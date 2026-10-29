@@ -23,6 +23,18 @@ async function loadClient(t: TestContext, document: unknown, name: string) {
   return loadGeneratedClient(output, name);
 }
 
+function cookieSendingClient(Client: Awaited<ReturnType<typeof loadClient>>) {
+  const sent: { cookie: string | null } = { cookie: null };
+  const client = new Client({
+    baseUrl: 'https://api.example',
+    fetchImpl: async (url: string | URL | Request, init?: RequestInit) => {
+      sent.cookie = captureRequest(url, init).init.headers.get('cookie');
+      return new Response(null, { status: 204 });
+    },
+  });
+  return { client, sent };
+}
+
 test('API execution resolves Basic and cookie credentials and merges constructor headers', async (t) => {
   const responses = { 204: { description: 'Accepted' } };
   const Client = await loadClient(t, {
@@ -145,14 +157,7 @@ test('header simple values stay literal and never percent-decode, and OAS 3.2 st
   assert.equal(result.headers?.['X-Greeting'], 'hello world');
   assert.equal(result.headers?.['X-Percent'], 'a%20b');
 
-  let cookie: string | null = null;
-  const cookieClient = new Client({
-    baseUrl: 'https://api.example',
-    fetchImpl: async (url: string | URL | Request, init?: RequestInit) => {
-      cookie = captureRequest(url, init).init.headers.get('cookie');
-      return new Response(null, { status: 204 });
-    },
-  });
+  const { client: cookieClient, sent } = cookieSendingClient(Client);
   await cookieClient.readJar().execute({
     cookie: {
       plain: 'hello world',
@@ -161,7 +166,7 @@ test('header simple values stay literal and never percent-decode, and OAS 3.2 st
     },
   });
   assert.equal(
-    cookie,
+    sent.cookie,
     'plain=hello world; tags=a b,c%20d; legacy=hello%20world',
   );
 });
@@ -284,16 +289,9 @@ test('a style cookie array or object with no explode is written exploded, as a f
       responses: { 204: { description: 'ok' } },
     } } },
   }, 'CookieExplode');
-  let cookie: string | null = null;
-  const client = new Client({
-    baseUrl: 'https://api.example',
-    fetchImpl: async (url: string | URL | Request, init?: RequestInit) => {
-      cookie = captureRequest(url, init).init.headers.get('cookie');
-      return new Response(null, { status: 204 });
-    },
-  });
+  const { client, sent } = cookieSendingClient(Client);
   await client.readJar().execute({ cookie: { tags: ['a', 'b'], point: { x: '1', y: '2' }, formTags: ['c', 'd'] } });
-  assert.equal(cookie, 'tags=a; tags=b; x=1; y=2; formTags=c; formTags=d');
+  assert.equal(sent.cookie, 'tags=a; tags=b; x=1; y=2; formTags=c; formTags=d');
 });
 
 test('an empty object response header decodes to an empty object, exploded or not', async (t) => {
