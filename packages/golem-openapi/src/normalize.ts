@@ -1,5 +1,6 @@
 import { asRecord, escapeJsonPointerToken, isJsonObject, objectEntries, readBoolean, readString, resolveJsonPointer, type JsonObject } from './json.js';
-import { GolemDiagnosticSeverity, identifier, type GolemDiagnostic } from '@exprtlabs/golem/generator-api';
+import { GolemDiagnosticSeverity, type GolemDiagnostic } from '@exprtlabs/golem/generator-api';
+import { identifier } from '@exprtlabs/golem/internal/generator-support';
 import { unescapePointerToken } from '@exprtlabs/golem/internal/schema';
 import { inboundOperationName, operationName } from './names.js';
 

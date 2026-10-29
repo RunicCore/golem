@@ -1,8 +1,7 @@
 import { asRecord, isJsonObject, objectEntries } from './json.js';
 import { unionVariants } from './composition.js';
 import { SCHEMA_ARRAY_KEYWORDS, SCHEMA_MAP_KEYWORDS, SCHEMA_SINGLE_KEYWORDS } from './schema-keywords.js';
-import { identifier } from '@exprtlabs/golem/generator-api';
-import { sourceDigest } from '@exprtlabs/golem/manifest';
+import { identifier, sourceDigest } from '@exprtlabs/golem/internal/generator-support';
 import { decodeUriFragment, escapePointerToken, unescapePointerToken } from '@exprtlabs/golem/internal/schema';
 import {
   normalizeDocument,

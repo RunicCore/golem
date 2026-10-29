@@ -10,7 +10,7 @@ import { requireObjectCodec } from '@exprtlabs/golem/serde';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import type { GeneratedModel } from '@exprtlabs/golem/model';
 import { getValidator } from '@exprtlabs/golem/validation';
-import { generate, generateModels } from '#openapi/generator';
+import { generate } from '#openapi/generator';
 import { generatedCodecIdFromRoot } from '../support/consumer.js';
 import { compileGeneratedSdk, generateMaterializedSdk, requireRecord } from './helpers.js';
 
@@ -1285,12 +1285,6 @@ const bothKeywords = {
   oneOf: [object({ kind: { const: 'a' }, code: { type: 'string', format: 'no-such-format' } }, { required: ['kind', 'code'] }), object({ kind: { const: 'b' } }, { required: ['kind'] })],
   anyOf: [object({ at: dateTime }, { required: ['at'] })],
 };
-
-// protects: T-554 the public generateModels reads both keywords of a schema, not only the oneOf
-test('generateModels keeps the anyOf of a schema that holds both oneOf and anyOf', () => {
-  const source = generateModels(visitDocument({ m: { ...bothKeywords, oneOf: [object({ kind: { const: 'a' } }, { required: ['kind'] }), object({ kind: { const: 'b' } }, { required: ['kind'] })] } }), { mobx: false, validation: false, allowAny: false });
-  assert.match(source, /\bat\b[^\n]*Date/);
-});
 
 // protects: T-554 a diagnostic inside a branch of a schema with both keywords names the place in the user's document
 test('a diagnostic inside a oneOf branch of a schema with both keywords names the user path', async t => {

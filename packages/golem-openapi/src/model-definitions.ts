@@ -1,6 +1,7 @@
 import { assertSupportedModelFieldName } from '@exprtlabs/golem/internal/schema';
 import { asRecord, isJsonObject, objectEntries } from './json.js';
-import { GolemDiagnosticSeverity, identifier, type GolemDiagnostic } from '@exprtlabs/golem/generator-api';
+import { GolemDiagnosticSeverity, type GolemDiagnostic } from '@exprtlabs/golem/generator-api';
+import { identifier } from '@exprtlabs/golem/internal/generator-support';
 import { ComponentNameScope } from './origin.js';
 import { resolveLocal } from './normalize.js';
 import type { ResourceIndex } from './schema-projection.js';

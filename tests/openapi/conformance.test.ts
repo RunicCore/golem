@@ -14,14 +14,10 @@ import { reaction, runInAction } from 'mobx';
 import { LibError, LibErrorKind, IssueSource } from '@exprtlabs/golem/errors';
 import type { GeneratedModel } from '@exprtlabs/golem/model';
 import { generatedCodecId } from '../support/consumer.js';
-import {
-  findRemoteRefs,
-  loadValidatedDocument,
-  normalizeDocument,
-  schemaType,
-  validate,
-  writeSdk as writeSdkFiles,
-} from '#openapi/generator';
+import { findRemoteRefs, validate } from '#openapi/document';
+import { loadValidatedDocument, writeSdk as writeSdkFiles } from '#openapi/generator';
+import { normalizeDocument } from '#openapi/normalize';
+import { schemaType } from '#openapi/types';
 import {
   captureRequest,
   isAsyncIterable,

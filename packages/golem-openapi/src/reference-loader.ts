@@ -1,7 +1,8 @@
 import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { displayPath, isInsideDirectory, parseYamlFile, type InputObserver } from '@exprtlabs/golem/generator-api';
+import { isInsideDirectory, parseYamlFile, type InputObserver } from '@exprtlabs/golem/generator-api';
+import { displayPath } from '@exprtlabs/golem/internal/generator-support';
 import { decodeUriFragment } from '@exprtlabs/golem/internal/schema';
 import { displayLocation } from './origin.js';
 import { asRecord, escapeJsonPointerToken, isJsonObject, jsonPointerJoin, objectEntries, resolveJsonPointer } from './json.js';

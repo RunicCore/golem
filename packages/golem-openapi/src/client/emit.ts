@@ -3,7 +3,7 @@ import { mediaFraming } from '../emission-plan.js';
 import type { SchemaPlace, SdkValidatorsInput } from '@exprtlabs/golem/internal/validation-plan';
 import { asRecord, escapeJsonPointerToken, isJsonObject, objectEntries } from '../json.js';
 import { componentPlace, type OriginLocator } from '../origin.js';
-import { identifier, NameScope } from '@exprtlabs/golem/generator-api';
+import { identifier, NameScope } from '@exprtlabs/golem/internal/generator-support';
 import {
   aliased,
   code,

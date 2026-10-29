@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { NameScope } from '@exprtlabs/golem/generator-api';
+import { NameScope } from '@exprtlabs/golem/internal/generator-support';
 import type { SchemaPlace } from '@exprtlabs/golem/internal/validation-plan';
 import { escapeJsonPointerToken } from './json.js';
 

@@ -26,7 +26,7 @@ import {
   type ObjectResult,
   type SlotRule,
 } from '@exprtlabs/golem/internal/emitter';
-import type { ModelConstraint, ModelTypeDescriptor } from '@exprtlabs/golem/model';
+import type { ModelConstraint, ModelTypeDescriptor } from '@exprtlabs/golem/internal/schema';
 
 import { asRecord, isJsonObject, objectEntries } from './json.js';
 import { effectiveSchemaTypes } from './normalize.js';

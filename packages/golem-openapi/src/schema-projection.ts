@@ -1,5 +1,6 @@
 import { asRecord, isJsonObject, jsonPointerJoin, objectEntries, type JsonObject } from './json.js';
-import { compareText, identifier } from '@exprtlabs/golem/generator-api';
+import { compareText } from '@exprtlabs/golem/generator-api';
+import { identifier } from '@exprtlabs/golem/internal/generator-support';
 import { canonicalSchemaKey, escapePointerToken, unescapePointerToken } from '@exprtlabs/golem/internal/schema';
 import {
   resolveLocalPointer,

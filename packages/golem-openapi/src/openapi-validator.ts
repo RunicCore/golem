@@ -1,5 +1,6 @@
 import { escapePointerToken } from '@exprtlabs/golem/internal/schema';
-import { schemaIssueMessage, type SchemaIssue, type Validator } from '@exprtlabs/golem/validation-runtime';
+import { schemaIssueMessage } from '@exprtlabs/golem/validation-runtime';
+import type { SchemaIssue, Validator } from '@exprtlabs/golem/validation';
 import { GolemDiagnosticSeverity } from '@exprtlabs/golem/generator-api';
 import { compile } from '@exprtlabs/golem/internal/validator-compiler';
 import { openApiLine, type OpenApiLine } from './json.js';

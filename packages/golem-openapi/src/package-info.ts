@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { displayPath } from '@exprtlabs/golem/generator-api';
+import { displayPath } from '@exprtlabs/golem/internal/generator-support';
 import { blockComment, type Code } from '@exprtlabs/golem/internal/emitter';
 
 const packageJsonPath = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'package.json');

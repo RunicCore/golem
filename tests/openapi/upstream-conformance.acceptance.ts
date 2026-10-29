@@ -11,7 +11,8 @@ import {
   GENERATION_PROFILES,
   PROFILE_IDS,
 } from '../../packages/golem-openapi/compliance/capabilities.js';
-import { generate, loadValidatedDocument, normalizeDocument } from '@exprtlabs/golem-openapi/generator';
+import { generate, loadValidatedDocument } from '@exprtlabs/golem-openapi/generator';
+import { normalizeDocument } from '#openapi/normalize';
 import {
   assertCaseTableIntegrity,
   caseKey,

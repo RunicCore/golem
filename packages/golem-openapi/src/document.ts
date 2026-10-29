@@ -4,7 +4,8 @@ import { asRecord, isJsonObject, objectEntries, unescapeJsonPointerToken } from 
 import { assertSupportedModelFieldName } from '@exprtlabs/golem/internal/schema';
 import { componentOrigin, LocatedError, type OriginLocator } from './origin.js';
 import { normalizeDocument, resolveLocalPointer, type NormalizedDocument, type NormalizedOperation } from './normalize.js';
-import { displayPath, GolemDiagnosticSeverity, parseYamlFile, type GolemDiagnostic } from '@exprtlabs/golem/generator-api';
+import { GolemDiagnosticSeverity, parseYamlFile, type GolemDiagnostic } from '@exprtlabs/golem/generator-api';
+import { displayPath } from '@exprtlabs/golem/internal/generator-support';
 import {
   collectCanonicalResources,
   lookupCanonicalResource,
@@ -263,12 +264,6 @@ export function authoredPointer(schema: unknown, pointer: string, moved: MovedUn
     current = Array.isArray(current) ? current[Number(token)] : isJsonObject(current) ? current[token] : undefined;
   }
   return kept.length === 0 ? '' : `/${kept.join('/')}`;
-}
-
-/** The same rewrite for one schema that is not part of a document. */
-export function normalizeSchemaUnionsOf(schema: unknown): unknown {
-  const { document } = normalizeSchemaUnions({ components: { schemas: { schema } } });
-  return asRecord(asRecord(asRecord(document).components).schemas).schema;
 }
 
 export function unsupportedHttpAuthSchemes(document: unknown): void {
