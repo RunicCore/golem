@@ -111,25 +111,33 @@ export interface SchemaGraphOptions {
  * graph, shared by every model that holds the shape.
  */
 export function anonymousShapeKeys(descriptor: ModelTypeDescriptor, found: Set<string> = new Set()): ReadonlySet<string> {
-  const visit = (child: ModelTypeDescriptor): void => {
-    if (!namedIdentity(child) && structural(child)) {
-      const key = canonicalDescriptorKey(child);
-      if (found.has(key)) return;
-      found.add(key);
-      anonymousShapeKeys(child, found);
-    } else if (!namedIdentity(child)) {
-      for (const nested of childDescriptors(child)) visit(nested);
-    }
+  forEachHeldType(descriptor, (child) => {
+    if (namedIdentity(child)) return;
+    const key = canonicalDescriptorKey(child);
+    if (found.has(key)) return;
+    found.add(key);
+    anonymousShapeKeys(child, found);
+  });
+  return found;
+}
+
+/**
+ * Calls `visit` for each named or object type that `descriptor` holds, through arrays, tuples, unions, constraint
+ * schemas and the wire form of each held type. It does not enter a type it visits; `visit` does.
+ */
+function forEachHeldType(descriptor: ModelTypeDescriptor, visit: (held: ModelTypeDescriptor) => void): void {
+  const walk = (child: ModelTypeDescriptor): void => {
+    if (namedIdentity(child) || structural(child)) visit(child);
+    else for (const nested of childDescriptors(child)) walk(nested);
     const wire = serdeWireDescriptor(child);
-    if (wire && wire !== child) visit(wire);
+    if (wire && wire !== child) walk(wire);
   };
-  for (const child of childDescriptors(descriptor)) visit(child);
+  for (const child of childDescriptors(descriptor)) walk(child);
   for (const constraint of descriptor.constraints ?? []) {
     for (const value of constraintSchemaValues(constraint)) {
-      if (isTypeDescriptor(value)) visit(value);
+      if (isTypeDescriptor(value)) walk(value);
     }
   }
-  return found;
 }
 
 function nodeKind(descriptor: ModelTypeDescriptor): SchemaNodeKind {
@@ -676,24 +684,10 @@ export function createSchemaGraph(
     internStack.add(stackKey);
     if (raw) internRawStack.add(raw);
     const nestedEdges: string[] = [];
-    const internNested = (child: ModelTypeDescriptor): void => {
-      if (namedIdentity(child) || structural(child)) {
-        const childNode = namedIdentity(child)
-          ? intern(child)
-          : intern(child, undefined, false, level);
-        if (!childNode.id.startsWith('__scalar_')) nestedEdges.push(childNode.id);
-      } else {
-        for (const nested of childDescriptors(child)) internNested(nested);
-      }
-      const wire = serdeWireDescriptor(child);
-      if (wire && wire !== child) internNested(wire);
-    };
-    for (const child of childDescriptors(descriptor)) internNested(child);
-    for (const constraint of descriptor.constraints ?? []) {
-      for (const value of constraintSchemaValues(constraint)) {
-        if (isTypeDescriptor(value)) internNested(value);
-      }
-    }
+    forEachHeldType(descriptor, (child) => {
+      const childNode = namedIdentity(child) ? intern(child) : intern(child, undefined, false, level);
+      if (!childNode.id.startsWith('__scalar_')) nestedEdges.push(childNode.id);
+    });
     // An unnamed object type is identified by its shape, so its id is stable across unrelated edits
     // and two files' anonymous types never share an id unless they are the same codec.
     const computedId = codecPublicId(named ?? 'Anonymous', descriptor, internLookup(), { source: codecSource, constructs: emitClass });

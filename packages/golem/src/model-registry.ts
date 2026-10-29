@@ -145,7 +145,7 @@ export type GeneratedModelValidatorEnhancer = <Fields extends object, Owner exte
  * The validation level a generated model registers as the default of its calls: `true` checks everything, `'sanity'` the
  * shape only, `false` is off. A call may choose any level up to the project's.
  */
-export type GeneratedModelValidation = boolean | 'sanity';
+type GeneratedModelValidation = boolean | 'sanity';
 
 export interface GeneratedModelDefinition<Model extends object, Wire = unknown> {
   readonly fields: readonly ModelField<Model>[];

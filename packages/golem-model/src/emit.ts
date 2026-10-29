@@ -881,7 +881,7 @@ export function internSourceDefinitions(
   options: SourceSchemaGraphOptions = {},
 ): ReturnType<typeof createSchemaGraph> {
   const entries = sourceEntries(definitions, emitted, options);
-  const validatedShapes = new Set([...(options.validatedShapes ?? []), ...validatedShapeKeys(definitions, emitted, options)]);
+  const validatedShapes = options.validatedShapes ?? validatedShapeKeys(definitions, emitted, options);
   const schemaGraph = createSchemaGraph({}, {
     ...(options.codecIds ? { codecIds: options.codecIds } : {}),
     ...(options.externalResidualIds ? { externalResidualIds: options.externalResidualIds } : {}),
