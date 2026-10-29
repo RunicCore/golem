@@ -461,6 +461,19 @@ function isSequenceDescriptor(descriptor: ModelTypeDescriptor): boolean {
   return descriptor.kind === 'array' || descriptor.kind === 'tuple';
 }
 
+/** `enum` limits a value to its listed scalars, with or without `type` (JSON Schema 2020-12 section 6.1.2); a list with an object or array is left to the caller. */
+function openApiEnumDescriptor(schema: { readonly enum?: unknown }): ModelTypeDescriptor | undefined {
+  const values = schema.enum;
+  if (!Array.isArray(values) || values.length === 0) return undefined;
+  const variants: ModelTypeDescriptor[] = [];
+  for (const value of values) {
+    if (value === null) variants.push({ kind: 'null' });
+    else if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') variants.push({ kind: 'literal', value });
+    else return undefined;
+  }
+  return variants.length === 1 ? variants[0]! : { kind: 'union', variants };
+}
+
 function openApiPrimitiveDescriptor(schema: { readonly type?: unknown }): ModelTypeDescriptor | undefined {
   const types = (Array.isArray(schema.type) ? schema.type : schema.type ? [schema.type] : [])
     .filter((item): item is string => typeof item === 'string' && item !== 'null');
@@ -683,6 +696,10 @@ export function modelConversionDescriptor(
   if (isJsonObject(schema) && schema.const !== undefined
     && (typeof schema.const === 'string' || typeof schema.const === 'number' || typeof schema.const === 'boolean')) {
     return { kind: 'literal', value: schema.const };
+  }
+  if (isJsonObject(schema)) {
+    const listed = openApiEnumDescriptor(schema);
+    if (listed) return listed;
   }
   if (isJsonObject(schema)) {
     const primitive = openApiPrimitiveDescriptor(schema);
