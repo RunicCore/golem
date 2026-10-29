@@ -45,7 +45,7 @@ import {
   type SerdeResolver,
   presentKeysCode,
 } from '@exprtlabs/golem/internal/emitter';
-import { createSchemaGraph, codecPublicId, codecShortName, internDescriptors, type SchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
+import { anonymousShapeKeys, createSchemaGraph, codecPublicId, codecShortName, internDescriptors, type SchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
 import { compareText, type GolemProfile } from '@exprtlabs/golem/generator-api';
 import { displayPath, RESERVED_MODEL_MEMBERS } from '@exprtlabs/golem/internal/generator-support';
 import type { ManifestIndex } from '@exprtlabs/golem/internal/type-analysis';
@@ -822,26 +822,26 @@ interface SourceSchemaGraphOptions {
   readonly externalResidualIds?: { readonly modelOnly: ReadonlySet<string>; readonly wireOnly: ReadonlySet<string> };
   /** Codec ids and aliases of models emitted elsewhere that publish a `#wire` schema. */
   readonly externalWireIds?: ReadonlySet<string>;
+  /** The unnamed object types a validating model of another source of the job holds; see `validatedShapeKeys`. */
+  readonly validatedShapes?: ReadonlySet<string>;
 }
 
-export function internSourceDefinitions(
+interface SourceEntry {
+  readonly name: string;
+  readonly descriptor: ModelConversionDescriptor;
+  readonly emitClass: boolean;
+  readonly validation?: GolemProfile['validation'];
+}
+
+/** The models of a source to intern, each with its validation level. */
+function sourceEntries(
   definitions: Readonly<Record<string, ModelConversionDescriptor>>,
   emitted: readonly ModelSpecification[],
-  options: SourceSchemaGraphOptions = {},
-): ReturnType<typeof createSchemaGraph> {
-  const schemaGraph = createSchemaGraph({}, {
-    ...(options.codecIds ? { codecIds: options.codecIds } : {}),
-    ...(options.externalResidualIds ? { externalResidualIds: options.externalResidualIds } : {}),
-    ...(options.externalWireIds ? { externalWireIds: options.externalWireIds } : {}),
-  });
+  options: SourceSchemaGraphOptions,
+): SourceEntry[] {
   const siblings = new Set(options.siblings ?? []);
   const interned = new Set<string>();
-  const entries: Array<{
-    name: string;
-    descriptor: ModelConversionDescriptor;
-    emitClass?: boolean;
-    validation?: GolemProfile['validation'];
-  }> = [];
+  const entries: SourceEntry[] = [];
   for (const specification of emitted) {
     interned.add(specification.name);
     const descriptor = definitions[specification.name];
@@ -859,6 +859,35 @@ export function internSourceDefinitions(
     if (interned.has(name)) continue;
     entries.push({ name, descriptor, emitClass: false, ...(options.defaultValidation === undefined ? {} : { validation: options.defaultValidation }) });
   }
+  return entries;
+}
+
+/** The keys of the unnamed object types that a validating model of the source holds (see `SchemaGraphOptions.validatedShapes`). */
+export function validatedShapeKeys(
+  definitions: Readonly<Record<string, ModelConversionDescriptor>>,
+  emitted: readonly ModelSpecification[],
+  options: SourceSchemaGraphOptions = {},
+): ReadonlySet<string> {
+  const keys = new Set<string>();
+  for (const entry of sourceEntries(definitions, emitted, options)) {
+    if (entry.validation !== false) anonymousShapeKeys(entry.descriptor, keys);
+  }
+  return keys;
+}
+
+export function internSourceDefinitions(
+  definitions: Readonly<Record<string, ModelConversionDescriptor>>,
+  emitted: readonly ModelSpecification[],
+  options: SourceSchemaGraphOptions = {},
+): ReturnType<typeof createSchemaGraph> {
+  const entries = sourceEntries(definitions, emitted, options);
+  const validatedShapes = new Set([...(options.validatedShapes ?? []), ...validatedShapeKeys(definitions, emitted, options)]);
+  const schemaGraph = createSchemaGraph({}, {
+    ...(options.codecIds ? { codecIds: options.codecIds } : {}),
+    ...(options.externalResidualIds ? { externalResidualIds: options.externalResidualIds } : {}),
+    ...(options.externalWireIds ? { externalWireIds: options.externalWireIds } : {}),
+    validatedShapes,
+  });
   internDescriptors(schemaGraph, entries);
   schemaGraph.seal();
   return schemaGraph;
@@ -1644,7 +1673,7 @@ function emitClassModel(context: EmitContext, emission: ModelFieldEmission): Pie
     code`    decode: (value, constructor) => ${decodeModel}(constructor ?? ${baseName}, value),`,
     code`  },`,
     code`  codecId: ${definition.kind === 'generated-model' ? literal(externalModel(context, definition.id).model.codecId) : codecId},`,
-    code`  profile: { validation: ${(specification.validation ?? profile.validation) ? code`true` : code`false`} },`,
+    code`  profile: { validation: ${literal(specification.validation ?? profile.validation)} },`,
     ...(observesValidator(context, specification) ? [code`  enhanceValidator: ${rt['mobx-validation'].enhanceValidatorWithMobX},`] : []),
     // A model with a dynamic map, or an explicit additionalProperties true, has no program state: the keys outside its
     // fields are data. A default-open model declares none, so its other own keys are program state.

@@ -99,6 +99,37 @@ export interface SchemaGraphOptions {
    * reaches one is not `sameSchema`: its own wire check must read that model's wire form.
    */
   readonly externalWireIds?: ReadonlySet<string>;
+  /**
+   * The canonical keys of the unnamed object types some validating model of the job holds (see `anonymousShapeKeys`).
+   * An unnamed type is one codec for every holder, so it validates when any holder does, whichever holder is interned first.
+   */
+  readonly validatedShapes?: ReadonlySet<string>;
+}
+
+/**
+ * The canonical keys of the unnamed structural types under `descriptor`, named types left out: each is one codec in its
+ * graph, shared by every model that holds the shape.
+ */
+export function anonymousShapeKeys(descriptor: ModelTypeDescriptor, found: Set<string> = new Set()): ReadonlySet<string> {
+  const visit = (child: ModelTypeDescriptor): void => {
+    if (!namedIdentity(child) && structural(child)) {
+      const key = canonicalDescriptorKey(child);
+      if (found.has(key)) return;
+      found.add(key);
+      anonymousShapeKeys(child, found);
+    } else if (!namedIdentity(child)) {
+      for (const nested of childDescriptors(child)) visit(nested);
+    }
+    const wire = serdeWireDescriptor(child);
+    if (wire && wire !== child) visit(wire);
+  };
+  for (const child of childDescriptors(descriptor)) visit(child);
+  for (const constraint of descriptor.constraints ?? []) {
+    for (const value of constraintSchemaValues(constraint)) {
+      if (isTypeDescriptor(value)) visit(value);
+    }
+  }
+  return found;
 }
 
 function nodeKind(descriptor: ModelTypeDescriptor): SchemaNodeKind {
@@ -631,6 +662,8 @@ export function createSchemaGraph(
         kind: 'scalar',
       };
     }
+    // An unnamed type validates when any validating model holds it, so an off holder interned first does not switch it off.
+    const level = !named && validation === false && options.validatedShapes?.has(canonicalDescriptorKey(descriptor)) === true ? true : validation;
     if (!named) {
       const existingId = byKey.get(canonicalDescriptorKey(descriptor));
       if (existingId) {
@@ -647,7 +680,7 @@ export function createSchemaGraph(
       if (namedIdentity(child) || structural(child)) {
         const childNode = namedIdentity(child)
           ? intern(child)
-          : intern(child, undefined, false, validation);
+          : intern(child, undefined, false, level);
         if (!childNode.id.startsWith('__scalar_')) nestedEdges.push(childNode.id);
       } else {
         for (const nested of childDescriptors(child)) internNested(nested);
@@ -706,7 +739,7 @@ export function createSchemaGraph(
       edges: [...new Set(nestedEdges)].filter((edge) => edge !== id),
       emitClass,
       kind: nodeKind(descriptor),
-      ...(validation === undefined ? {} : { validation }),
+      ...(level === undefined ? {} : { validation: level }),
       ...(named ? {} : { anonymous: true as const }),
     };
     if (shortExisting?.kind === 'reference' && shortExisting.id !== id) {

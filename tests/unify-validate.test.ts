@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 
-import { requireObjectCodec } from '@exprtlabs/golem/internal/model-runtime';
+import { findGeneratedModelDefinition, requireObjectCodec } from '@exprtlabs/golem/internal/model-runtime';
 import { getValidator, validateInstance } from '@exprtlabs/golem/validation';
 import { generate as generateOpenApi } from '@exprtlabs/golem-openapi/generator';
 import { buildModelProject, createModelProject, writeModelGolemYaml, type ModelProject } from './model-project.js';
@@ -91,22 +91,18 @@ function writeMixedModels(sourceRoot: string): void {
   })));
 }
 
-test('a sanity model in a full project checks the shape only, alone and inside a full model', async (t: TestContext) => {
-  // protects: T-678 a sanity model in a full project validates at shape only, and the full model around it keeps every limit
+test('a model registers its own validation level as the default of its calls', async (t: TestContext) => {
+  // protects: T-678 the generated code records each model's level (R-76: the model's level is a default, not a cap)
   const { root, sourceRoot } = fixture(t);
   writeMixedModels(sourceRoot);
   writeModelGolemYaml(root, { mobx: false, validation: true });
   await compile(root);
   const { Checked } = await import(pathToFileURL(path.join(root, 'build/mixed.model.js')).href);
+  assert.deepEqual(findGeneratedModelDefinition(new Checked({ title: 'abc' }))?.profile, { validation: 'sanity' });
   const checkedCodec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TChecked'));
-  const outerCodec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TOuter'));
   const trustedCodec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TTrusted'));
-  const overLimit = { title: 'ok', note: ' ' };
-  assert.equal(checkedCodec.validate(new Checked(overLimit)), true, 'a title under its limit and a blank note pass at sanity');
-  assert.equal(checkedCodec.validate({ title: 5 }), false, 'the sanity model still rejects a wrong type');
-  assert.equal(outerCodec.validate({ inner: overLimit, code: 'abc' }), true, 'the sanity model inside a full model checks the shape only');
-  assert.equal(outerCodec.validate({ inner: { title: 5 }, code: 'abc' }), false, 'a wrong type inside it is still rejected');
-  assert.equal(outerCodec.validate({ inner: overLimit, code: 'ab' }), false, 'the full model keeps its own limit');
+  assert.equal(checkedCodec.validate({ title: 'abc' }), true);
+  assert.equal(checkedCodec.validate({ title: 5 }), false, 'a wrong type is rejected at every level');
   assert.throws(() => trustedCodec.validate({ id: '1' }));
   assert.throws(() => trustedCodec.stringify({ id: '1' }, { validate: true }));
 });

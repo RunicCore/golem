@@ -29,6 +29,7 @@ import {
   validatorImports,
   codecEntriesForGraph,
   internSourceDefinitions,
+  validatedShapeKeys,
   type SourceModelGraph,
 } from './emit.js';
 import type { SchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
@@ -255,6 +256,8 @@ function internJobSchemaGraphs(
     if (entry.wireSchema !== undefined) names.forEach((name) => wirePlanes.add(name));
     if (entry.recursive !== undefined) names.forEach((name) => recursion.set(name, entry.recursive ?? true));
   }
+  // An unnamed object type has one codec id for every source that holds the shape, so it validates when any source's validating model holds it.
+  const validatedShapes = new Set(graphs.flatMap((graph) => [...validatedShapeKeys(graph.definitions, graph.emitted, { siblings: graph.siblings, defaultValidation })]));
   const byGraph = new Map<SourceModelGraph, SourceSchemaGraph>();
   const idsFor = (graph: SourceModelGraph, own: ReadonlyMap<string, string>): Map<string, string> => new Map([
     ...own,
@@ -289,6 +292,7 @@ function internJobSchemaGraphs(
         codecIds: idsFor(graph, new Map()),
         siblings: graph.siblings,
         defaultValidation,
+        validatedShapes,
         externalResidualIds: residualIds,
         externalWireIds: wirePlanes,
       });
@@ -323,6 +327,7 @@ function internJobSchemaGraphs(
       })),
       siblings: outside,
       defaultValidation,
+      validatedShapes,
       externalResidualIds: residualIds,
       externalWireIds: wirePlanes,
     });
@@ -338,6 +343,7 @@ function internJobSchemaGraphs(
         codecIds: idsFor(graph, own),
         siblings: graph.siblings,
         defaultValidation,
+        validatedShapes,
         externalResidualIds: residualIds,
         externalWireIds: wirePlanes,
       });

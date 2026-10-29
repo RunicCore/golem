@@ -432,7 +432,8 @@ function publicValidationDefinition(model: unknown): RegisteredGeneratedModelDef
       'This model was generated without an enabled validation profile. Regenerate it with validation enabled.',
     );
   }
-  if (definition.profile?.validation === true) {
+  // Here the profile, if any, validates at `true` or `'sanity'`.
+  if (definition.profile !== undefined) {
     if (!definition.conversion) {
       throw new LibError(
         LibErrorKind.ValidationUnavailable,

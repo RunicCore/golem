@@ -902,7 +902,7 @@ export function generateModels(
       code`  fields: [${fieldNames}] as const,`,
       code`  conversion: { decode: ${identifier(`decode${typeName}`)} },`,
       code`  codecId: ${literal(codecIdFor(definition.name))},`,
-      code`  profile: { validation: ${literal(profile.validation !== false)} },`,
+      code`  profile: { validation: ${literal(profile.validation)} },`,
       ...(profile.validation && profile.mobx ? [code`  enhanceValidator: ${rt['mobx-validation'].enhanceValidatorWithMobX},`] : []),
       ...(additionalPropertyType ? [code`  additionalProperties: true,`] : []),
       code`});`,
