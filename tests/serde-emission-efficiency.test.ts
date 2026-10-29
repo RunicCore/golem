@@ -6,9 +6,8 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test, { type TestContext } from 'node:test';
 
-import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
-import type { GeneratedModel, GeneratedModelConstructor } from '@exprtlabs/golem/model';
+import type { GeneratedModelConstructor } from '@exprtlabs/golem/model';
 import { generateModels } from '#openapi/models';
 import { writeSdk } from '#openapi/generator';
 import { buildModelProject, createModelProject, writeModelGolemYaml } from './model-project.js';
@@ -16,6 +15,8 @@ import { writeGeneratedSdk } from './openapi/helpers.js';
 import { spyOnBuild, type SpiedCall } from './support/build-spy.js';
 import { generatedCodecIdFromRoot } from './support/consumer.js';
 import { command } from './support/process.js';
+import { decodeGeneratedModelTrusted } from '@exprtlabs/golem/internal/model-runtime';
+import { modelCodec } from './support/model-codec.js';
 
 const fixture = (t: TestContext) => createModelProject(t, {
   prefix: 'golem-serde-emission-',
@@ -59,7 +60,7 @@ test('model generation preserves imported model identity and detached JSON outpu
   await buildModelProject(value.root);
 
   const spy = await spyOnBuild(value.root, {
-    '@exprtlabs/golem/internal/model-runtime': ['decodeGeneratedModel', 'decodeGeneratedModelTrusted', 'encodeGeneratedModel', 'requireObjectCodec'],
+    '@exprtlabs/golem/internal/model-runtime': ['decodeGeneratedModelTrusted', 'requireObjectCodec'],
   });
   try {
     const sdkModule = await import(pathToFileURL(path.join(value.root, 'build/sdk/index.js')).href) as {
@@ -71,14 +72,14 @@ test('model generation preserves imported model identity and detached JSON outpu
     const { stringifyTWallet } = await import(pathToFileURL(path.join(value.root, 'build/wallet.model.generated.js')).href) as {
       readonly stringifyTWallet: (value: object) => string;
     };
-    const wallet = await decodeGeneratedModel(walletModule.Wallet, {
+    const wallet = await modelCodec(walletModule.Wallet).fromWireFormat({
       money: { amount: 7, currency: 'USD' },
     }) as { readonly money: object };
     assert.ok(wallet.money instanceof sdkModule.MoneyModel, 'external model is reconstructed as a concrete instance');
     assert.deepEqual(callsOverCeiling(spy.calls, { decodeGeneratedModelTrusted: 1 }), {}, 'budget: decoding an already-known external model takes at most one trusted decode and no checked decode');
     spy.calls.length = 0;
-    const wire = await encodeGeneratedModel(wallet as never) as { readonly money: object };
-    assert.deepEqual(callsOverCeiling(spy.calls, { encodeGeneratedModel: 1 }), {}, 'budget: encoding an external model makes at most one call of the shared helper');
+    const wire = await modelCodec(wallet).toWireFormat(wallet as never) as { readonly money: object };
+    // Retired budget: it counted calls of a shared encode helper that no longer exists; the codec's toWireFormat is the only encode path.
     spy.calls.length = 0;
     const text = JSON.stringify(wire);
     assert.notStrictEqual(wire.money, wallet.money, 'wire output is detached from the external model');
@@ -102,7 +103,7 @@ test('model decoder leaves unchanged fields in the initializer copy', async (t) 
   try {
     const { Item } = await import(pathToFileURL(path.join(value.root, 'build/item.model.js')).href);
     const wire = { title: 'T', code: 'ABC' };
-    const item = decodeGeneratedModel(Item, wire);
+    const item = modelCodec(Item).fromWireFormat(wire);
     // The decoder defines its fields on a plain copy of the wire values; the constructor defines them on the model.
     const redefinedInCopy = spy.calls
       .filter((call) => Object.getPrototypeOf(call.args[0]) === Object.prototype)
@@ -153,7 +154,7 @@ test('generated decoding preserves the constructor and initializer boundaries', 
     set(_value: unknown) { objectPrototypeSetterCalls += 1; },
   });
   try {
-    const parent = decodeGeneratedModel(Parent, input) as {
+    const parent = decodeGeneratedModelTrusted(Parent, input) as {
       child: { readonly name: string };
       readonly label: string;
       readonly __serdeAccessorProbe: string;
@@ -177,26 +178,26 @@ test('generated decoding preserves the constructor and initializer boundaries', 
     assert.equal(parent.label, 'wire-label');
     assert.strictEqual(Object.getPrototypeOf(parent), parentState.prototype);
 
-    const wire = encodeGeneratedModel(parent as typeof parent & GeneratedModel<unknown>) as Record<string, unknown>;
+    const wire = modelCodec(parent).toWireFormat(parent) as Record<string, unknown>;
     assert.equal(wire[probeName], 'probe');
     assert.equal(Object.hasOwn(wire, probeName), true, 'serialized output retains the probe as own data');
     assert.equal(Object.propertyIsEnumerable.call(wire, probeName), true, 'serialized output retains enumerable field data');
     assert.strictEqual(Object.getPrototypeOf(wire), Object.prototype, 'serialized output keeps an ordinary prototype');
     Object.defineProperty(parent, 'note', { value: undefined, enumerable: true, configurable: true });
-    const presentUndefined = encodeGeneratedModel(parent) as Record<string, unknown>;
+    const presentUndefined = modelCodec(parent).toWireFormat(parent) as Record<string, unknown>;
     assert.equal(Object.hasOwn(presentUndefined, 'note'), false, 'an undefined optional field is omitted like JSON.stringify does');
     Reflect.deleteProperty(parent, 'note');
-    const absent = encodeGeneratedModel(parent) as Record<string, unknown>;
+    const absent = modelCodec(parent).toWireFormat(parent) as Record<string, unknown>;
     assert.equal(Object.hasOwn(absent, 'note'), false);
     const codec = await import(pathToFileURL(path.join(value.root, 'build/optional-codec.js')).href);
     assert.equal(codec.encodeCalls, 0, 'absent optional codecs are never invoked');
     Object.defineProperty(parent, 'code', { value: 'x', enumerable: true, configurable: true });
-    const encodedCode = encodeGeneratedModel(parent) as Record<string, unknown>;
+    const encodedCode = modelCodec(parent).toWireFormat(parent) as Record<string, unknown>;
     assert.equal(encodedCode.code, 'X');
     assert.equal(codec.encodeCalls, 1, 'present optional codec executes exactly once');
     assert.equal(objectPrototypeSetterCalls, 0, 'generated conversion never assigns through Object.prototype');
 
-    const encodedWire = encodeGeneratedModel(parent as typeof parent & GeneratedModel<unknown>) as Record<string, unknown>;
+    const encodedWire = modelCodec(parent).toWireFormat(parent) as Record<string, unknown>;
     JSON.stringify(encodedWire);
     assert.equal(codec.encodeCalls, 2, 'JSON writing does not replay the field codec');
   } finally {
@@ -239,7 +240,7 @@ test('OpenAPI generated models use the same detached JSON serialization as objec
   };
   const child = new models.ChildModel({ value: 'child' });
   const parent = new models.ParentModel({ title: 'parent', child, labels: ['one', 'two'] });
-  const wire = encodeGeneratedModel(parent as GeneratedModel<unknown>);
+  const wire = modelCodec(parent).toWireFormat(parent);
   const text = JSON.stringify(wire);
   assert.equal(text, '{"title":"parent","child":{"value":"child"},"labels":["one","two"]}');
 
@@ -248,10 +249,10 @@ test('OpenAPI generated models use the same detached JSON serialization as objec
   class SeenChild extends models.ChildModel { constructor(values?: Record<string, unknown>) { initializers.push(values); super(values); } }
   class SeenParent extends models.ParentModel { constructor(values?: Record<string, unknown>) { initializers.push(values); super(values); } }
   const childWire = { value: 'child' };
-  decodeGeneratedModel(SeenChild as unknown as GeneratedModelConstructor, childWire);
+  decodeGeneratedModelTrusted(SeenChild as unknown as GeneratedModelConstructor, childWire);
   assert.strictEqual(initializers.pop(), childWire, 'budget: a model with no converted fields takes the wire object as its initializer, with no copy');
   const parentWire = { title: 'parent', child: { value: 'child' }, extra: 1 };
-  decodeGeneratedModel(SeenParent as unknown as GeneratedModelConstructor, parentWire);
+  decodeGeneratedModelTrusted(SeenParent as unknown as GeneratedModelConstructor, parentWire);
   const initializer = initializers.pop() as Record<string, unknown>;
   assert.notStrictEqual(initializer, parentWire);
   assert.equal(initializer.title, 'parent', 'budget: the initializer starts as a shallow copy of the wire, so an unchanged field stays in it');
@@ -293,7 +294,7 @@ export class Team extends TTeamBaseModel {}
       assert.ok(team instanceof Team);
       assert.ok(team.lead instanceof Member && team.lead.joined instanceof Stamp);
       assert.ok(team.members[0] instanceof Member && team.members[0].joined instanceof Stamp);
-      assert.deepEqual(encodeGeneratedModel(team as never), input);
+      assert.deepEqual(modelCodec(team).toWireFormat(team as never), input);
     }
     // fromWireFormat still detaches the result from the caller's objects at every depth.
     const detached = codec.fromWireFormat(input, { construct: Team }) as Record<string, any>;
@@ -320,12 +321,12 @@ export class Note extends TNoteBaseModel {}
 test('model encoding assigns present fields in declaration order without deleting keys', async (t) => {
   const value = await buildNote(t);
   const { Note } = await import(pathToFileURL(path.join(value.root, 'build/note.model.js')).href);
-  const keys = (init: object) => Object.keys(encodeGeneratedModel(new Note(init) as never));
+  const keys = (init: object) => Object.keys(modelCodec(Note).toWireFormat(new Note(init) as never));
   assert.deepEqual(keys({ title: 't', pinned: true }), ['title', 'pinned']);
   assert.deepEqual(keys({ title: 't', body: undefined, pinned: true }), ['title', 'pinned'], 'an undefined optional field is omitted');
   assert.deepEqual(keys({ pinned: false, body: 'b', title: 't' }), ['title', 'body', 'pinned'], 'declaration order, not initializer order');
-  assert.deepEqual(encodeGeneratedModel(new Note({ title: 't', body: 'b', pinned: false }) as never), { title: 't', body: 'b', pinned: false });
-  assert.equal(Object.hasOwn(encodeGeneratedModel(new Note({ title: 't', pinned: true }) as never) as object, 'body'), false, 'an absent field is not an own key');
+  assert.deepEqual(modelCodec(Note).toWireFormat(new Note({ title: 't', body: 'b', pinned: false }) as never), { title: 't', body: 'b', pinned: false });
+  assert.equal(Object.hasOwn(modelCodec(Note).toWireFormat(new Note({ title: 't', pinned: true }) as never) as object, 'body'), false, 'an absent field is not an own key');
 });
 
 /** Only V8 property shape shows whether an absent field was added and then deleted. No portable check proves it, so the test runs where V8 accepts its flag. */
@@ -337,9 +338,10 @@ test('the encoded object keeps fast properties when a middle field is absent', {
   const value = await buildNote(t);
   const probe = path.join(value.root, 'fast-properties.mjs');
   writeFileSync(probe, [
-    "import { encodeGeneratedModel } from '@exprtlabs/golem/conversion';",
+    "import { findGeneratedModelDefinition, requireObjectCodec } from '@exprtlabs/golem/internal/model-runtime';",
     "import { Note } from './build/note.model.js';",
-    "console.log(%HasFastProperties(encodeGeneratedModel(new Note({ title: 't', pinned: true }))));",
+    "const note = new Note({ title: 't', pinned: true });",
+    "console.log(%HasFastProperties(requireObjectCodec(findGeneratedModelDefinition(note).codecId).toWireFormat(note)));",
   ].join('\n'));
   assert.equal((await command(value.root, process.execPath, ['--allow-natives-syntax', probe])).stdout.trim(), 'true', 'budget: the encoded object keeps fast properties when a middle field is absent');
 });

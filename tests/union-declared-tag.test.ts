@@ -3,7 +3,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test, { type TestContext } from 'node:test';
-import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { requireObjectCodec } from '@exprtlabs/golem/serde';
 import { getValidator, validateInstance } from '@exprtlabs/golem/validation';
@@ -13,6 +12,7 @@ import { fixturePath, writeGeneratedArtifacts } from './fixture-project.js';
 import { generatedCodecIdFromRoot } from './support/consumer.js';
 import { buildModelProject, createModelProject, writeModelGolemYaml, writeModelSources } from './model-project.js';
 import { requireRecord, type GeneratedModelClass } from './openapi/helpers.js';
+import { modelCodec } from './support/model-codec.js';
 
 const TAG = "Discriminator<'kind'>";
 
@@ -88,7 +88,7 @@ for (const validation of [false, true]) {
       assert.deepEqual({ ...requireRecord(contact.aliased, 'aliased') }, { ...phone, added: new Date(DAY) });
       assert.equal(contact.nullable, null);
     }
-    const contact = requireRecord(decodeGeneratedModel(Contact, wire), 'contact');
+    const contact = requireRecord(modelCodec(Contact).fromWireFormat(wire, { validate: false }), 'contact');
     assert.ok(contact.written instanceof Email, `validation=${validation}: written is an Email`);
     assert.ok(contact.aliased instanceof Phone, `validation=${validation}: aliased is a Phone`);
     assert.equal(contact.nullable, null);
@@ -96,12 +96,12 @@ for (const validation of [false, true]) {
     assert.ok(requireRecord(contact.byName, 'byName').home instanceof Phone);
     assert.ok(requireRecord(contact.written, 'written').added instanceof Date);
     const full = { ...wire, nullable: phone, optional: email };
-    const decoded = requireRecord(decodeGeneratedModel(Contact, full), 'contact');
+    const decoded = requireRecord(modelCodec(Contact).fromWireFormat(full, { validate: false }), 'contact');
     assert.ok(decoded.nullable instanceof Phone);
     assert.ok(decoded.optional instanceof Email);
-    assert.deepEqual(encodeGeneratedModel(decoded), full);
+    assert.deepEqual(modelCodec(decoded).toWireFormat(decoded), full);
     assert.deepEqual(JSON.parse(codec.stringify(decoded, options)), full);
-    if (validation) assert.throws(() => decodeGeneratedModel(Contact, { ...wire, written: { ...email, kind: 'fax' } }));
+    if (validation) assert.throws(() => modelCodec(Contact).fromWireFormat({ ...wire, written: { ...email, kind: 'fax' } }, { validate: false }));
   });
 }
 
@@ -136,7 +136,7 @@ test('a declared key picks the variant even when another shared literal field wo
   writeModelGolemYaml(root, { mobx: false, validation: false });
   await buildModelProject(root);
   const { Probe, Alpha } = await loadContact(root);
-  const probe = requireRecord(decodeGeneratedModel(Probe, { item: { kind: 'b', mode: 'x', at: DAY } }), 'probe');
+  const probe = requireRecord(modelCodec(Probe).fromWireFormat({ item: { kind: 'b', mode: 'x', at: DAY } }, { validate: false }), 'probe');
   assert.ok(probe.item instanceof Alpha, 'mode "x" selects Alpha although kind says "b"');
 });
 
@@ -276,7 +276,7 @@ for (const validation of [false, true]) {
     const { Item } = await buildMoneyItem(t, 'declared-default', validation,
       "(Money | { kind: 'a' | 'b'; x: number } | { kind: 'c' }) & Discriminator<'kind', Money>");
     const plain = (value: unknown): boolean => Object.getPrototypeOf(value) === Object.prototype;
-    const valueOf = (wire: unknown): unknown => requireRecord(decodeGeneratedModel(Item, { value: wire }), 'item').value;
+    const valueOf = (wire: unknown): unknown => requireRecord(modelCodec(Item).fromWireFormat({ value: wire }, { validate: false }), 'item').value;
     for (const wire of [{ kind: 'a', x: 1 }, { kind: 'b', x: 2 }, { kind: 'c' }]) {
       assert.equal(plain(valueOf(wire)), true, `validation=${validation}: ${JSON.stringify(wire)} is the tagged object`);
     }
@@ -336,20 +336,20 @@ for (const validation of [false, true]) {
     const mixed = { text: email, amount: 5, list: phone, flag: 'none' };
     const objects = { text: phone, amount: email, list: email, flag: phone };
     for (const wire of [scalars, mixed, objects]) {
-      const decoded = requireRecord(decodeGeneratedModel(Box, wire), 'box');
-      assert.deepEqual(encodeGeneratedModel(decoded), wire, `validation=${validation}: encode of ${JSON.stringify(wire)}`);
+      const decoded = requireRecord(modelCodec(Box).fromWireFormat(wire, { validate: false }), 'box');
+      assert.deepEqual(modelCodec(decoded).toWireFormat(decoded), wire, `validation=${validation}: encode of ${JSON.stringify(wire)}`);
       assert.deepEqual(JSON.parse(codec.stringify(decoded, options)), wire, `validation=${validation}: stringify of ${JSON.stringify(wire)}`);
       assert.deepEqual(JSON.parse(JSON.stringify(requireRecord(codec.parse(JSON.stringify(wire), options), 'parsed'))), wire);
     }
-    const first = requireRecord(decodeGeneratedModel(Box, scalars), 'box');
+    const first = requireRecord(modelCodec(Box).fromWireFormat(scalars, { validate: false }), 'box');
     assert.deepEqual([first.text, first.amount, first.list, first.flag], ['hi', null, ['a', 'b'], true]);
-    const second = requireRecord(decodeGeneratedModel(Box, mixed), 'box');
+    const second = requireRecord(modelCodec(Box).fromWireFormat(mixed, { validate: false }), 'box');
     assert.ok(second.text instanceof Email && second.list instanceof Phone, `validation=${validation}: tagged objects become their models`);
     assert.ok(requireRecord(second.text, 'text').added instanceof Date);
     assert.deepEqual([second.amount, second.flag], [5, 'none']);
-    const third = requireRecord(decodeGeneratedModel(Box, objects), 'box');
+    const third = requireRecord(modelCodec(Box).fromWireFormat(objects, { validate: false }), 'box');
     assert.ok(third.text instanceof Phone && third.amount instanceof Email && third.list instanceof Email && third.flag instanceof Phone);
-    assert.throws(() => decodeGeneratedModel(Box, { ...scalars, text: { ...email, kind: 'fax' } }), /Unknown kind discriminator value/);
+    assert.throws(() => modelCodec(Box).fromWireFormat({ ...scalars, text: { ...email, kind: 'fax' } }, { validate: false }), /Unknown kind discriminator value/);
   });
 
   test(`a declared default model sits beside scalars, an array and null, with validation ${validation ? 'on' : 'off'}`, async (t) => {
@@ -364,13 +364,13 @@ for (const validation of [false, true]) {
       ['hi', false], [[1, 2], false], [null, false], [{ kind: 'a', x: 1 }, false], [{ kind: 'c' }, false],
       [money, true],
     ] as const) {
-      const item = requireRecord(decodeGeneratedModel(Item, { value: wire }), 'item');
+      const item = requireRecord(modelCodec(Item).fromWireFormat({ value: wire }, { validate: false }), 'item');
       const label = `validation=${validation}: ${JSON.stringify(wire)}`;
       assert.equal(typeof item.value === 'object' && item.value !== null && !Array.isArray(item.value) && !plain(item.value), isModel, label);
-      assert.deepEqual(encodeGeneratedModel(item), { value: wire }, label);
+      assert.deepEqual(modelCodec(item).toWireFormat(item), { value: wire }, label);
       assert.deepEqual(JSON.parse(codec.stringify(item, options)), { value: wire }, label);
     }
-    const unknownTag = requireRecord(decodeGeneratedModel(Item, { value: { kind: 'zzz', ...money } }), 'item').value;
+    const unknownTag = requireRecord(modelCodec(Item).fromWireFormat({ value: { kind: 'zzz', ...money } }, { validate: false }), 'item').value;
     assert.equal(plain(unknownTag), false, `validation=${validation}: an unknown tag takes the default model`);
   });
 }
@@ -420,10 +420,10 @@ test('a writer tells a model instance by its class before its tag, with validati
   const tagless = itemOf({ address: 'a@b.c' });
   assert.equal(codec.stringify(tagless), '{"value":{"kind":"email","address":"a@b.c"}}');
   assert.deepEqual(codec.toWireFormat(tagless), { value: { kind: 'email', address: 'a@b.c' } });
-  assert.deepEqual(encodeGeneratedModel(tagless), { value: { kind: 'email', address: 'a@b.c' } });
+  assert.deepEqual(modelCodec(tagless).toWireFormat(tagless), { value: { kind: 'email', address: 'a@b.c' } });
   assert.equal(codec.stringify(itemOf({ kind: 'email', address: 'a@b.c' })), '{"value":{"kind":"email","address":"a@b.c"}}');
   const other = itemOf({ kind: 'phone', address: 'a@b.c' });
-  assert.throws(() => encodeGeneratedModel(other), /Unknown kind discriminator value: "phone"/);
+  assert.throws(() => modelCodec(other).toWireFormat(other), /Unknown kind discriminator value: "phone"/);
   assert.throws(() => codec.stringify(other), /Unknown kind discriminator value: "phone"/);
   assert.throws(() => codec.toWireFormat(other), /Unknown kind discriminator value: "phone"/);
 });
@@ -454,7 +454,7 @@ export type TItem = IModel<{ value: (TEmail | TPhone) & ${TAG} }>;
     const Item = (await load('build/item.model.generated.js')).TItemBaseModel as new () => Record<string, unknown>;
     const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TItem'));
     const tagless = Object.assign(new Item(), { value: Object.assign(new Email(), { address: 'a@b.c' }) });
-    assert.deepEqual(encodeGeneratedModel(tagless), { value: { kind: 'email', address: 'a@b.c' } });
+    assert.deepEqual(modelCodec(tagless).toWireFormat(tagless), { value: { kind: 'email', address: 'a@b.c' } });
     assert.equal(codec.stringify(tagless), '{"value":{"kind":"email","address":"a@b.c"}}');
     assert.deepEqual(codec.toWireFormat(tagless), { value: { kind: 'email', address: 'a@b.c' } });
   });
@@ -478,7 +478,7 @@ export type TItem = IModel<{ tagged: (TEmail | TPhone | Date) & ${TAG}; untagged
     const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TItem'));
     const item = Object.assign(new Item(), { tagged: new Date(DAY), untagged: new Date(DAY) });
     const wire = { tagged: DAY, untagged: DAY };
-    assert.deepEqual(encodeGeneratedModel(item), wire);
+    assert.deepEqual(modelCodec(item).toWireFormat(item), wire);
     assert.equal(codec.stringify(item), JSON.stringify(wire));
     assert.deepEqual(codec.toWireFormat(item), wire);
   });
@@ -488,12 +488,12 @@ test('the shared selector variable survives a tagged union nested in a branch an
   // protects: T-617 re-entrancy - the writers of a file share one index variable, so a union that runs inside a branch arm must not change the choice of the outer one
   const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-declared-reentry-', name: 'declared-reentry', linkWorkspaceNodeModules: true });
   writeModelSources(sourceRoot, {
-    'wrap.ts': `import { encodeGeneratedModel } from '@exprtlabs/golem/conversion';
+    'wrap.ts': `import { findGeneratedModelDefinition, requireObjectCodec } from '@exprtlabs/golem/internal/model-runtime';
 export class Wrap {
   constructor(readonly inner: object) {}
   show(): string { return 'wrap'; }
 }
-export function encodeWrap(value: Wrap): string { return JSON.stringify(encodeGeneratedModel(value.inner)); }
+export function encodeWrap(value: Wrap): string { return JSON.stringify(requireObjectCodec(findGeneratedModelDefinition(value.inner)!.codecId!).toWireFormat(value.inner)); }
 export function decodeWrap(value: string): Wrap { return new Wrap(JSON.parse(value) as object); }
 `,
     'item.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
@@ -518,7 +518,7 @@ export type TInner = IModel<{ value: (TAlpha | TBeta) & ${TAG} }>;
   const item = make('TRootBaseModel', { value: alpha });
   const wire = { value: { kind: 'a', parts: [{ kind: 'leaf' }, { kind: 'twig' }], wrapped: '{"value":{"kind":"b"}}' } };
   const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TRoot'));
-  assert.deepEqual(encodeGeneratedModel(item), wire);
+  assert.deepEqual(modelCodec(item).toWireFormat(item), wire);
   assert.equal(codec.stringify(item), JSON.stringify(wire));
   assert.deepEqual(codec.toWireFormat(item), wire);
 });

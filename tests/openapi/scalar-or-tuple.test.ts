@@ -4,10 +4,10 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 
-import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
 import { LibError } from '@exprtlabs/golem/errors';
 import type { GeneratedModelConstructor } from '@exprtlabs/golem/model';
 import { compileGeneratedSdk, generateMaterializedSdk, requireRecord } from './helpers.js';
+import { modelCodec } from '../support/model-codec.js';
 
 function isGeneratedModelConstructor(value: unknown): value is GeneratedModelConstructor {
   return typeof value === 'function';
@@ -70,14 +70,14 @@ test('a oneOf of a string and a tuple converts the tuple by item and keeps the s
   const ScheduleModel = models.ScheduleModel;
   assert.ok(isGeneratedModelConstructor(ScheduleModel));
 
-  const plain = decodeGeneratedModel(ScheduleModel, { when: 'plain' });
-  assert.deepEqual(encodeGeneratedModel(plain), { when: 'plain' });
-  const dated = decodeGeneratedModel(ScheduleModel, { when: ['2024-05-06T07:08:09.000Z'] });
+  const plain = modelCodec(ScheduleModel).fromWireFormat({ when: 'plain' });
+  assert.deepEqual(modelCodec(plain).toWireFormat(plain), { when: 'plain' });
+  const dated = modelCodec(ScheduleModel).fromWireFormat({ when: ['2024-05-06T07:08:09.000Z'] });
   assert.deepEqual(Reflect.get(dated, 'when'), [new Date('2024-05-06T07:08:09.000Z')]);
-  assert.deepEqual(encodeGeneratedModel(dated), { when: ['2024-05-06T07:08:09.000Z'] });
+  assert.deepEqual(modelCodec(dated).toWireFormat(dated), { when: ['2024-05-06T07:08:09.000Z'] });
 
   assert.throws(
-    () => decodeGeneratedModel(ScheduleModel, { when: ['not a date'] }),
+    () => modelCodec(ScheduleModel).fromWireFormat({ when: ['not a date'] }),
     (error: unknown): true => {
       assert.ok(error instanceof LibError);
       assert.deepEqual(error.issues[0]?.path, ['when', 0]);

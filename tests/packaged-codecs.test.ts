@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
-import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { createModelProject, buildModelProject, writeModelGolemYaml } from './model-project.js';
 import { createFixtureProject, linkProjectPackages } from './fixture-project.js';
@@ -12,6 +11,7 @@ import { taggedModelSource } from './fixture-templates/models/model-tags.js';
 import { COUNT_DIST_FILES, writeCodecPackage } from './fixture-templates/models/codec-package.js';
 import { tsSource } from './source-template.js';
 import { generate } from '#model/generator';
+import { modelCodec } from './support/model-codec.js';
 
 function project(t: TestContext, packages: Record<string, string> = {}, options: { readonly rootDir?: string } = {}) {
   return createModelProject(t, {
@@ -38,9 +38,9 @@ async function roundTrip(root: string): Promise<void> {
   const generated = fs.readFileSync(path.join(root, MODEL_FILE), 'utf8');
   assert.ok(importsOf(generated).includes('@fixture/pg/codecs'), 'the model imports the codecs by their package specifier');
   const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
-  const decoded = decodeGeneratedModel(A, { count: '42', name: 'abcd' });
+  const decoded = modelCodec(A).fromWireFormat({ count: '42', name: 'abcd' });
   assert.equal(decoded.count, 42);
-  assert.deepEqual(encodeGeneratedModel(decoded), { count: '42', name: 'abcd' });
+  assert.deepEqual(modelCodec(decoded).toWireFormat(decoded), { count: '42', name: 'abcd' });
 }
 
 /** A project with `@fixture/pg` installed with the given `exports` map and files, the model `A` that uses it, and the round trip of its build. */
@@ -100,9 +100,9 @@ export class A extends TABaseModel { constructor(values: Partial<TAFields> = {})
   await buildModelProject(root);
 
   const { A } = await import(path.toNamespacedPath(path.join(root, 'build', path.basename(root), 'src/a.model.js')));
-  const decoded = decodeGeneratedModel(A, { count: '42' });
+  const decoded = modelCodec(A).fromWireFormat({ count: '42' });
   assert.equal(decoded.count, 42);
-  assert.deepEqual(encodeGeneratedModel(decoded), { count: '42' });
+  assert.deepEqual(modelCodec(decoded).toWireFormat(decoded), { count: '42' });
   assert.deepEqual(fs.readdirSync(shared).sort(), ['codecs.ts', 'node_modules', 'package.json']);
 });
 
@@ -216,7 +216,7 @@ test('a package with no exports field hosts a codec at its package-relative path
   const generated = fs.readFileSync(path.join(root, MODEL_FILE), 'utf8');
   assert.ok(importsOf(generated).includes('@fixture/pg/dist/codecs.js'));
   const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
-  assert.deepEqual(encodeGeneratedModel(decodeGeneratedModel(A, { count: '42' })), { count: '42' });
+  assert.deepEqual(modelCodec(A).toWireFormat(modelCodec(A).fromWireFormat({ count: '42' })), { count: '42' });
 });
 
 test('exports without a types condition reach the declaration file beside each target', async t => {

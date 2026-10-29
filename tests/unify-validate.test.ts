@@ -4,7 +4,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 
-import { decodeGeneratedModel } from '@exprtlabs/golem/conversion';
 import { requireObjectCodec } from '@exprtlabs/golem/serde';
 import { getValidator, validateInstance } from '@exprtlabs/golem/validation';
 import { generate as generateOpenApi } from '@exprtlabs/golem-openapi/generator';
@@ -12,6 +11,7 @@ import { buildModelProject, createModelProject, writeModelGolemYaml, type ModelP
 import { command } from './support/process.js';
 import { generatedCodecIdFromRoot } from './support/consumer.js';
 import { pathToFileURL } from 'node:url';
+import { modelCodec } from './support/model-codec.js';
 
 function fixture(t: TestContext): ModelProject {
   return createModelProject(t, { prefix: 'golem-unify-validate-', name: 'unify-validate', linkWorkspaceNodeModules: true });
@@ -152,28 +152,28 @@ test('SDK Money $ref plus extra TValidation, local TValidation, and TSerde compi
     hold: null,
     bag: { lane: 'A' },
   };
-  const valid = decodeGeneratedModel(Checkout, validWire);
+  const valid = modelCodec(Checkout).fromWireFormat(validWire, { validate: false });
   assert.equal(codec.validate(valid), true);
   assert.deepEqual((await validateInstance(valid, { failFast: false })).map((issue) => issue.path), []);
 
-  const extra = decodeGeneratedModel(Checkout, { ...validWire, money: { amount: 12, currency: 'XXX' } });
+  const extra = modelCodec(Checkout).fromWireFormat({ ...validWire, money: { amount: 12, currency: 'XXX' } }, { validate: false });
   const extraIssues = await validateInstance(extra, { failFast: false });
   assert.equal(codec.validate(extra, { failFast: false }), false);
   assert.ok(extraIssues.some((issue) => issue.path[0] === 'money'));
 
-  const nested = decodeGeneratedModel(Checkout, { ...validWire, money: { amount: 12, currency: 'usd' } });
+  const nested = modelCodec(Checkout).fromWireFormat({ ...validWire, money: { amount: 12, currency: 'usd' } }, { validate: false });
   const nestedIssues = await validateInstance(nested, { failFast: false });
   assert.ok(nestedIssues.some((issue) => JSON.stringify(issue.path) === JSON.stringify(['money', 'currency'])));
 
-  const local = decodeGeneratedModel(Checkout, { ...validWire, note: '  ' });
+  const local = modelCodec(Checkout).fromWireFormat({ ...validWire, note: '  ' }, { validate: false });
   assert.ok((await validateInstance(local, { failFast: false })).some((issue) => issue.path[0] === 'note'));
 
-  const combined = decodeGeneratedModel(Checkout, {
+  const combined = modelCodec(Checkout).fromWireFormat({
     ...validWire,
     money: { amount: -1, currency: 'usd' },
     note: '  ',
     code: -1,
-  });
+  }, { validate: false });
   const collected = await validateInstance(combined, { failFast: false });
   const helper = await getValidator(combined).validate({ failFast: false });
   assert.equal(helper, false);

@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
-import { decodeGeneratedModel } from '@exprtlabs/golem/conversion';
 import { getValidator } from '@exprtlabs/golem/validation';
 import {
   compileStrictUnusedSdk,
@@ -11,6 +10,7 @@ import {
   isGeneratedModelClass,
   requireRecord,
 } from './helpers.js';
+import { modelCodec } from '../support/model-codec.js';
 
 const USER_ID = 'https://schemas.example.test/user';
 const ENVELOPE_ID = 'https://schemas.example.test/envelope';
@@ -131,16 +131,16 @@ test('public generate types URI $id refs, directional imports, nested models, an
     relative: { id: 'u1', secret: 's', serverValue: 'ok' },
     scoped: { inner: { id: 'scoped' } },
   };
-  const envelope = decodeGeneratedModel(EnvelopeModel, valid) as unknown as {
+  const envelope = modelCodec(EnvelopeModel).fromWireFormat(valid, { validate: false }) as unknown as {
     user: object;
     relative: object;
   };
   assert.equal(envelope.user instanceof UserModel, true);
   assert.equal(envelope.relative instanceof UserModel, true);
   assert.equal(await getValidator(envelope).validate(), true);
-  const invalid = decodeGeneratedModel(EnvelopeModel, {
+  const invalid = modelCodec(EnvelopeModel).fromWireFormat({
     user: { id: 'u1' },
     relative: { id: 'u1', secret: 's', serverValue: 'ok' },
-  });
+  }, { validate: false });
   assert.equal(await getValidator(invalid).validate(), false);
 });

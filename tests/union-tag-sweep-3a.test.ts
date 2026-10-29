@@ -2,10 +2,10 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
-import { decodeGeneratedModel } from '@exprtlabs/golem/conversion';
 import { generate } from '#model/generator';
 import { buildModelProject, createModelProject, writeModelGolemYaml, writeModelSources } from './model-project.js';
 import { requireRecord, type GeneratedModelClass } from './openapi/helpers.js';
+import { modelCodec } from './support/model-codec.js';
 
 const HEAD = `import type { IModel } from '@exprtlabs/golem/model';
 import type { Discriminator, TSerde } from '@exprtlabs/golem/tags';
@@ -75,7 +75,7 @@ export class A extends TABaseModel {}
   writeModelGolemYaml(root, { mobx: false, validation: true });
   await buildModelProject(root);
   const models = requireRecord(await import(pathToFileURL(path.join(root, 'build/a.model.js')).href), 'a');
-  const decoded = requireRecord(decodeGeneratedModel(models.A as GeneratedModelClass, { value: { kind: 'cat', lives: 9 } }), 'a');
+  const decoded = requireRecord(modelCodec(models.A as GeneratedModelClass).fromWireFormat({ value: { kind: 'cat', lives: 9 } }), 'a');
   assert.ok(decoded.value instanceof (models.Cat as new () => object));
 });
 
@@ -98,8 +98,8 @@ export class A extends TABaseModel {}
   await buildModelProject(root);
   const models = requireRecord(await import(pathToFileURL(path.join(root, 'build/a.model.js')).href), 'a');
   const A = models.A as GeneratedModelClass;
-  const nulls = requireRecord(decodeGeneratedModel(A, { plain: null, tagged: null }), 'a');
+  const nulls = requireRecord(modelCodec(A).fromWireFormat({ plain: null, tagged: null }), 'a');
   assert.deepEqual([nulls.plain, nulls.tagged], [null, null]);
-  const amounts = requireRecord(decodeGeneratedModel(A, { plain: '12.50', tagged: '3.00' }), 'a');
+  const amounts = requireRecord(modelCodec(A).fromWireFormat({ plain: '12.50', tagged: '3.00' }), 'a');
   assert.deepEqual([amounts.plain, amounts.tagged], [12.5, 3]);
 });
