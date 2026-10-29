@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { registerGeneratedModel } from '@exprtlabs/golem/model';
-import type { Validator } from '@exprtlabs/golem/validation-runtime';
+import { registerGeneratedModel } from '@exprtlabs/golem/internal/model-runtime';
+import type { Validator } from '@exprtlabs/golem/validation';
 import { compile } from '@exprtlabs/golem/internal/validator-compiler';
 
 import { compileValidatorModule, modelClass, type FastCheck } from './support/compiled-validators.js';

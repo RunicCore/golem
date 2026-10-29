@@ -2,12 +2,12 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
-import type { ModelTypeDescriptor } from '@exprtlabs/golem/model';
+import type { ModelTypeDescriptor } from '@exprtlabs/golem/internal/schema';
+import { registerIModelClass } from '@exprtlabs/golem/internal/model-runtime';
+import type { Validator } from '@exprtlabs/golem/validation';
 import { createSchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
-import { registerIModelClass } from '@exprtlabs/golem/serde';
 import { code, type StringifySerdeResolver, identifier } from '@exprtlabs/golem/internal/emitter';
 import { buildCodecValidationPlan } from '@exprtlabs/golem/internal/validation-plan';
-import type { Validator } from '@exprtlabs/golem/validation-runtime';
 
 import { instantiateRuntime, type RuntimeFunction, emitCodecRuntimeText } from './emitted-runtime.js';
 import { compileValidationPlanBinding, type FastCheck } from './support/compiled-validators.js';

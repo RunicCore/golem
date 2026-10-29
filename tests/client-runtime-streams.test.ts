@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { ClientRuntime, type RuntimeResponseContract } from '@exprtlabs/golem/client';
-import { responseCheck } from '@exprtlabs/golem/validation';
+import type { RuntimeResponseContract } from '@exprtlabs/golem/client';
+import { ClientRuntime } from '@exprtlabs/golem/internal/client-runtime';
+import { responseCheck } from '@exprtlabs/golem/internal/client-validation-runtime';
 
 const RS = '\u001e';
 const NO_VALIDATORS = undefined;

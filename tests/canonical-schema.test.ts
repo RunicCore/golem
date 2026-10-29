@@ -6,7 +6,7 @@ import {
   type JsonSchema,
   type ModelConstraint,
 } from '@exprtlabs/golem/internal/schema';
-import type { Validator } from '@exprtlabs/golem/validation-runtime';
+import type { Validator } from '@exprtlabs/golem/validation';
 import { compileSchema } from './support/compiled-validators.js';
 
 function validator(schema: JsonSchema): Promise<Validator> {

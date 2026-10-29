@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
-import { ClientRuntime, isUndeclaredResponseError, type RuntimeResponseContract } from '@exprtlabs/golem/client';
-import { responseCheck } from '@exprtlabs/golem/validation';
-import type { SchemaIssue } from '@exprtlabs/golem/validation-runtime';
+import type { RuntimeResponseContract } from '@exprtlabs/golem/client';
+import { ClientRuntime, isUndeclaredResponseError } from '@exprtlabs/golem/internal/client-runtime';
+import { responseCheck } from '@exprtlabs/golem/internal/client-validation-runtime';
+import type { SchemaIssue } from '@exprtlabs/golem/validation';
 
 // The emitted runtime has no `validate` option: validation is off when the caller passes no response check.
 const NO_VALIDATORS = undefined;

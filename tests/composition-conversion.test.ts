@@ -1,7 +1,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { convertModelField, convertModelItems, convertModelTupleItems, defineModelProperty, deserializeDate, withDiscriminatorValue } from '@exprtlabs/golem/conversion';
+import {
+  convertModelField,
+  convertModelItems,
+  convertModelTupleItems,
+  defineModelProperty,
+  deserializeDate,
+  withDiscriminatorValue,
+} from '@exprtlabs/golem/internal/model-runtime';
 import {
   code,
   emitModelFromInit,

@@ -5,9 +5,8 @@ import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 
 import { schemaForDescriptor } from '@exprtlabs/golem/internal/schema';
-import { requireObjectCodec } from '@exprtlabs/golem/serde';
-import type { Validator } from '@exprtlabs/golem/validation-runtime';
-import { getValidator } from '@exprtlabs/golem/validation';
+import { requireObjectCodec } from '@exprtlabs/golem/internal/model-runtime';
+import { getValidator, type Validator } from '@exprtlabs/golem/validation';
 import { analyzeSourceGraph, createJobAnalysis } from '#model/emit';
 import { generate } from '#model/generator';
 import { collectSpecifications } from '@exprtlabs/golem/internal/type-analysis';

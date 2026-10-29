@@ -9,7 +9,7 @@ import {
   copyModelRecord,
   deserializeDate,
   serializeDate,
-} from '@exprtlabs/golem/conversion';
+} from '@exprtlabs/golem/internal/model-runtime';
 import {
   IssueRepresentation,
   IssueSource,

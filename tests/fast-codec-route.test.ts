@@ -2,11 +2,11 @@ import assert from 'node:assert/strict';
 import { identifier } from '@exprtlabs/golem/internal/emitter';
 import { test } from 'node:test';
 
-import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
+import { LibError, LibErrorKind, IssueRepresentation, IssueSource } from '@exprtlabs/golem/errors';
 import type { ModelValidationContext } from '@exprtlabs/golem/model';
 import { createSchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
-import { assertModelValue, IssueRepresentation, IssueSource } from '@exprtlabs/golem/serde';
-import type { SchemaIssue, Validator } from '@exprtlabs/golem/validation-runtime';
+import { assertModelValue } from '@exprtlabs/golem/internal/model-runtime';
+import type { SchemaIssue, Validator } from '@exprtlabs/golem/validation';
 
 import { instantiateRuntime, type RuntimeFunction, emitCodecRuntimeText } from './emitted-runtime.js';
 
