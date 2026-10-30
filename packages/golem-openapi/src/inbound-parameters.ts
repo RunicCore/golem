@@ -32,8 +32,8 @@ function objectReading(reading: FieldReading | undefined, properties: Readings):
 /** A text parameter with its style rule and what the reader reads of it. */
 interface ParameterAnalysis {
   readonly parameter: NormalizedParameter;
-  readonly rule: ParameterStyleRule | undefined;
-  readonly reading: FieldReading | undefined;
+  readonly rule: ParameterStyleRule;
+  readonly reading: FieldReading;
   /** The reading of each property of an object parameter, also the properties that stay text. */
   readonly properties: Readings;
 }
@@ -50,8 +50,11 @@ function analyse(operation: NormalizedOperation, document: unknown): ReadonlyMap
       const parameters = textParameters(operation, location);
       const readings = parameters.length ? readParameters(parameters, document) : {};
       return parameters.length ? [[location, parameters.map((parameter): ParameterAnalysis => {
+        // The document check of the loader refuses a style that the place does not have, and reads every parameter: a miss here is a fault of the generator, not of the document.
         const rule = parameterStyleRule(location, parameter.style, parameter.explode);
-        return { parameter, rule, reading: readings[parameter.name], properties: rule ? readProperties(parameter, document) : {} };
+        const reading = readings[parameter.name];
+        if (rule === undefined || reading === undefined) throw new Error(`Internal error: the ${location} parameter "${parameter.name}" of ${operation.name} has no style rule or no reading.`);
+        return { parameter, rule, reading, properties: readProperties(parameter, document) };
       })] as const] : [];
     }));
     ofDocument.set(operation, found);
@@ -66,7 +69,7 @@ export function inboundTextTable(operation: NormalizedOperation, document: unkno
       const object = objectReading(reading, properties);
       const base = reading?.shape ?? { types: [] };
       const decodes = (base.types.length > 0 && !base.types.includes('string')) || base.literals !== undefined;
-      if (!rule || !(object || base.item !== undefined || rule.prefix !== undefined || decodes)) return [];
+      if (!(object || base.item !== undefined || rule.prefix !== undefined || decodes)) return [];
       const style = { ...(parameter.style === undefined ? {} : { style: parameter.style }), ...(parameter.explode === undefined ? {} : { explode: parameter.explode }) };
       return [[parameter.name, { ...base, ...(object ? { properties: Object.fromEntries(Object.entries(properties).map(([name, property]) => [name, property.shape])) } : {}), parameter: style }] as const];
     });
@@ -112,23 +115,12 @@ export function inboundParameterDiagnostics(operations: readonly NormalizedOpera
   // A header list splits on commas whatever its items hold: the standard defines no escaping for it, so a header is not refused.
   return operations.flatMap((operation) => [...analyse(operation, document)].filter(([location]) => location !== 'header').flatMap(([location, parameters]) =>
     parameters.flatMap(({ parameter, rule, reading, properties }): GolemDiagnostic[] => {
-      const reason = !rule || !reading ? undefined
-        : reading.item !== undefined ? arrayAmbiguity(reading.item, location, rule)
-          : objectReading(reading, properties) ? objectAmbiguity(parameter, rule, properties, parameters.map((other) => other.parameter)) : undefined;
+      const reason = reading.item !== undefined ? arrayAmbiguity(reading.item, location, rule)
+        : objectReading(reading, properties) ? objectAmbiguity(parameter, rule, properties, parameters.map((other) => other.parameter)) : undefined;
       return reason === undefined ? [] : [{
         code: 'OPENAPI_INBOUND_PARAMETER_AMBIGUOUS',
         severity: GolemDiagnosticSeverity.Error,
         message: `The ${location} parameter "${parameter.name}" of the inbound operation ${operation.name} cannot be read back from its text: ${reason}. Set explode, use repeated keys or style deepObject, or give it an item type that cannot hold the separator.`,
       }];
     })));
-}
-
-/** One error for each parameter whose style its place does not have (OpenAPI 3.1 and 3.2): the client could not write it and the reader could not read it. */
-export function parameterStyleDiagnostics(operations: readonly NormalizedOperation[]): GolemDiagnostic[] {
-  return operations.flatMap((operation) => LOCATIONS.flatMap((location) => textParameters(operation, location).flatMap((parameter): GolemDiagnostic[] =>
-    parameterStyleRule(location, parameter.style, parameter.explode) !== undefined ? [] : [{
-      code: 'OPENAPI_PARAMETER_STYLE_NOT_ALLOWED',
-      severity: GolemDiagnosticSeverity.Error,
-      message: `The ${location} parameter "${parameter.name}" of the operation ${operation.name} has style "${parameter.style}", which a ${location} parameter does not have. Use a style that OpenAPI allows for a ${location} parameter, or leave the style out.`,
-    }])));
 }

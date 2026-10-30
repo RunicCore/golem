@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createFixtureProject } from '../fixture-project.js';
 import path from 'node:path';
-import { generate, writeSdk } from '#openapi/generator';
+import { generate } from '#openapi/generator';
 import { defaultTestProfile, writeOpenApiDocument } from './helpers.js';
 
 // An inbound handler gets the text the framework has already decoded, so a parameter whose items or members can hold the separator of its style
@@ -64,24 +64,11 @@ for (const [name, parameter] of [
   });
 }
 
-const oneOperation = (parameter: Record<string, unknown>) => ({
-  openapi: '3.2.0',
-  info: { title: 'Things', version: '1' },
-  paths: { '/things/{ids}': { get: { operationId: 'list', parameters: [parameter], responses: { 204: { description: 'No content' } } } } },
+test('generation refuses a query parameter in simple style: the document check of the loader owns the rule', async (t) => {
+  // protects: T-751 a style that its place does not have stops generation once, at the loader
+  const directory = createFixtureProject(t, 'golem-openapi-parameter-style-');
+  await assert.rejects(
+    generate({ input: writeOpenApiDocument(directory, document({ name: 'ids', in: 'query', style: 'simple', schema: { type: 'integer' } })), output: path.join(directory, 'sdk'), name: 'Hooks', profile: defaultTestProfile }),
+    /Must be "form", "spaceDelimited", "pipeDelimited" or "deepObject"/,
+  );
 });
-
-// The document check of the loader refuses these styles for a document it loads; a document handed to the writer directly reaches the style check.
-for (const [name, parameter] of [
-  ['simple in a query', { name: 'ids', in: 'query', style: 'simple', schema: { type: 'integer' } }],
-  ['form in a header', { name: 'X-Ids', in: 'header', style: 'form', schema: { type: 'integer' } }],
-  ['form in a path', { name: 'ids', in: 'path', style: 'form', required: true, schema: { type: 'integer' } }],
-] as const) {
-  test(`generation stops for a parameter style that its place does not have: ${name}`, (t) => {
-    // protects: T-751 a style that OpenAPI does not allow at the place is a coded error of the document, not an error at every call
-    const directory = createFixtureProject(t, 'golem-openapi-parameter-style-');
-    const result = writeSdk(oneOperation(parameter), { output: path.join(directory, 'sdk'), name: 'Things', profile: defaultTestProfile });
-    assert.deepEqual(result.diagnostics?.map(({ code }) => code), ['OPENAPI_PARAMETER_STYLE_NOT_ALLOWED']);
-    assert.ok(result.diagnostics![0]!.message.includes(`"${parameter.name}"`));
-    assert.deepEqual(result.artifacts, []);
-  });
-}
