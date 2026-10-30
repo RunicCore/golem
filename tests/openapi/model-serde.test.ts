@@ -348,6 +348,7 @@ function sequenceSerdeDocument(
 async function generateSerdeSdk(t: FixtureScope, prefix: string, document: Record<string, unknown>, { validation }: { readonly validation: boolean }): Promise<string> {
   const output = path.join(createFixtureProject(t, prefix), 'sdk');
   await generateMaterializedSdk(document, {
+    mode: 'golem',
     output,
     name: 'SequenceSerde',
     profile: { mobx: false, validation, allowAny: false },
@@ -460,6 +461,7 @@ async function assertNestedDateInheritedAndDictionaryConversions(
 test('generated nested Date, inherited, and dictionary conversions work in a standalone SDK', async t => {
   const output = path.join(createFixtureProject(t, 'golem-openapi-model-serde-aot-'), 'sdk');
   await generateMaterializedSdk(modelSerdeDocument(), {
+    mode: 'golem',
     output,
     name: 'ModelSerde',
     profile: { mobx: false, validation: true, allowAny: false },
@@ -593,6 +595,7 @@ test('generated nested Date, inherited, and dictionary conversions work in a sta
 test('generated discriminated unions infer abstract, concrete, and handwritten serde classes', async t => {
   const output = path.join(createFixtureProject(t, 'golem-openapi-union-serde-'), 'sdk');
   await generateMaterializedSdk(discriminatedUnionSerdeDocument(), {
+    mode: 'golem',
     output,
     name: 'DiscriminatedSerde',
     profile: { mobx: false, validation: false, allowAny: false },
@@ -622,6 +625,7 @@ test('generated discriminated unions infer abstract, concrete, and handwritten s
 test('a tuple field converts each item by its own schema: the prefix stays a string and the rest items are Dates', async t => {
   const output = path.join(createFixtureProject(t, 'golem-openapi-tuple-serde-'), 'sdk');
   await generateMaterializedSdk(tupleSerdeDocument(), {
+    mode: 'golem',
     output,
     name: 'TupleSerde',
     profile: { mobx: false, validation: false, allowAny: false },
@@ -1284,7 +1288,7 @@ test('a model field that is only a map of dates compiles with noUnusedLocals and
   const dates = { type: 'object', additionalProperties: { type: 'string', format: 'date-time' } };
   await generateMaterializedSdk(documentBase('3.1.0', {
     components: { schemas: { Problem: { type: 'object', required: ['field'], properties: { field: dates } } } },
-  }), { output, name: 'DateMap', profile: { mobx: false, validation: false } });
+  }), { mode: 'golem', output, name: 'DateMap', profile: { mobx: false, validation: false } });
   compileStrictUnusedSdk(output);
 });
 

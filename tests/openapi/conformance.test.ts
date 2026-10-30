@@ -502,7 +502,7 @@ test('normalizes callbacks and webhooks into typed inbound contracts', (t) => {
 test('generation is deterministic', async (t) => {
   const document = await loadValidatedDocument(example, {});
   const output = createFixtureProject(t, 'golem-openapi-test-');
-  const profile = { mobx: true, validation: true };
+  const profile = { mobx: false, validation: true };
   const first = writeSdkFiles(document, { output, name: 'ExamplePayments', profile });
   const second = writeSdkFiles(document, { output, name: 'ExamplePayments', profile });
   assert.deepEqual(second.artifacts, first.artifacts, 'repeated generation from the same document produces identical artifacts');
@@ -514,7 +514,7 @@ test('generation is deterministic', async (t) => {
   const manifest = requireRecord(JSON.parse(manifestText), 'manifest');
   // golem's own reader accepts the generated manifest.
   assert.doesNotThrow(() => validateModelManifest(manifest));
-  assert.deepEqual(manifest.profile, { mobx: true, validation: true, allowAny: false, unknownFormats: 'error' });
+  assert.deepEqual(manifest.profile, { mobx: false, validation: true, allowAny: false, unknownFormats: 'error' });
   const source = requireRecord(manifest.source, 'source');
   assert.equal(source.dialect, requireRecord(document, 'document').openapi);
   assert.match(String(source.digest), /^[a-f0-9]{64}$/);

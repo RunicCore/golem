@@ -918,6 +918,15 @@ An `integer` member and a `number` member share the integers. A member that decl
 - Give the variant a mapping value of its own, for example `feline: '#/components/schemas/Cat'`.
 - Or remove the variant from the union.
 
+### OPENAPI_MOBX_NEEDS_GOLEM_MODE
+
+**MobX with a standalone SDK.** The profile sets `mobx: true`, and the job has `mode: standalone`, which is the default. A standalone SDK carries its own copy of the runtime, and that copy has no MobX support. This is an error: generation writes nothing.
+
+**Fix:**
+
+- Set `mode: golem` on the `openapi` job.
+- Or set `mobx: false`.
+
 ### OPENAPI_OPERATION_RENAMED
 
 **Operation renamed.** The generated operation name is a JavaScript reserved word or an existing client member name (such as `constructor`), so the generator appends its allocator's suffix to make it distinct. This is a warning: generation continues, but the operation's exported name no longer matches its `operationId` or inferred name.

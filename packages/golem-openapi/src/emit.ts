@@ -10,6 +10,7 @@ import { assertUniqueExportNames, code, documentLiteral, exportedName, fileImpor
 import { operationName, operationNameType } from './names.js';
 import { parameterSchema, type NormalizedOperation } from './normalize.js';
 import { generatedBannerComment } from './package-info.js';
+import { runtimeCopy, standaloneRuntimeSpecifiers, type RuntimeSpecifiers } from './runtime-copy.js';
 import type { OpenApiGenerationProfile } from './profile.js';
 import { requireProfile } from './profile.js';
 import {
@@ -176,6 +177,7 @@ function generateInbound(
   operations: readonly NormalizedOperation[],
   profile: OpenApiGenerationProfile,
   hasCodecs: (operation: string) => boolean,
+  specifiers: RuntimeSpecifiers | undefined,
 ): RenderedModule {
   const typesModule = new ImportSource('./types.js', true, { namespace: 'Types' });
   const methods = join(operations.map((operation) =>
@@ -229,7 +231,7 @@ ${handlers}
   };
 }
 `;
-  const imports: ImportOptions = { modules: ['client', 'validation'] };
+  const imports: ImportOptions = { modules: ['client', 'validation'], ...(specifiers ? { specifiers: specifiers('inbound.ts') } : {}) };
   const runtimeLines = runtimeLinesOf(body, imports);
   return renderModule(code`${join([
     generatedBannerComment(),
@@ -253,6 +255,15 @@ interface GeneratedFiles {
   diagnostics: readonly GolemDiagnostic[];
 }
 
+/** A standalone SDK carries no MobX runtime, so a profile with `mobx: true` needs the golem mode. */
+function mobxStandaloneDiagnostics(profile: OpenApiGenerationProfile): GolemDiagnostic[] {
+  return profile.mobx ? [{
+    code: 'OPENAPI_MOBX_NEEDS_GOLEM_MODE',
+    severity: GolemDiagnosticSeverity.Error,
+    message: 'mobx: true needs the MobX runtime of @exprtlabs/golem, which a standalone SDK does not carry. Set mode: golem on this openapi job, or set mobx: false.',
+  }] : [];
+}
+
 function buildGeneratedFiles(document: unknown, options: WriteSdkOptions, moved: MovedUnions): GeneratedFiles {
   const profile = requireProfile(options.profile);
   const ir = normalizeAndValidate(document, options.locate);
@@ -270,6 +281,8 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions, moved:
     ? buildSchemaData(document, ir, (operation, contentType) => operation.sourceKind === 'path' && modelAnalysis.convertedNodeIds.has(requestBodyKey(operation.name, contentType)))
     : undefined;
   const files = new Map<string, string>();
+  // A standalone SDK imports the runtime it carries; an SDK of golem mode imports `@exprtlabs/golem`.
+  const specifiers: RuntimeSpecifiers | undefined = options.mode === 'golem' ? undefined : standaloneRuntimeSpecifiers;
   // The names that each module of the index exports come from its Code, and the index re-exports the whole modules it stars.
   const modules = new Map<string, PublicModule>();
   const neverProperties = neverPropertiesReader(modelAnalysis, document);
@@ -295,6 +308,7 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions, moved:
     level: compileLevel(profile.validation),
     documentName: 'the OpenAPI document',
     ...(operationValidation ? { locate: operationValidation.locate } : {}),
+    ...(specifiers ? { specifiers: specifiers('validators.generated.ts') } : {}),
   } as const;
   // Every root is lowered, so each schema check and diagnostic runs; the module exports the roots an operation reads and the roots of the
   // written groups, so a model no operation reaches adds no code to the SDK.
@@ -314,6 +328,7 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions, moved:
   if (modelAnalysis.grouping.groups.length > 0) {
     const models = generateOpenApiModelArtifacts(document, profile, modelAnalysis, {
       locate: options.locate,
+      ...(specifiers ? { specifiers } : {}),
       ...(profile.validation ? { compileValidators: ({ plan, reachedRoots, locateModel }: { plan: CodecValidationPlan; groupPlans: ReadonlyMap<string, CodecValidationPlan>; reachedRoots: ReadonlySet<string>; locateModel: (name: string) => SchemaPlace }) => compileValidators(plan, locateModel, reachedRoots) } : {}),
     });
     for (const [name, source] of models.files) files.set(name, source);
@@ -333,6 +348,7 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions, moved:
       profile,
       plan,
       modelAnalysis.convertedNodeIds,
+      specifiers,
     );
     files.set('client.ts', clientModules.client.source);
     modules.set('client.ts', { exports: clientModules.client.exports, stars: [] });
@@ -352,7 +368,7 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions, moved:
     modules.set('servers.ts', { exports: serversModule.exports, stars: [] });
   }
   if (plan.artifacts.has('inbound.ts')) {
-    const inbound = generateInbound(clientName, document, inboundOperations, profile, (operation) => files.has(`codecs/${operation}.ts`));
+    const inbound = generateInbound(clientName, document, inboundOperations, profile, (operation) => files.has(`codecs/${operation}.ts`), specifiers);
     files.set('inbound.ts', inbound.source);
     modules.set('inbound.ts', { exports: inbound.exports, stars: [] });
   }
@@ -365,8 +381,10 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions, moved:
   files.set('index.ts', index.source);
   modules.set('index.ts', { exports: index.exports, stars: index.stars });
   assertUniqueExportNames(modules);
+  // The runtime copy is written whole beside the files that import it, and only an SDK with operations imports it.
+  if (specifiers && (plan.artifacts.has('client.ts') || plan.artifacts.has('inbound.ts'))) for (const [name, source] of runtimeCopy()) files.set(name, source);
   assertPortableFilenames(files.keys());
-  return { files, output, clientName, operations, inboundOperations, diagnostics: uniqueDiagnostics([...ir.diagnostics, ...browserCookieDiagnostics(document, operations), ...serverOverrideDiagnostics(document, operations), ...modelAnalysis.diagnostics, ...inlineDiagnostics, ...modelDiagnostics]) };
+  return { files, output, clientName, operations, inboundOperations, diagnostics: uniqueDiagnostics([...(specifiers ? mobxStandaloneDiagnostics(profile) : []), ...ir.diagnostics, ...browserCookieDiagnostics(document, operations), ...serverOverrideDiagnostics(document, operations), ...modelAnalysis.diagnostics, ...inlineDiagnostics, ...modelDiagnostics]) };
 }
 
 /**

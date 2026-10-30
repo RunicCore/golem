@@ -6,7 +6,7 @@ import { gzipSync } from 'node:zlib';
 import test from 'node:test';
 import { pathToFileURL } from 'node:url';
 import { createFixtureProject, fileFixtureScope, onceShared } from './fixture-project.js';
-import { repoRoot, tscBin } from './openapi/helpers.js';
+import { repoRoot, tscBin, writePlainTscProject } from './openapi/helpers.js';
 
 const scope = fileFixtureScope();
 const shipped = path.join(repoRoot(), 'packages/golem-openapi/sdk-runtime');
@@ -19,7 +19,7 @@ const generatedSdkImports = [
   'formatTest', 'isUndeclaredResponseError', 'isValidModelValue', 'jsonEqual', 'operationValidators', 'parseJson', 'responseCheck',
   'responseDecoder', 'serdeValidates', 'serializeContentParameter', 'serializeDate', 'serializeHeaderSimple', 'serializePath',
   'serializeTemporalInstant', 'stringifyJsonNumber', 'stringifyJsonScalar', 'stringifyJsonString', 'unknownDiscriminatorValue',
-  'validateOperationInput', 'withDeclaredFields', 'withDiscriminatorValue',
+  'validateOperationInput', 'validationUnavailableStub', 'withDeclaredFields', 'withDiscriminatorValue',
 ];
 
 const consumer = `import { ClientRuntime, LibError, deserializeDate, serializeDate } from './rt/runtime.js';
@@ -38,13 +38,7 @@ const compiledConsumer = onceShared(async () => {
   cpSync(shipped, path.join(project, 'src/rt'), { recursive: true });
   writeFileSync(path.join(project, 'src/main.ts'), consumer);
   writeFileSync(path.join(project, 'package.json'), '{"type":"module"}\n');
-  writeFileSync(path.join(project, 'tsconfig.json'), JSON.stringify({
-    compilerOptions: {
-      strict: true, noUncheckedIndexedAccess: true, exactOptionalPropertyTypes: true, verbatimModuleSyntax: true, target: 'ES2022',
-      module: 'NodeNext', moduleResolution: 'NodeNext', skipLibCheck: true, lib: ['ES2023', 'DOM'], types: [], rootDir: 'src', outDir: 'out',
-    },
-    include: ['src/**/*.ts'],
-  }));
+  writePlainTscProject(project);
   const compiled = spawnSync(process.execPath, [tscBin(), '-p', path.join(project, 'tsconfig.json')], { encoding: 'utf8' });
   return { project, compiled };
 });

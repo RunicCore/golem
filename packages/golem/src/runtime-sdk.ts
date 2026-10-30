@@ -16,7 +16,7 @@ export {
 } from './conversion.js';
 export {
   assertModelValue, createObjectCodec, fastable, isValidModelValue, parseJson, serdeValidates, stringifyJsonArray, stringifyJsonBoolean,
-  stringifyJsonNumber, stringifyJsonScalar, stringifyJsonString,
+  stringifyJsonNumber, stringifyJsonScalar, stringifyJsonString, validationUnavailableStub,
 } from './object-codec.js';
 export { IssueRepresentation, IssueSource, LibError } from './errors.js';
 export { withoutInstanceState } from './presence.js';

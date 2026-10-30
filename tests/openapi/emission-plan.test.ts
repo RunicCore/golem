@@ -205,10 +205,11 @@ async function assertFilesPerProfile(
   name: string,
   expected: (profile: OpenApiGenerationProfile) => readonly string[],
   compileDefaultProfile = true,
+  mode?: 'golem',
 ): Promise<void> {
   for (const profile of ALL_GENERATION_PROFILES) {
     const output = outputDir(t, `${name}-${profile.mobx}-${profile.validation}`);
-    const result = await generateMaterializedSdk(document, { output, name, profile });
+    const result = await generateMaterializedSdk(document, { output, name, profile, ...(mode ? { mode } : {}) });
     assert.deepEqual(emittedFiles(result.artifacts, output), [...expected(profile)].sort());
     if (compileDefaultProfile && profile.mobx === defaultTestProfile.mobx && profile.validation === defaultTestProfile.validation) {
       compileStrictUnusedSdk(output);
@@ -294,7 +295,7 @@ function pingDocument(): unknown {
   };
 }
 
-test('generated SDKs import the client runtime instead of copying it', async t => {
+test('generated SDKs of golem mode import the client runtime instead of copying it', async t => {
   const output = outputDir(t, 'shared-runtime');
   await generateMaterializedSdk({
     openapi: '3.2.0', info: info('Shared'),
@@ -303,7 +304,7 @@ test('generated SDKs import the client runtime instead of copying it', async t =
       parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
       responses: { '200': { description: 'item', content: { 'application/json': { schema: { type: 'object' } } } } },
     } } },
-  }, { output, name: 'Shared', profile: { mobx: false, validation: true } });
+  }, { output, name: 'Shared', profile: { mobx: false, validation: true }, mode: 'golem' });
   compileStrictUnusedSdk(output);
   const Client = (await importClient(output, 'shared client')).SharedClient;
   assert.ok(isGeneratedClientClass(Client));
@@ -325,7 +326,7 @@ test('minimal GET without content omits codec options and unused helpers', async
     'client.ts',
     'operations/ping.ts',
     ...(profile.validation ? ['codecs/ping.ts', 'validators.generated.ts'] : []),
-  ], false);
+  ], false, 'golem');
 
   const output = outputDir(t, 'codec-omit');
   await generateMaterializedSdk(pingDocument(), {

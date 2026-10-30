@@ -15,7 +15,12 @@ const output = path.join(root, 'packages/golem-openapi/sdk-runtime');
 const entry = 'runtime-sdk';
 // The types that generated SDK code names besides the values of the entry.
 const barrelTypes = [
-  ['client', ['ApiOperation', 'OperationCodecs', 'RuntimeResponseContract', 'RuntimeSecuritySchemes']],
+  ['client', [
+    'ApiOperation', 'AuthContext', 'BasicAuthValue', 'BasicCredentials', 'BodyEncoder', 'BodyEncoderContext', 'ClientOptions', 'EncodedBody',
+    'EncodingMetadata', 'InboundRequest', 'InboundResponse', 'MutualTlsTransport', 'OperationCodecs', 'ParameterSerializer',
+    'ParameterSerializerContext', 'RequestOptions', 'ResponseHeaderDecoder', 'ResponseHeaderDecoderContext', 'RuntimeResponseContract',
+    'RuntimeSecuritySchemes', 'StreamDecoder', 'StreamDecoderContext', 'TokenAuthValue', 'UndeclaredResponseError',
+  ]],
   ['object-codec', ['SerdeOptions', 'ValidateOptions']],
   ['schema-registry-validation', ['OperationRuntimeValidators']],
   ['issue-messages', ['SchemaIssue']],
@@ -59,11 +64,15 @@ for (const relative of declarationClosure()) {
   fs.copyFileSync(path.join(dist, relative), target);
 }
 fs.writeFileSync(path.join(output, 'runtime.impl.ts'), `// @ts-nocheck\n${bundle.outputFiles[0].text}`);
+// A class or an enum is a value and a type at once, so the facade also exports its type: generated code names `ClientRuntime` as both.
+const declared = new Set(declarationClosure().flatMap((relative) => [...fs.readFileSync(path.join(dist, relative), 'utf8').matchAll(/export declare (?:abstract )?(?:class|enum) (\w+)/g)].map(([, name]) => name)));
+const valueAndType = exportNames.filter((name) => declared.has(name));
 fs.writeFileSync(path.join(output, 'runtime.ts'), [
   "import * as impl from './runtime.impl.js';",
   `import type * as Types from './types/${entry}.js';`,
   'const typed = impl as unknown as typeof Types;',
-  `export const { ${exportNames.join(', ')} } = typed;`,
+  `export const { ${exportNames.filter((name) => !declared.has(name)).join(', ')} } = typed;`,
+  ...valueAndType.flatMap((name) => [`export const ${name} = typed.${name};`, `export type ${name} = Types.${name};`]),
   '',
 ].join('\n'));
 fs.writeFileSync(path.join(output, 'runtime.types.ts'), [

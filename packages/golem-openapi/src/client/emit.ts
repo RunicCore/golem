@@ -37,6 +37,7 @@ import {
 } from '../normalize.js';
 import { operationNameType } from '../names.js';
 import { generatedBannerComment } from '../package-info.js';
+import type { RuntimeSpecifiers } from '../runtime-copy.js';
 import type { OpenApiGenerationProfile } from '../profile.js';
 import { requireProfile } from '../profile.js';
 import { parameterKey, requestBodyKey, responseBodyKey, responseHeaderKey } from '../model-schema-graph.js';
@@ -209,6 +210,7 @@ function operationSource(
   responseContracts: readonly unknown[],
   securitySchemes: Readonly<Record<string, unknown>>,
   convertedNodeIds: ReadonlyMap<string, string>,
+  specifiers: RuntimeSpecifiers | undefined,
 ): string {
   const usedFunctions = new Set<string>();
   const use = (name: ClientFunction): Code => {
@@ -413,6 +415,7 @@ ${!isEmpty(validatorSetup) ? code`${validatorSetup}\n` : BLANK}${!isEmpty(decode
   const imports: ImportOptions = {
     typeNames: 'ordered',
     modules: ['client', 'mobx', 'validation'],
+    ...(specifiers ? { specifiers: specifiers(`operations/${operation.name}.ts`) } : {}),
     order: { client: ['ClientRuntime', ...[...usedFunctions].sort(), 'createApiOperation', 'ApiOperation', 'RuntimeResponseContract', 'RuntimeSecuritySchemes', 'OperationCodecs'] },
   };
   const runtimeLines = runtimeLinesOf(file, imports);
@@ -520,6 +523,7 @@ function emitClient(
   profile: OpenApiGenerationProfile,
   plan: EmissionPlan,
   rawSecuritySchemes: Readonly<Record<string, unknown>>,
+  specifiers: RuntimeSpecifiers | undefined,
 ): RenderedModule {
   const scope = new NameScope(`${clientName}Client`);
   const surfaces = plan.clientSurfaces;
@@ -571,7 +575,7 @@ ${join(securityCodes.map((alias) => code`  ...${alias},`), code`\n`)}
 } as const;`
     : BLANK;
   const clientRuntime = rt.client.ClientRuntime;
-  const runtimeTypes = new ImportSource('@exprtlabs/golem/client', true, { namespace: 'Runtime' });
+  const runtimeTypes = new ImportSource(specifiers ? specifiers('client.ts').types.client : '@exprtlabs/golem/client', true, { namespace: 'Runtime' });
   const typesModule = new ImportSource('./types.js', true, { namespace: 'Types' });
   const runtimeNamespace = runtimeTypes.namespace();
   const typesNamespace = typesModule.namespace();
@@ -656,7 +660,7 @@ ${metadata}
 `;
   const imports = join(fileImports(tail, localSources, { quote: '"', elsewhere: [runtimeTypes, typesModule] }), code`\n`);
   const rest = code`${imports}${tail}`;
-  const imports_: ImportOptions = { modules: ['client', 'mobx', 'validation'] };
+  const imports_: ImportOptions = { modules: ['client', 'mobx', 'validation'], ...(specifiers ? { specifiers: specifiers('client.ts') } : {}) };
   const groups = importGroups(rest, imports_);
   const written = new Set<string>();
   // The statements of the runtime groups that `wanted` picks: the values come from the internal entry, the types from the public subpaths.
@@ -749,6 +753,7 @@ export function generateClientModules(
   profile: OpenApiGenerationProfile,
   plan: EmissionPlan,
   convertedNodeIds: ReadonlyMap<string, string>,
+  specifiers?: RuntimeSpecifiers,
 ): GeneratedClientModules {
   requireProfile(profile);
   const rawSecuritySchemes = Object.fromEntries(plan.referencedAuthSchemes);
@@ -777,8 +782,9 @@ export function generateClientModules(
       responseContractsForOperation(document, operation),
       operationSchemes,
       convertedNodeIds,
+      specifiers,
     ));
   }
-  const client = emitClient(clientName, operations, profile, plan, rawSecuritySchemes);
+  const client = emitClient(clientName, operations, profile, plan, rawSecuritySchemes, specifiers);
   return { client, operations: emittedOperations };
 }

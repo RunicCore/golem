@@ -25,9 +25,14 @@ export function tscBin(): string {
 }
 
 export const defaultTestProfile: OpenApiGenerationProfile = Object.freeze({
-  mobx: true,
+  mobx: false,
   validation: true,
 });
+
+/** MobX needs the golem runtime, so a test SDK with `mobx: true` is generated in golem mode; any other SDK is standalone. */
+function modeOf(profile: OpenApiGenerationProfile): { readonly mode?: 'golem' } {
+  return profile.mobx ? { mode: 'golem' } : {};
+}
 
 export function requireRecord(value: unknown, label: string): Record<string, unknown> {
   if (!isRecord(value)) throw new TypeError(`${label} must be an object`);
@@ -41,7 +46,7 @@ export function writeGeneratedSdk(
 ): ReturnType<typeof WriteSdk> {
   const output = resolve(options.output);
   const profile = options.profile ?? defaultTestProfile;
-  const result = writeSdk(document, { output, name: options.name, profile });
+  const result = writeSdk(document, { output, name: options.name, profile, ...modeOf(profile) });
   writeGeneratedArtifacts(result.artifacts);
   prepareSdkProject(output);
   for (const name of ['typescript', '@types/node'] as const) {
@@ -113,6 +118,17 @@ export function compileGeneratedSdk(
   if (compiled.status !== 0) {
     throw new Error(compiled.stderr || compiled.stdout || 'tsc failed');
   }
+}
+
+/** Writes the tsconfig of a project that plain tsc builds: strict, NodeNext, no allowJs, no types, `src` into `out`. */
+export function writePlainTscProject(project: string): void {
+  writeFileSync(join(project, 'tsconfig.json'), JSON.stringify({
+    compilerOptions: {
+      strict: true, noUncheckedIndexedAccess: true, exactOptionalPropertyTypes: true, verbatimModuleSyntax: true, target: 'ES2022',
+      module: 'NodeNext', moduleResolution: 'NodeNext', skipLibCheck: true, lib: ['ES2023', 'DOM'], types: [], rootDir: 'src', outDir: 'out',
+    },
+    include: ['src/**/*.ts'],
+  }));
 }
 
 export function compileStrictUnusedSdk(output: string, extraFiles: string[] = []): void {
@@ -239,6 +255,8 @@ export async function generateMaterializedSdk(
     maxRefDocuments?: number;
     refTimeoutMs?: number;
     dates?: 'date' | 'temporal';
+    /** `golem` imports `@exprtlabs/golem` and registers codecs there; a profile with `mobx: true` always does. */
+    mode?: 'standalone' | 'golem';
   },
 ): Promise<Awaited<ReturnType<typeof generate>>> {
   const directory = dirname(options.output);
@@ -248,6 +266,8 @@ export async function generateMaterializedSdk(
     output: resolve(options.output),
     name: options.name,
     profile: options.profile ?? defaultTestProfile,
+    ...modeOf(options.profile ?? defaultTestProfile),
+    ...(options.mode === undefined ? {} : { mode: options.mode }),
     allowRemoteRefs: options.allowRemoteRefs,
     remoteHosts: options.remoteHosts,
     maxRefBytes: options.maxRefBytes,
