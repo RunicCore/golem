@@ -295,10 +295,13 @@ export type TRecord = IModel<{ plain: Currency; tagged: Currency & MinLength<2>;
   assert.throws(() => generated.fromWireFormatTRecord({ ...valid, email: 'nope' }), /Model validation failed/);
   assert.equal(generated.fromWireFormatTRecord({ ...valid, maybe: 'EUR' }).maybe, 'EUR');
   assert.throws(() => generated.fromWireFormatTRecord({ ...valid, maybe: 'EURO' }), /Model validation failed/);
-  const validators = fs.readFileSync(path.join(project.root, 'src/generated/models/models.validators.generated.ts'), 'utf8');
-  const check = validators.match(/^function f\d+_TRecord_[0-9a-f]{8}\(.*?^\}$/ms)?.[0] ?? '';
-  assert.equal([...check.matchAll(/limit: 3, inclusive: true/g)].length, 3, 'the SDK limit is written once for each of the three plain string fields; the nullable one keeps it in its union member');
-  assert.equal([...check.matchAll(/limit: 2, inclusive: true/g)].length, 1, 'the limit of the tag is written once');
+  // The SDK limit is checked once for each field: a second check of it would report the same field twice.
+  for (const field of ['plain', 'code', 'legacy'] as const) {
+    assert.throws(() => generated.fromWireFormatTRecord({ ...valid, [field]: 'ABCDE' }), (error: unknown) => error instanceof LibError
+      && JSON.stringify(error.issues.map(issue => issue.path)) === JSON.stringify([[field]]));
+  }
+  assert.throws(() => generated.fromWireFormatTRecord({ ...valid, tagged: 'A' }), (error: unknown) => error instanceof LibError
+    && JSON.stringify(error.issues.map(issue => issue.path)) === '[["tagged"]]', 'the limit of the tag is checked once');
 });
 
 test('a golem-mode model over an array, union or map SDK alias takes the SDK limits of the alias', async () => {
