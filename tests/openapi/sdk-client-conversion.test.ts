@@ -21,6 +21,7 @@ const DOCUMENT = {
     '/events': { post: { operationId: 'createEvent', requestBody: { required: true, content: JSON_BODY(EVENT) }, responses: { 201: { description: 'Created', content: JSON_BODY(EVENT) } } } },
     '/inline': { post: { operationId: 'echoInline', requestBody: { required: true, content: JSON_BODY(INLINE) }, responses: { 200: { description: 'Echo', content: JSON_BODY(INLINE) } } } },
     '/plain': { post: { operationId: 'echoPlain', requestBody: { required: true, content: JSON_BODY(PLAIN) }, responses: { 200: { description: 'Echo', content: JSON_BODY(PLAIN) } } } },
+    '/form': { post: { operationId: 'submitForm', requestBody: { required: true, content: { 'application/x-www-form-urlencoded': { schema: INLINE } } }, responses: { 204: { description: 'Done' } } } },
     '/stream': { get: { operationId: 'streamEvents', responses: { 200: { description: 'Events', content: { 'application/x-ndjson': { itemSchema: EVENT } } } } } },
   },
   components: { schemas: {
@@ -44,7 +45,7 @@ async function loadClient(t: Parameters<typeof createFixtureProject>[0], dates: 
   return new sdk.EventsClient({
     baseUrl: 'https://api.test',
     fetchImpl: async (_url: RequestInfo | URL, init?: RequestInit) => {
-      sent.push({ body: typeof init?.body === 'string' ? JSON.parse(init.body) : undefined });
+      sent.push({ body: typeof init?.body === 'string' && new Headers(init.headers).get('content-type') === 'application/json' ? JSON.parse(init.body) : init?.body });
       return reply();
     },
   }) as unknown as EventsClient;
@@ -112,4 +113,12 @@ test('a response with an invalid date is rejected as a validation error caused b
     (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.Validation && error.causedByInput === true,
   );
   assert.deepEqual(sent, []);
+});
+
+test('a form-urlencoded body with a date is sent with the date as its wire string', async t => {
+  // protects: R-80 the encoder runs for every request media type, so a form field holds the wire string
+  const sent: Fetched[] = [];
+  const client = await loadClient(t, 'date', () => new Response(null, { status: 204 }), sent);
+  await client.submitForm!().execute({ body: { when: new Date('2025-01-02T03:04:05Z') } });
+  assert.deepEqual(sent, [{ body: 'when=2025-01-02T03%3A04%3A05.000Z' }]);
 });
