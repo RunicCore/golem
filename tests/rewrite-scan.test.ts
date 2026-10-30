@@ -418,6 +418,19 @@ test('a user type that shares a file name and a type name with an SDK type never
   assert.equal(files.get('src/use-own.ts'), undefined);
 });
 
+test('a call on an SDK type reports a type without a codec at build time', (t) => {
+  // protects: T-687 an SDK writes no model class and its manifest names none, so its types have no codec key
+  const root = project(t);
+  installSdk(root);
+  const source = "import { parse } from '@exprtlabs/golem/serde';\nimport type { Money } from 'sdk';\ndeclare const text: string;\nexport const money = parse<Money>(text);\n";
+  fs.writeFileSync(path.join(root, 'src/parse-sdk-type.ts'), source);
+  const { diagnostics, files } = scan(root);
+  assert.deepEqual(diagnostics, [{
+    code: 'RUNM1067', severity: 'error', message: 'parse<Money> has no unique codec id', file: 'src/parse-sdk-type.ts', ...position(source, 'parse<Money>'),
+  }]);
+  assert.equal(files.get('src/parse-sdk-type.ts'), undefined);
+});
+
 test('a regenerated codec key file changes what the next scan stamps', (t) => {
   const root = project(t, ['calls.ts']);
   // calls.ts declares these two names itself (`declare const`), so the run supplies them.
