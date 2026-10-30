@@ -394,31 +394,29 @@ export interface SdkBodyCodec {
 }
 
 /**
- * Test-only: `document` with two operations that carry the component `root`: `getRoot` (GET /root, 200 response) and `putRoot` (POST /root-in, request body, 204).
- * `sdkBodyCodec` reads them. An operation of the document with one of these names is replaced.
+ * Test-only: `document` with two operations for each named component `Root`: `getRoot` (GET /get/Root, 200 response) and `putRoot` (POST /put/Root, request body, 204).
+ * `sdkBodyCodec` calls them. An operation of the document with one of these names is replaced.
  */
-export function withRootOperations(document: Record<string, unknown>, root: string): Record<string, unknown> {
-  const content = { 'application/json': { schema: { $ref: `#/components/schemas/${root}` } } };
-  return {
-    ...document,
-    paths: {
-      ...requireRecord(document.paths ?? {}, 'paths'),
-      '/root': { get: { operationId: 'getRoot', responses: { 200: { description: 'ok', content } } } },
-      '/root-in': { post: { operationId: 'putRoot', requestBody: { required: true, content }, responses: { 204: { description: 'none' } } } },
-    },
-  };
+export function withRootOperations(document: Record<string, unknown>, ...roots: string[]): Record<string, unknown> {
+  const paths: Record<string, unknown> = { ...requireRecord(document.paths ?? {}, 'paths') };
+  for (const root of roots) {
+    const content = { 'application/json': { schema: { $ref: `#/components/schemas/${root}` } } };
+    paths[`/get/${root}`] = { get: { operationId: `get${root}`, responses: { 200: { description: 'ok', content } } } };
+    paths[`/put/${root}`] = { post: { operationId: `put${root}`, requestBody: { required: true, content }, responses: { 204: { description: 'none' } } } };
+  }
+  return { ...document, paths };
 }
 
 /**
- * Test-only: reaches the conversion and checks of a compiled SDK (standalone or golem mode) through its client, with a fake `fetch`.
- * `name` is the SDK name (`<name>Client`); the SDK has the operations of `withRootOperations`. A test of client calls builds its own client with `loadGeneratedClient`.
+ * Test-only: reaches the conversion and checks of the component `root` in a compiled SDK (standalone or golem mode) through its client, with a fake `fetch`.
+ * `name` is the SDK name (`<name>Client`); the SDK has the operations of `withRootOperations` for `root`. A test of client calls builds its own client with `loadGeneratedClient`.
  */
-export async function sdkBodyCodec(output: string, name: string): Promise<SdkBodyCodec> {
+export async function sdkBodyCodec(output: string, name: string, root: string): Promise<SdkBodyCodec> {
   const Client = await loadGeneratedClient(output, name);
   return {
     async decode(wire, options) {
       const client = new Client({ baseUrl: 'https://api.test', fetchImpl: async () => Response.json(wire) });
-      return (await client.getRoot!().execute({}, options)).body;
+      return (await client[`get${root}`]!().execute({}, options)).body;
     },
     async encode(value, options) {
       let sent: unknown;
@@ -429,7 +427,7 @@ export async function sdkBodyCodec(output: string, name: string): Promise<SdkBod
           return new Response(null, { status: 204 });
         },
       });
-      await client.putRoot!().execute({ body: value }, options);
+      await client[`put${root}`]!().execute({ body: value }, options);
       return sent;
     },
   };

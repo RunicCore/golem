@@ -839,7 +839,7 @@ function builder(row: Row, validation: boolean): () => Promise<Built> {
       output,
       warnings: (result.diagnostics ?? []).filter(({ code }) => code.startsWith('OPENAPI_COMPOSITION_'))
         .map(({ code, message }) => `${code}: ${message}`),
-      codec: await sdkBodyCodec(output, 'Composition'),
+      codec: await sdkBodyCodec(output, 'Composition', row.root),
     };
   });
 }
@@ -1213,7 +1213,7 @@ async function generateCompiledSdk(document: Record<string, unknown>, output: st
 test('a component narrows an inherited union property to one of its variants', async t => {
   const output = path.join(createFixtureProject(t, 'golem-composition-narrowed-'), 'sdk');
   await generateCompiledSdk(withRootOperations(petDocument(ref('Cat')), 'Derived'), output);
-  const codec = await sdkBodyCodec(output, 'Composition');
+  const codec = await sdkBodyCodec(output, 'Composition', 'Derived');
   const decoded = await codec.decode({ pet: { kind: 'cat', lives: 9 } }, { validate: false });
   assert.deepEqual(withoutUndefined(await codec.encode(decoded)), { pet: { kind: 'cat', lives: 9 } });
 });

@@ -45,7 +45,7 @@ test('a model field limited by enum, with or without type, rejects a value outsi
   });
   await generateMaterializedSdk(withRootOperations(document, 'Ticket'), { output, name: 'Enums', profile: { mobx: false, validation: true } });
   compileGeneratedSdk(output, [], { strict: true });
-  const client = await sdkBodyCodec(output, 'Enums');
+  const client = await sdkBodyCodec(output, 'Enums', 'Ticket');
   const body = { rank: 2, mark: 'high', level: 3, label: 'b' };
   assert.deepEqual(await client.encode(body), body);
   assert.deepEqual(await client.decode(body), body);
@@ -65,7 +65,7 @@ test('an optional model field with an empty enum accepts no value', async t => {
   const output = path.join(createFixtureProject(t, 'golem-openapi-enum-empty-'), 'sdk');
   await generateMaterializedSdk(shelfDocument({ none: { enum: [] }, name: { type: 'string' } }, ['name']), { output, name: 'Shelves', profile: { mobx: false, validation: true } });
   compileGeneratedSdk(output, [], { strict: true });
-  const shelf = await sdkBodyCodec(output, 'Shelves');
+  const shelf = await sdkBodyCodec(output, 'Shelves', 'Shelf');
   assert.equal(await requestAccepts(shelf, { none: 'x', name: 'a' }), false);
   assert.equal(await requestAccepts(shelf, { none: null, name: 'a' }), false);
   assert.equal(await requestAccepts(shelf, { name: 'a' }), true);
@@ -87,7 +87,7 @@ test('a model field limited by an enum of objects and arrays accepts a listed va
   const output = path.join(createFixtureProject(t, 'golem-openapi-enum-object-'), 'sdk');
   await generateMaterializedSdk(shelfDocument({ pick: { enum: ['x', { a: 1, b: [2] }, [1, 2], Object.fromEntries([['__proto__', 'p']])] }, name: { type: 'string' } }), { output, name: 'Shelves', profile: { mobx: false, validation: true } });
   compileGeneratedSdk(output, [], { strict: true });
-  const shelf = await sdkBodyCodec(output, 'Shelves');
+  const shelf = await sdkBodyCodec(output, 'Shelves', 'Shelf');
   for (const pick of ['x', { b: [2], a: 1 }, [1, 2], Object.fromEntries([['__proto__', 'p']])]) {
     assert.equal(await requestAccepts(shelf, { pick, name: 'a' }), true, JSON.stringify(pick));
   }
@@ -101,7 +101,7 @@ test('a nullable model field limited by an enum that lists an object rejects nul
   const output = path.join(createFixtureProject(t, 'golem-openapi-enum-nullable-'), 'sdk');
   await generateMaterializedSdk(shelfDocument({ pick: { type: ['string', 'null'], enum: ['x', { a: 1 }] }, name: { type: 'string' } }), { output, name: 'Shelves', profile: { mobx: false, validation: true } });
   compileGeneratedSdk(output, [], { strict: true });
-  const shelf = await sdkBodyCodec(output, 'Shelves');
+  const shelf = await sdkBodyCodec(output, 'Shelves', 'Shelf');
   assert.equal(await requestAccepts(shelf, { pick: 'x', name: 'a' }), true);
   for (const pick of [null, 'y', { a: 1 }]) assert.equal(await requestAccepts(shelf, { pick, name: 'a' }), false, JSON.stringify(pick));
 });
@@ -118,7 +118,7 @@ test('a scalar enum keeps the keywords beside it and drops a listed value that i
     free: { minimum: 2, enum: [1, 2, 'x'] },
   }), { output, name: 'Shelves', profile: { mobx: false, validation: true } });
   compileGeneratedSdk(output, [], { strict: true });
-  const shelf = await sdkBodyCodec(output, 'Shelves');
+  const shelf = await sdkBodyCodec(output, 'Shelves', 'Shelf');
   const body = { count: 2, word: 'a', short: 'a', code: 'ab', whole: 1, free: 2 };
   assert.equal(await requestAccepts(shelf, body), true);
   assert.equal(await requestAccepts(shelf, { ...body, free: 'x' }), true);

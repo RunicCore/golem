@@ -61,7 +61,7 @@ test('dates: temporal maps date-time, date and duration to Temporal and keeps ti
   const output = path.join(createFixtureProject(t, 'golem-openapi-temporal-dates-'), 'sdk');
   await generateMaterializedSdk(withRootOperations(EVENT as Record<string, unknown>, 'Event'), { output, name: 'Events', profile: PROFILE, dates: 'temporal' });
   compileGeneratedSdk(output, [], { strict: true, lib: ['ES2023', 'DOM', 'DOM.Iterable', 'esnext.temporal'] });
-  const client = await sdkBodyCodec(output, 'Events');
+  const client = await sdkBodyCodec(output, 'Events', 'Event');
   const wire = { at: '2025-01-02T03:04:05Z', day: '2025-01-02', span: 'P1D', clock: '03:04:05Z', maybe: null };
   const model = await client.decode(wire) as Record<string, unknown>;
   assert.ok(model.at instanceof Temporal.Instant);
@@ -204,7 +204,7 @@ async function generateTemporalClient(t: Parameters<typeof createFixtureProject>
   const output = path.join(createFixtureProject(t, prefix), 'sdk');
   await generateMaterializedSdk(withRootOperations(doc, root), { output, name: 'Events', profile: PROFILE, dates: 'temporal' });
   compileGeneratedSdk(output, [], TEMPORAL_LIB);
-  return sdkBodyCodec(output, 'Events');
+  return sdkBodyCodec(output, 'Events', root);
 }
 
 test('dates: temporal converts array items, nullable items and nested arrays', async t => {
