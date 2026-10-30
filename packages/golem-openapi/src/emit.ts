@@ -20,6 +20,7 @@ import {
   generateSdkCodecs,
   type OpenApiDates,
 } from './models.js';
+import { neverPropertiesReader } from './model-resolution.js';
 import { withOrigins, type OriginLocator } from './origin.js';
 import { buildSchemaData } from './schemas.js';
 import { compileLevel, compileSdkValidators, uniqueDiagnostics, type CodecValidationPlan, type PlanValidators, type SchemaPlace } from '@exprtlabs/golem/internal/validation-plan';
@@ -186,14 +187,15 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions, moved:
   const files = new Map<string, string>();
   // The names that each module of the index exports come from its Code, and the index re-exports the whole modules it stars.
   const modules = new Map<string, PublicModule>();
-  const types = generateTypes(document, [...operations, ...inboundOperations], plan, options.dates);
+  const neverProperties = neverPropertiesReader(modelAnalysis, document);
+  const types = generateTypes(document, [...operations, ...inboundOperations], plan, options.dates, neverProperties);
   files.set('types.ts', types.source);
   modules.set('types.ts', { exports: types.exports, stars: [] });
   if (plan.artifacts.has('input-schemas.ts')) {
-    files.set('input-schemas.ts', generateDirectionalSchemas(document, 'input', options.dates));
+    files.set('input-schemas.ts', generateDirectionalSchemas(document, 'input', options.dates, neverProperties));
   }
   if (plan.artifacts.has('output-schemas.ts')) {
-    files.set('output-schemas.ts', generateDirectionalSchemas(document, 'output', options.dates));
+    files.set('output-schemas.ts', generateDirectionalSchemas(document, 'output', options.dates, neverProperties));
   }
   // One validators module serves the models and the operations: it compiles the roots of every model group and
   // every operation together, so a check the two share is written once.

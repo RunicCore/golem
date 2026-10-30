@@ -240,7 +240,17 @@ export interface SchemaTypeContext {
    * Temporal types as `dates` says. Absent: the wire form, where those values are strings.
    */
   readonly converted?: ConvertedTypes;
+  /** The component whose root schema is being typed; below the root it is absent. It tells the composition rule how the schema is read. */
+  readonly componentRoot?: string;
+  /** Reads the names of an allOf schema that no value can hold; the type writes each as `?: never`. Absent: no narrowing. */
+  readonly neverProperties?: NeverPropertiesOf;
 }
+
+/** The names of an allOf schema that no value can hold, read by the rule that warns about them. */
+export type NeverPropertiesOf = (
+  schema: JsonObjectLike,
+  place: { readonly currentBase: string | undefined; readonly anchors: ReadonlyMap<string, string> | undefined; readonly component: string | undefined },
+) => readonly string[];
 
 interface ConvertedTypes {
   readonly dates: OpenApiDates;
@@ -400,6 +410,7 @@ export function schemaContext(
   }
   return {
     ...context,
+    ...(componentName ? { componentRoot: componentName } : {}),
     document,
     anchors,
     resources: context.resources ?? collectCanonicalResources(document),
@@ -647,7 +658,8 @@ function schemaTypeNode(rawSchema: unknown, context: SchemaTypeContext = {}): Ty
     context.currentBase ?? (context.document ? schemaDocumentBase(context.document) : ''),
     resources,
   );
-  const inner: SchemaTypeContext = { ...context, resources, currentBase };
+  const { componentRoot, ...belowRoot } = context;
+  const inner: SchemaTypeContext = { ...belowRoot, resources, currentBase };
   if (typeof schema.$dynamicRef === 'string' || typeof schema.$ref === 'string') {
     const reference = String(schema.$dynamicRef || schema.$ref);
     const anchored = inner.anchors && inner.anchors.get(reference);
@@ -716,10 +728,18 @@ function schemaTypeNode(rawSchema: unknown, context: SchemaTypeContext = {}): Ty
     const parts = schema.allOf
       .flatMap((item) => allOfMemberTypes(item, requirements, inner))
       .filter((part) => !sameType(part, UNKNOWN_TYPE));
+    const never = neverPropertiesType(rawSchema, context, componentRoot);
+    if (never) parts.push(never);
     if (parts.length) result = intersectionType(result ? [result, ...parts] : parts);
   }
   if (!result) result = UNKNOWN_TYPE;
   return nullable && !sameType(result, UNKNOWN_TYPE) && !sameType(result, NULL_TYPE) ? orNull(result) : result;
+}
+
+/** `{ a?: never; b?: never }` for the properties of an allOf that its members do not agree on; undefined when there are none. */
+function neverPropertiesType(schema: JsonObjectLike, context: SchemaTypeContext, component: string | undefined): TypeCode | undefined {
+  const names = context.neverProperties?.(schema, { currentBase: context.currentBase, anchors: context.anchors, component }) ?? [];
+  return names.length ? typeCode(bracedLines(names.map((name) => code`${propertyKey(name)}?: never;`))) : undefined;
 }
 
 /** The members of a braced type, one to a line, each line one level in. */
@@ -874,6 +894,7 @@ export function generateTypes(
     readonly typesUsesOutputSchemas: boolean;
   },
   dates: OpenApiDates = 'date',
+  neverProperties?: NeverPropertiesOf,
 ): RenderedModule {
   const schemas = asRecord(asRecord(asRecord(document).components).schemas);
   const scope = new ComponentNameScope('types.ts');
@@ -885,7 +906,7 @@ export function generateTypes(
   const outputSchemas = new ImportSource('./output-schemas.js', true, { namespace: 'OutputSchemas' });
   const blobTypeName = generatedBlobType(scope, objectEntries(schemas).map(([name]) => identifier(name)));
   const converted = convertedTypes(schemas, dates);
-  const baseContext = schemaContext(document, { blobType: blobTypeName, converted });
+  const baseContext = schemaContext(document, { blobType: blobTypeName, converted, ...(neverProperties ? { neverProperties } : {}) });
   const BLANK = code``;
   const body: Code[] = [];
   const blobTypeIndex = 0;
@@ -906,12 +927,14 @@ export function generateTypes(
       ...(useInput ? { qualifier: code`${inputSchemas.namespace()}.` } : {}),
       blobType: blobTypeName,
       converted,
+      ...(neverProperties ? { neverProperties } : {}),
     });
     const outputContext = schemaContext(document, {
       direction: 'output',
       ...(useOutput ? { qualifier: code`${outputSchemas.namespace()}.` } : {}),
       blobType: blobTypeName,
       converted,
+      ...(neverProperties ? { neverProperties } : {}),
     });
     scope.claim(`${operation.typeName}OperationInput`, `operation ${JSON.stringify(operation.name)} input type`);
     scope.claim(`${operation.typeName}OperationSuccessBody`, `operation ${JSON.stringify(operation.name)} success body`);
@@ -938,11 +961,21 @@ export function generateTypes(
   return renderModule(code`${output}\n`);
 }
 
-export function generateDirectionalSchemas(document: unknown, direction: 'input' | 'output', dates: OpenApiDates = 'date'): string {
+export function generateDirectionalSchemas(
+  document: unknown,
+  direction: 'input' | 'output',
+  dates: OpenApiDates = 'date',
+  neverProperties?: NeverPropertiesOf,
+): string {
   const schemas = asRecord(asRecord(asRecord(document).components).schemas);
   const scope = new ComponentNameScope(`${direction}-schemas.ts`);
   const blobTypeName = generatedBlobType(scope, objectEntries(schemas).map(([name]) => identifier(name)));
-  const baseContext = schemaContext(document, { direction, blobType: blobTypeName, converted: convertedTypes(schemas, dates) });
+  const baseContext = schemaContext(document, {
+    direction,
+    blobType: blobTypeName,
+    converted: convertedTypes(schemas, dates),
+    ...(neverProperties ? { neverProperties } : {}),
+  });
   const BLANK = code``;
   const body: Code[] = [];
   for (const { name, schema, typeName } of claimedComponentSchemas(document, scope)) {

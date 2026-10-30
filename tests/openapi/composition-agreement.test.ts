@@ -943,10 +943,6 @@ function assertCodecRejects(built: Built, wire: Wire): void {
   );
 }
 
-// These rows state `x?: never` for a property that no member agrees on. The plain SDK type is the intersection of its members and keeps
-// the member's own type, so the fixture fails until the type writer narrows such properties (open: a follow-up task of T-689).
-const NARROWING_NOT_IN_TYPE = new Set(['strict-b1', 'strict-b2', 'closed-base-optional', 'date-and-model-optional']);
-
 for (const row of rows) {
   const checked = builder(row, true);
   const unchecked = builder(row, false);
@@ -954,7 +950,7 @@ for (const row of rows) {
   const fixture = row.fixture;
   if (fixture !== undefined) {
     // The fixtures state the converted type of a row: a Date where the wire holds a date-time.
-    test(`${row.shape}: the generated type`, { skip: NARROWING_NOT_IN_TYPE.has(fixture) && 'the plain type does not narrow a property to never yet' }, async () => {
+    test(`${row.shape}: the generated type`, async () => {
       const { output } = await checked();
       copyFixtureFile(output, `openapi/composition/${fixture}-types.ts`, 'row-types.ts');
       compileGeneratedSdk(output, [path.join(output, 'row-types.ts')], { strict: true, skipLibCheck: true, noEmit: true });

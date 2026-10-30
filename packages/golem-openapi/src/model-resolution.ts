@@ -20,7 +20,7 @@ import {
   unionVariants,
 } from './composition.js';
 import { effectiveSchemaTypes } from './normalize.js';
-import { schemaContext, temporalFormat } from './types.js';
+import { schemaContext, temporalFormat, type NeverPropertiesOf } from './types.js';
 import {
   collectCanonicalResources,
   nextSchemaBase,
@@ -814,6 +814,24 @@ export function checkComposition(
     }
   };
   visit(rawSchema, env, definition ? 'definition' : 'field', '');
+}
+
+/**
+ * Reads the names that no value can hold for the type writer: the rule of `checkComposition`, which warns about each of them,
+ * so the type of such a property is `never`. A component root that is a model is read at definition position, as the check does.
+ */
+export function neverPropertiesReader(
+  analysis: Pick<OpenApiModelAnalysis, 'definitions' | 'resources' | 'selections' | 'dates'>,
+  document: unknown,
+): NeverPropertiesOf {
+  return (schema, { currentBase, anchors, component }) => {
+    if (!hasAllOfMembers(schema)) return [];
+    const definition = component === undefined ? undefined : analysis.definitions.get(identifier(component));
+    const isModel = definition !== undefined && definition.schemaName === component && !definition.isUnion;
+    const env = modelEnv(document, currentBase, anchors, analysis.resources, analysis.selections, analysis.dates);
+    const composition = resolvedComposition(schema, analysis.definitions, env, 'to', new Set([schema]), isModel ? 'definition' : 'field');
+    return neverNames(composition).map((never) => never.name);
+  };
 }
 
 /**
