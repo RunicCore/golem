@@ -1,6 +1,6 @@
 import { IssueRepresentation, IssueSource, LibError, LibErrorKind, toIssue } from '../errors.js';
 import type { QueryFieldTable, ValidationLevel } from '../object-codec.js';
-import { decodeQueryField } from '../query-decode.js';
+import { decodeQueryField, gatherObjectField } from '../query-decode.js';
 import { mediaRank, type BodyEncoder, type ClientRuntime, type EncodedBody, type EncodingMetadata, type OperationCodecs, type ResponseCheck, type ResponseDecode } from './core.js';
 import { addQueryParameter } from './parameters.js';
 import type { CallLevels } from './validation.js';
@@ -297,7 +297,10 @@ function inboundRequestText(shape: InboundShape, request: InboundRequest): Inbou
     if (typeof group !== 'object' || group === null) continue;
     const named = location === 'header' ? declaredNames(group, shape.requestHeaders) : { ...group };
     for (const [name, field] of Object.entries(shape.text?.[location] ?? {})) {
-      if (Object.hasOwn(named, name)) Object.defineProperty(named, name, { value: decodeQueryField(named[name], field), writable: true, enumerable: true, configurable: true });
+      // An object that its style spreads over the keys of the group is gathered under its name.
+      const spread = field.object && (field.object.layout === 'keys' || field.object.layout === 'deep') ? gatherObjectField(named, name, field.object) : undefined;
+      for (const key of spread?.keys ?? []) delete named[key];
+      if (spread || Object.hasOwn(named, name)) Object.defineProperty(named, name, { value: decodeQueryField(spread ? spread.value : named[name], field), writable: true, enumerable: true, configurable: true });
     }
     text[location] = named;
   }

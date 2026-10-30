@@ -8,7 +8,7 @@ import { buildEmissionPlan, serverOverrideDiagnostics, type ArtifactFile, type E
 import { asRecord, objectEntries, readString } from './json.js';
 import { assertUniqueExportNames, code, documentLiteral, exportedName, fileImports, identifier as identifierPart, ImportSource, join, literal, renderModule, rt, rtType, runtimeLinesOf, type Code, type ImportOptions, type PublicModule, type RenderedModule } from '@exprtlabs/golem/internal/emitter';
 import { operationName, operationNameType } from './names.js';
-import { parameterSchema, type NormalizedOperation, type NormalizedParameter } from './normalize.js';
+import { parameterSchema, resolveLocal, type NormalizedOperation, type NormalizedParameter } from './normalize.js';
 import { generatedBannerComment } from './package-info.js';
 import { runtimeCopy, standaloneRuntimeSpecifiers, type RuntimeSpecifiers } from './runtime-copy.js';
 import type { OpenApiGenerationProfile } from './profile.js';
@@ -157,17 +157,43 @@ function itemSeparator(location: string, parameter: NormalizedParameter): ',' | 
   return style === 'form' ? ',' : style === 'spaceDelimited' ? ' ' : style === 'pipeDelimited' ? '|' : undefined;
 }
 
-/** `table` with the separator of each array field, and the label or matrix style of each path parameter, so the inbound handler reads their text as the style writes it. */
-function withParameterStyles<Table extends Readonly<Record<string, { readonly item?: unknown }>>>(table: Table | undefined, location: string, parameters: readonly NormalizedParameter[]): Table | undefined {
+/** How the style of an object parameter writes its properties, or undefined for a style that writes none. */
+function objectLayout(location: string, parameter: NormalizedParameter): { readonly layout: 'flat' | 'keyed' | 'keys' | 'deep'; readonly separator: ',' | ' ' | '|' | '.' | ';' } | undefined {
+  const style = parameter.style ?? (location === 'query' || location === 'cookie' ? 'form' : 'simple');
+  const explode = parameter.explode ?? style === 'form';
+  if (location === 'header' || location === 'path') {
+    const separator = style === 'label' ? '.' : style === 'matrix' ? ';' : ',';
+    return style === 'simple' || style === 'label' || style === 'matrix' ? { layout: explode ? 'keyed' : 'flat', separator: explode ? separator : ',' } : undefined;
+  }
+  if (style === 'deepObject') return { layout: 'deep', separator: ',' };
+  if (style === 'form' || style === 'spaceDelimited' || style === 'pipeDelimited') {
+    return explode ? { layout: 'keys', separator: ',' } : { layout: 'flat', separator: style === 'spaceDelimited' ? ' ' : style === 'pipeDelimited' ? '|' : ',' };
+  }
+  return undefined;
+}
+
+/** The table entry of an object parameter: the shape of each property its schema lists, and the layout its style writes them in. */
+function objectEntry(location: string, parameter: NormalizedParameter, document: unknown): Record<string, unknown> | undefined {
+  const schema = resolveLocal(document, parameterSchema(parameter));
+  const layout = objectLayout(location, parameter);
+  if (!isRecord(schema) || !layout || !(schema.type === 'object' || isRecord(schema.properties))) return undefined;
+  const decoded = queryFieldTable({ ...schema, components: asRecord(document).components } as never, () => undefined) ?? {};
+  const properties = Object.fromEntries(Object.keys(isRecord(schema.properties) ? schema.properties : {}).map((name) => [name, decoded[name] ?? { types: ['string'] }]));
+  return { types: [], object: { properties, ...layout } };
+}
+
+/** `table` with the separator of each array field, the object shape of each object parameter and the label or matrix style of each path parameter, so the inbound handler reads their text as the style writes it. */
+function withParameterStyles(table: Readonly<Record<string, object>> | undefined, location: string, parameters: readonly NormalizedParameter[], document: unknown): Record<string, object> | undefined {
   const entries = parameters.flatMap((parameter) => {
-    const shape: { readonly item?: unknown } = table?.[parameter.name] ?? { types: ['string'] } as { readonly item?: unknown };
+    const object = objectEntry(location, parameter, document);
+    const shape: { readonly item?: unknown } = object ?? table?.[parameter.name] ?? { types: ['string'] } as { readonly item?: unknown };
     const pathStyle = location === 'path' && (parameter.style === 'label' || parameter.style === 'matrix') ? { style: parameter.style, explode: parameter.explode ?? false, name: parameter.name } : undefined;
     const split = shape.item !== undefined ? itemSeparator(location, parameter) : undefined;
     // A string parameter is in the table only for its style: its text is no value to decode otherwise.
-    const kept = table?.[parameter.name] !== undefined || pathStyle !== undefined;
+    const kept = object !== undefined || table?.[parameter.name] !== undefined || pathStyle !== undefined;
     return kept ? [[parameter.name, { ...shape, ...(split === undefined ? {} : { split }), ...(pathStyle === undefined ? {} : { pathStyle }) }] as const] : [];
   });
-  return entries.length ? Object.fromEntries(entries) as unknown as Table : undefined;
+  return entries.length ? Object.fromEntries(entries) : undefined;
 }
 
 /**
@@ -180,7 +206,7 @@ function inboundShape(operation: NormalizedOperation, document: unknown): Parame
     const parameters = operation.parameters.filter((parameter) => parameter.in === location);
     // The group is a schema of its own; its references into the document's components resolve against `components`.
     const table = parameters.length ? queryFieldTable({ type: 'object', properties: Object.fromEntries(parameters.map((parameter) => [parameter.name, parameterSchema(parameter) ?? true])), components } as never, () => undefined) : undefined;
-    const styled = withParameterStyles(table, location, parameters);
+    const styled = withParameterStyles(table, location, parameters, document);
     return styled ? [[location, styled] as const] : [];
   }));
   // The tables hold only strings, numbers and booleans (an absent optional member is no member), so the shape is JSON.

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { fileFixtureScope, onceShared } from '../fixture-project.js';
 import { importGeneratedModule } from './helpers.js';
 import { loadSdk } from './sdk-client-fixture.js';
@@ -29,25 +30,46 @@ const STYLES = [
 ] as const;
 const STYLED_PARAMETERS = STYLES.map(([name, style, explode, schema]) => ({ name, in: 'path', required: true, style, explode, schema }));
 const STYLED_PATH = { labelInts: [0], labelIntsJoined: [0], labelWords: ['x'], labelWordsJoined: ['x'], matrixInts: [0], matrixIntsJoined: [0], matrixWords: ['x'], matrixWordsJoined: ['x'], labelOne: 0, matrixOne: 'x' };
+const pair = (first: string, second: string) => ({ type: 'object', required: [first, second], properties: { [first]: { type: 'integer' }, [second]: { type: 'string' } } });
+const OBJECTS = [
+  ['X-Flat', 'header', {}, pair('a', 'b')],
+  ['X-Keyed', 'header', { explode: true }, pair('a', 'b')],
+  ['plain', 'path', {}, pair('a', 'b')],
+  ['plainKeyed', 'path', { explode: true }, pair('a', 'b')],
+  ['dotted', 'path', { style: 'label' }, pair('a', 'b')],
+  ['dottedKeyed', 'path', { style: 'label', explode: true }, pair('a', 'b')],
+  ['semi', 'path', { style: 'matrix' }, pair('a', 'b')],
+  ['semiKeyed', 'path', { style: 'matrix', explode: true }, pair('a', 'b')],
+  ['formFlat', 'query', { explode: false }, pair('a', 'b')],
+  ['formKeys', 'query', {}, pair('fa', 'fb')],
+  ['deep', 'query', { style: 'deepObject' }, pair('a', 'b')],
+  ['piped', 'query', { style: 'pipeDelimited' }, pair('a', 'b')],
+  ['spaced', 'query', { style: 'spaceDelimited' }, pair('a', 'b')],
+] as const;
+const OBJECT_PARAMETERS = OBJECTS.map(([name, place, options, schema]) => ({ name, in: place, required: place === 'path', ...options, schema }));
+const OBJECT_PATH_NAMES = OBJECTS.filter(([, place]) => place === 'path').map(([name]) => name);
+const OBJECT_PATH = { plain: { a: 0, b: 'x' }, plainKeyed: { a: 0, b: 'x' }, dotted: { a: 0, b: 'x' }, dottedKeyed: { a: 0, b: 'x' }, semi: { a: 0, b: 'x' }, semiKeyed: { a: 0, b: 'x' } };
 const NO_CONTENT = { 204: { description: 'No content' } };
 const DOCUMENT = {
   openapi: '3.2.0',
   info: { title: 'Things', version: '1' },
   paths: {
     '/things/{ids}/{names}': { get: { operationId: 'searchThings', parameters: PARAMETERS, responses: NO_CONTENT } },
+    [`/objects${OBJECT_PATH_NAMES.map(name => `/{${name}}`).join('')}`]: { get: { operationId: 'searchObjects', parameters: OBJECT_PARAMETERS, responses: NO_CONTENT } },
     [`/styled${STYLES.map(([name]) => `/{${name}}`).join('')}`]: { get: { operationId: 'searchStyled', parameters: STYLED_PARAMETERS, responses: NO_CONTENT } },
   },
   webhooks: {
     things: { post: { operationId: 'receiveThings', parameters: PARAMETERS, responses: NO_CONTENT } },
     styled: { post: { operationId: 'receiveStyled', parameters: STYLED_PARAMETERS, responses: NO_CONTENT } },
+    objects: { post: { operationId: 'receiveObjects', parameters: OBJECT_PARAMETERS, responses: NO_CONTENT } },
   },
 };
 
 type Handler = (request: unknown) => Promise<unknown>;
-const sdk = onceShared(() => loadSdk<Record<'searchThings' | 'searchStyled', () => { execute(input: unknown): Promise<unknown> }>>(fileFixtureScope(), 'golem-openapi-inbound-arrays-', { document: DOCUMENT, name: 'Things', dates: 'date', validation: true }));
+const sdk = onceShared(() => loadSdk<Record<'searchThings' | 'searchStyled' | 'searchObjects', () => { execute(input: unknown): Promise<unknown> }>>(fileFixtureScope(), 'golem-openapi-inbound-arrays-', { document: DOCUMENT, name: 'Things', dates: 'date', validation: true }));
 
 /** What the client writes for `input` to `operation`, read as the framework gives it to an inbound handler: header names in lower case, path and query as text. */
-async function sentRequest(operation: 'searchThings' | 'searchStyled', pathNames: readonly string[], input: unknown): Promise<Record<string, unknown>> {
+async function sentRequest(operation: 'searchThings' | 'searchStyled' | 'searchObjects', pathNames: readonly string[], input: unknown): Promise<Record<string, unknown>> {
   let sent: { readonly url: URL; readonly headers: Headers } | undefined;
   const { createClient } = await sdk();
   await createClient({ fetchImpl: async (url: string | URL, init?: RequestInit) => { sent = { url: new URL(String(url)), headers: new Headers(init?.headers) }; return new Response(null, { status: 204 }); } })[operation]().execute(input);
@@ -58,12 +80,12 @@ async function sentRequest(operation: 'searchThings' | 'searchStyled', pathNames
 }
 
 /** The input the port of the webhook `handler` gets when the handler reads `request`. */
-async function received(handler: 'webhookReceiveThings' | 'webhookReceiveStyled', request: unknown): Promise<Record<string, unknown>> {
+async function received(handler: 'webhookReceiveThings' | 'webhookReceiveStyled' | 'webhookReceiveObjects', request: unknown): Promise<Record<string, unknown>> {
   const { output } = await sdk();
   const bind = (await importGeneratedModule(output, 'generated SDK')).bindThingsInbound as (port: Record<string, (input: unknown) => Promise<unknown>>) => Record<string, Handler>;
   const inputs: Record<string, unknown>[] = [];
   const answer = async (input: unknown) => { inputs.push(input as Record<string, unknown>); return { matched: 'status', status: 204, contentType: null, body: undefined, headers: {} }; };
-  await bind({ webhookReceiveThings: answer, webhookReceiveStyled: answer })[handler]!(request);
+  await bind({ webhookReceiveThings: answer, webhookReceiveStyled: answer, webhookReceiveObjects: answer })[handler]!(request);
   return inputs[0]!;
 }
 
@@ -106,3 +128,32 @@ for (const [name, field, value] of [
     assert.deepEqual(port.path[field], value);
   });
 }
+
+for (const [name, place, field, input, expected] of [
+  ['a header in simple style', 'header', 'X-Flat', { header: { 'X-Flat': { a: 1, b: 'x' } } }, { a: 1, b: 'x' }],
+  ['a header in simple style with explode', 'header', 'X-Keyed', { header: { 'X-Keyed': { a: 1, b: 'x' } } }, { a: 1, b: 'x' }],
+  ['a path in simple style', 'path', 'plain', { path: { ...OBJECT_PATH, plain: { a: 1, b: 'x' } } }, { a: 1, b: 'x' }],
+  ['a path in simple style with explode', 'path', 'plainKeyed', { path: { ...OBJECT_PATH, plainKeyed: { a: 1, b: 'x' } } }, { a: 1, b: 'x' }],
+  ['a path in label style', 'path', 'dotted', { path: { ...OBJECT_PATH, dotted: { a: 1, b: 'x' } } }, { a: 1, b: 'x' }],
+  ['a path in label style with explode', 'path', 'dottedKeyed', { path: { ...OBJECT_PATH, dottedKeyed: { a: 1, b: 'x' } } }, { a: 1, b: 'x' }],
+  ['a path in matrix style', 'path', 'semi', { path: { ...OBJECT_PATH, semi: { a: 1, b: 'x' } } }, { a: 1, b: 'x' }],
+  ['a path in matrix style with explode', 'path', 'semiKeyed', { path: { ...OBJECT_PATH, semiKeyed: { a: 1, b: 'x' } } }, { a: 1, b: 'x' }],
+  ['a query in form style without explode', 'query', 'formFlat', { path: OBJECT_PATH, query: { formFlat: { a: 1, b: 'x' } } }, { a: 1, b: 'x' }],
+  ['a query in form style with explode', 'query', 'formKeys', { path: OBJECT_PATH, query: { formKeys: { fa: 1, fb: 'x' } } }, { fa: 1, fb: 'x' }],
+  ['a query in deepObject style', 'query', 'deep', { path: OBJECT_PATH, query: { deep: { a: 1, b: 'x' } } }, { a: 1, b: 'x' }],
+  ['a query in pipeDelimited style', 'query', 'piped', { path: OBJECT_PATH, query: { piped: { a: 1, b: 'x' } } }, { a: 1, b: 'x' }],
+  ['a query in spaceDelimited style', 'query', 'spaced', { path: OBJECT_PATH, query: { spaced: { a: 1, b: 'x' } } }, { a: 1, b: 'x' }],
+] as const) {
+  test(`the inbound handler reads an object parameter in its style: ${name}`, async () => {
+    // protects: T-746 R-80 an object parameter reads back to the object the golem client wrote, a number as a number
+    const request = await sentRequest('searchObjects', OBJECT_PATH_NAMES, { path: OBJECT_PATH, ...input });
+    const port = await received('webhookReceiveObjects', request) as Record<string, Record<string, unknown>>;
+    assert.deepEqual(port[place]![field], expected);
+  });
+}
+
+test('an object parameter whose text does not fit its style stays text and the check rejects it', async () => {
+  // protects: T-746 text that does not match the style is left for the validator to report
+  const request = await sentRequest('searchObjects', OBJECT_PATH_NAMES, { path: OBJECT_PATH });
+  await assert.rejects(received('webhookReceiveObjects', { ...request, query: { formFlat: 'a,1,b' } }), (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.Validation && error.causedByInput === true);
+});
