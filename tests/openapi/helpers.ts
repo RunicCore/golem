@@ -51,9 +51,13 @@ function modeOf(profile: OpenApiGenerationProfile, output: string, requested?: '
 function writeSdkCodecs(output: string, profile: OpenApiGenerationProfile, mode: { readonly mode?: string }): void {
   if (mode.mode !== 'golem') return;
   const directory = dirname(output);
+  // Without `skipLibCheck` the job checks every library declaration file, which takes seconds for each SDK.
+  const tsconfig = join(directory, 'tsconfig.models.json');
+  writeFileSync(tsconfig, JSON.stringify({ compilerOptions: { target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', strict: true, skipLibCheck: true, lib: ['ES2023', 'DOM', 'DOM.Iterable'] }, include: [] }));
   const result = generateModels({
     root: directory,
     directory,
+    tsconfig,
     output: join(output, 'codecs'),
     manifestInputs: [join(output, 'model-manifest.json')],
     sdkOutputs: [output],
