@@ -17,7 +17,7 @@ import {
   type ResourceIndex,
 } from './schema-projection.js';
 
-/** The schema of the header parameters of an operation, checked apart from the rest of the input: none when it has no header parameter. */
+/** The schema of the header parameters of an operation, checked apart from the rest of the input: none when it has no header parameter. Header names are open: a request carries headers the operation does not declare (host, content-type), and only the declared ones are checked. */
 function operationHeadersSchema(operation: NormalizedOperation): unknown {
   const parameters = operation.parameters.filter((parameter) => parameter.in === 'header');
   return parameters.length
@@ -25,7 +25,6 @@ function operationHeadersSchema(operation: NormalizedOperation): unknown {
       type: 'object',
       properties: Object.fromEntries(parameters.map((parameter) => [parameter.name, parameterSchema(parameter) ?? true])),
       required: parameters.filter((parameter) => parameter.required).map((parameter) => parameter.name),
-      additionalProperties: false,
     }
     : undefined;
 }
@@ -34,7 +33,8 @@ function operationHeadersSchema(operation: NormalizedOperation): unknown {
 type BodyChecked = (operation: NormalizedOperation, contentType: string) => boolean;
 
 function operationInputSchema(operation: NormalizedOperation, bodyChecked: BodyChecked): unknown {
-  const properties: Record<string, unknown> = {};
+  // Headers are open here: the header root checks the declared ones (see `operationHeadersSchema`), and a request carries more.
+  const properties: Record<string, unknown> = { header: true };
   const required: string[] = [];
   for (const location of ['path', 'query', 'cookie'] as const) {
     const parameters = operation.parameters.filter((parameter) => parameter.in === location);

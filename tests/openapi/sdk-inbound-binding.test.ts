@@ -272,3 +272,15 @@ test('a request body of an undeclared media type is rejected as input', async ()
   await assert.rejects(handlers.webhookReceiveMedia({ body: { contentType: 'application/json', value: { seen: AT } } }), isInputError);
   assert.deepEqual(received, []);
 });
+
+test('headers the operation does not declare pass the header check, and a bad declared header still fails', async () => {
+  // protects: T-711 a real request carries host, content-type and more; only the declared headers are checked
+  const { handlers, received } = await bind('full', OK, { validate: { requestHeaders: true } });
+  const extra = { host: 'hooks.test', 'content-type': 'application/json', 'user-agent': 'curl' };
+  await handlers.webhookReceiveSettlement({ header: { ...extra, 'x-sent': AT }, body: { at: AT } });
+  assert.equal(received.length, 1);
+  await (await bind('full', NO_CONTENT, { validate: { requestHeaders: true } })).handlers.webhookReceivePlain({ header: extra, body: { n: 1 } });
+  await assert.rejects(handlers.webhookReceiveSettlement({ header: { ...extra, 'x-sent': 'yesterday' }, body: { at: AT } }), isInputError);
+  const required = await bind('full', NO_CONTENT, { validate: { requestHeaders: true } });
+  await assert.rejects(required.handlers.webhookReceiveSearch({ header: extra }), isInputError);
+});
