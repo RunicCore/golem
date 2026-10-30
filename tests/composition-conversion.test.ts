@@ -20,6 +20,7 @@ import {
   type SerdeResolver,
 } from '@exprtlabs/golem/internal/emitter';
 
+import { DATE_FIELD, DATE_SERDE } from './support/date-field.js';
 import { runModule } from './support/run-module.js';
 
 type CompiledConversion = (value: unknown) => unknown;
@@ -95,7 +96,7 @@ function decodeToken(value: unknown): number {
 }
 
 const serde: SerdeResolver = {
-  deserialize: (_id, value) => code`decodeToken(${value})`,
+  deserialize: (id, value) => id === 'date' ? DATE_SERDE.deserialize(id, value) : code`decodeToken(${value})`,
   serialize: (_id, value) => value,
 };
 
@@ -128,7 +129,6 @@ function compileFromJSON(descriptor: ModelConversionDescriptor): CompiledConvers
 
 test('intersection conversion merges object fields and runs overlapping conversions once', () => {
   resetCounters();
-  const date = { kind: 'date' } as const;
   const child = { kind: 'generated-model', id: 'child' } as const;
   const token = {
     kind: 'number',
@@ -137,8 +137,8 @@ test('intersection conversion merges object fields and runs overlapping conversi
   const descriptor: ModelConversionDescriptor = {
     kind: 'intersection',
     variants: [
-      openObjectDescriptor({ when: date, child, token }),
-      openObjectDescriptor({ when: date, token, label: { kind: 'string' } }),
+      openObjectDescriptor({ when: DATE_FIELD, child, token }),
+      openObjectDescriptor({ when: DATE_FIELD, token, label: { kind: 'string' } }),
     ],
   };
 
@@ -164,8 +164,8 @@ test('intersection and nullable fromInit preserve domain Date values while const
   const descriptor: ModelConversionDescriptor = {
     kind: 'intersection',
     variants: [
-      openObjectDescriptor({ when: { kind: 'date' }, child: { kind: 'generated-model', id: 'child' } }),
-      openObjectDescriptor({ when: { kind: 'date' }, token: { kind: 'number', serde: { id: 'token', wire: { kind: 'string' } } } }),
+      openObjectDescriptor({ when: DATE_FIELD, child: { kind: 'generated-model', id: 'child' } }),
+      openObjectDescriptor({ when: DATE_FIELD, token: { kind: 'number', serde: { id: 'token', wire: { kind: 'string' } } } }),
     ],
   };
   const fromInit = compileConversion(
@@ -173,7 +173,7 @@ test('intersection and nullable fromInit preserve domain Date values while const
     bindings,
   );
   const nullableDate = compileConversion(
-    render(emitModelFromInit({ kind: 'union', variants: [{ kind: 'date' }, { kind: 'null' }] }, identifier('value'), () => fromChild)),
+    render(emitModelFromInit({ kind: 'union', variants: [DATE_FIELD, { kind: 'null' }] }, identifier('value'), () => fromChild)),
     bindings,
   );
 
@@ -198,12 +198,12 @@ test('discriminated plain object unions convert only the selected branch', () =>
     variants: [
       objectDescriptor({
         kind: literal('token'),
-        when: { kind: 'date' },
+        when: DATE_FIELD,
         token: { kind: 'number', serde: { id: 'token', wire: { kind: 'string' } } },
       }),
       objectDescriptor({
         kind: literal('child'),
-        when: { kind: 'date' },
+        when: DATE_FIELD,
         child: { kind: 'generated-model', id: 'child' },
       }),
     ],
@@ -242,8 +242,8 @@ test('ambiguous union conversions fail generation instead of probing codecs', ()
       descriptor: {
         kind: 'union',
         variants: [
-          objectDescriptor({ when: { kind: 'date' } }),
-          objectDescriptor({ when: { kind: 'date' } }),
+          objectDescriptor({ when: DATE_FIELD }),
+          objectDescriptor({ when: DATE_FIELD }),
         ],
       },
       message: /unique|required literal discriminator|ambiguous/i,
@@ -254,7 +254,7 @@ test('ambiguous union conversions fail generation instead of probing codecs', ()
       descriptor: {
         kind: 'union',
         variants: [
-          { kind: 'date' },
+          DATE_FIELD,
           { kind: 'string' },
           { kind: 'array', item: { kind: 'string' } },
         ],
