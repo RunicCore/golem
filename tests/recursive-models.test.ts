@@ -5,13 +5,11 @@ import { pathToFileURL } from 'node:url';
 import test, { type TestContext } from 'node:test';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import type { GolemProfile } from '@exprtlabs/golem/generator-api';
-import { requireObjectCodec } from '@exprtlabs/golem/internal/model-runtime';
 import { writeSdk } from '#openapi/generator';
 import { createFixtureProject } from './fixture-project.js';
 import { buildModelProject, createModelProject, writeModelGolemYaml, writeModelSources } from './model-project.js';
 import { buildRecursiveProject, importCodecs, json, type Codec, type Codecs } from './support/recursive-fixtures.js';
-import { compileGeneratedSdk, generateMaterializedSdk, writeGeneratedSdk } from './openapi/helpers.js';
-import { generatedCodecIdFromRoot } from './support/consumer.js';
+import { compileGeneratedSdk, generateMaterializedSdk, sdkBodyCodec, withRootOperations, writeGeneratedSdk } from './openapi/helpers.js';
 
 const sources = {
   'tree.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
@@ -213,7 +211,8 @@ const unionDocument = {
   paths: {},
   components: {
     schemas: {
-      Base: { type: 'object', required: ['kind'], properties: { kind: { type: 'string' } } },
+      // The date-time property makes the tree convert, so the client writes it through a codec that guards a cycle.
+      Base: { type: 'object', required: ['kind'], properties: { kind: { type: 'string' }, at: { type: 'string', format: 'date-time' } } },
       Leaf: { allOf: [{ $ref: '#/components/schemas/Base' }, { type: 'object', required: ['value'], properties: { value: { type: 'number' } } }] },
       Branch: {
         allOf: [{ $ref: '#/components/schemas/Base' }, {
@@ -238,23 +237,19 @@ for (const validation of [false, true]) {
   test(`a recursive oneOf model encodes a nested branch and still throws on a cycle (validation ${validation ? 'on' : 'off'})`, async (t: TestContext) => {
     // protects: T-165 a recursive union encodes a nested value and a real cycle still throws
     const output = path.join(createFixtureProject(t, 'golem-openapi-recursive-union-'), 'sdk');
-    await generateMaterializedSdk(unionDocument, { output, name: 'Expr', profile: { mobx: false, validation, allowAny: false } });
+    await generateMaterializedSdk(withRootOperations(unionDocument, 'Branch', 'Owner'), { output, name: 'Expr', profile: { mobx: false, validation, allowAny: false } });
     compileGeneratedSdk(output, [], { strict: true, skipLibCheck: true });
-    await import(pathToFileURL(path.join(output, 'dist/index.js')).href);
-    type Encoder = { stringify(value: unknown): string; toWireFormat(value: unknown): unknown };
-    const branch = requireObjectCodec<object>(generatedCodecIdFromRoot(output, 'Branch')) as unknown as Encoder;
-    const owner = requireObjectCodec<object>(generatedCodecIdFromRoot(output, 'Owner')) as unknown as Encoder;
+    const branch = await sdkBodyCodec(output, 'Expr', 'Branch');
+    const owner = await sdkBodyCodec(output, 'Expr', 'Owner');
 
-    assert.equal(branch.stringify(nestedBranch), JSON.stringify(nestedBranch));
-    assert.deepEqual(json(branch.toWireFormat(nestedBranch)), nestedBranch);
-    assert.equal(owner.stringify({ root: nestedBranch }), JSON.stringify({ root: nestedBranch }));
-    assert.deepEqual(json(owner.toWireFormat({ root: nestedBranch })), { root: nestedBranch });
+    assert.deepEqual(await branch.encode(nestedBranch), nestedBranch);
+    assert.deepEqual(await branch.decode(nestedBranch), nestedBranch);
+    assert.deepEqual(await owner.encode({ root: nestedBranch }), { root: nestedBranch });
+    assert.deepEqual(await owner.decode({ root: nestedBranch }), { root: nestedBranch });
 
     const cyclic: { kind: string; children: unknown[] } = { kind: 'branch', children: [] };
     cyclic.children.push({ kind: 'branch', children: [cyclic] });
-    for (const encode of [(value: unknown) => branch.stringify(value), (value: unknown) => branch.toWireFormat(value)]) {
-      assert.throws(() => encode(cyclic), isSerializationError);
-    }
+    await assert.rejects(() => branch.encode(cyclic), isSerializationError);
   });
 }
 
