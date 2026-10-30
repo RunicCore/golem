@@ -10,7 +10,7 @@ import {
 } from '@exprtlabs/golem/internal/model-runtime';
 import type { ModelTypeDescriptor } from '@exprtlabs/golem/internal/schema';
 import { createSchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
-import { render } from '@exprtlabs/golem/internal/emitter';
+import { code, render, type StringifySerdeResolver } from '@exprtlabs/golem/internal/emitter';
 import { emitGraphStringify } from './support/stringify-graph.js';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { instantiate, instantiateRuntime, emitCodecRuntimeText } from './emitted-runtime.js';
@@ -226,11 +226,15 @@ test('tagged generated-model unions stringify the selected interned branch', () 
   assert.equal(stringifyContactBook(withPhone as never), JSON.stringify(withPhone));
 });
 
+/** A Date field in the class-value form; only a decode runs here, so the serde converts text to a Date and the wire carries no rule. */
+const DATE: ModelTypeDescriptor = { kind: 'class-value', typeName: 'Date', classRef: { path: ['Date'] }, serde: { id: 'date', wire: { kind: 'string' } } };
+const DATE_SERDE: StringifySerdeResolver = { deserialize: (_id, value) => code`new Date(${value} as string)`, serialize: (_id, value) => value };
+
 test('a root union of plain objects decodes by its tag with validation off, and an unknown tag throws', () => {
   // protects: T-643 a decoder that holds a tag local in its function body (decodeLocals) is emitted and runs
   const variant = (kind: string): ModelTypeDescriptor => ({
     kind: 'object',
-    properties: { kind: { kind: 'literal', value: kind }, added: { kind: 'date' } },
+    properties: { kind: { kind: 'literal', value: kind }, added: DATE },
     required: ['kind', 'added'],
     additionalProperties: false,
   });
@@ -242,7 +246,7 @@ test('a root union of plain objects decodes by its tag with validation off, and 
   const graph = createSchemaGraph();
   graph.intern(contact, 'Contact');
   graph.seal();
-  const { fromWireFormatContact } = instantiateRuntime(emitCodecRuntimeText(graph, { validationLevel: false }));
+  const { fromWireFormatContact } = instantiateRuntime(emitCodecRuntimeText(graph, { validationLevel: false, serde: DATE_SERDE }));
   assert.deepEqual(fromWireFormatContact({ kind: 'phone', added: '2024-05-06T07:08:09.000Z' }), { kind: 'phone', added: new Date('2024-05-06T07:08:09.000Z') });
   assert.throws(() => fromWireFormatContact({ kind: 'fax', added: '2024-05-06T07:08:09.000Z' }), LibError);
 });
