@@ -114,7 +114,7 @@ export const ${exportedName('responseLinks')} = ${documentLiteral(links, 2)} as 
 }
 
 /** The index module, and the files it re-exports with `export *`. */
-function generateIndex(profile: OpenApiGenerationProfile, plan?: EmissionPlan, modelReexports: Code = code``): RenderedModule & { readonly stars: readonly string[] } {
+function generateIndex(profile: OpenApiGenerationProfile, plan?: EmissionPlan): RenderedModule & { readonly stars: readonly string[] } {
   requireProfile(profile);
   const artifacts = plan?.artifacts;
   const include = (name: ArtifactFile): boolean => artifacts ? artifacts.has(name) : true;
@@ -123,7 +123,6 @@ function generateIndex(profile: OpenApiGenerationProfile, plan?: EmissionPlan, m
 export * from './types.js';
 ${include('input-schemas.ts') ? code`export type * as ${exportedName('InputSchemas')} from './input-schemas.js';` : code``}
 ${include('output-schemas.ts') ? code`export type * as ${exportedName('OutputSchemas')} from './output-schemas.js';` : code``}
-${modelReexports}
 ${include('client.ts') ? code`export * from './client.js';` : code``}
 ${include('inbound.ts') ? code`export * from './inbound.js';` : code``}
 ${include('links.ts') ? code`export * from './links.js';` : code``}
@@ -215,7 +214,6 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions, moved:
     );
     return validators.compiled;
   };
-  let modelReexports: Code = code``;
   const modelDiagnostics: GolemDiagnostic[] = [];
   if (plan.hasModels) {
     const models = generateOpenApiModelArtifacts(document, profile, modelAnalysis, {
@@ -223,7 +221,6 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions, moved:
       ...(profile.validation ? { compileValidators: ({ plan, locateModel }: { plan: CodecValidationPlan; locateModel: (name: string) => SchemaPlace }) => compileValidators(plan, locateModel) } : {}),
     });
     for (const [name, source] of models.files) files.set(name, source);
-    modelReexports = models.entryReexports;
   }
   if (operationValidation && !validators.compiled) compileValidators(undefined);
   if (validators.compiled) {
@@ -262,7 +259,7 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions, moved:
     files.set('links.ts', links.source);
     modules.set('links.ts', { exports: links.exports, stars: [] });
   }
-  const index = generateIndex(profile, plan, modelReexports);
+  const index = generateIndex(profile, plan);
   files.set('index.ts', index.source);
   modules.set('index.ts', { exports: index.exports, stars: index.stars });
   assertUniqueExportNames(modules);

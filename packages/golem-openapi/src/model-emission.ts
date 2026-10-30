@@ -9,7 +9,6 @@ import {
   MODEL_IMPORT_ORDER,
   type Piece,
   emitCodecRuntimeCode,
-  exportFrom,
   fileImports,
   identifier,
   MODULE_CONSTANT_HELPERS,
@@ -159,7 +158,7 @@ export function generateOpenApiModelArtifacts(
      */
     readonly compileValidators?: (input: { readonly plan: CodecValidationPlan; readonly groupPlans: ReadonlyMap<string, CodecValidationPlan>; readonly locateModel: (name: string) => SchemaPlace }) => Pick<PlanValidators, 'exports' | 'fastExports' | 'passExports'>;
   } = {},
-): { readonly files: ReadonlyMap<string, string>; readonly entryReexports: Code } {
+): { readonly files: ReadonlyMap<string, string> } {
   const { schemaGraph, ordered, grouping } = analysis;
   const { groups, owner, runtimeEdges } = grouping;
   const digest = sourceDigest(document);
@@ -198,19 +197,6 @@ export function generateOpenApiModelArtifacts(
   };
   const validatorsSource = new ImportSource('../validators.generated.js', false, { sorted: true });
   const files = new Map<string, string>();
-  const codecExports = (name: string): readonly (readonly [local: string, exported: string])[] => {
-    const node = analysis.nodesByName.get(name);
-    if (!node) return [];
-    return [
-      [`stringify${node.id}`, `stringify${name}`],
-      [`parse${node.id}`, `parse${name}`],
-      [`fromWireFormat${node.id}`, `fromWireFormat${name}`],
-      [`toWireFormat${node.id}`, `toWireFormat${name}`],
-      [`validate${node.id}`, `validate${name}`],
-      [`assert${node.id}`, `assert${name}`],
-      [`toWireFormat${node.id}`, `encode${name}`],
-    ];
-  };
   // Every group's validation plan comes first: the companions of a group import their validators by the names the
   // SDK's one validators module gives, and that module compiles every model in one plan.
   const groupPlans = new Map<string, CodecValidationPlan>();
@@ -277,17 +263,8 @@ export function generateOpenApiModelArtifacts(
       exportedFillFunctionIds: exportedFillFunctionsByGroup.get(group.id),
     });
     files.set(group.filename, modelModule);
-    for (const name of group.models) {
-      const filename = `models/${name}.ts`;
-      files.set(filename, render(code`${join([
-        generatedBannerComment(),
-        exportFrom(codecExports(name), `./_${group.id}.js`),
-      ], lineBreak)}\n`));
-    }
   }
-  const reexports = ordered.map((definition) =>
-    exportFrom(codecExports(definition.name).map(([, exported]) => exported), `./models/${definition.name}.js`));
-  return { files, entryReexports: join(reexports, lineBreak) };
+  return { files };
 }
 
 /**
