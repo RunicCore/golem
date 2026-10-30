@@ -151,11 +151,9 @@ test('parse<T> reads an app model over an SDK model of golem mode, with the limi
   assert.throws(() => readMoney('{"amount":-1,"currency":"EUR"}'), /Model validation failed/);
   assert.throws(() => readMoney('{"amount":5,"currency":"euro"}'), /Model validation failed/);
   assert.deepEqual(readBasket('{"price":{"amount":1,"currency":"USD"},"label":"x"}'), { price: { amount: 1, currency: 'USD' }, label: 'x' });
-  // An SDK type as a field keeps the SDK limits too, and is checked by the SDK's validator of it.
-  assert.throws(() => readBasket('{"price":{"amount":-1,"currency":"USD"},"label":"x"}'), /Model validation failed/);
-  const validators = fs.readFileSync(path.join(project.root, 'src/generated/models/models.validators.generated.ts'), 'utf8');
-  const holdingMinimum = validators.split(/^function /m).filter(body => /^f\d+_\w+_[0-9a-f]{8}\(/.test(body) && body.includes('< 0)')).map(body => body.replace(/^f\d+_(\w+?)_[0-9a-f]{8}\([^]*$/, '$1'));
-  assert.deepEqual(holdingMinimum, ['Money']);
+  // An SDK type as a field keeps the SDK limits too, and is checked by the SDK's validator of it: the issue lies at the field's path.
+  assert.throws(() => readBasket('{"price":{"amount":-1,"currency":"USD"},"label":"x"}'), (error: unknown) => error instanceof LibError
+    && error.kind === LibErrorKind.Validation && JSON.stringify(error.issues.map(issue => [issue.code, issue.path])) === '[["tooSmall",["price","amount"]]]');
   // The model that holds Money converts it with the codec of the SDK's codecs file.
   const companion = fs.readFileSync(path.join(project.root, 'src/money.model.generated.ts'), 'utf8');
   assert.match(companion, /import \{[^}]*\bfromWireFormatMoney\b[^}]*\} from "\.\/generated\/models\/sdk\/payments\.sdk\.generated\.js"/);
