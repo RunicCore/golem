@@ -1,4 +1,5 @@
 import { GolemDiagnosticSeverity, type GolemDiagnostic } from '../generator-core.js';
+import type { ImportOptions } from '../code.js';
 import { emit, exportNames, type PassExports } from './emit.js';
 import { lower } from './lower.js';
 
@@ -24,8 +25,8 @@ export interface SchemaPlace {
 export interface CompileOptions {
   /** What a format that golem does not implement does: warn and skip the check, or fail the compile. */
   readonly unknownFormats: 'warn' | 'error';
-  /** Where the generated module imports its helpers from; the internal validation runtime of the package by default. */
-  readonly runtimeModule?: string;
+  /** Where the generated module imports its helpers and their types from; the internal validation runtime and the public subpath of the package by default. */
+  readonly specifiers?: ImportOptions['specifiers'];
   /** Named in each diagnostic message that `locate` does not place. */
   readonly documentName?: string;
   /** Maps a schema resource and a JSON Pointer inside it to the place the user knows; without one, a diagnostic names the resource. */
@@ -87,7 +88,7 @@ export function compile(input: CompileInput, options: CompileOptions): CompileRe
   const exports = exportNames(module.exports.map(({ name }) => name));
   if (diagnostics.some(entry => entry.severity === GolemDiagnosticSeverity.Error)) return { source: '', exports, fastExports: new Map(), passExports: new Map(), diagnostics };
   const { source, fastExports, passExports } = emit(module, {
-    ...(options.runtimeModule === undefined ? {} : { runtimeModule: options.runtimeModule }),
+    ...(options.specifiers === undefined ? {} : { specifiers: options.specifiers }),
     ...(options.typed ? { typed: true } : {}),
     ...(options.fastPath === undefined || options.fastPath === false ? {} : { fastPath: options.fastPath }),
     ...(options.level === undefined ? {} : { level: options.level }),

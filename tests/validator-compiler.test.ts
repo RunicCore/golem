@@ -458,7 +458,7 @@ test('an anyOf of branches that differ by JSON type checks a valid value with th
   // protects: T-255 one type switch for a disjoint union (F-250); `Number.isInteger` runs only in the integer branch, which comes first.
   const { source, exports, fastExports } = compile(
     { roots: new Map([['root', { anyOf: [{ type: 'integer' }, { type: 'string' }, { type: 'null' }, { type: 'array', items: { type: 'string' } }, { type: 'object' }] }]]) },
-    { unknownFormats: 'warn', runtimeModule: 'golem-validation-runtime', fastPath: true },
+    { unknownFormats: 'warn', specifiers: { values: { 'validation-runtime': 'golem-validation-runtime' } }, fastPath: true },
   );
   const counts = { isInteger: 0 };
   const { values } = await loadBundle(t, source, [fastExports.get('root')!, exports.get('root')!], { counts }, 'const real = Number.isInteger; Number.isInteger = value => (counts.isInteger++, real(value));');
@@ -1208,7 +1208,7 @@ test('a bundle of one validator drops an unused validator with its constants', a
     ['kept', { type: 'string', pattern: '^kept-pattern-[0-9]+$' }],
     ['unused', { type: 'object', properties: { code: { type: 'string', pattern: '^unused-pattern-[0-9]+$' }, kind: { enum: ['unused-literal-a', 'unused-literal-b'] } }, additionalProperties: false }],
   ]);
-  const { source, exports } = compile({ roots }, { unknownFormats: 'warn', runtimeModule: 'golem-validation-runtime' });
+  const { source, exports } = compile({ roots }, { unknownFormats: 'warn', specifiers: { values: { 'validation-runtime': 'golem-validation-runtime' } } });
   const kept = exports.get('kept') ?? '';
   const unused = exports.get('unused') ?? '';
   const one = await loadBundle(t, source, [kept]);

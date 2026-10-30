@@ -68,8 +68,8 @@ test('a type name is imported with import type, and a file picks the specifier o
     ['@exprtlabs/golem/internal/validation-runtime', [{ name: 'jsonEqual' }], []],
   ]);
   assert.equal(
-    render(join(runtimeImports(body, { specifiers: { 'validation-runtime': 'file:///runtime/validation-runtime.js' }, quote: '"' }), code`\n`)),
-    'import type { SchemaIssue } from "@exprtlabs/golem/validation";\nimport { jsonEqual } from "file:///runtime/validation-runtime.js";',
+    render(join(runtimeImports(body, { specifiers: { values: { 'validation-runtime': 'file:///runtime/validation-runtime.js' }, types: { validation: 'file:///runtime/types.js' } }, quote: '"' }), code`\n`)),
+    'import type { SchemaIssue } from "file:///runtime/types.js";\nimport { jsonEqual } from "file:///runtime/validation-runtime.js";',
   );
   assert.equal(
     render(join(runtimeImports(body), code`\n`)),

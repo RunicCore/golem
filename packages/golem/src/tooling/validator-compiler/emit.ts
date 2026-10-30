@@ -1,4 +1,4 @@
-import { code, helperDefinitions, identifier as identifierCode, join, nameOf, NameTable, render, runtimeImports, type Code } from '../code.js';
+import { code, helperDefinitions, identifier as identifierCode, join, nameOf, NameTable, render, runtimeImports, type Code, type ImportOptions } from '../code.js';
 import type { IrFunction, IrModule } from './ir.js';
 import { compareText } from '../generator-core.js';
 import { rtType } from '../rt.js';
@@ -11,8 +11,8 @@ import { FastPlan } from './fast-plan.js';
 import { groupFunctions, type WrittenFastCheck, type WrittenFunction } from './grouping.js';
 
 interface EmitOptions {
-  /** The module specifier the generated file imports its runtime helpers and their types from; the internal validation runtime and the public subpath by default. */
-  readonly runtimeModule?: string;
+  /** The specifiers the generated file imports its runtime helpers and their types from; the internal validation runtime and the public subpath by default. */
+  readonly specifiers?: ImportOptions['specifiers'];
   /** Types each exported validator as a `Validator`, for a TypeScript file. */
   readonly typed?: boolean;
   /** Also writes the boolean fast check `is_X` beside `validate_X`, for each root, or each root named, that has one (see `FastPlan`). */
@@ -269,7 +269,7 @@ export function emit(module: IrModule, options: EmitOptions): EmitResult {
   const everything = join(contents, NEWLINE);
   return {
     source: render(join([
-      ...runtimeImports(everything, { ...(options.runtimeModule === undefined ? {} : { specifiers: { 'validation-runtime': options.runtimeModule } }), quote: '"' }),
+      ...runtimeImports(everything, { ...(options.specifiers === undefined ? {} : { specifiers: options.specifiers }), quote: '"' }),
       ...state.validationImports(),
       ...helperDefinitions(everything),
       ...contents,

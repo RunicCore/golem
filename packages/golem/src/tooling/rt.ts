@@ -79,6 +79,16 @@ export function runtimeTypeSpecifier(module: RuntimeModule): string {
   return `@exprtlabs/golem/${module}`;
 }
 
+/**
+ * The specifiers of a file that takes every runtime value from one module and every runtime type from another, as a standalone
+ * SDK does from its copy of the runtime (`ImportOptions.specifiers`).
+ */
+export function copiedRuntimeSpecifiers(values: string, types: string): { readonly values: Readonly<Record<RuntimeModule, string>>; readonly types: Readonly<Record<RuntimeModule, string>> } {
+  const modules = Object.keys(RUNTIME_SPECIFIER) as RuntimeModule[];
+  const all = (specifier: string): Record<RuntimeModule, string> => Object.fromEntries(modules.map((module) => [module, specifier])) as Record<RuntimeModule, string>;
+  return { values: all(values), types: all(types) };
+}
+
 export type RuntimeTypeTable = {
   readonly [M in keyof RuntimeTypeExports]: { readonly [N in keyof RuntimeTypeExports[M]]: Code };
 };
