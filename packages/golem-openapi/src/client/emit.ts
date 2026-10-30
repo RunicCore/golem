@@ -280,7 +280,7 @@ function operationSource(
   if (encodes) use('convertRequestBody');
   if (encodesParameters) use('convertRequestParameters');
   if (decodes) use('responseDecoder');
-  const validationFunctions = validatesWithSources ? ['operationValidators', 'responseCheck', 'validateOperationInput'] : [];
+  const validationFunctions = validatesWithSources ? ['callLevels', 'operationValidators', 'responseCheck', 'validateOperationInput'] : [];
   const runtimeFunctions = [...usedFunctions].sort();
   const importedNames: Array<readonly [string, string]> = [
     ['ClientRuntime', 'client runtime import'],
@@ -318,9 +318,19 @@ function operationSource(
   const inputType = code`${typesModule.namespace()}.${identifierPart(`${operation.typeName}OperationInput`)}`;
   const responseType = code`${typesModule.namespace()}.${identifierPart(`${operation.typeName}OperationHttpResponse`)}`;
   const validatorSetup = validatesWithSources
-    ? code`  const validators = ${rt.validation.operationValidators}(runtime, ${literal(operation.name)}, ${codecsName});\n  const checkResponse = ${rt.validation.responseCheck}(validators);`
+    ? code`  const validators = ${rt.validation.operationValidators}(runtime, ${literal(operation.name)}, ${codecsName});`
     : BLANK;
-  const decoderSetup = decodes ? code`  const decodeResponse = ${use('responseDecoder')}(${codecsName});` : BLANK;
+  // A validating SDK resolves the levels of each call, and the response check and decoder follow them.
+  const decoderSetup = decodes && !profile.validation ? code`  const decodeResponse = ${use('responseDecoder')}(${codecsName});` : BLANK;
+  const levelLines = profile.validation
+    ? [
+      code`    const levels = ${rt.validation.callLevels}(runtime, options.validate, ${literal(profile.validation === 'sanity' ? 'sanity' : true)});`,
+      code`    const checkResponse = ${rt.validation.responseCheck}(validators, levels.response);`,
+      ...(decodes ? [code`    const decodeResponse = ${use('responseDecoder')}(${codecsName}, levels);`] : []),
+    ]
+    : [];
+  const requestLevel = profile.validation ? code`, levels.request` : BLANK;
+  const parameterLevels = profile.validation ? code`, levels` : BLANK;
   const codecsSource = new ImportSource(`../codecs/${operation.name}.js`);
   const clientModule = new ImportSource('../client.js', true);
   const serversModule = new ImportSource('../servers.js');
@@ -343,14 +353,15 @@ function operationSource(
     ? code`    await ${use('applySecurity')}(runtime, ${security}, query, headers, cookies, securitySchemes);`
     : BLANK;
   const wireBodyExpression = operation.requestContent.length > 1
-    ? code`input.body && { contentType: input.body.contentType, value: ${use('convertRequestBody')}(${codecsName}, input.body.contentType, input.body.value) }`
-    : code`${use('convertRequestBody')}(${codecsName}, ${bodyContentType}, input.body)`;
+    ? code`input.body && { contentType: input.body.contentType, value: ${use('convertRequestBody')}(${codecsName}, input.body.contentType, input.body.value${requestLevel}) }`
+    : code`${use('convertRequestBody')}(${codecsName}, ${bodyContentType}, input.body${requestLevel})`;
   const usesQuery = queryLines.length > 0 || !isEmpty(queryStringLine) || !isEmpty(securityCall);
   const usesCookies = cookieLines.length > 0 || !isEmpty(securityCall);
   const bodyLines = [
-    encodesParameters ? code`    const wireInput = ${use('convertRequestParameters')}(${codecsName}, input);` : BLANK,
+    ...levelLines,
+    encodesParameters ? code`    const wireInput = ${use('convertRequestParameters')}(${codecsName}, input${parameterLevels});` : BLANK,
     encodes ? code`    const wireBody = ${wireBodyExpression};` : BLANK,
-    profile.validation ? code`    await ${rt.validation.validateOperationInput}(${literal(operation.name)}, ${encodes ? code`{ ...${parameterInput}, body: wireBody }` : parameterInput}, validators);` : BLANK,
+    profile.validation ? code`    await ${rt.validation.validateOperationInput}(${literal(operation.name)}, ${encodes ? code`{ ...${parameterInput}, body: wireBody }` : parameterInput}, validators, levels);` : BLANK,
     usesQuery ? code`    const query: string[] = [];` : BLANK,
     ...queryLines,
     queryStringLine,
@@ -589,11 +600,12 @@ ${join(securityCodes.map((alias) => code`  ...${alias},`), code`\n`)}
     ...(surfaces.mutualTls ? [] : ['mutualTls']),
     'auth',
     'operationValidators',
+    ...(profile.validation ? [] : ['validate']),
   ];
   const optionsType = code`Omit<${runtimeNamespace}.ClientOptions, ${join(omittedOptions.map((name) => literal(name)), code` | `)}>${optionExtensions.length ? code` & {\n${join(optionExtensions, code`\n`)}\n}` : BLANK}`;
   const aliases_ = join([
     code`export type ${exported('ClientOptions')} = ${optionsType};`,
-    code`export type ${exported('RequestOptions')} = ${runtimeNamespace}.RequestOptions;`,
+    code`export type ${exported('RequestOptions')} = ${profile.validation ? code`${runtimeNamespace}.RequestOptions` : code`Omit<${runtimeNamespace}.RequestOptions, 'validate'>`};`,
     ...(undeclared ? [
       code`export type ${exported('UndeclaredResponseError')} = ${runtimeNamespace}.UndeclaredResponseError;`,
       code`export function ${exportedName(`is${clientName}UndeclaredResponseError`)}(error: unknown): error is ${runtimeNamespace}.UndeclaredResponseError {\n  return ${rt.client.isUndeclaredResponseError}(error, ${literal(clientName)});\n}`,
@@ -715,6 +727,7 @@ export function operationValidatorNames(
 ): ReadonlyMap<string, OperationValidatorNames> {
   return new Map([...schemas.bundles].map(([name, bundle]) => [name, {
     input: requireValidatorExport(name, bundle.inputReference, validatorExports),
+    ...(bundle.headersReference === undefined ? {} : { headers: requireValidatorExport(name, bundle.headersReference, validatorExports) }),
     responses: bundle.responseReferences.map((item) => ({ key: `${item.status}:${item.contentType}`, name: requireValidatorExport(name, item.reference, validatorExports) })),
   }] as const));
 }

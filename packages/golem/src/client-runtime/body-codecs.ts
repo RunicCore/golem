@@ -1,5 +1,7 @@
+import type { ValidationLevel } from '../object-codec.js';
 import type { BodyEncoder, ClientRuntime, EncodedBody, EncodingMetadata, OperationCodecs, ResponseDecode } from './core.js';
 import { addQueryParameter } from './parameters.js';
+import type { CallLevels } from './validation.js';
 
 /** Encoding metadata the generated operation declares for one request media type. */
 interface RequestMediaMetadata {
@@ -139,10 +141,13 @@ export function encodeBody(
   throw new Error(`No request body encoder configured for media type: ${contentType}`);
 }
 
-/** The request body in its wire form: the generated encoder of its media type converts it, and a body that converts nothing has none. */
-export function convertRequestBody(codecs: OperationCodecs, contentType: string | undefined, value: unknown): unknown {
+/**
+ * The request body in its wire form: the generated encoder of its media type converts it, and a body that converts nothing has none.
+ * The encoder checks the plain value at `validate`; conversion runs at every level.
+ */
+export function convertRequestBody(codecs: OperationCodecs, contentType: string | undefined, value: unknown, validate?: ValidationLevel): unknown {
   const encode = value === undefined || contentType === undefined || !codecs.encode || !Object.hasOwn(codecs.encode, contentType) ? undefined : codecs.encode[contentType];
-  return encode ? encode(value as never) : value;
+  return encode ? encode(value as never, validate === undefined ? undefined : { validate }) : value;
 }
 
 /** The parameters of a call by location, as the serializers read them. */
@@ -154,32 +159,36 @@ interface RequestParameters {
   readonly querystring?: unknown;
 }
 
-/** The input with each request parameter that holds a Date or Temporal value in its wire form; the rest of the input is the same. */
-export function convertRequestParameters<Input extends object>(codecs: OperationCodecs, input: Input): Input & RequestParameters {
+/** The input with each request parameter that holds a Date or Temporal value in its wire form, each checked at the level of its side; the rest of the input is the same. */
+export function convertRequestParameters<Input extends object>(codecs: OperationCodecs, input: Input, levels?: Pick<CallLevels, 'request' | 'requestHeaders'>): Input & RequestParameters {
   const converted: Record<string, unknown> = Object.fromEntries(Object.entries(input));
   for (const [key, encode] of Object.entries(codecs.parameters ?? {})) {
     const separator = key.indexOf(':');
     const location = key.slice(0, separator);
+    const level = location === 'header' ? levels?.requestHeaders : levels?.request;
+    const options = level === undefined ? undefined : { validate: level };
     if (location === 'querystring') {
-      if (converted.querystring !== undefined) converted.querystring = encode(converted.querystring as never);
+      if (converted.querystring !== undefined) converted.querystring = encode(converted.querystring as never, options);
       continue;
     }
     const group = converted[location];
     if (typeof group !== 'object' || group === null) continue;
     const name = key.slice(separator + 1);
     const plain = (group as Record<string, unknown>)[name];
-    if (plain !== undefined) converted[location] = { ...group, [name]: encode(plain as never) };
+    if (plain !== undefined) converted[location] = { ...group, [name]: encode(plain as never, options) };
   }
   return converted as Input & RequestParameters;
 }
 
 /** The conversion of a checked response body, stream item or response header to its plain form; none when no response of the operation converts. */
-export function responseDecoder(codecs: OperationCodecs): ResponseDecode | undefined {
+export function responseDecoder(codecs: OperationCodecs, levels?: Pick<CallLevels, 'response' | 'responseHeaders'>): ResponseDecode | undefined {
   const { decode, headers } = codecs;
   if (!decode && !headers) return undefined;
+  const bodyOptions = levels === undefined ? undefined : { validate: levels.response };
+  const headerOptions = levels === undefined ? undefined : { validate: levels.responseHeaders };
   return (response, value, header) => {
     const table = header === undefined ? decode : headers;
     const key = `${response.status}:${header ?? response.contentType}`;
-    return table && Object.hasOwn(table, key) ? table[key]!(value as never) : value;
+    return table && Object.hasOwn(table, key) ? table[key]!(value as never, header === undefined ? bodyOptions : headerOptions) : value;
   };
 }

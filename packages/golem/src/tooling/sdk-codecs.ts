@@ -52,6 +52,8 @@ export interface SdkKeyedCode {
 export interface SdkOperationCodecs {
   /** Checks the plain input of a call. */
   readonly input?: Code;
+  /** Checks the plain header parameters of a call, apart from `input`; none when the operation has no header parameter. */
+  readonly requestHeaders?: Code;
   /** Checks the wire form of each response body or stream item, keyed `status:contentType`. */
   readonly responses?: readonly SdkKeyedCode[];
   /** Turns the plain request body of a media type into its wire form, keyed by the request content type. */
@@ -78,6 +80,7 @@ export function writeOperationCodecs(operation: SdkOperationCodecs, module: Oper
     : [];
   const members: Code[] = [
     ...(operation.input ? [code`input: ${operation.input},`] : []),
+    ...(operation.requestHeaders ? [code`requestHeaders: ${operation.requestHeaders},`] : []),
     ...keyed('responses', operation.responses),
     ...keyed('encode', operation.encode),
     ...keyed('decode', operation.decode),

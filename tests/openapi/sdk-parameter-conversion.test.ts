@@ -1,11 +1,9 @@
 import 'temporal-polyfill/global';
 import assert from 'node:assert/strict';
-import path from 'node:path';
-import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
-import { createFixtureProject } from '../fixture-project.js';
-import { compileGeneratedSdk, generateMaterializedSdk, importGeneratedModule, isGeneratedClientClass, requireRecord } from './helpers.js';
+import { importGeneratedModule, requireRecord } from './helpers.js';
+import { loadSdk } from './sdk-client-fixture.js';
 
 // The client converts what it carries (R-80): parameters leave in their wire form and response headers arrive in their plain form.
 
@@ -27,25 +25,20 @@ const DOCUMENT = {
   components: { schemas: { Moment: DATE_TIME } },
 };
 
-type Operation = { execute(input: unknown): Promise<{ status: number; headers: Record<string, unknown> }> };
+type Operation = { execute(input: unknown, options?: unknown): Promise<{ status: number; headers: Record<string, unknown> }> };
 type MomentsClient = Record<string, () => Operation>;
 interface Fetched { readonly url: string; readonly headers: Record<string, string> }
 
 /** Generates the SDK with `dates` and returns a client whose fetch answers `reply` and records the URL and headers of each request, and the folder of the SDK. */
-async function loadClient(t: Parameters<typeof createFixtureProject>[0], dates: 'date' | 'temporal', reply: () => Response, sent: Fetched[]): Promise<{ readonly client: MomentsClient; readonly output: string }> {
-  const output = path.join(createFixtureProject(t, `golem-openapi-parameter-conversion-${dates}-`), 'sdk');
-  await generateMaterializedSdk(DOCUMENT, { output, name: 'Moments', profile: { mobx: false, validation: true, allowAny: false }, dates });
-  compileGeneratedSdk(output, [], { strict: true, lib: ['ES2023', 'DOM', 'DOM.Iterable', 'esnext.temporal'] });
-  const sdk = requireRecord(await import(pathToFileURL(path.join(output, 'dist/index.js')).href), 'generated SDK');
-  assert.ok(isGeneratedClientClass(sdk.MomentsClient), 'generated client');
-  const client = new sdk.MomentsClient({
-    baseUrl: 'https://api.test',
+async function loadClient(t: Parameters<typeof loadSdk>[0], dates: 'date' | 'temporal', reply: () => Response, sent: Fetched[]): Promise<{ readonly client: MomentsClient; readonly output: string }> {
+  const sdk = await loadSdk<MomentsClient>(t, `golem-openapi-parameter-conversion-${dates}-`, { document: DOCUMENT, name: 'Moments', dates, validation: true });
+  const client = sdk.createClient({
     fetchImpl: async (url: RequestInfo | URL, init?: RequestInit) => {
       sent.push({ url: String(url), headers: Object.fromEntries(new Headers(init?.headers)) });
       return reply();
     },
-  }) as unknown as MomentsClient;
-  return { client, output };
+  });
+  return { client, output: sdk.output };
 }
 
 const NO_CONTENT = () => new Response(null, { status: 204 });
@@ -86,11 +79,15 @@ test('a response header with a date arrives as a Date and the other headers are 
   assert.equal(response.headers['X-Count'], 7);
 });
 
-test('a bad response header date is a validation error caused by input', async t => {
-  // protects: R-80 the wire check of a header runs before decode, so a header that is no date is rejected
+test('a bad response header date is a deserialization error, and a validation error when the header check is on', async t => {
+  // protects: R-80, R-86 header checks are off by default; conversion rejects a header that is no date, the check runs first when switched on
   const { client } = await loadClient(t, 'date', () => new Response(null, { status: 204, headers: { 'Last-Modified': 'yesterday' } }), []);
   await assert.rejects(
     client.readWithHeader!().execute({}),
+    (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.Deserialization && error.causedByInput === true,
+  );
+  await assert.rejects(
+    client.readWithHeader!().execute({}, { validate: { responseHeaders: true } }),
     (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.Validation && error.causedByInput === true,
   );
 });

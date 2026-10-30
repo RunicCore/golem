@@ -413,6 +413,8 @@ export function generateModels(
 /** The validators of an operation in the SDK's validators module: the export names of its input check and of each response check, under the key `status:contentType`. */
 export interface OperationValidatorNames {
   readonly input: string;
+  /** The export name of the check of the header parameters, when the operation has any. */
+  readonly headers?: string;
   readonly responses: readonly { readonly key: string; readonly name: string }[];
 }
 
@@ -445,7 +447,7 @@ export function generateOperationCodecs(
     const headers = keyed(operation.responses.flatMap((response) => Object.keys(response.headers).map((name) => [`${response.status}:${name}`, codecOf(responseHeaderKey(operation.name, response.status, name), 'fromWire')] as const)));
     if (!profile.validation && !encode.length && !decode.length && !parameters.length && !headers.length) continue;
     const codecs: SdkOperationCodecs = {
-      ...(checks ? { input: validatorsSource.name(checks.input), responses: checks.responses.map((item) => ({ key: item.key, code: validatorsSource.name(item.name) })) } : {}),
+      ...(checks ? { input: validatorsSource.name(checks.input), ...(checks.headers === undefined ? {} : { requestHeaders: validatorsSource.name(checks.headers) }), responses: checks.responses.map((item) => ({ key: item.key, code: validatorsSource.name(item.name) })) } : {}),
       ...(encode.length ? { encode } : {}),
       ...(decode.length ? { decode } : {}),
       ...(parameters.length ? { parameters } : {}),

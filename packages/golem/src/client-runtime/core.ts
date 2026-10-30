@@ -1,4 +1,5 @@
 import { LibError, LibErrorKind } from '../errors.js';
+import type { ValidationLevel } from '../object-codec.js';
 import type { OperationRuntimeValidators } from '../schema-registry-validation.js';
 import type { Validator } from '../validation-runtime.js';
 
@@ -101,10 +102,28 @@ export interface ClientOptions {
   streamDecoders?: Record<string, StreamDecoder>;
   /** Overrides generated validators for individual operations. */
   operationValidators?: ReadonlyMap<string, OperationRuntimeValidators>;
+  /** The default validation level of this client's calls; see `ValidateOption`. An SDK generated without validation has no such option. */
+  validate?: ValidateOption;
 }
+
+/**
+ * The validation level of a call: `true` checks everything, `'sanity'` checks the shape only, `false` checks nothing; conversion
+ * runs at every level. A level alone sets `request` and `response`, the bodies and the path, query and cookie values; `requestHeaders`
+ * and `responseHeaders` switch the header checks, each apart, and are off unless the option names them. An object sets the sides it names.
+ * A side it leaves out takes the level of the next source: the call, then the client, then the SDK's own level (off for the headers).
+ * A call can lower the level, never raise it above the SDK's: that throws `LibErrorKind.ValidationUnavailable`.
+ */
+export type ValidateOption = ValidationLevel | {
+  readonly request?: ValidationLevel;
+  readonly response?: ValidationLevel;
+  readonly requestHeaders?: ValidationLevel;
+  readonly responseHeaders?: ValidationLevel;
+};
 
 export interface RequestOptions {
   signal?: AbortSignal;
+  /** The validation level of this call; it wins over the client's `validate`. */
+  validate?: ValidateOption;
 }
 
 type ResponseFraming = 'ndjson' | 'json-seq' | 'sse' | 'custom-stream' | 'binary' | 'body';
@@ -141,7 +160,7 @@ interface RuntimeSecurityScheme {
 export type RuntimeSecuritySchemes = Readonly<Record<string, RuntimeSecurityScheme>>;
 
 /** Turns one body between its plain and its wire form; a generated codec takes the type of its model, which the client has checked. */
-type BodyConversion = (value: never) => unknown;
+type BodyConversion = (value: never, options?: { readonly validate: ValidationLevel }) => unknown;
 
 /**
  * What the generated codec module of an operation holds: its validators, and the conversion of each body, parameter and response header
@@ -150,6 +169,7 @@ type BodyConversion = (value: never) => unknown;
  */
 export interface OperationCodecs {
   readonly input?: Validator;
+  readonly requestHeaders?: Validator;
   readonly responses?: Readonly<Record<string, Validator>>;
   readonly encode?: Readonly<Record<string, BodyConversion>>;
   readonly decode?: Readonly<Record<string, BodyConversion>>;

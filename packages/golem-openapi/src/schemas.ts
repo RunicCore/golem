@@ -16,10 +16,23 @@ import {
   type ResourceIndex,
 } from './schema-projection.js';
 
+/** The schema of the header parameters of an operation, checked apart from the rest of the input: none when it has no header parameter. */
+function operationHeadersSchema(operation: NormalizedOperation): unknown {
+  const parameters = operation.parameters.filter((parameter) => parameter.in === 'header');
+  return parameters.length
+    ? {
+      type: 'object',
+      properties: Object.fromEntries(parameters.map((parameter) => [parameter.name, parameterSchema(parameter) ?? true])),
+      required: parameters.filter((parameter) => parameter.required).map((parameter) => parameter.name),
+      additionalProperties: false,
+    }
+    : undefined;
+}
+
 function operationInputSchema(operation: NormalizedOperation): unknown {
   const properties: Record<string, unknown> = {};
   const required: string[] = [];
-  for (const location of ['path', 'query', 'header', 'cookie'] as const) {
+  for (const location of ['path', 'query', 'cookie'] as const) {
     const parameters = operation.parameters.filter((parameter) => parameter.in === location);
     if (!parameters.length) continue;
     const groupRequired = location === 'path' || parameters.some((parameter) => parameter.required);
@@ -66,9 +79,11 @@ function operationInputSchema(operation: NormalizedOperation): unknown {
 }
 
 /** The schemas of an operation's validation root before projection, at the places its pointers name: `input` and `responses/<status>/<media type>`. */
-export function operationSourceSchemas(operation: NormalizedOperation): { readonly input: unknown; readonly responses: Readonly<Record<string, Readonly<Record<string, unknown>>>> } {
+export function operationSourceSchemas(operation: NormalizedOperation): { readonly input: unknown; readonly headers?: unknown; readonly responses: Readonly<Record<string, Readonly<Record<string, unknown>>>> } {
+  const headers = operationHeadersSchema(operation);
   return {
     input: operationInputSchema(operation),
+    ...(headers === undefined ? {} : { headers }),
     responses: Object.fromEntries(operation.responses.map((response) => [
       response.status,
       Object.fromEntries(response.content.map((media) => [
@@ -92,6 +107,7 @@ function operationRuntimeSchemas(
       operation.name,
       {
         input: projectOperationSchema(source.input, document, 'input', inputResourceId, resources),
+        ...(source.headers === undefined ? {} : { headers: projectOperationSchema(source.headers, document, 'input', inputResourceId, resources) }),
         responses: Object.fromEntries(Object.entries(source.responses).map(([status, content]) => [
           status,
           Object.fromEntries(Object.entries(content).map(([mediaType, schema]) => [
@@ -161,6 +177,7 @@ function runtimeRegistry(registry: Record<string, unknown>): Record<string, unkn
           name,
           {
             input: normalizeRuntimeSchema(record.input),
+            ...(record.headers === undefined ? {} : { headers: normalizeRuntimeSchema(record.headers) }),
             responses: Object.fromEntries(
               objectEntries(responses).map(([status, content]) => [
                 status,
@@ -248,6 +265,8 @@ export function buildSchemaData(document: unknown, preparedIr?: NormalizedDocume
 
 interface OpenApiOperationValidationSchemaBundle {
   readonly inputReference: string;
+  /** The root of the header parameters, checked apart from `inputReference`; none when the operation has no header parameter. */
+  readonly headersReference?: string;
   readonly responseReferences: readonly {
     readonly status: string;
     readonly contentType: string;
@@ -636,6 +655,7 @@ function operationBundleFromIndex(
   const operationRegistryEntry = asRecord(asRecord(data.normalizedRegistry.operations)[operation.name]);
   const operationSchemas = Object.create(null) as Record<string, unknown>;
   operationSchemas.input = rewriteOperationSchemaRefs(index, operationRegistryEntry.input, 'input');
+  if (operationRegistryEntry.headers !== undefined) operationSchemas.headers = rewriteOperationSchemaRefs(index, operationRegistryEntry.headers, 'input');
   const responseSchemas = Object.create(null) as Record<string, unknown>;
   const rawResponses = asRecord(operationRegistryEntry.responses);
   for (const [status, rawContent] of objectEntries(rawResponses)) {
@@ -687,6 +707,7 @@ function operationBundleFromIndex(
     pending.push({ ref, direction });
   };
   visitRefs(operationSchemas.input, 'input', collectReference);
+  if (operationSchemas.headers !== undefined) visitRefs(operationSchemas.headers, 'input', collectReference);
   for (const content of Object.values(responseSchemas)) {
     for (const schema of Object.values(asRecord(content))) visitRefs(schema, 'output', collectReference);
   }
@@ -716,6 +737,8 @@ function operationBundleFromIndex(
   const inputReference = `${operation.name}:input`;
   const roots = Object.create(null) as Record<string, object>;
   roots[inputReference] = { $ref: `${pointerBase}/input` };
+  const headersReference = operationSchemas.headers === undefined ? undefined : `${operation.name}:headers`;
+  if (headersReference !== undefined) roots[headersReference] = { $ref: `${pointerBase}/headers` };
   const responseReferences = operation.responses.flatMap((response) => response.content.map((media) => {
     const reference = `${operation.name}:response:${response.status}:${media.contentType}`;
     roots[reference] = { $ref: `${pointerBase}/responses/${escapePointerToken(response.status)}/${escapePointerToken(media.contentType)}` };
@@ -723,6 +746,7 @@ function operationBundleFromIndex(
   }));
   return {
     inputReference,
+    ...(headersReference === undefined ? {} : { headersReference }),
     responseReferences,
     schemas,
     roots,

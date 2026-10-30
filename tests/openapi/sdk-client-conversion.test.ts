@@ -1,11 +1,9 @@
 import 'temporal-polyfill/global';
 import assert from 'node:assert/strict';
-import path from 'node:path';
-import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
-import { createFixtureProject } from '../fixture-project.js';
-import { compileGeneratedSdk, generateMaterializedSdk, importGeneratedModule, isGeneratedClientClass, requireRecord } from './helpers.js';
+import { importGeneratedModule, requireRecord } from './helpers.js';
+import { loadSdk } from './sdk-client-fixture.js';
 
 // The client converts what it carries (R-80): bodies and stream items arrive and leave in their plain form.
 
@@ -43,20 +41,15 @@ type EventsClient = Record<string, () => Operation>;
 interface Fetched { readonly body: unknown }
 
 /** Generates the SDK with `dates` and returns a client whose fetch answers `reply` and records the body each request sends, and the folder of the SDK. */
-async function loadClient(t: Parameters<typeof createFixtureProject>[0], dates: 'date' | 'temporal', reply: () => Response, sent: Fetched[], validation = true): Promise<{ readonly client: EventsClient; readonly output: string }> {
-  const output = path.join(createFixtureProject(t, `golem-openapi-client-conversion-${dates}-`), 'sdk');
-  await generateMaterializedSdk(DOCUMENT, { output, name: 'Events', profile: { mobx: false, validation, allowAny: false }, dates });
-  compileGeneratedSdk(output, [], { strict: true, lib: ['ES2023', 'DOM', 'DOM.Iterable', 'esnext.temporal'] });
-  const sdk = requireRecord(await import(pathToFileURL(path.join(output, 'dist/index.js')).href), 'generated SDK');
-  assert.ok(isGeneratedClientClass(sdk.EventsClient), 'generated client');
-  const client = new sdk.EventsClient({
-    baseUrl: 'https://api.test',
+async function loadClient(t: Parameters<typeof loadSdk>[0], dates: 'date' | 'temporal', reply: () => Response, sent: Fetched[], validation = true): Promise<{ readonly client: EventsClient; readonly output: string }> {
+  const sdk = await loadSdk<EventsClient>(t, `golem-openapi-client-conversion-${dates}-`, { document: DOCUMENT, name: 'Events', dates, validation });
+  const client = sdk.createClient({
     fetchImpl: async (_url: RequestInfo | URL, init?: RequestInit) => {
       sent.push({ body: typeof init?.body === 'string' && new Headers(init.headers).get('content-type') === 'application/json' ? JSON.parse(init.body) : init?.body });
       return reply();
     },
-  }) as unknown as EventsClient;
-  return { client, output };
+  });
+  return { client, output: sdk.output };
 }
 
 const WIRE_EVENT = { at: '2025-01-02T03:04:05Z', day: '2025-01-02' };
