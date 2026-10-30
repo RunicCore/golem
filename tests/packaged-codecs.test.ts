@@ -193,7 +193,7 @@ test('two codecs from one package share one specifier', t => {
   fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({ name: 'A', imports: tsSource`import type { PkgCount } from '@fixture/pg/tags';`, fields: tsSource`one: PkgCount; two: PkgCount[]` }).text);
   const generated = generate({ root, profile: { mobx: false, validation: true } }).artifacts.find(a => a.path.endsWith(MODEL_FILE))?.content ?? '';
   assert.equal([...generated.matchAll(/import \{ encodeCount as /g)].length, 1);
-  assert.equal([...generated.matchAll(/from "@fixture\/pg\/codecs"/g)].length, 2); // one encode, one decode import
+  assert.equal([...generated.matchAll(/from "@fixture\/pg\/codecs"/g)].length, 1); // the encode and the decode share one import
 });
 
 test('RUNM1060 when no export reaches the codec', t => {
@@ -312,6 +312,6 @@ test('one package installed at two paths collapses to one binding', t => {
   writeCodecPackage(path.join(root, 'node_modules/dep/node_modules/@fixture/pg'), { name: '@fixture/pg', exports: EXPORTS, files: COUNT_DIST_FILES });
   fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({ name: 'A', imports: tsSource`import type { PkgCount } from '@fixture/pg/tags';\nimport type { DepCount } from 'dep';`, fields: tsSource`one: PkgCount; two: DepCount` }).text);
   const generated = generate({ root, profile: { mobx: false, validation: true } }).artifacts.find(a => a.path.endsWith(MODEL_FILE))?.content ?? '';
-  assert.equal([...generated.matchAll(/import \{ encodeCount as /g)].length, 1);
-  assert.equal([...generated.matchAll(/import \{ decodeCount as /g)].length, 1);
+  assert.equal([...generated.matchAll(/\bencodeCount as /g)].length, 1);
+  assert.equal([...generated.matchAll(/\bdecodeCount as /g)].length, 1);
 });

@@ -62,7 +62,7 @@ import {
   unionDispatch,
   type ObjectTypeDescriptor,
 } from './union-conversion.js';
-import { isRecordExpression } from './stringify-emitter.js';
+import { isRecordExpression, wireTypeGuard } from './stringify-emitter.js';
 
 /** Generators read tag values through the same rule as the shared union conversion. */
 export { AmbiguousUnionConversionError, descriptorNeedsConversion, ObjectUnionDiscriminatorError } from './union-conversion.js';
@@ -323,7 +323,9 @@ function emitNestedUncached(
   const value = expression;
   const tags = metadata(descriptor);
   if (tags.serde && resolveSerde) {
-    return direction === 'fromJSON' ? resolveSerde.deserialize(tags.serde, value) : value;
+    if (direction !== 'fromJSON') return value;
+    const deserialized = resolveSerde.deserialize(tags.serde, value);
+    return wireTypeGuard(descriptor, value, deserialized) ?? deserialized;
   }
   if (descriptor.kind === 'intersection') {
     const bases: ModelBases = { basesOf: (id) => resolveModel(id).bases ?? [] };

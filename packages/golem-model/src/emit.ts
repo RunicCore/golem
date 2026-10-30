@@ -1133,17 +1133,23 @@ function buildFileImports(
     sources.push(source);
   }
   const serde = new Map<string, { readonly serialize: Code; readonly deserialize: Code }>();
+  // The functions of one module are one import statement.
+  const bindingSources = new Map<string, ImportSource>();
+  const bindingSource = (binding: SerdeFunctions['serialize']): ImportSource => {
+    const specifier = bindingImportPath(binding, output);
+    let source = bindingSources.get(specifier);
+    if (source === undefined) bindingSources.set(specifier, source = new ImportSource(specifier));
+    return source;
+  };
   for (const binding of serdeBindings) {
     const names = serdeNames.get(binding.id);
     if (!names) throw new Error(`Generated serde names are missing: ${binding.id}`);
-    const serialize = new ImportSource(bindingImportPath(binding.serialize, output));
-    const deserialize = new ImportSource(bindingImportPath(binding.deserialize, output));
     serde.set(binding.id, {
-      serialize: serialize.name(binding.serialize.exportName, { alias: `${names.serialize}Source` }),
-      deserialize: deserialize.name(binding.deserialize.exportName, { alias: `${names.deserialize}Source` }),
+      serialize: bindingSource(binding.serialize).name(binding.serialize.exportName, { alias: `${names.serialize}Source` }),
+      deserialize: bindingSource(binding.deserialize).name(binding.deserialize.exportName, { alias: `${names.deserialize}Source` }),
     });
-    sources.push(serialize, deserialize);
   }
+  sources.push(...bindingSources.values());
   return {
     // A sibling companion registers the codecs this module references by id.
     siblingCompanions: [...new Set(graph.siblings.map((item) => sourceImportPath(companionOfSpecification(item), output)))]

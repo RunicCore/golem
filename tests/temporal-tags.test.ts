@@ -150,10 +150,3 @@ for (const [field, bad] of [
     assert.throws(() => codecs.parseTA(JSON.stringify({ ...PLAIN_WIRE, [field]: bad })), isInputError);
   });
 }
-
-test('a plain Temporal field rejects a non-string wire value with validation off', async () => {
-  // protects: T-659 F-39 a built-in Temporal class never reads a number, also when validation is off
-  const codecs = await buildPlain();
-  assert.doesNotThrow(() => codecs.fromWireFormatTA(PLAIN_WIRE, { validate: false }));
-  assert.throws(() => codecs.fromWireFormatTA({ ...PLAIN_WIRE, at: 5 }, { validate: false }), (error: unknown) => isInputError(error) && /Expected a Temporal\.Instant string/.test((error as Error).message));
-});

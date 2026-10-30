@@ -501,7 +501,7 @@ test('one package installed at two paths and used by models of one job is one bi
   const result = generate({ root, profile: { mobx: false, validation: true } });
   for (const name of ['a.model.generated.ts', 'two/b.model.generated.ts']) {
     const generated = result.artifacts.find(artifact => artifact.path.endsWith(name))?.content ?? '';
-    assert.equal([...generated.matchAll(/^import \{ encodeCount as __golemSerialize0Source \} from "@fixture\/pg\/codecs";$/gm)].length, 1, `${name} binds the package import, not a copy`);
+    assert.equal([...generated.matchAll(/^import \{ encodeCount as __golemSerialize0Source, decodeCount as __golemDeserialize0Source \} from "@fixture\/pg\/codecs";$/gm)].length, 1, `${name} binds the package import, not a copy`);
   }
 });
 
@@ -903,5 +903,5 @@ export type TA = IModel<{ big: bigint & TSerde<typeof $e, typeof $d> }>;
 `,
   });
   const source = generate({ root, profile: { mobx: false, validation: false } }).artifacts.find(artifact => artifact.path.endsWith('a.model.generated.ts'))?.content ?? '';
-  assert.match(source, /import \{ \$e as __golemSerialize0Source \} from "\.\/codecs\.js";\nimport \{ \$d as __golemDeserialize0Source \} from "\.\/codecs\.js";/);
+  assert.match(source, /import \{ \$e as __golemSerialize0Source, \$d as __golemDeserialize0Source \} from "\.\/codecs\.js";/);
 });

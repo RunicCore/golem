@@ -14,7 +14,7 @@ import {
   type Code, type Helper, type InputSlot, type JsonValue, type ReadShape,
 } from './code.js';
 import { nodeQueryFields } from './query-fields.js';
-import { isRuntimeFunction, rt, rtType, runtimeFunctionCode } from './rt.js';
+import { rt, rtType, runtimeFunctionCode } from './rt.js';
 import { calleeOf, emitArrayConversion, emitTupleConversion, JSON_SCALAR } from './sequence-conversion.js';
 import {
   descriptorNeedsConversion,
@@ -1384,16 +1384,24 @@ function emitUnionEncode(
   });
 }
 
+/**
+ * The decode of a serde value whose wire is a string, a number or a boolean: the deserializer runs only on a value of that JSON type, and any
+ * other value is bad input at every level of validation. A wire of another kind has no guard.
+ */
+export function wireTypeGuard(descriptor: ModelTypeDescriptor, value: Code, deserialized: Code): Code | undefined {
+  const wire = serdeWireDescriptor(descriptor);
+  if (wire?.kind !== 'string' && wire?.kind !== 'number' && wire?.kind !== 'boolean') return undefined;
+  return code`(typeof ${value} === ${literal(wire.kind)} ? ${deserialized} : ${rt.conversion.rejectWrongWire}(${literal(wire.kind)}))`;
+}
+
 function emitDecodeValue(descriptor: ModelTypeDescriptor, expression: Code, ctx: EmitCtx): Code {
   const value = expression;
   const tags = serdeTags(descriptor);
   if (tags.serde) {
     const deserialized = ctx.serde ? fallibleConversion(ctx, ctx.serde.deserialize(tags.serde, value)) : value;
     const wire = serdeWireDescriptor(descriptor);
-    // A function of the golem runtime reads `unknown` and rejects what it cannot read; any other binding gets only a wire of its JSON type.
-    if ((wire?.kind === 'string' || wire?.kind === 'number' || wire?.kind === 'boolean') && !isRuntimeFunction(tags.serde.deserialize)) {
-      return fallibleConversion(ctx, code`(typeof ${value} === ${literal(wire.kind)} ? ${deserialized} : ${rt.conversion.rejectWrongWire}(${literal(wire.kind)}))`);
-    }
+    const guarded = wireTypeGuard(descriptor, value, deserialized);
+    if (guarded) return fallibleConversion(ctx, guarded);
     if (wire && (wire.kind === 'object' || wire.kind === 'reference' || wire.kind === 'generated-model')) {
       return code`(${objectValueExpression(value)} ? ${deserialized} : ${value})`;
     }

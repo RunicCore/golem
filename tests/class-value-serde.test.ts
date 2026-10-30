@@ -13,6 +13,7 @@ import { TSC } from './support/build-project.js';
 import { modelCodec } from './support/model-codec.js';
 import { validateInstance } from '@exprtlabs/golem/validation';
 import { LibError } from '@exprtlabs/golem/errors';
+import { decodeGeneratedModelTrusted } from '@exprtlabs/golem/internal/model-runtime';
 
 function fixture(t: FixtureScope) {
   return createModelProject(t, { prefix: 'golem-class-value-', name: 'class-value', linkWorkspaceNodeModules: true });
@@ -190,6 +191,8 @@ for (const [field, wrong, message] of [
     const { A } = await classFields();
     assert.doesNotThrow(() => modelCodec(A).fromWireFormat(CLASS_WIRE, { validate: false }));
     assert.throws(() => modelCodec(A).fromWireFormat({ ...CLASS_WIRE, [field]: wrong }, { validate: false }), isInputError(message));
+    // The decoder a nested model field calls reads the same rule.
+    assert.throws(() => decodeGeneratedModelTrusted(A, { ...CLASS_WIRE, [field]: wrong }), isInputError(message));
   });
 }
 
