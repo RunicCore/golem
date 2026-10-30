@@ -181,22 +181,20 @@ export function convertRequestParameters<Input extends object>(codecs: Operation
   return converted as Input & RequestParameters;
 }
 
-/** Decodes a body or stream item the client has already checked at the response level: the codec converts only. */
+/** Decodes a value the response check has already seen: the codec converts only. */
 const CHECKED: { readonly validate: false } = { validate: false };
 
 /**
  * The conversion of a checked response body, stream item or response header to its plain form; none when no response of the operation converts.
- * The client check of a body or stream item ran before the decoder, so its codec converts only (a date that cannot convert still fails).
- * No other check sees a response header, so its codec checks at `headerLevel`.
+ * The response check ran before the decoder, so its codec converts only (a date that cannot convert still fails).
  */
-export function responseDecoder(codecs: OperationCodecs, headerLevel?: ValidationLevel): ResponseDecode | undefined {
+export function responseDecoder(codecs: OperationCodecs): ResponseDecode | undefined {
   const { decode, headers } = codecs;
   if (!decode && !headers) return undefined;
-  const headerOptions = headerLevel === undefined ? undefined : { validate: headerLevel };
   return (response, value, header) => {
     const table = header === undefined ? decode : headers;
     const key = `${response.status}:${header ?? response.contentType}`;
-    return table && Object.hasOwn(table, key) ? table[key]!(value as never, header === undefined ? CHECKED : headerOptions) : value;
+    return table && Object.hasOwn(table, key) ? table[key]!(value as never, CHECKED) : value;
   };
 }
 
@@ -220,10 +218,8 @@ export interface InboundResponse {
 export interface InboundChecks {
   /** Checks the wire request at the request levels; rejects with `LibErrorKind.Validation`. */
   readonly request: (request: InboundRequest) => Promise<void>;
-  /** Checks the wire body of the response; none when the response level is off. */
+  /** Checks the wire body of the response, and each wire response header; none when the response and response header levels are off. */
   readonly response?: ResponseCheck;
-  /** The level at which the converted response headers are checked. */
-  readonly responseHeaders?: ValidationLevel;
 }
 
 /** What the SDK knows about an inbound operation besides its codecs. */
@@ -269,7 +265,7 @@ export function inboundHandler<Input, Output extends InboundResponse>(
   call: (input: Input) => Promise<Output>,
   checks?: InboundChecks,
 ): (request: InboundRequest) => Promise<InboundResponse> {
-  const convert = responseDecoder(codecs, checks?.responseHeaders);
+  const convert = responseDecoder(codecs);
   return async (request) => {
     await checks?.request(request);
     const plain = convertInboundRequest(codecs, shape.media, request);
@@ -279,7 +275,12 @@ export function inboundHandler<Input, Output extends InboundResponse>(
       const declared = { status: key ?? String(response.status), contentType: response.contentType };
       const wireBody = convert && response.contentType !== null ? convert(declared, response.body) : response.body;
       if (checks?.response) await checks.response(declared, wireBody);
-      const headers = convert ? Object.fromEntries(Object.entries(response.headers).map(([name, value]) => [name, value === undefined ? value : convert(declared, value, name)])) : response.headers;
+      const headers: Record<string, unknown> = {};
+      for (const [name, value] of Object.entries(response.headers)) {
+        const wire = value === undefined || !convert ? value : convert(declared, value, name);
+        if (checks?.response && wire !== undefined) await checks.response(declared, wire, name);
+        headers[name] = wire;
+      }
       return { status: response.status, contentType: response.contentType, headers, body: wireBody };
     } catch (error) {
       throw applicationFault(error);

@@ -171,6 +171,7 @@ export interface OperationCodecs {
   readonly input?: Validator;
   readonly requestHeaders?: Validator;
   readonly responses?: Readonly<Record<string, Validator>>;
+  readonly responseHeaders?: Readonly<Record<string, Validator>>;
   readonly encode?: Readonly<Record<string, BodyConversion>>;
   readonly decode?: Readonly<Record<string, BodyConversion>>;
   readonly parameters?: Readonly<Record<string, BodyConversion>>;
@@ -183,8 +184,8 @@ interface CheckedResponse {
   readonly contentType: string | null;
 }
 
-/** Checks a decoded response body or stream item. Only SDKs generated with validation pass one, so the runtime core imports no validation code. */
-export type ResponseCheck = (response: CheckedResponse, value: unknown) => Promise<void>;
+/** Checks a decoded response body or stream item, or the decoded value of the response header `header`. Only SDKs generated with validation pass one, so the runtime core imports no validation code. */
+export type ResponseCheck = (response: CheckedResponse, value: unknown, header?: string) => Promise<void>;
 
 /** Converts a checked response body or stream item to its plain form, or the decoded value of the response header `header`; it runs after the check. */
 export type ResponseDecode = (response: CheckedResponse, value: unknown, header?: string) => unknown;
@@ -527,39 +528,42 @@ export class ClientRuntime {
     return this.decodeHeaderScalar(value, metadata.kind);
   }
 
-  private responseHeaders(
+  private async responseHeaders(
     operation: string,
     response: Response,
     headers: readonly RuntimeResponseHeaderContract[],
     checked: CheckedResponse,
+    check: ResponseCheck | undefined,
     decode: ResponseDecode | undefined,
-  ): Record<string, unknown> {
+  ): Promise<Record<string, unknown>> {
     const entries: Array<[string, unknown]> = [];
     for (const metadata of headers) {
       const value = response.headers.get(metadata.name);
       if (value !== null) {
         const decoded = this.decodeResponseHeader(operation, value, metadata);
+        if (check) await check(checked, decoded, metadata.name);
         entries.push([metadata.name, decode ? decode(checked, decoded, metadata.name) : decoded]);
       }
     }
     return Object.fromEntries(entries);
   }
 
-  private httpResponse(
+  private async httpResponse(
     operation: string,
     response: Response,
     declaredStatus: string,
     contentType: string | null,
     body: unknown,
     contracts: readonly RuntimeResponseContract[],
+    check: ResponseCheck | undefined,
     decode: ResponseDecode | undefined,
-  ): {
+  ): Promise<{
     matched: 'status' | 'range' | 'default';
     status: number;
     contentType: string | null;
     body: unknown;
     headers: Record<string, unknown>;
-  } {
+  }> {
     const contract = contracts.find((item) => item.status === declaredStatus);
     if (!contract) throw new Error(`Missing generated response contract for ${operation} ${declaredStatus}`);
     return {
@@ -567,7 +571,7 @@ export class ClientRuntime {
       status: response.status,
       contentType,
       body,
-      headers: this.responseHeaders(operation, response, contract.headers, { status: declaredStatus, contentType }, decode),
+      headers: await this.responseHeaders(operation, response, contract.headers, { status: declaredStatus, contentType }, check, decode),
     };
   }
 
@@ -586,14 +590,14 @@ export class ClientRuntime {
         const customStream = lookupCodec(this.streamDecoders, [rawContentType, selected.contentType || '']);
         if (customStream) {
           const framed = customStream(response, { operation, contentType: selected.actualContentType });
-          return this.httpResponse(operation, response, selected.status, selected.contentType, check || decode ? convertStreamItems(selected, framed, check, decode) : framed, contracts, decode) as TResponse;
+          return await this.httpResponse(operation, response, selected.status, selected.contentType, check || decode ? convertStreamItems(selected, framed, check, decode) : framed, contracts, check, decode) as TResponse;
         }
         const framed = selected.framing === 'ndjson' ? this.readNdjson(response.body)
           : selected.framing === 'json-seq' ? this.readJsonSeq(response.body)
           : selected.framing === 'sse' ? this.readServerSentEvents(response.body)
           : (() => { throw new Error('No stream decoder configured for media type: ' + (selected.contentType || '')); })();
         const body = check || decode ? convertStreamItems(selected, framed, check, decode) : framed;
-        return this.httpResponse(operation, response, selected.status, selected.contentType, body, contracts, decode) as TResponse;
+        return await this.httpResponse(operation, response, selected.status, selected.contentType, body, contracts, check, decode) as TResponse;
       }
       const mediaType = selected.actualContentType;
       const customDecoder = lookupCodec(this.responseDecoders, [rawContentType, selected.contentType || '']);
@@ -620,7 +624,7 @@ export class ClientRuntime {
       }
       if (check) await check(selected, body);
       if (decode && selected.contentType !== null) body = decode(selected, body);
-      return this.httpResponse(operation, response, selected.status, selected.contentType, body, contracts, decode) as TResponse;
+      return await this.httpResponse(operation, response, selected.status, selected.contentType, body, contracts, check, decode) as TResponse;
     }
     catch (error) {
       if (response.body && !response.body.locked) {

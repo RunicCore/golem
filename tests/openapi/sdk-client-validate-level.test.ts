@@ -21,7 +21,7 @@ const DOCUMENT = {
     operationId: 'createCharge',
     parameters: HEADER_PARAMETERS,
     requestBody: { required: true, content: JSON_CHARGE },
-    responses: { 200: { description: 'Created', content: JSON_CHARGE, headers: { 'X-Seen': { schema: { type: 'string', format: 'date-time' } } } } },
+    responses: { 200: { description: 'Created', content: JSON_CHARGE, headers: { 'X-Seen': { schema: { type: 'string', format: 'date-time' } }, 'X-Quota': { schema: { type: 'integer', maximum: 100 } } } } },
   } } },
 };
 
@@ -156,6 +156,33 @@ for (const [name, validate, expected] of [
     assert.deepEqual(await headerOutcomes(validate as Validate | undefined), expected);
   });
 }
+
+for (const [name, validate, expected] of [
+  ['by default', undefined, 'accepted'],
+  ['with request headers on', { requestHeaders: true }, 'accepted'],
+  ['with response headers on', { responseHeaders: true }, LibErrorKind.Validation],
+  ['with response headers at sanity', { responseHeaders: 'sanity' }, 'accepted'],
+] as const) {
+  test(`a response header that converts nothing and breaks its schema is checked only when responseHeaders is on: ${name}`, async () => {
+    // protects: R-87 every declared response header has a validator, switched by responseHeaders alone
+    const client = (await sdks.full()).createClient({
+      ...(validate === undefined ? {} : { validate }),
+      fetchImpl: async () => Response.json({ amount: 1, when: WHEN }, { headers: { 'X-Quota': '500' } }),
+    });
+    assert.equal(await outcome(() => client.createCharge().execute({ body: { amount: 1, when: new Date(WHEN) } })), expected);
+  });
+}
+
+test('a response header that breaks its schema is an error caused by input, and passes unchanged when unchecked', async () => {
+  // protects: R-87 a bad response header is a Validation error caused by the server's input; unchecked it arrives as sent
+  const client = (await sdks.full()).createClient({ fetchImpl: async () => Response.json({ amount: 1, when: WHEN }, { headers: { 'X-Quota': '500' } }) });
+  const input = { body: { amount: 1, when: new Date(WHEN) } };
+  assert.equal((await client.createCharge().execute(input)).headers['X-Quota'], 500);
+  await assert.rejects(
+    client.createCharge().execute(input, { validate: { responseHeaders: true } }),
+    (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.Validation && error.causedByInput === true,
+  );
+});
 
 test('a header that breaks its schema passes by default and its dates convert', async () => {
   // protects: R-86 dates in headers convert when header checks are off

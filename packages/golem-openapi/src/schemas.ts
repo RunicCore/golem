@@ -6,6 +6,7 @@ import { decodeUriFragment, escapePointerToken, unescapePointerToken } from '@ex
 import {
   normalizeDocument,
   parameterSchema,
+  resolveLocal,
   type NormalizedDocument,
   type NormalizedOperation,
 } from './normalize.js';
@@ -78,12 +79,27 @@ function operationInputSchema(operation: NormalizedOperation): unknown {
   };
 }
 
-/** The schemas of an operation's validation root before projection, at the places its pointers name: `input` and `responses/<status>/<media type>`. */
-export function operationSourceSchemas(operation: NormalizedOperation): { readonly input: unknown; readonly headers?: unknown; readonly responses: Readonly<Record<string, Readonly<Record<string, unknown>>>> } {
+/** The schema of each declared response header that has one, by response status and header name; a status with none is left out. */
+function responseHeaderSchemas(operation: NormalizedOperation, document: unknown): Record<string, Record<string, unknown>> {
+  const byStatus = operation.responses.map((response) => [response.status, Object.fromEntries(objectEntries(response.headers).flatMap(([name, header]) => {
+    const schema = parameterSchema(resolveLocal(document, header));
+    return schema === null ? [] : [[name, schema] as const];
+  }))] as const);
+  return Object.fromEntries(byStatus.filter(([, headers]) => Object.keys(headers).length > 0));
+}
+
+/** The schemas of an operation's validation root before projection, at the places its pointers name: `input`, `headers`, `responses/<status>/<media type>` and `responseHeaders/<status>/<header name>`. */
+export function operationSourceSchemas(operation: NormalizedOperation, document: unknown): {
+  readonly input: unknown;
+  readonly headers?: unknown;
+  readonly responses: Readonly<Record<string, Readonly<Record<string, unknown>>>>;
+  readonly responseHeaders: Readonly<Record<string, Readonly<Record<string, unknown>>>>;
+} {
   const headers = operationHeadersSchema(operation);
   return {
     input: operationInputSchema(operation),
     ...(headers === undefined ? {} : { headers }),
+    responseHeaders: responseHeaderSchemas(operation, document),
     responses: Object.fromEntries(operation.responses.map((response) => [
       response.status,
       Object.fromEntries(response.content.map((media) => [
@@ -102,7 +118,7 @@ function operationRuntimeSchemas(
   resources: ResourceIndex,
 ): Record<string, unknown> {
   return Object.fromEntries(operations.map((operation) => {
-    const source = operationSourceSchemas(operation);
+    const source = operationSourceSchemas(operation, document);
     return [
       operation.name,
       {
@@ -112,6 +128,13 @@ function operationRuntimeSchemas(
           status,
           Object.fromEntries(Object.entries(content).map(([mediaType, schema]) => [
             mediaType,
+            projectOperationSchema(schema, document, 'output', outputResourceId, resources),
+          ])),
+        ])),
+        responseHeaders: Object.fromEntries(Object.entries(source.responseHeaders).map(([status, headers]) => [
+          status,
+          Object.fromEntries(Object.entries(headers).map(([name, schema]) => [
+            name,
             projectOperationSchema(schema, document, 'output', outputResourceId, resources),
           ])),
         ])),
@@ -155,6 +178,14 @@ function normalizeRuntimeSchema(schema: unknown): unknown {
   return result;
 }
 
+/** The schemas of a table by response status and then by media type or header name, normalized. */
+function normalizeRuntimeSchemas(table: unknown): Record<string, Record<string, unknown>> {
+  return Object.fromEntries(objectEntries(table).map(([status, entries]) => [
+    status,
+    Object.fromEntries(objectEntries(entries).map(([key, schema]) => [key, normalizeRuntimeSchema(schema)])),
+  ]));
+}
+
 function runtimeRegistry(registry: Record<string, unknown>): Record<string, unknown> {
   const components = asRecord(registry.components);
   const operations = asRecord(registry.operations);
@@ -178,17 +209,8 @@ function runtimeRegistry(registry: Record<string, unknown>): Record<string, unkn
           {
             input: normalizeRuntimeSchema(record.input),
             ...(record.headers === undefined ? {} : { headers: normalizeRuntimeSchema(record.headers) }),
-            responses: Object.fromEntries(
-              objectEntries(responses).map(([status, content]) => [
-                status,
-                Object.fromEntries(
-                  objectEntries(content).map(([contentType, schema]) => [
-                    contentType,
-                    normalizeRuntimeSchema(schema),
-                  ]),
-                ),
-              ]),
-            ),
+            responses: normalizeRuntimeSchemas(responses),
+            responseHeaders: normalizeRuntimeSchemas(record.responseHeaders),
           },
         ];
       }),
@@ -270,6 +292,12 @@ interface OpenApiOperationValidationSchemaBundle {
   readonly responseReferences: readonly {
     readonly status: string;
     readonly contentType: string;
+    readonly reference: string;
+  }[];
+  /** The root of each declared response header that has a schema, checked in its wire form. */
+  readonly responseHeaderReferences: readonly {
+    readonly status: string;
+    readonly name: string;
     readonly reference: string;
   }[];
   /** Selected operation root and its complete canonical component/resource closure. */
@@ -666,6 +694,13 @@ function operationBundleFromIndex(
     responseSchemas[status] = content;
   }
   operationSchemas.responses = responseSchemas;
+  const responseHeaderSchemas = Object.create(null) as Record<string, unknown>;
+  for (const [status, headers] of objectEntries(operationRegistryEntry.responseHeaders)) {
+    const rewritten = Object.create(null) as Record<string, unknown>;
+    for (const [name, schema] of objectEntries(headers)) rewritten[name] = rewriteOperationSchemaRefs(index, schema, 'output');
+    responseHeaderSchemas[status] = rewritten;
+  }
+  operationSchemas.responseHeaders = responseHeaderSchemas;
   const root: Record<string, unknown> = Object.create(null) as Record<string, unknown>;
   root.$id = operationRootId;
   if (typeof data.normalizedRegistry.$schema === 'string') root.$schema = data.normalizedRegistry.$schema;
@@ -711,6 +746,9 @@ function operationBundleFromIndex(
   for (const content of Object.values(responseSchemas)) {
     for (const schema of Object.values(asRecord(content))) visitRefs(schema, 'output', collectReference);
   }
+  for (const headers of Object.values(responseHeaderSchemas)) {
+    for (const schema of Object.values(asRecord(headers))) visitRefs(schema, 'output', collectReference);
+  }
   const visited = new Set<string>();
   while (pending.length) {
     const item = pending.pop();
@@ -744,10 +782,16 @@ function operationBundleFromIndex(
     roots[reference] = { $ref: `${pointerBase}/responses/${escapePointerToken(response.status)}/${escapePointerToken(media.contentType)}` };
     return { status: response.status, contentType: media.contentType, reference };
   }));
+  const responseHeaderReferences = Object.entries(responseHeaderSchemas).flatMap(([status, headers]) => Object.keys(asRecord(headers)).map((name) => {
+    const reference = `${operation.name}:response-header:${status}:${name}`;
+    roots[reference] = { $ref: `${pointerBase}/responseHeaders/${escapePointerToken(status)}/${escapePointerToken(name)}` };
+    return { status, name, reference };
+  }));
   return {
     inputReference,
     ...(headersReference === undefined ? {} : { headersReference }),
     responseReferences,
+    responseHeaderReferences,
     schemas,
     roots,
     componentNames,

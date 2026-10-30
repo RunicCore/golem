@@ -56,6 +56,8 @@ export interface SdkOperationCodecs {
   readonly requestHeaders?: Code;
   /** Checks the wire form of each response body or stream item, keyed `status:contentType`. */
   readonly responses?: readonly SdkKeyedCode[];
+  /** Checks the wire form of each declared response header, keyed `status:name`. */
+  readonly responseHeaders?: readonly SdkKeyedCode[];
   /** Turns the plain request body of a media type into its wire form, keyed by the request content type. */
   readonly encode?: readonly SdkKeyedCode[];
   /** Turns the wire body or stream item of a response into its converted form, keyed `status:contentType`. */
@@ -82,6 +84,7 @@ export function writeOperationCodecs(operation: SdkOperationCodecs, module: Oper
     ...(operation.input ? [code`input: ${operation.input},`] : []),
     ...(operation.requestHeaders ? [code`requestHeaders: ${operation.requestHeaders},`] : []),
     ...keyed('responses', operation.responses),
+    ...keyed('responseHeaders', operation.responseHeaders),
     ...keyed('encode', operation.encode),
     ...keyed('decode', operation.decode),
     ...keyed('parameters', operation.parameters),

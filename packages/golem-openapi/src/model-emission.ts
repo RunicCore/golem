@@ -434,6 +434,8 @@ export interface OperationValidatorNames {
   /** The export name of the check of the header parameters, when the operation has any. */
   readonly headers?: string;
   readonly responses: readonly { readonly key: string; readonly name: string }[];
+  /** The export name of the check of each declared response header that has a schema, under the key `status:name`. */
+  readonly responseHeaders: readonly { readonly key: string; readonly name: string }[];
 }
 
 /**
@@ -471,7 +473,7 @@ export function generateOperationCodecs(
     const headers = keyed(operation.responses.flatMap((response) => Object.keys(response.headers).map((name) => [`${response.status}:${name}`, codecOf(responseHeaderKey(operation.name, response.status, name), responseConversion)] as const)));
     if (!profile.validation && !encode.length && !decode.length && !parameters.length && !headers.length) continue;
     const codecs: SdkOperationCodecs = {
-      ...(checks ? { input: validatorsSource.name(checks.input), ...(checks.headers === undefined ? {} : { requestHeaders: validatorsSource.name(checks.headers) }), responses: checks.responses.map((item) => ({ key: item.key, code: validatorsSource.name(item.name) })) } : {}),
+      ...(checks ? { input: validatorsSource.name(checks.input), ...(checks.headers === undefined ? {} : { requestHeaders: validatorsSource.name(checks.headers) }), responses: checks.responses.map((item) => ({ key: item.key, code: validatorsSource.name(item.name) })), responseHeaders: checks.responseHeaders.map((item) => ({ key: item.key, code: validatorsSource.name(item.name) })) } : {}),
       ...(encode.length ? { encode } : {}),
       ...(decode.length ? { decode } : {}),
       ...(parameters.length ? { parameters } : {}),

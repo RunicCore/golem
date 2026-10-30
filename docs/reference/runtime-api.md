@@ -112,7 +112,7 @@ function runValidation(validator: Validator, value: unknown, all = true): Promis
 | --- | --- |
 | `runValidation` | Runs one `Validator` and returns `{ valid, issues }`. `all` defaults to `true`, which reports every issue. `false` stops at the first. A validator that does not return an array throws `TypeError`. |
 | `Validator` | `(value, all) => readonly SchemaIssue[]`, empty when the value is valid. |
-| `OperationRuntimeValidators` | The value type of a client's `operationValidators` option: the input validator and the response validators keyed `status:contentType`. |
+| `OperationRuntimeValidators` | The value type of a client's `operationValidators` option: the input validator, the optional `requestHeaders` validator, the response validators keyed `status:contentType`, and the optional `responseHeaders` validators keyed `status:name`. |
 | `SchemaIssue`, `SchemaIssueDetail` | Issue types of a `Validator`. |
 
 ## `@exprtlabs/golem/mobx` {#mobx}

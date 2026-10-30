@@ -43,7 +43,7 @@ export function operationValidators(
 /** The validators that the generated codecs of an operation hold. */
 function generatedValidators(operation: string, codecs: OperationCodecs): OperationRuntimeValidators {
   if (!codecs.input) throw new LibError(LibErrorKind.ValidationUnavailable, `Missing generated input validator for ${operation}`);
-  return { input: codecs.input, ...(codecs.requestHeaders ? { requestHeaders: codecs.requestHeaders } : {}), responses: new Map(Object.entries(codecs.responses ?? {})) };
+  return { input: codecs.input, ...(codecs.requestHeaders ? { requestHeaders: codecs.requestHeaders } : {}), responses: new Map(Object.entries(codecs.responses ?? {})), responseHeaders: new Map(Object.entries(codecs.responseHeaders ?? {})) };
 }
 
 /**
@@ -69,13 +69,20 @@ export async function validateOperationInput(
   if (levels.requestHeaders !== false && validators?.requestHeaders) await assertValid(validators.requestHeaders, header ?? {}, levels.requestHeaders === 'sanity');
 }
 
-/** The check `readResponse` runs on each body or stream item at `level`, before it is decoded; responses without content are not checked. None at `false`. */
-export function responseCheck(validators: OperationRuntimeValidators, level: ValidationLevel = true): ResponseCheck | undefined {
-  if (level === false) return undefined;
-  const sanity = level === 'sanity';
-  return (response, value) => response.contentType === null
-    ? Promise.resolve()
-    : assertValid(validators.responses.get(`${response.status}:${response.contentType}`), value, sanity);
+/**
+ * The check `readResponse` runs on each body or stream item at `level` and on each response header at `headerLevel`, before it is decoded;
+ * responses without content have no body check. None when both levels are `false`.
+ */
+export function responseCheck(validators: OperationRuntimeValidators, level: ValidationLevel = true, headerLevel: ValidationLevel = false): ResponseCheck | undefined {
+  if (level === false && headerLevel === false) return undefined;
+  return (response, value, header) => {
+    if (header !== undefined) {
+      return headerLevel === false ? Promise.resolve() : assertValid(validators.responseHeaders?.get(`${response.status}:${header}`), value, headerLevel === 'sanity');
+    }
+    return level === false || response.contentType === null
+      ? Promise.resolve()
+      : assertValid(validators.responses.get(`${response.status}:${response.contentType}`), value, level === 'sanity');
+  };
 }
 
 /** The validation level of each side of one call. */
@@ -124,10 +131,9 @@ function levelsOf(client: ValidateOption | undefined, call: ValidateOption | und
 export function inboundChecks(operation: string, codecs: OperationCodecs, validate: ValidateOption | undefined, sdkLevel: true | 'sanity'): InboundChecks {
   const levels = levelsOf(undefined, validate, sdkLevel);
   const validators = generatedValidators(operation, codecs);
-  const response = responseCheck(validators, levels.response);
+  const response = responseCheck(validators, levels.response, levels.responseHeaders);
   return {
     request: (request) => validateOperationInput(operation, request, validators, levels),
     ...(response ? { response } : {}),
-    responseHeaders: levels.responseHeaders,
   };
 }

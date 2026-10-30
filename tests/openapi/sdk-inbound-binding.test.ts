@@ -10,6 +10,7 @@ const DATE_TIME = { type: 'string', format: 'date-time' };
 const EVENT = { $ref: '#/components/schemas/Event' };
 const ACK = { $ref: '#/components/schemas/Ack' };
 const ACK_RESPONSE = { description: 'Accepted', content: { 'application/json': { schema: ACK } } };
+const QUOTA_ACK_RESPONSE = { ...ACK_RESPONSE, headers: { 'X-Quota': { schema: { type: 'integer', maximum: 100 } } } };
 
 const DOCUMENT = {
   openapi: '3.2.0',
@@ -29,7 +30,7 @@ const DOCUMENT = {
         operationId: 'receiveSettlement',
         parameters: [{ name: 'X-Sent', in: 'header', schema: DATE_TIME }, { name: 'tenant', in: 'query', schema: { type: 'string' } }],
         requestBody: { required: true, content: { 'application/json': { schema: EVENT } } },
-        responses: { 200: ACK_RESPONSE, 204: { description: 'No content', headers: { 'X-At': { schema: DATE_TIME } } } },
+        responses: { 200: QUOTA_ACK_RESPONSE, 204: { description: 'No content', headers: { 'X-At': { schema: DATE_TIME } } } },
       },
     },
     plain: {
@@ -49,8 +50,8 @@ type Handlers = Record<'webhookReceiveSettlement' | 'webhookReceivePlain' | 'cal
 type Port = Record<keyof Handlers, (input: unknown) => Promise<unknown>>;
 
 /** The SDK generated once per test, and its binding over a port that records the input of each call and answers `reply`. */
-async function bind(t: Parameters<typeof loadSdk>[0], reply: unknown, options?: unknown): Promise<{ readonly handlers: Handlers; readonly received: unknown[]; readonly output: string }> {
-  const sdk = await loadSdk(t, 'golem-openapi-inbound-binding-', { document: DOCUMENT, name: 'Hooks', dates: 'date', validation: true });
+async function bind(t: Parameters<typeof loadSdk>[0], reply: unknown, options?: unknown, validation: true | 'sanity' = true): Promise<{ readonly handlers: Handlers; readonly received: unknown[]; readonly output: string }> {
+  const sdk = await loadSdk(t, 'golem-openapi-inbound-binding-', { document: DOCUMENT, name: 'Hooks', dates: 'date', validation });
   const bindHooksInbound = (await importGeneratedModule(sdk.output, 'generated SDK')).bindHooksInbound as (port: Port, options?: unknown) => Handlers;
   const received: unknown[] = [];
   const answer = async (input: unknown) => { received.push(input); return reply; };
@@ -90,6 +91,27 @@ test('a header is unchecked by default and checked when the binding names it', a
   const checked = await bind(t, OK, { validate: { requestHeaders: true } });
   await assert.rejects(checked.handlers.webhookReceiveSettlement(request), isInputError);
   assert.deepEqual(checked.received, []);
+});
+
+test('a response header that converts nothing and breaks its schema is the application\'s error only when responseHeaders is on', async t => {
+  // protects: R-87 inbound response headers have validators, off by default; a bad one is the app's fault
+  const reply = { ...OK, headers: { 'X-Quota': 500 } };
+  const request = { body: { at: '2025-01-02T03:04:05Z' } };
+  const unchecked = await bind(t, reply);
+  assert.equal((await unchecked.handlers.webhookReceiveSettlement(request)).headers['X-Quota'], 500);
+  const checked = await bind(t, reply, { validate: { responseHeaders: true } });
+  await assert.rejects(
+    checked.handlers.webhookReceiveSettlement(request),
+    (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.Validation && error.causedByInput === false,
+  );
+});
+
+test('a binding refuses a response header level above the SDK level', async t => {
+  // protects: R-72, R-87 a level above the SDK's throws ValidationUnavailable when the binding is made
+  await assert.rejects(
+    bind(t, OK, { validate: { responseHeaders: true } }, 'sanity'),
+    (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.ValidationUnavailable,
+  );
 });
 
 test('the response of the port is encoded: its dates leave as wire strings', async t => {

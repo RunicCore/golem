@@ -321,12 +321,11 @@ function operationSource(
     ? code`  const validators = ${rt.validation.operationValidators}(runtime, ${literal(operation.name)}, ${codecsName});`
     : BLANK;
   // A validating SDK resolves the levels of each call, and the response check and decoder follow them.
-  const decoderSetup = decodes && !profile.validation ? code`  const decodeResponse = ${use('responseDecoder')}(${codecsName});` : BLANK;
+  const decoderSetup = decodes ? code`  const decodeResponse = ${use('responseDecoder')}(${codecsName});` : BLANK;
   const levelLines = profile.validation
     ? [
       code`    const levels = ${rt.validation.callLevels}(runtime, options.validate, ${literal(profile.validation === 'sanity' ? 'sanity' : true)});`,
-      code`    const checkResponse = ${rt.validation.responseCheck}(validators, levels.response);`,
-      ...(decodes ? [code`    const decodeResponse = ${use('responseDecoder')}(${codecsName}, levels.responseHeaders);`] : []),
+      code`    const checkResponse = ${rt.validation.responseCheck}(validators, levels.response, levels.responseHeaders);`,
     ]
     : [];
   const requestLevel = profile.validation ? code`, levels.request` : BLANK;
@@ -703,7 +702,7 @@ export function buildOperationValidationSchemas(
   });
   const componentNames = new Map(list.flatMap((bundle) => Object.entries(bundle.componentNames)));
   const operationRoots = new Map(list.map((bundle) => [bundle.operationRootId, bundle.operationName] as const));
-  const sources = new Map(operations.map((operation) => [operation.name, operationSourceSchemas(operation)] as const));
+  const sources = new Map(operations.map((operation) => [operation.name, operationSourceSchemas(operation, document)] as const));
   return {
     bundles,
     operations: list.map((bundle) => ({ roots: bundle.roots, resources: bundle.schemas })),
@@ -729,6 +728,7 @@ export function operationValidatorNames(
     input: requireValidatorExport(name, bundle.inputReference, validatorExports),
     ...(bundle.headersReference === undefined ? {} : { headers: requireValidatorExport(name, bundle.headersReference, validatorExports) }),
     responses: bundle.responseReferences.map((item) => ({ key: `${item.status}:${item.contentType}`, name: requireValidatorExport(name, item.reference, validatorExports) })),
+    responseHeaders: bundle.responseHeaderReferences.map((item) => ({ key: `${item.status}:${item.name}`, name: requireValidatorExport(name, item.reference, validatorExports) })),
   }] as const));
 }
 
