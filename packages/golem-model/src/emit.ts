@@ -891,7 +891,8 @@ function sdkNodeCodecs(sdks: AppOutputs['sdkCodecs'], output: string): SdkNodeCo
   const sources = new Map((sdks ?? []).map((sdk) => [sdk.file, new ImportSource(sourceImportPath(sdk.file, output))] as const));
   // One type source for each module of the SDK that declares types.
   const typeSources = new Map((sdks ?? []).flatMap((sdk) => [...sdk.types.values()].map(({ file }) => file)).map((file) => [file, new ImportSource(sourceImportPath(file, output), true)] as const));
-  const asked = new Set<string>();
+  // Each form asked for, by a key that tells two asks of one form alike, with its codec id and suffix.
+  const asked = new Map<string, { readonly codecId: string; readonly suffix: Parameters<SdkNodeCodecs['type']>[1] }>();
   const written = new Set<string>();
   const ownType = (codecId: string): { readonly file: string; readonly name: string } | undefined => {
     for (const sdk of sdks ?? []) {
@@ -918,17 +919,17 @@ function sdkNodeCodecs(sdks: AppOutputs['sdkCodecs'], output: string): SdkNodeCo
     type(codecId, suffix) {
       const own = ownType(codecId);
       if (own !== undefined && (suffix !== 'JSON' || !wireDiffers(sdks, codecId))) return typeSources.get(own.file)!.name(own.name, { alias: codecId });
-      asked.add(`${codecId}${NODE_FORM}${suffix}`);
+      asked.set(`${codecId}${NODE_FORM}${suffix}`, { codecId, suffix });
       return identifier(`${codecId}${suffix}`);
     },
     typeAliases(describe) {
       const lines: Code[] = [];
       const modes = { Fields: 'model', JSON: 'wire', Init: 'init' } as const;
       // Writing the type of a form can ask for other forms: go on until every form asked for is written.
-      for (let pending = [...asked].filter((form) => !written.has(form)).sort(compareText); pending.length > 0; pending = [...asked].filter((form) => !written.has(form)).sort(compareText)) {
-        for (const form of pending) {
+      const unwritten = (): [string, { readonly codecId: string; readonly suffix: keyof typeof modes }][] => [...asked].filter(([form]) => !written.has(form)).sort(([a], [b]) => compareText(a, b));
+      for (let pending = unwritten(); pending.length > 0; pending = unwritten()) {
+        for (const [form, { codecId, suffix }] of pending) {
           written.add(form);
-          const [codecId, suffix] = form.split(NODE_FORM) as [string, keyof typeof modes];
           lines.push(code`type ${identifier(`${codecId}${suffix}`)} = ${describe(sdkNodeDescriptor(sdks, codecId), modes[suffix])};`);
         }
       }
