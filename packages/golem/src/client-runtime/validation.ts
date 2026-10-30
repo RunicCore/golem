@@ -53,21 +53,28 @@ function generatedValidators(operation: string, codecs: OperationCodecs): Operat
  */
 export async function validateOperationInput(
   operation: string,
-  value: object,
+  value: unknown,
   validators: OperationRuntimeValidators | undefined,
   levels: Pick<CallLevels, 'request' | 'requestHeaders'>,
 ): Promise<void> {
   const validator = validators?.input;
   if (levels.request !== false) {
     if (!validator) throw new LibError(LibErrorKind.ValidationUnavailable, `Missing generated input validator for ${operation}`);
-    const { header, ...rest } = value as { readonly header?: unknown };
+    const { input, header } = splitHeader(value);
     const inputOnly = validators?.requestHeaders !== undefined || levels.requestHeaders === false;
-    await assertValid(validator, inputOnly ? rest : value, levels.request === 'sanity');
+    await assertValid(validator, inputOnly ? input : value, levels.request === 'sanity');
     if (levels.requestHeaders !== false && validators?.requestHeaders) await assertValid(validators.requestHeaders, header ?? {}, levels.requestHeaders === 'sanity');
     return;
   }
-  const { header } = value as { readonly header?: unknown };
+  const { header } = splitHeader(value);
   if (levels.requestHeaders !== false && validators?.requestHeaders) await assertValid(validators.requestHeaders, header ?? {}, levels.requestHeaders === 'sanity');
+}
+
+/** The input without its `header` part, and the part. A value that is no object has none, so it reaches its validator as it came. */
+function splitHeader(value: unknown): { readonly input: unknown; readonly header: unknown } {
+  if (typeof value !== 'object' || value === null) return { input: value, header: undefined };
+  const { header, ...input } = value as { readonly header?: unknown };
+  return { input, header };
 }
 
 /**

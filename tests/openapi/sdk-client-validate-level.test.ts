@@ -241,6 +241,17 @@ for (const [name, validate, expected] of [
   });
 }
 
+for (const [name, input] of [['null', null], ['a string', 'x'], ['a number', 7]] as const) {
+  test(`an input that is no object is a Validation error caused by input: ${name}`, async () => {
+    // protects: F-39, T-736 execute(null) fails as a Validation error from the input check, not as a TypeError from the header read
+    const client = (await sdks.full()).createClient({ fetchImpl: async () => Response.json({}, { headers: { 'X-Request-Id': 'r1' } }) });
+    await assert.rejects(
+      () => client.getStatus().execute(input),
+      (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.Validation && error.causedByInput === true,
+    );
+  });
+}
+
 test('a response is checked once: the client check is the only wire check before decoding', async () => {
   // protects: R-86, F-164 the decoder does not check the wire body again; an override that accepts it is the last word
   const sdk = await sdks.full();
