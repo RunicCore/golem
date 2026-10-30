@@ -768,9 +768,9 @@ Golem reads relative imports (`./sdk/index.js`) for this rule, and reads them th
 
 ### RUNM1090
 
-**Validation option on a model over an SDK model.** An `IModel` or `IObject` whose fields type is an SDK model sets the `validation` option. The model is that SDK model: it uses the codec and the validation level of the SDK, so the option would never apply. The message names the model and the SDK model.
+**Validation option on a model over an SDK model.** An `IModel` or `IObject` whose fields type is an SDK model sets the `validation` option. The model has no codec of its own: the codec of the SDK serves its calls, at the validation level of the SDK. The option would never apply. The message names the model.
 
-**Fix:** Remove the option. A call can still choose a level with `{ validate }`.
+**Fix:** Remove the option. A call can still choose a level up to the project level with `{ validate }`.
 
 ## Validators (VALIDATE)
 

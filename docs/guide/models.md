@@ -44,7 +44,7 @@ The second type argument of `IObject` and `IModel` takes `{ validation: true | f
 
 - Without the option, the model uses the project level.
 - The model level is at or below the project level. A higher level stops generation with [`RUNM1089`](/reference/diagnostics#runm1089).
-- A model that is an SDK model (`IModel<Money>`) is that model and takes its level. The option stops generation with [`RUNM1090`](/reference/diagnostics#runm1090).
+- A model over an SDK model sets no level. The level of the SDK applies, and the option stops generation with [`RUNM1090`](/reference/diagnostics#runm1090).
 - A call can choose another level up to the project level ([Choose a level for one call](/guide/validation#choose-a-level-for-one-call)).
 
 ## Generated names

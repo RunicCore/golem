@@ -41,12 +41,12 @@ export interface TypeAnalysisContext {
 }
 
 /**
- * RUNM1090: a model that is an SDK model has the codec and the level of that model, so a `validation` option on it would
- * never apply.
+ * RUNM1090: a model over an SDK model has no codec of its own, so the codec of the SDK serves its calls at the level of the
+ * SDK. The `validation` option would never apply.
  */
-export function sdkModelLevelDiagnostic(sourceFile: ts.SourceFile, declaration: ts.TypeAliasDeclaration, sdkModel: string): Error {
+export function sdkModelLevelDiagnostic(sourceFile: ts.SourceFile, declaration: ts.TypeAliasDeclaration): Error {
   const name = declaration.name.text;
-  return diagnostic(sourceFile, declaration, '1090', `${name} is the SDK model ${sdkModel}, so it takes the SDK's validation level. Remove the option; a call can still choose a level with { validate }.`);
+  return diagnostic(sourceFile, declaration, '1090', `${name} is a model over an SDK model and sets the validation option. The level of the SDK applies to it. Remove the option; a call can still choose a level up to the project level with { validate }.`);
 }
 
 /** A descriptor kind (or a type's kind) as the phrase the RUNM1052 message uses: "an array", "a Date", "any". */
