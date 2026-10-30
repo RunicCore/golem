@@ -324,7 +324,7 @@ test('an app model over an SDK alias with a keyword that no descriptor carries s
 });
 
 test('a golem-mode model over an SDK discriminated union decodes each tag to its branch and rejects an unknown tag', async () => {
-  // protects: T-740 R-84 a union of SDK nodes dispatches by its tag (the plain branch tested instanceof Object, so the first branch took every value), and a nullable SDK node init writes no new Object
+  // protects: T-740 R-84 a union of SDK nodes dispatches by its tag (the plain branch tested instanceof Object, so the first branch took every value), and a nullable SDK node init keeps its value
   const pets: GolemModeSdkSetup = {
     folder: 'sdk/pets',
     name: 'Pets',
@@ -356,6 +356,9 @@ export const read = (wire: unknown) => fromWireFormat<OwnerRecord>(wire);
   assert.deepEqual(dog.pet, { petType: 'dog', bornAt: new Date('2025-01-02T03:04:05Z') });
   assert.deepEqual(read({ pet: { petType: 'cat', lives: 9 } }).pet, { petType: 'cat', lives: 9 });
   assert.throws(() => read({ pet: { petType: 'bird' } }), /petType|Model validation failed/);
-  const companion = fs.readFileSync(path.join(project.root, 'src/owner.model.generated.ts'), 'utf8');
-  assert.doesNotMatch(companion, /new \(?Object\b/);
+  // A nullable SDK node keeps the value it is given: the same object, and null stays null.
+  const { TKennelBaseModel } = await importBuilt(project.root, 'src/owner.model.generated.js');
+  const given = { petType: 'dog', bornAt: new Date('2025-01-02T03:04:05Z') };
+  assert.equal(Reflect.construct(TKennelBaseModel, [{ dog: given }]).dog, given);
+  assert.equal(Reflect.construct(TKennelBaseModel, [{ dog: null }]).dog, null);
 });
