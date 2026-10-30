@@ -6,7 +6,7 @@ import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 import { fileFixtureScope } from './fixture-project.js';
 import { buildModelProject, createModelProject, writeModelGolemYaml, writeModelSources } from './model-project.js';
-import { isGeneratedClientClass } from './openapi/helpers.js';
+import { generateMaterializedSdk, isGeneratedClientClass } from './openapi/helpers.js';
 import { loadGolemModeProject, writeGolemModeProject, type GolemModeSdkSetup } from './openapi/sdk-client-fixture.js';
 
 const scope = fileFixtureScope();
@@ -119,4 +119,69 @@ test('a golem-mode model over an SDK type chooses its own level, never above the
   const raised = writeGolemModeProject(scope, 'sdk-app-model-level-above-', [CHARGES], 'sanity');
   writeModelSources(raised.root, { 'src/charge.model.ts': CHARGE_MODEL.replace('IModel<Charge>', 'IModel<Charge, { validation: true }>') });
   await assert.rejects(buildModelProject(raised.root), /RUNM1089: TChargeRecord sets validation true, which is above the project level 'sanity'\./);
+});
+
+const MONEY: GolemModeSdkSetup = {
+  document: {
+    openapi: '3.1.0',
+    info: { title: 'Payments', version: '1' },
+    paths: { '/payments': { post: { operationId: 'createPayment', requestBody: { required: true, content: json(ref('Money')) }, responses: { 201: { description: 'ok', content: json(ref('Money')) } } } } },
+    components: { schemas: { Money: { type: 'object', additionalProperties: false, required: ['amount', 'currency'], properties: { amount: { type: 'number', minimum: 0 }, currency: { type: 'string', pattern: '^[A-Z]{3}$' } } } } },
+  },
+  folder: 'sdk/payments',
+  name: 'Payments',
+};
+const MONEY_MODEL = `import type { IModel } from '@exprtlabs/golem/model';
+import type { Money } from '../sdk/payments/index.js';
+import { TMoneyBaseModel } from './money.model.generated.js';
+export type TMoney = IModel<Money>;
+export type TBasket = IModel<{ price: Money; label: string }>;
+export class MoneyRecord extends TMoneyBaseModel {}
+`;
+const MONEY_USE = `import { parse } from '@exprtlabs/golem/serde';
+import type { TBasket } from './money.model.js';
+import { MoneyRecord } from './money.model.js';
+export const readMoney = (text: string) => parse<MoneyRecord>(text);
+export const readBasket = (text: string) => parse<TBasket>(text);
+`;
+
+test('parse<T> reads an app model over an SDK model of golem mode, with the limits of the SDK', async () => {
+  // protects: T-683 T-700 parse<MoneyRecord> works on a model over an SDK model (it failed with "codec not registered"), and a model that holds Money parses
+  const project = await buildGolemModeProject('sdk-app-model-parse-', MONEY, { 'src/money.model.ts': MONEY_MODEL, 'src/use.ts': MONEY_USE });
+  const { MoneyRecord } = await importBuilt(project.root, 'src/money.model.js');
+  const { readMoney, readBasket } = await importBuilt(project.root, 'src/use.js');
+  const money = readMoney('{"amount":5,"currency":"EUR"}');
+  assert.deepEqual([money instanceof MoneyRecord, money.amount, money.currency], [true, 5, 'EUR']);
+  assert.throws(() => readMoney('{"amount":-1,"currency":"EUR"}'), /Model validation failed/);
+  assert.throws(() => readMoney('{"amount":5,"currency":"euro"}'), /Model validation failed/);
+  assert.deepEqual(readBasket('{"price":{"amount":1,"currency":"USD"},"label":"x"}'), { price: { amount: 1, currency: 'USD' }, label: 'x' });
+});
+
+test('a standalone model over an SDK type with Temporal dates derives from the plain type and converts the dates', async () => {
+  // protects: T-700 R-83 a standalone SDK type with global Temporal fields imports nothing from golem, and an app model over it derives (it stopped with RUNM1004)
+  const { root, sourceRoot } = createModelProject(scope, { prefix: 'sdk-app-model-standalone-', name: 'standalone-sdk-model', linkWorkspaceNodeModules: true, compilerOptions: { lib: ['ES2023', 'DOM', 'DOM.Iterable', 'esnext.temporal'] } });
+  await generateMaterializedSdk(chargeDocument(), { output: path.join(sourceRoot, 'sdk'), name: 'Charges', dates: 'temporal', profile: { mobx: false, validation: true, allowAny: false } });
+  const types = fs.readFileSync(path.join(sourceRoot, 'sdk/types.ts'), 'utf8');
+  assert.doesNotMatch(types, /from '@exprtlabs\/golem/);
+  assert.match(types, /Temporal\.Instant/);
+  writeModelSources(sourceRoot, {
+    'charge.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
+import type { Charge } from './sdk/index.js';
+import { TChargeRecordBaseModel } from './charge.model.generated.js';
+export type TChargeRecord = IModel<Charge>;
+export class ChargeRecord extends TChargeRecordBaseModel {}
+`,
+    'use.ts': `import { parse, stringify } from '@exprtlabs/golem/serde';
+import { ChargeRecord } from './charge.model.js';
+export const read = (text: string) => parse<ChargeRecord>(text);
+export const write = (value: ChargeRecord) => stringify<ChargeRecord>(value);
+`,
+  });
+  writeModelGolemYaml(root, { mobx: false, validation: true });
+  await buildModelProject(root);
+  const { ChargeRecord } = await importBuilt(root, 'charge.model.js');
+  const { read, write } = await importBuilt(root, 'use.js');
+  const charge = read('{"id":"c1","amount":2,"at":"2025-01-02T03:04:05Z"}');
+  assert.deepEqual([charge instanceof ChargeRecord, charge.at instanceof Temporal.Instant], [true, true]);
+  assert.equal(write(charge), '{"id":"c1","amount":2,"at":"2025-01-02T03:04:05Z"}');
 });
