@@ -433,19 +433,6 @@ export async function sdkBodyCodec(output: string, name: string, root: string): 
   };
 }
 
-/**
- * Test-only: the codec functions of a compiled SDK (`parse<Name>`, `stringify<Name>`, `fromWireFormat<Name>`, `toWireFormat<Name>`,
- * `validate<Name>`, `assert<Name>`), read from its schema group modules. A standalone SDK writes a group module only for a schema that converts, so this reaches nothing for a document without a converting operation; prefer `sdkBodyCodec`. Kept for model-serde and recursive-wire-stringify until they move (T-703).
- */
-export async function importSdkCodecs(output: string, label = 'SDK codecs'): Promise<Record<string, unknown>> {
-  const directory = join(output, 'dist/models');
-  const exports: Record<string, unknown> = {};
-  for (const file of readdirSync(directory).filter(name => /^_group-.*\.js$/.test(name)).sort()) {
-    Object.assign(exports, await importGeneratedModule(output, `${label} ${file}`, `dist/models/${file}`));
-  }
-  return exports;
-}
-
 /** The manifest an openapi job of mode golem writes for `document`: the schema graph and the validation roots of every operation. */
 export function golemModeManifest(document: unknown, profile: OpenApiGenerationProfile, dates: 'date' | 'temporal' = 'date'): Record<string, unknown> {
   const ir = normalizeAndValidate(document);
