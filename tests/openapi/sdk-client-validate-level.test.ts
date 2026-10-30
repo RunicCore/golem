@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { fileFixtureScope, onceShared } from '../fixture-project.js';
+import { importGeneratedModule, requireRecord } from './helpers.js';
 import { loadSdk, type LoadedSdk } from './sdk-client-fixture.js';
 
 // The client takes a validation level per client and per call, request and response apart (R-86). The amount limit (maximum 100)
@@ -17,7 +18,10 @@ const HEADER_PARAMETERS = [
 const DOCUMENT = {
   openapi: '3.2.0',
   info: { title: 'Charges', version: '1' },
-  paths: { '/charges': { post: {
+  paths: { '/status': { get: {
+    operationId: 'getStatus',
+    responses: { 200: { description: 'Status', content: { 'application/json': { schema: { type: 'object' } } }, headers: { 'X-Request-Id': { required: true, schema: { type: 'string' } } } } },
+  } }, '/charges': { post: {
     operationId: 'createCharge',
     parameters: HEADER_PARAMETERS,
     requestBody: { required: true, content: JSON_CHARGE },
@@ -28,7 +32,7 @@ const DOCUMENT = {
 type Level = 'full' | 'sanity' | 'off';
 type Setting = true | 'sanity' | false;
 type Validate = Setting | { request?: Setting; response?: Setting; requestHeaders?: Setting; responseHeaders?: Setting };
-type ChargesClient = { createCharge(): { execute(input: unknown, options?: { validate?: unknown }): Promise<{ body: { when: unknown }; headers: Record<string, unknown> }> } };
+type ChargesClient = { getStatus(): { execute(input: unknown, options?: { validate?: unknown }): Promise<{ headers: Record<string, unknown> }> }; createCharge(): { execute(input: unknown, options?: { validate?: unknown }): Promise<{ body: { when: unknown }; headers: Record<string, unknown> }> } };
 
 const scope = fileFixtureScope();
 const sdks = {
@@ -231,3 +235,37 @@ test('with response validation off a bad date is a deserialization error: conver
     (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.Deserialization && error.causedByInput === true,
   );
 });
+
+test('a converting request body is checked once: its conversion checks the plain value and the input root leaves the wire body open', async () => {
+  // protects: R-86, T-711 a converting request body gets its plain-value check only; the rest of the input is the body-less root
+  const sdk = await sdks.full();
+  const codecs = requireRecord((await importGeneratedModule(sdk.output, 'charge codecs', 'dist/codecs/createCharge.js')).operationCodecs, 'charge codecs') as {
+    input(value: unknown, all: boolean): readonly unknown[];
+    encode: Record<string, (value: unknown, options?: { validate?: unknown }) => unknown>;
+  };
+  const toWire = codecs.encode['application/json']!;
+  const levels: unknown[] = [];
+  codecs.encode['application/json'] = (value, options) => { levels.push(options?.validate); return toWire(value, options); };
+  try {
+    await chargesClient(sdk, undefined, 1, []).createCharge().execute({ body: { amount: 1, when: new Date(WHEN) } });
+    assert.deepEqual(levels, [true], 'the conversion checks the plain body once');
+    await assert.rejects(chargesClient(sdk, undefined, 1, []).createCharge().execute({ body: { amount: 500, when: new Date(WHEN) } }), (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.Validation && error.causedByInput === true);
+  } finally {
+    codecs.encode['application/json'] = toWire;
+  }
+  assert.deepEqual(codecs.input({ body: { amount: 'not checked here', when: 5 } }, true), [], 'the input root does not look into the converted body');
+  assert.notDeepEqual(codecs.input({}, true), [], 'the root still requires the body');
+  assert.notDeepEqual(codecs.input({ body: {}, path: {} }, true), [], 'the root still checks the rest of the input');
+});
+
+for (const [name, validate, headers, expected] of [
+  ['absent by default', undefined, {}, 'accepted'],
+  ['absent with responseHeaders on', { responseHeaders: true }, {}, LibErrorKind.Validation],
+  ['present with responseHeaders on', { responseHeaders: true }, { 'x-request-id': 'r1' }, 'accepted'],
+] as const) {
+  test(`a required response header is reported when it is absent and responseHeaders is on: ${name}`, async () => {
+    // protects: R-87, T-710 a required response header that is absent is an error only when response header checks are on; names match in any case
+    const client = (await sdks.full()).createClient({ ...(validate === undefined ? {} : { validate }), fetchImpl: async () => Response.json({}, { headers }) });
+    assert.equal(await outcome(() => client.getStatus().execute({})), expected);
+  });
+}

@@ -133,6 +133,8 @@ interface RuntimeResponseHeaderContract {
   style: string;
   explode: boolean;
   contentType: string | null;
+  /** The header is required: its absence is reported when response headers are checked. */
+  required?: boolean;
   kind: string | null;
   itemKind: string | null;
   propertyKinds: Readonly<Record<string, string | null>>;
@@ -184,7 +186,7 @@ interface CheckedResponse {
   readonly contentType: string | null;
 }
 
-/** Checks a decoded response body or stream item, or the decoded value of the response header `header`. Only SDKs generated with validation pass one, so the runtime core imports no validation code. */
+/** Checks a decoded response body or stream item, or the decoded value of the response header `header`; for a required header that is absent, `value` is undefined. Only SDKs generated with validation pass one, so the runtime core imports no validation code. */
 export type ResponseCheck = (response: CheckedResponse, value: unknown, header?: string) => Promise<void>;
 
 /** Converts a checked response body or stream item to its plain form, or the decoded value of the response header `header`; it runs after the check. */
@@ -237,6 +239,20 @@ function lookupCodec<T>(map: Readonly<Record<string, T>>, keys: readonly string[
     if (essence && Object.hasOwn(map, essence)) return map[essence];
   }
   return Object.hasOwn(map, '*/*') ? map['*/*'] : undefined;
+}
+
+/** How closely the media type `actual` (parameters ignored) matches the declared `expected`, which may be a range: 0 exact, 1 a subtype range, 2 the full range; null when it does not. */
+export function mediaRank(actual: string, expected: string): number | null {
+  const rangeEnd = expected.indexOf(';');
+  const valueEnd = actual.indexOf(';');
+  const range = (rangeEnd < 0 ? expected : expected.slice(0, rangeEnd)).trim().toLowerCase();
+  const value = (valueEnd < 0 ? actual : actual.slice(0, valueEnd)).trim().toLowerCase();
+  if (value === range) return 0;
+  const [rangeType, rangeSubtype] = range.split('/');
+  const [actualType] = value.split('/');
+  if (rangeSubtype === '*' && rangeType === actualType) return 1;
+  if (range === '*/*') return 2;
+  return null;
 }
 
 interface SelectedResponse {
@@ -391,19 +407,6 @@ export class ClientRuntime {
     return expected === 'default';
   }
 
-  private mediaRank(actual: string, expected: string): number | null {
-    const rangeEnd = expected.indexOf(';');
-    const valueEnd = actual.indexOf(';');
-    const range = (rangeEnd < 0 ? expected : expected.slice(0, rangeEnd)).trim().toLowerCase();
-    const value = (valueEnd < 0 ? actual : actual.slice(0, valueEnd)).trim().toLowerCase();
-    if (value === range) return 0;
-    const [rangeType, rangeSubtype] = range.split('/');
-    const [actualType] = value.split('/');
-    if (rangeSubtype === '*' && rangeType === actualType) return 1;
-    if (range === '*/*') return 2;
-    return null;
-  }
-
   private selectResponse(
     operation: string,
     response: Response,
@@ -438,7 +441,7 @@ export class ClientRuntime {
     let match: (typeof selected.content)[number] | undefined;
     let bestRank = Infinity;
     for (const item of selected.content) {
-      const rank = this.mediaRank(mediaType, item.contentType);
+      const rank = mediaRank(mediaType, item.contentType);
       if (rank !== null && rank < bestRank) {
         match = item;
         bestRank = rank;
@@ -543,7 +546,7 @@ export class ClientRuntime {
         const decoded = this.decodeResponseHeader(operation, value, metadata);
         if (check) await check(checked, decoded, metadata.name);
         entries.push([metadata.name, decode ? decode(checked, decoded, metadata.name) : decoded]);
-      }
+      } else if (metadata.required && check) await check(checked, undefined, metadata.name);
     }
     return Object.fromEntries(entries);
   }

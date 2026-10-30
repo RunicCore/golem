@@ -55,5 +55,5 @@ When neither the project nor Golem has `typescript`, a command that needs the co
 
 - Validation and `exact` are enabled by default. MobX and `allowAny` are disabled by default ([which jobs each flag covers](/reference/config#root-keys)).
 - An individual `IObject` or `IModel` can override `exact`, `allowAny` and `validation`.
-- Callback and webhook types are generated, with a `bind<Client>Inbound` function. Your application implements the port. The function returns one handler for each inbound operation. A handler checks the raw request, converts it, calls the port, then converts and checks the response. Your application maps its errors to HTTP statuses.
+- Callback and webhook types are generated, with a `bind<Client>Inbound` function. Your application implements the port. The function returns one handler for each inbound operation. A handler matches header names in any letter case, decodes path, query, header and cookie text to the numbers and booleans the schema declares, checks the raw request, converts it, calls the port, then converts and checks the response. A response with a status or media type that the operation does not declare is an error of the application. Your application maps its errors to HTTP statuses.
 - Response links are emitted as metadata. Clients do not follow them automatically.

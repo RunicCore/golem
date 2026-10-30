@@ -1,14 +1,14 @@
 import path from 'node:path';
 import { GolemDiagnosticSeverity, type GolemDiagnostic, type GolemResult } from '@exprtlabs/golem/generator-api';
 import { stableJson } from '@exprtlabs/golem/generator-api';
-import { assertPortableFilenames, identifier, isRecord } from '@exprtlabs/golem/internal/generator-support';
-import { buildOperationValidationSchemas, generateClientModules, operationValidatorNames } from './client/emit.js';
+import { assertPortableFilenames, identifier, isRecord, queryFieldTable } from '@exprtlabs/golem/internal/generator-support';
+import { buildOperationValidationSchemas, generateClientModules, operationValidatorNames, responseHeaderRequired } from './client/emit.js';
 import { browserCookieDiagnostics, normalizeAndValidate, unsupportedHttpAuthSchemes, type MovedUnions } from './document.js';
 import { buildEmissionPlan, serverOverrideDiagnostics, type ArtifactFile, type EmissionPlan } from './emission-plan.js';
-import { asRecord, readString } from './json.js';
+import { asRecord, objectEntries, readString } from './json.js';
 import { assertUniqueExportNames, code, documentLiteral, exportedName, fileImports, identifier as identifierPart, ImportSource, join, literal, renderModule, rt, rtType, runtimeLinesOf, type Code, type ImportOptions, type PublicModule, type RenderedModule } from '@exprtlabs/golem/internal/emitter';
 import { operationName, operationNameType } from './names.js';
-import type { NormalizedOperation } from './normalize.js';
+import { parameterSchema, type NormalizedOperation } from './normalize.js';
 import { generatedBannerComment } from './package-info.js';
 import type { OpenApiGenerationProfile } from './profile.js';
 import { requireProfile } from './profile.js';
@@ -21,6 +21,7 @@ import {
   type OpenApiDates,
 } from './models.js';
 import { neverPropertiesReader } from './model-resolution.js';
+import { requestBodyKey } from './model-schema-graph.js';
 import { withOrigins, type OriginLocator } from './origin.js';
 import { buildSchemaData } from './schemas.js';
 import { compileLevel, compileSdkValidators, uniqueDiagnostics, type CodecValidationPlan, type PlanValidators, type SchemaPlace } from '@exprtlabs/golem/internal/validation-plan';
@@ -142,8 +143,36 @@ export const ${exportedName('operationServers')} = ${documentLiteral(plan.operat
 ` : code``}`);
 }
 
+const TEXT_LOCATIONS = ['path', 'query', 'header', 'cookie'] as const;
+
+/**
+ * What `inboundHandler` needs of an operation besides its codecs: its request media types, the declared names of its header parameters, the table of each location's
+ * text parameters that decode to a number, a boolean or an array (the rule of a Nest query), and its declared responses with their media types and headers.
+ */
+function inboundShape(operation: NormalizedOperation, document: unknown): Parameters<typeof literal>[0] {
+  const components = asRecord(document).components;
+  const text = Object.fromEntries(TEXT_LOCATIONS.flatMap((location) => {
+    const parameters = operation.parameters.filter((parameter) => parameter.in === location);
+    // The group is a schema of its own; its references into the document's components resolve against `components`.
+    const table = parameters.length ? queryFieldTable({ type: 'object', properties: Object.fromEntries(parameters.map((parameter) => [parameter.name, parameterSchema(parameter) ?? true])), components } as never, () => undefined) : undefined;
+    return table ? [[location, table] as const] : [];
+  }));
+  // The tables hold only strings, numbers and booleans (an absent optional member is no member), so the shape is JSON.
+  return {
+    media: operation.requestContent.map((media) => media.contentType),
+    requestHeaders: operation.parameters.filter((parameter) => parameter.in === 'header').map((parameter) => parameter.name),
+    ...(Object.keys(text).length ? { text } : {}),
+    responses: operation.responses.map((response) => ({
+      status: response.status,
+      content: response.content.map((media) => media.contentType),
+      headers: objectEntries(response.headers).map(([name, header]) => ({ name, required: responseHeaderRequired(document, header) })),
+    })),
+  } as unknown as Parameters<typeof literal>[0];
+}
+
 function generateInbound(
   clientName: string,
+  document: unknown,
   operations: readonly NormalizedOperation[],
   profile: OpenApiGenerationProfile,
   hasCodecs: (operation: string) => boolean,
@@ -157,7 +186,7 @@ function generateInbound(
   const sdkLevel = literal(profile.validation === 'sanity' ? 'sanity' : true);
   const handlers = join(operations.map((operation) => {
     const codecs = codecSources.get(operation.name)?.name('operationCodecs', { alias: `__golemCodecs_${operation.name}` }) ?? code`{}`;
-    const shape = literal({ media: operation.requestContent.map((media) => media.contentType), statuses: operation.responses.map((response) => response.status) });
+    const shape = literal(inboundShape(operation, document));
     const checks = profile.validation ? code`, ${rt.validation.inboundChecks}(${literal(operation.name)}, ${codecs}, options.validate, ${sdkLevel})` : code``;
     return code`    ${identifierPart(operation.name)}: ${rt.client.inboundHandler}(${codecs}, ${shape}, (input: ${typesModule.namespace()}.${identifierPart(`${operation.typeName}OperationInput`)}) => port.${identifierPart(operation.name)}(input)${checks}),`;
   }), code`\n`);
@@ -237,7 +266,8 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions, moved:
   const modelAnalysis = analyzeOpenApiModels(document, profile.validation, options.dates ?? 'date', [...operations, ...inboundOperations]);
   const inlineDiagnostics = checkOperationCompositions([...operations, ...inboundOperations], modelAnalysis, document);
   const schemaData = profile.validation && (plan.hasOutboundOperations || plan.hasInboundOperations)
-    ? buildSchemaData(document, ir)
+    // A request body that converts is checked by its own conversion, so the input root of its client operation leaves it open; an inbound request is checked in its wire form.
+    ? buildSchemaData(document, ir, (operation, contentType) => operation.sourceKind === 'path' && modelAnalysis.convertedNodeIds.has(requestBodyKey(operation.name, contentType)))
     : undefined;
   const files = new Map<string, string>();
   // The names that each module of the index exports come from its Code, and the index re-exports the whole modules it stars.
@@ -322,7 +352,7 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions, moved:
     modules.set('servers.ts', { exports: serversModule.exports, stars: [] });
   }
   if (plan.artifacts.has('inbound.ts')) {
-    const inbound = generateInbound(clientName, inboundOperations, profile, (operation) => files.has(`codecs/${operation}.ts`));
+    const inbound = generateInbound(clientName, document, inboundOperations, profile, (operation) => files.has(`codecs/${operation}.ts`));
     files.set('inbound.ts', inbound.source);
     modules.set('inbound.ts', { exports: inbound.exports, stars: [] });
   }

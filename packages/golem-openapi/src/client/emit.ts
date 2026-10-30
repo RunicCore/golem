@@ -117,6 +117,11 @@ function headerSchemaKind(document: unknown, rawSchema: unknown, depth = 0): str
   return kinds.size === 1 ? [...kinds][0] ?? null : null;
 }
 
+/** Whether a declared response header (or a reference to one) is required. */
+export function responseHeaderRequired(document: unknown, rawHeader: unknown): boolean {
+  return asRecord(resolveLocal(document, rawHeader)).required === true;
+}
+
 function responseContractsForOperation(
   document: unknown,
   operation: NormalizedOperation,
@@ -143,6 +148,7 @@ function responseContractsForOperation(
         style: header.style || 'simple',
         explode: header.explode === true,
         contentType,
+        ...(responseHeaderRequired(document, rawHeader) ? { required: true } : {}),
         kind: headerSchemaKind(document, schema),
         itemKind: headerSchemaKind(document, itemSchema),
         propertyKinds: Object.fromEntries(

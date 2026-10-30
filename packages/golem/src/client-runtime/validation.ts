@@ -71,13 +71,16 @@ export async function validateOperationInput(
 
 /**
  * The check `readResponse` runs on each body or stream item at `level` and on each response header at `headerLevel`, before it is decoded;
- * responses without content have no body check. None when both levels are `false`.
+ * responses without content have no body check. A required header that is absent comes with value undefined and fails. None when both levels are `false`.
  */
 export function responseCheck(validators: OperationRuntimeValidators, level: ValidationLevel = true, headerLevel: ValidationLevel = false): ResponseCheck | undefined {
   if (level === false && headerLevel === false) return undefined;
   return (response, value, header) => {
     if (header !== undefined) {
-      return headerLevel === false ? Promise.resolve() : assertValid(validators.responseHeaders?.get(`${response.status}:${header}`), value, headerLevel === 'sanity');
+      if (headerLevel === false) return Promise.resolve();
+      return value === undefined
+        ? Promise.reject(new LibError(LibErrorKind.Validation, 'API data validation failed.', [toIssue({ code: 'required', key: header, path: [header] }, IssueSource.OpenAPI, IssueRepresentation.Wire)]))
+        : assertValid(validators.responseHeaders?.get(`${response.status}:${header}`), value, headerLevel === 'sanity');
     }
     return level === false || response.contentType === null
       ? Promise.resolve()
@@ -134,6 +137,7 @@ export function inboundChecks(operation: string, codecs: OperationCodecs, valida
   const response = responseCheck(validators, levels.response, levels.responseHeaders);
   return {
     request: (request) => validateOperationInput(operation, request, validators, levels),
+    responseLevel: levels.response,
     ...(response ? { response } : {}),
   };
 }
