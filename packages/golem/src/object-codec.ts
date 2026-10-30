@@ -78,14 +78,7 @@ export interface QueryFieldShape {
   readonly types: readonly ('string' | 'number' | 'integer' | 'boolean')[];
   readonly literals?: readonly (string | number | boolean)[];
   readonly item?: QueryFieldShape;
-  /** The OpenAPI parameter that this field is: its text is read as the style of the parameter writes it (`parameter-styles.ts`). */
-  readonly parameter?: { readonly style?: string; readonly explode?: boolean };
-  /** An object parameter: the shape of each of its properties. */
-  readonly properties?: Readonly<Record<string, QueryFieldShape>>;
 }
-
-/** A field that is an OpenAPI parameter: its text is read as the style of the parameter writes it. */
-export type ParameterFieldShape = QueryFieldShape & { readonly parameter: NonNullable<QueryFieldShape['parameter']> };
 
 /** The fields of a model that a query string decodes, by name. */
 export type QueryFieldTable = Readonly<Record<string, QueryFieldShape>>;

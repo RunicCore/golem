@@ -169,8 +169,6 @@ type BodyConversion = (value: never, options?: { readonly validate: ValidationLe
  * What the generated codec module of an operation holds: its validators, and the conversion of each body, parameter and response header
  * that has a Date or Temporal value. `responses` and `decode` are keyed `status:contentType`, `encode` by request content type,
  * `parameters` by `location:name` and `headers` by `status:name`; a value that converts nothing has no entry.
- * The codecs of an inbound operation (a webhook or callback) run the other way: `encode` and `parameters` turn the wire request into its plain form,
- * `decode` and `headers` turn the plain response into its wire form.
  */
 export interface OperationCodecs {
   readonly input?: Validator;
@@ -179,8 +177,6 @@ export interface OperationCodecs {
   readonly responseHeaders?: Readonly<Record<string, Validator>>;
   readonly encode?: Readonly<Record<string, BodyConversion>>;
   readonly decode?: Readonly<Record<string, BodyConversion>>;
-  /** The `decode` keys of an inbound operation whose body the response check also judges in its wire form, because its descriptors do not carry every keyword of its schema. */
-  readonly wireChecked?: readonly string[];
   readonly parameters?: Readonly<Record<string, BodyConversion>>;
   readonly headers?: Readonly<Record<string, BodyConversion>>;
 }

@@ -3,7 +3,6 @@ import type { OperationRuntimeValidators } from '../schema-registry-validation.j
 import { serdeValidates, type ValidationLevel } from '../object-codec.js';
 import { runValidation } from '../validation-runner.js';
 import type { Validator } from '../validation-runtime.js';
-import type { InboundChecks } from './body-codecs.js';
 import type { ClientRuntime, OperationCodecs, ResponseCheck, ValidateOption } from './core.js';
 
 // Exported from `@exprtlabs/golem/validation` and `@exprtlabs/golem/internal/client-validation-runtime`, which only SDKs generated with validation import; `@exprtlabs/golem/client` and `@exprtlabs/golem/internal/client-runtime` never reach this module.
@@ -122,30 +121,11 @@ function sidesOf(option: unknown): Sides {
  * side), which also caps them (`serdeValidates` decides: a level above the cap throws `ValidationUnavailable`, an unknown value a `TypeError`).
  */
 export function callLevels(runtime: ClientRuntime, call: ValidateOption | undefined, sdkLevel: true | 'sanity'): CallLevels {
-  return levelsOf(runtime.options.validate, call, sdkLevel);
-}
-
-function levelsOf(client: ValidateOption | undefined, call: ValidateOption | undefined, sdkLevel: true | 'sanity'): CallLevels {
   const fromCall = sidesOf(call);
-  const fromClient = sidesOf(client);
+  const fromClient = sidesOf(runtime.options.validate);
   const level = (side: keyof Sides, unnamed: ValidationLevel): ValidationLevel => {
     const named = fromCall[side] === undefined ? fromClient[side] : fromCall[side];
     return named === undefined ? unnamed : serdeValidates({ validate: named as ValidationLevel }, sdkLevel);
   };
   return { request: level('request', sdkLevel), response: level('response', sdkLevel), requestHeaders: level('requestHeaders', false), responseHeaders: level('responseHeaders', false) };
-}
-
-/**
- * The checks of an inbound operation, at the levels of `validate` (the rule of `callLevels`: the binding's option, then the SDK's `sdkLevel`).
- * The wire request is checked as the client checks its wire input; the response of the application is checked as the client checks a response.
- */
-export function inboundChecks(operation: string, codecs: OperationCodecs, validate: ValidateOption | undefined, sdkLevel: true | 'sanity'): InboundChecks {
-  const levels = levelsOf(undefined, validate, sdkLevel);
-  const validators = generatedValidators(operation, codecs);
-  const response = responseCheck(validators, levels.response, levels.responseHeaders);
-  return {
-    request: (request) => validateOperationInput(operation, request, validators, levels),
-    responseLevel: levels.response,
-    ...(response ? { response } : {}),
-  };
 }

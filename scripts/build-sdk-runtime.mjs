@@ -20,7 +20,7 @@ const entry = 'runtime-sdk';
 const barrelTypes = [
   ['client', [
     'ApiOperation', 'AuthContext', 'BasicAuthValue', 'BasicCredentials', 'BodyEncoder', 'BodyEncoderContext', 'ClientOptions', 'EncodedBody',
-    'EncodingMetadata', 'InboundRequest', 'InboundResponse', 'MutualTlsTransport', 'OperationCodecs', 'ParameterSerializer',
+    'EncodingMetadata', 'MutualTlsTransport', 'OperationCodecs', 'ParameterSerializer',
     'ParameterSerializerContext', 'RequestOptions', 'ResponseHeaderDecoder', 'ResponseHeaderDecoderContext', 'RuntimeResponseContract',
     'RuntimeSecuritySchemes', 'StreamDecoder', 'StreamDecoderContext', 'TokenAuthValue', 'UndeclaredResponseError',
   ]],

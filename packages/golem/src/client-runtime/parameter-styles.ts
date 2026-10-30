@@ -1,6 +1,5 @@
 /**
- * The one table of OpenAPI 3.1 and 3.2 parameter styles. The client writes a parameter from it (`parameters.ts`), and the inbound reader reads the text of a
- * parameter back from it (`query-decode.ts`, and the generator of the inbound table), so the two cannot disagree about a separator, a prefix or an explode rule.
+ * The one table of OpenAPI 3.1 and 3.2 parameter styles. The client writes a parameter from it (`parameters.ts`), and the generator checks the style of a parameter against it.
  */
 
 export type ParameterLocation = 'path' | 'query' | 'header' | 'cookie';
