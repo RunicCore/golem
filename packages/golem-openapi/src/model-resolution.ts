@@ -397,7 +397,7 @@ function sequenceBodyDescriptor(
 ): ModelTypeDescriptor | undefined {
   if (Array.isArray(schema.prefixItems)) {
     const items = schema.prefixItems.map((item) => modelConversionDescriptor(item, definitions, env, direction, seen));
-    return schema.items === false
+    return withOpenApiConstraints(schema.items === false
       ? { kind: 'tuple', items }
       : {
         kind: 'tuple',
@@ -406,10 +406,10 @@ function sequenceBodyDescriptor(
           index: items.length,
           item: schema.items === undefined ? { kind: 'unknown' } : modelConversionDescriptor(schema.items, definitions, env, direction, seen),
         },
-      };
+      }, schema);
   }
   if (schema.items) {
-    return { kind: 'array', item: modelConversionDescriptor(schema.items, definitions, env, direction, seen) };
+    return withOpenApiConstraints({ kind: 'array', item: modelConversionDescriptor(schema.items, definitions, env, direction, seen) }, schema);
   }
   return undefined;
 }
@@ -552,7 +552,7 @@ export function modelConversionDescriptor(
     if (empty.length > 0) {
       throw new CompositionError(COMPOSITION_UNSATISFIABLE, `No object satisfies this schema: the required ${empty.length > 1 ? 'properties' : 'property'} ${empty.map((name) => JSON.stringify(name)).join(', ')} accept${empty.length > 1 ? '' : 's'} no value, because the schema is an empty enum, \`not: true\` or \`false\`. Remove ${empty.length > 1 ? 'them' : 'it'} from required, or give ${empty.length > 1 ? 'them' : 'it'} a schema that accepts a value.`);
     }
-    const object: ModelTypeDescriptor = {
+    const object: ModelTypeDescriptor = withOpenApiConstraints({
       kind: 'object',
       properties: Object.fromEntries(objectEntries(schema.properties).map(([name, child]) => [name, modelConversionDescriptor(child, definitions, nested, direction, seen)])),
       required,
@@ -562,7 +562,7 @@ export function modelConversionDescriptor(
           ? modelConversionDescriptor(schema.additionalProperties, definitions, nested, direction, seen)
           : true,
       ...(schema.additionalProperties === true ? { additionalPropertiesDeclared: true as const } : {}),
-    };
+    }, schema);
     return admitsNull(schema) ? { kind: 'union', variants: [object, { kind: 'null' }] } : object;
   }
   if (isJsonObject(schema) && schema.const !== undefined

@@ -64,7 +64,7 @@ const DOCUMENT = {
       },
     },
   },
-  components: { schemas: { Event: { type: 'object', required: ['at'], properties: { at: DATE_TIME } }, Ack: { type: 'object', required: ['seen'], properties: { seen: DATE_TIME } } } },
+  components: { schemas: { Event: { type: 'object', required: ['at'], properties: { at: DATE_TIME } }, Ack: { type: 'object', required: ['seen'], properties: { seen: DATE_TIME, tags: { type: 'array', minItems: 1, items: { type: 'string' } } } } } },
 };
 
 interface Wire { readonly status: number; readonly contentType: string | null; readonly headers: Record<string, unknown>; readonly body: unknown }
@@ -152,7 +152,7 @@ test('the response of the port is encoded: its dates leave as wire strings', asy
   assert.deepEqual(await noContent.handlers.webhookReceiveSettlement(REQUEST), { status: 204, contentType: null, headers: { 'X-At': AT }, body: undefined });
 });
 
-for (const [name, body] of [['a date that is no date', { seen: 'yesterday' }], ['a number for a date', { seen: 5 }], ['a missing field', {}]] as const) {
+for (const [name, body] of [['a date that is no date', { seen: 'yesterday' }], ['a number for a date', { seen: 5 }], ['a missing field', {}], ['an empty list under minItems', { seen: new Date(AT), tags: [] }]] as const) {
   test(`a response of the port with ${name} is an error of the application, not of the input`, async () => {
     // protects: R-80, F-777 a bad port response is an app-side LibError and golem picks no status
     const { handlers } = await bind('full', { ...OK, body });

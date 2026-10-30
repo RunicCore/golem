@@ -185,13 +185,13 @@ const CONVERTING_TASK = withRootOperations({
     type: 'object',
     additionalProperties: false,
     required: ['id', 'labels'],
-    properties: { id: { type: 'string' }, labels: { type: 'array', minItems: 1, items: { type: 'string' } }, when: { type: 'string', format: 'date-time' } },
+    properties: { id: { type: 'string' }, labels: { type: 'array', minItems: 1, items: { type: 'string' } }, meta: { type: 'object', minProperties: 1, additionalProperties: { type: 'string' } }, when: { type: 'string', format: 'date-time' } },
   } } },
 }, 'Task');
 
 for (const mode of ['standalone', 'golem'] as const) {
   test(`a ${mode} SDK checks a request body that converts a date like one that converts nothing, and validate false sends it unchecked`, async t => {
-    // protects: R-86, T-719 a converting request body is checked at the request level (constraints included), once
+    // protects: R-86, T-719 a converting request body is checked at the request level, array and object limits included
     const output = path.join(createFixtureProject(t, `converting-body-${mode}-`), 'sdk');
     await generateMaterializedSdk(CONVERTING_TASK, { output, name: 'Converting', profile, mode });
     compileGeneratedSdk(output, [], { strict: true, skipLibCheck: true });
@@ -200,6 +200,10 @@ for (const mode of ['standalone', 'golem'] as const) {
     assert.deepEqual(await codec.encode({ id: 'a', labels: ['x'], when }), { id: 'a', labels: ['x'], when: '1970-01-01T00:00:00.000Z' });
     await assert.rejects(
       codec.encode({ id: 'a', labels: [], when }),
+      (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.Validation && error.causedByInput === true,
+    );
+    await assert.rejects(
+      codec.encode({ id: 'a', labels: ['x'], meta: {}, when }),
       (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.Validation && error.causedByInput === true,
     );
     assert.deepEqual(await codec.encode({ id: 'a', labels: [], when }, { validate: false }), { id: 'a', labels: [], when: '1970-01-01T00:00:00.000Z' });

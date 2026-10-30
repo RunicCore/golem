@@ -29,7 +29,10 @@ function operationHeadersSchema(operation: NormalizedOperation): unknown {
     : undefined;
 }
 
-function operationInputSchema(operation: NormalizedOperation): unknown {
+/** Whether the body of a request media type is checked by its own conversion, as a plain value, so the input root leaves it open. */
+type BodyChecked = (operation: NormalizedOperation, contentType: string) => boolean;
+
+function operationInputSchema(operation: NormalizedOperation, bodyChecked: BodyChecked): unknown {
   // Headers are open here: the header root checks the declared ones (see `operationHeadersSchema`), and a request carries more.
   const properties: Record<string, unknown> = { header: true };
   const required: string[] = [];
@@ -56,7 +59,7 @@ function operationInputSchema(operation: NormalizedOperation): unknown {
   }
   if (operation.requestContent.length === 1) {
     const [media] = operation.requestContent;
-    properties.body = media?.schema ?? true;
+    properties.body = media && bodyChecked(operation, media.contentType) ? true : media?.schema ?? true;
     if (operation.requestBody && operation.requestBody.required) required.push('body');
   } else if (operation.requestContent.length > 1) {
     properties.body = {
@@ -64,7 +67,7 @@ function operationInputSchema(operation: NormalizedOperation): unknown {
         type: 'object',
         properties: {
           contentType: { const: media.contentType },
-          value: media.schema ?? true,
+          value: bodyChecked(operation, media.contentType) ? true : media.schema ?? true,
         },
         required: ['contentType', 'value'],
         additionalProperties: false,
@@ -90,7 +93,7 @@ function responseHeaderSchemas(operation: NormalizedOperation, document: unknown
 }
 
 /** The schemas of an operation's validation root before projection, at the places its pointers name: `input`, `headers`, `responses/<status>/<media type>` and `responseHeaders/<status>/<header name>`. */
-export function operationSourceSchemas(operation: NormalizedOperation, document: unknown): {
+export function operationSourceSchemas(operation: NormalizedOperation, document: unknown, bodyChecked: BodyChecked = () => false): {
   readonly input: unknown;
   readonly headers?: unknown;
   readonly responses: Readonly<Record<string, Readonly<Record<string, unknown>>>>;
@@ -98,7 +101,7 @@ export function operationSourceSchemas(operation: NormalizedOperation, document:
 } {
   const headers = operationHeadersSchema(operation);
   return {
-    input: operationInputSchema(operation),
+    input: operationInputSchema(operation, bodyChecked),
     ...(headers === undefined ? {} : { headers }),
     responseHeaders: responseHeaderSchemas(operation, document),
     responses: Object.fromEntries(operation.responses.map((response) => [
@@ -117,9 +120,10 @@ function operationRuntimeSchemas(
   inputResourceId: string,
   outputResourceId: string,
   resources: ResourceIndex,
+  bodyChecked: BodyChecked,
 ): Record<string, unknown> {
   return Object.fromEntries(operations.map((operation) => {
-    const source = operationSourceSchemas(operation, document);
+    const source = operationSourceSchemas(operation, document, bodyChecked);
     return [
       operation.name,
       {
@@ -250,7 +254,8 @@ function runtimeRegistry(registry: Record<string, unknown>): Record<string, unkn
   };
 }
 
-export function buildSchemaData(document: unknown, preparedIr?: NormalizedDocument) {
+/** `bodyChecked` names the request bodies that the input root leaves to their own conversion (see `operationInputSchema`). */
+export function buildSchemaData(document: unknown, preparedIr?: NormalizedDocument, bodyChecked: BodyChecked = () => false) {
   const ir = preparedIr ?? normalizeDocument(document);
   const operations = [...ir.operations, ...ir.inboundOperations];
   const rootId = `urn:golem:openapi:${identifier(asRecord(asRecord(document).info).title, 'api').toLowerCase()}:${sourceDigest(document)}:schemas`;
@@ -267,6 +272,7 @@ export function buildSchemaData(document: unknown, preparedIr?: NormalizedDocume
       projections?.inputResourceId ?? `${rootId}:input`,
       projections?.outputResourceId ?? `${rootId}:output`,
       resources,
+      bodyChecked,
     ),
     ...(projections ? {
       $defs: {

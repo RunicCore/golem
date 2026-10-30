@@ -22,7 +22,7 @@ import {
   type OpenApiDates,
 } from './models.js';
 import { neverPropertiesReader } from './model-resolution.js';
-import { operationConverts } from './model-schema-graph.js';
+import { operationConverts, requestBodyKey } from './model-schema-graph.js';
 import { golemCodecs, standaloneCodecs, type OperationCodecsFor } from './operation-codecs.js';
 import { withOrigins, type OriginLocator } from './origin.js';
 import { buildSchemaData } from './schemas.js';
@@ -285,7 +285,8 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions, moved:
   const modelAnalysis = analyzeOpenApiModels(document, profile.validation, options.dates ?? 'date', [...operations, ...inboundOperations]);
   const inlineDiagnostics = checkOperationCompositions([...operations, ...inboundOperations], modelAnalysis, document);
   const schemaData = profile.validation && (plan.hasOutboundOperations || plan.hasInboundOperations)
-    ? buildSchemaData(document, ir)
+    // A request body that converts is checked by its own conversion, so the input root of its client operation leaves it open; an inbound request is checked in its wire form.
+    ? buildSchemaData(document, ir, (operation, contentType) => operation.sourceKind === 'path' && modelAnalysis.convertedNodeIds.has(requestBodyKey(operation.name, contentType)))
     : undefined;
   const files = new Map<string, string>();
   const specifiers: RuntimeSpecifiers | undefined = golem ? undefined : standaloneRuntimeSpecifiers;
