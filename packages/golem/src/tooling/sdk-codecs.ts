@@ -64,7 +64,7 @@ export const TEMPORAL_SERDE = {
 };
 
 /** The code of a function the module names, under the key that picks it. */
-export interface SdkKeyedCode {
+interface SdkKeyedCode {
   readonly key: string;
   readonly code: Code;
 }
@@ -74,7 +74,7 @@ export interface SdkKeyedCode {
  * and an operation with no such value has no such member. The members `encode`, `decode`, `parameters` and `headers` name the client's direction;
  * for an inbound operation (a webhook or callback) they run the other way: the request converts from its wire form and the response to it.
  */
-export interface SdkOperationCodecs {
+interface SdkOperationCodecs {
   /** Checks the plain input of a call. */
   readonly input?: Code;
   /** Checks the plain header parameters of a call, apart from `input`; none when the operation has no header parameter. */
@@ -121,16 +121,67 @@ function operationCodecsLiteral(operation: SdkOperationCodecs): Code {
   return members.length ? code`{${nest(code`${lineBreak}${join(members, lineBreak)}`)}${lineBreak}}` : code`{}`;
 }
 
-/** The text of a module that exports `operationCodecs`, the codecs of one operation: a client imports the module of the operation it calls and no other. */
-export function writeOperationCodecs(operation: SdkOperationCodecs, module: OperationCodecsModule): string {
+/**
+ * What a writer knows of one operation. `values` are the places of the values that convert: `['request', contentType]`,
+ * `['response', status, contentType]`, `['parameter', location, name]` and `['response-header', status, name]`, in the order of each kind's table.
+ * `wireChecked` names the inbound response bodies (`status:contentType`) that the wire check also judges. `checks` are the validators of the operation.
+ */
+export interface SdkOperationShape {
+  readonly inbound: boolean;
+  readonly values: readonly (readonly string[])[];
+  readonly wireChecked: readonly string[];
+  readonly checks?: Pick<SdkOperationCodecs, 'input' | 'requestHeaders' | 'responses' | 'responseHeaders'>;
+}
+
+/** The code of the conversion function of the value at a place, or none when the value converts nothing. */
+export type SdkValueCodec = (at: readonly string[], conversion: 'fromWire' | 'toWire') => Code | undefined;
+
+/**
+ * The codecs of one operation, or none when it has nothing to say. Both writers of the SDK codecs (the module of a standalone operation
+ * and the table of a golem-mode SDK) build them here, so the direction of an inbound operation, the keys and the members are written once.
+ */
+function operationCodecsOf(shape: SdkOperationShape, codecOf: SdkValueCodec): SdkOperationCodecs | undefined {
+  // The request of a client operation leaves in its wire form and its response arrives in its plain form; the traffic of an inbound operation runs the other way.
+  const requestConversion = shape.inbound ? 'fromWire' : 'toWire';
+  const responseConversion = shape.inbound ? 'toWire' : 'fromWire';
+  const keyed = (kind: string, key: (at: readonly string[]) => string, conversion: 'fromWire' | 'toWire'): SdkKeyedCode[] => shape.values
+    .filter((at) => at[0] === kind)
+    .flatMap((at) => {
+      const codec = codecOf(at, conversion);
+      return codec === undefined ? [] : [{ key: key(at.slice(1)), code: codec }];
+    });
+  const encode = keyed('request', ([contentType]) => contentType!, requestConversion);
+  const decode = keyed('response', ([status, contentType]) => `${status}:${contentType}`, responseConversion);
+  const parameters = keyed('parameter', ([location, name]) => `${location}:${name}`, requestConversion);
+  const headers = keyed('response-header', ([status, name]) => `${status}:${name}`, responseConversion);
+  // An inbound response body that converts is judged by its conversion; the wire check also judges one whose descriptors miss a keyword of its schema.
+  const wireChecked = shape.inbound ? shape.wireChecked.filter((key) => decode.some((item) => item.key === key)) : [];
+  const codecs: SdkOperationCodecs = {
+    ...shape.checks,
+    ...(encode.length ? { encode } : {}),
+    ...(decode.length ? { decode } : {}),
+    ...(wireChecked.length ? { wireChecked } : {}),
+    ...(parameters.length ? { parameters } : {}),
+    ...(headers.length ? { headers } : {}),
+  };
+  return Object.keys(codecs).length ? codecs : undefined;
+}
+
+/** The text of a module that exports `operationCodecs`, the codecs of one operation: a client imports the module of the operation it calls and no other. An operation with no codecs has no module. */
+export function writeOperationCodecs(shape: SdkOperationShape, codecOf: SdkValueCodec, module: OperationCodecsModule): string | undefined {
+  const operation = operationCodecsOf(shape, codecOf);
+  if (operation === undefined) return undefined;
   const body = code`export const ${exportedName('operationCodecs')} = ${operationCodecsLiteral(operation)} as const;\n`;
   const imports = fileImports(body, module.sources);
   return render(code`${join([module.banner, ...imports, code``, body], lineBreak)}`);
 }
 
-/** The declaration of `SDK_CODECS_EXPORT`: the codecs of every operation of a golem-mode SDK, each under the operation's name, in the shape a standalone operation module exports. */
-export function sdkCodecsTable(operations: readonly { readonly name: string; readonly codecs: SdkOperationCodecs }[]): Code {
-  const members = operations.map(({ name, codecs }) => code`${propertyKey(name)}: ${operationCodecsLiteral(codecs)},`);
+/** The declaration of `SDK_CODECS_EXPORT`: the codecs of every operation of a golem-mode SDK that has any, each under the operation's name, in the shape a standalone operation module exports. */
+export function sdkCodecsTable(operations: readonly { readonly name: string; readonly shape: SdkOperationShape; readonly codecOf: SdkValueCodec }[]): Code {
+  const members = operations.flatMap(({ name, shape, codecOf }) => {
+    const codecs = operationCodecsOf(shape, codecOf);
+    return codecs === undefined ? [] : [code`${propertyKey(name)}: ${operationCodecsLiteral(codecs)},`];
+  });
   const literal = members.length ? code`{${nest(code`${lineBreak}${join(members, lineBreak)}`)}${lineBreak}}` : code`{}`;
   return code`export const ${exportedName(SDK_CODECS_EXPORT)} = ${literal} as const;\n`;
 }

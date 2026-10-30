@@ -25,8 +25,6 @@ import {
   wireStringifyExportName,
   TEMPORAL_SERDE,
   writeOperationCodecs,
-  type SdkKeyedCode,
-  type SdkOperationCodecs,
   type CodecRuntimeOptions,
   type FromJsonModelResolver,
 } from '@exprtlabs/golem/internal/emitter';
@@ -57,7 +55,7 @@ import {
   type CompositionSite,
 } from './model-resolution.js';
 import { openApiValidationSchemaClosure } from './model-manifest.js';
-import { analyzeOpenApiModels, parameterKey, reachableSchemaNodes, requestBodyKey, responseBodyKey, responseHeaderKey, schemaGraphView } from './model-schema-graph.js';
+import { analyzeOpenApiModels, inboundWireChecked, reachableSchemaNodes, schemaGraphView } from './model-schema-graph.js';
 
 /** The bases of the model that `reference` names, when it has any. */
 function referenceBases(reference: string, definitions: ModelDefinitions): { readonly bases?: ReturnType<typeof modelBases> } {
@@ -465,35 +463,32 @@ export function generateOperationCodecs(
   for (const operation of operations) {
     const validatorsSource = new ImportSource('../validators.generated.js', false, { sorted: true });
     const groupSources = new Map(analysis.grouping.groups.map((group) => [group.id, new ImportSource(`../models/_${group.id}.js`, false, { sorted: true })] as const));
-    const inbound = operation.sourceKind !== 'path';
-    // The request of a client operation leaves in its wire form and its response arrives in its plain form; the traffic of an inbound operation runs the other way.
-    const requestConversion = inbound ? 'fromWire' : 'toWire';
-    const responseConversion = inbound ? 'toWire' : 'fromWire';
-    const codecOf = (valueKey: string, functionName: 'fromWire' | 'toWire'): Code | undefined => {
-      const nodeId = analysis.convertedNodeIds.get(valueKey);
-      const groupId = nodeId === undefined ? undefined : analysis.grouping.owner.get(nodeId);
-      return nodeId !== undefined && groupId !== undefined ? groupSources.get(groupId)?.name(generatedFunctionName(nodeId, functionName)) : undefined;
-    };
-    const keyed = (items: ReadonlyArray<readonly [string, Code | undefined]>): SdkKeyedCode[] => items.flatMap(([key, codec]) => codec ? [{ key, code: codec }] : []);
     const checks = validators?.get(operation.name);
-    const responses = operation.responses.flatMap((response) => response.content.map((media) => [response.status, media.contentType] as const));
-    const encode = keyed(operation.requestContent.map((media) => [media.contentType, codecOf(requestBodyKey(operation.name, media.contentType), requestConversion)]));
-    const decode = keyed(responses.map(([status, contentType]) => [`${status}:${contentType}`, codecOf(responseBodyKey(operation.name, status, contentType), responseConversion)]));
-    // An inbound response body that converts is judged by its conversion; when its descriptors miss a keyword of its schema, the wire check judges it too.
-    const wireChecked = inbound ? responses.map(([status, contentType]) => [`${status}:${contentType}`, responseBodyKey(operation.name, status, contentType)] as const)
-      .filter(([, valueKey]) => analysis.uncarriedValues.has(valueKey)).map(([key]) => key) : [];
-    const parameters = keyed(operation.parameters.map((parameter) => [`${parameter.in}:${parameter.name}`, codecOf(parameterKey(operation.name, parameter.in, parameter.name), requestConversion)]));
-    const headers = keyed(operation.responses.flatMap((response) => Object.keys(response.headers).map((name) => [`${response.status}:${name}`, codecOf(responseHeaderKey(operation.name, response.status, name), responseConversion)] as const)));
-    if (!profile.validation && !encode.length && !decode.length && !parameters.length && !headers.length) continue;
-    const codecs: SdkOperationCodecs = {
-      ...(checks ? { input: validatorsSource.name(checks.input), ...(checks.headers === undefined ? {} : { requestHeaders: validatorsSource.name(checks.headers) }), responses: checks.responses.map((item) => ({ key: item.key, code: validatorsSource.name(item.name) })), responseHeaders: checks.responseHeaders.map((item) => ({ key: item.key, code: validatorsSource.name(item.name) })) } : {}),
-      ...(encode.length ? { encode } : {}),
-      ...(decode.length ? { decode } : {}),
-      ...(wireChecked.length ? { wireChecked } : {}),
-      ...(parameters.length ? { parameters } : {}),
-      ...(headers.length ? { headers } : {}),
+    const shape = {
+      inbound: operation.sourceKind !== 'path',
+      values: [
+        ...operation.requestContent.map((media) => ['request', media.contentType]),
+        ...operation.responses.flatMap((response) => response.content.map((media) => ['response', response.status, media.contentType])),
+        ...operation.parameters.map((parameter) => ['parameter', parameter.in, parameter.name]),
+        ...operation.responses.flatMap((response) => Object.keys(response.headers).map((name) => ['response-header', response.status, name])),
+      ],
+      wireChecked: inboundWireChecked(operation, analysis.uncarriedValues),
+      ...(checks ? {
+        checks: {
+          input: validatorsSource.name(checks.input),
+          ...(checks.headers === undefined ? {} : { requestHeaders: validatorsSource.name(checks.headers) }),
+          responses: checks.responses.map((item) => ({ key: item.key, code: validatorsSource.name(item.name) })),
+          responseHeaders: checks.responseHeaders.map((item) => ({ key: item.key, code: validatorsSource.name(item.name) })),
+        },
+      } : {}),
     };
-    files.set(`codecs/${operation.name}.ts`, writeOperationCodecs(codecs, { banner: generatedBannerComment(), sources: [validatorsSource, ...groupSources.values()] }));
+    const codecOf = (at: readonly string[], conversion: 'fromWire' | 'toWire'): Code | undefined => {
+      const nodeId = analysis.convertedNodeIds.get(JSON.stringify([operation.name, ...at]));
+      const groupId = nodeId === undefined ? undefined : analysis.grouping.owner.get(nodeId);
+      return nodeId !== undefined && groupId !== undefined ? groupSources.get(groupId)?.name(generatedFunctionName(nodeId, conversion)) : undefined;
+    };
+    const source = writeOperationCodecs(shape, codecOf, { banner: generatedBannerComment(), sources: [validatorsSource, ...groupSources.values()] });
+    if (source !== undefined) files.set(`codecs/${operation.name}.ts`, source);
   }
   return files;
 }

@@ -119,6 +119,16 @@ const STAMP_DOCUMENT = {
 };
 const stamps = onceShared(() => loadSdk(scope, 'golem-openapi-keyword-stamps-', { document: STAMP_DOCUMENT, name: 'Stamps', dates: 'date', validation: true }));
 const BEFORE_PATTERN = new Date('1970-01-01T00:00:00Z');
+/** A reply with a date that breaks the pattern is rejected and one that keeps it leaves as its wire text. */
+async function assertStampWireChecked(answer: (at: Date) => Promise<unknown>): Promise<void> {
+  await assert.rejects(answer(BEFORE_PATTERN), isValidation);
+  assert.deepEqual(await answer(new Date(AT)), { status: 200, contentType: 'application/json', headers: {}, body: { at: AT } });
+}
+/** The answer of the inbound handler of the SDK module when the application's port replies with a body holding `at`. */
+const stampAnswer = (sdkModule: Record<string, unknown>) => (at: Date) =>
+  (sdkModule.bindStampsInbound as (port: Record<string, unknown>) => Record<string, (request: unknown) => Promise<unknown>>)({
+    webhookReceiveStamp: async () => ({ matched: 'status', status: 200, contentType: 'application/json', body: { at }, headers: {} }),
+  }).webhookReceiveStamp!({});
 
 test('a request body with a date-time pattern is checked in its wire form: a date that breaks the pattern is rejected', async () => {
   // protects: T-729, F-163 a node with a keyword no descriptor carries keeps the wire check of the input root
@@ -129,10 +139,15 @@ test('a request body with a date-time pattern is checked in its wire form: a dat
 
 test('an inbound response with a date-time pattern runs the wire check of the response root after its conversion', async () => {
   // protects: T-729, F-163 an inbound response node with a keyword no descriptor carries is also checked in its wire form
-  const bind = (await importGeneratedModule((await stamps()).output, 'generated SDK')).bindStampsInbound as (port: Record<string, unknown>) => Record<string, (request: unknown) => Promise<unknown>>;
-  const answer = (at: Date) => bind({ webhookReceiveStamp: async () => ({ matched: 'status', status: 200, contentType: 'application/json', body: { at }, headers: {} }) }).webhookReceiveStamp!({});
-  await assert.rejects(answer(BEFORE_PATTERN), isValidation);
-  assert.deepEqual(await answer(new Date(AT)), { status: 200, contentType: 'application/json', headers: {}, body: { at: AT } });
+  const answer = stampAnswer(await importGeneratedModule((await stamps()).output, 'generated SDK'));
+  await assertStampWireChecked(answer);
+});
+
+test('a golem-mode inbound response with a date-time pattern runs the wire check of the response root after its conversion', async () => {
+  // protects: T-742 both SDK modes write wireChecked, so a golem-mode inbound response is judged in its wire form like a standalone one
+  const project = await loadGolemModeProject(scope, 'golem-openapi-keyword-stamps-golem-', [{ document: STAMP_DOCUMENT, folder: 'sdk/stamps', name: 'Stamps' }], true);
+  const answer = stampAnswer(await import(pathToFileURL(path.join(project.root, 'build/sdk/stamps/index.js')).href) as Record<string, unknown>);
+  await assertStampWireChecked(answer);
 });
 
 test('an app model over an SDK type with a keyword that no descriptor carries stops generation and names the keyword', async () => {

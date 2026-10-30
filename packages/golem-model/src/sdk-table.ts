@@ -24,8 +24,6 @@ import {
   type Code,
   type ImportOptions,
   type Piece,
-  type SdkKeyedCode,
-  type SdkOperationCodecs,
 } from '@exprtlabs/golem/internal/emitter';
 import { canonicalPath } from '@exprtlabs/golem/internal/generator-support';
 import type { SchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
@@ -126,38 +124,28 @@ export function sdkCodecsSource(
     modelBases: { basesOf: (id) => components.get(id)?.bases ?? [] },
   });
   const operations = sdk.manifest.operations.map((operation) => {
-    const valueCodec = (at: readonly string[], functionName: (id: string) => string): Code | undefined => {
-      const node = built.valueNodes.get(JSON.stringify([operation.name, ...at]));
-      return node === undefined ? undefined : identifier(functionName(node));
-    };
-    // The request of a client operation leaves in its wire form and its response arrives in its plain form; the traffic of an inbound operation runs the other way.
-    const requestConversion = operation.inbound ? fromWireFunctionName : toWireFunctionName;
-    const responseConversion = operation.inbound ? toWireFunctionName : fromWireFunctionName;
-    const keyed = (kind: string, key: (at: readonly string[]) => string, conversion: (id: string) => string): SdkKeyedCode[] => operation.values
-      .filter(({ at }) => at[0] === kind)
-      .flatMap(({ at }) => {
-        const codec = valueCodec(at, conversion);
-        return codec === undefined ? [] : [{ key: key(at.slice(1)), code: codec }];
-      });
-    const encode = keyed('request', ([contentType]) => contentType!, requestConversion);
-    const decode = keyed('response', ([status, contentType]) => `${status}:${contentType}`, responseConversion);
-    const parameters = keyed('parameter', ([location, name]) => `${location}:${name}`, requestConversion);
-    const headers = keyed('response-header', ([status, name]) => `${status}:${name}`, responseConversion);
     const checks = operation.validation;
     const root = (name: string): Code => validatorsSource!.name(exported(validators!.compiled.exports, scopedRoot(sdk, name)));
-    const codecs: SdkOperationCodecs = {
-      ...(checks && validatorsSource && validators ? {
-        input: root(checks.input),
-        ...(checks.headers === undefined ? {} : { requestHeaders: root(checks.headers) }),
-        responses: checks.responses.map((item) => ({ key: item.key, code: root(item.root) })),
-        responseHeaders: checks.responseHeaders.map((item) => ({ key: item.key, code: root(item.root) })),
-      } : {}),
-      ...(encode.length ? { encode } : {}),
-      ...(decode.length ? { decode } : {}),
-      ...(parameters.length ? { parameters } : {}),
-      ...(headers.length ? { headers } : {}),
+    return {
+      name: operation.name,
+      codecOf: (at: readonly string[], conversion: 'fromWire' | 'toWire'): Code | undefined => {
+        const node = built.valueNodes.get(JSON.stringify([operation.name, ...at]));
+        return node === undefined ? undefined : identifier((conversion === 'fromWire' ? fromWireFunctionName : toWireFunctionName)(node));
+      },
+      shape: {
+        inbound: operation.inbound === true,
+        values: operation.values.map(({ at }) => at),
+        wireChecked: operation.wireChecked ?? [],
+        ...(checks && validatorsSource && validators ? {
+          checks: {
+            input: root(checks.input),
+            ...(checks.headers === undefined ? {} : { requestHeaders: root(checks.headers) }),
+            responses: checks.responses.map((item) => ({ key: item.key, code: root(item.root) })),
+            responseHeaders: checks.responseHeaders.map((item) => ({ key: item.key, code: root(item.root) })),
+          },
+        } : {}),
+      },
     };
-    return { name: operation.name, codecs };
   });
   const body: Piece[] = [codecRuntime, sdkCodecsTable(operations)];
   // What the code calls decides the runtime imports and which helpers the file defines.

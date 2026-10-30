@@ -93,6 +93,8 @@ export interface GolemModeManifest extends ModelManifest {
     /** A webhook or callback: its request is decoded and its response encoded. */
     readonly inbound?: true;
     readonly values: readonly SdkOperationValue[];
+    /** The inbound response bodies, keyed `status:contentType`, that the wire check also judges because their descriptors miss a keyword of their schema. */
+    readonly wireChecked?: readonly string[];
     readonly validation?: SdkOperationValidation;
   }[];
   /** The schemas the operation roots reach, by resource id: one copy for all operations. Present when the SDK validates. */
@@ -229,7 +231,7 @@ function validateGolemModeGraph(manifest: Record<string, unknown>, filename: str
   if (!Array.isArray(components) || !components.every(validComponent) || new Set(components.map((entry) => entry.name)).size !== components.length) {
     throw invalid('components must list each schema once, by name, with its descriptor as JSON text, a codec id for a graph node and the type of an alias');
   }
-  if (!Array.isArray(operations) || !operations.every((entry) => isRecord(entry) && isName(entry.name) && Array.isArray(entry.values) && entry.values.every(isOperationValue))) {
+  if (!Array.isArray(operations) || !operations.every((entry) => isRecord(entry) && isName(entry.name) && Array.isArray(entry.values) && entry.values.every(isOperationValue) && (entry.wireChecked === undefined || (Array.isArray(entry.wireChecked) && entry.wireChecked.every((key) => typeof key === 'string'))))) {
     throw invalid('operations must list each operation name with the nodes of its values');
   }
   const validating = manifest.profile !== undefined && isRecord(manifest.profile) && manifest.profile.validation !== false;

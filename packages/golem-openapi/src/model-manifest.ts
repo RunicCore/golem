@@ -20,7 +20,7 @@ import {
   modelEnv,
   modelStableId,
 } from './model-resolution.js';
-import { uncarriedOf } from './model-schema-graph.js';
+import { inboundWireChecked, uncarriedOf } from './model-schema-graph.js';
 import { resolveLocal } from './normalize.js';
 
 /**
@@ -49,7 +49,8 @@ function golemModeGraph(document: unknown, analysis: OpenApiModelAnalysis, sdk: 
       roots: bundle.roots,
     };
     if (values.length === 0 && validation === undefined) continue;
-    operations.push({ name: operation.name, ...(operation.sourceKind === 'path' ? {} : { inbound: true }), values, ...(validation ? { validation } : {}) });
+    const wireChecked = inboundWireChecked(operation, analysis.uncarriedValues);
+    operations.push({ name: operation.name, ...(operation.sourceKind === 'path' ? {} : { inbound: true }), values, ...(wireChecked.length ? { wireChecked } : {}), ...(validation ? { validation } : {}) });
   }
   // A resource that several operations hold is the same schema in each, so one copy serves them all.
   const resources = Object.fromEntries([...(sdk.validation?.bundles.values() ?? [])]
