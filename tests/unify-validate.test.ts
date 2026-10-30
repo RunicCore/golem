@@ -254,13 +254,13 @@ test('an extra TValidation on an SDK-typed field rejects what the SDK accepts, a
   const rules = await import(pathToFileURL(path.join(root, 'build/src/rules.js')).href) as { extraMoneyCalls: number };
   const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TCheckout'));
   const wire = { note: 'ok', code: 'ff', when: '2026-01-01T00:00:00.000Z', items: [], primary: { sku: 'ABC', quantity: 1, price: 2 }, flags: {}, channel: { kind: 'open' }, span: ['2026-01-01T00:00:00.000Z', '2026-01-02T00:00:00.000Z'], hold: null };
-  const issuesOf = async (money: { amount: number; currency: string }): Promise<string[]> =>
-    (await validateInstance(modelCodec(Checkout).fromWireFormat({ ...wire, money }, { validate: false }), { failFast: false })).map((issue) => `${issue.path.join('.')}: ${issue.message}`);
+  const issuesOf = async (money: { amount: number; currency: string }): Promise<{ path: readonly (string | number)[]; message: string }[]> =>
+    (await validateInstance(modelCodec(Checkout).fromWireFormat({ ...wire, money }, { validate: false }), { failFast: false })).map((issue) => ({ path: issue.path, message: issue.message }));
 
   const before = rules.extraMoneyCalls;
-  assert.deepEqual(await issuesOf({ amount: 12, currency: 'XXX' }), ['money: reserved']);
+  assert.deepEqual(await issuesOf({ amount: 12, currency: 'XXX' }), [{ path: ['money'], message: 'reserved' }]);
   assert.equal(rules.extraMoneyCalls - before, 1, 'the extra rule ran for the value the SDK accepts');
-  assert.deepEqual((await issuesOf({ amount: 12, currency: 'usd' })).map((issue) => issue.split(':')[0]), ['money.currency']);
+  assert.deepEqual((await issuesOf({ amount: 12, currency: 'usd' })).map((issue) => issue.path), [['money', 'currency']]);
   assert.deepEqual(await issuesOf({ amount: 12, currency: 'USD' }), []);
   assert.equal(codec.validate(modelCodec(Checkout).fromWireFormat({ ...wire, money: { amount: 12, currency: 'XXX' } }, { validate: false })), false);
 });
