@@ -30,17 +30,17 @@ function document(format: string, chargeExtra: Record<string, unknown> = {}) {
 }
 
 /** A project with one app model and the golem-mode manifest of an SDK that has no validators of its own. */
-function golemModeProject(t: TestContext, format: string) {
+function golemModeProject(t: TestContext, format: string, withAppModel = true) {
   const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-model-golem-mode-sdk-', name: 'golem-mode-sdk' });
   const doc = document(format);
   const written = stableJson(golemModeManifest(doc, PROFILE));
   writeModelSources(sourceRoot, {
     'sdk/model-manifest.json': written,
-    'ledger.model.ts': "import type { IModel } from '@exprtlabs/golem/model';\nexport type TLedger = IModel<{ id: string; total: number }>;\n",
+    ...(withAppModel ? { 'ledger.model.ts': "import type { IModel } from '@exprtlabs/golem/model';\nexport type TLedger = IModel<{ id: string; total: number }>;\n" } : {}),
   });
   const manifest = validateModelManifest(JSON.parse(written));
   assert.ok(isGolemModeManifest(manifest));
-  const context = { root, sources: [path.join(sourceRoot, 'ledger.model.ts')], manifestInputs: [path.join(sourceRoot, 'sdk/model-manifest.json')], sdkOutputs: [path.join(sourceRoot, 'sdk')] };
+  const context = { root, ...(withAppModel ? { sources: [path.join(sourceRoot, 'ledger.model.ts')] } : {}), manifestInputs: [path.join(sourceRoot, 'sdk/model-manifest.json')], sdkOutputs: [path.join(sourceRoot, 'sdk')] };
   return { manifest, context };
 }
 
@@ -138,4 +138,12 @@ test('a golem-mode manifest that no openapi job of the golem.yaml writes is refu
   // protects: T-699 the models job takes the codecs file from the config and never from where a manifest lies
   const { context } = golemModeProject(t, 'date');
   assert.throws(() => generate({ ...context, sdkOutputs: [], profile: { mobx: false, validation: true } }), /is in mode golem, but no openapi job of mode golem in this golem\.yaml writes its folder/);
+});
+
+test('an app with no model file and one golem-mode SDK still writes the validators and the codecs file', t => {
+  // protects: T-699 the models job does not return early when the only thing to write is for an SDK of mode golem
+  const { context } = golemModeProject(t, 'date', false);
+  const result = generate({ ...context, profile: { mobx: false, validation: true } });
+  assert.deepEqual(result.artifacts.map(artifact => path.basename(artifact.path)).sort(), ['models.validators.generated.ts', 'sdk.sdk.generated.ts']);
+  assert.match(result.artifacts.find(artifact => artifact.path.endsWith('sdk.sdk.generated.ts'))?.content ?? '', /export const sdkCodecs = \{\n  createCharge: \{\n    input: validate_src_sdk_createCharge_input,/);
 });

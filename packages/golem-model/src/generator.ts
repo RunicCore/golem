@@ -476,10 +476,6 @@ export function generate(context: GolemModelContext): GolemModelResult {
     throw new Error(`RUNM1077: ${nested.map(displayPath).join(', ')} ${nested.length === 1 ? 'declares' : 'declare'} a models job below the models root ${displayPath(boundary.root)}, where the models job of ${displayPath(join(normalized.directory, 'golem.yaml'))} already generates the same model files. Two jobs would write one generated file. Remove the models job from ${nested.length === 1 ? 'it' : 'each'}, or move the folder out of the models root.`);
   }
   const sharedModelFiles = programModelFiles.filter((source) => !isOwnModelFile(boundary, source));
-  // A job with no model file of its own still generates the shared models its program holds.
-  if (ownCandidates.length === 0 && sharedModelFiles.length === 0) {
-    return emptyResult(programInfo, program, normalized.root);
-  }
   // The manifests are read when a decision needs them: a shared file may be an SDK file, and a job that has models emits against them.
   // A job that generates nothing reads none.
   let loaded: ManifestIndex | undefined;
@@ -490,6 +486,12 @@ export function generate(context: GolemModelContext): GolemModelResult {
     normalized.profile,
     normalized.onInput,
   );
+  // An app with no model file still writes the validators and the codecs file of an SDK of mode golem: nothing else writes them.
+  const hasGolemSdks = (): boolean => normalized.sdkOutputs.length > 0 && manifests().golemModeManifests.length > 0;
+  // A job with no model file of its own still generates the shared models its program holds.
+  if (ownCandidates.length === 0 && sharedModelFiles.length === 0 && !hasGolemSdks()) {
+    return emptyResult(programInfo, program, normalized.root);
+  }
   // A model file that an SDK manifest lists stays an SDK file: the SDK's generated code serves it.
   const sdkFiles = sharedModelFiles.length === 0 ? new Set<string>() : sdkModelFiles(manifests());
   const sharedCandidates = sharedModelFiles.filter((source) => !sdkFiles.has(canonicalPath(source)));
@@ -503,7 +505,7 @@ export function generate(context: GolemModelContext): GolemModelResult {
   // A shared model file of the program is a source of the job: this app writes its companion in models.output.
   const sharedSources = sharedCandidates.filter((source) => withModels.has(canonicalFilename(source)));
   const sources = [...ownSources, ...sharedSources];
-  if (sources.length === 0) {
+  if (sources.length === 0 && !hasGolemSdks()) {
     return emptyResult(programInfo, program, normalized.root);
   }
   const manifestIndex = manifests();
@@ -516,7 +518,7 @@ export function generate(context: GolemModelContext): GolemModelResult {
     normalized.onInput,
   );
   const tsconfigDirectory = programInfo.configPath === undefined ? normalized.root : dirname(programInfo.configPath);
-  if (specifications.length === 0) {
+  if (specifications.length === 0 && !hasGolemSdks()) {
     const diagnostics = ownDiagnostics(ts.getPreEmitDiagnostics(programInfo.program), sources.map(companionOf), sources);
     if (diagnostics.length > 0) throw new Error(formatDiagnostics(diagnostics));
     throw new Error('No exported IModel<...> type aliases were found.');
