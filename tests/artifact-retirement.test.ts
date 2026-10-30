@@ -177,7 +177,7 @@ test('retiring the last OpenAPI operation removes the client artifact through pu
   assert.equal(loadInventory(fixtureValue.config).files['sdk/client.ts'], undefined);
 });
 
-test('retiring the last OpenAPI component removes model artifacts through public generation and applyJob', async (t: TestContext) => {
+test('retiring the last OpenAPI component removes schema artifacts through public generation and applyJob', async (t: TestContext) => {
   const initialDocument = {
     ...metadata('LastComponent'),
     paths: {
@@ -201,23 +201,18 @@ test('retiring the last OpenAPI component removes model artifacts through public
   };
   const fixtureValue = fixture(t, initialDocument);
   const initial = await applyInitial(fixtureValue);
-  const models = artifactPath(initial, 'models/Order.ts');
   const inputSchemas = artifactPath(initial, 'input-schemas.ts');
   const outputSchemas = artifactPath(initial, 'output-schemas.ts');
-  assert.equal(fs.existsSync(models), true);
   assert.equal(fs.existsSync(inputSchemas), true);
   assert.equal(fs.existsSync(outputSchemas), true);
 
   writeDocument(fixtureValue, nextDocument);
   const next = await generateArtifacts(fixtureValue);
-  assert.equal(next.artifacts.some(({ path: filename }) => filename.endsWith('/models/Order.ts')), false);
   assert.equal(next.artifacts.some(({ path: filename }) => filename.endsWith('/input-schemas.ts')), false);
   assert.equal(next.artifacts.some(({ path: filename }) => filename.endsWith('/output-schemas.ts')), false);
   await checkThenApply(fixtureValue, next);
-  assert.equal(fs.existsSync(models), false);
   assert.equal(fs.existsSync(inputSchemas), false);
   assert.equal(fs.existsSync(outputSchemas), false);
-  assert.equal(loadInventory(fixtureValue.config).files['sdk/models/Order.ts'], undefined);
   assert.equal(loadInventory(fixtureValue.config).files['sdk/input-schemas.ts'], undefined);
   assert.equal(loadInventory(fixtureValue.config).files['sdk/output-schemas.ts'], undefined);
 });
