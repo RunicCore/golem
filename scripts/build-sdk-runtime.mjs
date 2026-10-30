@@ -6,6 +6,8 @@
 // The output depends on the compiled entry only, so two builds of one source give the same bytes.
 // `--check` builds the files in memory and fails when the files on disk differ, which a `tsc` run on the entry alone leaves stale.
 import { build } from 'esbuild';
+import * as ast from 'typescript/ast';
+import { API } from 'typescript/sync';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -27,19 +29,49 @@ const barrelTypes = [
   ['issue-messages', ['SchemaIssue']],
 ];
 
+const compiler = new API({ cwd: root });
+const declarationSources = new Map();
+/** The syntax tree of a declaration file below `dist`, read once. */
+function declarationTree(relative) {
+  if (!declarationSources.has(relative)) {
+    const file = path.join(dist, relative);
+    declarationSources.set(relative, compiler.createSourceFile(file, fs.readFileSync(file, 'utf8')).sourceFile);
+  }
+  return declarationSources.get(relative);
+}
+
+/** The module specifiers that a declaration file imports, re-exports or names in an `import()` type. */
+function moduleSpecifiers(tree) {
+  const found = [];
+  const visit = (node) => {
+    if ((ast.isImportDeclaration(node) || ast.isExportDeclaration(node)) && node.moduleSpecifier && ast.isStringLiteral(node.moduleSpecifier)) found.push(node.moduleSpecifier.text);
+    else if (ast.isImportTypeNode(node) && ast.isLiteralTypeNode(node.argument) && ast.isStringLiteral(node.argument.literal)) found.push(node.argument.literal.text);
+    node.forEachChild(visit);
+  };
+  visit(tree);
+  return found;
+}
+
 /** The declaration files that `entry.d.ts` reaches through relative imports, as paths below `dist`. */
 function declarationClosure() {
   const seen = new Set();
   const visit = (relative) => {
     if (seen.has(relative)) return;
     seen.add(relative);
-    const text = fs.readFileSync(path.join(dist, relative), 'utf8');
-    for (const [, , specifier] of text.matchAll(/(?:from|import)\s*\(?\s*(['"])(\.[^'"]*)\.js\1/g)) {
-      visit(path.posix.normalize(path.posix.join(path.posix.dirname(relative), `${specifier}.d.ts`)));
+    for (const specifier of moduleSpecifiers(declarationTree(relative))) {
+      if (specifier.startsWith('.') && specifier.endsWith('.js')) visit(path.posix.normalize(path.posix.join(path.posix.dirname(relative), `${specifier.slice(0, -'.js'.length)}.d.ts`)));
     }
   };
   visit(`${entry}.d.ts`);
   return [...seen].sort();
+}
+
+/** The names that a declaration file exports as a class or an enum. A `const enum` is no value, so it stays out. */
+function classAndEnumNames(tree) {
+  const hasModifier = (node, kind) => node.modifiers?.some((modifier) => modifier.kind === kind) ?? false;
+  return tree.statements
+    .filter((node) => (ast.isClassDeclaration(node) || ast.isEnumDeclaration(node)) && node.name && hasModifier(node, ast.SyntaxKind.ExportKeyword) && !hasModifier(node, ast.SyntaxKind.ConstKeyword))
+    .map((node) => node.name.text);
 }
 
 const bundle = await build({
@@ -61,7 +93,8 @@ const closure = declarationClosure();
 const files = new Map(closure.map((relative) => [path.join('types', relative), fs.readFileSync(path.join(dist, relative))]));
 files.set('runtime.impl.ts', `// @ts-nocheck\n${bundle.outputFiles[0].text}`);
 // A class or an enum is a value and a type at once, so the facade also exports its type: generated code names `ClientRuntime` as both.
-const declared = new Set(closure.flatMap((relative) => [...fs.readFileSync(path.join(dist, relative), 'utf8').matchAll(/export declare (?:abstract )?(?:class|enum) (\w+)/g)].map(([, name]) => name)));
+const declared = new Set(closure.flatMap((relative) => classAndEnumNames(declarationTree(relative))));
+compiler.close();
 // One statement per name, so a bundler drops each name that the importing module does not use; a destructuring of the whole namespace keeps all of them in esbuild.
 files.set('runtime.ts', [
   "import * as impl from './runtime.impl.js';",
