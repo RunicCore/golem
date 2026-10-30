@@ -4,9 +4,11 @@ import * as ts from '../typescript-ns.js';
 import {
   MODEL_MANIFEST_MARKER,
   discoverModelManifests,
+  isGolemModeManifest,
   readModelManifest,
 } from '../model-manifest-core.js';
 import type {
+  GolemModeManifest,
   ModelManifest,
   ModelManifestEntry,
 } from '../model-manifest-core.js';
@@ -36,6 +38,8 @@ export interface ManifestIndex {
   /** Manifests advertised by loaded sources or discovered under this job's src. */
   readonly localFiles: readonly string[];
   readonly validationSchemaClosure: readonly CodecSchemaClosureEntry[];
+  /** The manifests of SDKs in golem mode: this job compiles their types with its own models. */
+  readonly golemModeManifests: readonly { readonly file: string; readonly manifest: GolemModeManifest }[];
   /** Runtime (value) exports of the generated module an entry names. */
   runtimeExports(model: GeneratedModelManifestEntry): ReadonlySet<string>;
   externalModelForType(type: ts.Type): GeneratedModelManifestEntry | undefined;
@@ -313,6 +317,7 @@ export function loadModelManifests(
   // Every id of every manifest, an SDK type's included, so that two manifests cannot share one.
   const manifestOfId = new Map<string, string>();
   const validationSchemaClosure: CodecSchemaClosureEntry[] = [];
+  const golemModeManifests: { file: string; manifest: GolemModeManifest }[] = [];
   for (const filename of filenames) {
     // Explicit SDK manifests stay in the load set for duplicate-id and profile
     // checks. Only manifests this job discovered or advertised are watch inputs
@@ -322,6 +327,7 @@ export function loadModelManifests(
     const manifest = readModelManifest(filename);
     validateManifestProfile(manifest, filename, profile);
     validationSchemaClosure.push(...manifest.validationSchemaClosure ?? []);
+    if (isGolemModeManifest(manifest)) golemModeManifests.push({ file: filename, manifest });
     for (const model of manifest.models) {
       const existingFile = manifestOfId.get(model.id);
       if (existingFile) {
@@ -371,6 +377,7 @@ export function loadModelManifests(
     files: filenames,
     localFiles,
     validationSchemaClosure,
+    golemModeManifests,
     runtimeExports: (model) => exportsById.get(model.id) ?? new Set(),
     externalModelForType(type: ts.Type): GeneratedModelManifestEntry | undefined {
       for (const symbol of [type.aliasSymbol, type.getSymbol?.()]) {

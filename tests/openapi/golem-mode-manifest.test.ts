@@ -3,8 +3,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { identifier, render } from '#golem/code';
 import { stableJson } from '#golem/generator-core';
-import { isGolemModeManifest, internSdkSchemas, sdkCodecIds, validateModelManifest } from '#golem/model-manifest-core';
-import { createSchemaGraph } from '#golem/schema-graph';
+import { isGolemModeManifest, sdkSchemaGraph, validateModelManifest } from '#golem/model-manifest-core';
 import { emitCodecRuntimeCode } from '#golem/stringify-emitter';
 import { normalizeAndValidate } from '#openapi/document';
 import { generate } from '#openapi/generator';
@@ -57,9 +56,7 @@ test('the golem-mode schema graph goes through the manifest file and back to the
   assert.equal(manifest.dates, 'temporal');
   assert.match(manifest.descriptors.find(entry => entry.name === 'Charge')?.descriptor ?? '', /"id":"temporal:TemporalInstant"/);
 
-  const graph = createSchemaGraph({}, { codecSource: 'openapi', codecIds: sdkCodecIds(manifest) });
-  const valueNodes = internSdkSchemas(graph, manifest, true);
-  graph.seal();
+  const { graph, valueNodes } = sdkSchemaGraph(manifest, true);
 
   assert.deepEqual([...graph.nodes.keys()], [...original.schemaGraph.nodes.keys()]);
   assert.deepEqual([...graph.nodes.values()].map(node => node.codecId), [...original.schemaGraph.nodes.values()].map(node => node.codecId));

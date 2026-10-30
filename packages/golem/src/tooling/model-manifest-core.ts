@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { discoverSources, displayPath, isRecord, isValidationLevel, resolveProfile, stableValue } from './generator-core.js';
 import type { GolemProfile, InputObserver } from './generator-core.js';
-import { internDescriptors, type SchemaGraph } from './schema-graph.js';
+import { createSchemaGraph, internDescriptors, type SchemaGraph } from './schema-graph.js';
 import type { ModelTypeDescriptor } from './schema.js';
 import type { CodecSchemaClosureEntry } from './validation-plan.js';
 
@@ -64,30 +64,32 @@ export function isGolemModeManifest(manifest: ModelManifest): manifest is GolemM
   return manifest.mode === 'golem';
 }
 
-/** The fixed codec ids (`SchemaGraphOptions.codecIds`) under which `internSdkSchemas` re-interns the SDK. */
-export function sdkCodecIds(manifest: GolemModeManifest): ReadonlyMap<string, string> {
-  return new Map(Object.entries(manifest.codecIds));
-}
-
 /**
- * Interns the SDK's descriptors into `graph`, which was made with `sdkCodecIds`: every model and recursive alias, then every inline value.
- * Returns the node of each operation value that converts something, by `JSON.stringify([operation, ...at])`.
+ * The schema graph of a golem-mode SDK, sealed, made from the manifest's data: every model and recursive alias under its fixed
+ * codec id, then every inline operation value. The graph is `openapi`-sourced, as the SDK's own was, so an unnamed shape gets the
+ * node and codec id it had there; `valueNodes` gives the node of each operation value that converts something, by
+ * `JSON.stringify([operation, ...at])`. A node the graph does not hold under the id the manifest recorded means the manifest and
+ * this golem disagree, and stops with the regenerate message.
  */
-export function internSdkSchemas(
-  graph: SchemaGraph,
+export function sdkSchemaGraph(
   manifest: GolemModeManifest,
   validation: GolemProfile['validation'],
-): ReadonlyMap<string, string> {
+): { readonly graph: SchemaGraph; readonly valueNodes: ReadonlyMap<string, string> } {
+  const graph = createSchemaGraph({}, { codecSource: 'openapi', codecIds: new Map(Object.entries(manifest.codecIds)) });
   const parse = (text: string): ModelTypeDescriptor => JSON.parse(text) as ModelTypeDescriptor;
   internDescriptors(graph, manifest.descriptors.map(({ name, descriptor }) => ({ name, descriptor: parse(descriptor), emitClass: false, validation })));
-  const nodeIds = new Map<string, string>();
+  const valueNodes = new Map<string, string>();
   for (const { name: operation, values } of manifest.operations) {
     for (const { at, node, inline } of values) {
       const id = inline ? graph.intern(parse(inline.descriptor), inline.name, false, validation).id : node;
-      nodeIds.set(JSON.stringify([operation, ...at]), id);
+      if (id !== node || !graph.nodes.has(id)) {
+        throw new Error(`The SDK manifest of operation ${operation} names the schema node ${JSON.stringify(node)} for ${at.join(' ')}, which this golem does not rebuild. Regenerate the SDK with this golem version.`);
+      }
+      valueNodes.set(JSON.stringify([operation, ...at]), id);
     }
   }
-  return nodeIds;
+  graph.seal();
+  return { graph, valueNodes };
 }
 
 export const MODEL_MANIFEST_FILENAME = 'model-manifest.json';

@@ -36,7 +36,7 @@ import type { SchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
 import type { ModelSpecification } from '@exprtlabs/golem/internal/type-analysis';
 import { assertModelLevelsWithinProject, collectSpecifications } from '@exprtlabs/golem/internal/type-analysis';
 import { discoverModelManifests } from '@exprtlabs/golem/manifest';
-import { loadModelManifests, sdkModelFiles } from '@exprtlabs/golem/internal/type-analysis';
+import { loadModelManifests, sdkModelFiles, sdkSchemaGraph } from '@exprtlabs/golem/internal/type-analysis';
 import type { ManifestIndex } from '@exprtlabs/golem/internal/type-analysis';
 import {
   assertAbsolute,
@@ -169,7 +169,7 @@ function referencedManifestFiles(
   graphs: readonly { readonly externalIds: readonly string[] }[],
   manifestIndex: ManifestIndex,
 ): string[] {
-  const files = new Set<string>(manifestIndex.localFiles);
+  const files = new Set<string>([...manifestIndex.localFiles, ...manifestIndex.golemModeManifests.map(({ file }) => file)]);
   for (const graph of graphs) {
     for (const id of graph.externalIds) {
       const file = manifestIndex.byId.get(id)?.manifestFile;
@@ -537,7 +537,11 @@ export function generate(context: GolemModelContext): GolemModelResult {
     ))
     .filter((graph): graph is NonNullable<typeof graph> => graph !== undefined);
   const graphSchemaPairs = internJobSchemaGraphs(graphs, normalized.profile.validation, manifestIndex.validationSchemaClosure);
-  const schemaGraphs = graphSchemaPairs.map(({ schemaGraph }) => schemaGraph);
+  // An SDK in golem mode writes no validators: its types are nodes of this job's graphs, compiled with the models in one set.
+  const schemaGraphs = [
+    ...graphSchemaPairs.map(({ schemaGraph }) => schemaGraph),
+    ...manifestIndex.golemModeManifests.map(({ manifest }) => sdkSchemaGraph(manifest, normalized.profile.validation).graph),
+  ];
   const schemaEntries = deduplicateTagSchemas(
     graphs.flatMap((graph) => graph.schemas)
       .sort((left, right) => compareText(left.key, right.key)
