@@ -39,6 +39,8 @@ import {
   wireStringifyExportName,
   fromWireFunctionName,
   toWireFunctionName,
+  TEMPORAL_SERDE,
+  TEMPORAL_SERDE_PREFIX,
   descriptorNeedsConversion,
   type FromJsonModelResolver,
   type ModelConversionDescriptor,
@@ -211,6 +213,8 @@ function registerValidation(bindings: Map<string, ValidationBinding>, binding: V
 }
 
 function registerSerde(bindings: Map<string, SerdeBinding>, binding: SerdeBinding): void {
+  // A `temporal:` id names a codec of the runtime: there is no function of the user's to import, and `serdeExpression` calls the codec itself.
+  if (binding.id.startsWith(TEMPORAL_SERDE_PREFIX)) return;
   if (!bindings.has(binding.id)) bindings.set(binding.id, binding);
 }
 
@@ -1265,6 +1269,7 @@ function typeOf(context: EmitContext, descriptor: ModelConversionDescriptor, mod
 }
 
 function serdeExpression(context: EmitContext, id: string, direction: 'serialize' | 'deserialize', value: Code): Code {
+  if (id.startsWith(TEMPORAL_SERDE_PREFIX)) return TEMPORAL_SERDE[direction](id, value);
   const names = context.serdeNames.get(id);
   if (names === undefined) throw new Error(`The generated model file of ${displayPath(context.source)} has no ${direction} function for the serde id ${JSON.stringify(id)}.`);
   return code`${identifier(names[direction])}(${value})`;
