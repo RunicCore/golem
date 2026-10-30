@@ -194,6 +194,8 @@ export interface IrClass {
   readonly name: string;
   readonly path: readonly string[];
   readonly from?: number;
+  /** The validity predicate (see `isInstanceValidity`) that a global class's instance must also pass. */
+  readonly valid?: string;
 }
 
 /**

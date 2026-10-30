@@ -538,8 +538,9 @@ function descriptorSchema(
       // The wire form of a class value is its serde's wire descriptor; the model form is an instance of the class, where a runtime class exists.
       case 'class-value': {
         const ref = isRecord(value.classRef) ? value.classRef : undefined;
+        const valid = isRecord(value.serde) && typeof value.serde.valid === 'string' ? value.serde.valid : undefined;
         schema = options.representation === 'model' && ref !== undefined && typeof value.typeName === 'string'
-          ? { [MODEL_CLASS_KEYWORD]: { name: value.typeName, path: ref.path, ...(ref.id === undefined ? {} : { id: ref.id }) } }
+          ? { [MODEL_CLASS_KEYWORD]: { name: value.typeName, path: ref.path, ...(ref.id === undefined ? {} : { id: ref.id }), ...(valid === undefined ? {} : { valid }) } }
           : {};
         break;
       }

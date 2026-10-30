@@ -316,18 +316,19 @@ export class FunctionWriter {
     }
   }
 
-  /** The class the value's encoder selects must be `of`; see `IrInstance`. */
   /** An imported class is tested by `instanceof`; a global one by a test that looks the class up at each call, so a missing polyfill gives an issue. */
   private classCheck(check: IrClass, value: Code): void {
     const issue = code`code: 'instance', model: ${literalCode(check.name)}`;
     if (check.from === undefined) {
-      const test = this.state.constant('global', code`${runtime.globalInstanceTest}(${literalCode(check.path)})`, check.path.join('\u0000'));
+      const valid = check.valid === undefined ? code`` : code`, ${literalCode(check.valid)}`;
+      const test = this.state.constant('global', code`${runtime.globalInstanceTest}(${literalCode(check.path)}${valid})`, [...check.path, check.valid ?? ''].join('\u0000'));
       return this.leaf({ fails: code`!${test}(${value})`, issue });
     }
     const imported = join([this.state.validationFunction(check.from), ...check.path.map(identifierCode)], code`.`);
     this.leaf({ fails: code`!(${value} instanceof ${imported})`, issue });
   }
 
+  /** The class the value's encoder selects must be `of`; see `IrInstance`. */
   private instanceCheck(check: IrInstance, value: Code): void {
     const selected = this.fresh('selected');
     this.line(code`const ${selected} = ${selectedModelCall(this.state, value, check.among)};`);

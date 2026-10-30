@@ -1,6 +1,6 @@
 import { MODEL_CLASS_KEYWORD, MODEL_DATE_KEYWORD, MODEL_INSTANCE_KEYWORD, VALIDATION_KEYWORD } from '../../schema-keywords.js';
 import { unescapePointerToken } from '../../json-pointer.js';
-import { isKnownFormat, jsonEqual } from '../../validation-runtime.js';
+import { isInstanceValidity, isKnownFormat, jsonEqual } from '../../validation-runtime.js';
 import { GolemDiagnosticSeverity, isRecord, type GolemDiagnostic } from '../generator-core.js';
 import type { CompileInput, CompileOptions } from './index.js';
 import type { IrAdditional, IrCheck, IrContains, IrDiscriminator, IrClass, IrFunction, IrInstance, IrModule, IrSchema, IrTypeName, IrValidationImport } from './ir.js';
@@ -414,9 +414,10 @@ class Lowering {
    */
   private modelClass(value: unknown, location: SchemaLocation): IrClass | null | undefined {
     if (!isRecord(value)) return undefined;
-    const { name, path, id } = value;
+    const { name, path, id, valid } = value;
     if (typeof name !== 'string' || !Array.isArray(path) || !path.every((item): item is string => typeof item === 'string') || (id !== undefined && typeof id !== 'string')) return undefined;
-    if (id === undefined) return { kind: 'class', name, path };
+    if (valid !== undefined && (typeof valid !== 'string' || !isInstanceValidity(valid) || id !== undefined)) return undefined;
+    if (id === undefined) return { kind: 'class', name, path, ...(valid === undefined ? {} : { valid }) };
     const entry = this.input.validations?.get(id);
     if (entry === undefined) {
       this.report(VALIDATE_UNKNOWN_VALIDATION, GolemDiagnosticSeverity.Error, location, MODEL_CLASS_KEYWORD, `the class ${JSON.stringify(id)} is not among the classes to import`, 'id');
@@ -520,7 +521,7 @@ class Lowering {
     }
     if (Object.hasOwn(node, MODEL_CLASS_KEYWORD)) {
       const instance = this.modelClass(node[MODEL_CLASS_KEYWORD], here);
-      if (instance === undefined) malformed(MODEL_CLASS_KEYWORD, 'expected an object with a string "name", a list of strings "path" and an optional string "id"');
+      if (instance === undefined) malformed(MODEL_CLASS_KEYWORD, 'expected an object with a string "name", a list of strings "path", an optional string "id" and, for a global class, an optional known "valid"');
       else if (instance !== null) checks.push(instance);
     }
     if (Object.hasOwn(node, MODEL_INSTANCE_KEYWORD)) {

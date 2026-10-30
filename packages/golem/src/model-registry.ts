@@ -50,7 +50,12 @@ export type ModelConstraint =
 export interface ModelTypeMetadata {
   readonly validations?: readonly string[];
   readonly constraints?: readonly ModelConstraint[];
-  readonly serde?: { readonly id: string; readonly wire: ModelTypeDescriptor };
+  readonly serde?: {
+    readonly id: string;
+    readonly wire: ModelTypeDescriptor;
+    /** The name of a validity predicate that an instance of the class must pass after `instanceof` (see `BuiltinClass.valid`). */
+    readonly valid?: string;
+  };
   /**
    * The codec id of a golem-mode SDK schema that this descriptor holds inline. Conversion reads the descriptor; its schema is a reference
    * to the SDK's validators, so a model that holds the SDK type writes no second validator for it.
