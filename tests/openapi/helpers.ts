@@ -7,6 +7,9 @@ import { linkProjectPackages, writeGeneratedArtifacts } from '../fixture-project
 import { isRecord } from '@exprtlabs/golem/internal/generator-support';
 import { findGeneratedModelDefinitionForConstructor } from '@exprtlabs/golem/internal/model-runtime';
 import { generate, type OpenApiGenerationContext, writeSdk as WriteSdk } from '#openapi/generator';
+import { generate as generateModels } from '#model/generator';
+import { GolemDiagnosticSeverity } from '@exprtlabs/golem/generator-api';
+import { sdkCodecsFile } from '@exprtlabs/golem/internal/emitter';
 import type { OpenApiGenerationProfile } from '#openapi/profile';
 import { buildOperationValidationSchemas } from '#openapi/client/emit';
 import { normalizeAndValidate } from '#openapi/document';
@@ -34,11 +37,31 @@ export const defaultTestProfile: OpenApiGenerationProfile = Object.freeze({
   validation: true,
 });
 
-/** MobX needs the golem runtime, so a test SDK with `mobx: true` is generated in golem mode unless the test says otherwise; any other SDK is standalone. A golem-mode SDK imports the codecs file that the models job would write beside it. */
+/**
+ * MobX needs the golem runtime, so a test SDK with `mobx: true` is generated in golem mode unless the test says otherwise; any other SDK is standalone.
+ * A golem-mode SDK imports the codecs file that the models job writes: the tests give that job the SDK's own `codecs` folder as its output.
+ */
 function modeOf(profile: OpenApiGenerationProfile, output: string, requested?: 'standalone' | 'golem'): { readonly mode?: 'standalone' | 'golem'; readonly codecsFile?: string } {
   const mode = requested ?? (profile.mobx ? 'golem' : undefined);
   if (mode === undefined) return {};
-  return mode === 'golem' ? { mode, codecsFile: join(output, '..', 'models', 'sdk.sdk.generated.ts') } : { mode };
+  return mode === 'golem' ? { mode, codecsFile: sdkCodecsFile({ modelsOutput: join(output, 'codecs'), configDirectory: dirname(output), sdkOutput: output }) } : { mode };
+}
+
+/** Runs the models job of the SDK's golem.yaml folder for a golem-mode SDK that was just written, and writes the codecs file the SDK imports. */
+function writeSdkCodecs(output: string, profile: OpenApiGenerationProfile, mode: { readonly mode?: string }): void {
+  if (mode.mode !== 'golem') return;
+  const directory = dirname(output);
+  const result = generateModels({
+    root: directory,
+    directory,
+    output: join(output, 'codecs'),
+    manifestInputs: [join(output, 'model-manifest.json')],
+    sdkOutputs: [output],
+    profile,
+  });
+  const failure = result.diagnostics?.find(diagnostic => diagnostic.severity === GolemDiagnosticSeverity.Error);
+  if (failure) throw new Error(failure.message);
+  writeGeneratedArtifacts(result.artifacts);
 }
 
 export function requireRecord(value: unknown, label: string): Record<string, unknown> {
@@ -53,8 +76,10 @@ export function writeGeneratedSdk(
 ): ReturnType<typeof WriteSdk> {
   const output = resolve(options.output);
   const profile = options.profile ?? defaultTestProfile;
-  const result = writeSdk(document, { output, name: options.name, profile, ...modeOf(profile, output) });
+  const mode = modeOf(profile, output);
+  const result = writeSdk(document, { output, name: options.name, profile, ...mode });
   writeGeneratedArtifacts(result.artifacts);
+  writeSdkCodecs(output, profile, mode);
   prepareSdkProject(output);
   for (const name of ['typescript', '@types/node'] as const) {
     const source = join(repoRoot(), 'node_modules', name);
@@ -268,12 +293,13 @@ export async function generateMaterializedSdk(
 ): Promise<Awaited<ReturnType<typeof generate>>> {
   const directory = dirname(options.output);
   const input = writeOpenApiDocument(directory, document);
+  const mode = modeOf(options.profile ?? defaultTestProfile, resolve(options.output), options.mode);
   const context: OpenApiGenerationContext = {
     input,
     output: resolve(options.output),
     name: options.name,
     profile: options.profile ?? defaultTestProfile,
-    ...modeOf(options.profile ?? defaultTestProfile, resolve(options.output), options.mode),
+    ...mode,
     allowRemoteRefs: options.allowRemoteRefs,
     remoteHosts: options.remoteHosts,
     maxRefBytes: options.maxRefBytes,
@@ -283,6 +309,7 @@ export async function generateMaterializedSdk(
   };
   const result = await generate(context);
   materializeGeneratedSdk(result.artifacts, options.output);
+  writeSdkCodecs(resolve(options.output), options.profile ?? defaultTestProfile, mode);
   return result;
 }
 

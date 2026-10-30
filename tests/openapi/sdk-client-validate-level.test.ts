@@ -4,7 +4,7 @@ import test from 'node:test';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { fileFixtureScope, onceShared } from '../fixture-project.js';
 import { importGeneratedModule, requireRecord } from './helpers.js';
-import { loadSdk, type LoadedSdk } from './sdk-client-fixture.js';
+import { loadGolemModeSdk, loadSdk, type LoadedSdk } from './sdk-client-fixture.js';
 
 // The client takes a validation level per client and per call, request and response apart (R-86). The amount limit (maximum 100)
 // is a value limit: the sanity level skips it. A string amount breaks the shape: only `false` lets it through.
@@ -38,6 +38,12 @@ const scope = fileFixtureScope();
 const sdks = {
   full: onceShared(() => loadSdk<ChargesClient>(scope, 'golem-sdk-validate-full-', { document: DOCUMENT, name: 'Charges', dates: 'date', validation: true })),
   sanity: onceShared(() => loadSdk<ChargesClient>(scope, 'golem-sdk-validate-sanity-', { document: DOCUMENT, name: 'Charges', dates: 'date', validation: 'sanity' })),
+};
+
+/** The same documents as golem-mode SDKs: the models job writes their validators and codecs, and the client reads the same levels. */
+const golemSdks = {
+  full: onceShared(() => loadGolemModeSdk<ChargesClient>(scope, 'golem-sdk-validate-full-', { document: DOCUMENT, name: 'Charges', dates: 'date', validation: true })),
+  sanity: onceShared(() => loadGolemModeSdk<ChargesClient>(scope, 'golem-sdk-validate-sanity-', { document: DOCUMENT, name: 'Charges', dates: 'date', validation: 'sanity' })),
 };
 
 const WHEN = '2025-01-02T03:04:05.000Z';
@@ -97,6 +103,13 @@ for (const [name, sdkLevel, client, call, request, response] of LEVELS) {
   });
 }
 
+for (const [name, sdkLevel, client, call, request, response] of LEVELS) {
+  test(`golem mode validate level: ${name}`, async () => {
+    // protects: R-86 the per-client and per-call levels give the same outcomes when the models job holds the validators
+    assert.deepEqual(await outcomes(await golemSdks[sdkLevel](), client, call), [...OUTCOMES[request], ...OUTCOMES[response]]);
+  });
+}
+
 const ABOVE_SDK_LEVEL: ReadonlyArray<readonly [string, Validate | undefined, Validate | undefined]> = [
   ['call true', undefined, true],
   ['client true', true, undefined],
@@ -105,6 +118,16 @@ const ABOVE_SDK_LEVEL: ReadonlyArray<readonly [string, Validate | undefined, Val
   ['call request headers true', undefined, { requestHeaders: true }],
   ['client response headers true', { responseHeaders: true }, undefined],
 ];
+
+test('a golem-mode sanity SDK refuses a level above its own and sends nothing', async () => {
+  // protects: R-72, R-86 lower only, in golem mode too
+  const sent: unknown[] = [];
+  await assert.rejects(
+    chargesClient(await golemSdks.sanity(), undefined, 1, sent).createCharge().execute({ body: { amount: 1, when: new Date(WHEN) } }, { validate: true }),
+    (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.ValidationUnavailable,
+  );
+  assert.deepEqual(sent, []);
+});
 
 for (const [name, client, call] of ABOVE_SDK_LEVEL) {
   test(`a sanity SDK refuses a level above its own: ${name}`, async () => {
