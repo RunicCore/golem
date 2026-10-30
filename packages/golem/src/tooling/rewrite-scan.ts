@@ -672,7 +672,9 @@ interface HandlerInput {
   readonly decorator: string;
   /** The field a one-field parameter reads; undefined for a whole one. */
   readonly field: string | undefined;
-  /** The model and array form the interceptor compares between two whole parameters of one source. */
+  /** The type is an array of the model. */
+  readonly array: boolean;
+  /** The model and array form the interceptor compares between two parameters that read the same value. */
   readonly model: string;
 }
 
@@ -682,38 +684,41 @@ function handlerInputModel(binding: NestBinding): string {
 }
 
 /**
- * The limits `NestModelInterceptor` sets on the inputs of one handler together, each with the parameter to report it at:
- * a one-field parameter that is optional (a request that omits the field answers HTTP 400); a whole and a one-field parameter
- * of one source (the whole conversion replaces what the field reads); and two whole parameters of one source with another
- * model (both convert the same value). The last two throw a TypeError, and Nest answers HTTP 500. Per source, the first
- * conflict is reported.
+ * The limits `NestModelInterceptor` sets on the inputs of one handler together, each with the parameter to report it at, in
+ * parameter order. A parameter that omits what the interceptor needs: an optional one-field parameter or an optional whole body
+ * (a request without that value answers HTTP 400). A parameter the interceptor cannot convert next to an earlier one: a whole
+ * and a one-field parameter of one source, and two parameters that read the same value as another model (both throw a
+ * TypeError, and Nest answers HTTP 500). A whole `@Query()` array throws a TypeError too, because a query is an object.
+ * Each parameter that breaks a rule gets its own report.
  */
 function handlerInputFaults(file: ts.SourceFile, inputs: readonly HandlerInput[]): readonly { readonly parameter: ts.ParameterDeclaration; readonly message: string }[] {
   const faults: { parameter: ts.ParameterDeclaration; message: string }[] = [];
-  const written = ({ parameter, decorator }: HandlerInput): string => {
-    const expression = ts.getDecorators(parameter)?.find((each) => decoratorName(each) === decorator)?.expression;
-    return `@${expression?.getText(file) ?? decorator} ${parameter.name.getText(file)}`;
-  };
-  const sources = new Map<string, { whole?: HandlerInput; field?: HandlerInput; conflict: boolean }>();
-  for (const input of inputs) {
+  const expression = ({ parameter, decorator }: HandlerInput): string =>
+    `@${ts.getDecorators(parameter)?.find((each) => decoratorName(each) === decorator)?.expression.getText(file) ?? decorator}`;
+  const written = (input: HandlerInput): string => `${expression(input)} ${input.parameter.name.getText(file)}`;
+  inputs.forEach((input, index) => {
     const { parameter, decorator, field } = input;
     const lowered = decorator.toLowerCase();
-    if (field !== undefined && (parameter.questionToken !== undefined || parameter.initializer !== undefined)) {
-      faults.push({ parameter, message: `${written(input)} is an optional one-field model, and NestModelInterceptor answers HTTP 400 for a request that omits the field. Make the parameter required, or declare the field optional in a whole @${decorator}() model.` });
+    const earlier = inputs.slice(0, index).filter((other) => other.decorator === decorator);
+    const fault = (message: string): void => { faults.push({ parameter, message }); };
+    const optional = parameter.questionToken !== undefined || parameter.initializer !== undefined;
+    if (optional && field !== undefined) {
+      fault(`${written(input)} is an optional one-field model, and NestModelInterceptor answers HTTP 400 for a request that omits the field. Make the parameter required, or declare the field optional in a whole @${decorator}() model.`);
+    } else if (optional && decorator === 'Body') {
+      fault(`${written(input)} is an optional whole body, and NestModelInterceptor answers HTTP 400 for a request without a body. Make the parameter required.`);
     }
-    const source = sources.get(decorator) ?? { conflict: false };
-    sources.set(decorator, source);
-    const other = field === undefined ? source.field : source.whole;
-    if (!source.conflict && other !== undefined) {
-      source.conflict = true;
-      faults.push({ parameter, message: `${written(input)} cannot share a handler with ${written(other)}: NestModelInterceptor throws a TypeError for a whole and a one-field @${decorator}() together, and Nest answers HTTP 500. Declare the whole ${lowered} as one model, or use one-field parameters only.` });
-    } else if (!source.conflict && field === undefined && source.whole !== undefined && source.whole.model !== input.model) {
-      source.conflict = true;
-      faults.push({ parameter, message: `${written(input)} takes another model than ${written(source.whole)}: NestModelInterceptor throws a TypeError for whole @${decorator}() parameters of different types, and Nest answers HTTP 500. Give them one model type, or declare one whole ${lowered}.` });
+    if (field === undefined && decorator === 'Query' && input.array) {
+      fault(`${written(input)} is an array of models, and NestModelInterceptor throws a TypeError for a whole @Query() array, and Nest answers HTTP 500: a query is an object. Declare the query as one model.`);
     }
-    if (field === undefined) source.whole ??= input;
-    else source.field ??= input;
-  }
+    const mixed = earlier.find((other) => (other.field === undefined) !== (field === undefined));
+    if (mixed) {
+      fault(`${written(input)} cannot share a handler with ${written(mixed)}: NestModelInterceptor throws a TypeError for a whole and a one-field @${decorator}() together, and Nest answers HTTP 500. Declare the whole ${lowered} as one model, or use one-field parameters only.`);
+    }
+    const reads = earlier.find((other) => other.field === field);
+    if (reads && reads.model !== input.model) {
+      fault(`${written(input)} takes another model than ${written(reads)}: NestModelInterceptor throws a TypeError for ${field === undefined ? `whole @${decorator}() parameters` : `${expression(input)} parameters`} of different types, and Nest answers HTTP 500. Give them one model type, or declare one ${field === undefined ? `whole ${lowered}` : 'parameter'}.`);
+    }
+  });
   return faults;
 }
 
@@ -970,7 +975,7 @@ function scanFile(
       const field = staticFieldKey(checker, parameter, decorator) || undefined;
       // A type that is no model, or a union in one field, has its own report; the interceptor throws on it before it compares anything.
       if ((binding.id === '' && binding.union === undefined) || (binding.union !== undefined && (binding.array || field !== undefined))) continue;
-      inputs.push({ parameter, decorator, field, model: handlerInputModel(binding) });
+      inputs.push({ parameter, decorator, field, array: binding.array, model: handlerInputModel(binding) });
     }
     for (const { parameter, message } of handlerInputFaults(file, inputs)) {
       scan.diagnostics.push(locate(root, file, parameter, CODE_NEST_NOT_A_MODEL, `${message} ${nonModelAdvice}`, nonModelSeverity));

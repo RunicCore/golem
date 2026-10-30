@@ -675,11 +675,12 @@ The type can be:
 
 [`NestModelInterceptor`](/guide/nestjs-requests#what-happens-to-a-request) throws on such a parameter and Nest answers HTTP 500. The message shows the type and the decorator, such as `NoteInput is not a golem model, and NestModelInterceptor answers HTTP 500 for a @Body() parameter of that type`, and the position of the type.
 
-**Parameters of one handler that do not work together.** The message names the parameters and the position is the parameter that breaks the rule. For a whole and a one-field parameter, or for two whole parameters, this is the later one. These cases have the code:
+**Parameters of one handler that do not work together.** The message names the parameters and the position is the parameter that breaks the rule. For a whole and a one-field parameter, or for two parameters that read the same value, this is the later one. Each parameter that breaks a rule has its own report. These cases have the code:
 
-- **One-field model that is optional.** A parameter such as `@Body('payment') payment?: TPayment` or `@Query('filter') filter?: TFilter` has `?` or a default value. The interceptor reads the field as a model, so a request that omits the field gets HTTP 400. This holds for an array of models too.
+- **One-field model that is optional.** A parameter such as `@Body('payment') payment?: TPayment` or `@Query('filter') filter?: TFilter` has `?` or a default value. The interceptor reads the field as a model, so a request that omits the field gets HTTP 400. This holds for an array of models too. A whole `@Body()` with `?` or a default value has the same fault: a request without a body gets HTTP 400. A whole `@Query()` with `?` is valid, because a query is always an object.
 - **Whole parameter and one-field parameter of one source.** A handler has a whole `@Body()` and a one-field `@Body('payment')`, or a whole `@Query()` and a one-field `@Query('filter')`. The whole conversion replaces the value that the field reads. The interceptor throws a `TypeError`, and Nest answers HTTP 500 for every request.
-- **Whole parameters with different models.** A handler has two whole `@Body()` parameters, or two whole `@Query()` parameters, of different model types or array forms. The interceptor throws a `TypeError`, and Nest answers HTTP 500 for every request. Two whole parameters with the same model type are valid.
+- **Parameters that read the same value with different models.** A handler has two whole `@Body()` parameters, two whole `@Query()` parameters, or two parameters with one field name, of different model types or array forms. The interceptor throws a `TypeError`, and Nest answers HTTP 500 for every request. Parameters with the same model type are valid.
+- **Whole `@Query()` that is an array.** A whole `@Query()` parameter such as `filters: TFilter[]`. A query is an object, so the interceptor throws a `TypeError`, and Nest answers HTTP 500 for every request.
 
 A parameter of another kind, such as `@Body()` with `@Query()`, or two one-field parameters with different names, does not conflict.
 
@@ -693,7 +694,8 @@ What golem does depends on [`nonModelInputs`](/reference/config#root-keys) in `g
 - Declare the input as an `IModel` or `IObject`, or bind one field whose type is a model, such as `@Body('address') address: Address`. For a union, add `& Discriminator<'kind'>` to it, give each model a required literal field such as `kind: 'circle'`, and use the union as a whole parameter. Take the default variant out of the tag, or bind one model.
 - Make an optional one-field parameter required, or declare the field as optional inside a whole model.
 - For a whole and a one-field parameter, declare the whole input as one model, or use one-field parameters only.
-- Give whole parameters of one source one model type, or declare one whole parameter.
+- Give parameters that read the same value one model type, or declare one parameter.
+- Declare a whole `@Query()` as one model, not as an array.
 - An app that handles these parameters with its own interceptor sets `nonModelInputs: warn`.
 
 ### RUNM1082

@@ -196,7 +196,12 @@ const HANDLER_LIMITS_CONTROLLER = [
   '  @Post() twoWholes(@Body() first: TPaymentInput, @Body() second: TPaymentInput[]): number { return 1; }',
   "  @Post() wholeAndField(@Body() whole: TPaymentInput, @Body('input') input: TPaymentInput): number { return 1; }",
   "  @Post() queryAndWhole(@Query('filter') filter: TPaymentFilter, @Query() whole: TPaymentFilter): number { return 1; }",
+  '  @Post() optionalWhole(@Body() body?: TPaymentInput): number { return 1; }',
+  '  @Post() queryArray(@Query() filters: TPaymentFilter[]): number { return 1; }',
+  "  @Post() sameField(@Body('input') first: TPaymentInput, @Body('input') second: TPaymentInput[]): number { return 1; }",
+  "  @Post() everyConflict(@Body() whole: TPaymentInput, @Body('a') a: TPaymentInput, @Body('b') b: TPaymentInput): number { return 1; }",
   '  @Post() sameWholes(@Body() first: TPaymentInput, @Body() second: TPaymentInput): number { return 1; }',
+  '  @Post() optionalQueryWhole(@Query() filter?: TPaymentFilter): number { return 1; }',
   "  @Post() sources(@Body('input') input: TPaymentInput, @Query() filter: TPaymentFilter): number { return 1; }",
   "  @Post() fields(@Body('input') input: TPaymentInput, @Body('other') other: TPaymentInput): number { return 1; }",
   '}',
@@ -214,6 +219,11 @@ for (const mode of ['error', 'warn'] as const) {
       { line: 7, column: 51, message: `@Body() second takes another model than @Body() first: NestModelInterceptor throws a TypeError for whole @Body() parameters of different types, and Nest answers HTTP 500. Give them one model type, or declare one whole body. ${advice}` },
       { line: 8, column: 55, message: `@Body('input') input cannot share a handler with @Body() whole: NestModelInterceptor throws a TypeError for a whole and a one-field @Body() together, and Nest answers HTTP 500. Declare the whole body as one model, or use one-field parameters only. ${advice}` },
       { line: 9, column: 66, message: `@Query() whole cannot share a handler with @Query('filter') filter: NestModelInterceptor throws a TypeError for a whole and a one-field @Query() together, and Nest answers HTTP 500. Declare the whole query as one model, or use one-field parameters only. ${advice}` },
+      { line: 10, column: 25, message: `@Body() body is an optional whole body, and NestModelInterceptor answers HTTP 400 for a request without a body. Make the parameter required. ${advice}` },
+      { line: 11, column: 22, message: `@Query() filters is an array of models, and NestModelInterceptor throws a TypeError for a whole @Query() array, and Nest answers HTTP 500: a query is an object. Declare the query as one model. ${advice}` },
+      { line: 12, column: 58, message: `@Body('input') second takes another model than @Body('input') first: NestModelInterceptor throws a TypeError for @Body('input') parameters of different types, and Nest answers HTTP 500. Give them one model type, or declare one parameter. ${advice}` },
+      { line: 13, column: 55, message: `@Body('a') a cannot share a handler with @Body() whole: NestModelInterceptor throws a TypeError for a whole and a one-field @Body() together, and Nest answers HTTP 500. Declare the whole body as one model, or use one-field parameters only. ${advice}` },
+      { line: 13, column: 84, message: `@Body('b') b cannot share a handler with @Body() whole: NestModelInterceptor throws a TypeError for a whole and a one-field @Body() together, and Nest answers HTTP 500. Declare the whole body as one model, or use one-field parameters only. ${advice}` },
     ].map((expected) => ({ code: 'RUNM1081', severity, file: 'src/limits.controller.ts', ...expected })));
   });
 }
