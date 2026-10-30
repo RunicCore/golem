@@ -412,6 +412,8 @@ export interface PlanValidatorsOptions {
   readonly unknownFormats: 'warn' | 'error';
   /** What the module checks (see `compileLevel`); every check by default. */
   readonly level?: 'full' | 'sanity';
+  /** The roots the module exports (see `CompileOptions.emitRoots`); every root by default. */
+  readonly emitRoots?: ReadonlySet<string>;
   /** The user validation functions the schemas name, with import paths relative to the validators file. */
   readonly validations?: CompileInput['validations'];
   /** Named in each diagnostic message that `locate` does not place. */
@@ -453,6 +455,7 @@ function compileValidatorRoots(
       typed: true,
       fastPath: fastRoots,
       ...(options.level === undefined ? {} : { level: options.level }),
+      ...(options.emitRoots === undefined ? {} : { emitRoots: options.emitRoots }),
       ...(options.locate === undefined ? {} : { locate: options.locate }),
     },
   );

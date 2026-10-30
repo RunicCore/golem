@@ -210,10 +210,17 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions, moved:
     documentName: 'the OpenAPI document',
     ...(operationValidation ? { locate: operationValidation.locate } : {}),
   } as const;
-  const compileValidators = (plan: CodecValidationPlan | undefined, locateModel?: (name: string) => SchemaPlace): PlanValidators => {
+  // Every root is lowered, so each schema check and diagnostic runs; the module exports the roots an operation reads and the roots of the
+  // written groups, so a model no operation reaches adds no code to the SDK.
+  const compileValidators = (plan: CodecValidationPlan | undefined, locateModel?: (name: string) => SchemaPlace, reached?: ReadonlySet<string>): PlanValidators => {
+    const operations = operationValidation?.operations ?? [];
     validators.compiled = compileSdkValidators(
-      { ...(plan ? { plan } : {}), operations: operationValidation?.operations ?? [] },
-      { ...validatorOptions, ...(locateModel ? { locateModel } : {}) },
+      { ...(plan ? { plan } : {}), operations },
+      {
+        ...validatorOptions,
+        ...(locateModel ? { locateModel } : {}),
+        ...(reached ? { emitRoots: new Set([...reached, ...operations.flatMap((operation) => Object.keys(operation.roots))]) } : {}),
+      },
     );
     return validators.compiled;
   };
@@ -221,7 +228,7 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions, moved:
   if (modelAnalysis.grouping.groups.length > 0) {
     const models = generateOpenApiModelArtifacts(document, profile, modelAnalysis, {
       locate: options.locate,
-      ...(profile.validation ? { compileValidators: ({ plan, locateModel }: { plan: CodecValidationPlan; locateModel: (name: string) => SchemaPlace }) => compileValidators(plan, locateModel) } : {}),
+      ...(profile.validation ? { compileValidators: ({ plan, reachedRoots, locateModel }: { plan: CodecValidationPlan; groupPlans: ReadonlyMap<string, CodecValidationPlan>; reachedRoots: ReadonlySet<string>; locateModel: (name: string) => SchemaPlace }) => compileValidators(plan, locateModel, reachedRoots) } : {}),
     });
     for (const [name, source] of models.files) files.set(name, source);
   }

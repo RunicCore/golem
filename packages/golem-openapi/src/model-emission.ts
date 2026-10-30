@@ -135,10 +135,12 @@ export function generateOpenApiModelArtifacts(
     readonly locate?: OriginLocator | undefined;
     /**
      * Compiles the SDK's validators module from the validation plan of every model and returns the name it exports
-     * each root and each root's fast check under (`PlanValidators.exports`, `fastExports` and `passExports`). `groupPlans` are the plans the model groups' own schemas come from:
-     * a companion imports the validators of its group's plan ids. Called once, and required when the profile validates.
+     * each root and each root's fast check under (`PlanValidators.exports`, `fastExports` and `passExports`).
+     * `groupPlans` are the plans the model groups' own schemas come from:
+     * a companion imports the validators of its group's plan ids. `reachedRoots` are the roots of `plan` that the written groups use: the module exports those and the roots of the operations.
+     * Called once, and required when the profile validates.
      */
-    readonly compileValidators?: (input: { readonly plan: CodecValidationPlan; readonly groupPlans: ReadonlyMap<string, CodecValidationPlan>; readonly locateModel: (name: string) => SchemaPlace }) => Pick<PlanValidators, 'exports' | 'fastExports' | 'passExports'>;
+    readonly compileValidators?: (input: { readonly plan: CodecValidationPlan; readonly groupPlans: ReadonlyMap<string, CodecValidationPlan>; readonly reachedRoots: ReadonlySet<string>; readonly locateModel: (name: string) => SchemaPlace }) => Pick<PlanValidators, 'exports' | 'fastExports' | 'passExports'>;
   } = {},
 ): { readonly files: ReadonlyMap<string, string> } {
   const { schemaGraph, ordered, grouping } = analysis;
@@ -211,14 +213,30 @@ export function generateOpenApiModelArtifacts(
     }
   }
   if (profile.validation && !helpers.compileValidators) throw new Error('A validating SDK compiles its model validators with the operation validators; the caller names how.');
-  const compiledValidators = profile.validation && helpers.compileValidators
+  const wholePlan = profile.validation && helpers.compileValidators ? buildCodecValidationPlan(schemaGraph, [], {}, profile.validation) : undefined;
+  // A written group runs the checks of its own nodes and of the nodes it reaches in other groups, on every plane of each.
+  const reachedRoots = new Set<string>();
+  for (const group of groups.filter(({ id }) => written.has(id))) {
+    for (const key of Object.keys(groupPlans.get(group.id)?.schemas ?? {})) reachedRoots.add(key);
+    const codecIds = new Set([...group.nodes, ...dependenciesByGroup.get(group.id) ?? []].flatMap((id) => schemaGraph.nodes.get(id)?.codecId ?? []));
+    for (const root of Object.keys(wholePlan?.schemas ?? {})) {
+      if (codecIds.has(root) || codecIds.has(root.split('#')[0] ?? '')) reachedRoots.add(root);
+    }
+  }
+  const compiledValidators = profile.validation && helpers.compileValidators && wholePlan
     ? helpers.compileValidators({
-      plan: buildCodecValidationPlan(schemaGraph, [], {}, profile.validation),
+      plan: wholePlan,
       groupPlans,
+      reachedRoots,
       locateModel: (name) => componentPlace(helpers.locate, schemaNameByModelName.get(name) ?? name, ''),
     })
     : undefined;
   const validatorExports = compiledValidators?.exports;
+  // A group that nothing reads is generated for its checks and diagnostics and not written: the module exports none of its validators, and
+  // any name serves its discarded code.
+  const discardedExports = validatorExports && wholePlan
+    ? new Map([...Object.keys(wholePlan.schemas).map((id, index) => [id, `discarded${index}`] as const), ...validatorExports])
+    : undefined;
   const fastCheckExports = compiledValidators?.fastExports;
   const passCheckExports = compiledValidators?.passExports;
   for (const group of groups) {
@@ -246,7 +264,7 @@ export function generateOpenApiModelArtifacts(
       moduleSources: () => [...moduleSources.values()].sort((left, right) => compareText(left.specifier, right.specifier)),
       sideEffectImports,
       ...(groupPlan && validatorExports ? { validatorsSource } : {}),
-      ...(validatorExports ? { validatorExports } : {}),
+      ...(validatorExports ? { validatorExports: written.has(group.id) ? validatorExports : discardedExports } : {}),
       ...(fastCheckExports ? { fastCheckExports } : {}),
       ...(passCheckExports ? { passCheckExports } : {}),
       codecFunctionImport: (nodeId, functionName) => {
