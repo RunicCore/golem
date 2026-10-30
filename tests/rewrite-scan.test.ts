@@ -528,15 +528,14 @@ test('a config without a models or controllers job still checks the project that
   writeFixture(root, { mobx: false, validation: false }, false);
   const use = path.join(root, 'src/use.ts');
   fs.writeFileSync(use, `import { parse } from '@exprtlabs/golem/serde';
-import type { MoneyModel } from '../sdk/index.js';
-declare const text: string;
-export const money = parse<MoneyModel>(text);
+import { ProfileClient } from '../sdk/client.js';
+export const client = new ProfileClient({ baseUrl: 'https://api.test' });
 `);
   const config = path.join(root, 'golem.yaml');
   await runPipeline(config);
   await runPipeline(config, { check: true });
   fs.appendFileSync(use, "export const bad = parse<string | null>('{}');\n");
-  await assert.rejects(runPipeline(config, { check: true }), /RUNM1066 \(.*src\/use\.ts:5:20\)/);
+  await assert.rejects(runPipeline(config, { check: true }), /RUNM1066 \(.*src\/use\.ts:4:20\)/);
 });
 
 test('a file outside the project root with a rewrite site is rewritten by the project scan and by the per-file scan', (t) => {

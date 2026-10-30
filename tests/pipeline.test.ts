@@ -14,7 +14,6 @@ import { TSC, write as writeFile } from './support/build-project.js';
 import { writeFixture } from './support/consumer.js';
 import { until } from './support/watch-wait.js';
 import { runLines } from './support/watch-runs.js';
-import { readGeneratedModelSource } from './openapi/helpers.js';
 
 function fixture(t: TestContext): { root: string; config: string } {
   const root = createFixtureProject(t, 'golem-pipeline-');
@@ -54,11 +53,11 @@ test('global profile changes remove obsolete validation and keep manifest identi
   // A fresh process reads the built SDK, so no module of an earlier build stays cached.
   const validateBreakingMoney = async (): Promise<string> => {
     await command(root, process.execPath, [TSC, '-p', 'tsconfig.json']);
-    // The SDK index exports no codec: the validator of Money lives in its schema group module, which the client calls.
-    const probe = "import fs from 'node:fs'; let out = 'no validateMoney'; for (const file of fs.readdirSync('./build/sdk/models').filter((name) => /^_group-.*[.]js$/.test(name))) { const codecs = await import('./build/sdk/models/' + file); if (typeof codecs.validateMoney !== 'function') continue; try { out = String(codecs.validateMoney({ amount: -1, currency: 'usd' })); } catch (error) { out = error.kind; } } process.stdout.write(out);";
+    // The client reads a Money that breaks its minimum and pattern: a validating SDK refuses it, and one with validation off hands it over.
+    const probe = "const { ProfileClient } = await import('./build/sdk/client.js'); const client = new ProfileClient({ baseUrl: 'https://api.test', fetchImpl: async () => Response.json({ amount: -1, currency: 'usd' }) }); let out = 'accepted'; try { await client.getMoney().execute({}); } catch (error) { out = error.kind; } process.stdout.write(out);";
     return (await command(root, process.execPath, ['--input-type=module', '-e', probe])).stdout;
   };
-  assert.equal(await validateBreakingMoney(), 'false', 'validation on: the SDK model checks minimum and pattern');
+  assert.equal(await validateBreakingMoney(), 'validation', 'validation on: the client checks the minimum and the pattern of a response');
   fs.writeFileSync(config, fs.readFileSync(config, 'utf8').replace('validation: true', 'validation: false'));
   await assert.rejects(runPipeline(config, { check: true }), /stale/);
   await runPipeline(config);
@@ -68,7 +67,7 @@ test('global profile changes remove obsolete validation and keep manifest identi
   };
   assert.deepEqual(after.models.map((model) => model.id), before.models.map((model) => model.id));
   assert.deepEqual(after.profile, { mobx: false, validation: false, allowAny: false, unknownFormats: 'error' });
-  assert.equal(await validateBreakingMoney(), 'validation_unavailable', 'validation off: the SDK model has no validator left');
+  assert.equal(await validateBreakingMoney(), 'accepted', 'validation off: the client has no validator left');
   await runPipeline(config, { check: true });
 });
 
@@ -249,7 +248,8 @@ test('an unreferenced OpenAPI document does not regenerate model companions', as
   const companion = path.join(root, 'src/cart.model.generated.ts');
   fs.appendFileSync(companion, '\n// companion marker\n');
   const otherSdk = path.join(root, 'other-sdk');
-  const beforeOther = readGeneratedModelSource(otherSdk);
+  const otherTypes = path.join(otherSdk, 'types.ts');
+  const beforeOther = fs.readFileSync(otherTypes, 'utf8');
   const spec = JSON.parse(fs.readFileSync(other, 'utf8')) as {
     components: { schemas: { Note: { properties: Record<string, unknown> } } };
   };
@@ -257,7 +257,7 @@ test('an unreferenced OpenAPI document does not regenerate model companions', as
   fs.writeFileSync(other, JSON.stringify(spec));
   const second = await runPipeline(config, { previous: first, changedInputs: [other] });
   assert.match(fs.readFileSync(companion, 'utf8'), /companion marker/);
-  assert.notEqual(readGeneratedModelSource(otherSdk), beforeOther);
+  assert.notEqual(fs.readFileSync(otherTypes, 'utf8'), beforeOther);
   const api = path.join(root, 'api.json');
   const apiSpec = JSON.parse(fs.readFileSync(api, 'utf8')) as { info: { title: string } };
   apiSpec.info.title = 'Profile changed';

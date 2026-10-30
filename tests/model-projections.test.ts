@@ -280,11 +280,16 @@ export class View extends TViewBaseModel {}
   return { root, writeView };
 }
 
-test('a model that references an SDK model with an untyped property builds under the default allowAny', async t => {
+test('a model that references an SDK type with an untyped property is rejected by default and allowed by allowAny', async t => {
+  // protects: F-176 the SDK type is a plain type, so its unknown property is an unknown position of the model
   const { root, writeView } = await envelopeSdkProject(t);
   writeView('Envelope');
-  const built = await buildModelProject(root, [], { allowFailure: true });
-  assert.equal(built.code, 0, `${built.stdout}\n${built.stderr}`);
+  const rejected = await buildModelProject(root, [], { allowFailure: true });
+  assert.notEqual(rejected.code, 0);
+  assert.match(`${rejected.stdout}\n${rejected.stderr}`, /RUNM1011.*contains unknown/);
+  writeView('Envelope', ', { allowAny: true }');
+  const allowed = await buildModelProject(root, [], { allowFailure: true });
+  assert.equal(allowed.code, 0, `${allowed.stdout}\n${allowed.stderr}`);
 });
 
 test('a model that projects an SDK model with an unknown field is rejected by default and allowed by allowAny', async t => {
