@@ -27,6 +27,7 @@ A response holds the HTTP `status` and the decoded `body`. This includes declare
 | `headers` | headers for every request |
 | `auth` | credentials by security-scheme name ([Authentication](/guide/auth)) |
 | `operationValidators` | validators that replace generated ones ([Runtime API](/reference/runtime-api#runtime-validators)) |
+| `validate` | the check level of the calls of this client ([Lower the checks](#lower-the-checks)); only when the client validates |
 
 - An empty `baseUrl` is an error.
 - The client has `server` and `serverVariables` only when the document lists `servers`.
@@ -75,7 +76,29 @@ The SDK names each schema in PascalCase and adds `Model` for the runtime class (
 
 <<< ../../examples/payments/server/provider/charges.ts#invalid-charge
 
-Turn the checks on or off with the [`validation` key](/reference/config#validation-profiles). [Errors and issues](/guide/validation#errors-and-issues) shows how to read `error.issues`. The [runtime API](/reference/runtime-api#errors) holds the issue codes.
+Turn the checks on or off with the [`validation` key](/reference/config#validation-profiles). To lower them for one client or one call, use the [`validate` option](#lower-the-checks). [Errors and issues](/guide/validation#errors-and-issues) shows how to read `error.issues`. The [runtime API](/reference/runtime-api#errors) holds the issue codes.
+
+## Lower the checks
+
+A client that validates checks each request and each response at the level of its SDK. The `validate` option lowers that level. Set it on the client for all its calls, or in the second argument of `.execute()` for one call.
+
+| Value | Checks |
+| --- | --- |
+| `true` | everything |
+| `'sanity'` | the shape only: types, required fields and extra keys. Value limits are skipped |
+| `false` | nothing |
+| `{ request, response }` | the request and the response apart. Each side takes one of the three levels above |
+| `{ requestHeaders, responseHeaders }` | the header checks of the request and of the response, each apart |
+
+- Conversion always runs. A `Date` or `Temporal` value is converted at every level, also when the checks are off.
+- `request` covers the body and the `path`, `query` and `cookie` values. `response` covers the body and the stream items.
+- A level alone sets `request` and `response`. It does not switch the header checks.
+- The header checks are off unless you name them. A request header that breaks its schema is sent, and a response header is returned without a check. Set `requestHeaders` or `responseHeaders` to a level to check them.
+- A side that you leave out takes the level of the next source: the call, then the client, then the SDK.
+- You can lower the level, but you cannot raise it. A level above the level of the SDK rejects `.execute()` with a `LibError` of kind `ValidationUnavailable`. A sanity SDK has no full checks to switch on.
+- Any other value rejects `.execute()` with a `TypeError`.
+- With `response: false`, the client does not check the response body, but it still converts it. A date that cannot convert rejects `.execute()` with a `Deserialization` error.
+- An SDK generated without validation has no `validate` option.
 
 ## Handle errors
 
