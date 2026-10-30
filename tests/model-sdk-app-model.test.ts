@@ -1,4 +1,5 @@
 import 'temporal-polyfill/global';
+import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -349,6 +350,17 @@ test('a $ref sibling that the named schema already implies lets an app model gen
     }),
   };
   await assert.rejects(loadGolemModeProject(scope, 'sdk-app-model-ref-narrow-', [narrowing], true, { 'src/record.model.ts': model }), /OPENAPI_KEYWORD_NOT_CARRIED[^]*"maximum"/);
+
+  const looser: GolemModeSdkSetup = {
+    ...implied,
+    document: chargesDocument({
+      Amount: { type: 'number', maximum: 10 },
+      Charge: { type: 'object', required: ['price'], properties: { price: { $ref: '#/components/schemas/Amount', maximum: 20 } } },
+    }),
+  };
+  const loose = await importBuilt((await loadGolemModeProject(scope, 'sdk-app-model-ref-loose-', [looser], true, { 'src/record.model.ts': model })).root, 'src/record.model.generated.js');
+  assert.deepEqual(loose.fromWireFormatTRecord({ price: 3 }), { price: 3 });
+  assert.throws(() => loose.fromWireFormatTRecord({ price: 11 }), /Model validation failed/);
 });
 
 test('a golem-mode model over an SDK discriminated union decodes each tag to its branch and rejects an unknown tag', async () => {
@@ -383,7 +395,9 @@ export const read = (wire: unknown) => fromWireFormat<OwnerRecord>(wire);
   const dog = read({ pet: { petType: 'dog', bornAt: '2025-01-02T03:04:05Z' } });
   assert.deepEqual(dog.pet, { petType: 'dog', bornAt: new Date('2025-01-02T03:04:05Z') });
   assert.deepEqual(read({ pet: { petType: 'cat', lives: 9 } }).pet, { petType: 'cat', lives: 9 });
-  assert.throws(() => read({ pet: { petType: 'bird' } }), /petType|Model validation failed/);
+  assert.throws(() => read({ pet: { petType: 'bird' } }), (error: unknown) => error instanceof LibError
+    && error.kind === LibErrorKind.Validation && error.causedByInput === true && error.message === 'Model validation failed.'
+    && JSON.stringify(error.issues.map(issue => [issue.code, issue.path])) === '[["literal",["pet","petType"]]]');
   // A nullable SDK node keeps the value it is given: the same object, and null stays null.
   const { TKennelBaseModel } = await importBuilt(project.root, 'src/owner.model.generated.js');
   const given = { petType: 'dog', bornAt: new Date('2025-01-02T03:04:05Z') };
