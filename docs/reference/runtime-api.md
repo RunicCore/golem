@@ -257,10 +257,12 @@ client.<operation>().execute(input, options?: <Client>RequestOptions): Promise<H
 | `responseHeaderDecoders` | a response header that declares `content` | Header decoders by media type. |
 | `streamDecoders` | a response that declares `itemSchema` | Framing decoders for streams other than NDJSON, JSON-seq and SSE ([Connect a custom stream decoder](/guide/client-usage#connect-a-custom-stream-decoder)). |
 | `operationValidators` | `validation` turned on | A map of operation name to validators. Each entry replaces the generated validators of that operation ([Runtime validators](#runtime-validators)). |
+| `validate` | `validation` turned on | The check level of every call of this client ([The `validate` option](#client-validate)). |
 
 | Request option | Value |
 | --- | --- |
 | `signal` | An `AbortSignal` that cancels the request. |
+| `validate` | The check level of this call. It wins over the `validate` of the client ([The `validate` option](#client-validate)). Present when the client has the option. |
 
 - The client type has the first three options always. It adds each other option only when the API needs it. A key that the type does not have is a type error.
 - `baseUrl` loses its surrounding spaces and one trailing `/`. An empty value throws `Error` with the message `<Client>Client requires a non-empty baseUrl` when you create the client.
@@ -291,8 +293,24 @@ client.<operation>().execute(input, options?: <Client>RequestOptions): Promise<H
 | No security requirement has all its credentials | A plain `Error` whose message starts with `No configured credentials satisfy`. It rejects before `fetch` runs ([Client authentication](#client-authentication)). |
 | The network fails | The rejection of `fetchImpl`, unchanged. |
 
+- The client converts what it carries. A response body, a stream item and a declared response header arrive as plain objects with converted values, such as `Date` or `Temporal` for dates. A request body and the `path`, `query`, `header` and `cookie` values go out in their JSON form. No class is involved, in either [SDK mode](/reference/config#sdk-modes).
 - Test an undeclared response with the generated guard `is<Client>UndeclaredResponseError(error)`.
 - With validation off, the client checks no request or response. With it on, a response that declares no content has no body to check.
+
+#### The `validate` option {#client-validate}
+
+| Value | Checks |
+| --- | --- |
+| `true` | Everything. |
+| `'sanity'` | The shape only: types, required fields and extra keys. |
+| `false` | Nothing. Conversion still runs. |
+| `{ request, response, requestHeaders, responseHeaders }` | Each side apart. A side takes `true`, `'sanity'` or `false`. |
+
+- `request` covers the body and the `path`, `query` and `cookie` values. `response` covers the body and the stream items.
+- A level alone sets `request` and `response`. The header sides, `requestHeaders` and `responseHeaders`, are off unless the option names them.
+- A side takes the level of the call, else of the client, else of the SDK. The level of the SDK is the cap.
+- A level above the cap rejects `execute` with `LibError` of kind `ValidationUnavailable`. Any other value rejects it with `TypeError`.
+- The option works the same in a `standalone` and in a `golem` SDK.
 
 [Create a client](/guide/client-usage#create-a-client) shows the options in use. [Read responses and handle failures](/guide/client-usage#read-responses-and-handle-failures) and [Handle errors](/guide/client-usage#handle-errors) show how to read the result and the errors.
 

@@ -4,6 +4,13 @@ Create a client, send requests, read responses and errors, and share or cancel r
 
 These examples use the `ProviderClient` that [Generate an SDK](/guide/client) creates. You can use the same operations from your own API.
 
+The client is the only door to the API. It checks and converts each request and each response by itself:
+
+- A response body is a plain object of the SDK type. A `date` or `date-time` value is already a `Date` or a `Temporal` value ([`dates`](/reference/config#openapi-jobs)).
+- A request takes plain values. The client writes them in their JSON form.
+- The SDK has no model classes. A class with methods is your own model over the SDK type ([SDK types in your models](/guide/models-and-client)).
+- Both [SDK modes](/reference/config#sdk-modes) give the same calls.
+
 | Operation | Request | Declared responses |
 | --- | --- | --- |
 | `listCharges` | `GET /charges`, optional `limit` and `cursor` query | `200`: array of charges |
@@ -45,10 +52,10 @@ A response holds the HTTP `status` and the decoded `body`. This includes declare
 - `path`, `query`, `header` and `cookie` hold the operation's parameters. `body` holds the request data, encoded by the [body format](/guide/codecs) of the operation.
 - The input type has a group only when the operation declares it. A group is optional when none of its members is required. Pass `{}` when nothing is required.
 - When the operation accepts several media types, set `body` to `{ contentType, value }`.
-- To send a model, call `toWireFormat<T>(model)` first. The result is the plain JSON request body.
+- Pass plain values. A `Date` or `Temporal` value goes out as its JSON text. An instance of your own model over the SDK type is a valid body: the client writes its declared fields only.
 - With validation on, the client checks the input before it calls `fetch`.
 
-## Import one operation or model
+## Import one operation
 
 A feature that uses one endpoint imports its operation factory:
 
@@ -56,11 +63,11 @@ A feature that uses one endpoint imports its operation factory:
 
 The factory has the name of the operation and takes the client options. It returns the same operation as `client.getCharge()`, with `loading` when MobX is on. Create the operation once and call `.execute()` for each request. If `.execute()` fails with a `ValidationUnavailable` error and the message `Missing generated input validator for <operation>`, run `golem generate` again.
 
-The SDK names each schema in PascalCase and adds `Model` for the runtime class ([Generated SDK names](/reference/generated-files#generated-sdk-names)). The schema `Charge` gives the JSON data type `Charge` and the class `ChargeModel`. A response body is plain data. Call `fromWireFormat<T>` to get a model instance:
+The SDK names each schema in PascalCase ([Generated SDK names](/reference/generated-files#generated-sdk-names)). The schema `Charge` gives the type `Charge`. A response body is a plain `Charge`, with converted values:
 
-<<< ../../examples/payments/server/provider/charges.ts#charge-model
+<<< ../../examples/payments/server/provider/charges.ts#charge-type
 
-`sdk/index.js` exports every client, operation type and model. Import a model or an operation from its own file to let your bundler drop what you do not use. Find the paths in [Generated files](/reference/generated-files#public-paths).
+`sdk/index.js` exports the client, its types and the data types. Import an operation from its own file to let your bundler drop what you do not use. Find the paths in [Generated files](/reference/generated-files#public-paths).
 
 ## Read responses and handle failures
 
@@ -99,6 +106,10 @@ A client that validates checks each request and each response at the level of it
 - Any other value rejects `.execute()` with a `TypeError`.
 - With `response: false`, the client does not check the response body, but it still converts it. A date that cannot convert rejects `.execute()` with a `Deserialization` error.
 - An SDK generated without validation has no `validate` option.
+
+A client that checks only the shape of responses, and one call that does not check its response:
+
+<<< ../../examples/payments/server/provider/charges.ts#lower-checks
 
 ## Handle errors
 
