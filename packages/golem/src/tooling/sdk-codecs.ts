@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { code, exportedName, fileImports, ImportSource, join, lineBreak, literal as codeLiteral, nest, propertyKey, render, type Code } from './code.js';
 import { rt } from './rt.js';
+import { portableRelativeFilename } from './type-analysis/path-identity.js';
 
 /**
  * What both generated-SDK writers share: the codec module of an operation the client reads, and the Temporal codec rules. golem-openapi writes
@@ -26,7 +27,7 @@ export function sdkCodecsFile(where: { readonly modelsOutput: string; readonly c
 /** The specifier by which the generated file `fromFile` imports the generated TypeScript file `toFile`: relative, with `/` and the `.js` ending. */
 export function moduleSpecifier(fromFile: string, toFile: string): string {
   const target = path.parse(toFile);
-  const relative = path.relative(path.dirname(fromFile), path.join(target.dir, `${target.name}.js`)).split(path.sep).join('/');
+  const relative = portableRelativeFilename(path.join(target.dir, `${target.name}.js`), path.dirname(fromFile));
   return relative.startsWith('./') || relative.startsWith('../') ? relative : `./${relative}`;
 }
 

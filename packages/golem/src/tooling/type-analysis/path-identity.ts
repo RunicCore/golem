@@ -1,9 +1,19 @@
-import { normalize, resolve } from 'node:path';
+import { normalize, relative, resolve } from 'node:path';
 
 import { canonicalPath } from '../generator-core.js';
 
 export function canonicalFilename(filename: string): string {
   return normalize(resolve(filename));
+}
+
+/**
+ * Stable source identity used in generated metadata.  Absolute paths are
+ * useful while resolving a program but would make generated output depend on
+ * the checkout directory.  Keep the first portable workspace boundary and
+ * discard the machine-specific prefix.
+ */
+export function portableRelativeFilename(filename: string, root: string): string {
+  return relative(canonicalFilename(root), canonicalFilename(filename)).replace(/\\/g, '/');
 }
 
 /** Whether a path lies in a `node_modules` folder, whichever separator it uses. */

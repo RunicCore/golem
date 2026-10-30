@@ -5,9 +5,9 @@ import * as ts from '../typescript-ns.js';
 import { assertNotSolutionTsconfig } from '../typescript-config.js';
 import { readManifest } from './package-specifier.js';
 import { DEFAULT_MODEL_SUFFIXES, displayPath, GolemDiagnosticSeverity, canonicalPath, compareText, discoverSources, hasErrorCode, isInsideDirectory, parseYamlFile, suffixPattern, YamlFileError, type GeneratorSession, type GolemDiagnostic, type InputObserver } from '../generator-core.js';
-import { canonicalFilename, inNodeModules } from './path-identity.js';
+import { canonicalFilename, inNodeModules, portableRelativeFilename } from './path-identity.js';
 
-export { canonicalFilename };
+export { canonicalFilename, portableRelativeFilename };
 
 export interface ProgramInfo {
   readonly configPath?: string;
@@ -19,16 +19,6 @@ export interface ProgramInfo {
   readonly rootNames: readonly string[];
   readonly program: ts.Program;
   readonly host: ts.CompilerHost;
-}
-
-/**
- * Stable source identity used in generated metadata.  Absolute paths are
- * useful while resolving a program but would make generated output depend on
- * the checkout directory.  Keep the first portable workspace boundary and
- * discard the machine-specific prefix.
- */
-export function portableRelativeFilename(filename: string, root: string): string {
-  return relative(canonicalFilename(root), canonicalFilename(filename)).replace(/\\/g, '/');
 }
 
 /** Find a stable project root when a direct generator root is unavailable. */
