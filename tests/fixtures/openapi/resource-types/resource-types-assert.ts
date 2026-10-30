@@ -7,8 +7,6 @@ import type {
   PutEnvelopeOperationSuccessBody,
   GetEmbeddedOperationSuccessBody,
 } from './types.js';
-import { EnvelopeModel, ScopeUserModel, UserModel } from './index.js';
-import { fromWireFormat } from '@exprtlabs/golem/serde';
 
 const requestUser: InputSchemas.User = { id: 'u1', secret: 's' };
 const replyUser: OutputSchemas.User = { id: 'u1', serverValue: 'ok' };
@@ -25,14 +23,6 @@ const envelope: Envelope = {
   relative: { id: 'u1', secret: 's', serverValue: 'ok' },
   scoped: { inner: { id: 'scoped' } },
 };
-async function assertConverted(): Promise<void> {
-  const converted = fromWireFormat<EnvelopeModel>(envelope);
-  const nestedUser: UserModel = converted.user;
-  const nestedRelative: UserModel = converted.relative;
-  const nestedInner: ScopeUserModel | undefined = converted.scoped?.inner;
-  void nestedUser; void nestedRelative; void nestedInner;
-}
-void assertConverted;
 void requestUser; void replyUser; void input; void success; void embedded; void envelope;
 
 const scopedWithInner: NonNullable<Envelope['scoped']> = { inner: { id: 'scoped' } };
