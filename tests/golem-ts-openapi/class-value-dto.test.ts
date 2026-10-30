@@ -51,3 +51,31 @@ test('a controller DTO with a class-valued TSerde field and Temporal fields docu
   assert.deepEqual(order.properties?.placedAt?.allOf, [{ type: 'string' }, { format: 'date-time' }]);
   assert.deepEqual(order.properties?.shipsOn?.allOf, [{ type: 'string' }, { format: 'date' }]);
 });
+
+test('a plain global Temporal field documents the format of its class', async t => {
+  // protects: R-89 F-163 a plain Temporal.Instant field carries format date-time in OpenAPI, as the TemporalInstant tag does
+  const root = createControllerFixture(t, {
+    prefix: 'golem-ts-openapi-plain-temporal-',
+    packageName: 'golem-ts-openapi-plain-temporal-fixture',
+    sourceFile: 'src/events.controller.ts',
+    source: `import { Body, Controller, Post } from '@nestjs/common';
+import type { IModel } from '@exprtlabs/golem/model';
+
+export type TEvent = IModel<{ at: Temporal.Instant; day: Temporal.PlainDate }>;
+
+@Controller('events')
+export class EventsController {
+  @Post()
+  create(@Body() body: TEvent): TEvent { return body; }
+}
+`,
+    tsconfig: {
+      compilerOptions: { target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', strict: true, experimentalDecorators: true, skipLibCheck: true, lib: ['ES2023', 'esnext.temporal'] },
+      include: ['src/**/*.ts'],
+    },
+  });
+  const result = await generate({ root, output: path.join(root, 'openapi.json'), openapiVersion: '3.2.0', info: { title: 'Events', version: '1' }, profile: { mobx: false, validation: false } });
+  const event = (JSON.parse(result.artifacts[0]!.content) as { components: { schemas: Record<string, Schema> } }).components.schemas.TEvent;
+  assert.deepEqual(event?.properties?.at?.allOf, [{ type: 'string' }, { format: 'date-time' }]);
+  assert.deepEqual(event?.properties?.day?.allOf, [{ type: 'string' }, { format: 'date' }]);
+});
