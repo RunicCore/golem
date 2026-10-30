@@ -360,7 +360,9 @@ test('a $ref sibling that the named schema already implies lets an app model gen
   };
   const loose = await importBuilt((await loadGolemModeProject(scope, 'sdk-app-model-ref-loose-', [looser], true, { 'src/record.model.ts': model })).root, 'src/record.model.generated.js');
   assert.deepEqual(loose.fromWireFormatTRecord({ price: 3 }), { price: 3 });
-  assert.throws(() => loose.fromWireFormatTRecord({ price: 11 }), /Model validation failed/);
+  assert.throws(() => loose.fromWireFormatTRecord({ price: 11 }), (error: unknown) => error instanceof LibError
+    && error.kind === LibErrorKind.Validation && error.causedByInput === true && error.message === 'Model validation failed.'
+    && JSON.stringify(error.issues.map(issue => [issue.code, issue.path])) === '[["tooBig",["price"]]]');
 });
 
 test('a golem-mode model over an SDK discriminated union decodes each tag to its branch and rejects an unknown tag', async () => {
@@ -422,4 +424,13 @@ export const basketInit: TBasketInit = { price: money, label: 'x' };
   const project = writeGolemModeProject(scope, 'sdk-app-model-types-', [NESTED], true);
   writeModelSources(project.root, { 'src/charge.model.ts': model, 'src/assign.ts': assign });
   await buildModelProject(project.root, ['--noUnusedLocals']);
+});
+
+test('the JSON type of an app model over an SDK type with a date is the wire form, not the SDK type', async () => {
+  // protects: T-748 T-750 an SDK node whose wire form differs from its plain form (a date) gets a JSON type of its own
+  const model = "import type { IModel } from '@exprtlabs/golem/model';\nimport type { Charge } from '../sdk/charges/index.js';\nexport type TRecord = IModel<Charge>;\n";
+  const use = "import type { TRecordJSON } from './record.model.generated.js';\nexport const wire: TRecordJSON = { id: 'c1', amount: 2, at: '2025-01-02T03:04:05Z' };\n";
+  const project = await buildGolemModeProject('sdk-app-model-json-', CHARGES, { 'src/record.model.ts': model, 'src/use.ts': use });
+  const { wire } = await importBuilt(project.root, 'src/use.js');
+  assert.deepEqual(wire, { id: 'c1', amount: 2, at: '2025-01-02T03:04:05Z' });
 });
