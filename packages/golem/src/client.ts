@@ -15,6 +15,7 @@ export function createApiOperation<Input, Result, Options = unknown>(
 ): ApiOperation<Input, Result, Options> {
   return createTrackedApiOperation(name, run);
 }
+export type { InboundRequest, InboundResponse } from './client-runtime/body-codecs.js';
 export type {
   BodyEncoder, BodyEncoderContext, ClientOptions, EncodedBody, EncodingMetadata, MutualTlsTransport, OperationCodecs,
   ParameterSerializer, ParameterSerializerContext, RequestOptions, ResponseDecoder, ResponseHeaderDecoder, ResponseHeaderDecoderContext,

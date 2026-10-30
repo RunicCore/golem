@@ -49,7 +49,10 @@ interface RuntimeTypeExports {
   };
   readonly client: {
     readonly ApiOperation: client.ApiOperation<never, never, never>;
+    readonly InboundRequest: client.InboundRequest;
+    readonly InboundResponse: client.InboundResponse;
     readonly OperationCodecs: client.OperationCodecs;
+    readonly RequestOptions: client.RequestOptions;
     readonly RuntimeResponseContract: client.RuntimeResponseContract;
     readonly RuntimeSecuritySchemes: client.RuntimeSecuritySchemes;
   };

@@ -438,7 +438,9 @@ export interface OperationValidatorNames {
 
 /**
  * The codec module of each operation that validates or converts, by file name (`codecs/<operation>.ts`): the validators of its input and responses,
- * the encoder of each request body and parameter, and the decoder of each response body, stream item and response header, that converts something (`OpenApiModelAnalysis.convertedNodeIds`).
+ * the conversion of each request body and parameter, and of each response body, stream item and response header, that converts something (`OpenApiModelAnalysis.convertedNodeIds`).
+ * A client operation encodes its request and decodes its response. An inbound operation (a webhook or a callback) is the other way round:
+ * it decodes its request and encodes its response, so its request tables hold `fromWire` and its response tables `toWire`.
  * An operation module imports its own file, so a bundler that drops an operation drops its codecs and the groups only they reach.
  */
 export function generateOperationCodecs(
@@ -451,6 +453,10 @@ export function generateOperationCodecs(
   for (const operation of operations) {
     const validatorsSource = new ImportSource('../validators.generated.js', false, { sorted: true });
     const groupSources = new Map(analysis.grouping.groups.map((group) => [group.id, new ImportSource(`../models/_${group.id}.js`, false, { sorted: true })] as const));
+    const inbound = operation.sourceKind !== 'path';
+    // The request of a client operation leaves in its wire form and its response arrives in its plain form; the traffic of an inbound operation runs the other way.
+    const requestConversion = inbound ? 'fromWire' : 'toWire';
+    const responseConversion = inbound ? 'toWire' : 'fromWire';
     const codecOf = (valueKey: string, functionName: 'fromWire' | 'toWire'): Code | undefined => {
       const nodeId = analysis.convertedNodeIds.get(valueKey);
       const groupId = nodeId === undefined ? undefined : analysis.grouping.owner.get(nodeId);
@@ -459,10 +465,10 @@ export function generateOperationCodecs(
     const keyed = (items: ReadonlyArray<readonly [string, Code | undefined]>): SdkKeyedCode[] => items.flatMap(([key, codec]) => codec ? [{ key, code: codec }] : []);
     const checks = validators?.get(operation.name);
     const responses = operation.responses.flatMap((response) => response.content.map((media) => [response.status, media.contentType] as const));
-    const encode = keyed(operation.requestContent.map((media) => [media.contentType, codecOf(requestBodyKey(operation.name, media.contentType), 'toWire')]));
-    const decode = keyed(responses.map(([status, contentType]) => [`${status}:${contentType}`, codecOf(responseBodyKey(operation.name, status, contentType), 'fromWire')]));
-    const parameters = keyed(operation.parameters.map((parameter) => [`${parameter.in}:${parameter.name}`, codecOf(parameterKey(operation.name, parameter.in, parameter.name), 'toWire')]));
-    const headers = keyed(operation.responses.flatMap((response) => Object.keys(response.headers).map((name) => [`${response.status}:${name}`, codecOf(responseHeaderKey(operation.name, response.status, name), 'fromWire')] as const)));
+    const encode = keyed(operation.requestContent.map((media) => [media.contentType, codecOf(requestBodyKey(operation.name, media.contentType), requestConversion)]));
+    const decode = keyed(responses.map(([status, contentType]) => [`${status}:${contentType}`, codecOf(responseBodyKey(operation.name, status, contentType), responseConversion)]));
+    const parameters = keyed(operation.parameters.map((parameter) => [`${parameter.in}:${parameter.name}`, codecOf(parameterKey(operation.name, parameter.in, parameter.name), requestConversion)]));
+    const headers = keyed(operation.responses.flatMap((response) => Object.keys(response.headers).map((name) => [`${response.status}:${name}`, codecOf(responseHeaderKey(operation.name, response.status, name), responseConversion)] as const)));
     if (!profile.validation && !encode.length && !decode.length && !parameters.length && !headers.length) continue;
     const codecs: SdkOperationCodecs = {
       ...(checks ? { input: validatorsSource.name(checks.input), ...(checks.headers === undefined ? {} : { requestHeaders: validatorsSource.name(checks.headers) }), responses: checks.responses.map((item) => ({ key: item.key, code: validatorsSource.name(item.name) })) } : {}),

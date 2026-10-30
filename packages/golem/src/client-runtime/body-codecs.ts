@@ -1,5 +1,6 @@
+import { LibError } from '../errors.js';
 import type { ValidationLevel } from '../object-codec.js';
-import type { BodyEncoder, ClientRuntime, EncodedBody, EncodingMetadata, OperationCodecs, ResponseDecode } from './core.js';
+import type { BodyEncoder, ClientRuntime, EncodedBody, EncodingMetadata, OperationCodecs, ResponseCheck, ResponseDecode } from './core.js';
 import { addQueryParameter } from './parameters.js';
 import type { CallLevels } from './validation.js';
 
@@ -196,5 +197,97 @@ export function responseDecoder(codecs: OperationCodecs, headerLevel?: Validatio
     const table = header === undefined ? decode : headers;
     const key = `${response.status}:${header ?? response.contentType}`;
     return table && Object.hasOwn(table, key) ? table[key]!(value as never, header === undefined ? CHECKED : headerOptions) : value;
+  };
+}
+
+/**
+ * The raw wire request of an inbound operation, as the application's web framework holds it: the path, query, header and cookie values, and the body.
+ * The body is the bare value when the operation has one request media type, and `{ contentType, value }` when it has several.
+ */
+export interface InboundRequest {
+  readonly path?: Readonly<Record<string, unknown>>;
+  readonly query?: Readonly<Record<string, unknown>>;
+  readonly header?: Readonly<Record<string, unknown>>;
+  readonly cookie?: Readonly<Record<string, unknown>>;
+  readonly querystring?: unknown;
+  readonly body?: unknown;
+}
+
+/** The wire response of an inbound operation: what the application's web framework writes. */
+export interface InboundResponse {
+  readonly status: number;
+  readonly contentType: string | null;
+  readonly headers: Readonly<Record<string, unknown>>;
+  readonly body: unknown;
+}
+
+/** The checks of one inbound call. Only an SDK generated with validation has them (`inboundChecks` of the validation entry), so this module imports no validation code. */
+export interface InboundChecks {
+  /** Checks the wire request at the request levels; rejects with `LibErrorKind.Validation`. */
+  readonly request: (request: InboundRequest) => Promise<void>;
+  /** Checks the wire body of the response; none when the response level is off. */
+  readonly response?: ResponseCheck;
+  /** The level at which the converted response headers are checked. */
+  readonly responseHeaders?: ValidationLevel;
+}
+
+/** What the SDK knows about an inbound operation besides its codecs. */
+export interface InboundShape {
+  /** The request media types: none for an operation with no body, one for a bare body, several for `{ contentType, value }`. */
+  readonly media: readonly string[];
+  /** The response keys the operation declares: a status, a range such as `2XX`, or `default`. */
+  readonly statuses: readonly string[];
+}
+
+/** The declared key that answers `status`: the status itself, then its range, then `default`. */
+function declaredStatus(statuses: readonly string[], status: number): string | undefined {
+  const range = `${Math.floor(status / 100)}XX`;
+  return statuses.find((item) => item === String(status)) ?? statuses.find((item) => item.toUpperCase() === range) ?? statuses.find((item) => item === 'default');
+}
+
+/** A failure in the response of the application is the application's fault, not the caller's input. */
+function applicationFault(error: unknown): unknown {
+  return error instanceof LibError
+    ? new LibError(error.kind, `The response of the application breaks the operation's schema: ${error.message}`, error.issues, { cause: error, causedByInput: false })
+    : error;
+}
+
+/** The request in its plain form: the parameters and the body convert once the checks have run, so no conversion checks again. */
+function convertInboundRequest(codecs: OperationCodecs, media: readonly string[], request: InboundRequest): object {
+  const parameters = convertRequestParameters(codecs, request, { request: false, requestHeaders: false });
+  if (media.length === 0) return parameters;
+  if (media.length === 1) return { ...parameters, body: convertRequestBody(codecs, media[0], parameters.body, false) };
+  const body = parameters.body as { readonly contentType: string; readonly value: unknown } | undefined;
+  return body === undefined ? parameters : { ...parameters, body: { ...body, value: convertRequestBody(codecs, body.contentType, body.value, false) } };
+}
+
+/**
+ * The handler of one inbound operation: it checks the wire request and converts it to its plain form (a `Date` where the schema holds a date), calls the application,
+ * then converts the application's response to its wire form and checks it. The codecs of an inbound operation hold the conversions the other way round
+ * than the client's: `encode` and `parameters` turn a wire request into its plain form, `decode` and `headers` turn a plain response into its wire form.
+ * A request that breaks the schema rejects with `LibErrorKind.Validation` and `causedByInput`, before the application is called;
+ * a response that breaks it rejects with `causedByInput` false. The caller maps either to its protocol; golem chooses no status code.
+ */
+export function inboundHandler<Input, Output extends InboundResponse>(
+  codecs: OperationCodecs,
+  shape: InboundShape,
+  call: (input: Input) => Promise<Output>,
+  checks?: InboundChecks,
+): (request: InboundRequest) => Promise<InboundResponse> {
+  const convert = responseDecoder(codecs, checks?.responseHeaders);
+  return async (request) => {
+    await checks?.request(request);
+    const plain = convertInboundRequest(codecs, shape.media, request);
+    const response = await call(plain as Input);
+    try {
+      const key = declaredStatus(shape.statuses, response.status);
+      const declared = { status: key ?? String(response.status), contentType: response.contentType };
+      const wireBody = convert && response.contentType !== null ? convert(declared, response.body) : response.body;
+      if (checks?.response) await checks.response(declared, wireBody);
+      const headers = convert ? Object.fromEntries(Object.entries(response.headers).map(([name, value]) => [name, value === undefined ? value : convert(declared, value, name)])) : response.headers;
+      return { status: response.status, contentType: response.contentType, headers, body: wireBody };
+    } catch (error) {
+      throw applicationFault(error);
+    }
   };
 }

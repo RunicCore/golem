@@ -6,7 +6,7 @@ import { buildOperationValidationSchemas, generateClientModules, operationValida
 import { browserCookieDiagnostics, normalizeAndValidate, unsupportedHttpAuthSchemes, type MovedUnions } from './document.js';
 import { buildEmissionPlan, serverOverrideDiagnostics, type ArtifactFile, type EmissionPlan } from './emission-plan.js';
 import { asRecord, readString } from './json.js';
-import { assertUniqueExportNames, code, documentLiteral, exportedName, identifier as identifierPart, join, renderModule, type Code, type PublicModule, type RenderedModule } from '@exprtlabs/golem/internal/emitter';
+import { assertUniqueExportNames, code, documentLiteral, exportedName, fileImports, identifier as identifierPart, ImportSource, join, literal, renderModule, rt, rtType, runtimeLinesOf, type Code, type ImportOptions, type PublicModule, type RenderedModule } from '@exprtlabs/golem/internal/emitter';
 import { operationName, operationNameType } from './names.js';
 import type { NormalizedOperation } from './normalize.js';
 import { generatedBannerComment } from './package-info.js';
@@ -140,21 +140,73 @@ export const ${exportedName('operationServers')} = ${documentLiteral(plan.operat
 ` : code``}`);
 }
 
-function generateInbound(clientName: string, operations: readonly NormalizedOperation[]): RenderedModule {
+function generateInbound(
+  clientName: string,
+  operations: readonly NormalizedOperation[],
+  profile: OpenApiGenerationProfile,
+  hasCodecs: (operation: string) => boolean,
+): RenderedModule {
+  const typesModule = new ImportSource('./types.js', true, { namespace: 'Types' });
   const methods = join(operations.map((operation) =>
-    code`  ${descriptionComment(`${operation.sourceKind} ${operation.sourceName}: ${operation.method} ${operation.route}`)}\n  ${identifierPart(operation.name)}(input: Types.${identifierPart(`${operation.typeName}OperationInput`)}): Promise<Types.${identifierPart(`${operation.typeName}OperationHttpResponse`)}>;`,
+    code`  ${descriptionComment(`${operation.sourceKind} ${operation.sourceName}: ${operation.method} ${operation.route}`)}\n  ${identifierPart(operation.name)}(input: ${typesModule.namespace()}.${identifierPart(`${operation.typeName}OperationInput`)}): Promise<${typesModule.namespace()}.${identifierPart(`${operation.typeName}OperationHttpResponse`)}>;`,
   ), code`\n\n`);
-  return renderModule(code`${generatedBannerComment()}
-import type * as Types from './types.js';
-
+  const codecSources = new Map(operations.filter((operation) => hasCodecs(operation.name)).map((operation) => [operation.name, new ImportSource(`./codecs/${operation.name}.js`)] as const));
+  const name = (suffix: string): Code => exportedName(`${clientName}${suffix}`);
+  const sdkLevel = literal(profile.validation === 'sanity' ? 'sanity' : true);
+  const handlers = join(operations.map((operation) => {
+    const codecs = codecSources.get(operation.name)?.name('operationCodecs', { alias: `__golemCodecs_${operation.name}` }) ?? code`{}`;
+    const shape = literal({ media: operation.requestContent.map((media) => media.contentType), statuses: operation.responses.map((response) => response.status) });
+    const checks = profile.validation ? code`, ${rt.validation.inboundChecks}(${literal(operation.name)}, ${codecs}, options.validate, ${sdkLevel})` : code``;
+    return code`    ${identifierPart(operation.name)}: ${rt.client.inboundHandler}(${codecs}, ${shape}, (input: ${typesModule.namespace()}.${identifierPart(`${operation.typeName}OperationInput`)}) => port.${identifierPart(operation.name)}(input)${checks}),`;
+  }), code`\n`);
+  const handlerMembers = join(operations.map((operation) =>
+    code`  ${identifierPart(operation.name)}(request: ${name('InboundRequest')}): Promise<${name('InboundResponse')}>;`,
+  ), code`\n`);
+  const body = code`
 /**
  * Application-owned handlers for inbound OpenAPI callbacks and webhooks.
  * This contract intentionally does not choose an HTTP server framework.
  */
-export interface ${exportedName(`${clientName}InboundPort`)} {
+export interface ${name('InboundPort')} {
 ${methods}
 }
-`);
+
+/** The raw wire request of an inbound operation, as the web framework holds it: unknown path, query, header and cookie values and body. */
+export type ${name('InboundRequest')} = ${rtType.client.InboundRequest};
+
+/** The wire response of an inbound operation: the status, headers and body that the web framework writes. */
+export type ${name('InboundResponse')} = ${rtType.client.InboundResponse};
+${profile.validation ? code`
+/** The validation level of the handlers of one binding: \`true\`, \`'sanity'\`, \`false\`, or the sides \`request\`, \`response\`, \`requestHeaders\` and \`responseHeaders\`. Header checks are off unless named. */
+export interface ${name('InboundOptions')} {
+  validate?: ${rtType.client.RequestOptions}['validate'];
+}
+` : code``}
+/** One handler for each inbound operation. */
+export interface ${name('InboundHandlers')} {
+${handlerMembers}
+}
+
+/**
+ * Binds the application's port to one handler for each inbound operation. A handler takes the raw wire request, checks it, converts it to the plain form that the port takes (a Date where the schema holds a date),
+ * calls the port, then converts the port's response to its wire form, checks it and returns it. A request that breaks the schema rejects with a LibError of kind Validation and \`causedByInput\`, before the port is called;
+ * a response of the port that breaks it rejects with \`causedByInput\` false. Golem chooses no HTTP status for either: the application maps them.
+ */
+export function ${exportedName(`bind${clientName}Inbound`)}(port: ${name('InboundPort')}${profile.validation ? code`, options: ${name('InboundOptions')} = {}` : code``}): ${name('InboundHandlers')} {
+  return {
+${handlers}
+  };
+}
+`;
+  const imports: ImportOptions = { modules: ['client', 'validation'] };
+  const runtimeLines = runtimeLinesOf(body, imports);
+  return renderModule(code`${join([
+    generatedBannerComment(),
+    ...runtimeLines('client', 'validation'),
+    ...fileImports(body, [typesModule], { elsewhere: [...codecSources.values()] }),
+    ...fileImports(body, [...codecSources.values()], { elsewhere: [typesModule] }),
+    body,
+  ], code`\n`)}`);
 }
 
 function generatedFiles(document: unknown, options: WriteSdkOptions, moved: MovedUnions): GeneratedFiles {
@@ -179,9 +231,10 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions, moved:
   const clientName = identifier(options.name || readString(asRecord(asRecord(document).info).title), 'Api');
   const output = path.resolve(options.output);
   const plan = buildEmissionPlan(document, ir, profile);
-  const modelAnalysis = analyzeOpenApiModels(document, profile.validation, options.dates ?? 'date', operations);
+  // The inbound operations take part: a webhook or callback request is decoded and its response encoded, through the same nodes and codecs.
+  const modelAnalysis = analyzeOpenApiModels(document, profile.validation, options.dates ?? 'date', [...operations, ...inboundOperations]);
   const inlineDiagnostics = checkOperationCompositions([...operations, ...inboundOperations], modelAnalysis, document);
-  const schemaData = profile.validation && plan.hasOutboundOperations
+  const schemaData = profile.validation && (plan.hasOutboundOperations || plan.hasInboundOperations)
     ? buildSchemaData(document, ir)
     : undefined;
   const files = new Map<string, string>();
@@ -199,8 +252,9 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions, moved:
   }
   // One validators module serves the models and the operations: it compiles the roots of every model group and
   // every operation together, so a check the two share is written once.
-  const operationValidation = plan.artifacts.has('client.ts')
-    ? buildOperationValidationSchemas(operations, document, profile, schemaData, options.locate, moved)
+  const hasOperationModules = plan.artifacts.has('client.ts') || plan.artifacts.has('inbound.ts');
+  const operationValidation = hasOperationModules
+    ? buildOperationValidationSchemas([...operations, ...inboundOperations], document, profile, schemaData, options.locate, moved)
     : undefined;
   const validators: { compiled?: PlanValidators } = {};
   const validatorOptions = {
@@ -251,8 +305,10 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions, moved:
     files.set('client.ts', clientModules.client.source);
     modules.set('client.ts', { exports: clientModules.client.exports, stars: [] });
     for (const [name, source] of clientModules.operations) files.set(name, source);
+  }
+  if (hasOperationModules) {
     for (const [name, source] of generateOperationCodecs(
-      operations,
+      [...operations, ...inboundOperations],
       profile,
       modelAnalysis,
       operationValidation && validators.compiled ? operationValidatorNames(operationValidation, validators.compiled.exports) : undefined,
@@ -264,7 +320,7 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions, moved:
     modules.set('servers.ts', { exports: serversModule.exports, stars: [] });
   }
   if (plan.artifacts.has('inbound.ts')) {
-    const inbound = generateInbound(clientName, inboundOperations);
+    const inbound = generateInbound(clientName, inboundOperations, profile, (operation) => files.has(`codecs/${operation}.ts`));
     files.set('inbound.ts', inbound.source);
     modules.set('inbound.ts', { exports: inbound.exports, stars: [] });
   }
