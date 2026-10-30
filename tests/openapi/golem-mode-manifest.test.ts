@@ -80,8 +80,7 @@ test('the golem-mode manifest lists each component once: a model by its declared
 test('standalone mode keeps the manifest it always wrote', () => {
   // protects: T-696 standalone keeps its manifest: validation closure, no mode
   const manifest = generateModelManifest(DOCUMENT, PROFILE, analysis('date')) as Record<string, unknown>;
-  assert.equal(Object.hasOwn(manifest, 'mode'), false);
-  assert.equal(Object.hasOwn(manifest, 'components'), false);
+  assert.equal(isGolemModeManifest(validateModelManifest(JSON.parse(stableJson(manifest)))), false);
 });
 
 test('an openapi job in golem mode writes the graph into model-manifest.json', async t => {

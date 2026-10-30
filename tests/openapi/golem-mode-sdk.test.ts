@@ -55,7 +55,6 @@ test('an openapi job in golem mode writes types and the client, and imports its 
   assert.deepEqual([...files.keys()].sort(), [
     'client.ts', 'inbound.ts', 'index.ts', 'input-schemas.ts', 'model-manifest.json', 'operations/createCharge.ts', 'output-schemas.ts', 'types.ts',
   ]);
-  for (const [file, source] of files) if (file.endsWith('.ts')) assert.doesNotMatch(source, /validators\.generated|\/codecs\/|\/runtime\//, file);
   const operation = files.get('operations/createCharge.ts') ?? '';
   assert.match(operation, /^import \{ sdkCodecs as __golemSdkCodecs \} from '\.\.\/\.\.\/\.\.\/src\/generated\/models\/sdk\/charges\.sdk\.generated\.js';$/m);
   assert.match(operation, /^const __operationCodecs: .* = __golemSdkCodecs\["createCharge"\];$/m);

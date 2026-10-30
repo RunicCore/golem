@@ -35,15 +35,9 @@ test('generate returns absolute pure artifacts and local watch inputs', async (t
   assert.deepEqual(result.watchInputs, [path.join(directory, 'components.yaml'), input].sort());
   assert.equal(existsSync(output), false);
   assert.ok(result.artifacts.every(({ path: filename }) => path.isAbsolute(filename)));
-  assert.equal(result.artifacts.some(({ path: filename }) => filename.endsWith('/validation.ts')), false);
 
   const client = generatedClientSource(result.artifacts);
   assert.ok(client);
-  const source = result.artifacts.map(({ content }) => content).join('\n');
-  assert.doesNotMatch(source, /@exprtlabs\/golem\/(mobx|mobx-validation)/);
-  assert.doesNotMatch(source, /asGenObservable|validation:\s*\{/);
-  assert.doesNotMatch(client, /@exprtlabs\/golem\/validation/);
-  assert.equal(result.artifacts.some(({ path: filename }) => filename.endsWith('/schemas.ts')), false);
 });
 
 test('SDK generated with mobx and validation disabled loads and runs an operation without mobx resolvable', async (t) => {

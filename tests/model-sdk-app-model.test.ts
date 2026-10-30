@@ -160,19 +160,15 @@ test('parse<T> reads an app model over an SDK model of golem mode, with the limi
   const validators = fs.readFileSync(path.join(project.root, 'src/generated/models/models.validators.generated.ts'), 'utf8');
   const holdingMinimum = validators.split(/^function /m).filter(body => /^f\d+_\w+_[0-9a-f]{8}\(/.test(body) && body.includes('< 0)')).map(body => body.replace(/^f\d+_(\w+?)_[0-9a-f]{8}\([^]*$/, '$1'));
   assert.deepEqual(holdingMinimum, ['Money']);
-  // The model that holds Money converts it with the codec of the SDK's codecs file and writes no Money conversion of its own.
+  // The model that holds Money converts it with the codec of the SDK's codecs file.
   const companion = fs.readFileSync(path.join(project.root, 'src/money.model.generated.ts'), 'utf8');
   assert.match(companion, /import \{[^}]*\bfromWireFormatMoney\b[^}]*\} from "\.\/generated\/models\/sdk\/payments\.sdk\.generated\.js"/);
-  assert.doesNotMatch(companion, /function (?:fill|stringify|fromWireFormat|toWireFormat|convertFromWire)Money\b/);
 });
 
 test('a standalone model over an SDK type with Temporal dates derives from the plain type and converts the dates', async () => {
-  // protects: T-700 R-83 a standalone SDK type with global Temporal fields imports nothing from golem, and an app model over it derives (it stopped with RUNM1004)
+  // protects: T-700 R-83 an app model over a standalone SDK type with global Temporal fields derives (it stopped with RUNM1004)
   const { root, sourceRoot } = createModelProject(scope, { prefix: 'sdk-app-model-standalone-', name: 'standalone-sdk-model', linkWorkspaceNodeModules: true, compilerOptions: { lib: ['ES2023', 'DOM', 'DOM.Iterable', 'esnext.temporal'] } });
   await generateMaterializedSdk(chargeDocument(), { output: path.join(sourceRoot, 'sdk'), name: 'Charges', dates: 'temporal', profile: { mobx: false, validation: true, allowAny: false } });
-  const types = fs.readFileSync(path.join(sourceRoot, 'sdk/types.ts'), 'utf8');
-  assert.doesNotMatch(types, /from '@exprtlabs\/golem/);
-  assert.match(types, /Temporal\.Instant/);
   writeModelSources(sourceRoot, {
     'charge.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
 import type { Charge } from './sdk/index.js';

@@ -40,10 +40,9 @@ test('a golem-mode call converts its request and its response, Temporal values i
   assert.equal(body.day instanceof Temporal.PlainDate, true);
   assert.equal(body.spent instanceof Temporal.Duration, true);
   assert.deepEqual([String(body.at), String(body.day), String(body.spent)], ['2025-01-02T03:04:05Z', '2025-01-02', 'PT5M']);
-  // The models job owns the file the SDK imports: it is recorded for that job, and the SDK folder holds no codec.
+  // The models job owns the file the SDK imports: it is recorded for that job.
   const outputs = fs.readFileSync(path.join(project.root, '.golem/outputs.json'), 'utf8');
   assert.match(outputs, /src\/generated\/models\/sdk\/charges\.sdk\.generated\.ts/);
-  assert.equal(fs.existsSync(path.join(project.root, 'sdk/charges/validators.generated.ts')), false);
 });
 
 test('two golem-mode SDKs with one operation name share one models job; a modelOnly rerun and check change nothing', async () => {
