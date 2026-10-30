@@ -1,11 +1,11 @@
 import { createFixtureProject } from '../fixture-project.js';
-import { compileGeneratedSdk, generateMaterializedSdk, readGeneratedModelSource, requireRecord, writeOpenApiDocument } from './helpers.js';
+import { compileGeneratedSdk, generateMaterializedSdk, sdkBodyCodec, withRootOperations, writeOpenApiDocument } from './helpers.js';
+import { LibError } from '@exprtlabs/golem/errors';
 import { dateTime, object, operation, ref } from './schema-builders.js';
 import { generate } from '#openapi/generator';
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 
 // JsonValue reaches itself through an array and an object and holds no date or model: its wire type is its model type.
@@ -50,27 +50,17 @@ function groupSources(output: string): string[] {
     .map(name => readFileSync(path.join(directory, name), 'utf8'));
 }
 
-async function loadModels(output: string): Promise<Record<string, unknown>> {
-  return requireRecord(await import(pathToFileURL(path.join(output, 'dist/index.js')).href), 'generated models');
-}
-
-test('a recursive non-model component is typed Types.<Name> with no alias in the model layer, and a plain one stays inline', async t => {
+test('a recursive non-model component generates and its body round-trips through the client', async t => {
   // protects: A-60 case 10 recursive non-object component generates
   const output = path.join(createFixtureProject(t, 'golem-openapi-recursive-json-'), 'sdk');
-  await generateMaterializedSdk(jsonDocument, { output, name: 'RecursiveJson', profile: { mobx: false, validation: true } });
+  await generateMaterializedSdk(withRootOperations(jsonDocument, 'Note'), { output, name: 'RecursiveJson', profile: { mobx: false, validation: true } });
   compileGeneratedSdk(output, [], { strict: true, skipLibCheck: true, noUnusedLocals: true });
-  const source = readGeneratedModelSource(output);
-  // Kept pins: which type a model-layer field names (the Types.<Name> reference or an inline type) is the layering claim; the compile above and the round trip below prove the types and the values.
-  assert.match(source, /declare payload: Types\.JsonValue;/);
-  assert.match(source, /declare tag\?: string;/);
 
-  const models = await loadModels(output);
-  const stringifyNote = models.stringifyNote as (value: unknown) => string;
-  const parseNote = models.parseNote as (text: string) => { payload: unknown };
+  const note = await sdkBodyCodec(output, 'RecursiveJson', 'Note');
   const wire = { title: 'a', payload: { list: [1, null, { deep: ['x', true] }], n: 2.5 }, tag: 't' };
-  const note = parseNote(JSON.stringify(wire));
-  assert.deepEqual(note.payload, wire.payload);
-  assert.deepEqual(JSON.parse(stringifyNote(note)), wire);
+  const decoded = await note.decode(wire);
+  assert.deepEqual(decoded, wire);
+  assert.deepEqual(await note.encode(decoded), wire);
 });
 
 test('two model groups that hold one recursive component share its functions, defined once', async t => {
@@ -86,27 +76,23 @@ test('two model groups that hold one recursive component share its functions, de
   assert.equal(importing.length, 2);
 });
 
-test('a recursive component that holds a date-time value types it as Date in the model layer and decodes it', async t => {
+test('a recursive component that holds a date-time value decodes the date at each level and encodes it back', async t => {
   // protects: A-60 case 16 recursive component with a date decodes the date
   const output = path.join(createFixtureProject(t, 'golem-openapi-recursive-date-'), 'sdk');
-  await generateMaterializedSdk(datedDocument, { output, name: 'RecursiveDated', profile: { mobx: false, validation: true } });
+  await generateMaterializedSdk(withRootOperations(datedDocument, 'Log'), { output, name: 'RecursiveDated', profile: { mobx: false, validation: true } });
   compileGeneratedSdk(output, [], { strict: true, skipLibCheck: true, noUnusedLocals: true });
-  const source = readGeneratedModelSource(output);
-  // Kept pin: the model layer names its own Date type for the alias; the round trip below proves the decode.
-  assert.match(source, /type DatedTreeFields = Array<\{ at: Date; kids: DatedTreeFields \}>;/);
 
-  const models = await loadModels(output);
-  const stringifyLog = models.stringifyLog as (value: unknown) => string;
-  const parseLog = models.parseLog as (text: string) => { history: { at: Date; kids: { at: Date }[] }[] };
+  const log = await sdkBodyCodec(output, 'RecursiveDated', 'Log');
   const wire = {
     name: 'l',
     history: [{ at: '2025-01-02T03:04:05.000Z', kids: [{ at: '2025-02-03T04:05:06.000Z', kids: [] }] }],
   };
-  const log = parseLog(JSON.stringify(wire));
-  assert.equal(log.history[0]?.at instanceof Date, true);
-  assert.equal(log.history[0]?.kids[0]?.at instanceof Date, true);
-  assert.equal(log.history[0]?.kids[0]?.at.toISOString(), '2025-02-03T04:05:06.000Z');
-  assert.deepEqual(JSON.parse(stringifyLog(log)), wire);
+  const decoded = await log.decode(wire);
+  assert.deepEqual(decoded, {
+    name: 'l',
+    history: [{ at: new Date('2025-01-02T03:04:05.000Z'), kids: [{ at: new Date('2025-02-03T04:05:06.000Z'), kids: [] }] }],
+  });
+  assert.deepEqual(await log.encode(decoded), wire);
 });
 
 // Forest is an array of inline objects that hold a Leaf model and the array again.
@@ -123,26 +109,19 @@ const forestDocument = {
   },
 };
 
-test('a recursive component that holds a model decodes and initializes a model at each level, and encodes it back', async t => {
-  // protects: T-251 init of a recursive alias that reaches a model constructs the model
+test('a recursive component that holds a model checks the model at each level', async t => {
+  // protects: T-251 recursive alias that reaches a model is checked at each level
   const output = path.join(createFixtureProject(t, 'golem-openapi-recursive-model-'), 'sdk');
-  await generateMaterializedSdk(forestDocument, { output, name: 'RecursiveForest', profile: { mobx: false, validation: true } });
+  await generateMaterializedSdk(withRootOperations(forestDocument, 'Garden'), { output, name: 'RecursiveForest', profile: { mobx: false, validation: true } });
   compileGeneratedSdk(output, [], { strict: true, skipLibCheck: true, noUnusedLocals: true });
-  const models = await loadModels(output);
-  const GardenModel = models.GardenModel as new (init: unknown) => { forest: { leaf: unknown; kids: { leaf: unknown }[] }[] };
-  const LeafModel = models.LeafModel as abstract new (...args: never[]) => unknown;
-  const parseGarden = models.parseGarden as (text: string) => InstanceType<typeof GardenModel>;
-  const stringifyGarden = models.stringifyGarden as (value: unknown) => string;
-  const wire = { name: 'g', forest: [{ leaf: { name: 'a' }, kids: [{ leaf: { name: 'b' }, kids: [] }] }] };
 
-  const decoded = parseGarden(JSON.stringify(wire));
-  assert.equal(decoded.forest[0]?.leaf instanceof LeafModel, true);
-  assert.equal(decoded.forest[0]?.kids[0]?.leaf instanceof LeafModel, true);
-  const initialized = new GardenModel(wire);
-  assert.equal(initialized.forest[0]?.leaf instanceof LeafModel, true);
-  assert.equal(initialized.forest[0]?.kids[0]?.leaf instanceof LeafModel, true);
-  assert.deepEqual(JSON.parse(stringifyGarden(initialized)), wire);
-  assert.deepEqual(JSON.parse(stringifyGarden(decoded)), wire);
+  const garden = await sdkBodyCodec(output, 'RecursiveForest', 'Garden');
+  const wire = { name: 'g', forest: [{ leaf: { name: 'a' }, kids: [{ leaf: { name: 'b' }, kids: [] }] }] };
+  assert.deepEqual(await garden.decode(wire), wire);
+  assert.deepEqual(await garden.encode(wire), wire);
+  const nestedLeafWithoutName = { name: 'g', forest: [{ leaf: { name: 'a' }, kids: [{ leaf: {}, kids: [] }] }] };
+  await assert.rejects(() => garden.decode(nestedLeafWithoutName), (error: unknown) => error instanceof LibError);
+  await assert.rejects(() => garden.encode(nestedLeafWithoutName), (error: unknown) => error instanceof LibError);
 });
 
 test('a component that is only a $ref to itself stops generation with the ref cycle error', async t => {
