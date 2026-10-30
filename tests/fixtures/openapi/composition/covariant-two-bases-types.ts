@@ -1,7 +1,6 @@
-import { fromWireFormat } from '@exprtlabs/golem/serde';
-import { CatModel, DerivedModel } from './index.js';
+import type { Cat, Derived } from './index.js';
 
-const derived = fromWireFormat<DerivedModel>({ named: { name: 'n', nick: 'k', lives: 9 } });
-const named: CatModel | undefined = derived.named;
+declare const derived: Derived;
+const named: Cat | undefined = derived.named;
 
 void named;

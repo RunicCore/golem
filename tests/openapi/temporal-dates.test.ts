@@ -1,5 +1,6 @@
 import 'temporal-polyfill/global';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
@@ -88,12 +89,28 @@ test('dates: temporal models encode to the ISO strings the generated client send
   assert.deepEqual(JSON.parse(String(requests[0]?.init.body)), wire);
 });
 
-test('dates omitted and dates: date generate the same SDK', async t => {
+test('dates omitted and dates: date generate the same SDK, with Date values', async t => {
   const root = createFixtureProject(t, 'golem-openapi-temporal-default-');
   const omitted = await generateMaterializedSdk(EVENT, { output: path.join(root, 'omitted', 'sdk'), name: 'Events', profile: PROFILE });
   const explicit = await generateMaterializedSdk(EVENT, { output: path.join(root, 'explicit', 'sdk'), name: 'Events', profile: PROFILE, dates: 'date' });
   const contents = (result: typeof omitted) => result.artifacts.map(artifact => [path.basename(artifact.path), artifact.content]).sort();
   assert.deepEqual(contents(explicit), contents(omitted));
+  assert.match(contents(omitted).map(([, content]) => content).join('\n'), /\bat: Date\b/);
+});
+
+test('a component named Date or Temporal does not capture the converted date types', async t => {
+  // protects: T-689 the converted types name the global Date and Temporal, not a component of the same name
+  const root = createFixtureProject(t, 'golem-openapi-temporal-shadow-');
+  const shadowed = document({ required: ['at', 'day'], properties: { at: { type: 'string', format: 'date-time' }, day: { type: 'string', format: 'date' } } }) as { components: { schemas: Record<string, unknown> } };
+  shadowed.components.schemas.Date = { type: 'object', properties: { year: { type: 'integer' } } };
+  shadowed.components.schemas.Temporal = { type: 'object', properties: { zone: { type: 'string' } } };
+  for (const dates of ['date', 'temporal'] as const) {
+    const output = path.join(root, dates, 'sdk');
+    await generateMaterializedSdk(shadowed, { output, name: 'Events', profile: PROFILE, dates });
+    compileGeneratedSdk(output, [], { strict: true, lib: ['ES2023', 'DOM', 'DOM.Iterable', 'esnext.temporal'] });
+    const types = fs.readFileSync(path.join(output, 'types.ts'), 'utf8');
+    assert.match(types, dates === 'date' ? /at: globalThis\.Date;/ : /at: globalThis\.Temporal\.Instant;/);
+  }
 });
 
 test('dates: temporal rejects a date-time union with another string branch', async t => {
