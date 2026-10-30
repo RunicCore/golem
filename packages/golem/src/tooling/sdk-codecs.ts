@@ -1,9 +1,9 @@
-import { code, exportedName, fileImports, ImportSource, join, lineBreak, nest, propertyKey, render, sideEffectImport, type Code } from './code.js';
+import { code, exportedName, fileImports, ImportSource, join, lineBreak, nest, propertyKey, render, type Code } from './code.js';
 import { rt } from './rt.js';
 
 /**
- * What both generated-SDK writers share: the `sdkCodecs` table the client reads, and the Temporal codec rules. golem-openapi writes the
- * table of a standalone SDK and golem-model the table of a golem-mode SDK, so neither imports the other (generators do not import each other).
+ * What both generated-SDK writers share: the codec module of an operation the client reads, and the Temporal codec rules. golem-openapi writes
+ * the modules of a standalone SDK and golem-model those of a golem-mode SDK, so neither imports the other (generators do not import each other).
  */
 
 /** The prefix of the serde id that names a Temporal codec of `@exprtlabs/golem/internal/temporal-runtime`. */
@@ -39,19 +39,17 @@ export const TEMPORAL_SERDE = {
   serialize: (id: string, value: Code) => code`${temporalCodec('serialize', id)}((${value}) as never)`,
 };
 
-/** The code of a function the table names, under the key that picks it. */
+/** The code of a function the module names, under the key that picks it. */
 export interface SdkKeyedCode {
   readonly key: string;
   readonly code: Code;
 }
 
 /**
- * The codecs of one operation; each is the code of a function the table module can name. A body that converts nothing has no `encode` or `decode`
+ * The codecs of one operation; each is the code of a function the module can name. A body that converts nothing has no `encode` or `decode`
  * entry, and an operation with no such body has neither member.
  */
 export interface SdkOperationCodecs {
-  /** The operation name: the key of the table, so it is unique. */
-  readonly name: string;
   /** Checks the plain input of a call. */
   readonly input?: Code;
   /** Checks the wire form of each response body or stream item, keyed `status:contentType`. */
@@ -62,40 +60,26 @@ export interface SdkOperationCodecs {
   readonly decode?: readonly SdkKeyedCode[];
 }
 
-export interface SdkCodecsModule {
+export interface OperationCodecsModule {
   /** The comment that opens the file. */
   readonly banner: Code;
   /** The modules whose names the codecs use; the file imports the names it uses. */
   readonly sources: readonly ImportSource[];
-  /** Modules the file loads for the codecs they register, after the named imports. */
-  readonly loads?: readonly string[];
 }
 
-/** The text of a module that exports `sdkCodecs`, the table of the codecs of each operation by operation name. */
-export function writeSdkCodecs(operations: readonly SdkOperationCodecs[], module: SdkCodecsModule): string {
-  const names = new Set<string>();
-  for (const { name } of operations) {
-    if (names.has(name)) throw new Error(`Two operations are named ${JSON.stringify(name)}; the sdkCodecs table keys its entries by operation name.`);
-    names.add(name);
-  }
-  const entry = (operation: SdkOperationCodecs): Code => {
-    const keyed = (member: string, items: readonly SdkKeyedCode[] | undefined): Code[] => items?.length
-      ? [code`${propertyKey(member)}: {${nest(code`${lineBreak}${join(items.map(item => code`${propertyKey(item.key)}: ${item.code},`), lineBreak)}`)}${lineBreak}},`]
-      : [];
-    const members: Code[] = [
-      ...(operation.input ? [code`input: ${operation.input},`] : []),
-      ...keyed('responses', operation.responses),
-      ...keyed('encode', operation.encode),
-      ...keyed('decode', operation.decode),
-    ];
-    return members.length
-      ? code`${propertyKey(operation.name)}: {${nest(code`${lineBreak}${join(members, lineBreak)}`)}${lineBreak}},`
-      : code`${propertyKey(operation.name)}: {},`;
-  };
-  const table = operations.length
-    ? code`export const ${exportedName('sdkCodecs')} = {${nest(code`${lineBreak}${join(operations.map(entry), lineBreak)}`)}${lineBreak}} as const;`
-    : code`export const ${exportedName('sdkCodecs')} = {} as const;`;
-  const body = code`${table}\n`;
+/** The text of a module that exports `operationCodecs`, the codecs of one operation: a client imports the module of the operation it calls and no other. */
+export function writeOperationCodecs(operation: SdkOperationCodecs, module: OperationCodecsModule): string {
+  const keyed = (member: string, items: readonly SdkKeyedCode[] | undefined): Code[] => items?.length
+    ? [code`${propertyKey(member)}: {${nest(code`${lineBreak}${join(items.map(item => code`${propertyKey(item.key)}: ${item.code},`), lineBreak)}`)}${lineBreak}},`]
+    : [];
+  const members: Code[] = [
+    ...(operation.input ? [code`input: ${operation.input},`] : []),
+    ...keyed('responses', operation.responses),
+    ...keyed('encode', operation.encode),
+    ...keyed('decode', operation.decode),
+  ];
+  const literalBody = members.length ? code`{${nest(code`${lineBreak}${join(members, lineBreak)}`)}${lineBreak}}` : code`{}`;
+  const body = code`export const ${exportedName('operationCodecs')} = ${literalBody} as const;\n`;
   const imports = fileImports(body, module.sources);
-  return render(code`${join([module.banner, ...imports, ...(module.loads ?? []).map(specifier => sideEffectImport(specifier)), code``, body], lineBreak)}`);
+  return render(code`${join([module.banner, ...imports, code``, body], lineBreak)}`);
 }

@@ -268,7 +268,7 @@ function operationSource(
   if (appliesSecurity) use('applySecurity');
   if (requestBody) use('encodeBody');
   const validatesWithSources = profile.validation;
-  // The `sdkCodecs` table holds the validators, and the conversion of each body that has a Date or Temporal value.
+  // The operation's codec module holds the validators, and the conversion of each body that has a Date or Temporal value.
   const encodes = operation.requestContent.some((media) => bodyNodeIds.has(requestBodyKey(operation.name, media.contentType)));
   const decodes = operation.responses.some((response) => response.content.some((media) => bodyNodeIds.has(responseBodyKey(operation.name, response.status, media.contentType))));
   const usesCodecs = validatesWithSources || encodes || decodes;
@@ -307,7 +307,7 @@ function operationSource(
     return name;
   };
   const codecsName = identifierPart(uniqueModuleName('__operationCodecs', 'operation codecs'));
-  const sdkCodecsName = uniqueModuleName('__golemSdkCodecs', 'sdkCodecs table import');
+  const codecsModuleName = uniqueModuleName('__golemOperationCodecs', 'operation codecs module import');
   const typesModule = new ImportSource('../types.js', true, { namespace: 'Types' });
   const inputType = code`${typesModule.namespace()}.${identifierPart(`${operation.typeName}OperationInput`)}`;
   const responseType = code`${typesModule.namespace()}.${identifierPart(`${operation.typeName}OperationHttpResponse`)}`;
@@ -315,7 +315,7 @@ function operationSource(
     ? code`  const validators = ${rt.validation.operationValidators}(runtime, ${literal(operation.name)}, ${codecsName});\n  const checkResponse = ${rt.validation.responseCheck}(validators);`
     : BLANK;
   const decoderSetup = decodes ? code`  const decodeResponse = ${use('responseDecoder')}(${codecsName});` : BLANK;
-  const codecsSource = new ImportSource('../codecs.generated.js');
+  const codecsSource = new ImportSource(`../codecs/${operation.name}.js`);
   const clientModule = new ImportSource('../client.js', true);
   const serversModule = new ImportSource('../servers.js');
   const serversCode = plan.servers.length ? serversModule.name('servers', { alias: '__golemServers' }) : BLANK;
@@ -326,7 +326,7 @@ function operationSource(
   const apiOperation = profile.mobx ? aliased(rtType.mobx.ObservableApiOperation, 'ApiOperation') : rtType.client.ApiOperation;
   const createApiOperation = profile.mobx ? aliased(rt.mobx.createObservableApiOperation, 'createApiOperation') : rt.client.createApiOperation;
   const codecsDeclaration = usesCodecs
-    ? code`const ${codecsName}: ${rtType.client.OperationCodecs} = ${codecsSource.name('sdkCodecs', { alias: sdkCodecsName })}[${literal(operation.name)}];`
+    ? code`const ${codecsName}: ${rtType.client.OperationCodecs} = ${codecsSource.name('operationCodecs', { alias: codecsModuleName })};`
     : BLANK;
   const securitySchemesType = rtType.client.RuntimeSecuritySchemes;
   // The client module imports `__golemSecuritySchemes` from every operation module.
@@ -701,7 +701,7 @@ export function buildOperationValidationSchemas(
   };
 }
 
-/** The export name of each validator the `sdkCodecs` table lists for each operation, from the SDK's validators module. */
+/** The export name of each validator an operation's codec module lists, from the SDK's validators module. */
 export function operationValidatorNames(
   schemas: OperationValidationSchemas,
   validatorExports: ReadonlyMap<string, string>,
@@ -713,7 +713,7 @@ export function operationValidatorNames(
 }
 
 /**
- * The modules of the client. Each operation module reads its validators and body conversions from the `sdkCodecs` table by operation name;
+ * The modules of the client. Each operation module reads its validators and body conversions from its own codec module;
  * `bodyNodeIds` names the bodies that convert something.
  */
 export function generateClientModules(

@@ -24,7 +24,7 @@ import {
   reachesItself,
   wireStringifyExportName,
   TEMPORAL_SERDE,
-  writeSdkCodecs,
+  writeOperationCodecs,
   type SdkKeyedCode,
   type SdkOperationCodecs,
   type CodecRuntimeOptions,
@@ -155,19 +155,32 @@ export function generateOpenApiModelArtifacts(
     : [];
   const dependenciesByGroup = new Map<string, Set<string>>();
   const exportedFillFunctionsByGroup = new Map<string, Set<string>>();
+  const importedGroupsByGroup = new Map<string, Set<string>>();
   for (const group of groups) {
     const dependencies = new Set([...reachableSchemaNodes(schemaGraph, group.nodes, runtimeEdges)]
       .filter((id) => !group.nodes.has(id)));
     dependenciesByGroup.set(group.id, dependencies);
+    const importedGroups = new Set<string>();
+    importedGroupsByGroup.set(group.id, importedGroups);
     for (const nodeId of dependencies) {
       const node = schemaGraph.nodes.get(nodeId);
       const dependencyGroupId = owner.get(nodeId);
+      if (dependencyGroupId && dependencyGroupId !== group.id) importedGroups.add(dependencyGroupId);
       if (!node || node.kind !== 'object' || !dependencyGroupId || dependencyGroupId === group.id) continue;
       const exports = exportedFillFunctionsByGroup.get(dependencyGroupId) ?? new Set<string>();
       exports.add(nodeId);
       exportedFillFunctionsByGroup.set(dependencyGroupId, exports);
     }
   }
+  // A group is written when an operation body reaches it or a written group imports it; no other group has a reader.
+  const written = new Set<string>();
+  const pending = [...analysis.bodyNodeIds.values()].flatMap((nodeId) => owner.get(nodeId) ?? []);
+  for (let groupId = pending.pop(); groupId !== undefined; groupId = pending.pop()) {
+    if (written.has(groupId)) continue;
+    written.add(groupId);
+    pending.push(...importedGroupsByGroup.get(groupId) ?? []);
+  }
+  const writtenGroups = groups.filter((group) => written.has(group.id));
   const moduleSources = new Map<string, ImportSource>();
   const moduleSource = (specifier: string): ImportSource => {
     let source = moduleSources.get(specifier);
@@ -183,7 +196,7 @@ export function generateOpenApiModelArtifacts(
   // SDK's one validators module gives, and that module compiles every model in one plan.
   const groupPlans = new Map<string, CodecValidationPlan>();
   if (profile.validation) {
-    for (const group of groups) {
+    for (const group of writtenGroups) {
       const dependencyCodecIds = new Set([...(dependenciesByGroup.get(group.id) ?? [])].flatMap((id) => {
         const node = schemaGraph.nodes.get(id);
         return node ? [node.codecId] : [];
@@ -208,7 +221,7 @@ export function generateOpenApiModelArtifacts(
   const validatorExports = compiledValidators?.exports;
   const fastCheckExports = compiledValidators?.fastExports;
   const passCheckExports = compiledValidators?.passExports;
-  for (const group of groups) {
+  for (const group of writtenGroups) {
     const localIds = group.nodes;
     const dependencyIds = dependenciesByGroup.get(group.id) ?? new Set<string>();
     const groupPlan = groupPlans.get(group.id);
@@ -221,8 +234,7 @@ export function generateOpenApiModelArtifacts(
       const dependencyGroupId = owner.get(nodeId);
       return dependencyGroupId && dependencyGroupId !== group.id ? [dependencyGroupId] : [];
     }));
-    // A dependency may be needed only for schema registration. Importing its group for side effects ensures its codec
-    // exists before addNestedCodecSchema resolves the closure; the named imports are the names the code uses.
+    // Importing a dependency group for side effects registers its codecs before this group's own run; the named imports are the names the code uses.
     const sideEffectImports = [...dependencyGroups].sort().map((dependencyGroupId) => `./_${dependencyGroupId}.js`);
     const modelModule = generateModels(document, profile, {
       ...helpers,
@@ -404,38 +416,37 @@ export interface OperationValidatorNames {
 }
 
 /**
- * The module `codecs.generated.ts` of a standalone SDK: the `sdkCodecs` table, by operation name, and the load of every model group
- * module, so that a consumer's compile reaches them and loading the table registers their codecs. An operation gets the encoder of each
- * request body and the decoder of each response body or stream item that converts something (`OpenApiModelAnalysis.bodyNodeIds`).
+ * The codec module of each operation that validates or converts, by file name (`codecs/<operation>.ts`): the validators of its input and responses,
+ * the encoder of each request body and the decoder of each response body or stream item that converts something (`OpenApiModelAnalysis.bodyNodeIds`).
+ * An operation module imports its own file, so a bundler that drops an operation drops its codecs and the groups only they reach.
  */
-export function generateSdkCodecs(
+export function generateOperationCodecs(
   operations: readonly NormalizedOperation[],
+  profile: OpenApiGenerationProfile,
   analysis: OpenApiModelAnalysis,
   validators: ReadonlyMap<string, OperationValidatorNames> | undefined,
-): string {
-  const validatorsSource = new ImportSource('./validators.generated.js', false, { sorted: true });
-  const groupSources = new Map(analysis.grouping.groups.map((group) => [group.id, new ImportSource(`./models/_${group.id}.js`, false, { sorted: true })] as const));
-  const codecOf = (bodyKey: string, functionName: 'fromWire' | 'toWire'): Code | undefined => {
-    const nodeId = analysis.bodyNodeIds.get(bodyKey);
-    const groupId = nodeId === undefined ? undefined : analysis.grouping.owner.get(nodeId);
-    return nodeId !== undefined && groupId !== undefined ? groupSources.get(groupId)?.name(generatedFunctionName(nodeId, functionName)) : undefined;
-  };
-  const keyed = (items: ReadonlyArray<readonly [string, Code | undefined]>): SdkKeyedCode[] => items.flatMap(([key, codec]) => codec ? [{ key, code: codec }] : []);
-  const table = operations.map((operation): SdkOperationCodecs => {
+): ReadonlyMap<string, string> {
+  const files = new Map<string, string>();
+  for (const operation of operations) {
+    const validatorsSource = new ImportSource('../validators.generated.js', false, { sorted: true });
+    const groupSources = new Map(analysis.grouping.groups.map((group) => [group.id, new ImportSource(`../models/_${group.id}.js`, false, { sorted: true })] as const));
+    const codecOf = (bodyKey: string, functionName: 'fromWire' | 'toWire'): Code | undefined => {
+      const nodeId = analysis.bodyNodeIds.get(bodyKey);
+      const groupId = nodeId === undefined ? undefined : analysis.grouping.owner.get(nodeId);
+      return nodeId !== undefined && groupId !== undefined ? groupSources.get(groupId)?.name(generatedFunctionName(nodeId, functionName)) : undefined;
+    };
+    const keyed = (items: ReadonlyArray<readonly [string, Code | undefined]>): SdkKeyedCode[] => items.flatMap(([key, codec]) => codec ? [{ key, code: codec }] : []);
     const checks = validators?.get(operation.name);
     const responses = operation.responses.flatMap((response) => response.content.map((media) => [response.status, media.contentType] as const));
     const encode = keyed(operation.requestContent.map((media) => [media.contentType, codecOf(requestBodyKey(operation.name, media.contentType), 'toWire')]));
     const decode = keyed(responses.map(([status, contentType]) => [`${status}:${contentType}`, codecOf(responseBodyKey(operation.name, status, contentType), 'fromWire')]));
-    return {
-      name: operation.name,
+    if (!profile.validation && !encode.length && !decode.length) continue;
+    const codecs: SdkOperationCodecs = {
       ...(checks ? { input: validatorsSource.name(checks.input), responses: checks.responses.map((item) => ({ key: item.key, code: validatorsSource.name(item.name) })) } : {}),
       ...(encode.length ? { encode } : {}),
       ...(decode.length ? { decode } : {}),
     };
-  });
-  return writeSdkCodecs(table, {
-    banner: generatedBannerComment(),
-    sources: [validatorsSource, ...groupSources.values()],
-    loads: analysis.grouping.groups.map((group) => `./models/_${group.id}.js`),
-  });
+    files.set(`codecs/${operation.name}.ts`, writeOperationCodecs(codecs, { banner: generatedBannerComment(), sources: [validatorsSource, ...groupSources.values()] }));
+  }
+  return files;
 }

@@ -144,7 +144,7 @@ export type RuntimeSecuritySchemes = Readonly<Record<string, RuntimeSecuritySche
 type BodyConversion = (value: never) => unknown;
 
 /**
- * What the generated `sdkCodecs` table holds for one operation: its validators, and the conversion of each body that has a Date or Temporal value.
+ * What the generated codec module of an operation holds: its validators, and the conversion of each body that has a Date or Temporal value.
  * `responses` and `decode` are keyed `status:contentType`, `encode` by request content type; a body that converts nothing has no entry.
  */
 export interface OperationCodecs {

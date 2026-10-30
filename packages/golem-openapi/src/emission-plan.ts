@@ -3,8 +3,6 @@ import type { ServerObject } from '@exprtlabs/golem/client';
 import { GolemDiagnosticSeverity, type GolemDiagnostic } from '@exprtlabs/golem/generator-api';
 import { asRecord, isJsonObject, objectEntries } from './json.js';
 import { SCHEMA_ARRAY_KEYWORDS, SCHEMA_MAP_KEYWORDS, SCHEMA_SINGLE_KEYWORDS } from './schema-keywords.js';
-import { collectOpenApiModelDefinitions } from './models.js';
-import type { OpenApiDates } from './model-resolution.js';
 import {
   resolveLocal,
   parameterSchema,
@@ -30,7 +28,6 @@ export type ArtifactFile =
   | 'input-schemas.ts'
   | 'output-schemas.ts'
   | 'client.ts'
-  | 'codecs.generated.ts'
   | 'inbound.ts'
   | 'links.ts'
   | 'servers.ts';
@@ -73,7 +70,6 @@ export interface EmissionPlan {
   /** Operation name to its entry in `operationServers`; an operation on the document list has none. */
   readonly operationServerIndex: ReadonlyMap<string, number>;
   readonly hasComponentSchemas: boolean;
-  readonly hasModels: boolean;
   readonly hasOutboundOperations: boolean;
   readonly hasInboundOperations: boolean;
   readonly hasLinks: boolean;
@@ -336,14 +332,11 @@ export function buildEmissionPlan(
   document: unknown,
   ir: NormalizedDocument,
   profile: OpenApiGenerationProfile,
-  dates: OpenApiDates = 'date',
 ): EmissionPlan {
   const outbound = ir.operations;
   const inbound = ir.inboundOperations;
   const allOperations = [...outbound, ...inbound];
   const hasComponentSchemas = Object.keys(ir.schemas).length > 0;
-  const { ordered } = collectOpenApiModelDefinitions(document, undefined, dates);
-  const hasModels = ordered.length > 0;
   const hasOutboundOperations = outbound.length > 0;
   const hasInboundOperations = inbound.length > 0;
   const links = hasLinks(outbound);
@@ -416,7 +409,6 @@ export function buildEmissionPlan(
   const servers = normalizeServers(asRecord(document).servers);
   const overrides = servers.length ? operationFirstServers(outbound, servers) : { operationServers: [], operationServerIndex: new Map<string, number>() };
   if (hasOutboundOperations) artifacts.add('client.ts');
-  if (hasOutboundOperations || hasModels) artifacts.add('codecs.generated.ts');
   if (hasOutboundOperations && servers.length) artifacts.add('servers.ts');
   if (hasInboundOperations) artifacts.add('inbound.ts');
   if (links) artifacts.add('links.ts');
@@ -427,7 +419,6 @@ export function buildEmissionPlan(
     servers,
     ...overrides,
     hasComponentSchemas,
-    hasModels,
     hasOutboundOperations,
     hasInboundOperations,
     hasLinks: links,

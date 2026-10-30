@@ -912,20 +912,6 @@ export function sideEffectImport(specifier: string, quote: "'" | '"' = "'"): Cod
   return plainText(`import ${quote === '"' ? jsonText(specifier) : `'${checkedSingleQuoted(specifier)}'`};`);
 }
 
-/** A re-export statement: each name as the module exports it, or `[local, exported]` for a name it exports under another name. */
-export function exportFrom(names: readonly (string | readonly [local: string, exported: string])[], specifier: string, typeOnly: boolean = false): Code {
-  const members = names.map((entry): Code => {
-    if (typeof entry === 'string') return exportedName(entry);
-    const [local, exported] = entry;
-    return local === exported ? exportedName(exported) : fromParts([...identifier(local).parts, { kind: 'text', text: ' as ' }, ...exportedName(exported).parts]);
-  });
-  return fromParts([
-    { kind: 'text', text: `export ${typeOnly ? 'type ' : ''}{ ` },
-    ...join(members, plainText(', ')).parts,
-    { kind: 'text', text: ` } from '${checkedSingleQuoted(specifier)}';` },
-  ]);
-}
-
 /** The names of `source` that the code uses, as the module exports them, in the order of the declaration. */
 export function importedNames(root: Code, source: ImportSource): readonly string[] {
   const used = collect(root).imported.get(source);

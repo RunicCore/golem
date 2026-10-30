@@ -54,8 +54,7 @@ export function checkOperationCompositions(
   return diagnostics;
 }
 
-export { collectOpenApiModelDefinitions } from './model-definitions.js';
 export { analyzeOpenApiModels } from './model-schema-graph.js';
-export { generateModels, generateOpenApiModelArtifacts, generateSdkCodecs } from './model-emission.js';
+export { generateModels, generateOpenApiModelArtifacts, generateOperationCodecs } from './model-emission.js';
 export { generateModelManifest } from './model-manifest.js';
 export type { OpenApiDates } from './model-resolution.js';
