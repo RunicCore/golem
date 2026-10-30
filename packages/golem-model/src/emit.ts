@@ -1057,7 +1057,7 @@ interface EmitContext {
   readonly linkedByName: ReadonlyMap<string, ReturnType<typeof linkedClassNames>>;
   readonly referenceNames: ReadonlySet<string>;
   readonly projectionNames: ReadonlySet<string>;
-  /** Projections that reach no date, serde value or model: they convert to themselves, so a use writes no call. */
+  /** Projections that reach no serde value or model: they convert to themselves, so a use writes no call. */
   readonly identityProjections: ReadonlySet<string>;
   readonly imports: FileImports;
   readonly serdeBindings: readonly SerdeFunctions[];

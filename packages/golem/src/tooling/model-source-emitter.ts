@@ -21,7 +21,7 @@ export {
 export { type TupleConversionDescriptor } from './sequence-conversion.js';
 export { presentKeysCode } from './union-conversion.js';
 /** The built-in classes (Date and the Temporal classes) that golem converts with no tag. */
-export { builtinClassByOpenApiFormat, builtinClassDescriptor, type BuiltinClass } from './builtin-classes.js';
+export { BUILTIN_CLASS_ROOTS, builtinClassByOpenApiFormat, builtinClassDescriptor, type BuiltinClass } from './builtin-classes.js';
 /** The Code values and the functions that build, join and render them: generators write their files from these. */
 export {
   aliased, bindInput, blockComment, code, codeKey, docComment, documentLiteral, exportedName, exportedNames, fileImports, helper, helperName, helperSet, identifier, importedNames, indentation, inputCount, importGroups, importLines, ImportSource, inputOf, inputSlot, isEmpty, join, lineBreak, literal, localCode, nameOf, NameTable, nameSlot, nest, placeHelpers, propertyKey, render, renderModule, sameCode, sideEffectImport,
@@ -492,7 +492,7 @@ export const MODEL_IMPORT_ORDER: NonNullable<ImportOptions['order']> = {
   conversion: [
     'assertAcyclicEncodeInput', 'assertPropertyAcyclic', 'assertWireAcyclic', 'beginDecode', 'beginEncode', 'convertModelField', 'convertModelItems',
     'convertModelRecord', 'convertModelTupleItems', 'copyModelRecord', 'decodeCheckedInput', 'decodeDetachedInput', 'decodeGeneratedModelTrusted', 'defineModelProperty', 'deserializeDate',
-    'endDecode', 'endEncode', 'isVariantObject', 'jsonWithDiscriminator', 'rejectModelObject', 'rejectNonStringWire', 'requireModelObject', 'serializeDate', 'unknownDiscriminatorValue',
+    'endDecode', 'endEncode', 'isVariantObject', 'jsonWithDiscriminator', 'rejectModelObject', 'rejectWrongWire', 'requireModelObject', 'serializeDate', 'unknownDiscriminatorValue',
     'withDeclaredFields', 'withDiscriminatorValue',
   ],
   serde: SERDE_IMPORT_ORDER,

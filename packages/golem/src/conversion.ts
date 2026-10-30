@@ -462,7 +462,7 @@ function walkConversionInput(
   active: Set<object>,
   path: (string | number)[],
 ): void {
-  if (value === null || typeof value !== 'object' || value instanceof Date) return;
+  if (value === null || typeof value !== 'object') return;
   if (active.has(value)) {
     throw conversionError(kind, 'Cyclic values cannot be converted.', [...path], undefined, kind === LibErrorKind.Deserialization);
   }
@@ -568,20 +568,20 @@ export function decodeGeneratedModelTrusted(
 }
 
 /**
- * Restore a model Date from a `date-time` text; an existing valid Date is kept. The text must fit the `date-time` format
+ * Restore a model Date from a `date-time` text. The text must fit the `date-time` format
  * at every level of validation, off included, because `new Date('5')` reads text that is no time (F-39).
  */
 export function deserializeDate(value: unknown, path: IssuePath = activeConversionPath): Date {
-  const date = value instanceof Date ? value : typeof value === 'string' && isDateTime(value) ? new Date(value) : undefined;
+  const date = typeof value === 'string' && isDateTime(value) ? new Date(value) : undefined;
   if (!date || !Number.isFinite(date.getTime())) {
     throw conversionError(LibErrorKind.Deserialization, 'Expected a date-time string.', path, undefined, true);
   }
   return date;
 }
 
-/** A serde whose wire form is a string reads only a string: any other wire value is bad input at every level of validation, off included (F-39). */
-export function rejectNonStringWire(path: IssuePath = activeConversionPath): never {
-  throw conversionError(LibErrorKind.Deserialization, 'Expected a string.', path, undefined, true);
+/** A serde whose wire form is a string, a number or a boolean reads only that JSON type: any other wire value is bad input at every level of validation, off included (F-39). */
+export function rejectWrongWire(expected: 'string' | 'number' | 'boolean', path: IssuePath = activeConversionPath): never {
+  throw conversionError(LibErrorKind.Deserialization, `Expected a ${expected}.`, path, undefined, true);
 }
 
 /** Write a finite Date as UTC with millisecond precision. */

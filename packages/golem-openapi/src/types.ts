@@ -1,7 +1,7 @@
 import { isBinaryMediaType, isBuiltinTextMediaType } from './client/codecs.js';
 import { asRecord, isJsonObject, objectEntries, type JsonObject } from './json.js';
 import { identifier, NameScope } from '@exprtlabs/golem/internal/generator-support';
-import { builtinClassByOpenApiFormat, type BuiltinClass, code, codeKey, manifestMarkerComment, docComment, exportedName, fileImports, identifier as identifierPart, ImportSource, isEmpty, join, lineBreak, literal, nest, propertyKey, render, renderModule, sameCode, type RenderedModule, type Code, type JsonValue } from '@exprtlabs/golem/internal/emitter';
+import { BUILTIN_CLASS_ROOTS, builtinClassByOpenApiFormat, type BuiltinClass, code, codeKey, manifestMarkerComment, docComment, exportedName, fileImports, identifier as identifierPart, ImportSource, isEmpty, join, lineBreak, literal, nest, propertyKey, render, renderModule, sameCode, type RenderedModule, type Code, type JsonValue } from '@exprtlabs/golem/internal/emitter';
 import { unionVariants } from './composition.js';
 import { refName } from './names.js';
 import {
@@ -875,7 +875,7 @@ function* claimedComponentSchemas(
 /** The converted form of a module that declares the component `schemas`. */
 function convertedTypes(schemas: Record<string, unknown>, dates: OpenApiDates): ConvertedTypes {
   const declared = new Set(Object.keys(schemas).map((name) => identifier(name)));
-  return { dates, shadowed: new Set(['Date', 'Temporal'].filter((name) => declared.has(name))) };
+  return { dates, shadowed: new Set([...BUILTIN_CLASS_ROOTS].filter((name) => declared.has(name))) };
 }
 
 export function generateTypes(

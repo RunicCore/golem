@@ -610,7 +610,7 @@ export function emitUnionConversion(
     return sameCode(converted, value) ? value : code`${value} == null ? ${value} : (${converted})`;
   }
   const nullable = present.length !== descriptor.variants.length;
-  // A scalar that converts (a Date or a serde scalar), and in stringify any scalar writer other than the plain one, converts no
+  // A scalar that converts (a serde scalar), and in stringify any scalar writer other than the plain one, converts no
   // null or undefined, so the nullish variants of the union stop at a guard before its conversion.
   const scalarBranch = (scalars: readonly ModelTypeDescriptor[]): Code => {
     const variant = scalarBranchVariant(scalars) ?? (json && scalars.length === 1 ? scalars[0] : undefined);

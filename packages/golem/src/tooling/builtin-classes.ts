@@ -68,6 +68,9 @@ const BUILTIN_CLASS_LIST: readonly BuiltinClass[] = [
 
 export const BUILTIN_CLASSES: ReadonlyMap<string, BuiltinClass> = new Map(BUILTIN_CLASS_LIST.map((entry) => [entry.qualifiedName, entry]));
 
+/** The globals that the built-in classes live under (`Date`, `Temporal`), which a component schema of the same name would shadow in a generated module. */
+export const BUILTIN_CLASS_ROOTS: ReadonlySet<string> = new Set(BUILTIN_CLASS_LIST.map((entry) => entry.classPath[0]!));
+
 const MODES: readonly OpenApiDatesMode[] = ['date', 'temporal'];
 /** One table for both `dates` values: the class that a string `format` converts to, by the value. */
 const BY_OPENAPI_FORMAT: ReadonlyMap<OpenApiDatesMode, ReadonlyMap<string, BuiltinClass>> = new Map(MODES.map((mode) => [
@@ -85,5 +88,5 @@ export function builtinClassByOpenApiFormat(dates: OpenApiDatesMode, format: str
 
 /** The descriptor of a field of the class. A generator whose document states the wire form itself passes its own `wire`. */
 export function builtinClassDescriptor(entry: BuiltinClass, wire: ModelConversionDescriptor = entry.wire): ModelConversionDescriptor {
-  return { kind: 'class-value', typeName: entry.qualifiedName, classRef: { path: entry.classPath }, serde: { ...entry.serde, wireDescriptor: wire } } as unknown as ModelConversionDescriptor;
+  return { kind: 'class-value', typeName: entry.qualifiedName, classRef: { path: entry.classPath }, serde: { ...entry.serde, wireDescriptor: wire } };
 }

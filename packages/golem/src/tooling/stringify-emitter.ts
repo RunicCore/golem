@@ -14,8 +14,8 @@ import {
   type Code, type Helper, type InputSlot, type JsonValue, type ReadShape,
 } from './code.js';
 import { nodeQueryFields } from './query-fields.js';
-import { rt, rtType, runtimeFunctionCode } from './rt.js';
-import { emitArrayConversion, emitTupleConversion, JSON_SCALAR } from './sequence-conversion.js';
+import { isRuntimeFunction, rt, rtType, runtimeFunctionCode } from './rt.js';
+import { calleeOf, emitArrayConversion, emitTupleConversion, JSON_SCALAR } from './sequence-conversion.js';
 import {
   descriptorNeedsConversion,
   isScalarishDescriptor,
@@ -395,7 +395,7 @@ function emitRecursiveWireCall(named: SchemaNode, expression: Code, ctx: EmitCtx
     : `Internal error: recursive model ${named.name} reached its wire write with no function to call.`);
 }
 
-/** Whether a value under `descriptor` holds one a codec encodes (a date, a serde type, a model of another module or one with its own wire form). */
+/** Whether a value under `descriptor` holds one a codec encodes (a serde type, a model of another module or one with its own wire form). */
 function reachesEncodedValue(descriptor: ModelTypeDescriptor, ctx: Pick<EmitCtx, 'graph'>, seen: Set<string> = new Set()): boolean {
   const tags = serdeTags(descriptor);
   if (tags.serde || descriptor.kind === 'generated-model') return true;
@@ -898,9 +898,9 @@ function emittedFallible(before: number, decoded: Code, ctx: EmitCtx): boolean {
  * is a function name, which a caller can call on the value instead of writing the decoder in place.
  */
 function hoistConverter(input: Code, decoded: Code, locals: readonly Code[], ctx: EmitCtx): { readonly converter: Code; readonly named: boolean } {
-  if (sameCode(decoded, code`(${input} instanceof Date ? ${input} : ${rt.conversion.deserializeDate}(${input}))`)) {
-    return { converter: rt.conversion.deserializeDate, named: true };
-  }
+  // A decoder that is one call on its value is the function itself, for every binding.
+  const callee = calleeOf(decoded, input);
+  if (callee) return { converter: callee, named: true };
   if (!ctx.hoisted) return { converter: code`(${input}) => (${decoded})`, named: false };
   const declarations = locals.length > 0 ? code`  let ${join(locals.map((local) => code`${local}: unknown`), code`, `)};\n` : code``;
   const body = code`(${input}: unknown): unknown {\n${declarations}  return (${decoded});\n}\n`;
@@ -1390,14 +1390,9 @@ function emitDecodeValue(descriptor: ModelTypeDescriptor, expression: Code, ctx:
   if (tags.serde) {
     const deserialized = ctx.serde ? fallibleConversion(ctx, ctx.serde.deserialize(tags.serde, value)) : value;
     const wire = serdeWireDescriptor(descriptor);
-    if (wire?.kind === 'string') {
-      return fallibleConversion(ctx, code`(typeof ${value} === 'string' ? ${deserialized} : ${rt.conversion.rejectNonStringWire}())`);
-    }
-    if (wire?.kind === 'number') {
-      return code`(typeof ${value} === 'number' ? ${deserialized} : ${value})`;
-    }
-    if (wire?.kind === 'boolean') {
-      return code`(typeof ${value} === 'boolean' ? ${deserialized} : ${value})`;
+    // A function of the golem runtime reads `unknown` and rejects what it cannot read; any other binding gets only a wire of its JSON type.
+    if ((wire?.kind === 'string' || wire?.kind === 'number' || wire?.kind === 'boolean') && !isRuntimeFunction(tags.serde.deserialize)) {
+      return fallibleConversion(ctx, code`(typeof ${value} === ${literal(wire.kind)} ? ${deserialized} : ${rt.conversion.rejectWrongWire}(${literal(wire.kind)}))`);
     }
     if (wire && (wire.kind === 'object' || wire.kind === 'reference' || wire.kind === 'generated-model')) {
       return code`(${objectValueExpression(value)} ? ${deserialized} : ${value})`;

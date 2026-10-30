@@ -225,13 +225,19 @@ export function hasFiniteTime(instance: unknown): boolean {
 
 /**
  * A test for the class at `path` below `globalThis` (`['Temporal', 'Instant']`), and for the function `valid`, which an instance must also
- * pass. The class is looked up at each call, because a polyfill may load after the validators: while it is missing, no value is an instance of it.
+ * pass. The class is looked up on a call until it is found, because a polyfill may load after the validators: while it is missing, no value
+ * is an instance of it. A found class is kept.
  */
 export function globalInstanceTest(path: readonly string[], valid?: (instance: unknown) => boolean): (value: unknown) => boolean {
+  let known: (new (...args: never[]) => unknown) | undefined;
   return (value) => {
-    let found: unknown = globalThis;
-    for (const name of path) found = (found as Record<string, unknown> | undefined)?.[name];
-    return typeof found === 'function' && value instanceof found && (valid === undefined || valid(value));
+    if (known === undefined) {
+      let found: unknown = globalThis;
+      for (const name of path) found = (found as Record<string, unknown> | undefined)?.[name];
+      if (typeof found !== 'function') return false;
+      known = found as new (...args: never[]) => unknown;
+    }
+    return value instanceof known && (valid === undefined || valid(value));
   };
 }
 
