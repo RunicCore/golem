@@ -204,8 +204,8 @@ test('a TSerde field converts and is checked in one pass', async () => {
   const calls: string[] = [];
   const counted = <T extends (...args: never[]) => unknown>(name: string, run: T): T => ((...args: never[]) => { calls.push(name); return run(...args); }) as T;
   const resolver: StringifySerdeResolver = {
-    deserialize: (_id, value) => code`decodePermission(${value} as string)`,
-    serialize: (_id, value) => code`encodePermission(${value} as number)`,
+    deserialize: (_serde, value) => code`decodePermission(${value} as string)`,
+    serialize: (_serde, value) => code`encodePermission(${value} as number)`,
   };
   const scope: Record<string, unknown> = {
     decodePermission: counted('decode', (text: string) => Number.parseInt(text, 16)),

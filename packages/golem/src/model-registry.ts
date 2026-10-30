@@ -70,7 +70,8 @@ export interface SerdeFunctions {
 export interface ModelTypeMetadata {
   readonly validations?: readonly string[];
   readonly constraints?: readonly ModelConstraint[];
-  readonly serde?: SerdeFunctions & {
+  /** The `serialize` and `deserialize` functions are in every descriptor that a generator makes; a hand-written descriptor in a test may leave them out. */
+  readonly serde?: Pick<SerdeFunctions, 'id'> & Partial<SerdeFunctions> & {
     readonly wire: ModelTypeDescriptor;
     /** A function that tells whether an instance of the class holds a value, which the class check calls after `instanceof` (`new Date(NaN)` is a `Date` and holds none). */
     readonly valid?: ImportedFunction;

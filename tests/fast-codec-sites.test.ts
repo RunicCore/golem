@@ -38,8 +38,8 @@ class Bytes {
 }
 
 const BYTES_SERDE: StringifySerdeResolver = {
-  deserialize: (id, value) => id === 'bytes' ? code`new Bytes(${value} as string)` : id === 'date' ? DATE_SERDE.deserialize(id, value) : code`Number(${value})`,
-  serialize: (id, value) => id === 'bytes' ? code`(${value} as Bytes).text` : id === 'date' ? DATE_SERDE.serialize(id, value) : code`String(${value})`,
+  deserialize: (serde, value) => serde.id === 'bytes' ? code`new Bytes(${value} as string)` : serde.id === DATE_FIELD.serde?.id ? DATE_SERDE.deserialize(serde, value) : code`Number(${value})`,
+  serialize: (serde, value) => serde.id === 'bytes' ? code`(${value} as Bytes).text` : serde.id === DATE_FIELD.serde?.id ? DATE_SERDE.serialize(serde, value) : code`String(${value})`,
 };
 
 interface Routes {

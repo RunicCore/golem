@@ -96,8 +96,8 @@ function decodeToken(value: unknown): number {
 }
 
 const serde: SerdeResolver = {
-  deserialize: (id, value) => id === 'date' ? DATE_SERDE.deserialize(id, value) : code`decodeToken(${value})`,
-  serialize: (_id, value) => value,
+  deserialize: (serde, value) => serde.id === DATE_FIELD.serde?.id ? DATE_SERDE.deserialize(serde, value) : code`decodeToken(${value})`,
+  serialize: (_serde, value) => value,
 };
 
 const bindings: Readonly<Record<string, unknown>> = {
