@@ -11,17 +11,12 @@ import { applyJob, loadInventory } from '#golem/outputs';
 import { runBuild } from '#golem/build';
 import { command, stopChild, workspace } from './support/process.js';
 import { TSC, write as writeFile } from './support/build-project.js';
-import { writeFixture } from './support/consumer.js';
+import { workspaceLinkedProject, writeFixture } from './support/consumer.js';
 import { until } from './support/watch-wait.js';
 import { runLines } from './support/watch-runs.js';
 
 function fixture(t: TestContext): { root: string; config: string } {
-  const root = createFixtureProject(t, 'golem-pipeline-');
-
-  linkProjectPackages(root, Object.fromEntries(
-    ['golem', 'golem-model', 'golem-openapi'].map(name => [`@exprtlabs/${name}`, path.join(workspace, 'packages', name)]),
-  ));
-  fs.writeFileSync(path.join(root, 'package.json'), '{"name":"pipeline-fixture","type":"module"}');
+  const root = workspaceLinkedProject(t, 'golem-pipeline-', '{"name":"pipeline-fixture","type":"module"}');
   writeFixture(root, { mobx: false, validation: true });
   return { root, config: path.join(root, 'golem.yaml') };
 }
