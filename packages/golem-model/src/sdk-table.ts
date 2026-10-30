@@ -28,7 +28,7 @@ import {
 import { canonicalPath } from '@exprtlabs/golem/internal/generator-support';
 import type { SchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
 import { golemModeComponents, type GolemModeManifest } from '@exprtlabs/golem/manifest';
-import type { ManifestIndex } from '@exprtlabs/golem/internal/type-analysis';
+import { codedError, type ManifestIndex } from '@exprtlabs/golem/internal/type-analysis';
 import type { PlanValidators, SdkValidatorsInput } from '@exprtlabs/golem/internal/validation-plan';
 import { PACKAGE_VERSION } from './package-info.js';
 
@@ -53,7 +53,7 @@ export function golemSdks(
   return index.golemModeManifests.map(({ file, manifest }) => {
     const sdkOutput = outputs.get(canonicalPath(file));
     if (sdkOutput === undefined) {
-      throw Object.assign(new Error(`GOLEM_SDK_JOB_MISSING: The SDK manifest ${file} is in mode golem, but no openapi job of mode golem in this golem.yaml writes its folder, so the models job cannot name the codecs file for it. Set the SDK to mode standalone, or add its openapi job with mode golem to this golem.yaml.`), { code: 'GOLEM_SDK_JOB_MISSING' });
+      throw codedError('GOLEM_SDK_JOB_MISSING', `The SDK manifest ${file} is in mode golem, but no openapi job of mode golem in this golem.yaml writes its folder, so the models job cannot name the codecs file for it. Set the SDK to mode standalone, or add its openapi job with mode golem to this golem.yaml.`);
     }
     return { manifest, scope: relative(where.directory, sdkOutput).split(sep).join('/'), codecsFile: sdkCodecsFile({ modelsOutput: where.output, configDirectory: where.directory, sdkOutput }) };
   }).sort((left, right) => compareText(left.scope, right.scope));

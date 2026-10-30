@@ -19,10 +19,11 @@ import {
   generateModelManifest,
   generateOpenApiModelArtifacts,
   generateOperationCodecs,
+  operationHasCodecs,
   type OpenApiDates,
 } from './models.js';
 import { neverPropertiesReader } from './model-resolution.js';
-import { operationConverts, requestBodyKey } from './model-schema-graph.js';
+import { requestBodyKey } from './model-schema-graph.js';
 import { golemCodecs, standaloneCodecs, type OperationCodecsFor } from './operation-codecs.js';
 import { withOrigins, type OriginLocator } from './origin.js';
 import { buildSchemaData } from './schemas.js';
@@ -427,10 +428,8 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions, moved:
   }
   if (plan.artifacts.has('inbound.ts')) {
     const inboundByName = new Map(inboundOperations.map((operation) => [operation.name, operation] as const));
-    // The golem mode writes no codec module to look for: an operation has codecs when the standalone mode would write its module.
-    const hasCodecs = golem
-      ? (name: string): boolean => Boolean(profile.validation) || operationConverts(inboundByName.get(name)!, modelAnalysis.convertedNodeIds)
-      : (name: string): boolean => files.has(`codecs/${name}.ts`);
+    // An operation has codecs by the rule of the SDK codecs builder, which both modes write by: inbound.ts never names a table key or a module that is missing.
+    const hasCodecs = (name: string): boolean => operationHasCodecs(inboundByName.get(name)!, modelAnalysis, Boolean(profile.validation));
     const inbound = generateInbound(clientName, document, inboundOperations, profile, hasCodecs, codecsFor, specifiers);
     files.set('inbound.ts', inbound.source);
     modules.set('inbound.ts', { exports: inbound.exports, stars: [] });

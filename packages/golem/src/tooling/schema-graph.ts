@@ -556,6 +556,16 @@ export function createSchemaGraph(
   options: SchemaGraphOptions = {},
 ): SchemaGraph {
   const nodes = new Map<string, SchemaNode>();
+  // The index of `nodeByCodecId`; every change of `nodes` goes through `setNode` or `deleteNode`, which drop it.
+  let indexed: Map<string, SchemaNode> | undefined;
+  const setNode = (id: string, node: SchemaNode): void => {
+    nodes.set(id, node);
+    indexed = undefined;
+  };
+  const deleteNode = (id: string): void => {
+    nodes.delete(id);
+    indexed = undefined;
+  };
   const byKey = new Map<string, string>();
   const byName = new Map<string, string>();
   // Interned nodes by the exact name they were interned under; short names can be ambiguous, these are not.
@@ -630,7 +640,7 @@ export function createSchemaGraph(
       emitClass: false,
       kind: nodeKind(descriptor),
     };
-    nodes.set(id, placeholder);
+    setNode(id, placeholder);
     rememberShortName(named, id);
     byRawName.set(raw, id);
     return placeholder;
@@ -653,7 +663,7 @@ export function createSchemaGraph(
         emitClass: nextEmit,
         ...(nextValidation === undefined ? {} : { validation: nextValidation }),
       };
-      nodes.set(existing.id, next);
+      setNode(existing.id, next);
       return next;
     };
     if (descriptor.kind === 'generated-model' || descriptor.kind === 'reference') {
@@ -684,7 +694,7 @@ export function createSchemaGraph(
         ...(siblingId === undefined ? {} : { siblingCodec: true as const }),
       };
       if (siblingId !== undefined) byPublicId.set(siblingId, id);
-      nodes.set(id, placeholder);
+      setNode(id, placeholder);
       rememberShortName(named, id);
       if (raw !== named) rememberShortName(raw, id);
       byRawName.set(raw, id);
@@ -779,9 +789,9 @@ export function createSchemaGraph(
       ...(named ? {} : { anonymous: true as const }),
     };
     if (shortExisting?.kind === 'reference' && shortExisting.id !== id) {
-      nodes.delete(shortExisting.id);
+      deleteNode(shortExisting.id);
     }
-    nodes.set(id, placeholder);
+    setNode(id, placeholder);
     if (!byKey.has(canonicalDescriptorKey(descriptor))) {
       byKey.set(canonicalDescriptorKey(descriptor), id);
     }
@@ -819,7 +829,7 @@ export function createSchemaGraph(
       } as const;
       const jsonSchema = schemaForDescriptor(rewritten, { ...options, representation: 'wire' });
       const modelJsonSchema = schemaForDescriptor(rewritten, { ...options, representation: 'model' });
-      nodes.set(id, {
+      setNode(id, {
         ...node,
         descriptor: rewritten,
         jsonSchema,
@@ -853,7 +863,7 @@ export function createSchemaGraph(
       };
       for (const [id, node] of nodes) {
         if (node.sameSchema && !node.siblingCodec && node.kind !== 'reference' && reachesWire(node, new Set())) {
-          nodes.set(id, { ...node, sameSchema: false });
+          setNode(id, { ...node, sameSchema: false });
         }
       }
     }
@@ -890,7 +900,7 @@ export function createSchemaGraph(
     for (const [id, node] of residualCandidates) {
       const modelOnly = derive(id, node, 'model-only');
       const wireOnly = derive(id, node, 'wire-only');
-      nodes.set(id, {
+      setNode(id, {
         ...node,
         ...(modelOnly === true ? {} : { modelOnlyJsonSchema: modelOnly }),
         ...(wireOnly === true ? {} : { wireOnlyJsonSchema: wireOnly }),
@@ -904,15 +914,12 @@ export function createSchemaGraph(
     Object.entries(definitions).map(([name, descriptor]) => ({ name, descriptor })),
   );
 
-  // The nodes only grow while a graph is interned, and a node that replaces another keeps its codec id, so the size says whether the index is current.
-  let indexed: { readonly size: number; readonly byCodecId: ReadonlyMap<string, SchemaNode> } | undefined;
   const nodeByCodecId = (codecId: string): SchemaNode | undefined => {
-    if (indexed?.size !== nodes.size) {
-      const byCodecId = new Map<string, SchemaNode>();
-      for (const node of nodes.values()) if (node.kind !== 'reference' && !byCodecId.has(node.codecId)) byCodecId.set(node.codecId, node);
-      indexed = { size: nodes.size, byCodecId };
+    if (indexed === undefined) {
+      indexed = new Map<string, SchemaNode>();
+      for (const node of nodes.values()) if (node.kind !== 'reference' && !indexed.has(node.codecId)) indexed.set(node.codecId, node);
     }
-    return indexed.byCodecId.get(codecId);
+    return indexed.get(codecId);
   };
 
   return {

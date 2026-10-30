@@ -5,7 +5,14 @@ import type { ModelSpecification } from './models.js';
 import { isGolemSourceFile, isGolemTagKey } from './tags.js';
 import { hasLocalForm, localFormMessage } from '../names.js';
 
-/** A located model-analysis error with its RUNM code. */
+/** An error with a code: the text is `<where> <code>: <message>`, and `code` is a property of the error. */
+export function codedError(code: string, message: string, where?: string): Error & { readonly code: string } {
+  const error = new Error(`${where === undefined ? '' : `${where} `}${code}: ${message}`) as Error & { readonly code: string };
+  Object.defineProperty(error, 'code', { value: code, enumerable: true });
+  return error;
+}
+
+/** A located model-analysis error with its code. */
 export function namedDiagnostic(
   sourceFile: ts.SourceFile,
   node: ts.Node,
@@ -13,11 +20,7 @@ export function namedDiagnostic(
   message: string,
 ): Error & { readonly code: string } {
   const position = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
-  const error = new Error(
-    `${displayPath(sourceFile.fileName)}:${position.line + 1}:${position.character + 1} ${code}: ${message}`,
-  ) as Error & { readonly code: string };
-  Object.defineProperty(error, 'code', { value: code, enumerable: true });
-  return error;
+  return codedError(code, message, `${displayPath(sourceFile.fileName)}:${position.line + 1}:${position.character + 1}`);
 }
 
 export function diagnostic(

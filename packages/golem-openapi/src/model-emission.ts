@@ -25,6 +25,8 @@ import {
   wireStringifyExportName,
   TEMPORAL_SERDE,
   writeOperationCodecs,
+  hasOperationCodecs,
+  type SdkOperationShape,
   type CodecRuntimeOptions,
   type FromJsonModelResolver,
 } from '@exprtlabs/golem/internal/emitter';
@@ -446,6 +448,36 @@ export interface OperationValidatorNames {
   readonly responseHeaders: readonly { readonly key: string; readonly name: string }[];
 }
 
+/** The node that converts the value of an operation at a place (see `SdkOperationShape`) and the group of models that holds it; none for a value that converts nothing. */
+function convertedValueAt(analysis: OpenApiModelAnalysis, operation: NormalizedOperation, at: readonly string[]): { readonly nodeId: string; readonly groupId: string } | undefined {
+  const nodeId = analysis.convertedNodeIds.get(JSON.stringify([operation.name, ...at]));
+  const groupId = nodeId === undefined ? undefined : analysis.grouping.owner.get(nodeId);
+  return nodeId !== undefined && groupId !== undefined ? { nodeId, groupId } : undefined;
+}
+
+/** The operation as the SDK codecs builder reads it: where its values are, which inbound responses the wire check also judges, and its validators (none when the SDK does not validate). */
+function operationCodecShape(operation: NormalizedOperation, analysis: OpenApiModelAnalysis, checks: SdkOperationShape['checks']): SdkOperationShape {
+  return {
+    inbound: operation.sourceKind !== 'path',
+    values: [
+      ...operation.requestContent.map((media) => ['request', media.contentType]),
+      ...operation.responses.flatMap((response) => response.content.map((media) => ['response', response.status, media.contentType])),
+      ...operation.parameters.map((parameter) => ['parameter', parameter.in, parameter.name]),
+      ...operation.responses.flatMap((response) => Object.keys(response.headers).map((name) => ['response-header', response.status, name])),
+    ],
+    wireChecked: inboundWireChecked(operation, analysis.uncarriedValues),
+    ...(checks ? { checks } : {}),
+  };
+}
+
+/** Whether the operation has codecs in either mode of the SDK: the builder's own rule, asked with a placeholder for each codec. */
+export function operationHasCodecs(operation: NormalizedOperation, analysis: OpenApiModelAnalysis, validates: boolean): boolean {
+  return hasOperationCodecs(
+    operationCodecShape(operation, analysis, validates ? { input: code`` } : undefined),
+    (at) => convertedValueAt(analysis, operation, at) && code``,
+  );
+}
+
 /**
  * The codec module of each operation that validates or converts, by file name (`codecs/<operation>.ts`): the validators of its input and responses,
  * the conversion of each request body and parameter, and of each response body, stream item and response header, that converts something (`OpenApiModelAnalysis.convertedNodeIds`).
@@ -464,28 +496,15 @@ export function generateOperationCodecs(
     const validatorsSource = new ImportSource('../validators.generated.js', false, { sorted: true });
     const groupSources = new Map(analysis.grouping.groups.map((group) => [group.id, new ImportSource(`../models/_${group.id}.js`, false, { sorted: true })] as const));
     const checks = validators?.get(operation.name);
-    const shape = {
-      inbound: operation.sourceKind !== 'path',
-      values: [
-        ...operation.requestContent.map((media) => ['request', media.contentType]),
-        ...operation.responses.flatMap((response) => response.content.map((media) => ['response', response.status, media.contentType])),
-        ...operation.parameters.map((parameter) => ['parameter', parameter.in, parameter.name]),
-        ...operation.responses.flatMap((response) => Object.keys(response.headers).map((name) => ['response-header', response.status, name])),
-      ],
-      wireChecked: inboundWireChecked(operation, analysis.uncarriedValues),
-      ...(checks ? {
-        checks: {
-          input: validatorsSource.name(checks.input),
-          ...(checks.headers === undefined ? {} : { requestHeaders: validatorsSource.name(checks.headers) }),
-          responses: checks.responses.map((item) => ({ key: item.key, code: validatorsSource.name(item.name) })),
-          responseHeaders: checks.responseHeaders.map((item) => ({ key: item.key, code: validatorsSource.name(item.name) })),
-        },
-      } : {}),
-    };
+    const shape = operationCodecShape(operation, analysis, checks && {
+      input: validatorsSource.name(checks.input),
+      ...(checks.headers === undefined ? {} : { requestHeaders: validatorsSource.name(checks.headers) }),
+      responses: checks.responses.map((item) => ({ key: item.key, code: validatorsSource.name(item.name) })),
+      responseHeaders: checks.responseHeaders.map((item) => ({ key: item.key, code: validatorsSource.name(item.name) })),
+    });
     const codecOf = (at: readonly string[], conversion: 'fromWire' | 'toWire'): Code | undefined => {
-      const nodeId = analysis.convertedNodeIds.get(JSON.stringify([operation.name, ...at]));
-      const groupId = nodeId === undefined ? undefined : analysis.grouping.owner.get(nodeId);
-      return nodeId !== undefined && groupId !== undefined ? groupSources.get(groupId)?.name(generatedFunctionName(nodeId, conversion)) : undefined;
+      const converted = convertedValueAt(analysis, operation, at);
+      return converted && groupSources.get(converted.groupId)?.name(generatedFunctionName(converted.nodeId, conversion));
     };
     const source = writeOperationCodecs(shape, codecOf, { banner: generatedBannerComment(), sources: [validatorsSource, ...groupSources.values()] });
     if (source !== undefined) files.set(`codecs/${operation.name}.ts`, source);

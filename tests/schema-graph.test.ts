@@ -603,3 +603,18 @@ test('a reference to a model missing from the graph is never read as the model i
   graph.seal();
   assert.throws(() => render(emitGraphStringify(graph)), /require a unique, required literal discriminator\. The variants are Order_0badc0de \| Other_/);
 });
+
+test('the node of a codec id is the node the graph holds now, after a flag change and after seal', () => {
+  // protects: T-748 nodeByCodecId never returns a node that the graph has replaced
+  const graph = createSchemaGraph();
+  const item: ModelTypeDescriptor = { kind: 'object', properties: { id: { kind: 'string' } }, required: ['id'], additionalProperties: false };
+  const first = graph.intern(item, 'Item');
+  assert.equal(graph.nodeByCodecId(first.codecId), first);
+  // A reference to the model, interned as a class, replaces the node with one that emits its class.
+  const flagged = graph.intern({ kind: 'reference', name: 'Item' }, undefined, true);
+  assert.notEqual(flagged, first);
+  assert.equal(flagged.emitClass, true);
+  assert.equal(graph.nodeByCodecId(first.codecId), flagged);
+  graph.seal();
+  assert.equal(graph.nodeByCodecId(first.codecId), graph.nodes.get(first.id));
+});

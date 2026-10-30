@@ -940,19 +940,22 @@ function sdkNodeCodecs(sdks: AppOutputs['sdkCodecs'], output: string): SdkNodeCo
 /** Separates the codec id from the form in the name of a type form that the file asked for. */
 const NODE_FORM = '\0';
 
-/** Whether the wire form of the SDK node `codecId` differs from its plain form: it holds a date, a serde value or a node that does. */
-function wireDiffers(sdks: AppOutputs['sdkCodecs'], codecId: string, seen: Set<string> = new Set()): boolean {
-  if (seen.has(codecId)) return false;
-  seen.add(codecId);
-  const differs = (value: unknown): boolean => {
-    if (Array.isArray(value)) return value.some(differs);
-    if (value === null || typeof value !== 'object') return false;
-    const record = value as Record<string, unknown>;
-    if (record.kind === 'date' || record.kind === 'class-value' || record.serde !== undefined) return true;
-    if (record.kind === 'generated-model' && typeof record.id === 'string') return wireDiffers(sdks, record.id, seen);
-    return Object.values(record).some(differs);
-  };
-  return differs(sdkNodeDescriptor(sdks, codecId));
+/** The SDK graph that holds the node with codec id `codecId`, and the node. */
+function sdkNodeOf(sdks: AppOutputs['sdkCodecs'], codecId: string): { readonly graph: SchemaGraph; readonly node: SchemaNode } {
+  for (const sdk of sdks ?? []) {
+    const node = sdk.graph.nodeByCodecId(codecId);
+    if (node !== undefined) return { graph: sdk.graph, node };
+  }
+  throw new Error(`Internal error: no SDK node with the codec id "${codecId}" for the generated file.`);
+}
+
+/**
+ * Whether the wire form of the SDK node `codecId` differs from its plain form. The rule of the stringify emitter: the node converts something
+ * (`descriptorNeedsConversion`), or its wire and model schemas differ (`sameSchema`, which holds for a node only when every node it reaches is the same too).
+ */
+function wireDiffers(sdks: AppOutputs['sdkCodecs'], codecId: string): boolean {
+  const { node } = sdkNodeOf(sdks, codecId);
+  return descriptorNeedsConversion(node.descriptor) || !node.sameSchema;
 }
 
 /**
@@ -960,15 +963,11 @@ function wireDiffers(sdks: AppOutputs['sdkCodecs'], codecId: string, seen: Set<s
  * of it names the aliases of the other SDK nodes and the type of a schema that reaches itself is finite.
  */
 function sdkNodeDescriptor(sdks: AppOutputs['sdkCodecs'], codecId: string): ModelConversionDescriptor {
-  for (const sdk of sdks ?? []) {
-    const node = sdk.graph.nodeByCodecId(codecId);
-    if (node === undefined) continue;
-    return mapNamedTypes(node.descriptor, (named) => {
-      const target = sdk.graph.nodeFor(named);
-      return { kind: 'generated-model', id: target?.codecId ?? (named.kind === 'reference' ? named.name : named.id) };
-    });
-  }
-  throw new Error(`Internal error: no SDK node with the codec id "${codecId}" for the generated file.`);
+  const { graph, node } = sdkNodeOf(sdks, codecId);
+  return mapNamedTypes(node.descriptor, (named) => {
+    const target = graph.nodeFor(named);
+    return { kind: 'generated-model', id: target?.codecId ?? (named.kind === 'reference' ? named.name : named.id) };
+  });
 }
 
 /** What the app generated beside its model files, which a model file reads. */
