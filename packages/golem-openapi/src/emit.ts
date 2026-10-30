@@ -8,7 +8,7 @@ import { buildEmissionPlan, serverOverrideDiagnostics, type ArtifactFile, type E
 import { asRecord, objectEntries, readString } from './json.js';
 import { assertUniqueExportNames, code, documentLiteral, exportedName, fileImports, identifier as identifierPart, ImportSource, join, literal, renderModule, rt, rtType, runtimeLinesOf, type Code, type ImportOptions, type PublicModule, type RenderedModule } from '@exprtlabs/golem/internal/emitter';
 import { operationName, operationNameType } from './names.js';
-import { parameterSchema, type NormalizedOperation } from './normalize.js';
+import { parameterSchema, type NormalizedOperation, type NormalizedParameter } from './normalize.js';
 import { generatedBannerComment } from './package-info.js';
 import { runtimeCopy, standaloneRuntimeSpecifiers, type RuntimeSpecifiers } from './runtime-copy.js';
 import type { OpenApiGenerationProfile } from './profile.js';
@@ -149,6 +149,23 @@ export const ${exportedName('operationServers')} = ${documentLiteral(plan.operat
 
 const TEXT_LOCATIONS = ['path', 'query', 'header', 'cookie'] as const;
 
+/** The character that separates the items in the text of an array parameter, as its OpenAPI 3.1 style says; none when each item is a value of its own (a repeated key). */
+function itemSeparator(location: string, parameter: NormalizedParameter): ',' | ' ' | '|' | undefined {
+  const style = parameter.style ?? (location === 'query' || location === 'cookie' ? 'form' : 'simple');
+  if (location === 'header' || location === 'path') return style === 'simple' ? ',' : undefined;
+  if (parameter.explode ?? style === 'form') return undefined;
+  return style === 'form' ? ',' : style === 'spaceDelimited' ? ' ' : style === 'pipeDelimited' ? '|' : undefined;
+}
+
+/** `table` with the separator of each array field, so the inbound handler splits its text before it decodes the items. */
+function withItemSeparators<Table extends Readonly<Record<string, { readonly item?: unknown }>>>(table: Table, location: string, parameters: readonly NormalizedParameter[]): Table {
+  return Object.fromEntries(Object.entries(table).map(([name, shape]) => {
+    const parameter = parameters.find((candidate) => candidate.name === name);
+    const split = shape.item !== undefined && parameter ? itemSeparator(location, parameter) : undefined;
+    return [name, split === undefined ? shape : { ...shape, split }];
+  })) as unknown as Table;
+}
+
 /**
  * What `inboundHandler` needs of an operation besides its codecs: its request media types, the declared names of its header parameters, the table of each location's
  * text parameters that decode to a number, a boolean or an array (the rule of a Nest query), and its declared responses with their media types and headers.
@@ -159,7 +176,7 @@ function inboundShape(operation: NormalizedOperation, document: unknown): Parame
     const parameters = operation.parameters.filter((parameter) => parameter.in === location);
     // The group is a schema of its own; its references into the document's components resolve against `components`.
     const table = parameters.length ? queryFieldTable({ type: 'object', properties: Object.fromEntries(parameters.map((parameter) => [parameter.name, parameterSchema(parameter) ?? true])), components } as never, () => undefined) : undefined;
-    return table ? [[location, table] as const] : [];
+    return table ? [[location, withItemSeparators(table, location, parameters)] as const] : [];
   }));
   // The tables hold only strings, numbers and booleans (an absent optional member is no member), so the shape is JSON.
   return {

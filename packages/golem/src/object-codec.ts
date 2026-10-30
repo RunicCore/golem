@@ -78,6 +78,8 @@ export interface QueryFieldShape {
   readonly types: readonly ('string' | 'number' | 'integer' | 'boolean')[];
   readonly literals?: readonly (string | number | boolean)[];
   readonly item?: QueryFieldShape;
+  /** The character that separates the items in the text of an array field (the style of its OpenAPI parameter); absent when each item is a value of its own. */
+  readonly split?: ',' | ' ' | '|';
 }
 
 /** The fields of a model that a query string decodes, by name. */
