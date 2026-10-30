@@ -19,7 +19,6 @@ import {
   generateModelManifest,
   generateOpenApiModelArtifacts,
   generateOperationCodecs,
-  operationHasCodecs,
   type OpenApiDates,
 } from './models.js';
 import { neverPropertiesReader, type OpenApiModelAnalysis } from './model-resolution.js';
@@ -156,7 +155,6 @@ interface GeneratedFiles {
   output: string;
   clientName: string;
   operations: readonly NormalizedOperation[];
-  inboundOperations: readonly NormalizedOperation[];
   diagnostics: readonly GolemDiagnostic[];
 }
 
@@ -187,7 +185,7 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions, moved:
   const inlineDiagnostics = checkOperationCompositions([...operations, ...inboundOperations], modelAnalysis, document);
   const schemaData = profile.validation && plan.hasOutboundOperations
     // A request body that converts and whose descriptors carry every keyword of its schema is checked by its own conversion, so the input root of its client operation leaves it open; any other request body keeps the wire check of the root.
-    ? buildSchemaData(document, ir, (operation, contentType) => operation.sourceKind === 'path' && modelAnalysis.convertedNodeIds.has(requestBodyKey(operation.name, contentType)) && !modelAnalysis.uncarriedValues.has(requestBodyKey(operation.name, contentType)))
+    ? buildSchemaData(document, ir, (operation, contentType) => modelAnalysis.convertedNodeIds.has(requestBodyKey(operation.name, contentType)) && !modelAnalysis.uncarriedValues.has(requestBodyKey(operation.name, contentType)))
     : undefined;
   const files = new Map<string, string>();
   const specifiers: RuntimeSpecifiers | undefined = golem ? undefined : standaloneRuntimeSpecifiers;
@@ -290,7 +288,7 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions, moved:
   // The runtime copy is written whole beside the files that import it, and only an SDK with operations imports it.
   if (specifiers && plan.artifacts.has('client.ts')) for (const [name, source] of runtimeCopy()) files.set(name, source);
   assertPortableFilenames(files.keys());
-  return { files, output, clientName, operations, inboundOperations, diagnostics: uniqueDiagnostics([...(specifiers ? mobxStandaloneDiagnostics(profile) : []), ...ir.diagnostics, ...browserCookieDiagnostics(document, operations), ...serverOverrideDiagnostics(document, operations), ...modelAnalysis.diagnostics, ...inlineDiagnostics, ...modelDiagnostics]) };
+  return { files, output, clientName, operations, diagnostics: uniqueDiagnostics([...(specifiers ? mobxStandaloneDiagnostics(profile) : []), ...ir.diagnostics, ...browserCookieDiagnostics(document, operations), ...serverOverrideDiagnostics(document, operations), ...modelAnalysis.diagnostics, ...inlineDiagnostics, ...modelDiagnostics]) };
 }
 
 /**

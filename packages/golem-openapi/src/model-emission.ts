@@ -25,7 +25,6 @@ import {
   wireStringifyExportName,
   TEMPORAL_SERDE,
   writeOperationCodecs,
-  hasOperationCodecs,
   type SdkOperationShape,
   type CodecRuntimeOptions,
   type FromJsonModelResolver,
@@ -466,14 +465,6 @@ function operationCodecShape(operation: NormalizedOperation, analysis: OpenApiMo
     ],
     ...(checks ? { checks } : {}),
   };
-}
-
-/** Whether the operation has codecs in either mode of the SDK: the builder's own rule, asked with a placeholder for each codec. */
-export function operationHasCodecs(operation: NormalizedOperation, analysis: OpenApiModelAnalysis, validates: boolean): boolean {
-  return hasOperationCodecs(
-    operationCodecShape(operation, analysis, validates ? { input: code`` } : undefined),
-    (at) => convertedValueAt(analysis, operation, at) && code``,
-  );
 }
 
 /**

@@ -157,11 +157,6 @@ function operationCodecsOf(shape: SdkOperationShape, codecOf: SdkValueCodec): Sd
   return Object.keys(codecs).length ? codecs : undefined;
 }
 
-/** Whether an operation has codecs: the one rule that decides whether a standalone SDK writes its module and a golem-mode SDK lists it in its table. */
-export function hasOperationCodecs(shape: SdkOperationShape, codecOf: SdkValueCodec): boolean {
-  return operationCodecsOf(shape, codecOf) !== undefined;
-}
-
 /** The text of a module that exports `operationCodecs`, the codecs of one operation: a client imports the module of the operation it calls and no other. An operation with no codecs has no module. */
 export function writeOperationCodecs(shape: SdkOperationShape, codecOf: SdkValueCodec, module: OperationCodecsModule): string | undefined {
   const operation = operationCodecsOf(shape, codecOf);
