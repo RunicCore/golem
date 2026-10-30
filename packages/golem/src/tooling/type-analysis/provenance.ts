@@ -18,22 +18,27 @@ import type { ProgramInfo } from './project.js';
 
 export interface ResolvedModelManifestEntry extends ModelManifestEntry {
   readonly manifestFile: string;
-  /** The file of `generated.module`; absent when the entry names no generated class. */
-  readonly generatedFile?: string;
   /** OpenAPI entries advertise the effective any policy used for this model. */
   readonly allowAny: boolean;
 }
 
+/** An entry that names a generated model class, with the file of its module: the only kind that a model of this project can use. */
+export interface GeneratedModelManifestEntry extends ResolvedModelManifestEntry {
+  readonly generated: NonNullable<ModelManifestEntry['generated']>;
+  readonly generatedFile: string;
+}
+
 export interface ManifestIndex {
-  readonly byId: ReadonlyMap<string, ResolvedModelManifestEntry>;
-  readonly byProvenance: ReadonlyMap<string, ResolvedModelManifestEntry>;
+  /** The entries that name a generated class. An entry without one is an SDK type, which a model of this project sees as a plain type. */
+  readonly byId: ReadonlyMap<string, GeneratedModelManifestEntry>;
+  readonly byProvenance: ReadonlyMap<string, GeneratedModelManifestEntry>;
   readonly files: readonly string[];
   /** Manifests advertised by loaded sources or discovered under this job's src. */
   readonly localFiles: readonly string[];
   readonly validationSchemaClosure: readonly CodecSchemaClosureEntry[];
   /** Runtime (value) exports of the generated module an entry names. */
-  runtimeExports(model: ResolvedModelManifestEntry): ReadonlySet<string>;
-  externalModelForType(type: ts.Type): ResolvedModelManifestEntry | undefined;
+  runtimeExports(model: GeneratedModelManifestEntry): ReadonlySet<string>;
+  externalModelForType(type: ts.Type): GeneratedModelManifestEntry | undefined;
 }
 
 function escapeRegExp(value: string): string {
@@ -92,16 +97,16 @@ const lastValidated = new WeakMap<object, ValidatedModules>();
 function validateGeneratedModules(
   info: ProgramInfo,
   root: string,
-  models: readonly ResolvedModelManifestEntry[],
+  models: readonly GeneratedModelManifestEntry[],
   onInput?: InputObserver,
 ): ReadonlyMap<string, ReadonlySet<string>> {
   const { options } = info;
   const exportsById = new Map<string, ReadonlySet<string>>();
+  // A manifest of SDK types alone names no module to validate.
   if (models.length === 0) return exportsById;
-  const files = new Map<ResolvedModelManifestEntry, string>();
+  const files = new Map<GeneratedModelManifestEntry, string>();
   const resolutionCache = new Map<string, string>();
   for (const model of models) {
-    if (!model.generated) continue;
     const moduleName = model.generated.module;
     const cacheKey = `${dirname(model.manifestFile)}\0${moduleName}`;
     let resolvedFileName = resolutionCache.get(cacheKey);
@@ -133,7 +138,7 @@ function validateGeneratedModules(
   const appConfig = effectiveConfigPath(info);
   // The program is opened only when something it validates changed since the last pass: the request (the entries, the modules they
   // resolve to, the compiler options), a manifest, or a source file of the last program, which the openapi job can rewrite between two cycles.
-  const request = JSON.stringify([root, appConfig, sources, models.map((model) => [model.id, model.manifestFile, model.generated?.export])])
+  const request = JSON.stringify([root, appConfig, sources, models.map((model) => [model.id, model.manifestFile, model.generated.export])])
     + JSON.stringify(options, (key, value: unknown) => (key === 'configFile' ? undefined : value));
   const manifestSignatures = new Map(models.map((model) => [model.manifestFile, fileSignature(model.manifestFile)]));
   const previous = lastValidated.get(info.program.session);
@@ -252,9 +257,9 @@ export function advertisedModelManifests(program: ts.Program, onInput?: InputObs
 
 /** The manifest entry that lists a declaration of `symbol`. A published package ships `.d.ts` for the `.ts` file its manifest names. */
 export function manifestModelOfSymbol(
-  byProvenance: ReadonlyMap<string, ResolvedModelManifestEntry>,
+  byProvenance: ReadonlyMap<string, GeneratedModelManifestEntry>,
   symbol: ts.Symbol,
-): ResolvedModelManifestEntry | undefined {
+): GeneratedModelManifestEntry | undefined {
   for (const declaration of symbol.declarations ?? []) {
     const file = canonicalFilename(declaration.getSourceFile().fileName);
     const model = byProvenance.get(`${file}\0${symbol.getName()}`)
@@ -303,8 +308,10 @@ export function loadModelManifests(
     ...localFiles,
     ...explicit.map(canonicalFilename),
   ])].sort();
-  const byProvenance = new Map<string, ResolvedModelManifestEntry>();
-  const byId = new Map<string, ResolvedModelManifestEntry>();
+  const byProvenance = new Map<string, GeneratedModelManifestEntry>();
+  const byId = new Map<string, GeneratedModelManifestEntry>();
+  // Every id of every manifest, an SDK type's included, so that two manifests cannot share one.
+  const manifestOfId = new Map<string, string>();
   const validationSchemaClosure: CodecSchemaClosureEntry[] = [];
   for (const filename of filenames) {
     // Explicit SDK manifests stay in the load set for duplicate-id and profile
@@ -316,10 +323,10 @@ export function loadModelManifests(
     validateManifestProfile(manifest, filename, profile);
     validationSchemaClosure.push(...manifest.validationSchemaClosure ?? []);
     for (const model of manifest.models) {
-      const existingId = byId.get(model.id);
-      if (existingId) {
+      const existingFile = manifestOfId.get(model.id);
+      if (existingFile) {
         throw new Error(
-          `Duplicate model manifest id "${model.id}" in ${existingId.manifestFile} and ${filename}.`,
+          `Duplicate model manifest id "${model.id}" in ${existingFile} and ${filename}.`,
         );
       }
       if (typeof model.allowAny !== 'boolean') {
@@ -327,21 +334,22 @@ export function loadModelManifests(
           `Invalid model manifest ${filename}: model ${model.id} must advertise an effective allowAny boolean.`,
         );
       }
-      const resolved: ResolvedModelManifestEntry = {
+      manifestOfId.set(model.id, filename);
+      // An entry that names no generated class is an SDK type: a model of this project sees its declaration as a plain type.
+      if (!model.generated) continue;
+      const resolved: GeneratedModelManifestEntry = {
         ...model,
         allowAny: model.allowAny as boolean,
         manifestFile: filename,
-        ...(model.generated ? {
-          generatedFile: canonicalFilename(
-            isAbsolute(model.generated.module)
-              ? model.generated.module
-              : resolve(dirname(filename), model.generated.module),
-          ),
-        } : {}),
+        generated: model.generated,
+        generatedFile: canonicalFilename(
+          isAbsolute(model.generated.module)
+            ? model.generated.module
+            : resolve(dirname(filename), model.generated.module),
+        ),
       };
       byId.set(model.id, resolved);
-      // An entry that names no generated class is an SDK type: a model of this project sees its declaration as a plain type.
-      const provenances = model.generated ? [model.type, ...(model.type.aliases ?? [])] : [];
+      const provenances = [model.type, ...(model.type.aliases ?? [])];
       for (const provenance of provenances) {
         const key = manifestProvenance(filename, provenance.module, provenance.export);
         const existing = byProvenance.get(key);
@@ -364,7 +372,7 @@ export function loadModelManifests(
     localFiles,
     validationSchemaClosure,
     runtimeExports: (model) => exportsById.get(model.id) ?? new Set(),
-    externalModelForType(type: ts.Type): ResolvedModelManifestEntry | undefined {
+    externalModelForType(type: ts.Type): GeneratedModelManifestEntry | undefined {
       for (const symbol of [type.aliasSymbol, type.getSymbol?.()]) {
         const model = symbol && manifestModelOfSymbol(byProvenance, symbol);
         if (model) return model;

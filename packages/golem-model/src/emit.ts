@@ -158,17 +158,6 @@ function descriptorExternalIds(
   return found;
 }
 
-/**
- * The generated class of an external model, with the file it is exported from. A model of an SDK has none, because an SDK writes
- * no model classes: an app model that uses one stops here, with the model named.
- */
-function generatedClassOf(model: NonNullable<ReturnType<ManifestIndex['byId']['get']>>): { readonly export: string; readonly file: string } {
-  if (!model.generated || !model.generatedFile) {
-    throw new Error(`The model ${model.type.export} of ${displayPath(model.manifestFile)} has no generated class, so a model of this project cannot use it. An SDK writes types, not classes.`);
-  }
-  return { export: model.generated.export, file: model.generatedFile };
-}
-
 function assertGeneratedNames(
   specifications: readonly ModelSpecification[],
   externalIds: readonly string[],
@@ -192,7 +181,7 @@ function assertGeneratedNames(
   for (const id of externalIds) {
     const model = manifestIndex.byId.get(id);
     if (!model) throw new Error(`Generated model manifest id is missing: ${id}`);
-    const name = generatedClassOf(model).export;
+    const name = model.generated.export;
     const previous = names.get(name) ?? used.get(name);
     if (previous) {
       throw new Error(
@@ -207,7 +196,7 @@ function assertGeneratedNames(
   return new Map(externalIds.map((id) => {
     const model = manifestIndex.byId.get(id);
     if (!model) throw new Error(`Generated model manifest id is missing: ${id}`);
-    return [id, generatedClassOf(model).export] as const;
+    return [id, model.generated.export] as const;
   }));
 }
 
@@ -1124,7 +1113,7 @@ function buildFileImports(
     if (!model) throw new Error(`Generated model manifest id is missing: ${id}`);
     const localName = graph.externalNames.get(id);
     if (!localName) throw new Error(`Generated model local name is missing: ${id}`);
-    const { export: exported, file: generatedFile } = generatedClassOf(model);
+    const { generatedFile, generated: { export: exported } } = model;
     const source = new ImportSource(sourceImportPath(generatedFile, output));
     const short = codecShortName(id);
     external.set(id, {

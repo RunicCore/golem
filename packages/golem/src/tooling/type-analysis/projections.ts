@@ -2,7 +2,7 @@ import * as ts from '../typescript-ns.js';
 import type { ModelSpecification } from './models.js';
 import { resolveSymbol, isModelDeclarationReference } from './symbols.js';
 import { isDiscriminatorTag } from './tags.js';
-import { manifestModelOfSymbol, type ResolvedModelManifestEntry } from './provenance.js';
+import { manifestModelOfSymbol, type GeneratedModelManifestEntry } from './provenance.js';
 
 interface Provenance {
   readonly models: readonly ModelSpecification[];
@@ -14,7 +14,7 @@ interface Provenance {
 }
 
 interface ExternalReference {
-  readonly model: ResolvedModelManifestEntry;
+  readonly model: GeneratedModelManifestEntry;
   readonly type: ts.Type;
 }
 
@@ -23,7 +23,7 @@ export function fieldProvenance(
   checker: ts.TypeChecker,
   node: ts.TypeNode | undefined,
   specifications: readonly ModelSpecification[],
-  manifests?: ReadonlyMap<string, ResolvedModelManifestEntry>,
+  manifests?: ReadonlyMap<string, GeneratedModelManifestEntry>,
 ): Provenance {
   const walk = (current: ts.TypeNode | undefined, substitutions = new Map<ts.Symbol, ts.TypeNode>(), seen = new Set<ts.Node>()): Provenance => {
     const empty: Provenance = { models: [], projection: false, anonymous: undefined, externals: [] };
