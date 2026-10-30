@@ -336,7 +336,9 @@ export function resolveConfig(filename = 'golem.yaml', onInput?: InputObserver):
       }
     }
     const sourceSuffixes = suffixes(value.models.suffixes, 'models.suffixes');
-    jobs.push({ id: `models:${path.relative(directory, root) || '.'}`, kind: 'models', package: '@exprtlabs/golem-model', options: { root, directory, output, tsconfig, profile, ...exact, ...(sources ? { sources } : {}), ...(sourceSuffixes ? { suffixes: sourceSuffixes } : {}) } });
+    // The models job writes the codecs file of each SDK of mode golem; it takes their folders from the openapi jobs, never from where a manifest lies.
+    const sdkOutputs = jobs.flatMap(job => job.kind === 'openapi' && job.options.mode === 'golem' ? [job.options.output] : []);
+    jobs.push({ id: `models:${path.relative(directory, root) || '.'}`, kind: 'models', package: '@exprtlabs/golem-model', options: { root, directory, output, tsconfig, profile, ...exact, ...(sources ? { sources } : {}), ...(sourceSuffixes ? { suffixes: sourceSuffixes } : {}), ...(sdkOutputs.length ? { sdkOutputs } : {}) } });
     // A controllers job reads the same boundary: the models job writes the generated file of a shared model where a controller class extends it.
     const models = { root, directory, output, ...(sourceSuffixes ? { suffixes: sourceSuffixes } : {}) };
     for (const [index, job] of jobs.entries()) {

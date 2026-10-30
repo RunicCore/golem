@@ -8,7 +8,7 @@ import type {
   GeneratorSession,
   InputObserver,
 } from '@exprtlabs/golem/generator-api';
-import { buildCodecValidationPlan, compileLevel, compilePlanValidators, type CodecSchemaClosureEntry } from '@exprtlabs/golem/internal/validation-plan';
+import { buildCodecValidationPlan, compileLevel, compileSdkValidators, type CodecSchemaClosureEntry } from '@exprtlabs/golem/internal/validation-plan';
 import { GolemDiagnosticSeverity, compareText, isInsideDirectory, resolveProfile, type GolemDiagnostic, type ResolvedGolemProfile } from '@exprtlabs/golem/generator-api';
 import {
   canonicalPath,
@@ -38,6 +38,7 @@ import { assertModelLevelsWithinProject, collectSpecifications } from '@exprtlab
 import { discoverModelManifests } from '@exprtlabs/golem/manifest';
 import { loadModelManifests, sdkModelFiles, sdkSchemaGraph } from '@exprtlabs/golem/internal/type-analysis';
 import type { ManifestIndex } from '@exprtlabs/golem/internal/type-analysis';
+import { golemSdks, sdkValidatorOperations } from './sdk-table.js';
 import {
   assertAbsolute,
   assertDistinctCompanions,
@@ -84,6 +85,8 @@ export interface GolemModelContext {
   readonly exact?: boolean;
   /** Absolute model-manifest paths to add to marker and source discovery. */
   readonly manifestInputs?: readonly string[];
+  /** The absolute output folders of the openapi jobs of mode `golem` in the same golem.yaml: the job writes one codecs file for each. */
+  readonly sdkOutputs?: readonly string[];
   /** Observe attempted paths before reads and existence checks. */
   readonly onInput?: InputObserver;
   /** Keeps the TypeScript compiler warm across runs of one CLI pipeline or watch session. */
@@ -104,6 +107,7 @@ interface NormalizedContext {
   readonly profile: ResolvedGolemProfile;
   readonly exact: boolean | undefined;
   readonly manifestInputs: readonly string[];
+  readonly sdkOutputs: readonly string[];
   readonly onInput?: InputObserver;
   readonly session?: GeneratorSession;
 }
@@ -142,6 +146,14 @@ function validateContext(context: GolemModelContext): NormalizedContext {
       }
       return context.manifestInputs.map((filename) => assertAbsolute(filename, 'context.manifestInputs entry'));
     })();
+  const sdkOutputs = context.sdkOutputs === undefined
+    ? []
+    : (() => {
+      if (!Array.isArray(context.sdkOutputs)) {
+        throw new TypeError('context.sdkOutputs must be an array of absolute paths.');
+      }
+      return context.sdkOutputs.map((filename) => assertAbsolute(filename, 'context.sdkOutputs entry'));
+    })();
   return {
     root,
     directory,
@@ -152,6 +164,7 @@ function validateContext(context: GolemModelContext): NormalizedContext {
     profile,
     exact: context.exact,
     manifestInputs,
+    sdkOutputs,
     onInput: context.onInput,
     session: context.session,
   };
@@ -538,10 +551,9 @@ export function generate(context: GolemModelContext): GolemModelResult {
     .filter((graph): graph is NonNullable<typeof graph> => graph !== undefined);
   const graphSchemaPairs = internJobSchemaGraphs(graphs, normalized.profile.validation, manifestIndex.validationSchemaClosure);
   // An SDK in golem mode writes no validators: its types are nodes of this job's graphs, compiled with the models in one set.
-  const schemaGraphs = [
-    ...graphSchemaPairs.map(({ schemaGraph }) => schemaGraph),
-    ...manifestIndex.golemModeManifests.map(({ manifest }) => sdkSchemaGraph(manifest, normalized.profile.validation).graph),
-  ];
+  const sdks = golemSdks(manifestIndex, normalized);
+  const sdkGraphs = sdks.map((sdk) => sdkSchemaGraph(sdk.manifest, normalized.profile.validation));
+  const schemaGraphs = [...graphSchemaPairs.map(({ schemaGraph }) => schemaGraph), ...sdkGraphs.map(({ graph }) => graph)];
   const schemaEntries = deduplicateTagSchemas(
     graphs.flatMap((graph) => graph.schemas)
       .sort((left, right) => compareText(left.key, right.key)
@@ -558,8 +570,9 @@ export function generate(context: GolemModelContext): GolemModelResult {
     : undefined;
   const validatorsOutput = join(normalized.output, 'models.validators.generated.ts');
   // A project whose models all stay off has no codec that calls a validator, so it writes no file.
-  const validators = validationPlan && validationPlan.ownSchemas.length > 0
-    ? compilePlanValidators(validationPlan, {
+  const sdkOperations = validationPlan ? sdkValidatorOperations(sdks) : [];
+  const validators = validationPlan && (validationPlan.ownSchemas.length > 0 || sdkOperations.length > 0)
+    ? compileSdkValidators({ plan: validationPlan, operations: sdkOperations }, {
       owner: '@exprtlabs/golem-model',
       unknownFormats: normalized.profile.unknownFormats,
       level: compileLevel(normalized.profile.validation),

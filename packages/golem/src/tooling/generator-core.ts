@@ -180,6 +180,8 @@ export interface ModelContext {
   /** The `golem.yaml` default for the `exact` option of a model that sets none; omitted means `true`. */
   readonly exact?: boolean;
   readonly manifestInputs?: readonly string[];
+  /** The absolute output folders of the openapi jobs of mode `golem` in the same golem.yaml: the models job writes one codecs file for each (`sdkCodecsFile`). */
+  readonly sdkOutputs?: readonly string[];
   readonly onInput?: InputObserver;
   readonly session?: GeneratorSession;
 }
