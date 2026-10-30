@@ -4,6 +4,7 @@
 //   runtime.ts        the facade: it casts the import of the bundle once, to the declared types of the entry
 //   runtime.types.ts  the types barrel over the copied declaration files in types/
 // The output depends on the compiled entry only, so two builds of one source give the same bytes.
+// `--check` builds the files in memory and fails when the files on disk differ, which a `tsc` run on the entry alone leaves stale.
 import { build } from 'esbuild';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -33,7 +34,7 @@ function declarationClosure() {
     if (seen.has(relative)) return;
     seen.add(relative);
     const text = fs.readFileSync(path.join(dist, relative), 'utf8');
-    for (const [, specifier] of text.matchAll(/(?:from|import)\s*\(?\s*'(\.[^']*)\.js'/g)) {
+    for (const [, , specifier] of text.matchAll(/(?:from|import)\s*\(?\s*(['"])(\.[^'"]*)\.js\1/g)) {
       visit(path.posix.normalize(path.posix.join(path.posix.dirname(relative), `${specifier}.d.ts`)));
     }
   };
@@ -56,18 +57,13 @@ const bundle = await build({
 });
 const exportNames = Object.values(bundle.metafile.outputs)[0].exports.slice().sort();
 
-fs.rmSync(output, { recursive: true, force: true });
-fs.mkdirSync(path.join(output, 'types'), { recursive: true });
-for (const relative of declarationClosure()) {
-  const target = path.join(output, 'types', relative);
-  fs.mkdirSync(path.dirname(target), { recursive: true });
-  fs.copyFileSync(path.join(dist, relative), target);
-}
-fs.writeFileSync(path.join(output, 'runtime.impl.ts'), `// @ts-nocheck\n${bundle.outputFiles[0].text}`);
+const closure = declarationClosure();
+const files = new Map(closure.map((relative) => [path.join('types', relative), fs.readFileSync(path.join(dist, relative))]));
+files.set('runtime.impl.ts', `// @ts-nocheck\n${bundle.outputFiles[0].text}`);
 // A class or an enum is a value and a type at once, so the facade also exports its type: generated code names `ClientRuntime` as both.
-const declared = new Set(declarationClosure().flatMap((relative) => [...fs.readFileSync(path.join(dist, relative), 'utf8').matchAll(/export declare (?:abstract )?(?:class|enum) (\w+)/g)].map(([, name]) => name)));
+const declared = new Set(closure.flatMap((relative) => [...fs.readFileSync(path.join(dist, relative), 'utf8').matchAll(/export declare (?:abstract )?(?:class|enum) (\w+)/g)].map(([, name]) => name)));
 const valueAndType = exportNames.filter((name) => declared.has(name));
-fs.writeFileSync(path.join(output, 'runtime.ts'), [
+files.set('runtime.ts', [
   "import * as impl from './runtime.impl.js';",
   `import type * as Types from './types/${entry}.js';`,
   'const typed = impl as unknown as typeof Types;',
@@ -75,8 +71,24 @@ fs.writeFileSync(path.join(output, 'runtime.ts'), [
   ...valueAndType.flatMap((name) => [`export const ${name} = typed.${name};`, `export type ${name} = Types.${name};`]),
   '',
 ].join('\n'));
-fs.writeFileSync(path.join(output, 'runtime.types.ts'), [
+files.set('runtime.types.ts', [
   `export type * from './types/${entry}.js';`,
   ...barrelTypes.map(([module, names]) => `export type { ${names.join(', ')} } from './types/${module}.js';`),
   '',
 ].join('\n'));
+
+if (process.argv.includes('--check')) {
+  const onDisk = fs.existsSync(output) ? fs.readdirSync(output, { recursive: true, encoding: 'utf8' }).filter((name) => fs.statSync(path.join(output, name)).isFile()) : [];
+  const stale = [...files].filter(([name, content]) => !onDisk.includes(name) || !fs.readFileSync(path.join(output, name)).equals(Buffer.from(content)));
+  const extra = onDisk.filter((name) => !files.has(name));
+  if (stale.length > 0 || extra.length > 0) {
+    console.error(`The SDK runtime in ${path.relative(root, output)} is stale against packages/golem/dist. Run: npm run build -w @exprtlabs/golem\n${[...stale.map(([name]) => `  differs: ${name}`), ...extra.map((name) => `  extra: ${name}`)].join('\n')}`);
+    process.exit(1);
+  }
+} else {
+  fs.rmSync(output, { recursive: true, force: true });
+  for (const [name, content] of files) {
+    fs.mkdirSync(path.dirname(path.join(output, name)), { recursive: true });
+    fs.writeFileSync(path.join(output, name), content);
+  }
+}
