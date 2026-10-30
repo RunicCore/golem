@@ -1,7 +1,7 @@
 // Bundles the SDK runtime entry of @exprtlabs/golem into the files that @exprtlabs/golem-openapi ships in `sdk-runtime/`.
 // A standalone SDK copies them, so its runtime needs no installed golem. The files are:
 //   runtime.impl.ts   the minified bundle behind `// @ts-nocheck`; tsc copies a .ts value file to the SDK's outDir, but not a .js and .d.ts pair
-//   runtime.ts        the facade: it casts the import of the bundle once, to the declared types of the entry
+//   runtime.ts        the facade: it casts each name of the bundle to its declared type in the entry, one statement per name so that a bundler keeps only the names an SDK imports
 //   runtime.types.ts  the types barrel over the copied declaration files in types/
 // The output depends on the compiled entry only, so two builds of one source give the same bytes.
 // `--check` builds the files in memory and fails when the files on disk differ, which a `tsc` run on the entry alone leaves stale.
@@ -62,13 +62,14 @@ const files = new Map(closure.map((relative) => [path.join('types', relative), f
 files.set('runtime.impl.ts', `// @ts-nocheck\n${bundle.outputFiles[0].text}`);
 // A class or an enum is a value and a type at once, so the facade also exports its type: generated code names `ClientRuntime` as both.
 const declared = new Set(closure.flatMap((relative) => [...fs.readFileSync(path.join(dist, relative), 'utf8').matchAll(/export declare (?:abstract )?(?:class|enum) (\w+)/g)].map(([, name]) => name)));
-const valueAndType = exportNames.filter((name) => declared.has(name));
+// One statement per name, so a bundler drops each name that the importing module does not use; a destructuring of the whole namespace keeps all of them in esbuild.
 files.set('runtime.ts', [
   "import * as impl from './runtime.impl.js';",
   `import type * as Types from './types/${entry}.js';`,
-  'const typed = impl as unknown as typeof Types;',
-  `export const { ${exportNames.filter((name) => !declared.has(name)).join(', ')} } = typed;`,
-  ...valueAndType.flatMap((name) => [`export const ${name} = typed.${name};`, `export type ${name} = Types.${name};`]),
+  ...exportNames.flatMap((name) => [
+    `export const ${name} = impl.${name} as unknown as typeof Types.${name};`,
+    ...(declared.has(name) ? [`export type ${name} = Types.${name};`] : []),
+  ]),
   '',
 ].join('\n'));
 files.set('runtime.types.ts', [

@@ -4,6 +4,7 @@ import { cpSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { gzipSync } from 'node:zlib';
 import test from 'node:test';
+import { build } from 'esbuild';
 import { createFixtureProject, fileFixtureScope, onceShared } from './fixture-project.js';
 import { repoRoot, tscBin, writePlainTscProject } from './openapi/helpers.js';
 
@@ -40,4 +41,28 @@ test('a plain tsc consumer with no golem installed compiles the shipped SDK runt
   const ran = spawnSync(process.execPath, [path.join(project, 'out/main.js')], { encoding: 'utf8' });
   assert.equal(ran.status, 0, ran.stderr);
   assert.equal(ran.stdout.trim(), '{"iso":"1970-01-01T00:00:00.000Z","url":"https://api.example.test/charges","thrown":"LibError","depth":4,"issues":0}');
+});
+
+/** Bundles an entry that imports the given names through the shipped facade with esbuild, as a user's build does, and gives the bundle and what it prints. */
+async function bundleThroughFacade(names: string, use: string): Promise<{ code: string; stdout: string }> {
+  const project = createFixtureProject(scope, 'golem-sdk-shake-');
+  cpSync(shipped, path.join(project, 'rt'), { recursive: true });
+  writeFileSync(path.join(project, 'main.ts'), `import { ${names} } from './rt/runtime.js';\nconsole.log(${use});\n`);
+  const outfile = path.join(project, 'out/main.mjs');
+  await build({ absWorkingDir: project, entryPoints: ['main.ts'], bundle: true, minify: true, format: 'esm', platform: 'neutral', outfile, logLevel: 'silent' });
+  const ran = spawnSync(process.execPath, [outfile], { encoding: 'utf8' });
+  assert.equal(ran.status, 0, ran.stderr);
+  return { code: readFileSync(outfile, 'utf8'), stdout: ran.stdout.trim() };
+}
+
+test('an esbuild bundle of a module that imports one runtime function from the shipped facade keeps only that function', async () => {
+  // protects: T-714 R-88 a standalone SDK bundles only the runtime functions it imports, in esbuild as in Rollup
+  // The warning text is written inside createApiOperation only, so it marks that function in the bundle.
+  const marker = 'Concurrent execute() invocation';
+  const date = await bundleThroughFacade('serializeDate', 'serializeDate(new Date(0))');
+  assert.equal(date.stdout, '1970-01-01T00:00:00.000Z');
+  assert.ok(!date.code.includes(marker), 'createApiOperation is in a bundle that does not import it');
+  const operation = await bundleThroughFacade('createApiOperation', 'typeof createApiOperation');
+  assert.equal(operation.stdout, 'function');
+  assert.ok(operation.code.includes(marker), 'the marker is not found in a bundle that imports createApiOperation');
 });
