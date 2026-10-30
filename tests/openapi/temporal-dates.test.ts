@@ -10,11 +10,12 @@ import {
   compileGeneratedSdk,
   generateMaterializedSdk,
   importGeneratedModule,
-  importSdkCodecs,
   isGeneratedClientClass,
   requireRecord,
-  sdkFunction,
+  sdkBodyCodec,
+  withRootOperations,
   type CapturedRequest,
+  type SdkBodyCodec,
 } from './helpers.js';
 
 const PROFILE = { mobx: false, validation: true, allowAny: false } as const;
@@ -58,17 +59,17 @@ const EVENT_OPERATIONS = {
 
 test('dates: temporal maps date-time, date and duration to Temporal and keeps time a string', async t => {
   const output = path.join(createFixtureProject(t, 'golem-openapi-temporal-dates-'), 'sdk');
-  await generateMaterializedSdk(EVENT, { output, name: 'Events', profile: PROFILE, dates: 'temporal' });
+  await generateMaterializedSdk(withRootOperations(EVENT as Record<string, unknown>, 'Event'), { output, name: 'Events', profile: PROFILE, dates: 'temporal' });
   compileGeneratedSdk(output, [], { strict: true, lib: ['ES2023', 'DOM', 'DOM.Iterable', 'esnext.temporal'] });
-  const models = await importSdkCodecs(output, 'generated codecs');
+  const client = await sdkBodyCodec(output, 'Events');
   const wire = { at: '2025-01-02T03:04:05Z', day: '2025-01-02', span: 'P1D', clock: '03:04:05Z', maybe: null };
-  const model = sdkFunction<Record<string, unknown>>(models, 'fromWireFormat', 'Event')(wire);
+  const model = await client.decode(wire) as Record<string, unknown>;
   assert.ok(model.at instanceof Temporal.Instant);
   assert.ok(model.day instanceof Temporal.PlainDate);
   assert.ok(model.span instanceof Temporal.Duration);
   assert.equal(model.clock, '03:04:05Z');
   assert.equal(model.maybe, null);
-  assert.deepEqual(sdkFunction(models, 'toWireFormat', 'Event')(model), wire);
+  assert.deepEqual(await client.encode(model), wire);
 });
 
 test('dates: temporal models encode to the ISO strings the generated client sends and validates', async t => {
@@ -76,7 +77,6 @@ test('dates: temporal models encode to the ISO strings the generated client send
   await generateMaterializedSdk(EVENT_OPERATIONS, { output, name: 'Events', profile: PROFILE, dates: 'temporal' });
   compileGeneratedSdk(output, [], { strict: true, lib: ['ES2023', 'DOM', 'DOM.Iterable', 'esnext.temporal'] });
   const models = requireRecord(await import(pathToFileURL(path.join(output, 'dist/index.js')).href), 'generated models');
-  const codecs = await importSdkCodecs(output, 'generated codecs');
   assert.ok(isGeneratedClientClass(models.EventsClient), 'generated client');
   const wire = { at: '2025-01-02T03:04:05Z', day: '2025-01-02', span: 'P1D', clock: '03:04:05Z', maybe: null };
   const requests: CapturedRequest[] = [];
@@ -87,8 +87,7 @@ test('dates: temporal models encode to the ISO strings the generated client send
       return Response.json(wire, { status: 201 });
     },
   });
-  const model = sdkFunction<Record<string, unknown>>(codecs, 'fromWireFormat', 'Event')(wire);
-  assert.ok(model.at instanceof Temporal.Instant);
+  const model = { at: Temporal.Instant.from('2025-01-02T03:04:05Z'), day: Temporal.PlainDate.from('2025-01-02'), span: Temporal.Duration.from('P1D'), clock: '03:04:05Z', maybe: null };
   const response = await client.createEvent().execute({ body: model as never });
   assert.equal(response.status, 201);
   assert.deepEqual(JSON.parse(String(requests[0]?.init.body)), wire);
@@ -200,15 +199,16 @@ test('dates: temporal rejects a date-time union with another string branch insid
 
 const TEMPORAL_LIB = { strict: true, lib: ['ES2023', 'DOM', 'DOM.Iterable', 'esnext.temporal'] };
 
-async function generateTemporalModels(t: Parameters<typeof createFixtureProject>[0], prefix: string, doc: unknown): Promise<Record<string, unknown>> {
+/** The client of an SDK of `doc` with Temporal dates, whose operations carry the component `root`. */
+async function generateTemporalClient(t: Parameters<typeof createFixtureProject>[0], prefix: string, doc: Record<string, unknown>, root: string): Promise<SdkBodyCodec> {
   const output = path.join(createFixtureProject(t, prefix), 'sdk');
-  await generateMaterializedSdk(doc, { output, name: 'Events', profile: PROFILE, dates: 'temporal' });
+  await generateMaterializedSdk(withRootOperations(doc, root), { output, name: 'Events', profile: PROFILE, dates: 'temporal' });
   compileGeneratedSdk(output, [], TEMPORAL_LIB);
-  return importSdkCodecs(output, 'generated codecs');
+  return sdkBodyCodec(output, 'Events');
 }
 
 test('dates: temporal converts array items, nullable items and nested arrays', async t => {
-  const models = await generateTemporalModels(t, 'golem-openapi-temporal-arrays-', document({
+  const client = await generateTemporalClient(t, 'golem-openapi-temporal-arrays-', document({
     required: ['instants', 'days', 'spans', 'grid'],
     properties: {
       instants: { type: 'array', items: { type: 'string', format: 'date-time' } },
@@ -216,19 +216,19 @@ test('dates: temporal converts array items, nullable items and nested arrays', a
       spans: { type: 'array', items: { type: 'string', format: 'duration' } },
       grid: { type: 'array', items: { type: 'array', items: { type: 'string', format: 'date-time' } } },
     },
-  }));
+  }) as Record<string, unknown>, 'Event');
   const wire = { instants: ['2025-01-02T03:04:05Z'], days: ['2025-01-02', null], spans: ['P1D', 'PT1H'], grid: [['2025-01-02T03:04:05Z'], []] };
-  const model = sdkFunction<Record<string, unknown[]>>(models, 'fromWireFormat', 'Event')(wire);
+  const model = await client.decode(wire) as Record<string, unknown[]>;
   assert.ok(model.instants![0] instanceof Temporal.Instant);
   assert.ok(model.days![0] instanceof Temporal.PlainDate);
   assert.equal(model.days![1], null);
   assert.ok(model.spans!.every(item => item instanceof Temporal.Duration));
   assert.ok((model.grid![0] as unknown[])[0] instanceof Temporal.Instant);
-  assert.deepEqual(sdkFunction(models, 'toWireFormat', 'Event')(model), wire);
+  assert.deepEqual(await client.encode(model), wire);
 });
 
 test('dates: temporal converts fields of models that reference each other across groups', async t => {
-  const models = await generateTemporalModels(t, 'golem-openapi-temporal-groups-', {
+  const client = await generateTemporalClient(t, 'golem-openapi-temporal-groups-', {
     openapi: '3.1.0',
     info: { title: 'Events', version: '1.0.0' },
     paths: {},
@@ -246,12 +246,12 @@ test('dates: temporal converts fields of models that reference each other across
         span: { type: 'string', format: 'duration' },
       } },
     } },
-  });
+  }, 'Booking');
   const wire = { events: [{ at: '2025-01-02T03:04:05Z', venue: { opens: '2025-01-02', closes: ['2025-01-02T10:00:00Z'] } }], span: 'P1D' };
-  const model = sdkFunction<{ events: { at: unknown; venue: { opens: unknown; closes: unknown[] } }[]; span: unknown }>(models, 'fromWireFormat', 'Booking')(wire);
+  const model = await client.decode(wire) as { events: { at: unknown; venue: { opens: unknown; closes: unknown[] } }[]; span: unknown };
   assert.ok(model.events[0]!.at instanceof Temporal.Instant);
   assert.ok(model.events[0]!.venue.opens instanceof Temporal.PlainDate);
   assert.ok(model.events[0]!.venue.closes[0] instanceof Temporal.Instant);
   assert.ok(model.span instanceof Temporal.Duration);
-  assert.deepEqual(sdkFunction(models, 'toWireFormat', 'Booking')(model), wire);
+  assert.deepEqual(await client.encode(model), wire);
 });

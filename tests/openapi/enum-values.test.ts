@@ -7,9 +7,24 @@ import {
   compileGeneratedSdk,
   documentBase,
   generateMaterializedSdk,
-  importSdkCodecs,
-  sdkFunction,
+  sdkBodyCodec,
+  withRootOperations,
+  type SdkBodyCodec,
 } from './helpers.js';
+
+/** The client's own reading of a value that fails a check. */
+const isValidation = (error: unknown): boolean => error instanceof LibError && error.kind === LibErrorKind.Validation;
+
+/** Whether the client sends `value` as a request body; a check that fails is `false`, any other failure is the test's. */
+async function requestAccepts(codec: SdkBodyCodec, value: unknown): Promise<boolean> {
+  try {
+    await codec.encode(value);
+    return true;
+  } catch (error) {
+    if (!isValidation(error)) throw error;
+    return false;
+  }
+}
 
 test('a model field limited by enum, with or without type, rejects a value outside the list', async t => {
   // protects: T-644 an enum with no type, or with a type, limits a model field to its listed values
@@ -27,50 +42,33 @@ test('a model field limited by enum, with or without type, rejects a value outsi
         },
       },
     } },
-    paths: { '/tickets': { post: {
-      operationId: 'echo',
-      requestBody: { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/Ticket' } } } },
-      responses: { 200: { description: 'ok', content: { 'application/json': { schema: { $ref: '#/components/schemas/Ticket' } } } } },
-    } } },
   });
-  await generateMaterializedSdk(document, { output, name: 'Enums', profile: { mobx: false, validation: true } });
+  await generateMaterializedSdk(withRootOperations(document, 'Ticket'), { output, name: 'Enums', profile: { mobx: false, validation: true } });
   compileGeneratedSdk(output, [], { strict: true });
-  const models = await importSdkCodecs(output, 'enum models');
-  const validateTicket = sdkFunction<boolean>(models, 'validate', 'Ticket');
-  const fromWireFormatTicket = sdkFunction(models, 'fromWireFormat', 'Ticket');
+  const client = await sdkBodyCodec(output, 'Enums');
   const body = { rank: 2, mark: 'high', level: 3, label: 'b' };
-  assert.equal(await validateTicket(body), true);
-  assert.deepEqual({ ...(fromWireFormatTicket(body) as object) }, body);
+  assert.deepEqual(await client.encode(body), body);
+  assert.deepEqual(await client.decode(body), body);
   for (const [field, value] of [['rank', 4], ['rank', '2'], ['mark', 'mid'], ['level', 4], ['label', 'c']] as const) {
     const bad = { ...body, [field]: value };
-    assert.equal(await validateTicket(bad), false, `validate ${field} = ${String(value)}`);
-    assert.throws(
-      () => fromWireFormatTicket(bad),
-      (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.Validation,
-      `decode ${field} = ${String(value)}`,
-    );
+    await assert.rejects(client.encode(bad), isValidation, `request ${field} = ${String(value)}`);
+    await assert.rejects(client.decode(bad), isValidation, `response ${field} = ${String(value)}`);
   }
 });
 
-const shelfDocument = (properties: Record<string, unknown>, required: readonly string[] = Object.keys(properties)) => documentBase('3.1.0', {
+const shelfDocument = (properties: Record<string, unknown>, required: readonly string[] = Object.keys(properties)) => withRootOperations(documentBase('3.1.0', {
   components: { schemas: { Shelf: { type: 'object', required, properties } } },
-  paths: { '/shelves': { post: {
-    operationId: 'echo',
-    requestBody: { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/Shelf' } } } },
-    responses: { 200: { description: 'ok', content: { 'application/json': { schema: { $ref: '#/components/schemas/Shelf' } } } } },
-  } } },
-});
+}), 'Shelf');
 
 test('an optional model field with an empty enum accepts no value', async t => {
   // protects: T-644 an empty enum admits no value (JSON Schema 2020-12 section 6.1.2), as its type says
   const output = path.join(createFixtureProject(t, 'golem-openapi-enum-empty-'), 'sdk');
   await generateMaterializedSdk(shelfDocument({ none: { enum: [] }, name: { type: 'string' } }, ['name']), { output, name: 'Shelves', profile: { mobx: false, validation: true } });
   compileGeneratedSdk(output, [], { strict: true });
-  const models = await importSdkCodecs(output, 'empty enum models');
-  const validateShelf = sdkFunction<boolean>(models, 'validate', 'Shelf');
-  assert.equal(await validateShelf({ none: 'x', name: 'a' }), false);
-  assert.equal(await validateShelf({ none: null, name: 'a' }), false);
-  assert.equal(await validateShelf({ name: 'a' }), true);
+  const shelf = await sdkBodyCodec(output, 'Shelves');
+  assert.equal(await requestAccepts(shelf, { none: 'x', name: 'a' }), false);
+  assert.equal(await requestAccepts(shelf, { none: null, name: 'a' }), false);
+  assert.equal(await requestAccepts(shelf, { name: 'a' }), true);
 });
 
 for (const [label, schema] of [['an empty enum', { enum: [] }], ['not: true', { not: true }], ['false', false]] as const) {
@@ -89,13 +87,12 @@ test('a model field limited by an enum of objects and arrays accepts a listed va
   const output = path.join(createFixtureProject(t, 'golem-openapi-enum-object-'), 'sdk');
   await generateMaterializedSdk(shelfDocument({ pick: { enum: ['x', { a: 1, b: [2] }, [1, 2], Object.fromEntries([['__proto__', 'p']])] }, name: { type: 'string' } }), { output, name: 'Shelves', profile: { mobx: false, validation: true } });
   compileGeneratedSdk(output, [], { strict: true });
-  const models = await importSdkCodecs(output, 'object enum models');
-  const validateShelf = sdkFunction<boolean>(models, 'validate', 'Shelf');
+  const shelf = await sdkBodyCodec(output, 'Shelves');
   for (const pick of ['x', { b: [2], a: 1 }, [1, 2], Object.fromEntries([['__proto__', 'p']])]) {
-    assert.equal(await validateShelf({ pick, name: 'a' }), true, JSON.stringify(pick));
+    assert.equal(await requestAccepts(shelf, { pick, name: 'a' }), true, JSON.stringify(pick));
   }
   for (const pick of ['y', { a: 1 }, { a: 1, b: [2], c: 3 }, { a: 1, b: [3] }, [2, 1], null, {}]) {
-    assert.equal(await validateShelf({ pick, name: 'a' }), false, JSON.stringify(pick));
+    assert.equal(await requestAccepts(shelf, { pick, name: 'a' }), false, JSON.stringify(pick));
   }
 });
 
@@ -104,10 +101,9 @@ test('a nullable model field limited by an enum that lists an object rejects nul
   const output = path.join(createFixtureProject(t, 'golem-openapi-enum-nullable-'), 'sdk');
   await generateMaterializedSdk(shelfDocument({ pick: { type: ['string', 'null'], enum: ['x', { a: 1 }] }, name: { type: 'string' } }), { output, name: 'Shelves', profile: { mobx: false, validation: true } });
   compileGeneratedSdk(output, [], { strict: true });
-  const models = await importSdkCodecs(output, 'nullable object enum models');
-  const validateShelf = sdkFunction<boolean>(models, 'validate', 'Shelf');
-  assert.equal(await validateShelf({ pick: 'x', name: 'a' }), true);
-  for (const pick of [null, 'y', { a: 1 }]) assert.equal(await validateShelf({ pick, name: 'a' }), false, JSON.stringify(pick));
+  const shelf = await sdkBodyCodec(output, 'Shelves');
+  assert.equal(await requestAccepts(shelf, { pick: 'x', name: 'a' }), true);
+  for (const pick of [null, 'y', { a: 1 }]) assert.equal(await requestAccepts(shelf, { pick, name: 'a' }), false, JSON.stringify(pick));
 });
 
 test('a scalar enum keeps the keywords beside it and drops a listed value that its type excludes', async t => {
@@ -122,12 +118,11 @@ test('a scalar enum keeps the keywords beside it and drops a listed value that i
     free: { minimum: 2, enum: [1, 2, 'x'] },
   }), { output, name: 'Shelves', profile: { mobx: false, validation: true } });
   compileGeneratedSdk(output, [], { strict: true });
-  const models = await importSdkCodecs(output, 'scalar enum keyword models');
-  const validateShelf = sdkFunction<boolean>(models, 'validate', 'Shelf');
+  const shelf = await sdkBodyCodec(output, 'Shelves');
   const body = { count: 2, word: 'a', short: 'a', code: 'ab', whole: 1, free: 2 };
-  assert.equal(await validateShelf(body), true);
-  assert.equal(await validateShelf({ ...body, free: 'x' }), true);
+  assert.equal(await requestAccepts(shelf, body), true);
+  assert.equal(await requestAccepts(shelf, { ...body, free: 'x' }), true);
   for (const [field, value] of [['count', 1], ['word', 1], ['short', 'bb'], ['code', 'b'], ['whole', 1.5], ['free', 1]] as const) {
-    assert.equal(await validateShelf({ ...body, [field]: value }), false, `${field} = ${String(value)}`);
+    assert.equal(await requestAccepts(shelf, { ...body, [field]: value }), false, `${field} = ${String(value)}`);
   }
 });

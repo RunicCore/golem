@@ -8,7 +8,7 @@ import test from 'node:test';
 
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { generate } from '#openapi/generator';
-import { compileGeneratedSdk, generateMaterializedSdk, requireRecord, sdkBodyCodec, type SdkBodyCodec } from './helpers.js';
+import { compileGeneratedSdk, generateMaterializedSdk, requireRecord, sdkBodyCodec, withRootOperations, type SdkBodyCodec } from './helpers.js';
 
 /**
  * One row is one allOf shape. For each row the generated SDK is checked on every path that reads the shape: the generated type
@@ -824,19 +824,6 @@ interface Built {
   readonly codec: SdkBodyCodec;
 }
 
-/** The operations the builder adds beside the document's own: one that answers the root and one that takes it as a request body. */
-function withRootOperations(document: Record<string, unknown>, root: string): Record<string, unknown> {
-  const schema = ref(root);
-  const paths = requireRecord(document.paths, 'paths');
-  return {
-    ...document,
-    paths: {
-      ...paths,
-      '/root-in': { post: { operationId: 'putRoot', requestBody: { required: true, content: { 'application/json': { schema } } }, responses: { 204: { description: 'none' } } } },
-    },
-  };
-}
-
 const scope = fileFixtureScope();
 
 function builder(row: Row, validation: boolean): () => Promise<Built> {
@@ -852,7 +839,7 @@ function builder(row: Row, validation: boolean): () => Promise<Built> {
       output,
       warnings: (result.diagnostics ?? []).filter(({ code }) => code.startsWith('OPENAPI_COMPOSITION_'))
         .map(({ code, message }) => `${code}: ${message}`),
-      codec: await sdkBodyCodec(output, 'Composition', { read: 'getRoot', write: 'putRoot' }),
+      codec: await sdkBodyCodec(output, 'Composition'),
     };
   });
 }
@@ -1226,7 +1213,7 @@ async function generateCompiledSdk(document: Record<string, unknown>, output: st
 test('a component narrows an inherited union property to one of its variants', async t => {
   const output = path.join(createFixtureProject(t, 'golem-composition-narrowed-'), 'sdk');
   await generateCompiledSdk(withRootOperations(petDocument(ref('Cat')), 'Derived'), output);
-  const codec = await sdkBodyCodec(output, 'Composition', { read: 'getRoot', write: 'putRoot' });
+  const codec = await sdkBodyCodec(output, 'Composition');
   const decoded = await codec.decode({ pet: { kind: 'cat', lives: 9 } }, { validate: false });
   assert.deepEqual(withoutUndefined(await codec.encode(decoded)), { pet: { kind: 'cat', lives: 9 } });
 });

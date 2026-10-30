@@ -394,18 +394,31 @@ export interface SdkBodyCodec {
 }
 
 /**
- * Test-only: reaches the conversion and checks of a compiled SDK (standalone or golem mode) through its client, with a fake `fetch`.
- * `name` is the SDK name (`<name>Client`). `read` is an operation whose 200 response is the schema under test (`decode`), `write` one whose request body is
- * that schema (`encode`); one name serves both when an operation has both. Use it when a test is about what the SDK reads and writes;
- * a test of client calls builds its own client with `loadGeneratedClient`.
+ * Test-only: `document` with two operations that carry the component `root`: `getRoot` (GET /root, 200 response) and `putRoot` (POST /root-in, request body, 204).
+ * `sdkBodyCodec` reads them. An operation of the document with one of these names is replaced.
  */
-export async function sdkBodyCodec(output: string, name: string, operations: string | { read: string; write: string }): Promise<SdkBodyCodec> {
-  const { read, write } = typeof operations === 'string' ? { read: operations, write: operations } : operations;
+export function withRootOperations(document: Record<string, unknown>, root: string): Record<string, unknown> {
+  const content = { 'application/json': { schema: { $ref: `#/components/schemas/${root}` } } };
+  return {
+    ...document,
+    paths: {
+      ...requireRecord(document.paths ?? {}, 'paths'),
+      '/root': { get: { operationId: 'getRoot', responses: { 200: { description: 'ok', content } } } },
+      '/root-in': { post: { operationId: 'putRoot', requestBody: { required: true, content }, responses: { 204: { description: 'none' } } } },
+    },
+  };
+}
+
+/**
+ * Test-only: reaches the conversion and checks of a compiled SDK (standalone or golem mode) through its client, with a fake `fetch`.
+ * `name` is the SDK name (`<name>Client`); the SDK has the operations of `withRootOperations`. A test of client calls builds its own client with `loadGeneratedClient`.
+ */
+export async function sdkBodyCodec(output: string, name: string): Promise<SdkBodyCodec> {
   const Client = await loadGeneratedClient(output, name);
   return {
     async decode(wire, options) {
       const client = new Client({ baseUrl: 'https://api.test', fetchImpl: async () => Response.json(wire) });
-      return (await client[read]!().execute({}, options)).body;
+      return (await client.getRoot!().execute({}, options)).body;
     },
     async encode(value, options) {
       let sent: unknown;
@@ -416,10 +429,7 @@ export async function sdkBodyCodec(output: string, name: string, operations: str
           return new Response(null, { status: 204 });
         },
       });
-      // The reply is not the point: once the request has been sent, a failure of the reply is not a failure of the request.
-      await client[write]!().execute({ body: value }, options).catch((error: unknown) => {
-        if (sent === undefined) throw error;
-      });
+      await client.putRoot!().execute({ body: value }, options);
       return sent;
     },
   };
