@@ -30,6 +30,13 @@ test('dates: model-only checks the Date, wire-only checks the ISO string', () =>
   assert.deepEqual(schemaForDescriptor(obj({ when: date }), opts('wire-only')), { properties: { when: DATE_TEXT } });
 });
 
+test('a class binding that names a validity predicate keeps it in the model-only check', () => {
+  // protects: T-725 an invalid Date is rejected in the model-only plane, not only in the full model plane
+  const withValidity = { ...date, serde: { ...date.serde, valid: 'finiteTime' } };
+  assert.deepEqual(schemaForDescriptor(obj({ when: withValidity }), opts('model-only')),
+    { properties: { when: { [MODEL_CLASS_KEYWORD]: { name: 'Date', path: ['Date'], valid: 'finiteTime' } } } });
+});
+
 test('TSerde: model-only is the decoded value schema, wire-only the decoder parameter schema', () => {
   assert.deepEqual(schemaForDescriptor(obj({ code: hex }), opts('model-only')), { properties: { code: { allOf: [{ type: 'number' }, { minimum: 0 }] } } });
   assert.deepEqual(schemaForDescriptor(obj({ code: hex }), opts('wire-only')), { properties: { code: { allOf: [{ type: 'string' }, { pattern: '^[0-9a-f]+$' }] } } });

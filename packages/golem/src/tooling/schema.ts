@@ -387,10 +387,8 @@ function residualSchema(given: unknown, plane: ResidualPlane, state: SchemaAssem
     descriptorSchema(value, state, { ...options, representation, keepPredicates: undefined });
   const serde = isRecord(value.serde) ? value.serde : undefined;
   if (serde) {
-    if (plane === 'model-only') {
-      const { serde: _serde, ...decoded } = value;
-      return descriptorSchema(decoded, state, { ...options, representation: 'model', keepPredicates: true });
-    }
+    // The model plane ignores the serde's wire form, but a class binding's validity predicate (`valid`) is part of its model check.
+    if (plane === 'model-only') return descriptorSchema(value, state, { ...options, representation: 'model', keepPredicates: true });
     return descriptorSchema(serde.wireDescriptor ?? serde.wire, state, { ...options, representation: 'wire', keepPredicates: true });
   }
   // The wire schema strips executable rules from constraints (the TValidation inside
