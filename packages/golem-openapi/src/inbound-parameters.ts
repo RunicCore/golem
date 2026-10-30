@@ -107,11 +107,12 @@ function ambiguity(parameter: NormalizedParameter, rule: ParameterStyleRule, sch
 }
 
 /**
- * One error for each parameter of an inbound operation whose text cannot be read back to the value the client writes: the handler gets the text the framework
+ * One error for each path, query or cookie parameter of an inbound operation whose text cannot be read back to the value the client writes: the handler gets the text the framework
  * has already decoded, so an item or a member that can hold the separator of its style splits wrong. The error names the fix.
  */
 export function inboundParameterDiagnostics(operations: readonly NormalizedOperation[], document: unknown): GolemDiagnostic[] {
-  return operations.flatMap((operation) => LOCATIONS.flatMap((location) => {
+  // A header list splits on commas whatever its items hold: the standard defines no escaping for it, so a header is not refused.
+  return operations.flatMap((operation) => LOCATIONS.filter((location) => location !== 'header').flatMap((location) => {
     const parameters = textParameters(operation, location);
     return parameters.flatMap((parameter): GolemDiagnostic[] => {
       const rule = parameterStyleRule(location, parameter.style, parameter.explode);

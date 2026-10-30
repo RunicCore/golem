@@ -17,6 +17,8 @@ const PARAMETERS = [
   { name: 'names', in: 'path', required: true, schema: STRINGS },
   { name: 'X-Ids', in: 'header', schema: INTEGERS },
   { name: 'X-Tags', in: 'header', schema: STRINGS },
+  // A header list splits on commas whatever its items hold (the standard defines no escaping), so plain strings are accepted there.
+  { name: 'X-Words', in: 'header', schema: array({ type: 'string' }) },
   { name: 'nums', in: 'query', explode: false, schema: INTEGERS },
   { name: 'words', in: 'query', explode: false, schema: STRINGS },
   { name: 'piped', in: 'query', style: 'pipeDelimited', schema: INTEGERS },
@@ -104,6 +106,7 @@ async function received(handler: 'webhookReceiveThings' | 'webhookReceiveStyled'
 for (const [name, input, location, field, expected] of [
   ['integers in a header', { path: PATH, header: { 'X-Ids': [1, 2] } }, 'header', 'X-Ids', [1, 2]],
   ['strings in a header', { path: PATH, header: { 'X-Tags': ['a', 'b'] } }, 'header', 'X-Tags', ['a', 'b']],
+  ['plain strings in a header', { path: PATH, header: { 'X-Words': ['one', 'two words'] } }, 'header', 'X-Words', ['one', 'two words']],
   ['integers in a path', { path: { ids: [1, 2], names: ['x'] } }, 'path', 'ids', [1, 2]],
   ['strings in a path', { path: { ids: [0], names: ['a', 'b'] } }, 'path', 'names', ['a', 'b']],
   ['integers in a form query without explode', { path: PATH, query: { nums: [3, 4] } }, 'query', 'nums', [3, 4]],

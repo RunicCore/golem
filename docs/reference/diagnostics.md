@@ -923,7 +923,7 @@ An `integer` member and a `number` member share the integers. A member that decl
 
 ### OPENAPI_INBOUND_PARAMETER_AMBIGUOUS
 
-**Inbound parameter that cannot be read back.** An inbound operation (a webhook or a callback) has a path, query, header or cookie parameter. The handler gets the text that the web framework has already decoded. The handler splits that text at the separator of the parameter style. This reading is wrong when an item or a member can hold the separator. The error names the parameter and the reason. This is an error: generation writes nothing.
+**Inbound parameter that cannot be read back.** An inbound operation (a webhook or a callback) has a path, query or cookie parameter. The handler gets the text that the web framework has already decoded. The handler splits that text at the separator of the parameter style. This reading is wrong when an item or a member can hold the separator. The error names the parameter and the reason. This is an error: generation writes nothing.
 
 These cases stop generation:
 
@@ -932,6 +932,8 @@ These cases stop generation:
 - A `deepObject` parameter with a member that is an object or an array.
 - An object parameter that does not list its properties.
 - A property of an exploded object that has the name of another parameter in the same place.
+
+A header parameter is not in this list. A header list splits at commas, and the standard defines no escaping for it.
 
 An integer, a boolean, a string with an `enum` or a string with a `format` such as `uuid` does not hold these characters. The fixed `enum` values must not hold the separator.
 
