@@ -204,12 +204,7 @@ export function responseDecoder(codecs: OperationCodecs, headerLevel?: Validatio
  * The raw wire request of an inbound operation, as the application's web framework holds it: the path, query, header and cookie values, and the body.
  * The body is the bare value when the operation has one request media type, and `{ contentType, value }` when it has several.
  */
-export interface InboundRequest {
-  readonly path?: Readonly<Record<string, unknown>>;
-  readonly query?: Readonly<Record<string, unknown>>;
-  readonly header?: Readonly<Record<string, unknown>>;
-  readonly cookie?: Readonly<Record<string, unknown>>;
-  readonly querystring?: unknown;
+export interface InboundRequest extends RequestParameters {
   readonly body?: unknown;
 }
 
@@ -232,7 +227,7 @@ export interface InboundChecks {
 }
 
 /** What the SDK knows about an inbound operation besides its codecs. */
-export interface InboundShape {
+interface InboundShape {
   /** The request media types: none for an operation with no body, one for a bare body, several for `{ contentType, value }`. */
   readonly media: readonly string[];
   /** The response keys the operation declares: a status, a range such as `2XX`, or `default`. */
