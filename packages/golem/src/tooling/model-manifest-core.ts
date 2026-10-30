@@ -17,7 +17,8 @@ export interface ModelManifestEntry {
   readonly codecId: string;
   readonly allowAny: boolean;
   readonly type: ModelManifestProvenance;
-  readonly generated: { readonly module: string; readonly export: string };
+  /** The module and class a generated model class is exported from; an entry of an SDK, which writes no model class, names none. */
+  readonly generated?: { readonly module: string; readonly export: string };
   readonly [key: string]: unknown;
 }
 export interface ModelManifest {
@@ -126,7 +127,7 @@ export function validateModelManifest(manifest: unknown, filename = MODEL_MANIFE
   }
   for (const model of manifest.models) {
     if (
-      !isRecord(model) || !isProvenance(model.type) || !isProvenance(model.generated)
+      !isRecord(model) || !isProvenance(model.type) || (model.generated !== undefined && !isProvenance(model.generated))
       || typeof model.id !== 'string' || !model.id || typeof model.allowAny !== 'boolean'
       || (model.codecId !== undefined && (typeof model.codecId !== 'string' || !model.codecId))
     ) {

@@ -55,10 +55,20 @@ test('the models job opens no manifest validation program in a cycle whose manif
   assert.match(filesUnder(path.join(root, 'sdk')).map((file) => fs.readFileSync(file, 'utf8')).join('\n'), /memo/);
 });
 
+type ManifestFile = { models: { type: { export: string }; generated?: { module: string; export: string } }[] };
+
+/** The Money entry of the manifest, which an SDK leaves without a generated class: the test names the generated module the validation reads. */
+function nameGeneratedModule(manifest: string): void {
+  const parsed = JSON.parse(fs.readFileSync(manifest, 'utf8')) as ManifestFile;
+  parsed.models.find((model) => model.type.export === 'Money')!.generated = { module: './models/Money.ts', export: 'stringifyMoney' };
+  fs.writeFileSync(manifest, JSON.stringify(parsed));
+}
+
 /** Load the SDK manifest on one compiler session, as the models job of a watch does in each cycle. */
 async function loadManifestOnSession(t: TestContext): Promise<{ load: () => void; manifest: string; count: () => number }> {
   const { root, config, manifest } = sdkProject(t);
   await runPipeline(config);
+  nameGeneratedModule(manifest);
   const session = new ts.ProgramSession({ cwd: root });
   t.after(() => session[Symbol.dispose]());
   const opened = countValidationPrograms(t);
@@ -81,8 +91,8 @@ test('a cycle after a manifest edit opens the validation program again', async (
 // protects: T-470 a file that shadows what an SDK import resolved to validates again
 test('a cycle after a new file shadows what an SDK import resolved to opens the validation program again', async (t: TestContext) => {
   const { load, manifest, count } = await loadManifestOnSession(t);
-  const { models } = JSON.parse(fs.readFileSync(manifest, 'utf8')) as { models: { generated: { module: string } }[] };
-  const module = path.resolve(path.dirname(manifest), models[0]!.generated.module.replace(/\.js$/, '.ts'));
+  const { models } = JSON.parse(fs.readFileSync(manifest, 'utf8')) as ManifestFile;
+  const module = path.resolve(path.dirname(manifest), models.find((model) => model.generated)!.generated!.module.replace(/\.js$/, '.ts'));
   fs.writeFileSync(path.join(path.dirname(module), 'util.d.ts'), 'export declare const util: number;\n');
   fs.appendFileSync(module, "import './util.js';\n");
   load();
@@ -98,8 +108,8 @@ test('a cycle after a new file shadows what an SDK import resolved to opens the 
 test('a manifest that failed validation reports its error again in the next unchanged cycle', async (t: TestContext) => {
   const { load, manifest, count } = await loadManifestOnSession(t);
   const valid = fs.readFileSync(manifest, 'utf8');
-  const broken = JSON.parse(valid) as { models: { generated: { export: string } }[] };
-  broken.models[0]!.generated.export = 'NoSuchExport';
+  const broken = JSON.parse(valid) as ManifestFile;
+  broken.models.find((model) => model.generated)!.generated!.export = 'NoSuchExport';
   fs.writeFileSync(manifest, JSON.stringify(broken));
   assert.throws(load, /references missing runtime export NoSuchExport/);
   assert.throws(load, /references missing runtime export NoSuchExport/);

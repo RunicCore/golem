@@ -18,7 +18,8 @@ import type { ProgramInfo } from './project.js';
 
 export interface ResolvedModelManifestEntry extends ModelManifestEntry {
   readonly manifestFile: string;
-  readonly generatedFile: string;
+  /** The file of `generated.module`; absent when the entry names no generated class. */
+  readonly generatedFile?: string;
   /** OpenAPI entries advertise the effective any policy used for this model. */
   readonly allowAny: boolean;
 }
@@ -100,6 +101,7 @@ function validateGeneratedModules(
   const files = new Map<ResolvedModelManifestEntry, string>();
   const resolutionCache = new Map<string, string>();
   for (const model of models) {
+    if (!model.generated) continue;
     const moduleName = model.generated.module;
     const cacheKey = `${dirname(model.manifestFile)}\0${moduleName}`;
     let resolvedFileName = resolutionCache.get(cacheKey);
@@ -131,7 +133,7 @@ function validateGeneratedModules(
   const appConfig = effectiveConfigPath(info);
   // The program is opened only when something it validates changed since the last pass: the request (the entries, the modules they
   // resolve to, the compiler options), a manifest, or a source file of the last program, which the openapi job can rewrite between two cycles.
-  const request = JSON.stringify([root, appConfig, sources, models.map((model) => [model.id, model.manifestFile, model.generated.export])])
+  const request = JSON.stringify([root, appConfig, sources, models.map((model) => [model.id, model.manifestFile, model.generated?.export])])
     + JSON.stringify(options, (key, value: unknown) => (key === 'configFile' ? undefined : value));
   const manifestSignatures = new Map(models.map((model) => [model.manifestFile, fileSignature(model.manifestFile)]));
   const previous = lastValidated.get(info.program.session);
@@ -172,6 +174,8 @@ function validateGeneratedModules(
   const checker = moduleProgram.getTypeChecker();
   const runtimeExports = new Map<string, ReadonlySet<string>>();
   for (const [model, filename] of files) {
+    const generated = model.generated;
+    if (!generated) continue;
     let exports = runtimeExports.get(filename);
     if (!exports) {
       const sourceFile = moduleProgram.getSourceFile(filename);
@@ -181,10 +185,10 @@ function validateGeneratedModules(
         : []);
       runtimeExports.set(filename, exports);
     }
-    if (!exports.has(model.generated.export)) {
+    if (!exports.has(generated.export)) {
       throw new Error(
         `Model manifest ${displayPath(model.manifestFile)} references missing runtime export `
-        + `${model.generated.export} from ${model.generated.module} for ${model.id}.`,
+        + `${generated.export} from ${generated.module} for ${model.id}.`,
       );
     }
     exportsById.set(model.id, exports);
@@ -327,14 +331,17 @@ export function loadModelManifests(
         ...model,
         allowAny: model.allowAny as boolean,
         manifestFile: filename,
-        generatedFile: canonicalFilename(
-          isAbsolute(model.generated.module)
-            ? model.generated.module
-            : resolve(dirname(filename), model.generated.module),
-        ),
+        ...(model.generated ? {
+          generatedFile: canonicalFilename(
+            isAbsolute(model.generated.module)
+              ? model.generated.module
+              : resolve(dirname(filename), model.generated.module),
+          ),
+        } : {}),
       };
       byId.set(model.id, resolved);
-      const provenances = [model.type, ...(model.type.aliases ?? [])];
+      // An entry that names no generated class is an SDK type: a model of this project sees its declaration as a plain type.
+      const provenances = model.generated ? [model.type, ...(model.type.aliases ?? [])] : [];
       for (const provenance of provenances) {
         const key = manifestProvenance(filename, provenance.module, provenance.export);
         const existing = byProvenance.get(key);

@@ -177,9 +177,9 @@ class CodecKeys {
     for (const manifestFile of advertisedModelManifests(this.program)) {
       const table = portable(this.root, manifestFile);
       for (const model of readModelManifest(manifestFile).models) {
-        for (const { module, export: exportName } of [model.generated, model.type, ...(model.type.aliases ?? [])]) {
+        if (model.generated) this.addManifestModule(model.codecId, this.program.getSourceFile(canonicalFilename(path.resolve(path.dirname(manifestFile), model.generated.module)))?.fileName);
+        for (const { module, export: exportName } of [...(model.generated ? [model.generated] : []), model.type, ...(model.type.aliases ?? [])]) {
           const symbol = declarationsOf(manifestFile, module, exportName);
-          this.addManifestModule(model.codecId, this.program.getSourceFile(canonicalFilename(path.resolve(path.dirname(manifestFile), model.generated.module)))?.fileName);
           for (const declaration of symbol?.declarations ?? []) {
             this.add(`${this.keyOf(declaration.getSourceFile().fileName)}#${symbol!.name}`, model.codecId, table);
           }
