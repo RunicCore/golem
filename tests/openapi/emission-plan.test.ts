@@ -319,13 +319,13 @@ test('generated SDKs of golem mode import the client runtime instead of copying 
 });
 
 test('minimal GET without content omits codec options and unused helpers', async (t) => {
-  await assertFilesPerProfile(t, pingDocument(), 'Ping', (profile) => [
+  // A golem-mode SDK holds no codec module and no validators: the models job writes them.
+  await assertFilesPerProfile(t, pingDocument(), 'Ping', () => [
     'index.ts',
     'types.ts',
     'model-manifest.json',
     'client.ts',
     'operations/ping.ts',
-    ...(profile.validation ? ['codecs/ping.ts', 'validators.generated.ts'] : []),
   ], false, 'golem');
 
   const output = outputDir(t, 'codec-omit');
