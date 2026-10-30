@@ -265,17 +265,6 @@ export function readGeneratedClientSource(output: string): string {
   return files.filter(existsSync).map(filename => readFileSync(filename, 'utf8')).join('\n');
 }
 
-function isModelImplementation(filename: string): boolean {
-  return basename(dirname(filename)) === 'models' && /^_group-.*\.ts$/.test(basename(filename))
-    && !filename.endsWith('.d.ts');
-}
-
-/** Inspect all canonical model implementations while keeping facade tests separate. */
-export function generatedModelSource(artifacts: readonly { path: string; content: string }[]): string {
-  return artifacts.filter(artifact => isModelImplementation(artifact.path))
-    .map(artifact => artifact.content).join('\n');
-}
-
 export async function generateMaterializedSdk(
   document: unknown,
   options: {

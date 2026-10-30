@@ -331,7 +331,7 @@ const IMPORT_OPTIONS: ImportOptions = {
   order: MODEL_IMPORT_ORDER,
 };
 
-export function generateModels(
+function generateModels(
   document: unknown,
   profile: OpenApiGenerationProfile,
   helpers: {
