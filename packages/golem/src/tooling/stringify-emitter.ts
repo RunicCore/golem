@@ -8,7 +8,6 @@ import type { ModelTypeDescriptor } from '../model-registry.js';
 import type { ValidationLevel, ValidationPlane } from '../object-codec.js';
 import type { SchemaGraph, SchemaNode } from './schema-graph.js';
 import { codecShortName, serdeWireDescriptor } from './schema-graph.js';
-import type { JsonSchema } from './schema.js';
 import { requireComposedObject, type ModelBases } from './composition.js';
 import {
   aliased, asObjectLiteral, bindInput, bindRead, code, documentLiteral, helper, helperName, helperSet, identifier, indentation, inputCount, inputOf, inputSlot, isEmpty, join, literal, localCode, readShape, sameCode,
@@ -96,6 +95,8 @@ export interface CodecRuntimeOptions {
   readonly exportAnonymousCodecs?: boolean;
   /** A closed object root's `toWireFormat` keeps only the declared fields of a class instance: its other own keys are program state, not unknown keys. */
   readonly projectsInstanceState?: boolean;
+  /** Whether each codec is registered by id (`createObjectCodec`); default true. A standalone SDK reads no registry, so it registers nothing. */
+  readonly registerCodecs?: boolean;
   /** Codecs whose functions stay module-private, such as a model job's derived projections. */
   readonly privateCodec?: (node: SchemaNode) => boolean;
   /** The bases the generator declares for each model, by model name. */
@@ -124,6 +125,7 @@ interface EmitCtx
     | 'exportWireStringify'
     | 'exportAnonymousCodecs'
     | 'projectsInstanceState'
+    | 'registerCodecs'
     | 'privateCodec'
   > {
   readonly graph: SchemaGraph;
@@ -2386,7 +2388,7 @@ function emitNodeRuntime(
   const parse = emitParseSection(runtime);
   const validate = emitValidateSection(runtime);
   const planeAsserts = emitPlaneAssertSection(runtime);
-  const codec = emitCodecRegistrationSection(runtime);
+  const codec = moduleCtx.registerCodecs === false ? rowsToText([]) : emitCodecRegistrationSection(runtime);
   // The hoisted converters exist only after the decode section.
   return blocksToText([rowsToText(runtime.ctx.hoisted?.sources ?? []), decode.fill, stringify, decode.convert, decode.fromWire, toWire, parse, validate, planeAsserts, codec]);
 }
@@ -2433,6 +2435,7 @@ export function emitCodecRuntimeCode(
     fieldsType: options.fieldsType,
     exportAnonymousCodecs: options.exportAnonymousCodecs,
     projectsInstanceState: options.projectsInstanceState,
+    registerCodecs: options.registerCodecs,
     privateCodec: options.privateCodec,
     modelBases: options.modelBases,
     fillThrows: new Map(),

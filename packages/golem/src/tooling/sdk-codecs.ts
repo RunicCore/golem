@@ -47,7 +47,8 @@ export interface SdkKeyedCode {
 
 /**
  * The codecs of one operation; each is the code of a function the module can name. A value that converts nothing has no entry,
- * and an operation with no such value has no such member.
+ * and an operation with no such value has no such member. The members `encode`, `decode`, `parameters` and `headers` name the client's direction;
+ * for an inbound operation (a webhook or callback) they run the other way: the request converts from its wire form and the response to it.
  */
 export interface SdkOperationCodecs {
   /** Checks the plain input of a call. */

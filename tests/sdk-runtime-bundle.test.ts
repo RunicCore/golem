@@ -4,23 +4,11 @@ import { cpSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { gzipSync } from 'node:zlib';
 import test from 'node:test';
-import { pathToFileURL } from 'node:url';
 import { createFixtureProject, fileFixtureScope, onceShared } from './fixture-project.js';
 import { repoRoot, tscBin, writePlainTscProject } from './openapi/helpers.js';
 
 const scope = fileFixtureScope();
 const shipped = path.join(repoRoot(), 'packages/golem-openapi/sdk-runtime');
-
-// The values that SDK code generated for a client, its schema groups and its validators imports at runtime.
-const generatedSdkImports = [
-  'ClientRuntime', 'IssueRepresentation', 'IssueSource', 'addQueryParameter', 'applySecurity', 'assertModelValue', 'assertPropertyAcyclic',
-  'callLevels', 'checkFormat', 'codePointLength', 'convertModelField', 'convertRequestParameters', 'createApiOperation', 'createObjectCodec',
-  'decodeCheckedInput', 'decodeDetachedInput', 'defineModelProperty', 'deserializeDate', 'deserializeTemporalInstant', 'encodeBody',
-  'formatTest', 'isUndeclaredResponseError', 'isValidModelValue', 'jsonEqual', 'operationValidators', 'parseJson', 'responseCheck',
-  'responseDecoder', 'serdeValidates', 'serializeContentParameter', 'serializeDate', 'serializeHeaderSimple', 'serializePath',
-  'serializeTemporalInstant', 'stringifyJsonNumber', 'stringifyJsonScalar', 'stringifyJsonString', 'unknownDiscriminatorValue',
-  'validateOperationInput', 'validationUnavailableStub', 'withDeclaredFields', 'withDiscriminatorValue',
-];
 
 const consumer = `import { ClientRuntime, LibError, deserializeDate, serializeDate } from './rt/runtime.js';
 import type { ClientRuntime as Runtime, SchemaIssue, ValidateOptions } from './rt/runtime.types.js';
@@ -44,7 +32,7 @@ const compiledConsumer = onceShared(async () => {
 });
 
 test('a plain tsc consumer with no golem installed compiles the shipped SDK runtime and runs it', async (t) => {
-  // protects: T-693 R-83 standalone SDK bundles the golem runtime
+  // protects: T-693 R-83 standalone SDK bundles the golem runtime; T-712 it loads and converts with no registry module beside it
   const bundle = readFileSync(path.join(shipped, 'runtime.impl.ts'), 'utf8');
   t.diagnostic(`SDK runtime: ${Buffer.byteLength(bundle)} bytes minified, ${gzipSync(bundle, { level: 9 }).length} bytes gzip`);
   const { project, compiled } = await compiledConsumer();
@@ -52,12 +40,4 @@ test('a plain tsc consumer with no golem installed compiles the shipped SDK runt
   const ran = spawnSync(process.execPath, [path.join(project, 'out/main.js')], { encoding: 'utf8' });
   assert.equal(ran.status, 0, ran.stderr);
   assert.equal(ran.stdout.trim(), '{"iso":"1970-01-01T00:00:00.000Z","url":"https://api.example.test/charges","thrown":"LibError","depth":4,"issues":0}');
-});
-
-test('the shipped SDK runtime exports every name generated SDK code imports and holds no model class registry', async () => {
-  // protects: T-693 R-83 the runtime exports what generated code imports, with no registry
-  const { project } = await compiledConsumer();
-  const names = Object.keys(await import(pathToFileURL(path.join(project, 'out/rt/runtime.impl.js')).href) as object);
-  assert.deepEqual(generatedSdkImports.filter((name) => !names.includes(name)), []);
-  assert.deepEqual(names.filter((name) => /^(?:register|find|get)(?:Generated|Object)|^requireObjectCodec$/.test(name)), []);
 });

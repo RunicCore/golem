@@ -1,7 +1,8 @@
 /**
  * The runtime names that a standalone generated SDK imports. golem's build bundles this entry into the one minified file that
  * `@exprtlabs/golem-openapi` ships (`scripts/build-sdk-runtime.mjs`), so an SDK runs with no `@exprtlabs/golem` installed.
- * The entry holds no model class registry: `model-registry.ts` joins the bundle only through the three checks of `conversion.ts`.
+ * The entry holds no codec registry, because a standalone SDK registers no codec (no `createObjectCodec`); `model-registry.ts` joins the bundle
+ * only through the checks of `conversion.ts`, which golem mode shares and which find no model in a standalone SDK.
  * The path is internal: the names may change in any release.
  */
 export * from './runtime-client.js';
@@ -15,7 +16,7 @@ export {
   unknownDiscriminatorValue, withDeclaredFields, withDiscriminatorValue,
 } from './conversion.js';
 export {
-  assertModelValue, createObjectCodec, fastable, isValidModelValue, parseJson, serdeValidates, stringifyJsonArray, stringifyJsonBoolean,
+  assertModelValue, fastable, isValidModelValue, parseJson, serdeValidates, stringifyJsonArray, stringifyJsonBoolean,
   stringifyJsonNumber, stringifyJsonScalar, stringifyJsonString, validationUnavailableStub,
 } from './object-codec.js';
 export { IssueRepresentation, IssueSource, LibError } from './errors.js';

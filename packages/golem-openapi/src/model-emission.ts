@@ -256,8 +256,9 @@ export function generateOpenApiModelArtifacts(
       return dependencyGroupId && dependencyGroupId !== group.id ? [dependencyGroupId] : [];
     }));
     // Importing a dependency group for side effects registers its codecs before this group's own run; the named imports are the names the code uses.
-    const sideEffectImports = [...dependencyGroups].sort().map((dependencyGroupId) => `./_${dependencyGroupId}.js`);
+    // A standalone SDK (it names its runtime in `specifiers`) registers nothing, so it needs no such import.
     const { specifiers, ...rest } = helpers;
+    const sideEffectImports = specifiers ? [] : [...dependencyGroups].sort().map((dependencyGroupId) => `./_${dependencyGroupId}.js`);
     const modelModule = generateModels(document, profile, {
       ...rest,
       ...(specifiers ? { specifiers: specifiers(group.filename) } : {}),
@@ -388,6 +389,8 @@ export function generateModels(
     } } : {}),
     issueSource: 'OpenAPI',
     projectsInstanceState: true,
+    // Only golem's own registry reads a registered codec; a standalone SDK (it names its runtime in `specifiers`) registers none.
+    registerCodecs: helpers.specifiers === undefined,
     // A component's codecs take and return its converted `Types` type; a node that is no component, and so has no type there, stays `unknown`.
     fieldsType: (node) => {
       const definition = analysis.definitionNameByNodeId.has(node.id) ? definitions.get(analysis.definitionNameByNodeId.get(node.id) ?? '') : undefined;
