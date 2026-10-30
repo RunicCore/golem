@@ -4,7 +4,7 @@ import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { fileFixtureScope, onceShared } from '../fixture-project.js';
-import { importGeneratedModule, sdkBodyCodec, withRootOperations } from './helpers.js';
+import { sdkBodyCodec, withRootOperations } from './helpers.js';
 import { loadGolemModeProject, loadSdk, type GolemModeSdkSetup } from './sdk-client-fixture.js';
 
 // Every JSON Schema keyword that a model descriptor can carry reaches the model plane, so a body that converts a date is checked
@@ -38,14 +38,12 @@ const ROWS = [
 type Row = (typeof ROWS)[number];
 
 const ref = (name: string) => ({ $ref: `#/components/schemas/${name}` });
-const json = (name: string) => ({ 'application/json': { schema: ref(name) } });
 const DOCUMENT = {
   ...withRootOperations({
     openapi: '3.1.0',
     info: { title: 'Keywords', version: '1' },
     components: { schemas: Object.fromEntries(ROWS.map((row) => [row.name, row.schema])) },
   }, ...ROWS.map((row) => row.name)),
-  webhooks: Object.fromEntries(ROWS.map((row) => [row.name, { post: { operationId: `receive${row.name}`, responses: { 200: { description: 'ok', content: json(row.name) } } } }])),
 };
 
 const scope = fileFixtureScope();
@@ -65,20 +63,6 @@ const withWhen = (value: object, when: unknown) => ({ ...value, when });
 // A converted value writes `when` as the wire text and a Date reads back as it; the codec leaves the names the schema does not list out, so only `when` is compared.
 const writesWhen = (value: unknown) => JSON.stringify(value).includes(`"when":"${AT}"`);
 
-async function inboundHandler(row: Row): Promise<{ readonly answer: (value: object) => Promise<unknown> }> {
-  const { output } = await sdk();
-  const bind = (await importGeneratedModule(output, 'generated SDK')).bindKeywordsInbound as (port: Record<string, unknown>) => Record<string, (request: unknown) => Promise<unknown>>;
-  let reply: unknown;
-  const port = Object.fromEntries(ROWS.map((item) => [`webhookReceive${item.name}`, async () => reply]));
-  const handlers = bind(port);
-  return {
-    answer: async (value) => {
-      reply = { matched: 'status', status: 200, contentType: 'application/json', body: withWhen(value, new Date(AT)), headers: {} };
-      return handlers[`webhookReceive${row.name}`]!({});
-    },
-  };
-}
-
 for (const row of ROWS) {
   test(`a request body with a date is checked against ${row.name}`, async () => {
     // protects: T-729, F-163 a keyword of the full schema reaches the model plane of a converting request body
@@ -86,13 +70,6 @@ for (const row of ROWS) {
     const when = new Date(AT);
     await assert.rejects(codec.encode(withWhen(row.bad, when)), isValidation);
     assert.ok(writesWhen(await codec.encode(withWhen(row.good, when))));
-  });
-
-  test(`an inbound response with a date is checked against ${row.name}`, async () => {
-    // protects: T-729, F-163 a keyword of the full schema reaches the model plane of a converting inbound response
-    const { answer } = await inboundHandler(row);
-    await assert.rejects(answer(row.bad), isValidation);
-    assert.ok(writesWhen(await answer(row.good)));
   });
 
   test(`an app model over the SDK type checks ${row.name} when it reads and writes`, async () => {
@@ -115,39 +92,15 @@ const STAMP_DOCUMENT = {
     info: { title: 'Stamps', version: '1' },
     components: { schemas: { Stamp: { type: 'object', required: ['at'], properties: { at: { ...DATE_TIME, pattern: '^2025' } } } } },
   }, 'Stamp'),
-  webhooks: { Stamp: { post: { operationId: 'receiveStamp', responses: { 200: { description: 'ok', content: json('Stamp') } } } } },
 };
-const stamps = onceShared(() => loadSdk(scope, 'golem-openapi-keyword-stamps-', { document: STAMP_DOCUMENT, name: 'Stamps', dates: 'date', validation: true }));
 const BEFORE_PATTERN = new Date('1970-01-01T00:00:00Z');
-/** A reply with a date that breaks the pattern is rejected and one that keeps it leaves as its wire text. */
-async function assertStampWireChecked(answer: (at: Date) => Promise<unknown>): Promise<void> {
-  await assert.rejects(answer(BEFORE_PATTERN), isValidation);
-  assert.deepEqual(await answer(new Date(AT)), { status: 200, contentType: 'application/json', headers: {}, body: { at: AT } });
-}
-/** The answer of the inbound handler of the SDK module when the application's port replies with a body holding `at`. */
-const stampAnswer = (sdkModule: Record<string, unknown>) => (at: Date) =>
-  (sdkModule.bindStampsInbound as (port: Record<string, unknown>) => Record<string, (request: unknown) => Promise<unknown>>)({
-    webhookReceiveStamp: async () => ({ matched: 'status', status: 200, contentType: 'application/json', body: { at }, headers: {} }),
-  }).webhookReceiveStamp!({});
+const stamps = onceShared(() => loadSdk(scope, 'golem-openapi-keyword-stamps-', { document: STAMP_DOCUMENT, name: 'Stamps', dates: 'date', validation: true }));
 
 test('a request body with a date-time pattern is checked in its wire form: a date that breaks the pattern is rejected', async () => {
   // protects: T-729, F-163 a node with a keyword no descriptor carries keeps the wire check of the input root
   const codec = await sdkBodyCodec((await stamps()).output, 'Stamps', 'Stamp');
   await assert.rejects(codec.encode({ at: BEFORE_PATTERN }), isValidation);
   assert.deepEqual(await codec.encode({ at: new Date(AT) }), { at: AT });
-});
-
-test('an inbound response with a date-time pattern runs the wire check of the response root after its conversion', async () => {
-  // protects: T-729, F-163 an inbound response node with a keyword no descriptor carries is also checked in its wire form
-  const answer = stampAnswer(await importGeneratedModule((await stamps()).output, 'generated SDK'));
-  await assertStampWireChecked(answer);
-});
-
-test('a golem-mode inbound response with a date-time pattern runs the wire check of the response root after its conversion', async () => {
-  // protects: T-742 both SDK modes write wireChecked, so a golem-mode inbound response is judged in its wire form like a standalone one
-  const project = await loadGolemModeProject(scope, 'golem-openapi-keyword-stamps-golem-', [{ document: STAMP_DOCUMENT, folder: 'sdk/stamps', name: 'Stamps' }], true);
-  const answer = stampAnswer(await import(pathToFileURL(path.join(project.root, 'build/sdk/stamps/index.js')).href) as Record<string, unknown>);
-  await assertStampWireChecked(answer);
 });
 
 test('an app model over an SDK type with a keyword that no descriptor carries stops generation and names the keyword', async () => {
@@ -167,12 +120,6 @@ test('a request body keeps the members of a free-form object field', async () =>
   // protects: T-729 a free-form object field is carried, so its node stays complete and its members reach the wire
   const codec = await sdkBodyCodec((await sdk()).output, 'Keywords', 'FreeFormRule');
   assert.ok(keepsMeta(await codec.encode(withWhen(META, new Date(AT)))));
-});
-
-test('an inbound response keeps the members of a free-form object field', async () => {
-  // protects: T-729 a free-form object field is carried on the inbound response path
-  const { answer } = await inboundHandler(ROWS.find((row) => row.name === 'FreeFormRule')!);
-  assert.ok(keepsMeta(await answer(META)));
 });
 
 test('an app model over an SDK type with a free-form object field keeps its members', async () => {

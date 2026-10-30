@@ -53,15 +53,12 @@ test('an openapi job in golem mode writes types and the client, and imports its 
   const result = await generate(options);
   const files = new Map(result.artifacts.map(artifact => [path.relative(sdk, artifact.path), artifact.content]));
   assert.deepEqual([...files.keys()].sort(), [
-    'client.ts', 'inbound.ts', 'index.ts', 'input-schemas.ts', 'model-manifest.json', 'operations/createCharge.ts', 'output-schemas.ts', 'types.ts',
+    'client.ts', 'index.ts', 'input-schemas.ts', 'model-manifest.json', 'operations/createCharge.ts', 'output-schemas.ts', 'types.ts',
   ]);
   const operation = files.get('operations/createCharge.ts') ?? '';
   assert.match(operation, /^import \{ sdkCodecs as __golemSdkCodecs \} from '\.\.\/\.\.\/\.\.\/src\/generated\/models\/sdk\/charges\.sdk\.generated\.js';$/m);
   assert.match(operation, /^const __operationCodecs: .* = __golemSdkCodecs\["createCharge"\];$/m);
   assert.match(operation, /from '@exprtlabs\/golem\/client'/);
-  const inbound = files.get('inbound.ts') ?? '';
-  assert.match(inbound, /^import \{ sdkCodecs as __golemSdkCodecs \} from '\.\.\/\.\.\/src\/generated\/models\/sdk\/charges\.sdk\.generated\.js';$/m);
-  assert.match(inbound, /__golemSdkCodecs\["webhookReceiveChargeUpdated"\]/);
 
   const again = await generate(options);
   assert.deepEqual(again.artifacts, result.artifacts);

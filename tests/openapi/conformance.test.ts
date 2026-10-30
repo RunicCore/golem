@@ -284,8 +284,8 @@ export const mixedChildren: NumberTree[] | undefined = stringTree.children;
   compileGeneratedSdk(output, [assertFile], { strict: true });
 });
 
-test('a webhook name that holds a comment end is written into the inbound port doc line without ending it', (t) => {
-  // protects: T-290 the doc line of an inbound method escapes user text instead of throwing
+test('a webhook name that holds a comment end does not break the SDK', (t) => {
+  // protects: T-290 user text in a webhook name is escaped in the generated source instead of ending a comment
   const document = {
     openapi: '3.1.0',
     info: { title: 'Inbound', version: '1' },
@@ -297,11 +297,10 @@ test('a webhook name that holds a comment end is written into the inbound port d
   };
   const output = createFixtureProject(t, 'golem-openapi-inbound-comment-');
   writeSdk(document, { output, name: 'Inbound' });
-  const inbound = fs.readFileSync(path.join(output, 'inbound.ts'), 'utf8');
-  assert.match(inbound, /^  \/\*\* webhook paid\*\\\/done: POST paid\*\\\/done \*\/$/m);
+  compileGeneratedSdk(output, [], { strict: true });
 });
 
-test('normalizes callbacks and webhooks into typed inbound contracts', (t) => {
+test('normalizes callbacks and webhooks into payload types of the SDK', (t) => {
   const document = {
     openapi: '3.2.0',
     info: { title: 'Inbound', version: '1' },
@@ -378,11 +377,7 @@ test('normalizes callbacks and webhooks into typed inbound contracts', (t) => {
 
   const output = createFixtureProject(t, 'golem-openapi-inbound-');
   writeSdk(document, { output, name: 'Inbound' });
-  const inbound = fs.readFileSync(path.join(output, 'inbound.ts'), 'utf8');
-  // Only text shows the doc line that names each method's source in the port file.
-  assert.match(inbound, /^(?=[\s\S]*webhook paymentSettled: POST paymentSettled)(?=[\s\S]*callback createSubscription onStatus: POST)/);
-
-  copyFixtureFile(output, 'openapi/conformance/inbound-assert.ts', 'inbound-assert.ts');
+  copyFixtureFile(output, 'openapi/conformance/webhook-payload-assert.ts', 'webhook-payload-assert.ts');
   const compiled = spawnSync(process.execPath, [tscBin(),
     '--target', 'ES2022',
     '--module', 'NodeNext',
@@ -390,7 +385,7 @@ test('normalizes callbacks and webhooks into typed inbound contracts', (t) => {
     '--lib', 'ES2023,ESNext.Collection,DOM,DOM.Iterable',
     '--noEmit',
     path.join(output, 'index.ts'),
-    path.join(output, 'inbound-assert.ts'),
+    path.join(output, 'webhook-payload-assert.ts'),
   ], { encoding: 'utf8' });
   assert.equal(compiled.status, 0, compiled.stderr || compiled.stdout);
 });

@@ -434,10 +434,10 @@ export function clientBodyCodec(makeClient: (fetchImpl: typeof fetch) => Promise
 /** The manifest an openapi job of mode golem writes for `document`: the schema graph and the validation roots of every operation. */
 export function golemModeManifest(document: unknown, profile: OpenApiGenerationProfile, dates: 'date' | 'temporal' = 'date'): Record<string, unknown> {
   const ir = normalizeAndValidate(document);
-  const operations = [...ir.operations, ...ir.inboundOperations];
-  const analysis = analyzeOpenApiModels(document, profile.validation, dates, operations);
+  const operations = ir.operations;
+  const analysis = analyzeOpenApiModels(document, profile.validation, dates, [...operations, ...ir.inboundOperations]);
   const schemaData = profile.validation && operations.length > 0
-    ? buildSchemaData(document, ir, (operation, contentType) => operation.sourceKind === 'path' && analysis.convertedNodeIds.has(requestBodyKey(operation.name, contentType)) && !analysis.uncarriedValues.has(requestBodyKey(operation.name, contentType)))
+    ? buildSchemaData(document, ir, (operation, contentType) => analysis.convertedNodeIds.has(requestBodyKey(operation.name, contentType)) && !analysis.uncarriedValues.has(requestBodyKey(operation.name, contentType)))
     : undefined;
   return generateModelManifest(document, profile, analysis, 'golem', { operations, validation: buildOperationValidationSchemas(operations, document, profile, schemaData) }) as Record<string, unknown>;
 }

@@ -181,7 +181,6 @@ async function generateItemsClient(profile: OpenApiGenerationProfile): Promise<I
     profile,
   });
   assert.ok(result.artifacts.some(({ path: filename }) => filename.endsWith('/client.ts')));
-  assert.ok(result.artifacts.some(({ path: filename }) => filename.endsWith('/inbound.ts')));
   compileGeneratedSdk(output);
   const module = requireRecord(
     await import(pathToFileURL(path.join(output, 'dist/client.js')).href),

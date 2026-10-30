@@ -112,7 +112,7 @@ for (const profile of [
     assert.ok(generatedImports.length > 0);
     const generatedRuntimeEntry = /^@exprtlabs\/golem\/internal\/(?:model|client|client-validation|validation|mobx|mobx-validation|nest|temporal)-runtime$/;
     assert.ok(generatedImports.every(source => source.startsWith('./') || source.startsWith('../') || (source.startsWith('@exprtlabs/golem/') && (!source.startsWith('@exprtlabs/golem/internal/') || generatedRuntimeEntry.test(source)))), generatedImports.join('\n'));
-    for (const absent of ['inbound.ts', 'links.ts']) assert.equal(fs.existsSync(path.join(root, 'sdk', absent)), false);
+    assert.equal(fs.existsSync(path.join(root, 'sdk', 'links.ts')), false);
     if (!profile.mobx) assert.doesNotMatch(text, /asGenObservable|ModelAnnotations|@exprtlabs\/golem\/(?:internal\/)?mobx(?:-runtime)?\b/);
     if (!profile.validation) assert.doesNotMatch(text, /\$validator|runtimeSchemaRegistry|@exprtlabs\/golem\/(?:internal\/)?(?:validation|client-validation|mobx-validation)(?:-runtime)?\b/);
     await cli(root, ['build']);

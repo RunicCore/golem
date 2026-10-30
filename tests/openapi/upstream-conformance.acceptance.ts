@@ -122,14 +122,9 @@ function assertArtifactInventory(
     const links = result.artifacts.find(({ path: filename }) => filename.endsWith('/links.ts'))?.content;
     assert.ok(links, 'response Link Objects artifact');
   }
-  if (ir.inboundOperations.length) {
-    const inbound = result.artifacts.find(({ path: filename }) => filename.endsWith('/inbound.ts'))?.content;
-    assert.ok(inbound, 'inbound contract artifact');
-    for (const operation of ir.inboundOperations) {
-      const escapedName = operation.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      // Kept pin: inbound.ts holds types only, so no value runs; the name is the contract's member.
-      assert.match(inbound, new RegExp(`\\b${escapedName}\\b`));
-    }
+  for (const operation of ir.inboundOperations) {
+    const types = result.artifacts.find(({ path: filename }) => filename.endsWith('/types.ts'))?.content;
+    assert.match(types ?? '', new RegExp(`\\b${operation.typeName}OperationInput\\b`), 'the payload type of a webhook or callback');
   }
 }
 

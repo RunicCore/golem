@@ -217,42 +217,6 @@ test('retiring the last OpenAPI component removes schema artifacts through publi
   assert.equal(loadInventory(fixtureValue.config).files['sdk/output-schemas.ts'], undefined);
 });
 
-test('retiring the last inbound operation removes inbound.ts through public generation and applyJob', async (t: TestContext) => {
-  const initialDocument = {
-    ...metadata('LastInbound'),
-    paths: { '/health': { get: healthOperation() } },
-    webhooks: {
-      orderChanged: {
-        post: {
-          operationId: 'orderChanged',
-          requestBody: {
-            required: true,
-            content: { 'application/json': { schema: { $ref: '#/components/schemas/Order' } } },
-          },
-          responses: { '204': { description: 'accepted' } },
-        },
-      },
-    },
-    components: { schemas: { Order: modelSchema() } },
-  };
-  const nextDocument = {
-    ...metadata('LastInbound'),
-    paths: { '/health': { get: healthOperation() } },
-    components: { schemas: { Order: modelSchema() } },
-  };
-  const fixtureValue = fixture(t, initialDocument);
-  const initial = await applyInitial(fixtureValue);
-  const inbound = artifactPath(initial, 'inbound.ts');
-  assert.equal(fs.existsSync(inbound), true);
-
-  writeDocument(fixtureValue, nextDocument);
-  const next = await generateArtifacts(fixtureValue);
-  assert.equal(next.artifacts.some(({ path: filename }) => filename.endsWith('/inbound.ts')), false);
-  await checkThenApply(fixtureValue, next);
-  assert.equal(fs.existsSync(inbound), false);
-  assert.equal(loadInventory(fixtureValue.config).files['sdk/inbound.ts'], undefined);
-});
-
 test('retiring the last response link removes links.ts through public generation and applyJob', async (t: TestContext) => {
   const initialDocument = {
     ...metadata('LastLink'),

@@ -9,6 +9,7 @@ import { fileFixtureScope } from './fixture-project.js';
 import { buildModelProject, createModelProject, writeModelGolemYaml, writeModelSources } from './model-project.js';
 import { generateMaterializedSdk, isGeneratedClientClass } from './openapi/helpers.js';
 import { chargesDocument, loadGolemModeProject, writeGolemModeProject, type GolemModeSdkSetup } from './openapi/sdk-client-fixture.js';
+import { exportsOf } from './support/run-module.js';
 
 const scope = fileFixtureScope();
 const ref = (name: string) => ({ $ref: `#/components/schemas/${name}` });
@@ -25,6 +26,12 @@ import type { Charge } from '../sdk/charges/index.js';
 export type TChargeRecord = IModel<Charge>;
 `;
 
+/** The model of each validator the validators module exports, sorted: a model an app model shares with its SDK has one entry per shape, so a second validator of it shows as a repeat. */
+function exportedValidators(root: string): string[] {
+  const source = fs.readFileSync(path.join(root, 'src/generated/models/models.validators.generated.ts'), 'utf8');
+  return Object.keys(exportsOf(source)).flatMap(name => /^validate_(\w+?)_[0-9a-f]{8}(?:_wire|_model_only|_wire_only)?$/.exec(name)?.[1] ?? []).sort();
+}
+
 async function importBuilt(root: string, file: string): Promise<Record<string, any>> {
   return await import(pathToFileURL(path.join(root, 'build', file)).href) as Record<string, any>;
 }
@@ -32,10 +39,7 @@ async function importBuilt(root: string, file: string): Promise<Record<string, a
 test('a golem-mode model over an SDK type takes the SDK limits and writes no validator of its own for the type', async () => {
   // protects: T-700 R-84 E-52 an app model over an SDK type keeps the SDK's limits and shares the SDK's validators instead of compiling a copy
   const project = await loadGolemModeProject(scope, 'sdk-app-model-', [CHARGES], true, { 'src/charge.model.ts': CHARGE_MODEL });
-  const validators = fs.readFileSync(path.join(project.root, 'src/generated/models/models.validators.generated.ts'), 'utf8');
-  const checks = [...validators.matchAll(/^function f\d+_(\w+?)_[0-9a-f]{8}(?:_wire|_model_only|_wire_only)?\(/gm)].map(match => match[1]);
-  assert.deepEqual(checks, ['Charge', 'Charge', 'Charge', 'Charge']);
-  assert.match(validators, /^export function validate_TChargeRecord_[0-9a-f]{8}\(/m);
+  assert.deepEqual(exportedValidators(project.root), [...Array(4).fill('Charge'), ...Array(4).fill('TChargeRecord')]);
 
   const generated = await importBuilt(project.root, 'src/charge.model.generated.js');
   assert.deepEqual(generated.fromWireFormatTChargeRecord({ id: 'c1', amount: 2, at: '2025-01-02T03:04:05Z' }), { id: 'c1', amount: 2, at: new Date('2025-01-02T03:04:05Z') });
@@ -198,9 +202,7 @@ const NESTED: GolemModeSdkSetup = {
 test('a golem-mode model over an SDK type that holds another SDK type checks the nested type with the SDK validator', async () => {
   // protects: T-700 E-52 R-84 an SDK type reached inside an SDK type keeps its limits through the app model, and no second validator of it is written
   const project = await loadGolemModeProject(scope, 'sdk-app-model-nested-', [NESTED], true, { 'src/charge.model.ts': CHARGE_MODEL });
-  const validators = fs.readFileSync(path.join(project.root, 'src/generated/models/models.validators.generated.ts'), 'utf8');
-  const checks = [...validators.matchAll(/^function f\d+_(\w+?)_[0-9a-f]{8}(?:_wire|_model_only|_wire_only)?\(/gm)].map(match => match[1]);
-  assert.deepEqual(checks, ['Charge', 'Charge', 'Charge', 'Charge', 'Money', 'Money', 'Money', 'Money']);
+  assert.deepEqual(exportedValidators(project.root), [...Array(4).fill('Charge'), ...Array(4).fill('Money'), ...Array(4).fill('TChargeRecord')]);
 
   const generated = await importBuilt(project.root, 'src/charge.model.generated.js');
   const charge = generated.fromWireFormatTChargeRecord({ id: 'c1', price: { value: 2, at: '2025-01-02T03:04:05Z' } });
@@ -228,9 +230,7 @@ import type { Node } from '../sdk/trees/index.js';
 export type TNodeRecord = IModel<Node>;
 `;
   const project = await loadGolemModeProject(scope, 'sdk-app-model-recursive-', [tree], true, { 'src/node.model.ts': model });
-  const validators = fs.readFileSync(path.join(project.root, 'src/generated/models/models.validators.generated.ts'), 'utf8');
-  const checks = [...validators.matchAll(/^function f\d+_(\w+?)_[0-9a-f]{8}(?:_wire|_model_only|_wire_only)?\(/gm)].map(match => match[1]);
-  assert.deepEqual(checks, ['Node', 'Node', 'Node', 'Node']);
+  assert.deepEqual(exportedValidators(project.root), [...Array(4).fill('Node'), ...Array(4).fill('TNodeRecord')]);
 
   const generated = await importBuilt(project.root, 'src/node.model.generated.js');
   const wire = { value: 'a', children: [{ value: 'b', children: [{ value: 'c', at: '2025-01-02T03:04:05.000Z' }] }] };
@@ -240,6 +240,26 @@ export type TNodeRecord = IModel<Node>;
   const tooLong = { value: 'a', children: [{ value: 'b', children: [{ value: 'toolong' }] }] };
   assert.throws(() => generated.fromWireFormatTNodeRecord(tooLong), /Model validation failed/);
   assert.throws(() => generated.toWireFormatTNodeRecord(tooLong), /Model validation failed/);
+});
+
+test('a golem-mode model over a webhook payload type validates and converts it like any SDK type', async () => {
+  // protects: R-91 a webhook payload is an ordinary SDK type: an app model over it takes its limits and converts its dates, and the SDK has no handler
+  const document = {
+    openapi: '3.1.0',
+    info: { title: 'Events', version: '1' },
+    paths: { '/ping': { get: { operationId: 'ping', responses: { 204: { description: 'ok' } } } } },
+    webhooks: { eventSent: { post: { operationId: 'eventSent', requestBody: { required: true, content: json(ref('Event')) }, responses: { 204: { description: 'received' } } } } },
+    components: { schemas: { Event: { type: 'object', required: ['id'], properties: { id: { type: 'string', maxLength: 5 }, at: { type: 'string', format: 'date-time' } } } } },
+  };
+  const model = `import type { IModel } from '@exprtlabs/golem/model';
+import type { Event } from '../sdk/events/index.js';
+export type TEventRecord = IModel<Event>;
+`;
+  const project = await loadGolemModeProject(scope, 'sdk-app-model-webhook-', [{ document, folder: 'sdk/events', name: 'Events' }], true, { 'src/event.model.ts': model });
+  const generated = await importBuilt(project.root, 'src/event.model.generated.js');
+  assert.deepEqual(generated.fromWireFormatTEventRecord({ id: 'e1', at: '2025-01-02T03:04:05Z' }), { id: 'e1', at: new Date('2025-01-02T03:04:05Z') });
+  assert.throws(() => generated.fromWireFormatTEventRecord({ id: 'too-long' }), /Model validation failed/);
+  assert.throws(() => generated.toWireFormatTEventRecord({ id: 'too-long' }), /Model validation failed/);
 });
 
 test('a golem-mode model over a scalar SDK alias takes the SDK limit, and a tag beside the alias adds its own limit', async () => {

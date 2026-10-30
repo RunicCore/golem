@@ -35,7 +35,7 @@ const document = {
   components: { schemas: { Charge: { type: 'object', required: ['at'], properties: { at: { type: 'string', format: 'date-time' } } } } },
 };
 
-const main = `import { PayClient, bindPayInbound } from './sdk/index.js';
+const main = `import { PayClient, type Charge } from './sdk/index.js';
 const sent: string[] = [];
 const fetchImpl: typeof fetch = async (_url, init) => {
   sent.push(String(init?.body));
@@ -43,15 +43,8 @@ const fetchImpl: typeof fetch = async (_url, init) => {
 };
 const client = new PayClient({ fetchImpl });
 const result = await client.createCharge().execute({ body: { at: new Date(0) } });
-const received: unknown[] = [];
-const handlers = bindPayInbound({
-  webhookChargeDone: async (input) => {
-    received.push(input.body.at instanceof Date ? input.body.at.getTime() : 'not a Date');
-    return { matched: 'status', status: 200, contentType: null, body: undefined, headers: {} };
-  },
-});
-const answered = await handlers.webhookChargeDone({ body: { at: '1970-01-01T00:00:02.000Z' } });
-console.log(JSON.stringify({ sent, decoded: result.body.at instanceof Date ? result.body.at.getTime() : 'not a Date', received, status: answered.status }));
+const webhookPayload: Charge = { at: new Date(0) };
+console.log(JSON.stringify({ sent, decoded: result.body.at instanceof Date ? result.body.at.getTime() : 'not a Date', webhookPayload: webhookPayload.at.getTime() }));
 `;
 
 /** Generates the SDK with the real pipeline into a project, then removes every @exprtlabs package so only plain tsc and node remain. */
@@ -75,13 +68,13 @@ const built = onceShared(async () => {
   return { root, first, second: generated(), inventory, compiled };
 });
 
-test('a standalone SDK compiles with plain tsc in a project with no @exprtlabs package, runs a converted call and decodes a date before an inbound port', async () => {
-  // protects: T-694 R-83 a standalone SDK runs with no @exprtlabs/golem; T-712 the inbound binding runs in a standalone SDK
+test('a standalone SDK compiles with plain tsc in a project with no @exprtlabs package, runs a converted call and decodes a date, with a webhook payload type beside the client', async () => {
+  // protects: T-694 R-83 a standalone SDK runs with no @exprtlabs/golem; R-91 a webhook is only a payload type of the SDK
   const { root, compiled } = await built();
   assert.equal(compiled.status, 0, compiled.stdout + compiled.stderr);
   const ran = spawnSync(process.execPath, [path.join(root, 'out/main.js')], { encoding: 'utf8' });
   assert.equal(ran.status, 0, ran.stderr);
-  assert.equal(ran.stdout.trim(), '{"sent":["{\\"at\\":\\"1970-01-01T00:00:00.000Z\\"}"],"decoded":1000,"received":[2000],"status":200}');
+  assert.equal(ran.stdout.trim(), '{"sent":["{\\"at\\":\\"1970-01-01T00:00:00.000Z\\"}"],"decoded":1000,"webhookPayload":0}');
 });
 
 test('the job records the copied runtime files and a second run writes the same bytes', async () => {

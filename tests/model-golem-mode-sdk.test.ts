@@ -62,7 +62,7 @@ test('the models job compiles the SDK operation roots and the app models into on
   assert.deepEqual([...new Set(exported.map(name => name.replace(/^validate_(\w+?)(?:_wire|_model_only|_wire_only)?$/, '$1').replace(/_[0-9a-f]{8}$/, '')))].sort(), ['Anonymous', 'Charge', 'TLedger', 'src_sdk_createCharge_input', 'src_sdk_createCharge_response_200_application_json']);
   for (const root of [requestRoot, responseRoot]) assert.ok(exported.includes(`validate_${root}`), `${root} is an exported validator`);
   // The operation's response root is the model's wire check, not a second function for the same schema.
-  assert.equal(source.match(/^function f\d+_Charge_[0-9a-f]{8}(?:_wire)?\(/gm)?.length, 2, 'one model check and one wire check of Charge');
+  assert.deepEqual(exported.filter(name => name.startsWith('validate_Charge_')).map(name => name.replace(/^validate_Charge_[0-9a-f]{8}/, '')), ['', '_model_only', '_wire', '_wire_only'], 'one validator of Charge in each of its four forms');
   assert.match(source, /export function validate_src_sdk_createCharge_response_200_application_json\(.*\n.*\n  f\d+_Charge_[0-9a-f]{8}_wire\(/);
   assert.deepEqual(result.artifacts.map(artifact => path.basename(artifact.path)).sort(), ['codec-keys.json', 'ledger.model.generated.ts', 'models.validators.generated.ts', 'sdk.sdk.generated.ts']);
 });
@@ -125,12 +125,13 @@ test('two golem-mode SDKs with one operation name compile to separate roots in t
     profile: { mobx: false, validation: true },
   });
   const source = result.artifacts.find(artifact => artifact.path.endsWith('.validators.generated.ts'))?.content ?? '';
-  const operationRoots = [...source.matchAll(/^export function validate_(src_\w+)\(/gm)].map(match => match[1]!);
+  const exports = Object.keys(exportsOf(source));
+  const operationRoots = exports.filter(name => name.startsWith('validate_src_')).map(name => name.slice('validate_'.length));
   assert.deepEqual(operationRoots, [
     'src_first_createCharge_input', 'src_first_createCharge_response_200_application_json',
     'src_second_createCharge_input', 'src_second_createCharge_response_200_application_json',
   ]);
-  assert.equal(new Set(source.match(/^export function validate_Charge_[0-9a-f]{8}\(/gm)).size, 2, 'the two Charge shapes have two codec ids');
+  assert.equal(exports.filter(name => /^validate_Charge_[0-9a-f]{8}$/.test(name)).length, 2, 'the two Charge shapes have two codec ids');
 });
 
 test('a golem-mode manifest that no openapi job of the golem.yaml writes is refused', t => {
