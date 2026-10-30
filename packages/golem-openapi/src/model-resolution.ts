@@ -109,8 +109,8 @@ export interface OpenApiModelAnalysis {
   /** The schema each node was interned for. */
   readonly definitionNameByNodeId: ReadonlyMap<string, string>;
   readonly nodesByCodecId: ReadonlyMap<string, SchemaNode>;
-  /** The node of each operation body or stream item that converts something, by `operationBodyKey`; a body that converts nothing has none. */
-  readonly bodyNodeIds: ReadonlyMap<string, string>;
+  /** The node of each operation body, stream item, parameter and response header that converts something, by `requestBodyKey`, `responseBodyKey`, `parameterKey` or `responseHeaderKey`; a value that converts nothing has none. */
+  readonly convertedNodeIds: ReadonlyMap<string, string>;
   readonly diagnostics: readonly GolemDiagnostic[];
   readonly selections: DiscriminatorSelections;
   readonly dates: OpenApiDates;

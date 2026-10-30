@@ -273,12 +273,6 @@ function convertedStringType(schema: JsonObjectLike, converted: ConvertedTypes):
   return undefined;
 }
 
-/** The same context for a position that still carries wire values: the parameters and headers, until the client converts them. */
-function wireContext(context: SchemaTypeContext): SchemaTypeContext {
-  const { converted, ...wire } = context;
-  return wire;
-}
-
 /** How a type binds in a larger type: a member of a union, an intersection or an array parenthesizes by it. */
 type TypeBinding = 'primary' | 'intersection' | 'union';
 
@@ -771,9 +765,8 @@ function objectType(schema: JsonObjectLike, context: SchemaTypeContext): TypeCod
 
 type JsonObjectLike = { readonly [key: string]: unknown };
 
-/** The input of an operation: its bodies are typed by `context`; its parameters stay wire typed (see `wireContext`). */
+/** The input of an operation: its parameters and bodies are typed by `context`. */
 function inputType(operation: NormalizedOperation, context: SchemaTypeContext = {}): TypeCode {
-  const parameterContext = wireContext(context);
   const groups: Record<string, NormalizedOperation['parameters'][number][]> = {
     path: [],
     query: [],
@@ -788,13 +781,13 @@ function inputType(operation: NormalizedOperation, context: SchemaTypeContext = 
   }
   if (queryString) {
     const schema = parameterSchema(queryString);
-    lines.push(code`querystring${queryString.required ? code`` : code`?`}: ${schemaTypeCode(schema, parameterContext).code};`);
+    lines.push(code`querystring${queryString.required ? code`` : code`?`}: ${schemaTypeCode(schema, context).code};`);
   }
   for (const [location, parameters] of Object.entries(groups)) {
     if (!parameters.length) continue;
     const requiredGroup = location === 'path' || parameters.some((parameter) => parameter.required);
     const fields = parameters.map((parameter) =>
-      code`${propertyKey(parameter.name)}${parameter.required || location === 'path' ? code`` : code`?`}: ${schemaTypeCode(parameterSchema(parameter), parameterContext).code};`
+      code`${propertyKey(parameter.name)}${parameter.required || location === 'path' ? code`` : code`?`}: ${schemaTypeCode(parameterSchema(parameter), context).code};`
     );
     lines.push(code`${identifierPart(location)}${requiredGroup ? code`` : code`?`}: ${bracedLines(fields, code`};`)}`);
   }
@@ -830,10 +823,9 @@ function operationBodyType(operation: NormalizedOperation, success: boolean, con
 }
 
 function responseHeadersType(document: unknown, response: NormalizedResponse, context: SchemaTypeContext = {}): TypeCode {
-  const wire = wireContext(context);
   const members = objectEntries(response.headers).map(([name, rawHeader]) => {
     const header = resolveLocal(document, rawHeader);
-    return code`readonly ${propertyKey(name)}?: ${schemaTypeCode(parameterSchema(header), wire).code}`;
+    return code`readonly ${propertyKey(name)}?: ${schemaTypeCode(parameterSchema(header), context).code}`;
   });
   return members.length ? typeCode(code`{ ${join(members, code`; `)} }`) : recordType(NEVER_TYPE);
 }

@@ -3,7 +3,8 @@ import { createSchemaGraph, internDescriptors, type SchemaGraph, type SchemaNode
 import type { ModelTypeDescriptor } from '@exprtlabs/golem/internal/schema';
 import { compareText } from '@exprtlabs/golem/generator-api';
 import type { OpenApiGenerationProfile } from './profile.js';
-import type { NormalizedOperation } from './normalize.js';
+import { parameterSchema, resolveLocal, type NormalizedOperation } from './normalize.js';
+import { objectEntries } from './json.js';
 import { componentOrigin, LocatedError } from './origin.js';
 import { schemaContext } from './types.js';
 import { collectCanonicalResources, type ResourceIndex } from './schema-projection.js';
@@ -23,17 +24,27 @@ import {
 } from './model-resolution.js';
 import { collectOpenApiModelDefinitions } from './model-definitions.js';
 
-/** The node name of an inline body that is no object: the graph keeps unnamed objects only, and equal shapes under this name share one codec. */
-const OPERATION_BODY_NODE_NAME = '__operationBody';
+/** The node name of an inline body, parameter or header that is no object: the graph keeps unnamed objects only, and equal shapes under this name share one codec. */
+const OPERATION_VALUE_NODE_NAME = '__operationValue';
 
-/** The key of a request body in `OpenApiModelAnalysis.bodyNodeIds`: the operation and the request content type. */
+/** The key of a request body in `OpenApiModelAnalysis.convertedNodeIds`: the operation and the request content type. */
 export function requestBodyKey(operation: string, contentType: string): string {
   return JSON.stringify([operation, 'request', contentType]);
 }
 
-/** The key of a response body, or of its stream items, in `OpenApiModelAnalysis.bodyNodeIds`: the operation and the response status and content type. */
+/** The key of a response body, or of its stream items, in `OpenApiModelAnalysis.convertedNodeIds`: the operation and the response status and content type. */
 export function responseBodyKey(operation: string, status: string, contentType: string): string {
   return JSON.stringify([operation, 'response', status, contentType]);
+}
+
+/** The key of a request parameter in `OpenApiModelAnalysis.convertedNodeIds`: the operation, where the parameter is (`path`, `query`, `header`, `cookie` or `querystring`) and its name. */
+export function parameterKey(operation: string, location: string, name: string): string {
+  return JSON.stringify([operation, 'parameter', location, name]);
+}
+
+/** The key of a response header in `OpenApiModelAnalysis.convertedNodeIds`: the operation, the response status and the header name. */
+export function responseHeaderKey(operation: string, status: string, name: string): string {
+  return JSON.stringify([operation, 'response-header', status, name]);
 }
 
 /** Whether a value of `descriptor` changes between its wire and its plain form: a Date or Temporal value anywhere inside, through the components it references. */
@@ -59,18 +70,19 @@ function descriptorConverts(descriptor: ModelTypeDescriptor, graph: SchemaGraph,
 }
 
 /**
- * Interns the request body, response body and stream item schema of each operation that converts something, and returns the node of each by body key.
+ * Interns the request body, response body, stream item, parameter and response header schema of each operation that converts something, and returns the node of each by its key.
  * A `$ref` to a component uses the component's node and an inline shape the anonymous node of its shape, so equal shapes share one codec.
  * A schema that converts nothing gets no node: the client passes its value through.
  */
-function internOperationBodies(
+function internOperationValues(
+  document: unknown,
   schemaGraph: SchemaGraph,
   operations: readonly NormalizedOperation[],
   definitions: ModelDefinitions,
   env: ModelResolveEnv,
   validation: OpenApiGenerationProfile['validation'],
 ): ReadonlyMap<string, string> {
-  const bodyNodeIds = new Map<string, string>();
+  const convertedNodeIds = new Map<string, string>();
   const intern = (key: string, schema: unknown): void => {
     if (schema === null || typeof schema === 'boolean') return;
     let descriptor: ModelTypeDescriptor;
@@ -83,18 +95,20 @@ function internOperationBodies(
     }
     if (!descriptorConverts(descriptor, schemaGraph, new Set())) return;
     const named = descriptor.kind === 'generated-model' || descriptor.kind === 'reference';
-    const node = named ? schemaGraph.nodeFor(descriptor) : schemaGraph.intern(descriptor, descriptor.kind === 'object' ? undefined : OPERATION_BODY_NODE_NAME, false, validation);
-    if (node) bodyNodeIds.set(key, node.id);
+    const node = named ? schemaGraph.nodeFor(descriptor) : schemaGraph.intern(descriptor, descriptor.kind === 'object' ? undefined : OPERATION_VALUE_NODE_NAME, false, validation);
+    if (node) convertedNodeIds.set(key, node.id);
   };
   for (const operation of operations) {
+    for (const parameter of operation.parameters) intern(parameterKey(operation.name, parameter.in, parameter.name), parameterSchema(parameter));
     for (const media of operation.requestContent) intern(requestBodyKey(operation.name, media.contentType), media.schema);
     for (const response of operation.responses) {
+      for (const [name, header] of objectEntries(response.headers)) intern(responseHeaderKey(operation.name, response.status, name), parameterSchema(resolveLocal(document, header)));
       for (const media of response.content) {
         intern(responseBodyKey(operation.name, response.status, media.contentType), media.itemSchemaPresent ? media.itemSchema : media.schema);
       }
     }
   }
-  return bodyNodeIds;
+  return convertedNodeIds;
 }
 
 /**
@@ -142,7 +156,7 @@ function internOpenApiSchemaGraph(
   selections?: DiscriminatorSelections,
   dates: OpenApiDates = 'date',
   operations: readonly NormalizedOperation[] = [],
-): { readonly schemaGraph: SchemaGraph; readonly nodeIdByDefinition: ReadonlyMap<string, string>; readonly bodyNodeIds: ReadonlyMap<string, string> } {
+): { readonly schemaGraph: SchemaGraph; readonly nodeIdByDefinition: ReadonlyMap<string, string>; readonly convertedNodeIds: ReadonlyMap<string, string> } {
   const schemaGraph = createSchemaGraph({}, {
     codecSource: 'openapi',
   });
@@ -171,9 +185,9 @@ function internOpenApiSchemaGraph(
       validation,
     };
   }), ...aliasEntries]);
-  const bodyNodeIds = internOperationBodies(schemaGraph, operations, definitions, aliasEnv, validation);
+  const convertedNodeIds = internOperationValues(document, schemaGraph, operations, definitions, aliasEnv, validation);
   schemaGraph.seal();
-  return { schemaGraph, nodeIdByDefinition, bodyNodeIds };
+  return { schemaGraph, nodeIdByDefinition, convertedNodeIds };
 }
 
 /**
@@ -213,7 +227,7 @@ export function analyzeOpenApiModels(
 ): OpenApiModelAnalysis {
   const resources = collectCanonicalResources(document);
   const { definitions, ordered, diagnostics, selections } = collectOpenApiModelDefinitions(document, resources, dates);
-  const { schemaGraph, nodeIdByDefinition, bodyNodeIds } = internOpenApiSchemaGraph(document, ordered, definitions, validation, resources, selections, dates, operations);
+  const { schemaGraph, nodeIdByDefinition, convertedNodeIds } = internOpenApiSchemaGraph(document, ordered, definitions, validation, resources, selections, dates, operations);
   for (const alias of definitions.aliases.values()) {
     const nodeId = nodeIdByDefinition.get(alias.name);
     if (nodeId !== undefined) alias.nodeId = nodeId;
@@ -223,7 +237,7 @@ export function analyzeOpenApiModels(
   const { nodesByName, definitionNameByNodeId } = nodesByDefinitionName(schemaGraph, new Map([...nodeIdByDefinition].filter(([name]) => definitions.has(name))));
   const nodesByCodecId = new Map(nodes.map((node) => [node.codecId, node]));
   const grouping = schemaGraphGroups(schemaGraph, definitions, nodesByName);
-  return { definitions, ordered, schemaGraph, grouping, resources, nodesById, nodesByName, definitionNameByNodeId, nodesByCodecId, bodyNodeIds, diagnostics, selections, dates };
+  return { definitions, ordered, schemaGraph, grouping, resources, nodesById, nodesByName, definitionNameByNodeId, nodesByCodecId, convertedNodeIds, diagnostics, selections, dates };
 }
 
 export function schemaGraphView(

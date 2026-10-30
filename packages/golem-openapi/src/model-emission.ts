@@ -56,7 +56,7 @@ import {
   type CompositionSite,
 } from './model-resolution.js';
 import { openApiValidationSchemaClosure } from './model-manifest.js';
-import { analyzeOpenApiModels, reachableSchemaNodes, requestBodyKey, responseBodyKey, schemaGraphView } from './model-schema-graph.js';
+import { analyzeOpenApiModels, parameterKey, reachableSchemaNodes, requestBodyKey, responseBodyKey, responseHeaderKey, schemaGraphView } from './model-schema-graph.js';
 
 /** The bases of the model that `reference` names, when it has any. */
 function referenceBases(reference: string, definitions: ModelDefinitions): { readonly bases?: ReturnType<typeof modelBases> } {
@@ -175,7 +175,7 @@ export function generateOpenApiModelArtifacts(
   // Every group is generated, so each schema check and diagnostic runs whether or not an operation reaches the model.
   // A group is written when an operation body reaches it or a written group imports it; no other group has a reader.
   const written = new Set<string>();
-  const pending = [...analysis.bodyNodeIds.values()].flatMap((nodeId) => owner.get(nodeId) ?? []);
+  const pending = [...analysis.convertedNodeIds.values()].flatMap((nodeId) => owner.get(nodeId) ?? []);
   for (let groupId = pending.pop(); groupId !== undefined; groupId = pending.pop()) {
     if (written.has(groupId)) continue;
     written.add(groupId);
@@ -418,7 +418,7 @@ export interface OperationValidatorNames {
 
 /**
  * The codec module of each operation that validates or converts, by file name (`codecs/<operation>.ts`): the validators of its input and responses,
- * the encoder of each request body and the decoder of each response body or stream item that converts something (`OpenApiModelAnalysis.bodyNodeIds`).
+ * the encoder of each request body and parameter, and the decoder of each response body, stream item and response header, that converts something (`OpenApiModelAnalysis.convertedNodeIds`).
  * An operation module imports its own file, so a bundler that drops an operation drops its codecs and the groups only they reach.
  */
 export function generateOperationCodecs(
@@ -431,8 +431,8 @@ export function generateOperationCodecs(
   for (const operation of operations) {
     const validatorsSource = new ImportSource('../validators.generated.js', false, { sorted: true });
     const groupSources = new Map(analysis.grouping.groups.map((group) => [group.id, new ImportSource(`../models/_${group.id}.js`, false, { sorted: true })] as const));
-    const codecOf = (bodyKey: string, functionName: 'fromWire' | 'toWire'): Code | undefined => {
-      const nodeId = analysis.bodyNodeIds.get(bodyKey);
+    const codecOf = (valueKey: string, functionName: 'fromWire' | 'toWire'): Code | undefined => {
+      const nodeId = analysis.convertedNodeIds.get(valueKey);
       const groupId = nodeId === undefined ? undefined : analysis.grouping.owner.get(nodeId);
       return nodeId !== undefined && groupId !== undefined ? groupSources.get(groupId)?.name(generatedFunctionName(nodeId, functionName)) : undefined;
     };
@@ -441,11 +441,15 @@ export function generateOperationCodecs(
     const responses = operation.responses.flatMap((response) => response.content.map((media) => [response.status, media.contentType] as const));
     const encode = keyed(operation.requestContent.map((media) => [media.contentType, codecOf(requestBodyKey(operation.name, media.contentType), 'toWire')]));
     const decode = keyed(responses.map(([status, contentType]) => [`${status}:${contentType}`, codecOf(responseBodyKey(operation.name, status, contentType), 'fromWire')]));
-    if (!profile.validation && !encode.length && !decode.length) continue;
+    const parameters = keyed(operation.parameters.map((parameter) => [`${parameter.in}:${parameter.name}`, codecOf(parameterKey(operation.name, parameter.in, parameter.name), 'toWire')]));
+    const headers = keyed(operation.responses.flatMap((response) => Object.keys(response.headers).map((name) => [`${response.status}:${name}`, codecOf(responseHeaderKey(operation.name, response.status, name), 'fromWire')] as const)));
+    if (!profile.validation && !encode.length && !decode.length && !parameters.length && !headers.length) continue;
     const codecs: SdkOperationCodecs = {
       ...(checks ? { input: validatorsSource.name(checks.input), responses: checks.responses.map((item) => ({ key: item.key, code: validatorsSource.name(item.name) })) } : {}),
       ...(encode.length ? { encode } : {}),
       ...(decode.length ? { decode } : {}),
+      ...(parameters.length ? { parameters } : {}),
+      ...(headers.length ? { headers } : {}),
     };
     files.set(`codecs/${operation.name}.ts`, writeOperationCodecs(codecs, { banner: generatedBannerComment(), sources: [validatorsSource, ...groupSources.values()] }));
   }

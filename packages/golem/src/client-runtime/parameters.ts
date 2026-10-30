@@ -77,7 +77,7 @@ export function serializeContentParameter(
     for (const [key, item] of entries(value)) formValue(form, context.name, key, item);
     return form.toString();
   }
-  if (normalized.startsWith('text/')) return String(value);
+  if (normalized.startsWith('text/')) return String(primitive(context.name, value));
   throw new Error(
     `No parameter serializer configured for media type: ${context.contentType}`,
   );

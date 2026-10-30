@@ -39,7 +39,7 @@ import { operationNameType } from '../names.js';
 import { generatedBannerComment } from '../package-info.js';
 import type { OpenApiGenerationProfile } from '../profile.js';
 import { requireProfile } from '../profile.js';
-import { requestBodyKey, responseBodyKey } from '../model-schema-graph.js';
+import { parameterKey, requestBodyKey, responseBodyKey, responseHeaderKey } from '../model-schema-graph.js';
 import type { OperationValidatorNames } from '../model-emission.js';
 import { buildOperationValidationSchemaBundle, buildOperationValidationSchemaBundles, buildSchemaData, operationSourceSchemas } from '../schemas.js';
 import { authoredPointer, type MovedUnions } from '../document.js';
@@ -65,7 +65,7 @@ function serializedContentParameter(
   return code`${use('serializeContentParameter')}(runtime, ${value}, { operation: ${literal(operation.name)}, name: ${literal(name)}, in: ${CONTENT_PARAMETER_LOCATION[location]}, contentType: ${literal(contentType)} })`;
 }
 
-function routeExpression(operation: NormalizedOperation, use: (name: ClientFunction) => Code): { declarations: Code; expression: Code } {
+function routeExpression(operation: NormalizedOperation, use: (name: ClientFunction) => Code, input: Code): { declarations: Code; expression: Code } {
   const parameters = new Map(operation.parameters.filter((item) => item.in === 'path').map(item => [item.name, item]));
   const variables = new Map<string, Code>();
   const wholeSegments = new Set(operation.route.split('/').flatMap((segment) => /^\{[^{}]+\}$/.test(segment) ? [segment.slice(1, -1)] : []));
@@ -83,14 +83,14 @@ function routeExpression(operation: NormalizedOperation, use: (name: ClientFunct
     variables.set(parameter.name, variable);
     parts.push(variable);
     if (parameter.content) {
-      declarations.push(code`    const ${variable} = ${use('encode')}(${serializedContentParameter(operation, use, 'path', parameter.name, parameter.content, code`input.path[${literal(parameter.name)}]`)});`);
+      declarations.push(code`    const ${variable} = ${use('encode')}(${serializedContentParameter(operation, use, 'path', parameter.name, parameter.content, code`${input}.path[${literal(parameter.name)}]`)});`);
       continue;
     }
     const style = parameter.style || 'simple';
     const explode = parameter.explode === undefined ? false : parameter.explode;
     // Only a parameter that stands alone between slashes can form a dot-segment; the call states the other case.
     const inSegment = wholeSegments.has(parameter.name) ? BLANK : code`, false`;
-    declarations.push(code`    const ${variable} = ${use('serializePath')}(runtime, ${literal(parameter.name)}, input.path[${literal(parameter.name)}], ${literal(style)}, ${literal(explode)}${inSegment});`);
+    declarations.push(code`    const ${variable} = ${use('serializePath')}(runtime, ${literal(parameter.name)}, ${input}.path[${literal(parameter.name)}], ${literal(style)}, ${literal(explode)}${inSegment});`);
   }
   parts.push(literal(operation.route.slice(offset)));
   return { declarations: join(declarations, code`\n`), expression: join(parts, code` + `) };
@@ -202,14 +202,17 @@ function operationSource(
   plan: EmissionPlan,
   responseContracts: readonly unknown[],
   securitySchemes: Readonly<Record<string, unknown>>,
-  bodyNodeIds: ReadonlyMap<string, string>,
+  convertedNodeIds: ReadonlyMap<string, string>,
 ): string {
   const usedFunctions = new Set<string>();
   const use = (name: ClientFunction): Code => {
     usedFunctions.add(name);
     return rt.client[name];
   };
-  const route = routeExpression(operation, use);
+  const encodesParameters = operation.parameters.some((parameter) => convertedNodeIds.has(parameterKey(operation.name, parameter.in, parameter.name)));
+  // The parameters are read from the call's input, or from its copy with each converted parameter in its wire form.
+  const parameterInput = encodesParameters ? code`wireInput` : code`input`;
+  const route = routeExpression(operation, use, parameterInput);
   const queryParameters = operation.parameters.filter((item) => item.in === 'query');
   const queryStringParameter = operation.parameters.find((item) => item.in === 'querystring');
   const headerParameters = operation.parameters.filter((item) => item.in === 'header');
@@ -242,26 +245,26 @@ function operationSource(
   const appliesSecurity = (surfaces.auth || surfaces.mutualTls) && operation.security.length > 0;
   const queryLines = queryParameters.map((parameter) => {
     if (parameter.content) {
-      return code`    if (input.query?.[${literal(parameter.name)}] !== undefined) ${use('appendQuery')}(runtime, query, ${literal(parameter.name)}, ${serializedContentParameter(operation, use, 'query', parameter.name, parameter.content, code`input.query[${literal(parameter.name)}]`)}, ${literal(parameter.allowReserved === true)});`;
+      return code`    if (${parameterInput}.query?.[${literal(parameter.name)}] !== undefined) ${use('appendQuery')}(runtime, query, ${literal(parameter.name)}, ${serializedContentParameter(operation, use, 'query', parameter.name, parameter.content, code`${parameterInput}.query[${literal(parameter.name)}]`)}, ${literal(parameter.allowReserved === true)});`;
     }
-    return code`    ${use('addQueryParameter')}(runtime, query, ${literal(parameter.name)}, input.query?.[${literal(parameter.name)}], ${literal(parameter.style || 'form')}, ${literal(parameter.explode === undefined ? true : parameter.explode)}, ${literal(parameter.allowReserved === true)});`;
+    return code`    ${use('addQueryParameter')}(runtime, query, ${literal(parameter.name)}, ${parameterInput}.query?.[${literal(parameter.name)}], ${literal(parameter.style || 'form')}, ${literal(parameter.explode === undefined ? true : parameter.explode)}, ${literal(parameter.allowReserved === true)});`;
   });
   const headerLines = headerParameters.map((parameter) => {
     if (parameter.content) {
-      return code`    if (input.header?.[${literal(parameter.name)}] !== undefined) headers.set(${literal(parameter.name)}, ${serializedContentParameter(operation, use, 'header', parameter.name, parameter.content, code`input.header[${literal(parameter.name)}]`)});`;
+      return code`    if (${parameterInput}.header?.[${literal(parameter.name)}] !== undefined) headers.set(${literal(parameter.name)}, ${serializedContentParameter(operation, use, 'header', parameter.name, parameter.content, code`${parameterInput}.header[${literal(parameter.name)}]`)});`;
     }
-    return code`    if (input.header?.[${literal(parameter.name)}] !== undefined) headers.set(${literal(parameter.name)}, ${use('serializeHeaderSimple')}(runtime, input.header[${literal(parameter.name)}], ${literal(parameter.explode === true)}, ${literal(parameter.name)}));`;
+    return code`    if (${parameterInput}.header?.[${literal(parameter.name)}] !== undefined) headers.set(${literal(parameter.name)}, ${use('serializeHeaderSimple')}(runtime, ${parameterInput}.header[${literal(parameter.name)}], ${literal(parameter.explode === true)}, ${literal(parameter.name)}));`;
   });
   const cookieLines = cookieParameters.map((parameter) => {
     if (parameter.content) {
-      return code`    if (input.cookie?.[${literal(parameter.name)}] !== undefined) cookies.push(${literal(parameter.name)} + '=' + encodeURIComponent(${serializedContentParameter(operation, use, 'cookie', parameter.name, parameter.content, code`input.cookie[${literal(parameter.name)}]`)}));`;
+      return code`    if (${parameterInput}.cookie?.[${literal(parameter.name)}] !== undefined) cookies.push(${literal(parameter.name)} + '=' + encodeURIComponent(${serializedContentParameter(operation, use, 'cookie', parameter.name, parameter.content, code`${parameterInput}.cookie[${literal(parameter.name)}]`)}));`;
     }
     // OpenAPI 3.2 sets explode true for style form and style cookie when the parameter does not say (see the styles-for-cookie rule in openapi-schemas/oas-3-2.ts).
     const explode = literal(parameter.explode === undefined ? true : parameter.explode);
-    return code`    ${use(parameter.style === 'cookie' ? 'addCookieStyleParameter' : 'addCookieParameter')}(runtime, cookies, ${literal(parameter.name)}, input.cookie?.[${literal(parameter.name)}], ${explode});`;
+    return code`    ${use(parameter.style === 'cookie' ? 'addCookieStyleParameter' : 'addCookieParameter')}(runtime, cookies, ${literal(parameter.name)}, ${parameterInput}.cookie?.[${literal(parameter.name)}], ${explode});`;
   });
   const queryStringLine = queryStringParameter
-    ? code`    ${use('setQueryString')}(runtime, query, input.querystring, { operation: ${literal(operation.name)}, name: ${literal(queryStringParameter.name)}, in: 'querystring', contentType: ${literal(Object.keys(queryStringParameter.content || {})[0] || 'application/x-www-form-urlencoded')} });`
+    ? code`    ${use('setQueryString')}(runtime, query, ${parameterInput}.querystring, { operation: ${literal(operation.name)}, name: ${literal(queryStringParameter.name)}, in: 'querystring', contentType: ${literal(Object.keys(queryStringParameter.content || {})[0] || 'application/x-www-form-urlencoded')} });`
     : BLANK;
   const inputName = identifierPart(profile.validation || operation.parameters.length || requestBody ? 'input' : '_input');
   const factoryName = operationFactoryName(operation);
@@ -269,10 +272,13 @@ function operationSource(
   if (requestBody) use('encodeBody');
   const validatesWithSources = profile.validation;
   // The operation's codec module holds the validators, and the conversion of each body that has a Date or Temporal value.
-  const encodes = operation.requestContent.some((media) => bodyNodeIds.has(requestBodyKey(operation.name, media.contentType)));
-  const decodes = operation.responses.some((response) => response.content.some((media) => bodyNodeIds.has(responseBodyKey(operation.name, response.status, media.contentType))));
-  const usesCodecs = validatesWithSources || encodes || decodes;
+  const encodes = operation.requestContent.some((media) => convertedNodeIds.has(requestBodyKey(operation.name, media.contentType)));
+  const decodes = operation.responses.some((response) =>
+    response.content.some((media) => convertedNodeIds.has(responseBodyKey(operation.name, response.status, media.contentType)))
+    || Object.keys(response.headers).some((name) => convertedNodeIds.has(responseHeaderKey(operation.name, response.status, name))));
+  const usesCodecs = validatesWithSources || encodes || encodesParameters || decodes;
   if (encodes) use('convertRequestBody');
+  if (encodesParameters) use('convertRequestParameters');
   if (decodes) use('responseDecoder');
   const validationFunctions = validatesWithSources ? ['operationValidators', 'responseCheck', 'validateOperationInput'] : [];
   const runtimeFunctions = [...usedFunctions].sort();
@@ -342,8 +348,9 @@ function operationSource(
   const usesQuery = queryLines.length > 0 || !isEmpty(queryStringLine) || !isEmpty(securityCall);
   const usesCookies = cookieLines.length > 0 || !isEmpty(securityCall);
   const bodyLines = [
+    encodesParameters ? code`    const wireInput = ${use('convertRequestParameters')}(${codecsName}, input);` : BLANK,
     encodes ? code`    const wireBody = ${wireBodyExpression};` : BLANK,
-    profile.validation ? code`    await ${rt.validation.validateOperationInput}(${literal(operation.name)}, ${encodes ? code`{ ...input, body: wireBody }` : code`input`}, validators);` : BLANK,
+    profile.validation ? code`    await ${rt.validation.validateOperationInput}(${literal(operation.name)}, ${encodes ? code`{ ...${parameterInput}, body: wireBody }` : parameterInput}, validators);` : BLANK,
     usesQuery ? code`    const query: string[] = [];` : BLANK,
     ...queryLines,
     queryStringLine,
@@ -714,7 +721,7 @@ export function operationValidatorNames(
 
 /**
  * The modules of the client. Each operation module reads its validators and body conversions from its own codec module;
- * `bodyNodeIds` names the bodies that convert something.
+ * `convertedNodeIds` names the bodies, parameters and response headers that convert something.
  */
 export function generateClientModules(
   clientName: string,
@@ -722,7 +729,7 @@ export function generateClientModules(
   document: unknown = {},
   profile: OpenApiGenerationProfile,
   plan: EmissionPlan,
-  bodyNodeIds: ReadonlyMap<string, string>,
+  convertedNodeIds: ReadonlyMap<string, string>,
 ): GeneratedClientModules {
   requireProfile(profile);
   const rawSecuritySchemes = Object.fromEntries(plan.referencedAuthSchemes);
@@ -750,7 +757,7 @@ export function generateClientModules(
       plan,
       responseContractsForOperation(document, operation),
       operationSchemes,
-      bodyNodeIds,
+      convertedNodeIds,
     ));
   }
   const client = emitClient(clientName, operations, profile, plan, rawSecuritySchemes);

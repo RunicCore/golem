@@ -145,12 +145,41 @@ export function convertRequestBody(codecs: OperationCodecs, contentType: string 
   return encode ? encode(value as never) : value;
 }
 
-/** The conversion of a checked response body or stream item to its plain form; none when no response of the operation converts. */
+/** The parameters of a call by location, as the serializers read them. */
+interface RequestParameters {
+  readonly path?: Readonly<Record<string, unknown>>;
+  readonly query?: Readonly<Record<string, unknown>>;
+  readonly header?: Readonly<Record<string, unknown>>;
+  readonly cookie?: Readonly<Record<string, unknown>>;
+  readonly querystring?: unknown;
+}
+
+/** The input with each request parameter that holds a Date or Temporal value in its wire form; the rest of the input is the same. */
+export function convertRequestParameters<Input extends object>(codecs: OperationCodecs, input: Input): Input & RequestParameters {
+  const converted: Record<string, unknown> = Object.fromEntries(Object.entries(input));
+  for (const [key, encode] of Object.entries(codecs.parameters ?? {})) {
+    const separator = key.indexOf(':');
+    const location = key.slice(0, separator);
+    if (location === 'querystring') {
+      if (converted.querystring !== undefined) converted.querystring = encode(converted.querystring as never);
+      continue;
+    }
+    const group = converted[location];
+    if (typeof group !== 'object' || group === null) continue;
+    const name = key.slice(separator + 1);
+    const plain = (group as Record<string, unknown>)[name];
+    if (plain !== undefined) converted[location] = { ...group, [name]: encode(plain as never) };
+  }
+  return converted as Input & RequestParameters;
+}
+
+/** The conversion of a checked response body, stream item or response header to its plain form; none when no response of the operation converts. */
 export function responseDecoder(codecs: OperationCodecs): ResponseDecode | undefined {
-  const decode = codecs.decode;
-  if (!decode) return undefined;
-  return (response, value) => {
-    const key = `${response.status}:${response.contentType}`;
-    return Object.hasOwn(decode, key) ? decode[key]!(value as never) : value;
+  const { decode, headers } = codecs;
+  if (!decode && !headers) return undefined;
+  return (response, value, header) => {
+    const table = header === undefined ? decode : headers;
+    const key = `${response.status}:${header ?? response.contentType}`;
+    return table && Object.hasOwn(table, key) ? table[key]!(value as never) : value;
   };
 }

@@ -46,8 +46,8 @@ export interface SdkKeyedCode {
 }
 
 /**
- * The codecs of one operation; each is the code of a function the module can name. A body that converts nothing has no `encode` or `decode`
- * entry, and an operation with no such body has neither member.
+ * The codecs of one operation; each is the code of a function the module can name. A value that converts nothing has no entry,
+ * and an operation with no such value has no such member.
  */
 export interface SdkOperationCodecs {
   /** Checks the plain input of a call. */
@@ -58,6 +58,10 @@ export interface SdkOperationCodecs {
   readonly encode?: readonly SdkKeyedCode[];
   /** Turns the wire body or stream item of a response into its converted form, keyed `status:contentType`. */
   readonly decode?: readonly SdkKeyedCode[];
+  /** Turns a plain request parameter into its wire form, keyed `location:name` (`querystring:name` for the querystring parameter). */
+  readonly parameters?: readonly SdkKeyedCode[];
+  /** Turns the decoded wire value of a response header into its converted form, keyed `status:name`. */
+  readonly headers?: readonly SdkKeyedCode[];
 }
 
 export interface OperationCodecsModule {
@@ -77,6 +81,8 @@ export function writeOperationCodecs(operation: SdkOperationCodecs, module: Oper
     ...keyed('responses', operation.responses),
     ...keyed('encode', operation.encode),
     ...keyed('decode', operation.decode),
+    ...keyed('parameters', operation.parameters),
+    ...keyed('headers', operation.headers),
   ];
   const literalBody = members.length ? code`{${nest(code`${lineBreak}${join(members, lineBreak)}`)}${lineBreak}}` : code`{}`;
   const body = code`export const ${exportedName('operationCodecs')} = ${literalBody} as const;\n`;

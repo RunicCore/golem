@@ -239,7 +239,7 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions, moved:
       document,
       profile,
       plan,
-      modelAnalysis.bodyNodeIds,
+      modelAnalysis.convertedNodeIds,
     );
     files.set('client.ts', clientModules.client.source);
     modules.set('client.ts', { exports: clientModules.client.exports, stars: [] });

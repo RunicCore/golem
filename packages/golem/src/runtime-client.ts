@@ -3,7 +3,7 @@
  * The path is internal: golem build requires each built-in generator at the runtime's exact version, so the names may change in any release.
  */
 export { applySecurity } from './client-runtime/security.js';
-export { convertRequestBody, encodeBody, responseDecoder } from './client-runtime/body-codecs.js';
+export { convertRequestBody, convertRequestParameters, encodeBody, responseDecoder } from './client-runtime/body-codecs.js';
 export {
   addCookieParameter, addCookieStyleParameter, addQueryParameter, appendQuery, encode, serializeContentParameter, serializeHeaderSimple,
   serializePath, setQueryString,
