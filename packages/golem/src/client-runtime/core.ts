@@ -243,7 +243,7 @@ function lookupCodec<T>(map: Readonly<Record<string, T>>, keys: readonly string[
 }
 
 /** How closely the media type `actual` (parameters ignored) matches the declared `expected`, which may be a range: 0 exact, 1 a subtype range, 2 the full range; null when it does not. */
-export function mediaRank(actual: string, expected: string): number | null {
+function mediaRank(actual: string, expected: string): number | null {
   const { essence: range, type: rangeType, subtype: rangeSubtype } = parseMediaType(expected);
   const { essence: value, type: actualType } = parseMediaType(actual);
   if (value === range) return 0;
