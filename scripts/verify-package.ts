@@ -64,6 +64,11 @@ export function verifyPackage(directory: string): void {
     if (!Array.isArray(manifest.files) || manifest.files.some((file) => typeof file !== 'string')) {
       throw new Error('OpenAPI package must declare an explicit files list.');
     }
+    // The SDK runtime that golem's build bundles; a standalone SDK copies it.
+    if (!manifest.files.includes('sdk-runtime')) throw new Error('OpenAPI package must publish sdk-runtime.');
+    for (const file of ['runtime.impl.ts', 'runtime.ts', 'runtime.types.ts', 'types/runtime-sdk.d.ts']) {
+      if (!fs.statSync(path.join(root, 'sdk-runtime', file)).isFile()) throw new Error(`Missing SDK runtime artifact: sdk-runtime/${file}`);
+    }
     if (manifest.files.some((file) => file === 'compliance' || file.startsWith('compliance/'))) {
       throw new Error('OpenAPI package must not publish internal compliance records.');
     }

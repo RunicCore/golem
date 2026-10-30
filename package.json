@@ -123,6 +123,14 @@
           "src/**/*.ts"
         ]
       },
+      "packages/golem": {
+        "entry": [
+          "src/runtime-sdk.ts"
+        ],
+        "project": [
+          "src/**/*.ts"
+        ]
+      },
       "packages/golem-openapi": {
         "entry": [
           "compliance/generate-matrix.ts"
