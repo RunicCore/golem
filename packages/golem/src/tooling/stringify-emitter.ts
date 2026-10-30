@@ -49,7 +49,7 @@ export interface StringifySerdeResolver {
  * The JSON type of the wire of a serde when it is a string, a number or a boolean. Such a serde reads only a value of that type (F-39), so
  * its deserializer is wrapped once, by `wireChecked`, where the file binds it.
  */
-export function serdeWireKind(serde: SerdeFunctions): 'string' | 'number' | 'boolean' | undefined {
+function serdeWireKind(serde: SerdeFunctions): 'string' | 'number' | 'boolean' | undefined {
   const { wire, wireDescriptor } = serde as SerdeFunctions & { readonly wire?: ModelTypeDescriptor; readonly wireDescriptor?: ModelTypeDescriptor };
   const kind = (wireDescriptor ?? wire)?.kind;
   return kind === 'string' || kind === 'number' || kind === 'boolean' ? kind : undefined;
