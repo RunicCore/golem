@@ -29,10 +29,6 @@ interface FieldShape {
   readonly types: Set<string>;
   readonly literals: unknown[];
   item?: FieldShape;
-  /** The characters that a value of the field can hold; null when it can hold any. Read by the generators, never by a decode. */
-  characters: Set<string> | null;
-  /** Whether the schema admits an object. */
-  object: boolean;
 }
 
 const SCALARS: readonly QueryScalar[] = ['string', 'number', 'integer', 'boolean'];
@@ -42,7 +38,7 @@ function schemaRecord(value: unknown): SchemaRecord | undefined {
 }
 
 function newShape(): FieldShape {
-  return { types: new Set(), literals: [], characters: new Set(), object: false };
+  return { types: new Set(), literals: [] };
 }
 
 /**
@@ -69,70 +65,9 @@ function resolveReference(reference: string, scope: Scope): { readonly schema: u
   return schema === undefined ? undefined : { schema, scope: { ...scope, root: schema } };
 }
 
-/** The characters that each format writes; a value of the format cannot hold any other. */
-const FORMAT_CHARACTERS: Readonly<Record<string, string>> = {
-  uuid: '0123456789abcdefABCDEF-',
-  date: '0123456789-',
-  'date-time': '0123456789-:TtZz.+',
-  time: '0123456789:.Zz+-',
-  ipv4: '0123456789.',
-  byte: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=',
-};
-
-/** The keywords whose subschemas stand for the values of a schema: a schema with one of them and no type of its own adds what they add. */
-const STRUCTURAL_KEYWORDS = ['$ref', 'allOf', 'anyOf', 'oneOf', 'items', 'prefixItems', 'properties', VALIDATION_KEYWORD] as const;
-
-/**
- * Adds the characters that a value of `record` can hold to the shape: those of its `enum` or `const`, else those of its types. A value can hold any character
- * unless a type, an `enum` or a `const` proves it cannot: a string with no rule, and a schema with no type and nothing to read through, hold any.
- */
-function addCharacters(shape: FieldShape, record: SchemaRecord, types: readonly unknown[], intersection: boolean): void {
-  const values = Array.isArray(record.enum) ? record.enum : 'const' in record ? [record.const] : undefined;
-  const add = (text: string | null): void => {
-    if (text === null) shape.characters = null;
-    else if (shape.characters !== null) for (const character of text) shape.characters.add(character);
-  };
-  if (values !== undefined) {
-    for (const value of values) add(String(value));
-    return;
-  }
-  // A branch of an `allOf` narrows the values of its siblings: with no type of its own it adds nothing (`collectIntersection` decides when nothing proves the type).
-  if (types.length === 0 && !intersection && !STRUCTURAL_KEYWORDS.some((keyword) => keyword in record)) add(null);
-  for (const type of types) {
-    if (type === 'string') add(typeof record.format === 'string' && Object.hasOwn(FORMAT_CHARACTERS, record.format) ? FORMAT_CHARACTERS[record.format]! : null);
-    else if (type === 'integer') add('0123456789-');
-    else if (type === 'number') add('0123456789-+.eE');
-    else if (type === 'boolean') add('truefals');
-    else if (type === 'null') add('null');
-    else if (type !== 'array' && type !== 'object') add(null);
-  }
-}
-
-/** Adds what `source` admits to `target`. */
-function mergeShape(target: FieldShape, source: FieldShape): void {
-  for (const type of source.types) target.types.add(type);
-  target.literals.push(...source.literals);
-  target.object ||= source.object;
-  if (source.characters === null) target.characters = null;
-  else if (target.characters !== null) for (const character of source.characters) target.characters.add(character);
-  if (source.item) mergeShape(target.item ??= newShape(), source.item);
-}
-
-/**
- * The branches of an `allOf` are read together: each narrows its siblings, so a branch with no type adds nothing when another branch proves what the values are
- * (`allOf: [{ $ref: Id }, { description: 'x' }]`). When no branch proves it, the values can hold any character.
- */
-function collectIntersection(branches: readonly unknown[], shape: FieldShape, scope: Scope): void {
-  const inner = newShape();
-  for (const branch of branches) collectShape(branch, inner, scope, true);
-  if (inner.types.size === 0 && inner.literals.length === 0 && inner.item === undefined && !inner.object && inner.characters?.size === 0) inner.characters = null;
-  mergeShape(shape, inner);
-}
-
-function collectShape(schema: unknown, shape: FieldShape, scope: Scope, intersection = false): void {
+function collectShape(schema: unknown, shape: FieldShape, scope: Scope): void {
   if (schema === true) {
     shape.types.add('string');
-    shape.characters = null;
     return;
   }
   const record = schemaRecord(schema);
@@ -141,21 +76,15 @@ function collectShape(schema: unknown, shape: FieldShape, scope: Scope, intersec
   for (const type of types) if (typeof type === 'string') shape.types.add(type);
   if ('const' in record) shape.literals.push(record.const);
   if (Array.isArray(record.enum)) shape.literals.push(...record.enum);
-  if (types.includes('object')) shape.object = true;
-  addCharacters(shape, record, types, intersection);
   // An `items` keyword stands for an array also when the schema names no type.
-  // A tuple (`prefixItems`) is read as an array of all its items.
-  const tuple = Array.isArray(record.prefixItems) ? record.prefixItems : [];
-  if (types.includes('array') || record.items !== undefined || tuple.length > 0) {
+  if (types.includes('array') || record.items !== undefined) {
     shape.item ??= newShape();
-    if (record.items !== undefined) collectShape(record.items, shape.item, scope);
-    for (const item of tuple) collectShape(item, shape.item, scope);
+    collectShape(record.items, shape.item, scope);
   }
-  for (const keyword of ['anyOf', 'oneOf'] as const) {
+  for (const keyword of ['allOf', 'anyOf', 'oneOf'] as const) {
     const branches = record[keyword];
     if (Array.isArray(branches)) for (const branch of branches) collectShape(branch, shape, scope);
   }
-  if (Array.isArray(record.allOf)) collectIntersection(record.allOf, shape, scope);
   collectShape(schemaRecord(record[VALIDATION_KEYWORD])?.schema, shape, scope);
   const target = typeof record.$ref === 'string' ? resolveReference(record.$ref, scope) : undefined;
   // A reference cycle adds nothing more.
@@ -234,30 +163,6 @@ export function queryFieldTable(wireSchema: JsonSchema, resolve: QueryReferenceR
 }
 
 const graphSchemas = new WeakMap<SchemaGraph, ReadonlyMap<string, JsonSchema>>();
-
-/** A field as the generators read it: the shape that a decode uses, and what its values can hold. */
-export interface FieldReading {
-  readonly shape: QueryFieldShape;
-  /** The characters a value can hold; undefined when it can hold any. */
-  readonly characters: ReadonlySet<string> | undefined;
-  /** Whether the schema admits an object. */
-  readonly object: boolean;
-  readonly item?: FieldReading;
-}
-
-function readingOf(shape: FieldShape): FieldReading {
-  return { shape: tableShape(shape), characters: shape.characters ?? undefined, object: shape.object, ...(shape.item ? { item: readingOf(shape.item) } : {}) };
-}
-
-/**
- * Every field of a wire schema, also the fields that stay text, as the generators read it: `queryFieldTable` keeps only the fields that a query string decodes.
- * The walk enters `allOf`, `oneOf`, `anyOf` and references the same way.
- */
-export function queryFieldShapes(wireSchema: JsonSchema, resolve: QueryReferenceResolver): Readonly<Record<string, FieldReading>> {
-  const fields = new Map<string, FieldShape>();
-  collectFields(wireSchema, fields, { resolve, root: wireSchema, reading: new Set() });
-  return Object.fromEntries([...fields].sort(([left], [right]) => compareText(left, right)).map(([name, shape]) => [name, readingOf(shape)]));
-}
 
 /** The wire schema of each node of the graph, by its name, its codec id and the short name of its id. */
 function wireSchemasOf(graph: SchemaGraph): ReadonlyMap<string, JsonSchema> {

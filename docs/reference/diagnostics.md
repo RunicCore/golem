@@ -937,7 +937,21 @@ These cases stop generation:
 
 A header parameter is not in this list. A header list splits at commas, and the standard defines no escaping for it.
 
-An integer, a boolean, a string with an `enum` or a string with a `format` such as `uuid` does not hold these characters. The fixed `enum` values must not hold the separator. An item or a member with no `type`, `enum` or `const` can hold any character.
+The generator reads the kind of each item and each member from the descriptor of its schema. One table says which characters a value of each kind can hold:
+
+| Kind | Characters |
+|---|---|
+| Integer | Digits and `-`. |
+| Number | Digits, `-`, `+`, `.`, `e` and `E`. |
+| Boolean | The letters of `true` and `false`. |
+| Literal | The characters of its text. |
+| String with an `enum` | The characters of the text of each value. |
+| Null | The letters of `null`. |
+| Array and tuple | The table applies to the item kind. |
+| Object | The table applies to the kind of each member. |
+| Any other kind | Any character. |
+
+The other kinds are a string with no `enum`, a date, a reference to a model, an unknown value, and a schema that no descriptor carries. A union holds the characters of all its variants. An intersection holds the characters that all its proven variants hold.
 
 **Fix:**
 
@@ -977,6 +991,12 @@ A schema that carries these keywords does not stop an SDK. The SDK client checks
 **Operation renamed.** The generated operation name is a JavaScript reserved word or an existing client member name (such as `constructor`), so the generator appends its allocator's suffix to make it distinct. This is a warning: generation continues, but the operation's exported name no longer matches its `operationId` or inferred name.
 
 **Fix:** Give the operation an `operationId` that isn't a JavaScript reserved word or client member name, if you need the two to match exactly.
+
+### OPENAPI_PARAMETER_STYLE_NOT_ALLOWED
+
+**Parameter style that its place does not have.** A parameter has a `style` that OpenAPI does not allow in its place. A path parameter has `matrix`, `label` or `simple`. A query parameter has `form`, `spaceDelimited`, `pipeDelimited` or `deepObject`. A header parameter has `simple`. A cookie parameter has `form` or `cookie`. The client cannot write such a parameter, and an inbound handler cannot read it. This is an error: generation writes nothing.
+
+**Fix:** Use a style that OpenAPI allows for the place of the parameter, or leave the style out.
 
 ### OPENAPI_SERVER_OVERRIDE_IGNORED
 

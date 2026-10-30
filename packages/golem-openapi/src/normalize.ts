@@ -1,6 +1,6 @@
 import { asRecord, escapeJsonPointerToken, isJsonObject, objectEntries, readBoolean, readString, resolveJsonPointer, type JsonObject } from './json.js';
 import { GolemDiagnosticSeverity, type GolemDiagnostic } from '@exprtlabs/golem/generator-api';
-import { identifier } from '@exprtlabs/golem/internal/generator-support';
+import { identifier, parameterStyleRule, type ParameterLocation } from '@exprtlabs/golem/internal/generator-support';
 import { unescapePointerToken } from '@exprtlabs/golem/internal/schema';
 import { inboundOperationName, operationName } from './names.js';
 
@@ -146,12 +146,21 @@ function parameterKey(parameter: NormalizedParameter): string {
   return `${parameter.in}\0${parameter.in === 'header' ? parameter.name.toLowerCase() : parameter.name}`;
 }
 
+function isParameterLocation(location: string): location is ParameterLocation {
+  return location === 'path' || location === 'query' || location === 'header' || location === 'cookie';
+}
+
 function asParameter(value: unknown, origin: string): NormalizedParameter {
   const record = asRecord(value);
   const name = readString(record.name);
   const location = readString(record.in);
   if (!name || !location) {
     throw new Error(`${origin} is missing parameter name or in`);
+  }
+  const style = readString(record.style);
+  // A style that the place does not have (OpenAPI 3.1 and 3.2) can be neither written by the client nor read by a handler. A reference may reach a parameter that the document check did not see.
+  if (style !== undefined && isParameterLocation(location) && parameterStyleRule(location, style, readBoolean(record.explode)) === undefined) {
+    throw Object.assign(new Error(`OPENAPI_PARAMETER_STYLE_NOT_ALLOWED: the ${location} parameter ${JSON.stringify(name)} at ${origin} has style ${JSON.stringify(style)}, which a ${location} parameter does not have. Use a style that OpenAPI allows for a ${location} parameter, or leave the style out.`), { code: 'OPENAPI_PARAMETER_STYLE_NOT_ALLOWED' });
   }
   return {
     ...record,

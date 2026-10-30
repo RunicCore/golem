@@ -32,6 +32,7 @@ for (const [name, parameter, others] of [
   ['items with a rule but no type', { name: 'tags', in: 'query', explode: false, schema: { type: 'array', items: { minLength: 1 } } }, []],
   ['a member with no type', { name: 'tags', in: 'query', explode: false, schema: { type: 'object', properties: { a: { maxLength: 20 } } } }, []],
   ['an item branch with no type', { name: 'tags', in: 'query', explode: false, schema: { type: 'array', items: { anyOf: [{ type: 'integer' }, { minLength: 1 }] } } }, []],
+  ['an array with no items', { name: 'tags', in: 'query', explode: false, schema: { type: 'array' } }, []],
   ['a nested deepObject', { name: 'tags', in: 'query', style: 'deepObject', schema: nested }, []],
   ['a free-form deepObject', { name: 'tags', in: 'query', style: 'deepObject', schema: { type: 'object', additionalProperties: { type: 'integer' } } }, []],
   ['a property named like another parameter', { name: 'tags', in: 'query', schema: { type: 'object', properties: { limit: { type: 'integer' } } } }, [{ name: 'limit', in: 'query', schema: { type: 'integer' } }]],
@@ -51,6 +52,8 @@ for (const [name, parameter] of [
   ['string items from a fixed set in a path', { name: 'ids', in: 'path', required: true, schema: { type: 'array', items: { type: 'string', enum: ['a', 'b'] } } }],
   ['string items in a header, which has no escaping', { name: 'X-Ids', in: 'header', schema: tags }],
   ['items that are a reference with a described sibling', { name: 'ids', in: 'path', required: true, schema: { type: 'array', items: { allOf: [{ $ref: '#/components/schemas/Id' }, { description: 'The id of a tag' }] } } }],
+  ['items that are a string and a fixed set at once', { name: 'ids', in: 'path', required: true, schema: { type: 'array', items: { allOf: [{ type: 'string' }, { enum: ['a', 'b'] }] } } }],
+  ['integer items with a bound beside their type', { name: 'ids', in: 'path', required: true, schema: { type: 'array', items: { type: 'integer', allOf: [{ minimum: 1 }] } } }],
   ['integer items in a matrix path with explode', { name: 'ids', in: 'path', style: 'matrix', explode: true, required: true, schema: { type: 'array', items: { type: 'integer' } } }],
   ['integer items in a joined cookie', { name: 'ids', in: 'cookie', explode: false, schema: { type: 'array', items: { type: 'integer' } } }],
   ['string items in a repeated query', { name: 'ids', in: 'query', schema: tags }],
@@ -70,5 +73,15 @@ test('generation refuses a query parameter in simple style: the document check o
   await assert.rejects(
     generate({ input: writeOpenApiDocument(directory, document({ name: 'ids', in: 'query', style: 'simple', schema: { type: 'integer' } })), output: path.join(directory, 'sdk'), name: 'Hooks', profile: defaultTestProfile }),
     /Must be "form", "spaceDelimited", "pipeDelimited" or "deepObject"/,
+  );
+});
+
+test('generation refuses a parameter that a reference reaches outside the parameter places when its style is not allowed', async (t) => {
+  // protects: T-752 the style check reads every resolved parameter, also one that a reference reaches in an extension
+  const directory = createFixtureProject(t, 'golem-openapi-parameter-style-');
+  const shared = { ...document({ $ref: '#/x-shared/ids' }), 'x-shared': { ids: { name: 'ids', in: 'query', style: 'simple', schema: { type: 'integer' } } } };
+  await assert.rejects(
+    generate({ input: writeOpenApiDocument(directory, shared), output: path.join(directory, 'sdk'), name: 'Hooks', profile: defaultTestProfile }),
+    (error: unknown) => (error as { code?: string }).code === 'OPENAPI_PARAMETER_STYLE_NOT_ALLOWED' && (error as Error).message.includes('"ids"'),
   );
 });

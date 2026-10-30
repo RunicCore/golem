@@ -97,8 +97,8 @@ export function gatherObjectField(group: Readonly<Record<string, unknown>>, { lo
 /** The value of a parameter field as its style writes it: the prefix off, the text split into items or members, and each decoded to the type it declares. */
 export function decodeParameterField(value: unknown, shape: ParameterFieldShape, { location, name }: ParameterPlace): unknown {
   const { style, explode } = shape.parameter;
-  const rule = parameterStyleRule(location, style, explode);
-  if (rule === undefined) return value;
+  // The loader refuses a style that the place does not have, so a parameter that reaches a handler has a rule.
+  const rule = parameterStyleRule(location, style, explode)!;
   const kind = shape.item !== undefined ? 'array' : shape.properties !== undefined ? 'object' : 'value';
   const own = { ...shape, parameter: undefined };
   if (isRecord(value)) return shape.properties ? decodeProperties(value, shape.properties) : value;

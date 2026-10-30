@@ -23,7 +23,7 @@ import {
   operationHasCodecs,
   type OpenApiDates,
 } from './models.js';
-import { neverPropertiesReader } from './model-resolution.js';
+import { neverPropertiesReader, type OpenApiModelAnalysis } from './model-resolution.js';
 import { requestBodyKey } from './model-schema-graph.js';
 import { golemCodecs, standaloneCodecs, type OperationCodecsFor } from './operation-codecs.js';
 import { withOrigins, type OriginLocator } from './origin.js';
@@ -153,8 +153,8 @@ export const ${exportedName('operationServers')} = ${documentLiteral(plan.operat
  * What `inboundHandler` needs of an operation besides its codecs: its request media types, the declared names of its header parameters, the table of each location's
  * text parameters that decode to a number, a boolean or an array (the rule of a Nest query), and its declared responses with their media types and headers.
  */
-function inboundShape(operation: NormalizedOperation, document: unknown): Parameters<typeof literal>[0] {
-  const text = inboundTextTable(operation, document);
+function inboundShape(operation: NormalizedOperation, document: unknown, analysis: OpenApiModelAnalysis): Parameters<typeof literal>[0] {
+  const text = inboundTextTable(operation, document, analysis);
   // The tables hold only strings, numbers and booleans (an absent optional member is no member), so the shape is JSON.
   return {
     media: operation.requestContent.map((media) => media.contentType),
@@ -176,6 +176,7 @@ function generateInbound(
   hasCodecs: (operation: string) => boolean,
   codecsFor: OperationCodecsFor,
   specifiers: RuntimeSpecifiers | undefined,
+  analysis: OpenApiModelAnalysis,
 ): RenderedModule {
   const typesModule = new ImportSource('./types.js', true, { namespace: 'Types' });
   const methods = join(operations.map((operation) =>
@@ -186,7 +187,7 @@ function generateInbound(
   const sdkLevel = literal(profile.validation === 'sanity' ? 'sanity' : true);
   const handlers = join(operations.map((operation) => {
     const codecs = hasCodecs(operation.name) ? codecsAt.read(operation.name, `__golemCodecs_${operation.name}`) : code`{}`;
-    const shape = literal(inboundShape(operation, document));
+    const shape = literal(inboundShape(operation, document, analysis));
     const checks = profile.validation ? code`, ${rt.validation.inboundChecks}(${literal(operation.name)}, ${codecs}, options.validate, ${sdkLevel})` : code``;
     return code`    ${identifierPart(operation.name)}: ${rt.client.inboundHandler}(${codecs}, ${shape}, (input: ${typesModule.namespace()}.${identifierPart(`${operation.typeName}OperationInput`)}) => port.${identifierPart(operation.name)}(input)${checks}),`;
   }), code`\n`);
@@ -375,7 +376,7 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions, moved:
     const inboundByName = new Map(inboundOperations.map((operation) => [operation.name, operation] as const));
     // An operation has codecs by the rule of the SDK codecs builder, which both modes write by: inbound.ts never names a table key or a module that is missing.
     const hasCodecs = (name: string): boolean => operationHasCodecs(inboundByName.get(name)!, modelAnalysis, Boolean(profile.validation));
-    const inbound = generateInbound(clientName, document, inboundOperations, profile, hasCodecs, codecsFor, specifiers);
+    const inbound = generateInbound(clientName, document, inboundOperations, profile, hasCodecs, codecsFor, specifiers, modelAnalysis);
     files.set('inbound.ts', inbound.source);
     modules.set('inbound.ts', { exports: inbound.exports, stars: [] });
   }
@@ -391,7 +392,7 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions, moved:
   // The runtime copy is written whole beside the files that import it, and only an SDK with operations imports it.
   if (specifiers && (plan.artifacts.has('client.ts') || plan.artifacts.has('inbound.ts'))) for (const [name, source] of runtimeCopy()) files.set(name, source);
   assertPortableFilenames(files.keys());
-  return { files, output, clientName, operations, inboundOperations, diagnostics: uniqueDiagnostics([...(specifiers ? mobxStandaloneDiagnostics(profile) : []), ...ir.diagnostics, ...browserCookieDiagnostics(document, operations), ...inboundParameterDiagnostics(inboundOperations, document), ...serverOverrideDiagnostics(document, operations), ...modelAnalysis.diagnostics, ...inlineDiagnostics, ...modelDiagnostics]) };
+  return { files, output, clientName, operations, inboundOperations, diagnostics: uniqueDiagnostics([...(specifiers ? mobxStandaloneDiagnostics(profile) : []), ...ir.diagnostics, ...browserCookieDiagnostics(document, operations), ...inboundParameterDiagnostics(inboundOperations, document, modelAnalysis), ...serverOverrideDiagnostics(document, operations), ...modelAnalysis.diagnostics, ...inlineDiagnostics, ...modelDiagnostics]) };
 }
 
 /**

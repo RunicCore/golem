@@ -547,10 +547,12 @@ function sequenceBodyDescriptor(
   return undefined;
 }
 
-/** The schema converts by its own keywords: array items, oneOf, anyOf, properties or additionalProperties. */
+/** The schema converts by its own keywords: array items, oneOf, anyOf, properties, additionalProperties or a scalar type. */
 function hasOwnConversionKeywords(schema: Readonly<Record<string, unknown>>): boolean {
   return isSequenceSchema(schema) || Boolean(schema.oneOf || schema.anyOf || schema.properties)
-    || schema.additionalProperties !== undefined;
+    || schema.additionalProperties !== undefined
+    // A scalar type of the schema itself, beside members that only constrain: `{ type: integer, allOf: [{ minimum: 1 }] }` is an integer with a minimum.
+    || (typeof schema.type === 'string' && ['integer', 'number', 'string', 'boolean'].includes(schema.type));
 }
 
 /**
