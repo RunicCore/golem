@@ -877,9 +877,12 @@ export function validatorImports(
 interface SdkNodeCodecs {
   readonly find: (codecId: string) => NestedImportedSerde | undefined;
   readonly sources: readonly ImportSource[];
-  /** The local type of an SDK node; the file writes the type aliases of the nodes asked for (`typeAliases`). */
+  /**
+   * The type of an SDK node in one form: the SDK's own type when the SDK exports one (its plain, converted form is the model and init
+   * form, and the wire form when the node converts nothing), else a local alias, which the file writes (`typeAliases`).
+   */
   readonly type: (codecId: string, suffix: 'JSON' | 'Init' | 'Fields') => Code;
-  /** The type aliases of the SDK nodes that the types of the file named, with the nodes they name in turn. */
+  /** The type aliases of the SDK node forms that the types of the file named, with the forms they name in turn. */
   readonly typeAliases: (describe: (descriptor: ModelConversionDescriptor, mode: 'model' | 'wire' | 'init') => Code) => readonly Code[];
 }
 
@@ -900,8 +903,17 @@ function sdkNodeByCodecId(graph: SchemaGraph, codecId: string): SchemaNode | und
 function sdkNodeCodecs(sdks: AppOutputs['sdkCodecs'], output: string): SdkNodeCodecs {
   // One source for each codecs file; the import statement holds only the names the file's code uses.
   const sources = new Map((sdks ?? []).map((sdk) => [sdk.file, new ImportSource(sourceImportPath(sdk.file, output))] as const));
+  // One type source for each module of the SDK that declares types.
+  const typeSources = new Map((sdks ?? []).flatMap((sdk) => [...sdk.types.values()].map(({ file }) => file)).map((file) => [file, new ImportSource(sourceImportPath(file, output), true)] as const));
   const asked = new Set<string>();
   const written = new Set<string>();
+  const ownType = (codecId: string): { readonly file: string; readonly name: string } | undefined => {
+    for (const sdk of sdks ?? []) {
+      const found = sdk.types.get(codecId);
+      if (found !== undefined) return found;
+    }
+    return undefined;
+  };
   return {
     find(codecId) {
       for (const sdk of sdks ?? []) {
@@ -916,29 +928,45 @@ function sdkNodeCodecs(sdks: AppOutputs['sdkCodecs'], output: string): SdkNodeCo
       }
       return undefined;
     },
-    sources: [...sources.values()],
+    sources: [...sources.values(), ...typeSources.values()],
     type(codecId, suffix) {
-      asked.add(codecId);
+      const own = ownType(codecId);
+      if (own !== undefined && (suffix !== 'JSON' || !wireDiffers(sdks, codecId))) return typeSources.get(own.file)!.name(own.name, { alias: codecId });
+      asked.add(`${codecId}${NODE_FORM}${suffix}`);
       return identifier(`${codecId}${suffix}`);
     },
     typeAliases(describe) {
       const lines: Code[] = [];
-      // Writing the types of a node can name other nodes: go on until every node asked for is written.
-      for (let pending = [...asked].filter((id) => !written.has(id)).sort(compareText); pending.length > 0; pending = [...asked].filter((id) => !written.has(id)).sort(compareText)) {
-        for (const codecId of pending) {
-          written.add(codecId);
-          const descriptor = sdkNodeDescriptor(sdks, codecId);
-          lines.push(
-            code`type ${identifier(`${codecId}Fields`)} = ${describe(descriptor, 'model')};`,
-            code`type ${identifier(`${codecId}JSON`)} = ${describe(descriptor, 'wire')};`,
-            code`type ${identifier(`${codecId}Init`)} = ${describe(descriptor, 'init')};`,
-            BLANK,
-          );
+      const modes = { Fields: 'model', JSON: 'wire', Init: 'init' } as const;
+      // Writing the type of a form can ask for other forms: go on until every form asked for is written.
+      for (let pending = [...asked].filter((form) => !written.has(form)).sort(compareText); pending.length > 0; pending = [...asked].filter((form) => !written.has(form)).sort(compareText)) {
+        for (const form of pending) {
+          written.add(form);
+          const [codecId, suffix] = form.split(NODE_FORM) as [string, keyof typeof modes];
+          lines.push(code`type ${identifier(`${codecId}${suffix}`)} = ${describe(sdkNodeDescriptor(sdks, codecId), modes[suffix])};`);
         }
       }
-      return lines;
+      return lines.length === 0 ? lines : [...lines, BLANK];
     },
   };
+}
+
+/** Separates the codec id from the form in the name of a type form that the file asked for. */
+const NODE_FORM = '\0';
+
+/** Whether the wire form of the SDK node `codecId` differs from its plain form: it holds a date, a serde value or a node that does. */
+function wireDiffers(sdks: AppOutputs['sdkCodecs'], codecId: string, seen: Set<string> = new Set()): boolean {
+  if (seen.has(codecId)) return false;
+  seen.add(codecId);
+  const differs = (value: unknown): boolean => {
+    if (Array.isArray(value)) return value.some(differs);
+    if (value === null || typeof value !== 'object') return false;
+    const record = value as Record<string, unknown>;
+    if (record.kind === 'date' || record.kind === 'class-value' || record.serde !== undefined) return true;
+    if (record.kind === 'generated-model' && typeof record.id === 'string') return wireDiffers(sdks, record.id, seen);
+    return Object.values(record).some(differs);
+  };
+  return differs(sdkNodeDescriptor(sdks, codecId));
 }
 
 /**
@@ -975,7 +1003,12 @@ interface AppOutputs {
    * The codecs files of the golem-mode SDKs, each with its schema graph. A model that holds an SDK type which reaches itself
    * converts the inner occurrence with the node codec the file exports, under the SDK's codec id.
    */
-  readonly sdkCodecs?: readonly { readonly file: string; readonly graph: SchemaGraph }[];
+  readonly sdkCodecs?: readonly {
+    readonly file: string;
+    readonly graph: SchemaGraph;
+    /** The SDK's own type of each node it exports a type for, by codec id: the module that declares it and its export name. */
+    readonly types: ReadonlyMap<string, { readonly file: string; readonly name: string }>;
+  }[];
 }
 
 /** How this companion relates to the companions of the files its source imports. */

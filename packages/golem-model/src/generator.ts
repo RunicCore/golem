@@ -38,6 +38,7 @@ import { assertModelLevelsWithinProject, collectSpecifications } from '@exprtlab
 import { discoverModelManifests } from '@exprtlabs/golem/manifest';
 import { loadModelManifests, sdkModelFiles, sdkSchemaGraph } from '@exprtlabs/golem/internal/type-analysis';
 import type { ManifestIndex } from '@exprtlabs/golem/internal/type-analysis';
+import type { GolemModeManifest } from '@exprtlabs/golem/manifest';
 import { golemSdks, sdkCodecsSource, sdkValidatorOperations } from './sdk-table.js';
 import {
   assertAbsolute,
@@ -200,6 +201,20 @@ function sourceComponents(graphs: readonly SourceModelGraph[]): SourceModelGraph
 
 function canonicalSourceKey(filename: string): string {
   return canonicalFilename(filename);
+}
+
+/**
+ * The SDK's own type of each of its nodes that the SDK exports a type for, by codec id: a model has its declared type in the manifest,
+ * and a recursive alias has the type of its component. A node with no exported type (an unnamed shape) is absent.
+ */
+function sdkOwnTypes(index: ManifestIndex, manifest: GolemModeManifest): ReadonlyMap<string, { readonly file: string; readonly name: string }> {
+  const file = index.golemModeManifests.find((item) => item.manifest === manifest)!.file;
+  const types = new Map<string, { readonly file: string; readonly name: string }>();
+  for (const component of manifest.components) {
+    const declared = component.type ?? manifest.models.find((model) => model.type.export === component.name)?.type;
+    if (component.codecId !== undefined && declared !== undefined) types.set(component.codecId, { file: resolve(dirname(file), declared.module), name: declared.export });
+  }
+  return types;
 }
 
 /**
@@ -590,7 +605,7 @@ export function generate(context: GolemModelContext): GolemModelResult {
       { siblingWireCodecIds, siblingRecursion, cyclicSiblings },
       {
         ...(validators ? { validators: { module: validatorsOutput, exports: validators.exports, fastExports: validators.fastExports, passExports: validators.passExports } } : {}),
-        sdkCodecs: sdks.map((sdk, index) => ({ file: sdk.codecsFile, graph: sdkGraphs[index]!.graph })),
+        sdkCodecs: sdks.map((sdk, index) => ({ file: sdk.codecsFile, graph: sdkGraphs[index]!.graph, types: sdkOwnTypes(manifestIndex, sdk.manifest) })),
       },
     ));
     if (content !== undefined) artifacts.push({ path: output, content });

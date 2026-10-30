@@ -186,17 +186,19 @@ export const write = (value: ChargeRecord) => stringify<ChargeRecord>(value);
   assert.equal(write(charge), '{"id":"c1","amount":2,"at":"2025-01-02T03:04:05Z"}');
 });
 
+/** A charge SDK whose Charge holds a Money: a node with a date, and a node that holds it. */
+const NESTED: GolemModeSdkSetup = {
+  folder: 'sdk/charges',
+  name: 'Charges',
+  document: chargesDocument({
+    Money: { type: 'object', additionalProperties: false, required: ['value'], properties: { value: { type: 'number', minimum: 0 }, at: { type: 'string', format: 'date-time' } } },
+    Charge: { type: 'object', required: ['id', 'price'], properties: { id: { type: 'string', maxLength: 5 }, price: ref('Money') } },
+  }),
+};
+
 test('a golem-mode model over an SDK type that holds another SDK type checks the nested type with the SDK validator', async () => {
   // protects: T-700 E-52 R-84 an SDK type reached inside an SDK type keeps its limits through the app model, and no second validator of it is written
-  const nested: GolemModeSdkSetup = {
-    folder: 'sdk/charges',
-    name: 'Charges',
-    document: chargesDocument({
-        Money: { type: 'object', additionalProperties: false, required: ['value'], properties: { value: { type: 'number', minimum: 0 }, at: { type: 'string', format: 'date-time' } } },
-        Charge: { type: 'object', required: ['id', 'price'], properties: { id: { type: 'string', maxLength: 5 }, price: ref('Money') } },
-    }),
-  };
-  const project = await loadGolemModeProject(scope, 'sdk-app-model-nested-', [nested], true, { 'src/charge.model.ts': CHARGE_MODEL });
+  const project = await loadGolemModeProject(scope, 'sdk-app-model-nested-', [NESTED], true, { 'src/charge.model.ts': CHARGE_MODEL });
   const validators = fs.readFileSync(path.join(project.root, 'src/generated/models/models.validators.generated.ts'), 'utf8');
   const checks = [...validators.matchAll(/^function f\d+_(\w+?)_[0-9a-f]{8}(?:_wire|_model_only|_wire_only)?\(/gm)].map(match => match[1]);
   assert.deepEqual(checks, ['Charge', 'Charge', 'Charge', 'Charge', 'Money', 'Money', 'Money', 'Money']);
@@ -359,6 +361,25 @@ export const read = (wire: unknown) => fromWireFormat<OwnerRecord>(wire);
   // A nullable SDK node keeps the value it is given: the same object, and null stays null.
   const { TKennelBaseModel } = await importBuilt(project.root, 'src/owner.model.generated.js');
   const given = { petType: 'dog', bornAt: new Date('2025-01-02T03:04:05Z') };
-  assert.equal(Reflect.construct(TKennelBaseModel, [{ dog: given }]).dog, given);
-  assert.equal(Reflect.construct(TKennelBaseModel, [{ dog: null }]).dog, null);
+  assert.equal((Reflect.construct(TKennelBaseModel, [{ dog: given }]) as { dog: unknown }).dog, given);
+  assert.equal((Reflect.construct(TKennelBaseModel, [{ dog: null }]) as { dog: unknown }).dog, null);
+});
+
+test('a companion over SDK types imports the SDK types, compiles under noUnusedLocals, and takes the SDK value as its init', async () => {
+  // protects: T-744 R-84 a model over or holding an SDK type names the SDK's own type (no structural copy, no unused alias), so the SDK's value is the model's init
+  const model = `import type { IModel } from '@exprtlabs/golem/model';
+import type { Charge, Money } from '../sdk/charges/index.js';
+export type TChargeRecord = IModel<Charge>;
+export type TBasket = IModel<{ price: Money; label: string }>;
+`;
+  const assign = `import type { Charge, Money } from '../sdk/charges/index.js';
+import type { TBasketInit, TChargeRecordInit } from './charge.model.generated.js';
+declare const charge: Charge;
+declare const money: Money;
+export const chargeInit: TChargeRecordInit = charge;
+export const basketInit: TBasketInit = { price: money, label: 'x' };
+`;
+  const project = writeGolemModeProject(scope, 'sdk-app-model-types-', [NESTED], true);
+  writeModelSources(project.root, { 'src/charge.model.ts': model, 'src/assign.ts': assign });
+  await buildModelProject(project.root, ['--noUnusedLocals']);
 });
