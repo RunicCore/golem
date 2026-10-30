@@ -1,4 +1,4 @@
-import { reachesRecursiveNode, render } from '@exprtlabs/golem/internal/emitter';
+import { reachesRecursiveNode } from '@exprtlabs/golem/internal/emitter';
 import type { SchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
 import type { CodecSchemaClosureEntry } from '@exprtlabs/golem/internal/validation-plan';
 import type { JsonSchema } from '@exprtlabs/golem/internal/schema';
@@ -8,14 +8,10 @@ import { compareText } from '@exprtlabs/golem/generator-api';
 import { GENERATOR_NAME, PACKAGE_VERSION } from './package-info.js';
 import type { OpenApiGenerationProfile } from './profile.js';
 import { requireProfile } from './profile.js';
-import { schemaContext } from './types.js';
 import {
   type ModelDefinition,
   type OpenApiModelAnalysis,
-  modelEnv,
   modelStableId,
-  withSchemaBase,
-  modelFieldType,
 } from './model-resolution.js';
 
 export function generateModelManifest(
@@ -28,20 +24,10 @@ export function generateModelManifest(
   const digest = sourceDigest(document);
   const stableId = (definition: ModelDefinition) => modelStableId(digest, definition);
   const byName = modelAnalysis.definitions;
-  const sharedSchemaContext = schemaContext(document, { resources: modelAnalysis.resources });
   const models = ordered.map((definition) => {
-    const anchors = schemaContext(
-      document,
-      sharedSchemaContext,
-      definition.schemaName,
-      definition.rawSchema,
-    ).anchors;
-    const env = modelEnv(document, undefined, anchors, modelAnalysis.resources, modelAnalysis.selections, modelAnalysis.dates);
-    const fieldEnv = withSchemaBase(env, definition.rawSchema);
-    const fields = [...definition.properties.entries()].map(([name, schema]) => ({
+    const fields = [...definition.properties.keys()].map((name) => ({
       name,
       required: definition.required.has(name),
-      type: render(modelFieldType(schema, byName, fieldEnv)),
     }));
     const base = definition.baseName ? byName.get(definition.baseName) : undefined;
     return {

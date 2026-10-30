@@ -332,7 +332,7 @@ function emitSchemaCodecRuntime(
 /** The order of the names in each import of the runtime parts of a codec module. */
 const IMPORT_OPTIONS: ImportOptions = {
   typeNames: 'ordered',
-  modules: ['mobx-validation', 'model', 'conversion', 'temporal', 'serde', 'mobx'],
+  modules: ['conversion', 'temporal', 'serde'],
   order: MODEL_IMPORT_ORDER,
 };
 
@@ -428,7 +428,7 @@ export function generateModels(
   const validatorSources = validatorsSource ? [validatorsSource] : [];
   const lines: readonly Code[] = [
     generatedBannerComment(),
-    ...runtimeLines('mobx-validation', 'model', 'conversion', 'temporal', 'serde', 'mobx'),
+    ...runtimeLines('conversion', 'temporal', 'serde'),
     ...fileImports(bodyCode, [typesModule], { elsewhere: [...moduleSources, ...validatorSources] }),
     ...fileImports(bodyCode, moduleSources, { quote: '"', elsewhere: [typesModule, ...validatorSources] }),
     ...(helpers.sideEffectImports ?? []).map((specifier) => sideEffectImport(specifier, '"')),
