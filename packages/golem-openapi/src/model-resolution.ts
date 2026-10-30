@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from 'node:util';
 import { descriptorNeedsConversion, TEMPORAL_SERDE_PREFIX } from '@exprtlabs/golem/internal/emitter';
 import type { SchemaGraph, SchemaNode } from '@exprtlabs/golem/internal/schema-graph';
 import { identifier } from '@exprtlabs/golem/internal/generator-support';
@@ -569,8 +570,35 @@ const REFERENCE_SIBLINGS = [
   'if', 'not', 'oneOf', 'anyOf', 'allOf', 'unevaluatedProperties', 'unevaluatedItems',
 ] as const;
 
+const UPPER_BOUNDS: ReadonlySet<string> = new Set(['maximum', 'exclusiveMaximum', 'maxLength', 'maxItems', 'maxProperties']);
+const LOWER_BOUNDS: ReadonlySet<string> = new Set(['minimum', 'exclusiveMinimum', 'minLength', 'minItems', 'minProperties']);
+
+/** Whether the schema `target`, which a `$ref` names, already limits a value as the keyword `keyword: value` beside the `$ref` does: the same value, or a looser bound. */
+function impliedByTarget(keyword: string, value: unknown, target: Readonly<Record<string, unknown>>): boolean {
+  const held = target[keyword];
+  if (held === undefined) return false;
+  if (isDeepStrictEqual(value, held)) return true;
+  if (typeof value === 'number' && typeof held === 'number') return UPPER_BOUNDS.has(keyword) ? value >= held : LOWER_BOUNDS.has(keyword) && value <= held;
+  if (keyword === 'type' || keyword === 'required') {
+    const own: unknown[] = Array.isArray(value) ? value : [value];
+    const named: unknown[] = Array.isArray(held) ? held : [held];
+    // A type beside the reference names a type the target has; it lists names the target also requires.
+    return keyword === 'type' ? named.every((type) => own.includes(type)) : own.every((name) => named.includes(name));
+  }
+  return false;
+}
+
+/** The schema that a chain of component `$ref`s names, or none when it names no component of the document. */
+function referenceTarget(schema: unknown, env: ModelResolveEnv): Readonly<Record<string, unknown>> | undefined {
+  let target = componentSchemaTarget(schema, env);
+  for (let hops = 0; hops < 16 && isJsonObject(target) && typeof target.$ref === 'string' && Object.keys(target).length === 1; hops += 1) {
+    target = componentSchemaTarget(target, env);
+  }
+  return isJsonObject(target) ? target : undefined;
+}
+
 /** The keywords of a schema that its descriptor does not carry. The first three rules name keywords that no descriptor kind holds. */
-function uncarriedKeywords(schema: unknown, dates: OpenApiDates): string[] {
+function uncarriedKeywords(schema: unknown, dates: OpenApiDates, target?: Readonly<Record<string, unknown>>): string[] {
   if (!isJsonObject(schema)) return [];
   const present = (names: readonly string[]): string[] => names.filter((name) => schema[name] !== undefined);
   const isString = schema.type === 'string' || (Array.isArray(schema.type) && schema.type.includes('string'));
@@ -578,13 +606,16 @@ function uncarriedKeywords(schema: unknown, dates: OpenApiDates): string[] {
   const dated = temporalFormat(schema, dates) !== undefined || (isString && schema.format === 'date-time');
   // With an allOf the composition holds `unevaluatedProperties`; with none, a union or a condition evaluates names that the descriptor does not list.
   const unevaluating = !dated && !hasAllOfMembers(schema) && present(EVALUATING_KEYWORDS).length > 0 ? present(['unevaluatedProperties', 'unevaluatedItems']) : [];
-  const reference = typeof schema.$ref === 'string' || typeof schema.$dynamicRef === 'string' ? present(REFERENCE_SIBLINGS) : [];
+  // A keyword beside a `$ref` that the named schema already states, or states more tightly, adds nothing to what the reference converts.
+  const reference = typeof schema.$ref === 'string' || typeof schema.$dynamicRef === 'string'
+    ? present(REFERENCE_SIBLINGS).filter((keyword) => target === undefined || !impliedByTarget(keyword, schema[keyword], target))
+    : [];
   return [...(dated ? present(DATE_TEXT_KEYWORDS) : []), ...unevaluating, ...present(['additionalItems']), ...reference];
 }
 
 /** Records the keywords of the schema that no descriptor carries, in the collector of the env. */
 function noteUncarried(schema: unknown, env: ModelResolveEnv): void {
-  if (env.uncarried) for (const keyword of uncarriedKeywords(schema, env.dates)) env.uncarried.add(keyword);
+  if (env.uncarried) for (const keyword of uncarriedKeywords(schema, env.dates, referenceTarget(schema, withSchemaBase(env, schema)))) env.uncarried.add(keyword);
 }
 
 /** The descriptor of one JSON type with no keyword of its shape: an object of unknown values, an array of unknown items, `null`. */

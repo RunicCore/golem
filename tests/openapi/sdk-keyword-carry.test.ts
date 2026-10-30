@@ -4,7 +4,7 @@ import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { fileFixtureScope, onceShared } from '../fixture-project.js';
-import { golemModeManifest, importGeneratedModule, sdkBodyCodec, withRootOperations } from './helpers.js';
+import { importGeneratedModule, sdkBodyCodec, withRootOperations } from './helpers.js';
 import { loadGolemModeProject, loadSdk, type GolemModeSdkSetup } from './sdk-client-fixture.js';
 
 // Every JSON Schema keyword that a model descriptor can carry reaches the model plane, so a body that converts a date is checked
@@ -191,19 +191,22 @@ const BRANCHES = {
     schemas: {
       Cat: { ...PET, properties: { ...PET.properties, kind: { const: 'cat' } } },
       Dog: { ...PET, properties: { ...PET.properties, kind: { const: 'dog' } } },
-      Pet: { oneOf: [{ $ref: '#/components/schemas/Cat' }, { $ref: '#/components/schemas/Dog' }], discriminator: { propertyName: 'kind' } },
-      Left: { type: 'object', required: ['born'], properties: { born: DATE_TIME } },
-      Right: { type: 'object', properties: { born: DATE_TIME, note: { type: 'string' } } },
+      Pet: { oneOf: [{ $ref: '#/components/schemas/Cat' }, { $ref: '#/components/schemas/Dog' }], discriminator: { propertyName: 'kind', mapping: { cat: '#/components/schemas/Cat', dog: '#/components/schemas/Dog' } } },
+      Left: { type: 'object', required: ['born'], properties: { born: text } },
+      Right: { type: 'object', properties: { born: text, note: text } },
       Either: { oneOf: [{ $ref: '#/components/schemas/Left' }, { $ref: '#/components/schemas/Right' }] },
     },
   },
 };
 
-test('a discriminated oneOf keeps the plain union and a oneOf of overlapping branches keeps the oneOf constraint', () => {
-  // protects: T-729 a oneOf that a tag or disjoint branch types make exact adds no check; any other oneOf is exact
-  const manifest = golemModeManifest(withRootOperations(BRANCHES, 'Pet', 'Either'), { mobx: false, validation: true });
-  const operations = manifest.operations as readonly { readonly name: string; readonly values: readonly { readonly inline?: { readonly descriptor: string } }[] }[];
-  const descriptor = (operation: string) => operations.find((item) => item.name === operation)!.values[0]!.inline!.descriptor;
-  assert.doesNotMatch(descriptor('getPet'), /"kind":"oneOf"/);
-  assert.match(descriptor('getEither'), /"kind":"oneOf"/);
+const branches = onceShared(() => loadSdk(scope, 'golem-openapi-keyword-branches-', { document: withRootOperations(BRANCHES, 'Pet', 'Either'), name: 'Branches', dates: 'date', validation: true }));
+
+test('a oneOf of overlapping branches rejects a value that matches both, and one tagged Pet is accepted', async () => {
+  // protects: T-729 a oneOf accepts a value that exactly one branch accepts; a union that a tag makes exact needs no such check
+  const { output } = await branches();
+  const either = await sdkBodyCodec(output, 'Branches', 'Either');
+  await assert.rejects(either.decode({ born: 'today' }), isValidation);
+  assert.deepEqual(await either.decode({ note: 'n' }), { note: 'n' });
+  const pet = await sdkBodyCodec(output, 'Branches', 'Pet');
+  assert.deepEqual(await pet.decode({ kind: 'cat', born: AT }), { kind: 'cat', born: new Date(AT) });
 });

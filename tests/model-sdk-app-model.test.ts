@@ -325,6 +325,32 @@ test('an app model over an SDK alias with a keyword that no descriptor carries s
   await assert.rejects(loadGolemModeProject(scope, 'sdk-app-model-alias-uncarried-', [sdk], true, { 'src/record.model.ts': model }), /OPENAPI_KEYWORD_NOT_CARRIED[^]*"additionalItems"/);
 });
 
+test('a $ref sibling that the named schema already implies lets an app model generate, and a tighter bound beside it still stops generation', async () => {
+  // protects: T-745 OPENAPI_KEYWORD_NOT_CARRIED marks only a $ref sibling that adds a limit: the same type or an equal or looser bound is already in the named schema
+  const model = "import type { IModel } from '@exprtlabs/golem/model';\nimport type { Charge } from '../sdk/charges/index.js';\nexport type TRecord = IModel<Charge>;\n";
+  const implied: GolemModeSdkSetup = {
+    folder: 'sdk/charges',
+    name: 'Charges',
+    document: chargesDocument({
+      Money: { type: 'object', required: ['value'], properties: { value: { type: 'number', maximum: 10 } } },
+      Charge: { type: 'object', required: ['price'], properties: { price: { $ref: '#/components/schemas/Money', type: 'object' } } },
+    }),
+  };
+  const project = await loadGolemModeProject(scope, 'sdk-app-model-ref-sibling-', [implied], true, { 'src/record.model.ts': model });
+  const generated = await importBuilt(project.root, 'src/record.model.generated.js');
+  assert.deepEqual(generated.fromWireFormatTRecord({ price: { value: 3 } }), { price: { value: 3 } });
+  assert.throws(() => generated.fromWireFormatTRecord({ price: { value: 11 } }), /Model validation failed/);
+
+  const narrowing: GolemModeSdkSetup = {
+    ...implied,
+    document: chargesDocument({
+      Amount: { type: 'number', maximum: 10 },
+      Charge: { type: 'object', required: ['price'], properties: { price: { $ref: '#/components/schemas/Amount', maximum: 5 } } },
+    }),
+  };
+  await assert.rejects(loadGolemModeProject(scope, 'sdk-app-model-ref-narrow-', [narrowing], true, { 'src/record.model.ts': model }), /OPENAPI_KEYWORD_NOT_CARRIED[^]*"maximum"/);
+});
+
 test('a golem-mode model over an SDK discriminated union decodes each tag to its branch and rejects an unknown tag', async () => {
   // protects: T-740 R-84 a union of SDK nodes dispatches by its tag (the plain branch tested instanceof Object, so the first branch took every value), and a nullable SDK node init keeps its value
   const pets: GolemModeSdkSetup = {
