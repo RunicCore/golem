@@ -79,7 +79,7 @@ An `openapi` job writes these names for each schema in `components.schemas`. The
 | What | Name | Notes |
 | --- | --- | --- |
 | Data type | `Money` | A plain type. A `date` or `date-time` field has the type `Date` or a `Temporal` type, as `dates` sets. Responses carry these converted values. |
-| Request and response projections | `InputSchemas.Money`, `OutputSchemas.Money` | The type as a request takes it and as a response returns it. They differ when `readOnly` or `writeOnly` fields exist. |
+| Request type and response type | `InputSchemas.Money`, `OutputSchemas.Money` | The type as a request takes it and as a response returns it. They differ when `readOnly` or `writeOnly` fields exist. |
 | Operation input | `CreateChargeOperationInput` | The argument of `execute`: `path`, `query`, `header`, `cookie` and `body`. |
 | Operation result | `CreateChargeOperationHttpResponse` | The union of the declared responses. |
 | Operation bodies | `CreateChargeOperationSuccessBody`, `CreateChargeOperationErrorBody` | The bodies of the success and the error responses. |
