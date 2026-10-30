@@ -29,9 +29,11 @@ export const defaultTestProfile: OpenApiGenerationProfile = Object.freeze({
   validation: true,
 });
 
-/** MobX needs the golem runtime, so a test SDK with `mobx: true` is generated in golem mode; any other SDK is standalone. */
-function modeOf(profile: OpenApiGenerationProfile): { readonly mode?: 'golem' } {
-  return profile.mobx ? { mode: 'golem' } : {};
+/** MobX needs the golem runtime, so a test SDK with `mobx: true` is generated in golem mode unless the test says otherwise; any other SDK is standalone. A golem-mode SDK imports the codecs file that the models job would write beside it. */
+function modeOf(profile: OpenApiGenerationProfile, output: string, requested?: 'standalone' | 'golem'): { readonly mode?: 'standalone' | 'golem'; readonly codecsFile?: string } {
+  const mode = requested ?? (profile.mobx ? 'golem' : undefined);
+  if (mode === undefined) return {};
+  return mode === 'golem' ? { mode, codecsFile: join(output, '..', 'models', 'sdk.sdk.generated.ts') } : { mode };
 }
 
 export function requireRecord(value: unknown, label: string): Record<string, unknown> {
@@ -46,7 +48,7 @@ export function writeGeneratedSdk(
 ): ReturnType<typeof WriteSdk> {
   const output = resolve(options.output);
   const profile = options.profile ?? defaultTestProfile;
-  const result = writeSdk(document, { output, name: options.name, profile, ...modeOf(profile) });
+  const result = writeSdk(document, { output, name: options.name, profile, ...modeOf(profile, output) });
   writeGeneratedArtifacts(result.artifacts);
   prepareSdkProject(output);
   for (const name of ['typescript', '@types/node'] as const) {
@@ -266,8 +268,7 @@ export async function generateMaterializedSdk(
     output: resolve(options.output),
     name: options.name,
     profile: options.profile ?? defaultTestProfile,
-    ...modeOf(options.profile ?? defaultTestProfile),
-    ...(options.mode === undefined ? {} : { mode: options.mode }),
+    ...modeOf(options.profile ?? defaultTestProfile, resolve(options.output), options.mode),
     allowRemoteRefs: options.allowRemoteRefs,
     remoteHosts: options.remoteHosts,
     maxRefBytes: options.maxRefBytes,

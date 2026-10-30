@@ -42,6 +42,9 @@ function validateGenerateContext(context: OpenApiGenerationContext): OpenApiGene
   if (context.mode !== undefined && context.mode !== 'standalone' && context.mode !== 'golem') {
     throw new TypeError('context.mode must be "standalone" or "golem" when provided');
   }
+  if (context.mode === 'golem' && (typeof context.codecsFile !== 'string' || !path.isAbsolute(context.codecsFile))) {
+    throw new TypeError('context.codecsFile must be an absolute path when mode is "golem"');
+  }
   return requireProfile(context.profile);
 }
 
@@ -54,7 +57,7 @@ export async function generate(context: OpenApiGenerationContext): Promise<OpenA
   const input = path.resolve(context.input);
   const output = path.resolve(context.output);
   const loaded = await loadOpenApiInput(input, context);
-  const result = writeSdk(loaded.document, { output, name: context.name, profile, locate: loaded.locate, ...(context.dates === undefined ? {} : { dates: context.dates }), ...(context.mode === undefined ? {} : { mode: context.mode }) });
+  const result = writeSdk(loaded.document, { output, name: context.name, profile, locate: loaded.locate, ...(context.dates === undefined ? {} : { dates: context.dates }), ...(context.mode === undefined ? {} : { mode: context.mode }), ...(context.codecsFile === undefined ? {} : { codecsFile: context.codecsFile }) });
   return {
     apiVersion: API_VERSION,
     artifacts: result.artifacts,

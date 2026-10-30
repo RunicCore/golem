@@ -40,7 +40,8 @@ import { generatedBannerComment } from '../package-info.js';
 import type { RuntimeSpecifiers } from '../runtime-copy.js';
 import type { OpenApiGenerationProfile } from '../profile.js';
 import { requireProfile } from '../profile.js';
-import { parameterKey, requestBodyKey, responseBodyKey, responseHeaderKey } from '../model-schema-graph.js';
+import { operationConverts, parameterKey, requestBodyKey, responseBodyKey, responseHeaderKey } from '../model-schema-graph.js';
+import type { OperationCodecsFor } from '../operation-codecs.js';
 import type { OperationValidatorNames } from '../model-emission.js';
 import { buildOperationValidationSchemaBundle, buildOperationValidationSchemaBundles, buildSchemaData, operationSourceSchemas } from '../schemas.js';
 import { authoredPointer, type MovedUnions } from '../document.js';
@@ -210,6 +211,7 @@ function operationSource(
   responseContracts: readonly unknown[],
   securitySchemes: Readonly<Record<string, unknown>>,
   convertedNodeIds: ReadonlyMap<string, string>,
+  codecsFor: OperationCodecsFor,
   specifiers: RuntimeSpecifiers | undefined,
 ): string {
   const usedFunctions = new Set<string>();
@@ -284,7 +286,7 @@ function operationSource(
   const decodes = operation.responses.some((response) =>
     response.content.some((media) => convertedNodeIds.has(responseBodyKey(operation.name, response.status, media.contentType)))
     || Object.keys(response.headers).some((name) => convertedNodeIds.has(responseHeaderKey(operation.name, response.status, name))));
-  const usesCodecs = validatesWithSources || encodes || encodesParameters || decodes;
+  const usesCodecs = validatesWithSources || operationConverts(operation, convertedNodeIds);
   if (encodes) use('convertRequestBody');
   if (encodesParameters) use('convertRequestParameters');
   if (decodes) use('responseDecoder');
@@ -305,6 +307,8 @@ function operationSource(
   if (surfaces.auth || surfaces.mutualTls) importedNames.push(['__golemSecuritySchemes', 'security metadata']);
   if (appliesSecurity) importedNames.push(['RuntimeSecuritySchemes', 'security scheme type import']);
   if (usesCodecs) importedNames.push(['OperationCodecs', 'operation codecs type import']);
+  const codecsAt = codecsFor(`operations/${operation.name}.ts`);
+  if (usesCodecs) for (const name of codecsAt.claimed) importedNames.push([name, 'SDK codecs table import']);
   if (plan.servers.length) importedNames.push(['__golemServers', 'document servers import']);
   const overrideIndex = plan.operationServerIndex.get(operation.name);
   if (overrideIndex !== undefined) importedNames.push(['__golemOperationServers', 'operation servers import']);
@@ -338,7 +342,6 @@ function operationSource(
     : [];
   const requestLevel = profile.validation ? code`, levels.request` : BLANK;
   const parameterLevels = profile.validation ? code`, levels` : BLANK;
-  const codecsSource = new ImportSource(`../codecs/${operation.name}.js`);
   const clientModule = new ImportSource('../client.js', true);
   const serversModule = new ImportSource('../servers.js');
   const serversCode = plan.servers.length ? serversModule.name('servers', { alias: '__golemServers' }) : BLANK;
@@ -349,7 +352,7 @@ function operationSource(
   const apiOperation = profile.mobx ? aliased(rtType.mobx.ObservableApiOperation, 'ApiOperation') : rtType.client.ApiOperation;
   const createApiOperation = profile.mobx ? aliased(rt.mobx.createObservableApiOperation, 'createApiOperation') : rt.client.createApiOperation;
   const codecsDeclaration = usesCodecs
-    ? code`const ${codecsName}: ${rtType.client.OperationCodecs} = ${codecsSource.name('operationCodecs', { alias: codecsModuleName })};`
+    ? code`const ${codecsName}: ${rtType.client.OperationCodecs} = ${codecsAt.read(operation.name, codecsModuleName)};`
     : BLANK;
   const securitySchemesType = rtType.client.RuntimeSecuritySchemes;
   // The client module imports `__golemSecuritySchemes` from every operation module.
@@ -419,10 +422,11 @@ ${!isEmpty(validatorSetup) ? code`${validatorSetup}\n` : BLANK}${!isEmpty(decode
     order: { client: ['ClientRuntime', ...[...usedFunctions].sort(), 'createApiOperation', 'ApiOperation', 'RuntimeResponseContract', 'RuntimeSecuritySchemes', 'OperationCodecs'] },
   };
   const runtimeLines = runtimeLinesOf(file, imports);
-  const clientImports = fileImports(file, [clientModule], { elsewhere: [typesModule, codecsSource, serversModule] });
-  const typesImports = fileImports(file, [typesModule], { elsewhere: [clientModule, codecsSource, serversModule] });
-  const serversImports = fileImports(file, [serversModule], { elsewhere: [typesModule, clientModule, codecsSource] });
-  const codecsImportLines = fileImports(file, [codecsSource], { elsewhere: [typesModule, clientModule, serversModule] });
+  const codecsSources = codecsAt.sources();
+  const clientImports = fileImports(file, [clientModule], { elsewhere: [typesModule, ...codecsSources, serversModule] });
+  const typesImports = fileImports(file, [typesModule], { elsewhere: [clientModule, ...codecsSources, serversModule] });
+  const serversImports = fileImports(file, [serversModule], { elsewhere: [typesModule, clientModule, ...codecsSources] });
+  const codecsImportLines = fileImports(file, codecsSources, { elsewhere: [typesModule, clientModule, serversModule] });
   return render(code`${join([
     generatedBannerComment(),
     ...runtimeLines('client'),
@@ -743,7 +747,7 @@ export function operationValidatorNames(
 }
 
 /**
- * The modules of the client. Each operation module reads its validators and body conversions from its own codec module;
+ * The modules of the client. Each operation module reads its validators and body conversions from its codecs (`codecsFor`);
  * `convertedNodeIds` names the bodies, parameters and response headers that convert something.
  */
 export function generateClientModules(
@@ -753,6 +757,7 @@ export function generateClientModules(
   profile: OpenApiGenerationProfile,
   plan: EmissionPlan,
   convertedNodeIds: ReadonlyMap<string, string>,
+  codecsFor: OperationCodecsFor,
   specifiers?: RuntimeSpecifiers,
 ): GeneratedClientModules {
   requireProfile(profile);
@@ -782,6 +787,7 @@ export function generateClientModules(
       responseContractsForOperation(document, operation),
       operationSchemes,
       convertedNodeIds,
+      codecsFor,
       specifiers,
     ));
   }

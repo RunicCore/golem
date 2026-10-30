@@ -22,7 +22,8 @@ import {
   type OpenApiDates,
 } from './models.js';
 import { neverPropertiesReader } from './model-resolution.js';
-import { requestBodyKey } from './model-schema-graph.js';
+import { operationConverts, requestBodyKey } from './model-schema-graph.js';
+import { golemCodecs, standaloneCodecs, type OperationCodecsFor } from './operation-codecs.js';
 import { withOrigins, type OriginLocator } from './origin.js';
 import { buildSchemaData } from './schemas.js';
 import { compileLevel, compileSdkValidators, uniqueDiagnostics, type CodecValidationPlan, type PlanValidators, type SchemaPlace } from '@exprtlabs/golem/internal/validation-plan';
@@ -38,6 +39,8 @@ interface WriteSdkOptions {
   readonly dates?: OpenApiDates;
   /** `golem` writes the schema graph into the manifest for the models job; the default, `standalone`, keeps the SDK self-contained. */
   readonly mode?: 'standalone' | 'golem';
+  /** Mode `golem` only, and required there: the file the models job writes for this SDK, which the operation modules import. */
+  readonly codecsFile?: string;
   /** Names where a bundled component came from; generator errors that name one append it. */
   readonly locate?: OriginLocator;
 }
@@ -177,17 +180,18 @@ function generateInbound(
   operations: readonly NormalizedOperation[],
   profile: OpenApiGenerationProfile,
   hasCodecs: (operation: string) => boolean,
+  codecsFor: OperationCodecsFor,
   specifiers: RuntimeSpecifiers | undefined,
 ): RenderedModule {
   const typesModule = new ImportSource('./types.js', true, { namespace: 'Types' });
   const methods = join(operations.map((operation) =>
     code`  ${descriptionComment(`${operation.sourceKind} ${operation.sourceName}: ${operation.method} ${operation.route}`)}\n  ${identifierPart(operation.name)}(input: ${typesModule.namespace()}.${identifierPart(`${operation.typeName}OperationInput`)}): Promise<${typesModule.namespace()}.${identifierPart(`${operation.typeName}OperationHttpResponse`)}>;`,
   ), code`\n\n`);
-  const codecSources = new Map(operations.filter((operation) => hasCodecs(operation.name)).map((operation) => [operation.name, new ImportSource(`./codecs/${operation.name}.js`)] as const));
+  const codecsAt = codecsFor('inbound.ts');
   const name = (suffix: string): Code => exportedName(`${clientName}${suffix}`);
   const sdkLevel = literal(profile.validation === 'sanity' ? 'sanity' : true);
   const handlers = join(operations.map((operation) => {
-    const codecs = codecSources.get(operation.name)?.name('operationCodecs', { alias: `__golemCodecs_${operation.name}` }) ?? code`{}`;
+    const codecs = hasCodecs(operation.name) ? codecsAt.read(operation.name, `__golemCodecs_${operation.name}`) : code`{}`;
     const shape = literal(inboundShape(operation, document));
     const checks = profile.validation ? code`, ${rt.validation.inboundChecks}(${literal(operation.name)}, ${codecs}, options.validate, ${sdkLevel})` : code``;
     return code`    ${identifierPart(operation.name)}: ${rt.client.inboundHandler}(${codecs}, ${shape}, (input: ${typesModule.namespace()}.${identifierPart(`${operation.typeName}OperationInput`)}) => port.${identifierPart(operation.name)}(input)${checks}),`;
@@ -236,8 +240,8 @@ ${handlers}
   return renderModule(code`${join([
     generatedBannerComment(),
     ...runtimeLines('client', 'validation'),
-    ...fileImports(body, [typesModule], { elsewhere: [...codecSources.values()] }),
-    ...fileImports(body, [...codecSources.values()], { elsewhere: [typesModule] }),
+    ...fileImports(body, [typesModule], { elsewhere: codecsAt.sources() }),
+    ...fileImports(body, codecsAt.sources(), { elsewhere: [typesModule] }),
     body,
   ], code`\n`)}`);
 }
@@ -273,16 +277,20 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions, moved:
   const clientName = identifier(options.name || readString(asRecord(asRecord(document).info).title), 'Api');
   const output = path.resolve(options.output);
   const plan = buildEmissionPlan(document, ir, profile);
+  // A standalone SDK imports the runtime it carries and its own codecs. An SDK of golem mode imports `@exprtlabs/golem` and the table that the models job
+  // of the same golem.yaml writes later in the run: it holds the types, the client and the manifest, and no validator, group module or codec.
+  const golem = options.mode === 'golem';
+  if (golem && options.codecsFile === undefined) throw new Error('An SDK of mode golem needs codecsFile, the file that the models job writes for it.');
   // The inbound operations take part: a webhook or callback request is decoded and its response encoded, through the same nodes and codecs.
   const modelAnalysis = analyzeOpenApiModels(document, profile.validation, options.dates ?? 'date', [...operations, ...inboundOperations]);
   const inlineDiagnostics = checkOperationCompositions([...operations, ...inboundOperations], modelAnalysis, document);
-  const schemaData = profile.validation && (plan.hasOutboundOperations || plan.hasInboundOperations)
+  const schemaData = !golem && profile.validation && (plan.hasOutboundOperations || plan.hasInboundOperations)
     // A request body that converts is checked by its own conversion, so the input root of its client operation leaves it open; an inbound request is checked in its wire form.
     ? buildSchemaData(document, ir, (operation, contentType) => operation.sourceKind === 'path' && modelAnalysis.convertedNodeIds.has(requestBodyKey(operation.name, contentType)))
     : undefined;
   const files = new Map<string, string>();
-  // A standalone SDK imports the runtime it carries; an SDK of golem mode imports `@exprtlabs/golem`.
-  const specifiers: RuntimeSpecifiers | undefined = options.mode === 'golem' ? undefined : standaloneRuntimeSpecifiers;
+  const specifiers: RuntimeSpecifiers | undefined = golem ? undefined : standaloneRuntimeSpecifiers;
+  const codecsFor: OperationCodecsFor = options.codecsFile === undefined ? standaloneCodecs : golemCodecs(output, options.codecsFile);
   // The names that each module of the index exports come from its Code, and the index re-exports the whole modules it stars.
   const modules = new Map<string, PublicModule>();
   const neverProperties = neverPropertiesReader(modelAnalysis, document);
@@ -298,7 +306,7 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions, moved:
   // One validators module serves the models and the operations: it compiles the roots of every model group and
   // every operation together, so a check the two share is written once.
   const hasOperationModules = plan.artifacts.has('client.ts') || plan.artifacts.has('inbound.ts');
-  const operationValidation = hasOperationModules
+  const operationValidation = hasOperationModules && !golem
     ? buildOperationValidationSchemas([...operations, ...inboundOperations], document, profile, schemaData, options.locate, moved)
     : undefined;
   const validators: { compiled?: PlanValidators } = {};
@@ -325,7 +333,7 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions, moved:
     return validators.compiled;
   };
   const modelDiagnostics: GolemDiagnostic[] = [];
-  if (modelAnalysis.grouping.groups.length > 0) {
+  if (!golem && modelAnalysis.grouping.groups.length > 0) {
     const models = generateOpenApiModelArtifacts(document, profile, modelAnalysis, {
       locate: options.locate,
       ...(specifiers ? { specifiers } : {}),
@@ -348,13 +356,14 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions, moved:
       profile,
       plan,
       modelAnalysis.convertedNodeIds,
+      codecsFor,
       specifiers,
     );
     files.set('client.ts', clientModules.client.source);
     modules.set('client.ts', { exports: clientModules.client.exports, stars: [] });
     for (const [name, source] of clientModules.operations) files.set(name, source);
   }
-  if (hasOperationModules) {
+  if (hasOperationModules && !golem) {
     for (const [name, source] of generateOperationCodecs(
       [...operations, ...inboundOperations],
       profile,
@@ -368,7 +377,12 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions, moved:
     modules.set('servers.ts', { exports: serversModule.exports, stars: [] });
   }
   if (plan.artifacts.has('inbound.ts')) {
-    const inbound = generateInbound(clientName, document, inboundOperations, profile, (operation) => files.has(`codecs/${operation}.ts`), specifiers);
+    const inboundByName = new Map(inboundOperations.map((operation) => [operation.name, operation] as const));
+    // The golem mode writes no codec module to look for: an operation has codecs when the standalone mode would write its module.
+    const hasCodecs = golem
+      ? (name: string): boolean => Boolean(profile.validation) || operationConverts(inboundByName.get(name)!, modelAnalysis.convertedNodeIds)
+      : (name: string): boolean => files.has(`codecs/${name}.ts`);
+    const inbound = generateInbound(clientName, document, inboundOperations, profile, hasCodecs, codecsFor, specifiers);
     files.set('inbound.ts', inbound.source);
     modules.set('inbound.ts', { exports: inbound.exports, stars: [] });
   }

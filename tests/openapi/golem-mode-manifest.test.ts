@@ -81,7 +81,7 @@ test('an openapi job in golem mode writes the graph into model-manifest.json', a
   // protects: T-696 the job's mode key reaches the manifest
   const directory = createFixtureProject(t, 'golem-mode-manifest-');
   const input = writeOpenApiDocument(directory, DOCUMENT);
-  const result = await generate({ input, output: path.join(directory, 'sdk'), name: 'Charges', profile: PROFILE, mode: 'golem' });
+  const result = await generate({ input, output: path.join(directory, 'sdk'), name: 'Charges', profile: PROFILE, mode: 'golem', codecsFile: path.join(directory, 'models/sdk.sdk.generated.ts') });
   const manifest = validateModelManifest(JSON.parse(result.artifacts.find(artifact => artifact.path.endsWith('/model-manifest.json'))?.content ?? '{}'));
   assert.ok(isGolemModeManifest(manifest));
   assert.deepEqual(Object.keys(manifest.codecIds), ['Cat', 'Charge', 'Tree']);

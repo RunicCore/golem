@@ -12,7 +12,7 @@ test('generate takes the standalone or golem mode of the job and refuses any oth
   copyFixture(directory, 'openapi/api/standalone');
   const input = path.join(directory, 'openapi.yaml');
   for (const mode of ['standalone', 'golem'] as const) {
-    const result = await generate({ input, output: path.join(directory, mode), profile, mode });
+    const result = await generate({ input, output: path.join(directory, mode), profile, mode, ...(mode === 'golem' ? { codecsFile: path.join(directory, 'models', 'golem.sdk.generated.ts') } : {}) });
     assert.equal(result.apiVersion, 1);
   }
   await assert.rejects(

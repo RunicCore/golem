@@ -49,6 +49,15 @@ export function responseHeaderKey(operation: string, status: string, name: strin
   return JSON.stringify([operation, 'response-header', status, name]);
 }
 
+/** Whether any body, parameter or response header of the operation converts a value (a Date or Temporal inside it). */
+export function operationConverts(operation: NormalizedOperation, convertedNodeIds: ReadonlyMap<string, string>): boolean {
+  return operation.requestContent.some((media) => convertedNodeIds.has(requestBodyKey(operation.name, media.contentType)))
+    || operation.parameters.some((parameter) => convertedNodeIds.has(parameterKey(operation.name, parameter.in, parameter.name)))
+    || operation.responses.some((response) =>
+      response.content.some((media) => convertedNodeIds.has(responseBodyKey(operation.name, response.status, media.contentType)))
+      || Object.keys(response.headers).some((name) => convertedNodeIds.has(responseHeaderKey(operation.name, response.status, name))));
+}
+
 /** Whether a value of `descriptor` changes between its wire and its plain form: a Date or Temporal value anywhere inside, through the components it references. */
 function descriptorConverts(descriptor: ModelTypeDescriptor, graph: SchemaGraph, seen: Set<string>): boolean {
   const tags = descriptor as ModelTypeDescriptor & { readonly serde?: unknown };
