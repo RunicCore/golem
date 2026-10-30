@@ -116,7 +116,7 @@ export function readRootFields(value: unknown, fields: readonly string[]): unkno
 /**
  * The body of a closed object as data: an instance of a class (any prototype but `Object.prototype` or null) keeps only the
  * declared fields it holds, so its program state is never sent or judged as an unknown key. A plain object stays as it is and
- * an extra key of it is an error. Fields are read by property access, so a getter or accessor of the class supplies its value.
+ * an extra key of it is an error. A getter or accessor of the class supplies its value; a field named like an `Object.prototype` member (`constructor`) or `__proto__` reads and writes as data.
  */
 export function withDeclaredFields(value: unknown, fields: readonly string[]): unknown {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) return value;
@@ -124,10 +124,19 @@ export function withDeclaredFields(value: unknown, fields: readonly string[]): u
   if (prototype === Object.prototype || prototype === null) return value;
   const declared: Record<string, unknown> = {};
   for (const name of fields) {
-    const read: unknown = Reflect.get(value, name);
-    if (read !== undefined) declared[name] = read;
+    const read = declaredFieldValue(value, name);
+    if (read !== undefined) defineModelProperty(declared, name, read);
   }
   return declared;
+}
+
+/** The value of a declared field: an own property, or an accessor of a class between the value and `Object.prototype`; a name only `Object.prototype` holds (`toString`) or a method of the class is no field. */
+function declaredFieldValue(value: object, name: string): unknown {
+  for (let holder: object | null = value; holder !== null && holder !== Object.prototype; holder = Object.getPrototypeOf(holder) as object | null) {
+    const descriptor = Object.getOwnPropertyDescriptor(holder, name);
+    if (descriptor !== undefined) return holder === value || descriptor.get !== undefined ? Reflect.get(value, name) : undefined;
+  }
+  return undefined;
 }
 
 /** The default `maxDepth`: how many levels of objects and arrays a recursive model's input may nest. */
