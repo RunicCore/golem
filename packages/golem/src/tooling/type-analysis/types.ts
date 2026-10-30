@@ -6,6 +6,7 @@ import { projectionIdentity } from './graph.js';
 import { aliasProjectionName, isProjectionName, pascalIdentifier, policySuffix, headQualifiers, projectionBaseName, keysReadAlike, safeNameHint, unionVariantNaming } from './projection-names.js';
 import { commonDirectory, canonicalFilename, companionFilename, type ModelBoundary } from './project.js';
 import { packageSpecifier } from './package-specifier.js';
+import { TEMPORAL_SERDE_PREFIX } from '../sdk-codecs.js';
 import { compareText, displayPath } from '../generator-core.js';
 import type { GolemProfile } from '../generator-core.js';
 import { assertSupportedModelFieldName, canonicalDescriptorKey, isBrandPropertyName } from '../schema.js';
@@ -199,6 +200,29 @@ function hasRequiredTypeParameter(symbol: ts.Symbol): boolean {
     .map((item) => item.typeParameters ?? []);
   const count = Math.max(0, ...lists.map((list) => list.length));
   return Array.from({ length: count }, (_, index) => lists.some((list) => { const parameter = list[index]; return parameter !== undefined && ts.typeParameterDefault(parameter) !== undefined; })).some((defaulted) => !defaulted);
+}
+
+const TEMPORAL_CLASSES: ReadonlySet<string> = new Set(['Instant', 'ZonedDateTime', 'PlainDate', 'PlainDateTime', 'PlainTime', 'Duration']);
+
+/**
+ * The name of the global `Temporal` class that `type` is (`Instant` for `Temporal.Instant`), or undefined. A `Temporal` that a module
+ * exports, such as a polyfill's, is not the global one: generated code would have to import it.
+ */
+function globalTemporalClass(type: ts.Type): string | undefined {
+  const symbol = type.getSymbol();
+  const declaration = symbol?.declarations?.[0];
+  const name = symbol?.getName();
+  if (declaration === undefined || name === undefined || !TEMPORAL_CLASSES.has(name)) return undefined;
+  let outermost: ts.ModuleDeclaration | undefined;
+  let augmentsGlobal = false;
+  for (let parent: ts.Node | undefined = declaration.parent; parent && !ts.isSourceFile(parent); parent = parent.parent) {
+    if (!ts.isModuleDeclaration(parent)) continue;
+    if (!ts.isIdentifier(parent.name)) return undefined;
+    if (parent.name.text === 'global') { augmentsGlobal = true; break; }
+    outermost = parent;
+  }
+  const global = augmentsGlobal || !isModuleFile(declaration.getSourceFile());
+  return global && outermost !== undefined && ts.isIdentifier(outermost.name) && outermost.name.text === 'Temporal' ? name : undefined;
 }
 
 /** A file with a top-level import or export is a module; any other file declares globals. */
@@ -1123,6 +1147,15 @@ export function descriptorBuilder(
       });
     }
 
+    // A global `Temporal` class has the conversion of the runtime's Temporal codec of that name, as if it carried the golem Temporal tag.
+    const temporalClass = metadata.serde ? undefined : globalTemporalClass(type);
+    if (temporalClass !== undefined) {
+      return withMetadata({
+        kind: 'class-value',
+        typeName: `Temporal.${temporalClass}`,
+        serde: { id: `${TEMPORAL_SERDE_PREFIX}Temporal${temporalClass}`, wireDescriptor: { kind: 'string' } },
+      } as unknown as ModelConversionDescriptor, metadata);
+    }
     // A class instance or bigint has no JSON shape of its own; its TSerde codec is its only conversion.
     if (metadata.serde && isBigIntValueType(type)) {
       return withMetadata({ kind: 'class-value', typeName: 'bigint' } as ModelConversionDescriptor, metadata);

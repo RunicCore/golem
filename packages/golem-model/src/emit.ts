@@ -1830,7 +1830,7 @@ function emitCodecSection(context: EmitContext): CodecSection {
 /** The order of the names in each import line of a model file. */
 const IMPORT_OPTIONS: ImportOptions = {
   typeNames: 'inline',
-  modules: ['model', 'conversion', 'serde', 'mobx-validation'],
+  modules: ['model', 'conversion', 'serde', 'mobx-validation', 'temporal'],
   order: MODEL_IMPORT_ORDER,
 };
 
@@ -1868,7 +1868,7 @@ export function emitSource(
     ...fileImports(calls, codecs.sources, { quote: '"', elsewhere: otherSources }),
     ...runtimeLines('model', 'conversion'),
     ...fileImports(calls, context.imports.classSources, { quote: '"', elsewhere: otherSources }),
-    ...runtimeLines('serde', 'mobx-validation'),
+    ...runtimeLines('serde', 'temporal', 'mobx-validation'),
     ...context.imports.siblingCompanions,
     ...sdkCodecImports(context),
     ...fileImports(calls, context.imports.sources, { quote: '"', elsewhere: otherSources }),

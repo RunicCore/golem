@@ -1,9 +1,11 @@
+import 'temporal-polyfill/global';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 import { fileFixtureScope } from './fixture-project.js';
+import { buildModelProject, createModelProject, writeModelGolemYaml, writeModelSources } from './model-project.js';
 import { loadGolemModeProject, type GolemModeSdkSetup } from './openapi/sdk-client-fixture.js';
 
 const scope = fileFixtureScope();
@@ -41,4 +43,23 @@ test('a golem-mode model over an SDK type takes the SDK limits and writes no val
   const generated = await importBuilt(project.root, 'src/charge.model.generated.js');
   assert.deepEqual(generated.fromWireFormatTChargeRecord({ id: 'c1', amount: 2, at: '2025-01-02T03:04:05Z' }), { id: 'c1', amount: 2, at: new Date('2025-01-02T03:04:05Z') });
   assert.throws(() => generated.fromWireFormatTChargeRecord({ id: 'too-long', amount: 2 }), /id/);
+});
+
+test('a standalone model with plain Temporal fields parses and stringifies them', async () => {
+  // protects: T-700 R-83 an app model over a plain SDK type with global Temporal fields derives (it stopped with RUNM1004) and converts them
+  const { root, sourceRoot } = createModelProject(scope, { prefix: 'sdk-app-model-temporal-', name: 'temporal-fields', linkWorkspaceNodeModules: true, compilerOptions: { lib: ['ES2023', 'DOM', 'esnext.temporal'] } });
+  writeModelSources(sourceRoot, {
+    'charge.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
+export type Charge = { id: string; at: Temporal.Instant; day?: Temporal.PlainDate; spent: Temporal.Duration | null };
+export type TChargeRecord = IModel<Charge>;
+`,
+  });
+  writeModelGolemYaml(root, { mobx: false, validation: true });
+  await buildModelProject(root);
+  const generated = await importBuilt(root, 'charge.model.generated.js');
+  const wire = { id: 'c1', at: '2025-01-02T03:04:05Z', day: '2025-01-02', spent: 'PT5M' };
+  const charge = generated.parseTChargeRecord(JSON.stringify(wire));
+  assert.deepEqual([charge.at instanceof Temporal.Instant, charge.day instanceof Temporal.PlainDate, charge.spent instanceof Temporal.Duration], [true, true, true]);
+  assert.deepEqual(JSON.parse(generated.stringifyTChargeRecord(charge)), wire);
+  assert.throws(() => generated.parseTChargeRecord(JSON.stringify({ ...wire, at: 'yesterday' })), /Temporal\.Instant|at/);
 });
