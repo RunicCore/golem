@@ -10,10 +10,11 @@ import {
 } from '@exprtlabs/golem/internal/model-runtime';
 import type { ModelTypeDescriptor } from '@exprtlabs/golem/internal/schema';
 import { createSchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
-import { code, render, type StringifySerdeResolver } from '@exprtlabs/golem/internal/emitter';
+import { render } from '@exprtlabs/golem/internal/emitter';
 import { emitGraphStringify } from './support/stringify-graph.js';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { instantiate, instantiateRuntime, emitCodecRuntimeText } from './emitted-runtime.js';
+import { DATE_FIELD, DATE_SERDE } from './support/date-field.js';
 
 const stringCorpus = [
   '',
@@ -226,15 +227,11 @@ test('tagged generated-model unions stringify the selected interned branch', () 
   assert.equal(stringifyContactBook(withPhone as never), JSON.stringify(withPhone));
 });
 
-/** A Date field in the class-value form; only a decode runs here, so the serde converts text to a Date and the wire carries no rule. */
-const DATE: ModelTypeDescriptor = { kind: 'class-value', typeName: 'Date', classRef: { path: ['Date'] }, serde: { id: 'date', wire: { kind: 'string' } } };
-const DATE_SERDE: StringifySerdeResolver = { deserialize: (_id, value) => code`new Date(${value} as string)`, serialize: (_id, value) => value };
-
 test('a root union of plain objects decodes by its tag with validation off, and an unknown tag throws', () => {
   // protects: T-643 a decoder that holds a tag local in its function body (decodeLocals) is emitted and runs
   const variant = (kind: string): ModelTypeDescriptor => ({
     kind: 'object',
-    properties: { kind: { kind: 'literal', value: kind }, added: DATE },
+    properties: { kind: { kind: 'literal', value: kind }, added: DATE_FIELD },
     required: ['kind', 'added'],
     additionalProperties: false,
   });

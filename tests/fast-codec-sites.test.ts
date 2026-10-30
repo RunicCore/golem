@@ -159,6 +159,16 @@ for (const [name, descriptor, valid, invalid, nested] of FIXTURES) {
   });
 }
 
+test('generated codec, a Date field: a value that is no Date is one instance issue at the field path', async () => {
+  // protects: T-725 F-39 the model plane rejects a non-Date in a Date field with the shared class-instance issue
+  const { functions } = await orderCodec(WITH_DATE, true);
+  assert.throws(() => functions.assertOrder({ id: 'a', at: 'not a Date' }), (error: unknown) => {
+    assert.ok(error instanceof LibError);
+    assert.deepEqual(error.issues.map((issue) => ({ path: issue.path, code: issue.code, model: (issue as { model?: string }).model })), [{ path: ['at'], code: 'instance', model: 'Date' }]);
+    return true;
+  });
+});
+
 /** The planes each public conversion checks on a valid value; none of them reaches the full validator. */
 interface ConversionRoutes {
   readonly toWireFormat: readonly Plane[];

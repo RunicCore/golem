@@ -3,12 +3,8 @@ import test from 'node:test';
 
 import { createSchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
 import type { ModelTypeDescriptor } from '@exprtlabs/golem/internal/schema';
-import { code, type StringifySerdeResolver } from '@exprtlabs/golem/internal/emitter';
 import { instantiateRuntime, emitCodecRuntimeText } from './emitted-runtime.js';
-
-/** A Date field in the class-value form; only a decode runs here, so the serde converts text to a Date and the wire carries no rule. */
-const DATE: ModelTypeDescriptor = { kind: 'class-value', typeName: 'Date', serde: { id: 'date', wire: { kind: 'string' } }, classRef: { path: ['Date'] } };
-const DATE_SERDE: StringifySerdeResolver = { serialize: (_id, value) => value, deserialize: (_id, value) => code`new Date(${value} as string)` };
+import { DATE_FIELD, DATE_SERDE } from './support/date-field.js';
 
 /** A map whose keys are matched by two patterns that need the `u` flag, each with a date-time value. */
 function datesByKeyGraph(): ReturnType<typeof createSchemaGraph> {
@@ -18,8 +14,8 @@ function datesByKeyGraph(): ReturnType<typeof createSchemaGraph> {
     required: [],
     additionalProperties: false,
     constraints: [
-      { kind: 'patternProperties', pattern: '^\\p{L}+$', schema: DATE },
-      { kind: 'patternProperties', pattern: '^\\u{1F600}$', schema: DATE },
+      { kind: 'patternProperties', pattern: '^\\p{L}+$', schema: DATE_FIELD },
+      { kind: 'patternProperties', pattern: '^\\u{1F600}$', schema: DATE_FIELD },
     ],
   };
   const graph = createSchemaGraph();

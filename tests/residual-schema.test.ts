@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { MODEL_CLASS_KEYWORD, schemaForDescriptor, VALIDATION_KEYWORD } from '#golem/schema';
+import { DATE_FIELD } from './support/date-field.js';
 
 const str = { kind: 'string' };
 const num = { kind: 'number' };
-/** A Date field in the class-value form: the model plane holds an instance of the class, the wire a date-time string. */
-const date = { kind: 'class-value', typeName: 'Date', classRef: { path: ['Date'] }, serde: { id: 'date', wire: { kind: 'string', constraints: [{ kind: 'format', value: 'date-time' }] } } };
+const date = DATE_FIELD;
 const DATE_INSTANCE = { [MODEL_CLASS_KEYWORD]: { name: 'Date', path: ['Date'] } };
 const DATE_TEXT = { allOf: [{ type: 'string' }, { format: 'date-time' }] };
 const withRule = (d: object, id = 'src/rules.ts:1:2') => ({ ...d, validations: [id] });

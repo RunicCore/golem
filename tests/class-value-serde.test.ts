@@ -190,6 +190,18 @@ for (const [field, name] of [['price', 'Money'], ['link', 'URL'], ['when', 'Temp
   });
 }
 
+// A plain Date field has the same check, and a Date that holds no time (an invalid Date) is no value of the class.
+for (const [name, wrong] of [['a string', '2025-01-02T03:04:05.000Z'], ['a number', 5], ['an invalid Date', new Date(Number.NaN)]] as const) {
+  test(`at: validation rejects ${name} in a Date field with one instance issue at the field path`, async t => {
+    // protects: T-725 F-39 validate() rejects a non-Date and an invalid Date in a Date field, though Date has no rule of its own
+    const { A } = await build(t, tsSource`at: Date`);
+    const model = modelCodec(A).fromWireFormat({ at: '2025-01-02T03:04:05.000Z' });
+    assert.deepEqual(await validateInstance(model, { failFast: false }), []);
+    const issues = await validateInstance(Object.assign(model, { at: wrong }), { failFast: false });
+    assert.deepEqual(issues.map(issue => ({ path: issue.path, code: issue.code, message: issue.message })), [{ path: ['at'], code: 'instance', message: 'Expected an instance of Date' }]);
+  });
+}
+
 test('generated model type names the class', async t => {
   const { root } = await build(t, tsSource`price: Price; when: When; bytes: Bytes`);
   await assertFieldClasses(root, path.join(root, 'src'), ["import type { Money } from './money.js';"], { price: 'Money', when: 'Temporal.Instant', bytes: 'Uint8Array' });
