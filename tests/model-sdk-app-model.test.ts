@@ -279,3 +279,32 @@ export type TRecord = IModel<{ plain: Currency; tagged: Currency & MinLength<2>;
   assert.equal([...check.matchAll(/limit: 3, inclusive: true/g)].length, 3, 'the SDK limit is written once for each of the three plain string fields; the nullable one keeps it in its union member');
   assert.equal([...check.matchAll(/limit: 2, inclusive: true/g)].length, 1, 'the limit of the tag is written once');
 });
+
+test('a golem-mode model over an array, union or map SDK alias takes the SDK limits of the alias', async () => {
+  // protects: T-739 F-804 an app model field of a non-scalar SDK alias keeps the SDK's item, branch and value limits
+  const sdk: GolemModeSdkSetup = {
+    folder: 'sdk/charges',
+    name: 'Charges',
+    document: chargesDocument({
+      Tags: { type: 'array', items: { type: 'integer', maximum: 9 } },
+      Ident: { oneOf: [{ type: 'string', maxLength: 3 }, { type: 'integer', minimum: 0 }] },
+      Extra: { type: 'object', additionalProperties: { type: 'integer', maximum: 9 } },
+      Charge: { type: 'object', required: ['id'], properties: { id: { type: 'string' }, tags: ref('Tags'), ident: ref('Ident'), extra: ref('Extra') } },
+    }),
+  };
+  const model = `import type { IModel } from '@exprtlabs/golem/model';
+import type { Extra, Ident, Tags } from '../sdk/charges/index.js';
+export type TRecord = IModel<{ tags: Tags; ident: Ident; extra: Extra }>;
+`;
+  const project = await loadGolemModeProject(scope, 'sdk-app-model-alias-', [sdk], true, { 'src/record.model.ts': model });
+  const generated = await importBuilt(project.root, 'src/record.model.generated.js');
+  const valid = { tags: [1, 9], ident: 'ABC', extra: { a: 9 } };
+  assert.deepEqual(generated.fromWireFormatTRecord(valid), valid);
+  assert.deepEqual(generated.fromWireFormatTRecord({ ...valid, ident: 7 }).ident, 7);
+  assert.throws(() => generated.fromWireFormatTRecord({ ...valid, tags: [1.5] }), /Model validation failed/);
+  assert.throws(() => generated.fromWireFormatTRecord({ ...valid, tags: [10] }), /Model validation failed/);
+  assert.throws(() => generated.fromWireFormatTRecord({ ...valid, ident: 'ABCDE' }), /Model validation failed/);
+  assert.throws(() => generated.fromWireFormatTRecord({ ...valid, ident: -1 }), /Model validation failed/);
+  assert.throws(() => generated.fromWireFormatTRecord({ ...valid, extra: { a: 10 } }), /Model validation failed/);
+  assert.throws(() => generated.fromWireFormatTRecord({ ...valid, extra: { a: 1.5 } }), /Model validation failed/);
+});

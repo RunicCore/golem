@@ -65,13 +65,13 @@ test('the golem-mode schema graph goes through the manifest file and back to the
   assert.equal(codecText(graph, bases), codecText(original.schemaGraph, bases));
 });
 
-test('the golem-mode manifest lists each component once: a model by its declared type, a scalar alias by its type', () => {
+test('the golem-mode manifest lists each component once: a model by its declared type, any other alias by its type', () => {
   // protects: T-733 one components list holds the codec id, descriptor and type of each schema
-  const document = { ...DOCUMENT, components: { schemas: { ...DOCUMENT.components.schemas, Currency: { type: 'string', maxLength: 3 } } } };
+  const document = { ...DOCUMENT, components: { schemas: { ...DOCUMENT.components.schemas, Currency: { type: 'string', maxLength: 3 }, Tags: { type: 'array', items: { type: 'integer' } } } } };
   const manifest = validateModelManifest(JSON.parse(stableJson(golemModeManifest(document, PROFILE))));
   assert.ok(isGolemModeManifest(manifest));
   assert.deepEqual(manifest.components.map(entry => [entry.name, entry.codecId !== undefined, entry.type?.export]), [
-    ['Charge', true, undefined], ['Cat', true, undefined], ['Tree', true, undefined], ['Currency', false, 'Currency'],
+    ['Charge', true, undefined], ['Cat', true, undefined], ['Tree', true, undefined], ['Currency', false, 'Currency'], ['Tags', false, 'Tags'],
   ]);
   assert.deepEqual(manifest.components.find(entry => entry.name === 'Currency')?.descriptor, '{"kind":"string","constraints":[{"kind":"maxLength","value":3}]}');
   assert.deepEqual(manifest.models.map(entry => entry.type.export), ['Charge', 'Cat']);
@@ -112,7 +112,7 @@ test('a golem-mode manifest without the graph, or with another mode is refused a
   assert.throws(() => validateModelManifest({ ...written, dates: 'moment' }), /dates must be "date" or "temporal"\. Regenerate/);
   assert.throws(() => validateModelManifest({ ...written, validationResources: undefined }), /a validating SDK lists the validation roots of every operation and the resources they reach, and a non-validating SDK lists none\. Regenerate/);
   assert.throws(() => validateModelManifest({ ...written, mode: 'both' }), /mode must be "golem" when present\. Regenerate/);
-  assert.throws(() => validateModelManifest({ ...written, components: [{ name: 'Ghost', descriptor: '{"kind":"string"}' }] }), /components must list .* a codec id for a graph node and the type of a scalar alias/);
+  assert.throws(() => validateModelManifest({ ...written, components: [{ name: 'Ghost', descriptor: '{"kind":"string"}' }] }), /components must list .* a codec id for a graph node and the type of an alias/);
   assert.throws(() => validateModelManifest({ ...written, components: [{ name: 'Charge', codecId: 'Charge_00000001', descriptor: 'not json' }] }), /components must list/);
   const withoutCharge = (written.components as { name: string }[]).filter(component => component.name !== 'Charge');
   assert.throws(() => validateModelManifest({ ...written, components: withoutCharge }), /model entry Charge has no codecId\. Regenerate/);

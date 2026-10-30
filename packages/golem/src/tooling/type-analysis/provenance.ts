@@ -42,10 +42,11 @@ export interface ManifestIndex {
   /** The keywords of the SDK schema of the type that its descriptors do not carry, with those of the schemas it refers to; none when the type is no SDK type or its descriptors carry them all. */
   sdkUncarriedForType(type: ts.Type): readonly string[] | undefined;
   /**
-   * The descriptor of the scalar alias that the type node names (`type Currency = string`, which TypeScript resolves to `string`, so the
-   * type alone does not tell), with the limits the SDK's schema has. The model of the app then checks them inline, as the SDK does.
+   * The descriptor of the alias that the type node names (`type Currency = string` or `type Tags = number[]`, which TypeScript resolves to the
+   * plain type, so the type alone does not tell), with the limits the SDK's schema has and the SDK node of each model it names. The model of
+   * the app then checks them inline, as the SDK does.
    */
-  sdkScalarDescriptorForNode(checker: ts.TypeChecker, node: ts.TypeNode): ModelTypeDescriptor | undefined;
+  sdkAliasDescriptorForNode(checker: ts.TypeChecker, node: ts.TypeNode): ModelTypeDescriptor | undefined;
 }
 
 /** The descriptor kinds of an SDK schema that has a node codec in the SDK's codecs file; a scalar alias has none and is written inline. */
@@ -227,8 +228,8 @@ export function loadModelManifests(
   // The descriptor of each SDK type of a golem-mode manifest, with the schemas it names inline, by the provenance of its declaration.
   const sdkDescriptors = new Map<string, { readonly root: ModelTypeDescriptor; readonly field: ModelTypeDescriptor }>();
   const sdkUncarried = new Map<string, readonly string[]>();
-  // The descriptor of each scalar alias of a golem-mode manifest, by the provenance of its declaration.
-  const sdkScalars = new Map<string, ModelTypeDescriptor>();
+  // The descriptor of each alias of a golem-mode manifest that is no model, by the provenance of its declaration.
+  const sdkAliases = new Map<string, ModelTypeDescriptor>();
   for (const filename of filenames) {
     // Explicit SDK manifests stay in the load set for duplicate-id and profile
     // checks. Only manifests this job discovered or advertised are watch inputs
@@ -240,10 +241,10 @@ export function loadModelManifests(
     const golem = isGolemModeManifest(manifest) ? manifest : undefined;
     if (golem !== undefined) {
       golemModeManifests.push({ file: filename, manifest: golem });
-      for (const scalar of golem.components.filter((component) => component.type !== undefined)) {
-        const descriptor = JSON.parse(scalar.descriptor) as ModelTypeDescriptor;
-        for (const provenance of [scalar.type!, ...(scalar.type!.aliases ?? [])]) {
-          sdkScalars.set(manifestProvenance(filename, provenance.module, provenance.export), descriptor);
+      for (const alias of golem.components.filter((component) => component.type !== undefined)) {
+        const descriptor = sdkDescriptorOf(golem, alias.name)!;
+        for (const provenance of [alias.type!, ...(alias.type!.aliases ?? [])]) {
+          sdkAliases.set(manifestProvenance(filename, provenance.module, provenance.export), descriptor);
         }
       }
     }
@@ -299,14 +300,14 @@ export function loadModelManifests(
       return found === undefined ? undefined : root ? found.root : found.field;
     },
     sdkUncarriedForType: (type: ts.Type) => sdkEntryOfType(sdkUncarried, type),
-    sdkScalarDescriptorForNode(checker: ts.TypeChecker, node: ts.TypeNode): ModelTypeDescriptor | undefined {
-      if (sdkScalars.size === 0 || !ts.isTypeReferenceNode(node)) return undefined;
+    sdkAliasDescriptorForNode(checker: ts.TypeChecker, node: ts.TypeNode): ModelTypeDescriptor | undefined {
+      if (sdkAliases.size === 0 || !ts.isTypeReferenceNode(node)) return undefined;
       const named = checker.getSymbolAtLocation(node.typeName);
       const symbol = named !== undefined && (named.flags & ts.SymbolFlags.Alias) !== 0 ? checker.getAliasedSymbol(named) : named;
       for (const declaration of symbol?.declarations ?? []) {
         const file = canonicalFilename(declaration.getSourceFile().fileName);
-        const found = sdkScalars.get(`${file}\0${symbol!.getName()}`)
-          ?? sdkScalars.get(`${file.replace(/\.d\.([cm]?ts)$/, '.$1')}\0${symbol!.getName()}`);
+        const found = sdkAliases.get(`${file}\0${symbol!.getName()}`)
+          ?? sdkAliases.get(`${file.replace(/\.d\.([cm]?ts)$/, '.$1')}\0${symbol!.getName()}`);
         if (found !== undefined) return found;
       }
       return undefined;

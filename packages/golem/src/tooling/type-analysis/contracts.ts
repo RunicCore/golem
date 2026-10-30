@@ -66,7 +66,7 @@ export function createContractAnalysis(
   const sources = byRealPath([...ownSources, ...sharedSources]);
   const { specifications } = collectSpecifications(program, sources, options.exact, options.boundary && ((file) => companionFilename(options.boundary, file)));
   const emptyManifests: ManifestIndex = {
-    byProvenance: new Map(), files: [], localFiles: [], golemModeManifests: [], sdkDescriptorForType: () => undefined, sdkUncarriedForType: () => undefined, sdkScalarDescriptorForNode: () => undefined,
+    byProvenance: new Map(), files: [], localFiles: [], golemModeManifests: [], sdkDescriptorForType: () => undefined, sdkUncarriedForType: () => undefined, sdkAliasDescriptorForNode: () => undefined,
   };
   // A model with exactly one linked class is named by that class, or by the name the class declares; any other model by its alias.
   const baseNames = new Map<ModelSpecification, string>();

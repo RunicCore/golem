@@ -1201,10 +1201,10 @@ export function descriptorBuilder(
     }
     const sdkDescriptor = manifestIndex.sdkDescriptorForType(type, isRoot);
     if (sdkDescriptor) return withMetadata(sdkDescriptor as ModelConversionDescriptor, metadata);
-    // A scalar alias of the SDK (`type Currency = string`) is `string` to the checker, so the node names it. Its limits come first, then the field's own.
-    const scalarNode = hasBaseTags && analysis.baseNode ? analysis.baseNode : node ?? nameNode;
-    const sdkScalar = scalarNode === undefined ? undefined : manifestIndex.sdkScalarDescriptorForNode(checker, scalarNode) as { readonly constraints?: readonly ModelConstraint[] } | undefined;
-    if (sdkScalar) return withMetadata({ ...sdkScalar } as ModelConversionDescriptor, { ...metadata, constraints: [...(sdkScalar.constraints ?? []), ...metadata.constraints] });
+    // An alias of the SDK that is no model (`type Currency = string`, `type Tags = number[]`) is the plain type to the checker, so the node names it. Its limits come first, then the field's own.
+    const aliasNode = hasBaseTags && analysis.baseNode ? analysis.baseNode : node ?? nameNode;
+    const sdkAlias = aliasNode === undefined ? undefined : manifestIndex.sdkAliasDescriptorForNode(checker, aliasNode) as { readonly constraints?: readonly ModelConstraint[] } | undefined;
+    if (sdkAlias) return withMetadata({ ...sdkAlias } as ModelConversionDescriptor, { ...metadata, constraints: [...(sdkAlias.constraints ?? []), ...metadata.constraints] });
     if (type.flags & ts.TypeFlags.Any) {
       if (!allowUnresolved && isErrorAny(type)) {
         const at = node ?? context.declaration;

@@ -31,11 +31,11 @@ export interface ModelManifest {
  * and the key order of a descriptor is part of the codec id of an unnamed shape, so the text keeps the order the graph interned.
  */
 export interface GolemModeComponent {
-  /** The name the graph interned a node under, or the name of a scalar alias's declared type. */
+  /** The name the graph interned a node under, or the name of an alias's declared type. */
   readonly name: string;
-  /** The codec id of a node: a model or a recursive alias. A scalar alias has none and is written inline. */
+  /** The codec id of a node: a model or a recursive alias. An alias (scalar, array, tuple, union) has none and is written inline. */
   readonly codecId?: string;
-  /** The declared type of a scalar alias, whose limits an app field keeps. A model's declared type is its `models` entry. */
+  /** The declared type of an alias, whose limits an app field keeps. A model's declared type is its `models` entry. */
   readonly type?: ModelManifestProvenance;
   /** The names of the models that this model narrows. */
   readonly bases?: readonly string[];
@@ -83,8 +83,8 @@ export interface GolemModeManifest extends ModelManifest {
   readonly dates: 'date' | 'temporal';
   /**
    * Each component schema of the SDK once: a model or recursive alias has a codec id and is a node of the schema graph, a model is also
-   * the component named as its declared type (`export` of its `models` entry), and a scalar alias has a type and no codec id. In the
-   * order the graph interned the nodes, then the scalars.
+   * the component named as its declared type (`export` of its `models` entry), and any other alias has a type and no codec id. In the
+   * order the graph interned the nodes, then the aliases.
    */
   readonly components: readonly GolemModeComponent[];
   /** In the order the graph interned them. */
@@ -227,7 +227,7 @@ function validateGolemModeGraph(manifest: Record<string, unknown>, filename: str
     && (entry.bases === undefined || (Array.isArray(entry.bases) && entry.bases.every(isName)))
     && (entry.uncarried === undefined || (Array.isArray(entry.uncarried) && entry.uncarried.every(isName)));
   if (!Array.isArray(components) || !components.every(validComponent) || new Set(components.map((entry) => entry.name)).size !== components.length) {
-    throw invalid('components must list each schema once, by name, with its descriptor as JSON text, a codec id for a graph node and the type of a scalar alias');
+    throw invalid('components must list each schema once, by name, with its descriptor as JSON text, a codec id for a graph node and the type of an alias');
   }
   if (!Array.isArray(operations) || !operations.every((entry) => isRecord(entry) && isName(entry.name) && Array.isArray(entry.values) && entry.values.every(isOperationValue))) {
     throw invalid('operations must list each operation name with the nodes of its values');

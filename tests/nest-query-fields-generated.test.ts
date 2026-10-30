@@ -75,11 +75,12 @@ test('an app model over SDK types lists the query fields of their aliases and of
   const keys = (JSON.parse(fs.readFileSync(path.join(root, '.golem/codec-keys.json'), 'utf8')) as { keys: Record<string, string> }).keys;
   const tables = await queryFieldsOf(root, ['./build/src/page.model.generated.js'], [keys['src/page.model.ts#TPage']!, keys['src/page.model.ts#TPage2']!]);
   const page = {
-    flags: { types: [], item: { types: ['boolean'] } },
+    // A boolean enum alias lists its two literals, as the SDK's enum does.
+    flags: { types: [], item: { types: [], literals: [true, false] } },
     level: { types: [], literals: [1, 2, 3] },
     // An integer alias lists 'integer' beside 'number', because its validation schema says so: its text decodes to a number only when that number is a safe integer.
     limit: { types: ['number', 'integer'] },
-    tags: { types: [], item: { types: ['number'] } },
+    tags: { types: [], item: { types: ['number', 'integer'] } },
   };
   assert.deepEqual(tables.TPage, page);
   assert.deepEqual(tables.TPage2, { ...page, page: { types: ['number'] } });

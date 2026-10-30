@@ -6,7 +6,6 @@ import { sourceDigest } from '@exprtlabs/golem/internal/generator-support';
 import { asRecord, isJsonObject, objectEntries } from './json.js';
 import { compareText } from '@exprtlabs/golem/generator-api';
 import { identifier } from '@exprtlabs/golem/internal/generator-support';
-import type { ModelTypeDescriptor } from '@exprtlabs/golem/internal/schema';
 import type { GolemModeManifest, SdkOperationValidation, SdkOperationValue } from '@exprtlabs/golem/manifest';
 import type { OperationValidationSchemas } from './client/emit.js';
 import type { NormalizedOperation } from './normalize.js';
@@ -24,7 +23,7 @@ import {
 import { resolveLocal } from './normalize.js';
 
 /**
- * The schema graph the models job compiles in golem mode: each component once (a model and a recursive alias with its codec id, a scalar
+ * The schema graph the models job compiles in golem mode: each component once (a model and a recursive alias with its codec id, any other
  * alias with its type), and the operations' values. Descriptors are JSON text (see `GolemModeComponent`). The data is the graph's inputs,
  * so interning it again with these codec ids gives the same nodes. A value of a `$ref` is the node of that model and holds no descriptor.
  */
@@ -64,7 +63,7 @@ function golemModeGraph(document: unknown, analysis: OpenApiModelAnalysis, sdk: 
   return {
     mode: 'golem',
     dates: analysis.dates,
-    components: [...nodes, ...scalarComponents(document, analysis)],
+    components: [...nodes, ...aliasComponents(document, analysis)],
     operations,
     ...(validating ? { validationResources: resources } : {}),
   };
@@ -77,28 +76,16 @@ const declaredType = (name: string): { readonly module: string; readonly export:
   aliases: [{ module: './index.ts', export: name }],
 });
 
-const SCALAR_TYPES: ReadonlySet<unknown> = new Set(['string', 'number', 'integer', 'boolean']);
-
-/** A descriptor of one scalar, or of a union of scalars and null, which the SDK writes as a plain type alias: its limits are the constraints of the descriptor. */
-function isScalarDescriptor(descriptor: ModelTypeDescriptor): boolean {
-  const scalar = (kind: string): boolean => kind === 'string' || kind === 'number' || kind === 'boolean';
-  return scalar(descriptor.kind) || (descriptor.kind === 'union' && descriptor.variants.every((variant) => scalar(variant.kind) || variant.kind === 'null'));
-}
-
 /**
- * The component schemas that are one string, number or boolean (or one of them or null) and no model or recursive alias: the SDK writes
- * `export type Name = string`, which keeps none of their limits, so the manifest records their descriptors under the provenance of that type.
+ * The component schemas that are no model or recursive alias: a scalar, array, tuple, union or any other shape that each use inlines. The SDK
+ * writes `export type Name = string`, which keeps none of the limits, so the manifest records the descriptor under the provenance of that type.
  */
-function scalarComponents(document: unknown, analysis: OpenApiModelAnalysis): GolemModeManifest['components'] {
+function aliasComponents(document: unknown, analysis: OpenApiModelAnalysis): GolemModeManifest['components'] {
   const env = modelEnv(document, undefined, undefined, analysis.resources, analysis.selections, analysis.dates);
   return objectEntries(asRecord(asRecord(asRecord(document).components).schemas)).flatMap(([rawName, rawSchema]) => {
     const name = identifier(rawName);
-    const schema = resolveLocal(document, rawSchema);
-    if (analysis.definitions.has(name) || analysis.definitions.aliases.has(name) || !isJsonObject(schema)) return [];
-    const types = Array.isArray(schema.type) ? schema.type : [schema.type];
-    if (!types.every((type) => SCALAR_TYPES.has(type) || type === 'null') || types.every((type) => type === 'null')) return [];
+    if (analysis.definitions.has(name) || analysis.definitions.aliases.has(name) || !isJsonObject(resolveLocal(document, rawSchema))) return [];
     const descriptor = modelConversionDescriptor(rawSchema, analysis.definitions, env, 'to');
-    if (!isScalarDescriptor(descriptor)) return [];
     return [{ name, type: declaredType(name), descriptor: JSON.stringify(descriptor) }];
   });
 }
