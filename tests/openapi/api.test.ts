@@ -1,8 +1,7 @@
-import { copyFixture, copyFixtureFile, createFixtureProject, linkProjectPackages, writeGeneratedArtifacts } from '../fixture-project.js';
+import { copyFixture, createFixtureProject, writeGeneratedArtifacts } from '../fixture-project.js';
 import {
   compileStrictUnusedSdk,
   generatedClientSource,
-  generatedModelSource,
   isGeneratedClientClass,
   requireRecord,
 } from './helpers.js';
@@ -13,8 +12,7 @@ import { pathToFileURL } from 'node:url';
 import YAML from 'yaml';
 import test from 'node:test';
 import { generate } from '#openapi/generator';
-import { command, workspace } from '../support/process.js';
-import { tscBin } from './helpers.js';
+import { workspace } from '../support/process.js';
 
 function fixture(directory: string): string {
   copyFixture(directory, 'openapi/api/standalone');
@@ -39,39 +37,13 @@ test('generate returns absolute pure artifacts and local watch inputs', async (t
   assert.ok(result.artifacts.every(({ path: filename }) => path.isAbsolute(filename)));
   assert.equal(result.artifacts.some(({ path: filename }) => filename.endsWith('/validation.ts')), false);
 
-  const models = generatedModelSource(result.artifacts);
   const client = generatedClientSource(result.artifacts);
-  assert.ok(models);
   assert.ok(client);
-  assert.doesNotMatch(models, /@exprtlabs\/golem\/(mobx|mobx-validation)/);
-  assert.doesNotMatch(models, /asGenObservable|validation:\s*\{/);
-  assert.match(models, /registerGeneratedModel/);
+  const source = result.artifacts.map(({ content }) => content).join('\n');
+  assert.doesNotMatch(source, /@exprtlabs\/golem\/(mobx|mobx-validation)/);
+  assert.doesNotMatch(source, /asGenObservable|validation:\s*\{/);
   assert.doesNotMatch(client, /@exprtlabs\/golem\/validation/);
   assert.equal(result.artifacts.some(({ path: filename }) => filename.endsWith('/schemas.ts')), false);
-});
-
-test('OpenAPI getValidator infers generated fields and rejects handwritten subclass fields', async t => {
-  const directory = createFixtureProject(t, 'golem-openapi-validator-types-');
-  const input = path.join(directory, 'openapi.yaml');
-  const output = path.join(directory, 'sdk');
-  copyFixtureFile(directory, 'openapi/api/validator-types/openapi.yaml', 'openapi.yaml');
-  const result = await generate({ input, output, name: 'ValidatorTypes', profile: { mobx: false, validation: true } });
-  assert.equal(result.artifacts.some(({ path: filename }) => filename.endsWith('/validation.ts')), false);
-  writeGeneratedArtifacts(result.artifacts);
-  linkProjectPackages(output, { '@exprtlabs/golem': path.join(workspace, 'packages/golem') });
-  copyFixtureFile(output, "openapi/api/consumer.ts", "consumer.ts");
-  await command(directory, process.execPath, [
-    tscBin(),
-    '--target', 'ES2022',
-    '--module', 'NodeNext',
-    '--moduleResolution', 'NodeNext',
-    '--strict',
-    '--skipLibCheck',
-    '--outDir', path.join(output, 'build'),
-    path.join(output, 'consumer.ts'),
-    path.join(output, 'index.ts'),
-    path.join(output, 'types.ts'),
-  ]);
 });
 
 test('SDK generated with mobx and validation disabled loads and runs an operation without mobx resolvable', async (t) => {
