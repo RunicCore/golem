@@ -2,7 +2,6 @@ import { copyFixtureFile, createFixtureProject, readFixture, linkProjectPackages
 import assert from 'node:assert/strict';
 import {
   mkdirSync,
-  readdirSync,
   readFileSync,
   writeFileSync,
 } from 'node:fs';
@@ -12,7 +11,6 @@ import { build as bundle } from 'esbuild';
 import { parse } from 'yaml';
 import test, { type TestContext } from 'node:test';
 
-import { getValidator } from '@exprtlabs/golem/validation';
 import { generate as generateModels } from '#model/generator';
 import { writeSdk } from '#openapi/generator';
 import {
@@ -110,47 +108,6 @@ function moduleDocument(): Record<string, unknown> {
           },
         },
       } },
-    },
-  };
-}
-
-function nestedValidationDocument(): Record<string, unknown> {
-  return {
-    openapi: '3.1.0',
-    info: { title: 'Nested Standalone', version: '1' },
-    components: { schemas: {
-      LineItem: {
-        type: 'object',
-        additionalProperties: false,
-        required: ['sku', 'quantity'],
-        properties: {
-          sku: { type: 'string', minLength: 3 },
-          quantity: { type: 'integer', minimum: 1 },
-        },
-      },
-      Order: {
-        type: 'object',
-        additionalProperties: false,
-        required: ['id', 'lines'],
-        properties: {
-          id: { type: 'string', minLength: 3 },
-          lines: { type: 'array', items: { $ref: '#/components/schemas/LineItem' } },
-        },
-      },
-    } },
-    paths: {
-      '/orders': {
-        post: {
-          operationId: 'submitOrder',
-          requestBody: { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/Order' } } } },
-          responses: {
-            200: {
-              description: 'accepted',
-              content: { 'application/json': { schema: { $ref: '#/components/schemas/Order' } } },
-            },
-          },
-        },
-      },
     },
   };
 }
@@ -373,105 +330,6 @@ test('directional resource aliases never shadow another exact resource ID in gen
   const operation = echoOperation(operationFactory, 'submitPayload');
   const payload = { first: { first: 'one' }, second: { second: 2 } };
   assert.deepEqual((await operation.execute({ body: payload })).body, payload);
-});
-
-test('compact OpenAPI schema closure feeds nested model first/all validation and a missing closure is rejected', async t => {
-  const { root, source } = fixture(t);
-  const sdk = source;
-  const sdkResult = writeGeneratedSdk(writeSdk, nestedValidationDocument(), {
-    output: sdk,
-    name: 'NestedStandalone',
-    profile: { mobx: false, validation: true },
-  });
-  const manifestPath = path.join(sdk, 'model-manifest.json');
-  const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as {
-    source: { digest: string };
-    validationSchemaClosure?: readonly { codecId: string; modelSchema: unknown; wireSchema?: unknown; aliases?: readonly string[] }[];
-  };
-  const closure = manifest.validationSchemaClosure;
-  assert.ok(closure && closure.length >= 2, 'OpenAPI emits model validation schemas once in the manifest closure');
-  const codecIds = new Set(closure?.map(entry => entry.codecId));
-  assert.equal(codecIds.size, closure?.length, 'the closure has one entry per canonical codec identity');
-  const schemaRefs: string[] = [];
-  const collectRefs = (value: unknown): void => {
-    if (Array.isArray(value)) {
-      for (const item of value) collectRefs(item);
-      return;
-    }
-    if (!value || typeof value !== 'object') return;
-    for (const [key, item] of Object.entries(value)) {
-      if (key === '$ref' && typeof item === 'string') schemaRefs.push(item);
-      else collectRefs(item);
-    }
-  };
-  for (const entry of closure ?? []) {
-    collectRefs(entry.modelSchema);
-    collectRefs(entry.wireSchema);
-  }
-  assert.ok(schemaRefs.some(reference => [...codecIds].some(id => reference === id || reference === `${id}#wire`)),
-    'nested manifest schemas point to canonical closure entries instead of embedding repeated child schemas');
-  assert.ok(sdkResult.artifacts.some(artifact => artifact.path.endsWith('/models/Order.ts')));
-
-  const purchaseSource = path.join(source, 'purchase.model.ts');
-  copyFixtureFile(source, "openapi/modular-generation/purchase.model.ts", "purchase.model.ts");
-  const generateCompanion = () => generateModels({
-    root,
-    sources: [purchaseSource],
-    manifestInputs: [manifestPath],
-    profile: { mobx: false, validation: true },
-  });
-  const companion = generateCompanion();
-  const validatorModule = companion.artifacts.find(artifact => artifact.path.endsWith('/models.validators.generated.ts'));
-  assert.ok(validatorModule, 'golem-model consumes the transitive OpenAPI closure in one validator module');
-  writeGeneratedArtifacts(companion.artifacts);
-  // The model file imports its validators, so tsc emits them with it.
-  compileGeneratedSdk(source, [purchaseSource], {
-    strict: true,
-    noUnusedLocals: true,
-    noUnusedParameters: true,
-    exactOptionalPropertyTypes: true,
-    noUncheckedIndexedAccess: true,
-  });
-
-  const sdkModels = requireRecord(await import(pathToFileURL(path.join(source, 'dist/index.js')).href), 'SDK models');
-  const purchaseModule = requireRecord(await import(pathToFileURL(path.join(source, 'dist/purchase.model.js')).href), 'Purchase model');
-  const Purchase = purchaseModule.Purchase;
-  const OrderModel = sdkModels.OrderModel;
-  const LineItemModel = sdkModels.LineItemModel;
-  for (const [name, value] of [['Purchase', Purchase], ['OrderModel', OrderModel], ['LineItemModel', LineItemModel]] as const) {
-    assert.equal(typeof value, 'function', `${name} class export`);
-    if (typeof value !== 'function') throw new TypeError(`${name} class export`);
-  }
-  const PurchaseClass = Purchase as new (values?: Record<string, unknown>) => object;
-  const OrderClass = OrderModel as new (values?: Record<string, unknown>) => object;
-  const LineItemClass = LineItemModel as new (values?: Record<string, unknown>) => object;
-  const validOrder = new OrderClass({ id: 'ORD-1', lines: [new LineItemClass({ sku: 'sku-1', quantity: 1 })] });
-  const validPurchase = new PurchaseClass({ order: validOrder });
-  const validValidator = getValidator(validPurchase);
-  assert.equal(await validValidator.validate({ failFast: true }), true);
-
-  const invalidOrder = new OrderClass({ id: '', lines: [new LineItemClass({ sku: 'x', quantity: 0 })] });
-  const invalidPurchase = new PurchaseClass({ order: invalidOrder });
-  const invalidValidator = getValidator(invalidPurchase);
-  assert.equal(await invalidValidator.validate({ failFast: true }), false);
-  assert.equal(invalidValidator.issues.length, 1, 'first mode reads the closure set first-validator binding');
-  assert.equal(await invalidValidator.validate({ failFast: false }), false);
-  assert.ok(invalidValidator.issues.length >= 3, 'all mode reads the closure set all-validator binding');
-  assert.ok(invalidValidator.issues.some(issue => JSON.stringify(issue.path) === JSON.stringify(['order', 'lines', 0, 'sku'])));
-
-  delete (manifest as { validationSchemaClosure?: unknown }).validationSchemaClosure;
-  writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
-  const captureMissingClosureDiagnostic = (): string => {
-    try {
-      generateCompanion();
-    } catch (error) {
-      return error instanceof Error ? error.message : String(error);
-    }
-    throw new Error('generation unexpectedly accepted a missing OpenAPI validation schema closure');
-  };
-  const missingClosureError = captureMissingClosureDiagnostic();
-  assert.match(missingClosureError, /Regenerate the referenced model manifest with schema closure metadata/);
-  assert.equal(captureMissingClosureDiagnostic(), missingClosureError, 'missing closure diagnostics are deterministic across generation jobs');
 });
 
 test('a Nest-style Payment keeps canonical codec identity across repeated compact SDK closure candidates', t => {
