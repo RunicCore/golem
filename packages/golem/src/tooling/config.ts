@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { canonicalPath, displayPath, invalidValidationLevelMessage, isInsideDirectory, isRecord, isValidationLevel, outsideModelsRootMessage, parseYamlFile, resolveProfile } from './generator-core.js';
 import { defaultModelOutput } from './generated-paths.js';
+import { sdkCodecsFile } from './sdk-codecs.js';
 import type {
   GolemProfile,
   ControllerContext,
@@ -340,6 +341,8 @@ export function resolveConfig(filename = 'golem.yaml', onInput?: InputObserver):
     const models = { root, directory, output, ...(sourceSuffixes ? { suffixes: sourceSuffixes } : {}) };
     for (const [index, job] of jobs.entries()) {
       if (job.kind === 'controllers') jobs[index] = { ...job, options: { ...job.options, models } };
+      // An SDK of mode golem imports the file that this models job writes for it; the openapi job writes only the import.
+      if (job.kind === 'openapi' && job.options.mode === 'golem') jobs[index] = { ...job, options: { ...job.options, codecsFile: sdkCodecsFile({ modelsOutput: output, configDirectory: directory, sdkOutput: job.options.output }) } };
     }
   }
   if (!jobs.length) throw new Error('Configure at least one generators, controllers, openapi, or models section.');

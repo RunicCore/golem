@@ -25,7 +25,7 @@ export {
 } from './code.js';
 export { copiedRuntimeSpecifiers, rt, rtType, type RuntimeModule } from './rt.js';
 /** The Temporal codec rules and the operation codec module writer that golem-openapi and golem-model share. */
-export { TEMPORAL_FORMATS, TEMPORAL_SERDE, TEMPORAL_SERDE_PREFIX, temporalCodecName, writeOperationCodecs, type OperationCodecsModule, type SdkKeyedCode, type SdkOperationCodecs } from './sdk-codecs.js';
+export { moduleSpecifier, SDK_CODECS_EXPORT, sdkCodecsFile, TEMPORAL_FORMATS, TEMPORAL_SERDE, TEMPORAL_SERDE_PREFIX, temporalCodecName, writeOperationCodecs, type OperationCodecsModule, type SdkKeyedCode, type SdkOperationCodecs } from './sdk-codecs.js';
 /** The allOf object merge, for generators that read schemas (golem-openapi). */
 export {
   composeObjects,

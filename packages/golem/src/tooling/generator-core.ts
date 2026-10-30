@@ -214,6 +214,8 @@ export interface OpenApiContext {
   readonly dates?: 'date' | 'temporal';
   /** `standalone` (the default) is an SDK that needs no models job; `golem` leaves validators and conversion to the models job of the same golem.yaml. */
   readonly mode?: 'standalone' | 'golem';
+  /** Mode `golem` only: the absolute path of the file the models job writes for this SDK and the operation modules import (`sdkCodecsFile`). The config sets it. */
+  readonly codecsFile?: string;
   readonly profile: GolemProfile;
   readonly onInput?: InputObserver;
 }

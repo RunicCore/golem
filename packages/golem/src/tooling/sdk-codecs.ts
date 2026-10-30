@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { code, exportedName, fileImports, ImportSource, join, lineBreak, nest, propertyKey, render, type Code } from './code.js';
 import { rt } from './rt.js';
 
@@ -5,6 +6,29 @@ import { rt } from './rt.js';
  * What both generated-SDK writers share: the codec module of an operation the client reads, and the Temporal codec rules. golem-openapi writes
  * the modules of a standalone SDK and golem-model those of a golem-mode SDK, so neither imports the other (generators do not import each other).
  */
+
+/**
+ * Where a golem-mode SDK reads its codecs. The openapi job writes no codec of such an SDK: the models job of the same golem.yaml writes one file for it,
+ * which exports `SDK_CODECS_EXPORT`, an object with a member for every operation of the SDK, and the operation modules import that file by this name.
+ * The openapi job writes its imports and the models job writes the file, so both take the path from `sdkCodecsFile`.
+ */
+export const SDK_CODECS_EXPORT = 'sdkCodecs';
+
+/** The file the models job writes for the SDK in `sdkOutput`: below `modelsOutput`, at the SDK's folder relative to the golem.yaml folder, ending `.sdk.generated.ts`. */
+export function sdkCodecsFile(where: { readonly modelsOutput: string; readonly configDirectory: string; readonly sdkOutput: string }): string {
+  const relative = path.relative(where.configDirectory, where.sdkOutput);
+  if (relative === '' || relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+    throw new Error(`An SDK of mode golem lies in a folder below the golem.yaml folder; ${where.sdkOutput} does not (golem.yaml folder ${where.configDirectory}).`);
+  }
+  return path.join(where.modelsOutput, `${relative}.sdk.generated.ts`);
+}
+
+/** The specifier by which the generated file `fromFile` imports the generated TypeScript file `toFile`: relative, with `/` and the `.js` ending. */
+export function moduleSpecifier(fromFile: string, toFile: string): string {
+  const target = path.parse(toFile);
+  const relative = path.relative(path.dirname(fromFile), path.join(target.dir, `${target.name}.js`)).split(path.sep).join('/');
+  return relative.startsWith('./') || relative.startsWith('../') ? relative : `./${relative}`;
+}
 
 /** The prefix of the serde id that names a Temporal codec of `@exprtlabs/golem/internal/temporal-runtime`. */
 export const TEMPORAL_SERDE_PREFIX = 'temporal:';
