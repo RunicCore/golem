@@ -104,7 +104,7 @@ export interface GolemModeOperations {
   readonly validation: OperationValidationSchemas | undefined;
 }
 
-/** `golem` mode writes the schema graph in place of the data-only validation closure; `standalone` keeps the closure. */
+/** `golem` mode adds the schema graph's inputs to the manifest (`golemModeGraph`); `standalone` writes the models only. No manifest holds the validation closure: the emitter builds it from the schema graph when the profile validates. */
 export function generateModelManifest(
   document: unknown,
   profile: OpenApiGenerationProfile,

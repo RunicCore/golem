@@ -47,7 +47,7 @@ import {
   type SerdeResolver,
   presentKeysCode,
 } from '@exprtlabs/golem/internal/emitter';
-import { anonymousShapeKeys, createSchemaGraph, codecPublicId, codecShortName, internDescriptors, type SchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
+import { anonymousShapeKeys, createSchemaGraph, codecPublicId, codecShortName, internDescriptors, type SchemaGraph, type SchemaNode } from '@exprtlabs/golem/internal/schema-graph';
 import { compareText, type GolemProfile } from '@exprtlabs/golem/generator-api';
 import { displayPath, RESERVED_MODEL_MEMBERS } from '@exprtlabs/golem/internal/generator-support';
 import type { ManifestIndex } from '@exprtlabs/golem/internal/type-analysis';
@@ -883,6 +883,20 @@ interface SdkNodeCodecs {
   readonly typeAliases: (describe: (descriptor: ModelConversionDescriptor, mode: 'model' | 'wire' | 'init') => Code) => readonly Code[];
 }
 
+const nodesByCodecId = new WeakMap<SchemaGraph, ReadonlyMap<string, SchemaNode>>();
+
+/** The converting node of each codec id of an SDK graph, built once for the graph; a reference node has no codec of its own. */
+function sdkNodeByCodecId(graph: SchemaGraph, codecId: string): SchemaNode | undefined {
+  let nodes = nodesByCodecId.get(graph);
+  if (nodes === undefined) {
+    const built = new Map<string, SchemaNode>();
+    for (const item of graph.nodes.values()) if (item.kind !== 'reference' && !built.has(item.codecId)) built.set(item.codecId, item);
+    nodes = built;
+    nodesByCodecId.set(graph, nodes);
+  }
+  return nodes.get(codecId);
+}
+
 function sdkNodeCodecs(sdks: AppOutputs['sdkCodecs'], output: string): SdkNodeCodecs {
   // One source for each codecs file; the import statement holds only the names the file's code uses.
   const sources = new Map((sdks ?? []).map((sdk) => [sdk.file, new ImportSource(sourceImportPath(sdk.file, output))] as const));
@@ -891,7 +905,7 @@ function sdkNodeCodecs(sdks: AppOutputs['sdkCodecs'], output: string): SdkNodeCo
   return {
     find(codecId) {
       for (const sdk of sdks ?? []) {
-        const node = [...sdk.graph.nodes.values()].find((item) => item.kind !== 'reference' && item.codecId === codecId);
+        const node = sdkNodeByCodecId(sdk.graph, codecId);
         if (node === undefined) continue;
         const source = sources.get(sdk.file)!;
         return {
@@ -933,7 +947,7 @@ function sdkNodeCodecs(sdks: AppOutputs['sdkCodecs'], output: string): SdkNodeCo
  */
 function sdkNodeDescriptor(sdks: AppOutputs['sdkCodecs'], codecId: string): ModelConversionDescriptor {
   for (const sdk of sdks ?? []) {
-    const node = [...sdk.graph.nodes.values()].find((item) => item.kind !== 'reference' && item.codecId === codecId);
+    const node = sdkNodeByCodecId(sdk.graph, codecId);
     if (node === undefined) continue;
     const named = (value: unknown): unknown => {
       if (Array.isArray(value)) return value.map(named);
