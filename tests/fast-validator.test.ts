@@ -203,6 +203,8 @@ function oddValues(sample: unknown, seed: number, count: number): readonly unkno
   });
 }
 
+/** A Date field in the model plane: the value must be an instance of the global class `Date`. */
+const DATE = { golemModelClass: { name: 'Date', path: ['Date'] } };
 const ITEM = { type: 'object', required: ['sku', 'qty'], properties: { sku: { type: 'string', minLength: 1 }, qty: { type: 'integer', minimum: 1 } }, additionalProperties: false };
 
 interface Row {
@@ -221,7 +223,7 @@ const ROWS: readonly Row[] = [
       required: ['id', 'name', 'active', 'score', 'createdAt'],
       properties: {
         id: { type: 'integer' }, name: { type: 'string' }, active: { type: 'boolean' }, score: { type: 'number' },
-        createdAt: { golemModelDate: true }, status: { enum: ['open', 'closed', null] }, at: { type: 'string', format: 'date-time' },
+        createdAt: DATE, status: { enum: ['open', 'closed', null] }, at: { type: 'string', format: 'date-time' },
       },
       additionalProperties: false,
     },
@@ -245,7 +247,7 @@ const ROWS: readonly Row[] = [
   },
   {
     name: 'tuple with an optional tail and no extra items (K7)',
-    schema: { type: 'array', prefixItems: [{ type: 'string' }, { type: 'number' }, { golemModelDate: true }], items: false, minItems: 2 },
+    schema: { type: 'array', prefixItems: [{ type: 'string' }, { type: 'number' }, DATE], items: false, minItems: 2 },
     valid: [['a', 1], ['a', 1, new Date(0)]],
   },
   {
@@ -456,7 +458,6 @@ const JSON_VIEW_ROWS: readonly (readonly [name: string, schema: unknown, value: 
   ['NaN is not a number', { type: 'number' }, Number.NaN, false],
   ['Infinity is not a number', { type: 'number' }, Number.POSITIVE_INFINITY, false],
   ['-0 is an integer', { type: 'integer' }, -0, true],
-  ['an invalid Date is not a Date', { golemModelDate: true }, new Date(Number.NaN), false],
   ['a declared key that is not enumerable is absent, and the other key is unknown', CLOSED, NON_ENUMERABLE_ID, false],
   ['a symbol key is not a key of the JSON view', CLOSED, SYMBOL_EXTRA, true],
   ['an inherited declared key is absent', CLOSED, INHERITED_ID, false],
@@ -507,7 +508,7 @@ const FAST_FORM_ROWS: readonly (readonly [row: string, schema: unknown, valid: u
   ['K1 type', { type: ['string', 'integer'] }, 1, 1.5],
   ['K2 const and enum', { enum: ['a', 1, { b: 2 }] }, { b: 2 }, 'b'],
   ['K3 format', { type: 'string', format: 'uuid' }, '123e4567-e89b-12d3-a456-426614174000', 'x'],
-  ['K4 Date', { golemModelDate: true }, new Date(0), '1970-01-01'],
+  ['K4 Date', DATE, new Date(0), '1970-01-01'],
   ['K5 string limits and pattern', { type: 'string', minLength: 1, maxLength: 4, pattern: '^a' }, 'ab', 'ba'],
   ['K6 number bounds and multipleOf', { type: 'number', minimum: 0, exclusiveMaximum: 9, multipleOf: 3 }, 6, 9],
   ['K7 tuple and items', { type: 'array', prefixItems: [{ type: 'string' }], items: false, minItems: 1 }, ['a'], ['a', 1]],
@@ -638,7 +639,7 @@ function randomSchema(random: () => number, depth: number): Record<string, unkno
     case 'enum': return { enum: subset(random, ['y', 1, null, true, { k: 1 }, [1, 'x']]).concat(['x']) };
     case 'const': return { const: pick(random, ['x', 1, null, { k: 1, m: [2] }]) };
     case 'format': return { type: 'string', format: pick(random, Object.keys(FORMAT_SAMPLES)) };
-    case 'date': return { golemModelDate: true };
+    case 'date': return DATE;
     case 'instance': return { golemModelInstance: { of: 'Cat', among: ['Cat', 'Dog'], required: random() < 0.5 } };
     case 'ref': return { $ref: pick(random, Object.keys(SHARED)) };
     case 'array': return {
@@ -717,7 +718,7 @@ function valueFor(schema: Record<string, unknown>, random: () => number): unknow
   if (typeof schema.$ref === 'string') return valueFor(SHARED[schema.$ref], random);
   if (Array.isArray(schema.enum)) return copy(pick(random, schema.enum));
   if ('const' in schema) return copy(schema.const);
-  if (schema.golemModelDate === true) return random() < 0.9 ? new Date(0) : new Date(Number.NaN);
+  if (schema.golemModelClass !== undefined) return random() < 0.9 ? new Date(0) : new Date(Number.NaN);
   if (schema.golemModelInstance !== undefined) return random() < 0.8 ? new Cat() : new Dog();
   const branches = schema.oneOf ?? schema.anyOf;
   if (Array.isArray(branches)) {
