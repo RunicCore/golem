@@ -53,7 +53,7 @@ test('the golem-mode schema graph goes through the manifest file and back to the
   const manifest = validateModelManifest(JSON.parse(written));
   assert.ok(isGolemModeManifest(manifest));
   assert.equal(manifest.dates, 'temporal');
-  assert.match(manifest.descriptors.find(entry => entry.name === 'Charge')?.descriptor ?? '', /"id":"temporal:TemporalInstant"/);
+  assert.match(manifest.components.find(entry => entry.name === 'Charge')?.descriptor ?? '', /"id":"temporal:TemporalInstant"/);
 
   const { graph, valueNodes } = sdkSchemaGraph(manifest, true);
 
@@ -65,11 +65,23 @@ test('the golem-mode schema graph goes through the manifest file and back to the
   assert.equal(codecText(graph, bases), codecText(original.schemaGraph, bases));
 });
 
+test('the golem-mode manifest lists each component once: a model by its declared type, a scalar alias by its type', () => {
+  // protects: T-733 one components list holds the codec id, descriptor and type of each schema
+  const document = { ...DOCUMENT, components: { schemas: { ...DOCUMENT.components.schemas, Currency: { type: 'string', maxLength: 3 } } } };
+  const manifest = validateModelManifest(JSON.parse(stableJson(golemModeManifest(document, PROFILE))));
+  assert.ok(isGolemModeManifest(manifest));
+  assert.deepEqual(manifest.components.map(entry => [entry.name, entry.codecId !== undefined, entry.type?.export]), [
+    ['Charge', true, undefined], ['Cat', true, undefined], ['Tree', true, undefined], ['Currency', false, 'Currency'],
+  ]);
+  assert.deepEqual(manifest.components.find(entry => entry.name === 'Currency')?.descriptor, '{"kind":"string","constraints":[{"kind":"maxLength","value":3}]}');
+  assert.deepEqual(manifest.models.map(entry => entry.type.export), ['Charge', 'Cat']);
+});
+
 test('standalone mode keeps the manifest it always wrote', () => {
   // protects: T-696 standalone keeps its manifest: validation closure, no mode
   const manifest = generateModelManifest(DOCUMENT, PROFILE, analysis('date')) as Record<string, unknown>;
   assert.equal(Object.hasOwn(manifest, 'mode'), false);
-  assert.equal(Object.hasOwn(manifest, 'descriptors'), false);
+  assert.equal(Object.hasOwn(manifest, 'components'), false);
 });
 
 test('an openapi job in golem mode writes the graph into model-manifest.json', async t => {
@@ -79,7 +91,7 @@ test('an openapi job in golem mode writes the graph into model-manifest.json', a
   const result = await generate({ input, output: path.join(directory, 'sdk'), name: 'Charges', profile: PROFILE, mode: 'golem', codecsFile: path.join(directory, 'models/sdk.sdk.generated.ts') });
   const manifest = validateModelManifest(JSON.parse(result.artifacts.find(artifact => artifact.path.endsWith('/model-manifest.json'))?.content ?? '{}'));
   assert.ok(isGolemModeManifest(manifest));
-  assert.deepEqual(Object.keys(manifest.codecIds), ['Cat', 'Charge', 'Tree']);
+  assert.deepEqual(manifest.components.flatMap(entry => entry.codecId === undefined ? [] : [entry.name]), ['Charge', 'Cat', 'Tree']);
   assert.deepEqual(manifest.operations.map(operation => [operation.name, operation.values.map(value => value.at)]), [
     ['createCharge', [['parameter', 'query', 'since'], ['request', 'application/json'], ['response', '200', 'application/json']]],
   ]);
@@ -94,11 +106,15 @@ test('an openapi job in golem mode writes the graph into model-manifest.json', a
 test('a golem-mode manifest without the graph, or with another mode is refused and says to regenerate', () => {
   // protects: T-696 F-253 an older manifest gets the regenerate error
   const written = JSON.parse(stableJson(golemModeManifest(DOCUMENT, PROFILE))) as Record<string, unknown>;
-  const { descriptors: _descriptors, ...withoutGraph } = written;
-  assert.throws(() => validateModelManifest(withoutGraph, 'sdk/model-manifest.json'), /Invalid model manifest sdk\/model-manifest\.json: descriptors must list .* Regenerate the SDK with this golem version\./);
+  const { components: _components, ...withoutGraph } = written;
+  assert.throws(() => validateModelManifest(withoutGraph, 'sdk/model-manifest.json'), /Invalid model manifest sdk\/model-manifest\.json: components must list .* Regenerate the SDK with this golem version\./);
+  // The shape before the components list is refused the same way.
+  assert.throws(() => validateModelManifest({ ...withoutGraph, codecIds: {}, descriptors: [] }), /components must list .* Regenerate the SDK with this golem version\./);
   assert.throws(() => validateModelManifest({ ...written, dates: 'moment' }), /dates must be "date" or "temporal"\. Regenerate/);
   assert.throws(() => validateModelManifest({ ...written, validationResources: undefined }), /a validating SDK lists the validation roots of every operation and the resources they reach, and a non-validating SDK lists none\. Regenerate/);
   assert.throws(() => validateModelManifest({ ...written, mode: 'both' }), /mode must be "golem" when present\. Regenerate/);
-  assert.throws(() => validateModelManifest({ ...written, descriptors: [{ name: 'Ghost', descriptor: '{"kind":"string"}' }] }), /schema Ghost has no codec id/);
-  assert.throws(() => validateModelManifest({ ...written, descriptors: [{ name: 'Charge', descriptor: 'not json' }] }), /descriptors must list/);
+  assert.throws(() => validateModelManifest({ ...written, components: [{ name: 'Ghost', descriptor: '{"kind":"string"}' }] }), /components must list .* a codec id for a graph node and the type of a scalar alias/);
+  assert.throws(() => validateModelManifest({ ...written, components: [{ name: 'Charge', codecId: 'Charge_00000001', descriptor: 'not json' }] }), /components must list/);
+  const withoutCharge = (written.components as { name: string }[]).filter(component => component.name !== 'Charge');
+  assert.throws(() => validateModelManifest({ ...written, components: withoutCharge }), /model entry Charge has no codecId\. Regenerate/);
 });

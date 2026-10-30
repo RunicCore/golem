@@ -14,8 +14,8 @@ interface ModelManifestProvenance {
 
 export interface ModelManifestEntry {
   readonly id: string;
-  /** The runtime codec id a rewrite stamps for this model. */
-  readonly codecId: string;
+  /** The runtime codec id a rewrite stamps for this model. A golem-mode manifest has it on the model's component instead, and the reader joins it. */
+  readonly codecId?: string;
   readonly allowAny: boolean;
   readonly type: ModelManifestProvenance;
   readonly [key: string]: unknown;
@@ -27,13 +27,31 @@ export interface ModelManifest {
 }
 
 /**
- * The schema graph of a golem-mode SDK, as data. A descriptor is JSON text: the manifest file writes its keys in sorted order,
+ * One component schema of a golem-mode SDK, as data. The descriptor is JSON text: the manifest file writes its keys in sorted order,
  * and the key order of a descriptor is part of the codec id of an unnamed shape, so the text keeps the order the graph interned.
  */
-interface SdkDescriptorText {
-  /** The name the graph interned the model or recursive alias under. */
+export interface GolemModeComponent {
+  /** The name the graph interned a node under, or the name of a scalar alias's declared type. */
   readonly name: string;
+  /** The codec id of a node: a model or a recursive alias. A scalar alias has none and is written inline. */
+  readonly codecId?: string;
+  /** The declared type of a scalar alias, whose limits an app field keeps. A model's declared type is its `models` entry. */
+  readonly type?: ModelManifestProvenance;
+  /** The names of the models that this model narrows. */
+  readonly bases?: readonly string[];
   readonly descriptor: string;
+}
+
+const componentIndexes = new WeakMap<GolemModeManifest, ReadonlyMap<string, GolemModeComponent>>();
+
+/** The components of a golem-mode manifest by name, built once for each manifest. */
+export function golemModeComponents(manifest: GolemModeManifest): ReadonlyMap<string, GolemModeComponent> {
+  let index = componentIndexes.get(manifest);
+  if (index === undefined) {
+    index = new Map(manifest.components.map((component) => [component.name, component]));
+    componentIndexes.set(manifest, index);
+  }
+  return index;
 }
 
 /** One operation value that converts something: where it sits, and its node. An inline shape (no `$ref`) also holds the descriptor the graph interned for it. */
@@ -61,10 +79,12 @@ export interface SdkOperationValidation {
 export interface GolemModeManifest extends ModelManifest {
   readonly mode: 'golem';
   readonly dates: 'date' | 'temporal';
-  /** The codec id of each model and recursive alias, by interned name. */
-  readonly codecIds: Readonly<Record<string, string>>;
-  /** In the order the graph interned them. */
-  readonly descriptors: readonly SdkDescriptorText[];
+  /**
+   * Each component schema of the SDK once: a model or recursive alias has a codec id and is a node of the schema graph, a model is also
+   * the component named as its declared type (`export` of its `models` entry), and a scalar alias has a type and no codec id. In the
+   * order the graph interned the nodes, then the scalars.
+   */
+  readonly components: readonly GolemModeComponent[];
   /** In the order the graph interned them. */
   readonly operations: readonly {
     readonly name: string;
@@ -72,17 +92,6 @@ export interface GolemModeManifest extends ModelManifest {
     readonly inbound?: true;
     readonly values: readonly SdkOperationValue[];
     readonly validation?: SdkOperationValidation;
-  }[];
-  /** The models that each model narrows, by interned name; a model with none is absent. */
-  readonly bases: Readonly<Record<string, readonly string[]>>;
-  /**
-   * The component schemas that are one scalar (string, number or boolean) with limits, which the SDK writes as a plain type alias and which
-   * have no node codec: the descriptor of each, by the provenance of its type, so an app field of the alias keeps the SDK's limits.
-   */
-  readonly scalars: readonly {
-    readonly name: string;
-    readonly type: ModelManifestProvenance;
-    readonly descriptor: string;
   }[];
   /** The schemas the operation roots reach, by resource id: one copy for all operations. Present when the SDK validates. */
   readonly validationResources?: Readonly<Record<string, unknown>>;
@@ -103,9 +112,10 @@ export function sdkSchemaGraph(
   manifest: GolemModeManifest,
   validation: GolemProfile['validation'],
 ): { readonly graph: SchemaGraph; readonly valueNodes: ReadonlyMap<string, string> } {
-  const graph = createSchemaGraph({}, { codecSource: 'openapi', codecIds: new Map(Object.entries(manifest.codecIds)) });
+  const nodes = manifest.components.filter((component) => component.codecId !== undefined);
+  const graph = createSchemaGraph({}, { codecSource: 'openapi', codecIds: new Map(nodes.map((component) => [component.name, component.codecId!])) });
   const parse = (text: string): ModelTypeDescriptor => JSON.parse(text) as ModelTypeDescriptor;
-  internDescriptors(graph, manifest.descriptors.map(({ name, descriptor }) => ({ name, descriptor: parse(descriptor), emitClass: false, validation })));
+  internDescriptors(graph, nodes.map(({ name, descriptor }) => ({ name, descriptor: parse(descriptor), emitClass: false, validation })));
   const valueNodes = new Map<string, string>();
   for (const { name: operation, values } of manifest.operations) {
     for (const { at, node, inline } of values) {
@@ -208,17 +218,14 @@ function isOperationValidation(value: unknown): boolean {
 function validateGolemModeGraph(manifest: Record<string, unknown>, filename: string): void {
   const invalid = (reason: string): Error => new Error(`Invalid model manifest ${displayPath(filename)}: ${reason}. Regenerate the SDK with this golem version.`);
   if (manifest.dates !== 'date' && manifest.dates !== 'temporal') throw invalid('dates must be "date" or "temporal"');
-  const { codecIds, descriptors, operations, bases, scalars } = manifest;
-  if (!isRecord(bases) || !Object.values(bases).every((names) => Array.isArray(names) && names.every(isName))) throw invalid('bases must map each model to the names of the models it narrows');
-  if (!isRecord(codecIds) || !Object.values(codecIds).every(isName)) throw invalid('codecIds must map each schema name to a codec id');
-  if (!Array.isArray(descriptors) || !descriptors.every((entry) => isRecord(entry) && isName(entry.name) && isDescriptorText(entry.descriptor))) {
-    throw invalid('descriptors must list each schema name with its descriptor as JSON text');
+  const { components, operations } = manifest;
+  const validComponent = (entry: unknown): boolean => isRecord(entry) && isName(entry.name) && isDescriptorText(entry.descriptor)
+    && (entry.codecId === undefined ? isProvenance(entry.type) : isName(entry.codecId))
+    && (entry.type === undefined || isProvenance(entry.type))
+    && (entry.bases === undefined || (Array.isArray(entry.bases) && entry.bases.every(isName)));
+  if (!Array.isArray(components) || !components.every(validComponent) || new Set(components.map((entry) => entry.name)).size !== components.length) {
+    throw invalid('components must list each schema once, by name, with its descriptor as JSON text, a codec id for a graph node and the type of a scalar alias');
   }
-  if (!Array.isArray(scalars) || !scalars.every((entry) => isRecord(entry) && isName(entry.name) && isProvenance(entry.type) && isDescriptorText(entry.descriptor))) {
-    throw invalid('scalars must list each scalar schema name with the provenance of its type and its descriptor as JSON text');
-  }
-  const unnamed = descriptors.find((entry) => !isName(codecIds[entry.name]));
-  if (unnamed) throw invalid(`schema ${unnamed.name} has no codec id`);
   if (!Array.isArray(operations) || !operations.every((entry) => isRecord(entry) && isName(entry.name) && Array.isArray(entry.values) && entry.values.every(isOperationValue))) {
     throw invalid('operations must list each operation name with the nodes of its values');
   }
@@ -245,6 +252,8 @@ export function validateModelManifest(manifest: unknown, filename = MODEL_MANIFE
   if (!Array.isArray(manifest.models)) {
     throw new Error(`Invalid model manifest ${displayPath(filename)}: models must be an array.`);
   }
+  // A golem-mode model has its codec id on the component that has the name of its declared type.
+  const nodeNames = manifest.mode === 'golem' ? new Set((manifest.components as readonly GolemModeComponent[]).flatMap((component) => component.codecId === undefined ? [] : [component.name])) : undefined;
   for (const model of manifest.models) {
     if (
       !isRecord(model) || !isProvenance(model.type)
@@ -253,7 +262,7 @@ export function validateModelManifest(manifest: unknown, filename = MODEL_MANIFE
     ) {
       throw new Error(`Invalid model entry in ${displayPath(filename)}.`);
     }
-    if (model.codecId === undefined) {
+    if (nodeNames === undefined ? model.codecId === undefined : !nodeNames.has(model.type.export)) {
       throw new Error(`Invalid model manifest ${displayPath(filename)}: model entry ${model.type.export} has no codecId. Regenerate the SDK with this golem version.`);
     }
   }

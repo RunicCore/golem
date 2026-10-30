@@ -29,7 +29,7 @@ import {
 } from '@exprtlabs/golem/internal/emitter';
 import { canonicalPath } from '@exprtlabs/golem/internal/generator-support';
 import type { SchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
-import type { GolemModeManifest } from '@exprtlabs/golem/manifest';
+import { golemModeComponents, type GolemModeManifest } from '@exprtlabs/golem/manifest';
 import type { ManifestIndex } from '@exprtlabs/golem/internal/type-analysis';
 import type { PlanValidators, SdkValidatorsInput } from '@exprtlabs/golem/internal/validation-plan';
 import { PACKAGE_VERSION } from './package-info.js';
@@ -106,6 +106,7 @@ export function sdkCodecsSource(
     const name = map.get(id);
     return name === undefined || validatorsSource === undefined ? undefined : validatorsSource.name(name);
   };
+  const components = golemModeComponents(sdk.manifest);
   const codecRuntime = emitCodecRuntimeCode(built.graph, {
     validationLevel: profile.validation,
     serde: TEMPORAL_SERDE,
@@ -122,7 +123,7 @@ export function sdkCodecsSource(
     // The SDK reads no registry: a client calls the table, and an app model calls the node codecs by name.
     registerCodecs: false,
     exportAnonymousCodecs: true,
-    modelBases: { basesOf: (id) => sdk.manifest.bases[id] ?? [] },
+    modelBases: { basesOf: (id) => components.get(id)?.bases ?? [] },
   });
   const operations = sdk.manifest.operations.map((operation) => {
     const valueCodec = (at: readonly string[], functionName: (id: string) => string): Code | undefined => {

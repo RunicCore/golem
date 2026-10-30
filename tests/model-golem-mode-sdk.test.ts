@@ -52,7 +52,7 @@ test('the models job compiles the SDK operation roots and the app models into on
   const requestRoot = graph.nodes.get(valueNodes.get(JSON.stringify(['createCharge', 'request', 'application/json'])) ?? '')?.codecId ?? '';
   const responseRoot = graph.nodes.get(valueNodes.get(JSON.stringify(['createCharge', 'response', '200', 'application/json'])) ?? '')?.codecId ?? '';
   assert.match(requestRoot, /^Anonymous_[0-9a-f]{8}$/);
-  assert.equal(responseRoot, manifest.codecIds.Charge);
+  assert.equal(responseRoot, manifest.components.find(entry => entry.name === 'Charge')?.codecId);
 
   const validators = result.artifacts.filter(artifact => artifact.path.endsWith('.validators.generated.ts'));
   assert.equal(validators.length, 1);

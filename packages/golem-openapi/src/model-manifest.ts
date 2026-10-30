@@ -24,11 +24,11 @@ import {
 import { resolveLocal } from './normalize.js';
 
 /**
- * The schema graph the models job compiles in golem mode: each model and recursive alias with its codec id, and the operations' values.
- * Descriptors are JSON text (see `SdkDescriptorText`). The data is the graph's inputs, so interning it again with these codec ids
- * gives the same nodes. A value of a `$ref` is the node of that model and holds no descriptor.
+ * The schema graph the models job compiles in golem mode: each component once (a model and a recursive alias with its codec id, a scalar
+ * alias with its type), and the operations' values. Descriptors are JSON text (see `GolemModeComponent`). The data is the graph's inputs,
+ * so interning it again with these codec ids gives the same nodes. A value of a `$ref` is the node of that model and holds no descriptor.
  */
-function golemModeGraph(document: unknown, analysis: OpenApiModelAnalysis, sdk: GolemModeOperations, validating: boolean): Pick<GolemModeManifest, 'mode' | 'dates' | 'codecIds' | 'descriptors' | 'operations' | 'validationResources' | 'bases' | 'scalars'> {
+function golemModeGraph(document: unknown, analysis: OpenApiModelAnalysis, sdk: GolemModeOperations, validating: boolean): Pick<GolemModeManifest, 'mode' | 'dates' | 'components' | 'operations' | 'validationResources'> {
   const operations: GolemModeManifest['operations'][number][] = [];
   // An operation is listed when it converts a value or the SDK validates; the order is the order of the SDK's operations, then its inbound ones.
   for (const operation of sdk.operations) {
@@ -56,21 +56,25 @@ function golemModeGraph(document: unknown, analysis: OpenApiModelAnalysis, sdk: 
     .flatMap((bundle) => Object.entries(bundle.schemas))
     .sort(([left], [right]) => compareText(left, right)));
   // The models that each model narrows, which the codec emitter reads to merge an intersection.
-  const bases = Object.fromEntries(analysis.graphInputs.models.flatMap(({ name }) => {
-    const declared = modelBases(analysis.definitions.get(name));
-    return declared.length ? [[name, declared] as const] : [];
-  }));
+  const nodes = analysis.graphInputs.models.map(({ name, descriptor }) => {
+    const bases = modelBases(analysis.definitions.get(name));
+    return { name, codecId: openApiCodecId(analysis, name), ...(bases.length ? { bases } : {}), descriptor: JSON.stringify(descriptor) };
+  });
   return {
     mode: 'golem',
     dates: analysis.dates,
-    codecIds: Object.fromEntries(analysis.graphInputs.models.map(({ name }) => [name, openApiCodecId(analysis, name)])),
-    descriptors: analysis.graphInputs.models.map(({ name, descriptor }) => ({ name, descriptor: JSON.stringify(descriptor) })),
-    bases,
-    scalars: scalarComponents(document, analysis),
+    components: [...nodes, ...scalarComponents(document, analysis)],
     operations,
     ...(validating ? { validationResources: resources } : {}),
   };
 }
+
+/** Where the SDK declares the type of a component, and the module that re-exports it. */
+const declaredType = (name: string): { readonly module: string; readonly export: string; readonly aliases: readonly { readonly module: string; readonly export: string }[] } => ({
+  module: './types.ts',
+  export: name,
+  aliases: [{ module: './index.ts', export: name }],
+});
 
 const SCALAR_TYPES: ReadonlySet<unknown> = new Set(['string', 'number', 'integer', 'boolean']);
 
@@ -84,7 +88,7 @@ function isScalarDescriptor(descriptor: ModelTypeDescriptor): boolean {
  * The component schemas that are one string, number or boolean (or one of them or null) and no model or recursive alias: the SDK writes
  * `export type Name = string`, which keeps none of their limits, so the manifest records their descriptors under the provenance of that type.
  */
-function scalarComponents(document: unknown, analysis: OpenApiModelAnalysis): GolemModeManifest['scalars'] {
+function scalarComponents(document: unknown, analysis: OpenApiModelAnalysis): GolemModeManifest['components'] {
   const env = modelEnv(document, undefined, undefined, analysis.resources, analysis.selections, analysis.dates);
   return objectEntries(asRecord(asRecord(asRecord(document).components).schemas)).flatMap(([rawName, rawSchema]) => {
     const name = identifier(rawName);
@@ -94,7 +98,7 @@ function scalarComponents(document: unknown, analysis: OpenApiModelAnalysis): Go
     if (!types.every((type) => SCALAR_TYPES.has(type) || type === 'null') || types.every((type) => type === 'null')) return [];
     const descriptor = modelConversionDescriptor(rawSchema, analysis.definitions, env, 'to');
     if (!isScalarDescriptor(descriptor)) return [];
-    return [{ name, type: { module: './types.ts', export: name, aliases: [{ module: './index.ts', export: name }] }, descriptor: JSON.stringify(descriptor) }];
+    return [{ name, type: declaredType(name), descriptor: JSON.stringify(descriptor) }];
   });
 }
 
@@ -125,14 +129,11 @@ export function generateModelManifest(
     const base = definition.baseName ? byName.get(definition.baseName) : undefined;
     return {
       id: stableId(definition),
-      codecId: openApiCodecId(modelAnalysis, definition.name),
+      // A golem-mode manifest keeps the codec id on the component of the model.
+      ...(mode === 'golem' ? {} : { codecId: openApiCodecId(modelAnalysis, definition.name) }),
       sourceKind: 'openapi',
       allowAny: profile.allowAny ?? false,
-      type: {
-        module: './types.ts',
-        export: definition.name,
-        aliases: [{ module: './index.ts', export: definition.name }],
-      },
+      type: declaredType(definition.name),
       fields,
       inheritance: base ? { baseModelId: stableId(base) } : null,
       discriminator: definition.discriminator || null,
