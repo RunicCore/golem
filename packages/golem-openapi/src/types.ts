@@ -366,7 +366,7 @@ function emitBlobType(output: Code[], index: number, utility: { readonly name: s
 }
 
 /** The comment of a description: one line, and it cannot end itself. */
-export function descriptionComment(description: unknown): Code {
+function descriptionComment(description: unknown): Code {
   return docComment(String(description).replace(/\*\//g, '*\\/').replace(/\s+/g, ' '));
 }
 

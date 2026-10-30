@@ -2,11 +2,11 @@ import path from 'node:path';
 import { GolemDiagnosticSeverity, type GolemDiagnostic, type GolemResult } from '@exprtlabs/golem/generator-api';
 import { stableJson } from '@exprtlabs/golem/generator-api';
 import { assertPortableFilenames, identifier, isRecord } from '@exprtlabs/golem/internal/generator-support';
-import { buildOperationValidationSchemas, generateClientModules, operationValidatorNames, responseHeaderRequired } from './client/emit.js';
+import { buildOperationValidationSchemas, generateClientModules, operationValidatorNames } from './client/emit.js';
 import { browserCookieDiagnostics, normalizeAndValidate, unsupportedHttpAuthSchemes, type MovedUnions } from './document.js';
 import { buildEmissionPlan, serverOverrideDiagnostics, type ArtifactFile, type EmissionPlan } from './emission-plan.js';
-import { asRecord, objectEntries, readString } from './json.js';
-import { assertUniqueExportNames, code, documentLiteral, exportedName, fileImports, identifier as identifierPart, ImportSource, join, literal, renderModule, rt, rtType, runtimeLinesOf, type Code, type ImportOptions, type PublicModule, type RenderedModule } from '@exprtlabs/golem/internal/emitter';
+import { asRecord, readString } from './json.js';
+import { assertUniqueExportNames, code, documentLiteral, exportedName, renderModule, type PublicModule, type RenderedModule } from '@exprtlabs/golem/internal/emitter';
 import { operationName, operationNameType } from './names.js';
 import type { NormalizedOperation } from './normalize.js';
 import { generatedBannerComment } from './package-info.js';
@@ -21,13 +21,13 @@ import {
   generateOperationCodecs,
   type OpenApiDates,
 } from './models.js';
-import { neverPropertiesReader, type OpenApiModelAnalysis } from './model-resolution.js';
+import { neverPropertiesReader } from './model-resolution.js';
 import { requestBodyKey } from './model-schema-graph.js';
 import { golemCodecs, standaloneCodecs, type OperationCodecsFor } from './operation-codecs.js';
 import { withOrigins, type OriginLocator } from './origin.js';
 import { buildSchemaData } from './schemas.js';
 import { compileLevel, compileSdkValidators, uniqueDiagnostics, type CodecValidationPlan, type PlanValidators, type SchemaPlace } from '@exprtlabs/golem/internal/validation-plan';
-import { descriptionComment, generateDirectionalSchemas, generateTypes } from './types.js';
+import { generateDirectionalSchemas, generateTypes } from './types.js';
 
 interface WriteSdkResult extends GolemResult {}
 

@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { code, exportedName, fileImports, ImportSource, join, lineBreak, literal as codeLiteral, nest, propertyKey, render, type Code } from './code.js';
+import { code, exportedName, fileImports, ImportSource, join, lineBreak, nest, propertyKey, render, type Code } from './code.js';
 import { rt } from './rt.js';
 import { portableRelativeFilename } from './type-analysis/path-identity.js';
 

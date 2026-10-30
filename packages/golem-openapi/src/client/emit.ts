@@ -120,7 +120,7 @@ function headerSchemaKind(document: unknown, rawSchema: unknown, depth = 0): str
 }
 
 /** Whether a declared response header (or a reference to one) is required. */
-export function responseHeaderRequired(document: unknown, rawHeader: unknown): boolean {
+function responseHeaderRequired(document: unknown, rawHeader: unknown): boolean {
   return asRecord(resolveLocal(document, rawHeader)).required === true;
 }
 
