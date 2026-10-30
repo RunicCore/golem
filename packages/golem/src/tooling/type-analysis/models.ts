@@ -2,7 +2,7 @@ import { displayPath, invalidValidationLevelMessage, validationRank } from '../g
 import type { GolemProfile } from '../generator-core.js';
 import { diagnostic, modelDeclarationKind } from './symbols.js';
 import * as ts from '../typescript-ns.js';
-import { isDateType } from './tags.js';
+import { findBuiltinClass } from './builtin-class.js';
 import { descriptorBuilder, isErrorAny } from './types.js';
 
 export interface ModelSpecification {
@@ -66,7 +66,8 @@ function nonObjectKind(checker: ts.TypeChecker, type: ts.Type): string | undefin
   }
   if (checker.isTupleType(type)) return describeRootKind('tuple');
   if (checker.isArrayType(type)) return describeRootKind('array');
-  if (isDateType(checker, type)) return describeRootKind('date');
+  const builtin = findBuiltinClass(type);
+  if (builtin !== undefined) return describeRootKind(builtin.qualifiedName);
   if ((type.flags & ts.TypeFlags.Any) !== 0) return describeRootKind('any');
   if ((type.flags & ts.TypeFlags.Unknown) !== 0) return describeRootKind('unknown');
   if ((type.flags & ts.TypeFlags.Object) === 0) return checker.typeToString(type) === 'object' ? 'the object keyword' : describeRootKind('scalar');

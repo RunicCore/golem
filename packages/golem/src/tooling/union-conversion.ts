@@ -658,7 +658,7 @@ export function emitUnionConversion(
   if (jsonValue) {
     const { sequence, scalars, object } = jsonValue;
     const scalar = scalarBranch(scalars);
-    const objectTest = objectValueExpression(expression, scalars.some((variant) => variant.kind === 'date'));
+    const objectTest = objectValueExpression(expression, restInstance(scalars));
     const converted = guarded(object, convert(object));
     const mapped = guarded(sequence, emitSequenceBranch(sequence, expression, conversion.items));
     const rest = sameCode(converted, plain) && sameCode(scalar, plain)

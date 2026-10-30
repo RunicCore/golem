@@ -6,7 +6,7 @@ import { projectionIdentity } from './graph.js';
 import { aliasProjectionName, isProjectionName, pascalIdentifier, policySuffix, headQualifiers, projectionBaseName, keysReadAlike, safeNameHint, unionVariantNaming } from './projection-names.js';
 import { commonDirectory, canonicalFilename, companionFilename, portableRelativeFilename, type ModelBoundary } from './project.js';
 import { packageSpecifier } from './package-specifier.js';
-import { builtinClassDescriptor } from '../builtin-classes.js';
+import { builtinClassDescriptor, type BuiltinClass } from '../builtin-classes.js';
 import { enclosureOf, findBuiltinClass, isGlobalDeclaration } from './builtin-class.js';
 import { compareText, displayPath } from '../generator-core.js';
 import type { GolemProfile } from '../generator-core.js';
@@ -25,7 +25,6 @@ import {
   withoutDiscriminator,
   carriesSerdeTag,
   isAmbientOrGlobalSymbol,
-  isDateType,
   isGolemTagKey,
   publicExportName,
   type ModelConstraint,
@@ -67,8 +66,6 @@ function primitiveConstructorDescriptor(type: ts.Type): ModelConversionDescripto
       return { kind: 'boolean' };
     case 'BigInt':
       return { kind: 'bigint' };
-    case 'Date':
-      return { kind: 'date' };
     default:
       return undefined;
   }
@@ -264,7 +261,7 @@ function isObjectLikeIntersection(checker: ts.TypeChecker, type: ts.Type): boole
 
 /** A plain object type whose every property is a brand (`{ readonly __brand: 'Timestamp' }`, `{ __brand?: never }`): a type-only mark, no data. */
 function isBrandMember(checker: ts.TypeChecker, type: ts.Type): boolean {
-  if ((type.flags & ts.TypeFlags.Object) === 0 || isDateType(checker, type) || checker.isArrayType(type) || checker.isTupleType(type)) return false;
+  if ((type.flags & ts.TypeFlags.Object) === 0 || checker.isArrayType(type) || checker.isTupleType(type)) return false;
   const properties = checker.getPropertiesOfType(type);
   return properties.length > 0 && type.getCallSignatures().length === 0 && type.getConstructSignatures().length === 0
     && properties.every((property) => isBrandPropertyName(property.getName()));
@@ -275,22 +272,22 @@ function dataMembers(checker: ts.TypeChecker, type: ts.Type): readonly ts.Type[]
   return type.isIntersection() ? type.types.filter((member) => !isBrandMember(checker, member)) : [type];
 }
 
-/** A Date with only brands beside it, such as `Date & { readonly __brand: 'Timestamp' }`: it is a Date. */
-function isBrandedDate(checker: ts.TypeChecker, type: ts.Type): boolean {
+/** The built-in class that `type` is, with only brands beside it (`Date & { readonly __brand: 'Timestamp' }`), or undefined. */
+function builtinClassOf(checker: ts.TypeChecker, type: ts.Type): BuiltinClass | undefined {
   const members = dataMembers(checker, type);
-  return type.isIntersection() && members.length === 1 && isDateType(checker, members[0]!);
+  return members.length === 1 ? findBuiltinClass(members[0]!) : undefined;
 }
 
 /**
- * The scalar that golem converts by its own rule (a Date, a bigint) in an intersection with an object type, such as `Date & TModel`.
- * An intersection is AND, and no value is both a scalar and an object, so the field has no valid value. A brand is no object.
+ * The built-in class or bigint that golem converts by its own rule in an intersection with an object type, such as `Date & TModel`.
+ * An intersection is AND, and no value is both a class instance and an object, so the field has no valid value. A brand is no object.
  */
 function scalarIntersectedWithObject(checker: ts.TypeChecker, type: ts.Type): string | undefined {
   if (!type.isIntersection()) return undefined;
   const members = dataMembers(checker, type);
-  const scalar = members.find((member) => isDateType(checker, member) || isBigIntValueType(member));
-  const object = members.some((member) => (member.flags & ts.TypeFlags.Object) !== 0 && !isDateType(checker, member));
-  return scalar && object ? (isBigIntValueType(scalar) ? 'bigint' : 'Date') : undefined;
+  const scalar = members.find((member) => findBuiltinClass(member) !== undefined || isBigIntValueType(member));
+  const object = members.some((member) => (member.flags & ts.TypeFlags.Object) !== 0 && findBuiltinClass(member) === undefined);
+  return scalar && object ? (isBigIntValueType(scalar) ? 'bigint' : findBuiltinClass(scalar)!.qualifiedName) : undefined;
 }
 
 /**
@@ -894,7 +891,7 @@ export function descriptorBuilder(
     }
     if ((type.flags & ts.TypeFlags.Object) === 0 && !type.isIntersection()) return [];
     if (checker.isTupleType(type) || checker.isArrayType(type)) return checker.getTypeArguments(type as ts.TypeReference);
-    if (isDateType(checker, type) || isBrandedDate(checker, type) || primitiveConstructorDescriptor(type) || isPhantomTagType(checker, type)
+    if (builtinClassOf(checker, type) !== undefined || primitiveConstructorDescriptor(type) || isPhantomTagType(checker, type)
       || type.getCallSignatures().length > 0 || type.getConstructSignatures().length > 0) return [];
     const held: ts.Type[] = [];
     for (const property of checker.getPropertiesOfType(type)) {
@@ -1081,6 +1078,9 @@ export function descriptorBuilder(
       metadata,
     );
     const type = baseType;
+    // The flag only chose the base type above; a Date is a class value with a serde from here on, so no descriptor carries it.
+    const { date: _date, ...withoutDateFlag } = metadata;
+    metadata = withoutDateFlag;
 
     if (metadata.constraints.length > 0 && (type.flags & ts.TypeFlags.TypeParameter) === 0) {
       assertConstraintCompatibility(checker, metadata.constraints, type, context, representation);
@@ -1115,18 +1115,8 @@ export function descriptorBuilder(
       );
     }
 
-    // A custom serde can intersect Date with its phantom marker.  The
-    // checker then no longer reports the original intersection as Date, but
-    // the projected base type still is Date and must remain terminal.
-    if (metadata.date || isDateType(checker, type) || isBrandedDate(checker, type)) {
-      return withMetadata({ kind: 'date' } as unknown as ModelConversionDescriptor, {
-        ...metadata,
-        date: true,
-      });
-    }
-
     // A built-in class has the conversion of its registry entry, as if it carried the golem tag of the class.
-    const builtin = metadata.serde ? undefined : findBuiltinClass(type);
+    const builtin = metadata.serde ? undefined : builtinClassOf(checker, type);
     if (builtin !== undefined) return withMetadata(builtinClassDescriptor(builtin), metadata);
     // A class instance or bigint has no JSON shape of its own; its TSerde codec is its only conversion.
     if (metadata.serde && isBigIntValueType(type)) {

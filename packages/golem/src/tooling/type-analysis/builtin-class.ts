@@ -41,15 +41,13 @@ function isModuleFile(sourceFile: ts.SourceFile): boolean {
 }
 
 /**
- * The built-in class that `type` is, or undefined. The name is the qualified name of the global declaration (`Temporal.Instant`); a class that a
- * module exports under that name, such as a polyfill's, is not the global one: generated code would have to import it. The caller strips the
- * phantom brands of the type first.
+ * The built-in class that `type` is, or undefined. The name is the qualified name of a global declaration (`Date`, `Temporal.Instant`); a
+ * class that a module exports under that name, such as a polyfill's, is not the global one: generated code would have to import it. A
+ * `declare global` block that merges into the library's declaration does not change which class it is. The caller strips the brands first.
  */
 export function findBuiltinClass(type: ts.Type): BuiltinClass | undefined {
   const symbol = type.getSymbol();
-  const declaration = symbol?.declarations?.[0];
+  const declaration = symbol?.declarations?.find((candidate) => isGlobalDeclaration(candidate, enclosureOf(candidate)));
   if (symbol === undefined || declaration === undefined) return undefined;
-  const enclosure = enclosureOf(declaration);
-  if (!isGlobalDeclaration(declaration, enclosure)) return undefined;
-  return BUILTIN_CLASSES.get([...enclosure.namespaces, symbol.getName()].join('.'));
+  return BUILTIN_CLASSES.get([...enclosureOf(declaration).namespaces, symbol.getName()].join('.'));
 }

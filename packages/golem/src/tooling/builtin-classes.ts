@@ -23,6 +23,11 @@ export interface BuiltinClass {
   readonly classPath: readonly string[];
   /** The `format` of a string schema that an OpenAPI document with `dates: temporal` converts to this class. */
   readonly openApiFormat?: string;
+  /**
+   * The name of a validity predicate (`INSTANCE_VALIDITY` in `validation-runtime.ts`) that an instance of the class must also pass: an
+   * instance can be of the class and hold no value (`new Date(NaN)`). It travels in the `serde` of the descriptor, as data.
+   */
+  readonly valid?: string;
 }
 
 type TemporalClassName = 'Instant' | 'ZonedDateTime' | 'PlainDate' | 'PlainDateTime' | 'PlainTime' | 'Duration';
@@ -44,6 +49,16 @@ function temporalClass(name: TemporalClassName, type: Code, wire: ModelConstrain
 }
 
 const BUILTIN_CLASS_LIST: readonly BuiltinClass[] = [
+  {
+    qualifiedName: 'Date',
+    serdeId: 'date',
+    type: code`Date`,
+    wire: wireOf({ kind: 'format', value: 'date-time' }),
+    serialize: rt.conversion.serializeDate,
+    deserialize: rt.conversion.deserializeDate,
+    classPath: ['Date'],
+    valid: 'finiteTime',
+  },
   temporalClass('Instant', code`Temporal.Instant`, { kind: 'format', value: 'date-time' }, 'date-time'),
   temporalClass('ZonedDateTime', code`Temporal.ZonedDateTime`, { kind: 'pattern', value: ZONED_DATE_TIME_PATTERN }),
   temporalClass('PlainDate', code`Temporal.PlainDate`, { kind: 'format', value: 'date' }, 'date'),
@@ -68,7 +83,7 @@ export function builtinClassByOpenApiFormat(format: string): BuiltinClass | unde
 
 /** The descriptor of a field of the class. A generator whose document states the wire form itself passes its own `wire`. */
 export function builtinClassDescriptor(entry: BuiltinClass, wire: ModelConversionDescriptor = entry.wire): ModelConversionDescriptor {
-  return { kind: 'class-value', typeName: entry.qualifiedName, classRef: { path: entry.classPath }, serde: { id: entry.serdeId, wireDescriptor: wire } } as unknown as ModelConversionDescriptor;
+  return { kind: 'class-value', typeName: entry.qualifiedName, classRef: { path: entry.classPath }, serde: { id: entry.serdeId, wireDescriptor: wire, ...(entry.valid === undefined ? {} : { valid: entry.valid }) } } as unknown as ModelConversionDescriptor;
 }
 
 /**
