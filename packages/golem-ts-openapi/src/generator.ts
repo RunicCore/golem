@@ -4,6 +4,7 @@ import * as ts from '@exprtlabs/golem/internal/ts';
 import { operationCodecRegistryPath } from '@exprtlabs/golem/internal/generated-paths';
 import {
   assertAbsolute,
+  assertGeneratorRoot,
   assertNoSyntaxErrors,
   canonicalFilename,
   createContractAnalysis,
@@ -70,14 +71,7 @@ function validateContext(context: TsToOpenApiContext): {
   readonly laterOutputs: readonly string[];
   readonly onInput?: InputObserver;
 } {
-  if (!context || typeof context !== 'object' || Array.isArray(context)) {
-    throw new TypeError('generate(context) requires a context object.');
-  }
-  const root = assertAbsolute(context.root, 'context.root');
-  context.onInput?.(root);
-  if (!existsSync(root) || !statSync(root).isDirectory()) {
-    throw new Error(`context.root must be an existing directory: ${displayPath(root)}`);
-  }
+  const root = assertGeneratorRoot(context);
   const output = assertAbsolute(context.output, 'context.output');
   if (!/\.(?:json|ya?ml)$/i.test(output)) {
     throw new TypeError('context.output must be a JSON or YAML file.');

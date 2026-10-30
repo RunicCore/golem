@@ -724,11 +724,6 @@ function headText(message: string | ClassicMessageChain): string {
   return typeof message === 'string' ? message : message.messageText;
 }
 
-function chainTexts(message: string | ClassicMessageChain, depth: number): string[] {
-  if (typeof message === 'string') return [];
-  return (message.next ?? []).flatMap((next) => [`${'  '.repeat(depth)}${next.messageText}`, ...chainTexts(next, depth + 1)]);
-}
-
 /** The classic compiler's diagnostics for the program, each reading `text` as the head message. */
 export function getPreEmitDiagnostics(program: Golem.Program): readonly Golem.Diagnostic[] {
   if (!(program instanceof CompatProgram)) throw new TypeError('getPreEmitDiagnostics needs a program opened by the TypeScript 6 backend.');

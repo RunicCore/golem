@@ -7,6 +7,7 @@ import type {
   GolemResult,
   GeneratorSession,
   InputObserver,
+  ModelContext,
 } from '@exprtlabs/golem/generator-api';
 import { buildCodecValidationPlan, compileLevel, compileSdkValidators, type CodecSchemaClosureEntry } from '@exprtlabs/golem/internal/validation-plan';
 import { GolemDiagnosticSeverity, compareText, isInsideDirectory, resolveProfile, type GolemDiagnostic, type ResolvedGolemProfile } from '@exprtlabs/golem/generator-api';
@@ -40,6 +41,7 @@ import type { ManifestIndex } from '@exprtlabs/golem/internal/type-analysis';
 import { golemSdks, sdkCodecsSource, sdkValidatorOperations } from './sdk-table.js';
 import {
   assertAbsolute,
+  assertGeneratorRoot,
   assertDistinctCompanions,
   assertNoSyntaxErrors,
   byRealPath,
@@ -65,32 +67,7 @@ import {
   type ProgramInfo,
 } from '@exprtlabs/golem/internal/type-analysis';
 
-export interface GolemModelContext {
-  /** Absolute project root used for TypeScript configuration and discovery. */
-  readonly root: string;
-  /** The golem.yaml's directory, whose `.golem/` receives the codec keys. Defaults to `root`. */
-  readonly directory?: string;
-  /** Optional shared output directory for job-level model metadata. */
-  readonly output?: string;
-  /** Absolute model source paths. Omit to discover model sources below root/src. */
-  readonly sources?: readonly string[];
-  /** File-name endings that make a file below root/src a model source; defaults to `.model.ts` and `.models.ts`. */
-  readonly suffixes?: readonly string[];
-  /** The tsconfig the program opens from, absolute. Omit it to use the nearest `tsconfig.json` from `root` upward. */
-  readonly tsconfig?: string;
-  /** Runtime features selected for generated model companions. */
-  readonly profile: GolemProfile;
-  /** The `golem.yaml` default for the `exact` option of a model that sets none; omitted means `true`. */
-  readonly exact?: boolean;
-  /** Absolute model-manifest paths to add to marker and source discovery. */
-  readonly manifestInputs?: readonly string[];
-  /** The absolute output folders of the openapi jobs of mode `golem` in the same golem.yaml: the job writes one codecs file for each. */
-  readonly sdkOutputs?: readonly string[];
-  /** Observe attempted paths before reads and existence checks. */
-  readonly onInput?: InputObserver;
-  /** Keeps the TypeScript compiler warm across runs of one CLI pipeline or watch session. */
-  readonly session?: GeneratorSession;
-}
+export interface GolemModelContext extends ModelContext {}
 
 export interface GolemModelResult extends GolemResult {}
 
@@ -112,14 +89,7 @@ interface NormalizedContext {
 }
 
 function validateContext(context: GolemModelContext): NormalizedContext {
-  if (!context || typeof context !== 'object' || Array.isArray(context)) {
-    throw new TypeError('generate(context) requires a context object.');
-  }
-  const root = assertAbsolute(context.root, 'context.root');
-  context.onInput?.(root);
-  if (!existsSync(root) || !statSync(root).isDirectory()) {
-    throw new Error(`context.root must be an existing directory: ${displayPath(root)}`);
-  }
+  const root = assertGeneratorRoot(context);
   if (!context.profile || typeof context.profile !== 'object' || Array.isArray(context.profile)) {
     throw new TypeError('context.profile is required and must be an object with mobx and validation.');
   }

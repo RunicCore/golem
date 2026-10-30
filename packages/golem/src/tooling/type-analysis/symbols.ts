@@ -1,4 +1,3 @@
-import { resolve } from 'node:path';
 import * as ts from '../typescript-ns.js';
 import { DEFAULT_MODEL_SUFFIXES, canonicalPath, displayPath } from '../generator-core.js';
 import { canonicalFilename, generatedFilename, isModelFileName, type ModelBoundary } from './project.js';
