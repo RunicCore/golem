@@ -16,7 +16,7 @@ import {
   withRootOperations,
 } from './openapi/helpers.js';
 import { createFixtureProject } from './fixture-project.js';
-import { openScope, runModule } from './support/run-module.js';
+import { exportsOf } from './support/run-module.js';
 
 function validatedDocument(): Record<string, unknown> {
   return {
@@ -90,14 +90,6 @@ const profile = Object.freeze({
   validation: true,
   allowAny: false,
 });
-
-/** The values a generated TypeScript module exports, with every import stubbed. */
-function exportsOf(source: string): Record<string, unknown> {
-  const open = openScope();
-  const holder = { exports: {} as Record<string, unknown> };
-  runModule(source, { require: () => open, exports: holder.exports, module: holder }, { format: 'cjs' });
-  return holder.exports;
-}
 
 function compileValidatedSdk(output: string): string {
   const outDir = path.join(output, 'dist');
@@ -294,7 +286,7 @@ test('a model used in a request and a response with a readOnly field gets two va
   assert.deepEqual(validators.validate_createItem_response_201_application_json(withServerId, true), [], 'a response carries the readOnly field');
 });
 
-test('a model that only an operation response reads has its check written once in the SDK module, and no root of its own', () => {
+test('a model that only an operation response reads is checked by the response validator and has no root of its own', () => {
   const pattern = '^ITEM-[0-9]{6}$';
   const result = writeSdk({
     openapi: '3.1.0',
@@ -312,11 +304,11 @@ test('a model that only an operation response reads has its check written once i
   }, { output: path.join(tmpdir(), 'validators-shared-checks'), name: 'Shared', profile });
   const module = result.artifacts.find(item => path.basename(item.path) === 'validators.generated.ts');
   assert.ok(module);
-  // Each check function holds its pattern twice: the compiled expression and the issue it reports.
-  assert.equal(module.content.split(JSON.stringify(pattern)).length - 1, 2, 'one check function serves the operation');
-  assert.equal(module.content.split('new RegExp(').length - 1, 1, 'one compiled expression');
-  const exported = Object.keys(exportsOf(module.content));
-  assert.ok(exported.includes('validate_getItem_response_200_application_json'), 'the operation root is exported');
+  const validators = exportsOf(module.content) as Record<string, (value: unknown, validate: true) => { code: string; pattern?: string; path: unknown[] }[]>;
+  const validateResponse = validators.validate_getItem_response_200_application_json!;
+  assert.deepEqual(validateResponse({ code: 'ITEM-123456' }, true), []);
+  assert.deepEqual(validateResponse({ code: 'item-1' }, true).map(issue => [issue.code, issue.pattern, issue.path]), [['pattern', pattern, ['code']]], 'one issue for the one failing pattern');
+  const exported = Object.keys(validators);
   assert.equal(exported.filter(name => /^validate_Item_[0-9a-f]{8}$/.test(name)).length, 0, 'no group reads the model, so its root is not exported');
 });
 

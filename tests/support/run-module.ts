@@ -27,3 +27,11 @@ export function openScope(known: Readonly<Record<string, unknown>> = {}): unknow
   const open: unknown = new Proxy(function stub() {}, { get: () => open, apply: () => open, construct: () => open as object });
   return new Proxy(open as object, { get: (_target, name) => (typeof name === 'string' && Object.hasOwn(known, name) ? known[name] : open) });
 }
+
+/** The values a generated TypeScript module exports, with every import stubbed. */
+export function exportsOf(source: string): Record<string, unknown> {
+  const open = openScope();
+  const holder = { exports: {} as Record<string, unknown> };
+  runModule(source, { require: () => open, exports: holder.exports, module: holder }, { format: 'cjs' });
+  return holder.exports;
+}

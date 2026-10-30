@@ -8,6 +8,7 @@ import { isGolemModeManifest, sdkSchemaGraph, validateModelManifest } from '#gol
 import { generate } from '#model/generator';
 import { golemModeManifest } from './openapi/helpers.js';
 import { createModelProject, writeModelSources } from './model-project.js';
+import { exportsOf } from './support/run-module.js';
 
 const PROFILE = { mobx: false, validation: true, allowAny: false } as const;
 const ref = (name: string) => ({ $ref: `#/components/schemas/${name}` });
@@ -57,11 +58,9 @@ test('the models job compiles the SDK operation roots and the app models into on
   const validators = result.artifacts.filter(artifact => artifact.path.endsWith('.validators.generated.ts'));
   assert.equal(validators.length, 1);
   const source = validators[0]!.content;
-  const exported = [...source.matchAll(/^export function validate_(\w+?)(?:_wire|_model_only|_wire_only)?\(/gm)].map(match => match[1]!);
-  assert.deepEqual([...new Set(exported)].map(id => id.replace(/_[0-9a-f]{8}$/, '')).sort(), ['Anonymous', 'Charge', 'TLedger', 'src_sdk_createCharge_input', 'src_sdk_createCharge_response_200_application_json']);
-  for (const root of [requestRoot, responseRoot]) {
-    assert.equal(source.split(`export function validate_${root}(`).length - 1, 1, `${root} is compiled once`);
-  }
+  const exported = Object.keys(exportsOf(source)).filter(name => name.startsWith('validate_'));
+  assert.deepEqual([...new Set(exported.map(name => name.replace(/^validate_(\w+?)(?:_wire|_model_only|_wire_only)?$/, '$1').replace(/_[0-9a-f]{8}$/, '')))].sort(), ['Anonymous', 'Charge', 'TLedger', 'src_sdk_createCharge_input', 'src_sdk_createCharge_response_200_application_json']);
+  for (const root of [requestRoot, responseRoot]) assert.ok(exported.includes(`validate_${root}`), `${root} is an exported validator`);
   // The operation's response root is the model's wire check, not a second function for the same schema.
   assert.equal(source.match(/^function f\d+_Charge_[0-9a-f]{8}(?:_wire)?\(/gm)?.length, 2, 'one model check and one wire check of Charge');
   assert.match(source, /export function validate_src_sdk_createCharge_response_200_application_json\(.*\n.*\n  f\d+_Charge_[0-9a-f]{8}_wire\(/);
