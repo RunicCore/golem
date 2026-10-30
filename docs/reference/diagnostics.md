@@ -912,6 +912,19 @@ An `integer` member and a `number` member share the integers. A member that decl
 - Give the variant a mapping value of its own, for example `feline: '#/components/schemas/Cat'`.
 - Or remove the variant from the union.
 
+### OPENAPI_KEYWORD_NOT_CARRIED
+
+**Keyword that the model cannot check.** A schema has a keyword that a model cannot check, and a silent skip would let a bad value pass. Generation stops. The message names the keyword and the place of the schema. Two cases are possible:
+
+- A string with `format: date-time` has `pattern`, `minLength`, `maxLength`, `enum`, `const`, `not`, `if`, `allOf`, `anyOf` or `oneOf`. The model holds a date value, not the text, so it cannot check the text.
+- A schema has `unevaluatedProperties` or `unevaluatedItems` beside `if`, `dependentSchemas`, `oneOf` or `anyOf`. These keywords evaluate names or items that the model cannot follow.
+
+**Fix:**
+
+- Remove the keyword from the schema.
+- Or, for a date-time string, declare the value as a string without `format: date-time`.
+- Or, for `unevaluatedProperties` or `unevaluatedItems`, list the names or items in the schema itself.
+
 ### OPENAPI_MOBX_NEEDS_GOLEM_MODE
 
 **MobX with a standalone SDK.** The profile sets `mobx: true`, and the job has `mode: standalone`, which is the default. A standalone SDK carries its own copy of the runtime, and that copy has no MobX support. This is an error: generation writes nothing.
