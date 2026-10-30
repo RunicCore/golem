@@ -78,7 +78,8 @@ export function generateModelManifest(
       name: GENERATOR_NAME,
       version: PACKAGE_VERSION,
     },
-    runtime: { name: '@exprtlabs/golem', minimumVersion: PACKAGE_VERSION },
+    // A golem-mode SDK imports the installed @exprtlabs/golem and records the version it needs; a standalone SDK carries its own runtime and records none.
+    ...(mode === 'golem' ? { runtime: { name: '@exprtlabs/golem', minimumVersion: PACKAGE_VERSION } } : {}),
     source: {
       kind: 'openapi',
       dialect: asRecord(document).openapi,

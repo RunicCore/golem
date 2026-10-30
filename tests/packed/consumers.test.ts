@@ -96,8 +96,6 @@ for (const profile of [
     const manifest = JSON.parse(fs.readFileSync(path.join(root, 'sdk/model-manifest.json'), 'utf8'));
     assert.equal(Object.hasOwn(manifest, 'manifestVersion'), false);
     assert.deepEqual(manifest.profile, { ...profile, allowAny: false, unknownFormats: 'error' });
-    const packedVersion = JSON.parse(fs.readFileSync(path.join(root, 'node_modules/@exprtlabs/golem/package.json'), 'utf8')).version;
-    assert.deepEqual(manifest.runtime, { name: '@exprtlabs/golem', minimumVersion: packedVersion });
     copyFixtureFile(root, profile.mobx ? 'packed/profile-mobx-after-generation/cart.model.ts' : 'packed/profile-after-generation/cart.model.ts', 'src/cart.model.ts');
     await cli(root, ['generate']);
     const generated = [...filesUnder(path.join(root, 'sdk')), path.join(root, 'src/cart.model.generated.ts'), path.join(root, '.golem/outputs.json')];
