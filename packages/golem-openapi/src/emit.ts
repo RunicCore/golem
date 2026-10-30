@@ -185,14 +185,14 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions, moved:
   const files = new Map<string, string>();
   // The names that each module of the index exports come from its Code, and the index re-exports the whole modules it stars.
   const modules = new Map<string, PublicModule>();
-  const types = generateTypes(document, [...operations, ...inboundOperations], plan);
+  const types = generateTypes(document, [...operations, ...inboundOperations], plan, options.dates);
   files.set('types.ts', types.source);
   modules.set('types.ts', { exports: types.exports, stars: [] });
   if (plan.artifacts.has('input-schemas.ts')) {
-    files.set('input-schemas.ts', generateDirectionalSchemas(document, 'input'));
+    files.set('input-schemas.ts', generateDirectionalSchemas(document, 'input', options.dates));
   }
   if (plan.artifacts.has('output-schemas.ts')) {
-    files.set('output-schemas.ts', generateDirectionalSchemas(document, 'output'));
+    files.set('output-schemas.ts', generateDirectionalSchemas(document, 'output', options.dates));
   }
   // One validators module serves the models and the operations: it compiles the roots of every model group and
   // every operation together, so a check the two share is written once.

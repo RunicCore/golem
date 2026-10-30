@@ -20,8 +20,7 @@ import {
   unionVariants,
 } from './composition.js';
 import { effectiveSchemaTypes } from './normalize.js';
-import { code } from '@exprtlabs/golem/internal/emitter';
-import { schemaContext } from './types.js';
+import { schemaContext, temporalFormat } from './types.js';
 import {
   collectCanonicalResources,
   nextSchemaBase,
@@ -137,20 +136,7 @@ export function withSchemaBase(env: ModelResolveEnv, schema: unknown): ModelReso
   return { ...env, currentBase: nextSchemaBase(schema, env.currentBase, env.resources) };
 }
 
-/** `dates: temporal` string formats and the `@exprtlabs/golem/temporal` tag each converts with. */
-const TEMPORAL_FORMATS = {
-  'date-time': { typeName: 'Temporal.Instant', type: code`Temporal.Instant`, codec: 'TemporalInstant' },
-  date: { typeName: 'Temporal.PlainDate', type: code`Temporal.PlainDate`, codec: 'TemporalPlainDate' },
-  duration: { typeName: 'Temporal.Duration', type: code`Temporal.Duration`, codec: 'TemporalDuration' },
-} as const;
-
 export const TEMPORAL_SERDE_PREFIX = 'temporal:';
-
-function temporalFormat(schema: unknown, env: ModelResolveEnv): (typeof TEMPORAL_FORMATS)[keyof typeof TEMPORAL_FORMATS] | undefined {
-  if (env.dates !== 'temporal' || !isJsonObject(schema) || typeof schema.format !== 'string') return undefined;
-  if (!(schema.type === 'string' || (Array.isArray(schema.type) && schema.type.includes('string')))) return undefined;
-  return Object.hasOwn(TEMPORAL_FORMATS, schema.format) ? TEMPORAL_FORMATS[schema.format as keyof typeof TEMPORAL_FORMATS] : undefined;
-}
 
 function isTemporalDescriptor(descriptor: ModelTypeDescriptor): boolean {
   const serde = (descriptor as { readonly serde?: { readonly id?: string } }).serde;
@@ -444,7 +430,7 @@ export function modelConversionDescriptor(
   const seen = new Set(visiting).add(schema);
   const target = componentSchemaTarget(schema, nested);
   if (target !== undefined && target !== schema) return modelConversionDescriptor(target, definitions, nested, direction, seen);
-  const temporal = temporalFormat(schema, env);
+  const temporal = temporalFormat(schema, env.dates);
   if (temporal) {
     const value = {
       kind: 'class-value', typeName: temporal.typeName,

@@ -344,12 +344,10 @@ export function generateModels(
   const analysis = helpers.analysis ?? analyzeOpenApiModels(document, profile.validation);
   const definitions = analysis.definitions;
   const typesModule = new ImportSource(helpers.moduleFile?.includes('/') ? '../types.js' : './types.js', true, { namespace: 'Types' });
-  const typesNamespace = typesModule.namespace();
   const schemaGraph = analysis.schemaGraph;
   const emittedSchemaGraph = helpers.graphNodeIds
     ? schemaGraphView(schemaGraph, helpers.graphNodeIds, helpers.dependencyNodeIds)
     : schemaGraph;
-  const aliasesByNodeId = new Map([...definitions.aliases.values()].flatMap((alias) => alias.nodeId === undefined ? [] : [[alias.nodeId, alias] as const]));
   const validatorsSource = helpers.validatorsSource;
   const codecRuntimeOptions: Omit<CodecRuntimeOptions, 'modelBases'> = {
     validationLevel: profile.validation,
@@ -375,11 +373,6 @@ export function generateModels(
       const node = analysis.nodesById.get(id);
       return node && exportsWireStringify(analysis.schemaGraph, node, profile) ? [node.codecId] : [];
     })),
-    wireType: (node) => {
-      const modelName = analysis.definitionNameByNodeId.get(node.id);
-      const alias = aliasesByNodeId.get(node.id);
-      return modelName !== undefined && definitions.has(modelName) ? code`${typesNamespace}.${identifier(modelName)}` : alias === undefined ? undefined : code`${typesNamespace}.${identifier(alias.name)}`;
-    },
     ...(helpers.wireStringify ? { siblingWireName: helpers.wireStringify } : {}),
     ...(helpers.exportedFillFunctionIds ? { exportedFillFunctionIds: helpers.exportedFillFunctionIds } : {}),
     nestedImportedSerde: (codecId) => {

@@ -14,6 +14,7 @@ import {
 } from './normalize.js';
 import { generatedBannerComment } from './package-info.js';
 import { ComponentNameScope } from './origin.js';
+import type { OpenApiDates } from './model-resolution.js';
 import { projectSchema, collectCanonicalResources, nextSchemaBase, resolveSchemaTarget, schemaDocumentBase, schemaTargetIdentity, type ResolvedSchemaTarget, type ResourceIndex } from './schema-projection.js';
 
 type TextSchemaKind = 'string' | 'unknown' | 'non-string' | 'ambiguous';
@@ -234,6 +235,45 @@ export interface SchemaTypeContext {
   readonly resources?: ResourceIndex;
   readonly currentBase?: string;
   readonly inlining?: ReadonlySet<string>;
+  /**
+   * Present when the type is the converted form that a client takes and returns: `date-time` strings are `Date`, or
+   * Temporal types as `dates` says. Absent: the wire form, where those values are strings.
+   */
+  readonly converted?: ConvertedTypes;
+}
+
+export interface ConvertedTypes {
+  readonly dates: OpenApiDates;
+  /** The globals `Date` and `Temporal` that a component of the same name shadows in the module: they are reached through `globalThis`. */
+  readonly shadowed: ReadonlySet<string>;
+}
+
+/** `dates: temporal` string formats and the Temporal type each converts to, with the `@exprtlabs/golem/temporal` codec that converts it. */
+const TEMPORAL_FORMATS = {
+  'date-time': { typeName: 'Temporal.Instant', type: code`Temporal.Instant`, codec: 'TemporalInstant' },
+  date: { typeName: 'Temporal.PlainDate', type: code`Temporal.PlainDate`, codec: 'TemporalPlainDate' },
+  duration: { typeName: 'Temporal.Duration', type: code`Temporal.Duration`, codec: 'TemporalDuration' },
+} as const;
+
+/** The Temporal type of a string schema under `dates: temporal`; any other schema or mode has none. */
+export function temporalFormat(schema: unknown, dates: OpenApiDates): (typeof TEMPORAL_FORMATS)[keyof typeof TEMPORAL_FORMATS] | undefined {
+  if (dates !== 'temporal' || !isJsonObject(schema) || typeof schema.format !== 'string') return undefined;
+  if (!(schema.type === 'string' || (Array.isArray(schema.type) && schema.type.includes('string')))) return undefined;
+  return Object.hasOwn(TEMPORAL_FORMATS, schema.format) ? TEMPORAL_FORMATS[schema.format as keyof typeof TEMPORAL_FORMATS] : undefined;
+}
+
+/** The type that a string schema converts to, or undefined when its value stays a string. */
+function convertedStringType(schema: JsonObjectLike, converted: ConvertedTypes): TypeCode | undefined {
+  const temporal = temporalFormat(schema, converted.dates);
+  if (temporal) return typeCode(converted.shadowed.has('Temporal') ? code`globalThis.${temporal.type}` : temporal.type);
+  if (converted.dates === 'date' && schema.format === 'date-time') return typeCode(converted.shadowed.has('Date') ? code`globalThis.Date` : code`Date`);
+  return undefined;
+}
+
+/** The same context for a position that still carries wire values: the parameters and headers, until the client converts them. */
+function wireContext(context: SchemaTypeContext): SchemaTypeContext {
+  const { converted, ...wire } = context;
+  return wire;
 }
 
 /** How a type binds in a larger type: a member of a union, an intersection or an array parenthesizes by it. */
@@ -648,7 +688,8 @@ function schemaTypeNode(rawSchema: unknown, context: SchemaTypeContext = {}): Ty
   const primitiveType = (type: string): TypeCode => {
     switch (type) {
     case 'string':
-      return schema.format === 'binary' ? blobType(inner) : typeCode(code`string`);
+      if (schema.format === 'binary') return blobType(inner);
+      return (inner.converted && convertedStringType(schema, inner.converted)) || typeCode(code`string`);
     case 'integer':
     case 'number': return typeCode(code`number`);
     case 'boolean': return typeCode(code`boolean`);
@@ -717,7 +758,9 @@ function objectType(schema: JsonObjectLike, context: SchemaTypeContext): TypeCod
 
 type JsonObjectLike = { readonly [key: string]: unknown };
 
+/** The input of an operation: its bodies are typed by `context`; its parameters stay wire typed (see `wireContext`). */
 function inputType(operation: NormalizedOperation, context: SchemaTypeContext = {}): TypeCode {
+  const parameterContext = wireContext(context);
   const groups: Record<string, NormalizedOperation['parameters'][number][]> = {
     path: [],
     query: [],
@@ -732,13 +775,13 @@ function inputType(operation: NormalizedOperation, context: SchemaTypeContext = 
   }
   if (queryString) {
     const schema = parameterSchema(queryString);
-    lines.push(code`querystring${queryString.required ? code`` : code`?`}: ${schemaTypeCode(schema, context).code};`);
+    lines.push(code`querystring${queryString.required ? code`` : code`?`}: ${schemaTypeCode(schema, parameterContext).code};`);
   }
   for (const [location, parameters] of Object.entries(groups)) {
     if (!parameters.length) continue;
     const requiredGroup = location === 'path' || parameters.some((parameter) => parameter.required);
     const fields = parameters.map((parameter) =>
-      code`${propertyKey(parameter.name)}${parameter.required || location === 'path' ? code`` : code`?`}: ${schemaTypeCode(parameterSchema(parameter), context).code};`
+      code`${propertyKey(parameter.name)}${parameter.required || location === 'path' ? code`` : code`?`}: ${schemaTypeCode(parameterSchema(parameter), parameterContext).code};`
     );
     lines.push(code`${identifierPart(location)}${requiredGroup ? code`` : code`?`}: ${bracedLines(fields, code`};`)}`);
   }
@@ -774,9 +817,10 @@ function operationBodyType(operation: NormalizedOperation, success: boolean, con
 }
 
 function responseHeadersType(document: unknown, response: NormalizedResponse, context: SchemaTypeContext = {}): TypeCode {
+  const wire = wireContext(context);
   const members = objectEntries(response.headers).map(([name, rawHeader]) => {
     const header = resolveLocal(document, rawHeader);
-    return code`readonly ${propertyKey(name)}?: ${schemaTypeCode(parameterSchema(header), context).code}`;
+    return code`readonly ${propertyKey(name)}?: ${schemaTypeCode(parameterSchema(header), wire).code}`;
   });
   return members.length ? typeCode(code`{ ${join(members, code`; `)} }`) : recordType(NEVER_TYPE);
 }
@@ -823,6 +867,12 @@ function* claimedComponentSchemas(
   }
 }
 
+/** The converted form of a module that declares the component `schemas`. */
+function convertedTypes(schemas: Record<string, unknown>, dates: OpenApiDates): ConvertedTypes {
+  const declared = new Set(Object.keys(schemas).map((name) => identifier(name)));
+  return { dates, shadowed: new Set(['Date', 'Temporal'].filter((name) => declared.has(name))) };
+}
+
 export function generateTypes(
   document: unknown,
   operations: readonly NormalizedOperation[],
@@ -830,6 +880,7 @@ export function generateTypes(
     readonly typesUsesInputSchemas: boolean;
     readonly typesUsesOutputSchemas: boolean;
   },
+  dates: OpenApiDates = 'date',
 ): RenderedModule {
   const schemas = asRecord(asRecord(asRecord(document).components).schemas);
   const scope = new ComponentNameScope('types.ts');
@@ -840,7 +891,8 @@ export function generateTypes(
   const inputSchemas = new ImportSource('./input-schemas.js', true, { namespace: 'InputSchemas' });
   const outputSchemas = new ImportSource('./output-schemas.js', true, { namespace: 'OutputSchemas' });
   const blobTypeName = generatedBlobType(scope, objectEntries(schemas).map(([name]) => identifier(name)));
-  const baseContext = schemaContext(document, { blobType: blobTypeName });
+  const converted = convertedTypes(schemas, dates);
+  const baseContext = schemaContext(document, { blobType: blobTypeName, converted });
   const BLANK = code``;
   const body: Code[] = [];
   const blobTypeIndex = 0;
@@ -860,11 +912,13 @@ export function generateTypes(
       direction: 'input',
       ...(useInput ? { qualifier: code`${inputSchemas.namespace()}.` } : {}),
       blobType: blobTypeName,
+      converted,
     });
     const outputContext = schemaContext(document, {
       direction: 'output',
       ...(useOutput ? { qualifier: code`${outputSchemas.namespace()}.` } : {}),
       blobType: blobTypeName,
+      converted,
     });
     scope.claim(`${operation.typeName}OperationInput`, `operation ${JSON.stringify(operation.name)} input type`);
     scope.claim(`${operation.typeName}OperationSuccessBody`, `operation ${JSON.stringify(operation.name)} success body`);
@@ -891,11 +945,11 @@ export function generateTypes(
   return renderModule(code`${output}\n`);
 }
 
-export function generateDirectionalSchemas(document: unknown, direction: 'input' | 'output'): string {
+export function generateDirectionalSchemas(document: unknown, direction: 'input' | 'output', dates: OpenApiDates = 'date'): string {
   const schemas = asRecord(asRecord(asRecord(document).components).schemas);
   const scope = new ComponentNameScope(`${direction}-schemas.ts`);
   const blobTypeName = generatedBlobType(scope, objectEntries(schemas).map(([name]) => identifier(name)));
-  const baseContext = schemaContext(document, { direction, blobType: blobTypeName });
+  const baseContext = schemaContext(document, { direction, blobType: blobTypeName, converted: convertedTypes(schemas, dates) });
   const BLANK = code``;
   const body: Code[] = [];
   for (const { name, schema, typeName } of claimedComponentSchemas(document, scope)) {
