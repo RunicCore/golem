@@ -15,7 +15,7 @@ MobX changes observability only. Construction, `fromWireFormat` / `toWireFormat`
 
 ## Enable MobX
 
-Install MobX in the application. Your class constructors and the generated SDK models import it at runtime:
+Install MobX in the application. Your class constructors and the generated models import it at runtime:
 
 ```sh
 npm install mobx
@@ -31,7 +31,12 @@ Set the profile and regenerate:
 
 <<< ../../examples/payments/web/golem.yaml
 
-`mobx: true` applies to every generator in the configuration. The example also sets `validation: true`. Validation is independent of MobX ([Validate models](/guide/validation)). An SDK also gains observable operation loading ([Call operations](/guide/client-usage#observe-loading-with-mobx)).
+`mobx: true` applies to every generator in the configuration. The example also sets `validation: true`. Validation is independent of MobX ([Validate models](/guide/validation)).
+
+An SDK with `mobx: true` also gains observable operation loading ([Call operations](/guide/client-usage#observe-loading-with-mobx)). Such an SDK needs `mode: golem` on its `openapi` job, as the example sets. A `standalone` SDK carries its own copy of the runtime, and that copy has no MobX support, so generation stops with [`OPENAPI_MOBX_NEEDS_GOLEM_MODE`](/reference/diagnostics#openapi-mobx-needs-golem-mode). Set `mode: golem`, or set `mobx: false` ([SDK modes](/reference/config#sdk-modes)).
+
+- An SDK has no model classes in either mode, so the data it returns is plain and not observable.
+- For observable data, declare your own model over the SDK type, such as `IModel<Charge>`, with `mobx: true`.
 
 ## Initialize your class
 
@@ -40,7 +45,7 @@ Call `asGenObservable(this, annotations)` once in your constructor, after `super
 - Extra annotations are optional: `asGenObservable(this, { label: computed, toggle: action })`.
 - Annotate writable state with `observable`, derived getters with `computed` and state-changing methods with `action`.
 - Use `observable.ref`, `observable.shallow`, `observable.struct`, or `false` when a field should not be deeply observable.
-- An [SDK model class](/guide/models-and-client) such as `TMoneyModel`, created with `new` or with `fromWireFormat`, initializes itself. An empty `class Payment extends TPaymentBaseModel {}` is not observable until its constructor calls `asGenObservable(this)`.
+- An empty `class Payment extends TPaymentBaseModel {}` is not observable until its constructor calls `asGenObservable(this)`. This holds for a model over an [SDK type](/guide/models-and-client) too.
 
 ## Observe a model
 
@@ -54,16 +59,16 @@ Dispose the reaction when the observation is no longer needed.
 
 ## Nested models
 
-When an observable generated model contains another generated model, `asGenObservable` walks nested values through arrays, records, maps and sets.
+When an observable generated model contains another generated model or a plain object, `asGenObservable` walks nested values through arrays, records, maps and sets.
 
-The `golem.yaml` above generates the SDK into `sdk/` from `../server/api/openapi.yaml`, so a [model that uses SDK types](/guide/models-and-client) is observable together with its SDK types. In `src/payment-editor.model.ts`, `setAmount` edits the nested `money` model:
+The `golem.yaml` above generates the SDK into `sdk/` from `../server/api/openapi.yaml`. A [model that uses SDK types](/guide/models-and-client) is observable together with its nested SDK values. In `src/payment-editor.model.ts`, `setAmount` edits the nested `money` object:
 
 <<< ../../examples/payments/web/src/payment-editor.model.ts#nested-editing
 
 Calling `setAmount('12.50')` changes `money.amount`, and the reaction above reports the new summary.
 
-- The constructor turns the nested initializer into a generated `TMoneyModel`.
-- `asGenObservable` initializes that nested model, so it needs no manual MobX call.
+- `money` has the SDK type `TMoney`, a plain object type.
+- `asGenObservable` makes that nested object observable, so it needs no manual MobX call.
 - `setAmount` is an action. The reaction runs after it updates `money.amount`.
 
 ## Unions and your classes

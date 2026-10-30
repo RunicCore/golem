@@ -1,6 +1,6 @@
 # OpenAPI support
 
-Check what the client generator supports for each OpenAPI version, feature and profile. The generator turns the validation keywords of a schema into model and client validation, whichever tool produced the document.
+Check what the client generator supports for each OpenAPI version, feature and profile. The generator turns the validation keywords of a schema into client validation, whichever tool produced the document. A [`golem` mode SDK](/reference/config#sdk-modes) hands them to the `models` job, which compiles them with your models.
 
 ## Feature support
 
@@ -20,9 +20,9 @@ An operation name that is a JavaScript reserved word receives a `_` suffix (`ope
 
 ## Recursive schemas
 
-A component schema that refers to itself through `$ref` generates, also when it is not an object. For example, a `JsonValue` component that is a `oneOf` of scalars, an array of `JsonValue` and an object with `additionalProperties` of `JsonValue` becomes the type `JsonValue`. A model field of that component has the type `Types.JsonValue`.
+A component schema that refers to itself through `$ref` generates, also when it is not an object. For example, a `JsonValue` component that is a `oneOf` of scalars, an array of `JsonValue` and an object with `additionalProperties` of `JsonValue` becomes the type `JsonValue`.
 
-A recursive component that holds a `date-time` value or a model has a second type for the models. In the model, the value is a `Date` or a model instance at each level. In JSON, it is the string or the plain object. The client converts between the two for you.
+A recursive component that holds a `date-time` value has the converted type in the SDK: the value is a `Date` or a `Temporal` value at each level. In JSON, it is the string. The client converts between the two for you, in both modes.
 
 A component that does not refer to itself stays part of each field that uses it.
 
@@ -31,6 +31,17 @@ A component that does not refer to itself stays part of each field that uses it.
 A discriminator `mapping` value inside a referenced file must be a pointer such as `#/components/schemas/Dog`, or the name of a root alias. A bare name in another file names a root component, so generation fails when the root declares none by that name and reports the mapping and its file.
 
 `#/…` always means the containing document root, also inside a schema that declares its own `$id`. The `no-unresolved-refs` rule reports a pointer relative to an `$id` resource, such as `#/properties/x`.
+
+## What the client converts
+
+The client converts what it carries, in both [SDK modes](/reference/config#sdk-modes):
+
+- request and response bodies and stream items,
+- `path`, `query`, `header` and `cookie` parameters, including `$ref` `deepObject` and `querystring` parameters,
+- declared response headers,
+- the payloads of webhooks and callbacks.
+
+A `date` or `date-time` value becomes a `Date`, or a `Temporal` value with `dates: temporal`. The checks run at the [`validate`](/guide/client-usage#lower-the-checks) level of the call. Conversion runs at every level.
 
 ## Response matching
 

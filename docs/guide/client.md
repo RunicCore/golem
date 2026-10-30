@@ -2,6 +2,8 @@
 
 Generate a typed SDK from an OpenAPI document, then call its operations with checked requests and responses.
 
+The SDK is a client and types. The client checks and converts each request and each response, so your code never calls a conversion function. The SDK has no model classes.
+
 ## Install
 
 ```sh
@@ -33,11 +35,24 @@ The command writes the `sdk/` directory under `output`. The example writes `prov
 
 ## What to import
 
-Import `ProviderClient` from the `sdk/index.js` file under your `output` directory. The example's `provider/client.ts` imports `./sdk/index.js`. Import operation factories and model classes from the public paths in [Generated files](/reference/generated-files#public-paths).
+Import `ProviderClient` and the data types from the `sdk/index.js` file under your `output` directory. The example's `provider/client.ts` imports `./sdk/index.js`. Import operation factories from the public paths in [Generated files](/reference/generated-files#public-paths).
 
-Golem replaces only the files it generated. Keep your own code, including model classes that use [SDK types](/guide/models-and-client), outside `sdk/`. A file there that golem did not generate stops generation.
+Golem replaces only the files it generated. Keep your own code, including models over [SDK types](/guide/models-and-client), outside `sdk/`. A file there that golem did not generate stops generation.
 
 Change `provider.yaml` and generate again when the contract changes.
+
+## Choose a mode
+
+An `openapi` job has a `mode` key ([SDK modes](/reference/config#sdk-modes)). The calls are the same in both modes.
+
+| Mode | Use it when | What the SDK holds |
+| --- | --- | --- |
+| `standalone` (default) | You get a ready SDK and have no golem setup, or you publish the SDK | The client, the types, the checks and conversions, and a copy of the golem runtime that it uses |
+| `golem` | Your app runs golem and has models in the same `golem.yaml` | The client and the types. The `models` job writes the checks and conversions with your models |
+
+- A standalone SDK imports nothing from `@exprtlabs/golem`. With `dates: temporal`, install `temporal-polyfill` and load it before the first call.
+- A golem mode SDK needs a `models` section in the same file. Add `mode: golem` to the job.
+- An SDK with `mobx: true` needs `mode: golem` ([MobX and React](/guide/mobx)).
 
 ## First call
 
