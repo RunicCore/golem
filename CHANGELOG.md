@@ -86,6 +86,7 @@ This file is the complete list of changes. The documentation site's
 
 ### OpenAPI
 
+- A field whose type is a string, number, integer, boolean or null with tag keywords is one flat schema in the OpenAPI document and the model JSON Schema, such as `{ type: string, format: date-time }` for a `Date` field or `{ type: string, minLength: 2 }`. Before, it was `allOf: [{ type: string }, { minLength: 2 }]`. When two tags give one keyword different values, the field keeps `allOf`.
 - **Breaking:** a generated SDK has no model classes, in either mode. It writes no `<Name>Model` class, no `Fields`, `Init` or `JSON` type and no `parse`, `stringify`, `fromWireFormat`, `toWireFormat`, `validate`, `assert` or `encode` function for a schema, and no `sdk/models` folder. The client checks and converts each request and response by itself. A response body is a plain object of the SDK type, with converted values such as `Temporal` dates. A class with methods is your own model: `IModel<Charge>`. Old names and their replacements:
 
 | Before | Now |
