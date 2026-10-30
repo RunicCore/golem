@@ -326,7 +326,7 @@ function operationSource(
     ? [
       code`    const levels = ${rt.validation.callLevels}(runtime, options.validate, ${literal(profile.validation === 'sanity' ? 'sanity' : true)});`,
       code`    const checkResponse = ${rt.validation.responseCheck}(validators, levels.response);`,
-      ...(decodes ? [code`    const decodeResponse = ${use('responseDecoder')}(${codecsName}, levels);`] : []),
+      ...(decodes ? [code`    const decodeResponse = ${use('responseDecoder')}(${codecsName}, levels.responseHeaders);`] : []),
     ]
     : [];
   const requestLevel = profile.validation ? code`, levels.request` : BLANK;

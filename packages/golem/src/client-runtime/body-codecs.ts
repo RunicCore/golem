@@ -180,15 +180,21 @@ export function convertRequestParameters<Input extends object>(codecs: Operation
   return converted as Input & RequestParameters;
 }
 
-/** The conversion of a checked response body, stream item or response header to its plain form; none when no response of the operation converts. */
-export function responseDecoder(codecs: OperationCodecs, levels?: Pick<CallLevels, 'response' | 'responseHeaders'>): ResponseDecode | undefined {
+/** Decodes a body or stream item the client has already checked at the response level: the codec converts only. */
+const CHECKED: { readonly validate: false } = { validate: false };
+
+/**
+ * The conversion of a checked response body, stream item or response header to its plain form; none when no response of the operation converts.
+ * The client check of a body or stream item ran before the decoder, so its codec converts only (a date that cannot convert still fails).
+ * No other check sees a response header, so its codec checks at `headerLevel`.
+ */
+export function responseDecoder(codecs: OperationCodecs, headerLevel?: ValidationLevel): ResponseDecode | undefined {
   const { decode, headers } = codecs;
   if (!decode && !headers) return undefined;
-  const bodyOptions = levels === undefined ? undefined : { validate: levels.response };
-  const headerOptions = levels === undefined ? undefined : { validate: levels.responseHeaders };
+  const headerOptions = headerLevel === undefined ? undefined : { validate: headerLevel };
   return (response, value, header) => {
     const table = header === undefined ? decode : headers;
     const key = `${response.status}:${header ?? response.contentType}`;
-    return table && Object.hasOwn(table, key) ? table[key]!(value as never, header === undefined ? bodyOptions : headerOptions) : value;
+    return table && Object.hasOwn(table, key) ? table[key]!(value as never, header === undefined ? CHECKED : headerOptions) : value;
   };
 }

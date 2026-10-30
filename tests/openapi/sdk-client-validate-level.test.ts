@@ -170,6 +170,29 @@ test('a header that breaks its schema passes by default and its dates convert', 
   assert.ok(response.headers['X-Seen'] instanceof Date);
 });
 
+test('a response is checked once: the client check is the only wire check before decoding', async () => {
+  // protects: R-86, F-164 the decoder does not check the wire body again; an override that accepts it is the last word
+  const sdk = await sdks.full();
+  const checked: unknown[] = [];
+  const accept = (value: unknown): readonly [] => { checked.push(value); return []; };
+  const client = sdk.createClient({
+    operationValidators: new Map([['createCharge', { input: () => [], responses: new Map([['200:application/json', accept]]) }]]),
+    fetchImpl: async () => Response.json({ amount: 'x', when: WHEN }),
+  });
+  const response = await client.createCharge().execute({ body: { amount: 1, when: new Date(WHEN) } });
+  assert.deepEqual(checked, [{ amount: 'x', when: WHEN }]);
+  assert.deepEqual(response.body, { amount: 'x', when: new Date(WHEN) });
+});
+
+test('a leap-second date passes the wire check and is still rejected when it cannot convert', async () => {
+  // protects: R-86 skipping the decoder's own check loses nothing: a wire date that is no Date never arrives as one
+  const client = (await sdks.full()).createClient({ fetchImpl: async () => Response.json({ amount: 1, when: '2025-12-31T23:59:60Z' }) });
+  await assert.rejects(
+    client.createCharge().execute({ body: { amount: 1, when: new Date(WHEN) } }),
+    (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.Deserialization,
+  );
+});
+
 test('with response validation off a bad date is a deserialization error: conversion still runs', async () => {
   // protects: R-86 { response: false } turns the check off, not the conversion
   const sdk = await sdks.full();
