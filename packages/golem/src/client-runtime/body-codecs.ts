@@ -2,6 +2,7 @@ import { IssueRepresentation, IssueSource, LibError, LibErrorKind, toIssue } fro
 import type { ParameterFieldShape, ValidationLevel } from '../object-codec.js';
 import { decodeParameterField, gatherObjectField } from '../query-decode.js';
 import { mediaRank, type BodyEncoder, type ClientRuntime, type EncodedBody, type EncodingMetadata, type OperationCodecs, type ResponseCheck, type ResponseDecode } from './core.js';
+import { mediaEssence } from './media-type.js';
 import { addQueryParameter } from './parameters.js';
 import type { CallLevels } from './validation.js';
 
@@ -31,7 +32,7 @@ function ownEncoding(encoding: Readonly<Record<string, EncodingMetadata>>, name:
 
 function findBodyEncoder(encoders: Record<string, BodyEncoder>, contentType: string): BodyEncoder | undefined {
   if (Object.hasOwn(encoders, contentType)) return encoders[contentType];
-  const essence = (contentType.split(';', 1)[0] || '').trim().toLowerCase();
+  const essence = mediaEssence(contentType);
   if (essence && Object.hasOwn(encoders, essence)) return encoders[essence];
   return Object.hasOwn(encoders, '*/*') ? encoders['*/*'] : undefined;
 }
@@ -44,7 +45,7 @@ export function encodeBody(
   mediaMetadata: Readonly<Record<string, RequestMediaMetadata>>,
 ): { body?: BodyInit; contentType?: string } {
   if (value === undefined || !contentType) return {};
-  const essence = (contentType.split(';', 1)[0] || '').trim().toLowerCase();
+  const essence = mediaEssence(contentType);
   const metadata: RequestMediaMetadata = mediaMetadata[contentType] || mediaMetadata[essence] || {
     encoding: {},
     prefixEncoding: [],

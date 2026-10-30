@@ -2,6 +2,7 @@ import { LibError, LibErrorKind } from '../errors.js';
 import type { ValidationLevel } from '../object-codec.js';
 import type { OperationRuntimeValidators } from '../schema-registry-validation.js';
 import type { Validator } from '../validation-runtime.js';
+import { mediaEssence, parseMediaType } from './media-type.js';
 
 export interface ParameterSerializerContext {
   readonly operation: string;
@@ -239,7 +240,7 @@ function lookupCodec<T>(map: Readonly<Record<string, T>>, keys: readonly string[
     if (key && Object.hasOwn(map, key)) return map[key];
   }
   for (const key of keys) {
-    const essence = (key.split(';', 1)[0] || '').trim().toLowerCase();
+    const essence = mediaEssence(key);
     if (essence && Object.hasOwn(map, essence)) return map[essence];
   }
   return Object.hasOwn(map, '*/*') ? map['*/*'] : undefined;
@@ -247,13 +248,9 @@ function lookupCodec<T>(map: Readonly<Record<string, T>>, keys: readonly string[
 
 /** How closely the media type `actual` (parameters ignored) matches the declared `expected`, which may be a range: 0 exact, 1 a subtype range, 2 the full range; null when it does not. */
 export function mediaRank(actual: string, expected: string): number | null {
-  const rangeEnd = expected.indexOf(';');
-  const valueEnd = actual.indexOf(';');
-  const range = (rangeEnd < 0 ? expected : expected.slice(0, rangeEnd)).trim().toLowerCase();
-  const value = (valueEnd < 0 ? actual : actual.slice(0, valueEnd)).trim().toLowerCase();
+  const { essence: range, type: rangeType, subtype: rangeSubtype } = parseMediaType(expected);
+  const { essence: value, type: actualType } = parseMediaType(actual);
   if (value === range) return 0;
-  const [rangeType, rangeSubtype] = range.split('/');
-  const [actualType] = value.split('/');
   if (rangeSubtype === '*' && rangeType === actualType) return 1;
   if (range === '*/*') return 2;
   return null;
@@ -417,8 +414,7 @@ export class ClientRuntime {
     contracts: readonly RuntimeResponseContract[],
   ): SelectedResponse {
     const rawMediaType = response.headers.get('content-type') || '';
-    const mediaEnd = rawMediaType.indexOf(';');
-    const mediaType = (mediaEnd < 0 ? rawMediaType : rawMediaType.slice(0, mediaEnd)).trim().toLowerCase();
+    const mediaType = mediaEssence(rawMediaType);
     let selected: (typeof contracts)[number] | undefined;
     let range: (typeof contracts)[number] | undefined;
     let fallback: (typeof contracts)[number] | undefined;

@@ -1,6 +1,7 @@
-import { isBinaryMediaType, isJsonSeqMediaType, isNdjsonMediaType, isServerSentEventsMediaType, mediaEssence } from './client/codecs.js';
+import { isBinaryMediaType, isJsonSeqMediaType, isNdjsonMediaType, isServerSentEventsMediaType } from './client/codecs.js';
 import type { ServerObject } from '@exprtlabs/golem/client';
 import { GolemDiagnosticSeverity, type GolemDiagnostic } from '@exprtlabs/golem/generator-api';
+import { mediaEssence } from '@exprtlabs/golem/internal/generator-support';
 import { asRecord, isJsonObject, objectEntries } from './json.js';
 import { SCHEMA_ARRAY_KEYWORDS, SCHEMA_MAP_KEYWORDS, SCHEMA_SINGLE_KEYWORDS } from './schema-keywords.js';
 import {

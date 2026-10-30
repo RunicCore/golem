@@ -13,5 +13,6 @@ export {
 export { sourceDigest } from './model-manifest-core.js';
 export { queryFieldTable } from './query-fields.js';
 export { parameterStyleRule } from '../client-runtime/parameter-styles.js';
+export { mediaEssence } from '../client-runtime/media-type.js';
 export type { ParameterLocation, ParameterStyleRule } from '../client-runtime/parameter-styles.js';
 export { schemaIssueMessage } from '../issue-messages.js';
