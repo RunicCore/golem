@@ -657,7 +657,9 @@ The code also covers a `parse` or `fromWireFormat` call of a model class with a 
 
 ### RUNM1081
 
-**Body or query parameter that is not a model.** A `@Body()` or `@Query()` parameter has a type that is no `IModel` or `IObject` and no class that extends a generated model class. The parameter can be whole or one field, such as `@Body('name')` or `@Query('page')`.
+**Body or query parameter that `NestModelInterceptor` rejects.** Two kinds of fault have this code. The first is a `@Body()` or `@Query()` parameter whose type is no model. The second is a combination of the `@Body()` and `@Query()` parameters of one handler that the interceptor cannot convert.
+
+**A type that is not a model.** A `@Body()` or `@Query()` parameter has a type that is no `IModel` or `IObject` and no class that extends a generated model class. The parameter can be whole or one field, such as `@Body('name')` or `@Query('page')`.
 
 The type can be:
 
@@ -673,6 +675,14 @@ The type can be:
 
 [`NestModelInterceptor`](/guide/nestjs-requests#what-happens-to-a-request) throws on such a parameter and Nest answers HTTP 500. The message shows the type and the decorator, such as `NoteInput is not a golem model, and NestModelInterceptor answers HTTP 500 for a @Body() parameter of that type`, and the position of the type.
 
+**Parameters of one handler that do not work together.** The message names the parameters and the position is the parameter that breaks the rule. For a whole and a one-field parameter, or for two whole parameters, this is the later one. These cases have the code:
+
+- **One-field model that is optional.** A parameter such as `@Body('payment') payment?: TPayment` or `@Query('filter') filter?: TFilter` has `?` or a default value. The interceptor reads the field as a model, so a request that omits the field gets HTTP 400. This holds for an array of models too.
+- **Whole parameter and one-field parameter of one source.** A handler has a whole `@Body()` and a one-field `@Body('payment')`, or a whole `@Query()` and a one-field `@Query('filter')`. The whole conversion replaces the value that the field reads. The interceptor throws a `TypeError`, and Nest answers HTTP 500 for every request.
+- **Whole parameters with different models.** A handler has two whole `@Body()` parameters, or two whole `@Query()` parameters, of different model types or array forms. The interceptor throws a `TypeError`, and Nest answers HTTP 500 for every request. Two whole parameters with the same model type are valid.
+
+A parameter of another kind, such as `@Body()` with `@Query()`, or two one-field parameters with different names, does not conflict.
+
 What golem does depends on [`nonModelInputs`](/reference/config#root-keys) in `golem.yaml`:
 
 - By default this is an error. `golem build`, `golem check`, the Vite plugin, the esbuild plugin and the Node loader stop before a request arrives.
@@ -681,6 +691,9 @@ What golem does depends on [`nonModelInputs`](/reference/config#root-keys) in `g
 **Fix:**
 
 - Declare the input as an `IModel` or `IObject`, or bind one field whose type is a model, such as `@Body('address') address: Address`. For a union, add `& Discriminator<'kind'>` to it, give each model a required literal field such as `kind: 'circle'`, and use the union as a whole parameter. Take the default variant out of the tag, or bind one model.
+- Make an optional one-field parameter required, or declare the field as optional inside a whole model.
+- For a whole and a one-field parameter, declare the whole input as one model, or use one-field parameters only.
+- Give whole parameters of one source one model type, or declare one whole parameter.
 - An app that handles these parameters with its own interceptor sets `nonModelInputs: warn`.
 
 ### RUNM1082

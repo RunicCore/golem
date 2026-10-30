@@ -23,7 +23,7 @@ The CLI runs [generator jobs](#generator-jobs) first, then controller jobs, then
 | `allowAny` | boolean | No | `false` | Fields typed `any` or `unknown` in models |
 | `exact` | boolean | No | `true` | Rejection of extra properties in models |
 | `unknownFormats` | `warn` or `error` | No | `error` | Action for a schema `format` that golem does not check |
-| `nonModelInputs` | `warn` or `error` | No | `error` | Action for a `@Body()` or `@Query()` parameter whose type is no `IModel` or `IObject` |
+| `nonModelInputs` | `warn` or `error` | No | `error` | Action for a `@Body()` or `@Query()` parameter that `NestModelInterceptor` rejects: a type that is no `IModel` or `IObject`, or a combination of parameters of one handler that it cannot convert |
 | `generators` | array of generator jobs | No | — | Non-empty list of [jobs from installed packages](#generator-jobs) |
 | `controllers` | array of controller jobs | No | — | Non-empty list of controller-to-OpenAPI jobs |
 | `openapi` | array of OpenAPI jobs | No | — | Non-empty list of OpenAPI SDK jobs |
@@ -35,7 +35,7 @@ The CLI runs [generator jobs](#generator-jobs) first, then controller jobs, then
 - `allowAny: true` permits those fields. A declaration can override it ([`any` and `unknown`](/guide/field-types#any-and-unknown)).
 - `exact: false` admits keys that a model does not list. A declaration can override it ([Objects and exact](/guide/field-types#objects-and-exact)).
 - `unknownFormats: error` stops generation with [`VALIDATE_UNKNOWN_FORMAT`](/reference/diagnostics#validate-unknown-format). `warn` reports the format and skips its check.
-- `nonModelInputs` covers `golem build`, `golem check`, the Vite plugin, the esbuild plugin and the Node loader. The parameter can be whole or one field. `error` stops with [`RUNM1081`](/reference/diagnostics#runm1081). `warn` continues. `golem build` and `golem check` print the warning. The plugins and the loader print nothing. Set `warn` when your own interceptor handles those parameters.
+- `nonModelInputs` covers `golem build`, `golem check`, the Vite plugin, the esbuild plugin and the Node loader. It covers a parameter whose type is no model, whole or one field. It also covers the parameters of one handler that the interceptor cannot convert together: an optional one-field model, a whole parameter with a one-field parameter of the same source, and whole parameters with different models. `error` stops with [`RUNM1081`](/reference/diagnostics#runm1081). `warn` continues. `golem build` and `golem check` print the warning. The plugins and the loader print nothing. Set `warn` when your own interceptor handles those parameters.
 
 ```yaml
 version: 1
