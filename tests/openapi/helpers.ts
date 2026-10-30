@@ -400,22 +400,33 @@ export function withRootOperations(document: Record<string, unknown>, ...roots: 
  */
 export async function sdkBodyCodec(output: string, name: string, root: string): Promise<SdkBodyCodec> {
   const Client = await loadGeneratedClient(output, name);
+  return clientBodyCodec(async fetchImpl => new Client({ baseUrl: 'https://api.test', fetchImpl }), root);
+}
+
+type BodyOperations = Record<string, (() => { execute(input?: unknown, options?: unknown): Promise<{ body: unknown }> }) | undefined>;
+
+/** A fetch for a test client: it answers with `answer()` and keeps the JSON body of each request in `sent`. */
+export function recordingFetch(answer: () => Response): { readonly fetchImpl: typeof fetch; readonly sent: unknown[] } {
+  const sent: unknown[] = [];
+  const fetchImpl = async (_url: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    sent.push(typeof init?.body === 'string' ? JSON.parse(init.body) : init?.body);
+    return answer();
+  };
+  return { fetchImpl: fetchImpl as typeof fetch, sent };
+}
+
+/** The `SdkBodyCodec` of the component `root` of a client that `makeClient` makes around the fake `fetchImpl` it is given. */
+export function clientBodyCodec(makeClient: (fetchImpl: typeof fetch) => Promise<unknown>, root: string): SdkBodyCodec {
   return {
     async decode(wire, options) {
-      const client = new Client({ baseUrl: 'https://api.test', fetchImpl: async () => Response.json(wire) });
+      const client = await makeClient((async () => Response.json(wire)) as unknown as typeof fetch) as BodyOperations;
       return (await client[`get${root}`]!().execute({}, options)).body;
     },
     async encode(value, options) {
-      let sent: unknown;
-      const client = new Client({
-        baseUrl: 'https://api.test',
-        fetchImpl: async (_url: RequestInfo | URL, init?: RequestInit) => {
-          sent = typeof init?.body === 'string' ? JSON.parse(init.body) : init?.body;
-          return new Response(null, { status: 204 });
-        },
-      });
+      const { fetchImpl, sent } = recordingFetch(() => new Response(null, { status: 204 }));
+      const client = await makeClient(fetchImpl) as BodyOperations;
       await client[`put${root}`]!().execute({ body: value }, options);
-      return sent;
+      return sent[0];
     },
   };
 }

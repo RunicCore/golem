@@ -5,6 +5,7 @@ import test from 'node:test';
 
 import { LibError, LibErrorKind, IssueRepresentation, IssueSource } from '@exprtlabs/golem/errors';
 import {
+  clientBodyCodec,
   compileGeneratedSdk,
   compileStrictUnusedSdk,
   documentBase,
@@ -273,27 +274,9 @@ async function assertConverts(codec: SdkBodyCodec, row: ConversionRow): Promise<
   assert.deepEqual(await codec.encode(row.value), row.wire);
 }
 
-type GolemOperations = Record<string, () => { execute(input?: unknown, options?: unknown): Promise<{ body: unknown }> }>;
-
 /** The body of the schema `root` of a golem-mode SDK of `project`, through its built client. */
 function golemBodyCodec(project: GolemModeProject, sdk: GolemModeSdkSetup, root: string): SdkBodyCodec {
-  return {
-    async decode(wire, options) {
-      const client = await project.client<GolemOperations>(sdk, { fetchImpl: async () => Response.json(wire) });
-      return (await client[`get${root}`]!().execute({}, options)).body;
-    },
-    async encode(value, options) {
-      let sent: unknown;
-      const client = await project.client<GolemOperations>(sdk, {
-        fetchImpl: async (_url: RequestInfo | URL, init?: RequestInit) => {
-          sent = typeof init?.body === 'string' ? JSON.parse(init.body) : init?.body;
-          return new Response(null, { status: 204 });
-        },
-      });
-      await client[`put${root}`]!().execute({ body: value }, options);
-      return sent;
-    },
-  };
+  return clientBodyCodec(fetchImpl => project.client<unknown>(sdk, { fetchImpl }), root);
 }
 
 test('nested Date, inherited, and dictionary conversions work in a standalone SDK', async t => {

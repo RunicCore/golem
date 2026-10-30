@@ -4,20 +4,13 @@ import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { fileFixtureScope } from './fixture-project.js';
-import { loadGolemModeProject, type GolemModeSdkSetup } from './openapi/sdk-client-fixture.js';
+import { chargesDocument, loadGolemModeProject, type GolemModeSdkSetup } from './openapi/sdk-client-fixture.js';
 
 const scope = fileFixtureScope();
-const ref = (name: string) => ({ $ref: `#/components/schemas/${name}` });
-const json = (schema: unknown) => ({ 'application/json': { schema } });
 const CHARGES: GolemModeSdkSetup = {
   folder: 'sdk/charges',
   name: 'Charges',
-  document: {
-    openapi: '3.1.0',
-    info: { title: 'Charges', version: '1' },
-    paths: { '/charges': { post: { operationId: 'createCharge', requestBody: { required: true, content: json(ref('Charge')) }, responses: { 200: { description: 'ok', content: json(ref('Charge')) } } } } },
-    components: { schemas: { Charge: { type: 'object', required: ['id', 'tags'], properties: { id: { type: 'string' }, tags: { type: 'array', minItems: 1, items: { type: 'string' } } } } } },
-  },
+  document: chargesDocument({ Charge: { type: 'object', required: ['id', 'tags'], properties: { id: { type: 'string' }, tags: { type: 'array', minItems: 1, items: { type: 'string' } } } } }),
 };
 const CHARGE_MODEL = `import type { IModel } from '@exprtlabs/golem/model';
 import type { Charge } from '../sdk/charges/index.js';

@@ -7,7 +7,7 @@ import test from 'node:test';
 import { fileFixtureScope } from './fixture-project.js';
 import { buildModelProject, createModelProject, writeModelGolemYaml, writeModelSources } from './model-project.js';
 import { generateMaterializedSdk, isGeneratedClientClass } from './openapi/helpers.js';
-import { loadGolemModeProject, writeGolemModeProject, type GolemModeSdkSetup } from './openapi/sdk-client-fixture.js';
+import { chargesDocument, loadGolemModeProject, writeGolemModeProject, type GolemModeSdkSetup } from './openapi/sdk-client-fixture.js';
 
 const scope = fileFixtureScope();
 const ref = (name: string) => ({ $ref: `#/components/schemas/${name}` });
@@ -15,12 +15,7 @@ const json = (schema: unknown) => ({ 'application/json': { schema } });
 
 /** A charge SDK whose `id` holds at most five characters and whose `at` is an instant. */
 function chargeDocument(closed = false): unknown {
-  return {
-    openapi: '3.1.0',
-    info: { title: 'Charges', version: '1' },
-    paths: { '/charges': { post: { operationId: 'createCharge', requestBody: { required: true, content: json(ref('Charge')) }, responses: { 200: { description: 'ok', content: json(ref('Charge')) } } } } },
-    components: { schemas: { Charge: { type: 'object', ...(closed ? { additionalProperties: false } : {}), required: ['id', 'amount'], properties: { id: { type: 'string', maxLength: 5 }, amount: { type: 'number' }, at: { type: 'string', format: 'date-time' } } } } },
-  };
+  return chargesDocument({ Charge: { type: 'object', ...(closed ? { additionalProperties: false } : {}), required: ['id', 'amount'], properties: { id: { type: 'string', maxLength: 5 }, amount: { type: 'number' }, at: { type: 'string', format: 'date-time' } } } });
 }
 
 const CHARGES: GolemModeSdkSetup = { document: chargeDocument(), folder: 'sdk/charges', name: 'Charges' };
@@ -196,15 +191,10 @@ test('a golem-mode model over an SDK type that holds another SDK type checks the
   const nested: GolemModeSdkSetup = {
     folder: 'sdk/charges',
     name: 'Charges',
-    document: {
-      openapi: '3.1.0',
-      info: { title: 'Charges', version: '1' },
-      paths: { '/charges': { post: { operationId: 'createCharge', requestBody: { required: true, content: json(ref('Charge')) }, responses: { 200: { description: 'ok', content: json(ref('Charge')) } } } } },
-      components: { schemas: {
+    document: chargesDocument({
         Money: { type: 'object', additionalProperties: false, required: ['value'], properties: { value: { type: 'number', minimum: 0 }, at: { type: 'string', format: 'date-time' } } },
         Charge: { type: 'object', required: ['id', 'price'], properties: { id: { type: 'string', maxLength: 5 }, price: ref('Money') } },
-      } },
-    },
+    }),
   };
   const project = await loadGolemModeProject(scope, 'sdk-app-model-nested-', [nested], true, { 'src/charge.model.ts': CHARGE_MODEL });
   const validators = fs.readFileSync(path.join(project.root, 'src/generated/models/models.validators.generated.ts'), 'utf8');
@@ -256,19 +246,14 @@ test('a golem-mode model over a scalar SDK alias takes the SDK limit, and a tag 
   const sdk: GolemModeSdkSetup = {
     folder: 'sdk/charges',
     name: 'Charges',
-    document: {
-      openapi: '3.1.0',
-      info: { title: 'Charges', version: '1' },
-      paths: { '/charges': { post: { operationId: 'createCharge', requestBody: { required: true, content: json(ref('Charge')) }, responses: { 200: { description: 'ok', content: json(ref('Charge')) } } } } },
-      components: { schemas: {
+    document: chargesDocument({
         Currency: { type: 'string', maxLength: 3 },
         Code: { type: ['string', 'null'], maxLength: 3 },
         Legacy: { type: 'string', nullable: true, maxLength: 3 },
         Status: { type: 'string', enum: ['open', 'shut'] },
         Email: { type: 'string', format: 'email' },
         Charge: { type: 'object', required: ['id', 'currency'], properties: { id: { type: 'string' }, currency: ref('Currency'), code: ref('Code'), legacy: ref('Legacy'), status: ref('Status'), email: ref('Email') } },
-      } },
-    },
+    }),
   };
   const model = `import type { IModel } from '@exprtlabs/golem/model';
 import type { MinLength } from '@exprtlabs/golem/tags';

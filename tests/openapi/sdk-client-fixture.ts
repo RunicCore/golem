@@ -31,6 +31,17 @@ export async function loadSdk<Client>(scope: FixtureScope, prefix: string, setup
   return { output, createClient: (options) => new Constructor({ baseUrl: 'https://api.test', ...options }) as Client };
 }
 
+/** A document of one operation, `createCharge`, that posts and returns the schema `Charge` of `schemas`. */
+export function chargesDocument(schemas: Record<string, unknown>): unknown {
+  const charge = { content: { 'application/json': { schema: { $ref: '#/components/schemas/Charge' } } } };
+  return {
+    openapi: '3.1.0',
+    info: { title: 'Charges', version: '1' },
+    paths: { '/charges': { post: { operationId: 'createCharge', requestBody: { required: true, ...charge }, responses: { 200: { description: 'ok', ...charge } } } } },
+    components: { schemas },
+  };
+}
+
 /** An SDK of a golem-mode project: the document, the folder of the SDK in the project, and the client name. */
 export interface GolemModeSdkSetup {
   readonly document: unknown;

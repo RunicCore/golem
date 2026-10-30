@@ -7,6 +7,7 @@ import {
   compileStrictUnusedSdk,
   generateMaterializedSdk,
   loadGeneratedClient,
+  recordingFetch,
 } from './helpers.js';
 
 const USER_ID = 'https://schemas.example.test/user';
@@ -124,16 +125,10 @@ test('public generate types URI $id refs, directional imports, nested models, an
     scoped: { inner: { id: 'scoped' } },
   };
   const send = async (body: unknown, answer: unknown): Promise<{ sent: unknown; received: unknown }> => {
-    let sent: unknown;
-    const client = new Client({
-      baseUrl: 'https://api.test',
-      fetchImpl: async (_url: RequestInfo | URL, init?: RequestInit) => {
-        sent = typeof init?.body === 'string' ? JSON.parse(init.body) : init?.body;
-        return Response.json(answer);
-      },
-    });
+    const { fetchImpl, sent } = recordingFetch(() => Response.json(answer));
+    const client = new Client({ baseUrl: 'https://api.test', fetchImpl });
     const received = (await client.putEnvelope!().execute({ body })).body;
-    return { sent, received };
+    return { sent: sent[0], received };
   };
 
   assert.deepEqual(await send(request, reply), { sent: request, received: reply });
