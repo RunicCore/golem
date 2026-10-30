@@ -39,6 +39,23 @@ const EVENT = document({
   },
 });
 
+const EVENT_REFERENCE = { $ref: '#/components/schemas/Event' };
+
+/** The Event document with `createEvent`, which takes and returns an Event, and `listEvents`, which returns no body. */
+const EVENT_OPERATIONS = {
+  ...(EVENT as Record<string, unknown>),
+  paths: {
+    '/events': {
+      post: {
+        operationId: 'createEvent',
+        requestBody: { required: true, content: { 'application/json': { schema: EVENT_REFERENCE } } },
+        responses: { 201: { description: 'Created', content: { 'application/json': { schema: EVENT_REFERENCE } } } },
+      },
+      get: { operationId: 'listEvents', responses: { 204: { description: 'None' } } },
+    },
+  },
+};
+
 test('dates: temporal maps date-time, date and duration to Temporal and keeps time a string', async t => {
   const output = path.join(createFixtureProject(t, 'golem-openapi-temporal-dates-'), 'sdk');
   await generateMaterializedSdk(EVENT, { output, name: 'Events', profile: PROFILE, dates: 'temporal' });
@@ -56,20 +73,7 @@ test('dates: temporal maps date-time, date and duration to Temporal and keeps ti
 
 test('dates: temporal models encode to the ISO strings the generated client sends and validates', async t => {
   const output = path.join(createFixtureProject(t, 'golem-openapi-temporal-request-'), 'sdk');
-  const event = { $ref: '#/components/schemas/Event' };
-  const withOperation = {
-    ...(EVENT as Record<string, unknown>),
-    paths: {
-      '/events': {
-        post: {
-          operationId: 'createEvent',
-          requestBody: { required: true, content: { 'application/json': { schema: event } } },
-          responses: { 201: { description: 'Created', content: { 'application/json': { schema: event } } } },
-        },
-      },
-    },
-  };
-  await generateMaterializedSdk(withOperation, { output, name: 'Events', profile: PROFILE, dates: 'temporal' });
+  await generateMaterializedSdk(EVENT_OPERATIONS, { output, name: 'Events', profile: PROFILE, dates: 'temporal' });
   compileGeneratedSdk(output, [], { strict: true, lib: ['ES2023', 'DOM', 'DOM.Iterable', 'esnext.temporal'] });
   const models = requireRecord(await import(pathToFileURL(path.join(output, 'dist/index.js')).href), 'generated models');
   const codecs = await importSdkCodecs(output, 'generated codecs');
@@ -93,21 +97,7 @@ test('dates: temporal models encode to the ISO strings the generated client send
 test('a standalone SDK writes its sdkCodecs table, keyed by operation, and loading the index loads it', async t => {
   // protects: T-707 the shared module writes the sdkCodecs table the client reads
   const output = path.join(createFixtureProject(t, 'golem-openapi-sdk-codecs-'), 'sdk');
-  const event = { $ref: '#/components/schemas/Event' };
-  const withOperations = {
-    ...(EVENT as Record<string, unknown>),
-    paths: {
-      '/events': {
-        post: {
-          operationId: 'createEvent',
-          requestBody: { required: true, content: { 'application/json': { schema: event } } },
-          responses: { 201: { description: 'Created', content: { 'application/json': { schema: event } } } },
-        },
-        get: { operationId: 'listEvents', responses: { 204: { description: 'None' } } },
-      },
-    },
-  };
-  await generateMaterializedSdk(withOperations, { output, name: 'Events', profile: PROFILE, dates: 'temporal' });
+  await generateMaterializedSdk(EVENT_OPERATIONS, { output, name: 'Events', profile: PROFILE, dates: 'temporal' });
   compileGeneratedSdk(output, [], { strict: true, lib: ['ES2023', 'DOM', 'DOM.Iterable', 'esnext.temporal'] });
   const { sdkCodecs } = requireRecord(await importGeneratedModule(output, 'sdk codecs', 'dist/codecs.generated.js'), 'sdk codecs module') as { sdkCodecs: Record<string, Record<string, unknown>> };
   assert.deepEqual(Object.keys(sdkCodecs).sort(), ['createEvent', 'listEvents']);
