@@ -937,7 +937,7 @@ These cases stop generation:
 
 A header parameter is not in this list. A header list splits at commas, and the standard defines no escaping for it.
 
-An integer, a boolean, a string with an `enum` or a string with a `format` such as `uuid` does not hold these characters. The fixed `enum` values must not hold the separator.
+An integer, a boolean, a string with an `enum` or a string with a `format` such as `uuid` does not hold these characters. The fixed `enum` values must not hold the separator. An item or a member with no `type`, `enum` or `const` can hold any character.
 
 **Fix:**
 

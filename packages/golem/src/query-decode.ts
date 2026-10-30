@@ -95,7 +95,9 @@ export function gatherObjectField(group: Readonly<Record<string, unknown>>, { lo
 }
 
 /** The value of a parameter field as its style writes it: the prefix off, the text split into items or members, and each decoded to the type it declares. */
-function decodeParameter(value: unknown, shape: QueryFieldShape, { style, explode }: NonNullable<QueryFieldShape['parameter']>, { location, name }: ParameterPlace): unknown {
+export function decodeParameterField(value: unknown, shape: QueryFieldShape, { location, name }: ParameterPlace): unknown {
+  if (shape.parameter === undefined) return decodeQueryField(value, shape);
+  const { style, explode } = shape.parameter;
   const rule = parameterStyleRule(location, style, explode);
   if (rule === undefined) return value;
   const kind = shape.item !== undefined ? 'array' : shape.properties !== undefined ? 'object' : 'value';
@@ -121,8 +123,7 @@ function decodeParameter(value: unknown, shape: QueryFieldShape, { style, explod
 }
 
 /** The field value decoded to what `shape` declares; text that does not fit stays as it is. */
-export function decodeQueryField(value: unknown, shape: QueryFieldShape, place?: ParameterPlace): unknown {
-  if (shape.parameter !== undefined && place !== undefined) return decodeParameter(value, shape, shape.parameter, place);
+export function decodeQueryField(value: unknown, shape: QueryFieldShape): unknown {
   if (Array.isArray(value)) return shape.item ? decodeQueryItems(value, shape.item) : value;
   if (typeof value !== 'string') return value;
   const decoded = decodeQueryScalar(value, shape);

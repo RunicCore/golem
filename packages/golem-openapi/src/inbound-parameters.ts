@@ -29,16 +29,38 @@ function objectReading(reading: FieldReading | undefined, properties: Readings):
   return reading?.object === true || Object.keys(properties).length > 0;
 }
 
+/** A text parameter with its style rule and what the reader reads of it. */
+interface ParameterAnalysis {
+  readonly parameter: NormalizedParameter;
+  readonly rule: ParameterStyleRule | undefined;
+  readonly reading: FieldReading | undefined;
+  /** The reading of each property of an object parameter, also the properties that stay text. */
+  readonly properties: Readings;
+}
+
+const analyses = new WeakMap<NormalizedOperation, ReadonlyMap<ParameterLocation, readonly ParameterAnalysis[]>>();
+
+/** The analysis of the text parameters of an operation by place, made once: the table and the check read the same one. */
+function analyse(operation: NormalizedOperation, document: unknown): ReadonlyMap<ParameterLocation, readonly ParameterAnalysis[]> {
+  let found = analyses.get(operation);
+  if (found === undefined) {
+    found = new Map(LOCATIONS.flatMap((location) => {
+      const parameters = textParameters(operation, location);
+      const readings = parameters.length ? readParameters(parameters, document) : {};
+      return parameters.length ? [[location, parameters.map((parameter): ParameterAnalysis => {
+        const rule = parameterStyleRule(location, parameter.style, parameter.explode);
+        return { parameter, rule, reading: readings[parameter.name], properties: rule ? readProperties(parameter, document) : {} };
+      })] as const] : [];
+    }));
+    analyses.set(operation, found);
+  }
+  return found;
+}
+
 /** The inbound table of the text parameters of an operation: for each place, the shape of each parameter that is read from text, with the style it is written in. */
 export function inboundTextTable(operation: NormalizedOperation, document: unknown): Record<string, unknown> {
-  return Object.fromEntries(LOCATIONS.flatMap((location) => {
-    const parameters = textParameters(operation, location);
-    if (!parameters.length) return [];
-    const readings = readParameters(parameters, document);
-    const entries = parameters.flatMap((parameter) => {
-      const rule = parameterStyleRule(location, parameter.style, parameter.explode);
-      const reading = readings[parameter.name];
-      const properties = rule ? readProperties(parameter, document) : {};
+  return Object.fromEntries([...analyse(operation, document)].flatMap(([location, parameters]) => {
+    const entries = parameters.flatMap(({ parameter, rule, reading, properties }) => {
       const object = objectReading(reading, properties);
       const base = reading?.shape ?? { types: [] };
       const decodes = (base.types.length > 0 && !base.types.includes('string')) || base.literals !== undefined;
@@ -86,21 +108,15 @@ function objectAmbiguity(parameter: NormalizedParameter, rule: ParameterStyleRul
  */
 export function inboundParameterDiagnostics(operations: readonly NormalizedOperation[], document: unknown): GolemDiagnostic[] {
   // A header list splits on commas whatever its items hold: the standard defines no escaping for it, so a header is not refused.
-  return operations.flatMap((operation) => LOCATIONS.filter((location) => location !== 'header').flatMap((location) => {
-    const parameters = textParameters(operation, location);
-    const readings = parameters.length ? readParameters(parameters, document) : {};
-    return parameters.flatMap((parameter): GolemDiagnostic[] => {
-      const rule = parameterStyleRule(location, parameter.style, parameter.explode);
-      const reading = readings[parameter.name];
-      const properties = rule ? readProperties(parameter, document) : {};
+  return operations.flatMap((operation) => [...analyse(operation, document)].filter(([location]) => location !== 'header').flatMap(([location, parameters]) =>
+    parameters.flatMap(({ parameter, rule, reading, properties }): GolemDiagnostic[] => {
       const reason = !rule || !reading ? undefined
         : reading.item !== undefined ? arrayAmbiguity(reading.item, location, rule)
-          : objectReading(reading, properties) ? objectAmbiguity(parameter, rule, properties, parameters) : undefined;
+          : objectReading(reading, properties) ? objectAmbiguity(parameter, rule, properties, parameters.map((other) => other.parameter)) : undefined;
       return reason === undefined ? [] : [{
         code: 'OPENAPI_INBOUND_PARAMETER_AMBIGUOUS',
         severity: GolemDiagnosticSeverity.Error,
         message: `The ${location} parameter "${parameter.name}" of the inbound operation ${operation.name} cannot be read back from its text: ${reason}. Set explode, use repeated keys or style deepObject, or give it an item type that cannot hold the separator.`,
       }];
-    });
-  }));
+    })));
 }

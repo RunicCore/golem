@@ -79,7 +79,13 @@ const FORMAT_CHARACTERS: Readonly<Record<string, string>> = {
   byte: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=',
 };
 
-/** Adds the characters that a value of `record` can hold to the shape: those of its `enum` or `const`, else those of its types; any character when a string has no rule. */
+/** The keywords whose subschemas stand for the values of a schema: a schema with one of them and no type of its own adds what they add. */
+const STRUCTURAL_KEYWORDS = ['$ref', 'allOf', 'anyOf', 'oneOf', 'items', 'prefixItems', 'properties', VALIDATION_KEYWORD] as const;
+
+/**
+ * Adds the characters that a value of `record` can hold to the shape: those of its `enum` or `const`, else those of its types. A value can hold any character
+ * unless a type, an `enum` or a `const` proves it cannot: a string with no rule, and a schema with no type and nothing to read through, hold any.
+ */
 function addCharacters(shape: FieldShape, record: SchemaRecord, types: readonly unknown[]): void {
   const values = Array.isArray(record.enum) ? record.enum : 'const' in record ? [record.const] : undefined;
   const add = (text: string | null): void => {
@@ -90,12 +96,14 @@ function addCharacters(shape: FieldShape, record: SchemaRecord, types: readonly 
     for (const value of values) add(String(value));
     return;
   }
+  if (types.length === 0 && !STRUCTURAL_KEYWORDS.some((keyword) => keyword in record)) add(null);
   for (const type of types) {
     if (type === 'string') add(typeof record.format === 'string' && Object.hasOwn(FORMAT_CHARACTERS, record.format) ? FORMAT_CHARACTERS[record.format]! : null);
     else if (type === 'integer') add('0123456789-');
     else if (type === 'number') add('0123456789-+.eE');
     else if (type === 'boolean') add('truefals');
     else if (type === 'null') add('null');
+    else if (type !== 'array' && type !== 'object') add(null);
   }
 }
 
@@ -114,9 +122,12 @@ function collectShape(schema: unknown, shape: FieldShape, scope: Scope): void {
   if (types.includes('object')) shape.object = true;
   addCharacters(shape, record, types);
   // An `items` keyword stands for an array also when the schema names no type.
-  if (types.includes('array') || record.items !== undefined) {
+  // A tuple (`prefixItems`) is read as an array of all its items.
+  const tuple = Array.isArray(record.prefixItems) ? record.prefixItems : [];
+  if (types.includes('array') || record.items !== undefined || tuple.length > 0) {
     shape.item ??= newShape();
-    collectShape(record.items, shape.item, scope);
+    if (record.items !== undefined) collectShape(record.items, shape.item, scope);
+    for (const item of tuple) collectShape(item, shape.item, scope);
   }
   for (const keyword of ['allOf', 'anyOf', 'oneOf'] as const) {
     const branches = record[keyword];

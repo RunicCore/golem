@@ -1,6 +1,6 @@
 import { IssueRepresentation, IssueSource, LibError, LibErrorKind, toIssue } from '../errors.js';
 import type { QueryFieldTable, ValidationLevel } from '../object-codec.js';
-import { decodeQueryField, gatherObjectField } from '../query-decode.js';
+import { decodeParameterField, gatherObjectField } from '../query-decode.js';
 import { mediaRank, type BodyEncoder, type ClientRuntime, type EncodedBody, type EncodingMetadata, type OperationCodecs, type ResponseCheck, type ResponseDecode } from './core.js';
 import { addQueryParameter } from './parameters.js';
 import type { CallLevels } from './validation.js';
@@ -301,7 +301,7 @@ function inboundRequestText(shape: InboundShape, request: InboundRequest): Inbou
       const place = { location, name };
       const spread = gatherObjectField(named, place, field);
       for (const key of spread?.keys ?? []) delete named[key];
-      if (spread || Object.hasOwn(named, name)) Object.defineProperty(named, name, { value: decodeQueryField(spread ? spread.value : named[name], field, place), writable: true, enumerable: true, configurable: true });
+      if (spread || Object.hasOwn(named, name)) Object.defineProperty(named, name, { value: decodeParameterField(spread ? spread.value : named[name], field, place), writable: true, enumerable: true, configurable: true });
     }
     text[location] = named;
   }
