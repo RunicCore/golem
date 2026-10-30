@@ -140,6 +140,7 @@ const WITH_BYTES = order({ id: { kind: 'string' }, blob: BYTES }, ['id', 'blob']
 /** A model value that the codec accepts, with an invalid one, and whether the model refers to the IModel `Item`. */
 const FIXTURES: readonly (readonly [name: string, descriptor: ModelTypeDescriptor, valid: unknown, invalid: unknown, nested?: true])[] = [
   ['a Date field', WITH_DATE, { id: 'a', at: new Date(0) }, { id: 'a', at: 'not a Date' }],
+  ['an invalid Date field', WITH_DATE, { id: 'a', at: new Date(0) }, { id: 'a', at: new Date(Number.NaN) }],
   ['an undefined-valued optional field', order({ id: { kind: 'string' }, note: { kind: 'string' } }, ['id']), { id: 'a', note: undefined }, { id: 'a', note: 1 }],
   ['a non-enumerable field', ID_ONLY, hidden({ id: 'a', extra: 1 }, 'extra'), hidden({ id: 'a' }, 'id')],
   ['an array of nested objects', order({ lines: { kind: 'array', item: LINE } }, ['lines']), { lines: [{ sku: 'a', qty: 1 }] }, { lines: [{ sku: 'a' }] }],

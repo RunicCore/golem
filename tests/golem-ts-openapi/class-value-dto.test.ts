@@ -35,6 +35,7 @@ const TSCONFIG = {
 interface Schema { readonly type?: string; readonly format?: string; readonly required?: readonly string[]; readonly properties?: Readonly<Record<string, Schema>>; readonly items?: Schema; readonly $ref?: string }
 
 test('a controller DTO with a class-valued TSerde field and Temporal fields documents their wire form', async t => {
+  // protects: T-659 F-163 a class value is documented by its codec wire type, and a Temporal tag by its wire format
   const root = createControllerFixture(t, {
     prefix: 'golem-ts-openapi-class-value-',
     packageName: 'golem-ts-openapi-class-value-fixture',

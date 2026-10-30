@@ -126,8 +126,8 @@ test('deserializes timestamps with ECMAScript Date parse', () => {
     assert.equal(deserializeDate(wire).toISOString(), expected, wire);
     assert.equal(deserializeDate(wire).toISOString(), new Date(wire).toISOString(), wire);
   }
-  const existing = new Date('2026-01-01T00:00:00.000Z');
-  assert.equal(deserializeDate(existing), existing);
+  // A Date instance is no wire value: only the text is read.
+  assert.throws(() => deserializeDate(new Date('2026-01-01T00:00:00.000Z')), (error: unknown) => error instanceof LibError && error.causedByInput === true);
 });
 
 test('deserializeDate rejects an existing Invalid Date like an unparsable string', () => {

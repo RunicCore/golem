@@ -1,19 +1,20 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import test, { type TestContext } from 'node:test';
+import test from 'node:test';
 import { createModelProject, buildModelProject, writeModelGolemYaml } from './model-project.js';
 import { taggedModelSource } from './fixture-templates/models/model-tags.js';
 import { writeCodecPackage } from './fixture-templates/models/codec-package.js';
 import { tsSource, type SourceFragment } from './source-template.js';
 import { generate } from '#model/generator';
-import { writeGeneratedArtifacts } from './fixture-project.js';
+import { fileFixtureScope, onceShared, writeGeneratedArtifacts, type FixtureScope } from './fixture-project.js';
 import { command } from './support/process.js';
 import { TSC } from './support/build-project.js';
 import { modelCodec } from './support/model-codec.js';
 import { validateInstance } from '@exprtlabs/golem/validation';
+import { LibError } from '@exprtlabs/golem/errors';
 
-function fixture(t: TestContext) {
+function fixture(t: FixtureScope) {
   return createModelProject(t, { prefix: 'golem-class-value-', name: 'class-value', linkWorkspaceNodeModules: true });
 }
 
@@ -30,6 +31,10 @@ export function encodeLink(value: URL): string { return value.href; }
 export function decodeLink(value: string): URL { return new URL(value); }
 export function encodeBig(value: bigint): string { return value.toString(); }
 export function decodeBig(value: string): bigint { return BigInt(value); }
+export function encodeCents(value: bigint): number { return Number(value); }
+export function decodeCents(value: number): bigint { return BigInt(value); }
+export function encodeFlag(value: bigint): boolean { return value !== 0n; }
+export function decodeFlag(value: boolean): bigint { return value ? 1n : 0n; }
 `;
 const MONEY = `export class Money {
   constructor(readonly cents: bigint) {}
@@ -74,18 +79,20 @@ function writeClassSupport(sourceRoot: string): void {
   fs.writeFileSync(path.join(sourceRoot, 'temporal.d.ts'), TEMPORAL_D_TS);
 }
 
-async function build(t: TestContext, fields: SourceFragment) {
+async function build(t: FixtureScope, fields: SourceFragment) {
   const { root, sourceRoot } = fixture(t);
   writeClassSupport(sourceRoot);
   fs.writeFileSync(path.join(sourceRoot, 'temporal-runtime.js'), TEMPORAL_RUNTIME);
   fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({ name: 'A', imports: tsSource`import type { TSerde } from '@exprtlabs/golem/tags';
 import type { Money } from './money.js';
-import { encodeBytes, decodeBytes, encodeMoney, decodeMoney, encodeInstant, decodeInstant, encodeLink, decodeLink, encodeBig, decodeBig } from './codecs.js';
+import { encodeBytes, decodeBytes, encodeMoney, decodeMoney, encodeInstant, decodeInstant, encodeLink, decodeLink, encodeBig, decodeBig, encodeCents, decodeCents, encodeFlag, decodeFlag } from './codecs.js';
 type Bytes = Uint8Array & TSerde<typeof encodeBytes, typeof decodeBytes>;
 type Price = Money & TSerde<typeof encodeMoney, typeof decodeMoney>;
 type When = Temporal.Instant & TSerde<typeof encodeInstant, typeof decodeInstant>;
 type Link = URL & TSerde<typeof encodeLink, typeof decodeLink>;
-type Big = bigint & TSerde<typeof encodeBig, typeof decodeBig>;`, fields }).text);
+type Big = bigint & TSerde<typeof encodeBig, typeof decodeBig>;
+type Cents = bigint & TSerde<typeof encodeCents, typeof decodeCents>;
+type Flag = bigint & TSerde<typeof encodeFlag, typeof decodeFlag>;`, fields }).text);
   writeModelGolemYaml(root, { mobx: false, validation: true });
   fs.mkdirSync(path.join(root, 'build'), { recursive: true });
   fs.copyFileSync(path.join(sourceRoot, 'temporal-runtime.js'), path.join(root, 'build/temporal-runtime.js'));
@@ -165,36 +172,43 @@ test('invalid wire value is rejected before decoding', async t => {
   assert.doesNotThrow(() => codecs.parseTA('{"bytes":"AQID"}'));
 });
 
-// A user class, a global class and a Temporal class: each reads a string, so a number on the wire is bad input at every level of validation.
-for (const field of ['price', 'link', 'when'] as const) {
-  test(`${field}: a non-string wire value is rejected with validation off`, async t => {
-    // protects: T-659 F-39 a string-wire serde never reads a number, also when validation is off
-    const { A } = await build(t, tsSource`price: Price; link: Link; when: When`);
-    const wire = { price: '12.34', link: 'https://example.com/', when: '2025-01-02T03:04:05.000Z' };
-    assert.doesNotThrow(() => modelCodec(A).fromWireFormat(wire, { validate: false }));
-    assert.throws(() => modelCodec(A).fromWireFormat({ ...wire, [field]: 5 }, { validate: false }), /Expected a string/);
+// A user class, a global class, a Temporal class and a bigint, whose wires are a string, a number and a boolean, share one build.
+const fileScope = fileFixtureScope();
+const classFields = onceShared(() => build(fileScope, tsSource`price: Price; link: Link; when: When; cents: Cents; flag: Flag`));
+const dateField = onceShared(() => build(fileScope, tsSource`at: Date`));
+const CLASS_WIRE = { price: '12.34', link: 'https://example.com/', when: '2025-01-02T03:04:05.000Z', cents: 5, flag: true };
+const isInputError = (message: RegExp) => (error: unknown): boolean => error instanceof LibError && error.causedByInput === true && message.test(error.message);
+
+// A serde reads only the JSON type of its wire: any other wire value is bad input at every level of validation, off included.
+for (const [field, wrong, message] of [
+  ['price', 5, /Expected a string/],
+  ['cents', '5', /Expected a number/],
+  ['flag', 'yes', /Expected a boolean/],
+] as const) {
+  test(`${field}: a wire value of the wrong JSON type is rejected with validation off`, async () => {
+    // protects: T-659 F-39 a TSerde reads only the JSON type of its wire (string, number or boolean), also when validation is off
+    const { A } = await classFields();
+    assert.doesNotThrow(() => modelCodec(A).fromWireFormat(CLASS_WIRE, { validate: false }));
+    assert.throws(() => modelCodec(A).fromWireFormat({ ...CLASS_WIRE, [field]: wrong }, { validate: false }), isInputError(message));
   });
 }
 
 // A user class, a global class and a Temporal class share one model-plane check: the value is an instance of the class, or one `instance` issue names it.
-for (const [field, name] of [['price', 'Money'], ['link', 'URL'], ['when', 'Temporal.Instant']] as const) {
-  test(`${field}: validation accepts an instance of ${name} and rejects another value with one instance issue`, async t => {
+for (const [field, name, wrong] of [['price', 'Money', new Map()], ['link', 'URL', 5], ['when', 'Temporal.Instant', 'text']] as const) {
+  test(`${field}: validation accepts an instance of ${name} and rejects another value with one instance issue`, async () => {
     // protects: T-659 F-39 validate() rejects a value that is not an instance of the field's TSerde class
-    const { A } = await build(t, tsSource`price: Price; link: Link; when: When`);
-    const model = modelCodec(A).fromWireFormat({ price: '12.34', link: 'https://example.com/', when: '2025-01-02T03:04:05.000Z' });
-    assert.deepEqual(await validateInstance(model, { failFast: false }), []);
-    for (const wrong of [new Map(), 5, 'text']) {
-      const issues = await validateInstance(Object.assign(modelCodec(A).fromWireFormat({ price: '12.34', link: 'https://example.com/', when: '2025-01-02T03:04:05.000Z' }), { [field]: wrong }), { failFast: false });
-      assert.deepEqual(issues.map(issue => ({ path: issue.path, code: issue.code, model: (issue as { model?: string }).model })), [{ path: [field], code: 'instance', model: name }]);
-    }
+    const { A } = await classFields();
+    assert.deepEqual(await validateInstance(modelCodec(A).fromWireFormat(CLASS_WIRE), { failFast: false }), []);
+    const issues = await validateInstance(Object.assign(modelCodec(A).fromWireFormat(CLASS_WIRE), { [field]: wrong }), { failFast: false });
+    assert.deepEqual(issues.map(issue => ({ path: issue.path, code: issue.code, model: (issue as { model?: string }).model })), [{ path: [field], code: 'instance', model: name }]);
   });
 }
 
 // A plain Date field has the same check, and a Date that holds no time (an invalid Date) is no value of the class.
 for (const [name, wrong] of [['a string', '2025-01-02T03:04:05.000Z'], ['a number', 5], ['an invalid Date', new Date(Number.NaN)]] as const) {
-  test(`at: validation rejects ${name} in a Date field with one instance issue at the field path`, async t => {
+  test(`at: validation rejects ${name} in a Date field with one instance issue at the field path`, async () => {
     // protects: T-725 F-39 validate() rejects a non-Date and an invalid Date in a Date field, though Date has no rule of its own
-    const { A } = await build(t, tsSource`at: Date`);
+    const { A } = await dateField();
     const model = modelCodec(A).fromWireFormat({ at: '2025-01-02T03:04:05.000Z' });
     assert.deepEqual(await validateInstance(model, { failFast: false }), []);
     const issues = await validateInstance(Object.assign(model, { at: wrong }), { failFast: false });

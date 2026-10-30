@@ -969,12 +969,14 @@ test('golemModelClass accepts an instance of a global class and reports an insta
 });
 
 test('golemModelClass looks a nested global class up by its path', async () => {
+  // protects: T-659 a nested global class (Temporal.Instant, Intl.DateTimeFormat) is found below globalThis by its path
   const schema = { golemModelClass: { name: 'Intl.DateTimeFormat', path: ['Intl', 'DateTimeFormat'] } };
   await assertIssues(schema, new Intl.DateTimeFormat(), []);
   await assertIssues(schema, new Date(0), [{ path: [], code: 'instance', model: 'Intl.DateTimeFormat' }]);
 });
 
 test('golemModelClass reports at the path of the value it checks', async () => {
+  // protects: T-659 the instance issue of a class check carries the path of the field that holds the value
   const schema = { properties: { at: { golemModelClass: { name: 'Date', path: ['Date'] } } } };
   await assertIssues(schema, { at: 'soon' }, [{ path: ['at'], code: 'instance', model: 'Date' }]);
 });

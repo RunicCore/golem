@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
+import { LibError } from '@exprtlabs/golem/errors';
 import { createModelProject, buildModelProject, writeModelGolemYaml } from './model-project.js';
 import { fileFixtureScope, onceShared, type FixtureScope } from './fixture-project.js';
 import { taggedModelSource } from './fixture-templates/models/model-tags.js';
@@ -24,6 +25,9 @@ async function buildCodecs(scope: FixtureScope, name: string, source: Parameters
     fromWireFormatTA: (wire: unknown, options?: { validate?: boolean }) => Record<string, unknown>;
   }>;
 }
+
+/** A rejection of bad input: a `LibError` that names the input as its cause. */
+const isInputError = (error: unknown): boolean => error instanceof LibError && error.causedByInput === true;
 
 // Every test reads the same model, so the file builds it once.
 const fileScope = fileFixtureScope();
@@ -71,7 +75,7 @@ for (const [field, bad] of [
 ] as const) {
   test(`Temporal tag ${field} rejects ${bad}`, async () => {
     const codecs = await build();
-    assert.throws(() => codecs.parseTA(JSON.stringify({ ...WIRE, [field]: bad })));
+    assert.throws(() => codecs.parseTA(JSON.stringify({ ...WIRE, [field]: bad })), isInputError);
   });
 }
 
@@ -80,7 +84,7 @@ test('a missing Temporal gives the load-a-polyfill error', async () => {
   const saved = globalThis.Temporal;
   Reflect.deleteProperty(globalThis, 'Temporal');
   try {
-    assert.throws(() => deserializeTemporalInstant('2025-01-02T03:04:05Z' as never), /Temporal is not available; load a polyfill such as `temporal-polyfill\/global` before converting/);
+    assert.throws(() => deserializeTemporalInstant('2025-01-02T03:04:05Z' as never), (error: unknown) => error instanceof LibError && /Temporal is not available; load a polyfill such as `temporal-polyfill\/global` before converting/.test(error.message));
   } finally {
     Object.assign(globalThis, { Temporal: saved });
   }
@@ -129,7 +133,7 @@ test('a user TSerde over a Temporal class wins over the built-in class', async (
   const model = codecs.parseTA(JSON.stringify(PLAIN_WIRE));
   assert.ok(model.epoch instanceof Temporal.Instant);
   assert.equal(JSON.parse(codecs.stringifyTA(model)).epoch, 1735787045123);
-  assert.throws(() => codecs.parseTA(JSON.stringify({ ...PLAIN_WIRE, epoch: '2025-01-02T03:04:05Z' })));
+  assert.throws(() => codecs.parseTA(JSON.stringify({ ...PLAIN_WIRE, epoch: '2025-01-02T03:04:05Z' })), isInputError);
 });
 
 for (const [field, bad] of [
@@ -143,7 +147,7 @@ for (const [field, bad] of [
   test(`a plain Temporal field ${field} rejects ${bad}`, async () => {
     // protects: R-89 a plain Temporal field rejects text outside its wire form
     const codecs = await buildPlain();
-    assert.throws(() => codecs.parseTA(JSON.stringify({ ...PLAIN_WIRE, [field]: bad })));
+    assert.throws(() => codecs.parseTA(JSON.stringify({ ...PLAIN_WIRE, [field]: bad })), isInputError);
   });
 }
 
@@ -151,5 +155,5 @@ test('a plain Temporal field rejects a non-string wire value with validation off
   // protects: T-659 F-39 a built-in Temporal class never reads a number, also when validation is off
   const codecs = await buildPlain();
   assert.doesNotThrow(() => codecs.fromWireFormatTA(PLAIN_WIRE, { validate: false }));
-  assert.throws(() => codecs.fromWireFormatTA({ ...PLAIN_WIRE, at: 5 }, { validate: false }), /Expected a string/);
+  assert.throws(() => codecs.fromWireFormatTA({ ...PLAIN_WIRE, at: 5 }, { validate: false }), (error: unknown) => isInputError(error) && /Expected a Temporal\.Instant string/.test((error as Error).message));
 });

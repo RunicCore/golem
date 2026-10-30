@@ -6,6 +6,7 @@ import type { Validator } from '@exprtlabs/golem/validation';
 import { compile } from '@exprtlabs/golem/internal/validator-compiler';
 
 import { compileValidatorModule, modelClass, type FastCheck } from './support/compiled-validators.js';
+import { DATE_INSTANCE } from './support/date-field.js';
 
 // The fast check `is_X` of the validator compiler (`fastPath`) gives the full validator's verdict whenever the full
 // validator gives one, and throws only where it throws. When `is_X` returns true it has read every own value the full
@@ -203,8 +204,8 @@ function oddValues(sample: unknown, seed: number, count: number): readonly unkno
   });
 }
 
-/** A Date field in the model plane: the value must be an instance of the global class `Date`. */
-const DATE = { golemModelClass: { name: 'Date', path: ['Date'] } };
+/** A Date field in the model plane: the value must be an instance of the global class `Date` that holds a time. */
+const DATE = DATE_INSTANCE;
 const ITEM = { type: 'object', required: ['sku', 'qty'], properties: { sku: { type: 'string', minLength: 1 }, qty: { type: 'integer', minimum: 1 } }, additionalProperties: false };
 
 interface Row {
@@ -458,6 +459,7 @@ const JSON_VIEW_ROWS: readonly (readonly [name: string, schema: unknown, value: 
   ['NaN is not a number', { type: 'number' }, Number.NaN, false],
   ['Infinity is not a number', { type: 'number' }, Number.POSITIVE_INFINITY, false],
   ['-0 is an integer', { type: 'integer' }, -0, true],
+  ['an invalid Date is not a Date', DATE, new Date(Number.NaN), false],
   ['a declared key that is not enumerable is absent, and the other key is unknown', CLOSED, NON_ENUMERABLE_ID, false],
   ['a symbol key is not a key of the JSON view', CLOSED, SYMBOL_EXTRA, true],
   ['an inherited declared key is absent', CLOSED, INHERITED_ID, false],
