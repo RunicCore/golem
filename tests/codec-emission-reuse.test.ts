@@ -7,6 +7,7 @@ import type { ModelTypeDescriptor } from '@exprtlabs/golem/internal/schema';
 import { buildCodecValidationPlan } from '@exprtlabs/golem/internal/validation-plan';
 import { instantiateRuntime, emitCodecRuntimeText } from './emitted-runtime.js';
 import { compileValidationPlanBinding } from './support/compiled-validators.js';
+import { DATE_FIELD, DATE_SERDE } from './support/date-field.js';
 
 /** A parent that nests a model with a date, so the wire differs from the model and validation is on. */
 function paymentGraph(): ReturnType<typeof createSchemaGraph> {
@@ -14,7 +15,7 @@ function paymentGraph(): ReturnType<typeof createSchemaGraph> {
     kind: 'object',
     properties: {
       currency: { kind: 'string' },
-      at: { kind: 'date' },
+      at: DATE_FIELD,
       tags: { kind: 'array', item: { kind: 'string' } },
     },
     required: ['currency', 'at', 'tags'],
@@ -40,7 +41,7 @@ function paymentGraph(): ReturnType<typeof createSchemaGraph> {
 
 /** The runtime source of the payment graph; a test that runs it without compiled validators uses the default validator names. */
 function paymentRuntimeSource(options: Parameters<typeof emitCodecRuntimeText>[1] = {}): string {
-  return emitCodecRuntimeText(paymentGraph(), { validatorName: (id) => identifier(`validate_${id.replace(/[^\w$]/g, '_')}`), ...options });
+  return emitCodecRuntimeText(paymentGraph(), { validatorName: (id) => identifier(`validate_${id.replace(/[^\w$]/g, '_')}`), serde: DATE_SERDE, ...options });
 }
 
 /** The generated validators the payment runtime imports, compiled from the same graph, and the names the runtime source must use. */
