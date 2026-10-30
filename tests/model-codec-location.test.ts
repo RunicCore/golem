@@ -39,6 +39,20 @@ export function notBlank(value: string): boolean { return value.trim() !== ''; }
   assert.throws(run, /RUNM1065[^\n]*notBlank/);
 });
 
+test('the class of a TSerde field declared in a model file is a generation error naming the class', t => {
+  // protects: T-659 F-39 the validators import the class for its instance check, so a class in a model file closes the cycle and is refused, never skipped
+  const run = generateWith(t, {
+    'rules.ts': `import type { Label } from './task.model.js';
+export function toText(value: Label): string { return value.show(); }
+export function fromText(text: string): Label { throw new Error(text); }
+`,
+    'task.model.ts': `${model("import type { fromText, toText } from './rules.js';\n", 'label: Label & TSerde<typeof toText, typeof fromText>')}
+export class Label { show(): string { return ''; } }
+`,
+  });
+  assert.throws(run, /RUNM1065[^\n]*Label[^\n]*task\.model\.ts[^\n]*own module/);
+});
+
 test('TSerde and TValidation functions in their own module generate', t => {
   const run = generateWith(t, {
     'rules.ts': `export function toWord(value: number): string { return String(value); }

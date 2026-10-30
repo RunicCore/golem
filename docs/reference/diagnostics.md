@@ -482,16 +482,16 @@ The type that keeps the plain name is the one read first: the model source files
 
 ### RUNM1065
 
-**Codec or predicate declared in a model file.** A `TSerde` or `TValidation` function is declared in a `*.model.ts` or `*.models.ts` file. The two files import each other:
+**Codec, predicate or class declared in a model file.** A `TSerde` or `TValidation` function, or the class of a `TSerde` field, is declared in a `*.model.ts` or `*.models.ts` file. The two files import each other:
 
-- Generated code imports the function.
+- Generated code imports the function, or the class for its instance check.
 - The model file imports its `*.model.generated.ts` file.
 
 When the generated file loads first, the model class extends a base class that isn't initialized yet and start-up fails.
 
 **Fix:**
 
-- Move the function to its own module and export it there.
+- Move the function or class to its own module and export it there.
 - Import it into the model file.
 
 ### RUNM1066

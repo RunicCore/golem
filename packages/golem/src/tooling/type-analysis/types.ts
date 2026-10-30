@@ -150,7 +150,7 @@ function classValueReference(
   identityRoot: string,
   /** The generated file that imports the class: the companion of the model's file. */
   importer: string,
-  /** Whether a file is a model source: the validators module cannot import a class declared there (it would close a cycle with the model's companion). */
+  /** Whether a file is a model source: the validators module imports the class for its instance check, and from a model file that would close a cycle with the file's companion. */
   isModelSource: ((filename: string) => boolean) | undefined,
 ): { typeName: string; typeImport?: { exportName: string; module: string; specifier?: string }; classRef?: { id?: string; path: readonly string[] } } {
   // The class's own symbol, never a local alias such as `type Bytes = Uint8Array & TSerde<…>`,
@@ -190,7 +190,10 @@ function classValueReference(
     throw diagnostic(context.sourceFile, node, '1060', `Class ${typeName} is in package ${resolved.packageName}, but no "exports" entry reaches ${module}. Export that file from the package.`);
   }
   const typeImport = { exportName, module, ...(resolved.kind === 'package' ? { specifier: resolved.specifier } : {}) };
-  if (!runtimeClass || (resolved.kind !== 'package' && isModelSource?.(module))) return { typeName, typeImport };
+  if (!runtimeClass) return { typeName, typeImport };
+  if (resolved.kind !== 'package' && isModelSource?.(module)) {
+    throw diagnostic(context.sourceFile, node, '1065', `Class ${typeName} is declared in the model file ${path.basename(sourceFile.fileName)}. Move it to its own module and import it from there.`);
+  }
   // The id is the identity of the imported class, as for a validation function: a project path or a package import with the export name.
   const id = `${resolved.kind === 'package' ? resolved.specifier : portableRelativeFilename(sourceFile.fileName, identityRoot)}#${exportName}`;
   return { typeName, typeImport, classRef: { id, path: outermost ? names.slice(1) : [] } };
