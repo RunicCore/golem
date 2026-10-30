@@ -11,12 +11,12 @@ import {
   documentBase,
   generateMaterializedSdk,
   isGeneratedClientClass,
-  isGeneratedModelClass,
   materializeGeneratedSdk,
   requireRecord,
+  sdkBodyCodec,
+  withRootOperations,
   writeOpenApiDocument,
 } from './helpers.js';
-import { modelCodec } from '../support/model-codec.js';
 
 /** Three operations whose request body is `false` directly, as `additionalProperties`, and by `$ref`; every response is `true`. */
 function booleanSchemaDocument(openapi: string): Record<string, unknown> {
@@ -253,54 +253,33 @@ test('nullable binary response decodes to Blob or null and both pass runtime val
   }
 });
 
-test('an allOf alias of one model is its own model with its own codec', async t => {
-  for (const profile of [{ mobx: false, validation: false }, { mobx: false, validation: true }]) {
-    const directory = createFixtureProject(t, 'golem-openapi-allof-alias-');
-    const output = path.join(directory, 'sdk');
-    const suffix = profile.validation ? 'V' : 'N';
-    await generateMaterializedSdk(documentBase('3.1.0', {
-      paths: {},
-      components: {
-        schemas: {
-          [`Money${suffix}`]: {
-            type: 'object',
-            additionalProperties: false,
-            required: ['amount'],
-            properties: { amount: { type: 'number' } },
-          },
-          [`Price${suffix}`]: { allOf: [{ $ref: `#/components/schemas/Money${suffix}` }] },
+test('an allOf alias of one closed schema checks bodies exactly as its base does', async t => {
+  const output = path.join(createFixtureProject(t, 'golem-openapi-allof-alias-'), 'sdk');
+  await generateMaterializedSdk(withRootOperations(documentBase('3.1.0', {
+    paths: {},
+    components: {
+      schemas: {
+        Money: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['amount'],
+          properties: { amount: { type: 'number' } },
         },
+        Price: { allOf: [{ $ref: '#/components/schemas/Money' }] },
       },
-    }), { output, name: 'Alias', profile });
-    compileGeneratedSdk(output, [], { strict: true });
-    const models = requireRecord(await import(pathToFileURL(path.join(output, 'dist/index.js')).href), 'alias models');
-    const PriceModel = models[`Price${suffix}Model`];
-    const MoneyModel = models[`Money${suffix}Model`];
-    const parsePrice = models[`parsePrice${suffix}`];
-    const stringifyPrice = models[`stringifyPrice${suffix}`];
-    if (!isGeneratedModelClass(PriceModel) || !isGeneratedModelClass(MoneyModel)) throw new TypeError('alias model classes');
-    if (typeof parsePrice !== 'function' || typeof stringifyPrice !== 'function') throw new TypeError('alias codec functions');
-    const price = modelCodec(PriceModel).fromWireFormat({ amount: 3 });
-    assert.ok(price instanceof PriceModel && price instanceof MoneyModel);
-    assert.deepEqual(modelCodec(price).toWireFormat(price), { amount: 3 });
-    // The alias owns a registered codec, like its base: parse yields wire data.
-    assert.deepEqual({ ...requireRecord(Reflect.apply(parsePrice, undefined, ['{"amount":4}']), 'parsed price') }, { amount: 4 });
-    assert.equal(Reflect.apply(stringifyPrice, undefined, [price]), '{"amount":3}');
-    // The alias treats undeclared members exactly as its closed base does.
-    const stringifyMoney = models[`stringifyMoney${suffix}`];
-    if (typeof stringifyMoney !== 'function') throw new TypeError('base codec function');
-    const extra = { amount: 1, extra: 2 };
-    const outcome = (run: () => unknown): unknown => {
-      try { return { value: run() }; } catch (error) { return { error: error instanceof Error ? error.constructor.name : 'thrown' }; }
-    };
-    assert.deepEqual(
-      outcome(() => modelCodec(PriceModel).toWireFormat(modelCodec(PriceModel).fromWireFormat(extra))),
-      outcome(() => modelCodec(MoneyModel).toWireFormat(modelCodec(MoneyModel).fromWireFormat(extra))),
-    );
-    assert.deepEqual(
-      outcome(() => Reflect.apply(stringifyPrice, undefined, [extra])),
-      outcome(() => Reflect.apply(stringifyMoney, undefined, [extra])),
-    );
-  }
-});
+    },
+  }), 'Money', 'Price'), { output, name: 'Alias', profile: { mobx: false, validation: true } });
+  compileGeneratedSdk(output, [], { strict: true });
+  const money = await sdkBodyCodec(output, 'Alias', 'Money');
+  const price = await sdkBodyCodec(output, 'Alias', 'Price');
 
+  assert.deepEqual(await price.decode({ amount: 3 }), { amount: 3 });
+  assert.deepEqual(await price.encode({ amount: 3 }), { amount: 3 });
+  const isLibError = (error: unknown): boolean => error instanceof LibError;
+  const extra = { amount: 1, extra: 2 };
+  await assert.rejects(() => money.decode(extra), isLibError);
+  await assert.rejects(() => price.decode(extra), isLibError);
+  await assert.rejects(() => money.encode(extra), isLibError);
+  await assert.rejects(() => price.encode(extra), isLibError);
+  await assert.rejects(() => price.decode({ amount: 'three' }), isLibError);
+});
