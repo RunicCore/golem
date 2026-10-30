@@ -921,6 +921,26 @@ An `integer` member and a `number` member share the integers. A member that decl
 - Give the variant a mapping value of its own, for example `feline: '#/components/schemas/Cat'`.
 - Or remove the variant from the union.
 
+### OPENAPI_INBOUND_PARAMETER_AMBIGUOUS
+
+**Inbound parameter that cannot be read back.** An inbound operation (a webhook or a callback) has a path, query, header or cookie parameter. The handler gets the text that the web framework has already decoded. The handler splits that text at the separator of the parameter style. This reading is wrong when an item or a member can hold the separator. The error names the parameter and the reason. This is an error: generation writes nothing.
+
+These cases stop generation:
+
+- An array item that can hold the separator of a joined style. A string item holds a comma. A number item holds a dot in label style with `explode: true`.
+- An object member that can hold the separator, or `=` in a keyed style.
+- A `deepObject` parameter with a member that is an object or an array.
+- An object parameter that does not list its properties.
+- A property of an exploded object that has the name of another parameter in the same place.
+
+An integer, a boolean, a string with an `enum` or a string with a `format` such as `uuid` does not hold these characters. The fixed `enum` values must not hold the separator.
+
+**Fix:**
+
+- Set `explode: true` on the parameter, or use repeated keys.
+- Or use style `deepObject` for an object with flat members.
+- Or give the item a type that cannot hold the separator.
+
 ### OPENAPI_KEYWORD_NOT_CARRIED
 
 **App model over an SDK schema that the model cannot check in full.** An app model uses a type of a golem-mode SDK. The schema of that type has a keyword that the model descriptors do not carry. The SDK checks the full schema. The model of the app checks only through its descriptors, so a bad value can pass. Generation stops. The message names each keyword.
