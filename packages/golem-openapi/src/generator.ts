@@ -1,7 +1,8 @@
 import path from 'node:path';
-import type {
-  GolemResult,
-  OpenApiContext,
+import {
+  GolemDiagnosticSeverity,
+  type GolemResult,
+  type OpenApiContext,
 } from '@exprtlabs/golem/generator-api';
 import { normalizeSchemaUnions } from './document.js';
 import { writeSdk as emitSdk } from './emit.js';
@@ -58,10 +59,12 @@ export async function generate(context: OpenApiGenerationContext): Promise<OpenA
   const output = path.resolve(context.output);
   const loaded = await loadOpenApiInput(input, context);
   const result = writeSdk(loaded.document, { output, name: context.name, profile, locate: loaded.locate, ...(context.dates === undefined ? {} : { dates: context.dates }), ...(context.mode === undefined ? {} : { mode: context.mode }), ...(context.codecsFile === undefined ? {} : { codecsFile: context.codecsFile }) });
+  const failed = result.diagnostics?.some((diagnostic) => diagnostic.severity === GolemDiagnosticSeverity.Error) ?? false;
   return {
     apiVersion: API_VERSION,
     artifacts: result.artifacts,
-    manifestPaths: [path.resolve(output, 'model-manifest.json')],
+    // A run that reports an error writes no artifacts, so it names no manifest either.
+    manifestPaths: failed ? [] : [path.resolve(output, 'model-manifest.json')],
     watchInputs: [...loaded.localInputs],
     ...(result.diagnostics ? { diagnostics: result.diagnostics } : {}),
   };

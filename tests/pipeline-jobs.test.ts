@@ -58,6 +58,13 @@ test('model generation rejects an SDK manifest whose profile differs from the co
   assert.equal(fs.existsSync(path.join(root, 'src/cart.model.generated.ts')), false);
 });
 
+test('a standalone SDK job with mobx: true shows the generator error, not a manifest error', async (t: TestContext) => {
+  // protects: T-735 golem generate prints a generator's error diagnostics before it checks the result for a manifest
+  const { config } = packageFixture(t, { profile: { mobx: true, validation: true }, models: false });
+
+  await assert.rejects(() => runPipeline(config), /OPENAPI_MOBX_NEEDS_GOLEM_MODE/);
+});
+
 test('a downstream model failure preserves the completed SDK and a later run repairs inventory', async (t: TestContext) => {
   const { root, config } = packageFixture(t);
   const source = path.join(root, 'src/cart.model.ts');
