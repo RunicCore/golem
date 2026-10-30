@@ -38,13 +38,14 @@ Do not write `stringify(toWireFormat(x))` or `fromWireFormat(parse(text))` on th
 
 The model value is what your code holds. The JSON form is what `toWireFormat` returns and `stringify` writes. For most fields the two are equal. These differ:
 
-- A `Date` is a `Date` in the model and an ISO string in JSON.
+- A `Date` is a `Date` in the model and an ISO string in JSON. The Temporal classes are strings in JSON too. Golem converts them with built-in [`TSerde`](#change-the-json-form) functions.
 - A [`TSerde`](#change-the-json-form) field has the form that its functions give.
 
 A `Date` converts in these ways:
 
 - It decodes a `date-time` string at every validation level, off included. A value that is not a string, or that is not a `date-time` string, throws `Deserialization` with `causedByInput: true`.
 - It encodes as UTC ISO text with milliseconds. A year outside 0000-9999 throws `Serialization`.
+- Validation of the model value requires a `Date` that holds a time. Another value, and `new Date(NaN)`, fail with an `instance` issue ([Check a Date or Temporal field](/guide/field-types#check-a-date-or-temporal-field)).
 - Put your own rule on a `Date` with [`TValidation`](/guide/tags#add-a-custom-field-rule).
 
 A function, a symbol or an array hole is not a JSON value and fails the JSON check.
@@ -96,7 +97,7 @@ Write `typeof` each function in `TSerde`, and import the functions as types:
 <<< ../../examples/models/src/order.model.ts#order-declaration
 
 - `Integer`, `Minimum` and `Maximum` check the model values: `amount` is a whole number of cents, `priority` is 1 to 3.
-- `remindAt` is a `Date` and needs no `TSerde`. [Use Date fields](/guide/field-types#use-date-fields) shows how golem writes it and how to keep its exact text.
+- `remindAt` is a `Date` and needs no `TSerde` tag. [Use Date fields](/guide/field-types#use-date-fields) shows how golem writes it and how to keep its exact text.
 
 Run `npx golem generate`, then convert the JSON:
 
@@ -128,7 +129,7 @@ Here `PermissionWire` is a string tagged with a hexadecimal pattern, and the mod
 
 ## Class values
 
-A `TSerde` field can hold a class instance, such as `Uint8Array`, or a `bigint`. The codec does all the conversion, and validation checks the JSON value.
+A `TSerde` field can hold a class instance, such as `Uint8Array`, or a `bigint`. The codec does all the conversion. Validation checks the JSON value, and for a class it checks that the model value is an instance of the class.
 
 <<< ../../examples/models/src/base64-codec.ts#base64-codec
 
@@ -140,7 +141,10 @@ Converting the model writes the JSON form and restores the instance:
 
 - The `Base64` pattern accepts only well-formed base64. A malformed value fails the JSON check as input, before `atob` runs.
 - The class must have a name and have no type parameter without a default. A module must export it, under any name or as the default export ([RUNM1063](/reference/diagnostics#runm1063)).
-- A `TemporalInstant` is this kind of field. The [Temporal types](/guide/field-types#use-temporal-fields) ship their own codecs.
+- A value that is not an instance of the class fails with one `instance` issue that names the class. A type with no class behind it at run time, such as an `interface`, has no instance check.
+- A decoder whose JSON value is a string reads only a string. Another JSON value throws `Deserialization` at every validation level, off included.
+- Declare the class in its own module. A class of a `TSerde` field that a `*.model.ts` file declares stops generation with [RUNM1065](/reference/diagnostics#runm1065).
+- `Date` and the Temporal classes are this kind of field with the codec built in, so they need no tag. A `TSerde` tag on one of them replaces the built-in codec. The [Temporal types](/guide/field-types#use-temporal-fields) have their own tags.
 
 ## Checks during conversion
 
