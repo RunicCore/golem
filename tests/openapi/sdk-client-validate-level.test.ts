@@ -224,6 +224,23 @@ test('a header that breaks its schema passes by default and its dates convert', 
   assert.ok(response.headers['X-Seen'] instanceof Date);
 });
 
+for (const [name, validate, expected] of [
+  ['by default', undefined, 'accepted'],
+  ['with request headers on', { requestHeaders: true }, LibErrorKind.Validation],
+] as const) {
+  test(`an operationValidators override without a header validator gets the headers only when requestHeaders is on: ${name}`, async () => {
+    // protects: R-87, T-731 an override of the input check does not switch request header checks on
+    const noHeader = (value: object): readonly object[] => Object.keys(value).filter(key => key === 'header').map(key => ({ code: 'required', key, path: [key] }));
+    const client = (await sdks.full()).createClient({
+      ...(validate === undefined ? {} : { validate }),
+      operationValidators: new Map([['createCharge', { input: noHeader, responses: new Map() }]]),
+      fetchImpl: async () => Response.json({ amount: 1, when: WHEN }),
+    });
+    const run = () => client.createCharge().execute({ header: { 'X-Limit': 500 }, body: { amount: 1, when: new Date(WHEN) } });
+    assert.equal(await outcome(run), expected);
+  });
+}
+
 test('a response is checked once: the client check is the only wire check before decoding', async () => {
   // protects: R-86, F-164 the decoder does not check the wire body again; an override that accepts it is the last word
   const sdk = await sdks.full();

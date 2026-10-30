@@ -48,8 +48,8 @@ function generatedValidators(operation: string, codecs: OperationCodecs): Operat
 
 /**
  * The wire input of a call: the input at the request level, and its header parameters at the request header level. Generated
- * validators check the two apart, so `header` is not part of the input they check; an override without header validator is
- * given the whole input.
+ * validators check the two apart, so `header` is not part of the input they check. An override without header validator is
+ * given the headers only when `requestHeaders` is on, so no override of another option switches header checks on.
  */
 export async function validateOperationInput(
   operation: string,
@@ -61,7 +61,8 @@ export async function validateOperationInput(
   if (levels.request !== false) {
     if (!validator) throw new LibError(LibErrorKind.ValidationUnavailable, `Missing generated input validator for ${operation}`);
     const { header, ...rest } = value as { readonly header?: unknown };
-    await assertValid(validator, validators?.requestHeaders ? rest : value, levels.request === 'sanity');
+    const inputOnly = validators?.requestHeaders !== undefined || levels.requestHeaders === false;
+    await assertValid(validator, inputOnly ? rest : value, levels.request === 'sanity');
     if (levels.requestHeaders !== false && validators?.requestHeaders) await assertValid(validators.requestHeaders, header ?? {}, levels.requestHeaders === 'sanity');
     return;
   }
