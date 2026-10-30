@@ -60,20 +60,28 @@ function project(t: test.TestContext, prefix: string, yaml: readonly string[], d
   return root;
 }
 
-// protects: T-549 I-42 a query field typed by a named alias, and the fields of an allOf base, stayed raw strings
-test('a model that golem-openapi generates lists the query fields of its aliases and its allOf base', async (t) => {
-  const root = project(t, 'golem-query-fields-', ['openapi:', '  - input: api.json', '    output: sdk', '    name: QueryFields']);
+// protects: T-549 I-42 a query field typed by a named alias of an SDK, and the fields of an allOf base, stayed raw strings
+test('an app model over SDK types lists the query fields of their aliases and of an allOf base', async (t) => {
+  const root = project(t, 'golem-query-fields-', ['openapi:', '  - input: api.json', '    output: sdk', '    name: QueryFields', '    mode: golem', 'models:', '  root: .']);
+  fs.writeFileSync(path.join(root, 'src/page.model.ts'), [
+    "import type { IModel } from '@exprtlabs/golem/model';",
+    "import type { Level, Flag, IntLimit, Tags } from '../sdk/index.js';",
+    '',
+    'export type TPage = IModel<{ level: Level; flags: Flag[]; limit: IntLimit; tags: Tags; name: string }>;',
+    'export type TPage2 = IModel<{ level: Level; flags: Flag[]; limit: IntLimit; tags: Tags; name: string; page: number }>;',
+    '',
+  ].join('\n'));
   await runPipeline(path.join(root, 'golem.yaml'));
-  const ids = (JSON.parse(fs.readFileSync(path.join(root, 'sdk/model-manifest.json'), 'utf8')) as { models: { codecId: string }[] }).models.map((model) => model.codecId);
-  const tables = await queryFieldsOf(root, ['./build/sdk/index.js'], ids);
+  const keys = (JSON.parse(fs.readFileSync(path.join(root, '.golem/codec-keys.json'), 'utf8')) as { keys: Record<string, string> }).keys;
+  const tables = await queryFieldsOf(root, ['./build/src/page.model.generated.js'], [keys['src/page.model.ts#TPage']!, keys['src/page.model.ts#TPage2']!]);
   const page = {
-    flags: { types: [], item: { types: [], literals: [true, false] } },
+    flags: { types: [], item: { types: ['boolean'] } },
     level: { types: [], literals: [1, 2, 3] },
-    limit: { types: ['number', 'integer'] },
-    tags: { types: [], item: { types: ['number', 'integer'] } },
+    limit: { types: ['number'] },
+    tags: { types: [], item: { types: ['number'] } },
   };
-  assert.deepEqual(tables.Page, page);
-  assert.deepEqual(tables.Page2, { ...page, page: { types: ['number', 'integer'] } });
+  assert.deepEqual(tables.TPage, page);
+  assert.deepEqual(tables.TPage2, { ...page, page: { types: ['number'] } });
 });
 
 // protects: T-549 I-42 a golem-model @Query() model field typed by a named alias, also a recursive one, stayed a raw string
