@@ -217,3 +217,36 @@ test('a golem-mode model over an SDK type that holds another SDK type checks the
   assert.throws(() => generated.fromWireFormatTChargeRecord({ id: 'c1', price: { value: -1 } }), /Model validation failed/);
   assert.throws(() => generated.toWireFormatTChargeRecord({ id: 'c1', price: { value: -1 } }), /Model validation failed/);
 });
+
+test('a golem-mode model over an SDK type that reaches itself keeps the SDK limits and conversions at every depth', async () => {
+  // protects: T-715 R-82 R-84 an app model over a recursive SDK type checks and converts the nested nodes (it fell back to the TS fields with no message)
+  const tree: GolemModeSdkSetup = {
+    folder: 'sdk/trees',
+    name: 'Trees',
+    document: {
+      openapi: '3.1.0',
+      info: { title: 'Trees', version: '1' },
+      paths: { '/nodes': { post: { operationId: 'createNode', requestBody: { required: true, content: json(ref('Node')) }, responses: { 200: { description: 'ok', content: json(ref('Node')) } } } } },
+      components: { schemas: {
+        Node: { type: 'object', required: ['value'], properties: { value: { type: 'string', maxLength: 3 }, at: { type: 'string', format: 'date-time' }, children: { type: 'array', items: ref('Node') } } },
+      } },
+    },
+  };
+  const model = `import type { IModel } from '@exprtlabs/golem/model';
+import type { Node } from '../sdk/trees/index.js';
+export type TNodeRecord = IModel<Node>;
+`;
+  const project = await loadGolemModeProject(scope, 'sdk-app-model-recursive-', [tree], true, { 'src/node.model.ts': model });
+  const validators = fs.readFileSync(path.join(project.root, 'src/generated/models/models.validators.generated.ts'), 'utf8');
+  const checks = [...validators.matchAll(/^function f\d+_(\w+?)_[0-9a-f]{8}(?:_wire|_model_only|_wire_only)?\(/gm)].map(match => match[1]);
+  assert.deepEqual(checks, ['Node', 'Node', 'Node', 'Node']);
+
+  const generated = await importBuilt(project.root, 'src/node.model.generated.js');
+  const wire = { value: 'a', children: [{ value: 'b', children: [{ value: 'c', at: '2025-01-02T03:04:05.000Z' }] }] };
+  const read = generated.fromWireFormatTNodeRecord(wire);
+  assert.deepEqual(read.children[0].children[0].at, new Date('2025-01-02T03:04:05Z'));
+  assert.deepEqual(generated.toWireFormatTNodeRecord(read), wire);
+  const tooLong = { value: 'a', children: [{ value: 'b', children: [{ value: 'toolong' }] }] };
+  assert.throws(() => generated.fromWireFormatTNodeRecord(tooLong), /Model validation failed/);
+  assert.throws(() => generated.toWireFormatTNodeRecord(tooLong), /Model validation failed/);
+});

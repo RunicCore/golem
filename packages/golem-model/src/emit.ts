@@ -29,6 +29,9 @@ import {
   rtType,
   sameCode,
   render,
+  fromWireFunctionName,
+  stringifyFunctionName,
+  toWireFunctionName,
   type Code,
   type Helper,
   type ImportOptions,
@@ -40,6 +43,7 @@ import {
   descriptorNeedsConversion,
   type FromJsonModelResolver,
   type ModelConversionDescriptor,
+  type NestedImportedSerde,
   type SerdeResolver,
   presentKeysCode,
 } from '@exprtlabs/golem/internal/emitter';
@@ -351,6 +355,8 @@ interface TypeNames {
   readonly classValue: (key: string) => Code | undefined;
   /** `<name><suffix>` of a model: imported from the file that holds the model, or this file's own. */
   readonly modelType: (name: string, suffix: 'BaseModel' | 'JSON' | 'Init' | 'Fields') => Code;
+  /** `<codec id><suffix>`: the local type of an SDK node that a descriptor names by its codec id. */
+  readonly sdkNodeType: (codecId: string, suffix: 'JSON' | 'Init' | 'Fields') => Code;
 }
 
 function descriptorType(
@@ -390,7 +396,7 @@ function descriptorType(
         : mode === 'init'
           ? code`${names.modelType(descriptor.name, 'Init')} | ${names.modelType(descriptor.name, 'BaseModel')}`
           : names.modelType(descriptor.name, 'BaseModel');
-    case 'generated-model': throw new Error(`Internal error: the SDK model "${descriptor.id}" has no generated class in a model file.`);
+    case 'generated-model': return names.sdkNodeType(descriptor.id, mode === 'wire' ? 'JSON' : mode === 'init' ? 'Init' : 'Fields');
     case 'array': return code`${descriptor.isReadonly ? code`ReadonlyArray` : code`Array`}<${descriptorType(descriptor.item, mode, names)}>`;
     case 'tuple': {
       const items = descriptor.items.map((item, index) => {
@@ -864,6 +870,86 @@ export function validatorImports(
     .map(([id, binding]) => [id, { importPath: bindingImportPath(binding, validatorsFile), exportName: binding.exportName }] as const));
 }
 
+/**
+ * The node codecs of the golem-mode SDKs that a model file names by the SDK's codec id. Each SDK's codecs file is one import
+ * source for the whole file.
+ */
+interface SdkNodeCodecs {
+  readonly find: (codecId: string) => NestedImportedSerde | undefined;
+  readonly sources: readonly ImportSource[];
+  /** The local type of an SDK node; the file writes the type aliases of the nodes asked for (`typeAliases`). */
+  readonly type: (codecId: string, suffix: 'JSON' | 'Init' | 'Fields') => Code;
+  /** The type aliases of the SDK nodes that the types of the file named, with the nodes they name in turn. */
+  readonly typeAliases: (describe: (descriptor: ModelConversionDescriptor, mode: 'model' | 'wire' | 'init') => Code) => readonly Code[];
+}
+
+function sdkNodeCodecs(sdks: AppOutputs['sdkCodecs'], output: string): SdkNodeCodecs {
+  // One source for each codecs file; the import statement holds only the names the file's code uses.
+  const sources = new Map((sdks ?? []).map((sdk) => [sdk.file, new ImportSource(sourceImportPath(sdk.file, output))] as const));
+  const asked = new Set<string>();
+  const written = new Set<string>();
+  return {
+    find(codecId) {
+      for (const sdk of sdks ?? []) {
+        const node = [...sdk.graph.nodes.values()].find((item) => item.kind !== 'reference' && item.codecId === codecId);
+        if (node === undefined) continue;
+        const source = sources.get(sdk.file)!;
+        return {
+          stringify: source.name(stringifyFunctionName(node.id)),
+          fromWire: source.name(fromWireFunctionName(node.id)),
+          toWire: source.name(toWireFunctionName(node.id)),
+        };
+      }
+      return undefined;
+    },
+    sources: [...sources.values()],
+    type(codecId, suffix) {
+      asked.add(codecId);
+      return identifier(`${codecId}${suffix}`);
+    },
+    typeAliases(describe) {
+      const lines: Code[] = [];
+      // Writing the types of a node can name other nodes: go on until every node asked for is written.
+      for (let pending = [...asked].filter((id) => !written.has(id)).sort(compareText); pending.length > 0; pending = [...asked].filter((id) => !written.has(id)).sort(compareText)) {
+        for (const codecId of pending) {
+          written.add(codecId);
+          const descriptor = sdkNodeDescriptor(sdks, codecId);
+          lines.push(
+            code`type ${identifier(`${codecId}Fields`)} = ${describe(descriptor, 'model')};`,
+            code`type ${identifier(`${codecId}JSON`)} = ${describe(descriptor, 'wire')};`,
+            code`type ${identifier(`${codecId}Init`)} = ${describe(descriptor, 'init')};`,
+            BLANK,
+          );
+        }
+      }
+      return lines;
+    },
+  };
+}
+
+/**
+ * The descriptor of the SDK node with codec id `codecId`, with each schema it names written as a reference by codec id, so a type
+ * of it names the aliases of the other SDK nodes and the type of a schema that reaches itself is finite.
+ */
+function sdkNodeDescriptor(sdks: AppOutputs['sdkCodecs'], codecId: string): ModelConversionDescriptor {
+  for (const sdk of sdks ?? []) {
+    const node = [...sdk.graph.nodes.values()].find((item) => item.kind !== 'reference' && item.codecId === codecId);
+    if (node === undefined) continue;
+    const named = (value: unknown): unknown => {
+      if (Array.isArray(value)) return value.map(named);
+      if (value === null || typeof value !== 'object') return value;
+      const record = value as Record<string, unknown>;
+      if (record.kind === 'reference' || record.kind === 'generated-model') {
+        const target = sdk.graph.nodeFor(record as never);
+        return { kind: 'generated-model', id: target?.codecId ?? (record.kind === 'reference' ? record.name : record.id) };
+      }
+      return Object.fromEntries(Object.entries(record).map(([key, item]) => [key, named(item)]));
+    };
+    return named(node.descriptor) as ModelConversionDescriptor;
+  }
+  throw new Error(`Internal error: no SDK node with the codec id "${codecId}" for the generated file.`);
+}
+
 /** What the app generated beside its model files, which a model file reads. */
 interface AppOutputs {
   /**
@@ -871,6 +957,11 @@ interface AppOutputs {
    * `PlanValidators.exports` and `fastExports`); set when the app validates.
    */
   readonly validators?: { readonly module: string; readonly exports: ReadonlyMap<string, string>; readonly fastExports: ReadonlyMap<string, string>; readonly passExports: ReadonlyMap<string, { readonly structure: string; readonly predicates: string }> };
+  /**
+   * The codecs files of the golem-mode SDKs, each with its schema graph. A model that holds an SDK type which reaches itself
+   * converts the inner occurrence with the node codec the file exports, under the SDK's codec id.
+   */
+  readonly sdkCodecs?: readonly { readonly file: string; readonly graph: SchemaGraph }[];
 }
 
 /** How this companion relates to the companions of the files its source imports. */
@@ -924,6 +1015,7 @@ interface EmitContext {
   readonly profile: GolemProfile;
   readonly siblingCodecs: SiblingCodecOptions;
   readonly appOutputs: AppOutputs;
+  readonly sdkNodes: SdkNodeCodecs;
   readonly graph: SourceModelGraph;
   readonly schemaGraph: SchemaGraph;
   /** The models of this file. */
@@ -1122,7 +1214,7 @@ function buildEmitContext(
     cyclicSiblings, serdeBindings, serdeNames, classEntries, classNames,
   );
   return {
-    source, output, checker, profile, siblingCodecs, appOutputs, graph, schemaGraph,
+    source, output, checker, profile, siblingCodecs, appOutputs, sdkNodes: sdkNodeCodecs(appOutputs.sdkCodecs, output), graph, schemaGraph,
     local, localNames, fileLocalNames, classModelNames, objectOnlyNames, siblingObjects, siblingObjectNames, localImports,
     concreteNames, linkedByName, referenceNames, projectionNames, identityProjections, imports,
     serdeBindings, serdeNames,
@@ -1135,6 +1227,7 @@ function typeNamesOf(context: EmitContext): TypeNames {
   return {
     classValue: (key) => imports.classValues.get(key),
     modelType: (name, suffix) => modelType(context, name, suffix),
+    sdkNodeType: (codecId, suffix) => context.sdkNodes.type(codecId, suffix),
   };
 }
 
@@ -1254,7 +1347,16 @@ function modelResolvers(context: EmitContext, helpers: ReadonlyMap<string, Proje
       fromInit: (value) => code`${functions.init}(${value})`,
     };
   };
+  // An SDK type that reaches itself: its inner occurrence converts with the node codec the SDK's codecs file exports. The model's
+  // validators have checked the whole value, and a value in model form needs no conversion.
+  const resolveSdkNode = (codecs: NestedImportedSerde): FromJsonModelResolver => ({
+    className: identifier('Object'),
+    decode: (value) => code`${codecs.fromWire}(${value}, { validate: false })`,
+    fromInit: (value) => value,
+  });
   const fromAny = (id: string): FromJsonModelResolver => {
+    const sdkNode = context.sdkNodes.find(id);
+    if (sdkNode !== undefined) return resolveSdkNode(sdkNode);
     if (context.projectionNames.has(id)) return resolveProjection(id);
     if (context.siblingObjectNames.has(id)) return resolveSiblingObject(id);
     if (context.fileLocalNames.has(id)) {
@@ -1625,6 +1727,7 @@ function emitCodecSection(context: EmitContext): CodecSection {
     schemaGraph,
     {
       validationLevel: profile.validation,
+      nestedImportedSerde: context.sdkNodes.find,
       ...(validators ? {
         validatorName: (id: string) => {
           const name = validators.exports.get(id);
@@ -1657,7 +1760,7 @@ function emitCodecSection(context: EmitContext): CodecSection {
     },
   );
   return {
-    sources: [...(validatorsSource ? [validatorsSource] : []), ...siblingWireSources],
+    sources: [...(validatorsSource ? [validatorsSource] : []), ...siblingWireSources, ...context.sdkNodes.sources],
     lines: [
       codecRuntime,
     ],
@@ -1693,6 +1796,7 @@ export function emitSource(
     ...emitObjectHelperExports(context, projections.helpers),
     ...emitClassModels(context, emissions),
     ...codecs.lines,
+    ...context.sdkNodes.typeAliases((descriptor, mode) => typeOf(context, descriptor, mode)),
   ];
   // What the file calls decides its imports and which helpers it defines: a helper stands where its definition goes.
   const calls = join(pieces.filter(isCode), code`\n`);

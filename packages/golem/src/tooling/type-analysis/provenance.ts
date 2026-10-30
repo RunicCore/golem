@@ -43,11 +43,13 @@ export interface ManifestIndex {
 
 /**
  * The descriptor of the SDK schema `name`, with each schema it names written inline, so a model over it converts the whole value
- * and its schema is the SDK's: equal schemas compile to one validator. A schema that reaches itself has no finite inline form: undefined.
+ * and its schema is the SDK's: equal schemas compile to one validator. A schema that reaches itself has no finite inline form: its
+ * inner occurrence is a reference to the SDK node (`generated-model` with the codec id, also `sdkNode`), which the model's companion
+ * converts with the node codec the SDK's codecs file exports.
  */
 function inlineSdkDescriptor(manifest: GolemModeManifest, name: string, active: readonly string[]): ModelTypeDescriptor | undefined {
   const text = manifest.descriptors.find((entry) => entry.name === name)?.descriptor;
-  if (text === undefined || active.includes(name)) return undefined;
+  if (text === undefined) return undefined;
   let complete = true;
   const inline = (value: unknown): unknown => {
     if (Array.isArray(value)) return value.map(inline);
@@ -56,9 +58,14 @@ function inlineSdkDescriptor(manifest: GolemModeManifest, name: string, active: 
     const named = record.kind === 'generated-model' ? record.id : record.kind === 'reference' ? record.name : undefined;
     if (typeof named === 'string') {
       const { kind: _kind, id: _id, name: _name, projection: _projection, ...rest } = record;
+      const codecId = manifest.codecIds[named];
+      if ([...active, name].includes(named)) {
+        if (codecId === undefined) throw new Error(`The SDK manifest names no codec for the schema ${JSON.stringify(named)}, which reaches itself. Regenerate the SDK with this golem version.`);
+        return { kind: 'generated-model', id: codecId, ...(inline(rest) as object), sdkNode: codecId };
+      }
       const target = inlineSdkDescriptor(manifest, named, [...active, name]);
       if (target === undefined) complete = false;
-      return { ...target, ...(inline(rest) as object), sdkNode: manifest.codecIds[named] };
+      return { ...target, ...(inline(rest) as object), sdkNode: codecId };
     }
     return Object.fromEntries(Object.entries(record).map(([key, item]) => [key, inline(item)]));
   };

@@ -621,6 +621,7 @@ export function generate(context: GolemModelContext): GolemModelResult {
       { siblingWireCodecIds, siblingRecursion, cyclicSiblings },
       {
         ...(validators ? { validators: { module: validatorsOutput, exports: validators.exports, fastExports: validators.fastExports, passExports: validators.passExports } } : {}),
+        sdkCodecs: sdks.map((sdk, index) => ({ file: sdk.codecsFile, graph: sdkGraphs[index]!.graph })),
       },
     ));
     if (content !== undefined) artifacts.push({ path: output, content });
