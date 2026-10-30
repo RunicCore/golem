@@ -188,8 +188,8 @@ import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 
 | `code` | Extra fields | Failed check |
 | --- | --- | --- |
-| `type` | `expected` | The value has another type. `expected` lists `string`, `number`, `integer`, `boolean`, `null`, `object`, `array` or `Date`. |
-| `instance` | `model` | The value is not an instance of the model class. |
+| `type` | `expected` | The value has another type. `expected` lists `string`, `number`, `integer`, `boolean`, `null`, `object` or `array`. |
+| `instance` | `model` | The value is not an instance of the class of the field: a model class, a `Date`, a Temporal class or the class of a `TSerde` field. `model` holds the class name, such as `Date`. An invalid `Date` (`new Date(NaN)`) fails too. |
 | `required` | `key` | A property is missing. `path` ends at the missing key. |
 | `unknownKey` | `key` | The object has a property the schema does not allow. `path` ends at the key. |
 | `invalidKey` | `key` | A property name is not allowed. `path` points at the object. |
@@ -406,6 +406,10 @@ type TSerde<
 - The JSON value is checked before decoding and after encoding. `{ validate: false }` skips the checks and keeps the functions.
 - `Serialize` returns JSON-compatible data. A non-finite number or a cycle throws `Serialization`, also with `validate: false`.
 - A field can hold a class instance or a `bigint`. The class needs a name and an export, and no type parameter without a default ([RUNM1063](/reference/diagnostics#runm1063)).
+- A class field is checked with `instanceof`. A model value of another class gives one `instance` issue. A type with no class behind it at run time, such as an `interface`, has no instance check.
+- A class that a `*.model.ts` file declares stops generation ([RUNM1065](/reference/diagnostics#runm1065)).
+- A `Deserialize` function whose parameter is a string reads only a string. Another JSON value throws `Deserialization` at every validation level.
+- `Date` and the Temporal classes have a built-in `TSerde`, so a field of that type needs no tag. A `TSerde` on the field replaces it.
 - The [Temporal](#temporal) tags are `TSerde` tags with their own functions.
 
 | Failure | Where | Result |
@@ -507,6 +511,8 @@ The JSON string has a four-digit year and no calendar annotation.
 Each `deserializeTemporalX` accepts only that form, at every validation level, off included. Text that `Temporal.X.from` would read but the form rejects, such as `20250102` for a date, throws `Deserialization` with `causedByInput: true`. Each `serializeTemporalX` writes only that form: a value whose text falls outside it, such as a year beyond 9999 or a non-ISO calendar annotation, throws `Serialization`.
 
 Each tag `TemporalX` has the functions `serializeTemporalX` and `deserializeTemporalX` and the type `TemporalXWire`. Its `TSerde` uses the two functions.
+
+A field typed with the class itself, such as `Temporal.PlainDate`, uses the same two functions and has the same JSON string as the tag. A model value that is not an instance of the class fails with an `instance` issue.
 
 ## `@exprtlabs/golem/serde` {#serde}
 

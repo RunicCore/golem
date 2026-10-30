@@ -211,7 +211,7 @@ test('SDK Money $ref plus extra TValidation, local TValidation, and TSerde compi
     ...validWire,
     money: { amount: -1, currency: 'usd' },
     note: '  ',
-    code: -1,
+    code: '-1',
   }, { validate: false });
   const collected = await validateInstance(combined, { failFast: false });
   const helper = await getValidator(combined).validate({ failFast: false });

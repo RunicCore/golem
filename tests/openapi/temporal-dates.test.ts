@@ -143,7 +143,7 @@ test('dates: temporal rejects a date-time union with another string branch', asy
   });
   await assert.rejects(
     generateMaterializedSdk(ambiguous, { output, name: 'Events', profile: PROFILE, dates: 'temporal' }),
-    /one Temporal branch and optional null/,
+    /one Date or Temporal branch and optional null/,
   );
 });
 
@@ -169,7 +169,7 @@ test('dates: temporal rejects a date-time union with another string branch insid
   const root = createFixtureProject(t, 'golem-openapi-temporal-inline-');
   await assert.rejects(
     generateMaterializedSdk(inline, { output: path.join(root, 'temporal', 'sdk'), name: 'Events', profile: PROFILE, dates: 'temporal' }),
-    /one Temporal branch and optional null/,
+    /one Date or Temporal branch and optional null/,
   );
   await assert.rejects(
     generateMaterializedSdk(inline, { output: path.join(root, 'date', 'sdk'), name: 'Events', profile: PROFILE, dates: 'date' }),
@@ -188,7 +188,7 @@ test('dates: temporal rejects a date-time union with another string branch insid
   const root = createFixtureProject(t, 'golem-openapi-temporal-component-');
   await assert.rejects(
     generateMaterializedSdk(component, { output: path.join(root, 'temporal', 'sdk'), name: 'Events', profile: PROFILE, dates: 'temporal' }),
-    /one Temporal branch and optional null/,
+    /one Date or Temporal branch and optional null/,
   );
   await assert.rejects(
     generateMaterializedSdk(component, { output: path.join(root, 'date', 'sdk'), name: 'Events', profile: PROFILE, dates: 'date' }),

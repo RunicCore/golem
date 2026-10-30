@@ -1,7 +1,7 @@
 import { isBinaryMediaType, isBuiltinTextMediaType } from './client/codecs.js';
 import { asRecord, isJsonObject, objectEntries, type JsonObject } from './json.js';
 import { identifier, NameScope } from '@exprtlabs/golem/internal/generator-support';
-import { code, codeKey, TEMPORAL_FORMATS, manifestMarkerComment, docComment, exportedName, fileImports, identifier as identifierPart, ImportSource, isEmpty, join, lineBreak, literal, nest, propertyKey, render, renderModule, sameCode, type RenderedModule, type Code, type JsonValue } from '@exprtlabs/golem/internal/emitter';
+import { BUILTIN_CLASS_ROOTS, builtinClassByOpenApiFormat, type BuiltinClass, code, codeKey, manifestMarkerComment, docComment, exportedName, fileImports, identifier as identifierPart, ImportSource, isEmpty, join, lineBreak, literal, nest, propertyKey, render, renderModule, sameCode, type RenderedModule, type Code, type JsonValue } from '@exprtlabs/golem/internal/emitter';
 import { unionVariants } from './composition.js';
 import { refName } from './names.js';
 import {
@@ -258,19 +258,19 @@ interface ConvertedTypes {
   readonly shadowed: ReadonlySet<string>;
 }
 
-/** The Temporal type of a string schema under `dates: temporal`; any other schema or mode has none. */
-export function temporalFormat(schema: unknown, dates: OpenApiDates): (typeof TEMPORAL_FORMATS)[keyof typeof TEMPORAL_FORMATS] | undefined {
-  if (dates !== 'temporal' || !isJsonObject(schema) || typeof schema.format !== 'string') return undefined;
+/** The built-in class that a string schema converts to under the `dates` value (a `date-time` string is a Date, or a Temporal.Instant); any other schema has none. */
+export function dateClassOf(schema: unknown, dates: OpenApiDates): BuiltinClass | undefined {
+  if (!isJsonObject(schema) || typeof schema.format !== 'string') return undefined;
   if (!(schema.type === 'string' || (Array.isArray(schema.type) && schema.type.includes('string')))) return undefined;
-  return Object.hasOwn(TEMPORAL_FORMATS, schema.format) ? TEMPORAL_FORMATS[schema.format as keyof typeof TEMPORAL_FORMATS] : undefined;
+  return builtinClassByOpenApiFormat(dates, schema.format);
 }
 
 /** The type that a string schema converts to, or undefined when its value stays a string. */
 function convertedStringType(schema: JsonObjectLike, converted: ConvertedTypes): TypeCode | undefined {
-  const temporal = temporalFormat(schema, converted.dates);
-  if (temporal) return typeCode(converted.shadowed.has('Temporal') ? code`globalThis.${temporal.type}` : temporal.type);
-  if (converted.dates === 'date' && schema.format === 'date-time') return typeCode(converted.shadowed.has('Date') ? code`globalThis.Date` : code`Date`);
-  return undefined;
+  const builtin = dateClassOf(schema, converted.dates);
+  if (!builtin) return undefined;
+  // A component named like the global (`Date`, `Temporal`) shadows it in the module: the class is reached through `globalThis`.
+  return typeCode(converted.shadowed.has(builtin.classPath[0]) ? code`globalThis.${builtin.type}` : builtin.type);
 }
 
 /** How a type binds in a larger type: a member of a union, an intersection or an array parenthesizes by it. */
@@ -875,7 +875,7 @@ function* claimedComponentSchemas(
 /** The converted form of a module that declares the component `schemas`. */
 function convertedTypes(schemas: Record<string, unknown>, dates: OpenApiDates): ConvertedTypes {
   const declared = new Set(Object.keys(schemas).map((name) => identifier(name)));
-  return { dates, shadowed: new Set(['Date', 'Temporal'].filter((name) => declared.has(name))) };
+  return { dates, shadowed: new Set([...BUILTIN_CLASS_ROOTS].filter((name) => declared.has(name))) };
 }
 
 export function generateTypes(

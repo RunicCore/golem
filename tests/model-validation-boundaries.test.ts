@@ -6,6 +6,7 @@ import { getValidator } from '@exprtlabs/golem/validation';
 import { schemaForDescriptor } from '@exprtlabs/golem/internal/schema';
 import { installCodecModel } from './register-codec-model.js';
 import { compileSchema } from './support/compiled-validators.js';
+import { DATE_FIELD } from './support/date-field.js';
 import { modelCodec } from './support/model-codec.js';
 
 function generated<Model extends object>(model: Model): Model & GeneratedModel<unknown> {
@@ -48,7 +49,7 @@ test('exact frontend models ignore prototype extras while nested records stay ex
     kind: 'object',
     properties: {
       child: { kind: 'generated-model', id: 'Child' },
-      when: { kind: 'date' },
+      when: DATE_FIELD,
       settings,
     },
     required: ['child', 'when', 'settings'],

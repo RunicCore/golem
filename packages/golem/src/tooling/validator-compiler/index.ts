@@ -8,7 +8,7 @@ export interface CompileInput {
   readonly roots: ReadonlyMap<string, unknown>;
   /** Schemas reachable only through `$ref`, keyed by name (or by absolute URI); a schema's `$id` is also an address. */
   readonly resources?: ReadonlyMap<string, unknown>;
-  /** User validation functions the generated module imports, keyed by binding name. */
+  /** User validation functions and classes the generated module imports, keyed by binding id or class id. */
   readonly validations?: ReadonlyMap<string, { readonly importPath: string; readonly exportName: string }>;
 }
 

@@ -111,14 +111,12 @@ export function instanceFieldsCode(): Code {
 }
 
 /**
- * A non-null, non-array object. `excludingDate`: a Date beside the objects is a scalar variant, so it is no object here.
- * `'instance'`: so is the instance of a TSerde class, such as a URL. Its class is a type that generated code cannot name,
- * so the value is told from a variant object: a model instance and a plain object stay objects.
+ * A non-null, non-array object. `instance`: the instance of a class value (a Date, a URL) beside the objects is a scalar variant, so it is no object here.
+ * Its class is a type that generated code cannot name, so the value is told from a variant object: a model instance and a plain object stay objects.
  */
-export function objectValueExpression(expression: Code, excludingDate: boolean | 'instance' = false): Code {
-  if (excludingDate === 'instance') return code`${rt.conversion.isVariantObject}(${expression})`;
-  const object = code`typeof ${expression} === 'object' && ${expression} !== null && !Array.isArray(${expression})`;
-  return excludingDate ? code`${object} && !(${expression} instanceof Date)` : object;
+export function objectValueExpression(expression: Code, instance: boolean = false): Code {
+  if (instance) return code`${rt.conversion.isVariantObject}(${expression})`;
+  return code`typeof ${expression} === 'object' && ${expression} !== null && !Array.isArray(${expression})`;
 }
 
 function presentUnionVariants(
@@ -221,8 +219,8 @@ export interface DispatchOptions {
   readonly tagLocal?: Code;
   /** The conversion of a value that is no object (a scalar, null or the like), when the union has variants outside the tag table. */
   readonly rest?: Code;
-  /** `rest` holds a Date variant (`true`) or the variant of a TSerde class (`'instance'`): an instance of it is that variant, not an object for the tag test. */
-  readonly restIsInstance?: boolean | 'instance';
+  /** `rest` holds the variant of a class value: an instance of it is that variant, not an object for the tag test. */
+  readonly restIsInstance?: boolean;
   /** The conversion of an object whose tag selects no branch: the declared default. With none, such an object is rejected. */
   readonly fallback?: Code;
   /** The class of the instances `fallback` converts. An instance of it is no instance of a branch class it extends. */
@@ -443,13 +441,13 @@ function isClassValueOfScalar(descriptor: ModelTypeDescriptor): boolean {
   return descriptor.kind === 'class-value' && wire !== undefined && isScalarishDescriptor(wire);
 }
 
-/** How the model value of the scalar variants is told from a variant object: `'instance'` for a TSerde class instance, `true` for a Date, else `false`. */
-function restInstance(scalars: readonly ModelTypeDescriptor[]): boolean | 'instance' {
-  return scalars.some((variant) => variant.kind === 'class-value' && variant.typeName !== 'bigint') ? 'instance' : scalars.some((variant) => variant.kind === 'date');
+/** Whether the scalar variants hold a class value, an instance of which is told from a variant object by its class, not by its shape. */
+function restInstance(scalars: readonly ModelTypeDescriptor[]): boolean {
+  return scalars.some((variant) => variant.kind === 'class-value' && variant.typeName !== 'bigint');
 }
 
 /**
- * The variants a value's JSON type tells apart without a tag: scalar variants (a JSON scalar or a literal union, or one Date or one class value with a scalar JSON form)
+ * The variants a value's JSON type tells apart without a tag: scalar variants (a JSON scalar or a literal union, or one class value with a scalar JSON form)
  * and at most one array or tuple. Generated models and untagged objects are not scalarish.
  */
 function jsonTypeVariants(
@@ -461,7 +459,7 @@ function jsonTypeVariants(
   );
   if (sequences.length > 1) return undefined;
   const scalars = variants.filter((variant) => variant !== sequences[0]);
-  if (!scalars.every(isScalarishDescriptor) && !(scalars.length === 1 && (scalars[0].kind === 'date' || isClassValueOfScalar(scalars[0])))) return undefined;
+  if (!scalars.every(isScalarishDescriptor) && !(scalars.length === 1 && isClassValueOfScalar(scalars[0]))) return undefined;
   return { sequence: sequences[0], scalars };
 }
 
@@ -545,8 +543,8 @@ interface GeneratedWithObjects {
 export interface TaggedUnion {
   readonly indices: readonly number[];
   readonly rest?: Code;
-  /** `rest` converts a Date variant or a TSerde class variant (see `DispatchOptions`). */
-  readonly restIsInstance?: boolean | 'instance';
+  /** `rest` converts a class value variant (see `DispatchOptions`). */
+  readonly restIsInstance?: boolean;
   readonly fallback?: Code;
   /** The declared default variant that `fallback` converts: its class is not a tagged variant's, though it may extend one. */
   readonly fallbackVariant?: ModelTypeDescriptor;
@@ -612,7 +610,7 @@ export function emitUnionConversion(
     return sameCode(converted, value) ? value : code`${value} == null ? ${value} : (${converted})`;
   }
   const nullable = present.length !== descriptor.variants.length;
-  // A scalar that converts (a Date or a serde scalar), and in stringify any scalar writer other than the plain one, converts no
+  // A scalar that converts (a serde scalar), and in stringify any scalar writer other than the plain one, converts no
   // null or undefined, so the nullish variants of the union stop at a guard before its conversion.
   const scalarBranch = (scalars: readonly ModelTypeDescriptor[]): Code => {
     const variant = scalarBranchVariant(scalars) ?? (json && scalars.length === 1 ? scalars[0] : undefined);
@@ -658,7 +656,7 @@ export function emitUnionConversion(
   if (jsonValue) {
     const { sequence, scalars, object } = jsonValue;
     const scalar = scalarBranch(scalars);
-    const objectTest = objectValueExpression(expression, scalars.some((variant) => variant.kind === 'date'));
+    const objectTest = objectValueExpression(expression, restInstance(scalars));
     const converted = guarded(object, convert(object));
     const mapped = guarded(sequence, emitSequenceBranch(sequence, expression, conversion.items));
     const rest = sameCode(converted, plain) && sameCode(scalar, plain)
@@ -730,7 +728,7 @@ export type ProjectionBodyLookup = (name: string) => ModelTypeDescriptor | undef
 /**
  * Whether a value of `descriptor` changes when it is converted. A reference needs conversion when the codec constructs a
  * class for it. With `lookup`, a reference to a projection is followed to its body, once per name, so a recursive alias that
- * reaches no date, serde value or model needs none. A projected object copies its declared keys, so it always converts.
+ * reaches no serde value or model needs none. A projected object copies its declared keys, so it always converts.
  */
 export function descriptorNeedsConversion(
   descriptor: ModelTypeDescriptor,
@@ -739,9 +737,8 @@ export function descriptorNeedsConversion(
 ): boolean {
   const tags = descriptor as ModelTypeDescriptor & {
     readonly serde?: { readonly id: string };
-    readonly date?: true;
   };
-  if (tags.serde || tags.date || descriptor.kind === 'date' || descriptor.kind === 'generated-model') {
+  if (tags.serde || descriptor.kind === 'generated-model') {
     return true;
   }
   const needs = (held: ModelTypeDescriptor): boolean => descriptorNeedsConversion(held, lookup, visited);

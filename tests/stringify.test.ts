@@ -14,6 +14,7 @@ import { render } from '@exprtlabs/golem/internal/emitter';
 import { emitGraphStringify } from './support/stringify-graph.js';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { instantiate, instantiateRuntime, emitCodecRuntimeText } from './emitted-runtime.js';
+import { DATE_FIELD, DATE_SERDE } from './support/date-field.js';
 
 const stringCorpus = [
   '',
@@ -230,7 +231,7 @@ test('a root union of plain objects decodes by its tag with validation off, and 
   // protects: T-643 a decoder that holds a tag local in its function body (decodeLocals) is emitted and runs
   const variant = (kind: string): ModelTypeDescriptor => ({
     kind: 'object',
-    properties: { kind: { kind: 'literal', value: kind }, added: { kind: 'date' } },
+    properties: { kind: { kind: 'literal', value: kind }, added: DATE_FIELD },
     required: ['kind', 'added'],
     additionalProperties: false,
   });
@@ -242,7 +243,7 @@ test('a root union of plain objects decodes by its tag with validation off, and 
   const graph = createSchemaGraph();
   graph.intern(contact, 'Contact');
   graph.seal();
-  const { fromWireFormatContact } = instantiateRuntime(emitCodecRuntimeText(graph, { validationLevel: false }));
+  const { fromWireFormatContact } = instantiateRuntime(emitCodecRuntimeText(graph, { validationLevel: false, serde: DATE_SERDE }));
   assert.deepEqual(fromWireFormatContact({ kind: 'phone', added: '2024-05-06T07:08:09.000Z' }), { kind: 'phone', added: new Date('2024-05-06T07:08:09.000Z') });
   assert.throws(() => fromWireFormatContact({ kind: 'fax', added: '2024-05-06T07:08:09.000Z' }), LibError);
 });

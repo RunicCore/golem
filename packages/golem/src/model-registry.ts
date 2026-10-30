@@ -47,10 +47,37 @@ export type ModelConstraint =
     readonly else?: ConstraintSchemaValue;
   };
 
+/**
+ * A function that generated code imports: the export `exportName` of `module` (a file of the project), or of the package at `specifier`.
+ * A TSerde tag names two such functions, and a built-in class binds two of the golem runtime in the same shape.
+ */
+export interface ImportedFunction {
+  /** The identity of the function: a path from the project root or a package import, and the export name. */
+  readonly id: string;
+  readonly module: string;
+  readonly exportName: string;
+  /** Package import specifier, set only when the function lives in another package. */
+  readonly specifier?: string;
+}
+
+/** The serde of a descriptor: its identity and the two functions it names. */
+export interface SerdeFunctions {
+  readonly id: string;
+  readonly serialize: ImportedFunction;
+  readonly deserialize: ImportedFunction;
+}
+
 export interface ModelTypeMetadata {
   readonly validations?: readonly string[];
   readonly constraints?: readonly ModelConstraint[];
-  readonly serde?: { readonly id: string; readonly wire: ModelTypeDescriptor };
+  /** The `serialize` and `deserialize` functions are in every descriptor that a generator makes; a hand-written descriptor in a test may leave them out. */
+  readonly serde?: Pick<SerdeFunctions, 'id'> & Partial<SerdeFunctions> & {
+    /** The wire form: `wire` in a generated descriptor, `wireDescriptor` in one a generator reads from source (a reader takes either). */
+    readonly wire?: ModelTypeDescriptor;
+    readonly wireDescriptor?: ModelTypeDescriptor;
+    /** A function that tells whether an instance of the class holds a value, which the class check calls after `instanceof` (`new Date(NaN)` is a `Date` and holds none). */
+    readonly valid?: ImportedFunction;
+  };
   /**
    * The codec id of a golem-mode SDK schema that this descriptor holds inline. Conversion reads the descriptor; its schema is a reference
    * to the SDK's validators, so a model that holds the SDK type writes no second validator for it.
@@ -85,7 +112,6 @@ export type ModelTypeDescriptor = ModelTypeMetadata & (
   | { readonly kind: 'bigint' }
   | { readonly kind: 'null' }
   | { readonly kind: 'undefined' }
-  | { readonly kind: 'date' }
   /**
    * A class instance or bigint converted only by its field's TSerde codec. `typeImport`
    * exists during generation only; generated descriptor data omits it.
@@ -94,6 +120,12 @@ export type ModelTypeDescriptor = ModelTypeMetadata & (
       readonly kind: 'class-value';
       readonly typeName: string;
       readonly typeImport?: { readonly exportName: string; readonly module: string; readonly specifier?: string };
+      /**
+       * Where the class has a runtime value that a check can test with `instanceof`; a type with no runtime class (an interface)
+       * has none. `path` names the class below the value that `id` imports, or below `globalThis` when there is no `id`.
+       * `id` is the stable identity of the imported class (the project path or package import with the export name).
+       */
+      readonly classRef?: { readonly id?: string; readonly path: readonly string[] };
     }
   | { readonly kind: 'literal'; readonly value: string | number | boolean }
   | { readonly kind: 'array'; readonly isReadonly?: true; readonly item: ModelTypeDescriptor }

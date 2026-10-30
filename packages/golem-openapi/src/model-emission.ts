@@ -22,7 +22,7 @@ import {
   sideEffectImport,
   reachesItself,
   wireStringifyExportName,
-  TEMPORAL_SERDE,
+  RUNTIME_SERDE,
   writeOperationCodecs,
   type SdkOperationShape,
   type CodecRuntimeOptions,
@@ -110,7 +110,7 @@ export function checkModelFromJSON(
     modelConversionDescriptor(schema, definitions, env, 'from'),
     identifier(expression),
     (reference) => checkResolver(reference, definitions),
-    TEMPORAL_SERDE,
+    RUNTIME_SERDE,
   ));
 }
 
@@ -369,7 +369,7 @@ function generateModels(
   const validatorsSource = helpers.validatorsSource;
   const codecRuntimeOptions: Omit<CodecRuntimeOptions, 'modelBases'> = {
     validationLevel: profile.validation,
-    serde: TEMPORAL_SERDE,
+    serde: RUNTIME_SERDE,
     ...(helpers.validatorExports ? {
       validatorName: (id: string) => {
         const name = helpers.validatorExports?.get(id);

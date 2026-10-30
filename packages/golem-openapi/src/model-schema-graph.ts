@@ -61,7 +61,7 @@ export function operationConverts(operation: NormalizedOperation, convertedNodeI
 /** Whether a value of `descriptor` changes between its wire and its plain form: a Date or Temporal value anywhere inside, through the components it references. */
 function descriptorConverts(descriptor: ModelTypeDescriptor, graph: SchemaGraph, seen: Set<string>): boolean {
   const tags = descriptor as ModelTypeDescriptor & { readonly serde?: unknown };
-  if (tags.serde !== undefined || descriptor.kind === 'date') return true;
+  if (tags.serde !== undefined) return true;
   const converts = (held: ModelTypeDescriptor): boolean => descriptorConverts(held, graph, seen);
   switch (descriptor.kind) {
     case 'generated-model':

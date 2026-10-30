@@ -38,14 +38,13 @@ import {
   type JsonValue,
   emitModelFromInit,
   wireStringifyExportName,
-  TEMPORAL_SERDE,
-  TEMPORAL_SERDE_PREFIX,
   descriptorNeedsConversion,
   type FromJsonModelResolver,
   type ModelConversionDescriptor,
   type NestedImportedSerde,
   type SerdeResolver,
   presentKeysCode,
+  wireCheckedDeserializer,
 } from '@exprtlabs/golem/internal/emitter';
 import { anonymousShapeKeys, createSchemaGraph, codecPublicId, codecShortName, internDescriptors, mapNamedTypes, type SchemaGraph, type SchemaNode } from '@exprtlabs/golem/internal/schema-graph';
 import { compareText, type GolemProfile } from '@exprtlabs/golem/generator-api';
@@ -63,7 +62,7 @@ import {
 } from '@exprtlabs/golem/internal/type-analysis';
 import type {
   ModelConstraint,
-  SerdeBinding,
+  SerdeFunctions,
   ValidationBinding,
 } from '@exprtlabs/golem/internal/type-analysis';
 import {
@@ -82,9 +81,8 @@ import {
 
 type RichDescriptor = ModelConversionDescriptor & {
   readonly validations?: readonly ValidationBinding[];
-  readonly serde?: SerdeBinding & { readonly wireDescriptor?: ModelConversionDescriptor };
+  readonly serde?: SerdeFunctions & { readonly wireDescriptor?: ModelConversionDescriptor };
   readonly constraints?: readonly ModelConstraint[];
-  readonly date?: true;
 };
 
 function richDescriptor(descriptor: ModelConversionDescriptor): RichDescriptor {
@@ -152,19 +150,21 @@ function walkDescriptor(descriptor: ModelConversionDescriptor, visitor: Descript
   visitor.leave?.(descriptor);
 }
 
+/** A class that the validators import to test `instanceof`: its id is `classRef.id` of the descriptor, and `typeImport` says where it comes from. */
+type ClassBinding = NonNullable<Extract<ModelConversionDescriptor, { readonly kind: 'class-value' }>['typeImport']>;
+
 interface BindingRegistry {
   readonly validations: Map<string, ValidationBinding>;
-  readonly serde: Map<string, SerdeBinding>;
+  readonly serde: Map<string, SerdeFunctions>;
+  readonly classes: Map<string, ClassBinding>;
 }
 
 /** An id names one function: a path from the project root, or a package import. A second binding with the id is the same function reached again, so the first stays. */
-function registerValidation(bindings: Map<string, ValidationBinding>, binding: ValidationBinding): void {
+function registerValidation(bindings: Map<string, { readonly module: string; readonly specifier?: string; readonly exportName: string }>, binding: ValidationBinding): void {
   if (!bindings.has(binding.id)) bindings.set(binding.id, binding);
 }
 
-function registerSerde(bindings: Map<string, SerdeBinding>, binding: SerdeBinding): void {
-  // A `temporal:` id names a codec of the runtime: there is no function of the user's to import, and `serdeExpression` calls the codec itself.
-  if (binding.id.startsWith(TEMPORAL_SERDE_PREFIX)) return;
+function registerSerde(bindings: Map<string, SerdeFunctions>, binding: SerdeFunctions): void {
   if (!bindings.has(binding.id)) bindings.set(binding.id, binding);
 }
 
@@ -177,6 +177,9 @@ function visitDescriptor(
       const rich = richDescriptor(item);
       for (const binding of rich.validations ?? []) registerValidation(registry.validations, binding);
       if (rich.serde) registerSerde(registry.serde, rich.serde);
+      if (item.kind === 'class-value' && item.classRef?.id !== undefined && item.typeImport !== undefined && !registry.classes.has(item.classRef.id)) {
+        registry.classes.set(item.classRef.id, item.typeImport);
+      }
     },
   });
 }
@@ -274,12 +277,6 @@ function projectDescriptor(
       ? projectDescriptor(wireDescriptor, validationEnabled, true, true, definitions)
       : { kind: 'unknown' };
   }
-  if (wire && descriptor.kind === 'date') {
-    return {
-      kind: 'string',
-      ...(validationEnabled ? { constraints: [{ kind: 'format', value: 'date-time' }] } : {}),
-    } as ModelConversionDescriptor;
-  }
   const project = (item: ModelConversionDescriptor): ModelConversionDescriptor =>
     projectDescriptor(item, validationEnabled, wire, retainPredicates, definitions);
   const scalar = wire ? brandedScalar(descriptor) : undefined;
@@ -322,8 +319,8 @@ function projectDescriptor(
         ...(descriptor.additionalPropertiesDeclared ? { additionalPropertiesDeclared: true as const } : {}),
       };
       break;
-    // `typeImport` is an absolute path used only while emitting imports; generated data keeps the name.
-    case 'class-value': projected = { kind: 'class-value', typeName: descriptor.typeName } as ModelConversionDescriptor; break;
+    // `typeImport` is an absolute path used only while emitting imports; generated data keeps the name and the class reference.
+    case 'class-value': projected = { kind: 'class-value', typeName: descriptor.typeName, ...(descriptor.classRef ? { classRef: descriptor.classRef } : {}) } as ModelConversionDescriptor; break;
     default: projected = { kind: descriptor.kind, ...('value' in descriptor ? { value: descriptor.value } : {}), ...('name' in descriptor ? { name: descriptor.name } : {}), ...('id' in descriptor ? { id: descriptor.id } : {}), ...('projection' in descriptor && descriptor.projection ? { projection: true } : {}), ...('construct' in descriptor && descriptor.construct ? { construct: true as const } : {}) } as ModelConversionDescriptor;
   }
   const normalizedConstraints = validationEnabled
@@ -370,8 +367,6 @@ function descriptorType(
       ? descriptorType(rich.serde.wireDescriptor, 'wire', names)
       : code`unknown`;
   }
-  if (mode === 'wire' && descriptor.kind === 'date') return code`string`;
-  if ((mode === 'model' || mode === 'init') && descriptor.kind === 'date') return code`Date`;
   if ((mode === 'model' || mode === 'init') && descriptor.kind === 'class-value') {
     // `Temporal.Instant` imported from a module is `<alias>.Instant`: the import brings in the outermost name.
     const alias = descriptor.typeImport && names.classValue(classImportKey(descriptor.typeImport));
@@ -703,12 +698,12 @@ export function analyzeSourceGraph(
   definitions = deduplicateProjections(definitions, new Set(projections.keys()));
   const owned = Object.fromEntries(Object.entries(definitions).filter(([name]) =>
     ![...siblings].some((sibling) => sibling.name === name)));
-  const registry: BindingRegistry = { validations: new Map(), serde: new Map() };
+  const registry: BindingRegistry = { validations: new Map(), serde: new Map(), classes: new Map() };
   Object.values(owned).forEach((descriptor) => visitDescriptor(descriptor, registry));
   const ownedSpecifications = [...emitted].filter((specification) => !siblings.has(specification));
   // A model never validates above its project, so a project that does not validate has no model that does.
   const anyDeclValidation = profile.validation !== false && ownedSpecifications.some((specification) => specification.validation !== false);
-  if (!anyDeclValidation) registry.validations.clear();
+  if (!anyDeclValidation) { registry.validations.clear(); registry.classes.clear(); }
   // Sibling models keep their own references; lookups fall back to the job's descriptors.
   const lookup: Record<string, ModelConversionDescriptor> = Object.assign(
     Object.create(job.lookup ?? null) as Record<string, ModelConversionDescriptor>,
@@ -854,16 +849,20 @@ export function codecEntriesForGraph(
   });
 }
 
-/** The user validation functions a job's generated validators import, keyed by binding id; import paths are relative to `validatorsFile`. */
+/**
+ * The user validation functions and the classes a job's generated validators import, keyed by binding id or class id; import paths
+ * are relative to `validatorsFile`.
+ */
 export function validatorImports(
   graphs: readonly SourceModelGraph[],
   profile: GolemProfile,
   validatorsFile: string,
 ): ReadonlyMap<string, { readonly importPath: string; readonly exportName: string }> {
-  const bindings = new Map<string, ValidationBinding>();
+  const bindings = new Map<string, { readonly module: string; readonly specifier?: string; readonly exportName: string }>();
   for (const graph of graphs) {
     if (profile.validation === false || !graph.emitted.some((specification) => specification.validation !== false)) continue;
     for (const binding of graph.registry.validations.values()) registerValidation(bindings, binding);
+    for (const [id, binding] of graph.registry.classes) if (!bindings.has(id)) bindings.set(id, binding);
   }
   return new Map([...bindings]
     .sort(([left], [right]) => compareText(left, right))
@@ -1059,10 +1058,10 @@ interface EmitContext {
   readonly linkedByName: ReadonlyMap<string, ReturnType<typeof linkedClassNames>>;
   readonly referenceNames: ReadonlySet<string>;
   readonly projectionNames: ReadonlySet<string>;
-  /** Projections that reach no date, serde value or model: they convert to themselves, so a use writes no call. */
+  /** Projections that reach no serde value or model: they convert to themselves, so a use writes no call. */
   readonly identityProjections: ReadonlySet<string>;
   readonly imports: FileImports;
-  readonly serdeBindings: readonly SerdeBinding[];
+  readonly serdeBindings: readonly SerdeFunctions[];
   readonly serdeNames: ReadonlyMap<string, { readonly serialize: string; readonly deserialize: string }>;
 }
 
@@ -1090,7 +1089,7 @@ function buildFileImports(
   classModelNames: ReadonlySet<string>,
   referenceNames: ReadonlySet<string>,
   cyclicSiblings: ReadonlySet<string> | undefined,
-  serdeBindings: readonly SerdeBinding[],
+  serdeBindings: readonly SerdeFunctions[],
   serdeNames: ReadonlyMap<string, { readonly serialize: string; readonly deserialize: string }>,
   classEntries: readonly (readonly [string, { readonly importPath: string; readonly exportName: string }])[],
   classNames: ReadonlyMap<string, string>,
@@ -1135,17 +1134,23 @@ function buildFileImports(
     sources.push(source);
   }
   const serde = new Map<string, { readonly serialize: Code; readonly deserialize: Code }>();
+  // The functions of one module are one import statement.
+  const bindingSources = new Map<string, ImportSource>();
+  const bindingSource = (binding: SerdeFunctions['serialize']): ImportSource => {
+    const specifier = bindingImportPath(binding, output);
+    let source = bindingSources.get(specifier);
+    if (source === undefined) bindingSources.set(specifier, source = new ImportSource(specifier));
+    return source;
+  };
   for (const binding of serdeBindings) {
     const names = serdeNames.get(binding.id);
     if (!names) throw new Error(`Generated serde names are missing: ${binding.id}`);
-    const serialize = new ImportSource(bindingImportPath(binding.serialize, output));
-    const deserialize = new ImportSource(bindingImportPath(binding.deserialize, output));
     serde.set(binding.id, {
-      serialize: serialize.name(binding.serialize.exportName, { alias: `${names.serialize}Source` }),
-      deserialize: deserialize.name(binding.deserialize.exportName, { alias: `${names.deserialize}Source` }),
+      serialize: bindingSource(binding.serialize).name(binding.serialize.exportName, { alias: `${names.serialize}Source` }),
+      deserialize: bindingSource(binding.deserialize).name(binding.deserialize.exportName, { alias: `${names.deserialize}Source` }),
     });
-    sources.push(serialize, deserialize);
   }
+  sources.push(...bindingSources.values());
   return {
     // A sibling companion registers the codecs this module references by id.
     siblingCompanions: [...new Set(graph.siblings.map((item) => sourceImportPath(companionOfSpecification(item), output)))]
@@ -1270,7 +1275,6 @@ function typeOf(context: EmitContext, descriptor: ModelConversionDescriptor, mod
 }
 
 function serdeExpression(context: EmitContext, id: string, direction: 'serialize' | 'deserialize', value: Code): Code {
-  if (id.startsWith(TEMPORAL_SERDE_PREFIX)) return TEMPORAL_SERDE[direction](id, value);
   const names = context.serdeNames.get(id);
   if (names === undefined) throw new Error(`The generated model file of ${displayPath(context.source)} has no ${direction} function for the serde id ${JSON.stringify(id)}.`);
   return code`${identifier(names[direction])}(${value})`;
@@ -1279,8 +1283,8 @@ function serdeExpression(context: EmitContext, id: string, direction: 'serialize
 /** The serde functions of the file in both directions. */
 function serdeResolver(context: EmitContext): SerdeResolver {
   return {
-    deserialize: (id, value) => serdeExpression(context, id, 'deserialize', value),
-    serialize: (id, value) => serdeExpression(context, id, 'serialize', value),
+    deserialize: (serde, value) => serdeExpression(context, serde.id, 'deserialize', value),
+    serialize: (serde, value) => serdeExpression(context, serde.id, 'serialize', value),
   };
 }
 
@@ -1519,8 +1523,8 @@ function buildFieldEmissions(context: EmitContext, resolvers: ModelResolvers): M
         value,
         resolveFromAny,
         {
-          deserialize: (id, value) => serdeExpressionOf(id, 'deserialize', value),
-          serialize: (_id, value) => value,
+          deserialize: (serde, value) => serdeExpressionOf(serde.id, 'deserialize', value),
+          serialize: (_serde, value) => value,
         },
       );
       const fromInit = emitModelFromInit(descriptor, input, resolveFromAny);
@@ -1579,7 +1583,7 @@ function emitSerdeFunctions(context: EmitContext): Piece[] {
       const imported = context.imports.serde.get(binding.id);
       return names && imported ? [
         code`const ${identifier(names.serialize)} = ${imported.serialize} as (value: unknown) => unknown;`,
-        code`const ${identifier(names.deserialize)} = ${imported.deserialize} as (value: unknown) => unknown;`,
+        code`const ${identifier(names.deserialize)} = ${wireCheckedDeserializer(binding, code`${imported.deserialize} as (value: unknown) => unknown`)};`,
       ] : [];
     }),
     BLANK,

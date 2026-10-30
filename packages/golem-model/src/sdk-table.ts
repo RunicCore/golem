@@ -19,7 +19,7 @@ import {
   runtimeLinesOf,
   sdkCodecsFile,
   sdkCodecsTable,
-  TEMPORAL_SERDE,
+  RUNTIME_SERDE,
   toWireFunctionName,
   type Code,
   type ImportOptions,
@@ -106,7 +106,7 @@ export function sdkCodecsSource(
   const components = golemModeComponents(sdk.manifest);
   const codecRuntime = emitCodecRuntimeCode(built.graph, {
     validationLevel: profile.validation,
-    serde: TEMPORAL_SERDE,
+    serde: RUNTIME_SERDE,
     ...(validators && validatorsSource ? {
       validatorName: (id: string) => validatorsSource.name(exported(validators.compiled.exports, id)),
       fastCheckName: (id: string) => names(validators.compiled.fastExports, id),

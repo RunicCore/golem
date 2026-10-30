@@ -266,7 +266,6 @@ test('codePointLength counts code points, not UTF-16 units', () => {
 const messageRows: readonly (readonly [SchemaIssueDetail, string])[] = [
   [{ code: 'type', expected: ['string'] }, 'Expected string'],
   [{ code: 'type', expected: ['string', 'number', 'null'] }, 'Expected string, number or null'],
-  [{ code: 'type', expected: ['Date'] }, 'Expected Date'],
   [{ code: 'instance', model: 'User' }, 'Expected an instance of User'],
   [{ code: 'required', key: 'name' }, 'Missing required property "name"'],
   [{ code: 'unknownKey', key: 'extra' }, 'Unknown property "extra"'],

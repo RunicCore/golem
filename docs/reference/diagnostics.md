@@ -387,7 +387,7 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### RUNM1052
 
-**IModel fields type is not an object type.** `IModel`'s or `IObject`'s fields type is a union, an array, a tuple, a `Date`, a function, a scalar, or an intersection with one of these, such as `IModel<TEmail | TPhone>` or `IModel<string[]>`. The message names what it found.
+**IModel fields type is not an object type.** `IModel`'s or `IObject`'s fields type is a union, an array, a tuple, a `Date`, a Temporal class, a function, a scalar, or an intersection with one of these, such as `IModel<TEmail | TPhone>` or `IModel<string[]>`. The message names what it found.
 
 **Fix:**
 
@@ -482,16 +482,16 @@ The type that keeps the plain name is the one read first: the model source files
 
 ### RUNM1065
 
-**Codec or predicate declared in a model file.** A `TSerde` or `TValidation` function is declared in a `*.model.ts` or `*.models.ts` file. The two files import each other:
+**Codec, predicate or class declared in a model file.** A `TSerde` or `TValidation` function, or the class of a `TSerde` field, is declared in a `*.model.ts` or `*.models.ts` file. The two files import each other:
 
-- Generated code imports the function.
+- Generated code imports the function, or the class for its instance check.
 - The model file imports its `*.model.generated.ts` file.
 
 When the generated file loads first, the model class extends a base class that isn't initialized yet and start-up fails.
 
 **Fix:**
 
-- Move the function to its own module and export it there.
+- Move the function or class to its own module and export it there.
 - Import it into the model file.
 
 ### RUNM1066
@@ -726,7 +726,7 @@ Golem reads relative imports (`./sdk/index.js`) for this rule, and reads them th
 
 ### RUNM1085
 
-**Date or bigint combined with an object type.** A field is an intersection of a `Date` or a `bigint` with an object type or a model, such as `Date & TAddress`, `{ x: Date } & { x: TAddress }` or an optional form of these. An intersection is AND, and no value is both a `Date` and an object, so the field has no valid value. A phantom brand, such as `Date & { readonly __brand: 'Timestamp' }`, is no object. A field with a `TSerde` pair converts as one value and is not checked. The message names the field and the scalar.
+**Date, Temporal class or bigint combined with an object type.** A field is an intersection of a `Date`, a Temporal class or a `bigint` with an object type or a model, such as `Date & TAddress`, `Temporal.Instant & TAddress`, `{ x: Date } & { x: TAddress }` or an optional form of these. An intersection is AND, and no value is both a `Date` and an object, so the field has no valid value. A phantom brand, such as `Date & { readonly __brand: 'Timestamp' }`, is no object. A field with a `TSerde` pair converts as one value and is not checked. The message names the field and the class or scalar.
 
 **Fix:**
 
@@ -827,7 +827,7 @@ A cycle that goes through a property or an item, such as a tree whose `children`
 **Keyword golem does not support, or with an invalid value.** This code reports two cases:
 
 - `$dynamicRef` or `$dynamicAnchor` in a schema. Dynamic references depend on the order in which a validator reaches a schema at run time, which golem's validators do not track, so ignoring them would accept data that the schema rejects.
-- A keyword that golem writes into model schemas (`golemModelDate`, `golemModelInstance`, `exprtValidation`) with a value of the wrong shape. The message names the keyword and what it expects.
+- A keyword that golem writes into model schemas (`golemModelClass`, `golemModelInstance`, `exprtValidation`) with a value of the wrong shape. The message names the keyword and what it expects.
 
 Annotation keywords and keywords that start with `x-` are ignored without a diagnostic.
 

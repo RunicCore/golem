@@ -958,13 +958,27 @@ test('golemModelInstance reports at the path of the value it checks', async () =
   await assertIssues(schema, { pet: {} }, [{ path: ['pet'], code: 'instance', model: 'Cat' }]);
 });
 
-test('golemModelDate accepts a valid Date and reports a Date type issue for anything else', async () => {
-  const schema = { golemModelDate: true };
+test('golemModelClass accepts an instance of a global class and reports an instance issue for anything else', async () => {
+  // protects: T-659 a class-valued field has a model-plane instance check
+  const schema = { golemModelClass: { name: 'Date', path: ['Date'] } };
+  const issue = [{ path: [], code: 'instance', model: 'Date' }];
   await assertIssues(schema, new Date(0), []);
-  await assertIssues(schema, '2024-01-01T00:00:00Z', [{ path: [], code: 'type', expected: ['Date'] }]);
-  await assertIssues(schema, 0, [{ path: [], code: 'type', expected: ['Date'] }]);
-  await assertIssues(schema, new Date(Number.NaN), [{ path: [], code: 'type', expected: ['Date'] }]);
-  await assertIssues({ golemModelDate: false }, 'anything', []);
+  await assertIssues(schema, '2024-01-01T00:00:00Z', issue);
+  await assertIssues(schema, 0, issue);
+  await assertIssues(schema, null, issue);
+});
+
+test('golemModelClass looks a nested global class up by its path', async () => {
+  // protects: T-659 a nested global class (Temporal.Instant, Intl.DateTimeFormat) is found below globalThis by its path
+  const schema = { golemModelClass: { name: 'Intl.DateTimeFormat', path: ['Intl', 'DateTimeFormat'] } };
+  await assertIssues(schema, new Intl.DateTimeFormat(), []);
+  await assertIssues(schema, new Date(0), [{ path: [], code: 'instance', model: 'Intl.DateTimeFormat' }]);
+});
+
+test('golemModelClass reports at the path of the value it checks', async () => {
+  // protects: T-659 the instance issue of a class check carries the path of the field that holds the value
+  const schema = { properties: { at: { golemModelClass: { name: 'Date', path: ['Date'] } } } };
+  await assertIssues(schema, { at: 'soon' }, [{ path: ['at'], code: 'instance', model: 'Date' }]);
 });
 
 const RULES_PATH = './rules.mjs';
@@ -1066,7 +1080,9 @@ test('a binding that no validation names is an error naming it and its place in 
 
 test('a golem keyword with a malformed value is an error naming the keyword, not a dropped check', () => {
   const cases: readonly [string, unknown][] = [
-    ['golemModelDate', 'yes'],
+    ['golemModelClass', 'Date'],
+    ['golemModelClass', { name: 'Date' }],
+    ['golemModelClass', { name: 'Date', path: 'Date' }],
     ['golemModelInstance', { among: 'Cat', required: true }],
     ['golemModelInstance', { of: 1, among: ['Cat'], required: true }],
     ['golemModelInstance', { among: ['Cat'] }],

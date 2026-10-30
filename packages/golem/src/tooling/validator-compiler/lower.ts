@@ -1,9 +1,10 @@
-import { MODEL_DATE_KEYWORD, MODEL_INSTANCE_KEYWORD, VALIDATION_KEYWORD } from '../../schema-keywords.js';
+import { MODEL_CLASS_KEYWORD, MODEL_INSTANCE_KEYWORD, VALIDATION_KEYWORD } from '../../schema-keywords.js';
 import { unescapePointerToken } from '../../json-pointer.js';
 import { isKnownFormat, jsonEqual } from '../../validation-runtime.js';
+import { isRuntimeFunction } from '../rt.js';
 import { GolemDiagnosticSeverity, isRecord, type GolemDiagnostic } from '../generator-core.js';
 import type { CompileInput, CompileOptions } from './index.js';
-import type { IrAdditional, IrCheck, IrContains, IrDiscriminator, IrFunction, IrInstance, IrModule, IrSchema, IrTypeName, IrValidationImport } from './ir.js';
+import type { IrAdditional, IrCheck, IrContains, IrDiscriminator, IrClass, IrFunction, IrInstance, IrModule, IrSchema, IrTypeName, IrValidationImport } from './ir.js';
 import { JSON_TYPES } from './json-types.js';
 import { baseInside, pointerSegment, SchemaResolver, type SchemaLocation } from './resolve.js';
 
@@ -408,6 +409,24 @@ class Lowering {
     return calls;
   }
 
+  /**
+   * The check of a `golemModelClass` value; undefined when the value is malformed, and null when its `id` is not among the
+   * classes to import (reported here). An `id` names an imported class; with none, the class is a global.
+   */
+  private modelClass(value: unknown, location: SchemaLocation): IrClass | null | undefined {
+    if (!isRecord(value)) return undefined;
+    const { name, path, id, valid } = value;
+    if (typeof name !== 'string' || !Array.isArray(path) || !path.every((item): item is string => typeof item === 'string') || (id !== undefined && typeof id !== 'string')) return undefined;
+    if (valid !== undefined && (!isRuntimeFunction(valid) || id !== undefined)) return undefined;
+    if (id === undefined) return { kind: 'class', name, path, ...(valid === undefined ? {} : { valid }) };
+    const entry = this.input.validations?.get(id);
+    if (entry === undefined) {
+      this.report(VALIDATE_UNKNOWN_VALIDATION, GolemDiagnosticSeverity.Error, location, MODEL_CLASS_KEYWORD, `the class ${JSON.stringify(id)} is not among the classes to import`, 'id');
+      return null;
+    }
+    return { kind: 'class', name, path, from: this.importIndex(entry) };
+  }
+
   private isInlining(node: unknown): boolean {
     return typeof node === 'object' && node !== null && this.inlining.has(node);
   }
@@ -492,14 +511,15 @@ class Lowering {
     }
   }
 
-  private lowerTypeAndValues({ node, checks, malformed }: RecordContext): void {
+  private lowerTypeAndValues({ node, here, checks, malformed }: RecordContext): void {
     const typeList = typeof node.type === 'string' ? [node.type] : Array.isArray(node.type) ? node.type as readonly unknown[] : [];
     const names = typeList.filter(isTypeName);
     if (names.length > 0) checks.push({ kind: 'type', names });
 
-    if (Object.hasOwn(node, MODEL_DATE_KEYWORD)) {
-      if (typeof node[MODEL_DATE_KEYWORD] !== 'boolean') malformed(MODEL_DATE_KEYWORD, 'expected true or false');
-      else if (node[MODEL_DATE_KEYWORD]) checks.push({ kind: 'date' });
+    if (Object.hasOwn(node, MODEL_CLASS_KEYWORD)) {
+      const instance = this.modelClass(node[MODEL_CLASS_KEYWORD], here);
+      if (instance === undefined) malformed(MODEL_CLASS_KEYWORD, 'expected an object with a string "name", a list of strings "path", an optional string "id" and, for a global class, an optional "valid" function of the runtime');
+      else if (instance !== null) checks.push(instance);
     }
     if (Object.hasOwn(node, MODEL_INSTANCE_KEYWORD)) {
       const instance = modelInstance(node[MODEL_INSTANCE_KEYWORD]);

@@ -218,6 +218,29 @@ export function checkFormat(format: string, value: unknown): boolean {
   return true;
 }
 
+/** The validity of a `Date` binding: an instance can be a `Date` and hold no time (`new Date(NaN)`). */
+export function hasFiniteTime(instance: unknown): boolean {
+  return Number.isFinite((instance as Date).getTime());
+}
+
+/**
+ * A test for the class at `path` below `globalThis` (`['Temporal', 'Instant']`), and for the function `valid`, which an instance must also
+ * pass. The class is looked up on a call until it is found, because a polyfill may load after the validators: while it is missing, no value
+ * is an instance of it. A found class is kept.
+ */
+export function globalInstanceTest(path: readonly string[], valid?: (instance: unknown) => boolean): (value: unknown) => boolean {
+  let known: (new (...args: never[]) => unknown) | undefined;
+  return (value) => {
+    if (known === undefined) {
+      let found: unknown = globalThis;
+      for (const name of path) found = (found as Record<string, unknown> | undefined)?.[name];
+      if (typeof found !== 'function') return false;
+      known = found as new (...args: never[]) => unknown;
+    }
+    return value instanceof known && (valid === undefined || valid(value));
+  };
+}
+
 /** `checkFormat` for one `format`, with the format looked up once: a generated fast check calls it per value. */
 export function formatTest(format: string): (value: unknown) => boolean {
   const forString = Object.hasOwn(stringFormats, format) ? stringFormats[format] : undefined;

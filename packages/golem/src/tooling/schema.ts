@@ -12,7 +12,7 @@ export type JsonSchema = boolean | Readonly<Record<string, unknown>>;
 import type { ConstraintSchemaValue, ModelConstraint } from '../model-registry.js';
 import {
   GENERATED_MODEL_SCHEMA_REF_PREFIX,
-  MODEL_DATE_KEYWORD,
+  MODEL_CLASS_KEYWORD,
   MODEL_CODEC_IDS_KEY,
   MODEL_INSTANCE_KEYWORD,
   VALIDATION_KEYWORD,
@@ -25,7 +25,7 @@ export { decodeUriFragment, escapePointerToken, unescapePointerToken } from '../
 export { canonicalSchemaKey };
 /** The schema descriptor types that generators read (`@exprtlabs/golem/internal/schema`). */
 export type { ConstraintSchemaValue, DiscriminatorValue, ModelConstraint, ModelTypeDescriptor, ModelTypeMetadata, UnionDiscriminator } from '../model-registry.js';
-export { GENERATED_MODEL_SCHEMA_REF_PREFIX, MODEL_CODEC_IDS_KEY, MODEL_DATE_KEYWORD, MODEL_INSTANCE_KEYWORD, VALIDATION_KEYWORD };
+export { GENERATED_MODEL_SCHEMA_REF_PREFIX, MODEL_CLASS_KEYWORD, MODEL_CODEC_IDS_KEY, MODEL_INSTANCE_KEYWORD, VALIDATION_KEYWORD };
 export { validationTagSchemaDescriptor } from './validation-tags.js';
 
 /** Structural inputs used when a nested schema contains a named reference. */
@@ -205,10 +205,6 @@ function canonicalDescriptorValue(value: unknown): unknown {
     // Analyzer-only metadata can contain TypeScript nodes and checker graphs.
     // Strip it only at a descriptor boundary; user object property names and
     // literal/schema data remain untouched.
-    if (key === 'date') {
-      result[key] = true;
-      continue;
-    }
     if (key === 'serde') {
       // Keep the binding id so TSerde objects do not intern as identity types.
       // Do not walk serialize/deserialize functions or wireDescriptor graphs.
@@ -309,18 +305,17 @@ function modelClassId(variant: unknown): string | undefined {
 
 /**
  * A descriptor that holds a golem-mode SDK schema inline checks as a reference to that schema's codec. The tags the app puts beside the
- * SDK type on the field (`TValidation`, constraints, `TSerde`, date) stay on the reference, so the SDK's check and the app's rule both run.
+ * SDK type on the field (`TValidation`, constraints, `TSerde`) stay on the reference, so the SDK's check and the app's rule both run.
  */
 function sdkNodeReference(value: Record<string, unknown>): Record<string, unknown> {
   if (typeof value.sdkNode !== 'string') return value;
-  const { validations, constraints, serde, date } = value;
+  const { validations, constraints, serde } = value;
   return {
     kind: 'generated-model',
     id: value.sdkNode,
     ...(validations === undefined ? {} : { validations }),
     ...(constraints === undefined ? {} : { constraints }),
     ...(serde === undefined ? {} : { serde }),
-    ...(date === undefined ? {} : { date }),
   };
 }
 
@@ -386,10 +381,8 @@ function residualSchema(given: unknown, plane: ResidualPlane, state: SchemaAssem
     descriptorSchema(value, state, { ...options, representation, keepPredicates: undefined });
   const serde = isRecord(value.serde) ? value.serde : undefined;
   if (serde) {
-    if (plane === 'model-only') {
-      const { serde: _serde, ...decoded } = value;
-      return descriptorSchema(decoded, state, { ...options, representation: 'model', keepPredicates: true });
-    }
+    // The model plane ignores the serde's wire form, but a class binding's validity predicate (`valid`) is part of its model check.
+    if (plane === 'model-only') return descriptorSchema(value, state, { ...options, representation: 'model', keepPredicates: true });
     return descriptorSchema(serde.wireDescriptor ?? serde.wire, state, { ...options, representation: 'wire', keepPredicates: true });
   }
   // The wire schema strips executable rules from constraints (the TValidation inside
@@ -408,8 +401,6 @@ function residualSchema(given: unknown, plane: ResidualPlane, state: SchemaAssem
   const child = (item: unknown): JsonSchema => residualSchema(item, plane, state, options);
   const has = plane === 'model-only' ? options.residualReferences?.modelOnly : options.residualReferences?.wireOnly;
   switch (value.kind) {
-    case 'date':
-      return plane === 'model-only' ? full('model') : { type: 'string', format: 'date-time' };
     // A class instance or bigint has no JSON shape; only its TSerde wire value and its predicates are checked.
     case 'class-value':
       return nothing();
@@ -531,10 +522,15 @@ function descriptorSchema(
       case 'bigint': throw new TypeError('bigint has no JSON representation; declare a TSerde wire codec.');
       case 'null': schema = { type: 'null' }; break;
       case 'undefined': schema = false; break;
-      case 'date': schema = options.representation === 'model'
-        ? { [MODEL_DATE_KEYWORD]: true }
-        : { type: 'string', format: 'date-time' }; break;
-      case 'class-value': schema = {}; break;
+      // The wire form of a class value is its serde's wire descriptor; the model form is an instance of the class, where a runtime class exists.
+      case 'class-value': {
+        const ref = isRecord(value.classRef) ? value.classRef : undefined;
+        const valid = isRecord(value.serde) && isRecord(value.serde.valid) ? value.serde.valid : undefined;
+        schema = options.representation === 'model' && ref !== undefined && typeof value.typeName === 'string'
+          ? { [MODEL_CLASS_KEYWORD]: { name: value.typeName, path: ref.path, ...(ref.id === undefined ? {} : { id: ref.id }), ...(valid === undefined ? {} : { valid }) } }
+          : {};
+        break;
+      }
       case 'literal': schema = { const: value.value }; break;
       case 'array': schema = { type: 'array', items: descriptorSchema(value.item, state, options) }; break;
       case 'tuple': {
@@ -864,6 +860,7 @@ const schemaValuedKeywords = new Set([
   'unevaluatedItems',
 ]);
 
+const scalarTypes = new Set(['string', 'number', 'integer', 'boolean', 'null']);
 const lowerBoundKeywords = new Set(['minItems', 'minProperties', 'minContains']);
 const upperBoundKeywords = new Set(['maxItems', 'maxProperties', 'maxContains']);
 
@@ -880,13 +877,16 @@ function mergeSchemaValues(left: unknown, right: unknown): unknown {
  * validation context.  `additionalProperties` and `unevaluatedProperties`
  * are contextual: moving either keyword into a separate `allOf` branch would
  * make it lose the sibling `properties` annotations and reject valid fields.
+ * A scalar base (`string`, `number`, `integer`, `boolean`, `null`) takes tag
+ * keywords flat, as one schema, unless a keyword has two different values.
  */
 function mergeContextualSchema(
   base: Readonly<Record<string, unknown>>,
   constraints: Readonly<Record<string, unknown>>,
 ): JsonSchema | undefined {
   const baseType = base.type;
-  if (baseType !== 'object' && baseType !== 'array') return undefined;
+  const structural = baseType === 'object' || baseType === 'array';
+  if (!structural && !(typeof baseType === 'string' && scalarTypes.has(baseType))) return undefined;
   if (Object.hasOwn(constraints, 'allOf')) return undefined;
   const result: Record<string, unknown> = { ...base };
   for (const [keyword, value] of Object.entries(constraints)) {
@@ -896,7 +896,7 @@ function mergeContextualSchema(
       continue;
     }
     if (canonicalSchemaKey(existing) === canonicalSchemaKey(value)) continue;
-    if (keyword === 'type') return undefined;
+    if (keyword === 'type' || !structural) return undefined;
     if (lowerBoundKeywords.has(keyword)
       && typeof existing === 'number' && typeof value === 'number') {
       result[keyword] = Math.max(existing, value);

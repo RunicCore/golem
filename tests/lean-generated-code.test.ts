@@ -8,6 +8,7 @@ import { buildCodecValidationPlan } from '@exprtlabs/golem/internal/validation-p
 import * as modelRuntime from '@exprtlabs/golem/internal/model-runtime';
 import { emitCodecRuntimeText, instantiateRuntime } from './emitted-runtime.js';
 import { compileValidationPlanBinding } from './support/compiled-validators.js';
+import { DATE_FIELD, DATE_SERDE } from './support/date-field.js';
 import { runModule } from './support/run-module.js';
 import { emitGraphStringify } from './support/stringify-graph.js';
 
@@ -17,7 +18,7 @@ import { emitGraphStringify } from './support/stringify-graph.js';
 
 const money: ModelTypeDescriptor = {
   kind: 'object',
-  properties: { currency: { kind: 'string' }, at: { kind: 'date' }, tags: { kind: 'array', item: { kind: 'string' } } },
+  properties: { currency: { kind: 'string' }, at: DATE_FIELD, tags: { kind: 'array', item: { kind: 'string' } } },
   required: ['currency', 'at', 'tags'],
   additionalProperties: false,
 };
@@ -41,7 +42,7 @@ function paymentGraph(): ReturnType<typeof createSchemaGraph> {
   return graph;
 }
 
-const validatorNames = { validatorName: (id: string) => identifier(`validate_${id.replace(/[^\w$]/g, '_')}`) };
+const validatorNames = { validatorName: (id: string) => identifier(`validate_${id.replace(/[^\w$]/g, '_')}`), serde: DATE_SERDE };
 
 test('a generated guard is never a constant condition', () => {
   // protects: F-129 lean generated code: no `if (true)` guard for an interned field
@@ -51,7 +52,7 @@ test('a generated guard is never a constant condition', () => {
   graph.intern(payment, 'Payment', true);
   graph.intern({ ...payment, required: ['id', 'amount', 'note', 'list'] }, 'Invoice');
   graph.seal();
-  const sources = [render(emitGraphStringify(graph)), emitCodecRuntimeText(paymentGraph(), validatorNames)];
+  const sources = [render(emitGraphStringify(graph, DATE_SERDE)), emitCodecRuntimeText(paymentGraph(), validatorNames)];
   for (const source of sources) assert.equal([...source.matchAll(/\bif\s*\(\s*true\s*\)/g)].length, 0);
 });
 
@@ -137,6 +138,7 @@ test('a parent module names and defines the validators of its own model, not tho
   const asked: string[] = [];
   const source = emitCodecRuntimeText(graph, {
     validatorName: (id) => { asked.push(id.replace(/_[0-9a-f]{8}$/, '')); return identifier(`validate_${id.replace(/[^\w$]/g, '_')}`); },
+    serde: DATE_SERDE,
   });
   // Three asks, all for the parent: the validator, the assert and the guard of the parse of the wire plane. None is the nested model's.
   assert.deepEqual(asked, ['Owner', 'Owner', 'Owner']);
@@ -150,6 +152,7 @@ test('validate parses no JSON on a call', async () => {
   const runtime = instantiateRuntime(emitCodecRuntimeText(paymentGraph(), {
     validatorName: (id) => identifier(binding.validatorName(id)),
     fastCheckName: (id) => { const name = binding.fastCheckName(id); return name === undefined ? undefined : identifier(name); },
+    serde: DATE_SERDE,
   }), { ...binding.scope, ...binding.fastScope });
   const value = { id: 'p1', amount: { currency: 'USD', at: new Date(0), tags: ['a'] }, list: [['x']] };
   const parse = JSON.parse;
@@ -201,8 +204,8 @@ test('a TSerde field converts and is checked in one pass', async () => {
   const calls: string[] = [];
   const counted = <T extends (...args: never[]) => unknown>(name: string, run: T): T => ((...args: never[]) => { calls.push(name); return run(...args); }) as T;
   const resolver: StringifySerdeResolver = {
-    deserialize: (_id, value) => code`decodePermission(${value} as string)`,
-    serialize: (_id, value) => code`encodePermission(${value} as number)`,
+    deserialize: (_serde, value) => code`decodePermission(${value} as string)`,
+    serialize: (_serde, value) => code`encodePermission(${value} as number)`,
   };
   const scope: Record<string, unknown> = {
     decodePermission: counted('decode', (text: string) => Number.parseInt(text, 16)),

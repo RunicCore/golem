@@ -6,11 +6,12 @@ import type { ModelTypeDescriptor } from '@exprtlabs/golem/internal/schema';
 import { code, identifier, render, type Code } from '#golem/code';
 import { emitArrayConversion, emitArrayItems, emitTupleConversion, type SequenceItem, type TupleConversionDescriptor } from '#golem/sequence-conversion';
 import { instantiateRuntime } from './emitted-runtime.js';
+import { DATE_FIELD } from './support/date-field.js';
 
 const string: ModelTypeDescriptor = { kind: 'string' };
 const number: ModelTypeDescriptor = { kind: 'number' };
 const boolean: ModelTypeDescriptor = { kind: 'boolean' };
-const date: ModelTypeDescriptor = { kind: 'date' };
+const date = DATE_FIELD;
 const nothing: ModelTypeDescriptor = { kind: 'null' };
 
 /** Strings upper-case, numbers double and booleans flip, so each item shows which conversion ran on it. */
@@ -29,7 +30,7 @@ function jsonItem(descriptor: ModelTypeDescriptor, value: Code): SequenceItem {
 }
 
 function dateItem(descriptor: ModelTypeDescriptor, value: Code): SequenceItem {
-  return descriptor.kind === 'date' ? { code: code`deserializeDate(${value})`, throws: true } : { code: value, throws: false };
+  return descriptor.kind === 'class-value' ? { code: code`deserializeDate(${value})`, throws: true } : { code: value, throws: false };
 }
 
 function tuple(items: TupleConversionDescriptor['items'], rest?: TupleConversionDescriptor['rest'], optionalFrom?: number): TupleConversionDescriptor {
@@ -177,8 +178,8 @@ test('a rest tuple with only a failing rest item names the item index', () => {
 });
 
 test('an item after the rest that converts as the rest names its index like the rest', () => {
-  const good = '2024-05-06T07:08:09.000Z';
   const convert = deserializeConversion(tuple([date], { index: 0, item: date }));
+  const good = '2024-05-06T07:08:09.000Z';
   assert.deepEqual(convert([good, good]), [new Date(good), new Date(good)]);
   assert.deepEqual(issuePath(() => convert(['bad', good])), [0]);
   assert.deepEqual(issuePath(() => convert([good, 'bad'])), [1]);

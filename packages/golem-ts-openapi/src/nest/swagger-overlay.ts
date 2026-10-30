@@ -6,6 +6,7 @@ import {
   diagnostic,
   type TsToOpenApiDiagnostic,
 } from '../diagnostics.js';
+import { findBuiltinClass } from '@exprtlabs/golem/internal/type-analysis';
 import { evaluateStaticValue, isStaticArray, resolveValueSymbol, singleReturnExpression, unwrapExpression } from '@exprtlabs/golem/internal/static-value';
 import { hasDecorator, isTypeScriptBuiltinConstructor, unwrapAsyncType } from './analysis-utils.js';
 import {
@@ -47,7 +48,6 @@ const PRIMITIVE_CONSTRUCTORS: Readonly<Record<string, SwaggerPrimitive>> = {
 /** An explicit Swagger `type` option, classified by what it may assert about the TypeScript type. */
 type SwaggerTypeSpec = { readonly isArray: boolean } & (
   | { readonly kind: 'primitive'; readonly primitive: SwaggerPrimitive }
-  | { readonly kind: 'date' }
   | { readonly kind: 'enum'; readonly type: ts.Type }
   | { readonly kind: 'class'; readonly type: ts.Type }
   | { readonly kind: 'any' }
@@ -75,11 +75,11 @@ function swaggerTypeSpec(
   if (ts.isIdentifier(value)) {
     const primitive = PRIMITIVE_CONSTRUCTORS[value.text];
     if (primitive && isTypeScriptBuiltinConstructor(checker, value, value.text)) return { kind: 'primitive', primitive, isArray: false };
-    if (value.text === 'Date' && isTypeScriptBuiltinConstructor(checker, value, 'Date')) return { kind: 'date', isArray: false };
   }
   if (ts.isIdentifier(value) || ts.isPropertyAccessExpression(value) || ts.isElementAccessExpression(value)) {
     const symbol = resolveValueSymbol(checker, value);
-    if (symbol && (symbol.flags & ts.SymbolFlags.Class) !== 0) {
+    // A global class that golem converts (Date) is a class too, though the library declares it as an interface and a variable.
+    if (symbol && ((symbol.flags & ts.SymbolFlags.Class) !== 0 || findBuiltinClass(checker.getDeclaredTypeOfSymbol(symbol)) !== undefined)) {
       return { kind: 'class', type: checker.getDeclaredTypeOfSymbol(symbol), isArray: false };
     }
     if (symbol && (symbol.flags & ts.SymbolFlags.Enum) !== 0) {
@@ -134,10 +134,10 @@ function typeMatchesPrimitive(
   if (primitive === 'array') return isArrayLike(checker, type);
   if (primitive === 'object') return (type.flags & ts.TypeFlags.Object) !== 0;
   if (primitive === 'string') {
-    // Nest documents a `Date` or an upload object (`format: 'binary'`) as a formatted string.
+    // Nest documents a built-in class (a `Date`) or an upload object (`format: 'binary'`) as a formatted string.
     return (type.flags & ts.TypeFlags.StringLike) !== 0
       || typeSymbolName(type) === 'String'
-      || typeSymbolName(type) === 'Date'
+      || findBuiltinClass(type) !== undefined
       || (format !== undefined && (type.flags & ts.TypeFlags.Object) !== 0);
   }
   if (primitive === 'number' || primitive === 'integer') {
@@ -163,7 +163,6 @@ function typeMatchesSpec(
   if (isUnconstrained(item)) return true;
   switch (spec.kind) {
     case 'primitive': return typeMatchesPrimitive(checker, item, spec.primitive, format);
-    case 'date': return typeSymbolName(item) === 'Date';
     case 'enum': return checker.isTypeAssignableTo(item, spec.type);
     // A narrower TypeScript type may be documented as its base class.
     case 'class': return checker.isTypeAssignableTo(item, spec.type);

@@ -4,9 +4,10 @@ import * as ts from '../typescript-ns.js';
 import { assertNoSymbolKey, declaredModelAlias, isDefaultLibraryProperty, isSymbolKeyedProperty, diagnostic, namedDiagnostic, foreignModelReason, isGeneratedBrandKey, modelSpecificationForClass, propertyType, resolveSymbol } from './symbols.js';
 import { projectionIdentity } from './graph.js';
 import { aliasProjectionName, isProjectionName, pascalIdentifier, policySuffix, headQualifiers, projectionBaseName, keysReadAlike, safeNameHint, unionVariantNaming } from './projection-names.js';
-import { commonDirectory, canonicalFilename, companionFilename, type ModelBoundary } from './project.js';
+import { commonDirectory, canonicalFilename, companionFilename, portableRelativeFilename, type ModelBoundary } from './project.js';
 import { packageSpecifier } from './package-specifier.js';
-import { TEMPORAL_SERDE_PREFIX } from '../sdk-codecs.js';
+import { builtinClassDescriptor, type BuiltinClass } from '../builtin-classes.js';
+import { enclosureOf, findBuiltinClass, isGlobalDeclaration } from './builtin-class.js';
 import { compareText, displayPath } from '../generator-core.js';
 import type { GolemProfile } from '../generator-core.js';
 import { assertSupportedModelFieldName, canonicalDescriptorKey, isBrandPropertyName } from '../schema.js';
@@ -24,7 +25,6 @@ import {
   withoutDiscriminator,
   carriesSerdeTag,
   isAmbientOrGlobalSymbol,
-  isDateType,
   isGolemTagKey,
   publicExportName,
   type ModelConstraint,
@@ -40,7 +40,6 @@ export interface ModelDescriptorMetadata {
   readonly validations?: readonly ValidationBinding[];
   readonly serde?: SerdeBinding;
   readonly constraints?: readonly ModelConstraint[];
-  readonly date?: true;
 }
 
 type InternalSerdeBinding = SerdeBinding & {
@@ -66,8 +65,6 @@ function primitiveConstructorDescriptor(type: ts.Type): ModelConversionDescripto
       return { kind: 'boolean' };
     case 'BigInt':
       return { kind: 'bigint' };
-    case 'Date':
-      return { kind: 'date' };
     default:
       return undefined;
   }
@@ -149,7 +146,9 @@ function classValueReference(
   identityRoot: string,
   /** The generated file that imports the class: the companion of the model's file. */
   importer: string,
-): { typeName: string; typeImport?: { exportName: string; module: string; specifier?: string } } {
+  /** Whether a file is a model source: the validators module imports the class for its instance check, and from a model file that would close a cycle with the file's companion. */
+  isModelSource: ((filename: string) => boolean) | undefined,
+): { typeName: string; typeImport?: { exportName: string; module: string; specifier?: string }; classRef?: { id?: string; path: readonly string[] } } {
   // The class's own symbol, never a local alias such as `type Bytes = Uint8Array & TSerde<…>`,
   // which the model file need not export.
   const symbol = type.getSymbol();
@@ -161,24 +160,20 @@ function classValueReference(
     throw diagnostic(context.sourceFile, node, '1063', `The class of a TSerde field in ${context.name} has no name, so generated code cannot import it. Name the class and export it.`);
   }
   // TS 7's API has no getFullyQualifiedName: qualify by the enclosing namespaces instead.
-  const names = [declaredName && ts.isIdentifier(declaredName) ? declaredName.text : symbol.getName()];
-  let augmentsGlobal = false;
-  let outermost: ts.ModuleDeclaration | undefined;
-  for (let parent: ts.Node | undefined = declaration.parent; parent && !ts.isSourceFile(parent); parent = parent.parent) {
-    if (!ts.isModuleDeclaration(parent)) continue;
-    if (ts.isStringLiteral(parent.name)) {
-      throw diagnostic(context.sourceFile, node, '1063', `Class ${names.join('.')} is declared inside declare module ${JSON.stringify(parent.name.text)}, which generated code cannot import from. Move it into a module file and export it.`);
-    }
-    if (parent.name.text === 'global') { augmentsGlobal = true; break; }
-    names.unshift(parent.name.text);
-    outermost = parent;
+  const enclosure = enclosureOf(declaration);
+  const { outermost, quotedModule } = enclosure;
+  const names = [...enclosure.namespaces, declaredName && ts.isIdentifier(declaredName) ? declaredName.text : symbol.getName()];
+  if (quotedModule !== undefined) {
+    throw diagnostic(context.sourceFile, node, '1063', `Class ${names.join('.')} is declared inside declare module ${JSON.stringify(quotedModule)}, which generated code cannot import from. Move it into a module file and export it.`);
   }
   const typeName = names.join('.');
   if (hasRequiredTypeParameter(symbol)) {
     throw diagnostic(context.sourceFile, node, '1063', `Class ${typeName} has type parameters, so generated code cannot write its type. Use a non-generic class, such as one declared as \`class Named extends ${typeName}<string> {}\`.`);
   }
   // A script file (a TypeScript lib, an ambient .d.ts) or a `declare global` block declares a global name.
-  if (augmentsGlobal || !isModuleFile(declaration.getSourceFile())) return { typeName };
+  // A type with no runtime class (an interface) has no `instanceof` check, and its TSerde pair is its only check.
+  const runtimeClass = hasRuntimeClass(checker, symbol, node);
+  if (isGlobalDeclaration(declaration, enclosure)) return { typeName, ...(runtimeClass ? { classRef: { path: names } } : {}) };
   const sourceFile = declaration.getSourceFile();
   // `Temporal` for `Temporal.Instant` imported from a module: the outermost namespace is what the module exports.
   const exportName = publicExportName(checker, outermost ?? declaration, (outermost && checker.getSymbolAtLocation(outermost.name)) || symbol, true);
@@ -190,7 +185,19 @@ function classValueReference(
   if (resolved.kind === 'unexported') {
     throw diagnostic(context.sourceFile, node, '1060', `Class ${typeName} is in package ${resolved.packageName}, but no "exports" entry reaches ${module}. Export that file from the package.`);
   }
-  return { typeName, typeImport: { exportName, module, ...(resolved.kind === 'package' ? { specifier: resolved.specifier } : {}) } };
+  const typeImport = { exportName, module, ...(resolved.kind === 'package' ? { specifier: resolved.specifier } : {}) };
+  if (!runtimeClass) return { typeName, typeImport };
+  if (resolved.kind !== 'package' && isModelSource?.(module)) {
+    throw diagnostic(context.sourceFile, node, '1065', `Class ${typeName} is declared in the model file ${path.basename(sourceFile.fileName)}. Move it to its own module and import it from there.`);
+  }
+  // The id is the identity of the imported class, as for a validation function: a project path or a package import with the export name.
+  const id = `${resolved.kind === 'package' ? resolved.specifier : portableRelativeFilename(sourceFile.fileName, identityRoot)}#${exportName}`;
+  return { typeName, typeImport, classRef: { id, path: outermost ? names.slice(1) : [] } };
+}
+
+/** Whether the symbol of a class type has a value that `instanceof` can test: a class, or a constructing variable (`declare var URL: URLConstructor`). */
+function hasRuntimeClass(checker: ts.TypeChecker, symbol: ts.Symbol, node: ts.Node): boolean {
+  return (symbol.flags & ts.SymbolFlags.Value) !== 0 && checker.getTypeOfSymbolAtLocation(symbol, node).getConstructSignatures().length > 0;
 }
 
 /** Whether writing the class's bare name would omit a type argument: some type parameter has no default in any merged declaration. */
@@ -200,38 +207,6 @@ function hasRequiredTypeParameter(symbol: ts.Symbol): boolean {
     .map((item) => item.typeParameters ?? []);
   const count = Math.max(0, ...lists.map((list) => list.length));
   return Array.from({ length: count }, (_, index) => lists.some((list) => { const parameter = list[index]; return parameter !== undefined && ts.typeParameterDefault(parameter) !== undefined; })).some((defaulted) => !defaulted);
-}
-
-const TEMPORAL_CLASSES: ReadonlySet<string> = new Set(['Instant', 'ZonedDateTime', 'PlainDate', 'PlainDateTime', 'PlainTime', 'Duration']);
-
-/**
- * The name of the global `Temporal` class that `type` is (`Instant` for `Temporal.Instant`), or undefined. A `Temporal` that a module
- * exports, such as a polyfill's, is not the global one: generated code would have to import it.
- */
-function globalTemporalClass(type: ts.Type): string | undefined {
-  const symbol = type.getSymbol();
-  const declaration = symbol?.declarations?.[0];
-  const name = symbol?.getName();
-  if (declaration === undefined || name === undefined || !TEMPORAL_CLASSES.has(name)) return undefined;
-  let outermost: ts.ModuleDeclaration | undefined;
-  let augmentsGlobal = false;
-  for (let parent: ts.Node | undefined = declaration.parent; parent && !ts.isSourceFile(parent); parent = parent.parent) {
-    if (!ts.isModuleDeclaration(parent)) continue;
-    if (!ts.isIdentifier(parent.name)) return undefined;
-    if (parent.name.text === 'global') { augmentsGlobal = true; break; }
-    outermost = parent;
-  }
-  const global = augmentsGlobal || !isModuleFile(declaration.getSourceFile());
-  return global && outermost !== undefined && ts.isIdentifier(outermost.name) && outermost.name.text === 'Temporal' ? name : undefined;
-}
-
-/** A file with a top-level import or export is a module; any other file declares globals. */
-function isModuleFile(sourceFile: ts.SourceFile): boolean {
-  return sourceFile.statements.some((statement) => ts.isImportDeclaration(statement)
-    || ts.isImportEqualsDeclaration(statement)
-    || ts.isExportDeclaration(statement)
-    || ts.isExportAssignment(statement)
-    || ('modifiers' in statement && (statement.modifiers as readonly ts.Node[] | undefined)?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword)) === true);
 }
 
 function rejectAmbiguousGeneratedModelUnion(
@@ -285,7 +260,7 @@ function isObjectLikeIntersection(checker: ts.TypeChecker, type: ts.Type): boole
 
 /** A plain object type whose every property is a brand (`{ readonly __brand: 'Timestamp' }`, `{ __brand?: never }`): a type-only mark, no data. */
 function isBrandMember(checker: ts.TypeChecker, type: ts.Type): boolean {
-  if ((type.flags & ts.TypeFlags.Object) === 0 || isDateType(checker, type) || checker.isArrayType(type) || checker.isTupleType(type)) return false;
+  if ((type.flags & ts.TypeFlags.Object) === 0 || checker.isArrayType(type) || checker.isTupleType(type)) return false;
   const properties = checker.getPropertiesOfType(type);
   return properties.length > 0 && type.getCallSignatures().length === 0 && type.getConstructSignatures().length === 0
     && properties.every((property) => isBrandPropertyName(property.getName()));
@@ -296,22 +271,22 @@ function dataMembers(checker: ts.TypeChecker, type: ts.Type): readonly ts.Type[]
   return type.isIntersection() ? type.types.filter((member) => !isBrandMember(checker, member)) : [type];
 }
 
-/** A Date with only brands beside it, such as `Date & { readonly __brand: 'Timestamp' }`: it is a Date. */
-function isBrandedDate(checker: ts.TypeChecker, type: ts.Type): boolean {
+/** The built-in class that `type` is, with only brands beside it (`Date & { readonly __brand: 'Timestamp' }`), or undefined. */
+function builtinClassOf(checker: ts.TypeChecker, type: ts.Type): BuiltinClass | undefined {
   const members = dataMembers(checker, type);
-  return type.isIntersection() && members.length === 1 && isDateType(checker, members[0]!);
+  return members.length === 1 ? findBuiltinClass(members[0]!) : undefined;
 }
 
 /**
- * The scalar that golem converts by its own rule (a Date, a bigint) in an intersection with an object type, such as `Date & TModel`.
- * An intersection is AND, and no value is both a scalar and an object, so the field has no valid value. A brand is no object.
+ * The built-in class or bigint that golem converts by its own rule in an intersection with an object type, such as `Date & TModel`.
+ * An intersection is AND, and no value is both a class instance and an object, so the field has no valid value. A brand is no object.
  */
 function scalarIntersectedWithObject(checker: ts.TypeChecker, type: ts.Type): string | undefined {
   if (!type.isIntersection()) return undefined;
   const members = dataMembers(checker, type);
-  const scalar = members.find((member) => isDateType(checker, member) || isBigIntValueType(member));
-  const object = members.some((member) => (member.flags & ts.TypeFlags.Object) !== 0 && !isDateType(checker, member));
-  return scalar && object ? (isBigIntValueType(scalar) ? 'bigint' : 'Date') : undefined;
+  const scalar = members.find((member) => findBuiltinClass(member) !== undefined || isBigIntValueType(member));
+  const object = members.some((member) => (member.flags & ts.TypeFlags.Object) !== 0 && findBuiltinClass(member) === undefined);
+  return scalar && object ? (isBigIntValueType(scalar) ? 'bigint' : findBuiltinClass(scalar)!.qualifiedName) : undefined;
 }
 
 /**
@@ -619,7 +594,7 @@ function withMetadata(
   descriptor: ModelConversionDescriptor,
   metadata: TagMetadata,
 ): RichModelConversionDescriptor {
-  if (!metadata.validations.length && !metadata.serde && !metadata.constraints.length && !metadata.date) {
+  if (!metadata.validations.length && !metadata.serde && !metadata.constraints.length) {
     return descriptor as RichModelConversionDescriptor;
   }
   return {
@@ -627,7 +602,6 @@ function withMetadata(
     ...(metadata.validations.length ? { validations: metadata.validations } : {}),
     ...(metadata.serde ? { serde: metadata.serde } : {}),
     ...(metadata.constraints.length ? { constraints: metadata.constraints } : {}),
-    ...(metadata.date ? { date: true } : {}),
   } as RichModelConversionDescriptor;
 }
 
@@ -915,7 +889,7 @@ export function descriptorBuilder(
     }
     if ((type.flags & ts.TypeFlags.Object) === 0 && !type.isIntersection()) return [];
     if (checker.isTupleType(type) || checker.isArrayType(type)) return checker.getTypeArguments(type as ts.TypeReference);
-    if (isDateType(checker, type) || isBrandedDate(checker, type) || primitiveConstructorDescriptor(type) || isPhantomTagType(checker, type)
+    if (builtinClassOf(checker, type) !== undefined || primitiveConstructorDescriptor(type) || isPhantomTagType(checker, type)
       || type.getCallSignatures().length > 0 || type.getConstructSignatures().length > 0) return [];
     const held: ts.Type[] = [];
     for (const property of checker.getPropertiesOfType(type)) {
@@ -1089,10 +1063,9 @@ export function descriptorBuilder(
     const hasTagMetadata = metadata.validations.length > 0
       || metadata.serde !== undefined
       || metadata.constraints.length > 0
-      || metadata.date === true
       || metadata.discriminator !== undefined;
     // A Discriminator tag alone leaves the checker's own type: the union keeps its alias, which names a recursive union once.
-    const hasBaseTags = metadata.validations.length > 0 || metadata.serde !== undefined || metadata.constraints.length > 0 || metadata.date === true;
+    const hasBaseTags = metadata.validations.length > 0 || metadata.serde !== undefined || metadata.constraints.length > 0;
     const baseType = stripPhantomIntersection(
       checker,
       hasTagMetadata && hasBaseTags && analysis.baseNode
@@ -1102,7 +1075,6 @@ export function descriptorBuilder(
       metadata,
     );
     const type = baseType;
-
     if (metadata.constraints.length > 0 && (type.flags & ts.TypeFlags.TypeParameter) === 0) {
       assertConstraintCompatibility(checker, metadata.constraints, type, context, representation);
     }
@@ -1136,31 +1108,15 @@ export function descriptorBuilder(
       );
     }
 
-    // A custom serde can intersect Date with its phantom marker.  The
-    // checker then no longer reports the original intersection as Date, but
-    // the projected base type still is Date and must remain terminal.
-    if (metadata.date || isDateType(checker, type) || isBrandedDate(checker, type)) {
-      return withMetadata({ kind: 'date' } as unknown as ModelConversionDescriptor, {
-        ...metadata,
-        date: true,
-      });
-    }
-
-    // A global `Temporal` class has the conversion of the runtime's Temporal codec of that name, as if it carried the golem Temporal tag.
-    const temporalClass = metadata.serde ? undefined : globalTemporalClass(type);
-    if (temporalClass !== undefined) {
-      return withMetadata({
-        kind: 'class-value',
-        typeName: `Temporal.${temporalClass}`,
-        serde: { id: `${TEMPORAL_SERDE_PREFIX}Temporal${temporalClass}`, wireDescriptor: { kind: 'string' } },
-      } as unknown as ModelConversionDescriptor, metadata);
-    }
+    // A built-in class has the conversion of its registry entry, as if it carried the golem tag of the class.
+    const builtin = metadata.serde ? undefined : builtinClassOf(checker, type);
+    if (builtin !== undefined) return withMetadata(builtinClassDescriptor(builtin), metadata);
     // A class instance or bigint has no JSON shape of its own; its TSerde codec is its only conversion.
     if (metadata.serde && isBigIntValueType(type)) {
       return withMetadata({ kind: 'class-value', typeName: 'bigint' } as ModelConversionDescriptor, metadata);
     }
     if (metadata.serde && isClassValueType(checker, type)) {
-      return withMetadata({ kind: 'class-value', ...classValueReference(checker, type, context, node ?? context.declaration, stableIdentityRoot, companionOf(context.sourceFile.fileName)) } as ModelConversionDescriptor, metadata);
+      return withMetadata({ kind: 'class-value', ...classValueReference(checker, type, context, node ?? context.declaration, stableIdentityRoot, companionOf(context.sourceFile.fileName), modelSources && ((filename: string) => modelSources.has(filename))) } as ModelConversionDescriptor, metadata);
     }
 
     const isRoot = node === context.fieldsNode;

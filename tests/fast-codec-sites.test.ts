@@ -11,6 +11,7 @@ import { buildCodecValidationPlan } from '@exprtlabs/golem/internal/validation-p
 
 import { instantiateRuntime, type RuntimeFunction, emitCodecRuntimeText } from './emitted-runtime.js';
 import { compileValidationPlanBinding, type FastCheck } from './support/compiled-validators.js';
+import { DATE_FIELD, DATE_SERDE } from './support/date-field.js';
 
 // The generated codec of one model `Order`, run on its compiled validators. The scope the codec runs in is the test's:
 // each validator and fast check in it records the plane it checks, which shows the route a value took (spec 7.1).
@@ -37,8 +38,8 @@ class Bytes {
 }
 
 const BYTES_SERDE: StringifySerdeResolver = {
-  deserialize: (id, value) => id === 'bytes' ? code`new Bytes(${value} as string)` : code`Number(${value})`,
-  serialize: (id, value) => id === 'bytes' ? code`(${value} as Bytes).text` : code`String(${value})`,
+  deserialize: (serde, value) => serde.id === 'bytes' ? code`new Bytes(${value} as string)` : serde.id === DATE_FIELD.serde?.id ? DATE_SERDE.deserialize(serde, value) : code`Number(${value})`,
+  serialize: (serde, value) => serde.id === 'bytes' ? code`(${value} as Bytes).text` : serde.id === DATE_FIELD.serde?.id ? DATE_SERDE.serialize(serde, value) : code`String(${value})`,
 };
 
 interface Routes {
@@ -131,14 +132,15 @@ const STOCK: ModelTypeDescriptor = {
 };
 
 const ID_ONLY = order({ id: { kind: 'string' } }, ['id']);
-const WITH_DATE = order({ id: { kind: 'string' }, at: { kind: 'date' } }, ['id', 'at']);
+const WITH_DATE = order({ id: { kind: 'string' }, at: DATE_FIELD }, ['id', 'at']);
 const WITH_STOCK = order({ id: { kind: 'string' }, stock: STOCK }, ['id', 'stock']);
 const WITH_ITEM = order({ id: { kind: 'string' }, item: ITEM_FIELD }, ['id', 'item']);
 const WITH_BYTES = order({ id: { kind: 'string' }, blob: BYTES }, ['id', 'blob']);
 
 /** A model value that the codec accepts, with an invalid one, and whether the model refers to the IModel `Item`. */
 const FIXTURES: readonly (readonly [name: string, descriptor: ModelTypeDescriptor, valid: unknown, invalid: unknown, nested?: true])[] = [
-  ['a Date field', WITH_DATE, { id: 'a', at: new Date(0) }, { id: 'a', at: new Date(Number.NaN) }],
+  ['a Date field', WITH_DATE, { id: 'a', at: new Date(0) }, { id: 'a', at: 'not a Date' }],
+  ['an invalid Date field', WITH_DATE, { id: 'a', at: new Date(0) }, { id: 'a', at: new Date(Number.NaN) }],
   ['an undefined-valued optional field', order({ id: { kind: 'string' }, note: { kind: 'string' } }, ['id']), { id: 'a', note: undefined }, { id: 'a', note: 1 }],
   ['a non-enumerable field', ID_ONLY, hidden({ id: 'a', extra: 1 }, 'extra'), hidden({ id: 'a' }, 'id')],
   ['an array of nested objects', order({ lines: { kind: 'array', item: LINE } }, ['lines']), { lines: [{ sku: 'a', qty: 1 }] }, { lines: [{ sku: 'a' }] }],
@@ -157,6 +159,16 @@ for (const [name, descriptor, valid, invalid, nested] of FIXTURES) {
     assert.deepEqual(take(calls), { validator: ['model', 'model'], fast: ['model', 'model'] });
   });
 }
+
+test('generated codec, a Date field: a value that is no Date is one instance issue at the field path', async () => {
+  // protects: T-725 F-39 the model plane rejects a non-Date in a Date field with the shared class-instance issue
+  const { functions } = await orderCodec(WITH_DATE, true);
+  assert.throws(() => functions.assertOrder({ id: 'a', at: 'not a Date' }), (error: unknown) => {
+    assert.ok(error instanceof LibError);
+    assert.deepEqual(error.issues.map((issue) => ({ path: issue.path, code: issue.code, model: (issue as { model?: string }).model })), [{ path: ['at'], code: 'instance', model: 'Date' }]);
+    return true;
+  });
+});
 
 /** The planes each public conversion checks on a valid value; none of them reaches the full validator. */
 interface ConversionRoutes {
@@ -342,7 +354,7 @@ test('generated codec with a TValidation predicate checks the structure, then ru
 });
 
 // A model with a converter (the Date), so decode and parse check the model-only plane; two fields beside the predicate to fail the structure.
-const GUARDED = order({ amount: { kind: 'number', validations: ['positive'] }, name: { kind: 'string' }, at: { kind: 'date' } }, ['amount', 'name']);
+const GUARDED = order({ amount: { kind: 'number', validations: ['positive'] }, name: { kind: 'string' }, at: DATE_FIELD }, ['amount', 'name']);
 const AT = new Date(0);
 const AT_WIRE = '1970-01-01T00:00:00.000Z';
 
@@ -453,7 +465,7 @@ for (const [site, run, form] of SITES) {
 // Golden: a failing value gives the same error, issues and messages with the fast check as without it.
 const FAILING: readonly (readonly [descriptor: ModelTypeDescriptor, value: unknown, nested?: true])[] = [
   ...FIXTURES.map(([, descriptor, , invalid, nested]) => [descriptor, invalid, nested] as const),
-  [order({ id: { kind: 'string' }, at: { kind: 'date' } }, ['id', 'at']), { at: 'x', extra: true }],
+  [order({ id: { kind: 'string' }, at: DATE_FIELD }, ['id', 'at']), { at: 'x', extra: true }],
   [order({ lines: { kind: 'array', item: LINE } }, ['lines']), { lines: [{ qty: 'one' }, 5] }],
   [order({ amount: { kind: 'number', validations: ['positive'] } }, ['amount']), { amount: -1 }],
   [GUARDED, { amount: -1, name: 'a' }],

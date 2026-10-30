@@ -53,13 +53,15 @@ test('the golem-mode schema graph goes through the manifest file and back to the
   const manifest = validateModelManifest(JSON.parse(written));
   assert.ok(isGolemModeManifest(manifest));
   assert.equal(manifest.dates, 'temporal');
-  assert.match(manifest.components.find(entry => entry.name === 'Charge')?.descriptor ?? '', /"id":"temporal:TemporalInstant"/);
 
   const { graph, valueNodes } = sdkSchemaGraph(manifest, true);
 
   assert.deepEqual([...graph.nodes.keys()], [...original.schemaGraph.nodes.keys()]);
   assert.deepEqual([...graph.nodes.values()].map(node => node.codecId), [...original.schemaGraph.nodes.values()].map(node => node.codecId));
   assert.deepEqual([...valueNodes], [...original.convertedNodeIds]);
+  assert.deepEqual([...valueNodes.keys()], [
+    '["createCharge","parameter","query","since"]', '["createCharge","request","application/json"]', '["createCharge","response","200","application/json"]',
+  ], 'each value that holds a date-time converts');
   assert.deepEqual(graph.nodes.get('Charge')?.descriptor, original.schemaGraph.nodes.get('Charge')?.descriptor);
   const bases = declaredModelBases(original.definitions);
   assert.equal(codecText(graph, bases), codecText(original.schemaGraph, bases));

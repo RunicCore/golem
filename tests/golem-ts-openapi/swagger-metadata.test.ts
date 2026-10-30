@@ -169,6 +169,8 @@ test('maps Swagger integer, Date, enum member arrays and whole enums on properti
   assert.equal(count.description, 'Row count');
   const createdAt = property(document, report, 'createdAt');
   assert.equal(createdAt.type, 'string');
+  assert.equal(createdAt.format, 'date-time');
+  assert.equal(createdAt.allOf, undefined);
   assert.equal(createdAt.description, 'Creation time');
   assert.deepEqual(property(document, report, 'order').enum, ['asc', 'desc']);
   assert.deepEqual(property(document, report, 'wholeOrder').enum, ['asc', 'desc']);

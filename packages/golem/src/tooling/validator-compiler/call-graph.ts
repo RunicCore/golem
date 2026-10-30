@@ -52,7 +52,7 @@ function visitChecks(schema: IrSchema, visit: (check: IrCheck, conjunctive: bool
       case 'unevaluatedItems':
         visitChecks(check.schema, visit, false);
         break;
-      case 'type': case 'literal': case 'format': case 'string': case 'number': case 'date': case 'instance': case 'call': case 'union':
+      case 'type': case 'literal': case 'format': case 'string': case 'number': case 'class': case 'instance': case 'call': case 'union':
       case 'not': case 'conditional': case 'dependentSchemas': case 'validation':
         break;
     }
@@ -71,7 +71,7 @@ function calledFunctions(check: IrCheck): readonly number[] {
     case 'array': return check.contains === undefined ? [] : [check.contains.fn];
     case 'object': return check.propertyNames === undefined ? [] : [check.propertyNames];
     case 'validation': return check.fn === undefined ? [] : [check.fn];
-    case 'type': case 'literal': case 'format': case 'string': case 'number': case 'allOf': case 'date': case 'instance':
+    case 'type': case 'literal': case 'format': case 'string': case 'number': case 'allOf': case 'class': case 'instance':
     case 'unevaluatedProperties': case 'unevaluatedItems':
       return [];
   }
@@ -146,7 +146,7 @@ function withoutLimits(check: IrCheck): IrCheck | undefined {
       const { minProperties, maxProperties, ...rest } = check;
       return minProperties === undefined && maxProperties === undefined ? check : rest;
     }
-    case 'type': case 'literal': case 'date': case 'instance': case 'call': case 'allOf': case 'union': case 'not':
+    case 'type': case 'literal': case 'class': case 'instance': case 'call': case 'allOf': case 'union': case 'not':
     case 'conditional': case 'dependentSchemas': case 'unevaluatedProperties': case 'unevaluatedItems':
       return check;
     default: return unprojected(check);
@@ -251,7 +251,7 @@ export function projectPasses(functions: readonly IrFunction[], roots: Iterable<
       case 'allOf': return [{ ...check, branches: check.branches.map(nested) }];
       case 'array': return [{ ...check, prefixItems: check.prefixItems.map(nested), ...(check.items === undefined ? {} : { items: nested(check.items) }) }];
       case 'object': return [{ ...check, properties: check.properties.map(property => ({ ...property, schema: nested(property.schema) })) }];
-      case 'type': case 'literal': case 'format': case 'string': case 'number': case 'date': case 'instance': case 'union':
+      case 'type': case 'literal': case 'format': case 'string': case 'number': case 'class': case 'instance': case 'union':
       case 'not': case 'conditional': case 'dependentSchemas': case 'unevaluatedProperties': case 'unevaluatedItems':
         return [check];
       default: return unprojected(check);
@@ -292,7 +292,7 @@ export function projectPasses(functions: readonly IrFunction[], roots: Iterable<
         });
         return properties.length === 0 ? [] : [{ kind: 'object', required: [], dependentRequired: [], properties, patternProperties: [] }];
       }
-      case 'type': case 'literal': case 'format': case 'string': case 'number': case 'date': case 'instance': case 'union':
+      case 'type': case 'literal': case 'format': case 'string': case 'number': case 'class': case 'instance': case 'union':
       case 'not': case 'conditional': case 'dependentSchemas': case 'unevaluatedProperties': case 'unevaluatedItems':
         return [];
       default: return unprojected(check);

@@ -1,10 +1,19 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { schemaForDescriptor, VALIDATION_KEYWORD } from '#golem/schema';
+import { MODEL_CLASS_KEYWORD, schemaForDescriptor, VALIDATION_KEYWORD } from '#golem/schema';
+import { DATE_FIELD } from './support/date-field.js';
 
 const str = { kind: 'string' };
 const num = { kind: 'number' };
-const date = { kind: 'date' };
+const date = DATE_FIELD;
+const FINITE_TIME = {
+  id: '@exprtlabs/golem/internal/validation-runtime#hasFiniteTime',
+  module: '@exprtlabs/golem/internal/validation-runtime',
+  exportName: 'hasFiniteTime',
+  specifier: '@exprtlabs/golem/internal/validation-runtime',
+};
+const DATE_INSTANCE = { [MODEL_CLASS_KEYWORD]: { name: 'Date', path: ['Date'], valid: FINITE_TIME } };
+const DATE_TEXT = { type: 'string', format: 'date-time' };
 const withRule = (d: object, id = 'src/rules.ts:1:2') => ({ ...d, validations: [id] });
 const hex = { kind: 'number', serde: { wireDescriptor: { kind: 'string', constraints: [{ kind: 'pattern', value: '^[0-9a-f]+$' }] } }, constraints: [{ kind: 'minimum', value: 0 }] };
 const obj = (properties: Record<string, object>, extra: object = {}) => ({ kind: 'object', properties, required: Object.keys(properties), additionalProperties: false, ...extra });
@@ -23,18 +32,19 @@ test('a TValidation on an unconverted leaf is model-only, never wire-only', () =
 });
 
 test('dates: model-only checks the Date, wire-only checks the ISO string', () => {
-  assert.deepEqual(schemaForDescriptor(obj({ when: date }), opts('model-only')), { properties: { when: { golemModelDate: true } } });
-  assert.deepEqual(schemaForDescriptor(obj({ when: date }), opts('wire-only')), { properties: { when: { type: 'string', format: 'date-time' } } });
+  // protects: T-725 an invalid Date is rejected in the model-only plane: the binding's validity function stays in the check
+  assert.deepEqual(schemaForDescriptor(obj({ when: date }), opts('model-only')), { properties: { when: DATE_INSTANCE } });
+  assert.deepEqual(schemaForDescriptor(obj({ when: date }), opts('wire-only')), { properties: { when: DATE_TEXT } });
 });
 
 test('TSerde: model-only is the decoded value schema, wire-only the decoder parameter schema', () => {
-  assert.deepEqual(schemaForDescriptor(obj({ code: hex }), opts('model-only')), { properties: { code: { allOf: [{ type: 'number' }, { minimum: 0 }] } } });
-  assert.deepEqual(schemaForDescriptor(obj({ code: hex }), opts('wire-only')), { properties: { code: { allOf: [{ type: 'string' }, { pattern: '^[0-9a-f]+$' }] } } });
+  assert.deepEqual(schemaForDescriptor(obj({ code: hex }), opts('model-only')), { properties: { code: { type: 'number', minimum: 0 } } });
+  assert.deepEqual(schemaForDescriptor(obj({ code: hex }), opts('wire-only')), { properties: { code: { type: 'string', pattern: '^[0-9a-f]+$' } } });
 });
 
 test('residual objects carry no required list and no exactness; arrays recurse', () => {
   const schema = schemaForDescriptor(obj({ items: { kind: 'array', item: obj({ at: date, sku: str }) } }), opts('model-only'));
-  assert.deepEqual(schema, { properties: { items: { items: { properties: { at: { golemModelDate: true } } } } } });
+  assert.deepEqual(schema, { properties: { items: { items: { properties: { at: DATE_INSTANCE } } } } });
 });
 
 test('a union containing a converted field falls back to the full plane schema; a plain union is true', () => {
@@ -62,9 +72,9 @@ import { createSchemaGraph } from '#golem/schema-graph';
 
 test('graph nodes get residual schemas only when something is left to check', () => {
   const graph = createSchemaGraph({
-    Stamp: { kind: 'object', properties: { at: { kind: 'date' } }, required: ['at'], additionalProperties: false },
+    Stamp: { kind: 'object', properties: { at: date }, required: ['at'], additionalProperties: false },
     Plain: { kind: 'object', properties: { a: { kind: 'string' } }, required: ['a'], additionalProperties: false },
-    Tree: { kind: 'object', properties: { at: { kind: 'date' }, children: { kind: 'array', item: { kind: 'reference', name: 'Tree' } } }, required: ['at', 'children'], additionalProperties: false },
+    Tree: { kind: 'object', properties: { at: date, children: { kind: 'array', item: { kind: 'reference', name: 'Tree' } } }, required: ['at', 'children'], additionalProperties: false },
   } as never);
   graph.seal();
   const node = (name: string) => [...graph.nodes.values()].find(n => n.name === name)!;
@@ -77,8 +87,8 @@ test('graph nodes get residual schemas only when something is left to check', ()
 
 test('optional and nullable converted fields use their own residual, not the union fallback', () => {
   const optional = { kind: 'union', variants: [date, { kind: 'undefined' }] };
-  assert.deepEqual(schemaForDescriptor(obj({ when: optional }), opts('model-only')), { properties: { when: { golemModelDate: true } } });
+  assert.deepEqual(schemaForDescriptor(obj({ when: optional }), opts('model-only')), { properties: { when: DATE_INSTANCE } });
   const nullable = { kind: 'union', variants: [{ kind: 'null' }, date] };
   assert.deepEqual(schemaForDescriptor(obj({ hold: nullable }), opts('wire-only')),
-    { properties: { hold: { anyOf: [{ type: 'null' }, { type: 'string', format: 'date-time' }] } } });
+    { properties: { hold: { anyOf: [{ type: 'null' }, DATE_TEXT] } } });
 });

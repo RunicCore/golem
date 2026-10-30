@@ -1,6 +1,8 @@
-import type { ModelTypeDescriptor } from '../model-registry.js';
+import type { ModelTypeDescriptor, SerdeFunctions } from '../model-registry.js';
+import type { StringifySerdeResolver } from './stringify-emitter.js';
 export {
   emitCodecRuntimeCode,
+  RUNTIME_SERDE,
   emitStringifyFunction,
   fillFunctionName,
   fromWireFunctionName,
@@ -15,17 +17,20 @@ export {
   type CodecRuntimeOptions,
   type NestedImportedSerde,
   type StringifySerdeResolver,
+  wireCheckedDeserializer,
 } from './stringify-emitter.js';
 export { type TupleConversionDescriptor } from './sequence-conversion.js';
 export { presentKeysCode } from './union-conversion.js';
+/** The built-in classes (Date and the Temporal classes) that golem converts with no tag. */
+export { BUILTIN_CLASS_ROOTS, builtinClassByOpenApiFormat, builtinClassDescriptor, type BuiltinClass } from './builtin-classes.js';
 /** The Code values and the functions that build, join and render them: generators write their files from these. */
 export {
   aliased, bindInput, blockComment, code, codeKey, docComment, documentLiteral, exportedName, exportedNames, fileImports, helper, helperName, helperSet, identifier, importedNames, indentation, inputCount, importGroups, importLines, ImportSource, inputOf, inputSlot, isEmpty, join, lineBreak, literal, localCode, nameOf, NameTable, nameSlot, nest, placeHelpers, propertyKey, render, renderModule, sameCode, sideEffectImport,
   type Code, type Helper, type ImportGroup, type ImportOptions, type InputSlot, type JsonValue, type NameSlot, type RenderedModule,
 } from './code.js';
 export { copiedRuntimeSpecifiers, rt, rtType, type RuntimeModule } from './rt.js';
-/** The Temporal codec rules and the operation codec module writer that golem-openapi and golem-model share. */
-export { moduleSpecifier, SDK_CODECS_EXPORT, sdkCodecsFile, sdkCodecsTable, TEMPORAL_FORMATS, TEMPORAL_SERDE, TEMPORAL_SERDE_PREFIX, temporalCodecName, writeOperationCodecs, type OperationCodecsModule, type SdkOperationShape } from './sdk-codecs.js';
+/** The operation codec module writer that golem-openapi and golem-model share. */
+export { moduleSpecifier, SDK_CODECS_EXPORT, sdkCodecsFile, sdkCodecsTable, writeOperationCodecs, type OperationCodecsModule, type SdkOperationShape } from './sdk-codecs.js';
 /** The allOf object merge, for generators that read schemas (golem-openapi). */
 export {
   composeObjects,
@@ -96,14 +101,10 @@ export interface FromJsonModelResolver {
  * compiler owns the import and lazy wrapper; this emitter only decides where
  * the wrapper is applied in a nested conversion tree.
  */
-export interface SerdeResolver {
-  readonly deserialize: (id: string, value: Code) => Code;
-  readonly serialize: (id: string, value: Code) => Code;
-}
+export type SerdeResolver = StringifySerdeResolver;
 
 type DescriptorMetadata = {
-  readonly serde?: { readonly id: string };
-  readonly date?: true;
+  readonly serde?: SerdeFunctions;
 };
 
 function metadata(descriptor: ModelConversionDescriptor): DescriptorMetadata {
@@ -323,10 +324,8 @@ function emitNestedUncached(
   const value = expression;
   const tags = metadata(descriptor);
   if (tags.serde && resolveSerde) {
-    return direction === 'fromJSON' ? resolveSerde.deserialize(tags.serde.id, value) : value;
-  }
-  if (descriptor.kind === 'date' || tags.date) {
-    return direction === 'fromJSON' ? code`${rt.conversion.deserializeDate}(${value})` : value;
+    if (direction !== 'fromJSON') return value;
+    return resolveSerde.deserialize(tags.serde, value);
   }
   if (descriptor.kind === 'intersection') {
     const bases: ModelBases = { basesOf: (id) => resolveModel(id).bases ?? [] };
@@ -496,7 +495,7 @@ export const MODEL_IMPORT_ORDER: NonNullable<ImportOptions['order']> = {
     'assertAcyclicEncodeInput', 'assertPropertyAcyclic', 'assertWireAcyclic', 'beginDecode', 'beginEncode', 'convertModelField', 'convertModelItems',
     'convertModelRecord', 'convertModelTupleItems', 'copyModelRecord', 'decodeCheckedInput', 'decodeDetachedInput', 'decodeGeneratedModelTrusted', 'defineModelProperty', 'deserializeDate',
     'endDecode', 'endEncode', 'isVariantObject', 'jsonWithDiscriminator', 'rejectModelObject', 'requireModelObject', 'serializeDate', 'unknownDiscriminatorValue',
-    'withDeclaredFields', 'withDiscriminatorValue',
+    'wireChecked', 'withDeclaredFields', 'withDiscriminatorValue',
   ],
   serde: SERDE_IMPORT_ORDER,
 };

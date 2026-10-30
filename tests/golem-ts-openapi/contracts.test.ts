@@ -18,10 +18,6 @@ interface FixtureOptions {
   readonly files?: Readonly<Record<string, string>>;
 }
 
-function allOfSchemas(schema: OpenApiSchema, label: string): readonly OpenApiSchema[] {
-  return expectValue(schema.allOf, `${label}.allOf`).map((item, index) => expectSchema(item, `${label}.allOf[${index}]`));
-}
-
 function anyOfSchemas(schema: OpenApiSchema, label: string): readonly OpenApiSchema[] {
   return expectValue(schema.anyOf, `${label}.anyOf`).map((item, index) => expectSchema(item, `${label}.anyOf[${index}]`));
 }
@@ -61,9 +57,9 @@ test('uses the IModel wire TSerde contract before any model companion exists', a
   assert.equal(fs.existsSync(path.join(root, 'src/payment.model.generated.ts')), false);
   const document = documentOf(await generateFixture(root));
   const amount = propertySchema(schemaOf(document, 'TPayment'), 'amount');
-  const amountVariants = allOfSchemas(amount, 'TPayment.amount');
-  assert.equal(amountVariants[0]?.type, 'string');
-  assert.equal(amountVariants[1]?.pattern, '^[0-9]+$');
+  assert.equal(amount.type, 'string');
+  assert.equal(amount.pattern, '^[0-9]+$');
+  assert.equal(amount.allOf, undefined);
   assert.doesNotMatch(JSON.stringify(amount), /"minimum"/, 'model-side numeric bounds must not leak across the wire boundary');
 });
 
@@ -122,9 +118,10 @@ test('emits a lossless whole querystring schema in 3.2 and rejects cross-field f
   assert.equal(querystring.name, 'query');
   const querySchema = contentSchema(querystring, 'application/x-www-form-urlencoded', 'querystring');
   assert.deepEqual(querySchema.dependentRequired, { min: ['max'] });
-  const min = allOfSchemas(propertySchema(querySchema, 'min'), 'querystring.min');
-  assert.equal(min[0]?.type, 'string');
-  assert.equal(min[1]?.pattern, '^[0-9]+$');
+  const min = propertySchema(querySchema, 'min');
+  assert.equal(min.type, 'string');
+  assert.equal(min.pattern, '^[0-9]+$');
+  assert.equal(min.allOf, undefined);
 
   await assert.rejects(
     generateFixture(root, '3.1.2'),

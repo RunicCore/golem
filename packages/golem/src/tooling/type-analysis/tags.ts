@@ -6,15 +6,12 @@ import { canonicalFilename, portableRelativeFilename } from './project.js';
 import { packageSpecifier } from './package-specifier.js';
 import { canonicalConstraintKey } from '../schema.js';
 import type { ConstraintSchemaValue, ModelConstraint } from '../schema.js';
+import type { ImportedFunction } from '../../model-registry.js';
+export type { SerdeFunctions } from '../../model-registry.js';
 export type { ConstraintSchemaValue, ModelConstraint } from '../schema.js';
 
-export interface ValueBinding {
-  readonly id: string;
-  readonly module: string;
-  readonly exportName: string;
+export interface ValueBinding extends ImportedFunction {
   readonly declaration: ts.Declaration;
-  /** Package import specifier, set only when the function lives in another package. */
-  readonly specifier?: string;
 }
 
 export interface ValidationBinding extends ValueBinding {
@@ -40,7 +37,6 @@ export interface TagMetadata {
   readonly validations: readonly ValidationBinding[];
   readonly serde?: SerdeBinding;
   readonly constraints: readonly ModelConstraint[];
-  readonly date?: true;
   /** The property a `Discriminator<Key>` tag names as the tag of a model object union. */
   readonly discriminator?: string;
   /** The `Default` type argument of that tag, when it names a variant. */
@@ -130,7 +126,6 @@ function mergeMetadata(context: TagAnalysisContext, at: ts.Node, first: TagMetad
     validations: [...validations.values()],
     constraints: [...constraints.values()],
     ...(first.serde ?? second.serde ? { serde: first.serde ?? second.serde } : {}),
-    ...(first.date || second.date ? { date: true } : {}),
     ...(discriminator === undefined ? {} : { discriminator }),
     ...(discriminatorDefault === undefined ? {} : { discriminatorDefault }),
   };
@@ -886,14 +881,6 @@ export function isAmbientOrGlobalSymbol(symbol: ts.Symbol | undefined): boolean 
   return declarations.length === 0 || declarations.some((declaration) => declaration.getSourceFile().isDeclarationFile);
 }
 
-export function isDateType(checker: ts.TypeChecker, type: ts.Type): boolean {
-  const symbol = type.getSymbol?.() ?? type.aliasSymbol;
-  if (!symbol) return checker.typeToString(type) === 'Date';
-  // Only the global Date is a date: a class or interface the user declares under that name keeps its own shape.
-  const name = symbol.getName();
-  return name === 'Date' && isAmbientOrGlobalSymbol(symbol);
-}
-
 function emptyBase(node: ts.TypeNode): TagReadResult {
   return { baseNode: node, metadata: EMPTY };
 }
@@ -948,7 +935,7 @@ export function readTags(
         },
       };
       const nested = readTags(nestedContext, declaration.type, next);
-      if (nested.metadata.validations.length || nested.metadata.serde || nested.metadata.constraints.length || nested.metadata.date || nested.metadata.discriminator !== undefined) {
+      if (nested.metadata.validations.length || nested.metadata.serde || nested.metadata.constraints.length || nested.metadata.discriminator !== undefined) {
         return nested;
       }
     }
@@ -964,9 +951,6 @@ export function analyzeNode(
   const nodeContext: TagAnalysisContext = { ...context, writtenFunctions: newWrittenFunctions() };
   const result = node ? readTags(nodeContext, node) : { baseNode: undefined, metadata: EMPTY };
   const metadata = mergeMetadata(nodeContext, node ?? context.sourceFile, result.metadata, metadataFromType(nodeContext, type));
-  if (isDateType(context.checker, type)) {
-    return { baseNode: result.baseNode ?? node, metadata: { ...metadata, date: true } };
-  }
   // Tags that only the checker type carries mean the node is not where this type comes from (the declaration a
   // mapped property inherits is not the type its template computes), so the node is no untagged base.
   const nodeCarriesTags = result.metadata.validations.length > 0

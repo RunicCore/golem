@@ -16,7 +16,7 @@ Pick the TypeScript shape of a field and see how golem constructs, converts and 
 | a declaration alias, such as `TPlace` | a nested plain object, still converted |
 | your class, such as `Place` | a nested instance of that class |
 | `Date` | an ISO date-time string in JSON, restored with `Date` parsing |
-| `TemporalInstant`, `TemporalPlainDate` and the other [`@exprtlabs/golem/temporal`](/reference/runtime-api#temporal) types | an ISO 8601 string in JSON ([Dates and times](#dates-and-times)) |
+| `Temporal.Instant`, `Temporal.PlainDate` and the other Temporal classes, or the [`@exprtlabs/golem/temporal`](/reference/runtime-api#temporal) types `TemporalInstant`, `TemporalPlainDate` and so on | an ISO 8601 string in JSON ([Dates and times](#dates-and-times)) |
 | a [recursive type alias](#recursive-type-aliases) | converted and validated at every level |
 | `any`, `unknown` | accepted only when [`allowAny` is `true`](#any-and-unknown) |
 
@@ -27,6 +27,8 @@ An `undefined` property is left out of JSON. `bigint` needs a codec that writes 
 ## Dates and times
 
 Hold dates in models and the SDK as `Date` or as Temporal values, and send them as ISO 8601 strings.
+
+`Date` and the Temporal classes are built-in [`TSerde`](/guide/serialization#change-the-json-form) types. Golem gives each class a default pair of functions, as a `TSerde` tag does. A field typed `Date` or `Temporal.Instant` needs no tag, and a `TSerde` tag on the same type replaces the default.
 
 <<< ../../examples/models/src/reminder.model.ts#date-field
 
@@ -45,6 +47,8 @@ Golem writes a `Date` in UTC with milliseconds. A reader that gets `"2026-01-02T
 
 Declare a field with a type from [`@exprtlabs/golem/temporal`](/reference/runtime-api#temporal). Each type holds its `Temporal` class in the model and an ISO 8601 string in JSON.
 
+You can also write the class itself: `Temporal.Instant`, `Temporal.ZonedDateTime`, `Temporal.PlainDate`, `Temporal.PlainDateTime`, `Temporal.PlainTime` or `Temporal.Duration`. It converts to the same JSON string as the matching type.
+
 <<< ../../examples/models/src/schedule.model.ts#temporal-fields
 
 - Add `"esnext.temporal"` to `compilerOptions.lib` in `tsconfig.json`.
@@ -61,6 +65,15 @@ Declare a field with a type from [`@exprtlabs/golem/temporal`](/reference/runtim
 A `Temporal` value is written in its own `toString()` form. A `TemporalInstant` shows fractional seconds only when it has them, for example `2025-01-02T03:04:05.250Z`.
 
 `TemporalZonedDateTime`, `TemporalPlainDateTime` and `TemporalPlainTime` work the same way.
+
+### Check a Date or Temporal field
+
+Validation checks the model value of a `Date` or Temporal field with `instanceof`.
+
+- A value of another type fails with one [`instance` issue](/reference/runtime-api#errors) at the field path. For a `Date`, the message is `Expected an instance of Date`.
+- An invalid `Date`, such as `new Date(NaN)`, fails in the same way.
+- Decoding reads a string only. Another JSON value throws `Deserialization` at every validation level, off included.
+- The JSON value is checked as a `date-time` string for a `Date`, or as the form of the class for a Temporal field.
 
 ### Use Temporal values in a client
 
