@@ -1,4 +1,4 @@
-import { LibError, LibErrorKind } from '../errors.js';
+import { IssueRepresentation, IssueSource, LibError, LibErrorKind, toIssue } from '../errors.js';
 import type { QueryFieldTable, ValidationLevel } from '../object-codec.js';
 import { decodeQueryField } from '../query-decode.js';
 import { mediaRank, type BodyEncoder, type ClientRuntime, type EncodedBody, type EncodingMetadata, type OperationCodecs, type ResponseCheck, type ResponseDecode } from './core.js';
@@ -159,6 +159,15 @@ interface RequestParameters {
   readonly header?: Readonly<Record<string, unknown>>;
   readonly cookie?: Readonly<Record<string, unknown>>;
   readonly querystring?: unknown;
+}
+
+/**
+ * The first line of a generated operation that reads its input: a value that is no object is rejected as a Validation error caused by input,
+ * at any validation level, before a conversion or a check reads a part of it. An operation that reads no input does not call this.
+ */
+export function requireObjectInput(operation: string, input: unknown): void {
+  if (typeof input === 'object' && input !== null && !Array.isArray(input)) return;
+  throw new LibError(LibErrorKind.Validation, `The input of ${operation} must be an object.`, [toIssue({ code: 'type', expected: ['object'], path: [] }, IssueSource.OpenAPI, IssueRepresentation.Wire)], { causedByInput: true });
 }
 
 /** The input with each request parameter that holds a Date or Temporal value in its wire form, each checked at the level of its side; the rest of the input is the same. */

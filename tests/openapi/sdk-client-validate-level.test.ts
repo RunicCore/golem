@@ -26,13 +26,21 @@ const DOCUMENT = {
     parameters: HEADER_PARAMETERS,
     requestBody: { required: true, content: JSON_CHARGE },
     responses: { 200: { description: 'Created', content: JSON_CHARGE, headers: { 'X-Seen': { schema: { type: 'string', format: 'date-time' } }, 'X-Quota': { schema: { type: 'integer', maximum: 100 } } } } },
+  } }, '/events': { post: {
+    operationId: 'postEvent',
+    requestBody: { required: true, content: JSON_CHARGE },
+    responses: { 200: { description: 'Accepted', content: { 'application/json': { schema: { type: 'object' } } } } },
+  } }, '/since': { get: {
+    operationId: 'getSince',
+    parameters: [HEADER_PARAMETERS[1]],
+    responses: { 200: { description: 'Since', content: { 'application/json': { schema: { type: 'object' } } } } },
   } } },
 };
 
 type Level = 'full' | 'sanity' | 'off';
 type Setting = true | 'sanity' | false;
 type Validate = Setting | { request?: Setting; response?: Setting; requestHeaders?: Setting; responseHeaders?: Setting };
-type ChargesClient = { getStatus(): { execute(input: unknown, options?: { validate?: unknown }): Promise<{ headers: Record<string, unknown> }> }; createCharge(): { execute(input: unknown, options?: { validate?: unknown }): Promise<{ body: { when: unknown }; headers: Record<string, unknown> }> } };
+type ChargesClient = { getStatus(): { execute(input: unknown, options?: { validate?: unknown }): Promise<{ headers: Record<string, unknown> }> }; createCharge(): { execute(input: unknown, options?: { validate?: unknown }): Promise<{ body: { when: unknown }; headers: Record<string, unknown> }> }; postEvent(): { execute(input: unknown): Promise<unknown> }; getSince(): { execute(input: unknown): Promise<unknown> } };
 
 const scope = fileFixtureScope();
 const sdks = {
@@ -238,6 +246,22 @@ for (const [name, validate, expected] of [
     });
     const run = () => client.createCharge().execute({ header: { 'X-Limit': 500 }, body: { amount: 1, when: new Date(WHEN) } });
     assert.equal(await outcome(run), expected);
+  });
+}
+
+for (const [name, operation, validate] of [
+  ['a converting body, validation on', 'postEvent', undefined],
+  ['a converting body, validation off', 'postEvent', false],
+  ['converting parameters, validation on', 'getSince', undefined],
+  ['converting parameters, validation off', 'getSince', false],
+] as const) {
+  test(`execute(null) is a Validation error caused by input on an operation with ${name}`, async () => {
+    // protects: F-39, T-736 a null input fails as a LibError caused by input before a conversion reads it, at any validation level
+    const client = (await sdks.full()).createClient({ ...(validate === undefined ? {} : { validate }), fetchImpl: async () => Response.json({}) });
+    await assert.rejects(
+      () => client[operation]().execute(null),
+      (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.Validation && error.causedByInput === true,
+    );
   });
 }
 

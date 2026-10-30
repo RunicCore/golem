@@ -276,7 +276,8 @@ function operationSource(
   const queryStringLine = queryStringParameter
     ? code`    ${use('setQueryString')}(runtime, query, ${parameterInput}.querystring, { operation: ${literal(operation.name)}, name: ${literal(queryStringParameter.name)}, in: 'querystring', contentType: ${literal(Object.keys(queryStringParameter.content || {})[0] || 'application/x-www-form-urlencoded')} });`
     : BLANK;
-  const inputName = identifierPart(profile.validation || operation.parameters.length || requestBody ? 'input' : '_input');
+  const readsInput = Boolean(profile.validation || operation.parameters.length || requestBody);
+  const inputName = identifierPart(readsInput ? 'input' : '_input');
   const factoryName = operationFactoryName(operation);
   if (appliesSecurity) use('applySecurity');
   if (requestBody) use('encodeBody');
@@ -289,6 +290,7 @@ function operationSource(
   const usesCodecs = validatesWithSources || operationConverts(operation, convertedNodeIds);
   if (encodes) use('convertRequestBody');
   if (encodesParameters) use('convertRequestParameters');
+  if (readsInput) use('requireObjectInput');
   if (decodes) use('responseDecoder');
   const validationFunctions = validatesWithSources ? ['callLevels', 'operationValidators', 'responseCheck', 'validateOperationInput'] : [];
   const runtimeFunctions = [...usedFunctions].sort();
@@ -368,6 +370,7 @@ function operationSource(
   const usesQuery = queryLines.length > 0 || !isEmpty(queryStringLine) || !isEmpty(securityCall);
   const usesCookies = cookieLines.length > 0 || !isEmpty(securityCall);
   const bodyLines = [
+    readsInput ? code`    ${use('requireObjectInput')}(${literal(operation.name)}, input);` : BLANK,
     ...levelLines,
     encodesParameters ? code`    const wireInput = ${use('convertRequestParameters')}(${codecsName}, input${parameterLevels});` : BLANK,
     encodes ? code`    const wireBody = ${wireBodyExpression};` : BLANK,
