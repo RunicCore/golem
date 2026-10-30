@@ -647,13 +647,13 @@ The code also covers a `parse` or `fromWireFormat` call of a model class with a 
 
 ### RUNM1080
 
-**Object union with no declared tag.** A model has a union of two or more object variants (object types, models, `IObject` types, SDK models or records) and the union has no `Discriminator` tag. Golem never looks for a tag in the variants, and it does not try the variants in turn, so generation stops. This holds at every position (a field, an optional field, an array item, a record value, a tuple item) and also when no variant needs a conversion. The message names the model file, the union and its variants.
+**Object union with no declared tag.** A model has a union of two or more object variants (object types, models, `IObject` types, SDK types or records) and the union has no `Discriminator` tag. Golem never looks for a tag in the variants, and it does not try the variants in turn, so generation stops. This holds at every position (a field, an optional field, an array item, a record value, a tuple item) and also when no variant needs a conversion. The message names the model file, the union and its variants.
 
 **Fix:**
 
 - Add the tag to the union: `(TCat | TDog) & Discriminator<'kind'>`. Import `Discriminator` from `@exprtlabs/golem/tags`.
 - Give each variant a required property with that key and a literal type that differs between variants, such as `kind: 'cat'` and `kind: 'dog'`. A tag may be a union of literals when the values do not overlap.
-- For an SDK model that has no such property, name it as the default: `Discriminator<'kind', Money>`.
+- For an SDK type that has no such property, name it as the default: `Discriminator<'kind', Money>`.
 
 ### RUNM1081
 

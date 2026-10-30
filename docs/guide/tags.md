@@ -66,7 +66,7 @@ Schema-valued tags describe another TypeScript contract:
 
 ### Add a default variant
 
-Give `Discriminator` a second type argument to name the default variant. The default is the variant that has no tag, such as an SDK model from an OpenAPI document.
+Give `Discriminator` a second type argument to name the default variant. The default is the variant that has no tag, such as an SDK type from an OpenAPI document.
 
 <<< ../../examples/models/src/contact.model.ts#union-tag-default
 

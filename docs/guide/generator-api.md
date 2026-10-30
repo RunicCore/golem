@@ -28,7 +28,7 @@ Call `generate` with a [`ControllerContext`](/reference/generator-api#controller
 
 `generate()` returns an `OpenApiGenerationResult`. Call it with an [`OpenApiContext`](/reference/generator-api#openapicontext) that sets `input`, `output` and `profile`. The other fields, such as `name` and the options for remote references, are in the same entry, which holds a full example.
 
-The result's `manifestPaths` holds the SDK's `model-manifest.json`. Pass it in `manifestInputs` to the model generator, so your models can use the SDK models.
+The result's `manifestPaths` holds the SDK's `model-manifest.json`. Pass it in `manifestInputs` to the model generator, so your models can use the SDK types.
 
 ### Start from a loaded document
 
