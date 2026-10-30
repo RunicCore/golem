@@ -34,7 +34,7 @@ export interface ModelManifest {
  * The schema graph of a golem-mode SDK, as data. A descriptor is JSON text: the manifest file writes its keys in sorted order,
  * and the key order of a descriptor is part of the codec id of an unnamed shape, so the text keeps the order the graph interned.
  */
-export interface SdkDescriptorText {
+interface SdkDescriptorText {
   /** The name the graph interned the model or recursive alias under. */
   readonly name: string;
   readonly descriptor: string;
