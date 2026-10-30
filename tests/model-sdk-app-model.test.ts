@@ -322,3 +322,40 @@ test('an app model over an SDK alias with a keyword that no descriptor carries s
   const model = "import type { IModel } from '@exprtlabs/golem/model';\nimport type { Pair } from '../sdk/charges/index.js';\nexport type TRecord = IModel<{ pair: Pair }>;\n";
   await assert.rejects(loadGolemModeProject(scope, 'sdk-app-model-alias-uncarried-', [sdk], true, { 'src/record.model.ts': model }), /OPENAPI_KEYWORD_NOT_CARRIED[^]*"additionalItems"/);
 });
+
+test('a golem-mode model over an SDK discriminated union decodes each tag to its branch and rejects an unknown tag', async () => {
+  // protects: T-740 R-84 a union of SDK nodes dispatches by its tag (the plain branch tested instanceof Object, so the first branch took every value), and a nullable SDK node init writes no new Object
+  const pets: GolemModeSdkSetup = {
+    folder: 'sdk/pets',
+    name: 'Pets',
+    document: {
+      openapi: '3.1.0',
+      info: { title: 'Pets', version: '1' },
+      paths: { '/owners': { post: { operationId: 'createOwner', requestBody: { required: true, content: json(ref('Owner')) }, responses: { 200: { description: 'ok', content: json(ref('Owner')) } } } } },
+      components: { schemas: {
+        Cat: { type: 'object', required: ['petType', 'lives'], properties: { petType: { type: 'string', const: 'cat' }, lives: { type: 'integer', maximum: 9 } } },
+        Dog: { type: 'object', required: ['petType'], properties: { petType: { type: 'string', const: 'dog' }, bornAt: { type: 'string', format: 'date-time' } } },
+        Owner: { type: 'object', required: ['pet'], properties: { pet: { oneOf: [ref('Cat'), ref('Dog')], discriminator: { propertyName: 'petType', mapping: { cat: '#/components/schemas/Cat', dog: '#/components/schemas/Dog' } } } } },
+      } },
+    },
+  };
+  const model = `import type { IModel } from '@exprtlabs/golem/model';
+import type { Dog, Owner } from '../sdk/pets/index.js';
+import { TOwnerRecordBaseModel } from './owner.model.generated.js';
+export type TOwnerRecord = IModel<Owner>;
+export type TKennel = IModel<{ dog: Dog | null }>;
+export class OwnerRecord extends TOwnerRecordBaseModel {}
+`;
+  const use = `import { fromWireFormat } from '@exprtlabs/golem/serde';
+import { OwnerRecord } from './owner.model.js';
+export const read = (wire: unknown) => fromWireFormat<OwnerRecord>(wire);
+`;
+  const project = await buildGolemModeProject('sdk-app-model-union-', pets, { 'src/owner.model.ts': model, 'src/use.ts': use });
+  const { read } = await importBuilt(project.root, 'src/use.js');
+  const dog = read({ pet: { petType: 'dog', bornAt: '2025-01-02T03:04:05Z' } });
+  assert.deepEqual(dog.pet, { petType: 'dog', bornAt: new Date('2025-01-02T03:04:05Z') });
+  assert.deepEqual(read({ pet: { petType: 'cat', lives: 9 } }).pet, { petType: 'cat', lives: 9 });
+  assert.throws(() => read({ pet: { petType: 'bird' } }), /petType|Model validation failed/);
+  const companion = fs.readFileSync(path.join(project.root, 'src/owner.model.generated.ts'), 'utf8');
+  assert.doesNotMatch(companion, /new \(?Object\b/);
+});

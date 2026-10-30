@@ -1367,6 +1367,7 @@ function modelResolvers(context: EmitContext, helpers: ReadonlyMap<string, Proje
     className: identifier('Object'),
     plain: true,
     decode: (value) => code`${codecs.fromWire}(${value}, { validate: false })`,
+    fromInit: (value) => value,
   });
   const fromAny = (id: string): FromJsonModelResolver => {
     const sdkNode = context.sdkNodes.find(id);

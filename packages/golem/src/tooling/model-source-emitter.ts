@@ -235,8 +235,13 @@ function emitNestedUnion(
       const variants = indices.map((index) => descriptor.variants[index]);
       const dispatch = unionDispatch(descriptor, indices);
       if (!dispatch) return undefined;
-      const classOf = (variant: ModelConversionDescriptor): Code | undefined => variant.kind === 'generated-model' ? resolveModel(variant.id).className
-        : variant.kind === 'reference' && !variant.projection ? resolveModel(variant.name).className
+      // Plain data has no class: the tag selects its branch.
+      const classOfModel = (id: string): Code | undefined => {
+        const model = resolveModel(id);
+        return model.plain ? undefined : model.className;
+      };
+      const classOf = (variant: ModelConversionDescriptor): Code | undefined => variant.kind === 'generated-model' ? classOfModel(variant.id)
+        : variant.kind === 'reference' && !variant.projection ? classOfModel(variant.name)
           : undefined;
       const branches = variants.map((variant, position) => ({
         values: dispatch.values[position],
