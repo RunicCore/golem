@@ -332,89 +332,21 @@ test('directional resource aliases never shadow another exact resource ID in gen
   assert.deepEqual((await operation.execute({ body: payload })).body, payload);
 });
 
-test('a Nest-style Payment keeps canonical codec identity across repeated compact SDK closure candidates', t => {
-  const { root, source } = fixture(t);
-  const configPath = path.join(root, 'tsconfig.json');
-  const projectConfig = requireRecord(JSON.parse(readFileSync(configPath, 'utf8')), 'fixture TypeScript config');
-  const compilerOptions = requireRecord(projectConfig.compilerOptions, 'fixture compiler options');
-  // The isolated source retains TPaymentInput and TPaymentFilter but omits the
-  // controllers that consume their generated conversion helpers, so unused
-  // locals are allowed; the rest of strict typechecking stays on.
-  compilerOptions.noUnusedLocals = false;
-  writeFileSync(configPath, JSON.stringify(projectConfig));
+test('a Nest-style Payment keeps its canonical codec ID across repeated SDK generations', t => {
+  const { root } = fixture(t);
   const document = parse(readFixture('openapi/canonical-codec-identity/openapi.yaml'));
-  const sdk = path.join(root, 'sdk');
-  const sdkResult = writeSdk(document, {
-    output: sdk,
-    name: 'Payments',
-    profile: { mobx: false, validation: true },
-  });
-  writeGeneratedArtifacts(sdkResult.artifacts);
-
-  const paymentSource = path.join(source, 'payment.model.ts');
-  copyFixtureFile(root, 'openapi/canonical-codec-identity/payment.model.ts', 'src/payment.model.ts');
-  copyFixtureFile(root, 'openapi/canonical-codec-identity/payment-status.ts', 'src/payment-status.ts');
-
-  const manifestPath = path.join(sdk, 'model-manifest.json');
-  const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as {
-    validationSchemaClosure: {
-      codecId: string;
-      aliases?: readonly string[];
-      modelSchema: unknown;
-      wireSchema?: unknown;
-    }[];
+  const codecIdOfPayment = (name: string): string => {
+    const output = path.join(root, name);
+    const result = writeSdk(document, { output, name: 'Payments', profile: { mobx: false, validation: true } });
+    writeGeneratedArtifacts(result.artifacts);
+    const manifest = JSON.parse(readFileSync(path.join(output, 'model-manifest.json'), 'utf8')) as { models: { type: { export: string }; codecId: string }[] };
+    const payment = manifest.models.find(model => model.type.export === 'Payment');
+    assert.ok(payment);
+    return payment.codecId;
   };
-  const paymentClosure = manifest.validationSchemaClosure.find(entry => entry.aliases?.includes('Payment'));
-  const moneyClosure = manifest.validationSchemaClosure.find(entry => entry.aliases?.includes('Money'));
-  assert.ok(paymentClosure);
-  assert.ok(moneyClosure);
-  assert.match(paymentClosure.codecId, /^Payment_[0-9a-f]{8}$/, 'the codec ID follows the name_digest format');
-
-  const secondSdk = path.join(root, 'sdk-2');
-  const secondSdkResult = writeSdk(document, {
-    output: secondSdk,
-    name: 'Payments',
-    profile: { mobx: false, validation: true },
-  });
-  writeGeneratedArtifacts(secondSdkResult.artifacts);
-  const secondManifest = JSON.parse(readFileSync(path.join(secondSdk, 'model-manifest.json'), 'utf8')) as {
-    validationSchemaClosure: { codecId: string; aliases?: readonly string[] }[];
-  };
-  const secondPaymentClosure = secondManifest.validationSchemaClosure.find(entry => entry.aliases?.includes('Payment'));
-  assert.ok(secondPaymentClosure);
-  assert.equal(secondPaymentClosure.codecId, paymentClosure.codecId,
-    'the SDK preserves its canonical Payment codec ID across repeated generations');
-
-  // A second imported closure can carry the same shared component identity.
-  // The local full graph plus this compact entry exercise two equal
-  // candidates while keeping each payload paired with its own graph context.
-  manifest.validationSchemaClosure.push(structuredClone(paymentClosure));
-  writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
-
-  const generatePayment = () => generateModels({
-    root,
-    sources: [paymentSource],
-    manifestInputs: [manifestPath],
-    profile: { mobx: false, validation: true },
-  });
-  const result = generatePayment();
-  assert.ok(result.artifacts.some(artifact => artifact.path.endsWith('/payment.model.generated.ts')));
-  assert.ok(result.artifacts.some(artifact => artifact.path.endsWith('/models.validators.generated.ts')));
-
-  const conflictingMoneySchema = {
-    ...requireRecord(moneyClosure.modelSchema, 'Money model schema'),
-    maxProperties: 1,
-  };
-  // The hand-written Payment and the SDK no longer share Money's codec id, so the
-  // conflict is two closure entries that claim the SDK's Money id with different schemas.
-  manifest.validationSchemaClosure.push({ ...moneyClosure, modelSchema: conflictingMoneySchema });
-  writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
-  assert.throws(
-    generatePayment,
-    error => error instanceof TypeError
-      && error.message === `Conflicting schema identity "${moneyClosure.codecId}".`,
-    'two closure entries with one codec id and different schemas remain rejected',
-  );
+  const first = codecIdOfPayment('sdk');
+  assert.match(first, /^Payment_[0-9a-f]{8}$/, 'the codec ID follows the name_digest format');
+  assert.equal(codecIdOfPayment('sdk-2'), first, 'the SDK preserves its canonical Payment codec ID across repeated generations');
 });
 
 test('10 and 100 operations share one validators module and the generated source grows linearly', async t => {

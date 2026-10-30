@@ -13,7 +13,6 @@ import type {
   ModelManifestEntry,
 } from '../model-manifest-core.js';
 import { canonicalPath, displayPath, type GolemProfile, type InputObserver } from '../generator-core.js';
-import type { CodecSchemaClosureEntry } from '../validation-plan.js';
 import type { ModelTypeDescriptor } from '../../model-registry.js';
 import { canonicalFilename, isUnderOutputs } from './project.js';
 import type { ProgramInfo } from './project.js';
@@ -30,7 +29,6 @@ export interface ManifestIndex {
   readonly files: readonly string[];
   /** Manifests advertised by loaded sources or discovered under this job's src. */
   readonly localFiles: readonly string[];
-  readonly validationSchemaClosure: readonly CodecSchemaClosureEntry[];
   /** The manifests of SDKs in golem mode: this job compiles their types with its own models. */
   readonly golemModeManifests: readonly { readonly file: string; readonly manifest: GolemModeManifest }[];
   /**
@@ -204,7 +202,6 @@ export function loadModelManifests(
   const byProvenance = new Map<string, ResolvedModelManifestEntry>();
   // Every id of every manifest, an SDK type's included, so that two manifests cannot share one.
   const manifestOfId = new Map<string, string>();
-  const validationSchemaClosure: CodecSchemaClosureEntry[] = [];
   const golemModeManifests: { file: string; manifest: GolemModeManifest }[] = [];
   // The descriptor of each SDK type of a golem-mode manifest, with the schemas it names inline, by the provenance of its declaration.
   const sdkDescriptors = new Map<string, { readonly root: ModelTypeDescriptor; readonly field: ModelTypeDescriptor }>();
@@ -216,7 +213,6 @@ export function loadModelManifests(
     if (!existsSync(filename)) throw new Error(`Model manifest does not exist: ${displayPath(filename)}`);
     const manifest = readModelManifest(filename);
     validateManifestProfile(manifest, filename, profile);
-    validationSchemaClosure.push(...manifest.validationSchemaClosure ?? []);
     if (isGolemModeManifest(manifest)) golemModeManifests.push({ file: filename, manifest });
     for (const model of manifest.models) {
       const existingFile = manifestOfId.get(model.id);
@@ -262,7 +258,6 @@ export function loadModelManifests(
     byProvenance,
     files: filenames,
     localFiles,
-    validationSchemaClosure,
     golemModeManifests,
     sdkDescriptorForType(type: ts.Type, root: boolean): ModelTypeDescriptor | undefined {
       for (const symbol of [type.aliasSymbol, type.getSymbol?.()]) {

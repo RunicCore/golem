@@ -5,7 +5,6 @@ import { discoverSources, displayPath, isRecord, isValidationLevel, resolveProfi
 import type { GolemProfile, InputObserver } from './generator-core.js';
 import { createSchemaGraph, internDescriptors, type SchemaGraph } from './schema-graph.js';
 import type { ModelTypeDescriptor } from './schema.js';
-import type { CodecSchemaClosureEntry } from './validation-plan.js';
 
 interface ModelManifestProvenance {
   readonly module: string;
@@ -24,7 +23,6 @@ export interface ModelManifestEntry {
 export interface ModelManifest {
   readonly profile: GolemProfile;
   readonly models: readonly ModelManifestEntry[];
-  readonly validationSchemaClosure?: readonly CodecSchemaClosureEntry[];
   readonly [key: string]: unknown;
 }
 
@@ -59,7 +57,7 @@ export interface SdkOperationValidation {
   readonly roots: Readonly<Record<string, unknown>>;
 }
 
-/** A manifest of an SDK in golem mode: the models job compiles the SDK types from these fields, and the manifest holds no `validationSchemaClosure`. */
+/** A manifest of an SDK in golem mode: the models job compiles the SDK types from these fields. */
 export interface GolemModeManifest extends ModelManifest {
   readonly mode: 'golem';
   readonly dates: 'date' | 'temporal';
@@ -173,26 +171,6 @@ function isProvenance(value: unknown, visiting = new Set<object>()): value is Mo
   return valid;
 }
 
-function isSchemaData(value: unknown, visiting = new Set<object>()): boolean {
-  if (value === null || typeof value === 'string' || typeof value === 'boolean') return true;
-  if (typeof value === 'number') return Number.isFinite(value);
-  if (typeof value !== 'object' || visiting.has(value)) return false;
-  if (!Array.isArray(value) && Object.getPrototypeOf(value) !== Object.prototype && Object.getPrototypeOf(value) !== null) return false;
-  visiting.add(value);
-  const valid = (Array.isArray(value) ? value : Object.values(value)).every(item => isSchemaData(item, visiting));
-  visiting.delete(value);
-  return valid;
-}
-
-function isClosureEntry(value: unknown): value is CodecSchemaClosureEntry {
-  return isRecord(value) && typeof value.codecId === 'string' && value.codecId.length > 0
-    && (typeof value.modelSchema === 'boolean' || isRecord(value.modelSchema)) && isSchemaData(value.modelSchema)
-    && [value.wireSchema, value.modelOnlySchema, value.wireOnlySchema].every((schema) =>
-      schema === undefined || ((typeof schema === 'boolean' || isRecord(schema)) && isSchemaData(schema)))
-    && (value.recursive === undefined || typeof value.recursive === 'boolean')
-    && (value.aliases === undefined || (Array.isArray(value.aliases) && value.aliases.every(alias => typeof alias === 'string' && alias.length > 0)));
-}
-
 function isDescriptorText(value: unknown): value is string {
   if (typeof value !== 'string') return false;
   try {
@@ -220,7 +198,6 @@ function isOperationValidation(value: unknown): boolean {
 /** A manifest with `mode: "golem"` carries the schema graph the models job compiles; one that lacks it was written by an older generator. */
 function validateGolemModeGraph(manifest: Record<string, unknown>, filename: string): void {
   const invalid = (reason: string): Error => new Error(`Invalid model manifest ${displayPath(filename)}: ${reason}. Regenerate the SDK with this golem version.`);
-  if (manifest.validationSchemaClosure !== undefined) throw invalid('a golem-mode manifest holds the schema graph, not validationSchemaClosure');
   if (manifest.dates !== 'date' && manifest.dates !== 'temporal') throw invalid('dates must be "date" or "temporal"');
   const { codecIds, descriptors, operations, bases } = manifest;
   if (!isRecord(bases) || !Object.values(bases).every((names) => Array.isArray(names) && names.every(isName))) throw invalid('bases must map each model to the names of the models it narrows');
@@ -253,10 +230,6 @@ export function validateModelManifest(manifest: unknown, filename = MODEL_MANIFE
     throw new Error(`Invalid model manifest ${displayPath(filename)}: mode must be "golem" when present. Regenerate the SDK with this golem version.`);
   }
   if (manifest.mode === 'golem') validateGolemModeGraph(manifest, filename);
-  if (manifest.validationSchemaClosure !== undefined
-    && (!Array.isArray(manifest.validationSchemaClosure) || !manifest.validationSchemaClosure.every(isClosureEntry))) {
-    throw new Error(`Invalid model manifest ${displayPath(filename)}: validationSchemaClosure must contain codec ids and data-only model/wire schemas. Regenerate the models.`);
-  }
   if (!Array.isArray(manifest.models)) {
     throw new Error(`Invalid model manifest ${displayPath(filename)}: models must be an array.`);
   }

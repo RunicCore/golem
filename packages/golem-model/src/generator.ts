@@ -529,7 +529,6 @@ export function generate(context: GolemModelContext): GolemModelResult {
   const sdks = golemSdks(manifestIndex, normalized);
   const sdkGraphs = sdks.map((sdk) => sdkSchemaGraph(sdk.manifest, normalized.profile.validation));
   const graphSchemaPairs = internJobSchemaGraphs(graphs, normalized.profile.validation, [
-    ...manifestIndex.validationSchemaClosure,
     ...sdkGraphs.flatMap(({ graph }) => sdkNodeClosure(graph)),
   ]);
   const schemaGraphs = [...graphSchemaPairs.map(({ schemaGraph }) => schemaGraph), ...sdkGraphs.map(({ graph }) => graph)];
@@ -542,7 +541,7 @@ export function generate(context: GolemModelContext): GolemModelResult {
   const validationPlan = normalized.profile.validation !== false
     ? buildCodecValidationPlan(
       schemaGraphs,
-      manifestIndex.validationSchemaClosure,
+      [],
       Object.fromEntries(schemaEntries.map((compilation) => [compilation.id, compilation.schema])),
       normalized.profile.validation,
     )

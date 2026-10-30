@@ -217,7 +217,6 @@ for (const validation of [false, true]) {
       components: { schemas: { Money: { type: 'object', required: ['currency'], properties: { currency: { type: 'string' } } } } },
     }, { output: sdk, name: 'sdk', profile: { mobx: false, validation } });
     writeGeneratedArtifacts([...generated.artifacts, { path: path.join(sdk, 'package.json'), content: JSON.stringify({ name: '@acme/sdk', version: '1.0.0', type: 'module', types: './index.ts', main: './index.ts' }) }]);
-    assert.equal(JSON.parse(fs.readFileSync(path.join(sdk, 'model-manifest.json'), 'utf8')).validationSchemaClosure !== undefined, validation, 'the manifest holds the schema closure only with validation on');
 
     await runPipeline(config);
 

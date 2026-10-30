@@ -270,15 +270,6 @@ export function generatedModelSource(artifacts: readonly { path: string; content
     .map(artifact => artifact.content).join('\n');
 }
 
-export function readGeneratedModelSource(output: string): string {
-  const files: string[] = [];
-  const directory = join(output, 'models');
-  if (existsSync(directory)) {
-    files.push(...readdirSync(directory).map(name => join(directory, name)).filter(isModelImplementation));
-  }
-  return files.filter(existsSync).map(filename => readFileSync(filename, 'utf8')).join('\n');
-}
-
 export async function generateMaterializedSdk(
   document: unknown,
   options: {

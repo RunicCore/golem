@@ -340,8 +340,7 @@ export function buildCodecValidationPlan(
             const codecId = codecIdOf(name, preferredAliases, 'generated model schema reference');
             if (codecId === undefined || !Object.hasOwn(schemas, codecId)) {
               throw new TypeError(
-                `Cannot compile validators: generated model schema reference ${JSON.stringify(name)} is unresolved. `
-                + 'Regenerate the referenced model manifest with schema closure metadata.',
+                `Cannot compile validators: generated model schema reference ${JSON.stringify(name)} is unresolved.`,
               );
             }
             if (residualPlane !== undefined) {

@@ -121,9 +121,7 @@ export function generateModelManifest(
     },
     profile,
     models,
-    ...(mode === 'golem' ? golemModeGraph(modelAnalysis, golem, Boolean(profile.validation)) : profile.validation ? {
-      validationSchemaClosure: openApiValidationSchemaClosure(schemaGraph, ordered, stableId),
-    } : {}),
+    ...(mode === 'golem' ? golemModeGraph(modelAnalysis, golem, Boolean(profile.validation)) : {}),
   };
 }
 

@@ -52,7 +52,6 @@ test('the golem-mode schema graph goes through the manifest file and back to the
   const written = stableJson(golemModeManifest(DOCUMENT, PROFILE, 'temporal'));
   const manifest = validateModelManifest(JSON.parse(written));
   assert.ok(isGolemModeManifest(manifest));
-  assert.equal(Object.hasOwn(manifest, 'validationSchemaClosure'), false);
   assert.equal(manifest.dates, 'temporal');
   assert.match(manifest.descriptors.find(entry => entry.name === 'Charge')?.descriptor ?? '', /"id":"temporal:TemporalInstant"/);
 
@@ -70,7 +69,6 @@ test('standalone mode keeps the manifest it always wrote', () => {
   // protects: T-696 standalone keeps its manifest: validation closure, no mode
   const manifest = generateModelManifest(DOCUMENT, PROFILE, analysis('date')) as Record<string, unknown>;
   assert.equal(Object.hasOwn(manifest, 'mode'), false);
-  assert.ok(Array.isArray(manifest.validationSchemaClosure));
   assert.equal(Object.hasOwn(manifest, 'descriptors'), false);
 });
 
@@ -93,12 +91,11 @@ test('an openapi job in golem mode writes the graph into model-manifest.json', a
   assert.equal(Object.keys(manifest.validationResources ?? {}).some(id => id.endsWith(':operation:createCharge')), true);
 });
 
-test('a golem-mode manifest without the graph, or with the closure, or with another mode is refused and says to regenerate', () => {
+test('a golem-mode manifest without the graph, or with another mode is refused and says to regenerate', () => {
   // protects: T-696 F-253 an older manifest gets the regenerate error
   const written = JSON.parse(stableJson(golemModeManifest(DOCUMENT, PROFILE))) as Record<string, unknown>;
   const { descriptors: _descriptors, ...withoutGraph } = written;
   assert.throws(() => validateModelManifest(withoutGraph, 'sdk/model-manifest.json'), /Invalid model manifest sdk\/model-manifest\.json: descriptors must list .* Regenerate the SDK with this golem version\./);
-  assert.throws(() => validateModelManifest({ ...written, validationSchemaClosure: [] }), /not validationSchemaClosure\. Regenerate/);
   assert.throws(() => validateModelManifest({ ...written, dates: 'moment' }), /dates must be "date" or "temporal"\. Regenerate/);
   assert.throws(() => validateModelManifest({ ...written, validationResources: undefined }), /a validating SDK lists the validation roots of every operation and the resources they reach, and a non-validating SDK lists none\. Regenerate/);
   assert.throws(() => validateModelManifest({ ...written, mode: 'both' }), /mode must be "golem" when present\. Regenerate/);
