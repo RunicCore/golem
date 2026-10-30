@@ -94,6 +94,8 @@ export interface CodecRuntimeOptions {
   readonly exportWireStringify?: boolean | ((node: SchemaNode) => boolean);
   /** Export anonymous codecs' functions: OpenAPI group modules import them from each other. Model companions keep them private. */
   readonly exportAnonymousCodecs?: boolean;
+  /** A closed object root's `toWireFormat` keeps only the declared fields of a class instance: its other own keys are program state, not unknown keys. */
+  readonly projectsInstanceState?: boolean;
   /** Codecs whose functions stay module-private, such as a model job's derived projections. */
   readonly privateCodec?: (node: SchemaNode) => boolean;
   /** The bases the generator declares for each model, by model name. */
@@ -121,6 +123,7 @@ interface EmitCtx
     | 'siblingRecursion'
     | 'exportWireStringify'
     | 'exportAnonymousCodecs'
+    | 'projectsInstanceState'
     | 'privateCodec'
   > {
   readonly graph: SchemaGraph;
@@ -2268,6 +2271,9 @@ function emitToWireSection(runtime: NodeRuntime): Code {
   return rowsToText([
     toWireCoreSource,
     code`${exported}function ${names.toWire}(value: ${fieldsOrUnknown}, options?: ${SERDE_OPTIONS}): ${wireOrUnknown} {`,
+    ...(ctx.projectsInstanceState && objectDescriptor?.additionalProperties === false
+      ? [code`  value = ${rt.conversion.withDeclaredFields}(value, ${literal(Object.keys(objectDescriptor.properties))}) as ${fieldsOrUnknown};`]
+      : []),
     emitSerdeValidates(runtime.levels),
     ...(validationEnabled ? [
       code`  if (validates) {`,
@@ -2426,6 +2432,7 @@ export function emitCodecRuntimeCode(
     wireType: options.wireType,
     fieldsType: options.fieldsType,
     exportAnonymousCodecs: options.exportAnonymousCodecs,
+    projectsInstanceState: options.projectsInstanceState,
     privateCodec: options.privateCodec,
     modelBases: options.modelBases,
     fillThrows: new Map(),

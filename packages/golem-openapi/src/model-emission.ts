@@ -362,6 +362,7 @@ export function generateModels(
       return names === undefined || validatorsSource === undefined ? undefined : { structure: validatorsSource.name(names.structure), predicates: validatorsSource.name(names.predicates) };
     } } : {}),
     issueSource: 'OpenAPI',
+    projectsInstanceState: true,
     // A component's codecs take and return its converted `Types` type; a node that is no component, and so has no type there, stays `unknown`.
     fieldsType: (node) => {
       const definition = analysis.definitionNameByNodeId.has(node.id) ? definitions.get(analysis.definitionNameByNodeId.get(node.id) ?? '') : undefined;

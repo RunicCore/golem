@@ -113,6 +113,23 @@ export function readRootFields(value: unknown, fields: readonly string[]): unkno
   return copy;
 }
 
+/**
+ * The body of a closed object as data: an instance of a class (any prototype but `Object.prototype` or null) keeps only the
+ * declared fields it holds, so its program state is never sent or judged as an unknown key. A plain object stays as it is and
+ * an extra key of it is an error. Fields are read by property access, so a getter or accessor of the class supplies its value.
+ */
+export function withDeclaredFields(value: unknown, fields: readonly string[]): unknown {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return value;
+  const prototype: unknown = Object.getPrototypeOf(value);
+  if (prototype === Object.prototype || prototype === null) return value;
+  const declared: Record<string, unknown> = {};
+  for (const name of fields) {
+    const read: unknown = Reflect.get(value, name);
+    if (read !== undefined) declared[name] = read;
+  }
+  return declared;
+}
+
 /** The default `maxDepth`: how many levels of objects and arrays a recursive model's input may nest. */
 const DEFAULT_MAX_DEPTH = 512;
 

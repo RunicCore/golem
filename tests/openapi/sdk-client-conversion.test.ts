@@ -13,6 +13,7 @@ const JSON_BODY = (schema: unknown) => ({ 'application/json': { schema } });
 const EVENT = { $ref: '#/components/schemas/Event' };
 const INLINE = { type: 'object', additionalProperties: false, required: ['when'], properties: { when: { type: 'string', format: 'date-time' } } };
 const PLAIN = { $ref: '#/components/schemas/Plain' };
+const CHARGE = { type: 'object', additionalProperties: false, required: ['amount', 'when'], properties: { amount: { type: 'integer' }, when: { type: 'string', format: 'date-time' } } };
 const COMPOSED = { allOf: [{ $ref: '#/components/schemas/Stamp' }, { type: 'object', required: ['note'], properties: { note: { type: 'string' } } }] };
 
 const DOCUMENT = {
@@ -24,6 +25,7 @@ const DOCUMENT = {
     '/plain': { post: { operationId: 'echoPlain', requestBody: { required: true, content: JSON_BODY(PLAIN) }, responses: { 200: { description: 'Echo', content: JSON_BODY(PLAIN) } } } },
     '/form': { post: { operationId: 'submitForm', requestBody: { required: true, content: { 'application/x-www-form-urlencoded': { schema: INLINE } } }, responses: { 204: { description: 'Done' } } } },
     '/composed': { post: { operationId: 'echoComposed', requestBody: { required: true, content: JSON_BODY(COMPOSED) }, responses: { 200: { description: 'Echo', content: JSON_BODY(COMPOSED) } } } },
+    '/tracked': { post: { operationId: 'chargeTracked', requestBody: { required: true, content: JSON_BODY(CHARGE) }, responses: { 204: { description: 'Done' } } } },
     '/upload': { post: { operationId: 'uploadForm', requestBody: { required: true, content: { 'multipart/form-data': { schema: INLINE } } }, responses: { 204: { description: 'Done' } } } },
     '/note': { post: { operationId: 'sendNote', requestBody: { required: true, content: { 'text/plain': { schema: { type: 'string', format: 'date-time' } } } }, responses: { 204: { description: 'Done' } } } },
     '/stream': { get: { operationId: 'streamEvents', responses: { 200: { description: 'Events', content: { 'application/x-ndjson': { itemSchema: EVENT } } } } } },
@@ -144,6 +146,24 @@ test('an allOf body with a date converts in both directions', async t => {
   const body = response.body as { at: unknown; note: unknown };
   assert.ok(body.at instanceof Date);
   assert.equal(body.note, 'hi');
+});
+
+test('a class instance with extra own state is sent without that state against additionalProperties false', async t => {
+  // protects: R-80, F-39 a class instance sends its declared fields only, while a plain object with an extra key is still rejected
+  class TrackedCharge {
+    readonly trace = 'internal-1';
+    constructor(readonly amount: number, readonly when: Date) {}
+  }
+  const sent: Fetched[] = [];
+  const { client } = await loadClient(t, 'date', () => new Response(null, { status: 204 }), sent);
+  await client.chargeTracked!().execute({ body: new TrackedCharge(5, new Date('2025-01-02T03:04:05Z')) });
+  assert.deepEqual(sent, [{ body: { amount: 5, when: '2025-01-02T03:04:05.000Z' } }]);
+  sent.length = 0;
+  await assert.rejects(
+    client.chargeTracked!().execute({ body: { amount: 5, when: new Date('2025-01-02T03:04:05Z'), trace: 'internal-1' } as never }),
+    (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.Validation && error.causedByInput === true,
+  );
+  assert.deepEqual(sent, []);
 });
 
 test('a multipart body with a date is sent with the date as its wire string', async t => {

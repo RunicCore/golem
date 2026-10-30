@@ -484,7 +484,7 @@ export const MODEL_IMPORT_ORDER: NonNullable<ImportOptions['order']> = {
     'assertAcyclicEncodeInput', 'assertPropertyAcyclic', 'assertWireAcyclic', 'beginDecode', 'beginEncode', 'convertModelField', 'convertModelItems',
     'convertModelRecord', 'convertModelTupleItems', 'copyModelRecord', 'decodeCheckedInput', 'decodeDetachedInput', 'decodeGeneratedModelTrusted', 'defineModelProperty', 'deserializeDate',
     'endDecode', 'endEncode', 'isVariantObject', 'jsonWithDiscriminator', 'rejectModelObject', 'requireModelObject', 'serializeDate', 'unknownDiscriminatorValue',
-    'withDiscriminatorValue',
+    'withDeclaredFields', 'withDiscriminatorValue',
   ],
   serde: SERDE_IMPORT_ORDER,
 };
