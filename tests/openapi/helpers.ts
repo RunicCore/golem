@@ -47,6 +47,12 @@ function modeOf(profile: OpenApiGenerationProfile, output: string, requested?: '
   return mode === 'golem' ? { mode, codecsFile: sdkCodecsFile({ modelsOutput: join(output, 'codecs'), configDirectory: dirname(output), sdkOutput: output }) } : { mode };
 }
 
+/** A generation that reports an error writes nothing, so a test that went on would pass without an SDK: the error codes and messages stop it. */
+function requireNoErrorDiagnostics(result: { readonly diagnostics?: readonly { readonly code: string; readonly severity: GolemDiagnosticSeverity; readonly message: string }[] }): void {
+  const errors = result.diagnostics?.filter(diagnostic => diagnostic.severity === GolemDiagnosticSeverity.Error) ?? [];
+  if (errors.length > 0) throw new Error(`Generation reported ${errors.length} error(s):\n${errors.map(({ code, message }) => `${code}: ${message}`).join('\n')}`);
+}
+
 /** Runs the models job of the SDK's golem.yaml folder for a golem-mode SDK that was just written, and writes the codecs file the SDK imports. */
 function writeSdkCodecs(output: string, profile: OpenApiGenerationProfile, mode: { readonly mode?: string }): void {
   if (mode.mode !== 'golem') return;
@@ -63,8 +69,7 @@ function writeSdkCodecs(output: string, profile: OpenApiGenerationProfile, mode:
     sdkOutputs: [output],
     profile,
   });
-  const failure = result.diagnostics?.find(diagnostic => diagnostic.severity === GolemDiagnosticSeverity.Error);
-  if (failure) throw new Error(failure.message);
+  requireNoErrorDiagnostics(result);
   writeGeneratedArtifacts(result.artifacts);
 }
 
@@ -82,6 +87,7 @@ export function writeGeneratedSdk(
   const profile = options.profile ?? defaultTestProfile;
   const mode = modeOf(profile, output);
   const result = writeSdk(document, { output, name: options.name, profile, ...mode });
+  requireNoErrorDiagnostics(result);
   writeGeneratedArtifacts(result.artifacts);
   writeSdkCodecs(output, profile, mode);
   prepareSdkProject(output);
@@ -303,6 +309,7 @@ export async function generateMaterializedSdk(
     ...(options.dates === undefined ? {} : { dates: options.dates }),
   };
   const result = await generate(context);
+  requireNoErrorDiagnostics(result);
   materializeGeneratedSdk(result.artifacts, options.output);
   writeSdkCodecs(resolve(options.output), options.profile ?? defaultTestProfile, mode);
   return result;
