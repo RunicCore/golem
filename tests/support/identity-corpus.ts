@@ -93,9 +93,7 @@ export const EXPECTED_REJECTIONS: Readonly<Record<string, string>> = {
 /** A fixture directory that discovery finds and leaves out, with the one reason it cannot run on its own. */
 const EXCLUDED: Readonly<Record<string, string>> = {
   'model-composition/first-generation-resolves-model-class-bases-through-project-path-aliases': 'needs its own tsconfig: the `#generated/*` path alias',
-  'model-generator/manifest-identity': 'needs an SDK manifest that is not one of the two SDK cases',
   'model-companions/conversion-unions': 'needs an SDK manifest that is not one of the two SDK cases',
-  'model-companions/missing-manifest': 'needs an SDK manifest that is not one of the two SDK cases',
   'model-companions/public-generation-compiles-and-executes-conversion-and-rest-tuple-behavior': 'needs an SDK manifest that is not one of the two SDK cases',
   'constraint-callback-composition/handwritten-child-parent': 'not self-contained: its test adds the sibling files that the model imports',
   'constraint-callback-composition/nested-value-callbacks': 'not self-contained: its test adds the sibling files that the model imports',

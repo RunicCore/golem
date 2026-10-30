@@ -133,7 +133,7 @@ test('a nested trusted call to a model of another module shares one frozen optio
   graph.intern({ kind: 'generated-model', id: 'Pet' }, 'Pet');
   graph.intern(owner, 'Owner');
   graph.seal();
-  const source = emitCodecRuntimeText(graph, { validationLevel: false, nestedGenerated: (id) => identifier(`${id}Model`) });
+  const source = emitCodecRuntimeText(graph, { validationLevel: false });
   const received: unknown[] = [];
   const pet = { stringify: (_value: unknown, options: unknown) => { received.push(options); return '"pet"'; }, toWireFormat: (_value: unknown, options: unknown) => { received.push(options); return 'pet'; } };
   const runtime = instantiateRuntime(source, { requireObjectCodec: () => pet });

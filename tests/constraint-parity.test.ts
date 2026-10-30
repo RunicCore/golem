@@ -75,9 +75,7 @@ function canonicalModelSchema(root: string, sourceRoot: string): unknown {
   const graph = analyzeSourceGraph(
     source,
     generatedFilename(source),
-    checker,
     specifications,
-    manifestIndex,
     profile,
     root,
     createJobAnalysis(checker, specifications, manifestIndex, profile, [source], file => programInfo.program.isSourceFileDefaultLibrary(file), root),

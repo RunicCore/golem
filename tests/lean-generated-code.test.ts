@@ -137,7 +137,6 @@ test('a parent module names and defines the validators of its own model, not tho
   graph.seal();
   const asked: string[] = [];
   const source = emitCodecRuntimeText(graph, {
-    nestedGenerated: (id) => identifier(`${id}Model`),
     validatorName: (id) => { asked.push(id.replace(/_[0-9a-f]{8}$/, '')); return identifier(`validate_${id.replace(/[^\w$]/g, '_')}`); },
   });
   // Three asks, all for the parent: the validator, the assert and the guard of the parse of the wire plane. None is the nested model's.

@@ -548,7 +548,6 @@ test('fill assigns known fields, keeps __proto__ defineProperty, and nested mode
   graph.seal();
   const source = emitCodecRuntimeText(graph, {
     validatorName: (id) => identifier(`validate_${id.replace(/[^\w$]/g, '_')}`),
-    nestedGenerated: (id) => identifier(id === 'Money' ? 'MoneyModel' : id),
   });
   class MoneyModel {
     public constructor(values: object = {}) {

@@ -136,75 +136,6 @@ export type TAccount = IModel<{ id: string }>;`,
   assert.equal(result.watchInputs.some((filename) => filename.endsWith('.generated.ts')), false);
 });
 
-/** The fixture's SDK module with the runtime registration of a generated SDK model, and a count of the calls it receives. */
-const COUNTING_SDK_MODELS = tsSource`import { registerGeneratedModel } from '@exprtlabs/golem/internal/model-runtime';
-export const calls = { decode: 0, stringify: 0, toWire: 0 };
-export class MoneyModel {
-  public currency = '';
-  public constructor(values: { currency?: string } = {}) { if (values.currency !== undefined) this.currency = values.currency; }
-}
-registerGeneratedModel(MoneyModel, {
-  fields: ['currency'],
-  conversion: {
-    decode: (value, constructor) => { calls.decode += 1; return Reflect.construct(constructor ?? MoneyModel, [value]) as MoneyModel; },
-  },
-});
-export function stringifyfixture_money(value: MoneyModel, _trusted?: unknown): string { calls.stringify += 1; return JSON.stringify({ currency: value.currency }); }
-export function toWireFormatfixture_money(value: MoneyModel, _trusted?: unknown): object { calls.toWire += 1; return { currency: value.currency }; }
-`;
-
-test('consumes current manifests and keeps imported model identity for conversion', async (t: TestContext) => {
-  const { root, sourceRoot } = project(t);
-  copyFixture(root, 'models/model-generator/manifest-identity');
-  const sdkRoot = path.join(sourceRoot, 'sdk');
-  const sdkTypes = path.join(sdkRoot, 'types.ts');
-  const manifest = path.join(sdkRoot, 'model-manifest.json');
-  const source = path.join(sourceRoot, 'aggregate.model.ts');
-  writeModelSources(sdkRoot, { 'models.ts': COUNTING_SDK_MODELS });
-  const result = generate({
-    root,
-    sources: [source],
-    profile: { mobx: false, validation: false },
-    manifestInputs: [manifest],
-  });
-  assert.equal(result.watchInputs.includes(manifest), true);
-  assert.equal(result.watchInputs.includes(sdkTypes), true);
-
-  writeModelGolemYaml(root, { mobx: false, validation: false });
-  await buildModelProject(root);
-  const sdk = await import(pathToFileURL(path.join(root, 'build/sdk/models.js')).href) as {
-    readonly MoneyModel: new () => object;
-    readonly calls: { decode: number; stringify: number; toWire: number };
-  };
-  const { TAggregateBaseModel, stringifyTAggregate } = await import(pathToFileURL(path.join(root, 'build/aggregate.model.generated.js')).href);
-  const wire = { money: { currency: 'USD' }, nested: { money: { currency: 'EUR' } } };
-  const aggregate = modelCodec(TAggregateBaseModel).fromWireFormat(wire);
-  assert.ok(aggregate.money instanceof sdk.MoneyModel, 'the companion builds the SDK class of the manifest, not a copy of it');
-  assert.ok(aggregate.nested.money instanceof sdk.MoneyModel);
-  assert.equal(sdk.calls.decode, 2, 'each Money goes through the registered conversion of the SDK model');
-  assert.deepEqual(modelCodec(aggregate).toWireFormat(aggregate), wire);
-  assert.equal(stringifyTAggregate(aggregate), JSON.stringify(wire));
-  assert.equal(sdk.calls.stringify, 2, 'each Money is written by the stringify helper of the SDK');
-});
-
-test('rejects an SDK module that lacks a codec helper the companion imports', (t: TestContext) => {
-  const { root, sourceRoot } = project(t);
-  copyFixture(root, 'models/model-generator/manifest-identity');
-  const sdkModels = path.join(sourceRoot, 'sdk/models.ts');
-  // The SDK module exports the model class but not stringifyfixture_money, which the companion calls.
-  fs.writeFileSync(sdkModels, 'export class MoneyModel {\n  public constructor() {}\n}\n');
-  assert.throws(
-    () => generate({
-      root,
-      sources: [path.join(sourceRoot, 'aggregate.model.ts')],
-      profile: { mobx: false, validation: false },
-      manifestInputs: [path.join(sourceRoot, 'sdk/model-manifest.json')],
-    }),
-    /generated model module \.\/models\.ts .*does not export stringifyfixture_money\b/,
-  );
-  assert.equal(fs.existsSync(path.join(sourceRoot, 'aggregate.model.generated.ts')), false, 'no companion is written');
-});
-
 test('a model named with a non-ASCII letter generates a companion that keeps the name', (t: TestContext) => {
   // protects: T-290 a user model name may hold any Unicode letter, as it did before Code values
   const { root, sourceRoot } = project(t);
@@ -312,7 +243,6 @@ test('rejects unsupported and duplicate model manifests', (t: TestContext) => {
     codecId: 'Money_0a1b2c3d',
     allowAny: false,
     type: { module: './types.ts', export: 'Money' },
-    generated: { module: './models.ts', export: 'MoneyModel' },
   };
   const manifest = (profile: { mobx: boolean; validation: boolean }) => ({
     profile: { ...profile, allowAny: false, unknownFormats: 'error' },
@@ -390,25 +320,6 @@ test('a solution tsconfig that starts with a byte-order mark generates with the 
   });
   const result = generate({ root, profile: { mobx: false, validation: true } });
   assert.ok(generatedModelPaths(result.artifacts).includes(path.join(sourceRoot, 'item.model.generated.ts')));
-});
-
-test('a solution tsconfig checks a generated SDK module with the options of the referenced project', (t: TestContext) => {
-  const { root, sourceRoot } = solutionProject(t, ['./tsconfig.other.json', './tsconfig.app.json']);
-  copyFixture(root, 'models/model-generator/manifest-identity');
-  // The SDK module reaches its exports through the app project's `paths` alias; the solution root has no paths.
-  fs.mkdirSync(path.join(sourceRoot, 'lib'));
-  fs.renameSync(path.join(sourceRoot, 'sdk/models.ts'), path.join(sourceRoot, 'lib/money.ts'));
-  fs.writeFileSync(path.join(sourceRoot, 'sdk/models.ts'), "export * from '@lib/money';\n");
-  const context = {
-    root,
-    sources: [path.join(sourceRoot, 'aggregate.model.ts')],
-    profile: { mobx: false, validation: false },
-    manifestInputs: [path.join(sourceRoot, 'sdk/model-manifest.json')],
-  };
-  generate(context);
-  // The module is read through the alias: once it lacks the codec helper the companion calls, generation stops.
-  fs.writeFileSync(path.join(sourceRoot, 'lib/money.ts'), 'export class MoneyModel {\n  public constructor() {}\n}\n');
-  assert.throws(() => generate(context), /does not export stringifyfixture_money\b/);
 });
 
 test('a solution tsconfig whose references hold no model source names the solution and the source', (t: TestContext) => {

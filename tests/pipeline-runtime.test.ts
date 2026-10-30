@@ -77,8 +77,7 @@ function modelWatchFixture(t: TestContext): ModelWatchFixture {
 }
 
 function writeExternalManifest(fixture: ModelWatchFixture): void {
-  copyFixtureFile(fixture.root, 'pipeline/model-watch/models.ts', 'src/external/models.ts');
-  writeMoneyManifest(fixture.manifest, 'MoneyModel');
+  writeMoneyManifest(fixture.manifest);
 }
 
 function writeExternalTypes(fixture: ModelWatchFixture): void {
@@ -262,7 +261,7 @@ test('initial model watch failures retain missing manifests and declarations in 
 
       await until(
         () => fs.existsSync(fixture.companion)
-          && fs.readFileSync(fixture.companion, 'utf8').includes('MoneyModel'),
+          && fs.readFileSync(fixture.companion, 'utf8').includes('currency: string'),
         `${order}: model companion after external inputs are complete`,
       );
       const recoveredErrorCount = errors.length;

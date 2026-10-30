@@ -77,8 +77,7 @@
     "ignore": [
       "tests/fixtures/**",
       "scripts/benchmark/fixtures/**",
-      "**/*.generated.ts",
-      "**/sdk/**"
+      "**/*.generated.ts"
     ],
     "workspaces": {
       ".": {

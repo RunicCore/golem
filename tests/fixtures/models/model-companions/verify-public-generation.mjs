@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import { Wallet } from './build/wallet.model.js';
-import { MoneyModel } from './build/sdk/models.js';
 import { findGeneratedModelDefinition, requireObjectCodec } from '@exprtlabs/golem/internal/model-runtime';
 import { getValidator } from '@exprtlabs/golem/validation';
 
@@ -11,8 +10,6 @@ const wallet = modelCodec(Wallet).fromWireFormat({
   mixed: 'cash',
   values: ['x', true, 1, 2],
 }, { construct: Wallet });
-assert.ok(wallet.money instanceof MoneyModel);
-// toWireFormat copies a nested SDK model and keeps its class, so the comparison is on the JSON text.
 assert.deepEqual(JSON.parse(JSON.stringify(modelCodec(wallet).toWireFormat(wallet))), {
   money: { currency: 'VND', amount: 3 },
   mixed: 'cash',

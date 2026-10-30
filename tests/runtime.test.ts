@@ -302,7 +302,6 @@ test('model manifests validate profile and keep identity independent of profile'
       codecId: 'Payment_a1b2c3d4',
       allowAny: false,
       type: { module: './types.ts', export: 'Payment' },
-      generated: { module: './models.ts', export: 'PaymentModel' },
     }],
   };
   const profileVariant = {
