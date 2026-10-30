@@ -21,7 +21,7 @@ import {
 } from './models.js';
 import { withOrigins, type OriginLocator } from './origin.js';
 import { buildSchemaData } from './schemas.js';
-import { compileSdkValidators, uniqueDiagnostics, type CodecValidationPlan, type PlanValidators, type SchemaPlace } from '@exprtlabs/golem/internal/validation-plan';
+import { compileLevel, compileSdkValidators, uniqueDiagnostics, type CodecValidationPlan, type PlanValidators, type SchemaPlace } from '@exprtlabs/golem/internal/validation-plan';
 import { descriptionComment, generateDirectionalSchemas, generateTypes } from './types.js';
 
 interface WriteSdkResult extends GolemResult {}
@@ -204,6 +204,7 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions, moved:
   const validatorOptions = {
     owner: '@exprtlabs/golem-openapi',
     unknownFormats: profile.unknownFormats,
+    level: compileLevel(profile.validation),
     documentName: 'the OpenAPI document',
     ...(operationValidation ? { locate: operationValidation.locate } : {}),
   } as const;

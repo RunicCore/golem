@@ -123,7 +123,7 @@ test('with validation off an object writes the fields it holds, in order and wit
   const graph = createSchemaGraph();
   graph.intern(record, 'Record5');
   graph.seal();
-  const { stringifyRecord5 } = instantiateRuntime(emitCodecRuntimeText(graph, { validationEnabled: false }));
+  const { stringifyRecord5 } = instantiateRuntime(emitCodecRuntimeText(graph, { validationLevel: false }));
   const write = (value: object): unknown => stringifyRecord5!(value, { validate: false });
   assert.equal(write({ b: 1, d: true }), '{"b":1,"d":true}');
   assert.equal(write({ a: 'x', b: 1, c: 'y', d: true, e: 'z' }), '{"a":"x","b":1,"c":"y","d":true,"e":"z"}');
@@ -242,7 +242,7 @@ test('a root union of plain objects decodes by its tag with validation off, and 
   const graph = createSchemaGraph();
   graph.intern(contact, 'Contact');
   graph.seal();
-  const { fromWireFormatContact } = instantiateRuntime(emitCodecRuntimeText(graph, { validationEnabled: false }));
+  const { fromWireFormatContact } = instantiateRuntime(emitCodecRuntimeText(graph, { validationLevel: false }));
   assert.deepEqual(fromWireFormatContact({ kind: 'phone', added: '2024-05-06T07:08:09.000Z' }), { kind: 'phone', added: new Date('2024-05-06T07:08:09.000Z') });
   assert.throws(() => fromWireFormatContact({ kind: 'fax', added: '2024-05-06T07:08:09.000Z' }), LibError);
 });
@@ -265,7 +265,7 @@ test('an explicit union tag table must list every variant', () => {
   assert.throws(() => {
     graph.intern(owner, 'Owner');
     graph.seal();
-    emitCodecRuntimeText(graph, { validationEnabled: false });
+    emitCodecRuntimeText(graph, { validationLevel: false });
   }, /tag values for every (union )?variant/);
 });
 

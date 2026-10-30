@@ -43,7 +43,7 @@ The model value is what your code holds. The JSON form is what `toWireFormat` re
 
 A `Date` converts in these ways:
 
-- It decodes with ECMAScript `Date` parsing. A value that is not a string, or that does not parse, throws `Deserialization` with `causedByInput: true`.
+- It decodes a `date-time` string at every validation level, off included. A value that is not a string, or that is not a `date-time` string, throws `Deserialization` with `causedByInput: true`.
 - It encodes as UTC ISO text with milliseconds. A year outside 0000-9999 throws `Serialization`.
 - Put your own rule on a `Date` with [`TValidation`](/guide/tags#add-a-custom-field-rule).
 
@@ -160,10 +160,14 @@ With validation on, the default, each call checks the value. The JSON value and 
 
 <<< ../../examples/models/src/load-task.ts#validation-during-conversion
 
+- `parse`, `stringify`, `fromWireFormat` and `toWireFormat` take `validate: true | 'sanity' | false`. `{ validate: 'sanity' }` checks the [shape only](/reference/config#validation-profiles): JSON types, required and extra keys, union tags, enums, tuple length and `date-time` values.
+- Without the option, the call uses the default level of its model ([rules for a level](/guide/validation#choose-a-level-for-one-call)).
+- A level above the project level throws a `LibError` of kind `ValidationUnavailable`. For these four calls, any other value throws a `TypeError`.
+- A nested model is checked at the level of the call.
 - After a successful `parse` or `fromWireFormat` with validation on, call `validateInstance(model)` again only after you edit the instance. Call `getValidator(model).validate()` to store all field errors for display.
 - `failFast: false` throws with every issue instead of the first one. It does not turn the check off.
 - `validate<T>(value)` from `@exprtlabs/golem/validation` narrows `value` to the model and returns whether it matches, without throwing. `validateInstance(model)` returns the issues and does not throw for an ordinary invalid value.
-- When `validation` is off, generated output has no checks. `{ validate: true }` then throws a `LibError` of kind `validation_unavailable`. With validation off, a missing required field is not reported: `stringify` leaves it out, and `toWireFormat` returns it as `undefined`.
+- When `validation` is off, generated output has no checks. `{ validate: true }` and `{ validate: 'sanity' }` then throw a `LibError` of kind `validation_unavailable`. In a project at `sanity`, `{ validate: true }` throws it too. With validation off, a missing required field is not reported: `stringify` leaves it out, and `toWireFormat` returns it as `undefined`.
 
 ## Copies and references
 

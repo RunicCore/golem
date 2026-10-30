@@ -6,7 +6,7 @@ import { test, type TestContext } from 'node:test';
 import { requireObjectCodec } from '@exprtlabs/golem/internal/model-runtime';
 import { IssueRepresentation, IssueSource, LibError, LibErrorKind, type Issue } from '@exprtlabs/golem/errors';
 import { getValidator } from '@exprtlabs/golem/validation';
-import type { GolemProfile } from '#golem/generator-api';
+import { resolveProfile, type GolemProfile } from '#golem/generator-api';
 import { generate } from '#model/generator';
 import { buildModelProject, createModelProject, writeModelGolemYaml } from './model-project.js';
 import { generatedCodecIdFromRoot } from './support/consumer.js';
@@ -279,6 +279,95 @@ for (const item of [
         assert.deepEqual(error.issues[0]?.path, ['extra']);
         return true;
       },
+    );
+  });
+}
+
+type Level = boolean | 'sanity';
+/** The diagnostic message from the model file name on, so the literal does not depend on the temporary folder. */
+function fromModelFile(error: unknown): { readonly code: unknown; readonly text: string } {
+  const { code, message } = error as { code?: unknown; message: string };
+  return { code, text: message.slice(message.indexOf('payload.model.ts')) };
+}
+const show = (level: Level): string => (level === 'sanity' ? "'sanity'" : String(level));
+
+test('resolveProfile takes validation true, false and sanity and refuses every other value', () => {
+  // protects: T-663 an extension author's GolemProfile carries validation: 'sanity'; other values are a TypeError
+  for (const validation of [true, false, 'sanity'] as const) {
+    assert.deepEqual(resolveProfile({ mobx: false, validation }), { mobx: false, validation, allowAny: false, unknownFormats: 'error' });
+  }
+  for (const validation of ['full', 'true', 1, null, undefined]) {
+    assert.throws(
+      () => resolveProfile({ mobx: false, validation } as unknown as GolemProfile),
+      { name: 'TypeError', message: 'Generation profile validation must be true, false or "sanity".' },
+      String(validation),
+    );
+  }
+});
+
+const MODEL_SOURCE = (model: Level): string =>
+  `import type { IModel } from '@exprtlabs/golem/model';\nexport type TCard = IModel<{ id: string }, { validation: ${show(model)} }>;\n`;
+
+const ALLOWED_ROWS: readonly (readonly [project: Level, model: Level])[] = [
+  [true, true], [true, 'sanity'], [true, false], ['sanity', 'sanity'], ['sanity', false], [false, false],
+];
+const REFUSED_ROWS: readonly (readonly [project: Level, model: Level])[] = [['sanity', true], [false, 'sanity'], [false, true]];
+
+for (const [project, model] of ALLOWED_ROWS) {
+  test(`a model at validation ${show(model)} in a project at ${show(project)} generates`, (t: TestContext) => {
+    // protects: T-663 a model lowers the validation level of its project (false < 'sanity' < true)
+    const { root, source } = modelProject(t);
+    fs.writeFileSync(source, MODEL_SOURCE(model));
+    assert.ok(generate({ root, sources: [source], profile: profile({ validation: project }) }));
+  });
+}
+
+for (const [project, model] of REFUSED_ROWS) {
+  test(`a model at validation ${show(model)} in a project at ${show(project)} stops with RUNM1089`, (t: TestContext) => {
+    // protects: T-663 a model never raises the validation level of its project
+    const { root, source } = modelProject(t);
+    fs.writeFileSync(source, MODEL_SOURCE(model));
+    assert.throws(() => generate({ root, sources: [source], profile: profile({ validation: project }) }), (error: unknown) => {
+      assert.deepEqual(fromModelFile(error), {
+        code: 'RUNM1089',
+        text: `payload.model.ts:2:1 RUNM1089: TCard sets validation ${show(model)}, which is above the project level ${show(project)}. A model may lower the level of its project, never raise it. Set the model to ${show(project)} or lower, or raise validation in golem.yaml.`,
+      });
+      return true;
+    });
+  });
+}
+
+test('a model validation option that is none of true, false and sanity stops with RUNM1089 naming the key and the allowed values', (t: TestContext) => {
+  // protects: T-663 any other per-model validation value is an error, not a silent inherit
+  const { root, source } = modelProject(t);
+  fs.writeFileSync(source, "import type { IModel } from '@exprtlabs/golem/model';\nexport type TCard = IModel<{ id: string }, { validation: 'full' }>;\n");
+  assert.throws(() => generate({ root, sources: [source], profile: profile() }), (error: unknown) => {
+    assert.deepEqual(fromModelFile(error), { code: 'RUNM1089', text: 'payload.model.ts:2:1 RUNM1089: The validation option of TCard must be true, false or "sanity". It is "full".' });
+    return true;
+  });
+});
+
+function writeManifestProject(t: TestContext, manifest: Level): { readonly root: string; readonly source: string; readonly manifestFile: string } {
+  const { root, source } = modelProject(t);
+  fs.writeFileSync(source, "import type { IModel } from '@exprtlabs/golem/model';\nexport type TCard = IModel<{ id: string }>;\n");
+  const manifestFile = path.join(root, 'external-model-manifest.json');
+  fs.writeFileSync(manifestFile, JSON.stringify({ profile: { mobx: false, validation: manifest, allowAny: false, unknownFormats: 'error' }, models: [] }));
+  return { root, source, manifestFile };
+}
+
+test('an SDK manifest at validation sanity matches a project at sanity', (t: TestContext) => {
+  // protects: T-663 an SDK and its app at the same level are accepted
+  const { root, source, manifestFile } = writeManifestProject(t, 'sanity');
+  assert.ok(generate({ root, sources: [source], profile: profile({ validation: 'sanity' }), manifestInputs: [manifestFile] }));
+});
+
+for (const [manifest, project] of [['sanity', true], [true, 'sanity'], [false, 'sanity'], ['sanity', false]] as const) {
+  test(`an SDK manifest at validation ${show(manifest)} is refused by a project at ${show(project)}`, (t: TestContext) => {
+    // protects: T-663 mixed app and SDK levels are refused for any difference, and the message prints both levels
+    const { root, source, manifestFile } = writeManifestProject(t, manifest);
+    assert.throws(
+      () => generate({ root, sources: [source], profile: profile({ validation: project }), manifestInputs: [manifestFile] }),
+      new RegExp(`profile mismatch in .*: validation: manifest ${manifest}, project ${project}\\. The project expects \\{ mobx: false, validation: ${project},`),
     );
   });
 }

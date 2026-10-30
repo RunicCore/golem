@@ -90,7 +90,7 @@ export function writeModelSources(
 export const MINIMAL_GOLEM_YAML = 'version: 1\nmodels:\n  root: .\n';
 
 /** The golem.yaml of a project whose models job generates with `profile`: the profile its own `generate` calls used, so a build regenerates the same files. `exact` is the root default for the `exact` model option, not a profile key. */
-export function writeModelGolemYaml(root: string, profile: Readonly<{ mobx?: boolean; validation?: boolean; allowAny?: boolean; exact?: boolean }>): void {
+export function writeModelGolemYaml(root: string, profile: Readonly<{ mobx?: boolean; validation?: boolean | 'sanity'; allowAny?: boolean; exact?: boolean }>): void {
   const keys = Object.entries(profile).map(([key, value]) => `${key}: ${String(value)}\n`).join('');
   fs.writeFileSync(path.join(root, 'golem.yaml'), `version: 1\n${keys}models:\n  root: .\n`);
 }

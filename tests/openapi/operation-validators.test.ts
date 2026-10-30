@@ -408,3 +408,23 @@ test('writeSdk reports each schema keyword that holds a value that is no schema,
     ['VALIDATE_UNSUPPORTED_KEYWORD', GolemDiagnosticSeverity.Error, `operation "send" at /input/properties/body/properties/branch/allOf/1: the value of allOf is not valid: ${expected}`],
   ]);
 });
+
+test('a sanity SDK compiles its validators without value limits, records sanity in its manifest, and its client checks the shape only', async () => {
+  // protects: T-678 a sanity SDK emits no value-limit code and its client validates at the SDK level, with no per-call option
+  const output = path.join(payloadRoot, 'sanity');
+  const document = sdkDocument('S');
+  const payload = (document.components as { schemas: { Payload: { properties: Record<string, unknown> } } }).schemas.Payload;
+  payload.properties.name = { type: 'string', minLength: 3 };
+  writeGeneratedSdk(writeSdk, document, { output, name: 'Engine', profile: { mobx: false, validation: 'sanity' } });
+  compileGeneratedSdk(output, []);
+  const validators = fs.readFileSync(path.join(output, 'validators.generated.ts'), 'utf8');
+  assert.equal(/codePointLength|\.length\s*</.test(validators), false, 'the validators module holds no length check');
+  const manifest = JSON.parse(fs.readFileSync(path.join(output, 'model-manifest.json'), 'utf8')) as { profile: { validation: unknown } };
+  assert.equal(manifest.profile.validation, 'sanity');
+  const module: Record<string, unknown> = await import(pathToFileURL(path.join(output, 'dist/client.js')).href);
+  const Client = module.EngineClient;
+  assert.ok(isGeneratedClientClass(Client));
+  const client = new Client({ baseUrl: 'https://fixture.invalid', fetchImpl: echo }) as unknown as { sendPayload(): { execute(input: { body: unknown }): Promise<{ body: unknown }> } };
+  assert.deepEqual((await client.sendPayload().execute({ body: { marker: 'S', name: 'ab' } })).body, { marker: 'S', name: 'ab' });
+  await assert.rejects(client.sendPayload().execute({ body: { marker: 'S', name: 5 } }));
+});

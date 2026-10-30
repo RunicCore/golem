@@ -5,7 +5,7 @@
  */
 
 import type { ModelTypeDescriptor } from '../model-registry.js';
-import type { ValidationPlane } from '../object-codec.js';
+import type { ValidationLevel, ValidationPlane } from '../object-codec.js';
 import type { SchemaGraph, SchemaNode } from './schema-graph.js';
 import { codecShortName, serdeWireDescriptor } from './schema-graph.js';
 import type { JsonSchema } from './schema.js';
@@ -52,7 +52,8 @@ export interface NestedImportedSerde {
 }
 
 export interface CodecRuntimeOptions {
-  readonly validationEnabled?: boolean;
+  /** The validation level of the project (`golem.yaml` `validation`): the highest level any call of this module may ask for. */
+  readonly validationLevel?: ValidationLevel;
   /**
    * The name the module imports the validator of a root under; the root is a codec id and plane (`Id`, `Id#wire`,
    * `Id#model-only`, `Id#wire-only`). The name is Code that holds an imported part, so the file imports the validators its code uses.
@@ -188,7 +189,7 @@ interface HoistedConverters {
 }
 
 const TRUSTED = code`{ validate: false }`;
-const STRINGIFY_OPTIONS = code`_options?: { readonly validate?: boolean; readonly failFast?: boolean }`;
+const STRINGIFY_OPTIONS = code`_options?: { readonly validate?: boolean | 'sanity'; readonly failFast?: boolean }`;
 /** Declared once per emitted module that passes trusted options to a function in another module. */
 const TRUSTED_HELPER: Helper = helper('__golemTrusted', () => code`const __golemTrusted = Object.freeze({ validate: false });`);
 /**
@@ -374,7 +375,7 @@ function inlineLocalLines(ctx: EmitCtx): Code[] {
 function emitRecursiveWireCall(named: SchemaNode, expression: Code, ctx: EmitCtx): Code {
   if (ctx.siblingWireCodecIds?.has(named.codecId)) return code`${siblingWireCall(named.codecId, ctx)}(${expression} as never)`;
   if (named.sameSchema && !reachesEncodedValue(named.descriptor, ctx)) return nestedStringifyCall(named.id, expression, ctx);
-  throw new Error(named.validationEnabled === false
+  throw new Error(named.validation === false
     ? `Recursive model ${named.name} has validation turned off, so its wire form has no function to write it; turn validation on for it.`
     : `Internal error: recursive model ${named.name} reached its wire write with no function to call.`);
 }
@@ -765,7 +766,7 @@ export function emitStringifyFunction(
   if (root) return emitObjectStringify(fn, root, ctx, guard, valueSlot);
   if (delegates) {
     return stringifyFunction(
-      (parameter) => code`function ${identifier(fn)}(${parameter}: unknown, options?: { readonly validate?: boolean; readonly failFast?: boolean }): string {`,
+      (parameter) => code`function ${identifier(fn)}(${parameter}: unknown, options?: { readonly validate?: boolean | 'sanity'; readonly failFast?: boolean }): string {`,
       [code`  return ${rt.serde.requireObjectCodec}(${literal(node.codecId)}).stringify(${inputOf(valueSlot)} as never, options);`],
       false,
       valueSlot,
@@ -1866,10 +1867,45 @@ function wireOnlyAssertName(node: SchemaNode): string {
   return `__golemAssertWireOnly_${node.id}`;
 }
 
-function emitSerdeValidates(validationEnabled: boolean): Code {
-  return validationEnabled
-    ? code`  const validates = ${rt.serde.serdeValidates}(options, true);`
-    : code`  ${rt.serde.serdeValidates}(options, false);`;
+/**
+ * The level a node's calls run at when the call names none, and the highest level a call may ask for. A node is off when
+ * its project or the node is; any other node takes the level of its project, or `'sanity'` when it chose that and the
+ * project validates at full.
+ */
+interface NodeLevels {
+  readonly defaultLevel: ValidationLevel;
+  readonly cap: ValidationLevel;
+}
+
+function nodeLevels(node: SchemaNode, project: ValidationLevel): NodeLevels {
+  if (project === false || node.validation === false) return { defaultLevel: false, cap: false };
+  return { defaultLevel: node.validation === 'sanity' ? 'sanity' : project, cap: project };
+}
+
+/** The level arguments of `serdeValidates`: the default, and the cap when it is another level. */
+function levelArguments({ defaultLevel, cap }: NodeLevels): Code {
+  return cap === defaultLevel ? code`, ${literal(defaultLevel)}` : code`, ${literal(defaultLevel)}, ${literal(cap)}`;
+}
+
+/**
+ * The level arguments of a guard, which resolves the level of its call itself. A full node leaves out what the runtime
+ * defaults to. In a sanity project the validators take no flag, so a guard resolves the level only to refuse a request for
+ * full, and only an entry of the public API (`publicEntry`) can meet one: the other entries refused it before they got here.
+ */
+function guardLevelArguments(levels: NodeLevels, publicEntry: boolean): Code {
+  if (levels.cap === true) return levels.defaultLevel === true ? code`` : levelArguments(levels);
+  return publicEntry ? levelArguments(levels) : code``;
+}
+
+/** Whether a node's calls validate by default: its project and the node are not off. */
+function validatesByDefault(levels: NodeLevels): boolean {
+  return levels.defaultLevel !== false;
+}
+
+function emitSerdeValidates(levels: NodeLevels): Code {
+  return !validatesByDefault(levels)
+    ? code`  ${rt.serde.serdeValidates}(options, false);`
+    : code`  const validates = ${rt.serde.serdeValidates}(options${levelArguments(levels)});`;
 }
 
 function validatorReference(ctx: EmitCtx, id: string): Code {
@@ -1891,17 +1927,19 @@ function validatorFor(ctx: EmitCtx, reference: string, value: Code): Code {
 /**
  * True when the fast check `fast` answers for `value`: no validation context decides instead. The test is
  * written in each model's function, not in a shared runtime helper, so each call of a fast check sees one check only
- * and V8 can inline it.
+ * and V8 can inline it. A public entry of a sanity project answers from the fast check unless the call asks for full: that
+ * call must throw whatever the value, and the guard behind the fast check refuses it.
  */
-function fastPasses(fast: Code, value: Code): Code {
-  return code`options?.validationContext === undefined && ${fast}(${value})`;
+function fastPasses(fast: Code, value: Code, levels: NodeLevels, publicEntry: boolean): Code {
+  const noDecision = publicEntry && levels.cap === 'sanity' ? code`${rt.serde.fastable}(options)` : code`options?.validationContext === undefined`;
+  return code`${noDecision} && ${fast}(${value})`;
 }
 
 /** Whether `value` passes the validator of `reference`, from the fast check first when the root has one. */
-function validModelValueCall(ctx: EmitCtx, reference: string): Code {
+function validModelValueCall(ctx: EmitCtx, reference: string, levels: NodeLevels): Code {
   const fast = ctx.fastCheckName?.(reference);
-  const slow = code`${rt.serde.isValidModelValue}(value, options, ${validatorFor(ctx, reference, code`value`)}, ${literal(reference)})`;
-  return fast === undefined ? slow : code`(${fastPasses(fast, code`value`)}) || ${slow}`;
+  const slow = code`${rt.serde.isValidModelValue}(value, options, ${validatorFor(ctx, reference, code`value`)}, ${literal(reference)}${guardLevelArguments(levels, true)})`;
+  return fast === undefined ? slow : code`(${fastPasses(fast, code`value`, levels, true)}) || ${slow}`;
 }
 
 function emitModelGuard(
@@ -1909,6 +1947,8 @@ function emitModelGuard(
   value: Code,
   plane: ValidationPlane,
   ctx: EmitCtx,
+  levels: NodeLevels,
+  publicEntry: boolean,
   contextReference?: string,
 ): Code {
   const wire = plane === 'wire' && !node.sameSchema;
@@ -1919,8 +1959,8 @@ function emitModelGuard(
   // A valid value passes the fast check first, unless a validation context decides. `contextReference` is the key a validation
   // context is asked, when it differs from the key of the generated validator.
   const fast = ctx.fastCheckName?.(reference);
-  const slow = code`${rt.serde.assertModelValue}(${value}, options, ${validatorFor(ctx, reference, value)}, ${literal(contextReference ?? reference)}, ${rt.serde.IssueRepresentation}.${identifier(representation)}, ${rt.serde.IssueSource}.${identifier(ctx.issueSource)});`;
-  return fast === undefined ? slow : code`if (!(${fastPasses(fast, value)})) ${slow}`;
+  const slow = code`${rt.serde.assertModelValue}(${value}, options, ${validatorFor(ctx, reference, value)}, ${literal(contextReference ?? reference)}, ${rt.serde.IssueRepresentation}.${identifier(representation)}, ${rt.serde.IssueSource}.${identifier(ctx.issueSource)}${guardLevelArguments(levels, publicEntry)});`;
+  return fast === undefined ? slow : code`if (!(${fastPasses(fast, value, levels, publicEntry)})) ${slow}`;
 }
 
 /** The rows of a block, one to a line. */
@@ -1944,11 +1984,14 @@ interface NodeFields {
 interface NodeRuntime {
   readonly node: SchemaNode;
   readonly ctx: EmitCtx;
-  readonly validationEnabled: boolean;
+  /** The level of the node's calls and the highest level a call may ask for. */
+  readonly levels: NodeLevels;
   readonly names: { readonly fromWire: Code; readonly toWire: Code; readonly parse: Code };
   readonly stringifyId: Code;
   readonly validateId: Code;
   readonly assertId: Code;
+  /** The private assert of the model plane, which the exported assert and the checks of stringify and toWireFormat run. */
+  readonly modelAssertId: Code;
   readonly wireAssertId: Code;
   readonly modelOnlyAssertId: Code;
   readonly wireOnlyAssertId: Code;
@@ -2003,7 +2046,7 @@ function encodedContext({ ctx, guardInline }: NodeRuntime): EmitCtx {
   return { ...ctx, inlineLocals: new Set(), guardInline };
 }
 
-function nodeRuntime(node: SchemaNode, moduleCtx: EmitCtx, validationEnabled: boolean): NodeRuntime {
+function nodeRuntime(node: SchemaNode, moduleCtx: EmitCtx, levels: NodeLevels): NodeRuntime {
   const ctx: EmitCtx = {
     ...moduleCtx,
     effects: { fallible: 0, keyed: 0 },
@@ -2022,7 +2065,7 @@ function nodeRuntime(node: SchemaNode, moduleCtx: EmitCtx, validationEnabled: bo
   return {
     node,
     ctx,
-    validationEnabled,
+    levels,
     names: {
       fromWire: identifier(fromWireFunctionName(node.id)),
       toWire: identifier(toWireFunctionName(node.id)),
@@ -2031,6 +2074,7 @@ function nodeRuntime(node: SchemaNode, moduleCtx: EmitCtx, validationEnabled: bo
     stringifyId: identifier(stringifyFunctionName(node.id)),
     validateId: identifier(validateFunctionName(node.id)),
     assertId: identifier(`assert${node.id}`),
+    modelAssertId: identifier(`__golemAssertModel_${node.id}`),
     wireAssertId: identifier(`__golemAssertWire_${node.id}`),
     modelOnlyAssertId: identifier(modelOnlyAssertName(node)),
     wireOnlyAssertId: identifier(wireOnlyAssertName(node)),
@@ -2045,7 +2089,8 @@ function nodeRuntime(node: SchemaNode, moduleCtx: EmitCtx, validationEnabled: bo
 
 /** The stringify function of a node, with the lenient and wire copies it needs, and the checked wrapper that calls them. */
 function emitStringifySection(runtime: NodeRuntime): Code {
-  const { node, ctx, validationEnabled, stringifyId, assertId, wireOnlyAssertId, exported, objectDescriptor } = runtime;
+  const { node, ctx, levels, stringifyId, modelAssertId, wireOnlyAssertId, exported, objectDescriptor } = runtime;
+  const validationEnabled = validatesByDefault(levels);
   // The validated call of a codec whose wire and model schemas agree runs this function after its check, so it keeps the
   // all-required fast path and a call with validation off runs a lenient copy. Any other call is lenient.
   const checkedCore = validationEnabled && node.sameSchema;
@@ -2078,12 +2123,12 @@ function emitStringifySection(runtime: NodeRuntime): Code {
   return rowsToText([
     blocksToText([stringifySrc, lenientStringify ?? code``, wireStringifySrc]),
     code`${exported}function ${stringifyId}(value: ${modelType}, options?: ${SERDE_OPTIONS}): string {`,
-    emitSerdeValidates(validationEnabled),
+    emitSerdeValidates(runtime.levels),
     ...(emitsValidatedWire ? inlineLocalLines(encoded) : []),
     ...(validationEnabled ? [
       code`  if (validates) {`,
       ...(runtime.reachesCycle ? [code`    ${rt.conversion.assertAcyclicEncodeInput}(value);`] : []),
-      code`    ${assertId}(value, options);`,
+      code`    ${modelAssertId}(value, options);`,
       ...(encodedExpr ? [
         code`    const wire = ${encodedExpr};`,
         // The full model check already ran; check only the JSON encoding produced.
@@ -2103,9 +2148,10 @@ function emitStringifySection(runtime: NodeRuntime): Code {
 /** The decode section: the fill function of an object model, the conversion from the wire, and the exported fromWireFormat. */
 function emitDecodeSection(runtime: NodeRuntime): { readonly fill: Code; readonly convert: Code; readonly fromWire: Code } {
   const {
-    node, ctx, validationEnabled, names, wireAssertId, modelOnlyAssertId, convertId, exported,
+    node, ctx, levels, names, wireAssertId, modelOnlyAssertId, convertId, exported,
     objectDescriptor, reachesCycle,
   } = runtime;
+  const validationEnabled = validatesByDefault(levels);
   const fillId = identifier(fillFunctionName(node.id));
   const fill = objectDescriptor ? emitFillFunction(node, ctx, objectDescriptor) : undefined;
   const wireRoot = inputSlot('wire', 'name', true);
@@ -2117,12 +2163,12 @@ function emitDecodeSection(runtime: NodeRuntime): { readonly fill: Code; readonl
 
   const convertLines: Code[] = [
     code`function ${convertId}(wire: unknown, options: ${SERDE_OPTIONS} | undefined): unknown {`,
-    emitSerdeValidates(validationEnabled),
+    emitSerdeValidates(runtime.levels),
   ];
   if (validationEnabled) {
     // The wire and model schemas are one validator, which a validation context is asked for as the wire plane.
     const wireAssertCall = node.sameSchema
-      ? emitModelGuard(node, code`wire`, 'model', ctx, `${node.codecId}#wire`)
+      ? emitModelGuard(node, code`wire`, 'model', ctx, levels, false, `${node.codecId}#wire`)
       : code`${wireAssertId}(wire, options);`;
     convertLines.push(
       code`  if (validates) {`,
@@ -2188,7 +2234,8 @@ function emitDecodeSection(runtime: NodeRuntime): { readonly fill: Code; readonl
 
 /** The toWireFormat core, which nested trusted calls and the validating wrapper both run, and the exported wrapper. */
 function emitToWireSection(runtime: NodeRuntime): Code {
-  const { node, ctx, validationEnabled, names, assertId, wireOnlyAssertId, exported, objectDescriptor, reachesCycle } = runtime;
+  const { node, ctx, levels, names, modelAssertId, wireOnlyAssertId, exported, objectDescriptor, reachesCycle } = runtime;
+  const validationEnabled = validatesByDefault(levels);
   const fieldsOrUnknown = runtime.fields().orUnknown;
   const toWireCoreId = identifier(`${toWireFunctionName(node.id)}Core`);
   const recursiveNode = reachesNode(node.descriptor, node.id, ctx) && !passesValueOn(node.descriptor, objectDescriptor !== undefined);
@@ -2221,11 +2268,11 @@ function emitToWireSection(runtime: NodeRuntime): Code {
   return rowsToText([
     toWireCoreSource,
     code`${exported}function ${names.toWire}(value: ${fieldsOrUnknown}, options?: ${SERDE_OPTIONS}): ${wireOrUnknown} {`,
-    emitSerdeValidates(validationEnabled),
+    emitSerdeValidates(runtime.levels),
     ...(validationEnabled ? [
       code`  if (validates) {`,
       ...(reachesCycle ? [code`    ${rt.conversion.assertAcyclicEncodeInput}(value);`] : []),
-      code`    ${assertId}(value, options);`,
+      code`    ${modelAssertId}(value, options);`,
       code`  }`,
     ] : []),
     ...(validationEnabled && node.wireOnlyJsonSchema !== undefined ? [
@@ -2253,17 +2300,23 @@ function emitParseSection(runtime: NodeRuntime): Code {
 
 /** The exported validate and assert functions, which are the runtime stub that fails with `validationUnavailable` when validation is off. */
 function emitValidateSection(runtime: NodeRuntime): Code {
-  const { node, ctx, validationEnabled, validateId, assertId, exported } = runtime;
+  const { node, ctx, levels, validateId, assertId, modelAssertId, exported } = runtime;
+  const validationEnabled = validatesByDefault(levels);
   const { modelType } = runtime.fields();
   return rowsToText(validationEnabled
     ? [
       code`${exported}function ${validateId}(value: unknown, options?: ${VALIDATE_OPTIONS}): value is ${modelType} {`,
-      code`  return ${validModelValueCall(ctx, node.codecId)};`,
+      code`  return ${validModelValueCall(ctx, node.codecId, levels)};`,
+      code`}`,
+      code``,
+      // One check of the model plane serves the exported assert and the checks of stringify and toWireFormat. It takes the options of a conversion, which may turn validation off.
+      code`function ${modelAssertId}(value: unknown, options?: ${SERDE_OPTIONS}): ${modelType} {`,
+      code`  ${emitModelGuard(node, VALUE_REF, 'model', ctx, levels, true)}`,
+      code`  return value as ${modelType};`,
       code`}`,
       code``,
       code`${exported}function ${assertId}(value: unknown, options?: ${VALIDATE_OPTIONS}): ${modelType} {`,
-      code`  ${emitModelGuard(node, VALUE_REF, 'model', ctx)}`,
-      code`  return value as ${modelType};`,
+      code`  return ${modelAssertId}(value, options);`,
       code`}`,
       code``,
     ]
@@ -2276,10 +2329,11 @@ function emitValidateSection(runtime: NodeRuntime): Code {
 
 /** The private assert functions of the wire plane and of the residual model-only and wire-only planes. */
 function emitPlaneAssertSection(runtime: NodeRuntime): Code {
-  const { node, ctx, validationEnabled, wireAssertId, modelOnlyAssertId, wireOnlyAssertId } = runtime;
+  const { node, ctx, levels, wireAssertId, modelOnlyAssertId, wireOnlyAssertId } = runtime;
+  const validationEnabled = validatesByDefault(levels);
   const planeAssert = (name: Code, plane: ValidationPlane): Code[] => [
-    code`function ${name}(value: unknown, options?: ${VALIDATE_OPTIONS}): Record<string, unknown> {`,
-    code`  ${emitModelGuard(node, VALUE_REF, plane, ctx)}`,
+    code`function ${name}(value: unknown, options?: ${SERDE_OPTIONS}): Record<string, unknown> {`,
+    code`  ${emitModelGuard(node, VALUE_REF, plane, ctx, levels, false)}`,
     code`  return value as Record<string, unknown>;`,
     code`}`,
     code``,
@@ -2316,10 +2370,10 @@ function emitCodecRegistrationSection(runtime: NodeRuntime): Code {
 function emitNodeRuntime(
   node: SchemaNode,
   moduleCtx: EmitCtx,
-  validationEnabled: boolean,
+  levels: NodeLevels,
 ): Code {
   if (node.descriptor.kind === 'generated-model' || node.descriptor.kind === 'reference') return emitExternalNodeRuntime(node, moduleCtx);
-  const runtime = nodeRuntime(node, moduleCtx, validationEnabled);
+  const runtime = nodeRuntime(node, moduleCtx, levels);
   const stringify = emitStringifySection(runtime);
   const decode = emitDecodeSection(runtime);
   const toWire = emitToWireSection(runtime);
@@ -2329,12 +2383,6 @@ function emitNodeRuntime(
   const codec = emitCodecRegistrationSection(runtime);
   // The hoisted converters exist only after the decode section.
   return blocksToText([rowsToText(runtime.ctx.hoisted?.sources ?? []), decode.fill, stringify, decode.convert, decode.fromWire, toWire, parse, validate, planeAsserts, codec]);
-}
-
-function nodeValidates(node: SchemaNode, defaultEnabled: boolean): boolean {
-  if (node.validationEnabled === true) return true;
-  if (node.validationEnabled === false) return false;
-  return defaultEnabled;
 }
 
 function isExternalCodecNode(node: SchemaNode): boolean {
@@ -2348,8 +2396,8 @@ export function emitCodecRuntimeCode(
   graph: SchemaGraph,
   options: CodecRuntimeOptions,
 ): Code {
-  const defaultEnabled = options.validationEnabled !== false;
-  const validates = (node: SchemaNode): boolean => nodeValidates(node, defaultEnabled);
+  const project = options.validationLevel ?? true;
+  const validates = (node: SchemaNode): boolean => validatesByDefault(nodeLevels(node, project));
   const nodes = [...graph.topo()];
   const patternConstants = new Map<string, Code>();
   const ctx: EmitCtx = {
@@ -2385,7 +2433,7 @@ export function emitCodecRuntimeCode(
   };
   const runtimes: Code[] = [];
   for (const node of nodes) {
-    const runtime = emitNodeRuntime(node, ctx, validates(node));
+    const runtime = emitNodeRuntime(node, ctx, nodeLevels(node, project));
     if (!isEmpty(runtime)) runtimes.push(runtime);
   }
   // A blank line stands between two functions' runtimes, and none ends the last.

@@ -2,7 +2,8 @@ import { code, identifier as identifierCode, join, joinIndented, literal as lite
 import type { IrArray, IrCheck, IrDiscriminator, IrFunction, IrInstance, IrNumber, IrObject, IrPatternProperty, IrSchema, IrString, IrType, IrTypeName, IrUnion, IrValidation, IrValidationImport } from './ir.js';
 import { rt } from '../rt.js';
 import { presentValueCode } from '../union-conversion.js';
-import { VALUE, PATH, NEWLINE, COMMA, ISSUES, ALL, INHERITED, EVALUATION, type CalleeSlot, type CallArguments } from './function-names.js';
+import { VALUE, PATH, NEWLINE, COMMA, ISSUES, ALL, SANITY, INHERITED, EVALUATION, type CalleeSlot, type CallArguments } from './function-names.js';
+import { isTuple, keepsFormat } from './call-graph.js';
 import { JSON_TYPES, dispatchTest } from './json-types.js';
 import { localName, lazyStateTest, scaledDivisor } from './local-helpers.js';
 import { patternExpression, type ModuleState } from './module-state.js';
@@ -26,6 +27,11 @@ interface LeafCheck {
   readonly issue: Lazy;
   /** The path of the issue; the current path by default. */
   readonly path?: Code;
+  /**
+   * The sanity level does not run this check. `cheap`: the test is a comparison, so a value that passes it pays nothing
+   * for the flag (`test && !s`). `costly`: the test costs more than the flag (`!s && test`).
+   */
+  readonly skip?: 'cheap' | 'costly';
 }
 
 /** The type names of every JSON value, which a hole in an array is none of. */
@@ -165,8 +171,27 @@ export class FunctionWriter {
     this.close();
   }
 
+  /** True when this function takes the sanity flag `s` and its mode honors it: a skipped check is written under the flag. */
+  private get honorsSanity(): boolean {
+    return this.mode.takesSanity && this.fn.sanity === true;
+  }
+
+  /** True when this function honors the flag and a function in `ids` reaches a check the sanity level skips: the check that calls them is relaxed there. */
+  private relaxes(ids: readonly number[]): boolean {
+    return this.honorsSanity && ids.some(id => this.functions[this.target(id)].sanity === true);
+  }
+
+  /** Writes `body` where the sanity level does not run it. */
+  private unlessSanity(body: () => void): void {
+    if (!this.honorsSanity) return body();
+    this.open(code`if (!${SANITY})`);
+    body();
+    this.close();
+  }
+
   private leaf(check: LeafCheck): void {
-    const failing = resolve(this.mode.form(check.fails, check.fast));
+    const test = resolve(this.mode.form(check.fails, check.fast));
+    const failing = check.skip === undefined || !this.honorsSanity ? test : check.skip === 'cheap' ? code`(${test}) && !${SANITY}` : code`!${SANITY} && (${test})`;
     if (this.mode.fail.leaves) return this.failWhen(failing);
     this.open(code`if (${failing})`);
     this.issue(resolve(check.issue), check.path);
@@ -174,9 +199,9 @@ export class FunctionWriter {
   }
 
   /** The `tooSmall` and `tooBig` leaves of a lower and an upper limit on `measure`, whose value `actual` holds; `fast` writes each test cheaper. */
-  private limitLeaves(measure: string, actual: Lazy, min: number | undefined, max: number | undefined, fast?: { readonly min: (limit: number) => Code; readonly max: (limit: number) => Code }): void {
-    if (min !== undefined) this.leaf({ fails: () => code`${resolve(actual)} < ${literalCode(min)}`, ...(fast ? { fast: () => fast.min(min) } : {}), issue: limitFields('tooSmall', measure, min, true) });
-    if (max !== undefined) this.leaf({ fails: () => code`${resolve(actual)} > ${literalCode(max)}`, ...(fast ? { fast: () => fast.max(max) } : {}), issue: limitFields('tooBig', measure, max, true) });
+  private limitLeaves(measure: string, actual: Lazy, min: number | undefined, max: number | undefined, fast?: { readonly min: (limit: number) => Code; readonly max: (limit: number) => Code }, skip?: LeafCheck['skip']): void {
+    if (min !== undefined) this.leaf({ fails: () => code`${resolve(actual)} < ${literalCode(min)}`, ...(fast ? { fast: () => fast.min(min) } : {}), issue: limitFields('tooSmall', measure, min, true), ...(skip ? { skip } : {}) });
+    if (max !== undefined) this.leaf({ fails: () => code`${resolve(actual)} > ${literalCode(max)}`, ...(fast ? { fast: () => fast.max(max) } : {}), issue: limitFields('tooBig', measure, max, true), ...(skip ? { skip } : {}) });
   }
 
   /** Adds a statement that marks what the current value evaluated, when this function keeps a record. */
@@ -250,6 +275,7 @@ export class FunctionWriter {
           // The format's test, looked up once when the module loads.
           fast: () => code`!${this.state.constant('format', code`${runtime.formatTest}(${literalCode(check.format)})`, check.format)}(${value})`,
           issue: code`code: 'format', format: ${literalCode(check.format)}`,
+          ...(keepsFormat(check.format) ? {} : { skip: 'costly' as const }),
         });
       case 'date':
         return this.leaf({ fails: code`!(${value} instanceof Date) || !Number.isFinite(${value}.getTime())`, issue: code`code: 'type', expected: ['Date']` });
@@ -265,7 +291,8 @@ export class FunctionWriter {
         return;
       case 'union': return check.discriminator ? this.discriminatedUnion(check, check.discriminator, value) : this.unionCheck(check, value);
       case 'not':
-        return this.leaf({ fails: this.call(check.fn, { value, issues: code`[]`, all: code`false` }), issue: code`code: 'not'` });
+        // The sanity level does not run a `not` whose schema reaches a skipped check: that check passing less would fail the `not` more.
+        return this.leaf({ fails: this.call(check.fn, { value, issues: code`[]`, all: code`false` }), issue: code`code: 'not'`, ...(this.relaxes([check.fn]) ? { skip: 'costly' as const } : {}) });
       case 'conditional': return this.conditionalCheck(check, value);
       case 'dependentSchemas': {
         const presence = objectPresence(value);
@@ -303,7 +330,7 @@ export class FunctionWriter {
   private validationCheck(check: IrValidation, value: Code): void {
     // A function that reaches a validation function has no fast check, so the predicate runs once.
     if (!this.mode.records) throw new Error(`The validator compiler writes no fast check for the schema function ${this.fn.id}: it reaches a validation function.`);
-    const runCalls = (): void => {
+    const runCalls = (): void => this.unlessSanity(() => {
       for (const index of check.calls) {
         const result = this.fresh('result');
         this.line(code`const ${result} = ${this.state.validationFunction(index)}(${value});`);
@@ -312,10 +339,10 @@ export class FunctionWriter {
         this.close();
         this.leaf({ fails: code`${result} !== true`, issue: code`code: 'custom', ...(typeof ${result} === 'string' && ${result}.length > 0 ? { reason: ${result} } : {})` });
       }
-    };
+    });
     if (check.fn === undefined) return runCalls();
     this.open(code`if (${this.call(check.fn, { value, issues: ISSUES, all: ALL, ...(this.record === undefined ? {} : { record: this.record }) })})`);
-    runCalls();
+    if (check.calls.length > 0) runCalls();
     this.close();
     this.open(code`else`);
     this.fail();
@@ -338,13 +365,16 @@ export class FunctionWriter {
     };
     // A code point is one or two UTF-16 units, so the fast check counts them only where the length cannot decide.
     const codePoints = (): Code => code`${runtime.codePointLength}(${value})`;
-    this.limitLeaves('length', length, check.minLength, check.maxLength, {
-      min: limit => code`${value}.length < ${literalCode(2 * limit)} && ${codePoints()} < ${literalCode(limit)}`,
-      max: limit => code`${value}.length > ${literalCode(limit)} && ${codePoints()} > ${literalCode(limit)}`,
-    });
+    // The count of code points costs a pass over the text, so the sanity level skips the lengths as a block.
+    if (check.minLength !== undefined || check.maxLength !== undefined) {
+      this.unlessSanity(() => this.limitLeaves('length', length, check.minLength, check.maxLength, {
+        min: limit => code`${value}.length < ${literalCode(2 * limit)} && ${codePoints()} < ${literalCode(limit)}`,
+        max: limit => code`${value}.length > ${literalCode(limit)} && ${codePoints()} > ${literalCode(limit)}`,
+      }));
+    }
     if (check.pattern !== undefined) {
       const expression = patternExpression(this.state, check.pattern);
-      this.leaf({ fails: code`!${expression}.test(${value})`, issue: code`code: 'pattern', pattern: ${literalCode(check.pattern)}` });
+      this.leaf({ fails: code`!${expression}.test(${value})`, issue: code`code: 'pattern', pattern: ${literalCode(check.pattern)}`, skip: 'costly' });
     }
   }
 
@@ -362,7 +392,7 @@ export class FunctionWriter {
     for (const [keyword, operator, kind, inclusive] of bounds) {
       const limit = check[keyword];
       if (limit === undefined) continue;
-      this.leaf({ fails: code`${value} ${operator} ${literalCode(limit)}`, issue: limitFields(kind, 'value', limit, inclusive) });
+      this.leaf({ fails: code`${value} ${operator} ${literalCode(limit)}`, issue: limitFields(kind, 'value', limit, inclusive), skip: 'cheap' });
     }
     if (check.multipleOf !== undefined) {
       const divisor = literalCode(check.multipleOf);
@@ -370,13 +400,14 @@ export class FunctionWriter {
       const test = scaled === undefined
         ? code`${localName('isMultipleOf')}(${value}, ${divisor})`
         : code`${localName('isMultipleOfScaled')}(${value}, ${divisor}, ${literalCode(scaled.units)}, ${literalCode(scaled.scale)})`;
-      this.leaf({ fails: code`!${test}`, issue: code`code: 'multipleOf', divisor: ${divisor}` });
+      this.leaf({ fails: code`!${test}`, issue: code`code: 'multipleOf', divisor: ${divisor}`, skip: 'costly' });
     }
   }
 
   private arrayCheck(check: IrArray, value: Code, types: readonly IrTypeName[] | undefined): void {
     this.guarded(code`if (Array.isArray(${value}))`, ['array'], types, () => {
-      this.limitLeaves('items', code`${value}.length`, check.minItems, check.maxItems);
+      // A tuple's arity is shape; any other count of items is a limit.
+      this.limitLeaves('items', code`${value}.length`, check.minItems, check.maxItems, undefined, isTuple(check) ? undefined : 'cheap');
       if (check.closed) this.leaf({ fails: code`${value}.length > ${literalCode(check.prefixItems.length)}`, issue: limitFields('tooBig', 'items', check.prefixItems.length, true) });
       if (check.prefixItems.length > 0) this.mark(record => code`${record}.prefix = Math.max(${record}.prefix, Math.min(${value}.length, ${literalCode(check.prefixItems.length)}));`);
       // The JSON view of an item: an `undefined` item is `null`, and a hole is no JSON value (one `type` issue; its schema is skipped).
@@ -392,7 +423,7 @@ export class FunctionWriter {
       this.arrayItem(index, value, check.items !== undefined && check.items.kind !== 'always' ? check.items : undefined);
       this.close();
       if (check.contains !== undefined) this.containsCheck(check.contains, value);
-      if (check.uniqueItems) {
+      if (check.uniqueItems) this.unlessSanity(() => {
         const first = this.fresh('x');
         const second = this.fresh('y');
         // With all errors the search stops at the first duplicate pair; a mode that leaves at a failure needs no label.
@@ -406,7 +437,7 @@ export class FunctionWriter {
         this.close();
         this.close();
         this.close();
-      }
+      });
     }, true);
   }
 
@@ -449,22 +480,36 @@ export class FunctionWriter {
     });
   }
 
-  /** Counts the items that pass `contains`; the count must lie between its limits, and each match counts as evaluated. */
+  /**
+   * Counts the items that pass `contains`; the count must lie between its limits, and each match counts as evaluated.
+   * The sanity level needs one match at most, and none when `contains` reaches a skipped check (the count would
+   * fail more once that check passes less); it still marks the matches for `unevaluatedItems`.
+   */
   private containsCheck(contains: NonNullable<IrArray['contains']>, value: Code): void {
     const marks = this.record !== undefined;
     if (contains.min === 0 && contains.max === undefined && !marks) return;
-    const count = this.fresh('count');
-    const index = this.fresh('x');
-    this.line(code`let ${count} = 0;`);
-    this.open(code`for (let ${index} = 0; ${index} < ${value}.length; ${index}++)`);
-    this.open(code`if (${this.call(contains.fn, { value: code`${value}[${index}] ?? null`, issues: code`[]`, all: code`false` })})`);
-    this.line(code`${count}++;`);
-    this.mark(record => code`${record}.indexes.add(${index});`);
-    // Without a maximum or a record, the first `min` matches decide the outcome.
-    if (contains.max === undefined && !marks) this.line(code`if (${count} >= ${literalCode(contains.min)}) break;`);
-    this.close();
-    this.close();
-    this.limitLeaves('matches', count, contains.min > 0 ? contains.min : undefined, contains.max);
+    const relaxed = this.relaxes([contains.fn]);
+    const write = (): void => {
+      const count = this.fresh('count');
+      const index = this.fresh('x');
+      this.line(code`let ${count} = 0;`);
+      this.open(code`for (let ${index} = 0; ${index} < ${value}.length; ${index}++)`);
+      this.open(code`if (${this.call(contains.fn, { value: code`${value}[${index}] ?? null`, issues: code`[]`, all: code`false` })})`);
+      this.line(code`${count}++;`);
+      this.mark(record => code`${record}.indexes.add(${index});`);
+      // Without a maximum or a record, the first `min` matches decide the outcome.
+      if (contains.max === undefined && !marks) this.line(code`if (${count} >= ${literalCode(contains.min)}) break;`);
+      this.close();
+      this.close();
+      // Inside the block of a `contains` that nothing marks, the sanity level has already left.
+      const inBlock = relaxed && !marks;
+      // A smaller minimum is a limit; one match is the least `contains` needs.
+      const bound = !relaxed && contains.min > 1 && this.honorsSanity ? code`(${SANITY} ? 1 : ${literalCode(contains.min)})` : literalCode(contains.min);
+      if (contains.min > 0) this.leaf({ fails: code`${count} < ${bound}`, issue: limitFields('tooSmall', 'matches', contains.min, true), ...(relaxed && !inBlock ? { skip: 'cheap' as const } : {}) });
+      this.limitLeaves('matches', count, undefined, contains.max, undefined, inBlock ? undefined : 'cheap');
+    };
+    if (relaxed && !marks) this.unlessSanity(write);
+    else write();
   }
 
   private objectCheck(check: IrObject, value: Code, types: readonly IrTypeName[] | undefined): void {
@@ -503,7 +548,7 @@ export class FunctionWriter {
     const patterns = check.patternProperties.map(entry => ({ entry, expression: patternExpression(this.state, entry.pattern) }));
     const test = prepared ?? this.mode.keyTest(this, { check, value, captured, reads });
     const pass: ObjectPass = { check, value, marks, test, patterns, patternsToRun: patterns.filter(({ entry }) => reads.patterns.includes(entry)) };
-    this.limitLeaves('properties', () => keyList(test.count), check.minProperties, check.maxProperties);
+    this.limitLeaves('properties', () => keyList(test.count), check.minProperties, check.maxProperties, undefined, 'cheap');
     this.requiredKeys(pass);
     // Ahead of `properties`: with fail-fast the first issue is the object's own unknown key. A key test that made `unknown` ran it.
     if (test.unknown !== undefined) this.failWhen(test.unknown);
@@ -673,8 +718,24 @@ export class FunctionWriter {
     this.close();
   }
 
-  /** `if` runs with a scratch list and, when this function keeps a record, a scratch record that counts only when `if` passes. */
+  /**
+   * `if` runs with a scratch list and, when this function keeps a record, a scratch record that counts only when `if` passes.
+   * The sanity level does not let `if` decide when its schema reaches a skipped check: `if` passing more would apply a
+   * `then` that full does not. A `then` or `else` that reaches one is relaxed by its own flag and still applies.
+   */
   private conditionalCheck(check: Extract<IrCheck, { kind: 'conditional' }>, value: Code): void {
+    if (check.relaxed === true) return this.relaxedConditional(check, value);
+    if (!this.relaxes([check.if])) return this.exactConditional(check, value);
+    if (this.record === undefined) return this.unlessSanity(() => this.exactConditional(check, value));
+    this.open(code`if (${SANITY})`);
+    this.relaxedConditional(check, value);
+    this.close();
+    this.open(code`else`);
+    this.exactConditional(check, value);
+    this.close();
+  }
+
+  private exactConditional(check: Extract<IrCheck, { kind: 'conditional' }>, value: Code): void {
     const scratch = this.record === undefined ? undefined : this.fresh('scratch');
     if (scratch !== undefined) this.line(code`const ${scratch} = ${localName('newEvaluation')}();`);
     this.open(code`if (${this.call(check.if, { value, issues: code`[]`, all: code`false`, ...(scratch === undefined ? {} : { record: scratch }) })})`);
@@ -688,6 +749,19 @@ export class FunctionWriter {
     }
   }
 
+  /** Only what `if`, `then` and `else` evaluate counts, each from a scratch record whatever they decide: a record that holds more accepts more. */
+  private relaxedConditional(check: Extract<IrCheck, { kind: 'conditional' }>, value: Code): void {
+    const record = this.record;
+    if (record === undefined) return;
+    for (const id of [check.if, check.then, check.else]) {
+      if (id === undefined) continue;
+      const scratch = this.fresh('scratch');
+      this.line(code`const ${scratch} = ${localName('newEvaluation')}();`);
+      this.line(code`${this.call(id, { value, issues: code`[]`, all: code`false`, record: scratch })};`);
+      this.line(code`${localName('mergeEvaluation')}(${record}, ${scratch});`);
+    }
+  }
+
   private unionCheck(check: IrUnion, value: Code): void {
     if (this.record !== undefined) return this.recordingUnionCheck(check, value);
     const attempt = (fn: number): Code => this.call(fn, { value, issues: code`[]`, all: code`false` });
@@ -696,7 +770,13 @@ export class FunctionWriter {
     this.line(code`let ${matched} = 0;`);
     // Two matches already decide the outcome, so later branches are not run.
     check.branches.forEach((fn, position) => this.line(code`if (${position === 0 ? code`` : code`${matched} < 2 && `}${attempt(fn)}) ${matched}++;`));
-    this.leaf({ fails: code`${matched} !== 1`, issue: code`code: 'union', matched: ${matched}` });
+    this.leaf({ fails: this.unionFails(check, matched), issue: code`code: 'union', matched: ${matched}` });
+  }
+
+  /** The test that fails a union with `matched` branches matching; the sanity level fails an untagged `oneOf` only when none matches, as it fails an `anyOf`, when a branch reaches a skipped check (two branches may then match that fail one at full). */
+  private unionFails(check: IrUnion, matched: Code): Code {
+    if (!check.exactlyOne) return code`${matched} === 0`;
+    return this.relaxes(check.branches) ? code`${SANITY} ? ${matched} === 0 : ${matched} !== 1` : code`${matched} !== 1`;
   }
 
   /**
@@ -727,9 +807,11 @@ export class FunctionWriter {
     const record = this.requireRecord();
     const matched = this.fresh('matched');
     this.line(code`let ${matched} = 0;`);
+    // Two matches decide an exact `oneOf`, but the sanity level fails none: every branch that passes marks what it evaluated.
+    const stops = this.relaxes(check.branches) ? code`${SANITY} || ${matched} < 2` : code`${matched} < 2`;
     check.branches.forEach((fn, position) => {
       const scratch = this.fresh('scratch');
-      this.open(position === 0 || !check.exactlyOne ? undefined : code`if (${matched} < 2)`);
+      this.open(position === 0 || !check.exactlyOne ? undefined : code`if (${stops})`);
       this.line(code`const ${scratch} = ${localName('newEvaluation')}();`);
       this.open(code`if (${this.call(fn, { value, issues: code`[]`, all: code`false`, record: scratch })})`);
       this.line(code`${matched}++;`);
@@ -737,7 +819,7 @@ export class FunctionWriter {
       this.close();
       this.close();
     });
-    this.leaf({ fails: check.exactlyOne ? code`${matched} !== 1` : code`${matched} === 0`, issue: code`code: 'union', matched: ${matched}` });
+    this.leaf({ fails: this.unionFails(check, matched), issue: code`code: 'union', matched: ${matched}` });
   }
 
   /**

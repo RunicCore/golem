@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { discoverSources, displayPath, isRecord, resolveProfile, stableValue } from './generator-core.js';
+import { discoverSources, displayPath, isRecord, isValidationLevel, resolveProfile, stableValue } from './generator-core.js';
 import type { GolemProfile, InputObserver } from './generator-core.js';
 import type { CodecSchemaClosureEntry } from './validation-plan.js';
 
@@ -46,7 +46,7 @@ export function sourceDigest(value: unknown): string {
 }
 
 function isProfile(profile: unknown): profile is GolemProfile {
-  return isRecord(profile) && ['mobx', 'validation', 'allowAny'].every(key => typeof profile[key] === 'boolean');
+  return isRecord(profile) && ['mobx', 'allowAny'].every(key => typeof profile[key] === 'boolean') && isValidationLevel(profile.validation);
 }
 
 function validateModelProfile(profile: unknown, filename = MODEL_MANIFEST_FILENAME): GolemProfile {
@@ -55,7 +55,7 @@ function validateModelProfile(profile: unknown, filename = MODEL_MANIFEST_FILENA
   }
   if (!isProfile(profile)) {
     throw new Error(
-      `Invalid model manifest ${displayPath(filename)}: profile must include mobx, validation and allowAny booleans. Regenerate the models.`,
+      `Invalid model manifest ${displayPath(filename)}: profile must include mobx, validation and allowAny booleans (validation may also be "sanity"). Regenerate the models.`,
     );
   }
   if (profile.unknownFormats !== undefined && profile.unknownFormats !== 'warn' && profile.unknownFormats !== 'error') {

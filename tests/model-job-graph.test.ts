@@ -111,23 +111,24 @@ for (const [label, profile] of profiles) for (const chain of [modelChain, object
   });
 }
 
-test('with validation off only the model that opts in imports validators', (t: TestContext) => {
+test('with validation on only the model that does not turn it off imports validators', (t: TestContext) => {
+  // protects: R-77 a model at false gets no validators
   const { root, sourceRoot } = project(t, 'golem-model-imports-');
   writeModelSources(sourceRoot, {
     'plain.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
-export type TPlain = IModel<{ at: Date }>;
+export type TPlain = IModel<{ at: Date }, { validation: false }>;
 `,
     'opted.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
-export type TOpted = IModel<{ at: Date }, { validation: true }>;
+export type TOpted = IModel<{ at: Date }>;
 `,
   });
-  const { artifacts } = generate({ root, profile: { mobx: false, validation: false } });
+  const { artifacts } = generate({ root, profile: { mobx: false, validation: true } });
   const content = (name: string): string => artifacts.find((artifact) => artifact.path.endsWith(name))?.content ?? '';
   assert.match(content('opted.model.generated.ts'), /import \{ [^}]*validate_TOpted_\w+[^}]* \} from "[^"]*models\.validators\.generated\.js";/);
   assert.doesNotMatch(content('plain.model.generated.ts'), /models\.validators\.generated/);
   assert.match(content('plain.model.generated.ts'), /profile: \{ validation: false \}/);
   assert.match(content('opted.model.generated.ts'), /profile: \{ validation: true \}/);
-  // With no opt-in model there is no validators file at all.
+  // With validation off in the project there is no validators file at all.
   const plainOnly = generate({ root, sources: [path.join(sourceRoot, 'plain.model.ts')], profile: { mobx: false, validation: false } });
   assert.equal(plainOnly.artifacts.some((artifact) => artifact.path.endsWith('.validators.generated.ts')), false);
 });

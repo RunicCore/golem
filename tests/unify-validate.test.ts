@@ -4,7 +4,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 
-import { requireObjectCodec } from '@exprtlabs/golem/internal/model-runtime';
+import { LibErrorKind } from '@exprtlabs/golem/errors';
+import { findGeneratedModelDefinition, requireObjectCodec } from '@exprtlabs/golem/internal/model-runtime';
 import { getValidator, validateInstance } from '@exprtlabs/golem/validation';
 import { generate as generateOpenApi } from '@exprtlabs/golem-openapi/generator';
 import { buildModelProject, createModelProject, writeModelGolemYaml, type ModelProject } from './model-project.js';
@@ -25,18 +26,24 @@ async function compile(root: string): Promise<void> {
   await buildModelProject(root);
 }
 
-function generatedText(root: string): string {
-  const files: string[] = [];
+/** The text of every file under `root` whose name `matches`, joined; empty when there is none. */
+function textOfFiles(root: string, matches: (name: string) => boolean): string {
+  const texts: string[] = [];
   const visit = (directory: string): void => {
     for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
       const filename = path.join(directory, entry.name);
       if (entry.isDirectory()) visit(filename);
-      else if (entry.name.endsWith('.generated.ts')) files.push(filename);
+      else if (matches(entry.name)) texts.push(fs.readFileSync(filename, 'utf8'));
     }
   };
   visit(root);
-  return files.map((filename) => fs.readFileSync(filename, 'utf8')).join('\n');
+  return texts.join('\n');
 }
+
+const generatedText = (root: string): string => textOfFiles(root, name => name.endsWith('.generated.ts'));
+
+/** The text of every `models.validators.generated.ts` under `root`; empty when the job wrote none. */
+const validatorsText = (sourceRoot: string): string => textOfFiles(sourceRoot, name => name === 'models.validators.generated.ts');
 
 function assertGeneratedValidatorsBound(source: string): void {
   assert.ok((source.match(/\bvalidate_\w+_[0-9a-f]{8}\b/g) ?? []).length >= 1, 'a codec binds to the generated validators');
@@ -68,21 +75,73 @@ test('global validation true binds IObject and IModel codecs to generated valida
   assert.deepEqual(issues.map((issue) => issue.path), getValidator(invalid).issues.map((issue) => issue.path));
 });
 
-test('I* validation option overrides the global flag in both directions and mixed files', async (t: TestContext) => {
+const MIXED_FIXTURE = 'models/unify-validate/i-validation-option-lowers-the-project-level-per-type-in-mixed-files';
+
+function writeMixedModels(sourceRoot: string): void {
+  writeGeneratedArtifacts(['mixed.model.ts', 'rules.ts'].map((name) => ({
+    path: path.join(sourceRoot, name),
+    content: readFixture(`${MIXED_FIXTURE}/${name}`),
+  })));
+}
+
+test('a model registers its own validation level as the default of its calls', async (t: TestContext) => {
+  // protects: T-678 the generated code records each model's level (R-76: the model's level is a default, not a cap)
   const { root, sourceRoot } = fixture(t);
-  writeGeneratedArtifacts([{
-    path: path.join(sourceRoot, 'mixed.model.ts'),
-    content: readFixture('models/unify-validate/i-validation-option-overrides-the-global-flag-in-both-directions-and-mixed-f/mixed.model.ts'),
-  }]);
-  writeModelGolemYaml(root, { mobx: false, validation: false });
+  writeMixedModels(sourceRoot);
+  writeModelGolemYaml(root, { mobx: false, validation: true });
   await compile(root);
   const { Checked } = await import(pathToFileURL(path.join(root, 'build/mixed.model.js')).href);
+  assert.deepEqual(findGeneratedModelDefinition(new Checked({ title: 'abc' }))?.profile, { validation: 'sanity' });
   const checkedCodec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TChecked'));
   const trustedCodec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TTrusted'));
-  assert.equal(checkedCodec.validate(new Checked({ title: 'ok' })), true);
-  assert.equal(checkedCodec.validate({ title: 5 }), false, 'the per-type override still runs a real schema check');
-  assert.throws(() => trustedCodec.validate({ id: '1' }));
-  assert.throws(() => trustedCodec.stringify({ id: '1' }, { validate: true }));
+  assert.equal(checkedCodec.validate({ title: 'abc' }), true);
+  assert.equal(checkedCodec.validate({ title: 5 }), false, 'a wrong type is rejected at every level');
+  assert.throws(() => trustedCodec.validate({ id: '1' }), { kind: LibErrorKind.ValidationUnavailable });
+  assert.throws(() => trustedCodec.stringify({ id: '1' }, { validate: true }), { kind: LibErrorKind.ValidationUnavailable });
+});
+
+test('a sanity project emits no value limit and no validation function, and its models check the shape only', async (t: TestContext) => {
+  // protects: T-678 a sanity project emits no value-limit or TValidation code
+  const { root, sourceRoot } = fixture(t);
+  writeMixedModels(sourceRoot);
+  writeModelGolemYaml(root, { mobx: false, validation: 'sanity' });
+  await compile(root);
+  const validators = validatorsText(sourceRoot);
+  assert.notEqual(validators, '', 'the sanity project writes its validators module');
+  assert.equal(/notBlank|rules\.js|\.length\s*<|codePointLength/.test(validators), false, 'the validators module holds no limit and imports no validation function');
+  await import(pathToFileURL(path.join(root, 'build/mixed.model.js')).href);
+  const outerCodec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TOuter'));
+  assert.equal(outerCodec.validate({ inner: { title: 'ok', note: ' ' }, code: 'ab' }), true);
+  assert.equal(outerCodec.validate({ inner: { title: 'ok' }, code: 5 }), false);
+});
+
+test('a project at true whose models are all off writes no validators module', async (t: TestContext) => {
+  // protects: T-678 project true with only off models writes no models.validators.generated.ts, as project false does
+  const { root, sourceRoot } = fixture(t);
+  writeGeneratedArtifacts([{
+    path: path.join(sourceRoot, 'off.model.ts'),
+    content: "import type { IObject } from '@exprtlabs/golem/model';\nimport type { MinLength } from '@exprtlabs/golem/tags';\nexport type TOff = IObject<{ id: string & MinLength<3> }, { validation: false }>;\n",
+  }]);
+  writeModelGolemYaml(root, { mobx: false, validation: true });
+  await compile(root);
+  assert.equal(validatorsText(sourceRoot), '');
+});
+
+test('an off model with a validation function in its own file, held by a validating model, generates', async (t: TestContext) => {
+  // protects: T-678 bug: an off model's tag schema named a validation function that was not imported (VALIDATE_UNKNOWN_VALIDATION)
+  const { root, sourceRoot } = fixture(t);
+  const files: Record<string, string> = {
+    'rules.ts': 'export function notBlank(value: string): boolean | string { return value.trim().length > 0 || "blank"; }\n',
+    'child.model.ts': "import type { IObject } from '@exprtlabs/golem/model';\nimport type { TValidation } from '@exprtlabs/golem/tags';\nimport { notBlank } from './rules.js';\nexport type TChild = IObject<{ secret: string & TValidation<typeof notBlank> }, { validation: false }>;\n",
+    'parent.model.ts': "import type { IModel } from '@exprtlabs/golem/model';\nimport type { TChild } from './child.model.js';\nexport type TParent = IModel<{ child: TChild; note: string }>;\n",
+  };
+  writeGeneratedArtifacts(Object.entries(files).map(([name, content]) => ({ path: path.join(sourceRoot, name), content })));
+  writeModelGolemYaml(root, { mobx: false, validation: true });
+  await compile(root);
+  await import(pathToFileURL(path.join(root, 'build/parent.model.generated.js')).href);
+  const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TParent'));
+  assert.equal(codec.validate({ child: { secret: '  ' }, note: 'ok' }), true, 'the off child is not checked');
+  assert.equal(codec.validate({ child: { secret: 'x' }, note: 5 }), false);
 });
 
 test('nested interned child with validation false is opaque; parent field tags still run', async (t: TestContext) => {

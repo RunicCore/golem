@@ -45,12 +45,12 @@ import {
   type SerdeResolver,
   presentKeysCode,
 } from '@exprtlabs/golem/internal/emitter';
-import { createSchemaGraph, codecPublicId, codecShortName, internDescriptors, type SchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
+import { anonymousShapeKeys, createSchemaGraph, codecPublicId, codecShortName, internDescriptors, type SchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
 import { compareText, type GolemProfile } from '@exprtlabs/golem/generator-api';
 import { displayPath, RESERVED_MODEL_MEMBERS } from '@exprtlabs/golem/internal/generator-support';
 import type { ManifestIndex } from '@exprtlabs/golem/internal/type-analysis';
 import type { ModelBoundary, ModelSpecification } from '@exprtlabs/golem/internal/type-analysis';
-import { descriptorBuilder, describeRootKind, nonObjectRootDiagnostic, propertyType } from '@exprtlabs/golem/internal/type-analysis';
+import { descriptorBuilder, describeRootKind, nonObjectRootDiagnostic, propertyType, sdkModelLevelDiagnostic } from '@exprtlabs/golem/internal/type-analysis';
 import {
   canonicalFilename,
   commonDirectory,
@@ -610,6 +610,11 @@ function assertRootHasFields(specification: ModelSpecification, definition: Mode
   if (found) throw nonObjectRootDiagnostic(specification.sourceFile, specification.declaration, specification.emitClass ? 'IModel' : 'IObject', found);
 }
 
+/** RUNM1090: a model over an SDK model has no codec of its own, so a `validation` option on it would never apply. */
+function assertSdkModelSetsNoLevel(specification: ModelSpecification, definition: ModelConversionDescriptor): void {
+  if (definition.kind === 'generated-model' && specification.validation !== undefined) throw sdkModelLevelDiagnostic(specification.sourceFile, specification.declaration);
+}
+
 /** Describe every model of the job once and index the results for lookups. */
 export function describeJob(job: JobAnalysis, specifications: readonly ModelSpecification[]): void {
   const byName = new Map<string, ModelConversionDescriptor | null>();
@@ -768,7 +773,8 @@ export function analyzeSourceGraph(
   const registry: BindingRegistry = { validations: new Map(), serde: new Map() };
   Object.values(owned).forEach((descriptor) => visitDescriptor(descriptor, registry));
   const ownedSpecifications = [...emitted].filter((specification) => !siblings.has(specification));
-  const anyDeclValidation = ownedSpecifications.some((specification) => specification.validation ?? profile.validation);
+  // A model never validates above its project, so a project that does not validate has no model that does.
+  const anyDeclValidation = profile.validation !== false && ownedSpecifications.some((specification) => specification.validation !== false);
   if (!anyDeclValidation) registry.validations.clear();
   // Sibling models keep their own references; lookups fall back to the job's descriptors.
   const lookup: Record<string, ModelConversionDescriptor> = Object.assign(
@@ -777,19 +783,21 @@ export function analyzeSourceGraph(
   );
   executableMemos.set(lookup, job.executableMemo);
   const modelDefinitions = Object.fromEntries(
-    Object.entries(definitions).map(([name, descriptor]) => [name, projectDescriptor(descriptor, profile.validation, false, true, lookup)]),
+    Object.entries(definitions).map(([name, descriptor]) => [name, projectDescriptor(descriptor, profile.validation !== false, false, true, lookup)]),
   );
   const wireDefinitions = Object.fromEntries(
-    Object.entries(definitions).map(([name, descriptor]) => [name, projectDescriptor(descriptor, profile.validation, true, false, lookup)]),
+    Object.entries(definitions).map(([name, descriptor]) => [name, projectDescriptor(descriptor, profile.validation !== false, true, false, lookup)]),
   );
   const wireLookup: Record<string, ModelConversionDescriptor> = Object.assign(
     Object.create(job.lookup ?? null) as Record<string, ModelConversionDescriptor>,
     wireDefinitions,
   );
   executableMemos.set(wireLookup, job.executableMemo);
-  const schemas = [
-    ...tagSchemas(Object.values(owned), profile.validation, lookup, 'model'),
-    ...tagSchemas(Object.keys(owned).map((name) => wireDefinitions[name]), profile.validation, wireLookup, 'wire'),
+  // The tag schemas serve the validators of this source's models; a source whose models are all off has none, and its
+  // validation functions are not imported (`validatorImports`), so a schema that names one could not compile.
+  const schemas = !anyDeclValidation ? [] : [
+    ...tagSchemas(Object.values(owned), true, lookup, 'model'),
+    ...tagSchemas(Object.keys(owned).map((name) => wireDefinitions[name]), true, wireLookup, 'wire'),
   ];
   return {
     source,
@@ -814,31 +822,31 @@ interface SourceSchemaGraphOptions {
   /** Models emitted by another companion of the job. */
   readonly siblings?: readonly ModelSpecification[];
   /** What a model that sets no `validation` does: the validation of the app's profile. */
-  readonly defaultValidation?: boolean;
+  readonly defaultValidation?: GolemProfile['validation'];
   /** Codec ids and aliases of models emitted elsewhere that publish residual schemas. */
   readonly externalResidualIds?: { readonly modelOnly: ReadonlySet<string>; readonly wireOnly: ReadonlySet<string> };
   /** Codec ids and aliases of models emitted elsewhere that publish a `#wire` schema. */
   readonly externalWireIds?: ReadonlySet<string>;
+  /** The unnamed object types a validating model of another source of the job holds; see `validatedShapeKeys`. */
+  readonly validatedShapes?: ReadonlySet<string>;
 }
 
-export function internSourceDefinitions(
+interface SourceEntry {
+  readonly name: string;
+  readonly descriptor: ModelConversionDescriptor;
+  readonly emitClass: boolean;
+  readonly validation?: GolemProfile['validation'];
+}
+
+/** The models of a source to intern, each with its validation level. */
+function sourceEntries(
   definitions: Readonly<Record<string, ModelConversionDescriptor>>,
   emitted: readonly ModelSpecification[],
-  options: SourceSchemaGraphOptions = {},
-): ReturnType<typeof createSchemaGraph> {
-  const schemaGraph = createSchemaGraph({}, {
-    ...(options.codecIds ? { codecIds: options.codecIds } : {}),
-    ...(options.externalResidualIds ? { externalResidualIds: options.externalResidualIds } : {}),
-    ...(options.externalWireIds ? { externalWireIds: options.externalWireIds } : {}),
-  });
+  options: SourceSchemaGraphOptions,
+): SourceEntry[] {
   const siblings = new Set(options.siblings ?? []);
   const interned = new Set<string>();
-  const entries: Array<{
-    name: string;
-    descriptor: ModelConversionDescriptor;
-    emitClass?: boolean;
-    validationEnabled?: boolean;
-  }> = [];
+  const entries: SourceEntry[] = [];
   for (const specification of emitted) {
     interned.add(specification.name);
     const descriptor = definitions[specification.name];
@@ -848,14 +856,43 @@ export function internSourceDefinitions(
       // A sibling is a codec reference: its schema and code come from its companion.
       descriptor: siblings.has(specification) ? { kind: 'reference', name: specification.name } : descriptor,
       emitClass: siblings.has(specification) ? false : specification.emitClass,
-      // A model that sets `validation` keeps it; any other follows the profile of the app.
-      ...(specification.validation ?? options.defaultValidation) === undefined ? {} : { validationEnabled: specification.validation ?? options.defaultValidation },
+      // A model that sets `validation` keeps it (the project's level caps it); any other follows the profile of the app.
+      ...(specification.validation ?? options.defaultValidation) === undefined ? {} : { validation: specification.validation ?? options.defaultValidation },
     });
   }
   for (const [name, descriptor] of Object.entries(definitions)) {
     if (interned.has(name)) continue;
-    entries.push({ name, descriptor, emitClass: false, ...(options.defaultValidation === undefined ? {} : { validationEnabled: options.defaultValidation }) });
+    entries.push({ name, descriptor, emitClass: false, ...(options.defaultValidation === undefined ? {} : { validation: options.defaultValidation }) });
   }
+  return entries;
+}
+
+/** The keys of the unnamed object types that a validating model of the source holds (see `SchemaGraphOptions.validatedShapes`). */
+export function validatedShapeKeys(
+  definitions: Readonly<Record<string, ModelConversionDescriptor>>,
+  emitted: readonly ModelSpecification[],
+  options: SourceSchemaGraphOptions = {},
+): ReadonlySet<string> {
+  const keys = new Set<string>();
+  for (const entry of sourceEntries(definitions, emitted, options)) {
+    if (entry.validation !== false) anonymousShapeKeys(entry.descriptor, keys);
+  }
+  return keys;
+}
+
+export function internSourceDefinitions(
+  definitions: Readonly<Record<string, ModelConversionDescriptor>>,
+  emitted: readonly ModelSpecification[],
+  options: SourceSchemaGraphOptions = {},
+): ReturnType<typeof createSchemaGraph> {
+  const entries = sourceEntries(definitions, emitted, options);
+  const validatedShapes = options.validatedShapes ?? validatedShapeKeys(definitions, emitted, options);
+  const schemaGraph = createSchemaGraph({}, {
+    ...(options.codecIds ? { codecIds: options.codecIds } : {}),
+    ...(options.externalResidualIds ? { externalResidualIds: options.externalResidualIds } : {}),
+    ...(options.externalWireIds ? { externalWireIds: options.externalWireIds } : {}),
+    validatedShapes,
+  });
   internDescriptors(schemaGraph, entries);
   schemaGraph.seal();
   return schemaGraph;
@@ -894,7 +931,7 @@ export function validatorImports(
 ): ReadonlyMap<string, { readonly importPath: string; readonly exportName: string }> {
   const bindings = new Map<string, ValidationBinding>();
   for (const graph of graphs) {
-    if (!graph.emitted.some((specification) => specification.validation ?? profile.validation)) continue;
+    if (profile.validation === false || !graph.emitted.some((specification) => specification.validation !== false)) continue;
     for (const binding of graph.registry.validations.values()) registerValidation(bindings, binding);
   }
   return new Map([...bindings]
@@ -1450,6 +1487,7 @@ function buildFieldEmissions(context: EmitContext, resolvers: ModelResolvers): M
   return context.local.map((specification) => {
     const definition = definitions[specification.name];
     assertRootHasFields(specification, definition);
+    assertSdkModelSetsNoLevel(specification, definition);
     const baseName = identifier(`${specification.name}BaseModel`);
     // Phantom tag members are part of the type-level intersection and must
     // remain in the root descriptor, but they are not model fields.  Emitting
@@ -1527,7 +1565,7 @@ function buildFieldEmissions(context: EmitContext, resolvers: ModelResolvers): M
 
 /** A class model registers the MobX validator hook when the app validates it and uses MobX. */
 function observesValidator(context: EmitContext, specification: ModelSpecification): boolean {
-  return context.profile.mobx && (specification.validation ?? context.profile.validation);
+  return context.profile.mobx && (specification.validation ?? context.profile.validation) !== false;
 }
 
 const BLANK = code``;
@@ -1641,7 +1679,7 @@ function emitClassModel(context: EmitContext, emission: ModelFieldEmission): Pie
     code`    decode: (value, constructor) => ${decodeModel}(constructor ?? ${baseName}, value),`,
     code`  },`,
     code`  codecId: ${definition.kind === 'generated-model' ? literal(externalModel(context, definition.id).model.codecId) : codecId},`,
-    code`  profile: { validation: ${(specification.validation ?? profile.validation) ? code`true` : code`false`} },`,
+    code`  profile: { validation: ${literal(specification.validation ?? profile.validation)} },`,
     ...(observesValidator(context, specification) ? [code`  enhanceValidator: ${rt['mobx-validation'].enhanceValidatorWithMobX},`] : []),
     // A model with a dynamic map, or an explicit additionalProperties true, has no program state: the keys outside its
     // fields are data. A default-open model declares none, so its other own keys are program state.
@@ -1742,7 +1780,7 @@ function emitCodecSection(context: EmitContext): CodecSection {
   const codecRuntime = emitCodecRuntimeCode(
     schemaGraph,
     {
-      validationEnabled: profile.validation,
+      validationLevel: profile.validation,
       ...(validators ? {
         validatorName: (id: string) => {
           const name = validators.exports.get(id);

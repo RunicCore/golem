@@ -156,6 +156,26 @@ Merge rules for response decorators follow `@nestjs/swagger`:
 - A range or `default` response keeps the inferred `200` or `201` response.
 - A route that decorates only other statuses, such as `@ApiNotFoundResponse()`, keeps the inferred `200` or `201` response, as the Nest Swagger CLI plugin does.
 
+## Request validation level
+
+Golem does not set HTTP status codes. It marks a value that it rejects with a `LibError` whose `causedByInput` is true. `NestModelInterceptor` is a default example: it answers HTTP 400 for such an error and lets every other error through. An application usually writes its own interceptor or exception filter with the public API ([your own interceptor](/guide/nestjs-requests#union-of-models)).
+
+`NestModelInterceptor` takes an options object. `validate` sets the level that it checks `@Body()` and `@Query()` input at.
+
+| `validate` | Level of the check |
+| --- | --- |
+| Not set | The default level of each model |
+| `'sanity'` | The shape only ([what sanity checks](/reference/config#validation-profiles)) |
+| `true` | Every rule |
+
+```ts
+new NestModelInterceptor({ validate: 'sanity' });
+```
+
+- Input that fails the check answers HTTP 400, at every level.
+- A level above the project level is a server error: the request answers HTTP 500, because the fault is in the setup and not in the input.
+- The `maxDepth` option is in the [runtime reference](/reference/runtime-api#max-depth).
+
 ## Query compatibility
 
 | Target | Whole-query contract |

@@ -2,7 +2,8 @@ import { code, identifier as identifierCode, join, nameSlot, type Code, type Nam
 import type { IrFunction } from './ir.js';
 
 // Parameters of every generated function: the value, the path stack, the issue list and the all-errors flag,
-// then, for a function that receives an evaluation record (see `IrFunction`), the caller's record. Every call and
+// then, for a function that reaches a check the sanity level skips, the sanity flag, then, for a function that receives
+// an evaluation record (see `IrFunction`), the caller's record. Every call and
 // header goes through `functionParameters` and `callFunction`, so a change to the parameter list is made in one place.
 export const VALUE = identifierCode('v');
 export const PATH = identifierCode('p');
@@ -10,12 +11,14 @@ export const NEWLINE = code`\n`;
 export const COMMA = code`, `;
 export const ISSUES = identifierCode('i');
 export const ALL = identifierCode('a');
+/** True when only the shape is checked; a check of a value limit does not run. Absent or false: every check runs. */
+export const SANITY = identifierCode('s');
 export const INHERITED = identifierCode('e');
 // The record a function keeps or fills, and what it holds.
 export const EVALUATION = identifierCode('r');
 
 export function functionParameters(fn: IrFunction): Code {
-  return join([VALUE, PATH, ISSUES, ALL, ...(fn.receives ? [INHERITED] : [])], COMMA);
+  return join([VALUE, PATH, ISSUES, ALL, ...(fn.sanity ? [SANITY] : []), ...(fn.receives ? [INHERITED] : [])], COMMA);
 }
 
 /**
@@ -61,5 +64,7 @@ export interface CallArguments {
 
 export function callFunction(callee: IrFunction, name: Code, args: CallArguments): Code {
   const record = callee.receives && args.record !== undefined ? [args.record] : [];
-  return code`${name}(${join([args.value, args.path ?? PATH, args.issues, args.all, ...record], COMMA)})`;
+  // The caller of a callee with the flag has it too: it reaches what the callee reaches. The flag comes before the record.
+  const sanity = callee.sanity ? [SANITY] : [];
+  return code`${name}(${join([args.value, args.path ?? PATH, args.issues, args.all, ...sanity, ...record], COMMA)})`;
 }

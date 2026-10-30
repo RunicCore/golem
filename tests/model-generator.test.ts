@@ -594,24 +594,22 @@ test('one package installed at two paths and used by models of one job is one bi
   }
 });
 
-test('with validation off, a model that opts in generates and validates, and the default model it nests stays open', async (t: TestContext) => {
-  // protects: a validating model compiles the undecided codecs it references: the nested Date child validates, though its model and wire schemas differ
+test('with validation on, a model validates and the nested model that turns validation off stays open', async (t: TestContext) => {
+  // protects: a validating model compiles the codecs it references: the nested Date child, whose model and wire schemas differ, is left open when it turns validation off
   const { root, sourceRoot } = project(t);
   writeModelSources(sourceRoot, {
-    'rules.ts': rulesSource,
     'child.model.ts': tsSource`import type { IObject } from '@exprtlabs/golem/model';
-import type { TValidation } from '@exprtlabs/golem/tags';
-import { isEven } from './rules.js';
-export type TChild = IObject<{ count: number & TValidation<typeof isEven>; at: Date }>;
+import type { Minimum } from '@exprtlabs/golem/tags';
+export type TChild = IObject<{ count: number & Minimum<10>; at: Date }, { validation: false }>;
 `,
     'parent.model.ts': tsSource`import type { IModel } from '@exprtlabs/golem/model';
 import type { MinLength } from '@exprtlabs/golem/tags';
 import type { TChild } from './child.model.js';
-export type TParent = IModel<{ name: string & MinLength<3>; child: TChild }, { validation: true }>;
+export type TParent = IModel<{ name: string & MinLength<3>; child: TChild }>;
 `,
   });
-  // verify-open-child.mjs runs the validators of the opt-in model and shows that the nested default model stays open.
-  writeModelGolemYaml(root, { mobx: false, validation: false });
+  // verify-open-child.mjs runs the validators of the parent and shows that the nested model with validation off stays open.
+  writeModelGolemYaml(root, { mobx: false, validation: true });
   await buildModelProject(root);
   const verifier = copyFixtureFile(root, 'models/model-generator/verify-open-child.mjs', 'verify-open-child.mjs');
   await command(root, process.execPath, [verifier, generatedCodecIdFromRoot(root, 'TParent'), generatedCodecIdFromRoot(root, 'TChild')]);

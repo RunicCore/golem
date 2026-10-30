@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { createSchemaGraph, internDescriptors, type SchemaGraph, type SchemaNode } from '@exprtlabs/golem/internal/schema-graph';
 import type { ModelTypeDescriptor } from '@exprtlabs/golem/internal/schema';
 import { compareText } from '@exprtlabs/golem/generator-api';
+import type { OpenApiGenerationProfile } from './profile.js';
 import { componentOrigin, LocatedError } from './origin.js';
 import { schemaContext } from './types.js';
 import { collectCanonicalResources, type ResourceIndex } from './schema-projection.js';
@@ -61,7 +62,7 @@ function internOpenApiSchemaGraph(
   document: unknown,
   ordered: readonly ModelDefinition[],
   definitions: ModelDefinitions,
-  validationEnabled = true,
+  validation: OpenApiGenerationProfile['validation'] = true,
   resources?: ResourceIndex,
   selections?: DiscriminatorSelections,
   dates: OpenApiDates = 'date',
@@ -75,7 +76,7 @@ function internOpenApiSchemaGraph(
     name: alias.name,
     descriptor: locatingComposition(alias.schemaName, () => aliasDescriptor(alias, definitions, aliasEnv)),
     emitClass: false,
-    validationEnabled,
+    validation,
   }));
   const nodeIdByDefinition = internDescriptors(schemaGraph, [...ordered.map((definition) => {
     const anchors = schemaContext(
@@ -91,7 +92,7 @@ function internOpenApiSchemaGraph(
         ? modelConversionDescriptor(definition.rawSchema, definitions, env, 'to')
         : modelClassDescriptor(modelConversionDescriptor(definition.rawSchema, definitions, env, 'to', new Set(), true, 'definition'), definitions, env)),
       emitClass: true,
-      validationEnabled,
+      validation,
     };
   }), ...aliasEntries]);
   schemaGraph.seal();
@@ -129,12 +130,12 @@ function nodesByDefinitionName(
 
 export function analyzeOpenApiModels(
   document: unknown,
-  validationEnabled = true,
+  validation: OpenApiGenerationProfile['validation'] = true,
   dates: OpenApiDates = 'date',
 ): OpenApiModelAnalysis {
   const resources = collectCanonicalResources(document);
   const { definitions, ordered, diagnostics, selections } = collectOpenApiModelDefinitions(document, resources, dates);
-  const { schemaGraph, nodeIdByDefinition } = internOpenApiSchemaGraph(document, ordered, definitions, validationEnabled, resources, selections, dates);
+  const { schemaGraph, nodeIdByDefinition } = internOpenApiSchemaGraph(document, ordered, definitions, validation, resources, selections, dates);
   for (const alias of definitions.aliases.values()) {
     const nodeId = nodeIdByDefinition.get(alias.name);
     if (nodeId !== undefined) alias.nodeId = nodeId;

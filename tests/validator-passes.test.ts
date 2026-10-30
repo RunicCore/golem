@@ -41,6 +41,12 @@ function passCalls(): string[] {
   return Array.isArray(calls) ? calls.map(String) : [];
 }
 
+/** Empties the list the rules module of the last compile pushes to; a new list would be one that module does not hold. */
+function resetCalls(): void {
+  const calls: unknown = Reflect.get(globalThis, 'passCalls');
+  if (Array.isArray(calls)) calls.length = 0;
+}
+
 async function compileOrder() {
   const module = await compileValidatorModule({ roots: { order: ORDER, union: UNION, contains: CONTAINS }, validations: VALIDATIONS, modules: { 'rules.mjs': RULES }, fastPath: true });
   return module;
@@ -83,6 +89,22 @@ for (const all of [true, false]) {
     assert.deepEqual(results, all ? [5, 2, 3, 2, 0] : [1, 1, 1, 1, 0]);
   });
 }
+
+test('the predicates-only pass and the full validator skip the predicates with the sanity flag, and the structure check stays exact', async () => {
+  // protects: R-71 the wrappers that take the sanity flag skip every validation function and keep the structure
+  const module = await compileOrder();
+  const { predicates, structure } = module.passByRoot.order;
+  const value = { id: 1, code: 'abcdef', sizes: [1, 3] };
+  resetCalls();
+  assert.deepEqual(predicates(value, true, true), []);
+  assert.deepEqual(module.byRoot.order(value, true, true), []);
+  assert.deepEqual(passCalls(), []);
+  assert.equal(predicates(value, true).length, 3);
+  assert.deepEqual(passCalls().sort(), ['isEven', 'isEven', 'isShort']);
+  assert.equal(module.byRoot.order({ id: 'x' }, true, true).length, 1);
+  // The structure check takes no flag: a string shorter than `minLength` is no valid structure.
+  assert.equal(structure({ id: 1, code: '' }), false);
+});
 
 // A TypeScript tuple [Validated, string, ...Validated[]]: the rest items start after the plain prefix item.
 const TUPLE = { type: 'array', prefixItems: [short, { type: 'string' }], items: short };

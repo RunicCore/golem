@@ -38,6 +38,15 @@ export interface CompileOptions {
    * the module is as without the option.
    */
   readonly fastPath?: boolean | ReadonlySet<string>;
+  /**
+   * `full` (the default) writes one module whose validators check everything, and skip the value limits (lengths, patterns,
+   * ranges, formats other than `date-time`, `multipleOf`, counts, `uniqueItems`) and the validation functions when the
+   * caller passes `true` as the third argument. `sanity` writes a module that checks the shape only (types, required and
+   * extra keys, union tags, enums, a tuple's arity) and holds no code for a skipped check; it takes no flag. A diagnostic
+   * (an unknown format, an invalid pattern) is reported at both levels. A validation context (`ModelValidationContext`)
+   * is no part of this module: it runs its own checks at every level, so a model with one stays stricter than the shape.
+   */
+  readonly level?: 'full' | 'sanity';
 }
 
 export interface CompileResult {
@@ -74,6 +83,7 @@ export function compile(input: CompileInput, options: CompileOptions): CompileRe
     ...(options.runtimeModule === undefined ? {} : { runtimeModule: options.runtimeModule }),
     ...(options.typed ? { typed: true } : {}),
     ...(options.fastPath === undefined || options.fastPath === false ? {} : { fastPath: options.fastPath }),
+    ...(options.level === undefined ? {} : { level: options.level }),
   });
   return { source, exports, fastExports, passExports, diagnostics };
 }

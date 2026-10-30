@@ -148,6 +148,12 @@ interface IrConditional {
   readonly if: number;
   readonly then?: number;
   readonly else?: number;
+  /**
+   * Set by the sanity level (see `sanitize`): the schema of `if` reaches a check that level skips, so it would pass more
+   * and apply a `then` that full does not. `if`, `then` and `else` only mark what they evaluate, and only when the
+   * function keeps an evaluation record.
+   */
+  readonly relaxed?: true;
 }
 
 /** `dependentSchemas`: when `trigger` is present, the whole object must pass `fn`. */
@@ -233,6 +239,11 @@ export interface IrFunction {
   readonly body: IrSchema;
   readonly collects: boolean;
   readonly receives: boolean;
+  /**
+   * The function reaches a check that the sanity level skips (see `reachingSkipped`): it takes the flag `s` before the
+   * record, and a skipped check is written under it. Set by the emitter, never by the lowering.
+   */
+  readonly sanity?: boolean;
 }
 
 interface IrExport {

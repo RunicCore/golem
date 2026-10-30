@@ -25,7 +25,7 @@ function datesByKeyGraph(): ReturnType<typeof createSchemaGraph> {
 
 test('a patternProperties key that only the u flag matches decodes to its declared type', () => {
   // protects: T-483 the generated conversion matches Unicode keys like the validator
-  const runtime = instantiateRuntime(emitCodecRuntimeText(datesByKeyGraph(), { validationEnabled: false }));
+  const runtime = instantiateRuntime(emitCodecRuntimeText(datesByKeyGraph(), { validationLevel: false }));
   const wire = { 'é': '1970-01-01T00:00:00.000Z', '\u{1F600}': '1970-01-01T00:00:01.000Z', ascii: '1970-01-01T00:00:02.000Z' };
   const decoded = runtime.fromWireFormatDatesByKey(wire, { validate: false }) as Record<string, unknown>;
   assert.deepEqual(decoded, {

@@ -8,7 +8,7 @@ import type {
   GeneratorSession,
   InputObserver,
 } from '@exprtlabs/golem/generator-api';
-import { buildCodecValidationPlan, compilePlanValidators, type CodecSchemaClosureEntry } from '@exprtlabs/golem/internal/validation-plan';
+import { buildCodecValidationPlan, compileLevel, compilePlanValidators, type CodecSchemaClosureEntry } from '@exprtlabs/golem/internal/validation-plan';
 import { GolemDiagnosticSeverity, compareText, isInsideDirectory, resolveProfile, type GolemDiagnostic, type ResolvedGolemProfile } from '@exprtlabs/golem/generator-api';
 import {
   canonicalPath,
@@ -29,11 +29,12 @@ import {
   validatorImports,
   codecEntriesForGraph,
   internSourceDefinitions,
+  validatedShapeKeys,
   type SourceModelGraph,
 } from './emit.js';
 import type { SchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
 import type { ModelSpecification } from '@exprtlabs/golem/internal/type-analysis';
-import { collectSpecifications } from '@exprtlabs/golem/internal/type-analysis';
+import { assertModelLevelsWithinProject, collectSpecifications } from '@exprtlabs/golem/internal/type-analysis';
 import { discoverModelManifests } from '@exprtlabs/golem/manifest';
 import { loadModelManifests, sdkModelFiles } from '@exprtlabs/golem/internal/type-analysis';
 import type { ManifestIndex } from '@exprtlabs/golem/internal/type-analysis';
@@ -117,7 +118,7 @@ function validateContext(context: GolemModelContext): NormalizedContext {
     throw new Error(`context.root must be an existing directory: ${displayPath(root)}`);
   }
   if (!context.profile || typeof context.profile !== 'object' || Array.isArray(context.profile)) {
-    throw new TypeError('context.profile is required and must contain mobx and validation booleans.');
+    throw new TypeError('context.profile is required and must be an object with mobx and validation.');
   }
   const profile = resolveProfile(context.profile);
   const output = assertAbsolute(
@@ -236,7 +237,7 @@ function canonicalSourceKey(filename: string): string {
  */
 function internJobSchemaGraphs(
   graphs: readonly SourceModelGraph[],
-  defaultValidation: boolean,
+  defaultValidation: GolemProfile['validation'],
   closure: readonly CodecSchemaClosureEntry[] = [],
 ): SourceSchemaGraph[] {
   const codecIds = new Map<ModelSpecification, string>();
@@ -255,6 +256,8 @@ function internJobSchemaGraphs(
     if (entry.wireSchema !== undefined) names.forEach((name) => wirePlanes.add(name));
     if (entry.recursive !== undefined) names.forEach((name) => recursion.set(name, entry.recursive ?? true));
   }
+  // An unnamed object type has one codec id for every source that holds the shape, so it validates when any source's validating model holds it.
+  const validatedShapes = new Set(graphs.flatMap((graph) => [...validatedShapeKeys(graph.definitions, graph.emitted, { siblings: graph.siblings, defaultValidation })]));
   const byGraph = new Map<SourceModelGraph, SourceSchemaGraph>();
   const idsFor = (graph: SourceModelGraph, own: ReadonlyMap<string, string>): Map<string, string> => new Map([
     ...own,
@@ -289,6 +292,7 @@ function internJobSchemaGraphs(
         codecIds: idsFor(graph, new Map()),
         siblings: graph.siblings,
         defaultValidation,
+        validatedShapes,
         externalResidualIds: residualIds,
         externalWireIds: wirePlanes,
       });
@@ -323,6 +327,7 @@ function internJobSchemaGraphs(
       })),
       siblings: outside,
       defaultValidation,
+      validatedShapes,
       externalResidualIds: residualIds,
       externalWireIds: wirePlanes,
     });
@@ -338,6 +343,7 @@ function internJobSchemaGraphs(
         codecIds: idsFor(graph, own),
         siblings: graph.siblings,
         defaultValidation,
+        validatedShapes,
         externalResidualIds: residualIds,
         externalWireIds: wirePlanes,
       });
@@ -476,6 +482,7 @@ export function generate(context: GolemModelContext): GolemModelResult {
   const sharedCandidates = sharedModelFiles.filter((source) => !sdkFiles.has(canonicalPath(source)));
   assertNoSyntaxErrors(program, [...ownCandidates, ...sharedCandidates]);
   const { checker, specifications } = collectSpecifications(program, [...ownCandidates, ...sharedCandidates], normalized.exact, (file) => companionFilename(boundary, file));
+  assertModelLevelsWithinProject(specifications, normalized.profile.validation);
   // A discovered file with no IModel or IObject alias is not a model file: it is skipped, and so is its companion.
   // A file that `models.sources` names must have one.
   const withModels = new Set(specifications.map((specification) => canonicalFilename(specification.sourceFile.fileName)));
@@ -531,15 +538,13 @@ export function generate(context: GolemModelContext): GolemModelResult {
     .filter((graph): graph is NonNullable<typeof graph> => graph !== undefined);
   const graphSchemaPairs = internJobSchemaGraphs(graphs, normalized.profile.validation, manifestIndex.validationSchemaClosure);
   const schemaGraphs = graphSchemaPairs.map(({ schemaGraph }) => schemaGraph);
-  // A model can ask for validation when the profile does not.
-  const anyValidation = normalized.profile.validation
-    || schemaGraphs.some((graph) => [...graph.nodes.values()].some((node) => node.kind !== 'reference' && node.validationEnabled === true));
   const schemaEntries = deduplicateTagSchemas(
     graphs.flatMap((graph) => graph.schemas)
       .sort((left, right) => compareText(left.key, right.key)
         || compareText(JSON.stringify(left.schema), JSON.stringify(right.schema))),
   );
-  const validationPlan = anyValidation
+  // A model never validates above its project, so a project that does not validate has no validators.
+  const validationPlan = normalized.profile.validation !== false
     ? buildCodecValidationPlan(
       schemaGraphs,
       manifestIndex.validationSchemaClosure,
@@ -548,10 +553,12 @@ export function generate(context: GolemModelContext): GolemModelResult {
     )
     : undefined;
   const validatorsOutput = join(normalized.output, 'models.validators.generated.ts');
-  const validators = validationPlan && validationPlan.references.length > 0
+  // A project whose models all stay off has no codec that calls a validator, so it writes no file.
+  const validators = validationPlan && validationPlan.ownSchemas.length > 0
     ? compilePlanValidators(validationPlan, {
       owner: '@exprtlabs/golem-model',
       unknownFormats: normalized.profile.unknownFormats,
+      level: compileLevel(normalized.profile.validation),
       validations: validatorImports(graphs, normalized.profile, validatorsOutput),
       documentName: 'the model schemas',
       locate: (resource) => resource.startsWith('golem:model-tag:') ? { where: FIELD_TYPE_PLACE } : undefined,

@@ -38,7 +38,7 @@ function generated<Model extends object>(model: Model): Model & GeneratedModel<u
   return model as Model & GeneratedModel<unknown>;
 }
 
-function writeSdk(document: unknown, options: { output: string; name?: string; profile?: { mobx: boolean; validation: boolean }; check?: boolean }) {
+function writeSdk(document: unknown, options: { output: string; name?: string; profile?: { mobx: boolean; validation: boolean | 'sanity' }; check?: boolean }) {
   return writeGeneratedSdk(writeSdkFiles, document, options);
 }
 

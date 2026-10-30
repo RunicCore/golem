@@ -14,7 +14,7 @@ The examples use a task form. Its title must not be blank. `MinLength<1>` reject
 
 <<< ../../examples/models/src/task-input-checks.ts#validate-a-model
 
-`validation` defaults to `true`. [Validation profiles](/reference/config#validation-profiles) set it in `golem.yaml`. `IObject` and `IModel` accept `{ validation: false }` to skip checks for that declaration. A nested `IObject` or `IModel` uses its own setting.
+`validation` defaults to `true`. It also takes `false` and `'sanity'`, which checks the [shape only](/reference/config#validation-profiles). `IObject` and `IModel` accept `{ validation: true | false | 'sanity' }` to set the default level of that declaration. The level is at or below the project level.
 
 ## The calls
 
@@ -33,8 +33,38 @@ The examples use a task form. Its title must not be blank. `MinLength<1>` reject
 | Show field errors in a form | `getValidator(model)` |
 | Check untrusted data against a type | `validate<T>(value)` (type predicate) |
 | Check while converting | the default in `parse` and `fromWireFormat` ([Serialization](/guide/serialization#checks-during-conversion)) |
+| Check the shape only | `validate: 'sanity'` ([Choose a level for one call](#choose-a-level-for-one-call)) |
 | Check `@Body()` and `@Query()` in NestJS | `NestModelInterceptor` ([NestJS requests](/guide/nestjs-requests)) |
 | Call an API | a generated client validates the request and response ([Call operations](/guide/client-usage)) |
+
+## Choose a level for one call
+
+A call checks at the default level of its model. Pass `validate` to choose another level for one call.
+
+<<< ../../examples/models/src/check-levels.ts#validation-levels
+
+| Call | `validate` takes |
+| --- | --- |
+| `parse<T>`, `stringify<T>`, `fromWireFormat<T>`, `toWireFormat<T>` | `true`, `'sanity'` or `false` |
+| `validate<T>`, `assertValue<T>`, `validateInstance`, `getValidator(model).validate` | `true` or `'sanity'` |
+
+- Without `validate`, the call uses the default level of its model. The model level is only a default.
+- A call can choose any level up to the project level. Off is always allowed.
+- A level above the project level throws a `LibError` of kind `ValidationUnavailable`, because golem wrote no validators for it.
+- For `parse`, `stringify`, `fromWireFormat` and `toWireFormat`, any other value throws a `TypeError`. `validateInstance` and `getValidator(model).validate` throw it too.
+- A nested model is checked at the level of the call that reaches it.
+
+The table shows the level of a call that names `validate`. Only the conversion calls take `false`.
+
+| Project level | `validate: true` | `validate: 'sanity'` | `validate: false` |
+| --- | --- | --- | --- |
+| `true` | Full check | Shape only | No check |
+| `'sanity'` | `ValidationUnavailable` | Shape only | No check |
+| `false` | `ValidationUnavailable` | `ValidationUnavailable` | No check |
+
+A model with `{ validation: false }` has no validators. A call cannot check it, at any project level.
+
+A call at `'sanity'` skips the instance rules that you add with `extend()`.
 
 ## Validate a model
 
@@ -90,7 +120,7 @@ The next `validator.validate()` replaces these messages with its own results. Th
 
 - An invalid value is an ordinary result for `validateInstance` and `validate()`.
 - A call that converts a value throws a `LibError` instead: `parse`, `stringify`, `fromWireFormat`, `toWireFormat` and `assertValue`.
-- A validator also throws `LibError` when validation cannot run, for example when the model was generated with `validation: false`.
+- A validator also throws `LibError` when validation cannot run, for example when the model was generated with `validation: false`, or when a call asks for a level above the project level.
 - A validator throws `LibError` when a rule or a converter throws.
 
 <<< ../../examples/models/src/read-errors.ts#lib-error

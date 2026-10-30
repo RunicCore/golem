@@ -15,7 +15,7 @@ import {
   type ModelConstraint,
 } from './schema.js';
 import { canonicalSchemaKey } from './canonical-schema-key.js';
-import { compareText } from './generator-core.js';
+import { compareText, type GolemProfile } from './generator-core.js';
 
 export type SchemaNodeKind = 'object' | 'array' | 'tuple' | 'union' | 'intersection' | 'scalar' | 'reference';
 
@@ -39,11 +39,11 @@ export interface SchemaNode {
   readonly edges: readonly string[];
   readonly emitClass: boolean;
   /**
-   * Resolved per-declaration validation flag. `undefined` inherits the emit
+   * Resolved per-declaration validation level, never above the project's. `undefined` inherits the emit
    * profile. `false` stubs `validate${id}` and parent schemas do not `$ref`
-   * this node as if it had a validator.
+   * this node as if it had a validator. `'sanity'` checks the shape only (the schemas keep every limit).
    */
-  readonly validationEnabled?: boolean;
+  readonly validation?: GolemProfile['validation'];
   readonly kind: SchemaNodeKind;
   /**
    * A model another generated module of the same job emits, by its known
@@ -69,7 +69,7 @@ export interface SchemaGraph {
     descriptor: ModelTypeDescriptor,
     name?: string,
     emitClass?: boolean,
-    validationEnabled?: boolean,
+    validation?: GolemProfile['validation'],
   ): SchemaNode;
   /**
    * `constructs` selects the class or plain-object codec when one graph holds both
@@ -99,6 +99,45 @@ export interface SchemaGraphOptions {
    * reaches one is not `sameSchema`: its own wire check must read that model's wire form.
    */
   readonly externalWireIds?: ReadonlySet<string>;
+  /**
+   * The canonical keys of the unnamed object types some validating model of the job holds (see `anonymousShapeKeys`).
+   * An unnamed type is one codec for every holder, so it validates when any holder does, whichever holder is interned first.
+   */
+  readonly validatedShapes?: ReadonlySet<string>;
+}
+
+/**
+ * The canonical keys of the unnamed structural types under `descriptor`, named types left out: each is one codec in its
+ * graph, shared by every model that holds the shape.
+ */
+export function anonymousShapeKeys(descriptor: ModelTypeDescriptor, found: Set<string> = new Set()): ReadonlySet<string> {
+  forEachHeldType(descriptor, (child) => {
+    if (namedIdentity(child)) return;
+    const key = canonicalDescriptorKey(child);
+    if (found.has(key)) return;
+    found.add(key);
+    anonymousShapeKeys(child, found);
+  });
+  return found;
+}
+
+/**
+ * Calls `visit` for each named or object type that `descriptor` holds, through arrays, tuples, unions, constraint
+ * schemas and the wire form of each held type. It does not enter a type it visits; `visit` does.
+ */
+function forEachHeldType(descriptor: ModelTypeDescriptor, visit: (held: ModelTypeDescriptor) => void): void {
+  const walk = (child: ModelTypeDescriptor): void => {
+    if (namedIdentity(child) || structural(child)) visit(child);
+    else for (const nested of childDescriptors(child)) walk(nested);
+    const wire = serdeWireDescriptor(child);
+    if (wire && wire !== child) walk(wire);
+  };
+  for (const child of childDescriptors(descriptor)) walk(child);
+  for (const constraint of descriptor.constraints ?? []) {
+    for (const value of constraintSchemaValues(constraint)) {
+      if (isTypeDescriptor(value)) walk(value);
+    }
+  }
 }
 
 function nodeKind(descriptor: ModelTypeDescriptor): SchemaNodeKind {
@@ -271,7 +310,7 @@ export function internDescriptors(
     readonly name: string;
     readonly descriptor: ModelTypeDescriptor;
     readonly emitClass?: boolean;
-    readonly validationEnabled?: boolean;
+    readonly validation?: GolemProfile['validation'];
   }>,
 ): ReadonlyMap<string, string> {
   const interned = new Set<(typeof entries)[number]>();
@@ -287,7 +326,7 @@ export function internDescriptors(
       }
     }
     interned.add(entry);
-    nodeIds.set(entry.name, graph.intern(entry.descriptor, entry.name, entry.emitClass === true, entry.validationEnabled).id);
+    nodeIds.set(entry.name, graph.intern(entry.descriptor, entry.name, entry.emitClass === true, entry.validation).id);
     stack.delete(entry.name);
   };
   for (const entry of entries) visit(entry);
@@ -560,17 +599,18 @@ export function createSchemaGraph(
     descriptor: ModelTypeDescriptor,
     name?: string,
     emitClass = false,
-    validationEnabled?: boolean,
+    validation?: GolemProfile['validation'],
   ): SchemaNode => {
     if (sealed) throw new TypeError('Schema graph is sealed.');
     const applyFlags = (existing: SchemaNode): SchemaNode => {
       const nextEmit = emitClass || existing.emitClass;
-      const nextValidation = validationEnabled !== undefined ? validationEnabled : existing.validationEnabled;
-      if (nextEmit === existing.emitClass && nextValidation === existing.validationEnabled) return existing;
+      // The first level a node is given stays: a node is interned from one model, whose level the project caps.
+      const nextValidation = existing.validation ?? validation;
+      if (nextEmit === existing.emitClass && nextValidation === existing.validation) return existing;
       const next: SchemaNode = {
         ...existing,
         emitClass: nextEmit,
-        ...(nextValidation === undefined ? {} : { validationEnabled: nextValidation }),
+        ...(nextValidation === undefined ? {} : { validation: nextValidation }),
       };
       nodes.set(existing.id, next);
       return next;
@@ -598,7 +638,7 @@ export function createSchemaGraph(
         edges: [],
         emitClass: false,
         kind: 'reference',
-        ...(validationEnabled === undefined ? {} : { validationEnabled }),
+        ...(validation === undefined ? {} : { validation }),
         ...(siblingId === undefined ? {} : { siblingCodec: true as const }),
       };
       if (siblingId !== undefined) byPublicId.set(siblingId, id);
@@ -630,6 +670,8 @@ export function createSchemaGraph(
         kind: 'scalar',
       };
     }
+    // An unnamed type validates when any validating model holds it, so an off holder interned first does not switch it off.
+    const level = !named && validation === false && options.validatedShapes?.has(canonicalDescriptorKey(descriptor)) === true ? true : validation;
     if (!named) {
       const existingId = byKey.get(canonicalDescriptorKey(descriptor));
       if (existingId) {
@@ -642,24 +684,10 @@ export function createSchemaGraph(
     internStack.add(stackKey);
     if (raw) internRawStack.add(raw);
     const nestedEdges: string[] = [];
-    const internNested = (child: ModelTypeDescriptor): void => {
-      if (namedIdentity(child) || structural(child)) {
-        const childNode = namedIdentity(child)
-          ? intern(child)
-          : intern(child, undefined, false, validationEnabled);
-        if (!childNode.id.startsWith('__scalar_')) nestedEdges.push(childNode.id);
-      } else {
-        for (const nested of childDescriptors(child)) internNested(nested);
-      }
-      const wire = serdeWireDescriptor(child);
-      if (wire && wire !== child) internNested(wire);
-    };
-    for (const child of childDescriptors(descriptor)) internNested(child);
-    for (const constraint of descriptor.constraints ?? []) {
-      for (const value of constraintSchemaValues(constraint)) {
-        if (isTypeDescriptor(value)) internNested(value);
-      }
-    }
+    forEachHeldType(descriptor, (child) => {
+      const childNode = namedIdentity(child) ? intern(child) : intern(child, undefined, false, level);
+      if (!childNode.id.startsWith('__scalar_')) nestedEdges.push(childNode.id);
+    });
     // An unnamed object type is identified by its shape, so its id is stable across unrelated edits
     // and two files' anonymous types never share an id unless they are the same codec.
     const computedId = codecPublicId(named ?? 'Anonymous', descriptor, internLookup(), { source: codecSource, constructs: emitClass });
@@ -705,7 +733,7 @@ export function createSchemaGraph(
       edges: [...new Set(nestedEdges)].filter((edge) => edge !== id),
       emitClass,
       kind: nodeKind(descriptor),
-      ...(validationEnabled === undefined ? {} : { validationEnabled }),
+      ...(level === undefined ? {} : { validation: level }),
       ...(named ? {} : { anonymous: true as const }),
     };
     if (shortExisting?.kind === 'reference' && shortExisting.id !== id) {
@@ -737,14 +765,14 @@ export function createSchemaGraph(
     );
     const opaqueReferenceIds = new Set(
       [...nodes.values()]
-        .filter((node) => node.validationEnabled === false)
+        .filter((node) => node.validation === false)
         .flatMap((node) => [node.codecId, node.name, node.id]),
     );
     for (const [id, node] of nodes) {
       const rewritten = rewrittenNodes.get(id) ?? node.descriptor;
       const options = {
         definitions: definitionsMap,
-        executableBindings: node.validationEnabled !== false,
+        executableBindings: node.validation !== false,
         opaqueReferenceIds,
       } as const;
       const jsonSchema = schemaForDescriptor(rewritten, { ...options, representation: 'wire' });
@@ -765,7 +793,7 @@ export function createSchemaGraph(
         node.codecId, node.name, node.id, ...(node.descriptor.kind === 'generated-model' ? [node.descriptor.id] : []),
       ].some((alias) => externalWireIds.has(alias));
       const reachesWire = (node: SchemaNode, seen: Set<string>): boolean => {
-        if (node.validationEnabled === false || seen.has(node.id)) return false;
+        if (node.validation === false || seen.has(node.id)) return false;
         seen.add(node.id);
         if (node.kind === 'reference' && publishesWire(node)) return true;
         return node.edges.some((edge) => {
@@ -787,7 +815,7 @@ export function createSchemaGraph(
     };
     // External codecs (another module or an SDK) publish their own residual schemas.
     const residualCandidates = [...nodes.entries()].filter(([, node]) =>
-      !node.sameSchema && node.validationEnabled !== false && !node.siblingCodec
+      !node.sameSchema && node.validation !== false && !node.siblingCodec
       && node.kind !== 'reference' && node.descriptor.kind !== 'generated-model' && node.descriptor.kind !== 'reference');
     const derive = (id: string, node: SchemaNode, plane: 'model-only' | 'wire-only'): JsonSchema =>
       schemaForDescriptor(rewrittenNodes.get(id) ?? node.descriptor, {

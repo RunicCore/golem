@@ -65,3 +65,19 @@ test('a manifest profile with a field golem no longer reads is rejected and says
     /Invalid model manifest sdk\/model-manifest\.json: profile has unsupported field\(s\): retiredOption\. Regenerate or remove the older generated SDK\./,
   );
 });
+
+test('an SDK generated at validation sanity records sanity in its manifest, and the manifest reader takes true, false and sanity only', async t => {
+  // protects: T-663 SDK manifests record the sanity level and the reader accepts it
+  const output = path.join(createFixtureProject(t, 'golem-manifest-sanity-'), 'sdk');
+  const result = await generateMaterializedSdk(document, { output, name: 'Manifest', profile: { mobx: false, validation: 'sanity' } });
+  const manifest = JSON.parse(result.artifacts.find(item => item.path.endsWith('/model-manifest.json'))?.content ?? '{}') as { profile?: unknown };
+  assert.deepEqual(manifest.profile, { allowAny: false, mobx: false, unknownFormats: 'error', validation: 'sanity' });
+  assert.doesNotThrow(() => validateModelManifest(manifest));
+  for (const validation of [true, false, 'sanity']) {
+    assert.equal(validateModelManifest({ profile: { mobx: false, validation, allowAny: false }, models: [] }).profile.validation, validation);
+  }
+  assert.throws(
+    () => validateModelManifest({ profile: { mobx: false, validation: 'full', allowAny: false }, models: [] }, 'sdk/model-manifest.json'),
+    /Invalid model manifest sdk\/model-manifest\.json: profile must include mobx, validation and allowAny booleans \(validation may also be "sanity"\)\. Regenerate the models\./,
+  );
+});

@@ -141,12 +141,18 @@ export type GeneratedModelValidatorEnhancer = <Fields extends object, Owner exte
   validator: ModelValidator<Fields, Owner>,
 ) => ModelValidator<Fields, Owner>;
 
+/**
+ * The validation level a generated model registers as the default of its calls: `true` checks everything, `'sanity'` the
+ * shape only, `false` is off. A call may choose any level up to the project's.
+ */
+type GeneratedModelValidation = boolean | 'sanity';
+
 export interface GeneratedModelDefinition<Model extends object, Wire = unknown> {
   readonly fields: readonly ModelField<Model>[];
   /** Raw synchronous conversion hooks are internal metadata, not class APIs. */
   readonly conversion?: GeneratedModelConversion<Model, Wire>;
-  /** Validation availability is independent from the conversion hooks. */
-  readonly profile?: { readonly validation: boolean };
+  /** Validation availability and default level are independent from the conversion hooks. */
+  readonly profile?: { readonly validation: GeneratedModelValidation };
   /** ObjectCodec id used by `validate(instance)` when the companion registered one. */
   readonly codecId?: string;
   /** Whether unlisted own keys are part of this model's dynamic map. */
@@ -160,7 +166,7 @@ export interface RegisteredGeneratedModelDefinition {
   readonly constructor: Function;
   readonly fields: readonly string[];
   readonly conversion?: GeneratedModelConversion<object, unknown>;
-  readonly profile?: { readonly validation: boolean };
+  readonly profile?: { readonly validation: GeneratedModelValidation };
   readonly codecId?: string;
   readonly additionalProperties?: boolean;
   readonly enhanceValidator?: GeneratedModelValidatorEnhancer;
