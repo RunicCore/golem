@@ -921,44 +921,6 @@ An `integer` member and a `number` member share the integers. A member that decl
 - Give the variant a mapping value of its own, for example `feline: '#/components/schemas/Cat'`.
 - Or remove the variant from the union.
 
-### OPENAPI_INBOUND_PARAMETER_AMBIGUOUS
-
-**Inbound parameter that cannot be read back.** An inbound operation (a webhook or a callback) has a path, query or cookie parameter. The handler gets the text that the web framework has already decoded. The handler splits that text at the separator of the parameter style. This reading is wrong when an item or a member can hold the separator. The error names the parameter and the reason. This is an error: generation writes nothing.
-
-These cases stop generation:
-
-- An array item that can hold the separator of a joined style. A string item holds a comma. A number item holds a dot in label style with `explode: true`.
-- An array item that can hold `;` in matrix style with `explode: true`.
-- An array in a cookie that repeats its name. A cookie parser keeps only the first value.
-- An object member that can hold the separator, or a member name that holds the separator or `=`.
-- A `deepObject` parameter with a member that is an object or an array.
-- An object parameter that does not list its properties.
-- A property of an exploded object that has the name of another parameter in the same place.
-
-A header parameter is not in this list. A header list splits at commas, and the standard defines no escaping for it.
-
-The generator reads the kind of each item and each member from the descriptor of its schema. One table says which characters a value of each kind can hold:
-
-| Kind | Characters |
-|---|---|
-| Integer | Digits and `-`. |
-| Number | Digits, `-`, `+`, `.`, `e` and `E`. |
-| Boolean | The letters of `true` and `false`. |
-| Literal | The characters of its text. |
-| String with an `enum` | The characters of the text of each value. |
-| Null | The letters of `null`. |
-| Array and tuple | The table applies to the item kind. |
-| Object | The table applies to the kind of each member. |
-| Any other kind | Any character. |
-
-The other kinds are a string with no `enum`, a date, a reference to a model, an unknown value, and a schema that no descriptor carries. A union holds the characters of all its variants. An intersection holds the characters that all its proven variants hold.
-
-**Fix:**
-
-- Set `explode: true` on the parameter, or use repeated keys.
-- Or use style `deepObject` for an object with flat members.
-- Or give the item a type that cannot hold the separator.
-
 ### OPENAPI_KEYWORD_NOT_CARRIED
 
 **App model over an SDK schema that the model cannot check in full.** An app model uses a type of a golem-mode SDK. The schema of that type has a keyword that the model descriptors do not carry. The SDK checks the full schema. The model of the app checks only through its descriptors, so a bad value can pass. Generation stops. The message names each keyword.
@@ -970,11 +932,11 @@ The descriptors do not carry these keywords:
 - `additionalItems`.
 - A keyword of the schema beside a `$ref`.
 
-A schema that carries these keywords does not stop an SDK. The SDK client checks a request body in its wire form, and an inbound response body in its wire form. The SDK still converts the dates of the body.
+A schema that carries these keywords does not stop an SDK. The SDK client checks a request body in its wire form. The SDK still converts the dates of the body.
 
 **Fix:**
 
-- Use the SDK type in the client or handler code, and give the app model its own type.
+- Use the SDK type in the client code, and give the app model its own type.
 - Or change the schema so that the descriptors carry the keyword.
 
 ### OPENAPI_MOBX_NEEDS_GOLEM_MODE
@@ -994,7 +956,7 @@ A schema that carries these keywords does not stop an SDK. The SDK client checks
 
 ### OPENAPI_PARAMETER_STYLE_NOT_ALLOWED
 
-**Parameter style that its place does not have.** A parameter has a `style` that OpenAPI does not allow in its place. A path parameter has `matrix`, `label` or `simple`. A query parameter has `form`, `spaceDelimited`, `pipeDelimited` or `deepObject`. A header parameter has `simple`. A cookie parameter has `form` or `cookie`. The client cannot write such a parameter, and an inbound handler cannot read it. This is an error: generation writes nothing.
+**Parameter style that its place does not have.** A parameter has a `style` that OpenAPI does not allow in its place. A path parameter has `matrix`, `label` or `simple`. A query parameter has `form`, `spaceDelimited`, `pipeDelimited` or `deepObject`. A header parameter has `simple`. A cookie parameter has `form` or `cookie`. The client cannot write such a parameter. This is an error: generation writes nothing.
 
 **Fix:** Use a style that OpenAPI allows for the place of the parameter, or leave the style out.
 
