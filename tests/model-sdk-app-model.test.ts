@@ -266,23 +266,33 @@ test('a golem-mode model over a scalar SDK alias takes the SDK limit, and a tag 
       paths: { '/charges': { post: { operationId: 'createCharge', requestBody: { required: true, content: json(ref('Charge')) }, responses: { 200: { description: 'ok', content: json(ref('Charge')) } } } } },
       components: { schemas: {
         Currency: { type: 'string', maxLength: 3 },
-        Charge: { type: 'object', required: ['id', 'currency'], properties: { id: { type: 'string' }, currency: ref('Currency') } },
+        Code: { type: ['string', 'null'], maxLength: 3 },
+        Legacy: { type: 'string', nullable: true, maxLength: 3 },
+        Status: { type: 'string', enum: ['open', 'shut'] },
+        Email: { type: 'string', format: 'email' },
+        Charge: { type: 'object', required: ['id', 'currency'], properties: { id: { type: 'string' }, currency: ref('Currency'), code: ref('Code'), legacy: ref('Legacy'), status: ref('Status'), email: ref('Email') } },
       } },
     },
   };
   const model = `import type { IModel } from '@exprtlabs/golem/model';
 import type { MinLength } from '@exprtlabs/golem/tags';
-import type { Currency } from '../sdk/charges/index.js';
-export type TRecord = IModel<{ plain: Currency; tagged: Currency & MinLength<2> }>;
+import type { Code, Currency, Email, Legacy, Status } from '../sdk/charges/index.js';
+export type TRecord = IModel<{ plain: Currency; tagged: Currency & MinLength<2>; code: Code; legacy: Legacy; status: Status; email: Email }>;
 `;
   const project = await loadGolemModeProject(scope, 'sdk-app-model-scalar-', [sdk], true, { 'src/record.model.ts': model });
   const generated = await importBuilt(project.root, 'src/record.model.generated.js');
-  assert.deepEqual(generated.fromWireFormatTRecord({ plain: 'AB', tagged: 'AB' }), { plain: 'AB', tagged: 'AB' });
-  assert.throws(() => generated.fromWireFormatTRecord({ plain: 'ABCDE', tagged: 'AB' }), /Model validation failed/);
-  assert.throws(() => generated.fromWireFormatTRecord({ plain: 'AB', tagged: 'A' }), /Model validation failed/);
-  assert.throws(() => generated.fromWireFormatTRecord({ plain: 'AB', tagged: 'ABCDE' }), /Model validation failed/);
+  const valid = { plain: 'AB', tagged: 'AB', code: null, legacy: 'AB', status: 'shut', email: 'a@b.co' };
+  assert.deepEqual(generated.fromWireFormatTRecord(valid), valid);
+  assert.deepEqual(generated.fromWireFormatTRecord({ ...valid, code: 'ABC' }).code, 'ABC');
+  assert.throws(() => generated.fromWireFormatTRecord({ ...valid, plain: 'ABCDE' }), /Model validation failed/);
+  assert.throws(() => generated.fromWireFormatTRecord({ ...valid, tagged: 'A' }), /Model validation failed/);
+  assert.throws(() => generated.fromWireFormatTRecord({ ...valid, tagged: 'ABCDE' }), /Model validation failed/);
+  assert.throws(() => generated.fromWireFormatTRecord({ ...valid, code: 'ABCDE' }), /Model validation failed/);
+  assert.throws(() => generated.fromWireFormatTRecord({ ...valid, legacy: 'ABCDE' }), /Model validation failed/);
+  assert.throws(() => generated.fromWireFormatTRecord({ ...valid, status: 'gone' }), /Model validation failed/);
+  assert.throws(() => generated.fromWireFormatTRecord({ ...valid, email: 'nope' }), /Model validation failed/);
   const validators = fs.readFileSync(path.join(project.root, 'src/generated/models/models.validators.generated.ts'), 'utf8');
   const check = validators.match(/^function f\d+_TRecord_[0-9a-f]{8}\(.*?^\}$/ms)?.[0] ?? '';
-  assert.equal([...check.matchAll(/limit: 3, inclusive: true/g)].length, 2, 'the SDK limit of the alias is written once for each of the two fields');
+  assert.equal([...check.matchAll(/limit: 3, inclusive: true/g)].length, 3, 'the SDK limit is written once for each of the three plain string fields; the nullable one keeps it in its union member');
   assert.equal([...check.matchAll(/limit: 2, inclusive: true/g)].length, 1, 'the limit of the tag is written once');
 });

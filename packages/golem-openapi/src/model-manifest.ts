@@ -6,6 +6,7 @@ import { sourceDigest } from '@exprtlabs/golem/internal/generator-support';
 import { asRecord, isJsonObject, objectEntries } from './json.js';
 import { compareText } from '@exprtlabs/golem/generator-api';
 import { identifier } from '@exprtlabs/golem/internal/generator-support';
+import type { ModelTypeDescriptor } from '@exprtlabs/golem/internal/schema';
 import type { GolemModeManifest, SdkOperationValidation, SdkOperationValue } from '@exprtlabs/golem/manifest';
 import type { OperationValidationSchemas } from './client/emit.js';
 import type { NormalizedOperation } from './normalize.js';
@@ -71,12 +72,17 @@ function golemModeGraph(document: unknown, analysis: OpenApiModelAnalysis, sdk: 
   };
 }
 
-/** The descriptor kinds of a scalar the SDK writes as a plain type alias: its limits are the descriptor's constraints. */
-const SCALAR_KINDS: ReadonlySet<string> = new Set(['string', 'number', 'boolean']);
+const SCALAR_TYPES: ReadonlySet<unknown> = new Set(['string', 'number', 'integer', 'boolean']);
+
+/** A descriptor of one scalar, or of a union of scalars and null, which the SDK writes as a plain type alias: its limits are the constraints of the descriptor. */
+function isScalarDescriptor(descriptor: ModelTypeDescriptor): boolean {
+  const scalar = (kind: string): boolean => kind === 'string' || kind === 'number' || kind === 'boolean';
+  return scalar(descriptor.kind) || (descriptor.kind === 'union' && descriptor.variants.every((variant) => scalar(variant.kind) || variant.kind === 'null'));
+}
 
 /**
- * The component schemas that are one string, number or boolean and no model or recursive alias: the SDK writes `export type Name = string`,
- * which keeps none of their limits, so the manifest records their descriptors under the provenance of that type.
+ * The component schemas that are one string, number or boolean (or one of them or null) and no model or recursive alias: the SDK writes
+ * `export type Name = string`, which keeps none of their limits, so the manifest records their descriptors under the provenance of that type.
  */
 function scalarComponents(document: unknown, analysis: OpenApiModelAnalysis): GolemModeManifest['scalars'] {
   const env = modelEnv(document, undefined, undefined, analysis.resources, analysis.selections, analysis.dates);
@@ -84,9 +90,10 @@ function scalarComponents(document: unknown, analysis: OpenApiModelAnalysis): Go
     const name = identifier(rawName);
     const schema = resolveLocal(document, rawSchema);
     if (analysis.definitions.has(name) || analysis.definitions.aliases.has(name) || !isJsonObject(schema)) return [];
-    if (schema.type !== 'string' && schema.type !== 'number' && schema.type !== 'integer' && schema.type !== 'boolean') return [];
+    const types = Array.isArray(schema.type) ? schema.type : [schema.type];
+    if (!types.every((type) => SCALAR_TYPES.has(type) || type === 'null') || types.every((type) => type === 'null')) return [];
     const descriptor = modelConversionDescriptor(rawSchema, analysis.definitions, env, 'to');
-    if (!SCALAR_KINDS.has(descriptor.kind)) return [];
+    if (!isScalarDescriptor(descriptor)) return [];
     return [{ name, type: { module: './types.ts', export: name, aliases: [{ module: './index.ts', export: name }] }, descriptor: JSON.stringify(descriptor) }];
   });
 }
