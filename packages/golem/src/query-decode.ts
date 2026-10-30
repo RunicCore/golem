@@ -3,7 +3,7 @@
  * SDK request, decode through it. A value that does not fit stays text, so the validator reports it.
  */
 
-import { parameterStyleRule, type ParameterStyleRule } from './client-runtime/parameter-styles.js';
+import { parameterStyleRule, type ParameterLocation, type ParameterStyleRule } from './client-runtime/parameter-styles.js';
 import type { QueryFieldShape } from './object-codec.js';
 
 const NOT_DECODED = Symbol('not decoded');
@@ -32,7 +32,11 @@ function decodeQueryItems(values: readonly unknown[], item: QueryFieldShape): un
   });
 }
 
-type Parameter = NonNullable<QueryFieldShape['parameter']>;
+/** Where a parameter is: its place in the request, and its name. */
+export interface ParameterPlace {
+  readonly location: ParameterLocation;
+  readonly name: string;
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -77,9 +81,9 @@ function decodeProperties(record: Record<string, unknown>, properties: Readonly<
  * The object that a parameter writes over the keys of its group (`keys`, and `deep` as `name[member]`), with those keys; undefined when none of its keys is there.
  * A `deep` parameter may also arrive as one nested object under its name.
  */
-export function gatherObjectField(group: Readonly<Record<string, unknown>>, name: string, shape: QueryFieldShape): { readonly value: Record<string, unknown>; readonly keys: readonly string[] } | undefined {
+export function gatherObjectField(group: Readonly<Record<string, unknown>>, { location, name }: ParameterPlace, shape: QueryFieldShape): { readonly value: Record<string, unknown>; readonly keys: readonly string[] } | undefined {
   const { parameter, properties } = shape;
-  const layout = parameter && properties ? parameterStyleRule(parameter.location, parameter.style, parameter.explode)?.object.layout : undefined;
+  const layout = parameter && properties ? parameterStyleRule(location, parameter.style, parameter.explode)?.object.layout : undefined;
   if (!properties || (layout !== 'keys' && layout !== 'deep')) return undefined;
   if (layout === 'deep' && isRecord(group[name])) return { value: group[name], keys: [name] };
   const keys = layout === 'deep'
@@ -91,7 +95,7 @@ export function gatherObjectField(group: Readonly<Record<string, unknown>>, name
 }
 
 /** The value of a parameter field as its style writes it: the prefix off, the text split into items or members, and each decoded to the type it declares. */
-function decodeParameter(value: unknown, shape: QueryFieldShape, { location, style, explode, name }: Parameter): unknown {
+function decodeParameter(value: unknown, shape: QueryFieldShape, { style, explode }: NonNullable<QueryFieldShape['parameter']>, { location, name }: ParameterPlace): unknown {
   const rule = parameterStyleRule(location, style, explode);
   if (rule === undefined) return value;
   const kind = shape.item !== undefined ? 'array' : shape.properties !== undefined ? 'object' : 'value';
@@ -117,8 +121,8 @@ function decodeParameter(value: unknown, shape: QueryFieldShape, { location, sty
 }
 
 /** The field value decoded to what `shape` declares; text that does not fit stays as it is. */
-export function decodeQueryField(value: unknown, shape: QueryFieldShape): unknown {
-  if (shape.parameter !== undefined) return decodeParameter(value, shape, shape.parameter);
+export function decodeQueryField(value: unknown, shape: QueryFieldShape, place?: ParameterPlace): unknown {
+  if (shape.parameter !== undefined && place !== undefined) return decodeParameter(value, shape, shape.parameter, place);
   if (Array.isArray(value)) return shape.item ? decodeQueryItems(value, shape.item) : value;
   if (typeof value !== 'string') return value;
   const decoded = decodeQueryScalar(value, shape);

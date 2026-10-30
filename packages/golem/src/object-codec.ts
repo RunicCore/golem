@@ -12,7 +12,6 @@ import {
   type Issue,
 } from './errors.js';
 import { nestingDepthError, readRootFields, resolveMaxDepth, textNestsDeeperThan, valueNestsDeeperThan } from './conversion.js';
-import type { ParameterLocation } from './client-runtime/parameter-styles.js';
 import { withoutInstanceState } from './presence.js';
 import type { SchemaIssue } from './issue-messages.js';
 import type { ModelValidationContext, WireFormat } from './model.js';
@@ -80,7 +79,7 @@ export interface QueryFieldShape {
   readonly literals?: readonly (string | number | boolean)[];
   readonly item?: QueryFieldShape;
   /** The OpenAPI parameter that this field is: its text is read as the style of the parameter writes it (`parameter-styles.ts`). */
-  readonly parameter?: { readonly location: ParameterLocation; readonly style?: string; readonly explode?: boolean; readonly name: string };
+  readonly parameter?: { readonly style?: string; readonly explode?: boolean };
   /** An object parameter: the shape of each of its properties. */
   readonly properties?: Readonly<Record<string, QueryFieldShape>>;
 }

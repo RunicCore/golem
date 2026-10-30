@@ -298,9 +298,10 @@ function inboundRequestText(shape: InboundShape, request: InboundRequest): Inbou
     const named = location === 'header' ? declaredNames(group, shape.requestHeaders) : { ...group };
     for (const [name, field] of Object.entries(shape.text?.[location] ?? {})) {
       // An object that its style spreads over the keys of the group is gathered under its name.
-      const spread = gatherObjectField(named, name, field);
+      const place = { location, name };
+      const spread = gatherObjectField(named, place, field);
       for (const key of spread?.keys ?? []) delete named[key];
-      if (spread || Object.hasOwn(named, name)) Object.defineProperty(named, name, { value: decodeQueryField(spread ? spread.value : named[name], field), writable: true, enumerable: true, configurable: true });
+      if (spread || Object.hasOwn(named, name)) Object.defineProperty(named, name, { value: decodeQueryField(spread ? spread.value : named[name], field, place), writable: true, enumerable: true, configurable: true });
     }
     text[location] = named;
   }

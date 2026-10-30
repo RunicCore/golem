@@ -928,7 +928,9 @@ An `integer` member and a `number` member share the integers. A member that decl
 These cases stop generation:
 
 - An array item that can hold the separator of a joined style. A string item holds a comma. A number item holds a dot in label style with `explode: true`.
-- An object member that can hold the separator, or `=` in a keyed style.
+- An array item that can hold `;` in matrix style with `explode: true`.
+- An array in a cookie that repeats its name. A cookie parser keeps only the first value.
+- An object member that can hold the separator, or a member name that holds the separator or `=`.
 - A `deepObject` parameter with a member that is an object or an array.
 - An object parameter that does not list its properties.
 - A property of an exploded object that has the name of another parameter in the same place.

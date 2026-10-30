@@ -150,7 +150,7 @@ export function addQueryParameter(
     for (const [key, item] of entries(value)) append(`${encode(name)}[${encode(key)}]`, item);
     return;
   }
-  const rule = parameterStyleRule('query', style, explode) ?? styleRule('query', 'form', explode);
+  const rule = styleRule('query', style, explode);
   const encoded = (text: string): string => encode(text, allowReserved);
   const joined = joinedText(name, value, rule, encoded);
   if (Array.isArray(value)) {

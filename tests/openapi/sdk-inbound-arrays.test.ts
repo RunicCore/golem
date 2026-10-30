@@ -50,7 +50,6 @@ const OBJECTS = [
   ['piped', 'query', { style: 'pipeDelimited' }, pair('a', 'b')],
   ['spaced', 'query', { style: 'spaceDelimited' }, pair('a', 'b')],
   ['merged', 'query', { explode: false }, { allOf: [{ type: 'object', properties: { a: { type: 'integer' } } }, { type: 'object', properties: { b: WORD } }] }],
-  ['ckIds', 'cookie', {}, INTEGERS],
   ['ckJoined', 'cookie', { explode: false }, INTEGERS],
   ['ckStyle', 'cookie', { style: 'cookie', explode: false }, INTEGERS],
   ['ckObj', 'cookie', {}, pair('ca', 'cb')],
@@ -88,7 +87,8 @@ async function sentRequest(operation: 'searchThings' | 'searchStyled' | 'searchO
   const cookie: Record<string, unknown> = {};
   for (const part of (headers.get('cookie') ?? '').split('; ').filter(Boolean)) {
     const [key, value] = [part.slice(0, part.indexOf('=')), decodeURIComponent(part.slice(part.indexOf('=') + 1))];
-    cookie[key] = key in cookie ? [cookie[key], value].flat() : value;
+    // A cookie parser keeps the first value of a name that repeats.
+    cookie[key] ??= value;
   }
   return { path: Object.fromEntries(pathNames.map((name, index) => [name, segments[index]])), query, header: Object.fromEntries(headers), ...(Object.keys(cookie).length ? { cookie } : {}) };
 }
@@ -159,7 +159,6 @@ for (const [name, place, field, input, expected] of [
   ['a query in pipeDelimited style', 'query', 'piped', { path: OBJECT_PATH, query: { piped: { a: 1, b: 'x' } } }, { a: 1, b: 'x' }],
   ['a query in spaceDelimited style', 'query', 'spaced', { path: OBJECT_PATH, query: { spaced: { a: 1, b: 'x' } } }, { a: 1, b: 'x' }],
   ['a query whose object is an allOf', 'query', 'merged', { path: OBJECT_PATH, query: { merged: { a: 1, b: 'x' } } }, { a: 1, b: 'x' }],
-  ['integers in a repeated cookie', 'cookie', 'ckIds', { path: OBJECT_PATH, cookie: { ckIds: [1, 2] } }, [1, 2]],
   ['integers in a joined cookie', 'cookie', 'ckJoined', { path: OBJECT_PATH, cookie: { ckJoined: [3, 4] } }, [3, 4]],
   ['integers in a cookie of style cookie', 'cookie', 'ckStyle', { path: OBJECT_PATH, cookie: { ckStyle: [5, 6] } }, [5, 6]],
   ['an object in cookies', 'cookie', 'ckObj', { path: OBJECT_PATH, cookie: { ckObj: { ca: 1, cb: 'x' } } }, { ca: 1, cb: 'x' }],
