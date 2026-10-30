@@ -43,8 +43,8 @@ const fetchImpl: typeof fetch = async (_url, init) => {
 };
 const client = new PayClient({ fetchImpl });
 const result = await client.createCharge().execute({ body: { at: new Date(0) } });
-const webhookPayload: Charge = { at: new Date(0) };
-console.log(JSON.stringify({ sent, decoded: result.body.at instanceof Date ? result.body.at.getTime() : 'not a Date', webhookPayload: webhookPayload.at.getTime() }));
+export type WebhookPayload = Charge;
+console.log(JSON.stringify({ sent, decoded: result.body.at instanceof Date ? result.body.at.getTime() : 'not a Date' }));
 `;
 
 /** Generates the SDK with the real pipeline into a project, then removes every @exprtlabs package so only plain tsc and node remain. */
@@ -74,7 +74,7 @@ test('a standalone SDK compiles with plain tsc in a project with no @exprtlabs p
   assert.equal(compiled.status, 0, compiled.stdout + compiled.stderr);
   const ran = spawnSync(process.execPath, [path.join(root, 'out/main.js')], { encoding: 'utf8' });
   assert.equal(ran.status, 0, ran.stderr);
-  assert.equal(ran.stdout.trim(), '{"sent":["{\\"at\\":\\"1970-01-01T00:00:00.000Z\\"}"],"decoded":1000,"webhookPayload":0}');
+  assert.equal(ran.stdout.trim(), '{"sent":["{\\"at\\":\\"1970-01-01T00:00:00.000Z\\"}"],"decoded":1000}');
 });
 
 test('the job records the copied runtime files and a second run writes the same bytes', async () => {

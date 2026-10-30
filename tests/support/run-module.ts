@@ -1,3 +1,4 @@
+import { createContext, runInContext } from 'node:vm';
 import { transformSync } from 'esbuild';
 
 /** TypeScript text as JavaScript, so a test can run or import it; `format` is ES module unless a test runs it as CommonJS. */
@@ -34,4 +35,16 @@ export function exportsOf(source: string): Record<string, unknown> {
   const holder = { exports: {} as Record<string, unknown> };
   runModule(source, { require: () => open, exports: holder.exports, module: holder }, { format: 'cjs' });
   return holder.exports;
+}
+
+/**
+ * Runs a generated TypeScript module with every import stubbed and gives back its exports and the global scope it ran in. The module's top-level
+ * functions, exported or not, are properties of that scope, and a call between them reads the property: a test that replaces one sees every call to it.
+ */
+export function runModuleScope(source: string): { readonly exports: Record<string, unknown>; readonly scope: Record<string, unknown> } {
+  const open = openScope();
+  const holder = { exports: {} as Record<string, unknown> };
+  const scope = createContext({ require: () => open, exports: holder.exports, module: holder }) as Record<string, unknown>;
+  runInContext(stripTypes(source, 'cjs'), scope);
+  return { exports: holder.exports, scope };
 }

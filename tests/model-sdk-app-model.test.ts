@@ -9,7 +9,7 @@ import { fileFixtureScope } from './fixture-project.js';
 import { buildModelProject, createModelProject, writeModelGolemYaml, writeModelSources } from './model-project.js';
 import { generateMaterializedSdk, isGeneratedClientClass } from './openapi/helpers.js';
 import { chargesDocument, loadGolemModeProject, writeGolemModeProject, type GolemModeSdkSetup } from './openapi/sdk-client-fixture.js';
-import { exportsOf } from './support/run-module.js';
+import { runModuleScope } from './support/run-module.js';
 
 const scope = fileFixtureScope();
 const ref = (name: string) => ({ $ref: `#/components/schemas/${name}` });
@@ -26,10 +26,29 @@ import type { Charge } from '../sdk/charges/index.js';
 export type TChargeRecord = IModel<Charge>;
 `;
 
-/** The model of each validator the validators module exports, sorted: a model an app model shares with its SDK has one entry per shape, so a second validator of it shows as a repeat. */
-function exportedValidators(root: string): string[] {
-  const source = fs.readFileSync(path.join(root, 'src/generated/models/models.validators.generated.ts'), 'utf8');
-  return Object.keys(exportsOf(source)).flatMap(name => /^validate_(\w+?)_[0-9a-f]{8}(?:_wire|_model_only|_wire_only)?$/.exec(name)?.[1] ?? []).sort();
+/**
+ * How the validators module of a project compiles each model, and which of them an app model's validator runs. `compiled` counts the functions
+ * that the module holds for each model; a model compiled twice shows as more than its four forms. `reached` lists the models whose function the
+ * validator of `appModel` calls when it validates `value`: each is replaced by a probe in turn, so the call goes through the module's own scope.
+ */
+function validatorsOfModels(root: string, appModel: string, value: unknown): { compiled: Record<string, number>; reached: string[] } {
+  const { exports, scope } = runModuleScope(fs.readFileSync(path.join(root, 'src/generated/models/models.validators.generated.ts'), 'utf8'));
+  const functions: Record<string, string[]> = {};
+  for (const name of Object.keys(scope)) {
+    const model = typeof scope[name] === 'function' ? /^f\d+_(\w+?)_[0-9a-f]{8}/.exec(name)?.[1] : undefined;
+    if (model !== undefined) (functions[model] ??= []).push(name);
+  }
+  const validate = exports[Object.keys(exports).find(name => new RegExp(`^validate_${appModel}_[0-9a-f]{8}$`).test(name))!] as (value: unknown) => unknown;
+  const reached: string[] = [];
+  for (const [model, names] of Object.entries(functions)) {
+    const originals = names.map(name => scope[name]);
+    let ran = false;
+    for (const name of names) scope[name] = () => { ran = true; };
+    try { validate(value); } catch { /* the stubbed runtime may refuse a value; only the probe matters */ }
+    names.forEach((name, index) => { scope[name] = originals[index]; });
+    if (ran) reached.push(model);
+  }
+  return { compiled: Object.fromEntries(Object.entries(functions).map(([model, names]) => [model, names.length])), reached: reached.sort() };
 }
 
 async function importBuilt(root: string, file: string): Promise<Record<string, any>> {
@@ -39,7 +58,7 @@ async function importBuilt(root: string, file: string): Promise<Record<string, a
 test('a golem-mode model over an SDK type takes the SDK limits and writes no validator of its own for the type', async () => {
   // protects: T-700 R-84 E-52 an app model over an SDK type keeps the SDK's limits and shares the SDK's validators instead of compiling a copy
   const project = await loadGolemModeProject(scope, 'sdk-app-model-', [CHARGES], true, { 'src/charge.model.ts': CHARGE_MODEL });
-  assert.deepEqual(exportedValidators(project.root), [...Array(4).fill('Charge'), ...Array(4).fill('TChargeRecord')]);
+  assert.deepEqual(validatorsOfModels(project.root, 'TChargeRecord', { id: 'c1', amount: 2 }), { compiled: { Charge: 4 }, reached: ['Charge'] });
 
   const generated = await importBuilt(project.root, 'src/charge.model.generated.js');
   assert.deepEqual(generated.fromWireFormatTChargeRecord({ id: 'c1', amount: 2, at: '2025-01-02T03:04:05Z' }), { id: 'c1', amount: 2, at: new Date('2025-01-02T03:04:05Z') });
@@ -202,7 +221,7 @@ const NESTED: GolemModeSdkSetup = {
 test('a golem-mode model over an SDK type that holds another SDK type checks the nested type with the SDK validator', async () => {
   // protects: T-700 E-52 R-84 an SDK type reached inside an SDK type keeps its limits through the app model, and no second validator of it is written
   const project = await loadGolemModeProject(scope, 'sdk-app-model-nested-', [NESTED], true, { 'src/charge.model.ts': CHARGE_MODEL });
-  assert.deepEqual(exportedValidators(project.root), [...Array(4).fill('Charge'), ...Array(4).fill('Money'), ...Array(4).fill('TChargeRecord')]);
+  assert.deepEqual(validatorsOfModels(project.root, 'TChargeRecord', { id: 'c1', price: { value: 2 } }), { compiled: { Charge: 4, Money: 4 }, reached: ['Charge'] });
 
   const generated = await importBuilt(project.root, 'src/charge.model.generated.js');
   const charge = generated.fromWireFormatTChargeRecord({ id: 'c1', price: { value: 2, at: '2025-01-02T03:04:05Z' } });
@@ -230,7 +249,7 @@ import type { Node } from '../sdk/trees/index.js';
 export type TNodeRecord = IModel<Node>;
 `;
   const project = await loadGolemModeProject(scope, 'sdk-app-model-recursive-', [tree], true, { 'src/node.model.ts': model });
-  assert.deepEqual(exportedValidators(project.root), [...Array(4).fill('Node'), ...Array(4).fill('TNodeRecord')]);
+  assert.deepEqual(validatorsOfModels(project.root, 'TNodeRecord', { value: 'a', children: [{ value: 'b' }] }), { compiled: { Node: 4 }, reached: ['Node'] });
 
   const generated = await importBuilt(project.root, 'src/node.model.generated.js');
   const wire = { value: 'a', children: [{ value: 'b', children: [{ value: 'c', at: '2025-01-02T03:04:05.000Z' }] }] };
@@ -297,10 +316,10 @@ export type TRecord = IModel<{ plain: Currency; tagged: Currency & MinLength<2>;
   assert.throws(() => generated.fromWireFormatTRecord({ ...valid, maybe: 'EURO' }), /Model validation failed/);
   // The SDK limit is checked once for each field: a second check of it would report the same field twice.
   for (const field of ['plain', 'code', 'legacy'] as const) {
-    assert.throws(() => generated.fromWireFormatTRecord({ ...valid, [field]: 'ABCDE' }), (error: unknown) => error instanceof LibError
+    assert.throws(() => generated.fromWireFormatTRecord({ ...valid, [field]: 'ABCDE' }, { failFast: false }), (error: unknown) => error instanceof LibError
       && JSON.stringify(error.issues.map(issue => issue.path)) === JSON.stringify([[field]]));
   }
-  assert.throws(() => generated.fromWireFormatTRecord({ ...valid, tagged: 'A' }), (error: unknown) => error instanceof LibError
+  assert.throws(() => generated.fromWireFormatTRecord({ ...valid, tagged: 'A' }, { failFast: false }), (error: unknown) => error instanceof LibError
     && JSON.stringify(error.issues.map(issue => issue.path)) === '[["tagged"]]', 'the limit of the tag is checked once');
 });
 

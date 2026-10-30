@@ -78,7 +78,8 @@ function readManifest(filename: string): UpstreamManifest {
 
 const manifest = readManifest(path.join(fixtureRoot, 'manifest.json'));
 
-function compileStrict(output: string): void {
+/** Compiles the SDK, and with it the files beside it that `extra` names. */
+function compileStrict(output: string, extra: readonly string[] = []): void {
   const compiled = spawnSync(process.execPath, [tscBin(), 
     '--target', 'ES2022',
     '--module', 'NodeNext',
@@ -92,6 +93,7 @@ function compileStrict(output: string): void {
     '--rootDir', output,
     '--outDir', path.join(output, 'dist'),
     path.join(output, 'index.ts'),
+    ...extra.map((file) => path.join(output, file)),
   ], { encoding: 'utf8' });
   assert.equal(compiled.status, 0, compiled.stderr || compiled.stdout);
 }
@@ -121,10 +123,6 @@ function assertArtifactInventory(
   if (hasResponseLinks(ir)) {
     const links = result.artifacts.find(({ path: filename }) => filename.endsWith('/links.ts'))?.content;
     assert.ok(links, 'response Link Objects artifact');
-  }
-  for (const operation of ir.inboundOperations) {
-    const types = result.artifacts.find(({ path: filename }) => filename.endsWith('/types.ts'))?.content;
-    assert.match(types ?? '', new RegExp(`\\b${operation.typeName}OperationInput\\b`), 'the payload type of a webhook or callback');
   }
 }
 
@@ -380,7 +378,10 @@ test('typed upstream corpus cases generate, strict-compile, and execute every ac
         profile: { ...profile, unknownFormats: 'warn' },
       });
       assertArtifactInventory(result, ir);
-      compileStrict(output);
+      // The payload of each webhook and callback is a type of the SDK: a file that imports every one of them compiles with the SDK.
+      const payloadTypes = ir.inboundOperations.map((operation) => `${operation.typeName}OperationInput`);
+      if (payloadTypes.length) fs.writeFileSync(path.join(output, 'payload-types.ts'), `import type { ${payloadTypes.join(', ')} } from './types.js';\nexport type PayloadInputs = [${payloadTypes.join(', ')}];\n`);
+      compileStrict(output, payloadTypes.length ? ['payload-types.ts'] : []);
       assertManifestProfile(output, profile);
 
       const linksArtifact = result.artifacts.find(({ path: filename }) => filename.endsWith('/links.ts'))?.content;

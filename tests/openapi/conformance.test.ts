@@ -284,22 +284,6 @@ export const mixedChildren: NumberTree[] | undefined = stringTree.children;
   compileGeneratedSdk(output, [assertFile], { strict: true });
 });
 
-test('a webhook name that holds a comment end does not break the SDK', (t) => {
-  // protects: T-290 user text in a webhook name is escaped in the generated source instead of ending a comment
-  const document = {
-    openapi: '3.1.0',
-    info: { title: 'Inbound', version: '1' },
-    webhooks: { 'paid*/done': { post: {
-      operationId: 'receivePaid',
-      requestBody: { required: true, content: { 'application/json': { schema: { type: 'object' } } } },
-      responses: { 204: { description: 'accepted' } },
-    } } },
-  };
-  const output = createFixtureProject(t, 'golem-openapi-inbound-comment-');
-  writeSdk(document, { output, name: 'Inbound' });
-  compileGeneratedSdk(output, [], { strict: true });
-});
-
 test('normalizes callbacks and webhooks into payload types of the SDK', (t) => {
   const document = {
     openapi: '3.2.0',

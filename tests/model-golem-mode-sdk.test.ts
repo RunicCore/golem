@@ -8,7 +8,7 @@ import { isGolemModeManifest, sdkSchemaGraph, validateModelManifest } from '#gol
 import { generate } from '#model/generator';
 import { golemModeManifest } from './openapi/helpers.js';
 import { createModelProject, writeModelSources } from './model-project.js';
-import { exportsOf } from './support/run-module.js';
+import { exportsOf, runModuleScope } from './support/run-module.js';
 
 const PROFILE = { mobx: false, validation: true, allowAny: false } as const;
 const ref = (name: string) => ({ $ref: `#/components/schemas/${name}` });
@@ -61,9 +61,15 @@ test('the models job compiles the SDK operation roots and the app models into on
   const exported = Object.keys(exportsOf(source)).filter(name => name.startsWith('validate_'));
   assert.deepEqual([...new Set(exported.map(name => name.replace(/^validate_(\w+?)(?:_wire|_model_only|_wire_only)?$/, '$1').replace(/_[0-9a-f]{8}$/, '')))].sort(), ['Anonymous', 'Charge', 'TLedger', 'src_sdk_createCharge_input', 'src_sdk_createCharge_response_200_application_json']);
   for (const root of [requestRoot, responseRoot]) assert.ok(exported.includes(`validate_${root}`), `${root} is an exported validator`);
-  // The operation's response root is the model's wire check, not a second function for the same schema.
-  assert.deepEqual(exported.filter(name => name.startsWith('validate_Charge_')).map(name => name.replace(/^validate_Charge_[0-9a-f]{8}/, '')), ['', '_model_only', '_wire', '_wire_only'], 'one validator of Charge in each of its four forms');
-  assert.match(source, /export function validate_src_sdk_createCharge_response_200_application_json\(.*\n.*\n  f\d+_Charge_[0-9a-f]{8}_wire\(/);
+  // The operation's response root runs the model's wire check, not a second function for the same schema: the module holds one model check and one wire check of Charge,
+  // and the root calls them (each function is replaced by a probe in turn, so the call goes through the module's scope).
+  const { exports: roots, scope } = runModuleScope(source);
+  const chargeChecks = Object.keys(scope).filter(name => typeof scope[name] === 'function' && /^f\d+_Charge_[0-9a-f]{8}(?:_wire)?$/.test(name));
+  assert.equal(chargeChecks.length, 2, 'one model check and one wire check of Charge');
+  const called: string[] = [];
+  for (const name of chargeChecks) scope[name] = () => { called.push(name.endsWith('_wire') ? 'wire' : 'model'); };
+  (roots.validate_src_sdk_createCharge_response_200_application_json as (value: unknown) => unknown)({ id: 'c1' });
+  assert.deepEqual(called, ['wire']);
   assert.deepEqual(result.artifacts.map(artifact => path.basename(artifact.path)).sort(), ['codec-keys.json', 'ledger.model.generated.ts', 'models.validators.generated.ts', 'sdk.sdk.generated.ts']);
 });
 
