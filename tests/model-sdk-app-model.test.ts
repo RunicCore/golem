@@ -256,7 +256,7 @@ export type TNodeRecord = IModel<Node>;
 });
 
 test('a golem-mode model over a scalar SDK alias takes the SDK limit, and a tag beside the alias adds its own limit', async () => {
-  // protects: T-721 F-804 an app model field of a scalar SDK alias keeps the limit of the SDK, each limit checked once
+  // protects: T-721 F-804 an app model field of a scalar SDK alias keeps the limit of the SDK, each limit checked once; T-730 F-232 also inside a union with null
   const sdk: GolemModeSdkSetup = {
     folder: 'sdk/charges',
     name: 'Charges',
@@ -277,11 +277,11 @@ test('a golem-mode model over a scalar SDK alias takes the SDK limit, and a tag 
   const model = `import type { IModel } from '@exprtlabs/golem/model';
 import type { MinLength } from '@exprtlabs/golem/tags';
 import type { Code, Currency, Email, Legacy, Status } from '../sdk/charges/index.js';
-export type TRecord = IModel<{ plain: Currency; tagged: Currency & MinLength<2>; code: Code; legacy: Legacy; status: Status; email: Email }>;
+export type TRecord = IModel<{ plain: Currency; tagged: Currency & MinLength<2>; code: Code; legacy: Legacy; status: Status; email: Email; maybe: Currency | null }>;
 `;
   const project = await loadGolemModeProject(scope, 'sdk-app-model-scalar-', [sdk], true, { 'src/record.model.ts': model });
   const generated = await importBuilt(project.root, 'src/record.model.generated.js');
-  const valid = { plain: 'AB', tagged: 'AB', code: null, legacy: 'AB', status: 'shut', email: 'a@b.co' };
+  const valid = { plain: 'AB', tagged: 'AB', code: null, legacy: 'AB', status: 'shut', email: 'a@b.co', maybe: null };
   assert.deepEqual(generated.fromWireFormatTRecord(valid), valid);
   assert.deepEqual(generated.fromWireFormatTRecord({ ...valid, code: 'ABC' }).code, 'ABC');
   assert.throws(() => generated.fromWireFormatTRecord({ ...valid, plain: 'ABCDE' }), /Model validation failed/);
@@ -291,6 +291,8 @@ export type TRecord = IModel<{ plain: Currency; tagged: Currency & MinLength<2>;
   assert.throws(() => generated.fromWireFormatTRecord({ ...valid, legacy: 'ABCDE' }), /Model validation failed/);
   assert.throws(() => generated.fromWireFormatTRecord({ ...valid, status: 'gone' }), /Model validation failed/);
   assert.throws(() => generated.fromWireFormatTRecord({ ...valid, email: 'nope' }), /Model validation failed/);
+  assert.equal(generated.fromWireFormatTRecord({ ...valid, maybe: 'EUR' }).maybe, 'EUR');
+  assert.throws(() => generated.fromWireFormatTRecord({ ...valid, maybe: 'EURO' }), /Model validation failed/);
   const validators = fs.readFileSync(path.join(project.root, 'src/generated/models/models.validators.generated.ts'), 'utf8');
   const check = validators.match(/^function f\d+_TRecord_[0-9a-f]{8}\(.*?^\}$/ms)?.[0] ?? '';
   assert.equal([...check.matchAll(/limit: 3, inclusive: true/g)].length, 3, 'the SDK limit is written once for each of the three plain string fields; the nullable one keeps it in its union member');
