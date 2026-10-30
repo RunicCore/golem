@@ -179,6 +179,29 @@ test('a models or controllers job reads the tsconfig the yaml names, not the one
   assert.equal(controllers!.kind === 'controllers' && controllers.options.tsconfig, path.join(nested.root, 'tsconfig.json'));
 });
 
+test('an openapi job reads mode as standalone by default, and mode golem needs a models section', (t: TestContext) => {
+  // protects: T-695 the mode key, its default and its checks
+  const sdk = 'openapi:\n  - input: api.yaml\n    output: sdk\n';
+  const accepted: [string, string][] = [
+    ['version: 1\n' + sdk, 'standalone'],
+    ['version: 1\n' + sdk + '    mode: standalone\n', 'standalone'],
+    ['version: 1\n' + sdk + '    mode: golem\nmodels:\n  root: .\n', 'golem'],
+  ];
+  for (const [yaml, mode] of accepted) {
+    const job = loadConfig(fixture(t, yaml).filename).jobs[0];
+    assert.ok(job && job.kind === 'openapi');
+    assert.equal(job.options.mode, mode);
+  }
+  const refused: [string, RegExp][] = [
+    ['version: 1\n' + sdk + '    mode: hybrid\nmodels:\n  root: .\n', /openapi\[0\]\.mode must be "standalone" or "golem"/],
+    ['version: 1\n' + sdk + '    mode: 1\n', /openapi\[0\]\.mode must be "standalone" or "golem"/],
+    ['version: 1\n' + sdk + '    mode: golem\n', /openapi\[0\]\.mode "golem" needs a models section in the same golem\.yaml/],
+  ];
+  for (const [yaml, error] of refused) {
+    assert.throws(() => loadConfig(fixture(t, yaml).filename), error);
+  }
+});
+
 test('configuration errors reject unknown overrides, duplicate keys and overlapping outputs', (t: TestContext) => {
   const testCases: [string, RegExp][] = [
     ['version: 2\nmodels: {}', /version/],

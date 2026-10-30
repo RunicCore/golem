@@ -39,6 +39,9 @@ function validateGenerateContext(context: OpenApiGenerationContext): OpenApiGene
   if (context.dates !== undefined && context.dates !== 'date' && context.dates !== 'temporal') {
     throw new TypeError('context.dates must be "date" or "temporal" when provided');
   }
+  if (context.mode !== undefined && context.mode !== 'standalone' && context.mode !== 'golem') {
+    throw new TypeError('context.mode must be "standalone" or "golem" when provided');
+  }
   return requireProfile(context.profile);
 }
 

@@ -181,6 +181,7 @@ Install `@exprtlabs/golem-openapi` to use `openapi`. Each job reads one YAML or 
 | `maxRefDocuments` | positive integer | No | `256` | Maximum referenced documents, local ones included. |
 | `refTimeoutMs` | positive integer | No | `10000` | Timeout for a remote reference read, in milliseconds. |
 | `dates` | `date` or `temporal` | No | `date` | `temporal` maps `format: date-time` to `Temporal.Instant`, `date` to `Temporal.PlainDate` and `duration` to `Temporal.Duration`. [`@exprtlabs/golem/temporal`](/reference/runtime-api#temporal) converts them. `time` stays a string. Encoding a `Temporal.Instant` writes `Z`, so the original offset is lost. |
+| `mode` | `standalone` or `golem` | No | `standalone` | `standalone` is an SDK that runs alone. `golem` leaves validation and conversion to the `models` job of the same file, so it needs a `models` section in the same file. |
 
 The generator assembles local and allowed remote `$ref`s into one document. These rules apply:
 

@@ -212,6 +212,8 @@ export interface OpenApiContext {
   readonly refTimeoutMs?: number;
   /** `temporal` maps `format: date-time`, `date` and `duration` to Temporal types; the default is `date`. */
   readonly dates?: 'date' | 'temporal';
+  /** `standalone` (the default) is an SDK that needs no models job; `golem` leaves validators and conversion to the models job of the same golem.yaml. */
+  readonly mode?: 'standalone' | 'golem';
   readonly profile: GolemProfile;
   readonly onInput?: InputObserver;
 }

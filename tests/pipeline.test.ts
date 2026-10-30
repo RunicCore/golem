@@ -352,6 +352,20 @@ test('a deleted output reruns its job, and a changed option or golem code reruns
   assert.deepEqual(ranKinds(await runPipeline(config)), []);
 });
 
+test('the mode of an openapi job is recorded with the job, and a mode change reruns that job', async (t: TestContext) => {
+  // protects: T-695 a mode change reruns the openapi job
+  const { root, config } = fixture(t);
+  await runPipeline(config);
+  const records = JSON.parse(fs.readFileSync(path.join(root, '.golem/jobs.json'), 'utf8')) as { jobs: Record<string, { options: string }> };
+  const openapiId = Object.keys(records.jobs).find((id) => id.startsWith('openapi:'));
+  assert.ok(openapiId, 'the openapi job has a record');
+  assert.equal((JSON.parse(records.jobs[openapiId].options) as { mode: string }).mode, 'standalone');
+
+  fs.writeFileSync(config, fs.readFileSync(config, 'utf8').replace('    name: Profile', '    name: Profile\n    mode: golem'));
+  assert.deepEqual(ranKinds(await runPipeline(config)), ['openapi', 'models']);
+  assert.deepEqual(ranKinds(await runPipeline(config)), []);
+});
+
 test('a generated file or the codec key table edited by hand is restored by the next run, because its job is not current', async (t: TestContext) => {
   const { root, config } = fixture(t);
   await runPipeline(config);
