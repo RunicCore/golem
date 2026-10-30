@@ -137,7 +137,7 @@ test('two golem-mode SDKs with one operation name compile to separate roots in t
 test('a golem-mode manifest that no openapi job of the golem.yaml writes is refused', t => {
   // protects: T-699 the models job takes the codecs file from the config and never from where a manifest lies
   const { context } = golemModeProject(t, 'date');
-  assert.throws(() => generate({ ...context, sdkOutputs: [], profile: { mobx: false, validation: true } }), /is in mode golem, but no openapi job of mode golem in this golem\.yaml writes its folder/);
+  assert.throws(() => generate({ ...context, sdkOutputs: [], profile: { mobx: false, validation: true } }), (error: unknown) => (error as { code?: string }).code === 'GOLEM_SDK_JOB_MISSING' && /Set the SDK to mode standalone, or add its openapi job with mode golem/.test((error as Error).message));
 });
 
 test('an app with no model file and one golem-mode SDK still writes the validators and the codecs file', t => {

@@ -129,7 +129,6 @@ export interface OpenApiModelAnalysis {
   readonly nodesByName: ReadonlyMap<string, SchemaNode>;
   /** The schema each node was interned for. */
   readonly definitionNameByNodeId: ReadonlyMap<string, string>;
-  readonly nodesByCodecId: ReadonlyMap<string, SchemaNode>;
   /** The node of each operation body, stream item, parameter and response header that converts something, by `requestBodyKey`, `responseBodyKey`, `parameterKey` or `responseHeaderKey`; a value that converts nothing has none. */
   readonly convertedNodeIds: ReadonlyMap<string, string>;
   /**
@@ -650,7 +649,6 @@ export function modelConversionDescriptor(
   const target = componentSchemaTarget(schema, nested);
   if (target !== undefined && target !== schema) return modelConversionDescriptor(target, definitions, nested, direction, seen);
   const sub = subschemaConverter(definitions, nested, direction, seen);
-  const whole = (descriptor: ModelTypeDescriptor): ModelTypeDescriptor => isJsonObject(schema) ? carryKeywords(descriptor, schema, sub) : descriptor;
   const temporal = temporalFormat(schema, env.dates);
   if (temporal) {
     const value = {

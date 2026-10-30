@@ -766,6 +766,15 @@ Golem reads relative imports (`./sdk/index.js`) for this rule, and reads them th
 
 **Fix:** Set the option to `true`, `false` or `'sanity'`, at or below the project level, or raise `validation` in `golem.yaml`.
 
+### GOLEM_SDK_JOB_MISSING
+
+**SDK in mode golem with no openapi job.** The models job finds an SDK whose `model-manifest.json` says `mode: golem`. No openapi job of mode `golem` in this `golem.yaml` writes the folder of that SDK. The models job has no codecs file to name for the SDK, so generation stops. The message names the manifest.
+
+**Fix:**
+
+- Set the SDK to mode `standalone`, and generate it again.
+- Or add the openapi job of the SDK to this `golem.yaml` with `mode: golem`.
+
 ## Validators (VALIDATE)
 
 The validator compiler writes the checks that generated models and SDKs run. Its messages name the document, the schema and the JSON pointer of the keyword it rejects, such as `orders.yaml: schema "Order" at /properties/total/pattern: ...`. An error stops generation before any validator is written; a warning lets generation continue, as its entry notes.

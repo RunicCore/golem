@@ -301,9 +301,8 @@ export function analyzeOpenApiModels(
   const nodes = [...schemaGraph.nodes.values()];
   const nodesById = new Map(nodes.map((node) => [node.id, node]));
   const { nodesByName, definitionNameByNodeId } = nodesByDefinitionName(schemaGraph, new Map([...nodeIdByDefinition].filter(([name]) => definitions.has(name))));
-  const nodesByCodecId = new Map(nodes.map((node) => [node.codecId, node]));
   const grouping = schemaGraphGroups(schemaGraph, definitions, nodesByName);
-  return { definitions, ordered, schemaGraph, grouping, resources, nodesById, nodesByName, definitionNameByNodeId, nodesByCodecId, convertedNodeIds, uncarriedModels, uncarriedValues, graphInputs, diagnostics, selections, dates };
+  return { definitions, ordered, schemaGraph, grouping, resources, nodesById, nodesByName, definitionNameByNodeId, convertedNodeIds, uncarriedModels, uncarriedValues, graphInputs, diagnostics, selections, dates };
 }
 
 export function schemaGraphView(
@@ -327,6 +326,7 @@ export function schemaGraphView(
     nodes,
     intern: graph.intern.bind(graph),
     nodeFor: graph.nodeFor.bind(graph),
+    nodeByCodecId: graph.nodeByCodecId.bind(graph),
     seal: () => undefined,
     topo: () => graph.topo().flatMap((node) => {
       const emitted = nodes.get(node.id);

@@ -156,7 +156,6 @@ export function openApiValidationSchemaClosure(
   stableId: (definition: ModelDefinition) => string,
 ): CodecSchemaClosureEntry[] {
   const idsByName = new Map(definitions.map((definition) => [definition.name, stableId(definition)]));
-  const nodesByCodecId = new Map([...schemaGraph.nodes.values()].map((node) => [node.codecId, node]));
   const compact = (value: unknown, wire: boolean): unknown => {
     if (Array.isArray(value)) return value.map((item) => compact(item, wire));
     if (value === null || typeof value !== 'object') return value;
@@ -165,7 +164,7 @@ export function openApiValidationSchemaClosure(
       if (key === '$defs' && child !== null && typeof child === 'object' && !Array.isArray(child)) {
         const definitions = Object.create(null) as Record<string, unknown>;
         for (const [name, schema] of Object.entries(child)) {
-          const node = nodesByCodecId.get(name);
+          const node = schemaGraph.nodeByCodecId(name);
           definitions[name] = node
             ? { $ref: wire && !node.sameSchema ? `${node.codecId}#wire` : node.codecId }
             : compact(schema, wire);

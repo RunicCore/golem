@@ -245,7 +245,7 @@ export function generateOpenApiModelArtifacts(
     const dependencyIds = dependenciesByGroup.get(group.id) ?? new Set<string>();
     const groupPlan = groupPlans.get(group.id);
     const wireStringify = (codecId: string): Code => {
-      const node = analysis.nodesByCodecId.get(codecId);
+      const node = analysis.schemaGraph.nodeByCodecId(codecId);
       const groupId = node ? owner.get(node.id) : undefined;
       return groupId !== undefined && groupId !== group.id ? moduleSource(`./_${groupId}.js`).name(wireStringifyExportName(codecId)) : identifier(wireStringifyExportName(codecId));
     };
@@ -404,7 +404,7 @@ function generateModels(
     ...(helpers.exportedFillFunctionIds ? { exportedFillFunctionIds: helpers.exportedFillFunctionIds } : {}),
     nestedImportedSerde: (codecId) => {
       if (!helpers.codecFunctionImport) return undefined;
-      const node = analysis.nodesByCodecId.get(codecId) ?? analysis.nodesById.get(codecId);
+      const node = analysis.schemaGraph.nodeByCodecId(codecId) ?? analysis.nodesById.get(codecId);
       if (!node || helpers.graphNodeIds?.has(node.id)) return undefined;
       const stringify = helpers.codecFunctionImport(node.id, 'stringify');
       const fill = helpers.codecFunctionImport(node.id, 'fill');

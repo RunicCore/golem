@@ -76,6 +76,11 @@ export interface SchemaGraph {
    * for a name and shape; without it, either matches.
    */
   nodeFor(descriptor: ModelTypeDescriptor, name?: string, constructs?: boolean): SchemaNode | undefined;
+  /**
+   * The node with a codec id. A reference node has no codec of its own and is skipped; when several nodes share an id, the one interned first is the node
+   * the others were made from.
+   */
+  nodeByCodecId(codecId: string): SchemaNode | undefined;
   seal(): void;
   topo(): readonly SchemaNode[];
 }
@@ -417,6 +422,44 @@ function namedReference(
     ...(original.constraints ? { constraints: original.constraints } : {}),
     ...(original.serde ? { serde: original.serde } : {}),
   };
+}
+
+/** A descriptor that names another type: a reference to a model, or a generated model. */
+type NamedType = Extract<ModelTypeDescriptor, { readonly kind: 'reference' | 'generated-model' }>;
+
+/**
+ * The descriptor with each named type it holds replaced by `replace`. It walks the slots of a descriptor (properties, items, variants), the
+ * schemas of its constraints and the wire form of its serde, and it does not enter a named type.
+ */
+export function mapNamedTypes(descriptor: ModelTypeDescriptor, replace: (named: NamedType) => ModelTypeDescriptor): ModelTypeDescriptor {
+  if (descriptor.kind === 'reference' || descriptor.kind === 'generated-model') return replace(descriptor);
+  const again = (child: ModelTypeDescriptor): ModelTypeDescriptor => mapNamedTypes(child, replace);
+  let mapped: ModelTypeDescriptor;
+  switch (descriptor.kind) {
+    case 'object':
+      mapped = {
+        ...descriptor,
+        properties: Object.fromEntries(Object.entries(descriptor.properties).map(([name, property]) => [name, again(property)])),
+        additionalProperties: typeof descriptor.additionalProperties === 'object' ? again(descriptor.additionalProperties) : descriptor.additionalProperties,
+      };
+      break;
+    case 'array':
+      mapped = { ...descriptor, item: again(descriptor.item) };
+      break;
+    case 'tuple':
+      mapped = { ...descriptor, items: descriptor.items.map(again), ...(descriptor.rest ? { rest: { ...descriptor.rest, item: again(descriptor.rest.item) } } : {}) };
+      break;
+    case 'union':
+    case 'intersection':
+      mapped = { ...descriptor, variants: descriptor.variants.map(again) };
+      break;
+    default:
+      mapped = descriptor;
+  }
+  const constraints = mapped.constraints?.map((constraint) => mapConstraintSchemaValues(constraint, (value) => (isTypeDescriptor(value) ? again(value) as ConstraintSchemaValue : value)));
+  const wire = serdeWireDescriptor(mapped);
+  const serde = mapped.serde && wire ? { ...mapped.serde, ...('wireDescriptor' in mapped.serde ? { wireDescriptor: again(wire) } : { wire: again(wire) }) } : mapped.serde;
+  return { ...mapped, ...(constraints ? { constraints } : {}), ...(serde ? { serde } : {}) };
 }
 
 function rewriteConstraint(
@@ -861,10 +904,22 @@ export function createSchemaGraph(
     Object.entries(definitions).map(([name, descriptor]) => ({ name, descriptor })),
   );
 
+  // The nodes only grow while a graph is interned, and a node that replaces another keeps its codec id, so the size says whether the index is current.
+  let indexed: { readonly size: number; readonly byCodecId: ReadonlyMap<string, SchemaNode> } | undefined;
+  const nodeByCodecId = (codecId: string): SchemaNode | undefined => {
+    if (indexed?.size !== nodes.size) {
+      const byCodecId = new Map<string, SchemaNode>();
+      for (const node of nodes.values()) if (node.kind !== 'reference' && !byCodecId.has(node.codecId)) byCodecId.set(node.codecId, node);
+      indexed = { size: nodes.size, byCodecId };
+    }
+    return indexed.byCodecId.get(codecId);
+  };
+
   return {
     nodes,
     intern,
     nodeFor,
+    nodeByCodecId,
     seal,
     topo() {
       const visiting = new Set<string>();
