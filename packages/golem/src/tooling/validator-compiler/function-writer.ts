@@ -1,5 +1,5 @@
 import { code, identifier as identifierCode, join, joinIndented, literal as literalCode, type Code, type IndentedLine } from '../code.js';
-import type { IrArray, IrCheck, IrDiscriminator, IrFunction, IrInstance, IrNumber, IrObject, IrPatternProperty, IrSchema, IrString, IrType, IrTypeName, IrUnion, IrValidation, IrValidationImport } from './ir.js';
+import type { IrArray, IrCheck, IrClass, IrDiscriminator, IrFunction, IrInstance, IrNumber, IrObject, IrPatternProperty, IrSchema, IrString, IrType, IrTypeName, IrUnion, IrValidation, IrValidationImport } from './ir.js';
 import { rt } from '../rt.js';
 import { presentValueCode } from '../union-conversion.js';
 import { VALUE, PATH, NEWLINE, COMMA, ISSUES, ALL, SANITY, INHERITED, EVALUATION, type CalleeSlot, type CallArguments } from './function-names.js';
@@ -279,6 +279,7 @@ export class FunctionWriter {
         });
       case 'date':
         return this.leaf({ fails: code`!(${value} instanceof Date) || !Number.isFinite(${value}.getTime())`, issue: code`code: 'type', expected: ['Date']` });
+      case 'class': return this.classCheck(check, value);
       case 'instance': return this.instanceCheck(check, value);
       case 'validation': return this.validationCheck(check, value);
       case 'string': return this.stringCheck(check, value, types);
@@ -316,6 +317,17 @@ export class FunctionWriter {
   }
 
   /** The class the value's encoder selects must be `of`; see `IrInstance`. */
+  /** An imported class is tested by `instanceof`; a global one by a test that looks the class up at each call, so a missing polyfill gives an issue. */
+  private classCheck(check: IrClass, value: Code): void {
+    const issue = code`code: 'instance', model: ${literalCode(check.name)}`;
+    if (check.from === undefined) {
+      const test = this.state.constant('global', code`${runtime.globalInstanceTest}(${literalCode(check.path)})`, check.path.join('\u0000'));
+      return this.leaf({ fails: code`!${test}(${value})`, issue });
+    }
+    const imported = join([this.state.validationFunction(check.from), ...check.path.map(identifierCode)], code`.`);
+    this.leaf({ fails: code`!(${value} instanceof ${imported})`, issue });
+  }
+
   private instanceCheck(check: IrInstance, value: Code): void {
     const selected = this.fresh('selected');
     this.line(code`const ${selected} = ${selectedModelCall(this.state, value, check.among)};`);

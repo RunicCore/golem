@@ -7,6 +7,8 @@
 export const VALIDATION_KEYWORD = 'exprtValidation';
 /** Internal model-plane keyword; wire/OpenAPI dates remain date-time strings. */
 export const MODEL_DATE_KEYWORD = 'golemModelDate';
+/** Model plane only: the value of a class-valued field must be an instance of its class (`{ name, path, id? }`; see `ModelTypeDescriptor`, `classRef`). */
+export const MODEL_CLASS_KEYWORD = 'golemModelClass';
 /** Model plane only: ties a union branch to the variant class its encoder selects. */
 export const MODEL_INSTANCE_KEYWORD = 'golemModelInstance';
 /**

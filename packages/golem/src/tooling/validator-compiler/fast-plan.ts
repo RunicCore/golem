@@ -15,7 +15,7 @@ function decidesFast(check: IrCheck, has: (id: number) => boolean): boolean {
     case 'conditional': return [check.if, check.then, check.else].some(id => id !== undefined && has(id));
     case 'dependentSchemas': return check.entries.some(entry => has(entry.fn));
     case 'validation': case 'unevaluatedProperties': case 'unevaluatedItems': return false;
-    case 'type': case 'literal': case 'format': case 'date': case 'string': case 'number': case 'instance': case 'array': case 'object':
+    case 'type': case 'literal': case 'format': case 'date': case 'class': case 'string': case 'number': case 'instance': case 'array': case 'object':
       return true;
   }
 }

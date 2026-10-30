@@ -218,6 +218,18 @@ export function checkFormat(format: string, value: unknown): boolean {
   return true;
 }
 
+/**
+ * A test for the class at `path` below `globalThis` (`['Temporal', 'Instant']`). The class is looked up at each call, because a
+ * polyfill may load after the validators: while it is missing, no value is an instance of it.
+ */
+export function globalInstanceTest(path: readonly string[]): (value: unknown) => boolean {
+  return (value) => {
+    let found: unknown = globalThis;
+    for (const name of path) found = (found as Record<string, unknown> | undefined)?.[name];
+    return typeof found === 'function' && value instanceof found;
+  };
+}
+
 /** `checkFormat` for one `format`, with the format looked up once: a generated fast check calls it per value. */
 export function formatTest(format: string): (value: unknown) => boolean {
   const forString = Object.hasOwn(stringFormats, format) ? stringFormats[format] : undefined;

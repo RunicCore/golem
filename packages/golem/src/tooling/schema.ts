@@ -12,6 +12,7 @@ export type JsonSchema = boolean | Readonly<Record<string, unknown>>;
 import type { ConstraintSchemaValue, ModelConstraint } from '../model-registry.js';
 import {
   GENERATED_MODEL_SCHEMA_REF_PREFIX,
+  MODEL_CLASS_KEYWORD,
   MODEL_DATE_KEYWORD,
   MODEL_CODEC_IDS_KEY,
   MODEL_INSTANCE_KEYWORD,
@@ -25,7 +26,7 @@ export { decodeUriFragment, escapePointerToken, unescapePointerToken } from '../
 export { canonicalSchemaKey };
 /** The schema descriptor types that generators read (`@exprtlabs/golem/internal/schema`). */
 export type { ConstraintSchemaValue, DiscriminatorValue, ModelConstraint, ModelTypeDescriptor, ModelTypeMetadata, UnionDiscriminator } from '../model-registry.js';
-export { GENERATED_MODEL_SCHEMA_REF_PREFIX, MODEL_CODEC_IDS_KEY, MODEL_DATE_KEYWORD, MODEL_INSTANCE_KEYWORD, VALIDATION_KEYWORD };
+export { GENERATED_MODEL_SCHEMA_REF_PREFIX, MODEL_CLASS_KEYWORD, MODEL_CODEC_IDS_KEY, MODEL_DATE_KEYWORD, MODEL_INSTANCE_KEYWORD, VALIDATION_KEYWORD };
 export { validationTagSchemaDescriptor } from './validation-tags.js';
 
 /** Structural inputs used when a nested schema contains a named reference. */
@@ -534,7 +535,14 @@ function descriptorSchema(
       case 'date': schema = options.representation === 'model'
         ? { [MODEL_DATE_KEYWORD]: true }
         : { type: 'string', format: 'date-time' }; break;
-      case 'class-value': schema = {}; break;
+      // The wire form of a class value is its serde's wire descriptor; the model form is an instance of the class, where a runtime class exists.
+      case 'class-value': {
+        const ref = isRecord(value.classRef) ? value.classRef : undefined;
+        schema = options.representation === 'model' && ref !== undefined && typeof value.typeName === 'string'
+          ? { [MODEL_CLASS_KEYWORD]: { name: value.typeName, path: ref.path, ...(ref.id === undefined ? {} : { id: ref.id }) } }
+          : {};
+        break;
+      }
       case 'literal': schema = { const: value.value }; break;
       case 'array': schema = { type: 'array', items: descriptorSchema(value.item, state, options) }; break;
       case 'tuple': {

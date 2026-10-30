@@ -94,6 +94,12 @@ export type ModelTypeDescriptor = ModelTypeMetadata & (
       readonly kind: 'class-value';
       readonly typeName: string;
       readonly typeImport?: { readonly exportName: string; readonly module: string; readonly specifier?: string };
+      /**
+       * Where the class has a runtime value that a check can test with `instanceof`; a type with no runtime class (an interface)
+       * has none. `path` names the class below the value that `id` imports, or below `globalThis` when there is no `id`.
+       * `id` is the stable identity of the imported class (the project path or package import with the export name).
+       */
+      readonly classRef?: { readonly id?: string; readonly path: readonly string[] };
     }
   | { readonly kind: 'literal'; readonly value: string | number | boolean }
   | { readonly kind: 'array'; readonly isReadonly?: true; readonly item: ModelTypeDescriptor }

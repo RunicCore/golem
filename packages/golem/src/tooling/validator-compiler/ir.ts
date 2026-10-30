@@ -186,6 +186,17 @@ interface IrDate {
 }
 
 /**
+ * `golemModelClass`: the value must be an instance of the class `name`, which `path` names below the import at `from` (an index
+ * into `IrModule.validations`), or below `globalThis` when there is no import. A failure is one `instance` issue naming `name`.
+ */
+export interface IrClass {
+  readonly kind: 'class';
+  readonly name: string;
+  readonly path: readonly string[];
+  readonly from?: number;
+}
+
+/**
  * `golemModelInstance`: of the model classes `among`, the one the value's encoder selects is the most derived one
  * the value is an instance of. It must be `of`: always when `required`, otherwise when there is one. Without `of`,
  * the value must be an instance of none of them. A failure is one `instance` issue naming `of`, or the first of `among`.
@@ -197,7 +208,7 @@ export interface IrInstance {
   readonly required: boolean;
 }
 
-/** A user validation function the generated module imports. */
+/** A user validation function or class the generated module imports. */
 export interface IrValidationImport {
   readonly importPath: string;
   readonly exportName: string;
@@ -216,7 +227,7 @@ export interface IrValidation {
 
 export type IrCheck =
   | IrType | IrLiteral | IrFormat | IrString | IrNumber | IrArray | IrObject | IrCall | IrAllOf | IrUnion | IrNot
-  | IrConditional | IrDependentSchemas | IrDate | IrInstance | IrValidation | IrUnevaluatedProperties | IrUnevaluatedItems;
+  | IrConditional | IrDependentSchemas | IrDate | IrClass | IrInstance | IrValidation | IrUnevaluatedProperties | IrUnevaluatedItems;
 
 /** A lowered schema: the `true` schema, the `false` schema, or the checks that apply in order. */
 export type IrSchema =

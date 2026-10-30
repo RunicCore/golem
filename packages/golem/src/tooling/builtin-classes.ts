@@ -19,6 +19,8 @@ export interface BuiltinClass {
   readonly wire: ModelConversionDescriptor;
   readonly serialize: Code;
   readonly deserialize: Code;
+  /** The class below `globalThis`, which the instance check of a field looks up. */
+  readonly classPath: readonly string[];
   /** The `format` of a string schema that an OpenAPI document with `dates: temporal` converts to this class. */
   readonly openApiFormat?: string;
 }
@@ -36,6 +38,7 @@ function temporalClass(name: TemporalClassName, type: Code, wire: ModelConstrain
     wire: wireOf(wire),
     serialize: rt.temporal[`serializeTemporal${name}` as const],
     deserialize: rt.temporal[`deserializeTemporal${name}` as const],
+    classPath: ['Temporal', name],
     ...(openApiFormat === undefined ? {} : { openApiFormat }),
   };
 }
@@ -65,7 +68,7 @@ export function builtinClassByOpenApiFormat(format: string): BuiltinClass | unde
 
 /** The descriptor of a field of the class. A generator whose document states the wire form itself passes its own `wire`. */
 export function builtinClassDescriptor(entry: BuiltinClass, wire: ModelConversionDescriptor = entry.wire): ModelConversionDescriptor {
-  return { kind: 'class-value', typeName: entry.qualifiedName, serde: { id: entry.serdeId, wireDescriptor: wire } } as unknown as ModelConversionDescriptor;
+  return { kind: 'class-value', typeName: entry.qualifiedName, classRef: { path: entry.classPath }, serde: { id: entry.serdeId, wireDescriptor: wire } } as unknown as ModelConversionDescriptor;
 }
 
 /**

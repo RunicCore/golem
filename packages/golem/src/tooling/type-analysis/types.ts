@@ -4,7 +4,7 @@ import * as ts from '../typescript-ns.js';
 import { assertNoSymbolKey, declaredModelAlias, isDefaultLibraryProperty, isSymbolKeyedProperty, diagnostic, namedDiagnostic, foreignModelReason, isGeneratedBrandKey, modelSpecificationForClass, propertyType, resolveSymbol } from './symbols.js';
 import { projectionIdentity } from './graph.js';
 import { aliasProjectionName, isProjectionName, pascalIdentifier, policySuffix, headQualifiers, projectionBaseName, keysReadAlike, safeNameHint, unionVariantNaming } from './projection-names.js';
-import { commonDirectory, canonicalFilename, companionFilename, type ModelBoundary } from './project.js';
+import { commonDirectory, canonicalFilename, companionFilename, portableRelativeFilename, type ModelBoundary } from './project.js';
 import { packageSpecifier } from './package-specifier.js';
 import { builtinClassDescriptor } from '../builtin-classes.js';
 import { enclosureOf, findBuiltinClass, isGlobalDeclaration } from './builtin-class.js';
@@ -150,7 +150,9 @@ function classValueReference(
   identityRoot: string,
   /** The generated file that imports the class: the companion of the model's file. */
   importer: string,
-): { typeName: string; typeImport?: { exportName: string; module: string; specifier?: string } } {
+  /** Whether a file is a model source: the validators module cannot import a class declared there (it would close a cycle with the model's companion). */
+  isModelSource: ((filename: string) => boolean) | undefined,
+): { typeName: string; typeImport?: { exportName: string; module: string; specifier?: string }; classRef?: { id?: string; path: readonly string[] } } {
   // The class's own symbol, never a local alias such as `type Bytes = Uint8Array & TSerde<…>`,
   // which the model file need not export.
   const symbol = type.getSymbol();
@@ -173,7 +175,9 @@ function classValueReference(
     throw diagnostic(context.sourceFile, node, '1063', `Class ${typeName} has type parameters, so generated code cannot write its type. Use a non-generic class, such as one declared as \`class Named extends ${typeName}<string> {}\`.`);
   }
   // A script file (a TypeScript lib, an ambient .d.ts) or a `declare global` block declares a global name.
-  if (isGlobalDeclaration(declaration, enclosure)) return { typeName };
+  // A type with no runtime class (an interface) has no `instanceof` check, and its TSerde pair is its only check.
+  const runtimeClass = hasRuntimeClass(checker, symbol, node);
+  if (isGlobalDeclaration(declaration, enclosure)) return { typeName, ...(runtimeClass ? { classRef: { path: names } } : {}) };
   const sourceFile = declaration.getSourceFile();
   // `Temporal` for `Temporal.Instant` imported from a module: the outermost namespace is what the module exports.
   const exportName = publicExportName(checker, outermost ?? declaration, (outermost && checker.getSymbolAtLocation(outermost.name)) || symbol, true);
@@ -185,7 +189,13 @@ function classValueReference(
   if (resolved.kind === 'unexported') {
     throw diagnostic(context.sourceFile, node, '1060', `Class ${typeName} is in package ${resolved.packageName}, but no "exports" entry reaches ${module}. Export that file from the package.`);
   }
-  return { typeName, typeImport: { exportName, module, ...(resolved.kind === 'package' ? { specifier: resolved.specifier } : {}) } };
+  const typeImport = { exportName, module, ...(resolved.kind === 'package' ? { specifier: resolved.specifier } : {}) };
+  return { typeName, typeImport };
+}
+
+/** Whether the symbol of a class type has a value that `instanceof` can test: a class, or a constructing variable (`declare var URL: URLConstructor`). */
+function hasRuntimeClass(checker: ts.TypeChecker, symbol: ts.Symbol, node: ts.Node): boolean {
+  return (symbol.flags & ts.SymbolFlags.Value) !== 0 && checker.getTypeOfSymbolAtLocation(symbol, node).getConstructSignatures().length > 0;
 }
 
 /** Whether writing the class's bare name would omit a type argument: some type parameter has no default in any merged declaration. */
@@ -1117,7 +1127,7 @@ export function descriptorBuilder(
       return withMetadata({ kind: 'class-value', typeName: 'bigint' } as ModelConversionDescriptor, metadata);
     }
     if (metadata.serde && isClassValueType(checker, type)) {
-      return withMetadata({ kind: 'class-value', ...classValueReference(checker, type, context, node ?? context.declaration, stableIdentityRoot, companionOf(context.sourceFile.fileName)) } as ModelConversionDescriptor, metadata);
+      return withMetadata({ kind: 'class-value', ...classValueReference(checker, type, context, node ?? context.declaration, stableIdentityRoot, companionOf(context.sourceFile.fileName), modelSources && ((filename: string) => modelSources.has(filename))) } as ModelConversionDescriptor, metadata);
     }
 
     const isRoot = node === context.fieldsNode;
