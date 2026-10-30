@@ -5,7 +5,8 @@
  */
 import type { DiscriminatorValue } from './model-registry.js';
 import { requireModelObject, unknownDiscriminatorValue } from './conversion.js';
-import { getIModelClass, getObjectCodec, type ObjectCodec, type QueryFieldShape, type SerdeOptions } from './object-codec.js';
+import { getIModelClass, getObjectCodec, type ObjectCodec, type SerdeOptions } from './object-codec.js';
+import { decodeQueryField } from './query-decode.js';
 import { presentValue } from './presence.js';
 
 const NEST_MODEL_CODEC_ID = Symbol.for('@exprtlabs/golem:nestModelCodec');
@@ -171,46 +172,12 @@ function nestUnionInput(property: string, variants: readonly NestUnionVariant[])
 
 type QueryWireDecoder = (query: unknown) => unknown;
 
-const NOT_DECODED = Symbol('not decoded');
-const JSON_NUMBER = /^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?$/;
 const queryWireDecoders = new WeakMap<ObjectCodec, QueryWireDecoder>();
 
 export function schemaRecord(value: unknown): Readonly<Record<string, unknown>> | undefined {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
     ? value as Readonly<Record<string, unknown>>
     : undefined;
-}
-
-function decodeQueryScalar(text: string, shape: QueryFieldShape): unknown {
-  const literals = shape.literals ?? [];
-  if (shape.types.includes('string') || literals.includes(text)) return text;
-  const literal = literals.find((value) =>
-    (typeof value === 'number' || typeof value === 'boolean') && String(value) === text);
-  if (literal !== undefined) return literal;
-  if ((shape.types.includes('number') || shape.types.includes('integer')) && JSON_NUMBER.test(text)) {
-    const value = Number(text);
-    // An integer outside the safe range would decode to a different value.
-    if (!shape.types.includes('integer') || Number.isSafeInteger(value)) return value;
-  }
-  if (shape.types.includes('boolean') && (text === 'true' || text === 'false')) return text === 'true';
-  return NOT_DECODED;
-}
-
-function decodeQueryItems(values: readonly unknown[], item: QueryFieldShape): unknown[] {
-  return values.map((entry) => {
-    if (typeof entry !== 'string') return entry;
-    const decoded = decodeQueryScalar(entry, item);
-    return decoded === NOT_DECODED ? entry : decoded;
-  });
-}
-
-function decodeQueryField(value: unknown, shape: QueryFieldShape): unknown {
-  if (Array.isArray(value)) return shape.item ? decodeQueryItems(value, shape.item) : value;
-  if (typeof value !== 'string') return value;
-  const decoded = decodeQueryScalar(value, shape);
-  if (decoded !== NOT_DECODED) return decoded;
-  // A single occurrence of a repeatable key arrives as a string.
-  return shape.item ? decodeQueryItems([value], shape.item) : value;
 }
 
 /**
