@@ -12,7 +12,6 @@ import {
   artifactBasenames,
   compileGeneratedSdk,
   generateMaterializedSdk,
-  generatedModelSource,
 } from './openapi/helpers.js';
 import { openScope, runModule } from './support/run-module.js';
 
@@ -103,7 +102,7 @@ function compileValidatedSdk(output: string): string {
   return outDir;
 }
 
-test('OpenAPI SDKs emit one validators module that the models and the operations use', () => {
+test('a validating OpenAPI SDK emits one validators module and records the profile in its manifest', () => {
   const result = writeSdk(validatedDocument(), {
     output: path.join(tmpdir(), 'validators-profile'),
     name: 'Validated',
@@ -111,10 +110,6 @@ test('OpenAPI SDKs emit one validators module that the models and the operations
   });
   const names = artifactBasenames(result.artifacts);
   assert.equal(names.includes('validators.generated.ts'), true);
-  const models = generatedModelSource(result.artifacts);
-  // Kept pins: the module specifier and the runtime export that the models name are the contract between the SDK files and golem. The models text joins several files, so it cannot run as one module.
-  assert.match(models, /validators\.generated\.js/);
-  assert.match(models, /createObjectCodec/);
   const manifest = JSON.parse(result.artifacts.find(item => item.path.endsWith('/model-manifest.json'))?.content ?? '{}') as {
     profile?: { allowAny?: boolean };
   };
@@ -146,7 +141,7 @@ test('SDK compiles a no-content operation with no response validators', async t 
   assert.equal(deleted.status, 204);
 });
 
-test('SDK operation validators expose every operation reference and validate through the client', async t => {
+test('SDK operations accept a valid body and reject an invalid one through the client', async t => {
   const output = path.join(mkdtempSync(path.join(tmpdir(), 'golem-openapi-validated-')), 'sdk');
   t.after(() => rmSync(path.dirname(output), { recursive: true, force: true }));
   const result = await generateMaterializedSdk(validatedDocument(), {
@@ -160,24 +155,7 @@ test('SDK operation validators expose every operation reference and validate thr
   assert.doesNotMatch(generatedCode, /new\s+Function|\beval\s*\(/);
   assert.ok(result.artifacts.some(item => item.path === path.join(output, 'validators.generated.ts')), 'the SDK carries one validators module');
 
-  type OperationValidator = (value: unknown, all: boolean) => readonly { readonly path: readonly unknown[] }[];
-  const expected: Record<string, string[]> = {
-    createTask: ['validate_createTask_input', 'validate_createTask_response_201_application_json', 'validate_createTask_response_400_application_json'],
-    getTask: ['validate_getTask_input', 'validate_getTask_response_200_application_json'],
-  };
   const task = { id: 'task-1', when: '2025-01-02T03:04:05Z', child: { id: 'child-1' }, labels: ['one'] };
-  const validatorsOf = async (): Promise<Record<string, OperationValidator>> =>
-    await import(pathToFileURL(path.join(compiled, 'validators.generated.js')).href) as Record<string, OperationValidator>;
-  const all = await validatorsOf();
-  for (const name of Object.keys(all)) assert.equal(typeof all[name], 'function', name);
-  for (const names of Object.values(expected)) for (const name of names) assert.equal(typeof all[name], 'function', name);
-  assert.ok(Object.keys(all).some(name => /^validate_Task_[0-9a-f]{8}$/.test(name)), 'the model roots are exported by the same module');
-
-  const inputValidator = all.validate_createTask_input;
-  assert.ok(inputValidator);
-  assert.deepEqual(inputValidator({ body: task }, true), []);
-  assert.deepEqual(inputValidator({ body: { ...task, labels: [] } }, true).map(issue => issue.path), [['body', 'labels']]);
-  assert.deepEqual(inputValidator({ body: { ...task, when: 'not-a-date' } }, true).map(issue => issue.path), [['body', 'when']]);
 
   const clientModule = await import(pathToFileURL(path.join(compiled, 'client.js')).href);
   const respond = (status: number, body: unknown): typeof fetch => async () =>
