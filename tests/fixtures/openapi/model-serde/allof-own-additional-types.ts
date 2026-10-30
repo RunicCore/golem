@@ -1,3 +1,4 @@
-import { VisitModel } from './index.js';
+import type { Visit } from './types.js';
 
-void VisitModel;
+declare const visit: Visit;
+void visit;

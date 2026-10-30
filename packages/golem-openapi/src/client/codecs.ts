@@ -1,6 +1,4 @@
-export function mediaEssence(contentType: string): string {
-  return contentType.split(';', 1)[0]?.trim().toLowerCase() || '';
-}
+import { mediaEssence } from '@exprtlabs/golem/internal/generator-support';
 
 export function isBuiltinTextMediaType(contentType: string): boolean {
   const essence = mediaEssence(contentType);

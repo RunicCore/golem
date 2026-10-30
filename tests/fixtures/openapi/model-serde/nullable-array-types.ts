@@ -1,7 +1,6 @@
-import { fromWireFormat } from '@exprtlabs/golem/serde';
-import { VisitModel } from './index.js';
+import type { Visit } from './types.js';
 
-const visit = fromWireFormat<VisitModel>({ visits: null });
+declare const visit: Visit;
 const visits: Date[] | null = visit.visits;
 
 void visits;

@@ -1,17 +1,13 @@
 import { copyFixtureFile, readFixture } from './fixture-project.js';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test, { type TestContext } from 'node:test';
 
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
-import type { GeneratedModelConstructor } from '@exprtlabs/golem/model';
-import { generateModels } from '#openapi/models';
-import { writeSdk } from '#openapi/generator';
 import { buildModelProject, createModelProject, writeModelGolemYaml } from './model-project.js';
-import { writeGeneratedSdk } from './openapi/helpers.js';
 import { spyOnBuild, type SpiedCall } from './support/build-spy.js';
 import { generatedCodecIdFromRoot } from './support/consumer.js';
 import { command } from './support/process.js';
@@ -29,65 +25,6 @@ function callsOverCeiling(calls: readonly SpiedCall[], ceilings: Readonly<Record
   for (const { name } of calls) counts[name] = (counts[name] ?? 0) + 1;
   return Object.fromEntries(Object.entries(counts).filter(([name, count]) => count > (ceilings[name] ?? 0)));
 }
-
-test('model generation preserves imported model identity and detached JSON output', async (t) => {
-  const value = fixture(t);
-  const sdk = path.join(value.sourceRoot, 'sdk');
-  mkdirSync(sdk, { recursive: true });
-  const document = {
-    openapi: '3.1.0',
-    info: { title: 'External model', version: '1' },
-    components: {
-      schemas: {
-        Money: {
-          type: 'object',
-          required: ['amount', 'currency'],
-          properties: {
-            amount: { type: 'number' },
-            currency: { type: 'string' },
-          },
-        },
-      },
-    },
-  };
-  writeGeneratedSdk(writeSdk, document, {
-    output: sdk,
-    profile: { mobx: false, validation: false, allowAny: false },
-  });
-  writeFileSync(path.join(value.sourceRoot, 'wallet.model.ts'), readFixture("models/serde-emission-efficiency/model-generation-preserves-imported-model-identity-and-detached-json-output/wallet.model.ts"));
-
-  writeModelGolemYaml(value.root, { mobx: false, validation: false });
-  await buildModelProject(value.root);
-
-  const spy = await spyOnBuild(value.root, {
-    '@exprtlabs/golem/internal/model-runtime': ['decodeGeneratedModelTrusted', 'requireObjectCodec'],
-  });
-  try {
-    const sdkModule = await import(pathToFileURL(path.join(value.root, 'build/sdk/index.js')).href) as {
-      readonly MoneyModel: new (values?: { amount?: number; currency?: string }) => object;
-    };
-    const walletModule = await import(pathToFileURL(path.join(value.root, 'build/wallet.model.js')).href) as {
-      readonly Wallet: new (values?: { money?: object }) => object;
-    };
-    const { stringifyTWallet } = await import(pathToFileURL(path.join(value.root, 'build/wallet.model.generated.js')).href) as {
-      readonly stringifyTWallet: (value: object) => string;
-    };
-    const wallet = await modelCodec(walletModule.Wallet).fromWireFormat({
-      money: { amount: 7, currency: 'USD' },
-    }) as { readonly money: object };
-    assert.ok(wallet.money instanceof sdkModule.MoneyModel, 'external model is reconstructed as a concrete instance');
-    assert.deepEqual(callsOverCeiling(spy.calls, { decodeGeneratedModelTrusted: 1 }), {}, 'budget: decoding an already-known external model takes at most one trusted decode and no checked decode');
-    spy.calls.length = 0;
-    const wire = await modelCodec(wallet).toWireFormat(wallet as never) as { readonly money: object };
-    assert.deepEqual(callsOverCeiling(spy.calls, { requireObjectCodec: 0 }), {}, 'budget: encoding a wallet with a known Money codec resolves no codec through requireObjectCodec');
-    spy.calls.length = 0;
-    const text = JSON.stringify(wire);
-    assert.notStrictEqual(wire.money, wallet.money, 'wire output is detached from the external model');
-    assert.equal(text, '{"money":{"amount":7,"currency":"USD"}}');
-    assert.equal(stringifyTWallet(wallet), text);
-    assert.deepEqual(callsOverCeiling(spy.calls, {}), {}, 'budget: a known Money codec is stringified by direct call, not a runtime requireObjectCodec lookup or an encode');
-  } finally { spy.stop(); }
-});
 
 test('model decoder leaves unchanged fields in the initializer copy', async (t) => {
   const value = fixture(t);
@@ -204,61 +141,6 @@ test('generated decoding preserves the constructor and initializer boundaries', 
     if (previousProbe) Object.defineProperty(Object.prototype, probeName, previousProbe);
     else Reflect.deleteProperty(Object.prototype, probeName);
   }
-});
-
-test('OpenAPI generated models use the same detached JSON serialization as object serialization', async (t) => {
-  const value = fixture(t);
-  writeFileSync(path.join(value.sourceRoot, 'types.ts'), readFixture("models/serde-emission-efficiency/openapi-generated-models-use-the-same-detached-json-serialization-as-object-/types.ts"));
-  const source = generateModels({
-    openapi: '3.1.0',
-    info: { title: 'Emission', version: '1' },
-    components: {
-      schemas: {
-        Child: {
-          type: 'object',
-          required: ['value'],
-          properties: { value: { type: 'string' } },
-        },
-        Parent: {
-          type: 'object',
-          required: ['title', 'child'],
-          properties: {
-            title: { type: 'string' },
-            child: { $ref: '#/components/schemas/Child' },
-            labels: { type: 'array', items: { type: 'string' } },
-          },
-        },
-      },
-    },
-  }, { mobx: false, validation: false });
-  writeFileSync(path.join(value.sourceRoot, 'models.ts'), source);
-  await buildModelProject(value.root);
-
-  const models = await import(pathToFileURL(path.join(value.root, 'build/models.js')).href) as unknown as {
-    readonly ChildModel: new (values?: Record<string, unknown>) => object;
-    readonly ParentModel: new (values?: Record<string, unknown>) => object;
-  };
-  const child = new models.ChildModel({ value: 'child' });
-  const parent = new models.ParentModel({ title: 'parent', child, labels: ['one', 'two'] });
-  const wire = modelCodec(parent).toWireFormat(parent);
-  const text = JSON.stringify(wire);
-  assert.equal(text, '{"title":"parent","child":{"value":"child"},"labels":["one","two"]}');
-
-  // The decoder hands a model with a converted field a shallow copy of the wire, and a model with none the wire itself.
-  const initializers: unknown[] = [];
-  class SeenChild extends models.ChildModel { constructor(values?: Record<string, unknown>) { initializers.push(values); super(values); } }
-  class SeenParent extends models.ParentModel { constructor(values?: Record<string, unknown>) { initializers.push(values); super(values); } }
-  const childWire = { value: 'child' };
-  decodeGeneratedModelTrusted(SeenChild as unknown as GeneratedModelConstructor, childWire);
-  assert.strictEqual(initializers.pop(), childWire, 'budget: a model with no converted fields takes the wire object as its initializer, with no copy');
-  const parentWire = { title: 'parent', child: { value: 'child' }, extra: 1 };
-  decodeGeneratedModelTrusted(SeenParent as unknown as GeneratedModelConstructor, parentWire);
-  const initializer = initializers.pop() as Record<string, unknown>;
-  assert.notStrictEqual(initializer, parentWire);
-  assert.equal(initializer.title, 'parent', 'budget: the initializer starts as a shallow copy of the wire, so an unchanged field stays in it');
-  assert.equal(initializer.extra, 1);
-  assert.ok(initializer.child instanceof models.ChildModel, 'the nested $ref field is converted');
-  assert.deepEqual(parentWire, { title: 'parent', child: { value: 'child' }, extra: 1 }, 'the caller\'s wire is not changed');
 });
 
 test('nested local models decode through the local converter of the nested model', async (t) => {

@@ -1,13 +1,13 @@
 
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, parse, relative, resolve, sep } from 'node:path';
 import * as ts from '../typescript-ns.js';
 import { assertNotSolutionTsconfig } from '../typescript-config.js';
 import { readManifest } from './package-specifier.js';
 import { DEFAULT_MODEL_SUFFIXES, displayPath, GolemDiagnosticSeverity, canonicalPath, compareText, discoverSources, hasErrorCode, isInsideDirectory, parseYamlFile, suffixPattern, YamlFileError, type GeneratorSession, type GolemDiagnostic, type InputObserver } from '../generator-core.js';
-import { canonicalFilename, inNodeModules } from './path-identity.js';
+import { canonicalFilename, inNodeModules, portableRelativeFilename } from './path-identity.js';
 
-export { canonicalFilename };
+export { canonicalFilename, portableRelativeFilename };
 
 export interface ProgramInfo {
   readonly configPath?: string;
@@ -19,16 +19,6 @@ export interface ProgramInfo {
   readonly rootNames: readonly string[];
   readonly program: ts.Program;
   readonly host: ts.CompilerHost;
-}
-
-/**
- * Stable source identity used in generated metadata.  Absolute paths are
- * useful while resolving a program but would make generated output depend on
- * the checkout directory.  Keep the first portable workspace boundary and
- * discard the machine-specific prefix.
- */
-export function portableRelativeFilename(filename: string, root: string): string {
-  return relative(canonicalFilename(root), canonicalFilename(filename)).replace(/\\/g, '/');
 }
 
 /** Find a stable project root when a direct generator root is unavailable. */
@@ -49,6 +39,19 @@ export function commonDirectory(filenames: readonly string[]): string {
 export function assertAbsolute(filename: string, label: string): string {
   if (!pathIsAbsolute(filename)) throw new TypeError(`${label} must be an absolute path.`);
   return canonicalFilename(filename);
+}
+
+/** The checks that open every generator's `generate(context)`: a context object whose `root` is an absolute, existing directory. Reports `root` to the input observer. */
+export function assertGeneratorRoot(context: { readonly root: string; readonly onInput?: InputObserver }): string {
+  if (!context || typeof context !== 'object' || Array.isArray(context)) {
+    throw new TypeError('generate(context) requires a context object.');
+  }
+  const root = assertAbsolute(context.root, 'context.root');
+  context.onInput?.(root);
+  if (!existsSync(root) || !statSync(root).isDirectory()) {
+    throw new Error(`context.root must be an existing directory: ${displayPath(root)}`);
+  }
+  return root;
 }
 
 function pathIsAbsolute(filename: string): boolean {

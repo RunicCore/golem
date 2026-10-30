@@ -1,11 +1,12 @@
 import path from 'node:path';
 import { fieldProvenance, isPropertyMapping, isReadonlySequenceType, readonlyPropertyNames, instantiatedTypeSource, substituteTypeNode, authoredPropertyTypeNode, type TypeSubstitutions } from './projections.js';
 import * as ts from '../typescript-ns.js';
-import { assertNoSymbolKey, declaredModelAlias, isDefaultLibraryProperty, isSymbolKeyedProperty, diagnostic, foreignModelReason, isGeneratedBrandKey, modelSpecificationForClass, propertyType, resolveSymbol } from './symbols.js';
+import { assertNoSymbolKey, declaredModelAlias, isDefaultLibraryProperty, isSymbolKeyedProperty, diagnostic, namedDiagnostic, foreignModelReason, isGeneratedBrandKey, modelSpecificationForClass, propertyType, resolveSymbol } from './symbols.js';
 import { projectionIdentity } from './graph.js';
 import { aliasProjectionName, isProjectionName, pascalIdentifier, policySuffix, headQualifiers, projectionBaseName, keysReadAlike, safeNameHint, unionVariantNaming } from './projection-names.js';
 import { commonDirectory, canonicalFilename, companionFilename, type ModelBoundary } from './project.js';
 import { packageSpecifier } from './package-specifier.js';
+import { TEMPORAL_SERDE_PREFIX } from '../sdk-codecs.js';
 import { compareText, displayPath } from '../generator-core.js';
 import type { GolemProfile } from '../generator-core.js';
 import { assertSupportedModelFieldName, canonicalDescriptorKey, isBrandPropertyName } from '../schema.js';
@@ -199,6 +200,29 @@ function hasRequiredTypeParameter(symbol: ts.Symbol): boolean {
     .map((item) => item.typeParameters ?? []);
   const count = Math.max(0, ...lists.map((list) => list.length));
   return Array.from({ length: count }, (_, index) => lists.some((list) => { const parameter = list[index]; return parameter !== undefined && ts.typeParameterDefault(parameter) !== undefined; })).some((defaulted) => !defaulted);
+}
+
+const TEMPORAL_CLASSES: ReadonlySet<string> = new Set(['Instant', 'ZonedDateTime', 'PlainDate', 'PlainDateTime', 'PlainTime', 'Duration']);
+
+/**
+ * The name of the global `Temporal` class that `type` is (`Instant` for `Temporal.Instant`), or undefined. A `Temporal` that a module
+ * exports, such as a polyfill's, is not the global one: generated code would have to import it.
+ */
+function globalTemporalClass(type: ts.Type): string | undefined {
+  const symbol = type.getSymbol();
+  const declaration = symbol?.declarations?.[0];
+  const name = symbol?.getName();
+  if (declaration === undefined || name === undefined || !TEMPORAL_CLASSES.has(name)) return undefined;
+  let outermost: ts.ModuleDeclaration | undefined;
+  let augmentsGlobal = false;
+  for (let parent: ts.Node | undefined = declaration.parent; parent && !ts.isSourceFile(parent); parent = parent.parent) {
+    if (!ts.isModuleDeclaration(parent)) continue;
+    if (!ts.isIdentifier(parent.name)) return undefined;
+    if (parent.name.text === 'global') { augmentsGlobal = true; break; }
+    outermost = parent;
+  }
+  const global = augmentsGlobal || !isModuleFile(declaration.getSourceFile());
+  return global && outermost !== undefined && ts.isIdentifier(outermost.name) && outermost.name.text === 'Temporal' ? name : undefined;
 }
 
 /** A file with a top-level import or export is a module; any other file declares globals. */
@@ -875,10 +899,9 @@ export function descriptorBuilder(
     return match;
   };
 
-  // A model, a class model and an SDK model end a walk: `describe` returns a reference for each before it reads the body.
+  // A model and a class model end a walk: `describe` returns a reference for each before it reads the body.
   const isModelBoundary = (type: ts.Type): boolean =>
     modelSpecificationForType(checker, type, specifications) !== undefined
-    || manifestIndex.externalModelForType(type) !== undefined
     || ((type.flags & ts.TypeFlags.Object) !== 0 && modelSpecificationForClass(checker, type, specifications) !== undefined);
   // The types a type holds that `describe` descends into. It stops where `describe` stops, so a type that reaches
   // itself only through a model is not a cycle: the model is a reference.
@@ -1000,7 +1023,7 @@ export function descriptorBuilder(
     readonly classMatch: ModelSpecification | undefined;
     readonly model: ModelSpecification | undefined;
   } => {
-    const provenance = fieldProvenance(checker, node, specifications, manifestIndex.byProvenance);
+    const provenance = fieldProvenance(checker, node, specifications);
     const projection = provenance.projection || isPropertyMapping(type);
     const candidates = provenance.models.filter(specification => checker.isTypeAssignableTo(type, specification.fieldsType)
       && checker.isTypeAssignableTo(specification.fieldsType, type));
@@ -1123,6 +1146,15 @@ export function descriptorBuilder(
       });
     }
 
+    // A global `Temporal` class has the conversion of the runtime's Temporal codec of that name, as if it carried the golem Temporal tag.
+    const temporalClass = metadata.serde ? undefined : globalTemporalClass(type);
+    if (temporalClass !== undefined) {
+      return withMetadata({
+        kind: 'class-value',
+        typeName: `Temporal.${temporalClass}`,
+        serde: { id: `${TEMPORAL_SERDE_PREFIX}Temporal${temporalClass}`, wireDescriptor: { kind: 'string' } },
+      } as unknown as ModelConversionDescriptor, metadata);
+    }
     // A class instance or bigint has no JSON shape of its own; its TSerde codec is its only conversion.
     if (metadata.serde && isBigIntValueType(type)) {
       return withMetadata({ kind: 'class-value', typeName: 'bigint' } as ModelConversionDescriptor, metadata);
@@ -1160,15 +1192,23 @@ export function descriptorBuilder(
         ...(classMatch ? { construct: true as const, ...(type.getSymbol()?.getName() ? { className: type.getSymbol()!.getName() } : {}) } : {}),
       }, metadata);
     }
-    // An SDK interface names its model by its type; an SDK IObject alias names it by the alias the field's type node reaches,
-    // and the reference whose type equals this type (a variant of `Money | null`, not the union) is the one that counts.
-    const aliased = (type.flags & (ts.TypeFlags.Any | ts.TypeFlags.Unknown | ts.TypeFlags.Never)) !== 0 ? [] : provenance.externals.filter(({ type: reached }) =>
-      checker.isTypeAssignableTo(type, reached) && checker.isTypeAssignableTo(reached, type));
-    if (new Set(aliased.map(({ model }) => model.id)).size > 1) {
-      throw diagnostic(context.sourceFile, node ?? context.declaration, '1054', 'Model identity is ambiguous after type composition. Use an explicit named model reference.');
+    // A type of a golem-mode SDK keeps the SDK's limits and conversions: the root of a model takes the SDK's descriptor, and a field
+    // refers to the SDK node. The validators compile once for both, since the compiler writes one function for equal schemas.
+    // An alias of the SDK that is no model (`type Currency = string`, `type Tags = number[]`) is the plain type to the checker, so the node names it.
+    const aliasNode = hasBaseTags && analysis.baseNode ? analysis.baseNode : node ?? nameNode;
+    const sdkAlias = aliasNode === undefined ? undefined : manifestIndex.sdkAliasForNode(checker, aliasNode);
+    const uncarried = manifestIndex.sdkUncarriedForType(type) ?? sdkAlias?.uncarried;
+    if (uncarried !== undefined) {
+      const at = node ?? context.declaration;
+      throw namedDiagnostic(context.sourceFile, at, 'OPENAPI_KEYWORD_NOT_CARRIED', `The SDK schema of this type uses ${uncarried.map((keyword) => JSON.stringify(keyword)).join(', ')}, which its model descriptors do not carry, and the model of the app checks only through them. The SDK itself checks the schema in full. Use the SDK type in the client or handler code, or change the schema so that the descriptors carry the keyword.`);
     }
-    const externalModel = aliased[0]?.model ?? manifestIndex.externalModelForType(type);
-    if (externalModel) return withMetadata({ kind: 'generated-model', id: externalModel.id }, metadata);
+    const sdkDescriptor = manifestIndex.sdkDescriptorForType(type, isRoot);
+    if (sdkDescriptor) return withMetadata(sdkDescriptor as ModelConversionDescriptor, metadata);
+    // The limits of the alias come first, then the field's own.
+    if (sdkAlias) {
+      const aliasDescriptor = sdkAlias.descriptor as { readonly constraints?: readonly ModelConstraint[] };
+      return withMetadata({ ...aliasDescriptor } as ModelConversionDescriptor, { ...metadata, constraints: [...(aliasDescriptor.constraints ?? []), ...metadata.constraints] });
+    }
     if (type.flags & ts.TypeFlags.Any) {
       if (!allowUnresolved && isErrorAny(type)) {
         const at = node ?? context.declaration;

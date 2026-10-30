@@ -8,7 +8,7 @@ import type { GolemProfile } from '@exprtlabs/golem/generator-api';
 
 import { createFixtureProject } from './fixture-project.js';
 import { buildModelProject, createModelProject, writeModelGolemYaml, writeModelSources } from './model-project.js';
-import { compileGeneratedSdk, generateMaterializedSdk, requireRecord } from './openapi/helpers.js';
+import { compileGeneratedSdk, generateMaterializedSdk, sdkBodyCodec, withRootOperations } from './openapi/helpers.js';
 import { modelCodec } from './support/model-codec.js';
 
 // toWireFormat of the codec of a model's class (D-105) validates when the profile does and `{ validate: false }` skips.
@@ -68,25 +68,21 @@ test('the toWireFormat of a model codec does not validate when the profile has v
   assert.deepEqual(modelCodec(Card).toWireFormat(new Card({ title: 5 })), { title: 5 });
 });
 
-test('the toWireFormat of a golem-openapi model codec validates and accepts validate false', async (t) => {
-  // protects: D-105 an SDK model resolves its codec like a golem-model class
+test('the request body of an SDK client validates and accepts validate false', async (t) => {
+  // protects: D-105 an SDK body is checked on its way out, and a call can lower the check
   const output = path.join(createFixtureProject(t, 'golem-openapi-encode-model-'), 'sdk');
   const item = { type: 'object', additionalProperties: false, required: ['name'], properties: { name: { type: 'string' } } };
-  const content = { 'application/json': { schema: { $ref: '#/components/schemas/Item' } } };
-  const document = {
+  const document = withRootOperations({
     openapi: '3.1.0',
     info: { title: 'Items', version: '1' },
-    paths: { '/items': { post: { operationId: 'createItem', requestBody: { required: true, content }, responses: { 201: { description: 'created', content } } } } },
     components: { schemas: { Item: item } },
-  };
+  }, 'Item');
   await generateMaterializedSdk(document, { output, name: 'Items', profile: { mobx: false, validation: true, allowAny: false } });
   compileGeneratedSdk(output, [], { strict: true, skipLibCheck: true, outDir: path.join(output, 'dist') });
-  const models = requireRecord(await import(pathToFileURL(path.join(output, 'dist/index.js')).href), 'generated models');
-  const ItemModel = models.ItemModel as Model;
-  const codec = modelCodec(ItemModel);
-  assert.deepEqual(codec.toWireFormat(new ItemModel({ name: 'n' })), { name: 'n' });
-  assert.throws(() => codec.toWireFormat(new ItemModel({ name: 5 })), isValidationError);
-  assert.deepEqual(codec.toWireFormat(new ItemModel({ name: 5 }), { validate: false }), { name: 5 });
+  const codec = await sdkBodyCodec(output, 'Items', 'Item');
+  assert.deepEqual(await codec.encode({ name: 'n' }), { name: 'n' });
+  await assert.rejects(() => codec.encode({ name: 5 }), isValidationError);
+  assert.deepEqual(await codec.encode({ name: 5 }, { validate: false }), { name: 5 });
 });
 
 test('a validated stringify and toWireFormat, generated and through the model codec, run the predicate of a nested model once', async (t) => {

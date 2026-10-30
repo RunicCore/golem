@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { canonicalPath, displayPath, invalidValidationLevelMessage, isInsideDirectory, isRecord, isValidationLevel, outsideModelsRootMessage, parseYamlFile, resolveProfile } from './generator-core.js';
 import { defaultModelOutput } from './generated-paths.js';
+import { sdkCodecsFile } from './sdk-codecs.js';
 import type {
   GolemProfile,
   ControllerContext,
@@ -290,7 +291,7 @@ export function resolveConfig(filename = 'golem.yaml', onInput?: InputObserver):
     if (!Array.isArray(value.openapi) || !value.openapi.length) throw new Error('openapi must be a nonempty array of jobs.');
     for (const [index, entry] of value.openapi.entries()) {
       const label = `openapi[${index}]`;
-      keys(entry, ['input', 'output', 'name', 'allowRemoteRefs', 'remoteHosts', 'maxRefBytes', 'maxRefDocuments', 'refTimeoutMs', 'dates'], label);
+      keys(entry, ['input', 'output', 'name', 'allowRemoteRefs', 'remoteHosts', 'maxRefBytes', 'maxRefDocuments', 'refTimeoutMs', 'dates', 'mode'], label);
       const input = inputPath(entry.input, `${label}.input`);
       const output = canonicalPath(path.resolve(directory, nonempty(entry.output, `${label}.output`)));
       if (fs.existsSync(output) && !fs.statSync(output).isDirectory()) throw new Error(`${label}.output must be a directory.`);
@@ -301,8 +302,11 @@ export function resolveConfig(filename = 'golem.yaml', onInput?: InputObserver):
       const remoteHosts = (entry.remoteHosts ?? []).map((host: unknown) => nonempty(host, `${label}.remoteHosts`));
       if (allowRemoteRefs && !remoteHosts.length) throw new Error(`${label}.allowRemoteRefs requires remoteHosts.`);
       if (entry.dates !== undefined && entry.dates !== 'date' && entry.dates !== 'temporal') throw new Error(`${label}.dates must be "date" or "temporal".`);
+      if (entry.mode !== undefined && entry.mode !== 'standalone' && entry.mode !== 'golem') throw new Error(`${label}.mode must be "standalone" or "golem".`);
+      const mode = entry.mode ?? 'standalone';
+      if (mode === 'golem' && value.models === undefined) throw new Error(`${label}.mode "golem" needs a models section in the same golem.yaml.`);
       jobs.push({ id: `openapi:${path.relative(directory, output) || '.'}`, kind: 'openapi', package: '@exprtlabs/golem-openapi', options: {
-        input, output, profile, allowRemoteRefs, remoteHosts,
+        input, output, profile, allowRemoteRefs, remoteHosts, mode,
         ...(entry.name === undefined ? {} : { name: nonempty(entry.name, `${label}.name`) }),
         ...(entry.dates === undefined ? {} : { dates: entry.dates }),
         maxRefBytes: positive(entry.maxRefBytes, 5 * 1024 * 1024, `${label}.maxRefBytes`),
@@ -332,11 +336,15 @@ export function resolveConfig(filename = 'golem.yaml', onInput?: InputObserver):
       }
     }
     const sourceSuffixes = suffixes(value.models.suffixes, 'models.suffixes');
-    jobs.push({ id: `models:${path.relative(directory, root) || '.'}`, kind: 'models', package: '@exprtlabs/golem-model', options: { root, directory, output, tsconfig, profile, ...exact, ...(sources ? { sources } : {}), ...(sourceSuffixes ? { suffixes: sourceSuffixes } : {}) } });
+    // The models job writes the codecs file of each SDK of mode golem; it takes their folders from the openapi jobs, never from where a manifest lies.
+    const sdkOutputs = jobs.flatMap(job => job.kind === 'openapi' && job.options.mode === 'golem' ? [job.options.output] : []);
+    jobs.push({ id: `models:${path.relative(directory, root) || '.'}`, kind: 'models', package: '@exprtlabs/golem-model', options: { root, directory, output, tsconfig, profile, ...exact, ...(sources ? { sources } : {}), ...(sourceSuffixes ? { suffixes: sourceSuffixes } : {}), ...(sdkOutputs.length ? { sdkOutputs } : {}) } });
     // A controllers job reads the same boundary: the models job writes the generated file of a shared model where a controller class extends it.
     const models = { root, directory, output, ...(sourceSuffixes ? { suffixes: sourceSuffixes } : {}) };
     for (const [index, job] of jobs.entries()) {
       if (job.kind === 'controllers') jobs[index] = { ...job, options: { ...job.options, models } };
+      // An SDK of mode golem imports the file that this models job writes for it; the openapi job writes only the import.
+      if (job.kind === 'openapi' && job.options.mode === 'golem') jobs[index] = { ...job, options: { ...job.options, codecsFile: sdkCodecsFile({ modelsOutput: output, configDirectory: directory, sdkOutput: job.options.output }) } };
     }
   }
   if (!jobs.length) throw new Error('Configure at least one generators, controllers, openapi, or models section.');

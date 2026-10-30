@@ -1,4 +1,4 @@
-import { copyFixtureFile, createFixtureProject, linkProjectPackages } from './fixture-project.js';
+import { copyFixtureFile } from './fixture-project.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -8,7 +8,7 @@ import { realOutputFiles } from '#golem/outputs';
 import type { OutputFiles } from '#golem/outputs';
 import { runPipeline } from '#golem/pipeline';
 import { workspace } from './support/process.js';
-import { writeFixture } from './support/consumer.js';
+import { workspaceLinkedProject, writeFixture } from './support/consumer.js';
 import { until } from './support/watch-wait.js';
 import { runLines } from './support/watch-runs.js';
 
@@ -21,12 +21,7 @@ function sdkValidatorModules(root: string): string[] {
 }
 
 function fixture(t: TestContext) {
-  const root = createFixtureProject(t, 'golem-validator-recovery-');
-
-  linkProjectPackages(root, Object.fromEntries(
-    ['golem', 'golem-model', 'golem-openapi'].map(name => [`@exprtlabs/${name}`, path.join(workspace, 'packages', name)]),
-  ));
-  fs.writeFileSync(path.join(root, 'package.json'), '{"type":"module"}');
+  const root = workspaceLinkedProject(t, 'golem-validator-recovery-', '{"type":"module"}');
   writeFixture(root, { mobx: false, validation: true });
   const model = path.join(root, 'src/cart.model.ts');
   copyFixtureFile(root, 'pipeline/validator-module-recovery/cart.model.ts', 'src/cart.model.ts');

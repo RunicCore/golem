@@ -171,8 +171,8 @@ async function createCompileTree(shards: readonly ShardRun[]): Promise<{ readonl
   assert.deepEqual(unexpected, [], 'a model case that wrote no generated file on TypeScript 6 claims a rejection');
   const expectedCount = IDENTITY_CASES.filter(isCompiled).length - withoutGeneratedFiles.length;
   assert.equal(casesByFolder.size, expectedCount, 'the compile holds every model case that is not excluded and did not claim a rejection');
-  // The SDK-only wire claim has no model for the generators, so it is no case of the corpus. Its check joins the compile with the SDK
-  // generated here with mobx on; the SDK generator loads no TypeScript, so this one run serves both versions.
+  // The SDK-only wire claim has no model for the generators, so it is no case of the corpus. Its check joins the compile with a standalone SDK
+  // (MobX needs the golem mode and its models job; wire-format-sdk.test.ts claims the MobX SDK); the SDK generator loads no TypeScript, so this one run serves both versions.
   const sdkSource = path.join(root, caseFolder(SDK_ONLY_WIRE_CLAIM), 'src');
   fs.cpSync(fixturePath(SDK_ONLY_WIRE_CLAIM), sdkSource, { recursive: true });
   fs.copyFileSync(fixturePath('wire-format/wire-assert.ts'), path.join(sdkSource, 'wire-assert.ts'));
@@ -180,7 +180,7 @@ async function createCompileTree(shards: readonly ShardRun[]): Promise<{ readonl
     input: path.join(sdkSource, 'payments.yaml'),
     output: path.join(sdkSource, 'sdk'),
     name: 'Payments',
-    profile: { mobx: true, validation: true },
+    profile: { mobx: false, validation: true },
   })).artifacts);
   casesByFolder.set(caseFolder(SDK_ONLY_WIRE_CLAIM), SDK_ONLY_WIRE_CLAIM);
   return { root, casesByFolder };

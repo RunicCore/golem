@@ -1,5 +1,5 @@
 import { autorun, configure, isObservableProp, runInAction } from 'mobx';
-import { ProfileClient, MoneyModel } from '../sdk/index.js';
+import { ProfileClient } from '../sdk/index.js';
 import { Cart } from './cart.model.js';
 import { fromWireFormat, toWireFormat } from '@exprtlabs/golem/serde';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
@@ -12,7 +12,7 @@ async function run() {
   const amounts: number[] = [];
   const stopMoney = autorun(() => amounts.push(cart.money.amount));
   runInAction(() => { cart.money.amount = 2; });
-  const nested = cart.money instanceof MoneyModel && isObservableProp(cart.money, 'amount');
+  const nested = isObservableProp(cart.money, 'amount');
   stopMoney();
   const cartValidator = getValidator(cart);
   const customValidationInitiallyValid = await cartValidator.validate();

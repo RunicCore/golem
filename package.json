@@ -30,7 +30,7 @@
     "docs:build": "npm run generate:openapi-compliance && vitepress build docs",
     "docs:check": "bash scripts/test-runner/run.sh docs",
     "docs:preview": "vitepress preview docs",
-    "lint": "npm run build && npm run build:scripts && node .build/scripts/check-imports.js",
+    "lint": "npm run build && npm run build:scripts && node .build/scripts/check-imports.js && node scripts/build-sdk-runtime.mjs --check",
     "public:check": "npm run build:scripts && node .build/scripts/public-source.js check",
     "public:export": "npm run build:scripts && node .build/scripts/public-source.js export",
     "knip": "knip",
@@ -77,8 +77,7 @@
     "ignore": [
       "tests/fixtures/**",
       "scripts/benchmark/fixtures/**",
-      "**/*.generated.ts",
-      "**/sdk/**"
+      "**/*.generated.ts"
     ],
     "workspaces": {
       ".": {
@@ -119,6 +118,14 @@
         ]
       },
       "packages/*": {
+        "project": [
+          "src/**/*.ts"
+        ]
+      },
+      "packages/golem": {
+        "entry": [
+          "src/runtime-sdk.ts"
+        ],
         "project": [
           "src/**/*.ts"
         ]

@@ -162,7 +162,7 @@ export function collectOpenApiModelDefinitions(document: unknown, resources?: Re
     // Base `required` fields still constrain a derived allOf schema when
     // that schema redeclares the field to narrow its type (for example,
     // a discriminator const). Collect them so the derived declaration
-    // cannot become optional in the emitted TypeScript class.
+    // cannot become optional in the emitted TypeScript type.
     visitAllOfChain(env, definition.rawSchema, (schema) => {
       for (const property of Array.isArray(schema.required) ? schema.required : []) {
         definition.required.add(String(property));
@@ -171,9 +171,9 @@ export function collectOpenApiModelDefinitions(document: unknown, resources?: Re
   }
 
   // A union model is decided against declared inheritance only, so the result does not depend on
-  // component order. A variant that one union selects extends that union's class. A variant that
-  // several unions select cannot extend them all: it keeps its own base, and each of those unions
-  // answers `instanceof` for it.
+  // component order. A variant that one union selects takes that union as its base. A variant that
+  // several unions select cannot take them all: it keeps its own base, and each of those unions
+  // lists it as a variant.
   const unions: ModelDefinition[] = [];
   for (const [rawName, rawSchema] of objectEntries(schemas)) {
     if (!isJsonObject(rawSchema)) continue;
@@ -213,8 +213,6 @@ export function collectOpenApiModelDefinitions(document: unknown, resources?: Re
   for (const union of unions) {
     schemaScope.claim(union.name, `union schema ${JSON.stringify(union.schemaName)}`, union.schemaName);
     definitions.set(union.name, union);
-    const shared = (union.variants ?? []).filter((variant) => claims.get(variant) !== 1);
-    if (shared.length > 0) union.sharedVariants = shared;
     for (const variant of union.variants ?? []) {
       const child = definitions.get(variant);
       if (!child) continue;

@@ -184,17 +184,11 @@ test('the generated validators of an operation are keyed by status and content t
   const input: Validator = () => [];
   const ok: Validator = () => [];
   const problem: Validator = () => [];
-  const sources = {
-    input,
-    responses: [
-      { status: '200', contentType: 'application/json', validator: ok },
-      { status: '400', contentType: 'application/problem+json', validator: problem },
-    ],
-  };
-  const resolved = operationValidators(runtime, 'sendPayload', sources);
+  const codecs = { input, responses: { '200:application/json': ok, '400:application/problem+json': problem } };
+  const resolved = operationValidators(runtime, 'sendPayload', codecs);
   assert.equal(resolved.input, input);
   assert.deepEqual([...resolved.responses], [['200:application/json', ok], ['400:application/problem+json', problem]]);
-  assert.equal(operationValidators(runtime, 'sendPayload', { input: ok, responses: [] }), resolved, 'the first resolution is kept');
+  assert.equal(operationValidators(runtime, 'sendPayload', { input: ok, responses: {} }), resolved, 'the first resolution is kept');
 });
 
 test('a discriminated response is validated against the variant its tag selects', async (t) => {

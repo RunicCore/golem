@@ -1,6 +1,6 @@
 # Call a partner's API
 
-Turn a partner's OpenAPI 3.1 document into a typed client for a Node.js service, with bearer auth, Temporal dates, checked responses and your own model class.
+Turn a partner's OpenAPI 3.1 document into a typed client for a Node.js service, with bearer auth, Temporal dates, checked and converted responses and your own model class.
 
 ## What golem gives you
 
@@ -10,10 +10,10 @@ Golem reads the partner's document and writes a TypeScript client from it. The e
 | --- | --- |
 | To call an operation such as `getCharge` | A `ProviderClient` method for each operation, with typed input and a typed response |
 | To send a bearer token | An `auth` option on the client, keyed by the name of the security scheme |
-| To use a schema such as `Charge` | A JSON type, a runtime class and a type guard for each schema |
-| Dates as dates | `Temporal.Instant` and `Temporal.PlainDate` values from `format: date-time` and `format: date` |
-| To know when the partner breaks the contract | A check of each request and response, and a `LibError` when one fails |
-| Your own rules on the partner's data | Your own model class that uses the SDK types and adds methods |
+| To use a schema such as `Charge` | A TypeScript type for each schema. The client returns plain objects of that type |
+| Dates as dates | `Temporal.Instant` and `Temporal.PlainDate` values in the response, from `format: date-time` and `format: date` |
+| To know when the partner breaks the contract | A check of each request and response, and a `LibError` when one fails. You can lower the checks per client or per call |
+| Your own rules on the partner's data | Your own model over the SDK types, with methods |
 
 ## Step 1: Install
 
@@ -23,8 +23,9 @@ npm install --save-dev @exprtlabs/golem-openapi @exprtlabs/golem-model typescrip
 ```
 
 - `@exprtlabs/golem-model` is for your own model in Step 8. Leave it out when you do not write one.
+- A standalone SDK (the default) carries the golem runtime that it uses. Generated code imports nothing from `@exprtlabs/golem`. You need the package to run `golem generate`, and to build your own models.
 - Check the [requirements](/guide/quick-start#requirements) and the [project settings](/guide/quick-start#project-settings), such as `"type": "module"`.
-- Add `"esnext.temporal"` to `compilerOptions.lib` in `tsconfig.json`.
+- Add `"esnext.temporal"` to `compilerOptions.lib` in `tsconfig.json`. Or set `skipLibCheck: true`. The SDK types name the global `Temporal` when you set `dates: temporal`.
 - Include the output directory of the job in the TypeScript program, for example `provider/sdk/**/*.ts`, so it holds the generated client.
 
 ## Step 2: Add the document and the job
@@ -40,6 +41,7 @@ npm install --save-dev @exprtlabs/golem-openapi @exprtlabs/golem-model typescrip
 | `output` | The directory that golem fills with the client |
 | `name` | The prefix of the client, so `Provider` gives `ProviderClient` |
 | `dates: temporal` | Temporal values for dates and times in place of `Date` ([OpenAPI jobs](/reference/config#openapi-jobs)) |
+| `mode` | Leave it out for a standalone SDK, which runs alone. `golem` leaves checks and conversions to the `models` job ([SDK modes](/reference/config#sdk-modes)) |
 
 The `models` job lets your own model class use the SDK types (Step 8):
 
@@ -55,7 +57,7 @@ npx golem generate
 
 The command writes `provider/sdk/`. You choose whether to ignore or commit the generated files ([ignore or commit them](/reference/generated-files#gitignore)). Run the command again when the partner publishes a new version of the document.
 
-Import from `sdk/index.js`. Each schema in `components.schemas` gets a set of names. The schema `Charge` gives the class `ChargeModel`. The JSON type, the type guard and the other names are in [Generated SDK names](/reference/generated-files#generated-sdk-names).
+Import from `sdk/index.js`. Each schema in `components.schemas` gives a type. The schema `Charge` gives the type `Charge`. The SDK has no model classes. The other names are in [Generated SDK names](/reference/generated-files#generated-sdk-names).
 
 <<< ../../examples/payments/server/provider/charges.ts#client-imports
 
@@ -78,7 +80,7 @@ The client has an `auth` option only when the document declares the security sch
 
 <<< ../../examples/payments/server/provider/charges.ts#read-charge
 
-- A response holds `status` and the decoded `body`.
+- A response holds `status` and the decoded `body`. The client has checked and converted the body: it is a plain object of the SDK type.
 - A status that the document declares, such as `404`, gives you a response, not an error. Check `status` before you read `body`.
 
 Reuse, shared headers and cancel are in [Call operations](/guide/client-usage).
@@ -87,7 +89,7 @@ Reuse, shared headers and cancel are in [Call operations](/guide/client-usage).
 
 - `dates: temporal` in Step 2 makes `format: date-time` a `Temporal.Instant`, `format: date` a `Temporal.PlainDate` and `format: duration` a `Temporal.Duration`.
 - A `Temporal` must exist when golem converts a value. Install `temporal-polyfill` and import `temporal-polyfill/global` once, before the first conversion. A runtime that has a global `Temporal` needs no polyfill. Without any, conversion fails with "Temporal is not available".
-- The JSON form stays an ISO 8601 string. The response `body` holds the strings, and the model class holds the Temporal values:
+- The JSON form stays an ISO 8601 string. The client converts it for you, so the response `body` holds the Temporal values:
 
 | Schema `format` | JSON text | In your code |
 | --- | --- | --- |
@@ -99,7 +101,7 @@ Reuse, shared headers and cancel are in [Call operations](/guide/client-usage).
 
 <<< ../../examples/payments/server/provider/settlement.ts#read-dates
 
-`toWireFormat<ChargeModel>(charge)` writes the strings back. A `Temporal.Instant` is written with `Z`. [Dates and times](/guide/field-types#use-temporal-values-in-a-client) shows the write.
+The client writes a Temporal value in a request as its ISO 8601 string. A `Temporal.Instant` is written with `Z`. A model of your own writes the strings back with `toWireFormat<T>` ([Dates and times](/guide/field-types#use-temporal-values-in-a-client)).
 
 ## Step 7: Handle a reply that breaks the contract
 
@@ -107,7 +109,7 @@ A request or a response that breaks its schema rejects `.execute()`. This catch 
 
 <<< ../../examples/payments/server/provider/charges.ts#invalid-charge
 
-A request or a response that breaks its schema gives a `LibError` of kind `Validation`. An undeclared status or media type gives kind `Response`. A network failure rejects with the error of `fetch`. Each failure, the guard [`isProviderUndeclaredResponseError`](/guide/client-usage#handle-errors) and the issue fields are in [Read responses and handle failures](/guide/client-usage#read-responses-and-handle-failures).
+A request or a response that breaks its schema gives a `LibError` of kind `Validation`. To lower or switch off the checks for one client or one call, use the [`validate` option](/guide/client-usage#lower-the-checks). An undeclared status or media type gives kind `Response`. A network failure rejects with the error of `fetch`. Each failure, the guard [`isProviderUndeclaredResponseError`](/guide/client-usage#handle-errors) and the issue fields are in [Read responses and handle failures](/guide/client-usage#read-responses-and-handle-failures).
 
 <<< ../../examples/payments/server/provider/charges.ts#handle-errors
 
@@ -115,36 +117,27 @@ Every failure and its result are in the [generated client reference](/reference/
 
 ## Step 8: Add your own model
 
-Put your rules in a class of your own, not in the SDK:
+The SDK has no model classes. Put your rules in a model of your own, over the SDK type:
 
-- A model can use an SDK type as a field. Golem builds that field as the SDK class: the type `TMoney` gives the class `TMoneyModel`.
+- `IModel<Charge>` makes a model with the fields of `Charge`.
 - Your class extends the generated base class of your model and adds methods.
-
-<<< ../../examples/payments/web/src/payment-editor.model.ts#model-declaration
-
-<<< ../../examples/payments/web/src/payment-editor.model.ts#model-methods
-
-- Declare a field with the SDK type, such as `money: TMoney`. The field is a `TMoneyModel`, so `this.money.amount` reads a field of the SDK model. The web project has its own SDK, so this import reads `../sdk/index.js` of that project.
-- A method such as `summary` goes in the class body. It reads `this.money.amount`.
-- Golem links a class to its model through `extends <Alias>BaseModel` ([generated names](/reference/generated-files#generated-names)). Keep methods in that class.
-- Run `golem generate` before you write the class. It writes the base class that the class extends.
-- This example turns MobX on. With `mobx: false`, leave out the MobX import and the `asGenObservable` call.
-
-A model can also hold a type of the partner, such as `Charge`. This model adds `isOverdue()`:
+- The model is yours. The client still returns the plain `Charge`.
 
 <<< ../../examples/payments/server/provider/charge-record.model.ts#charge-record-declaration
 
 <<< ../../examples/payments/server/provider/charge-record.model.ts#charge-record-class
 
-- The field `charge: Charge` is the SDK class `ChargeModel`. Its `settlesOn` is a `Temporal.PlainDate`.
+- The field `charge: Charge` holds a plain `Charge`. Its `settlesOn` is a `Temporal.PlainDate`.
 - `isOverdue` takes today's date as an argument, so a test can fix the date. The settlement day itself is not overdue.
 - The `temporal-polyfill/global` import gives the global `Temporal` ([Step 6](/guide/partner-client#step-6-read-dates-as-temporal-values)).
+- Golem links a class to its model through `extends <Alias>BaseModel` ([generated names](/reference/generated-files#generated-names)). Keep methods in that class.
+- Run `golem generate` before you write the class. It writes the base class that the class extends.
 
-Build the model from the body of a response:
+Build the model from the body of a response with the constructor. The client has checked the body, so the constructor runs no second check:
 
-<<< ../../examples/payments/web/src/summary.ts#load-from-wire
+<<< ../../examples/payments/server/provider/charge-record.model.ts#charge-view
 
-[SDK types in your models](/guide/models-and-client) shows the whole flow, with validation and sending.
+[SDK types in your models](/guide/models-and-client) shows custom constructors, golem mode and the whole flow, with validation and sending.
 
 ## Step 9: Run with Node
 
@@ -165,6 +158,7 @@ Build the model from the body of a response:
 - [Generated client](/reference/runtime-api#generated-client): options, results and failures of the client.
 - [Client authentication](/reference/runtime-api#client-authentication): the schemes and what the client sends.
 - [Generated SDK names](/reference/generated-files#generated-sdk-names): the names for each schema.
+- [SDK modes](/reference/config#sdk-modes): standalone and golem.
 - [Temporal types](/reference/runtime-api#temporal): the six types and their JSON strings.
 - [OpenAPI support](/reference/openapi-support): the features that the generator reads.
 - Guides: [Call operations](/guide/client-usage), [Authentication](/guide/auth), [Dates and times](/guide/field-types#dates-and-times), [SDK types in your models](/guide/models-and-client), [Build tools](/guide/build).

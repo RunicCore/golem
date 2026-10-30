@@ -1,7 +1,6 @@
-import { fromWireFormat } from '@exprtlabs/golem/serde';
-import { PersonModel, VisitModel } from './index.js';
+import type { Person, Visit } from './index.js';
 
-const visit = fromWireFormat<VisitModel>({ owner: { name: 'n' } });
-const owner: PersonModel = visit.owner;
+declare const visit: Visit;
+const owner: Person = visit.owner;
 
 void owner;

@@ -1,3 +1,4 @@
+import 'temporal-polyfill/global'; // The provider client returns Temporal dates.
 import { BadGatewayException, Injectable } from '@nestjs/common';
 import { createChargeWithKey } from '../provider/charges.js';
 import { isProviderUndeclaredResponseError, ProviderClient } from '../provider/sdk/index.js';

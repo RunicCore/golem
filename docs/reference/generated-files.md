@@ -6,13 +6,16 @@ Know which generated paths and names you can import, and which files to ignore.
 
 | Path | What it holds | Stable |
 | --- | --- | --- |
-| `sdk/index.js` | The client and its types | Yes |
-| `sdk/models/<Name>.js` | One runtime model class per object schema | Yes |
+| `sdk/index.js` | The client, its types and the data types | Yes |
 | `sdk/operations/<name>.js` | One operation factory per endpoint | Yes |
 | `<name>.model.generated.ts` | The generated base beside each model file | Yes |
 | `<models.output>/<package name>/<name>.model.generated.ts` | The generated base of a shared model file | Yes |
 
 The SDK folder is the `sdk` output that you configure. Import only from the paths above.
+
+- An SDK has no model classes in either [mode](/reference/config#sdk-modes). Its data types are types.
+- A `standalone` SDK also holds a copy of the golem runtime that it uses and its checks and conversions. Do not import them.
+- A `golem` mode SDK holds no checks or conversions. The `models` job writes them to a file below `models.output`, named after the SDK folder with `.sdk.generated.ts` at the end. Do not import it.
 
 ## Ignore or commit generated files {#gitignore}
 
@@ -71,26 +74,23 @@ The first line of a generated model file names the version of golem that wrote i
 
 ## Generated SDK names
 
-An `openapi` job writes these names for each object schema in `components.schemas`. The table uses the schema `Money`. Another schema gives the same names with its own name in place of `Money`.
+An `openapi` job writes these names for each schema in `components.schemas`. The table uses the schema `Money` and the operation `createCharge`. Another schema or operation gives the same names with its own name.
 
-| What | Name for `Money` | Notes |
+| What | Name | Notes |
 | --- | --- | --- |
-| JSON data type | `Money`, also `MoneyJSON` | The plain data of the request or response body. |
-| Model class | `MoneyModel` | The runtime class. `fromWireFormat<MoneyModel>(data)` returns an instance. |
-| Fields and constructor input | `MoneyFields`, `MoneyInit` | The field values of the class, and the input of its constructor. |
-| Type check | `validateMoney(value)` | Returns whether `value` matches. It narrows `value` to `MoneyFields`. With validation off, it throws `ValidationUnavailable`. |
-| Assertion | `assertMoney(value)` | Throws when `value` does not match. Otherwise it returns `value` as `MoneyFields`. With validation off, it throws `ValidationUnavailable`. |
-| Field type in another model | `MoneyModel` | A field that refers to `Money` has this type in `ChargeModel` and in `ChargeFields`. It adds `null` when the schema allows `null`. |
-| Other functions | `parseMoney`, `stringifyMoney`, `fromWireFormatMoney`, `toWireFormatMoney`, `encodeMoney` | Functions for the schema. |
+| Data type | `Money` | A plain type. A `date` or `date-time` field has the type `Date` or a `Temporal` type, as `dates` sets. Responses carry these converted values. |
+| Request type and response type | `InputSchemas.Money`, `OutputSchemas.Money` | The type as a request takes it and as a response returns it. They differ when `readOnly` or `writeOnly` fields exist. |
+| Operation input | `CreateChargeOperationInput` | The argument of `execute`: `path`, `query`, `header`, `cookie` and `body`. |
+| Operation result | `CreateChargeOperationHttpResponse` | The union of the declared responses. |
+| Operation bodies | `CreateChargeOperationSuccessBody`, `CreateChargeOperationErrorBody` | The bodies of the success and the error responses. |
+| Client | `ProviderClient`, `ProviderClientOptions` | The prefix is the `name` of the job. |
+| Undeclared response | `isProviderUndeclaredResponseError(error)` | A type guard for an undeclared status or media type. |
 
 The rules for the names:
 
 - The name is the schema key, in PascalCase. Each word starts with a capital letter. A character that is not a letter, a digit, `_` or `$` starts a new word, and so does a capital after a lowercase letter or a digit. `charge` gives `Charge`, `Foo-Bar` gives `FooBar`, and `paymentMethod` gives `PaymentMethod`. `TMoney` stays `TMoney`.
-- The suffixes and function prefixes go on that name. A schema `Charge` gives `Charge` and `ChargeModel`. A schema `TMoney` gives `TMoney` and `TMoneyModel`: the name keeps the schema's own prefix.
 - A `controllers` job names a schema after its model ([component names](/reference/nestjs#component-names)). `type TMoney = IModel<…>` with no class gives the schema `TMoney`.
-- Only an object schema has the class, the fields, the init type, the `JSON` type and the functions. A schema of another type, such as a string enum or an array, has the data type only.
-- A `oneOf` union, or an `anyOf` union with a `discriminator`, also gets `<Name>Model` when every variant is an object schema that extends the same base schema through `allOf`. The class is abstract and the variants extend it.
-- A variant that two or more unions select cannot extend them all. It extends its base schema, and each of its unions answers `instanceof` for it. The other variants of those unions still extend the union class.
+- An SDK writes no model class, no `Fields` or `Init` type and no `parse`, `stringify`, `validate`, `assert`, `toWireFormat` or `fromWireFormat` function for a schema. The client converts and checks by itself. A class is your own model over the type ([SDK types in your models](/guide/models-and-client)).
 
 Two schemas that give one name stop generation with a `generated name collision` error. The schemas `Foo-Bar` and `Foo.Bar` both give `FooBar`. The error names both schemas with the place of each in the document. Rename one schema in the document.
 
@@ -98,7 +98,7 @@ The diagnostics for these names:
 
 - [OPENAPI_DISCRIMINATOR_IMPLICIT_VALUE](/reference/diagnostics#openapi-discriminator-implicit-value): a variant with no `mapping` entry is selected by its schema name, not by its generated name.
 
-Call operations with these names in [Call operations](/guide/client-usage#import-one-operation-or-model). Use them as the field types of your own models in [SDK types in your models](/guide/models-and-client).
+Call operations with these names in [Call operations](/guide/client-usage#import-one-operation). Use the data types as the field types of your own models in [SDK types in your models](/guide/models-and-client).
 
 ## Derived type names
 
@@ -146,5 +146,5 @@ Two different shapes that get the same name fail generation with [RUNM1059](/ref
 
 ## Runtime version
 
-- **Rule:** Install `@exprtlabs/golem` at the exact version of each built-in generator package that the configuration uses. Generated files import runtime entries that change with the version. An extension package under `generators` keeps its own version and is not compared.
+- **Rule:** Install `@exprtlabs/golem` at the exact version of each built-in generator package that the configuration uses. Generated files import runtime entries that change with the version. An extension package under `generators` keeps its own version and is not compared. A standalone SDK runs with the runtime it carries, so its run time needs no version match.
 - **Check:** `generate`, `check`, `exec`, `watch` and `build` compare the installed `@exprtlabs/golem` with `@exprtlabs/golem-model`, `@exprtlabs/golem-openapi` and `@exprtlabs/golem-ts-openapi`. They fail before they write when a version differs. The message names both packages and versions and gives the `npm install -D` command that aligns the generator.

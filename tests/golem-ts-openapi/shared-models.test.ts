@@ -105,7 +105,7 @@ test('an alias in the .model.d.ts file of an installed package in a controller s
   await runPipeline(config, { check: true });
 });
 
-/** The SDK package `@acme/sdk`: `money.model.d.ts` holds `TMoney`, which its manifest lists as the SDK model `sdk:money`. */
+/** The SDK package `@acme/sdk`: `money.model.d.ts` holds `TMoney`, which its manifest lists as the SDK type `sdk:money`. */
 const SDK_PACKAGE: Readonly<Record<string, string>> = {
   'package.json': JSON.stringify({ name: '@acme/sdk', version: '1.0.0', type: 'module', exports: { './money.model': { types: './money.model.d.ts' } } }),
   'money.model.d.ts': "/* @golem-model-manifest ./model-manifest.json */\nimport type { IObject } from '@exprtlabs/golem/model';\nexport type TMoney = IObject<{ currency: string }>;\n",
@@ -115,28 +115,6 @@ const SDK_PACKAGE: Readonly<Record<string, string>> = {
     models: [{ id: 'sdk:money', codecId: 'Money_0a1b2c3d', allowAny: false, type: { module: './money.model.d.ts', export: 'TMoney' }, generated: { module: './models.ts', export: 'MoneyModel' } }],
   }),
 };
-
-for (const place of ['installed', 'linked'] as const) {
-  test(`a controller that uses the SDK model of a manifest in an SDK package that is ${place} gets the codec id of the manifest in the codecs and in both Nest marks`, async (t) => {
-    // protects: T-195 review: an SDK model keeps its manifest codec id in the controllers analysis (R-20 an SDK keeps working)
-    const { app, config } = appWithSharedModel(t, sharedModel('IObject'), { 'src/customers.controller.ts': controller('TMoney', '@acme/sdk/money.model') }, true);
-    const outer = path.dirname(app);
-    const sdk = place === 'installed' ? path.join(outer, 'node_modules/@acme/sdk') : path.join(outer, 'sdk-src');
-    writeGeneratedArtifacts(Object.entries(SDK_PACKAGE).map(([relative, content]) => ({ path: path.join(sdk, relative), content })));
-    if (place === 'linked') fs.symlinkSync('../../sdk-src', path.join(outer, 'node_modules/@acme/sdk'), 'dir');
-
-    await runPipeline(config);
-
-    const id = JSON.stringify('Money_0a1b2c3d');
-    assert.ok(readText(app, 'src/generated/operation-codecs.ts').includes(id), readText(app, 'src/generated/operation-codecs.ts'));
-    const code = rewrittenController(app);
-    assert.ok(code.includes(`@__golem_nestModelCodec(${id}) input: TMoney`), code);
-    assert.ok(code.includes(`@__golem_nestModelReturn(${id})`), code);
-    const document = readJson(app, 'generated/api.json');
-    assert.deepEqual(document.paths['/customers'].post.requestBody.content['application/json'].schema, { $ref: '#/components/schemas/TMoney' });
-    assert.deepEqual(document.components.schemas.TMoney, { type: 'object', properties: { currency: { type: 'string' } }, required: ['currency'], additionalProperties: false });
-  });
-}
 
 test('a model file that the program holds under two names is one model source of the controllers analysis', (t) => {
   // protects: T-195 review: one file under two spellings made collectSpecifications throw RUNM1005
@@ -153,19 +131,13 @@ test('a model file that the program holds under two names is one model source of
   assert.deepEqual(analysis.specifications.map(({ name }) => name), ['TCustomer']);
 });
 
-// An interface has no model of the app, so the document inlines it; an IObject alias is a model of the controllers analysis, so the document names it.
+// An SDK type is a type, not a model of the app: the document inlines it in the model that nests it.
 const SDK_MONEY_KINDS = [
   {
     kind: 'interface',
     declaration: 'export interface TMoney { currency: string }',
     moneyField: { type: 'object', properties: { currency: { type: 'string' } }, required: ['currency'], additionalProperties: false },
     schemaNames: ['TOrder'],
-  },
-  {
-    kind: 'IObject alias',
-    declaration: "import type { IObject } from '@exprtlabs/golem/model';\nexport type TMoney = IObject<{ currency: string }>;",
-    moneyField: { $ref: '#/components/schemas/TMoney' },
-    schemaNames: ['TMoney', 'TOrder'],
   },
 ] as const;
 
@@ -217,7 +189,6 @@ for (const validation of [false, true]) {
       components: { schemas: { Money: { type: 'object', required: ['currency'], properties: { currency: { type: 'string' } } } } },
     }, { output: sdk, name: 'sdk', profile: { mobx: false, validation } });
     writeGeneratedArtifacts([...generated.artifacts, { path: path.join(sdk, 'package.json'), content: JSON.stringify({ name: '@acme/sdk', version: '1.0.0', type: 'module', types: './index.ts', main: './index.ts' }) }]);
-    assert.equal(JSON.parse(fs.readFileSync(path.join(sdk, 'model-manifest.json'), 'utf8')).validationSchemaClosure !== undefined, validation, 'the manifest holds the schema closure only with validation on');
 
     await runPipeline(config);
 

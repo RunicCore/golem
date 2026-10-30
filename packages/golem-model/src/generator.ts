@@ -1,5 +1,5 @@
 import { existsSync, statSync } from 'node:fs';
-import { basename, dirname, join, resolve, sep } from 'node:path';
+import { dirname, join, resolve, sep } from 'node:path';
 import * as ts from '@exprtlabs/golem/internal/ts';
 import type {
   GolemArtifact,
@@ -7,15 +7,15 @@ import type {
   GolemResult,
   GeneratorSession,
   InputObserver,
+  ModelContext,
 } from '@exprtlabs/golem/generator-api';
-import { buildCodecValidationPlan, compileLevel, compilePlanValidators, type CodecSchemaClosureEntry } from '@exprtlabs/golem/internal/validation-plan';
+import { buildCodecValidationPlan, compileLevel, compileSdkValidators, type CodecSchemaClosureEntry } from '@exprtlabs/golem/internal/validation-plan';
 import { GolemDiagnosticSeverity, compareText, isInsideDirectory, resolveProfile, type GolemDiagnostic, type ResolvedGolemProfile } from '@exprtlabs/golem/generator-api';
 import {
   canonicalPath,
   DEFAULT_MODEL_SUFFIXES,
   displayPath,
   outsideModelsRootMessage,
-  suffixPattern,
 } from '@exprtlabs/golem/internal/generator-support';
 import { codecKeysPath, defaultModelOutput } from '@exprtlabs/golem/internal/generated-paths';
 import { AmbiguousUnionConversionError, ObjectUnionDiscriminatorError, reachesRecursiveNode } from '@exprtlabs/golem/internal/emitter';
@@ -36,10 +36,13 @@ import type { SchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
 import type { ModelSpecification } from '@exprtlabs/golem/internal/type-analysis';
 import { assertModelLevelsWithinProject, collectSpecifications } from '@exprtlabs/golem/internal/type-analysis';
 import { discoverModelManifests } from '@exprtlabs/golem/manifest';
-import { loadModelManifests, sdkModelFiles } from '@exprtlabs/golem/internal/type-analysis';
+import { loadModelManifests, sdkModelFiles, sdkSchemaGraph } from '@exprtlabs/golem/internal/type-analysis';
 import type { ManifestIndex } from '@exprtlabs/golem/internal/type-analysis';
+import type { GolemModeManifest } from '@exprtlabs/golem/manifest';
+import { golemSdks, sdkCodecsSource, sdkValidatorOperations } from './sdk-table.js';
 import {
   assertAbsolute,
+  assertGeneratorRoot,
   assertDistinctCompanions,
   assertNoSyntaxErrors,
   byRealPath,
@@ -65,30 +68,7 @@ import {
   type ProgramInfo,
 } from '@exprtlabs/golem/internal/type-analysis';
 
-export interface GolemModelContext {
-  /** Absolute project root used for TypeScript configuration and discovery. */
-  readonly root: string;
-  /** The golem.yaml's directory, whose `.golem/` receives the codec keys. Defaults to `root`. */
-  readonly directory?: string;
-  /** Optional shared output directory for job-level model metadata. */
-  readonly output?: string;
-  /** Absolute model source paths. Omit to discover model sources below root/src. */
-  readonly sources?: readonly string[];
-  /** File-name endings that make a file below root/src a model source; defaults to `.model.ts` and `.models.ts`. */
-  readonly suffixes?: readonly string[];
-  /** The tsconfig the program opens from, absolute. Omit it to use the nearest `tsconfig.json` from `root` upward. */
-  readonly tsconfig?: string;
-  /** Runtime features selected for generated model companions. */
-  readonly profile: GolemProfile;
-  /** The `golem.yaml` default for the `exact` option of a model that sets none; omitted means `true`. */
-  readonly exact?: boolean;
-  /** Absolute model-manifest paths to add to marker and source discovery. */
-  readonly manifestInputs?: readonly string[];
-  /** Observe attempted paths before reads and existence checks. */
-  readonly onInput?: InputObserver;
-  /** Keeps the TypeScript compiler warm across runs of one CLI pipeline or watch session. */
-  readonly session?: GeneratorSession;
-}
+export interface GolemModelContext extends ModelContext {}
 
 export interface GolemModelResult extends GolemResult {}
 
@@ -104,19 +84,13 @@ interface NormalizedContext {
   readonly profile: ResolvedGolemProfile;
   readonly exact: boolean | undefined;
   readonly manifestInputs: readonly string[];
+  readonly sdkOutputs: readonly string[];
   readonly onInput?: InputObserver;
   readonly session?: GeneratorSession;
 }
 
 function validateContext(context: GolemModelContext): NormalizedContext {
-  if (!context || typeof context !== 'object' || Array.isArray(context)) {
-    throw new TypeError('generate(context) requires a context object.');
-  }
-  const root = assertAbsolute(context.root, 'context.root');
-  context.onInput?.(root);
-  if (!existsSync(root) || !statSync(root).isDirectory()) {
-    throw new Error(`context.root must be an existing directory: ${displayPath(root)}`);
-  }
+  const root = assertGeneratorRoot(context);
   if (!context.profile || typeof context.profile !== 'object' || Array.isArray(context.profile)) {
     throw new TypeError('context.profile is required and must be an object with mobx and validation.');
   }
@@ -142,6 +116,14 @@ function validateContext(context: GolemModelContext): NormalizedContext {
       }
       return context.manifestInputs.map((filename) => assertAbsolute(filename, 'context.manifestInputs entry'));
     })();
+  const sdkOutputs = context.sdkOutputs === undefined
+    ? []
+    : (() => {
+      if (!Array.isArray(context.sdkOutputs)) {
+        throw new TypeError('context.sdkOutputs must be an array of absolute paths.');
+      }
+      return context.sdkOutputs.map((filename) => assertAbsolute(filename, 'context.sdkOutputs entry'));
+    })();
   return {
     root,
     directory,
@@ -152,6 +134,7 @@ function validateContext(context: GolemModelContext): NormalizedContext {
     profile,
     exact: context.exact,
     manifestInputs,
+    sdkOutputs,
     onInput: context.onInput,
     session: context.session,
   };
@@ -165,18 +148,8 @@ function emptyResult(info: ProgramInfo, program: ts.Program, root: string): Gole
   return { artifacts: [], manifestPaths: [], watchInputs };
 }
 
-function referencedManifestFiles(
-  graphs: readonly { readonly externalIds: readonly string[] }[],
-  manifestIndex: ManifestIndex,
-): string[] {
-  const files = new Set<string>(manifestIndex.localFiles);
-  for (const graph of graphs) {
-    for (const id of graph.externalIds) {
-      const file = manifestIndex.byId.get(id)?.manifestFile;
-      if (file) files.add(file);
-    }
-  }
-  return [...files];
+function referencedManifestFiles(manifestIndex: ManifestIndex): string[] {
+  return [...new Set([...manifestIndex.localFiles, ...manifestIndex.golemModeManifests.map(({ file }) => file)])];
 }
 
 interface SourceSchemaGraph {
@@ -228,6 +201,37 @@ function sourceComponents(graphs: readonly SourceModelGraph[]): SourceModelGraph
 
 function canonicalSourceKey(filename: string): string {
   return canonicalFilename(filename);
+}
+
+/**
+ * The SDK's own type of each of its nodes that the SDK exports a type for, by codec id: a model has its declared type in the manifest,
+ * and a recursive alias has the type of its component. A node with no exported type (an unnamed shape) is absent.
+ */
+function sdkOwnTypes(index: ManifestIndex, manifest: GolemModeManifest): ReadonlyMap<string, { readonly file: string; readonly name: string }> {
+  const file = index.golemModeManifests.find((item) => item.manifest === manifest)!.file;
+  const types = new Map<string, { readonly file: string; readonly name: string }>();
+  for (const component of manifest.components) {
+    const declared = component.type ?? manifest.models.find((model) => model.type.export === component.name)?.type;
+    if (component.codecId !== undefined && declared !== undefined) types.set(component.codecId, { file: resolve(dirname(file), declared.module), name: declared.export });
+  }
+  return types;
+}
+
+/**
+ * The planes that the nodes of an SDK graph publish, as the closure entries a model holding an SDK type reads: such a model is not
+ * `sameSchema` when the SDK type has a wire form of its own, and checks the residual planes the SDK type publishes.
+ */
+function sdkNodeClosure(graph: SchemaGraph): readonly CodecSchemaClosureEntry[] {
+  return [...graph.nodes.values()]
+    .filter((node) => node.kind !== 'reference' && !node.id.startsWith('__scalar_'))
+    .map((node) => ({
+      codecId: node.codecId,
+      modelSchema: node.modelJsonSchema,
+      aliases: [node.name, node.id],
+      ...(node.sameSchema ? {} : { wireSchema: node.jsonSchema }),
+      ...(node.modelOnlyJsonSchema === undefined ? {} : { modelOnlySchema: node.modelOnlyJsonSchema }),
+      ...(node.wireOnlyJsonSchema === undefined ? {} : { wireOnlySchema: node.wireOnlyJsonSchema }),
+    }));
 }
 
 /**
@@ -463,10 +467,6 @@ export function generate(context: GolemModelContext): GolemModelResult {
     throw new Error(`RUNM1077: ${nested.map(displayPath).join(', ')} ${nested.length === 1 ? 'declares' : 'declare'} a models job below the models root ${displayPath(boundary.root)}, where the models job of ${displayPath(join(normalized.directory, 'golem.yaml'))} already generates the same model files. Two jobs would write one generated file. Remove the models job from ${nested.length === 1 ? 'it' : 'each'}, or move the folder out of the models root.`);
   }
   const sharedModelFiles = programModelFiles.filter((source) => !isOwnModelFile(boundary, source));
-  // A job with no model file of its own still generates the shared models its program holds.
-  if (ownCandidates.length === 0 && sharedModelFiles.length === 0) {
-    return emptyResult(programInfo, program, normalized.root);
-  }
   // The manifests are read when a decision needs them: a shared file may be an SDK file, and a job that has models emits against them.
   // A job that generates nothing reads none.
   let loaded: ManifestIndex | undefined;
@@ -477,6 +477,12 @@ export function generate(context: GolemModelContext): GolemModelResult {
     normalized.profile,
     normalized.onInput,
   );
+  // An app with no model file still writes the validators and the codecs file of an SDK of mode golem: nothing else writes them.
+  const hasGolemSdks = (): boolean => normalized.sdkOutputs.length > 0 && manifests().golemModeManifests.length > 0;
+  // A job with no model file of its own still generates the shared models its program holds.
+  if (ownCandidates.length === 0 && sharedModelFiles.length === 0 && !hasGolemSdks()) {
+    return emptyResult(programInfo, program, normalized.root);
+  }
   // A model file that an SDK manifest lists stays an SDK file: the SDK's generated code serves it.
   const sdkFiles = sharedModelFiles.length === 0 ? new Set<string>() : sdkModelFiles(manifests());
   const sharedCandidates = sharedModelFiles.filter((source) => !sdkFiles.has(canonicalPath(source)));
@@ -490,7 +496,7 @@ export function generate(context: GolemModelContext): GolemModelResult {
   // A shared model file of the program is a source of the job: this app writes its companion in models.output.
   const sharedSources = sharedCandidates.filter((source) => withModels.has(canonicalFilename(source)));
   const sources = [...ownSources, ...sharedSources];
-  if (sources.length === 0) {
+  if (sources.length === 0 && !hasGolemSdks()) {
     return emptyResult(programInfo, program, normalized.root);
   }
   const manifestIndex = manifests();
@@ -503,7 +509,7 @@ export function generate(context: GolemModelContext): GolemModelResult {
     normalized.onInput,
   );
   const tsconfigDirectory = programInfo.configPath === undefined ? normalized.root : dirname(programInfo.configPath);
-  if (specifications.length === 0) {
+  if (specifications.length === 0 && !hasGolemSdks()) {
     const diagnostics = ownDiagnostics(ts.getPreEmitDiagnostics(programInfo.program), sources.map(companionOf), sources);
     if (diagnostics.length > 0) throw new Error(formatDiagnostics(diagnostics));
     throw new Error('No exported IModel<...> type aliases were found.');
@@ -528,16 +534,19 @@ export function generate(context: GolemModelContext): GolemModelResult {
     .map((source) => analyzeSourceGraph(
       source,
       companionOf(source),
-      checker,
       specifications,
-      manifestIndex,
       normalized.profile,
       normalized.root,
       job,
     ))
     .filter((graph): graph is NonNullable<typeof graph> => graph !== undefined);
-  const graphSchemaPairs = internJobSchemaGraphs(graphs, normalized.profile.validation, manifestIndex.validationSchemaClosure);
-  const schemaGraphs = graphSchemaPairs.map(({ schemaGraph }) => schemaGraph);
+  // An SDK in golem mode writes no validators: its types are nodes of this job's graphs, compiled with the models in one set.
+  const sdks = golemSdks(manifestIndex, normalized);
+  const sdkGraphs = sdks.map((sdk) => sdkSchemaGraph(sdk.manifest, normalized.profile.validation));
+  const graphSchemaPairs = internJobSchemaGraphs(graphs, normalized.profile.validation, [
+    ...sdkGraphs.flatMap(({ graph }) => sdkNodeClosure(graph)),
+  ]);
+  const schemaGraphs = [...graphSchemaPairs.map(({ schemaGraph }) => schemaGraph), ...sdkGraphs.map(({ graph }) => graph)];
   const schemaEntries = deduplicateTagSchemas(
     graphs.flatMap((graph) => graph.schemas)
       .sort((left, right) => compareText(left.key, right.key)
@@ -547,15 +556,16 @@ export function generate(context: GolemModelContext): GolemModelResult {
   const validationPlan = normalized.profile.validation !== false
     ? buildCodecValidationPlan(
       schemaGraphs,
-      manifestIndex.validationSchemaClosure,
+      [],
       Object.fromEntries(schemaEntries.map((compilation) => [compilation.id, compilation.schema])),
       normalized.profile.validation,
     )
     : undefined;
   const validatorsOutput = join(normalized.output, 'models.validators.generated.ts');
   // A project whose models all stay off has no codec that calls a validator, so it writes no file.
-  const validators = validationPlan && validationPlan.ownSchemas.length > 0
-    ? compilePlanValidators(validationPlan, {
+  const sdkOperations = validationPlan ? sdkValidatorOperations(sdks) : [];
+  const validators = validationPlan && (validationPlan.ownSchemas.length > 0 || sdkOperations.length > 0)
+    ? compileSdkValidators({ plan: validationPlan, operations: sdkOperations }, {
       owner: '@exprtlabs/golem-model',
       unknownFormats: normalized.profile.unknownFormats,
       level: compileLevel(normalized.profile.validation),
@@ -570,13 +580,17 @@ export function generate(context: GolemModelContext): GolemModelResult {
     return {
       artifacts: [],
       manifestPaths: [],
-      watchInputs: projectWatchInputs(programInfo, programInfo.program, sources, referencedManifestFiles(graphs, manifestIndex)),
+      watchInputs: projectWatchInputs(programInfo, programInfo.program, sources, referencedManifestFiles(manifestIndex)),
       diagnostics: [...ignoredWarnings, ...validatorDiagnostics],
     };
   }
   const artifacts: GolemArtifact[] = [];
   if (validators) {
     artifacts.push({ path: validatorsOutput, content: validators.source });
+  }
+  // The file an SDK of mode golem imports for its codecs; the openapi job wrote the import and the models job owns the file.
+  for (const [index, sdk] of sdks.entries()) {
+    artifacts.push({ path: sdk.codecsFile, content: sdkCodecsSource(sdk, sdkGraphs[index]!, validators && { file: validatorsOutput, compiled: validators }, normalized.profile) });
   }
   for (const { graph, schemaGraph, siblingWireCodecIds, siblingRecursion, cyclicSiblings } of graphSchemaPairs) {
     const { source, output } = graph;
@@ -585,13 +599,13 @@ export function generate(context: GolemModelContext): GolemModelResult {
       output,
       checker,
       specifications,
-      manifestIndex,
       normalized.profile,
       graph,
       schemaGraph,
       { siblingWireCodecIds, siblingRecursion, cyclicSiblings },
       {
         ...(validators ? { validators: { module: validatorsOutput, exports: validators.exports, fastExports: validators.fastExports, passExports: validators.passExports } } : {}),
+        sdkCodecs: sdks.map((sdk, index) => ({ file: sdk.codecsFile, graph: sdkGraphs[index]!.graph, types: sdkOwnTypes(manifestIndex, sdk.manifest) })),
       },
     ));
     if (content !== undefined) artifacts.push({ path: output, content });
@@ -633,7 +647,7 @@ export function generate(context: GolemModelContext): GolemModelResult {
       programInfo,
       prospective,
       sources,
-      referencedManifestFiles(graphs, manifestIndex),
+      referencedManifestFiles(manifestIndex),
     ),
     ...(ignoredWarnings.length + validatorDiagnostics.length > 0 ? { diagnostics: [...ignoredWarnings, ...validatorDiagnostics] } : {}),
   };

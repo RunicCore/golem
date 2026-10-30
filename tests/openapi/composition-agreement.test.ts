@@ -5,19 +5,13 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 
-import { requireObjectCodec } from '@exprtlabs/golem/internal/model-runtime';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
-import type { GeneratedModel } from '@exprtlabs/golem/model';
-import { getValidator } from '@exprtlabs/golem/validation';
 import { generate } from '#openapi/generator';
-import { generatedCodecIdFromRoot } from '../support/consumer.js';
-import { compileGeneratedSdk, generateMaterializedSdk, requireRecord } from './helpers.js';
-import { modelCodec } from '../support/model-codec.js';
+import { compileGeneratedSdk, generateMaterializedSdk, requireRecord, sdkBodyCodec, withRootOperations, type SdkBodyCodec } from './helpers.js';
 
 /**
  * One row is one allOf shape. For each row the generated SDK is checked on every path that reads the shape: the generated type
- * (a compile-time fixture), the model path (the model codec fromWireFormat and toWireFormat), the codec (fromWireFormat and
- * toWireFormat) and the validator, with validation on and off.
+ * (a compile-time fixture), the client (a response body it decodes, a request body it encodes and checks), and the validators, with validation on and off.
  *
  * `additionalProperties` inside an allOf member follows strict JSON Schema: a member judges every name that it does not list in
  * its own `properties`, the names of its siblings included.
@@ -25,14 +19,12 @@ import { modelCodec } from '../support/model-codec.js';
 
 type Wire = Record<string, unknown>;
 type Fields = Record<string, unknown>;
-type ModelConstructor = new (values?: Record<string, unknown>) => Record<string, unknown>;
-type Models = Readonly<Record<string, ModelConstructor>>;
 
 interface Accepted {
   /** The JSON the codec reads and writes. */
   readonly wire: Wire;
-  /** The decoded model's own fields; a function builds the nested model instances from the generated models. */
-  readonly model: Fields | ((models: Models) => Fields);
+  /** The decoded value. */
+  readonly model: Fields;
 }
 
 interface Row {
@@ -42,14 +34,11 @@ interface Row {
   /** The generated model that the claims read. */
   readonly root: string;
   readonly document: Record<string, unknown>;
+  /** The client converts the row's model, so the generated validators hold a model root for it; a row that converts nothing has only operation roots, which have no fast check. */
+  readonly converts?: true;
   readonly accepted: readonly Accepted[];
-  /** Inputs that the validator rejects, checked with validation on. */
+  /** Inputs that the codec rejects on decode with validation on. */
   readonly rejected: readonly Wire[];
-  /**
-   * Inputs that the codec rejects and the model path cannot see: a name that a generated class does not hold (its
-   * constructor keeps only its declared fields, also for a closed class), or a wire string that the model holds as a Date.
-   */
-  readonly rejectedOnWire?: readonly Wire[];
   /** The composition warnings of generation, each as `code: message`; a row without it expects none. */
   readonly warnings?: readonly RegExp[];
 }
@@ -95,6 +84,7 @@ const object = (properties: Record<string, unknown>, more: Record<string, unknow
 const rows: readonly Row[] = [
   {
     shape: 'disjoint inline objects (T-80, T-91)',
+    converts: true,
     fixture: 'disjoint-objects',
     root: 'Visit',
     document: visitDocument({ m: { allOf: [object({ at: dateTime }), object({ b: dateTime })] } }),
@@ -107,6 +97,7 @@ const rows: readonly Row[] = [
   },
   {
     shape: 'own properties plus an allOf member that adds properties (T-80)',
+    converts: true,
     fixture: 'own-plus-member',
     root: 'Visit',
     document: visitDocument({ m: { type: 'object', properties: { at: dateTime }, allOf: [{ properties: { b: dateTime } }] } }),
@@ -119,6 +110,7 @@ const rows: readonly Row[] = [
   },
   {
     shape: 'an allOf member requires an own property',
+    converts: true,
     fixture: 'required-member',
     root: 'Visit',
     document: visitDocument({ m: { type: 'object', properties: { at: dateTime }, allOf: [{ required: ['at'] }] } }),
@@ -127,6 +119,7 @@ const rows: readonly Row[] = [
   },
   {
     shape: 'array of allOf object members (T-94)',
+    converts: true,
     fixture: 'array-items',
     root: 'Visit',
     document: visitDocument({
@@ -140,6 +133,7 @@ const rows: readonly Row[] = [
   },
   {
     shape: 'a constraint-only allOf member (minProperties) beside own properties',
+    converts: true,
     fixture: 'constraint-only',
     root: 'Visit',
     document: visitDocument({ m: { type: 'object', properties: { at: dateTime }, allOf: [{ minProperties: 1 }] } }),
@@ -148,6 +142,7 @@ const rows: readonly Row[] = [
   },
   {
     shape: 'a nullable object with a constraint-only allOf member',
+    converts: true,
     fixture: 'nullable-constraint-only',
     root: 'Visit',
     document: visitDocument({ m: { type: ['object', 'null'], properties: { at: dateTime }, allOf: [{ minProperties: 1 }] } }),
@@ -159,6 +154,7 @@ const rows: readonly Row[] = [
   },
   {
     shape: 'inheritance: a component allOf [$ref Base, own properties]',
+    converts: true,
     fixture: 'inheritance',
     root: 'Derived',
     document: componentDocument('Derived', {
@@ -173,6 +169,7 @@ const rows: readonly Row[] = [
   },
   {
     shape: 'polymorphism: Pet is oneOf [Cat, Dog] and each variant is allOf [$ref PetBase, own properties]',
+    converts: true,
     fixture: 'polymorphism',
     root: 'Pet',
     document: componentDocument('Pet', {
@@ -192,6 +189,7 @@ const rows: readonly Row[] = [
   },
   {
     shape: 'a narrowed property with an equal conversion (const over string)',
+    converts: true,
     fixture: 'narrowed-equal',
     root: 'Derived',
     document: componentDocument('Derived', {
@@ -268,12 +266,12 @@ const rows: readonly Row[] = [
       Cat: { allOf: [ref('Pet'), object({ meow: text }, { additionalProperties: false })] },
     }),
     accepted: [{ wire: { meow: 'm' }, model: { meow: 'm' } }],
-    rejected: [],
-    rejectedOnWire: [{ meow: 'm', name: 'n' }],
+    rejected: [{ meow: 'm', name: 'n' }],
     warnings: [/^OPENAPI_COMPOSITION_PROPERTY_NEVER: Property "name" of schema "Cat" at #\/components\/schemas\/Cat .*allOf member 1 sets additionalProperties: false\. Replace it with unevaluatedProperties: false beside the allOf\./],
   },
   {
     shape: 'an open base and a component with unevaluatedProperties false',
+    converts: true,
     fixture: 'unevaluated-open-base',
     root: 'Derived',
     document: componentDocument('Derived', {
@@ -281,8 +279,7 @@ const rows: readonly Row[] = [
       Derived: { allOf: [ref('Base'), object({ b: dateTime })], unevaluatedProperties: false },
     }),
     accepted: [{ wire: { a: 'x', b: B }, model: { a: 'x', b: new Date(B) } }],
-    rejected: [],
-    rejectedOnWire: [{ a: 'x', b: B, z: 'q' }],
+    rejected: [{ a: 'x', b: B, z: 'q' }],
   },
   // The T-99 shapes reject invalid input as strict JSON Schema does.
   {
@@ -303,6 +300,7 @@ const rows: readonly Row[] = [
   },
   {
     shape: 'T-96: a nullable object with own properties and an allOf object member',
+    converts: true,
     fixture: 'nullable-own-plus-member',
     root: 'Visit',
     document: visitDocument({ m: { type: ['object', 'null'], properties: { at: dateTime }, allOf: [{ properties: { b: dateTime } }] } }),
@@ -314,6 +312,7 @@ const rows: readonly Row[] = [
   },
   {
     shape: 'T-98: own properties plus an allOf $ref member',
+    converts: true,
     fixture: 'own-plus-reference',
     root: 'Visit',
     document: visitDocument(
@@ -325,6 +324,7 @@ const rows: readonly Row[] = [
   },
   {
     shape: 'T-98: an inline allOf of a $ref member and a properties member',
+    converts: true,
     fixture: 'inline-reference-plus-properties',
     root: 'Visit',
     document: visitDocument(
@@ -336,6 +336,7 @@ const rows: readonly Row[] = [
   },
   {
     shape: 'T-99a: two members declare the same property',
+    converts: true,
     fixture: 'same-name-members',
     root: 'Visit',
     document: visitDocument({ m: { allOf: [object({ at: dateTime }), object({ at: dateTime })] } }),
@@ -347,6 +348,7 @@ const rows: readonly Row[] = [
   },
   {
     shape: 'T-99b: an additionalProperties-only member beside a date property',
+    converts: true,
     fixture: 'additional-only-member',
     root: 'Visit',
     document: visitDocument({ m: { allOf: [{ type: 'object', additionalProperties: text }, object({ at: dateTime })] } }),
@@ -358,6 +360,7 @@ const rows: readonly Row[] = [
   },
   {
     shape: 'strict b3: a date property, then an additionalProperties string member',
+    converts: true,
     fixture: 'additional-member-after-date',
     root: 'Visit',
     document: visitDocument({ m: { allOf: [object({ at: dateTime }), { type: 'object', additionalProperties: text }] } }),
@@ -366,6 +369,7 @@ const rows: readonly Row[] = [
   },
   {
     shape: 'T-99c: a member with properties and additionalProperties beside a date property',
+    converts: true,
     fixture: 'additional-plus-property',
     root: 'Visit',
     document: visitDocument({
@@ -379,6 +383,7 @@ const rows: readonly Row[] = [
   },
   {
     shape: 'T-99: own additionalProperties dates plus an allOf properties member',
+    converts: true,
     fixture: 'own-additional-plus-member',
     root: 'Visit',
     document: visitDocument({
@@ -393,6 +398,7 @@ const rows: readonly Row[] = [
   // A property that wraps one model reference stays that model, and a model may wrap a reference to itself.
   {
     shape: 'a property that wraps one model $ref in allOf with a description',
+    converts: true,
     fixture: 'reference-wrapper',
     root: 'Visit',
     document: visitDocument(
@@ -401,7 +407,7 @@ const rows: readonly Row[] = [
     ),
     accepted: [{
       wire: { owner: { name: 'n', born: AT } },
-      model: ({ PersonModel }) => ({ owner: construct(PersonModel, { name: 'n', born: new Date(AT) }) }),
+      model: { owner: { name: 'n', born: new Date(AT) } },
     }],
     rejected: [{ owner: { born: 1 } }],
   },
@@ -418,17 +424,18 @@ const rows: readonly Row[] = [
     }),
     accepted: [{
       wire: { name: 'r', parent: { name: 'p' }, children: [{ name: 'c' }] },
-      model: ({ TreeNodeModel }) => ({
+      model: {
         name: 'r',
-        parent: construct(TreeNodeModel, { name: 'p' }),
-        children: [construct(TreeNodeModel, { name: 'c' })],
-      }),
+        parent: { name: 'p' },
+        children: [{ name: 'c' }],
+      },
     }],
     rejected: [{ name: 'r', parent: { name: 1 } }],
   },
   // JSON Schema AND: a derived member that narrows a nullable base date to a date is a date, not a conflict.
   {
     shape: 'a derived component narrows a nullable base date-time to a date-time',
+    converts: true,
     fixture: 'narrowed-nullable-date',
     root: 'Derived',
     document: componentDocument('Derived', {
@@ -441,6 +448,7 @@ const rows: readonly Row[] = [
   // Two members declare one object property: the objects resolve as one allOf, also when both convert a date in it.
   {
     shape: 'two members declare one object property with dates under different names',
+    converts: true,
     fixture: 'same-name-objects',
     root: 'Visit',
     document: visitDocument({
@@ -456,14 +464,14 @@ const rows: readonly Row[] = [
   // model holds a Date, so only the wire check sees the string (spec 4.7).
   {
     shape: 'an additionalProperties pattern member constrains a date-time sibling',
+    converts: true,
     fixture: 'additional-pattern-date',
     root: 'Visit',
     document: visitDocument({
       m: { allOf: [{ type: 'object', additionalProperties: { type: 'string', pattern: '^2024-' } }, object({ at: dateTime })] },
     }),
     accepted: [{ wire: { m: { at: AT } }, model: { m: { at: new Date(AT) } } }],
-    rejected: [],
-    rejectedOnWire: [{ m: { at: '2023-05-06T07:08:09.000Z' } }],
+    rejected: [{ m: { at: '2023-05-06T07:08:09.000Z' } }],
   },
   // A oneOf of a model and a string AND that model is the model, whichever direction the conversion is read in.
   {
@@ -474,7 +482,7 @@ const rows: readonly Row[] = [
       { m: { allOf: [object({ x: { oneOf: [ref('M'), text] } }), object({ x: ref('M') })] } },
       { M: object({ n: text }) },
     ),
-    accepted: [{ wire: { m: { x: { n: 'a' } } }, model: ({ MModel }) => ({ m: { x: construct(MModel, { n: 'a' }) } }) }],
+    accepted: [{ wire: { m: { x: { n: 'a' } } }, model: { m: { x: { n: 'a' } } } }],
     rejected: [{ m: { x: 'a' } }],
   },
   {
@@ -485,7 +493,7 @@ const rows: readonly Row[] = [
       { m: { allOf: [object({ x: { oneOf: [ref('M'), text] } }), object({ x: object({ n: text }) })] } },
       { M: object({ n: text }) },
     ),
-    accepted: [{ wire: { m: { x: { n: 'a' } } }, model: ({ MModel }) => ({ m: { x: construct(MModel, { n: 'a' }) } }) }],
+    accepted: [{ wire: { m: { x: { n: 'a' } } }, model: { m: { x: { n: 'a' } } } }],
     rejected: [{ m: { x: 'a' } }],
   },
   // An object member beside a model it does not convert still checks the wire value: a required name must be there.
@@ -512,10 +520,10 @@ const rows: readonly Row[] = [
     }),
     accepted: [{
       wire: { pet: { name: 'n', lives: 9 }, pets: [{ name: 'm', lives: 1 }] },
-      model: ({ CatModel }) => ({
-        pet: construct(CatModel, { name: 'n', lives: 9 }),
-        pets: [construct(CatModel, { name: 'm', lives: 1 })],
-      }),
+      model: {
+        pet: { name: 'n', lives: 9 },
+        pets: [{ name: 'm', lives: 1 }],
+      },
     }],
     rejected: [{ pet: { name: 'n', lives: 'x' } }],
   },
@@ -532,13 +540,23 @@ const rows: readonly Row[] = [
     }),
     accepted: [{
       wire: { named: { name: 'n', nick: 'k', lives: 9 } },
-      model: ({ CatModel }) => ({ named: construct(CatModel, { name: 'n', nick: 'k', lives: 9 }) }),
+      model: { named: { name: 'n', nick: 'k', lives: 9 } },
     }],
     rejected: [{ named: { name: 'n', lives: 'x' } }],
+  },
+  // protects: T-456 a component that narrows an inherited union property to one variant decodes it as that variant
+  {
+    shape: 'a derived component narrows an inherited union property to one of its variants',
+    root: 'Derived',
+    document: petDocument(ref('Cat'), ['kind', 'lives']),
+    accepted: [{ wire: { pet: { kind: 'cat', lives: 9 } }, model: { pet: { kind: 'cat', lives: 9 } } }],
+    // The property decodes as Cat: a cat without lives and a dog both throw, though Pet accepts a dog.
+    rejected: [{ pet: { kind: 'cat' } }, { pet: { kind: 'dog' } }],
   },
   // Arrays and tuples that convert alike combine by their items, so items that differ in null or required names agree.
   {
     shape: 'a derived component narrows an inherited array of nullable date-times to date-times',
+    converts: true,
     fixture: 'narrowed-items',
     root: 'Derived',
     document: componentDocument('Derived', {
@@ -550,6 +568,7 @@ const rows: readonly Row[] = [
   },
   {
     shape: 'a derived component requires a name in the items of an inherited array',
+    converts: true,
     root: 'Derived',
     document: componentDocument('Derived', {
       Base: object({ visits: { type: 'array', items: object({ a: dateTime }) } }),
@@ -560,6 +579,7 @@ const rows: readonly Row[] = [
   },
   {
     shape: 'a derived component narrows an inherited tuple of a nullable date-time to a date-time',
+    converts: true,
     root: 'Derived',
     document: componentDocument('Derived', {
       Base: object({ pair: { type: 'array', prefixItems: [{ type: ['string', 'null'], format: 'date-time' }], items: false } }),
@@ -576,9 +596,8 @@ const rows: readonly Row[] = [
       { owner: { allOf: [ref('Person')], unevaluatedProperties: false } },
       { Person: object({ name: text }) },
     ),
-    accepted: [{ wire: { owner: { name: 'n' } }, model: ({ PersonModel }) => ({ owner: construct(PersonModel, { name: 'n' }) }) }],
-    rejected: [],
-    rejectedOnWire: [{ owner: { name: 'n', z: 'q' } }],
+    accepted: [{ wire: { owner: { name: 'n' } }, model: { owner: { name: 'n' } } }],
+    rejected: [{ owner: { name: 'n', z: 'q' } }],
   },
   // A component's own properties beside its allOf are its own names, and unevaluatedProperties: false keeps them.
   {
@@ -590,8 +609,7 @@ const rows: readonly Row[] = [
       Derived: { allOf: [ref('Base'), object({ c: text })], properties: { b: text }, unevaluatedProperties: false },
     }),
     accepted: [{ wire: { a: 'x', b: 'y', c: 'z' }, model: { a: 'x', b: 'y', c: 'z' } }],
-    rejected: [],
-    rejectedOnWire: [{ a: 'x', b: 'y', z: 'q' }],
+    rejected: [{ a: 'x', b: 'y', z: 'q' }],
   },
   {
     shape: 'a component that is allOf [$ref Base] with unevaluatedProperties false',
@@ -601,12 +619,12 @@ const rows: readonly Row[] = [
       Derived: { allOf: [ref('Base')], unevaluatedProperties: false },
     }),
     accepted: [{ wire: { a: 'x' }, model: { a: 'x' } }],
-    rejected: [],
-    rejectedOnWire: [{ a: 'x', z: 'q' }],
+    rejected: [{ a: 'x', z: 'q' }],
   },
   // A base beside a union in an allOf member (T-227): the value satisfies the base AND one variant.
   {
     shape: 'a field that is allOf [inline base, { oneOf of two inline objects }]',
+    converts: true,
     fixture: 'member-union-inline',
     root: 'Visit',
     document: visitDocument({ m: { allOf: [object({ id: text, at: dateTime }, { required: ['id'] }), { oneOf: [object({ kind: { const: 'a' }, a: text }, { required: ['kind', 'a'] }), object({ kind: { const: 'b' }, b: text }, { required: ['kind', 'b'] })] }] } }),
@@ -618,6 +636,7 @@ const rows: readonly Row[] = [
   },
   {
     shape: 'a field that is allOf [$ref Base, { oneOf of two inline objects }]',
+    converts: true,
     fixture: 'member-union-model',
     root: 'Visit',
     document: visitDocument(
@@ -632,6 +651,7 @@ const rows: readonly Row[] = [
   },
   {
     shape: 'a field that is allOf [$ref Base, { oneOf of two $ref models }]',
+    converts: true,
     root: 'Visit',
     document: visitDocument(
       { m: { allOf: [ref('Base'), { oneOf: [ref('A'), ref('B')] }] } },
@@ -650,6 +670,7 @@ const rows: readonly Row[] = [
   // The schema's own oneOf beside its allOf: the value satisfies the base AND one variant (T-92).
   {
     shape: 'a field that is allOf [inline base] beside its own oneOf of two inline objects',
+    converts: true,
     fixture: 'own-one-of',
     root: 'Visit',
     document: visitDocument({ m: { allOf: [object({ id: text, at: dateTime }, { required: ['id'] })], oneOf: [object({ kind: { const: 'a' }, a: text }, { required: ['kind', 'a'] }), object({ kind: { const: 'b' }, b: text }, { required: ['kind', 'b'] })] } }),
@@ -663,6 +684,7 @@ const rows: readonly Row[] = [
   // protects: T-554 a schema with both oneOf and anyOf keeps the anyOf in the type and the conversion
   {
     shape: 'a field that holds both a oneOf and an anyOf of inline objects, with no allOf',
+    converts: true,
     fixture: 'one-of-and-any-of',
     root: 'Visit',
     document: visitDocument({
@@ -717,6 +739,7 @@ const rows: readonly Row[] = [
   },
   {
     shape: 'a field that is allOf [$ref Base] beside its own oneOf of two $ref models',
+    converts: true,
     root: 'Visit',
     document: visitDocument(
       { m: { allOf: [ref('Base')], oneOf: [ref('A'), ref('B')] } },
@@ -734,6 +757,7 @@ const rows: readonly Row[] = [
   },
   {
     shape: 'a component that is allOf [$ref Base] beside its own oneOf of two $ref models, read through a field',
+    converts: true,
     root: 'Visit',
     document: visitDocument(
       { m: ref('Combo') },
@@ -753,6 +777,7 @@ const rows: readonly Row[] = [
   // A component whose allOf holds a union member is an alias of the union of merged objects, not a class with no variant fields (T-220).
   {
     shape: 'a component that is allOf [$ref Base, { oneOf of two $ref models }], read as a type and through a field',
+    converts: true,
     fixture: 'component-member-union',
     root: 'Visit',
     document: visitDocument(
@@ -773,6 +798,7 @@ const rows: readonly Row[] = [
   // A discriminator beside the union keeps the tag table (T-227): the kind property has no const, so only the table dispatches.
   {
     shape: 'a field that is allOf [$ref Base, { discriminated oneOf of two $ref models }]',
+    converts: true,
     root: 'Visit',
     document: visitDocument(
       { m: { allOf: [ref('Base'), { oneOf: [ref('A'), ref('B')], discriminator: { propertyName: 'kind', mapping: { a: '#/components/schemas/A', b: '#/components/schemas/B' } } }] } },
@@ -790,6 +816,7 @@ const rows: readonly Row[] = [
   },
   {
     shape: 'a field that is allOf [$ref Base] beside its own discriminated oneOf of two $ref models',
+    converts: true,
     root: 'Visit',
     document: visitDocument(
       { m: { allOf: [ref('Base')], oneOf: [ref('A'), ref('B')], discriminator: { propertyName: 'kind', mapping: { a: '#/components/schemas/A', b: '#/components/schemas/B' } } } },
@@ -808,6 +835,7 @@ const rows: readonly Row[] = [
   // Keywords beside the oneOf in the union member are one more part of every variant (T-227).
   {
     shape: 'a field that is allOf [inline base, { properties and required beside a oneOf }]',
+    converts: true,
     root: 'Visit',
     document: visitDocument({
       m: {
@@ -827,12 +855,10 @@ const rows: readonly Row[] = [
 
 interface Built {
   readonly output: string;
-  readonly models: Models;
   /** The composition warnings of generation, as `code: message`. */
   readonly warnings: readonly string[];
-  readonly Model: ModelConstructor;
-  readonly construct: abstract new (values?: never) => object;
-  readonly codec: ReturnType<typeof requireObjectCodec<Fields>>;
+  /** The client's reading of the row's root as a response body and its writing as a request body. */
+  readonly codec: SdkBodyCodec;
 }
 
 const scope = fileFixtureScope();
@@ -840,32 +866,19 @@ const scope = fileFixtureScope();
 function builder(row: Row, validation: boolean): () => Promise<Built> {
   return onceShared(async () => {
     const output = path.join(createFixtureProject(scope, 'golem-composition-agreement-'), 'sdk');
-    const result = await generateMaterializedSdk(row.document, {
+    const result = await generateMaterializedSdk(withRootOperations(row.document, row.root), {
       output,
       name: 'Composition',
       profile: { mobx: false, validation, allowAny: false },
     });
     compileGeneratedSdk(output, [], { strict: true, skipLibCheck: true });
-    const models = requireRecord(
-      await import(pathToFileURL(path.join(output, 'dist/index.js')).href),
-      `generated ${row.shape} models`,
-    );
-    const Model = models[`${row.root}Model`] as ModelConstructor;
     return {
       output,
-      models: models as Models,
       warnings: (result.diagnostics ?? []).filter(({ code }) => code.startsWith('OPENAPI_COMPOSITION_'))
         .map(({ code, message }) => `${code}: ${message}`),
-      Model,
-      construct: Model as unknown as abstract new (values?: never) => object,
-      codec: requireObjectCodec<Fields>(generatedCodecIdFromRoot(output, row.root)),
+      codec: await sdkBodyCodec(output, 'Composition', row.root),
     };
   });
-}
-
-function construct(Model: ModelConstructor | undefined, values: Record<string, unknown>): Record<string, unknown> {
-  if (Model === undefined) throw new Error('The row names a model that was not generated.');
-  return new Model(values);
 }
 
 /** Fields and wire values count an absent optional property and one set to undefined alike, as JSON does. */
@@ -873,7 +886,7 @@ function fieldsOf(model: object): Fields {
   return withoutUndefined({ ...model }) as Fields;
 }
 
-/** The value without undefined fields; an object keeps its prototype, so a nested model stays an instance of its class. */
+/** The value without undefined fields. */
 function withoutUndefined(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(withoutUndefined);
   if (typeof value !== 'object' || value === null || value instanceof Date) return value;
@@ -881,10 +894,6 @@ function withoutUndefined(value: unknown): unknown {
     Object.entries(value).filter(([, field]) => field !== undefined).map(([name, field]) => [name, withoutUndefined(field)]),
   );
   return Object.assign(Object.create(Object.getPrototypeOf(value)), fields);
-}
-
-function asGenerated(model: object): GeneratedModel<unknown> {
-  return model as GeneratedModel<unknown>;
 }
 
 /** A failure names the input that caused it. */
@@ -897,35 +906,27 @@ async function forInput(wire: Wire, check: () => void | Promise<void>): Promise<
   }
 }
 
-/** Model path and codec read and write the same fields for each accepted input. */
+/** The codec reads and writes the same fields for each accepted input. */
 async function assertPathsAgree(built: Built, accepted: readonly Accepted[]): Promise<void> {
   for (const { wire, model: expected } of accepted) {
-    const model = withoutUndefined(typeof expected === 'function' ? expected(built.models) : expected);
-    await forInput(wire, () => {
-      const decoded = modelCodec(built.Model).fromWireFormat(wire, { validate: false });
-      assert.deepEqual(fieldsOf(decoded), model, 'model path decodes');
-      assert.deepEqual(withoutUndefined(modelCodec(asGenerated(decoded)).toWireFormat(asGenerated(decoded))), wire, 'model path encodes');
-      const viaCodec = built.codec.fromWireFormat(wire, { construct: built.construct });
-      assert.deepEqual(fieldsOf(viaCodec), model, 'codec decodes');
-      assert.deepEqual(withoutUndefined(built.codec.toWireFormat(viaCodec)), wire, 'codec encodes');
+    const model = withoutUndefined(expected);
+    await forInput(wire, async () => {
+      const decoded = await built.codec.decode(wire) as Fields;
+      assert.deepEqual(fieldsOf(decoded), model, 'the client decodes the response');
+      assert.deepEqual(withoutUndefined(await built.codec.encode(decoded)), wire, 'the client encodes the request');
     });
   }
 }
 
-/** The validator accepts each accepted input as a model and rejects each rejected input on the wire and as a model. */
+/** The request check accepts each decoded accepted input and the client rejects each rejected input as a response. */
 async function assertValidatorJudges(built: Built, row: Row): Promise<void> {
   for (const { wire } of row.accepted) {
     await forInput(wire, async () => {
-      assert.equal(await getValidator(modelCodec(built.Model).fromWireFormat(wire, { validate: false })).validate(), true, 'validator accepts the model');
+      const decoded = await built.codec.decode(wire, { validate: false });
+      await assert.doesNotReject(built.codec.encode(decoded), 'the request check accepts the decoded value');
     });
   }
   for (const wire of row.rejected) {
-    await forInput(wire, async () => {
-      assertCodecRejects(built, wire);
-      assert.equal(await modelPathAccepts(built, wire), false, 'model path rejects the input');
-    });
-  }
-  for (const wire of row.rejectedOnWire ?? []) {
     await forInput(wire, () => assertCodecRejects(built, wire));
   }
 }
@@ -933,19 +934,23 @@ async function assertValidatorJudges(built: Built, row: Row): Promise<void> {
 /** A model validator of the generated module: `validate_<Model>_<hash>` with the plane of its schema. */
 const MODEL_VALIDATOR = /^validate_(\w+?)_[0-9a-f]{8}(?:_wire|_model_only|_wire_only)?$/;
 
+/** The model roots of the generated validators module, each with its validator and its fast check (`is_X`, when it has one). */
+async function modelValidatorRoots(built: Built, row: Row) {
+  const validators = requireRecord(await import(pathToFileURL(path.join(built.output, 'dist/validators.generated.js')).href), `generated ${row.shape} validators`);
+  return Object.keys(validators).flatMap(name => {
+    const match = MODEL_VALIDATOR.exec(name);
+    if (match === null) return [];
+    return [{ model: match[1], validate: validators[name], isValid: validators[`is_${name.slice('validate_'.length)}`] }];
+  });
+}
+
 /**
  * Each model root of the generated validators module has a fast check (`is_X`) on every plane. Each fast check gives the
  * answer of its validator (`validate_X`) on every input of the row, accepted and rejected (spec 5.1 rule 1).
  */
 async function assertFastChecksAgree(built: Built, row: Row): Promise<void> {
-  const validators = requireRecord(await import(pathToFileURL(path.join(built.output, 'dist/validators.generated.js')).href), `generated ${row.shape} validators`);
-  const inputs: readonly unknown[] = [...row.accepted.map(({ wire }) => wire), ...row.rejected, ...(row.rejectedOnWire ?? [])];
-  const roots = Object.keys(validators).flatMap(name => {
-    const match = MODEL_VALIDATOR.exec(name);
-    if (match === null) return [];
-    return [{ model: match[1], validate: validators[name], isValid: validators[`is_${name.slice('validate_'.length)}`] }];
-  });
-  assert.ok(roots.some(({ model }) => model === row.root), `the generated validators have the root ${row.root}`);
+  const roots = await modelValidatorRoots(built, row);
+  const inputs: readonly unknown[] = [...row.accepted.map(({ wire }) => wire), ...row.rejected];
   assert.deepEqual(roots.filter(({ isValid }) => typeof isValid !== 'function').map(({ model }) => model), [], 'every model root has a fast check');
   const disagreeing = roots.flatMap(({ model, validate, isValid }) => typeof isValid !== 'function' || typeof validate !== 'function' ? [] : inputs
     .filter(input => isValid(input) !== (validate(input, true).length === 0))
@@ -953,9 +958,9 @@ async function assertFastChecksAgree(built: Built, row: Row): Promise<void> {
   assert.deepEqual(disagreeing, []);
 }
 
-function assertCodecRejects(built: Built, wire: Wire): void {
-  assert.throws(
-    () => built.codec.fromWireFormat(wire, { construct: built.construct }),
+async function assertCodecRejects(built: Built, wire: Wire): Promise<void> {
+  await assert.rejects(
+    built.codec.decode(wire),
     (error: unknown): true => {
       assert.ok(error instanceof LibError, 'codec rejects the input');
       assert.equal(error.kind, LibErrorKind.Validation);
@@ -964,28 +969,24 @@ function assertCodecRejects(built: Built, wire: Wire): void {
   );
 }
 
-/** The model path rejects an input when the codec rejects its wire shape or cannot convert it, or when the validator rejects the decoded model. */
-async function modelPathAccepts(built: Built, wire: Wire): Promise<boolean> {
-  let model: object;
-  try {
-    model = modelCodec(built.Model).fromWireFormat(wire);
-  } catch (error) {
-    if (error instanceof LibError && (error.kind === LibErrorKind.Validation || error.kind === LibErrorKind.Deserialization)) return false;
-    throw error;
-  }
-  return getValidator(model).validate();
-}
-
 for (const row of rows) {
   const checked = builder(row, true);
   const unchecked = builder(row, false);
 
   const fixture = row.fixture;
   if (fixture !== undefined) {
+    // The fixtures state the converted type of a row: a Date where the wire holds a date-time.
     test(`${row.shape}: the generated type`, async () => {
       const { output } = await checked();
       copyFixtureFile(output, `openapi/composition/${fixture}-types.ts`, 'row-types.ts');
       compileGeneratedSdk(output, [path.join(output, 'row-types.ts')], { strict: true, skipLibCheck: true, noEmit: true });
+    });
+  }
+
+  if (row.converts) {
+    test(`${row.shape}: the generated validators have the model root`, async () => {
+      const roots = await modelValidatorRoots(await checked(), row);
+      assert.ok(roots.some(({ model }) => model === row.root), `the generated validators have the root ${row.root}`);
     });
   }
 
@@ -1029,12 +1030,12 @@ function operationDocument(operation: Record<string, unknown>): Record<string, u
 }
 
 /** `Derived` extends `Base`, whose `pet` is the union `Pet` of `Cat` and `Dog`; `Derived` narrows `pet` to `narrowed`. */
-function petDocument(narrowed: Record<string, unknown>): Record<string, unknown> {
-  const kinds = (tag: string, own: Record<string, unknown>): Record<string, unknown> =>
-    ({ allOf: [ref('Animal'), object({ kind: { const: tag }, ...own }, { required: ['kind'] })] });
+function petDocument(narrowed: Record<string, unknown>, catRequired: readonly string[] = ['kind']): Record<string, unknown> {
+  const kinds = (tag: string, own: Record<string, unknown>, required: readonly string[] = ['kind']): Record<string, unknown> =>
+    ({ allOf: [ref('Animal'), object({ kind: { const: tag }, ...own }, { required: [...required] })] });
   return componentDocument('Derived', {
     Animal: object({ kind: text }, { required: ['kind'] }),
-    Cat: kinds('cat', { lives: { type: 'integer' } }),
+    Cat: kinds('cat', { lives: { type: 'integer' } }, catRequired),
     Dog: kinds('dog', { bark: { type: 'boolean' } }),
     Bird: kinds('bird', { wings: { type: 'integer' } }),
     Pet: {
@@ -1254,16 +1255,13 @@ async function generateCompiledSdk(document: Record<string, unknown>, output: st
   compileGeneratedSdk(output, [], { strict: true, skipLibCheck: true });
 }
 
-// protects: T-456 a component that narrows an inherited union property to one of its variants generates and decodes to that variant
+// protects: T-456 a component that narrows an inherited union property to one of its variants generates and round-trips its wire form
 test('a component narrows an inherited union property to one of its variants', async t => {
   const output = path.join(createFixtureProject(t, 'golem-composition-narrowed-'), 'sdk');
-  await generateCompiledSdk(petDocument(ref('Cat')), output);
-  const models = requireRecord(await import(pathToFileURL(path.join(output, 'dist/index.js')).href), 'generated narrowed models');
-  const Derived = models.DerivedModel as ModelConstructor;
-  const Cat = models.CatModel as ModelConstructor;
-  const decoded = modelCodec(Derived).fromWireFormat({ pet: { kind: 'cat', lives: 9 } }, { validate: false });
-  assert.ok(decoded.pet instanceof Cat, 'pet decodes to Cat');
-  assert.deepEqual(withoutUndefined(modelCodec(asGenerated(decoded)).toWireFormat(asGenerated(decoded))), { pet: { kind: 'cat', lives: 9 } });
+  await generateCompiledSdk(withRootOperations(petDocument(ref('Cat')), 'Derived'), output);
+  const codec = await sdkBodyCodec(output, 'Composition', 'Derived');
+  const decoded = await codec.decode({ pet: { kind: 'cat', lives: 9 } }, { validate: false });
+  assert.deepEqual(withoutUndefined(await codec.encode(decoded)), { pet: { kind: 'cat', lives: 9 } });
 });
 
 // protects: T-650 the composition check reads a request body with the decode conversion, so a oneOf of one $ref with no null and a readOnly property still generate as before

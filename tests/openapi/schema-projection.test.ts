@@ -625,9 +625,8 @@ test('directional projection is consistent on OAS 3.1 and 3.2 and keeps neutral 
     for (const entry of manifest.models) {
       const model = requireRecord(entry, 'manifest model');
       const type = requireRecord(model.type, 'model type');
-      const implementation = requireRecord(model.generated, 'generated model');
-      assert.equal(implementation.module, `./models/${String(type.export)}.ts`);
-      assert.equal(implementation.export, `${String(type.export)}Model`);
+      assert.equal(type.module, './types.ts');
+      assert.equal(model.generated, undefined, 'an SDK names no generated class');
     }
 
     const defs = requireRecord(generated.registry.$defs, '$defs');

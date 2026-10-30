@@ -1,7 +1,6 @@
-import { fromWireFormat } from '@exprtlabs/golem/serde';
-import { VisitModel } from './index.js';
+import type { Visit } from './types.js';
 
-const visit = fromWireFormat<VisitModel>({ plainOrDates: 'plain', plainOrLeg: null });
+declare const visit: Visit;
 const plainOrDates: string | Date[] | null = visit.plainOrDates;
 const plainOrLeg: string | [] | [Date] | null = visit.plainOrLeg;
 

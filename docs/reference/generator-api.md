@@ -123,14 +123,14 @@ The subpath is the extension API. It exports the contracts above and the types `
 import { discoverModelManifests, readModelManifest } from '@exprtlabs/golem/manifest';
 ```
 
-An OpenAPI job writes `model-manifest.json` beside its SDK. A model job reads it to use the SDK models in your declarations.
+An OpenAPI job writes `model-manifest.json` beside its SDK. A model job reads it to use the SDK types in your declarations.
 
 | Member | Signature | Behavior |
 | --- | --- | --- |
 | `discoverModelManifests` | `(root = process.cwd(), onInput?): string[]` | Sorted absolute paths of `model-manifest.json` files below `<root>/src`, skipping `dist` and `build`. |
 | `readModelManifest` | `(filename: string, onInput?): ModelManifest` | Reads and checks one manifest. Throws with the file name when it is unreadable or invalid. |
 | `validateModelManifest` | `(manifest: unknown, filename?): ModelManifest` | Checks a parsed manifest. |
-| `ModelManifest` | `{ profile, models, validationSchemaClosure? }` | The generation profile, one entry in `models` for each model, and the schemas a project needs to validate those models. |
+| `ModelManifest` | `{ profile, models, mode?, … }` | The generation profile, one entry in `models` for each schema, and, in a `golem` SDK, the schema graph that the model job compiles. |
 | `MODEL_MANIFEST_FILENAME` | `'model-manifest.json'` | The file name. |
 
 ## `@exprtlabs/golem/rewrite` {#rewrite}
@@ -216,6 +216,8 @@ The context of the SDK generator. Usage: [Generate an OpenAPI SDK](/guide/genera
 | `profile` | Yes | — | `GolemProfile`. |
 | `name` | No | the document's `info.title`, else `Api` | Prefix of the client name, such as `PaymentsClient`. |
 | `dates` | No | `'date'` | `'temporal'` maps date and date-time strings to Temporal types ([`dates`](/reference/config#openapi-jobs)). |
+| `mode` | No | `'standalone'` | `'standalone'` writes an SDK that carries its own checks, conversions and runtime. `'golem'` writes types and the client only, and leaves checks and conversions to the model job ([`mode`](/reference/config#openapi-jobs)). |
+| `codecsFile` | With `mode: 'golem'` | omitted | The absolute path of the file that the model job writes for this SDK. The operation modules import the operation codecs from it. `golem.yaml` sets it for you. |
 | `allowRemoteRefs` | No | `false` | Reads HTTPS `$ref` documents when `true`. |
 | `remoteHosts` | No | `[]` | Hosts remote references may use. Required with `allowRemoteRefs`. |
 | `maxRefBytes` | No | `5242880` | Maximum bytes read from one referenced document. |
@@ -223,9 +225,10 @@ The context of the SDK generator. Usage: [Generate an OpenAPI SDK](/guide/genera
 | `refTimeoutMs` | No | `10000` | Timeout of each remote read, in milliseconds. |
 | `onInput` | No | omitted | Called with each local path before it is read. |
 
-- `manifestPaths` holds the SDK's `model-manifest.json`. Each model entry points to its `models/<Name>.ts` module.
-- The optional `validationSchemaClosure` holds the model and JSON schemas that model jobs compile into their validators.
-- A model job that uses an SDK without `validationSchemaClosure` fails with `Cannot compile validators: … is unresolved`. Generate that SDK again.
+- `manifestPaths` holds the SDK's `model-manifest.json`. A model job reads it to know the SDK types.
+- A `standalone` SDK carries its checks and conversions. Its manifest lists the schemas of the SDK.
+- A `golem` SDK carries none. Its manifest holds the schema graph as data, and the model job compiles the checks and conversions of the SDK with your models.
+- A model job that reads a manifest from an older release fails and asks you to generate the SDK again.
 
 Example:
 
@@ -249,7 +252,7 @@ Both are exports of `@exprtlabs/golem-openapi/generator`. Usage: [Start from a l
 ```ts
 function writeSdk(
   document: unknown,
-  options: { readonly output: string; readonly name?: string; readonly profile: GolemProfile; readonly dates?: 'date' | 'temporal' },
+  options: { readonly output: string; readonly name?: string; readonly profile: GolemProfile; readonly dates?: 'date' | 'temporal'; readonly mode?: 'standalone' | 'golem'; readonly codecsFile?: string },
 ): GolemResult;
 
 function loadValidatedDocument(filename: string, options?: ReferenceResolutionOptions): Promise<unknown>;
@@ -283,7 +286,8 @@ The context of the model generator. Usage: [Generate TypeScript models](/guide/g
 | `output` | No | `<root>/src/generated/models` | Directory for files shared by all models of the job, and for the generated files of shared model files. |
 | `sources` | No | files that end in `suffixes` below `<root>/src` | Model files. |
 | `suffixes` | No | `['.model.ts', '.models.ts']` | File-name endings that make a file below `<root>/src` a model source. |
-| `manifestInputs` | No | `[]` | SDK `model-manifest.json` files whose models your declarations use. |
+| `manifestInputs` | No | `[]` | SDK `model-manifest.json` files whose types your declarations use. |
+| `sdkOutputs` | No | `[]` | The absolute output folders of the `openapi` jobs of mode `golem` in the same `golem.yaml`. The model job writes the checks and conversions of each SDK. |
 | `onInput` | No | omitted | Called with each path before it is read or checked. |
 | `session` | No | omitted | Keeps the compiler running across calls. |
 

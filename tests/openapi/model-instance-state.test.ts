@@ -1,109 +1,47 @@
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import test from 'node:test';
-import { pathToFileURL } from 'node:url';
 
-import { LibError } from '@exprtlabs/golem/errors';
-import { requireObjectCodec } from '@exprtlabs/golem/internal/model-runtime';
+import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 
 import { createFixtureProject, fileFixtureScope, onceShared } from '../fixture-project.js';
-import { generatedCodecIdFromRoot } from '../support/consumer.js';
-import { compileGeneratedSdk, generateMaterializedSdk, requireRecord } from './helpers.js';
-import { modelCodec } from '../support/model-codec.js';
+import { compileGeneratedSdk, generateMaterializedSdk, sdkBodyCodec, withRootOperations, type SdkBodyCodec } from './helpers.js';
 
-// An own key of a golem-openapi model instance that its own model does not declare is program state, never an unknown
-// key (T-148). A key that the model declares is judged as before; a dynamic-map model has no program state.
+// What an SDK client writes for a body that has keys its schema does not declare, and for a body that lacks a required key. The SDK has no model
+// class, so there is no instance and no program state of one; the same rules for the models of an app are proved in tests/model-instance-state.test.ts.
 
 const ref = (name: string) => ({ $ref: `#/components/schemas/${name}` });
-const json = (name: string) => ({ 'application/json': { schema: ref(name) } });
-const post = (operationId: string, name: string) => ({
-  post: { operationId, requestBody: { required: true, content: json(name) }, responses: { 201: { description: 'created', content: json(name) } } },
-});
 
-const document = {
-  openapi: '3.1.0',
-  info: { title: 'Instance state', version: '1' },
-  paths: { '/items': post('createItem', 'Item'), '/derived': post('createDerived', 'Derived'), '/mixed': post('createMixed', 'Mixed') },
-  components: {
-    schemas: {
-      // serverId is declared by the model, and the request plane forbids it.
-      Item: { type: 'object', additionalProperties: false, required: ['name'], properties: { name: { type: 'string' }, serverId: { type: 'string', readOnly: true } } },
-      Base: { type: 'object', required: ['name'], properties: { name: { type: 'string' } } },
-      Derived: {
-        allOf: [ref('Base'), { type: 'object', properties: { mode: { type: 'string' }, serverId: { type: 'string', readOnly: true } } }],
-        unevaluatedProperties: false,
-      },
-      // An allOf with a union member is an alias of the union of merged objects, so a holder reaches it through a field (T-220).
-      MixedHolder: { type: 'object', required: ['value'], properties: { value: ref('Mixed') } },
-      LeadHolder: { type: 'object', required: ['value'], properties: { value: ref('Lead') } },
-      Mixed: { allOf: [ref('Base'), { oneOf: [{ type: 'object', required: ['kind', 'a'], properties: { kind: { const: 'a' }, a: { type: 'string' } } }, { type: 'object', required: ['kind', 'b'], properties: { kind: { const: 'b' }, b: { type: 'string' } } }] }] },
-      Holder: { type: 'object', required: ['base'], properties: { base: ref('Base') } },
-      Tree: { type: 'object', required: ['label'], properties: { label: { type: 'string' }, child: ref('Tree') } },
-      Open: { type: 'object', additionalProperties: true, required: ['id'], properties: { id: { type: 'string' } } },
-      // Objects that declare no field: closed, open only by default, and open by an explicit additionalProperties true.
-      EmptyClosed: { type: 'object', additionalProperties: false },
-      EmptyDefault: { type: 'object', properties: {} },
-      EmptyOpen: { type: 'object', additionalProperties: true },
-      // A field of unknown type, and a composed root with a model in a field.
-      Note: { type: 'object', required: ['title'], properties: { title: { type: 'string' }, data: {} } },
-      Lead: { allOf: [{ type: 'object', required: ['lead'], properties: { lead: ref('Base') } }, { oneOf: [{ type: 'object', required: ['kind', 'a'], properties: { kind: { const: 'a' }, a: { type: 'string' } } }, { type: 'object', required: ['kind', 'b'], properties: { kind: { const: 'b' }, b: { type: 'string' } } }] }] },
-      // Composed roots: open by an explicit additionalProperties true on a member or on the root, and open only by default.
-      ComposedOpenInline: { allOf: [{ type: 'object', required: ['id'], properties: { id: { type: 'string' } } }, { additionalProperties: true }] },
-      ComposedOpenRef: { allOf: [ref('Base'), { additionalProperties: true }] },
-      ComposedOwnRef: { allOf: [ref('Base')], additionalProperties: true },
-      ComposedOpenRoot: { allOf: [{ type: 'object', required: ['id'], properties: { id: { type: 'string' } } }, { type: 'object', properties: { tag: { type: 'string' } } }], additionalProperties: true },
-      ComposedDefault: { allOf: [{ type: 'object', required: ['id'], properties: { id: { type: 'string' } } }, { type: 'object', properties: { tag: { type: 'string' } } }] },
-      Bag: { type: 'object', additionalProperties: { type: 'string' }, required: ['id'], properties: { id: { type: 'string' } } },
-      // A plain field and a converted one (date-time), to read through the constructor, decode and encode.
-      Stamped: { type: 'object', properties: { name: { type: 'string' }, at: { type: 'string', format: 'date-time' } } },
-    },
+const SCHEMAS = {
+  // serverId is declared by the model, and the request plane forbids it.
+  Item: { type: 'object', additionalProperties: false, required: ['name'], properties: { name: { type: 'string' }, serverId: { type: 'string', readOnly: true } } },
+  Base: { type: 'object', required: ['name'], properties: { name: { type: 'string' } } },
+  Derived: {
+    allOf: [ref('Base'), { type: 'object', properties: { mode: { type: 'string' }, serverId: { type: 'string', readOnly: true } } }],
+    unevaluatedProperties: false,
   },
+  // An allOf with a union member is an alias of the union of merged objects, so a holder reaches it through a field (T-220).
+  MixedHolder: { type: 'object', required: ['value'], properties: { value: ref('Mixed') } },
+  Mixed: { allOf: [ref('Base'), { oneOf: [{ type: 'object', required: ['kind', 'a'], properties: { kind: { const: 'a' }, a: { type: 'string' } } }, { type: 'object', required: ['kind', 'b'], properties: { kind: { const: 'b' }, b: { type: 'string' } } }] }] },
+  Tree: { type: 'object', required: ['label'], properties: { label: { type: 'string' }, child: ref('Tree') } },
+  Open: { type: 'object', additionalProperties: true, required: ['id'], properties: { id: { type: 'string' } } },
+  // An object that declares no field and is open by an explicit additionalProperties true.
+  EmptyOpen: { type: 'object', additionalProperties: true },
+  // Composed roots: open by an explicit additionalProperties true on a member or on the root.
+  ComposedOpenInline: { allOf: [{ type: 'object', required: ['id'], properties: { id: { type: 'string' } } }, { additionalProperties: true }] },
+  ComposedOpenRef: { allOf: [ref('Base'), { additionalProperties: true }] },
+  ComposedOwnRef: { allOf: [ref('Base')], additionalProperties: true },
+  ComposedOpenRoot: { allOf: [{ type: 'object', required: ['id'], properties: { id: { type: 'string' } } }, { type: 'object', properties: { tag: { type: 'string' } } }], additionalProperties: true },
+  Bag: { type: 'object', additionalProperties: { type: 'string' }, required: ['id'], properties: { id: { type: 'string' } } },
+  // A converted field (date-time), to read through the client.
+  Stamped: { type: 'object', properties: { name: { type: 'string' }, at: { type: 'string', format: 'date-time' } } },
 };
 
-type Model = new (values?: object) => object;
-type Issues = readonly { readonly code: string; readonly path: readonly unknown[] }[];
-type Validator = (value: unknown, all: boolean) => Issues;
-
-test('the own state of an SDK model instance is no unknown key; a declared key stays judged, in a derived model too', async () => {
-  // protects: bug T-148 program state of an SDK model instance passes, a declared key is still judged on the request plane
-  const { output, models } = await validatedSdk();
-  const validators = await import(pathToFileURL(path.join(output, 'dist/validators.generated.js')).href) as Record<string, Validator>;
-  const [Item, Base, Derived, Bag] = [models.ItemModel, models.BaseModel, models.DerivedModel, models.BagModel] as Model[];
-  const issues = (operation: string, body: object) => validators[`validate_${operation}_input`]({ body }, true).map(issue => [issue.code, issue.path]);
-  const state = { cache: new Map<string, string>(), hits: 3 };
-
-  assert.deepEqual(issues('createItem', Object.assign(new Item({ name: 'n' }), state)), [], 'a model with a closed key set');
-  assert.deepEqual(issues('createItem', new Item({ name: 'n', serverId: 's' })), [['unknownKey', ['body', 'serverId']]], 'the declared serverId is forbidden on the request plane');
-  assert.deepEqual(issues('createDerived', Object.assign(new Derived({ name: 'n', mode: 'm' }), state)), [], 'a derived model under unevaluatedProperties');
-  assert.deepEqual(issues('createDerived', new Derived({ name: 'n', serverId: 's' })), [['unknownKey', ['body', 'serverId']]], 'the declared serverId of the derived model');
-  assert.deepEqual(validators.validate_createItem_response_201_application_json(new Item({ name: 'n', serverId: 's' }), true), [], 'the response plane carries serverId');
-
-  const stringified = (root: string, value: object) => requireObjectCodec(generatedCodecIdFromRoot(output, root)).stringify(value);
-  assert.equal(stringified('Item', Object.assign(new Item({ name: 'n' }), state)), '{"name":"n"}');
-  assert.equal(stringified('Base', Object.assign(new Base({ name: 'n' }), state)), '{"name":"n"}', 'an open model');
-  const derived = requireObjectCodec(generatedCodecIdFromRoot(output, 'Derived'));
-  const withState = Object.assign(new Derived({ name: 'n', mode: 'm' }), state);
-  assert.equal(derived.validate(withState), true);
-  assert.deepEqual(derived.toWireFormat(withState), { name: 'n', mode: 'm' });
-  assert.equal(derived.stringify(withState), '{"name":"n","mode":"m"}', 'the composed root writes its declared fields only');
-  assert.throws(() => derived.stringify({ name: 'n', cache: 1 }), (error: unknown) => error instanceof LibError, 'a plain value with an extra key is judged as input');
-
-  assert.equal(stringified('MixedHolder', { value: { name: 'n', kind: 'a', a: 'x' } }), '{"value":{"name":"n","kind":"a","a":"x"}}', 'a composition with a union member keeps the fields of both members');
-  const bag = requireObjectCodec(generatedCodecIdFromRoot(output, 'Bag'));
-  const map = Object.assign(new Bag({ id: 'a' }), { extra: 'x' });
-  assert.equal(bag.validate(map), true);
-  assert.equal(bag.stringify(map), '{"id":"a","extra":"x"}', 'a dynamic-map model writes its extra keys as data');
-  assert.deepEqual(bag.toWireFormat(map), { id: 'a', extra: 'x' });
-});
-
-test('a field that is a composition with a union member stringifies the declared fields of a model instance only', async () => {
-  // protects: bug T-155 the fallback of a composed root wrote every own key, program state of a model instance included
-  const { models } = await unvalidatedSdk();
-  const Base = models.BaseModel as Model;
-  const stringify = models.stringifyMixedHolder as (value: unknown) => string;
-  assert.equal(stringify({ value: Object.assign(new Base({ name: 'n' }), { kind: 'a', a: 'x', ...programState() }) }), '{"value":{"name":"n","kind":"a","a":"x"}}');
-  assert.equal(stringify({ value: { name: 'n', kind: 'a', a: 'x' } }), '{"value":{"name":"n","kind":"a","a":"x"}}', 'a plain value is written as it is');
-});
+const document = withRootOperations({
+  openapi: '3.1.0',
+  info: { title: 'Instance state', version: '1' },
+  components: { schemas: SCHEMAS },
+}, ...Object.keys(SCHEMAS));
 
 // Each SDK is generated and compiled once for the file: one with validation on, one with it off.
 const scope = fileFixtureScope();
@@ -111,203 +49,77 @@ const buildSdk = (name: string, validation: boolean) => async () => {
   const output = path.join(createFixtureProject(scope, `golem-openapi-${name}-`), 'sdk');
   await generateMaterializedSdk(document, { output, name, profile: { mobx: false, validation, allowAny: false } });
   compileGeneratedSdk(output, [], { strict: true, skipLibCheck: true, outDir: path.join(output, 'dist') });
-  const models = requireRecord(await import(pathToFileURL(path.join(output, 'dist/index.js')).href), 'generated models');
-  return { output, models };
+  return (root: keyof typeof SCHEMAS): Promise<SdkBodyCodec> => sdkBodyCodec(output, name, root);
 };
 const validatedSdk = onceShared(buildSdk('ValidatedState', true));
 const unvalidatedSdk = onceShared(buildSdk('UnvalidatedState', false));
 
-async function generateOpen() {
-  const { output, models } = await validatedSdk();
-  const Open = models.OpenModel as Model;
-  return { codec: requireObjectCodec(generatedCodecIdFromRoot(output, 'Open')), instance: Object.assign(new Open({ id: 'a' }), { extra: 'x' }) };
+const isValidation = (error: unknown): boolean => error instanceof LibError && error.kind === LibErrorKind.Validation;
+
+test('a declared readOnly key is forbidden in a request and carried in a response, in a derived model too', async () => {
+  // protects: bug T-148 a declared key is still judged on the request plane
+  const codec = await validatedSdk();
+  const [item, derived] = [await codec('Item'), await codec('Derived')];
+  assert.deepEqual(await item.encode({ name: 'n' }), { name: 'n' });
+  await assert.rejects(item.encode({ name: 'n', serverId: 's' }), isValidation, 'the declared serverId is forbidden on the request plane');
+  assert.deepEqual(await item.decode({ name: 'n', serverId: 's' }), { name: 'n', serverId: 's' }, 'the response plane carries serverId');
+  assert.deepEqual(await derived.encode({ name: 'n', mode: 'm' }), { name: 'n', mode: 'm' }, 'a derived model under unevaluatedProperties');
+  await assert.rejects(derived.encode({ name: 'n', serverId: 's' }), isValidation, 'the declared serverId of the derived model');
+});
+
+test('a dynamic-map model and a model with additionalProperties true write their extra keys as data', async () => {
+  // protects: bug T-154 the codec wrote the declared fields only, where an explicit additionalProperties true keeps the extra keys
+  const codec = await validatedSdk();
+  const [bag, open] = [await codec('Bag'), await codec('Open')];
+  assert.deepEqual(await bag.encode({ id: 'a', extra: 'x' }), { id: 'a', extra: 'x' });
+  assert.deepEqual(await bag.decode({ id: 'a', extra: 'x' }), { id: 'a', extra: 'x' });
+  assert.deepEqual(await open.encode({ id: 'a', extra: 'x' }), { id: 'a', extra: 'x' });
+});
+
+test('an object that is open only by default and converts a field writes its declared fields only', async () => {
+  // protects: F-56 the conversion writes the declared fields; only an explicit additionalProperties true keeps extra keys
+  const stamped = await (await validatedSdk())('Stamped');
+  assert.deepEqual(await stamped.encode({ name: 'n', at: new Date('2024-01-02T03:04:05.000Z'), extra: 'x' }), { name: 'n', at: '2024-01-02T03:04:05.000Z' });
+});
+
+for (const [name, sdk] of [['on', validatedSdk], ['off', unvalidatedSdk]] as const) {
+  test(`a composition with a union member writes the fields of both members, with validation ${name}`, async () => {
+    // protects: bug T-155 the fallback of a composed root wrote every own key
+    const wire = { value: { name: 'n', kind: 'a', a: 'x' } };
+    assert.deepEqual(await (await (await sdk())('MixedHolder')).encode(wire), wire);
+  });
 }
 
-test('stringify writes the extra keys of a model with additionalProperties true as data', async () => {
-  // protects: bug T-154 the codec wrote the declared fields only, where the model codec toWireFormat keeps the extra keys
-  const { codec, instance } = await generateOpen();
-  assert.equal(codec.stringify(instance), '{"id":"a","extra":"x"}');
-  assert.equal(codec.stringify({ id: 'a', extra: 'x' }), '{"id":"a","extra":"x"}', 'a plain value');
+test('with validation off an object that lacks a required field is written with the fields it holds, nested too; validation on rejects it', async () => {
+  // protects: bug T-156 a plain root threw a TypeError on a missing required field with validation off
+  const codec = await validatedSdk();
+  const [item, base, tree] = [await codec('Item'), await codec('Base'), await codec('Tree')];
+  assert.deepEqual(await item.encode({ serverId: 's' }, { validate: false }), { serverId: 's' }, 'the required name is missing');
+  assert.deepEqual(await base.encode({}, { validate: false }), {}, 'a root that holds no field');
+  assert.deepEqual(await tree.encode({ label: 'a', child: {} }, { validate: false }), { label: 'a', child: {} });
+  assert.deepEqual(await tree.encode({ label: 'a', child: { label: 'b' } }), { label: 'a', child: { label: 'b' } });
+  await assert.rejects(item.encode({ serverId: 's' }), isValidation, 'validation on rejects the missing field');
 });
 
-test('toWireFormat keeps the extra keys of a model with additionalProperties true as data', async () => {
-  // protects: bug T-154 the codec wire encoding dropped the extra keys, where the model codec toWireFormat keeps them
-  const { codec, instance } = await generateOpen();
-  assert.deepEqual(codec.toWireFormat(instance), { id: 'a', extra: 'x' });
-  assert.deepEqual(codec.toWireFormat({ id: 'a', extra: 'x' }), { id: 'a', extra: 'x' }, 'a plain value');
-});
-
-test('an object root with validation off stringifies the fields it holds when a required field is missing', async () => {
-  // protects: bug T-156 a plain root threw a TypeError on a missing required field with validation off; validation on still rejects it
-  const { models } = await validatedSdk();
-  const [stringifyItem, stringifyBase] = [models.stringifyItem, models.stringifyBase] as ((value: unknown, options?: { validate: boolean }) => string)[];
-  assert.equal(stringifyItem({ serverId: 's' }, { validate: false }), '{"serverId":"s"}', 'the required name is missing');
-  assert.equal(stringifyBase({}, { validate: false }), '{}', 'a root that holds no field');
-  assert.equal(stringifyItem({ name: 'n', serverId: 's' }), '{"name":"n","serverId":"s"}');
-  assert.throws(() => stringifyItem({ serverId: 's' }), (error: unknown) => error instanceof LibError, 'validation on still rejects the missing field');
-});
-
-test('an object that is open only by default writes its declared fields only, in stringify and toWireFormat', async () => {
-  // protects: F-56 stringify writes the declared fields; only an explicit additionalProperties true keeps extra keys
-  const { output } = await validatedSdk();
-  const base = requireObjectCodec(generatedCodecIdFromRoot(output, 'Base'));
-  assert.equal(base.stringify({ name: 'n', extra: 'x' }), '{"name":"n"}');
-  assert.deepEqual(base.toWireFormat({ name: 'n', extra: 'x' }), { name: 'n' });
-});
-
-test('a field that is a composition with a union member encodes the declared fields of a model instance only', async () => {
-  // protects: P-10 no codec writes program state; toWireFormat of this field returned the instance as it was
-  const { output, models } = await unvalidatedSdk();
-  const Base = models.BaseModel as Model;
-  const codec = requireObjectCodec(generatedCodecIdFromRoot(output, 'MixedHolder'));
-  assert.deepEqual(codec.toWireFormat({ value: Object.assign(new Base({ name: 'n' }), { kind: 'a', a: 'x', ...programState() }) }), { value: { name: 'n', kind: 'a', a: 'x' } });
-  assert.deepEqual(codec.toWireFormat({ value: { name: 'n', kind: 'a', a: 'x' } }), { value: { name: 'n', kind: 'a', a: 'x' } }, 'a plain value is kept');
-});
-
-test('with validation off a nested object that lacks a required field is written with the fields it holds', async () => {
-  // protects: T-156 a nested object of the same module threw a TypeError on a missing required field where its parent wrote around it
-  const { models } = await validatedSdk();
-  const stringifyTree = models.stringifyTree as (value: unknown, options?: { validate: boolean }) => string;
-  assert.equal(stringifyTree({ label: 'a', child: {} }, { validate: false }), '{"label":"a","child":{}}');
-  assert.equal(stringifyTree({ label: 'a', child: { label: 'b' } }), '{"label":"a","child":{"label":"b"}}');
-});
-
-test('a validated parent trusts its check: a child of another module writes its required fields without a presence test', async () => {
-  // protects: T-156 validation off writes around a missing field, but a validated call keeps the all-required fast path
-  const { models } = await validatedSdk();
-  const stringifyHolder = models.stringifyHolder as (value: unknown, options?: { validate?: boolean; validationContext?: unknown }) => string;
-  const acceptAll = { resolve: () => () => [] };
-  assert.throws(() => stringifyHolder({ base: {} }, { validationContext: acceptAll }), TypeError, 'the check accepted the missing name');
-  assert.equal(stringifyHolder({ base: {} }, { validate: false }), '{"base":{}}', 'validation off writes what is there');
-});
-
-test('options a user passes with a checked key still take the lenient path', async () => {
-  // protects: bug T-156 the internal checked mark was a plain key, so user options carrying it skipped the lenient path
-  const { models } = await validatedSdk();
-  const stringifyItem = models.stringifyItem as (value: unknown, options?: object) => string;
-  assert.equal(stringifyItem({ serverId: 's' }, { validate: false, checked: true }), '{"serverId":"s"}', 'the missing name is left out');
-});
-
-for (const [name, root, required, keeps] of [
-  ['a member with additionalProperties true', 'ComposedOpenInline', { id: 'a' }, true],
-  ['a model base and a member with additionalProperties true', 'ComposedOpenRef', { name: 'a' }, true],
-  ['a model base and additionalProperties true on the root', 'ComposedOwnRef', { name: 'a' }, true],
-  ['additionalProperties true on the root', 'ComposedOpenRoot', { id: 'a' }, true],
-  ['no additionalProperties', 'ComposedDefault', { id: 'a' }, false],
+for (const [name, root, required] of [
+  ['a member with additionalProperties true', 'ComposedOpenInline', { id: 'a' }],
+  ['a model base and a member with additionalProperties true', 'ComposedOpenRef', { name: 'a' }],
+  ['a model base and additionalProperties true on the root', 'ComposedOwnRef', { name: 'a' }],
+  ['additionalProperties true on the root', 'ComposedOpenRoot', { id: 'a' }],
+  ['no declared field and additionalProperties true', 'EmptyOpen', {}],
 ] as const) {
-  test(`a composed root with ${name} ${keeps ? 'keeps' : 'drops'} its extra keys in stringify and toWireFormat`, async () => {
+  test(`a root with ${name} keeps its extra keys in a request`, async () => {
     // protects: bug T-159 a composed root did not carry additionalPropertiesDeclared, so an explicit additionalProperties true lost its extra keys (F-200)
-    const { output, models } = await validatedSdk();
-    const Model = models[`${root}Model`] as Model;
-    const codec = requireObjectCodec(generatedCodecIdFromRoot(output, root));
-    const plain = { ...required, extra: 'x' };
-    const written = keeps ? plain : required;
-    assert.deepEqual(codec.toWireFormat(plain), written, 'a plain value');
-    assert.equal(codec.stringify(plain), JSON.stringify(written), 'a plain value');
-    const instance = Object.assign(new Model(required), { extra: 'x' });
-    assert.deepEqual(codec.toWireFormat(instance), written, 'a model instance');
-    assert.equal(codec.stringify(instance), JSON.stringify(written), 'a model instance');
+    const codec = await (await validatedSdk())(root);
+    assert.deepEqual(await codec.encode({ ...required, extra: 'x' }), { ...required, extra: 'x' });
   });
 }
 
-const programState = () => ({ cache: new Map<string, string>(), hits: 3 });
-
-for (const [name, root, keeps] of [['closed', 'EmptyClosed', false], ['open only by default', 'EmptyDefault', false], ['open by an explicit additionalProperties true', 'EmptyOpen', true]] as const) {
-  test(`an object with no declared field and ${name} writes the same in stringify and toWireFormat`, async () => {
-    // protects: bug T-158 toWireFormat of a model with no declared field returned the instance with its program state; stringify wrote {}
-    const { output, models } = await validatedSdk();
-    const Model = models[`${root}Model`] as Model;
-    const codec = requireObjectCodec(generatedCodecIdFromRoot(output, root));
-    // An instance of a model with an explicit additionalProperties true has no program state: its own keys are data.
-    const state = Object.assign(new Model({}), keeps ? { extra: 'x' } : programState());
-    const wire = codec.toWireFormat(state);
-    assert.deepEqual(wire, keeps ? { extra: 'x' } : {}, 'program state is never written');
-    assert.notEqual(wire, state, 'the wire value is not the instance');
-    assert.equal(codec.stringify(state), keeps ? '{"extra":"x"}' : '{}');
-    const plain = { extra: 'x' };
-    assert.deepEqual(codec.toWireFormat(plain), keeps ? { extra: 'x' } : {}, 'a plain value');
-    assert.equal(codec.stringify(plain), keeps ? '{"extra":"x"}' : '{}', 'a plain value');
-  });
-}
-
-for (const validation of [true, false]) {
-  test(`a model instance at any depth in an unknown field writes no program state (validation ${validation ? 'on' : 'off'})`, async () => {
-    // protects: bug T-164 only the top value of an unknown field lost its program state; an instance inside an array or object kept it
-    const { output, models } = await (validation ? validatedSdk : unvalidatedSdk)();
-    const [Base, EmptyOpen] = [models.BaseModel, models.EmptyOpenModel] as Model[];
-    const note = requireObjectCodec(generatedCodecIdFromRoot(output, 'Note'));
-    const task = () => Object.assign(new Base({ name: 't' }), programState());
-    const cases: readonly [string, unknown, unknown][] = [
-      ['an array', [task()], [{ name: 't' }]],
-      ['a nested plain object', { inner: { list: [1, task()] } }, { inner: { list: [1, { name: 't' }] } }],
-      ['an instance', task(), { name: 't' }],
-      ['a value with no model instance', { a: [1, { b: null }], c: 'x', d: [] }, { a: [1, { b: null }], c: 'x', d: [] }],
-      ['a scalar', 'text', 'text'],
-    ];
-    for (const [label, data, expected] of cases) {
-      const value = { title: 'n', data };
-      assert.deepEqual(note.toWireFormat(value), { title: 'n', data: expected }, `toWireFormat of ${label}`);
-      assert.equal(note.stringify(value), JSON.stringify({ title: 'n', data: expected }), `stringify of ${label}`);
-    }
-    const open = codec('EmptyOpen');
-    const extra = Object.assign(new EmptyOpen({}), { extra: task() });
-    assert.deepEqual(open.toWireFormat(extra), { extra: { name: 't' } }, 'an extra key of an explicit additionalProperties true');
-    assert.equal(open.stringify(extra), '{"extra":{"name":"t"}}');
-
-    function codec(root: string) { return requireObjectCodec(generatedCodecIdFromRoot(output, root)); }
-  });
-}
-
-test('a model instance in a field of a composition with a union member writes no program state', async () => {
-  // protects: bug T-157 a composed root with a member that is no object wrote an instance of a field as it was
-  const { output, models } = await unvalidatedSdk();
-  const Base = models.BaseModel as Model;
-  const codec = requireObjectCodec(generatedCodecIdFromRoot(output, 'LeadHolder'));
-  const value = { value: { lead: Object.assign(new Base({ name: 'n' }), programState()), kind: 'a', a: 'x' } };
-  assert.deepEqual(codec.toWireFormat(value), { value: { lead: { name: 'n' }, kind: 'a', a: 'x' } });
-  assert.equal(codec.stringify(value), '{"value":{"lead":{"name":"n"},"kind":"a","a":"x"}}');
-});
-
-test('the class-level encode of an SDK model writes no program state of an instance inside its unknown field', async () => {
-  // protects: bug T-164 a model nested as a field of another model is encoded by the class-level encode, which kept the state of an instance in its unknown field
-  const { models } = await validatedSdk();
-  const [Base, Note] = [models.BaseModel, models.NoteModel] as Model[];
-  const task = Object.assign(new Base({ name: 't' }), programState());
-  assert.deepEqual(modelCodec(Note).toWireFormat(new Note({ title: 'n', data: { list: [task] } })), { title: 'n', data: { list: [{ name: 't' }] } });
-  assert.deepEqual(modelCodec(Note).toWireFormat(new Note({ title: 'n', data: task })), { title: 'n', data: { name: 't' } });
-});
-
-test('an SDK model constructor and decode count only own enumerable keys; encode writes each declared field by property access', async () => {
-  // protects: bug T-162 the constructor copied an inherited value (values["name"] !== undefined), against the own-key rule of presence.ts
-  // protects: fact F-286 encode reads each declared field by property access, so a prototype value or a getter is written, once
-  const { models } = await validatedSdk();
-  const Stamped = models.StampedModel as new (values?: object) => { name?: string; at?: Date };
-  const instance = (values: object) => new Stamped(values);
-  const inherited = () => Object.create({ name: 'x', at: '2024-01-02T03:04:05.000Z' }) as object;
-  const counted = (key: string, value: unknown) => {
-    const reads = { count: 0 };
-    const own = Object.defineProperty({}, key, { enumerable: true, get() { reads.count += 1; return value; } });
-    return { own, reads };
-  };
-
-  assert.deepEqual({ ...instance(inherited()) }, {}, 'the constructor leaves an inherited value out');
-  assert.equal(instance({ name: 'x' }).name, 'x', 'the constructor copies an own value');
-  const ctorGetter = counted('name', 'x');
-  assert.equal(instance(ctorGetter.own).name, 'x');
-  assert.equal(ctorGetter.reads.count, 1, 'the constructor reads an own getter once');
-
-  assert.deepEqual({ ...modelCodec(Stamped).fromWireFormat(inherited()) }, {}, 'decode leaves an inherited value out');
-  assert.deepEqual({ ...modelCodec(Stamped).fromWireFormat({ at: '2024-01-02T03:04:05.000Z' }) }, { at: new Date('2024-01-02T03:04:05.000Z') }, 'decode converts an own value');
-
-  const prototype = Object.assign(new Stamped(), { name: 'x', at: new Date('2024-01-02T03:04:05.000Z') });
-  assert.deepEqual(modelCodec(Stamped).toWireFormat(Object.create(prototype), { allowGetter: true }), { name: 'x', at: '2024-01-02T03:04:05.000Z' }, 'encode writes an inherited declared field');
-  assert.deepEqual(modelCodec(Stamped).toWireFormat(instance({ at: new Date('2024-01-02T03:04:05.000Z') }), { allowGetter: true }), { at: '2024-01-02T03:04:05.000Z' }, 'encode writes an own value');
-  let encodeReads = 0;
-  const encodeGetter = Object.defineProperty(new Stamped(), 'at', { enumerable: true, get() { encodeReads += 1; return new Date('2024-01-02T03:04:05.000Z'); } });
-  assert.deepEqual(modelCodec(encodeGetter).toWireFormat(encodeGetter), { at: '2024-01-02T03:04:05.000Z' });
-  assert.equal(encodeReads, 1, 'encode reads an own getter once');
-  let hiddenReads = 0;
-  const hidden = Object.defineProperty(new Stamped(), 'name', { enumerable: false, get() { hiddenReads += 1; return 'x'; } });
-  assert.deepEqual(modelCodec(hidden).toWireFormat(hidden), { name: 'x' }, 'encode writes a declared field that a non-enumerable getter supplies');
-  assert.equal(hiddenReads, 1, 'encode reads that getter once');
+test('the client reads a getter of the body once when it writes a converted field', async () => {
+  // protects: F-286 encode reads each declared field by property access, once
+  const stamped = await (await unvalidatedSdk())('Stamped');
+  let reads = 0;
+  const body = Object.defineProperty({}, 'at', { enumerable: true, get() { reads += 1; return new Date('2024-01-02T03:04:05.000Z'); } });
+  assert.deepEqual(await stamped.encode(body), { at: '2024-01-02T03:04:05.000Z' });
+  assert.equal(reads, 1);
 });

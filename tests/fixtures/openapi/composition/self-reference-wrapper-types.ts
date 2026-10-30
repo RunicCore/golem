@@ -1,8 +1,7 @@
-import { fromWireFormat } from '@exprtlabs/golem/serde';
-import { TreeNodeModel } from './index.js';
+import type { TreeNode } from './index.js';
 
-const node = fromWireFormat<TreeNodeModel>({ name: 'r' });
-const parent: TreeNodeModel | undefined = node.parent;
-const children: TreeNodeModel[] | undefined = node.children;
+declare const node: TreeNode;
+const parent: TreeNode | undefined = node.parent;
+const children: TreeNode[] | undefined = node.children;
 
 void parent; void children;

@@ -1,7 +1,7 @@
 import { isBinaryMediaType, isBuiltinTextMediaType } from './client/codecs.js';
 import { asRecord, isJsonObject, objectEntries, type JsonObject } from './json.js';
 import { identifier, NameScope } from '@exprtlabs/golem/internal/generator-support';
-import { code, codeKey, manifestMarkerComment, docComment, exportedName, fileImports, identifier as identifierPart, ImportSource, isEmpty, join, lineBreak, literal, nest, propertyKey, render, renderModule, sameCode, type RenderedModule, type Code, type JsonValue } from '@exprtlabs/golem/internal/emitter';
+import { code, codeKey, TEMPORAL_FORMATS, manifestMarkerComment, docComment, exportedName, fileImports, identifier as identifierPart, ImportSource, isEmpty, join, lineBreak, literal, nest, propertyKey, render, renderModule, sameCode, type RenderedModule, type Code, type JsonValue } from '@exprtlabs/golem/internal/emitter';
 import { unionVariants } from './composition.js';
 import { refName } from './names.js';
 import {
@@ -14,6 +14,7 @@ import {
 } from './normalize.js';
 import { generatedBannerComment } from './package-info.js';
 import { ComponentNameScope } from './origin.js';
+import type { OpenApiDates } from './model-resolution.js';
 import { projectSchema, collectCanonicalResources, nextSchemaBase, resolveSchemaTarget, schemaDocumentBase, schemaTargetIdentity, type ResolvedSchemaTarget, type ResourceIndex } from './schema-projection.js';
 
 type TextSchemaKind = 'string' | 'unknown' | 'non-string' | 'ambiguous';
@@ -234,18 +235,54 @@ export interface SchemaTypeContext {
   readonly resources?: ResourceIndex;
   readonly currentBase?: string;
   readonly inlining?: ReadonlySet<string>;
+  /**
+   * Present when the type is the converted form that a client takes and returns: `date-time` strings are `Date`, or
+   * Temporal types as `dates` says. Absent: the wire form, where those values are strings.
+   */
+  readonly converted?: ConvertedTypes;
+  /** The component whose root schema is being typed; below the root it is absent. It tells the composition rule how the schema is read. */
+  readonly componentRoot?: string;
+  /** Reads the names of an allOf schema that no value can hold; the type writes each as `?: never`. Absent: no narrowing. */
+  readonly neverProperties?: NeverPropertiesOf;
+}
+
+/** The names of an allOf schema that no value can hold, read by the rule that warns about them. */
+export type NeverPropertiesOf = (
+  schema: JsonObjectLike,
+  place: { readonly currentBase: string | undefined; readonly anchors: ReadonlyMap<string, string> | undefined; readonly component: string | undefined },
+) => readonly string[];
+
+interface ConvertedTypes {
+  readonly dates: OpenApiDates;
+  /** The globals `Date` and `Temporal` that a component of the same name shadows in the module: they are reached through `globalThis`. */
+  readonly shadowed: ReadonlySet<string>;
+}
+
+/** The Temporal type of a string schema under `dates: temporal`; any other schema or mode has none. */
+export function temporalFormat(schema: unknown, dates: OpenApiDates): (typeof TEMPORAL_FORMATS)[keyof typeof TEMPORAL_FORMATS] | undefined {
+  if (dates !== 'temporal' || !isJsonObject(schema) || typeof schema.format !== 'string') return undefined;
+  if (!(schema.type === 'string' || (Array.isArray(schema.type) && schema.type.includes('string')))) return undefined;
+  return Object.hasOwn(TEMPORAL_FORMATS, schema.format) ? TEMPORAL_FORMATS[schema.format as keyof typeof TEMPORAL_FORMATS] : undefined;
+}
+
+/** The type that a string schema converts to, or undefined when its value stays a string. */
+function convertedStringType(schema: JsonObjectLike, converted: ConvertedTypes): TypeCode | undefined {
+  const temporal = temporalFormat(schema, converted.dates);
+  if (temporal) return typeCode(converted.shadowed.has('Temporal') ? code`globalThis.${temporal.type}` : temporal.type);
+  if (converted.dates === 'date' && schema.format === 'date-time') return typeCode(converted.shadowed.has('Date') ? code`globalThis.Date` : code`Date`);
+  return undefined;
 }
 
 /** How a type binds in a larger type: a member of a union, an intersection or an array parenthesizes by it. */
-export type TypeBinding = 'primary' | 'intersection' | 'union';
+type TypeBinding = 'primary' | 'intersection' | 'union';
 
 /** The code of a type, and how it binds. The builder that writes the type knows its binding, so no step reads the code back. */
-export interface TypeCode {
+interface TypeCode {
   readonly code: Code;
   readonly binds: TypeBinding;
 }
 
-export function typeCode(typeText: Code, binds: TypeBinding = 'primary'): TypeCode {
+function typeCode(typeText: Code, binds: TypeBinding = 'primary'): TypeCode {
   return { code: typeText, binds };
 }
 
@@ -301,7 +338,7 @@ function intersectionType(types: readonly TypeCode[]): TypeCode {
 }
 
 /** `T | null`. */
-export function orNull(type: TypeCode): TypeCode {
+function orNull(type: TypeCode): TypeCode {
   return typeCode(code`${type.code} | null`, 'union');
 }
 
@@ -329,7 +366,7 @@ function emitBlobType(output: Code[], index: number, utility: { readonly name: s
 }
 
 /** The comment of a description: one line, and it cannot end itself. */
-export function descriptionComment(description: unknown): Code {
+function descriptionComment(description: unknown): Code {
   return docComment(String(description).replace(/\*\//g, '*\\/').replace(/\s+/g, ' '));
 }
 
@@ -367,6 +404,7 @@ export function schemaContext(
   }
   return {
     ...context,
+    ...(componentName ? { componentRoot: componentName } : {}),
     document,
     anchors,
     resources: context.resources ?? collectCanonicalResources(document),
@@ -392,7 +430,7 @@ export function schemaType(schema: unknown, context: PublicSchemaTypeContext = {
   return render(schemaTypeCode(schema, { ...rest, ...(qualified ? { qualifier: qualified } : {}) }).code);
 }
 
-export function schemaTypeCode(schema: unknown, context: SchemaTypeContext = {}): TypeCode {
+function schemaTypeCode(schema: unknown, context: SchemaTypeContext = {}): TypeCode {
   const projected = context.direction
     ? projectSchema(schema, { document: context.document ?? {}, direction: context.direction })
     : schema;
@@ -400,7 +438,7 @@ export function schemaTypeCode(schema: unknown, context: SchemaTypeContext = {})
 }
 
 /** The type of a `prefixItems` array: a union of the prefix lengths that min/max allow. `itemType` gives the type of one item schema. */
-export function prefixItemsType(schema: JsonObjectLike, itemType: (item: unknown) => TypeCode): TypeCode {
+function prefixItemsType(schema: JsonObjectLike, itemType: (item: unknown) => TypeCode): TypeCode {
   const prefix = (Array.isArray(schema.prefixItems) ? schema.prefixItems : [])
     .map(itemType);
   const min = typeof schema.minItems === 'number' ? schema.minItems : 0;
@@ -614,7 +652,8 @@ function schemaTypeNode(rawSchema: unknown, context: SchemaTypeContext = {}): Ty
     context.currentBase ?? (context.document ? schemaDocumentBase(context.document) : ''),
     resources,
   );
-  const inner: SchemaTypeContext = { ...context, resources, currentBase };
+  const { componentRoot, ...belowRoot } = context;
+  const inner: SchemaTypeContext = { ...belowRoot, resources, currentBase };
   if (typeof schema.$dynamicRef === 'string' || typeof schema.$ref === 'string') {
     const reference = String(schema.$dynamicRef || schema.$ref);
     const anchored = inner.anchors && inner.anchors.get(reference);
@@ -648,7 +687,8 @@ function schemaTypeNode(rawSchema: unknown, context: SchemaTypeContext = {}): Ty
   const primitiveType = (type: string): TypeCode => {
     switch (type) {
     case 'string':
-      return schema.format === 'binary' ? blobType(inner) : typeCode(code`string`);
+      if (schema.format === 'binary') return blobType(inner);
+      return (inner.converted && convertedStringType(schema, inner.converted)) || typeCode(code`string`);
     case 'integer':
     case 'number': return typeCode(code`number`);
     case 'boolean': return typeCode(code`boolean`);
@@ -682,10 +722,18 @@ function schemaTypeNode(rawSchema: unknown, context: SchemaTypeContext = {}): Ty
     const parts = schema.allOf
       .flatMap((item) => allOfMemberTypes(item, requirements, inner))
       .filter((part) => !sameType(part, UNKNOWN_TYPE));
+    const never = neverPropertiesType(rawSchema, context, componentRoot);
+    if (never) parts.push(never);
     if (parts.length) result = intersectionType(result ? [result, ...parts] : parts);
   }
   if (!result) result = UNKNOWN_TYPE;
   return nullable && !sameType(result, UNKNOWN_TYPE) && !sameType(result, NULL_TYPE) ? orNull(result) : result;
+}
+
+/** `{ a?: never; b?: never }` for the properties of an allOf that its members do not agree on; undefined when there are none. */
+function neverPropertiesType(schema: JsonObjectLike, context: SchemaTypeContext, component: string | undefined): TypeCode | undefined {
+  const names = context.neverProperties?.(schema, { currentBase: context.currentBase, anchors: context.anchors, component }) ?? [];
+  return names.length ? typeCode(bracedLines(names.map((name) => code`${propertyKey(name)}?: never;`))) : undefined;
 }
 
 /** The members of a braced type, one to a line, each line one level in. */
@@ -717,6 +765,7 @@ function objectType(schema: JsonObjectLike, context: SchemaTypeContext): TypeCod
 
 type JsonObjectLike = { readonly [key: string]: unknown };
 
+/** The input of an operation: its parameters and bodies are typed by `context`. */
 function inputType(operation: NormalizedOperation, context: SchemaTypeContext = {}): TypeCode {
   const groups: Record<string, NormalizedOperation['parameters'][number][]> = {
     path: [],
@@ -823,6 +872,12 @@ function* claimedComponentSchemas(
   }
 }
 
+/** The converted form of a module that declares the component `schemas`. */
+function convertedTypes(schemas: Record<string, unknown>, dates: OpenApiDates): ConvertedTypes {
+  const declared = new Set(Object.keys(schemas).map((name) => identifier(name)));
+  return { dates, shadowed: new Set(['Date', 'Temporal'].filter((name) => declared.has(name))) };
+}
+
 export function generateTypes(
   document: unknown,
   operations: readonly NormalizedOperation[],
@@ -830,6 +885,8 @@ export function generateTypes(
     readonly typesUsesInputSchemas: boolean;
     readonly typesUsesOutputSchemas: boolean;
   },
+  dates: OpenApiDates = 'date',
+  neverProperties?: NeverPropertiesOf,
 ): RenderedModule {
   const schemas = asRecord(asRecord(asRecord(document).components).schemas);
   const scope = new ComponentNameScope('types.ts');
@@ -840,7 +897,8 @@ export function generateTypes(
   const inputSchemas = new ImportSource('./input-schemas.js', true, { namespace: 'InputSchemas' });
   const outputSchemas = new ImportSource('./output-schemas.js', true, { namespace: 'OutputSchemas' });
   const blobTypeName = generatedBlobType(scope, objectEntries(schemas).map(([name]) => identifier(name)));
-  const baseContext = schemaContext(document, { blobType: blobTypeName });
+  const converted = convertedTypes(schemas, dates);
+  const baseContext = schemaContext(document, { blobType: blobTypeName, converted, ...(neverProperties ? { neverProperties } : {}) });
   const BLANK = code``;
   const body: Code[] = [];
   const blobTypeIndex = 0;
@@ -860,11 +918,15 @@ export function generateTypes(
       direction: 'input',
       ...(useInput ? { qualifier: code`${inputSchemas.namespace()}.` } : {}),
       blobType: blobTypeName,
+      converted,
+      ...(neverProperties ? { neverProperties } : {}),
     });
     const outputContext = schemaContext(document, {
       direction: 'output',
       ...(useOutput ? { qualifier: code`${outputSchemas.namespace()}.` } : {}),
       blobType: blobTypeName,
+      converted,
+      ...(neverProperties ? { neverProperties } : {}),
     });
     scope.claim(`${operation.typeName}OperationInput`, `operation ${JSON.stringify(operation.name)} input type`);
     scope.claim(`${operation.typeName}OperationSuccessBody`, `operation ${JSON.stringify(operation.name)} success body`);
@@ -891,11 +953,21 @@ export function generateTypes(
   return renderModule(code`${output}\n`);
 }
 
-export function generateDirectionalSchemas(document: unknown, direction: 'input' | 'output'): string {
+export function generateDirectionalSchemas(
+  document: unknown,
+  direction: 'input' | 'output',
+  dates: OpenApiDates = 'date',
+  neverProperties?: NeverPropertiesOf,
+): string {
   const schemas = asRecord(asRecord(asRecord(document).components).schemas);
   const scope = new ComponentNameScope(`${direction}-schemas.ts`);
   const blobTypeName = generatedBlobType(scope, objectEntries(schemas).map(([name]) => identifier(name)));
-  const baseContext = schemaContext(document, { direction, blobType: blobTypeName });
+  const baseContext = schemaContext(document, {
+    direction,
+    blobType: blobTypeName,
+    converted: convertedTypes(schemas, dates),
+    ...(neverProperties ? { neverProperties } : {}),
+  });
   const BLANK = code``;
   const body: Code[] = [];
   for (const { name, schema, typeName } of claimedComponentSchemas(document, scope)) {

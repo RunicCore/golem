@@ -1,25 +1,23 @@
 // Runs inside a generated SDK: an allOf variant inherits a date-time field from
-// its base, and the discriminated union selects the variant.
-import * as models from './dist/index.js';
+// its base, and the discriminated union selects the variant. The operations carry each component as a response and as a request body.
+import { DatesClient } from './dist/client.js';
 
-const { fromWireFormatPayment, fromWireFormatCardPayment, fromWireFormatPaymentBase, parsePayment, parseCardPayment,
-  validatePayment, validateCardPayment, CardPaymentModel } = models;
+const read = async (component, wire) => (await new DatesClient({ baseUrl: 'http://dates.test', fetchImpl: async () => Response.json(wire) })[`get${component}`]().execute({})).body;
+const write = async (component, value) => {
+  let sent;
+  await new DatesClient({ baseUrl: 'http://dates.test', fetchImpl: async (_url, init) => { sent = JSON.parse(init.body); return new Response(null, { status: 204 }); } })[`put${component}`]().execute({ body: value });
+  return sent;
+};
 const base = { id: 'p1', createdAt: '2026-01-01T00:00:00.000Z' };
 const card = { ...base, kind: 'card', maskedPan: '1234' };
 const isDate = (value) => value instanceof Date && value.toISOString() === base.createdAt;
 const report = {
-  base: isDate(fromWireFormatPaymentBase(base).createdAt),
-  variant: isDate(fromWireFormatCardPayment(card).createdAt),
-  union: isDate(fromWireFormatPayment(card).createdAt),
-  parseVariant: isDate(parseCardPayment(JSON.stringify(card)).createdAt),
-  parseUnion: isDate(parsePayment(JSON.stringify(card)).createdAt),
-  unionConstructs: fromWireFormatPayment(card, { construct: CardPaymentModel }) instanceof CardPaymentModel,
-  validateVariant: validateCardPayment(fromWireFormatCardPayment(card)),
-  validateUnion: validatePayment(fromWireFormatPayment(card)),
-  nonObjectIsInput: (() => {
-    try { fromWireFormatCardPayment('text'); return false; }
-    catch (error) { return error?.kind === 'validation' && error.causedByInput === true; }
-  })(),
-  rejectsBadDate: (() => { try { fromWireFormatPayment({ ...card, createdAt: 'nope' }); return false; } catch { return true; } })(),
+  base: isDate((await read('PaymentBase', base)).createdAt),
+  variant: isDate((await read('CardPayment', card)).createdAt),
+  union: isDate((await read('Payment', card)).createdAt),
+  writeVariant: (await write('CardPayment', await read('CardPayment', card))).createdAt === base.createdAt,
+  writeUnion: (await write('Payment', await read('Payment', card))).createdAt === base.createdAt,
+  nonObjectIsInput: await read('CardPayment', 'text').then(() => false, (error) => error?.kind === 'validation' && error.causedByInput === true),
+  rejectsBadDate: await read('Payment', { ...card, createdAt: 'nope' }).then(() => false, () => true),
 };
 process.stdout.write(JSON.stringify(report));

@@ -18,7 +18,7 @@ import {
 import { defaultIfEmpty, firstValueFrom, map, of, type Observable } from 'rxjs';
 import { NestModelInterceptor, type NestModelInterceptorOptions, nestModelStringifyInterceptor, nestUnionFromMetatype, objectCodecFromMetatype } from '@exprtlabs/golem/nest';
 import { nestModelCodec, nestModelReturn, nestModelUnion } from '@exprtlabs/golem/internal/nest-runtime';
-import { LibError } from '@exprtlabs/golem/errors';
+import { LibError, type LibErrorKind } from '@exprtlabs/golem/errors';
 import { deserializeDate, unknownDiscriminatorValue, assertModelValue, isValidModelValue } from '@exprtlabs/golem/internal/model-runtime';
 import type { ModelTypeDescriptor } from '@exprtlabs/golem/internal/schema';
 import { schemaForDescriptor } from '@exprtlabs/golem/internal/schema';
@@ -710,10 +710,14 @@ test('NestModelInterceptor passes @Query() through unchanged unless a present fi
 });
 
 test('NestModelInterceptor answers 400 for request input the decoder rejects and 500 for server faults', async () => {
+  // protects: T-686 the interceptor sees a LibError from a second golem copy as bad input
+  const secondCopy = await import(`${import.meta.resolve('@exprtlabs/golem/errors')}?second-copy`) as { LibError: typeof LibError; LibErrorKind: typeof LibErrorKind };
   class UnregisteredModel {}
   const decoders: Record<string, (wire: Record<string, unknown>) => unknown> = {
     unknownTag: (wire) => unknownDiscriminatorValue('kind', wire.kind, 'deserialize'),
     invalidDate: (wire) => ({ at: deserializeDate(wire.at) }),
+    // A LibError from another golem copy (a standalone SDK) is bad input too.
+    foreignCopy: () => { throw new (secondCopy.LibError)(secondCopy.LibErrorKind.Validation, 'from the SDK'); },
     // Missing conversion metadata is a program fault, not bad input.
     serverFault: (wire) => modelCodec(UnregisteredModel).fromWireFormat(wire),
     // A validator that cannot report a result is a program fault too.
@@ -747,6 +751,7 @@ test('NestModelInterceptor answers 400 for request input the decoder rejects and
     assert.match(JSON.stringify(await unknownTag.json()), /Unknown kind discriminator value/);
     assert.equal((await post('invalidDate', { at: 'not a date' })).status, 400);
     assert.equal((await post('invalidDate', { at: 1 })).status, 400, 'a date must be text');
+    assert.equal((await post('foreignCopy', {})).status, 400);
     assert.equal((await post('serverFault', {})).status, 500);
     assert.equal((await post('brokenValidator', {})).status, 500);
   } finally {

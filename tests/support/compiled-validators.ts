@@ -65,7 +65,7 @@ export async function compileValidatorModule(input: CompiledValidatorInput): Pro
       resources: new Map(Object.entries(input.resources ?? {})),
       validations: new Map(Object.entries(input.validations ?? {})),
     },
-    { unknownFormats: input.unknownFormats ?? 'warn', runtimeModule, ...(input.fastPath ? { fastPath: true } : {}), ...(input.typed ? { typed: true } : {}), ...(input.level === undefined ? {} : { level: input.level }) },
+    { unknownFormats: input.unknownFormats ?? 'warn', specifiers: { values: { 'validation-runtime': runtimeModule } }, ...(input.fastPath ? { fastPath: true } : {}), ...(input.typed ? { typed: true } : {}), ...(input.level === undefined ? {} : { level: input.level }) },
   );
   const errors = diagnostics.filter(entry => entry.severity === GolemDiagnosticSeverity.Error);
   if (errors.length > 0) throw new Error(`Compile failed: ${errors.map(entry => `${entry.code} ${entry.message}`).join('; ')}`);

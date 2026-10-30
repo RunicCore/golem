@@ -1,10 +1,9 @@
-import { isBinaryMediaType, isJsonSeqMediaType, isNdjsonMediaType, isServerSentEventsMediaType, mediaEssence } from './client/codecs.js';
+import { isBinaryMediaType, isJsonSeqMediaType, isNdjsonMediaType, isServerSentEventsMediaType } from './client/codecs.js';
 import type { ServerObject } from '@exprtlabs/golem/client';
 import { GolemDiagnosticSeverity, type GolemDiagnostic } from '@exprtlabs/golem/generator-api';
+import { mediaEssence } from '@exprtlabs/golem/internal/generator-support';
 import { asRecord, isJsonObject, objectEntries } from './json.js';
 import { SCHEMA_ARRAY_KEYWORDS, SCHEMA_MAP_KEYWORDS, SCHEMA_SINGLE_KEYWORDS } from './schema-keywords.js';
-import { collectOpenApiModelDefinitions } from './models.js';
-import type { OpenApiDates } from './model-resolution.js';
 import {
   resolveLocal,
   parameterSchema,
@@ -30,7 +29,6 @@ export type ArtifactFile =
   | 'input-schemas.ts'
   | 'output-schemas.ts'
   | 'client.ts'
-  | 'inbound.ts'
   | 'links.ts'
   | 'servers.ts';
 
@@ -72,9 +70,7 @@ export interface EmissionPlan {
   /** Operation name to its entry in `operationServers`; an operation on the document list has none. */
   readonly operationServerIndex: ReadonlyMap<string, number>;
   readonly hasComponentSchemas: boolean;
-  readonly hasModels: boolean;
   readonly hasOutboundOperations: boolean;
-  readonly hasInboundOperations: boolean;
   readonly hasLinks: boolean;
   readonly typesUsesInputSchemas: boolean;
   readonly typesUsesOutputSchemas: boolean;
@@ -335,16 +331,12 @@ export function buildEmissionPlan(
   document: unknown,
   ir: NormalizedDocument,
   profile: OpenApiGenerationProfile,
-  dates: OpenApiDates = 'date',
 ): EmissionPlan {
   const outbound = ir.operations;
   const inbound = ir.inboundOperations;
   const allOperations = [...outbound, ...inbound];
   const hasComponentSchemas = Object.keys(ir.schemas).length > 0;
-  const { ordered } = collectOpenApiModelDefinitions(document, undefined, dates);
-  const hasModels = ordered.length > 0;
   const hasOutboundOperations = outbound.length > 0;
-  const hasInboundOperations = inbound.length > 0;
   const links = hasLinks(outbound);
   const resources = collectCanonicalResources(document);
   const componentRefEnv: ComponentRefEnv = {
@@ -416,7 +408,6 @@ export function buildEmissionPlan(
   const overrides = servers.length ? operationFirstServers(outbound, servers) : { operationServers: [], operationServerIndex: new Map<string, number>() };
   if (hasOutboundOperations) artifacts.add('client.ts');
   if (hasOutboundOperations && servers.length) artifacts.add('servers.ts');
-  if (hasInboundOperations) artifacts.add('inbound.ts');
   if (links) artifacts.add('links.ts');
 
   const partial = {
@@ -425,9 +416,7 @@ export function buildEmissionPlan(
     servers,
     ...overrides,
     hasComponentSchemas,
-    hasModels,
     hasOutboundOperations,
-    hasInboundOperations,
     hasLinks: links,
     typesUsesInputSchemas,
     typesUsesOutputSchemas,

@@ -20,10 +20,12 @@ export { type TupleConversionDescriptor } from './sequence-conversion.js';
 export { presentKeysCode } from './union-conversion.js';
 /** The Code values and the functions that build, join and render them: generators write their files from these. */
 export {
-  aliased, bindInput, blockComment, code, codeKey, docComment, documentLiteral, exportedName, exportedNames, exportFrom, fileImports, helper, helperName, helperSet, identifier, importedNames, indentation, inputCount, importGroups, importLines, ImportSource, inputOf, inputSlot, isEmpty, join, lineBreak, literal, localCode, nameOf, NameTable, nameSlot, nest, placeHelpers, propertyKey, render, renderModule, sameCode, sideEffectImport,
+  aliased, bindInput, blockComment, code, codeKey, docComment, documentLiteral, exportedName, exportedNames, fileImports, helper, helperName, helperSet, identifier, importedNames, indentation, inputCount, importGroups, importLines, ImportSource, inputOf, inputSlot, isEmpty, join, lineBreak, literal, localCode, nameOf, NameTable, nameSlot, nest, placeHelpers, propertyKey, render, renderModule, sameCode, sideEffectImport,
   type Code, type Helper, type ImportGroup, type ImportOptions, type InputSlot, type JsonValue, type NameSlot, type RenderedModule,
 } from './code.js';
-export { rt, rtType, type RuntimeModule } from './rt.js';
+export { copiedRuntimeSpecifiers, rt, rtType, type RuntimeModule } from './rt.js';
+/** The Temporal codec rules and the operation codec module writer that golem-openapi and golem-model share. */
+export { moduleSpecifier, SDK_CODECS_EXPORT, sdkCodecsFile, sdkCodecsTable, TEMPORAL_FORMATS, TEMPORAL_SERDE, TEMPORAL_SERDE_PREFIX, temporalCodecName, writeOperationCodecs, type OperationCodecsModule, type SdkOperationShape } from './sdk-codecs.js';
 /** The allOf object merge, for generators that read schemas (golem-openapi). */
 export {
   composeObjects,
@@ -82,6 +84,11 @@ export interface FromJsonModelResolver {
   readonly fromInit?: (value: Code) => Code;
   /** A projection whose value converts to itself: a use writes no call. */
   readonly identity?: true;
+  /**
+   * Plain data that another module converts (a node of a golem-mode SDK): `decode` turns the wire value into the model value, and the
+   * model value needs no conversion. A value is not tested against `className`, since a plain object is never an instance of it.
+   */
+  readonly plain?: true;
 }
 
 /**
@@ -161,6 +168,7 @@ function modelFromConversion(
   expression: Code,
   convertToModel: (model: FromJsonModelResolver, expression: Code) => Code,
 ): Code {
+  if (model.plain) return convertToModel(model, expression);
   return code`${expression} instanceof ${model.className} ? ${expression} : ${convertToModel(model, expression)}`;
 }
 
@@ -227,8 +235,13 @@ function emitNestedUnion(
       const variants = indices.map((index) => descriptor.variants[index]);
       const dispatch = unionDispatch(descriptor, indices);
       if (!dispatch) return undefined;
-      const classOf = (variant: ModelConversionDescriptor): Code | undefined => variant.kind === 'generated-model' ? resolveModel(variant.id).className
-        : variant.kind === 'reference' && !variant.projection ? resolveModel(variant.name).className
+      // Plain data has no class: the tag selects its branch.
+      const classOfModel = (id: string): Code | undefined => {
+        const model = resolveModel(id);
+        return model.plain ? undefined : model.className;
+      };
+      const classOf = (variant: ModelConversionDescriptor): Code | undefined => variant.kind === 'generated-model' ? classOfModel(variant.id)
+        : variant.kind === 'reference' && !variant.projection ? classOfModel(variant.name)
           : undefined;
       const branches = variants.map((variant, position) => ({
         values: dispatch.values[position],
@@ -334,6 +347,7 @@ function emitNestedUncached(
   if (descriptor.kind === 'generated-model' || descriptor.kind === 'reference') {
     const modelName = descriptor.kind === 'reference' ? descriptor.name : descriptor.id;
     const model = resolveModel(modelName);
+    if (model.plain) return direction === 'fromInit' ? value : model.decode(expression);
     if (descriptor.kind === 'reference' && descriptor.projection) {
       if (model.identity) return value;
       return direction === 'fromInit' ? (model.fromInit ?? model.decode)(expression) : model.decode(expression);
@@ -482,7 +496,7 @@ export const MODEL_IMPORT_ORDER: NonNullable<ImportOptions['order']> = {
     'assertAcyclicEncodeInput', 'assertPropertyAcyclic', 'assertWireAcyclic', 'beginDecode', 'beginEncode', 'convertModelField', 'convertModelItems',
     'convertModelRecord', 'convertModelTupleItems', 'copyModelRecord', 'decodeCheckedInput', 'decodeDetachedInput', 'decodeGeneratedModelTrusted', 'defineModelProperty', 'deserializeDate',
     'endDecode', 'endEncode', 'isVariantObject', 'jsonWithDiscriminator', 'rejectModelObject', 'requireModelObject', 'serializeDate', 'unknownDiscriminatorValue',
-    'withDiscriminatorValue',
+    'withDeclaredFields', 'withDiscriminatorValue',
   ],
   serde: SERDE_IMPORT_ORDER,
 };

@@ -19,6 +19,6 @@ export function examplePayment(): PaymentEditor {
 
 // #region load-from-wire
 export function loadPaymentEditor(wire: unknown): PaymentEditor {
-  return fromWireFormat<PaymentEditor>(wire); // Builds the editor and its nested money model.
+  return fromWireFormat<PaymentEditor>(wire); // Builds the editor; its money field is the plain TMoney object.
 }
 // #endregion load-from-wire

@@ -76,6 +76,11 @@ export interface SchemaGraph {
    * for a name and shape; without it, either matches.
    */
   nodeFor(descriptor: ModelTypeDescriptor, name?: string, constructs?: boolean): SchemaNode | undefined;
+  /**
+   * The node with a codec id. A reference node has no codec of its own and is skipped; when several nodes share an id, the one interned first is the node
+   * the others were made from.
+   */
+  nodeByCodecId(codecId: string): SchemaNode | undefined;
   seal(): void;
   topo(): readonly SchemaNode[];
 }
@@ -406,9 +411,7 @@ function namedReference(
     ? undefined
     : original.kind === 'reference' && original.construct === true
       ? true as const
-      : original.kind === 'generated-model' && node.emitClass
-        ? true as const
-        : undefined;
+      : undefined;
   return {
     kind: 'reference',
     name: node.codecId,
@@ -419,6 +422,44 @@ function namedReference(
     ...(original.constraints ? { constraints: original.constraints } : {}),
     ...(original.serde ? { serde: original.serde } : {}),
   };
+}
+
+/** A descriptor that names another type: a reference to a model, or a generated model. */
+type NamedType = Extract<ModelTypeDescriptor, { readonly kind: 'reference' | 'generated-model' }>;
+
+/**
+ * The descriptor with each named type it holds replaced by `replace`. It walks the slots of a descriptor (properties, items, variants), the
+ * schemas of its constraints and the wire form of its serde, and it does not enter a named type.
+ */
+export function mapNamedTypes(descriptor: ModelTypeDescriptor, replace: (named: NamedType) => ModelTypeDescriptor): ModelTypeDescriptor {
+  if (descriptor.kind === 'reference' || descriptor.kind === 'generated-model') return replace(descriptor);
+  const again = (child: ModelTypeDescriptor): ModelTypeDescriptor => mapNamedTypes(child, replace);
+  let mapped: ModelTypeDescriptor;
+  switch (descriptor.kind) {
+    case 'object':
+      mapped = {
+        ...descriptor,
+        properties: Object.fromEntries(Object.entries(descriptor.properties).map(([name, property]) => [name, again(property)])),
+        additionalProperties: typeof descriptor.additionalProperties === 'object' ? again(descriptor.additionalProperties) : descriptor.additionalProperties,
+      };
+      break;
+    case 'array':
+      mapped = { ...descriptor, item: again(descriptor.item) };
+      break;
+    case 'tuple':
+      mapped = { ...descriptor, items: descriptor.items.map(again), ...(descriptor.rest ? { rest: { ...descriptor.rest, item: again(descriptor.rest.item) } } : {}) };
+      break;
+    case 'union':
+    case 'intersection':
+      mapped = { ...descriptor, variants: descriptor.variants.map(again) };
+      break;
+    default:
+      mapped = descriptor;
+  }
+  const constraints = mapped.constraints?.map((constraint) => mapConstraintSchemaValues(constraint, (value) => (isTypeDescriptor(value) ? again(value) as ConstraintSchemaValue : value)));
+  const wire = serdeWireDescriptor(mapped);
+  const serde = mapped.serde && wire ? { ...mapped.serde, ...('wireDescriptor' in mapped.serde ? { wireDescriptor: again(wire) } : { wire: again(wire) }) } : mapped.serde;
+  return { ...mapped, ...(constraints ? { constraints } : {}), ...(serde ? { serde } : {}) };
 }
 
 function rewriteConstraint(
@@ -515,6 +556,16 @@ export function createSchemaGraph(
   options: SchemaGraphOptions = {},
 ): SchemaGraph {
   const nodes = new Map<string, SchemaNode>();
+  // The index of `nodeByCodecId`; every change of `nodes` goes through `setNode` or `deleteNode`, which drop it.
+  let indexed: Map<string, SchemaNode> | undefined;
+  const setNode = (id: string, node: SchemaNode): void => {
+    nodes.set(id, node);
+    indexed = undefined;
+  };
+  const deleteNode = (id: string): void => {
+    nodes.delete(id);
+    indexed = undefined;
+  };
   const byKey = new Map<string, string>();
   const byName = new Map<string, string>();
   // Interned nodes by the exact name they were interned under; short names can be ambiguous, these are not.
@@ -589,7 +640,7 @@ export function createSchemaGraph(
       emitClass: false,
       kind: nodeKind(descriptor),
     };
-    nodes.set(id, placeholder);
+    setNode(id, placeholder);
     rememberShortName(named, id);
     byRawName.set(raw, id);
     return placeholder;
@@ -612,7 +663,7 @@ export function createSchemaGraph(
         emitClass: nextEmit,
         ...(nextValidation === undefined ? {} : { validation: nextValidation }),
       };
-      nodes.set(existing.id, next);
+      setNode(existing.id, next);
       return next;
     };
     if (descriptor.kind === 'generated-model' || descriptor.kind === 'reference') {
@@ -626,7 +677,8 @@ export function createSchemaGraph(
       // A reference to an ambiguous short name must not take the id of a node interned under it.
       const taken = nodes.get(identifierFromName(named));
       const id = taken && taken.kind !== 'reference' ? identifierFromName(`${raw}__reference`) : identifierFromName(named);
-      const siblingId = descriptor.kind === 'reference' ? fixedCodecId(raw) : undefined;
+      // A reference to a model this graph is interning (a recursive model) is that model, not a sibling's.
+      const siblingId = descriptor.kind === 'reference' && !internRawStack.has(raw) ? fixedCodecId(raw) : undefined;
       const placeholder: SchemaNode = {
         id,
         name: named,
@@ -642,7 +694,7 @@ export function createSchemaGraph(
         ...(siblingId === undefined ? {} : { siblingCodec: true as const }),
       };
       if (siblingId !== undefined) byPublicId.set(siblingId, id);
-      nodes.set(id, placeholder);
+      setNode(id, placeholder);
       rememberShortName(named, id);
       if (raw !== named) rememberShortName(raw, id);
       byRawName.set(raw, id);
@@ -737,9 +789,9 @@ export function createSchemaGraph(
       ...(named ? {} : { anonymous: true as const }),
     };
     if (shortExisting?.kind === 'reference' && shortExisting.id !== id) {
-      nodes.delete(shortExisting.id);
+      deleteNode(shortExisting.id);
     }
-    nodes.set(id, placeholder);
+    setNode(id, placeholder);
     if (!byKey.has(canonicalDescriptorKey(descriptor))) {
       byKey.set(canonicalDescriptorKey(descriptor), id);
     }
@@ -777,7 +829,7 @@ export function createSchemaGraph(
       } as const;
       const jsonSchema = schemaForDescriptor(rewritten, { ...options, representation: 'wire' });
       const modelJsonSchema = schemaForDescriptor(rewritten, { ...options, representation: 'model' });
-      nodes.set(id, {
+      setNode(id, {
         ...node,
         descriptor: rewritten,
         jsonSchema,
@@ -792,10 +844,18 @@ export function createSchemaGraph(
       const publishesWire = (node: SchemaNode): boolean => [
         node.codecId, node.name, node.id, ...(node.descriptor.kind === 'generated-model' ? [node.descriptor.id] : []),
       ].some((alias) => externalWireIds.has(alias));
+      // A descriptor that holds an SDK schema inline checks it through the SDK's validator, so it reads that schema's wire form too.
+      const holdsPublishedWire = (value: unknown): boolean => {
+        if (Array.isArray(value)) return value.some(holdsPublishedWire);
+        if (value === null || typeof value !== 'object') return false;
+        const held = (value as { readonly sdkNode?: unknown }).sdkNode;
+        return (typeof held === 'string' && externalWireIds.has(held)) || Object.values(value).some(holdsPublishedWire);
+      };
       const reachesWire = (node: SchemaNode, seen: Set<string>): boolean => {
         if (node.validation === false || seen.has(node.id)) return false;
         seen.add(node.id);
         if (node.kind === 'reference' && publishesWire(node)) return true;
+        if (holdsPublishedWire(node.descriptor)) return true;
         return node.edges.some((edge) => {
           const target = nodes.get(edge);
           return target !== undefined && reachesWire(target, seen);
@@ -803,7 +863,7 @@ export function createSchemaGraph(
       };
       for (const [id, node] of nodes) {
         if (node.sameSchema && !node.siblingCodec && node.kind !== 'reference' && reachesWire(node, new Set())) {
-          nodes.set(id, { ...node, sameSchema: false });
+          setNode(id, { ...node, sameSchema: false });
         }
       }
     }
@@ -840,7 +900,7 @@ export function createSchemaGraph(
     for (const [id, node] of residualCandidates) {
       const modelOnly = derive(id, node, 'model-only');
       const wireOnly = derive(id, node, 'wire-only');
-      nodes.set(id, {
+      setNode(id, {
         ...node,
         ...(modelOnly === true ? {} : { modelOnlyJsonSchema: modelOnly }),
         ...(wireOnly === true ? {} : { wireOnlyJsonSchema: wireOnly }),
@@ -854,10 +914,19 @@ export function createSchemaGraph(
     Object.entries(definitions).map(([name, descriptor]) => ({ name, descriptor })),
   );
 
+  const nodeByCodecId = (codecId: string): SchemaNode | undefined => {
+    if (indexed === undefined) {
+      indexed = new Map<string, SchemaNode>();
+      for (const node of nodes.values()) if (node.kind !== 'reference' && !indexed.has(node.codecId)) indexed.set(node.codecId, node);
+    }
+    return indexed.get(codecId);
+  };
+
   return {
     nodes,
     intern,
     nodeFor,
+    nodeByCodecId,
     seal,
     topo() {
       const visiting = new Set<string>();

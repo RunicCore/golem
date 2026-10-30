@@ -9,6 +9,7 @@ import {
   copyModelRecord,
   deserializeDate,
   serializeDate,
+  withDeclaredFields,
 } from '@exprtlabs/golem/internal/model-runtime';
 import {
   IssueRepresentation,
@@ -162,4 +163,27 @@ test('Date conversion preserves caller paths and serializeDate rejects timestamp
   for (const value of [new Date('-000001-12-31T23:00:00Z'), new Date('+010000-01-01T00:00:00Z')]) {
     assertConversionError(() => serializeDate(value, path), LibErrorKind.Serialization, IssueRepresentation.Model, path);
   }
+});
+
+test('a class instance keeps its own and accessor fields; a name only Object.prototype or a method holds is no field, and __proto__ is data', () => {
+  // protects: T-711 withDeclaredFields reads own properties and accessors below Object.prototype, and writes with defineModelProperty
+  class Account {
+    id = 1;
+    constructor(public toString?: string) { void toString; }
+    get label(): string { return 'main'; }
+    method(): void {}
+  }
+  const account = new Account();
+  assert.deepEqual(withDeclaredFields(account, ['id', 'label', 'method', 'toString', 'constructor', 'valueOf', 'hasOwnProperty']), { id: 1, label: 'main' });
+  const named = new Account('mine');
+  assert.deepEqual(withDeclaredFields(named, ['toString']), { toString: 'mine' });
+  const hostile = Object.assign(new Account(), { constructor: 'own' });
+  assert.deepEqual(withDeclaredFields(hostile, ['constructor']), { constructor: 'own' });
+  const proto = new Account();
+  Object.defineProperty(proto, '__proto__', { value: { polluted: true }, enumerable: true, configurable: true, writable: true });
+  const declared = withDeclaredFields(proto, ['__proto__']) as object;
+  assert.equal(Object.getPrototypeOf(declared), Object.prototype);
+  assert.deepEqual(Object.keys(declared), ['__proto__']);
+  assert.equal(withDeclaredFields(new Account(), ['__proto__']) instanceof Object, true);
+  assert.deepEqual(Object.keys(withDeclaredFields(new Account(), ['__proto__']) as object), []);
 });

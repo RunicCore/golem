@@ -8,7 +8,6 @@ import type { ModelTypeDescriptor } from '../model-registry.js';
 import type { ValidationLevel, ValidationPlane } from '../object-codec.js';
 import type { SchemaGraph, SchemaNode } from './schema-graph.js';
 import { codecShortName, serdeWireDescriptor } from './schema-graph.js';
-import type { JsonSchema } from './schema.js';
 import { requireComposedObject, type ModelBases } from './composition.js';
 import {
   aliased, asObjectLiteral, bindInput, bindRead, code, documentLiteral, helper, helperName, helperSet, identifier, indentation, inputCount, inputOf, inputSlot, isEmpty, join, literal, localCode, readShape, sameCode,
@@ -71,7 +70,6 @@ export interface CodecRuntimeOptions {
   readonly passCheckNames?: (id: string) => { readonly structure: Code; readonly predicates: Code } | undefined;
   readonly serde?: StringifySerdeResolver;
   readonly nestedConstruct?: (name: string, className?: string) => Code;
-  readonly nestedGenerated?: (id: string) => Code | undefined;
   /** The name a class model's rejection of a non-object input carries (`<Name> expected an object.`); a node with no name keeps its text. */
   readonly modelClassName?: (node: SchemaNode) => string | undefined;
   /** The class an instance of the model `name` is tested against in a union, when the module binds it. */
@@ -94,6 +92,10 @@ export interface CodecRuntimeOptions {
   readonly exportWireStringify?: boolean | ((node: SchemaNode) => boolean);
   /** Export anonymous codecs' functions: OpenAPI group modules import them from each other. Model companions keep them private. */
   readonly exportAnonymousCodecs?: boolean;
+  /** A closed object root's `toWireFormat` keeps only the declared fields of a class instance: its other own keys are program state, not unknown keys. */
+  readonly projectsInstanceState?: boolean;
+  /** Whether each codec is registered by id (`createObjectCodec`); default true. A standalone SDK reads no registry, so it registers nothing. */
+  readonly registerCodecs?: boolean;
   /** Codecs whose functions stay module-private, such as a model job's derived projections. */
   readonly privateCodec?: (node: SchemaNode) => boolean;
   /** The bases the generator declares for each model, by model name. */
@@ -109,7 +111,6 @@ interface EmitCtx
     | 'passCheckNames'
     | 'serde'
     | 'nestedConstruct'
-    | 'nestedGenerated'
     | 'modelClassName'
     | 'nestedBase'
     | 'nestedImportedSerde'
@@ -121,6 +122,8 @@ interface EmitCtx
     | 'siblingRecursion'
     | 'exportWireStringify'
     | 'exportAnonymousCodecs'
+    | 'projectsInstanceState'
+    | 'registerCodecs'
     | 'privateCodec'
   > {
   readonly graph: SchemaGraph;
@@ -733,7 +736,6 @@ export function emitStringifyFunction(
     serde,
     nestedConstruct: extra.nestedConstruct,
     siblingWireName: extra.siblingWireName,
-    nestedGenerated: extra.nestedGenerated,
     nestedBase: extra.nestedBase,
     nestedImportedSerde: extra.nestedImportedSerde,
     issueSource: extra.issueSource ?? 'TypeScript',
@@ -959,7 +961,6 @@ function sharesInput(descriptor: ModelTypeDescriptor, ctx: EmitCtx, seen: Set<Mo
     }
     case 'reference':
     case 'generated-model': {
-      if (descriptor.kind === 'generated-model' && ctx.nestedGenerated?.(descriptor.id)) return false;
       if (shouldConstructNested(descriptor, ctx)) return false;
       // A node is decoded by its own fill or convert function, which checks what it carries by reference.
       return ctx.graph.nodeFor(descriptor) === undefined;
@@ -1216,11 +1217,10 @@ function writerLocals(ctx: EmitCtx): number {
 
 /**
  * The class expression of a variant whose values are model instances: a
- * generated model, or a reference the codec constructs. Only a class the
+ * reference the codec constructs. Only a class the
  * emitting module binds is used, so a guard never looks up a registry.
  */
 function variantClassName(variant: ModelTypeDescriptor, ctx: EmitCtx, byBase = false): Code | undefined {
-  if (variant.kind === 'generated-model') return ctx.nestedGenerated?.(variant.id);
   if (variant.kind !== 'reference') return undefined;
   if (shouldConstructNested(variant, ctx)) return ctx.nestedConstruct?.(ctx.graph.nodeFor(variant)?.codecId ?? variant.name, variant.className);
   // A model of this module that a writer receives as an instance is told by its generated base class; a decoder and a wire write see plain data and have none.
@@ -1245,8 +1245,6 @@ interface UnionWalker extends Pick<UnionConversion, 'items' | 'joinSequence' | '
   readonly walk: (variant: ModelTypeDescriptor, scope: EmitCtx) => Code;
   /** The conversion of a variant under tagged dispatch, when it differs from `walk`. */
   readonly walkTagged?: (variant: ModelTypeDescriptor, scope: EmitCtx) => Code;
-  /** The conversion of the generated model beside scalars, when it differs from `walk`. */
-  readonly generatedText?: (generated: Extract<ModelTypeDescriptor, { readonly kind: 'generated-model' }>) => Code | undefined;
 }
 
 /** The dispatch direction of each union direction. A decoder reads the wire; the others write a value or JSON text. */
@@ -1261,7 +1259,7 @@ function emitUnion(
   descriptor: UnionTypeDescriptor,
   value: Code,
   ctx: EmitCtx,
-  { walk, walkTagged, generatedText, ...steps }: UnionWalker,
+  { walk, walkTagged, ...steps }: UnionWalker,
 ): Code {
   const decoding = direction === 'decode';
   const dispatch = UNION_DISPATCH[direction];
@@ -1278,9 +1276,9 @@ function emitUnion(
       dispatch,
       { ...(decoding ? {} : { unresolved: 'skip' as const }), localsBefore },
     ),
-    declaredDefault: (variant) => (variant.kind === 'generated-model' ? generatedText?.(variant) : undefined) ?? walk(variant, ctx),
+    declaredDefault: (variant) => walk(variant, ctx),
     generated: {
-      text: generatedText ?? ((generated) => walk(generated, ctx)),
+      text: (generated) => walk(generated, ctx),
       takesEveryObject: decoding,
     },
     ...steps,
@@ -1353,12 +1351,6 @@ function emitUnionDecode(
   const value = expression;
   return emitUnion('decode', descriptor, value, ctx, {
     walk: (variant, scope) => emitDecodeValue(variant, value, scope),
-    generatedText: (generated) => {
-      const name = ctx.nestedGenerated?.(generated.id);
-      return name
-        ? code`${value} instanceof ${name} ? ${value} : ${fallibleConversion(ctx, code`${rt.conversion.decodeGeneratedModelTrusted}(${name}, ${value})`)}`
-        : undefined;
-    },
     items: { output: 'value', paths: 'deserialize', item: decodeItem(ctx) },
   });
 }
@@ -1387,10 +1379,6 @@ function emitUnionEncode(
 
 function emitDecodeValue(descriptor: ModelTypeDescriptor, expression: Code, ctx: EmitCtx): Code {
   const value = expression;
-  if (descriptor.kind === 'generated-model') {
-    const className = ctx.nestedGenerated?.(descriptor.id);
-    if (className) return fallibleConversion(ctx, code`${rt.conversion.decodeGeneratedModelTrusted}(${className}, ${value})`);
-  }
   const tags = serdeTags(descriptor);
   if (tags.serde) {
     const deserialized = ctx.serde ? fallibleConversion(ctx, ctx.serde.deserialize(tags.serde.id, value)) : value;
@@ -2268,6 +2256,9 @@ function emitToWireSection(runtime: NodeRuntime): Code {
   return rowsToText([
     toWireCoreSource,
     code`${exported}function ${names.toWire}(value: ${fieldsOrUnknown}, options?: ${SERDE_OPTIONS}): ${wireOrUnknown} {`,
+    ...(ctx.projectsInstanceState && objectDescriptor?.additionalProperties === false
+      ? [code`  value = ${rt.conversion.withDeclaredFields}(value, ${literal(Object.keys(objectDescriptor.properties))}) as ${fieldsOrUnknown};`]
+      : []),
     emitSerdeValidates(runtime.levels),
     ...(validationEnabled ? [
       code`  if (validates) {`,
@@ -2380,7 +2371,7 @@ function emitNodeRuntime(
   const parse = emitParseSection(runtime);
   const validate = emitValidateSection(runtime);
   const planeAsserts = emitPlaneAssertSection(runtime);
-  const codec = emitCodecRegistrationSection(runtime);
+  const codec = moduleCtx.registerCodecs === false ? rowsToText([]) : emitCodecRegistrationSection(runtime);
   // The hoisted converters exist only after the decode section.
   return blocksToText([rowsToText(runtime.ctx.hoisted?.sources ?? []), decode.fill, stringify, decode.convert, decode.fromWire, toWire, parse, validate, planeAsserts, codec]);
 }
@@ -2417,7 +2408,6 @@ export function emitCodecRuntimeCode(
     serde: options.serde,
     nestedConstruct: options.nestedConstruct,
     siblingWireName: options.siblingWireName,
-    nestedGenerated: options.nestedGenerated,
     modelClassName: options.modelClassName,
     nestedBase: options.nestedBase,
     nestedImportedSerde: options.nestedImportedSerde,
@@ -2426,6 +2416,8 @@ export function emitCodecRuntimeCode(
     wireType: options.wireType,
     fieldsType: options.fieldsType,
     exportAnonymousCodecs: options.exportAnonymousCodecs,
+    projectsInstanceState: options.projectsInstanceState,
+    registerCodecs: options.registerCodecs,
     privateCodec: options.privateCodec,
     modelBases: options.modelBases,
     fillThrows: new Map(),

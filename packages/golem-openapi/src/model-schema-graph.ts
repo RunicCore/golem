@@ -3,6 +3,8 @@ import { createSchemaGraph, internDescriptors, type SchemaGraph, type SchemaNode
 import type { ModelTypeDescriptor } from '@exprtlabs/golem/internal/schema';
 import { compareText } from '@exprtlabs/golem/generator-api';
 import type { OpenApiGenerationProfile } from './profile.js';
+import { parameterSchema, resolveLocal, type NormalizedOperation } from './normalize.js';
+import { objectEntries } from './json.js';
 import { componentOrigin, LocatedError } from './origin.js';
 import { schemaContext } from './types.js';
 import { collectCanonicalResources, type ResourceIndex } from './schema-projection.js';
@@ -13,6 +15,8 @@ import {
   type OpenApiDates,
   type ModelResolveEnv,
   type OpenApiModelAnalysis,
+  type SchemaGraphInput,
+  type SchemaGraphInputs,
   modelEnv,
   aliasDescriptor,
   CompositionError,
@@ -22,9 +26,144 @@ import {
 } from './model-resolution.js';
 import { collectOpenApiModelDefinitions } from './model-definitions.js';
 
+/** The node name of an inline body, parameter or header that is no object: the graph keeps unnamed objects only, and equal shapes under this name share one codec. */
+const OPERATION_VALUE_NODE_NAME = '__operationValue';
+
+/** The key of a request body in `OpenApiModelAnalysis.convertedNodeIds`: the operation and the request content type. */
+export function requestBodyKey(operation: string, contentType: string): string {
+  return JSON.stringify([operation, 'request', contentType]);
+}
+
+/** The key of a response body, or of its stream items, in `OpenApiModelAnalysis.convertedNodeIds`: the operation and the response status and content type. */
+export function responseBodyKey(operation: string, status: string, contentType: string): string {
+  return JSON.stringify([operation, 'response', status, contentType]);
+}
+
+/** The key of a request parameter in `OpenApiModelAnalysis.convertedNodeIds`: the operation, where the parameter is (`path`, `query`, `header`, `cookie` or `querystring`) and its name. */
+export function parameterKey(operation: string, location: string, name: string): string {
+  return JSON.stringify([operation, 'parameter', location, name]);
+}
+
+/** The key of a response header in `OpenApiModelAnalysis.convertedNodeIds`: the operation, the response status and the header name. */
+export function responseHeaderKey(operation: string, status: string, name: string): string {
+  return JSON.stringify([operation, 'response-header', status, name]);
+}
+
+/** Whether any body, parameter or response header of the operation converts a value (a Date or Temporal inside it). */
+export function operationConverts(operation: NormalizedOperation, convertedNodeIds: ReadonlyMap<string, string>): boolean {
+  return operation.requestContent.some((media) => convertedNodeIds.has(requestBodyKey(operation.name, media.contentType)))
+    || operation.parameters.some((parameter) => convertedNodeIds.has(parameterKey(operation.name, parameter.in, parameter.name)))
+    || operation.responses.some((response) =>
+      response.content.some((media) => convertedNodeIds.has(responseBodyKey(operation.name, response.status, media.contentType)))
+      || Object.keys(response.headers).some((name) => convertedNodeIds.has(responseHeaderKey(operation.name, response.status, name))));
+}
+
+/** Whether a value of `descriptor` changes between its wire and its plain form: a Date or Temporal value anywhere inside, through the components it references. */
+function descriptorConverts(descriptor: ModelTypeDescriptor, graph: SchemaGraph, seen: Set<string>): boolean {
+  const tags = descriptor as ModelTypeDescriptor & { readonly serde?: unknown };
+  if (tags.serde !== undefined || descriptor.kind === 'date') return true;
+  const converts = (held: ModelTypeDescriptor): boolean => descriptorConverts(held, graph, seen);
+  switch (descriptor.kind) {
+    case 'generated-model':
+    case 'reference': {
+      const node = graph.nodeFor(descriptor);
+      if (!node || seen.has(node.id)) return false;
+      seen.add(node.id);
+      return converts(node.descriptor);
+    }
+    case 'array': return converts(descriptor.item);
+    case 'tuple': return descriptor.items.some(converts) || (descriptor.rest !== undefined && converts(descriptor.rest.item));
+    case 'object': return Object.values(descriptor.properties).some(converts) || (typeof descriptor.additionalProperties === 'object' && converts(descriptor.additionalProperties));
+    case 'union':
+    case 'intersection': return descriptor.variants.some(converts);
+    default: return false;
+  }
+}
+
+/** The models and recursive aliases that a descriptor names, anywhere inside it. */
+function referencedModels(descriptor: unknown): string[] {
+  if (Array.isArray(descriptor)) return descriptor.flatMap(referencedModels);
+  if (descriptor === null || typeof descriptor !== 'object') return [];
+  const record = descriptor as Record<string, unknown>;
+  const named = record.kind === 'generated-model' ? record.id : record.kind === 'reference' ? record.name : undefined;
+  return [...(typeof named === 'string' ? [named] : []), ...Object.values(record).flatMap(referencedModels)];
+}
+
+/** The keywords that no descriptor carries, own and of every model the descriptor refers to; none when the descriptor is complete. */
+export function uncarriedOf(own: ReadonlySet<string>, descriptor: ModelTypeDescriptor, models: ReadonlyMap<string, readonly string[]>): string[] {
+  return [...new Set([...own, ...referencedModels(descriptor).flatMap((name) => models.get(name) ?? [])])].sort(compareText);
+}
+
+/** The keywords that the descriptors of each model do not carry, with those of the models it refers to. */
+function uncarriedModelsOf(entries: readonly { readonly name: string; readonly descriptor: ModelTypeDescriptor; readonly own: ReadonlySet<string> }[]): ReadonlyMap<string, readonly string[]> {
+  const found = new Map<string, readonly string[]>();
+  for (;;) {
+    let changed = false;
+    for (const { name, descriptor, own } of entries) {
+      const next = uncarriedOf(own, descriptor, found);
+      if (next.length !== (found.get(name)?.length ?? 0)) {
+        found.set(name, next);
+        changed = true;
+      }
+    }
+    if (!changed) return new Map([...found].filter(([, keywords]) => keywords.length > 0));
+  }
+}
+
 /**
- * A model class owns its codec. `allOf: [{ $ref: X }]` collapses to a bare
- * reference to X, which would make the subclass delegate to a codec that is
+ * Interns the request body, response body, stream item, parameter and response header schema of each operation that converts something, and returns the node of each by its key.
+ * A `$ref` to a component uses the component's node and an inline shape the anonymous node of its shape, so equal shapes share one codec.
+ * A schema that converts nothing gets no node: the client passes its value through.
+ */
+function internOperationValues(
+  document: unknown,
+  schemaGraph: SchemaGraph,
+  operations: readonly NormalizedOperation[],
+  definitions: ModelDefinitions,
+  env: ModelResolveEnv,
+  validation: OpenApiGenerationProfile['validation'],
+  uncarriedModels: ReadonlyMap<string, readonly string[]>,
+): { readonly convertedNodeIds: ReadonlyMap<string, string>; readonly values: ReadonlyMap<string, SchemaGraphInput>; readonly uncarriedValues: ReadonlyMap<string, readonly string[]> } {
+  const convertedNodeIds = new Map<string, string>();
+  const values = new Map<string, SchemaGraphInput>();
+  const uncarriedValues = new Map<string, readonly string[]>();
+  const intern = (key: string, schema: unknown): void => {
+    if (schema === null || typeof schema === 'boolean') return;
+    let descriptor: ModelTypeDescriptor;
+    const own = new Set<string>();
+    try {
+      descriptor = modelConversionDescriptor(schema, definitions, { ...env, uncarried: own }, 'to');
+    } catch (thrown) {
+      // A schema that does not convert gets no node. `checkOperationCompositions` runs next, stops generation, and names the schema and the place in it.
+      if (thrown instanceof CompositionError) return;
+      throw thrown;
+    }
+    if (!descriptorConverts(descriptor, schemaGraph, new Set())) return;
+    const named = descriptor.kind === 'generated-model' || descriptor.kind === 'reference';
+    const valueName = descriptor.kind === 'object' ? undefined : OPERATION_VALUE_NODE_NAME;
+    const node = named ? schemaGraph.nodeFor(descriptor) : schemaGraph.intern(descriptor, valueName, false, validation);
+    if (!node) return;
+    convertedNodeIds.set(key, node.id);
+    const uncarried = uncarriedOf(own, descriptor, uncarriedModels);
+    if (uncarried.length > 0) uncarriedValues.set(key, uncarried);
+    if (!named) values.set(key, { ...(valueName === undefined ? {} : { name: valueName }), descriptor });
+  };
+  for (const operation of operations) {
+    for (const parameter of operation.parameters) intern(parameterKey(operation.name, parameter.in, parameter.name), parameterSchema(parameter));
+    for (const media of operation.requestContent) intern(requestBodyKey(operation.name, media.contentType), media.schema);
+    for (const response of operation.responses) {
+      for (const [name, header] of objectEntries(response.headers)) intern(responseHeaderKey(operation.name, response.status, name), parameterSchema(resolveLocal(document, header)));
+      for (const media of response.content) {
+        intern(responseBodyKey(operation.name, response.status, media.contentType), media.itemSchemaPresent ? media.itemSchema : media.schema);
+      }
+    }
+  }
+  return { convertedNodeIds, values, uncarriedValues };
+}
+
+/**
+ * A model owns its codec. `allOf: [{ $ref: X }]` collapses to a bare
+ * reference to X, which would make the model delegate to a codec that is
  * never registered under its own id; keep it an object node extending X, as
  * `allOf: [{ $ref: X }, { type: 'object' }]` would.
  */
@@ -66,37 +205,47 @@ function internOpenApiSchemaGraph(
   resources?: ResourceIndex,
   selections?: DiscriminatorSelections,
   dates: OpenApiDates = 'date',
-): { readonly schemaGraph: SchemaGraph; readonly nodeIdByDefinition: ReadonlyMap<string, string> } {
+  operations: readonly NormalizedOperation[] = [],
+): { readonly schemaGraph: SchemaGraph; readonly nodeIdByDefinition: ReadonlyMap<string, string>; readonly convertedNodeIds: ReadonlyMap<string, string>; readonly uncarriedModels: ReadonlyMap<string, readonly string[]>; readonly uncarriedValues: ReadonlyMap<string, readonly string[]>; readonly graphInputs: SchemaGraphInputs } {
   const schemaGraph = createSchemaGraph({}, {
     codecSource: 'openapi',
   });
   const sharedSchemaContext = schemaContext(document, resources ? { resources } : {});
   const aliasEnv = modelEnv(document, undefined, undefined, resources, selections, dates);
-  const aliasEntries = [...definitions.aliases.values()].map((alias) => ({
-    name: alias.name,
-    descriptor: locatingComposition(alias.schemaName, () => aliasDescriptor(alias, definitions, aliasEnv)),
-    emitClass: false,
-    validation,
-  }));
-  const nodeIdByDefinition = internDescriptors(schemaGraph, [...ordered.map((definition) => {
+  const aliasEntries = [...definitions.aliases.values()].map((alias) => {
+    const own = new Set<string>();
+    return {
+      name: alias.name,
+      descriptor: locatingComposition(alias.schemaName, () => aliasDescriptor(alias, definitions, { ...aliasEnv, uncarried: own })),
+      emitClass: false,
+      validation,
+      own,
+    };
+  });
+  const modelEntries = [...ordered.map((definition) => {
     const anchors = schemaContext(
       document,
       sharedSchemaContext,
       definition.schemaName,
       definition.rawSchema,
     ).anchors;
-    const env = modelEnv(document, undefined, anchors, resources, selections, dates);
+    const own = new Set<string>();
+    const env = { ...modelEnv(document, undefined, anchors, resources, selections, dates), uncarried: own };
     return {
       name: definition.name,
       descriptor: locatingComposition(definition.schemaName, () => definition.isUnion
         ? modelConversionDescriptor(definition.rawSchema, definitions, env, 'to')
         : modelClassDescriptor(modelConversionDescriptor(definition.rawSchema, definitions, env, 'to', new Set(), true, 'definition'), definitions, env)),
-      emitClass: true,
+      emitClass: false,
       validation,
+      own,
     };
-  }), ...aliasEntries]);
+  }), ...aliasEntries];
+  const nodeIdByDefinition = internDescriptors(schemaGraph, modelEntries);
+  const uncarriedModels = uncarriedModelsOf(modelEntries);
+  const { convertedNodeIds, values, uncarriedValues } = internOperationValues(document, schemaGraph, operations, definitions, aliasEnv, validation, uncarriedModels);
   schemaGraph.seal();
-  return { schemaGraph, nodeIdByDefinition };
+  return { schemaGraph, nodeIdByDefinition, convertedNodeIds, uncarriedModels, uncarriedValues, graphInputs: { models: modelEntries.map(({ name, descriptor }) => ({ name, descriptor })), values } };
 }
 
 /**
@@ -132,10 +281,11 @@ export function analyzeOpenApiModels(
   document: unknown,
   validation: OpenApiGenerationProfile['validation'] = true,
   dates: OpenApiDates = 'date',
+  operations: readonly NormalizedOperation[] = [],
 ): OpenApiModelAnalysis {
   const resources = collectCanonicalResources(document);
   const { definitions, ordered, diagnostics, selections } = collectOpenApiModelDefinitions(document, resources, dates);
-  const { schemaGraph, nodeIdByDefinition } = internOpenApiSchemaGraph(document, ordered, definitions, validation, resources, selections, dates);
+  const { schemaGraph, nodeIdByDefinition, convertedNodeIds, uncarriedModels, uncarriedValues, graphInputs } = internOpenApiSchemaGraph(document, ordered, definitions, validation, resources, selections, dates, operations);
   for (const alias of definitions.aliases.values()) {
     const nodeId = nodeIdByDefinition.get(alias.name);
     if (nodeId !== undefined) alias.nodeId = nodeId;
@@ -143,9 +293,8 @@ export function analyzeOpenApiModels(
   const nodes = [...schemaGraph.nodes.values()];
   const nodesById = new Map(nodes.map((node) => [node.id, node]));
   const { nodesByName, definitionNameByNodeId } = nodesByDefinitionName(schemaGraph, new Map([...nodeIdByDefinition].filter(([name]) => definitions.has(name))));
-  const nodesByCodecId = new Map(nodes.map((node) => [node.codecId, node]));
-  const grouping = schemaGraphGroups(schemaGraph, definitions, nodesByName, definitionNameByNodeId);
-  return { definitions, ordered, schemaGraph, grouping, resources, nodesById, nodesByName, definitionNameByNodeId, nodesByCodecId, diagnostics, selections, dates };
+  const grouping = schemaGraphGroups(schemaGraph, definitions, nodesByName);
+  return { definitions, ordered, schemaGraph, grouping, resources, nodesById, nodesByName, definitionNameByNodeId, convertedNodeIds, uncarriedModels, uncarriedValues, graphInputs, diagnostics, selections, dates };
 }
 
 export function schemaGraphView(
@@ -169,6 +318,7 @@ export function schemaGraphView(
     nodes,
     intern: graph.intern.bind(graph),
     nodeFor: graph.nodeFor.bind(graph),
+    nodeByCodecId: graph.nodeByCodecId.bind(graph),
     seal: () => undefined,
     topo: () => graph.topo().flatMap((node) => {
       const emitted = nodes.get(node.id);
@@ -181,7 +331,6 @@ function schemaGraphGroups(
   schemaGraph: SchemaGraph,
   definitions: ModelDefinitions,
   nodesByName: ReadonlyMap<string, SchemaNode>,
-  definitionNameByNodeId: ReadonlyMap<string, string>,
 ): SchemaGraphGrouping {
   const runtimeEdges = new Map([...schemaGraph.nodes].map(([id, node]) => [id, new Set(node.edges)]));
   const addRuntimeEdge = (fromName: string, toName: string | undefined): void => {
@@ -192,10 +341,10 @@ function schemaGraphGroups(
     runtimeEdges.get(from.id)?.add(to.id);
   };
   for (const definition of definitions.values()) {
-    // Inheritance and discriminator dispatch produce runtime class references
-    // that are not necessarily represented by codec-schema edges. Keep every
-    // class-load cycle inside one ESM module so subclass/union initialization
-    // cannot observe a partially initialized binding.
+    // Inheritance and discriminator dispatch produce codec references that
+    // are not necessarily represented by codec-schema edges. Keep every such
+    // cycle inside one ESM module so a codec cannot observe a partially
+    // initialized binding.
     addRuntimeEdge(definition.name, definition.baseName ?? undefined);
     for (const variant of definition.variants ?? []) addRuntimeEdge(definition.name, variant);
   }
@@ -236,16 +385,12 @@ function schemaGraphGroups(
   const owner = new Map<string, string>();
   const described = new Map<string, readonly string[]>();
   const groups = components.map((ids) => {
-    const models = new Set(ids.flatMap((id) => {
-      const model = definitionNameByNodeId.get(id);
-      return model === undefined ? [] : [model];
-    }));
     const id = `group-${hashGroup([...ids].map((nodeId) => schemaGraph.nodes.get(nodeId)?.codecId ?? nodeId))}`;
     const other = described.get(id);
     if (other) throw new Error(`Internal error: the schema groups [${other.join(', ')}] and [${ids.join(', ')}] have the same id ${id}; one would overwrite the other's file models/_${id}.ts`);
     described.set(id, ids);
     for (const nodeId of ids) owner.set(nodeId, id);
-    return { id, filename: `models/_${id}.ts`, nodes: new Set(ids), models };
+    return { id, filename: `models/_${id}.ts`, nodes: new Set(ids) };
   }).sort((left, right) => compareText(left.id, right.id));
   return { groups, owner, runtimeEdges };
 }

@@ -9,13 +9,7 @@ import * as ts from '@exprtlabs/golem/internal/ts';
 import { createFixtureProject, readFixture } from './fixture-project.js';
 import { generate as generateController } from '#controllers/generator';
 import { generate as generateModel } from '#model/generator';
-import {
-  manifestScaleClassSource,
-  manifestScaleNames,
-  manifestScaleTypesSource,
-} from './fixture-templates/models/compiler-lifecycle.js';
 import { workspace } from './support/process.js';
-import { writeMoneyManifest } from './support/model-manifest.js';
 import { pathMappedProject } from './support/path-mapped-project.js';
 import { compilerChildren } from './support/generation-watch.js';
 import { subscribe } from './support/golem-channels.js';
@@ -104,26 +98,6 @@ function controllerContext(root: string, source: string, output: string) {
   } as const;
 }
 
-function writeManifestFixture(fixture: Fixture): { readonly source: string; readonly manifest: string } {
-  const sdk = path.join(fixture.sourceRoot, 'sdk');
-  fs.mkdirSync(sdk, { recursive: true });
-  const types = path.join(sdk, 'types.ts');
-  const generated = path.join(sdk, 'models.ts');
-  const manifest = path.join(sdk, 'model-manifest.json');
-  const source = path.join(fixture.sourceRoot, 'aggregate.model.ts');
-  fs.writeFileSync(types, '/* @golem-model-manifest ./model-manifest.json */\nexport interface Money { currency: string }\n');
-  fs.writeFileSync(generated, 'export const Other = 1;\n');
-  // The manifest names MoneyModel, which models.ts does not export.
-  writeMoneyManifest(manifest, 'MoneyModel');
-  fs.writeFileSync(source, [
-    "import type { IModel } from '@exprtlabs/golem/model';",
-    "import type { Money } from './sdk/types.js';",
-    'export type TAggregate = IModel<{ money: Money }>;',
-    '',
-  ].join('\n'));
-  return { source, manifest };
-}
-
 /**
  * Subscribe to the snapshot requests a program session sends. TypeScript 7.1 sends the first request with `createSnapshot` and later
  * ones through the newest snapshot; golem publishes both before it sends. A subscriber runs inside the publish, so it acts at the
@@ -210,19 +184,6 @@ test('a model generation with no sources closes its API child', async t => {
   await tracker.assertClosed('empty model generation');
 });
 
-test('a manifest validation failure closes the API child', async t => {
-  // protects: a manifest validation failure leaves no TypeScript API process running
-  const tracker = trackApiChildren(t);
-  const fixture = projectFixture(t, 'compiler-lifecycle-manifest');
-  const manifest = writeManifestFixture(fixture);
-  assert.throws(
-    () => generateModel({ root: fixture.root, sources: [manifest.source], profile: lifecycleProfile, manifestInputs: [manifest.manifest] }),
-    /missing runtime export/,
-  );
-  await tracker.assertClosed('manifest validation failure');
-  assert.ok(tracker.seen() >= 1, `expected an API subprocess from the manifest validation, saw ${tracker.seen()}`);
-});
-
 test('a controller generation that succeeds closes its API child', async t => {
   // protects: a successful controller generation leaves no TypeScript API process running
   const tracker = trackApiChildren(t);
@@ -287,56 +248,6 @@ test('compiler setup preserves the primary error and reports cleanup failure aft
   assert.equal(closing.closed(), 1);
   assert.ok(tracker.seen() >= 1, 'setup failure did not reach the real TypeScript API child boundary');
   await tracker.assertClosed('compiler setup failure');
-});
-
-/** A project whose manifest lists `count` generated model modules, and the model source that aggregates them. */
-function manifestScaleFixture(t: TestContext, count: number): { readonly fixture: Fixture; readonly sdk: string; readonly source: string } {
-  const fixture = projectFixture(t, `manifest-scale-${count}`);
-  const sdk = path.join(fixture.sourceRoot, 'sdk');
-  fs.mkdirSync(path.join(sdk, 'models'), { recursive: true });
-  const manifestFile = path.join(sdk, 'model-manifest.json');
-  const models = Array.from({ length: count }, (_, index) => {
-    const names = manifestScaleNames({ index });
-    return {
-      id: `scale:item:${index}`,
-      codecId: `${names.item}_${index.toString(16).padStart(8, '0')}`,
-      allowAny: false,
-      type: { module: './types.ts', export: names.item },
-      generated: { module: `./models/${names.item}.ts`, export: names.generatedClass },
-    };
-  });
-  fs.writeFileSync(path.join(sdk, 'types.ts'), manifestScaleTypesSource({ count }).text);
-  for (let index = 0; index < count; index++) {
-    const { item } = manifestScaleNames({ index });
-    fs.writeFileSync(path.join(sdk, 'models', `${item}.ts`), manifestScaleClassSource({ index }).text);
-  }
-  fs.writeFileSync(manifestFile, JSON.stringify({
-    profile: { ...lifecycleProfile, allowAny: false, unknownFormats: 'error' }, models,
-  }));
-  const source = path.join(fixture.sourceRoot, 'aggregate.model.ts');
-  fs.writeFileSync(source, readFixture('models/compiler-lifecycle/manifest-scale/aggregate.model.ts'));
-  return { fixture, sdk, source };
-}
-
-// One compiler serves a generation however many models its manifest lists, so each size spawns the same single process.
-for (const count of [5, 50]) {
-  test(`manifest validation shares one compiler across ${count} generated model modules`, async t => {
-    const tracker = trackApiChildren(t);
-    const { fixture, source } = manifestScaleFixture(t, count);
-    const result = generateModel({ root: fixture.root, sources: [source], profile: lifecycleProfile });
-    assert.ok(result.artifacts.some(artifact => artifact.path.endsWith('aggregate.model.generated.ts')));
-    assert.equal(tracker.seen(), 1, 'the public generator must invoke the real compiler once, however many manifest entries');
-    await tracker.assertClosed(`${count}-model manifest`);
-  });
-}
-
-test('a cached manifest export table is rebuilt for the next generation job', async t => {
-  const tracker = trackApiChildren(t);
-  const { fixture, sdk, source } = manifestScaleFixture(t, 50);
-  generateModel({ root: fixture.root, sources: [source], profile: lifecycleProfile });
-  fs.writeFileSync(path.join(sdk, 'models', 'Item49.ts'), 'export const RenamedModel = 1;\n');
-  assert.throws(() => generateModel({ root: fixture.root, sources: [source], profile: lifecycleProfile }), /missing runtime export Item49Model/);
-  await tracker.assertClosed('changed manifest export');
 });
 
 test('owned generator scope preserves its primary error when API cleanup also fails', async t => {

@@ -20,28 +20,14 @@ import { runRewritten } from './support/rewritten-module.js';
 import { tsSource } from './source-template.js';
 import { generate } from '#model/generator';
 
-function writeManifest(
-  filename: string,
-  generatedModule: string,
-  generatedExport: string,
-  typeModule = './types.ts',
-  profile: { readonly mobx: boolean; readonly validation: boolean } = { mobx: false, validation: false },
-): void {
+function writeManifest(filename: string, profile: { readonly mobx: boolean; readonly validation: boolean }): void {
   fs.writeFileSync(filename, JSON.stringify({
     profile: { ...profile, allowAny: false, unknownFormats: 'error' },
-    // A validating model that references this one compiles its schema into its own validators.
-    ...(profile.validation ? {
-      validationSchemaClosure: [{
-        codecId: 'fixture:money',
-        modelSchema: { type: 'object', properties: { currency: { type: 'string' }, amount: { type: 'number' } }, required: ['currency', 'amount'], additionalProperties: false },
-      }],
-    } : {}),
     models: [{
       id: 'fixture:money',
       codecId: 'fixture:money',
       allowAny: false,
-      type: { module: typeModule, export: 'Money' },
-      generated: { module: generatedModule, export: generatedExport },
+      type: { module: './types.ts', export: 'Money' },
     }],
   }));
 }
@@ -149,38 +135,12 @@ test('tsconfig ambient declarations are inputs a watching build follows', (t) =>
   assert.equal(result.watchInputs.includes(ambient), true);
 });
 
-test('missing manifest modules and runtime exports fail before companion emission', (t) => {
-  const { root, sourceRoot } = modelProject(t);
-  const sdk = path.join(sourceRoot, 'sdk');
-  fs.mkdirSync(sdk, { recursive: true });
-  const types = path.join(sdk, 'types.ts');
-  const manifest = path.join(sdk, 'model-manifest.json');
-  const source = path.join(sourceRoot, 'aggregate.model.ts');
-  fs.writeFileSync(types, '/* @golem-model-manifest ./model-manifest.json */\nexport interface Money { currency: string }\n');
-  writeModelSources(sourceRoot, {
-    'aggregate.model.ts': readFixture('models/model-companions/missing-manifest/aggregate.model.ts'),
-  });
-  writeManifest(manifest, './missing-models.ts', 'MoneyModel');
-  assert.throws(
-    () => generate({ root, sources: [source], profile: { mobx: false, validation: false }, manifestInputs: [manifest] }),
-    /missing generated module/,
-  );
-  const generated = path.join(sdk, 'models.ts');
-  fs.writeFileSync(generated, 'export const Other = 1;\n');
-  writeManifest(manifest, './models.ts', 'MoneyModel');
-  assert.throws(
-    () => generate({ root, sources: [source], profile: { mobx: false, validation: false }, manifestInputs: [manifest] }),
-    /missing runtime export/,
-  );
-});
-
 test('public generation compiles and executes conversion and rest tuple behavior', async (t) => {
   const { root, sourceRoot } = modelProject(t);
   const sdk = path.join(sourceRoot, 'sdk');
   fs.mkdirSync(sdk, { recursive: true });
   copyFixtureFile(root, 'models/model-companions/sdk-types/types.ts', 'src/sdk/types.ts');
-  fs.writeFileSync(path.join(sdk, 'models.ts'), readFixture("models/model-companions/public-generation-compiles-and-executes-conversion-and-rest-tuple-behavior/models.ts"));
-  writeManifest(path.join(sdk, 'model-manifest.json'), './models.ts', 'MoneyModel', './types.ts', { mobx: false, validation: true });
+  writeManifest(path.join(sdk, 'model-manifest.json'), { mobx: false, validation: true });
   copyFixtureFile(root, 'models/model-companions/public-generation-compiles-and-executes-conversion-and-rest-tuple-behavior/wallet.model.ts', 'src/wallet.model.ts');
   writeModelGolemYaml(root, { mobx: false, validation: true });
   await buildModelProject(root);
@@ -188,52 +148,8 @@ test('public generation compiles and executes conversion and rest tuple behavior
   await command(root, process.execPath, [verifier]);
 });
 
-// Writes the SDK folder whose Money is an IObject alias, with the generated MoneyModel and its manifest.
-function installSdkMoney(
-  sourceRoot: string,
-  types = "/* @golem-model-manifest ./model-manifest.json */\nimport type { IObject } from '@exprtlabs/golem/model';\nexport type Money = IObject<{ currency: string; amount: number }>;\n",
-): void {
-  const sdk = path.join(sourceRoot, 'sdk');
-  fs.mkdirSync(sdk, { recursive: true });
-  fs.writeFileSync(path.join(sdk, 'types.ts'), types);
-  fs.writeFileSync(path.join(sdk, 'models.ts'), readFixture('models/model-companions/public-generation-compiles-and-executes-conversion-and-rest-tuple-behavior/models.ts'));
-  writeManifest(path.join(sdk, 'model-manifest.json'), './models.ts', 'MoneyModel', './types.ts', { mobx: false, validation: true });
-}
-
-test('an app model that nests an SDK model written as an IObject alias uses the SDK class: parse and stringify round-trip', async (t) => {
-  // protects: T-206 an SDK IObject alias nested in an app model generates (RUNM1053 judged the alias anonymous before the manifest was read)
-  const { root, sourceRoot } = modelProject(t);
-  installSdkMoney(sourceRoot);
-  writeModelSources(sourceRoot, {
-    'order.model.ts': tsSource`import type { IObject } from '@exprtlabs/golem/model';
-import type { Money } from './sdk/types.js';
-export type TOrder = IObject<{ id: string; money: Money }>;
-`,
-  });
-  writeModelGolemYaml(root, { mobx: false, validation: true });
-  await buildModelProject(root);
-  const verifier = copyFixtureFile(root, 'models/model-companions/verify-sdk-alias.mjs', 'verify-sdk-alias.mjs');
-  await command(root, process.execPath, [verifier, generatedCodecIdFromRoot(root, 'TOrder')]);
-});
-
-test('an SDK IObject alias nested as Money | null, (Money | null)[] and NonNullable<Money> uses the SDK class, and null stays null', async (t) => {
-  // protects: T-206 final review: a nullable SDK alias is the SDK model, never an inlined plain object
-  const { root, sourceRoot } = modelProject(t);
-  installSdkMoney(sourceRoot);
-  writeModelSources(sourceRoot, {
-    'order.model.ts': tsSource`import type { IObject } from '@exprtlabs/golem/model';
-import type { Money } from './sdk/types.js';
-export type TOrder = IObject<{ id: string; money: Money | null; history: (Money | null)[]; kept: NonNullable<Money> }>;
-`,
-  });
-  writeModelGolemYaml(root, { mobx: false, validation: true });
-  await buildModelProject(root);
-  const verifier = copyFixtureFile(root, 'models/model-companions/verify-sdk-alias-nullable.mjs', 'verify-sdk-alias-nullable.mjs');
-  await command(root, process.execPath, [verifier, generatedCodecIdFromRoot(root, 'TOrder')]);
-});
-
 test('re-exported IModel and IObject symbols preserve class versus plain-object generation', async () => {
-  const { root, sourceRoot, artifacts } = await trustedProject();
+  const { root, sourceRoot } = await trustedProject();
   const sourceFile = path.join(sourceRoot, 'provenance.model.ts');
   const built = await import(path.toNamespacedPath(path.join(root, 'build/provenance.model.generated.js'))) as Record<string, unknown>;
   assert.deepEqual(Object.keys(built).filter((name) => name.endsWith('BaseModel')), ['TProvenanceBaseModel'], 'only the IModel alias gets a class');

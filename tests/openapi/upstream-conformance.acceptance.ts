@@ -23,7 +23,7 @@ import {
 } from './compliance-cases.js';
 import {
   isGeneratedClientClass,
-  materializeGeneratedSdk,
+  generateMaterializedSdk,
   openApiFixture,
   repoRoot,
   requireRecord,
@@ -78,7 +78,8 @@ function readManifest(filename: string): UpstreamManifest {
 
 const manifest = readManifest(path.join(fixtureRoot, 'manifest.json'));
 
-function compileStrict(output: string): void {
+/** Compiles the SDK, and with it the files beside it that `extra` names. */
+function compileStrict(output: string, extra: readonly string[] = []): void {
   const compiled = spawnSync(process.execPath, [tscBin(), 
     '--target', 'ES2022',
     '--module', 'NodeNext',
@@ -92,6 +93,7 @@ function compileStrict(output: string): void {
     '--rootDir', output,
     '--outDir', path.join(output, 'dist'),
     path.join(output, 'index.ts'),
+    ...extra.map((file) => path.join(output, file)),
   ], { encoding: 'utf8' });
   assert.equal(compiled.status, 0, compiled.stderr || compiled.stdout);
 }
@@ -113,19 +115,6 @@ function assertArtifactInventory(
   const files = artifactNames(result);
   const manifestArtifact = result.artifacts.find(({ path: filename }) => path.basename(filename) === 'model-manifest.json');
   assert.ok(manifestArtifact, 'generated model manifest');
-  const manifest = requireRecord(JSON.parse(manifestArtifact.content), 'generated model manifest');
-  assert.ok(Array.isArray(manifest.models));
-  const modelModules = manifest.models.map((entry: unknown) => {
-    const model = requireRecord(entry, 'manifest model');
-    const generated = requireRecord(model.generated, 'model implementation');
-    const type = requireRecord(model.type, 'model type');
-    const module = `./models/${String(type.export)}.ts`;
-    assert.equal(generated.module, module);
-    assert.equal(generated.export, `${String(type.export)}Model`);
-    return module.slice(2);
-  });
-  const modelGroups = files.filter(file => /^models\/_group-[a-f0-9]+\.ts$/.test(file));
-  if (modelModules.length) assert.ok(modelGroups.length > 0, 'model implementations have private groups');
   const schemaModules = files.filter(file => /^validation-schemas\/[A-Za-z0-9_$-]+\.(?:input|output)(?:-[0-9a-f]{6})?\.ts$|^validation-schemas\/resource-[0-9a-f]{12}\.ts$/.test(file));
   for (const module of schemaModules) {
     const importPath = `../${module.replace(/\.ts$/, '.js')}`;
@@ -134,15 +123,6 @@ function assertArtifactInventory(
   if (hasResponseLinks(ir)) {
     const links = result.artifacts.find(({ path: filename }) => filename.endsWith('/links.ts'))?.content;
     assert.ok(links, 'response Link Objects artifact');
-  }
-  if (ir.inboundOperations.length) {
-    const inbound = result.artifacts.find(({ path: filename }) => filename.endsWith('/inbound.ts'))?.content;
-    assert.ok(inbound, 'inbound contract artifact');
-    for (const operation of ir.inboundOperations) {
-      const escapedName = operation.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      // Kept pin: inbound.ts holds types only, so no value runs; the name is the contract's member.
-      assert.match(inbound, new RegExp(`\\b${escapedName}\\b`));
-    }
   }
 }
 
@@ -390,16 +370,18 @@ test('typed upstream corpus cases generate, strict-compile, and execute every ac
     for (const profileId of PROFILE_IDS) {
       const profile = GENERATION_PROFILES[profileId];
       const output = path.join(outputRoot, `${fixture.version.replace('.', '-')}-${fixtureIndex}-${profileId}`);
-      const result = await generate({
-        input: filename,
+      // MobX needs the golem mode: the helper generates that SDK and runs the models job for its codecs.
+      const result = await generateMaterializedSdk(document, {
         output,
         name: `Upstream${fixtureIndex}`,
         // Third-party documents carry formats golem does not check, such as the uspto `uriref`.
         profile: { ...profile, unknownFormats: 'warn' },
       });
-      materializeGeneratedSdk(result.artifacts, output);
       assertArtifactInventory(result, ir);
-      compileStrict(output);
+      // The payload of each webhook and callback is a type of the SDK: a file that imports every one of them compiles with the SDK.
+      const payloadTypes = ir.inboundOperations.map((operation) => `${operation.typeName}OperationInput`);
+      if (payloadTypes.length) fs.writeFileSync(path.join(output, 'payload-types.ts'), `import type { ${payloadTypes.join(', ')} } from './types.js';\nexport type PayloadInputs = [${payloadTypes.join(', ')}];\n`);
+      compileStrict(output, payloadTypes.length ? ['payload-types.ts'] : []);
       assertManifestProfile(output, profile);
 
       const linksArtifact = result.artifacts.find(({ path: filename }) => filename.endsWith('/links.ts'))?.content;

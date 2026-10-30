@@ -1,7 +1,6 @@
-import { fromWireFormat } from '@exprtlabs/golem/serde';
-import { CatModel, DogModel, VisitModel } from './index.js';
+import type { Cat, Dog, Visit } from './types.js';
 
-const visit = fromWireFormat<VisitModel>({ pet: { kind: 'dog', name: 'Rex' } });
-const pet: DogModel | CatModel = visit.pet;
+declare const visit: Visit;
+const pet: Dog | Cat = visit.pet;
 
 void pet;

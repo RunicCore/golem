@@ -12,9 +12,11 @@ import {
   artifactBasenames,
   compileGeneratedSdk,
   generateMaterializedSdk,
-  generatedModelSource,
+  sdkBodyCodec,
+  withRootOperations,
 } from './openapi/helpers.js';
-import { openScope, runModule } from './support/run-module.js';
+import { createFixtureProject } from './fixture-project.js';
+import { exportsOf } from './support/run-module.js';
 
 function validatedDocument(): Record<string, unknown> {
   return {
@@ -89,21 +91,13 @@ const profile = Object.freeze({
   allowAny: false,
 });
 
-/** The values a generated TypeScript module exports, with every import stubbed. */
-function exportsOf(source: string): Record<string, unknown> {
-  const open = openScope();
-  const holder = { exports: {} as Record<string, unknown> };
-  runModule(source, { require: () => open, exports: holder.exports, module: holder }, { format: 'cjs' });
-  return holder.exports;
-}
-
 function compileValidatedSdk(output: string): string {
   const outDir = path.join(output, 'dist');
   compileGeneratedSdk(output, [], { strict: true, skipLibCheck: true, outDir });
   return outDir;
 }
 
-test('OpenAPI SDKs emit one validators module that the models and the operations use', () => {
+test('a validating OpenAPI SDK emits one validators module and records the profile in its manifest', () => {
   const result = writeSdk(validatedDocument(), {
     output: path.join(tmpdir(), 'validators-profile'),
     name: 'Validated',
@@ -111,10 +105,6 @@ test('OpenAPI SDKs emit one validators module that the models and the operations
   });
   const names = artifactBasenames(result.artifacts);
   assert.equal(names.includes('validators.generated.ts'), true);
-  const models = generatedModelSource(result.artifacts);
-  // Kept pins: the module specifier and the runtime export that the models name are the contract between the SDK files and golem. The models text joins several files, so it cannot run as one module.
-  assert.match(models, /validators\.generated\.js/);
-  assert.match(models, /createObjectCodec/);
   const manifest = JSON.parse(result.artifacts.find(item => item.path.endsWith('/model-manifest.json'))?.content ?? '{}') as {
     profile?: { allowAny?: boolean };
   };
@@ -146,7 +136,7 @@ test('SDK compiles a no-content operation with no response validators', async t 
   assert.equal(deleted.status, 204);
 });
 
-test('SDK operation validators expose every operation reference and validate through the client', async t => {
+test('SDK operations accept a valid body and reject an invalid one through the client', async t => {
   const output = path.join(mkdtempSync(path.join(tmpdir(), 'golem-openapi-validated-')), 'sdk');
   t.after(() => rmSync(path.dirname(output), { recursive: true, force: true }));
   const result = await generateMaterializedSdk(validatedDocument(), {
@@ -160,40 +150,57 @@ test('SDK operation validators expose every operation reference and validate thr
   assert.doesNotMatch(generatedCode, /new\s+Function|\beval\s*\(/);
   assert.ok(result.artifacts.some(item => item.path === path.join(output, 'validators.generated.ts')), 'the SDK carries one validators module');
 
-  type OperationValidator = (value: unknown, all: boolean) => readonly { readonly path: readonly unknown[] }[];
-  const expected: Record<string, string[]> = {
-    createTask: ['validate_createTask_input', 'validate_createTask_response_201_application_json', 'validate_createTask_response_400_application_json'],
-    getTask: ['validate_getTask_input', 'validate_getTask_response_200_application_json'],
-  };
   const task = { id: 'task-1', when: '2025-01-02T03:04:05Z', child: { id: 'child-1' }, labels: ['one'] };
-  const validatorsOf = async (): Promise<Record<string, OperationValidator>> =>
-    await import(pathToFileURL(path.join(compiled, 'validators.generated.js')).href) as Record<string, OperationValidator>;
-  const all = await validatorsOf();
-  for (const name of Object.keys(all)) assert.equal(typeof all[name], 'function', name);
-  for (const names of Object.values(expected)) for (const name of names) assert.equal(typeof all[name], 'function', name);
-  assert.ok(Object.keys(all).some(name => /^validate_Task_[0-9a-f]{8}$/.test(name)), 'the model roots are exported by the same module');
-
-  const inputValidator = all.validate_createTask_input;
-  assert.ok(inputValidator);
-  assert.deepEqual(inputValidator({ body: task }, true), []);
-  assert.deepEqual(inputValidator({ body: { ...task, labels: [] } }, true).map(issue => issue.path), [['body', 'labels']]);
-  assert.deepEqual(inputValidator({ body: { ...task, when: 'not-a-date' } }, true).map(issue => issue.path), [['body', 'when']]);
 
   const clientModule = await import(pathToFileURL(path.join(compiled, 'client.js')).href);
   const respond = (status: number, body: unknown): typeof fetch => async () =>
     new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+  // The client takes and returns the converted form: `when` is a Date.
+  const plainTask = { ...task, when: new Date('2025-01-02T03:04:05Z') };
   const createdTask = await new clientModule.ValidatedClient({ baseUrl: 'https://api.example', fetchImpl: respond(201, task) })
-    .createTask().execute({ body: task });
-  assert.deepEqual(createdTask.body, task);
+    .createTask().execute({ body: plainTask });
+  assert.deepEqual(createdTask.body, plainTask);
   const fetched = await new clientModule.ValidatedClient({ baseUrl: 'https://api.example', fetchImpl: respond(200, task) })
     .getTask().execute({ path: { id: 'task-1' } });
-  assert.deepEqual(fetched.body, task);
+  assert.deepEqual(fetched.body, plainTask);
   await assert.rejects(
     () => new clientModule.ValidatedClient({ baseUrl: 'https://api.example', fetchImpl: respond(201, task) })
-      .createTask().execute({ body: { ...task, labels: [] } }),
+      .createTask().execute({ body: { ...plainTask, labels: [] } }),
     (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.Validation,
   );
 });
+
+const CONVERTING_TASK = withRootOperations({
+  openapi: '3.1.0',
+  info: { title: 'Converting', version: '1' },
+  components: { schemas: { Task: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['id', 'labels'],
+    properties: { id: { type: 'string' }, labels: { type: 'array', minItems: 1, items: { type: 'string' } }, meta: { type: 'object', minProperties: 1, additionalProperties: { type: 'string' } }, when: { type: 'string', format: 'date-time' } },
+  } } },
+}, 'Task');
+
+for (const mode of ['standalone', 'golem'] as const) {
+  test(`a ${mode} SDK checks a request body that converts a date like one that converts nothing, and validate false sends it unchecked`, async t => {
+    // protects: R-86, T-719 a converting request body is checked at the request level, array and object limits included
+    const output = path.join(createFixtureProject(t, `converting-body-${mode}-`), 'sdk');
+    await generateMaterializedSdk(CONVERTING_TASK, { output, name: 'Converting', profile, mode });
+    compileGeneratedSdk(output, [], { strict: true, skipLibCheck: true });
+    const codec = await sdkBodyCodec(output, 'Converting', 'Task');
+    const when = new Date('1970-01-01T00:00:00Z');
+    assert.deepEqual(await codec.encode({ id: 'a', labels: ['x'], when }), { id: 'a', labels: ['x'], when: '1970-01-01T00:00:00.000Z' });
+    await assert.rejects(
+      codec.encode({ id: 'a', labels: [], when }),
+      (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.Validation && error.causedByInput === true,
+    );
+    await assert.rejects(
+      codec.encode({ id: 'a', labels: ['x'], meta: {}, when }),
+      (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.Validation && error.causedByInput === true,
+    );
+    assert.deepEqual(await codec.encode({ id: 'a', labels: [], when }, { validate: false }), { id: 'a', labels: [], when: '1970-01-01T00:00:00.000Z' });
+  });
+}
 
 test('SDK validates a response whose $id schema refers to a component by local pointer', async t => {
   const output = path.join(mkdtempSync(path.join(tmpdir(), 'golem-openapi-embedded-id-')), 'sdk');
@@ -279,7 +286,7 @@ test('a model used in a request and a response with a readOnly field gets two va
   assert.deepEqual(validators.validate_createItem_response_201_application_json(withServerId, true), [], 'a response carries the readOnly field');
 });
 
-test('a model that an operation response and a model group both validate has its check written once in the SDK module', () => {
+test('a model that only an operation response reads is checked by the response validator and has no root of its own', () => {
   const pattern = '^ITEM-[0-9]{6}$';
   const result = writeSdk({
     openapi: '3.1.0',
@@ -297,12 +304,12 @@ test('a model that an operation response and a model group both validate has its
   }, { output: path.join(tmpdir(), 'validators-shared-checks'), name: 'Shared', profile });
   const module = result.artifacts.find(item => path.basename(item.path) === 'validators.generated.ts');
   assert.ok(module);
-  // Each check function holds its pattern twice: the compiled expression and the issue it reports.
-  assert.equal(module.content.split(JSON.stringify(pattern)).length - 1, 2, 'one check function serves the model and the operation');
-  assert.equal(module.content.split('new RegExp(').length - 1, 1, 'one compiled expression');
-  const exported = Object.keys(exportsOf(module.content));
-  assert.ok(exported.includes('validate_getItem_response_200_application_json'), 'the operation root is exported');
-  assert.equal(exported.filter(name => /^validate_Item_[0-9a-f]{8}$/.test(name)).length, 1, 'the model root is exported once');
+  const validators = exportsOf(module.content) as Record<string, (value: unknown, validate: true) => { code: string; pattern?: string; path: unknown[] }[]>;
+  const validateResponse = validators.validate_getItem_response_200_application_json!;
+  assert.deepEqual(validateResponse({ code: 'ITEM-123456' }, true), []);
+  assert.deepEqual(validateResponse({ code: 'item-1' }, true).map(issue => [issue.code, issue.pattern, issue.path]), [['pattern', pattern, ['code']]], 'one issue for the one failing pattern');
+  const exported = Object.keys(validators);
+  assert.equal(exported.filter(name => /^validate_Item_[0-9a-f]{8}$/.test(name)).length, 0, 'no group reads the model, so its root is not exported');
 });
 
 test('a validation-off SDK writes no validators module and no import of one', () => {

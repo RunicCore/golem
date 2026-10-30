@@ -1,28 +1,14 @@
+import type { Child, Event } from './types.js';
 
-import type { Event } from './types.js';
-import { ChildModel } from './index.js';
-import type { ChildFields, EventFields, EventInit, EventJSON } from './index.js';
-
-const wire: EventJSON = {
-  when: '2025-01-02T03:04:05Z',
-  maybeWhen: null,
-  child: { id: 'child' },
-};
-const fields: EventFields = {
-  when: new Date('2025-01-02T03:04:05Z'),
-  maybeWhen: null,
-  child: new ChildModel({ id: 'child' }),
-};
-const init: EventInit = {
+const event: Event = {
   when: new Date('2025-01-02T03:04:05Z'),
   maybeWhen: null,
   child: { id: 'child' },
   children: [{ id: 'child-2' }],
 };
-const childFields: ChildFields = { id: 'child' };
-const event: Event = wire;
-void fields; void init; void childFields; void event;
+const child: Child = { id: 'child' };
+void event; void child;
 
-// @ts-expect-error Date is the runtime value, while the wire contract remains a string.
-const wrongWire: EventJSON = { when: new Date(), child: { id: 'child' } };
-void wrongWire;
+// @ts-expect-error Date is the converted value of a date-time field; its wire string does not fit the SDK type.
+const wrongWhen: Event = { when: '2025-01-02T03:04:05Z', child: { id: 'child' } };
+void wrongWhen;

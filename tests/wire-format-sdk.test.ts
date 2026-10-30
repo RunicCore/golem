@@ -1,5 +1,6 @@
 // The SDK-model claims of WireFormat<T>, and the JSON that toWireFormat and the generated encoders produce at runtime.
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
@@ -12,29 +13,34 @@ import { assertWireClaimBuilds, wireClaimProject, type WireClaim } from './suppo
 import { modelCodec } from './support/model-codec.js';
 
 interface SdkWireClaim extends WireClaim {
-  /** An OpenAPI document in the fixture; its SDK is generated with this mobx setting, and the models job uses the same one. */
+  /** An OpenAPI document in the fixture; its standalone SDK is generated from it. */
   readonly spec: string;
-  readonly mobx: boolean;
 }
 
 const SDK_CLAIMS: readonly SdkWireClaim[] = [
-  { claim: 'a model that uses an SDK model, and the SDK model class and fields', fixture: 'sdk-money', spec: 'money.yaml', mobx: false },
-  { claim: 'nested and omitted-field SDK models without mobx', fixture: 'nested-sdk', spec: 'payments.yaml', mobx: false },
-  { claim: 'nested and omitted-field SDK models with mobx', fixture: 'nested-sdk', spec: 'payments.yaml', mobx: true },
+  { claim: 'a model that uses an SDK type, and the SDK data type', fixture: 'sdk-money', spec: 'money.yaml' },
+  { claim: 'nested and omitted-field SDK models without mobx', fixture: 'nested-sdk', spec: 'payments.yaml' },
 ];
 
-for (const { claim, fixture, spec, mobx } of SDK_CLAIMS) {
+for (const { claim, fixture, spec } of SDK_CLAIMS) {
   test(`WireFormat<T> equals the emitted JSON type: ${claim}`, async t => {
-    const { root, sourceRoot } = wireClaimProject(t, fixture, mobx);
+    const { root, sourceRoot } = wireClaimProject(t, fixture, false);
     writeGeneratedArtifacts((await generateOpenApi({
       input: path.join(sourceRoot, spec),
       output: path.join(sourceRoot, 'sdk'),
       name: 'Payments',
-      profile: { mobx, validation: true },
+      profile: { mobx: false, validation: true },
     })).artifacts);
     await assertWireClaimBuilds(root);
   });
 }
+
+test('WireFormat<T> equals the emitted JSON type: nested and omitted-field SDK models with mobx', async t => {
+  // MobX needs the golem mode, whose SDK the build writes from the openapi job before the models job reads it.
+  const { root } = wireClaimProject(t, 'nested-sdk', true);
+  fs.writeFileSync(path.join(root, 'golem.yaml'), 'version: 1\nmobx: true\nvalidation: true\nopenapi:\n  - input: src/payments.yaml\n    output: src/sdk\n    name: Payments\n    mode: golem\nmodels:\n  root: .\n');
+  await assertWireClaimBuilds(root);
+});
 
 test('toWireFormat<T> returns the emitted JSON type through the golem rewrite without a cast', async t => {
   const { root, sourceRoot } = createModelProject(t, {

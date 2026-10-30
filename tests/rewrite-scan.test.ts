@@ -318,104 +318,17 @@ function installSdk(root: string): string {
   return sdk;
 }
 
-/** The manifest of an installed SDK, parsed. */
-function sdkManifest(sdk: string): { models: { id: string; codecId?: string; generated: { module: string; export: string } }[] } {
-  return JSON.parse(fs.readFileSync(path.join(sdk, 'model-manifest.json'), 'utf8'));
-}
-
-/** The codec id the SDK's manifest gives `MoneyModel`. */
-function sdkMoneyId(sdk: string): string {
-  const id = sdkManifest(sdk).models.find((model) => model.generated.export === 'MoneyModel')?.codecId;
-  assert.match(id ?? '', /^Money_[0-9a-f]{8}$/, 'the SDK manifest holds the codec id of MoneyModel');
-  return id!;
-}
-
-const USE_SDK = `import { parse } from '@exprtlabs/golem/serde';
-import type { MoneyModel } from 'sdk';
-declare const text: string;
-export const money = parse<MoneyModel>(text);
-`;
-
-test('a type from an installed SDK resolves through the codec id of its manifest, and constructs the SDK class', (t) => {
-  const root = project(t);
-  const sdk = installSdk(root);
-  const id = sdkMoneyId(sdk);
-  fs.writeFileSync(path.join(root, 'src/use-sdk.ts'), USE_SDK);
-  const result = scan(root);
-  assert.deepEqual(result.diagnostics, []);
-  const code = rewritten(root, result, 'use-sdk.ts');
-  assert.deepEqual(runRewritten(code, ['text']).codecIds, [id], 'the module runs with every name it uses imported or declared');
-  assertLines(code, [
-    `export const money = __golem_requireObjectCodec("${id}").parse(text, { construct: __golem_MoneyModel });`,
-    "import { MoneyModel as __golem_MoneyModel } from 'sdk';",
-  ]);
-  assert.deepEqual(scanned(result, 'use-sdk.ts').dependencies, ['node_modules/sdk/model-manifest.json'], 'the manifest is what the edit was resolved from');
-  assert.deepEqual([...result.files.keys()].filter((file) => file.includes('node_modules')), [], 'installed packages are not rewritten');
-});
-
-test('a call on a type of an installed SDK loads the module of the SDK that registers its codec', (t) => {
-  // protects: T-190 / R-18 an SDK model has no companion in the project, so the SDK's generated module is what loads
+test('a call on an SDK type reports a type without a codec at build time', (t) => {
+  // protects: T-687 an SDK writes no model class and its manifest names none, so its types have no codec key
   const root = project(t);
   installSdk(root);
-  fs.writeFileSync(path.join(root, 'src/write-sdk.ts'), [
-    "import { stringify } from '@exprtlabs/golem/serde';",
-    "import type { MoneyModel } from 'sdk';",
-    'declare const money: MoneyModel;',
-    'export const text = stringify<MoneyModel>(money);',
-    '',
-  ].join('\n'));
-  const result = scan(root);
-  assert.deepEqual(result.diagnostics, []);
-  assert.deepEqual(scanned(result, 'write-sdk.ts').imports, [
-    { from: '@exprtlabs/golem/internal/model-runtime', names: ['requireObjectCodec'] },
-    { from: 'sdk/models/Money.js', names: [] },
-  ]);
-  assert.ok(rewritten(root, result, 'write-sdk.ts').split('\n').includes("import 'sdk/models/Money.js';"));
-});
-
-test('a call on an SDK type that the file imports through a project re-export loads the module of the SDK that registers it', (t) => {
-  // protects: T-190 a re-exporting project module compiles to an empty import, so the SDK's own module is what must load
-  const root = project(t);
-  installSdk(root);
-  fs.writeFileSync(path.join(root, 'src/types.ts'), "export type { MoneyModel } from 'sdk';\n");
-  fs.writeFileSync(path.join(root, 'src/write-sdk.ts'), [
-    "import { stringify } from '@exprtlabs/golem/serde';",
-    "import type { MoneyModel } from './types.js';",
-    'declare const money: MoneyModel;',
-    'export const text = stringify<MoneyModel>(money);',
-    '',
-  ].join('\n'));
-  const result = scan(root);
-  assert.deepEqual(result.diagnostics, []);
-  assert.deepEqual(scanned(result, 'write-sdk.ts').imports, [
-    { from: '@exprtlabs/golem/internal/model-runtime', names: ['requireObjectCodec'] },
-    { from: 'sdk/models/Money.js', names: [] },
-  ]);
-});
-
-test('two manifests that give one declaration different codec ids make a call on it fail instead of choosing one', (t) => {
-  const root = project(t);
-  const sdk = installSdk(root);
-  const manifest = sdkManifest(sdk);
-  for (const model of manifest.models) model.codecId = 'Money_00000000';
-  fs.writeFileSync(path.join(sdk, 'other-manifest.json'), JSON.stringify(manifest));
-  fs.writeFileSync(path.join(root, 'src/other-manifest.ts'), '/* @golem-model-manifest ../node_modules/sdk/other-manifest.json */\nexport {};\n');
-  fs.writeFileSync(path.join(root, 'src/use-sdk.ts'), USE_SDK);
+  const source = "import { parse } from '@exprtlabs/golem/serde';\nimport type { Money } from 'sdk';\ndeclare const text: string;\nexport const money = parse<Money>(text);\n";
+  fs.writeFileSync(path.join(root, 'src/parse-sdk-type.ts'), source);
   const { diagnostics, files } = scan(root);
-  assert.deepEqual(diagnostics.map(({ code, message, file }) => ({ code, message, file })), [{ code: 'RUNM1067', message: 'parse<MoneyModel> has no unique codec id', file: 'src/use-sdk.ts' }]);
-  assert.equal(files.get('src/use-sdk.ts'), undefined);
-});
-
-test('a user type that shares a file name and a type name with an SDK type never takes the SDK codec id', (t) => {
-  const root = project(t);
-  installSdk(root);
-  fs.writeFileSync(path.join(root, 'src/use-sdk.ts'), USE_SDK);
-  // Every SDK declares its types in types.ts; this project's own types.ts declares its own Money.
-  fs.writeFileSync(path.join(root, 'src/types.ts'), 'export type Money = { amount: string };\n');
-  fs.writeFileSync(path.join(root, 'src/use-own.ts'), "import { parse } from '@exprtlabs/golem/serde';\nimport type { Money } from './types.js';\ndeclare const text: string;\nexport const money = parse<Money>(text);\n");
-  const { diagnostics, files } = scan(root);
-  assert.deepEqual(diagnostics.map(({ code, message, file }) => ({ code, message, file })), [{ code: 'RUNM1067', message: 'parse<Money> has no unique codec id', file: 'src/use-own.ts' }]);
-  assert.equal(files.get('src/use-own.ts'), undefined);
+  assert.deepEqual(diagnostics, [{
+    code: 'RUNM1067', severity: 'error', message: 'parse<Money> has no unique codec id', file: 'src/parse-sdk-type.ts', ...position(source, 'parse<Money>'),
+  }]);
+  assert.equal(files.get('src/parse-sdk-type.ts'), undefined);
 });
 
 test('a regenerated codec key file changes what the next scan stamps', (t) => {
@@ -615,15 +528,14 @@ test('a config without a models or controllers job still checks the project that
   writeFixture(root, { mobx: false, validation: false }, false);
   const use = path.join(root, 'src/use.ts');
   fs.writeFileSync(use, `import { parse } from '@exprtlabs/golem/serde';
-import type { MoneyModel } from '../sdk/index.js';
-declare const text: string;
-export const money = parse<MoneyModel>(text);
+import { ProfileClient } from '../sdk/client.js';
+export const client = new ProfileClient({ baseUrl: 'https://api.test' });
 `);
   const config = path.join(root, 'golem.yaml');
   await runPipeline(config);
   await runPipeline(config, { check: true });
   fs.appendFileSync(use, "export const bad = parse<string | null>('{}');\n");
-  await assert.rejects(runPipeline(config, { check: true }), /RUNM1066 \(.*src\/use\.ts:5:20\)/);
+  await assert.rejects(runPipeline(config, { check: true }), /RUNM1066 \(.*src\/use\.ts:4:20\)/);
 });
 
 test('a file outside the project root with a rewrite site is rewritten by the project scan and by the per-file scan', (t) => {

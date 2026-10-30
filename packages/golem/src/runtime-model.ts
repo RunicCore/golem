@@ -9,7 +9,7 @@ export {
   assertAcyclicEncodeInput, assertPropertyAcyclic, assertWireAcyclic, beginDecode, beginEncode, convertModelField, convertModelItems,
   convertModelRecord, convertModelTupleItems, copyModelRecord, decodeCheckedInput, decodeDetachedInput, decodeGeneratedModelTrusted,
   defineModelProperty, deserializeDate, endDecode, endEncode, isVariantObject, jsonWithDiscriminator, rejectModelObject,
-  requireModelObject, serializeDate, unknownDiscriminatorValue, withDiscriminatorValue,
+  requireModelObject, serializeDate, unknownDiscriminatorValue, withDeclaredFields, withDiscriminatorValue,
 } from './conversion.js';
 export {
   assertModelValue, createObjectCodec, fastable, isValidModelValue, parseJson, registerIModelClass, requireIModelClass, requireObjectCodec, serdeValidates,

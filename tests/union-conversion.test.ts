@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import * as modelRuntime from '@exprtlabs/golem/internal/model-runtime';
-import { bindInput, emitModelFromInit, emitModelFromJSON, inputOf, inputSlot, render, code, identifier, literal, type Code } from '@exprtlabs/golem/internal/emitter';
+import { bindInput, emitModelFromInit, emitModelFromJSON, inputOf, inputSlot, code, identifier, literal, type Code } from '@exprtlabs/golem/internal/emitter';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import type { DiscriminatorValue, ModelTypeDescriptor } from '@exprtlabs/golem/internal/schema';
 import { createSchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
@@ -23,48 +23,30 @@ function ownerRuntime(
   tags: readonly (readonly DiscriminatorValue[])[],
   options: {
     readonly taggedVariants: boolean;
-    /** Generated model classes owning their codecs, as in an SDK. */
-    readonly classes?: Readonly<Record<string, unknown>>;
     /** Classes the codec constructs for its own variant nodes, as OpenAPI models are. */
     readonly constructed?: Readonly<Record<string, unknown>>;
   },
 ) {
   const tag: Record<string, ModelTypeDescriptor> = options.taggedVariants ? { kind: { kind: 'string' } } : {};
   const graph = createSchemaGraph();
-  // Generated model classes own their variant codecs, as in an SDK; plain variants are graph nodes.
-  if (!options.classes) {
-    graph.intern(variant({ ...tag, name: { kind: 'string' } }), `${prefix}Cat`, options.constructed !== undefined);
-    graph.intern(variant({ ...tag, bark: { kind: 'boolean' } }), `${prefix}Dog`, options.constructed !== undefined);
-  } else {
-    for (const name of ['Cat', 'Dog']) {
-      const constructor = options.classes[`${prefix}${name}Model`] as new () => object;
-      // The variant codec writes only the model's own fields, like a generated one.
-      modelRuntime.createObjectCodec(`${prefix}${name}`, {
-        stringify: (value) => JSON.stringify({ ...(value as object) }),
-        parse: (text) => Object.assign(new constructor(), JSON.parse(text)) as never,
-        validate: () => true,
-        assert: (value) => value as never,
-        toWireFormat: (value) => ({ ...(value as object) }),
-        fromWireFormat: (wire) => Object.assign(new constructor(), wire) as never,
-      });
-    }
-  }
+  graph.intern(variant({ ...tag, name: { kind: 'string' } }), `${prefix}Cat`, options.constructed !== undefined);
+  graph.intern(variant({ ...tag, bark: { kind: 'boolean' } }), `${prefix}Dog`, options.constructed !== undefined);
   graph.intern(variant({
     pet: {
       kind: 'union',
       variants: [
-        { kind: 'generated-model', id: `${prefix}Cat` },
-        { kind: 'generated-model', id: `${prefix}Dog` },
+        ...(['Cat', 'Dog'] as const).map((name): ModelTypeDescriptor => options.constructed
+          ? { kind: 'reference', name: `${prefix}${name}`, construct: true }
+          : { kind: 'generated-model', id: `${prefix}${name}` }),
         { kind: 'null' },
       ],
       discriminator: { propertyName: 'kind', variants: [{ values: tags[0] }, { values: tags[1] }, { values: [] }] },
     },
   }), `${prefix}Owner`);
   graph.seal();
-  const classes = options.classes ?? options.constructed ?? {};
+  const classes = options.constructed ?? {};
   const source = emitCodecRuntimeText(graph, {
     validationLevel: false,
-    ...(options.classes ? { nestedGenerated: (id: string) => identifier(`${id}Model`) } : {}),
     ...(options.constructed
       ? { nestedConstruct: (codecId: string) => identifier(`${prefix}${codecId.startsWith(`${prefix}Cat`) ? 'Cat' : 'Dog'}Model`) }
       : {}),
@@ -102,30 +84,6 @@ test('shared codec rejects an unknown or missing tag on encode and decode, and w
     assert.equal(text, JSON.stringify({ pet }));
     assert.deepEqual(owner.parse(text).pet, pet);
   }
-});
-
-test('shared codec writes a variant instance by its class with its own or canonical tag', () => {
-  class InstanceCatModel {}
-  class InstanceDogModel extends InstanceCatModel {}
-  const owner = ownerRuntime('Instance', [['cat', 'kitty'], ['dog']], {
-    taggedVariants: false,
-    classes: { InstanceCatModel, InstanceDogModel },
-  });
-  const cat = Object.assign(new InstanceCatModel(), { name: 'Miso' });
-  const dog = Object.assign(new InstanceDogModel(), { bark: true });
-  const catText = owner.stringify({ pet: cat });
-  assert.equal(catText, '{"pet":{"kind":"cat","name":"Miso"}}', 'an untagged instance writes the canonical tag');
-  assert.ok(owner.parse(catText).pet instanceof InstanceCatModel);
-  const dogText = owner.stringify({ pet: dog });
-  assert.equal(dogText, '{"pet":{"kind":"dog","bark":true}}', 'a subclass listed after its base selects itself');
-  assert.ok(owner.parse(dogText).pet instanceof InstanceDogModel);
-  assert.deepEqual(owner.toWire({ pet: cat }), { pet: { kind: 'cat', name: 'Miso' } });
-  assert.deepEqual(owner.toWire({ pet: dog }), { pet: { kind: 'dog', bark: true } });
-  const kitty = Object.assign(new InstanceCatModel(), { kind: 'kitty', name: 'Miso' });
-  assert.equal(owner.stringify({ pet: kitty }), '{"pet":{"kind":"kitty","name":"Miso"}}', 'an own tag value is kept');
-  const mutated = Object.assign(new InstanceCatModel(), { kind: 'dog', name: 'Miso' });
-  assert.throws(() => owner.stringify({ pet: mutated }), failsWith(LibErrorKind.Serialization, /"dog"/));
-  assert.throws(() => owner.toWire({ pet: mutated }), failsWith(LibErrorKind.Serialization, /"dog"/));
 });
 
 test('shared codec selects constructed reference variants by class, like model conversion', () => {

@@ -18,7 +18,7 @@ The CLI runs [generator jobs](#generator-jobs) first, then controller jobs, then
 | --- | --- | --- | --- | --- |
 | `version` | literal `1` | Yes | — | Configuration format version |
 | `tsconfig` | path | No | `tsconfig.json` | The project's tsconfig, relative to `golem.yaml` |
-| `mobx` | boolean | No | `false` | MobX observability hooks |
+| `mobx` | boolean | No | `false` | MobX observability hooks. An `openapi` job with `mobx: true` needs `mode: golem` ([modes](#sdk-modes)). |
 | `validation` | `true`, `false` or `sanity` | No | `true` | Level of the generated runtime checks ([levels](#validation-profiles)). Any other value is an error. |
 | `allowAny` | boolean | No | `false` | Fields typed `any` or `unknown` in models |
 | `exact` | boolean | No | `true` | Rejection of extra properties in models |
@@ -181,6 +181,25 @@ Install `@exprtlabs/golem-openapi` to use `openapi`. Each job reads one YAML or 
 | `maxRefDocuments` | positive integer | No | `256` | Maximum referenced documents, local ones included. |
 | `refTimeoutMs` | positive integer | No | `10000` | Timeout for a remote reference read, in milliseconds. |
 | `dates` | `date` or `temporal` | No | `date` | `temporal` maps `format: date-time` to `Temporal.Instant`, `date` to `Temporal.PlainDate` and `duration` to `Temporal.Duration`. [`@exprtlabs/golem/temporal`](/reference/runtime-api#temporal) converts them. `time` stays a string. Encoding a `Temporal.Instant` writes `Z`, so the original offset is lost. |
+| `mode` | `standalone` or `golem` | No | `standalone` | The kind of SDK ([modes](#sdk-modes)). `golem` needs a `models` section in the same file. |
+
+### SDK modes {#sdk-modes}
+
+| | `standalone` (default) | `golem` |
+| --- | --- | --- |
+| For | A team that gets a ready SDK and has no golem setup | An app that runs golem with its own models in the same `golem.yaml` |
+| The SDK holds | The client, types, checks, conversions and a copy of the golem runtime that it uses | The client and types only |
+| Checks and conversions | Written by the `openapi` job | Written by the `models` job, together with your models |
+| Installs | Nothing from golem; `temporal-polyfill` with `dates: temporal` | `@exprtlabs/golem` |
+| `mobx: true` | Error [`OPENAPI_MOBX_NEEDS_GOLEM_MODE`](/reference/diagnostics#openapi-mobx-needs-golem-mode) | Allowed |
+
+- Both modes write no model classes. A response is a plain object of the SDK type, with converted values such as `Temporal` dates. A class with methods is your own model over the SDK type ([SDK types in your models](/guide/models-and-client)).
+- `mode: golem` without a `models` section in the same `golem.yaml` stops generation with an error that names the key.
+- A `golem` SDK lies in a folder below the folder of `golem.yaml`. The `models` job writes its checks and conversions below `models.output`.
+- A `standalone` SDK needs no `models` job.
+- An SDK that you install from a package is a `standalone` SDK.
+- The mode is part of the job input, so changing it generates the SDK again.
+- Both modes take the [`validate` option](/guide/client-usage#lower-the-checks) per client and per call.
 
 The generator assembles local and allowed remote `$ref`s into one document. These rules apply:
 

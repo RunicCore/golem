@@ -76,7 +76,8 @@ function collectShape(schema: unknown, shape: FieldShape, scope: Scope): void {
   for (const type of types) if (typeof type === 'string') shape.types.add(type);
   if ('const' in record) shape.literals.push(record.const);
   if (Array.isArray(record.enum)) shape.literals.push(...record.enum);
-  if (types.includes('array')) {
+  // An `items` keyword stands for an array also when the schema names no type.
+  if (types.includes('array') || record.items !== undefined) {
     shape.item ??= newShape();
     collectShape(record.items, shape.item, scope);
   }
@@ -112,7 +113,10 @@ function collectFields(schema: unknown, fields: Map<string, FieldShape>, scope: 
   }
   const target = typeof record.$ref === 'string' ? resolveReference(record.$ref, scope) : undefined;
   if (target) collectFields(target.schema, fields, target.scope, seen);
-  if (Array.isArray(record.allOf)) for (const branch of record.allOf) collectFields(branch, fields, scope, seen);
+  for (const keyword of ['allOf', 'oneOf', 'anyOf'] as const) {
+    const branches = record[keyword];
+    if (Array.isArray(branches)) for (const branch of branches) collectFields(branch, fields, scope, seen);
+  }
   collectFields(schemaRecord(record[VALIDATION_KEYWORD])?.schema, fields, scope, seen);
 }
 

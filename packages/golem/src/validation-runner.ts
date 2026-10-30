@@ -9,8 +9,9 @@ export async function runValidation(
   validator: Validator,
   value: unknown,
   all = true,
+  sanity = false,
 ): Promise<{ readonly valid: boolean; readonly issues: readonly SchemaIssue[] }> {
-  const issues: unknown = validator(value, all);
+  const issues: unknown = validator(value, all, sanity);
   // An override written for another contract (a boolean, a promise) must not read as "valid".
   if (!Array.isArray(issues)) throw new TypeError('A validator must return an array of issues.');
   return { valid: issues.length === 0, issues };

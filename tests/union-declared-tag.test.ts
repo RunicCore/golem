@@ -13,6 +13,8 @@ import { generatedCodecIdFromRoot } from './support/consumer.js';
 import { buildModelProject, createModelProject, writeModelGolemYaml, writeModelSources } from './model-project.js';
 import { requireRecord, type GeneratedModelClass } from './openapi/helpers.js';
 import { modelCodec } from './support/model-codec.js';
+import { parse as parseYaml } from 'yaml';
+import { loadGolemModeProject } from './openapi/sdk-client-fixture.js';
 
 const TAG = "Discriminator<'kind'>";
 
@@ -272,17 +274,16 @@ export type TItem = IModel<{ value: ${valueType} }>;
 
 for (const validation of [false, true]) {
   test(`a declared default variant takes the value whose tag selects no object, with validation ${validation ? 'on' : 'off'}`, async (t) => {
-    // protects: T-593 Discriminator<'kind', Money> makes the SDK model the default beside tagged objects; each tagged object still wins by its value
+    // protects: T-593 Discriminator<'kind', Money> makes the SDK type the default beside tagged objects; each tagged object still wins by its value, shown by its Date field
     const { Item } = await buildMoneyItem(t, 'declared-default', validation,
-      "(Money | { kind: 'a' | 'b'; x: number } | { kind: 'c' }) & Discriminator<'kind', Money>");
-    const plain = (value: unknown): boolean => Object.getPrototypeOf(value) === Object.prototype;
-    const valueOf = (wire: unknown): unknown => requireRecord(modelCodec(Item).fromWireFormat({ value: wire }, { validate: false }), 'item').value;
-    for (const wire of [{ kind: 'a', x: 1 }, { kind: 'b', x: 2 }, { kind: 'c' }]) {
-      assert.equal(plain(valueOf(wire)), true, `validation=${validation}: ${JSON.stringify(wire)} is the tagged object`);
-    }
-    for (const wire of [{ amount: 5, currency: 'EUR' }, { kind: 'zzz', amount: 5, currency: 'EUR' }]) {
-      assert.equal(plain(valueOf(wire)), false, `validation=${validation}: ${JSON.stringify(wire)} is the default SDK model`);
-    }
+      "(Money | { kind: 'a' | 'b'; at: Date } | { kind: 'c' }) & Discriminator<'kind', Money>");
+    const valueOf = (wire: unknown): Record<string, unknown> => requireRecord(requireRecord(modelCodec(Item).fromWireFormat({ value: wire }, { validate: false }), 'item').value, 'value');
+    const at = '2025-01-02T03:04:05.000Z';
+    assert.deepEqual(valueOf({ kind: 'a', at }), { kind: 'a', at: new Date(at) });
+    assert.deepEqual(valueOf({ kind: 'b', at }), { kind: 'b', at: new Date(at) });
+    assert.deepEqual(valueOf({ kind: 'c' }), { kind: 'c' });
+    assert.equal(valueOf({ amount: 5, currency: 'EUR' }).amount, 5);
+    assert.equal(valueOf({ kind: 'zzz', amount: 5, currency: 'EUR' }).amount, 5);
   });
 }
 
@@ -290,16 +291,21 @@ for (const validation of [false, true]) {
 const OPEN_MONEY_DOCUMENT = fs.readFileSync(fixturePath('wire-format/sdk-money/money.yaml'), 'utf8').split('\n').filter(line => !line.includes('additionalProperties')).join('\n');
 
 test('an open declared default does not take the value of a tagged variant that the value does not fit', async (t) => {
-  // protects: I-2 (P-31) the default takes only values whose tag selects no variant, also when its model is open
-  const { root } = await buildMoneyItem(t, 'declared-open-default', true,
-    "(Money | { kind: 'a' | 'b'; x: number } | { kind: 'c' }) & Discriminator<'kind', Money>", OPEN_MONEY_DOCUMENT);
+  // protects: I-2 (P-31) the default takes only values whose tag selects no variant, also when its type is open; the open type comes from a golem-mode SDK (F-804)
+  const model = `import type { IModel } from '@exprtlabs/golem/model';
+import type { Discriminator } from '@exprtlabs/golem/tags';
+import type { Money } from '../sdk/index.js';
+export type TItem = IModel<{ value: (Money | { kind: 'a' | 'b'; x: number } | { kind: 'c' }) & Discriminator<'kind', Money> }>;
+`;
+  const { root } = await loadGolemModeProject(t, 'golem-declared-open-default-', [{ document: parseYaml(OPEN_MONEY_DOCUMENT), folder: 'sdk', name: 'Payments' }], true, { 'src/item.model.ts': model });
+  await import(pathToFileURL(path.join(root, 'build/src/item.model.generated.js')).href);
   const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TItem'));
   const options = { validate: true };
   assert.throws(() => codec.parse(JSON.stringify({ value: { kind: 'a', amount: 5, currency: 'EUR' } }), options));
   assert.throws(() => codec.fromWireFormat({ value: { kind: 'a', amount: 5, currency: 'EUR' } }, options));
-  for (const wire of [{ amount: 5, currency: 'EUR' }, { kind: 'zzz', amount: 5, currency: 'EUR' }, { kind: 'a', x: 1 }]) {
-    assert.doesNotThrow(() => codec.parse(JSON.stringify({ value: wire }), options), JSON.stringify(wire));
-  }
+  assert.doesNotThrow(() => codec.parse(JSON.stringify({ value: { amount: 5, currency: 'EUR' } }), options));
+  assert.doesNotThrow(() => codec.parse(JSON.stringify({ value: { kind: 'zzz', amount: 5, currency: 'EUR' } }), options));
+  assert.doesNotThrow(() => codec.parse(JSON.stringify({ value: { kind: 'a', x: 1 } }), options));
 });
 
 const BOX_MODEL = `
@@ -358,20 +364,13 @@ for (const validation of [false, true]) {
       "((Money | string | number[] | { kind: 'a'; x: number } | { kind: 'c' }) & Discriminator<'kind', Money>) | null");
     const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TItem'));
     const options = { validate: validation };
-    const plain = (value: unknown): boolean => Object.getPrototypeOf(value) === Object.prototype;
     const money = { amount: 5, currency: 'EUR' };
-    for (const [wire, isModel] of [
-      ['hi', false], [[1, 2], false], [null, false], [{ kind: 'a', x: 1 }, false], [{ kind: 'c' }, false],
-      [money, true],
-    ] as const) {
-      const item = requireRecord(modelCodec(Item).fromWireFormat({ value: wire }, { validate: false }), 'item');
-      const label = `validation=${validation}: ${JSON.stringify(wire)}`;
-      assert.equal(typeof item.value === 'object' && item.value !== null && !Array.isArray(item.value) && !plain(item.value), isModel, label);
-      assert.deepEqual(modelCodec(item).toWireFormat(item), { value: wire }, label);
-      assert.deepEqual(JSON.parse(codec.stringify(item, options)), { value: wire }, label);
-    }
-    const unknownTag = requireRecord(modelCodec(Item).fromWireFormat({ value: { kind: 'zzz', ...money } }, { validate: false }), 'item').value;
-    assert.equal(plain(unknownTag), false, `validation=${validation}: an unknown tag takes the default model`);
+    const item = (wire: unknown): Record<string, unknown> => requireRecord(modelCodec(Item).fromWireFormat({ value: wire }, { validate: false }), 'item');
+    const rows = [item('hi'), item([1, 2]), item(null), item({ kind: 'a', x: 1 }), item({ kind: 'c' }), item(money)];
+    assert.deepEqual(rows.map(row => modelCodec(row).toWireFormat(row)), [{ value: 'hi' }, { value: [1, 2] }, { value: null }, { value: { kind: 'a', x: 1 } }, { value: { kind: 'c' } }, { value: money }]);
+    assert.deepEqual(rows.map(row => JSON.parse(codec.stringify(row, options))), [{ value: 'hi' }, { value: [1, 2] }, { value: null }, { value: { kind: 'a', x: 1 } }, { value: { kind: 'c' } }, { value: money }]);
+    // An unknown tag takes the default, which keeps the fields of Money.
+    assert.equal(requireRecord(item({ kind: 'zzz', ...money }).value, 'value').amount, 5);
   });
 }
 

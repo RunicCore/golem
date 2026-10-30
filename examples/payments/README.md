@@ -9,7 +9,7 @@ A merchant payments app: one TypeScript contract becomes a NestJS API, an OpenAP
 - `server/provider/`: a client generated from `provider.yaml` with bearer auth, an optional `Idempotency-Key` header parameter, NDJSON event streams, Temporal settlement dates and a custom money media type.
 - Each saved payment is charged through the provider client (bearer token, the payment's `Idempotency-Key` as a per-call header parameter), and the editor shows the charge status.
 - `generators/event-models.js`: a generator job that writes the provider's event models.
-- One package, two configurations: `server/golem.yaml` has MobX off and `web/golem.yaml` has MobX on.
+- One package, two configurations and both SDK modes: `server/golem.yaml` has MobX off and the provider SDK in standalone mode, which carries its own checks and conversions. `web/golem.yaml` has MobX on and the payments SDK in golem mode (`mode: golem`), where the models step writes the checks and conversions together with the editor models.
 
 The example depends on `1.1.0-rc.0` of `@exprtlabs/golem*`. Run it from this repository checkout.
 
@@ -48,7 +48,7 @@ Payment 1: USD 12.50, charge charge-1 is pending
 | `server/src/price.model.ts`, `decimal-text.ts` | A reference sample for the docs: integer minor units written as decimal text. The app does not use it |
 | `server/provider/provider.yaml` | The provider's OpenAPI document |
 | `server/provider/*.ts` | Provider client usage: auth, headers, codecs, streams, dates |
-| `server/provider/charge-record.model.ts` | Model that holds a provider `Charge` and adds `isOverdue()` |
+| `server/provider/charge-record.model.ts` | Your own model over the provider's plain `Charge` type; it adds `isOverdue()` |
 | `web/src/payment-editor.model.ts` | Observable payment editor model |
 | `web/src/payment-store.ts` | Validate, save, cancel and retry |
 | `web/src/App.tsx` | The editor view |

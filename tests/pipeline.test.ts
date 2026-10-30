@@ -11,28 +11,22 @@ import { applyJob, loadInventory } from '#golem/outputs';
 import { runBuild } from '#golem/build';
 import { command, stopChild, workspace } from './support/process.js';
 import { TSC, write as writeFile } from './support/build-project.js';
-import { writeFixture } from './support/consumer.js';
+import { workspaceLinkedProject, writeFixture } from './support/consumer.js';
 import { until } from './support/watch-wait.js';
 import { runLines } from './support/watch-runs.js';
-import { readGeneratedModelSource } from './openapi/helpers.js';
 
 function fixture(t: TestContext): { root: string; config: string } {
-  const root = createFixtureProject(t, 'golem-pipeline-');
-
-  linkProjectPackages(root, Object.fromEntries(
-    ['golem', 'golem-model', 'golem-openapi'].map(name => [`@exprtlabs/${name}`, path.join(workspace, 'packages', name)]),
-  ));
-  fs.writeFileSync(path.join(root, 'package.json'), '{"name":"pipeline-fixture","type":"module"}');
+  const root = workspaceLinkedProject(t, 'golem-pipeline-', '{"name":"pipeline-fixture","type":"module"}');
   writeFixture(root, { mobx: false, validation: true });
   return { root, config: path.join(root, 'golem.yaml') };
 }
 
-test('frontend models generated from an out-of-src SDK manifest do not re-emit its validation pattern', async (t: TestContext) => {
+test('frontend models generated from an out-of-src SDK manifest read an SDK type as a plain type', async (t: TestContext) => {
   const { root, config } = fixture(t);
   const state = await runPipeline(config);
   const generated = fs.readFileSync(path.join(root, 'src/cart.model.generated.ts'), 'utf8');
-  // The companion names the SDK's own model class, which the manifest names.
-  assert.match(generated, /MoneyModel/);
+  // The SDK writes no model class, so the companion holds the fields of Money itself.
+  assert.match(generated, /money: \{ amount: number; currency: string \}/);
   assert.equal(state.inputs.has(path.join(root, 'sdk/model-manifest.json')), false);
 });
 
@@ -54,10 +48,11 @@ test('global profile changes remove obsolete validation and keep manifest identi
   // A fresh process reads the built SDK, so no module of an earlier build stays cached.
   const validateBreakingMoney = async (): Promise<string> => {
     await command(root, process.execPath, [TSC, '-p', 'tsconfig.json']);
-    const probe = "import { validateMoney } from './build/sdk/index.js'; let out; try { out = String(validateMoney({ amount: -1, currency: 'usd' })); } catch (error) { out = error.kind; } process.stdout.write(out);";
+    // The client reads a Money that breaks its minimum and pattern: a validating SDK refuses it, and one with validation off hands it over.
+    const probe = "const { ProfileClient } = await import('./build/sdk/client.js'); const client = new ProfileClient({ baseUrl: 'https://api.test', fetchImpl: async () => Response.json({ amount: -1, currency: 'usd' }) }); let out = 'accepted'; try { await client.getMoney().execute({}); } catch (error) { out = error.kind; } process.stdout.write(out);";
     return (await command(root, process.execPath, ['--input-type=module', '-e', probe])).stdout;
   };
-  assert.equal(await validateBreakingMoney(), 'false', 'validation on: the SDK model checks minimum and pattern');
+  assert.equal(await validateBreakingMoney(), 'validation', 'validation on: the client checks the minimum and the pattern of a response');
   fs.writeFileSync(config, fs.readFileSync(config, 'utf8').replace('validation: true', 'validation: false'));
   await assert.rejects(runPipeline(config, { check: true }), /stale/);
   await runPipeline(config);
@@ -67,7 +62,7 @@ test('global profile changes remove obsolete validation and keep manifest identi
   };
   assert.deepEqual(after.models.map((model) => model.id), before.models.map((model) => model.id));
   assert.deepEqual(after.profile, { mobx: false, validation: false, allowAny: false, unknownFormats: 'error' });
-  assert.equal(await validateBreakingMoney(), 'validation_unavailable', 'validation off: the SDK model has no validator left');
+  assert.equal(await validateBreakingMoney(), 'accepted', 'validation off: the client has no validator left');
   await runPipeline(config, { check: true });
 });
 
@@ -248,7 +243,8 @@ test('an unreferenced OpenAPI document does not regenerate model companions', as
   const companion = path.join(root, 'src/cart.model.generated.ts');
   fs.appendFileSync(companion, '\n// companion marker\n');
   const otherSdk = path.join(root, 'other-sdk');
-  const beforeOther = readGeneratedModelSource(otherSdk);
+  const otherTypes = path.join(otherSdk, 'types.ts');
+  const beforeOther = fs.readFileSync(otherTypes, 'utf8');
   const spec = JSON.parse(fs.readFileSync(other, 'utf8')) as {
     components: { schemas: { Note: { properties: Record<string, unknown> } } };
   };
@@ -256,7 +252,7 @@ test('an unreferenced OpenAPI document does not regenerate model companions', as
   fs.writeFileSync(other, JSON.stringify(spec));
   const second = await runPipeline(config, { previous: first, changedInputs: [other] });
   assert.match(fs.readFileSync(companion, 'utf8'), /companion marker/);
-  assert.notEqual(readGeneratedModelSource(otherSdk), beforeOther);
+  assert.notEqual(fs.readFileSync(otherTypes, 'utf8'), beforeOther);
   const api = path.join(root, 'api.json');
   const apiSpec = JSON.parse(fs.readFileSync(api, 'utf8')) as { info: { title: string } };
   apiSpec.info.title = 'Profile changed';
@@ -348,6 +344,20 @@ test('a deleted output reruns its job, and a changed option or golem code reruns
   assert.deepEqual(ranKinds(await runPipeline(config)), ['models']);
 
   fs.writeFileSync(config, fs.readFileSync(config, 'utf8').replace('validation: true', 'validation: false'));
+  assert.deepEqual(ranKinds(await runPipeline(config)), ['openapi', 'models']);
+  assert.deepEqual(ranKinds(await runPipeline(config)), []);
+});
+
+test('the mode of an openapi job is recorded with the job, and a mode change reruns that job', async (t: TestContext) => {
+  // protects: T-695 a mode change reruns the openapi job
+  const { root, config } = fixture(t);
+  await runPipeline(config);
+  const records = JSON.parse(fs.readFileSync(path.join(root, '.golem/jobs.json'), 'utf8')) as { jobs: Record<string, { options: string }> };
+  const openapiId = Object.keys(records.jobs).find((id) => id.startsWith('openapi:'));
+  assert.ok(openapiId, 'the openapi job has a record');
+  assert.equal((JSON.parse(records.jobs[openapiId].options) as { mode: string }).mode, 'standalone');
+
+  fs.writeFileSync(config, fs.readFileSync(config, 'utf8').replace('    name: Profile', '    name: Profile\n    mode: golem'));
   assert.deepEqual(ranKinds(await runPipeline(config)), ['openapi', 'models']);
   assert.deepEqual(ranKinds(await runPipeline(config)), []);
 });

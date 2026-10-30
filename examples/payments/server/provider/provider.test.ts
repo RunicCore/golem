@@ -5,7 +5,7 @@ import { createAuthorizedClient, createClientWithSharedHeaders, createMoneyTextC
 import { chargeAmountIssues, createChargeWithKey, fetchCharge, readCharge, readTwoCharges } from './charges.js';
 import { createEventLinesClient, firstEvent, firstEventId, readCaptured, readEvents, readUntilClosed } from './events.js';
 import { describeCharge, readSettlementDate } from './settlement.js';
-import { ChargeRecord } from './charge-record.model.js';
+import { ChargeRecord, ChargeView } from './charge-record.model.js';
 import { fromWireFormat } from '@exprtlabs/golem/serde';
 import { PaymentCaptured } from '../src/events/payment-events.model.js';
 
@@ -150,4 +150,15 @@ test('a charge is overdue the day after its settlement date and not on that day'
   const record = fromWireFormat<ChargeRecord>({ charge });
   assert.equal(record.isOverdue(Temporal.PlainDate.from('2025-02-02')), true);
   assert.equal(record.isOverdue(Temporal.PlainDate.from('2025-02-01')), false);
+});
+
+test('a model over the Charge type takes the client data and keeps its own state', async () => {
+  // protects: R-84 a model over an SDK type has its own constructor and takes the client's converted body
+  const response = await withFetch(() => Response.json(charge), () => createAuthorizedClient(base, 't').getCharge().execute({ path: { id: 'charge-1' } }));
+  assert.equal(response.status, 200);
+  if (response.status !== 200) return;
+  const fetchedAt = Temporal.Instant.from('2025-03-01T00:00:00Z');
+  const view = new ChargeView(response.body, fetchedAt);
+  assert.equal(view.fetchedAt, fetchedAt);
+  assert.ok(view.settlesOn instanceof Temporal.PlainDate);
 });

@@ -1,7 +1,19 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { GolemProfile } from '@exprtlabs/golem/generator-api';
-import { copyFixtureFile } from '../fixture-project.js';
+import type { TestContext } from 'node:test';
+import { copyFixtureFile, createFixtureProject, linkProjectPackages } from '../fixture-project.js';
+import { workspace } from './process.js';
+
+/** A fixture project whose node_modules link the workspace packages golem, golem-model and golem-openapi, with `packageJson` as its package.json. */
+export function workspaceLinkedProject(t: TestContext, prefix: string, packageJson: string): string {
+  const root = createFixtureProject(t, prefix);
+  linkProjectPackages(root, Object.fromEntries(
+    ['golem', 'golem-model', 'golem-openapi'].map(name => [`@exprtlabs/${name}`, path.join(workspace, 'packages', name)]),
+  ));
+  fs.writeFileSync(path.join(root, 'package.json'), packageJson);
+  return root;
+}
 
 export function writeFixture(root: string, profile: GolemProfile, includeModels = true): void {
   copyFixtureFile(root, 'packed/profile/api.json', 'api.json');
@@ -17,6 +29,8 @@ export function writeFixture(root: string, profile: GolemProfile, includeModels 
     '  - input: api.json',
     '    output: sdk',
     '    name: Profile',
+    // MobX needs the golem mode, which needs the models section.
+    ...(profile.mobx && includeModels ? ['    mode: golem'] : []),
     ...(includeModels ? ['models:', '  root: .'] : []),
     '',
   ].join('\n');

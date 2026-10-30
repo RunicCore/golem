@@ -205,10 +205,11 @@ async function assertFilesPerProfile(
   name: string,
   expected: (profile: OpenApiGenerationProfile) => readonly string[],
   compileDefaultProfile = true,
+  mode?: 'golem',
 ): Promise<void> {
   for (const profile of ALL_GENERATION_PROFILES) {
     const output = outputDir(t, `${name}-${profile.mobx}-${profile.validation}`);
-    const result = await generateMaterializedSdk(document, { output, name, profile });
+    const result = await generateMaterializedSdk(document, { output, name, profile, ...(mode ? { mode } : {}) });
     assert.deepEqual(emittedFiles(result.artifacts, output), [...expected(profile)].sort());
     if (compileDefaultProfile && profile.mobx === defaultTestProfile.mobx && profile.validation === defaultTestProfile.validation) {
       compileStrictUnusedSdk(output);
@@ -235,9 +236,6 @@ test('schema-only documents emit types, directional files, and models without a 
     'model-manifest.json',
     'input-schemas.ts',
     'output-schemas.ts',
-    'models/Widget.ts',
-    'models/_group-<hash>.ts',
-    ...(profile.validation ? ['validators.generated.ts'] : []),
   ]);
 });
 
@@ -297,7 +295,7 @@ function pingDocument(): unknown {
   };
 }
 
-test('generated SDKs import the client runtime instead of copying it', async t => {
+test('generated SDKs of golem mode import the client runtime instead of copying it', async t => {
   const output = outputDir(t, 'shared-runtime');
   await generateMaterializedSdk({
     openapi: '3.2.0', info: info('Shared'),
@@ -306,7 +304,7 @@ test('generated SDKs import the client runtime instead of copying it', async t =
       parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
       responses: { '200': { description: 'item', content: { 'application/json': { schema: { type: 'object' } } } } },
     } } },
-  }, { output, name: 'Shared', profile: { mobx: false, validation: true } });
+  }, { output, name: 'Shared', profile: { mobx: false, validation: true }, mode: 'golem' });
   compileStrictUnusedSdk(output);
   const Client = (await importClient(output, 'shared client')).SharedClient;
   assert.ok(isGeneratedClientClass(Client));
@@ -321,14 +319,14 @@ test('generated SDKs import the client runtime instead of copying it', async t =
 });
 
 test('minimal GET without content omits codec options and unused helpers', async (t) => {
-  await assertFilesPerProfile(t, pingDocument(), 'Ping', (profile) => [
+  // A golem-mode SDK holds no codec module and no validators: the models job writes them.
+  await assertFilesPerProfile(t, pingDocument(), 'Ping', () => [
     'index.ts',
     'types.ts',
     'model-manifest.json',
     'client.ts',
     'operations/ping.ts',
-    ...(profile.validation ? ['validators.generated.ts'] : []),
-  ], false);
+  ], false, 'golem');
 
   const output = outputDir(t, 'codec-omit');
   await generateMaterializedSdk(pingDocument(), {
@@ -497,28 +495,31 @@ test('an operation with no effective security requirement sends no credentials a
   assert.deepEqual(resolved, ['bearer'], 'only the operation that inherits the requirement resolves a credential');
 });
 
-test('the SDK entry re-exports each model module directly', async t => {
-  const output = outputDir(t, 'direct-models');
-  const result = await generateMaterializedSdk({
-    openapi: '3.2.0', info: info('Direct'), paths: {},
-    components: { schemas: {
-      Money: { type: 'object', properties: { amount: { type: 'string' } }, required: ['amount'] },
-      Payment: { type: 'object', properties: { money: { $ref: '#/components/schemas/Money' } }, required: ['money'] },
-    } },
-  }, { output, name: 'Direct', profile: { mobx: false, validation: false } });
-  // One file per model and no facade module between the entry and them.
-  assert.deepEqual(emittedFiles(result.artifacts, output).filter(file => !file.startsWith('models/_group-')), [
-    'index.ts', 'input-schemas.ts', 'model-manifest.json', 'models/Money.ts', 'models/Payment.ts', 'output-schemas.ts', 'types.ts',
-  ]);
+// protects: R-80 R-81 T-688 the SDK index holds the client, the undeclared-response guard and types; no per-type codec function
+test('the SDK index exports its client and guard, and the client returns the checked body', async t => {
+  const output = outputDir(t, 'export-surface');
+  const money = { $ref: '#/components/schemas/Money' };
+  await generateMaterializedSdk({
+    openapi: '3.2.0', info: info('Surface'),
+    paths: { '/money': { get: {
+      operationId: 'getMoney',
+      responses: { 200: { description: 'ok', content: { 'application/json': { schema: money } } } },
+    } } },
+    components: { schemas: { Money: { type: 'object', properties: { amount: { type: 'string' } }, required: ['amount'] } } },
+  }, { output, name: 'Surface', profile: { mobx: false, validation: true } });
   compileStrictUnusedSdk(output);
   const entry = requireRecord(await import(pathToFileURL(path.join(output, 'dist/index.js')).href), 'SDK entry');
-  const assertDirect = async (name: string): Promise<void> => {
-    const direct = requireRecord(await import(pathToFileURL(path.join(output, `dist/models/${name}.js`)).href), `${name} module`);
-    assert.ok(isGeneratedModelClass(entry[`${name}Model`]), `${name}Model is a model class`);
-    assert.strictEqual(entry[`${name}Model`], direct[`${name}Model`]);
-  };
-  await assertDirect('Money');
-  await assertDirect('Payment');
+  assert.deepEqual(Object.keys(entry).sort(), ['SurfaceClient', 'isSurfaceUndeclaredResponseError']);
+  const Client = entry.SurfaceClient;
+  assert.ok(isGeneratedClientClass(Client));
+  if (!isGeneratedClientClass(Client)) throw new TypeError('SurfaceClient');
+  const respond = (status: number, body: unknown) => new Client({ baseUrl: 'https://fixture.invalid', fetchImpl: async () => Response.json(body, { status }) });
+  const response = await respond(200, { amount: '5' }).getMoney().execute({});
+  assert.deepEqual(response.body, { amount: '5' });
+  const failure = await respond(500, {}).getMoney().execute({}).then(() => undefined, (cause: unknown) => cause);
+  const guard = entry.isSurfaceUndeclaredResponseError as (error: unknown) => boolean;
+  assert.equal(guard(failure), true);
+  assert.equal(guard(new Error('other')), false);
 });
 
 test('a validation SDK with operations compiles under strict unused checks', async t => {
@@ -571,38 +572,4 @@ test('an operation module declares only the request locals it uses', async t => 
     { url: 'https://fixture.invalid/plain', cookie: null },
     { url: 'https://fixture.invalid/session', cookie: 'sid=abc' },
   ]);
-});
-
-test('SDK model functions use the model types instead of unknown', async t => {
-  const output = outputDir(t, 'typed-functions');
-  await generateMaterializedSdk({
-    openapi: '3.1.0', info: info('Typed'), paths: {},
-    components: { schemas: { Money: { type: 'object', properties: { amount: { type: 'string' } }, required: ['amount'] } } },
-  }, { output, name: 'Typed', profile: { mobx: false, validation: true } });
-  const assertFile = writeAssertFile(output, 'functions-assert.ts', `import { parseMoney, toWireFormatMoney, validateMoney, type MoneyFields } from './index.js';
-import type * as Types from './types.js';
-type IsAny<T> = 0 extends 1 & T ? true : false;
-const returnsAny: IsAny<ReturnType<typeof parseMoney>> = false;
-const parsed: MoneyFields = parseMoney('{"amount":"1"}');
-const wire: Types.Money = toWireFormatMoney(parsed);
-declare const input: unknown;
-if (validateMoney(input)) {
-  const narrowed: MoneyFields = input;
-  void narrowed;
-}
-// @ts-expect-error toWireFormatMoney takes a model value, not unknown
-void toWireFormatMoney(input);
-void wire;
-void returnsAny;
-`);
-  compileStrictUnusedSdk(output, [assertFile]);
-  const { parseMoney, toWireFormatMoney, validateMoney } = await import(pathToFileURL(path.join(output, 'dist/index.js')).href) as {
-    parseMoney(text: string): unknown;
-    toWireFormatMoney(value: unknown): unknown;
-    validateMoney(value: unknown): boolean;
-  };
-  const money: unknown = parseMoney('{"amount":"5"}');
-  assert.equal(validateMoney(money), true);
-  assert.equal(validateMoney({}), false);
-  assert.deepEqual(toWireFormatMoney(money), { amount: '5' });
 });

@@ -1,5 +1,9 @@
-import type { BodyEncoder, ClientRuntime, EncodedBody, EncodingMetadata } from './core.js';
+import { IssueRepresentation, IssueSource, LibError, LibErrorKind, toIssue } from '../errors.js';
+import type { ValidationLevel } from '../object-codec.js';
+import type { BodyEncoder, ClientRuntime, EncodedBody, EncodingMetadata, OperationCodecs, ResponseDecode } from './core.js';
+import { mediaEssence } from './media-type.js';
 import { addQueryParameter } from './parameters.js';
+import type { CallLevels } from './validation.js';
 
 /** Encoding metadata the generated operation declares for one request media type. */
 interface RequestMediaMetadata {
@@ -27,7 +31,7 @@ function ownEncoding(encoding: Readonly<Record<string, EncodingMetadata>>, name:
 
 function findBodyEncoder(encoders: Record<string, BodyEncoder>, contentType: string): BodyEncoder | undefined {
   if (Object.hasOwn(encoders, contentType)) return encoders[contentType];
-  const essence = (contentType.split(';', 1)[0] || '').trim().toLowerCase();
+  const essence = mediaEssence(contentType);
   if (essence && Object.hasOwn(encoders, essence)) return encoders[essence];
   return Object.hasOwn(encoders, '*/*') ? encoders['*/*'] : undefined;
 }
@@ -40,7 +44,7 @@ export function encodeBody(
   mediaMetadata: Readonly<Record<string, RequestMediaMetadata>>,
 ): { body?: BodyInit; contentType?: string } {
   if (value === undefined || !contentType) return {};
-  const essence = (contentType.split(';', 1)[0] || '').trim().toLowerCase();
+  const essence = mediaEssence(contentType);
   const metadata: RequestMediaMetadata = mediaMetadata[contentType] || mediaMetadata[essence] || {
     encoding: {},
     prefixEncoding: [],
@@ -137,4 +141,69 @@ export function encodeBody(
     return { body: value, contentType };
   }
   throw new Error(`No request body encoder configured for media type: ${contentType}`);
+}
+
+/**
+ * The request body in its wire form: the generated encoder of its media type converts it, and a body that converts nothing has none.
+ * The encoder checks the plain value at `validate`; conversion runs at every level.
+ */
+export function convertRequestBody(codecs: OperationCodecs, contentType: string | undefined, value: unknown, validate?: ValidationLevel): unknown {
+  const encode = value === undefined || contentType === undefined || !codecs.encode || !Object.hasOwn(codecs.encode, contentType) ? undefined : codecs.encode[contentType];
+  return encode ? encode(value as never, validate === undefined ? undefined : { validate }) : value;
+}
+
+/** The parameters of a call by location, as the serializers read them. */
+interface RequestParameters {
+  readonly path?: Readonly<Record<string, unknown>>;
+  readonly query?: Readonly<Record<string, unknown>>;
+  readonly header?: Readonly<Record<string, unknown>>;
+  readonly cookie?: Readonly<Record<string, unknown>>;
+  readonly querystring?: unknown;
+}
+
+/**
+ * The first line of a generated operation that reads its input: a value that is no object is rejected as a Validation error caused by input,
+ * at any validation level, before a conversion or a check reads a part of it. An operation that reads no input does not call this.
+ */
+export function requireObjectInput(operation: string, input: unknown): void {
+  if (typeof input === 'object' && input !== null && !Array.isArray(input)) return;
+  throw new LibError(LibErrorKind.Validation, `The input of ${operation} must be an object.`, [toIssue({ code: 'type', expected: ['object'], path: [] }, IssueSource.OpenAPI, IssueRepresentation.Wire)], { causedByInput: true });
+}
+
+/** The input with each request parameter that holds a Date or Temporal value in its wire form, each checked at the level of its side; the rest of the input is the same. */
+export function convertRequestParameters<Input extends object>(codecs: OperationCodecs, input: Input, levels?: Pick<CallLevels, 'request' | 'requestHeaders'>): Input & RequestParameters {
+  const converted: Record<string, unknown> = Object.fromEntries(Object.entries(input));
+  for (const [key, encode] of Object.entries(codecs.parameters ?? {})) {
+    const separator = key.indexOf(':');
+    const location = key.slice(0, separator);
+    const level = location === 'header' ? levels?.requestHeaders : levels?.request;
+    const options = level === undefined ? undefined : { validate: level };
+    if (location === 'querystring') {
+      if (converted.querystring !== undefined) converted.querystring = encode(converted.querystring as never, options);
+      continue;
+    }
+    const group = converted[location];
+    if (typeof group !== 'object' || group === null) continue;
+    const name = key.slice(separator + 1);
+    const plain = (group as Record<string, unknown>)[name];
+    if (plain !== undefined) converted[location] = { ...group, [name]: encode(plain as never, options) };
+  }
+  return converted as Input & RequestParameters;
+}
+
+/** Decodes a value the response check has already seen: the codec converts only. */
+const CHECKED: { readonly validate: false } = { validate: false };
+
+/**
+ * The conversion of a checked response body, stream item or response header to its plain form; none when no response of the operation converts.
+ * The response check ran before the decoder, so its codec converts only (a date that cannot convert still fails).
+ */
+export function responseDecoder(codecs: OperationCodecs): ResponseDecode | undefined {
+  const { decode, headers } = codecs;
+  if (!decode && !headers) return undefined;
+  return (response, value, header) => {
+    const table = header === undefined ? decode : headers;
+    const key = `${response.status}:${header ?? response.contentType}`;
+    return table && Object.hasOwn(table, key) ? table[key]!(value as never, CHECKED) : value;
+  };
 }

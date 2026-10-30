@@ -16,7 +16,7 @@ export function createApiOperation<Input, Result, Options = unknown>(
   return createTrackedApiOperation(name, run);
 }
 export type {
-  BodyEncoder, BodyEncoderContext, ClientOptions, EncodedBody, EncodingMetadata, MutualTlsTransport, OperationValidationSources,
+  BodyEncoder, BodyEncoderContext, ClientOptions, EncodedBody, EncodingMetadata, MutualTlsTransport, OperationCodecs,
   ParameterSerializer, ParameterSerializerContext, RequestOptions, ResponseDecoder, ResponseHeaderDecoder, ResponseHeaderDecoderContext,
   RuntimeResponseContract, RuntimeSecuritySchemes, ServerObject, StreamDecoder, StreamDecoderContext, UndeclaredResponseError,
 } from './client-runtime/core.js';

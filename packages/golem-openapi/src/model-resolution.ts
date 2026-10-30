@@ -1,14 +1,14 @@
-import { descriptorNeedsConversion } from '@exprtlabs/golem/internal/emitter';
+import { isDeepStrictEqual } from 'node:util';
+import { descriptorNeedsConversion, TEMPORAL_SERDE_PREFIX } from '@exprtlabs/golem/internal/emitter';
 import type { SchemaGraph, SchemaNode } from '@exprtlabs/golem/internal/schema-graph';
 import { identifier } from '@exprtlabs/golem/internal/generator-support';
 import { asRecord, escapeJsonPointerToken, isJsonObject, objectEntries, type JsonObject } from './json.js';
 import type { GolemDiagnostic } from '@exprtlabs/golem/generator-api';
-import type { ModelConstraint, ModelTypeDescriptor, UnionDiscriminator } from '@exprtlabs/golem/internal/schema';
+import type { ConstraintSchemaValue, ModelConstraint, ModelTypeDescriptor, UnionDiscriminator } from '@exprtlabs/golem/internal/schema';
 import { componentOrigin, LocatedError } from './origin.js';
 import {
   COMPOSITION_PROPERTY_NEVER,
   COMPOSITION_UNSATISFIABLE,
-  composedRequired,
   isConstraintOnlyPart,
   isSequenceSchema,
   joinMembers,
@@ -18,12 +18,10 @@ import {
   resolveComposition,
   type Composition,
   type CompositionReader,
-  type SlotChild,
   unionVariants,
 } from './composition.js';
 import { effectiveSchemaTypes } from './normalize.js';
-import { code, identifier as identifierPart, join, propertyKey, type Code } from '@exprtlabs/golem/internal/emitter';
-import { orNull, prefixItemsType, schemaContext, schemaTypeCode, typeCode, type SchemaTypeContext, type TypeCode } from './types.js';
+import { schemaContext, temporalFormat, type NeverPropertiesOf } from './types.js';
 import {
   collectCanonicalResources,
   nextSchemaBase,
@@ -43,7 +41,7 @@ export interface ModelDefinition {
   readonly schemaName: string;
   readonly schema: unknown;
   readonly rawSchema: unknown;
-  /** The model that the generated class extends: the first model `$ref` of the allOf. */
+  /** The base model: the first model `$ref` of the allOf. */
   baseName: string | null;
   /** The other models the allOf refers to; their fields are in `properties`, and a slot narrows each of them. */
   otherBaseNames: readonly string[];
@@ -53,8 +51,6 @@ export interface ModelDefinition {
   additionalProperties: unknown;
   required: Set<string>;
   variants?: readonly string[];
-  /** The variants of a union that another union also selects. They extend their own base, so the union class answers `instanceof` for them. */
-  sharedVariants?: readonly string[];
   discriminator?: unknown;
   isUnion?: boolean;
 }
@@ -71,10 +67,6 @@ export interface RecursiveAlias {
   nodeId?: string;
   /** The conversion descriptor of the component, with each use of a recursive component as a projection reference. */
   descriptor?: ModelTypeDescriptor;
-  /** Whether it reaches a date or a model: its model type is then a private alias of the owner group, not `Types.<Name>`. */
-  convertsValue?: boolean;
-  /** Whether a model sits inside it: its init is then a function of the owner group. */
-  initsModel?: boolean;
 }
 
 /** The models of a document by type name, and its recursive aliases. */
@@ -104,31 +96,28 @@ export interface ModelResolveEnv {
   readonly currentBase: string;
   readonly anchors?: ReadonlyMap<string, string>;
   readonly selections?: DiscriminatorSelections;
-  /** How the module that holds the code names types of other modules; without it, the types namespace is the local name `Types`. */
-  readonly names?: ModelNames;
+  /** Collects the keywords of the schemas converted under this env that no descriptor carries (see `noteUncarried`); none collects nothing. */
+  readonly uncarried?: Set<string>;
+  /**
+   * What the caller of the next conversion holds of the schema it converts: an allOf `member` (the composition holds its `required` names and its object type),
+   * or a keyword's `sub`-schema (`subschemaConverter` holds its `required` names).
+   */
+  readonly holds?: 'member' | 'sub';
 }
 
-/** What a module decides about the names its model code writes: each is a local name, or a part imported from the module that holds it. */
-export interface ModelNames {
-  /** The namespace the module imports `types.ts` under. */
-  readonly types: Code;
-  /** The class of the model `reference`. */
-  readonly model: (reference: string) => Code;
-  /** The fields type of the model `reference`. */
-  readonly fields: (reference: string) => Code;
-  /** The init type of the model `reference`. */
-  readonly init: (reference: string) => Code;
-  /** The model-layer type of a recursive alias that reaches a date or a model. */
-  readonly aliasType: (alias: RecursiveAlias) => Code;
+/** One schema interned into the graph: the descriptor as the graph received it, before it sealed and rewrote the references of every node to codec ids. */
+export interface SchemaGraphInput {
+  /** The name the graph interned it under; none for an unnamed object, which the graph names by its shape. */
+  readonly name?: string;
+  readonly descriptor: ModelTypeDescriptor;
 }
 
-export const LOCAL_NAMES: ModelNames = {
-  types: identifierPart('Types'),
-  model: (reference) => identifierPart(`${reference}Model`),
-  fields: (reference) => identifierPart(`${reference}Fields`),
-  init: (reference) => identifierPart(`${reference}Init`),
-  aliasType: (alias) => identifierPart(aliasModelTypeName(alias)),
-};
+/** What the analysis interned into the graph, in order: each model and recursive alias, then the inline value of each operation. */
+export interface SchemaGraphInputs {
+  readonly models: readonly (SchemaGraphInput & { readonly name: string })[];
+  /** By the key of `convertedNodeIds`. A value that names a model (`$ref`) has no input: it is the node of that model. */
+  readonly values: ReadonlyMap<string, SchemaGraphInput>;
+}
 
 export interface OpenApiModelAnalysis {
   readonly definitions: ModelDefinitions;
@@ -141,7 +130,17 @@ export interface OpenApiModelAnalysis {
   readonly nodesByName: ReadonlyMap<string, SchemaNode>;
   /** The schema each node was interned for. */
   readonly definitionNameByNodeId: ReadonlyMap<string, string>;
-  readonly nodesByCodecId: ReadonlyMap<string, SchemaNode>;
+  /** The node of each operation body, stream item, parameter and response header that converts something, by `requestBodyKey`, `responseBodyKey`, `parameterKey` or `responseHeaderKey`; a value that converts nothing has none. */
+  readonly convertedNodeIds: ReadonlyMap<string, string>;
+  /**
+   * The keywords that the descriptors of a model do not carry, by model name, with those of every model it refers to: a model not in the map is complete.
+   * The model plane alone cannot check such a model as the schema does.
+   */
+  readonly uncarriedModels: ReadonlyMap<string, readonly string[]>;
+  /** The same for the operation values of `convertedNodeIds`, by the same keys: a value not in the map is complete. */
+  readonly uncarriedValues: ReadonlyMap<string, readonly string[]>;
+  /** What the graph was given to intern, for the golem-mode manifest: the models job interns the same descriptors again. */
+  readonly graphInputs: SchemaGraphInputs;
   readonly diagnostics: readonly GolemDiagnostic[];
   readonly selections: DiscriminatorSelections;
   readonly dates: OpenApiDates;
@@ -154,7 +153,6 @@ export function modelEnv(
   resources?: ResourceIndex,
   selections?: DiscriminatorSelections,
   dates: OpenApiDates = 'date',
-  names?: ModelNames,
 ): ModelResolveEnv {
   return {
     document,
@@ -163,7 +161,6 @@ export function modelEnv(
     currentBase: currentBase ?? schemaDocumentBase(document),
     anchors,
     selections,
-    ...(names ? { names } : {}),
   };
 }
 
@@ -171,34 +168,9 @@ export function withSchemaBase(env: ModelResolveEnv, schema: unknown): ModelReso
   return { ...env, currentBase: nextSchemaBase(schema, env.currentBase, env.resources) };
 }
 
-/** `dates: temporal` string formats and the `@exprtlabs/golem/temporal` tag each converts with. */
-const TEMPORAL_FORMATS = {
-  'date-time': { typeName: 'Temporal.Instant', type: code`Temporal.Instant`, codec: 'TemporalInstant' },
-  date: { typeName: 'Temporal.PlainDate', type: code`Temporal.PlainDate`, codec: 'TemporalPlainDate' },
-  duration: { typeName: 'Temporal.Duration', type: code`Temporal.Duration`, codec: 'TemporalDuration' },
-} as const;
-
-export const TEMPORAL_SERDE_PREFIX = 'temporal:';
-
-function temporalFormat(schema: unknown, env: ModelResolveEnv): (typeof TEMPORAL_FORMATS)[keyof typeof TEMPORAL_FORMATS] | undefined {
-  if (env.dates !== 'temporal' || !isJsonObject(schema) || typeof schema.format !== 'string') return undefined;
-  if (!(schema.type === 'string' || (Array.isArray(schema.type) && schema.type.includes('string')))) return undefined;
-  return Object.hasOwn(TEMPORAL_FORMATS, schema.format) ? TEMPORAL_FORMATS[schema.format as keyof typeof TEMPORAL_FORMATS] : undefined;
-}
-
 function isTemporalDescriptor(descriptor: ModelTypeDescriptor): boolean {
   const serde = (descriptor as { readonly serde?: { readonly id?: string } }).serde;
   return descriptor.kind === 'class-value' && serde?.id?.startsWith(TEMPORAL_SERDE_PREFIX) === true;
-}
-
-function typeContext(env: ModelResolveEnv): SchemaTypeContext {
-  return {
-    qualifier: code`${(env.names ?? LOCAL_NAMES).types}.`,
-    anchors: env.anchors,
-    document: env.document,
-    resources: env.resources,
-    currentBase: env.currentBase,
-  };
 }
 
 export function directComponentSchemaRef(schema: unknown, env: ModelResolveEnv): string | null {
@@ -276,38 +248,15 @@ export function modelSchemaProperties(
 }
 
 /** The environment a component's own schema is read in: its anchors, and the analysis' dates and discriminator tables. */
-export function componentEnv(env: ModelResolveEnv, schemaName: string, rawSchema: unknown): ModelResolveEnv {
+function componentEnv(env: ModelResolveEnv, schemaName: string, rawSchema: unknown): ModelResolveEnv {
   const anchors = schemaContext(env.document, schemaContext(env.document, { resources: env.resources }), schemaName, rawSchema).anchors;
-  return modelEnv(env.document, undefined, anchors, env.resources, env.selections, env.dates, env.names);
+  return { ...modelEnv(env.document, undefined, anchors, env.resources, env.selections, env.dates), uncarried: env.uncarried };
 }
 
 /** The conversion descriptor of a recursive alias: each use of a recursive component, itself included, is a projection reference. */
 export function aliasDescriptor(alias: RecursiveAlias, definitions: ModelDefinitions, env: ModelResolveEnv): ModelTypeDescriptor {
   alias.descriptor ??= modelConversionDescriptor(alias.rawSchema, definitions, componentEnv(env, alias.schemaName, alias.rawSchema), 'to', new Set(), true, 'definition');
   return alias.descriptor;
-}
-
-/** Whether a use of the alias converts a value (it reaches a date, a serde value or a model); if not, its model type is its wire type. */
-export function aliasConvertsValue(alias: RecursiveAlias, definitions: ModelDefinitions, env: ModelResolveEnv): boolean {
-  alias.convertsValue ??= descriptorNeedsConversion(
-    { kind: 'reference', name: alias.name, projection: true },
-    (name) => {
-      const held = definitions.aliases.get(name);
-      return held ? aliasDescriptor(held, definitions, env) : undefined;
-    },
-  );
-  return alias.convertsValue;
-}
-
-/** The model-layer type of an alias that reaches a date or a model. */
-export function aliasModelTypeName(alias: RecursiveAlias): string {
-  return `${alias.name}Fields`;
-}
-
-/** The type of a use of a recursive alias in the model layer. */
-export function aliasUseType(alias: RecursiveAlias, definitions: ModelDefinitions, env: ModelResolveEnv): Code {
-  const names = env.names ?? LOCAL_NAMES;
-  return aliasConvertsValue(alias, definitions, env) ? names.aliasType(alias) : code`${names.types}.${identifierPart(alias.name)}`;
 }
 
 /** Every model that the definition narrows: its class base, the other refs of its allOf, and the unions that select it. */
@@ -324,94 +273,22 @@ function modelSchemaReference(schema: unknown, env: ModelResolveEnv): string | n
   return directComponentSchemaRef(schema, withSchemaBase(env, schema));
 }
 
-/** The type of a model field, as the code of the model layer writes it. */
-export function modelFieldType(
-  schema: unknown,
-  definitions: ModelDefinitions,
-  env: ModelResolveEnv,
-  visiting: ReadonlySet<unknown> = new Set(),
-  nullThroughReference = true,
-): Code {
-  return modelFieldTypeNode(schema, definitions, env, visiting, nullThroughReference).code;
-}
+/** Converts a sub-schema of a keyword (`not`, `contains`, `if`, ...) with the descriptor builder that converts a field. */
+type SubSchema = (schema: unknown) => ConstraintSchemaValue;
 
-/** `T | null` when `nullable`. */
-function nullableType(type: TypeCode, nullable: boolean): TypeCode {
-  return nullable ? orNull(type) : type;
-}
+/**
+ * Which keywords a call carries. `typed` keywords judge one JSON type and pass any other value, so they sit on the value's own
+ * descriptor, inside a nullable union. `any` keywords judge every value, `null` included, so they sit on the whole descriptor.
+ */
+type KeywordPart = 'typed' | 'any' | 'all';
 
-/** The members in parentheses, joined by `|`. */
-function parenthesizedUnion(members: readonly TypeCode[]): TypeCode {
-  return typeCode(join(members.map((member) => code`(${member.code})`), code` | `), members.length > 1 ? 'union' : 'primary');
-}
+const OPEN_OBJECT: ModelTypeDescriptor = { kind: 'object', properties: {}, required: [], additionalProperties: true };
 
-function modelFieldTypeNode(
-  schema: unknown,
-  definitions: ModelDefinitions,
-  env: ModelResolveEnv,
-  visiting: ReadonlySet<unknown> = new Set(),
-  nullThroughReference = true,
-): TypeCode {
-  const nested = withSchemaBase(env, schema);
-  const reference = modelSchemaReference(schema, nested);
-  if (reference && definitions.has(reference)) {
-    const nullable = nullThroughReference ? admitsNullThroughReference(schema, reference, definitions) : admitsNull(asRecord(schema));
-    return nullableType(typeCode((env.names ?? LOCAL_NAMES).model(reference)), nullable);
-  }
-  const alias = reference ? definitions.aliases.get(reference) : undefined;
-  if (alias) return nullableType(typeCode(aliasUseType(alias, definitions, env)), admitsNull(asRecord(schema)));
-  if (visiting.has(schema)) throw new Error('Internal error: a schema reaches itself without a named recursive alias.');
-  const seen = new Set(visiting).add(schema);
-  const target = componentSchemaTarget(schema, nested);
-  if (target !== undefined && target !== schema) return modelFieldTypeNode(target, definitions, nested, seen);
-  const temporal = temporalFormat(schema, env);
-  if (temporal) return nullableType(typeCode(temporal.type), admitsNull(asRecord(schema)));
-  if (isJsonObject(schema) && schema.format === 'date-time'
-    && (schema.type === 'string' || (Array.isArray(schema.type) && schema.type.includes('string')))) {
-    return nullableType(typeCode(code`Date`), admitsNull(schema));
-  }
-  // The resolver decides an allOf object; otherwise deciding allOf members win, then the schema's own array keywords,
-  // then oneOf and anyOf.
-  const composition = isJsonObject(schema) ? fieldComposition(schema, definitions, env, 'from', seen) : undefined;
-  if (composition?.kind === 'object') return objectCompositionType(composition, definitions, seen);
-  if (composition?.kind === 'variants') {
-    return parenthesizedUnion(composition.variants.map((variant) => objectCompositionType(variant, definitions, seen)));
-  }
-  const allOfMembers = isJsonObject(schema) && hasAllOfMembers(schema)
-    ? schema.allOf.map((item) => ({ item, descriptor: modelConversionDescriptor(item, definitions, nested, 'from', seen) }))
-    : [];
-  const decidingMembers = allOfMembers.filter(({ descriptor }) => isDecidingPart(descriptor));
-  const [decidingMember] = decidingMembers;
-  // A deciding member makes the schema's own union one more member; constraint-only members leave the union to convert it.
-  const field = isJsonObject(schema) ? withOwnUnionsAsMembers(schema) : schema;
-  if (field !== schema && decidingMembers.length > 0) return modelFieldTypeNode(field, definitions, env, seen, nullThroughReference);
-  // One deciding sequence or model reference is the field's type, as it is its conversion (a lone `allOf [$ref Pet]`).
-  if (decidingMembers.length === 1 && decidingMember
-    && (isSequenceDescriptor(decidingMember.descriptor) || decidingMember.descriptor.kind === 'generated-model')) {
-    return modelFieldTypeNode(decidingMember.item, definitions, nested, seen);
-  }
-  if (isJsonObject(schema) && decidingMembers.length === 0 && isSequenceSchema(schema)) {
-    const nullable = admitsNull(schema);
-    if (Array.isArray(schema.prefixItems)) {
-      return nullableType(prefixItemsType(schema, (item) => modelFieldTypeNode(item, definitions, nested, seen)), nullable);
-    }
-    if (schema.items) return nullableType(typeCode(code`Array<${modelFieldTypeNode(schema.items, definitions, nested, seen).code}>`), nullable);
-  }
-  if (isJsonObject(schema) && (schema.oneOf || schema.anyOf)) {
-    const variants = unionVariants(schema) ?? [];
-    return parenthesizedUnion(variants
-      .map((item) => modelFieldTypeNode(item, definitions, nested, seen, !isJsonObject(schema.discriminator))));
-  }
-  if (isJsonObject(schema) && (schema.properties || isJsonObject(schema.additionalProperties))) {
-    const required = new Set(composedRequired(schema));
-    const fields = objectEntries(schema.properties).map(([name, child]) => code`${propertyKey(name)}${required.has(name) ? code`` : code`?`}: ${modelFieldTypeNode(child, definitions, nested, seen).code}`);
-    if (isJsonObject(schema.additionalProperties)) fields.push(code`[key: string]: ${fields.length ? code`unknown` : modelFieldTypeNode(schema.additionalProperties, definitions, nested, seen).code}`);
-    return nullableType(typeCode(code`{ ${join(fields, code`; `)} }`), admitsNull(schema));
-  }
-  return schemaTypeCode(schema, typeContext(nested));
-}
-
-function openApiKeywordConstraints(schema: Readonly<Record<string, unknown>>): ModelConstraint[] | undefined {
+/**
+ * The one path from the keywords of an OpenAPI schema to model constraints, for every kind of descriptor. A keyword that the
+ * descriptor already holds in its shape (`properties`, `items`, `prefixItems`, `additionalProperties`, a literal `enum`) is not read here.
+ */
+function openApiKeywordConstraints(schema: Readonly<Record<string, unknown>>, sub: SubSchema, part: KeywordPart = 'all'): ModelConstraint[] | undefined {
   const constraints: ModelConstraint[] = [];
   const numeric = (
     key: string,
@@ -422,30 +299,66 @@ function openApiKeywordConstraints(schema: Readonly<Record<string, unknown>>): M
     const value = schema[key];
     if (typeof value === 'number') constraints.push({ kind, value });
   };
-  numeric('minimum', 'minimum');
-  numeric('maximum', 'maximum');
-  numeric('exclusiveMinimum', 'exclusiveMinimum');
-  numeric('exclusiveMaximum', 'exclusiveMaximum');
-  numeric('multipleOf', 'multipleOf');
-  numeric('minLength', 'minLength');
-  numeric('maxLength', 'maxLength');
-  numeric('minItems', 'minItems');
-  numeric('maxItems', 'maxItems');
-  numeric('minProperties', 'minProperties');
-  numeric('maxProperties', 'maxProperties');
-  numeric('minContains', 'minContains');
-  numeric('maxContains', 'maxContains');
-  if (typeof schema.pattern === 'string') constraints.push({ kind: 'pattern', value: schema.pattern });
-  if (typeof schema.format === 'string') constraints.push({ kind: 'format', value: schema.format });
-  if (schema.uniqueItems === true) constraints.push({ kind: 'uniqueItems' });
+  const subschema = (value: unknown): ConstraintSchemaValue | undefined => typeof value === 'boolean' || isJsonObject(value) ? sub(value) : undefined;
+  const withSubschema = (kind: 'contains' | 'propertyNames' | 'unevaluatedProperties' | 'unevaluatedItems' | 'not'): void => {
+    const converted = subschema(schema[kind]);
+    if (converted !== undefined) constraints.push({ kind, schema: converted });
+  };
+  if (part !== 'any') {
+    numeric('minimum', 'minimum');
+    numeric('maximum', 'maximum');
+    numeric('exclusiveMinimum', 'exclusiveMinimum');
+    numeric('exclusiveMaximum', 'exclusiveMaximum');
+    numeric('multipleOf', 'multipleOf');
+    numeric('minLength', 'minLength');
+    numeric('maxLength', 'maxLength');
+    numeric('minItems', 'minItems');
+    numeric('maxItems', 'maxItems');
+    numeric('minProperties', 'minProperties');
+    numeric('maxProperties', 'maxProperties');
+    numeric('minContains', 'minContains');
+    numeric('maxContains', 'maxContains');
+    if (typeof schema.pattern === 'string') constraints.push({ kind: 'pattern', value: schema.pattern });
+    if (typeof schema.format === 'string') constraints.push({ kind: 'format', value: schema.format });
+    if (schema.uniqueItems === true) constraints.push({ kind: 'uniqueItems' });
+    withSubschema('contains');
+    withSubschema('propertyNames');
+    withSubschema('unevaluatedProperties');
+    withSubschema('unevaluatedItems');
+    for (const [pattern, child] of objectEntries(schema.patternProperties)) {
+      const converted = subschema(child);
+      if (converted !== undefined) constraints.push({ kind: 'patternProperties', pattern, schema: converted });
+    }
+    const required = Object.fromEntries(objectEntries(schema.dependentRequired).flatMap(([name, names]) =>
+      Array.isArray(names) ? [[name, names.filter((item): item is string => typeof item === 'string')] as const] : []));
+    if (Object.keys(required).length) constraints.push({ kind: 'dependentRequired', value: required });
+    const dependent = Object.fromEntries(objectEntries(schema.dependentSchemas).flatMap(([name, child]) => {
+      const converted = subschema(child);
+      return converted === undefined ? [] : [[name, converted] as const];
+    }));
+    if (Object.keys(dependent).length) constraints.push({ kind: 'dependentSchemas', value: dependent });
+  }
+  if (part !== 'typed') {
+    withSubschema('not');
+    const condition = subschema(schema.if);
+    if (condition !== undefined) {
+      const then = subschema(schema.then);
+      const otherwise = subschema(schema.else);
+      constraints.push({ kind: 'ifThenElse', if: condition, ...(then === undefined ? {} : { then }), ...(otherwise === undefined ? {} : { else: otherwise }) });
+    }
+    // A scalar `const` is a literal descriptor where the schema converts as a scalar; here it limits a value of another shape.
+    if (schema.const !== undefined) constraints.push({ kind: 'enum', values: [schema.const] });
+  }
   return constraints.length ? constraints : undefined;
 }
 
 function withOpenApiConstraints(
   descriptor: ModelTypeDescriptor,
   schema: Readonly<Record<string, unknown>>,
+  sub: SubSchema,
+  part: KeywordPart = 'all',
 ): ModelTypeDescriptor {
-  const extra = openApiKeywordConstraints(schema);
+  const extra = openApiKeywordConstraints(schema, sub, part);
   if (!extra) return descriptor;
   return { ...descriptor, constraints: [...(descriptor.constraints ?? []), ...extra] };
 }
@@ -457,6 +370,67 @@ function withOpenApiEnum(
 ): ModelTypeDescriptor {
   if (!Array.isArray(schema.enum)) return descriptor;
   return { ...descriptor, constraints: [...(descriptor.constraints ?? []), { kind: 'enum', values: schema.enum }] };
+}
+
+/** The keywords that judge every value of the schema, `null` included, and the `enum` that no literal descriptor holds. */
+function withOpenApiWholeValue(descriptor: ModelTypeDescriptor, schema: Readonly<Record<string, unknown>>, sub: SubSchema): ModelTypeDescriptor {
+  return withOpenApiEnum(withOpenApiConstraints(descriptor, schema, sub, 'any'), schema);
+}
+
+/** Every keyword of the schema that the descriptor does not hold in its shape, for a descriptor that no inner step has constrained. */
+function carryKeywords(descriptor: ModelTypeDescriptor, schema: Readonly<Record<string, unknown>>, sub: SubSchema): ModelTypeDescriptor {
+  return withOpenApiEnum(withOpenApiConstraints(descriptor, schema, sub), schema);
+}
+
+type JsonClass = 'string' | 'number' | 'boolean' | 'null' | 'object' | 'array';
+const JSON_CLASSES: readonly JsonClass[] = ['string', 'number', 'boolean', 'null', 'object', 'array'];
+
+/** The JSON types that a value of the descriptor can have. A descriptor of a shape not listed here can have any. */
+function valueClasses(descriptor: ModelTypeDescriptor): readonly JsonClass[] {
+  switch (descriptor.kind) {
+    case 'string':
+    case 'date': return ['string'];
+    case 'class-value': return isTemporalDescriptor(descriptor) ? ['string'] : JSON_CLASSES;
+    case 'number': return ['number'];
+    case 'boolean': return ['boolean'];
+    case 'null': return ['null'];
+    case 'literal': return [typeof descriptor.value as JsonClass];
+    case 'object': return ['object'];
+    case 'array':
+    case 'tuple': return ['array'];
+    case 'union': return [...new Set(descriptor.variants.flatMap(valueClasses))];
+    case 'never': return [];
+    default: return JSON_CLASSES;
+  }
+}
+
+/** Whether no value can satisfy both descriptors: they have no JSON type in common, or they are different literals. */
+function areDisjoint(left: ModelTypeDescriptor, right: ModelTypeDescriptor): boolean {
+  if (left.kind === 'literal' && right.kind === 'literal') return left.value !== right.value;
+  const classes = valueClasses(right);
+  return !valueClasses(left).some((type) => classes.includes(type));
+}
+
+/**
+ * `oneOf` accepts a value that exactly one branch accepts, and the union descriptor accepts a value that any branch accepts. A union that a
+ * discriminator tags, or whose branches no value can satisfy together, is exact as it is. Any other `oneOf` keeps the `oneOf` constraint beside the union.
+ */
+function withExactOneOf(descriptor: ModelTypeDescriptor, union: Readonly<Record<string, unknown>>): ModelTypeDescriptor {
+  if (!Array.isArray(union.oneOf) || descriptor.kind !== 'union' || descriptor.discriminator !== undefined) return descriptor;
+  const { variants } = descriptor;
+  if (variants.every((left, at) => variants.slice(at + 1).every((right) => areDisjoint(left, right)))) return descriptor;
+  return { ...descriptor, constraints: [...(descriptor.constraints ?? []), { kind: 'oneOf', schemas: variants }] };
+}
+
+/**
+ * A sub-schema that lists `required` names and converts to nothing (no `properties`) judges only the objects among its values:
+ * `{ required: ['cvc'] }` is the rule "an object has `cvc`", and every other value passes.
+ */
+function withRequiredNames(descriptor: ModelTypeDescriptor, schema: unknown): ModelTypeDescriptor {
+  const names = isJsonObject(schema) && Array.isArray(schema.required) ? schema.required.filter((name): name is string => typeof name === 'string') : [];
+  if (names.length === 0 || descriptor.kind !== 'unknown') return descriptor;
+  const rule: ModelConstraint = { kind: 'ifThenElse', if: OPEN_OBJECT, then: { ...OPEN_OBJECT, required: names } };
+  return { ...descriptor, constraints: [...(descriptor.constraints ?? []), rule] };
 }
 
 /**
@@ -537,7 +511,9 @@ function sequenceConversionDescriptor(
 ): ModelTypeDescriptor | undefined {
   if (!isSequenceSchema(schema)) return undefined;
   const sequence = sequenceBodyDescriptor(schema, definitions, env, direction, seen);
-  return sequence && admitsNull(schema) ? { kind: 'union', variants: [sequence, { kind: 'null' }] } : sequence;
+  if (!sequence) return undefined;
+  const sub = subschemaConverter(definitions, env, direction, seen);
+  return withOpenApiWholeValue(admitsNull(schema) ? { kind: 'union', variants: [sequence, { kind: 'null' }] } : sequence, schema, sub);
 }
 
 function sequenceBodyDescriptor(
@@ -547,29 +523,133 @@ function sequenceBodyDescriptor(
   direction: 'from' | 'to',
   seen: ReadonlySet<unknown>,
 ): ModelTypeDescriptor | undefined {
+  // `unevaluatedItems` judges the items that no `items` or `prefixItems` evaluates, so beside `prefixItems` alone it is the rest of the
+  // tuple, and beside `items` it judges nothing: the descriptor holds it in its shape, and no constraint repeats it.
+  const { unevaluatedItems: _held, ...own } = schema;
+  const sub = subschemaConverter(definitions, env, direction, seen);
   if (Array.isArray(schema.prefixItems)) {
     const items = schema.prefixItems.map((item) => modelConversionDescriptor(item, definitions, env, direction, seen));
-    return schema.items === false
+    const rest = schema.items ?? schema.unevaluatedItems;
+    return withOpenApiConstraints(rest === false
       ? { kind: 'tuple', items }
       : {
         kind: 'tuple',
         items,
         rest: {
           index: items.length,
-          item: schema.items === undefined ? { kind: 'unknown' } : modelConversionDescriptor(schema.items, definitions, env, direction, seen),
+          item: rest === undefined ? { kind: 'unknown' } : modelConversionDescriptor(rest, definitions, env, direction, seen),
         },
-      };
+      }, own, sub, 'typed');
   }
   if (schema.items) {
-    return { kind: 'array', item: modelConversionDescriptor(schema.items, definitions, env, direction, seen) };
+    return withOpenApiConstraints({ kind: 'array', item: modelConversionDescriptor(schema.items, definitions, env, direction, seen) }, own, sub, 'typed');
   }
   return undefined;
 }
 
-/** The schema converts by its own keywords: array items, oneOf, anyOf, properties or additionalProperties. */
+/** The schema converts by its own keywords: array items, oneOf, anyOf, properties, additionalProperties or a scalar type. */
 function hasOwnConversionKeywords(schema: Readonly<Record<string, unknown>>): boolean {
   return isSequenceSchema(schema) || Boolean(schema.oneOf || schema.anyOf || schema.properties)
-    || schema.additionalProperties !== undefined;
+    || schema.additionalProperties !== undefined
+    // A scalar type of the schema itself, beside members that only constrain: `{ type: integer, allOf: [{ minimum: 1 }] }` is an integer with a minimum.
+    || (typeof schema.type === 'string' && ['integer', 'number', 'string', 'boolean'].includes(schema.type));
+}
+
+/**
+ * The keywords that limit the text of a date-time string. The model holds a `Date` or a `Temporal` value, not the text, so
+ * no descriptor of it can check them.
+ */
+const DATE_TEXT_KEYWORDS = ['pattern', 'minLength', 'maxLength', 'enum', 'const', 'not', 'if', 'allOf', 'anyOf', 'oneOf'] as const;
+
+/** The keywords that evaluate properties or items beside `unevaluatedProperties` or `unevaluatedItems`, which a union or a condition of the descriptor cannot follow. */
+const EVALUATING_KEYWORDS = ['if', 'dependentSchemas', 'oneOf', 'anyOf'] as const;
+
+/** The keywords that a `$ref` does not carry when it has them beside it: the reference converts as the schema it names. */
+const REFERENCE_SIBLINGS = [
+  'type', 'enum', 'const', 'format', 'pattern', 'minLength', 'maxLength', 'minimum', 'maximum', 'exclusiveMinimum', 'exclusiveMaximum', 'multipleOf',
+  'minItems', 'maxItems', 'uniqueItems', 'items', 'prefixItems', 'contains', 'minContains', 'maxContains', 'minProperties', 'maxProperties',
+  'required', 'properties', 'additionalProperties', 'patternProperties', 'propertyNames', 'dependentRequired', 'dependentSchemas',
+  'if', 'not', 'oneOf', 'anyOf', 'allOf', 'unevaluatedProperties', 'unevaluatedItems',
+] as const;
+
+const UPPER_BOUNDS: ReadonlySet<string> = new Set(['maximum', 'exclusiveMaximum', 'maxLength', 'maxItems', 'maxProperties']);
+const LOWER_BOUNDS: ReadonlySet<string> = new Set(['minimum', 'exclusiveMinimum', 'minLength', 'minItems', 'minProperties']);
+
+/** Whether the schema `target`, which a `$ref` names, already limits a value as the keyword `keyword: value` beside the `$ref` does: the same value, or a looser bound. */
+function impliedByTarget(keyword: string, value: unknown, target: Readonly<Record<string, unknown>>): boolean {
+  const held = target[keyword];
+  if (held === undefined) return false;
+  if (isDeepStrictEqual(value, held)) return true;
+  if (typeof value === 'number' && typeof held === 'number') return UPPER_BOUNDS.has(keyword) ? value >= held : LOWER_BOUNDS.has(keyword) && value <= held;
+  if (keyword === 'type' || keyword === 'required') {
+    const own: unknown[] = Array.isArray(value) ? value : [value];
+    const named: unknown[] = Array.isArray(held) ? held : [held];
+    // A type beside the reference names a type the target has; it lists names the target also requires.
+    return keyword === 'type' ? named.every((type) => own.includes(type)) : own.every((name) => named.includes(name));
+  }
+  return false;
+}
+
+/** The schema that a chain of component `$ref`s names, or none when it names no component of the document. */
+function referenceTarget(schema: unknown, env: ModelResolveEnv): Readonly<Record<string, unknown>> | undefined {
+  let target = componentSchemaTarget(schema, env);
+  for (let hops = 0; hops < 16 && isJsonObject(target) && typeof target.$ref === 'string' && Object.keys(target).length === 1; hops += 1) {
+    target = componentSchemaTarget(target, env);
+  }
+  return isJsonObject(target) ? target : undefined;
+}
+
+/** The keywords of a schema that its descriptor does not carry. The first three rules name keywords that no descriptor kind holds. */
+function uncarriedKeywords(schema: unknown, dates: OpenApiDates, target?: Readonly<Record<string, unknown>>): string[] {
+  if (!isJsonObject(schema)) return [];
+  const present = (names: readonly string[]): string[] => names.filter((name) => schema[name] !== undefined);
+  const isString = schema.type === 'string' || (Array.isArray(schema.type) && schema.type.includes('string'));
+  // The model holds a date value, not its text.
+  const dated = temporalFormat(schema, dates) !== undefined || (isString && schema.format === 'date-time');
+  // With an allOf the composition holds `unevaluatedProperties`; with none, a union or a condition evaluates names that the descriptor does not list.
+  const unevaluating = !dated && !hasAllOfMembers(schema) && present(EVALUATING_KEYWORDS).length > 0 ? present(['unevaluatedProperties', 'unevaluatedItems']) : [];
+  // A keyword beside a `$ref` that the named schema already states, or states more tightly, adds nothing to what the reference converts.
+  const reference = typeof schema.$ref === 'string' || typeof schema.$dynamicRef === 'string'
+    ? present(REFERENCE_SIBLINGS).filter((keyword) => target === undefined || !impliedByTarget(keyword, schema[keyword], target))
+    : [];
+  return [...(dated ? present(DATE_TEXT_KEYWORDS) : []), ...unevaluating, ...present(['additionalItems']), ...reference];
+}
+
+/** Records the keywords of the schema that no descriptor carries, in the collector of the env. */
+function noteUncarried(schema: unknown, env: ModelResolveEnv): void {
+  if (env.uncarried) for (const keyword of uncarriedKeywords(schema, env.dates, referenceTarget(schema, withSchemaBase(env, schema)))) env.uncarried.add(keyword);
+}
+
+/** The descriptor of one JSON type with no keyword of its shape: an object of unknown values, an array of unknown items, `null`. */
+function typeDescriptor(type: string, required: readonly string[]): ModelTypeDescriptor | undefined {
+  switch (type) {
+    case 'string': return { kind: 'string' };
+    case 'number': return { kind: 'number' };
+    case 'integer': return { kind: 'number', constraints: [{ kind: 'integer' }] };
+    case 'boolean': return { kind: 'boolean' };
+    case 'null': return { kind: 'null' };
+    case 'array': return { kind: 'array', item: { kind: 'unknown' } };
+    case 'object': return { kind: 'object', properties: {}, required, additionalProperties: { kind: 'unknown' } };
+    default: return undefined;
+  }
+}
+
+/**
+ * The descriptor of a schema that names its `type` and has no keyword of that shape: the union of the descriptors of its types.
+ * An allOf member that names only `object` stays a constraint-only part: the composition holds the object type.
+ */
+function typesDescriptor(schema: Readonly<Record<string, unknown>>, holds: ModelResolveEnv['holds']): ModelTypeDescriptor | undefined {
+  if (schema.type === undefined) return undefined;
+  const types = effectiveSchemaTypes(schema);
+  if (holds === 'member' && types.every((type) => type === 'object')) return undefined;
+  const required = Array.isArray(schema.required) ? schema.required.filter((name): name is string => typeof name === 'string') : [];
+  const variants = types.flatMap((type) => typeDescriptor(type, required) ?? []);
+  return variants.length > 1 ? { kind: 'union', variants } : variants[0];
+}
+
+/** The converter of the sub-schemas of a keyword, which reads them as it reads a field. */
+function subschemaConverter(definitions: ModelDefinitions, env: ModelResolveEnv, direction: 'from' | 'to', seen: ReadonlySet<unknown>): SubSchema {
+  return (child) => typeof child === 'boolean' ? child : withRequiredNames(modelConversionDescriptor(child, definitions, { ...env, holds: 'sub' }, direction, seen), child);
 }
 
 export function modelConversionDescriptor(
@@ -581,7 +661,10 @@ export function modelConversionDescriptor(
   nullThroughReference = true,
   position: 'field' | 'definition' = 'field',
 ): ModelTypeDescriptor {
+  const holds = env.holds;
+  if (holds) env = { ...env, holds: undefined };
   const nested = withSchemaBase(env, schema);
+  noteUncarried(schema, env);
   const reference = modelSchemaReference(schema, nested);
   if (reference && definitions.has(reference)) {
     const generated: ModelTypeDescriptor = { kind: 'generated-model', id: reference };
@@ -598,7 +681,8 @@ export function modelConversionDescriptor(
   const seen = new Set(visiting).add(schema);
   const target = componentSchemaTarget(schema, nested);
   if (target !== undefined && target !== schema) return modelConversionDescriptor(target, definitions, nested, direction, seen);
-  const temporal = temporalFormat(schema, env);
+  const sub = subschemaConverter(definitions, nested, direction, seen);
+  const temporal = temporalFormat(schema, env.dates);
   if (temporal) {
     const value = {
       kind: 'class-value', typeName: temporal.typeName,
@@ -614,16 +698,21 @@ export function modelConversionDescriptor(
   }
   if (isJsonObject(schema) && hasAllOfMembers(schema)) {
     const composition = resolvedComposition(schema, definitions, env, direction, seen, position);
-    if (composition.kind === 'object') return objectCompositionDescriptor(composition);
-    if (composition.kind === 'inherits') return composition.descriptor;
+    // The composition holds the schema's `unevaluatedProperties` and its members' keywords; the keywords beside the allOf join them.
+    const beside = (descriptor: ModelTypeDescriptor): ModelTypeDescriptor => {
+      const { unevaluatedProperties: _held, ...rest } = schema;
+      return carryKeywords(descriptor, composition.kind === 'members' ? schema : rest, sub);
+    };
+    if (composition.kind === 'object') return beside(objectCompositionDescriptor(composition));
+    if (composition.kind === 'inherits') return beside(composition.descriptor);
     if (composition.kind === 'variants') {
       const variants = composition.variants.map(objectCompositionDescriptor);
       const declaredKey = asRecord(composition.union.discriminator).propertyName;
       const discriminator = unionDiscriminatorTable(composition.union, composition.items, definitions, composition.scope)
         ?? untaggedUnionTable(variants, definitions, typeof declaredKey === 'string' ? declaredKey : undefined);
-      return { kind: 'union', variants, ...(discriminator ? { discriminator } : {}) };
+      return withExactOneOf(beside({ kind: 'union', variants, ...(discriminator ? { discriminator } : {}) }), asRecord(composition.union));
     }
-    const members = schema.allOf.map((item) => modelConversionDescriptor(item, definitions, nested, direction, seen));
+    const members = schema.allOf.map((item) => modelConversionDescriptor(item, definitions, { ...nested, holds: 'member' }, direction, seen));
     // Deciding members win. Members that only constrain, or restate an array without converting it, leave the schema's own
     // array, oneOf, anyOf and properties keywords to convert the field; the constraints join that descriptor.
     const deciding = members.filter(isDecidingPart);
@@ -636,11 +725,11 @@ export function modelConversionDescriptor(
         ...members.filter(isConstraintOnlyPart),
       ]);
     }
-    return joinMembers(deciding.length ? members.filter((part) => isConstraintOnlyPart(part) || isDecidingPart(part)) : members);
+    return beside(joinMembers(deciding.length ? members.filter((part) => isConstraintOnlyPart(part) || isDecidingPart(part)) : members));
   }
   const sequence = isJsonObject(schema) ? sequenceConversionDescriptor(schema, definitions, nested, direction, seen) : undefined;
   if (sequence) return sequence;
-  if (isJsonObject(schema) && (schema.oneOf || schema.anyOf)) {
+  const union = isJsonObject(schema) && (schema.oneOf || schema.anyOf) ? ((): ModelTypeDescriptor | undefined => {
     const variants = unionVariants(schema) ?? [];
     // A nullable array variant is a plain union of its own; its branches join the outer union.
     const convertedVariants = variants.flatMap((item): readonly ModelTypeDescriptor[] => {
@@ -695,7 +784,9 @@ export function modelConversionDescriptor(
     if (convertedVariants.length > 1 || discriminator) {
       return { kind: 'union', variants: convertedVariants, ...(discriminator ? { discriminator } : {}) };
     }
-  }
+    return undefined;
+  })() : undefined;
+  if (union) return withExactOneOf(carryKeywords(union, asRecord(schema), sub), asRecord(schema));
   if (isJsonObject(schema) && (schema.properties || schema.additionalProperties !== undefined)) {
     const required = Array.isArray(schema.required)
       ? schema.required.filter((item): item is string => typeof item === 'string')
@@ -704,18 +795,21 @@ export function modelConversionDescriptor(
     if (empty.length > 0) {
       throw new CompositionError(COMPOSITION_UNSATISFIABLE, `No object satisfies this schema: the required ${empty.length > 1 ? 'properties' : 'property'} ${empty.map((name) => JSON.stringify(name)).join(', ')} accept${empty.length > 1 ? '' : 's'} no value, because the schema is an empty enum, \`not: true\` or \`false\`. Remove ${empty.length > 1 ? 'them' : 'it'} from required, or give ${empty.length > 1 ? 'them' : 'it'} a schema that accepts a value.`);
     }
-    const object: ModelTypeDescriptor = {
+    // Beside `properties` alone, `unevaluatedProperties` judges the names that `properties` does not list, as `additionalProperties` does.
+    const { unevaluatedProperties: _held, ...own } = schema;
+    const closing = schema.additionalProperties ?? schema.unevaluatedProperties;
+    const object: ModelTypeDescriptor = withOpenApiConstraints({
       kind: 'object',
       properties: Object.fromEntries(objectEntries(schema.properties).map(([name, child]) => [name, modelConversionDescriptor(child, definitions, nested, direction, seen)])),
       required,
-      additionalProperties: schema.additionalProperties === false
+      additionalProperties: closing === false
         ? false
-        : isJsonObject(schema.additionalProperties)
-          ? modelConversionDescriptor(schema.additionalProperties, definitions, nested, direction, seen)
+        : isJsonObject(closing)
+          ? modelConversionDescriptor(closing, definitions, nested, direction, seen)
           : true,
       ...(schema.additionalProperties === true ? { additionalPropertiesDeclared: true as const } : {}),
-    };
-    return admitsNull(schema) ? { kind: 'union', variants: [object, { kind: 'null' }] } : object;
+    }, own, sub, 'typed');
+    return withOpenApiWholeValue(admitsNull(schema) ? { kind: 'union', variants: [object, { kind: 'null' }] } : object, schema, sub);
   }
   if (isJsonObject(schema) && schema.const !== undefined
     && (typeof schema.const === 'string' || typeof schema.const === 'number' || typeof schema.const === 'boolean')) {
@@ -723,18 +817,22 @@ export function modelConversionDescriptor(
   }
   if (isJsonObject(schema)) {
     const listed = openApiEnumDescriptor(schema);
-    if (listed) return withOpenApiConstraints(listed, schema);
+    if (listed) return withOpenApiConstraints(listed, schema, sub);
   }
   if (isJsonObject(schema)) {
     const primitive = openApiPrimitiveDescriptor(schema);
     if (primitive) {
-      const constrained = withOpenApiConstraints(primitive, schema);
-      return withOpenApiEnum(admitsNull(schema)
+      const constrained = withOpenApiConstraints(primitive, schema, sub, 'typed');
+      return withOpenApiWholeValue(admitsNull(schema)
         ? { kind: 'union', variants: [constrained, { kind: 'null' }] }
-        : constrained, schema);
+        : constrained, schema, sub);
     }
-    const constraints = openApiKeywordConstraints(schema);
-    if (constraints || Array.isArray(schema.enum)) return withOpenApiEnum({ kind: 'unknown', ...(constraints ? { constraints } : {}) }, schema);
+    const shaped = typesDescriptor(schema, holds);
+    if (shaped) return withOpenApiEnum(withOpenApiConstraints(shaped, schema, sub), schema);
+    const constraints = openApiKeywordConstraints(schema, sub);
+    const unknown: ModelTypeDescriptor = constraints || Array.isArray(schema.enum) ? withOpenApiEnum({ kind: 'unknown', ...(constraints ? { constraints } : {}) }, schema) : { kind: 'unknown' };
+    // An allOf member or a sub-schema has its `required` names held by its caller; any other schema without `type` or `properties` holds them as a rule of its objects.
+    return holds === undefined ? withRequiredNames(unknown, schema) : unknown;
   }
   return { kind: 'unknown' };
 }
@@ -766,7 +864,7 @@ function compositionReader(
       return name && target !== undefined ? { name, referenced: target, scope: nested, model: definitions.has(name) } : undefined;
     },
     nested: (schema, env) => withSchemaBase(env, schema),
-    descriptor: (schema, env) => seen.has(schema) ? undefined : modelConversionDescriptor(schema, definitions, env, direction, seen),
+    descriptor: (schema, env) => seen.has(schema) ? undefined : modelConversionDescriptor(schema, definitions, { ...env, holds: 'member' }, direction, seen),
     ...declaredModelBases(definitions),
   };
 }
@@ -784,16 +882,6 @@ function resolvedComposition(
   return composition;
 }
 
-function fieldComposition(
-  schema: Readonly<Record<string, unknown>>,
-  definitions: ModelDefinitions,
-  env: ModelResolveEnv,
-  direction: 'from' | 'to',
-  seen: ReadonlySet<unknown>,
-): Composition<ModelResolveEnv> | undefined {
-  return hasAllOfMembers(schema) ? resolvedComposition(schema, definitions, env, direction, seen, 'field') : undefined;
-}
-
 type ObjectComposition = Extract<Composition<ModelResolveEnv>, { readonly kind: 'object' }>;
 
 function objectCompositionDescriptor(composition: ObjectComposition): ModelTypeDescriptor {
@@ -807,30 +895,6 @@ function objectCompositionDescriptor(composition: ObjectComposition): ModelTypeD
     ...(composition.constraints.length ? { constraints: composition.constraints } : {}),
   };
   return composition.nullable ? { kind: 'union', variants: [object, { kind: 'null' }] } : object;
-}
-
-function objectCompositionType(
-  composition: ObjectComposition,
-  definitions: ModelDefinitions,
-  seen: ReadonlySet<unknown>,
-): TypeCode {
-  const childType = (child: SlotChild<ModelResolveEnv>): TypeCode => {
-    const types = child.sources.map((source) => modelFieldTypeNode(source.schema, definitions, source.scope, seen));
-    const [only, ...more] = types;
-    return only === undefined ? typeCode(code`never`) : more.length === 0 ? only : typeCode(join(types.map((type) => code`(${type.code})`), code` & `), 'intersection');
-  };
-  const required = new Set(composition.required);
-  const slots = Object.entries(composition.slots);
-  const fields = slots.map(([name, child]) => code`${propertyKey(name)}${required.has(name) ? code`` : code`?`}: ${childType(child).code}`);
-  const { extra } = composition;
-  if (extra.mode === 'values') {
-    // An index signature holds every property: it names the value type when each property has it, else `unknown`.
-    const key = JSON.stringify(extra.child.descriptor);
-    const uniform = slots.every(([, child]) => JSON.stringify(child.descriptor) === key);
-    const optional = slots.some(([name]) => !required.has(name));
-    fields.push(code`[key: string]: ${uniform ? code`${childType(extra.child).code}${optional ? code` | undefined` : code``}` : code`unknown`}`);
-  }
-  return nullableType(typeCode(code`{ ${join(fields, code`; `)} }`), composition.nullable);
 }
 
 /** Where the schemas of a component sit: its name, and the bundled component an error names. */
@@ -1007,8 +1071,11 @@ export function checkComposition(
     }
     const nested = withSchemaBase(scope, schema);
     for (const [name, child] of objectEntries(schema.properties)) visit(child, nested, 'field', `${pointer}/properties/${escapeJsonPointerToken(name)}`);
-    for (const keyword of ['items', 'additionalProperties', 'unevaluatedProperties'] as const) {
+    for (const keyword of ['items', 'additionalProperties', 'unevaluatedProperties', 'unevaluatedItems', 'not', 'contains', 'propertyNames', 'if', 'then', 'else'] as const) {
       visit(schema[keyword], nested, 'field', `${pointer}/${keyword}`);
+    }
+    for (const keyword of ['patternProperties', 'dependentSchemas'] as const) {
+      for (const [name, child] of objectEntries(schema[keyword])) visit(child, nested, 'field', `${pointer}/${keyword}/${escapeJsonPointerToken(name)}`);
     }
     for (const keyword of ['prefixItems', 'allOf', 'oneOf', 'anyOf'] as const) {
       const items = schema[keyword];
@@ -1016,6 +1083,24 @@ export function checkComposition(
     }
   };
   visit(rawSchema, env, definition ? 'definition' : 'field', '');
+}
+
+/**
+ * Reads the names that no value can hold for the type writer: the rule of `checkComposition`, which warns about each of them,
+ * so the type of such a property is `never`. A component root that is a model is read at definition position, as the check does.
+ */
+export function neverPropertiesReader(
+  analysis: Pick<OpenApiModelAnalysis, 'definitions' | 'resources' | 'selections' | 'dates'>,
+  document: unknown,
+): NeverPropertiesOf {
+  return (schema, { currentBase, anchors, component }) => {
+    if (!hasAllOfMembers(schema)) return [];
+    const definition = component === undefined ? undefined : analysis.definitions.get(identifier(component));
+    const isModel = definition !== undefined && definition.schemaName === component && !definition.isUnion;
+    const env = modelEnv(document, currentBase, anchors, analysis.resources, analysis.selections, analysis.dates);
+    const composition = resolvedComposition(schema, analysis.definitions, env, 'to', new Set([schema]), isModel ? 'definition' : 'field');
+    return neverNames(composition).map((never) => never.name);
+  };
 }
 
 /**
@@ -1130,7 +1215,6 @@ interface SchemaGraphGroup {
   readonly id: string;
   readonly filename: string;
   readonly nodes: ReadonlySet<string>;
-  readonly models: ReadonlySet<string>;
 }
 
 export interface SchemaGraphGrouping {

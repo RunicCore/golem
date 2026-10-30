@@ -11,8 +11,10 @@ import { writeSdk } from '#openapi/generator';
 import {
   compileGeneratedSdk,
   generateMaterializedSdk,
+  sdkBodyCodec,
   isGeneratedClientClass,
   requireRecord,
+  withRootOperations,
   writeGeneratedSdk,
 } from './helpers.js';
 
@@ -49,23 +51,18 @@ const petDocument = {
 };
 
 interface CaseReport {
-  readonly validateCodec: boolean;
-  readonly validateModel: boolean;
-  readonly encodeOwner: boolean;
-  readonly toWireFormat: boolean;
-  readonly stringify: boolean;
+  readonly requestAccepted: boolean;
+  readonly responseAccepted: boolean;
 }
 
 const expected: Readonly<Record<string, boolean>> = {
   taggedPlain: true,
-  untaggedCatModel: true,
   untaggedPlain: false,
   untaggedStranger: false,
   taggedStranger: true,
-  catModelForeignTag: false,
 };
 
-test('discriminator mapping: validation agrees with encode and round trip', async (t) => {
+test('discriminator mapping: the client judges a pet by its tag in a request and in a response', async (t) => {
   const output = path.join(createFixtureProject(t, 'golem-openapi-discriminator-validation-'), 'sdk');
   await generateMaterializedSdk(petDocument, { output, name: 'Pets', profile: { mobx: false, validation: true } });
   compileGeneratedSdk(output, [], { strict: true });
@@ -78,13 +75,7 @@ test('discriminator mapping: validation agrees with encode and round trip', asyn
   };
   assert.equal(codeGeneration, 'blocked');
   for (const [name, outcome] of Object.entries(report)) {
-    assert.deepEqual(outcome, {
-      validateCodec: expected[name],
-      validateModel: expected[name],
-      encodeOwner: expected[name],
-      toWireFormat: expected[name],
-      stringify: expected[name],
-    }, name);
+    assert.deepEqual(outcome, { requestAccepted: expected[name], responseAccepted: expected[name] }, name);
   }
   assert.deepEqual(Object.keys(report).sort(), Object.keys(expected).sort());
 });
@@ -218,13 +209,12 @@ const dateDocument = {
 
 test('inherited date fields decode and validate in allOf variants and their union', async (t) => {
   const output = path.join(createFixtureProject(t, 'golem-openapi-variant-dates-'), 'sdk');
-  await generateMaterializedSdk(dateDocument, { output, name: 'Dates', profile: { mobx: false, validation: true } });
+  await generateMaterializedSdk(withRootOperations(dateDocument, 'Payment', 'CardPayment', 'PaymentBase'), { output, name: 'Dates', profile: { mobx: false, validation: true } });
   compileGeneratedSdk(output, [], { strict: true });
   copyFixtureFile(output, 'openapi/standalone-discriminator/verify-dates.mjs', 'verify-dates.mjs');
   const result = await command(output, process.execPath, ['--disallow-code-generation-from-strings', 'verify-dates.mjs']);
   assert.deepEqual(JSON.parse(result.stdout), {
-    base: true, variant: true, union: true, parseVariant: true, parseUnion: true,
-    unionConstructs: true, validateVariant: true, validateUnion: true, nonObjectIsInput: true, rejectsBadDate: true,
+    base: true, variant: true, union: true, writeVariant: true, writeUnion: true, nonObjectIsInput: true, rejectsBadDate: true,
   });
 });
 
@@ -299,22 +289,21 @@ for (const validation of [false, true]) {
   test(`a discriminated oneOf whose branch leaves its tag optional rejects {} as input, not as a TypeError, with validation ${validation ? 'on' : 'off'}`, async (t) => {
     // protects: R-57 review finding 10 - the validator treats such a discriminator as a plain oneOf, and the decoder must not answer with a TypeError for the untagged object
     const output = path.join(createFixtureProject(t, 'golem-openapi-optional-tag-'), 'sdk');
-    await generateMaterializedSdk({
+    await generateMaterializedSdk(withRootOperations({
       openapi: '3.1.0',
       info: { title: 'Optional', version: '1' },
-      paths: {},
       components: {
         schemas: {
-          Cat: { type: 'object', properties: { kind: { type: 'string', enum: ['cat'] }, name: { type: 'string' } } },
+          // The date-time field gives the union a decoder; a union that converts nothing has none.
+          Cat: { type: 'object', properties: { kind: { type: 'string', enum: ['cat'] }, name: { type: 'string' }, at: { type: 'string', format: 'date-time' } } },
           Dog: { type: 'object', required: ['kind'], properties: { kind: { type: 'string', enum: ['dog'] }, bark: { type: 'boolean' } } },
           Pet: { oneOf: [{ $ref: '#/components/schemas/Cat' }, { $ref: '#/components/schemas/Dog' }], discriminator: { propertyName: 'kind' } },
           Owner: { type: 'object', required: ['pet'], properties: { pet: { $ref: '#/components/schemas/Pet' } } },
         },
       },
-    }, { output, name: 'Optional', profile: { mobx: false, validation } });
+    }, 'Owner'), { output, name: 'Optional', profile: { mobx: false, validation } });
     compileGeneratedSdk(output, [], { strict: true });
-    const models = requireRecord(await import(pathToFileURL(path.join(output, 'dist/index.js')).href), 'optional sdk');
-    const parseOwner = models.parseOwner as (text: string) => unknown;
-    assert.throws(() => parseOwner('{"pet":{}}'), (error: unknown) => error instanceof LibError && error.causedByInput === true);
+    const owner = await sdkBodyCodec(output, 'Optional', 'Owner');
+    await assert.rejects(owner.decode({ pet: {} }), (error: unknown) => error instanceof LibError && error.causedByInput === true);
   });
 }

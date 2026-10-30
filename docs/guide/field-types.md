@@ -64,19 +64,19 @@ A `Temporal` value is written in its own `toString()` form. A `TemporalInstant` 
 
 ### Use Temporal values in a client
 
-Set `dates: temporal` on the [OpenAPI job](/reference/config#openapi-jobs). The generated model classes then map `format: date-time` to `Temporal.Instant`, `format: date` to `Temporal.PlainDate` and `format: duration` to `Temporal.Duration`. Without the key, the same fields are `Date` values.
+Set `dates: temporal` on the [OpenAPI job](/reference/config#openapi-jobs). The generated client then maps `format: date-time` to `Temporal.Instant`, `format: date` to `Temporal.PlainDate` and `format: duration` to `Temporal.Duration`. Without the key, the same fields are `Date` values.
 
 <<< ../../examples/payments/server/golem.yaml#openapi-dates-job
 
-The response `body` keeps the JSON strings. Import `fromWireFormat` from `@exprtlabs/golem/serde` and the model class from the generated SDK. Convert the body with the model class to get Temporal values:
+The client converts the JSON strings for you, so the response `body` holds the Temporal values:
 
 <<< ../../examples/payments/server/provider/settlement.ts#read-dates
 
-Building the model class and calling `toWireFormat` writes the strings back:
+A model of your own over the SDK type writes the strings back with `toWireFormat`:
 
 <<< ../../examples/payments/server/provider/settlement.ts#write-dates
 
-`format: time` stays a string. A `Temporal.Instant` is written with `Z`, so an offset in the original string is not kept. The generated client needs the same `esnext.temporal` setting and a loaded `Temporal`.
+`format: time` stays a string. A `Temporal.Instant` is written with `Z`, so an offset in the original string is not kept. The generated client needs the same `esnext.temporal` setting, or `skipLibCheck: true`, and a loaded `Temporal`.
 
 ## Objects and exact
 
@@ -118,7 +118,6 @@ Supported without a tag:
 - strings, numbers, booleans or literals beside one array or one tuple, as in query objects (`status?: Status | Status[]`). The items can convert: `string | Date[]`. A Date can be the only scalar beside the array: `Date | Date[]`, `Date | string[]`
 - a model beside an array of that model: `TPlace | TPlace[]`
 - strings, numbers, booleans or literals beside one array and one object or model: `string | string[] | TPlace`. The `JsonValue` alias under [Recursive type aliases](#recursive-type-aliases) has this shape
-- an SDK model class (generated from an OpenAPI document) beside a primitive
 
 A union of two or more objects needs a declared tag, as the next section shows.
 

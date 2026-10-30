@@ -6,7 +6,6 @@ import path from 'node:path';
 import test from 'node:test';
 
 import { requireObjectCodec } from '@exprtlabs/golem/internal/model-runtime';
-import { validateInstance } from '@exprtlabs/golem/validation';
 import { generatedCodecIdFromRoot } from './support/consumer.js';
 import { compositionProject as fixture } from './support/model-composition-project.js';
 import { buildModelProject, buildModelProjectWith, writeModelGolemYaml, writeModelSources } from './model-project.js';
@@ -178,25 +177,6 @@ export type TItem = IModel<{ value: (Money | { kind: 'a' | 'b'; x: number } | { 
   );
   assert.equal(fs.existsSync(path.join(sourceRoot, 'item.model.generated.ts')), false);
 });
-
-for (const option of ['true', 'false', "'sanity'"]) {
-  test(`an IModel over an SDK model that sets validation ${option} stops generation with RUNM1090`, async t => {
-    // protects: R-76 the option of a model over an SDK model would never apply, so it stops generation instead of being ignored
-    const { root, sourceRoot } = fixture(t);
-    await writeMoneySdk(sourceRoot);
-    writeModelSources(sourceRoot, {
-      'item.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
-import type { Money } from './sdk/index.js';
-export type TItem = IModel<Money, { validation: ${option} }>;
-`,
-    });
-    assert.throws(
-      () => generate({ root, profile: { mobx: false, validation: true } }),
-      /item\.model\.ts:\d+:\d+ RUNM1090: TItem is a model over an SDK model and sets the validation option\. The level of the SDK applies to it\. Remove the option; a call can still choose a level up to the project level with \{ validate \}\./,
-    );
-    assert.equal(fs.existsSync(path.join(sourceRoot, 'item.model.generated.ts')), false);
-  });
-}
 
 for (const validation of [true, false]) test(`an IModel over an SDK model keeps a field spelled like a brand key, drops the real brand keys, and encodes and validates with the codec of the SDK model (validation ${validation})`, async t => {
   // protects: T-650 the forwarders of such a companion call the codec of the SDK model

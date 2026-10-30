@@ -1,4 +1,5 @@
 import { GolemDiagnosticSeverity, type GolemDiagnostic } from '../generator-core.js';
+import type { ImportOptions } from '../code.js';
 import { emit, exportNames, type PassExports } from './emit.js';
 import { lower } from './lower.js';
 
@@ -24,8 +25,8 @@ export interface SchemaPlace {
 export interface CompileOptions {
   /** What a format that golem does not implement does: warn and skip the check, or fail the compile. */
   readonly unknownFormats: 'warn' | 'error';
-  /** Where the generated module imports its helpers from; the internal validation runtime of the package by default. */
-  readonly runtimeModule?: string;
+  /** Where the generated module imports its helpers and their types from; the internal validation runtime and the public subpath of the package by default. */
+  readonly specifiers?: ImportOptions['specifiers'];
   /** Named in each diagnostic message that `locate` does not place. */
   readonly documentName?: string;
   /** Maps a schema resource and a JSON Pointer inside it to the place the user knows; without one, a diagnostic names the resource. */
@@ -47,6 +48,11 @@ export interface CompileOptions {
    * is no part of this module: it runs its own checks at every level, so a model with one stays stricter than the shape.
    */
   readonly level?: 'full' | 'sanity';
+  /**
+   * The roots the module exports, by root name; every root by default. The other roots are still lowered, so their diagnostics are
+   * reported, but the module holds no code that only they reach, and `exports` names the exported roots only.
+   */
+  readonly emitRoots?: ReadonlySet<string>;
 }
 
 export interface CompileResult {
@@ -76,11 +82,13 @@ export interface CompileResult {
 
 /** Compiles JSON Schema 2020-12 roots to a module that exports one validator function per root. */
 export function compile(input: CompileInput, options: CompileOptions): CompileResult {
-  const { module, diagnostics } = lower(input, options);
-  const exports = exportNames(input.roots.keys());
+  const { module: lowered, diagnostics } = lower(input, options);
+  const { emitRoots } = options;
+  const module = emitRoots === undefined ? lowered : { ...lowered, exports: lowered.exports.filter(({ name }) => emitRoots.has(name)) };
+  const exports = exportNames(module.exports.map(({ name }) => name));
   if (diagnostics.some(entry => entry.severity === GolemDiagnosticSeverity.Error)) return { source: '', exports, fastExports: new Map(), passExports: new Map(), diagnostics };
   const { source, fastExports, passExports } = emit(module, {
-    ...(options.runtimeModule === undefined ? {} : { runtimeModule: options.runtimeModule }),
+    ...(options.specifiers === undefined ? {} : { specifiers: options.specifiers }),
     ...(options.typed ? { typed: true } : {}),
     ...(options.fastPath === undefined || options.fastPath === false ? {} : { fastPath: options.fastPath }),
     ...(options.level === undefined ? {} : { level: options.level }),

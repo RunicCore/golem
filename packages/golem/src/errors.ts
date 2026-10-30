@@ -120,7 +120,28 @@ export interface LibErrorOptions extends ErrorOptions {
   readonly causedByInput?: boolean;
 }
 
+/**
+ * The registry symbol every copy of golem shares. An application and a standalone SDK each hold their own copy of this
+ * module, so `instanceof` on a class cannot see across them; the brand can. The suffix names the error contract
+ * (`kind`, `issues`, `causedByInput`): a change to that shape takes a new suffix.
+ */
+const LIB_ERROR_BRAND = Symbol.for('@exprtlabs/golem:LibError.v1');
+
 export class LibError extends Error {
+  static {
+    // On the prototype, so the brand is no own property of an instance and every subclass instance carries it.
+    Object.defineProperty(LibError.prototype, LIB_ERROR_BRAND, { value: true });
+  }
+
+  /**
+   * `instanceof LibError` is true for an error of any golem copy. A subclass keeps the ordinary prototype check, so
+   * `instanceof MyError` is not true for every LibError.
+   */
+  public static override [Symbol.hasInstance](this: Function, value: unknown): value is LibError {
+    if (this !== LibError) return Function.prototype[Symbol.hasInstance].call(this, value);
+    return typeof value === 'object' && value !== null && (value as { readonly [LIB_ERROR_BRAND]?: unknown })[LIB_ERROR_BRAND] === true;
+  }
+
   public readonly kind: LibErrorKind;
   public readonly issues: readonly Issue[];
   /**

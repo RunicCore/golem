@@ -647,13 +647,13 @@ The code also covers a `parse` or `fromWireFormat` call of a model class with a 
 
 ### RUNM1080
 
-**Object union with no declared tag.** A model has a union of two or more object variants (object types, models, `IObject` types, SDK models or records) and the union has no `Discriminator` tag. Golem never looks for a tag in the variants, and it does not try the variants in turn, so generation stops. This holds at every position (a field, an optional field, an array item, a record value, a tuple item) and also when no variant needs a conversion. The message names the model file, the union and its variants.
+**Object union with no declared tag.** A model has a union of two or more object variants (object types, models, `IObject` types, SDK types or records) and the union has no `Discriminator` tag. Golem never looks for a tag in the variants, and it does not try the variants in turn, so generation stops. This holds at every position (a field, an optional field, an array item, a record value, a tuple item) and also when no variant needs a conversion. The message names the model file, the union and its variants.
 
 **Fix:**
 
 - Add the tag to the union: `(TCat | TDog) & Discriminator<'kind'>`. Import `Discriminator` from `@exprtlabs/golem/tags`.
 - Give each variant a required property with that key and a literal type that differs between variants, such as `kind: 'cat'` and `kind: 'dog'`. A tag may be a union of literals when the values do not overlap.
-- For an SDK model that has no such property, name it as the default: `Discriminator<'kind', Money>`.
+- For an SDK type that has no such property, name it as the default: `Discriminator<'kind', Money>`.
 
 ### RUNM1081
 
@@ -766,11 +766,14 @@ Golem reads relative imports (`./sdk/index.js`) for this rule, and reads them th
 
 **Fix:** Set the option to `true`, `false` or `'sanity'`, at or below the project level, or raise `validation` in `golem.yaml`.
 
-### RUNM1090
+### GOLEM_SDK_JOB_MISSING
 
-**Validation option on a model over an SDK model.** An `IModel` or `IObject` whose fields type is an SDK model sets the `validation` option. The model has no codec of its own: the codec of the SDK serves its calls, at the validation level of the SDK. The option would never apply. The message names the model.
+**SDK in mode golem with no openapi job.** The models job finds an SDK whose `model-manifest.json` says `mode: golem`. No openapi job of mode `golem` in this `golem.yaml` writes the folder of that SDK. The models job has no codecs file to name for the SDK, so generation stops. The message names the manifest.
 
-**Fix:** Remove the option. A call can still choose a level up to the project level with `{ validate }`.
+**Fix:**
+
+- Set the SDK to mode `standalone`, and generate it again.
+- Or add the openapi job of the SDK to this `golem.yaml` with `mode: golem`.
 
 ## Validators (VALIDATE)
 
@@ -918,11 +921,44 @@ An `integer` member and a `number` member share the integers. A member that decl
 - Give the variant a mapping value of its own, for example `feline: '#/components/schemas/Cat'`.
 - Or remove the variant from the union.
 
+### OPENAPI_KEYWORD_NOT_CARRIED
+
+**App model over an SDK schema that the model cannot check in full.** An app model uses a type of a golem-mode SDK. The schema of that type has a keyword that the model descriptors do not carry. The SDK checks the full schema. The model of the app checks only through its descriptors, so a bad value can pass. Generation stops. The message names each keyword.
+
+The descriptors do not carry these keywords:
+
+- `pattern`, `minLength`, `maxLength`, `enum`, `const`, `not`, `if`, `allOf`, `anyOf` or `oneOf` on a string with `format: date-time`. The model holds a date value, not its text.
+- `unevaluatedProperties` or `unevaluatedItems` beside `if`, `dependentSchemas`, `oneOf` or `anyOf`.
+- `additionalItems`.
+- A keyword of the schema beside a `$ref`.
+
+A schema that carries these keywords does not stop an SDK. The SDK client checks a request body in its wire form. The SDK still converts the dates of the body.
+
+**Fix:**
+
+- Use the SDK type in the client code, and give the app model its own type.
+- Or change the schema so that the descriptors carry the keyword.
+
+### OPENAPI_MOBX_NEEDS_GOLEM_MODE
+
+**MobX with a standalone SDK.** The profile sets `mobx: true`, and the job has `mode: standalone`, which is the default. A standalone SDK carries its own copy of the runtime, and that copy has no MobX support. This is an error: generation writes nothing.
+
+**Fix:**
+
+- Set `mode: golem` on the `openapi` job.
+- Or set `mobx: false`.
+
 ### OPENAPI_OPERATION_RENAMED
 
 **Operation renamed.** The generated operation name is a JavaScript reserved word or an existing client member name (such as `constructor`), so the generator appends its allocator's suffix to make it distinct. This is a warning: generation continues, but the operation's exported name no longer matches its `operationId` or inferred name.
 
 **Fix:** Give the operation an `operationId` that isn't a JavaScript reserved word or client member name, if you need the two to match exactly.
+
+### OPENAPI_PARAMETER_STYLE_NOT_ALLOWED
+
+**Parameter style that its place does not have.** A parameter has a `style` that OpenAPI does not allow in its place. A path parameter has `matrix`, `label` or `simple`. A query parameter has `form`, `spaceDelimited`, `pipeDelimited` or `deepObject`. A header parameter has `simple`. A cookie parameter has `form` or `cookie`. The client cannot write such a parameter. The check covers the parameters of webhooks and callbacks too. This is an error: generation writes nothing.
+
+**Fix:** Use a style that OpenAPI allows for the place of the parameter, or leave the style out.
 
 ### OPENAPI_SERVER_OVERRIDE_IGNORED
 

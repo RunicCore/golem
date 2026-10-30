@@ -1,20 +1,14 @@
-import { createFixtureProject, linkProjectPackages, snapshotFilesystem } from './fixture-project.js';
+import { createFixtureProject, snapshotFilesystem } from './fixture-project.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { test, type TestContext } from 'node:test';
 import { runPipeline } from '#golem/cli';
-import { workspace } from './support/process.js';
-import { writeFixture } from './support/consumer.js';
+import { workspaceLinkedProject, writeFixture } from './support/consumer.js';
 import { generate as generateModels } from '@exprtlabs/golem-model/generator';
 
 function packageFixture(t: TestContext, { profile = { mobx: false, validation: true }, models = true } = {}): { root: string; config: string } {
-  const root = createFixtureProject(t, 'golem-pipeline-jobs-');
-
-  linkProjectPackages(root, Object.fromEntries(
-    ['golem', 'golem-model', 'golem-openapi'].map(name => [`@exprtlabs/${name}`, path.join(workspace, 'packages', name)]),
-  ));
-  fs.writeFileSync(path.join(root, 'package.json'), '{"name":"golem-pipeline-jobs-fixture","type":"module"}');
+  const root = workspaceLinkedProject(t, 'golem-pipeline-jobs-', '{"name":"golem-pipeline-jobs-fixture","type":"module"}');
   writeFixture(root, profile, models);
   return { root, config: path.join(root, 'golem.yaml') };
 }
@@ -56,6 +50,13 @@ test('model generation rejects an SDK manifest whose profile differs from the co
     /profile mismatch/,
   );
   assert.equal(fs.existsSync(path.join(root, 'src/cart.model.generated.ts')), false);
+});
+
+test('a standalone SDK job with mobx: true shows the generator error, not a manifest error', async (t: TestContext) => {
+  // protects: T-735 golem generate prints a generator's error diagnostics before it checks the result for a manifest
+  const { config } = packageFixture(t, { profile: { mobx: true, validation: true }, models: false });
+
+  await assert.rejects(() => runPipeline(config), /OPENAPI_MOBX_NEEDS_GOLEM_MODE/);
 });
 
 test('a downstream model failure preserves the completed SDK and a later run repairs inventory', async (t: TestContext) => {

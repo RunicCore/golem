@@ -13,7 +13,8 @@ import { canonicalSchemaKey } from '@exprtlabs/golem/internal/schema';
 import { readFixture, writeGeneratedArtifacts } from './fixture-project.js';
 import { buildModelProject, createModelProject, generatedModelFiles, writeModelGolemYaml, writeModelSources, type ModelProject } from './model-project.js';
 import { duplicateLocalNameReferenceModelSource } from './fixture-templates/models/model-artifact-efficiency.js';
-import { generate as generateOpenApi } from '@exprtlabs/golem-openapi/generator';
+import { parse as parseYaml } from 'yaml';
+import { loadGolemModeProject } from './openapi/sdk-client-fixture.js';
 import { IssueRepresentation, IssueSource, LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { requireObjectCodec, decodeGeneratedModelTrusted, findGeneratedModelDefinitionForConstructor } from '@exprtlabs/golem/internal/model-runtime';
 import { getValidator } from '@exprtlabs/golem/validation';
@@ -263,21 +264,11 @@ test('array item models that live in another file validate at their full path', 
   );
 });
 
-test('an array item model from OpenAPI reports the issue source of the model that validates it', async (t) => {
-  const profile = { mobx: false, validation: true } as const;
-  const fixtureValue = createModelProject(t, { prefix: 'golem-model-efficiency-mixed-', name: 'model-efficiency-mixed', allowJs: true });
+test('an array item type from a golem-mode SDK reports the issue source of the model that validates it', async (t) => {
   const fixtureRoot = 'models/model-artifact-efficiency/array-items-inline/mixed-source';
-  writeModelSources(fixtureValue.root, { 'money.yaml': readFixture(`${fixtureRoot}/money.yaml`) });
-  writeGeneratedArtifacts((await generateOpenApi({
-    input: path.join(fixtureValue.root, 'money.yaml'),
-    output: path.join(fixtureValue.sourceRoot, 'sdk'),
-    name: 'Payments',
-    profile,
-  })).artifacts);
-  writeModelSources(fixtureValue.sourceRoot, { 'wallet.model.ts': readFixture(`${fixtureRoot}/wallet.model.ts`) });
-  writeModelGolemYaml(fixtureValue.root, profile);
-  await buildModelProject(fixtureValue.root);
-  const { Wallet } = await import(pathToFileURL(path.join(fixtureValue.root, 'build/wallet.model.js')).href);
+  const wallet = readFixture(`${fixtureRoot}/wallet.model.ts`).replace("'./sdk/index.js'", "'../sdk/index.js'");
+  const { root } = await loadGolemModeProject(t, 'golem-model-efficiency-mixed-', [{ document: parseYaml(readFixture(`${fixtureRoot}/money.yaml`)), folder: 'sdk', name: 'Payments' }], true, { 'src/wallet.model.ts': wallet });
+  const { Wallet } = await import(pathToFileURL(path.join(root, 'build/src/wallet.model.js')).href);
   const invalid = getValidator(new Wallet({ coins: [{ amount: 1, currency: 'USD' }, { amount: -1, currency: 'USD' }] }));
   assert.equal(await invalid.validate(), false);
   assert.deepEqual(

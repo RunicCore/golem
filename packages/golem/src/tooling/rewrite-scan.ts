@@ -8,11 +8,9 @@ import type { DiscriminatorValue } from '../model-registry.js';
 import { REWRITE_IMPORT_PREFIX } from './rewrite.js';
 import { evaluateStaticValue } from './static-value.js';
 import type { FileRewrite, RewriteEdit, RewriteImport } from './rewrite.js';
-import { readModelManifest } from './model-manifest-core.js';
 import { inNodeModules, isInstalledFile } from './type-analysis/path-identity.js';
 import { createProjectProgram, canonicalFilename, companionFilename, isGeneratedCompanion, modelBoundary, retainedProgramSession, type ModelBoundary } from './type-analysis/project.js';
 import { packageSpecifier } from './type-analysis/package-specifier.js';
-import { advertisedModelManifests } from './type-analysis/provenance.js';
 import { fieldProvenance } from './type-analysis/projections.js';
 import { authoredUnionMembers } from './type-analysis/projection-names.js';
 import { isDiscriminatorTag, readTags } from './type-analysis/tags.js';
@@ -123,15 +121,10 @@ function readCodecKeysFile(filename: string): Readonly<Record<string, string>> {
   return keys as Readonly<Record<string, string>>;
 }
 
-/**
- * The codec id of every declaration a rewrite can name, from two sources: the project's `.golem/codec-keys.json` and the
- * `codecId` of the model manifests that the program's files advertise.
- */
+/** The codec id of every declaration a rewrite can name, from the project's `.golem/codec-keys.json`. */
 class CodecKeys {
   /** Each declaration's ids, each with the files that give it; more than one id makes the declaration ambiguous. */
   private readonly byDeclaration = new Map<string, Map<string, Set<string>>>();
-  /** The generated module that registers each codec id, where a manifest says which. */
-  private readonly manifestModules = new Map<string, string>();
   /** The key file's declarations of each codec id, in file order: the model file of one is where the generated module that registers the id is looked up. */
   private readonly keyDeclarations = new Map<string, string[]>();
   /** The key file's entries by model name: a class that extends `<Name>BaseModel` is a class of the model with that name whose companion declares the base. */
@@ -145,7 +138,7 @@ class CodecKeys {
   private readonly base: string;
   private readonly keysByFile = new Map<string, string>();
 
-  constructor(private readonly program: ts.Program, private readonly checker: ts.TypeChecker, private readonly root: string, codecKeysFile: string, private readonly boundary: ModelBoundary) {
+  constructor(private readonly program: ts.Program, root: string, codecKeysFile: string, private readonly boundary: ModelBoundary) {
     this.base = canonicalPath(root);
     const table = portable(root, codecKeysFile);
     for (const [declaration, id] of Object.entries(readCodecKeysFile(codecKeysFile))) {
@@ -155,35 +148,6 @@ class CodecKeys {
         this.keyDeclarations.set(id, [...(this.keyDeclarations.get(id) ?? []), key]);
         const name = key.slice(key.lastIndexOf('#') + 1);
         this.keysByName.set(name, [...(this.keysByName.get(name) ?? []), { declaration: key, id, table }]);
-      }
-    }
-    this.addManifests();
-  }
-
-  /** The models of the manifests that the program's files advertise, resolved to the declarations they export in this program. */
-  private addManifests(): void {
-    const exportsOf = new Map<ts.SourceFile, ReadonlyMap<string, ts.Symbol>>();
-    const declarationsOf = (manifestFile: string, module: string, exportName: string): ts.Symbol | undefined => {
-      const file = this.program.getSourceFile(canonicalFilename(path.resolve(path.dirname(manifestFile), module)));
-      if (!file) return undefined;
-      let exported = exportsOf.get(file);
-      if (!exported) {
-        const moduleSymbol = this.checker.getSymbolAtLocation(file);
-        exported = new Map((moduleSymbol ? this.checker.getExportsOfModule(moduleSymbol) : []).map((symbol) => [symbol.name, symbol]));
-        exportsOf.set(file, exported);
-      }
-      return resolveSymbol(this.checker, exported.get(exportName));
-    };
-    for (const manifestFile of advertisedModelManifests(this.program)) {
-      const table = portable(this.root, manifestFile);
-      for (const model of readModelManifest(manifestFile).models) {
-        for (const { module, export: exportName } of [model.generated, model.type, ...(model.type.aliases ?? [])]) {
-          const symbol = declarationsOf(manifestFile, module, exportName);
-          this.addManifestModule(model.codecId, this.program.getSourceFile(canonicalFilename(path.resolve(path.dirname(manifestFile), model.generated.module)))?.fileName);
-          for (const declaration of symbol?.declarations ?? []) {
-            this.add(`${this.keyOf(declaration.getSourceFile().fileName)}#${symbol!.name}`, model.codecId, table);
-          }
-        }
       }
     }
   }
@@ -218,17 +182,13 @@ class CodecKeys {
       .map((file) => [canonicalPath(file.fileName), file.fileName] as const));
   }
 
-  private addManifestModule(id: string, module: string | undefined): void {
-    if (module !== undefined && !this.manifestModules.has(id)) this.manifestModules.set(id, module);
-  }
-
-  /** The absolute file of the generated module that registers the codec, or undefined when no key file or manifest names it. A key file wins over a manifest. */
+  /** The absolute file of the generated module that registers the codec, or undefined when no key file names it. */
   moduleOf(id: string): string | undefined {
     for (const declaration of this.keyDeclarations.get(id) ?? []) {
       const companion = this.companionOf(declaration);
       if (companion !== undefined) return companion;
     }
-    return this.manifestModules.get(id);
+    return undefined;
   }
 
   private add(declaration: string, id: string, table: string): void {
@@ -238,8 +198,8 @@ class CodecKeys {
   }
 
   /**
-   * The codec id of the named declaration in the file: the id that the key file and the manifests give it.
-   * The key files and manifests that give a found id are added to `dependencies`.
+   * The codec id of the named declaration in the file: the id that the key file gives it.
+   * The key files that give a found id are added to `dependencies`.
    */
   idFor(filename: string, name: string, dependencies: Set<string>): string {
     if (name === '') return '';
@@ -1095,7 +1055,7 @@ export function emitsJavaScript(options: ts.CompilerOptions): boolean {
   return options.noEmit !== true && options.emitDeclarationOnly !== true;
 }
 
-/** Finds the rewrite sites of the files of one program. A file's text is the program's own; the codec keys come from `codecKeysFile` and the manifests the program advertises. */
+/** Finds the rewrite sites of the files of one program. A file's text is the program's own; the codec keys come from `codecKeysFile`. */
 export class RewriteScanner {
   private readonly root: string;
   private readonly program: ts.Program;
@@ -1113,7 +1073,7 @@ export class RewriteScanner {
     this.checker = input.checker;
     this.nest = input.nest;
     this.nonModelInputs = input.nonModelInputs ?? 'error';
-    this.keys = new CodecKeys(input.program, input.checker, input.root, input.codecKeysFile, this.boundary);
+    this.keys = new CodecKeys(input.program, input.root, input.codecKeysFile, this.boundary);
   }
 
   private candidate(file: ts.SourceFile): boolean {

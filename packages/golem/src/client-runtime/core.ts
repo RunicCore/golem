@@ -1,6 +1,8 @@
 import { LibError, LibErrorKind } from '../errors.js';
+import type { ValidationLevel } from '../object-codec.js';
 import type { OperationRuntimeValidators } from '../schema-registry-validation.js';
 import type { Validator } from '../validation-runtime.js';
+import { mediaEssence, parseMediaType } from './media-type.js';
 
 export interface ParameterSerializerContext {
   readonly operation: string;
@@ -101,10 +103,28 @@ export interface ClientOptions {
   streamDecoders?: Record<string, StreamDecoder>;
   /** Overrides generated validators for individual operations. */
   operationValidators?: ReadonlyMap<string, OperationRuntimeValidators>;
+  /** The default validation level of this client's calls; see `ValidateOption`. An SDK generated without validation has no such option. */
+  validate?: ValidateOption;
 }
+
+/**
+ * The validation level of a call: `true` checks everything, `'sanity'` checks the shape only, `false` checks nothing; conversion
+ * runs at every level. A level alone sets `request` and `response`, the bodies and the path, query and cookie values; `requestHeaders`
+ * and `responseHeaders` switch the header checks, each apart, and are off unless the option names them. An object sets the sides it names.
+ * A side it leaves out takes the level of the next source: the call, then the client, then the SDK's own level (off for the headers).
+ * A call can lower the level, never raise it above the SDK's: that throws `LibErrorKind.ValidationUnavailable`.
+ */
+export type ValidateOption = ValidationLevel | {
+  readonly request?: ValidationLevel;
+  readonly response?: ValidationLevel;
+  readonly requestHeaders?: ValidationLevel;
+  readonly responseHeaders?: ValidationLevel;
+};
 
 export interface RequestOptions {
   signal?: AbortSignal;
+  /** The validation level of this call; it wins over the client's `validate`. */
+  validate?: ValidateOption;
 }
 
 type ResponseFraming = 'ndjson' | 'json-seq' | 'sse' | 'custom-stream' | 'binary' | 'body';
@@ -114,6 +134,8 @@ interface RuntimeResponseHeaderContract {
   style: string;
   explode: boolean;
   contentType: string | null;
+  /** The header is required: its absence is reported when response headers are checked. */
+  required?: boolean;
   kind: string | null;
   itemKind: string | null;
   propertyKinds: Readonly<Record<string, string | null>>;
@@ -140,10 +162,23 @@ interface RuntimeSecurityScheme {
 }
 export type RuntimeSecuritySchemes = Readonly<Record<string, RuntimeSecurityScheme>>;
 
-/** The generated validators of one operation, each imported by name from the generated validators module. */
-export interface OperationValidationSources {
-  readonly input: Validator;
-  readonly responses: readonly { readonly status: string; readonly contentType: string; readonly validator: Validator }[];
+/** Turns one body between its plain and its wire form; a generated codec takes the type of its model, which the client has checked. */
+type BodyConversion = (value: never, options?: { readonly validate: ValidationLevel }) => unknown;
+
+/**
+ * What the generated codec module of an operation holds: its validators, and the conversion of each body, parameter and response header
+ * that has a Date or Temporal value. `responses` and `decode` are keyed `status:contentType`, `encode` by request content type,
+ * `parameters` by `location:name` and `headers` by `status:name`; a value that converts nothing has no entry.
+ */
+export interface OperationCodecs {
+  readonly input?: Validator;
+  readonly requestHeaders?: Validator;
+  readonly responses?: Readonly<Record<string, Validator>>;
+  readonly responseHeaders?: Readonly<Record<string, Validator>>;
+  readonly encode?: Readonly<Record<string, BodyConversion>>;
+  readonly decode?: Readonly<Record<string, BodyConversion>>;
+  readonly parameters?: Readonly<Record<string, BodyConversion>>;
+  readonly headers?: Readonly<Record<string, BodyConversion>>;
 }
 
 /** The matched response a check runs against. */
@@ -152,8 +187,11 @@ interface CheckedResponse {
   readonly contentType: string | null;
 }
 
-/** Checks a decoded response body or stream item. Only SDKs generated with validation pass one, so the runtime core imports no validation code. */
-export type ResponseCheck = (response: CheckedResponse, value: unknown) => Promise<void>;
+/** Checks a decoded response body or stream item, or the decoded value of the response header `header`; for a required header that is absent, `value` is undefined. Only SDKs generated with validation pass one, so the runtime core imports no validation code. */
+export type ResponseCheck = (response: CheckedResponse, value: unknown, header?: string) => Promise<void>;
+
+/** Converts a checked response body or stream item to its plain form, or the decoded value of the response header `header`; it runs after the check. */
+export type ResponseDecode = (response: CheckedResponse, value: unknown, header?: string) => unknown;
 
 /** A response whose status or media type the operation does not declare. Its body was cancelled. */
 export interface UndeclaredResponseError extends LibError {
@@ -198,10 +236,20 @@ function lookupCodec<T>(map: Readonly<Record<string, T>>, keys: readonly string[
     if (key && Object.hasOwn(map, key)) return map[key];
   }
   for (const key of keys) {
-    const essence = (key.split(';', 1)[0] || '').trim().toLowerCase();
+    const essence = mediaEssence(key);
     if (essence && Object.hasOwn(map, essence)) return map[essence];
   }
   return Object.hasOwn(map, '*/*') ? map['*/*'] : undefined;
+}
+
+/** How closely the media type `actual` (parameters ignored) matches the declared `expected`, which may be a range: 0 exact, 1 a subtype range, 2 the full range; null when it does not. */
+function mediaRank(actual: string, expected: string): number | null {
+  const { essence: range, type: rangeType, subtype: rangeSubtype } = parseMediaType(expected);
+  const { essence: value, type: actualType } = parseMediaType(actual);
+  if (value === range) return 0;
+  if (rangeSubtype === '*' && rangeType === actualType) return 1;
+  if (range === '*/*') return 2;
+  return null;
 }
 
 interface SelectedResponse {
@@ -214,14 +262,15 @@ interface SelectedResponse {
   headers: readonly RuntimeResponseHeaderContract[];
 }
 
-async function* checkStreamItems(
+async function* convertStreamItems(
   selected: CheckedResponse,
   stream: AsyncIterable<unknown>,
-  check: ResponseCheck,
+  check: ResponseCheck | undefined,
+  decode: ResponseDecode | undefined,
 ): AsyncIterable<unknown> {
   for await (const item of stream) {
-    await check(selected, item);
-    yield item;
+    if (check) await check(selected, item);
+    yield decode ? decode(selected, item) : item;
   }
 }
 
@@ -355,27 +404,13 @@ export class ClientRuntime {
     return expected === 'default';
   }
 
-  private mediaRank(actual: string, expected: string): number | null {
-    const rangeEnd = expected.indexOf(';');
-    const valueEnd = actual.indexOf(';');
-    const range = (rangeEnd < 0 ? expected : expected.slice(0, rangeEnd)).trim().toLowerCase();
-    const value = (valueEnd < 0 ? actual : actual.slice(0, valueEnd)).trim().toLowerCase();
-    if (value === range) return 0;
-    const [rangeType, rangeSubtype] = range.split('/');
-    const [actualType] = value.split('/');
-    if (rangeSubtype === '*' && rangeType === actualType) return 1;
-    if (range === '*/*') return 2;
-    return null;
-  }
-
   private selectResponse(
     operation: string,
     response: Response,
     contracts: readonly RuntimeResponseContract[],
   ): SelectedResponse {
     const rawMediaType = response.headers.get('content-type') || '';
-    const mediaEnd = rawMediaType.indexOf(';');
-    const mediaType = (mediaEnd < 0 ? rawMediaType : rawMediaType.slice(0, mediaEnd)).trim().toLowerCase();
+    const mediaType = mediaEssence(rawMediaType);
     let selected: (typeof contracts)[number] | undefined;
     let range: (typeof contracts)[number] | undefined;
     let fallback: (typeof contracts)[number] | undefined;
@@ -402,7 +437,7 @@ export class ClientRuntime {
     let match: (typeof selected.content)[number] | undefined;
     let bestRank = Infinity;
     for (const item of selected.content) {
-      const rank = this.mediaRank(mediaType, item.contentType);
+      const rank = mediaRank(mediaType, item.contentType);
       if (rank !== null && rank < bestRank) {
         match = item;
         bestRank = rank;
@@ -492,35 +527,42 @@ export class ClientRuntime {
     return this.decodeHeaderScalar(value, metadata.kind);
   }
 
-  private responseHeaders(
+  private async responseHeaders(
     operation: string,
     response: Response,
     headers: readonly RuntimeResponseHeaderContract[],
-  ): Record<string, unknown> {
+    checked: CheckedResponse,
+    check: ResponseCheck | undefined,
+    decode: ResponseDecode | undefined,
+  ): Promise<Record<string, unknown>> {
     const entries: Array<[string, unknown]> = [];
     for (const metadata of headers) {
       const value = response.headers.get(metadata.name);
       if (value !== null) {
-        entries.push([metadata.name, this.decodeResponseHeader(operation, value, metadata)]);
-      }
+        const decoded = this.decodeResponseHeader(operation, value, metadata);
+        if (check) await check(checked, decoded, metadata.name);
+        entries.push([metadata.name, decode ? decode(checked, decoded, metadata.name) : decoded]);
+      } else if (metadata.required && check) await check(checked, undefined, metadata.name);
     }
     return Object.fromEntries(entries);
   }
 
-  private httpResponse(
+  private async httpResponse(
     operation: string,
     response: Response,
     declaredStatus: string,
     contentType: string | null,
     body: unknown,
     contracts: readonly RuntimeResponseContract[],
-  ): {
+    check: ResponseCheck | undefined,
+    decode: ResponseDecode | undefined,
+  ): Promise<{
     matched: 'status' | 'range' | 'default';
     status: number;
     contentType: string | null;
     body: unknown;
     headers: Record<string, unknown>;
-  } {
+  }> {
     const contract = contracts.find((item) => item.status === declaredStatus);
     if (!contract) throw new Error(`Missing generated response contract for ${operation} ${declaredStatus}`);
     return {
@@ -528,7 +570,7 @@ export class ClientRuntime {
       status: response.status,
       contentType,
       body,
-      headers: this.responseHeaders(operation, response, contract.headers),
+      headers: await this.responseHeaders(operation, response, contract.headers, { status: declaredStatus, contentType }, check, decode),
     };
   }
 
@@ -537,6 +579,7 @@ export class ClientRuntime {
     response: Response,
     contracts: readonly RuntimeResponseContract[],
     check?: ResponseCheck,
+    decode?: ResponseDecode,
   ): Promise<TResponse> {
     try {
       const selected = this.selectResponse(operation, response, contracts);
@@ -546,14 +589,14 @@ export class ClientRuntime {
         const customStream = lookupCodec(this.streamDecoders, [rawContentType, selected.contentType || '']);
         if (customStream) {
           const framed = customStream(response, { operation, contentType: selected.actualContentType });
-          return this.httpResponse(operation, response, selected.status, selected.contentType, check ? checkStreamItems(selected, framed, check) : framed, contracts) as TResponse;
+          return await this.httpResponse(operation, response, selected.status, selected.contentType, check || decode ? convertStreamItems(selected, framed, check, decode) : framed, contracts, check, decode) as TResponse;
         }
         const framed = selected.framing === 'ndjson' ? this.readNdjson(response.body)
           : selected.framing === 'json-seq' ? this.readJsonSeq(response.body)
           : selected.framing === 'sse' ? this.readServerSentEvents(response.body)
           : (() => { throw new Error('No stream decoder configured for media type: ' + (selected.contentType || '')); })();
-        const body = check ? checkStreamItems(selected, framed, check) : framed;
-        return this.httpResponse(operation, response, selected.status, selected.contentType, body, contracts) as TResponse;
+        const body = check || decode ? convertStreamItems(selected, framed, check, decode) : framed;
+        return await this.httpResponse(operation, response, selected.status, selected.contentType, body, contracts, check, decode) as TResponse;
       }
       const mediaType = selected.actualContentType;
       const customDecoder = lookupCodec(this.responseDecoders, [rawContentType, selected.contentType || '']);
@@ -579,7 +622,8 @@ export class ClientRuntime {
         throw new Error(`No response decoder configured for media type: ${mediaType || '(empty)'}`);
       }
       if (check) await check(selected, body);
-      return this.httpResponse(operation, response, selected.status, selected.contentType, body, contracts) as TResponse;
+      if (decode && selected.contentType !== null) body = decode(selected, body);
+      return await this.httpResponse(operation, response, selected.status, selected.contentType, body, contracts, check, decode) as TResponse;
     }
     catch (error) {
       if (response.body && !response.body.locked) {

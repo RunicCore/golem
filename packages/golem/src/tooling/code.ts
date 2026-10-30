@@ -801,8 +801,14 @@ function importSet(root: Code, options: Pick<ImportOptions, 'order' | 'modules'>
 
 /** How a file writes the imports of its runtime parts. */
 export interface ImportOptions {
-  /** The specifier of a runtime module, for its values and its types; a module not listed is imported from `RUNTIME_SPECIFIER` for values and `runtimeTypeSpecifier` for types. */
-  readonly specifiers?: Partial<Readonly<Record<RuntimeModule, string>>>;
+  /**
+   * The specifier a runtime module is imported from, for its values and for its types apart; a module not listed is imported from
+   * `RUNTIME_SPECIFIER` for values and `runtimeTypeSpecifier` for types. A standalone SDK names its copied runtime here.
+   */
+  readonly specifiers?: {
+    readonly values?: Partial<Readonly<Record<RuntimeModule, string>>>;
+    readonly types?: Partial<Readonly<Record<RuntimeModule, string>>>;
+  };
   /** The quote of a specifier; a single quote by default. */
   readonly quote?: "'" | '"';
   /**
@@ -846,9 +852,8 @@ export function importGroups(root: Code, options: Pick<ImportOptions, 'order' | 
     for (const next of added) if (!into.some((have) => have.name === next.name && have.alias === next.alias)) into.push(next);
   };
   for (const { module, names, types } of importSet(root, options)) {
-    const override = options.specifiers?.[module];
-    if (names.length > 0) addOnce(into(override ?? RUNTIME_SPECIFIER[module], module).names, names);
-    if (types.length > 0) addOnce(into(override ?? runtimeTypeSpecifier(module), module).types, types);
+    if (names.length > 0) addOnce(into(options.specifiers?.values?.[module] ?? RUNTIME_SPECIFIER[module], module).names, names);
+    if (types.length > 0) addOnce(into(options.specifiers?.types?.[module] ?? runtimeTypeSpecifier(module), module).types, types);
   }
   return [...groups].map(([specifier, group]) => ({ specifier, ...group }));
 }
@@ -910,20 +915,6 @@ export function fileImports(
 /** An import statement that names no binding, only the module. */
 export function sideEffectImport(specifier: string, quote: "'" | '"' = "'"): Code {
   return plainText(`import ${quote === '"' ? jsonText(specifier) : `'${checkedSingleQuoted(specifier)}'`};`);
-}
-
-/** A re-export statement: each name as the module exports it, or `[local, exported]` for a name it exports under another name. */
-export function exportFrom(names: readonly (string | readonly [local: string, exported: string])[], specifier: string, typeOnly: boolean = false): Code {
-  const members = names.map((entry): Code => {
-    if (typeof entry === 'string') return exportedName(entry);
-    const [local, exported] = entry;
-    return local === exported ? exportedName(exported) : fromParts([...identifier(local).parts, { kind: 'text', text: ' as ' }, ...exportedName(exported).parts]);
-  });
-  return fromParts([
-    { kind: 'text', text: `export ${typeOnly ? 'type ' : ''}{ ` },
-    ...join(members, plainText(', ')).parts,
-    { kind: 'text', text: ` } from '${checkedSingleQuoted(specifier)}';` },
-  ]);
 }
 
 /** The names of `source` that the code uses, as the module exports them, in the order of the declaration. */

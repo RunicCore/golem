@@ -214,15 +214,6 @@ function validateResult(result: unknown, job: GolemJob): GolemResult {
     if (typeof filename !== 'string' || !path.isAbsolute(filename)) throw new Error(`${job.package} returned a non-absolute input or manifest path.`);
     return path.normalize(filename);
   });
-  const manifestPaths = paths(result.manifestPaths);
-  for (const filename of manifestPaths) {
-    const artifact = artifacts.find(artifact => artifact.path === filename);
-    if (!artifact) throw new Error(`${job.package} returned a manifest without an artifact: ${displayPath(filename)}`);
-    const manifest = validateModelManifest(JSON.parse(artifact.content) as unknown, filename);
-    if (Object.entries(job.options.profile).some(([key, value]) => Reflect.get(manifest.profile, key) !== value)) {
-      throw new Error(`${job.package} returned a manifest with a different generation profile. Regenerate with a compatible provider.`);
-    }
-  }
   const diagnostics = result.diagnostics === undefined
     ? undefined
     : (() => {
@@ -261,6 +252,17 @@ function validateResult(result: unknown, job: GolemJob): GolemResult {
         };
       });
     })();
+  // The generator's own error diagnostics come first: a failed run has no artifacts to check, and the user needs its cause.
+  assertNoDiagnosticErrors(job, { diagnostics });
+  const manifestPaths = paths(result.manifestPaths);
+  for (const filename of manifestPaths) {
+    const artifact = artifacts.find(artifact => artifact.path === filename);
+    if (!artifact) throw new Error(`${job.package} returned a manifest without an artifact: ${displayPath(filename)}`);
+    const manifest = validateModelManifest(JSON.parse(artifact.content) as unknown, filename);
+    if (Object.entries(job.options.profile).some(([key, value]) => Reflect.get(manifest.profile, key) !== value)) {
+      throw new Error(`${job.package} returned a manifest with a different generation profile. Regenerate with a compatible provider.`);
+    }
+  }
   return {
     artifacts,
     manifestPaths,
@@ -289,7 +291,7 @@ function errorDiagnosticsMessage(source: string, errors: readonly GolemDiagnosti
   ].join('\n');
 }
 
-function assertNoDiagnosticErrors(job: GolemJob, result: GolemResult): void {
+function assertNoDiagnosticErrors(job: GolemJob, result: Pick<GolemResult, 'diagnostics'>): void {
   const errors = result.diagnostics?.filter(diagnostic => diagnostic.severity === GolemDiagnosticSeverity.Error) ?? [];
   if (errors.length === 0) return;
   throw new Error(errorDiagnosticsMessage(job.package, errors));
@@ -643,7 +645,6 @@ async function runJob(job: GolemJob, run: PipelineRun, plan: PipelinePlan, progr
     manifests: result.manifestPaths.map(manifest => recordPath(config, manifest)),
     warnings: (result.diagnostics ?? []).filter(diagnostic => diagnostic.severity === GolemDiagnosticSeverity.Warning),
   };
-  assertNoDiagnosticErrors(job, result);
   writeWarnings(result.diagnostics ?? []);
   assertUnowned(progress.owned, result.artifacts.map(artifact => artifact.path));
   options.onOwned?.(result.artifacts.map(artifact => artifact.path));

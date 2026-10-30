@@ -7,7 +7,15 @@ import { linkProjectPackages, writeGeneratedArtifacts } from '../fixture-project
 import { isRecord } from '@exprtlabs/golem/internal/generator-support';
 import { findGeneratedModelDefinitionForConstructor } from '@exprtlabs/golem/internal/model-runtime';
 import { generate, type OpenApiGenerationContext, writeSdk as WriteSdk } from '#openapi/generator';
+import { generate as generateModels } from '#model/generator';
+import { GolemDiagnosticSeverity } from '@exprtlabs/golem/generator-api';
+import { sdkCodecsFile } from '@exprtlabs/golem/internal/emitter';
 import type { OpenApiGenerationProfile } from '#openapi/profile';
+import { buildOperationValidationSchemas } from '#openapi/client/emit';
+import { normalizeAndValidate } from '#openapi/document';
+import { generateModelManifest } from '#openapi/model-manifest';
+import { analyzeOpenApiModels, requestBodyKey } from '#openapi/model-schema-graph';
+import { buildSchemaData } from '#openapi/schemas';
 
 export type { OpenApiGenerationProfile };
 
@@ -25,9 +33,45 @@ export function tscBin(): string {
 }
 
 export const defaultTestProfile: OpenApiGenerationProfile = Object.freeze({
-  mobx: true,
+  mobx: false,
   validation: true,
 });
+
+/**
+ * MobX needs the golem runtime, so a test SDK with `mobx: true` is generated in golem mode unless the test says otherwise; any other SDK is standalone.
+ * A golem-mode SDK imports the codecs file that the models job writes: the tests give that job the SDK's own `codecs` folder as its output.
+ */
+function modeOf(profile: OpenApiGenerationProfile, output: string, requested?: 'standalone' | 'golem'): { readonly mode?: 'standalone' | 'golem'; readonly codecsFile?: string } {
+  const mode = requested ?? (profile.mobx ? 'golem' : undefined);
+  if (mode === undefined) return {};
+  return mode === 'golem' ? { mode, codecsFile: sdkCodecsFile({ modelsOutput: join(output, 'codecs'), configDirectory: dirname(output), sdkOutput: output }) } : { mode };
+}
+
+/** A generation that reports an error writes nothing, so a test that went on would pass without an SDK: the error codes and messages stop it. */
+function requireNoErrorDiagnostics(result: { readonly diagnostics?: readonly { readonly code: string; readonly severity: GolemDiagnosticSeverity; readonly message: string }[] }): void {
+  const errors = result.diagnostics?.filter(diagnostic => diagnostic.severity === GolemDiagnosticSeverity.Error) ?? [];
+  if (errors.length > 0) throw new Error(`Generation reported ${errors.length} error(s):\n${errors.map(({ code, message }) => `${code}: ${message}`).join('\n')}`);
+}
+
+/** Runs the models job of the SDK's golem.yaml folder for a golem-mode SDK that was just written, and writes the codecs file the SDK imports. */
+function writeSdkCodecs(output: string, profile: OpenApiGenerationProfile, mode: { readonly mode?: string }): void {
+  if (mode.mode !== 'golem') return;
+  const directory = dirname(output);
+  // Without `skipLibCheck` the job checks every library declaration file, which takes seconds for each SDK.
+  const tsconfig = join(directory, 'tsconfig.models.json');
+  writeFileSync(tsconfig, JSON.stringify({ compilerOptions: { target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', strict: true, skipLibCheck: true, lib: ['ES2023', 'DOM', 'DOM.Iterable'] }, include: [] }));
+  const result = generateModels({
+    root: directory,
+    directory,
+    tsconfig,
+    output: join(output, 'codecs'),
+    manifestInputs: [join(output, 'model-manifest.json')],
+    sdkOutputs: [output],
+    profile,
+  });
+  requireNoErrorDiagnostics(result);
+  writeGeneratedArtifacts(result.artifacts);
+}
 
 export function requireRecord(value: unknown, label: string): Record<string, unknown> {
   if (!isRecord(value)) throw new TypeError(`${label} must be an object`);
@@ -41,8 +85,11 @@ export function writeGeneratedSdk(
 ): ReturnType<typeof WriteSdk> {
   const output = resolve(options.output);
   const profile = options.profile ?? defaultTestProfile;
-  const result = writeSdk(document, { output, name: options.name, profile });
+  const mode = modeOf(profile, output);
+  const result = writeSdk(document, { output, name: options.name, profile, ...mode });
+  requireNoErrorDiagnostics(result);
   writeGeneratedArtifacts(result.artifacts);
+  writeSdkCodecs(output, profile, mode);
   prepareSdkProject(output);
   for (const name of ['typescript', '@types/node'] as const) {
     const source = join(repoRoot(), 'node_modules', name);
@@ -113,6 +160,17 @@ export function compileGeneratedSdk(
   if (compiled.status !== 0) {
     throw new Error(compiled.stderr || compiled.stdout || 'tsc failed');
   }
+}
+
+/** Writes the tsconfig of a project that plain tsc builds: strict, NodeNext, no allowJs, no types, `src` into `out`. */
+export function writePlainTscProject(project: string): void {
+  writeFileSync(join(project, 'tsconfig.json'), JSON.stringify({
+    compilerOptions: {
+      strict: true, noUncheckedIndexedAccess: true, exactOptionalPropertyTypes: true, verbatimModuleSyntax: true, target: 'ES2022',
+      module: 'NodeNext', moduleResolution: 'NodeNext', skipLibCheck: true, lib: ['ES2023', 'DOM'], types: [], rootDir: 'src', outDir: 'out',
+    },
+    include: ['src/**/*.ts'],
+  }));
 }
 
 export function compileStrictUnusedSdk(output: string, extraFiles: string[] = []): void {
@@ -207,26 +265,6 @@ export function readGeneratedClientSource(output: string): string {
   return files.filter(existsSync).map(filename => readFileSync(filename, 'utf8')).join('\n');
 }
 
-function isModelImplementation(filename: string): boolean {
-  return basename(dirname(filename)) === 'models' && /^_group-.*\.ts$/.test(basename(filename))
-    && !filename.endsWith('.d.ts');
-}
-
-/** Inspect all canonical model implementations while keeping facade tests separate. */
-export function generatedModelSource(artifacts: readonly { path: string; content: string }[]): string {
-  return artifacts.filter(artifact => isModelImplementation(artifact.path))
-    .map(artifact => artifact.content).join('\n');
-}
-
-export function readGeneratedModelSource(output: string): string {
-  const files: string[] = [];
-  const directory = join(output, 'models');
-  if (existsSync(directory)) {
-    files.push(...readdirSync(directory).map(name => join(directory, name)).filter(isModelImplementation));
-  }
-  return files.filter(existsSync).map(filename => readFileSync(filename, 'utf8')).join('\n');
-}
-
 export async function generateMaterializedSdk(
   document: unknown,
   options: {
@@ -239,15 +277,19 @@ export async function generateMaterializedSdk(
     maxRefDocuments?: number;
     refTimeoutMs?: number;
     dates?: 'date' | 'temporal';
+    /** `golem` imports `@exprtlabs/golem` and registers codecs there; a profile with `mobx: true` always does. */
+    mode?: 'standalone' | 'golem';
   },
 ): Promise<Awaited<ReturnType<typeof generate>>> {
   const directory = dirname(options.output);
   const input = writeOpenApiDocument(directory, document);
+  const mode = modeOf(options.profile ?? defaultTestProfile, resolve(options.output), options.mode);
   const context: OpenApiGenerationContext = {
     input,
     output: resolve(options.output),
     name: options.name,
     profile: options.profile ?? defaultTestProfile,
+    ...mode,
     allowRemoteRefs: options.allowRemoteRefs,
     remoteHosts: options.remoteHosts,
     maxRefBytes: options.maxRefBytes,
@@ -256,7 +298,9 @@ export async function generateMaterializedSdk(
     ...(options.dates === undefined ? {} : { dates: options.dates }),
   };
   const result = await generate(context);
+  requireNoErrorDiagnostics(result);
   materializeGeneratedSdk(result.artifacts, options.output);
+  writeSdkCodecs(resolve(options.output), options.profile ?? defaultTestProfile, mode);
   return result;
 }
 
@@ -326,4 +370,74 @@ export function captureRequest(url: string | URL | Request, init?: RequestInit):
       signal: init?.signal,
     },
   };
+}
+
+/** The body of one operation of a compiled SDK as the public client carries it: what a response of `wire` decodes to, and the JSON a request of `value` sends. */
+export interface SdkBodyCodec {
+  /** Answers `wire` as the response body and returns the body the client gives. A check that fails rejects with the client's `LibError`; `options` are the per-call options (`validate`). */
+  decode(wire: unknown, options?: { validate?: unknown }): Promise<unknown>;
+  /** Sends `value` as the request body and returns the JSON the request carried. A value that fails the request check rejects with the client's `LibError`; `options` are the per-call options (`validate`). */
+  encode(value: unknown, options?: { validate?: unknown }): Promise<unknown>;
+}
+
+/**
+ * Test-only: `document` with two operations for each named component `Root`: `getRoot` (GET /get/Root, 200 response) and `putRoot` (POST /put/Root, request body, 204).
+ * `sdkBodyCodec` calls them. An operation of the document with one of these names is replaced.
+ */
+export function withRootOperations(document: Record<string, unknown>, ...roots: string[]): Record<string, unknown> {
+  const paths: Record<string, unknown> = { ...requireRecord(document.paths ?? {}, 'paths') };
+  for (const root of roots) {
+    const content = { 'application/json': { schema: { $ref: `#/components/schemas/${root}` } } };
+    paths[`/get/${root}`] = { get: { operationId: `get${root}`, responses: { 200: { description: 'ok', content } } } };
+    paths[`/put/${root}`] = { post: { operationId: `put${root}`, requestBody: { required: true, content }, responses: { 204: { description: 'none' } } } };
+  }
+  return { ...document, paths };
+}
+
+/**
+ * Test-only: reaches the conversion and checks of the component `root` in a compiled SDK (standalone or golem mode) through its client, with a fake `fetch`.
+ * `name` is the SDK name (`<name>Client`); the SDK has the operations of `withRootOperations` for `root`. A test of client calls builds its own client with `loadGeneratedClient`.
+ */
+export async function sdkBodyCodec(output: string, name: string, root: string): Promise<SdkBodyCodec> {
+  const Client = await loadGeneratedClient(output, name);
+  return clientBodyCodec(async fetchImpl => new Client({ baseUrl: 'https://api.test', fetchImpl }), root);
+}
+
+type BodyOperations = Record<string, (() => { execute(input?: unknown, options?: unknown): Promise<{ body: unknown }> }) | undefined>;
+
+/** A fetch for a test client: it answers with `answer()` and keeps the JSON body of each request in `sent`. */
+export function recordingFetch(answer: () => Response): { readonly fetchImpl: typeof fetch; readonly sent: unknown[] } {
+  const sent: unknown[] = [];
+  const fetchImpl = async (_url: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    sent.push(typeof init?.body === 'string' ? JSON.parse(init.body) : init?.body);
+    return answer();
+  };
+  return { fetchImpl: fetchImpl as typeof fetch, sent };
+}
+
+/** The `SdkBodyCodec` of the component `root` of a client that `makeClient` makes around the fake `fetchImpl` it is given. */
+export function clientBodyCodec(makeClient: (fetchImpl: typeof fetch) => Promise<unknown>, root: string): SdkBodyCodec {
+  return {
+    async decode(wire, options) {
+      const client = await makeClient((async () => Response.json(wire)) as unknown as typeof fetch) as BodyOperations;
+      return (await client[`get${root}`]!().execute({}, options)).body;
+    },
+    async encode(value, options) {
+      const { fetchImpl, sent } = recordingFetch(() => new Response(null, { status: 204 }));
+      const client = await makeClient(fetchImpl) as BodyOperations;
+      await client[`put${root}`]!().execute({ body: value }, options);
+      return sent[0];
+    },
+  };
+}
+
+/** The manifest an openapi job of mode golem writes for `document`: the schema graph and the validation roots of every operation. */
+export function golemModeManifest(document: unknown, profile: OpenApiGenerationProfile, dates: 'date' | 'temporal' = 'date'): Record<string, unknown> {
+  const ir = normalizeAndValidate(document);
+  const operations = ir.operations;
+  const analysis = analyzeOpenApiModels(document, profile.validation, dates, [...operations, ...ir.inboundOperations]);
+  const schemaData = profile.validation && operations.length > 0
+    ? buildSchemaData(document, ir, (operation, contentType) => analysis.convertedNodeIds.has(requestBodyKey(operation.name, contentType)) && !analysis.uncarriedValues.has(requestBodyKey(operation.name, contentType)))
+    : undefined;
+  return generateModelManifest(document, profile, analysis, 'golem', { operations, validation: buildOperationValidationSchemas(operations, document, profile, schemaData) }) as Record<string, unknown>;
 }

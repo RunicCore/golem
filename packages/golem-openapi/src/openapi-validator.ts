@@ -40,7 +40,7 @@ async function compileOpenApiValidators(): Promise<OpenApiValidators> {
   const resources = new Map(Object.entries(JSON_SCHEMA_2020_12_META_SCHEMAS).filter(([id]) => id !== JSON_SCHEMA_2020_12_ID));
   const { source, exports, diagnostics } = compile(
     { roots, resources },
-    { unknownFormats: 'error', runtimeModule: import.meta.resolve('@exprtlabs/golem/internal/validation-runtime'), documentName: 'the OpenAPI meta-schemas' },
+    { unknownFormats: 'error', specifiers: { values: { 'validation-runtime': import.meta.resolve('@exprtlabs/golem/internal/validation-runtime') } }, documentName: 'the OpenAPI meta-schemas' },
   );
   const errors = diagnostics.filter((entry) => entry.severity === GolemDiagnosticSeverity.Error);
   if (errors.length) throw new Error(`the OpenAPI meta-schemas do not compile: ${errors.map((entry) => entry.message).join('; ')}`);

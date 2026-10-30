@@ -4,7 +4,6 @@ import test from 'node:test';
 import { createSchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
 import { code, emitModelFromInit, emitModelFromJSON, identifier, render, type StringifySerdeResolver } from '@exprtlabs/golem/internal/emitter';
 import type { ModelTypeDescriptor } from '@exprtlabs/golem/internal/schema';
-import type { Validator } from '@exprtlabs/golem/validation';
 import { buildCodecValidationPlan } from '@exprtlabs/golem/internal/validation-plan';
 import * as modelRuntime from '@exprtlabs/golem/internal/model-runtime';
 import { emitCodecRuntimeText, instantiateRuntime } from './emitted-runtime.js';
@@ -137,7 +136,6 @@ test('a parent module names and defines the validators of its own model, not tho
   graph.seal();
   const asked: string[] = [];
   const source = emitCodecRuntimeText(graph, {
-    nestedGenerated: (id) => identifier(`${id}Model`),
     validatorName: (id) => { asked.push(id.replace(/_[0-9a-f]{8}$/, '')); return identifier(`validate_${id.replace(/[^\w$]/g, '_')}`); },
   });
   // Three asks, all for the parent: the validator, the assert and the guard of the parse of the wire plane. None is the nested model's.

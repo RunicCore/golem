@@ -37,8 +37,12 @@ import {
 } from '../normalize.js';
 import { operationNameType } from '../names.js';
 import { generatedBannerComment } from '../package-info.js';
+import type { RuntimeSpecifiers } from '../runtime-copy.js';
 import type { OpenApiGenerationProfile } from '../profile.js';
 import { requireProfile } from '../profile.js';
+import { operationConverts, parameterKey, requestBodyKey, responseBodyKey, responseHeaderKey } from '../model-schema-graph.js';
+import type { OperationCodecsFor } from '../operation-codecs.js';
+import type { OperationValidatorNames } from '../model-emission.js';
 import { buildOperationValidationSchemaBundle, buildOperationValidationSchemaBundles, buildSchemaData, operationSourceSchemas } from '../schemas.js';
 import { authoredPointer, type MovedUnions } from '../document.js';
 import { textCodecRequirement } from '../types.js';
@@ -63,7 +67,7 @@ function serializedContentParameter(
   return code`${use('serializeContentParameter')}(runtime, ${value}, { operation: ${literal(operation.name)}, name: ${literal(name)}, in: ${CONTENT_PARAMETER_LOCATION[location]}, contentType: ${literal(contentType)} })`;
 }
 
-function routeExpression(operation: NormalizedOperation, use: (name: ClientFunction) => Code): { declarations: Code; expression: Code } {
+function routeExpression(operation: NormalizedOperation, use: (name: ClientFunction) => Code, input: Code): { declarations: Code; expression: Code } {
   const parameters = new Map(operation.parameters.filter((item) => item.in === 'path').map(item => [item.name, item]));
   const variables = new Map<string, Code>();
   const wholeSegments = new Set(operation.route.split('/').flatMap((segment) => /^\{[^{}]+\}$/.test(segment) ? [segment.slice(1, -1)] : []));
@@ -81,14 +85,14 @@ function routeExpression(operation: NormalizedOperation, use: (name: ClientFunct
     variables.set(parameter.name, variable);
     parts.push(variable);
     if (parameter.content) {
-      declarations.push(code`    const ${variable} = ${use('encode')}(${serializedContentParameter(operation, use, 'path', parameter.name, parameter.content, code`input.path[${literal(parameter.name)}]`)});`);
+      declarations.push(code`    const ${variable} = ${use('encode')}(${serializedContentParameter(operation, use, 'path', parameter.name, parameter.content, code`${input}.path[${literal(parameter.name)}]`)});`);
       continue;
     }
     const style = parameter.style || 'simple';
     const explode = parameter.explode === undefined ? false : parameter.explode;
     // Only a parameter that stands alone between slashes can form a dot-segment; the call states the other case.
     const inSegment = wholeSegments.has(parameter.name) ? BLANK : code`, false`;
-    declarations.push(code`    const ${variable} = ${use('serializePath')}(runtime, ${literal(parameter.name)}, input.path[${literal(parameter.name)}], ${literal(style)}, ${literal(explode)}${inSegment});`);
+    declarations.push(code`    const ${variable} = ${use('serializePath')}(runtime, ${literal(parameter.name)}, ${input}.path[${literal(parameter.name)}], ${literal(style)}, ${literal(explode)}${inSegment});`);
   }
   parts.push(literal(operation.route.slice(offset)));
   return { declarations: join(declarations, code`\n`), expression: join(parts, code` + `) };
@@ -113,6 +117,11 @@ function headerSchemaKind(document: unknown, rawSchema: unknown, depth = 0): str
     }
   }
   return kinds.size === 1 ? [...kinds][0] ?? null : null;
+}
+
+/** Whether a declared response header (or a reference to one) is required. */
+function responseHeaderRequired(document: unknown, rawHeader: unknown): boolean {
+  return asRecord(resolveLocal(document, rawHeader)).required === true;
 }
 
 function responseContractsForOperation(
@@ -141,6 +150,7 @@ function responseContractsForOperation(
         style: header.style || 'simple',
         explode: header.explode === true,
         contentType,
+        ...(responseHeaderRequired(document, rawHeader) ? { required: true } : {}),
         kind: headerSchemaKind(document, schema),
         itemKind: headerSchemaKind(document, itemSchema),
         propertyKinds: Object.fromEntries(
@@ -200,15 +210,19 @@ function operationSource(
   plan: EmissionPlan,
   responseContracts: readonly unknown[],
   securitySchemes: Readonly<Record<string, unknown>>,
-  validationBundle: ReturnType<typeof buildOperationValidationSchemaBundle> | undefined,
-  validatorExports: ReadonlyMap<string, string>,
+  convertedNodeIds: ReadonlyMap<string, string>,
+  codecsFor: OperationCodecsFor,
+  specifiers: RuntimeSpecifiers | undefined,
 ): string {
   const usedFunctions = new Set<string>();
   const use = (name: ClientFunction): Code => {
     usedFunctions.add(name);
     return rt.client[name];
   };
-  const route = routeExpression(operation, use);
+  const encodesParameters = operation.parameters.some((parameter) => convertedNodeIds.has(parameterKey(operation.name, parameter.in, parameter.name)));
+  // The parameters are read from the call's input, or from its copy with each converted parameter in its wire form.
+  const parameterInput = encodesParameters ? code`wireInput` : code`input`;
+  const route = routeExpression(operation, use, parameterInput);
   const queryParameters = operation.parameters.filter((item) => item.in === 'query');
   const queryStringParameter = operation.parameters.find((item) => item.in === 'querystring');
   const headerParameters = operation.parameters.filter((item) => item.in === 'header');
@@ -241,34 +255,44 @@ function operationSource(
   const appliesSecurity = (surfaces.auth || surfaces.mutualTls) && operation.security.length > 0;
   const queryLines = queryParameters.map((parameter) => {
     if (parameter.content) {
-      return code`    if (input.query?.[${literal(parameter.name)}] !== undefined) ${use('appendQuery')}(runtime, query, ${literal(parameter.name)}, ${serializedContentParameter(operation, use, 'query', parameter.name, parameter.content, code`input.query[${literal(parameter.name)}]`)}, ${literal(parameter.allowReserved === true)});`;
+      return code`    if (${parameterInput}.query?.[${literal(parameter.name)}] !== undefined) ${use('appendQuery')}(runtime, query, ${literal(parameter.name)}, ${serializedContentParameter(operation, use, 'query', parameter.name, parameter.content, code`${parameterInput}.query[${literal(parameter.name)}]`)}, ${literal(parameter.allowReserved === true)});`;
     }
-    return code`    ${use('addQueryParameter')}(runtime, query, ${literal(parameter.name)}, input.query?.[${literal(parameter.name)}], ${literal(parameter.style || 'form')}, ${literal(parameter.explode === undefined ? true : parameter.explode)}, ${literal(parameter.allowReserved === true)});`;
+    return code`    ${use('addQueryParameter')}(runtime, query, ${literal(parameter.name)}, ${parameterInput}.query?.[${literal(parameter.name)}], ${literal(parameter.style || 'form')}, ${literal(parameter.explode === undefined ? true : parameter.explode)}, ${literal(parameter.allowReserved === true)});`;
   });
   const headerLines = headerParameters.map((parameter) => {
     if (parameter.content) {
-      return code`    if (input.header?.[${literal(parameter.name)}] !== undefined) headers.set(${literal(parameter.name)}, ${serializedContentParameter(operation, use, 'header', parameter.name, parameter.content, code`input.header[${literal(parameter.name)}]`)});`;
+      return code`    if (${parameterInput}.header?.[${literal(parameter.name)}] !== undefined) headers.set(${literal(parameter.name)}, ${serializedContentParameter(operation, use, 'header', parameter.name, parameter.content, code`${parameterInput}.header[${literal(parameter.name)}]`)});`;
     }
-    return code`    if (input.header?.[${literal(parameter.name)}] !== undefined) headers.set(${literal(parameter.name)}, ${use('serializeHeaderSimple')}(runtime, input.header[${literal(parameter.name)}], ${literal(parameter.explode === true)}, ${literal(parameter.name)}));`;
+    return code`    if (${parameterInput}.header?.[${literal(parameter.name)}] !== undefined) headers.set(${literal(parameter.name)}, ${use('serializeHeaderSimple')}(runtime, ${parameterInput}.header[${literal(parameter.name)}], ${literal(parameter.explode === true)}, ${literal(parameter.name)}));`;
   });
   const cookieLines = cookieParameters.map((parameter) => {
     if (parameter.content) {
-      return code`    if (input.cookie?.[${literal(parameter.name)}] !== undefined) cookies.push(${literal(parameter.name)} + '=' + encodeURIComponent(${serializedContentParameter(operation, use, 'cookie', parameter.name, parameter.content, code`input.cookie[${literal(parameter.name)}]`)}));`;
+      return code`    if (${parameterInput}.cookie?.[${literal(parameter.name)}] !== undefined) cookies.push(${literal(parameter.name)} + '=' + encodeURIComponent(${serializedContentParameter(operation, use, 'cookie', parameter.name, parameter.content, code`${parameterInput}.cookie[${literal(parameter.name)}]`)}));`;
     }
     // OpenAPI 3.2 sets explode true for style form and style cookie when the parameter does not say (see the styles-for-cookie rule in openapi-schemas/oas-3-2.ts).
     const explode = literal(parameter.explode === undefined ? true : parameter.explode);
-    return code`    ${use(parameter.style === 'cookie' ? 'addCookieStyleParameter' : 'addCookieParameter')}(runtime, cookies, ${literal(parameter.name)}, input.cookie?.[${literal(parameter.name)}], ${explode});`;
+    return code`    ${use(parameter.style === 'cookie' ? 'addCookieStyleParameter' : 'addCookieParameter')}(runtime, cookies, ${literal(parameter.name)}, ${parameterInput}.cookie?.[${literal(parameter.name)}], ${explode});`;
   });
   const queryStringLine = queryStringParameter
-    ? code`    ${use('setQueryString')}(runtime, query, input.querystring, { operation: ${literal(operation.name)}, name: ${literal(queryStringParameter.name)}, in: 'querystring', contentType: ${literal(Object.keys(queryStringParameter.content || {})[0] || 'application/x-www-form-urlencoded')} });`
+    ? code`    ${use('setQueryString')}(runtime, query, ${parameterInput}.querystring, { operation: ${literal(operation.name)}, name: ${literal(queryStringParameter.name)}, in: 'querystring', contentType: ${literal(Object.keys(queryStringParameter.content || {})[0] || 'application/x-www-form-urlencoded')} });`
     : BLANK;
-  const inputName = identifierPart(profile.validation || operation.parameters.length || requestBody ? 'input' : '_input');
+  const readsInput = Boolean(profile.validation || operation.parameters.length || requestBody);
+  const inputName = identifierPart(readsInput ? 'input' : '_input');
   const factoryName = operationFactoryName(operation);
   if (appliesSecurity) use('applySecurity');
   if (requestBody) use('encodeBody');
-  // The bundle exists exactly when the profile validates.
-  const validatesWithSources = validationBundle !== undefined;
-  const validationFunctions = validatesWithSources ? ['operationValidators', 'responseCheck', 'validateOperationInput'] : [];
+  const validatesWithSources = profile.validation;
+  // The operation's codec module holds the validators, and the conversion of each body that has a Date or Temporal value.
+  const encodes = operation.requestContent.some((media) => convertedNodeIds.has(requestBodyKey(operation.name, media.contentType)));
+  const decodes = operation.responses.some((response) =>
+    response.content.some((media) => convertedNodeIds.has(responseBodyKey(operation.name, response.status, media.contentType)))
+    || Object.keys(response.headers).some((name) => convertedNodeIds.has(responseHeaderKey(operation.name, response.status, name))));
+  const usesCodecs = validatesWithSources || operationConverts(operation, convertedNodeIds);
+  if (encodes) use('convertRequestBody');
+  if (encodesParameters) use('convertRequestParameters');
+  if (readsInput) use('requireObjectInput');
+  if (decodes) use('responseDecoder');
+  const validationFunctions = validatesWithSources ? ['callLevels', 'operationValidators', 'responseCheck', 'validateOperationInput'] : [];
   const runtimeFunctions = [...usedFunctions].sort();
   const importedNames: Array<readonly [string, string]> = [
     ['ClientRuntime', 'client runtime import'],
@@ -284,7 +308,9 @@ function operationSource(
   ];
   if (surfaces.auth || surfaces.mutualTls) importedNames.push(['__golemSecuritySchemes', 'security metadata']);
   if (appliesSecurity) importedNames.push(['RuntimeSecuritySchemes', 'security scheme type import']);
-  if (profile.validation) importedNames.push(['OperationValidationSources', 'validation source type import']);
+  if (usesCodecs) importedNames.push(['OperationCodecs', 'operation codecs type import']);
+  const codecsAt = codecsFor(`operations/${operation.name}.ts`);
+  if (usesCodecs) for (const name of codecsAt.claimed) importedNames.push([name, 'SDK codecs table import']);
   if (plan.servers.length) importedNames.push(['__golemServers', 'document servers import']);
   const overrideIndex = plan.operationServerIndex.get(operation.name);
   if (overrideIndex !== undefined) importedNames.push(['__golemOperationServers', 'operation servers import']);
@@ -297,25 +323,27 @@ function operationSource(
   const uniqueModuleName = (base: string, origin: string): string => {
     let name = base;
     for (let suffix = 1; moduleScope.has(name); suffix += 1) name = `${base}${suffix}`;
-    if (validatesWithSources) moduleScope.claim(name, origin);
+    if (usesCodecs) moduleScope.claim(name, origin);
     return name;
   };
-  const validationSourcesName = identifierPart(uniqueModuleName('__operationValidationSources', 'operation validation sources'));
+  const codecsName = identifierPart(uniqueModuleName('__operationCodecs', 'operation codecs'));
+  const codecsModuleName = uniqueModuleName('__golemOperationCodecs', 'operation codecs module import');
   const typesModule = new ImportSource('../types.js', true, { namespace: 'Types' });
   const inputType = code`${typesModule.namespace()}.${identifierPart(`${operation.typeName}OperationInput`)}`;
   const responseType = code`${typesModule.namespace()}.${identifierPart(`${operation.typeName}OperationHttpResponse`)}`;
   const validatorSetup = validatesWithSources
-    ? code`  const validators = ${rt.validation.operationValidators}(runtime, ${literal(operation.name)}, ${validationSourcesName});\n  const checkResponse = ${rt.validation.responseCheck}(validators);`
+    ? code`  const validators = ${rt.validation.operationValidators}(runtime, ${literal(operation.name)}, ${codecsName});`
     : BLANK;
-  // The generated validators this operation imports, each under a module-local alias that no operation name can take.
-  const validatorImports = validationBundle
+  // A validating SDK resolves the levels of each call, and the response check and decoder follow them.
+  const decoderSetup = decodes ? code`  const decodeResponse = ${use('responseDecoder')}(${codecsName});` : BLANK;
+  const levelLines = profile.validation
     ? [
-      { reference: validationBundle.inputReference, local: uniqueModuleName('__validateInput', 'generated input validator import') },
-      ...validationBundle.responseReferences.map((item, index) => ({ reference: item.reference, local: uniqueModuleName(`__validateResponse${index}`, 'generated response validator import') })),
-    ].map(item => ({ ...item, exported: requireValidatorExport(operation.name, item.reference, validatorExports) }))
+      code`    const levels = ${rt.validation.callLevels}(runtime, options.validate, ${literal(profile.validation === 'sanity' ? 'sanity' : true)});`,
+      code`    const checkResponse = ${rt.validation.responseCheck}(validators, levels.response, levels.responseHeaders);`,
+    ]
     : [];
-  const validatorsSource = new ImportSource('../validators.generated.js');
-  const validatorNames = validatorImports.map((item) => validatorsSource.name(item.exported, { alias: item.local }));
+  const requestLevel = profile.validation ? code`, levels.request` : BLANK;
+  const parameterLevels = profile.validation ? code`, levels` : BLANK;
   const clientModule = new ImportSource('../client.js', true);
   const serversModule = new ImportSource('../servers.js');
   const serversCode = plan.servers.length ? serversModule.name('servers', { alias: '__golemServers' }) : BLANK;
@@ -325,13 +353,8 @@ function operationSource(
   const clientRuntime = rt.client.ClientRuntime;
   const apiOperation = profile.mobx ? aliased(rtType.mobx.ObservableApiOperation, 'ApiOperation') : rtType.client.ApiOperation;
   const createApiOperation = profile.mobx ? aliased(rt.mobx.createObservableApiOperation, 'createApiOperation') : rt.client.createApiOperation;
-  const validationSources = validationBundle
-    ? join([
-      code`const ${validationSourcesName}: ${rtType.client.OperationValidationSources} = {`,
-      code`  input: ${validatorNames[0]},`,
-      code`  responses: [${join(validationBundle.responseReferences.map((item, index) => code`{ status: ${literal(item.status)}, contentType: ${literal(item.contentType)}, validator: ${validatorNames[index + 1]} }`), code`, `)}],`,
-      code`};`,
-    ], code`\n`)
+  const codecsDeclaration = usesCodecs
+    ? code`const ${codecsName}: ${rtType.client.OperationCodecs} = ${codecsAt.read(operation.name, codecsModuleName)};`
     : BLANK;
   const securitySchemesType = rtType.client.RuntimeSecuritySchemes;
   // The client module imports `__golemSecuritySchemes` from every operation module.
@@ -341,10 +364,17 @@ function operationSource(
   const securityCall = appliesSecurity
     ? code`    await ${use('applySecurity')}(runtime, ${security}, query, headers, cookies, securitySchemes);`
     : BLANK;
+  const wireBodyExpression = operation.requestContent.length > 1
+    ? code`input.body && { contentType: input.body.contentType, value: ${use('convertRequestBody')}(${codecsName}, input.body.contentType, input.body.value${requestLevel}) }`
+    : code`${use('convertRequestBody')}(${codecsName}, ${bodyContentType}, input.body${requestLevel})`;
   const usesQuery = queryLines.length > 0 || !isEmpty(queryStringLine) || !isEmpty(securityCall);
   const usesCookies = cookieLines.length > 0 || !isEmpty(securityCall);
   const bodyLines = [
-    profile.validation ? code`    await ${rt.validation.validateOperationInput}(${literal(operation.name)}, input, validators);` : BLANK,
+    readsInput ? code`    ${use('requireObjectInput')}(${literal(operation.name)}, input);` : BLANK,
+    ...levelLines,
+    encodesParameters ? code`    const wireInput = ${use('convertRequestParameters')}(${codecsName}, input${parameterLevels});` : BLANK,
+    encodes ? code`    const wireBody = ${wireBodyExpression};` : BLANK,
+    profile.validation ? code`    await ${rt.validation.validateOperationInput}(${literal(operation.name)}, ${encodes ? code`{ ...${parameterInput}, body: wireBody }` : parameterInput}, validators, levels);` : BLANK,
     usesQuery ? code`    const query: string[] = [];` : BLANK,
     ...queryLines,
     queryStringLine,
@@ -354,7 +384,7 @@ function operationSource(
     ...cookieLines,
     securityCall,
     usesCookies ? code`    if (cookies.length) headers.set('Cookie', cookies.join('; '));` : BLANK,
-    requestBody ? code`    const encodedBody = ${use('encodeBody')}(runtime, ${literal(operation.name)}, ${bodyValue}, ${bodyContentType}, ${bodyEncodings});\n    if (encodedBody.contentType) headers.set('Content-Type', encodedBody.contentType);` : BLANK,
+    requestBody ? code`    const encodedBody = ${use('encodeBody')}(runtime, ${literal(operation.name)}, ${encodes ? (operation.requestContent.length > 1 ? code`wireBody?.value` : code`wireBody`) : bodyValue}, ${bodyContentType}, ${bodyEncodings});\n    if (encodedBody.contentType) headers.set('Content-Type', encodedBody.contentType);` : BLANK,
     route.declarations,
     code`    const request: RequestInit = {`,
     code`      method: ${literal(operation.method)},`,
@@ -366,7 +396,7 @@ function operationSource(
     code`    return runtime.readResponse<${responseType}>(`,
     code`      ${literal(operation.name)},`,
     code`      response,`,
-    code`      responseContracts,${validatesWithSources ? code`\n      checkResponse,` : BLANK}`,
+    code`      responseContracts,${validatesWithSources ? code`\n      checkResponse,` : decodes ? code`\n      undefined,` : BLANK}${decodes ? code`\n      decodeResponse,` : BLANK}`,
     code`    );`,
   ].filter(line => !isEmpty(line));
   const body = code`  return ${createApiOperation}(${literal(operation.name)}, async (${inputName}: ${inputType}, options: ${requestOptions} = {}): Promise<${responseType}> => {
@@ -375,7 +405,7 @@ ${join(bodyLines, code`\n`)}
   const declarations = join([
     securityDeclaration,
     code`const responseContracts: readonly ${rtType.client.RuntimeResponseContract}[] = ${documentLiteral(responseContracts)};`,
-    validationSources,
+    codecsDeclaration,
   ].filter((part) => !isEmpty(part)), code`\n`);
   const factoryCode = identifierPart(factoryName);
   const functions = code`export function ${identifierPart(operation.name)}(options: ${clientOptions}): ${apiOperation}<${inputType}, ${responseType}, ${requestOptions}> {
@@ -383,7 +413,7 @@ ${join(bodyLines, code`\n`)}
 }
 
 export function ${factoryCode}(runtime: ${clientRuntime}): ${apiOperation}<${inputType}, ${responseType}, ${requestOptions}> {
-${!isEmpty(validatorSetup) ? code`${validatorSetup}\n` : BLANK}${body}
+${!isEmpty(validatorSetup) ? code`${validatorSetup}\n` : BLANK}${!isEmpty(decoderSetup) ? code`${decoderSetup}\n` : BLANK}${body}
 }
 `;
   const file = join([declarations, functions], code`\n`);
@@ -391,13 +421,15 @@ ${!isEmpty(validatorSetup) ? code`${validatorSetup}\n` : BLANK}${body}
   const imports: ImportOptions = {
     typeNames: 'ordered',
     modules: ['client', 'mobx', 'validation'],
-    order: { client: ['ClientRuntime', ...[...usedFunctions].sort(), 'createApiOperation', 'ApiOperation', 'RuntimeResponseContract', 'RuntimeSecuritySchemes', 'OperationValidationSources'] },
+    ...(specifiers ? { specifiers: specifiers(`operations/${operation.name}.ts`) } : {}),
+    order: { client: ['ClientRuntime', ...[...usedFunctions].sort(), 'createApiOperation', 'ApiOperation', 'RuntimeResponseContract', 'RuntimeSecuritySchemes', 'OperationCodecs'] },
   };
   const runtimeLines = runtimeLinesOf(file, imports);
-  const clientImports = fileImports(file, [clientModule], { elsewhere: [typesModule, validatorsSource, serversModule] });
-  const typesImports = fileImports(file, [typesModule], { elsewhere: [clientModule, validatorsSource, serversModule] });
-  const serversImports = fileImports(file, [serversModule], { elsewhere: [typesModule, clientModule, validatorsSource] });
-  const validatorImportLines = fileImports(file, [validatorsSource], { elsewhere: [typesModule, clientModule, serversModule] });
+  const codecsSources = codecsAt.sources();
+  const clientImports = fileImports(file, [clientModule], { elsewhere: [typesModule, ...codecsSources, serversModule] });
+  const typesImports = fileImports(file, [typesModule], { elsewhere: [clientModule, ...codecsSources, serversModule] });
+  const serversImports = fileImports(file, [serversModule], { elsewhere: [typesModule, clientModule, ...codecsSources] });
+  const codecsImportLines = fileImports(file, codecsSources, { elsewhere: [typesModule, clientModule, serversModule] });
   return render(code`${join([
     generatedBannerComment(),
     ...runtimeLines('client'),
@@ -405,7 +437,7 @@ ${!isEmpty(validatorSetup) ? code`${validatorSetup}\n` : BLANK}${body}
     ...typesImports,
     ...serversImports,
     ...runtimeLines('mobx'),
-    ...validatorImportLines,
+    ...codecsImportLines,
     ...runtimeLines('validation'),
     BLANK,
     ...(!isEmpty(declarations) ? [declarations] : []),
@@ -498,6 +530,7 @@ function emitClient(
   profile: OpenApiGenerationProfile,
   plan: EmissionPlan,
   rawSecuritySchemes: Readonly<Record<string, unknown>>,
+  specifiers: RuntimeSpecifiers | undefined,
 ): RenderedModule {
   const scope = new NameScope(`${clientName}Client`);
   const surfaces = plan.clientSurfaces;
@@ -549,7 +582,7 @@ ${join(securityCodes.map((alias) => code`  ...${alias},`), code`\n`)}
 } as const;`
     : BLANK;
   const clientRuntime = rt.client.ClientRuntime;
-  const runtimeTypes = new ImportSource('@exprtlabs/golem/client', true, { namespace: 'Runtime' });
+  const runtimeTypes = new ImportSource(specifiers ? specifiers('client.ts').types.client : '@exprtlabs/golem/client', true, { namespace: 'Runtime' });
   const typesModule = new ImportSource('./types.js', true, { namespace: 'Types' });
   const runtimeNamespace = runtimeTypes.namespace();
   const typesNamespace = typesModule.namespace();
@@ -583,11 +616,12 @@ ${join(securityCodes.map((alias) => code`  ...${alias},`), code`\n`)}
     ...(surfaces.mutualTls ? [] : ['mutualTls']),
     'auth',
     'operationValidators',
+    ...(profile.validation ? [] : ['validate']),
   ];
   const optionsType = code`Omit<${runtimeNamespace}.ClientOptions, ${join(omittedOptions.map((name) => literal(name)), code` | `)}>${optionExtensions.length ? code` & {\n${join(optionExtensions, code`\n`)}\n}` : BLANK}`;
   const aliases_ = join([
     code`export type ${exported('ClientOptions')} = ${optionsType};`,
-    code`export type ${exported('RequestOptions')} = ${runtimeNamespace}.RequestOptions;`,
+    code`export type ${exported('RequestOptions')} = ${profile.validation ? code`${runtimeNamespace}.RequestOptions` : code`Omit<${runtimeNamespace}.RequestOptions, 'validate'>`};`,
     ...(undeclared ? [
       code`export type ${exported('UndeclaredResponseError')} = ${runtimeNamespace}.UndeclaredResponseError;`,
       code`export function ${exportedName(`is${clientName}UndeclaredResponseError`)}(error: unknown): error is ${runtimeNamespace}.UndeclaredResponseError {\n  return ${rt.client.isUndeclaredResponseError}(error, ${literal(clientName)});\n}`,
@@ -633,7 +667,7 @@ ${metadata}
 `;
   const imports = join(fileImports(tail, localSources, { quote: '"', elsewhere: [runtimeTypes, typesModule] }), code`\n`);
   const rest = code`${imports}${tail}`;
-  const imports_: ImportOptions = { modules: ['client', 'mobx', 'validation'] };
+  const imports_: ImportOptions = { modules: ['client', 'mobx', 'validation'], ...(specifiers ? { specifiers: specifiers('client.ts') } : {}) };
   const groups = importGroups(rest, imports_);
   const written = new Set<string>();
   // The statements of the runtime groups that `wanted` picks: the values come from the internal entry, the types from the public subpaths.
@@ -658,7 +692,7 @@ ${rest}`);
 type OperationValidationBundle = ReturnType<typeof buildOperationValidationSchemaBundle>;
 
 /** What the SDK's validators module compiles for the operations. */
-interface OperationValidationSchemas {
+export interface OperationValidationSchemas {
   /** The validation schema bundle of each operation, by operation name. */
   readonly bundles: ReadonlyMap<string, OperationValidationBundle>;
   /** The roots and resources of each operation, for `compileSdkValidators`. */
@@ -685,7 +719,7 @@ export function buildOperationValidationSchemas(
   });
   const componentNames = new Map(list.flatMap((bundle) => Object.entries(bundle.componentNames)));
   const operationRoots = new Map(list.map((bundle) => [bundle.operationRootId, bundle.operationName] as const));
-  const sources = new Map(operations.map((operation) => [operation.name, operationSourceSchemas(operation)] as const));
+  const sources = new Map(operations.map((operation) => [operation.name, operationSourceSchemas(operation, document)] as const));
   return {
     bundles,
     operations: list.map((bundle) => ({ roots: bundle.roots, resources: bundle.schemas })),
@@ -702,9 +736,22 @@ export function buildOperationValidationSchemas(
   };
 }
 
+/** The export name of each validator an operation's codec module lists, from the SDK's validators module. */
+export function operationValidatorNames(
+  schemas: OperationValidationSchemas,
+  validatorExports: ReadonlyMap<string, string>,
+): ReadonlyMap<string, OperationValidatorNames> {
+  return new Map([...schemas.bundles].map(([name, bundle]) => [name, {
+    input: requireValidatorExport(name, bundle.inputReference, validatorExports),
+    ...(bundle.headersReference === undefined ? {} : { headers: requireValidatorExport(name, bundle.headersReference, validatorExports) }),
+    responses: bundle.responseReferences.map((item) => ({ key: `${item.status}:${item.contentType}`, name: requireValidatorExport(name, item.reference, validatorExports) })),
+    responseHeaders: bundle.responseHeaderReferences.map((item) => ({ key: `${item.status}:${item.name}`, name: requireValidatorExport(name, item.reference, validatorExports) })),
+  }] as const));
+}
+
 /**
- * The modules of the client. When the profile validates, `validatorExports` is the name the SDK's validators module
- * exports each operation root under, and each operation module imports its validators from that module.
+ * The modules of the client. Each operation module reads its validators and body conversions from its codecs (`codecsFor`);
+ * `convertedNodeIds` names the bodies, parameters and response headers that convert something.
  */
 export function generateClientModules(
   clientName: string,
@@ -712,7 +759,9 @@ export function generateClientModules(
   document: unknown = {},
   profile: OpenApiGenerationProfile,
   plan: EmissionPlan,
-  validation?: { readonly schemas: OperationValidationSchemas; readonly validatorExports: ReadonlyMap<string, string> },
+  convertedNodeIds: ReadonlyMap<string, string>,
+  codecsFor: OperationCodecsFor,
+  specifiers?: RuntimeSpecifiers,
 ): GeneratedClientModules {
   requireProfile(profile);
   const rawSecuritySchemes = Object.fromEntries(plan.referencedAuthSchemes);
@@ -729,7 +778,6 @@ export function generateClientModules(
       },
     ]),
   );
-  if (profile.validation && !validation) throw new Error('A validating SDK imports its operation validators from the SDK validators module; the caller gives its schemas and exports.');
   const emittedOperations = new Map<string, string>();
   for (const operation of operations) {
     const operationSchemes = operationSecuritySchemeData(operation, securitySchemes);
@@ -741,10 +789,11 @@ export function generateClientModules(
       plan,
       responseContractsForOperation(document, operation),
       operationSchemes,
-      validation?.schemas.bundles.get(operation.name),
-      validation?.validatorExports ?? new Map<string, string>(),
+      convertedNodeIds,
+      codecsFor,
+      specifiers,
     ));
   }
-  const client = emitClient(clientName, operations, profile, plan, rawSecuritySchemes);
+  const client = emitClient(clientName, operations, profile, plan, rawSecuritySchemes, specifiers);
   return { client, operations: emittedOperations };
 }

@@ -19,7 +19,6 @@ import * as manifest from '@exprtlabs/golem/manifest';
 import { sourceDigest } from '@exprtlabs/golem/internal/generator-support';
 
 const distRoot = dirname(fileURLToPath(import.meta.resolve('@exprtlabs/golem/model')));
-const packageRoot = dirname(distRoot);
 
 test('registering a model leaves its metadata off instances, prototypes and JSON', () => {
   class Base { value = 'initial'; }
@@ -302,7 +301,6 @@ test('model manifests validate profile and keep identity independent of profile'
       codecId: 'Payment_a1b2c3d4',
       allowAny: false,
       type: { module: './types.ts', export: 'Payment' },
-      generated: { module: './models.ts', export: 'PaymentModel' },
     }],
   };
   const profileVariant = {
@@ -324,15 +322,6 @@ test('model manifests validate profile and keep identity independent of profile'
     () => manifest.validateModelManifest({ ...base, manifestVersion: 2 }),
     /Outdated model manifest/,
   );
-  const closure = [{ codecId: 'Payment_a1b2c3d4', modelSchema: { type: 'object' }, wireSchema: false, aliases: ['Payment'] }];
-  assert.deepEqual(manifest.validateModelManifest({ ...base, validationSchemaClosure: closure }).validationSchemaClosure, closure);
-  const cycle: Record<string, unknown> = {};
-  cycle.self = cycle;
-  for (const invalid of [null, {}, [{ codecId: '', modelSchema: true }], [{ codecId: 'Payment', modelSchema: [] }],
-    [{ codecId: 'Payment', modelSchema: { validate: () => true } }], [{ codecId: 'Payment', modelSchema: cycle }],
-    [{ codecId: 'Payment', modelSchema: { value: new Date() } }], [{ codecId: 'Payment', modelSchema: true, aliases: [42] }]]) {
-    assert.throws(() => manifest.validateModelManifest({ ...base, validationSchemaClosure: invalid }), /validationSchemaClosure/);
-  }
 });
 
 test('pure runtime entrypoints load in an application without optional integrations', (t: TestContext) => {

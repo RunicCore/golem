@@ -1,7 +1,6 @@
-import { fromWireFormat } from '@exprtlabs/golem/serde';
-import { DerivedModel } from './index.js';
+import type { Derived } from './index.js';
 
-const derived = fromWireFormat<DerivedModel>({ a: 'x', b: 'y', c: 'z' });
+declare const derived: Derived;
 const a: string | undefined = derived.a;
 const b: string | undefined = derived.b;
 const c: string | undefined = derived.c;

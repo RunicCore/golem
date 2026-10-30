@@ -1,4 +1,3 @@
-import { resolve } from 'node:path';
 import * as ts from '../typescript-ns.js';
 import { DEFAULT_MODEL_SUFFIXES, canonicalPath, displayPath } from '../generator-core.js';
 import { canonicalFilename, generatedFilename, isModelFileName, type ModelBoundary } from './project.js';
@@ -6,19 +5,31 @@ import type { ModelSpecification } from './models.js';
 import { isGolemSourceFile, isGolemTagKey } from './tags.js';
 import { hasLocalForm, localFormMessage } from '../names.js';
 
-/** A located model-analysis error with its RUNM code. */
-export function diagnostic(
+/** An error with a code: the text is `<where> <code>: <message>`, and `code` is a property of the error. */
+export function codedError(code: string, message: string, where?: string): Error & { readonly code: string } {
+  const error = new Error(`${where === undefined ? '' : `${where} `}${code}: ${message}`) as Error & { readonly code: string };
+  Object.defineProperty(error, 'code', { value: code, enumerable: true });
+  return error;
+}
+
+/** A located model-analysis error with its code. */
+export function namedDiagnostic(
   sourceFile: ts.SourceFile,
   node: ts.Node,
   code: string,
   message: string,
 ): Error & { readonly code: string } {
   const position = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
-  const error = new Error(
-    `${displayPath(sourceFile.fileName)}:${position.line + 1}:${position.character + 1} RUNM${code}: ${message}`,
-  ) as Error & { readonly code: string };
-  Object.defineProperty(error, 'code', { value: `RUNM${code}`, enumerable: true });
-  return error;
+  return codedError(code, message, `${displayPath(sourceFile.fileName)}:${position.line + 1}:${position.character + 1}`);
+}
+
+export function diagnostic(
+  sourceFile: ts.SourceFile,
+  node: ts.Node,
+  code: string,
+  message: string,
+): Error & { readonly code: string } {
+  return namedDiagnostic(sourceFile, node, `RUNM${code}`, message);
 }
 
 /** The declared type of a property, read at its own declaration. */

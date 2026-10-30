@@ -83,7 +83,7 @@ export class PaymentStore {
       // #region send-payment
       const wire = toWireFormat<TPaymentEditor>(this.editor, { validate: false });
       const response = await this.createPayment.execute(
-        { body: { merchant, billing, money: wire.money, note: wire.note } },
+        { body: { merchant, billing, money: this.editor.money, note: wire.note } },
         { signal: controller.signal },
       );
       // #endregion send-payment

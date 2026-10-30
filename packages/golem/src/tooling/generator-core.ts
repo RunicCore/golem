@@ -180,6 +180,8 @@ export interface ModelContext {
   /** The `golem.yaml` default for the `exact` option of a model that sets none; omitted means `true`. */
   readonly exact?: boolean;
   readonly manifestInputs?: readonly string[];
+  /** The absolute output folders of the openapi jobs of mode `golem` in the same golem.yaml: the models job writes one codecs file for each (`sdkCodecsFile`). */
+  readonly sdkOutputs?: readonly string[];
   readonly onInput?: InputObserver;
   readonly session?: GeneratorSession;
 }
@@ -212,6 +214,10 @@ export interface OpenApiContext {
   readonly refTimeoutMs?: number;
   /** `temporal` maps `format: date-time`, `date` and `duration` to Temporal types; the default is `date`. */
   readonly dates?: 'date' | 'temporal';
+  /** `standalone` (the default) is an SDK that needs no models job; `golem` leaves validators and conversion to the models job of the same golem.yaml. */
+  readonly mode?: 'standalone' | 'golem';
+  /** Mode `golem` only: the absolute path of the file the models job writes for this SDK and the operation modules import (`sdkCodecsFile`). The config sets it. */
+  readonly codecsFile?: string;
   readonly profile: GolemProfile;
   readonly onInput?: InputObserver;
 }

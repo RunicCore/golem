@@ -1,9 +1,8 @@
 import { createFixtureProject } from '../fixture-project.js';
-import { compileGeneratedSdk, generateMaterializedSdk, readGeneratedModelSource, requireRecord } from './helpers.js';
+import { compileGeneratedSdk, generateMaterializedSdk, sdkBodyCodec, withRootOperations } from './helpers.js';
 import { dateTime, object, operation, ref } from './schema-builders.js';
 import assert from 'node:assert/strict';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 
 import { LibError } from '@exprtlabs/golem/errors';
@@ -27,16 +26,12 @@ const document = {
   },
 };
 
-test('a model with a date writes a recursive model or oneOf of another module, with and without a date, and rejects an invalid nested value', async t => {
+test('a body with a date writes a recursive object or oneOf, with and without a date, and rejects an invalid nested value', async t => {
   // protects: T-200 recursive oneOf/object under a dated model generates with validation on
   const output = path.join(createFixtureProject(t, 'golem-openapi-recursive-wire-'), 'sdk');
-  await generateMaterializedSdk(document, { output, name: 'RecursiveWire', profile: { mobx: false, validation: true } });
+  await generateMaterializedSdk(withRootOperations(document, 'Report'), { output, name: 'RecursiveWire', profile: { mobx: false, validation: true } });
   compileGeneratedSdk(output, [], { strict: true, skipLibCheck: true, noUnusedLocals: true });
-  // Only a recursive model's wire stringify is exported: Report is not recursive.
-  assert.doesNotMatch(readGeneratedModelSource(output), /export \{ stringifyReport\w*Wire as /);
-  const models = requireRecord(await import(pathToFileURL(path.join(output, 'dist/index.js')).href), 'generated models');
-  const stringifyReport = models.stringifyReport as (value: unknown) => string;
-  const parseReport = models.parseReport as (text: string) => unknown;
+  const report = await sdkBodyCodec(output, 'RecursiveWire', 'Report');
 
   const wire = {
     at: '2025-01-02T03:04:05.000Z',
@@ -44,14 +39,15 @@ test('a model with a date writes a recursive model or oneOf of another module, w
     dated: { at: '2025-02-03T04:05:06.000Z', children: [{ at: '2025-03-04T05:06:07.000Z', children: [] }] },
     node: { kind: 'Branch', children: [{ kind: 'Leaf', value: 'a' }, { kind: 'Branch', children: [] }] },
   };
-  const text = stringifyReport(parseReport(JSON.stringify(wire)));
-  assert.deepEqual(JSON.parse(text), wire);
+  const decoded = await report.decode(wire);
+  assert.deepEqual(await report.encode(decoded), wire);
 
-  const invalid = parseReport(JSON.stringify(wire)) as { tree: { children: { name: unknown }[] } };
-  invalid.tree.children[0].name = 7;
-  assert.throws(() => stringifyReport(invalid), (error: unknown) => error instanceof LibError);
+  const isLibError = (error: unknown): boolean => error instanceof LibError;
+  const invalid = structuredClone(decoded) as { tree: { children: { name: unknown }[] } };
+  invalid.tree.children[0]!.name = 7;
+  await assert.rejects(() => report.encode(invalid), isLibError);
 
-  const invalidNode = parseReport(JSON.stringify(wire)) as { node: { children: { value: unknown }[] } };
-  invalidNode.node.children[0].value = 7;
-  assert.throws(() => stringifyReport(invalidNode), (error: unknown) => error instanceof LibError);
+  const invalidNode = structuredClone(decoded) as { node: { children: { value: unknown }[] } };
+  invalidNode.node.children[0]!.value = 7;
+  await assert.rejects(() => report.encode(invalidNode), isLibError);
 });

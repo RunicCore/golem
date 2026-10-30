@@ -18,7 +18,6 @@ import {
   identifier,
   inputOf,
   inputSlot,
-  importedNames,
   MODULE_CONSTANT_HELPERS,
   placeHelpers,
   ImportSource,
@@ -30,27 +29,30 @@ import {
   rtType,
   sameCode,
   render,
+  fromWireFunctionName,
+  stringifyFunctionName,
+  toWireFunctionName,
   type Code,
   type Helper,
   type ImportOptions,
   type JsonValue,
   emitModelFromInit,
-  stringifyFunctionName,
   wireStringifyExportName,
-  fromWireFunctionName,
-  toWireFunctionName,
+  TEMPORAL_SERDE,
+  TEMPORAL_SERDE_PREFIX,
   descriptorNeedsConversion,
   type FromJsonModelResolver,
   type ModelConversionDescriptor,
+  type NestedImportedSerde,
   type SerdeResolver,
   presentKeysCode,
 } from '@exprtlabs/golem/internal/emitter';
-import { anonymousShapeKeys, createSchemaGraph, codecPublicId, codecShortName, internDescriptors, type SchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
+import { anonymousShapeKeys, createSchemaGraph, codecPublicId, codecShortName, internDescriptors, mapNamedTypes, type SchemaGraph, type SchemaNode } from '@exprtlabs/golem/internal/schema-graph';
 import { compareText, type GolemProfile } from '@exprtlabs/golem/generator-api';
 import { displayPath, RESERVED_MODEL_MEMBERS } from '@exprtlabs/golem/internal/generator-support';
 import type { ManifestIndex } from '@exprtlabs/golem/internal/type-analysis';
 import type { ModelBoundary, ModelSpecification } from '@exprtlabs/golem/internal/type-analysis';
-import { descriptorBuilder, describeRootKind, nonObjectRootDiagnostic, propertyType, sdkModelLevelDiagnostic } from '@exprtlabs/golem/internal/type-analysis';
+import { descriptorBuilder, describeRootKind, nonObjectRootDiagnostic, propertyType } from '@exprtlabs/golem/internal/type-analysis';
 import {
   canonicalFilename,
   commonDirectory,
@@ -150,56 +152,6 @@ function walkDescriptor(descriptor: ModelConversionDescriptor, visitor: Descript
   visitor.leave?.(descriptor);
 }
 
-function descriptorExternalIds(
-  descriptor: ModelConversionDescriptor,
-  found = new Set<string>(),
-): Set<string> {
-  walkDescriptor(descriptor, { leave: (item) => { if (item.kind === 'generated-model') found.add(item.id); } });
-  return found;
-}
-
-function assertGeneratedNames(
-  specifications: readonly ModelSpecification[],
-  externalIds: readonly string[],
-  manifestIndex: ManifestIndex,
-): Map<string, string> {
-  // These names are part of the generated model API.  Reserve the complete
-  // set even when a profile currently omits one integration so a later
-  // profile change cannot turn a handwritten field into an API collision.
-  const reserved = new Set(RESERVED_MODEL_MEMBERS);
-  const used = new Map<string, string>();
-  for (const specification of specifications) {
-    for (const name of [specification.name, `${specification.name}BaseModel`, `${specification.name}Fields`]) {
-      const earlier = used.get(name);
-      if (earlier !== undefined) {
-        throw new Error(`Generated model symbol collision for "${name}" between ${displayPath(earlier)} and ${displayPath(specification.sourceFile.fileName)}.`);
-      }
-      used.set(name, specification.sourceFile.fileName);
-    }
-  }
-  const names = new Map<string, string>();
-  for (const id of externalIds) {
-    const model = manifestIndex.byId.get(id);
-    if (!model) throw new Error(`Generated model manifest id is missing: ${id}`);
-    const name = model.generated.export;
-    const previous = names.get(name) ?? used.get(name);
-    if (previous) {
-      throw new Error(
-        `Generated model import collision for "${name}" between ${displayPath(previous)} and ${displayPath(model.manifestFile)}.`,
-      );
-    }
-    if (reserved.has(name)) {
-      throw new Error(`Generated model import "${name}" collides with a generated API member.`);
-    }
-    names.set(name, model.manifestFile);
-  }
-  return new Map(externalIds.map((id) => {
-    const model = manifestIndex.byId.get(id);
-    if (!model) throw new Error(`Generated model manifest id is missing: ${id}`);
-    return [id, model.generated.export] as const;
-  }));
-}
-
 interface BindingRegistry {
   readonly validations: Map<string, ValidationBinding>;
   readonly serde: Map<string, SerdeBinding>;
@@ -211,6 +163,8 @@ function registerValidation(bindings: Map<string, ValidationBinding>, binding: V
 }
 
 function registerSerde(bindings: Map<string, SerdeBinding>, binding: SerdeBinding): void {
+  // A `temporal:` id names a codec of the runtime: there is no function of the user's to import, and `serdeExpression` calls the codec itself.
+  if (binding.id.startsWith(TEMPORAL_SERDE_PREFIX)) return;
   if (!bindings.has(binding.id)) bindings.set(binding.id, binding);
 }
 
@@ -397,12 +351,12 @@ function classImportKey(typeImport: { readonly exportName: string; readonly modu
 
 /** The names a type text takes from other modules, as parts: the file imports the ones its types use. */
 interface TypeNames {
-  /** The class of an SDK model by manifest id. */
-  readonly externalClass: (id: string) => Code | undefined;
   /** The local name of a class a TSerde field names, by `classImportKey`. */
   readonly classValue: (key: string) => Code | undefined;
   /** `<name><suffix>` of a model: imported from the file that holds the model, or this file's own. */
   readonly modelType: (name: string, suffix: 'BaseModel' | 'JSON' | 'Init' | 'Fields') => Code;
+  /** `<codec id><suffix>`: the local type of an SDK node that a descriptor names by its codec id. */
+  readonly sdkNodeType: (codecId: string, suffix: 'JSON' | 'Init' | 'Fields') => Code;
 }
 
 function descriptorType(
@@ -442,14 +396,7 @@ function descriptorType(
         : mode === 'init'
           ? code`${names.modelType(descriptor.name, 'Init')} | ${names.modelType(descriptor.name, 'BaseModel')}`
           : names.modelType(descriptor.name, 'BaseModel');
-    case 'generated-model': {
-      const className = names.externalClass(descriptor.id) ?? code`object`;
-      return mode === 'wire'
-        ? code`${rtType.model.GeneratedModelWire}<InstanceType<typeof ${className}>>`
-        : mode === 'init'
-          ? code`(ConstructorParameters<typeof ${className}> extends [] ? never : ConstructorParameters<typeof ${className}> extends [(infer Initializer)?, ...unknown[]] ? Initializer : never) | InstanceType<typeof ${className}>`
-          : code`InstanceType<typeof ${className}>`;
-    }
+    case 'generated-model': return names.sdkNodeType(descriptor.id, mode === 'wire' ? 'JSON' : mode === 'init' ? 'Init' : 'Fields');
     case 'array': return code`${descriptor.isReadonly ? code`ReadonlyArray` : code`Array`}<${descriptorType(descriptor.item, mode, names)}>`;
     case 'tuple': {
       const items = descriptor.items.map((item, index) => {
@@ -549,8 +496,6 @@ export interface SourceModelGraph {
   readonly definitions: Readonly<Record<string, ModelConversionDescriptor>>;
   readonly modelDefinitions: Readonly<Record<string, ModelConversionDescriptor>>;
   readonly wireDefinitions: Readonly<Record<string, ModelConversionDescriptor>>;
-  readonly externalIds: readonly string[];
-  readonly externalNames: ReadonlyMap<string, string>;
   readonly registry: BindingRegistry;
   readonly schemas: readonly TagSchema[];
   /** Every model this companion names: its own, inlined ones, and sibling models. */
@@ -600,19 +545,14 @@ function describeRoot(job: JobAnalysis, specification: ModelSpecification): Mode
 }
 
 /**
- * A model emits the fields of an object, or of an SDK model. A root that a TSerde converts as a whole, or any other root
+ * A model emits the fields of an object. A root that a TSerde converts as a whole, or any other root
  * that is no object, has no fields to emit: it stops with RUNM1052 once its other uses have been described.
  */
 function assertRootHasFields(specification: ModelSpecification, definition: ModelConversionDescriptor): void {
   const found = 'serde' in definition ? 'a type that a TSerde converts as a whole'
-    : definition.kind === 'object' || definition.kind === 'generated-model' ? undefined
+    : definition.kind === 'object' ? undefined
       : describeRootKind(definition.kind);
   if (found) throw nonObjectRootDiagnostic(specification.sourceFile, specification.declaration, specification.emitClass ? 'IModel' : 'IObject', found);
-}
-
-/** RUNM1090: a model over an SDK model has no codec of its own, so a `validation` option on it would never apply. */
-function assertSdkModelSetsNoLevel(specification: ModelSpecification, definition: ModelConversionDescriptor): void {
-  if (definition.kind === 'generated-model' && specification.validation !== undefined) throw sdkModelLevelDiagnostic(specification.sourceFile, specification.declaration);
 }
 
 /** Describe every model of the job once and index the results for lookups. */
@@ -699,9 +639,7 @@ function importedFiles(job: JobAnalysis, file: ts.SourceFile): ReadonlySet<strin
 export function analyzeSourceGraph(
   source: string,
   output: string,
-  checker: ts.TypeChecker,
   specifications: readonly ModelSpecification[],
-  manifestIndex: ManifestIndex,
   profile: GolemProfile,
   identityRoot: string | undefined,
   job: JobAnalysis,
@@ -765,11 +703,6 @@ export function analyzeSourceGraph(
   definitions = deduplicateProjections(definitions, new Set(projections.keys()));
   const owned = Object.fromEntries(Object.entries(definitions).filter(([name]) =>
     ![...siblings].some((sibling) => sibling.name === name)));
-  const externalIds = [...Object.values(owned).reduce(
-    (found, descriptor) => descriptorExternalIds(descriptor, found),
-    new Set<string>(),
-  )].sort();
-  const externalNames = assertGeneratedNames([...emitted], externalIds, manifestIndex);
   const registry: BindingRegistry = { validations: new Map(), serde: new Map() };
   Object.values(owned).forEach((descriptor) => visitDescriptor(descriptor, registry));
   const ownedSpecifications = [...emitted].filter((specification) => !siblings.has(specification));
@@ -806,8 +739,6 @@ export function analyzeSourceGraph(
     definitions,
     modelDefinitions,
     wireDefinitions,
-    externalIds,
-    externalNames,
     registry,
     schemas,
     emitted: [...emitted],
@@ -939,6 +870,107 @@ export function validatorImports(
     .map(([id, binding]) => [id, { importPath: bindingImportPath(binding, validatorsFile), exportName: binding.exportName }] as const));
 }
 
+/**
+ * The node codecs of the golem-mode SDKs that a model file names by the SDK's codec id. Each SDK's codecs file is one import
+ * source for the whole file.
+ */
+interface SdkNodeCodecs {
+  readonly find: (codecId: string) => NestedImportedSerde | undefined;
+  readonly sources: readonly ImportSource[];
+  /**
+   * The type of an SDK node in one form: the SDK's own type when the SDK exports one (its plain, converted form is the model and init
+   * form, and the wire form when the node converts nothing), else a local alias, which the file writes (`typeAliases`).
+   */
+  readonly type: (codecId: string, suffix: 'JSON' | 'Init' | 'Fields') => Code;
+  /** The type aliases of the SDK node forms that the types of the file named, with the forms they name in turn. */
+  readonly typeAliases: (describe: (descriptor: ModelConversionDescriptor, mode: 'model' | 'wire' | 'init') => Code) => readonly Code[];
+}
+
+function sdkNodeCodecs(sdks: AppOutputs['sdkCodecs'], output: string): SdkNodeCodecs {
+  // One source for each codecs file; the import statement holds only the names the file's code uses.
+  const sources = new Map((sdks ?? []).map((sdk) => [sdk.file, new ImportSource(sourceImportPath(sdk.file, output))] as const));
+  // One type source for each module of the SDK that declares types.
+  const typeSources = new Map((sdks ?? []).flatMap((sdk) => [...sdk.types.values()].map(({ file }) => file)).map((file) => [file, new ImportSource(sourceImportPath(file, output), true)] as const));
+  // Each form asked for, by a key that tells two asks of one form alike, with its codec id and suffix.
+  const asked = new Map<string, { readonly codecId: string; readonly suffix: Parameters<SdkNodeCodecs['type']>[1] }>();
+  const written = new Set<string>();
+  const ownType = (codecId: string): { readonly file: string; readonly name: string } | undefined => {
+    for (const sdk of sdks ?? []) {
+      const found = sdk.types.get(codecId);
+      if (found !== undefined) return found;
+    }
+    return undefined;
+  };
+  return {
+    find(codecId) {
+      for (const sdk of sdks ?? []) {
+        const node = sdk.graph.nodeByCodecId(codecId);
+        if (node === undefined) continue;
+        const source = sources.get(sdk.file)!;
+        return {
+          stringify: source.name(stringifyFunctionName(node.id)),
+          fromWire: source.name(fromWireFunctionName(node.id)),
+          toWire: source.name(toWireFunctionName(node.id)),
+        };
+      }
+      return undefined;
+    },
+    sources: [...sources.values(), ...typeSources.values()],
+    type(codecId, suffix) {
+      const own = ownType(codecId);
+      if (own !== undefined && (suffix !== 'JSON' || !wireDiffers(sdks, codecId))) return typeSources.get(own.file)!.name(own.name, { alias: codecId });
+      asked.set(`${codecId}${NODE_FORM}${suffix}`, { codecId, suffix });
+      return identifier(`${codecId}${suffix}`);
+    },
+    typeAliases(describe) {
+      const lines: Code[] = [];
+      const modes = { Fields: 'model', JSON: 'wire', Init: 'init' } as const;
+      // Writing the type of a form can ask for other forms: go on until every form asked for is written.
+      const unwritten = (): [string, { readonly codecId: string; readonly suffix: keyof typeof modes }][] => [...asked].filter(([form]) => !written.has(form)).sort(([a], [b]) => compareText(a, b));
+      for (let pending = unwritten(); pending.length > 0; pending = unwritten()) {
+        for (const [form, { codecId, suffix }] of pending) {
+          written.add(form);
+          lines.push(code`type ${identifier(`${codecId}${suffix}`)} = ${describe(sdkNodeDescriptor(sdks, codecId), modes[suffix])};`);
+        }
+      }
+      return lines.length === 0 ? lines : [...lines, BLANK];
+    },
+  };
+}
+
+/** Separates the codec id from the form in the name of a type form that the file asked for. */
+const NODE_FORM = '\0';
+
+/** The SDK graph that holds the node with codec id `codecId`, and the node. */
+function sdkNodeOf(sdks: AppOutputs['sdkCodecs'], codecId: string): { readonly graph: SchemaGraph; readonly node: SchemaNode } {
+  for (const sdk of sdks ?? []) {
+    const node = sdk.graph.nodeByCodecId(codecId);
+    if (node !== undefined) return { graph: sdk.graph, node };
+  }
+  throw new Error(`Internal error: no SDK node with the codec id "${codecId}" for the generated file.`);
+}
+
+/**
+ * Whether the wire form of the SDK node `codecId` differs from its plain form. The rule of the stringify emitter: the node converts something
+ * (`descriptorNeedsConversion`), or its wire and model schemas differ (`sameSchema`, which holds for a node only when every node it reaches is the same too).
+ */
+function wireDiffers(sdks: AppOutputs['sdkCodecs'], codecId: string): boolean {
+  const { node } = sdkNodeOf(sdks, codecId);
+  return descriptorNeedsConversion(node.descriptor) || !node.sameSchema;
+}
+
+/**
+ * The descriptor of the SDK node with codec id `codecId`, with each schema it names written as a reference by codec id, so a type
+ * of it names the aliases of the other SDK nodes and the type of a schema that reaches itself is finite.
+ */
+function sdkNodeDescriptor(sdks: AppOutputs['sdkCodecs'], codecId: string): ModelConversionDescriptor {
+  const { graph, node } = sdkNodeOf(sdks, codecId);
+  return mapNamedTypes(node.descriptor, (named) => {
+    const target = graph.nodeFor(named);
+    return { kind: 'generated-model', id: target?.codecId ?? (named.kind === 'reference' ? named.name : named.id) };
+  });
+}
+
 /** What the app generated beside its model files, which a model file reads. */
 interface AppOutputs {
   /**
@@ -946,6 +978,16 @@ interface AppOutputs {
    * `PlanValidators.exports` and `fastExports`); set when the app validates.
    */
   readonly validators?: { readonly module: string; readonly exports: ReadonlyMap<string, string>; readonly fastExports: ReadonlyMap<string, string>; readonly passExports: ReadonlyMap<string, { readonly structure: string; readonly predicates: string }> };
+  /**
+   * The codecs files of the golem-mode SDKs, each with its schema graph. A model that holds an SDK type which reaches itself
+   * converts the inner occurrence with the node codec the file exports, under the SDK's codec id.
+   */
+  readonly sdkCodecs?: readonly {
+    readonly file: string;
+    readonly graph: SchemaGraph;
+    /** The SDK's own type of each node it exports a type for, by codec id: the module that declares it and its export name. */
+    readonly types: ReadonlyMap<string, { readonly file: string; readonly name: string }>;
+  }[];
 }
 
 /** How this companion relates to the companions of the files its source imports. */
@@ -967,17 +1009,6 @@ function objectHelperExportName(kind: 'decode' | 'init', codecId: string): strin
   return `__golem${kind[0].toUpperCase()}${kind.slice(1)}_${codecId.replace(/[^A-Za-z0-9_$]/g, '_')}`;
 }
 
-/** An SDK model that the file imports, with the codec functions of its generated module. */
-interface ExternalModel {
-  readonly source: ImportSource;
-  readonly generatedFile: string;
-  readonly model: NonNullable<ReturnType<ManifestIndex['byId']['get']>>;
-  readonly cls: Code;
-  readonly stringify: Code;
-  readonly fromWire: Code;
-  readonly toWire: Code;
-}
-
 /**
  * Everything the file takes from other modules, as parts: the code holds the part of each name it uses, and the import
  * statements hold exactly those names, in the order each source declares them.
@@ -987,7 +1018,7 @@ interface FileImports {
   readonly siblingCompanions: readonly Code[];
   /** One `import type` source for each class a TSerde field names. */
   readonly classSources: readonly ImportSource[];
-  /** The other modules in statement order: companions, sibling helpers, handwritten classes, SDK models and serde functions. */
+  /** The other modules in statement order: companions, sibling helpers, handwritten classes and serde functions. */
   readonly sources: readonly ImportSource[];
   /** By `classImportKey`. */
   readonly classValues: ReadonlyMap<string, Code>;
@@ -995,7 +1026,6 @@ interface FileImports {
   readonly siblingTypes: ReadonlyMap<string, Readonly<Record<'Fields' | 'JSON' | 'Init' | 'decode' | 'init', Code>>>;
   /** The handwritten class of a model of another file, by model name. */
   readonly concrete: ReadonlyMap<string, Code>;
-  readonly external: ReadonlyMap<string, ExternalModel>;
   /** The imported source functions of a serde pair, by binding id. */
   readonly serde: ReadonlyMap<string, { readonly serialize: Code; readonly deserialize: Code }>;
 }
@@ -1008,10 +1038,10 @@ interface EmitContext {
   readonly source: string;
   readonly output: string;
   readonly checker: ts.TypeChecker;
-  readonly manifestIndex: ManifestIndex;
   readonly profile: GolemProfile;
   readonly siblingCodecs: SiblingCodecOptions;
   readonly appOutputs: AppOutputs;
+  readonly sdkNodes: SdkNodeCodecs;
   readonly graph: SourceModelGraph;
   readonly schemaGraph: SchemaGraph;
   /** The models of this file. */
@@ -1053,7 +1083,6 @@ function siblingObjectCodecId(schemaGraph: SchemaGraph, name: string): string {
 function buildFileImports(
   output: string,
   graph: SourceModelGraph,
-  manifestIndex: ManifestIndex,
   schemaGraph: SchemaGraph,
   localImports: readonly ModelSpecification[],
   siblingObjects: readonly ModelSpecification[],
@@ -1105,28 +1134,6 @@ function buildFileImports(
     concrete.set(item.name, source.name(name));
     sources.push(source);
   }
-  // A model of another file is imported from the module the manifest names. This module never imports the handwritten
-  // class of its own file: that would be an ESM TDZ error when the user file extends this companion.
-  const external = new Map<string, ExternalModel>();
-  for (const id of graph.externalIds) {
-    const model = manifestIndex.byId.get(id);
-    if (!model) throw new Error(`Generated model manifest id is missing: ${id}`);
-    const localName = graph.externalNames.get(id);
-    if (!localName) throw new Error(`Generated model local name is missing: ${id}`);
-    const exported = model.generated.export;
-    const source = new ImportSource(sourceImportPath(model.generatedFile, output));
-    const short = codecShortName(id);
-    external.set(id, {
-      source,
-      generatedFile: model.generatedFile,
-      model,
-      cls: source.name(exported, exported === localName ? {} : { alias: localName }),
-      stringify: source.name(stringifyFunctionName(short)),
-      fromWire: source.name(fromWireFunctionName(short)),
-      toWire: source.name(toWireFunctionName(short)),
-    });
-    sources.push(source);
-  }
   const serde = new Map<string, { readonly serialize: Code; readonly deserialize: Code }>();
   for (const binding of serdeBindings) {
     const names = serdeNames.get(binding.id);
@@ -1150,7 +1157,6 @@ function buildFileImports(
     localModels,
     siblingTypes,
     concrete,
-    external,
     serde,
   };
 }
@@ -1160,7 +1166,6 @@ function buildEmitContext(
   output: string,
   checker: ts.TypeChecker,
   specifications: readonly ModelSpecification[],
-  manifestIndex: ManifestIndex,
   profile: GolemProfile,
   graph: SourceModelGraph,
   preparedSchemaGraph: SchemaGraph | undefined,
@@ -1231,11 +1236,11 @@ function buildEmitContext(
     deserialize: `__golemDeserialize${index}`,
   }));
   const imports = buildFileImports(
-    output, graph, manifestIndex, schemaGraph, localImports, siblingObjects, concreteNames, classModelNames, referenceNames,
+    output, graph, schemaGraph, localImports, siblingObjects, concreteNames, classModelNames, referenceNames,
     cyclicSiblings, serdeBindings, serdeNames, classEntries, classNames,
   );
   return {
-    source, output, checker, manifestIndex, profile, siblingCodecs, appOutputs, graph, schemaGraph,
+    source, output, checker, profile, siblingCodecs, appOutputs, sdkNodes: sdkNodeCodecs(appOutputs.sdkCodecs, output), graph, schemaGraph,
     local, localNames, fileLocalNames, classModelNames, objectOnlyNames, siblingObjects, siblingObjectNames, localImports,
     concreteNames, linkedByName, referenceNames, projectionNames, identityProjections, imports,
     serdeBindings, serdeNames,
@@ -1246,9 +1251,9 @@ function buildEmitContext(
 function typeNamesOf(context: EmitContext): TypeNames {
   const { imports } = context;
   return {
-    externalClass: (id) => imports.external.get(id)?.cls,
     classValue: (key) => imports.classValues.get(key),
     modelType: (name, suffix) => modelType(context, name, suffix),
+    sdkNodeType: (codecId, suffix) => context.sdkNodes.type(codecId, suffix),
   };
 }
 
@@ -1265,6 +1270,7 @@ function typeOf(context: EmitContext, descriptor: ModelConversionDescriptor, mod
 }
 
 function serdeExpression(context: EmitContext, id: string, direction: 'serialize' | 'deserialize', value: Code): Code {
+  if (id.startsWith(TEMPORAL_SERDE_PREFIX)) return TEMPORAL_SERDE[direction](id, value);
   const names = context.serdeNames.get(id);
   if (names === undefined) throw new Error(`The generated model file of ${displayPath(context.source)} has no ${direction} function for the serde id ${JSON.stringify(id)}.`);
   return code`${identifier(names[direction])}(${value})`;
@@ -1300,22 +1306,9 @@ function descriptorOf(definitions: Readonly<Record<string, ModelConversionDescri
   return descriptor;
 }
 
-function externalModel(context: EmitContext, id: string): ExternalModel {
-  const found = context.imports.external.get(id);
-  if (!found) throw new Error(`Generated model manifest id is missing: ${id}`);
-  return found;
-}
-
-function resolveFromJsonModel(context: EmitContext, id: string): FromJsonModelResolver {
-  const className = externalModel(context, id).cls;
-  return {
-    className,
-    decode: (value) => code`${rt.conversion.decodeGeneratedModelTrusted}(${className}, ${value})`,
-    // SDK constructors may be zero-argument classes.  Cast only the
-    // constructor call boundary so nested initializers stay type-safe without
-    // indexing an empty ConstructorParameters tuple.
-    fromInit: (value) => code`new (${className} as unknown as new (values?: unknown) => ${className})(${value})`,
-  };
+/** A model name that no model of the file, no sibling and no import names: the graph holds no model for it. */
+function unknownModel(id: string): never {
+  throw new Error(`Internal error: no model "${id}" for the generated file.`);
 }
 
 function resolveLocalModel(context: EmitContext, name: string, codecId?: string): FromJsonModelResolver {
@@ -1335,7 +1328,7 @@ function resolveLocalModel(context: EmitContext, name: string, codecId?: string)
       fromInit: (value) => code`new ${ctor}(${value} as unknown as ${initType})`,
     };
   }
-  return resolveFromJsonModel(context, name);
+  return unknownModel(name);
 }
 
 function modelResolvers(context: EmitContext, helpers: ReadonlyMap<string, ProjectionHelper>): ModelResolvers {
@@ -1362,7 +1355,7 @@ function modelResolvers(context: EmitContext, helpers: ReadonlyMap<string, Proje
     const cls = registered
       ?? (concrete === undefined ? undefined : context.imports.concrete.get(id) ?? identifier(concrete))
       ?? (context.classModelNames.has(id) ? modelType(context, id, 'BaseModel') : undefined);
-    if (!cls) return resolveFromJsonModel(context, id);
+    if (!cls) return unknownModel(id);
     // A class looked up by codec id is a value, not a type name.
     const instance = registered ? modelType(context, id, 'BaseModel') : cls;
     return {
@@ -1380,7 +1373,17 @@ function modelResolvers(context: EmitContext, helpers: ReadonlyMap<string, Proje
       fromInit: (value) => code`${functions.init}(${value})`,
     };
   };
+  // A node of a golem-mode SDK: it converts with the node codec the SDK's codecs file exports. The model's validators have checked the
+  // whole value, and a value in model form needs no conversion.
+  const resolveSdkNode = (codecs: NestedImportedSerde): FromJsonModelResolver => ({
+    className: identifier('Object'),
+    plain: true,
+    decode: (value) => code`${codecs.fromWire}(${value}, { validate: false })`,
+    fromInit: (value) => value,
+  });
   const fromAny = (id: string): FromJsonModelResolver => {
+    const sdkNode = context.sdkNodes.find(id);
+    if (sdkNode !== undefined) return resolveSdkNode(sdkNode);
     if (context.projectionNames.has(id)) return resolveProjection(id);
     if (context.siblingObjectNames.has(id)) return resolveSiblingObject(id);
     if (context.fileLocalNames.has(id)) {
@@ -1388,7 +1391,7 @@ function modelResolvers(context: EmitContext, helpers: ReadonlyMap<string, Proje
       return resolveLocalModel(context, id, codecId);
     }
     if (context.localImports.some((item) => item.name === id) && context.classModelNames.has(id)) return resolveImportedModel(id);
-    return resolveFromJsonModel(context, id);
+    return unknownModel(id);
   };
   return { fromAny };
 }
@@ -1487,8 +1490,6 @@ function buildFieldEmissions(context: EmitContext, resolvers: ModelResolvers): M
   return context.local.map((specification) => {
     const definition = definitions[specification.name];
     assertRootHasFields(specification, definition);
-    assertSdkModelSetsNoLevel(specification, definition);
-    const baseName = identifier(`${specification.name}BaseModel`);
     // Phantom tag members are part of the type-level intersection and must
     // remain in the root descriptor, but they are not model fields.  Emitting
     // them would make conversion look for descriptors that intentionally do
@@ -1547,7 +1548,6 @@ function buildFieldEmissions(context: EmitContext, resolvers: ModelResolvers): M
     const mapValue: ModelConversionDescriptor | undefined = typeof mapSchema === 'object' ? mapSchema
       : declaredMap ? { kind: 'unknown' } : undefined;
     if (mapValue) {
-      const fieldsValue = typedMap ? code`${identifier(`${specification.name}Fields`)}[string]` : code`unknown`;
       const initValue = typedMap ? code`${identifier(`${specification.name}Init`)}[string]` : code`unknown`;
       const known = identifier(`__knownKeys_${specification.name}`);
       helpers.push(code`const ${known}: ReadonlySet<string> = new Set<string>([${join(fields.map((field) => literal(field.getName())), code`, `)}]);`);
@@ -1678,7 +1678,7 @@ function emitClassModel(context: EmitContext, emission: ModelFieldEmission): Pie
     code`  conversion: {`,
     code`    decode: (value, constructor) => ${decodeModel}(constructor ?? ${baseName}, value),`,
     code`  },`,
-    code`  codecId: ${definition.kind === 'generated-model' ? literal(externalModel(context, definition.id).model.codecId) : codecId},`,
+    code`  codecId: ${codecId},`,
     code`  profile: { validation: ${literal(specification.validation ?? profile.validation)} },`,
     ...(observesValidator(context, specification) ? [code`  enhanceValidator: ${rt['mobx-validation'].enhanceValidatorWithMobX},`] : []),
     // A model with a dynamic map, or an explicit additionalProperties true, has no program state: the keys outside its
@@ -1689,20 +1689,6 @@ function emitClassModel(context: EmitContext, emission: ModelFieldEmission): Pie
     code`${rt.serde.registerIModelClass}(${codecId}, ${baseName});`,
     BLANK,
   ];
-}
-
-/**
- * A class that declares an SDK model registers the manifest codec id of that model, and its encode and validation call that codec.
- * The SDK module registers the codec, and this file names the module in types only, which the compiler drops: load it.
- */
-function sdkCodecImports(context: EmitContext): Code[] {
-  const modules = new Set<string>();
-  for (const specification of context.local) {
-    const definition = descriptorOf(context.graph.definitions, specification.name);
-    if (!specification.emitClass || definition.kind !== 'generated-model') continue;
-    modules.add(sourceImportPath(externalModel(context, definition.id).generatedFile, context.output));
-  }
-  return [...modules].sort().map((path) => code`import ${literal(path)};`);
 }
 
 /** The class models of this file; a model that is not a class writes no code here. */
@@ -1744,23 +1730,10 @@ function emitCodecSection(context: EmitContext): CodecSection {
     }
     return code`${rt.serde.requireIModelClass}(${literal(id)})`;
   };
-  const nestedGenerated = (id: string): Code => externalModel(context, id).cls;
   // The generated base class of a class model this file declares or imports: a union tests an instance's class with it, so no guard looks up a registry. An IObject model has no class.
   const nestedBase = (name: string): Code | undefined => context.classModelNames.has(name) && (context.fileLocalNames.has(name) || imports.localModels.has(name))
     ? modelType(context, name, 'BaseModel')
     : undefined;
-  /** The manifest id of the SDK model that a generated-model descriptor names by its short name, class name or manifest id. */
-  const externalManifestId = (name: string): string | undefined => [...graph.externalNames.entries()].find(([manifestId, className]) => (
-    manifestId === name
-    || className === name
-    || codecShortName(manifestId) === name
-  ))?.[0];
-  const nestedImportedSerde = (id: string) => {
-    const match = externalManifestId(id);
-    if (!match) return undefined;
-    const { stringify, fromWire, toWire } = externalModel(context, match);
-    return { stringify, fromWire, toWire };
-  };
   // The validators the codecs use: the model file imports those and no others.
   const validators = appOutputs.validators;
   const validatorsSource = validators ? new ImportSource(sourceImportPath(validators.module, output)) : undefined;
@@ -1781,6 +1754,7 @@ function emitCodecSection(context: EmitContext): CodecSection {
     schemaGraph,
     {
       validationLevel: profile.validation,
+      nestedImportedSerde: context.sdkNodes.find,
       ...(validators ? {
         validatorName: (id: string) => {
           const name = validators.exports.get(id);
@@ -1800,10 +1774,8 @@ function emitCodecSection(context: EmitContext): CodecSection {
       modelBases: { basesOf: () => [] },
       serde: serdeResolver(context),
       nestedConstruct,
-      nestedGenerated,
       modelClassName: (node) => localNames.has(node.name) ? `${node.name}BaseModel` : undefined,
       nestedBase,
-      nestedImportedSerde,
       siblingWireName: (codecId) => siblingWires.get(codecId) ?? identifier(wireStringifyExportName(codecId)),
       wireType: (node) => Object.hasOwn(definitions, node.name) || localNames.has(node.name) ? modelType(context, node.name, 'JSON') : undefined,
       fieldsType: (node) => Object.hasOwn(definitions, node.name) || localNames.has(node.name) ? modelType(context, node.name, 'Fields') : undefined,
@@ -1815,7 +1787,7 @@ function emitCodecSection(context: EmitContext): CodecSection {
     },
   );
   return {
-    sources: [...(validatorsSource ? [validatorsSource] : []), ...siblingWireSources],
+    sources: [...(validatorsSource ? [validatorsSource] : []), ...siblingWireSources, ...context.sdkNodes.sources],
     lines: [
       codecRuntime,
     ],
@@ -1825,7 +1797,7 @@ function emitCodecSection(context: EmitContext): CodecSection {
 /** The order of the names in each import line of a model file. */
 const IMPORT_OPTIONS: ImportOptions = {
   typeNames: 'inline',
-  modules: ['model', 'conversion', 'serde', 'mobx-validation'],
+  modules: ['model', 'conversion', 'serde', 'mobx-validation', 'temporal'],
   order: MODEL_IMPORT_ORDER,
 };
 
@@ -1835,14 +1807,13 @@ export function emitSource(
   output: string,
   checker: ts.TypeChecker,
   specifications: readonly ModelSpecification[],
-  manifestIndex: ManifestIndex,
   profile: GolemProfile,
   graph: SourceModelGraph,
   preparedSchemaGraph?: SchemaGraph,
   siblingCodecs: SiblingCodecOptions = {},
   appOutputs: AppOutputs = {},
 ): string | undefined {
-  const context = buildEmitContext(source, output, checker, specifications, manifestIndex, profile, graph, preparedSchemaGraph, siblingCodecs, appOutputs);
+  const context = buildEmitContext(source, output, checker, specifications, profile, graph, preparedSchemaGraph, siblingCodecs, appOutputs);
   const projections = buildProjections(context);
   const emissions = buildFieldEmissions(context, modelResolvers(context, projections.helpers));
   const codecs = emitCodecSection(context);
@@ -1852,10 +1823,10 @@ export function emitSource(
     ...emitObjectHelperExports(context, projections.helpers),
     ...emitClassModels(context, emissions),
     ...codecs.lines,
+    ...context.sdkNodes.typeAliases((descriptor, mode) => typeOf(context, descriptor, mode)),
   ];
   // What the file calls decides its imports and which helpers it defines: a helper stands where its definition goes.
   const calls = join(pieces.filter(isCode), code`\n`);
-  assertExternalImportsExported(calls, context);
   const runtimeLines = runtimeLinesOf(calls, IMPORT_OPTIONS);
   const otherSources = [...codecs.sources, ...context.imports.classSources, ...context.imports.sources];
   const lines: readonly Code[] = [
@@ -1863,36 +1834,11 @@ export function emitSource(
     ...fileImports(calls, codecs.sources, { quote: '"', elsewhere: otherSources }),
     ...runtimeLines('model', 'conversion'),
     ...fileImports(calls, context.imports.classSources, { quote: '"', elsewhere: otherSources }),
-    ...runtimeLines('serde', 'mobx-validation'),
+    ...runtimeLines('serde', 'temporal', 'mobx-validation'),
     ...context.imports.siblingCompanions,
-    ...sdkCodecImports(context),
     ...fileImports(calls, context.imports.sources, { quote: '"', elsewhere: otherSources }),
     BLANK,
     ...placeHelpers(calls, pieces, MODULE_CONSTANT_HELPERS),
   ];
   return render(code`${join(lines, code`\n`)}\n`);
-}
-
-/**
- * A companion imports the model class and its codec helpers from each SDK module.
- * Reject the generation when that module lacks one, so no uncompilable companion is written.
- */
-function assertExternalImportsExported(calls: Code, context: EmitContext): void {
-  const checked = new Set<string>();
-  for (const id of context.graph.externalIds) {
-    const { model, generatedFile } = externalModel(context, id);
-    if (checked.has(generatedFile)) continue;
-    checked.add(generatedFile);
-    const exports = context.manifestIndex.runtimeExports(model);
-    const imported = [...context.imports.external.values()]
-      .filter((each) => each.generatedFile === generatedFile)
-      .flatMap((each) => importedNames(calls, each.source));
-    const missing = [...new Set(imported.filter((name) => !exports.has(name)))];
-    if (missing.length > 0) {
-      throw new Error(
-        `${displayPath(context.source)}: generated model module ${model.generated.module} (model manifest ${displayPath(model.manifestFile)}) `
-        + `does not export ${missing.join(', ')}. Regenerate the SDK so it exports the model class and its codec helpers.`,
-      );
-    }
-  }
 }

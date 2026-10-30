@@ -110,6 +110,17 @@ for (const { name, schema, expected } of refFields) {
   });
 }
 
+// protects: T-741 a query field is found through an items keyword without a type and through the oneOf and anyOf branches of the model
+for (const [name, schema, expected] of [
+  ['an items keyword without a type', { type: 'object', properties: { ids: { items: { type: 'integer' } } } }, { ids: { types: [], item: { types: ['integer'] } } }],
+  ['a oneOf branch of the model', { type: 'object', oneOf: [{ properties: { limit: { type: 'number' } } }, { properties: { name: { type: 'string' } } }] }, { limit: { types: ['number'] } }],
+  ['an anyOf branch of the model', { type: 'object', anyOf: [{ properties: { active: { type: 'boolean' } } }] }, { active: { types: ['boolean'] } }],
+] as const) {
+  test(`the query fields of a model with ${name}`, () => {
+    assert.deepEqual(table(schema), expected);
+  });
+}
+
 test('a model with only string fields has no query fields', () => {
   // protects: T-377 a string-only model, even one with a string-or-array field, registers no query field table
   assert.equal(table({ type: 'object', properties: { name: { type: 'string' }, either: { type: ['string', 'array'], items: { type: 'string' } } } }), undefined);

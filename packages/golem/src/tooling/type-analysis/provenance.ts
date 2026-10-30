@@ -1,38 +1,105 @@
 import { existsSync } from 'node:fs';
-import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
+import { dirname, isAbsolute, resolve } from 'node:path';
 import * as ts from '../typescript-ns.js';
 import {
   MODEL_MANIFEST_MARKER,
   discoverModelManifests,
+  golemModeComponents,
+  isGolemModeManifest,
   readModelManifest,
 } from '../model-manifest-core.js';
 import type {
+  GolemModeManifest,
   ModelManifest,
   ModelManifestEntry,
 } from '../model-manifest-core.js';
 import { canonicalPath, displayPath, type GolemProfile, type InputObserver } from '../generator-core.js';
-import { MISSING, fileSignature } from '../input-watcher.js';
-import type { CodecSchemaClosureEntry } from '../validation-plan.js';
-import { canonicalFilename, effectiveConfigPath, isUnderOutputs } from './project.js';
+import type { ModelTypeDescriptor } from '../../model-registry.js';
+import { canonicalFilename, isUnderOutputs } from './project.js';
 import type { ProgramInfo } from './project.js';
 
 export interface ResolvedModelManifestEntry extends ModelManifestEntry {
+  readonly codecId: string;
   readonly manifestFile: string;
-  readonly generatedFile: string;
   /** OpenAPI entries advertise the effective any policy used for this model. */
   readonly allowAny: boolean;
 }
 
+/** An alias of a golem-mode SDK that is no model: what an app field of it checks, and the keywords of its schema that the descriptor does not carry. */
+export interface SdkAlias {
+  readonly descriptor: ModelTypeDescriptor;
+  readonly uncarried?: readonly string[];
+}
+
 export interface ManifestIndex {
-  readonly byId: ReadonlyMap<string, ResolvedModelManifestEntry>;
+  /** Every entry, by the module and export of its declaration. */
   readonly byProvenance: ReadonlyMap<string, ResolvedModelManifestEntry>;
   readonly files: readonly string[];
   /** Manifests advertised by loaded sources or discovered under this job's src. */
   readonly localFiles: readonly string[];
-  readonly validationSchemaClosure: readonly CodecSchemaClosureEntry[];
-  /** Runtime (value) exports of the generated module an entry names. */
-  runtimeExports(model: ResolvedModelManifestEntry): ReadonlySet<string>;
-  externalModelForType(type: ts.Type): ResolvedModelManifestEntry | undefined;
+  /** The manifests of SDKs in golem mode: this job compiles their types with its own models. */
+  readonly golemModeManifests: readonly { readonly file: string; readonly manifest: GolemModeManifest }[];
+  /**
+   * The descriptor that the manifest of a golem-mode SDK holds for a type the SDK declares. The root of a model over the type
+   * (`root`) takes the SDK's descriptor, with each schema it names a reference to the SDK node; its schema equals the SDK's. A field
+   * of the type is that reference (`sdkNode` names the codec of the SDK that checks and converts it), or the descriptor for a scalar alias.
+   */
+  sdkDescriptorForType(type: ts.Type, root: boolean): ModelTypeDescriptor | undefined;
+  /** The keywords of the SDK schema of the type that its descriptors do not carry, with those of the schemas it refers to; none when the type is no SDK type or its descriptors carry them all. */
+  sdkUncarriedForType(type: ts.Type): readonly string[] | undefined;
+  /**
+   * The alias that the type node names: its descriptor (`type Currency = string` or `type Tags = number[]`, which TypeScript resolves to the
+   * plain type, so the type alone does not tell), with the limits the SDK's schema has and the SDK node of each model it names. The model of
+   * the app then checks them inline, as the SDK does; `uncarried` lists the keywords of its schema that the descriptor does not carry.
+   */
+  sdkAliasForNode(checker: ts.TypeChecker, node: ts.TypeNode): SdkAlias | undefined;
+}
+
+/** The descriptor kinds of an SDK schema that has a node codec in the SDK's codecs file; a scalar alias has none and is written inline. */
+const NODE_KINDS: ReadonlySet<string> = new Set(['object', 'array', 'tuple', 'union', 'intersection']);
+
+/** The kind of the descriptor of the SDK schema `name`, through the schemas that only name another. */
+function descriptorKind(manifest: GolemModeManifest, name: string, seen: readonly string[] = []): string {
+  const text = golemModeComponents(manifest).get(name)?.descriptor;
+  if (text === undefined) throw new Error(`The SDK manifest has no descriptor for the schema ${JSON.stringify(name)}. Regenerate the SDK with this golem version.`);
+  const descriptor = JSON.parse(text) as { readonly kind: string; readonly id?: string; readonly name?: string };
+  const next = descriptor.kind === 'generated-model' ? descriptor.id : descriptor.kind === 'reference' ? descriptor.name : undefined;
+  return next === undefined || seen.includes(next) ? descriptor.kind : descriptorKind(manifest, next, [...seen, name]);
+}
+
+/**
+ * The descriptor of the SDK schema `name`, with each schema it names a reference to the SDK node (`generated-model` with the codec id,
+ * also `sdkNode`): the model's check is the SDK's validator and its conversion calls the node codec the SDK's codecs file exports, so no
+ * SDK conversion is written twice. A scalar alias, which has no node codec, is written inline.
+ */
+function sdkDescriptorOf(manifest: GolemModeManifest, name: string): ModelTypeDescriptor | undefined {
+  const text = golemModeComponents(manifest).get(name)?.descriptor;
+  if (text === undefined) return undefined;
+  const nodeReferences = (value: unknown): unknown => {
+    if (Array.isArray(value)) return value.map(nodeReferences);
+    if (value === null || typeof value !== 'object') return value;
+    const record = value as Record<string, unknown>;
+    const named = record.kind === 'generated-model' ? record.id : record.kind === 'reference' ? record.name : undefined;
+    if (typeof named !== 'string') return Object.fromEntries(Object.entries(record).map(([key, item]) => [key, nodeReferences(item)]));
+    const { kind: _kind, id: _id, name: _name, projection: _projection, ...rest } = record;
+    const codecId = golemModeComponents(manifest).get(named)?.codecId;
+    if (!NODE_KINDS.has(descriptorKind(manifest, named))) return { ...sdkDescriptorOf(manifest, named), ...(nodeReferences(rest) as object), sdkNode: codecId };
+    if (codecId === undefined) throw new Error(`The SDK manifest names no codec for the schema ${JSON.stringify(named)}. Regenerate the SDK with this golem version.`);
+    return { kind: 'generated-model', id: codecId, ...(nodeReferences(rest) as object), sdkNode: codecId };
+  };
+  return nodeReferences(JSON.parse(text)) as ModelTypeDescriptor;
+}
+
+/** The entry of an SDK type in a table keyed by the file and name of its declaration, found by the type's alias or its own symbol. */
+function sdkEntryOfType<Entry>(table: ReadonlyMap<string, Entry>, type: ts.Type): Entry | undefined {
+  for (const symbol of [type.aliasSymbol, type.getSymbol?.()]) {
+    for (const declaration of symbol?.declarations ?? []) {
+      const file = canonicalFilename(declaration.getSourceFile().fileName);
+      const found = table.get(`${file}\0${symbol!.getName()}`) ?? table.get(`${file.replace(/\.d\.([cm]?ts)$/, '.$1')}\0${symbol!.getName()}`);
+      if (found !== undefined) return found;
+    }
+  }
+  return undefined;
 }
 
 function escapeRegExp(value: string): string {
@@ -63,145 +130,6 @@ function validateManifestProfile(
       + 'Regenerate the SDK manifest with the same profile before model generation, or set the project to the manifest value in golem.yaml.',
     );
   }
-}
-
-function isRuntimeExport(symbol: ts.Symbol, checker: ts.TypeChecker): boolean {
-  const resolved = (symbol.flags & ts.SymbolFlags.Alias) !== 0
-    ? checker.getAliasedSymbol(symbol)
-    : symbol;
-  return (resolved.flags & ts.SymbolFlags.Value) !== 0;
-}
-
-/**
- * A validation that passed: the request it answered, the signature of each file it depended on, and the exports it found. A failed
- * validation leaves none, so a failure is never taken for a pass.
- */
-interface ValidatedModules {
-  readonly request: string;
-  /** Every path the program reported, which the job's observer hears again when the program is not opened. */
-  readonly reported: readonly string[];
-  /** The signature, as it was before the program read the file, of each manifest, each source file of the program except the default library, each probe that found nothing and each package.json. */
-  readonly signatures: ReadonlyMap<string, string>;
-  readonly exportsById: ReadonlyMap<string, ReadonlySet<string>>;
-}
-
-/** The last passed validation of each compiler session, which a watch keeps across its cycles. A session that closes takes its record with it. */
-const lastValidated = new WeakMap<object, ValidatedModules>();
-
-function validateGeneratedModules(
-  info: ProgramInfo,
-  root: string,
-  models: readonly ResolvedModelManifestEntry[],
-  onInput?: InputObserver,
-): ReadonlyMap<string, ReadonlySet<string>> {
-  const { options } = info;
-  const exportsById = new Map<string, ReadonlySet<string>>();
-  if (models.length === 0) return exportsById;
-  const files = new Map<ResolvedModelManifestEntry, string>();
-  const resolutionCache = new Map<string, string>();
-  for (const model of models) {
-    const moduleName = model.generated.module;
-    const cacheKey = `${dirname(model.manifestFile)}\0${moduleName}`;
-    let resolvedFileName = resolutionCache.get(cacheKey);
-    if (!resolvedFileName) {
-      const resolved = info.program.session.resolveModuleName(moduleName, model.manifestFile, options).resolvedModule;
-      if (!resolved) {
-        throw new Error(
-          `Model manifest ${displayPath(model.manifestFile)} references missing generated module `
-          + `${moduleName} for ${model.id}.`,
-        );
-      }
-      resolvedFileName = canonicalFilename(resolved.resolvedFileName);
-      resolutionCache.set(cacheKey, resolvedFileName);
-    }
-    onInput?.(resolvedFileName);
-    files.set(model, resolvedFileName);
-  }
-  // All exports in this generation job share one program and type checker.
-  // A manifest with many entries must not reparse its dependency graph once
-  // for every model, whether entries share a module or use narrow modules.
-  // These modules can come from several SDK output directories. The generic
-  // createProgram adapter roots its project at the first source file, which
-  // can leave modules from the other SDKs outside the selected TS7 project.
-  // Opening files does not make sources excluded by the app tsconfig project
-  // roots, so give the one project an overlay config that explicitly lists all
-  // resolved modules while extending the job's effective config to preserve its
-  // options: the referenced project of a solution tsconfig, not the solution.
-  const sources = [...new Set(files.values())];
-  const appConfig = effectiveConfigPath(info);
-  // The program is opened only when something it validates changed since the last pass: the request (the entries, the modules they
-  // resolve to, the compiler options), a manifest, or a source file of the last program, which the openapi job can rewrite between two cycles.
-  const request = JSON.stringify([root, appConfig, sources, models.map((model) => [model.id, model.manifestFile, model.generated.export])])
-    + JSON.stringify(options, (key, value: unknown) => (key === 'configFile' ? undefined : value));
-  const manifestSignatures = new Map(models.map((model) => [model.manifestFile, fileSignature(model.manifestFile)]));
-  const previous = lastValidated.get(info.program.session);
-  lastValidated.delete(info.program.session);
-  if (previous?.request === request && [...previous.signatures].every(([filename, signature]) => fileSignature(filename) === signature)) {
-    previous.reported.forEach((filename) => onInput?.(filename));
-    lastValidated.set(info.program.session, previous);
-    return previous.exportsById;
-  }
-  // A path reported again, as a session does for every file it has read, keeps the signature of its first report.
-  const reported = new Map<string, string>();
-  const observe: InputObserver = (filename) => {
-    if (!reported.has(filename)) reported.set(filename, fileSignature(filename));
-    onInput?.(filename);
-  };
-  const configFile = join(root, '.golem-manifest-validation.json');
-  const validationConfig = appConfig
-    ? { extends: appConfig, files: sources, include: [] }
-    : {
-      compilerOptions: {
-        strict: true,
-        target: 'ES2022',
-        module: 'NodeNext',
-        moduleResolution: 'NodeNext',
-        skipLibCheck: true,
-        noEmit: true,
-      },
-      files: sources,
-      include: [],
-    };
-  using moduleProgram = info.program.session.openProgram({
-    root,
-    configFile,
-    sources,
-    overlays: new Map([[canonicalFilename(configFile), JSON.stringify(validationConfig)]]),
-    onInput: observe,
-  });
-  const checker = moduleProgram.getTypeChecker();
-  const runtimeExports = new Map<string, ReadonlySet<string>>();
-  for (const [model, filename] of files) {
-    let exports = runtimeExports.get(filename);
-    if (!exports) {
-      const sourceFile = moduleProgram.getSourceFile(filename);
-      const moduleSymbol = sourceFile ? checker.getSymbolAtLocation(sourceFile) : undefined;
-      exports = new Set(moduleSymbol
-        ? checker.getExportsOfModule(moduleSymbol).filter(symbol => isRuntimeExport(symbol, checker)).map(symbol => symbol.name)
-        : []);
-      runtimeExports.set(filename, exports);
-    }
-    if (!exports.has(model.generated.export)) {
-      throw new Error(
-        `Model manifest ${displayPath(model.manifestFile)} references missing runtime export `
-        + `${model.generated.export} from ${model.generated.module} for ${model.id}.`,
-      );
-    }
-    exportsById.set(model.id, exports);
-  }
-  const signatures = new Map(manifestSignatures);
-  for (const file of moduleProgram.getSourceFiles()) {
-    if (moduleProgram.isSourceFileDefaultLibrary(file)) continue;
-    const filename = canonicalFilename(file.fileName);
-    signatures.set(filename, reported.get(filename) ?? fileSignature(filename));
-  }
-  // A file the program probed and did not find (a new file can shadow what it resolved to) and each package.json (its "type", "exports" and
-  // "types" decide resolution) are dependencies too. The other reported paths are not: a session replays everything it ever read.
-  for (const [filename, signature] of reported) {
-    if (signature === MISSING || basename(filename) === 'package.json') signatures.set(filename, signature);
-  }
-  lastValidated.set(info.program.session, { request, reported: [...reported.keys()], signatures, exportsById });
-  return exportsById;
 }
 
 const MARKER_PATTERN = new RegExp(`${escapeRegExp(MODEL_MANIFEST_MARKER)}\\s+([^\\s*]+)`);
@@ -300,8 +228,14 @@ export function loadModelManifests(
     ...explicit.map(canonicalFilename),
   ])].sort();
   const byProvenance = new Map<string, ResolvedModelManifestEntry>();
-  const byId = new Map<string, ResolvedModelManifestEntry>();
-  const validationSchemaClosure: CodecSchemaClosureEntry[] = [];
+  // Every id of every manifest, an SDK type's included, so that two manifests cannot share one.
+  const manifestOfId = new Map<string, string>();
+  const golemModeManifests: { file: string; manifest: GolemModeManifest }[] = [];
+  // The descriptor of each SDK type of a golem-mode manifest, with the schemas it names inline, by the provenance of its declaration.
+  const sdkDescriptors = new Map<string, { readonly root: ModelTypeDescriptor; readonly field: ModelTypeDescriptor }>();
+  const sdkUncarried = new Map<string, readonly string[]>();
+  // The descriptor of each alias of a golem-mode manifest that is no model, by the provenance of its declaration.
+  const sdkAliases = new Map<string, SdkAlias>();
   for (const filename of filenames) {
     // Explicit SDK manifests stay in the load set for duplicate-id and profile
     // checks. Only manifests this job discovered or advertised are watch inputs
@@ -310,12 +244,21 @@ export function loadModelManifests(
     if (!existsSync(filename)) throw new Error(`Model manifest does not exist: ${displayPath(filename)}`);
     const manifest = readModelManifest(filename);
     validateManifestProfile(manifest, filename, profile);
-    validationSchemaClosure.push(...manifest.validationSchemaClosure ?? []);
+    const golem = isGolemModeManifest(manifest) ? manifest : undefined;
+    if (golem !== undefined) {
+      golemModeManifests.push({ file: filename, manifest: golem });
+      for (const alias of golem.components.filter((component) => component.type !== undefined)) {
+        const entry: SdkAlias = { descriptor: sdkDescriptorOf(golem, alias.name)!, ...(alias.uncarried?.length ? { uncarried: alias.uncarried } : {}) };
+        for (const provenance of [alias.type!, ...(alias.type!.aliases ?? [])]) {
+          sdkAliases.set(manifestProvenance(filename, provenance.module, provenance.export), entry);
+        }
+      }
+    }
     for (const model of manifest.models) {
-      const existingId = byId.get(model.id);
-      if (existingId) {
+      const existingFile = manifestOfId.get(model.id);
+      if (existingFile) {
         throw new Error(
-          `Duplicate model manifest id "${model.id}" in ${existingId.manifestFile} and ${filename}.`,
+          `Duplicate model manifest id "${model.id}" in ${existingFile} and ${filename}.`,
         );
       }
       if (typeof model.allowAny !== 'boolean') {
@@ -323,17 +266,11 @@ export function loadModelManifests(
           `Invalid model manifest ${filename}: model ${model.id} must advertise an effective allowAny boolean.`,
         );
       }
-      const resolved: ResolvedModelManifestEntry = {
-        ...model,
-        allowAny: model.allowAny as boolean,
-        manifestFile: filename,
-        generatedFile: canonicalFilename(
-          isAbsolute(model.generated.module)
-            ? model.generated.module
-            : resolve(dirname(filename), model.generated.module),
-        ),
-      };
-      byId.set(model.id, resolved);
+      manifestOfId.set(model.id, filename);
+      // A golem-mode model has its codec id on the component named as its declared type (`validateModelManifest` checked it is there).
+      const component = golem && golemModeComponents(golem).get(model.type.export);
+      const codecId = component?.codecId ?? model.codecId!;
+      const resolved: ResolvedModelManifestEntry = { ...model, codecId, allowAny: model.allowAny, manifestFile: filename };
       const provenances = [model.type, ...(model.type.aliases ?? [])];
       for (const provenance of provenances) {
         const key = manifestProvenance(filename, provenance.module, provenance.export);
@@ -346,21 +283,38 @@ export function loadModelManifests(
         }
         byProvenance.set(key, resolved);
       }
+      if (golem !== undefined && component !== undefined) {
+        const descriptor = sdkDescriptorOf(golem, component.name);
+        if (descriptor !== undefined) {
+          const reference = NODE_KINDS.has(descriptor.kind) ? { kind: 'generated-model' as const, id: codecId, sdkNode: codecId } : { ...descriptor, sdkNode: codecId };
+          for (const provenance of provenances) {
+            sdkDescriptors.set(manifestProvenance(filename, provenance.module, provenance.export), { root: descriptor, field: reference });
+            if (component.uncarried?.length) sdkUncarried.set(manifestProvenance(filename, provenance.module, provenance.export), component.uncarried);
+          }
+        }
+      }
     }
   }
-  const exportsById = validateGeneratedModules(info, root, [...byId.values()], onInput);
 
   return {
-    byId,
     byProvenance,
     files: filenames,
     localFiles,
-    validationSchemaClosure,
-    runtimeExports: (model) => exportsById.get(model.id) ?? new Set(),
-    externalModelForType(type: ts.Type): ResolvedModelManifestEntry | undefined {
-      for (const symbol of [type.aliasSymbol, type.getSymbol?.()]) {
-        const model = symbol && manifestModelOfSymbol(byProvenance, symbol);
-        if (model) return model;
+    golemModeManifests,
+    sdkDescriptorForType(type: ts.Type, root: boolean): ModelTypeDescriptor | undefined {
+      const found = sdkEntryOfType(sdkDescriptors, type);
+      return found === undefined ? undefined : root ? found.root : found.field;
+    },
+    sdkUncarriedForType: (type: ts.Type) => sdkEntryOfType(sdkUncarried, type),
+    sdkAliasForNode(checker: ts.TypeChecker, node: ts.TypeNode): SdkAlias | undefined {
+      if (sdkAliases.size === 0 || !ts.isTypeReferenceNode(node)) return undefined;
+      const named = checker.getSymbolAtLocation(node.typeName);
+      const symbol = named !== undefined && (named.flags & ts.SymbolFlags.Alias) !== 0 ? checker.getAliasedSymbol(named) : named;
+      for (const declaration of symbol?.declarations ?? []) {
+        const file = canonicalFilename(declaration.getSourceFile().fileName);
+        const found = sdkAliases.get(`${file}\0${symbol!.getName()}`)
+          ?? sdkAliases.get(`${file.replace(/\.d\.([cm]?ts)$/, '.$1')}\0${symbol!.getName()}`);
+        if (found !== undefined) return found;
       }
       return undefined;
     },

@@ -34,10 +34,10 @@ const input = {
 // The models job's codec ids, by `src/<file>#<name>`.
 const modelCodecKeys = JSON.parse(readFileSync(new URL('./.golem/codec-keys.json', import.meta.url), 'utf8')).keys;
 
-// The SDK's codec ids, from the `codecId` of each model in its manifest, by generated class name.
-const sdkModels = JSON.parse(readFileSync(new URL('./sdk/model-manifest.json', import.meta.url), 'utf8')).models;
+// The SDK's codec ids, from the `codecId` of each component in its manifest, by component name.
+const sdkComponents = JSON.parse(readFileSync(new URL('./sdk/model-manifest.json', import.meta.url), 'utf8')).components;
 
-const sdkCodecId = model => sdkModels.find(entry => entry.generated.export === `${model}Model`)?.codecId;
+const sdkCodecId = component => sdkComponents.find(entry => entry.name === component)?.codecId;
 
 async function withApplication(run) {
   const application = await createApplication(adapter === 'fastify' ? new FastifyAdapter() : new ExpressAdapter());
@@ -175,7 +175,6 @@ for (const [alias, component] of [['TPayment', 'Payment'], ['TMerchant', 'TMerch
   assert.match(sdkId ?? '', new RegExp(`^${component}_[0-9a-f]{8}$`));
   assert.notEqual(sdkId, modelId, `${alias}: handwritten and SDK ids differ`);
   assert.equal(getObjectCodec(modelId)?.issueSource, 'typescript', `${alias}: handwritten codec keeps its source`);
-  assert.equal(getObjectCodec(sdkId)?.issueSource, 'openapi', `${alias}: SDK codec keeps its source`);
 }
 assert.equal(OPERATION_CODECS['POST /api/payments/transactions'], modelCodecKeys['src/payment.model.ts#TPaymentInput']);
 assert.equal(OPERATION_CODECS['POST /api/payments/transactions/as-class'], modelCodecKeys['src/payment.model.ts#TPayment']);
