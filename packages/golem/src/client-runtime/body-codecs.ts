@@ -145,7 +145,7 @@ export function encodeBody(
 
 /**
  * The request body in its wire form: the generated encoder of its media type converts it, and a body that converts nothing has none.
- * The encoder checks the plain value at `validate`; conversion runs at every level.
+ * The encoder checks the plain value at `validate` (its types and dates); conversion runs at every level. The input root then checks the wire body once, constraints included.
  */
 export function convertRequestBody(codecs: OperationCodecs, contentType: string | undefined, value: unknown, validate?: ValidationLevel): unknown {
   const encode = value === undefined || contentType === undefined || !codecs.encode || !Object.hasOwn(codecs.encode, contentType) ? undefined : codecs.encode[contentType];

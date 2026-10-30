@@ -12,7 +12,10 @@ import {
   artifactBasenames,
   compileGeneratedSdk,
   generateMaterializedSdk,
+  sdkBodyCodec,
+  withRootOperations,
 } from './openapi/helpers.js';
+import { createFixtureProject } from './fixture-project.js';
 import { openScope, runModule } from './support/run-module.js';
 
 function validatedDocument(): Record<string, unknown> {
@@ -174,6 +177,34 @@ test('SDK operations accept a valid body and reject an invalid one through the c
     (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.Validation,
   );
 });
+
+const CONVERTING_TASK = withRootOperations({
+  openapi: '3.1.0',
+  info: { title: 'Converting', version: '1' },
+  components: { schemas: { Task: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['id', 'labels'],
+    properties: { id: { type: 'string' }, labels: { type: 'array', minItems: 1, items: { type: 'string' } }, when: { type: 'string', format: 'date-time' } },
+  } } },
+}, 'Task');
+
+for (const mode of ['standalone', 'golem'] as const) {
+  test(`a ${mode} SDK checks a request body that converts a date like one that converts nothing, and validate false sends it unchecked`, async t => {
+    // protects: R-86, T-719 a converting request body is checked at the request level (constraints included), once
+    const output = path.join(createFixtureProject(t, `converting-body-${mode}-`), 'sdk');
+    await generateMaterializedSdk(CONVERTING_TASK, { output, name: 'Converting', profile, mode });
+    compileGeneratedSdk(output, [], { strict: true, skipLibCheck: true });
+    const codec = await sdkBodyCodec(output, 'Converting', 'Task');
+    const when = new Date('1970-01-01T00:00:00Z');
+    assert.deepEqual(await codec.encode({ id: 'a', labels: ['x'], when }), { id: 'a', labels: ['x'], when: '1970-01-01T00:00:00.000Z' });
+    await assert.rejects(
+      codec.encode({ id: 'a', labels: [], when }),
+      (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.Validation && error.causedByInput === true,
+    );
+    assert.deepEqual(await codec.encode({ id: 'a', labels: [], when }, { validate: false }), { id: 'a', labels: [], when: '1970-01-01T00:00:00.000Z' });
+  });
+}
 
 test('SDK validates a response whose $id schema refers to a component by local pointer', async t => {
   const output = path.join(mkdtempSync(path.join(tmpdir(), 'golem-openapi-embedded-id-')), 'sdk');

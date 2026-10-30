@@ -259,8 +259,8 @@ test('with response validation off a bad date is a deserialization error: conver
   );
 });
 
-test('a converting request body is checked once: its conversion checks the plain value and the input root leaves the wire body open', async () => {
-  // protects: R-86, T-711 a converting request body gets its plain-value check only; the rest of the input is the body-less root
+test('a converting request body is checked at the request level: its conversion checks the plain value and the input root the wire body', async () => {
+  // protects: R-86, T-719 a converting request body gets the plain-value check of its conversion and the wire check of the input root, constraints included
   const sdk = await sdks.full();
   const codecs = requireRecord((await importGeneratedModule(sdk.output, 'charge codecs', 'dist/codecs/createCharge.js')).operationCodecs, 'charge codecs') as {
     input(value: unknown, all: boolean): readonly unknown[];
@@ -271,14 +271,14 @@ test('a converting request body is checked once: its conversion checks the plain
   codecs.encode['application/json'] = (value, options) => { levels.push(options?.validate); return toWire(value, options); };
   try {
     await chargesClient(sdk, undefined, 1, []).createCharge().execute({ body: { amount: 1, when: new Date(WHEN) } });
-    assert.deepEqual(levels, [true], 'the conversion checks the plain body once');
+    assert.deepEqual(levels, [true], 'the conversion checks the plain body at the request level');
     await assert.rejects(chargesClient(sdk, undefined, 1, []).createCharge().execute({ body: { amount: 500, when: new Date(WHEN) } }), (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.Validation && error.causedByInput === true);
   } finally {
     codecs.encode['application/json'] = toWire;
   }
-  assert.deepEqual(codecs.input({ body: { amount: 'not checked here', when: 5 } }, true), [], 'the input root does not look into the converted body');
-  assert.notDeepEqual(codecs.input({}, true), [], 'the root still requires the body');
-  assert.notDeepEqual(codecs.input({ body: {}, path: {} }, true), [], 'the root still checks the rest of the input');
+  assert.deepEqual(codecs.input({ body: { amount: 'x', when: 5 } }, true).map(issue => (issue as { path: unknown }).path), [['body', 'amount'], ['body', 'when']], 'the input root checks the wire body');
+  assert.notDeepEqual(codecs.input({}, true), [], 'the root requires the body');
+  assert.notDeepEqual(codecs.input({ body: {}, path: {} }, true), [], 'the root checks the rest of the input');
 });
 
 for (const [name, validate, headers, expected] of [

@@ -14,7 +14,7 @@ import type { OpenApiGenerationProfile } from '#openapi/profile';
 import { buildOperationValidationSchemas } from '#openapi/client/emit';
 import { normalizeAndValidate } from '#openapi/document';
 import { generateModelManifest } from '#openapi/model-manifest';
-import { analyzeOpenApiModels, requestBodyKey } from '#openapi/model-schema-graph';
+import { analyzeOpenApiModels } from '#openapi/model-schema-graph';
 import { buildSchemaData } from '#openapi/schemas';
 
 export type { OpenApiGenerationProfile };
@@ -437,7 +437,7 @@ export function golemModeManifest(document: unknown, profile: OpenApiGenerationP
   const operations = [...ir.operations, ...ir.inboundOperations];
   const analysis = analyzeOpenApiModels(document, profile.validation, dates, operations);
   const schemaData = profile.validation && operations.length > 0
-    ? buildSchemaData(document, ir, (operation, contentType) => operation.sourceKind === 'path' && analysis.convertedNodeIds.has(requestBodyKey(operation.name, contentType)))
+    ? buildSchemaData(document, ir)
     : undefined;
   return generateModelManifest(document, profile, analysis, 'golem', { operations, validation: buildOperationValidationSchemas(operations, document, profile, schemaData) }) as Record<string, unknown>;
 }
