@@ -1,4 +1,5 @@
 import type { ClientRuntime, ParameterSerializerContext } from './core.js';
+import { parameterStyleRule, type ParameterLocation, type ParameterStyleRule } from './parameter-styles.js';
 
 /** `value` when it is a primitive; an object has no wire text, and an array or object nested in an array or object has none either. `parameter` names the parameter in the error. */
 function primitive(parameter: string, value: unknown): unknown {
@@ -39,27 +40,27 @@ function scalarText(name: string, value: unknown): string {
   return encode(primitive(name, value));
 }
 
-function serializeSimple(name: string, value: unknown, explode: boolean): string {
-  if (Array.isArray(value)) return value.map((item) => encode(primitive(name, item))).join(',');
+/** The rule of `style` for `location`; a style the location does not have is an error of the document. */
+function styleRule(location: ParameterLocation, style: string | undefined, explode: boolean): ParameterStyleRule {
+  const rule = parameterStyleRule(location, style, explode);
+  if (rule === undefined) throw new Error(`Unsupported ${location} parameter style: ${style}`);
+  return rule;
+}
+
+/** The text of an array or an object in one piece, as the rule writes it: the items or members joined, each by `write`. Undefined for a value that is neither. */
+function joinedText(name: string, value: unknown, rule: ParameterStyleRule, write: (text: string) => string): string | undefined {
+  if (Array.isArray(value) && rule.array.layout === 'joined') return value.map((item) => write(String(primitive(name, item)))).join(rule.array.separator);
   const pairs = entries(value);
-  if (pairs.length) {
-    return pairs.map(([key, item]) =>
-      explode ? `${encode(key)}=${encode(primitive(name, item))}` : `${encode(key)},${encode(primitive(name, item))}`
-    ).join(',');
-  }
-  return scalarText(name, value);
+  if (!pairs.length || (rule.object.layout !== 'flat' && rule.object.layout !== 'keyed')) return undefined;
+  const { layout, separator } = rule.object;
+  return (layout === 'keyed'
+    ? pairs.map(([key, item]) => `${write(key)}=${write(String(primitive(name, item)))}`)
+    : pairs.flatMap(([key, item]) => [write(key), write(String(primitive(name, item)))])).join(separator);
 }
 
 /** `name` is the header parameter, for the error of a value that has no wire text. */
 export function serializeHeaderSimple(_runtime: ClientRuntime, value: unknown, explode: boolean, name = 'header'): string {
-  if (Array.isArray(value)) return value.map((item) => String(primitive(name, item))).join(',');
-  const pairs = entries(value);
-  if (pairs.length) {
-    return pairs.map(([key, item]) =>
-      explode ? `${key}=${primitive(name, item)}` : `${key},${primitive(name, item)}`
-    ).join(',');
-  }
-  return String(primitive(name, value));
+  return joinedText(name, value, styleRule('header', 'simple', explode), (text) => text) ?? String(primitive(name, value));
 }
 
 export function serializeContentParameter(
@@ -89,32 +90,14 @@ function pathText(
   style: string,
   explode: boolean,
 ): string {
-  if (style === 'simple') return serializeSimple(name, value, explode);
-  if (style === 'label') {
-    if (Array.isArray(value)) return `.${value.map((item) => encode(primitive(name, item))).join(explode ? '.' : ',')}`;
-    const pairs = entries(value);
-    if (pairs.length) {
-      return `.${pairs.map(([key, item]) =>
-        explode ? `${encode(key)}=${encode(primitive(name, item))}` : `${encode(key)},${encode(primitive(name, item))}`
-      ).join(explode ? '.' : ',')}`;
-    }
-    return `.${scalarText(name, value)}`;
-  }
-  if (style === 'matrix') {
-    if (Array.isArray(value)) {
-      return explode
-        ? value.map((item) => `;${encode(name)}=${encode(primitive(name, item))}`).join('')
-        : `;${encode(name)}=${value.map((item) => encode(primitive(name, item))).join(',')}`;
-    }
-    const pairs = entries(value);
-    if (pairs.length) {
-      return explode
-        ? pairs.map(([key, item]) => `;${encode(key)}=${encode(primitive(name, item))}`).join('')
-        : `;${encode(name)}=${pairs.flatMap(([key, item]) => [encode(key), encode(primitive(name, item))]).join(',')}`;
-    }
-    return `;${encode(name)}=${scalarText(name, value)}`;
-  }
-  throw new Error(`Unsupported path parameter style: ${style}`);
+  const rule = styleRule('path', style, explode);
+  const joined = joinedText(name, value, rule, encode);
+  if (rule.prefix === undefined) return joined ?? scalarText(name, value);
+  if (rule.prefix === 'label') return `.${joined ?? scalarText(name, value)}`;
+  // Matrix: an exploded array repeats `;name=`, an exploded object writes `;key=value` for each member, and any other value has one `;name=` before its text.
+  if (Array.isArray(value) && rule.array.layout === 'repeated') return value.map((item) => `;${encode(name)}=${encode(primitive(name, item))}`).join('');
+  if (joined !== undefined && rule.object.layout === 'keyed' && !Array.isArray(value)) return `;${joined}`;
+  return `;${encode(name)}=${joined ?? scalarText(name, value)}`;
 }
 
 export function serializePath(
@@ -167,24 +150,24 @@ export function addQueryParameter(
     for (const [key, item] of entries(value)) append(`${encode(name)}[${encode(key)}]`, item);
     return;
   }
-  const delimiter = style === 'spaceDelimited' ? '%20' : style === 'pipeDelimited' ? '|' : ',';
+  const rule = parameterStyleRule('query', style, explode) ?? styleRule('query', 'form', explode);
+  const encoded = (text: string): string => encode(text, allowReserved);
+  const joined = joinedText(name, value, rule, encoded);
   if (Array.isArray(value)) {
-    if (style === 'form' && explode) {
+    if (rule.array.layout === 'repeated') {
       for (const item of value) appendQuery(runtime, query, name, primitive(name, item), allowReserved);
     } else {
-      query.push(`${encode(name)}=${value.map((item) => encode(primitive(name, item), allowReserved)).join(delimiter)}`);
+      // A space is written as %20 in the query string.
+      query.push(`${encode(name)}=${(joined ?? '').replaceAll(' ', '%20')}`);
     }
     return;
   }
   const pairs = entries(value);
   if (pairs.length) {
-    if (style === 'form' && explode) {
+    if (rule.object.layout === 'keys') {
       for (const [key, item] of pairs) appendQuery(runtime, query, key, primitive(name, item), allowReserved);
     } else {
-      const flattened = pairs
-        .flatMap(([key, item]) => [encode(key), encode(primitive(name, item), allowReserved)])
-        .join(delimiter);
-      query.push(`${encode(name)}=${flattened}`);
+      query.push(`${encode(name)}=${(joined ?? '').replaceAll(' ', '%20')}`);
     }
     return;
   }
@@ -224,24 +207,18 @@ function pushCookie(
   write: (part: string) => string,
 ): void {
   if (value === undefined || value === null) return;
+  const rule = styleRule('cookie', 'form', explode);
   const text = (part: unknown): string => write(String(primitive(name, part)));
-  if (Array.isArray(value)) {
-    if (explode) {
-      for (const item of value) cookies.push(`${write(name)}=${text(item)}`);
-    } else {
-      cookies.push(`${write(name)}=${value.map((item) => text(item)).join(',')}`);
-    }
+  if (Array.isArray(value) && rule.array.layout === 'repeated') {
+    for (const item of value) cookies.push(`${write(name)}=${text(item)}`);
     return;
   }
   const pairs = entries(value);
-  if (pairs.length && explode) {
+  if (pairs.length && rule.object.layout === 'keys') {
     for (const [key, item] of pairs) cookies.push(`${write(key)}=${text(item)}`);
     return;
   }
-  const serialized = pairs.length
-    ? pairs.flatMap(([key, item]) => [write(key), text(item)]).join(',')
-    : write(String(primitive(name, value)));
-  cookies.push(`${write(name)}=${serialized}`);
+  cookies.push(`${write(name)}=${joinedText(name, value, rule, write) ?? write(String(primitive(name, value)))}`);
 }
 
 export function addCookieParameter(

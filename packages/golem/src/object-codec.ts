@@ -12,6 +12,7 @@ import {
   type Issue,
 } from './errors.js';
 import { nestingDepthError, readRootFields, resolveMaxDepth, textNestsDeeperThan, valueNestsDeeperThan } from './conversion.js';
+import type { ParameterLocation } from './client-runtime/parameter-styles.js';
 import { withoutInstanceState } from './presence.js';
 import type { SchemaIssue } from './issue-messages.js';
 import type { ModelValidationContext, WireFormat } from './model.js';
@@ -78,19 +79,10 @@ export interface QueryFieldShape {
   readonly types: readonly ('string' | 'number' | 'integer' | 'boolean')[];
   readonly literals?: readonly (string | number | boolean)[];
   readonly item?: QueryFieldShape;
-  /** The character that separates the items in the text of an array field (the style of its OpenAPI parameter); absent when each item is a value of its own. */
-  readonly split?: ',' | ' ' | '|';
-  /** The label or matrix style of a path parameter: its text carries a leading '.' or ';name=' that the decode reads off first. */
-  readonly pathStyle?: { readonly style: 'label' | 'matrix'; readonly explode: boolean; readonly name: string };
-  /**
-   * An object parameter: the shape of each property, and how its style writes it. `flat` is `k,v,k,v` and `keyed` is `k=v,k=v` (joined by `separator`) in one text;
-   * `keys` spreads each property over a key of its own, and `deep` over the keys `name[property]`.
-   */
-  readonly object?: {
-    readonly properties: Readonly<Record<string, QueryFieldShape>>;
-    readonly layout: 'flat' | 'keyed' | 'keys' | 'deep';
-    readonly separator: ',' | ' ' | '|' | '.' | ';';
-  };
+  /** The OpenAPI parameter that this field is: its text is read as the style of the parameter writes it (`parameter-styles.ts`). */
+  readonly parameter?: { readonly location: ParameterLocation; readonly style?: string; readonly explode?: boolean; readonly name: string };
+  /** An object parameter: the shape of each of its properties. */
+  readonly properties?: Readonly<Record<string, QueryFieldShape>>;
 }
 
 /** The fields of a model that a query string decodes, by name. */

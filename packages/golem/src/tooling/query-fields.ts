@@ -164,6 +164,16 @@ export function queryFieldTable(wireSchema: JsonSchema, resolve: QueryReferenceR
 
 const graphSchemas = new WeakMap<SchemaGraph, ReadonlyMap<string, JsonSchema>>();
 
+/**
+ * Every field of a wire schema with the shape of each, also the fields that stay text; `queryFieldTable` keeps only the fields that a query string decodes.
+ * The walk enters `allOf`, `oneOf`, `anyOf` and references the same way.
+ */
+export function queryFieldShapes(wireSchema: JsonSchema, resolve: QueryReferenceResolver): QueryFieldTable {
+  const fields = new Map<string, FieldShape>();
+  collectFields(wireSchema, fields, { resolve, root: wireSchema, reading: new Set() });
+  return Object.fromEntries([...fields].sort(([left], [right]) => compareText(left, right)).map(([name, shape]) => [name, tableShape(shape)]));
+}
+
 /** The wire schema of each node of the graph, by its name, its codec id and the short name of its id. */
 function wireSchemasOf(graph: SchemaGraph): ReadonlyMap<string, JsonSchema> {
   let schemas = graphSchemas.get(graph);

@@ -9,7 +9,9 @@ import { loadSdk } from './sdk-client-fixture.js';
 
 const array = (items: unknown) => ({ type: 'array', items });
 const INTEGERS = array({ type: 'integer' });
-const STRINGS = array({ type: 'string' });
+// A string item that can hold the separator of its style cannot be read back from text (OPENAPI_INBOUND_PARAMETER_AMBIGUOUS), so these items are a fixed set without one.
+const WORD = { type: 'string', enum: ['a', 'b', 'c', 'd', 'e', 'f', 'x'] };
+const STRINGS = array(WORD);
 const PARAMETERS = [
   { name: 'ids', in: 'path', required: true, schema: INTEGERS },
   { name: 'names', in: 'path', required: true, schema: STRINGS },
@@ -30,7 +32,7 @@ const STYLES = [
 ] as const;
 const STYLED_PARAMETERS = STYLES.map(([name, style, explode, schema]) => ({ name, in: 'path', required: true, style, explode, schema }));
 const STYLED_PATH = { labelInts: [0], labelIntsJoined: [0], labelWords: ['x'], labelWordsJoined: ['x'], matrixInts: [0], matrixIntsJoined: [0], matrixWords: ['x'], matrixWordsJoined: ['x'], labelOne: 0, matrixOne: 'x' };
-const pair = (first: string, second: string) => ({ type: 'object', required: [first, second], properties: { [first]: { type: 'integer' }, [second]: { type: 'string' } } });
+const pair = (first: string, second: string) => ({ type: 'object', required: [first, second], properties: { [first]: { type: 'integer' }, [second]: WORD } });
 const OBJECTS = [
   ['X-Flat', 'header', {}, pair('a', 'b')],
   ['X-Keyed', 'header', { explode: true }, pair('a', 'b')],
@@ -45,6 +47,11 @@ const OBJECTS = [
   ['deep', 'query', { style: 'deepObject' }, pair('a', 'b')],
   ['piped', 'query', { style: 'pipeDelimited' }, pair('a', 'b')],
   ['spaced', 'query', { style: 'spaceDelimited' }, pair('a', 'b')],
+  ['merged', 'query', { explode: false }, { allOf: [{ type: 'object', properties: { a: { type: 'integer' } } }, { type: 'object', properties: { b: WORD } }] }],
+  ['ckIds', 'cookie', {}, INTEGERS],
+  ['ckJoined', 'cookie', { explode: false }, INTEGERS],
+  ['ckStyle', 'cookie', { style: 'cookie', explode: false }, INTEGERS],
+  ['ckObj', 'cookie', {}, pair('ca', 'cb')],
 ] as const;
 const OBJECT_PARAMETERS = OBJECTS.map(([name, place, options, schema]) => ({ name, in: place, required: place === 'path', ...options, schema }));
 const OBJECT_PATH_NAMES = OBJECTS.filter(([, place]) => place === 'path').map(([name]) => name);
@@ -76,7 +83,12 @@ async function sentRequest(operation: 'searchThings' | 'searchStyled' | 'searchO
   const { url, headers } = sent!;
   const segments = url.pathname.split('/').slice(2).map(decodeURIComponent);
   const query = Object.fromEntries([...new Set(url.searchParams.keys())].map(key => [key, url.searchParams.getAll(key).length === 1 ? url.searchParams.get(key) : url.searchParams.getAll(key)]));
-  return { path: Object.fromEntries(pathNames.map((name, index) => [name, segments[index]])), query, header: Object.fromEntries(headers) };
+  const cookie: Record<string, unknown> = {};
+  for (const part of (headers.get('cookie') ?? '').split('; ').filter(Boolean)) {
+    const [key, value] = [part.slice(0, part.indexOf('=')), decodeURIComponent(part.slice(part.indexOf('=') + 1))];
+    cookie[key] = key in cookie ? [cookie[key], value].flat() : value;
+  }
+  return { path: Object.fromEntries(pathNames.map((name, index) => [name, segments[index]])), query, header: Object.fromEntries(headers), ...(Object.keys(cookie).length ? { cookie } : {}) };
 }
 
 /** The input the port of the webhook `handler` gets when the handler reads `request`. */
@@ -143,6 +155,11 @@ for (const [name, place, field, input, expected] of [
   ['a query in deepObject style', 'query', 'deep', { path: OBJECT_PATH, query: { deep: { a: 1, b: 'x' } } }, { a: 1, b: 'x' }],
   ['a query in pipeDelimited style', 'query', 'piped', { path: OBJECT_PATH, query: { piped: { a: 1, b: 'x' } } }, { a: 1, b: 'x' }],
   ['a query in spaceDelimited style', 'query', 'spaced', { path: OBJECT_PATH, query: { spaced: { a: 1, b: 'x' } } }, { a: 1, b: 'x' }],
+  ['a query whose object is an allOf', 'query', 'merged', { path: OBJECT_PATH, query: { merged: { a: 1, b: 'x' } } }, { a: 1, b: 'x' }],
+  ['integers in a repeated cookie', 'cookie', 'ckIds', { path: OBJECT_PATH, cookie: { ckIds: [1, 2] } }, [1, 2]],
+  ['integers in a joined cookie', 'cookie', 'ckJoined', { path: OBJECT_PATH, cookie: { ckJoined: [3, 4] } }, [3, 4]],
+  ['integers in a cookie of style cookie', 'cookie', 'ckStyle', { path: OBJECT_PATH, cookie: { ckStyle: [5, 6] } }, [5, 6]],
+  ['an object in cookies', 'cookie', 'ckObj', { path: OBJECT_PATH, cookie: { ckObj: { ca: 1, cb: 'x' } } }, { ca: 1, cb: 'x' }],
 ] as const) {
   test(`the inbound handler reads an object parameter in its style: ${name}`, async () => {
     // protects: T-746 R-80 an object parameter reads back to the object the golem client wrote, a number as a number

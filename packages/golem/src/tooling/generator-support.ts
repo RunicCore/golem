@@ -11,5 +11,7 @@ export {
   NameScope, RESERVED_BINDING_NAMES, RESERVED_MODEL_MEMBERS, assertPortableFilenames, bindingName, camelIdentifier, identifier,
 } from './names.js';
 export { sourceDigest } from './model-manifest-core.js';
-export { queryFieldTable } from './query-fields.js';
+export { queryFieldShapes, queryFieldTable } from './query-fields.js';
+export { parameterStyleRule } from '../client-runtime/parameter-styles.js';
+export type { ParameterLocation, ParameterStyleRule } from '../client-runtime/parameter-styles.js';
 export { schemaIssueMessage } from '../issue-messages.js';

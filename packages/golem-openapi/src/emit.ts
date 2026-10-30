@@ -1,14 +1,15 @@
 import path from 'node:path';
 import { GolemDiagnosticSeverity, type GolemDiagnostic, type GolemResult } from '@exprtlabs/golem/generator-api';
 import { stableJson } from '@exprtlabs/golem/generator-api';
-import { assertPortableFilenames, identifier, isRecord, queryFieldTable } from '@exprtlabs/golem/internal/generator-support';
+import { assertPortableFilenames, identifier, isRecord } from '@exprtlabs/golem/internal/generator-support';
 import { buildOperationValidationSchemas, generateClientModules, operationValidatorNames, responseHeaderRequired } from './client/emit.js';
 import { browserCookieDiagnostics, normalizeAndValidate, unsupportedHttpAuthSchemes, type MovedUnions } from './document.js';
 import { buildEmissionPlan, serverOverrideDiagnostics, type ArtifactFile, type EmissionPlan } from './emission-plan.js';
 import { asRecord, objectEntries, readString } from './json.js';
 import { assertUniqueExportNames, code, documentLiteral, exportedName, fileImports, identifier as identifierPart, ImportSource, join, literal, renderModule, rt, rtType, runtimeLinesOf, type Code, type ImportOptions, type PublicModule, type RenderedModule } from '@exprtlabs/golem/internal/emitter';
 import { operationName, operationNameType } from './names.js';
-import { parameterSchema, resolveLocal, type NormalizedOperation, type NormalizedParameter } from './normalize.js';
+import type { NormalizedOperation } from './normalize.js';
+import { inboundParameterDiagnostics, inboundTextTable } from './inbound-parameters.js';
 import { generatedBannerComment } from './package-info.js';
 import { runtimeCopy, standaloneRuntimeSpecifiers, type RuntimeSpecifiers } from './runtime-copy.js';
 import type { OpenApiGenerationProfile } from './profile.js';
@@ -148,68 +149,12 @@ export const ${exportedName('operationServers')} = ${documentLiteral(plan.operat
 ` : code``}`);
 }
 
-const TEXT_LOCATIONS = ['path', 'query', 'header', 'cookie'] as const;
-
-/** The character that separates the items in the text of an array parameter, as its OpenAPI 3.1 style says; none when each item is a value of its own (a repeated key). */
-function itemSeparator(location: string, parameter: NormalizedParameter): ',' | ' ' | '|' | undefined {
-  const style = parameter.style ?? (location === 'query' || location === 'cookie' ? 'form' : 'simple');
-  if (location === 'header' || location === 'path') return style === 'simple' ? ',' : undefined;
-  if (parameter.explode ?? style === 'form') return undefined;
-  return style === 'form' ? ',' : style === 'spaceDelimited' ? ' ' : style === 'pipeDelimited' ? '|' : undefined;
-}
-
-/** How the style of an object parameter writes its properties, or undefined for a style that writes none. */
-function objectLayout(location: string, parameter: NormalizedParameter): { readonly layout: 'flat' | 'keyed' | 'keys' | 'deep'; readonly separator: ',' | ' ' | '|' | '.' | ';' } | undefined {
-  const style = parameter.style ?? (location === 'query' || location === 'cookie' ? 'form' : 'simple');
-  const explode = parameter.explode ?? style === 'form';
-  if (location === 'header' || location === 'path') {
-    const separator = style === 'label' ? '.' : style === 'matrix' ? ';' : ',';
-    return style === 'simple' || style === 'label' || style === 'matrix' ? { layout: explode ? 'keyed' : 'flat', separator: explode ? separator : ',' } : undefined;
-  }
-  if (style === 'deepObject') return { layout: 'deep', separator: ',' };
-  if (style === 'form' || style === 'spaceDelimited' || style === 'pipeDelimited') {
-    return explode ? { layout: 'keys', separator: ',' } : { layout: 'flat', separator: style === 'spaceDelimited' ? ' ' : style === 'pipeDelimited' ? '|' : ',' };
-  }
-  return undefined;
-}
-
-/** The table entry of an object parameter: the shape of each property its schema lists, and the layout its style writes them in. */
-function objectEntry(location: string, parameter: NormalizedParameter, document: unknown): Record<string, unknown> | undefined {
-  const schema = resolveLocal(document, parameterSchema(parameter));
-  const layout = objectLayout(location, parameter);
-  if (!isRecord(schema) || !layout || !(schema.type === 'object' || isRecord(schema.properties))) return undefined;
-  const decoded = queryFieldTable({ ...schema, components: asRecord(document).components } as never, () => undefined) ?? {};
-  const properties = Object.fromEntries(Object.keys(isRecord(schema.properties) ? schema.properties : {}).map((name) => [name, decoded[name] ?? { types: ['string'] }]));
-  return { types: [], object: { properties, ...layout } };
-}
-
-/** `table` with the separator of each array field, the object shape of each object parameter and the label or matrix style of each path parameter, so the inbound handler reads their text as the style writes it. */
-function withParameterStyles(table: Readonly<Record<string, object>> | undefined, location: string, parameters: readonly NormalizedParameter[], document: unknown): Record<string, object> | undefined {
-  const entries = parameters.flatMap((parameter) => {
-    const object = objectEntry(location, parameter, document);
-    const shape: { readonly item?: unknown } = object ?? table?.[parameter.name] ?? { types: ['string'] } as { readonly item?: unknown };
-    const pathStyle = location === 'path' && (parameter.style === 'label' || parameter.style === 'matrix') ? { style: parameter.style, explode: parameter.explode ?? false, name: parameter.name } : undefined;
-    const split = shape.item !== undefined ? itemSeparator(location, parameter) : undefined;
-    // A string parameter is in the table only for its style: its text is no value to decode otherwise.
-    const kept = object !== undefined || table?.[parameter.name] !== undefined || pathStyle !== undefined;
-    return kept ? [[parameter.name, { ...shape, ...(split === undefined ? {} : { split }), ...(pathStyle === undefined ? {} : { pathStyle }) }] as const] : [];
-  });
-  return entries.length ? Object.fromEntries(entries) : undefined;
-}
-
 /**
  * What `inboundHandler` needs of an operation besides its codecs: its request media types, the declared names of its header parameters, the table of each location's
  * text parameters that decode to a number, a boolean or an array (the rule of a Nest query), and its declared responses with their media types and headers.
  */
 function inboundShape(operation: NormalizedOperation, document: unknown): Parameters<typeof literal>[0] {
-  const components = asRecord(document).components;
-  const text = Object.fromEntries(TEXT_LOCATIONS.flatMap((location) => {
-    const parameters = operation.parameters.filter((parameter) => parameter.in === location);
-    // The group is a schema of its own; its references into the document's components resolve against `components`.
-    const table = parameters.length ? queryFieldTable({ type: 'object', properties: Object.fromEntries(parameters.map((parameter) => [parameter.name, parameterSchema(parameter) ?? true])), components } as never, () => undefined) : undefined;
-    const styled = withParameterStyles(table, location, parameters, document);
-    return styled ? [[location, styled] as const] : [];
-  }));
+  const text = inboundTextTable(operation, document);
   // The tables hold only strings, numbers and booleans (an absent optional member is no member), so the shape is JSON.
   return {
     media: operation.requestContent.map((media) => media.contentType),
@@ -446,7 +391,7 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions, moved:
   // The runtime copy is written whole beside the files that import it, and only an SDK with operations imports it.
   if (specifiers && (plan.artifacts.has('client.ts') || plan.artifacts.has('inbound.ts'))) for (const [name, source] of runtimeCopy()) files.set(name, source);
   assertPortableFilenames(files.keys());
-  return { files, output, clientName, operations, inboundOperations, diagnostics: uniqueDiagnostics([...(specifiers ? mobxStandaloneDiagnostics(profile) : []), ...ir.diagnostics, ...browserCookieDiagnostics(document, operations), ...serverOverrideDiagnostics(document, operations), ...modelAnalysis.diagnostics, ...inlineDiagnostics, ...modelDiagnostics]) };
+  return { files, output, clientName, operations, inboundOperations, diagnostics: uniqueDiagnostics([...(specifiers ? mobxStandaloneDiagnostics(profile) : []), ...ir.diagnostics, ...browserCookieDiagnostics(document, operations), ...inboundParameterDiagnostics(inboundOperations, document), ...serverOverrideDiagnostics(document, operations), ...modelAnalysis.diagnostics, ...inlineDiagnostics, ...modelDiagnostics]) };
 }
 
 /**

@@ -3,6 +3,7 @@
  * SDK request, decode through it. A value that does not fit stays text, so the validator reports it.
  */
 
+import { parameterStyleRule, type ParameterStyleRule } from './client-runtime/parameter-styles.js';
 import type { QueryFieldShape } from './object-codec.js';
 
 const NOT_DECODED = Symbol('not decoded');
@@ -31,38 +32,34 @@ function decodeQueryItems(values: readonly unknown[], item: QueryFieldShape): un
   });
 }
 
-/** The items of the text of an array field: empty text is no item, the rest splits at `separator`. */
-function splitItems(value: unknown, separator: string): unknown[] {
-  if (typeof value !== 'string') return [value];
-  return value === '' ? [] : value.split(separator);
-}
-
-type ObjectShape = NonNullable<QueryFieldShape['object']>;
+type Parameter = NonNullable<QueryFieldShape['parameter']>;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+/** The items of a text that joins them; empty text has none. */
+function splitText(text: string, separator: string): string[] {
+  return text === '' ? [] : text.split(separator);
+}
+
 /**
- * The text of a path parameter in label (`.1.2`, `.1,2`) or matrix (`;id=1;id=2`, `;id=1,2`, `;a=1;b=x`) style without its prefixes, as the items of an array field or as the one text;
- * undefined when the text does not have the style, so the validator reports it.
+ * The text of a label (`.1.2`) or matrix (`;id=1,2`, `;a=1;b=x`) parameter without its prefix; the items of an array that repeats `;name=`.
+ * Undefined when the text does not have the style, so the validator reports it.
  */
-function readPathStyle(text: string, { style, explode, name }: NonNullable<QueryFieldShape['pathStyle']>, kind: 'array' | 'object' | 'value'): string | string[] | undefined {
-  if (style === 'label') {
-    if (!text.startsWith('.')) return undefined;
-    const rest = text.slice(1);
-    return kind === 'array' ? (rest === '' ? [] : rest.split(explode ? '.' : ',')) : rest;
+function readPrefix(text: string, prefix: 'label' | 'matrix', name: string, rule: ParameterStyleRule, kind: 'array' | 'object' | 'value'): string | string[] | undefined {
+  if (prefix === 'label') return text.startsWith('.') ? text.slice(1) : undefined;
+  if (kind === 'object' && rule.explode) return text.startsWith(';') ? text.slice(1) : undefined;
+  const lead = `;${name}=`;
+  if (kind === 'array' && rule.array.layout === 'repeated') {
+    const entries = text.split(';').slice(1);
+    return text.startsWith(';') && entries.every((entry) => entry.startsWith(`${name}=`)) ? entries.map((entry) => entry.slice(name.length + 1)) : undefined;
   }
-  const prefix = `;${name}=`;
-  if (kind === 'object' && explode) return text.startsWith(';') ? text.slice(1) : undefined;
-  if (kind !== 'array') return text.startsWith(prefix) ? text.slice(prefix.length) : undefined;
-  if (!explode) return text.startsWith(prefix) ? text.slice(prefix.length).split(',') : undefined;
-  const entries = text.split(';').slice(1);
-  return text.startsWith(';') && entries.every((entry) => entry.startsWith(`${name}=`)) ? entries.map((entry) => entry.slice(name.length + 1)) : undefined;
+  return text.startsWith(lead) ? text.slice(lead.length) : undefined;
 }
 
 /** The properties of an object written as text, `k,v,k,v` (flat) or `k=v,k=v` (keyed); undefined when the text is not written so. */
-function parseObjectText(text: string, { layout, separator }: ObjectShape): Record<string, string> | undefined {
+function parseObjectText(text: string, layout: 'flat' | 'keyed', separator: string): Record<string, string> | undefined {
   if (text === '') return {};
   const parts = text.split(separator);
   if (layout === 'keyed') {
@@ -72,40 +69,56 @@ function parseObjectText(text: string, { layout, separator }: ObjectShape): Reco
   return parts.length % 2 === 0 ? Object.fromEntries(Array.from({ length: parts.length / 2 }, (_, index) => [parts[2 * index]!, parts[2 * index + 1]!])) : undefined;
 }
 
-function decodeProperties(record: Record<string, unknown>, { properties }: ObjectShape): Record<string, unknown> {
+function decodeProperties(record: Record<string, unknown>, properties: Readonly<Record<string, QueryFieldShape>>): Record<string, unknown> {
   return Object.fromEntries(Object.entries(record).map(([key, value]) => [key, Object.hasOwn(properties, key) ? decodeQueryField(value, properties[key]!) : value]));
 }
 
 /**
- * The object that a `keys` or `deep` parameter spreads over the keys of its group, with those keys; undefined when none of its keys is there.
+ * The object that a parameter writes over the keys of its group (`keys`, and `deep` as `name[member]`), with those keys; undefined when none of its keys is there.
  * A `deep` parameter may also arrive as one nested object under its name.
  */
-export function gatherObjectField(group: Readonly<Record<string, unknown>>, name: string, object: ObjectShape): { readonly value: Record<string, unknown>; readonly keys: readonly string[] } | undefined {
-  if (object.layout === 'deep' && isRecord(group[name])) return { value: group[name], keys: [name] };
-  const keys = object.layout === 'deep'
+export function gatherObjectField(group: Readonly<Record<string, unknown>>, name: string, shape: QueryFieldShape): { readonly value: Record<string, unknown>; readonly keys: readonly string[] } | undefined {
+  const { parameter, properties } = shape;
+  const layout = parameter && properties ? parameterStyleRule(parameter.location, parameter.style, parameter.explode)?.object.layout : undefined;
+  if (!properties || (layout !== 'keys' && layout !== 'deep')) return undefined;
+  if (layout === 'deep' && isRecord(group[name])) return { value: group[name], keys: [name] };
+  const keys = layout === 'deep'
     ? Object.keys(group).filter((key) => key.startsWith(`${name}[`) && key.endsWith(']'))
-    : Object.keys(object.properties).filter((key) => Object.hasOwn(group, key));
+    : Object.keys(properties).filter((key) => Object.hasOwn(group, key));
   if (keys.length === 0) return undefined;
-  const property = (key: string): string => (object.layout === 'deep' ? key.slice(name.length + 1, -1) : key);
-  return { value: Object.fromEntries(keys.map((key) => [property(key), group[key]])), keys };
+  const member = (key: string): string => (layout === 'deep' ? key.slice(name.length + 1, -1) : key);
+  return { value: Object.fromEntries(keys.map((key) => [member(key), group[key]])), keys };
+}
+
+/** The value of a parameter field as its style writes it: the prefix off, the text split into items or members, and each decoded to the type it declares. */
+function decodeParameter(value: unknown, shape: QueryFieldShape, { location, style, explode, name }: Parameter): unknown {
+  const rule = parameterStyleRule(location, style, explode);
+  if (rule === undefined) return value;
+  const kind = shape.item !== undefined ? 'array' : shape.properties !== undefined ? 'object' : 'value';
+  const own = { ...shape, parameter: undefined };
+  if (isRecord(value)) return shape.properties ? decodeProperties(value, shape.properties) : value;
+  if (kind === 'object' && typeof value === 'string') {
+    const text = rule.prefix ? readPrefix(value, rule.prefix, name, rule, kind) : value;
+    const { layout, separator } = rule.object.layout === 'flat' || rule.object.layout === 'keyed' ? rule.object : { layout: undefined, separator: ',' as const };
+    const parsed = typeof text === 'string' && layout ? parseObjectText(text, layout, separator) : undefined;
+    return parsed === undefined ? value : decodeProperties(parsed, shape.properties!);
+  }
+  if (kind === 'array' && (typeof value === 'string' || Array.isArray(value))) {
+    const texts = (Array.isArray(value) ? value : [value]).map((entry) => (typeof entry === 'string' && rule.prefix ? readPrefix(entry, rule.prefix, name, rule, kind) : entry));
+    if (texts.some((text) => text === undefined)) return value;
+    const items = (texts as (string | string[])[]).flat().flatMap((text) => (rule.array.layout === 'joined' ? splitText(text, rule.array.separator) : [text]));
+    return decodeQueryItems(items, shape.item!);
+  }
+  if (kind === 'value' && typeof value === 'string' && rule.prefix) {
+    const text = readPrefix(value, rule.prefix, name, rule, kind);
+    return typeof text === 'string' ? decodeQueryField(text, own) : value;
+  }
+  return decodeQueryField(value, own);
 }
 
 /** The field value decoded to what `shape` declares; text that does not fit stays as it is. */
 export function decodeQueryField(value: unknown, shape: QueryFieldShape): unknown {
-  if (shape.pathStyle !== undefined && typeof value === 'string') {
-    const content = readPathStyle(value, shape.pathStyle, shape.item !== undefined ? 'array' : shape.object !== undefined ? 'object' : 'value');
-    return content === undefined ? value : decodeQueryField(content, { ...shape, pathStyle: undefined });
-  }
-  if (shape.object !== undefined) {
-    if (typeof value === 'string') {
-      const parsed = shape.object.layout === 'flat' || shape.object.layout === 'keyed' ? parseObjectText(value, shape.object) : undefined;
-      return parsed === undefined ? value : decodeProperties(parsed, shape.object);
-    }
-    return isRecord(value) ? decodeProperties(value, shape.object) : value;
-  }
-  if (shape.split !== undefined && shape.item && (typeof value === 'string' || Array.isArray(value))) {
-    return decodeQueryItems((Array.isArray(value) ? value : [value]).flatMap((entry) => splitItems(entry, shape.split!)), shape.item);
-  }
+  if (shape.parameter !== undefined) return decodeParameter(value, shape, shape.parameter);
   if (Array.isArray(value)) return shape.item ? decodeQueryItems(value, shape.item) : value;
   if (typeof value !== 'string') return value;
   const decoded = decodeQueryScalar(value, shape);
