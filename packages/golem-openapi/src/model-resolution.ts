@@ -3,7 +3,7 @@ import type { SchemaGraph, SchemaNode } from '@exprtlabs/golem/internal/schema-g
 import { identifier } from '@exprtlabs/golem/internal/generator-support';
 import { asRecord, escapeJsonPointerToken, isJsonObject, objectEntries, type JsonObject } from './json.js';
 import type { GolemDiagnostic } from '@exprtlabs/golem/generator-api';
-import type { ModelConstraint, ModelTypeDescriptor, UnionDiscriminator } from '@exprtlabs/golem/internal/schema';
+import type { ConstraintSchemaValue, ModelConstraint, ModelTypeDescriptor, UnionDiscriminator } from '@exprtlabs/golem/internal/schema';
 import { componentOrigin, LocatedError } from './origin.js';
 import {
   COMPOSITION_PROPERTY_NEVER,
@@ -259,7 +259,22 @@ function modelSchemaReference(schema: unknown, env: ModelResolveEnv): string | n
   return directComponentSchemaRef(schema, withSchemaBase(env, schema));
 }
 
-function openApiKeywordConstraints(schema: Readonly<Record<string, unknown>>): ModelConstraint[] | undefined {
+/** Converts a sub-schema of a keyword (`not`, `contains`, `if`, ...) with the descriptor builder that converts a field. */
+type SubSchema = (schema: unknown) => ConstraintSchemaValue;
+
+/**
+ * Which keywords a call carries. `typed` keywords judge one JSON type and pass any other value, so they sit on the value's own
+ * descriptor, inside a nullable union. `any` keywords judge every value, `null` included, so they sit on the whole descriptor.
+ */
+type KeywordPart = 'typed' | 'any' | 'all';
+
+const OPEN_OBJECT: ModelTypeDescriptor = { kind: 'object', properties: {}, required: [], additionalProperties: true };
+
+/**
+ * The one path from the keywords of an OpenAPI schema to model constraints, for every kind of descriptor. A keyword that the
+ * descriptor already holds in its shape (`properties`, `items`, `prefixItems`, `additionalProperties`, a literal `enum`) is not read here.
+ */
+function openApiKeywordConstraints(schema: Readonly<Record<string, unknown>>, sub: SubSchema, part: KeywordPart = 'all'): ModelConstraint[] | undefined {
   const constraints: ModelConstraint[] = [];
   const numeric = (
     key: string,
@@ -270,30 +285,66 @@ function openApiKeywordConstraints(schema: Readonly<Record<string, unknown>>): M
     const value = schema[key];
     if (typeof value === 'number') constraints.push({ kind, value });
   };
-  numeric('minimum', 'minimum');
-  numeric('maximum', 'maximum');
-  numeric('exclusiveMinimum', 'exclusiveMinimum');
-  numeric('exclusiveMaximum', 'exclusiveMaximum');
-  numeric('multipleOf', 'multipleOf');
-  numeric('minLength', 'minLength');
-  numeric('maxLength', 'maxLength');
-  numeric('minItems', 'minItems');
-  numeric('maxItems', 'maxItems');
-  numeric('minProperties', 'minProperties');
-  numeric('maxProperties', 'maxProperties');
-  numeric('minContains', 'minContains');
-  numeric('maxContains', 'maxContains');
-  if (typeof schema.pattern === 'string') constraints.push({ kind: 'pattern', value: schema.pattern });
-  if (typeof schema.format === 'string') constraints.push({ kind: 'format', value: schema.format });
-  if (schema.uniqueItems === true) constraints.push({ kind: 'uniqueItems' });
+  const subschema = (value: unknown): ConstraintSchemaValue | undefined => typeof value === 'boolean' || isJsonObject(value) ? sub(value) : undefined;
+  const withSubschema = (kind: 'contains' | 'propertyNames' | 'unevaluatedProperties' | 'unevaluatedItems' | 'not'): void => {
+    const converted = subschema(schema[kind]);
+    if (converted !== undefined) constraints.push({ kind, schema: converted });
+  };
+  if (part !== 'any') {
+    numeric('minimum', 'minimum');
+    numeric('maximum', 'maximum');
+    numeric('exclusiveMinimum', 'exclusiveMinimum');
+    numeric('exclusiveMaximum', 'exclusiveMaximum');
+    numeric('multipleOf', 'multipleOf');
+    numeric('minLength', 'minLength');
+    numeric('maxLength', 'maxLength');
+    numeric('minItems', 'minItems');
+    numeric('maxItems', 'maxItems');
+    numeric('minProperties', 'minProperties');
+    numeric('maxProperties', 'maxProperties');
+    numeric('minContains', 'minContains');
+    numeric('maxContains', 'maxContains');
+    if (typeof schema.pattern === 'string') constraints.push({ kind: 'pattern', value: schema.pattern });
+    if (typeof schema.format === 'string') constraints.push({ kind: 'format', value: schema.format });
+    if (schema.uniqueItems === true) constraints.push({ kind: 'uniqueItems' });
+    withSubschema('contains');
+    withSubschema('propertyNames');
+    withSubschema('unevaluatedProperties');
+    withSubschema('unevaluatedItems');
+    for (const [pattern, child] of objectEntries(schema.patternProperties)) {
+      const converted = subschema(child);
+      if (converted !== undefined) constraints.push({ kind: 'patternProperties', pattern, schema: converted });
+    }
+    const required = Object.fromEntries(objectEntries(schema.dependentRequired).flatMap(([name, names]) =>
+      Array.isArray(names) ? [[name, names.filter((item): item is string => typeof item === 'string')] as const] : []));
+    if (Object.keys(required).length) constraints.push({ kind: 'dependentRequired', value: required });
+    const dependent = Object.fromEntries(objectEntries(schema.dependentSchemas).flatMap(([name, child]) => {
+      const converted = subschema(child);
+      return converted === undefined ? [] : [[name, converted] as const];
+    }));
+    if (Object.keys(dependent).length) constraints.push({ kind: 'dependentSchemas', value: dependent });
+  }
+  if (part !== 'typed') {
+    withSubschema('not');
+    const condition = subschema(schema.if);
+    if (condition !== undefined) {
+      const then = subschema(schema.then);
+      const otherwise = subschema(schema.else);
+      constraints.push({ kind: 'ifThenElse', if: condition, ...(then === undefined ? {} : { then }), ...(otherwise === undefined ? {} : { else: otherwise }) });
+    }
+    // A scalar `const` is a literal descriptor where the schema converts as a scalar; here it limits a value of another shape.
+    if (schema.const !== undefined) constraints.push({ kind: 'enum', values: [schema.const] });
+  }
   return constraints.length ? constraints : undefined;
 }
 
 function withOpenApiConstraints(
   descriptor: ModelTypeDescriptor,
   schema: Readonly<Record<string, unknown>>,
+  sub: SubSchema,
+  part: KeywordPart = 'all',
 ): ModelTypeDescriptor {
-  const extra = openApiKeywordConstraints(schema);
+  const extra = openApiKeywordConstraints(schema, sub, part);
   if (!extra) return descriptor;
   return { ...descriptor, constraints: [...(descriptor.constraints ?? []), ...extra] };
 }
@@ -305,6 +356,27 @@ function withOpenApiEnum(
 ): ModelTypeDescriptor {
   if (!Array.isArray(schema.enum)) return descriptor;
   return { ...descriptor, constraints: [...(descriptor.constraints ?? []), { kind: 'enum', values: schema.enum }] };
+}
+
+/** The keywords that judge every value of the schema, `null` included, and the `enum` that no literal descriptor holds. */
+function withOpenApiWholeValue(descriptor: ModelTypeDescriptor, schema: Readonly<Record<string, unknown>>, sub: SubSchema): ModelTypeDescriptor {
+  return withOpenApiEnum(withOpenApiConstraints(descriptor, schema, sub, 'any'), schema);
+}
+
+/** Every keyword of the schema that the descriptor does not hold in its shape, for a descriptor that no inner step has constrained. */
+function carryKeywords(descriptor: ModelTypeDescriptor, schema: Readonly<Record<string, unknown>>, sub: SubSchema): ModelTypeDescriptor {
+  return withOpenApiEnum(withOpenApiConstraints(descriptor, schema, sub), schema);
+}
+
+/**
+ * A sub-schema that lists `required` names and converts to nothing (no `properties`) judges only the objects among its values:
+ * `{ required: ['cvc'] }` is the rule "an object has `cvc`", and every other value passes.
+ */
+function withRequiredNames(descriptor: ModelTypeDescriptor, schema: unknown): ModelTypeDescriptor {
+  const names = isJsonObject(schema) && Array.isArray(schema.required) ? schema.required.filter((name): name is string => typeof name === 'string') : [];
+  if (names.length === 0 || descriptor.kind !== 'unknown') return descriptor;
+  const rule: ModelConstraint = { kind: 'ifThenElse', if: OPEN_OBJECT, then: { ...OPEN_OBJECT, required: names } };
+  return { ...descriptor, constraints: [...(descriptor.constraints ?? []), rule] };
 }
 
 /**
@@ -385,7 +457,9 @@ function sequenceConversionDescriptor(
 ): ModelTypeDescriptor | undefined {
   if (!isSequenceSchema(schema)) return undefined;
   const sequence = sequenceBodyDescriptor(schema, definitions, env, direction, seen);
-  return sequence && admitsNull(schema) ? { kind: 'union', variants: [sequence, { kind: 'null' }] } : sequence;
+  if (!sequence) return undefined;
+  const sub = subschemaConverter(definitions, env, direction, seen);
+  return withOpenApiWholeValue(admitsNull(schema) ? { kind: 'union', variants: [sequence, { kind: 'null' }] } : sequence, schema, sub);
 }
 
 function sequenceBodyDescriptor(
@@ -395,21 +469,26 @@ function sequenceBodyDescriptor(
   direction: 'from' | 'to',
   seen: ReadonlySet<unknown>,
 ): ModelTypeDescriptor | undefined {
+  // `unevaluatedItems` judges the items that no `items` or `prefixItems` evaluates, so beside `prefixItems` alone it is the rest of the
+  // tuple, and beside `items` it judges nothing: the descriptor holds it in its shape, and no constraint repeats it.
+  const { unevaluatedItems: _held, ...own } = schema;
+  const sub = subschemaConverter(definitions, env, direction, seen);
   if (Array.isArray(schema.prefixItems)) {
     const items = schema.prefixItems.map((item) => modelConversionDescriptor(item, definitions, env, direction, seen));
-    return withOpenApiConstraints(schema.items === false
+    const rest = schema.items ?? schema.unevaluatedItems;
+    return withOpenApiConstraints(rest === false
       ? { kind: 'tuple', items }
       : {
         kind: 'tuple',
         items,
         rest: {
           index: items.length,
-          item: schema.items === undefined ? { kind: 'unknown' } : modelConversionDescriptor(schema.items, definitions, env, direction, seen),
+          item: rest === undefined ? { kind: 'unknown' } : modelConversionDescriptor(rest, definitions, env, direction, seen),
         },
-      }, schema);
+      }, own, sub, 'typed');
   }
   if (schema.items) {
-    return withOpenApiConstraints({ kind: 'array', item: modelConversionDescriptor(schema.items, definitions, env, direction, seen) }, schema);
+    return withOpenApiConstraints({ kind: 'array', item: modelConversionDescriptor(schema.items, definitions, env, direction, seen) }, own, sub, 'typed');
   }
   return undefined;
 }
@@ -418,6 +497,46 @@ function sequenceBodyDescriptor(
 function hasOwnConversionKeywords(schema: Readonly<Record<string, unknown>>): boolean {
   return isSequenceSchema(schema) || Boolean(schema.oneOf || schema.anyOf || schema.properties)
     || schema.additionalProperties !== undefined;
+}
+
+/** The code of the error for a keyword that no model descriptor can carry. */
+export const KEYWORD_NOT_CARRIED = 'OPENAPI_KEYWORD_NOT_CARRIED';
+
+/**
+ * The keywords that limit the text of a date-time string. The model holds a `Date` or a `Temporal` value, not the text, so
+ * no descriptor of it can check them.
+ */
+const DATE_TEXT_KEYWORDS = ['pattern', 'minLength', 'maxLength', 'enum', 'const', 'not', 'if', 'allOf', 'anyOf', 'oneOf'] as const;
+
+/** The keywords that read the properties or items that another keyword of the schema evaluates, which the descriptor of a union or a condition cannot follow. */
+const EVALUATING_KEYWORDS = ['if', 'dependentSchemas', 'oneOf', 'anyOf'] as const;
+
+/** The keyword of a schema that no model descriptor can carry, and why; the schema stops generation. */
+function uncarriedKeyword(schema: unknown, dates: OpenApiDates): { readonly keyword: string; readonly reason: string } | undefined {
+  if (!isJsonObject(schema)) return undefined;
+  const isString = schema.type === 'string' || (Array.isArray(schema.type) && schema.type.includes('string'));
+  if (temporalFormat(schema, dates) !== undefined || (isString && schema.format === 'date-time')) {
+    const keyword = DATE_TEXT_KEYWORDS.find((name) => schema[name] !== undefined);
+    return keyword && { keyword, reason: 'limits the text of a date-time string, but the model holds a date value, not the text, so it cannot check the keyword' };
+  }
+  // With an allOf the composition holds `unevaluatedProperties`; with none, a union or a condition evaluates names that the descriptor does not list.
+  const beside = hasAllOfMembers(schema) ? undefined : EVALUATING_KEYWORDS.find((name) => schema[name] !== undefined);
+  const keyword = (['unevaluatedProperties', 'unevaluatedItems'] as const).find((name) => schema[name] !== undefined);
+  return beside && keyword && { keyword, reason: `judges the names or items that ${JSON.stringify(beside)} beside it evaluates, and the model cannot follow that` };
+}
+
+function uncarriedMessage({ keyword, reason }: { readonly keyword: string; readonly reason: string }): string {
+  return `The keyword ${JSON.stringify(keyword)} ${reason}. Remove ${JSON.stringify(keyword)} from this schema, or change the schema so that the model can check it.`;
+}
+
+function rejectUncarriedKeywords(schema: unknown, dates: OpenApiDates): void {
+  const uncarried = uncarriedKeyword(schema, dates);
+  if (uncarried !== undefined) throw new CompositionError(KEYWORD_NOT_CARRIED, uncarriedMessage(uncarried));
+}
+
+/** The converter of the sub-schemas of a keyword, which reads them as it reads a field. */
+function subschemaConverter(definitions: ModelDefinitions, env: ModelResolveEnv, direction: 'from' | 'to', seen: ReadonlySet<unknown>): SubSchema {
+  return (child) => typeof child === 'boolean' ? child : withRequiredNames(modelConversionDescriptor(child, definitions, env, direction, seen), child);
 }
 
 export function modelConversionDescriptor(
@@ -446,6 +565,9 @@ export function modelConversionDescriptor(
   const seen = new Set(visiting).add(schema);
   const target = componentSchemaTarget(schema, nested);
   if (target !== undefined && target !== schema) return modelConversionDescriptor(target, definitions, nested, direction, seen);
+  rejectUncarriedKeywords(schema, env.dates);
+  const sub = subschemaConverter(definitions, nested, direction, seen);
+  const whole = (descriptor: ModelTypeDescriptor): ModelTypeDescriptor => isJsonObject(schema) ? carryKeywords(descriptor, schema, sub) : descriptor;
   const temporal = temporalFormat(schema, env.dates);
   if (temporal) {
     const value = {
@@ -462,14 +584,19 @@ export function modelConversionDescriptor(
   }
   if (isJsonObject(schema) && hasAllOfMembers(schema)) {
     const composition = resolvedComposition(schema, definitions, env, direction, seen, position);
-    if (composition.kind === 'object') return objectCompositionDescriptor(composition);
-    if (composition.kind === 'inherits') return composition.descriptor;
+    // The composition holds the schema's `unevaluatedProperties` and its members' keywords; the keywords beside the allOf join them.
+    const beside = (descriptor: ModelTypeDescriptor): ModelTypeDescriptor => {
+      const { unevaluatedProperties: _held, ...rest } = schema;
+      return carryKeywords(descriptor, composition.kind === 'members' ? schema : rest, sub);
+    };
+    if (composition.kind === 'object') return beside(objectCompositionDescriptor(composition));
+    if (composition.kind === 'inherits') return beside(composition.descriptor);
     if (composition.kind === 'variants') {
       const variants = composition.variants.map(objectCompositionDescriptor);
       const declaredKey = asRecord(composition.union.discriminator).propertyName;
       const discriminator = unionDiscriminatorTable(composition.union, composition.items, definitions, composition.scope)
         ?? untaggedUnionTable(variants, definitions, typeof declaredKey === 'string' ? declaredKey : undefined);
-      return { kind: 'union', variants, ...(discriminator ? { discriminator } : {}) };
+      return beside({ kind: 'union', variants, ...(discriminator ? { discriminator } : {}) });
     }
     const members = schema.allOf.map((item) => modelConversionDescriptor(item, definitions, nested, direction, seen));
     // Deciding members win. Members that only constrain, or restate an array without converting it, leave the schema's own
@@ -484,11 +611,11 @@ export function modelConversionDescriptor(
         ...members.filter(isConstraintOnlyPart),
       ]);
     }
-    return joinMembers(deciding.length ? members.filter((part) => isConstraintOnlyPart(part) || isDecidingPart(part)) : members);
+    return beside(joinMembers(deciding.length ? members.filter((part) => isConstraintOnlyPart(part) || isDecidingPart(part)) : members));
   }
   const sequence = isJsonObject(schema) ? sequenceConversionDescriptor(schema, definitions, nested, direction, seen) : undefined;
   if (sequence) return sequence;
-  if (isJsonObject(schema) && (schema.oneOf || schema.anyOf)) {
+  const union = isJsonObject(schema) && (schema.oneOf || schema.anyOf) ? ((): ModelTypeDescriptor | undefined => {
     const variants = unionVariants(schema) ?? [];
     // A nullable array variant is a plain union of its own; its branches join the outer union.
     const convertedVariants = variants.flatMap((item): readonly ModelTypeDescriptor[] => {
@@ -543,7 +670,9 @@ export function modelConversionDescriptor(
     if (convertedVariants.length > 1 || discriminator) {
       return { kind: 'union', variants: convertedVariants, ...(discriminator ? { discriminator } : {}) };
     }
-  }
+    return undefined;
+  })() : undefined;
+  if (union) return carryKeywords(union, asRecord(schema), sub);
   if (isJsonObject(schema) && (schema.properties || schema.additionalProperties !== undefined)) {
     const required = Array.isArray(schema.required)
       ? schema.required.filter((item): item is string => typeof item === 'string')
@@ -552,18 +681,21 @@ export function modelConversionDescriptor(
     if (empty.length > 0) {
       throw new CompositionError(COMPOSITION_UNSATISFIABLE, `No object satisfies this schema: the required ${empty.length > 1 ? 'properties' : 'property'} ${empty.map((name) => JSON.stringify(name)).join(', ')} accept${empty.length > 1 ? '' : 's'} no value, because the schema is an empty enum, \`not: true\` or \`false\`. Remove ${empty.length > 1 ? 'them' : 'it'} from required, or give ${empty.length > 1 ? 'them' : 'it'} a schema that accepts a value.`);
     }
+    // Beside `properties` alone, `unevaluatedProperties` judges the names that `properties` does not list, as `additionalProperties` does.
+    const { unevaluatedProperties: _held, ...own } = schema;
+    const closing = schema.additionalProperties ?? schema.unevaluatedProperties;
     const object: ModelTypeDescriptor = withOpenApiConstraints({
       kind: 'object',
       properties: Object.fromEntries(objectEntries(schema.properties).map(([name, child]) => [name, modelConversionDescriptor(child, definitions, nested, direction, seen)])),
       required,
-      additionalProperties: schema.additionalProperties === false
+      additionalProperties: closing === false
         ? false
-        : isJsonObject(schema.additionalProperties)
-          ? modelConversionDescriptor(schema.additionalProperties, definitions, nested, direction, seen)
+        : isJsonObject(closing)
+          ? modelConversionDescriptor(closing, definitions, nested, direction, seen)
           : true,
       ...(schema.additionalProperties === true ? { additionalPropertiesDeclared: true as const } : {}),
-    }, schema);
-    return admitsNull(schema) ? { kind: 'union', variants: [object, { kind: 'null' }] } : object;
+    }, own, sub, 'typed');
+    return withOpenApiWholeValue(admitsNull(schema) ? { kind: 'union', variants: [object, { kind: 'null' }] } : object, schema, sub);
   }
   if (isJsonObject(schema) && schema.const !== undefined
     && (typeof schema.const === 'string' || typeof schema.const === 'number' || typeof schema.const === 'boolean')) {
@@ -571,17 +703,17 @@ export function modelConversionDescriptor(
   }
   if (isJsonObject(schema)) {
     const listed = openApiEnumDescriptor(schema);
-    if (listed) return withOpenApiConstraints(listed, schema);
+    if (listed) return withOpenApiConstraints(listed, schema, sub);
   }
   if (isJsonObject(schema)) {
     const primitive = openApiPrimitiveDescriptor(schema);
     if (primitive) {
-      const constrained = withOpenApiConstraints(primitive, schema);
-      return withOpenApiEnum(admitsNull(schema)
+      const constrained = withOpenApiConstraints(primitive, schema, sub, 'typed');
+      return withOpenApiWholeValue(admitsNull(schema)
         ? { kind: 'union', variants: [constrained, { kind: 'null' }] }
-        : constrained, schema);
+        : constrained, schema, sub);
     }
-    const constraints = openApiKeywordConstraints(schema);
+    const constraints = openApiKeywordConstraints(schema, sub);
     if (constraints || Array.isArray(schema.enum)) return withOpenApiEnum({ kind: 'unknown', ...(constraints ? { constraints } : {}) }, schema);
   }
   return { kind: 'unknown' };
@@ -806,6 +938,8 @@ export function checkComposition(
   const visit = (schema: unknown, scope: ModelResolveEnv, position: 'field' | 'definition', pointer: string): void => {
     if (!isJsonObject(schema) || directComponentSchemaRef(schema, withSchemaBase(scope, schema))) return;
     const where = site.where(pointer);
+    const uncarried = uncarriedKeyword(schema, scope.dates);
+    if (uncarried !== undefined) throw new LocatedError(`${where}: ${KEYWORD_NOT_CARRIED}: ${uncarriedMessage(uncarried)}`, site.origins(where));
     if (hasAllOfMembers(schema)) {
       let composition: Composition<ModelResolveEnv>;
       try {
@@ -821,8 +955,11 @@ export function checkComposition(
     }
     const nested = withSchemaBase(scope, schema);
     for (const [name, child] of objectEntries(schema.properties)) visit(child, nested, 'field', `${pointer}/properties/${escapeJsonPointerToken(name)}`);
-    for (const keyword of ['items', 'additionalProperties', 'unevaluatedProperties'] as const) {
+    for (const keyword of ['items', 'additionalProperties', 'unevaluatedProperties', 'unevaluatedItems', 'not', 'contains', 'propertyNames', 'if', 'then', 'else'] as const) {
       visit(schema[keyword], nested, 'field', `${pointer}/${keyword}`);
+    }
+    for (const keyword of ['patternProperties', 'dependentSchemas'] as const) {
+      for (const [name, child] of objectEntries(schema[keyword])) visit(child, nested, 'field', `${pointer}/${keyword}/${escapeJsonPointerToken(name)}`);
     }
     for (const keyword of ['prefixItems', 'allOf', 'oneOf', 'anyOf'] as const) {
       const items = schema[keyword];
