@@ -160,6 +160,10 @@ test('parse<T> reads an app model over an SDK model of golem mode, with the limi
   const validators = fs.readFileSync(path.join(project.root, 'src/generated/models/models.validators.generated.ts'), 'utf8');
   const holdingMinimum = validators.split(/^function /m).filter(body => /^f\d+_\w+_[0-9a-f]{8}\(/.test(body) && body.includes('< 0)')).map(body => body.replace(/^f\d+_(\w+?)_[0-9a-f]{8}\([^]*$/, '$1'));
   assert.deepEqual(holdingMinimum, ['Money']);
+  // The model that holds Money converts it with the codec of the SDK's codecs file and writes no Money conversion of its own.
+  const companion = fs.readFileSync(path.join(project.root, 'src/money.model.generated.ts'), 'utf8');
+  assert.match(companion, /import \{[^}]*\bfromWireFormatMoney\b[^}]*\} from "\.\/generated\/models\/sdk\/payments\.sdk\.generated\.js"/);
+  assert.doesNotMatch(companion, /function (?:fill|stringify|fromWireFormat|toWireFormat|convertFromWire)Money\b/);
 });
 
 test('a standalone model over an SDK type with Temporal dates derives from the plain type and converts the dates', async () => {

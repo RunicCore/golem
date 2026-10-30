@@ -1347,12 +1347,12 @@ function modelResolvers(context: EmitContext, helpers: ReadonlyMap<string, Proje
       fromInit: (value) => code`${functions.init}(${value})`,
     };
   };
-  // An SDK type that reaches itself: its inner occurrence converts with the node codec the SDK's codecs file exports. The model's
-  // validators have checked the whole value, and a value in model form needs no conversion.
+  // A node of a golem-mode SDK: it converts with the node codec the SDK's codecs file exports. The model's validators have checked the
+  // whole value, and a value in model form needs no conversion.
   const resolveSdkNode = (codecs: NestedImportedSerde): FromJsonModelResolver => ({
     className: identifier('Object'),
+    plain: true,
     decode: (value) => code`${codecs.fromWire}(${value}, { validate: false })`,
-    fromInit: (value) => value,
   });
   const fromAny = (id: string): FromJsonModelResolver => {
     const sdkNode = context.sdkNodes.find(id);

@@ -34,43 +34,46 @@ export interface ManifestIndex {
   /** The manifests of SDKs in golem mode: this job compiles their types with its own models. */
   readonly golemModeManifests: readonly { readonly file: string; readonly manifest: GolemModeManifest }[];
   /**
-   * The descriptor that the manifest of a golem-mode SDK holds for a type the SDK declares, when it names no other schema.
-   * It holds each schema it names inline, and `sdkNode` names the codec of the SDK that checks it: a model that holds the type
-   * checks it with the SDK's validator. The root of a model over the type drops `sdkNode`, since its schema equals the SDK's.
+   * The descriptor that the manifest of a golem-mode SDK holds for a type the SDK declares. The root of a model over the type
+   * (`root`) takes the SDK's descriptor, with each schema it names a reference to the SDK node; its schema equals the SDK's. A field
+   * of the type is that reference (`sdkNode` names the codec of the SDK that checks and converts it), or the descriptor for a scalar alias.
    */
-  sdkDescriptorForType(type: ts.Type): ModelTypeDescriptor | undefined;
+  sdkDescriptorForType(type: ts.Type, root: boolean): ModelTypeDescriptor | undefined;
+}
+
+/** The descriptor kinds of an SDK schema that has a node codec in the SDK's codecs file; a scalar alias has none and is written inline. */
+const NODE_KINDS: ReadonlySet<string> = new Set(['object', 'array', 'tuple', 'union', 'intersection']);
+
+/** The kind of the descriptor of the SDK schema `name`, through the schemas that only name another. */
+function descriptorKind(manifest: GolemModeManifest, name: string, seen: readonly string[] = []): string {
+  const text = manifest.descriptors.find((entry) => entry.name === name)?.descriptor;
+  if (text === undefined) throw new Error(`The SDK manifest has no descriptor for the schema ${JSON.stringify(name)}. Regenerate the SDK with this golem version.`);
+  const descriptor = JSON.parse(text) as { readonly kind: string; readonly id?: string; readonly name?: string };
+  const next = descriptor.kind === 'generated-model' ? descriptor.id : descriptor.kind === 'reference' ? descriptor.name : undefined;
+  return next === undefined || seen.includes(next) ? descriptor.kind : descriptorKind(manifest, next, [...seen, name]);
 }
 
 /**
- * The descriptor of the SDK schema `name`, with each schema it names written inline, so a model over it converts the whole value
- * and its schema is the SDK's: equal schemas compile to one validator. A schema that reaches itself has no finite inline form: its
- * inner occurrence is a reference to the SDK node (`generated-model` with the codec id, also `sdkNode`), which the model's companion
- * converts with the node codec the SDK's codecs file exports.
+ * The descriptor of the SDK schema `name`, with each schema it names a reference to the SDK node (`generated-model` with the codec id,
+ * also `sdkNode`): the model's check is the SDK's validator and its conversion calls the node codec the SDK's codecs file exports, so no
+ * SDK conversion is written twice. A scalar alias, which has no node codec, is written inline.
  */
-function inlineSdkDescriptor(manifest: GolemModeManifest, name: string, active: readonly string[]): ModelTypeDescriptor | undefined {
+function sdkDescriptorOf(manifest: GolemModeManifest, name: string): ModelTypeDescriptor | undefined {
   const text = manifest.descriptors.find((entry) => entry.name === name)?.descriptor;
   if (text === undefined) return undefined;
-  let complete = true;
-  const inline = (value: unknown): unknown => {
-    if (Array.isArray(value)) return value.map(inline);
+  const nodeReferences = (value: unknown): unknown => {
+    if (Array.isArray(value)) return value.map(nodeReferences);
     if (value === null || typeof value !== 'object') return value;
     const record = value as Record<string, unknown>;
     const named = record.kind === 'generated-model' ? record.id : record.kind === 'reference' ? record.name : undefined;
-    if (typeof named === 'string') {
-      const { kind: _kind, id: _id, name: _name, projection: _projection, ...rest } = record;
-      const codecId = manifest.codecIds[named];
-      if ([...active, name].includes(named)) {
-        if (codecId === undefined) throw new Error(`The SDK manifest names no codec for the schema ${JSON.stringify(named)}, which reaches itself. Regenerate the SDK with this golem version.`);
-        return { kind: 'generated-model', id: codecId, ...(inline(rest) as object), sdkNode: codecId };
-      }
-      const target = inlineSdkDescriptor(manifest, named, [...active, name]);
-      if (target === undefined) complete = false;
-      return { ...target, ...(inline(rest) as object), sdkNode: codecId };
-    }
-    return Object.fromEntries(Object.entries(record).map(([key, item]) => [key, inline(item)]));
+    if (typeof named !== 'string') return Object.fromEntries(Object.entries(record).map(([key, item]) => [key, nodeReferences(item)]));
+    const { kind: _kind, id: _id, name: _name, projection: _projection, ...rest } = record;
+    const codecId = manifest.codecIds[named];
+    if (!NODE_KINDS.has(descriptorKind(manifest, named))) return { ...sdkDescriptorOf(manifest, named), ...(nodeReferences(rest) as object), sdkNode: codecId };
+    if (codecId === undefined) throw new Error(`The SDK manifest names no codec for the schema ${JSON.stringify(named)}. Regenerate the SDK with this golem version.`);
+    return { kind: 'generated-model', id: codecId, ...(nodeReferences(rest) as object), sdkNode: codecId };
   };
-  const descriptor = inline(JSON.parse(text)) as ModelTypeDescriptor;
-  return complete ? descriptor : undefined;
+  return nodeReferences(JSON.parse(text)) as ModelTypeDescriptor;
 }
 
 function escapeRegExp(value: string): string {
@@ -204,7 +207,7 @@ export function loadModelManifests(
   const validationSchemaClosure: CodecSchemaClosureEntry[] = [];
   const golemModeManifests: { file: string; manifest: GolemModeManifest }[] = [];
   // The descriptor of each SDK type of a golem-mode manifest, with the schemas it names inline, by the provenance of its declaration.
-  const sdkDescriptors = new Map<string, ModelTypeDescriptor>();
+  const sdkDescriptors = new Map<string, { readonly root: ModelTypeDescriptor; readonly field: ModelTypeDescriptor }>();
   for (const filename of filenames) {
     // Explicit SDK manifests stay in the load set for duplicate-id and profile
     // checks. Only manifests this job discovered or advertised are watch inputs
@@ -243,10 +246,12 @@ export function loadModelManifests(
       }
       if (isGolemModeManifest(manifest)) {
         const name = Object.keys(manifest.codecIds).find((candidate) => manifest.codecIds[candidate] === model.codecId);
-        const descriptor = name === undefined ? undefined : inlineSdkDescriptor(manifest, name, []);
+        const descriptor = name === undefined ? undefined : sdkDescriptorOf(manifest, name);
         if (descriptor !== undefined && name !== undefined) {
+          const codecId = manifest.codecIds[name];
+          const reference = NODE_KINDS.has(descriptor.kind) ? { kind: 'generated-model' as const, id: codecId, sdkNode: codecId } : { ...descriptor, sdkNode: codecId };
           for (const provenance of provenances) {
-            sdkDescriptors.set(manifestProvenance(filename, provenance.module, provenance.export), { ...descriptor, sdkNode: manifest.codecIds[name] });
+            sdkDescriptors.set(manifestProvenance(filename, provenance.module, provenance.export), { root: descriptor, field: reference });
           }
         }
       }
@@ -259,13 +264,13 @@ export function loadModelManifests(
     localFiles,
     validationSchemaClosure,
     golemModeManifests,
-    sdkDescriptorForType(type: ts.Type): ModelTypeDescriptor | undefined {
+    sdkDescriptorForType(type: ts.Type, root: boolean): ModelTypeDescriptor | undefined {
       for (const symbol of [type.aliasSymbol, type.getSymbol?.()]) {
         for (const declaration of symbol?.declarations ?? []) {
           const file = canonicalFilename(declaration.getSourceFile().fileName);
           const found = sdkDescriptors.get(`${file}\0${symbol!.getName()}`)
             ?? sdkDescriptors.get(`${file.replace(/\.d\.([cm]?ts)$/, '.$1')}\0${symbol!.getName()}`);
-          if (found !== undefined) return found;
+          if (found !== undefined) return root ? found.root : found.field;
         }
       }
       return undefined;

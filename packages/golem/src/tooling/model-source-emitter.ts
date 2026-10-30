@@ -84,6 +84,11 @@ export interface FromJsonModelResolver {
   readonly fromInit?: (value: Code) => Code;
   /** A projection whose value converts to itself: a use writes no call. */
   readonly identity?: true;
+  /**
+   * Plain data that another module converts (a node of a golem-mode SDK): `decode` turns the wire value into the model value, and the
+   * model value needs no conversion. A value is not tested against `className`, since a plain object is never an instance of it.
+   */
+  readonly plain?: true;
 }
 
 /**
@@ -163,6 +168,7 @@ function modelFromConversion(
   expression: Code,
   convertToModel: (model: FromJsonModelResolver, expression: Code) => Code,
 ): Code {
+  if (model.plain) return convertToModel(model, expression);
   return code`${expression} instanceof ${model.className} ? ${expression} : ${convertToModel(model, expression)}`;
 }
 
@@ -336,6 +342,7 @@ function emitNestedUncached(
   if (descriptor.kind === 'generated-model' || descriptor.kind === 'reference') {
     const modelName = descriptor.kind === 'reference' ? descriptor.name : descriptor.id;
     const model = resolveModel(modelName);
+    if (model.plain) return direction === 'fromInit' ? value : model.decode(expression);
     if (descriptor.kind === 'reference' && descriptor.projection) {
       if (model.identity) return value;
       return direction === 'fromInit' ? (model.fromInit ?? model.decode)(expression) : model.decode(expression);
