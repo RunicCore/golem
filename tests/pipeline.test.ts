@@ -54,7 +54,8 @@ test('global profile changes remove obsolete validation and keep manifest identi
   // A fresh process reads the built SDK, so no module of an earlier build stays cached.
   const validateBreakingMoney = async (): Promise<string> => {
     await command(root, process.execPath, [TSC, '-p', 'tsconfig.json']);
-    const probe = "import { validateMoney } from './build/sdk/index.js'; let out; try { out = String(validateMoney({ amount: -1, currency: 'usd' })); } catch (error) { out = error.kind; } process.stdout.write(out);";
+    // The SDK index exports no codec: the validator of Money lives in its schema group module, which the client calls.
+    const probe = "import fs from 'node:fs'; let out = 'no validateMoney'; for (const file of fs.readdirSync('./build/sdk/models').filter((name) => /^_group-.*[.]js$/.test(name))) { const codecs = await import('./build/sdk/models/' + file); if (typeof codecs.validateMoney !== 'function') continue; try { out = String(codecs.validateMoney({ amount: -1, currency: 'usd' })); } catch (error) { out = error.kind; } } process.stdout.write(out);";
     return (await command(root, process.execPath, ['--input-type=module', '-e', probe])).stdout;
   };
   assert.equal(await validateBreakingMoney(), 'false', 'validation on: the SDK model checks minimum and pattern');

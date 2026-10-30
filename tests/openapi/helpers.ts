@@ -81,8 +81,14 @@ export function compileGeneratedSdk(
     }
   };
   collectJavascript(output);
+  // The index imports no schema group module (the client will, in T-689), so the compile names them: they are generated and must compile.
+  const groupsDirectory = join(output, 'models');
+  const groupModules = existsSync(groupsDirectory)
+    ? readdirSync(groupsDirectory).filter(name => /^_group-.*\.ts$/.test(name)).sort().map(name => join(groupsDirectory, name))
+    : [];
   const files = [
     join(output, 'index.ts'),
+    ...groupModules,
     ...generatedJavascript,
     ...extraFiles,
   ];
@@ -328,9 +334,22 @@ export function captureRequest(url: string | URL | Request, init?: RequestInit):
   };
 }
 
-/** The function `<prefix><Name>` that an SDK exports for its schema `Name` (`validate`, `fromWireFormat`, `toWireFormat`, `parse`, `stringify`, `assert`). */
-export function sdkFunction<Result = unknown>(models: Record<string, unknown>, prefix: string, name: string): (...input: unknown[]) => Result {
-  const found = models[`${prefix}${name}`];
-  if (typeof found !== 'function') throw new TypeError(`The SDK exports no function ${prefix}${name}`);
+/**
+ * Test-only: the codec functions of a compiled SDK (`parse<Name>`, `stringify<Name>`, `fromWireFormat<Name>`, `toWireFormat<Name>`,
+ * `validate<Name>`, `assert<Name>`), read from its schema group modules. The SDK index exports none of them; the client calls them.
+ */
+export async function importSdkCodecs(output: string, label = 'SDK codecs'): Promise<Record<string, unknown>> {
+  const directory = join(output, 'dist/models');
+  const exports: Record<string, unknown> = {};
+  for (const file of readdirSync(directory).filter(name => /^_group-.*\.js$/.test(name)).sort()) {
+    Object.assign(exports, await importGeneratedModule(output, `${label} ${file}`, `dist/models/${file}`));
+  }
+  return exports;
+}
+
+/** The function `<prefix><Name>` that `importSdkCodecs` finds for the schema `Name` (`validate`, `fromWireFormat`, `toWireFormat`, `parse`, `stringify`, `assert`). */
+export function sdkFunction<Result = unknown>(codecs: Record<string, unknown>, prefix: string, name: string): (...input: unknown[]) => Result {
+  const found = codecs[`${prefix}${name}`];
+  if (typeof found !== 'function') throw new TypeError(`The SDK has no codec function ${prefix}${name}`);
   return found as (...input: unknown[]) => Result;
 }

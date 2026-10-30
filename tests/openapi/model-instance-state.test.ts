@@ -8,7 +8,7 @@ import { requireObjectCodec } from '@exprtlabs/golem/internal/model-runtime';
 
 import { createFixtureProject, fileFixtureScope, onceShared } from '../fixture-project.js';
 import { generatedCodecIdFromRoot } from '../support/consumer.js';
-import { compileGeneratedSdk, generateMaterializedSdk, requireRecord } from './helpers.js';
+import { compileGeneratedSdk, generateMaterializedSdk, importSdkCodecs, requireRecord } from './helpers.js';
 import { modelCodec } from '../support/model-codec.js';
 
 // An own key of a golem-openapi model instance that its own model does not declare is program state, never an unknown
@@ -111,7 +111,7 @@ const buildSdk = (name: string, validation: boolean) => async () => {
   const output = path.join(createFixtureProject(scope, `golem-openapi-${name}-`), 'sdk');
   await generateMaterializedSdk(document, { output, name, profile: { mobx: false, validation, allowAny: false } });
   compileGeneratedSdk(output, [], { strict: true, skipLibCheck: true, outDir: path.join(output, 'dist') });
-  const models = requireRecord(await import(pathToFileURL(path.join(output, 'dist/index.js')).href), 'generated models');
+  const models = { ...requireRecord(await import(pathToFileURL(path.join(output, 'dist/index.js')).href), 'generated models'), ...await importSdkCodecs(output, 'generated codecs') };
   return { output, models };
 };
 const validatedSdk = onceShared(buildSdk('ValidatedState', true));

@@ -7,7 +7,7 @@ import test from 'node:test';
 
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { generate } from '#openapi/generator';
-import { compileGeneratedSdk, generateMaterializedSdk, requireRecord } from './helpers.js';
+import { compileGeneratedSdk, generateMaterializedSdk, importSdkCodecs, requireRecord } from './helpers.js';
 
 /**
  * One row is one allOf shape. For each row the generated SDK is checked on every path that reads the shape: the generated type
@@ -844,7 +844,8 @@ function builder(row: Row, validation: boolean): () => Promise<Built> {
       await import(pathToFileURL(path.join(output, 'dist/index.js')).href),
       `generated ${row.shape} models`,
     );
-    const exported = models as Models;
+    // The codec functions are not exported by the index: the client calls them, and the test reads them from the schema group modules.
+    const exported = await importSdkCodecs(output, `generated ${row.shape} codecs`) as Models;
     return {
       output,
       models: exported,
@@ -1225,7 +1226,7 @@ async function generateCompiledSdk(document: Record<string, unknown>, output: st
 test('a component narrows an inherited union property to one of its variants', async t => {
   const output = path.join(createFixtureProject(t, 'golem-composition-narrowed-'), 'sdk');
   await generateCompiledSdk(petDocument(ref('Cat')), output);
-  const models = requireRecord(await import(pathToFileURL(path.join(output, 'dist/index.js')).href), 'generated narrowed models');
+  const models = await importSdkCodecs(output, 'generated narrowed codecs');
   const fromWireFormat = models.fromWireFormatDerived as (wire: unknown, options?: { validate?: boolean }) => Fields;
   const toWireFormat = models.toWireFormatDerived as (value: Fields) => unknown;
   const decoded = fromWireFormat({ pet: { kind: 'cat', lives: 9 } }, { validate: false });

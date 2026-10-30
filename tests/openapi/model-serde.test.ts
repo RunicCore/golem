@@ -16,6 +16,7 @@ import {
   documentBase,
   generateMaterializedSdk,
   importGeneratedModule,
+  importSdkCodecs,
   requireRecord,
 } from './helpers.js';
 import { modelCodec } from '../support/model-codec.js';
@@ -365,7 +366,8 @@ async function loadVisitModels(output: string, label: string): Promise<{
   VisitModel: new (values?: Record<string, unknown>) => Record<string, unknown>;
   construct: abstract new (values?: never) => object;
 }> {
-  const models = await importGeneratedModule(output, label);
+  // Loading the schema group modules registers the codecs that `visitCodec` finds; the index imports none of them.
+  const models = { ...await importGeneratedModule(output, label), ...await importSdkCodecs(output, label) };
   const VisitModel = models.VisitModel as unknown as new (values?: Record<string, unknown>) => Record<string, unknown>;
   return { models, VisitModel, construct: VisitModel as unknown as abstract new (values?: never) => object };
 }

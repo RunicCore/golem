@@ -11,6 +11,7 @@ import { writeSdk } from '#openapi/generator';
 import {
   compileGeneratedSdk,
   generateMaterializedSdk,
+  importSdkCodecs,
   isGeneratedClientClass,
   requireRecord,
   writeGeneratedSdk,
@@ -313,7 +314,7 @@ for (const validation of [false, true]) {
       },
     }, { output, name: 'Optional', profile: { mobx: false, validation } });
     compileGeneratedSdk(output, [], { strict: true });
-    const models = requireRecord(await import(pathToFileURL(path.join(output, 'dist/index.js')).href), 'optional sdk');
+    const models = await importSdkCodecs(output, 'optional sdk');
     const parseOwner = models.parseOwner as (text: string) => unknown;
     assert.throws(() => parseOwner('{"pet":{}}'), (error: unknown) => error instanceof LibError && error.causedByInput === true);
   });

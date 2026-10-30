@@ -1,5 +1,5 @@
 import { createFixtureProject } from '../fixture-project.js';
-import { compileGeneratedSdk, generateMaterializedSdk, readGeneratedModelSource, requireRecord } from './helpers.js';
+import { compileGeneratedSdk, generateMaterializedSdk, importSdkCodecs, readGeneratedModelSource, requireRecord } from './helpers.js';
 import { dateTime, object, operation, ref } from './schema-builders.js';
 import assert from 'node:assert/strict';
 import path from 'node:path';
@@ -34,7 +34,7 @@ test('a model with a date writes a recursive model or oneOf of another module, w
   compileGeneratedSdk(output, [], { strict: true, skipLibCheck: true, noUnusedLocals: true });
   // Only a recursive model's wire stringify is exported: Report is not recursive.
   assert.doesNotMatch(readGeneratedModelSource(output), /export \{ stringifyReport\w*Wire as /);
-  const models = requireRecord(await import(pathToFileURL(path.join(output, 'dist/index.js')).href), 'generated models');
+  const models = await importSdkCodecs(output, 'generated codecs');
   const stringifyReport = models.stringifyReport as (value: unknown) => string;
   const parseReport = models.parseReport as (text: string) => unknown;
 
