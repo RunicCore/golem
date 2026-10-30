@@ -2,6 +2,7 @@ import type { Format, Pattern, TSerde } from './tags.js';
 import { activeConversionPath, conversionError } from './conversion-error.js';
 import { LibErrorKind } from './errors.js';
 import { isDate, isDateTime } from './rfc3339.js';
+import { DURATION_PATTERN, PLAIN_DATE_TIME_PATTERN, PLAIN_TIME_PATTERN, ZONED_DATE_TIME_PATTERN } from './temporal-wire.js';
 
 type TemporalNamespace = typeof Temporal; // from lib esnext.temporal
 type TemporalClassName = 'Instant' | 'ZonedDateTime' | 'PlainDate' | 'PlainDateTime' | 'PlainTime' | 'Duration';
@@ -13,11 +14,6 @@ function runtime(kind: LibErrorKind.Serialization | LibErrorKind.Deserialization
   if (!value) throw conversionError(kind, MISSING);
   return value;
 }
-
-const ZONED_DATE_TIME_PATTERN = '^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?(?:Z|[+-]\\d{2}:\\d{2})\\[[A-Za-z0-9_+\\-/:]+\\]$';
-const PLAIN_DATE_TIME_PATTERN = '^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?$';
-const PLAIN_TIME_PATTERN = '^\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?$';
-const DURATION_PATTERN = '^-?P(?!$)(?:\\d+Y)?(?:\\d+M)?(?:\\d+W)?(?:\\d+D)?(?:T(?=\\d)(?:\\d+H)?(?:\\d+M)?(?:\\d+(?:\\.\\d{1,9})?S)?)?$';
 
 /**
  * Wire forms. Years outside 0000-9999 (Temporal's ±YYYYYY form) are rejected. Each wire type states its rule once: a

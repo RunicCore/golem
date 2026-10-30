@@ -1,7 +1,7 @@
 import { isBinaryMediaType, isBuiltinTextMediaType } from './client/codecs.js';
 import { asRecord, isJsonObject, objectEntries, type JsonObject } from './json.js';
 import { identifier, NameScope } from '@exprtlabs/golem/internal/generator-support';
-import { code, codeKey, TEMPORAL_FORMATS, manifestMarkerComment, docComment, exportedName, fileImports, identifier as identifierPart, ImportSource, isEmpty, join, lineBreak, literal, nest, propertyKey, render, renderModule, sameCode, type RenderedModule, type Code, type JsonValue } from '@exprtlabs/golem/internal/emitter';
+import { builtinClassByOpenApiFormat, type BuiltinClass, code, codeKey, manifestMarkerComment, docComment, exportedName, fileImports, identifier as identifierPart, ImportSource, isEmpty, join, lineBreak, literal, nest, propertyKey, render, renderModule, sameCode, type RenderedModule, type Code, type JsonValue } from '@exprtlabs/golem/internal/emitter';
 import { unionVariants } from './composition.js';
 import { refName } from './names.js';
 import {
@@ -258,16 +258,16 @@ interface ConvertedTypes {
   readonly shadowed: ReadonlySet<string>;
 }
 
-/** The Temporal type of a string schema under `dates: temporal`; any other schema or mode has none. */
-export function temporalFormat(schema: unknown, dates: OpenApiDates): (typeof TEMPORAL_FORMATS)[keyof typeof TEMPORAL_FORMATS] | undefined {
+/** The Temporal class of a string schema under `dates: temporal`; any other schema or mode has none. */
+export function temporalClassOf(schema: unknown, dates: OpenApiDates): BuiltinClass | undefined {
   if (dates !== 'temporal' || !isJsonObject(schema) || typeof schema.format !== 'string') return undefined;
   if (!(schema.type === 'string' || (Array.isArray(schema.type) && schema.type.includes('string')))) return undefined;
-  return Object.hasOwn(TEMPORAL_FORMATS, schema.format) ? TEMPORAL_FORMATS[schema.format as keyof typeof TEMPORAL_FORMATS] : undefined;
+  return builtinClassByOpenApiFormat(schema.format);
 }
 
 /** The type that a string schema converts to, or undefined when its value stays a string. */
 function convertedStringType(schema: JsonObjectLike, converted: ConvertedTypes): TypeCode | undefined {
-  const temporal = temporalFormat(schema, converted.dates);
+  const temporal = temporalClassOf(schema, converted.dates);
   if (temporal) return typeCode(converted.shadowed.has('Temporal') ? code`globalThis.${temporal.type}` : temporal.type);
   if (converted.dates === 'date' && schema.format === 'date-time') return typeCode(converted.shadowed.has('Date') ? code`globalThis.Date` : code`Date`);
   return undefined;

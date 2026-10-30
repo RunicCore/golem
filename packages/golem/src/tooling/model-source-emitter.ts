@@ -18,14 +18,16 @@ export {
 } from './stringify-emitter.js';
 export { type TupleConversionDescriptor } from './sequence-conversion.js';
 export { presentKeysCode } from './union-conversion.js';
+/** The built-in classes (the Temporal classes) that golem converts with no tag, and the resolver of their serde ids. */
+export { BUILTIN_SERDE, builtinClassByOpenApiFormat, builtinClassBySerdeId, builtinClassDescriptor, type BuiltinClass } from './builtin-classes.js';
 /** The Code values and the functions that build, join and render them: generators write their files from these. */
 export {
   aliased, bindInput, blockComment, code, codeKey, docComment, documentLiteral, exportedName, exportedNames, fileImports, helper, helperName, helperSet, identifier, importedNames, indentation, inputCount, importGroups, importLines, ImportSource, inputOf, inputSlot, isEmpty, join, lineBreak, literal, localCode, nameOf, NameTable, nameSlot, nest, placeHelpers, propertyKey, render, renderModule, sameCode, sideEffectImport,
   type Code, type Helper, type ImportGroup, type ImportOptions, type InputSlot, type JsonValue, type NameSlot, type RenderedModule,
 } from './code.js';
 export { copiedRuntimeSpecifiers, rt, rtType, type RuntimeModule } from './rt.js';
-/** The Temporal codec rules and the operation codec module writer that golem-openapi and golem-model share. */
-export { moduleSpecifier, SDK_CODECS_EXPORT, sdkCodecsFile, sdkCodecsTable, TEMPORAL_FORMATS, TEMPORAL_SERDE, TEMPORAL_SERDE_PREFIX, temporalCodecName, writeOperationCodecs, type OperationCodecsModule, type SdkOperationShape } from './sdk-codecs.js';
+/** The operation codec module writer that golem-openapi and golem-model share. */
+export { moduleSpecifier, SDK_CODECS_EXPORT, sdkCodecsFile, sdkCodecsTable, writeOperationCodecs, type OperationCodecsModule, type SdkOperationShape } from './sdk-codecs.js';
 /** The allOf object merge, for generators that read schemas (golem-openapi). */
 export {
   composeObjects,

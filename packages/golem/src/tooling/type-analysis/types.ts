@@ -6,7 +6,8 @@ import { projectionIdentity } from './graph.js';
 import { aliasProjectionName, isProjectionName, pascalIdentifier, policySuffix, headQualifiers, projectionBaseName, keysReadAlike, safeNameHint, unionVariantNaming } from './projection-names.js';
 import { commonDirectory, canonicalFilename, companionFilename, type ModelBoundary } from './project.js';
 import { packageSpecifier } from './package-specifier.js';
-import { TEMPORAL_SERDE_PREFIX } from '../sdk-codecs.js';
+import { builtinClassDescriptor } from '../builtin-classes.js';
+import { enclosureOf, findBuiltinClass, isGlobalDeclaration } from './builtin-class.js';
 import { compareText, displayPath } from '../generator-core.js';
 import type { GolemProfile } from '../generator-core.js';
 import { assertSupportedModelFieldName, canonicalDescriptorKey, isBrandPropertyName } from '../schema.js';
@@ -161,24 +162,18 @@ function classValueReference(
     throw diagnostic(context.sourceFile, node, '1063', `The class of a TSerde field in ${context.name} has no name, so generated code cannot import it. Name the class and export it.`);
   }
   // TS 7's API has no getFullyQualifiedName: qualify by the enclosing namespaces instead.
-  const names = [declaredName && ts.isIdentifier(declaredName) ? declaredName.text : symbol.getName()];
-  let augmentsGlobal = false;
-  let outermost: ts.ModuleDeclaration | undefined;
-  for (let parent: ts.Node | undefined = declaration.parent; parent && !ts.isSourceFile(parent); parent = parent.parent) {
-    if (!ts.isModuleDeclaration(parent)) continue;
-    if (ts.isStringLiteral(parent.name)) {
-      throw diagnostic(context.sourceFile, node, '1063', `Class ${names.join('.')} is declared inside declare module ${JSON.stringify(parent.name.text)}, which generated code cannot import from. Move it into a module file and export it.`);
-    }
-    if (parent.name.text === 'global') { augmentsGlobal = true; break; }
-    names.unshift(parent.name.text);
-    outermost = parent;
+  const enclosure = enclosureOf(declaration);
+  const { outermost, quotedModule } = enclosure;
+  const names = [...enclosure.namespaces, declaredName && ts.isIdentifier(declaredName) ? declaredName.text : symbol.getName()];
+  if (quotedModule !== undefined) {
+    throw diagnostic(context.sourceFile, node, '1063', `Class ${names.join('.')} is declared inside declare module ${JSON.stringify(quotedModule)}, which generated code cannot import from. Move it into a module file and export it.`);
   }
   const typeName = names.join('.');
   if (hasRequiredTypeParameter(symbol)) {
     throw diagnostic(context.sourceFile, node, '1063', `Class ${typeName} has type parameters, so generated code cannot write its type. Use a non-generic class, such as one declared as \`class Named extends ${typeName}<string> {}\`.`);
   }
   // A script file (a TypeScript lib, an ambient .d.ts) or a `declare global` block declares a global name.
-  if (augmentsGlobal || !isModuleFile(declaration.getSourceFile())) return { typeName };
+  if (isGlobalDeclaration(declaration, enclosure)) return { typeName };
   const sourceFile = declaration.getSourceFile();
   // `Temporal` for `Temporal.Instant` imported from a module: the outermost namespace is what the module exports.
   const exportName = publicExportName(checker, outermost ?? declaration, (outermost && checker.getSymbolAtLocation(outermost.name)) || symbol, true);
@@ -200,38 +195,6 @@ function hasRequiredTypeParameter(symbol: ts.Symbol): boolean {
     .map((item) => item.typeParameters ?? []);
   const count = Math.max(0, ...lists.map((list) => list.length));
   return Array.from({ length: count }, (_, index) => lists.some((list) => { const parameter = list[index]; return parameter !== undefined && ts.typeParameterDefault(parameter) !== undefined; })).some((defaulted) => !defaulted);
-}
-
-const TEMPORAL_CLASSES: ReadonlySet<string> = new Set(['Instant', 'ZonedDateTime', 'PlainDate', 'PlainDateTime', 'PlainTime', 'Duration']);
-
-/**
- * The name of the global `Temporal` class that `type` is (`Instant` for `Temporal.Instant`), or undefined. A `Temporal` that a module
- * exports, such as a polyfill's, is not the global one: generated code would have to import it.
- */
-function globalTemporalClass(type: ts.Type): string | undefined {
-  const symbol = type.getSymbol();
-  const declaration = symbol?.declarations?.[0];
-  const name = symbol?.getName();
-  if (declaration === undefined || name === undefined || !TEMPORAL_CLASSES.has(name)) return undefined;
-  let outermost: ts.ModuleDeclaration | undefined;
-  let augmentsGlobal = false;
-  for (let parent: ts.Node | undefined = declaration.parent; parent && !ts.isSourceFile(parent); parent = parent.parent) {
-    if (!ts.isModuleDeclaration(parent)) continue;
-    if (!ts.isIdentifier(parent.name)) return undefined;
-    if (parent.name.text === 'global') { augmentsGlobal = true; break; }
-    outermost = parent;
-  }
-  const global = augmentsGlobal || !isModuleFile(declaration.getSourceFile());
-  return global && outermost !== undefined && ts.isIdentifier(outermost.name) && outermost.name.text === 'Temporal' ? name : undefined;
-}
-
-/** A file with a top-level import or export is a module; any other file declares globals. */
-function isModuleFile(sourceFile: ts.SourceFile): boolean {
-  return sourceFile.statements.some((statement) => ts.isImportDeclaration(statement)
-    || ts.isImportEqualsDeclaration(statement)
-    || ts.isExportDeclaration(statement)
-    || ts.isExportAssignment(statement)
-    || ('modifiers' in statement && (statement.modifiers as readonly ts.Node[] | undefined)?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword)) === true);
 }
 
 function rejectAmbiguousGeneratedModelUnion(
@@ -1146,15 +1109,9 @@ export function descriptorBuilder(
       });
     }
 
-    // A global `Temporal` class has the conversion of the runtime's Temporal codec of that name, as if it carried the golem Temporal tag.
-    const temporalClass = metadata.serde ? undefined : globalTemporalClass(type);
-    if (temporalClass !== undefined) {
-      return withMetadata({
-        kind: 'class-value',
-        typeName: `Temporal.${temporalClass}`,
-        serde: { id: `${TEMPORAL_SERDE_PREFIX}Temporal${temporalClass}`, wireDescriptor: { kind: 'string' } },
-      } as unknown as ModelConversionDescriptor, metadata);
-    }
+    // A built-in class has the conversion of its registry entry, as if it carried the golem tag of the class.
+    const builtin = metadata.serde ? undefined : findBuiltinClass(type);
+    if (builtin !== undefined) return withMetadata(builtinClassDescriptor(builtin), metadata);
     // A class instance or bigint has no JSON shape of its own; its TSerde codec is its only conversion.
     if (metadata.serde && isBigIntValueType(type)) {
       return withMetadata({ kind: 'class-value', typeName: 'bigint' } as ModelConversionDescriptor, metadata);

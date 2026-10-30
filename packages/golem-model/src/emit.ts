@@ -38,8 +38,8 @@ import {
   type JsonValue,
   emitModelFromInit,
   wireStringifyExportName,
-  TEMPORAL_SERDE,
-  TEMPORAL_SERDE_PREFIX,
+  BUILTIN_SERDE,
+  builtinClassBySerdeId,
   descriptorNeedsConversion,
   type FromJsonModelResolver,
   type ModelConversionDescriptor,
@@ -163,8 +163,8 @@ function registerValidation(bindings: Map<string, ValidationBinding>, binding: V
 }
 
 function registerSerde(bindings: Map<string, SerdeBinding>, binding: SerdeBinding): void {
-  // A `temporal:` id names a codec of the runtime: there is no function of the user's to import, and `serdeExpression` calls the codec itself.
-  if (binding.id.startsWith(TEMPORAL_SERDE_PREFIX)) return;
+  // A built-in class id names a codec of the runtime: there is no function of the user's to import, and `serdeExpression` calls the codec itself.
+  if (builtinClassBySerdeId(binding.id) !== undefined) return;
   if (!bindings.has(binding.id)) bindings.set(binding.id, binding);
 }
 
@@ -1270,7 +1270,7 @@ function typeOf(context: EmitContext, descriptor: ModelConversionDescriptor, mod
 }
 
 function serdeExpression(context: EmitContext, id: string, direction: 'serialize' | 'deserialize', value: Code): Code {
-  if (id.startsWith(TEMPORAL_SERDE_PREFIX)) return TEMPORAL_SERDE[direction](id, value);
+  if (builtinClassBySerdeId(id) !== undefined) return BUILTIN_SERDE[direction](id, value);
   const names = context.serdeNames.get(id);
   if (names === undefined) throw new Error(`The generated model file of ${displayPath(context.source)} has no ${direction} function for the serde id ${JSON.stringify(id)}.`);
   return code`${identifier(names[direction])}(${value})`;
