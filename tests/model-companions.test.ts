@@ -149,7 +149,7 @@ test('public generation compiles and executes conversion and rest tuple behavior
 });
 
 test('re-exported IModel and IObject symbols preserve class versus plain-object generation', async () => {
-  const { root, sourceRoot, artifacts } = await trustedProject();
+  const { root, sourceRoot } = await trustedProject();
   const sourceFile = path.join(sourceRoot, 'provenance.model.ts');
   const built = await import(path.toNamespacedPath(path.join(root, 'build/provenance.model.generated.js'))) as Record<string, unknown>;
   assert.deepEqual(Object.keys(built).filter((name) => name.endsWith('BaseModel')), ['TProvenanceBaseModel'], 'only the IModel alias gets a class');

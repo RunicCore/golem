@@ -19,7 +19,6 @@ import * as manifest from '@exprtlabs/golem/manifest';
 import { sourceDigest } from '@exprtlabs/golem/internal/generator-support';
 
 const distRoot = dirname(fileURLToPath(import.meta.resolve('@exprtlabs/golem/model')));
-const packageRoot = dirname(distRoot);
 
 test('registering a model leaves its metadata off instances, prototypes and JSON', () => {
   class Base { value = 'initial'; }

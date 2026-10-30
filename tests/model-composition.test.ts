@@ -6,7 +6,6 @@ import path from 'node:path';
 import test from 'node:test';
 
 import { requireObjectCodec } from '@exprtlabs/golem/internal/model-runtime';
-import { validateInstance } from '@exprtlabs/golem/validation';
 import { generatedCodecIdFromRoot } from './support/consumer.js';
 import { compositionProject as fixture } from './support/model-composition-project.js';
 import { buildModelProject, buildModelProjectWith, writeModelGolemYaml, writeModelSources } from './model-project.js';

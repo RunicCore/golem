@@ -1,6 +1,5 @@
 import { linkProjectPackages, readFixture, writeGeneratedArtifacts } from './fixture-project.js';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 
@@ -14,7 +13,7 @@ import { loadModelManifests } from '@exprtlabs/golem/internal/type-analysis';
 import { createProgram, generatedFilename } from '@exprtlabs/golem/internal/type-analysis';
 import { generate as generateControllers } from '#controllers/generator';
 import { workspace } from './support/process.js';
-import { buildModelProject, createModelProject, generatedModelFiles, writeModelGolemYaml, type ModelProject } from './model-project.js';
+import { buildModelProject, createModelProject, writeModelGolemYaml, type ModelProject } from './model-project.js';
 import { generatedCodecIdFromRoot } from './support/consumer.js';
 import { compileSchema } from './support/compiled-validators.js';
 import { containsSiblingConstraintSource } from './fixture-templates/models/constraint-parity.js';

@@ -4,7 +4,6 @@ import test from 'node:test';
 import { createSchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
 import { code, emitModelFromInit, emitModelFromJSON, identifier, render, type StringifySerdeResolver } from '@exprtlabs/golem/internal/emitter';
 import type { ModelTypeDescriptor } from '@exprtlabs/golem/internal/schema';
-import type { Validator } from '@exprtlabs/golem/validation';
 import { buildCodecValidationPlan } from '@exprtlabs/golem/internal/validation-plan';
 import * as modelRuntime from '@exprtlabs/golem/internal/model-runtime';
 import { emitCodecRuntimeText, instantiateRuntime } from './emitted-runtime.js';

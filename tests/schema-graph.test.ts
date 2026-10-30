@@ -557,7 +557,7 @@ test('fill assigns known fields, keeps __proto__ defineProperty, and nested mode
   createObjectCodec('Money', {
     stringify: (value) => JSON.stringify(value),
     parse: (text) => JSON.parse(text) as never,
-    validate: (value: unknown): value is never => true,
+    validate: (_value: unknown): _value is never => true,
     assert: (value) => value as never,
     toWireFormat: (value) => ({ ...(value as object) }),
     fromWireFormat: (wire) => new MoneyModel(wire as object) as never,

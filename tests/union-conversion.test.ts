@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import * as modelRuntime from '@exprtlabs/golem/internal/model-runtime';
-import { bindInput, emitModelFromInit, emitModelFromJSON, inputOf, inputSlot, render, code, identifier, literal, type Code } from '@exprtlabs/golem/internal/emitter';
+import { bindInput, emitModelFromInit, emitModelFromJSON, inputOf, inputSlot, code, identifier, literal, type Code } from '@exprtlabs/golem/internal/emitter';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import type { DiscriminatorValue, ModelTypeDescriptor } from '@exprtlabs/golem/internal/schema';
 import { createSchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
