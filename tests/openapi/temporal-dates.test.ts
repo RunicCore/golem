@@ -9,6 +9,7 @@ import {
   captureRequest,
   compileGeneratedSdk,
   generateMaterializedSdk,
+  importGeneratedModule,
   importSdkCodecs,
   isGeneratedClientClass,
   requireRecord,
@@ -87,6 +88,36 @@ test('dates: temporal models encode to the ISO strings the generated client send
   const response = await client.createEvent().execute({ body: sdkFunction(codecs, 'toWireFormat', 'Event')(model) as never });
   assert.equal(response.status, 201);
   assert.deepEqual(JSON.parse(String(requests[0]?.init.body)), wire);
+});
+
+test('a standalone SDK writes its sdkCodecs table, keyed by operation, and loading the index loads it', async t => {
+  // protects: T-707 the shared module writes the sdkCodecs table the client reads
+  const output = path.join(createFixtureProject(t, 'golem-openapi-sdk-codecs-'), 'sdk');
+  const event = { $ref: '#/components/schemas/Event' };
+  const withOperations = {
+    ...(EVENT as Record<string, unknown>),
+    paths: {
+      '/events': {
+        post: {
+          operationId: 'createEvent',
+          requestBody: { required: true, content: { 'application/json': { schema: event } } },
+          responses: { 201: { description: 'Created', content: { 'application/json': { schema: event } } } },
+        },
+        get: { operationId: 'listEvents', responses: { 204: { description: 'None' } } },
+      },
+    },
+  };
+  await generateMaterializedSdk(withOperations, { output, name: 'Events', profile: PROFILE, dates: 'temporal' });
+  compileGeneratedSdk(output, [], { strict: true, lib: ['ES2023', 'DOM', 'DOM.Iterable', 'esnext.temporal'] });
+  const { sdkCodecs } = requireRecord(await importGeneratedModule(output, 'sdk codecs', 'dist/codecs.generated.js'), 'sdk codecs module') as { sdkCodecs: Record<string, Record<string, unknown>> };
+  assert.deepEqual(Object.keys(sdkCodecs).sort(), ['createEvent', 'listEvents']);
+  assert.deepEqual(Object.keys(sdkCodecs.createEvent ?? {}), ['input', 'responses', 'encode', 'decode']);
+  assert.deepEqual(Object.keys(sdkCodecs.listEvents ?? {}), ['input']);
+  const wire = { at: '2025-01-02T03:04:05Z', day: '2025-01-02', span: 'P1D', clock: '03:04:05Z', maybe: null };
+  const decoded = (sdkCodecs.createEvent?.decode as (wire: unknown) => Record<string, unknown>)(wire);
+  assert.ok(decoded.at instanceof Temporal.Instant);
+  assert.deepEqual((sdkCodecs.createEvent?.encode as (value: unknown) => unknown)(decoded), wire);
+  assert.match(fs.readFileSync(path.join(output, 'index.ts'), 'utf8'), /^import '\.\/codecs\.generated\.js';$/m);
 });
 
 test('dates omitted and dates: date generate the same SDK, with Date values', async t => {

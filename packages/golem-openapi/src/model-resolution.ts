@@ -1,4 +1,4 @@
-import { descriptorNeedsConversion } from '@exprtlabs/golem/internal/emitter';
+import { descriptorNeedsConversion, TEMPORAL_SERDE_PREFIX } from '@exprtlabs/golem/internal/emitter';
 import type { SchemaGraph, SchemaNode } from '@exprtlabs/golem/internal/schema-graph';
 import { identifier } from '@exprtlabs/golem/internal/generator-support';
 import { asRecord, escapeJsonPointerToken, isJsonObject, objectEntries, type JsonObject } from './json.js';
@@ -135,8 +135,6 @@ export function modelEnv(
 export function withSchemaBase(env: ModelResolveEnv, schema: unknown): ModelResolveEnv {
   return { ...env, currentBase: nextSchemaBase(schema, env.currentBase, env.resources) };
 }
-
-export const TEMPORAL_SERDE_PREFIX = 'temporal:';
 
 function isTemporalDescriptor(descriptor: ModelTypeDescriptor): boolean {
   const serde = (descriptor as { readonly serde?: { readonly id?: string } }).serde;
@@ -928,7 +926,6 @@ interface SchemaGraphGroup {
   readonly id: string;
   readonly filename: string;
   readonly nodes: ReadonlySet<string>;
-  readonly models: ReadonlySet<string>;
 }
 
 export interface SchemaGraphGrouping {

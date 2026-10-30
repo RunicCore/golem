@@ -24,6 +24,8 @@ export {
   type Code, type Helper, type ImportGroup, type ImportOptions, type InputSlot, type JsonValue, type NameSlot, type RenderedModule,
 } from './code.js';
 export { rt, rtType, type RuntimeModule } from './rt.js';
+/** The Temporal codec rules and the `sdkCodecs` table writer that golem-openapi and golem-model share. */
+export { TEMPORAL_FORMATS, TEMPORAL_SERDE, TEMPORAL_SERDE_PREFIX, temporalCodecName, writeSdkCodecs, type SdkCodecsModule, type SdkOperationCodecs } from './sdk-codecs.js';
 /** The allOf object merge, for generators that read schemas (golem-openapi). */
 export {
   composeObjects,

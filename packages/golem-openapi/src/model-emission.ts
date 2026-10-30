@@ -17,21 +17,25 @@ import {
   join,
   lineBreak,
   render,
-  rt,
   type Code,
   type ImportOptions,
   fillFunctionName,
   sideEffectImport,
   reachesItself,
   wireStringifyExportName,
+  TEMPORAL_SERDE,
+  writeSdkCodecs,
+  type SdkOperationCodecs,
   type CodecRuntimeOptions,
   type FromJsonModelResolver,
 } from '@exprtlabs/golem/internal/emitter';
 import { type SchemaGraph, type SchemaNode } from '@exprtlabs/golem/internal/schema-graph';
 import type { CodecValidationPlan, PlanValidators, SchemaPlace } from '@exprtlabs/golem/internal/validation-plan';
-import { sourceDigest } from '@exprtlabs/golem/internal/generator-support';
+import { identifier as typeIdentifier, sourceDigest } from '@exprtlabs/golem/internal/generator-support';
 import { buildCodecValidationPlan } from '@exprtlabs/golem/internal/validation-plan';
 import { compareText } from '@exprtlabs/golem/generator-api';
+import { asRecord } from './json.js';
+import type { NormalizedOperation } from './normalize.js';
 import { componentOrigin, componentPlace, LocatedError, type OriginLocator } from './origin.js';
 import { COMPOSITION_CONVERSION_CONFLICT, conflictMessage } from './composition.js';
 import { generatedBannerComment } from './package-info.js';
@@ -42,39 +46,18 @@ import {
   ModelDefinitions,
   type ModelResolveEnv,
   type OpenApiModelAnalysis,
-  TEMPORAL_SERDE_PREFIX,
   declaredModelBases,
   modelBases,
   modelStableId,
   modelConversionDescriptor,
+  modelEnv,
+  directComponentSchemaRef,
   CompositionError,
   locatedCompositionError,
   type CompositionSite,
 } from './model-resolution.js';
 import { openApiValidationSchemaClosure } from './model-manifest.js';
 import { analyzeOpenApiModels, reachableSchemaNodes, schemaGraphView } from './model-schema-graph.js';
-
-/**
- * Calls the Temporal codec of `@exprtlabs/golem/internal/temporal-runtime` that a `temporal:` serde id names; other ids never reach OpenAPI models.
- * Conversion code holds values as `unknown`; wire validation has already checked them, so the call casts.
- * The codec is a runtime part, so the file imports exactly the codecs it calls. The module exports one pair for each
- * Temporal type; a name it lacks is a TypeScript error in the generated file.
- */
-const TEMPORAL_CODECS = rt.temporal as unknown as Readonly<Record<string, Code>>;
-
-function temporalCodec(direction: 'deserialize' | 'serialize', id: string): Code {
-  return TEMPORAL_CODECS[`${direction}${temporalCodecName(id)}`];
-}
-
-const TEMPORAL_SERDE = {
-  deserialize: (id: string, value: Code) => code`${temporalCodec('deserialize', id)}((${value}) as never)`,
-  serialize: (id: string, value: Code) => code`${temporalCodec('serialize', id)}((${value}) as never)`,
-};
-
-function temporalCodecName(id: string): string {
-  if (!id.startsWith(TEMPORAL_SERDE_PREFIX)) throw new Error(`Unexpected serde id in an OpenAPI model: ${id}`);
-  return id.slice(TEMPORAL_SERDE_PREFIX.length);
-}
 
 /** The bases of the model that `reference` names, when it has any. */
 function referenceBases(reference: string, definitions: ModelDefinitions): { readonly bases?: ReturnType<typeof modelBases> } {
@@ -368,6 +351,12 @@ export function generateModels(
       return names === undefined || validatorsSource === undefined ? undefined : { structure: validatorsSource.name(names.structure), predicates: validatorsSource.name(names.predicates) };
     } } : {}),
     issueSource: 'OpenAPI',
+    // A component's codecs take and return its converted `Types` type; a node that is no component, and so has no type there, stays `unknown`.
+    fieldsType: (node) => {
+      const definition = analysis.definitionNameByNodeId.has(node.id) ? definitions.get(analysis.definitionNameByNodeId.get(node.id) ?? '') : undefined;
+      const declared = definition !== undefined && Object.hasOwn(asRecord(asRecord(asRecord(document).components).schemas), definition.schemaName);
+      return definition !== undefined && declared && typeIdentifier(definition.schemaName) === definition.name ? code`${typesModule.namespace()}.${identifier(definition.name)}` : undefined;
+    },
     exportWireStringify: (node) => exportsWireStringify(analysis.schemaGraph, node, profile),
     siblingWireCodecIds: new Set([...(helpers.dependencyNodeIds ?? [])].flatMap((id) => {
       const node = analysis.nodesById.get(id);
@@ -407,4 +396,53 @@ export function generateModels(
     ...bodyLines,
   ];
   return render(code`${join(lines, code`\n`)}\n`);
+}
+
+/** The validators of an operation in the SDK's validators module: the export names of its input check and of each response check. */
+export interface OperationValidatorNames {
+  readonly input: string;
+  readonly responses: readonly string[];
+}
+
+/** The model that every schema in `schemas` references, when they all reference the same one. */
+function sharedModelNode(schemas: readonly unknown[], analysis: OpenApiModelAnalysis, document: unknown): SchemaNode | undefined {
+  const env = modelEnv(document, undefined, undefined, analysis.resources, analysis.selections, analysis.dates);
+  const references = schemas.map((schema) => directComponentSchemaRef(schema, env));
+  const [first] = references;
+  return first === null || first === undefined || !references.every((reference) => reference === first) ? undefined : analysis.nodesByName.get(first);
+}
+
+/**
+ * The module `codecs.generated.ts` of a standalone SDK: the `sdkCodecs` table, by operation name, and the load of every model group
+ * module, so that a consumer's compile reaches them and loading the table registers their codecs. An operation gets the encoder
+ * of its request body and the decoder of its success body when each is a reference to one model.
+ */
+export function generateSdkCodecs(
+  document: unknown,
+  operations: readonly NormalizedOperation[],
+  analysis: OpenApiModelAnalysis,
+  validators: ReadonlyMap<string, OperationValidatorNames> | undefined,
+): string {
+  const validatorsSource = new ImportSource('./validators.generated.js', false, { sorted: true });
+  const groupSources = new Map(analysis.grouping.groups.map((group) => [group.id, new ImportSource(`./models/_${group.id}.js`, false, { sorted: true })] as const));
+  const codecOf = (node: SchemaNode | undefined, functionName: 'fromWire' | 'toWire'): Code | undefined => {
+    const groupId = node ? analysis.grouping.owner.get(node.id) : undefined;
+    return node && groupId !== undefined ? groupSources.get(groupId)?.name(generatedFunctionName(node.id, functionName)) : undefined;
+  };
+  const table = operations.map((operation): SdkOperationCodecs => {
+    const checks = validators?.get(operation.name);
+    const encode = codecOf(sharedModelNode(operation.requestContent.map((media) => media.schema), analysis, document), 'toWire');
+    const decode = codecOf(sharedModelNode(operation.responses.filter((response) => response.success).flatMap((response) => response.content.map((media) => media.schema)), analysis, document), 'fromWire');
+    return {
+      name: operation.name,
+      ...(checks ? { input: validatorsSource.name(checks.input), responses: checks.responses.map((name) => validatorsSource.name(name)) } : {}),
+      ...(encode ? { encode } : {}),
+      ...(decode ? { decode } : {}),
+    };
+  });
+  return writeSdkCodecs(table, {
+    banner: generatedBannerComment(),
+    sources: [validatorsSource, ...groupSources.values()],
+    loads: analysis.grouping.groups.map((group) => `./models/_${group.id}.js`),
+  });
 }

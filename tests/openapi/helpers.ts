@@ -81,14 +81,8 @@ export function compileGeneratedSdk(
     }
   };
   collectJavascript(output);
-  // The index imports no schema group module (the client will, in T-689), so the compile names them: they are generated and must compile.
-  const groupsDirectory = join(output, 'models');
-  const groupModules = existsSync(groupsDirectory)
-    ? readdirSync(groupsDirectory).filter(name => /^_group-.*\.ts$/.test(name)).sort().map(name => join(groupsDirectory, name))
-    : [];
   const files = [
     join(output, 'index.ts'),
-    ...groupModules,
     ...generatedJavascript,
     ...extraFiles,
   ];
@@ -336,7 +330,7 @@ export function captureRequest(url: string | URL | Request, init?: RequestInit):
 
 /**
  * Test-only: the codec functions of a compiled SDK (`parse<Name>`, `stringify<Name>`, `fromWireFormat<Name>`, `toWireFormat<Name>`,
- * `validate<Name>`, `assert<Name>`), read from its schema group modules. The SDK index exports none of them; the client calls them.
+ * `validate<Name>`, `assert<Name>`), read from its schema group modules. The SDK index exports none of them, and the `sdkCodecs` table is keyed by operation, so a test of a component's codec reads the group modules.
  */
 export async function importSdkCodecs(output: string, label = 'SDK codecs'): Promise<Record<string, unknown>> {
   const directory = join(output, 'dist/models');

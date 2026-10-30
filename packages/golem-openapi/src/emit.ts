@@ -2,11 +2,11 @@ import path from 'node:path';
 import { GolemDiagnosticSeverity, type GolemDiagnostic, type GolemResult } from '@exprtlabs/golem/generator-api';
 import { stableJson } from '@exprtlabs/golem/generator-api';
 import { assertPortableFilenames, identifier, isRecord } from '@exprtlabs/golem/internal/generator-support';
-import { buildOperationValidationSchemas, generateClientModules } from './client/emit.js';
+import { buildOperationValidationSchemas, generateClientModules, operationValidatorNames } from './client/emit.js';
 import { browserCookieDiagnostics, normalizeAndValidate, unsupportedHttpAuthSchemes, type MovedUnions } from './document.js';
 import { buildEmissionPlan, serverOverrideDiagnostics, type ArtifactFile, type EmissionPlan } from './emission-plan.js';
 import { asRecord, readString } from './json.js';
-import { assertUniqueExportNames, code, documentLiteral, exportedName, identifier as identifierPart, join, renderModule, type Code, type PublicModule, type RenderedModule } from '@exprtlabs/golem/internal/emitter';
+import { assertUniqueExportNames, code, documentLiteral, exportedName, identifier as identifierPart, join, renderModule, sideEffectImport, type Code, type PublicModule, type RenderedModule } from '@exprtlabs/golem/internal/emitter';
 import { operationName, operationNameType } from './names.js';
 import type { NormalizedOperation } from './normalize.js';
 import { generatedBannerComment } from './package-info.js';
@@ -17,6 +17,7 @@ import {
   checkOperationCompositions,
   generateModelManifest,
   generateOpenApiModelArtifacts,
+  generateSdkCodecs,
   type OpenApiDates,
 } from './models.js';
 import { withOrigins, type OriginLocator } from './origin.js';
@@ -120,7 +121,7 @@ function generateIndex(profile: OpenApiGenerationProfile, plan?: EmissionPlan): 
   const include = (name: ArtifactFile): boolean => artifacts ? artifacts.has(name) : true;
   const stars = ['types.ts', ...(['client.ts', 'inbound.ts', 'links.ts'] as const).filter(include)];
   return { ...renderModule(code`${generatedBannerComment()}
-export * from './types.js';
+${artifacts?.has('codecs.generated.ts') ? code`${sideEffectImport('./codecs.generated.js')}\n` : code``}export * from './types.js';
 ${include('input-schemas.ts') ? code`export type * as ${exportedName('InputSchemas')} from './input-schemas.js';` : code``}
 ${include('output-schemas.ts') ? code`export type * as ${exportedName('OutputSchemas')} from './output-schemas.js';` : code``}
 ${include('client.ts') ? code`export * from './client.js';` : code``}
@@ -227,6 +228,14 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions, moved:
     modelDiagnostics.push(...validators.compiled.diagnostics);
     // A source is empty when the compile reported an error; no file is written then.
     if (validators.compiled.source !== '' && validators.compiled.exports.size > 0) files.set('validators.generated.ts', validators.compiled.source);
+  }
+  if (plan.artifacts.has('codecs.generated.ts')) {
+    files.set('codecs.generated.ts', generateSdkCodecs(
+      document,
+      operations,
+      modelAnalysis,
+      operationValidation && validators.compiled ? operationValidatorNames(operationValidation, validators.compiled.exports) : undefined,
+    ));
   }
   files.set('model-manifest.json', stableJson(generateModelManifest(document, profile, modelAnalysis)));
   if (plan.artifacts.has('client.ts')) {

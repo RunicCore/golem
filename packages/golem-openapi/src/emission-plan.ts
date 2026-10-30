@@ -30,6 +30,7 @@ export type ArtifactFile =
   | 'input-schemas.ts'
   | 'output-schemas.ts'
   | 'client.ts'
+  | 'codecs.generated.ts'
   | 'inbound.ts'
   | 'links.ts'
   | 'servers.ts';
@@ -415,6 +416,7 @@ export function buildEmissionPlan(
   const servers = normalizeServers(asRecord(document).servers);
   const overrides = servers.length ? operationFirstServers(outbound, servers) : { operationServers: [], operationServerIndex: new Map<string, number>() };
   if (hasOutboundOperations) artifacts.add('client.ts');
+  if (hasOutboundOperations || hasModels) artifacts.add('codecs.generated.ts');
   if (hasOutboundOperations && servers.length) artifacts.add('servers.ts');
   if (hasInboundOperations) artifacts.add('inbound.ts');
   if (links) artifacts.add('links.ts');

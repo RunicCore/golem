@@ -236,6 +236,7 @@ test('schema-only documents emit types, directional files, and models without a 
     'input-schemas.ts',
     'output-schemas.ts',
     'models/_group-<hash>.ts',
+    'codecs.generated.ts',
     ...(profile.validation ? ['validators.generated.ts'] : []),
   ]);
 });
@@ -326,6 +327,7 @@ test('minimal GET without content omits codec options and unused helpers', async
     'model-manifest.json',
     'client.ts',
     'operations/ping.ts',
+    'codecs.generated.ts',
     ...(profile.validation ? ['validators.generated.ts'] : []),
   ], false);
 

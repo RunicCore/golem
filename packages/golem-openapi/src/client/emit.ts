@@ -702,6 +702,17 @@ export function buildOperationValidationSchemas(
   };
 }
 
+/** The export name of each validator the `sdkCodecs` table lists for each operation, from the SDK's validators module. */
+export function operationValidatorNames(
+  schemas: OperationValidationSchemas,
+  validatorExports: ReadonlyMap<string, string>,
+): ReadonlyMap<string, { readonly input: string; readonly responses: readonly string[] }> {
+  return new Map([...schemas.bundles].map(([name, bundle]) => [name, {
+    input: requireValidatorExport(name, bundle.inputReference, validatorExports),
+    responses: bundle.responseReferences.map((item) => requireValidatorExport(name, item.reference, validatorExports)),
+  }] as const));
+}
+
 /**
  * The modules of the client. When the profile validates, `validatorExports` is the name the SDK's validators module
  * exports each operation root under, and each operation module imports its validators from that module.

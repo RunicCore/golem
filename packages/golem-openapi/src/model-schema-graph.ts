@@ -144,7 +144,7 @@ export function analyzeOpenApiModels(
   const nodesById = new Map(nodes.map((node) => [node.id, node]));
   const { nodesByName, definitionNameByNodeId } = nodesByDefinitionName(schemaGraph, new Map([...nodeIdByDefinition].filter(([name]) => definitions.has(name))));
   const nodesByCodecId = new Map(nodes.map((node) => [node.codecId, node]));
-  const grouping = schemaGraphGroups(schemaGraph, definitions, nodesByName, definitionNameByNodeId);
+  const grouping = schemaGraphGroups(schemaGraph, definitions, nodesByName);
   return { definitions, ordered, schemaGraph, grouping, resources, nodesById, nodesByName, definitionNameByNodeId, nodesByCodecId, diagnostics, selections, dates };
 }
 
@@ -181,7 +181,6 @@ function schemaGraphGroups(
   schemaGraph: SchemaGraph,
   definitions: ModelDefinitions,
   nodesByName: ReadonlyMap<string, SchemaNode>,
-  definitionNameByNodeId: ReadonlyMap<string, string>,
 ): SchemaGraphGrouping {
   const runtimeEdges = new Map([...schemaGraph.nodes].map(([id, node]) => [id, new Set(node.edges)]));
   const addRuntimeEdge = (fromName: string, toName: string | undefined): void => {
@@ -236,16 +235,12 @@ function schemaGraphGroups(
   const owner = new Map<string, string>();
   const described = new Map<string, readonly string[]>();
   const groups = components.map((ids) => {
-    const models = new Set(ids.flatMap((id) => {
-      const model = definitionNameByNodeId.get(id);
-      return model === undefined ? [] : [model];
-    }));
     const id = `group-${hashGroup([...ids].map((nodeId) => schemaGraph.nodes.get(nodeId)?.codecId ?? nodeId))}`;
     const other = described.get(id);
     if (other) throw new Error(`Internal error: the schema groups [${other.join(', ')}] and [${ids.join(', ')}] have the same id ${id}; one would overwrite the other's file models/_${id}.ts`);
     described.set(id, ids);
     for (const nodeId of ids) owner.set(nodeId, id);
-    return { id, filename: `models/_${id}.ts`, nodes: new Set(ids), models };
+    return { id, filename: `models/_${id}.ts`, nodes: new Set(ids) };
   }).sort((left, right) => compareText(left.id, right.id));
   return { groups, owner, runtimeEdges };
 }

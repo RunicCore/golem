@@ -1,7 +1,7 @@
 import { isBinaryMediaType, isBuiltinTextMediaType } from './client/codecs.js';
 import { asRecord, isJsonObject, objectEntries, type JsonObject } from './json.js';
 import { identifier, NameScope } from '@exprtlabs/golem/internal/generator-support';
-import { code, codeKey, manifestMarkerComment, docComment, exportedName, fileImports, identifier as identifierPart, ImportSource, isEmpty, join, lineBreak, literal, nest, propertyKey, render, renderModule, sameCode, type RenderedModule, type Code, type JsonValue } from '@exprtlabs/golem/internal/emitter';
+import { code, codeKey, TEMPORAL_FORMATS, manifestMarkerComment, docComment, exportedName, fileImports, identifier as identifierPart, ImportSource, isEmpty, join, lineBreak, literal, nest, propertyKey, render, renderModule, sameCode, type RenderedModule, type Code, type JsonValue } from '@exprtlabs/golem/internal/emitter';
 import { unionVariants } from './composition.js';
 import { refName } from './names.js';
 import {
@@ -247,13 +247,6 @@ interface ConvertedTypes {
   /** The globals `Date` and `Temporal` that a component of the same name shadows in the module: they are reached through `globalThis`. */
   readonly shadowed: ReadonlySet<string>;
 }
-
-/** `dates: temporal` string formats and the Temporal type each converts to, with the `@exprtlabs/golem/temporal` codec that converts it. */
-const TEMPORAL_FORMATS = {
-  'date-time': { typeName: 'Temporal.Instant', type: code`Temporal.Instant`, codec: 'TemporalInstant' },
-  date: { typeName: 'Temporal.PlainDate', type: code`Temporal.PlainDate`, codec: 'TemporalPlainDate' },
-  duration: { typeName: 'Temporal.Duration', type: code`Temporal.Duration`, codec: 'TemporalDuration' },
-} as const;
 
 /** The Temporal type of a string schema under `dates: temporal`; any other schema or mode has none. */
 export function temporalFormat(schema: unknown, dates: OpenApiDates): (typeof TEMPORAL_FORMATS)[keyof typeof TEMPORAL_FORMATS] | undefined {
