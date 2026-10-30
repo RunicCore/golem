@@ -6,7 +6,7 @@ import { isGolemSourceFile, isGolemTagKey } from './tags.js';
 import { hasLocalForm, localFormMessage } from '../names.js';
 
 /** A located model-analysis error with its RUNM code. */
-export function diagnostic(
+export function namedDiagnostic(
   sourceFile: ts.SourceFile,
   node: ts.Node,
   code: string,
@@ -14,10 +14,19 @@ export function diagnostic(
 ): Error & { readonly code: string } {
   const position = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
   const error = new Error(
-    `${displayPath(sourceFile.fileName)}:${position.line + 1}:${position.character + 1} RUNM${code}: ${message}`,
+    `${displayPath(sourceFile.fileName)}:${position.line + 1}:${position.character + 1} ${code}: ${message}`,
   ) as Error & { readonly code: string };
-  Object.defineProperty(error, 'code', { value: `RUNM${code}`, enumerable: true });
+  Object.defineProperty(error, 'code', { value: code, enumerable: true });
   return error;
+}
+
+export function diagnostic(
+  sourceFile: ts.SourceFile,
+  node: ts.Node,
+  code: string,
+  message: string,
+): Error & { readonly code: string } {
+  return namedDiagnostic(sourceFile, node, `RUNM${code}`, message);
 }
 
 /** The declared type of a property, read at its own declaration. */

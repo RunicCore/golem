@@ -39,6 +39,8 @@ export interface GolemModeComponent {
   readonly type?: ModelManifestProvenance;
   /** The names of the models that this model narrows. */
   readonly bases?: readonly string[];
+  /** The keywords of the schema that its descriptor, and those of the models it refers to, do not carry: the model plane alone does not check the schema as the SDK does. None when the descriptors carry them all. */
+  readonly uncarried?: readonly string[];
   readonly descriptor: string;
 }
 
@@ -222,7 +224,8 @@ function validateGolemModeGraph(manifest: Record<string, unknown>, filename: str
   const validComponent = (entry: unknown): boolean => isRecord(entry) && isName(entry.name) && isDescriptorText(entry.descriptor)
     && (entry.codecId === undefined ? isProvenance(entry.type) : isName(entry.codecId))
     && (entry.type === undefined || isProvenance(entry.type))
-    && (entry.bases === undefined || (Array.isArray(entry.bases) && entry.bases.every(isName)));
+    && (entry.bases === undefined || (Array.isArray(entry.bases) && entry.bases.every(isName)))
+    && (entry.uncarried === undefined || (Array.isArray(entry.uncarried) && entry.uncarried.every(isName)));
   if (!Array.isArray(components) || !components.every(validComponent) || new Set(components.map((entry) => entry.name)).size !== components.length) {
     throw invalid('components must list each schema once, by name, with its descriptor as JSON text, a codec id for a graph node and the type of a scalar alias');
   }

@@ -80,6 +80,36 @@ function descriptorConverts(descriptor: ModelTypeDescriptor, graph: SchemaGraph,
   }
 }
 
+/** The models and recursive aliases that a descriptor names, anywhere inside it. */
+function referencedModels(descriptor: unknown): string[] {
+  if (Array.isArray(descriptor)) return descriptor.flatMap(referencedModels);
+  if (descriptor === null || typeof descriptor !== 'object') return [];
+  const record = descriptor as Record<string, unknown>;
+  const named = record.kind === 'generated-model' ? record.id : record.kind === 'reference' ? record.name : undefined;
+  return [...(typeof named === 'string' ? [named] : []), ...Object.values(record).flatMap(referencedModels)];
+}
+
+/** The keywords that no descriptor carries, own and of every model the descriptor refers to; none when the descriptor is complete. */
+function uncarriedOf(own: ReadonlySet<string>, descriptor: ModelTypeDescriptor, models: ReadonlyMap<string, readonly string[]>): string[] {
+  return [...new Set([...own, ...referencedModels(descriptor).flatMap((name) => models.get(name) ?? [])])].sort(compareText);
+}
+
+/** The keywords that the descriptors of each model do not carry, with those of the models it refers to. */
+function uncarriedModelsOf(entries: readonly { readonly name: string; readonly descriptor: ModelTypeDescriptor; readonly own: ReadonlySet<string> }[]): ReadonlyMap<string, readonly string[]> {
+  const found = new Map<string, readonly string[]>();
+  for (;;) {
+    let changed = false;
+    for (const { name, descriptor, own } of entries) {
+      const next = uncarriedOf(own, descriptor, found);
+      if (next.length !== (found.get(name)?.length ?? 0)) {
+        found.set(name, next);
+        changed = true;
+      }
+    }
+    if (!changed) return new Map([...found].filter(([, keywords]) => keywords.length > 0));
+  }
+}
+
 /**
  * Interns the request body, response body, stream item, parameter and response header schema of each operation that converts something, and returns the node of each by its key.
  * A `$ref` to a component uses the component's node and an inline shape the anonymous node of its shape, so equal shapes share one codec.
@@ -92,14 +122,17 @@ function internOperationValues(
   definitions: ModelDefinitions,
   env: ModelResolveEnv,
   validation: OpenApiGenerationProfile['validation'],
-): { readonly convertedNodeIds: ReadonlyMap<string, string>; readonly values: ReadonlyMap<string, SchemaGraphInput> } {
+  uncarriedModels: ReadonlyMap<string, readonly string[]>,
+): { readonly convertedNodeIds: ReadonlyMap<string, string>; readonly values: ReadonlyMap<string, SchemaGraphInput>; readonly uncarriedValues: ReadonlyMap<string, readonly string[]> } {
   const convertedNodeIds = new Map<string, string>();
   const values = new Map<string, SchemaGraphInput>();
+  const uncarriedValues = new Map<string, readonly string[]>();
   const intern = (key: string, schema: unknown): void => {
     if (schema === null || typeof schema === 'boolean') return;
     let descriptor: ModelTypeDescriptor;
+    const own = new Set<string>();
     try {
-      descriptor = modelConversionDescriptor(schema, definitions, env, 'to');
+      descriptor = modelConversionDescriptor(schema, definitions, { ...env, uncarried: own }, 'to');
     } catch (thrown) {
       // A schema that does not convert gets no node. `checkOperationCompositions` runs next, stops generation, and names the schema and the place in it.
       if (thrown instanceof CompositionError) return;
@@ -111,6 +144,8 @@ function internOperationValues(
     const node = named ? schemaGraph.nodeFor(descriptor) : schemaGraph.intern(descriptor, valueName, false, validation);
     if (!node) return;
     convertedNodeIds.set(key, node.id);
+    const uncarried = uncarriedOf(own, descriptor, uncarriedModels);
+    if (uncarried.length > 0) uncarriedValues.set(key, uncarried);
     if (!named) values.set(key, { ...(valueName === undefined ? {} : { name: valueName }), descriptor });
   };
   for (const operation of operations) {
@@ -123,7 +158,7 @@ function internOperationValues(
       }
     }
   }
-  return { convertedNodeIds, values };
+  return { convertedNodeIds, values, uncarriedValues };
 }
 
 /**
@@ -171,18 +206,22 @@ function internOpenApiSchemaGraph(
   selections?: DiscriminatorSelections,
   dates: OpenApiDates = 'date',
   operations: readonly NormalizedOperation[] = [],
-): { readonly schemaGraph: SchemaGraph; readonly nodeIdByDefinition: ReadonlyMap<string, string>; readonly convertedNodeIds: ReadonlyMap<string, string>; readonly graphInputs: SchemaGraphInputs } {
+): { readonly schemaGraph: SchemaGraph; readonly nodeIdByDefinition: ReadonlyMap<string, string>; readonly convertedNodeIds: ReadonlyMap<string, string>; readonly uncarriedModels: ReadonlyMap<string, readonly string[]>; readonly uncarriedValues: ReadonlyMap<string, readonly string[]>; readonly graphInputs: SchemaGraphInputs } {
   const schemaGraph = createSchemaGraph({}, {
     codecSource: 'openapi',
   });
   const sharedSchemaContext = schemaContext(document, resources ? { resources } : {});
   const aliasEnv = modelEnv(document, undefined, undefined, resources, selections, dates);
-  const aliasEntries = [...definitions.aliases.values()].map((alias) => ({
-    name: alias.name,
-    descriptor: locatingComposition(alias.schemaName, () => aliasDescriptor(alias, definitions, aliasEnv)),
-    emitClass: false,
-    validation,
-  }));
+  const aliasEntries = [...definitions.aliases.values()].map((alias) => {
+    const own = new Set<string>();
+    return {
+      name: alias.name,
+      descriptor: locatingComposition(alias.schemaName, () => aliasDescriptor(alias, definitions, { ...aliasEnv, uncarried: own })),
+      emitClass: false,
+      validation,
+      own,
+    };
+  });
   const modelEntries = [...ordered.map((definition) => {
     const anchors = schemaContext(
       document,
@@ -190,7 +229,8 @@ function internOpenApiSchemaGraph(
       definition.schemaName,
       definition.rawSchema,
     ).anchors;
-    const env = modelEnv(document, undefined, anchors, resources, selections, dates);
+    const own = new Set<string>();
+    const env = { ...modelEnv(document, undefined, anchors, resources, selections, dates), uncarried: own };
     return {
       name: definition.name,
       descriptor: locatingComposition(definition.schemaName, () => definition.isUnion
@@ -198,12 +238,14 @@ function internOpenApiSchemaGraph(
         : modelClassDescriptor(modelConversionDescriptor(definition.rawSchema, definitions, env, 'to', new Set(), true, 'definition'), definitions, env)),
       emitClass: false,
       validation,
+      own,
     };
   }), ...aliasEntries];
   const nodeIdByDefinition = internDescriptors(schemaGraph, modelEntries);
-  const { convertedNodeIds, values } = internOperationValues(document, schemaGraph, operations, definitions, aliasEnv, validation);
+  const uncarriedModels = uncarriedModelsOf(modelEntries);
+  const { convertedNodeIds, values, uncarriedValues } = internOperationValues(document, schemaGraph, operations, definitions, aliasEnv, validation, uncarriedModels);
   schemaGraph.seal();
-  return { schemaGraph, nodeIdByDefinition, convertedNodeIds, graphInputs: { models: modelEntries.map(({ name, descriptor }) => ({ name, descriptor })), values } };
+  return { schemaGraph, nodeIdByDefinition, convertedNodeIds, uncarriedModels, uncarriedValues, graphInputs: { models: modelEntries.map(({ name, descriptor }) => ({ name, descriptor })), values } };
 }
 
 /**
@@ -243,7 +285,7 @@ export function analyzeOpenApiModels(
 ): OpenApiModelAnalysis {
   const resources = collectCanonicalResources(document);
   const { definitions, ordered, diagnostics, selections } = collectOpenApiModelDefinitions(document, resources, dates);
-  const { schemaGraph, nodeIdByDefinition, convertedNodeIds, graphInputs } = internOpenApiSchemaGraph(document, ordered, definitions, validation, resources, selections, dates, operations);
+  const { schemaGraph, nodeIdByDefinition, convertedNodeIds, uncarriedModels, uncarriedValues, graphInputs } = internOpenApiSchemaGraph(document, ordered, definitions, validation, resources, selections, dates, operations);
   for (const alias of definitions.aliases.values()) {
     const nodeId = nodeIdByDefinition.get(alias.name);
     if (nodeId !== undefined) alias.nodeId = nodeId;
@@ -253,7 +295,7 @@ export function analyzeOpenApiModels(
   const { nodesByName, definitionNameByNodeId } = nodesByDefinitionName(schemaGraph, new Map([...nodeIdByDefinition].filter(([name]) => definitions.has(name))));
   const nodesByCodecId = new Map(nodes.map((node) => [node.codecId, node]));
   const grouping = schemaGraphGroups(schemaGraph, definitions, nodesByName);
-  return { definitions, ordered, schemaGraph, grouping, resources, nodesById, nodesByName, definitionNameByNodeId, nodesByCodecId, convertedNodeIds, graphInputs, diagnostics, selections, dates };
+  return { definitions, ordered, schemaGraph, grouping, resources, nodesById, nodesByName, definitionNameByNodeId, nodesByCodecId, convertedNodeIds, uncarriedModels, uncarriedValues, graphInputs, diagnostics, selections, dates };
 }
 
 export function schemaGraphView(

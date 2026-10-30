@@ -39,6 +39,8 @@ export interface ManifestIndex {
    * of the type is that reference (`sdkNode` names the codec of the SDK that checks and converts it), or the descriptor for a scalar alias.
    */
   sdkDescriptorForType(type: ts.Type, root: boolean): ModelTypeDescriptor | undefined;
+  /** The keywords of the SDK schema of the type that its descriptors do not carry, with those of the schemas it refers to; none when the type is no SDK type or its descriptors carry them all. */
+  sdkUncarriedForType(type: ts.Type): readonly string[] | undefined;
   /**
    * The descriptor of the scalar alias that the type node names (`type Currency = string`, which TypeScript resolves to `string`, so the
    * type alone does not tell), with the limits the SDK's schema has. The model of the app then checks them inline, as the SDK does.
@@ -79,6 +81,18 @@ function sdkDescriptorOf(manifest: GolemModeManifest, name: string): ModelTypeDe
     return { kind: 'generated-model', id: codecId, ...(nodeReferences(rest) as object), sdkNode: codecId };
   };
   return nodeReferences(JSON.parse(text)) as ModelTypeDescriptor;
+}
+
+/** The entry of an SDK type in a table keyed by the file and name of its declaration, found by the type's alias or its own symbol. */
+function sdkEntryOfType<Entry>(table: ReadonlyMap<string, Entry>, type: ts.Type): Entry | undefined {
+  for (const symbol of [type.aliasSymbol, type.getSymbol?.()]) {
+    for (const declaration of symbol?.declarations ?? []) {
+      const file = canonicalFilename(declaration.getSourceFile().fileName);
+      const found = table.get(`${file}\0${symbol!.getName()}`) ?? table.get(`${file.replace(/\.d\.([cm]?ts)$/, '.$1')}\0${symbol!.getName()}`);
+      if (found !== undefined) return found;
+    }
+  }
+  return undefined;
 }
 
 function escapeRegExp(value: string): string {
@@ -212,6 +226,7 @@ export function loadModelManifests(
   const golemModeManifests: { file: string; manifest: GolemModeManifest }[] = [];
   // The descriptor of each SDK type of a golem-mode manifest, with the schemas it names inline, by the provenance of its declaration.
   const sdkDescriptors = new Map<string, { readonly root: ModelTypeDescriptor; readonly field: ModelTypeDescriptor }>();
+  const sdkUncarried = new Map<string, readonly string[]>();
   // The descriptor of each scalar alias of a golem-mode manifest, by the provenance of its declaration.
   const sdkScalars = new Map<string, ModelTypeDescriptor>();
   for (const filename of filenames) {
@@ -267,6 +282,7 @@ export function loadModelManifests(
           const reference = NODE_KINDS.has(descriptor.kind) ? { kind: 'generated-model' as const, id: codecId, sdkNode: codecId } : { ...descriptor, sdkNode: codecId };
           for (const provenance of provenances) {
             sdkDescriptors.set(manifestProvenance(filename, provenance.module, provenance.export), { root: descriptor, field: reference });
+            if (component.uncarried?.length) sdkUncarried.set(manifestProvenance(filename, provenance.module, provenance.export), component.uncarried);
           }
         }
       }
@@ -279,16 +295,10 @@ export function loadModelManifests(
     localFiles,
     golemModeManifests,
     sdkDescriptorForType(type: ts.Type, root: boolean): ModelTypeDescriptor | undefined {
-      for (const symbol of [type.aliasSymbol, type.getSymbol?.()]) {
-        for (const declaration of symbol?.declarations ?? []) {
-          const file = canonicalFilename(declaration.getSourceFile().fileName);
-          const found = sdkDescriptors.get(`${file}\0${symbol!.getName()}`)
-            ?? sdkDescriptors.get(`${file.replace(/\.d\.([cm]?ts)$/, '.$1')}\0${symbol!.getName()}`);
-          if (found !== undefined) return root ? found.root : found.field;
-        }
-      }
-      return undefined;
+      const found = sdkEntryOfType(sdkDescriptors, type);
+      return found === undefined ? undefined : root ? found.root : found.field;
     },
+    sdkUncarriedForType: (type: ts.Type) => sdkEntryOfType(sdkUncarried, type),
     sdkScalarDescriptorForNode(checker: ts.TypeChecker, node: ts.TypeNode): ModelTypeDescriptor | undefined {
       if (sdkScalars.size === 0 || !ts.isTypeReferenceNode(node)) return undefined;
       const named = checker.getSymbolAtLocation(node.typeName);

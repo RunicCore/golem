@@ -178,6 +178,8 @@ export interface OperationCodecs {
   readonly responseHeaders?: Readonly<Record<string, Validator>>;
   readonly encode?: Readonly<Record<string, BodyConversion>>;
   readonly decode?: Readonly<Record<string, BodyConversion>>;
+  /** The `decode` keys of an inbound operation whose body the response check also judges in its wire form, because its descriptors do not carry every keyword of its schema. */
+  readonly wireChecked?: readonly string[];
   readonly parameters?: Readonly<Record<string, BodyConversion>>;
   readonly headers?: Readonly<Record<string, BodyConversion>>;
 }

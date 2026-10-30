@@ -95,6 +95,10 @@ export interface ModelResolveEnv {
   readonly currentBase: string;
   readonly anchors?: ReadonlyMap<string, string>;
   readonly selections?: DiscriminatorSelections;
+  /** Collects the keywords of the schemas converted under this env that no descriptor carries (see `noteUncarried`); none collects nothing. */
+  readonly uncarried?: Set<string>;
+  /** The next conversion reads a schema whose `required` names its caller holds: an allOf member (the composition holds them) or a sub-schema (`withRequiredNames`). */
+  readonly holdsRequired?: boolean;
 }
 
 /** One schema interned into the graph: the descriptor as the graph received it, before it sealed and rewrote the references of every node to codec ids. */
@@ -125,6 +129,13 @@ export interface OpenApiModelAnalysis {
   readonly nodesByCodecId: ReadonlyMap<string, SchemaNode>;
   /** The node of each operation body, stream item, parameter and response header that converts something, by `requestBodyKey`, `responseBodyKey`, `parameterKey` or `responseHeaderKey`; a value that converts nothing has none. */
   readonly convertedNodeIds: ReadonlyMap<string, string>;
+  /**
+   * The keywords that the descriptors of a model do not carry, by model name, with those of every model it refers to: a model not in the map is complete.
+   * The model plane alone cannot check such a model as the schema does.
+   */
+  readonly uncarriedModels: ReadonlyMap<string, readonly string[]>;
+  /** The same for the operation values of `convertedNodeIds`, by the same keys: a value not in the map is complete. */
+  readonly uncarriedValues: ReadonlyMap<string, readonly string[]>;
   /** What the graph was given to intern, for the golem-mode manifest: the models job interns the same descriptors again. */
   readonly graphInputs: SchemaGraphInputs;
   readonly diagnostics: readonly GolemDiagnostic[];
@@ -236,7 +247,7 @@ export function modelSchemaProperties(
 /** The environment a component's own schema is read in: its anchors, and the analysis' dates and discriminator tables. */
 function componentEnv(env: ModelResolveEnv, schemaName: string, rawSchema: unknown): ModelResolveEnv {
   const anchors = schemaContext(env.document, schemaContext(env.document, { resources: env.resources }), schemaName, rawSchema).anchors;
-  return modelEnv(env.document, undefined, anchors, env.resources, env.selections, env.dates);
+  return { ...modelEnv(env.document, undefined, anchors, env.resources, env.selections, env.dates), uncarried: env.uncarried };
 }
 
 /** The conversion descriptor of a recursive alias: each use of a recursive component, itself included, is a projection reference. */
@@ -499,44 +510,54 @@ function hasOwnConversionKeywords(schema: Readonly<Record<string, unknown>>): bo
     || schema.additionalProperties !== undefined;
 }
 
-/** The code of the error for a keyword that no model descriptor can carry. */
-export const KEYWORD_NOT_CARRIED = 'OPENAPI_KEYWORD_NOT_CARRIED';
-
 /**
  * The keywords that limit the text of a date-time string. The model holds a `Date` or a `Temporal` value, not the text, so
  * no descriptor of it can check them.
  */
 const DATE_TEXT_KEYWORDS = ['pattern', 'minLength', 'maxLength', 'enum', 'const', 'not', 'if', 'allOf', 'anyOf', 'oneOf'] as const;
 
-/** The keywords that read the properties or items that another keyword of the schema evaluates, which the descriptor of a union or a condition cannot follow. */
+/** The keywords that evaluate properties or items beside `unevaluatedProperties` or `unevaluatedItems`, which a union or a condition of the descriptor cannot follow. */
 const EVALUATING_KEYWORDS = ['if', 'dependentSchemas', 'oneOf', 'anyOf'] as const;
 
-/** The keyword of a schema that no model descriptor can carry, and why; the schema stops generation. */
-function uncarriedKeyword(schema: unknown, dates: OpenApiDates): { readonly keyword: string; readonly reason: string } | undefined {
-  if (!isJsonObject(schema)) return undefined;
+/** The keywords that a `$ref` does not carry when it has them beside it: the reference converts as the schema it names. */
+const REFERENCE_SIBLINGS = [
+  'type', 'enum', 'const', 'format', 'pattern', 'minLength', 'maxLength', 'minimum', 'maximum', 'exclusiveMinimum', 'exclusiveMaximum', 'multipleOf',
+  'minItems', 'maxItems', 'uniqueItems', 'items', 'prefixItems', 'contains', 'minContains', 'maxContains', 'minProperties', 'maxProperties',
+  'required', 'properties', 'additionalProperties', 'patternProperties', 'propertyNames', 'dependentRequired', 'dependentSchemas',
+  'if', 'not', 'oneOf', 'anyOf', 'allOf', 'unevaluatedProperties', 'unevaluatedItems',
+] as const;
+
+/** The keywords of a schema that its descriptor does not carry. The first three rules name keywords that no descriptor kind holds. */
+function uncarriedKeywords(schema: unknown, dates: OpenApiDates): string[] {
+  if (!isJsonObject(schema)) return [];
+  const present = (names: readonly string[]): string[] => names.filter((name) => schema[name] !== undefined);
   const isString = schema.type === 'string' || (Array.isArray(schema.type) && schema.type.includes('string'));
-  if (temporalFormat(schema, dates) !== undefined || (isString && schema.format === 'date-time')) {
-    const keyword = DATE_TEXT_KEYWORDS.find((name) => schema[name] !== undefined);
-    return keyword && { keyword, reason: 'limits the text of a date-time string, but the model holds a date value, not the text, so it cannot check the keyword' };
-  }
+  // The model holds a date value, not its text.
+  const dated = temporalFormat(schema, dates) !== undefined || (isString && schema.format === 'date-time');
   // With an allOf the composition holds `unevaluatedProperties`; with none, a union or a condition evaluates names that the descriptor does not list.
-  const beside = hasAllOfMembers(schema) ? undefined : EVALUATING_KEYWORDS.find((name) => schema[name] !== undefined);
-  const keyword = (['unevaluatedProperties', 'unevaluatedItems'] as const).find((name) => schema[name] !== undefined);
-  return beside && keyword && { keyword, reason: `judges the names or items that ${JSON.stringify(beside)} beside it evaluates, and the model cannot follow that` };
+  const unevaluating = !dated && !hasAllOfMembers(schema) && present(EVALUATING_KEYWORDS).length > 0 ? present(['unevaluatedProperties', 'unevaluatedItems']) : [];
+  const reference = typeof schema.$ref === 'string' || typeof schema.$dynamicRef === 'string' ? present(REFERENCE_SIBLINGS) : [];
+  return [...(dated ? present(DATE_TEXT_KEYWORDS) : []), ...unevaluating, ...present(['additionalItems']), ...reference];
 }
 
-function uncarriedMessage({ keyword, reason }: { readonly keyword: string; readonly reason: string }): string {
-  return `The keyword ${JSON.stringify(keyword)} ${reason}. Remove ${JSON.stringify(keyword)} from this schema, or change the schema so that the model can check it.`;
+/** Records the keywords of the schema that no descriptor carries, in the collector of the env. */
+function noteUncarried(schema: unknown, env: ModelResolveEnv): void {
+  if (env.uncarried) for (const keyword of uncarriedKeywords(schema, env.dates)) env.uncarried.add(keyword);
 }
 
-function rejectUncarriedKeywords(schema: unknown, dates: OpenApiDates): void {
-  const uncarried = uncarriedKeyword(schema, dates);
-  if (uncarried !== undefined) throw new CompositionError(KEYWORD_NOT_CARRIED, uncarriedMessage(uncarried));
+/**
+ * A schema that converts to a value of no known shape (`unknown`) drops its `type` when it names a type that has no descriptor of its own
+ * (`object` or `array` with no keywords of their shape, `null`, several types) and its `required` names unless the caller holds them.
+ */
+function noteUnknownShape(schema: Readonly<Record<string, unknown>>, env: ModelResolveEnv, requiredHeld: boolean): void {
+  if (!env.uncarried) return;
+  if (schema.type !== undefined) env.uncarried.add('type');
+  if (!requiredHeld && schema.properties === undefined && Array.isArray(schema.required) && schema.required.length > 0) env.uncarried.add('required');
 }
 
 /** The converter of the sub-schemas of a keyword, which reads them as it reads a field. */
 function subschemaConverter(definitions: ModelDefinitions, env: ModelResolveEnv, direction: 'from' | 'to', seen: ReadonlySet<unknown>): SubSchema {
-  return (child) => typeof child === 'boolean' ? child : withRequiredNames(modelConversionDescriptor(child, definitions, env, direction, seen), child);
+  return (child) => typeof child === 'boolean' ? child : withRequiredNames(modelConversionDescriptor(child, definitions, { ...env, holdsRequired: true }, direction, seen), child);
 }
 
 export function modelConversionDescriptor(
@@ -548,7 +569,10 @@ export function modelConversionDescriptor(
   nullThroughReference = true,
   position: 'field' | 'definition' = 'field',
 ): ModelTypeDescriptor {
+  const requiredHeld = env.holdsRequired === true;
+  if (requiredHeld) env = { ...env, holdsRequired: false };
   const nested = withSchemaBase(env, schema);
+  noteUncarried(schema, env);
   const reference = modelSchemaReference(schema, nested);
   if (reference && definitions.has(reference)) {
     const generated: ModelTypeDescriptor = { kind: 'generated-model', id: reference };
@@ -565,7 +589,6 @@ export function modelConversionDescriptor(
   const seen = new Set(visiting).add(schema);
   const target = componentSchemaTarget(schema, nested);
   if (target !== undefined && target !== schema) return modelConversionDescriptor(target, definitions, nested, direction, seen);
-  rejectUncarriedKeywords(schema, env.dates);
   const sub = subschemaConverter(definitions, nested, direction, seen);
   const whole = (descriptor: ModelTypeDescriptor): ModelTypeDescriptor => isJsonObject(schema) ? carryKeywords(descriptor, schema, sub) : descriptor;
   const temporal = temporalFormat(schema, env.dates);
@@ -598,7 +621,7 @@ export function modelConversionDescriptor(
         ?? untaggedUnionTable(variants, definitions, typeof declaredKey === 'string' ? declaredKey : undefined);
       return beside({ kind: 'union', variants, ...(discriminator ? { discriminator } : {}) });
     }
-    const members = schema.allOf.map((item) => modelConversionDescriptor(item, definitions, nested, direction, seen));
+    const members = schema.allOf.map((item) => modelConversionDescriptor(item, definitions, { ...nested, holdsRequired: true }, direction, seen));
     // Deciding members win. Members that only constrain, or restate an array without converting it, leave the schema's own
     // array, oneOf, anyOf and properties keywords to convert the field; the constraints join that descriptor.
     const deciding = members.filter(isDecidingPart);
@@ -713,6 +736,7 @@ export function modelConversionDescriptor(
         ? { kind: 'union', variants: [constrained, { kind: 'null' }] }
         : constrained, schema, sub);
     }
+    noteUnknownShape(schema, env, requiredHeld);
     const constraints = openApiKeywordConstraints(schema, sub);
     if (constraints || Array.isArray(schema.enum)) return withOpenApiEnum({ kind: 'unknown', ...(constraints ? { constraints } : {}) }, schema);
   }
@@ -746,7 +770,7 @@ function compositionReader(
       return name && target !== undefined ? { name, referenced: target, scope: nested, model: definitions.has(name) } : undefined;
     },
     nested: (schema, env) => withSchemaBase(env, schema),
-    descriptor: (schema, env) => seen.has(schema) ? undefined : modelConversionDescriptor(schema, definitions, env, direction, seen),
+    descriptor: (schema, env) => seen.has(schema) ? undefined : modelConversionDescriptor(schema, definitions, { ...env, holdsRequired: true }, direction, seen),
     ...declaredModelBases(definitions),
   };
 }
@@ -938,8 +962,6 @@ export function checkComposition(
   const visit = (schema: unknown, scope: ModelResolveEnv, position: 'field' | 'definition', pointer: string): void => {
     if (!isJsonObject(schema) || directComponentSchemaRef(schema, withSchemaBase(scope, schema))) return;
     const where = site.where(pointer);
-    const uncarried = uncarriedKeyword(schema, scope.dates);
-    if (uncarried !== undefined) throw new LocatedError(`${where}: ${KEYWORD_NOT_CARRIED}: ${uncarriedMessage(uncarried)}`, site.origins(where));
     if (hasAllOfMembers(schema)) {
       let composition: Composition<ModelResolveEnv>;
       try {

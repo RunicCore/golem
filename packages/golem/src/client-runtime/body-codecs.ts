@@ -228,7 +228,7 @@ export interface InboundResponse {
 export interface InboundChecks {
   /** Checks the wire request at the request levels; rejects with `LibErrorKind.Validation`. */
   readonly request: (request: InboundRequest) => Promise<void>;
-  /** The level of the response body check. A body that converts is checked by its conversion at this level, the plain value before it leaves, and the wire check skips it. */
+  /** The level of the response body check. A body that converts is checked by its conversion at this level, the plain value before it leaves, and the wire check skips it, unless the codecs list the body in `wireChecked`. */
   readonly responseLevel: ValidationLevel;
   /** Checks the wire body of the response, and each wire response header; none when the response and response header levels are off. */
   readonly response?: ResponseCheck;
@@ -344,7 +344,7 @@ export function inboundHandler<Input, Output extends InboundResponse>(
       const bodyCodec = declared.contentType === null || !codecs.decode ? undefined : Object.hasOwn(codecs.decode, `${declared.status}:${declared.contentType}`) ? codecs.decode[`${declared.status}:${declared.contentType}`] : undefined;
       let body = response.body;
       if (bodyCodec) body = bodyCodec(body as never, checks === undefined ? undefined : { validate: checks.responseLevel });
-      else if (checks?.response) await checks.response(declared, body);
+      if (checks?.response && (!bodyCodec || codecs.wireChecked?.includes(`${declared.status}:${declared.contentType}`))) await checks.response(declared, body);
       const sent = declaredNames(response.headers, declaredAs?.headers.map((item) => item.name) ?? []);
       for (const [name, value] of Object.entries(sent)) {
         const wireValue = value === undefined || !convert ? value : convert(declared, value, name);

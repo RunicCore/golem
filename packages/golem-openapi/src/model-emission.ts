@@ -479,6 +479,9 @@ export function generateOperationCodecs(
     const responses = operation.responses.flatMap((response) => response.content.map((media) => [response.status, media.contentType] as const));
     const encode = keyed(operation.requestContent.map((media) => [media.contentType, codecOf(requestBodyKey(operation.name, media.contentType), requestConversion)]));
     const decode = keyed(responses.map(([status, contentType]) => [`${status}:${contentType}`, codecOf(responseBodyKey(operation.name, status, contentType), responseConversion)]));
+    // An inbound response body that converts is judged by its conversion; when its descriptors miss a keyword of its schema, the wire check judges it too.
+    const wireChecked = inbound ? responses.map(([status, contentType]) => [`${status}:${contentType}`, responseBodyKey(operation.name, status, contentType)] as const)
+      .filter(([, valueKey]) => analysis.uncarriedValues.has(valueKey)).map(([key]) => key) : [];
     const parameters = keyed(operation.parameters.map((parameter) => [`${parameter.in}:${parameter.name}`, codecOf(parameterKey(operation.name, parameter.in, parameter.name), requestConversion)]));
     const headers = keyed(operation.responses.flatMap((response) => Object.keys(response.headers).map((name) => [`${response.status}:${name}`, codecOf(responseHeaderKey(operation.name, response.status, name), responseConversion)] as const)));
     if (!profile.validation && !encode.length && !decode.length && !parameters.length && !headers.length) continue;
@@ -486,6 +489,7 @@ export function generateOperationCodecs(
       ...(checks ? { input: validatorsSource.name(checks.input), ...(checks.headers === undefined ? {} : { requestHeaders: validatorsSource.name(checks.headers) }), responses: checks.responses.map((item) => ({ key: item.key, code: validatorsSource.name(item.name) })), responseHeaders: checks.responseHeaders.map((item) => ({ key: item.key, code: validatorsSource.name(item.name) })) } : {}),
       ...(encode.length ? { encode } : {}),
       ...(decode.length ? { decode } : {}),
+      ...(wireChecked.length ? { wireChecked } : {}),
       ...(parameters.length ? { parameters } : {}),
       ...(headers.length ? { headers } : {}),
     };

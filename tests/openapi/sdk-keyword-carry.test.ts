@@ -3,8 +3,8 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
-import { createFixtureProject, fileFixtureScope, onceShared } from '../fixture-project.js';
-import { generateMaterializedSdk, importGeneratedModule, sdkBodyCodec, withRootOperations } from './helpers.js';
+import { fileFixtureScope, onceShared } from '../fixture-project.js';
+import { importGeneratedModule, sdkBodyCodec, withRootOperations } from './helpers.js';
 import { loadGolemModeProject, loadSdk, type GolemModeSdkSetup } from './sdk-client-fixture.js';
 
 // Every JSON Schema keyword that a model descriptor can carry reaches the model plane, so a body that converts a date is checked
@@ -105,13 +105,39 @@ for (const row of ROWS) {
   });
 }
 
-test('a keyword that limits the text of a date-time string stops generation and names the keyword', async () => {
-  // protects: T-729 a keyword that no descriptor can carry stops generation with OPENAPI_KEYWORD_NOT_CARRIED, never a silent drop
-  const document = withRootOperations({
+// A keyword that no descriptor carries (here the text of a date-time string) marks its node: the SDK checks the body in its wire form too,
+// and an app model over the type stops generation.
+const STAMP_DOCUMENT = {
+  ...withRootOperations({
     openapi: '3.1.0',
     info: { title: 'Stamps', version: '1' },
-    components: { schemas: { Stamp: body({}, { at: { type: 'string', format: 'date-time', pattern: '^2025' } }) } },
-  }, 'Stamp');
-  const output = path.join(createFixtureProject(scope, 'golem-openapi-keyword-uncarried-'), 'sdk');
-  await assert.rejects(generateMaterializedSdk(document, { output, name: 'Stamps' }), /OPENAPI_KEYWORD_NOT_CARRIED[^]*"pattern"/);
+    components: { schemas: { Stamp: { type: 'object', required: ['at'], properties: { at: { ...DATE_TIME, pattern: '^2025' } } } } },
+  }, 'Stamp'),
+  webhooks: { Stamp: { post: { operationId: 'receiveStamp', responses: { 200: { description: 'ok', content: json('Stamp') } } } } },
+};
+const stamps = onceShared(() => loadSdk(scope, 'golem-openapi-keyword-stamps-', { document: STAMP_DOCUMENT, name: 'Stamps', dates: 'date', validation: true }));
+const BEFORE_PATTERN = new Date('1970-01-01T00:00:00Z');
+
+test('a request body with a date-time pattern is checked in its wire form: a date that breaks the pattern is rejected', async () => {
+  // protects: T-729, F-163 a node with a keyword no descriptor carries keeps the wire check of the input root
+  const codec = await sdkBodyCodec((await stamps()).output, 'Stamps', 'Stamp');
+  await assert.rejects(codec.encode({ at: BEFORE_PATTERN }), isValidation);
+  assert.deepEqual(await codec.encode({ at: new Date(AT) }), { at: AT });
+});
+
+test('an inbound response with a date-time pattern runs the wire check of the response root after its conversion', async () => {
+  // protects: T-729, F-163 an inbound response node with a keyword no descriptor carries is also checked in its wire form
+  const bind = (await importGeneratedModule((await stamps()).output, 'generated SDK')).bindStampsInbound as (port: Record<string, unknown>) => Record<string, (request: unknown) => Promise<unknown>>;
+  const answer = (at: Date) => bind({ webhookReceiveStamp: async () => ({ matched: 'status', status: 200, contentType: 'application/json', body: { at }, headers: {} }) }).webhookReceiveStamp!({});
+  await assert.rejects(answer(BEFORE_PATTERN), isValidation);
+  assert.deepEqual(await answer(new Date(AT)), { status: 200, contentType: 'application/json', headers: {}, body: { at: AT } });
+});
+
+test('an app model over an SDK type with a keyword that no descriptor carries stops generation and names the keyword', async () => {
+  // protects: T-729 OPENAPI_KEYWORD_NOT_CARRIED: the model plane is the only check of an app model, so it never skips a keyword silently
+  const model = "import type { IModel } from '@exprtlabs/golem/model';\nimport type { Stamp } from '../sdk/stamps/index.js';\nexport type TStamp = IModel<Stamp>;\n";
+  await assert.rejects(
+    loadGolemModeProject(scope, 'golem-openapi-keyword-stamp-model-', [{ document: STAMP_DOCUMENT, folder: 'sdk/stamps', name: 'Stamps' }], true, { 'src/stamp.model.ts': model }),
+    /OPENAPI_KEYWORD_NOT_CARRIED[^]*"pattern"/,
+  );
 });

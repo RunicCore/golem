@@ -914,16 +914,23 @@ An `integer` member and a `number` member share the integers. A member that decl
 
 ### OPENAPI_KEYWORD_NOT_CARRIED
 
-**Keyword that the model cannot check.** A schema has a keyword that a model cannot check, and a silent skip would let a bad value pass. Generation stops. The message names the keyword and the place of the schema. Two cases are possible:
+**App model over an SDK schema that the model cannot check in full.** An app model uses a type of a golem-mode SDK. The schema of that type has a keyword that the model descriptors do not carry. The SDK checks the full schema. The model of the app checks only through its descriptors, so a bad value can pass. Generation stops. The message names each keyword.
 
-- A string with `format: date-time` has `pattern`, `minLength`, `maxLength`, `enum`, `const`, `not`, `if`, `allOf`, `anyOf` or `oneOf`. The model holds a date value, not the text, so it cannot check the text.
-- A schema has `unevaluatedProperties` or `unevaluatedItems` beside `if`, `dependentSchemas`, `oneOf` or `anyOf`. These keywords evaluate names or items that the model cannot follow.
+The descriptors do not carry these keywords:
+
+- `pattern`, `minLength`, `maxLength`, `enum`, `const`, `not`, `if`, `allOf`, `anyOf` or `oneOf` on a string with `format: date-time`. The model holds a date value, not its text.
+- `unevaluatedProperties` or `unevaluatedItems` beside `if`, `dependentSchemas`, `oneOf` or `anyOf`.
+- `additionalItems`.
+- A keyword of the schema beside a `$ref`.
+- `type` of `object`, `array` or `null`, or several types, when the schema has no keyword of that shape.
+- `required` when the schema has no `properties`.
+
+A schema that carries these keywords does not stop an SDK. The SDK client checks a request body in its wire form, and an inbound response body in its wire form. The SDK still converts the dates of the body.
 
 **Fix:**
 
-- Remove the keyword from the schema.
-- Or, for a date-time string, declare the value as a string without `format: date-time`.
-- Or, for `unevaluatedProperties` or `unevaluatedItems`, list the names or items in the schema itself.
+- Use the SDK type in the client or handler code, and give the app model its own type.
+- Or change the schema so that the descriptors carry the keyword.
 
 ### OPENAPI_MOBX_NEEDS_GOLEM_MODE
 

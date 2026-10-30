@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { code, exportedName, fileImports, ImportSource, join, lineBreak, nest, propertyKey, render, type Code } from './code.js';
+import { code, exportedName, fileImports, ImportSource, join, lineBreak, literal as codeLiteral, nest, propertyKey, render, type Code } from './code.js';
 import { rt } from './rt.js';
 
 /**
@@ -87,6 +87,8 @@ export interface SdkOperationCodecs {
   readonly encode?: readonly SdkKeyedCode[];
   /** Turns the wire body or stream item of a response into its converted form, keyed `status:contentType`. */
   readonly decode?: readonly SdkKeyedCode[];
+  /** The `decode` keys of an inbound operation whose response body the wire check also judges, after its conversion: the descriptors do not carry every keyword of its schema. */
+  readonly wireChecked?: readonly string[];
   /** Turns a plain request parameter into its wire form, keyed `location:name` (`querystring:name` for the querystring parameter). */
   readonly parameters?: readonly SdkKeyedCode[];
   /** Turns the decoded wire value of a response header into its converted form, keyed `status:name`. */
@@ -112,6 +114,7 @@ function operationCodecsLiteral(operation: SdkOperationCodecs): Code {
     ...keyed('responseHeaders', operation.responseHeaders),
     ...keyed('encode', operation.encode),
     ...keyed('decode', operation.decode),
+    ...(operation.wireChecked?.length ? [code`wireChecked: [${join(operation.wireChecked.map(key => codeLiteral(key)), code`, `)}],`] : []),
     ...keyed('parameters', operation.parameters),
     ...keyed('headers', operation.headers),
   ];

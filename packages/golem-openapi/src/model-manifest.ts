@@ -58,7 +58,8 @@ function golemModeGraph(document: unknown, analysis: OpenApiModelAnalysis, sdk: 
   // The models that each model narrows, which the codec emitter reads to merge an intersection.
   const nodes = analysis.graphInputs.models.map(({ name, descriptor }) => {
     const bases = modelBases(analysis.definitions.get(name));
-    return { name, codecId: openApiCodecId(analysis, name), ...(bases.length ? { bases } : {}), descriptor: JSON.stringify(descriptor) };
+    const uncarried = analysis.uncarriedModels.get(name);
+    return { name, codecId: openApiCodecId(analysis, name), ...(bases.length ? { bases } : {}), ...(uncarried ? { uncarried } : {}), descriptor: JSON.stringify(descriptor) };
   });
   return {
     mode: 'golem',
