@@ -25,6 +25,8 @@ export function encodeMoney(value: Money): string { return value.toString(); }
 export function decodeMoney(value: string): Money { return Money.parse(value); }
 export function encodeInstant(value: Temporal.Instant): string { return value.toString(); }
 export function decodeInstant(value: string): Temporal.Instant { return Temporal.Instant.from(value); }
+export function encodeLink(value: URL): string { return value.href; }
+export function decodeLink(value: string): URL { return new URL(value); }
 export function encodeBig(value: bigint): string { return value.toString(); }
 export function decodeBig(value: string): bigint { return BigInt(value); }
 `;
@@ -77,10 +79,11 @@ async function build(t: TestContext, fields: SourceFragment) {
   fs.writeFileSync(path.join(sourceRoot, 'temporal-runtime.js'), TEMPORAL_RUNTIME);
   fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({ name: 'A', imports: tsSource`import type { TSerde } from '@exprtlabs/golem/tags';
 import type { Money } from './money.js';
-import { encodeBytes, decodeBytes, encodeMoney, decodeMoney, encodeInstant, decodeInstant, encodeBig, decodeBig } from './codecs.js';
+import { encodeBytes, decodeBytes, encodeMoney, decodeMoney, encodeInstant, decodeInstant, encodeLink, decodeLink, encodeBig, decodeBig } from './codecs.js';
 type Bytes = Uint8Array & TSerde<typeof encodeBytes, typeof decodeBytes>;
 type Price = Money & TSerde<typeof encodeMoney, typeof decodeMoney>;
 type When = Temporal.Instant & TSerde<typeof encodeInstant, typeof decodeInstant>;
+type Link = URL & TSerde<typeof encodeLink, typeof decodeLink>;
 type Big = bigint & TSerde<typeof encodeBig, typeof decodeBig>;`, fields }).text);
   writeModelGolemYaml(root, { mobx: false, validation: true });
   fs.mkdirSync(path.join(root, 'build'), { recursive: true });
@@ -160,6 +163,17 @@ test('invalid wire value is rejected before decoding', async t => {
   assert.throws(() => codecs.parseTA('{"bytes":"***"}'));
   assert.doesNotThrow(() => codecs.parseTA('{"bytes":"AQID"}'));
 });
+
+// A user class, a global class and a Temporal class: each reads a string, so a number on the wire is bad input at every level of validation.
+for (const field of ['price', 'link', 'when'] as const) {
+  test(`${field}: a non-string wire value is rejected with validation off`, async t => {
+    // protects: T-659 F-39 a string-wire serde never reads a number, also when validation is off
+    const { A } = await build(t, tsSource`price: Price; link: Link; when: When`);
+    const wire = { price: '12.34', link: 'https://example.com/', when: '2025-01-02T03:04:05.000Z' };
+    assert.doesNotThrow(() => modelCodec(A).fromWireFormat(wire, { validate: false }));
+    assert.throws(() => modelCodec(A).fromWireFormat({ ...wire, [field]: 5 }, { validate: false }), /Expected a string/);
+  });
+}
 
 test('generated model type names the class', async t => {
   const { root } = await build(t, tsSource`price: Price; when: When; bytes: Bytes`);

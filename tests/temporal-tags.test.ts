@@ -21,6 +21,7 @@ async function buildCodecs(scope: FixtureScope, name: string, source: Parameters
   return import(path.toNamespacedPath(path.join(root, 'build/a.model.generated.js'))) as Promise<{
     parseTA: (text: string) => Record<string, unknown>;
     stringifyTA: (value: object) => string;
+    fromWireFormatTA: (wire: unknown, options?: { validate?: boolean }) => Record<string, unknown>;
   }>;
 }
 
@@ -145,3 +146,10 @@ for (const [field, bad] of [
     assert.throws(() => codecs.parseTA(JSON.stringify({ ...PLAIN_WIRE, [field]: bad })));
   });
 }
+
+test('a plain Temporal field rejects a non-string wire value with validation off', async () => {
+  // protects: T-659 F-39 a built-in Temporal class never reads a number, also when validation is off
+  const codecs = await buildPlain();
+  assert.doesNotThrow(() => codecs.fromWireFormatTA(PLAIN_WIRE, { validate: false }));
+  assert.throws(() => codecs.fromWireFormatTA({ ...PLAIN_WIRE, at: 5 }, { validate: false }), /Expected a string/);
+});

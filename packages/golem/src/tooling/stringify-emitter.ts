@@ -1384,7 +1384,7 @@ function emitDecodeValue(descriptor: ModelTypeDescriptor, expression: Code, ctx:
     const deserialized = ctx.serde ? fallibleConversion(ctx, ctx.serde.deserialize(tags.serde.id, value)) : value;
     const wire = serdeWireDescriptor(descriptor);
     if (wire?.kind === 'string') {
-      return code`(typeof ${value} === 'string' ? ${deserialized} : ${value})`;
+      return fallibleConversion(ctx, code`(typeof ${value} === 'string' ? ${deserialized} : ${rt.conversion.rejectNonStringWire}())`);
     }
     if (wire?.kind === 'number') {
       return code`(typeof ${value} === 'number' ? ${deserialized} : ${value})`;

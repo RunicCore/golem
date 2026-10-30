@@ -579,6 +579,11 @@ export function deserializeDate(value: unknown, path: IssuePath = activeConversi
   return date;
 }
 
+/** A serde whose wire form is a string reads only a string: any other wire value is bad input at every level of validation, off included (F-39). */
+export function rejectNonStringWire(path: IssuePath = activeConversionPath): never {
+  throw conversionError(LibErrorKind.Deserialization, 'Expected a string.', path, undefined, true);
+}
+
 /** Write a finite Date as UTC with millisecond precision. */
 export function serializeDate(value: unknown, path: IssuePath = activeConversionPath): string {
   if (!(value instanceof Date) || !Number.isFinite(value.getTime())) {
