@@ -54,6 +54,24 @@ Golem 1.1.0 is a breaking release with a 1.x number. It supports TypeScript 6.0+
 - The `model-manifest.json` of a generated SDK no longer lists `modelReferences` ([OpenAPI](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#openapi)).
 - An untagged `anyOf` whose branches state different JSON types checks a value only with the branches of its type.
 
+- **Breaking:** a generated SDK has no model classes, in either mode, and no per-schema functions. The client checks and converts each request and response, and a response body is a plain object of the SDK type with converted dates. Your own `IModel<Charge>` gives a class with methods ([OpenAPI](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#openapi)).
+- An `openapi` job takes `mode: standalone | golem`. A standalone SDK (the default) runs alone with a bundled copy of the runtime. A golem mode SDK leaves checks and conversions to the `models` job ([SDK modes](/reference/config#sdk-modes)).
+- **Breaking:** `mobx: true` on a standalone `openapi` job stops generation with `OPENAPI_MOBX_NEEDS_GOLEM_MODE`. Set `mode: golem` ([OpenAPI](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#openapi)).
+- The generated client takes a `validate` option for each client and each call, with a level for requests and responses apart ([Lower the checks](/guide/client-usage#lower-the-checks)).
+
+Move an SDK to 1.1 with this table, then generate again:
+
+| Before | Now |
+| --- | --- |
+| `ChargeModel`, the class of the schema `Charge` | `Charge`, a plain type. For methods, declare your own model: `IModel<Charge>` |
+| `ChargeFields` and `ChargeInit` | `Charge`. A request takes `InputSchemas.Charge` |
+| `ChargeJSON` | None. The client holds the JSON form inside. For your own model, `WireFormat<T>` names it |
+| `parseCharge`, `stringifyCharge`, `fromWireFormatCharge`, `toWireFormatCharge`, `validateCharge`, `assertCharge`, `encodeCharge` | None. The client checks and converts. For your own model, use `parse<T>`, `stringify<T>`, `fromWireFormat<T>`, `toWireFormat<T>`, `validate<T>` and `assertValue<T>` |
+| `fromWireFormat<ChargeModel>(response.body)` | `response.body`, which is already a `Charge` with converted dates |
+| `toWireFormat<ChargeModel>(charge)` to build a request body | Pass the object. The client writes the JSON form |
+| `import { ChargeModel } from './sdk/models/Charge.js'` | `import type { Charge } from './sdk/index.js'` |
+| `RUNM1090` for an SDK model in another model | Gone. `IModel<Charge>` and a field of type `Charge` are ordinary models |
+
 Read the [CHANGELOG](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#unreleased) for every change.
 
 ## 1.0.0
