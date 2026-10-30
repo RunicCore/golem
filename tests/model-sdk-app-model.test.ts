@@ -254,3 +254,35 @@ export type TNodeRecord = IModel<Node>;
   assert.throws(() => generated.fromWireFormatTNodeRecord(tooLong), /Model validation failed/);
   assert.throws(() => generated.toWireFormatTNodeRecord(tooLong), /Model validation failed/);
 });
+
+test('a golem-mode model over a scalar SDK alias takes the SDK limit, and a tag beside the alias adds its own limit', async () => {
+  // protects: T-721 F-804 an app model field of a scalar SDK alias keeps the limit of the SDK, each limit checked once
+  const sdk: GolemModeSdkSetup = {
+    folder: 'sdk/charges',
+    name: 'Charges',
+    document: {
+      openapi: '3.1.0',
+      info: { title: 'Charges', version: '1' },
+      paths: { '/charges': { post: { operationId: 'createCharge', requestBody: { required: true, content: json(ref('Charge')) }, responses: { 200: { description: 'ok', content: json(ref('Charge')) } } } } },
+      components: { schemas: {
+        Currency: { type: 'string', maxLength: 3 },
+        Charge: { type: 'object', required: ['id', 'currency'], properties: { id: { type: 'string' }, currency: ref('Currency') } },
+      } },
+    },
+  };
+  const model = `import type { IModel } from '@exprtlabs/golem/model';
+import type { MinLength } from '@exprtlabs/golem/tags';
+import type { Currency } from '../sdk/charges/index.js';
+export type TRecord = IModel<{ plain: Currency; tagged: Currency & MinLength<2> }>;
+`;
+  const project = await loadGolemModeProject(scope, 'sdk-app-model-scalar-', [sdk], true, { 'src/record.model.ts': model });
+  const generated = await importBuilt(project.root, 'src/record.model.generated.js');
+  assert.deepEqual(generated.fromWireFormatTRecord({ plain: 'AB', tagged: 'AB' }), { plain: 'AB', tagged: 'AB' });
+  assert.throws(() => generated.fromWireFormatTRecord({ plain: 'ABCDE', tagged: 'AB' }), /Model validation failed/);
+  assert.throws(() => generated.fromWireFormatTRecord({ plain: 'AB', tagged: 'A' }), /Model validation failed/);
+  assert.throws(() => generated.fromWireFormatTRecord({ plain: 'AB', tagged: 'ABCDE' }), /Model validation failed/);
+  const validators = fs.readFileSync(path.join(project.root, 'src/generated/models/models.validators.generated.ts'), 'utf8');
+  const check = validators.match(/^function f\d+_TRecord_[0-9a-f]{8}\(.*?^\}$/ms)?.[0] ?? '';
+  assert.equal([...check.matchAll(/limit: 3, inclusive: true/g)].length, 2, 'the SDK limit of the alias is written once for each of the two fields');
+  assert.equal([...check.matchAll(/limit: 2, inclusive: true/g)].length, 1, 'the limit of the tag is written once');
+});

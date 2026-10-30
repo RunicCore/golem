@@ -75,6 +75,15 @@ export interface GolemModeManifest extends ModelManifest {
   }[];
   /** The models that each model narrows, by interned name; a model with none is absent. */
   readonly bases: Readonly<Record<string, readonly string[]>>;
+  /**
+   * The component schemas that are one scalar (string, number or boolean) with limits, which the SDK writes as a plain type alias and which
+   * have no node codec: the descriptor of each, by the provenance of its type, so an app field of the alias keeps the SDK's limits.
+   */
+  readonly scalars: readonly {
+    readonly name: string;
+    readonly type: ModelManifestProvenance;
+    readonly descriptor: string;
+  }[];
   /** The schemas the operation roots reach, by resource id: one copy for all operations. Present when the SDK validates. */
   readonly validationResources?: Readonly<Record<string, unknown>>;
 }
@@ -199,11 +208,14 @@ function isOperationValidation(value: unknown): boolean {
 function validateGolemModeGraph(manifest: Record<string, unknown>, filename: string): void {
   const invalid = (reason: string): Error => new Error(`Invalid model manifest ${displayPath(filename)}: ${reason}. Regenerate the SDK with this golem version.`);
   if (manifest.dates !== 'date' && manifest.dates !== 'temporal') throw invalid('dates must be "date" or "temporal"');
-  const { codecIds, descriptors, operations, bases } = manifest;
+  const { codecIds, descriptors, operations, bases, scalars } = manifest;
   if (!isRecord(bases) || !Object.values(bases).every((names) => Array.isArray(names) && names.every(isName))) throw invalid('bases must map each model to the names of the models it narrows');
   if (!isRecord(codecIds) || !Object.values(codecIds).every(isName)) throw invalid('codecIds must map each schema name to a codec id');
   if (!Array.isArray(descriptors) || !descriptors.every((entry) => isRecord(entry) && isName(entry.name) && isDescriptorText(entry.descriptor))) {
     throw invalid('descriptors must list each schema name with its descriptor as JSON text');
+  }
+  if (!Array.isArray(scalars) || !scalars.every((entry) => isRecord(entry) && isName(entry.name) && isProvenance(entry.type) && isDescriptorText(entry.descriptor))) {
+    throw invalid('scalars must list each scalar schema name with the provenance of its type and its descriptor as JSON text');
   }
   const unnamed = descriptors.find((entry) => !isName(codecIds[entry.name]));
   if (unnamed) throw invalid(`schema ${unnamed.name} has no codec id`);

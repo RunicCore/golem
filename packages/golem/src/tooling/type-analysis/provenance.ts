@@ -37,6 +37,11 @@ export interface ManifestIndex {
    * of the type is that reference (`sdkNode` names the codec of the SDK that checks and converts it), or the descriptor for a scalar alias.
    */
   sdkDescriptorForType(type: ts.Type, root: boolean): ModelTypeDescriptor | undefined;
+  /**
+   * The descriptor of the scalar alias that the type node names (`type Currency = string`, which TypeScript resolves to `string`, so the
+   * type alone does not tell), with the limits the SDK's schema has. The model of the app then checks them inline, as the SDK does.
+   */
+  sdkScalarDescriptorForNode(checker: ts.TypeChecker, node: ts.TypeNode): ModelTypeDescriptor | undefined;
 }
 
 /** The descriptor kinds of an SDK schema that has a node codec in the SDK's codecs file; a scalar alias has none and is written inline. */
@@ -205,6 +210,8 @@ export function loadModelManifests(
   const golemModeManifests: { file: string; manifest: GolemModeManifest }[] = [];
   // The descriptor of each SDK type of a golem-mode manifest, with the schemas it names inline, by the provenance of its declaration.
   const sdkDescriptors = new Map<string, { readonly root: ModelTypeDescriptor; readonly field: ModelTypeDescriptor }>();
+  // The descriptor of each scalar alias of a golem-mode manifest, by the provenance of its declaration.
+  const sdkScalars = new Map<string, ModelTypeDescriptor>();
   for (const filename of filenames) {
     // Explicit SDK manifests stay in the load set for duplicate-id and profile
     // checks. Only manifests this job discovered or advertised are watch inputs
@@ -213,7 +220,15 @@ export function loadModelManifests(
     if (!existsSync(filename)) throw new Error(`Model manifest does not exist: ${displayPath(filename)}`);
     const manifest = readModelManifest(filename);
     validateManifestProfile(manifest, filename, profile);
-    if (isGolemModeManifest(manifest)) golemModeManifests.push({ file: filename, manifest });
+    if (isGolemModeManifest(manifest)) {
+      golemModeManifests.push({ file: filename, manifest });
+      for (const scalar of manifest.scalars) {
+        const descriptor = JSON.parse(scalar.descriptor) as ModelTypeDescriptor;
+        for (const provenance of [scalar.type, ...(scalar.type.aliases ?? [])]) {
+          sdkScalars.set(manifestProvenance(filename, provenance.module, provenance.export), descriptor);
+        }
+      }
+    }
     for (const model of manifest.models) {
       const existingFile = manifestOfId.get(model.id);
       if (existingFile) {
@@ -267,6 +282,18 @@ export function loadModelManifests(
             ?? sdkDescriptors.get(`${file.replace(/\.d\.([cm]?ts)$/, '.$1')}\0${symbol!.getName()}`);
           if (found !== undefined) return root ? found.root : found.field;
         }
+      }
+      return undefined;
+    },
+    sdkScalarDescriptorForNode(checker: ts.TypeChecker, node: ts.TypeNode): ModelTypeDescriptor | undefined {
+      if (sdkScalars.size === 0 || !ts.isTypeReferenceNode(node)) return undefined;
+      const named = checker.getSymbolAtLocation(node.typeName);
+      const symbol = named !== undefined && (named.flags & ts.SymbolFlags.Alias) !== 0 ? checker.getAliasedSymbol(named) : named;
+      for (const declaration of symbol?.declarations ?? []) {
+        const file = canonicalFilename(declaration.getSourceFile().fileName);
+        const found = sdkScalars.get(`${file}\0${symbol!.getName()}`)
+          ?? sdkScalars.get(`${file.replace(/\.d\.([cm]?ts)$/, '.$1')}\0${symbol!.getName()}`);
+        if (found !== undefined) return found;
       }
       return undefined;
     },

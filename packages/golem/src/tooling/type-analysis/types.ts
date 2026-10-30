@@ -1196,6 +1196,10 @@ export function descriptorBuilder(
     // refers to the SDK node. The validators compile once for both, since the compiler writes one function for equal schemas.
     const sdkDescriptor = manifestIndex.sdkDescriptorForType(type, isRoot);
     if (sdkDescriptor) return withMetadata(sdkDescriptor as ModelConversionDescriptor, metadata);
+    // A scalar alias of the SDK (`type Currency = string`) is `string` to the checker, so the node names it. Its limits come first, then the field's own.
+    const scalarNode = hasBaseTags && analysis.baseNode ? analysis.baseNode : node;
+    const sdkScalar = scalarNode === undefined ? undefined : manifestIndex.sdkScalarDescriptorForNode(checker, scalarNode) as { readonly constraints?: readonly ModelConstraint[] } | undefined;
+    if (sdkScalar) return withMetadata({ ...sdkScalar } as ModelConversionDescriptor, { ...metadata, constraints: [...(sdkScalar.constraints ?? []), ...metadata.constraints] });
     if (type.flags & ts.TypeFlags.Any) {
       if (!allowUnresolved && isErrorAny(type)) {
         const at = node ?? context.declaration;

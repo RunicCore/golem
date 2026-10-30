@@ -3,8 +3,9 @@ import type { SchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
 import type { CodecSchemaClosureEntry } from '@exprtlabs/golem/internal/validation-plan';
 import type { JsonSchema } from '@exprtlabs/golem/internal/schema';
 import { sourceDigest } from '@exprtlabs/golem/internal/generator-support';
-import { asRecord, isJsonObject } from './json.js';
+import { asRecord, isJsonObject, objectEntries } from './json.js';
 import { compareText } from '@exprtlabs/golem/generator-api';
+import { identifier } from '@exprtlabs/golem/internal/generator-support';
 import type { GolemModeManifest, SdkOperationValidation, SdkOperationValue } from '@exprtlabs/golem/manifest';
 import type { OperationValidationSchemas } from './client/emit.js';
 import type { NormalizedOperation } from './normalize.js';
@@ -15,15 +16,18 @@ import {
   type ModelDefinition,
   type OpenApiModelAnalysis,
   modelBases,
+  modelConversionDescriptor,
+  modelEnv,
   modelStableId,
 } from './model-resolution.js';
+import { resolveLocal } from './normalize.js';
 
 /**
  * The schema graph the models job compiles in golem mode: each model and recursive alias with its codec id, and the operations' values.
  * Descriptors are JSON text (see `SdkDescriptorText`). The data is the graph's inputs, so interning it again with these codec ids
  * gives the same nodes. A value of a `$ref` is the node of that model and holds no descriptor.
  */
-function golemModeGraph(analysis: OpenApiModelAnalysis, sdk: GolemModeOperations, validating: boolean): Pick<GolemModeManifest, 'mode' | 'dates' | 'codecIds' | 'descriptors' | 'operations' | 'validationResources' | 'bases'> {
+function golemModeGraph(document: unknown, analysis: OpenApiModelAnalysis, sdk: GolemModeOperations, validating: boolean): Pick<GolemModeManifest, 'mode' | 'dates' | 'codecIds' | 'descriptors' | 'operations' | 'validationResources' | 'bases' | 'scalars'> {
   const operations: GolemModeManifest['operations'][number][] = [];
   // An operation is listed when it converts a value or the SDK validates; the order is the order of the SDK's operations, then its inbound ones.
   for (const operation of sdk.operations) {
@@ -61,9 +65,30 @@ function golemModeGraph(analysis: OpenApiModelAnalysis, sdk: GolemModeOperations
     codecIds: Object.fromEntries(analysis.graphInputs.models.map(({ name }) => [name, openApiCodecId(analysis, name)])),
     descriptors: analysis.graphInputs.models.map(({ name, descriptor }) => ({ name, descriptor: JSON.stringify(descriptor) })),
     bases,
+    scalars: scalarComponents(document, analysis),
     operations,
     ...(validating ? { validationResources: resources } : {}),
   };
+}
+
+/** The descriptor kinds of a scalar the SDK writes as a plain type alias: its limits are the descriptor's constraints. */
+const SCALAR_KINDS: ReadonlySet<string> = new Set(['string', 'number', 'boolean']);
+
+/**
+ * The component schemas that are one string, number or boolean and no model or recursive alias: the SDK writes `export type Name = string`,
+ * which keeps none of their limits, so the manifest records their descriptors under the provenance of that type.
+ */
+function scalarComponents(document: unknown, analysis: OpenApiModelAnalysis): GolemModeManifest['scalars'] {
+  const env = modelEnv(document, undefined, undefined, analysis.resources, analysis.selections, analysis.dates);
+  return objectEntries(asRecord(asRecord(asRecord(document).components).schemas)).flatMap(([rawName, rawSchema]) => {
+    const name = identifier(rawName);
+    const schema = resolveLocal(document, rawSchema);
+    if (analysis.definitions.has(name) || analysis.definitions.aliases.has(name) || !isJsonObject(schema)) return [];
+    if (schema.type !== 'string' && schema.type !== 'number' && schema.type !== 'integer' && schema.type !== 'boolean') return [];
+    const descriptor = modelConversionDescriptor(rawSchema, analysis.definitions, env, 'to');
+    if (!SCALAR_KINDS.has(descriptor.kind)) return [];
+    return [{ name, type: { module: './types.ts', export: name, aliases: [{ module: './index.ts', export: name }] }, descriptor: JSON.stringify(descriptor) }];
+  });
 }
 
 /** What an SDK of mode golem writes into its manifest besides the schema graph: its operations (outbound, then inbound) and their validation roots. */
@@ -121,7 +146,7 @@ export function generateModelManifest(
     },
     profile,
     models,
-    ...(mode === 'golem' ? golemModeGraph(modelAnalysis, golem, Boolean(profile.validation)) : {}),
+    ...(mode === 'golem' ? golemModeGraph(document, modelAnalysis, golem, Boolean(profile.validation)) : {}),
   };
 }
 
