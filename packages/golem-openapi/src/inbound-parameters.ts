@@ -38,11 +38,13 @@ interface ParameterAnalysis {
   readonly properties: Readings;
 }
 
-const analyses = new WeakMap<NormalizedOperation, ReadonlyMap<ParameterLocation, readonly ParameterAnalysis[]>>();
+const analyses = new WeakMap<object, WeakMap<NormalizedOperation, ReadonlyMap<ParameterLocation, readonly ParameterAnalysis[]>>>();
 
-/** The analysis of the text parameters of an operation by place, made once: the table and the check read the same one. */
+/** The analysis of the text parameters of an operation by place, made once for the operation of a document: the table and the check read the same one. */
 function analyse(operation: NormalizedOperation, document: unknown): ReadonlyMap<ParameterLocation, readonly ParameterAnalysis[]> {
-  let found = analyses.get(operation);
+  const ofDocument = analyses.get(document as object) ?? new WeakMap();
+  analyses.set(document as object, ofDocument);
+  let found = ofDocument.get(operation);
   if (found === undefined) {
     found = new Map(LOCATIONS.flatMap((location) => {
       const parameters = textParameters(operation, location);
@@ -52,7 +54,7 @@ function analyse(operation: NormalizedOperation, document: unknown): ReadonlyMap
         return { parameter, rule, reading: readings[parameter.name], properties: rule ? readProperties(parameter, document) : {} };
       })] as const] : [];
     }));
-    analyses.set(operation, found);
+    ofDocument.set(operation, found);
   }
   return found;
 }
@@ -119,4 +121,14 @@ export function inboundParameterDiagnostics(operations: readonly NormalizedOpera
         message: `The ${location} parameter "${parameter.name}" of the inbound operation ${operation.name} cannot be read back from its text: ${reason}. Set explode, use repeated keys or style deepObject, or give it an item type that cannot hold the separator.`,
       }];
     })));
+}
+
+/** One error for each parameter whose style its place does not have (OpenAPI 3.1 and 3.2): the client could not write it and the reader could not read it. */
+export function parameterStyleDiagnostics(operations: readonly NormalizedOperation[]): GolemDiagnostic[] {
+  return operations.flatMap((operation) => LOCATIONS.flatMap((location) => textParameters(operation, location).flatMap((parameter): GolemDiagnostic[] =>
+    parameterStyleRule(location, parameter.style, parameter.explode) !== undefined ? [] : [{
+      code: 'OPENAPI_PARAMETER_STYLE_NOT_ALLOWED',
+      severity: GolemDiagnosticSeverity.Error,
+      message: `The ${location} parameter "${parameter.name}" of the operation ${operation.name} has style "${parameter.style}", which a ${location} parameter does not have. Use a style that OpenAPI allows for a ${location} parameter, or leave the style out.`,
+    }])));
 }

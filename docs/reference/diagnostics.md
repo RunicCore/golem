@@ -978,6 +978,12 @@ A schema that carries these keywords does not stop an SDK. The SDK client checks
 
 **Fix:** Give the operation an `operationId` that isn't a JavaScript reserved word or client member name, if you need the two to match exactly.
 
+### OPENAPI_PARAMETER_STYLE_NOT_ALLOWED
+
+**Parameter style that its place does not have.** A parameter has a `style` that OpenAPI does not allow in its place. A path parameter has `matrix`, `label` or `simple`. A query parameter has `form`, `spaceDelimited`, `pipeDelimited` or `deepObject`. A header parameter has `simple`. A cookie parameter has `form` or `cookie`. The client cannot write such a parameter, and an inbound handler cannot read it. This is an error: generation writes nothing.
+
+**Fix:** Use a style that OpenAPI allows for the place of the parameter, or leave the style out.
+
 ### OPENAPI_SERVER_OVERRIDE_IGNORED
 
 **Operation servers ignored.** The document has no root `servers`, and an operation, or its path item, lists its own `servers`. A client of a document without servers requires `baseUrl`, and `baseUrl` wins over every server list, so the client uses `baseUrl` for that operation. This is a warning: generation continues.

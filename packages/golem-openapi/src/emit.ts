@@ -9,7 +9,7 @@ import { asRecord, objectEntries, readString } from './json.js';
 import { assertUniqueExportNames, code, documentLiteral, exportedName, fileImports, identifier as identifierPart, ImportSource, join, literal, renderModule, rt, rtType, runtimeLinesOf, type Code, type ImportOptions, type PublicModule, type RenderedModule } from '@exprtlabs/golem/internal/emitter';
 import { operationName, operationNameType } from './names.js';
 import type { NormalizedOperation } from './normalize.js';
-import { inboundParameterDiagnostics, inboundTextTable } from './inbound-parameters.js';
+import { inboundParameterDiagnostics, inboundTextTable, parameterStyleDiagnostics } from './inbound-parameters.js';
 import { generatedBannerComment } from './package-info.js';
 import { runtimeCopy, standaloneRuntimeSpecifiers, type RuntimeSpecifiers } from './runtime-copy.js';
 import type { OpenApiGenerationProfile } from './profile.js';
@@ -391,7 +391,7 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions, moved:
   // The runtime copy is written whole beside the files that import it, and only an SDK with operations imports it.
   if (specifiers && (plan.artifacts.has('client.ts') || plan.artifacts.has('inbound.ts'))) for (const [name, source] of runtimeCopy()) files.set(name, source);
   assertPortableFilenames(files.keys());
-  return { files, output, clientName, operations, inboundOperations, diagnostics: uniqueDiagnostics([...(specifiers ? mobxStandaloneDiagnostics(profile) : []), ...ir.diagnostics, ...browserCookieDiagnostics(document, operations), ...inboundParameterDiagnostics(inboundOperations, document), ...serverOverrideDiagnostics(document, operations), ...modelAnalysis.diagnostics, ...inlineDiagnostics, ...modelDiagnostics]) };
+  return { files, output, clientName, operations, inboundOperations, diagnostics: uniqueDiagnostics([...(specifiers ? mobxStandaloneDiagnostics(profile) : []), ...ir.diagnostics, ...browserCookieDiagnostics(document, operations), ...parameterStyleDiagnostics([...operations, ...inboundOperations]), ...inboundParameterDiagnostics(inboundOperations, document), ...serverOverrideDiagnostics(document, operations), ...modelAnalysis.diagnostics, ...inlineDiagnostics, ...modelDiagnostics]) };
 }
 
 /**

@@ -4,7 +4,7 @@
  */
 
 import { parameterStyleRule, type ParameterLocation, type ParameterStyleRule } from './client-runtime/parameter-styles.js';
-import type { QueryFieldShape } from './object-codec.js';
+import type { ParameterFieldShape, QueryFieldShape } from './object-codec.js';
 
 const NOT_DECODED = Symbol('not decoded');
 const JSON_NUMBER = /^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?$/;
@@ -81,9 +81,9 @@ function decodeProperties(record: Record<string, unknown>, properties: Readonly<
  * The object that a parameter writes over the keys of its group (`keys`, and `deep` as `name[member]`), with those keys; undefined when none of its keys is there.
  * A `deep` parameter may also arrive as one nested object under its name.
  */
-export function gatherObjectField(group: Readonly<Record<string, unknown>>, { location, name }: ParameterPlace, shape: QueryFieldShape): { readonly value: Record<string, unknown>; readonly keys: readonly string[] } | undefined {
+export function gatherObjectField(group: Readonly<Record<string, unknown>>, { location, name }: ParameterPlace, shape: ParameterFieldShape): { readonly value: Record<string, unknown>; readonly keys: readonly string[] } | undefined {
   const { parameter, properties } = shape;
-  const layout = parameter && properties ? parameterStyleRule(location, parameter.style, parameter.explode)?.object.layout : undefined;
+  const layout = properties ? parameterStyleRule(location, parameter.style, parameter.explode)?.object.layout : undefined;
   if (!properties || (layout !== 'keys' && layout !== 'deep')) return undefined;
   if (layout === 'deep' && isRecord(group[name])) return { value: group[name], keys: [name] };
   const keys = layout === 'deep'
@@ -95,8 +95,7 @@ export function gatherObjectField(group: Readonly<Record<string, unknown>>, { lo
 }
 
 /** The value of a parameter field as its style writes it: the prefix off, the text split into items or members, and each decoded to the type it declares. */
-export function decodeParameterField(value: unknown, shape: QueryFieldShape, { location, name }: ParameterPlace): unknown {
-  if (shape.parameter === undefined) return decodeQueryField(value, shape);
+export function decodeParameterField(value: unknown, shape: ParameterFieldShape, { location, name }: ParameterPlace): unknown {
   const { style, explode } = shape.parameter;
   const rule = parameterStyleRule(location, style, explode);
   if (rule === undefined) return value;

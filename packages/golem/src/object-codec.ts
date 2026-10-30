@@ -84,6 +84,9 @@ export interface QueryFieldShape {
   readonly properties?: Readonly<Record<string, QueryFieldShape>>;
 }
 
+/** A field that is an OpenAPI parameter: its text is read as the style of the parameter writes it. */
+export type ParameterFieldShape = QueryFieldShape & { readonly parameter: NonNullable<QueryFieldShape['parameter']> };
+
 /** The fields of a model that a query string decodes, by name. */
 export type QueryFieldTable = Readonly<Record<string, QueryFieldShape>>;
 

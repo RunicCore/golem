@@ -430,6 +430,6 @@ test('the JSON type of an app model over an SDK type with a date is the wire for
   // protects: T-748 T-750 an SDK node whose wire form differs from its plain form (a date) gets a JSON type of its own
   const model = "import type { IModel } from '@exprtlabs/golem/model';\nimport type { Charge } from '../sdk/charges/index.js';\nexport type TRecord = IModel<Charge>;\n";
   const use = "import type { TRecordJSON } from './record.model.generated.js';\nexport const wire: TRecordJSON = { id: 'c1', amount: 2, at: '2025-01-02T03:04:05Z' };\n// @ts-expect-error the wire form of a date is its text, not a Date\nexport const plain: TRecordJSON = { id: 'c1', amount: 2, at: new Date() };\n";
-  const project = await buildGolemModeProject('sdk-app-model-json-', CHARGES, { 'src/record.model.ts': model, 'src/use.ts': use });
-  assert.ok(fs.existsSync(path.join(project.root, 'build/src/use.js')));
+  // The build is the check: it fails when the JSON type is the SDK type, which takes a Date.
+  await buildGolemModeProject('sdk-app-model-json-', CHARGES, { 'src/record.model.ts': model, 'src/use.ts': use });
 });

@@ -1,5 +1,5 @@
 import { IssueRepresentation, IssueSource, LibError, LibErrorKind, toIssue } from '../errors.js';
-import type { QueryFieldTable, ValidationLevel } from '../object-codec.js';
+import type { ParameterFieldShape, ValidationLevel } from '../object-codec.js';
 import { decodeParameterField, gatherObjectField } from '../query-decode.js';
 import { mediaRank, type BodyEncoder, type ClientRuntime, type EncodedBody, type EncodingMetadata, type OperationCodecs, type ResponseCheck, type ResponseDecode } from './core.js';
 import { addQueryParameter } from './parameters.js';
@@ -245,7 +245,7 @@ interface InboundShape {
   /** The declared names of the header parameters: a framework gives them in any letter case. */
   readonly requestHeaders: readonly string[];
   /** The text parameters that decode to a number or boolean, or to an array, by location and name. */
-  readonly text?: Readonly<Partial<Record<TextLocation, QueryFieldTable>>>;
+  readonly text?: Readonly<Partial<Record<TextLocation, Readonly<Record<string, ParameterFieldShape>>>>>;
   /** The responses the operation declares: a status, a range such as `2XX`, or `default`, with its media types and headers. */
   readonly responses: readonly {
     readonly status: string;
