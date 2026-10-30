@@ -1,33 +1,23 @@
-// Runs inside a generated SDK directory. For each Owner.pet value, reports
-// both validators and whether each encoder's wire value decodes back to Cat.
-import { getValidator } from '@exprtlabs/golem/validation';
-import * as models from './dist/index.js';
+// Runs inside a generated SDK directory. For each Owner.pet value, reports whether the client accepts it as a request body
+// and whether the client accepts it as a response body.
+import { PetsClient } from './dist/client.js';
 
-const { CatModel, DogModel, OwnerModel, validateOwner, encodeOwner, toWireFormatOwner, stringifyOwner, parseOwner } = models;
 class Stranger { constructor() { this.name = 'Miso'; } }
 const cases = {
   taggedPlain: () => ({ kind: 'cat', name: 'Miso' }),
-  untaggedCatModel: () => { const cat = new CatModel({ name: 'Miso' }); delete cat.kind; return cat; },
   untaggedPlain: () => ({ name: 'Miso' }),
   untaggedStranger: () => new Stranger(),
   taggedStranger: () => Object.assign(new Stranger(), { kind: 'cat' }),
-  catModelForeignTag: () => Object.assign(new CatModel({ name: 'Miso' }), { kind: 'dog', bark: true }),
 };
-const decodesToCat = (text) => {
-  const pet = parseOwner(text).pet;
-  return pet instanceof CatModel && !(pet instanceof DogModel);
-};
-const attempt = (encode) => { try { return decodesToCat(encode()); } catch { return false; } };
+const attempt = async (call) => { try { await call(); return true; } catch { return false; } };
+const requestAccepted = (body) => attempt(() => new PetsClient({ baseUrl: 'http://pets.test', fetchImpl: async () => Response.json({ pet: { kind: 'cat', name: 'Miso' } }) }).createOwner().execute({ body }));
+const responseAccepted = (wire) => attempt(() => new PetsClient({ baseUrl: 'http://pets.test', fetchImpl: async () => Response.json(wire) }).createOwner().execute({ body: { pet: { kind: 'cat', name: 'Miso' } } }));
 const report = {};
 for (const [name, make] of Object.entries(cases)) {
   const pet = make();
-  const owner = Object.assign(Object.create(OwnerModel.prototype), { pet });
   report[name] = {
-    validateCodec: validateOwner({ pet }),
-    validateModel: await getValidator(owner).validate(),
-    encodeOwner: attempt(() => JSON.stringify(encodeOwner(owner))),
-    toWireFormat: attempt(() => JSON.stringify(toWireFormatOwner({ pet }, { validate: false }))),
-    stringify: attempt(() => stringifyOwner({ pet }, { validate: false })),
+    requestAccepted: await requestAccepted({ pet }),
+    responseAccepted: await responseAccepted(JSON.parse(JSON.stringify({ pet }))),
   };
 }
 let codeGeneration = 'allowed';
