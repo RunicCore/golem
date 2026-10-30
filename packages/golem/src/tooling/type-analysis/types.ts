@@ -40,7 +40,6 @@ export interface ModelDescriptorMetadata {
   readonly validations?: readonly ValidationBinding[];
   readonly serde?: SerdeBinding;
   readonly constraints?: readonly ModelConstraint[];
-  readonly date?: true;
 }
 
 type InternalSerdeBinding = SerdeBinding & {
@@ -595,7 +594,7 @@ function withMetadata(
   descriptor: ModelConversionDescriptor,
   metadata: TagMetadata,
 ): RichModelConversionDescriptor {
-  if (!metadata.validations.length && !metadata.serde && !metadata.constraints.length && !metadata.date) {
+  if (!metadata.validations.length && !metadata.serde && !metadata.constraints.length) {
     return descriptor as RichModelConversionDescriptor;
   }
   return {
@@ -603,7 +602,6 @@ function withMetadata(
     ...(metadata.validations.length ? { validations: metadata.validations } : {}),
     ...(metadata.serde ? { serde: metadata.serde } : {}),
     ...(metadata.constraints.length ? { constraints: metadata.constraints } : {}),
-    ...(metadata.date ? { date: true } : {}),
   } as RichModelConversionDescriptor;
 }
 
@@ -1065,10 +1063,9 @@ export function descriptorBuilder(
     const hasTagMetadata = metadata.validations.length > 0
       || metadata.serde !== undefined
       || metadata.constraints.length > 0
-      || metadata.date === true
       || metadata.discriminator !== undefined;
     // A Discriminator tag alone leaves the checker's own type: the union keeps its alias, which names a recursive union once.
-    const hasBaseTags = metadata.validations.length > 0 || metadata.serde !== undefined || metadata.constraints.length > 0 || metadata.date === true;
+    const hasBaseTags = metadata.validations.length > 0 || metadata.serde !== undefined || metadata.constraints.length > 0;
     const baseType = stripPhantomIntersection(
       checker,
       hasTagMetadata && hasBaseTags && analysis.baseNode
@@ -1078,10 +1075,6 @@ export function descriptorBuilder(
       metadata,
     );
     const type = baseType;
-    // The flag only chose the base type above; a Date is a class value with a serde from here on, so no descriptor carries it.
-    const { date: _date, ...withoutDateFlag } = metadata;
-    metadata = withoutDateFlag;
-
     if (metadata.constraints.length > 0 && (type.flags & ts.TypeFlags.TypeParameter) === 0) {
       assertConstraintCompatibility(checker, metadata.constraints, type, context, representation);
     }

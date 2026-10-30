@@ -13,7 +13,6 @@ import type { ConstraintSchemaValue, ModelConstraint } from '../model-registry.j
 import {
   GENERATED_MODEL_SCHEMA_REF_PREFIX,
   MODEL_CLASS_KEYWORD,
-  MODEL_DATE_KEYWORD,
   MODEL_CODEC_IDS_KEY,
   MODEL_INSTANCE_KEYWORD,
   VALIDATION_KEYWORD,
@@ -26,7 +25,7 @@ export { decodeUriFragment, escapePointerToken, unescapePointerToken } from '../
 export { canonicalSchemaKey };
 /** The schema descriptor types that generators read (`@exprtlabs/golem/internal/schema`). */
 export type { ConstraintSchemaValue, DiscriminatorValue, ModelConstraint, ModelTypeDescriptor, ModelTypeMetadata, UnionDiscriminator } from '../model-registry.js';
-export { GENERATED_MODEL_SCHEMA_REF_PREFIX, MODEL_CLASS_KEYWORD, MODEL_CODEC_IDS_KEY, MODEL_DATE_KEYWORD, MODEL_INSTANCE_KEYWORD, VALIDATION_KEYWORD };
+export { GENERATED_MODEL_SCHEMA_REF_PREFIX, MODEL_CLASS_KEYWORD, MODEL_CODEC_IDS_KEY, MODEL_INSTANCE_KEYWORD, VALIDATION_KEYWORD };
 export { validationTagSchemaDescriptor } from './validation-tags.js';
 
 /** Structural inputs used when a nested schema contains a named reference. */
@@ -206,10 +205,6 @@ function canonicalDescriptorValue(value: unknown): unknown {
     // Analyzer-only metadata can contain TypeScript nodes and checker graphs.
     // Strip it only at a descriptor boundary; user object property names and
     // literal/schema data remain untouched.
-    if (key === 'date') {
-      result[key] = true;
-      continue;
-    }
     if (key === 'serde') {
       // Keep the binding id so TSerde objects do not intern as identity types.
       // Do not walk serialize/deserialize functions or wireDescriptor graphs.
@@ -310,18 +305,17 @@ function modelClassId(variant: unknown): string | undefined {
 
 /**
  * A descriptor that holds a golem-mode SDK schema inline checks as a reference to that schema's codec. The tags the app puts beside the
- * SDK type on the field (`TValidation`, constraints, `TSerde`, date) stay on the reference, so the SDK's check and the app's rule both run.
+ * SDK type on the field (`TValidation`, constraints, `TSerde`) stay on the reference, so the SDK's check and the app's rule both run.
  */
 function sdkNodeReference(value: Record<string, unknown>): Record<string, unknown> {
   if (typeof value.sdkNode !== 'string') return value;
-  const { validations, constraints, serde, date } = value;
+  const { validations, constraints, serde } = value;
   return {
     kind: 'generated-model',
     id: value.sdkNode,
     ...(validations === undefined ? {} : { validations }),
     ...(constraints === undefined ? {} : { constraints }),
     ...(serde === undefined ? {} : { serde }),
-    ...(date === undefined ? {} : { date }),
   };
 }
 
@@ -407,8 +401,6 @@ function residualSchema(given: unknown, plane: ResidualPlane, state: SchemaAssem
   const child = (item: unknown): JsonSchema => residualSchema(item, plane, state, options);
   const has = plane === 'model-only' ? options.residualReferences?.modelOnly : options.residualReferences?.wireOnly;
   switch (value.kind) {
-    case 'date':
-      return plane === 'model-only' ? full('model') : { type: 'string', format: 'date-time' };
     // A class instance or bigint has no JSON shape; only its TSerde wire value and its predicates are checked.
     case 'class-value':
       return nothing();
@@ -530,13 +522,10 @@ function descriptorSchema(
       case 'bigint': throw new TypeError('bigint has no JSON representation; declare a TSerde wire codec.');
       case 'null': schema = { type: 'null' }; break;
       case 'undefined': schema = false; break;
-      case 'date': schema = options.representation === 'model'
-        ? { [MODEL_DATE_KEYWORD]: true }
-        : { type: 'string', format: 'date-time' }; break;
       // The wire form of a class value is its serde's wire descriptor; the model form is an instance of the class, where a runtime class exists.
       case 'class-value': {
         const ref = isRecord(value.classRef) ? value.classRef : undefined;
-        const valid = isRecord(value.serde) && typeof value.serde.valid === 'string' ? value.serde.valid : undefined;
+        const valid = isRecord(value.serde) && isRecord(value.serde.valid) ? value.serde.valid : undefined;
         schema = options.representation === 'model' && ref !== undefined && typeof value.typeName === 'string'
           ? { [MODEL_CLASS_KEYWORD]: { name: value.typeName, path: ref.path, ...(ref.id === undefined ? {} : { id: ref.id }), ...(valid === undefined ? {} : { valid }) } }
           : {};

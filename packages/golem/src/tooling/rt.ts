@@ -16,6 +16,7 @@ import type * as mobxValidationEntry from '../runtime-mobx-validation.js';
 import type * as modelEntry from '../runtime-model.js';
 import type * as temporalEntry from '../runtime-temporal.js';
 import type * as validationEntry from '../runtime-validation.js';
+import type { ImportedFunction } from '../model-registry.js';
 import { runtimeCode, type Code } from './code.js';
 
 /** The runtime keys of the emitters and the internal entry each one is imported from. Several keys share one entry. */
@@ -130,3 +131,27 @@ export const rt = Object.fromEntries(
 export const rtType = Object.fromEntries(
   (Object.keys(RUNTIME_MODULE_RANK) as RuntimeModule[]).map((module) => [module, moduleTable(module, true)]),
 ) as unknown as RuntimeTypeTable;
+
+/** A function of a runtime module in the shape of the function a TSerde tag names: a binding of the runtime and a binding of the project are the same kind of value. */
+export function runtimeFunction<M extends RuntimeModule>(module: M, name: keyof RuntimeTable[M] & string): ImportedFunction {
+  const specifier = RUNTIME_SPECIFIER[module];
+  return { id: `${specifier}#${name}`, module: specifier, exportName: name, specifier };
+}
+
+const MODULE_OF_SPECIFIER: ReadonlyMap<string, RuntimeModule> = new Map(
+  (Object.keys(RUNTIME_SPECIFIER) as RuntimeModule[]).reverse().map((module) => [RUNTIME_SPECIFIER[module], module]),
+);
+
+/** Whether `value`, read from schema data, is the binding of a function of the runtime (see `runtimeFunction`). */
+export function isRuntimeFunction(value: unknown): value is ImportedFunction {
+  if (typeof value !== 'object' || value === null) return false;
+  const { id, module, exportName, specifier } = value as Record<string, unknown>;
+  return typeof id === 'string' && typeof module === 'string' && typeof exportName === 'string' && typeof specifier === 'string' && MODULE_OF_SPECIFIER.has(specifier);
+}
+
+/** The Code of a function that a binding takes from the runtime: the runtime part of the module whose entry the binding's specifier is, so a standalone SDK imports it from its copied runtime. */
+export function runtimeFunctionCode(binding: ImportedFunction): Code {
+  const module = binding.specifier === undefined ? undefined : MODULE_OF_SPECIFIER.get(binding.specifier);
+  if (module === undefined) throw new Error(`The function ${JSON.stringify(binding.id)} is not a function of the golem runtime.`);
+  return runtimeCode(module, binding.exportName);
+}

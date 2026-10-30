@@ -358,7 +358,6 @@ function scalarWireKind(descriptor: ModelTypeDescriptor): string | undefined {
   if (descriptor.serde) return descriptor.serde.wire === undefined ? 'string' : scalarWireKind(descriptor.serde.wire);
   switch (descriptor.kind) {
     case 'string':
-    case 'date':
       return 'string';
     case 'number':
     case 'boolean':

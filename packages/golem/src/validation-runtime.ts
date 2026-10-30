@@ -218,35 +218,20 @@ export function checkFormat(format: string, value: unknown): boolean {
   return true;
 }
 
-/**
- * The validity predicates that a class binding can name (`valid`): an instance of a class can still hold no value, such as
- * `new Date(NaN)`. The binding carries the name as data and the check calls the predicate after `instanceof`.
- */
-const INSTANCE_VALIDITY: Readonly<Record<string, (instance: never) => boolean>> = {
-  finiteTime: (instance: { getTime(): number }) => Number.isFinite(instance.getTime()),
-};
-
-export function isInstanceValidity(name: string): boolean {
-  return Object.hasOwn(INSTANCE_VALIDITY, name);
-}
-
-/** A test that `value` passes the predicate `valid` names; without a name every value passes. */
-function instanceValidityTest(valid?: string): (value: unknown) => boolean {
-  const predicate = valid === undefined ? undefined : INSTANCE_VALIDITY[valid] as ((value: unknown) => boolean) | undefined;
-  if (valid !== undefined && predicate === undefined) throw new TypeError(`Unknown class validity ${JSON.stringify(valid)}.`);
-  return predicate ?? (() => true);
+/** The validity of a `Date` binding: an instance can be a `Date` and hold no time (`new Date(NaN)`). */
+export function hasFiniteTime(instance: unknown): boolean {
+  return Number.isFinite((instance as Date).getTime());
 }
 
 /**
- * A test for the class at `path` below `globalThis` (`['Temporal', 'Instant']`), and for the validity `valid` names. The class is
- * looked up at each call, because a polyfill may load after the validators: while it is missing, no value is an instance of it.
+ * A test for the class at `path` below `globalThis` (`['Temporal', 'Instant']`), and for the function `valid`, which an instance must also
+ * pass. The class is looked up at each call, because a polyfill may load after the validators: while it is missing, no value is an instance of it.
  */
-export function globalInstanceTest(path: readonly string[], valid?: string): (value: unknown) => boolean {
-  const passes = instanceValidityTest(valid);
+export function globalInstanceTest(path: readonly string[], valid?: (instance: unknown) => boolean): (value: unknown) => boolean {
   return (value) => {
     let found: unknown = globalThis;
     for (const name of path) found = (found as Record<string, unknown> | undefined)?.[name];
-    return typeof found === 'function' && value instanceof found && passes(value);
+    return typeof found === 'function' && value instanceof found && (valid === undefined || valid(value));
   };
 }
 

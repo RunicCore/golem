@@ -4,7 +4,7 @@
  * Date convert in the same pass as concat / JSON.parse.
  */
 
-import type { ModelTypeDescriptor } from '../model-registry.js';
+import type { ImportedFunction, ModelTypeDescriptor, SerdeFunctions } from '../model-registry.js';
 import type { ValidationLevel, ValidationPlane } from '../object-codec.js';
 import type { SchemaGraph, SchemaNode } from './schema-graph.js';
 import { codecShortName, serdeWireDescriptor } from './schema-graph.js';
@@ -14,7 +14,7 @@ import {
   type Code, type Helper, type InputSlot, type JsonValue, type ReadShape,
 } from './code.js';
 import { nodeQueryFields } from './query-fields.js';
-import { rt, rtType } from './rt.js';
+import { rt, rtType, runtimeFunctionCode } from './rt.js';
 import { emitArrayConversion, emitTupleConversion, JSON_SCALAR } from './sequence-conversion.js';
 import {
   descriptorNeedsConversion,
@@ -36,10 +36,24 @@ import {
   type UnionTypeDescriptor,
 } from './union-conversion.js';
 
+/**
+ * Resolve the serde of a descriptor to a call expression: the one place that turns a serde into its two functions. A generator
+ * says how it calls a function it is bound to; every binding, a TSerde tag's or a built-in class's, goes through that call.
+ */
 export interface StringifySerdeResolver {
-  readonly deserialize: (id: string, value: Code) => Code;
-  readonly serialize: (id: string, value: Code) => Code;
+  readonly deserialize: (serde: SerdeFunctions, value: Code) => Code;
+  readonly serialize: (serde: SerdeFunctions, value: Code) => Code;
 }
+
+function serdeResolver(call: (binding: ImportedFunction, value: Code) => Code): StringifySerdeResolver {
+  return { deserialize: (serde, value) => call(serde.deserialize, value), serialize: (serde, value) => call(serde.serialize, value) };
+}
+
+/**
+ * The resolver of a generator whose bindings are functions of the golem runtime (OpenAPI documents hold no TSerde tag). Conversion code holds
+ * values as `unknown`; wire validation has already checked them, so the call casts. The file imports exactly the functions it calls.
+ */
+export const RUNTIME_SERDE: StringifySerdeResolver = serdeResolver((binding, value) => code`${runtimeFunctionCode(binding)}((${value}) as never)`);
 
 /** The functions of a codec that another module generated, as the names this module imports them under. */
 export interface NestedImportedSerde {
@@ -313,12 +327,10 @@ function memberPrefix(name: string, leadingComma: boolean): Code {
 }
 
 function serdeTags(descriptor: ModelTypeDescriptor): {
-  readonly serde?: { readonly id: string };
-  readonly date?: true;
+  readonly serde?: SerdeFunctions;
 } {
   return descriptor as ModelTypeDescriptor & {
-    readonly serde?: { readonly id: string };
-    readonly date?: true;
+    readonly serde?: SerdeFunctions;
   };
 }
 
@@ -386,7 +398,7 @@ function emitRecursiveWireCall(named: SchemaNode, expression: Code, ctx: EmitCtx
 /** Whether a value under `descriptor` holds one a codec encodes (a date, a serde type, a model of another module or one with its own wire form). */
 function reachesEncodedValue(descriptor: ModelTypeDescriptor, ctx: Pick<EmitCtx, 'graph'>, seen: Set<string> = new Set()): boolean {
   const tags = serdeTags(descriptor);
-  if (tags.serde || tags.date || descriptor.kind === 'date' || descriptor.kind === 'generated-model') return true;
+  if (tags.serde || descriptor.kind === 'generated-model') return true;
   if (descriptor.kind === 'reference') {
     const node = ctx.graph.nodeFor(descriptor);
     if (!node || !node.sameSchema || node.descriptor.kind === 'reference') return true;
@@ -415,7 +427,7 @@ function emitValue(
     const wire = serdeWireDescriptor(descriptor) ?? { kind: 'unknown' as const };
     if (ctx.wireIdentity) return emitValue(wire, value, ctx);
     const serialized = ctx.serde
-      ? ctx.serde.serialize(tags.serde.id, value)
+      ? ctx.serde.serialize(tags.serde, value)
       : value;
     return emitValue(wire, serialized, ctx);
   }
@@ -442,10 +454,6 @@ function emitValue(
         : emitValue(named.descriptor, value, inlining);
     }
     return nestedStringifyCall(named.id, value, ctx);
-  }
-  if (descriptor.kind === 'date' || tags.date) {
-    if (ctx.wireIdentity) return code`${rt.serde.stringifyJsonString}(${value} as string)`;
-    return code`${rt.serde.stringifyJsonString}(${rt.conversion.serializeDate}(${value}))`;
   }
   if (descriptor.kind === 'string') return code`${rt.serde.stringifyJsonString}(${value} as string)`;
   if (descriptor.kind === 'number') return code`${rt.serde.stringifyJsonNumber}(${value} as number)`;
@@ -936,7 +944,6 @@ function sharesInput(descriptor: ModelTypeDescriptor, ctx: EmitCtx, seen: Set<Mo
     const wire = serdeWireDescriptor(descriptor);
     return wire !== undefined && sharesInput(wire, ctx, seen);
   }
-  if (tags.date) return false;
   switch (descriptor.kind) {
     case 'any':
     case 'unknown':
@@ -1381,7 +1388,7 @@ function emitDecodeValue(descriptor: ModelTypeDescriptor, expression: Code, ctx:
   const value = expression;
   const tags = serdeTags(descriptor);
   if (tags.serde) {
-    const deserialized = ctx.serde ? fallibleConversion(ctx, ctx.serde.deserialize(tags.serde.id, value)) : value;
+    const deserialized = ctx.serde ? fallibleConversion(ctx, ctx.serde.deserialize(tags.serde, value)) : value;
     const wire = serdeWireDescriptor(descriptor);
     if (wire?.kind === 'string') {
       return fallibleConversion(ctx, code`(typeof ${value} === 'string' ? ${deserialized} : ${rt.conversion.rejectNonStringWire}())`);
@@ -1396,9 +1403,6 @@ function emitDecodeValue(descriptor: ModelTypeDescriptor, expression: Code, ctx:
       return code`(${objectValueExpression(value)} ? ${deserialized} : ${value})`;
     }
     return deserialized;
-  }
-  if (descriptor.kind === 'date' || tags.date) {
-    return fallibleConversion(ctx, code`(${value} instanceof Date ? ${value} : ${rt.conversion.deserializeDate}(${value}))`);
   }
   if (descriptor.kind === 'union') {
     return withUnionInput(value, (union) => emitUnionDecode(descriptor, union, ctx));
@@ -1743,9 +1747,8 @@ function emitEncodeValue(descriptor: ModelTypeDescriptor, expression: Code, ctx:
   }
   const tags = serdeTags(descriptor);
   if (tags.serde) {
-    return ctx.serde ? ctx.serde.serialize(tags.serde.id, value) : value;
+    return ctx.serde ? ctx.serde.serialize(tags.serde, value) : value;
   }
-  if (descriptor.kind === 'date' || tags.date) return code`${rt.conversion.serializeDate}(${value})`;
   const named = ctx.graph.nodeFor(descriptor);
   if (named && isObjectish(descriptor)) {
     return nestedToWireCall(named.id, value, ctx);

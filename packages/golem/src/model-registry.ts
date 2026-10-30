@@ -47,14 +47,33 @@ export type ModelConstraint =
     readonly else?: ConstraintSchemaValue;
   };
 
+/**
+ * A function that generated code imports: the export `exportName` of `module` (a file of the project), or of the package at `specifier`.
+ * A TSerde tag names two such functions, and a built-in class binds two of the golem runtime in the same shape.
+ */
+export interface ImportedFunction {
+  /** The identity of the function: a path from the project root or a package import, and the export name. */
+  readonly id: string;
+  readonly module: string;
+  readonly exportName: string;
+  /** Package import specifier, set only when the function lives in another package. */
+  readonly specifier?: string;
+}
+
+/** The serde of a descriptor: its identity and the two functions it names. */
+export interface SerdeFunctions {
+  readonly id: string;
+  readonly serialize: ImportedFunction;
+  readonly deserialize: ImportedFunction;
+}
+
 export interface ModelTypeMetadata {
   readonly validations?: readonly string[];
   readonly constraints?: readonly ModelConstraint[];
-  readonly serde?: {
-    readonly id: string;
+  readonly serde?: SerdeFunctions & {
     readonly wire: ModelTypeDescriptor;
-    /** The name of a validity predicate that an instance of the class must pass after `instanceof` (see `BuiltinClass.valid`). */
-    readonly valid?: string;
+    /** A function that tells whether an instance of the class holds a value, which the class check calls after `instanceof` (`new Date(NaN)` is a `Date` and holds none). */
+    readonly valid?: ImportedFunction;
   };
   /**
    * The codec id of a golem-mode SDK schema that this descriptor holds inline. Conversion reads the descriptor; its schema is a reference
@@ -90,7 +109,6 @@ export type ModelTypeDescriptor = ModelTypeMetadata & (
   | { readonly kind: 'bigint' }
   | { readonly kind: 'null' }
   | { readonly kind: 'undefined' }
-  | { readonly kind: 'date' }
   /**
    * A class instance or bigint converted only by its field's TSerde codec. `typeImport`
    * exists during generation only; generated descriptor data omits it.

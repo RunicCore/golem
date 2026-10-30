@@ -38,8 +38,6 @@ import {
   type JsonValue,
   emitModelFromInit,
   wireStringifyExportName,
-  BUILTIN_SERDE,
-  builtinClassBySerdeId,
   descriptorNeedsConversion,
   type FromJsonModelResolver,
   type ModelConversionDescriptor,
@@ -63,7 +61,7 @@ import {
 } from '@exprtlabs/golem/internal/type-analysis';
 import type {
   ModelConstraint,
-  SerdeBinding,
+  SerdeFunctions,
   ValidationBinding,
 } from '@exprtlabs/golem/internal/type-analysis';
 import {
@@ -82,9 +80,8 @@ import {
 
 type RichDescriptor = ModelConversionDescriptor & {
   readonly validations?: readonly ValidationBinding[];
-  readonly serde?: SerdeBinding & { readonly wireDescriptor?: ModelConversionDescriptor };
+  readonly serde?: SerdeFunctions & { readonly wireDescriptor?: ModelConversionDescriptor };
   readonly constraints?: readonly ModelConstraint[];
-  readonly date?: true;
 };
 
 function richDescriptor(descriptor: ModelConversionDescriptor): RichDescriptor {
@@ -157,7 +154,7 @@ type ClassBinding = NonNullable<Extract<ModelConversionDescriptor, { readonly ki
 
 interface BindingRegistry {
   readonly validations: Map<string, ValidationBinding>;
-  readonly serde: Map<string, SerdeBinding>;
+  readonly serde: Map<string, SerdeFunctions>;
   readonly classes: Map<string, ClassBinding>;
 }
 
@@ -166,9 +163,7 @@ function registerValidation(bindings: Map<string, { readonly module: string; rea
   if (!bindings.has(binding.id)) bindings.set(binding.id, binding);
 }
 
-function registerSerde(bindings: Map<string, SerdeBinding>, binding: SerdeBinding): void {
-  // A built-in class id names a codec of the runtime: there is no function of the user's to import, and `serdeExpression` calls the codec itself.
-  if (builtinClassBySerdeId(binding.id) !== undefined) return;
+function registerSerde(bindings: Map<string, SerdeFunctions>, binding: SerdeFunctions): void {
   if (!bindings.has(binding.id)) bindings.set(binding.id, binding);
 }
 
@@ -281,12 +276,6 @@ function projectDescriptor(
       ? projectDescriptor(wireDescriptor, validationEnabled, true, true, definitions)
       : { kind: 'unknown' };
   }
-  if (wire && descriptor.kind === 'date') {
-    return {
-      kind: 'string',
-      ...(validationEnabled ? { constraints: [{ kind: 'format', value: 'date-time' }] } : {}),
-    } as ModelConversionDescriptor;
-  }
   const project = (item: ModelConversionDescriptor): ModelConversionDescriptor =>
     projectDescriptor(item, validationEnabled, wire, retainPredicates, definitions);
   const scalar = wire ? brandedScalar(descriptor) : undefined;
@@ -377,8 +366,6 @@ function descriptorType(
       ? descriptorType(rich.serde.wireDescriptor, 'wire', names)
       : code`unknown`;
   }
-  if (mode === 'wire' && descriptor.kind === 'date') return code`string`;
-  if ((mode === 'model' || mode === 'init') && descriptor.kind === 'date') return code`Date`;
   if ((mode === 'model' || mode === 'init') && descriptor.kind === 'class-value') {
     // `Temporal.Instant` imported from a module is `<alias>.Instant`: the import brings in the outermost name.
     const alias = descriptor.typeImport && names.classValue(classImportKey(descriptor.typeImport));
@@ -1073,7 +1060,7 @@ interface EmitContext {
   /** Projections that reach no date, serde value or model: they convert to themselves, so a use writes no call. */
   readonly identityProjections: ReadonlySet<string>;
   readonly imports: FileImports;
-  readonly serdeBindings: readonly SerdeBinding[];
+  readonly serdeBindings: readonly SerdeFunctions[];
   readonly serdeNames: ReadonlyMap<string, { readonly serialize: string; readonly deserialize: string }>;
 }
 
@@ -1101,7 +1088,7 @@ function buildFileImports(
   classModelNames: ReadonlySet<string>,
   referenceNames: ReadonlySet<string>,
   cyclicSiblings: ReadonlySet<string> | undefined,
-  serdeBindings: readonly SerdeBinding[],
+  serdeBindings: readonly SerdeFunctions[],
   serdeNames: ReadonlyMap<string, { readonly serialize: string; readonly deserialize: string }>,
   classEntries: readonly (readonly [string, { readonly importPath: string; readonly exportName: string }])[],
   classNames: ReadonlyMap<string, string>,
@@ -1281,7 +1268,6 @@ function typeOf(context: EmitContext, descriptor: ModelConversionDescriptor, mod
 }
 
 function serdeExpression(context: EmitContext, id: string, direction: 'serialize' | 'deserialize', value: Code): Code {
-  if (builtinClassBySerdeId(id) !== undefined) return BUILTIN_SERDE[direction](id, value);
   const names = context.serdeNames.get(id);
   if (names === undefined) throw new Error(`The generated model file of ${displayPath(context.source)} has no ${direction} function for the serde id ${JSON.stringify(id)}.`);
   return code`${identifier(names[direction])}(${value})`;
@@ -1290,8 +1276,8 @@ function serdeExpression(context: EmitContext, id: string, direction: 'serialize
 /** The serde functions of the file in both directions. */
 function serdeResolver(context: EmitContext): SerdeResolver {
   return {
-    deserialize: (id, value) => serdeExpression(context, id, 'deserialize', value),
-    serialize: (id, value) => serdeExpression(context, id, 'serialize', value),
+    deserialize: (serde, value) => serdeExpression(context, serde.id, 'deserialize', value),
+    serialize: (serde, value) => serdeExpression(context, serde.id, 'serialize', value),
   };
 }
 
@@ -1530,8 +1516,8 @@ function buildFieldEmissions(context: EmitContext, resolvers: ModelResolvers): M
         value,
         resolveFromAny,
         {
-          deserialize: (id, value) => serdeExpressionOf(id, 'deserialize', value),
-          serialize: (_id, value) => value,
+          deserialize: (serde, value) => serdeExpressionOf(serde.id, 'deserialize', value),
+          serialize: (_serde, value) => value,
         },
       );
       const fromInit = emitModelFromInit(descriptor, input, resolveFromAny);

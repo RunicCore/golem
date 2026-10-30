@@ -1,4 +1,6 @@
-/** Type names a JSON Schema `type` keyword can test; `Date` is golem's own node (`IrDate`) and has no `type` name. */
+import type { ImportedFunction } from '../../model-registry.js';
+
+/** Type names a JSON Schema `type` keyword can test. */
 export type IrTypeName = 'string' | 'number' | 'integer' | 'boolean' | 'null' | 'object' | 'array';
 
 /** `type`: the value must be one of the named types. */
@@ -180,11 +182,6 @@ interface IrNot {
   readonly fn: number;
 }
 
-/** `golemModelDate`: the value must be a `Date` that holds a valid time. */
-interface IrDate {
-  readonly kind: 'date';
-}
-
 /**
  * `golemModelClass`: the value must be an instance of the class `name`, which `path` names below the import at `from` (an index
  * into `IrModule.validations`), or below `globalThis` when there is no import. A failure is one `instance` issue naming `name`.
@@ -194,8 +191,8 @@ export interface IrClass {
   readonly name: string;
   readonly path: readonly string[];
   readonly from?: number;
-  /** The validity predicate (see `isInstanceValidity`) that a global class's instance must also pass. */
-  readonly valid?: string;
+  /** The function of the runtime that a global class's instance must also pass (the `valid` of its serde binding). */
+  readonly valid?: ImportedFunction;
 }
 
 /**
@@ -229,7 +226,7 @@ export interface IrValidation {
 
 export type IrCheck =
   | IrType | IrLiteral | IrFormat | IrString | IrNumber | IrArray | IrObject | IrCall | IrAllOf | IrUnion | IrNot
-  | IrConditional | IrDependentSchemas | IrDate | IrClass | IrInstance | IrValidation | IrUnevaluatedProperties | IrUnevaluatedItems;
+  | IrConditional | IrDependentSchemas | IrClass | IrInstance | IrValidation | IrUnevaluatedProperties | IrUnevaluatedItems;
 
 /** A lowered schema: the `true` schema, the `false` schema, or the checks that apply in order. */
 export type IrSchema =

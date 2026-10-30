@@ -43,8 +43,7 @@ export interface TypeAnalysisContext {
 /** A descriptor kind (or a type's kind) as the phrase the RUNM1052 message uses: "an array", "a Date", "any". */
 export function describeRootKind(kind: string): string {
   if (kind === 'any' || kind === 'unknown') return kind;
-  const noun = kind === 'date' ? 'Date' : kind;
-  return `${/^[aeio]/.test(noun) ? 'an' : 'a'} ${noun}`;
+  return `${/^[aeio]/.test(kind) ? 'an' : 'a'} ${kind}`;
 }
 
 /** RUNM1052: the one message for a root that is no object, whether the type or its descriptor shows it. */

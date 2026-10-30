@@ -258,19 +258,19 @@ interface ConvertedTypes {
   readonly shadowed: ReadonlySet<string>;
 }
 
-/** The Temporal class of a string schema under `dates: temporal`; any other schema or mode has none. */
-export function temporalClassOf(schema: unknown, dates: OpenApiDates): BuiltinClass | undefined {
-  if (dates !== 'temporal' || !isJsonObject(schema) || typeof schema.format !== 'string') return undefined;
+/** The built-in class that a string schema converts to under the `dates` value (a `date-time` string is a Date, or a Temporal.Instant); any other schema has none. */
+export function dateClassOf(schema: unknown, dates: OpenApiDates): BuiltinClass | undefined {
+  if (!isJsonObject(schema) || typeof schema.format !== 'string') return undefined;
   if (!(schema.type === 'string' || (Array.isArray(schema.type) && schema.type.includes('string')))) return undefined;
-  return builtinClassByOpenApiFormat(schema.format);
+  return builtinClassByOpenApiFormat(dates, schema.format);
 }
 
 /** The type that a string schema converts to, or undefined when its value stays a string. */
 function convertedStringType(schema: JsonObjectLike, converted: ConvertedTypes): TypeCode | undefined {
-  const temporal = temporalClassOf(schema, converted.dates);
-  if (temporal) return typeCode(converted.shadowed.has('Temporal') ? code`globalThis.${temporal.type}` : temporal.type);
-  if (converted.dates === 'date' && schema.format === 'date-time') return typeCode(converted.shadowed.has('Date') ? code`globalThis.Date` : code`Date`);
-  return undefined;
+  const builtin = dateClassOf(schema, converted.dates);
+  if (!builtin) return undefined;
+  // A component named like the global (`Date`, `Temporal`) shadows it in the module: the class is reached through `globalThis`.
+  return typeCode(converted.shadowed.has(builtin.classPath[0]) ? code`globalThis.${builtin.type}` : builtin.type);
 }
 
 /** How a type binds in a larger type: a member of a union, an intersection or an array parenthesizes by it. */

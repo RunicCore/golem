@@ -1,3 +1,4 @@
+export { findBuiltinClass } from './builtin-class.js';
 export * from './models.js';
 export * from './types.js';
 export * from './tags.js';

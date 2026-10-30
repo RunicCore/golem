@@ -1,5 +1,5 @@
 import { isDeepStrictEqual } from 'node:util';
-import { builtinClassBySerdeId, builtinClassDescriptor, descriptorNeedsConversion } from '@exprtlabs/golem/internal/emitter';
+import { builtinClassDescriptor, descriptorNeedsConversion } from '@exprtlabs/golem/internal/emitter';
 import type { SchemaGraph, SchemaNode } from '@exprtlabs/golem/internal/schema-graph';
 import { identifier } from '@exprtlabs/golem/internal/generator-support';
 import { asRecord, escapeJsonPointerToken, isJsonObject, objectEntries, type JsonObject } from './json.js';
@@ -21,7 +21,7 @@ import {
   unionVariants,
 } from './composition.js';
 import { effectiveSchemaTypes } from './normalize.js';
-import { schemaContext, temporalClassOf, type NeverPropertiesOf } from './types.js';
+import { schemaContext, dateClassOf, type NeverPropertiesOf } from './types.js';
 import {
   collectCanonicalResources,
   nextSchemaBase,
@@ -166,11 +166,6 @@ export function modelEnv(
 
 export function withSchemaBase(env: ModelResolveEnv, schema: unknown): ModelResolveEnv {
   return { ...env, currentBase: nextSchemaBase(schema, env.currentBase, env.resources) };
-}
-
-function isBuiltinClassDescriptor(descriptor: ModelTypeDescriptor): boolean {
-  const serde = (descriptor as { readonly serde?: { readonly id?: string } }).serde;
-  return descriptor.kind === 'class-value' && serde?.id !== undefined && builtinClassBySerdeId(serde.id) !== undefined;
 }
 
 export function directComponentSchemaRef(schema: unknown, env: ModelResolveEnv): string | null {
@@ -388,9 +383,9 @@ const JSON_CLASSES: readonly JsonClass[] = ['string', 'number', 'boolean', 'null
 /** The JSON types that a value of the descriptor can have. A descriptor of a shape not listed here can have any. */
 function valueClasses(descriptor: ModelTypeDescriptor): readonly JsonClass[] {
   switch (descriptor.kind) {
-    case 'string':
-    case 'date': return ['string'];
-    case 'class-value': return isBuiltinClassDescriptor(descriptor) ? ['string'] : JSON_CLASSES;
+    case 'string': return ['string'];
+    // A class value has the JSON types of its serde's wire form.
+    case 'class-value': return valueClasses((descriptor as { readonly serde?: { readonly wireDescriptor?: ModelTypeDescriptor } }).serde?.wireDescriptor ?? { kind: 'unknown' });
     case 'number': return ['number'];
     case 'boolean': return ['boolean'];
     case 'null': return ['null'];
@@ -605,7 +600,7 @@ function uncarriedKeywords(schema: unknown, dates: OpenApiDates, target?: Readon
   const present = (names: readonly string[]): string[] => names.filter((name) => schema[name] !== undefined);
   const isString = schema.type === 'string' || (Array.isArray(schema.type) && schema.type.includes('string'));
   // The model holds a date value, not its text.
-  const dated = temporalClassOf(schema, dates) !== undefined || (isString && schema.format === 'date-time');
+  const dated = dateClassOf(schema, dates) !== undefined;
   // With an allOf the composition holds `unevaluatedProperties`; with none, a union or a condition evaluates names that the descriptor does not list.
   const unevaluating = !dated && !hasAllOfMembers(schema) && present(EVALUATING_KEYWORDS).length > 0 ? present(['unevaluatedProperties', 'unevaluatedItems']) : [];
   // A keyword beside a `$ref` that the named schema already states, or states more tightly, adds nothing to what the reference converts.
@@ -682,17 +677,11 @@ export function modelConversionDescriptor(
   const target = componentSchemaTarget(schema, nested);
   if (target !== undefined && target !== schema) return modelConversionDescriptor(target, definitions, nested, direction, seen);
   const sub = subschemaConverter(definitions, nested, direction, seen);
-  const temporal = temporalClassOf(schema, env.dates);
-  if (temporal) {
+  const builtin = dateClassOf(schema, env.dates);
+  if (builtin) {
     // The document states the wire form (its own format, limits and patterns), so the descriptor keeps a plain string.
-    const value = builtinClassDescriptor(temporal, { kind: 'string' });
+    const value = builtinClassDescriptor(builtin, { kind: 'string' });
     return admitsNull(asRecord(schema)) ? { kind: 'union', variants: [value, { kind: 'null' }] } : value;
-  }
-  if (isJsonObject(schema) && schema.format === 'date-time'
-    && (schema.type === 'string' || (Array.isArray(schema.type) && schema.type.includes('string')))) {
-    const date: ModelTypeDescriptor = { kind: 'date' };
-    return admitsNull(schema)
-      ? { kind: 'union', variants: [date, { kind: 'null' }] } : date;
   }
   if (isJsonObject(schema) && hasAllOfMembers(schema)) {
     const composition = resolvedComposition(schema, definitions, env, direction, seen, position);
@@ -736,17 +725,10 @@ export function modelConversionDescriptor(
       const converted = modelConversionDescriptor(item, definitions, nested, direction, seen, !isJsonObject(schema.discriminator));
       return converted.kind === 'union' && converted.discriminator === undefined ? converted.variants : [converted];
     });
-    const temporalVariants = convertedVariants.filter(isBuiltinClassDescriptor);
-    if (temporalVariants.length) {
-      if (temporalVariants.length !== 1 || convertedVariants.some(item => !isBuiltinClassDescriptor(item) && item.kind !== 'null')) {
-        throw new Error('A date-time model union must have one Temporal branch and optional null. Ambiguous string branches cannot be converted to Temporal.');
-      }
-      return { kind: 'union', variants: convertedVariants };
-    }
-    const dateVariants = convertedVariants.filter(item => item.kind === 'date');
-    if (dateVariants.length) {
-      if (dateVariants.length !== 1 || convertedVariants.some(item => item.kind !== 'date' && item.kind !== 'null')) {
-        throw new Error('A date-time model union must have one date-time branch and optional null. Ambiguous string branches cannot be converted to Date.');
+    const classVariants = convertedVariants.filter(item => item.kind === 'class-value');
+    if (classVariants.length) {
+      if (classVariants.length !== 1 || convertedVariants.some(item => item.kind !== 'class-value' && item.kind !== 'null')) {
+        throw new Error('A date-time model union must have one Date or Temporal branch and optional null. Ambiguous string branches cannot be converted to Date or Temporal.');
       }
       return { kind: 'union', variants: convertedVariants };
     }
