@@ -186,6 +186,38 @@ for (const mode of ['error', 'warn'] as const) {
   });
 }
 
+const HANDLER_LIMITS_CONTROLLER = [
+  "import { Body, Controller, Post, Query } from '@nestjs/common';",
+  "import type { TPaymentFilter, TPaymentInput } from './payment.model.js';",
+  "@Controller('limits')",
+  'export class LimitsController {',
+  "  @Post() optionalBody(@Body('input') input?: TPaymentInput): number { return 1; }",
+  "  @Post() optionalQuery(@Query('filter') filter?: TPaymentFilter): number { return 1; }",
+  '  @Post() twoWholes(@Body() first: TPaymentInput, @Body() second: TPaymentInput[]): number { return 1; }',
+  "  @Post() wholeAndField(@Body() whole: TPaymentInput, @Body('input') input: TPaymentInput): number { return 1; }",
+  "  @Post() queryAndWhole(@Query('filter') filter: TPaymentFilter, @Query() whole: TPaymentFilter): number { return 1; }",
+  '  @Post() sameWholes(@Body() first: TPaymentInput, @Body() second: TPaymentInput): number { return 1; }',
+  "  @Post() sources(@Body('input') input: TPaymentInput, @Query() filter: TPaymentFilter): number { return 1; }",
+  "  @Post() fields(@Body('input') input: TPaymentInput, @Body('other') other: TPaymentInput): number { return 1; }",
+  '}',
+].join('\n');
+
+for (const mode of ['error', 'warn'] as const) {
+  test(`NestModelInterceptor limits of one handler give RUNM1081 at the parameter, ${mode === 'warn' ? 'a warning with nonModelInputs: warn' : 'an error by default'}; valid combinations are silent`, (t) => {
+    // protects: T-755 R-92 each limit the interceptor sets on the inputs of one handler stops the build here, not only in the controllers job
+    const root = paymentsProject(t, { 'src/limits.controller.ts': HANDLER_LIMITS_CONTROLLER });
+    const severity = mode === 'warn' ? 'warning' : 'error';
+    const advice = mode === 'warn' ? 'Generation continues, because golem.yaml sets nonModelInputs: warn.' : 'An app with its own interceptor can set nonModelInputs: warn in golem.yaml.';
+    assert.deepEqual(scan(root, true, mode).diagnostics.map(({ code, severity, file, line, column, message }) => ({ code, severity, file, line, column, message })), [
+      { line: 5, column: 24, message: `@Body('input') input is an optional one-field model, and NestModelInterceptor answers HTTP 400 for a request that omits the field. Make the parameter required, or declare the field optional in a whole @Body() model. ${advice}` },
+      { line: 6, column: 25, message: `@Query('filter') filter is an optional one-field model, and NestModelInterceptor answers HTTP 400 for a request that omits the field. Make the parameter required, or declare the field optional in a whole @Query() model. ${advice}` },
+      { line: 7, column: 51, message: `@Body() second takes another model than @Body() first: NestModelInterceptor throws a TypeError for whole @Body() parameters of different types, and Nest answers HTTP 500. Give them one model type, or declare one whole body. ${advice}` },
+      { line: 8, column: 55, message: `@Body('input') input cannot share a handler with @Body() whole: NestModelInterceptor throws a TypeError for a whole and a one-field @Body() together, and Nest answers HTTP 500. Declare the whole body as one model, or use one-field parameters only. ${advice}` },
+      { line: 9, column: 66, message: `@Query() whole cannot share a handler with @Query('filter') filter: NestModelInterceptor throws a TypeError for a whole and a one-field @Query() together, and Nest answers HTTP 500. Declare the whole query as one model, or use one-field parameters only. ${advice}` },
+    ].map((expected) => ({ code: 'RUNM1081', severity, file: 'src/limits.controller.ts', ...expected })));
+  });
+}
+
 test('two Payment contracts keep distinct ids in their controllers', (t) => {
   const root = project(t, {
     'src/billing/payment.model.ts': paymentModelSource({ field: 'amount', fieldType: 'number' }).text,

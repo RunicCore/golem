@@ -469,12 +469,17 @@ function decoratorNames(node: ts.Node): readonly string[] {
   return (ts.getDecorators(node) ?? []).flatMap((decorator) => decoratorName(decorator) ?? []);
 }
 
-/** The registry slot of a `@Body()` or `@Query()` parameter: a first argument with a static string value names a field, the way the controllers job reads it; any other first argument is a pipe. */
-function nestSlot(checker: ts.TypeChecker, parameter: ts.ParameterDeclaration, decorator: string): string {
+/** The static string a `@Body()` or `@Query()` parameter names a field with, as the controllers job reads it; any other first argument is a pipe, and no argument names no field. */
+function staticFieldKey(checker: ts.TypeChecker, parameter: ts.ParameterDeclaration, decorator: string): string | undefined {
   const expression = ts.getDecorators(parameter)?.find((each) => decoratorName(each) === decorator)?.expression;
   const argument = expression !== undefined && ts.isCallExpression(expression) ? expression.arguments[0] : undefined;
   const key = argument === undefined ? undefined : evaluateStaticValue(checker, argument);
-  return operationCodecSlot(decorator === 'Body' ? 'body' : 'query', key?.ok === true && typeof key.value === 'string' ? key.value : undefined);
+  return key?.ok === true && typeof key.value === 'string' ? key.value : undefined;
+}
+
+/** The registry slot of a `@Body()` or `@Query()` parameter: a first argument with a static string value names a field. */
+function nestSlot(checker: ts.TypeChecker, parameter: ts.ParameterDeclaration, decorator: string): string {
+  return operationCodecSlot(decorator === 'Body' ? 'body' : 'query', staticFieldKey(checker, parameter, decorator));
 }
 
 /** Whether the node carries the decorator, written plainly or as the aliased import an earlier rewrite added. */
@@ -659,6 +664,57 @@ function nestBinding(
   if (name) addAliasChainFiles(checker, { root, from: file, dependencies }, name);
   if (!symbol) return { ...unbound, golemModel: modelDeclarationKind(checker, model) !== undefined };
   return { ...unbound, id: codecIdOf(checker, keys, symbol, dependencies), golemModel: isGolemModel(checker, symbol), name, defaultExport: symbol.name === 'default' };
+}
+
+/** One `@Body()` or `@Query()` parameter of a handler that `NestModelInterceptor` converts to a model. */
+interface HandlerInput {
+  readonly parameter: ts.ParameterDeclaration;
+  readonly decorator: string;
+  /** The field a one-field parameter reads; undefined for a whole one. */
+  readonly field: string | undefined;
+  /** The model and array form the interceptor compares between two whole parameters of one source. */
+  readonly model: string;
+}
+
+function handlerInputModel(binding: NestBinding): string {
+  if (binding.union) return JSON.stringify([binding.union.property, binding.union.variants.map((variant) => [variant.values, variant.id])]);
+  return `${binding.id}${binding.array ? '[]' : ''}`;
+}
+
+/**
+ * The limits `NestModelInterceptor` sets on the inputs of one handler together, each with the parameter to report it at:
+ * a one-field parameter that is optional (a request that omits the field answers HTTP 400); a whole and a one-field parameter
+ * of one source (the whole conversion replaces what the field reads); and two whole parameters of one source with another
+ * model (both convert the same value). The last two throw a TypeError, and Nest answers HTTP 500. Per source, the first
+ * conflict is reported.
+ */
+function handlerInputFaults(file: ts.SourceFile, inputs: readonly HandlerInput[]): readonly { readonly parameter: ts.ParameterDeclaration; readonly message: string }[] {
+  const faults: { parameter: ts.ParameterDeclaration; message: string }[] = [];
+  const written = ({ parameter, decorator }: HandlerInput): string => {
+    const expression = ts.getDecorators(parameter)?.find((each) => decoratorName(each) === decorator)?.expression;
+    return `@${expression?.getText(file) ?? decorator} ${parameter.name.getText(file)}`;
+  };
+  const sources = new Map<string, { whole?: HandlerInput; field?: HandlerInput; conflict: boolean }>();
+  for (const input of inputs) {
+    const { parameter, decorator, field } = input;
+    const lowered = decorator.toLowerCase();
+    if (field !== undefined && (parameter.questionToken !== undefined || parameter.initializer !== undefined)) {
+      faults.push({ parameter, message: `${written(input)} is an optional one-field model, and NestModelInterceptor answers HTTP 400 for a request that omits the field. Make the parameter required, or declare the field optional in a whole @${decorator}() model.` });
+    }
+    const source = sources.get(decorator) ?? { conflict: false };
+    sources.set(decorator, source);
+    const other = field === undefined ? source.field : source.whole;
+    if (!source.conflict && other !== undefined) {
+      source.conflict = true;
+      faults.push({ parameter, message: `${written(input)} cannot share a handler with ${written(other)}: NestModelInterceptor throws a TypeError for a whole and a one-field @${decorator}() together, and Nest answers HTTP 500. Declare the whole ${lowered} as one model, or use one-field parameters only.` });
+    } else if (!source.conflict && field === undefined && source.whole !== undefined && source.whole.model !== input.model) {
+      source.conflict = true;
+      faults.push({ parameter, message: `${written(input)} takes another model than ${written(source.whole)}: NestModelInterceptor throws a TypeError for whole @${decorator}() parameters of different types, and Nest answers HTTP 500. Give them one model type, or declare one whole ${lowered}.` });
+    }
+    if (field === undefined) source.whole ??= input;
+    else source.field ??= input;
+  }
+  return faults;
 }
 
 // One file
@@ -897,13 +953,37 @@ function scanFile(
     }
   };
 
+  const nonModelSeverity = nonModelInputs === 'warn' ? GolemDiagnosticSeverity.Warning : GolemDiagnosticSeverity.Error;
+  const nonModelAdvice = nonModelInputs === 'warn'
+    ? 'Generation continues, because golem.yaml sets nonModelInputs: warn.'
+    : 'An app with its own interceptor can set nonModelInputs: warn in golem.yaml.';
+  const bindParameter = (typeNode: ts.TypeNode, decorator: string): NestBinding =>
+    nestBinding({ root, checker, keys, file, dependencies: scan.dependencies, unions: { text: decorator === 'Query' } }, typeNode);
+
+  /** The inputs of one handler that the interceptor converts together: `handlerInputFaults` reports the limits they set on each other. */
+  const visitHandler = (method: ts.MethodDeclaration): void => {
+    const inputs: HandlerInput[] = [];
+    for (const parameter of method.parameters) {
+      const decorator = decoratorNames(parameter).find((name) => NEST_PARAMETER_DECORATORS.includes(name));
+      if (!parameter.type || decorator === undefined) continue;
+      const binding = bindParameter(parameter.type, decorator);
+      const field = staticFieldKey(checker, parameter, decorator) || undefined;
+      // A type that is no model, or a union in one field, has its own report; the interceptor throws on it before it compares anything.
+      if ((binding.id === '' && binding.union === undefined) || (binding.union !== undefined && (binding.array || field !== undefined))) continue;
+      inputs.push({ parameter, decorator, field, model: handlerInputModel(binding) });
+    }
+    for (const { parameter, message } of handlerInputFaults(file, inputs)) {
+      scan.diagnostics.push(locate(root, file, parameter, CODE_NEST_NOT_A_MODEL, `${message} ${nonModelAdvice}`, nonModelSeverity));
+    }
+  };
+
   /** A `@Body()` or `@Query()` parameter of a model gets `@nestModelCodec(id)` before its name, and one of a tagged union of models `@nestModelUnion(tag, variants)`. */
   const visitParameter = (parameter: ts.ParameterDeclaration): void => {
     const names = decoratorNames(parameter);
     const decorator = names.find((name) => NEST_PARAMETER_DECORATORS.includes(name));
     if (!parameter.type || decorator === undefined || hasDecorator(names, NEST_CODEC_DECORATOR) || hasDecorator(names, NEST_UNION_DECORATOR)) return;
     const typeNode = parameter.type;
-    const { id, golemModel, label, array, name, defaultExport, union, unionFault } = nestBinding({ root, checker, keys, file, dependencies: scan.dependencies, unions: { text: decorator === 'Query' } }, typeNode);
+    const { id, golemModel, label, array, name, defaultExport, union, unionFault } = bindParameter(typeNode, decorator);
     // A union converts as a whole input only; golem describes no array of a union and no one-field union.
     const unionUnsupported = union !== undefined && (array || !['input', 'query'].includes(nestSlot(checker, parameter, decorator)));
     if ((id === '' && union === undefined) || unionUnsupported) {
@@ -916,10 +996,8 @@ function scanFile(
         ? `@${decorator}() type ${label} is the default export of its file, which has no codec id; golem generate cannot add one. Export the class by name (export class ${label}) and import it by name.`
         : `@${decorator}() type ${label} has no unique codec id; run golem generate`));
       else scan.diagnostics.push(locate(root, file, typeNode, CODE_NEST_NOT_A_MODEL,
-        `${label} ${reason}, and NestModelInterceptor answers HTTP 500 for a @${decorator}() parameter of that type. ${advice} ${nonModelInputs === 'warn'
-          ? 'Generation continues, because golem.yaml sets nonModelInputs: warn.'
-          : 'An app with its own interceptor can set nonModelInputs: warn in golem.yaml.'}`,
-        nonModelInputs === 'warn' ? GolemDiagnosticSeverity.Warning : GolemDiagnosticSeverity.Error));
+        `${label} ${reason}, and NestModelInterceptor answers HTTP 500 for a @${decorator}() parameter of that type. ${advice} ${nonModelAdvice}`,
+        nonModelSeverity));
       return;
     }
     if (union) {
@@ -951,7 +1029,7 @@ function scanFile(
 
   const visit = (node: ts.Node): void => {
     if (nest && ts.isParameter(node)) visitParameter(node);
-    else if (nest && ts.isMethodDeclaration(node)) visitMethod(node);
+    else if (nest && ts.isMethodDeclaration(node)) { visitMethod(node); visitHandler(node); }
     if (ts.isCallExpression(node)) visitCall(node);
     else if (ts.isExpressionWithTypeArguments(node) && node.typeArguments?.length) reportNotRewritten(node, node.typeArguments, node.expression);
     else if (ts.isClassDeclaration(node) && node.name) {
