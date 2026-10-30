@@ -18,7 +18,7 @@ interface SdkWireClaim extends WireClaim {
 }
 
 const SDK_CLAIMS: readonly SdkWireClaim[] = [
-  { claim: 'a model that uses an SDK model, and the SDK model class and fields', fixture: 'sdk-money', spec: 'money.yaml', mobx: false },
+  { claim: 'a model that uses an SDK type, and the SDK data type', fixture: 'sdk-money', spec: 'money.yaml', mobx: false },
   { claim: 'nested and omitted-field SDK models without mobx', fixture: 'nested-sdk', spec: 'payments.yaml', mobx: false },
   { claim: 'nested and omitted-field SDK models with mobx', fixture: 'nested-sdk', spec: 'payments.yaml', mobx: true },
 ];

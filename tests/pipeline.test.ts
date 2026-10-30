@@ -27,12 +27,12 @@ function fixture(t: TestContext): { root: string; config: string } {
   return { root, config: path.join(root, 'golem.yaml') };
 }
 
-test('frontend models generated from an out-of-src SDK manifest do not re-emit its validation pattern', async (t: TestContext) => {
+test('frontend models generated from an out-of-src SDK manifest read an SDK type as a plain type', async (t: TestContext) => {
   const { root, config } = fixture(t);
   const state = await runPipeline(config);
   const generated = fs.readFileSync(path.join(root, 'src/cart.model.generated.ts'), 'utf8');
-  // The companion names the SDK's own model class, which the manifest names.
-  assert.match(generated, /MoneyModel/);
+  // The SDK writes no model class, so the companion holds the fields of Money itself.
+  assert.match(generated, /money: \{ amount: number; currency: string \}/);
   assert.equal(state.inputs.has(path.join(root, 'sdk/model-manifest.json')), false);
 });
 

@@ -213,8 +213,6 @@ export function collectOpenApiModelDefinitions(document: unknown, resources?: Re
   for (const union of unions) {
     schemaScope.claim(union.name, `union schema ${JSON.stringify(union.schemaName)}`, union.schemaName);
     definitions.set(union.name, union);
-    const shared = (union.variants ?? []).filter((variant) => claims.get(variant) !== 1);
-    if (shared.length > 0) union.sharedVariants = shared;
     for (const variant of union.variants ?? []) {
       const child = definitions.get(variant);
       if (!child) continue;

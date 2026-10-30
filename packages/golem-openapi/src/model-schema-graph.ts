@@ -23,8 +23,8 @@ import {
 import { collectOpenApiModelDefinitions } from './model-definitions.js';
 
 /**
- * A model class owns its codec. `allOf: [{ $ref: X }]` collapses to a bare
- * reference to X, which would make the subclass delegate to a codec that is
+ * A model owns its codec. `allOf: [{ $ref: X }]` collapses to a bare
+ * reference to X, which would make the model delegate to a codec that is
  * never registered under its own id; keep it an object node extending X, as
  * `allOf: [{ $ref: X }, { type: 'object' }]` would.
  */
@@ -91,7 +91,7 @@ function internOpenApiSchemaGraph(
       descriptor: locatingComposition(definition.schemaName, () => definition.isUnion
         ? modelConversionDescriptor(definition.rawSchema, definitions, env, 'to')
         : modelClassDescriptor(modelConversionDescriptor(definition.rawSchema, definitions, env, 'to', new Set(), true, 'definition'), definitions, env)),
-      emitClass: true,
+      emitClass: false,
       validation,
     };
   }), ...aliasEntries]);
@@ -192,10 +192,10 @@ function schemaGraphGroups(
     runtimeEdges.get(from.id)?.add(to.id);
   };
   for (const definition of definitions.values()) {
-    // Inheritance and discriminator dispatch produce runtime class references
-    // that are not necessarily represented by codec-schema edges. Keep every
-    // class-load cycle inside one ESM module so subclass/union initialization
-    // cannot observe a partially initialized binding.
+    // Inheritance and discriminator dispatch produce codec references that
+    // are not necessarily represented by codec-schema edges. Keep every such
+    // cycle inside one ESM module so a codec cannot observe a partially
+    // initialized binding.
     addRuntimeEdge(definition.name, definition.baseName ?? undefined);
     for (const variant of definition.variants ?? []) addRuntimeEdge(definition.name, variant);
   }

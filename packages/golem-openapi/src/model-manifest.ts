@@ -54,10 +54,6 @@ export function generateModelManifest(
         export: definition.name,
         aliases: [{ module: './index.ts', export: definition.name }],
       },
-      generated: {
-        module: `./models/${definition.name}.ts`,
-        export: `${definition.name}Model`,
-      },
       fields,
       inheritance: base ? { baseModelId: stableId(base) } : null,
       discriminator: definition.discriminator || null,

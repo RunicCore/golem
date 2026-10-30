@@ -53,8 +53,6 @@ export interface ModelDefinition {
   additionalProperties: unknown;
   required: Set<string>;
   variants?: readonly string[];
-  /** The variants of a union that another union also selects. They extend their own base, so the union class answers `instanceof` for them. */
-  sharedVariants?: readonly string[];
   discriminator?: unknown;
   isUnion?: boolean;
 }
@@ -73,8 +71,6 @@ export interface RecursiveAlias {
   descriptor?: ModelTypeDescriptor;
   /** Whether it reaches a date or a model: its model type is then a private alias of the owner group, not `Types.<Name>`. */
   convertsValue?: boolean;
-  /** Whether a model sits inside it: its init is then a function of the owner group. */
-  initsModel?: boolean;
 }
 
 /** The models of a document by type name, and its recursive aliases. */
@@ -104,30 +100,13 @@ export interface ModelResolveEnv {
   readonly currentBase: string;
   readonly anchors?: ReadonlyMap<string, string>;
   readonly selections?: DiscriminatorSelections;
-  /** How the module that holds the code names types of other modules; without it, the types namespace is the local name `Types`. */
-  readonly names?: ModelNames;
 }
 
-/** What a module decides about the names its model code writes: each is a local name, or a part imported from the module that holds it. */
-export interface ModelNames {
-  /** The namespace the module imports `types.ts` under. */
-  readonly types: Code;
-  /** The class of the model `reference`. */
-  readonly model: (reference: string) => Code;
-  /** The fields type of the model `reference`. */
-  readonly fields: (reference: string) => Code;
-  /** The init type of the model `reference`. */
-  readonly init: (reference: string) => Code;
-  /** The model-layer type of a recursive alias that reaches a date or a model. */
-  readonly aliasType: (alias: RecursiveAlias) => Code;
-}
-
-export const LOCAL_NAMES: ModelNames = {
+/** The names the model-layer types of a manifest field are written with. */
+const LOCAL_NAMES = {
   types: identifierPart('Types'),
-  model: (reference) => identifierPart(`${reference}Model`),
-  fields: (reference) => identifierPart(`${reference}Fields`),
-  init: (reference) => identifierPart(`${reference}Init`),
-  aliasType: (alias) => identifierPart(aliasModelTypeName(alias)),
+  model: (reference: string) => identifierPart(`${reference}Model`),
+  aliasType: (alias: RecursiveAlias) => identifierPart(aliasModelTypeName(alias)),
 };
 
 export interface OpenApiModelAnalysis {
@@ -154,7 +133,6 @@ export function modelEnv(
   resources?: ResourceIndex,
   selections?: DiscriminatorSelections,
   dates: OpenApiDates = 'date',
-  names?: ModelNames,
 ): ModelResolveEnv {
   return {
     document,
@@ -163,7 +141,6 @@ export function modelEnv(
     currentBase: currentBase ?? schemaDocumentBase(document),
     anchors,
     selections,
-    ...(names ? { names } : {}),
   };
 }
 
@@ -193,7 +170,7 @@ function isTemporalDescriptor(descriptor: ModelTypeDescriptor): boolean {
 
 function typeContext(env: ModelResolveEnv): SchemaTypeContext {
   return {
-    qualifier: code`${(env.names ?? LOCAL_NAMES).types}.`,
+    qualifier: code`${LOCAL_NAMES.types}.`,
     anchors: env.anchors,
     document: env.document,
     resources: env.resources,
@@ -278,7 +255,7 @@ export function modelSchemaProperties(
 /** The environment a component's own schema is read in: its anchors, and the analysis' dates and discriminator tables. */
 export function componentEnv(env: ModelResolveEnv, schemaName: string, rawSchema: unknown): ModelResolveEnv {
   const anchors = schemaContext(env.document, schemaContext(env.document, { resources: env.resources }), schemaName, rawSchema).anchors;
-  return modelEnv(env.document, undefined, anchors, env.resources, env.selections, env.dates, env.names);
+  return modelEnv(env.document, undefined, anchors, env.resources, env.selections, env.dates);
 }
 
 /** The conversion descriptor of a recursive alias: each use of a recursive component, itself included, is a projection reference. */
@@ -306,8 +283,7 @@ export function aliasModelTypeName(alias: RecursiveAlias): string {
 
 /** The type of a use of a recursive alias in the model layer. */
 export function aliasUseType(alias: RecursiveAlias, definitions: ModelDefinitions, env: ModelResolveEnv): Code {
-  const names = env.names ?? LOCAL_NAMES;
-  return aliasConvertsValue(alias, definitions, env) ? names.aliasType(alias) : code`${names.types}.${identifierPart(alias.name)}`;
+  return aliasConvertsValue(alias, definitions, env) ? LOCAL_NAMES.aliasType(alias) : code`${LOCAL_NAMES.types}.${identifierPart(alias.name)}`;
 }
 
 /** Every model that the definition narrows: its class base, the other refs of its allOf, and the unions that select it. */
@@ -356,7 +332,7 @@ function modelFieldTypeNode(
   const reference = modelSchemaReference(schema, nested);
   if (reference && definitions.has(reference)) {
     const nullable = nullThroughReference ? admitsNullThroughReference(schema, reference, definitions) : admitsNull(asRecord(schema));
-    return nullableType(typeCode((env.names ?? LOCAL_NAMES).model(reference)), nullable);
+    return nullableType(typeCode(LOCAL_NAMES.model(reference)), nullable);
   }
   const alias = reference ? definitions.aliases.get(reference) : undefined;
   if (alias) return nullableType(typeCode(aliasUseType(alias, definitions, env)), admitsNull(asRecord(schema)));
