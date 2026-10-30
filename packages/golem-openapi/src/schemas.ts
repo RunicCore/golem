@@ -257,7 +257,7 @@ function runtimeRegistry(registry: Record<string, unknown>): Record<string, unkn
 /** `bodyChecked` names the request bodies that the input root leaves to their own conversion (see `operationInputSchema`). */
 export function buildSchemaData(document: unknown, preparedIr?: NormalizedDocument, bodyChecked: BodyChecked = () => false) {
   const ir = preparedIr ?? normalizeDocument(document);
-  const operations = [...ir.operations, ...ir.inboundOperations];
+  const operations = ir.operations;
   const rootId = `urn:golem:openapi:${identifier(asRecord(asRecord(document).info).title, 'api').toLowerCase()}:${sourceDigest(document)}:schemas`;
   const resources = collectCanonicalResources(document);
   const projections = operations.length

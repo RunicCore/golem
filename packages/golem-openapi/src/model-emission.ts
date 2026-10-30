@@ -57,7 +57,7 @@ import {
   type CompositionSite,
 } from './model-resolution.js';
 import { openApiValidationSchemaClosure } from './model-manifest.js';
-import { analyzeOpenApiModels, inboundWireChecked, reachableSchemaNodes, schemaGraphView } from './model-schema-graph.js';
+import { analyzeOpenApiModels, reachableSchemaNodes, schemaGraphView } from './model-schema-graph.js';
 
 /** The bases of the model that `reference` names, when it has any. */
 function referenceBases(reference: string, definitions: ModelDefinitions): { readonly bases?: ReturnType<typeof modelBases> } {
@@ -455,17 +455,15 @@ function convertedValueAt(analysis: OpenApiModelAnalysis, operation: NormalizedO
   return nodeId !== undefined && groupId !== undefined ? { nodeId, groupId } : undefined;
 }
 
-/** The operation as the SDK codecs builder reads it: where its values are, which inbound responses the wire check also judges, and its validators (none when the SDK does not validate). */
+/** The operation as the SDK codecs builder reads it: where its values are and its validators (none when the SDK does not validate). */
 function operationCodecShape(operation: NormalizedOperation, analysis: OpenApiModelAnalysis, checks: SdkOperationShape['checks']): SdkOperationShape {
   return {
-    inbound: operation.sourceKind !== 'path',
     values: [
       ...operation.requestContent.map((media) => ['request', media.contentType]),
       ...operation.responses.flatMap((response) => response.content.map((media) => ['response', response.status, media.contentType])),
       ...operation.parameters.map((parameter) => ['parameter', parameter.in, parameter.name]),
       ...operation.responses.flatMap((response) => Object.keys(response.headers).map((name) => ['response-header', response.status, name])),
     ],
-    wireChecked: inboundWireChecked(operation, analysis.uncarriedValues),
     ...(checks ? { checks } : {}),
   };
 }
@@ -481,8 +479,7 @@ export function operationHasCodecs(operation: NormalizedOperation, analysis: Ope
 /**
  * The codec module of each operation that validates or converts, by file name (`codecs/<operation>.ts`): the validators of its input and responses,
  * the conversion of each request body and parameter, and of each response body, stream item and response header, that converts something (`OpenApiModelAnalysis.convertedNodeIds`).
- * A client operation encodes its request and decodes its response. An inbound operation (a webhook or a callback) is the other way round:
- * it decodes its request and encodes its response, so its request tables hold `fromWire` and its response tables `toWire`.
+ * A client operation encodes its request and decodes its response.
  * An operation module imports its own file, so a bundler that drops an operation drops its codecs and the groups only they reach.
  */
 export function generateOperationCodecs(

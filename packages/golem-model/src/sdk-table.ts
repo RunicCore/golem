@@ -85,8 +85,7 @@ interface SdkValidators {
 
 /**
  * The file a golem-mode SDK imports: the codecs of the SDK's converting nodes, and `sdkCodecs`, the table with one member per operation.
- * An operation has a member when the SDK validates or one of its values converts. A client operation encodes its request and decodes its response;
- * an inbound one (a webhook or callback) is the other way round, so its request tables hold `fromWire` and its response tables `toWire`.
+ * An operation has a member when the SDK validates or one of its values converts. A client operation encodes its request and decodes its response.
  */
 export function sdkCodecsSource(
   sdk: GolemSdk,
@@ -133,9 +132,7 @@ export function sdkCodecsSource(
         return node === undefined ? undefined : identifier((conversion === 'fromWire' ? fromWireFunctionName : toWireFunctionName)(node));
       },
       shape: {
-        inbound: operation.inbound === true,
         values: operation.values.map(({ at }) => at),
-        wireChecked: operation.wireChecked ?? [],
         ...(checks && validatorsSource && validators ? {
           checks: {
             input: root(checks.input),

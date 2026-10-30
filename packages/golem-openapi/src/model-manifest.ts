@@ -20,7 +20,7 @@ import {
   modelEnv,
   modelStableId,
 } from './model-resolution.js';
-import { inboundWireChecked, uncarriedOf } from './model-schema-graph.js';
+import { uncarriedOf } from './model-schema-graph.js';
 import { resolveLocal } from './normalize.js';
 
 /**
@@ -30,7 +30,7 @@ import { resolveLocal } from './normalize.js';
  */
 function golemModeGraph(document: unknown, analysis: OpenApiModelAnalysis, sdk: GolemModeOperations, validating: boolean): Pick<GolemModeManifest, 'mode' | 'dates' | 'components' | 'operations' | 'validationResources'> {
   const operations: GolemModeManifest['operations'][number][] = [];
-  // An operation is listed when it converts a value or the SDK validates; the order is the order of the SDK's operations, then its inbound ones.
+  // An operation is listed when it converts a value or the SDK validates; the order is the order of the SDK's operations.
   for (const operation of sdk.operations) {
     const values: SdkOperationValue[] = [];
     for (const [key, node] of analysis.convertedNodeIds) {
@@ -49,8 +49,7 @@ function golemModeGraph(document: unknown, analysis: OpenApiModelAnalysis, sdk: 
       roots: bundle.roots,
     };
     if (values.length === 0 && validation === undefined) continue;
-    const wireChecked = inboundWireChecked(operation, analysis.uncarriedValues);
-    operations.push({ name: operation.name, ...(operation.sourceKind === 'path' ? {} : { inbound: true }), values, ...(wireChecked.length ? { wireChecked } : {}), ...(validation ? { validation } : {}) });
+    operations.push({ name: operation.name, values, ...(validation ? { validation } : {}) });
   }
   // A resource that several operations hold is the same schema in each, so one copy serves them all.
   const resources = Object.fromEntries([...(sdk.validation?.bundles.values() ?? [])]
@@ -94,7 +93,7 @@ function aliasComponents(document: unknown, analysis: OpenApiModelAnalysis): Gol
   });
 }
 
-/** What an SDK of mode golem writes into its manifest besides the schema graph: its operations (outbound, then inbound) and their validation roots. */
+/** What an SDK of mode golem writes into its manifest besides the schema graph: its operations and their validation roots. */
 export interface GolemModeOperations {
   readonly operations: readonly NormalizedOperation[];
   readonly validation: OperationValidationSchemas | undefined;

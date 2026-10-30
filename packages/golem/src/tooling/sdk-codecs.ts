@@ -72,8 +72,7 @@ interface SdkKeyedCode {
 
 /**
  * The codecs of one operation; each is the code of a function the module can name. A value that converts nothing has no entry,
- * and an operation with no such value has no such member. The members `encode`, `decode`, `parameters` and `headers` name the client's direction;
- * for an inbound operation (a webhook or callback) they run the other way: the request converts from its wire form and the response to it.
+ * and an operation with no such value has no such member. The members `encode`, `decode`, `parameters` and `headers` name the client's direction.
  */
 interface SdkOperationCodecs {
   /** Checks the plain input of a call. */
@@ -88,8 +87,6 @@ interface SdkOperationCodecs {
   readonly encode?: readonly SdkKeyedCode[];
   /** Turns the wire body or stream item of a response into its converted form, keyed `status:contentType`. */
   readonly decode?: readonly SdkKeyedCode[];
-  /** The `decode` keys of an inbound operation whose response body the wire check also judges, after its conversion: the descriptors do not carry every keyword of its schema. */
-  readonly wireChecked?: readonly string[];
   /** Turns a plain request parameter into its wire form, keyed `location:name` (`querystring:name` for the querystring parameter). */
   readonly parameters?: readonly SdkKeyedCode[];
   /** Turns the decoded wire value of a response header into its converted form, keyed `status:name`. */
@@ -115,7 +112,6 @@ function operationCodecsLiteral(operation: SdkOperationCodecs): Code {
     ...keyed('responseHeaders', operation.responseHeaders),
     ...keyed('encode', operation.encode),
     ...keyed('decode', operation.decode),
-    ...(operation.wireChecked?.length ? [code`wireChecked: [${join(operation.wireChecked.map(key => codeLiteral(key)), code`, `)}],`] : []),
     ...keyed('parameters', operation.parameters),
     ...keyed('headers', operation.headers),
   ];
@@ -125,12 +121,10 @@ function operationCodecsLiteral(operation: SdkOperationCodecs): Code {
 /**
  * What a writer knows of one operation. `values` are the places of the values that convert: `['request', contentType]`,
  * `['response', status, contentType]`, `['parameter', location, name]` and `['response-header', status, name]`, in the order of each kind's table.
- * `wireChecked` names the inbound response bodies (`status:contentType`) that the wire check also judges. `checks` are the validators of the operation.
+ * `checks` are the validators of the operation.
  */
 export interface SdkOperationShape {
-  readonly inbound: boolean;
   readonly values: readonly (readonly string[])[];
-  readonly wireChecked: readonly string[];
   readonly checks?: Pick<SdkOperationCodecs, 'input' | 'requestHeaders' | 'responses' | 'responseHeaders'>;
 }
 
@@ -139,29 +133,24 @@ export type SdkValueCodec = (at: readonly string[], conversion: 'fromWire' | 'to
 
 /**
  * The codecs of one operation, or none when it has nothing to say. Both writers of the SDK codecs (the module of a standalone operation
- * and the table of a golem-mode SDK) build them here, so the direction of an inbound operation, the keys and the members are written once.
+ * and the table of a golem-mode SDK) build them here, so the keys and the members are written once.
  */
 function operationCodecsOf(shape: SdkOperationShape, codecOf: SdkValueCodec): SdkOperationCodecs | undefined {
-  // The request of a client operation leaves in its wire form and its response arrives in its plain form; the traffic of an inbound operation runs the other way.
-  const requestConversion = shape.inbound ? 'fromWire' : 'toWire';
-  const responseConversion = shape.inbound ? 'toWire' : 'fromWire';
+  // The request of a client operation leaves in its wire form and its response arrives in its plain form.
   const keyed = (kind: string, key: (at: readonly string[]) => string, conversion: 'fromWire' | 'toWire'): SdkKeyedCode[] => shape.values
     .filter((at) => at[0] === kind)
     .flatMap((at) => {
       const codec = codecOf(at, conversion);
       return codec === undefined ? [] : [{ key: key(at.slice(1)), code: codec }];
     });
-  const encode = keyed('request', ([contentType]) => contentType!, requestConversion);
-  const decode = keyed('response', ([status, contentType]) => `${status}:${contentType}`, responseConversion);
-  const parameters = keyed('parameter', ([location, name]) => `${location}:${name}`, requestConversion);
-  const headers = keyed('response-header', ([status, name]) => `${status}:${name}`, responseConversion);
-  // An inbound response body that converts is judged by its conversion; the wire check also judges one whose descriptors miss a keyword of its schema.
-  const wireChecked = shape.inbound ? shape.wireChecked.filter((key) => decode.some((item) => item.key === key)) : [];
+  const encode = keyed('request', ([contentType]) => contentType!, 'toWire');
+  const decode = keyed('response', ([status, contentType]) => `${status}:${contentType}`, 'fromWire');
+  const parameters = keyed('parameter', ([location, name]) => `${location}:${name}`, 'toWire');
+  const headers = keyed('response-header', ([status, name]) => `${status}:${name}`, 'fromWire');
   const codecs: SdkOperationCodecs = {
     ...shape.checks,
     ...(encode.length ? { encode } : {}),
     ...(decode.length ? { decode } : {}),
-    ...(wireChecked.length ? { wireChecked } : {}),
     ...(parameters.length ? { parameters } : {}),
     ...(headers.length ? { headers } : {}),
   };

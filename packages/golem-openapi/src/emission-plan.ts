@@ -29,7 +29,6 @@ export type ArtifactFile =
   | 'input-schemas.ts'
   | 'output-schemas.ts'
   | 'client.ts'
-  | 'inbound.ts'
   | 'links.ts'
   | 'servers.ts';
 
@@ -72,7 +71,6 @@ export interface EmissionPlan {
   readonly operationServerIndex: ReadonlyMap<string, number>;
   readonly hasComponentSchemas: boolean;
   readonly hasOutboundOperations: boolean;
-  readonly hasInboundOperations: boolean;
   readonly hasLinks: boolean;
   readonly typesUsesInputSchemas: boolean;
   readonly typesUsesOutputSchemas: boolean;
@@ -339,7 +337,6 @@ export function buildEmissionPlan(
   const allOperations = [...outbound, ...inbound];
   const hasComponentSchemas = Object.keys(ir.schemas).length > 0;
   const hasOutboundOperations = outbound.length > 0;
-  const hasInboundOperations = inbound.length > 0;
   const links = hasLinks(outbound);
   const resources = collectCanonicalResources(document);
   const componentRefEnv: ComponentRefEnv = {
@@ -411,7 +408,6 @@ export function buildEmissionPlan(
   const overrides = servers.length ? operationFirstServers(outbound, servers) : { operationServers: [], operationServerIndex: new Map<string, number>() };
   if (hasOutboundOperations) artifacts.add('client.ts');
   if (hasOutboundOperations && servers.length) artifacts.add('servers.ts');
-  if (hasInboundOperations) artifacts.add('inbound.ts');
   if (links) artifacts.add('links.ts');
 
   const partial = {
@@ -421,7 +417,6 @@ export function buildEmissionPlan(
     ...overrides,
     hasComponentSchemas,
     hasOutboundOperations,
-    hasInboundOperations,
     hasLinks: links,
     typesUsesInputSchemas,
     typesUsesOutputSchemas,
