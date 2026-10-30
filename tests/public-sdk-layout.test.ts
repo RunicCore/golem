@@ -28,15 +28,14 @@ function exportedNames(program: ts.Program, file: string): string[] {
   return [...new Set(names)].sort();
 }
 
-/** The generated SDK profiles whose public layout is frozen. */
+/** The generated SDK profiles whose public layout is frozen: MobX needs the golem mode, which imports the codecs file the models job writes. */
 const PROFILES = {
-  'mobx-off': { mobx: false, validation: true },
-  'mobx-on': { mobx: true, validation: true },
+  'mobx-off': { profile: { mobx: false, validation: true }, mode: 'standalone', ownValidators: true },
+  'mobx-on': { profile: { mobx: true, validation: true }, mode: 'golem', ownValidators: false },
 } as const;
 
 function publicLayout(sdk: string): Record<string, string[]> {
   const files = ['index.ts',
-    ...fs.readdirSync(path.join(sdk, 'models')).filter(f => f.endsWith('.ts') && !f.startsWith('_')).map(f => `models/${f}`),
     ...(fs.existsSync(path.join(sdk, 'operations')) ? fs.readdirSync(path.join(sdk, 'operations')).filter(f => f.endsWith('.ts')).map(f => `operations/${f}`) : [])];
   using program = ts.createProgramFromSources({ root: sdk, sources: files.map(file => path.join(sdk, file)) });
   return Object.fromEntries(files.sort().map(file => [file, exportedNames(program, path.join(sdk, file))]));
@@ -59,12 +58,12 @@ test('the public SDK layout generated from a fixture document matches the frozen
     },
   };
   const actual: Layout = {};
-  for (const [name, profile] of Object.entries(PROFILES)) {
+  for (const [name, { profile, mode, ownValidators }] of Object.entries(PROFILES)) {
     const sdk = path.join(createFixtureProject(t, `golem-sdk-layout-${name}-`), 'sdk');
-    writeGeneratedArtifacts(writeSdk(document, { output: sdk, name: 'Payments', profile }).artifacts);
+    writeGeneratedArtifacts(writeSdk(document, { output: sdk, name: 'Payments', profile, mode, codecsFile: path.resolve(sdk, 'codecs.generated.ts') }).artifacts);
     actual[name] = publicLayout(sdk);
-    // The SDK's one validators module sits at its root and is internal: the layout lists index.ts, the models and the operations.
-    assert.ok(fs.existsSync(path.join(sdk, 'validators.generated.ts')), name);
+    // A standalone SDK carries its validators module at its root (internal: the layout lists index.ts and the operations); a golem-mode SDK compiles them in the models job.
+    assert.equal(fs.existsSync(path.join(sdk, 'validators.generated.ts')), ownValidators, name);
   }
   assert.deepEqual(actual, expected, `Public SDK layout changed. If intended (major release), replace tests/fixtures/public-sdk-layout.json with:\n${JSON.stringify(actual, null, 2)}`);
 });

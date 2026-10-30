@@ -21,6 +21,11 @@ const DOCUMENT = {
     ], responses: { 204: { description: 'Found' } } } },
     '/with-header': { get: { operationId: 'readWithHeader', parameters: [{ name: 'X-Since', in: 'header', schema: DATE_TIME }], responses: { 204: { description: 'Found', headers: { 'Last-Modified': { schema: DATE_TIME }, 'X-Count': { schema: { type: 'integer' } } } } } } },
     '/plain/{id}': { get: { operationId: 'getPlain', parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }, { name: 'q', in: 'query', schema: { type: 'string' } }], responses: { 204: { description: 'Found' } } } },
+    '/with-cookie': { get: { operationId: 'readWithCookie', parameters: [{ name: 'since', in: 'cookie', schema: DATE_TIME }], responses: { 204: { description: 'Found' } } } },
+    '/in-range': { get: { operationId: 'searchRange', parameters: [{
+      name: 'range', in: 'query', style: 'deepObject', explode: true,
+      schema: { type: 'object', properties: { from: DATE_TIME, to: DATE_TIME } },
+    }], responses: { 204: { description: 'Found' } } } },
   },
   components: { schemas: { Moment: DATE_TIME } },
 };
@@ -65,6 +70,32 @@ test('a date header parameter is sent as its wire string', async t => {
   const { client } = await loadClient(t, 'date', NO_CONTENT, sent);
   await client.readWithHeader!().execute({ header: { 'X-Since': new Date('2025-01-02T03:04:05Z') } });
   assert.equal(sent[0]?.headers['x-since'], '2025-01-02T03:04:05.000Z');
+});
+
+test('a date cookie parameter is sent as its wire string and a value that is no date is rejected as input', async t => {
+  // protects: T-691 a cookie parameter is encoded before it is sent
+  const sent: Fetched[] = [];
+  const { client } = await loadClient(t, 'date', NO_CONTENT, sent);
+  await client.readWithCookie!().execute({ cookie: { since: new Date('2025-01-02T03:04:05Z') } });
+  assert.equal(sent[0]?.headers.cookie, 'since=2025-01-02T03%3A04%3A05.000Z');
+  await assert.rejects(
+    client.readWithCookie!().execute({ cookie: { since: 'yesterday' } }),
+    (error: unknown) => error instanceof LibError && error.causedByInput === true,
+  );
+  assert.equal(sent.length, 1);
+});
+
+test('the dates of a deepObject query parameter are sent as wire strings and a value that is no date is rejected as input', async t => {
+  // protects: T-691 a deepObject parameter encodes the dates inside it before it is sent
+  const sent: Fetched[] = [];
+  const { client } = await loadClient(t, 'date', NO_CONTENT, sent);
+  await client.searchRange!().execute({ query: { range: { from: new Date('2025-01-02T03:04:05Z'), to: new Date('2025-01-03T03:04:05Z') } } });
+  assert.deepEqual(sent.map(item => item.url), ['https://api.test/in-range?range[from]=2025-01-02T03%3A04%3A05.000Z&range[to]=2025-01-03T03%3A04%3A05.000Z']);
+  await assert.rejects(
+    client.searchRange!().execute({ query: { range: { from: 'yesterday' } } }),
+    (error: unknown) => error instanceof LibError && error.causedByInput === true,
+  );
+  assert.equal(sent.length, 1);
 });
 
 test('a response header with a date arrives as a Date and the other headers are decoded as before', async t => {
