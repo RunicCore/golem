@@ -2,7 +2,7 @@ import { LibError, LibErrorKind, IssueSource, IssueRepresentation, toIssue } fro
 import type { OperationRuntimeValidators } from '../schema-registry-validation.js';
 import { runValidation } from '../validation-runner.js';
 import type { Validator } from '../validation-runtime.js';
-import type { ClientRuntime, OperationValidationSources, ResponseCheck } from './core.js';
+import type { ClientRuntime, OperationCodecs, ResponseCheck } from './core.js';
 
 // Exported from `@exprtlabs/golem/validation` and `@exprtlabs/golem/internal/client-validation-runtime`, which only SDKs generated with validation import; `@exprtlabs/golem/client` and `@exprtlabs/golem/internal/client-runtime` never reach this module.
 
@@ -19,11 +19,11 @@ async function assertValid(validator: Validator | undefined, value: unknown): Pr
   }
 }
 
-/** The operation's validators: a caller override, then the generated ones. Resolved once per runtime. */
+/** The operation's validators: a caller override, then those of its generated codecs. Resolved once per runtime. */
 export function operationValidators(
   runtime: ClientRuntime,
   operation: string,
-  sources: OperationValidationSources,
+  codecs: OperationCodecs,
 ): OperationRuntimeValidators {
   const cached = runtime.operationValidatorCache.get(operation);
   if (cached) return cached;
@@ -33,9 +33,8 @@ export function operationValidators(
     return override;
   }
 
-  const responses = new Map<string, Validator>();
-  for (const item of sources.responses) responses.set(`${item.status}:${item.contentType}`, item.validator);
-  const resolved = { input: sources.input, responses };
+  if (!codecs.input) throw new LibError(LibErrorKind.ValidationUnavailable, `Missing generated input validator for ${operation}`);
+  const resolved = { input: codecs.input, responses: new Map(Object.entries(codecs.responses ?? {})) };
   runtime.operationValidatorCache.set(operation, resolved);
   return resolved;
 }

@@ -1,4 +1,4 @@
-import type { BodyEncoder, ClientRuntime, EncodedBody, EncodingMetadata } from './core.js';
+import type { BodyEncoder, ClientRuntime, EncodedBody, EncodingMetadata, OperationCodecs, ResponseDecode } from './core.js';
 import { addQueryParameter } from './parameters.js';
 
 /** Encoding metadata the generated operation declares for one request media type. */
@@ -137,4 +137,20 @@ export function encodeBody(
     return { body: value, contentType };
   }
   throw new Error(`No request body encoder configured for media type: ${contentType}`);
+}
+
+/** The request body in its wire form: the generated encoder of its media type converts it, and a body that converts nothing has none. */
+export function convertRequestBody(codecs: OperationCodecs, contentType: string | undefined, value: unknown): unknown {
+  const encode = value === undefined || contentType === undefined || !codecs.encode || !Object.hasOwn(codecs.encode, contentType) ? undefined : codecs.encode[contentType];
+  return encode ? encode(value as never) : value;
+}
+
+/** The conversion of a checked response body or stream item to its plain form; none when no response of the operation converts. */
+export function responseDecoder(codecs: OperationCodecs): ResponseDecode | undefined {
+  const decode = codecs.decode;
+  if (!decode) return undefined;
+  return (response, value) => {
+    const key = `${response.status}:${response.contentType}`;
+    return Object.hasOwn(decode, key) ? decode[key]!(value as never) : value;
+  };
 }

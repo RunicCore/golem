@@ -182,15 +182,17 @@ test('SDK operation validators expose every operation reference and validate thr
   const clientModule = await import(pathToFileURL(path.join(compiled, 'client.js')).href);
   const respond = (status: number, body: unknown): typeof fetch => async () =>
     new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+  // The client takes and returns the converted form: `when` is a Date.
+  const plainTask = { ...task, when: new Date('2025-01-02T03:04:05Z') };
   const createdTask = await new clientModule.ValidatedClient({ baseUrl: 'https://api.example', fetchImpl: respond(201, task) })
-    .createTask().execute({ body: task });
-  assert.deepEqual(createdTask.body, task);
+    .createTask().execute({ body: plainTask });
+  assert.deepEqual(createdTask.body, plainTask);
   const fetched = await new clientModule.ValidatedClient({ baseUrl: 'https://api.example', fetchImpl: respond(200, task) })
     .getTask().execute({ path: { id: 'task-1' } });
-  assert.deepEqual(fetched.body, task);
+  assert.deepEqual(fetched.body, plainTask);
   await assert.rejects(
     () => new clientModule.ValidatedClient({ baseUrl: 'https://api.example', fetchImpl: respond(201, task) })
-      .createTask().execute({ body: { ...task, labels: [] } }),
+      .createTask().execute({ body: { ...plainTask, labels: [] } }),
     (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.Validation,
   );
 });

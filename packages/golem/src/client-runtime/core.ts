@@ -140,10 +140,18 @@ interface RuntimeSecurityScheme {
 }
 export type RuntimeSecuritySchemes = Readonly<Record<string, RuntimeSecurityScheme>>;
 
-/** The generated validators of one operation, each imported by name from the generated validators module. */
-export interface OperationValidationSources {
-  readonly input: Validator;
-  readonly responses: readonly { readonly status: string; readonly contentType: string; readonly validator: Validator }[];
+/** Turns one body between its plain and its wire form; a generated codec takes the type of its model, which the client has checked. */
+type BodyConversion = (value: never) => unknown;
+
+/**
+ * What the generated `sdkCodecs` table holds for one operation: its validators, and the conversion of each body that has a Date or Temporal value.
+ * `responses` and `decode` are keyed `status:contentType`, `encode` by request content type; a body that converts nothing has no entry.
+ */
+export interface OperationCodecs {
+  readonly input?: Validator;
+  readonly responses?: Readonly<Record<string, Validator>>;
+  readonly encode?: Readonly<Record<string, BodyConversion>>;
+  readonly decode?: Readonly<Record<string, BodyConversion>>;
 }
 
 /** The matched response a check runs against. */
@@ -154,6 +162,9 @@ interface CheckedResponse {
 
 /** Checks a decoded response body or stream item. Only SDKs generated with validation pass one, so the runtime core imports no validation code. */
 export type ResponseCheck = (response: CheckedResponse, value: unknown) => Promise<void>;
+
+/** Converts a checked response body or stream item to its plain form; it runs after the check. */
+export type ResponseDecode = (response: CheckedResponse, value: unknown) => unknown;
 
 /** A response whose status or media type the operation does not declare. Its body was cancelled. */
 export interface UndeclaredResponseError extends LibError {
@@ -214,14 +225,15 @@ interface SelectedResponse {
   headers: readonly RuntimeResponseHeaderContract[];
 }
 
-async function* checkStreamItems(
+async function* convertStreamItems(
   selected: CheckedResponse,
   stream: AsyncIterable<unknown>,
-  check: ResponseCheck,
+  check: ResponseCheck | undefined,
+  decode: ResponseDecode | undefined,
 ): AsyncIterable<unknown> {
   for await (const item of stream) {
-    await check(selected, item);
-    yield item;
+    if (check) await check(selected, item);
+    yield decode ? decode(selected, item) : item;
   }
 }
 
@@ -537,6 +549,7 @@ export class ClientRuntime {
     response: Response,
     contracts: readonly RuntimeResponseContract[],
     check?: ResponseCheck,
+    decode?: ResponseDecode,
   ): Promise<TResponse> {
     try {
       const selected = this.selectResponse(operation, response, contracts);
@@ -546,13 +559,13 @@ export class ClientRuntime {
         const customStream = lookupCodec(this.streamDecoders, [rawContentType, selected.contentType || '']);
         if (customStream) {
           const framed = customStream(response, { operation, contentType: selected.actualContentType });
-          return this.httpResponse(operation, response, selected.status, selected.contentType, check ? checkStreamItems(selected, framed, check) : framed, contracts) as TResponse;
+          return this.httpResponse(operation, response, selected.status, selected.contentType, check || decode ? convertStreamItems(selected, framed, check, decode) : framed, contracts) as TResponse;
         }
         const framed = selected.framing === 'ndjson' ? this.readNdjson(response.body)
           : selected.framing === 'json-seq' ? this.readJsonSeq(response.body)
           : selected.framing === 'sse' ? this.readServerSentEvents(response.body)
           : (() => { throw new Error('No stream decoder configured for media type: ' + (selected.contentType || '')); })();
-        const body = check ? checkStreamItems(selected, framed, check) : framed;
+        const body = check || decode ? convertStreamItems(selected, framed, check, decode) : framed;
         return this.httpResponse(operation, response, selected.status, selected.contentType, body, contracts) as TResponse;
       }
       const mediaType = selected.actualContentType;
@@ -579,6 +592,7 @@ export class ClientRuntime {
         throw new Error(`No response decoder configured for media type: ${mediaType || '(empty)'}`);
       }
       if (check) await check(selected, body);
+      if (decode && selected.contentType !== null) body = decode(selected, body);
       return this.httpResponse(operation, response, selected.status, selected.contentType, body, contracts) as TResponse;
     }
     catch (error) {

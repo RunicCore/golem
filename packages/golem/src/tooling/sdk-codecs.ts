@@ -39,18 +39,27 @@ export const TEMPORAL_SERDE = {
   serialize: (id: string, value: Code) => code`${temporalCodec('serialize', id)}((${value}) as never)`,
 };
 
-/** The codecs of one operation; each is the code of a function the table module can name. An operation that converts nothing has no `encode` or `decode`. */
+/** The code of a function the table names, under the key that picks it. */
+export interface SdkKeyedCode {
+  readonly key: string;
+  readonly code: Code;
+}
+
+/**
+ * The codecs of one operation; each is the code of a function the table module can name. A body that converts nothing has no `encode` or `decode`
+ * entry, and an operation with no such body has neither member.
+ */
 export interface SdkOperationCodecs {
   /** The operation name: the key of the table, so it is unique. */
   readonly name: string;
   /** Checks the plain input of a call. */
   readonly input?: Code;
-  /** Checks the wire form of each response, in the order the operation lists them. */
-  readonly responses?: readonly Code[];
-  /** Turns the plain request body into its wire form. */
-  readonly encode?: Code;
-  /** Turns the wire response body into its converted form. */
-  readonly decode?: Code;
+  /** Checks the wire form of each response body or stream item, keyed `status:contentType`. */
+  readonly responses?: readonly SdkKeyedCode[];
+  /** Turns the plain request body of a media type into its wire form, keyed by the request content type. */
+  readonly encode?: readonly SdkKeyedCode[];
+  /** Turns the wire body or stream item of a response into its converted form, keyed `status:contentType`. */
+  readonly decode?: readonly SdkKeyedCode[];
 }
 
 export interface SdkCodecsModule {
@@ -70,11 +79,14 @@ export function writeSdkCodecs(operations: readonly SdkOperationCodecs[], module
     names.add(name);
   }
   const entry = (operation: SdkOperationCodecs): Code => {
+    const keyed = (member: string, items: readonly SdkKeyedCode[] | undefined): Code[] => items?.length
+      ? [code`${propertyKey(member)}: {${nest(code`${lineBreak}${join(items.map(item => code`${propertyKey(item.key)}: ${item.code},`), lineBreak)}`)}${lineBreak}},`]
+      : [];
     const members: Code[] = [
       ...(operation.input ? [code`input: ${operation.input},`] : []),
-      ...(operation.responses?.length ? [code`responses: [${join(operation.responses, code`, `)}],`] : []),
-      ...(operation.encode ? [code`encode: ${operation.encode},`] : []),
-      ...(operation.decode ? [code`decode: ${operation.decode},`] : []),
+      ...keyed('responses', operation.responses),
+      ...keyed('encode', operation.encode),
+      ...keyed('decode', operation.decode),
     ];
     return members.length
       ? code`${propertyKey(operation.name)}: {${nest(code`${lineBreak}${join(members, lineBreak)}`)}${lineBreak}},`

@@ -89,7 +89,7 @@ test('dates: temporal models encode to the ISO strings the generated client send
   });
   const model = sdkFunction<Record<string, unknown>>(codecs, 'fromWireFormat', 'Event')(wire);
   assert.ok(model.at instanceof Temporal.Instant);
-  const response = await client.createEvent().execute({ body: sdkFunction(codecs, 'toWireFormat', 'Event')(model) as never });
+  const response = await client.createEvent().execute({ body: model as never });
   assert.equal(response.status, 201);
   assert.deepEqual(JSON.parse(String(requests[0]?.init.body)), wire);
 });
@@ -99,14 +99,16 @@ test('a standalone SDK writes its sdkCodecs table, keyed by operation, and loadi
   const output = path.join(createFixtureProject(t, 'golem-openapi-sdk-codecs-'), 'sdk');
   await generateMaterializedSdk(EVENT_OPERATIONS, { output, name: 'Events', profile: PROFILE, dates: 'temporal' });
   compileGeneratedSdk(output, [], { strict: true, lib: ['ES2023', 'DOM', 'DOM.Iterable', 'esnext.temporal'] });
-  const { sdkCodecs } = requireRecord(await importGeneratedModule(output, 'sdk codecs', 'dist/codecs.generated.js'), 'sdk codecs module') as { sdkCodecs: Record<string, Record<string, unknown>> };
+  const { sdkCodecs } = requireRecord(await importGeneratedModule(output, 'sdk codecs', 'dist/codecs.generated.js'), 'sdk codecs module') as { sdkCodecs: Record<string, Record<string, Record<string, unknown>>> };
   assert.deepEqual(Object.keys(sdkCodecs).sort(), ['createEvent', 'listEvents']);
   assert.deepEqual(Object.keys(sdkCodecs.createEvent ?? {}), ['input', 'responses', 'encode', 'decode']);
+  assert.deepEqual(Object.keys(sdkCodecs.createEvent?.encode ?? {}), ['application/json']);
+  assert.deepEqual(Object.keys(sdkCodecs.createEvent?.decode ?? {}), ['201:application/json']);
   assert.deepEqual(Object.keys(sdkCodecs.listEvents ?? {}), ['input']);
   const wire = { at: '2025-01-02T03:04:05Z', day: '2025-01-02', span: 'P1D', clock: '03:04:05Z', maybe: null };
-  const decoded = (sdkCodecs.createEvent?.decode as (wire: unknown) => Record<string, unknown>)(wire);
+  const decoded = (sdkCodecs.createEvent?.decode?.['201:application/json'] as (wire: unknown) => Record<string, unknown>)(wire);
   assert.ok(decoded.at instanceof Temporal.Instant);
-  assert.deepEqual((sdkCodecs.createEvent?.encode as (value: unknown) => unknown)(decoded), wire);
+  assert.deepEqual((sdkCodecs.createEvent?.encode?.['application/json'] as (value: unknown) => unknown)(decoded), wire);
   assert.match(fs.readFileSync(path.join(output, 'index.ts'), 'utf8'), /^import '\.\/codecs\.generated\.js';$/m);
 });
 

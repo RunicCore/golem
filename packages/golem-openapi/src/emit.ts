@@ -178,7 +178,7 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions, moved:
   const clientName = identifier(options.name || readString(asRecord(asRecord(document).info).title), 'Api');
   const output = path.resolve(options.output);
   const plan = buildEmissionPlan(document, ir, profile, options.dates ?? 'date');
-  const modelAnalysis = analyzeOpenApiModels(document, profile.validation, options.dates ?? 'date');
+  const modelAnalysis = analyzeOpenApiModels(document, profile.validation, options.dates ?? 'date', operations);
   const inlineDiagnostics = checkOperationCompositions([...operations, ...inboundOperations], modelAnalysis, document);
   const schemaData = profile.validation && plan.hasOutboundOperations
     ? buildSchemaData(document, ir)
@@ -216,7 +216,7 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions, moved:
     return validators.compiled;
   };
   const modelDiagnostics: GolemDiagnostic[] = [];
-  if (plan.hasModels) {
+  if (modelAnalysis.grouping.groups.length > 0) {
     const models = generateOpenApiModelArtifacts(document, profile, modelAnalysis, {
       locate: options.locate,
       ...(profile.validation ? { compileValidators: ({ plan, locateModel }: { plan: CodecValidationPlan; locateModel: (name: string) => SchemaPlace }) => compileValidators(plan, locateModel) } : {}),
@@ -231,7 +231,6 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions, moved:
   }
   if (plan.artifacts.has('codecs.generated.ts')) {
     files.set('codecs.generated.ts', generateSdkCodecs(
-      document,
       operations,
       modelAnalysis,
       operationValidation && validators.compiled ? operationValidatorNames(operationValidation, validators.compiled.exports) : undefined,
@@ -245,9 +244,7 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions, moved:
       document,
       profile,
       plan,
-      operationValidation && validators.compiled
-        ? { schemas: operationValidation, validatorExports: validators.compiled.exports }
-        : undefined,
+      modelAnalysis.bodyNodeIds,
     );
     files.set('client.ts', clientModules.client.source);
     modules.set('client.ts', { exports: clientModules.client.exports, stars: [] });

@@ -49,7 +49,7 @@ interface RuntimeTypeExports {
   };
   readonly client: {
     readonly ApiOperation: client.ApiOperation<never, never, never>;
-    readonly OperationValidationSources: client.OperationValidationSources;
+    readonly OperationCodecs: client.OperationCodecs;
     readonly RuntimeResponseContract: client.RuntimeResponseContract;
     readonly RuntimeSecuritySchemes: client.RuntimeSecuritySchemes;
   };

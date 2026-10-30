@@ -25,6 +25,7 @@ import {
   wireStringifyExportName,
   TEMPORAL_SERDE,
   writeSdkCodecs,
+  type SdkKeyedCode,
   type SdkOperationCodecs,
   type CodecRuntimeOptions,
   type FromJsonModelResolver,
@@ -50,14 +51,12 @@ import {
   modelBases,
   modelStableId,
   modelConversionDescriptor,
-  modelEnv,
-  directComponentSchemaRef,
   CompositionError,
   locatedCompositionError,
   type CompositionSite,
 } from './model-resolution.js';
 import { openApiValidationSchemaClosure } from './model-manifest.js';
-import { analyzeOpenApiModels, reachableSchemaNodes, schemaGraphView } from './model-schema-graph.js';
+import { analyzeOpenApiModels, reachableSchemaNodes, requestBodyKey, responseBodyKey, schemaGraphView } from './model-schema-graph.js';
 
 /** The bases of the model that `reference` names, when it has any. */
 function referenceBases(reference: string, definitions: ModelDefinitions): { readonly bases?: ReturnType<typeof modelBases> } {
@@ -398,46 +397,40 @@ export function generateModels(
   return render(code`${join(lines, code`\n`)}\n`);
 }
 
-/** The validators of an operation in the SDK's validators module: the export names of its input check and of each response check. */
+/** The validators of an operation in the SDK's validators module: the export names of its input check and of each response check, under the key `status:contentType`. */
 export interface OperationValidatorNames {
   readonly input: string;
-  readonly responses: readonly string[];
-}
-
-/** The model that every schema in `schemas` references, when they all reference the same one. */
-function sharedModelNode(schemas: readonly unknown[], analysis: OpenApiModelAnalysis, document: unknown): SchemaNode | undefined {
-  const env = modelEnv(document, undefined, undefined, analysis.resources, analysis.selections, analysis.dates);
-  const references = schemas.map((schema) => directComponentSchemaRef(schema, env));
-  const [first] = references;
-  return first === null || first === undefined || !references.every((reference) => reference === first) ? undefined : analysis.nodesByName.get(first);
+  readonly responses: readonly { readonly key: string; readonly name: string }[];
 }
 
 /**
  * The module `codecs.generated.ts` of a standalone SDK: the `sdkCodecs` table, by operation name, and the load of every model group
- * module, so that a consumer's compile reaches them and loading the table registers their codecs. An operation gets the encoder
- * of its request body and the decoder of its success body when each is a reference to one model.
+ * module, so that a consumer's compile reaches them and loading the table registers their codecs. An operation gets the encoder of each
+ * request body and the decoder of each response body or stream item that converts something (`OpenApiModelAnalysis.bodyNodeIds`).
  */
 export function generateSdkCodecs(
-  document: unknown,
   operations: readonly NormalizedOperation[],
   analysis: OpenApiModelAnalysis,
   validators: ReadonlyMap<string, OperationValidatorNames> | undefined,
 ): string {
   const validatorsSource = new ImportSource('./validators.generated.js', false, { sorted: true });
   const groupSources = new Map(analysis.grouping.groups.map((group) => [group.id, new ImportSource(`./models/_${group.id}.js`, false, { sorted: true })] as const));
-  const codecOf = (node: SchemaNode | undefined, functionName: 'fromWire' | 'toWire'): Code | undefined => {
-    const groupId = node ? analysis.grouping.owner.get(node.id) : undefined;
-    return node && groupId !== undefined ? groupSources.get(groupId)?.name(generatedFunctionName(node.id, functionName)) : undefined;
+  const codecOf = (bodyKey: string, functionName: 'fromWire' | 'toWire'): Code | undefined => {
+    const nodeId = analysis.bodyNodeIds.get(bodyKey);
+    const groupId = nodeId === undefined ? undefined : analysis.grouping.owner.get(nodeId);
+    return nodeId !== undefined && groupId !== undefined ? groupSources.get(groupId)?.name(generatedFunctionName(nodeId, functionName)) : undefined;
   };
+  const keyed = (items: ReadonlyArray<readonly [string, Code | undefined]>): SdkKeyedCode[] => items.flatMap(([key, codec]) => codec ? [{ key, code: codec }] : []);
   const table = operations.map((operation): SdkOperationCodecs => {
     const checks = validators?.get(operation.name);
-    const encode = codecOf(sharedModelNode(operation.requestContent.map((media) => media.schema), analysis, document), 'toWire');
-    const decode = codecOf(sharedModelNode(operation.responses.filter((response) => response.success).flatMap((response) => response.content.map((media) => media.schema)), analysis, document), 'fromWire');
+    const responses = operation.responses.flatMap((response) => response.content.map((media) => [response.status, media.contentType] as const));
+    const encode = keyed(operation.requestContent.map((media) => [media.contentType, codecOf(requestBodyKey(operation.name, media.contentType), 'toWire')]));
+    const decode = keyed(responses.map(([status, contentType]) => [`${status}:${contentType}`, codecOf(responseBodyKey(operation.name, status, contentType), 'fromWire')]));
     return {
       name: operation.name,
-      ...(checks ? { input: validatorsSource.name(checks.input), responses: checks.responses.map((name) => validatorsSource.name(name)) } : {}),
-      ...(encode ? { encode } : {}),
-      ...(decode ? { decode } : {}),
+      ...(checks ? { input: validatorsSource.name(checks.input), responses: checks.responses.map((item) => ({ key: item.key, code: validatorsSource.name(item.name) })) } : {}),
+      ...(encode.length ? { encode } : {}),
+      ...(decode.length ? { decode } : {}),
     };
   });
   return writeSdkCodecs(table, {

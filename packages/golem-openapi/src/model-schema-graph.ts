@@ -3,6 +3,7 @@ import { createSchemaGraph, internDescriptors, type SchemaGraph, type SchemaNode
 import type { ModelTypeDescriptor } from '@exprtlabs/golem/internal/schema';
 import { compareText } from '@exprtlabs/golem/generator-api';
 import type { OpenApiGenerationProfile } from './profile.js';
+import type { NormalizedOperation } from './normalize.js';
 import { componentOrigin, LocatedError } from './origin.js';
 import { schemaContext } from './types.js';
 import { collectCanonicalResources, type ResourceIndex } from './schema-projection.js';
@@ -21,6 +22,80 @@ import {
   type SchemaGraphGrouping,
 } from './model-resolution.js';
 import { collectOpenApiModelDefinitions } from './model-definitions.js';
+
+/** The node name of an inline body that is no object: the graph keeps unnamed objects only, and equal shapes under this name share one codec. */
+const OPERATION_BODY_NODE_NAME = '__operationBody';
+
+/** The key of a request body in `OpenApiModelAnalysis.bodyNodeIds`: the operation and the request content type. */
+export function requestBodyKey(operation: string, contentType: string): string {
+  return JSON.stringify([operation, 'request', contentType]);
+}
+
+/** The key of a response body, or of its stream items, in `OpenApiModelAnalysis.bodyNodeIds`: the operation and the response status and content type. */
+export function responseBodyKey(operation: string, status: string, contentType: string): string {
+  return JSON.stringify([operation, 'response', status, contentType]);
+}
+
+/** Whether a value of `descriptor` changes between its wire and its plain form: a Date or Temporal value anywhere inside, through the components it references. */
+function descriptorConverts(descriptor: ModelTypeDescriptor, graph: SchemaGraph, seen: Set<string>): boolean {
+  const tags = descriptor as ModelTypeDescriptor & { readonly serde?: unknown };
+  if (tags.serde !== undefined || descriptor.kind === 'date') return true;
+  const converts = (held: ModelTypeDescriptor): boolean => descriptorConverts(held, graph, seen);
+  switch (descriptor.kind) {
+    case 'generated-model':
+    case 'reference': {
+      const node = graph.nodeFor(descriptor);
+      if (!node || seen.has(node.id)) return false;
+      seen.add(node.id);
+      return converts(node.descriptor);
+    }
+    case 'array': return converts(descriptor.item);
+    case 'tuple': return descriptor.items.some(converts) || (descriptor.rest !== undefined && converts(descriptor.rest.item));
+    case 'object': return Object.values(descriptor.properties).some(converts) || (typeof descriptor.additionalProperties === 'object' && converts(descriptor.additionalProperties));
+    case 'union':
+    case 'intersection': return descriptor.variants.some(converts);
+    default: return false;
+  }
+}
+
+/**
+ * Interns the request body, response body and stream item schema of each operation that converts something, and returns the node of each by body key.
+ * A `$ref` to a component uses the component's node and an inline shape the anonymous node of its shape, so equal shapes share one codec.
+ * A schema that converts nothing gets no node: the client passes its value through.
+ */
+function internOperationBodies(
+  schemaGraph: SchemaGraph,
+  operations: readonly NormalizedOperation[],
+  definitions: ModelDefinitions,
+  env: ModelResolveEnv,
+  validation: OpenApiGenerationProfile['validation'],
+): ReadonlyMap<string, string> {
+  const bodyNodeIds = new Map<string, string>();
+  const intern = (key: string, schema: unknown): void => {
+    if (schema === null || typeof schema === 'boolean') return;
+    let descriptor: ModelTypeDescriptor;
+    try {
+      descriptor = modelConversionDescriptor(schema, definitions, env, 'to');
+    } catch (thrown) {
+      // A schema that does not convert gets no node. `checkOperationCompositions` runs next, stops generation, and names the schema and the place in it.
+      if (thrown instanceof CompositionError) return;
+      throw thrown;
+    }
+    if (!descriptorConverts(descriptor, schemaGraph, new Set())) return;
+    const named = descriptor.kind === 'generated-model' || descriptor.kind === 'reference';
+    const node = named ? schemaGraph.nodeFor(descriptor) : schemaGraph.intern(descriptor, descriptor.kind === 'object' ? undefined : OPERATION_BODY_NODE_NAME, false, validation);
+    if (node) bodyNodeIds.set(key, node.id);
+  };
+  for (const operation of operations) {
+    for (const media of operation.requestContent) intern(requestBodyKey(operation.name, media.contentType), media.schema);
+    for (const response of operation.responses) {
+      for (const media of response.content) {
+        intern(responseBodyKey(operation.name, response.status, media.contentType), media.itemSchemaPresent ? media.itemSchema : media.schema);
+      }
+    }
+  }
+  return bodyNodeIds;
+}
 
 /**
  * A model owns its codec. `allOf: [{ $ref: X }]` collapses to a bare
@@ -66,7 +141,8 @@ function internOpenApiSchemaGraph(
   resources?: ResourceIndex,
   selections?: DiscriminatorSelections,
   dates: OpenApiDates = 'date',
-): { readonly schemaGraph: SchemaGraph; readonly nodeIdByDefinition: ReadonlyMap<string, string> } {
+  operations: readonly NormalizedOperation[] = [],
+): { readonly schemaGraph: SchemaGraph; readonly nodeIdByDefinition: ReadonlyMap<string, string>; readonly bodyNodeIds: ReadonlyMap<string, string> } {
   const schemaGraph = createSchemaGraph({}, {
     codecSource: 'openapi',
   });
@@ -95,8 +171,9 @@ function internOpenApiSchemaGraph(
       validation,
     };
   }), ...aliasEntries]);
+  const bodyNodeIds = internOperationBodies(schemaGraph, operations, definitions, aliasEnv, validation);
   schemaGraph.seal();
-  return { schemaGraph, nodeIdByDefinition };
+  return { schemaGraph, nodeIdByDefinition, bodyNodeIds };
 }
 
 /**
@@ -132,10 +209,11 @@ export function analyzeOpenApiModels(
   document: unknown,
   validation: OpenApiGenerationProfile['validation'] = true,
   dates: OpenApiDates = 'date',
+  operations: readonly NormalizedOperation[] = [],
 ): OpenApiModelAnalysis {
   const resources = collectCanonicalResources(document);
   const { definitions, ordered, diagnostics, selections } = collectOpenApiModelDefinitions(document, resources, dates);
-  const { schemaGraph, nodeIdByDefinition } = internOpenApiSchemaGraph(document, ordered, definitions, validation, resources, selections, dates);
+  const { schemaGraph, nodeIdByDefinition, bodyNodeIds } = internOpenApiSchemaGraph(document, ordered, definitions, validation, resources, selections, dates, operations);
   for (const alias of definitions.aliases.values()) {
     const nodeId = nodeIdByDefinition.get(alias.name);
     if (nodeId !== undefined) alias.nodeId = nodeId;
@@ -145,7 +223,7 @@ export function analyzeOpenApiModels(
   const { nodesByName, definitionNameByNodeId } = nodesByDefinitionName(schemaGraph, new Map([...nodeIdByDefinition].filter(([name]) => definitions.has(name))));
   const nodesByCodecId = new Map(nodes.map((node) => [node.codecId, node]));
   const grouping = schemaGraphGroups(schemaGraph, definitions, nodesByName);
-  return { definitions, ordered, schemaGraph, grouping, resources, nodesById, nodesByName, definitionNameByNodeId, nodesByCodecId, diagnostics, selections, dates };
+  return { definitions, ordered, schemaGraph, grouping, resources, nodesById, nodesByName, definitionNameByNodeId, nodesByCodecId, bodyNodeIds, diagnostics, selections, dates };
 }
 
 export function schemaGraphView(

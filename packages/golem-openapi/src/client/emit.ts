@@ -39,6 +39,8 @@ import { operationNameType } from '../names.js';
 import { generatedBannerComment } from '../package-info.js';
 import type { OpenApiGenerationProfile } from '../profile.js';
 import { requireProfile } from '../profile.js';
+import { requestBodyKey, responseBodyKey } from '../model-schema-graph.js';
+import type { OperationValidatorNames } from '../model-emission.js';
 import { buildOperationValidationSchemaBundle, buildOperationValidationSchemaBundles, buildSchemaData, operationSourceSchemas } from '../schemas.js';
 import { authoredPointer, type MovedUnions } from '../document.js';
 import { textCodecRequirement } from '../types.js';
@@ -200,8 +202,7 @@ function operationSource(
   plan: EmissionPlan,
   responseContracts: readonly unknown[],
   securitySchemes: Readonly<Record<string, unknown>>,
-  validationBundle: ReturnType<typeof buildOperationValidationSchemaBundle> | undefined,
-  validatorExports: ReadonlyMap<string, string>,
+  bodyNodeIds: ReadonlyMap<string, string>,
 ): string {
   const usedFunctions = new Set<string>();
   const use = (name: ClientFunction): Code => {
@@ -266,8 +267,13 @@ function operationSource(
   const factoryName = operationFactoryName(operation);
   if (appliesSecurity) use('applySecurity');
   if (requestBody) use('encodeBody');
-  // The bundle exists exactly when the profile validates.
-  const validatesWithSources = validationBundle !== undefined;
+  const validatesWithSources = profile.validation;
+  // The `sdkCodecs` table holds the validators, and the conversion of each body that has a Date or Temporal value.
+  const encodes = operation.requestContent.some((media) => bodyNodeIds.has(requestBodyKey(operation.name, media.contentType)));
+  const decodes = operation.responses.some((response) => response.content.some((media) => bodyNodeIds.has(responseBodyKey(operation.name, response.status, media.contentType))));
+  const usesCodecs = validatesWithSources || encodes || decodes;
+  if (encodes) use('convertRequestBody');
+  if (decodes) use('responseDecoder');
   const validationFunctions = validatesWithSources ? ['operationValidators', 'responseCheck', 'validateOperationInput'] : [];
   const runtimeFunctions = [...usedFunctions].sort();
   const importedNames: Array<readonly [string, string]> = [
@@ -284,7 +290,7 @@ function operationSource(
   ];
   if (surfaces.auth || surfaces.mutualTls) importedNames.push(['__golemSecuritySchemes', 'security metadata']);
   if (appliesSecurity) importedNames.push(['RuntimeSecuritySchemes', 'security scheme type import']);
-  if (profile.validation) importedNames.push(['OperationValidationSources', 'validation source type import']);
+  if (usesCodecs) importedNames.push(['OperationCodecs', 'operation codecs type import']);
   if (plan.servers.length) importedNames.push(['__golemServers', 'document servers import']);
   const overrideIndex = plan.operationServerIndex.get(operation.name);
   if (overrideIndex !== undefined) importedNames.push(['__golemOperationServers', 'operation servers import']);
@@ -297,25 +303,19 @@ function operationSource(
   const uniqueModuleName = (base: string, origin: string): string => {
     let name = base;
     for (let suffix = 1; moduleScope.has(name); suffix += 1) name = `${base}${suffix}`;
-    if (validatesWithSources) moduleScope.claim(name, origin);
+    if (usesCodecs) moduleScope.claim(name, origin);
     return name;
   };
-  const validationSourcesName = identifierPart(uniqueModuleName('__operationValidationSources', 'operation validation sources'));
+  const codecsName = identifierPart(uniqueModuleName('__operationCodecs', 'operation codecs'));
+  const sdkCodecsName = uniqueModuleName('__golemSdkCodecs', 'sdkCodecs table import');
   const typesModule = new ImportSource('../types.js', true, { namespace: 'Types' });
   const inputType = code`${typesModule.namespace()}.${identifierPart(`${operation.typeName}OperationInput`)}`;
   const responseType = code`${typesModule.namespace()}.${identifierPart(`${operation.typeName}OperationHttpResponse`)}`;
   const validatorSetup = validatesWithSources
-    ? code`  const validators = ${rt.validation.operationValidators}(runtime, ${literal(operation.name)}, ${validationSourcesName});\n  const checkResponse = ${rt.validation.responseCheck}(validators);`
+    ? code`  const validators = ${rt.validation.operationValidators}(runtime, ${literal(operation.name)}, ${codecsName});\n  const checkResponse = ${rt.validation.responseCheck}(validators);`
     : BLANK;
-  // The generated validators this operation imports, each under a module-local alias that no operation name can take.
-  const validatorImports = validationBundle
-    ? [
-      { reference: validationBundle.inputReference, local: uniqueModuleName('__validateInput', 'generated input validator import') },
-      ...validationBundle.responseReferences.map((item, index) => ({ reference: item.reference, local: uniqueModuleName(`__validateResponse${index}`, 'generated response validator import') })),
-    ].map(item => ({ ...item, exported: requireValidatorExport(operation.name, item.reference, validatorExports) }))
-    : [];
-  const validatorsSource = new ImportSource('../validators.generated.js');
-  const validatorNames = validatorImports.map((item) => validatorsSource.name(item.exported, { alias: item.local }));
+  const decoderSetup = decodes ? code`  const decodeResponse = ${use('responseDecoder')}(${codecsName});` : BLANK;
+  const codecsSource = new ImportSource('../codecs.generated.js');
   const clientModule = new ImportSource('../client.js', true);
   const serversModule = new ImportSource('../servers.js');
   const serversCode = plan.servers.length ? serversModule.name('servers', { alias: '__golemServers' }) : BLANK;
@@ -325,13 +325,8 @@ function operationSource(
   const clientRuntime = rt.client.ClientRuntime;
   const apiOperation = profile.mobx ? aliased(rtType.mobx.ObservableApiOperation, 'ApiOperation') : rtType.client.ApiOperation;
   const createApiOperation = profile.mobx ? aliased(rt.mobx.createObservableApiOperation, 'createApiOperation') : rt.client.createApiOperation;
-  const validationSources = validationBundle
-    ? join([
-      code`const ${validationSourcesName}: ${rtType.client.OperationValidationSources} = {`,
-      code`  input: ${validatorNames[0]},`,
-      code`  responses: [${join(validationBundle.responseReferences.map((item, index) => code`{ status: ${literal(item.status)}, contentType: ${literal(item.contentType)}, validator: ${validatorNames[index + 1]} }`), code`, `)}],`,
-      code`};`,
-    ], code`\n`)
+  const codecsDeclaration = usesCodecs
+    ? code`const ${codecsName}: ${rtType.client.OperationCodecs} = ${codecsSource.name('sdkCodecs', { alias: sdkCodecsName })}[${literal(operation.name)}];`
     : BLANK;
   const securitySchemesType = rtType.client.RuntimeSecuritySchemes;
   // The client module imports `__golemSecuritySchemes` from every operation module.
@@ -341,10 +336,14 @@ function operationSource(
   const securityCall = appliesSecurity
     ? code`    await ${use('applySecurity')}(runtime, ${security}, query, headers, cookies, securitySchemes);`
     : BLANK;
+  const wireBodyExpression = operation.requestContent.length > 1
+    ? code`input.body && { contentType: input.body.contentType, value: ${use('convertRequestBody')}(${codecsName}, input.body.contentType, input.body.value) }`
+    : code`${use('convertRequestBody')}(${codecsName}, ${bodyContentType}, input.body)`;
   const usesQuery = queryLines.length > 0 || !isEmpty(queryStringLine) || !isEmpty(securityCall);
   const usesCookies = cookieLines.length > 0 || !isEmpty(securityCall);
   const bodyLines = [
-    profile.validation ? code`    await ${rt.validation.validateOperationInput}(${literal(operation.name)}, input, validators);` : BLANK,
+    encodes ? code`    const wireBody = ${wireBodyExpression};` : BLANK,
+    profile.validation ? code`    await ${rt.validation.validateOperationInput}(${literal(operation.name)}, ${encodes ? code`{ ...input, body: wireBody }` : code`input`}, validators);` : BLANK,
     usesQuery ? code`    const query: string[] = [];` : BLANK,
     ...queryLines,
     queryStringLine,
@@ -354,7 +353,7 @@ function operationSource(
     ...cookieLines,
     securityCall,
     usesCookies ? code`    if (cookies.length) headers.set('Cookie', cookies.join('; '));` : BLANK,
-    requestBody ? code`    const encodedBody = ${use('encodeBody')}(runtime, ${literal(operation.name)}, ${bodyValue}, ${bodyContentType}, ${bodyEncodings});\n    if (encodedBody.contentType) headers.set('Content-Type', encodedBody.contentType);` : BLANK,
+    requestBody ? code`    const encodedBody = ${use('encodeBody')}(runtime, ${literal(operation.name)}, ${encodes ? (operation.requestContent.length > 1 ? code`wireBody?.value` : code`wireBody`) : bodyValue}, ${bodyContentType}, ${bodyEncodings});\n    if (encodedBody.contentType) headers.set('Content-Type', encodedBody.contentType);` : BLANK,
     route.declarations,
     code`    const request: RequestInit = {`,
     code`      method: ${literal(operation.method)},`,
@@ -366,7 +365,7 @@ function operationSource(
     code`    return runtime.readResponse<${responseType}>(`,
     code`      ${literal(operation.name)},`,
     code`      response,`,
-    code`      responseContracts,${validatesWithSources ? code`\n      checkResponse,` : BLANK}`,
+    code`      responseContracts,${validatesWithSources ? code`\n      checkResponse,` : decodes ? code`\n      undefined,` : BLANK}${decodes ? code`\n      decodeResponse,` : BLANK}`,
     code`    );`,
   ].filter(line => !isEmpty(line));
   const body = code`  return ${createApiOperation}(${literal(operation.name)}, async (${inputName}: ${inputType}, options: ${requestOptions} = {}): Promise<${responseType}> => {
@@ -375,7 +374,7 @@ ${join(bodyLines, code`\n`)}
   const declarations = join([
     securityDeclaration,
     code`const responseContracts: readonly ${rtType.client.RuntimeResponseContract}[] = ${documentLiteral(responseContracts)};`,
-    validationSources,
+    codecsDeclaration,
   ].filter((part) => !isEmpty(part)), code`\n`);
   const factoryCode = identifierPart(factoryName);
   const functions = code`export function ${identifierPart(operation.name)}(options: ${clientOptions}): ${apiOperation}<${inputType}, ${responseType}, ${requestOptions}> {
@@ -383,7 +382,7 @@ ${join(bodyLines, code`\n`)}
 }
 
 export function ${factoryCode}(runtime: ${clientRuntime}): ${apiOperation}<${inputType}, ${responseType}, ${requestOptions}> {
-${!isEmpty(validatorSetup) ? code`${validatorSetup}\n` : BLANK}${body}
+${!isEmpty(validatorSetup) ? code`${validatorSetup}\n` : BLANK}${!isEmpty(decoderSetup) ? code`${decoderSetup}\n` : BLANK}${body}
 }
 `;
   const file = join([declarations, functions], code`\n`);
@@ -391,13 +390,13 @@ ${!isEmpty(validatorSetup) ? code`${validatorSetup}\n` : BLANK}${body}
   const imports: ImportOptions = {
     typeNames: 'ordered',
     modules: ['client', 'mobx', 'validation'],
-    order: { client: ['ClientRuntime', ...[...usedFunctions].sort(), 'createApiOperation', 'ApiOperation', 'RuntimeResponseContract', 'RuntimeSecuritySchemes', 'OperationValidationSources'] },
+    order: { client: ['ClientRuntime', ...[...usedFunctions].sort(), 'createApiOperation', 'ApiOperation', 'RuntimeResponseContract', 'RuntimeSecuritySchemes', 'OperationCodecs'] },
   };
   const runtimeLines = runtimeLinesOf(file, imports);
-  const clientImports = fileImports(file, [clientModule], { elsewhere: [typesModule, validatorsSource, serversModule] });
-  const typesImports = fileImports(file, [typesModule], { elsewhere: [clientModule, validatorsSource, serversModule] });
-  const serversImports = fileImports(file, [serversModule], { elsewhere: [typesModule, clientModule, validatorsSource] });
-  const validatorImportLines = fileImports(file, [validatorsSource], { elsewhere: [typesModule, clientModule, serversModule] });
+  const clientImports = fileImports(file, [clientModule], { elsewhere: [typesModule, codecsSource, serversModule] });
+  const typesImports = fileImports(file, [typesModule], { elsewhere: [clientModule, codecsSource, serversModule] });
+  const serversImports = fileImports(file, [serversModule], { elsewhere: [typesModule, clientModule, codecsSource] });
+  const codecsImportLines = fileImports(file, [codecsSource], { elsewhere: [typesModule, clientModule, serversModule] });
   return render(code`${join([
     generatedBannerComment(),
     ...runtimeLines('client'),
@@ -405,7 +404,7 @@ ${!isEmpty(validatorSetup) ? code`${validatorSetup}\n` : BLANK}${body}
     ...typesImports,
     ...serversImports,
     ...runtimeLines('mobx'),
-    ...validatorImportLines,
+    ...codecsImportLines,
     ...runtimeLines('validation'),
     BLANK,
     ...(!isEmpty(declarations) ? [declarations] : []),
@@ -706,16 +705,16 @@ export function buildOperationValidationSchemas(
 export function operationValidatorNames(
   schemas: OperationValidationSchemas,
   validatorExports: ReadonlyMap<string, string>,
-): ReadonlyMap<string, { readonly input: string; readonly responses: readonly string[] }> {
+): ReadonlyMap<string, OperationValidatorNames> {
   return new Map([...schemas.bundles].map(([name, bundle]) => [name, {
     input: requireValidatorExport(name, bundle.inputReference, validatorExports),
-    responses: bundle.responseReferences.map((item) => requireValidatorExport(name, item.reference, validatorExports)),
+    responses: bundle.responseReferences.map((item) => ({ key: `${item.status}:${item.contentType}`, name: requireValidatorExport(name, item.reference, validatorExports) })),
   }] as const));
 }
 
 /**
- * The modules of the client. When the profile validates, `validatorExports` is the name the SDK's validators module
- * exports each operation root under, and each operation module imports its validators from that module.
+ * The modules of the client. Each operation module reads its validators and body conversions from the `sdkCodecs` table by operation name;
+ * `bodyNodeIds` names the bodies that convert something.
  */
 export function generateClientModules(
   clientName: string,
@@ -723,7 +722,7 @@ export function generateClientModules(
   document: unknown = {},
   profile: OpenApiGenerationProfile,
   plan: EmissionPlan,
-  validation?: { readonly schemas: OperationValidationSchemas; readonly validatorExports: ReadonlyMap<string, string> },
+  bodyNodeIds: ReadonlyMap<string, string>,
 ): GeneratedClientModules {
   requireProfile(profile);
   const rawSecuritySchemes = Object.fromEntries(plan.referencedAuthSchemes);
@@ -740,7 +739,6 @@ export function generateClientModules(
       },
     ]),
   );
-  if (profile.validation && !validation) throw new Error('A validating SDK imports its operation validators from the SDK validators module; the caller gives its schemas and exports.');
   const emittedOperations = new Map<string, string>();
   for (const operation of operations) {
     const operationSchemes = operationSecuritySchemeData(operation, securitySchemes);
@@ -752,8 +750,7 @@ export function generateClientModules(
       plan,
       responseContractsForOperation(document, operation),
       operationSchemes,
-      validation?.schemas.bundles.get(operation.name),
-      validation?.validatorExports ?? new Map<string, string>(),
+      bodyNodeIds,
     ));
   }
   const client = emitClient(clientName, operations, profile, plan, rawSecuritySchemes);
