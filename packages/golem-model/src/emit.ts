@@ -152,13 +152,17 @@ function walkDescriptor(descriptor: ModelConversionDescriptor, visitor: Descript
   visitor.leave?.(descriptor);
 }
 
+/** A class that the validators import to test `instanceof`: its id is `classRef.id` of the descriptor, and `typeImport` says where it comes from. */
+type ClassBinding = NonNullable<Extract<ModelConversionDescriptor, { readonly kind: 'class-value' }>['typeImport']>;
+
 interface BindingRegistry {
   readonly validations: Map<string, ValidationBinding>;
   readonly serde: Map<string, SerdeBinding>;
+  readonly classes: Map<string, ClassBinding>;
 }
 
 /** An id names one function: a path from the project root, or a package import. A second binding with the id is the same function reached again, so the first stays. */
-function registerValidation(bindings: Map<string, ValidationBinding>, binding: ValidationBinding): void {
+function registerValidation(bindings: Map<string, { readonly module: string; readonly specifier?: string; readonly exportName: string }>, binding: ValidationBinding): void {
   if (!bindings.has(binding.id)) bindings.set(binding.id, binding);
 }
 
@@ -177,6 +181,9 @@ function visitDescriptor(
       const rich = richDescriptor(item);
       for (const binding of rich.validations ?? []) registerValidation(registry.validations, binding);
       if (rich.serde) registerSerde(registry.serde, rich.serde);
+      if (item.kind === 'class-value' && item.classRef?.id !== undefined && item.typeImport !== undefined && !registry.classes.has(item.classRef.id)) {
+        registry.classes.set(item.classRef.id, item.typeImport);
+      }
     },
   });
 }
@@ -322,8 +329,8 @@ function projectDescriptor(
         ...(descriptor.additionalPropertiesDeclared ? { additionalPropertiesDeclared: true as const } : {}),
       };
       break;
-    // `typeImport` is an absolute path used only while emitting imports; generated data keeps the name.
-    case 'class-value': projected = { kind: 'class-value', typeName: descriptor.typeName } as ModelConversionDescriptor; break;
+    // `typeImport` is an absolute path used only while emitting imports; generated data keeps the name and the class reference.
+    case 'class-value': projected = { kind: 'class-value', typeName: descriptor.typeName, ...(descriptor.classRef ? { classRef: descriptor.classRef } : {}) } as ModelConversionDescriptor; break;
     default: projected = { kind: descriptor.kind, ...('value' in descriptor ? { value: descriptor.value } : {}), ...('name' in descriptor ? { name: descriptor.name } : {}), ...('id' in descriptor ? { id: descriptor.id } : {}), ...('projection' in descriptor && descriptor.projection ? { projection: true } : {}), ...('construct' in descriptor && descriptor.construct ? { construct: true as const } : {}) } as ModelConversionDescriptor;
   }
   const normalizedConstraints = validationEnabled
@@ -703,12 +710,12 @@ export function analyzeSourceGraph(
   definitions = deduplicateProjections(definitions, new Set(projections.keys()));
   const owned = Object.fromEntries(Object.entries(definitions).filter(([name]) =>
     ![...siblings].some((sibling) => sibling.name === name)));
-  const registry: BindingRegistry = { validations: new Map(), serde: new Map() };
+  const registry: BindingRegistry = { validations: new Map(), serde: new Map(), classes: new Map() };
   Object.values(owned).forEach((descriptor) => visitDescriptor(descriptor, registry));
   const ownedSpecifications = [...emitted].filter((specification) => !siblings.has(specification));
   // A model never validates above its project, so a project that does not validate has no model that does.
   const anyDeclValidation = profile.validation !== false && ownedSpecifications.some((specification) => specification.validation !== false);
-  if (!anyDeclValidation) registry.validations.clear();
+  if (!anyDeclValidation) { registry.validations.clear(); registry.classes.clear(); }
   // Sibling models keep their own references; lookups fall back to the job's descriptors.
   const lookup: Record<string, ModelConversionDescriptor> = Object.assign(
     Object.create(job.lookup ?? null) as Record<string, ModelConversionDescriptor>,
@@ -854,16 +861,20 @@ export function codecEntriesForGraph(
   });
 }
 
-/** The user validation functions a job's generated validators import, keyed by binding id; import paths are relative to `validatorsFile`. */
+/**
+ * The user validation functions and the classes a job's generated validators import, keyed by binding id or class id; import paths
+ * are relative to `validatorsFile`.
+ */
 export function validatorImports(
   graphs: readonly SourceModelGraph[],
   profile: GolemProfile,
   validatorsFile: string,
 ): ReadonlyMap<string, { readonly importPath: string; readonly exportName: string }> {
-  const bindings = new Map<string, ValidationBinding>();
+  const bindings = new Map<string, { readonly module: string; readonly specifier?: string; readonly exportName: string }>();
   for (const graph of graphs) {
     if (profile.validation === false || !graph.emitted.some((specification) => specification.validation !== false)) continue;
     for (const binding of graph.registry.validations.values()) registerValidation(bindings, binding);
+    for (const [id, binding] of graph.registry.classes) if (!bindings.has(id)) bindings.set(id, binding);
   }
   return new Map([...bindings]
     .sort(([left], [right]) => compareText(left, right))

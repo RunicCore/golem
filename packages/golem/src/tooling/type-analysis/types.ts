@@ -190,7 +190,10 @@ function classValueReference(
     throw diagnostic(context.sourceFile, node, '1060', `Class ${typeName} is in package ${resolved.packageName}, but no "exports" entry reaches ${module}. Export that file from the package.`);
   }
   const typeImport = { exportName, module, ...(resolved.kind === 'package' ? { specifier: resolved.specifier } : {}) };
-  return { typeName, typeImport };
+  if (!runtimeClass || (resolved.kind !== 'package' && isModelSource?.(module))) return { typeName, typeImport };
+  // The id is the identity of the imported class, as for a validation function: a project path or a package import with the export name.
+  const id = `${resolved.kind === 'package' ? resolved.specifier : portableRelativeFilename(sourceFile.fileName, identityRoot)}#${exportName}`;
+  return { typeName, typeImport, classRef: { id, path: outermost ? names.slice(1) : [] } };
 }
 
 /** Whether the symbol of a class type has a value that `instanceof` can test: a class, or a constructing variable (`declare var URL: URLConstructor`). */

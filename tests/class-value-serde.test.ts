@@ -11,6 +11,7 @@ import { writeGeneratedArtifacts } from './fixture-project.js';
 import { command } from './support/process.js';
 import { TSC } from './support/build-project.js';
 import { modelCodec } from './support/model-codec.js';
+import { validateInstance } from '@exprtlabs/golem/validation';
 
 function fixture(t: TestContext) {
   return createModelProject(t, { prefix: 'golem-class-value-', name: 'class-value', linkWorkspaceNodeModules: true });
@@ -172,6 +173,20 @@ for (const field of ['price', 'link', 'when'] as const) {
     const wire = { price: '12.34', link: 'https://example.com/', when: '2025-01-02T03:04:05.000Z' };
     assert.doesNotThrow(() => modelCodec(A).fromWireFormat(wire, { validate: false }));
     assert.throws(() => modelCodec(A).fromWireFormat({ ...wire, [field]: 5 }, { validate: false }), /Expected a string/);
+  });
+}
+
+// A user class, a global class and a Temporal class share one model-plane check: the value is an instance of the class, or one `instance` issue names it.
+for (const [field, name] of [['price', 'Money'], ['link', 'URL'], ['when', 'Temporal.Instant']] as const) {
+  test(`${field}: validation accepts an instance of ${name} and rejects another value with one instance issue`, async t => {
+    // protects: T-659 F-39 validate() rejects a value that is not an instance of the field's TSerde class
+    const { A } = await build(t, tsSource`price: Price; link: Link; when: When`);
+    const model = modelCodec(A).fromWireFormat({ price: '12.34', link: 'https://example.com/', when: '2025-01-02T03:04:05.000Z' });
+    assert.deepEqual(await validateInstance(model, { failFast: false }), []);
+    for (const wrong of [new Map(), 5, 'text']) {
+      const issues = await validateInstance(Object.assign(modelCodec(A).fromWireFormat({ price: '12.34', link: 'https://example.com/', when: '2025-01-02T03:04:05.000Z' }), { [field]: wrong }), { failFast: false });
+      assert.deepEqual(issues.map(issue => ({ path: issue.path, code: issue.code, model: (issue as { model?: string }).model })), [{ path: [field], code: 'instance', model: name }]);
+    }
   });
 }
 
