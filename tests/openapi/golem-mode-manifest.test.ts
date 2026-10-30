@@ -11,7 +11,7 @@ import { generateModelManifest } from '#openapi/model-manifest';
 import { declaredModelBases } from '#openapi/model-resolution';
 import { analyzeOpenApiModels } from '#openapi/model-schema-graph';
 import { createFixtureProject } from '../fixture-project.js';
-import { writeOpenApiDocument } from './helpers.js';
+import { golemModeManifest, writeOpenApiDocument } from './helpers.js';
 
 const PROFILE = { mobx: false, validation: true, allowAny: false } as const;
 const ref = (name: string) => ({ $ref: `#/components/schemas/${name}` });
@@ -49,7 +49,7 @@ const codecText = (graph: Parameters<typeof emitCodecRuntimeCode>[0], bases: Ret
 test('the golem-mode schema graph goes through the manifest file and back to the same nodes, references and codec text', () => {
   // protects: T-696 the models job compiles SDK types from the manifest with no loss ("it's openapi to sdk, i don't see why it can't go back to json")
   const original = analysis('temporal');
-  const written = stableJson(generateModelManifest(DOCUMENT, PROFILE, original, 'golem'));
+  const written = stableJson(golemModeManifest(DOCUMENT, PROFILE, 'temporal'));
   const manifest = validateModelManifest(JSON.parse(written));
   assert.ok(isGolemModeManifest(manifest));
   assert.equal(Object.hasOwn(manifest, 'validationSchemaClosure'), false);
@@ -85,15 +85,22 @@ test('an openapi job in golem mode writes the graph into model-manifest.json', a
   assert.deepEqual(manifest.operations.map(operation => [operation.name, operation.values.map(value => value.at)]), [
     ['createCharge', [['parameter', 'query', 'since'], ['request', 'application/json'], ['response', '200', 'application/json']]],
   ]);
+  // protects: T-699 the manifest carries the validation roots the models job compiles, and the schemas they reach once
+  const validation = manifest.operations[0]?.validation;
+  assert.deepEqual([validation?.input, validation?.headers, validation?.responses.map(item => item.key), Object.keys(validation?.roots ?? {})], [
+    'createCharge:input', undefined, ['200:application/json'], ['createCharge:input', 'createCharge:response:200:application/json'],
+  ]);
+  assert.equal(Object.keys(manifest.validationResources ?? {}).some(id => id.endsWith(':operation:createCharge')), true);
 });
 
 test('a golem-mode manifest without the graph, or with the closure, or with another mode is refused and says to regenerate', () => {
   // protects: T-696 F-253 an older manifest gets the regenerate error
-  const written = JSON.parse(stableJson(generateModelManifest(DOCUMENT, PROFILE, analysis('date'), 'golem'))) as Record<string, unknown>;
+  const written = JSON.parse(stableJson(golemModeManifest(DOCUMENT, PROFILE))) as Record<string, unknown>;
   const { descriptors: _descriptors, ...withoutGraph } = written;
   assert.throws(() => validateModelManifest(withoutGraph, 'sdk/model-manifest.json'), /Invalid model manifest sdk\/model-manifest\.json: descriptors must list .* Regenerate the SDK with this golem version\./);
   assert.throws(() => validateModelManifest({ ...written, validationSchemaClosure: [] }), /not validationSchemaClosure\. Regenerate/);
   assert.throws(() => validateModelManifest({ ...written, dates: 'moment' }), /dates must be "date" or "temporal"\. Regenerate/);
+  assert.throws(() => validateModelManifest({ ...written, validationResources: undefined }), /a validating SDK lists the validation roots of every operation and the resources they reach, and a non-validating SDK lists none\. Regenerate/);
   assert.throws(() => validateModelManifest({ ...written, mode: 'both' }), /mode must be "golem" when present\. Regenerate/);
   assert.throws(() => validateModelManifest({ ...written, descriptors: [{ name: 'Ghost', descriptor: '{"kind":"string"}' }] }), /schema Ghost has no codec id/);
   assert.throws(() => validateModelManifest({ ...written, descriptors: [{ name: 'Charge', descriptor: 'not json' }] }), /descriptors must list/);

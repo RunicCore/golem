@@ -48,6 +48,19 @@ export interface SdkOperationValue {
   readonly inline?: { readonly name?: string; readonly descriptor: string };
 }
 
+/**
+ * The validators of one operation, as the data the models job compiles: the name of the root that checks the plain input, the header parameters, each response
+ * body or stream item (key `status:contentType`) and each response header (key `status:name`), and the roots themselves. A root names its schema in the
+ * manifest's `validationResources`.
+ */
+export interface SdkOperationValidation {
+  readonly input: string;
+  readonly headers?: string;
+  readonly responses: readonly { readonly key: string; readonly root: string }[];
+  readonly responseHeaders: readonly { readonly key: string; readonly root: string }[];
+  readonly roots: Readonly<Record<string, unknown>>;
+}
+
 /** A manifest of an SDK in golem mode: the models job compiles the SDK types from these fields, and the manifest holds no `validationSchemaClosure`. */
 export interface GolemModeManifest extends ModelManifest {
   readonly mode: 'golem';
@@ -57,7 +70,9 @@ export interface GolemModeManifest extends ModelManifest {
   /** In the order the graph interned them. */
   readonly descriptors: readonly SdkDescriptorText[];
   /** In the order the graph interned them. */
-  readonly operations: readonly { readonly name: string; readonly values: readonly SdkOperationValue[] }[];
+  readonly operations: readonly { readonly name: string; readonly values: readonly SdkOperationValue[]; readonly validation?: SdkOperationValidation }[];
+  /** The schemas the operation roots reach, by resource id: one copy for all operations. Present when the SDK validates. */
+  readonly validationResources?: Readonly<Record<string, unknown>>;
 }
 
 export function isGolemModeManifest(manifest: ModelManifest): manifest is GolemModeManifest {
@@ -190,6 +205,12 @@ function isOperationValue(value: unknown): boolean {
       && (value.inline.name === undefined || isName(value.inline.name))));
 }
 
+function isOperationValidation(value: unknown): boolean {
+  const keyed = (items: unknown, member: string): boolean => Array.isArray(items) && items.every((item) => isRecord(item) && isName(item.key) && isName(item[member]));
+  return isRecord(value) && isName(value.input) && (value.headers === undefined || isName(value.headers))
+    && keyed(value.responses, 'root') && keyed(value.responseHeaders, 'root') && isRecord(value.roots);
+}
+
 /** A manifest with `mode: "golem"` carries the schema graph the models job compiles; one that lacks it was written by an older generator. */
 function validateGolemModeGraph(manifest: Record<string, unknown>, filename: string): void {
   const invalid = (reason: string): Error => new Error(`Invalid model manifest ${displayPath(filename)}: ${reason}. Regenerate the SDK with this golem version.`);
@@ -204,6 +225,10 @@ function validateGolemModeGraph(manifest: Record<string, unknown>, filename: str
   if (unnamed) throw invalid(`schema ${unnamed.name} has no codec id`);
   if (!Array.isArray(operations) || !operations.every((entry) => isRecord(entry) && isName(entry.name) && Array.isArray(entry.values) && entry.values.every(isOperationValue))) {
     throw invalid('operations must list each operation name with the nodes of its values');
+  }
+  const validating = manifest.profile !== undefined && isRecord(manifest.profile) && manifest.profile.validation !== false;
+  if (validating !== operations.every((entry) => isOperationValidation(entry.validation)) || (validating && !isRecord(manifest.validationResources))) {
+    throw invalid('a validating SDK lists the validation roots of every operation and the resources they reach, and a non-validating SDK lists none');
   }
 }
 

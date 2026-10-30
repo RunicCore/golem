@@ -284,7 +284,7 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions, moved:
   // The inbound operations take part: a webhook or callback request is decoded and its response encoded, through the same nodes and codecs.
   const modelAnalysis = analyzeOpenApiModels(document, profile.validation, options.dates ?? 'date', [...operations, ...inboundOperations]);
   const inlineDiagnostics = checkOperationCompositions([...operations, ...inboundOperations], modelAnalysis, document);
-  const schemaData = !golem && profile.validation && (plan.hasOutboundOperations || plan.hasInboundOperations)
+  const schemaData = profile.validation && (plan.hasOutboundOperations || plan.hasInboundOperations)
     // A request body that converts is checked by its own conversion, so the input root of its client operation leaves it open; an inbound request is checked in its wire form.
     ? buildSchemaData(document, ir, (operation, contentType) => operation.sourceKind === 'path' && modelAnalysis.convertedNodeIds.has(requestBodyKey(operation.name, contentType)))
     : undefined;
@@ -306,7 +306,7 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions, moved:
   // One validators module serves the models and the operations: it compiles the roots of every model group and
   // every operation together, so a check the two share is written once.
   const hasOperationModules = plan.artifacts.has('client.ts') || plan.artifacts.has('inbound.ts');
-  const operationValidation = hasOperationModules && !golem
+  const operationValidation = hasOperationModules
     ? buildOperationValidationSchemas([...operations, ...inboundOperations], document, profile, schemaData, options.locate, moved)
     : undefined;
   const validators: { compiled?: PlanValidators } = {};
@@ -341,13 +341,14 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions, moved:
     });
     for (const [name, source] of models.files) files.set(name, source);
   }
-  if (operationValidation && !validators.compiled) compileValidators(undefined);
+  // An SDK of golem mode compiles nothing: its manifest carries the roots and the models job compiles them (R-82).
+  if (!golem && operationValidation && !validators.compiled) compileValidators(undefined);
   if (validators.compiled) {
     modelDiagnostics.push(...validators.compiled.diagnostics);
     // A source is empty when the compile reported an error; no file is written then. Only operations import the module.
     if (operationValidation && validators.compiled.source !== '' && validators.compiled.exports.size > 0) files.set('validators.generated.ts', validators.compiled.source);
   }
-  files.set('model-manifest.json', stableJson(generateModelManifest(document, profile, modelAnalysis, options.mode)));
+  files.set('model-manifest.json', stableJson(generateModelManifest(document, profile, modelAnalysis, options.mode, operationValidation)));
   if (plan.artifacts.has('client.ts')) {
     const clientModules = generateClientModules(
       clientName,

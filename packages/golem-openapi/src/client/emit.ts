@@ -689,7 +689,7 @@ ${rest}`);
 type OperationValidationBundle = ReturnType<typeof buildOperationValidationSchemaBundle>;
 
 /** What the SDK's validators module compiles for the operations. */
-interface OperationValidationSchemas {
+export interface OperationValidationSchemas {
   /** The validation schema bundle of each operation, by operation name. */
   readonly bundles: ReadonlyMap<string, OperationValidationBundle>;
   /** The roots and resources of each operation, for `compileSdkValidators`. */
