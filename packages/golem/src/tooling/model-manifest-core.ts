@@ -3,6 +3,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { discoverSources, displayPath, isRecord, isValidationLevel, resolveProfile, stableValue } from './generator-core.js';
 import type { GolemProfile, InputObserver } from './generator-core.js';
+import { internDescriptors, type SchemaGraph } from './schema-graph.js';
+import type { ModelTypeDescriptor } from './schema.js';
 import type { CodecSchemaClosureEntry } from './validation-plan.js';
 
 interface ModelManifestProvenance {
@@ -26,6 +28,66 @@ export interface ModelManifest {
   readonly models: readonly ModelManifestEntry[];
   readonly validationSchemaClosure?: readonly CodecSchemaClosureEntry[];
   readonly [key: string]: unknown;
+}
+
+/**
+ * The schema graph of a golem-mode SDK, as data. A descriptor is JSON text: the manifest file writes its keys in sorted order,
+ * and the key order of a descriptor is part of the codec id of an unnamed shape, so the text keeps the order the graph interned.
+ */
+export interface SdkDescriptorText {
+  /** The name the graph interned the model or recursive alias under. */
+  readonly name: string;
+  readonly descriptor: string;
+}
+
+/** One operation value that converts something: where it sits, and its node. An inline shape (no `$ref`) also holds the descriptor the graph interned for it. */
+export interface SdkOperationValue {
+  /** The key of the value after the operation name: `['request', contentType]`, `['response', status, contentType]`, `['parameter', location, name]` or `['response-header', status, name]`. */
+  readonly at: readonly string[];
+  readonly node: string;
+  readonly inline?: { readonly name?: string; readonly descriptor: string };
+}
+
+/** A manifest of an SDK in golem mode: the models job compiles the SDK types from these fields, and the manifest holds no `validationSchemaClosure`. */
+export interface GolemModeManifest extends ModelManifest {
+  readonly mode: 'golem';
+  readonly dates: 'date' | 'temporal';
+  /** The codec id of each model and recursive alias, by interned name. */
+  readonly codecIds: Readonly<Record<string, string>>;
+  /** In the order the graph interned them. */
+  readonly descriptors: readonly SdkDescriptorText[];
+  /** In the order the graph interned them. */
+  readonly operations: readonly { readonly name: string; readonly values: readonly SdkOperationValue[] }[];
+}
+
+export function isGolemModeManifest(manifest: ModelManifest): manifest is GolemModeManifest {
+  return manifest.mode === 'golem';
+}
+
+/** The fixed codec ids (`SchemaGraphOptions.codecIds`) under which `internSdkSchemas` re-interns the SDK. */
+export function sdkCodecIds(manifest: GolemModeManifest): ReadonlyMap<string, string> {
+  return new Map(Object.entries(manifest.codecIds));
+}
+
+/**
+ * Interns the SDK's descriptors into `graph`, which was made with `sdkCodecIds`: every model and recursive alias, then every inline value.
+ * Returns the node of each operation value that converts something, by `JSON.stringify([operation, ...at])`.
+ */
+export function internSdkSchemas(
+  graph: SchemaGraph,
+  manifest: GolemModeManifest,
+  validation: GolemProfile['validation'],
+): ReadonlyMap<string, string> {
+  const parse = (text: string): ModelTypeDescriptor => JSON.parse(text) as ModelTypeDescriptor;
+  internDescriptors(graph, manifest.descriptors.map(({ name, descriptor }) => ({ name, descriptor: parse(descriptor), emitClass: false, validation })));
+  const nodeIds = new Map<string, string>();
+  for (const { name: operation, values } of manifest.operations) {
+    for (const { at, node, inline } of values) {
+      const id = inline ? graph.intern(parse(inline.descriptor), inline.name, false, validation).id : node;
+      nodeIds.set(JSON.stringify([operation, ...at]), id);
+    }
+  }
+  return nodeIds;
 }
 
 export const MODEL_MANIFEST_FILENAME = 'model-manifest.json';
@@ -108,6 +170,41 @@ function isClosureEntry(value: unknown): value is CodecSchemaClosureEntry {
     && (value.aliases === undefined || (Array.isArray(value.aliases) && value.aliases.every(alias => typeof alias === 'string' && alias.length > 0)));
 }
 
+function isDescriptorText(value: unknown): value is string {
+  if (typeof value !== 'string') return false;
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return isRecord(parsed) && typeof parsed.kind === 'string';
+  } catch {
+    return false;
+  }
+}
+
+const isName = (value: unknown): value is string => typeof value === 'string' && value.length > 0;
+
+function isOperationValue(value: unknown): boolean {
+  return isRecord(value) && Array.isArray(value.at) && value.at.length > 0 && value.at.every(isName) && isName(value.node)
+    && (value.inline === undefined || (isRecord(value.inline) && isDescriptorText(value.inline.descriptor)
+      && (value.inline.name === undefined || isName(value.inline.name))));
+}
+
+/** A manifest with `mode: "golem"` carries the schema graph the models job compiles; one that lacks it was written by an older generator. */
+function validateGolemModeGraph(manifest: Record<string, unknown>, filename: string): void {
+  const invalid = (reason: string): Error => new Error(`Invalid model manifest ${displayPath(filename)}: ${reason}. Regenerate the SDK with this golem version.`);
+  if (manifest.validationSchemaClosure !== undefined) throw invalid('a golem-mode manifest holds the schema graph, not validationSchemaClosure');
+  if (manifest.dates !== 'date' && manifest.dates !== 'temporal') throw invalid('dates must be "date" or "temporal"');
+  const { codecIds, descriptors, operations } = manifest;
+  if (!isRecord(codecIds) || !Object.values(codecIds).every(isName)) throw invalid('codecIds must map each schema name to a codec id');
+  if (!Array.isArray(descriptors) || !descriptors.every((entry) => isRecord(entry) && isName(entry.name) && isDescriptorText(entry.descriptor))) {
+    throw invalid('descriptors must list each schema name with its descriptor as JSON text');
+  }
+  const unnamed = descriptors.find((entry) => !isName(codecIds[entry.name]));
+  if (unnamed) throw invalid(`schema ${unnamed.name} has no codec id`);
+  if (!Array.isArray(operations) || !operations.every((entry) => isRecord(entry) && isName(entry.name) && Array.isArray(entry.values) && entry.values.every(isOperationValue))) {
+    throw invalid('operations must list each operation name with the nodes of its values');
+  }
+}
+
 export function validateModelManifest(manifest: unknown, filename = MODEL_MANIFEST_FILENAME): ModelManifest {
   if (!isRecord(manifest)) {
     throw new Error(`Invalid model manifest ${displayPath(filename)}: expected an object.`);
@@ -118,6 +215,10 @@ export function validateModelManifest(manifest: unknown, filename = MODEL_MANIFE
     );
   }
   modelManifestProfile(manifest, filename);
+  if (manifest.mode !== undefined && manifest.mode !== 'golem') {
+    throw new Error(`Invalid model manifest ${displayPath(filename)}: mode must be "golem" when present. Regenerate the SDK with this golem version.`);
+  }
+  if (manifest.mode === 'golem') validateGolemModeGraph(manifest, filename);
   if (manifest.validationSchemaClosure !== undefined
     && (!Array.isArray(manifest.validationSchemaClosure) || !manifest.validationSchemaClosure.every(isClosureEntry))) {
     throw new Error(`Invalid model manifest ${displayPath(filename)}: validationSchemaClosure must contain codec ids and data-only model/wire schemas. Regenerate the models.`);

@@ -34,6 +34,8 @@ interface WriteSdkOptions {
   readonly profile: OpenApiGenerationProfile;
   /** `temporal` maps date formats to Temporal types; the default keeps `Date`. */
   readonly dates?: OpenApiDates;
+  /** `golem` writes the schema graph into the manifest for the models job; the default, `standalone`, keeps the SDK self-contained. */
+  readonly mode?: 'standalone' | 'golem';
   /** Names where a bundled component came from; generator errors that name one append it. */
   readonly locate?: OriginLocator;
 }
@@ -292,7 +294,7 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions, moved:
     // A source is empty when the compile reported an error; no file is written then. Only operations import the module.
     if (operationValidation && validators.compiled.source !== '' && validators.compiled.exports.size > 0) files.set('validators.generated.ts', validators.compiled.source);
   }
-  files.set('model-manifest.json', stableJson(generateModelManifest(document, profile, modelAnalysis)));
+  files.set('model-manifest.json', stableJson(generateModelManifest(document, profile, modelAnalysis, options.mode)));
   if (plan.artifacts.has('client.ts')) {
     const clientModules = generateClientModules(
       clientName,

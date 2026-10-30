@@ -5,6 +5,7 @@ import type { JsonSchema } from '@exprtlabs/golem/internal/schema';
 import { sourceDigest } from '@exprtlabs/golem/internal/generator-support';
 import { asRecord, isJsonObject } from './json.js';
 import { compareText } from '@exprtlabs/golem/generator-api';
+import type { GolemModeManifest, SdkOperationValue } from '@exprtlabs/golem/manifest';
 import { GENERATOR_NAME, PACKAGE_VERSION } from './package-info.js';
 import type { OpenApiGenerationProfile } from './profile.js';
 import { requireProfile } from './profile.js';
@@ -14,10 +15,36 @@ import {
   modelStableId,
 } from './model-resolution.js';
 
+/**
+ * The schema graph the models job compiles in golem mode: each model and recursive alias with its codec id, and the operations' values.
+ * Descriptors are JSON text (see `SdkDescriptorText`). The data is the graph's inputs, so interning it again with these codec ids
+ * gives the same nodes. A value of a `$ref` is the node of that model and holds no descriptor.
+ */
+function golemModeGraph(analysis: OpenApiModelAnalysis): Pick<GolemModeManifest, 'mode' | 'dates' | 'codecIds' | 'descriptors' | 'operations'> {
+  const operations: { name: string; values: SdkOperationValue[] }[] = [];
+  for (const [key, node] of analysis.convertedNodeIds) {
+    const [name, ...at] = JSON.parse(key) as [string, ...string[]];
+    const input = analysis.graphInputs.values.get(key);
+    const inline = input && { ...(input.name === undefined ? {} : { name: input.name }), descriptor: JSON.stringify(input.descriptor) };
+    const last = operations.at(-1);
+    const values = last?.name === name ? last.values : operations[operations.push({ name, values: [] }) - 1]!.values;
+    values.push({ at, node, ...(inline ? { inline } : {}) });
+  }
+  return {
+    mode: 'golem',
+    dates: analysis.dates,
+    codecIds: Object.fromEntries(analysis.graphInputs.models.map(({ name }) => [name, openApiCodecId(analysis, name)])),
+    descriptors: analysis.graphInputs.models.map(({ name, descriptor }) => ({ name, descriptor: JSON.stringify(descriptor) })),
+    operations,
+  };
+}
+
+/** `golem` mode writes the schema graph in place of the data-only validation closure; `standalone` keeps the closure. */
 export function generateModelManifest(
   document: unknown,
   profile: OpenApiGenerationProfile,
   modelAnalysis: OpenApiModelAnalysis,
+  mode: 'standalone' | 'golem' = 'standalone',
 ): unknown {
   profile = requireProfile(profile);
   const { ordered, schemaGraph } = modelAnalysis;
@@ -59,7 +86,7 @@ export function generateModelManifest(
     },
     profile,
     models,
-    ...(profile.validation ? {
+    ...(mode === 'golem' ? golemModeGraph(modelAnalysis) : profile.validation ? {
       validationSchemaClosure: openApiValidationSchemaClosure(schemaGraph, ordered, stableId),
     } : {}),
   };

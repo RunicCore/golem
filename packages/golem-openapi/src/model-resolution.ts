@@ -97,6 +97,20 @@ export interface ModelResolveEnv {
   readonly selections?: DiscriminatorSelections;
 }
 
+/** One schema interned into the graph: the descriptor as the graph received it, before it sealed and rewrote the references of every node to codec ids. */
+export interface SchemaGraphInput {
+  /** The name the graph interned it under; none for an unnamed object, which the graph names by its shape. */
+  readonly name?: string;
+  readonly descriptor: ModelTypeDescriptor;
+}
+
+/** What the analysis interned into the graph, in order: each model and recursive alias, then the inline value of each operation. */
+export interface SchemaGraphInputs {
+  readonly models: readonly (SchemaGraphInput & { readonly name: string })[];
+  /** By the key of `convertedNodeIds`. A value that names a model (`$ref`) has no input: it is the node of that model. */
+  readonly values: ReadonlyMap<string, SchemaGraphInput>;
+}
+
 export interface OpenApiModelAnalysis {
   readonly definitions: ModelDefinitions;
   readonly ordered: readonly ModelDefinition[];
@@ -111,6 +125,8 @@ export interface OpenApiModelAnalysis {
   readonly nodesByCodecId: ReadonlyMap<string, SchemaNode>;
   /** The node of each operation body, stream item, parameter and response header that converts something, by `requestBodyKey`, `responseBodyKey`, `parameterKey` or `responseHeaderKey`; a value that converts nothing has none. */
   readonly convertedNodeIds: ReadonlyMap<string, string>;
+  /** What the graph was given to intern, for the golem-mode manifest: the models job interns the same descriptors again. */
+  readonly graphInputs: SchemaGraphInputs;
   readonly diagnostics: readonly GolemDiagnostic[];
   readonly selections: DiscriminatorSelections;
   readonly dates: OpenApiDates;

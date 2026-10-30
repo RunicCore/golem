@@ -626,7 +626,8 @@ export function createSchemaGraph(
       // A reference to an ambiguous short name must not take the id of a node interned under it.
       const taken = nodes.get(identifierFromName(named));
       const id = taken && taken.kind !== 'reference' ? identifierFromName(`${raw}__reference`) : identifierFromName(named);
-      const siblingId = descriptor.kind === 'reference' ? fixedCodecId(raw) : undefined;
+      // A reference to a model this graph is interning (a recursive model) is that model, not a sibling's.
+      const siblingId = descriptor.kind === 'reference' && !internRawStack.has(raw) ? fixedCodecId(raw) : undefined;
       const placeholder: SchemaNode = {
         id,
         name: named,
