@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import { writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { isDeepStrictEqual } from 'node:util';
 import test from 'node:test';
 
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
@@ -35,6 +34,8 @@ interface Row {
   /** The generated model that the claims read. */
   readonly root: string;
   readonly document: Record<string, unknown>;
+  /** The client converts the row's model, so the generated validators hold a model root for it; a row that converts nothing has only operation roots, which have no fast check. */
+  readonly converts?: true;
   readonly accepted: readonly Accepted[];
   /** Inputs that the codec rejects on decode with validation on. */
   readonly rejected: readonly Wire[];
@@ -83,6 +84,7 @@ const object = (properties: Record<string, unknown>, more: Record<string, unknow
 const rows: readonly Row[] = [
   {
     shape: 'disjoint inline objects (T-80, T-91)',
+    converts: true,
     fixture: 'disjoint-objects',
     root: 'Visit',
     document: visitDocument({ m: { allOf: [object({ at: dateTime }), object({ b: dateTime })] } }),
@@ -95,6 +97,7 @@ const rows: readonly Row[] = [
   },
   {
     shape: 'own properties plus an allOf member that adds properties (T-80)',
+    converts: true,
     fixture: 'own-plus-member',
     root: 'Visit',
     document: visitDocument({ m: { type: 'object', properties: { at: dateTime }, allOf: [{ properties: { b: dateTime } }] } }),
@@ -107,6 +110,7 @@ const rows: readonly Row[] = [
   },
   {
     shape: 'an allOf member requires an own property',
+    converts: true,
     fixture: 'required-member',
     root: 'Visit',
     document: visitDocument({ m: { type: 'object', properties: { at: dateTime }, allOf: [{ required: ['at'] }] } }),
@@ -115,6 +119,7 @@ const rows: readonly Row[] = [
   },
   {
     shape: 'array of allOf object members (T-94)',
+    converts: true,
     fixture: 'array-items',
     root: 'Visit',
     document: visitDocument({
@@ -128,6 +133,7 @@ const rows: readonly Row[] = [
   },
   {
     shape: 'a constraint-only allOf member (minProperties) beside own properties',
+    converts: true,
     fixture: 'constraint-only',
     root: 'Visit',
     document: visitDocument({ m: { type: 'object', properties: { at: dateTime }, allOf: [{ minProperties: 1 }] } }),
@@ -136,6 +142,7 @@ const rows: readonly Row[] = [
   },
   {
     shape: 'a nullable object with a constraint-only allOf member',
+    converts: true,
     fixture: 'nullable-constraint-only',
     root: 'Visit',
     document: visitDocument({ m: { type: ['object', 'null'], properties: { at: dateTime }, allOf: [{ minProperties: 1 }] } }),
@@ -147,6 +154,7 @@ const rows: readonly Row[] = [
   },
   {
     shape: 'inheritance: a component allOf [$ref Base, own properties]',
+    converts: true,
     fixture: 'inheritance',
     root: 'Derived',
     document: componentDocument('Derived', {
@@ -161,6 +169,7 @@ const rows: readonly Row[] = [
   },
   {
     shape: 'polymorphism: Pet is oneOf [Cat, Dog] and each variant is allOf [$ref PetBase, own properties]',
+    converts: true,
     fixture: 'polymorphism',
     root: 'Pet',
     document: componentDocument('Pet', {
@@ -180,6 +189,7 @@ const rows: readonly Row[] = [
   },
   {
     shape: 'a narrowed property with an equal conversion (const over string)',
+    converts: true,
     fixture: 'narrowed-equal',
     root: 'Derived',
     document: componentDocument('Derived', {
@@ -261,6 +271,7 @@ const rows: readonly Row[] = [
   },
   {
     shape: 'an open base and a component with unevaluatedProperties false',
+    converts: true,
     fixture: 'unevaluated-open-base',
     root: 'Derived',
     document: componentDocument('Derived', {
@@ -289,6 +300,7 @@ const rows: readonly Row[] = [
   },
   {
     shape: 'T-96: a nullable object with own properties and an allOf object member',
+    converts: true,
     fixture: 'nullable-own-plus-member',
     root: 'Visit',
     document: visitDocument({ m: { type: ['object', 'null'], properties: { at: dateTime }, allOf: [{ properties: { b: dateTime } }] } }),
@@ -300,6 +312,7 @@ const rows: readonly Row[] = [
   },
   {
     shape: 'T-98: own properties plus an allOf $ref member',
+    converts: true,
     fixture: 'own-plus-reference',
     root: 'Visit',
     document: visitDocument(
@@ -311,6 +324,7 @@ const rows: readonly Row[] = [
   },
   {
     shape: 'T-98: an inline allOf of a $ref member and a properties member',
+    converts: true,
     fixture: 'inline-reference-plus-properties',
     root: 'Visit',
     document: visitDocument(
@@ -322,6 +336,7 @@ const rows: readonly Row[] = [
   },
   {
     shape: 'T-99a: two members declare the same property',
+    converts: true,
     fixture: 'same-name-members',
     root: 'Visit',
     document: visitDocument({ m: { allOf: [object({ at: dateTime }), object({ at: dateTime })] } }),
@@ -333,6 +348,7 @@ const rows: readonly Row[] = [
   },
   {
     shape: 'T-99b: an additionalProperties-only member beside a date property',
+    converts: true,
     fixture: 'additional-only-member',
     root: 'Visit',
     document: visitDocument({ m: { allOf: [{ type: 'object', additionalProperties: text }, object({ at: dateTime })] } }),
@@ -344,6 +360,7 @@ const rows: readonly Row[] = [
   },
   {
     shape: 'strict b3: a date property, then an additionalProperties string member',
+    converts: true,
     fixture: 'additional-member-after-date',
     root: 'Visit',
     document: visitDocument({ m: { allOf: [object({ at: dateTime }), { type: 'object', additionalProperties: text }] } }),
@@ -352,6 +369,7 @@ const rows: readonly Row[] = [
   },
   {
     shape: 'T-99c: a member with properties and additionalProperties beside a date property',
+    converts: true,
     fixture: 'additional-plus-property',
     root: 'Visit',
     document: visitDocument({
@@ -365,6 +383,7 @@ const rows: readonly Row[] = [
   },
   {
     shape: 'T-99: own additionalProperties dates plus an allOf properties member',
+    converts: true,
     fixture: 'own-additional-plus-member',
     root: 'Visit',
     document: visitDocument({
@@ -379,6 +398,7 @@ const rows: readonly Row[] = [
   // A property that wraps one model reference stays that model, and a model may wrap a reference to itself.
   {
     shape: 'a property that wraps one model $ref in allOf with a description',
+    converts: true,
     fixture: 'reference-wrapper',
     root: 'Visit',
     document: visitDocument(
@@ -415,6 +435,7 @@ const rows: readonly Row[] = [
   // JSON Schema AND: a derived member that narrows a nullable base date to a date is a date, not a conflict.
   {
     shape: 'a derived component narrows a nullable base date-time to a date-time',
+    converts: true,
     fixture: 'narrowed-nullable-date',
     root: 'Derived',
     document: componentDocument('Derived', {
@@ -427,6 +448,7 @@ const rows: readonly Row[] = [
   // Two members declare one object property: the objects resolve as one allOf, also when both convert a date in it.
   {
     shape: 'two members declare one object property with dates under different names',
+    converts: true,
     fixture: 'same-name-objects',
     root: 'Visit',
     document: visitDocument({
@@ -442,6 +464,7 @@ const rows: readonly Row[] = [
   // model holds a Date, so only the wire check sees the string (spec 4.7).
   {
     shape: 'an additionalProperties pattern member constrains a date-time sibling',
+    converts: true,
     fixture: 'additional-pattern-date',
     root: 'Visit',
     document: visitDocument({
@@ -533,6 +556,7 @@ const rows: readonly Row[] = [
   // Arrays and tuples that convert alike combine by their items, so items that differ in null or required names agree.
   {
     shape: 'a derived component narrows an inherited array of nullable date-times to date-times',
+    converts: true,
     fixture: 'narrowed-items',
     root: 'Derived',
     document: componentDocument('Derived', {
@@ -544,6 +568,7 @@ const rows: readonly Row[] = [
   },
   {
     shape: 'a derived component requires a name in the items of an inherited array',
+    converts: true,
     root: 'Derived',
     document: componentDocument('Derived', {
       Base: object({ visits: { type: 'array', items: object({ a: dateTime }) } }),
@@ -554,6 +579,7 @@ const rows: readonly Row[] = [
   },
   {
     shape: 'a derived component narrows an inherited tuple of a nullable date-time to a date-time',
+    converts: true,
     root: 'Derived',
     document: componentDocument('Derived', {
       Base: object({ pair: { type: 'array', prefixItems: [{ type: ['string', 'null'], format: 'date-time' }], items: false } }),
@@ -598,6 +624,7 @@ const rows: readonly Row[] = [
   // A base beside a union in an allOf member (T-227): the value satisfies the base AND one variant.
   {
     shape: 'a field that is allOf [inline base, { oneOf of two inline objects }]',
+    converts: true,
     fixture: 'member-union-inline',
     root: 'Visit',
     document: visitDocument({ m: { allOf: [object({ id: text, at: dateTime }, { required: ['id'] }), { oneOf: [object({ kind: { const: 'a' }, a: text }, { required: ['kind', 'a'] }), object({ kind: { const: 'b' }, b: text }, { required: ['kind', 'b'] })] }] } }),
@@ -609,6 +636,7 @@ const rows: readonly Row[] = [
   },
   {
     shape: 'a field that is allOf [$ref Base, { oneOf of two inline objects }]',
+    converts: true,
     fixture: 'member-union-model',
     root: 'Visit',
     document: visitDocument(
@@ -623,6 +651,7 @@ const rows: readonly Row[] = [
   },
   {
     shape: 'a field that is allOf [$ref Base, { oneOf of two $ref models }]',
+    converts: true,
     root: 'Visit',
     document: visitDocument(
       { m: { allOf: [ref('Base'), { oneOf: [ref('A'), ref('B')] }] } },
@@ -641,6 +670,7 @@ const rows: readonly Row[] = [
   // The schema's own oneOf beside its allOf: the value satisfies the base AND one variant (T-92).
   {
     shape: 'a field that is allOf [inline base] beside its own oneOf of two inline objects',
+    converts: true,
     fixture: 'own-one-of',
     root: 'Visit',
     document: visitDocument({ m: { allOf: [object({ id: text, at: dateTime }, { required: ['id'] })], oneOf: [object({ kind: { const: 'a' }, a: text }, { required: ['kind', 'a'] }), object({ kind: { const: 'b' }, b: text }, { required: ['kind', 'b'] })] } }),
@@ -654,6 +684,7 @@ const rows: readonly Row[] = [
   // protects: T-554 a schema with both oneOf and anyOf keeps the anyOf in the type and the conversion
   {
     shape: 'a field that holds both a oneOf and an anyOf of inline objects, with no allOf',
+    converts: true,
     fixture: 'one-of-and-any-of',
     root: 'Visit',
     document: visitDocument({
@@ -708,6 +739,7 @@ const rows: readonly Row[] = [
   },
   {
     shape: 'a field that is allOf [$ref Base] beside its own oneOf of two $ref models',
+    converts: true,
     root: 'Visit',
     document: visitDocument(
       { m: { allOf: [ref('Base')], oneOf: [ref('A'), ref('B')] } },
@@ -725,6 +757,7 @@ const rows: readonly Row[] = [
   },
   {
     shape: 'a component that is allOf [$ref Base] beside its own oneOf of two $ref models, read through a field',
+    converts: true,
     root: 'Visit',
     document: visitDocument(
       { m: ref('Combo') },
@@ -744,6 +777,7 @@ const rows: readonly Row[] = [
   // A component whose allOf holds a union member is an alias of the union of merged objects, not a class with no variant fields (T-220).
   {
     shape: 'a component that is allOf [$ref Base, { oneOf of two $ref models }], read as a type and through a field',
+    converts: true,
     fixture: 'component-member-union',
     root: 'Visit',
     document: visitDocument(
@@ -764,6 +798,7 @@ const rows: readonly Row[] = [
   // A discriminator beside the union keeps the tag table (T-227): the kind property has no const, so only the table dispatches.
   {
     shape: 'a field that is allOf [$ref Base, { discriminated oneOf of two $ref models }]',
+    converts: true,
     root: 'Visit',
     document: visitDocument(
       { m: { allOf: [ref('Base'), { oneOf: [ref('A'), ref('B')], discriminator: { propertyName: 'kind', mapping: { a: '#/components/schemas/A', b: '#/components/schemas/B' } } }] } },
@@ -781,6 +816,7 @@ const rows: readonly Row[] = [
   },
   {
     shape: 'a field that is allOf [$ref Base] beside its own discriminated oneOf of two $ref models',
+    converts: true,
     root: 'Visit',
     document: visitDocument(
       { m: { allOf: [ref('Base')], oneOf: [ref('A'), ref('B')], discriminator: { propertyName: 'kind', mapping: { a: '#/components/schemas/A', b: '#/components/schemas/B' } } } },
@@ -799,6 +835,7 @@ const rows: readonly Row[] = [
   // Keywords beside the oneOf in the union member are one more part of every variant (T-227).
   {
     shape: 'a field that is allOf [inline base, { properties and required beside a oneOf }]',
+    converts: true,
     root: 'Visit',
     document: visitDocument({
       m: {
@@ -897,21 +934,23 @@ async function assertValidatorJudges(built: Built, row: Row): Promise<void> {
 /** A model validator of the generated module: `validate_<Model>_<hash>` with the plane of its schema. */
 const MODEL_VALIDATOR = /^validate_(\w+?)_[0-9a-f]{8}(?:_wire|_model_only|_wire_only)?$/;
 
+/** The model roots of the generated validators module, each with its validator and its fast check (`is_X`, when it has one). */
+async function modelValidatorRoots(built: Built, row: Row) {
+  const validators = requireRecord(await import(pathToFileURL(path.join(built.output, 'dist/validators.generated.js')).href), `generated ${row.shape} validators`);
+  return Object.keys(validators).flatMap(name => {
+    const match = MODEL_VALIDATOR.exec(name);
+    if (match === null) return [];
+    return [{ model: match[1], validate: validators[name], isValid: validators[`is_${name.slice('validate_'.length)}`] }];
+  });
+}
+
 /**
  * Each model root of the generated validators module has a fast check (`is_X`) on every plane. Each fast check gives the
  * answer of its validator (`validate_X`) on every input of the row, accepted and rejected (spec 5.1 rule 1).
  */
 async function assertFastChecksAgree(built: Built, row: Row): Promise<void> {
-  const validators = requireRecord(await import(pathToFileURL(path.join(built.output, 'dist/validators.generated.js')).href), `generated ${row.shape} validators`);
+  const roots = await modelValidatorRoots(built, row);
   const inputs: readonly unknown[] = [...row.accepted.map(({ wire }) => wire), ...row.rejected];
-  const roots = Object.keys(validators).flatMap(name => {
-    const match = MODEL_VALIDATOR.exec(name);
-    if (match === null) return [];
-    return [{ model: match[1], validate: validators[name], isValid: validators[`is_${name.slice('validate_'.length)}`] }];
-  });
-  // A model root exists when the client converts the model; a row that converts nothing has only operation roots, which have no fast check.
-  const converts = row.accepted.some(({ wire, model }) => !isDeepStrictEqual(wire, model));
-  if (converts) assert.ok(roots.some(({ model }) => model === row.root), `the generated validators have the root ${row.root}`);
   assert.deepEqual(roots.filter(({ isValid }) => typeof isValid !== 'function').map(({ model }) => model), [], 'every model root has a fast check');
   const disagreeing = roots.flatMap(({ model, validate, isValid }) => typeof isValid !== 'function' || typeof validate !== 'function' ? [] : inputs
     .filter(input => isValid(input) !== (validate(input, true).length === 0))
@@ -941,6 +980,13 @@ for (const row of rows) {
       const { output } = await checked();
       copyFixtureFile(output, `openapi/composition/${fixture}-types.ts`, 'row-types.ts');
       compileGeneratedSdk(output, [path.join(output, 'row-types.ts')], { strict: true, skipLibCheck: true, noEmit: true });
+    });
+  }
+
+  if (row.converts) {
+    test(`${row.shape}: the generated validators have the model root`, async () => {
+      const roots = await modelValidatorRoots(await checked(), row);
+      assert.ok(roots.some(({ model }) => model === row.root), `the generated validators have the root ${row.root}`);
     });
   }
 

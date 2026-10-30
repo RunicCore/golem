@@ -82,11 +82,13 @@ test('an object that is open only by default and converts a field writes its dec
   assert.deepEqual(await stamped.encode({ name: 'n', at: new Date('2024-01-02T03:04:05.000Z'), extra: 'x' }), { name: 'n', at: '2024-01-02T03:04:05.000Z' });
 });
 
-test('a composition with a union member writes the fields of both members, with validation on and off', async () => {
-  // protects: bug T-155 the fallback of a composed root wrote every own key
-  const wire = { value: { name: 'n', kind: 'a', a: 'x' } };
-  for (const sdk of [validatedSdk, unvalidatedSdk]) assert.deepEqual(await (await (await sdk())('MixedHolder')).encode(wire), wire);
-});
+for (const [name, sdk] of [['on', validatedSdk], ['off', unvalidatedSdk]] as const) {
+  test(`a composition with a union member writes the fields of both members, with validation ${name}`, async () => {
+    // protects: bug T-155 the fallback of a composed root wrote every own key
+    const wire = { value: { name: 'n', kind: 'a', a: 'x' } };
+    assert.deepEqual(await (await (await sdk())('MixedHolder')).encode(wire), wire);
+  });
+}
 
 test('with validation off an object that lacks a required field is written with the fields it holds, nested too; validation on rejects it', async () => {
   // protects: bug T-156 a plain root threw a TypeError on a missing required field with validation off
