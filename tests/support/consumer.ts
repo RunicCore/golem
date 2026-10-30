@@ -17,6 +17,8 @@ export function writeFixture(root: string, profile: GolemProfile, includeModels 
     '  - input: api.json',
     '    output: sdk',
     '    name: Profile',
+    // MobX needs the golem mode, which needs the models section.
+    ...(profile.mobx && includeModels ? ['    mode: golem'] : []),
     ...(includeModels ? ['models:', '  root: .'] : []),
     '',
   ].join('\n');

@@ -23,7 +23,7 @@ for (const mode of ['conversion-only', 'validating'] as const) {
     copyFixture(root, 'models/serde-features');
     fs.writeFileSync(path.join(root, 'golem.yaml'), [
       'version: 1', 'mobx: false', `validation: ${mode === 'validating'}`,
-      'openapi:', '  - input: money.yaml', '    output: src/sdk', '    name: Payments',
+      'openapi:', '  - input: money.yaml', '    output: src/sdk', '    name: Payments', '    mode: golem',
       'models:', '  root: .', '',
     ].join('\n'));
     await buildModelProject(root);

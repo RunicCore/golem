@@ -11,5 +11,6 @@ openapi:
   - input: ./api/openapi.yaml
     output: ./sdk
     name: Payments
+    mode: golem
 models:
   root: .

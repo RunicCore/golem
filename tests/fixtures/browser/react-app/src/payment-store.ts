@@ -1,9 +1,9 @@
 import { computed, makeObservable, observable, runInAction } from 'mobx';
-import { fromWireFormat, toWireFormat } from '@exprtlabs/golem/serde';
+import { toWireFormat } from '@exprtlabs/golem/serde';
 import { getValidator } from '@exprtlabs/golem/validation';
 import {
-  MoneyModel,
   PaymentsClient,
+  type Money,
   type PaymentsClientPort,
 } from '../sdk/index.js';
 import { PaymentEditor, type TPaymentEditorInit } from './payment-editor.model.js';
@@ -23,7 +23,7 @@ export class PaymentStore {
   public readonly editor: PaymentEditor;
   public saveState: SaveState = 'idle';
   public message = '';
-  public lastSaved: MoneyModel | undefined;
+  public lastSaved: Money | undefined;
 
   private readonly client: PaymentsClientPort;
   private activeController: AbortController | undefined;
@@ -78,7 +78,7 @@ export class PaymentStore {
         return false;
       }
 
-      const saved = fromWireFormat<MoneyModel>(response.body);
+      const saved = response.body;
       if (this.disposed || controller.signal.aborted || this.activeController !== controller) {
         return false;
       }
