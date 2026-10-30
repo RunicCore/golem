@@ -308,3 +308,17 @@ export type TRecord = IModel<{ tags: Tags; ident: Ident; extra: Extra }>;
   assert.throws(() => generated.fromWireFormatTRecord({ ...valid, extra: { a: 10 } }), /Model validation failed/);
   assert.throws(() => generated.fromWireFormatTRecord({ ...valid, extra: { a: 1.5 } }), /Model validation failed/);
 });
+
+test('an app model over an SDK alias with a keyword that no descriptor carries stops generation and names the keyword', async () => {
+  // protects: T-739 OPENAPI_KEYWORD_NOT_CARRIED also holds for an alias that is no model: the model plane is the only check of an app model
+  const sdk: GolemModeSdkSetup = {
+    folder: 'sdk/charges',
+    name: 'Charges',
+    document: chargesDocument({
+      Pair: { type: 'array', items: { type: 'string' }, additionalItems: false },
+      Charge: { type: 'object', required: ['id'], properties: { id: { type: 'string' }, pair: { $ref: '#/components/schemas/Pair' } } },
+    }),
+  };
+  const model = "import type { IModel } from '@exprtlabs/golem/model';\nimport type { Pair } from '../sdk/charges/index.js';\nexport type TRecord = IModel<{ pair: Pair }>;\n";
+  await assert.rejects(loadGolemModeProject(scope, 'sdk-app-model-alias-uncarried-', [sdk], true, { 'src/record.model.ts': model }), /OPENAPI_KEYWORD_NOT_CARRIED[^]*"additionalItems"/);
+});

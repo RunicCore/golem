@@ -25,6 +25,12 @@ export interface ResolvedModelManifestEntry extends ModelManifestEntry {
   readonly allowAny: boolean;
 }
 
+/** An alias of a golem-mode SDK that is no model: what an app field of it checks, and the keywords of its schema that the descriptor does not carry. */
+export interface SdkAlias {
+  readonly descriptor: ModelTypeDescriptor;
+  readonly uncarried?: readonly string[];
+}
+
 export interface ManifestIndex {
   /** Every entry, by the module and export of its declaration. */
   readonly byProvenance: ReadonlyMap<string, ResolvedModelManifestEntry>;
@@ -42,11 +48,11 @@ export interface ManifestIndex {
   /** The keywords of the SDK schema of the type that its descriptors do not carry, with those of the schemas it refers to; none when the type is no SDK type or its descriptors carry them all. */
   sdkUncarriedForType(type: ts.Type): readonly string[] | undefined;
   /**
-   * The descriptor of the alias that the type node names (`type Currency = string` or `type Tags = number[]`, which TypeScript resolves to the
+   * The alias that the type node names: its descriptor (`type Currency = string` or `type Tags = number[]`, which TypeScript resolves to the
    * plain type, so the type alone does not tell), with the limits the SDK's schema has and the SDK node of each model it names. The model of
-   * the app then checks them inline, as the SDK does.
+   * the app then checks them inline, as the SDK does; `uncarried` lists the keywords of its schema that the descriptor does not carry.
    */
-  sdkAliasDescriptorForNode(checker: ts.TypeChecker, node: ts.TypeNode): ModelTypeDescriptor | undefined;
+  sdkAliasForNode(checker: ts.TypeChecker, node: ts.TypeNode): SdkAlias | undefined;
 }
 
 /** The descriptor kinds of an SDK schema that has a node codec in the SDK's codecs file; a scalar alias has none and is written inline. */
@@ -229,7 +235,7 @@ export function loadModelManifests(
   const sdkDescriptors = new Map<string, { readonly root: ModelTypeDescriptor; readonly field: ModelTypeDescriptor }>();
   const sdkUncarried = new Map<string, readonly string[]>();
   // The descriptor of each alias of a golem-mode manifest that is no model, by the provenance of its declaration.
-  const sdkAliases = new Map<string, ModelTypeDescriptor>();
+  const sdkAliases = new Map<string, SdkAlias>();
   for (const filename of filenames) {
     // Explicit SDK manifests stay in the load set for duplicate-id and profile
     // checks. Only manifests this job discovered or advertised are watch inputs
@@ -242,9 +248,9 @@ export function loadModelManifests(
     if (golem !== undefined) {
       golemModeManifests.push({ file: filename, manifest: golem });
       for (const alias of golem.components.filter((component) => component.type !== undefined)) {
-        const descriptor = sdkDescriptorOf(golem, alias.name)!;
+        const entry: SdkAlias = { descriptor: sdkDescriptorOf(golem, alias.name)!, ...(alias.uncarried?.length ? { uncarried: alias.uncarried } : {}) };
         for (const provenance of [alias.type!, ...(alias.type!.aliases ?? [])]) {
-          sdkAliases.set(manifestProvenance(filename, provenance.module, provenance.export), descriptor);
+          sdkAliases.set(manifestProvenance(filename, provenance.module, provenance.export), entry);
         }
       }
     }
@@ -300,7 +306,7 @@ export function loadModelManifests(
       return found === undefined ? undefined : root ? found.root : found.field;
     },
     sdkUncarriedForType: (type: ts.Type) => sdkEntryOfType(sdkUncarried, type),
-    sdkAliasDescriptorForNode(checker: ts.TypeChecker, node: ts.TypeNode): ModelTypeDescriptor | undefined {
+    sdkAliasForNode(checker: ts.TypeChecker, node: ts.TypeNode): SdkAlias | undefined {
       if (sdkAliases.size === 0 || !ts.isTypeReferenceNode(node)) return undefined;
       const named = checker.getSymbolAtLocation(node.typeName);
       const symbol = named !== undefined && (named.flags & ts.SymbolFlags.Alias) !== 0 ? checker.getAliasedSymbol(named) : named;

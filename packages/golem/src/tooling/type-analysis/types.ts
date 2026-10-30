@@ -1194,17 +1194,21 @@ export function descriptorBuilder(
     }
     // A type of a golem-mode SDK keeps the SDK's limits and conversions: the root of a model takes the SDK's descriptor, and a field
     // refers to the SDK node. The validators compile once for both, since the compiler writes one function for equal schemas.
-    const uncarried = manifestIndex.sdkUncarriedForType(type);
+    // An alias of the SDK that is no model (`type Currency = string`, `type Tags = number[]`) is the plain type to the checker, so the node names it.
+    const aliasNode = hasBaseTags && analysis.baseNode ? analysis.baseNode : node ?? nameNode;
+    const sdkAlias = aliasNode === undefined ? undefined : manifestIndex.sdkAliasForNode(checker, aliasNode);
+    const uncarried = manifestIndex.sdkUncarriedForType(type) ?? sdkAlias?.uncarried;
     if (uncarried !== undefined) {
       const at = node ?? context.declaration;
       throw namedDiagnostic(context.sourceFile, at, 'OPENAPI_KEYWORD_NOT_CARRIED', `The SDK schema of this type uses ${uncarried.map((keyword) => JSON.stringify(keyword)).join(', ')}, which its model descriptors do not carry, and the model of the app checks only through them. The SDK itself checks the schema in full. Use the SDK type in the client or handler code, or change the schema so that the descriptors carry the keyword.`);
     }
     const sdkDescriptor = manifestIndex.sdkDescriptorForType(type, isRoot);
     if (sdkDescriptor) return withMetadata(sdkDescriptor as ModelConversionDescriptor, metadata);
-    // An alias of the SDK that is no model (`type Currency = string`, `type Tags = number[]`) is the plain type to the checker, so the node names it. Its limits come first, then the field's own.
-    const aliasNode = hasBaseTags && analysis.baseNode ? analysis.baseNode : node ?? nameNode;
-    const sdkAlias = aliasNode === undefined ? undefined : manifestIndex.sdkAliasDescriptorForNode(checker, aliasNode) as { readonly constraints?: readonly ModelConstraint[] } | undefined;
-    if (sdkAlias) return withMetadata({ ...sdkAlias } as ModelConversionDescriptor, { ...metadata, constraints: [...(sdkAlias.constraints ?? []), ...metadata.constraints] });
+    // The limits of the alias come first, then the field's own.
+    if (sdkAlias) {
+      const aliasDescriptor = sdkAlias.descriptor as { readonly constraints?: readonly ModelConstraint[] };
+      return withMetadata({ ...aliasDescriptor } as ModelConversionDescriptor, { ...metadata, constraints: [...(aliasDescriptor.constraints ?? []), ...metadata.constraints] });
+    }
     if (type.flags & ts.TypeFlags.Any) {
       if (!allowUnresolved && isErrorAny(type)) {
         const at = node ?? context.declaration;

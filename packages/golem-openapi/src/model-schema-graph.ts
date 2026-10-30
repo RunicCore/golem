@@ -90,7 +90,7 @@ function referencedModels(descriptor: unknown): string[] {
 }
 
 /** The keywords that no descriptor carries, own and of every model the descriptor refers to; none when the descriptor is complete. */
-function uncarriedOf(own: ReadonlySet<string>, descriptor: ModelTypeDescriptor, models: ReadonlyMap<string, readonly string[]>): string[] {
+export function uncarriedOf(own: ReadonlySet<string>, descriptor: ModelTypeDescriptor, models: ReadonlyMap<string, readonly string[]>): string[] {
   return [...new Set([...own, ...referencedModels(descriptor).flatMap((name) => models.get(name) ?? [])])].sort(compareText);
 }
 

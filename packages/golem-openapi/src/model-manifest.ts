@@ -20,6 +20,7 @@ import {
   modelEnv,
   modelStableId,
 } from './model-resolution.js';
+import { uncarriedOf } from './model-schema-graph.js';
 import { resolveLocal } from './normalize.js';
 
 /**
@@ -85,8 +86,10 @@ function aliasComponents(document: unknown, analysis: OpenApiModelAnalysis): Gol
   return objectEntries(asRecord(asRecord(asRecord(document).components).schemas)).flatMap(([rawName, rawSchema]) => {
     const name = identifier(rawName);
     if (analysis.definitions.has(name) || analysis.definitions.aliases.has(name) || !isJsonObject(resolveLocal(document, rawSchema))) return [];
-    const descriptor = modelConversionDescriptor(rawSchema, analysis.definitions, env, 'to');
-    return [{ name, type: declaredType(name), descriptor: JSON.stringify(descriptor) }];
+    const own = new Set<string>();
+    const descriptor = modelConversionDescriptor(rawSchema, analysis.definitions, { ...env, uncarried: own }, 'to');
+    const uncarried = uncarriedOf(own, descriptor, analysis.uncarriedModels);
+    return [{ name, type: declaredType(name), ...(uncarried.length ? { uncarried } : {}), descriptor: JSON.stringify(descriptor) }];
   });
 }
 
