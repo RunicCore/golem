@@ -899,10 +899,9 @@ export function descriptorBuilder(
     return match;
   };
 
-  // A model, a class model and an SDK model end a walk: `describe` returns a reference for each before it reads the body.
+  // A model and a class model end a walk: `describe` returns a reference for each before it reads the body.
   const isModelBoundary = (type: ts.Type): boolean =>
     modelSpecificationForType(checker, type, specifications) !== undefined
-    || manifestIndex.externalModelForType(type) !== undefined
     || ((type.flags & ts.TypeFlags.Object) !== 0 && modelSpecificationForClass(checker, type, specifications) !== undefined);
   // The types a type holds that `describe` descends into. It stops where `describe` stops, so a type that reaches
   // itself only through a model is not a cycle: the model is a reference.
@@ -1024,7 +1023,7 @@ export function descriptorBuilder(
     readonly classMatch: ModelSpecification | undefined;
     readonly model: ModelSpecification | undefined;
   } => {
-    const provenance = fieldProvenance(checker, node, specifications, manifestIndex.byProvenance);
+    const provenance = fieldProvenance(checker, node, specifications);
     const projection = provenance.projection || isPropertyMapping(type);
     const candidates = provenance.models.filter(specification => checker.isTypeAssignableTo(type, specification.fieldsType)
       && checker.isTypeAssignableTo(specification.fieldsType, type));
@@ -1193,15 +1192,6 @@ export function descriptorBuilder(
         ...(classMatch ? { construct: true as const, ...(type.getSymbol()?.getName() ? { className: type.getSymbol()!.getName() } : {}) } : {}),
       }, metadata);
     }
-    // An SDK interface names its model by its type; an SDK IObject alias names it by the alias the field's type node reaches,
-    // and the reference whose type equals this type (a variant of `Money | null`, not the union) is the one that counts.
-    const aliased = (type.flags & (ts.TypeFlags.Any | ts.TypeFlags.Unknown | ts.TypeFlags.Never)) !== 0 ? [] : provenance.externals.filter(({ type: reached }) =>
-      checker.isTypeAssignableTo(type, reached) && checker.isTypeAssignableTo(reached, type));
-    if (new Set(aliased.map(({ model }) => model.id)).size > 1) {
-      throw diagnostic(context.sourceFile, node ?? context.declaration, '1054', 'Model identity is ambiguous after type composition. Use an explicit named model reference.');
-    }
-    const externalModel = aliased[0]?.model ?? manifestIndex.externalModelForType(type);
-    if (externalModel) return withMetadata({ kind: 'generated-model', id: externalModel.id }, metadata);
     // A type of a golem-mode SDK, as the root of a model or a field of one, takes the SDK's descriptor: the SDK's limits and conversions
     // apply, and the validators compile once for both, since the compiler writes one function for equal schemas.
     const sdkDescriptor = manifestIndex.sdkDescriptorForType(type);

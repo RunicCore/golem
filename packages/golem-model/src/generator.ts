@@ -1,5 +1,5 @@
 import { existsSync, statSync } from 'node:fs';
-import { basename, dirname, join, resolve, sep } from 'node:path';
+import { dirname, join, resolve, sep } from 'node:path';
 import * as ts from '@exprtlabs/golem/internal/ts';
 import type {
   GolemArtifact,
@@ -15,7 +15,6 @@ import {
   DEFAULT_MODEL_SUFFIXES,
   displayPath,
   outsideModelsRootMessage,
-  suffixPattern,
 } from '@exprtlabs/golem/internal/generator-support';
 import { codecKeysPath, defaultModelOutput } from '@exprtlabs/golem/internal/generated-paths';
 import { AmbiguousUnionConversionError, ObjectUnionDiscriminatorError, reachesRecursiveNode } from '@exprtlabs/golem/internal/emitter';
@@ -178,18 +177,8 @@ function emptyResult(info: ProgramInfo, program: ts.Program, root: string): Gole
   return { artifacts: [], manifestPaths: [], watchInputs };
 }
 
-function referencedManifestFiles(
-  graphs: readonly { readonly externalIds: readonly string[] }[],
-  manifestIndex: ManifestIndex,
-): string[] {
-  const files = new Set<string>([...manifestIndex.localFiles, ...manifestIndex.golemModeManifests.map(({ file }) => file)]);
-  for (const graph of graphs) {
-    for (const id of graph.externalIds) {
-      const file = manifestIndex.byId.get(id)?.manifestFile;
-      if (file) files.add(file);
-    }
-  }
-  return [...files];
+function referencedManifestFiles(manifestIndex: ManifestIndex): string[] {
+  return [...new Set([...manifestIndex.localFiles, ...manifestIndex.golemModeManifests.map(({ file }) => file)])];
 }
 
 interface SourceSchemaGraph {
@@ -560,9 +549,7 @@ export function generate(context: GolemModelContext): GolemModelResult {
     .map((source) => analyzeSourceGraph(
       source,
       companionOf(source),
-      checker,
       specifications,
-      manifestIndex,
       normalized.profile,
       normalized.root,
       job,
@@ -609,7 +596,7 @@ export function generate(context: GolemModelContext): GolemModelResult {
     return {
       artifacts: [],
       manifestPaths: [],
-      watchInputs: projectWatchInputs(programInfo, programInfo.program, sources, referencedManifestFiles(graphs, manifestIndex)),
+      watchInputs: projectWatchInputs(programInfo, programInfo.program, sources, referencedManifestFiles(manifestIndex)),
       diagnostics: [...ignoredWarnings, ...validatorDiagnostics],
     };
   }
@@ -628,7 +615,6 @@ export function generate(context: GolemModelContext): GolemModelResult {
       output,
       checker,
       specifications,
-      manifestIndex,
       normalized.profile,
       graph,
       schemaGraph,
@@ -676,7 +662,7 @@ export function generate(context: GolemModelContext): GolemModelResult {
       programInfo,
       prospective,
       sources,
-      referencedManifestFiles(graphs, manifestIndex),
+      referencedManifestFiles(manifestIndex),
     ),
     ...(ignoredWarnings.length + validatorDiagnostics.length > 0 ? { diagnostics: [...ignoredWarnings, ...validatorDiagnostics] } : {}),
   };

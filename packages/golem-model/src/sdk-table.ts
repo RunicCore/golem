@@ -62,7 +62,7 @@ export function golemSdks(
 }
 
 /** The name of an operation root of an SDK in the models validators module: the root name of the manifest under the SDK's scope, so two SDKs with one operation name do not collide. */
-export const scopedRoot = (sdk: GolemSdk, root: string): string => `${sdk.scope}:${root}`;
+const scopedRoot = (sdk: GolemSdk, root: string): string => `${sdk.scope}:${root}`;
 
 /** The operation roots of the golem-mode SDKs, for `compileSdkValidators`: each SDK's roots under its scope, with the resources they reach. */
 export function sdkValidatorOperations(sdks: readonly GolemSdk[]): SdkValidatorsInput['operations'] {

@@ -406,9 +406,7 @@ function namedReference(
     ? undefined
     : original.kind === 'reference' && original.construct === true
       ? true as const
-      : original.kind === 'generated-model' && node.emitClass
-        ? true as const
-        : undefined;
+      : undefined;
   return {
     kind: 'reference',
     name: node.codecId,
