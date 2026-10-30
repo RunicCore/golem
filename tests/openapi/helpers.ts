@@ -435,7 +435,7 @@ export async function sdkBodyCodec(output: string, name: string, root: string): 
 
 /**
  * Test-only: the codec functions of a compiled SDK (`parse<Name>`, `stringify<Name>`, `fromWireFormat<Name>`, `toWireFormat<Name>`,
- * `validate<Name>`, `assert<Name>`), read from its schema group modules. The SDK index exports none of them, and the `sdkCodecs` table is keyed by operation, so a test of a component's codec reads the group modules.
+ * `validate<Name>`, `assert<Name>`), read from its schema group modules. A standalone SDK writes a group module only for a schema that converts, so this reaches nothing for a document without a converting operation; prefer `sdkBodyCodec`. Kept for model-serde and recursive-wire-stringify until they move (T-703).
  */
 export async function importSdkCodecs(output: string, label = 'SDK codecs'): Promise<Record<string, unknown>> {
   const directory = join(output, 'dist/models');
@@ -444,13 +444,6 @@ export async function importSdkCodecs(output: string, label = 'SDK codecs'): Pro
     Object.assign(exports, await importGeneratedModule(output, `${label} ${file}`, `dist/models/${file}`));
   }
   return exports;
-}
-
-/** The function `<prefix><Name>` that `importSdkCodecs` finds for the schema `Name` (`validate`, `fromWireFormat`, `toWireFormat`, `parse`, `stringify`, `assert`). */
-export function sdkFunction<Result = unknown>(codecs: Record<string, unknown>, prefix: string, name: string): (...input: unknown[]) => Result {
-  const found = codecs[`${prefix}${name}`];
-  if (typeof found !== 'function') throw new TypeError(`The SDK has no codec function ${prefix}${name}`);
-  return found as (...input: unknown[]) => Result;
 }
 
 /** The manifest an openapi job of mode golem writes for `document`: the schema graph and the validation roots of every operation. */
