@@ -67,8 +67,10 @@ export function writeGolemModeProject(scope: FixtureScope, prefix: string, sdks:
   return { root, config };
 }
 
-export async function loadGolemModeProject(scope: FixtureScope, prefix: string, sdks: readonly GolemModeSdkSetup[], validation: boolean | 'sanity' = true): Promise<GolemModeProject> {
+/** `files` are written below the project before the pipeline runs, by path, so a model file can name the types of an SDK. */
+export async function loadGolemModeProject(scope: FixtureScope, prefix: string, sdks: readonly GolemModeSdkSetup[], validation: boolean | 'sanity' = true, files: Readonly<Record<string, string>> = {}): Promise<GolemModeProject> {
   const { root, config } = writeGolemModeProject(scope, prefix, sdks, validation);
+  for (const [file, content] of Object.entries(files)) fs.writeFileSync(path.join(root, file), content);
   await runPipeline(config);
   await command(root, process.execPath, [TSC, '-p', 'tsconfig.json']);
   return {

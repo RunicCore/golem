@@ -1169,6 +1169,10 @@ export function descriptorBuilder(
     }
     const externalModel = aliased[0]?.model ?? manifestIndex.externalModelForType(type);
     if (externalModel) return withMetadata({ kind: 'generated-model', id: externalModel.id }, metadata);
+    // A model over a type of a golem-mode SDK takes the SDK's descriptor as its root: the SDK's limits and conversions apply, and
+    // the validators compile once for both, since the compiler writes one function for equal schemas.
+    const sdkRoot = isRoot ? manifestIndex.sdkDescriptorForType(type) : undefined;
+    if (sdkRoot) return withMetadata(sdkRoot as ModelConversionDescriptor, metadata);
     if (type.flags & ts.TypeFlags.Any) {
       if (!allowUnresolved && isErrorAny(type)) {
         const at = node ?? context.declaration;
