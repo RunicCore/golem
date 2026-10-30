@@ -523,12 +523,10 @@ test('generation is deterministic', async (t) => {
     if (typeof model !== 'object' || model === null) return false;
     const record = requireRecord(model, 'model');
     const type = requireRecord(record.type, 'type');
-    const generated = requireRecord(record.generated, 'generated');
     return record.sourceKind === 'openapi'
       && type.module === './types.ts'
-      && generated.module === `./models/${String(type.export)}.ts`
-      && generated.export === `${String(type.export)}Model`
-      && fs.existsSync(path.join(output, String(generated.module)));
+      && record.generated === undefined
+      && fs.existsSync(path.join(output, 'types.ts'));
   }));
   // Only text shows the marker comment that tooling follows from types.ts to the manifest.
   assert.match(
