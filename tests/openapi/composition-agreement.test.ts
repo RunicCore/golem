@@ -36,10 +36,8 @@ interface Row {
   readonly root: string;
   readonly document: Record<string, unknown>;
   readonly accepted: readonly Accepted[];
-  /** Inputs that the validator rejects, checked with validation on. */
+  /** Inputs that the codec rejects on decode with validation on. */
   readonly rejected: readonly Wire[];
-  /** Inputs that the codec rejects and the validator of a decoded value cannot see: a wire string that the decoded value holds as a Date. */
-  readonly rejectedOnWire?: readonly Wire[];
   /** The composition warnings of generation, each as `code: message`; a row without it expects none. */
   readonly warnings?: readonly RegExp[];
 }
@@ -258,8 +256,7 @@ const rows: readonly Row[] = [
       Cat: { allOf: [ref('Pet'), object({ meow: text }, { additionalProperties: false })] },
     }),
     accepted: [{ wire: { meow: 'm' }, model: { meow: 'm' } }],
-    rejected: [],
-    rejectedOnWire: [{ meow: 'm', name: 'n' }],
+    rejected: [{ meow: 'm', name: 'n' }],
     warnings: [/^OPENAPI_COMPOSITION_PROPERTY_NEVER: Property "name" of schema "Cat" at #\/components\/schemas\/Cat .*allOf member 1 sets additionalProperties: false\. Replace it with unevaluatedProperties: false beside the allOf\./],
   },
   {
@@ -271,8 +268,7 @@ const rows: readonly Row[] = [
       Derived: { allOf: [ref('Base'), object({ b: dateTime })], unevaluatedProperties: false },
     }),
     accepted: [{ wire: { a: 'x', b: B }, model: { a: 'x', b: new Date(B) } }],
-    rejected: [],
-    rejectedOnWire: [{ a: 'x', b: B, z: 'q' }],
+    rejected: [{ a: 'x', b: B, z: 'q' }],
   },
   // The T-99 shapes reject invalid input as strict JSON Schema does.
   {
@@ -391,7 +387,7 @@ const rows: readonly Row[] = [
     ),
     accepted: [{
       wire: { owner: { name: 'n', born: AT } },
-      model: ({ owner: ({ name: 'n', born: new Date(AT) }) }),
+      model: { owner: { name: 'n', born: new Date(AT) } },
     }],
     rejected: [{ owner: { born: 1 } }],
   },
@@ -408,11 +404,11 @@ const rows: readonly Row[] = [
     }),
     accepted: [{
       wire: { name: 'r', parent: { name: 'p' }, children: [{ name: 'c' }] },
-      model: ({
+      model: {
         name: 'r',
-        parent: ({ name: 'p' }),
-        children: [({ name: 'c' })],
-      }),
+        parent: { name: 'p' },
+        children: [{ name: 'c' }],
+      },
     }],
     rejected: [{ name: 'r', parent: { name: 1 } }],
   },
@@ -452,8 +448,7 @@ const rows: readonly Row[] = [
       m: { allOf: [{ type: 'object', additionalProperties: { type: 'string', pattern: '^2024-' } }, object({ at: dateTime })] },
     }),
     accepted: [{ wire: { m: { at: AT } }, model: { m: { at: new Date(AT) } } }],
-    rejected: [],
-    rejectedOnWire: [{ m: { at: '2023-05-06T07:08:09.000Z' } }],
+    rejected: [{ m: { at: '2023-05-06T07:08:09.000Z' } }],
   },
   // A oneOf of a model and a string AND that model is the model, whichever direction the conversion is read in.
   {
@@ -464,7 +459,7 @@ const rows: readonly Row[] = [
       { m: { allOf: [object({ x: { oneOf: [ref('M'), text] } }), object({ x: ref('M') })] } },
       { M: object({ n: text }) },
     ),
-    accepted: [{ wire: { m: { x: { n: 'a' } } }, model: ({ m: { x: ({ n: 'a' }) } }) }],
+    accepted: [{ wire: { m: { x: { n: 'a' } } }, model: { m: { x: { n: 'a' } } } }],
     rejected: [{ m: { x: 'a' } }],
   },
   {
@@ -475,7 +470,7 @@ const rows: readonly Row[] = [
       { m: { allOf: [object({ x: { oneOf: [ref('M'), text] } }), object({ x: object({ n: text }) })] } },
       { M: object({ n: text }) },
     ),
-    accepted: [{ wire: { m: { x: { n: 'a' } } }, model: ({ m: { x: ({ n: 'a' }) } }) }],
+    accepted: [{ wire: { m: { x: { n: 'a' } } }, model: { m: { x: { n: 'a' } } } }],
     rejected: [{ m: { x: 'a' } }],
   },
   // An object member beside a model it does not convert still checks the wire value: a required name must be there.
@@ -502,10 +497,10 @@ const rows: readonly Row[] = [
     }),
     accepted: [{
       wire: { pet: { name: 'n', lives: 9 }, pets: [{ name: 'm', lives: 1 }] },
-      model: ({
-        pet: ({ name: 'n', lives: 9 }),
-        pets: [({ name: 'm', lives: 1 })],
-      }),
+      model: {
+        pet: { name: 'n', lives: 9 },
+        pets: [{ name: 'm', lives: 1 }],
+      },
     }],
     rejected: [{ pet: { name: 'n', lives: 'x' } }],
   },
@@ -522,9 +517,28 @@ const rows: readonly Row[] = [
     }),
     accepted: [{
       wire: { named: { name: 'n', nick: 'k', lives: 9 } },
-      model: ({ named: ({ name: 'n', nick: 'k', lives: 9 }) }),
+      model: { named: { name: 'n', nick: 'k', lives: 9 } },
     }],
     rejected: [{ named: { name: 'n', lives: 'x' } }],
+  },
+  // protects: T-456 a component that narrows an inherited union property to one variant decodes it as that variant
+  {
+    shape: 'a derived component narrows an inherited union property to one of its variants',
+    root: 'Derived',
+    document: componentDocument('Derived', {
+      Animal: object({ kind: text }, { required: ['kind'] }),
+      Cat: { allOf: [ref('Animal'), object({ kind: { const: 'cat' }, lives: { type: 'integer' } }, { required: ['kind', 'lives'] })] },
+      Dog: { allOf: [ref('Animal'), object({ kind: { const: 'dog' }, bark: { type: 'boolean' } }, { required: ['kind'] })] },
+      Pet: {
+        oneOf: [ref('Cat'), ref('Dog')],
+        discriminator: { propertyName: 'kind', mapping: { cat: '#/components/schemas/Cat', dog: '#/components/schemas/Dog' } },
+      },
+      Base: object({ pet: ref('Pet') }, { required: ['pet'] }),
+      Derived: { allOf: [ref('Base'), object({ pet: ref('Cat') })] },
+    }),
+    accepted: [{ wire: { pet: { kind: 'cat', lives: 9 } }, model: { pet: { kind: 'cat', lives: 9 } } }],
+    // The property decodes as Cat: a cat without lives and a dog both throw, though Pet accepts a dog.
+    rejected: [{ pet: { kind: 'cat' } }, { pet: { kind: 'dog' } }],
   },
   // Arrays and tuples that convert alike combine by their items, so items that differ in null or required names agree.
   {
@@ -566,9 +580,8 @@ const rows: readonly Row[] = [
       { owner: { allOf: [ref('Person')], unevaluatedProperties: false } },
       { Person: object({ name: text }) },
     ),
-    accepted: [{ wire: { owner: { name: 'n' } }, model: ({ owner: ({ name: 'n' }) }) }],
-    rejected: [],
-    rejectedOnWire: [{ owner: { name: 'n', z: 'q' } }],
+    accepted: [{ wire: { owner: { name: 'n' } }, model: { owner: { name: 'n' } } }],
+    rejected: [{ owner: { name: 'n', z: 'q' } }],
   },
   // A component's own properties beside its allOf are its own names, and unevaluatedProperties: false keeps them.
   {
@@ -580,8 +593,7 @@ const rows: readonly Row[] = [
       Derived: { allOf: [ref('Base'), object({ c: text })], properties: { b: text }, unevaluatedProperties: false },
     }),
     accepted: [{ wire: { a: 'x', b: 'y', c: 'z' }, model: { a: 'x', b: 'y', c: 'z' } }],
-    rejected: [],
-    rejectedOnWire: [{ a: 'x', b: 'y', z: 'q' }],
+    rejected: [{ a: 'x', b: 'y', z: 'q' }],
   },
   {
     shape: 'a component that is allOf [$ref Base] with unevaluatedProperties false',
@@ -591,8 +603,7 @@ const rows: readonly Row[] = [
       Derived: { allOf: [ref('Base')], unevaluatedProperties: false },
     }),
     accepted: [{ wire: { a: 'x' }, model: { a: 'x' } }],
-    rejected: [],
-    rejectedOnWire: [{ a: 'x', z: 'q' }],
+    rejected: [{ a: 'x', z: 'q' }],
   },
   // A base beside a union in an allOf member (T-227): the value satisfies the base AND one variant.
   {
@@ -905,9 +916,6 @@ async function assertValidatorJudges(built: Built, row: Row): Promise<void> {
   for (const wire of row.rejected) {
     await forInput(wire, () => assertCodecRejects(built, wire));
   }
-  for (const wire of row.rejectedOnWire ?? []) {
-    await forInput(wire, () => assertCodecRejects(built, wire));
-  }
 }
 
 /** A model validator of the generated module: `validate_<Model>_<hash>` with the plane of its schema. */
@@ -919,7 +927,7 @@ const MODEL_VALIDATOR = /^validate_(\w+?)_[0-9a-f]{8}(?:_wire|_model_only|_wire_
  */
 async function assertFastChecksAgree(built: Built, row: Row): Promise<void> {
   const validators = requireRecord(await import(pathToFileURL(path.join(built.output, 'dist/validators.generated.js')).href), `generated ${row.shape} validators`);
-  const inputs: readonly unknown[] = [...row.accepted.map(({ wire }) => wire), ...row.rejected, ...(row.rejectedOnWire ?? [])];
+  const inputs: readonly unknown[] = [...row.accepted.map(({ wire }) => wire), ...row.rejected];
   const roots = Object.keys(validators).flatMap(name => {
     const match = MODEL_VALIDATOR.exec(name);
     if (match === null) return [];
