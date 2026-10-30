@@ -44,6 +44,7 @@ import {
   type NestedImportedSerde,
   type SerdeResolver,
   presentKeysCode,
+  wireCheckedDeserializer,
 } from '@exprtlabs/golem/internal/emitter';
 import { anonymousShapeKeys, createSchemaGraph, codecPublicId, codecShortName, internDescriptors, mapNamedTypes, type SchemaGraph, type SchemaNode } from '@exprtlabs/golem/internal/schema-graph';
 import { compareText, type GolemProfile } from '@exprtlabs/golem/generator-api';
@@ -1582,7 +1583,7 @@ function emitSerdeFunctions(context: EmitContext): Piece[] {
       const imported = context.imports.serde.get(binding.id);
       return names && imported ? [
         code`const ${identifier(names.serialize)} = ${imported.serialize} as (value: unknown) => unknown;`,
-        code`const ${identifier(names.deserialize)} = ${imported.deserialize} as (value: unknown) => unknown;`,
+        code`const ${identifier(names.deserialize)} = ${wireCheckedDeserializer(binding, code`${imported.deserialize} as (value: unknown) => unknown`)};`,
       ] : [];
     }),
     BLANK,

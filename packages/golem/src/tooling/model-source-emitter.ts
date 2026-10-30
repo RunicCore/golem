@@ -17,6 +17,7 @@ export {
   type CodecRuntimeOptions,
   type NestedImportedSerde,
   type StringifySerdeResolver,
+  wireCheckedDeserializer,
 } from './stringify-emitter.js';
 export { type TupleConversionDescriptor } from './sequence-conversion.js';
 export { presentKeysCode } from './union-conversion.js';
@@ -62,7 +63,7 @@ import {
   unionDispatch,
   type ObjectTypeDescriptor,
 } from './union-conversion.js';
-import { isRecordExpression, wireTypeGuard } from './stringify-emitter.js';
+import { isRecordExpression } from './stringify-emitter.js';
 
 /** Generators read tag values through the same rule as the shared union conversion. */
 export { AmbiguousUnionConversionError, descriptorNeedsConversion, ObjectUnionDiscriminatorError } from './union-conversion.js';
@@ -324,8 +325,7 @@ function emitNestedUncached(
   const tags = metadata(descriptor);
   if (tags.serde && resolveSerde) {
     if (direction !== 'fromJSON') return value;
-    const deserialized = resolveSerde.deserialize(tags.serde, value);
-    return wireTypeGuard(descriptor, value, deserialized) ?? deserialized;
+    return resolveSerde.deserialize(tags.serde, value);
   }
   if (descriptor.kind === 'intersection') {
     const bases: ModelBases = { basesOf: (id) => resolveModel(id).bases ?? [] };
@@ -494,8 +494,8 @@ export const MODEL_IMPORT_ORDER: NonNullable<ImportOptions['order']> = {
   conversion: [
     'assertAcyclicEncodeInput', 'assertPropertyAcyclic', 'assertWireAcyclic', 'beginDecode', 'beginEncode', 'convertModelField', 'convertModelItems',
     'convertModelRecord', 'convertModelTupleItems', 'copyModelRecord', 'decodeCheckedInput', 'decodeDetachedInput', 'decodeGeneratedModelTrusted', 'defineModelProperty', 'deserializeDate',
-    'endDecode', 'endEncode', 'isVariantObject', 'jsonWithDiscriminator', 'rejectModelObject', 'rejectWrongWire', 'requireModelObject', 'serializeDate', 'unknownDiscriminatorValue',
-    'withDeclaredFields', 'withDiscriminatorValue',
+    'endDecode', 'endEncode', 'isVariantObject', 'jsonWithDiscriminator', 'rejectModelObject', 'requireModelObject', 'serializeDate', 'unknownDiscriminatorValue',
+    'wireChecked', 'withDeclaredFields', 'withDiscriminatorValue',
   ],
   serde: SERDE_IMPORT_ORDER,
 };

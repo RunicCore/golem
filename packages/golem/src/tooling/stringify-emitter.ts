@@ -10,7 +10,7 @@ import type { SchemaGraph, SchemaNode } from './schema-graph.js';
 import { codecShortName, serdeWireDescriptor } from './schema-graph.js';
 import { requireComposedObject, type ModelBases } from './composition.js';
 import {
-  aliased, asObjectLiteral, bindInput, bindRead, code, documentLiteral, helper, helperName, helperSet, identifier, indentation, inputCount, inputOf, inputSlot, isEmpty, join, literal, localCode, readShape, sameCode,
+  aliased, asObjectLiteral, bindInput, bindRead, code, documentLiteral, helper, helperName, helperSet, selfPlacedHelper, identifier, indentation, inputCount, inputOf, inputSlot, isEmpty, join, literal, localCode, readShape, sameCode,
   type Code, type Helper, type InputSlot, type JsonValue, type ReadShape,
 } from './code.js';
 import { nodeQueryFields } from './query-fields.js';
@@ -45,15 +45,44 @@ export interface StringifySerdeResolver {
   readonly serialize: (serde: SerdeFunctions, value: Code) => Code;
 }
 
-function serdeResolver(call: (binding: ImportedFunction, value: Code) => Code): StringifySerdeResolver {
-  return { deserialize: (serde, value) => call(serde.deserialize, value), serialize: (serde, value) => call(serde.serialize, value) };
+/**
+ * The JSON type of the wire of a serde when it is a string, a number or a boolean. Such a serde reads only a value of that type (F-39), so
+ * its deserializer is wrapped once, by `wireChecked`, where the file binds it.
+ */
+export function serdeWireKind(serde: SerdeFunctions): 'string' | 'number' | 'boolean' | undefined {
+  const { wire, wireDescriptor } = serde as SerdeFunctions & { readonly wire?: ModelTypeDescriptor; readonly wireDescriptor?: ModelTypeDescriptor };
+  const kind = (wireDescriptor ?? wire)?.kind;
+  return kind === 'string' || kind === 'number' || kind === 'boolean' ? kind : undefined;
+}
+
+/** The deserializer `deserialize` of a serde, as a function that rejects a wire value of another JSON type than the wire's. */
+export function wireCheckedDeserializer(serde: SerdeFunctions, deserialize: Code): Code {
+  const kind = serdeWireKind(serde);
+  return kind === undefined ? deserialize : code`${rt.conversion.wireChecked}(${literal(kind)}, ${deserialize})`;
+}
+
+/** The deserializer of a runtime function, bound once per file where a decode reaches it. */
+const checkedDeserializers = new Map<string, Helper>();
+function checkedDeserializer(serde: SerdeFunctions): Helper {
+  const name = `__golemDeserialize_${serde.deserialize.exportName}`;
+  let known = checkedDeserializers.get(name);
+  if (known === undefined) {
+    known = selfPlacedHelper(name, () => code`const ${identifier(name)} = ${wireCheckedDeserializer(serde, code`${runtimeFunctionCode(serde.deserialize)} as (value: unknown) => unknown`)};`);
+    checkedDeserializers.set(name, known);
+  }
+  return known;
 }
 
 /**
  * The resolver of a generator whose bindings are functions of the golem runtime (OpenAPI documents hold no TSerde tag). Conversion code holds
  * values as `unknown`; wire validation has already checked them, so the call casts. The file imports exactly the functions it calls.
  */
-export const RUNTIME_SERDE: StringifySerdeResolver = serdeResolver((binding, value) => code`${runtimeFunctionCode(binding)}((${value}) as never)`);
+export const RUNTIME_SERDE: StringifySerdeResolver = {
+  deserialize: (serde, value) => serdeWireKind(serde) === undefined
+    ? code`${runtimeFunctionCode(serde.deserialize)}((${value}) as never)`
+    : code`${helperName(checkedDeserializer(serde))}(${value})`,
+  serialize: (serde, value) => code`${runtimeFunctionCode(serde.serialize)}((${value}) as never)`,
+};
 
 /** The functions of a codec that another module generated, as the names this module imports them under. */
 export interface NestedImportedSerde {
@@ -1384,24 +1413,12 @@ function emitUnionEncode(
   });
 }
 
-/**
- * The decode of a serde value whose wire is a string, a number or a boolean: the deserializer runs only on a value of that JSON type, and any
- * other value is bad input at every level of validation. A wire of another kind has no guard.
- */
-export function wireTypeGuard(descriptor: ModelTypeDescriptor, value: Code, deserialized: Code): Code | undefined {
-  const wire = serdeWireDescriptor(descriptor);
-  if (wire?.kind !== 'string' && wire?.kind !== 'number' && wire?.kind !== 'boolean') return undefined;
-  return code`(typeof ${value} === ${literal(wire.kind)} ? ${deserialized} : ${rt.conversion.rejectWrongWire}(${literal(wire.kind)}))`;
-}
-
 function emitDecodeValue(descriptor: ModelTypeDescriptor, expression: Code, ctx: EmitCtx): Code {
   const value = expression;
   const tags = serdeTags(descriptor);
   if (tags.serde) {
     const deserialized = ctx.serde ? fallibleConversion(ctx, ctx.serde.deserialize(tags.serde, value)) : value;
     const wire = serdeWireDescriptor(descriptor);
-    const guarded = wireTypeGuard(descriptor, value, deserialized);
-    if (guarded) return fallibleConversion(ctx, guarded);
     if (wire && (wire.kind === 'object' || wire.kind === 'reference' || wire.kind === 'generated-model')) {
       return code`(${objectValueExpression(value)} ? ${deserialized} : ${value})`;
     }

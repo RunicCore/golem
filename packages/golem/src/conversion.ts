@@ -579,9 +579,15 @@ export function deserializeDate(value: unknown, path: IssuePath = activeConversi
   return date;
 }
 
-/** A serde whose wire form is a string, a number or a boolean reads only that JSON type: any other wire value is bad input at every level of validation, off included (F-39). */
-export function rejectWrongWire(expected: 'string' | 'number' | 'boolean', path: IssuePath = activeConversionPath): never {
-  throw conversionError(LibErrorKind.Deserialization, `Expected a ${expected}.`, path, undefined, true);
+/**
+ * A serde whose wire form is a string, a number or a boolean reads only that JSON type: any other wire value is bad input at every level of
+ * validation, off included (F-39). The deserializer that this returns runs on a value of the JSON type and throws for any other.
+ */
+export function wireChecked(expected: 'string' | 'number' | 'boolean', deserialize: (value: unknown) => unknown): (value: unknown) => unknown {
+  return (value) => {
+    if (typeof value !== expected) throw conversionError(LibErrorKind.Deserialization, `Expected a ${expected}.`, activeConversionPath, undefined, true);
+    return deserialize(value);
+  };
 }
 
 /** Write a finite Date as UTC with millisecond precision. */
