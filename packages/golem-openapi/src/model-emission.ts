@@ -172,6 +172,7 @@ export function generateOpenApiModelArtifacts(
       exportedFillFunctionsByGroup.set(dependencyGroupId, exports);
     }
   }
+  // Every group is generated, so each schema check and diagnostic runs whether or not an operation reaches the model.
   // A group is written when an operation body reaches it or a written group imports it; no other group has a reader.
   const written = new Set<string>();
   const pending = [...analysis.bodyNodeIds.values()].flatMap((nodeId) => owner.get(nodeId) ?? []);
@@ -180,7 +181,6 @@ export function generateOpenApiModelArtifacts(
     written.add(groupId);
     pending.push(...importedGroupsByGroup.get(groupId) ?? []);
   }
-  const writtenGroups = groups.filter((group) => written.has(group.id));
   const moduleSources = new Map<string, ImportSource>();
   const moduleSource = (specifier: string): ImportSource => {
     let source = moduleSources.get(specifier);
@@ -196,7 +196,7 @@ export function generateOpenApiModelArtifacts(
   // SDK's one validators module gives, and that module compiles every model in one plan.
   const groupPlans = new Map<string, CodecValidationPlan>();
   if (profile.validation) {
-    for (const group of writtenGroups) {
+    for (const group of groups) {
       const dependencyCodecIds = new Set([...(dependenciesByGroup.get(group.id) ?? [])].flatMap((id) => {
         const node = schemaGraph.nodes.get(id);
         return node ? [node.codecId] : [];
@@ -221,7 +221,7 @@ export function generateOpenApiModelArtifacts(
   const validatorExports = compiledValidators?.exports;
   const fastCheckExports = compiledValidators?.fastExports;
   const passCheckExports = compiledValidators?.passExports;
-  for (const group of writtenGroups) {
+  for (const group of groups) {
     const localIds = group.nodes;
     const dependencyIds = dependenciesByGroup.get(group.id) ?? new Set<string>();
     const groupPlan = groupPlans.get(group.id);
@@ -256,7 +256,7 @@ export function generateOpenApiModelArtifacts(
       },
       exportedFillFunctionIds: exportedFillFunctionsByGroup.get(group.id),
     });
-    files.set(group.filename, modelModule);
+    if (written.has(group.id)) files.set(group.filename, modelModule);
   }
   return { files };
 }

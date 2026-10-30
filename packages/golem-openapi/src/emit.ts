@@ -218,7 +218,7 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions, moved:
     return validators.compiled;
   };
   const modelDiagnostics: GolemDiagnostic[] = [];
-  if (modelAnalysis.bodyNodeIds.size > 0) {
+  if (modelAnalysis.grouping.groups.length > 0) {
     const models = generateOpenApiModelArtifacts(document, profile, modelAnalysis, {
       locate: options.locate,
       ...(profile.validation ? { compileValidators: ({ plan, locateModel }: { plan: CodecValidationPlan; locateModel: (name: string) => SchemaPlace }) => compileValidators(plan, locateModel) } : {}),
@@ -228,8 +228,8 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions, moved:
   if (operationValidation && !validators.compiled) compileValidators(undefined);
   if (validators.compiled) {
     modelDiagnostics.push(...validators.compiled.diagnostics);
-    // A source is empty when the compile reported an error; no file is written then.
-    if (validators.compiled.source !== '' && validators.compiled.exports.size > 0) files.set('validators.generated.ts', validators.compiled.source);
+    // A source is empty when the compile reported an error; no file is written then. Only operations import the module.
+    if (operationValidation && validators.compiled.source !== '' && validators.compiled.exports.size > 0) files.set('validators.generated.ts', validators.compiled.source);
   }
   files.set('model-manifest.json', stableJson(generateModelManifest(document, profile, modelAnalysis)));
   if (plan.artifacts.has('client.ts')) {
