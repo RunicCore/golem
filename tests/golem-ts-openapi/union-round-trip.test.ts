@@ -5,8 +5,7 @@ import { LibError } from '@exprtlabs/golem/errors';
 import { generate } from '#controllers/generator';
 import { createControllerFixture } from '../fixture-templates/controllers/project.js';
 import { createFixtureProject } from '../fixture-project.js';
-import { compileGeneratedSdk, generateMaterializedSdk, importGeneratedModule, isGeneratedModelClass, type GeneratedModelClass } from '../openapi/helpers.js';
-import { modelCodec } from '../support/model-codec.js';
+import { compileGeneratedSdk, generateMaterializedSdk, sdkBodyCodec, withRootOperations, type SdkBodyCodec } from '../openapi/helpers.js';
 
 const controllerOf = (models: string, model: string): string => `import { Body, Controller, Post } from '@nestjs/common';
 import type { IModel } from '@exprtlabs/golem/model';
@@ -29,12 +28,12 @@ async function controllersDocument(t: TestContext, source: string, openapiVersio
   return JSON.parse(result.artifacts[0]!.content) as { components: { schemas: Record<string, Record<string, unknown>> } };
 }
 
-async function sdkModels(t: TestContext, document: unknown): Promise<Record<string, GeneratedModelClass>> {
+/** The client body codec of the SDK generated from `document` for the component `root`. */
+async function sdkRoot(t: TestContext, document: Record<string, unknown>, root: string): Promise<SdkBodyCodec> {
   const output = path.join(createFixtureProject(t, 'golem-union-round-trip-sdk-'), 'sdk');
-  await generateMaterializedSdk(document, { output, name: 'Items', profile: { mobx: false, validation: true } });
+  await generateMaterializedSdk(withRootOperations(document, root), { output, name: 'Items', profile: { mobx: false, validation: true } });
   compileGeneratedSdk(output, [], { strict: true });
-  const exports = await importGeneratedModule(output, 'items models');
-  return Object.fromEntries(Object.entries(exports).filter((entry): entry is [string, GeneratedModelClass] => isGeneratedModelClass(entry[1])));
+  return sdkBodyCodec(output, 'Items', root);
 }
 
 const CONTACT = `export type TEmail = IModel<{ kind: 'email'; address: string }>;
@@ -50,16 +49,16 @@ for (const openapiVersion of ['3.2.0', '3.1.2'] as const) {
       oneOf: [{ $ref: '#/components/schemas/TEmail' }, { $ref: '#/components/schemas/TPhone' }],
     });
 
-    const models = await sdkModels(t, { ...document, openapi: openapiVersion });
+    const contact = await sdkRoot(t, { ...document, openapi: openapiVersion }, 'TContact');
     const email = { value: { kind: 'email', address: 'a@b.c' } };
     const phone = { value: { kind: 'phone', number: '555' } };
-    const decodedEmail = modelCodec(models.TContactModel!).fromWireFormat(email) as { value: object };
-    const decodedPhone = modelCodec(models.TContactModel!).fromWireFormat(phone) as { value: object };
-    assert.ok(decodedEmail.value instanceof models.TEmailModel!);
-    assert.ok(decodedPhone.value instanceof models.TPhoneModel!);
-    assert.deepEqual(modelCodec(decodedEmail).toWireFormat(decodedEmail), email);
-    assert.deepEqual(modelCodec(decodedPhone).toWireFormat(decodedPhone), phone);
-    assert.throws(() => modelCodec(models.TContactModel!).fromWireFormat({ value: { kind: 'fax', number: '555' } }), LibError);
+    assert.deepEqual(await contact.decode(email), email);
+    assert.deepEqual(await contact.decode(phone), phone);
+    assert.deepEqual(await contact.encode(email), email);
+    assert.deepEqual(await contact.encode(phone), phone);
+    await assert.rejects(() => contact.decode({ value: { kind: 'fax', number: '555' } }), LibError);
+    // The tag selects the variant: an email tag with a phone's fields is no email.
+    await assert.rejects(() => contact.decode({ value: { kind: 'email', number: '555' } }), LibError);
   });
 }
 
@@ -83,21 +82,20 @@ test('a declared default variant is the defaultMapping of the 3.2 document', asy
 test('the SDK generated from the 3.2 document decodes a value with an unmapped tag to the declared default and encodes it back', async t => {
   // protects: T-604 the declared default round-trips on 3.2 (golem-openapi reads defaultMapping)
   const document = await controllersDocument(t, controllerOf(PAYMENT, 'TPayment'), '3.2.0');
-  const models = await sdkModels(t, document);
+  const payment = await sdkRoot(t, document, 'TPayment');
   const card = { method: { kind: 'card', number: '1234' } };
   const cash = { method: { kind: 'cash', amount: 5 } };
   const note = { method: { note: 'wire' } };
-  const decodedCard = modelCodec(models.TPaymentModel!).fromWireFormat(card) as { method: object };
-  const decodedCash = modelCodec(models.TPaymentModel!).fromWireFormat(cash) as { method: object };
-  const decodedNote = modelCodec(models.TPaymentModel!).fromWireFormat(note) as { method: object };
-  assert.ok(decodedCard.method instanceof models.TCardModel!);
-  assert.ok(decodedCash.method instanceof models.TCashModel!);
-  assert.ok(decodedNote.method instanceof models.TOtherModel!);
-  assert.deepEqual(modelCodec(decodedCard).toWireFormat(decodedCard), card);
-  assert.deepEqual(modelCodec(decodedCash).toWireFormat(decodedCash), cash);
-  assert.deepEqual(modelCodec(decodedNote).toWireFormat(decodedNote), note);
-  const unmapped = modelCodec(models.TPaymentModel!).fromWireFormat({ method: { kind: 'wire', note: 'x' } }, { validate: false }) as { method: object };
-  assert.ok(unmapped.method instanceof models.TOtherModel!);
+  assert.deepEqual(await payment.decode(card), card);
+  assert.deepEqual(await payment.decode(cash), cash);
+  assert.deepEqual(await payment.decode(note), note);
+  assert.deepEqual(await payment.encode(card), card);
+  assert.deepEqual(await payment.encode(cash), cash);
+  assert.deepEqual(await payment.encode(note), note);
+  // An unmapped tag takes the declared default variant, so decoding it without the check reads it; a mapped tag never falls back to it.
+  const unmapped = { method: { kind: 'wire', note: 'x' } };
+  assert.deepEqual(await payment.decode(unmapped, { validate: false }), unmapped);
+  await assert.rejects(() => payment.decode({ method: { kind: 'cash', note: 'x' } }), LibError);
 });
 
 test('OpenAPI 3.1 has no defaultMapping, so a union with a declared default is anyOf with no discriminator', async t => {
