@@ -10,7 +10,8 @@ import { instantiateRuntime } from './emitted-runtime.js';
 const string: ModelTypeDescriptor = { kind: 'string' };
 const number: ModelTypeDescriptor = { kind: 'number' };
 const boolean: ModelTypeDescriptor = { kind: 'boolean' };
-const date: ModelTypeDescriptor = { kind: 'date' };
+/** A class value that only its serde converts: the item converter of `deserializeConversion` reads it from text and rejects any other value. */
+const stamp: ModelTypeDescriptor = { kind: 'class-value', typeName: 'Stamp' };
 const nothing: ModelTypeDescriptor = { kind: 'null' };
 
 /** Strings upper-case, numbers double and booleans flip, so each item shows which conversion ran on it. */
@@ -28,8 +29,10 @@ function jsonItem(descriptor: ModelTypeDescriptor, value: Code): SequenceItem {
   return { code: code`stringifyJsonScalar(${value} as never)`, throws: false };
 }
 
-function dateItem(descriptor: ModelTypeDescriptor, value: Code): SequenceItem {
-  return descriptor.kind === 'date' ? { code: code`deserializeDate(${value})`, throws: true } : { code: value, throws: false };
+function stampItem(descriptor: ModelTypeDescriptor, value: Code): SequenceItem {
+  return descriptor.kind === 'class-value'
+    ? { code: code`(typeof ${value} === 'string' ? ${value}.toUpperCase() : rejectNonStringWire())`, throws: true }
+    : { code: value, throws: false };
 }
 
 function tuple(items: TupleConversionDescriptor['items'], rest?: TupleConversionDescriptor['rest'], optionalFrom?: number): TupleConversionDescriptor {
@@ -51,7 +54,7 @@ function jsonConversion(descriptor: TupleConversionDescriptor) {
 }
 
 function deserializeConversion(descriptor: TupleConversionDescriptor) {
-  return compile(render(emitTupleConversion(descriptor, identifier('input'), { output: 'value', paths: 'deserialize', item: dateItem })));
+  return compile(render(emitTupleConversion(descriptor, identifier('input'), { output: 'value', paths: 'deserialize', item: stampItem })));
 }
 
 function issuePath(action: () => unknown): readonly (string | number)[] | undefined {
@@ -129,12 +132,11 @@ test('a tuple with no conversion writes its items as JSON scalars and a non-arra
 });
 
 test('a failing tuple item names its position in the error path, before and after the rest', () => {
-  const convert = deserializeConversion(tuple([string, date], { index: 1, item: date }));
-  const good = '2024-05-06T07:08:09.000Z';
-  assert.deepEqual(convert(['a', good, good]), ['a', new Date(good), new Date(good)]);
-  assert.deepEqual(issuePath(() => convert(['a', good, 'bad', good])), [2]);
-  assert.deepEqual(issuePath(() => convert(['a', good, good, good, 'bad'])), [4]);
-  assert.deepEqual(issuePath(() => convert(['a', 'bad'])), [1]);
+  const convert = deserializeConversion(tuple([string, stamp], { index: 1, item: stamp }));
+  assert.deepEqual(convert(['a', 'b', 'c']), ['a', 'B', 'C']);
+  assert.deepEqual(issuePath(() => convert(['a', 'b', 7, 'c'])), [2]);
+  assert.deepEqual(issuePath(() => convert(['a', 'b', 'c', 'd', 7])), [4]);
+  assert.deepEqual(issuePath(() => convert(['a', 7])), [1]);
 });
 
 test('an array converts each item and keeps a non-array as it is', () => {
@@ -164,22 +166,20 @@ test('the items of a scalar-or-array union change the array and leave an unchang
   assert.strictEqual(unchanged(input), input);
 });
 
-test('a failing array item names its index, and the date converter keeps its default path', () => {
-  const convert = compile(render(emitArrayConversion(date, identifier('input'), { output: 'value', paths: 'deserialize', item: dateItem })));
-  const good = '2024-05-06T07:08:09.000Z';
-  assert.deepEqual(convert([good]), [new Date(good)]);
-  assert.deepEqual(issuePath(() => convert([good, 'bad'])), [1]);
+test('a failing array item names its index, and a converter that takes the item only keeps its default path', () => {
+  const convert = compile(render(emitArrayConversion(stamp, identifier('input'), { output: 'value', paths: 'deserialize', item: stampItem })));
+  assert.deepEqual(convert(['a']), ['A']);
+  assert.deepEqual(issuePath(() => convert(['a', 7])), [1]);
 });
 
 test('a rest tuple with only a failing rest item names the item index', () => {
-  const convert = deserializeConversion(tuple([], { index: 0, item: date }));
-  assert.deepEqual(issuePath(() => convert(['2024-05-06T07:08:09.000Z', 'bad'])), [1]);
+  const convert = deserializeConversion(tuple([], { index: 0, item: stamp }));
+  assert.deepEqual(issuePath(() => convert(['a', 7])), [1]);
 });
 
 test('an item after the rest that converts as the rest names its index like the rest', () => {
-  const good = '2024-05-06T07:08:09.000Z';
-  const convert = deserializeConversion(tuple([date], { index: 0, item: date }));
-  assert.deepEqual(convert([good, good]), [new Date(good), new Date(good)]);
-  assert.deepEqual(issuePath(() => convert(['bad', good])), [0]);
-  assert.deepEqual(issuePath(() => convert([good, 'bad'])), [1]);
+  const convert = deserializeConversion(tuple([stamp], { index: 0, item: stamp }));
+  assert.deepEqual(convert(['a', 'b']), ['A', 'B']);
+  assert.deepEqual(issuePath(() => convert([7, 'b'])), [0]);
+  assert.deepEqual(issuePath(() => convert(['a', 7])), [1]);
 });
