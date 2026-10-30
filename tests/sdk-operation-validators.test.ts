@@ -281,7 +281,7 @@ test('a model used in a request and a response with a readOnly field gets two va
   assert.deepEqual(validators.validate_createItem_response_201_application_json(withServerId, true), [], 'a response carries the readOnly field');
 });
 
-test('a model that an operation response and a model group both validate has its check written once in the SDK module', () => {
+test('a model that only an operation response reads has its check written once in the SDK module, and no root of its own', () => {
   const pattern = '^ITEM-[0-9]{6}$';
   const result = writeSdk({
     openapi: '3.1.0',
@@ -300,11 +300,11 @@ test('a model that an operation response and a model group both validate has its
   const module = result.artifacts.find(item => path.basename(item.path) === 'validators.generated.ts');
   assert.ok(module);
   // Each check function holds its pattern twice: the compiled expression and the issue it reports.
-  assert.equal(module.content.split(JSON.stringify(pattern)).length - 1, 2, 'one check function serves the model and the operation');
+  assert.equal(module.content.split(JSON.stringify(pattern)).length - 1, 2, 'one check function serves the operation');
   assert.equal(module.content.split('new RegExp(').length - 1, 1, 'one compiled expression');
   const exported = Object.keys(exportsOf(module.content));
   assert.ok(exported.includes('validate_getItem_response_200_application_json'), 'the operation root is exported');
-  assert.equal(exported.filter(name => /^validate_Item_[0-9a-f]{8}$/.test(name)).length, 1, 'the model root is exported once');
+  assert.equal(exported.filter(name => /^validate_Item_[0-9a-f]{8}$/.test(name)).length, 0, 'no group reads the model, so its root is not exported');
 });
 
 test('a validation-off SDK writes no validators module and no import of one', () => {

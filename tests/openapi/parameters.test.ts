@@ -208,8 +208,10 @@ test('generated content parameters validate before execute', async t => {
   if (!isGeneratedClientClass(Client)) throw new TypeError('ContentParametersClient');
 
   let fetchCount = 0;
+  // Header checks are off unless named; the header case below needs them on.
   const client = new Client({
     baseUrl: 'https://api.example',
+    validate: { requestHeaders: true },
     fetchImpl: async () => {
       fetchCount += 1;
       return new Response(null, { status: 204 });

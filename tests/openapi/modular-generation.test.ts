@@ -767,10 +767,8 @@ test('the SDK validators module exports one named function per root and no recor
   assert.equal(sdkValidatorArtifacts(result.artifacts).length, 1);
   compileGeneratedSdk(source, [], STRICT_OPTIONS);
   const module = requireRecord(await import(pathToFileURL(path.join(source, 'dist/validators.generated.js')).href), 'validators module');
-  // A model root's fast check is exported as the function itself; the operation roots get none.
+  // The operation roots get no fast check; the model of this document converts nothing, so no group reads its root and the module holds none.
   assert.deepEqual(Object.keys(module).map(name => name.replace(/_[0-9a-f]{8}$/, '_<hash>')).sort(), [
-    'is_Envelope_<hash>',
-    'validate_Envelope_<hash>',
     'validate_putEnvelope_input',
     'validate_putEnvelope_response_200_application_json',
   ]);
