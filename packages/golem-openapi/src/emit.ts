@@ -157,13 +157,17 @@ function itemSeparator(location: string, parameter: NormalizedParameter): ',' | 
   return style === 'form' ? ',' : style === 'spaceDelimited' ? ' ' : style === 'pipeDelimited' ? '|' : undefined;
 }
 
-/** `table` with the separator of each array field, so the inbound handler splits its text before it decodes the items. */
-function withItemSeparators<Table extends Readonly<Record<string, { readonly item?: unknown }>>>(table: Table, location: string, parameters: readonly NormalizedParameter[]): Table {
-  return Object.fromEntries(Object.entries(table).map(([name, shape]) => {
-    const parameter = parameters.find((candidate) => candidate.name === name);
-    const split = shape.item !== undefined && parameter ? itemSeparator(location, parameter) : undefined;
-    return [name, split === undefined ? shape : { ...shape, split }];
-  })) as unknown as Table;
+/** `table` with the separator of each array field, and the label or matrix style of each path parameter, so the inbound handler reads their text as the style writes it. */
+function withParameterStyles<Table extends Readonly<Record<string, { readonly item?: unknown }>>>(table: Table | undefined, location: string, parameters: readonly NormalizedParameter[]): Table | undefined {
+  const entries = parameters.flatMap((parameter) => {
+    const shape: { readonly item?: unknown } = table?.[parameter.name] ?? { types: ['string'] } as { readonly item?: unknown };
+    const pathStyle = location === 'path' && (parameter.style === 'label' || parameter.style === 'matrix') ? { style: parameter.style, explode: parameter.explode ?? false, name: parameter.name } : undefined;
+    const split = shape.item !== undefined ? itemSeparator(location, parameter) : undefined;
+    // A string parameter is in the table only for its style: its text is no value to decode otherwise.
+    const kept = table?.[parameter.name] !== undefined || pathStyle !== undefined;
+    return kept ? [[parameter.name, { ...shape, ...(split === undefined ? {} : { split }), ...(pathStyle === undefined ? {} : { pathStyle }) }] as const] : [];
+  });
+  return entries.length ? Object.fromEntries(entries) as unknown as Table : undefined;
 }
 
 /**
@@ -176,7 +180,8 @@ function inboundShape(operation: NormalizedOperation, document: unknown): Parame
     const parameters = operation.parameters.filter((parameter) => parameter.in === location);
     // The group is a schema of its own; its references into the document's components resolve against `components`.
     const table = parameters.length ? queryFieldTable({ type: 'object', properties: Object.fromEntries(parameters.map((parameter) => [parameter.name, parameterSchema(parameter) ?? true])), components } as never, () => undefined) : undefined;
-    return table ? [[location, withItemSeparators(table, location, parameters)] as const] : [];
+    const styled = withParameterStyles(table, location, parameters);
+    return styled ? [[location, styled] as const] : [];
   }));
   // The tables hold only strings, numbers and booleans (an absent optional member is no member), so the shape is JSON.
   return {

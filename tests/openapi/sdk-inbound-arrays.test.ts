@@ -22,35 +22,48 @@ const PARAMETERS = [
   { name: 'amount', in: 'query', schema: { anyOf: [{ type: 'integer' }, { type: 'number' }] } },
 ];
 const PATH = { ids: [0], names: ['x'] };
+const STYLES = [
+  ['labelInts', 'label', true, INTEGERS], ['labelIntsJoined', 'label', false, INTEGERS], ['labelWords', 'label', true, STRINGS], ['labelWordsJoined', 'label', false, STRINGS],
+  ['matrixInts', 'matrix', true, INTEGERS], ['matrixIntsJoined', 'matrix', false, INTEGERS], ['matrixWords', 'matrix', true, STRINGS], ['matrixWordsJoined', 'matrix', false, STRINGS],
+  ['labelOne', 'label', false, { type: 'integer' }], ['matrixOne', 'matrix', false, { type: 'string' }],
+] as const;
+const STYLED_PARAMETERS = STYLES.map(([name, style, explode, schema]) => ({ name, in: 'path', required: true, style, explode, schema }));
+const STYLED_PATH = { labelInts: [0], labelIntsJoined: [0], labelWords: ['x'], labelWordsJoined: ['x'], matrixInts: [0], matrixIntsJoined: [0], matrixWords: ['x'], matrixWordsJoined: ['x'], labelOne: 0, matrixOne: 'x' };
 const NO_CONTENT = { 204: { description: 'No content' } };
 const DOCUMENT = {
   openapi: '3.2.0',
   info: { title: 'Things', version: '1' },
-  paths: { '/things/{ids}/{names}': { get: { operationId: 'searchThings', parameters: PARAMETERS, responses: NO_CONTENT } } },
-  webhooks: { things: { post: { operationId: 'receiveThings', parameters: PARAMETERS, responses: NO_CONTENT } } },
+  paths: {
+    '/things/{ids}/{names}': { get: { operationId: 'searchThings', parameters: PARAMETERS, responses: NO_CONTENT } },
+    [`/styled${STYLES.map(([name]) => `/{${name}}`).join('')}`]: { get: { operationId: 'searchStyled', parameters: STYLED_PARAMETERS, responses: NO_CONTENT } },
+  },
+  webhooks: {
+    things: { post: { operationId: 'receiveThings', parameters: PARAMETERS, responses: NO_CONTENT } },
+    styled: { post: { operationId: 'receiveStyled', parameters: STYLED_PARAMETERS, responses: NO_CONTENT } },
+  },
 };
 
 type Handler = (request: unknown) => Promise<unknown>;
-const sdk = onceShared(() => loadSdk<{ searchThings(): { execute(input: unknown): Promise<unknown> } }>(fileFixtureScope(), 'golem-openapi-inbound-arrays-', { document: DOCUMENT, name: 'Things', dates: 'date', validation: true }));
+const sdk = onceShared(() => loadSdk<Record<'searchThings' | 'searchStyled', () => { execute(input: unknown): Promise<unknown> }>>(fileFixtureScope(), 'golem-openapi-inbound-arrays-', { document: DOCUMENT, name: 'Things', dates: 'date', validation: true }));
 
-/** What the client writes for `input`, read as the framework gives it to an inbound handler: header names in lower case, path and query as text. */
-async function sentRequest(input: unknown): Promise<Record<string, unknown>> {
+/** What the client writes for `input` to `operation`, read as the framework gives it to an inbound handler: header names in lower case, path and query as text. */
+async function sentRequest(operation: 'searchThings' | 'searchStyled', pathNames: readonly string[], input: unknown): Promise<Record<string, unknown>> {
   let sent: { readonly url: URL; readonly headers: Headers } | undefined;
   const { createClient } = await sdk();
-  await createClient({ fetchImpl: async (url: string | URL, init?: RequestInit) => { sent = { url: new URL(String(url)), headers: new Headers(init?.headers) }; return new Response(null, { status: 204 }); } }).searchThings().execute(input);
+  await createClient({ fetchImpl: async (url: string | URL, init?: RequestInit) => { sent = { url: new URL(String(url)), headers: new Headers(init?.headers) }; return new Response(null, { status: 204 }); } })[operation]().execute(input);
   const { url, headers } = sent!;
-  const [ids, names] = url.pathname.split('/').slice(2).map(decodeURIComponent);
+  const segments = url.pathname.split('/').slice(2).map(decodeURIComponent);
   const query = Object.fromEntries([...new Set(url.searchParams.keys())].map(key => [key, url.searchParams.getAll(key).length === 1 ? url.searchParams.get(key) : url.searchParams.getAll(key)]));
-  return { path: { ids, names }, query, header: Object.fromEntries(headers) };
+  return { path: Object.fromEntries(pathNames.map((name, index) => [name, segments[index]])), query, header: Object.fromEntries(headers) };
 }
 
-/** The input the port of the webhook gets when the handler reads `request`. */
-async function received(request: unknown): Promise<Record<string, unknown>> {
+/** The input the port of the webhook `handler` gets when the handler reads `request`. */
+async function received(handler: 'webhookReceiveThings' | 'webhookReceiveStyled', request: unknown): Promise<Record<string, unknown>> {
   const { output } = await sdk();
   const bind = (await importGeneratedModule(output, 'generated SDK')).bindThingsInbound as (port: Record<string, (input: unknown) => Promise<unknown>>) => Record<string, Handler>;
   const inputs: Record<string, unknown>[] = [];
-  const handlers = bind({ webhookReceiveThings: async (input) => { inputs.push(input as Record<string, unknown>); return { matched: 'status', status: 204, contentType: null, body: undefined, headers: {} }; } });
-  await handlers.webhookReceiveThings!(request);
+  const answer = async (input: unknown) => { inputs.push(input as Record<string, unknown>); return { matched: 'status', status: 204, contentType: null, body: undefined, headers: {} }; };
+  await bind({ webhookReceiveThings: answer, webhookReceiveStyled: answer })[handler]!(request);
   return inputs[0]!;
 }
 
@@ -68,8 +81,28 @@ for (const [name, input, location, field, expected] of [
 ] as const) {
   test(`the inbound handler reads what the client wrote: ${name}`, async () => {
     // protects: T-741 R-80 an inbound parameter decodes as its style says, as the golem client writes it
-    const request = await sentRequest(input);
-    const port = await received(request) as Record<string, Record<string, unknown>>;
+    const request = await sentRequest('searchThings', ['ids', 'names'], input);
+    const port = await received('webhookReceiveThings', request) as Record<string, Record<string, unknown>>;
     assert.deepEqual(port[location]![field], expected);
+  });
+}
+
+for (const [name, field, value] of [
+  ['integers in a label path with explode', 'labelInts', [1, 2]],
+  ['integers in a label path without explode', 'labelIntsJoined', [1, 2]],
+  ['strings in a label path with explode', 'labelWords', ['a', 'b']],
+  ['strings in a label path without explode', 'labelWordsJoined', ['a', 'b']],
+  ['integers in a matrix path with explode', 'matrixInts', [1, 2]],
+  ['integers in a matrix path without explode', 'matrixIntsJoined', [1, 2]],
+  ['strings in a matrix path with explode', 'matrixWords', ['a', 'b']],
+  ['strings in a matrix path without explode', 'matrixWordsJoined', ['a', 'b']],
+  ['an integer in a label path', 'labelOne', 5],
+  ['a string in a matrix path', 'matrixOne', 'abc'],
+] as const) {
+  test(`the inbound handler reads a path parameter in its style: ${name}`, async () => {
+    // protects: T-741 R-80 label and matrix path text reads back to the value the golem client wrote
+    const request = await sentRequest('searchStyled', STYLES.map(([parameter]) => parameter), { path: { ...STYLED_PATH, [field]: value } });
+    const port = await received('webhookReceiveStyled', { path: request.path }) as { path: Record<string, unknown> };
+    assert.deepEqual(port.path[field], value);
   });
 }

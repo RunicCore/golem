@@ -80,6 +80,8 @@ export interface QueryFieldShape {
   readonly item?: QueryFieldShape;
   /** The character that separates the items in the text of an array field (the style of its OpenAPI parameter); absent when each item is a value of its own. */
   readonly split?: ',' | ' ' | '|';
+  /** The label or matrix style of a path parameter: its text carries a leading '.' or ';name=' that the decode reads off first. */
+  readonly pathStyle?: { readonly style: 'label' | 'matrix'; readonly explode: boolean; readonly name: string };
 }
 
 /** The fields of a model that a query string decodes, by name. */

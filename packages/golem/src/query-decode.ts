@@ -37,8 +37,29 @@ function splitItems(value: unknown, separator: string): unknown[] {
   return value === '' ? [] : value.split(separator);
 }
 
+/**
+ * The text of a path parameter in label (`.1.2`, `.1,2`) or matrix (`;id=1;id=2`, `;id=1,2`) style without its prefixes, as the items of an array field or as the one value;
+ * undefined when the text does not have the style, so the validator reports it.
+ */
+function readPathStyle(text: string, { style, explode, name }: NonNullable<QueryFieldShape['pathStyle']>, array: boolean): string | string[] | undefined {
+  if (style === 'label') {
+    if (!text.startsWith('.')) return undefined;
+    const rest = text.slice(1);
+    return array ? (rest === '' ? [] : rest.split(explode ? '.' : ',')) : rest;
+  }
+  const prefix = `;${name}=`;
+  if (!array) return text.startsWith(prefix) ? text.slice(prefix.length) : undefined;
+  if (!explode) return text.startsWith(prefix) ? text.slice(prefix.length).split(',') : undefined;
+  const entries = text.split(';').slice(1);
+  return text.startsWith(';') && entries.every((entry) => entry.startsWith(`${name}=`)) ? entries.map((entry) => entry.slice(name.length + 1)) : undefined;
+}
+
 /** The field value decoded to what `shape` declares; text that does not fit stays as it is. */
 export function decodeQueryField(value: unknown, shape: QueryFieldShape): unknown {
+  if (shape.pathStyle !== undefined && typeof value === 'string') {
+    const content = readPathStyle(value, shape.pathStyle, shape.item !== undefined);
+    return content === undefined ? value : decodeQueryField(content, { ...shape, pathStyle: undefined });
+  }
   if (shape.split !== undefined && shape.item && (typeof value === 'string' || Array.isArray(value))) {
     return decodeQueryItems((Array.isArray(value) ? value : [value]).flatMap((entry) => splitItems(entry, shape.split!)), shape.item);
   }
