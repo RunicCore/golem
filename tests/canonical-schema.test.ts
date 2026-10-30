@@ -236,7 +236,7 @@ test('wire schemas erase type-only scalar brands while retaining constraints', a
     ],
     constraints: [{ kind: 'minLength', value: 2 }],
   }, { representation: 'wire' });
-  assert.deepEqual(schema, { allOf: [{ type: 'string' }, { minLength: 2 }] });
+  assert.deepEqual(schema, { type: 'string', minLength: 2 });
   const validate = await validator(schema);
   assertAccepts(validate, 'ok');
   assertRejects(validate, 'x');

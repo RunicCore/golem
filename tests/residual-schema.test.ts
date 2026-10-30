@@ -13,7 +13,7 @@ const FINITE_TIME = {
   specifier: '@exprtlabs/golem/internal/validation-runtime',
 };
 const DATE_INSTANCE = { [MODEL_CLASS_KEYWORD]: { name: 'Date', path: ['Date'], valid: FINITE_TIME } };
-const DATE_TEXT = { allOf: [{ type: 'string' }, { format: 'date-time' }] };
+const DATE_TEXT = { type: 'string', format: 'date-time' };
 const withRule = (d: object, id = 'src/rules.ts:1:2') => ({ ...d, validations: [id] });
 const hex = { kind: 'number', serde: { wireDescriptor: { kind: 'string', constraints: [{ kind: 'pattern', value: '^[0-9a-f]+$' }] } }, constraints: [{ kind: 'minimum', value: 0 }] };
 const obj = (properties: Record<string, object>, extra: object = {}) => ({ kind: 'object', properties, required: Object.keys(properties), additionalProperties: false, ...extra });
@@ -38,8 +38,8 @@ test('dates: model-only checks the Date, wire-only checks the ISO string', () =>
 });
 
 test('TSerde: model-only is the decoded value schema, wire-only the decoder parameter schema', () => {
-  assert.deepEqual(schemaForDescriptor(obj({ code: hex }), opts('model-only')), { properties: { code: { allOf: [{ type: 'number' }, { minimum: 0 }] } } });
-  assert.deepEqual(schemaForDescriptor(obj({ code: hex }), opts('wire-only')), { properties: { code: { allOf: [{ type: 'string' }, { pattern: '^[0-9a-f]+$' }] } } });
+  assert.deepEqual(schemaForDescriptor(obj({ code: hex }), opts('model-only')), { properties: { code: { type: 'number', minimum: 0 } } });
+  assert.deepEqual(schemaForDescriptor(obj({ code: hex }), opts('wire-only')), { properties: { code: { type: 'string', pattern: '^[0-9a-f]+$' } } });
 });
 
 test('residual objects carry no required list and no exactness; arrays recurse', () => {

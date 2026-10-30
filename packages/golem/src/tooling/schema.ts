@@ -860,6 +860,7 @@ const schemaValuedKeywords = new Set([
   'unevaluatedItems',
 ]);
 
+const scalarTypes = new Set(['string', 'number', 'integer', 'boolean', 'null']);
 const lowerBoundKeywords = new Set(['minItems', 'minProperties', 'minContains']);
 const upperBoundKeywords = new Set(['maxItems', 'maxProperties', 'maxContains']);
 
@@ -876,13 +877,16 @@ function mergeSchemaValues(left: unknown, right: unknown): unknown {
  * validation context.  `additionalProperties` and `unevaluatedProperties`
  * are contextual: moving either keyword into a separate `allOf` branch would
  * make it lose the sibling `properties` annotations and reject valid fields.
+ * A scalar base (`string`, `number`, `integer`, `boolean`, `null`) takes tag
+ * keywords flat, as one schema, unless a keyword has two different values.
  */
 function mergeContextualSchema(
   base: Readonly<Record<string, unknown>>,
   constraints: Readonly<Record<string, unknown>>,
 ): JsonSchema | undefined {
   const baseType = base.type;
-  if (baseType !== 'object' && baseType !== 'array') return undefined;
+  const structural = baseType === 'object' || baseType === 'array';
+  if (!structural && !(typeof baseType === 'string' && scalarTypes.has(baseType))) return undefined;
   if (Object.hasOwn(constraints, 'allOf')) return undefined;
   const result: Record<string, unknown> = { ...base };
   for (const [keyword, value] of Object.entries(constraints)) {
@@ -892,7 +896,7 @@ function mergeContextualSchema(
       continue;
     }
     if (canonicalSchemaKey(existing) === canonicalSchemaKey(value)) continue;
-    if (keyword === 'type') return undefined;
+    if (keyword === 'type' || !structural) return undefined;
     if (lowerBoundKeywords.has(keyword)
       && typeof existing === 'number' && typeof value === 'number') {
       result[keyword] = Math.max(existing, value);

@@ -84,7 +84,7 @@ test('a shared IObject alias in a controller signature is a model of the app: it
   assert.match(id, /^TCustomer_[0-9a-f]{8}$/);
   const document = readJson(app, 'generated/api.json');
   assert.deepEqual(document.paths['/customers'].post.requestBody.content['application/json'].schema, { $ref: '#/components/schemas/TCustomer' });
-  assert.deepEqual(document.components.schemas.TCustomer, { type: 'object', properties: { name: { allOf: [{ type: 'string' }, { minLength: 3 }] } }, required: ['name'], additionalProperties: false });
+  assert.deepEqual(document.components.schemas.TCustomer, { type: 'object', properties: { name: { type: 'string', minLength: 3 } }, required: ['name'], additionalProperties: false });
   assert.ok(readText(app, 'src/generated/operation-codecs.ts').includes(JSON.stringify(id)), 'the operation codecs of the controllers job hold the id of the app');
   const code = rewrittenController(app);
   assert.ok(code.includes(`@__golem_nestModelCodec(${JSON.stringify(id)}) input: TCustomer`), code);

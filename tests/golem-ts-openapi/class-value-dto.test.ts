@@ -32,7 +32,7 @@ const TSCONFIG = {
   include: ['src/**/*.ts'],
 };
 
-interface Schema { readonly type?: string; readonly format?: string; readonly required?: readonly string[]; readonly properties?: Readonly<Record<string, Schema>>; readonly items?: Schema; readonly allOf?: readonly Schema[]; readonly $ref?: string }
+interface Schema { readonly type?: string; readonly format?: string; readonly required?: readonly string[]; readonly properties?: Readonly<Record<string, Schema>>; readonly items?: Schema; readonly $ref?: string }
 
 test('a controller DTO with a class-valued TSerde field and Temporal fields documents their wire form', async t => {
   const root = createControllerFixture(t, {
@@ -50,12 +50,12 @@ test('a controller DTO with a class-valued TSerde field and Temporal fields docu
   assert.deepEqual(order.required, ['placedAt', 'price', 'prices']);
   assert.deepEqual(order.properties?.price, { type: 'string' }, 'a class value is documented by its codec wire type');
   assert.deepEqual(order.properties?.prices, { type: 'array', items: { type: 'string' } });
-  assert.deepEqual(order.properties?.placedAt?.allOf, [{ type: 'string' }, { format: 'date-time' }]);
-  assert.deepEqual(order.properties?.shipsOn?.allOf, [{ type: 'string' }, { format: 'date' }]);
+  assert.deepEqual(order.properties?.placedAt, { type: 'string', format: 'date-time' });
+  assert.deepEqual(order.properties?.shipsOn, { type: 'string', format: 'date' });
 });
 
-test('a plain global Temporal field documents the format of its class', async t => {
-  // protects: R-89 F-163 a plain Temporal.Instant field carries format date-time in OpenAPI, as the TemporalInstant tag does
+test('a plain global Date or Temporal field is one flat schema with the format of its class', async t => {
+  // protects: T-760 F-163 a Date, Temporal.Instant or Temporal.PlainDate field is one flat {type, format} schema, never allOf
   const root = createControllerFixture(t, {
     prefix: 'golem-ts-openapi-plain-temporal-',
     packageName: 'golem-ts-openapi-plain-temporal-fixture',
@@ -63,7 +63,7 @@ test('a plain global Temporal field documents the format of its class', async t 
     source: `import { Body, Controller, Post } from '@nestjs/common';
 import type { IModel } from '@exprtlabs/golem/model';
 
-export type TEvent = IModel<{ at: Temporal.Instant; day: Temporal.PlainDate }>;
+export type TEvent = IModel<{ at: Temporal.Instant; day: Temporal.PlainDate; made: Date }>;
 
 @Controller('events')
 export class EventsController {
@@ -75,6 +75,7 @@ export class EventsController {
   });
   const result = await generate({ root, output: path.join(root, 'openapi.json'), openapiVersion: '3.2.0', info: { title: 'Events', version: '1' }, profile: { mobx: false, validation: false } });
   const event = (JSON.parse(result.artifacts[0]!.content) as { components: { schemas: Record<string, Schema> } }).components.schemas.TEvent;
-  assert.deepEqual(event?.properties?.at?.allOf, [{ type: 'string' }, { format: 'date-time' }]);
-  assert.deepEqual(event?.properties?.day?.allOf, [{ type: 'string' }, { format: 'date' }]);
+  assert.deepEqual(event?.properties?.at, { type: 'string', format: 'date-time' });
+  assert.deepEqual(event?.properties?.day, { type: 'string', format: 'date' });
+  assert.deepEqual(event?.properties?.made, { type: 'string', format: 'date-time' });
 });
