@@ -956,7 +956,7 @@ A schema that carries these keywords does not stop an SDK. The SDK client checks
 
 ### OPENAPI_PARAMETER_STYLE_NOT_ALLOWED
 
-**Parameter style that its place does not have.** A parameter has a `style` that OpenAPI does not allow in its place. A path parameter has `matrix`, `label` or `simple`. A query parameter has `form`, `spaceDelimited`, `pipeDelimited` or `deepObject`. A header parameter has `simple`. A cookie parameter has `form` or `cookie`. The client cannot write such a parameter. This is an error: generation writes nothing.
+**Parameter style that its place does not have.** A parameter has a `style` that OpenAPI does not allow in its place. A path parameter has `matrix`, `label` or `simple`. A query parameter has `form`, `spaceDelimited`, `pipeDelimited` or `deepObject`. A header parameter has `simple`. A cookie parameter has `form` or `cookie`. The client cannot write such a parameter. The check covers the parameters of webhooks and callbacks too. This is an error: generation writes nothing.
 
 **Fix:** Use a style that OpenAPI allows for the place of the parameter, or leave the style out.
 

@@ -38,8 +38,9 @@ The client converts what it carries, in both [SDK modes](/reference/config#sdk-m
 
 - request and response bodies and stream items,
 - `path`, `query`, `header` and `cookie` parameters, including `$ref` `deepObject` and `querystring` parameters,
-- declared response headers,
-- the payloads of webhooks and callbacks.
+- declared response headers.
+
+The payload of a webhook or a callback is a type of the SDK. The SDK has no handler for it. An app model over the type converts the payload.
 
 A `date` or `date-time` value becomes a `Date`, or a `Temporal` value with `dates: temporal`. The checks run at the [`validate`](/guide/client-usage#lower-the-checks) level of the call. Conversion runs at every level.
 
