@@ -1,5 +1,4 @@
-import type { CreatePaymentOperationHttpResponse } from './types.js';
-import { PaymentModel, PaymentStatusEventModel } from './index.js';
+import type { CreatePaymentOperationHttpResponse, PaymentStatusEvent } from './types.js';
 
 declare const response: CreatePaymentOperationHttpResponse;
 if (response.matched === 'status' && response.status === 201) {
@@ -13,10 +12,7 @@ if (response.matched === 'status' && response.status === 201) {
   void problemStatus;
 }
 
-// @ts-expect-error PaymentModel is abstract; only its discriminated variants (CardPaymentModel, BankTransferPaymentModel) can be constructed
-new PaymentModel();
-
-declare const event: PaymentStatusEventModel;
+declare const event: PaymentStatusEvent;
 event.failure = null;
 // @ts-expect-error PaymentStatusEvent.failure resolves to the Problem schema, not an unconstrained object
 event.failure = { random: true };

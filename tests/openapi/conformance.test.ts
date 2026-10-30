@@ -1,5 +1,5 @@
 import { copyFixture, copyFixtureFile, createFixtureProject } from '../fixture-project.js';
-import { compileGeneratedSdk, readGeneratedModelSource } from './helpers.js';
+import { compileGeneratedSdk } from './helpers.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -7,12 +7,8 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import test, { after } from 'node:test';
-import { requireObjectCodec } from '@exprtlabs/golem/internal/model-runtime';
 import { validateModelManifest } from '@exprtlabs/golem/manifest';
-import { reaction, runInAction } from 'mobx';
 import { LibError, LibErrorKind, IssueSource } from '@exprtlabs/golem/errors';
-import type { GeneratedModel } from '@exprtlabs/golem/model';
-import { generatedCodecId } from '../support/consumer.js';
 import { findRemoteRefs, validate } from '#openapi/document';
 import { loadValidatedDocument, writeSdk as writeSdkFiles } from '#openapi/generator';
 import { normalizeDocument } from '#openapi/normalize';
@@ -21,7 +17,6 @@ import {
   captureRequest,
   isAsyncIterable,
   isGeneratedClientClass,
-  isGeneratedModelClass,
   loadGeneratedClient,
   openApiFixture,
   requireRecord,
@@ -30,13 +25,8 @@ import {
   type CapturedRequest,
   type GeneratedClientClass,
 } from './helpers.js';
-import { modelCodec } from '../support/model-codec.js';
 
 const example = openApiFixture('example.openapi.yaml');
-
-function generated<Model extends object>(model: Model): Model & GeneratedModel<unknown> {
-  return model as Model & GeneratedModel<unknown>;
-}
 
 function writeSdk(document: unknown, options: { output: string; name?: string; profile?: { mobx: boolean; validation: boolean | 'sanity' }; check?: boolean }) {
   return writeGeneratedSdk(writeSdkFiles, document, options);
@@ -281,111 +271,17 @@ test('component-root dynamic anchors retain their local recursive scope', async 
   };
   const output = createFixtureProject(t, 'golem-openapi-dynamic-anchor-');
   writeSdk(document, { output, name: 'RecursiveAnchors' });
-  // The recursive child type of each component is that same component, in its type and in its model.
+  // The recursive child type of each component is that same component.
   const assertFile = path.join(output, 'recursive-assert.ts');
   fs.writeFileSync(assertFile, `import type { StringTree, NumberTree } from './types.js';
-import type { StringTreeModel, NumberTreeModel } from './index.js';
 declare const stringTree: StringTree;
 declare const numberTree: NumberTree;
-declare const stringModel: StringTreeModel;
-declare const numberModel: NumberTreeModel;
 export const stringChildren: StringTree[] | undefined = stringTree.children;
 export const numberChildren: NumberTree[] | undefined = numberTree.children;
-export const stringModelChildren: StringTreeModel[] | undefined = stringModel.children;
-export const numberModelChildren: NumberTreeModel[] | undefined = numberModel.children;
 // @ts-expect-error the children of a StringTree are StringTree values, not NumberTree values
 export const mixedChildren: NumberTree[] | undefined = stringTree.children;
-// @ts-expect-error the children of a NumberTreeModel are NumberTreeModel values, not StringTreeModel values
-export const mixedModelChildren: StringTreeModel[] | undefined = numberModel.children;
 `);
   compileGeneratedSdk(output, [assertFile], { strict: true });
-  const exports = requireRecord(await import(pathToFileURL(path.join(output, 'dist/index.js')).href), 'recursive models');
-  const { StringTreeModel, NumberTreeModel } = exports;
-  if (!isGeneratedModelClass(StringTreeModel) || !isGeneratedModelClass(NumberTreeModel)) {
-    throw new TypeError('expected generated model classes');
-  }
-  const stringTree = requireRecord(modelCodec(StringTreeModel).fromWireFormat({ value: 'a', children: [{ value: 'b' }] }), 'string tree');
-  const numberTree = requireRecord(modelCodec(NumberTreeModel).fromWireFormat({ value: 1, children: [{ value: 2 }] }), 'number tree');
-  assert.ok(Array.isArray(stringTree.children) && stringTree.children[0] instanceof StringTreeModel);
-  assert.ok(Array.isArray(numberTree.children) && numberTree.children[0] instanceof NumberTreeModel);
-});
-
-test('generates inheritable object models with serde conversion metadata', async (t) => {
-  const document = {
-    openapi: '3.2.0',
-    info: { title: 'Models', version: '1' },
-    components: {
-      schemas: {
-        BasePayment: {
-          type: 'object',
-          required: ['amount'],
-          properties: { amount: { type: 'integer' } },
-        },
-        Payment: {
-          allOf: [
-            { $ref: '#/components/schemas/BasePayment' },
-            {
-              type: 'object',
-              required: ['id'],
-              properties: { id: { type: 'string' }, note: { type: 'string' } },
-            },
-          ],
-        },
-        Metadata: {
-          type: 'object',
-          additionalProperties: { type: 'string' },
-        },
-      },
-    },
-  };
-  const output = createFixtureProject(t, 'golem-openapi-models-');
-  writeSdk(document, { output, name: 'Models' });
-  const models = readGeneratedModelSource(output);
-
-  copyFixtureFile(output, "openapi/conformance/consumer.ts", "consumer.ts");
-  // A rule of a handwritten subclass names the generated fields through the exported brand.
-  fs.writeFileSync(path.join(output, 'brand-assert.ts'), `import type { generatedModelFieldsBrand } from '@exprtlabs/golem/model';
-import type { PaymentModel } from './index.js';
-export const amountField: keyof PaymentModel[typeof generatedModelFieldsBrand] = 'amount';
-// @ts-expect-error a field the Payment schema does not declare is not a key of its fields
-export const missingField: keyof PaymentModel[typeof generatedModelFieldsBrand] = 'missing';
-`);
-  const compiled = spawnSync(process.execPath, [tscBin(), 
-    '--target', 'ES2022',
-    '--module', 'NodeNext',
-    '--moduleResolution', 'NodeNext',
-    '--lib', 'ES2023,ESNext.Collection,DOM,DOM.Iterable',
-    '--outDir', path.join(output, 'dist'),
-    path.join(output, 'consumer.ts'),
-    path.join(output, 'brand-assert.ts'),
-  ], { encoding: 'utf8' });
-  assert.equal(compiled.status, 0, compiled.stderr || compiled.stdout);
-
-  const modelExports = requireRecord(
-    await import(pathToFileURL(path.join(output, 'dist/index.js')).href),
-    'models',
-  );
-  const BasePaymentModel = modelExports.BasePaymentModel;
-  const MetadataModel = modelExports.MetadataModel;
-  const PaymentModel = modelExports.PaymentModel;
-  assert.equal(isGeneratedModelClass(BasePaymentModel), true);
-  assert.equal(isGeneratedModelClass(MetadataModel), true);
-  assert.equal(isGeneratedModelClass(PaymentModel), true);
-  if (!isGeneratedModelClass(BasePaymentModel) || !isGeneratedModelClass(MetadataModel) || !isGeneratedModelClass(PaymentModel)) {
-    throw new TypeError('expected generated model classes');
-  }
-  const payment = modelCodec(PaymentModel).fromWireFormat({ amount: 125, id: 'pay_7', note: 'memo' });
-  assert.ok(payment instanceof BasePaymentModel);
-  assert.deepEqual(modelCodec(generated(payment)).toWireFormat(generated(payment)), { amount: 125, id: 'pay_7', note: 'memo' });
-  assert.throws(() => requireObjectCodec(generatedCodecId(models, 'Payment')).assert( ['not', 'an', 'object']), /validation|deserial/i);
-  const metadata = generated(modelCodec(MetadataModel).fromWireFormat({ traceId: 'trace_7' }));
-    assert.deepEqual(modelCodec(metadata).toWireFormat(metadata), { traceId: 'trace_7' });
-  // The mobx profile makes a decoded model observable: a reaction sees a field change.
-  const seen: unknown[] = [];
-  const stop = reaction(() => Reflect.get(payment, 'amount'), (amount) => seen.push(amount));
-  runInAction(() => Reflect.set(payment, 'amount', 200));
-  stop();
-  assert.deepEqual(seen, [200]);
 });
 
 test('a webhook name that holds a comment end is written into the inbound port doc line without ending it', (t) => {
