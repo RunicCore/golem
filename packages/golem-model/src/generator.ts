@@ -244,6 +244,23 @@ function canonicalSourceKey(filename: string): string {
 }
 
 /**
+ * The planes that the nodes of an SDK graph publish, as the closure entries a model holding an SDK type reads: such a model is not
+ * `sameSchema` when the SDK type has a wire form of its own, and checks the residual planes the SDK type publishes.
+ */
+function sdkNodeClosure(graph: SchemaGraph): readonly CodecSchemaClosureEntry[] {
+  return [...graph.nodes.values()]
+    .filter((node) => node.kind !== 'reference' && !node.id.startsWith('__scalar_'))
+    .map((node) => ({
+      codecId: node.codecId,
+      modelSchema: node.modelJsonSchema,
+      aliases: [node.name, node.id],
+      ...(node.sameSchema ? {} : { wireSchema: node.jsonSchema }),
+      ...(node.modelOnlyJsonSchema === undefined ? {} : { modelOnlySchema: node.modelOnlyJsonSchema }),
+      ...(node.wireOnlyJsonSchema === undefined ? {} : { wireOnlySchema: node.wireOnlyJsonSchema }),
+    }));
+}
+
+/**
  * Intern each companion's schema graph. Codec ids are fixed per group of
  * sources that reference each other, so a model has one id in its own
  * companion and in every companion that references it.
@@ -551,10 +568,13 @@ export function generate(context: GolemModelContext): GolemModelResult {
       job,
     ))
     .filter((graph): graph is NonNullable<typeof graph> => graph !== undefined);
-  const graphSchemaPairs = internJobSchemaGraphs(graphs, normalized.profile.validation, manifestIndex.validationSchemaClosure);
   // An SDK in golem mode writes no validators: its types are nodes of this job's graphs, compiled with the models in one set.
   const sdks = golemSdks(manifestIndex, normalized);
   const sdkGraphs = sdks.map((sdk) => sdkSchemaGraph(sdk.manifest, normalized.profile.validation));
+  const graphSchemaPairs = internJobSchemaGraphs(graphs, normalized.profile.validation, [
+    ...manifestIndex.validationSchemaClosure,
+    ...sdkGraphs.flatMap(({ graph }) => sdkNodeClosure(graph)),
+  ]);
   const schemaGraphs = [...graphSchemaPairs.map(({ schemaGraph }) => schemaGraph), ...sdkGraphs.map(({ graph }) => graph)];
   const schemaEntries = deduplicateTagSchemas(
     graphs.flatMap((graph) => graph.schemas)

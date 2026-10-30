@@ -793,10 +793,18 @@ export function createSchemaGraph(
       const publishesWire = (node: SchemaNode): boolean => [
         node.codecId, node.name, node.id, ...(node.descriptor.kind === 'generated-model' ? [node.descriptor.id] : []),
       ].some((alias) => externalWireIds.has(alias));
+      // A descriptor that holds an SDK schema inline checks it through the SDK's validator, so it reads that schema's wire form too.
+      const holdsPublishedWire = (value: unknown): boolean => {
+        if (Array.isArray(value)) return value.some(holdsPublishedWire);
+        if (value === null || typeof value !== 'object') return false;
+        const held = (value as { readonly sdkNode?: unknown }).sdkNode;
+        return (typeof held === 'string' && externalWireIds.has(held)) || Object.values(value).some(holdsPublishedWire);
+      };
       const reachesWire = (node: SchemaNode, seen: Set<string>): boolean => {
         if (node.validation === false || seen.has(node.id)) return false;
         seen.add(node.id);
         if (node.kind === 'reference' && publishesWire(node)) return true;
+        if (holdsPublishedWire(node.descriptor)) return true;
         return node.edges.some((edge) => {
           const target = nodes.get(edge);
           return target !== undefined && reachesWire(target, seen);

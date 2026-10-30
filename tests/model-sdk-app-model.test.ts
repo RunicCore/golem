@@ -155,6 +155,11 @@ test('parse<T> reads an app model over an SDK model of golem mode, with the limi
   assert.throws(() => readMoney('{"amount":-1,"currency":"EUR"}'), /Model validation failed/);
   assert.throws(() => readMoney('{"amount":5,"currency":"euro"}'), /Model validation failed/);
   assert.deepEqual(readBasket('{"price":{"amount":1,"currency":"USD"},"label":"x"}'), { price: { amount: 1, currency: 'USD' }, label: 'x' });
+  // An SDK type as a field keeps the SDK limits too, and is checked by the SDK's validator of it.
+  assert.throws(() => readBasket('{"price":{"amount":-1,"currency":"USD"},"label":"x"}'), /Model validation failed/);
+  const validators = fs.readFileSync(path.join(project.root, 'src/generated/models/models.validators.generated.ts'), 'utf8');
+  const holdingMinimum = validators.split(/^function /m).filter(body => /^f\d+_\w+_[0-9a-f]{8}\(/.test(body) && body.includes('< 0)')).map(body => body.replace(/^f\d+_(\w+?)_[0-9a-f]{8}\([^]*$/, '$1'));
+  assert.deepEqual(holdingMinimum, ['Money']);
 });
 
 test('a standalone model over an SDK type with Temporal dates derives from the plain type and converts the dates', async () => {
@@ -184,4 +189,31 @@ export const write = (value: ChargeRecord) => stringify<ChargeRecord>(value);
   const charge = read('{"id":"c1","amount":2,"at":"2025-01-02T03:04:05Z"}');
   assert.deepEqual([charge instanceof ChargeRecord, charge.at instanceof Temporal.Instant], [true, true]);
   assert.equal(write(charge), '{"id":"c1","amount":2,"at":"2025-01-02T03:04:05Z"}');
+});
+
+test('a golem-mode model over an SDK type that holds another SDK type checks the nested type with the SDK validator', async () => {
+  // protects: T-700 E-52 R-84 an SDK type reached inside an SDK type keeps its limits through the app model, and no second validator of it is written
+  const nested: GolemModeSdkSetup = {
+    folder: 'sdk/charges',
+    name: 'Charges',
+    document: {
+      openapi: '3.1.0',
+      info: { title: 'Charges', version: '1' },
+      paths: { '/charges': { post: { operationId: 'createCharge', requestBody: { required: true, content: json(ref('Charge')) }, responses: { 200: { description: 'ok', content: json(ref('Charge')) } } } } },
+      components: { schemas: {
+        Money: { type: 'object', additionalProperties: false, required: ['value'], properties: { value: { type: 'number', minimum: 0 }, at: { type: 'string', format: 'date-time' } } },
+        Charge: { type: 'object', required: ['id', 'price'], properties: { id: { type: 'string', maxLength: 5 }, price: ref('Money') } },
+      } },
+    },
+  };
+  const project = await loadGolemModeProject(scope, 'sdk-app-model-nested-', [nested], true, { 'src/charge.model.ts': CHARGE_MODEL });
+  const validators = fs.readFileSync(path.join(project.root, 'src/generated/models/models.validators.generated.ts'), 'utf8');
+  const checks = [...validators.matchAll(/^function f\d+_(\w+?)_[0-9a-f]{8}(?:_wire|_model_only|_wire_only)?\(/gm)].map(match => match[1]);
+  assert.deepEqual(checks, ['Charge', 'Charge', 'Charge', 'Charge', 'Money', 'Money', 'Money', 'Money']);
+
+  const generated = await importBuilt(project.root, 'src/charge.model.generated.js');
+  const charge = generated.fromWireFormatTChargeRecord({ id: 'c1', price: { value: 2, at: '2025-01-02T03:04:05Z' } });
+  assert.deepEqual(charge.price, { value: 2, at: new Date('2025-01-02T03:04:05Z') });
+  assert.throws(() => generated.fromWireFormatTChargeRecord({ id: 'c1', price: { value: -1 } }), /Model validation failed/);
+  assert.throws(() => generated.toWireFormatTChargeRecord({ id: 'c1', price: { value: -1 } }), /Model validation failed/);
 });

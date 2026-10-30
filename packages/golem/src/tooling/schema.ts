@@ -307,6 +307,11 @@ function modelClassId(variant: unknown): string | undefined {
   return generatedModelShortName(variant.id);
 }
 
+/** A descriptor that holds a golem-mode SDK schema inline checks as a reference to that schema's codec. */
+function sdkNodeReference(value: Record<string, unknown>): Record<string, unknown> {
+  return typeof value.sdkNode === 'string' ? { kind: 'generated-model', id: value.sdkNode } : value;
+}
+
 /** The codec short name a generated-model id resolves to. */
 export function generatedModelShortName(id: string): string {
   const segment = id.includes('/') ? id.slice(id.lastIndexOf('/') + 1) : id;
@@ -362,8 +367,9 @@ function ownValidationBindings(value: Record<string, unknown>): string[] | undef
 }
 
 /** What is left to check after the full check of the other plane; `true` when nothing is. */
-function residualSchema(value: unknown, plane: ResidualPlane, state: SchemaAssemblyState, options: AssemblyOptions): JsonSchema {
-  if (!isRecord(value)) return true;
+function residualSchema(given: unknown, plane: ResidualPlane, state: SchemaAssemblyState, options: AssemblyOptions): JsonSchema {
+  if (!isRecord(given)) return true;
+  const value = sdkNodeReference(given);
   const full = (representation: 'model' | 'wire'): JsonSchema =>
     descriptorSchema(value, state, { ...options, representation, keepPredicates: undefined });
   const serde = isRecord(value.serde) ? value.serde : undefined;
@@ -454,12 +460,13 @@ function residualSchema(value: unknown, plane: ResidualPlane, state: SchemaAssem
 }
 
 function descriptorSchema(
-  value: unknown,
+  given: unknown,
   state: SchemaAssemblyState,
   options: AssemblyOptions,
 ): JsonSchema {
-  if (typeof value === 'boolean') return value;
-  if (!isRecord(value)) throw new TypeError('A schema descriptor must be an object or boolean.');
+  if (typeof given === 'boolean') return given;
+  if (!isRecord(given)) throw new TypeError('A schema descriptor must be an object or boolean.');
+  const value = sdkNodeReference(given);
   if (state.active.has(value)) throw new TypeError('Cyclic model schema metadata.');
   state.active.add(value);
   try {
