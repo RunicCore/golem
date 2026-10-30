@@ -3,18 +3,15 @@ import { writeFileSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
-import { getValidator } from '@exprtlabs/golem/validation';
 import { createFixtureProject } from '../fixture-project.js';
 import {
   compileGeneratedSdk,
   generateMaterializedSdk,
-  importGeneratedModule,
-  isGeneratedModelClass,
   requireRecord,
-  type GeneratedModelClass,
+  sdkBodyCodec,
+  withRootOperations,
   type OpenApiGenerationProfile,
 } from './helpers.js';
-import { modelCodec } from '../support/model-codec.js';
 
 interface PetShape {
   /** Union keyword carrying the discriminator. */
@@ -54,7 +51,7 @@ function petDocument(
   });
   const toys: Record<string, unknown> = shape.nestedToy ? {
     [`ToyBase${suffix}`]: { type: 'object', required: ['shape'], properties: { shape: { type: 'string' } } },
-    [`ball${suffix}`]: { allOf: [ref('ToyBase'), { type: 'object', properties: { bounce: { type: 'boolean' } } }] },
+    [`ball${suffix}`]: { allOf: [ref('ToyBase'), { type: 'object', properties: { bounce: { type: 'boolean' }, made: { type: 'string', format: 'date-time' } } }] },
     [`rope${suffix}`]: { allOf: [ref('ToyBase'), { type: 'object', properties: { length: { type: 'number' } } }] },
     [`Toy${suffix}`]: {
       oneOf: [ref('ball'), ref('rope')],
@@ -72,9 +69,10 @@ function petDocument(
           : { type: 'object', ...(shape.optionalTag ? {} : { required: ['kind'] }), properties: { kind: { type: 'string' } } },
         [`cat${suffix}`]: variant({
           name: { type: 'string' },
+          born: { type: 'string', format: 'date-time' },
           ...(shape.nestedToy ? { toy: ref('Toy') } : {}),
         }, ['name'], catTag),
-        [`dog${suffix}`]: variant({ bark: { type: 'boolean' } }, ['bark'], dogTag),
+        [`dog${suffix}`]: variant({ bark: { type: 'boolean' }, adopted: { type: 'string', format: 'date-time' } }, ['bark'], dogTag),
         [`Pet${suffix}`]: {
           [shape.keyword ?? 'oneOf']: [ref('cat'), ref('dog'), ...(shape.nullBranch ? [{ type: 'null' }] : [])],
           ...(discriminator ? { discriminator } : {}),
@@ -188,24 +186,28 @@ const profiles: readonly OpenApiGenerationProfile[] = [
   { mobx: true, validation: true },
 ];
 
-function modelClass(exports: Record<string, unknown>, name: string): GeneratedModelClass {
-  const value = exports[name];
-  if (!isGeneratedModelClass(value)) throw new TypeError(`${name} must be a generated model class`);
-  return value;
-}
+const BORN = '2024-05-06T07:08:09.000Z';
+const ADOPTED = '2025-01-02T03:04:05.000Z';
 
-function codec(exports: Record<string, unknown>, name: string): (value: unknown) => unknown {
-  const value = exports[name];
-  if (typeof value !== 'function') throw new TypeError(`${name} must be a generated codec function`);
-  return (input: unknown) => Reflect.apply(value, undefined, [input]);
-}
-
-async function compileStrictAndLoadModels(output: string, extraFiles: string[] = []): Promise<Record<string, unknown>> {
+/** Generates the pets SDK of `document` with a body reached for each root in `roots`, and returns the codec of each root. */
+async function generatePets(
+  t: Parameters<typeof createFixtureProject>[0],
+  document: Record<string, unknown>,
+  roots: readonly string[],
+  profile: OpenApiGenerationProfile,
+  extraFiles: string[] = [],
+): Promise<{ output: string; diagnostics: readonly { code: string }[]; codec: (root: string) => ReturnType<typeof sdkBodyCodec> }> {
+  const output = path.join(createFixtureProject(t, 'golem-openapi-discriminator-'), 'sdk');
+  const result = await generateMaterializedSdk(withRootOperations(document, ...roots), { output, name: 'Pets', profile });
   compileGeneratedSdk(output, extraFiles, { strict: true });
-  return importGeneratedModule(output, 'models');
+  return { output, diagnostics: result.diagnostics ?? [], codec: root => sdkBodyCodec(output, 'Pets', root) };
 }
 
-test('OAS discriminator mappings select allOf variants in model decode, encode, and the shared codec', async suite => {
+const isLibError = (error: unknown): boolean => error instanceof LibError;
+/** The per-call option that turns the checks off; a tag value only the decoder accepts (a component name) then passes. */
+const unchecked = { validate: false };
+
+test('OAS discriminator mappings select allOf variants in decode and encode', async suite => {
   for (const [caseIndex, example] of cases.entries()) {
     // Each case exercises a distinct lowering path; the second profile only re-runs the first case.
     for (const [profileIndex, profile] of (caseIndex === 0 ? profiles : profiles.slice(1)).entries()) {
@@ -213,126 +215,86 @@ test('OAS discriminator mappings select allOf variants in model decode, encode, 
         const suffix = `X${caseIndex}${profileIndex}`;
         const catTags = example.cat(suffix);
         const dogTag = example.dog(suffix);
-        const output = path.join(createFixtureProject(t, 'golem-openapi-discriminator-'), 'sdk');
-        const result = await generateMaterializedSdk(petDocument(suffix, example.discriminator(suffix), example.shape, catTags[0], dogTag), {
-          output,
-          name: 'Pets',
-          profile: { mobx: profile.mobx, validation: profile.validation },
-        });
-        assert.deepEqual((result.diagnostics ?? []).map(diagnostic => diagnostic.code), example.warnings ?? []);
-        compileGeneratedSdk(output, [], { strict: true });
+        const pets = await generatePets(
+          t,
+          petDocument(suffix, example.discriminator(suffix), example.shape, catTags[0], dogTag),
+          [`Owner${suffix}`, `Pet${suffix}`],
+          { mobx: profile.mobx, validation: profile.validation },
+        );
+        assert.deepEqual(pets.diagnostics.map(diagnostic => diagnostic.code), example.warnings ?? []);
 
-        const models = await importGeneratedModule(output, 'pet models');
-        // A union that admits null is not lowered to a model class of its own.
-        const PetModel = example.shape?.nullBranch ? undefined : modelClass(models, `Pet${suffix}Model`);
-        const CatModel = modelClass(models, `Cat${suffix}Model`);
-        const DogModel = modelClass(models, `Dog${suffix}Model`);
-        const OwnerModel = modelClass(models, `Owner${suffix}Model`);
+        // A tag selects its variant when only that variant's date field converts.
+        const toyWire = example.shape?.nestedToy ? { toy: { shape: 'round', bounce: true, made: BORN } } : {};
+        const toyValue = example.shape?.nestedToy ? { toy: { shape: 'round', bounce: true, made: new Date(BORN) } } : {};
+        const catWire = (kind: string) => ({ kind, name: 'Miso', born: BORN, ...toyWire });
+        const catValue = (kind: string) => ({ kind, name: 'Miso', born: new Date(BORN), ...toyValue });
+        const dogWire = { kind: dogTag, bark: true, adopted: ADOPTED };
+        const dogValue = { kind: dogTag, bark: true, adopted: new Date(ADOPTED) };
 
-        const toy = example.shape?.nestedToy ? { toy: { shape: 'round', bounce: true } } : {};
-        if (PetModel) {
-          for (const tag of catTags) {
-            const pet: object = modelCodec(PetModel).fromWireFormat({ kind: tag, name: 'Miso', ...toy }, { validate: false });
-            assert.ok(pet instanceof CatModel, `tag ${tag} selects cat`);
-            assert.deepEqual(modelCodec(pet).toWireFormat(pet), { kind: tag, name: 'Miso', ...toy });
-            if (example.shape?.nestedToy) {
-              const toyValue = requireRecord(pet, 'cat').toy;
-              assert.ok(toyValue instanceof modelClass(models, `Ball${suffix}Model`), 'nested union selects its variant');
-            }
-          }
-          const dog = modelCodec(PetModel).fromWireFormat({ kind: dogTag, bark: true }, { validate: false });
-          assert.ok(dog instanceof DogModel, `tag ${dogTag} selects dog`);
-          assert.deepEqual(modelCodec(dog).toWireFormat(dog), { kind: dogTag, bark: true });
+        const pet = await pets.codec(`Pet${suffix}`);
+        for (const tag of catTags) {
+          assert.deepEqual(await pet.decode(catWire(tag), unchecked), catValue(tag), `tag ${tag} selects cat`);
+          assert.deepEqual(await pet.encode(catValue(tag), unchecked), catWire(tag));
         }
+        assert.deepEqual(await pet.decode(dogWire, unchecked), dogValue, `tag ${dogTag} selects dog`);
+        assert.deepEqual(await pet.encode(dogValue, unchecked), dogWire);
+        await assert.rejects(() => pet.decode({ kind: example.unknown, name: 'Miso' }, unchecked), isLibError);
 
-        const ownerJson = {
-          pet: { kind: dogTag, bark: false },
-          pets: [...catTags.map(kind => ({ kind, name: 'Miso', ...toy })), { kind: dogTag, bark: true }],
-        };
-        const owner = requireRecord(modelCodec(OwnerModel).fromWireFormat(ownerJson, { validate: false }), 'owner');
-        assert.ok(owner.pet instanceof DogModel);
-        assert.ok(Array.isArray(owner.pets));
-        assert.deepEqual(owner.pets.map(pet => pet instanceof CatModel), [...catTags.map(() => true), false]);
-        assert.ok(owner.pets.at(-1) instanceof DogModel);
-        assert.deepEqual(modelCodec(owner).toWireFormat(owner), ownerJson);
-
-        if (PetModel) {
-          assert.throws(
-            () => modelCodec(PetModel).fromWireFormat({ kind: example.unknown, name: 'Miso' }, { validate: false }),
-            (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.Deserialization,
-          );
-        }
-        const decodeUnknownTag = () => modelCodec(OwnerModel).fromWireFormat({ pet: { kind: example.unknown, name: 'Miso' } }, { validate: false });
-        if (example.shape?.nullBranch) assert.throws(decodeUnknownTag, (error: unknown) => error instanceof LibError);
-        else assert.throws(decodeUnknownTag);
-
-        if (example.shape?.nullBranch) {
-          const nullableJson = { pet: null, pets: [{ kind: catTags[0], name: 'Miso' }, { kind: dogTag, bark: true }, null] };
-          const nullable = requireRecord(modelCodec(OwnerModel).fromWireFormat(nullableJson, { validate: false }), 'nullable owner');
-          assert.equal(nullable.pet, null);
-          assert.ok(Array.isArray(nullable.pets));
-          assert.ok(nullable.pets[0] instanceof CatModel && nullable.pets[1] instanceof DogModel);
-          assert.equal(nullable.pets[2], null);
-          assert.deepEqual(modelCodec(nullable).toWireFormat(nullable), nullableJson);
-        }
-
-        // The shared codec path (parse/stringify) dispatches on the same tags.
-        const parsed = requireRecord(codec(models, `parseOwner${suffix}`)(JSON.stringify(ownerJson)), 'parsed owner');
-        assert.ok(parsed.pet instanceof DogModel);
-        assert.ok(Array.isArray(parsed.pets));
-        assert.deepEqual(parsed.pets.map(pet => pet instanceof CatModel), [...catTags.map(() => true), false]);
-        assert.deepEqual(JSON.parse(String(codec(models, `stringifyOwner${suffix}`)(owner))), ownerJson);
+        const owner = await pets.codec(`Owner${suffix}`);
+        const ownerWire = { pet: dogWire, pets: [...catTags.map(tag => catWire(tag)), dogWire] };
+        const ownerValue = { pet: dogValue, pets: [...catTags.map(tag => catValue(tag)), dogValue] };
+        assert.deepEqual(await owner.decode(ownerWire, unchecked), ownerValue);
+        assert.deepEqual(await owner.encode(ownerValue, unchecked), ownerWire);
+        await assert.rejects(() => owner.decode({ pet: { kind: example.unknown, name: 'Miso' } }, unchecked), isLibError);
       });
     }
   }
+});
+
+test('a union that admits null decodes and encodes null beside its variants', async t => {
+  const suffix = 'Nullable';
+  const pets = await generatePets(t, petDocument(suffix, explicitMapping(suffix), { nullBranch: true }), [`Owner${suffix}`], profiles[1]);
+  const owner = await pets.codec(`Owner${suffix}`);
+  const wire = { pet: null, pets: [{ kind: 'feline', name: 'Miso', born: BORN }, { kind: 'canine', bark: true, adopted: ADOPTED }, null] };
+  const value = { pet: null, pets: [{ kind: 'feline', name: 'Miso', born: new Date(BORN) }, { kind: 'canine', bark: true, adopted: new Date(ADOPTED) }, null] };
+  assert.deepEqual(await owner.decode(wire), value);
+  assert.deepEqual(await owner.encode(value), wire);
 });
 
 test('a union variant used on its own keeps its declared tag type and any tag value', async t => {
   for (const validation of [false, true]) {
     const suffix = validation ? 'SoloV' : 'SoloN';
     const output = path.join(createFixtureProject(t, 'golem-openapi-discriminator-solo-'), 'sdk');
-    await generateMaterializedSdk(petDocument(suffix, explicitMapping(suffix)), {
-      output,
-      name: 'Pets',
-      profile: { mobx: false, validation },
-    });
+    await generateMaterializedSdk(withRootOperations(petDocument(suffix, explicitMapping(suffix)), `cat${suffix}`), { output, name: 'Pets', profile: { mobx: false, validation } });
     const consumer = path.join(output, 'standalone-cat.ts');
     writeFileSync(consumer, [
-      `import type { Cat${suffix}Init, Cat${suffix}Model } from './index.js';`,
-      `export const init: Cat${suffix}Init = { kind: 'anything', name: 'Miso' };`,
-      `export function kindOf(cat: Cat${suffix}Model): string { const kind: string = cat.kind; return kind; }`,
+      `import type { Cat${suffix} } from './types.js';`,
+      `export const init: Cat${suffix} = { kind: 'anything', name: 'Miso' };`,
+      `export function kindOf(cat: Cat${suffix}): string { const kind: string = cat.kind; return kind; }`,
       '',
     ].join('\n'));
-    const models = await compileStrictAndLoadModels(output, [consumer]);
-    const CatModel = modelClass(models, `Cat${suffix}Model`);
-    const parse = codec(models, `parseCat${suffix}`);
-    const stringify = codec(models, `stringifyCat${suffix}`);
+    compileGeneratedSdk(output, [consumer], { strict: true });
+    const cat = await sdkBodyCodec(output, 'Pets', `cat${suffix}`);
     // A tag the union never maps is still a valid standalone Cat.
-    const other = { kind: 'other', name: 'Miso' };
-    assert.deepEqual(modelCodec(CatModel).toWireFormat(modelCodec(CatModel).fromWireFormat(other, { validate: false })), other);
-    assert.deepEqual(JSON.parse(String(stringify(parse(JSON.stringify(other))))), other);
-    // A missing tag is left as is; only the base's `required` (validation) objects to it.
-    const untagged = { name: 'Miso' };
-    // toWireFormat keeps the missing key as undefined, which JSON drops; with validation on the call would reject the model.
-    assert.deepEqual(JSON.parse(JSON.stringify(modelCodec(CatModel).toWireFormat(modelCodec(CatModel).fromWireFormat(untagged, { validate: false }), { validate: false }))), untagged);
-    if (validation) {
-      // The variant's own validation schema is not narrowed to the union's tag.
-      assert.equal(await getValidator(modelCodec(CatModel).fromWireFormat(other, { validate: false })).validate(), true);
-      assert.equal(await getValidator(modelCodec(CatModel).fromWireFormat(untagged, { validate: false })).validate(), false, 'the base requires kind');
-      assert.throws(
-        () => parse(JSON.stringify(untagged)),
-        (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.Validation,
-      );
-    } else {
-      assert.deepEqual(JSON.parse(String(stringify(parse(JSON.stringify(untagged))))), untagged);
-    }
+    assert.deepEqual(await cat.decode({ kind: 'other', name: 'Miso', born: BORN }), { kind: 'other', name: 'Miso', born: new Date(BORN) });
+    assert.deepEqual(await cat.encode({ kind: 'other', name: 'Miso', born: new Date(BORN) }), { kind: 'other', name: 'Miso', born: BORN });
   }
 });
 
-test('a variant shared by two discriminated unions gets both union classes, in either declaration order', async t => {
-  // protects: T-385 a shared variant still gets each union model class
+test('a standalone variant without its tag is rejected by the base only when validation is on', async t => {
+  const untagged = { name: 'Miso' };
+  const off = await generatePets(t, petDocument('SoloOff', explicitMapping('SoloOff')), ['catSoloOff'], { mobx: false, validation: false });
+  assert.deepEqual(await (await off.codec('catSoloOff')).decode(untagged), untagged);
+  const on = await generatePets(t, petDocument('SoloOn', explicitMapping('SoloOn')), ['catSoloOn'], { mobx: false, validation: true });
+  await assert.rejects(
+    async () => (await on.codec('catSoloOn')).decode(untagged),
+    (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.Validation,
+  );
+});
+
+test('a variant shared by two discriminated unions is selected by each union through its own tags, in either declaration order', async t => {
+  // protects: T-385 a shared variant is still selected by each union that lists it
   // The lowering order does not depend on the profile, so one profile (mobx and validation on) is enough.
-  const profile = profiles[1];
   for (const order of ['union-first', 'shared-first'] as const) {
     const suffix = order === 'union-first' ? 'TwiceA' : 'TwiceB';
     const document = petDocument(suffix, explicitMapping(suffix));
@@ -345,72 +307,22 @@ test('a variant shared by two discriminated unions gets both union classes, in e
       ? { ...schemas, [`Feline${suffix}`]: feline }
       : { [`Feline${suffix}`]: feline, ...schemas };
     requireRecord(document.components, 'components').schemas = ordered;
-    const output = path.join(createFixtureProject(t, 'golem-openapi-discriminator-twice-'), 'sdk');
-    const result = await generateMaterializedSdk(document, { output, name: 'Pets', profile });
-    assert.deepEqual((result.diagnostics ?? []).map(diagnostic => diagnostic.code), []);
-    // `instanceof` on a union class narrows to its variants, the shared one included.
-    const consumer = path.join(output, 'narrow-union.ts');
-    writeFileSync(consumer, [
-      `import { Cat${suffix}Model, Dog${suffix}Model, Feline${suffix}Model, Owner${suffix}Model, Pet${suffix}Model } from './index.js';`,
-      `export function feline(value: unknown): Cat${suffix}Model | undefined { return value instanceof Feline${suffix}Model ? value : undefined; }`,
-      `export function pet(value: unknown): Cat${suffix}Model | Dog${suffix}Model | undefined { return value instanceof Pet${suffix}Model ? value : undefined; }`,
-      // A variant instance is a value of each union class that selects it, also as a field of another model.
-      `export const asPet: Pet${suffix}Model = new Cat${suffix}Model({ kind: 'feline', name: 'Miso' });`,
-      `export const asFeline: Feline${suffix}Model = new Cat${suffix}Model({ kind: 'tabby', name: 'Miso' });`,
-      `export const owner = new Owner${suffix}Model({ pet: new Cat${suffix}Model({ kind: 'feline', name: 'Miso' }) });`,
-      '',
-    ].join('\n'));
-    const models = await compileStrictAndLoadModels(output, [consumer]);
-    const CatModel = modelClass(models, `Cat${suffix}Model`);
-    const DogModel = modelClass(models, `Dog${suffix}Model`);
-    const PetModel = modelClass(models, `Pet${suffix}Model`);
-    const FelineModel = modelClass(models, `Feline${suffix}Model`);
-    // Each union class decodes its own tags to the variant models, the shared variant included.
-    const cat = modelCodec(PetModel).fromWireFormat({ kind: 'feline', name: 'Miso' }, { validate: false });
-    assert.ok(cat instanceof CatModel);
-    assert.deepEqual(modelCodec(cat).toWireFormat(cat), { kind: 'feline', name: 'Miso' });
-    assert.ok(modelCodec(PetModel).fromWireFormat({ kind: 'canine', bark: true }, { validate: false }) instanceof DogModel);
-    const tabby = modelCodec(FelineModel).fromWireFormat({ kind: 'tabby', name: 'Miso' }, { validate: false });
-    assert.ok(tabby instanceof CatModel);
-    assert.deepEqual(modelCodec(tabby).toWireFormat(tabby), { kind: 'tabby', name: 'Miso' });
-    // A variant that only this union selects still extends it; the shared one keeps its own base.
-    assert.equal(Object.getPrototypeOf(DogModel), PetModel);
-    // A union class answers instanceof for the variants it selects, and only those.
-    const dog = modelCodec(PetModel).fromWireFormat({ kind: 'canine', bark: true }, { validate: false });
-    assert.deepEqual([cat, dog, tabby].map(value => value instanceof PetModel), [true, true, true]);
-    assert.deepEqual([cat, dog, tabby].map(value => value instanceof FelineModel), [true, false, true]);
-    // A value is an instance only through a variant class: the tag alone, or a look-alike class, is not enough.
-    class Lookalike { readonly kind = 'feline'; readonly name = 'Miso'; }
-    assert.deepEqual([{ kind: 'feline', name: 'Miso' }, new Lookalike()].map(value => value instanceof PetModel), [false, false]);
-    // A handwritten subclass of a union class tests its own prototype chain, not the variants of the union.
-    class Handwritten extends (PetModel as unknown as new () => object) {}
-    assert.deepEqual([cat instanceof Handwritten, new Handwritten() instanceof Handwritten], [false, true]);
-    // A tag that another union maps is not one of this union's.
-    assert.throws(() => modelCodec(FelineModel).fromWireFormat({ kind: 'feline', name: 'Miso' }, { validate: false }));
-    assert.throws(() => modelCodec(PetModel).fromWireFormat({ kind: 'tabby', name: 'Miso' }, { validate: false }));
-    const json = { pet: { kind: 'feline', name: 'Miso' }, pets: [{ kind: 'canine', bark: true }] };
-    const owner = requireRecord(modelCodec(modelClass(models, `Owner${suffix}Model`)).fromWireFormat(json, { validate: false }), 'owner');
-    assert.ok(owner.pet instanceof CatModel);
-    assert.ok(Array.isArray(owner.pets) && owner.pets[0] instanceof DogModel);
-    assert.deepEqual(modelCodec(owner).toWireFormat(owner), json);
-  }
-});
+    const pets = await generatePets(t, document, [`Pet${suffix}`, `Feline${suffix}`, `Owner${suffix}`], profiles[1]);
+    assert.deepEqual(pets.diagnostics.map(diagnostic => diagnostic.code), []);
 
-test('a union with no shared variant is extended by its variants and keeps the plain instanceof', async t => {
-  // protects: T-385 only a union with a shared variant changes form
-  const suffix = 'Ordinary';
-  const output = path.join(createFixtureProject(t, 'golem-openapi-discriminator-ordinary-'), 'sdk');
-  await generateMaterializedSdk(petDocument(suffix, explicitMapping(suffix)), { output, name: 'Pets', profile: profiles[1] });
-  const models = await compileStrictAndLoadModels(output);
-  const PetModel = modelClass(models, `Pet${suffix}Model`);
-  const cat = modelCodec(PetModel).fromWireFormat({ kind: 'feline', name: 'Miso' }, { validate: false });
-  assert.deepEqual(
-    [Object.getPrototypeOf(modelClass(models, `Cat${suffix}Model`)) === PetModel, Object.getPrototypeOf(modelClass(models, `Dog${suffix}Model`)) === PetModel],
-    [true, true],
-  );
-  assert.equal(Object.getOwnPropertyDescriptor(PetModel, Symbol.hasInstance), undefined);
-  assert.ok(cat instanceof PetModel);
-  assert.deepEqual(modelCodec(cat).toWireFormat(cat), { kind: 'feline', name: 'Miso' });
+    const pet = await pets.codec(`Pet${suffix}`);
+    const felineCodec = await pets.codec(`Feline${suffix}`);
+    assert.deepEqual(await pet.decode({ kind: 'feline', name: 'Miso', born: BORN }), { kind: 'feline', name: 'Miso', born: new Date(BORN) });
+    assert.deepEqual(await pet.decode({ kind: 'canine', bark: true, adopted: ADOPTED }), { kind: 'canine', bark: true, adopted: new Date(ADOPTED) });
+    assert.deepEqual(await felineCodec.decode({ kind: 'tabby', name: 'Miso', born: BORN }), { kind: 'tabby', name: 'Miso', born: new Date(BORN) });
+    assert.deepEqual(await felineCodec.encode({ kind: 'tabby', name: 'Miso', born: new Date(BORN) }), { kind: 'tabby', name: 'Miso', born: BORN });
+    // A tag that another union maps is not one of this union's.
+    await assert.rejects(() => felineCodec.decode({ kind: 'feline', name: 'Miso', born: BORN }), isLibError);
+    await assert.rejects(() => pet.decode({ kind: 'tabby', name: 'Miso', born: BORN }), isLibError);
+    const owner = await pets.codec(`Owner${suffix}`);
+    const json = { pet: { kind: 'feline', name: 'Miso', born: BORN }, pets: [{ kind: 'canine', bark: true, adopted: ADOPTED }] };
+    assert.deepEqual(await owner.encode(await owner.decode(json)), json);
+  }
 });
 
 test('a discriminator over a non-model variant is reported and left to the union shape', async t => {
@@ -520,15 +432,16 @@ for (const [form, defaultMapping] of [['a component name', 'Other'], ['a $ref', 
     // protects: T-604 golem-openapi reads discriminator.defaultMapping; the default variant may lack the tag property
     const suffix = form === 'a $ref' ? 'DefRef' : 'DefName';
     const ref = (name: string) => ({ $ref: `#/components/schemas/${name}${suffix}` });
+    const stamp = (name: string) => ({ [name]: { type: 'string', format: 'date-time' } });
     const document = {
       openapi: '3.2.0',
       info: { title: 'Payments', version: '1' },
       paths: {},
       components: {
         schemas: {
-          [`Card${suffix}`]: { type: 'object', required: ['kind', 'number'], properties: { kind: { type: 'string' }, number: { type: 'string' } } },
-          [`Cash${suffix}`]: { type: 'object', required: ['kind', 'amount'], properties: { kind: { type: 'string' }, amount: { type: 'number' } } },
-          [`Other${suffix}`]: { type: 'object', required: ['note'], properties: { note: { type: 'string' } } },
+          [`Card${suffix}`]: { type: 'object', required: ['kind', 'number'], properties: { kind: { type: 'string' }, number: { type: 'string' }, ...stamp('cardAt') } },
+          [`Cash${suffix}`]: { type: 'object', required: ['kind', 'amount'], properties: { kind: { type: 'string' }, amount: { type: 'number' }, ...stamp('cashAt') } },
+          [`Other${suffix}`]: { type: 'object', required: ['note'], properties: { note: { type: 'string' }, ...stamp('otherAt') } },
           [`Payment${suffix}`]: {
             oneOf: [ref('Card'), ref('Cash'), ref('Other')],
             discriminator: {
@@ -542,19 +455,22 @@ for (const [form, defaultMapping] of [['a component name', 'Other'], ['a $ref', 
       },
     };
     const output = path.join(createFixtureProject(t, 'golem-openapi-discriminator-default-'), 'sdk');
-    await generateMaterializedSdk(document, { output, name: 'Payments', profile: { mobx: false, validation: true } });
+    await generateMaterializedSdk(withRootOperations(document, `Owner${suffix}`), { output, name: 'Payments', profile: { mobx: false, validation: true } });
     compileGeneratedSdk(output, [], { strict: true });
-    const models = await importGeneratedModule(output, 'payment models');
-    const OwnerModel = modelClass(models, `Owner${suffix}Model`);
-    const owner = (payment: object) => modelCodec(OwnerModel).fromWireFormat({ payment }, { validate: false }) as { payment: object };
-    assert.ok(owner({ kind: 'card', number: '1' }).payment instanceof modelClass(models, `Card${suffix}Model`));
-    assert.ok(owner({ kind: 'cash', amount: 2 }).payment instanceof modelClass(models, `Cash${suffix}Model`));
-    const other = modelClass(models, `Other${suffix}Model`);
-    assert.ok(owner({ note: 'n' }).payment instanceof other);
-    assert.ok(owner({ kind: 'wire', note: 'n' }).payment instanceof other);
-    for (const payment of [{ kind: 'card', number: '1' }, { kind: 'cash', amount: 2 }, { note: 'n' }]) {
-      assert.deepEqual(modelCodec(owner(payment)).toWireFormat(owner(payment)), { payment });
-    }
+    const owner = await sdkBodyCodec(output, 'Payments', `Owner${suffix}`);
+    const at = '2026-01-02T03:04:05.000Z';
+    const date = new Date(at);
+    const rows = [
+      { wire: { kind: 'card', number: '1', cardAt: at }, value: { kind: 'card', number: '1', cardAt: date } },
+      { wire: { kind: 'cash', amount: 2, cashAt: at }, value: { kind: 'cash', amount: 2, cashAt: date } },
+      { wire: { note: 'n', otherAt: at }, value: { note: 'n', otherAt: date } },
+      { wire: { kind: 'wire', note: 'n', otherAt: at }, value: { kind: 'wire', note: 'n', otherAt: date } },
+    ];
+    assert.deepEqual(await owner.decode({ payment: rows[0]!.wire }), { payment: rows[0]!.value });
+    assert.deepEqual(await owner.decode({ payment: rows[1]!.wire }), { payment: rows[1]!.value });
+    assert.deepEqual(await owner.decode({ payment: rows[2]!.wire }), { payment: rows[2]!.value });
+    assert.deepEqual(await owner.decode({ payment: rows[3]!.wire }), { payment: rows[3]!.value });
+    assert.deepEqual(await owner.encode({ payment: rows[2]!.value }), { payment: rows[2]!.wire });
   });
 }
 
@@ -611,8 +527,8 @@ test('a variant given a mapping value of its own is selected by it while the key
     paths: {},
     components: {
       schemas: {
-        CatOwn: tagged({ name: { type: 'string' } }),
-        DogOwn: tagged({ bark: { type: 'boolean' } }),
+        CatOwn: tagged({ born: { type: 'string', format: 'date-time' } }),
+        DogOwn: tagged({ adopted: { type: 'string', format: 'date-time' } }),
         PetOwn: {
           oneOf: [{ $ref: '#/components/schemas/CatOwn' }, { $ref: '#/components/schemas/DogOwn' }],
           discriminator: { propertyName: 'kind', mapping: { CatOwn: '#/components/schemas/DogOwn', feline: '#/components/schemas/CatOwn' } },
@@ -621,18 +537,14 @@ test('a variant given a mapping value of its own is selected by it while the key
       },
     },
   };
-  const output = path.join(createFixtureProject(t, 'golem-openapi-discriminator-own-'), 'sdk');
-  await generateMaterializedSdk(document, { output, name: 'Pets', profile: { mobx: false, validation: true } });
-  compileGeneratedSdk(output, [], { strict: true });
-  const models = await importGeneratedModule(output, 'pet models');
-  const OwnerModel = modelClass(models, 'OwnerOwnModel');
-  const decodePet = (pet: object) => (modelCodec(OwnerModel).fromWireFormat({ pet }, { validate: false }) as { pet: object }).pet;
-  assert.ok(decodePet({ kind: 'feline', name: 'Miso' }) instanceof modelClass(models, 'CatOwnModel'));
-  assert.ok(decodePet({ kind: 'CatOwn', bark: true }) instanceof modelClass(models, 'DogOwnModel'));
+  const pets = await generatePets(t, document, ['OwnerOwn'], { mobx: false, validation: true });
+  const owner = await pets.codec('OwnerOwn');
+  assert.deepEqual(await owner.decode({ pet: { kind: 'feline', born: BORN } }), { pet: { kind: 'feline', born: new Date(BORN) } });
+  assert.deepEqual(await owner.decode({ pet: { kind: 'CatOwn', adopted: ADOPTED } }), { pet: { kind: 'CatOwn', adopted: new Date(ADOPTED) } });
 });
 
-test('a default variant that extends a tagged variant is written as the default', async t => {
-  // protects: T-605 an instance of the default's class is not an instance of the tagged variant it extends; its unmapped tag is not rejected
+test('a default variant that extends a tagged variant is chosen for an unmapped tag', async t => {
+  // protects: T-605 a default that extends a tagged variant still takes an unmapped tag, which is not rejected
   const document = {
     openapi: '3.2.0',
     info: { title: 'Pets', version: '1' },
@@ -640,7 +552,7 @@ test('a default variant that extends a tagged variant is written as the default'
     components: {
       schemas: {
         CatBase: { type: 'object', required: ['kind', 'name'], properties: { kind: { type: 'string' }, name: { type: 'string' } } },
-        DogBase: { allOf: [{ $ref: '#/components/schemas/CatBase' }, { type: 'object', required: ['bark'], properties: { bark: { type: 'boolean' } } }] },
+        DogBase: { allOf: [{ $ref: '#/components/schemas/CatBase' }, { type: 'object', required: ['bark'], properties: { bark: { type: 'boolean' }, adopted: { type: 'string', format: 'date-time' } } }] },
         PetBase: {
           oneOf: [{ $ref: '#/components/schemas/CatBase' }, { $ref: '#/components/schemas/DogBase' }],
           discriminator: { propertyName: 'kind', mapping: { cat: '#/components/schemas/CatBase' }, defaultMapping: '#/components/schemas/DogBase' },
@@ -649,21 +561,17 @@ test('a default variant that extends a tagged variant is written as the default'
       },
     },
   };
-  const output = path.join(createFixtureProject(t, 'golem-openapi-discriminator-subclass-'), 'sdk');
-  await generateMaterializedSdk(document, { output, name: 'Pets', profile: { mobx: false, validation: false } });
-  compileGeneratedSdk(output, [], { strict: true });
-  const models = await importGeneratedModule(output, 'pet models');
-  const OwnerModel = modelClass(models, 'OwnerBaseModel');
-  const wire = { pet: { kind: 'zzz', name: 'Rex', bark: true } };
-  const owner = modelCodec(OwnerModel).fromWireFormat(wire, { validate: false }) as { pet: object };
-  assert.ok(owner.pet instanceof modelClass(models, 'DogBaseModel'));
-  assert.deepEqual(modelCodec(owner).toWireFormat(owner), wire);
+  const pets = await generatePets(t, document, ['OwnerBase'], { mobx: false, validation: false });
+  const owner = await pets.codec('OwnerBase');
+  const wire = { pet: { kind: 'zzz', name: 'Rex', bark: true, adopted: ADOPTED } };
+  const value = { pet: { kind: 'zzz', name: 'Rex', bark: true, adopted: new Date(ADOPTED) } };
+  assert.deepEqual(await owner.decode(wire), value);
+  assert.deepEqual(await owner.encode(value), wire);
 });
 
 for (const validation of [false, true]) {
   test(`a oneOf with no discriminator keyword takes a model with no tag as the default of its tagged objects, with validation ${validation ? 'on' : 'off'}`, async t => {
     // protects: T-602 golem-openapi keeps a no-discriminator oneOf of one untagged model beside tagged objects: the model takes every other object
-    const output = path.join(createFixtureProject(t, 'golem-openapi-untagged-default-'), 'sdk');
     const stamp = { type: 'string', format: 'date-time' };
     const document = {
       openapi: '3.1.0',
@@ -682,21 +590,14 @@ for (const validation of [false, true]) {
         },
       },
     };
-    await generateMaterializedSdk(document, { output, name: 'Payments', profile: { mobx: false, validation } });
-    compileGeneratedSdk(output, [], { strict: true });
-    const models = await importGeneratedModule(output, 'untagged default models');
-    const OwnerModel = modelClass(models, 'OwnerUntaggedModel');
-    const MoneyModel = modelClass(models, 'MoneyUntaggedModel');
-    const owner = (payout: object) => modelCodec(OwnerModel).fromWireFormat({ payout }, { validate: false }) as { payout: { issued: unknown } };
+    const pets = await generatePets(t, document, ['OwnerUntagged'], { mobx: false, validation });
+    const owner = await pets.codec('OwnerUntagged');
     const issued = '2026-01-02T03:04:05.000Z';
-    const money = owner({ amount: 3, issued }).payout;
-    assert.ok(money instanceof MoneyModel);
-    assert.ok(money.issued instanceof Date);
-    const other = owner({ kind: 'other', issued }).payout;
-    assert.ok(!(other instanceof MoneyModel));
-    assert.ok(other.issued instanceof Date);
-    for (const payout of [{ amount: 3, issued }, { kind: 'other', issued }]) {
-      assert.deepEqual(modelCodec(owner(payout)).toWireFormat(owner(payout)), { payout });
-    }
+    const money = { payout: { amount: 3, issued } };
+    const other = { payout: { kind: 'other', issued } };
+    assert.deepEqual(await owner.decode(money), { payout: { amount: 3, issued: new Date(issued) } });
+    assert.deepEqual(await owner.decode(other), { payout: { kind: 'other', issued: new Date(issued) } });
+    assert.deepEqual(await owner.encode({ payout: { amount: 3, issued: new Date(issued) } }), money);
+    assert.deepEqual(await owner.encode({ payout: { kind: 'other', issued: new Date(issued) } }), other);
   });
 }
