@@ -385,6 +385,46 @@ export function captureRequest(url: string | URL | Request, init?: RequestInit):
   };
 }
 
+/** The body of one operation of a compiled SDK as the public client carries it: what a response of `wire` decodes to, and the JSON a request of `value` sends. */
+export interface SdkBodyCodec {
+  /** Answers `wire` as the response body and returns the body the client gives. A check that fails rejects with the client's `LibError`; `options` are the per-call options (`validate`). */
+  decode(wire: unknown, options?: { validate?: unknown }): Promise<unknown>;
+  /** Sends `value` as the request body and returns the JSON the request carried. A value that fails the request check rejects with the client's `LibError`; `options` are the per-call options (`validate`). */
+  encode(value: unknown, options?: { validate?: unknown }): Promise<unknown>;
+}
+
+/**
+ * Test-only: reaches the conversion and checks of a compiled SDK (standalone or golem mode) through its client, with a fake `fetch`.
+ * `name` is the SDK name (`<name>Client`). `read` is an operation whose 200 response is the schema under test (`decode`), `write` one whose request body is
+ * that schema (`encode`); one name serves both when an operation has both. Use it when a test is about what the SDK reads and writes;
+ * a test of client calls builds its own client with `loadGeneratedClient`.
+ */
+export async function sdkBodyCodec(output: string, name: string, operations: string | { read: string; write: string }): Promise<SdkBodyCodec> {
+  const { read, write } = typeof operations === 'string' ? { read: operations, write: operations } : operations;
+  const Client = await loadGeneratedClient(output, name);
+  return {
+    async decode(wire, options) {
+      const client = new Client({ baseUrl: 'https://api.test', fetchImpl: async () => Response.json(wire) });
+      return (await client[read]!().execute({}, options)).body;
+    },
+    async encode(value, options) {
+      let sent: unknown;
+      const client = new Client({
+        baseUrl: 'https://api.test',
+        fetchImpl: async (_url: RequestInfo | URL, init?: RequestInit) => {
+          sent = typeof init?.body === 'string' ? JSON.parse(init.body) : init?.body;
+          return new Response(null, { status: 204 });
+        },
+      });
+      // The reply is not the point: once the request has been sent, a failure of the reply is not a failure of the request.
+      await client[write]!().execute({ body: value }, options).catch((error: unknown) => {
+        if (sent === undefined) throw error;
+      });
+      return sent;
+    },
+  };
+}
+
 /**
  * Test-only: the codec functions of a compiled SDK (`parse<Name>`, `stringify<Name>`, `fromWireFormat<Name>`, `toWireFormat<Name>`,
  * `validate<Name>`, `assert<Name>`), read from its schema group modules. The SDK index exports none of them, and the `sdkCodecs` table is keyed by operation, so a test of a component's codec reads the group modules.

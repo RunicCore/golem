@@ -3,15 +3,16 @@ import assert from 'node:assert/strict';
 import { writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { isDeepStrictEqual } from 'node:util';
 import test from 'node:test';
 
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { generate } from '#openapi/generator';
-import { compileGeneratedSdk, generateMaterializedSdk, importSdkCodecs, requireRecord } from './helpers.js';
+import { compileGeneratedSdk, generateMaterializedSdk, requireRecord, sdkBodyCodec, type SdkBodyCodec } from './helpers.js';
 
 /**
  * One row is one allOf shape. For each row the generated SDK is checked on every path that reads the shape: the generated type
- * (a compile-time fixture), the codec (fromWireFormat and toWireFormat) and the validator, with validation on and off.
+ * (a compile-time fixture), the client (a response body it decodes, a request body it encodes and checks), and the validators, with validation on and off.
  *
  * `additionalProperties` inside an allOf member follows strict JSON Schema: a member judges every name that it does not list in
  * its own `properties`, the names of its siblings included.
@@ -19,7 +20,6 @@ import { compileGeneratedSdk, generateMaterializedSdk, importSdkCodecs, requireR
 
 type Wire = Record<string, unknown>;
 type Fields = Record<string, unknown>;
-type Models = Readonly<Record<string, (...input: unknown[]) => unknown>>;
 
 interface Accepted {
   /** The JSON the codec reads and writes. */
@@ -818,14 +818,22 @@ const rows: readonly Row[] = [
 
 interface Built {
   readonly output: string;
-  readonly models: Models;
   /** The composition warnings of generation, as `code: message`. */
   readonly warnings: readonly string[];
-  /** The exported codec functions of the row's root model. */
-  readonly codec: {
-    readonly fromWireFormat: (wire: unknown, options?: { readonly validate?: boolean }) => Fields;
-    readonly toWireFormat: (value: Fields) => unknown;
-    readonly validate: (value: unknown) => boolean;
+  /** The client's reading of the row's root as a response body and its writing as a request body. */
+  readonly codec: SdkBodyCodec;
+}
+
+/** The operations the builder adds beside the document's own: one that answers the root and one that takes it as a request body. */
+function withRootOperations(document: Record<string, unknown>, root: string): Record<string, unknown> {
+  const schema = ref(root);
+  const paths = requireRecord(document.paths, 'paths');
+  return {
+    ...document,
+    paths: {
+      ...paths,
+      '/root-in': { post: { operationId: 'putRoot', requestBody: { required: true, content: { 'application/json': { schema } } }, responses: { 204: { description: 'none' } } } },
+    },
   };
 }
 
@@ -834,28 +842,17 @@ const scope = fileFixtureScope();
 function builder(row: Row, validation: boolean): () => Promise<Built> {
   return onceShared(async () => {
     const output = path.join(createFixtureProject(scope, 'golem-composition-agreement-'), 'sdk');
-    const result = await generateMaterializedSdk(row.document, {
+    const result = await generateMaterializedSdk(withRootOperations(row.document, row.root), {
       output,
       name: 'Composition',
       profile: { mobx: false, validation, allowAny: false },
     });
     compileGeneratedSdk(output, [], { strict: true, skipLibCheck: true });
-    const models = requireRecord(
-      await import(pathToFileURL(path.join(output, 'dist/index.js')).href),
-      `generated ${row.shape} models`,
-    );
-    // The codec functions are not exported by the index: the client calls them, and the test reads them from the schema group modules.
-    const exported = await importSdkCodecs(output, `generated ${row.shape} codecs`) as Models;
     return {
       output,
-      models: exported,
       warnings: (result.diagnostics ?? []).filter(({ code }) => code.startsWith('OPENAPI_COMPOSITION_'))
         .map(({ code, message }) => `${code}: ${message}`),
-      codec: {
-        fromWireFormat: exported[`fromWireFormat${row.root}`] as Built['codec']['fromWireFormat'],
-        toWireFormat: exported[`toWireFormat${row.root}`] as Built['codec']['toWireFormat'],
-        validate: exported[`validate${row.root}`] as Built['codec']['validate'],
-      },
+      codec: await sdkBodyCodec(output, 'Composition', { read: 'getRoot', write: 'putRoot' }),
     };
   });
 }
@@ -889,19 +886,20 @@ async function forInput(wire: Wire, check: () => void | Promise<void>): Promise<
 async function assertPathsAgree(built: Built, accepted: readonly Accepted[]): Promise<void> {
   for (const { wire, model: expected } of accepted) {
     const model = withoutUndefined(expected);
-    await forInput(wire, () => {
-      const decoded = built.codec.fromWireFormat(wire);
-      assert.deepEqual(fieldsOf(decoded), model, 'codec decodes');
-      assert.deepEqual(withoutUndefined(built.codec.toWireFormat(decoded)), wire, 'codec encodes');
+    await forInput(wire, async () => {
+      const decoded = await built.codec.decode(wire) as Fields;
+      assert.deepEqual(fieldsOf(decoded), model, 'the client decodes the response');
+      assert.deepEqual(withoutUndefined(await built.codec.encode(decoded)), wire, 'the client encodes the request');
     });
   }
 }
 
-/** The validator accepts each decoded accepted input and the codec rejects each rejected input. */
+/** The request check accepts each decoded accepted input and the client rejects each rejected input as a response. */
 async function assertValidatorJudges(built: Built, row: Row): Promise<void> {
   for (const { wire } of row.accepted) {
-    await forInput(wire, () => {
-      assert.equal(built.codec.validate(built.codec.fromWireFormat(wire, { validate: false })), true, 'validator accepts the decoded value');
+    await forInput(wire, async () => {
+      const decoded = await built.codec.decode(wire, { validate: false });
+      await assert.doesNotReject(built.codec.encode(decoded), 'the request check accepts the decoded value');
     });
   }
   for (const wire of row.rejected) {
@@ -924,7 +922,9 @@ async function assertFastChecksAgree(built: Built, row: Row): Promise<void> {
     if (match === null) return [];
     return [{ model: match[1], validate: validators[name], isValid: validators[`is_${name.slice('validate_'.length)}`] }];
   });
-  assert.ok(roots.some(({ model }) => model === row.root), `the generated validators have the root ${row.root}`);
+  // A model root exists when the client converts the model; a row that converts nothing has only operation roots, which have no fast check.
+  const converts = row.accepted.some(({ wire, model }) => !isDeepStrictEqual(wire, model));
+  if (converts) assert.ok(roots.some(({ model }) => model === row.root), `the generated validators have the root ${row.root}`);
   assert.deepEqual(roots.filter(({ isValid }) => typeof isValid !== 'function').map(({ model }) => model), [], 'every model root has a fast check');
   const disagreeing = roots.flatMap(({ model, validate, isValid }) => typeof isValid !== 'function' || typeof validate !== 'function' ? [] : inputs
     .filter(input => isValid(input) !== (validate(input, true).length === 0))
@@ -932,9 +932,9 @@ async function assertFastChecksAgree(built: Built, row: Row): Promise<void> {
   assert.deepEqual(disagreeing, []);
 }
 
-function assertCodecRejects(built: Built, wire: Wire): void {
-  assert.throws(
-    () => built.codec.fromWireFormat(wire),
+async function assertCodecRejects(built: Built, wire: Wire): Promise<void> {
+  await assert.rejects(
+    built.codec.decode(wire),
     (error: unknown): true => {
       assert.ok(error instanceof LibError, 'codec rejects the input');
       assert.equal(error.kind, LibErrorKind.Validation);
@@ -1225,12 +1225,10 @@ async function generateCompiledSdk(document: Record<string, unknown>, output: st
 // protects: T-456 a component that narrows an inherited union property to one of its variants generates and round-trips its wire form
 test('a component narrows an inherited union property to one of its variants', async t => {
   const output = path.join(createFixtureProject(t, 'golem-composition-narrowed-'), 'sdk');
-  await generateCompiledSdk(petDocument(ref('Cat')), output);
-  const models = await importSdkCodecs(output, 'generated narrowed codecs');
-  const fromWireFormat = models.fromWireFormatDerived as (wire: unknown, options?: { validate?: boolean }) => Fields;
-  const toWireFormat = models.toWireFormatDerived as (value: Fields) => unknown;
-  const decoded = fromWireFormat({ pet: { kind: 'cat', lives: 9 } }, { validate: false });
-  assert.deepEqual(withoutUndefined(toWireFormat(decoded)), { pet: { kind: 'cat', lives: 9 } });
+  await generateCompiledSdk(withRootOperations(petDocument(ref('Cat')), 'Derived'), output);
+  const codec = await sdkBodyCodec(output, 'Composition', { read: 'getRoot', write: 'putRoot' });
+  const decoded = await codec.decode({ pet: { kind: 'cat', lives: 9 } }, { validate: false });
+  assert.deepEqual(withoutUndefined(await codec.encode(decoded)), { pet: { kind: 'cat', lives: 9 } });
 });
 
 // protects: T-650 the composition check reads a request body with the decode conversion, so a oneOf of one $ref with no null and a readOnly property still generate as before
