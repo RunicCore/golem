@@ -8,15 +8,14 @@ import { fileFixtureScope, onceShared, type FixtureScope } from './fixture-proje
 import { taggedModelSource } from './fixture-templates/models/model-tags.js';
 import { tsSource } from './source-template.js';
 
-async function buildCodecs(scope: FixtureScope) {
+/** Builds the model `A` of `source` in a project named `name`, with the user's files in `files`, and returns its generated codecs. */
+async function buildCodecs(scope: FixtureScope, name: string, source: Parameters<typeof taggedModelSource>[0], files: Readonly<Record<string, string>> = {}) {
   const { root, sourceRoot } = createModelProject(scope, {
-    prefix: 'golem-temporal-tags-', name: 'temporal-tags', linkWorkspaceNodeModules: true,
+    prefix: `golem-${name}-`, name, linkWorkspaceNodeModules: true,
     compilerOptions: { lib: ['ES2023', 'DOM', 'esnext.temporal'] },
   });
-  fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({ name: 'A',
-    imports: tsSource`import type { TemporalDuration, TemporalInstant, TemporalPlainDate, TemporalPlainDateTime, TemporalPlainTime, TemporalZonedDateTime } from '@exprtlabs/golem/temporal';`,
-    fields: tsSource`at: TemporalInstant; zoned: TemporalZonedDateTime; day: TemporalPlainDate; local: TemporalPlainDateTime; time: TemporalPlainTime; span: TemporalDuration; maybe: TemporalInstant | null`,
-  }).text);
+  for (const [file, text] of Object.entries(files)) fs.writeFileSync(path.join(sourceRoot, file), text);
+  fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource(source).text);
   writeModelGolemYaml(root, { mobx: false, validation: true });
   await buildModelProject(root);
   return import(path.toNamespacedPath(path.join(root, 'build/a.model.generated.js'))) as Promise<{
@@ -27,7 +26,10 @@ async function buildCodecs(scope: FixtureScope) {
 
 // Every test reads the same model, so the file builds it once.
 const fileScope = fileFixtureScope();
-const build = onceShared(() => buildCodecs(fileScope));
+const build = onceShared(() => buildCodecs(fileScope, 'temporal-tags', { name: 'A',
+  imports: tsSource`import type { TemporalDuration, TemporalInstant, TemporalPlainDate, TemporalPlainDateTime, TemporalPlainTime, TemporalZonedDateTime } from '@exprtlabs/golem/temporal';`,
+  fields: tsSource`at: TemporalInstant; zoned: TemporalZonedDateTime; day: TemporalPlainDate; local: TemporalPlainDateTime; time: TemporalPlainTime; span: TemporalDuration; maybe: TemporalInstant | null`,
+}));
 
 const WIRE = {
   at: '2025-01-02T03:04:05.123Z',
@@ -100,28 +102,15 @@ for (const [field, value] of [
 // The same six classes written as plain global types: the built-in class registry gives them the conversion and the wire rule of the tags above.
 const PLAIN_FIELDS = tsSource`at: Temporal.Instant; zoned: Temporal.ZonedDateTime; day: Temporal.PlainDate; local: Temporal.PlainDateTime; time: Temporal.PlainTime; span: Temporal.Duration`;
 
-async function buildPlainCodecs(scope: FixtureScope) {
-  const { root, sourceRoot } = createModelProject(scope, {
-    prefix: 'golem-temporal-plain-', name: 'temporal-plain', linkWorkspaceNodeModules: true,
-    compilerOptions: { lib: ['ES2023', 'DOM', 'esnext.temporal'] },
-  });
-  fs.writeFileSync(path.join(sourceRoot, 'codec.ts'), `export function encodeEpoch(value: Temporal.Instant): number { return value.epochMilliseconds; }
+const EPOCH_CODEC = `export function encodeEpoch(value: Temporal.Instant): number { return value.epochMilliseconds; }
 export function decodeEpoch(value: number): Temporal.Instant { return Temporal.Instant.fromEpochMilliseconds(value); }
-`);
-  fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({ name: 'A',
-    imports: tsSource`import type { TSerde } from '@exprtlabs/golem/tags';
-import { decodeEpoch, encodeEpoch } from './codec.js';`,
-    fields: tsSource`${PLAIN_FIELDS}; epoch: Temporal.Instant & TSerde<typeof encodeEpoch, typeof decodeEpoch>`,
-  }).text);
-  writeModelGolemYaml(root, { mobx: false, validation: true });
-  await buildModelProject(root);
-  return import(path.toNamespacedPath(path.join(root, 'build/a.model.generated.js'))) as Promise<{
-    parseTA: (text: string) => Record<string, unknown>;
-    stringifyTA: (value: object) => string;
-  }>;
-}
+`;
 
-const buildPlain = onceShared(() => buildPlainCodecs(fileScope));
+const buildPlain = onceShared(() => buildCodecs(fileScope, 'temporal-plain', { name: 'A',
+  imports: tsSource`import type { TSerde } from '@exprtlabs/golem/tags';
+import { decodeEpoch, encodeEpoch } from './codec.js';`,
+  fields: tsSource`${PLAIN_FIELDS}; epoch: Temporal.Instant & TSerde<typeof encodeEpoch, typeof decodeEpoch>`,
+}, { 'codec.ts': EPOCH_CODEC }));
 const PLAIN_WIRE = { at: WIRE.at, zoned: WIRE.zoned, day: WIRE.day, local: WIRE.local, time: WIRE.time, span: WIRE.span, epoch: 1735787045123 };
 
 test('each plain global Temporal class round-trips', async () => {

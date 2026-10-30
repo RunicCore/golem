@@ -27,6 +27,11 @@ export function encodeMoney(value: Money): string { return value.toString(); }
 export function decodeMoney(value: string): Money { return new Money(BigInt(value)); }
 `;
 
+const TSCONFIG = {
+  compilerOptions: { target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', strict: true, experimentalDecorators: true, skipLibCheck: true, lib: ['ES2023', 'esnext.temporal'] },
+  include: ['src/**/*.ts'],
+};
+
 interface Schema { readonly type?: string; readonly format?: string; readonly required?: readonly string[]; readonly properties?: Readonly<Record<string, Schema>>; readonly items?: Schema; readonly allOf?: readonly Schema[]; readonly $ref?: string }
 
 test('a controller DTO with a class-valued TSerde field and Temporal fields documents their wire form', async t => {
@@ -36,10 +41,7 @@ test('a controller DTO with a class-valued TSerde field and Temporal fields docu
     sourceFile: 'src/orders.controller.ts',
     source: CONTROLLER,
     files: { 'src/money.ts': MONEY },
-    tsconfig: {
-      compilerOptions: { target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', strict: true, experimentalDecorators: true, skipLibCheck: true, lib: ['ES2023', 'esnext.temporal'] },
-      include: ['src/**/*.ts'],
-    },
+    tsconfig: TSCONFIG,
   });
   const result = await generate({ root, output: path.join(root, 'openapi.json'), openapiVersion: '3.2.0', info: { title: 'Orders', version: '1' }, profile: { mobx: false, validation: false } });
   const document = JSON.parse(result.artifacts[0]!.content) as { components: { schemas: Record<string, Schema> } };
@@ -69,10 +71,7 @@ export class EventsController {
   create(@Body() body: TEvent): TEvent { return body; }
 }
 `,
-    tsconfig: {
-      compilerOptions: { target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', strict: true, experimentalDecorators: true, skipLibCheck: true, lib: ['ES2023', 'esnext.temporal'] },
-      include: ['src/**/*.ts'],
-    },
+    tsconfig: TSCONFIG,
   });
   const result = await generate({ root, output: path.join(root, 'openapi.json'), openapiVersion: '3.2.0', info: { title: 'Events', version: '1' }, profile: { mobx: false, validation: false } });
   const event = (JSON.parse(result.artifacts[0]!.content) as { components: { schemas: Record<string, Schema> } }).components.schemas.TEvent;
