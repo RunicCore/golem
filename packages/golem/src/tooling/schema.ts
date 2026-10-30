@@ -307,9 +307,21 @@ function modelClassId(variant: unknown): string | undefined {
   return generatedModelShortName(variant.id);
 }
 
-/** A descriptor that holds a golem-mode SDK schema inline checks as a reference to that schema's codec. */
+/**
+ * A descriptor that holds a golem-mode SDK schema inline checks as a reference to that schema's codec. The tags the app puts beside the
+ * SDK type on the field (`TValidation`, constraints, `TSerde`, date) stay on the reference, so the SDK's check and the app's rule both run.
+ */
 function sdkNodeReference(value: Record<string, unknown>): Record<string, unknown> {
-  return typeof value.sdkNode === 'string' ? { kind: 'generated-model', id: value.sdkNode } : value;
+  if (typeof value.sdkNode !== 'string') return value;
+  const { validations, constraints, serde, date } = value;
+  return {
+    kind: 'generated-model',
+    id: value.sdkNode,
+    ...(validations === undefined ? {} : { validations }),
+    ...(constraints === undefined ? {} : { constraints }),
+    ...(serde === undefined ? {} : { serde }),
+    ...(date === undefined ? {} : { date }),
+  };
 }
 
 /** The codec short name a generated-model id resolves to. */
