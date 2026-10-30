@@ -1,7 +1,6 @@
 // #region client-imports
-import { fromWireFormat } from '@exprtlabs/golem/serde';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
-import { ChargeModel, isProviderUndeclaredResponseError, type Money, ProviderClient } from './sdk/index.js';
+import { type Charge, isProviderUndeclaredResponseError, type Money, ProviderClient } from './sdk/index.js';
 // #endregion client-imports
 
 // #region create-and-list
@@ -51,13 +50,12 @@ export async function readCharge(client: ProviderClient, id: string) {
 }
 // #endregion read-charge
 
-// #region charge-model
-export function loadCharge(data: unknown): ChargeModel {
-  const charge = fromWireFormat<ChargeModel>(data);
-  console.log(charge instanceof ChargeModel); // true
-  return charge;
+// #region charge-type
+export async function readChargeData(client: ProviderClient, id: string): Promise<Charge | undefined> {
+  const response = await client.getCharge().execute({ path: { id } });
+  return response.status === 200 ? response.body : undefined; // A plain Charge: settlesOn is a Temporal.PlainDate.
 }
-// #endregion charge-model
+// #endregion charge-type
 
 // #region invalid-charge
 export async function chargeAmountIssues(client: ProviderClient, amount: string) {
@@ -72,6 +70,16 @@ export async function chargeAmountIssues(client: ProviderClient, amount: string)
   }
 }
 // #endregion invalid-charge
+
+// #region lower-checks
+export function createLenientClient(baseUrl: string, token: string) {
+  return new ProviderClient({ baseUrl, auth: { bearerAuth: token }, validate: { response: 'sanity' } }); // The default of every call.
+}
+
+export async function readChargeUnchecked(client: ProviderClient, id: string) {
+  return client.getCharge().execute({ path: { id } }, { validate: { response: false } }); // This call only; the date still converts.
+}
+// #endregion lower-checks
 
 // #region handle-errors
 export async function fetchCharge(client: ProviderClient, id: string) {
