@@ -237,15 +237,15 @@ export interface SchemaTypeContext {
 }
 
 /** How a type binds in a larger type: a member of a union, an intersection or an array parenthesizes by it. */
-export type TypeBinding = 'primary' | 'intersection' | 'union';
+type TypeBinding = 'primary' | 'intersection' | 'union';
 
 /** The code of a type, and how it binds. The builder that writes the type knows its binding, so no step reads the code back. */
-export interface TypeCode {
+interface TypeCode {
   readonly code: Code;
   readonly binds: TypeBinding;
 }
 
-export function typeCode(typeText: Code, binds: TypeBinding = 'primary'): TypeCode {
+function typeCode(typeText: Code, binds: TypeBinding = 'primary'): TypeCode {
   return { code: typeText, binds };
 }
 
@@ -301,7 +301,7 @@ function intersectionType(types: readonly TypeCode[]): TypeCode {
 }
 
 /** `T | null`. */
-export function orNull(type: TypeCode): TypeCode {
+function orNull(type: TypeCode): TypeCode {
   return typeCode(code`${type.code} | null`, 'union');
 }
 
@@ -392,7 +392,7 @@ export function schemaType(schema: unknown, context: PublicSchemaTypeContext = {
   return render(schemaTypeCode(schema, { ...rest, ...(qualified ? { qualifier: qualified } : {}) }).code);
 }
 
-export function schemaTypeCode(schema: unknown, context: SchemaTypeContext = {}): TypeCode {
+function schemaTypeCode(schema: unknown, context: SchemaTypeContext = {}): TypeCode {
   const projected = context.direction
     ? projectSchema(schema, { document: context.document ?? {}, direction: context.direction })
     : schema;
@@ -400,7 +400,7 @@ export function schemaTypeCode(schema: unknown, context: SchemaTypeContext = {})
 }
 
 /** The type of a `prefixItems` array: a union of the prefix lengths that min/max allow. `itemType` gives the type of one item schema. */
-export function prefixItemsType(schema: JsonObjectLike, itemType: (item: unknown) => TypeCode): TypeCode {
+function prefixItemsType(schema: JsonObjectLike, itemType: (item: unknown) => TypeCode): TypeCode {
   const prefix = (Array.isArray(schema.prefixItems) ? schema.prefixItems : [])
     .map(itemType);
   const min = typeof schema.minItems === 'number' ? schema.minItems : 0;

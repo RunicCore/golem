@@ -232,7 +232,7 @@ export function modelSchemaProperties(
 }
 
 /** The environment a component's own schema is read in: its anchors, and the analysis' dates and discriminator tables. */
-export function componentEnv(env: ModelResolveEnv, schemaName: string, rawSchema: unknown): ModelResolveEnv {
+function componentEnv(env: ModelResolveEnv, schemaName: string, rawSchema: unknown): ModelResolveEnv {
   const anchors = schemaContext(env.document, schemaContext(env.document, { resources: env.resources }), schemaName, rawSchema).anchors;
   return modelEnv(env.document, undefined, anchors, env.resources, env.selections, env.dates);
 }

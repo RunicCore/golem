@@ -525,17 +525,7 @@ const rows: readonly Row[] = [
   {
     shape: 'a derived component narrows an inherited union property to one of its variants',
     root: 'Derived',
-    document: componentDocument('Derived', {
-      Animal: object({ kind: text }, { required: ['kind'] }),
-      Cat: { allOf: [ref('Animal'), object({ kind: { const: 'cat' }, lives: { type: 'integer' } }, { required: ['kind', 'lives'] })] },
-      Dog: { allOf: [ref('Animal'), object({ kind: { const: 'dog' }, bark: { type: 'boolean' } }, { required: ['kind'] })] },
-      Pet: {
-        oneOf: [ref('Cat'), ref('Dog')],
-        discriminator: { propertyName: 'kind', mapping: { cat: '#/components/schemas/Cat', dog: '#/components/schemas/Dog' } },
-      },
-      Base: object({ pet: ref('Pet') }, { required: ['pet'] }),
-      Derived: { allOf: [ref('Base'), object({ pet: ref('Cat') })] },
-    }),
+    document: petDocument(ref('Cat'), ['kind', 'lives']),
     accepted: [{ wire: { pet: { kind: 'cat', lives: 9 } }, model: { pet: { kind: 'cat', lives: 9 } } }],
     // The property decodes as Cat: a cat without lives and a dog both throw, though Pet accepts a dog.
     rejected: [{ pet: { kind: 'cat' } }, { pet: { kind: 'dog' } }],
@@ -1006,12 +996,12 @@ function operationDocument(operation: Record<string, unknown>): Record<string, u
 }
 
 /** `Derived` extends `Base`, whose `pet` is the union `Pet` of `Cat` and `Dog`; `Derived` narrows `pet` to `narrowed`. */
-function petDocument(narrowed: Record<string, unknown>): Record<string, unknown> {
-  const kinds = (tag: string, own: Record<string, unknown>): Record<string, unknown> =>
-    ({ allOf: [ref('Animal'), object({ kind: { const: tag }, ...own }, { required: ['kind'] })] });
+function petDocument(narrowed: Record<string, unknown>, catRequired: readonly string[] = ['kind']): Record<string, unknown> {
+  const kinds = (tag: string, own: Record<string, unknown>, required: readonly string[] = ['kind']): Record<string, unknown> =>
+    ({ allOf: [ref('Animal'), object({ kind: { const: tag }, ...own }, { required: [...required] })] });
   return componentDocument('Derived', {
     Animal: object({ kind: text }, { required: ['kind'] }),
-    Cat: kinds('cat', { lives: { type: 'integer' } }),
+    Cat: kinds('cat', { lives: { type: 'integer' } }, catRequired),
     Dog: kinds('dog', { bark: { type: 'boolean' } }),
     Bird: kinds('bird', { wings: { type: 'integer' } }),
     Pet: {

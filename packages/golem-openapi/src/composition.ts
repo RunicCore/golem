@@ -64,7 +64,7 @@ interface NeverName {
 }
 
 /** One name's child: its descriptor, and the schemas whose type it shows (none for a name that no value can hold). */
-export interface SlotChild<S> {
+interface SlotChild<S> {
   readonly descriptor: ModelTypeDescriptor;
   readonly sources: readonly ScopedSchema<S>[];
 }
@@ -617,7 +617,7 @@ export function joinMembers(parts: readonly ModelTypeDescriptor[]): ModelTypeDes
 }
 
 /** Rule 5: the required names of a schema, its own and those that its allOf members list. */
-export function composedRequired(schema: unknown): string[] {
+function composedRequired(schema: unknown): string[] {
   const members = isJsonObject(schema) && Array.isArray(schema.allOf) ? schema.allOf : [];
   return [...new Set([...requiredNames(schema), ...members.flatMap(requiredNames)])];
 }
