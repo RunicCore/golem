@@ -242,7 +242,7 @@ export interface SchemaTypeContext {
   readonly converted?: ConvertedTypes;
 }
 
-export interface ConvertedTypes {
+interface ConvertedTypes {
   readonly dates: OpenApiDates;
   /** The globals `Date` and `Temporal` that a component of the same name shadows in the module: they are reached through `globalThis`. */
   readonly shadowed: ReadonlySet<string>;
