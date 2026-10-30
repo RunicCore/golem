@@ -4,7 +4,7 @@ import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { fileFixtureScope, onceShared } from '../fixture-project.js';
-import { importGeneratedModule, sdkBodyCodec, withRootOperations } from './helpers.js';
+import { golemModeManifest, importGeneratedModule, sdkBodyCodec, withRootOperations } from './helpers.js';
 import { loadGolemModeProject, loadSdk, type GolemModeSdkSetup } from './sdk-client-fixture.js';
 
 // Every JSON Schema keyword that a model descriptor can carry reaches the model plane, so a body that converts a date is checked
@@ -31,6 +31,8 @@ const ROWS = [
   { name: 'ConstObjectRule', schema: body({}, { pin: { type: 'object', properties: { a: { type: 'integer' } }, const: { a: 1 } } }), bad: { pin: { a: 2 } }, good: { pin: { a: 1 } } },
   { name: 'EnumObjectRule', schema: body({}, { pin: { type: 'object', properties: { a: { type: 'integer' } }, enum: [{ a: 1 }, { a: 2 }] } }), bad: { pin: { a: 3 } }, good: { pin: { a: 2 } } },
   { name: 'LimitBesideOneOfRule', schema: body({}, { tag: { oneOf: [text, { type: 'integer' }], maxLength: 3 } }), bad: { tag: 'abcd' }, good: { tag: 'abc' } },
+  { name: 'FreeFormRule', schema: body({}, { meta: { type: 'object' } }), bad: { meta: 'x' }, good: { meta: { a: 1 } } },
+  { name: 'OneOfOverlapRule', schema: body({}, { pick: { oneOf: [text, { type: 'string', maxLength: 3 }] } }), bad: { pick: 'abc' }, good: { pick: 'abcd' } },
   { name: 'LimitBesideAllOfRule', schema: body({}, { tag: { allOf: [text], maxLength: 3 } }), bad: { tag: 'abcd' }, good: { tag: 'abc' } },
 ] as const;
 type Row = (typeof ROWS)[number];
@@ -140,4 +142,53 @@ test('an app model over an SDK type with a keyword that no descriptor carries st
     loadGolemModeProject(scope, 'golem-openapi-keyword-stamp-model-', [{ document: STAMP_DOCUMENT, folder: 'sdk/stamps', name: 'Stamps' }], true, { 'src/stamp.model.ts': model }),
     /OPENAPI_KEYWORD_NOT_CARRIED[^]*"pattern"/,
   );
+});
+
+// A free-form object field (`type: object` alone) is an object of unknown values: it keeps its members, and no node of it is marked.
+const keepsMeta = (value: unknown) => JSON.stringify(value).includes('"meta":{"a":1}');
+const META = { meta: { a: 1 } };
+
+test('a request body keeps the members of a free-form object field', async () => {
+  // protects: T-729 a free-form object field is carried, so its node stays complete and its members reach the wire
+  const codec = await sdkBodyCodec((await sdk()).output, 'Keywords', 'FreeFormRule');
+  assert.ok(keepsMeta(await codec.encode(withWhen(META, new Date(AT)))));
+});
+
+test('an inbound response keeps the members of a free-form object field', async () => {
+  // protects: T-729 a free-form object field is carried on the inbound response path
+  const { answer } = await inboundHandler(ROWS.find((row) => row.name === 'FreeFormRule')!);
+  assert.ok(keepsMeta(await answer(META)));
+});
+
+test('an app model over an SDK type with a free-form object field keeps its members', async () => {
+  // protects: T-729 an app model over a common SDK type with a free-form field does not stop with OPENAPI_KEYWORD_NOT_CARRIED
+  const generated = await golemModel();
+  assert.ok(keepsMeta(generated.fromWireFormatTFreeFormRule!(withWhen(META, AT))));
+  assert.ok(keepsMeta(generated.toWireFormatTFreeFormRule!(withWhen(META, new Date(AT)))));
+});
+
+// A oneOf accepts a value that exactly one branch accepts. A union whose branches cannot overlap is exact as it is.
+const PET = { type: 'object', required: ['kind', 'born'], properties: { born: DATE_TIME } };
+const BRANCHES = {
+  openapi: '3.1.0',
+  info: { title: 'Branches', version: '1' },
+  components: {
+    schemas: {
+      Cat: { ...PET, properties: { ...PET.properties, kind: { const: 'cat' } } },
+      Dog: { ...PET, properties: { ...PET.properties, kind: { const: 'dog' } } },
+      Pet: { oneOf: [{ $ref: '#/components/schemas/Cat' }, { $ref: '#/components/schemas/Dog' }], discriminator: { propertyName: 'kind' } },
+      Left: { type: 'object', required: ['born'], properties: { born: DATE_TIME } },
+      Right: { type: 'object', properties: { born: DATE_TIME, note: { type: 'string' } } },
+      Either: { oneOf: [{ $ref: '#/components/schemas/Left' }, { $ref: '#/components/schemas/Right' }] },
+    },
+  },
+};
+
+test('a discriminated oneOf keeps the plain union and a oneOf of overlapping branches keeps the oneOf constraint', () => {
+  // protects: T-729 a oneOf that a tag or disjoint branch types make exact adds no check; any other oneOf is exact
+  const manifest = golemModeManifest(withRootOperations(BRANCHES, 'Pet', 'Either'), { mobx: false, validation: true });
+  const operations = manifest.operations as readonly { readonly name: string; readonly values: readonly { readonly inline?: { readonly descriptor: string } }[] }[];
+  const descriptor = (operation: string) => operations.find((item) => item.name === operation)!.values[0]!.inline!.descriptor;
+  assert.doesNotMatch(descriptor('getPet'), /"kind":"oneOf"/);
+  assert.match(descriptor('getEither'), /"kind":"oneOf"/);
 });

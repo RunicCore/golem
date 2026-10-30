@@ -97,8 +97,11 @@ export interface ModelResolveEnv {
   readonly selections?: DiscriminatorSelections;
   /** Collects the keywords of the schemas converted under this env that no descriptor carries (see `noteUncarried`); none collects nothing. */
   readonly uncarried?: Set<string>;
-  /** The next conversion reads a schema whose `required` names its caller holds: an allOf member (the composition holds them) or a sub-schema (`withRequiredNames`). */
-  readonly holdsRequired?: boolean;
+  /**
+   * What the caller of the next conversion holds of the schema it converts: an allOf `member` (the composition holds its `required` names and its object type),
+   * or a keyword's `sub`-schema (`subschemaConverter` holds its `required` names).
+   */
+  readonly holds?: 'member' | 'sub';
 }
 
 /** One schema interned into the graph: the descriptor as the graph received it, before it sealed and rewrote the references of every node to codec ids. */
@@ -379,6 +382,46 @@ function carryKeywords(descriptor: ModelTypeDescriptor, schema: Readonly<Record<
   return withOpenApiEnum(withOpenApiConstraints(descriptor, schema, sub), schema);
 }
 
+type JsonClass = 'string' | 'number' | 'boolean' | 'null' | 'object' | 'array';
+const JSON_CLASSES: readonly JsonClass[] = ['string', 'number', 'boolean', 'null', 'object', 'array'];
+
+/** The JSON types that a value of the descriptor can have. A descriptor of a shape not listed here can have any. */
+function valueClasses(descriptor: ModelTypeDescriptor): readonly JsonClass[] {
+  switch (descriptor.kind) {
+    case 'string':
+    case 'date': return ['string'];
+    case 'class-value': return isTemporalDescriptor(descriptor) ? ['string'] : JSON_CLASSES;
+    case 'number': return ['number'];
+    case 'boolean': return ['boolean'];
+    case 'null': return ['null'];
+    case 'literal': return [typeof descriptor.value as JsonClass];
+    case 'object': return ['object'];
+    case 'array':
+    case 'tuple': return ['array'];
+    case 'union': return [...new Set(descriptor.variants.flatMap(valueClasses))];
+    case 'never': return [];
+    default: return JSON_CLASSES;
+  }
+}
+
+/** Whether no value can satisfy both descriptors: they have no JSON type in common, or they are different literals. */
+function areDisjoint(left: ModelTypeDescriptor, right: ModelTypeDescriptor): boolean {
+  if (left.kind === 'literal' && right.kind === 'literal') return left.value !== right.value;
+  const classes = valueClasses(right);
+  return !valueClasses(left).some((type) => classes.includes(type));
+}
+
+/**
+ * `oneOf` accepts a value that exactly one branch accepts, and the union descriptor accepts a value that any branch accepts. A union that a
+ * discriminator tags, or whose branches no value can satisfy together, is exact as it is. Any other `oneOf` keeps the `oneOf` constraint beside the union.
+ */
+function withExactOneOf(descriptor: ModelTypeDescriptor, union: Readonly<Record<string, unknown>>): ModelTypeDescriptor {
+  if (!Array.isArray(union.oneOf) || descriptor.kind !== 'union' || descriptor.discriminator !== undefined) return descriptor;
+  const { variants } = descriptor;
+  if (variants.every((left, at) => variants.slice(at + 1).every((right) => areDisjoint(left, right)))) return descriptor;
+  return { ...descriptor, constraints: [...(descriptor.constraints ?? []), { kind: 'oneOf', schemas: variants }] };
+}
+
 /**
  * A sub-schema that lists `required` names and converts to nothing (no `properties`) judges only the objects among its values:
  * `{ required: ['cvc'] }` is the rule "an object has `cvc`", and every other value passes.
@@ -545,19 +588,36 @@ function noteUncarried(schema: unknown, env: ModelResolveEnv): void {
   if (env.uncarried) for (const keyword of uncarriedKeywords(schema, env.dates)) env.uncarried.add(keyword);
 }
 
+/** The descriptor of one JSON type with no keyword of its shape: an object of unknown values, an array of unknown items, `null`. */
+function typeDescriptor(type: string, required: readonly string[]): ModelTypeDescriptor | undefined {
+  switch (type) {
+    case 'string': return { kind: 'string' };
+    case 'number': return { kind: 'number' };
+    case 'integer': return { kind: 'number', constraints: [{ kind: 'integer' }] };
+    case 'boolean': return { kind: 'boolean' };
+    case 'null': return { kind: 'null' };
+    case 'array': return { kind: 'array', item: { kind: 'unknown' } };
+    case 'object': return { kind: 'object', properties: {}, required, additionalProperties: { kind: 'unknown' } };
+    default: return undefined;
+  }
+}
+
 /**
- * A schema that converts to a value of no known shape (`unknown`) drops its `type` when it names a type that has no descriptor of its own
- * (`object` or `array` with no keywords of their shape, `null`, several types) and its `required` names unless the caller holds them.
+ * The descriptor of a schema that names its `type` and has no keyword of that shape: the union of the descriptors of its types.
+ * An allOf member that names only `object` stays a constraint-only part: the composition holds the object type.
  */
-function noteUnknownShape(schema: Readonly<Record<string, unknown>>, env: ModelResolveEnv, requiredHeld: boolean): void {
-  if (!env.uncarried) return;
-  if (schema.type !== undefined) env.uncarried.add('type');
-  if (!requiredHeld && schema.properties === undefined && Array.isArray(schema.required) && schema.required.length > 0) env.uncarried.add('required');
+function typesDescriptor(schema: Readonly<Record<string, unknown>>, holds: ModelResolveEnv['holds']): ModelTypeDescriptor | undefined {
+  if (schema.type === undefined) return undefined;
+  const types = effectiveSchemaTypes(schema);
+  if (holds === 'member' && types.every((type) => type === 'object')) return undefined;
+  const required = Array.isArray(schema.required) ? schema.required.filter((name): name is string => typeof name === 'string') : [];
+  const variants = types.flatMap((type) => typeDescriptor(type, required) ?? []);
+  return variants.length > 1 ? { kind: 'union', variants } : variants[0];
 }
 
 /** The converter of the sub-schemas of a keyword, which reads them as it reads a field. */
 function subschemaConverter(definitions: ModelDefinitions, env: ModelResolveEnv, direction: 'from' | 'to', seen: ReadonlySet<unknown>): SubSchema {
-  return (child) => typeof child === 'boolean' ? child : withRequiredNames(modelConversionDescriptor(child, definitions, { ...env, holdsRequired: true }, direction, seen), child);
+  return (child) => typeof child === 'boolean' ? child : withRequiredNames(modelConversionDescriptor(child, definitions, { ...env, holds: 'sub' }, direction, seen), child);
 }
 
 export function modelConversionDescriptor(
@@ -569,8 +629,8 @@ export function modelConversionDescriptor(
   nullThroughReference = true,
   position: 'field' | 'definition' = 'field',
 ): ModelTypeDescriptor {
-  const requiredHeld = env.holdsRequired === true;
-  if (requiredHeld) env = { ...env, holdsRequired: false };
+  const holds = env.holds;
+  if (holds) env = { ...env, holds: undefined };
   const nested = withSchemaBase(env, schema);
   noteUncarried(schema, env);
   const reference = modelSchemaReference(schema, nested);
@@ -619,9 +679,9 @@ export function modelConversionDescriptor(
       const declaredKey = asRecord(composition.union.discriminator).propertyName;
       const discriminator = unionDiscriminatorTable(composition.union, composition.items, definitions, composition.scope)
         ?? untaggedUnionTable(variants, definitions, typeof declaredKey === 'string' ? declaredKey : undefined);
-      return beside({ kind: 'union', variants, ...(discriminator ? { discriminator } : {}) });
+      return withExactOneOf(beside({ kind: 'union', variants, ...(discriminator ? { discriminator } : {}) }), asRecord(composition.union));
     }
-    const members = schema.allOf.map((item) => modelConversionDescriptor(item, definitions, { ...nested, holdsRequired: true }, direction, seen));
+    const members = schema.allOf.map((item) => modelConversionDescriptor(item, definitions, { ...nested, holds: 'member' }, direction, seen));
     // Deciding members win. Members that only constrain, or restate an array without converting it, leave the schema's own
     // array, oneOf, anyOf and properties keywords to convert the field; the constraints join that descriptor.
     const deciding = members.filter(isDecidingPart);
@@ -695,7 +755,7 @@ export function modelConversionDescriptor(
     }
     return undefined;
   })() : undefined;
-  if (union) return carryKeywords(union, asRecord(schema), sub);
+  if (union) return withExactOneOf(carryKeywords(union, asRecord(schema), sub), asRecord(schema));
   if (isJsonObject(schema) && (schema.properties || schema.additionalProperties !== undefined)) {
     const required = Array.isArray(schema.required)
       ? schema.required.filter((item): item is string => typeof item === 'string')
@@ -736,9 +796,12 @@ export function modelConversionDescriptor(
         ? { kind: 'union', variants: [constrained, { kind: 'null' }] }
         : constrained, schema, sub);
     }
-    noteUnknownShape(schema, env, requiredHeld);
+    const shaped = typesDescriptor(schema, holds);
+    if (shaped) return withOpenApiEnum(withOpenApiConstraints(shaped, schema, sub), schema);
     const constraints = openApiKeywordConstraints(schema, sub);
-    if (constraints || Array.isArray(schema.enum)) return withOpenApiEnum({ kind: 'unknown', ...(constraints ? { constraints } : {}) }, schema);
+    const unknown: ModelTypeDescriptor = constraints || Array.isArray(schema.enum) ? withOpenApiEnum({ kind: 'unknown', ...(constraints ? { constraints } : {}) }, schema) : { kind: 'unknown' };
+    // An allOf member or a sub-schema has its `required` names held by its caller; any other schema without `type` or `properties` holds them as a rule of its objects.
+    return holds === undefined ? withRequiredNames(unknown, schema) : unknown;
   }
   return { kind: 'unknown' };
 }
@@ -770,7 +833,7 @@ function compositionReader(
       return name && target !== undefined ? { name, referenced: target, scope: nested, model: definitions.has(name) } : undefined;
     },
     nested: (schema, env) => withSchemaBase(env, schema),
-    descriptor: (schema, env) => seen.has(schema) ? undefined : modelConversionDescriptor(schema, definitions, { ...env, holdsRequired: true }, direction, seen),
+    descriptor: (schema, env) => seen.has(schema) ? undefined : modelConversionDescriptor(schema, definitions, { ...env, holds: 'member' }, direction, seen),
     ...declaredModelBases(definitions),
   };
 }

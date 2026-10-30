@@ -922,8 +922,6 @@ The descriptors do not carry these keywords:
 - `unevaluatedProperties` or `unevaluatedItems` beside `if`, `dependentSchemas`, `oneOf` or `anyOf`.
 - `additionalItems`.
 - A keyword of the schema beside a `$ref`.
-- `type` of `object`, `array` or `null`, or several types, when the schema has no keyword of that shape.
-- `required` when the schema has no `properties`.
 
 A schema that carries these keywords does not stop an SDK. The SDK client checks a request body in its wire form, and an inbound response body in its wire form. The SDK still converts the dates of the body.
 
