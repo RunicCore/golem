@@ -327,3 +327,10 @@ export function captureRequest(url: string | URL | Request, init?: RequestInit):
     },
   };
 }
+
+/** The function `<prefix><Name>` that an SDK exports for its schema `Name` (`validate`, `fromWireFormat`, `toWireFormat`, `parse`, `stringify`, `assert`). */
+export function sdkFunction<Result = unknown>(models: Record<string, unknown>, prefix: string, name: string): (...input: unknown[]) => Result {
+  const found = models[`${prefix}${name}`];
+  if (typeof found !== 'function') throw new TypeError(`The SDK exports no function ${prefix}${name}`);
+  return found as (...input: unknown[]) => Result;
+}

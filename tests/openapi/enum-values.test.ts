@@ -2,15 +2,13 @@ import { createFixtureProject } from '../fixture-project.js';
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import test from 'node:test';
-import { requireObjectCodec } from '@exprtlabs/golem/internal/model-runtime';
-import { getValidator } from '@exprtlabs/golem/validation';
-import { generatedCodecIdFromRoot } from '../support/consumer.js';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import {
   compileGeneratedSdk,
   documentBase,
   generateMaterializedSdk,
   importGeneratedModule,
+  sdkFunction,
 } from './helpers.js';
 
 test('a model field limited by enum, with or without type, rejects a value outside the list', async t => {
@@ -38,17 +36,16 @@ test('a model field limited by enum, with or without type, rejects a value outsi
   await generateMaterializedSdk(document, { output, name: 'Enums', profile: { mobx: false, validation: true } });
   compileGeneratedSdk(output, [], { strict: true });
   const models = await importGeneratedModule(output, 'enum models');
-  const TicketModel = models.TicketModel as new (values?: Record<string, unknown>) => Record<string, unknown>;
-  const construct = TicketModel as unknown as abstract new (values?: never) => object;
-  const codec = requireObjectCodec(generatedCodecIdFromRoot(output, 'Ticket'));
+  const validateTicket = sdkFunction<boolean>(models, 'validate', 'Ticket');
+  const fromWireFormatTicket = sdkFunction(models, 'fromWireFormat', 'Ticket');
   const body = { rank: 2, mark: 'high', level: 3, label: 'b' };
-  assert.equal(await getValidator(new TicketModel(body)).validate(), true);
-  assert.deepEqual({ ...(codec.fromWireFormat(body, { construct }) as object) }, body);
+  assert.equal(await validateTicket(body), true);
+  assert.deepEqual({ ...(fromWireFormatTicket(body) as object) }, body);
   for (const [field, value] of [['rank', 4], ['rank', '2'], ['mark', 'mid'], ['level', 4], ['label', 'c']] as const) {
     const bad = { ...body, [field]: value };
-    assert.equal(await getValidator(new TicketModel(bad)).validate(), false, `validate ${field} = ${String(value)}`);
+    assert.equal(await validateTicket(bad), false, `validate ${field} = ${String(value)}`);
     assert.throws(
-      () => codec.fromWireFormat(bad, { construct }),
+      () => fromWireFormatTicket(bad),
       (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.Validation,
       `decode ${field} = ${String(value)}`,
     );
@@ -70,10 +67,10 @@ test('an optional model field with an empty enum accepts no value', async t => {
   await generateMaterializedSdk(shelfDocument({ none: { enum: [] }, name: { type: 'string' } }, ['name']), { output, name: 'Shelves', profile: { mobx: false, validation: true } });
   compileGeneratedSdk(output, [], { strict: true });
   const models = await importGeneratedModule(output, 'empty enum models');
-  const ShelfModel = models.ShelfModel as new (values?: Record<string, unknown>) => Record<string, unknown>;
-  assert.equal(await getValidator(new ShelfModel({ none: 'x', name: 'a' })).validate(), false);
-  assert.equal(await getValidator(new ShelfModel({ none: null, name: 'a' })).validate(), false);
-  assert.equal(await getValidator(new ShelfModel({ name: 'a' })).validate(), true);
+  const validateShelf = sdkFunction<boolean>(models, 'validate', 'Shelf');
+  assert.equal(await validateShelf({ none: 'x', name: 'a' }), false);
+  assert.equal(await validateShelf({ none: null, name: 'a' }), false);
+  assert.equal(await validateShelf({ name: 'a' }), true);
 });
 
 for (const [label, schema] of [['an empty enum', { enum: [] }], ['not: true', { not: true }], ['false', false]] as const) {
@@ -93,12 +90,12 @@ test('a model field limited by an enum of objects and arrays accepts a listed va
   await generateMaterializedSdk(shelfDocument({ pick: { enum: ['x', { a: 1, b: [2] }, [1, 2], Object.fromEntries([['__proto__', 'p']])] }, name: { type: 'string' } }), { output, name: 'Shelves', profile: { mobx: false, validation: true } });
   compileGeneratedSdk(output, [], { strict: true });
   const models = await importGeneratedModule(output, 'object enum models');
-  const ShelfModel = models.ShelfModel as new (values?: Record<string, unknown>) => Record<string, unknown>;
+  const validateShelf = sdkFunction<boolean>(models, 'validate', 'Shelf');
   for (const pick of ['x', { b: [2], a: 1 }, [1, 2], Object.fromEntries([['__proto__', 'p']])]) {
-    assert.equal(await getValidator(new ShelfModel({ pick, name: 'a' })).validate(), true, JSON.stringify(pick));
+    assert.equal(await validateShelf({ pick, name: 'a' }), true, JSON.stringify(pick));
   }
   for (const pick of ['y', { a: 1 }, { a: 1, b: [2], c: 3 }, { a: 1, b: [3] }, [2, 1], null, {}]) {
-    assert.equal(await getValidator(new ShelfModel({ pick, name: 'a' })).validate(), false, JSON.stringify(pick));
+    assert.equal(await validateShelf({ pick, name: 'a' }), false, JSON.stringify(pick));
   }
 });
 
@@ -108,9 +105,9 @@ test('a nullable model field limited by an enum that lists an object rejects nul
   await generateMaterializedSdk(shelfDocument({ pick: { type: ['string', 'null'], enum: ['x', { a: 1 }] }, name: { type: 'string' } }), { output, name: 'Shelves', profile: { mobx: false, validation: true } });
   compileGeneratedSdk(output, [], { strict: true });
   const models = await importGeneratedModule(output, 'nullable object enum models');
-  const ShelfModel = models.ShelfModel as new (values?: Record<string, unknown>) => Record<string, unknown>;
-  assert.equal(await getValidator(new ShelfModel({ pick: 'x', name: 'a' })).validate(), true);
-  for (const pick of [null, 'y', { a: 1 }]) assert.equal(await getValidator(new ShelfModel({ pick, name: 'a' })).validate(), false, JSON.stringify(pick));
+  const validateShelf = sdkFunction<boolean>(models, 'validate', 'Shelf');
+  assert.equal(await validateShelf({ pick: 'x', name: 'a' }), true);
+  for (const pick of [null, 'y', { a: 1 }]) assert.equal(await validateShelf({ pick, name: 'a' }), false, JSON.stringify(pick));
 });
 
 test('a scalar enum keeps the keywords beside it and drops a listed value that its type excludes', async t => {
@@ -126,11 +123,11 @@ test('a scalar enum keeps the keywords beside it and drops a listed value that i
   }), { output, name: 'Shelves', profile: { mobx: false, validation: true } });
   compileGeneratedSdk(output, [], { strict: true });
   const models = await importGeneratedModule(output, 'scalar enum keyword models');
-  const ShelfModel = models.ShelfModel as new (values?: Record<string, unknown>) => Record<string, unknown>;
+  const validateShelf = sdkFunction<boolean>(models, 'validate', 'Shelf');
   const body = { count: 2, word: 'a', short: 'a', code: 'ab', whole: 1, free: 2 };
-  assert.equal(await getValidator(new ShelfModel(body)).validate(), true);
-  assert.equal(await getValidator(new ShelfModel({ ...body, free: 'x' })).validate(), true);
+  assert.equal(await validateShelf(body), true);
+  assert.equal(await validateShelf({ ...body, free: 'x' }), true);
   for (const [field, value] of [['count', 1], ['word', 1], ['short', 'bb'], ['code', 'b'], ['whole', 1.5], ['free', 1]] as const) {
-    assert.equal(await getValidator(new ShelfModel({ ...body, [field]: value })).validate(), false, `${field} = ${String(value)}`);
+    assert.equal(await validateShelf({ ...body, [field]: value }), false, `${field} = ${String(value)}`);
   }
 });
