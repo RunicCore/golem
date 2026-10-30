@@ -65,7 +65,34 @@ test('the models job compiles the SDK operation roots and the app models into on
   // The operation's response root is the model's wire check, not a second function for the same schema.
   assert.equal(source.match(/^function f\d+_Charge_[0-9a-f]{8}(?:_wire)?\(/gm)?.length, 2, 'one model check and one wire check of Charge');
   assert.match(source, /export function validate_src_sdk_createCharge_response_200_application_json\(.*\n.*\n  f\d+_Charge_[0-9a-f]{8}_wire\(/);
-  assert.deepEqual(result.artifacts.map(artifact => path.basename(artifact.path)).sort(), ['codec-keys.json', 'ledger.model.generated.ts', 'models.validators.generated.ts']);
+  assert.deepEqual(result.artifacts.map(artifact => path.basename(artifact.path)).sort(), ['codec-keys.json', 'ledger.model.generated.ts', 'models.validators.generated.ts', 'sdk.sdk.generated.ts']);
+});
+
+test('the models job writes the sdkCodecs table: a member per operation in the shape of a standalone codec module', t => {
+  // protects: T-699 the file sdkCodecsFile names exports sdkCodecs, one member per operation, with the SDK node codecs it names
+  const { manifest, context } = golemModeProject(t, 'date');
+  const result = generate({ ...context, profile: { mobx: false, validation: true } });
+  const file = result.artifacts.find(artifact => artifact.path === path.join(context.root, 'src/generated/models/src/sdk.sdk.generated.ts'));
+  const { graph, valueNodes } = sdkSchemaGraph(manifest, true);
+  const requestNode = valueNodes.get(JSON.stringify(['createCharge', 'request', 'application/json'])) ?? '';
+  assert.ok(graph.nodes.has(requestNode));
+  const table = file?.content.slice(file.content.indexOf('export const sdkCodecs')) ?? '';
+  assert.equal(table, `export const sdkCodecs = {
+  createCharge: {
+    input: validate_src_sdk_createCharge_input,
+    responses: {
+      "200:application/json": validate_src_sdk_createCharge_response_200_application_json,
+    },
+    encode: {
+      "application/json": toWireFormat${requestNode},
+    },
+    decode: {
+      "200:application/json": fromWireFormatCharge,
+    },
+  },
+} as const;
+`);
+  assert.match(file?.content ?? '', /^import \{ .*validate_src_sdk_createCharge_input.* \} from '\.\.\/models\.validators\.generated\.js';$/m);
 });
 
 test('the models job reports the diagnostics of the SDK types: an unknown format in an SDK operation stops generation', t => {

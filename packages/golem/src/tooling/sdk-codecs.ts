@@ -100,8 +100,8 @@ export interface OperationCodecsModule {
   readonly sources: readonly ImportSource[];
 }
 
-/** The text of a module that exports `operationCodecs`, the codecs of one operation: a client imports the module of the operation it calls and no other. */
-export function writeOperationCodecs(operation: SdkOperationCodecs, module: OperationCodecsModule): string {
+/** The object literal of the codecs of one operation; the member of the table of a golem-mode SDK and the value of the module of a standalone one. */
+function operationCodecsLiteral(operation: SdkOperationCodecs): Code {
   const keyed = (member: string, items: readonly SdkKeyedCode[] | undefined): Code[] => items?.length
     ? [code`${propertyKey(member)}: {${nest(code`${lineBreak}${join(items.map(item => code`${propertyKey(item.key)}: ${item.code},`), lineBreak)}`)}${lineBreak}},`]
     : [];
@@ -115,8 +115,19 @@ export function writeOperationCodecs(operation: SdkOperationCodecs, module: Oper
     ...keyed('parameters', operation.parameters),
     ...keyed('headers', operation.headers),
   ];
-  const literalBody = members.length ? code`{${nest(code`${lineBreak}${join(members, lineBreak)}`)}${lineBreak}}` : code`{}`;
-  const body = code`export const ${exportedName('operationCodecs')} = ${literalBody} as const;\n`;
+  return members.length ? code`{${nest(code`${lineBreak}${join(members, lineBreak)}`)}${lineBreak}}` : code`{}`;
+}
+
+/** The text of a module that exports `operationCodecs`, the codecs of one operation: a client imports the module of the operation it calls and no other. */
+export function writeOperationCodecs(operation: SdkOperationCodecs, module: OperationCodecsModule): string {
+  const body = code`export const ${exportedName('operationCodecs')} = ${operationCodecsLiteral(operation)} as const;\n`;
   const imports = fileImports(body, module.sources);
   return render(code`${join([module.banner, ...imports, code``, body], lineBreak)}`);
+}
+
+/** The declaration of `SDK_CODECS_EXPORT`: the codecs of every operation of a golem-mode SDK, each under the operation's name, in the shape a standalone operation module exports. */
+export function sdkCodecsTable(operations: readonly { readonly name: string; readonly codecs: SdkOperationCodecs }[]): Code {
+  const members = operations.map(({ name, codecs }) => code`${propertyKey(name)}: ${operationCodecsLiteral(codecs)},`);
+  const literal = members.length ? code`{${nest(code`${lineBreak}${join(members, lineBreak)}`)}${lineBreak}}` : code`{}`;
+  return code`export const ${exportedName(SDK_CODECS_EXPORT)} = ${literal} as const;\n`;
 }

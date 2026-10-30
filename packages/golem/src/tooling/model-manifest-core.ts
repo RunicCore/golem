@@ -70,7 +70,15 @@ export interface GolemModeManifest extends ModelManifest {
   /** In the order the graph interned them. */
   readonly descriptors: readonly SdkDescriptorText[];
   /** In the order the graph interned them. */
-  readonly operations: readonly { readonly name: string; readonly values: readonly SdkOperationValue[]; readonly validation?: SdkOperationValidation }[];
+  readonly operations: readonly {
+    readonly name: string;
+    /** A webhook or callback: its request is decoded and its response encoded. */
+    readonly inbound?: true;
+    readonly values: readonly SdkOperationValue[];
+    readonly validation?: SdkOperationValidation;
+  }[];
+  /** The models that each model narrows, by interned name; a model with none is absent. */
+  readonly bases: Readonly<Record<string, readonly string[]>>;
   /** The schemas the operation roots reach, by resource id: one copy for all operations. Present when the SDK validates. */
   readonly validationResources?: Readonly<Record<string, unknown>>;
 }
@@ -216,7 +224,8 @@ function validateGolemModeGraph(manifest: Record<string, unknown>, filename: str
   const invalid = (reason: string): Error => new Error(`Invalid model manifest ${displayPath(filename)}: ${reason}. Regenerate the SDK with this golem version.`);
   if (manifest.validationSchemaClosure !== undefined) throw invalid('a golem-mode manifest holds the schema graph, not validationSchemaClosure');
   if (manifest.dates !== 'date' && manifest.dates !== 'temporal') throw invalid('dates must be "date" or "temporal"');
-  const { codecIds, descriptors, operations } = manifest;
+  const { codecIds, descriptors, operations, bases } = manifest;
+  if (!isRecord(bases) || !Object.values(bases).every((names) => Array.isArray(names) && names.every(isName))) throw invalid('bases must map each model to the names of the models it narrows');
   if (!isRecord(codecIds) || !Object.values(codecIds).every(isName)) throw invalid('codecIds must map each schema name to a codec id');
   if (!Array.isArray(descriptors) || !descriptors.every((entry) => isRecord(entry) && isName(entry.name) && isDescriptorText(entry.descriptor))) {
     throw invalid('descriptors must list each schema name with its descriptor as JSON text');
@@ -227,7 +236,7 @@ function validateGolemModeGraph(manifest: Record<string, unknown>, filename: str
     throw invalid('operations must list each operation name with the nodes of its values');
   }
   const validating = manifest.profile !== undefined && isRecord(manifest.profile) && manifest.profile.validation !== false;
-  if (validating !== operations.every((entry) => isOperationValidation(entry.validation)) || (validating && !isRecord(manifest.validationResources))) {
+  if ((validating ? !operations.every((entry) => isOperationValidation(entry.validation)) : operations.some((entry) => entry.validation !== undefined)) || validating !== isRecord(manifest.validationResources)) {
     throw invalid('a validating SDK lists the validation roots of every operation and the resources they reach, and a non-validating SDK lists none');
   }
 }

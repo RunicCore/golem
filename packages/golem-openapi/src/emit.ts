@@ -348,7 +348,7 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions, moved:
     // A source is empty when the compile reported an error; no file is written then. Only operations import the module.
     if (operationValidation && validators.compiled.source !== '' && validators.compiled.exports.size > 0) files.set('validators.generated.ts', validators.compiled.source);
   }
-  files.set('model-manifest.json', stableJson(generateModelManifest(document, profile, modelAnalysis, options.mode, operationValidation)));
+  files.set('model-manifest.json', stableJson(generateModelManifest(document, profile, modelAnalysis, options.mode, { operations: [...operations, ...inboundOperations], validation: operationValidation })));
   if (plan.artifacts.has('client.ts')) {
     const clientModules = generateClientModules(
       clientName,

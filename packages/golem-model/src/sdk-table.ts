@@ -1,10 +1,38 @@
 import { join as joinPath, relative, sep } from 'node:path';
-import { compareText } from '@exprtlabs/golem/generator-api';
+import { compareText, type ResolvedGolemProfile } from '@exprtlabs/golem/generator-api';
+import {
+  blockComment,
+  code,
+  emitCodecRuntimeCode,
+  fileImports,
+  fromWireFunctionName,
+  identifier,
+  ImportSource,
+  isCode,
+  join,
+  lineBreak,
+  MODEL_IMPORT_ORDER,
+  moduleSpecifier,
+  MODULE_CONSTANT_HELPERS,
+  placeHelpers,
+  render,
+  runtimeLinesOf,
+  sdkCodecsFile,
+  sdkCodecsTable,
+  TEMPORAL_SERDE,
+  toWireFunctionName,
+  type Code,
+  type ImportOptions,
+  type Piece,
+  type SdkKeyedCode,
+  type SdkOperationCodecs,
+} from '@exprtlabs/golem/internal/emitter';
 import { canonicalPath } from '@exprtlabs/golem/internal/generator-support';
-import { sdkCodecsFile } from '@exprtlabs/golem/internal/emitter';
+import type { SchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
 import type { GolemModeManifest } from '@exprtlabs/golem/manifest';
 import type { ManifestIndex } from '@exprtlabs/golem/internal/type-analysis';
-import type { SdkValidatorsInput } from '@exprtlabs/golem/internal/validation-plan';
+import type { PlanValidators, SdkValidatorsInput } from '@exprtlabs/golem/internal/validation-plan';
+import { PACKAGE_VERSION } from './package-info.js';
 
 /** An SDK of mode golem that this models job compiles and writes the codecs file for. */
 export interface GolemSdk {
@@ -38,8 +66,110 @@ export const scopedRoot = (sdk: GolemSdk, root: string): string => `${sdk.scope}
 
 /** The operation roots of the golem-mode SDKs, for `compileSdkValidators`: each SDK's roots under its scope, with the resources they reach. */
 export function sdkValidatorOperations(sdks: readonly GolemSdk[]): SdkValidatorsInput['operations'] {
-  return sdks.flatMap((sdk) => sdk.manifest.validationResources === undefined ? [] : [{
-    roots: Object.fromEntries(sdk.manifest.operations.flatMap(({ validation }) => Object.entries(validation?.roots ?? {})).map(([name, root]) => [scopedRoot(sdk, name), root])),
-    resources: sdk.manifest.validationResources,
-  }]);
+  return sdks.flatMap((sdk) => {
+    const roots = sdk.manifest.operations.flatMap(({ validation }) => Object.entries(validation?.roots ?? {})).map(([name, root]) => [scopedRoot(sdk, name), root] as const);
+    return roots.length === 0 ? [] : [{ roots: Object.fromEntries(roots), resources: sdk.manifest.validationResources ?? {} }];
+  });
+}
+
+/** The order of the names in each import of the runtime parts of the file. */
+const IMPORT_OPTIONS: ImportOptions = {
+  typeNames: 'ordered',
+  modules: ['conversion', 'temporal', 'serde'],
+  order: MODEL_IMPORT_ORDER,
+};
+
+/** The generated validators module and what it exports: the SDK's operation roots, under their scoped names, and the models' codec ids. */
+interface SdkValidators {
+  readonly file: string;
+  readonly compiled: PlanValidators;
+}
+
+/**
+ * The file a golem-mode SDK imports: the codecs of the SDK's converting nodes, and `sdkCodecs`, the table with one member per operation.
+ * An operation has a member when the SDK validates or one of its values converts. A client operation encodes its request and decodes its response;
+ * an inbound one (a webhook or callback) is the other way round, so its request tables hold `fromWire` and its response tables `toWire`.
+ */
+export function sdkCodecsSource(
+  sdk: GolemSdk,
+  built: { readonly graph: SchemaGraph; readonly valueNodes: ReadonlyMap<string, string> },
+  validators: SdkValidators | undefined,
+  profile: ResolvedGolemProfile,
+): string {
+  const validatorsSource = validators && new ImportSource(moduleSpecifier(sdk.codecsFile, validators.file));
+  const exported = (map: ReadonlyMap<string, string>, id: string): string => {
+    const name = map.get(id);
+    if (name === undefined) throw new Error(`The generated validators module has no validator for ${JSON.stringify(id)}.`);
+    return name;
+  };
+  const names = (map: ReadonlyMap<string, string>, id: string): Code | undefined => {
+    const name = map.get(id);
+    return name === undefined || validatorsSource === undefined ? undefined : validatorsSource.name(name);
+  };
+  const codecRuntime = emitCodecRuntimeCode(built.graph, {
+    validationLevel: profile.validation,
+    serde: TEMPORAL_SERDE,
+    ...(validators && validatorsSource ? {
+      validatorName: (id: string) => validatorsSource.name(exported(validators.compiled.exports, id)),
+      fastCheckName: (id: string) => names(validators.compiled.fastExports, id),
+      passCheckNames: (id: string) => {
+        const pass = validators.compiled.passExports.get(id);
+        return pass === undefined ? undefined : { structure: validatorsSource.name(pass.structure), predicates: validatorsSource.name(pass.predicates) };
+      },
+    } : {}),
+    issueSource: 'OpenAPI',
+    projectsInstanceState: true,
+    // The SDK reads no registry: a client calls the table, and an app model calls the node codecs by name.
+    registerCodecs: false,
+    exportAnonymousCodecs: true,
+    modelBases: { basesOf: (id) => sdk.manifest.bases[id] ?? [] },
+  });
+  const operations = sdk.manifest.operations.map((operation) => {
+    const valueCodec = (at: readonly string[], functionName: (id: string) => string): Code | undefined => {
+      const node = built.valueNodes.get(JSON.stringify([operation.name, ...at]));
+      return node === undefined ? undefined : identifier(functionName(node));
+    };
+    // The request of a client operation leaves in its wire form and its response arrives in its plain form; the traffic of an inbound operation runs the other way.
+    const requestConversion = operation.inbound ? fromWireFunctionName : toWireFunctionName;
+    const responseConversion = operation.inbound ? toWireFunctionName : fromWireFunctionName;
+    const keyed = (kind: string, key: (at: readonly string[]) => string, conversion: (id: string) => string): SdkKeyedCode[] => operation.values
+      .filter(({ at }) => at[0] === kind)
+      .flatMap(({ at }) => {
+        const codec = valueCodec(at, conversion);
+        return codec === undefined ? [] : [{ key: key(at.slice(1)), code: codec }];
+      });
+    const encode = keyed('request', ([contentType]) => contentType!, requestConversion);
+    const decode = keyed('response', ([status, contentType]) => `${status}:${contentType}`, responseConversion);
+    const parameters = keyed('parameter', ([location, name]) => `${location}:${name}`, requestConversion);
+    const headers = keyed('response-header', ([status, name]) => `${status}:${name}`, responseConversion);
+    const checks = operation.validation;
+    const root = (name: string): Code => validatorsSource!.name(exported(validators!.compiled.exports, scopedRoot(sdk, name)));
+    const codecs: SdkOperationCodecs = {
+      ...(checks && validatorsSource && validators ? {
+        input: root(checks.input),
+        ...(checks.headers === undefined ? {} : { requestHeaders: root(checks.headers) }),
+        responses: checks.responses.map((item) => ({ key: item.key, code: root(item.root) })),
+        responseHeaders: checks.responseHeaders.map((item) => ({ key: item.key, code: root(item.root) })),
+      } : {}),
+      ...(encode.length ? { encode } : {}),
+      ...(decode.length ? { decode } : {}),
+      ...(parameters.length ? { parameters } : {}),
+      ...(headers.length ? { headers } : {}),
+    };
+    return { name: operation.name, codecs };
+  });
+  const body: Piece[] = [codecRuntime, sdkCodecsTable(operations)];
+  // What the code calls decides the runtime imports and which helpers the file defines.
+  const calls = join(body.filter(isCode), code`\n`);
+  const runtimeLines = runtimeLinesOf(calls, IMPORT_OPTIONS);
+  const bodyLines = placeHelpers(calls, body, MODULE_CONSTANT_HELPERS);
+  const sources = validatorsSource ? [validatorsSource] : [];
+  const lines: readonly Code[] = [
+    blockComment(`Generated by @exprtlabs/golem-model ${PACKAGE_VERSION}. Do not edit.`),
+    ...runtimeLines('conversion', 'temporal', 'serde'),
+    ...fileImports(join(bodyLines, code`\n`), sources),
+    code``,
+    ...bodyLines,
+  ];
+  return render(code`${join(lines, lineBreak)}`);
 }

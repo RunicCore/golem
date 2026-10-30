@@ -7,12 +7,14 @@ import { asRecord, isJsonObject } from './json.js';
 import { compareText } from '@exprtlabs/golem/generator-api';
 import type { GolemModeManifest, SdkOperationValidation, SdkOperationValue } from '@exprtlabs/golem/manifest';
 import type { OperationValidationSchemas } from './client/emit.js';
+import type { NormalizedOperation } from './normalize.js';
 import { GENERATOR_NAME, PACKAGE_VERSION } from './package-info.js';
 import type { OpenApiGenerationProfile } from './profile.js';
 import { requireProfile } from './profile.js';
 import {
   type ModelDefinition,
   type OpenApiModelAnalysis,
+  modelBases,
   modelStableId,
 } from './model-resolution.js';
 
@@ -21,41 +23,53 @@ import {
  * Descriptors are JSON text (see `SdkDescriptorText`). The data is the graph's inputs, so interning it again with these codec ids
  * gives the same nodes. A value of a `$ref` is the node of that model and holds no descriptor.
  */
-function golemModeGraph(analysis: OpenApiModelAnalysis, operationValidation: OperationValidationSchemas | undefined, validating: boolean): Pick<GolemModeManifest, 'mode' | 'dates' | 'codecIds' | 'descriptors' | 'operations' | 'validationResources'> {
-  const operations: { name: string; values: SdkOperationValue[]; validation?: SdkOperationValidation }[] = [];
-  const operationOf = (name: string) => {
-    const last = operations.at(-1);
-    return last?.name === name ? last : operations[operations.push({ name, values: [] }) - 1]!;
-  };
-  // Every operation of a validating SDK is listed, in the order the bundles are built; a non-validating SDK lists those with a converting value.
-  for (const [name, bundle] of operationValidation?.bundles ?? []) {
-    operationOf(name).validation = {
+function golemModeGraph(analysis: OpenApiModelAnalysis, sdk: GolemModeOperations, validating: boolean): Pick<GolemModeManifest, 'mode' | 'dates' | 'codecIds' | 'descriptors' | 'operations' | 'validationResources' | 'bases'> {
+  const operations: GolemModeManifest['operations'][number][] = [];
+  // An operation is listed when it converts a value or the SDK validates; the order is the order of the SDK's operations, then its inbound ones.
+  for (const operation of sdk.operations) {
+    const values: SdkOperationValue[] = [];
+    for (const [key, node] of analysis.convertedNodeIds) {
+      const [name, ...at] = JSON.parse(key) as [string, ...string[]];
+      if (name !== operation.name) continue;
+      const input = analysis.graphInputs.values.get(key);
+      const inline = input && { ...(input.name === undefined ? {} : { name: input.name }), descriptor: JSON.stringify(input.descriptor) };
+      values.push({ at, node, ...(inline ? { inline } : {}) });
+    }
+    const bundle = sdk.validation?.bundles.get(operation.name);
+    const validation: SdkOperationValidation | undefined = bundle && {
       input: bundle.inputReference,
       ...(bundle.headersReference === undefined ? {} : { headers: bundle.headersReference }),
       responses: bundle.responseReferences.map((item) => ({ key: `${item.status}:${item.contentType}`, root: item.reference })),
       responseHeaders: bundle.responseHeaderReferences.map((item) => ({ key: `${item.status}:${item.name}`, root: item.reference })),
       roots: bundle.roots,
     };
-  }
-  for (const [key, node] of analysis.convertedNodeIds) {
-    const [name, ...at] = JSON.parse(key) as [string, ...string[]];
-    const input = analysis.graphInputs.values.get(key);
-    const inline = input && { ...(input.name === undefined ? {} : { name: input.name }), descriptor: JSON.stringify(input.descriptor) };
-    const found = operations.find((operation) => operation.name === name) ?? operationOf(name);
-    found.values.push({ at, node, ...(inline ? { inline } : {}) });
+    if (values.length === 0 && validation === undefined) continue;
+    operations.push({ name: operation.name, ...(operation.sourceKind === 'path' ? {} : { inbound: true }), values, ...(validation ? { validation } : {}) });
   }
   // A resource that several operations hold is the same schema in each, so one copy serves them all.
-  const resources = Object.fromEntries([...(operationValidation?.bundles.values() ?? [])]
+  const resources = Object.fromEntries([...(sdk.validation?.bundles.values() ?? [])]
     .flatMap((bundle) => Object.entries(bundle.schemas))
     .sort(([left], [right]) => compareText(left, right)));
+  // The models that each model narrows, which the codec emitter reads to merge an intersection.
+  const bases = Object.fromEntries(analysis.graphInputs.models.flatMap(({ name }) => {
+    const declared = modelBases(analysis.definitions.get(name));
+    return declared.length ? [[name, declared] as const] : [];
+  }));
   return {
     mode: 'golem',
     dates: analysis.dates,
     codecIds: Object.fromEntries(analysis.graphInputs.models.map(({ name }) => [name, openApiCodecId(analysis, name)])),
     descriptors: analysis.graphInputs.models.map(({ name, descriptor }) => ({ name, descriptor: JSON.stringify(descriptor) })),
+    bases,
     operations,
     ...(validating ? { validationResources: resources } : {}),
   };
+}
+
+/** What an SDK of mode golem writes into its manifest besides the schema graph: its operations (outbound, then inbound) and their validation roots. */
+export interface GolemModeOperations {
+  readonly operations: readonly NormalizedOperation[];
+  readonly validation: OperationValidationSchemas | undefined;
 }
 
 /** `golem` mode writes the schema graph in place of the data-only validation closure; `standalone` keeps the closure. */
@@ -64,7 +78,7 @@ export function generateModelManifest(
   profile: OpenApiGenerationProfile,
   modelAnalysis: OpenApiModelAnalysis,
   mode: 'standalone' | 'golem' = 'standalone',
-  operationValidation?: OperationValidationSchemas,
+  golem: GolemModeOperations = { operations: [], validation: undefined },
 ): unknown {
   profile = requireProfile(profile);
   const { ordered, schemaGraph } = modelAnalysis;
@@ -107,7 +121,7 @@ export function generateModelManifest(
     },
     profile,
     models,
-    ...(mode === 'golem' ? golemModeGraph(modelAnalysis, operationValidation, Boolean(profile.validation)) : profile.validation ? {
+    ...(mode === 'golem' ? golemModeGraph(modelAnalysis, golem, Boolean(profile.validation)) : profile.validation ? {
       validationSchemaClosure: openApiValidationSchemaClosure(schemaGraph, ordered, stableId),
     } : {}),
   };

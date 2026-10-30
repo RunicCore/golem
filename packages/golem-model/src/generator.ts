@@ -38,7 +38,7 @@ import { assertModelLevelsWithinProject, collectSpecifications } from '@exprtlab
 import { discoverModelManifests } from '@exprtlabs/golem/manifest';
 import { loadModelManifests, sdkModelFiles, sdkSchemaGraph } from '@exprtlabs/golem/internal/type-analysis';
 import type { ManifestIndex } from '@exprtlabs/golem/internal/type-analysis';
-import { golemSdks, sdkValidatorOperations } from './sdk-table.js';
+import { golemSdks, sdkCodecsSource, sdkValidatorOperations } from './sdk-table.js';
 import {
   assertAbsolute,
   assertDistinctCompanions,
@@ -594,6 +594,10 @@ export function generate(context: GolemModelContext): GolemModelResult {
   const artifacts: GolemArtifact[] = [];
   if (validators) {
     artifacts.push({ path: validatorsOutput, content: validators.source });
+  }
+  // The file an SDK of mode golem imports for its codecs; the openapi job wrote the import and the models job owns the file.
+  for (const [index, sdk] of sdks.entries()) {
+    artifacts.push({ path: sdk.codecsFile, content: sdkCodecsSource(sdk, sdkGraphs[index]!, validators && { file: validatorsOutput, compiled: validators }, normalized.profile) });
   }
   for (const { graph, schemaGraph, siblingWireCodecIds, siblingRecursion, cyclicSiblings } of graphSchemaPairs) {
     const { source, output } = graph;
