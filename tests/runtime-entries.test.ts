@@ -56,11 +56,11 @@ function importedRuntimeModules(directory: string): { readonly values: readonly 
 }
 
 const profiles: readonly [string, OpenApiGenerationProfile, readonly string[], readonly string[]][] = [
-  ['plain', { mobx: false, validation: false }, ['@exprtlabs/golem/internal/client-runtime', '@exprtlabs/golem/internal/model-runtime'],
-    ['@exprtlabs/golem/client', '@exprtlabs/golem/model', '@exprtlabs/golem/serde']],
+  // A standalone SDK carries its runtime and imports nothing from @exprtlabs/golem.
+  ['plain', { mobx: false, validation: false }, [], []],
   ['mobx and validation', { mobx: true, validation: true }, [
-    '@exprtlabs/golem/internal/client-runtime', '@exprtlabs/golem/internal/client-validation-runtime', '@exprtlabs/golem/internal/mobx-runtime', '@exprtlabs/golem/internal/mobx-validation-runtime', '@exprtlabs/golem/internal/model-runtime', '@exprtlabs/golem/internal/validation-runtime',
-  ], ['@exprtlabs/golem/client', '@exprtlabs/golem/mobx', '@exprtlabs/golem/model', '@exprtlabs/golem/serde', '@exprtlabs/golem/validation']],
+    '@exprtlabs/golem/internal/client-runtime', '@exprtlabs/golem/internal/client-validation-runtime', '@exprtlabs/golem/internal/mobx-runtime', '@exprtlabs/golem/internal/model-runtime', '@exprtlabs/golem/internal/validation-runtime',
+  ], ['@exprtlabs/golem/client', '@exprtlabs/golem/mobx', '@exprtlabs/golem/serde', '@exprtlabs/golem/validation']],
 ];
 
 for (const [label, profile, valueModules, typeModules] of profiles) {
@@ -80,9 +80,9 @@ for (const [label, profile, valueModules, typeModules] of profiles) {
         return new Response(JSON.stringify({ id: 'a', createdAt: '1970-01-01T00:00:01.000Z', tags: ['x'] }), { status: 200, headers: { 'content-type': 'application/json' } });
       },
     });
-    const created = await client.createItem().execute({ body: { id: 'a', createdAt: '1970-01-01T00:00:00.000Z', tags: ['x'] } });
+    const created = await client.createItem().execute({ body: { id: 'a', createdAt: new Date('1970-01-01T00:00:00.000Z'), tags: ['x'] } });
     assert.deepEqual(JSON.parse(String(sent[0]!.init.body)), { id: 'a', createdAt: '1970-01-01T00:00:00.000Z', tags: ['x'] });
-    assert.equal((created.body as { createdAt: string }).createdAt, '1970-01-01T00:00:01.000Z');
+    assert.equal((created.body as { createdAt: Date }).createdAt.toISOString(), '1970-01-01T00:00:01.000Z');
     await client.getItem().execute({ path: { id: 'a b' }, query: { tag: ['p', 'q'] } });
     assert.equal(sent[1]!.url, 'https://api.example/items/a%20b?tag=p&tag=q');
     assert.equal(sent[1]!.init.headers.get('authorization'), 'Bearer token');
