@@ -1,5 +1,0 @@
-{
-  "name": "@exprtlabs/golem-openapi",
-  "type": "module",
-  "exports": { "./generator": "./incompatible.js" }
-}
