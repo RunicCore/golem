@@ -6,6 +6,7 @@ import type { GolemConfig, GolemJob } from './config.js';
 import { GolemDiagnosticSeverity, compareText, hasErrorCode, isInsideDirectory, isRecord } from './generator-core.js';
 import type { GolemDiagnostic } from './generator-core.js';
 import type { PackageRegistration } from './package-registry.js';
+import { codecKeysPath } from './generated-paths.js';
 import { atomicWrite, loadInventory } from './outputs.js';
 import type { Inventory, InventoryEntry, OutputFiles } from './outputs.js';
 
@@ -229,7 +230,7 @@ function outputIsRecorded(entry: InventoryEntry | undefined, filename: string): 
 /**
  * Whether the job would produce what its record holds: the golem code, provider code, options and manifest set
  * match, every output still has the digest the inventory recorded for it and every input still has the digest it had when the job
- * read it. An output that is missing, edited or absent from the inventory is not current: the job runs again and rewrites it. The
+ * read it. An output that is missing, edited or absent from the inventory (the codec key table apart) is not current: the job runs again and rewrites it. The
  * files the inventory records are left out of directory listings; `inventory` defaults to the one on disk.
  */
 export function jobIsCurrent(
@@ -246,7 +247,9 @@ export function jobIsCurrent(
   const outputs = new Set(record.outputs.map(output => absoluteRecordPath(config, output)));
   const entries = new Map(Object.entries(inventory.files).map(([key, entry]) => [path.resolve(config.directory, key), entry]));
   const generated = new Set(entries.keys());
-  if (![...outputs].every(output => outputIsRecorded(entries.get(output), output))) return false;
+  // The codec key table is core's own record, which no inventory entry holds: it only has to exist.
+  const codecKeys = codecKeysPath(config.directory);
+  if (![...outputs].every(output => output === codecKeys ? fs.existsSync(output) : outputIsRecorded(entries.get(output), output))) return false;
   const excluded = (filename: string): boolean => generated.has(filename) || outputs.has(filename) || insideAny(ignoredDirectories, filename);
   return Object.entries(record.inputs)
     .every(([input, digest]) => inputDigest(absoluteRecordPath(config, input), excluded, config.directory) === digest);
