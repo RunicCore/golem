@@ -79,6 +79,8 @@ function cleanProject(t: TestContext, source: string, yaml = config, files: Reco
 const read = (root: string, file: string): string => fs.readFileSync(path.join(root, file), 'utf8');
 /** The named schemas of a document: a type that has no name, such as a Pick, is written inline and adds none. */
 const schemaNames = (document: string): string[] => Object.keys((JSON.parse(document) as { components?: { schemas: object } }).components?.schemas ?? {});
+/** The response schema of GET /catalog, as the document writes it. */
+const catalogResponse = (document: string): unknown => (JSON.parse(document) as { paths: Record<string, { get: { responses: Record<string, { content: Record<string, { schema: unknown }> }> } }> }).paths['/catalog'].get.responses['200'].content['application/json'].schema;
 const sdkUnknownFormats = (root: string): string => (JSON.parse(read(root, 'sdk/model-manifest.json')) as { profile: { unknownFormats: string } }).profile.unknownFormats;
 
 // protects: T-464 a clean run and a run with the SDK present give the same document
@@ -117,13 +119,13 @@ test('a profile option changed after a run regenerates the SDK manifest with the
 });
 
 const reaches = [
-  ['returns it', 'TCart', '', undefined, ['TCart']],
-  ['returns an array of it', 'TCart[]', '', undefined, ['TCart']],
-  ['picks a field of it that holds no SDK type', "Pick<TCart, 'note'>", '', undefined, []],
-  ['returns it in a union', 'TStatus | TCart', '', undefined, ['TCart', 'TStatus']],
-  ['returns a model that holds it', 'TStatus | TOrder', "import type { TOrder } from './order.model.js';", undefined, ['TCart', 'TOrder', 'TStatus']],
-  ['imports an SDK type', 'Money', "import type { Money } from '../sdk/index.js';", undefined, []],
-  ['returns a local type that holds an SDK type', 'Local', "import type { Money } from '../sdk/index.js';\ntype Local = { m: Money };", undefined, []],
+  ['returns it', 'TCart', '', undefined, ['TCart'], { $ref: '#/components/schemas/TCart' }],
+  ['returns an array of it', 'TCart[]', '', undefined, ['TCart'], { type: 'array', items: { $ref: '#/components/schemas/TCart' } }],
+  ['picks a field of it that holds no SDK type', "Pick<TCart, 'note'>", '', undefined, [], { type: 'object', additionalProperties: true, properties: { note: { type: 'string' } }, required: ['note'] }],
+  ['returns it in a union', 'TStatus | TCart', '', undefined, ['TCart', 'TStatus'], { anyOf: [{ $ref: '#/components/schemas/TCart' }, { $ref: '#/components/schemas/TStatus' }] }],
+  ['returns a model that holds it', 'TStatus | TOrder', "import type { TOrder } from './order.model.js';", undefined, ['TCart', 'TOrder', 'TStatus'], { anyOf: [{ $ref: '#/components/schemas/TOrder' }, { $ref: '#/components/schemas/TStatus' }] }],
+  ['imports an SDK type', 'Money', "import type { Money } from '../sdk/index.js';", undefined, [], { type: 'object', additionalProperties: true, properties: { amount: { type: 'number' }, currency: { type: 'string' } }, required: ['amount', 'currency'] }],
+  ['returns a local type that holds an SDK type', 'Local', "import type { Money } from '../sdk/index.js';\ntype Local = { m: Money };", undefined, [], { type: 'object', additionalProperties: true, properties: { m: { type: 'object', additionalProperties: true, properties: { amount: { type: 'number' }, currency: { type: 'string' } }, required: ['amount', 'currency'] } }, required: ['m'] }],
 ] as const;
 
 // One project whose SDK is on disk, shared by the cases: the controller file changes, the models stay.
@@ -140,13 +142,14 @@ const withSdk = onceShared(async () => {
 });
 
 // protects: T-464 a controller that reaches a model with an SDK import generates in every run: the derived order puts the SDK job, which reads no program, before the docs job
-for (const [reach, returns, imports, body, schemas] of reaches) {
+for (const [reach, returns, imports, body, schemas, response] of reaches) {
   test(`a controller that ${reach} generates its document in one run on a clean tree`, async (t: TestContext) => {
     const root = cleanProject(t, controller(returns, imports, body));
 
     await runPipeline(path.join(root, 'golem.yaml'));
 
     assert.deepEqual(schemaNames(read(root, 'generated/openapi.json')), schemas);
+    assert.deepEqual(catalogResponse(read(root, 'generated/openapi.json')), response);
   });
   test(`a controller that ${reach} generates its document in one run when the SDK is present`, async () => {
     const root = await withSdk();
@@ -155,6 +158,7 @@ for (const [reach, returns, imports, body, schemas] of reaches) {
     await runPipeline(path.join(root, 'golem.yaml'));
 
     assert.deepEqual(schemaNames(read(root, 'generated/openapi.json')), schemas);
+    assert.deepEqual(catalogResponse(read(root, 'generated/openapi.json')), response);
   });
 }
 

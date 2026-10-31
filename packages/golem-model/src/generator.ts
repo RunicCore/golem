@@ -398,7 +398,7 @@ function withoutRepeatedFieldTypeWarnings(diagnostics: readonly GolemDiagnostic[
   ));
 }
 
-/** A `sources` entry is a file of this job: one outside the models root, in node_modules or a declaration file stops generation. */
+/** A `sources` entry is a file of this job: one outside the golem.yaml folder, in node_modules or a declaration file stops generation. */
 function assertListedSourceIsOwn(boundary: ModelBoundary, source: string): void {
   const real = canonicalPath(source);
   if (!isInsideDirectory(boundary.root, real)) throw new Error(outsideModelsRootMessage(real, boundary.root));
@@ -449,7 +449,7 @@ export function generate(context: GolemModelContext): GolemModelResult {
   );
   using program = programInfo.program;
   // The program holds the files the tsconfig includes and the files they import. A model file is the job's own only when its
-  // real path is inside the models root and it is not a declaration file; any other model file, whether a shared folder, a linked
+  // real path is inside the golem.yaml folder and it is not a declaration file; any other model file, whether a shared folder, a linked
   // workspace package or an installed package holds it, is shared: its aliases are models of this app.
   const programModelFiles = byRealPath(includedModelSources(programFilenames(program), normalized.suffixes));
   const candidates = listed || programInfo.configPath === undefined
@@ -458,7 +458,7 @@ export function generate(context: GolemModelContext): GolemModelResult {
   const ownCandidates = candidates.filter((source) => isOwnModelFile(boundary, source));
   const nested = nestedJobsOfBlock(MODEL_BLOCK, boundary.root, canonicalPath(normalized.directory), ownCandidates, normalized.onInput);
   if (nested.length > 0) {
-    throw new Error(`RUNM1077: ${nested.map(displayPath).join(', ')} ${nested.length === 1 ? 'declares' : 'declare'} a models job below the models root ${displayPath(boundary.root)}, where the models job of ${displayPath(join(normalized.directory, 'golem.yaml'))} already generates the same model files. Two jobs would write one generated file. Remove the models job from ${nested.length === 1 ? 'it' : 'each'}, or move the folder out of the models root.`);
+    throw new Error(`RUNM1077: ${nested.map(displayPath).join(', ')} ${nested.length === 1 ? 'declares' : 'declare'} a model block below the golem.yaml folder ${displayPath(boundary.root)}, where the model block of ${displayPath(join(normalized.directory, 'golem.yaml'))} already generates the same model files. Two blocks would write one generated file. Remove the model block from ${nested.length === 1 ? 'its golem.yaml' : 'each golem.yaml'}, or move the folder out of the golem.yaml folder.`);
   }
   const sharedModelFiles = programModelFiles.filter((source) => !isOwnModelFile(boundary, source));
   // The manifests are read when a decision needs them: a shared file may be an SDK file, and a job that has models emits against them.
@@ -487,7 +487,7 @@ export function generate(context: GolemModelContext): GolemModelResult {
   // A file that `model.sources` names must have one.
   const withModels = new Set(specifications.map((specification) => canonicalFilename(specification.sourceFile.fileName)));
   const ownSources = listed ? ownCandidates : ownCandidates.filter((source) => withModels.has(canonicalFilename(source)));
-  // A shared model file of the program is a source of the job: this app writes its companion in models.output.
+  // A shared model file of the program is a source of the job: this app writes its companion in model.output.
   const sharedSources = sharedCandidates.filter((source) => withModels.has(canonicalFilename(source)));
   const sources = [...ownSources, ...sharedSources];
   if (sources.length === 0 && !hasGolemSdks()) {

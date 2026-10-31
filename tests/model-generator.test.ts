@@ -651,7 +651,7 @@ export type TMoney = IObject<{ currency: string }>;
 
   assert.throws(
     () => generate({ root, profile: { mobx: false, validation: true } }),
-    { message: `RUNM1077: ${path.relative(process.cwd(), path.join(sourceRoot, 'lib/golem.yaml'))} declares a models job below the models root ${path.relative(process.cwd(), root)}, where the models job of ${path.relative(process.cwd(), path.join(root, 'golem.yaml'))} already generates the same model files. Two jobs would write one generated file. Remove the models job from it, or move the folder out of the models root.` },
+    { message: `RUNM1077: ${path.relative(process.cwd(), path.join(sourceRoot, 'lib/golem.yaml'))} declares a model block below the golem.yaml folder ${path.relative(process.cwd(), root)}, where the model block of ${path.relative(process.cwd(), path.join(root, 'golem.yaml'))} already generates the same model files. Two blocks would write one generated file. Remove the model block from its golem.yaml, or move the folder out of the golem.yaml folder.` },
   );
 });
 
@@ -789,7 +789,7 @@ test('models.root reached through a folder link still owns its model files', (t:
   );
 });
 
-test('no generated file is written outside the models root', (t: TestContext) => {
+test('no generated file is written outside the golem.yaml folder', (t: TestContext) => {
   const outer = sharedWorkspace(t);
   sharedMoneyModel(outer);
   writeModelSources(path.join(outer, 'shared'), { 'plain.ts': 'export type TShared = { amount: number };\n' });
@@ -815,7 +815,7 @@ test('a sources entry outside the models root stops generation with RUNM1075 nam
 
   assert.throws(
     () => generate({ root, sources: [path.join(root, 'src/order.model.ts'), money], profile: { mobx: false, validation: true } }),
-    { message: `RUNM1075: model.sources entry ${path.relative(process.cwd(), money)} is outside the models root ${path.relative(process.cwd(), root)}. A models job generates only files inside its root.` },
+    { message: `RUNM1075: model.sources entry ${path.relative(process.cwd(), money)} is outside the golem.yaml folder ${path.relative(process.cwd(), root)}. The model block generates only files inside that folder.` },
   );
 });
 
@@ -827,7 +827,7 @@ test('a sources entry that links to a file outside the models root stops generat
 
   assert.throws(
     () => generate({ root, sources: [path.join(root, 'src/money.model.ts')], profile: { mobx: false, validation: true } }),
-    { message: `RUNM1075: model.sources entry ${path.relative(process.cwd(), money)} is outside the models root ${path.relative(process.cwd(), root)}. A models job generates only files inside its root.` },
+    { message: `RUNM1075: model.sources entry ${path.relative(process.cwd(), money)} is outside the golem.yaml folder ${path.relative(process.cwd(), root)}. The model block generates only files inside that folder.` },
   );
 });
 
@@ -845,7 +845,7 @@ export type TMoney = IObject<{ currency: string }>;
   assert.throws(
     () => generate({ root, sources: [path.join(root, 'src/lib/money.model.ts')], profile: { mobx: false, validation: true } }),
     (error: unknown) => error instanceof Error
-      && error.message.startsWith(`RUNM1077: ${path.relative(process.cwd(), path.join(fs.realpathSync(root), 'src/lib/golem.yaml'))} declares a models job below the models root ${path.relative(process.cwd(), fs.realpathSync(root))}, where `),
+      && error.message.startsWith(`RUNM1077: ${path.relative(process.cwd(), path.join(fs.realpathSync(root), 'src/lib/golem.yaml'))} declares a model block below the golem.yaml folder ${path.relative(process.cwd(), fs.realpathSync(root))}, where `),
   );
 });
 
@@ -1001,13 +1001,13 @@ for (const [block, message] of MODEL_BLOCK_CASES) {
 
 for (const [name, link] of [['a source outside the root', false], ['a source that links to a file outside the root', true]] as const) {
   test(`${name} stops loading with RUNM1075 naming the real path and the root`, (t: TestContext) => {
-    // protects: a models job generates only files inside its root (RUNM1075), and a link shows as the file it points to
+    // protects: the model block generates only files inside the golem.yaml folder (RUNM1075), and a link shows as the file it points to
     const { root, app, filename } = configProject(t, `model:\n  sources: [${link ? 'src/money.model.ts' : '../shared/money.model.ts'}]\n`);
     fs.mkdirSync(path.join(root, 'shared'));
     fs.writeFileSync(path.join(root, 'shared/money.model.ts'), 'export {};\n');
     if (link) fs.symlinkSync('../../shared/money.model.ts', path.join(app, 'src/money.model.ts'));
     assert.throws(() => resolveConfig(filename), {
-      message: `RUNM1075: model.sources entry ${path.relative(process.cwd(), path.join(root, 'shared/money.model.ts'))} is outside the models root ${path.relative(process.cwd(), app)}. A models job generates only files inside its root.`,
+      message: `RUNM1075: model.sources entry ${path.relative(process.cwd(), path.join(root, 'shared/money.model.ts'))} is outside the golem.yaml folder ${path.relative(process.cwd(), app)}. The model block generates only files inside that folder.`,
     });
   });
 }

@@ -14,9 +14,9 @@ export const MODEL_BLOCK = 'model';
 /** The file-name endings of a model file when the block lists none. */
 export const DEFAULT_MODEL_SUFFIXES: readonly string[] = ['.model.ts', '.models.ts'];
 
-/** The error for a `model.sources` entry whose real path is outside the models root: the yaml and the API stop with this text. */
+/** The error for a `model.sources` entry whose real path is outside the golem.yaml folder: the yaml and the API stop with this text. */
 export function outsideModelsRootMessage(entry: string, root: string): string {
-  return `RUNM1075: model.sources entry ${displayPath(entry)} is outside the models root ${displayPath(root)}. A models job generates only files inside its root.`;
+  return `RUNM1075: model.sources entry ${displayPath(entry)} is outside the golem.yaml folder ${displayPath(root)}. The model block generates only files inside that folder.`;
 }
 
 function nonempty(value: unknown, label: string): string {
