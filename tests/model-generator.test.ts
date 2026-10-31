@@ -1022,7 +1022,7 @@ for (const [name, output, resolved] of [
     fs.mkdirSync(path.join(root, 'outside'));
     fs.symlinkSync(path.join(root, 'outside'), path.join(app, 'linked'), 'dir');
     assert.throws(() => resolveConfig(filename), (error: unknown) => error instanceof JobRuleError
-      && error.message === `Job model: output ${path.join(root, resolved)} is outside the tsconfig directory ${app}. Move it inside.`);
+      && error.message === `Job model: output ${path.relative(process.cwd(), path.join(root, resolved))} is outside the tsconfig directory ${path.relative(process.cwd(), app)}. Move it inside.`);
     assert.deepEqual(fs.readdirSync(path.join(root, 'outside')), []);
   });
 }
@@ -1031,7 +1031,7 @@ test('a model output that overlaps an SDK output stops loading', (t: TestContext
   // protects: A1 overlap rule: exclusive outputs never overlap, so the model folder and an SDK folder cannot share files (master's check of the models output)
   const { app, filename } = configProject(t, 'model:\n  output: gen\nshop:\n  jobs:\n    - { id: sdk, needs: [CodecsHost], outputs: [{ path: gen/sdk, kind: folder }] }\n');
   assert.throws(() => resolveConfig(filename), (error: unknown) => error instanceof JobRuleError
-    && error.rule === 'overlap' && error.message === `Overlapping outputs: ${path.join(app, 'gen')} (job model) and ${path.join(app, 'gen/sdk')} (job sdk).`);
+    && error.rule === 'overlap' && error.message === `Overlapping outputs: ${path.relative(process.cwd(), path.join(app, 'gen'))} (job model) and ${path.relative(process.cwd(), path.join(app, 'gen/sdk'))} (job sdk).`);
 });
 
 test('the models job reads the SDK folders of the jobs that need the codecs host, and so runs after them', (t: TestContext) => {
