@@ -32,6 +32,7 @@
   },
   "files": [
     "dist",
+    "golem-schema.json",
     "sdk-runtime",
     "README.md",
     "LICENSE",
@@ -43,7 +44,8 @@
     "apiVersion": 2,
     "block": "openapi-ts",
     "plan": "./plan",
-    "generator": "./generator"
+    "generator": "./generator",
+    "schema": "./golem-schema.json"
   },
   "exports": {
     "./plan": {

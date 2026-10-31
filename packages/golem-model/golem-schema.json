@@ -1,0 +1,26 @@
+{
+  "description": "The model job: it reads the model files of the project and writes the companion files and the shared model folder.",
+  "type": ["object", "null"],
+  "properties": {
+    "sources": {
+      "description": "Model files and folders of the job. Each lies inside the folder of golem.yaml. Without it the job scans that folder.",
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "suffixes": {
+      "description": "File-name endings of a model file. Each starts with a dot and ends in .ts, .mts or .cts. The default is .model.ts and .models.ts.",
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^\\.(.*\\.)?[cm]?ts$" }
+    },
+    "output": {
+      "description": "The folder that holds the shared model files. The default is src/generated/models.",
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "additionalProperties": false
+}

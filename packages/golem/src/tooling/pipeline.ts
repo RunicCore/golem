@@ -10,6 +10,7 @@ import { absoluteRecordPath, golemCode, insideAny, inventoryPaths, JobInputs, jo
 import type { JobRecord } from './job-cache.js';
 import { GolemDiagnosticSeverity, displayPath, errorMessage, isInsideDirectory, isRecord } from './generator-core.js';
 import { isJobOutput, watchedBy } from './job-facts.js';
+import { writeEditorSchema } from './editor-schema.js';
 import { loadPackageRegistry, registrationForBlock } from './package-registry.js';
 import { validateModelManifest } from './model-manifest-core.js';
 import type { GolemArtifact, GolemDiagnostic, GolemResult, GeneratorSession } from './generator-core.js';
@@ -443,7 +444,10 @@ async function planPipeline(filename: string, run: PipelineRun): Promise<{ reado
   });
   options.onConfig?.(config);
   // A change to a file the registry read, or the appearance of one it looked for, can change which package registers a block.
-  for (const file of loadPackageRegistry(config.configFile).files) observer.observe(file);
+  const registry = loadPackageRegistry(config.configFile);
+  for (const file of registry.files) observer.observe(file);
+  // The editor schema is core's own record in .golem, like the job records: `check` writes nothing. A part left out is a warning, not a stop.
+  if (!options.check) for (const warning of writeEditorSchema(config.directory, registry, options.files)) process.stderr.write(`${warning}\n`);
   // Config paths identify source jobs; only the configuration itself forces all jobs.
   for (const job of config.jobs) for (const input of declaredInputs(job)) observer.observe(input, job.id);
   validateConfigInputs(config);

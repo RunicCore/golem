@@ -30,7 +30,7 @@ export interface PackageRegistration {
   readonly generator: string | undefined;
   /** The entries of the extensions that a block may turn on, by extension name. */
   readonly extensions: ReadonlyMap<string, string>;
-  /** The part this package adds to the editor schema. */
+  /** The file of the part this package adds to the editor schema, in its folder. It is not read here: a missing or broken part is a warning of the editor schema. */
   readonly schema: string | undefined;
 }
 
@@ -158,11 +158,17 @@ function declaresGolemVersion(manifest: Manifest): boolean {
   });
 }
 
-/** The file that Node resolves for a `golem` entry such as `./plan` of `name`, without loading it. */
-function resolveEntry(requireFromConfig: NodeJS.Require, configDirectory: string, name: string, key: string, subpath: unknown): string {
+/** `subpath` as a package subpath such as `./plan`, or a stop. */
+function subpathOf(name: string, key: string, subpath: unknown): string {
   if (typeof subpath !== 'string' || !subpath.startsWith('./') || subpath.length === 2 || subpath.split('/').includes('..')) {
     throw new PackageRegistryError(`golem.${key} of ${name} must be a package subpath such as "./plan", not ${JSON.stringify(subpath)}.`);
   }
+  return subpath;
+}
+
+/** The file that Node resolves for a `golem` entry such as `./plan` of `name`, without loading it. */
+function resolveEntry(requireFromConfig: NodeJS.Require, configDirectory: string, name: string, key: string, value: unknown): string {
+  const subpath = subpathOf(name, key, value);
   const specifier = `${name}/${subpath.slice(2)}`;
   try {
     return requireFromConfig.resolve(specifier);
@@ -183,12 +189,14 @@ function registrationOf(requireFromConfig: NodeJS.Require, configDirectory: stri
     try { assertRuntimeCompatible({ name: GOLEM_PACKAGE, version: golemVersion() }, { name, version: String(manifest.data.version) }); }
     catch (error) { throw new PackageRegistryError(describe(error), { cause: error }); }
   }
-  const entry = (key: 'plan' | 'generator' | 'schema'): string | undefined =>
+  const entry = (key: 'plan' | 'generator'): string | undefined =>
     field[key] === undefined ? undefined : resolveEntry(requireFromConfig, configDirectory, name, key, field[key]);
+  // The schema part is data for editors, not code that Node loads: it lies in the package folder and its existence is not judged here.
+  const schema = field.schema === undefined ? undefined : path.join(manifest.directory, subpathOf(name, 'schema', field.schema).slice(2));
   const declared = field.extensions;
   if (declared !== undefined && !isRecord(declared)) throw new PackageRegistryError(`golem.extensions of ${name} must be an object that maps an extension name to a package subpath.`);
   const extensions = new Map(Object.entries(declared ?? {}).map(([extension, subpath]) => [extension, resolveEntry(requireFromConfig, configDirectory, name, `extensions.${extension}`, subpath)]));
-  return { name, directory: manifest.directory, block: field.block, plan: entry('plan'), generator: entry('generator'), extensions, schema: entry('schema') };
+  return { name, directory: manifest.directory, block: field.block, plan: entry('plan'), generator: entry('generator'), extensions, schema };
 }
 
 function buildRegistry(configFile: string, stamps: Map<string, string>): PackageRegistry {
