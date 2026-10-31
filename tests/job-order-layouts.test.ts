@@ -117,11 +117,11 @@ const LAYOUTS: readonly Layout[] = [
 ];
 
 for (const layout of LAYOUTS) {
-  test(`job order: ${layout.name}`, (t) => {
+  test(`job order: ${layout.name}`, async (t) => {
     // protects: page review rounds 1 to 4: the job order of the reviewed layout, each row names its round
     const folder = app(t, layout.blocks);
 
-    const config = resolveConfig(path.join(folder, 'golem.yaml'));
+    const config = await resolveConfig(path.join(folder, 'golem.yaml'));
 
     assert.deepEqual(config.jobs.map((job) => job.id), layout.jobs, layout.protects);
     const views: Record<string, ProgramView> = {};

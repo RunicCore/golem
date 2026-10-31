@@ -75,7 +75,7 @@ function stringOption(options: ts.CompilerOptions, name: string): string | undef
 }
 
 /** The golem.yaml a build starts from. Nothing above the working directory is searched. */
-function readGolemConfig(requested: string | undefined, observe: (filename: string) => void): GolemConfig {
+async function readGolemConfig(requested: string | undefined, observe: (filename: string) => void): Promise<GolemConfig> {
   const file = path.resolve(requested ?? 'golem.yaml');
   observe(file);
   if (!fs.existsSync(file)) throw new Error(requested === undefined ? NO_GOLEM_YAML : `golem build cannot find ${displayPath(file)}.`);
@@ -426,7 +426,7 @@ async function buildOnce(requestSession: () => ts.ProgramSession, run: BuildRun,
     const folder = root === undefined ? undefined : outsideFolder(root, file);
     if (folder !== undefined) run.baseline?.observeFolder(folder);
   };
-  const golemConfig = readGolemConfig(run.config, observe);
+  const golemConfig = await readGolemConfig(run.config, observe);
   const configFile = resolveProject(run.project, golemConfig);
   root = path.dirname(configFile);
   for (const input of inputs) {
@@ -554,7 +554,7 @@ async function buildOnce(requestSession: () => ts.ProgramSession, run: BuildRun,
  * compiler checks and emits in process, to memory; the build writes each output that differs from the file on disk. With `watch`, the build repeats when an input changes and ends on `signal`.
  */
 export async function runBuild(options: BuildOptions): Promise<{ exitCode: number }> {
-  const first = readGolemConfig(options.config, () => {});
+  const first = await readGolemConfig(options.config, () => {});
   const root = path.dirname(first.tsconfig);
   const label = displayPath(options.project === undefined ? first.tsconfig : path.resolve(options.project));
   // Core owns one program session: the generation jobs, the rewrite scan and the build's own programs request this one.

@@ -927,17 +927,17 @@ function configProject(t: TestContext, yaml: string): { root: string; app: strin
   return { root, app, filename };
 }
 
-const modelJobOf = (filename: string) => {
-  const config = resolveConfig(filename);
+const modelJobOf = async (filename: string) => {
+  const config = await resolveConfig(filename);
   const job = config.jobs.find(candidate => candidate.block === 'model');
   assert.ok(job, 'the config holds the models job');
   return { config, job };
 };
 
-test('an empty model block scans from the golem.yaml folder, writes the default output and provides both contracts', (t: TestContext) => {
+test('an empty model block scans from the golem.yaml folder, writes the default output and provides both contracts', async (t: TestContext) => {
   // protects: R4 the models job scans from the golem.yaml folder; page "Packages": golem-model provides ModelBoundary and CodecsHost, owns its model folder (an exclusive output the app imports) and reads the program
   const { app, filename } = configProject(t, 'model:\n');
-  const { config, job } = modelJobOf(filename);
+  const { config, job } = await modelJobOf(filename);
   const output = path.join(app, 'src/generated/models');
   assert.equal(job.id, 'model');
   assert.equal(job.package, '@exprtlabs/golem-model');
@@ -949,10 +949,10 @@ test('an empty model block scans from the golem.yaml folder, writes the default 
   assert.deepEqual(config.contracts, { ModelBoundary: { root: app, directory: app, output }, CodecsHost: { modelsOutput: output, configDirectory: app } });
 });
 
-test('model sources, suffixes and output reach the options and the boundary; the owned roots run from the source folders to the root', (t: TestContext) => {
+test('model sources, suffixes and output reach the options and the boundary; the owned roots run from the source folders to the root', async (t: TestContext) => {
   // protects: page "What a job declares": the model folder is an exclusive output and the owned roots run narrow to wide, so a file is recorded under its narrowest owner; the boundary carries the suffixes the rewrite reads
   const { app, filename } = configProject(t, 'exact: false\nmodel:\n  output: gen/models\n  suffixes: [.entity.ts, .record.mts]\n  sources: [a/b/x.entity.ts, a/y.record.mts]\n');
-  const { job, config } = modelJobOf(filename);
+  const { job, config } = await modelJobOf(filename);
   assert.deepEqual(job.facts.outputs, [{ path: path.join(app, 'gen/models'), kind: 'folder', importedByApp: true }]);
   assert.deepEqual(job.facts.ownedRoots, [path.join(app, 'a/b'), path.join(app, 'a'), app]);
   // A job with a list of sources reads those files and no others: nothing is watched for new ones.
@@ -977,10 +977,10 @@ const MODEL_SUFFIX_CASES: readonly (readonly [string, string])[] = [
   ['[.model.ts, .models.ts, .model.ts]', 'model.suffixes lists .model.ts twice.'],
 ];
 for (const [suffixes, message] of MODEL_SUFFIX_CASES) {
-  test(`model.suffixes ${suffixes} stops loading with a message that names the entry`, (t: TestContext) => {
+  test(`model.suffixes ${suffixes} stops loading with a message that names the entry`, async (t: TestContext) => {
     // protects: a suffix that is empty, malformed, repeated, a declaration or a generated file would make golem read its own output or nothing
     const { filename } = configProject(t, `model:\n  suffixes: ${suffixes}\n`);
-    assert.throws(() => resolveConfig(filename), { message });
+    await assert.rejects(() => resolveConfig(filename), { message });
   });
 }
 
@@ -993,21 +993,21 @@ const MODEL_BLOCK_CASES: readonly (readonly [string, string])[] = [
   ['model:\n  sources: [a.model.ts, ./a.model.ts]', 'Duplicate model sources.'],
 ];
 for (const [block, message] of MODEL_BLOCK_CASES) {
-  test(`the model block ${JSON.stringify(block)} stops loading with ${JSON.stringify(message)}`, (t: TestContext) => {
+  test(`the model block ${JSON.stringify(block)} stops loading with ${JSON.stringify(message)}`, async (t: TestContext) => {
     // protects: the block is validated whole at config time, so a misspelled key or a bad value never reaches a generator
     const { filename } = configProject(t, `${block}\n`);
-    assert.throws(() => resolveConfig(filename), { message });
+    await assert.rejects(() => resolveConfig(filename), { message });
   });
 }
 
 for (const [name, link] of [['a source outside the root', false], ['a source that links to a file outside the root', true]] as const) {
-  test(`${name} stops loading with RUNM1075 naming the real path and the root`, (t: TestContext) => {
+  test(`${name} stops loading with RUNM1075 naming the real path and the root`, async (t: TestContext) => {
     // protects: the model block generates only files inside the golem.yaml folder (RUNM1075), and a link shows as the file it points to
     const { root, app, filename } = configProject(t, `model:\n  sources: [${link ? 'src/money.model.ts' : '../shared/money.model.ts'}]\n`);
     fs.mkdirSync(path.join(root, 'shared'));
     fs.writeFileSync(path.join(root, 'shared/money.model.ts'), 'export {};\n');
     if (link) fs.symlinkSync('../../shared/money.model.ts', path.join(app, 'src/money.model.ts'));
-    assert.throws(() => resolveConfig(filename), {
+    await assert.rejects(() => resolveConfig(filename), {
       message: `RUNM1075: model.sources entry ${path.relative(process.cwd(), path.join(root, 'shared/money.model.ts'))} is outside the golem.yaml folder ${path.relative(process.cwd(), app)}. The model block generates only files inside that folder.`,
     });
   });
@@ -1017,28 +1017,28 @@ for (const [name, output, resolved] of [
   ['a model output', '../outside', 'outside'],
   ['a model output behind a link to a folder', 'linked/models', 'outside/models'],
 ] as const) {
-  test(`${name} outside the tsconfig directory stops loading and writes nothing`, (t: TestContext) => {
+  test(`${name} outside the tsconfig directory stops loading and writes nothing`, async (t: TestContext) => {
     // protects: F-42 the models output stays inside the tsconfig directory (T-182)
     const { root, app, filename } = configProject(t, `model:\n  output: ${output}\n`);
     fs.mkdirSync(path.join(root, 'outside'));
     fs.symlinkSync(path.join(root, 'outside'), path.join(app, 'linked'), 'dir');
-    assert.throws(() => resolveConfig(filename), (error: unknown) => error instanceof JobRuleError
+    await assert.rejects(() => resolveConfig(filename), (error: unknown) => error instanceof JobRuleError
       && error.message === `Job model: output ${path.relative(process.cwd(), path.join(root, resolved))} is outside the tsconfig directory ${path.relative(process.cwd(), app)}. Move it inside.`);
     assert.deepEqual(fs.readdirSync(path.join(root, 'outside')), []);
   });
 }
 
-test('a model output that overlaps an SDK output stops loading', (t: TestContext) => {
+test('a model output that overlaps an SDK output stops loading', async (t: TestContext) => {
   // protects: A1 overlap rule: exclusive outputs never overlap, so the model folder and an SDK folder cannot share files (master's check of the models output)
   const { app, filename } = configProject(t, 'model:\n  output: gen\nshop:\n  jobs:\n    - { id: sdk, needs: [CodecsHost], outputs: [{ path: gen/sdk, kind: folder }] }\n');
-  assert.throws(() => resolveConfig(filename), (error: unknown) => error instanceof JobRuleError
+  await assert.rejects(() => resolveConfig(filename), (error: unknown) => error instanceof JobRuleError
     && error.rule === 'overlap' && error.message === `Overlapping outputs: ${path.relative(process.cwd(), path.join(app, 'gen'))} (job model) and ${path.relative(process.cwd(), path.join(app, 'gen/sdk'))} (job sdk).`);
 });
 
-test('the models job reads the SDK folders of the jobs that need the codecs host, and so runs after them', (t: TestContext) => {
+test('the models job reads the SDK folders of the jobs that need the codecs host, and so runs after them', async (t: TestContext) => {
   // protects: page "When": the SDK folders that the models job reads come from CodecsHost in the second pass, so docs, SDKs, models is the order when an SDK links them
   const shop = (jobs: string): string => `model:\nshop:\n  jobs:\n${jobs}`;
-  const linked = modelJobOf(configProject(t, shop([
+  const linked = await modelJobOf(configProject(t, shop([
     '    - { id: sdk-a, readsProgram: true, needs: [CodecsHost], outputs: [{ path: sdk/a, kind: folder }] }',
     '    - { id: sdk-b, needs: [CodecsHost], outputs: [{ path: sdk/b, kind: folder }] }',
     '    - { id: docs, readsProgram: true, outputs: [{ path: api.yaml }] }',
@@ -1048,7 +1048,7 @@ test('the models job reads the SDK folders of the jobs that need the codecs host
   assert.deepEqual(Reflect.get(linked.job.options as object, 'sdkOutputs'), [path.join(app, 'sdk/a'), path.join(app, 'sdk/b')]);
   assert.deepEqual(linked.config.jobs.map(job => job.id).filter(id => id !== 'sdk-b'), ['sdk-a', 'model', 'docs']);
 
-  const unlinked = modelJobOf(configProject(t, shop('    - { id: docs, outputs: [{ path: api.yaml }] }\n')).filename);
+  const unlinked = await modelJobOf(configProject(t, shop('    - { id: docs, outputs: [{ path: api.yaml }] }\n')).filename);
   assert.deepEqual(unlinked.job.facts.inputFolders, []);
   assert.equal('sdkOutputs' in (unlinked.job.options as object), false);
 });

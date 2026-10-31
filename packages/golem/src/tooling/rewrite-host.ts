@@ -371,7 +371,7 @@ export async function openRewriteProject(options: GolemHostOptions & { cwd: stri
   const named = options.config || process.env.GOLEM_CONFIG || undefined;
   const requested = path.resolve(options.cwd, named ?? 'golem.yaml');
   if (!existsSync(requested)) throw new GolemHostError(named === undefined ? NO_GOLEM_YAML : `${NO_GOLEM_YAML} (${displayPath(requested)} does not exist)`);
-  const config = resolveConfig(requested);
+  const config = await resolveConfig(requested);
   const key = config.configFile;
   let shared = projects.get(key);
   if (shared === undefined) {

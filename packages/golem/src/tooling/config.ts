@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { createRequire } from 'node:module';
+import { pathToFileURL } from 'node:url';
 import { canonicalPath, displayPath, invalidValidationLevelMessage, isInsideDirectory, isRecord, isValidationLevel, parseYamlFile, resolveProfile } from './generator-core.js';
 import { ROOT_KEYS } from './editor-schema.js';
 import { providersOf, resolveJobPlan } from './job-rules.js';
@@ -66,11 +66,11 @@ export function canonicalFile(filename: string): string {
   return path.join(canonicalPath(path.dirname(resolved)), path.basename(resolved));
 }
 
-/** The plan entry of `registration`: the module that its `golem.plan` names exports it as `plan`. It is light and loads synchronously. */
-function loadPlanEntry(registration: PackageRegistration, configFile: string): GolemPlanEntry {
+/** The plan entry of `registration`: the module that its `golem.plan` names exports it as `plan`. The module is light; `import()` loads it, because `require()` of an ES module fails inside a Node loader hook. Its `declare` and `link` are synchronous. */
+async function loadPlanEntry(registration: PackageRegistration): Promise<GolemPlanEntry> {
   if (registration.plan === undefined) throw new PackageRegistryError(`${registration.name} registers the golem block "${registration.block}" but declares no golem.plan entry, so golem cannot read its block.`);
   let loaded: unknown;
-  try { loaded = createRequire(configFile)(registration.plan); }
+  try { loaded = await import(pathToFileURL(registration.plan).href); }
   catch (error) { throw new PackageRegistryError(`Cannot load the plan entry of ${registration.name}: ${error instanceof Error ? error.message : String(error)}`, { cause: error }); }
   const entry = isRecord(loaded) ? loaded.plan : undefined;
   if (!isRecord(entry) || typeof entry.declare !== 'function') throw new PackageRegistryError(`The plan entry of ${registration.name} must export "plan" with a declare function.`);
@@ -94,7 +94,7 @@ function plannedJobs(registration: PackageRegistration, planned: unknown): reado
 }
 
 /** Parse and resolve the complete dependency graph before checking existence. */
-export function resolveConfig(filename = 'golem.yaml', onInput?: InputObserver): GolemConfig {
+export async function resolveConfig(filename = 'golem.yaml', onInput?: InputObserver): Promise<GolemConfig> {
   const requested = path.resolve(filename);
   onInput?.(requested);
   const configFile = fs.realpathSync.native(requested);
@@ -133,7 +133,7 @@ export function resolveConfig(filename = 'golem.yaml', onInput?: InputObserver):
   const ids = new Map<string, string>();
   for (const block of blocks) {
     const registration = registrationForBlock(registry, block);
-    const entry = loadPlanEntry(registration, configFile);
+    const entry = await loadPlanEntry(registration);
     const context: PlanContext = { configFile, directory, tsconfig, profile, ...(exact === undefined ? {} : { exact }), block: value[block], ...(onInput ? { onInput } : {}) };
     const planned = plannedJobs(registration, entry.declare(context));
     for (const { facts } of planned) {

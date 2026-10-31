@@ -79,9 +79,9 @@ export function parseArguments(argv: readonly string[]): Arguments {
 }
 
 /** The directory of the tsconfig the golem.yaml names. A golem.yaml that cannot be read is reported by the command itself, which reads it again. */
-function tsconfigDirectory(configFile: string): string {
+async function tsconfigDirectory(configFile: string): Promise<string> {
   try {
-    return path.dirname(resolveConfig(configFile).tsconfig);
+    return path.dirname((await resolveConfig(configFile)).tsconfig);
   } catch {
     return path.dirname(path.resolve(configFile));
   }
@@ -97,7 +97,7 @@ export async function main(argv = process.argv.slice(2)) {
     return;
   }
   // The project's TypeScript is the one beside its tsconfig, wherever the command runs from; the seam reads this when it first loads.
-  requestTypeScriptRoot(tsconfigDirectory(options.config ?? 'golem.yaml'), { lazy: true });
+  requestTypeScriptRoot(await tsconfigDirectory(options.config ?? 'golem.yaml'), { lazy: true });
   if (options.action === 'build') {
     const controller = new AbortController();
     let signalled: number | undefined;

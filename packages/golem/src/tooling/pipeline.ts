@@ -461,7 +461,7 @@ async function planPipeline(filename: string, run: PipelineRun): Promise<{ reado
   try { canonicalConfig = fs.realpathSync.native(requestedConfig); } catch { /* resolveConfig reports the missing/invalid file */ }
   let config: GolemConfig;
   try {
-    config = resolveConfig(filename, input => {
+    config = await resolveConfig(filename, input => {
       const resolved = path.resolve(input);
       // resolveConfig reports roots, sources, and generated inputs through the
       // same observer as the YAML file. Classify those paths from their jobs

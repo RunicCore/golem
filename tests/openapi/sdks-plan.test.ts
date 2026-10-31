@@ -21,10 +21,10 @@ function project(t: TestContext, yaml: string): { root: string; filename: string
 
 const SDK = 'openapi-ts:\n  sdks:\n    - input: api.yaml\n      output: sdk\n';
 
-test('an SDK job declares its document as the input and one output folder, and its paths are anchored to golem.yaml', (t: TestContext) => {
+test('an SDK job declares its document as the input and one output folder, and its paths are anchored to golem.yaml', async (t: TestContext) => {
   // protects: T-769 page "What a job declares": an SDK job reads its document and owns one exclusive folder; a standalone SDK needs no contract
   const { root, filename } = project(t, `version: 1\n${SDK}`);
-  const [job, ...others] = loadConfig(filename).jobs;
+  const [job, ...others] = (await loadConfig(filename)).jobs;
   assert.deepEqual(others, []);
   assert.ok(job);
   assert.equal(job.id, 'openapi:sdk');
@@ -44,23 +44,23 @@ test('an SDK job declares its document as the input and one output folder, and i
   });
 });
 
-test('the SDK options mode, name, dates, remoteHosts and the reference limits reach the generator options', (t: TestContext) => {
+test('the SDK options mode, name, dates, remoteHosts and the reference limits reach the generator options', async (t: TestContext) => {
   // protects: T-695 mode and its default; remoteHosts, maxRefBytes and the other reference limits stay options of the SDK job
   const { filename } = project(t, [
     'version: 1', 'openapi-ts:', '  sdks:', '    - input: api.yaml', '      output: sdk', '      name: Payments', '      dates: temporal',
     '      allowRemoteRefs: true', '      remoteHosts: [schemas.example]', '      maxRefBytes: 1024', '      maxRefDocuments: 4', '      refTimeoutMs: 500', '',
   ].join('\n'));
-  const [job] = loadConfig(filename).jobs;
+  const [job] = (await loadConfig(filename)).jobs;
   assert.ok(job);
   const { name, dates, allowRemoteRefs, remoteHosts, maxRefBytes, maxRefDocuments, refTimeoutMs } = job.options as OpenApiOptions;
   assert.deepEqual({ name, dates, allowRemoteRefs, remoteHosts, maxRefBytes, maxRefDocuments, refTimeoutMs },
     { name: 'Payments', dates: 'temporal', allowRemoteRefs: true, remoteHosts: ['schemas.example'], maxRefBytes: 1024, maxRefDocuments: 4, refTimeoutMs: 500 });
 });
 
-test('a golem-mode SDK needs the codecs host, takes its codecs file from it and runs before the model job that writes that file', (t: TestContext) => {
+test('a golem-mode SDK needs the codecs host, takes its codecs file from it and runs before the model job that writes that file', async (t: TestContext) => {
   // protects: T-769 page "Packages": a golem SDK needs CodecsHost; the model job reads the SDK folder, so the SDK job runs first
   const { root, filename } = project(t, `version: 1\n${SDK}      mode: golem\nmodel:\n  output: models\n`);
-  const config = loadConfig(filename);
+  const config = await loadConfig(filename);
   assert.deepEqual(config.jobs.map(job => job.id), ['openapi:sdk', 'model']);
   const [sdk, model] = config.jobs;
   assert.ok(sdk && model);
@@ -70,13 +70,13 @@ test('a golem-mode SDK needs the codecs host, takes its codecs file from it and 
   assert.deepEqual(Reflect.get(model.options as object, 'sdkOutputs'), [path.join(root, 'sdk')]);
 });
 
-test('a golem-mode SDK without a model block stops loading and names the job and the contract', (t: TestContext) => {
+test('a golem-mode SDK without a model block stops loading and names the job and the contract', async (t: TestContext) => {
   // protects: T-695 mode golem needs the model job (page: a needed contract with no provider stops loading)
   const { filename } = project(t, `version: 1\n${SDK}      mode: golem\n`);
-  assert.throws(() => loadConfig(filename), /Job openapi:sdk needs the contract CodecsHost, but no job provides it/);
+  await assert.rejects(() => loadConfig(filename), /Job openapi:sdk needs the contract CodecsHost, but no job provides it/);
 });
 
-test('the openapi-ts block refuses an unknown key, a wrong value and an empty list, each with the key it names', (t: TestContext) => {
+test('the openapi-ts block refuses an unknown key, a wrong value and an empty list, each with the key it names', async (t: TestContext) => {
   // protects: T-769 the option checks of the old openapi section stay with the SDK jobs, under the key sdks
   const refused: [string, RegExp][] = [
     ['openapi-ts:\n  jobs: []\n', /Unknown openapi-ts key: jobs\./],
@@ -90,18 +90,18 @@ test('the openapi-ts block refuses an unknown key, a wrong value and an empty li
     [`${SDK}      maxRefBytes: 0\n`, /openapi-ts\.sdks\[0\]\.maxRefBytes must be a positive safe integer/],
     ['openapi-ts:\n  sdks:\n    - output: sdk\n', /openapi-ts\.sdks\[0\]\.input must be a nonempty string/],
   ];
-  for (const [block, error] of refused) assert.throws(() => loadConfig(project(t, `version: 1\n${block}`).filename), error, block);
+  for (const [block, error] of refused) await assert.rejects(() => loadConfig(project(t, `version: 1\n${block}`).filename), error, block);
 });
 
-test('SDK outputs that overlap stop loading, also through a link to a folder', (t: TestContext) => {
+test('SDK outputs that overlap stop loading, also through a link to a folder', async (t: TestContext) => {
   // protects: T-769 page "Overlap": exclusive outputs never overlap, and a folder link resolves before the check
   const nested = project(t, 'version: 1\nopenapi-ts:\n  sdks:\n    - { input: api.yaml, output: sdk }\n    - { input: api.yaml, output: sdk/nested }\n');
-  assert.throws(() => loadConfig(nested.filename), /Overlapping outputs/);
+  await assert.rejects(() => loadConfig(nested.filename), /Overlapping outputs/);
 
   const alias = project(t, 'version: 1\nopenapi-ts:\n  sdks:\n    - { input: api.yaml, output: sdk }\n    - { input: api.yaml, output: alias/nested }\n');
   fs.mkdirSync(path.join(alias.root, 'sdk'));
   fs.symlinkSync(path.join(alias.root, 'sdk'), path.join(alias.root, 'alias'), 'dir');
-  assert.throws(() => loadConfig(alias.filename), /Overlapping outputs/);
+  await assert.rejects(() => loadConfig(alias.filename), /Overlapping outputs/);
 });
 
 test('a standalone SDK job with mobx: true shows the generator error, not a manifest error', async (t: TestContext) => {

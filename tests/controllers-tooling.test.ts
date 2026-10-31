@@ -97,12 +97,12 @@ const SAMPLE = `ts-openapi:
       info: { title: Other, version: "1" }
 `;
 
-test('a docs job declares one exclusive output file, scans its root, reads the program and wants the model boundary', (t: TestContext) => {
+test('a docs job declares one exclusive output file, scans its root, reads the program and wants the model boundary', async (t: TestContext) => {
   // protects: page "What a job declares" and "Packages": the doc job's facts; a source list is an input, a job without one watches root/src
   const { root, config } = fixture(t);
   useDocsPackage(root);
   writeConfig(config, SAMPLE);
-  const [first, second] = loadConfig(config).jobs.filter(job => job.block === 'ts-openapi');
+  const [first, second] = (await loadConfig(config)).jobs.filter(job => job.block === 'ts-openapi');
   assert.deepEqual([first?.package, first?.block], ['@exprtlabs/golem-ts-openapi', 'ts-openapi']);
   assert.deepEqual(first?.facts, {
     id: 'docs:generated/api.json',
@@ -122,33 +122,33 @@ test('a docs job declares one exclusive output file, scans its root, reads the p
   assert.equal((first?.options as { openapiVersion: string }).openapiVersion, '3.2.0');
 });
 
-test('a docs job receives the boundary of the job that provides ModelBoundary as its models option', (t: TestContext) => {
+test('a docs job receives the boundary of the job that provides ModelBoundary as its models option', async (t: TestContext) => {
   // protects: page "Contracts": the second pass hands a job the value of a contract it needs (the old `models` option of a controllers job)
   const { root, config } = fixture(t);
   useDocsPackage(root);
   writeConfig(config, docs('api.json'), 'boundary:\n  root: .\n  output: gen/models\n  suffixes: [.entity.ts]\n');
-  const job = loadConfig(config).jobs.find(candidate => candidate.block === 'ts-openapi');
+  const job = (await loadConfig(config)).jobs.find(candidate => candidate.block === 'ts-openapi');
   assert.deepEqual((job?.options as { models?: unknown }).models, { root, directory: root, output: path.join(root, 'gen/models'), suffixes: ['.entity.ts'] });
 });
 
-test('a docs-only project loads and its docs job gets no models option', (t: TestContext) => {
+test('a docs-only project loads and its docs job gets no models option', async (t: TestContext) => {
   // protects: T-768 the doc job wants ModelBoundary and does not need it: no model block, no `models` option (master's optional models)
   const { root, config } = fixture(t);
   useDocsPackage(root);
   writeConfig(config, docs('api.json'), '');
-  const options = loadConfig(config).jobs[0]?.options as object;
+  const options = (await loadConfig(config)).jobs[0]?.options as object;
   assert.equal('models' in options, false);
 });
 
-test('a docs job whose source is its own output stops loading as a cycle', (t: TestContext) => {
+test('a docs job whose source is its own output stops loading as a cycle', async (t: TestContext) => {
   // protects: master "Generated input dependency cycle": a job that reads its own document
   const { root, config } = fixture(t);
   useDocsPackage(root);
   writeConfig(config, docs('api.yaml', '      sources: [api.yaml]\n'));
-  assert.throws(() => loadConfig(config), /Jobs read each other's output in a cycle: docs:api\.yaml writes what docs:api\.yaml reads\./);
+  await assert.rejects(() => loadConfig(config), /Jobs read each other's output in a cycle: docs:api\.yaml writes what docs:api\.yaml reads\./);
 });
 
-test('controller context validates URI versioning and preserves document tags', (t: TestContext) => {
+test('controller context validates URI versioning and preserves document tags', async (t: TestContext) => {
   // protects: the controllers option parse moved into the ts-openapi plan entry (T-768): tags and uriVersioning reach the job options
   const { root, config } = fixture(t);
   useDocsPackage(root);
@@ -160,22 +160,22 @@ test('controller context validates URI versioning and preserves document tags', 
         prefix: v
         defaultVersion: ["1", "2"]
 `));
-  const options = loadConfig(config).jobs.find(job => job.block === 'ts-openapi')?.options as { tags: unknown; uriVersioning: unknown };
+  const options = (await loadConfig(config)).jobs.find(job => job.block === 'ts-openapi')?.options as { tags: unknown; uriVersioning: unknown };
   assert.deepEqual(options.tags, [{ name: 'health', description: 'Health endpoints' }]);
   assert.deepEqual(options.uriVersioning, { type: 'URI', prefix: 'v', defaultVersion: ['1', '2'] });
 });
 
-test('docs suffixes are read per job, and a job without them leaves the default to the generator', (t: TestContext) => {
+test('docs suffixes are read per job, and a job without them leaves the default to the generator', async (t: TestContext) => {
   // protects: old config.test "suffixes are read per job, and a job without them has none"
   const { root, config } = fixture(t);
   useDocsPackage(root);
   writeConfig(config, SAMPLE);
-  const [first, second] = loadConfig(config).jobs.filter(job => job.block === 'ts-openapi');
+  const [first, second] = (await loadConfig(config)).jobs.filter(job => job.block === 'ts-openapi');
   assert.equal('suffixes' in (first?.options as object), false);
   assert.deepEqual((second?.options as { suffixes: unknown }).suffixes, ['.api.ts', '.route.mts']);
 });
 
-test('a docs suffix that is empty, malformed, repeated or names a generated file is a configuration error', (t: TestContext) => {
+test('a docs suffix that is empty, malformed, repeated or names a generated file is a configuration error', async (t: TestContext) => {
   // protects: old config.test "a suffix that is empty, malformed, repeated or names a generated file is a configuration error" (controller rows)
   const { root, config } = fixture(t);
   useDocsPackage(root);
@@ -193,41 +193,41 @@ test('a docs suffix that is empty, malformed, repeated or names a generated file
   ];
   for (const [suffixes, message] of testCases) {
     writeConfig(config, docs('api.json', `      suffixes: ${suffixes}\n`));
-    assert.throws(() => loadConfig(config), (error: unknown) => error instanceof Error && error.message === message, message);
+    await assert.rejects(() => loadConfig(config), (error: unknown) => error instanceof Error && error.message === message, message);
   }
 });
 
-test('a docs root must lie inside the directory of the yaml tsconfig, and the job reads the tsconfig the yaml names', (t: TestContext) => {
+test('a docs root must lie inside the directory of the yaml tsconfig, and the job reads the tsconfig the yaml names', async (t: TestContext) => {
   // protects: F-42 one golem.yaml serves one tsconfig (old config.test, controllers layout); T-480 every job reads the tsconfig of golem.yaml
   const { root, config } = fixture(t);
   useDocsPackage(root);
   for (const directory of ['app', 'other']) fs.mkdirSync(path.join(root, directory));
   fs.writeFileSync(path.join(root, 'app/tsconfig.json'), '{}');
   writeConfig(config, `tsconfig: app/tsconfig.json\n${docs('api.json').replace('- output:', '- root: other\n      output:')}`);
-  assert.throws(() => loadConfig(config), new RegExp(`Job docs:api\\.json: root ${path.relative(process.cwd(), path.join(root, 'other'))} is outside ${path.relative(process.cwd(), path.join(root, 'app'))}; use one golem.yaml per tsconfig\\.`));
+  await assert.rejects(() => loadConfig(config), new RegExp(`Job docs:api\\.json: root ${path.relative(process.cwd(), path.join(root, 'other'))} is outside ${path.relative(process.cwd(), path.join(root, 'app'))}; use one golem.yaml per tsconfig\\.`));
 
   fs.writeFileSync(path.join(root, 'tsconfig.json'), '{}');
   fs.writeFileSync(path.join(root, 'tsconfig.app.json'), '{}');
   writeConfig(config, `tsconfig: ./tsconfig.app.json\n${docs('api.json')}`);
-  assert.equal((loadConfig(config).jobs.find(job => job.block === 'ts-openapi')?.options as { tsconfig: string }).tsconfig, path.join(root, 'tsconfig.app.json'));
+  assert.equal(((await loadConfig(config)).jobs.find(job => job.block === 'ts-openapi')?.options as { tsconfig: string }).tsconfig, path.join(root, 'tsconfig.app.json'));
 });
 
-test('controller maxResultBytes from golem.yaml reaches the job options and must be a positive integer', (t: TestContext) => {
+test('controller maxResultBytes from golem.yaml reaches the job options and must be a positive integer', async (t: TestContext) => {
   // protects: T-376 golem.yaml sets the route result limit; the job options, and so the job hash, carry it
   const { config, root } = fixture(t);
   useDocsPackage(root);
   writeConfig(config, docs('api.json', '      maxResultBytes: 2097152\n'));
-  assert.equal((loadConfig(config).jobs.find(job => job.block === 'ts-openapi')?.options as { maxResultBytes: number }).maxResultBytes, 2097152);
+  assert.equal(((await loadConfig(config)).jobs.find(job => job.block === 'ts-openapi')?.options as { maxResultBytes: number }).maxResultBytes, 2097152);
   writeConfig(config, docs('api.json', '      maxResultBytes: 0\n'));
-  assert.throws(() => loadConfig(config), /ts-openapi\.docs\[0\]\.maxResultBytes must be a positive safe integer/);
+  await assert.rejects(() => loadConfig(config), /ts-openapi\.docs\[0\]\.maxResultBytes must be a positive safe integer/);
 });
 
-test('the ts-openapi block takes a nonempty docs list of known keys, and a docs job keeps the framework nestjs', (t: TestContext) => {
+test('the ts-openapi block takes a nonempty docs list of known keys, and a docs job keeps the framework nestjs', async (t: TestContext) => {
   // protects: the block shape of page "golem.yaml" (docs list); old "controller framework accepts NestJS and rejects unsupported adapters" (T-768 keeps framework and root until plan D)
   const { root, config } = fixture(t);
   useDocsPackage(root);
   writeConfig(config, docs('api.json', '      framework: nestjs\n'));
-  assert.equal(loadConfig(config).jobs.some(job => job.block === 'ts-openapi'), true);
+  assert.equal((await loadConfig(config)).jobs.some(job => job.block === 'ts-openapi'), true);
   const refused: [string, RegExp][] = [
     [docs('api.json', '      framework: express\n'), /ts-openapi\.docs\[0\]\.framework must be nestjs/],
     [docs('api.json', '      retiredOption: true\n'), /Unknown ts-openapi\.docs\[0\] key: retiredOption\./],
@@ -236,17 +236,17 @@ test('the ts-openapi block takes a nonempty docs list of known keys, and a docs 
   ];
   for (const [body, error] of refused) {
     writeConfig(config, body);
-    assert.throws(() => loadConfig(config), error);
+    await assert.rejects(() => loadConfig(config), error);
   }
 });
 
-test('controller output extensions and collisions fail before providers run', (t: TestContext) => {
+test('controller output extensions and collisions fail before providers run', async (t: TestContext) => {
   const { config, root } = fixture(t);
   useDocsPackage(root);
   writeConfig(config, docs('api.txt'));
-  assert.throws(() => loadConfig(config), /JSON or YAML/);
+  await assert.rejects(() => loadConfig(config), /JSON or YAML/);
   writeConfig(config, `${docs('api.yaml')}${docs('api.yaml').replace('ts-openapi:\n  docs:\n', '')}`);
-  assert.throws(() => loadConfig(config), /Job id docs:api\.yaml is declared twice/);
+  await assert.rejects(() => loadConfig(config), /Job id docs:api\.yaml is declared twice/);
 });
 
 test('controller error diagnostics block exact-file writes while warnings remain typed in the result', async (t: TestContext) => {
@@ -359,7 +359,7 @@ test('a docs job owns exactly its document: a sibling or descendant file under i
   const { root, config } = fixture(t);
   useDocsPackage(root);
   writeConfig(config, docs('api/openapi.json'));
-  const resolved = loadConfig(config);
+  const resolved = await loadConfig(config);
   const directory = path.dirname(resolved.inventoryFile);
   fs.mkdirSync(directory, { recursive: true });
   for (const key of ['api/notes.json', 'api/openapi.json/child.json']) {

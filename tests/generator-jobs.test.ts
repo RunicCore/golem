@@ -70,7 +70,7 @@ test('a block whose package declares no generator entry names the package and th
 
 test('a generator reporting another API version is rejected', async t => {
   const { config } = project(t, { apiVersion: 99 });
-  await assert.rejects(providersFor(loadConfig(config)), /Incompatible generator @fixture\/gen: CLI supports API 1; installed provider reports 99/);
+  await assert.rejects(providersFor(await loadConfig(config)), /Incompatible generator @fixture\/gen: CLI supports API 1; installed provider reports 99/);
 });
 
 test('a third-party generator is not held to the version of golem', async t => {
