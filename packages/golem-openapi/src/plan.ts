@@ -7,6 +7,9 @@ import { canonicalPath, CODECS_HOST, isRecord, sdkCodecsFile } from '@exprtlabs/
 /** What the generator receives: the context of an SDK job without what the host adds. */
 export type OpenApiOptions = Omit<OpenApiContext, 'onInput'>;
 
+/** The hook where an extension wraps the operations that an SDK job emits. Its participant type belongs to this package. */
+export const OPERATION_WRAPPER_HOOK = 'client.operationWrapper';
+
 const BLOCK_KEYS: readonly string[] = ['sdks'];
 const SDK_KEYS: readonly string[] = ['input', 'output', 'name', 'allowRemoteRefs', 'remoteHosts', 'maxRefBytes', 'maxRefDocuments', 'refTimeoutMs', 'dates', 'mode'];
 
@@ -79,7 +82,7 @@ export const plan: GolemPlanEntry<OpenApiOptions> = {
         provides: [],
         // A golem SDK imports the codecs file that the host of the codecs writes for it.
         needs: mode === 'golem' ? [CODECS_HOST] : [],
-        hooks: [],
+        hooks: [OPERATION_WRAPPER_HOOK],
         watch: [],
       };
       return { facts, options };

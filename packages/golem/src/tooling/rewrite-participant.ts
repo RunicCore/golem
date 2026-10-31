@@ -82,6 +82,19 @@ export type RewriteParticipant = (input: RewriteParticipantInput) => RewritePart
 /** What an extension entry exports as `extension`. */
 export interface GolemExtension {
   readonly rewrite?: RewriteParticipant;
+  /**
+   * The participants that fill hooks, by hook name. A job offers a hook by name (`JobFacts.hooks`) and defines its contract, so the type of a participant
+   * belongs to the package of that job; core only routes it. A name that no job of the golem.yaml offers stops the run.
+   */
+  readonly hooks?: Readonly<Record<string, unknown>>;
+}
+
+/** An enabled extension with what its entry exports. */
+export interface LoadedExtension {
+  readonly extension: EnabledExtension;
+  readonly rewrite?: RewriteParticipant;
+  /** The participants by hook name; empty when the entry fills no hook. */
+  readonly hooks: Readonly<Record<string, unknown>>;
 }
 
 /** A participant with the extension that it belongs to. */
@@ -106,23 +119,30 @@ function describe(error: unknown): string {
 }
 
 /**
- * Loads the entries of the extensions that blocks turn on, once for a host start, and returns their rewrite participants in the
- * order of golem.yaml. It runs in the host's asynchronous project start, after the host picked the project's TypeScript. An entry
- * loads with `import()`, because `require()` of an ES module fails inside a Node loader hook.
+ * Loads the entries of the extensions that blocks turn on, in the order of golem.yaml, and checks what each exports. An entry loads with `import()`,
+ * because `require()` of an ES module fails inside a Node loader hook. A rewrite host calls this in its asynchronous project start, after it
+ * picked the project's TypeScript; the pipeline calls it before the jobs run.
  */
-export async function loadRewriteParticipants(extensions: readonly EnabledExtension[]): Promise<readonly LoadedParticipant[]> {
-  const loaded: LoadedParticipant[] = [];
+export async function loadExtensions(extensions: readonly EnabledExtension[]): Promise<readonly LoadedExtension[]> {
+  const loaded: LoadedExtension[] = [];
   for (const extension of extensions) {
     let module: unknown;
     try { module = await import(pathToFileURL(extension.entry).href); }
     catch (error) { throw new ExtensionFaultError(extension, `did not load (${displayPath(extension.entry)}): ${describe(error)}`, { cause: error }); }
     const exported = isRecord(module) ? module.extension : undefined;
     if (!isRecord(exported)) throw new ExtensionFaultError(extension, `must export "extension" from ${displayPath(extension.entry)}`);
-    if (exported.rewrite === undefined) continue;
-    if (typeof exported.rewrite !== 'function') throw new ExtensionFaultError(extension, 'exports an "extension" whose "rewrite" is not a function');
-    loaded.push({ extension, participant: exported.rewrite as RewriteParticipant });
+    if (exported.rewrite !== undefined && typeof exported.rewrite !== 'function') throw new ExtensionFaultError(extension, 'exports an "extension" whose "rewrite" is not a function');
+    if (exported.hooks !== undefined && (!isRecord(exported.hooks) || Object.values(exported.hooks).some(participant => participant === undefined || participant === null))) {
+      throw new ExtensionFaultError(extension, 'exports an "extension" whose "hooks" is not an object of participants by hook name');
+    }
+    loaded.push({ extension, ...(exported.rewrite === undefined ? {} : { rewrite: exported.rewrite as RewriteParticipant }), hooks: (exported.hooks ?? {}) as Readonly<Record<string, unknown>> });
   }
   return loaded;
+}
+
+/** The rewrite participants of the loaded extensions, in the order of golem.yaml. */
+export async function loadRewriteParticipants(extensions: readonly EnabledExtension[]): Promise<readonly LoadedParticipant[]> {
+  return (await loadExtensions(extensions)).flatMap(({ extension, rewrite }) => rewrite === undefined ? [] : [{ extension, participant: rewrite }]);
 }
 
 /** The edits of a participant's result, each checked against the file text: whole numbers, in range, and `expect` the text of the range. */

@@ -3,6 +3,7 @@ import path from 'node:path';
 import { inspect } from 'node:util';
 import YAML from 'yaml';
 import { canonicalPath, displayPath, isInsideDirectory, isRecord } from './plan-support.js';
+import type { HookParticipants } from './extension-hooks.js';
 import type { JobFacts, ProgramView } from './job-facts.js';
 
 // The helpers live in plan-support, which plan entries may import; the rest of core reads them here.
@@ -187,6 +188,8 @@ export interface GeneratorHostContext {
   readonly session?: GeneratorSession;
   /** What the program of a job that reads the program leaves out or stubs of the jobs after it; omitted for a job that reads no program. */
   readonly programView?: ProgramView;
+  /** For a job that offers hooks (`facts.hooks`): the participants of the extensions that fill each, in the order of golem.yaml. Omitted for a job that offers none. */
+  readonly hooks?: HookParticipants;
 }
 
 /**

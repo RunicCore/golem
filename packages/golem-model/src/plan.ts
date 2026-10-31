@@ -11,6 +11,12 @@ export type ModelOptions = Omit<ModelContext, 'onInput' | 'session'>;
 /** The golem.yaml key of the block that this package registers (`golem.block` in its package.json). */
 export const MODEL_BLOCK = 'model';
 
+/** The hook where an extension changes the code the model job emits for a validator. Its participant type belongs to this package. */
+export const VALIDATOR_ENHANCER_HOOK = 'model.validatorEnhancer';
+
+/** The hook where an extension adds data, keyed by its name, to the codec the model job emits. Its participant type belongs to this package. */
+export const CODEC_DATA_HOOK = 'model.codecData';
+
 /** The file-name endings of a model file when the block lists none. */
 export const DEFAULT_MODEL_SUFFIXES: readonly string[] = ['.model.ts', '.models.ts'];
 
@@ -99,7 +105,7 @@ export const plan: GolemPlanEntry<ModelOptions> = {
       readsProgram: true,
       provides: [MODEL_BOUNDARY, CODECS_HOST],
       needs: [],
-      hooks: [],
+      hooks: [VALIDATOR_ENHANCER_HOOK, CODEC_DATA_HOOK],
       // A job with a list of sources reads those and no others. Otherwise a file with a model ending in a folder the job owns or has read is a source, whether or not a run has read it.
       watch: sources ? [] : [{ suffixes: sourceSuffixes ?? DEFAULT_MODEL_SUFFIXES }],
     };

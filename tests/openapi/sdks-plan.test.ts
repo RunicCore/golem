@@ -34,7 +34,7 @@ test('an SDK job declares its document as the input and one output folder, and i
     id: 'openapi:sdk',
     outputs: [{ path: path.join(root, 'sdk'), kind: 'folder' }],
     ownedRoots: [], inputFiles: [path.join(root, 'api.yaml')], inputFolders: [],
-    readsProgram: false, provides: [], needs: [], hooks: [], watch: [],
+    readsProgram: false, provides: [], needs: [], hooks: ['client.operationWrapper'], watch: [],
   });
   assert.deepEqual(job.options as OpenApiOptions, {
     input: path.join(root, 'api.yaml'), output: path.join(root, 'sdk'),

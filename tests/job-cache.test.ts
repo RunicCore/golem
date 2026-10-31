@@ -3,11 +3,12 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { loadConfig } from './support/load-config.js';
-import { golemCode, inputDigest, insideAny, jobIsCurrent, loadJobRecords, saveJobRecords, type JobRecord, type JobSetup } from '#golem/job-cache';
+import { golemCode, hookCode, inputDigest, insideAny, jobIsCurrent, loadJobRecords, saveJobRecords, type JobRecord, type JobSetup } from '#golem/job-cache';
 import { digest, type Inventory } from '#golem/outputs';
+import type { EnabledExtension } from '#golem/rewrite-participant';
 import { createFixtureProject, linkGolemPackages } from './fixture-project.js';
 
-const SETUP: JobSetup = { providerCode: 'provider-code-digest', manifestInputs: [] };
+const SETUP: JobSetup = { providerCode: 'provider-code-digest', hookCode: 'hook-code-digest', manifestInputs: [] };
 
 /** The inventory of a job's files: each as it is on disk now. */
 function inventoryOf(root: string, files: readonly string[]): Inventory {
@@ -39,6 +40,7 @@ async function project(t: TestContext): Promise<{ root: string; record: JobRecor
   const record: JobRecord = {
     golemCode: golemCode(),
     providerCode: SETUP.providerCode ?? '',
+    hookCode: SETUP.hookCode,
     options: JSON.stringify(job.options),
     inputs: {
       'api.yaml': inputDigest(path.join(root, 'api.yaml'), () => false, root),
@@ -73,10 +75,25 @@ test('a job is current while its golem code, provider code, options, outputs and
   assert.equal(jobIsCurrent(config, job, undefined, SETUP, inventory), false);
   assert.equal(jobIsCurrent(config, job, { ...record, golemCode: 'other-golem-code-digest' }, SETUP, inventory), false, 'other golem code');
   assert.equal(jobIsCurrent(config, job, { ...record, options: '{}' }, SETUP, inventory), false, 'other options');
+  assert.equal(jobIsCurrent(config, job, record, { ...SETUP, hookCode: 'other-hook-code-digest' }, inventory), false, 'other extensions on the job\'s hooks');
   assert.equal(jobIsCurrent(config, job, { ...record, outputs: ['sdk.ts', 'gone.ts'] }, SETUP, inventory), false, 'an output is gone');
   assert.equal(jobIsCurrent(config, job, record, SETUP, inventory), true);
   fs.appendFileSync(path.join(root, 'api.yaml'), '\n');
   assert.equal(jobIsCurrent(config, job, record, SETUP, inventory), false, 'an edited file');
+});
+
+test('the hook digest follows the extensions on a job\'s hooks, their options and their code, and not the order of an options object\'s keys', () => {
+  // protects: T-781 the cache key holds the digest of every extension on the job's hooks
+  const extension = (name: string, options: Record<string, unknown>): EnabledExtension => ({ package: '@fixture/probe', block: 'probe', name, entry: '/entry.mjs', options });
+  const codeOf = (code: string) => () => code;
+  const note = { hook: 'hooked.note', extension: extension('note', { prefix: '>', width: 2 }) };
+  const base = hookCode([note], codeOf('code-1'));
+
+  assert.equal(hookCode([], codeOf('code-1')), '', 'no extension on a hook of the job');
+  assert.equal(hookCode([{ ...note, extension: extension('note', { width: 2, prefix: '>' }) }], codeOf('code-1')), base, 'the same options in another key order');
+  assert.notEqual(hookCode([{ ...note, extension: extension('note', { prefix: '#', width: 2 }) }], codeOf('code-1')), base, 'other options');
+  assert.notEqual(hookCode([note], codeOf('code-2')), base, 'other code');
+  assert.notEqual(hookCode([note, { hook: 'hooked.other', extension: extension('other', {}) }], codeOf('code-1')), base, 'one more extension');
 });
 
 test('a job is stale when an output is edited or is not in the inventory', async (t: TestContext) => {
@@ -110,6 +127,7 @@ test('a directory outside the golem.yaml directory is recorded by existence, one
   const recorded = {
     golemCode: golemCode(),
     providerCode: SETUP.providerCode ?? '',
+    hookCode: SETUP.hookCode,
     options: JSON.stringify(job.options),
     inputs: { ...inputs, [path.relative(root, outside)]: inputDigest(outside, () => false, root), src: inputDigest(path.join(root, 'src'), () => false, root) },
     manifestInputs: [],

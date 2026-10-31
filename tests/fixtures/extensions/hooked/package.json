@@ -1,0 +1,6 @@
+{
+  "name": "@fixture/hooked",
+  "version": "1.0.0",
+  "exports": { "./plan": "./plan.js", "./generator": "./generator.mjs" },
+  "golem": { "apiVersion": 2, "block": "hooked", "plan": "./plan", "generator": "./generator" }
+}

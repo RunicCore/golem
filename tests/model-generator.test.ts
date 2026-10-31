@@ -943,7 +943,7 @@ test('an empty model block scans from the golem.yaml folder, writes the default 
   assert.equal(job.package, '@exprtlabs/golem-model');
   assert.deepEqual(job.facts, {
     id: 'model', outputs: [{ path: output, kind: 'folder', importedByApp: true }], ownedRoots: [app], inputFiles: [], inputFolders: [], readsProgram: true,
-    provides: ['ModelBoundary', 'CodecsHost'], needs: [], hooks: [], watch: [{ suffixes: ['.model.ts', '.models.ts'] }],
+    provides: ['ModelBoundary', 'CodecsHost'], needs: [], hooks: ['model.validatorEnhancer', 'model.codecData'], watch: [{ suffixes: ['.model.ts', '.models.ts'] }],
   });
   assert.deepEqual(job.options, { root: app, directory: app, output, tsconfig: path.join(app, 'tsconfig.json'), profile: config.profile });
   assert.deepEqual(config.contracts, { ModelBoundary: { root: app, directory: app, output }, CodecsHost: { modelsOutput: output, configDirectory: app } });

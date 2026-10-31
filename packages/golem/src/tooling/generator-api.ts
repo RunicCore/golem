@@ -42,4 +42,5 @@ export type {
   ResolvedGolemProfile,
   SourceDiscoveryOptions,
 } from './generator-core.js';
+export type { HookFill, HookParticipants } from './extension-hooks.js';
 export type { JobFacts, JobOutput, WatchRule } from './job-facts.js';

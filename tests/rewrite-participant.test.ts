@@ -151,5 +151,5 @@ test('the block entry is the only switch, and the files the participant read are
 test('an extension the package does not register stops loading and lists the ones it registers', async (t) => {
   // protects: R-94 a block turns on only the extensions its package registers
   const root = await app(t, TAG, 'version: 1\nmodel: {}\nprobe:\n  extensions:\n    nope: {}\n', false);
-  await assert.rejects(resolveConfig(path.join(root, 'golem.yaml')), /probe\.extensions turns on "nope", which @fixture\/probe does not register\. It registers: mark\./);
+  await assert.rejects(resolveConfig(path.join(root, 'golem.yaml')), /probe\.extensions turns on "nope", which @fixture\/probe does not register\. It registers: mark, note, stray, broken\./);
 });
