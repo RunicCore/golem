@@ -403,8 +403,9 @@ async function analyzeController(
     const parsedBody = parseRequestBody(context, decorators);
     // SwaggerExplorer.mergeValues concatenates class-level and method-level security arrays.
     const security = [...classSecurity, ...operation.security ?? []];
-    const apiBody = parsedBody && parameterResult.body
-      ? { ...parsedBody, declaredType: parameterResult.body.type }
+    const wholeBody = parameterResult.bodyParts.find(part => part.name === undefined);
+    const apiBody = parsedBody && wholeBody
+      ? { ...parsedBody, declaredType: wholeBody.type }
       : parsedBody;
     const parameterOverrides = {
       ...parseParameterOverride(context, classParameterDecorators(context.checker, method, classDeclaration)),
@@ -449,7 +450,7 @@ async function analyzeController(
             ...(operation.description ? { description: operation.description } : {}),
             tags: [...new Set([...classTags, ...operation.tags])],
             parameters,
-            ...(parameterResult.body ? { body: parameterResult.body } : {}),
+            bodyParts: parameterResult.bodyParts,
             responses,
             ...(apiBody ? { requestBody: apiBody } : {}),
             ...(Object.keys(parameterOverrides).length > 0 ? { parameterOverrides } : {}),

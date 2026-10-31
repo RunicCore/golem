@@ -316,21 +316,39 @@ interface OneFieldKind {
   /** The parameter holds a model, or an array of models (one `T[]` level). */
   readonly model: boolean;
   readonly array: boolean;
-  /** The parameter's type; an array of models carries the model id of its items, and an optional model its model id. */
+  /** The parameter's type without `undefined`; an array of models carries the model id of its items, and a model its model id. */
   readonly type: TypeReference;
+}
+
+/** The type node `T` of `T | undefined`, through parentheses, when the written union has one member besides `undefined`. */
+function presentTypeNode(checker: ts.TypeChecker, node: ts.TypeNode | undefined): ts.TypeNode | undefined {
+  if (node === undefined) return undefined;
+  if (ts.isParenthesizedTypeNode(node)) return presentTypeNode(checker, node.type);
+  if (!ts.isUnionTypeNode(node)) return node;
+  const members = node.types.filter(item => (checker.getTypeFromTypeNode(item).flags & ts.TypeFlags.Undefined) === 0);
+  return members.length === 1 ? presentTypeNode(checker, members[0]) : node;
+}
+
+/** The reference of the written type with `undefined` taken out of a union (`x?: TModel` has the declared type node `TModel`; `x: TModel | undefined` is a union), carrying the model id when it names a model. The member's type node keeps the alias that names the model. */
+function bareReference(context: NestAnalysisContext, parameter: ts.ParameterDeclaration, parameterType: TypeReference): TypeReference {
+  const node = presentTypeNode(context.checker, parameter.type);
+  const declared = node ? typeReference(context.checker, parameter, node) : parameterType;
+  const members = declared.type.isUnion() ? declared.type.types.filter(item => (item.flags & ts.TypeFlags.Undefined) === 0) : [];
+  return authoritativeTypeReference(context, members.length === 1 ? typeReference(context.checker, parameter, undefined, members[0]) : declared)!;
+}
+
+/** The parameter's type as the document describes it: an optional parameter is described by the type it holds when present. The bare reference is read only for a type that has `undefined`: an inherited generic parameter would read its `T` too early. */
+function presentReference(context: NestAnalysisContext, parameter: ts.ParameterDeclaration, parameterType: TypeReference): TypeReference {
+  return containsUndefined(parameterType.type) ? bareReference(context, parameter, parameterType) : parameterType;
 }
 
 /** What a one-field `@Body('x')` or `@Query('x')` parameter holds: a model, an array of models (one `T[]` level), or another type. */
 function oneFieldKind(context: NestAnalysisContext, parameter: ts.ParameterDeclaration, parameterType: TypeReference): OneFieldKind {
-  // `x?: TModel` has the declared type node `TModel`; `x: TModel | undefined` is a union with one member besides undefined.
-  const declared = parameter.type ? typeReference(context.checker, parameter, parameter.type) : parameterType;
-  const members = declared.type.isUnion() ? declared.type.types.filter(item => (item.flags & ts.TypeFlags.Undefined) === 0) : [];
-  const bare = authoritativeTypeReference(context, members.length === 1 ? typeReference(context.checker, parameter, undefined, members[0]) : declared)!;
+  const bare = bareReference(context, parameter, parameterType);
   // The model of an item comes from the item's type node: the checker's type argument has lost the alias that names the model.
   const item = bare.modelContractName === undefined ? arrayItemNode(parameter.type) : undefined;
   const itemModel = item === undefined ? undefined : authoritativeTypeReference(context, typeReference(context.checker, parameter, item))!.modelContractName;
-  // An optional parameter is described by the type it holds when present.
-  const present = containsUndefined(parameterType.type) ? bare : parameterType;
+  const present = presentReference(context, parameter, parameterType);
   if (bare.modelContractName === undefined && itemModel === undefined) return { model: false, array: false, type: present };
   return {
     model: true,
@@ -365,11 +383,11 @@ export function parseParameters(
   controllerClass: ts.ClassDeclaration,
 ): {
   readonly parameters: readonly ControllerParameter[];
-  readonly body?: ControllerParameter;
+  readonly bodyParts: readonly ControllerParameter[];
   readonly manualResponse?: ts.ParameterDeclaration;
 } {
   const parameters: ControllerParameter[] = [];
-  let body: ControllerParameter | undefined;
+  const bodyParts: ControllerParameter[] = [];
   let manualResponse: ts.ParameterDeclaration | undefined;
   const signature = controllerMethodSignature(context.checker, method, controllerClass);
   method.parameters.forEach((parameter, index) => {
@@ -398,22 +416,22 @@ export function parseParameters(
     const required = !isOptionalParameter(parameter, parameterType.type);
     const name = location.name;
     if (location.location === 'body') {
-      // The document describes every part the handler reads: the first whole @Body() is `body`; another whole @Body() has no name and the one-field parameters each have one.
-      if (name !== undefined || body !== undefined) {
-        parameters.push({ node: parameter, type: oneFieldKind(context, parameter, parameterType).type, location: 'body', ...(name === undefined ? {} : { name }), required });
+      // The document describes every part the handler reads: each whole @Body() and each one-field @Body('name'), in parameter order.
+      if (name !== undefined) {
+        bodyParts.push({ node: parameter, type: oneFieldKind(context, parameter, parameterType).type, location: 'body', name, required });
         return;
       }
       // Only an array body names an item model; describing any other body here would read a generic base's `T` too early.
       const items = context.checker.isArrayType(parameterType.type) ? oneFieldKind(context, parameter, parameterType) : undefined;
       const unionModels = unionModelIds(context, parameter);
-      body = {
+      bodyParts.push({
         node: parameter,
-        type: parameterType,
+        type: presentReference(context, parameter, parameterType),
         location: 'body',
         required,
         ...(items?.array && items.type.modelContractName !== undefined ? { bodyItemModel: items.type.modelContractName } : {}),
         ...(unionModels === undefined ? {} : { unionModels }),
-      };
+      });
       return;
     }
     if (name !== undefined) {
@@ -471,6 +489,7 @@ export function parseParameters(
     }
   }
   const allParameters = [...classHeaders.reverse(), ...parameters];
-  assertDistinctParameters(context, allParameters);
-  return { parameters: allParameters, ...(body ? { body } : {}), ...(manualResponse ? { manualResponse } : {}) };
+  // A one-field body name is a key of the request body object, so a repeat is one parameter declared twice.
+  assertDistinctParameters(context, [...allParameters, ...bodyParts]);
+  return { parameters: allParameters, bodyParts, ...(manualResponse ? { manualResponse } : {}) };
 }

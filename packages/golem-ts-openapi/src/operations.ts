@@ -359,12 +359,14 @@ async function requestBody(
   context: OperationBuildContext,
   route: ControllerRoute,
 ): Promise<Record<string, unknown> | undefined> {
-  const parts = route.parameters.filter(parameter => parameter.location === 'body');
-  if (!route.body && !route.requestBody && parts.length === 0) return undefined;
+  if (route.bodyParts.length === 0 && !route.requestBody) return undefined;
   const override = route.requestBody;
-  const declaredType = override?.declaredType ?? route.body?.type;
+  // The first whole @Body() is the body the Swagger overrides refine; the other parts join it.
+  const [primary] = route.bodyParts.filter(part => part.name === undefined);
+  const declaredType = override?.declaredType ?? primary?.type;
   const bodyType = declaredType ?? override?.type;
-  const extraSchemas = await bodyExtraSchemas(context, parts);
+  // An @ApiBody with a type replaces the body the handler parameters give, as @nestjs/swagger does (api-parameters.explorer.js, removeBodyMetadataIfExplicitExists).
+  const extraSchemas = override?.type ? [] : await bodyExtraSchemas(context, route.bodyParts.filter(part => part !== primary));
   if (declaredType && override?.type && override.type !== declaredType) {
     const declaredSchema = await schemaFor(context, declaredType, 'request', 'body.declared');
     let overrideSchema = await schemaFor(context, override.type, 'request', 'body.override');
@@ -373,7 +375,7 @@ async function requestBody(
       authoritative: declaredType.modelContractName !== undefined,
       resolveReference: context.resolveSchemaReference,
       sourceFile: route.sourceFile,
-      node: route.body?.node ?? route.method,
+      node: primary?.node ?? route.method,
       location: 'body',
       hint: contractHint('request'),
     });
@@ -415,7 +417,7 @@ async function requestBody(
     }
   }
   // The body is required when any part the handler reads is.
-  const required = [...route.body ? [route.body] : [], ...parts].map(part => part.required);
+  const required = route.bodyParts.map(part => part.required);
   const requiredBody = override?.required ?? (required.length > 0 ? required.some(Boolean) : undefined);
   return {
     ...(override?.description ? { description: override.description } : {}),
@@ -518,9 +520,7 @@ async function operationObject(
   context: OperationBuildContext,
   route: ControllerRoute,
 ): Promise<Record<string, unknown>> {
-  // A one-field body parameter is a property of the request body, not an OpenAPI parameter.
-  const parameters = await Promise.all(route.parameters.filter(parameter => parameter.location !== 'body')
-    .map(parameter => openApiParameter(context, route, parameter)));
+  const parameters = await Promise.all(route.parameters.map(parameter => openApiParameter(context, route, parameter)));
   const placeholders = pathParameterNames(route.path);
   for (const placeholder of placeholders) {
     if (!parameters.some(parameter => parameter.in === 'path' && parameter.name === placeholder)) {

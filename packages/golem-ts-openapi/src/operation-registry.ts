@@ -26,20 +26,22 @@ function collectOperationCodecs(routes: readonly ControllerRoute[]): OperationCo
   const methods: Record<string, OperationMethodCodecs> = {};
   const declaredBy = new Map<string, ControllerRoute>();
   for (const route of routes) {
-    const inputName = route.body?.type.modelContractName
+    // The registry reads the first whole @Body() only; step 4 of plan P-38 deletes it.
+    const body = route.bodyParts.find((part) => part.name === undefined);
+    const inputName = body?.type.modelContractName
       ?? route.requestBody?.declaredType?.modelContractName
       ?? route.requestBody?.type?.modelContractName;
     // OpenAPI 3.2 keeps a whole @Query() model as one querystring parameter; 3.1 flattens it, and each flattened parameter names the model.
     const queryName = route.parameters.find((parameter) => parameter.location === 'querystring')?.type.modelContractName
       ?? route.parameters.find((parameter) => parameter.wholeQueryModel !== undefined)?.wholeQueryModel;
-    const fieldNames = Object.fromEntries(route.parameters.flatMap((parameter) => parameter.name !== undefined
+    const fieldNames = Object.fromEntries([...route.bodyParts, ...route.parameters].flatMap((parameter) => parameter.name !== undefined
       && (parameter.location === 'body' || parameter.location === 'query') && parameter.type.modelContractName !== undefined
       ? [[operationCodecSlot(parameter.location, parameter.name), parameter.type.modelContractName] as const]
       : []));
     const success = route.responses.find((response) => response.status === '200' || response.status === '201');
     const outputName = success?.declaredType?.modelContractName ?? success?.type?.modelContractName;
     // The item model of an array body is for golem check only: in the route-key map it would read as a body of that one model.
-    const methodInput = inputName ?? route.body?.bodyItemModel ?? route.body?.unionModels;
+    const methodInput = inputName ?? body?.bodyItemModel ?? body?.unionModels;
     // The variants of a union are for golem check only, like the item model: no route key reads a union as one model.
     const methodQuery = queryName ?? route.parameters.find((parameter) => parameter.unionModels !== undefined)?.unionModels;
     const key = routeKey(route);

@@ -117,8 +117,8 @@ const TFILTER = { $ref: '#/components/schemas/TFilter' };
 /** The note field of the bodies that mix a whole body with a one-field body. */
 const NOTE = { type: 'object', properties: { note: { type: 'string' } }, required: ['note'] };
 
-// One row for each body the handler reads: the route, the handler parameters, the request body `required`, and the schema.
-const BODIES: readonly (readonly [string, string, boolean, unknown])[] = [
+// One row for each body the handler reads: the route, the handler parameters, the request body `required`, the schema, and the decorator before the handler.
+const BODIES: readonly (readonly [string, string, boolean, unknown, string?])[] = [
   ['note', "@Body('note') note: string", true, NOTE],
   ['tags', "@Body('tags') tags: string[]", true, { type: 'object', properties: { tags: { type: 'array', items: { type: 'string' } } }, required: ['tags'] }],
   ['optional', "@Body('payment') payment?: TPayment", false, { type: 'object', properties: { payment: TPAYMENT } }],
@@ -127,18 +127,24 @@ const BODIES: readonly (readonly [string, string, boolean, unknown])[] = [
   ['two-same', '@Body() first: TPayment, @Body() second: TPayment', true, TPAYMENT],
   ['whole-and-field', "@Body() whole: TPayment, @Body('note') note: string", true, { allOf: [TPAYMENT, NOTE] }],
   ['field-and-whole', "@Body('note') note: string, @Body() whole: TPayment", true, { allOf: [TPAYMENT, NOTE] }],
+  ['whole-optional', '@Body() whole?: TPayment', false, TPAYMENT],
+  ['whole-undefined', '@Body() whole: TPayment | undefined', false, TPAYMENT],
+  ['whole-default', "@Body() whole: TPayment = { id: 'a', amount: 1 }", false, TPAYMENT],
+  ['whole-optional-and-field', "@Body() whole: TPayment | undefined, @Body('note') note: string", true, { allOf: [TPAYMENT, NOTE] }],
+  // An @ApiBody type replaces the body the handler parameters give, as @nestjs/swagger does.
+  ['api-body', "@Body('payment') payment: TPayment", true, { type: 'object', properties: { text: { type: 'string' } }, required: ['text'], additionalProperties: true }, '@ApiBody({ type: NoteDto })'],
 ];
 
 for (const openapiVersion of ['3.2.0', '3.1.2'] as const) {
   test(`the OpenAPI ${openapiVersion} document states the body and the query the handler reads, whatever NestModelInterceptor accepts`, async (t) => {
     // protects: T-756 the document a client reads states the real optionality and body shape; the interceptor limits are reported by the build tools, not by the controllers job
     const methods = [
-      ...BODIES.map(([route, parameters]) => `  @Post('${route}') ${route.replace(/-(\w)/g, (_, letter: string) => letter.toUpperCase())}(${parameters}): void {}`),
+      ...BODIES.map(([route, parameters, , , decorator = '']) => `  ${decorator} @Post('${route}') ${route.replace(/-(\w)/g, (_, letter: string) => letter.toUpperCase())}(${parameters}): void {}`),
       "  @Get('filtered') filtered(@Query('filter') filter?: TFilter): void {}",
     ].join('\n');
     const root = createControllerFixture(t, {
       prefix: 'golem-one-field-shape-',
-      source: `import { Body, Controller, Get, Post, Query } from '@nestjs/common';\n${MODEL}@Controller('a')\nexport class AController {\n${methods}\n}\n`,
+      source: `import { Body, Controller, Get, Post, Query } from '@nestjs/common';\nimport { ApiBody, ApiProperty } from '@nestjs/swagger';\n${MODEL}class NoteDto { @ApiProperty() text!: string; }\n@Controller('a')\nexport class AController {\n${methods}\n}\n`,
     });
     const result = await generate({ root, output: path.join(root, 'openapi.json'), openapiVersion, info: { title: 'T', version: '1' }, profile: { mobx: false, validation: false } });
     const document = JSON.parse(result.artifacts[0]!.content) as { paths: Record<string, Record<string, Operation>> };

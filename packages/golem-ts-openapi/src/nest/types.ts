@@ -37,6 +37,7 @@ export interface ControllerParameter {
   readonly node: ts.Node;
   readonly type: TypeReference;
   readonly location?: ParameterLocation | 'body';
+  /** The parameter name. A part of the request body (`location: 'body'`) has one when it is a one-field `@Body('name')` and none when it is a whole `@Body()`. */
   readonly name?: string;
   readonly required: boolean;
   /** The model id of the whole `@Query()` model that OpenAPI 3.1 flattened into this parameter. */
@@ -83,7 +84,8 @@ export interface ControllerRoute {
   readonly description?: string;
   readonly tags: readonly string[];
   readonly parameters: readonly ControllerParameter[];
-  readonly body?: ControllerParameter;
+  /** The parts of the request body the handler reads, in parameter order: each whole `@Body()` (no name) and each one-field `@Body('name')`. They are not in `parameters`. */
+  readonly bodyParts: readonly ControllerParameter[];
   readonly responses: readonly ResponseDescription[];
   readonly requestBody?: RequestBodyDescription;
   readonly parameterOverrides?: Readonly<Record<string, Readonly<Record<string, unknown>>>>;
