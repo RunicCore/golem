@@ -38,6 +38,11 @@ export interface PackageRegistry {
   /** The registering packages in name order. */
   readonly packages: readonly PackageRegistration[];
   readonly blocks: ReadonlyMap<string, PackageRegistration>;
+  /**
+   * The files the registry read or looked for: golem.yaml, each package.json and pnpm-workspace.yaml of the walk, and the package.json of each
+   * dependency name. The watch reloads the config when one changes, appears or goes.
+   */
+  readonly files: readonly string[];
 }
 
 /** The registration of `block`, or a stop that lists the installed golem packages and their blocks. */
@@ -214,7 +219,7 @@ function buildRegistry(configFile: string, stamps: Map<string, string>): Package
     packages.push(registration);
   }
   packages.sort((left, right) => (left.name < right.name ? -1 : left.name > right.name ? 1 : 0));
-  return { packages, blocks };
+  return { packages, blocks, files: [...stamps.keys()] };
 }
 
 interface CachedRegistry { readonly stamps: ReadonlyMap<string, string>; readonly registry: PackageRegistry }

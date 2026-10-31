@@ -1,3 +1,5 @@
+import path from 'node:path';
+
 /**
  * What a job declares to core. A package's plan entry returns these facts for each job it adds; core derives the job order and checks outputs and contracts from them
  * (`job-rules.ts`). A fact names no package and no job kind. Every path is absolute and canonical: the caller resolves links before it declares a fact.
@@ -41,8 +43,35 @@ export interface JobFacts {
   readonly scanRoots?: readonly string[];
   /** Names of the hooks this job offers to extensions. */
   readonly hooks: readonly string[];
-  /** Patterns of the files whose change reruns this job. */
+  /**
+   * Patterns of the files whose change, or whose appearance, reruns this job. A pattern is a relative glob in the dialect of Node's `path.matchesGlob`
+   * (`*` and `?` stay inside one folder name, `**` crosses folders, `{a,b}` offers choices; a name with a leading dot is never matched by a wildcard).
+   * It matches the path from one of the job's `ownedRoots`, `scanRoots` or `inputFolders` to the file, so one pattern can name every model file below those folders.
+   * The watch lists only those folders, so a file elsewhere is never seen.
+   * A file that a job output holds never reruns a job by its name (`isJobOutput`). A file that the job read before reruns it without a pattern.
+   */
   readonly watch: readonly string[];
+}
+
+/** Whether `filename` lies in an output that one of `jobs` writes: the output file itself, or a file below an output folder. Such a file is generated, so core never reruns a job because of it. */
+export function isJobOutput(jobs: readonly Pick<JobFacts, 'outputs'>[], filename: string): boolean {
+  return jobs.some(({ outputs }) => outputs.some(output => (output.kind === 'file' ? output.path === filename : within(output.path, filename))));
+}
+
+/** Whether a watch pattern of `job` matches `filename`, a file that no job output holds. */
+export function watchedBy(job: Pick<JobFacts, 'watch' | 'ownedRoots' | 'scanRoots' | 'inputFolders'>, filename: string): boolean {
+  return watchFolders(job).some(folder => within(folder, filename) && job.watch.some(pattern => path.matchesGlob(path.relative(folder, filename), pattern)));
+}
+
+/** The folders a job's watch patterns apply to: the folders it owns, scans or reads. */
+export function watchFolders(job: Pick<JobFacts, 'ownedRoots' | 'scanRoots' | 'inputFolders'>): readonly string[] {
+  return [...job.ownedRoots, ...job.scanRoots ?? [], ...job.inputFolders];
+}
+
+/** `plan-support` holds the same test, but it imports this file. */
+function within(folder: string, filename: string): boolean {
+  const relative = path.relative(folder, filename);
+  return relative === '' || (relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative));
 }
 
 /** What core knows about the config as a whole, outside any job. */

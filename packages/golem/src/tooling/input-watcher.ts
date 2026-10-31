@@ -53,8 +53,6 @@ export interface ScanScope {
   readonly root: string;
   /** Folders whose subfolders are listed too, so a source added in a folder that holds no input yet is seen. Folder links are not followed. */
   readonly descend?: readonly string[];
-  /** A folder the descent does not enter. */
-  readonly skipDescent?: (directory: string) => boolean;
 }
 
 /** An editor's temporary file or a hidden file: no input, and no reason to run again. */
@@ -209,7 +207,7 @@ export class InputScan {
       if (listed === undefined) return;
       folders.set(directory, listed.names);
       if (!this.descends(directory)) return;
-      for (const subfolder of listed.directories) if (!this.scope.skipDescent?.(subfolder)) visit(subfolder);
+      for (const subfolder of listed.directories) visit(subfolder);
     };
     for (const directory of this.directories) visit(directory);
     return { files, folders };

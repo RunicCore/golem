@@ -154,8 +154,8 @@ function docsJob(context: PlanContext, entry: unknown, label: string): PlannedJo
       needs: [],
       wants: [MODEL_BOUNDARY],
       hooks: [],
-      // A job with a list of sources reads those and no others. Otherwise a file below `root/src` with a controller ending is a source, whether or not a run has read it.
-      watch: sources ? [] : (sourceSuffixes ?? DEFAULT_CONTROLLER_SUFFIXES).map(suffix => `${path.join(root, 'src')}${path.sep}*${suffix}`),
+      // A job with a list of sources reads those and no others. Otherwise a file below `src` of the root with a controller ending is a source, whether or not a run has read it.
+      watch: sources ? [] : (sourceSuffixes ?? DEFAULT_CONTROLLER_SUFFIXES).map(suffix => `src/**/*${suffix}`),
     },
     options: {
       root,

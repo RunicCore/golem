@@ -9,29 +9,13 @@ import type { FileChanges, Inventory, OutputFiles } from './outputs.js';
 import { absoluteRecordPath, golemCode, insideAny, inventoryPaths, JobInputs, jobIsCurrent, loadJobRecords, recordPath, registrationCode, sameSetup, saveJobRecords } from './job-cache.js';
 import type { JobRecord } from './job-cache.js';
 import { GolemDiagnosticSeverity, displayPath, errorMessage, isInsideDirectory, isRecord } from './generator-core.js';
-import { MODEL_BOUNDARY } from './job-facts.js';
+import { isJobOutput, MODEL_BOUNDARY, watchedBy } from './job-facts.js';
 import { loadPackageRegistry, registrationForBlock } from './package-registry.js';
 import { validateModelManifest } from './model-manifest-core.js';
 import type { GolemArtifact, GolemDiagnostic, GolemResult, GeneratorSession } from './generator-core.js';
 import { selectedTypeScript } from './typescript-selection.js';
 import { TypeScriptNotInstalledError } from './typescript-version.js';
 
-export type InputKind = 'config' | 'controllers' | 'openapi' | 'models' | 'generator';
-
-const INPUT_KIND_PRIORITY: Readonly<Record<InputKind, number>> = {
-  generator: 0,
-  models: 1,
-  openapi: 2,
-  controllers: 3,
-  config: 4,
-};
-
-/** Preserve the strongest dependency when one file is read by several jobs. */
-export function strongestInputKind(existing: InputKind | undefined, candidate: InputKind): InputKind {
-  return existing === undefined || INPUT_KIND_PRIORITY[candidate] > INPUT_KIND_PRIORITY[existing]
-    ? candidate
-    : existing;
-}
 interface LoadedProvider { readonly apiVersion: 1; generate(context: unknown): unknown }
 /** What one job did in a run that executed it. */
 export interface JobReport extends FileChanges {
@@ -41,7 +25,7 @@ export interface JobReport extends FileChanges {
 export interface PipelineState {
   readonly config: GolemConfig;
   readonly results: ReadonlyMap<string, GolemResult>;
-  readonly inputs: ReadonlyMap<string, InputKind>;
+  readonly inputs: ReadonlySet<string>;
   readonly dependencies: ReadonlyMap<string, ReadonlySet<string>>;
   readonly owned: ReadonlySet<string>;
   /** The ids of the jobs that executed in this run; a job reused from `previous` or skipped by the job cache is not in it. */
@@ -55,10 +39,9 @@ export interface PipelineState {
 }
 export interface PipelineOptions {
   readonly check?: boolean;
-  readonly modelOnly?: boolean;
   readonly changedInputs?: readonly string[];
   readonly previous?: PipelineState;
-  readonly onInput?: (filename: string, kind: InputKind) => void;
+  readonly onInput?: (filename: string) => void;
   readonly onConfig?: (config: GolemConfig) => void;
   readonly onOwned?: (filenames: readonly string[]) => void;
   /** Directories a job's directory inputs leave out: the compiler output of the project that builds after the run, which is no input of any job. */
@@ -292,14 +275,9 @@ async function loadRewriteScan(hasCompilerJob: boolean): Promise<typeof import('
   return import('./rewrite-scan.js');
 }
 
-/** The inputs a job declares as facts, before it runs: the files and folders it reads, and the folders it owns. */
-function declaredInputs(job: GolemJob): readonly string[] {
-  return [...job.facts.inputFiles, ...job.facts.inputFolders, ...job.facts.ownedRoots];
-}
-
-/** What the watcher calls the kind of a job's inputs: the models boundary provider's inputs are `models`, which a model-only run keeps apart; core knows no other kind. */
-function inputKindOf(job: GolemJob): InputKind {
-  return job.facts.provides.includes(MODEL_BOUNDARY) ? 'models' : 'generator';
+/** The inputs a job declares as facts, before it runs: the files and folders it reads, and the folders it owns or scans. */
+export function declaredInputs(job: GolemJob): readonly string[] {
+  return [...job.facts.inputFiles, ...job.facts.inputFolders, ...job.facts.ownedRoots, ...job.facts.scanRoots ?? []];
 }
 
 /** Whether `output`, written by a job that reruns, is read by `consumer` as one of its declared files or inside one of its declared folders. */
@@ -314,19 +292,22 @@ function readsAny(config: GolemConfig, record: JobRecord, outputs: ReadonlySet<s
 
 /**
  * Select source consumers and then follow generated-artifact edges in pipeline order. A changed file reruns the jobs that read it
- * (the recorded reads, and a declared input file). The watch patterns of a job, which find a file the last run did not read, are not applied here yet.
+ * (the recorded reads and a declared input file) and the jobs whose watch patterns match it, which finds a file the last run did not
+ * read: a new source. A file that a job output holds matches no pattern. A change to golem.yaml or to a file the registry read reruns every job.
  */
 function affectedJobs(config: GolemConfig, options: PipelineOptions): ReadonlySet<string> | undefined {
   const previous = options.previous;
   if (!previous || !options.changedInputs || options.check) return undefined;
   if (JSON.stringify(config.jobs) !== JSON.stringify(previous.config.jobs)) return undefined;
   const changed = new Set(options.changedInputs.map(input => path.resolve(input)));
-  if (changed.has(config.configFile)) return undefined;
+  if (changed.has(config.configFile) || loadPackageRegistry(config.configFile).files.some(file => changed.has(file))) return undefined;
+  const facts = config.jobs.map(job => job.facts);
   const affected = new Set<string>();
   for (const input of changed) {
     for (const id of previous.dependencies.get(input) ?? []) affected.add(id);
+    const generated = isJobOutput(facts, input);
     for (const job of config.jobs) {
-      if (job.facts.inputFiles.includes(input)) affected.add(job.id);
+      if (job.facts.inputFiles.includes(input) || (!generated && watchedBy(job.facts, input))) affected.add(job.id);
     }
   }
   // An unclassified input can be a previously missing resolution dependency.
@@ -347,21 +328,20 @@ function affectedJobs(config: GolemConfig, options: PipelineOptions): ReadonlySe
 
 /** Records the inputs a run reads and which jobs read them, and reports each one to the host as it is seen. */
 class InputObserver {
-  readonly inputs = new Map<string, InputKind>();
+  readonly inputs = new Set<string>();
   readonly dependencies = new Map<string, Set<string>>();
 
   constructor(private readonly onInput: PipelineOptions['onInput']) {}
 
-  observe = (filename: string, kind: InputKind, jobId?: string): void => {
+  observe = (filename: string, jobId?: string): void => {
     const resolved = path.resolve(filename);
-    const effective = strongestInputKind(this.inputs.get(resolved), kind);
-    this.inputs.set(resolved, effective);
+    this.inputs.add(resolved);
     if (jobId) {
       const consumers = this.dependencies.get(resolved) ?? new Set<string>();
       consumers.add(jobId);
       this.dependencies.set(resolved, consumers);
     }
-    this.onInput?.(resolved, effective);
+    this.onInput?.(resolved);
   };
 }
 
@@ -463,11 +443,13 @@ async function planPipeline(filename: string, run: PipelineRun): Promise<{ reado
     // resolveConfig reports roots, sources, and generated inputs through the
     // same observer as the YAML file. Classify those paths from their jobs
     // below; only the YAML file itself is a config dependency.
-    if (resolved === requestedConfig || resolved === canonicalConfig) observer.observe(input, 'config');
+    if (resolved === requestedConfig || resolved === canonicalConfig) observer.observe(input);
   });
   options.onConfig?.(config);
+  // A change to a file the registry read, or the appearance of one it looked for, can change which package registers a block.
+  for (const file of loadPackageRegistry(config.configFile).files) observer.observe(file);
   // Config paths identify source jobs; only the configuration itself forces all jobs.
-  for (const job of config.jobs) for (const input of declaredInputs(job)) observer.observe(input, inputKindOf(job), job.id);
+  for (const job of config.jobs) for (const input of declaredInputs(job)) observer.observe(input, job.id);
   validateConfigInputs(config);
   const inventory = loadInventory(config);
   // The record is local state in the ignored .golem folder. Without it every generated file would read as stale.
@@ -535,7 +517,7 @@ async function runJob(job: GolemJob, run: PipelineRun, plan: PipelinePlan, progr
   const previous = options.previous?.results.get(job.id);
   const previousJob = options.previous?.config.jobs.find(candidate => candidate.id === job.id);
   const cached = !options.check
-    && (plan.affected ? !plan.affected.has(job.id) : options.modelOnly && !job.facts.provides.includes(MODEL_BOUNDARY))
+    && plan.affected?.has(job.id) === false
     && previous
     && JSON.stringify(previousJob?.options) === JSON.stringify(job.options);
   const record = plan.records.get(job.id);
@@ -544,19 +526,19 @@ async function runJob(job: GolemJob, run: PipelineRun, plan: PipelinePlan, progr
     const outputs = record.outputs.map(output => absoluteRecordPath(config, output));
     assertUnowned(progress.owned, outputs);
     options.onOwned?.(outputs);
-    for (const input of Object.keys(record.inputs)) observer.observe(absoluteRecordPath(config, input), inputKindOf(job), job.id);
+    for (const input of Object.keys(record.inputs)) observer.observe(absoluteRecordPath(config, input), job.id);
     // The job's inputs are as they were, so its warnings still hold: each run writes them once.
     writeWarnings(record.warnings);
     return { kind: 'skipped', outputs, manifests: record.manifests.map(manifest => absoluteRecordPath(config, manifest)) };
   }
   if (cached) {
     for (const [input, consumers] of options.previous?.dependencies ?? []) {
-      if (consumers.has(job.id)) observer.observe(input, inputKindOf(job), job.id);
+      if (consumers.has(job.id)) observer.observe(input, job.id);
     }
     assertNoDiagnosticErrors(job, previous);
     assertUnowned(progress.owned, previous.artifacts.map(artifact => artifact.path));
     options.onOwned?.(previous.artifacts.map(artifact => artifact.path));
-    for (const input of previous.watchInputs) observer.observe(input, inputKindOf(job), job.id);
+    for (const input of previous.watchInputs) observer.observe(input, job.id);
     return { kind: 'reused', result: previous };
   }
   // The job's own earlier outputs are not inputs: its record and its directory listings leave them out.
@@ -581,7 +563,7 @@ async function runJob(job: GolemJob, run: PipelineRun, plan: PipelinePlan, progr
     generatedResult = await provider.generate({
       ...job.options,
       manifestInputs: [...progress.manifests],
-      onInput: (input: string) => { observer.observe(input, inputKindOf(job)); read?.read(input); },
+      onInput: (input: string) => { observer.observe(input); read?.read(input); },
       session: session.forJob(job.id, keys),
     });
   } catch (error) {
@@ -618,7 +600,7 @@ async function runJob(job: GolemJob, run: PipelineRun, plan: PipelinePlan, progr
       throw error;
     }
   }
-  for (const input of result.watchInputs) observer.observe(input, inputKindOf(job), job.id);
+  for (const input of result.watchInputs) observer.observe(input, job.id);
   return {
     kind: 'ran',
     result,

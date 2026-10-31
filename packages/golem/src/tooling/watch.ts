@@ -1,21 +1,13 @@
 import path from 'node:path';
-import type { GolemConfig } from './config.js';
-import { DEFAULT_CONTROLLER_SUFFIXES, DEFAULT_MODEL_SUFFIXES, errorMessage, failureText, isInsideDirectory, suffixPattern } from './generator-core.js';
+import { errorMessage, failureText } from './generator-core.js';
+import { isJobOutput, watchedBy, watchFolders } from './job-facts.js';
+import type { JobFacts } from './job-facts.js';
 import { changedPaths, InputScan, InputWatcher, outsideFolder, OwnedOutputIndex, realInputFiles, RunBaseline } from './input-watcher.js';
 import type { InputFiles } from './input-watcher.js';
 import { realOutputFiles } from './outputs.js';
 import type { OutputFiles } from './outputs.js';
-import { GeneratorSessionResources, jobFailedBeforeWriting, jobFailedSavingRecord, runPipeline, strongestInputKind } from './pipeline.js';
-import type { InputKind, JobReport, PipelineState } from './pipeline.js';
-
-/** The names a job reads as sources, and what they are: a path with one of these endings is a source whether or not a run has read it. */
-function sourcePatterns(config: GolemConfig | undefined): readonly { readonly kind: 'models' | 'controllers'; readonly pattern: RegExp }[] {
-  return (config?.jobs ?? []).flatMap(job => {
-    // A job with a list of sources reads those and no others.
-    if ((job.kind !== 'models' && job.kind !== 'controllers') || job.options.sources) return [];
-    return [{ kind: job.kind, pattern: suffixPattern(job.options.suffixes ?? (job.kind === 'models' ? DEFAULT_MODEL_SUFFIXES : DEFAULT_CONTROLLER_SUFFIXES)) }];
-  });
-}
+import { declaredInputs, GeneratorSessionResources, jobFailedBeforeWriting, jobFailedSavingRecord, runPipeline } from './pipeline.js';
+import type { JobReport, PipelineState } from './pipeline.js';
 
 /** Records an input a run reads: its signature and the folders around it, as they are when the run first reads them. */
 function observeInput(baseline: RunBaseline, root: string, input: string): void {
@@ -39,9 +31,10 @@ export function baselineBeforeRun(configFile: string): { readonly baseline: RunB
 /** What one watch looks at between two runs. */
 interface Watched {
   readonly root: string;
-  readonly sources: ReturnType<typeof sourcePatterns>;
-  /** The inputs it reads, by what reads them. */
-  readonly kinds: ReadonlyMap<string, InputKind>;
+  /** What each job declares: its watch patterns find a source that no run has read, and its outputs are generated files. */
+  readonly jobs: readonly JobFacts[];
+  /** The inputs it reads. */
+  readonly inputs: ReadonlySet<string>;
   readonly scan: InputScan;
 }
 
@@ -99,7 +92,7 @@ export function watchPipeline(initial: PipelineState | string, reportError: (err
   let state = typeof initial === 'string' ? undefined : initial;
   const filename = path.resolve(typeof initial === 'string' ? initial : initial.config.configFile);
   let config = state?.config;
-  let attempted = new Map<string, InputKind>();
+  let attempted = new Set<string>();
   const owned = new OwnedOutputIndex(state?.owned);
   let retryFull = !state;
   let first = !state;
@@ -122,46 +115,32 @@ export function watchPipeline(initial: PipelineState | string, reportError: (err
   };
   // The inputs and folders to scan change only when a run ends, so they are worked out then and not at every tick.
   const watch = (): Watched => {
-    const inputs = new Map<string, InputKind>(state?.inputs);
-    for (const [input, kind] of attempted) inputs.set(input, strongestInputKind(inputs.get(input), kind));
-    inputs.set(filename, 'config');
-    const sources = sourcePatterns(config);
+    const inputs = new Set<string>([...state?.inputs ?? [], ...attempted, filename]);
     const root = config ? path.dirname(config.tsconfig) : path.dirname(filename);
     const descend: string[] = [];
-    if (config) {
-      for (const job of config.jobs) {
-        if (job.kind === 'controllers') {
-          inputs.set(job.options.root, strongestInputKind(inputs.get(job.options.root), 'controllers'));
-        } else if (job.kind === 'openapi') inputs.set(job.options.input, strongestInputKind(inputs.get(job.options.input), 'openapi'));
-        if (job.kind !== 'models' && job.kind !== 'controllers') continue;
-        // A job reads every source of its root; a controllers job reads `src`.
-        if (!job.options.sources) descend.push(job.kind === 'models' ? job.options.root : path.join(job.options.root, 'src'));
-      }
+    for (const job of config?.jobs ?? []) {
+      for (const input of declaredInputs(job)) inputs.add(input);
+      // A job with watch patterns reads the sources below the folders its patterns apply to, so a source added to any of them starts a run.
+      if (job.facts.watch.length) descend.push(...watchFolders(job.facts));
     }
     // A new output directory can have been observed as missing during module
     // resolution. Its creation is output work, not a source edit. Adding a
     // source beneath it is still seen: the scan lists the names around the inputs.
-    const kinds = new Map([...inputs].filter(([input]) => !owned.covers(input)));
-    // Generated outputs can contain model-named files; they are not model sources.
-    const outputs = (config?.jobs ?? []).flatMap(job => job.kind === 'openapi' || job.kind === 'controllers' ? [job.options.output] : []);
-    const scan = new InputScan(kinds.keys(), {
-      root, descend,
-      skipDescent: directory => outputs.some(output => isInsideDirectory(output, directory)),
-    }, inputFiles);
-    return { root, sources, kinds, scan };
+    const known = new Set([...inputs].filter(input => !owned.covers(input)));
+    return { root, jobs: config?.jobs.map(job => job.facts) ?? [], inputs: known, scan: new InputScan(known, { root, descend }, inputFiles) };
   };
   let watched = watch();
   const firstSnapshot = watcher.snapshotWatching(watched.scan);
   let previous = firstBaseline?.settle(firstSnapshot) ?? firstSnapshot;
-  /** What reads a changed path: an input, or else a source that was added or removed. A name that is no source is not a change. */
-  const kindOf = (input: string): InputKind | undefined => watched.kinds.get(input) ?? watched.sources.find(source => source.pattern.test(path.basename(input)))?.kind;
+  /** Whether a changed path reruns a job: an input, or else a source that a watch pattern names and that was added or removed. A generated file and a name that is no source are not a change. */
+  const rerunsJob = (input: string): boolean => !isJobOutput(watched.jobs, input) && (watched.inputs.has(input) || watched.jobs.some(job => watchedBy(job, input)));
   const tick = async (installed: boolean): Promise<void> => {
     if (stopped) return;
     busy = true;
     try {
       const before = watcher.snapshotWatching(watched.scan);
       const paths = changedPaths(previous, before, input => owned.covers(input));
-      const changed = paths.filter(input => kindOf(input) !== undefined);
+      const changed = paths.filter(rerunsJob);
       // An install can change any package a job read: the run reads everything again.
       if (installed) retryFull = true;
       if (!first && !changed.length && !installed) {
@@ -171,19 +150,18 @@ export function watchPipeline(initial: PipelineState | string, reportError: (err
       }
       first = false;
       session.inputsChanged(changed);
-      const modelOnly = !retryFull && changed.every(input => kindOf(input) === 'models');
       const baseline = new RunBaseline(before, watched.root, inputFiles);
-      const latestAttempt = new Map<string, InputKind>();
+      const latestAttempt = new Set<string>();
       // The line of this run when it ended well, kept until the watch has recorded what the run read.
       let line: string | undefined;
       try {
         const started = performance.now();
         const next = await runPipeline(filename, {
-          modelOnly, previous: state, session, files: outputFiles,
+          previous: state, session, files: outputFiles,
           ...(!retryFull ? { changedInputs: changed } : {}),
           onConfig: value => { config = value; },
-          onInput: (input, kind) => {
-            latestAttempt.set(input, strongestInputKind(latestAttempt.get(input), kind));
+          onInput: input => {
+            latestAttempt.add(input);
             observeInput(baseline, watched.root, input);
           },
           onOwned: filenames => { for (const filename of filenames) owned.add(filename); },
