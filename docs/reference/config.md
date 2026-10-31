@@ -8,6 +8,7 @@ Put `golem.yaml` in the project that owns the source files. Paths in the file ar
 - `tsconfig` names the TypeScript project. Every job reads it: `golem generate`, `golem check` and `golem build`, and the Vite and esbuild plugins and the Node loader, which open the same project from `golem.yaml`. They read the `config` option of the plugin, then `GOLEM_CONFIG`, then `./golem.yaml`.
 - `mobx`, `validation` and `allowAny` apply to every job. `exact` applies to the models job and to the models that controller jobs describe. A named `IObject` or `IModel` can still set `validation`, `allowAny` and `exact` for that declaration.
 - Unknown keys are errors.
+- Golem writes `.golem/schema.json`, a JSON Schema for `golem.yaml` that holds the root keys and the keys of each installed package block. To get completion in your editor, put `# yaml-language-server: $schema=.golem/schema.json` on the first line of `golem.yaml`. A schema part that is missing or broken gives a warning, and the editor does not complete that block.
 - Configure at least one `generators`, `controllers`, `openapi` or `models` job.
 
 The CLI runs [generator jobs](#generator-jobs) first, then controller jobs, then OpenAPI SDK jobs, and model jobs last. A model job can therefore read the manifest that an SDK job writes. A job that reads the output of a later job is a cycle error.
