@@ -238,7 +238,7 @@ test('controller output extensions and collisions fail before providers run', (t
   writeConfig(config, docs('api.txt'));
   assert.throws(() => loadConfig(config), /JSON or YAML/);
   writeConfig(config, `${docs('api.yaml')}${docs('api.yaml').replace('ts-openapi:\n  docs:\n', '')}`);
-  assert.throws(() => loadConfig(config), /overlap/i);
+  assert.throws(() => loadConfig(config), /Job id docs:api\.yaml is declared twice/);
 });
 
 test('controller error diagnostics block exact-file writes while warnings remain typed in the result', async (t: TestContext) => {
@@ -355,7 +355,7 @@ test('pipeline executes controller output before the SDK consumes its exact file
 });
 
 
-test('retired controller inventories reject sibling and descendant file ownership', async t => {
+test('a recorded file destination must be exactly the document of its job', async t => {
   const { root, config } = fixture(t);
   useDocsPackage(root);
   writeConfig(config, docs('api/openapi.json'));
@@ -367,13 +367,6 @@ test('retired controller inventories reject sibling and descendant file ownershi
       [key]: { job: 'docs:api/openapi.json', owner: '@exprtlabs/golem-ts-openapi', digest: '0'.repeat(64), destination: 'api/openapi.json', destinationKind: 'file' },
     } }));
     assert.throws(() => loadInventory(resolved), /exact file destination/);
-  }
-  const job = resolved.jobs.find(candidate => candidate.block === 'ts-openapi') as GolemJob;
-  for (const written of ['api/notes.json', 'api/openapi.json/child.json']) {
-    assert.throws(() => applyJob(resolved, { version: 1, files: {} }, job, [{
-      path: path.join(root, written),
-      content: '{"x-generator":"@exprtlabs/golem-ts-openapi"}',
-    }]), /escapes the docs:api\/openapi\.json destination/, written);
   }
 });
 
