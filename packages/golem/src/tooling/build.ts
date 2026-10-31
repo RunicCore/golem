@@ -13,6 +13,7 @@ import { GeneratorSessionResources, runPipeline } from './pipeline.js';
 import type { PipelineState } from './pipeline.js';
 import { applyRewrites } from './rewrite.js';
 import type { FileRewrite } from './rewrite.js';
+import { loadRewriteParticipants } from './rewrite-participant.js';
 import { emitsJavaScript, projectSources, RewriteScanner } from './rewrite-scan.js';
 import { retainedProgramSession } from './type-analysis/project.js';
 import { inlineEmittedSourceMap, pointDeclarationMap, pointSourceMap } from './source-map.js';
@@ -492,7 +493,8 @@ async function buildOnce(requestSession: () => ts.ProgramSession, run: BuildRun,
     return checkCode;
   }
   const checker = program.getTypeChecker();
-  const scanned = new RewriteScanner({ root, boundary: golemConfig.contracts.ModelBoundary, program, checker, codecKeysFile: codecKeysPath(golemConfig.directory), nonModelInputs: golemConfig.nonModelInputs })
+  const participants = await loadRewriteParticipants(golemConfig.extensions);
+  const scanned = new RewriteScanner({ root, boundary: golemConfig.contracts.ModelBoundary, program, checker, codecKeysFile: codecKeysPath(golemConfig.directory), nonModelInputs: golemConfig.nonModelInputs, participants })
     .scanFiles(sources.map((source) => source.fileName));
   const errors = scanned.diagnostics.filter((diagnostic) => diagnostic.severity === GolemDiagnosticSeverity.Error);
   if (errors.length > 0) throw scanFailure(root, errors);

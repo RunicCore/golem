@@ -13,6 +13,7 @@ import { observedFolders, watchingJobs } from './job-facts.js';
 import { writeEditorSchema } from './editor-schema.js';
 import { loadPackageRegistry, PackageRegistryError, registrationForBlock, registryFiles } from './package-registry.js';
 import { validateModelManifest } from './model-manifest-core.js';
+import { loadRewriteParticipants } from './rewrite-participant.js';
 import type { GolemArtifact, GolemDiagnostic, GolemResult, GeneratorSession } from './generator-core.js';
 import { selectedTypeScript } from './typescript-selection.js';
 import { TypeScriptNotInstalledError } from './typescript-version.js';
@@ -677,8 +678,11 @@ async function scanRewriteSites(config: GolemConfig, session: GeneratorSessionRe
   const rewriteScan = fs.existsSync(config.tsconfig) ? await loadRewriteScan(config.jobs.some(job => job.facts.readsProgram)) : undefined;
   if (!rewriteScan) return;
   const root = path.dirname(config.tsconfig);
+  // The extension entries load after the scan module has picked the project's TypeScript.
+  const participants = await loadRewriteParticipants(config.extensions);
   const scanned = rewriteScan.scanProject({
     root,
+    participants,
     boundary: config.contracts.ModelBoundary,
     configFile: config.tsconfig,
     nonModelInputs: config.nonModelInputs,

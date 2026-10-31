@@ -5,6 +5,8 @@ import { GolemDiagnosticSeverity, canonicalPath, compareText, displayPath, error
 import type { GeneratorSession, GolemDiagnostic, ModelBoundaryValue } from './generator-core.js';
 import type { DiscriminatorValue } from '../model-registry.js';
 import { REWRITE_IMPORT_PREFIX } from './rewrite.js';
+import { ExtensionFaultError, checkedEdits, editsOverlap } from './rewrite-participant.js';
+import type { LoadedParticipant, RewriteCore } from './rewrite-participant.js';
 import type { FileRewrite, RewriteEdit, RewriteImport } from './rewrite.js';
 import { inNodeModules, isInstalledFile } from './type-analysis/path-identity.js';
 import { createProjectProgram, canonicalFilename, companionFilename, isGeneratedCompanion, modelBoundary, retainedProgramSession, type ModelBoundary } from './type-analysis/project.js';
@@ -26,6 +28,8 @@ interface ScanInput {
   readonly codecKeysFile: string;
   /** What a `@Body()` or `@Query()` parameter that is no golem model is: an `error` (the default) or a `warn`ing. */
   readonly nonModelInputs?: 'error' | 'warn' | undefined;
+  /** The rewrite participants of the extensions that golem.yaml turns on, already loaded, in the order of golem.yaml. */
+  readonly participants?: readonly LoadedParticipant[] | undefined;
 }
 
 const MODEL_RUNTIME_MODULE = '@exprtlabs/golem/internal/model-runtime';
@@ -54,6 +58,8 @@ const CODE_FOREIGN_MODEL = 'RUNM1074';
 const CODE_NOT_A_CALL = 'RUNM1079';
 /** A `@Body()` or `@Query()` parameter, whole or one field, whose type is no golem model, which `NestModelInterceptor` rejects on each request. An error unless `nonModelInputs: warn` is set. */
 const CODE_NEST_NOT_A_MODEL = 'RUNM1081';
+/** An edit of a rewrite participant covers text that an edit of core or of another participant covers. */
+const CODE_PARTICIPANT_OVERLAP = 'RUNM1091';
 
 /** The serde functions a type argument turns into a codec call, and the runtime method each becomes. */
 const SERDE_METHODS: ReadonlyMap<string, string> = new Map([
@@ -849,8 +855,61 @@ function pendingGeneration(boundary: ModelBoundary, alias: ts.TypeAliasDeclarati
   return `${displayPath(companion)} is missing. Wait for golem generate or golem watch to write it.`;
 }
 
+/** The participant of each extension that golem.yaml turns on adds its edits, imports, reads and diagnostics to the scan of `file`, in the order of golem.yaml. */
+function runParticipants(
+  scan: FileScan,
+  input: { readonly root: string; readonly checker: ts.TypeChecker; readonly keys: CodecKeys; readonly boundaryValue: ModelBoundaryValue | undefined; readonly modelClasses: () => ReadonlyMap<string, number>; readonly participants: readonly LoadedParticipant[] },
+  file: ts.SourceFile,
+): void {
+  const { root, checker, keys } = input;
+  const core: RewriteCore = {
+    root,
+    importName: (node, name, from) => importOf(scan, root, file, node, name, from),
+    loadCodecModule: (id, typeName) => loadCodecModule(scan, { root, checker, keys, file }, id, typeName),
+    codecIdOf: (symbol) => codecIdOf(checker, keys, symbol, scan.dependencies),
+    isGolemModel: (symbol) => isGolemModel(checker, symbol),
+    locate: (node, code, message, severity) => locate(root, file, node, code, message, severity),
+  };
+  for (const { extension, participant } of input.participants) {
+    let result: ReturnType<typeof participant>;
+    try {
+      result = participant({
+        ts, checker, file, root, core, boundary: input.boundaryValue, modelClasses: input.modelClasses, options: extension.options,
+        codecKeys: { idFor: (filename, name) => keys.idFor(filename, name, scan.dependencies), moduleOf: (id) => keys.moduleOf(id) },
+      });
+    } catch (error) {
+      throw new ExtensionFaultError(extension, `threw while it rewrote ${displayPath(file.fileName)}: ${errorMessage(error)}`, { cause: error });
+    }
+    const edits = checkedEdits(extension, file.fileName, file.text, result);
+    // An edit may not cover text that an edit of core, of an earlier participant or of this one covers, and a clash is not picked silently.
+    const placed = [...scan.edits];
+    let clash: { readonly edit: RewriteEdit; readonly other: RewriteEdit } | undefined;
+    for (const edit of edits) {
+      const other = placed.find((existing) => editsOverlap(edit, existing));
+      if (other) { clash = { edit, other }; break; }
+      placed.push(edit);
+    }
+    if (clash) {
+      scan.diagnostics.push({
+        code: CODE_PARTICIPANT_OVERLAP, severity: GolemDiagnosticSeverity.Error, file: portable(root, file.fileName),
+        ...positionOf(file, clash.edit.start),
+        message: `Extension "${extension.name}" of ${extension.package} edits ${clash.edit.start}-${clash.edit.end} of this file, which overlaps the edit at ${clash.other.start}-${clash.other.end} of core or of an extension. Edit text that no other rewrite covers.`,
+      });
+    } else {
+      scan.edits.push(...edits);
+    }
+    for (const read of result.reads ?? []) scan.dependencies.add(portable(root, read));
+    scan.diagnostics.push(...result.diagnostics ?? []);
+  }
+}
+
+function positionOf(file: ts.SourceFile, offset: number): { readonly line: number; readonly column: number } {
+  const { line, character } = file.getLineAndCharacterOfPosition(offset);
+  return { line: line + 1, column: character + 1 };
+}
+
 function scanFile(
-  input: { readonly root: string; readonly checker: ts.TypeChecker; readonly keys: CodecKeys; readonly nest: boolean; readonly nonModelInputs: 'error' | 'warn'; readonly boundary: ModelBoundary | undefined; readonly modelClasses: () => ReadonlyMap<string, number> },
+  input: { readonly root: string; readonly checker: ts.TypeChecker; readonly keys: CodecKeys; readonly nest: boolean; readonly nonModelInputs: 'error' | 'warn'; readonly boundary: ModelBoundary | undefined; readonly modelClasses: () => ReadonlyMap<string, number>; readonly boundaryValue: ModelBoundaryValue | undefined; readonly participants: readonly LoadedParticipant[] },
   file: ts.SourceFile,
 ): FileScan {
   const { root, checker, keys, nest, nonModelInputs, boundary } = input;
@@ -1016,6 +1075,8 @@ function scanFile(
     importOf(scan, root, file, file, 'registerIModelClass', MODEL_RUNTIME_MODULE);
   }
 
+  runParticipants(scan, input, file);
+
   // A user binding of the reserved prefix would capture the call the rewrite inserts, so a file that is rewritten may not use one.
   if (reserved && scan.edits.length > 0) {
     scan.diagnostics.push(locate(root, file, reserved, CODE_RESERVED_PREFIX,
@@ -1103,11 +1164,15 @@ export class RewriteScanner {
   private readonly nonModelInputs: 'error' | 'warn';
   private readonly keys: CodecKeys;
   private readonly boundary: ModelBoundary | undefined;
+  private readonly boundaryValue: ModelBoundaryValue | undefined;
+  private readonly participants: readonly LoadedParticipant[];
   private modelClassCounts: ReadonlyMap<string, number> | undefined;
 
   constructor(input: ScanInput) {
     this.root = input.root;
     this.boundary = input.boundary && modelBoundary(input.boundary.root, input.boundary.suffixes, { directory: input.boundary.directory, output: input.boundary.output });
+    this.boundaryValue = input.boundary;
+    this.participants = input.participants ?? [];
     this.program = input.program;
     this.checker = input.checker;
     this.nonModelInputs = input.nonModelInputs ?? 'error';
@@ -1149,7 +1214,7 @@ export class RewriteScanner {
   }
 
   private scan(file: ts.SourceFile): FileScanResult {
-    return resultOf(scanFile({ root: this.root, checker: this.checker, keys: this.keys, nest: this.nestSideOn(), nonModelInputs: this.nonModelInputs, boundary: this.boundary, modelClasses: () => this.modelClasses() }, file), file);
+    return resultOf(scanFile({ root: this.root, checker: this.checker, keys: this.keys, nest: this.nestSideOn(), nonModelInputs: this.nonModelInputs, boundary: this.boundary, modelClasses: () => this.modelClasses(), boundaryValue: this.boundaryValue, participants: this.participants }, file), file);
   }
 
   /**
@@ -1200,6 +1265,8 @@ interface ProjectScanInput {
   readonly nonModelInputs?: 'error' | 'warn' | undefined;
   /** The yaml's `.golem/codec-keys.json`. */
   readonly codecKeysFile: string;
+  /** The rewrite participants of the extensions that golem.yaml turns on, loaded. */
+  readonly participants?: readonly LoadedParticipant[];
   /** Core's session of the run: the scan requests the same program session as the jobs. Without one, the scan opens its own and closes it when idle. */
   readonly session?: Pick<GeneratorSession, 'share'>;
 }
@@ -1212,9 +1279,9 @@ export function compilerOutputDirectories(configFile: string, session: Pick<Gene
 
 /** Open the project's program and ask the scanner about its sources: what `golem check` reports. Writes nothing. */
 export function scanProject(input: ProjectScanInput): ProgramScan {
-  const { root, boundary, configFile, nonModelInputs, codecKeysFile, session } = input;
+  const { root, boundary, configFile, nonModelInputs, codecKeysFile, participants, session } = input;
   const info = createProjectProgram(root, undefined, retainedProgramSession(session, root), configFile);
   using program = info.program;
-  const { files, diagnostics } = new RewriteScanner({ root: path.dirname(configFile), boundary, program, checker: program.getTypeChecker(), nonModelInputs, codecKeysFile }).scanProgram();
+  const { files, diagnostics } = new RewriteScanner({ root: path.dirname(configFile), boundary, program, checker: program.getTypeChecker(), nonModelInputs, codecKeysFile, participants }).scanProgram();
   return { files, diagnostics };
 }

@@ -6,6 +6,7 @@ import { ROOT_KEYS } from './editor-schema.js';
 import { providersOf, resolveJobPlan } from './job-rules.js';
 import { loadPackageRegistry, PackageRegistryError, registrationForBlock } from './package-registry.js';
 import type { PackageRegistration } from './package-registry.js';
+import type { EnabledExtension } from './rewrite-participant.js';
 import type { JobFacts, JobPlan } from './job-facts.js';
 import type {
   ContractValues,
@@ -34,6 +35,8 @@ export interface GolemConfig {
   readonly jobPlan: JobPlan;
   /** The value of each contract that a job provides. */
   readonly contracts: ContractValues;
+  /** The extensions that the blocks turn on, in the order of golem.yaml: each is an entry under `extensions:` in a block. None is loaded here: a rewrite host loads them when it starts. */
+  readonly extensions: readonly EnabledExtension[];
   readonly inventoryFile: string;
 }
 
@@ -93,6 +96,26 @@ function plannedJobs(registration: PackageRegistration, planned: unknown): reado
   return planned as readonly PlannedJob[];
 }
 
+/**
+ * The extensions that a block turns on: the names under its `extensions:` key, each with its options. A name the block's package does
+ * not register stops loading and lists the extensions that it registers. Core reads only these names; the package validates the rest of its block.
+ */
+function enabledExtensions(registration: PackageRegistration, block: string, value: unknown): readonly EnabledExtension[] {
+  const declared = isRecord(value) ? value.extensions : undefined;
+  if (declared === undefined) return [];
+  if (!isRecord(declared)) throw new TypeError(`${block}.extensions must map an extension name to its options.`);
+  return Object.entries(declared).map(([name, options]) => {
+    const entry = registration.extensions.get(name);
+    if (entry === undefined) {
+      const registered = [...registration.extensions.keys()];
+      throw new PackageRegistryError(`${block}.extensions turns on "${name}", which ${registration.name} does not register. ${registered.length ? `It registers: ${registered.join(', ')}.` : 'It registers no extension.'}`);
+    }
+    // A bare `name:` in YAML is null: an extension with no options.
+    if (options !== null && !isRecord(options)) throw new TypeError(`${block}.extensions.${name} must be an object of options.`);
+    return { package: registration.name, block, name, entry, options: options ?? {} };
+  });
+}
+
 /** Parse and resolve the complete dependency graph before checking existence. */
 export async function resolveConfig(filename = 'golem.yaml', onInput?: InputObserver): Promise<GolemConfig> {
   const requested = path.resolve(filename);
@@ -131,6 +154,7 @@ export async function resolveConfig(filename = 'golem.yaml', onInput?: InputObse
   // Pass 1: each package validates its block and declares its jobs with their facts.
   const entries = new Map<string, { registration: PackageRegistration; entry: GolemPlanEntry; planned: readonly PlannedJob[] }>();
   const ids = new Map<string, string>();
+  const extensions: EnabledExtension[] = [];
   for (const block of blocks) {
     const registration = registrationForBlock(registry, block);
     const entry = await loadPlanEntry(registration);
@@ -142,6 +166,7 @@ export async function resolveConfig(filename = 'golem.yaml', onInput?: InputObse
       ids.set(facts.id, registration.name);
     }
     entries.set(block, { registration, entry, planned });
+    extensions.push(...enabledExtensions(registration, block, value[block]));
   }
   if (!ids.size) throw new Error('Configure at least one job: the blocks of golem.yaml declare none.');
 
@@ -169,7 +194,7 @@ export async function resolveConfig(filename = 'golem.yaml', onInput?: InputObse
   const byId = new Map(jobs.map(job => [job.id, job] as const));
   return {
     configFile, directory, tsconfig, profile, nonModelInputs,
-    jobs: jobPlan.order.map(id => byId.get(id) as GolemJob), jobPlan, contracts,
+    jobs: jobPlan.order.map(id => byId.get(id) as GolemJob), jobPlan, contracts, extensions,
     inventoryFile: path.join(directory, '.golem', 'outputs.json'),
   };
 }

@@ -1,0 +1,6 @@
+{
+  "name": "@fixture/probe",
+  "version": "1.0.0",
+  "exports": { "./plan": "./plan.js", "./mark": "./mark.mjs", "./label": "./label.mjs" },
+  "golem": { "apiVersion": 2, "block": "probe", "plan": "./plan", "extensions": { "mark": "./mark" } }
+}

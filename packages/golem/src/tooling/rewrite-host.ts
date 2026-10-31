@@ -13,6 +13,8 @@ import type { GolemDiagnostic } from './generator-core.js';
 import { applyRewrites } from './rewrite.js';
 import { assertNotSolutionTsconfig } from './typescript-config.js';
 import { requestTypeScriptRoot } from './typescript-selection.js';
+import { loadRewriteParticipants } from './rewrite-participant.js';
+import type { LoadedParticipant } from './rewrite-participant.js';
 import type { FileScanResult, RewriteScanner } from './rewrite-scan.js';
 import { composeSourceMaps, decodeMappings } from './source-map.js';
 import type { SourceMapV3 } from './source-map.js';
@@ -163,6 +165,8 @@ interface Compiler {
   readonly ts: typeof ts;
   readonly RewriteScanner: typeof RewriteScanner;
   readonly canonicalFilename: (filename: string) => string;
+  /** The rewrite participants of the extensions that golem.yaml turns on. */
+  readonly participants: readonly LoadedParticipant[];
 }
 
 /** A project's compiler session and the program of its latest state; a changed or new file reopens the program. */
@@ -210,7 +214,7 @@ class ScanningProject {
     const program = this.session.openProgram({ root: this.root, sources, configFile: this.config.tsconfig, overlays: new Map(this.overlays) });
     this.program?.close();
     this.program = program;
-    this.scanner = new this.compiler.RewriteScanner({ root: this.root, boundary: this.config.contracts.ModelBoundary, program, codecKeysFile: codecKeysPath(this.config.directory), checker: program.getTypeChecker(), nonModelInputs: this.config.nonModelInputs });
+    this.scanner = new this.compiler.RewriteScanner({ root: this.root, boundary: this.config.contracts.ModelBoundary, program, codecKeysFile: codecKeysPath(this.config.directory), checker: program.getTypeChecker(), nonModelInputs: this.config.nonModelInputs, participants: this.compiler.participants });
     this.stale = false;
     this.recordSignature = signature;
     this.recorded = recorded;
@@ -382,8 +386,10 @@ export async function openRewriteProject(options: GolemHostOptions & { cwd: stri
         // The compiler seam loads once per process, so the project's TypeScript is requested before the seam is imported.
         requestTypeScriptRoot(path.dirname(config.tsconfig));
         const [seam, scan, analysis] = await Promise.all([import('./typescript-ns.js'), import('./rewrite-scan.js'), import('./type-analysis/project.js')]);
+        // The extension entries load after the project's TypeScript is picked: a participant gets the seam and never picks TypeScript itself.
+        const participants = await loadRewriteParticipants(config.extensions);
         return new ScanningProject(config,
-          { ts: seam, RewriteScanner: scan.RewriteScanner, canonicalFilename: analysis.canonicalFilename });
+          { ts: seam, RewriteScanner: scan.RewriteScanner, canonicalFilename: analysis.canonicalFilename, participants });
       })(),
     };
     projects.set(key, shared);

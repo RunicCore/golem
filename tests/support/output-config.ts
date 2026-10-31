@@ -19,5 +19,6 @@ export function configFor(directory: string, job: GolemJob): GolemConfig {
     jobs: [job],
     jobPlan: { order: [job.id], providers: Object.fromEntries(job.facts.provides.map(contract => [contract, job.id])), programViews: {} },
     contracts: {},
+    extensions: [],
   };
 }
