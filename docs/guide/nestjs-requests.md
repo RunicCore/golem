@@ -72,12 +72,18 @@ A whole `@Body()` parameter reads the request body as follows:
 A whole `@Query()` is an object, so declare it as one model and not as an array.
 
 - Give all whole `@Body()` parameters of a handler one model type. The same rule holds for whole `@Query()` parameters.
-- Name one field with `@Body('payment') payment: TPayment` or `@Query('filter') filter: TFilter` when the model sits under one key. Its type is an `IModel` or `IObject`, and the parameter is required: an optional `payment?: TPayment` stops the `controllers` job, because the interceptor answers HTTP 400 for a missing value.
+- Name one field with `@Body('payment') payment: TPayment` or `@Query('filter') filter: TFilter` when the model sits under one key. Its type is an `IModel` or `IObject`, and the parameter is required: an optional `payment?: TPayment` makes the interceptor answer HTTP 400 for a missing value. `golem build` reports it under [`RUNM1081`](/reference/diagnostics#runm1081).
 - A one-field `@Body('items') items: TPayment[]` takes an array of models. The interceptor converts it item by item, and an invalid item returns HTTP 400 with the path `['items', 1, 'name']`. A one-field `@Query` cannot be an array of models: the `controllers` job reports [`NEST1107`](/reference/diagnostics#nest1107).
-- Do not mix a whole `@Body()` and a one-field `@Body('field')` in one handler. The same rule holds for `@Query()`. The `controllers` job reports [`NEST1103`](/reference/diagnostics#nest1103) for a mixed body and [`NEST1107`](/reference/diagnostics#nest1107) for a mixed query.
+- Do not mix a whole `@Body()` and a one-field `@Body('field')` in one handler. The same rule holds for `@Query()`. `golem build` reports the mix under `RUNM1081`. The `controllers` job still documents the handler.
 - A one-field `@Query` model has no array field at any depth. OpenAPI does not define arrays in a `deepObject` parameter, and the `controllers` job reports [`NEST1107`](/reference/diagnostics#nest1107). Send an array in a `@Body`, or in a whole `@Query()` on OpenAPI 3.2.
 
-The `controllers` job writes the one-field `@Body` parameters as the properties of one object request body. It writes a one-field `@Query` model as a `deepObject` query parameter, such as `?filter[status]=paid`. The app must parse nested query keys:
+The `controllers` job writes the types the handler reads and enforces no limit of `NestModelInterceptor`:
+
+- **One-field `@Body` parameters:** they are the properties of one object request body, whatever their type. An optional parameter is not in `required`. When all parts are optional, the request body is not required.
+- **Several body parts:** a second whole `@Body()`, or a whole `@Body()` beside a one-field one, combine with `allOf`. A part that repeats appears once.
+- **A one-field `@Query` model:** it is a `deepObject` query parameter, such as `?filter[status]=paid`. An optional one is not required. On OpenAPI 3.1.2 a whole `@Query()` gives flat parameters beside it. A name that both use stops the job with [`NEST1312`](/reference/diagnostics#nest1312).
+
+The app must parse nested query keys:
 
 - Express 5 reads `filter[status]` as one flat key by default. Set the parser once: `app.set('query parser', 'extended')` on the Express instance, which a Nest app gets from `app.getHttpAdapter().getInstance()`.
 - Fastify has the same default. Pass a parser that reads nested keys, such as `qs.parse`, as the `querystringParser` option of `new FastifyAdapter({ querystringParser })`.

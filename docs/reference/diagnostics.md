@@ -30,24 +30,6 @@ An error prints its code, location when known, and message, then stops generatio
 
 **Unrepresentable Nest parameter.** A `@nestjs/common` parameter decorator this generator doesn't recognize is present — not a location decorator (`@Body`, `@Query`, `@Param`, `@Headers`) and not one of the explicitly unsupported ones. **Fix:** Remove the decorator, or replace it with a supported one.
 
-### NEST1103
-
-**Named body parameter.** A `@Body` parameter is not valid in these cases:
-
-- A one-field `@Body('field')` has a type that is no `IModel`, `IObject` or array of them.
-- A one-field `@Body('field')` is optional.
-- A one-field `@Body('field')` shares an operation with a whole `@Body()`.
-- A second whole `@Body()` in the same method.
-
-`NestModelInterceptor` converts only a model field, and it cannot convert a whole body and a field of it together.
-
-**Fix:**
-
-- Give the field a required `IModel` or `IObject` type, or an array of one.
-- Or use `@Body()` for the whole object and declare an explicit request-body contract.
-- Use one-field parameters only, or one whole parameter only.
-- Declare the body as one model when a method has two whole `@Body()` parameters.
-
 ### NEST1105
 
 **Unknown parameter keys.** Flattening a whole `@Query()`/`@Param()`-style object fails because its type has an index signature, so its full set of keys isn't statically known. **Fix:** Declare named fields instead of an index signature, or name the parameter explicitly (`@Query('name')`) so it isn't flattened.
@@ -62,14 +44,15 @@ An error prints its code, location when known, and message, then stops generatio
 
 - Flattening it would need a non-primitive property.
 - A named parameter is neither primitive nor, for `@Query('name')`, an `IModel` or `IObject`.
-- A one-field `@Query('name')` model is optional, is an array of models, or holds an array field.
-- A whole `@Query()` object shares an operation with a one-field model, or collides with another query parameter.
+- A one-field `@Query('name')` model is an array of models or holds an array field, which a `deepObject` parameter cannot hold.
+- On OpenAPI 3.2.0, a whole `@Query()` object (one `querystring` parameter) shares an operation with a one-field model or another query parameter.
 - A `querystring` parameter needs OpenAPI 3.2.0.
 
 **Fix:**
 
 - Use a named primitive parameter or an explicit Swagger contract.
-- Keep a single whole-object query parameter.
+- Keep a single whole-object query parameter on OpenAPI 3.2.0, or generate against OpenAPI 3.1.2, which writes the whole query as flat parameters.
+- Send an array in a `@Body`.
 - Generate against OpenAPI 3.2.0 for a `querystring` parameter.
 
 ### NEST1108
@@ -162,7 +145,7 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### NEST1312
 
-**Duplicate parameter.** The same parameter (name and location) is declared more than once for one operation, or a whole `@Query()` object is declared alongside another whole-object or named query parameter. Header names compare without letter case, so `X-Trace` and `x-trace` are one header. **Fix:** Remove the duplicate, or combine the fields into one contract.
+**Duplicate parameter.** The same parameter (name and location) is declared more than once for one operation. OpenAPI identifies a parameter by its name and location, so one operation cannot hold two, such as a flat field `limit` of a whole `@Query()` and a named model `@Query('limit')` on OpenAPI 3.1.2. Header names compare without letter case, so `X-Trace` and `x-trace` are one header. **Fix:** Remove the duplicate, or combine the fields into one contract.
 
 ### NEST1313
 
