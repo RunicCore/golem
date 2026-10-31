@@ -27,7 +27,8 @@ function readsOutputOf(reader: JobFacts, writer: JobFacts): boolean {
   ));
 }
 
-function providersOf(jobs: readonly JobFacts[]): Record<string, string> {
+/** The id of the job that provides each contract; throws a `JobRuleError` for a contract with two providers or a needed contract with none. */
+export function providersOf(jobs: readonly JobFacts[]): Record<string, string> {
   const providers: Record<string, string> = {};
   for (const job of jobs) {
     for (const contract of job.provides) {
