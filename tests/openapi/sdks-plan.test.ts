@@ -60,7 +60,6 @@ test('the SDK options mode, name, dates, remoteHosts and the reference limits re
 test('a golem-mode SDK needs the codecs host, takes its codecs file from it and runs before the model job that writes that file', (t: TestContext) => {
   // protects: T-769 page "Packages": a golem SDK needs CodecsHost; the model job reads the SDK folder, so the SDK job runs first
   const { root, filename } = project(t, `version: 1\n${SDK}      mode: golem\nmodel:\n  output: models\n`);
-  fs.mkdirSync(path.join(root, 'models'));
   const config = loadConfig(filename);
   assert.deepEqual(config.jobs.map(job => job.id), ['openapi:sdk', 'model']);
   const [sdk, model] = config.jobs;
