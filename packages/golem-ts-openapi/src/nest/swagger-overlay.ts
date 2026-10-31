@@ -6,7 +6,7 @@ import {
   diagnostic,
   type TsToOpenApiDiagnostic,
 } from '../diagnostics.js';
-import { findBuiltinClass } from '@exprtlabs/golem/internal/type-analysis';
+import { NEST_SWAGGER, findBuiltinClass } from '@exprtlabs/golem/internal/type-analysis';
 import { evaluateStaticValue, isStaticArray, resolveValueSymbol, singleReturnExpression, unwrapExpression } from '@exprtlabs/golem/internal/static-value';
 import { hasDecorator, isTypeScriptBuiltinConstructor, unwrapAsyncType } from './analysis-utils.js';
 import {
@@ -24,7 +24,7 @@ import {
   type SchemaMergeOptions,
 } from './json-schema-merge.js';
 import { decoratorOptions, type DecoratorOptions, type MetadataReader } from './metadata.js';
-import { NEST_SWAGGER, decoratorsOf } from './symbols.js';
+import { decoratorsOf } from './symbols.js';
 import type { TypeReference } from './types.js';
 
 interface DtoSchemaOptions extends SchemaMergeOptions {

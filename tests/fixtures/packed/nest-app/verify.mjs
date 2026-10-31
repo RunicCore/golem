@@ -13,11 +13,6 @@ import { createApplication } from './.build/src/application.js';
 import { Payment } from './.build/src/payment.model.js';
 import { PaymentsController } from './.build/src/payments.controller.js';
 import { parseInput, stringifyInput, submitPayment } from './.build/src/wire.js';
-import {
-  OPERATION_CODECS,
-  OPERATION_OUTPUT_CODECS,
-  OPERATION_QUERY_CODECS,
-} from './.build/src/generated/operation-codecs.js';
 
 const adapter = process.env.TEST_HTTP_ADAPTER;
 if (adapter !== 'express' && adapter !== 'fastify') {
@@ -176,8 +171,3 @@ for (const [alias, component] of [['TPayment', 'Payment'], ['TMerchant', 'TMerch
   assert.notEqual(sdkId, modelId, `${alias}: handwritten and SDK ids differ`);
   assert.equal(getObjectCodec(modelId)?.issueSource, 'typescript', `${alias}: handwritten codec keeps its source`);
 }
-assert.equal(OPERATION_CODECS['POST /api/payments/transactions'], modelCodecKeys['src/payment.model.ts#TPaymentInput']);
-assert.equal(OPERATION_CODECS['POST /api/payments/transactions/as-class'], modelCodecKeys['src/payment.model.ts#TPayment']);
-assert.equal(OPERATION_OUTPUT_CODECS['GET /api/payments/transactions/{id}'], modelCodecKeys['src/payment.model.ts#TPayment']);
-assert.equal(OPERATION_QUERY_CODECS['GET /api/payments/transactions'], modelCodecKeys['src/payment.model.ts#TPaymentFilter']);
-assert.match(OPERATION_CODECS['POST /api/payments/transactions'] ?? '', /^TPaymentInput_[0-9a-f]{8}$/);

@@ -4,7 +4,6 @@ import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { runPipeline } from '#golem/cli';
 import { GeneratorSessionResources } from '#golem/pipeline';
-import { operationCodecRegistryPath } from '#golem/generated-paths';
 import { createControllerFixture } from './fixture-templates/controllers/project.js';
 import { subscribe } from './support/golem-channels.js';
 
@@ -46,7 +45,7 @@ function twoFolderProject(t: TestContext): string {
 }
 
 function outputs(root: string): Record<string, string> {
-  const files = ['generated/openapi.json', path.relative(root, operationCodecRegistryPath(root)), 'src/holder.model.generated.ts', 'lib/shared.model.generated.ts'];
+  const files = ['generated/openapi.json', 'src/holder.model.generated.ts', 'lib/shared.model.generated.ts'];
   return Object.fromEntries(files.map((file) => [file, fs.readFileSync(path.join(root, file), 'utf8')]));
 }
 

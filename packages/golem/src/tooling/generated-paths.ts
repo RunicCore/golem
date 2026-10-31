@@ -2,46 +2,9 @@ import path from 'node:path';
 
 /** Default directory for shared model files, relative to the models job root. Public at 1.0. */
 export const DEFAULT_MODEL_OUTPUT = 'src/generated/models';
-/** Operation-codec registry written by a controllers job, relative to its root. Public at 1.0. */
-export const OPERATION_CODEC_REGISTRY = 'src/generated/operation-codecs.ts';
 
 export function defaultModelOutput(root: string): string {
   return path.join(root, DEFAULT_MODEL_OUTPUT);
-}
-
-export function operationCodecRegistryPath(root: string): string {
-  return path.join(root, OPERATION_CODEC_REGISTRY);
-}
-
-/** True when a portable (forward-slash) path ends at the registry location. */
-export function isOperationCodecRegistry(portablePath: string): boolean {
-  return portablePath === OPERATION_CODEC_REGISTRY || portablePath.endsWith(`/${OPERATION_CODEC_REGISTRY}`);
-}
-
-/** The registry export that maps `<Controller>.<method>` to the model ids of that method's slots. */
-export const OPERATION_METHOD_KEYS_EXPORT = 'OPERATION_METHOD_KEYS';
-
-/** The model ids of one controller method in the registry: `input` and `query` hold a whole `@Body()` and `@Query()` model, or the models of a union of them, `fields` a one-field `@Body('name')` or `@Query('name')` model. */
-export interface OperationMethodCodecs {
-  readonly input?: string | readonly string[];
-  readonly output?: string;
-  readonly query?: string | readonly string[];
-  readonly fields?: Readonly<Record<string, string>>;
-}
-
-/**
- * The slot of a method's registry entry that holds the model of a `@Body()` or `@Query()` parameter: `input` or `query` for the whole
- * model, `body:name` or `query:name` for a one-field parameter, which `fields` keys the same way.
- */
-export function operationCodecSlot(location: 'body' | 'query', name?: string): string {
-  if (name !== undefined) return `${location}:${name}`;
-  return location === 'body' ? 'input' : 'query';
-}
-
-/** The model ids a method's registry entry holds in the slot, if any: one for a model, the variants' for a union. */
-export function operationSlotCodecs(entry: OperationMethodCodecs, slot: string): readonly string[] | undefined {
-  const ids = slot === 'input' ? entry.input : slot === 'query' ? entry.query : entry.fields?.[slot];
-  return ids === undefined ? undefined : typeof ids === 'string' ? [ids] : ids;
 }
 
 /** The codec ids a models job writes under `.golem/`, beside the owned-output inventory: the table a rewrite reads. */

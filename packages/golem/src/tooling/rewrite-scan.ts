@@ -3,13 +3,12 @@ import path from 'node:path';
 import * as ts from './typescript-ns.js';
 import { GolemDiagnosticSeverity, canonicalPath, compareText, displayPath, errorMessage, hasErrorCode, isRecord } from './generator-core.js';
 import type { GeneratorSession, GolemDiagnostic } from './generator-core.js';
-import { OPERATION_METHOD_KEYS_EXPORT, operationCodecRegistryPath, operationCodecSlot, operationSlotCodecs, type OperationMethodCodecs } from './generated-paths.js';
 import type { DiscriminatorValue } from '../model-registry.js';
 import { REWRITE_IMPORT_PREFIX } from './rewrite.js';
-import { evaluateStaticValue } from './static-value.js';
 import type { FileRewrite, RewriteEdit, RewriteImport } from './rewrite.js';
 import { inNodeModules, isInstalledFile } from './type-analysis/path-identity.js';
 import { createProjectProgram, canonicalFilename, companionFilename, isGeneratedCompanion, modelBoundary, retainedProgramSession, type ModelBoundary } from './type-analysis/project.js';
+import { GOLEM_PACKAGE, NEST_COMMON, arrayItemNode, decoratorIdentity, staticDecoratorKey } from './type-analysis/controller-parameters.js';
 import { packageSpecifier } from './type-analysis/package-specifier.js';
 import { fieldProvenance } from './type-analysis/projections.js';
 import { authoredUnionMembers } from './type-analysis/projection-names.js';
@@ -37,23 +36,6 @@ interface ScanInput {
   readonly nonModelInputs?: 'error' | 'warn' | undefined;
 }
 
-/** A `@Body()` or `@Query()` parameter that the scan stamps with `nestModelCodec(id)`. */
-interface NestCodecSite {
-  /** Root-relative file. */
-  readonly file: string;
-  readonly line: number;
-  readonly column: number;
-  readonly decorator: string;
-  /** The model type as the parameter spells it, array wrappers removed. */
-  readonly label: string;
-  /** The id of the model, or the ids of the models of a union. */
-  readonly ids: readonly string[];
-  /** The name of the method the parameter belongs to, spelled as the generated registry spells it. Undefined for a parameter of a constructor or a function, which no route holds. */
-  readonly method: string | undefined;
-  /** The slot of that method's registry entry that holds `id` (`operationCodecSlot`). */
-  readonly slot: string;
-}
-
 const MODEL_RUNTIME_MODULE = '@exprtlabs/golem/internal/model-runtime';
 const NEST_MODULE = '@exprtlabs/golem/internal/nest-runtime';
 const NEST_PARAMETER_DECORATORS: readonly string[] = ['Body', 'Query'];
@@ -72,7 +54,6 @@ const CODE_NO_CODEC = 'RUNM1067';
 const CODE_RESERVED_PREFIX = 'RUNM1068';
 const CODE_IMPORT_CLASH = 'RUNM1069';
 const CODE_NEST_NO_CODEC = 'RUNM1071';
-const CODE_NEST_REGISTRY = 'RUNM1072';
 /** A model that golem does not generate for this project: its file name has no model suffix. */
 const CODE_FOREIGN_MODEL = 'RUNM1074';
 /** A serde function with type arguments that no call rewrite reaches: `parse<T>` as a value, `parse?.<T>(...)`, or a `parse<T>(...)` of a class whose construct option a spread argument hides. */
@@ -440,46 +421,35 @@ function isNamed(typeName: ts.EntityName, ...names: readonly string[]): boolean 
 function nestModelType(typeNode: ts.TypeNode, forReturn: boolean): { readonly model: ts.TypeNode; readonly array: boolean } | undefined {
   let node = typeNode;
   let array = false;
-  const wrapArray = (element: ts.TypeNode): boolean => {
-    if (array) return false;
-    array = true;
-    node = element;
-    return true;
-  };
   for (;;) {
-    if (ts.isParenthesizedTypeNode(node)) node = node.type;
-    else if (ts.isArrayTypeNode(node)) { if (!wrapArray(node.elementType)) return undefined; }
+    const item = arrayItemNode(node);
+    if (item !== undefined) {
+      if (array) return undefined;
+      array = true;
+      node = item;
+    } else if (ts.isParenthesizedTypeNode(node)) node = node.type;
     else if (ts.isTypeOperatorNode(node) && node.operator === ts.SyntaxKind.ReadonlyKeyword) node = node.type;
     else if (ts.isTypeOperatorNode(node) || ts.isUnionTypeNode(node)) return forReturn ? undefined : { model: node, array };
     else if (forReturn && ts.isTypeReferenceNode(node) && node.typeArguments?.length === 1 && isNamed(node.typeName, 'Promise')) node = node.typeArguments[0];
-    else if (ts.isTypeReferenceNode(node) && node.typeArguments?.length === 1 && isNamed(node.typeName, 'Array', 'ReadonlyArray')) { if (!wrapArray(node.typeArguments[0])) return undefined; }
     else return { model: node, array };
   }
 }
 
-/** The name a decorator is called by, as `@Name()`, `@Name` or `@namespace.Name()`; the receiver is not checked. */
-function decoratorName(decorator: ts.Decorator): string | undefined {
-  const expression = ts.isCallExpression(decorator.expression) ? decorator.expression.expression : decorator.expression;
-  if (ts.isIdentifier(expression)) return expression.text;
-  if (ts.isPropertyAccessExpression(expression)) return expression.name.text;
+/** The `@Body()` or `@Query()` of NestJS that a parameter carries, found by the symbol it resolves to: an aliased or re-exported import is found, a local decorator of the same name is not. */
+function nestParameterDecorator(checker: ts.TypeChecker, parameter: ts.ParameterDeclaration): { readonly node: ts.Decorator; readonly name: string } | undefined {
+  for (const node of ts.getDecorators(parameter) ?? []) {
+    const { name, packageName } = decoratorIdentity(checker, node);
+    if (packageName === NEST_COMMON && name !== undefined && NEST_PARAMETER_DECORATORS.includes(name)) return { node, name };
+  }
   return undefined;
 }
 
-function decoratorNames(node: ts.Node): readonly string[] {
-  return (ts.getDecorators(node) ?? []).flatMap((decorator) => decoratorName(decorator) ?? []);
-}
-
-/** The registry slot of a `@Body()` or `@Query()` parameter: a first argument with a static string value names a field, the way the controllers job reads it; any other first argument is a pipe. */
-function nestSlot(checker: ts.TypeChecker, parameter: ts.ParameterDeclaration, decorator: string): string {
-  const expression = ts.getDecorators(parameter)?.find((each) => decoratorName(each) === decorator)?.expression;
-  const argument = expression !== undefined && ts.isCallExpression(expression) ? expression.arguments[0] : undefined;
-  const key = argument === undefined ? undefined : evaluateStaticValue(checker, argument);
-  return operationCodecSlot(decorator === 'Body' ? 'body' : 'query', key?.ok === true && typeof key.value === 'string' ? key.value : undefined);
-}
-
-/** Whether the node carries the decorator, written plainly or as the aliased import an earlier rewrite added. */
-function hasDecorator(names: readonly string[], name: string): boolean {
-  return names.includes(name) || names.includes(`${REWRITE_IMPORT_PREFIX}${name}`);
+/** Whether the node carries golem's own decorator `name`, plainly or under an alias; a decorator of that name from another package is not it. */
+function hasDecorator(checker: ts.TypeChecker, node: ts.Node, name: string): boolean {
+  return (ts.getDecorators(node) ?? []).some((decorator) => {
+    const identity = decoratorIdentity(checker, decorator);
+    return identity.packageName === GOLEM_PACKAGE && identity.name === name;
+  });
 }
 
 /**
@@ -661,6 +631,63 @@ function nestBinding(
   return { ...unbound, id: codecIdOf(checker, keys, symbol, dependencies), golemModel: isGolemModel(checker, symbol), name, defaultExport: symbol.name === 'default' };
 }
 
+/** One `@Body()` or `@Query()` parameter of a handler that `NestModelInterceptor` converts to a model. */
+interface HandlerInput {
+  readonly parameter: ts.ParameterDeclaration;
+  readonly decorator: string;
+  /** The decorator as written, for the message. */
+  readonly node: ts.Decorator;
+  /** The field a one-field parameter reads; undefined for a whole one. */
+  readonly field: string | undefined;
+  /** The type is an array of the model. */
+  readonly array: boolean;
+  /** The model and array form the interceptor compares between two parameters that read the same value. */
+  readonly model: string;
+}
+
+function handlerInputModel(binding: NestBinding): string {
+  if (binding.union) return JSON.stringify([binding.union.property, binding.union.variants.map((variant) => [variant.values, variant.id])]);
+  return `${binding.id}${binding.array ? '[]' : ''}`;
+}
+
+/**
+ * The limits `NestModelInterceptor` sets on the inputs of one handler together, each with the parameter to report it at, in
+ * parameter order. A parameter that omits what the interceptor needs: an optional one-field parameter or an optional whole body
+ * (a request without that value answers HTTP 400). A parameter the interceptor cannot convert next to an earlier one: a whole
+ * and a one-field parameter of one source, and two parameters that read the same value as another model (both throw a
+ * TypeError, and Nest answers HTTP 500). A whole `@Query()` array throws a TypeError too, because a query is an object.
+ * Each parameter that breaks a rule gets its own report.
+ */
+function handlerInputFaults(file: ts.SourceFile, inputs: readonly HandlerInput[]): readonly { readonly parameter: ts.ParameterDeclaration; readonly message: string }[] {
+  const faults: { parameter: ts.ParameterDeclaration; message: string }[] = [];
+  const expression = ({ node }: HandlerInput): string => `@${node.expression.getText(file)}`;
+  const written = (input: HandlerInput): string => `${expression(input)} ${input.parameter.name.getText(file)}`;
+  inputs.forEach((input, index) => {
+    const { parameter, decorator, field } = input;
+    const lowered = decorator.toLowerCase();
+    const earlier = inputs.slice(0, index).filter((other) => other.decorator === decorator);
+    const fault = (message: string): void => { faults.push({ parameter, message }); };
+    const optional = parameter.questionToken !== undefined || parameter.initializer !== undefined;
+    if (optional && field !== undefined) {
+      fault(`${written(input)} is an optional one-field model, and NestModelInterceptor answers HTTP 400 for a request that omits the field. Make the parameter required, or declare the field optional in a whole @${decorator}() model.`);
+    } else if (optional && decorator === 'Body') {
+      fault(`${written(input)} is an optional whole body, and NestModelInterceptor answers HTTP 400 for a request without a body. Make the parameter required.`);
+    }
+    if (field === undefined && decorator === 'Query' && input.array) {
+      fault(`${written(input)} is an array of models, and NestModelInterceptor throws a TypeError for a whole @Query() array, and Nest answers HTTP 500: a query is an object. Declare the query as one model.`);
+    }
+    const mixed = earlier.find((other) => (other.field === undefined) !== (field === undefined));
+    if (mixed) {
+      fault(`${written(input)} cannot share a handler with ${written(mixed)}: NestModelInterceptor throws a TypeError for a whole and a one-field @${decorator}() together, and Nest answers HTTP 500. Declare the whole ${lowered} as one model, or use one-field parameters only.`);
+    }
+    const reads = earlier.find((other) => other.field === field);
+    if (reads && reads.model !== input.model) {
+      fault(`${written(input)} takes another model than ${written(reads)}: NestModelInterceptor throws a TypeError for ${field === undefined ? `whole @${decorator}() parameters` : `${expression(input)} parameters`} of different types, and Nest answers HTTP 500. Give them one model type, or declare one ${field === undefined ? `whole ${lowered}` : 'parameter'}.`);
+    }
+  });
+  return faults;
+}
+
 // One file
 
 interface FileScan {
@@ -670,7 +697,6 @@ interface FileScan {
   /** Modules the file loads for their side effects: the generated modules that register the codecs its edits name. */
   readonly loads: Set<string>;
   readonly diagnostics: GolemDiagnostic[];
-  readonly nestSites: NestCodecSite[];
   /** Root-relative key tables and generated model modules the edits were resolved from. */
   readonly dependencies: Set<string>;
 }
@@ -835,7 +861,7 @@ function scanFile(
 ): FileScan {
   const { root, checker, keys, nest, nonModelInputs, boundary } = input;
   const text = file.text;
-  const scan: FileScan = { edits: [], imports: new Map(), loads: new Set(), diagnostics: [], nestSites: [], dependencies: new Set() };
+  const scan: FileScan = { edits: [], imports: new Map(), loads: new Set(), diagnostics: [], dependencies: new Set() };
   const classes: { readonly name: string; readonly id: string; readonly end: number }[] = [];
   let reserved: ts.Identifier | undefined;
 
@@ -897,15 +923,40 @@ function scanFile(
     }
   };
 
+  const nonModelSeverity = nonModelInputs === 'warn' ? GolemDiagnosticSeverity.Warning : GolemDiagnosticSeverity.Error;
+  const nonModelAdvice = nonModelInputs === 'warn'
+    ? 'Generation continues, because golem.yaml sets nonModelInputs: warn.'
+    : 'An app with its own interceptor can set nonModelInputs: warn in golem.yaml.';
+  const bindParameter = (typeNode: ts.TypeNode, decorator: string): NestBinding =>
+    nestBinding({ root, checker, keys, file, dependencies: scan.dependencies, unions: { text: decorator === 'Query' } }, typeNode);
+
+  /** The inputs of one handler that the interceptor converts together: `handlerInputFaults` reports the limits they set on each other. */
+  const visitHandler = (method: ts.MethodDeclaration): void => {
+    const inputs: HandlerInput[] = [];
+    for (const parameter of method.parameters) {
+      const found = nestParameterDecorator(checker, parameter);
+      if (!parameter.type || found === undefined) continue;
+      const { node, name: decorator } = found;
+      const binding = bindParameter(parameter.type, decorator);
+      const field = staticDecoratorKey(checker, node);
+      // A type that is no model, or a union in one field, has its own report; the interceptor throws on it before it compares anything.
+      if ((binding.id === '' && binding.union === undefined) || (binding.union !== undefined && (binding.array || field !== undefined))) continue;
+      inputs.push({ parameter, decorator, node, field, array: binding.array, model: handlerInputModel(binding) });
+    }
+    for (const { parameter, message } of handlerInputFaults(file, inputs)) {
+      scan.diagnostics.push(locate(root, file, parameter, CODE_NEST_NOT_A_MODEL, `${message} ${nonModelAdvice}`, nonModelSeverity));
+    }
+  };
+
   /** A `@Body()` or `@Query()` parameter of a model gets `@nestModelCodec(id)` before its name, and one of a tagged union of models `@nestModelUnion(tag, variants)`. */
   const visitParameter = (parameter: ts.ParameterDeclaration): void => {
-    const names = decoratorNames(parameter);
-    const decorator = names.find((name) => NEST_PARAMETER_DECORATORS.includes(name));
-    if (!parameter.type || decorator === undefined || hasDecorator(names, NEST_CODEC_DECORATOR) || hasDecorator(names, NEST_UNION_DECORATOR)) return;
+    const found = nestParameterDecorator(checker, parameter);
+    if (!parameter.type || found === undefined || hasDecorator(checker, parameter, NEST_CODEC_DECORATOR) || hasDecorator(checker, parameter, NEST_UNION_DECORATOR)) return;
+    const { node: decoratorNode, name: decorator } = found;
     const typeNode = parameter.type;
-    const { id, golemModel, label, array, name, defaultExport, union, unionFault } = nestBinding({ root, checker, keys, file, dependencies: scan.dependencies, unions: { text: decorator === 'Query' } }, typeNode);
+    const { id, golemModel, label, array, name, defaultExport, union, unionFault } = bindParameter(typeNode, decorator);
     // A union converts as a whole input only; golem describes no array of a union and no one-field union.
-    const unionUnsupported = union !== undefined && (array || !['input', 'query'].includes(nestSlot(checker, parameter, decorator)));
+    const unionUnsupported = union !== undefined && (array || staticDecoratorKey(checker, decoratorNode) !== undefined);
     if ((id === '' && union === undefined) || unionUnsupported) {
       const [reason, advice] = unionFault
         ? unionFault
@@ -916,10 +967,8 @@ function scanFile(
         ? `@${decorator}() type ${label} is the default export of its file, which has no codec id; golem generate cannot add one. Export the class by name (export class ${label}) and import it by name.`
         : `@${decorator}() type ${label} has no unique codec id; run golem generate`));
       else scan.diagnostics.push(locate(root, file, typeNode, CODE_NEST_NOT_A_MODEL,
-        `${label} ${reason}, and NestModelInterceptor answers HTTP 500 for a @${decorator}() parameter of that type. ${advice} ${nonModelInputs === 'warn'
-          ? 'Generation continues, because golem.yaml sets nonModelInputs: warn.'
-          : 'An app with its own interceptor can set nonModelInputs: warn in golem.yaml.'}`,
-        nonModelInputs === 'warn' ? GolemDiagnosticSeverity.Warning : GolemDiagnosticSeverity.Error));
+        `${label} ${reason}, and NestModelInterceptor answers HTTP 500 for a @${decorator}() parameter of that type. ${advice} ${nonModelAdvice}`,
+        nonModelSeverity));
       return;
     }
     if (union) {
@@ -931,9 +980,6 @@ function scanFile(
       importOf(scan, root, file, parameter, NEST_CODEC_DECORATOR, NEST_MODULE);
       loadCodecModule(scan, { root, checker, keys, file }, id, name);
     }
-    const { line, character } = file.getLineAndCharacterOfPosition(parameter.type.getStart(file));
-    const method = ts.isMethodDeclaration(parameter.parent) ? parameter.parent.name.getText(file) : undefined;
-    scan.nestSites.push({ file: portable(root, file.fileName), line: line + 1, column: character + 1, decorator, label, ids: union === undefined ? [id] : union.variants.map((variant) => variant.id), method, slot: nestSlot(checker, parameter, decorator) });
   };
 
   /** A class method that returns a model gets `@nestModelReturn(id[, true])` before its other decorators. */
@@ -941,7 +987,7 @@ function scanFile(
     // A decorator is a syntax error on an object literal method, an abstract method and an overload signature.
     if (!method.type || !method.body || !ts.isClassLike(method.parent)) return;
     const returned = nestModelType(method.type, true);
-    if (!returned || hasDecorator(decoratorNames(method), NEST_RETURN_DECORATOR)) return;
+    if (!returned || hasDecorator(checker, method, NEST_RETURN_DECORATOR)) return;
     const { id, primitive, name } = nestBinding({ root, checker, keys, file, dependencies: scan.dependencies }, returned.model);
     if (primitive || id === '') return;
     scan.edits.push(insertion(method.getStart(file), `@${REWRITE_IMPORT_PREFIX}${NEST_RETURN_DECORATOR}(${JSON.stringify(id)}${returned.array ? ', true' : ''}) `));
@@ -951,7 +997,7 @@ function scanFile(
 
   const visit = (node: ts.Node): void => {
     if (nest && ts.isParameter(node)) visitParameter(node);
-    else if (nest && ts.isMethodDeclaration(node)) visitMethod(node);
+    else if (nest && ts.isMethodDeclaration(node)) { visitMethod(node); visitHandler(node); }
     if (ts.isCallExpression(node)) visitCall(node);
     else if (ts.isExpressionWithTypeArguments(node) && node.typeArguments?.length) reportNotRewritten(node, node.typeArguments, node.expression);
     else if (ts.isClassDeclaration(node) && node.name) {
@@ -989,8 +1035,6 @@ function scanFile(
 /** What one file needs rewritten, answered per file from the program the scanner holds. */
 export interface FileScanResult extends FileRewrite {
   readonly diagnostics: readonly GolemDiagnostic[];
-  /** Every parameter the nest rule stamps in this file; empty unless `nest` is on. */
-  readonly nestCodecSites: readonly NestCodecSite[];
   /** Root-relative key tables and generated model modules the edits were resolved from, sorted. A change to one of them can change this file's edits. */
   readonly dependencies: readonly string[];
 }
@@ -1037,7 +1081,7 @@ function resultOf(scan: FileScan, file: ts.SourceFile): FileScanResult {
     .sort(([left], [right]) => compareText(left, right))
     .map(([from, names]) => ({ from, names: names.sort(compareText) }));
   const edits = [...scan.edits].sort((left, right) => left.start - right.start || left.end - right.end);
-  return { edits, imports, importsAt: imports.length === 0 ? 0 : importInsertOffset(file), diagnostics: scan.diagnostics, nestCodecSites: scan.nestSites, dependencies: [...scan.dependencies].sort(compareText) };
+  return { edits, imports, importsAt: imports.length === 0 ? 0 : importInsertOffset(file), diagnostics: scan.diagnostics, dependencies: [...scan.dependencies].sort(compareText) };
 }
 
 /**
@@ -1127,80 +1171,10 @@ export class RewriteScanner {
   }
 }
 
-/** The scanner's answer for a whole project, with the nest sites `checkNestCodecs` reads. */
+/** The scanner's answer for a whole project. */
 export interface ProgramScan {
   readonly files: ReadonlyMap<string, FileScanResult>;
   readonly diagnostics: readonly GolemDiagnostic[];
-  readonly nestCodecSites: readonly NestCodecSite[];
-}
-
-/** The plain data of a literal the generator wrote: nested objects, arrays and strings. Anything else is no data. */
-function literalData(node: ts.Expression): unknown {
-  if (ts.isStringLiteralLike(node)) return node.text;
-  if (ts.isArrayLiteralExpression(node)) return node.elements.map(literalData);
-  if (!ts.isObjectLiteralExpression(node)) return undefined;
-  const data: Record<string, unknown> = {};
-  for (const property of node.properties) {
-    if (!ts.isPropertyAssignment(property) || !(ts.isStringLiteralLike(property.name) || ts.isIdentifier(property.name))) continue;
-    data[property.name.text] = literalData(property.initializer);
-  }
-  return data;
-}
-
-/** The `<Controller>.<method>` entries of the `OPERATION_METHOD_KEYS` export of a registry file, read from its syntax tree. */
-function registryMethods(session: ts.ProgramSession, filename: string, text: string): ReadonlyMap<string, OperationMethodCodecs> {
-  for (const statement of session.parseSourceFile(filename, text).statements) {
-    if (!ts.isVariableStatement(statement)) continue;
-    for (const declaration of statement.declarationList.declarations) {
-      if (!ts.isIdentifier(declaration.name) || declaration.name.text !== OPERATION_METHOD_KEYS_EXPORT || declaration.initializer === undefined) continue;
-      const initializer = ts.isAsExpression(declaration.initializer) ? declaration.initializer.expression : declaration.initializer;
-      const data = literalData(initializer);
-      return new Map(isRecord(data) ? Object.entries(data).flatMap(([key, entry]) => isRecord(entry) ? [[key, entry as OperationMethodCodecs] as const] : []) : []);
-    }
-  }
-  return new Map();
-}
-
-/** Whether the registry holds the models of the site, in any order. */
-function sameIds(held: readonly string[] | undefined, ids: readonly string[]): boolean {
-  return held !== undefined && held.length === ids.length && ids.every((id) => held.includes(id));
-}
-
-/**
- * The `@Body()` and `@Query()` parameters whose model the generated operation codecs do not hold in the slot of the parameter's own method. The id the scan stamps and the id the controllers job writes come
- * from separate analyses, so a mismatch means the decorators and the generated operations disagree. The registry names a route by the controller class that serves it, which an inherited route does not share with the class that
- * declares the method, so a method matches by its name, in any controller. A missing registry, and a parameter of no method, disagree with every site. `roots` are the controllers job roots whose registries the project's sites may belong to.
- */
-export function checkNestCodecs(roots: string | readonly string[], scanned: { readonly nestCodecSites: readonly NestCodecSite[] }): GolemDiagnostic[] {
-  const registries: { filename: string; text: string }[] = [];
-  const unreadable: GolemDiagnostic[] = [];
-  for (const root of typeof roots === 'string' ? [roots] : roots) {
-    const filename = operationCodecRegistryPath(root);
-    try {
-      registries.push({ filename, text: fs.readFileSync(filename, 'utf8') });
-    } catch (error) {
-      // No registry yet is the normal case before the controllers job ran. Any other failure is reported once for the file, not as a disagreement of every site.
-      if (!hasErrorCode(error, 'ENOENT')) {
-        unreadable.push({ code: CODE_NEST_REGISTRY, severity: GolemDiagnosticSeverity.Error, message: `the generated operation keys cannot be read (${errorMessage(error)}), so the @Body() and @Query() types cannot be checked against them`, file: filename });
-      }
-    }
-  }
-  if (unreadable.length > 0) return unreadable;
-  const methods: (readonly [string, OperationMethodCodecs])[] = [];
-  if (registries.length > 0) {
-    using session = new ts.ProgramSession({ cwd: path.dirname(registries[0]!.filename), closeWhenIdle: true });
-    for (const { filename, text } of registries) methods.push(...registryMethods(session, filename, text));
-  }
-  return scanned.nestCodecSites
-    .filter((site) => site.method === undefined || !methods.some(([key, entry]) => key.endsWith(`.${site.method}`) && sameIds(operationSlotCodecs(entry, site.slot), site.ids)))
-    .map((site) => ({
-      code: CODE_NEST_REGISTRY,
-      severity: GolemDiagnosticSeverity.Error,
-      message: `@${site.decorator}() type ${site.label} disagrees with generated operation keys`,
-      file: site.file,
-      line: site.line,
-      column: site.column,
-    }));
 }
 
 /** What opening a project's program for a scan needs. */
@@ -1231,5 +1205,5 @@ export function scanProject(input: ProjectScanInput): ProgramScan {
   const info = createProjectProgram(root, undefined, sessionOwner === undefined ? undefined : retainedProgramSession(session, sessionOwner, root), configFile);
   using program = info.program;
   const { files, diagnostics } = new RewriteScanner({ root: path.dirname(configFile), directory, modelsRoot, suffixes, output, program, checker: program.getTypeChecker(), nest, nonModelInputs, codecKeysFile }).scanProgram();
-  return { files, diagnostics, nestCodecSites: [...files.values()].flatMap((file) => file.nestCodecSites) };
+  return { files, diagnostics };
 }

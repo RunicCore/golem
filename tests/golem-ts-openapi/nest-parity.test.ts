@@ -136,18 +136,20 @@ export class ItemsController {
   assert.deepEqual(operation.security, [{ basic: [] }, { bearer: [] }, { basic: [] }, { bearer: [] }]);
 });
 
-test('a second whole @Body() is reported like a mixed @Body', async t => {
-  // protects: T-493 a second whole body must not silently replace the first
-  const refused = await rejection(build(t, `
-export type TA = IModel<{ a: string }>;
-export type TB = IModel<{ b: string }>;
+test('a second whole @Body() with another open model is documented as an allOf of both', async t => {
+  // protects: T-756 the document a client reads states every part of the body the handler reads, not only the first
+  const document = await build(t, `
+export type TA = IModel<{ a: string }, { exact: false }>;
+export type TB = IModel<{ b: string }, { exact: false }>;
 @Controller('items')
 export class ItemsController {
   @Post() create(@Body() first: TA, @Body() second: TB): TA { return first; }
 }
-`));
-  assert.ok(refused.codes.includes('NEST1103'), refused.text);
-  assert.match(refused.text, /second whole @Body\(\)/);
+`);
+  assert.deepEqual((document.paths['/items']!.post as unknown as { requestBody: unknown }).requestBody, {
+    required: true,
+    content: { 'application/json': { schema: { allOf: [{ $ref: '#/components/schemas/TA' }, { $ref: '#/components/schemas/TB' }] } } },
+  });
 });
 
 test('@ApiProperty({ type: String }) on string | null keeps the type String and drops null, as Nest does', async t => {

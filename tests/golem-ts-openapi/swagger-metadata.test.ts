@@ -532,7 +532,7 @@ export class ChainController extends ChainBase {
   assert.deepEqual(listed, document.paths['/constant']?.get?.parameters);
 });
 
-test('names the component of a model class by its @ApiSchema name in every $ref and keeps the codec ids', async t => {
+test('names the component of a model class by its @ApiSchema name in every $ref', async t => {
   // protects: F-163 a class that sets @ApiSchema({ name }) is that component in a body, a nested property and a return (T-324)
   const root = createControllerFixture(t, {
     prefix: 'golem-ts-openapi-swagger-metadata-',
@@ -564,8 +564,6 @@ export type TReceipt = IModel<{ total: number }>;
   assert.deepEqual(operation?.requestBody?.content?.['application/json']?.schema, { $ref: '#/components/schemas/PlacedOrder' });
   assert.deepEqual(jsonSchema(operation, '201'), { $ref: '#/components/schemas/OrderReceipt' });
   assert.deepEqual(property(document, objectSchema(document, schemas.PlacedOrder), 'lines').items, { $ref: '#/components/schemas/OrderLine' });
-  const registry = result.artifacts.find(artifact => artifact.path.endsWith('operation-codecs.ts'))?.content ?? '';
-  assert.match(registry, /"POST \/orders": "TOrder_[0-9a-f]{8}"/, 'the codec id is the model\'s, not the renamed component');
 });
 
 test('stops with RUNM1005 when two model classes of one file take one @ApiSchema name', async t => {

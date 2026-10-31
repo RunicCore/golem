@@ -22,9 +22,10 @@ import {
   typeReference,
   unionModelIds,
 } from './analysis-utils.js';
-import { evaluateStaticValue, isStaticArray } from '@exprtlabs/golem/internal/static-value';
+import { isStaticArray } from '@exprtlabs/golem/internal/static-value';
+import { NEST_COMMON, NEST_SWAGGER, arrayItemNode, staticDecoratorKey } from '@exprtlabs/golem/internal/type-analysis';
 import { decoratorOptions, headerOptionsList, inApplicationOrder, readString, type DecoratorOptions, type MetadataReader } from './metadata.js';
-import { NEST_COMMON, NEST_SWAGGER, callArguments, decoratorsOf, staticObject } from './symbols.js';
+import { callArguments, decoratorsOf, staticObject } from './symbols.js';
 import type { ControllerParameter, DecoratorInfo, NestAnalysisContext, TypeReference } from './types.js';
 
 /** `@nestjs/swagger` parameter decorators and the location each documents. */
@@ -145,12 +146,12 @@ export function parseParameterOverride(
  * instead be a pipe (`@Query(ParseIntPipe)`), which names no key.
  */
 function parameterKey(reader: MetadataReader, decorator: DecoratorInfo): string | undefined {
+  const key = staticDecoratorKey(reader.checker, decorator.decorator);
+  if (key !== undefined) return key;
   const argument = callArguments(decorator)[0];
-  if (!argument) return undefined;
-  const result = evaluateStaticValue(reader.checker, argument);
-  if (result.ok && typeof result.value === 'string') return result.value;
-  if ((reader.checker.getTypeAtLocation(argument).flags & ts.TypeFlags.StringLike) === 0) return undefined;
-  return readString(reader, argument, `@${decorator.name}() key`);
+  if (!argument || (reader.checker.getTypeAtLocation(argument).flags & ts.TypeFlags.StringLike) === 0) return undefined;
+  // An empty key names no field, as for a static one.
+  return readString(reader, argument, `@${decorator.name}() key`) || undefined;
 }
 
 function parameterLocation(
@@ -283,7 +284,7 @@ function assertDistinctParameters(context: NestAnalysisContext, parameters: read
         parameter.node.getSourceFile(),
         parameter.node,
         TsToOpenApiDiagnosticCode.DuplicateParameter,
-        `Parameter ${parameter.name} in ${parameter.location} is declared more than once for this operation.`,
+        `Parameter ${parameter.name} in ${parameter.location} is declared more than once for this operation. OpenAPI identifies a parameter by its name and location, so one operation cannot hold two.`,
       ));
     }
     seen.add(key);
@@ -300,40 +301,48 @@ function assertDistinctParameters(context: NestAnalysisContext, parameters: read
   ));
 }
 
-/** The item type node of `T[]`, `Array<T>`, `ReadonlyArray<T>` or a qualified spelling such as `globalThis.Array<T>`, through parentheses and `readonly`: the array forms the rewrite stamps with a model. */
-function arrayItemNode(node: ts.TypeNode | undefined): ts.TypeNode | undefined {
-  if (node === undefined) return undefined;
-  if (ts.isParenthesizedTypeNode(node)) return arrayItemNode(node.type);
-  if (ts.isTypeOperatorNode(node)) return node.operator === ts.SyntaxKind.ReadonlyKeyword ? arrayItemNode(node.type) : undefined;
-  let item: ts.TypeNode | undefined;
-  if (ts.isArrayTypeNode(node)) item = node.elementType;
-  else if (ts.isTypeReferenceNode(node) && ['Array', 'ReadonlyArray'].includes(ts.isIdentifier(node.typeName) ? node.typeName.text : node.typeName.right.text)) item = node.typeArguments?.length === 1 ? node.typeArguments[0] : undefined;
-  while (item !== undefined && ts.isParenthesizedTypeNode(item)) item = item.type;
-  return item;
-}
-
 interface OneFieldKind {
-  /** A model, an array of models, or an optional one of them (`x?: TModel`, which NestModelInterceptor answers HTTP 400 for when the value is missing). */
-  readonly kind: 'model' | 'optional model' | 'other';
+  /** The parameter holds a model, or an array of models (one `T[]` level). */
+  readonly model: boolean;
   readonly array: boolean;
-  /** The parameter's type; an array of models carries the model id of its items. */
+  /** The parameter's type without `undefined`; an array of models carries the model id of its items, and a model its model id. */
   readonly type: TypeReference;
 }
 
-/** What a one-field `@Body('x')` or `@Query('x')` parameter is for NestModelInterceptor: a model, an array of models (one `T[]` level), or another type. */
-function oneFieldKind(context: NestAnalysisContext, parameter: ts.ParameterDeclaration, parameterType: TypeReference): OneFieldKind {
-  // `x?: TModel` has the declared type node `TModel`; `x: TModel | undefined` is a union with one member besides undefined.
-  const declared = parameter.type ? typeReference(context.checker, parameter, parameter.type) : parameterType;
+/** The type node `T` of `T | undefined`, through parentheses, when the written union has one member besides `undefined`. */
+function presentTypeNode(checker: ts.TypeChecker, node: ts.TypeNode | undefined): ts.TypeNode | undefined {
+  if (node === undefined) return undefined;
+  if (ts.isParenthesizedTypeNode(node)) return presentTypeNode(checker, node.type);
+  if (!ts.isUnionTypeNode(node)) return node;
+  const members = node.types.filter(item => (checker.getTypeFromTypeNode(item).flags & ts.TypeFlags.Undefined) === 0);
+  return members.length === 1 ? presentTypeNode(checker, members[0]) : node;
+}
+
+/** The reference of the written type with `undefined` taken out of a union (`x?: TModel` has the declared type node `TModel`; `x: TModel | undefined` is a union), carrying the model id when it names a model. The member's type node keeps the alias that names the model. */
+function bareReference(context: NestAnalysisContext, parameter: ts.ParameterDeclaration, parameterType: TypeReference): TypeReference {
+  const node = presentTypeNode(context.checker, parameter.type);
+  const declared = node ? typeReference(context.checker, parameter, node) : parameterType;
   const members = declared.type.isUnion() ? declared.type.types.filter(item => (item.flags & ts.TypeFlags.Undefined) === 0) : [];
-  const bare = authoritativeTypeReference(context, members.length === 1 ? typeReference(context.checker, parameter, undefined, members[0]) : declared)!;
+  return authoritativeTypeReference(context, members.length === 1 ? typeReference(context.checker, parameter, undefined, members[0]) : declared)!;
+}
+
+/** The parameter's type as the document describes it: an optional parameter is described by the type it holds when present. The bare reference is read only for a type that has `undefined`: an inherited generic parameter would read its `T` too early. */
+function presentReference(context: NestAnalysisContext, parameter: ts.ParameterDeclaration, parameterType: TypeReference): TypeReference {
+  return containsUndefined(parameterType.type) ? bareReference(context, parameter, parameterType) : parameterType;
+}
+
+/** What a one-field `@Body('x')` or `@Query('x')` parameter holds: a model, an array of models (one `T[]` level), or another type. */
+function oneFieldKind(context: NestAnalysisContext, parameter: ts.ParameterDeclaration, parameterType: TypeReference): OneFieldKind {
+  const bare = bareReference(context, parameter, parameterType);
   // The model of an item comes from the item's type node: the checker's type argument has lost the alias that names the model.
   const item = bare.modelContractName === undefined ? arrayItemNode(parameter.type) : undefined;
   const itemModel = item === undefined ? undefined : authoritativeTypeReference(context, typeReference(context.checker, parameter, item))!.modelContractName;
-  if (bare.modelContractName === undefined && itemModel === undefined) return { kind: 'other', array: false, type: parameterType };
+  const present = presentReference(context, parameter, parameterType);
+  if (bare.modelContractName === undefined && itemModel === undefined) return { model: false, array: false, type: present };
   return {
-    kind: isOptionalParameter(parameter, parameterType.type) ? 'optional model' : 'model',
+    model: true,
     array: itemModel !== undefined,
-    type: itemModel === undefined ? parameterType : { ...parameterType, modelContractName: itemModel },
+    type: { ...present, modelContractName: itemModel ?? bare.modelContractName! },
   };
 }
 
@@ -363,16 +372,12 @@ export function parseParameters(
   controllerClass: ts.ClassDeclaration,
 ): {
   readonly parameters: readonly ControllerParameter[];
-  readonly body?: ControllerParameter;
+  readonly bodyParts: readonly ControllerParameter[];
   readonly manualResponse?: ts.ParameterDeclaration;
 } {
   const parameters: ControllerParameter[] = [];
-  let body: ControllerParameter | undefined;
+  const bodyParts: ControllerParameter[] = [];
   let manualResponse: ts.ParameterDeclaration | undefined;
-  // A whole @Query() and a one-field model @Query('x') both replace the query, and the interceptor cannot convert both.
-  let wholeQuery = false;
-  let namedModelQuery: ts.ParameterDeclaration | undefined;
-  const mixedQuery = (parameter: ts.ParameterDeclaration, name: string | undefined): TsToOpenApiError => new TsToOpenApiError(diagnostic(parameter.getSourceFile(), parameter, TsToOpenApiDiagnosticCode.NonPortableParameter, `${name === undefined ? '@Query()' : `@Query("${name}")`} cannot share an operation with ${name === undefined ? 'a one-field model @Query("field")' : 'a whole @Query()'}: both read the query. Declare the whole query as one model, or use one-field parameters only.`));
   const signature = controllerMethodSignature(context.checker, method, controllerClass);
   method.parameters.forEach((parameter, index) => {
     const decorators = decoratorsOf(context.checker, parameter);
@@ -400,68 +405,46 @@ export function parseParameters(
     const required = !isOptionalParameter(parameter, parameterType.type);
     const name = location.name;
     if (location.location === 'body') {
-      // The interceptor reads a whole body or its fields, never both, and it converts only a model field.
-      if (name === undefined && body !== undefined) {
-        throw new TsToOpenApiError(diagnostic(parameter.getSourceFile(), parameter, TsToOpenApiDiagnosticCode.NamedBodyParameter, 'A second whole @Body() cannot share an operation with the first: both read the whole request body. Declare the body as one model.'));
-      }
-      if (name !== undefined ? body !== undefined : parameters.some(item => item.location === 'body')) {
-        throw new TsToOpenApiError(diagnostic(parameter.getSourceFile(), parameter, TsToOpenApiDiagnosticCode.NamedBodyParameter, `@Body(${name === undefined ? '' : `"${name}"`}) cannot share an operation with ${name === undefined ? 'a one-field @Body("field")' : 'a whole @Body()'}: both read the request body. Declare the whole body as one model, or use one-field parameters only.`));
-      }
+      // The document describes every part the handler reads: each whole @Body() and each one-field @Body('name'), in parameter order.
       if (name !== undefined) {
-        const field = oneFieldKind(context, parameter, parameterType);
-        if (field.kind !== 'model') {
-          throw new TsToOpenApiError(diagnostic(parameter.getSourceFile(), parameter, TsToOpenApiDiagnosticCode.NamedBodyParameter, field.kind === 'optional model'
-            ? `@Body("${name}") is an optional one-field model or array of models, which NestModelInterceptor does not support: it answers HTTP 400 for a missing value. Make the parameter required.`
-            : `@Body("${name}") must be an IModel or IObject, or an array of one written as a type, such as TPayment[]; any other type needs a whole @Body() or an explicit request-body contract.`));
-        }
-        parameters.push({ node: parameter, type: field.type, location: 'body', name, required: true });
+        bodyParts.push({ node: parameter, type: oneFieldKind(context, parameter, parameterType).type, location: 'body', name, required });
         return;
       }
       // Only an array body names an item model; describing any other body here would read a generic base's `T` too early.
       const items = context.checker.isArrayType(parameterType.type) ? oneFieldKind(context, parameter, parameterType) : undefined;
       const unionModels = unionModelIds(context, parameter);
-      body = {
+      bodyParts.push({
         node: parameter,
-        type: parameterType,
+        type: presentReference(context, parameter, parameterType),
         location: 'body',
         required,
         ...(items?.array && items.type.modelContractName !== undefined ? { bodyItemModel: items.type.modelContractName } : {}),
         ...(unionModels === undefined ? {} : { unionModels }),
-      };
+      });
       return;
     }
     if (name !== undefined) {
-      // A model in a named query parameter is a deepObject (`name[field]=value`), which the interceptor reads and converts.
+      // A model in a named query parameter is a deepObject (`name[field]=value`).
       const field = location.location === 'query' ? oneFieldKind(context, parameter, parameterType) : undefined;
-      const kind = field?.kind ?? 'other';
       if (field?.array) {
         throw new TsToOpenApiError(diagnostic(parameter.getSourceFile(), parameter, TsToOpenApiDiagnosticCode.NonPortableParameter, `@Query("${name}") is an array of models, and OpenAPI does not define arrays in a deepObject query parameter. Send the array in a @Body.`));
       }
-      if (kind === 'optional model') {
-        throw new TsToOpenApiError(diagnostic(parameter.getSourceFile(), parameter, TsToOpenApiDiagnosticCode.NonPortableParameter, `@Query("${name}") is an optional one-field model, which NestModelInterceptor does not support: it answers HTTP 400 for a missing value. Make the parameter required.`));
-      }
-      if (kind === 'model') {
-        if (wholeQuery) throw mixedQuery(parameter, name);
+      if (field?.model) {
         const arrayField = arrayFieldPath(context.checker, parameterType.type, parameter);
         if (arrayField !== undefined) {
           throw new TsToOpenApiError(diagnostic(parameter.getSourceFile(), parameter, TsToOpenApiDiagnosticCode.NonPortableParameter, `@Query("${name}") has an array field (${arrayField}), and OpenAPI does not define arrays in a deepObject query parameter. Send the array in a @Body or in a whole @Query() on OpenAPI 3.2.`));
         }
-        namedModelQuery = parameter;
       } else if (!isFlatParameterType(context.checker, parameterType.type)) {
         throw new TsToOpenApiError(diagnostic(parameter.getSourceFile(), parameter, TsToOpenApiDiagnosticCode.NonPortableParameter, `Named @${location.location} parameter ${name} must be primitive, a primitive array${location.location === 'query' ? ' or an IModel or IObject' : ''}; use a whole @Query() object in OpenAPI 3.2 or an explicit supported contract.`));
       }
       parameters.push({
         node: parameter,
-        type: parameterType,
+        type: field?.type ?? parameterType,
         location: location.location,
         name,
-        required: location.location === 'path' || kind === 'model' ? true : required,
+        required: location.location === 'path' ? true : required,
       });
       return;
-    }
-    if (location.location === 'query') {
-      if (namedModelQuery) throw mixedQuery(parameter, undefined);
-      wholeQuery = true;
     }
     parameters.push(...flattenParameter(context, parameter, parameterType, location.location));
   });
@@ -496,5 +479,5 @@ export function parseParameters(
   }
   const allParameters = [...classHeaders.reverse(), ...parameters];
   assertDistinctParameters(context, allParameters);
-  return { parameters: allParameters, ...(body ? { body } : {}), ...(manualResponse ? { manualResponse } : {}) };
+  return { parameters: allParameters, bodyParts, ...(manualResponse ? { manualResponse } : {}) };
 }

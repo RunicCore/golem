@@ -30,24 +30,6 @@ An error prints its code, location when known, and message, then stops generatio
 
 **Unrepresentable Nest parameter.** A `@nestjs/common` parameter decorator this generator doesn't recognize is present — not a location decorator (`@Body`, `@Query`, `@Param`, `@Headers`) and not one of the explicitly unsupported ones. **Fix:** Remove the decorator, or replace it with a supported one.
 
-### NEST1103
-
-**Named body parameter.** A `@Body` parameter is not valid in these cases:
-
-- A one-field `@Body('field')` has a type that is no `IModel`, `IObject` or array of them.
-- A one-field `@Body('field')` is optional.
-- A one-field `@Body('field')` shares an operation with a whole `@Body()`.
-- A second whole `@Body()` in the same method.
-
-`NestModelInterceptor` converts only a model field, and it cannot convert a whole body and a field of it together.
-
-**Fix:**
-
-- Give the field a required `IModel` or `IObject` type, or an array of one.
-- Or use `@Body()` for the whole object and declare an explicit request-body contract.
-- Use one-field parameters only, or one whole parameter only.
-- Declare the body as one model when a method has two whole `@Body()` parameters.
-
 ### NEST1105
 
 **Unknown parameter keys.** Flattening a whole `@Query()`/`@Param()`-style object fails because its type has an index signature, so its full set of keys isn't statically known. **Fix:** Declare named fields instead of an index signature, or name the parameter explicitly (`@Query('name')`) so it isn't flattened.
@@ -62,15 +44,19 @@ An error prints its code, location when known, and message, then stops generatio
 
 - Flattening it would need a non-primitive property.
 - A named parameter is neither primitive nor, for `@Query('name')`, an `IModel` or `IObject`.
-- A one-field `@Query('name')` model is optional, is an array of models, or holds an array field.
-- A whole `@Query()` object shares an operation with a one-field model, or collides with another query parameter.
+- A one-field `@Query('name')` model is an array of models or holds an array field, which a `deepObject` parameter cannot hold.
+- On OpenAPI 3.2.0, a whole `@Query()` object (one `querystring` parameter) shares an operation with a one-field model or another query parameter.
 - A `querystring` parameter needs OpenAPI 3.2.0.
+- A request body combines a closed model (`additionalProperties: false`, the default of `IModel`) with a part that requires a property the model lacks: a required one-field `@Body('name')` or another whole `@Body()` model with a required field. No body satisfies both, and OpenAPI cannot describe the empty type.
+- Two one-field `@Body('name')` parameters of one name have different types. A body property has one schema.
 
 **Fix:**
 
 - Use a named primitive parameter or an explicit Swagger contract.
-- Keep a single whole-object query parameter.
+- Keep a single whole-object query parameter on OpenAPI 3.2.0, or generate against OpenAPI 3.1.2, which writes the whole query as flat parameters.
+- Send an array in a `@Body`.
 - Generate against OpenAPI 3.2.0 for a `querystring` parameter.
+- Declare the property in the model, make the model open with `{ exact: false }`, or read the body in one whole `@Body()`.
 
 ### NEST1108
 
@@ -162,13 +148,7 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### NEST1312
 
-**Duplicate parameter.** The same parameter (name and location) is declared more than once for one operation, or a whole `@Query()` object is declared alongside another whole-object or named query parameter. Header names compare without letter case, so `X-Trace` and `x-trace` are one header. **Fix:** Remove the duplicate, or combine the fields into one contract.
-
-### NEST1313
-
-**Duplicate controller name.** Two controller classes with the same name, in different files, each declare a method of the same name, and `@ApiOperation({ operationId })` keeps their operation IDs apart. Golem names a method by its class and method name, so one method would replace the other, and `golem check` would report a wrong [`RUNM1072`](#runm1072) for the other class.
-
-**Fix:** Rename one controller class.
+**Duplicate parameter.** The same parameter (name and location) is declared more than once for one operation. OpenAPI identifies a parameter by its name and location, so one operation cannot hold two, such as a flat field `limit` of a whole `@Query()` and a named model `@Query('limit')` on OpenAPI 3.1.2. Header names compare without letter case, so `X-Trace` and `x-trace` are one header. **Fix:** Remove the duplicate, or combine the fields into one contract.
 
 ### NEST1401
 
@@ -554,18 +534,6 @@ The message shows the decorator and the type, such as `@Body() type Payment has 
 - Run `golem generate`.
 - If the error stays, type the parameter with the exported `IModel` or `IObject` alias or the model class, imported from the file that declares it.
 
-### RUNM1072
-
-**Nest parameter disagrees with the generated operations.** `golem check` found a `@Body()` or `@Query()` parameter whose model its own operation does not hold in `src/generated/operation-codecs.ts`. A model that another operation holds does not count. The message shows the decorator and the type. Two cases:
-
-- That file does not exist.
-- The parameter is not part of a route that the controllers job generated. The job writes that file from the routes it reads.
-
-**Fix:**
-
-- Run `golem generate`.
-- If the parameter belongs to a method that is not a route, add its file to the controllers job's `sources`, or give the parameter a primitive type.
-
 ### RUNM1074
 
 **Model declared in a file that is not a model file.** A model field, or a `stringify`, `parse`, `validate`, `assertValue`, `toWireFormat` or `fromWireFormat` call, names an `IModel` or `IObject` alias that sits in a file whose name does not end in one of the `models.suffixes`.
@@ -657,7 +625,9 @@ The code also covers a `parse` or `fromWireFormat` call of a model class with a 
 
 ### RUNM1081
 
-**Body or query parameter that is not a model.** A `@Body()` or `@Query()` parameter has a type that is no `IModel` or `IObject` and no class that extends a generated model class. The parameter can be whole or one field, such as `@Body('name')` or `@Query('page')`.
+**Body or query parameter that `NestModelInterceptor` rejects.** Two kinds of fault have this code. The first is a `@Body()` or `@Query()` parameter whose type is no model. The second is a combination of the `@Body()` and `@Query()` parameters of one handler that the interceptor cannot convert.
+
+**A type that is not a model.** A `@Body()` or `@Query()` parameter has a type that is no `IModel` or `IObject` and no class that extends a generated model class. The parameter can be whole or one field, such as `@Body('name')` or `@Query('page')`.
 
 The type can be:
 
@@ -673,6 +643,15 @@ The type can be:
 
 [`NestModelInterceptor`](/guide/nestjs-requests#what-happens-to-a-request) throws on such a parameter and Nest answers HTTP 500. The message shows the type and the decorator, such as `NoteInput is not a golem model, and NestModelInterceptor answers HTTP 500 for a @Body() parameter of that type`, and the position of the type.
 
+**Parameters of one handler that do not work together.** The message names the parameters and the position is the parameter that breaks the rule. For a whole and a one-field parameter, or for two parameters that read the same value, this is the later one. Each parameter that breaks a rule has its own report. These cases have the code:
+
+- **One-field model that is optional.** A parameter such as `@Body('payment') payment?: TPayment` or `@Query('filter') filter?: TFilter` has `?` or a default value. The interceptor reads the field as a model, so a request that omits the field gets HTTP 400. This holds for an array of models too. A whole `@Body()` with `?` or a default value has the same fault: a request without a body gets HTTP 400. A whole `@Query()` with `?` is valid, because a query is always an object.
+- **Whole parameter and one-field parameter of one source.** A handler has a whole `@Body()` and a one-field `@Body('payment')`, or a whole `@Query()` and a one-field `@Query('filter')`. The whole conversion replaces the value that the field reads. The interceptor throws a `TypeError`, and Nest answers HTTP 500 for every request.
+- **Parameters that read the same value with different models.** A handler has two whole `@Body()` parameters, two whole `@Query()` parameters, or two parameters with one field name, of different model types or array forms. The interceptor throws a `TypeError`, and Nest answers HTTP 500 for every request. Parameters with the same model type are valid.
+- **Whole `@Query()` that is an array.** A whole `@Query()` parameter such as `filters: TFilter[]`. A query is an object, so the interceptor throws a `TypeError`, and Nest answers HTTP 500 for every request.
+
+A parameter of another kind, such as `@Body()` with `@Query()`, or two one-field parameters with different names, does not conflict.
+
 What golem does depends on [`nonModelInputs`](/reference/config#root-keys) in `golem.yaml`:
 
 - By default this is an error. `golem build`, `golem check`, the Vite plugin, the esbuild plugin and the Node loader stop before a request arrives.
@@ -681,6 +660,10 @@ What golem does depends on [`nonModelInputs`](/reference/config#root-keys) in `g
 **Fix:**
 
 - Declare the input as an `IModel` or `IObject`, or bind one field whose type is a model, such as `@Body('address') address: Address`. For a union, add `& Discriminator<'kind'>` to it, give each model a required literal field such as `kind: 'circle'`, and use the union as a whole parameter. Take the default variant out of the tag, or bind one model.
+- Make an optional one-field parameter required, or declare the field as optional inside a whole model.
+- For a whole and a one-field parameter, declare the whole input as one model, or use one-field parameters only.
+- Give parameters that read the same value one model type, or declare one parameter.
+- Declare a whole `@Query()` as one model, not as an array.
 - An app that handles these parameters with its own interceptor sets `nonModelInputs: warn`.
 
 ### RUNM1082

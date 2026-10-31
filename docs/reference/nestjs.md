@@ -183,7 +183,7 @@ new NestModelInterceptor({ validate: 'sanity' });
 | OpenAPI 3.2 | Emits `in: querystring` with form content and the complete query schema |
 | OpenAPI 3.1.2 | Flattens independent fields into named parameters and rejects a contract whose constraints would be lost ([`NEST1108`](/reference/diagnostics#nest1108)) |
 
-Named `@Query('name')` parameters remain ordinary query parameters. A named parameter must be a scalar, an array of scalars, or an `IModel` or `IObject`, or generation stops ([`NEST1107`](/reference/diagnostics#nest1107)). A named model is one `deepObject` parameter (`filter[status]=paid`). A one-field `@Body('name')` model is a property of the request body ([`NEST1103`](/reference/diagnostics#nest1103) for another type).
+Named `@Query('name')` parameters remain ordinary query parameters. A named parameter must be a scalar, an array of scalars, or an `IModel` or `IObject`, or generation stops ([`NEST1107`](/reference/diagnostics#nest1107)). A named model is one `deepObject` parameter (`filter[status]=paid`). A one-field `@Body('name')` parameter is a property of the request body.
 
 A whole `@Query()` object follows these rules:
 

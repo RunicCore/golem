@@ -6,7 +6,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { runPipeline } from '#golem/cli';
-import { operationCodecRegistryPath } from '#golem/generated-paths';
 
 const config = [
   'version: 1',
@@ -81,8 +80,8 @@ function cleanProject(t: TestContext, source: string, yaml = config, files: Reco
 const read = (root: string, file: string): string => fs.readFileSync(path.join(root, file), 'utf8');
 const sdkUnknownFormats = (root: string): string => (JSON.parse(read(root, 'sdk/model-manifest.json')) as { profile: { unknownFormats: string } }).profile.unknownFormats;
 
-// protects: T-464 a clean run and a run with the SDK present give the same document and registry
-test('a clean tree generates in one run, and the run after it writes the same document and registry', async (t: TestContext) => {
+// protects: T-464 a clean run and a run with the SDK present give the same document
+test('a clean tree generates in one run, and the run after it writes the same document', async (t: TestContext) => {
   const root = cleanProject(t, keeps);
   const yaml = path.join(root, 'golem.yaml');
   assert.equal(fs.existsSync(path.join(root, 'sdk')), false);
@@ -91,15 +90,14 @@ test('a clean tree generates in one run, and the run after it writes the same do
   for (const written of ['generated/openapi.json', 'sdk/index.ts', 'src/cart.model.generated.ts', 'src/status.model.generated.ts']) {
     assert.equal(fs.existsSync(path.join(root, written)), true, `${written} is written`);
   }
-  const registry = path.relative(root, operationCodecRegistryPath(root));
-  const first = { document: read(root, 'generated/openapi.json'), registry: read(root, registry) };
+  const first = read(root, 'generated/openapi.json');
   // The inline `import('../sdk/index.js').Money` model and the model that reaches the SDK through a `paths` alias are left out too.
-  assert.deepEqual(Object.keys((JSON.parse(first.document) as { components: { schemas: object } }).components.schemas), ['TCharge', 'TStatus']);
+  assert.deepEqual(Object.keys((JSON.parse(first) as { components: { schemas: object } }).components.schemas), ['TCharge', 'TStatus']);
 
   // A changed controller file makes the controllers job read the project again, now with the SDK on disk.
   fs.appendFileSync(path.join(root, 'src/catalog.controller.ts'), '// second run\n');
   await runPipeline(yaml);
-  assert.deepEqual({ document: read(root, 'generated/openapi.json'), registry: read(root, registry) }, first);
+  assert.equal(read(root, 'generated/openapi.json'), first);
   await runPipeline(yaml, { check: true });
 });
 

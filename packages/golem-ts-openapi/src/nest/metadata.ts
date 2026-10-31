@@ -17,7 +17,8 @@ import {
   type StaticValueResult,
 } from '@exprtlabs/golem/internal/static-value';
 import { hasAnyDecorator, hasDecorator } from './analysis-utils.js';
-import { NEST_SWAGGER, callArguments, decoratorsOf, nestPackageOf } from './symbols.js';
+import { NEST_SWAGGER, decoratorPackageOf } from '@exprtlabs/golem/internal/type-analysis';
+import { callArguments, decoratorsOf } from './symbols.js';
 import type { DecoratorInfo, TypeReference } from './types.js';
 
 /** What decorator metadata reading needs: the checker plus optional component and warning sinks. */
@@ -70,7 +71,7 @@ function swaggerIntrinsics(reader: MetadataReader): StaticIntrinsic {
     return { ok: true, value: `${SCHEMA_PREFIX}${name}` };
   };
   return call => {
-    if (nestPackageOf(checker, call.expression) !== NEST_SWAGGER) return undefined;
+    if (decoratorPackageOf(checker, call.expression) !== NEST_SWAGGER) return undefined;
     const name = resolveValueSymbol(checker, call.expression)?.getName();
     if (name === 'getSchemaPath') return schemaPath(call.arguments[0], call);
     if (name !== 'refs') return undefined;
