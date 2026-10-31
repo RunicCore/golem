@@ -20,7 +20,7 @@ const CODEC_KEYS = '.golem/codec-keys.json';
 
 /** A project of the shared model fixtures plus the named fixture files, all under `src/`. */
 function project(t: TestContext, files: readonly string[] = []): string {
-  const { root } = createModelProject(t, { prefix: 'golem-rewrite-scan-', linkTypescript: true });
+  const { root } = createModelProject(t, { prefix: 'golem-rewrite-scan-', linkTypescript: true, packages: { '@nestjs/common': path.join(workspace, 'node_modules/@nestjs/common') } });
   for (const file of [...BASE, ...files]) copyFixtureFile(root, `rewrite/${file}`, `src/${file}`);
   copyFixtureFile(root, 'rewrite/codec-keys.json', CODEC_KEYS);
   return root;

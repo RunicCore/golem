@@ -5,6 +5,7 @@ import { assertNoSymbolKey, declaredModelAlias, isDefaultLibraryProperty, isSymb
 import { projectionIdentity } from './graph.js';
 import { aliasProjectionName, isProjectionName, pascalIdentifier, policySuffix, headQualifiers, projectionBaseName, keysReadAlike, safeNameHint, unionVariantNaming } from './projection-names.js';
 import { commonDirectory, canonicalFilename, companionFilename, portableRelativeFilename, type ModelBoundary } from './project.js';
+import { NEST_SWAGGER, decoratorIdentity } from './controller-parameters.js';
 import { packageSpecifier } from './package-specifier.js';
 import { builtinClassDescriptor, type BuiltinClass } from '../builtin-classes.js';
 import { enclosureOf, findBuiltinClass, isGlobalDeclaration } from './builtin-class.js';
@@ -90,12 +91,11 @@ function isClassProperty(property: ts.Symbol): boolean {
 }
 
 /** True when the property has `@ApiProperty` or `@ApiPropertyOptional` with a `type`, `schema` or `additionalProperties` the user wrote. */
-function carriesExplicitSwaggerSchema(property: ts.Symbol): boolean {
+function carriesExplicitSwaggerSchema(checker: ts.TypeChecker, property: ts.Symbol): boolean {
   return (property.declarations ?? []).some(declaration => ts.canHaveDecorators(declaration) && (ts.getDecorators(declaration) ?? []).some(decorator => {
     if (!ts.isCallExpression(decorator.expression)) return false;
-    const callee = decorator.expression.expression;
-    const decoratorName = ts.isIdentifier(callee) ? callee.text : ts.isPropertyAccessExpression(callee) ? callee.name.text : undefined;
-    if (decoratorName !== 'ApiProperty' && decoratorName !== 'ApiPropertyOptional') return false;
+    const { name, packageName } = decoratorIdentity(checker, decorator);
+    if (packageName !== NEST_SWAGGER || (name !== 'ApiProperty' && name !== 'ApiPropertyOptional')) return false;
     const [options] = decorator.expression.arguments;
     return options !== undefined && ts.isObjectLiteralExpression(options) && options.properties.some(item => (
       (ts.isPropertyAssignment(item) || ts.isShorthandPropertyAssignment(item))
@@ -1457,7 +1457,7 @@ export function descriptorBuilder(
           // A DTO field with a written Swagger schema is an open object: the schema is the Swagger overlay's to state, and a Map has no field of its own.
           // An optional field has `undefined` in its type; a `null` member makes a different schema, which this shortcut does not write.
           const present = valueType.isUnion() ? valueType.types.filter(member => (member.flags & ts.TypeFlags.Undefined) === 0) : [valueType];
-          if (context.dto && present.length === 1 && mapOrSetName(present[0]!) && carriesExplicitSwaggerSchema(property)) {
+          if (context.dto && present.length === 1 && mapOrSetName(present[0]!) && carriesExplicitSwaggerSchema(checker, property)) {
             properties[name] = { kind: 'object', properties: {}, required: [], additionalProperties: true };
             if (!optional) required.push(name);
             continue;

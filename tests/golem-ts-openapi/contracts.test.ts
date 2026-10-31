@@ -542,6 +542,31 @@ export class LabelsController {
   assert.equal(expectSchema(schema.properties?.names, 'names').properties?.size, undefined);
 });
 
+test('an @ApiProperty imported under another name documents a Map field, and a local decorator of that name does not', async t => {
+  // protects: T-757 the Swagger schema of a DTO field is found by the decorator's resolved symbol and package
+  const dto = (header: string, decorator: string): string => `import { Controller, Get } from '@nestjs/common';
+import { ApiOkResponse } from '@nestjs/swagger';
+${header}
+
+class LabelsDto {
+  @${decorator}({ type: 'object', additionalProperties: { type: 'number' } })
+  counts!: Map<string, number>;
+}
+
+@Controller('labels')
+export class LabelsController {
+  @Get()
+  @ApiOkResponse({ type: LabelsDto })
+  get(): LabelsDto { throw new Error('not implemented'); }
+}
+`;
+  const aliased = fixture(t, dto("import { ApiProperty as Prop } from '@nestjs/swagger';", 'Prop'));
+  const schema = expectSchema(responseOf(documentOf(await generateFixture(aliased)), '/labels', 'get', '200').content?.['application/json']?.schema, 'LabelsDto');
+  assert.deepEqual(schema.properties?.counts, { type: 'object', properties: {}, additionalProperties: { type: 'number' } });
+  const local = fixture(t, dto('declare function ApiProperty(options: object): PropertyDecorator;', 'ApiProperty'));
+  await assert.rejects(generateFixture(local), /RUNM1086: Field "counts" is a Map/);
+});
+
 test('isModel is false for a model class with a whole-value TSerde and true for the model class itself', async t => {
   // protects: T-448 asking whether a type is a model gives the answer describe gives: a TSerde over a class value converts the whole value, so it is no model
   const root = fixture(t, `import { Money, encodeMoney, decodeMoney } from './money.model.js';

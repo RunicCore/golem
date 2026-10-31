@@ -161,6 +161,24 @@ test('a @Body() or @Query() imported under another name or through a re-export i
   assert.match(rewritten(root, result, 'src/aliased.controller.ts'), /create\(@Input\(\) @__golem_nestModelCodec\("TPaymentInput_[0-9a-f]{8}"\) input: TPaymentInput, @Filter\(\) @__golem_nestModelCodec\("TPaymentFilter_[0-9a-f]{8}"\) filter: TPaymentFilter/);
 });
 
+test('a local decorator named nestModelCodec does not count as the stamp golem adds', (t) => {
+  // protects: T-757 an existing codec decorator is golem's by its resolved symbol and package, not by its name
+  const root = paymentsProject(t, {
+    'src/look-alike.controller.ts': [
+      "import { Body, Controller, Post } from '@nestjs/common';",
+      "import type { TPaymentInput } from './payment.model.js';",
+      'declare function nestModelCodec(id: string): ParameterDecorator;',
+      "@Controller('look-alike')",
+      'export class LookAlikeController {',
+      "  @Post() create(@nestModelCodec('mine') @Body() input: TPaymentInput): number { return 1; }",
+      '}',
+    ].join('\n'),
+  });
+  const result = scan(root);
+  assert.deepEqual(result.diagnostics, []);
+  assert.match(rewritten(root, result, 'src/look-alike.controller.ts'), /create\(@nestModelCodec\('mine'\) @Body\(\) @__golem_nestModelCodec\("TPaymentInput_[0-9a-f]{8}"\) input: TPaymentInput/);
+});
+
 // The key table names a `Payment` model; the `Payment` of the second controller is a plain interface of its own file.
 for (const { name, fixture, type } of [
   { name: 'a primitive @Body()', fixture: 'rewrite-skips-a-primitive-body', type: 'string' },

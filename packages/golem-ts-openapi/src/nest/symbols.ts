@@ -1,9 +1,9 @@
 import * as ts from '@exprtlabs/golem/internal/ts';
-import { NEST_COMMON, NEST_SWAGGER, decoratorCallee, decoratorIdentity, nestPackageOf } from '@exprtlabs/golem/internal/type-analysis';
+import { NEST_COMMON, NEST_SWAGGER, decoratorCallee, decoratorIdentity, decoratorPackageOf } from '@exprtlabs/golem/internal/type-analysis';
 import { unwrapExpression } from '@exprtlabs/golem/internal/static-value';
 import type { DecoratorInfo } from './types.js';
 
-export { NEST_COMMON, NEST_SWAGGER, nestPackageOf };
+export { NEST_COMMON, NEST_SWAGGER, decoratorPackageOf };
 
 function decoratorInfo(
   checker: ts.TypeChecker,

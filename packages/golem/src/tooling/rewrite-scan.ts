@@ -8,7 +8,7 @@ import { REWRITE_IMPORT_PREFIX } from './rewrite.js';
 import type { FileRewrite, RewriteEdit, RewriteImport } from './rewrite.js';
 import { inNodeModules, isInstalledFile } from './type-analysis/path-identity.js';
 import { createProjectProgram, canonicalFilename, companionFilename, isGeneratedCompanion, modelBoundary, retainedProgramSession, type ModelBoundary } from './type-analysis/project.js';
-import { NEST_COMMON, arrayItemNode, decoratorIdentity, staticDecoratorKey } from './type-analysis/controller-parameters.js';
+import { GOLEM_PACKAGE, NEST_COMMON, arrayItemNode, decoratorIdentity, staticDecoratorKey } from './type-analysis/controller-parameters.js';
 import { packageSpecifier } from './type-analysis/package-specifier.js';
 import { fieldProvenance } from './type-analysis/projections.js';
 import { authoredUnionMembers } from './type-analysis/projection-names.js';
@@ -444,9 +444,12 @@ function nestParameterDecorator(checker: ts.TypeChecker, parameter: ts.Parameter
   return undefined;
 }
 
-/** Whether the node carries the golem decorator `name`, plainly or under an alias. */
+/** Whether the node carries golem's own decorator `name`, plainly or under an alias; a decorator of that name from another package is not it. */
 function hasDecorator(checker: ts.TypeChecker, node: ts.Node, name: string): boolean {
-  return (ts.getDecorators(node) ?? []).some((decorator) => decoratorIdentity(checker, decorator).name === name);
+  return (ts.getDecorators(node) ?? []).some((decorator) => {
+    const identity = decoratorIdentity(checker, decorator);
+    return identity.packageName === GOLEM_PACKAGE && identity.name === name;
+  });
 }
 
 /**

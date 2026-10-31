@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Post } from '@nestjs/common';
-import * as golem from '@exprtlabs/golem/nest';
+import * as golem from '@exprtlabs/golem/internal/nest-runtime';
 import { nestModelCodec, nestModelReturn } from '@exprtlabs/golem/internal/nest-runtime';
 import type { TPayment, TPaymentInput } from './payment.model.js';
 @Controller('plain')
