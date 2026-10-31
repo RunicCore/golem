@@ -10,6 +10,7 @@ import { isInsideDirectory } from '#golem/generator-api';
 import { GeneratorSessionResources } from '#golem/pipeline';
 import { OwnedOutputIndex, realInputFiles } from '#golem/input-watcher';
 import type { InputFiles } from '#golem/input-watcher';
+import { listProjectDependencies } from './fixture-project.js';
 import { write } from './support/build-project.js';
 import { workspace } from './support/process.js';
 import { compilerChildren, generationWatchFixture, skipOnTypeScript6, startGenerationWatch } from './support/generation-watch.js';
@@ -217,6 +218,14 @@ test('a job record that cannot be saved after the job wrote its files is reporte
  * The generation fixture with its models job moved into `app`, whose `cart.model.ts` imports `Note` from `shared/note.ts`, which the caller writes or leaves missing.
  * The tsconfig of `app` lists only its `src`, so the shared type is reached only through the import, not the project file list.
  */
+/** Moves the golem.yaml into `app`: the model job scans the folder of golem.yaml and the tsconfig beside it is the one of `app`. The OpenAPI document and the SDK stay in the project folder above. */
+function configInApp(root: string, config: string): string {
+  const inApp = path.join(root, 'app/golem.yaml');
+  fs.writeFileSync(inApp, fs.readFileSync(config, 'utf8').replace('input: api.json', 'input: ../api.json').replace('output: sdk', 'output: ../sdk'));
+  fs.rmSync(config);
+  return inApp;
+}
+
 function appImportingShared(t: TestContext): { root: string; config: string; app: string } {
   const { root, config } = generationWatchFixture(t);
   const app = path.join(root, 'app');
@@ -234,9 +243,7 @@ function appImportingShared(t: TestContext): { root: string; config: string; app
     'export type TCart = IModel<{ note: Note }>;',
     '',
   ].join('\n'));
-  // The models job lies in `app`, so the yaml names the tsconfig of `app`.
-  fs.writeFileSync(config, `tsconfig: app/tsconfig.json\n${fs.readFileSync(config, 'utf8').replace('root: .', 'root: app')}`);
-  return { root, config, app };
+  return { root, config: configInApp(root, config), app };
 }
 
 test('watch keeps model dependencies outside the models root after a run that reuses the models job', async (t: TestContext) => {
@@ -244,7 +251,7 @@ test('watch keeps model dependencies outside the models root after a run that re
   const shared = path.join(root, 'shared/note.ts');
   fs.writeFileSync(shared, 'export type Note = { text: string };\n');
   const state = await runPipeline(config);
-  const modelInputs = state.results.get('models:app')?.watchInputs ?? [];
+  const modelInputs = state.results.get('model')?.watchInputs ?? [];
   assert.ok(modelInputs.includes(shared), 'the out-of-root import is a models dependency');
   assert.deepEqual(
     modelInputs.filter((input) => input.split(path.sep).includes('node_modules')
@@ -282,7 +289,7 @@ test('watch keeps model dependencies outside the models root after a run that re
 
 test('watch generates a new file that ends in a configured model suffix', async (t: TestContext) => {
   const { root, config } = generationWatchFixture(t);
-  fs.writeFileSync(config, fs.readFileSync(config, 'utf8').replace('models:\n  root: .\n', 'models:\n  root: .\n  suffixes: [.entity.ts]\n'));
+  fs.writeFileSync(config, fs.readFileSync(config, 'utf8').replace('model: {}\n', 'model:\n  suffixes: [.entity.ts]\n'));
   const entity = (name: string): string => `import type { IModel } from '@exprtlabs/golem/model';\n\nexport type T${name} = IModel<{ id: string }>;\n`;
   fs.writeFileSync(path.join(root, 'src/cart.entity.ts'), entity('Cart'));
   const { errors, stop, context } = startGenerationWatch(config);
@@ -492,8 +499,7 @@ function sharedModelFixture(t: TestContext, include: string): { root: string; co
   fs.writeFileSync(path.join(shared, 'package.json'), '{"type":"module"}');
   fs.writeFileSync(path.join(app, 'src/cart.model.ts'), newModel('Cart'));
   fs.writeFileSync(path.join(shared, 'money.model.ts'), newModel('Money'));
-  fs.writeFileSync(config, `tsconfig: app/tsconfig.json\n${fs.readFileSync(config, 'utf8').replace('root: .', 'root: app')}`);
-  return { root, config };
+  return { root, config: configInApp(root, config) };
 }
 
 function newModel(name: string): string {
@@ -554,7 +560,7 @@ test('a pipeline session closes the compiler of a removed job', { skip: process.
   t.after(() => session[Symbol.dispose]());
   await runPipeline(config, { session });
   assert.equal(compilerChildren(process.pid).length, 1, 'the models job keeps its compiler');
-  fs.writeFileSync(config, fs.readFileSync(config, 'utf8').replace('models:\n  root: .\n', ''));
+  fs.writeFileSync(config, fs.readFileSync(config, 'utf8').replace('model: {}\n', ''));
   await runPipeline(config, { session });
   await until(() => compilerChildren(process.pid).length === 0, 'the removed job closes its compiler');
 });
@@ -624,12 +630,21 @@ test('an edit during a running generation triggers exactly one follow-up run wit
 test('a watch that reports with the default reporter prints the stack and cause of a TypeError in a generator', async (t: TestContext) => {
   // protects: T-490 the default reporter of watchPipeline printed errorMessage only, so a generator's TypeError lost its stack and cause
   const { root, config } = generationWatchFixture(t);
-  write(root, 'node_modules/@fixture/throwing/package.json', JSON.stringify({ name: '@fixture/throwing', version: '1.0.0', type: 'module', exports: { './generator': './index.js' } }));
+  write(root, 'node_modules/@fixture/throwing/package.json', JSON.stringify({ name: '@fixture/throwing', version: '1.0.0', type: 'module', exports: { './plan': './plan.js', './generator': './index.js' }, golem: { apiVersion: 2, block: 'throwing', plan: './plan', generator: './generator' } }));
+  write(root, 'node_modules/@fixture/throwing/plan.js', `import path from 'node:path';
+export const plan = {
+  declare({ directory }) {
+    const output = path.join(directory, 'out');
+    return [{ facts: { id: 'throwing', outputs: [{ path: output, kind: 'folder' }], ownedRoots: [], inputFiles: [], inputFolders: [], readsProgram: false, provides: [], needs: [], hooks: [], watch: [] }, options: { directory, output } }];
+  },
+};
+`);
+  listProjectDependencies(root, ['@fixture/throwing']);
   write(root, 'node_modules/@fixture/throwing/index.js', `export const apiVersion = 1;
 export function generate() { throw new TypeError('generator state is broken', { cause: new RangeError('index out of range') }); }
 `);
   const document = YAML.parse(fs.readFileSync(config, 'utf8')) as Record<string, unknown>;
-  fs.writeFileSync(config, YAML.stringify({ ...document, generators: [{ package: '@fixture/throwing', output: 'out' }] }));
+  fs.writeFileSync(config, YAML.stringify({ ...document, throwing: {} }));
   let printed = '';
   t.mock.method(process.stderr, 'write', (chunk: string | Uint8Array) => { printed += typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString(); return true; });
   const stop = watchPipeline(config);

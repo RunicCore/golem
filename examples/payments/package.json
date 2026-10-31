@@ -3,7 +3,14 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./plan": "./generators/event-models.js",
     "./generator": "./generators/event-models.js"
+  },
+  "golem": {
+    "apiVersion": 2,
+    "block": "payment-events",
+    "plan": "./plan",
+    "generator": "./generator"
   },
   "scripts": {
     "generate": "golem generate --config server/golem.yaml && golem generate --config web/golem.yaml",

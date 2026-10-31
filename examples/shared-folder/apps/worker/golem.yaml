@@ -1,4 +1,3 @@
 version: 1
 validation: false
-models:
-  root: .
+model: {}

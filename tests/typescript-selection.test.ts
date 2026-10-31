@@ -107,7 +107,7 @@ function project(typescript: string | { readonly version: string }): string {
     fs.symlinkSync(typescript, path.join(root, 'node_modules/typescript'), 'dir');
   }
   fs.mkdirSync(path.join(root, 'src'));
-  fs.writeFileSync(path.join(root, 'golem.yaml'), 'version: 1\nmobx: false\nvalidation: false\nmodels:\n  root: .\n');
+  fs.writeFileSync(path.join(root, 'golem.yaml'), 'version: 1\nvalidation: false\n');
   fs.writeFileSync(path.join(root, 'tsconfig.json'), JSON.stringify({ compilerOptions: { target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', strict: true, noEmit: true }, include: ['src/**/*.ts'] }));
   fs.writeFileSync(path.join(root, 'src/plain.ts'), 'export const plain = 1;\n');
   return root;
