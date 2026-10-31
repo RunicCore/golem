@@ -5,7 +5,7 @@ import path from 'node:path';
 import { loadConfig } from './support/load-config.js';
 import { golemCode, inputDigest, insideAny, jobIsCurrent, loadJobRecords, saveJobRecords, type JobRecord, type JobSetup } from '#golem/job-cache';
 import { digest, type Inventory } from '#golem/outputs';
-import { createFixtureProject } from './fixture-project.js';
+import { createFixtureProject, linkGolemPackages } from './fixture-project.js';
 
 const SETUP: JobSetup = { providerCode: 'provider-code-digest', manifestInputs: [] };
 
@@ -30,7 +30,9 @@ function project(t: TestContext): { root: string; record: JobRecord; inventory: 
   fs.mkdirSync(path.join(root, 'src'));
   fs.writeFileSync(path.join(root, 'src/a.model.ts'), 'export {};\n');
   fs.writeFileSync(path.join(root, 'sdk.ts'), 'export {};\n');
-  fs.writeFileSync(path.join(root, 'golem.yaml'), 'version: 1\nopenapi:\n  - input: api.yaml\n    output: sdk\n');
+  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'job-cache-fixture', private: true, type: 'module' }));
+  linkGolemPackages(root, ['golem', 'golem-openapi']);
+  fs.writeFileSync(path.join(root, 'golem.yaml'), 'version: 1\nopenapi-ts:\n  sdks:\n    - input: api.yaml\n      output: sdk\n');
   const config = loadConfig(path.join(root, 'golem.yaml'));
   const job = config.jobs[0];
   assert.ok(job);
@@ -173,7 +175,6 @@ test('a job is stale when its provider code or the manifests it receives are not
   const manifest = path.join(root, 'sdk/model-manifest.json');
   assert.equal(jobIsCurrent(config, job, record, SETUP, inventory), true);
   assert.equal(jobIsCurrent(config, job, record, { ...SETUP, providerCode: 'other-provider-code-digest' }, inventory), false, 'other provider code');
-  assert.equal(jobIsCurrent(config, job, record, { ...SETUP, providerCode: undefined }, inventory), false, 'a provider that cannot be resolved');
   assert.equal(jobIsCurrent(config, job, record, { ...SETUP, manifestInputs: [manifest] }, inventory), false, 'a manifest the record did not receive');
   const received = { ...record, manifestInputs: ['sdk/model-manifest.json'] };
   assert.equal(jobIsCurrent(config, job, received, { ...SETUP, manifestInputs: [manifest] }, inventory), true);

@@ -19,7 +19,7 @@ import { quietly, until, watchStarted } from './support/watch-wait.js';
 const OPTIONS = { strict: true, target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', skipLibCheck: true, noEmit: true };
 const SOLUTION = JSON.stringify({ files: [], references: [{ path: './tsconfig.app.json' }] });
 const ITEM_MODEL = "import type { IModel } from '@exprtlabs/golem/model';\nimport type { Id } from '@lib/ids.js';\nexport type TItem = IModel<{ id: Id }>;\n";
-const MODELS_YAML = (root: string): string => `version: 1\nmobx: false\nvalidation: false\nmodels:\n  root: ${root}\n`;
+const MODELS_YAML = (source: string): string => `version: 1\nvalidation: false\nmodel:\n  sources:\n    - ${source}\n`;
 
 /** A model project with no tsconfig of its own yet: the caller writes every tsconfig. */
 function bareProject(t: TestContext, name: string): string {
@@ -37,7 +37,7 @@ test('a solution tsconfig.json beside the tsconfig.app.json that golem.yaml name
   const root = sourceOnlyProject(t, 'job-tsconfig-solution-beside');
   fs.renameSync(path.join(root, 'tsconfig.json'), path.join(root, 'tsconfig.app.json'));
   write(root, 'tsconfig.json', SOLUTION);
-  write(root, 'golem.yaml', 'version: 1\nmobx: false\nvalidation: false\ntsconfig: ./tsconfig.app.json\nmodels:\n  root: .\n');
+  write(root, 'golem.yaml', 'version: 1\nvalidation: false\ntsconfig: ./tsconfig.app.json\nmodel: {}\n');
   write(root, 'src/use.ts', USE);
   const yaml = path.join(root, 'golem.yaml');
 
@@ -60,9 +60,9 @@ test('a golem.yaml that names the solution tsconfig.json is refused by generate,
   write(root, 'src/main.ts', 'export const main = 1;\n');
   const yaml = path.join(root, 'golem.yaml');
   // The project was generated while golem.yaml named the app tsconfig; then the yaml names the solution.
-  write(root, 'golem.yaml', 'version: 1\nmobx: false\nvalidation: false\ntsconfig: ./tsconfig.app.json\nmodels:\n  root: .\n');
+  write(root, 'golem.yaml', 'version: 1\nvalidation: false\ntsconfig: ./tsconfig.app.json\nmodel: {}\n');
   await runPipeline(yaml);
-  write(root, 'golem.yaml', 'version: 1\nmobx: false\nvalidation: false\ntsconfig: ./tsconfig.json\nmodels:\n  root: .\n');
+  write(root, 'golem.yaml', 'version: 1\nvalidation: false\ntsconfig: ./tsconfig.json\nmodel: {}\n');
   const shown = (name: string): string => path.relative(process.cwd(), path.join(fs.realpathSync(root), name));
   const refusal = `${shown('tsconfig.json')} only lists project references, so it has no files. Name one referenced project in the tsconfig key of golem.yaml. Build each project of ${shown('tsconfig.json')} with its own golem.yaml, in dependency order:\n  ${shown('tsconfig.app.json')}: golem build --config ${shown('golem.yaml')}`;
   const refused = (error: Error): boolean => {
@@ -85,7 +85,7 @@ function parentWithPackageProject(t: TestContext, name: string): { root: string;
   json(root, 'packages/app/tsconfig.json', { compilerOptions: { ...OPTIONS, paths: { '@lib/*': ['./src/lib/*'] } }, include: ['src/**/*.ts'] });
   write(root, 'packages/app/src/lib/ids.ts', 'export type Id = string;\n');
   write(root, 'packages/app/src/item.model.ts', ITEM_MODEL);
-  write(root, 'golem.yaml', MODELS_YAML('packages/app'));
+  write(root, 'golem.yaml', MODELS_YAML('packages/app/src/item.model.ts'));
   return { root, app };
 }
 
@@ -110,10 +110,10 @@ test('a run, the same run again, then a change of tsconfig: in golem.yaml: the s
   write(root, 'src/use.ts', USE);
   write(root, 'tsconfig.build.json', JSON.stringify({ extends: './tsconfig.json' }));
 
-  assert.deepEqual(await buildAndListJobs(root), { exitCode: 0, ran: ['models:.'] });
+  assert.deepEqual(await buildAndListJobs(root), { exitCode: 0, ran: ['model'] });
   assert.deepEqual(await buildAndListJobs(root), { exitCode: 0, ran: [] }, 'nothing changed, so the job is skipped');
   write(root, 'golem.yaml', `${fs.readFileSync(path.join(root, 'golem.yaml'), 'utf8')}tsconfig: ./tsconfig.build.json\n`);
-  assert.deepEqual(await buildAndListJobs(root), { exitCode: 0, ran: ['models:.'] }, 'another tsconfig: runs the job again');
+  assert.deepEqual(await buildAndListJobs(root), { exitCode: 0, ran: ['model'] }, 'another tsconfig: runs the job again');
 });
 
 /** A project whose golem.yaml names tsconfig.app.json, which extends tsconfig.base.json, which holds the `@lib` alias; `pkg/tsconfig.json` is nearer to the job root and has none. */
@@ -124,7 +124,7 @@ function watchedProject(t: TestContext): { root: string; yaml: string } {
   json(root, 'pkg/tsconfig.json', { compilerOptions: OPTIONS, include: ['src/**/*.ts'] });
   write(root, 'pkg/src/lib/ids.ts', 'export type Id = string;\n');
   write(root, 'pkg/src/item.model.ts', ITEM_MODEL);
-  write(root, 'golem.yaml', `version: 1\nmobx: false\nvalidation: false\ntsconfig: ./tsconfig.app.json\nmodels:\n  root: pkg\n`);
+  write(root, 'golem.yaml', `version: 1\nvalidation: false\ntsconfig: ./tsconfig.app.json\nmodel:\n  sources:\n    - pkg/src/item.model.ts\n`);
   return { root, yaml: path.join(root, 'golem.yaml') };
 }
 

@@ -29,7 +29,7 @@ function project(t: TestContext, methods: string, openapiVersion = '3.2.0', prea
     files: {
       'src/payment.model.ts': MODEL,
       'src/a.controller.ts': `import { Body, Controller, Get, Post, Query } from '@nestjs/common';\nimport type { TPayment, TPayments, TOpen, TFilter, TTagged, TNested, TOrder } from './payment.model.js';\n${preamble}@Controller('a')\nexport class AController {\n${methods}\n}\n`,
-      'golem.yaml': `version: 1\nmobx: false\nvalidation: true\ncontrollers:\n  - root: .\n    sources:\n      - src/a.controller.ts\n    output: generated/api.json\n    openapiVersion: "${openapiVersion}"\n    info: { title: T, version: "1" }\nmodels:\n  root: .\n`,
+      'golem.yaml': `version: 1\nvalidation: true\nts-openapi:\n  docs:\n    - sources:\n        - src/a.controller.ts\n      output: generated/api.json\n      openapiVersion: "${openapiVersion}"\n      info: { title: T, version: "1" }\nmodel: {}\n`,
     },
   });
 }
@@ -215,7 +215,7 @@ export class AController {
   @Get() list(@Query('filter') filter: TFilter): TFilter { return filter; }
 }
 `,
-      'golem.yaml': 'version: 1\nmobx: false\nvalidation: true\ncontrollers:\n  - root: .\n    sources:\n      - src/a.controller.ts\n    output: generated/api.json\n    info: { title: T, version: "1" }\nopenapi:\n  - input: generated/api.json\n    output: src/sdk\n    name: Api\nmodels:\n  root: .\n',
+      'golem.yaml': 'version: 1\nvalidation: true\nts-openapi:\n  docs:\n    - sources:\n        - src/a.controller.ts\n      output: generated/api.json\n      info: { title: T, version: "1" }\nopenapi-ts:\n  sdks:\n    - input: generated/api.json\n      output: src/sdk\n      name: Api\nmodel: {}\n',
     },
   });
   const built = await command(root, process.execPath, [golem, 'build', '--config', path.join(root, 'golem.yaml')]);

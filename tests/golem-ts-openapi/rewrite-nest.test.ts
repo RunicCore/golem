@@ -25,7 +25,7 @@ function project(t: TestContext, files: Readonly<Record<string, string>>): strin
   const root = createControllerFixture(t, {
     prefix: 'golem-rewrite-nest-',
     links: 'workspace',
-    files: { 'golem.yaml': 'version: 1\nmodels: { root: . }\n', 'src/interceptor.ts': NEST_INTERCEPTOR_SOURCE, ...files },
+    files: { 'golem.yaml': 'version: 1\nmodel: {}\n', 'src/interceptor.ts': NEST_INTERCEPTOR_SOURCE, ...files },
   });
   writeGeneratedArtifacts(generate({ root, profile: { mobx: false, validation: true } }).artifacts);
   return root;
@@ -422,11 +422,9 @@ function nestAppProject(t: TestContext, options: { readonly controllersJob: bool
       ...(options.interceptor ? { 'src/interceptor.ts': NEST_INTERCEPTOR_SOURCE } : {}),
       'golem.yaml': [
         'version: 1',
-        'mobx: false',
         'validation: true',
-        ...(options.controllersJob ? ['controllers:', '  - root: .', '    sources:', `      - ${CONTROLLER}`, '    output: generated/api.json', '    info: { title: Test API, version: "1" }'] : []),
-        'models:',
-        '  root: .',
+        ...(options.controllersJob ? ['ts-openapi:', '  docs:', '    - sources:', `        - ${CONTROLLER}`, '      output: generated/api.json', '      info: { title: Test API, version: "1" }'] : []),
+        'model: {}',
         '',
       ].join('\n'),
     },

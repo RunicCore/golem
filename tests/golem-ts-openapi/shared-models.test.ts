@@ -38,15 +38,15 @@ function appWithSharedModel(t: TestContext, shared: string, files: Readonly<Reco
       'shared/package.json': JSON.stringify({ name: '@acme/shared', private: true, type: 'module' }),
       'shared/customer.model.ts': shared,
     }),
-    'app/package.json': JSON.stringify({ name: 'app', private: true, type: 'module' }),
+    'app/package.json': JSON.stringify({ name: 'app', private: true, type: 'module', dependencies: Object.fromEntries(['golem', 'golem-model', 'golem-ts-openapi'].map((name) => [`@exprtlabs/${name}`, '*'])) }),
     'app/tsconfig.json': JSON.stringify({
       compilerOptions: { target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', strict: true, skipLibCheck: true, experimentalDecorators: true, emitDecoratorMetadata: true, rootDir: '..', outDir: 'build' },
       include: ['src/**/*.ts', '../shared/**/*.ts'],
     }),
     'app/golem.yaml': [
-      'version: 1', 'mobx: false', 'validation: true',
-      'controllers:', '  - root: .', '    sources:', '      - src/customers.controller.ts', '    output: generated/api.json', '    info: { title: Test API, version: "1" }',
-      'models:', '  root: .', '',
+      'version: 1', 'validation: true',
+      'ts-openapi:', '  docs:', '    - sources:', '        - src/customers.controller.ts', '      output: generated/api.json', '      info: { title: Test API, version: "1" }',
+      'model: {}', '',
     ].join('\n'),
     'app/src/interceptor.ts': NEST_INTERCEPTOR_SOURCE,
     ...Object.fromEntries(Object.entries(files).map(([relative, content]) => [`app/${relative}`, content])),
@@ -145,7 +145,7 @@ for (const { kind, declaration, moneyField, schemaNames } of SDK_MONEY_KINDS) {
   test(`an app model that nests an SDK ${kind} has one codec id in the codec keys of the models job and both Nest marks`, async (t) => {
     // protects: T-195 P-12 check, T-206: the codec keys and the Nest marks agree for an app model that nests an SDK model, written as an interface or an IObject alias
     const order = "import type { IObject } from '@exprtlabs/golem/model';\nimport type { TMoney } from '@acme/sdk/money.model';\nexport type TOrder = IObject<{ id: string; money: TMoney }>;\n";
-    const yaml = ['version: 1', 'mobx: false', 'validation: false', 'controllers:', '  - root: .', '    sources:', '      - src/customers.controller.ts', '    output: generated/api.json', '    info: { title: Test API, version: "1" }', 'models:', '  root: .', ''].join('\n');
+    const yaml = ['version: 1', 'validation: false', 'ts-openapi:', '  docs:', '    - sources:', '        - src/customers.controller.ts', '      output: generated/api.json', '      info: { title: Test API, version: "1" }', 'model: {}', ''].join('\n');
     const { app, config } = appWithSharedModel(t, sharedModel('IObject'), { 'src/order.model.ts': order, 'src/customers.controller.ts': controller('TOrder', './order.model.js'), 'golem.yaml': yaml }, true);
     const outer = path.dirname(app);
     // The SDK type is listed by the manifest, so a models job nests it as the generated SDK model.
@@ -179,7 +179,7 @@ for (const validation of [false, true]) {
   test(`an app model that nests a generated SDK model has one codec id in the codec keys of the models job and both Nest marks with validation ${validation ? 'on' : 'off'}`, async (t) => {
     // protects: T-209 F-229: the ids of an app model that nests an SDK model agree with validation on, as with validation off
     const order = "import type { IObject } from '@exprtlabs/golem/model';\nimport type { Money } from '@acme/sdk';\nexport type TOrder = IObject<{ id: string; money: Money }>;\n";
-    const yaml = ['version: 1', 'mobx: false', `validation: ${validation}`, 'controllers:', '  - root: .', '    sources:', '      - src/customers.controller.ts', '    output: generated/api.json', '    info: { title: Test API, version: "1" }', 'models:', '  root: .', ''].join('\n');
+    const yaml = ['version: 1', `validation: ${validation}`, 'ts-openapi:', '  docs:', '    - sources:', '        - src/customers.controller.ts', '      output: generated/api.json', '      info: { title: Test API, version: "1" }', 'model: {}', ''].join('\n');
     const { app, config } = appWithSharedModel(t, sharedModel('IObject'), { 'src/order.model.ts': order, 'src/customers.controller.ts': controller('TOrder', './order.model.js'), 'golem.yaml': yaml }, true);
     const sdk = path.join(path.dirname(app), 'node_modules/@acme/sdk');
     const generated = writeSdk({

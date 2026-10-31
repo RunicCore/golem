@@ -13,7 +13,7 @@ import {
   writeModelGolemYaml,
   writeModelSources,
 } from './model-project.js';
-import { copyFixtureFile, readFixture } from './fixture-project.js';
+import { copyFixtureFile, listProjectDependencies, readFixture } from './fixture-project.js';
 import { companionModelSource } from './fixture-templates/models/model-companions.js';
 
 test('model companions compile with --noUnusedLocals for empty, scalar and nested models', async t => {
@@ -31,7 +31,7 @@ test('model companions compile with --noUnusedLocals for empty, scalar and neste
       const modelName = modelNames.find(name => path.basename(artifact.path) === `${name.toLowerCase()}.model.generated.ts`);
       if (!modelName) {
         const base = path.basename(artifact.path);
-        assert.ok(base === 'models.validators.generated.ts' || base === 'codec-keys.json', base);
+        assert.equal(base, 'models.validators.generated.ts');
         continue;
       }
       assert.match(artifact.content, new RegExp(`function fillT${modelName}\\(`), `${modelName}: shared fill`);
@@ -315,7 +315,7 @@ test('a build over the stale generated base of a changed model writes the files 
   assert.deepEqual(await acceptedSummaries(stale.root, ['{"city":"Oslo"}', '{"age":36}'], 1), ['{"city":"Oslo"}']);
 });
 
-test('one generate after a model change gives the controllers job the new fields of a projection of its class', async t => {
+test('one generate after a model change gives the docs job the new fields of a projection of its class', async t => {
   // protects: T-264 the controllers job read the stale base on disk, so its OpenAPI lagged one run behind a model change
   const root = createModelProject(t, { prefix: 'golem-controller-stale-', name: 'controller-stale', linkWorkspaceNodeModules: true, compilerOptions: { experimentalDecorators: true, emitDecoratorMetadata: true } }).root;
   const model = (type: string): string => `${IMODEL}export type TCustomer = IModel<{ name: ${type}; age: number }>;\n`;
@@ -324,8 +324,9 @@ test('one generate after a model change gives the controllers job the new fields
     'customer.ts': CUSTOMER_CLASS,
     'api.controller.ts': "import { Controller, Get } from '@nestjs/common';\nimport type { Customer } from './customer.js';\n@Controller('customers')\nexport class CustomersController {\n  @Get() list(): Pick<Customer, 'name'> { return {} as never; }\n}\n",
   });
+  listProjectDependencies(root, ['@exprtlabs/golem-ts-openapi']);
   const config = path.join(root, 'golem.yaml');
-  fs.writeFileSync(config, 'version: 1\nmobx: false\nvalidation: true\ncontrollers:\n  - root: .\n    output: ./api/openapi.json\n    info: { title: Stale, version: "1" }\nmodels:\n  root: .\n');
+  fs.writeFileSync(config, 'version: 1\nvalidation: true\nts-openapi:\n  docs:\n    - output: ./api/openapi.json\n      info: { title: Stale, version: "1" }\nmodel: {}\n');
   const nameType = (): string | undefined => JSON.stringify(JSON.parse(fs.readFileSync(path.join(root, 'api/openapi.json'), 'utf8'))).match(/"name":\{"type":"(\w+)"/)?.[1];
   await command(root, process.execPath, [golem, 'generate', '--config', config]);
   assert.equal(nameType(), 'string');

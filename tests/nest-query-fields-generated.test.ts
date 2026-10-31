@@ -3,8 +3,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import { runPipeline } from '#golem/cli';
-import { copyFixtureFile, createFixtureProject, linkProjectPackages } from './fixture-project.js';
-import { command, golem, workspace } from './support/process.js';
+import { copyFixtureFile, createFixtureProject, linkGolemPackages } from './fixture-project.js';
+import { command, golem } from './support/process.js';
 
 const ref = (name: string) => ({ $ref: `#/components/schemas/${name}` });
 /** A GET path for each named schema; the response of each is the schema. */
@@ -49,20 +49,18 @@ async function filterQueryFields(root: string): Promise<unknown> {
 
 function project(t: test.TestContext, prefix: string, yaml: readonly string[], document: object = openApiDocument): string {
   const root = createFixtureProject(t, prefix);
-  linkProjectPackages(root, Object.fromEntries(
-    ['golem', 'golem-model', 'golem-openapi'].map((name) => [`@exprtlabs/${name}`, path.join(workspace, 'packages', name)]),
-  ));
   fs.writeFileSync(path.join(root, 'package.json'), `{"name":"${prefix}fixture","type":"module"}`);
+  linkGolemPackages(root, ['golem', 'golem-model', 'golem-openapi']);
   fs.writeFileSync(path.join(root, 'api.json'), JSON.stringify(document));
   copyFixtureFile(root, 'packed/profile/tsconfig.json', 'tsconfig.json');
   fs.mkdirSync(path.join(root, 'src'));
-  fs.writeFileSync(path.join(root, 'golem.yaml'), ['version: 1', 'mobx: false', 'validation: true', ...yaml, ''].join('\n'));
+  fs.writeFileSync(path.join(root, 'golem.yaml'), ['version: 1', 'validation: true', ...yaml, ''].join('\n'));
   return root;
 }
 
 // protects: T-549 I-42 a query field typed by a named alias of an SDK, and the fields of an allOf base, stayed raw strings
 test('an app model over SDK types lists the query fields of their aliases and of an allOf base', async (t) => {
-  const root = project(t, 'golem-query-fields-', ['openapi:', '  - input: api.json', '    output: sdk', '    name: QueryFields', '    mode: golem', 'models:', '  root: .']);
+  const root = project(t, 'golem-query-fields-', ['openapi-ts:', '  sdks:', '    - input: api.json', '      output: sdk', '      name: QueryFields', '      mode: golem', 'model: {}']);
   fs.writeFileSync(path.join(root, 'src/page.model.ts'), [
     "import type { IModel } from '@exprtlabs/golem/model';",
     "import type { Level, Flag, IntLimit, Tags } from '../sdk/index.js';",
@@ -88,7 +86,7 @@ test('an app model over SDK types lists the query fields of their aliases and of
 
 // protects: T-549 I-42 a golem-model @Query() model field typed by a named alias, also a recursive one, stayed a raw string
 test('a model that golem-model generates lists the query fields of its named and recursive aliases', async (t) => {
-  const root = project(t, 'golem-query-fields-model-', ['models:', '  root: .']);
+  const root = project(t, 'golem-query-fields-model-', ['model: {}']);
   fs.writeFileSync(path.join(root, 'src/filter.model.ts'), [
     "import type { IModel } from '@exprtlabs/golem/model';",
     '',
@@ -119,7 +117,7 @@ test('a model that golem-model generates lists the query fields of an SDK alias 
       },
     },
   };
-  const root = project(t, 'golem-query-fields-sdk-', ['openapi:', '  - input: api.json', '    output: sdk', '    name: QuerySdkFields', 'models:', '  root: .'], sdkDocument);
+  const root = project(t, 'golem-query-fields-sdk-', ['openapi-ts:', '  sdks:', '    - input: api.json', '      output: sdk', '      name: QuerySdkFields', 'model: {}'], sdkDocument);
   fs.writeFileSync(path.join(root, 'src/filter.model.ts'), [
     "import type { IModel } from '@exprtlabs/golem/model';",
     "import type { Level, Range } from '../sdk/index.js';",
@@ -143,7 +141,7 @@ test('a @Query() model built on an SDK model has the query fields of that SDK mo
       },
     },
   };
-  const root = project(t, 'golem-query-sdk-base-', ['openapi:', '  - input: api.json', '    output: sdk', '    name: QuerySdk', 'models:', '  root: .'], sdkDocument);
+  const root = project(t, 'golem-query-sdk-base-', ['openapi-ts:', '  sdks:', '    - input: api.json', '      output: sdk', '      name: QuerySdk', 'model: {}'], sdkDocument);
   fs.writeFileSync(path.join(root, 'src/filter.model.ts'), [
     "import type { IModel } from '@exprtlabs/golem/model';",
     "import type { Page } from '../sdk/index.js';",
