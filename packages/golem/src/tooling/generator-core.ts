@@ -44,11 +44,6 @@ export interface ResolvedGolemProfile extends GolemProfile {
   readonly unknownFormats: 'warn' | 'error';
 }
 
-/** The error for a `models.sources` entry whose real path is outside `models.root`: the yaml and the API stop with this text. */
-export function outsideModelsRootMessage(entry: string, root: string): string {
-  return `RUNM1075: models.sources entry ${displayPath(entry)} is outside the models root ${displayPath(root)}. A models job generates only files inside its root.`;
-}
-
 /** The validation levels from the lowest to the highest; a model or call may lower the level of its project, never raise it. */
 const VALIDATION_LEVELS: readonly GolemProfile['validation'][] = [false, 'sanity', true];
 
@@ -169,7 +164,7 @@ export interface ModelContext {
   /** The `golem.yaml` default for the `exact` option of a model that sets none; omitted means `true`. */
   readonly exact?: boolean;
   readonly manifestInputs?: readonly string[];
-  /** The absolute output folders of the openapi jobs of mode `golem` in the same golem.yaml: the models job writes one codecs file for each (`sdkCodecsFile`). */
+  /** The absolute output folders of the golem-mode SDK jobs in the same golem.yaml: the model job writes one codecs file for each (`sdkCodecsFile`). */
   readonly sdkOutputs?: readonly string[];
   readonly onInput?: InputObserver;
   readonly session?: GeneratorSession;

@@ -99,7 +99,7 @@ export function byRealPath(files: readonly string[]): string[] {
   return [...byReal.values()];
 }
 
-/** What decides which files are the own model sources of one models job. */
+/** What decides which files are the own model sources of one model job. */
 export interface ModelBoundary {
   /** The real path of `models.root`. */
   readonly root: string;
@@ -109,7 +109,7 @@ export interface ModelBoundary {
   readonly companions?: {
     /** The real path of the directory of the golem.yaml: the search for a shared file's package folder stops there. */
     readonly directory: string;
-    /** `models.output`. */
+    /** `model.output`. */
     readonly output: string;
   };
 }
@@ -124,7 +124,7 @@ export function isModelFileName(boundary: Pick<ModelBoundary, 'suffixes'>, filen
 }
 
 /**
- * Whether the models job of `boundary` owns `filename` as a model source: its real path is inside the models root, no folder
+ * Whether the model job of `boundary` owns `filename` as a model source: its real path is inside its root (the golem.yaml folder), no folder
  * between the root and the file is `node_modules`, and it is not a declaration file. The job writes the file's generated
  * companion beside it. Any other model file is a shared file: it is the type definition of a shared folder or package.
  */
@@ -203,21 +203,21 @@ function packageFolderOf(filename: string, appDirectory: string): string | undef
 
 /**
  * The name of the package that holds a shared model file: the `name` of the package folder's package.json, else the folder's name.
- * The name becomes a folder in `models.output`, so one that leaves it (an absolute name, or one with a `..` segment) is an error.
+ * The name becomes a folder in `model.output`, so one that leaves it (an absolute name, or one with a `..` segment) is an error.
  */
 function packageNameOf(packageFolder: string): string {
   const manifestFile = join(packageFolder, 'package.json');
   const name = readManifest(manifestFile)?.name;
   if (typeof name !== 'string' || name === '') return basename(packageFolder);
   if (isAbsolute(name) || /^[a-zA-Z]:/.test(name) || name.split(/[\\/]/).includes('..')) {
-    throw new Error(`${displayPath(manifestFile)} names the package "${name}". The generated files of the package go in a folder of that name in models.output, so the name cannot be absolute or have a ".." segment. Rename the package.`);
+    throw new Error(`${displayPath(manifestFile)} names the package "${name}". The generated files of the package go in a folder of that name in model.output, so the name cannot be absolute or have a ".." segment. Rename the package.`);
   }
   return name;
 }
 
 /**
  * The generated companion of a model file. An own file's is beside it: `.generated` before its final extension. A shared file's
- * is in `models.output`: `<package name>/<path of the file in its package folder>`, a declaration file's `.d.ts`, `.d.cts` or `.d.mts` becomes `.ts`.
+ * is in `model.output`: `<package name>/<path of the file in its package folder>`, a declaration file's `.d.ts`, `.d.cts` or `.d.mts` becomes `.ts`.
  * Two shared files can give one path: `assertDistinctCompanions` stops the job.
  */
 export function companionFilename(boundary: ModelBoundary | undefined, modelFile: string): string {
@@ -275,7 +275,7 @@ export function ignoredSharedFileWarnings(sharedFiles: readonly string[], appDir
     for (const companion of companionsBeside(modelFile)) {
       onInput?.(companion);
       if (existsSync(companion) && !warnings.has(companion)) {
-        warn(companion, `${displayPath(companion)} is a generated file beside the shared model file ${displayPath(modelFile)}. Golem does not use it: this app uses its own generated file in models.output. Delete it.`);
+        warn(companion, `${displayPath(companion)} is a generated file beside the shared model file ${displayPath(modelFile)}. Golem does not use it: this app uses its own generated file in model.output. Delete it.`);
       }
     }
   }
@@ -522,7 +522,7 @@ export function isOrphanCompanion(companion: string, suffixes: readonly string[]
  * The names of the class models a model file declares: the exported aliases `type Name = IModel<...>`, where `IModel` is
  * the name the file imports it by (`import { IModel as Model }` too) or a member of a namespace import. The names come
  * from the top-level statements of the parsed file, so a declaration in a comment or a string gives none. A file where it
- * finds no name gets no stub: its own companion stays as it is on disk, and a companion in `models.output`, which golem
+ * finds no name gets no stub: its own companion stays as it is on disk, and a companion in `model.output`, which golem
  * owns, reads as `export {}`.
  */
 export function classModelNames(file: ts.SourceFile): string[] {
