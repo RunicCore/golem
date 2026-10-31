@@ -1,0 +1,6 @@
+{
+  "name": "@fixture/acme-generator",
+  "version": "1.0.0",
+  "exports": { "./plan": "./plan.js" },
+  "golem": { "apiVersion": 2, "block": "acme", "plan": "./plan" }
+}
