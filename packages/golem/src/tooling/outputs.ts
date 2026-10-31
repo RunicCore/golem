@@ -4,7 +4,7 @@ import crypto from 'node:crypto';
 
 import { canonicalPath, compareText, displayPath, errorMessage, hasErrorCode, isInsideDirectory, isRecord } from './generator-core.js';
 import type { GolemArtifact } from './generator-core.js';
-import { codecKeysPath, defaultModelOutput, isOperationCodecRegistry, operationCodecRegistryPath } from './generated-paths.js';
+import { codecKeysPath, defaultModelOutput } from './generated-paths.js';
 import type { GolemConfig, GolemJob } from './config.js';
 
 export interface InventoryEntry {
@@ -137,20 +137,14 @@ function modelSourceDirectories(job: Extract<GolemJob, { kind: 'models' }>): rea
  */
 function jobDestinations(config: GolemConfig, job: GolemJob): readonly string[] {
   if (job.kind === 'generator') return [job.options.output];
-  if (job.kind === 'controllers') {
-    return [job.options.output, operationCodecRegistryPath(job.options.root)];
-  }
-  if (job.kind === 'openapi') return [job.options.output];
+  if (job.kind === 'controllers' || job.kind === 'openapi') return [job.options.output];
   return [modelOutputOf(job), ...modelSourceDirectories(job), path.dirname(codecKeysPath(config.directory)), job.options.root];
 }
 
 function artifactDestination(config: GolemConfig, job: GolemJob, filename: string): string {
   const destinations = jobDestinations(config, job);
-  if (job.kind === 'controllers') {
-    const extra = operationCodecRegistryPath(job.options.root);
-    if (!samePath(filename, job.options.output) && !samePath(filename, extra)) {
-      throw new Error(`Generated output escapes the ${job.id} destination: ${displayPath(filename)}`);
-    }
+  if (job.kind === 'controllers' && !samePath(filename, job.options.output)) {
+    throw new Error(`Generated output escapes the ${job.id} destination: ${displayPath(filename)}`);
   }
   const destination = destinations.find(candidate => {
     if (isInsideDirectory(path.resolve(candidate), filename)) return true;
@@ -173,11 +167,9 @@ function destinationKind(owner: string): InventoryEntry['destinationKind'] {
 function inventoryDestination(config: GolemConfig, filename: string, entry: InventoryEntry): string {
   const destination = recordedDestinationPath(config, entry.destination);
   if (entry.destinationKind === 'file') {
-    // A controllers job owns exactly its configured document and the operation-codec registry.
+    // A controllers job owns exactly its configured document.
     const configured = path.resolve(config.directory, entry.job.slice('controllers:'.length));
-    const isDocument = samePath(configured, destination);
-    const isRegistry = isOperationCodecRegistry(portable(entry.destination));
-    if (path.resolve(filename) !== path.resolve(destination) || (!isDocument && !isRegistry)) {
+    if (path.resolve(filename) !== path.resolve(destination) || !samePath(configured, destination)) {
       throw new Error(`Generated output escapes its exact file destination: ${displayPath(filename)}`);
     }
   }

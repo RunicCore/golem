@@ -147,12 +147,6 @@ An error prints its code, location when known, and message, then stops generatio
 
 **Duplicate parameter.** The same parameter (name and location) is declared more than once for one operation. OpenAPI identifies a parameter by its name and location, so one operation cannot hold two, such as a flat field `limit` of a whole `@Query()` and a named model `@Query('limit')` on OpenAPI 3.1.2. Header names compare without letter case, so `X-Trace` and `x-trace` are one header. **Fix:** Remove the duplicate, or combine the fields into one contract.
 
-### NEST1313
-
-**Duplicate controller name.** Two controller classes with the same name, in different files, each declare a method of the same name, and `@ApiOperation({ operationId })` keeps their operation IDs apart. Golem names a method by its class and method name, so one method would replace the other, and `golem check` would report a wrong [`RUNM1072`](#runm1072) for the other class.
-
-**Fix:** Rename one controller class.
-
 ### NEST1401
 
 **Invalid info.** `info` of the controller job, or its `title` or `version` field, is missing, not an object, or not a non-empty string. **Fix:** Set `info` with a `title` and a `version` that are non-empty strings.
@@ -536,18 +530,6 @@ The message shows the decorator and the type, such as `@Body() type Payment has 
 
 - Run `golem generate`.
 - If the error stays, type the parameter with the exported `IModel` or `IObject` alias or the model class, imported from the file that declares it.
-
-### RUNM1072
-
-**Nest parameter disagrees with the generated operations.** `golem check` found a `@Body()` or `@Query()` parameter whose model its own operation does not hold in `src/generated/operation-codecs.ts`. A model that another operation holds does not count. The message shows the decorator and the type. Two cases:
-
-- That file does not exist.
-- The parameter is not part of a route that the controllers job generated. The job writes that file from the routes it reads.
-
-**Fix:**
-
-- Run `golem generate`.
-- If the parameter belongs to a method that is not a route, add its file to the controllers job's `sources`, or give the parameter a primitive type.
 
 ### RUNM1074
 

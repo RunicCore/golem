@@ -1,7 +1,6 @@
 import { existsSync, statSync } from 'node:fs';
 import path from 'node:path';
 import * as ts from '@exprtlabs/golem/internal/ts';
-import { operationCodecRegistryPath } from '@exprtlabs/golem/internal/generated-paths';
 import {
   assertAbsolute,
   assertGeneratorRoot,
@@ -46,7 +45,6 @@ import { analyzeControllers, discoverControllerSources } from './nest/routes.js'
 import type { DtoSchema } from './nest/json-schema-merge.js';
 import { applySwaggerPropertyMetadata } from './nest/swagger-overlay.js';
 import type { TypeReference } from './nest/types.js';
-import { emitOperationRegistry } from './operation-registry.js';
 import type { SchemaResolutionContext } from './operations.js';
 
 export const apiVersion = 1 as const;
@@ -531,15 +529,11 @@ export async function generate(context: TsToOpenApiContext): Promise<TsToOpenApi
   const finalDocument = completeDocument(builtDocument, schemas);
   assertResolvedLocalReferences(finalDocument);
   const artifact: GolemArtifact = { path: normalized.output, content: serializeForOutput(finalDocument, normalized.output) };
-  const operationRegistry = emitOperationRegistry(
-    analysis.routes,
-    operationCodecRegistryPath(normalized.root),
-  );
   const watchInputs = new Set(projectWatchInputs(programInfo, program, sources, []));
   for (const filename of observed) watchInputs.add(filename);
   return {
     apiVersion,
-    artifacts: [artifact, operationRegistry],
+    artifacts: [artifact],
     manifestPaths: [],
     watchInputs: [...watchInputs].sort(),
     ...(schemas.reported.length > 0 ? { diagnostics: schemas.reported.map(asGolemDiagnostic) } : {}),

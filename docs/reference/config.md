@@ -61,7 +61,7 @@ The `output` of a job marks where it writes its main files. Golem replaces only 
 Each kind of job writes its files in one place:
 
 - A `generators` or `openapi` job writes only below its `output` directory.
-- A `controllers` job writes its `output` document and `src/generated/operation-codecs.ts` below its `root`.
+- A `controllers` job writes only its `output` document.
 - A `models` job writes `models.validators.generated.ts` and the generated files of shared model files below its `output`. It writes the generated file of each model source beside that source inside `root`.
 
 These rules apply to every `output`:

@@ -49,10 +49,9 @@ The OpenAPI document of a `controllers` job is a generated file. When you ignore
 | Output | Location |
 | --- | --- |
 | Model files | `src/generated/models/`, below the `root` of the models job |
-| Operation codecs | `src/generated/operation-codecs.ts`, below the `root` of the controllers job |
 | OpenAPI document and SDK | The paths you configure |
 
-`models.output` overrides the model location. The operation codecs path is fixed.
+`models.output` overrides the model location.
 
 ## Generated names
 

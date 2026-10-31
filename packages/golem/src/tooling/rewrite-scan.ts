@@ -3,7 +3,6 @@ import path from 'node:path';
 import * as ts from './typescript-ns.js';
 import { GolemDiagnosticSeverity, canonicalPath, compareText, displayPath, errorMessage, hasErrorCode, isRecord } from './generator-core.js';
 import type { GeneratorSession, GolemDiagnostic } from './generator-core.js';
-import { OPERATION_METHOD_KEYS_EXPORT, operationCodecRegistryPath, operationCodecSlot, operationSlotCodecs, type OperationMethodCodecs } from './generated-paths.js';
 import type { DiscriminatorValue } from '../model-registry.js';
 import { REWRITE_IMPORT_PREFIX } from './rewrite.js';
 import { evaluateStaticValue } from './static-value.js';
@@ -37,23 +36,6 @@ interface ScanInput {
   readonly nonModelInputs?: 'error' | 'warn' | undefined;
 }
 
-/** A `@Body()` or `@Query()` parameter that the scan stamps with `nestModelCodec(id)`. */
-interface NestCodecSite {
-  /** Root-relative file. */
-  readonly file: string;
-  readonly line: number;
-  readonly column: number;
-  readonly decorator: string;
-  /** The model type as the parameter spells it, array wrappers removed. */
-  readonly label: string;
-  /** The id of the model, or the ids of the models of a union. */
-  readonly ids: readonly string[];
-  /** The name of the method the parameter belongs to, spelled as the generated registry spells it. Undefined for a parameter of a constructor or a function, which no route holds. */
-  readonly method: string | undefined;
-  /** The slot of that method's registry entry that holds `id` (`operationCodecSlot`). */
-  readonly slot: string;
-}
-
 const MODEL_RUNTIME_MODULE = '@exprtlabs/golem/internal/model-runtime';
 const NEST_MODULE = '@exprtlabs/golem/internal/nest-runtime';
 const NEST_PARAMETER_DECORATORS: readonly string[] = ['Body', 'Query'];
@@ -72,7 +54,6 @@ const CODE_NO_CODEC = 'RUNM1067';
 const CODE_RESERVED_PREFIX = 'RUNM1068';
 const CODE_IMPORT_CLASH = 'RUNM1069';
 const CODE_NEST_NO_CODEC = 'RUNM1071';
-const CODE_NEST_REGISTRY = 'RUNM1072';
 /** A model that golem does not generate for this project: its file name has no model suffix. */
 const CODE_FOREIGN_MODEL = 'RUNM1074';
 /** A serde function with type arguments that no call rewrite reaches: `parse<T>` as a value, `parse?.<T>(...)`, or a `parse<T>(...)` of a class whose construct option a spread argument hides. */
@@ -477,11 +458,6 @@ function staticFieldKey(checker: ts.TypeChecker, parameter: ts.ParameterDeclarat
   return key?.ok === true && typeof key.value === 'string' ? key.value : undefined;
 }
 
-/** The registry slot of a `@Body()` or `@Query()` parameter: a first argument with a static string value names a field. */
-function nestSlot(checker: ts.TypeChecker, parameter: ts.ParameterDeclaration, decorator: string): string {
-  return operationCodecSlot(decorator === 'Body' ? 'body' : 'query', staticFieldKey(checker, parameter, decorator));
-}
-
 /** Whether the node carries the decorator, written plainly or as the aliased import an earlier rewrite added. */
 function hasDecorator(names: readonly string[], name: string): boolean {
   return names.includes(name) || names.includes(`${REWRITE_IMPORT_PREFIX}${name}`);
@@ -731,7 +707,6 @@ interface FileScan {
   /** Modules the file loads for their side effects: the generated modules that register the codecs its edits name. */
   readonly loads: Set<string>;
   readonly diagnostics: GolemDiagnostic[];
-  readonly nestSites: NestCodecSite[];
   /** Root-relative key tables and generated model modules the edits were resolved from. */
   readonly dependencies: Set<string>;
 }
@@ -896,7 +871,7 @@ function scanFile(
 ): FileScan {
   const { root, checker, keys, nest, nonModelInputs, boundary } = input;
   const text = file.text;
-  const scan: FileScan = { edits: [], imports: new Map(), loads: new Set(), diagnostics: [], nestSites: [], dependencies: new Set() };
+  const scan: FileScan = { edits: [], imports: new Map(), loads: new Set(), diagnostics: [], dependencies: new Set() };
   const classes: { readonly name: string; readonly id: string; readonly end: number }[] = [];
   let reserved: ts.Identifier | undefined;
 
@@ -990,7 +965,7 @@ function scanFile(
     const typeNode = parameter.type;
     const { id, golemModel, label, array, name, defaultExport, union, unionFault } = bindParameter(typeNode, decorator);
     // A union converts as a whole input only; golem describes no array of a union and no one-field union.
-    const unionUnsupported = union !== undefined && (array || !['input', 'query'].includes(nestSlot(checker, parameter, decorator)));
+    const unionUnsupported = union !== undefined && (array || staticFieldKey(checker, parameter, decorator) !== undefined);
     if ((id === '' && union === undefined) || unionUnsupported) {
       const [reason, advice] = unionFault
         ? unionFault
@@ -1014,9 +989,6 @@ function scanFile(
       importOf(scan, root, file, parameter, NEST_CODEC_DECORATOR, NEST_MODULE);
       loadCodecModule(scan, { root, checker, keys, file }, id, name);
     }
-    const { line, character } = file.getLineAndCharacterOfPosition(parameter.type.getStart(file));
-    const method = ts.isMethodDeclaration(parameter.parent) ? parameter.parent.name.getText(file) : undefined;
-    scan.nestSites.push({ file: portable(root, file.fileName), line: line + 1, column: character + 1, decorator, label, ids: union === undefined ? [id] : union.variants.map((variant) => variant.id), method, slot: nestSlot(checker, parameter, decorator) });
   };
 
   /** A class method that returns a model gets `@nestModelReturn(id[, true])` before its other decorators. */
@@ -1072,8 +1044,6 @@ function scanFile(
 /** What one file needs rewritten, answered per file from the program the scanner holds. */
 export interface FileScanResult extends FileRewrite {
   readonly diagnostics: readonly GolemDiagnostic[];
-  /** Every parameter the nest rule stamps in this file; empty unless `nest` is on. */
-  readonly nestCodecSites: readonly NestCodecSite[];
   /** Root-relative key tables and generated model modules the edits were resolved from, sorted. A change to one of them can change this file's edits. */
   readonly dependencies: readonly string[];
 }
@@ -1120,7 +1090,7 @@ function resultOf(scan: FileScan, file: ts.SourceFile): FileScanResult {
     .sort(([left], [right]) => compareText(left, right))
     .map(([from, names]) => ({ from, names: names.sort(compareText) }));
   const edits = [...scan.edits].sort((left, right) => left.start - right.start || left.end - right.end);
-  return { edits, imports, importsAt: imports.length === 0 ? 0 : importInsertOffset(file), diagnostics: scan.diagnostics, nestCodecSites: scan.nestSites, dependencies: [...scan.dependencies].sort(compareText) };
+  return { edits, imports, importsAt: imports.length === 0 ? 0 : importInsertOffset(file), diagnostics: scan.diagnostics, dependencies: [...scan.dependencies].sort(compareText) };
 }
 
 /**
@@ -1210,80 +1180,10 @@ export class RewriteScanner {
   }
 }
 
-/** The scanner's answer for a whole project, with the nest sites `checkNestCodecs` reads. */
+/** The scanner's answer for a whole project. */
 export interface ProgramScan {
   readonly files: ReadonlyMap<string, FileScanResult>;
   readonly diagnostics: readonly GolemDiagnostic[];
-  readonly nestCodecSites: readonly NestCodecSite[];
-}
-
-/** The plain data of a literal the generator wrote: nested objects, arrays and strings. Anything else is no data. */
-function literalData(node: ts.Expression): unknown {
-  if (ts.isStringLiteralLike(node)) return node.text;
-  if (ts.isArrayLiteralExpression(node)) return node.elements.map(literalData);
-  if (!ts.isObjectLiteralExpression(node)) return undefined;
-  const data: Record<string, unknown> = {};
-  for (const property of node.properties) {
-    if (!ts.isPropertyAssignment(property) || !(ts.isStringLiteralLike(property.name) || ts.isIdentifier(property.name))) continue;
-    data[property.name.text] = literalData(property.initializer);
-  }
-  return data;
-}
-
-/** The `<Controller>.<method>` entries of the `OPERATION_METHOD_KEYS` export of a registry file, read from its syntax tree. */
-function registryMethods(session: ts.ProgramSession, filename: string, text: string): ReadonlyMap<string, OperationMethodCodecs> {
-  for (const statement of session.parseSourceFile(filename, text).statements) {
-    if (!ts.isVariableStatement(statement)) continue;
-    for (const declaration of statement.declarationList.declarations) {
-      if (!ts.isIdentifier(declaration.name) || declaration.name.text !== OPERATION_METHOD_KEYS_EXPORT || declaration.initializer === undefined) continue;
-      const initializer = ts.isAsExpression(declaration.initializer) ? declaration.initializer.expression : declaration.initializer;
-      const data = literalData(initializer);
-      return new Map(isRecord(data) ? Object.entries(data).flatMap(([key, entry]) => isRecord(entry) ? [[key, entry as OperationMethodCodecs] as const] : []) : []);
-    }
-  }
-  return new Map();
-}
-
-/** Whether the registry holds the models of the site, in any order. */
-function sameIds(held: readonly string[] | undefined, ids: readonly string[]): boolean {
-  return held !== undefined && held.length === ids.length && ids.every((id) => held.includes(id));
-}
-
-/**
- * The `@Body()` and `@Query()` parameters whose model the generated operation codecs do not hold in the slot of the parameter's own method. The id the scan stamps and the id the controllers job writes come
- * from separate analyses, so a mismatch means the decorators and the generated operations disagree. The registry names a route by the controller class that serves it, which an inherited route does not share with the class that
- * declares the method, so a method matches by its name, in any controller. A missing registry, and a parameter of no method, disagree with every site. `roots` are the controllers job roots whose registries the project's sites may belong to.
- */
-export function checkNestCodecs(roots: string | readonly string[], scanned: { readonly nestCodecSites: readonly NestCodecSite[] }): GolemDiagnostic[] {
-  const registries: { filename: string; text: string }[] = [];
-  const unreadable: GolemDiagnostic[] = [];
-  for (const root of typeof roots === 'string' ? [roots] : roots) {
-    const filename = operationCodecRegistryPath(root);
-    try {
-      registries.push({ filename, text: fs.readFileSync(filename, 'utf8') });
-    } catch (error) {
-      // No registry yet is the normal case before the controllers job ran. Any other failure is reported once for the file, not as a disagreement of every site.
-      if (!hasErrorCode(error, 'ENOENT')) {
-        unreadable.push({ code: CODE_NEST_REGISTRY, severity: GolemDiagnosticSeverity.Error, message: `the generated operation keys cannot be read (${errorMessage(error)}), so the @Body() and @Query() types cannot be checked against them`, file: filename });
-      }
-    }
-  }
-  if (unreadable.length > 0) return unreadable;
-  const methods: (readonly [string, OperationMethodCodecs])[] = [];
-  if (registries.length > 0) {
-    using session = new ts.ProgramSession({ cwd: path.dirname(registries[0]!.filename), closeWhenIdle: true });
-    for (const { filename, text } of registries) methods.push(...registryMethods(session, filename, text));
-  }
-  return scanned.nestCodecSites
-    .filter((site) => site.method === undefined || !methods.some(([key, entry]) => key.endsWith(`.${site.method}`) && sameIds(operationSlotCodecs(entry, site.slot), site.ids)))
-    .map((site) => ({
-      code: CODE_NEST_REGISTRY,
-      severity: GolemDiagnosticSeverity.Error,
-      message: `@${site.decorator}() type ${site.label} disagrees with generated operation keys`,
-      file: site.file,
-      line: site.line,
-      column: site.column,
-    }));
 }
 
 /** What opening a project's program for a scan needs. */
@@ -1314,5 +1214,5 @@ export function scanProject(input: ProjectScanInput): ProgramScan {
   const info = createProjectProgram(root, undefined, sessionOwner === undefined ? undefined : retainedProgramSession(session, sessionOwner, root), configFile);
   using program = info.program;
   const { files, diagnostics } = new RewriteScanner({ root: path.dirname(configFile), directory, modelsRoot, suffixes, output, program, checker: program.getTypeChecker(), nest, nonModelInputs, codecKeysFile }).scanProgram();
-  return { files, diagnostics, nestCodecSites: [...files.values()].flatMap((file) => file.nestCodecSites) };
+  return { files, diagnostics };
 }

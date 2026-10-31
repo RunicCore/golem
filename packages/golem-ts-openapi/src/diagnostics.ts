@@ -42,7 +42,6 @@ export enum TsToOpenApiDiagnosticCode {
   UnresolvedSchemaReference = 'NEST1505',
   ConflictingResponseStatus = 'NEST1311',
   DuplicateParameter = 'NEST1312',
-  DuplicateControllerName = 'NEST1313',
   UnsupportedRoutePath = 'NEST1207',
   UnsupportedRouteExpression = 'RUNT2101',
   RouteResultTooLarge = 'RUNT2106',

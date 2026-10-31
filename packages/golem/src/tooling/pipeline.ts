@@ -302,8 +302,8 @@ interface RewriteRoot {
   readonly job?: GolemJob;
   /** The root the borrowed compiler is kept under: its job's root, or the config directory without a job. */
   readonly root: string;
-  /** The roots of the controllers jobs whose generated operation codecs hold the project's `@Body()` and `@Query()` ids. */
-  readonly controllerRoots: readonly string[];
+  /** The config has a controllers job, so the scan stamps and checks the project's `@Body()` and `@Query()` parameters. */
+  readonly nest: boolean;
 }
 
 /**
@@ -316,7 +316,7 @@ function rewriteRoot(config: GolemConfig): RewriteRoot {
     ?? config.jobs.find((candidate): candidate is Extract<GolemJob, { kind: 'controllers' }> => candidate.kind === 'controllers');
   return {
     ...(job ? { job, root: job.options.root } : { root: config.directory }),
-    controllerRoots: config.jobs.flatMap(candidate => candidate.kind === 'controllers' ? [candidate.options.root] : []),
+    nest: config.jobs.some(candidate => candidate.kind === 'controllers'),
   };
 }
 
@@ -705,8 +705,7 @@ function absorbOutcome(progress: PipelineProgress, job: GolemJob, outcome: JobOu
 async function scanRewriteSites(config: GolemConfig, session: GeneratorSessionResources, used: Map<string, Set<string>>): Promise<void> {
   const rewriteScan = fs.existsSync(config.tsconfig) ? await loadRewriteScan(rewriteRoot(config).job !== undefined) : undefined;
   if (!rewriteScan) return;
-  const { job, root, controllerRoots } = rewriteRoot(config);
-  const nest = controllerRoots.length > 0;
+  const { job, root, nest } = rewriteRoot(config);
   const keys = job ? used.get(job.id) ?? new Set<string>() : undefined;
   if (job && keys) used.set(job.id, keys);
   const scanned = rewriteScan.scanProject({
@@ -729,8 +728,6 @@ async function scanRewriteSites(config: GolemConfig, session: GeneratorSessionRe
   const errors = scanned.diagnostics.filter(diagnostic => diagnostic.severity === GolemDiagnosticSeverity.Error);
   if (errors.length > 0) throw new Error(errorDiagnosticsMessage('golem rewrite scan', errors, path.dirname(config.tsconfig)));
   writeWarnings(scanned.diagnostics, path.dirname(config.tsconfig));
-  const disagreements = nest ? rewriteScan.checkNestCodecs(controllerRoots, scanned) : [];
-  if (disagreements.length > 0) throw new Error(errorDiagnosticsMessage('golem nest codec check', disagreements, path.dirname(config.tsconfig)));
 }
 
 /** Scan the sources for `check`, save the records of the jobs still configured, and hand the provider keys back to the session. */
