@@ -39,7 +39,18 @@
     "THIRD_PARTY_NOTICES.md",
     "LICENSES"
   ],
+  "golem": {
+    "apiVersion": 2,
+    "block": "openapi-ts",
+    "plan": "./plan",
+    "generator": "./generator"
+  },
   "exports": {
+    "./plan": {
+      "types": "./dist/plan.d.ts",
+      "import": "./dist/plan.js",
+      "default": "./dist/plan.js"
+    },
     "./generator": {
       "types": "./dist/generator.d.ts",
       "import": "./dist/generator.js",
