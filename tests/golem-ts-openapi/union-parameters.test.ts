@@ -131,9 +131,13 @@ test('the controllers job documents a union of models as oneOf with a discrimina
   assert.match(registry, /export const OPERATION_QUERY_CODECS = \{\} as const;/);
 });
 
-test('the controllers job stops a whole @Query() union on OpenAPI 3.1 and a one-field union, which it cannot describe', async (t) => {
-  // protects: T-390 a union the interceptor converts but the document cannot express is refused at generation
+test('the controllers job stops a whole @Query() union on OpenAPI 3.1, which has no querystring to hold it', async (t) => {
+  // protects: T-390 a union the 3.1 format cannot express is refused at generation
   await assert.rejects(runPipeline(path.join(project(t, '3.1.2'), 'golem.yaml')), (error: Error) => error.message.includes('NEST1108') && /cannot express a union of models/.test(error.message));
+});
+
+test('the controllers job documents a one-field union of models as a property of the request body', async (t) => {
+  // protects: T-756 the document a client reads describes the one-field union the handler reads; the build tools report the interceptor limit
   const oneField = createControllerFixture(t, {
     prefix: 'golem-union-field-',
     links: 'workspace',
@@ -143,5 +147,13 @@ test('the controllers job stops a whole @Query() union on OpenAPI 3.1 and a one-
       'golem.yaml': yaml('3.2.0'),
     },
   });
-  await assert.rejects(runPipeline(path.join(oneField, 'golem.yaml')), (error: Error) => error.message.includes('NEST1103'));
+  await runPipeline(path.join(oneField, 'golem.yaml'));
+  const document = JSON.parse(fs.readFileSync(path.join(oneField, 'generated/api.json'), 'utf8')) as { paths: Record<string, Record<string, Operation>> };
+  assert.deepEqual(document.paths['/shapes']!.post!.requestBody, {
+    required: true,
+    content: { 'application/json': { schema: { type: 'object', properties: { shape: {
+      discriminator: { propertyName: 'kind', mapping: { circle: '#/components/schemas/TCircle', rect: '#/components/schemas/TRect' } },
+      oneOf: [{ $ref: '#/components/schemas/TCircle' }, { $ref: '#/components/schemas/TRect' }],
+    } }, required: ['shape'] } } },
+  });
 });

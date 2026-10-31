@@ -5,7 +5,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { pathToFileURL } from 'node:url';
+import { generate } from '#controllers/generator';
 import { runPipeline } from '#golem/cli';
+import { formatOpenApiProblems, validateOpenApiDocument } from '#openapi/openapi-validator';
 import { createControllerFixture } from '../fixture-templates/controllers/project.js';
 import { startNestApp } from '../support/nest-app.js';
 import { command, golem } from '../support/process.js';
@@ -110,33 +112,82 @@ for (const openapiVersion of ['3.2.0', '3.1.2']) {
   });
 }
 
-test('the controllers job refuses what NestModelInterceptor throws for, or cannot convert, in a one-field parameter', async (t) => {
-  // protects: R-13 T-323 T-442 a one-field parameter the interceptor cannot convert, or that the client would send wrong, stops generation
+const TPAYMENT = { $ref: '#/components/schemas/TPayment' };
+const TFILTER = { $ref: '#/components/schemas/TFilter' };
+/** The note field of the bodies that mix a whole body with a one-field body. */
+const NOTE = { type: 'object', properties: { note: { type: 'string' } }, required: ['note'] };
+
+// One row for each body the handler reads: the route, the handler parameters, the request body `required`, and the schema.
+const BODIES: readonly (readonly [string, string, boolean, unknown])[] = [
+  ['note', "@Body('note') note: string", true, NOTE],
+  ['tags', "@Body('tags') tags: string[]", true, { type: 'object', properties: { tags: { type: 'array', items: { type: 'string' } } }, required: ['tags'] }],
+  ['optional', "@Body('payment') payment?: TPayment", false, { type: 'object', properties: { payment: TPAYMENT } }],
+  ['optional-list', "@Body('items') items?: TPayment[]", false, { type: 'object', properties: { items: { type: 'array', items: TPAYMENT } } }],
+  ['optional-and-required', "@Body('note') note: string, @Body('payment') payment?: TPayment", true, { type: 'object', properties: { note: { type: 'string' }, payment: TPAYMENT }, required: ['note'] }],
+  ['two-same', '@Body() first: TPayment, @Body() second: TPayment', true, TPAYMENT],
+  ['whole-and-field', "@Body() whole: TPayment, @Body('note') note: string", true, { allOf: [TPAYMENT, NOTE] }],
+  ['field-and-whole', "@Body('note') note: string, @Body() whole: TPayment", true, { allOf: [TPAYMENT, NOTE] }],
+];
+
+for (const openapiVersion of ['3.2.0', '3.1.2'] as const) {
+  test(`the OpenAPI ${openapiVersion} document states the body and the query the handler reads, whatever NestModelInterceptor accepts`, async (t) => {
+    // protects: T-756 the document a client reads states the real optionality and body shape; the interceptor limits are reported by the build tools, not by the controllers job
+    const methods = [
+      ...BODIES.map(([route, parameters]) => `  @Post('${route}') ${route.replace(/-(\w)/g, (_, letter: string) => letter.toUpperCase())}(${parameters}): void {}`),
+      "  @Get('filtered') filtered(@Query('filter') filter?: TFilter): void {}",
+    ].join('\n');
+    const root = createControllerFixture(t, {
+      prefix: 'golem-one-field-shape-',
+      source: `import { Body, Controller, Get, Post, Query } from '@nestjs/common';\n${MODEL}@Controller('a')\nexport class AController {\n${methods}\n}\n`,
+    });
+    const result = await generate({ root, output: path.join(root, 'openapi.json'), openapiVersion, info: { title: 'T', version: '1' }, profile: { mobx: false, validation: false } });
+    const document = JSON.parse(result.artifacts[0]!.content) as { paths: Record<string, Record<string, Operation>> };
+    const problems = validateOpenApiDocument(document);
+    assert.deepEqual(problems, [], formatOpenApiProblems(problems, pointer => pointer));
+    for (const [route, , required, schema] of BODIES) {
+      assert.deepEqual(document.paths[`/a/${route}`]!.post!.requestBody, { required, content: { 'application/json': { schema } } }, route);
+    }
+    assert.deepEqual(document.paths['/a/filtered']!.get!.parameters, [{ name: 'filter', in: 'query', required: false, style: 'deepObject', explode: true, schema: TFILTER }]);
+  });
+}
+
+test('OpenAPI 3.1 documents a named model query beside a whole query as a deepObject parameter and flat parameters', async (t) => {
+  // protects: T-756 3.1 can describe both forms, so the controllers job no longer stops them; the build tools report the interceptor limit
+  const root = createControllerFixture(t, {
+    prefix: 'golem-one-field-mixed-',
+    source: `import { Controller, Get, Query } from '@nestjs/common';\n${MODEL}@Controller('a')\nexport class AController {\n  @Get() list(@Query() whole: TFilter, @Query('filter') filter: TFilter): void {}\n}\n`,
+  });
+  const result = await generate({ root, output: path.join(root, 'openapi.json'), openapiVersion: '3.1.2', info: { title: 'T', version: '1' }, profile: { mobx: false, validation: false } });
+  const document = JSON.parse(result.artifacts[0]!.content) as { paths: Record<string, Record<string, Operation>> };
+  const problems = validateOpenApiDocument(document);
+  assert.deepEqual(problems, [], formatOpenApiProblems(problems, pointer => pointer));
+  assert.deepEqual(document.paths['/a']!.get!.parameters, [
+    { name: 'status', in: 'query', required: true, style: 'form', explode: true, schema: { type: 'string' } },
+    { name: 'limit', in: 'query', required: false, style: 'form', explode: true, schema: { type: 'number' } },
+    { name: 'active', in: 'query', required: false, style: 'form', explode: true, schema: { type: 'boolean' } },
+    { name: 'filter', in: 'query', required: true, style: 'deepObject', explode: true, schema: TFILTER },
+  ]);
+});
+
+test('the controllers job stops only what the OpenAPI format cannot describe in a one-field parameter', async (t) => {
+  // protects: R-13 T-323 T-442 T-756 a parameter the format cannot hold stops generation with the reason; the interceptor limits do not
   const cases: readonly (readonly [string, string, RegExp])[] = [
-    ["  @Post() a(@Body('note') note: string): void {}", 'NEST1103', /must be an IModel or IObject/],
-    ["  @Post() a(@Body() whole: TPayment, @Body('payment') payment: TPayment): void {}", 'NEST1103', /cannot share an operation with a whole @Body\(\)/],
-    ["  @Post() a(@Body('payment') payment: TPayment, @Body() whole: TPayment): void {}", 'NEST1103', /cannot share an operation with a one-field @Body\("field"\)/],
-    ["  @Post() a(@Body('payment') one: TPayment, @Body('payment') two: TPayment): void {}", 'NEST1312', /declared more than once/],
-    ["  @Post() a(@Body('payment') payment?: TPayment): void {}", 'NEST1103', /optional one-field model.*Make the parameter required/],
-    ["  @Get() a(@Query('filter') filter?: TFilter): void {}", 'NEST1107', /optional one-field model.*Make the parameter required/],
+    ["  @Post() a(@Body('payment') one: TPayment, @Body('payment') two: TPayment): void {}", 'NEST1312', /declared more than once.*identifies a parameter by its name and location/],
     ["  @Get() a(@Query('when') when: Date): void {}", 'NEST1107', /must be primitive/],
-    ["  @Post() a(@Body('items') items?: TPayment[]): void {}", 'NEST1103', /optional one-field model.*Make the parameter required/],
-    ["  @Post() a(@Body('items') items: string[]): void {}", 'NEST1103', /must be an IModel or IObject/],
-    ["  @Post() a(@Body('items') items: TPayments): void {}", 'NEST1103', /an array of one written as a type, such as TPayment\[\]/],
-    ["  @Post() a(@Body('items') items: TPayment[][]): void {}", 'NEST1103', /must be an IModel or IObject/],
     ["  @Get() a(@Query('filter') filter: TFilter[]): void {}", 'NEST1107', /array of models.*does not define arrays in a deepObject.*Send the array in a @Body\./],
     ["  @Get() a(@Query('filter') filter: TTagged): void {}", 'NEST1107', /array field \(tags\).*@Body or in a whole @Query\(\) on OpenAPI 3\.2/],
     ["  @Get() a(@Query('filter') filter: TNested): void {}", 'NEST1107', /array field \(inner\.tags\)/],
+    ["  @Get() a(@Query() whole: TFilter, @Query('filter') filter: TFilter): void {}", 'NEST1107', /sends a whole @Query\(\) object as one querystring parameter, which cannot be combined with another @Query\(\) object or with named query parameters/],
+    ["  @Get() a(@Query('filter') filter: TFilter, @Query() whole: TFilter): void {}", 'NEST1107', /cannot be combined with another @Query\(\) object or with named query parameters/],
   ];
-  for (const openapiVersion of ['3.2.0', '3.1.2']) {
-    const mixed: readonly (readonly [string, string, RegExp])[] = [
-      ["  @Get() a(@Query() whole: TFilter, @Query('filter') filter: TFilter): void {}", 'NEST1107', /cannot share an operation with a whole @Query\(\)/],
-      ["  @Get() a(@Query('filter') filter: TFilter, @Query() whole: TFilter): void {}", 'NEST1107', /cannot share an operation with a one-field model/],
-    ];
-    for (const [methods, code, message] of [...mixed, ...(openapiVersion === '3.2.0' ? cases : [])]) {
-      await assert.rejects(runPipeline(path.join(project(t, methods, openapiVersion), 'golem.yaml')), (error: Error) => error.message.includes(code) && message.test(error.message), `${openapiVersion} ${methods}`);
-    }
+  for (const [methods, code, message] of cases) {
+    await assert.rejects(runPipeline(path.join(project(t, methods, '3.2.0'), 'golem.yaml')), (error: Error) => error.message.includes(code) && message.test(error.message), methods);
   }
+  // A named model whose name a flat parameter of the whole query also uses cannot share the one (name, in) key of the 3.1 document.
+  await assert.rejects(
+    runPipeline(path.join(project(t, "  @Get() a(@Query() whole: TFilter, @Query('limit') limit: TFilter): void {}", '3.1.2'), 'golem.yaml')),
+    (error: Error) => error.message.includes('NEST1312') && /identifies a parameter by its name and location/.test(error.message),
+  );
 });
 
 test('the generated client sends a one-field body model and a one-field query model, and NestModelInterceptor converts both', async (t) => {

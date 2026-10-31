@@ -324,29 +324,47 @@ function explicitContent(value: unknown): Record<string, unknown> | undefined {
   return record(value);
 }
 
-async function bodyFieldsSchema(
+/**
+ * The schema of the request body parts beyond the first whole `@Body()`: each
+ * further whole `@Body()` type, then one object that holds each one-field
+ * parameter under its name. A one-field parameter that is optional is not
+ * `required`.
+ */
+async function bodyExtraSchemas(
   context: OperationBuildContext,
-  fields: readonly ControllerParameter[],
-): Promise<OpenApiSchema> {
+  parts: readonly ControllerParameter[],
+): Promise<readonly OpenApiSchema[]> {
+  const schemas: OpenApiSchema[] = [];
+  for (const [index, part] of parts.filter(item => item.name === undefined).entries()) {
+    schemas.push(await schemaFor(context, part.type, 'request', `body.part${index + 1}`));
+  }
+  const fields = parts.filter(item => item.name !== undefined);
+  if (fields.length === 0) return schemas;
   const properties = Object.fromEntries(await Promise.all(fields.map(async (field) => [
     field.name!,
     await schemaFor(context, field.type, 'request', `body.${field.name}`),
   ] as const)));
-  // A one-field body parameter is required: NestModelInterceptor answers HTTP 400 for a missing value.
-  return { type: 'object', properties, required: fields.map(field => field.name!) };
+  const required = fields.filter(field => field.required).map(field => field.name!);
+  schemas.push({ type: 'object', properties, ...(required.length > 0 ? { required } : {}) });
+  return schemas;
+}
+
+/** The parts of a request body as one schema: a part that repeats appears once, and several parts combine with `allOf`. */
+function combineBodyParts(parts: readonly OpenApiSchema[]): OpenApiSchema {
+  const unique = parts.filter((part, index) => parts.findIndex(other => JSON.stringify(other) === JSON.stringify(part)) === index);
+  return unique.length === 1 ? unique[0]! : { allOf: unique };
 }
 
 async function requestBody(
   context: OperationBuildContext,
   route: ControllerRoute,
 ): Promise<Record<string, unknown> | undefined> {
-  const fields = route.parameters.filter(parameter => parameter.location === 'body');
-  if (!route.body && !route.requestBody && fields.length === 0) return undefined;
+  const parts = route.parameters.filter(parameter => parameter.location === 'body');
+  if (!route.body && !route.requestBody && parts.length === 0) return undefined;
   const override = route.requestBody;
   const declaredType = override?.declaredType ?? route.body?.type;
   const bodyType = declaredType ?? override?.type;
-  // The body of one-field parameters: an object that holds each field under its name.
-  const fieldsSchema = bodyType || fields.length === 0 ? undefined : await bodyFieldsSchema(context, fields);
+  const extraSchemas = await bodyExtraSchemas(context, parts);
   if (declaredType && override?.type && override.type !== declaredType) {
     const declaredSchema = await schemaFor(context, declaredType, 'request', 'body.declared');
     let overrideSchema = await schemaFor(context, override.type, 'request', 'body.override');
@@ -382,21 +400,23 @@ async function requestBody(
         }
         const schema = explicitCompositionSchema(declaredType ?? bodyType, mediaRecord.schema)
           ?? await schemaFor(context, declaredType ?? bodyType, 'request', `body.${media}`, mediaRecord.schema as OpenApiSchema);
-        generatedContent[media] = { ...mediaRecord, schema: override?.isArray ? arraySchema(schema) : schema };
+        generatedContent[media] = { ...mediaRecord, schema: combineBodyParts([override?.isArray ? arraySchema(schema) : schema, ...extraSchemas]) };
         continue;
       }
       if (!bodyType) {
-        generatedContent[media] = fieldsSchema ? { ...mediaRecord, schema: fieldsSchema } : mediaRecord;
+        generatedContent[media] = extraSchemas.length > 0 ? { ...mediaRecord, schema: combineBodyParts(extraSchemas) } : mediaRecord;
         continue;
       }
       const schema = await schemaFor(context, declaredType ?? bodyType, 'request', `body.${media}`);
       generatedContent[media] = {
         ...mediaRecord,
-        schema: override?.isArray ? arraySchema(schema) : schema,
+        schema: combineBodyParts([override?.isArray ? arraySchema(schema) : schema, ...extraSchemas]),
       };
     }
   }
-  const requiredBody = override?.required ?? route.body?.required ?? (fields.length > 0 ? true : undefined);
+  // The body is required when any part the handler reads is.
+  const required = [...route.body ? [route.body] : [], ...parts].map(part => part.required);
+  const requiredBody = override?.required ?? (required.length > 0 ? required.some(Boolean) : undefined);
   return {
     ...(override?.description ? { description: override.description } : {}),
     ...(requiredBody === undefined ? {} : { required: requiredBody }),

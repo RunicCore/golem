@@ -10,7 +10,6 @@ export enum TsToOpenApiDiagnosticCode {
   NoControllerSources = 'NEST1002',
   UnsupportedNestParameter = 'NEST1101',
   UnrepresentableNestParameter = 'NEST1102',
-  NamedBodyParameter = 'NEST1103',
   UnknownParameterKeys = 'NEST1105',
   NonPrimitiveParameter = 'NEST1106',
   NonPortableParameter = 'NEST1107',
