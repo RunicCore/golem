@@ -220,7 +220,6 @@ function flattenParameter(
   if (!portable) {
     throw new TsToOpenApiError(diagnostic(parameter.getSourceFile(), parameter, TsToOpenApiDiagnosticCode.NonPortableParameter, `Cannot flatten @${location} parameter ${context.checker.typeToString(type)}; only primitive and primitive-array properties have portable OpenAPI parameter mappings.`));
   }
-  const unionModels = location === 'query' ? unionModelIds(context, parameter) : undefined;
   if (location === 'query' && context.openapiVersion === '3.2.0') {
     return [{
       node: parameter,
@@ -228,10 +227,9 @@ function flattenParameter(
       location: 'querystring',
       name: ts.isIdentifier(parameter.name) ? parameter.name.text : 'query',
       required: !isOptionalParameter(parameter, type),
-      ...(unionModels === undefined ? {} : { unionModels }),
     } satisfies ControllerParameter];
   }
-  if (unionModels !== undefined) {
+  if (location === 'query' && unionModelIds(context, parameter) !== undefined) {
     throw new TsToOpenApiError(diagnostic(parameter.getSourceFile(), parameter, TsToOpenApiDiagnosticCode.LossyQueryFlatten, 'OpenAPI 3.1 flattens a whole @Query() into independent parameters, which cannot express a union of models. Use OpenAPI 3.2, which writes a querystring parameter, or declare one model for the query.'));
   }
   if (location === 'query' && hasWholeObjectContract(context, parameter, type)) {
@@ -247,7 +245,6 @@ function flattenParameter(
       location,
       name: property.name,
       required: !(property.flags & ts.SymbolFlags.Optional) && !containsUndefined(propertyType),
-      ...(location !== 'query' || parameterType.modelContractName === undefined ? {} : { wholeQueryModel: parameterType.modelContractName }),
     } satisfies ControllerParameter;
   });
 }
@@ -410,17 +407,7 @@ export function parseParameters(
         bodyParts.push({ node: parameter, type: oneFieldKind(context, parameter, parameterType).type, location: 'body', name, required });
         return;
       }
-      // Only an array body names an item model; describing any other body here would read a generic base's `T` too early.
-      const items = context.checker.isArrayType(parameterType.type) ? oneFieldKind(context, parameter, parameterType) : undefined;
-      const unionModels = unionModelIds(context, parameter);
-      bodyParts.push({
-        node: parameter,
-        type: presentReference(context, parameter, parameterType),
-        location: 'body',
-        required,
-        ...(items?.array && items.type.modelContractName !== undefined ? { bodyItemModel: items.type.modelContractName } : {}),
-        ...(unionModels === undefined ? {} : { unionModels }),
-      });
+      bodyParts.push({ node: parameter, type: presentReference(context, parameter, parameterType), location: 'body', required });
       return;
     }
     if (name !== undefined) {
