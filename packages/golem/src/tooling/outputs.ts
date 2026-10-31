@@ -337,6 +337,11 @@ function providesCodecKeys(config: GolemConfig, job: GolemJob): boolean {
   return config.jobPlan.providers[MODEL_BOUNDARY] === job.id;
 }
 
+/** The files core owns that it writes from the artifacts of `job`: no job output and no inventory entry. Today only the codec key table. */
+export function coreRecordsOf(config: GolemConfig, job: GolemJob): readonly string[] {
+  return providesCodecKeys(config, job) ? [codecKeysPath(config.directory)] : [];
+}
+
 /** `compilerOutputs` are the folders the project's compiler writes (outDir, declarationDir): the check for unrecorded files leaves them out. */
 export function applyJob(config: GolemConfig, inventory: Inventory, job: GolemJob, artifacts: readonly GolemArtifact[], check = false, files: OutputFiles = realOutputFiles, compilerOutputs: readonly string[] = []): FileChanges {
   assertInventoryPath(config);

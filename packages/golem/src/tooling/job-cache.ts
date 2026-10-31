@@ -6,8 +6,7 @@ import type { GolemConfig, GolemJob } from './config.js';
 import { GolemDiagnosticSeverity, compareText, hasErrorCode, isInsideDirectory, isRecord } from './generator-core.js';
 import type { GolemDiagnostic } from './generator-core.js';
 import type { PackageRegistration } from './package-registry.js';
-import { codecKeysPath } from './generated-paths.js';
-import { atomicWrite, loadInventory } from './outputs.js';
+import { atomicWrite, digest, loadInventory } from './outputs.js';
 import type { Inventory, InventoryEntry, OutputFiles } from './outputs.js';
 
 /**
@@ -25,7 +24,10 @@ export interface JobRecord {
   readonly inputs: Readonly<Record<string, string>>;
   /** The manifests of the jobs before it that the job received as `manifestInputs`. */
   readonly manifestInputs: readonly string[];
+  /** The inventory-recorded files the job wrote. */
   readonly outputs: readonly string[];
+  /** The files core owns that it wrote from the job's artifacts (the codec key table), by the digest they had: they are no job output and no inventory entry. */
+  readonly records: Readonly<Record<string, string>>;
   /** The manifests the job reported: its outputs that later jobs read as `manifestInputs`. */
   readonly manifests: readonly string[];
   /** The warnings the job reported. A later run that skips the job writes them again: its inputs are as they were, so they still hold. */
@@ -60,6 +62,7 @@ function isJobRecord(value: unknown): value is JobRecord {
     && strings(value.manifestInputs)
     && isRecord(value.inputs) && Object.values(value.inputs).every(digest => typeof digest === 'string')
     && strings(value.outputs)
+    && isRecord(value.records) && Object.values(value.records).every(recorded => typeof recorded === 'string')
     && strings(value.manifests)
     && Array.isArray(value.warnings) && value.warnings.every(isWarning);
 }
@@ -100,6 +103,7 @@ export function saveJobRecords(config: GolemConfig, records: ReadonlyMap<string,
       inputs: Object.fromEntries(Object.entries(record.inputs).sort(([left], [right]) => compareText(left, right))),
       manifestInputs: record.manifestInputs,
       outputs: record.outputs,
+      records: record.records,
       manifests: record.manifests,
       warnings: record.warnings,
     }]));
@@ -216,6 +220,16 @@ export function sameSetup(config: GolemConfig, record: JobRecord, setup: JobSetu
     && JSON.stringify(record.manifestInputs) === JSON.stringify(setup.manifestInputs.map(manifest => recordPath(config, manifest)));
 }
 
+/** The digest of a file's content, or undefined when it does not exist. */
+function fileDigest(filename: string): string | undefined {
+  try {
+    return digest(fs.readFileSync(filename, 'utf8'));
+  } catch (error) {
+    if (hasErrorCode(error, 'ENOENT') || hasErrorCode(error, 'EISDIR')) return undefined;
+    throw error;
+  }
+}
+
 /** Whether the file still holds what the inventory recorded for it. */
 function outputIsRecorded(entry: InventoryEntry | undefined, filename: string): boolean {
   if (!entry) return false;
@@ -230,7 +244,7 @@ function outputIsRecorded(entry: InventoryEntry | undefined, filename: string): 
 /**
  * Whether the job would produce what its record holds: the golem code, provider code, options and manifest set
  * match, every output still has the digest the inventory recorded for it and every input still has the digest it had when the job
- * read it. An output that is missing, edited or absent from the inventory (the codec key table apart) is not current: the job runs again and rewrites it. The
+ * read it. An output that is missing, edited or absent from the inventory, or a core record that is missing or edited, is not current: the job runs again and rewrites it. The
  * files the inventory records are left out of directory listings; `inventory` defaults to the one on disk.
  */
 export function jobIsCurrent(
@@ -247,9 +261,8 @@ export function jobIsCurrent(
   const outputs = new Set(record.outputs.map(output => absoluteRecordPath(config, output)));
   const entries = new Map(Object.entries(inventory.files).map(([key, entry]) => [path.resolve(config.directory, key), entry]));
   const generated = new Set(entries.keys());
-  // The codec key table is core's own record, which no inventory entry holds: it only has to exist.
-  const codecKeys = codecKeysPath(config.directory);
-  if (![...outputs].every(output => output === codecKeys ? fs.existsSync(output) : outputIsRecorded(entries.get(output), output))) return false;
+  if (![...outputs].every(output => outputIsRecorded(entries.get(output), output))) return false;
+  if (!Object.entries(record.records).every(([recorded, expected]) => fileDigest(absoluteRecordPath(config, recorded)) === expected)) return false;
   const excluded = (filename: string): boolean => generated.has(filename) || outputs.has(filename) || insideAny(ignoredDirectories, filename);
   return Object.entries(record.inputs)
     .every(([input, digest]) => inputDigest(absoluteRecordPath(config, input), excluded, config.directory) === digest);

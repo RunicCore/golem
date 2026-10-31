@@ -47,6 +47,7 @@ function project(t: TestContext): { root: string; record: JobRecord; inventory: 
     },
     manifestInputs: [],
     outputs: ['sdk.ts'],
+    records: {},
     manifests: [],
     warnings: [],
   };
@@ -113,6 +114,7 @@ test('a directory outside the golem.yaml directory is recorded by existence, one
     inputs: { ...inputs, [path.relative(root, outside)]: inputDigest(outside, () => false, root), src: inputDigest(path.join(root, 'src'), () => false, root) },
     manifestInputs: [],
     outputs: ['sdk.ts'],
+    records: {},
     manifests: [],
     warnings: [],
   } satisfies JobRecord;
