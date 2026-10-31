@@ -1,7 +1,6 @@
 // The rewrite participant of an extension that a golem.yaml block turns on. The test extension is tests/fixtures/extensions/probe, which registers the block `probe`
 // and the extension `mark`. Core runs its participant in golem check, golem build, Vite, esbuild and the Node loader alike.
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 

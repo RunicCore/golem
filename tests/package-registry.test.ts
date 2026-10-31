@@ -52,7 +52,7 @@ test('a package that only the workspace root lists registers its block, with eve
     block: 'alpha',
     plan: path.join(installed, 'plan.js'),
     generator: path.join(installed, 'generator.js'),
-    extensions: new Map([['nest', path.join(installed, 'nest.js')]]),
+    extensions: new Map([['nest', { entry: path.join(installed, 'nest.js'), profile: false }]]),
     schema: path.join(installed, 'golem-schema.json'),
   }]);
 });
@@ -181,4 +181,23 @@ test('a broken package.json or entry is a clear error naming the file or the pac
   writeJson(path.join(root, 'node_modules/@fixture/unexported/package.json'), { name: '@fixture/unexported', exports: {}, golem: { apiVersion: 2, block: 'x', plan: './plan' } });
   assert.match(thrown(() => loadPackageRegistry(config)).message,
     /^@fixture\/unexported declares golem\.plan "\.\/plan", but @fixture\/unexported\/plan does not resolve from [^\n]*: [^\n]*\. Export "\.\/plan" in the exports of @fixture\/unexported\.$/);
+});
+
+test('an extension registers the profile flag beside its entry; a flag that is not a boolean names the package and the extension', (t) => {
+  // protects: T-782 golem.extensions.<name> takes { entry, profile }; a malformed flag is a PackageRegistryError, not a silent "no flag"
+  const { root, config } = project(t);
+  writeJson(path.join(root, 'package.json'), { name: 'app', dependencies: { '@fixture/flagged': '1.0.0' } });
+  const register = (extension: unknown): void => writeJson(path.join(root, 'node_modules/@fixture/flagged/package.json'), {
+    name: '@fixture/flagged', exports: { './plan': './plan.js', './shape': './shape.js' }, golem: { apiVersion: 2, block: 'flagged', extensions: { shape: extension } },
+  });
+  const entry = path.join(fs.realpathSync(root), 'node_modules/@fixture/flagged/shape.js');
+
+  register({ entry: './shape', profile: true });
+  for (const file of ['plan.js', 'shape.js']) fs.writeFileSync(path.join(root, 'node_modules/@fixture/flagged', file), '');
+  assert.deepEqual(loadPackageRegistry(config).packages[0]!.extensions, new Map([['shape', { entry, profile: true }]]));
+  register({ entry: './shape' });
+  assert.deepEqual(loadPackageRegistry(config).packages[0]!.extensions, new Map([['shape', { entry, profile: false }]]));
+
+  register({ entry: './shape', profile: 'yes' });
+  assert.equal(thrown(() => loadPackageRegistry(config)).message, 'golem.extensions.shape.profile of @fixture/flagged must be true or false, not "yes".');
 });

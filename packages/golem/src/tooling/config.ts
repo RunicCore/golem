@@ -5,7 +5,7 @@ import { canonicalPath, displayPath, invalidValidationLevelMessage, isInsideDire
 import { ROOT_KEYS } from './editor-schema.js';
 import { providersOf, resolveJobPlan } from './job-rules.js';
 import { loadPackageRegistry, PackageRegistryError, registrationForBlock } from './package-registry.js';
-import type { PackageRegistration } from './package-registry.js';
+import type { PackageRegistration, PackageRegistry } from './package-registry.js';
 import type { EnabledExtension } from './rewrite-participant.js';
 import type { JobFacts, JobPlan } from './job-facts.js';
 import type {
@@ -105,15 +105,27 @@ function enabledExtensions(registration: PackageRegistration, block: string, val
   if (declared === undefined) return [];
   if (!isRecord(declared)) throw new TypeError(`${block}.extensions must map an extension name to its options.`);
   return Object.entries(declared).map(([name, options]) => {
-    const entry = registration.extensions.get(name);
-    if (entry === undefined) {
-      const registered = [...registration.extensions.keys()];
-      throw new PackageRegistryError(`${block}.extensions turns on "${name}", which ${registration.name} does not register. ${registered.length ? `It registers: ${registered.join(', ')}.` : 'It registers no extension.'}`);
+    const registered = registration.extensions.get(name);
+    if (registered === undefined) {
+      const names = [...registration.extensions.keys()];
+      throw new PackageRegistryError(`${block}.extensions turns on "${name}", which ${registration.name} does not register. ${names.length ? `It registers: ${names.join(', ')}.` : 'It registers no extension.'}`);
     }
     // A bare `name:` in YAML is null: an extension with no options.
     if (options !== null && !isRecord(options)) throw new TypeError(`${block}.extensions.${name} must be an object of options.`);
-    return { package: registration.name, block, name, entry, options: options ?? {} };
+    return { package: registration.name, block, name, entry: registered.entry, options: options ?? {} };
   });
+}
+
+/**
+ * The options of the enabled extensions that their package flags `profile: true`, as golem.yaml writes them, by package and extension name.
+ * An extension with no flag adds nothing: it changes no generated code.
+ */
+function profileExtensions(registry: PackageRegistry, enabled: readonly EnabledExtension[]): Record<string, Record<string, unknown>> {
+  const recorded: Record<string, Record<string, unknown>> = {};
+  for (const { package: owner, block, name, options } of enabled) {
+    if (registrationForBlock(registry, block).extensions.get(name)?.profile) (recorded[owner] ??= {})[name] = options;
+  }
+  return recorded;
 }
 
 /** Parse and resolve the complete dependency graph before checking existence. */
@@ -129,11 +141,11 @@ export async function resolveConfig(filename = 'golem.yaml', onInput?: InputObse
   if (value.unknownFormats !== undefined && value.unknownFormats !== 'warn' && value.unknownFormats !== 'error') throw new Error('unknownFormats must be "warn" or "error".');
   if (value.nonModelInputs !== undefined && value.nonModelInputs !== 'warn' && value.nonModelInputs !== 'error') throw new Error('nonModelInputs must be "warn" or "error".');
   const nonModelInputs = value.nonModelInputs ?? 'error';
-  const profile = resolveProfile({
+  const settings: GolemProfile = {
     mobx: boolean(value.mobx, false, 'mobx'), validation: validationLevel(value.validation),
     allowAny: boolean(value.allowAny, false, 'allowAny'),
     ...(value.unknownFormats === undefined ? {} : { unknownFormats: value.unknownFormats }),
-  });
+  };
   const exact = value.exact === undefined ? undefined : boolean(value.exact, true, 'exact');
   const tsconfigRequested = path.resolve(directory, value.tsconfig === undefined ? 'tsconfig.json' : nonempty(value.tsconfig, 'tsconfig'));
   onInput?.(tsconfigRequested);
@@ -151,10 +163,13 @@ export async function resolveConfig(filename = 'golem.yaml', onInput?: InputObse
     throw new Error(`Configure at least one golem block. ${installed.length ? `Installed golem packages and their blocks: ${installed.join(', ')}.` : 'No installed package registers a golem block.'}`);
   }
 
+  // The extensions are read before pass 1: the profile that the plans receive records the options of those that change generated code.
+  const extensions = blocks.flatMap(block => enabledExtensions(registrationForBlock(registry, block), block, value[block]));
+  const profile = resolveProfile({ ...settings, extensions: profileExtensions(registry, extensions) });
+
   // Pass 1: each package validates its block and declares its jobs with their facts.
   const entries = new Map<string, { registration: PackageRegistration; entry: GolemPlanEntry; planned: readonly PlannedJob[] }>();
   const ids = new Map<string, string>();
-  const extensions: EnabledExtension[] = [];
   for (const block of blocks) {
     const registration = registrationForBlock(registry, block);
     const entry = await loadPlanEntry(registration);
@@ -166,7 +181,6 @@ export async function resolveConfig(filename = 'golem.yaml', onInput?: InputObse
       ids.set(facts.id, registration.name);
     }
     entries.set(block, { registration, entry, planned });
-    extensions.push(...enabledExtensions(registration, block, value[block]));
   }
   if (!ids.size) throw new Error('Configure at least one job: the blocks of golem.yaml declare none.');
 

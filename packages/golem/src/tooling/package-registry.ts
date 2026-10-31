@@ -21,6 +21,18 @@ export class PackageRegistryError extends Error {
   }
 }
 
+/**
+ * One extension of a package: `"name": "./subpath"` or `"name": { "entry": "./subpath", "profile": true }` under `golem.extensions`.
+ * `profile: true` says that the extension's options change generated code: core records them, exactly as golem.yaml writes them, in
+ * `profile.extensions` of every manifest that a generator writes. Core cannot normalize them, so every option of a flagged extension
+ * must change generated code and none may have a silent default. An extension that only rewrites source sets no flag.
+ */
+export interface RegisteredExtension {
+  /** The absolute file that Node resolves for the entry; it is not loaded here. */
+  readonly entry: string;
+  readonly profile: boolean;
+}
+
 /** What one package registers in its `golem` field. Every entry is the absolute file that Node resolves for its subpath; none is loaded. */
 export interface PackageRegistration {
   readonly name: string;
@@ -31,8 +43,8 @@ export interface PackageRegistration {
   readonly plan: string | undefined;
   /** The heavy entry: loads TypeScript when a job runs. */
   readonly generator: string | undefined;
-  /** The entries of the extensions that a block may turn on, by extension name. */
-  readonly extensions: ReadonlyMap<string, string>;
+  /** The extensions that a block may turn on, by extension name. */
+  readonly extensions: ReadonlyMap<string, RegisteredExtension>;
   /** The file of the part this package adds to the editor schema, in its folder. It is not read here: a missing or broken part is a warning of the editor schema. */
   readonly schema: string | undefined;
 }
@@ -180,6 +192,16 @@ function resolveEntry(requireFromConfig: NodeJS.Require, configDirectory: string
   }
 }
 
+/** An extension's registration: a package subpath, or an object with the `entry` and the `profile` flag. */
+function extensionOf(requireFromConfig: NodeJS.Require, configDirectory: string, name: string, extension: string, value: unknown): RegisteredExtension {
+  const key = `extensions.${extension}`;
+  if (!isRecord(value)) return { entry: resolveEntry(requireFromConfig, configDirectory, name, key, value), profile: false };
+  const unknown = Object.keys(value).filter((field) => field !== 'entry' && field !== 'profile');
+  if (unknown.length) throw new PackageRegistryError(`golem.${key} of ${name} has unknown keys: ${unknown.join(', ')}. It takes: entry, profile.`);
+  if (value.profile !== undefined && typeof value.profile !== 'boolean') throw new PackageRegistryError(`golem.${key}.profile of ${name} must be true or false, not ${JSON.stringify(value.profile)}.`);
+  return { entry: resolveEntry(requireFromConfig, configDirectory, name, `${key}.entry`, value.entry), profile: value.profile ?? false };
+}
+
 function registrationOf(requireFromConfig: NodeJS.Require, configDirectory: string, name: string, manifest: Manifest, field: unknown): PackageRegistration {
   if (!isRecord(field)) throw new PackageRegistryError(`"golem" in ${displayPath(manifest.file)} must be an object.`);
   if (field.apiVersion !== REGISTRATION_API_VERSION) {
@@ -197,8 +219,8 @@ function registrationOf(requireFromConfig: NodeJS.Require, configDirectory: stri
   // The schema part is data for editors, not code that Node loads: it lies in the package folder and its existence is not judged here.
   const schema = field.schema === undefined ? undefined : path.join(manifest.directory, subpathOf(name, 'schema', field.schema).slice(2));
   const declared = field.extensions;
-  if (declared !== undefined && !isRecord(declared)) throw new PackageRegistryError(`golem.extensions of ${name} must be an object that maps an extension name to a package subpath.`);
-  const extensions = new Map(Object.entries(declared ?? {}).map(([extension, subpath]) => [extension, resolveEntry(requireFromConfig, configDirectory, name, `extensions.${extension}`, subpath)]));
+  if (declared !== undefined && !isRecord(declared)) throw new PackageRegistryError(`golem.extensions of ${name} must be an object that maps an extension name to a package subpath or to { entry, profile }.`);
+  const extensions = new Map(Object.entries(declared ?? {}).map(([extension, value]) => [extension, extensionOf(requireFromConfig, configDirectory, name, extension, value)]));
   return { name, directory: manifest.directory, block: field.block, plan: entry('plan'), generator: entry('generator'), extensions, schema };
 }
 
