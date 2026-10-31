@@ -7,7 +7,7 @@ import type { GolemJob } from '#golem/config';
 import { runPipeline } from '#golem/cli';
 import { applyJob, loadInventory } from '#golem/outputs';
 import { createFixtureProject, linkProjectPackages } from './fixture-project.js';
-import { configFor } from './support/output-config.js';
+import { configFor, jobWithFacts } from './support/output-config.js';
 import { workspace } from './support/process.js';
 import { writeFixture } from './support/consumer.js';
 
@@ -52,17 +52,7 @@ function pipelineFixture(t: TestContext): { root: string; config: string; extern
 }
 
 function modelJob(root: string, source: string): GolemJob {
-  return {
-    id: 'models:.',
-    kind: 'models',
-    package: '@exprtlabs/golem-model',
-    options: {
-      root,
-      sources: [source],
-      output: path.join(root, 'src/generated/models'),
-      profile: { mobx: false, validation: true },
-    },
-  };
+  return jobWithFacts('models:.', '@exprtlabs/golem-model', { ownedRoots: [path.join(root, 'src/generated/models'), path.dirname(source), root] });
 }
 
 function modelContent(value: number): string {
@@ -92,7 +82,8 @@ test('YAML pipeline supports external OpenAPI and model roots, sources, and outp
   };
   const relative = (filename: string): string => path.relative(root, filename).replaceAll(path.sep, '/');
   assert.equal(inventory.files[relative(sdkClient)]?.destination, relative(path.join(external, 'sdk')));
-  assert.equal(inventory.files[relative(modelOutput)]?.destination, '.golem');
+  // The codec key table is core's own record: the inventory does not list it.
+  assert.equal(inventory.files[relative(modelOutput)], undefined);
   assert.equal(inventory.files[relative(companion)]?.destination, relative(path.dirname(source)));
 
   await runPipeline(config, { check: true });
