@@ -77,7 +77,8 @@ function cleanProject(t: TestContext, source: string, yaml = config, files: Reco
 }
 
 const read = (root: string, file: string): string => fs.readFileSync(path.join(root, file), 'utf8');
-const schemaNames = (document: string): string[] => Object.keys((JSON.parse(document) as { components: { schemas: object } }).components.schemas);
+/** The named schemas of a document: a type that has no name, such as a Pick, is written inline and adds none. */
+const schemaNames = (document: string): string[] => Object.keys((JSON.parse(document) as { components?: { schemas: object } }).components?.schemas ?? {});
 const sdkUnknownFormats = (root: string): string => (JSON.parse(read(root, 'sdk/model-manifest.json')) as { profile: { unknownFormats: string } }).profile.unknownFormats;
 
 // protects: T-464 a clean run and a run with the SDK present give the same document
@@ -118,12 +119,11 @@ test('a profile option changed after a run regenerates the SDK manifest with the
 const reaches = [
   ['returns it', 'TCart', '', undefined, ['TCart']],
   ['returns an array of it', 'TCart[]', '', undefined, ['TCart']],
-  ['picks a field of it that holds no SDK type', "Pick<TCart, 'note'>", '', undefined, ['TCart']],
+  ['picks a field of it that holds no SDK type', "Pick<TCart, 'note'>", '', undefined, []],
   ['returns it in a union', 'TStatus | TCart', '', undefined, ['TCart', 'TStatus']],
   ['returns a model that holds it', 'TStatus | TOrder', "import type { TOrder } from './order.model.js';", undefined, ['TCart', 'TOrder', 'TStatus']],
-  ['returns an inferred Map of it', '', '', 'new Map<string, TCart>()', ['TCart']],
-  ['imports an SDK type', 'Money', "import type { Money } from '../sdk/index.js';", undefined, ['Money']],
-  ['returns a local type that holds an SDK type', 'Local', "import type { Money } from '../sdk/index.js';\ntype Local = { m: Money };", undefined, ['Local']],
+  ['imports an SDK type', 'Money', "import type { Money } from '../sdk/index.js';", undefined, []],
+  ['returns a local type that holds an SDK type', 'Local', "import type { Money } from '../sdk/index.js';\ntype Local = { m: Money };", undefined, []],
 ] as const;
 
 // One project whose SDK is on disk, shared by the cases: the controller file changes, the models stay.
@@ -157,6 +157,13 @@ for (const [reach, returns, imports, body, schemas] of reaches) {
     assert.deepEqual(schemaNames(read(root, 'generated/openapi.json')), schemas);
   });
 }
+
+// protects: T-464 a Map return stays an error of its own, no longer hidden behind the cycle error
+test('a controller that returns an inferred Map of an SDK-reaching model stops with RUNM1086 on a clean tree', async (t: TestContext) => {
+  const root = cleanProject(t, controller('', '', 'new Map<string, TCart>()'));
+
+  await assert.rejects(runPipeline(path.join(root, 'golem.yaml')), /RUNM1086: Type Map is a Map\./);
+});
 
 // protects: T-464 an import that no later job writes keeps RUNM1058 in a model that no controller reaches
 test('a typo in the import of an unreached model still stops with RUNM1058 when no job writes that path', async (t: TestContext) => {
