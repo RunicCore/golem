@@ -8,7 +8,7 @@ import { runBuild } from '#golem/build';
 import { decodeMappings } from '#golem/source-map';
 import { resolveTypeScript } from '#golem/typescript-version';
 import { generate } from '#model/generator';
-import { copyFixtureFile, writeGeneratedArtifacts } from '../fixture-project.js';
+import { copyFixtureFile, listProjectDependencies, writeGeneratedArtifacts } from '../fixture-project.js';
 import { createModelProject } from '../model-project.js';
 import { command, golem, workspace } from './process.js';
 
@@ -29,7 +29,7 @@ export function editTsconfig(root: string, edit: (tsconfig: { compilerOptions: R
 }
 
 /** The golem.yaml of the serde projects: the models job with the generation profile of `PROFILE`. */
-export const SERDE_GOLEM_YAML = 'version: 1\nmobx: false\nvalidation: true\nmodels:\n  root: .\n';
+export const SERDE_GOLEM_YAML = 'version: 1\nvalidation: true\nmodel: {}\n';
 
 /** A serde project with the shared money model, `declaration` and `sourceMap` on, and nothing generated yet; the caller adds sources. */
 export function sourceOnlyProject(t: TestContext, name: string): string {
@@ -45,15 +45,29 @@ export function sourceOnlyProject(t: TestContext, name: string): string {
   return root;
 }
 
+/** The plan entry of `@fixture/counter`: the block `counter` declares one job that writes the folder `out` and reads `src/money.model.ts`. */
+const COUNTER_PLAN = `import path from 'node:path';
+export const plan = {
+  declare({ directory }) {
+    const output = path.join(directory, 'out');
+    return [{
+      facts: { id: 'generator:out', outputs: [{ path: output, kind: 'folder' }], ownedRoots: [], inputFiles: [], inputFolders: [], readsProgram: false, provides: [], needs: [], hooks: [], watch: [] },
+      options: { directory, output },
+    }];
+  },
+};
+`;
+
 /**
- * Adds a generator job to the project that reads `src/money.model.ts` and nothing else, as the models job also does: a job result
- * shows it running exactly when that source changes. Its id is `generator:out`.
+ * Adds a job of a package that registers the block `counter` to the project. The job reads `src/money.model.ts` and nothing else, as the model job
+ * also does: a job result shows it running exactly when that source changes. Its id is `generator:out`.
  */
 export function countingGenerator(root: string): void {
   const provider = path.join(root, 'node_modules/@fixture/counter');
   fs.mkdirSync(provider, { recursive: true });
-  fs.writeFileSync(path.join(provider, 'package.json'), JSON.stringify({ name: '@fixture/counter', version: '1.0.0', type: 'module', exports: { './generator': './index.js' } }));
-  fs.writeFileSync(path.join(provider, 'index.js'), `import fs from 'node:fs';
+  fs.writeFileSync(path.join(provider, 'package.json'), JSON.stringify({ name: '@fixture/counter', version: '1.0.0', type: 'module', exports: { './plan': './plan.js', './generator': './generator.js' }, golem: { apiVersion: 2, block: 'counter', plan: './plan', generator: './generator' } }));
+  fs.writeFileSync(path.join(provider, 'plan.js'), COUNTER_PLAN);
+  fs.writeFileSync(path.join(provider, 'generator.js'), `import fs from 'node:fs';
 import path from 'node:path';
 export const apiVersion = 1;
 export function generate(context) {
@@ -63,8 +77,9 @@ export function generate(context) {
   return { apiVersion: 1, artifacts: [artifact], manifestPaths: [], watchInputs: [input] };
 }
 `);
+  listProjectDependencies(root, ['@fixture/counter']);
   const yaml = path.join(root, 'golem.yaml');
-  fs.writeFileSync(yaml, `${fs.readFileSync(yaml, 'utf8')}generators:\n  - package: '@fixture/counter'\n    output: out\n`);
+  fs.writeFileSync(yaml, `${fs.readFileSync(yaml, 'utf8')}counter: {}\n`);
 }
 
 /** A serde project (the shared money model and its generated files, as `golem generate` writes them); the caller adds sources. */

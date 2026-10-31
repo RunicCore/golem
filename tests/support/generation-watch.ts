@@ -6,7 +6,7 @@ import { type TestContext } from 'node:test';
 import { watchPipeline } from '#golem/cli';
 import type { WatchOptions } from '#golem/watch';
 import { resolveTypeScript } from '#golem/typescript-version';
-import { workspace } from './process.js';
+import { linkGolemPackages } from '../fixture-project.js';
 import { writeFixture } from './consumer.js';
 
 // Tests that count the TypeScript 7 compiler's server processes and sessions, which TypeScript 6 does not have, skip on this.
@@ -17,11 +17,8 @@ export const skipOnTypeScript6 = resolveTypeScript(process.env.GOLEM_TYPESCRIPT_
 export function generationWatchFixture(t: TestContext): { root: string; config: string } {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'golem-watch-')));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  fs.mkdirSync(path.join(root, 'node_modules/@exprtlabs'), { recursive: true });
-  for (const name of ['golem', 'golem-model', 'golem-openapi']) {
-    fs.symlinkSync(path.join(workspace, 'packages', name), path.join(root, 'node_modules/@exprtlabs', name), 'dir');
-  }
   fs.writeFileSync(path.join(root, 'package.json'), '{"name":"watch-fixture","type":"module"}');
+  linkGolemPackages(root, ['golem', 'golem-model', 'golem-openapi']);
   writeFixture(root, { mobx: false, validation: true });
   const config = path.join(root, 'golem.yaml');
   fs.writeFileSync(config, fs.readFileSync(config, 'utf8').replace(

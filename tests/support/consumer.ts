@@ -2,16 +2,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { GolemProfile } from '@exprtlabs/golem/generator-api';
 import type { TestContext } from 'node:test';
-import { copyFixtureFile, createFixtureProject, linkProjectPackages } from '../fixture-project.js';
-import { workspace } from './process.js';
+import { copyFixtureFile, createFixtureProject, linkGolemPackages } from '../fixture-project.js';
 
-/** A fixture project whose node_modules link the workspace packages golem, golem-model and golem-openapi, with `packageJson` as its package.json. */
+/** A fixture project whose node_modules link the workspace packages golem, golem-model and golem-openapi, with `packageJson` as its package.json plus a dependency on each of them that it does not list. */
 export function workspaceLinkedProject(t: TestContext, prefix: string, packageJson: string): string {
   const root = createFixtureProject(t, prefix);
-  linkProjectPackages(root, Object.fromEntries(
-    ['golem', 'golem-model', 'golem-openapi'].map(name => [`@exprtlabs/${name}`, path.join(workspace, 'packages', name)]),
-  ));
   fs.writeFileSync(path.join(root, 'package.json'), packageJson);
+  linkGolemPackages(root, ['golem', 'golem-model', 'golem-openapi']);
   return root;
 }
 
@@ -25,13 +22,14 @@ export function writeFixture(root: string, profile: GolemProfile, includeModels 
     'version: 1',
     `mobx: ${profile.mobx}`,
     `validation: ${profile.validation}`,
-    'openapi:',
-    '  - input: api.json',
-    '    output: sdk',
-    '    name: Profile',
-    // MobX needs the golem mode, which needs the models section.
-    ...(profile.mobx && includeModels ? ['    mode: golem'] : []),
-    ...(includeModels ? ['models:', '  root: .'] : []),
+    'openapi-ts:',
+    '  sdks:',
+    '    - input: api.json',
+    '      output: sdk',
+    '      name: Profile',
+    // MobX needs the golem mode, which needs the model block.
+    ...(profile.mobx && includeModels ? ['      mode: golem'] : []),
+    ...(includeModels ? ['model: {}'] : []),
     '',
   ].join('\n');
   fs.writeFileSync(path.join(root, 'golem.yaml'), configuration);

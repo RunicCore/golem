@@ -1,9 +1,8 @@
 version: 1
-mobx: false
 validation: true
-openapi:
-  - input: api.json
-    output: sdk
-    name: Profile
-models:
-  root: .
+openapi-ts:
+  sdks:
+    - input: api.json
+      output: sdk
+      name: Profile
+model: {}

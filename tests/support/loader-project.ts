@@ -11,7 +11,7 @@ import { command, workspace, type CommandResult } from './process.js';
 
 export const NODE_FLAGS = ['--import', '@exprtlabs/golem/register', '--experimental-strip-types', '--enable-source-maps'] as const;
 export const SERDE = '@exprtlabs/golem/serde';
-export const MODELS_YAML = 'version: 1\nmobx: false\nvalidation: false\nmodels:\n  root: .\n';
+export const MODELS_YAML = 'version: 1\nvalidation: false\nmodel: {}\n';
 
 /** Under Node's type stripping every relative import names its `.ts` file. */
 export const MAIN = `import { parse, stringify } from '${SERDE}';

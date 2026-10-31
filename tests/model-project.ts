@@ -6,6 +6,7 @@ import { command, golem, type CommandOptions, type CommandResult } from './suppo
 import {
   createFixtureProject,
   linkProjectPackages,
+  listProjectDependencies,
   type FixtureScope,
 } from './fixture-project.js';
 import type { SourceFragment } from './source-template.js';
@@ -44,12 +45,16 @@ export function createModelProject(t: FixtureScope, options: ModelProjectOptions
     }),
   };
   fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify(packageManifest));
+  // The project lists the golem packages it links, golem-model for its `model:` block among them.
+  const golemPackages = new Set(['@exprtlabs/golem', '@exprtlabs/golem-model', ...Object.keys(options.packages ?? {}).filter((name) => name.startsWith('@exprtlabs/'))]);
+  listProjectDependencies(root, [...golemPackages]);
 
   if (options.linkWorkspaceNodeModules) {
     fs.symlinkSync(path.join(workspace, 'node_modules'), path.join(root, 'node_modules'), 'dir');
   } else {
     const packages: Record<string, string> = {
       '@exprtlabs/golem': path.join(workspace, 'packages/golem'),
+      '@exprtlabs/golem-model': path.join(workspace, 'packages/golem-model'),
       ...(options.linkTypescript ? { typescript: path.join(workspace, 'node_modules/typescript') } : {}),
       ...options.packages,
     };
@@ -87,12 +92,12 @@ export function writeModelSources(
 }
 
 /** The smallest golem.yaml `golem build` reads: it names the tsconfig beside it by default. */
-export const MINIMAL_GOLEM_YAML = 'version: 1\nmodels:\n  root: .\n';
+export const MINIMAL_GOLEM_YAML = 'version: 1\nmodel: {}\n';
 
 /** The golem.yaml of a project whose models job generates with `profile`: the profile its own `generate` calls used, so a build regenerates the same files. `exact` is the root default for the `exact` model option, not a profile key. */
 export function writeModelGolemYaml(root: string, profile: Readonly<{ mobx?: boolean; validation?: boolean | 'sanity'; allowAny?: boolean; exact?: boolean }>): void {
-  const keys = Object.entries(profile).map(([key, value]) => `${key}: ${String(value)}\n`).join('');
-  fs.writeFileSync(path.join(root, 'golem.yaml'), `version: 1\n${keys}models:\n  root: .\n`);
+  const keys = Object.entries(profile).filter(([key, value]) => key !== 'mobx' || value !== false).map(([key, value]) => `${key}: ${String(value)}\n`).join('');
+  fs.writeFileSync(path.join(root, 'golem.yaml'), `version: 1\n${keys}model: {}\n`);
 }
 
 /** Write the project's golem.yaml for `profile` and run `golem build` on it. */
@@ -125,10 +130,11 @@ export async function buildModelProject(
 ): Promise<CommandResult> {
   const config = path.join(root, 'golem.yaml');
   if (!fs.existsSync(config)) fs.writeFileSync(config, MINIMAL_GOLEM_YAML);
-  // The build runs the models job, which the project installs; a project that links the workspace's node_modules has it.
+  // The build runs the models job, which the project installs and lists; a project that links the workspace's node_modules has it.
   if (!fs.lstatSync(path.join(root, 'node_modules'), { throwIfNoEntry: false })?.isSymbolicLink()) {
     linkProjectPackages(root, { '@exprtlabs/golem-model': path.join(workspace, 'packages/golem-model') });
   }
+  listProjectDependencies(root, ['@exprtlabs/golem-model']);
   const flags = args.map((arg) => {
     if (!/^--[A-Za-z]+$/.test(arg)) throw new Error(`buildModelProject takes boolean compiler flags only, not ${arg}`);
     return arg.slice(2);
