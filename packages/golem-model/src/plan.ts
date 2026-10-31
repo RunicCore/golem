@@ -8,6 +8,9 @@ import { canonicalPath, CODECS_HOST, displayPath, isInsideDirectory, isRecord, M
 /** What the generator receives: the context of the models job without what the host adds. */
 export type ModelOptions = Omit<ModelContext, 'onInput' | 'session'>;
 
+/** The golem.yaml key of the block that this package registers (`golem.block` in its package.json). */
+export const MODEL_BLOCK = 'model';
+
 /** The file-name endings of a model file when the block lists none. */
 export const DEFAULT_MODEL_SUFFIXES: readonly string[] = ['.model.ts', '.models.ts'];
 

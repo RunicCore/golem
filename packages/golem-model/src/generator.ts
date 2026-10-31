@@ -12,7 +12,7 @@ import type {
 import { buildCodecValidationPlan, compileLevel, compileSdkValidators, type CodecSchemaClosureEntry } from '@exprtlabs/golem/internal/validation-plan';
 import { GolemDiagnosticSeverity, compareText, isInsideDirectory, resolveProfile, type GolemDiagnostic, type ResolvedGolemProfile } from '@exprtlabs/golem/generator-api';
 import { canonicalPath, displayPath } from '@exprtlabs/golem/internal/generator-support';
-import { DEFAULT_MODEL_SUFFIXES, outsideModelsRootMessage } from './plan.js';
+import { DEFAULT_MODEL_SUFFIXES, MODEL_BLOCK, outsideModelsRootMessage } from './plan.js';
 import { codecKeysPath, defaultModelOutput } from '@exprtlabs/golem/internal/generated-paths';
 import { AmbiguousUnionConversionError, ObjectUnionDiscriminatorError, reachesRecursiveNode } from '@exprtlabs/golem/internal/emitter';
 import { emitCodecDeclarationTable } from '@exprtlabs/golem/internal/schema-graph';
@@ -56,7 +56,7 @@ import {
   isModelSource,
   isOwnModelFile,
   modelBoundary,
-  nestedModelsJobs,
+  nestedJobsOfBlock,
   portableRelativeFilename,
   projectWatchInputs,
   retainedProgramSession,
@@ -456,7 +456,7 @@ export function generate(context: GolemModelContext): GolemModelResult {
     ? discovered
     : [...new Set([...discovered, ...programModelFiles])].sort();
   const ownCandidates = candidates.filter((source) => isOwnModelFile(boundary, source));
-  const nested = nestedModelsJobs(boundary.root, canonicalPath(normalized.directory), ownCandidates, normalized.onInput);
+  const nested = nestedJobsOfBlock(MODEL_BLOCK, boundary.root, canonicalPath(normalized.directory), ownCandidates, normalized.onInput);
   if (nested.length > 0) {
     throw new Error(`RUNM1077: ${nested.map(displayPath).join(', ')} ${nested.length === 1 ? 'declares' : 'declare'} a models job below the models root ${displayPath(boundary.root)}, where the models job of ${displayPath(join(normalized.directory, 'golem.yaml'))} already generates the same model files. Two jobs would write one generated file. Remove the models job from ${nested.length === 1 ? 'it' : 'each'}, or move the folder out of the models root.`);
   }

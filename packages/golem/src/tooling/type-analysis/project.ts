@@ -6,6 +6,7 @@ import { assertNotSolutionTsconfig } from '../typescript-config.js';
 import { readManifest } from './package-specifier.js';
 import { DEFAULT_MODEL_SUFFIXES, displayPath, GolemDiagnosticSeverity, canonicalPath, compareText, discoverSources, hasErrorCode, isInsideDirectory, parseYamlFile, suffixPattern, YamlFileError, type GeneratorSession, type GolemDiagnostic, type InputObserver } from '../generator-core.js';
 import { canonicalFilename, inNodeModules, portableRelativeFilename } from './path-identity.js';
+import { ROOT_KEYS } from '../editor-schema.js';
 
 export { canonicalFilename, portableRelativeFilename };
 
@@ -135,32 +136,30 @@ export function isOwnModelFile(boundary: ModelBoundary, filename: string): boole
 }
 
 /**
- * The golem.yaml files of other models jobs below the root that cover one of `files`, sorted. A file is covered when such a
- * yaml lies in the file's directory or in a directory above it, up to the root. The walk stops at the directory of this
- * job's own golem.yaml: that one and every one above it is never another job. The answer for a directory is read once.
+ * The golem.yaml files below the root that declare the block `block` and cover one of `files`, sorted: another job of the caller's
+ * block would write the same files. A file is covered when such a yaml lies in the file's directory or in a directory above it,
+ * up to the root. The walk stops at the directory of this job's own golem.yaml: that one and every one above it is never another
+ * job. The answer for a directory is read once.
  */
-export function nestedModelsJobs(root: string, own: string, files: readonly string[], onInput?: InputObserver): string[] {
-  const hasModelsJob = new Map<string, boolean>();
-  const directoryHasModelsJob = (directory: string): boolean => {
-    const known = hasModelsJob.get(directory);
+export function nestedJobsOfBlock(block: string, root: string, own: string, files: readonly string[], onInput?: InputObserver): string[] {
+  const hasBlock = new Map<string, boolean>();
+  const directoryHasBlock = (directory: string): boolean => {
+    const known = hasBlock.get(directory);
     if (known !== undefined) return known;
-    const found = declaresModelsJob(join(directory, 'golem.yaml'), onInput);
-    hasModelsJob.set(directory, found);
+    const found = declaresBlock(join(directory, 'golem.yaml'), block, onInput);
+    hasBlock.set(directory, found);
     return found;
   };
   const found = new Set<string>();
   for (const file of files) {
     for (let directory = dirname(canonicalPath(file)); isInsideDirectory(root, directory); directory = dirname(directory)) {
       if (directory === own || own.startsWith(`${directory}${sep}`)) break;
-      if (directoryHasModelsJob(directory)) found.add(join(directory, 'golem.yaml'));
+      if (directoryHasBlock(directory)) found.add(join(directory, 'golem.yaml'));
       if (directory === root || dirname(directory) === directory) break;
     }
   }
   return [...found].sort();
 }
-
-/** The job keys of a golem.yaml: a file with one of them configures an app. */
-const JOB_KEYS = ['generators', 'controllers', 'openapi', 'models'] as const;
 
 /** The parsed `golemYaml`, or undefined when it does not exist. Throws the parse error or the file-read error. */
 function readGolemYaml(golemYaml: string, onInput?: InputObserver): unknown {
@@ -175,9 +174,15 @@ function declaresAny(configuration: unknown, keys: readonly string[]): boolean {
     && keys.some((key) => Reflect.get(configuration, key) !== null && Reflect.get(configuration, key) !== undefined);
 }
 
-/** Whether `golemYaml` exists and has a `models` job. A file that is not YAML is the project's to fix: its parse error stops the run. */
-function declaresModelsJob(golemYaml: string, onInput?: InputObserver): boolean {
-  return declaresAny(readGolemYaml(golemYaml, onInput), ['models']);
+/** Whether `configuration` has a value under a key that is no root key of core: any such key is the block of a package, so the file configures an app. */
+function declaresAnyBlock(configuration: unknown): boolean {
+  return typeof configuration === 'object' && configuration !== null
+    && declaresAny(configuration, Object.keys(configuration).filter((key) => !ROOT_KEYS.includes(key)));
+}
+
+/** Whether `golemYaml` exists and has the block `block`. A file that is not YAML is the project's to fix: its parse error stops the run. */
+function declaresBlock(golemYaml: string, block: string, onInput?: InputObserver): boolean {
+  return declaresAny(readGolemYaml(golemYaml, onInput), [block]);
 }
 
 /**
@@ -281,7 +286,7 @@ function ignoredGolemYamlMessage(golemYaml: string, modelFile: string): string {
   const ignored = `${displayPath(golemYaml)} is a golem.yaml in the shared folder of the model file ${displayPath(modelFile)}. Golem does not read it.`;
   let belongsToAnApp = false;
   try {
-    belongsToAnApp = declaresAny(readGolemYaml(golemYaml), JOB_KEYS);
+    belongsToAnApp = declaresAnyBlock(readGolemYaml(golemYaml));
   } catch (error) {
     // Golem ignores this file, so a file that is not YAML or that it cannot read is ignored like any other.
     if (!(error instanceof YamlFileError || ['EACCES', 'EPERM', 'EISDIR', 'ENOENT'].some((code) => hasErrorCode(error, code)))) throw error;
