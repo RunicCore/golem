@@ -139,7 +139,7 @@ test('a job root outside the directory of the yaml tsconfig fails in golem gener
   fs.writeFileSync(path.join(root, 'app/tsconfig.json'), JSON.stringify({ extends: '../tsconfig.json', include: ['../src/**/*.ts'] }));
   const yaml = path.join(root, 'golem.yaml');
   const outside = (error: Error): boolean => {
-    assert.equal(error.message, `job root ${path.relative(process.cwd(), fs.realpathSync(root))} is outside ${path.relative(process.cwd(), path.join(fs.realpathSync(root), 'app'))}; use one golem.yaml per tsconfig.`);
+    assert.equal(error.message, `Job model: root ${path.relative(process.cwd(), fs.realpathSync(root))} is outside ${path.relative(process.cwd(), path.join(fs.realpathSync(root), 'app'))}; use one golem.yaml per tsconfig.`);
     return true;
   };
   await assert.rejects(runPipeline(yaml), outside);

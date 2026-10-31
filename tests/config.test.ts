@@ -182,7 +182,7 @@ test('an output that the app imports lies inside the tsconfig directory, and not
   const filename = path.join(root, 'project/golem.yaml');
   fs.writeFileSync(filename, `version: 1\n${SHOP('    - { id: models, outputs: [{ path: ../outside, kind: folder, importedByApp: true }] }\n')}`);
   assert.throws(() => resolveConfig(filename), (error: unknown) => error instanceof JobRuleError && error.rule === 'containment'
-    && error.message === `Job models: output ${path.join(root, 'outside')} is outside the tsconfig directory ${path.join(root, 'project')}. Move it inside.`);
+    && error.message === `Job models: output ${path.relative(process.cwd(), path.join(root, 'outside'))} is outside the tsconfig directory ${path.relative(process.cwd(), path.join(root, 'project'))}. Move it inside.`);
   assert.deepEqual(fs.readdirSync(path.join(root, 'outside')), []);
 });
 

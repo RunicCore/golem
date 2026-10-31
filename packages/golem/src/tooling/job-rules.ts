@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { MODEL_BOUNDARY } from './job-facts.js';
-import { isInsideDirectory } from './plan-support.js';
+import { displayPath, isInsideDirectory } from './plan-support.js';
 import type { JobFacts, JobOutput, JobPlan, JobRuleContext, ProgramView } from './job-facts.js';
 
 /** The rule a config broke. */
@@ -52,13 +52,13 @@ function checkOutputs(jobs: readonly JobFacts[], context: JobRuleContext): void 
   const owned = path.join(path.dirname(context.configFile), '.golem');
   const outputs = jobs.flatMap(job => job.outputs.map((output): [string, JobOutput] => [job.id, output]));
   for (const [id, output] of outputs) {
-    if (overlaps(output.path, context.configFile)) throw new JobRuleError('reserved-output', `Job ${id}: output ${output.path} holds golem.yaml, which golem owns.`, [id]);
-    if (overlaps(output.path, owned)) throw new JobRuleError('reserved-output', `Job ${id}: output ${output.path} overlaps the .golem folder, which golem owns.`, [id]);
+    if (overlaps(output.path, context.configFile)) throw new JobRuleError('reserved-output', `Job ${id}: output ${displayPath(output.path)} holds golem.yaml, which golem owns.`, [id]);
+    if (overlaps(output.path, owned)) throw new JobRuleError('reserved-output', `Job ${id}: output ${displayPath(output.path)} overlaps the .golem folder, which golem owns.`, [id]);
   }
   for (const [index, [id, output]] of outputs.entries()) {
     for (const [otherId, other] of outputs.slice(index + 1)) {
       if (overlaps(output.path, other.path)) {
-        throw new JobRuleError('overlap', `Overlapping outputs: ${output.path} (job ${id}) and ${other.path} (job ${otherId}).`, [...new Set([id, otherId])]);
+        throw new JobRuleError('overlap', `Overlapping outputs: ${displayPath(output.path)} (job ${id}) and ${displayPath(other.path)} (job ${otherId}).`, [...new Set([id, otherId])]);
       }
     }
   }
@@ -69,11 +69,11 @@ function checkContainment(jobs: readonly JobFacts[], context: JobRuleContext): v
   const directory = context.tsconfigDirectory;
   for (const job of jobs) {
     for (const root of [...job.ownedRoots, ...(job.scanRoots ?? [])]) {
-      if (!isInsideDirectory(directory, root)) throw new JobRuleError('containment', `Job ${job.id}: root ${root} is outside ${directory}; use one golem.yaml per tsconfig.`, [job.id]);
+      if (!isInsideDirectory(directory, root)) throw new JobRuleError('containment', `Job ${job.id}: root ${displayPath(root)} is outside ${displayPath(directory)}; use one golem.yaml per tsconfig.`, [job.id]);
     }
     for (const output of job.outputs) {
       if (output.importedByApp === true && !isInsideDirectory(directory, output.path)) {
-        throw new JobRuleError('containment', `Job ${job.id}: output ${output.path} is outside the tsconfig directory ${directory}. Move it inside.`, [job.id]);
+        throw new JobRuleError('containment', `Job ${job.id}: output ${displayPath(output.path)} is outside the tsconfig directory ${displayPath(directory)}. Move it inside.`, [job.id]);
       }
     }
   }

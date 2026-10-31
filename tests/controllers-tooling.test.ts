@@ -204,7 +204,7 @@ test('a docs root must lie inside the directory of the yaml tsconfig, and the jo
   for (const directory of ['app', 'other']) fs.mkdirSync(path.join(root, directory));
   fs.writeFileSync(path.join(root, 'app/tsconfig.json'), '{}');
   writeConfig(config, `tsconfig: app/tsconfig.json\n${docs('api.json').replace('- output:', '- root: other\n      output:')}`);
-  assert.throws(() => loadConfig(config), new RegExp(`Job docs:api\\.json: root ${path.join(root, 'other')} is outside ${path.join(root, 'app')}; use one golem.yaml per tsconfig\\.`));
+  assert.throws(() => loadConfig(config), new RegExp(`Job docs:api\\.json: root ${path.relative(process.cwd(), path.join(root, 'other'))} is outside ${path.relative(process.cwd(), path.join(root, 'app'))}; use one golem.yaml per tsconfig\\.`));
 
   fs.writeFileSync(path.join(root, 'tsconfig.json'), '{}');
   fs.writeFileSync(path.join(root, 'tsconfig.app.json'), '{}');

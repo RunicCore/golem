@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
+import path from 'node:path';
 import test from 'node:test';
 import type { JobFacts, JobOutput, ProgramView } from '#golem/job-facts';
 import { JobRuleError, resolveJobPlan } from '#golem/job-rules';
+
+/** A path as the messages print it: relative to the working directory. */
+const shown = (filename: string): string => path.relative(process.cwd(), filename);
 
 const context = { configFile: '/app/golem.yaml', tsconfigDirectory: '/app' };
 const documentFile = '/app/api/payments.yaml';
@@ -220,14 +224,14 @@ test('contracts: ModelBoundary is optional when no job needs it', () => {
 
 test('overlap: exclusive outputs that equal or hold each other stop loading and name both jobs', () => {
   // protects: page overlap rule
-  const message = 'Overlapping outputs: /app/sdk (job sdk) and /app/sdk/api.yaml (job docs).';
+  const message = `Overlapping outputs: ${shown('/app/sdk')} (job sdk) and ${shown('/app/sdk/api.yaml')} (job docs).`;
   assert.throws(
     () => resolveJobPlan([sdk('/app/sdk', false), job('docs', { outputs: [file('/app/sdk/api.yaml')] })], context),
     rejection('overlap', ['sdk', 'docs'], message),
   );
   assert.throws(
     () => resolveJobPlan([sdk('/app/sdk', false), generator('/app/sdk')], context),
-    rejection('overlap', ['sdk', 'gen'], 'Overlapping outputs: /app/sdk (job sdk) and /app/sdk (job gen).'),
+    rejection('overlap', ['sdk', 'gen'], `Overlapping outputs: ${shown('/app/sdk')} (job sdk) and ${shown('/app/sdk')} (job gen).`),
   );
 });
 
@@ -239,16 +243,16 @@ test('overlap: folders whose names share a prefix do not overlap, and an SDK ins
 
 test('reserved outputs: no output holds golem.yaml or lies in the .golem folder', () => {
   // protects: page overlap rule, golem.yaml and .golem/ belong to core
-  assert.throws(() => resolveJobPlan([job('docs', { outputs: [file('/app/golem.yaml')] })], context), rejection('reserved-output', ['docs'], 'Job docs: output /app/golem.yaml holds golem.yaml, which golem owns.'));
-  assert.throws(() => resolveJobPlan([generator('/app/.golem/cache')], context), rejection('reserved-output', ['gen'], 'Job gen: output /app/.golem/cache overlaps the .golem folder, which golem owns.'));
-  assert.throws(() => resolveJobPlan([generator('/app')], context), rejection('reserved-output', ['gen'], 'Job gen: output /app holds golem.yaml, which golem owns.'));
+  assert.throws(() => resolveJobPlan([job('docs', { outputs: [file('/app/golem.yaml')] })], context), rejection('reserved-output', ['docs'], `Job docs: output ${shown('/app/golem.yaml')} holds golem.yaml, which golem owns.`));
+  assert.throws(() => resolveJobPlan([generator('/app/.golem/cache')], context), rejection('reserved-output', ['gen'], `Job gen: output ${shown('/app/.golem/cache')} overlaps the .golem folder, which golem owns.`));
+  assert.throws(() => resolveJobPlan([generator('/app')], context), rejection('reserved-output', ['gen'], `Job gen: output ${shown('/app')} holds golem.yaml, which golem owns.`));
 });
 
 test('containment: a job root outside the tsconfig folder stops loading (F-42)', () => {
   // protects: F-42 one golem.yaml serves one tsconfig
   assert.throws(
     () => resolveJobPlan([job('models', { ownedRoots: ['/other/app'] })], context),
-    rejection('containment', ['models'], 'Job models: root /other/app is outside /app; use one golem.yaml per tsconfig.'),
+    rejection('containment', ['models'], `Job models: root ${shown('/other/app')} is outside ${shown('/app')}; use one golem.yaml per tsconfig.`),
   );
 });
 
@@ -257,7 +261,7 @@ test('containment: an output the app imports lies inside the tsconfig folder, an
   const imported: JobFacts = job('models', { outputs: [{ path: '/other/models', kind: 'folder', importedByApp: true }] });
   assert.throws(
     () => resolveJobPlan([imported], context),
-    rejection('containment', ['models'], 'Job models: output /other/models is outside the tsconfig directory /app. Move it inside.'),
+    rejection('containment', ['models'], `Job models: output ${shown('/other/models')} is outside the tsconfig directory ${shown('/app')}. Move it inside.`),
   );
   assert.deepEqual(order([generator('/other/gen')]), ['gen']);
 });
@@ -274,7 +278,7 @@ test('containment: a scan root outside the tsconfig folder stops loading (F-42)'
   // protects: F-42 a read-only folder of the doc job lies inside the tsconfig folder like an owned root
   assert.throws(
     () => resolveJobPlan([job('docs', { scanRoots: ['/other/app'] })], context),
-    rejection('containment', ['docs'], 'Job docs: root /other/app is outside /app; use one golem.yaml per tsconfig.'),
+    rejection('containment', ['docs'], `Job docs: root ${shown('/other/app')} is outside ${shown('/app')}; use one golem.yaml per tsconfig.`),
   );
 });
 
