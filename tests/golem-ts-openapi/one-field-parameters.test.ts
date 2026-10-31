@@ -122,6 +122,8 @@ const BODIES: readonly (readonly [string, string, boolean, unknown, string?])[] 
   ['same-field', "@Body('payment') one: TPayment, @Body('payment') two: TPayment", true, { type: 'object', properties: { payment: TPAYMENT }, required: ['payment'] }],
   // A closed model (the default) cannot share the body with a part that adds a property; an open one (exact: false) can.
   ['whole-and-field', "@Body() whole: TOpen, @Body('note') note: string", true, { allOf: [TOPEN, NOTE] }],
+  // A closed model beside an optional property is a valid body: only a required property it lacks makes the type empty.
+  ['closed-whole-and-optional-field', "@Body() whole: TPayment, @Body('note') note?: string", true, { allOf: [TPAYMENT, { type: 'object', properties: { note: { type: 'string' } } }] }],
   ['field-and-whole', "@Body('note') note: string, @Body() whole: TOpen", true, { allOf: [TOPEN, NOTE] }],
   ['whole-optional', '@Body() whole?: TPayment', false, TPAYMENT],
   ['whole-undefined', '@Body() whole: TPayment | undefined', false, TPAYMENT],
@@ -175,9 +177,9 @@ test('the controllers job stops only what the OpenAPI format cannot describe in 
   // protects: R-13 T-323 T-442 T-756 T-759 a parameter or body the format cannot hold stops generation with the reason; the interceptor limits do not; a closed model beside a part with a property it lacks is an empty type, named with both parts
   const cases: readonly (readonly [string, string, RegExp])[] = [
     ["  @Post() a(@Body('payment') one: TPayment, @Body('payment') two: TFilter): void {}", 'NEST1107', /@Body\("payment"\) is declared twice with different types, and a request body property has one schema/],
-    ["  @Post() a(@Body() whole: TPayment, @Body('note') note: string): void {}", 'NEST1107', /the whole @Body\(\) .*TPayment is a closed model.*the one-field @Body\("note"\) adds the property "note" that it does not declare/],
-    ["  @Post() a(@Body('note') note: string, @Body() whole: TPayment): void {}", 'NEST1107', /the whole @Body\(\) .*TPayment is a closed model.*the one-field @Body\("note"\) adds the property "note"/],
-    ["  @Post() a(@Body() whole: TPayment, @Body() other: TFilter): void {}", 'NEST1107', /the whole @Body\(\) .* is a closed model.*the whole @Body\(\) .* adds the property/],
+    ["  @Post() a(@Body() whole: TPayment, @Body('note') note: string): void {}", 'NEST1107', /the whole @Body\(\) .*TPayment is a closed model.*the one-field @Body\("note"\) requires the property "note" that it does not declare/],
+    ["  @Post() a(@Body('note') note: string, @Body() whole: TPayment): void {}", 'NEST1107', /the whole @Body\(\) .*TPayment is a closed model.*the one-field @Body\("note"\) requires the property "note"/],
+    ["  @Post() a(@Body() whole: TPayment, @Body() other: TFilter): void {}", 'NEST1107', /the whole @Body\(\) .* is a closed model.*the whole @Body\(\) .* requires the property/],
     ["  @Get() a(@Query('when') when: Date): void {}", 'NEST1107', /must be primitive/],
     ["  @Get() a(@Query('filter') filter: TFilter[]): void {}", 'NEST1107', /array of models.*does not define arrays in a deepObject.*Send the array in a @Body\./],
     ["  @Get() a(@Query('filter') filter: TTagged): void {}", 'NEST1107', /array field \(tags\).*@Body or in a whole @Query\(\) on OpenAPI 3\.2/],

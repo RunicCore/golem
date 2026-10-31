@@ -378,13 +378,13 @@ function resolvedSchema(context: OperationBuildContext, schema: OpenApiSchema, s
   return target === undefined ? undefined : resolvedSchema(context, target, new Set(seen).add(value.$ref));
 }
 
-/** The property names a schema declares, through references and `allOf`. Undefined when a part cannot be read. */
-function declaredProperties(context: OperationBuildContext, schema: OpenApiSchema): ReadonlySet<string> | undefined {
+/** The property names a schema declares (`key: 'properties'`) or requires (`key: 'required'`), through references and `allOf`. Undefined when a part cannot be read. */
+function propertyNames(context: OperationBuildContext, schema: OpenApiSchema, key: 'properties' | 'required'): ReadonlySet<string> | undefined {
   const value = resolvedSchema(context, schema);
   if (value === undefined) return undefined;
-  const names = new Set(Object.keys(record(value.properties) ?? {}));
+  const names = new Set(key === 'properties' ? Object.keys(record(value.properties) ?? {}) : (Array.isArray(value.required) ? value.required as string[] : []));
   for (const member of Array.isArray(value.allOf) ? value.allOf as OpenApiSchema[] : []) {
-    const inner = declaredProperties(context, member);
+    const inner = propertyNames(context, member, key);
     if (inner === undefined) return undefined;
     for (const name of inner) names.add(name);
   }
@@ -394,19 +394,20 @@ function declaredProperties(context: OperationBuildContext, schema: OpenApiSchem
 /**
  * The parts of a request body as one schema: a part that repeats appears once,
  * and several parts combine with `allOf`. A closed part (`additionalProperties:
- * false`, such as an exact model) beside a part that declares a property it
- * lacks is an empty type, which no document can describe.
+ * false`, such as an exact model) beside a part that requires a property it
+ * lacks is an empty type, which no document can describe. A part that only
+ * declares an optional property leaves a valid body.
  */
 function combineBodyParts(context: OperationBuildContext, parts: readonly BodyPartSchema[]): OpenApiSchema {
   const unique = parts.filter((part, index) => parts.findIndex(other => JSON.stringify(other.schema) === JSON.stringify(part.schema)) === index);
   if (unique.length === 1) return unique[0]!.schema;
   for (const closed of unique) {
     if (resolvedSchema(context, closed.schema)?.additionalProperties !== false) continue;
-    const declared = declaredProperties(context, closed.schema);
+    const declared = propertyNames(context, closed.schema, 'properties');
     for (const other of unique.filter(item => item !== closed)) {
-      const extra = [...declaredProperties(context, other.schema) ?? []].find(name => !declared?.has(name));
+      const extra = [...propertyNames(context, other.schema, 'required') ?? []].find(name => !declared?.has(name));
       if (extra === undefined) continue;
-      throw new TsToOpenApiError(diagnostic(other.node.getSourceFile(), other.node, TsToOpenApiDiagnosticCode.NonPortableParameter, `${closed.label} is a closed model (additionalProperties: false) and ${other.label} adds the property "${extra}" that it does not declare, so no request body can satisfy both and OpenAPI cannot describe the empty type. Declare the property in the model, make the model open with { exact: false }, or read the body in one whole @Body().`));
+      throw new TsToOpenApiError(diagnostic(other.node.getSourceFile(), other.node, TsToOpenApiDiagnosticCode.NonPortableParameter, `${closed.label} is a closed model (additionalProperties: false) and ${other.label} requires the property "${extra}" that it does not declare, so no request body can satisfy both and OpenAPI cannot describe the empty type. Declare the property in the model, make the model open with { exact: false }, or read the body in one whole @Body().`));
     }
   }
   return { allOf: unique.map(part => part.schema) };
