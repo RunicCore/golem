@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { providersFor, runPipeline } from '#golem/cli';
 import { loadConfig } from './support/load-config.js';
-import { createFixtureProject, linkProjectPackages } from './fixture-project.js';
+import { copyFixtureFile, createFixtureProject, linkProjectPackages, listProjectDependencies } from './fixture-project.js';
 import { command, golem, workspace } from './support/process.js';
 
 const VERSION = (JSON.parse(fs.readFileSync(path.join(workspace, 'packages/golem/package.json'), 'utf8')) as { version: string }).version;
@@ -89,6 +89,50 @@ test('a failing generator names its package and leaves earlier outputs and the i
   fs.writeFileSync(path.join(root, 'fail-generator'), '');
   await assert.rejects(runPipeline(config), /@fixture\/gen/);
   assert.deepEqual(files.map(file => fs.readFileSync(path.join(root, file), 'utf8')), before);
+});
+
+/** The project with the models job beside the generator: the generator writes into the model folder, and a new model source is one the models job has not read. */
+function modelProject(t: TestContext): { root: string; config: string; addModel: () => string } {
+  const { root, config } = project(t);
+  linkProjectPackages(root, { '@exprtlabs/golem-model': path.join(workspace, 'packages/golem-model') });
+  listProjectDependencies(root, ['@exprtlabs/golem-model']);
+  copyFixtureFile(root, 'packed/profile/tsconfig.json', 'tsconfig.json');
+  fs.appendFileSync(config, 'model:\n');
+  const addModel = (): string => {
+    const other = path.join(root, 'src/other.model.ts');
+    fs.writeFileSync(other, "import type { IModel } from '@exprtlabs/golem/model';\nimport { TOtherBaseModel } from './other.model.generated.js';\nexport type TOther = IModel<{ count: number }>;\nexport class Other extends TOtherBaseModel {}\n");
+    return other;
+  };
+  return { root, config, addModel };
+}
+
+test('an unrelated model change does not rerun the generator', async t => {
+  // protects: T-771 a new model source reruns the models job through its watch rule and no job that does not watch it
+  const { root, config, addModel } = modelProject(t);
+  const state = await runPipeline(config);
+  await runPipeline(config, { previous: state, changedInputs: [addModel()] });
+  assert.equal(fs.readFileSync(path.join(root, 'calls.txt'), 'utf8'), '1');
+  assert.equal(fs.existsSync(path.join(root, 'src/other.model.generated.ts')), true);
+});
+
+test('an edited package.json that the registry read reruns every job', async t => {
+  // protects: T-771 a change to a file the registry read can change which package registers a block, so no job is reused
+  const { root, config, addModel } = modelProject(t);
+  const state = await runPipeline(config);
+  const manifest = path.join(root, 'package.json');
+  fs.writeFileSync(manifest, fs.readFileSync(manifest, 'utf8').replace('"type"', '"private":true,"type"'));
+  await runPipeline(config, { previous: state, changedInputs: [addModel(), manifest] });
+  assert.equal(fs.readFileSync(path.join(root, 'calls.txt'), 'utf8'), '2');
+});
+
+test('a run that stops on a package.json it cannot read still reports that file as an input', async t => {
+  // protects: T-771 a first run that fails on the registry still records the files it read, so fixing the package.json starts a run
+  const { root, config } = project(t);
+  const manifest = path.join(root, 'package.json');
+  fs.writeFileSync(manifest, '{');
+  const inputs: string[] = [];
+  await assert.rejects(runPipeline(config, { onInput: input => { inputs.push(input); } }), /package\.json is not valid JSON/);
+  assert.deepEqual(inputs.filter(input => input.endsWith('package.json')), [manifest]);
 });
 
 // ---------------------------------------------------------------------------

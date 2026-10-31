@@ -100,7 +100,8 @@ export const plan: GolemPlanEntry<ModelOptions> = {
       provides: [MODEL_BOUNDARY, CODECS_HOST],
       needs: [],
       hooks: [],
-      watch: (sourceSuffixes ?? DEFAULT_MODEL_SUFFIXES).map(suffix => `**/*${suffix}`),
+      // A job with a list of sources reads those and no others. Otherwise a file with a model ending in a folder the job owns or has read is a source, whether or not a run has read it.
+      watch: sources ? [] : [{ suffixes: sourceSuffixes ?? DEFAULT_MODEL_SUFFIXES }],
     };
     const modelBoundary: ModelBoundaryValue = { root, directory, output, ...(sourceSuffixes ? { suffixes: sourceSuffixes } : {}) };
     const codecsHost: CodecsHostValue = { modelsOutput: output, configDirectory: directory };

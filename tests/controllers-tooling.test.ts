@@ -118,7 +118,7 @@ test('a docs job declares one exclusive output file, scans its root, reads the p
     hooks: [],
     watch: [],
   });
-  assert.deepEqual(second?.facts.watch, ['src/**/*.api.ts', 'src/**/*.route.mts']);
+  assert.deepEqual(second?.facts.watch, [{ folder: path.join(root, 'src'), suffixes: ['.api.ts', '.route.mts'] }]);
   assert.equal((first?.options as { openapiVersion: string }).openapiVersion, '3.2.0');
 });
 

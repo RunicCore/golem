@@ -20,6 +20,13 @@ export interface JobOutput {
   readonly importedByApp?: boolean;
 }
 
+/** One place a job looks for new files: the files below `folder` (absolute) with a name that ends with one of `suffixes`. */
+export interface WatchRule {
+  /** Absolute. Without it, each of the job's `watchFolders` applies. */
+  readonly folder?: string;
+  readonly suffixes: readonly string[];
+}
+
 export interface JobFacts {
   /** Unique among the jobs of one config. It names the job in every message. */
   readonly id: string;
@@ -44,13 +51,11 @@ export interface JobFacts {
   /** Names of the hooks this job offers to extensions. */
   readonly hooks: readonly string[];
   /**
-   * Patterns of the files whose change, or whose appearance, reruns this job. A pattern is a relative glob in the dialect of Node's `path.matchesGlob`
-   * (`*` and `?` stay inside one folder name, `**` crosses folders, `{a,b}` offers choices; a name with a leading dot is never matched by a wildcard).
-   * It matches the path from one of the job's `ownedRoots`, `scanRoots` or `inputFolders` to the file, so one pattern can name every model file below those folders.
-   * The watch lists only those folders, so a file elsewhere is never seen.
-   * A file that a job output holds never reruns a job by its name (`isJobOutput`). A file that the job read before reruns it without a pattern.
+   * Where a new file reruns this job. A file added or removed inside `folder` whose name ends with one of `suffixes` reruns it. Without a `folder`, each folder of
+   * `watchFolders` applies, so one entry can name every source below the folders the job owns, scans or reads. A file elsewhere is never seen.
+   * A file that a job output holds never reruns a job by its name (`isJobOutput`). A file that the job read before reruns it without an entry. An empty list means none.
    */
-  readonly watch: readonly string[];
+  readonly watch: readonly WatchRule[];
 }
 
 /** Whether `filename` lies in an output that one of `jobs` writes: the output file itself, or a file below an output folder. Such a file is generated, so core never reruns a job because of it. */
@@ -58,14 +63,37 @@ export function isJobOutput(jobs: readonly Pick<JobFacts, 'outputs'>[], filename
   return jobs.some(({ outputs }) => outputs.some(output => (output.kind === 'file' ? output.path === filename : within(output.path, filename))));
 }
 
-/** Whether a watch pattern of `job` matches `filename`, a file that no job output holds. */
-export function watchedBy(job: Pick<JobFacts, 'watch' | 'ownedRoots' | 'scanRoots' | 'inputFolders'>, filename: string): boolean {
-  return watchFolders(job).some(folder => within(folder, filename) && job.watch.some(pattern => path.matchesGlob(path.relative(folder, filename), pattern)));
+type WatchedJob = Pick<JobFacts, 'watch' | 'ownedRoots' | 'scanRoots' | 'inputFolders'>;
+
+/** The folders a rule applies to: its own, else the folders the job owns, scans or reads, and `observed`, the folders of the files it read in its last run. */
+function ruleFolders(job: WatchedJob, { folder }: WatchRule, observed: readonly string[]): readonly string[] {
+  return folder === undefined ? [...job.ownedRoots, ...job.scanRoots ?? [], ...job.inputFolders, ...observed] : [folder];
 }
 
-/** The folders a job's watch patterns apply to: the folders it owns, scans or reads. */
-export function watchFolders(job: Pick<JobFacts, 'ownedRoots' | 'scanRoots' | 'inputFolders'>): readonly string[] {
-  return [...job.ownedRoots, ...job.scanRoots ?? [], ...job.inputFolders];
+function ruleNames(job: WatchedJob, filename: string, observed: readonly string[]): boolean {
+  return job.watch.some(rule => rule.suffixes.some(suffix => filename.endsWith(suffix)) && ruleFolders(job, rule, observed).some(folder => within(folder, filename)));
+}
+
+/**
+ * The jobs a file reruns by name, for a file that no run has read: a job whose watch rule has the file inside its folder and its name ending with one of its suffixes.
+ * A file that a job output holds is generated, so it reruns none. `observed` is each job's `observedFolders`; it lets a source added beside a file the job read outside
+ * its own folders, such as in a shared folder, rerun it.
+ */
+export function watchingJobs<Job extends WatchedJob & Pick<JobFacts, 'id' | 'outputs'>>(jobs: readonly Job[], filename: string, observed: ReadonlyMap<string, readonly string[]>): Job[] {
+  if (isJobOutput(jobs, filename)) return [];
+  return jobs.filter(job => ruleNames(job, filename, observed.get(job.id) ?? []));
+}
+
+/** The folders of the files that job `id` read in its last run, from the run's map of each input to the jobs that read it. */
+export function observedFolders(dependencies: ReadonlyMap<string, ReadonlySet<string>>, id: string): readonly string[] {
+  const folders = new Set<string>();
+  for (const [input, jobs] of dependencies) if (jobs.has(id)) folders.add(path.dirname(input));
+  return [...folders];
+}
+
+/** The folders where a new file can match a watch rule of `job` without a run having read it: the watch lists them and their subfolders. */
+export function watchFolders(job: WatchedJob): readonly string[] {
+  return job.watch.flatMap(rule => ruleFolders(job, rule, []));
 }
 
 /** `plan-support` holds the same test, but it imports this file. */

@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { errorMessage, failureText } from './generator-core.js';
-import { isJobOutput, watchedBy, watchFolders } from './job-facts.js';
+import { isJobOutput, observedFolders, watchFolders, watchingJobs } from './job-facts.js';
 import type { JobFacts } from './job-facts.js';
 import { changedPaths, InputScan, InputWatcher, outsideFolder, OwnedOutputIndex, realInputFiles, RunBaseline } from './input-watcher.js';
 import type { InputFiles } from './input-watcher.js';
@@ -31,8 +31,10 @@ export function baselineBeforeRun(configFile: string): { readonly baseline: RunB
 /** What one watch looks at between two runs. */
 interface Watched {
   readonly root: string;
-  /** What each job declares: its watch patterns find a source that no run has read, and its outputs are generated files. */
+  /** What each job declares: its watch rules find a source that no run has read, and its outputs are generated files. */
   readonly jobs: readonly JobFacts[];
+  /** For each job id, the folders of the files it read in its last run. */
+  readonly observed: ReadonlyMap<string, readonly string[]>;
   /** The inputs it reads. */
   readonly inputs: ReadonlySet<string>;
   readonly scan: InputScan;
@@ -120,20 +122,20 @@ export function watchPipeline(initial: PipelineState | string, reportError: (err
     const descend: string[] = [];
     for (const job of config?.jobs ?? []) {
       for (const input of declaredInputs(job)) inputs.add(input);
-      // A job with watch patterns reads the sources below the folders its patterns apply to, so a source added to any of them starts a run.
-      if (job.facts.watch.length) descend.push(...watchFolders(job.facts));
+      // A job with watch rules reads the sources below the folders its rules apply to, so a source added to any of them starts a run.
+      descend.push(...watchFolders(job.facts));
     }
     // A new output directory can have been observed as missing during module
     // resolution. Its creation is output work, not a source edit. Adding a
     // source beneath it is still seen: the scan lists the names around the inputs.
     const known = new Set([...inputs].filter(input => !owned.covers(input)));
-    return { root, jobs: config?.jobs.map(job => job.facts) ?? [], inputs: known, scan: new InputScan(known, { root, descend }, inputFiles) };
+    return { root, jobs: config?.jobs.map(job => job.facts) ?? [], observed: new Map(config?.jobs.map(job => [job.id, observedFolders(state?.dependencies ?? new Map(), job.id)])), inputs: known, scan: new InputScan(known, { root, descend }, inputFiles) };
   };
   let watched = watch();
   const firstSnapshot = watcher.snapshotWatching(watched.scan);
   let previous = firstBaseline?.settle(firstSnapshot) ?? firstSnapshot;
-  /** Whether a changed path reruns a job: an input, or else a source that a watch pattern names and that was added or removed. A generated file and a name that is no source are not a change. */
-  const rerunsJob = (input: string): boolean => !isJobOutput(watched.jobs, input) && (watched.inputs.has(input) || watched.jobs.some(job => watchedBy(job, input)));
+  /** Whether a changed path reruns a job: an input, or else a source that a watch rule names and that was added or removed. A generated file and a name that is no source are not a change. */
+  const rerunsJob = (input: string): boolean => (watched.inputs.has(input) ? !isJobOutput(watched.jobs, input) : watchingJobs(watched.jobs, input, watched.observed).length > 0);
   const tick = async (installed: boolean): Promise<void> => {
     if (stopped) return;
     busy = true;

@@ -9,9 +9,9 @@ import type { FileChanges, Inventory, OutputFiles } from './outputs.js';
 import { absoluteRecordPath, golemCode, insideAny, inventoryPaths, JobInputs, jobIsCurrent, loadJobRecords, recordPath, registrationCode, sameSetup, saveJobRecords } from './job-cache.js';
 import type { JobRecord } from './job-cache.js';
 import { GolemDiagnosticSeverity, displayPath, errorMessage, isInsideDirectory, isRecord } from './generator-core.js';
-import { isJobOutput, watchedBy } from './job-facts.js';
+import { observedFolders, watchingJobs } from './job-facts.js';
 import { writeEditorSchema } from './editor-schema.js';
-import { loadPackageRegistry, registrationForBlock } from './package-registry.js';
+import { loadPackageRegistry, PackageRegistryError, registrationForBlock, registryFiles } from './package-registry.js';
 import { validateModelManifest } from './model-manifest-core.js';
 import type { GolemArtifact, GolemDiagnostic, GolemResult, GeneratorSession } from './generator-core.js';
 import { selectedTypeScript } from './typescript-selection.js';
@@ -314,8 +314,8 @@ function readsAny(config: GolemConfig, record: JobRecord, outputs: ReadonlySet<s
 
 /**
  * Select source consumers and then follow generated-artifact edges in pipeline order. A changed file reruns the jobs that read it
- * (the recorded reads and a declared input file) and the jobs whose watch patterns match it, which finds a file the last run did not
- * read: a new source. A file that a job output holds matches no pattern. A change to golem.yaml or to a file the registry read reruns every job.
+ * (the recorded reads and a declared input file) and the jobs whose watch rules name it, which finds a file the last run did not
+ * read: a new source. A file that a job output holds matches no rule. A change to golem.yaml or to a file the registry read reruns every job.
  */
 function affectedJobs(config: GolemConfig, options: PipelineOptions): ReadonlySet<string> | undefined {
   const previous = options.previous;
@@ -324,13 +324,12 @@ function affectedJobs(config: GolemConfig, options: PipelineOptions): ReadonlySe
   const changed = new Set(options.changedInputs.map(input => path.resolve(input)));
   if (changed.has(config.configFile) || loadPackageRegistry(config.configFile).files.some(file => changed.has(file))) return undefined;
   const facts = config.jobs.map(job => job.facts);
+  const observed = new Map(facts.map(job => [job.id, observedFolders(previous.dependencies, job.id)]));
   const affected = new Set<string>();
   for (const input of changed) {
     for (const id of previous.dependencies.get(input) ?? []) affected.add(id);
-    const generated = isJobOutput(facts, input);
-    for (const job of config.jobs) {
-      if (job.facts.inputFiles.includes(input) || (!generated && watchedBy(job.facts, input))) affected.add(job.id);
-    }
+    for (const job of config.jobs) if (job.facts.inputFiles.includes(input)) affected.add(job.id);
+    for (const job of watchingJobs(facts, input, observed)) affected.add(job.id);
   }
   // An unclassified input can be a previously missing resolution dependency.
   if (affected.size === 0) return undefined;
@@ -460,13 +459,20 @@ async function planPipeline(filename: string, run: PipelineRun): Promise<{ reado
   const requestedConfig = path.resolve(filename);
   let canonicalConfig: string | undefined;
   try { canonicalConfig = fs.realpathSync.native(requestedConfig); } catch { /* resolveConfig reports the missing/invalid file */ }
-  const config = resolveConfig(filename, input => {
-    const resolved = path.resolve(input);
-    // resolveConfig reports roots, sources, and generated inputs through the
-    // same observer as the YAML file. Classify those paths from their jobs
-    // below; only the YAML file itself is a config dependency.
-    if (resolved === requestedConfig || resolved === canonicalConfig) observer.observe(input);
-  });
+  let config: GolemConfig;
+  try {
+    config = resolveConfig(filename, input => {
+      const resolved = path.resolve(input);
+      // resolveConfig reports roots, sources, and generated inputs through the
+      // same observer as the YAML file. Classify those paths from their jobs
+      // below; only the YAML file itself is a config dependency.
+      if (resolved === requestedConfig || resolved === canonicalConfig) observer.observe(input);
+    });
+  } catch (error) {
+    // A run that stops on a package.json still records the files the registry read, so fixing one starts the next run.
+    if (error instanceof PackageRegistryError) for (const file of registryFiles(canonicalConfig ?? requestedConfig)) observer.observe(file);
+    throw error;
+  }
   options.onConfig?.(config);
   // A change to a file the registry read, or the appearance of one it looked for, can change which package registers a block.
   const registry = loadPackageRegistry(config.configFile);

@@ -12,6 +12,9 @@ export const REGISTRATION_API_VERSION = 2;
 
 /** A package.json or an installed package that the registry cannot use: the developer's input to fix. */
 export class PackageRegistryError extends Error {
+  /** The files the registry read or looked for before it stopped, when it stopped while it read them. */
+  files: readonly string[] = [];
+
   constructor(message: string, options?: { cause: unknown }) {
     super(message, options);
     this.name = 'PackageRegistryError';
@@ -249,7 +252,23 @@ export function loadPackageRegistry(configFile: string): PackageRegistry {
   if (cached && stillCurrent(cached)) return cached.registry;
   cache.delete(key);
   const stamps = new Map<string, string>();
-  const registry = buildRegistry(key, stamps);
+  let registry: PackageRegistry;
+  try {
+    registry = buildRegistry(key, stamps);
+  } catch (error) {
+    if (error instanceof PackageRegistryError) error.files = [...stamps.keys()];
+    throw error;
+  }
   cache.set(key, { stamps, registry });
   return registry;
+}
+
+/** The files the registry read or looked for, also when it stopped on a problem in one of them: a watch reloads the config when one is fixed. */
+export function registryFiles(configFile: string): readonly string[] {
+  try {
+    return loadPackageRegistry(configFile).files;
+  } catch (error) {
+    if (error instanceof PackageRegistryError) return error.files;
+    throw error;
+  }
 }

@@ -42,4 +42,4 @@ export type {
   ResolvedGolemProfile,
   SourceDiscoveryOptions,
 } from './generator-core.js';
-export type { JobFacts, JobOutput } from './job-facts.js';
+export type { JobFacts, JobOutput, WatchRule } from './job-facts.js';

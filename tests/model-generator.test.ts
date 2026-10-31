@@ -943,7 +943,7 @@ test('an empty model block scans from the golem.yaml folder, writes the default 
   assert.equal(job.package, '@exprtlabs/golem-model');
   assert.deepEqual(job.facts, {
     id: 'model', outputs: [{ path: output, kind: 'folder', importedByApp: true }], ownedRoots: [app], inputFiles: [], inputFolders: [], readsProgram: true,
-    provides: ['ModelBoundary', 'CodecsHost'], needs: [], hooks: [], watch: ['**/*.model.ts', '**/*.models.ts'],
+    provides: ['ModelBoundary', 'CodecsHost'], needs: [], hooks: [], watch: [{ suffixes: ['.model.ts', '.models.ts'] }],
   });
   assert.deepEqual(job.options, { root: app, directory: app, output, tsconfig: path.join(app, 'tsconfig.json'), profile: config.profile });
   assert.deepEqual(config.contracts, { ModelBoundary: { root: app, directory: app, output }, CodecsHost: { modelsOutput: output, configDirectory: app } });
@@ -955,7 +955,8 @@ test('model sources, suffixes and output reach the options and the boundary; the
   const { job, config } = modelJobOf(filename);
   assert.deepEqual(job.facts.outputs, [{ path: path.join(app, 'gen/models'), kind: 'folder', importedByApp: true }]);
   assert.deepEqual(job.facts.ownedRoots, [path.join(app, 'a/b'), path.join(app, 'a'), app]);
-  assert.deepEqual(job.facts.watch, ['**/*.entity.ts', '**/*.record.mts']);
+  // A job with a list of sources reads those files and no others: nothing is watched for new ones.
+  assert.deepEqual(job.facts.watch, []);
   assert.deepEqual(job.options, {
     root: app, directory: app, output: path.join(app, 'gen/models'), tsconfig: path.join(app, 'tsconfig.json'), profile: config.profile, exact: false,
     sources: [path.join(app, 'a/b/x.entity.ts'), path.join(app, 'a/y.record.mts')], suffixes: ['.entity.ts', '.record.mts'],
