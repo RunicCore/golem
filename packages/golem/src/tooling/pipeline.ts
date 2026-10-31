@@ -1,19 +1,18 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
 import { modelsRootOf, resolveConfig, validateConfigInputs } from './config.js';
 import type { GolemConfig, GolemJob } from './config.js';
 import { codecKeysPath } from './generated-paths.js';
 import { loadInventory, applyJob, removeRetiredJobs } from './outputs.js';
 import type { FileChanges, Inventory, OutputFiles } from './outputs.js';
-import { absoluteRecordPath, codeDigest, golemCode, insideAny, inventoryPaths, JobInputs, jobIsCurrent, loadJobRecords, recordPath, sameSetup, saveJobRecords } from './job-cache.js';
+import { absoluteRecordPath, golemCode, insideAny, inventoryPaths, JobInputs, jobIsCurrent, loadJobRecords, recordPath, registrationCode, sameSetup, saveJobRecords } from './job-cache.js';
 import type { JobRecord } from './job-cache.js';
-import { DEFAULT_CONTROLLER_SUFFIXES, DEFAULT_MODEL_SUFFIXES, GolemDiagnosticSeverity, displayPath, errorMessage, hasErrorCode, isInsideDirectory, isRecord, suffixPattern } from './generator-core.js';
-import { distTagForVersion } from './dist-tag.js';
+import { GolemDiagnosticSeverity, displayPath, errorMessage, isInsideDirectory, isRecord } from './generator-core.js';
+import { MODEL_BOUNDARY } from './job-facts.js';
+import { loadPackageRegistry, registrationForBlock } from './package-registry.js';
 import { validateModelManifest } from './model-manifest-core.js';
 import type { GolemArtifact, GolemDiagnostic, GolemResult, GeneratorSession } from './generator-core.js';
-import { assertRuntimeCompatible } from './runtime-compatibility.js';
 import { selectedTypeScript } from './typescript-selection.js';
 import { TypeScriptNotInstalledError } from './typescript-version.js';
 
@@ -132,58 +131,23 @@ export class GeneratorSessionResources implements Disposable {
   }
 }
 
-function golemVersion(): string {
-  // dist/tooling/pipeline.js → package.json of @exprtlabs/golem.
-  const manifest: unknown = JSON.parse(fs.readFileSync(new URL('../../package.json', import.meta.url), 'utf8'));
-  if (!isRecord(manifest) || typeof manifest.version !== 'string') throw new Error('@exprtlabs/golem package.json has no version.');
-  return manifest.version;
+/** The digest of the code of the package that registers the block of `job`. */
+function providerCode(config: GolemConfig, job: GolemJob): string {
+  return registrationCode(registrationForBlock(loadPackageRegistry(config.configFile), job.block));
 }
 
-/** The directory and manifest of the package that owns `filename`, found by walking up to its package.json. */
-function owningPackage(specifier: string, filename: string): { readonly directory: string; readonly manifest: Record<string, unknown> } {
-  for (let directory = path.dirname(filename); ; directory = path.dirname(directory)) {
-    const manifestFile = path.join(directory, 'package.json');
-    if (fs.existsSync(manifestFile)) {
-      const manifest: unknown = JSON.parse(fs.readFileSync(manifestFile, 'utf8'));
-      if (isRecord(manifest) && manifest.name === specifier) return { directory, manifest };
-    }
-    if (path.dirname(directory) === directory) throw new Error(`Cannot find the package.json of ${specifier}.`);
-  }
-}
-
-/** Version of the package that owns `filename`. */
-function packageVersion(specifier: string, filename: string): string {
-  const { manifest } = owningPackage(specifier, filename);
-  if (typeof manifest.version !== 'string') throw new Error(`${specifier} package.json has no version.`);
-  return manifest.version;
-}
-
-/** The digest of the code of the package that provides a job, or undefined when it cannot be resolved. */
-function providerCode(config: GolemConfig, job: GolemJob): string | undefined {
-  let directory: string;
-  try {
-    directory = owningPackage(job.package, createRequire(path.join(config.directory, 'package.json')).resolve(`${job.package}/generator`)).directory;
-  } catch {
-    return undefined;
-  }
-  return codeDigest(directory);
-}
-
-/** The providers of the configured jobs, or of the jobs named by `only`. */
+/**
+ * The providers of the configured jobs, or of the jobs named by `only`, loaded from the generator entry that the registry holds for the
+ * block of each job. One provider serves every job of its package. The registry has already checked the versions of every package.
+ */
 export async function providersFor(config: GolemConfig, only?: ReadonlySet<string>): Promise<ReadonlyMap<string, LoadedProvider>> {
-  const requireFromProject = createRequire(path.join(config.directory, 'package.json'));
+  const registry = loadPackageRegistry(config.configFile);
   const providers = new Map<string, LoadedProvider>();
   for (const job of config.jobs) {
     if (providers.has(job.package) || (only && !only.has(job.id))) continue;
-    let filename: string;
-    try { filename = requireFromProject.resolve(`${job.package}/generator`); }
-    catch (error) {
-      if (hasErrorCode(error, 'MODULE_NOT_FOUND')) throw new Error(`${job.kind} is configured but ${job.package} is not installed in ${displayPath(config.directory)}. Install it with npm install -D ${job.package}@${distTagForVersion(golemVersion())}.`);
-      throw new Error(`Cannot resolve ${job.package}/generator: ${errorMessage(error)}`);
-    }
-    // golem publishes its own packages in lockstep and a built-in generator needs the runtime of its own version; a third-party generator versions on its own.
-    if (job.kind !== 'generator') assertRuntimeCompatible({ name: '@exprtlabs/golem', version: golemVersion() }, { name: job.package, version: packageVersion(job.package, filename) });
-    const imported: unknown = await import(pathToFileURL(filename).href);
+    const registration = registrationForBlock(registry, job.block);
+    if (registration.generator === undefined) throw new Error(`${job.package} registers the golem block "${job.block}" but declares no golem.generator entry, so job ${job.id} cannot run.`);
+    const imported: unknown = await import(pathToFileURL(registration.generator).href);
     if (!isRecord(imported) || imported.apiVersion !== 1 || typeof imported.generate !== 'function') {
       throw new Error(`Incompatible generator ${job.package}: CLI supports API 1; installed provider reports ${isRecord(imported) ? String(imported.apiVersion) : 'unknown'}.`);
     }
@@ -193,17 +157,12 @@ export async function providersFor(config: GolemConfig, only?: ReadonlySet<strin
   return providers;
 }
 
-function validateResult(result: unknown, job: GolemJob): GolemResult {
+function validateResult(result: unknown, job: GolemJob, profile: GolemConfig['profile']): GolemResult {
   if (!isRecord(result) || !Array.isArray(result.artifacts) || !Array.isArray(result.manifestPaths) || !Array.isArray(result.watchInputs)) {
     throw new Error(`Invalid generator result from ${job.package}. Expected artifacts, manifestPaths and watchInputs.`);
   }
-  // OpenAPI's historical provider result carries apiVersion.  Controller
-  // providers are governed by the module-level API-1 export and may omit the
-  // redundant result field; an explicit incompatible value remains invalid.
-  if (job.kind === 'openapi' && result.apiVersion !== 1) {
-    throw new Error(`Invalid generator result from ${job.package}: expected API 1.`);
-  }
-  if (job.kind === 'controllers' && result.apiVersion !== undefined && result.apiVersion !== 1) {
+  // The module-level API-1 export governs a provider; its result may omit the redundant field, and an explicit incompatible value is invalid.
+  if (result.apiVersion !== undefined && result.apiVersion !== 1) {
     throw new Error(`Invalid generator result from ${job.package}: expected API 1.`);
   }
   const artifacts = result.artifacts.map((artifact: unknown): GolemArtifact => {
@@ -259,7 +218,7 @@ function validateResult(result: unknown, job: GolemJob): GolemResult {
     const artifact = artifacts.find(artifact => artifact.path === filename);
     if (!artifact) throw new Error(`${job.package} returned a manifest without an artifact: ${displayPath(filename)}`);
     const manifest = validateModelManifest(JSON.parse(artifact.content) as unknown, filename);
-    if (Object.entries(job.options.profile).some(([key, value]) => Reflect.get(manifest.profile, key) !== value)) {
+    if (Object.entries(profile).some(([key, value]) => Reflect.get(manifest.profile, key) !== value)) {
       throw new Error(`${job.package} returned a manifest with a different generation profile. Regenerate with a compatible provider.`);
     }
   }
@@ -306,13 +265,13 @@ interface RewriteRoot {
 
 /**
  * The project whose sources `golem check` scans: the tsconfig the golem.yaml names (`golem build` starts from the same
- * yaml). The scan borrows the compiler of the first models job, else of the first controllers job; a config with neither
- * opens its own, so an app that only calls an SDK is checked too. A yaml with no tsconfig file has no project.
+ * yaml). The scan borrows the compiler of the job that provides the models boundary, else of the first job that reads the program; a
+ * config with neither opens its own, so an app that only calls an SDK is checked too. A yaml with no tsconfig file has no project.
  */
 function rewriteRoot(config: GolemConfig): RewriteRoot {
-  const job = config.jobs.find((candidate): candidate is Extract<GolemJob, { kind: 'models' }> => candidate.kind === 'models')
-    ?? config.jobs.find((candidate): candidate is Extract<GolemJob, { kind: 'controllers' }> => candidate.kind === 'controllers');
-  return job ? { job, root: job.options.root } : { root: config.directory };
+  const job = config.jobs.find(candidate => candidate.facts.provides.includes(MODEL_BOUNDARY))
+    ?? config.jobs.find(candidate => candidate.facts.readsProgram);
+  return { ...(job ? { job } : {}), root: modelsRootOf(config) };
 }
 
 /**
@@ -333,11 +292,19 @@ async function loadRewriteScan(hasCompilerJob: boolean): Promise<typeof import('
   return import('./rewrite-scan.js');
 }
 
-/** The inputs a job names in its configuration, before it runs. */
+/** The inputs a job declares as facts, before it runs: the files and folders it reads, and the folders it owns. */
 function declaredInputs(job: GolemJob): readonly string[] {
-  if (job.kind === 'openapi') return [job.options.input];
-  if (job.kind === 'generator') return [];
-  return [job.options.root, ...(job.options.sources ?? [])];
+  return [...job.facts.inputFiles, ...job.facts.inputFolders, ...job.facts.ownedRoots];
+}
+
+/** What the watcher calls the kind of a job's inputs: the models boundary provider's inputs are `models`, which a model-only run keeps apart; core knows no other kind. */
+function inputKindOf(job: GolemJob): InputKind {
+  return job.facts.provides.includes(MODEL_BOUNDARY) ? 'models' : 'generator';
+}
+
+/** Whether `output`, written by a job that reruns, is read by `consumer` as one of its declared files or inside one of its declared folders. */
+function readsOutput(consumer: GolemJob, output: string): boolean {
+  return consumer.facts.inputFiles.includes(output) || consumer.facts.inputFolders.some(folder => isInsideDirectory(folder, output));
 }
 
 /** Whether a record's inputs include any of `outputs`: a job downstream of one that ran. */
@@ -345,7 +312,10 @@ function readsAny(config: GolemConfig, record: JobRecord, outputs: ReadonlySet<s
   return Object.keys(record.inputs).some(input => outputs.has(absoluteRecordPath(config, input)));
 }
 
-/** Select source consumers and then follow generated-artifact edges in pipeline order. */
+/**
+ * Select source consumers and then follow generated-artifact edges in pipeline order. A changed file reruns the jobs that read it
+ * (the recorded reads, and a declared input file). The watch patterns of a job, which find a file the last run did not read, are not applied here yet.
+ */
 function affectedJobs(config: GolemConfig, options: PipelineOptions): ReadonlySet<string> | undefined {
   const previous = options.previous;
   if (!previous || !options.changedInputs || options.check) return undefined;
@@ -355,15 +325,8 @@ function affectedJobs(config: GolemConfig, options: PipelineOptions): ReadonlySe
   const affected = new Set<string>();
   for (const input of changed) {
     for (const id of previous.dependencies.get(input) ?? []) affected.add(id);
-    // Newly discovered source files do not have dependency records yet.
     for (const job of config.jobs) {
-      if (job.kind === 'openapi') {
-        if (input === job.options.input) affected.add(job.id);
-      } else if (job.kind === 'generator') {
-        // A generator job has no input pattern; it reruns from its recorded watchInputs or a config change.
-      } else if (job.options.sources?.includes(input)
-        || (!job.options.sources && isInsideDirectory(path.join(job.options.root, 'src'), input)
-          && suffixPattern(job.options.suffixes ?? (job.kind === 'controllers' ? DEFAULT_CONTROLLER_SUFFIXES : DEFAULT_MODEL_SUFFIXES)).test(path.basename(input)))) affected.add(job.id);
+      if (job.facts.inputFiles.includes(input)) affected.add(job.id);
     }
   }
   // An unclassified input can be a previously missing resolution dependency.
@@ -375,7 +338,7 @@ function affectedJobs(config: GolemConfig, options: PipelineOptions): ReadonlySe
     for (const output of outputs) {
       for (const consumer of previous.dependencies.get(output) ?? []) affected.add(consumer);
       for (const consumer of config.jobs) {
-        if (consumer.kind === 'openapi' && consumer.options.input === output) affected.add(consumer.id);
+        if (readsOutput(consumer, output)) affected.add(consumer.id);
       }
     }
   }
@@ -420,7 +383,7 @@ interface PipelinePlan {
   readonly records: ReadonlyMap<string, JobRecord>;
   /** The ids of the jobs whose record still holds, judged before anything runs. */
   readonly current: ReadonlySet<string>;
-  readonly providerCode: (job: GolemJob) => string | undefined;
+  readonly providerCode: (job: GolemJob) => string;
   /** The jobs a watch run must rerun, or undefined when every job is judged on its own. */
   readonly affected: ReadonlySet<string> | undefined;
   /** The files removed with the jobs that are no longer configured. */
@@ -504,12 +467,7 @@ async function planPipeline(filename: string, run: PipelineRun): Promise<{ reado
   });
   options.onConfig?.(config);
   // Config paths identify source jobs; only the configuration itself forces all jobs.
-  for (const job of config.jobs) {
-    if (job.kind === 'controllers') {
-      for (const input of [job.options.root, ...(job.options.sources ?? [])]) observer.observe(input, 'controllers', job.id);
-    } else if (job.kind === 'openapi') observer.observe(job.options.input, 'openapi', job.id);
-    else if (job.kind === 'models') for (const input of [job.options.root, ...(job.options.sources ?? [])]) observer.observe(input, 'models', job.id);
-  }
+  for (const job of config.jobs) for (const input of declaredInputs(job)) observer.observe(input, inputKindOf(job), job.id);
   validateConfigInputs(config);
   const inventory = loadInventory(config);
   // The record is local state in the ignored .golem folder. Without it every generated file would read as stale.
@@ -520,10 +478,11 @@ async function planPipeline(filename: string, run: PipelineRun): Promise<{ reado
   // The outputs of removed jobs go before the first job runs, so a job that reads one is not current.
   const active = new Set(config.jobs.map(job => job.id));
   const retired = new Set(Object.entries(inventory.files).filter(([, entry]) => !active.has(entry.job)).map(([key]) => path.resolve(config.directory, key)));
-  const providerCodes = new Map<string, string | undefined>();
-  const codeOf = (job: GolemJob): string | undefined => {
-    if (!providerCodes.has(job.package)) providerCodes.set(job.package, providerCode(config, job));
-    return providerCodes.get(job.package);
+  const providerCodes = new Map<string, string>();
+  const codeOf = (job: GolemJob): string => {
+    let code = providerCodes.get(job.package);
+    if (code === undefined) providerCodes.set(job.package, code = providerCode(config, job));
+    return code;
   };
   const current = new Set<string>();
   // The manifests a job receives are those of the jobs before it; their records say what to expect before anything runs.
@@ -576,7 +535,7 @@ async function runJob(job: GolemJob, run: PipelineRun, plan: PipelinePlan, progr
   const previous = options.previous?.results.get(job.id);
   const previousJob = options.previous?.config.jobs.find(candidate => candidate.id === job.id);
   const cached = !options.check
-    && (plan.affected ? !plan.affected.has(job.id) : options.modelOnly && (job.kind === 'controllers' || job.kind === 'openapi' || job.kind === 'generator'))
+    && (plan.affected ? !plan.affected.has(job.id) : options.modelOnly && !job.facts.provides.includes(MODEL_BOUNDARY))
     && previous
     && JSON.stringify(previousJob?.options) === JSON.stringify(job.options);
   const record = plan.records.get(job.id);
@@ -585,19 +544,19 @@ async function runJob(job: GolemJob, run: PipelineRun, plan: PipelinePlan, progr
     const outputs = record.outputs.map(output => absoluteRecordPath(config, output));
     assertUnowned(progress.owned, outputs);
     options.onOwned?.(outputs);
-    for (const input of Object.keys(record.inputs)) observer.observe(absoluteRecordPath(config, input), job.kind, job.id);
+    for (const input of Object.keys(record.inputs)) observer.observe(absoluteRecordPath(config, input), inputKindOf(job), job.id);
     // The job's inputs are as they were, so its warnings still hold: each run writes them once.
     writeWarnings(record.warnings);
     return { kind: 'skipped', outputs, manifests: record.manifests.map(manifest => absoluteRecordPath(config, manifest)) };
   }
   if (cached) {
     for (const [input, consumers] of options.previous?.dependencies ?? []) {
-      if (consumers.has(job.id)) observer.observe(input, job.kind, job.id);
+      if (consumers.has(job.id)) observer.observe(input, inputKindOf(job), job.id);
     }
     assertNoDiagnosticErrors(job, previous);
     assertUnowned(progress.owned, previous.artifacts.map(artifact => artifact.path));
     options.onOwned?.(previous.artifacts.map(artifact => artifact.path));
-    for (const input of previous.watchInputs) observer.observe(input, job.kind, job.id);
+    for (const input of previous.watchInputs) observer.observe(input, inputKindOf(job), job.id);
     return { kind: 'reused', result: previous };
   }
   // The job's own earlier outputs are not inputs: its record and its directory listings leave them out.
@@ -616,23 +575,22 @@ async function runJob(job: GolemJob, run: PipelineRun, plan: PipelinePlan, progr
   const keys = new Set<string>();
   const read = options.check ? undefined : new JobInputs(filename => plan.generated.has(filename) || previousOutputs.has(filename) || progress.ranOutputs.has(filename) || insideAny(ignoredDirectories, filename), config.directory);
   for (const input of declaredInputs(job)) read?.read(input);
+  if (!isRecord(job.options)) throw new TypeError(`The plan entry of ${job.package} gave job ${job.id} options that are not an object.`);
   let generatedResult: unknown;
   try {
     generatedResult = await provider.generate({
       ...job.options,
       manifestInputs: [...progress.manifests],
-      onInput: (input: string) => { observer.observe(input, job.kind); read?.read(input); },
+      onInput: (input: string) => { observer.observe(input, inputKindOf(job)); read?.read(input); },
       session: session.forJob(job.id, keys),
     });
   } catch (error) {
-    // A package's generator failure names the package; built-in generators report their own diagnostics.
-    if (job.kind === 'generator') throw new Error(`Generator ${job.package} failed for ${job.id}: ${errorMessage(error)}`, { cause: error });
-    throw error;
+    throw new Error(`Generator ${job.package} failed for ${job.id}: ${errorMessage(error)}`, { cause: error });
   }
-  const result = validateResult(generatedResult, job);
+  const result = validateResult(generatedResult, job, config.profile);
   const nextRecord = read && {
     golemCode: golemCode(),
-    providerCode: plan.providerCode(job) ?? '',
+    providerCode: plan.providerCode(job),
     options: JSON.stringify(job.options),
     manifestInputs: progress.manifests.map(manifest => recordPath(config, manifest)),
     inputs: read.finish(config, result.watchInputs, new Set([...previousOutputs, ...result.artifacts.map(artifact => artifact.path)])),
@@ -660,7 +618,7 @@ async function runJob(job: GolemJob, run: PipelineRun, plan: PipelinePlan, progr
       throw error;
     }
   }
-  for (const input of result.watchInputs) observer.observe(input, job.kind, job.id);
+  for (const input of result.watchInputs) observer.observe(input, inputKindOf(job), job.id);
   return {
     kind: 'ran',
     result,
@@ -701,14 +659,15 @@ async function scanRewriteSites(config: GolemConfig, session: GeneratorSessionRe
   const rewriteScan = fs.existsSync(config.tsconfig) ? await loadRewriteScan(rewriteRoot(config).job !== undefined) : undefined;
   if (!rewriteScan) return;
   const { job, root } = rewriteRoot(config);
+  const boundary = config.contracts.ModelBoundary;
   const keys = job ? used.get(job.id) ?? new Set<string>() : undefined;
   if (job && keys) used.set(job.id, keys);
   const scanned = rewriteScan.scanProject({
     root,
     directory: config.directory,
     modelsRoot: modelsRootOf(config),
-    suffixes: job?.kind === 'models' ? job.options.suffixes : undefined,
-    output: job?.kind === 'models' ? job.options.output : undefined,
+    suffixes: boundary?.suffixes,
+    output: boundary?.output,
     configFile: config.tsconfig,
     nonModelInputs: config.nonModelInputs,
     codecKeysFile: codecKeysPath(config.directory),

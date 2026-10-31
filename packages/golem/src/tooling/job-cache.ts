@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import type { GolemConfig, GolemJob } from './config.js';
 import { GolemDiagnosticSeverity, compareText, hasErrorCode, isInsideDirectory, isRecord } from './generator-core.js';
 import type { GolemDiagnostic } from './generator-core.js';
+import type { PackageRegistration } from './package-registry.js';
 import { atomicWrite, loadInventory } from './outputs.js';
 import type { Inventory, InventoryEntry, OutputFiles } from './outputs.js';
 
@@ -15,7 +16,7 @@ import type { Inventory, InventoryEntry, OutputFiles } from './outputs.js';
 export interface JobRecord {
   /** The digest of the JavaScript of the golem package that ran the job. */
   readonly golemCode: string;
-  /** The digest of the JavaScript of the job's provider package, which can change with its options and inputs unchanged; empty when the package could not be resolved. */
+  /** The digest of the JavaScript of the package that registers the job's block, which can change with its options and inputs unchanged. */
   readonly providerCode: string;
   /** JSON of the job's resolved options. */
   readonly options: string;
@@ -189,6 +190,11 @@ export function codeDigest(directory: string): string {
   return digest.digest('hex');
 }
 
+/** The digest of the JavaScript of the package that a registry entry names: its folder as the registry resolved it. */
+export function registrationCode(registration: PackageRegistration): string {
+  return codeDigest(registration.directory);
+}
+
 let golemCodeDigest: string | undefined;
 
 /** The digest of the golem package that is running, found from this module: `dist/tooling` sits two directories below the package. Computed once. */
@@ -197,10 +203,9 @@ export function golemCode(): string {
   return golemCodeDigest;
 }
 
-/** What the run supplies to a job besides its inputs: the digest of its provider package's code, and the manifests of the jobs before it (absolute paths). */
+/** What the run supplies to a job besides its inputs: the digest of the code of the package that registers its block, and the manifests of the jobs before it (absolute paths). */
 export interface JobSetup {
-  /** Undefined when the provider package cannot be resolved. */
-  readonly providerCode: string | undefined;
+  readonly providerCode: string;
   readonly manifestInputs: readonly string[];
 }
 
