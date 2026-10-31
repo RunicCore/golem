@@ -464,7 +464,7 @@ function generatedProject(t: TestContext): { root: string; config: string } {
     linkTypescript: true,
     packages: { '@exprtlabs/golem-model': path.join(workspace, 'packages/golem-model') },
   });
-  fs.writeFileSync(path.join(root, 'golem.yaml'), 'version: 1\nmobx: false\nvalidation: false\nmodels:\n  root: .\n');
+  fs.writeFileSync(path.join(root, 'golem.yaml'), 'version: 1\nvalidation: false\nmodel: {}\n');
   copyFixtureFile(root, 'models/serde/base-payment-model/money.model.ts', 'src/money.model.ts');
   fs.writeFileSync(path.join(root, 'src/use.ts'), `import { parse } from '@exprtlabs/golem/serde';
 import { Payment } from './money.model.js';
@@ -473,11 +473,12 @@ export const payment = parse<Payment>('{}');
   return { root, config: path.join(root, 'golem.yaml') };
 }
 
-test('a models job owns .golem/codec-keys.json, and the project it generates passes the check with its codec ids', async (t) => {
+test('core keeps .golem/codec-keys.json beside the inventory, and the project the models job generates passes the check with its codec ids', async (t) => {
   const { root, config } = generatedProject(t);
   await runPipeline(config);
-  const inventory: { files: Record<string, { job: string }> } = JSON.parse(fs.readFileSync(path.join(root, '.golem/outputs.json'), 'utf8'));
-  assert.equal(inventory.files['.golem/codec-keys.json']?.job, 'models:.', 'the codec key file is an owned output of the models job');
+  const inventory: { files: Record<string, unknown> } = JSON.parse(fs.readFileSync(path.join(root, '.golem/outputs.json'), 'utf8'));
+  // The codec key table is core's own record: the inventory does not list it.
+  assert.equal(inventory.files['.golem/codec-keys.json'], undefined);
   const table: { version: number; keys: Record<string, string> } = JSON.parse(fs.readFileSync(path.join(root, '.golem/codec-keys.json'), 'utf8'));
   assert.equal(table.version, 1);
   assert.match(table.keys['src/money.model.ts#Payment'] ?? '', /^TPayment_[0-9a-f]{8}$/, 'keys name the source from the tsconfig directory');
@@ -500,13 +501,13 @@ function appBesideForeignModels(t: TestContext, site: string): { readonly app: s
     fs.writeFileSync(path.join(outer, file), text);
   };
   write('shared/package.json', JSON.stringify({ name: '@acme/shared', private: true, type: 'module' }));
-  write('shared/golem.yaml', 'version: 1\nmodels:\n  root: .\n');
+  write('shared/golem.yaml', 'version: 1\nmodel: {}\n');
   write('shared/tsconfig.json', JSON.stringify({ compilerOptions, include: ['src/**/*.ts'] }));
   write('shared/src/money.model.ts', "import type { IObject } from '@exprtlabs/golem/model';\nexport type TMoney = IObject<{ currency: string }>;\n");
   write('node_modules/@acme/money/package.json', JSON.stringify({ name: '@acme/money', version: '1.0.0', type: 'module', types: './index.d.ts', exports: { '.': { types: './index.d.ts' } } }));
   write('node_modules/@acme/money/index.d.ts', "import type { IObject } from '@exprtlabs/golem/model';\nexport type TPkgMoney = IObject<{ currency: string }>;\n");
-  write('app/package.json', JSON.stringify({ name: 'app', private: true, type: 'module' }));
-  write('app/golem.yaml', 'version: 1\nmobx: false\nvalidation: false\nmodels:\n  root: .\n');
+  write('app/package.json', JSON.stringify({ name: 'app', private: true, type: 'module', dependencies: { '@exprtlabs/golem-model': '*' } }));
+  write('app/golem.yaml', 'version: 1\nvalidation: false\nmodel: {}\n');
   write('app/tsconfig.json', JSON.stringify({ compilerOptions, include: ['src/**/*.ts', '../shared/**/*.ts'] }));
   write('app/src/order.model.ts', "import type { IModel } from '@exprtlabs/golem/model';\nexport type TOrder = IModel<{ id: string }>;\n");
   write('app/src/use.ts', site);

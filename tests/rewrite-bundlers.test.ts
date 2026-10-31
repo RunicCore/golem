@@ -106,7 +106,7 @@ async function generatedProject(t: TestContext, name: string, options: { readonl
     packages: { '@exprtlabs/golem-model': path.join(workspace, 'packages/golem-model') },
     compilerOptions: { noEmit: true, ...(options.preserveSymlinks === true ? { preserveSymlinks: true } : {}) },
   });
-  write(root, 'golem.yaml', `version: 1\nmobx: false\nvalidation: ${options.validation === true}\nmodels:\n  root: .\n`);
+  write(root, 'golem.yaml', `version: 1\nvalidation: ${options.validation === true}\nmodel: {}\n`);
   copyFixtureFile(root, 'models/serde/base-payment-model/money.model.ts', 'src/money.model.ts');
   write(root, 'src/money.model.ts', fs.readFileSync(path.join(root, 'src/money.model.ts'), 'utf8') + TAG_MODEL);
   write(root, 'src/main.ts', MAIN);

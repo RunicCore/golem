@@ -74,7 +74,8 @@ test('a built-in generator package of another version than the installed runtime
   fs.mkdirSync(path.join(provider, 'dist'), { recursive: true });
   const source = path.join(workspace, 'packages/golem-openapi');
   const manifest = JSON.parse(fs.readFileSync(path.join(source, 'package.json'), 'utf8')) as { version: string };
-  fs.writeFileSync(path.join(provider, 'package.json'), JSON.stringify({ ...manifest, version: '1.99.0' }));
+  // A release pins golem to its own version; the registry compares that pin with the runtime.
+  fs.writeFileSync(path.join(provider, 'package.json'), JSON.stringify({ ...manifest, version: '1.99.0', dependencies: { '@exprtlabs/golem': '1.99.0' } }));
   for (const entry of ['generator', 'plan']) fs.copyFileSync(path.join(source, `dist/${entry}.js`), path.join(provider, `dist/${entry}.js`));
   await assert.rejects(runPipeline(config), /@exprtlabs\/golem \S+ and @exprtlabs\/golem-openapi 1\.99\.0 must have the same version/);
   assert.equal(fs.existsSync(path.join(root, 'sdk')), false);
@@ -587,7 +588,7 @@ export function generate(context) {
   assert.equal(fs.existsSync(path.join(root, 'sdk/index.ts')), true);
 
   fs.writeFileSync(config, yaml('elsewhere/api.json'));
-  await assert.rejects(runPipeline(config), /OpenAPI input does not exist: .*elsewhere[\\/]api\.json/);
+  await assert.rejects(runPipeline(config), /input file does not exist: .*elsewhere[\\/]api\.json/);
 });
 
 /**

@@ -152,7 +152,7 @@ test('CLI resolves configured providers from a project with spaces outside cwd a
   const before = registry().requests.length;
   const missing = await command(workspace, binary, ['generate', '--config', config], { allowFailure: true });
   assert.notEqual(missing.code, 0);
-  assert.match(missing.stderr, /openapi is configured.*not installed/);
+  assert.match(missing.stderr, /No installed package registers the golem block "openapi-ts"/);
   assert.equal(registry().requests.length, before);
   assert.equal(fs.existsSync(path.join(root, 'sdk')), false);
 
@@ -167,11 +167,11 @@ test('CLI resolves configured providers from a project with spaces outside cwd a
   await command(workspace, binary, ['check', '--config', config]);
 
   const provider = path.join(root, 'node_modules/@exprtlabs/golem-openapi');
-  copyFixtureFile(provider, 'packed/incompatible-provider/package.json', 'package.json');
+  // The provider keeps its block registration and its plan entry; its generator is the incompatible one.
   // The runtime version check runs before the provider loads, so the fake needs the packed release version.
-  const providerManifest: Record<string, unknown> = JSON.parse(fs.readFileSync(path.join(provider, 'package.json'), 'utf8'));
+  const providerManifest: { exports: Record<string, unknown> } = JSON.parse(fs.readFileSync(path.join(provider, 'package.json'), 'utf8'));
   const packedRelease: { version: string } = JSON.parse(fs.readFileSync(path.join(root, 'node_modules/@exprtlabs/golem/package.json'), 'utf8'));
-  fs.writeFileSync(path.join(provider, 'package.json'), JSON.stringify({ ...providerManifest, version: packedRelease.version }));
+  fs.writeFileSync(path.join(provider, 'package.json'), JSON.stringify({ ...providerManifest, version: packedRelease.version, exports: { ...providerManifest.exports, './generator': './incompatible.js' } }));
   copyFixtureFile(provider, 'packed/incompatible-provider/incompatible.js', 'incompatible.js');
   const beforeIncompatible = registry().requests.length;
   const incompatible = await command(workspace, binary, ['check', '--config', config], { allowFailure: true });
