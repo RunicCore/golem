@@ -215,7 +215,7 @@ test('a package without a tsconfig of its own, under a parent tsconfig, builds w
     rootDir: '.',
     include: ['packages/*/src/**/*.ts'],
   });
-  write(root, 'golem.yaml', 'version: 1\nvalidation: false\nmodel:\n  sources: [packages/a]\n');
+  write(root, 'golem.yaml', 'version: 1\nvalidation: false\nmodel:\n  sources: [packages/a/src/money.model.ts]\n');
   copyFixtureFile(root, 'models/serde/base-payment-model/money.model.ts', 'packages/a/src/money.model.ts');
   write(root, 'packages/a/src/use.ts', USE);
   // A sibling package that the same tsconfig includes: its sites are not outside the tsconfig directory. It uses the model of package a.

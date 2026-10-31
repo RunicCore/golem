@@ -89,10 +89,10 @@ test('a solution tsconfig is refused with the command for each referenced projec
   assert.equal(fs.existsSync(path.join(root, 'build')), false);
 });
 
-/** A project that imports and parses a model of `shared`, which is outside its model job (`sources: [src]`). */
+/** A project that imports and parses a model of `shared`, which is outside its model job (`sources: [src/money.model.ts]`). */
 async function parsingOutsideModel(t: TestContext, name: string, file: string): Promise<{ root: string; result: Awaited<ReturnType<typeof golemBuild>> }> {
   const root = await referencing(t, name, true, sourceOnlyProject);
-  write(root, 'golem.yaml', SERDE_GOLEM_YAML.replace('model: {}', 'model:\n  sources: [src]'));
+  write(root, 'golem.yaml', SERDE_GOLEM_YAML.replace('model: {}', 'model:\n  sources: [src/money.model.ts]'));
   write(root, `shared/src/${file}.ts`, "import type { IObject } from '@exprtlabs/golem/model';\nexport type TOutside = IObject<{ currency: string }>;\n");
   await command(root, process.execPath, [TSC, '-p', 'shared']);
   write(root, 'src/use.ts', `import { parse } from '@exprtlabs/golem/serde';\nimport type { TOutside } from '../shared/src/${file}.js';\nexport const value = parse<TOutside>('{}');\n`);

@@ -45,7 +45,7 @@ function writeConfig(filename: string, body: string, boundary = 'boundary:\n  ro
 
 /** A `ts-openapi` block with one docs job; `extra` lines belong to that job. */
 function docs(output: string, extra = ''): string {
-  return `ts-openapi:\n  docs:\n    - root: .\n      output: ${output}\n      info: { title: Test API, version: "1" }\n${extra}`;
+  return `ts-openapi:\n  docs:\n    - output: ${output}\n      info: { title: Test API, version: "1" }\n${extra}`;
 }
 
 /** A fake package for the block of `realPackage`: it runs the real plan entry of that package and the generator in `generatorFixture`. */
@@ -89,12 +89,10 @@ function installPipelineProvider(
 
 const SAMPLE = `ts-openapi:
   docs:
-    - root: .
-      output: generated/api.json
+    - output: generated/api.json
       info: { title: Test API, version: "1" }
       sources: [src/app.controller.ts]
-    - root: .
-      output: generated/other.yaml
+    - output: generated/other.yaml
       suffixes: [.api.ts, .route.mts]
       info: { title: Other, version: "1" }
 `;
@@ -120,7 +118,7 @@ test('a docs job declares one exclusive output file, scans its root, reads the p
     hooks: [],
     watch: [],
   });
-  assert.deepEqual(second?.facts.watch, [`${path.join(root, 'src')}${path.sep}*.api.ts`, `${path.join(root, 'src')}${path.sep}*.route.mts`]);
+  assert.deepEqual(second?.facts.watch, ['src/**/*.api.ts', 'src/**/*.route.mts']);
   assert.equal((first?.options as { openapiVersion: string }).openapiVersion, '3.2.0');
 });
 
@@ -205,7 +203,7 @@ test('a docs root must lie inside the directory of the yaml tsconfig, and the jo
   useDocsPackage(root);
   for (const directory of ['app', 'other']) fs.mkdirSync(path.join(root, directory));
   fs.writeFileSync(path.join(root, 'app/tsconfig.json'), '{}');
-  writeConfig(config, `tsconfig: app/tsconfig.json\n${docs('api.json').replace('root: .', 'root: other')}`);
+  writeConfig(config, `tsconfig: app/tsconfig.json\n${docs('api.json').replace('- output:', '- root: other\n      output:')}`);
   assert.throws(() => loadConfig(config), new RegExp(`Job docs:api\\.json: root ${path.join(root, 'other')} is outside ${path.join(root, 'app')}; use one golem.yaml per tsconfig\\.`));
 
   fs.writeFileSync(path.join(root, 'tsconfig.json'), '{}');
@@ -332,8 +330,7 @@ test('pipeline executes controller output before the SDK consumes its exact file
   writeConfig(config, [
     'ts-openapi:',
     '  docs:',
-    '    - root: .',
-    '      output: generated/api.json',
+    '    - output: generated/api.json',
     '      info: {title: Test API, version: "1"}',
     'openapi-ts:',
     '  sdks:',
@@ -387,12 +384,10 @@ test('source invalidation regenerates its controller consumers and SDKs without 
   }
   writeConfig(config, `ts-openapi:
   docs:
-    - root: .
-      sources: [src/one.ts]
+    - sources: [src/one.ts]
       output: api/one.json
       info: { title: One, version: '1' }
-    - root: .
-      sources: [src/two.ts]
+    - sources: [src/two.ts]
       output: api/two.json
       info: { title: Two, version: '1' }
 openapi-ts:
