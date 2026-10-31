@@ -30,7 +30,7 @@ import type {
   ResolvedGolemProfile,
 } from '@exprtlabs/golem/generator-api';
 import { resolveProfile } from '@exprtlabs/golem/generator-api';
-import { DEFAULT_CONTROLLER_SUFFIXES, DEFAULT_MODEL_SUFFIXES, displayPath } from '@exprtlabs/golem/internal/generator-support';
+import { DEFAULT_MODEL_SUFFIXES, displayPath } from '@exprtlabs/golem/internal/generator-support';
 import {
   GolemDiagnosticSeverity,
   diagnostic,
@@ -39,6 +39,7 @@ import {
   type TsToOpenApiDiagnostic,
 } from './diagnostics.js';
 import { buildDocument, serializeForOutput } from './document.js';
+import { DEFAULT_CONTROLLER_SUFFIXES } from './plan.js';
 import { validateRouteEvaluationOptions } from './evaluation/dependencies.js';
 import { apiSchemaName } from './nest/metadata.js';
 import { analyzeControllers, discoverControllerSources } from './nest/routes.js';

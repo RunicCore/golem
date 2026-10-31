@@ -34,7 +34,18 @@
     "README.md",
     "LICENSE"
   ],
+  "golem": {
+    "apiVersion": 2,
+    "block": "ts-openapi",
+    "plan": "./plan",
+    "generator": "./generator"
+  },
   "exports": {
+    "./plan": {
+      "types": "./dist/plan.d.ts",
+      "import": "./dist/plan.js",
+      "default": "./dist/plan.js"
+    },
     "./generator": {
       "types": "./dist/generator.d.ts",
       "import": "./dist/generator.js",
