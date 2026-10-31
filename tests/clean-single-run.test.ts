@@ -9,18 +9,17 @@ import { runPipeline } from '#golem/cli';
 
 const config = [
   'version: 1',
-  'mobx: false',
   'validation: true',
-  'controllers:',
-  '  - root: .',
-  '    output: generated/openapi.json',
-  '    info: { title: Catalog API, version: "1" }',
-  'openapi:',
-  '  - input: api.json',
-  '    output: sdk',
-  '    name: Profile',
-  'models:',
-  '  root: .',
+  'ts-openapi:',
+  '  docs:',
+  '    - output: generated/openapi.json',
+  '      info: { title: Catalog API, version: "1" }',
+  'openapi-ts:',
+  '  sdks:',
+  '    - input: api.json',
+  '      output: sdk',
+  '      name: Profile',
+  'model: {}',
   '',
 ].join('\n');
 
@@ -157,7 +156,7 @@ for (const [reach, returns, imports, body] of reaches) {
 
 // protects: T-464 an import that no later job writes keeps RUNM1058 in a model that no controller reaches
 test('a typo in the import of an unreached model still stops with RUNM1058 when no job writes that path', async (t: TestContext) => {
-  const withoutModels = config.replace('models:\n  root: .\n', '');
+  const withoutModels = config.replace('model: {}\n', '');
   const typo = model('TCart', 'money: Money', "import type { Money } from '../skd/index.js';");
   const root = cleanProject(t, keeps, withoutModels, { ...models, 'src/cart.model.ts': typo });
 

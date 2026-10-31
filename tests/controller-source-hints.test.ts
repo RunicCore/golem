@@ -3,7 +3,7 @@ import test, { type TestContext } from 'node:test';
 import { createControllerFixture } from './fixture-templates/controllers/project.js';
 import { command, golem } from './support/process.js';
 
-const yaml = 'version: 1\ncontrollers:\n  - framework: nestjs\n    root: .\n    output: ./generated/openapi.json\n    info:\n      title: Catalog API\n      version: "1"\n';
+const yaml = 'version: 1\nts-openapi:\n  docs:\n    - output: ./generated/openapi.json\n      info:\n        title: Catalog API\n        version: "1"\n';
 
 async function generateStderr(t: TestContext, files: Record<string, string>): Promise<string> {
   const root = createControllerFixture(t, { prefix: 'golem-controller-hints-', packageName: 'controller-hints', links: 'workspace', files: { 'golem.yaml': yaml, ...files } });

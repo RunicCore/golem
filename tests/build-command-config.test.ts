@@ -23,7 +23,7 @@ async function generatedProject(t: TestContext, name: string, options: { readonl
     packages: { '@exprtlabs/golem-model': path.join(workspace, 'packages/golem-model') },
     compilerOptions: { declaration: true, sourceMap: true },
   });
-  write(root, 'golem.yaml', options.yaml ?? 'version: 1\nmobx: false\nvalidation: false\nmodels:\n  root: .\n');
+  write(root, 'golem.yaml', options.yaml ?? 'version: 1\nvalidation: false\nmodel: {}\n');
   copyFixtureFile(root, 'models/serde/base-payment-model/money.model.ts', 'src/money.model.ts');
   write(root, 'src/use.ts', USE);
   write(root, 'src/use.test.ts', USE.replace('export const text', 'export const testText').replace('(text)', '(testText)'));
@@ -65,7 +65,7 @@ test('golem build --config from the parent folder builds the yaml tsconfig and k
     files: {
       'packages/api/src/payment.model.ts': readFixture(`${nest}/payment.model.ts`),
       'packages/api/src/payments.controller.ts': PAYMENTS_CONTROLLER,
-      'packages/api/golem.yaml': 'version: 1\ntsconfig: ../../tsconfig.json\nmodels: { root: . }\ncontrollers:\n  - root: .\n    output: generated/api.json\n    info: { title: Payments, version: "1" }\n',
+      'packages/api/golem.yaml': 'version: 1\ntsconfig: ../../tsconfig.json\nmodel: {}\nts-openapi:\n  docs:\n    - output: generated/api.json\n      info: { title: Payments, version: "1" }\n',
     },
   });
   const config = path.join(root, 'packages/api/golem.yaml');
@@ -104,7 +104,7 @@ test('-p may name another build config of the yaml project, and only one in the 
 
 /** The yaml names `tsconfig.json`, which leaves the tests out, beside `tsconfig.all.json`, which includes them. */
 async function projectWithNamedTsconfig(t: TestContext, name: string): Promise<string> {
-  const root = await generatedProject(t, name, { yaml: 'version: 1\nmobx: false\nvalidation: false\ntsconfig: ./tsconfig.json\nmodels:\n  root: .\n', generate: false });
+  const root = await generatedProject(t, name, { yaml: 'version: 1\nvalidation: false\ntsconfig: ./tsconfig.json\nmodel: {}\n', generate: false });
   editTsconfig(root, (tsconfig) => { tsconfig.exclude = ['src/**/*.test.ts']; });
   fs.writeFileSync(path.join(root, 'tsconfig.all.json'), JSON.stringify({ extends: './tsconfig.json', exclude: [] }));
   await runPipeline(path.join(root, 'golem.yaml'));
@@ -123,7 +123,7 @@ test('a tsconfig key names the project that golem build builds', async (t) => {
 
 test('a tsconfig key that names a build tsconfig with a paths alias generates and builds', async (t) => {
   // protects: T-480 the models job reads the tsconfig golem.yaml names, not the nearest one
-  const root = await generatedProject(t, 'build-named-paths-tsconfig', { yaml: 'version: 1\nmobx: false\nvalidation: false\ntsconfig: ./tsconfig.build.json\nmodels:\n  root: .\n', generate: false });
+  const root = await generatedProject(t, 'build-named-paths-tsconfig', { yaml: 'version: 1\nvalidation: false\ntsconfig: ./tsconfig.build.json\nmodel: {}\n', generate: false });
   fs.writeFileSync(path.join(root, 'tsconfig.build.json'), JSON.stringify({ extends: './tsconfig.json', compilerOptions: { paths: { '@lib/*': ['./src/lib/*'] } } }));
   write(root, 'src/lib/ids.ts', 'export type Id = string;\n');
   write(root, 'src/item.model.ts', "import type { IModel } from '@exprtlabs/golem/model';\nimport type { Id } from '@lib/ids.js';\nexport type TItem = IModel<{ id: Id }>;\n");
@@ -134,7 +134,7 @@ test('a tsconfig key that names a build tsconfig with a paths alias generates an
 
 test('a job root outside the directory of the yaml tsconfig fails in golem generate, golem check and golem build', async (t) => {
   // protects: T-375 the build error names its local files relative to the working directory
-  const root = await generatedProject(t, 'build-job-root-outside', { yaml: 'version: 1\nmobx: false\nvalidation: false\ntsconfig: ./app/tsconfig.json\nmodels:\n  root: .\n', generate: false });
+  const root = await generatedProject(t, 'build-job-root-outside', { yaml: 'version: 1\nvalidation: false\ntsconfig: ./app/tsconfig.json\nmodel: {}\n', generate: false });
   fs.mkdirSync(path.join(root, 'app'));
   fs.writeFileSync(path.join(root, 'app/tsconfig.json'), JSON.stringify({ extends: '../tsconfig.json', include: ['../src/**/*.ts'] }));
   const yaml = path.join(root, 'golem.yaml');
@@ -215,7 +215,7 @@ test('a package without a tsconfig of its own, under a parent tsconfig, builds w
     rootDir: '.',
     include: ['packages/*/src/**/*.ts'],
   });
-  write(root, 'golem.yaml', 'version: 1\nmobx: false\nvalidation: false\nmodels:\n  root: packages/a\n');
+  write(root, 'golem.yaml', 'version: 1\nvalidation: false\nmodel:\n  sources: [packages/a]\n');
   copyFixtureFile(root, 'models/serde/base-payment-model/money.model.ts', 'packages/a/src/money.model.ts');
   write(root, 'packages/a/src/use.ts', USE);
   // A sibling package that the same tsconfig includes: its sites are not outside the tsconfig directory. It uses the model of package a.
@@ -230,11 +230,11 @@ test('a package without a tsconfig of its own, under a parent tsconfig, builds w
 });
 
 
-/** An app folder with its package.json, the `tsconfig` text the case needs, a golem.yaml with a models job, and the base money model. */
+/** An app folder with its package.json, the `tsconfig` text the case needs, a golem.yaml with a model block, and the base money model. */
 function writeApp(app: string, name: string, tsconfig: string): void {
-  write(app, 'package.json', JSON.stringify({ name, type: 'module' }));
+  write(app, 'package.json', JSON.stringify({ name, type: 'module', dependencies: { '@exprtlabs/golem-model': '*' } }));
   write(app, 'tsconfig.json', tsconfig);
-  write(app, 'golem.yaml', 'version: 1\nmobx: false\nvalidation: false\nmodels:\n  root: .\n');
+  write(app, 'golem.yaml', 'version: 1\nvalidation: false\nmodel: {}\n');
   copyFixtureFile(app, 'models/serde/base-payment-model/money.model.ts', 'src/money.model.ts');
 }
 
