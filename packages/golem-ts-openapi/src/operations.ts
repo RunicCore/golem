@@ -324,35 +324,92 @@ function explicitContent(value: unknown): Record<string, unknown> | undefined {
   return record(value);
 }
 
+/** A type as the source writes it, for a message. */
+function typeText(context: OperationBuildContext, reference: TypeReference): string {
+  return reference.node?.getText() ?? context.checker.typeToString(reference.type);
+}
+
+/** The schema of one request body part, with how a message names the part. */
+interface BodyPartSchema {
+  readonly schema: OpenApiSchema;
+  readonly label: string;
+  readonly node: ts.Node;
+}
+
 /**
  * The schema of the request body parts beyond the first whole `@Body()`: each
  * further whole `@Body()` type, then one object that holds each one-field
- * parameter under its name. A one-field parameter that is optional is not
- * `required`.
+ * parameter under its name. A name is one property: a repeat adds nothing when
+ * it has the same schema. A one-field parameter that is optional is not
+ * `required`, and the property is required when any parameter of its name is.
  */
 async function bodyExtraSchemas(
   context: OperationBuildContext,
   parts: readonly ControllerParameter[],
-): Promise<readonly OpenApiSchema[]> {
-  const schemas: OpenApiSchema[] = [];
+): Promise<readonly BodyPartSchema[]> {
+  const schemas: BodyPartSchema[] = [];
   for (const [index, part] of parts.filter(item => item.name === undefined).entries()) {
-    schemas.push(await schemaFor(context, part.type, 'request', `body.part${index + 1}`));
+    schemas.push({ schema: await schemaFor(context, part.type, 'request', `body.part${index + 1}`), label: `the whole @Body() ${typeText(context, part.type)}`, node: part.node });
   }
   const fields = parts.filter(item => item.name !== undefined);
   if (fields.length === 0) return schemas;
-  const properties = Object.fromEntries(await Promise.all(fields.map(async (field) => [
-    field.name!,
-    await schemaFor(context, field.type, 'request', `body.${field.name}`),
-  ] as const)));
-  const required = fields.filter(field => field.required).map(field => field.name!);
-  schemas.push({ type: 'object', properties, ...(required.length > 0 ? { required } : {}) });
+  const properties: Record<string, OpenApiSchema> = {};
+  const required = new Set<string>();
+  for (const field of fields) {
+    const name = field.name!;
+    const schema = await schemaFor(context, field.type, 'request', `body.${name}`);
+    if (properties[name] !== undefined && JSON.stringify(properties[name]) !== JSON.stringify(schema)) {
+      throw new TsToOpenApiError(diagnostic(field.node.getSourceFile(), field.node, TsToOpenApiDiagnosticCode.NonPortableParameter, `@Body("${name}") is declared twice with different types, and a request body property has one schema. Give both parameters one type, or read the body in one whole @Body().`));
+    }
+    properties[name] = schema;
+    if (field.required) required.add(name);
+  }
+  const names = Object.keys(properties).map(name => `@Body("${name}")`).join(' and ');
+  schemas.push({ schema: { type: 'object', properties, ...(required.size > 0 ? { required: [...required] } : {}) }, label: `the one-field ${names}`, node: fields[0]!.node });
   return schemas;
 }
 
-/** The parts of a request body as one schema: a part that repeats appears once, and several parts combine with `allOf`. */
-function combineBodyParts(parts: readonly OpenApiSchema[]): OpenApiSchema {
-  const unique = parts.filter((part, index) => parts.findIndex(other => JSON.stringify(other) === JSON.stringify(part)) === index);
-  return unique.length === 1 ? unique[0]! : { allOf: unique };
+/** The schema a `$ref` names, through references. Undefined when it cannot be read. */
+function resolvedSchema(context: OperationBuildContext, schema: OpenApiSchema, seen: ReadonlySet<string> = new Set()): Record<string, unknown> | undefined {
+  const value = record(schema);
+  if (value === undefined || typeof value.$ref !== 'string') return value;
+  if (seen.has(value.$ref)) return undefined;
+  const target = context.resolveSchemaReference?.(value.$ref);
+  return target === undefined ? undefined : resolvedSchema(context, target, new Set(seen).add(value.$ref));
+}
+
+/** The property names a schema declares, through references and `allOf`. Undefined when a part cannot be read. */
+function declaredProperties(context: OperationBuildContext, schema: OpenApiSchema): ReadonlySet<string> | undefined {
+  const value = resolvedSchema(context, schema);
+  if (value === undefined) return undefined;
+  const names = new Set(Object.keys(record(value.properties) ?? {}));
+  for (const member of Array.isArray(value.allOf) ? value.allOf as OpenApiSchema[] : []) {
+    const inner = declaredProperties(context, member);
+    if (inner === undefined) return undefined;
+    for (const name of inner) names.add(name);
+  }
+  return names;
+}
+
+/**
+ * The parts of a request body as one schema: a part that repeats appears once,
+ * and several parts combine with `allOf`. A closed part (`additionalProperties:
+ * false`, such as an exact model) beside a part that declares a property it
+ * lacks is an empty type, which no document can describe.
+ */
+function combineBodyParts(context: OperationBuildContext, parts: readonly BodyPartSchema[]): OpenApiSchema {
+  const unique = parts.filter((part, index) => parts.findIndex(other => JSON.stringify(other.schema) === JSON.stringify(part.schema)) === index);
+  if (unique.length === 1) return unique[0]!.schema;
+  for (const closed of unique) {
+    if (resolvedSchema(context, closed.schema)?.additionalProperties !== false) continue;
+    const declared = declaredProperties(context, closed.schema);
+    for (const other of unique.filter(item => item !== closed)) {
+      const extra = [...declaredProperties(context, other.schema) ?? []].find(name => !declared?.has(name));
+      if (extra === undefined) continue;
+      throw new TsToOpenApiError(diagnostic(other.node.getSourceFile(), other.node, TsToOpenApiDiagnosticCode.NonPortableParameter, `${closed.label} is a closed model (additionalProperties: false) and ${other.label} adds the property "${extra}" that it does not declare, so no request body can satisfy both and OpenAPI cannot describe the empty type. Declare the property in the model, make the model open with { exact: false }, or read the body in one whole @Body().`));
+    }
+  }
+  return { allOf: unique.map(part => part.schema) };
 }
 
 async function requestBody(
@@ -367,6 +424,7 @@ async function requestBody(
   const bodyType = declaredType ?? override?.type;
   // An @ApiBody with a type replaces the body the handler parameters give, as @nestjs/swagger does (api-parameters.explorer.js, removeBodyMetadataIfExplicitExists).
   const extraSchemas = override?.type ? [] : await bodyExtraSchemas(context, route.bodyParts.filter(part => part !== primary));
+  const primaryPart = { label: `the whole @Body() ${primary ? typeText(context, primary.type) : ''}`.trim(), node: primary?.node ?? route.method };
   if (declaredType && override?.type && override.type !== declaredType) {
     const declaredSchema = await schemaFor(context, declaredType, 'request', 'body.declared');
     let overrideSchema = await schemaFor(context, override.type, 'request', 'body.override');
@@ -402,17 +460,17 @@ async function requestBody(
         }
         const schema = explicitCompositionSchema(declaredType ?? bodyType, mediaRecord.schema)
           ?? await schemaFor(context, declaredType ?? bodyType, 'request', `body.${media}`, mediaRecord.schema as OpenApiSchema);
-        generatedContent[media] = { ...mediaRecord, schema: combineBodyParts([override?.isArray ? arraySchema(schema) : schema, ...extraSchemas]) };
+        generatedContent[media] = { ...mediaRecord, schema: combineBodyParts(context, [{ schema: override?.isArray ? arraySchema(schema) : schema, ...primaryPart }, ...extraSchemas]) };
         continue;
       }
       if (!bodyType) {
-        generatedContent[media] = extraSchemas.length > 0 ? { ...mediaRecord, schema: combineBodyParts(extraSchemas) } : mediaRecord;
+        generatedContent[media] = extraSchemas.length > 0 ? { ...mediaRecord, schema: combineBodyParts(context, extraSchemas) } : mediaRecord;
         continue;
       }
       const schema = await schemaFor(context, declaredType ?? bodyType, 'request', `body.${media}`);
       generatedContent[media] = {
         ...mediaRecord,
-        schema: combineBodyParts([override?.isArray ? arraySchema(schema) : schema, ...extraSchemas]),
+        schema: combineBodyParts(context, [{ schema: override?.isArray ? arraySchema(schema) : schema, ...primaryPart }, ...extraSchemas]),
       };
     }
   }

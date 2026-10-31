@@ -136,11 +136,11 @@ export class ItemsController {
   assert.deepEqual(operation.security, [{ basic: [] }, { bearer: [] }, { basic: [] }, { bearer: [] }]);
 });
 
-test('a second whole @Body() with another model is documented as an allOf of both', async t => {
+test('a second whole @Body() with another open model is documented as an allOf of both', async t => {
   // protects: T-756 the document a client reads states every part of the body the handler reads, not only the first
   const document = await build(t, `
-export type TA = IModel<{ a: string }>;
-export type TB = IModel<{ b: string }>;
+export type TA = IModel<{ a: string }, { exact: false }>;
+export type TB = IModel<{ b: string }, { exact: false }>;
 @Controller('items')
 export class ItemsController {
   @Post() create(@Body() first: TA, @Body() second: TB): TA { return first; }

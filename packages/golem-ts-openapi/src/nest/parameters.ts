@@ -477,7 +477,6 @@ export function parseParameters(
     }
   }
   const allParameters = [...classHeaders.reverse(), ...parameters];
-  // A one-field body name is a key of the request body object, so a repeat is one parameter declared twice.
-  assertDistinctParameters(context, [...allParameters, ...bodyParts]);
+  assertDistinctParameters(context, allParameters);
   return { parameters: allParameters, bodyParts, ...(manualResponse ? { manualResponse } : {}) };
 }

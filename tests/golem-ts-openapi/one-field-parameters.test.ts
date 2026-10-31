@@ -16,6 +16,7 @@ const MODEL = `import type { IModel, IObject } from '@exprtlabs/golem/model';
 export type TPayment = IModel<{ id: string; amount: number }>;
 export type TFilter = IObject<{ status: string; limit?: number; active?: boolean }>;
 export type TPayments = TPayment[];
+export type TOpen = IModel<{ id: string }, { exact: false }>;
 export type TTagged = IObject<{ tags: string[] }>;
 export type TNested = IObject<{ inner: { tags?: string[] } }>;
 export type TOrder = IModel<{ id: string; mutable: TPayment[]; readonly: readonly TPayment[]; readonlyGeneric: ReadonlyArray<TPayment> }>;
@@ -27,13 +28,21 @@ function project(t: TestContext, methods: string, openapiVersion = '3.2.0', prea
     links: 'workspace',
     files: {
       'src/payment.model.ts': MODEL,
-      'src/a.controller.ts': `import { Body, Controller, Get, Post, Query } from '@nestjs/common';\nimport type { TPayment, TPayments, TFilter, TTagged, TNested, TOrder } from './payment.model.js';\n${preamble}@Controller('a')\nexport class AController {\n${methods}\n}\n`,
+      'src/a.controller.ts': `import { Body, Controller, Get, Post, Query } from '@nestjs/common';\nimport type { TPayment, TPayments, TOpen, TFilter, TTagged, TNested, TOrder } from './payment.model.js';\n${preamble}@Controller('a')\nexport class AController {\n${methods}\n}\n`,
       'golem.yaml': `version: 1\nmobx: false\nvalidation: true\ncontrollers:\n  - root: .\n    sources:\n      - src/a.controller.ts\n    output: generated/api.json\n    openapiVersion: "${openapiVersion}"\n    info: { title: T, version: "1" }\nmodels:\n  root: .\n`,
     },
   });
 }
 
 const read = (root: string, file: string): string => fs.readFileSync(path.join(root, file), 'utf8');
+
+/** Generates the project, checks it against the rewrite unless told not to, and reads the controllers document. */
+async function generatedDocument(root: string, check = true): Promise<{ paths: Record<string, Record<string, Operation>> }> {
+  const config = path.join(root, 'golem.yaml');
+  await runPipeline(config);
+  if (check) await runPipeline(config, { check: true });
+  return JSON.parse(read(root, 'generated/api.json')) as { paths: Record<string, Record<string, Operation>> };
+}
 
 interface Operation { readonly parameters?: readonly Record<string, unknown>[]; readonly requestBody?: { readonly required?: boolean; readonly content: Record<string, { readonly schema: Record<string, unknown> }> } }
 
@@ -43,10 +52,7 @@ test('the controllers job names a one-field parameter by a key written as a conc
     "  @Post() create(@Body('pay' + 'ment') payment: TPayment): void {}",
     '  @Get() list(@Query(KEYS.filter) filter: TFilter): void {}',
   ].join('\n'), '3.2.0', "const KEYS = { filter: 'filter' } as const;\n");
-  const config = path.join(root, 'golem.yaml');
-  await runPipeline(config);
-  await runPipeline(config, { check: true });
-  const document = JSON.parse(read(root, 'generated/api.json')) as { paths: Record<string, Record<string, Operation>> };
+  const document = await generatedDocument(root);
   const bodySchema = document.paths['/a']!.post!.requestBody!.content['application/json']!.schema;
   assert.deepEqual(Object.keys(bodySchema.properties as object), ['payment']);
   assert.deepEqual(document.paths['/a']!.get!.parameters!.map(parameter => parameter.name), ['filter']);
@@ -68,11 +74,7 @@ for (const openapiVersion of ['3.2.0', '3.1.2']) {
       "  @Post('order') createOrder(@Body('order') order: TOrder): void {}",
       "  @Get() list(@Query('filter') filter: TFilter): void {}",
     ].join('\n'), openapiVersion);
-    const config = path.join(root, 'golem.yaml');
-    await runPipeline(config);
-    await runPipeline(config, { check: true });
-
-    const document = JSON.parse(read(root, 'generated/api.json')) as { paths: Record<string, Record<string, Operation>> };
+    const document = await generatedDocument(root);
     const post = document.paths['/a']!.post!;
     const bodySchema = post.requestBody!.content['application/json']!.schema;
     assert.equal(post.requestBody!.required, true);
@@ -104,6 +106,7 @@ for (const openapiVersion of ['3.2.0', '3.1.2']) {
 }
 
 const TPAYMENT = { $ref: '#/components/schemas/TPayment' };
+const TOPEN = { $ref: '#/components/schemas/TOpen' };
 const TFILTER = { $ref: '#/components/schemas/TFilter' };
 /** The note field of the bodies that mix a whole body with a one-field body. */
 const NOTE = { type: 'object', properties: { note: { type: 'string' } }, required: ['note'] };
@@ -116,12 +119,14 @@ const BODIES: readonly (readonly [string, string, boolean, unknown, string?])[] 
   ['optional-list', "@Body('items') items?: TPayment[]", false, { type: 'object', properties: { items: { type: 'array', items: TPAYMENT } } }],
   ['optional-and-required', "@Body('note') note: string, @Body('payment') payment?: TPayment", true, { type: 'object', properties: { note: { type: 'string' }, payment: TPAYMENT }, required: ['note'] }],
   ['two-same', '@Body() first: TPayment, @Body() second: TPayment', true, TPAYMENT],
-  ['whole-and-field', "@Body() whole: TPayment, @Body('note') note: string", true, { allOf: [TPAYMENT, NOTE] }],
-  ['field-and-whole', "@Body('note') note: string, @Body() whole: TPayment", true, { allOf: [TPAYMENT, NOTE] }],
+  ['same-field', "@Body('payment') one: TPayment, @Body('payment') two: TPayment", true, { type: 'object', properties: { payment: TPAYMENT }, required: ['payment'] }],
+  // A closed model (the default) cannot share the body with a part that adds a property; an open one (exact: false) can.
+  ['whole-and-field', "@Body() whole: TOpen, @Body('note') note: string", true, { allOf: [TOPEN, NOTE] }],
+  ['field-and-whole', "@Body('note') note: string, @Body() whole: TOpen", true, { allOf: [TOPEN, NOTE] }],
   ['whole-optional', '@Body() whole?: TPayment', false, TPAYMENT],
   ['whole-undefined', '@Body() whole: TPayment | undefined', false, TPAYMENT],
   ['whole-default', "@Body() whole: TPayment = { id: 'a', amount: 1 }", false, TPAYMENT],
-  ['whole-optional-and-field', "@Body() whole: TPayment | undefined, @Body('note') note: string", true, { allOf: [TPAYMENT, NOTE] }],
+  ['whole-optional-and-field', "@Body() whole: TOpen | undefined, @Body('note') note: string", true, { allOf: [TOPEN, NOTE] }],
   // An @ApiBody type replaces the body the handler parameters give, as @nestjs/swagger does.
   ['api-body', "@Body('payment') payment: TPayment", true, { type: 'object', properties: { text: { type: 'string' } }, required: ['text'], additionalProperties: true }, '@ApiBody({ type: NoteDto })'],
 ];
@@ -167,9 +172,12 @@ test('OpenAPI 3.1 documents a named model query beside a whole query as a deepOb
 });
 
 test('the controllers job stops only what the OpenAPI format cannot describe in a one-field parameter', async (t) => {
-  // protects: R-13 T-323 T-442 T-756 a parameter the format cannot hold stops generation with the reason; the interceptor limits do not
+  // protects: R-13 T-323 T-442 T-756 T-759 a parameter or body the format cannot hold stops generation with the reason; the interceptor limits do not; a closed model beside a part with a property it lacks is an empty type, named with both parts
   const cases: readonly (readonly [string, string, RegExp])[] = [
-    ["  @Post() a(@Body('payment') one: TPayment, @Body('payment') two: TPayment): void {}", 'NEST1312', /declared more than once.*identifies a parameter by its name and location/],
+    ["  @Post() a(@Body('payment') one: TPayment, @Body('payment') two: TFilter): void {}", 'NEST1107', /@Body\("payment"\) is declared twice with different types, and a request body property has one schema/],
+    ["  @Post() a(@Body() whole: TPayment, @Body('note') note: string): void {}", 'NEST1107', /the whole @Body\(\) .*TPayment is a closed model.*the one-field @Body\("note"\) adds the property "note" that it does not declare/],
+    ["  @Post() a(@Body('note') note: string, @Body() whole: TPayment): void {}", 'NEST1107', /the whole @Body\(\) .*TPayment is a closed model.*the one-field @Body\("note"\) adds the property "note"/],
+    ["  @Post() a(@Body() whole: TPayment, @Body() other: TFilter): void {}", 'NEST1107', /the whole @Body\(\) .* is a closed model.*the whole @Body\(\) .* adds the property/],
     ["  @Get() a(@Query('when') when: Date): void {}", 'NEST1107', /must be primitive/],
     ["  @Get() a(@Query('filter') filter: TFilter[]): void {}", 'NEST1107', /array of models.*does not define arrays in a deepObject.*Send the array in a @Body\./],
     ["  @Get() a(@Query('filter') filter: TTagged): void {}", 'NEST1107', /array field \(tags\).*@Body or in a whole @Query\(\) on OpenAPI 3\.2/],

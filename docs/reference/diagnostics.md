@@ -47,6 +47,8 @@ An error prints its code, location when known, and message, then stops generatio
 - A one-field `@Query('name')` model is an array of models or holds an array field, which a `deepObject` parameter cannot hold.
 - On OpenAPI 3.2.0, a whole `@Query()` object (one `querystring` parameter) shares an operation with a one-field model or another query parameter.
 - A `querystring` parameter needs OpenAPI 3.2.0.
+- A request body combines a closed model (`additionalProperties: false`, the default of `IModel`) with a part that declares a property the model lacks: a one-field `@Body('name')` or another whole `@Body()` model. No body satisfies both, and OpenAPI cannot describe the empty type.
+- Two one-field `@Body('name')` parameters of one name have different types. A body property has one schema.
 
 **Fix:**
 
@@ -54,6 +56,7 @@ An error prints its code, location when known, and message, then stops generatio
 - Keep a single whole-object query parameter on OpenAPI 3.2.0, or generate against OpenAPI 3.1.2, which writes the whole query as flat parameters.
 - Send an array in a `@Body`.
 - Generate against OpenAPI 3.2.0 for a `querystring` parameter.
+- Declare the property in the model, make the model open with `{ exact: false }`, or read the body in one whole `@Body()`.
 
 ### NEST1108
 

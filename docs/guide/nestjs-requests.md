@@ -80,7 +80,8 @@ A whole `@Query()` is an object, so declare it as one model and not as an array.
 The `controllers` job writes the types the handler reads and enforces no limit of `NestModelInterceptor`:
 
 - **One-field `@Body` parameters:** they are the properties of one object request body, whatever their type. An optional parameter is not in `required`. When all parts are optional, the request body is not required.
-- **Several body parts:** a second whole `@Body()`, or a whole `@Body()` beside a one-field one, combine with `allOf`. A part that repeats appears once.
+- **Several body parts:** a second whole `@Body()`, or a whole `@Body()` beside a one-field one, combine with `allOf`. A part that repeats appears once. Two one-field parameters of one name are one property.
+- **Closed models:** an `IModel` is closed by default, so it cannot share the body with a part that adds a property it does not declare. The job stops with [`NEST1107`](/reference/diagnostics#nest1107) and names both parts. Make the model open with `{ exact: false }`, or declare the property in it.
 - **A one-field `@Query` model:** it is a `deepObject` query parameter, such as `?filter[status]=paid`. An optional one is not required. On OpenAPI 3.1.2 a whole `@Query()` gives flat parameters beside it. A name that both use stops the job with [`NEST1312`](/reference/diagnostics#nest1312).
 
 The app must parse nested query keys:
