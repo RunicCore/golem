@@ -565,6 +565,24 @@ test('a pipeline session closes the compiler of a removed job', { skip: process.
   await until(() => compilerChildren(process.pid).length === 0, 'the removed job closes its compiler');
 });
 
+test('a pipeline session keeps a shared resource while a job that requested it is configured, and closes it with the last such job', () => {
+  // protects: T-779 a watch tick that reruns no program reader does not throw the warm program away
+  const session = new GeneratorSessionResources();
+  let closed = 0;
+  const create = (): Disposable => ({ [Symbol.dispose]: () => { closed += 1; } });
+  const shared = session.forJob('models', new Set()).share('program', create);
+  session.retainUsed(new Set(['models', 'sdk']), new Map([['sdk', new Set()]]));
+  assert.equal(closed, 0, 'a run that reruns only the sdk job keeps the program of the models job');
+  assert.equal(session.forJob('models', new Set()).share('program', create), shared);
+  session.retainUsed(new Set(['sdk']), new Map());
+  assert.equal(closed, 1, 'the program closes when the models job leaves the plan');
+  session.share('program', create);
+  session.retainUsed(new Set(['sdk']), new Map());
+  assert.equal(closed, 1, 'a host that requested the program in the run keeps it');
+  session.retainUsed(new Set(['sdk']), new Map());
+  assert.equal(closed, 2, 'a host that stopped requesting it lets it close');
+});
+
 /** The cart model of `root` and its companion: `edit(field)` gives the source an optional boolean `field`, and `generated()` reads the companion ('' while it does not exist). */
 function cartModel(root: string): { companion: string; edit: (field: string) => void; generated: () => string } {
   const source = path.join(root, 'src/cart.model.ts');

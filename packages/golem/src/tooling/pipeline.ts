@@ -72,12 +72,20 @@ function disposeAll(resources: Iterable<Disposable>): void {
 export class GeneratorSessionResources implements Disposable, Pick<GeneratorSession, 'share'> {
   private readonly jobs = new Map<string, Map<string, SessionResource>>();
   private readonly shared = new Map<string, SessionResource>();
-  /** The shared keys requested since the last `retainUsed`: the run in progress. */
-  private readonly requested = new Set<string>();
+  /** The jobs that requested each shared key. */
+  private readonly sharedBy = new Map<string, Set<string>>();
+  /** The shared keys that a requester other than a job (the build, the rewrite scan, `check`) asked for since the last `retainUsed`. */
+  private readonly hostRequested = new Set<string>();
 
-  /** The resource under `key`, created by its first request and kept while the runs after it request it again. */
-  share<Resource extends Disposable>(key: string, create: () => Resource): Resource {
-    this.requested.add(key);
+  /** The resource under `key`, created by its first request and kept while a requester of it remains; `jobId` names the job that asks. */
+  share<Resource extends Disposable>(key: string, create: () => Resource, jobId?: string): Resource {
+    if (jobId === undefined) {
+      this.hostRequested.add(key);
+    } else {
+      let jobs = this.sharedBy.get(key);
+      if (!jobs) this.sharedBy.set(key, jobs = new Set());
+      jobs.add(jobId);
+    }
     let resource = this.shared.get(key);
     if (!resource) this.shared.set(key, resource = create());
     return resource as Resource;
@@ -94,7 +102,7 @@ export class GeneratorSessionResources implements Disposable, Pick<GeneratorSess
         used.add(key);
         return resource as Resource;
       },
-      share: (key, create) => this.share(key, create),
+      share: (key, create) => this.share(key, create, jobId),
     };
   }
 
@@ -108,9 +116,10 @@ export class GeneratorSessionResources implements Disposable, Pick<GeneratorSess
 
   /**
    * After a successful run, close the resources of jobs that no longer exist
-   * and those a rerun job stopped using, and each shared resource that nothing
-   * requested during the run. Reused jobs keep theirs. A host that holds a shared
-   * resource across a run requests it again in each run.
+   * and those a rerun job stopped using, and each shared resource whose requesting
+   * jobs all left the plan, unless a requester other than a job asked for it in
+   * this run. Reused jobs keep theirs. A host that holds a shared resource across
+   * a run requests it again in each run.
    */
   retainUsed(jobIds: ReadonlySet<string>, used: ReadonlyMap<string, ReadonlySet<string>>): void {
     const obsolete: Disposable[] = [];
@@ -124,11 +133,14 @@ export class GeneratorSessionResources implements Disposable, Pick<GeneratorSess
       if (resources.size === 0) this.jobs.delete(jobId);
     }
     for (const [key, resource] of this.shared) {
-      if (this.requested.has(key)) continue;
+      const jobs = this.sharedBy.get(key) ?? new Set<string>();
+      for (const jobId of jobs) if (!jobIds.has(jobId)) jobs.delete(jobId);
+      if (jobs.size > 0 || this.hostRequested.has(key)) continue;
       obsolete.push(resource);
       this.shared.delete(key);
+      this.sharedBy.delete(key);
     }
-    this.requested.clear();
+    this.hostRequested.clear();
     disposeAll(obsolete);
   }
 
@@ -136,7 +148,8 @@ export class GeneratorSessionResources implements Disposable, Pick<GeneratorSess
     const resources: Disposable[] = [...this.jobs.values()].flatMap((job) => [...job.values()]).concat([...this.shared.values()]);
     this.jobs.clear();
     this.shared.clear();
-    this.requested.clear();
+    this.sharedBy.clear();
+    this.hostRequested.clear();
     disposeAll(resources);
   }
 }
