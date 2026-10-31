@@ -2,15 +2,14 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { inspect } from 'node:util';
 import YAML from 'yaml';
+import { canonicalPath, displayPath, isInsideDirectory, isRecord } from './plan-support.js';
+
+// The helpers live in plan-support, which plan entries may import; the rest of core reads them here.
+export { canonicalPath, displayPath, isInsideDirectory, isRecord };
+
 /** Canonical text order: by UTF-16 code unit, so output does not depend on the machine's locale or ICU data. */
 export function compareText(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
-}
-
-/** Whether `filename` is `directory` or lies inside it, by path alone: the path from `directory` is not `..`, does not start with `..` and the separator, and is not absolute. */
-export function isInsideDirectory(directory: string, filename: string): boolean {
-  const relative = path.relative(directory, filename);
-  return relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative));
 }
 
 /** A copy of a JSON-like value with its object keys sorted at every depth. */
@@ -47,22 +46,6 @@ export interface ResolvedGolemProfile extends GolemProfile {
 /** The error for a `models.sources` entry whose real path is outside `models.root`: the yaml and the API stop with this text. */
 export function outsideModelsRootMessage(entry: string, root: string): string {
   return `RUNM1075: models.sources entry ${displayPath(entry)} is outside the models root ${displayPath(root)}. A models job generates only files inside its root.`;
-}
-
-/**
- * The real path of `filename`: each link of its existing prefix is followed, and the part that does not exist yet stays
- * as written. A file reached through a folder link has the same real path as the file itself.
- */
-export function canonicalPath(filename: string): string {
-  let ancestor = path.resolve(filename);
-  const missing: string[] = [];
-  while (!fs.existsSync(ancestor)) {
-    missing.unshift(path.basename(ancestor));
-    const parent = path.dirname(ancestor);
-    if (parent === ancestor) break;
-    ancestor = parent;
-  }
-  return path.join(fs.realpathSync.native(ancestor), ...missing);
 }
 
 /** The validation levels from the lowest to the highest; a model or call may lower the level of its project, never raise it. */
@@ -277,15 +260,6 @@ export interface ControllerModels {
 export interface GolemProvider<Context> {
   readonly apiVersion: 1;
   generate(context: Context): GolemResult | Promise<GolemResult>;
-}
-
-export function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
-
-/** `filename` as a message prints it: an absolute path relative to the working directory (`.` for the directory itself), any other name (a URL, a relative path) as written. */
-export function displayPath(filename: string): string {
-  return path.isAbsolute(filename) ? path.relative(process.cwd(), filename) || '.' : filename;
 }
 
 /** A YAML file that does not parse: the developer's input to fix. The message starts with `<file>:<line>:<column>`; `cause` is the parser's error. */

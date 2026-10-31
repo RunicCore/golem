@@ -1,0 +1,6 @@
+{
+  "name": "my-app",
+  "version": "0.0.1",
+  "exports": { "./generator": "./generator.js" },
+  "golem": { "apiVersion": 2, "block": "mine", "generator": "./generator" }
+}
