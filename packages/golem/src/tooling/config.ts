@@ -121,6 +121,9 @@ export function resolveConfig(filename = 'golem.yaml', onInput?: InputObserver):
   onInput?.(tsconfig);
 
   const registry = loadPackageRegistry(configFile);
+  for (const { name, block } of registry.packages) {
+    if (ROOT_KEYS.includes(block)) throw new PackageRegistryError(`${name} registers the golem block "${block}", which is a root key of golem.yaml. Core reads the root keys (${ROOT_KEYS.join(', ')}); the package must register another block name.`);
+  }
   const blocks = Object.keys(value).filter(key => !ROOT_KEYS.includes(key));
   if (!blocks.length) {
     const installed = registry.packages.map(({ name, block }) => `${name} (block ${block})`);
