@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { MODEL_BOUNDARY } from './job-facts.js';
+import { isInsideDirectory } from './plan-support.js';
 import type { JobFacts, JobOutput, JobPlan, JobRuleContext, ProgramView } from './job-facts.js';
 
 /** The rule a config broke. */
@@ -13,21 +14,15 @@ export class JobRuleError extends Error {
   }
 }
 
-/** Whether `filename` is `directory` or lies inside it, by path alone. */
-function isInside(directory: string, filename: string): boolean {
-  const relative = path.relative(directory, filename);
-  return relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative));
-}
-
 function overlaps(a: string, b: string): boolean {
-  return isInside(a, b) || isInside(b, a);
+  return isInsideDirectory(a, b) || isInsideDirectory(b, a);
 }
 
 /** Whether `reader` reads a file that `writer` writes. */
 function readsOutputOf(reader: JobFacts, writer: JobFacts): boolean {
   if (reader === writer) return false;
   return writer.outputs.some(output => (
-    reader.inputFiles.some(file => isInside(output.path, file))
+    reader.inputFiles.some(file => isInsideDirectory(output.path, file))
     || reader.inputFolders.some(folder => overlaps(folder, output.path))
   ));
 }
@@ -74,10 +69,10 @@ function checkContainment(jobs: readonly JobFacts[], context: JobRuleContext): v
   const directory = context.tsconfigDirectory;
   for (const job of jobs) {
     for (const root of job.ownedRoots) {
-      if (!isInside(directory, root)) throw new JobRuleError('containment', `Job ${job.id}: root ${root} is outside ${directory}; use one golem.yaml per tsconfig.`, [job.id]);
+      if (!isInsideDirectory(directory, root)) throw new JobRuleError('containment', `Job ${job.id}: root ${root} is outside ${directory}; use one golem.yaml per tsconfig.`, [job.id]);
     }
     for (const output of job.outputs) {
-      if (output.importedByApp === true && !isInside(directory, output.path)) {
+      if (output.importedByApp === true && !isInsideDirectory(directory, output.path)) {
         throw new JobRuleError('containment', `Job ${job.id}: output ${output.path} is outside the tsconfig directory ${directory}. Move it inside.`, [job.id]);
       }
     }
