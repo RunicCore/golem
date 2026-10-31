@@ -90,7 +90,7 @@ function isClassProperty(property: ts.Symbol): boolean {
   return (property.declarations ?? []).some(declaration => ts.isPropertyDeclaration(declaration));
 }
 
-/** True when the property has `@ApiProperty` or `@ApiPropertyOptional` with a `type`, `schema` or `additionalProperties` the user wrote. */
+/** True when the property has `@ApiProperty` or `@ApiPropertyOptional` of `@nestjs/swagger` with a `type`, `schema` or `additionalProperties` the user wrote. */
 function carriesExplicitSwaggerSchema(checker: ts.TypeChecker, property: ts.Symbol): boolean {
   return (property.declarations ?? []).some(declaration => ts.canHaveDecorators(declaration) && (ts.getDecorators(declaration) ?? []).some(decorator => {
     if (!ts.isCallExpression(decorator.expression)) return false;
