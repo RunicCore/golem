@@ -261,3 +261,27 @@ test('containment: an output the app imports lies inside the tsconfig folder, an
   );
   assert.deepEqual(order([generator('/other/gen')]), ['gen']);
 });
+
+test('contracts: a wanted contract with no provider is no error, and two providers of it still stop loading', () => {
+  // protects: T-768 the doc job wants ModelBoundary: a docs-only project loads (the old optional `models` option)
+  const wanting = job('docs', { wants: ['ModelBoundary'] });
+  assert.deepEqual(resolveJobPlan([wanting], context).providers, {});
+  const other = { ...models([]), id: 'models-2', outputs: [folder('/app/other')] };
+  assert.throws(() => resolveJobPlan([wanting, models([]), other], context), rejection('contract-twice', ['models', 'models-2'], 'The contract ModelBoundary has two providers, models and models-2. At most one job provides it.'));
+});
+
+test('containment: a scan root outside the tsconfig folder stops loading (F-42)', () => {
+  // protects: F-42 a read-only folder of the doc job lies inside the tsconfig folder like an owned root
+  assert.throws(
+    () => resolveJobPlan([job('docs', { scanRoots: ['/other/app'] })], context),
+    rejection('containment', ['docs'], 'Job docs: root /other/app is outside /app; use one golem.yaml per tsconfig.'),
+  );
+});
+
+test('rule 1: a job whose input lies in its own output stops loading as a cycle naming the job', () => {
+  // protects: master "Generated input dependency cycle": a job that reads its own document
+  assert.throws(
+    () => resolveJobPlan([job('docs', { outputs: [file(documentFile)], inputFiles: [documentFile] })], context),
+    rejection('cycle', ['docs'], "Jobs read each other's output in a cycle: docs writes what docs reads."),
+  );
+});

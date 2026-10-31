@@ -20,7 +20,6 @@ function overlaps(a: string, b: string): boolean {
 
 /** Whether `reader` reads a file that `writer` writes. */
 function readsOutputOf(reader: JobFacts, writer: JobFacts): boolean {
-  if (reader === writer) return false;
   return writer.outputs.some(output => (
     reader.inputFiles.some(file => isInsideDirectory(output.path, file))
     || reader.inputFolders.some(folder => overlaps(folder, output.path))
@@ -69,7 +68,7 @@ function checkOutputs(jobs: readonly JobFacts[], context: JobRuleContext): void 
 function checkContainment(jobs: readonly JobFacts[], context: JobRuleContext): void {
   const directory = context.tsconfigDirectory;
   for (const job of jobs) {
-    for (const root of job.ownedRoots) {
+    for (const root of [...job.ownedRoots, ...(job.scanRoots ?? [])]) {
       if (!isInsideDirectory(directory, root)) throw new JobRuleError('containment', `Job ${job.id}: root ${root} is outside ${directory}; use one golem.yaml per tsconfig.`, [job.id]);
     }
     for (const output of job.outputs) {

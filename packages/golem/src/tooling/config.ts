@@ -153,8 +153,9 @@ export function resolveConfig(filename = 'golem.yaml', onInput?: InputObserver):
   const jobs: GolemJob[] = [];
   for (const [block, { registration, entry, planned }] of entries) {
     for (const job of planned) {
-      const needed = Object.fromEntries(job.facts.needs.map(contract => [contract, contracts[contract]]));
-      const consumers = Object.fromEntries(job.facts.provides.map(contract => [contract, pass1.filter(other => other !== job && other.facts.needs.includes(contract)).map((other): JobFacts => other.facts)]));
+      const received = [...job.facts.needs, ...(job.facts.wants ?? []).filter(contract => providers[contract] !== undefined)];
+      const needed = Object.fromEntries(received.map(contract => [contract, contracts[contract]]));
+      const consumers = Object.fromEntries(job.facts.provides.map(contract => [contract, pass1.filter(other => other !== job && [...other.facts.needs, ...(other.facts.wants ?? [])].includes(contract)).map((other): JobFacts => other.facts)]));
       const linked: JobPlanParts = entry.link ? entry.link(job, { needed, consumers }) : job;
       if (linked.facts.id !== job.facts.id) throw new Error(`The plan entry of ${registration.name} changed the id of job ${job.facts.id} in the second pass.`);
       jobs.push({ id: linked.facts.id, package: registration.name, block, facts: linked.facts, options: linked.options });
@@ -184,7 +185,7 @@ function writtenBefore(jobs: readonly GolemJob[], input: string): boolean {
 
 export function validateConfigInputs(config: GolemConfig): void {
   for (const [index, job] of config.jobs.entries()) {
-    for (const root of job.facts.ownedRoots) existing(root, 'directory', `Job ${job.id}: root`);
+    for (const root of [...job.facts.ownedRoots, ...(job.facts.scanRoots ?? [])]) existing(root, 'directory', `Job ${job.id}: root`);
     // An input that an earlier job writes is absent on a clean clone until that job runs. Rule 1 keeps a producer before its reader.
     for (const input of job.facts.inputFiles) if (!writtenBefore(config.jobs.slice(0, index), input)) existing(input, 'file', `Job ${job.id}: input file`);
     for (const output of job.facts.outputs) {

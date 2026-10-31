@@ -33,8 +33,12 @@ export interface JobFacts {
   readonly readsProgram: boolean;
   /** Names of the contracts this job provides. */
   readonly provides: readonly string[];
-  /** Names of the contracts this job needs. */
+  /** Names of the contracts this job needs. A needed contract with no provider stops loading. */
   readonly needs: readonly string[];
+  /** Names of the contracts this job wants: link() receives the value when exactly one job provides it. No provider is no error; two providers stay one. Omitted means none. */
+  readonly wants?: readonly string[];
+  /** Folders the job only reads and scans (it writes none of them). Each exists and lies inside the tsconfig folder (F-42). They are never a write destination. Omitted means none. */
+  readonly scanRoots?: readonly string[];
   /** Names of the hooks this job offers to extensions. */
   readonly hooks: readonly string[];
   /** Patterns of the files whose change reruns this job. */

@@ -145,12 +145,14 @@ function docsJob(context: PlanContext, entry: unknown, label: string): PlannedJo
     facts: {
       id,
       outputs: [{ path: output, kind: 'file' }],
-      ownedRoots: [root],
+      ownedRoots: [],
+      scanRoots: [root],
       inputFiles: sources ?? [],
       inputFolders: [],
       readsProgram: true,
       provides: [],
-      needs: [MODEL_BOUNDARY],
+      needs: [],
+      wants: [MODEL_BOUNDARY],
       hooks: [],
       // A job with a list of sources reads those and no others. Otherwise a file below `root/src` with a controller ending is a source, whether or not a run has read it.
       watch: sources ? [] : (sourceSuffixes ?? DEFAULT_CONTROLLER_SUFFIXES).map(suffix => `${path.join(root, 'src')}${path.sep}*${suffix}`),
@@ -182,7 +184,7 @@ export const plan: GolemPlanEntry<ControllerContext> = {
     if (!Array.isArray(docs) || !docs.length) throw new Error(`${BLOCK}.docs must be a nonempty array of jobs.`);
     return docs.map((entry: unknown, index) => docsJob(context, entry, `${BLOCK}.docs[${index}]`));
   },
-  // The second pass: a controller type that is a shared model of the app is matched to its model through the boundary of the ModelBoundary provider.
+  // The second pass, when a job provides ModelBoundary: a controller type that is a shared model of the app is matched to its model through the boundary of the ModelBoundary provider.
   link(job, { needed }) {
     const { ModelBoundary: models } = needed;
     return { facts: job.facts, options: { ...job.options, ...(models ? { models } : {}) } };

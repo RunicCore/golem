@@ -100,7 +100,7 @@ const SAMPLE = `ts-openapi:
       info: { title: Other, version: "1" }
 `;
 
-test('a docs job declares one exclusive output file, owns its root, reads the program and needs the model boundary', (t: TestContext) => {
+test('a docs job declares one exclusive output file, scans its root, reads the program and wants the model boundary', (t: TestContext) => {
   // protects: page "What a job declares" and "Packages": the doc job's facts; a source list is an input, a job without one watches root/src
   const { root, config } = fixture(t);
   useDocsPackage(root);
@@ -110,12 +110,14 @@ test('a docs job declares one exclusive output file, owns its root, reads the pr
   assert.deepEqual(first?.facts, {
     id: 'docs:generated/api.json',
     outputs: [{ path: path.join(root, 'generated/api.json'), kind: 'file' }],
-    ownedRoots: [root],
+    ownedRoots: [],
+    scanRoots: [root],
     inputFiles: [path.join(root, 'src/app.controller.ts')],
     inputFolders: [],
     readsProgram: true,
     provides: [],
-    needs: ['ModelBoundary'],
+    needs: [],
+    wants: ['ModelBoundary'],
     hooks: [],
     watch: [],
   });
@@ -132,12 +134,21 @@ test('a docs job receives the boundary of the job that provides ModelBoundary as
   assert.deepEqual((job?.options as { models?: unknown }).models, { root, directory: root, output: path.join(root, 'gen/models'), suffixes: ['.entity.ts'] });
 });
 
-test('a docs job with no ModelBoundary provider stops loading and names the contract', (t: TestContext) => {
-  // protects: page "Contracts": a needed contract with no provider stops loading and names it
+test('a docs-only project loads and its docs job gets no models option', (t: TestContext) => {
+  // protects: T-768 the doc job wants ModelBoundary and does not need it: no model block, no `models` option (master's optional models)
   const { root, config } = fixture(t);
   useDocsPackage(root);
   writeConfig(config, docs('api.json'), '');
-  assert.throws(() => loadConfig(config), /Job docs:api\.json needs the contract ModelBoundary, but no job provides it\./);
+  const options = loadConfig(config).jobs[0]?.options as object;
+  assert.equal('models' in options, false);
+});
+
+test('a docs job whose source is its own output stops loading as a cycle', (t: TestContext) => {
+  // protects: master "Generated input dependency cycle": a job that reads its own document
+  const { root, config } = fixture(t);
+  useDocsPackage(root);
+  writeConfig(config, docs('api.yaml', '      sources: [api.yaml]\n'));
+  assert.throws(() => loadConfig(config), /Jobs read each other's output in a cycle: docs:api\.yaml writes what docs:api\.yaml reads\./);
 });
 
 test('controller context validates URI versioning and preserves document tags', (t: TestContext) => {
@@ -355,7 +366,7 @@ test('pipeline executes controller output before the SDK consumes its exact file
 });
 
 
-test('a recorded file destination must be exactly the document of its job', async t => {
+test('a docs job owns exactly its document: a sibling or descendant file under its root is refused', async t => {
   const { root, config } = fixture(t);
   useDocsPackage(root);
   writeConfig(config, docs('api/openapi.json'));
@@ -367,6 +378,13 @@ test('a recorded file destination must be exactly the document of its job', asyn
       [key]: { job: 'docs:api/openapi.json', owner: '@exprtlabs/golem-ts-openapi', digest: '0'.repeat(64), destination: 'api/openapi.json', destinationKind: 'file' },
     } }));
     assert.throws(() => loadInventory(resolved), /exact file destination/);
+  }
+  const job = resolved.jobs.find(candidate => candidate.block === 'ts-openapi') as GolemJob;
+  for (const written of ['api/notes.json', 'api/openapi.json/child.json']) {
+    assert.throws(() => applyJob(resolved, { version: 1, files: {} }, job, [{
+      path: path.join(root, written),
+      content: '{"x-generator":"@exprtlabs/golem-ts-openapi"}',
+    }]), /escapes the docs:api\/openapi\.json destination/, written);
   }
 });
 
