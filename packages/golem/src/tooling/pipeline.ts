@@ -586,7 +586,7 @@ async function runJob(job: GolemJob, run: PipelineRun, plan: PipelinePlan, progr
   options.onOwned?.(result.artifacts.map(artifact => artifact.path));
   let changes: FileChanges;
   try {
-    changes = applyJob(config, inventory, job, result.artifacts, Boolean(options.check), options.files);
+    changes = applyJob(config, inventory, job, result.artifacts, Boolean(options.check), options.files, ignoredDirectories);
   } catch (error) {
     // The write loop may have changed files before it threw, so this failure is not one that left the job's output as it was.
     if (typeof error === 'object' && error !== null) failedWhileWriting.add(error);
@@ -670,11 +670,20 @@ async function finalizePipeline(run: PipelineRun, plan: PipelinePlan, progress: 
   return { config, results: progress.results, inputs: observer.inputs, dependencies: observer.dependencies, owned: progress.owned, ran: progress.ran, reports: progress.reports, retired: plan.retired, skippedOutputs: progress.skippedOutputs };
 }
 
+/** The compiler output of the project that `check` leaves out of its search for unrecorded files. A yaml without a tsconfig or a compiler has none. */
+async function checkedCompilerOutputs(config: GolemConfig, session: GeneratorSessionResources): Promise<readonly string[]> {
+  const rewriteScan = fs.existsSync(config.tsconfig) ? await loadRewriteScan(config.jobs.some(job => job.facts.readsProgram)) : undefined;
+  return rewriteScan?.compilerOutputDirectories(config.tsconfig, session) ?? [];
+}
+
 export async function runPipeline(filename: string, options: PipelineOptions = {}): Promise<PipelineState> {
   const session = options.session ?? new GeneratorSessionResources();
   using ownedSession = options.session ? undefined : session;
-  const run: PipelineRun = { options, session, observer: new InputObserver(options.onInput) };
-  const { plan, providers } = await planPipeline(filename, run);
+  const planned: PipelineRun = { options, session, observer: new InputObserver(options.onInput) };
+  const { plan, providers } = await planPipeline(filename, planned);
+  const run: PipelineRun = options.check && options.ignoredDirectories === undefined
+    ? { ...planned, options: { ...options, ignoredDirectories: await checkedCompilerOutputs(plan.config, session) } }
+    : planned;
   const progress = startProgress(plan, providers);
   for (const job of plan.config.jobs) {
     const started = performance.now();

@@ -1204,6 +1204,12 @@ interface ProjectScanInput {
   readonly session?: Pick<GeneratorSession, 'share'>;
 }
 
+/** The folders the project's compiler writes: the `outDir` and `declarationDir` of the tsconfig, parsed by the run's program session. */
+export function compilerOutputDirectories(configFile: string, session: Pick<GeneratorSession, 'share'>): readonly string[] {
+  const { options } = retainedProgramSession(session, path.dirname(configFile)).parseConfigFile(configFile);
+  return [options.outDir, options.declarationDir].filter((directory): directory is string => typeof directory === 'string');
+}
+
 /** Open the project's program and ask the scanner about its sources: what `golem check` reports. Writes nothing. */
 export function scanProject(input: ProjectScanInput): ProgramScan {
   const { root, boundary, configFile, nonModelInputs, codecKeysFile, session } = input;

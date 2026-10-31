@@ -288,7 +288,7 @@ function saveInventory(config: GolemConfig, inventory: Inventory, files: OutputF
 }
 
 /** `golem check` only: a file that carries a generator's marker, sits in a job's destination and no inventory entry or artifact names. A run that writes does not look. */
-function assertNoUnrecordedOutputs(config: GolemConfig, inventory: Inventory, job: GolemJob, expected: ReadonlyMap<string, ExpectedArtifact>): void {
+function assertNoUnrecordedOutputs(config: GolemConfig, inventory: Inventory, job: GolemJob, expected: ReadonlyMap<string, ExpectedArtifact>, compilerOutputs: readonly string[]): void {
   const owners = ownersOf(config);
   const drift: string[] = [];
   const visited = new Set<string>();
@@ -296,6 +296,8 @@ function assertNoUnrecordedOutputs(config: GolemConfig, inventory: Inventory, jo
     const canonicalDirectory = canonicalPath(directory);
     if (visited.has(canonicalDirectory)) return;
     visited.add(canonicalDirectory);
+    // The compiler output of the project is the build's own: a generated file compiled there is no drift.
+    if (compilerOutputs.some(output => isInsideDirectory(canonicalPath(output), canonicalDirectory))) return;
     let entries: fs.Dirent[];
     try { entries = fs.readdirSync(directory, { withFileTypes: true }); }
     catch (error) { if (hasErrorCode(error, 'ENOENT')) return; throw error; }
@@ -335,7 +337,8 @@ function providesCodecKeys(config: GolemConfig, job: GolemJob): boolean {
   return config.jobPlan.providers[MODEL_BOUNDARY] === job.id;
 }
 
-export function applyJob(config: GolemConfig, inventory: Inventory, job: GolemJob, artifacts: readonly GolemArtifact[], check = false, files: OutputFiles = realOutputFiles): FileChanges {
+/** `compilerOutputs` are the folders the project's compiler writes (outDir, declarationDir): the check for unrecorded files leaves them out. */
+export function applyJob(config: GolemConfig, inventory: Inventory, job: GolemJob, artifacts: readonly GolemArtifact[], check = false, files: OutputFiles = realOutputFiles, compilerOutputs: readonly string[] = []): FileChanges {
   assertInventoryPath(config);
   if (!Array.isArray(artifacts)) throw new Error(`${job.package} returned invalid artifacts.`);
   const expected = new Map<string, ExpectedArtifact>();
@@ -365,7 +368,7 @@ export function applyJob(config: GolemConfig, inventory: Inventory, job: GolemJo
     }
     expected.set(key, { filename, content: artifact.content, destination, destinationKind });
   }
-  if (check) assertNoUnrecordedOutputs(config, inventory, job, expected);
+  if (check) assertNoUnrecordedOutputs(config, inventory, job, expected, compilerOutputs);
   const stale: string[] = [];
   const deletions: Array<{ key: string; filename: string }> = [];
   for (const [key, artifact] of expected) {
