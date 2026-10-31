@@ -72,9 +72,12 @@ function disposeAll(resources: Iterable<Disposable>): void {
 export class GeneratorSessionResources implements Disposable, Pick<GeneratorSession, 'share'> {
   private readonly jobs = new Map<string, Map<string, SessionResource>>();
   private readonly shared = new Map<string, SessionResource>();
+  /** The shared keys requested since the last `retainUsed`: the run in progress. */
+  private readonly requested = new Set<string>();
 
-  /** The resource under `key`, created by its first request and kept until the session ends. */
+  /** The resource under `key`, created by its first request and kept while the runs after it request it again. */
   share<Resource extends Disposable>(key: string, create: () => Resource): Resource {
+    this.requested.add(key);
     let resource = this.shared.get(key);
     if (!resource) this.shared.set(key, resource = create());
     return resource as Resource;
@@ -105,7 +108,9 @@ export class GeneratorSessionResources implements Disposable, Pick<GeneratorSess
 
   /**
    * After a successful run, close the resources of jobs that no longer exist
-   * and those a rerun job stopped using. Reused jobs keep theirs.
+   * and those a rerun job stopped using, and each shared resource that nothing
+   * requested during the run. Reused jobs keep theirs. A host that holds a shared
+   * resource across a run requests it again in each run.
    */
   retainUsed(jobIds: ReadonlySet<string>, used: ReadonlyMap<string, ReadonlySet<string>>): void {
     const obsolete: Disposable[] = [];
@@ -118,6 +123,12 @@ export class GeneratorSessionResources implements Disposable, Pick<GeneratorSess
       }
       if (resources.size === 0) this.jobs.delete(jobId);
     }
+    for (const [key, resource] of this.shared) {
+      if (this.requested.has(key)) continue;
+      obsolete.push(resource);
+      this.shared.delete(key);
+    }
+    this.requested.clear();
     disposeAll(obsolete);
   }
 
@@ -125,6 +136,7 @@ export class GeneratorSessionResources implements Disposable, Pick<GeneratorSess
     const resources: Disposable[] = [...this.jobs.values()].flatMap((job) => [...job.values()]).concat([...this.shared.values()]);
     this.jobs.clear();
     this.shared.clear();
+    this.requested.clear();
     disposeAll(resources);
   }
 }
