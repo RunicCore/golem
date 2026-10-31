@@ -23,9 +23,9 @@ import {
   unionModelIds,
 } from './analysis-utils.js';
 import { isStaticArray } from '@exprtlabs/golem/internal/static-value';
-import { arrayItemNode, staticDecoratorKey } from '@exprtlabs/golem/internal/type-analysis';
+import { NEST_COMMON, NEST_SWAGGER, arrayItemNode, staticDecoratorKey } from '@exprtlabs/golem/internal/type-analysis';
 import { decoratorOptions, headerOptionsList, inApplicationOrder, readString, type DecoratorOptions, type MetadataReader } from './metadata.js';
-import { NEST_COMMON, NEST_SWAGGER, callArguments, decoratorsOf, staticObject } from './symbols.js';
+import { callArguments, decoratorsOf, staticObject } from './symbols.js';
 import type { ControllerParameter, DecoratorInfo, NestAnalysisContext, TypeReference } from './types.js';
 
 /** `@nestjs/swagger` parameter decorators and the location each documents. */
@@ -150,7 +150,8 @@ function parameterKey(reader: MetadataReader, decorator: DecoratorInfo): string 
   if (key !== undefined) return key;
   const argument = callArguments(decorator)[0];
   if (!argument || (reader.checker.getTypeAtLocation(argument).flags & ts.TypeFlags.StringLike) === 0) return undefined;
-  return readString(reader, argument, `@${decorator.name}() key`);
+  // An empty key names no field, as for a static one.
+  return readString(reader, argument, `@${decorator.name}() key`) || undefined;
 }
 
 function parameterLocation(

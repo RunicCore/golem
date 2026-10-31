@@ -39,3 +39,10 @@ test('the controllers job documents a body field written with a decorator re-exp
   const schema = await bodySchema(t, "export { Body as Field } from '@nestjs/common';\n", "@Field('payment') payment: TPayment");
   assert.deepEqual(Object.keys(schema.properties as object), ['payment']);
 });
+
+test('the controllers job reads @Body(\'\') as a whole body, as Nest does, not as a field named by the empty string', async (t) => {
+  // protects: T-757 an empty decorator key names no field in either job
+  const schema = await bodySchema(t, "export { Body as Field } from '@nestjs/common';\n", "@Field('') payment: TPayment");
+  assert.equal(schema.properties, undefined);
+  assert.deepEqual(schema, { $ref: '#/components/schemas/TPayment' });
+});
