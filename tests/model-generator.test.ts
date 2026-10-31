@@ -65,8 +65,9 @@ for (const [profile, expected] of profileCases()) {
     );
     assert.ok(result.artifacts.some(artifact => artifact.path === path.join(sourceRoot, 'payment.model.generated.ts')));
     assert.equal(fs.existsSync(path.join(sourceRoot, 'payment.model.generated.ts')), false);
-    // golem retires or replaces a file only while it recognizes its owner's marker.
-    for (const artifact of result.artifacts) assert.equal(marker(artifact.content, '@exprtlabs/golem-model'), true, path.basename(artifact.path));
+    // golem retires or replaces a file only while it recognizes its owner's marker. The codec key table is core's own record and carries none.
+    const jobFiles = result.artifacts.filter(artifact => path.basename(artifact.path) !== 'codec-keys.json');
+    for (const artifact of jobFiles) assert.equal(marker(artifact.content, '@exprtlabs/golem-model'), true, path.basename(artifact.path));
 
     // The same profile, built and run. An import or a MobX hook the profile does not use fails the strict unused compile.
     const built = createModelProject(t, { prefix: 'golem-model-generator-built-', name: 'model-generator-built', compilerOptions: { noUnusedLocals: true } });
