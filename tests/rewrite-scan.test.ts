@@ -28,16 +28,17 @@ function project(t: TestContext, files: readonly string[] = []): string {
 
 type ProgramScan = ReturnType<RewriteScanner['scanProgram']>;
 
-/** The scanner's answer for every file of the project's own program. */
-function scan(root: string, nest = false): ProgramScan {
-  return withScanner(root, (scanner) => scanner.scanProgram(), nest);
+/** The scanner's answer for every file of the project's own program; `interceptor` adds the source that imports `NestModelInterceptor`, which turns the NestJS side on. */
+function scan(root: string, interceptor = false): ProgramScan {
+  if (interceptor) fs.writeFileSync(path.join(root, 'src/interceptor.ts'), "export { NestModelInterceptor } from '@exprtlabs/golem/nest';\n");
+  return withScanner(root, (scanner) => scanner.scanProgram());
 }
 
 /** Run `use` against a scanner of the project's own program, which closes with it. */
-function withScanner<T>(root: string, use: (scanner: RewriteScanner) => T, nest = false): T {
+function withScanner<T>(root: string, use: (scanner: RewriteScanner) => T): T {
   const info = createProjectProgram(root, undefined, undefined, path.join(root, 'tsconfig.json'));
   using program = info.program;
-  return use(new RewriteScanner({ root, directory: root, modelsRoot: root, program, checker: program.getTypeChecker(), codecKeysFile: path.join(root, CODEC_KEYS), nest }));
+  return use(new RewriteScanner({ root, directory: root, modelsRoot: root, program, checker: program.getTypeChecker(), codecKeysFile: path.join(root, CODEC_KEYS) }));
 }
 
 function scanned(result: ProgramScan, file: string): FileScanResult {

@@ -30,13 +30,13 @@ interface ScanInput {
   readonly checker: ts.TypeChecker;
   /** The project's `.golem/codec-keys.json`, which the program does not hold; a missing file holds no keys. */
   readonly codecKeysFile: string;
-  /** The project has NestJS controllers: `@Body()` and `@Query()` parameters and method returns of a model get codec decorators. */
-  readonly nest: boolean;
   /** What a `@Body()` or `@Query()` parameter that is no golem model is: an `error` (the default) or a `warn`ing. */
   readonly nonModelInputs?: 'error' | 'warn' | undefined;
 }
 
 const MODEL_RUNTIME_MODULE = '@exprtlabs/golem/internal/model-runtime';
+/** The module that exports `NestModelInterceptor`. */
+const GOLEM_NEST_SPECIFIER = `${GOLEM_PACKAGE}/nest`;
 const NEST_MODULE = '@exprtlabs/golem/internal/nest-runtime';
 const NEST_PARAMETER_DECORATORS: readonly string[] = ['Body', 'Query'];
 const NEST_CODEC_DECORATOR = 'nestModelCodec';
@@ -1104,7 +1104,8 @@ export class RewriteScanner {
   private readonly root: string;
   private readonly program: ts.Program;
   private readonly checker: ts.TypeChecker;
-  private readonly nest: boolean;
+  /** Whether the NestJS side is on: set the first time a scan needs it. */
+  private nestSide: boolean | undefined;
   private readonly nonModelInputs: 'error' | 'warn';
   private readonly keys: CodecKeys;
   private readonly boundary: ModelBoundary;
@@ -1115,7 +1116,6 @@ export class RewriteScanner {
     this.boundary = modelBoundary(input.modelsRoot, input.suffixes, input.output === undefined ? undefined : { directory: input.directory, output: input.output });
     this.program = input.program;
     this.checker = input.checker;
-    this.nest = input.nest;
     this.nonModelInputs = input.nonModelInputs ?? 'error';
     this.keys = new CodecKeys(input.program, input.root, input.codecKeysFile, this.boundary);
   }
@@ -1135,8 +1135,22 @@ export class RewriteScanner {
     return this.modelClassCounts ??= countModelClasses({ checker: this.checker, keys: this.keys }, this.program.getSourceFiles().filter((file) => this.candidate(file) && file.text.includes('class') && file.text.includes('extends')));
   }
 
+  /**
+   * The NestJS side (codec decorators on `@Body()` and `@Query()` parameters and returns, RUNM1081) is on when a source of the
+   * program imports `@exprtlabs/golem/nest`, which exports `NestModelInterceptor`. A program without that import has no golem
+   * interceptor to convert its inputs. Each program has its own scanner, so a watch run follows the current program.
+   */
+  private nestSideOn(): boolean {
+    return this.nestSide ??= projectSources(this.program).some((file) => this.candidate(file) && file.statements.some((statement) => {
+      if (!(ts.isImportDeclaration(statement) || ts.isExportDeclaration(statement)) || statement.moduleSpecifier === undefined) return false;
+      const module = this.checker.getSymbolAtLocation(statement.moduleSpecifier)?.declarations?.[0]?.getSourceFile().fileName;
+      const reached = module === undefined ? undefined : packageSpecifier(module, file.fileName, this.root);
+      return reached?.kind === 'package' && reached.specifier === GOLEM_NEST_SPECIFIER;
+    }));
+  }
+
   private scan(file: ts.SourceFile): FileScanResult {
-    return resultOf(scanFile({ root: this.root, checker: this.checker, keys: this.keys, nest: this.nest, nonModelInputs: this.nonModelInputs, boundary: this.boundary, modelClasses: () => this.modelClasses() }, file), file);
+    return resultOf(scanFile({ root: this.root, checker: this.checker, keys: this.keys, nest: this.nestSideOn(), nonModelInputs: this.nonModelInputs, boundary: this.boundary, modelClasses: () => this.modelClasses() }, file), file);
   }
 
   /**
@@ -1190,7 +1204,6 @@ interface ProjectScanInput {
   readonly output?: string | undefined;
   /** The tsconfig whose files are scanned, from the golem.yaml; its directory is what the file paths are relative to. */
   readonly configFile: string;
-  readonly nest: boolean;
   readonly nonModelInputs?: 'error' | 'warn' | undefined;
   /** The yaml's `.golem/codec-keys.json`. */
   readonly codecKeysFile: string;
@@ -1201,9 +1214,9 @@ interface ProjectScanInput {
 
 /** Open the project's program and ask the scanner about its sources: what `golem check` reports. Writes nothing. */
 export function scanProject(input: ProjectScanInput): ProgramScan {
-  const { root, directory, modelsRoot, suffixes, output, configFile, nest, nonModelInputs, codecKeysFile, session, sessionOwner } = input;
+  const { root, directory, modelsRoot, suffixes, output, configFile, nonModelInputs, codecKeysFile, session, sessionOwner } = input;
   const info = createProjectProgram(root, undefined, sessionOwner === undefined ? undefined : retainedProgramSession(session, sessionOwner, root), configFile);
   using program = info.program;
-  const { files, diagnostics } = new RewriteScanner({ root: path.dirname(configFile), directory, modelsRoot, suffixes, output, program, checker: program.getTypeChecker(), nest, nonModelInputs, codecKeysFile }).scanProgram();
+  const { files, diagnostics } = new RewriteScanner({ root: path.dirname(configFile), directory, modelsRoot, suffixes, output, program, checker: program.getTypeChecker(), nonModelInputs, codecKeysFile }).scanProgram();
   return { files, diagnostics };
 }

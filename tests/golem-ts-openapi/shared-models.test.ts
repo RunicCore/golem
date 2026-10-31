@@ -47,6 +47,7 @@ function appWithSharedModel(t: TestContext, shared: string, files: Readonly<Reco
       'controllers:', '  - root: .', '    sources:', '      - src/customers.controller.ts', '    output: generated/api.json', '    info: { title: Test API, version: "1" }',
       'models:', '  root: .', '',
     ].join('\n'),
+    'app/src/interceptor.ts': "export { NestModelInterceptor } from '@exprtlabs/golem/nest';\n",
     ...Object.fromEntries(Object.entries(files).map(([relative, content]) => [`app/${relative}`, content])),
   };
   writeGeneratedArtifacts(Object.entries(sources).map(([relative, content]) => ({ path: path.join(outer, relative), content })));
@@ -69,7 +70,7 @@ export class CustomersController {
 
 /** The controller source as the build rewrites it, found with the codec keys and companions of the app. */
 function rewrittenController(app: string): string {
-  const scanned = scanProject({ root: app, directory: app, modelsRoot: app, output: path.join(app, 'src/generated/models'), configFile: path.join(app, 'tsconfig.json'), nest: true, codecKeysFile: path.join(app, '.golem/codec-keys.json') });
+  const scanned = scanProject({ root: app, directory: app, modelsRoot: app, output: path.join(app, 'src/generated/models'), configFile: path.join(app, 'tsconfig.json'), codecKeysFile: path.join(app, '.golem/codec-keys.json') });
   assert.deepEqual(scanned.diagnostics, []);
   return applyRewrites(readText(app, 'src/customers.controller.ts'), scanned.files.get('src/customers.controller.ts')!).code;
 }

@@ -67,7 +67,8 @@ test('a noEmit or emitDeclarationOnly project is checked and writes no JavaScrip
 
 // Decorator metadata
 
-test('a Nest controller builds with the design:paramtypes of a plain tsc emit of the original', async (t) => {
+test('a Nest controller builds with the design:paramtypes of a plain tsc emit of the original, and carries the nest rewrite with no controllers job', async (t) => {
+  // protects: T-761 R-92 a models job and golem's interceptor turn the NestJS side on; the doc job is not needed
   const nest = 'controllers/nest-plugin/project';
   const root = createControllerFixture(t, {
     prefix: 'golem-build-nest-',
@@ -90,7 +91,7 @@ test('a Nest controller builds with the design:paramtypes of a plain tsc emit of
     files: {
       'src/payment.model.ts': readFixture(`${nest}/payment.model.ts`),
       'src/payments.controller.ts': PAYMENTS_CONTROLLER,
-      'golem.yaml': 'version: 1\nmodels: { root: . }\ncontrollers:\n  - root: .\n    output: generated/api.json\n    info: { title: Payments, version: "1" }\n',
+      'golem.yaml': 'version: 1\nmodels: { root: . }\n',
     },
   });
   assert.equal((await build(root, 'tsconfig.json', path.join(root, 'golem.yaml'))).exitCode, 0);

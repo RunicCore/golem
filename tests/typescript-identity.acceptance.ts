@@ -41,7 +41,8 @@ async function createProject(t: FixtureScope, item: IdentityCase, label: string)
   const slug = item.name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
   const prefix = `golem-identity-${label}-`;
   if (item.kind === 'controller') {
-    const files = Object.fromEntries(item.files.map(file => [file.to, readFixture(file.from)]));
+    // The rewrite's NestJS side is on for a program that imports golem's interceptor module.
+    const files = { 'src/interceptor.ts': "export { NestModelInterceptor } from '@exprtlabs/golem/nest';\n", ...Object.fromEntries(item.files.map(file => [file.to, readFixture(file.from)])) };
     return { name: item.name, kind: item.kind, mobx: item.mobx, root: createControllerFixture(t, { prefix, files }) };
   }
   if (item.kind === 'specifiers') {

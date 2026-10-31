@@ -53,7 +53,6 @@ function rewriteStage(item: IdentityProject, lines: string[]): ReadonlyMap<strin
       modelsRoot: item.root,
       configFile: path.join(item.root, 'tsconfig.json'),
       codecKeysFile: path.join(item.root, '.golem/codec-keys.json'),
-      nest: item.kind === 'controller',
     });
     for (const diagnostic of scan.diagnostics) lines.push(describeDiagnostic('rewrite', diagnostic));
     for (const [relative, fileScan] of scan.files) {
