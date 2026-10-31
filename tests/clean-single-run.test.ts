@@ -77,6 +77,7 @@ function cleanProject(t: TestContext, source: string, yaml = config, files: Reco
 }
 
 const read = (root: string, file: string): string => fs.readFileSync(path.join(root, file), 'utf8');
+const schemaNames = (document: string): string[] => Object.keys((JSON.parse(document) as { components: { schemas: object } }).components.schemas);
 const sdkUnknownFormats = (root: string): string => (JSON.parse(read(root, 'sdk/model-manifest.json')) as { profile: { unknownFormats: string } }).profile.unknownFormats;
 
 // protects: T-464 a clean run and a run with the SDK present give the same document
@@ -90,8 +91,8 @@ test('a clean tree generates in one run, and the run after it writes the same do
     assert.equal(fs.existsSync(path.join(root, written)), true, `${written} is written`);
   }
   const first = read(root, 'generated/openapi.json');
-  // The inline `import('../sdk/index.js').Money` model and the model that reaches the SDK through a `paths` alias are left out too.
-  assert.deepEqual(Object.keys((JSON.parse(first) as { components: { schemas: object } }).components.schemas), ['TCharge', 'TStatus']);
+  // The document holds the models the controller returns. The two classes named TCharge are told apart by their folder, and only the reached one is in it.
+  assert.deepEqual(schemaNames(first), ['TStatus', 'b.TCharge']);
 
   // A changed controller file makes the controllers job read the project again, now with the SDK on disk.
   fs.appendFileSync(path.join(root, 'src/catalog.controller.ts'), '// second run\n');
@@ -115,16 +116,15 @@ test('a profile option changed after a run regenerates the SDK manifest with the
 });
 
 const reaches = [
-  ['returns it', 'TCart', '', undefined],
-  ['returns an array of it', 'TCart[]', '', undefined],
-  ['picks a field of it that holds no SDK type', "Pick<TCart, 'note'>", '', undefined],
-  ['returns it in a union', 'TStatus | TCart', '', undefined],
-  ['returns a model that holds it', 'TStatus | TOrder', "import type { TOrder } from './order.model.js';", undefined],
-  ['returns an inferred Map of it', '', '', 'new Map<string, TCart>()'],
-  ['imports an SDK type', 'Money', "import type { Money } from '../sdk/index.js';", undefined],
-  ['returns a local type that holds an SDK type', 'Local', "import type { Money } from '../sdk/index.js';\ntype Local = { m: Money };", undefined],
+  ['returns it', 'TCart', '', undefined, ['TCart']],
+  ['returns an array of it', 'TCart[]', '', undefined, ['TCart']],
+  ['picks a field of it that holds no SDK type', "Pick<TCart, 'note'>", '', undefined, ['TCart']],
+  ['returns it in a union', 'TStatus | TCart', '', undefined, ['TCart', 'TStatus']],
+  ['returns a model that holds it', 'TStatus | TOrder', "import type { TOrder } from './order.model.js';", undefined, ['TCart', 'TOrder', 'TStatus']],
+  ['returns an inferred Map of it', '', '', 'new Map<string, TCart>()', ['TCart']],
+  ['imports an SDK type', 'Money', "import type { Money } from '../sdk/index.js';", undefined, ['Money']],
+  ['returns a local type that holds an SDK type', 'Local', "import type { Money } from '../sdk/index.js';\ntype Local = { m: Money };", undefined, ['Local']],
 ] as const;
-const cycle = (error: unknown): boolean => /RUNM1084: Generated input dependency cycle: the controllers job reads .*, which is, or imports, a file that a later job writes/.test(String(error)) && !/RUNM1058/.test(String(error));
 
 // One project whose SDK is on disk, shared by the cases: the controller file changes, the models stay.
 const fileScope = fileFixtureScope();
@@ -139,18 +139,22 @@ const withSdk = onceShared(async () => {
   return root;
 });
 
-// protects: T-464 a controller that reaches a model with an SDK import gets RUNM1084 in every run
-for (const [reach, returns, imports, body] of reaches) {
-  test(`a controller that ${reach} stops with RUNM1084 on a clean tree`, async (t: TestContext) => {
+// protects: T-464 a controller that reaches a model with an SDK import generates in every run: the derived order puts the SDK job, which reads no program, before the docs job
+for (const [reach, returns, imports, body, schemas] of reaches) {
+  test(`a controller that ${reach} generates its document in one run on a clean tree`, async (t: TestContext) => {
     const root = cleanProject(t, controller(returns, imports, body));
 
-    await assert.rejects(runPipeline(path.join(root, 'golem.yaml')), cycle);
+    await runPipeline(path.join(root, 'golem.yaml'));
+
+    assert.deepEqual(schemaNames(read(root, 'generated/openapi.json')), schemas);
   });
-  test(`a controller that ${reach} stops with RUNM1084 when the SDK is present`, async () => {
+  test(`a controller that ${reach} generates its document in one run when the SDK is present`, async () => {
     const root = await withSdk();
     fs.writeFileSync(path.join(root, 'src/catalog.controller.ts'), controller(returns, imports, body));
 
-    await assert.rejects(runPipeline(path.join(root, 'golem.yaml')), cycle);
+    await runPipeline(path.join(root, 'golem.yaml'));
+
+    assert.deepEqual(schemaNames(read(root, 'generated/openapi.json')), schemas);
   });
 }
 
