@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { canonicalPath, displayPath, invalidValidationLevelMessage, isInsideDirectory, isRecord, isValidationLevel, parseYamlFile, resolveProfile } from './generator-core.js';
+import { ROOT_KEYS } from './editor-schema.js';
 import { providersOf, resolveJobPlan } from './job-rules.js';
 import { loadPackageRegistry, PackageRegistryError, registrationForBlock } from './package-registry.js';
 import type { PackageRegistration } from './package-registry.js';
@@ -35,9 +36,6 @@ export interface GolemConfig {
   readonly contracts: ContractValues;
   readonly inventoryFile: string;
 }
-
-/** The top-level keys that every package shares or that core still reads itself. Any other key is the block of a package. */
-const ROOT_KEYS: readonly string[] = ['version', 'tsconfig', 'validation', 'allowAny', 'exact', 'unknownFormats', 'mobx', 'nonModelInputs'];
 
 function boolean(value: unknown, fallback: boolean, label: string): boolean {
   if (value === undefined) return fallback;

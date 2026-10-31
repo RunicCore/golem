@@ -28,6 +28,9 @@ const ROOT_PROPERTIES: JsonObject = {
   nonModelInputs: { enum: ['warn', 'error'], default: 'error', description: 'The action for a @Body() or @Query() parameter that NestModelInterceptor rejects.' },
 };
 
+/** The names of the root keys, in schema order. */
+export const ROOT_KEYS: readonly string[] = Object.keys(ROOT_PROPERTIES);
+
 export interface EditorSchema {
   /** The text of .golem/schema.json. */
   readonly text: string;
