@@ -9,6 +9,7 @@ import { RewriteScanner, type FileScanResult } from '#golem/rewrite-scan';
 import { decodeMappings } from '#golem/source-map';
 import { createProjectProgram } from '@exprtlabs/golem/internal/type-analysis';
 import { writeSdk } from '#openapi/generator';
+import { NEST_INTERCEPTOR_SOURCE } from './fixture-templates/controllers/project.js';
 import { copyFixtureFile, readFixture, writeGeneratedArtifacts } from './fixture-project.js';
 import { createModelProject, writeModelSources } from './model-project.js';
 import { writeFixture } from './support/consumer.js';
@@ -30,7 +31,7 @@ type ProgramScan = ReturnType<RewriteScanner['scanProgram']>;
 
 /** The scanner's answer for every file of the project's own program; `interceptor` adds the source that imports `NestModelInterceptor`, which turns the NestJS side on. */
 function scan(root: string, interceptor = false): ProgramScan {
-  if (interceptor) fs.writeFileSync(path.join(root, 'src/interceptor.ts'), "export { NestModelInterceptor } from '@exprtlabs/golem/nest';\n");
+  if (interceptor) fs.writeFileSync(path.join(root, 'src/interceptor.ts'), NEST_INTERCEPTOR_SOURCE);
   return withScanner(root, (scanner) => scanner.scanProgram());
 }
 

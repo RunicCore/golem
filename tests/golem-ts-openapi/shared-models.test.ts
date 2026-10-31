@@ -13,6 +13,7 @@ import { scanProject } from '#golem/rewrite-scan';
 import { createContractAnalysis, createProgram, modelBoundary } from '@exprtlabs/golem/internal/type-analysis';
 import { applyRewrites } from '#golem/rewrite';
 import { writeSdk } from '#openapi/generator';
+import { NEST_INTERCEPTOR_SOURCE } from '../fixture-templates/controllers/project.js';
 import { createFixtureProject, linkProjectPackages, writeGeneratedArtifacts } from '../fixture-project.js';
 import { command, golem, workspace } from '../support/process.js';
 
@@ -47,7 +48,7 @@ function appWithSharedModel(t: TestContext, shared: string, files: Readonly<Reco
       'controllers:', '  - root: .', '    sources:', '      - src/customers.controller.ts', '    output: generated/api.json', '    info: { title: Test API, version: "1" }',
       'models:', '  root: .', '',
     ].join('\n'),
-    'app/src/interceptor.ts': "export { NestModelInterceptor } from '@exprtlabs/golem/nest';\n",
+    'app/src/interceptor.ts': NEST_INTERCEPTOR_SOURCE,
     ...Object.fromEntries(Object.entries(files).map(([relative, content]) => [`app/${relative}`, content])),
   };
   writeGeneratedArtifacts(Object.entries(sources).map(([relative, content]) => ({ path: path.join(outer, relative), content })));

@@ -14,6 +14,9 @@ export interface ControllerFixtureOptions {
   readonly links?: 'nest-declarations' | 'workspace' | 'none';
 }
 
+/** A project source that imports the module of `NestModelInterceptor`. It turns the NestJS side of the rewrite on, as the file that registers the interceptor does in an app. */
+export const NEST_INTERCEPTOR_SOURCE = "export { NestModelInterceptor } from '@exprtlabs/golem/nest';\n";
+
 const defaultTsconfig = {
   compilerOptions: {
     target: 'ES2022',

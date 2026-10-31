@@ -8,7 +8,7 @@ import { applyRewrites } from '#golem/rewrite';
 import { scanProject, type ProgramScan } from '#golem/rewrite-scan';
 import { generate } from '#model/generator';
 import { readFixture, writeGeneratedArtifacts } from '../fixture-project.js';
-import { createControllerFixture } from '../fixture-templates/controllers/project.js';
+import { NEST_INTERCEPTOR_SOURCE, createControllerFixture } from '../fixture-templates/controllers/project.js';
 import { paymentModelSource } from '../fixture-templates/controllers/payment-model.js';
 
 const PLUGIN = 'controllers/nest-plugin';
@@ -17,8 +17,6 @@ const CONTROLLERS_JOB = `${PLUGIN}/rewrite-scans-a-controllers-job-project`;
 const CONTROLLER = 'src/payments.controller.ts';
 /** The load of the module that registers the payment codecs, added for any codec the controller names. */
 const PAYMENT_MODULE = "import './payment.model.generated.js';";
-/** The source that imports the module of `NestModelInterceptor`: it turns the NestJS side of the rewrite on. */
-const INTERCEPTOR = "export { NestModelInterceptor } from '@exprtlabs/golem/nest';\n";
 const NEST_IMPORT = "import { nestModelCodec as __golem_nestModelCodec, nestModelReturn as __golem_nestModelReturn } from '@exprtlabs/golem/internal/nest-runtime';";
 
 /** A project of the named source files (under `src/`) with the models job's generated files written. */
@@ -26,7 +24,7 @@ function project(t: TestContext, files: Readonly<Record<string, string>>): strin
   const root = createControllerFixture(t, {
     prefix: 'golem-rewrite-nest-',
     links: 'workspace',
-    files: { 'golem.yaml': 'version: 1\nmodels: { root: . }\n', 'src/interceptor.ts': INTERCEPTOR, ...files },
+    files: { 'golem.yaml': 'version: 1\nmodels: { root: . }\n', 'src/interceptor.ts': NEST_INTERCEPTOR_SOURCE, ...files },
   });
   writeGeneratedArtifacts(generate({ root, profile: { mobx: false, validation: true } }).artifacts);
   return root;
@@ -420,7 +418,7 @@ function nestAppProject(t: TestContext, options: { readonly controllersJob: bool
     files: {
       'src/payment.model.ts': readFixture(`${PLUGIN}/project/payment.model.ts`),
       [CONTROLLER]: readFixture(`${CONTROLLERS_JOB}/payments.controller.ts`),
-      ...(options.interceptor ? { 'src/interceptor.ts': INTERCEPTOR } : {}),
+      ...(options.interceptor ? { 'src/interceptor.ts': NEST_INTERCEPTOR_SOURCE } : {}),
       'golem.yaml': [
         'version: 1',
         'mobx: false',

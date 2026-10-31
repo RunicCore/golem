@@ -6,7 +6,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { pathToFileURL } from 'node:url';
 import { runPipeline } from '#golem/cli';
-import { createControllerFixture } from '../fixture-templates/controllers/project.js';
+import { NEST_INTERCEPTOR_SOURCE, createControllerFixture } from '../fixture-templates/controllers/project.js';
 import { startNestApp } from '../support/nest-app.js';
 import { command, golem } from '../support/process.js';
 
@@ -41,7 +41,7 @@ function project(t: Parameters<typeof createControllerFixture>[0], openapiVersio
     prefix: 'golem-union-parameters-',
     links: 'workspace',
     tsconfig: { compilerOptions: { target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', strict: true, experimentalDecorators: true, emitDecoratorMetadata: true, skipLibCheck: true, outDir: 'build', rootDir: 'src', types: ['node'] }, include: ['src/**/*.ts'] },
-    files: { 'src/shapes.model.ts': MODELS, 'src/shapes.controller.ts': CONTROLLER, 'golem.yaml': yaml(openapiVersion) },
+    files: { 'src/shapes.model.ts': MODELS, 'src/shapes.controller.ts': CONTROLLER, 'src/interceptor.ts': NEST_INTERCEPTOR_SOURCE, 'golem.yaml': yaml(openapiVersion) },
   });
 }
 
