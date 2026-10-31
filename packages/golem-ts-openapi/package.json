@@ -55,11 +55,16 @@
     }
   },
   "dependencies": {
-    "@exprtlabs/golem": "1.1.0-rc.0",
     "yaml": "^2.9.0"
   },
   "peerDependencies": {
+    "@exprtlabs/golem": "1.1.0-rc.0",
     "typescript": ">=6.0.0 <7 || >=7.1.0-0 <8"
+  },
+  "peerDependenciesMeta": {
+    "typescript": {
+      "optional": true
+    }
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
