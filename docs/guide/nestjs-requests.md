@@ -21,7 +21,7 @@ Import `reflect-metadata` first in the application entry file, before any applic
 
 TypeScript erases the types of `@Body()`, `@Query()` and return values. The build rewrite records them for `NestModelInterceptor`.
 
-- The rewrite and its [`RUNM1081`](/reference/diagnostics#runm1081) checks run when a source of the project imports `@exprtlabs/golem/nest`, the module that exports `NestModelInterceptor`. A plain NestJS app that never imports it gets neither.
+- The rewrite and its [`RUNM1081`](/reference/diagnostics#runm1081) checks run when a source of the project imports `@exprtlabs/golem/nest`, the module that exports `NestModelInterceptor`. A static import, a re-export and `import x = require(...)` count. A dynamic `import()` or `require()` call does not. A plain NestJS app that never imports it gets neither.
 - A `controllers` job is not needed for them, and it does not turn them on. The `controllers` job only writes the OpenAPI document.
 
 - Every build tool applies the rewrite ([Build tools](/guide/build)).

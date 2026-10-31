@@ -1139,13 +1139,18 @@ export class RewriteScanner {
    * The NestJS side (codec decorators on `@Body()` and `@Query()` parameters and returns, RUNM1081) is on when a source of the
    * program imports `@exprtlabs/golem/nest`, which exports `NestModelInterceptor`. A program without that import has no golem
    * interceptor to convert its inputs. Each program has its own scanner, so a watch run follows the current program.
+   * A static import, a re-export and `import x = require(...)` count; a dynamic `import()` or `require()` call does not.
+   * The module that a statement reaches is a declaration file or a package file; an authored project source is skipped without a package lookup.
    */
   private nestSideOn(): boolean {
     return this.nestSide ??= projectSources(this.program).some((file) => this.candidate(file) && file.statements.some((statement) => {
-      if (!(ts.isImportDeclaration(statement) || ts.isExportDeclaration(statement)) || statement.moduleSpecifier === undefined) return false;
-      const module = this.checker.getSymbolAtLocation(statement.moduleSpecifier)?.declarations?.[0]?.getSourceFile().fileName;
-      const reached = module === undefined ? undefined : packageSpecifier(module, file.fileName, this.root);
-      return reached?.kind === 'package' && reached.specifier === GOLEM_NEST_SPECIFIER;
+      const specifier = ts.isImportDeclaration(statement) || ts.isExportDeclaration(statement) ? statement.moduleSpecifier
+        : ts.isImportEqualsDeclaration(statement) && statement.moduleReference.kind === ts.SyntaxKind.ExternalModuleReference ? ts.forEachChild(statement.moduleReference, (child) => child)
+          : undefined;
+      const module = specifier === undefined ? undefined : this.checker.getSymbolAtLocation(specifier)?.declarations?.[0]?.getSourceFile();
+      if (module === undefined || this.candidate(module)) return false;
+      const reached = packageSpecifier(module.fileName, file.fileName, this.root);
+      return reached.kind === 'package' && reached.specifier === GOLEM_NEST_SPECIFIER;
     }));
   }
 

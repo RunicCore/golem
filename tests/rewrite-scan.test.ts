@@ -295,6 +295,17 @@ test('a @Body() class that reaches the generated base through another class gets
   assert.ok(rewritten(root, result, 'rush.controller.ts').includes('@__golem_nestModelCodec("TPayment_22222222") input: RushPayment'));
 });
 
+test('an import-equals require of @exprtlabs/golem/nest turns the NestJS side on, and a dynamic import of it does not', (t) => {
+  // protects: T-761 the switch counts import x = require(...) and leaves a dynamic import() out
+  const root = project(t);
+  fs.writeFileSync(path.join(root, 'src/rush.controller.ts'), 'import { Body } from \'@nestjs/common\';\nimport type { Payment } from \'./payment.model.js\';\nexport class RushController {\n  create(@Body() input: Payment): void {}\n}\n');
+  fs.writeFileSync(path.join(root, 'src/interceptor.ts'), "export const load = () => import('@exprtlabs/golem/nest');\n");
+  assert.equal(scan(root).files.get('src/rush.controller.ts'), undefined);
+
+  fs.writeFileSync(path.join(root, 'src/interceptor.ts'), "import nest = require('@exprtlabs/golem/nest');\nexport const interceptor = nest.NestModelInterceptor;\n");
+  assert.ok(rewritten(root, scan(root), 'rush.controller.ts').includes('@__golem_nestModelCodec("TPayment_22222222") input: Payment'));
+});
+
 test('a @Body() model that is a default export says to export the class by name', (t) => {
   // protects: T-195 review: "run golem generate" never fixes a default export, so the message names the fix
   const root = project(t, ['default-class.model.ts', 'default-class.model.generated.ts']);
