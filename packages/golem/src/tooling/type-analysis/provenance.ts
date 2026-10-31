@@ -13,7 +13,7 @@ import type {
   ModelManifest,
   ModelManifestEntry,
 } from '../model-manifest-core.js';
-import { canonicalPath, displayPath, type GolemProfile, type InputObserver } from '../generator-core.js';
+import { canonicalPath, compareText, displayPath, stableValue, type GolemProfile, type InputObserver } from '../generator-core.js';
 import type { ModelTypeDescriptor } from '../../model-registry.js';
 import { canonicalFilename, isUnderOutputs } from './project.js';
 import type { ProgramInfo } from './project.js';
@@ -123,10 +123,16 @@ function validateManifestProfile(
   const differing = (Object.keys(expected) as (keyof typeof expected)[])
     .filter((key) => advertised[key] !== expected[key])
     .map((key) => `${key}: manifest ${advertised[key] ?? 'not recorded'}, project ${expected[key]}`);
+  // A package without a record is not used; its settings are equal when their stable JSON is.
+  const settings = (extensions: GolemProfile['extensions'], name: string): string => extensions?.[name] === undefined ? 'not used' : JSON.stringify(stableValue(extensions[name]));
+  for (const name of [...new Set([...Object.keys(advertised.extensions ?? {}), ...Object.keys(profile.extensions ?? {})])].sort(compareText)) {
+    const [manifest, project] = [settings(advertised.extensions, name), settings(profile.extensions, name)];
+    if (manifest !== project) differing.push(`extensions of ${name}: manifest ${manifest}, project ${project}`);
+  }
   if (differing.length > 0) {
     throw new Error(
       `Model manifest profile mismatch in ${displayPath(filename)}: ${differing.join('; ')}. The project expects `
-      + `{ mobx: ${expected.mobx}, validation: ${expected.validation}, allowAny: ${expected.allowAny}, unknownFormats: ${expected.unknownFormats} }. `
+      + `{ mobx: ${expected.mobx}, validation: ${expected.validation}, allowAny: ${expected.allowAny}, unknownFormats: ${expected.unknownFormats}${profile.extensions === undefined ? '' : `, extensions: ${JSON.stringify(stableValue(profile.extensions))}`} }. `
       + 'Regenerate the SDK manifest with the same profile before model generation, or set the project to the manifest value in golem.yaml.',
     );
   }

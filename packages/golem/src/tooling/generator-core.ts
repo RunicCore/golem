@@ -37,6 +37,11 @@ export interface GolemProfile {
   readonly allowAny?: boolean;
   /** What a schema format that golem does not implement does: `error` (default) fails generation, `warn` skips its check. */
   readonly unknownFormats?: 'warn' | 'error';
+  /**
+   * The settings of the extensions that change generated code, by the name of the package whose block holds them. A manifest records
+   * them as written and a model job compares them as stable JSON. A missing package, or no record at all, means "not used".
+   */
+  readonly extensions?: Readonly<Record<string, Readonly<Record<string, unknown>>>>;
 }
 
 export interface ResolvedGolemProfile extends GolemProfile {
@@ -65,7 +70,7 @@ export function validationRank(level: GolemProfile['validation']): number {
 export function resolveProfile(profile: GolemProfile): ResolvedGolemProfile {
   if (!isRecord(profile)) throw new TypeError('Generation profile must be an object.');
   for (const key of Object.keys(profile)) {
-    if (!['mobx', 'validation', 'allowAny', 'unknownFormats'].includes(key)) {
+    if (!['mobx', 'validation', 'allowAny', 'unknownFormats', 'extensions'].includes(key)) {
       throw new TypeError(`Unknown generation profile option: ${key}.`);
     }
   }
@@ -77,8 +82,13 @@ export function resolveProfile(profile: GolemProfile): ResolvedGolemProfile {
   if (profile.unknownFormats !== undefined && profile.unknownFormats !== 'warn' && profile.unknownFormats !== 'error') {
     throw new TypeError('Generation profile unknownFormats must be "warn" or "error".');
   }
+  const { extensions, ...rest } = profile;
+  if (extensions !== undefined && (!isRecord(extensions) || !Object.values(extensions).every(isRecord))) {
+    throw new TypeError('Generation profile extensions must map a package name to an object of settings.');
+  }
   const resolved: ResolvedGolemProfile = {
-    ...profile,
+    ...rest,
+    ...(extensions === undefined || !Object.keys(extensions).length ? {} : { extensions }),
     allowAny: profile.allowAny ?? false,
     unknownFormats: profile.unknownFormats ?? 'error',
   };
