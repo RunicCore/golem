@@ -2,18 +2,11 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
-import {
-  DEFAULT_MODEL_OUTPUT, defaultModelOutput, isOperationCodecRegistry, operationCodecRegistryPath,
-} from '#golem/generated-paths';
+import { DEFAULT_MODEL_OUTPUT, defaultModelOutput } from '#golem/generated-paths';
 import { workspace } from './support/process.js';
 
 test('default generated paths resolve under the job root', () => {
   assert.equal(defaultModelOutput('/project'), path.join('/project', 'src/generated/models'));
-  assert.equal(operationCodecRegistryPath('/project'), path.join('/project', 'src/generated/operation-codecs.ts'));
-  assert.equal(isOperationCodecRegistry('src/generated/operation-codecs.ts'), true);
-  assert.equal(isOperationCodecRegistry('app/src/generated/operation-codecs.ts'), true);
-  assert.equal(isOperationCodecRegistry('src/generated/operation-codecs.ts.bak'), false);
-  assert.equal(isOperationCodecRegistry('xsrc/generated/operation-codecs.ts'), false);
 });
 
 // Budget (Spec A D4): default paths have one owner. Only generated-paths.ts may spell them.

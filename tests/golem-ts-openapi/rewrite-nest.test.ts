@@ -5,7 +5,7 @@ import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { runPipeline } from '#golem/cli';
 import { applyRewrites } from '#golem/rewrite';
-import { checkNestCodecs, scanProject, type ProgramScan } from '#golem/rewrite-scan';
+import { scanProject, type ProgramScan } from '#golem/rewrite-scan';
 import { generate } from '#model/generator';
 import { readFixture, writeGeneratedArtifacts } from '../fixture-project.js';
 import { createControllerFixture } from '../fixture-templates/controllers/project.js';
@@ -13,7 +13,7 @@ import { paymentModelSource } from '../fixture-templates/controllers/payment-mod
 
 const PLUGIN = 'controllers/nest-plugin';
 const FORMS = `${PLUGIN}/rewrite-covers-qualified-array-and-serde-forms`;
-const CHECKS = `${PLUGIN}/rewrite-checks-parameters-against-operation-codecs`;
+const CONTROLLERS_JOB = `${PLUGIN}/rewrite-scans-a-controllers-job-project`;
 const CONTROLLER = 'src/payments.controller.ts';
 /** The load of the module that registers the payment codecs, added for any codec the controller names. */
 const PAYMENT_MODULE = "import './payment.model.generated.js';";
@@ -128,7 +128,6 @@ test('without nest the controller is not rewritten', (t) => {
   const result = scan(root, false);
   assert.deepEqual(result.diagnostics, []);
   assert.equal(result.files.get(CONTROLLER), undefined);
-  assert.deepEqual(result.nestCodecSites, []);
 });
 
 test('a decorator that is already present, plain, through a namespace or aliased, is kept and adds no edit', (t) => {
@@ -155,7 +154,6 @@ for (const { name, fixture, type } of [
       { code: 'RUNM1081', severity: 'error', file: 'src/notes.controller.ts', message: notAModel('Body', type) },
     ]);
     assert.equal(result.files.get('src/notes.controller.ts'), undefined);
-    assert.deepEqual(result.nestCodecSites.filter(site => site.file === 'src/notes.controller.ts'), []);
   });
 }
 
@@ -358,62 +356,6 @@ test('a method that calls parse and carries nest decorators gets both rewrites a
   ]);
 });
 
-test('the operation-codec check passes when the registry holds every id the scan found, and fails when it does not', (t) => {
-  const root = paymentsProject(t);
-  const result = scan(root);
-  assert.deepEqual(result.diagnostics, []);
-  const registry = path.join(root, 'src/generated/operation-codecs.ts');
-
-  assert.equal(result.nestCodecSites.length, 6, 'one site for each parameter that gained a codec');
-  const { ids, label, decorator } = result.nestCodecSites[0]!;
-  assert.deepEqual(result.nestCodecSites.map(site => site.file), Array(6).fill(CONTROLLER));
-  assert.equal(ids.length, 1);
-  assert.match(ids[0]!, /^TPaymentInput_[0-9a-f]{8}$/);
-  assert.equal(label, 'TPaymentInput');
-  assert.equal(decorator, 'Body');
-
-  const slotOf = (site: { readonly method: string | undefined; readonly slot: string }): string => `${site.method}:${site.slot}`;
-  assert.deepEqual(result.nestCodecSites.map(slotOf), ['create:input', 'createAsClass:input', 'list:query', 'createBatch:input', 'createPiped:input', 'listPiped:query']);
-  const methods = (replaced?: string, misplaced?: string): string => `export const OPERATION_METHOD_KEYS = ${JSON.stringify(Object.fromEntries(result.nestCodecSites.map(site => [
-    `PaymentsController.${site.method}`, { [site.method === misplaced ? 'input' : site.slot]: site.method === 'create' && replaced ? replaced : site.ids[0] },
-  ])), null, 2)} as const;\n`;
-  fs.mkdirSync(path.dirname(registry), { recursive: true });
-  fs.writeFileSync(registry, methods());
-  assert.deepEqual(checkNestCodecs(root, result), []);
-
-  // Each site is compared with the slot of its own method: three methods hold the same id, and only the one that now holds another id fails.
-  fs.writeFileSync(registry, methods('TPaymentInput_00000000'));
-  const failures = checkNestCodecs(root, result);
-  assert.deepEqual(failures.map(({ code, file, message }) => ({ code, file, message })), [
-    { code: 'RUNM1072', file: CONTROLLER, message: '@Body() type TPaymentInput disagrees with generated operation keys' },
-  ]);
-  assert.deepEqual([failures[0]?.line, failures[0]?.column], [7, 25]);
-
-  // The method matches, but its registry entry holds the id in another slot: `list` is a @Query() site and its model sits under `input`.
-  fs.writeFileSync(registry, methods(undefined, 'list'));
-  assert.deepEqual(checkNestCodecs(root, result).map(({ message }) => message), ['@Query() type TPaymentFilter disagrees with generated operation keys']);
-
-  fs.rmSync(registry);
-  assert.equal(checkNestCodecs(root, result).length, 6, 'a missing registry disagrees with every site');
-});
-
-test('a registry that cannot be read is reported once with its file, not as a disagreement of every site', (t) => {
-  // protects: T-490 only a missing registry means "no keys yet"; a read error such as EACCES must not become six RUNM1072 sites
-  const root = paymentsProject(t);
-  const result = scan(root);
-  const registry = path.join(root, 'src/generated/operation-codecs.ts');
-  fs.mkdirSync(registry, { recursive: true });
-  const failures = checkNestCodecs(root, result);
-  assert.equal(result.nestCodecSites.length, 6);
-  assert.deepEqual(failures.map(({ code, file }) => ({ code, file })), [{ code: 'RUNM1072', file: registry }]);
-  assert.match(failures[0]!.message, /^the generated operation keys cannot be read \(EISDIR/);
-});
-
-test('the operation-codec check has nothing to compare when the project has no nest sites', (t) => {
-  const root = paymentsProject(t);
-  assert.deepEqual(checkNestCodecs(root, scan(root, false)), [], 'no registry is needed when nest is off');
-});
-
 /** A project whose golem.yaml has a controllers job over the payments controller, so the scan runs with nest on. */
 function controllersJobProject(t: TestContext): string {
   return createControllerFixture(t, {
@@ -421,7 +363,7 @@ function controllersJobProject(t: TestContext): string {
     links: 'workspace',
     files: {
       'src/payment.model.ts': readFixture(`${PLUGIN}/project/payment.model.ts`),
-      [CONTROLLER]: readFixture(`${CHECKS}/payments.controller.ts`),
+      [CONTROLLER]: readFixture(`${CONTROLLERS_JOB}/payments.controller.ts`),
       'golem.yaml': [
         'version: 1',
         'mobx: false',
@@ -439,18 +381,6 @@ function controllersJobProject(t: TestContext): string {
     },
   });
 }
-
-test('a controllers job turns nest on, and golem check fails a parameter the generated operations do not hold', async (t) => {
-  const root = controllersJobProject(t);
-  const config = path.join(root, 'golem.yaml');
-  await runPipeline(config);
-  await runPipeline(config, { check: true });
-
-  // A method outside the controllers job's sources is stamped by the scan but is in no generated operation.
-  fs.writeFileSync(path.join(root, 'src/helper.controller.ts'), readFixture(`${CHECKS}/helper.controller.ts`));
-  await runPipeline(config);
-  await assert.rejects(runPipeline(config, { check: true }), /RUNM1072 \(.*src\/helper\.controller\.ts:4:\d+\): @Query\(\) type TPaymentFilter disagrees with generated operation keys/);
-});
 
 test('golem check stops on a body or query parameter that is no model, and nonModelInputs: warn reports it and continues', async (t) => {
   // protects: T-258 R-13 the user's choice: error by default, a golem.yaml setting makes it a warning
@@ -584,10 +514,6 @@ test('a generic tag wrapper Tagged<A | B> on a @Body() or @Query() union is stam
     `  @Post() body(@Body() @__golem_nestModelUnion("kind", ${variants}) shape: Tagged<TCircle | TRect>): number { return 1; }`,
     `  @Post() query(@Query() @__golem_nestModelUnion("kind", ${variants}) shape: Tagged<TCircle | TRect>): number { return 1; }`,
   ]);
-  assert.deepEqual(result.nestCodecSites.map(({ method, slot, ids }) => ({ method, slot, ids })), [
-    { method: 'body', slot: 'input', ids: [circle, rect] },
-    { method: 'query', slot: 'query', ids: [circle, rect] },
-  ]);
 });
 
 test('a whole @Body() or @Query() union of tagged models is stamped with its tag and variants, and an untagged, array or one-field union gets RUNM1081', (t) => {
@@ -618,19 +544,4 @@ test('a whole @Body() or @Query() union of tagged models is stamped with its tag
     `  @Post() query(@Query() @__golem_nestModelUnion("kind", ${variants}) shape: (TCircle | TRect) & Discriminator<'kind'>): number { return 1; }`,
     `  @Post() bodyMixed(@Body() @__golem_nestModelUnion("v", [[[1],"${shapeId(root, 'TNumberTag')}"],[["1"],"${shapeId(root, 'TTextTag')}"]]) tag: (TNumberTag | TTextTag) & Discriminator<'v'>): number { return 1; }`,
   ]);
-  assert.deepEqual(result.nestCodecSites.map(({ method, slot, ids }) => ({ method, slot, ids })), [
-    { method: 'written', slot: 'input', ids: [circle, rect] },
-    { method: 'aliased', slot: 'input', ids: [circle, rect] },
-    { method: 'query', slot: 'query', ids: [circle, rect] },
-    { method: 'bodyMixed', slot: 'input', ids: [shapeId(root, 'TNumberTag'), shapeId(root, 'TTextTag')] },
-  ]);
-
-  // The registry holds the variants of a union as a list: the check compares them as a set, in any order.
-  const registry = path.join(root, 'src/generated/operation-codecs.ts');
-  const methods = (input: readonly string[]): string => `export const OPERATION_METHOD_KEYS = { 'ShapesController.written': { input: ${JSON.stringify(input)} }, 'ShapesController.aliased': { input: ${JSON.stringify(input)} }, 'ShapesController.query': { query: ${JSON.stringify(input)} }, 'ShapesController.bodyMixed': { input: ${JSON.stringify([shapeId(root, 'TTextTag'), shapeId(root, 'TNumberTag')])} } } as const;\n`;
-  fs.mkdirSync(path.dirname(registry), { recursive: true });
-  fs.writeFileSync(registry, methods([rect, circle]));
-  assert.deepEqual(checkNestCodecs(root, result), []);
-  fs.writeFileSync(registry, methods([rect]));
-  assert.equal(checkNestCodecs(root, result).length, 3, 'a registry that lacks a variant disagrees with every union site');
 });

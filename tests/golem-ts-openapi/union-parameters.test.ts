@@ -104,8 +104,8 @@ test('NestModelInterceptor converts each variant of a tagged object union in a w
 
 interface Operation { readonly parameters?: readonly { readonly in: string; readonly content: Record<string, { readonly schema: unknown }> }[]; readonly requestBody?: { readonly content: Record<string, { readonly schema: unknown }> } }
 
-test('the controllers job documents a union of models as oneOf with a discriminator and records the variant ids for golem check only', async (t) => {
-  // protects: T-390 E-50 the document and the operation codecs describe the union that the interceptor converts
+test('the controllers job documents a union of models as oneOf with a discriminator', async (t) => {
+  // protects: T-390 E-50 the document describes the union that the interceptor converts
   const root = project(t);
   const config = path.join(root, 'golem.yaml');
   await runPipeline(config);
@@ -124,11 +124,6 @@ test('the controllers job documents a union of models as oneOf with a discrimina
   const queryOf = (route: string) => document.paths[route]!.get!.parameters![0]!.content['application/x-www-form-urlencoded']!.schema;
   assert.deepEqual(bodyOf('/shapes/wrapped'), bodyOf('/shapes'));
   assert.deepEqual(queryOf('/shapes/wrapped'), queryOf('/shapes'));
-  const registry = fs.readFileSync(path.join(root, 'src/generated/operation-codecs.ts'), 'utf8');
-  assert.match(registry, /"ShapesController\.draw": \{\s*"input": \[\s*"TCircle_[0-9a-f]{8}",\s*"TRect_[0-9a-f]{8}"\s*\]/);
-  assert.match(registry, /"ShapesController\.find": \{\s*"query": \[\s*"TByName_[0-9a-f]{8}",\s*"TById_[0-9a-f]{8}"\s*\]/);
-  assert.match(registry, /export const OPERATION_CODECS = \{\} as const;/, 'no route key reads a union as one model');
-  assert.match(registry, /export const OPERATION_QUERY_CODECS = \{\} as const;/);
 });
 
 test('the controllers job stops a whole @Query() union on OpenAPI 3.1, which has no querystring to hold it', async (t) => {

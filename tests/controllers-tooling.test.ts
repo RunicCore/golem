@@ -327,7 +327,7 @@ test('retired controller inventories reject sibling and descendant file ownershi
     } }));
     assert.throws(() => loadInventory(resolved), /exact file destination/);
   }
-  // A recorded file destination must be the configured document or the operation-codec registry.
+  // A recorded file destination must be the configured document.
   fs.writeFileSync(resolved.inventoryFile, JSON.stringify({ version: 1, files: {
     'api/notes.json': { job: 'controllers:api/openapi.json', owner: '@exprtlabs/golem-ts-openapi', digest: '0'.repeat(64), destination: 'api/notes.json', destinationKind: 'file' },
   } }));

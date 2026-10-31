@@ -33,8 +33,12 @@ function project(t: TestContext, methods: string, openapiVersion = '3.2.0', prea
   });
 }
 
-test('golem check agrees with the controllers job on a field key written as a concatenation or a constant member', async (t) => {
-  // protects: T-446 the check names a one-field parameter the way the controllers job does, so a key the job folds to a string is not reported
+const read = (root: string, file: string): string => fs.readFileSync(path.join(root, file), 'utf8');
+
+interface Operation { readonly parameters?: readonly Record<string, unknown>[]; readonly requestBody?: { readonly required?: boolean; readonly content: Record<string, { readonly schema: Record<string, unknown> }> } }
+
+test('the controllers job names a one-field parameter by a key written as a concatenation or a constant member', async (t) => {
+  // protects: T-446 a key that the job folds to a string names the body property and the query parameter
   const root = project(t, [
     "  @Post() create(@Body('pay' + 'ment') payment: TPayment): void {}",
     '  @Get() list(@Query(KEYS.filter) filter: TFilter): void {}',
@@ -42,17 +46,14 @@ test('golem check agrees with the controllers job on a field key written as a co
   const config = path.join(root, 'golem.yaml');
   await runPipeline(config);
   await runPipeline(config, { check: true });
-  const registry = read(root, 'src/generated/operation-codecs.ts');
-  assert.match(registry, /"AController\.create": \{\s*"fields": \{\s*"body:payment": "TPayment_[0-9a-f]{8}"/);
-  assert.match(registry, /"AController\.list": \{\s*"fields": \{\s*"query:filter": "TFilter_[0-9a-f]{8}"/);
+  const document = JSON.parse(read(root, 'generated/api.json')) as { paths: Record<string, Record<string, Operation>> };
+  const bodySchema = document.paths['/a']!.post!.requestBody!.content['application/json']!.schema;
+  assert.deepEqual(Object.keys(bodySchema.properties as object), ['payment']);
+  assert.deepEqual(document.paths['/a']!.get!.parameters!.map(parameter => parameter.name), ['filter']);
 });
 
-const read = (root: string, file: string): string => fs.readFileSync(path.join(root, file), 'utf8');
-
-interface Operation { readonly parameters?: readonly Record<string, unknown>[]; readonly requestBody?: { readonly required?: boolean; readonly content: Record<string, { readonly schema: Record<string, unknown> }> } }
-
 for (const openapiVersion of ['3.2.0', '3.1.2']) {
-  test(`a one-field model @Body and @Query reach the OpenAPI ${openapiVersion} document and the operation codecs, and golem check agrees with the rewrite`, async (t) => {
+  test(`a one-field model @Body and @Query reach the OpenAPI ${openapiVersion} document`, async (t) => {
     // protects: R-13 T-323 T-442 T-445 the one-field model parameter, or array of models (readonly too, a whole body, a model field), the interceptor converts is described by the controllers job
     const root = project(t, [
       "  @Post() create(@Body('payment') payment: TPayment): void {}",
@@ -84,8 +85,6 @@ for (const openapiVersion of ['3.2.0', '3.1.2']) {
     for (const route of ['generic', 'qualified', 'readonly', 'readonly-generic']) {
       assert.deepEqual(document.paths[`/a/${route}`]!.post!.requestBody!.content['application/json']!.schema, batchSchema, route);
     }
-    assert.match(read(root, 'src/generated/operation-codecs.ts'), /"AController\.createWhole": \{\s*"input": "TPayment_[0-9a-f]{8}"/, 'a whole array body names its item model');
-    assert.doesNotMatch(read(root, 'src/generated/operation-codecs.ts'), /"POST \/a\/whole"/, 'the route-key map does not read an array body as one model');
     const wholeSchema = document.paths['/a/whole']!.post!.requestBody!.content['application/json']!.schema;
     assert.deepEqual(wholeSchema, { type: 'array', items: { $ref: '#/components/schemas/TPayment' } });
     for (const route of ['whole-readonly', 'whole-readonly-generic']) {
@@ -101,14 +100,6 @@ for (const openapiVersion of ['3.2.0', '3.1.2']) {
     const filter = document.paths['/a']!.get!.parameters!.find(parameter => parameter.name === 'filter')!;
     assert.deepEqual({ in: filter.in, style: filter.style, explode: filter.explode, required: filter.required }, { in: 'query', style: 'deepObject', explode: true, required: true });
     assert.match(JSON.stringify(filter.schema), /TFilter/);
-
-    const registry = read(root, 'src/generated/operation-codecs.ts');
-    assert.match(registry, /"AController\.create": \{\s*"fields": \{\s*"body:payment": "TPayment_[0-9a-f]{8}"/);
-    assert.match(registry, /"AController\.createBatch": \{\s*"fields": \{\s*"body:items": "TPayment_[0-9a-f]{8}"/);
-    for (const method of ['createGeneric', 'createReadonly', 'createReadonlyGeneric', 'createQualified']) {
-      assert.match(registry, new RegExp(`"AController\\.${method}": \\{\\s*"fields": \\{\\s*"body:items": "TPayment_[0-9a-f]{8}"`), method);
-    }
-    assert.match(registry, /"AController\.list": \{\s*"fields": \{\s*"query:filter": "TFilter_[0-9a-f]{8}"/);
   });
 }
 

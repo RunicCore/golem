@@ -194,7 +194,7 @@ test('unresolved controller contract types fail instead of becoming unrestricted
   await assert.rejects(generateFixture(root), /RUNM1058.*could not be resolved/);
 });
 
-test('same-name same-shape class and plain models share one component and keep their own codec ids in the operation registry', async t => {
+test('same-name same-shape class and plain models share one component', async t => {
   const controller = (directory: string, route: string): string => [
     "import { Body, Controller, Post } from '@nestjs/common';",
     `import { type TPayment } from './${directory}/payment.model.js';`,
@@ -218,27 +218,11 @@ test('same-name same-shape class and plain models share one component and keep t
     },
   });
   const contracts = await generateFixture(root);
-  const registry = contracts.artifacts.find(artifact => artifact.path.endsWith('operation-codecs.ts'))?.content ?? '';
-  const models = await generateModels({ root, profile: { mobx: false, validation: true } });
-  const keys = models.artifacts.find(artifact => artifact.path.endsWith('codec-keys.json'))?.content ?? '';
-  const keyOf = (directory: string): string => {
-    const id = keys.match(new RegExp(`src/${directory}/payment\\.model\\.ts#TPayment": "([^"]+)"`))?.[1];
-    assert.ok(id, `${directory} model has a plugin key`);
-    return id;
-  };
-  const routeId = (route: string): string => {
-    const id = registry.match(new RegExp(`"POST /${route}": "([^"]+)"`))?.[1];
-    assert.ok(id, `${route} route has an operation codec`);
-    return id;
-  };
-  assert.notEqual(keyOf('billing'), keyOf('payout'));
-  assert.equal(routeId('billing'), keyOf('billing'), 'the class model route uses the class codec');
-  assert.equal(routeId('payout'), keyOf('payout'), 'the plain model route uses the plain codec');
   const document = documentOf(contracts);
   assert.deepEqual(Object.keys(expectValue(document.components, 'OpenAPI components').schemas ?? {}), ['TPayment'], 'one shared component');
 });
 
-test('exact: false gives a model with no exact option an open schema and the same codec id in the controllers job and the models job', async t => {
+test('exact: false gives a model with no exact option an open schema', async t => {
   const root = fixture(t, [
     "import { Body, Controller, Post } from '@nestjs/common';",
     "import { type TPayment } from './payment.model.js';",
@@ -258,13 +242,6 @@ test('exact: false gives a model with no exact option an open schema and the sam
     profile: { mobx: false, validation: false },
     exact: false,
   });
-  const models = await generateModels({ root, profile: { mobx: false, validation: true }, exact: false });
-  const registry = contracts.artifacts.find(artifact => artifact.path.endsWith('operation-codecs.ts'))?.content ?? '';
-  const keys = JSON.parse(models.artifacts.find(artifact => artifact.path.endsWith('codec-keys.json'))?.content ?? '{}') as { keys?: Record<string, string> };
-  const routeId = registry.match(/"POST \/payments": "([^"]+)"/)?.[1];
-  const modelId = keys.keys?.['src/payment.model.ts#TPayment'];
-  assert.ok(routeId && modelId, 'the route and the model have a codec id');
-  assert.equal(routeId, modelId);
   assert.equal(schemaOf(documentOf(contracts), 'TPayment').additionalProperties, true);
 });
 
