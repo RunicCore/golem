@@ -1,5 +1,5 @@
 // lane: typescript6 ProgramSession resolution updates in the pipeline runtime
-import { copyFixtureFile, createFixtureProject, linkProjectPackages, writeGeneratedArtifacts } from './fixture-project.js';
+import { copyFixtureFile, createFixtureProject, linkGolemPackages, linkProjectPackages, writeGeneratedArtifacts } from './fixture-project.js';
 import { createModelProject } from './model-project.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -28,12 +28,6 @@ interface ChildResult {
   readonly signal: NodeJS.Signals | null;
 }
 
-function linkPackages(root: string, names: readonly string[]): void {
-  linkProjectPackages(root, Object.fromEntries(
-    names.map(name => [`@exprtlabs/${name}`, path.join(workspace, 'packages', name)]),
-  ));
-}
-
 function workspaceReleaseVersion(): string {
   const { version } = JSON.parse(fs.readFileSync(path.join(workspace, 'packages/golem/package.json'), 'utf8')) as { version: string };
   return version;
@@ -47,8 +41,11 @@ function installFakeOpenApiProvider(root: string, manifest: unknown): void {
     name: '@exprtlabs/golem-openapi',
     version: workspaceReleaseVersion(),
     type: 'module',
-    exports: { './generator': './generator.js' },
+    exports: { './plan': './plan.js', './generator': './generator.js' },
+    golem: { apiVersion: 2, block: 'openapi-ts', plan: './plan', generator: './generator' },
   }));
+  // The real plan entry reads the block; the fake generator returns the manifest.
+  fs.copyFileSync(path.join(workspace, 'packages/golem-openapi/dist/plan.js'), path.join(packageRoot, 'plan.js'));
   copyFixtureFile(packageRoot, 'pipeline/returned-manifest-provider/generator.js', 'generator.js');
   fs.writeFileSync(path.join(packageRoot, 'fixture-manifest.json'), JSON.stringify(manifest));
 }
@@ -62,7 +59,7 @@ function modelWatchFixture(t: TestContext): ModelWatchFixture {
   fs.mkdirSync(path.join(root, 'src/external'), { recursive: true });
   fs.writeFileSync(
     path.join(root, 'golem.yaml'),
-    'version: 1\nmobx: false\nvalidation: false\nallowAny: false\nmodels:\n  root: .\n',
+    'version: 1\nvalidation: false\nallowAny: false\nmodel: {}\n',
   );
 
   const manifest = path.join(root, 'src/external/model-manifest.json');
@@ -480,8 +477,8 @@ test('pipeline rejects malformed or profile-mismatched returned manifests before
   for (const entry of cases) {
     const root = createFixtureProject(t, `golem-pipeline-manifest-${entry.name}-`);
 
-    linkPackages(root, ['golem', 'golem-model', 'golem-openapi']);
     fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'manifest-fixture', private: true, type: 'module' }));
+    linkGolemPackages(root, ['golem', 'golem-model', 'golem-openapi']);
     writeFixture(root, { mobx: false, validation: true }, false);
     installFakeOpenApiProvider(root, entry.manifest);
 

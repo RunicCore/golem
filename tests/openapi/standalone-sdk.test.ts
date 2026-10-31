@@ -4,8 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import { runPipeline } from '#golem/cli';
-import { createFixtureProject, fileFixtureScope, linkProjectPackages, onceShared } from '../fixture-project.js';
-import { workspace } from '../support/process.js';
+import { createFixtureProject, fileFixtureScope, linkGolemPackages, onceShared } from '../fixture-project.js';
 import { tscBin, writePlainTscProject } from './helpers.js';
 
 const scope = fileFixtureScope();
@@ -53,8 +52,8 @@ const built = onceShared(async () => {
   fs.mkdirSync(path.join(root, 'src'), { recursive: true });
   fs.writeFileSync(path.join(root, 'package.json'), '{"name":"standalone-fixture","type":"module"}\n');
   fs.writeFileSync(path.join(root, 'api.json'), JSON.stringify(document));
-  fs.writeFileSync(path.join(root, 'golem.yaml'), 'version: 1\nmobx: false\nvalidation: true\nopenapi:\n  - input: api.json\n    output: src/sdk\n    name: Pay\n');
-  linkProjectPackages(root, Object.fromEntries(['golem', 'golem-openapi'].map((name) => [`@exprtlabs/${name}`, path.join(workspace, 'packages', name)])));
+  fs.writeFileSync(path.join(root, 'golem.yaml'), 'version: 1\nvalidation: true\nopenapi-ts:\n  sdks:\n    - input: api.json\n      output: src/sdk\n      name: Pay\n');
+  linkGolemPackages(root, ['golem', 'golem-openapi']);
   await runPipeline(path.join(root, 'golem.yaml'));
   const generated = (): Record<string, string> => Object.fromEntries(fs.readdirSync(path.join(root, 'src/sdk'), { recursive: true, encoding: 'utf8' })
     .filter((name) => fs.statSync(path.join(root, 'src/sdk', name)).isFile()).sort().map((name) => [name, fs.readFileSync(path.join(root, 'src/sdk', name), 'utf8')]));

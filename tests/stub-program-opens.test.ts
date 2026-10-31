@@ -36,7 +36,7 @@ function twoFolderProject(t: TestContext): string {
       include: ['src/**/*.ts', 'lib/**/*.ts'],
     },
     files: {
-      'golem.yaml': 'version: 1\nmobx: false\nvalidation: true\ncontrollers:\n  - root: .\n    output: generated/openapi.json\n    info: { title: Stub API, version: "1" }\nmodels:\n  root: .\n',
+      'golem.yaml': 'version: 1\nvalidation: true\nts-openapi:\n  docs:\n    - output: generated/openapi.json\n      info: { title: Stub API, version: "1" }\nmodel: {}\n',
       'src/catalog.controller.ts': controller,
       'src/holder.model.ts': model('THolder', 'shared: TShared', "import type { TShared } from '../lib/shared.model.js';"),
       'lib/shared.model.ts': model('TShared', 'name: string'),

@@ -30,7 +30,7 @@ test('node runs a TypeScript file whose parse and stringify calls the host rewri
 
 test('a validating model project runs when its sources and its companions are imported with .js specifiers', async (t) => {
   const root = await project(t, 'loader-js-specifiers', { generate: false });
-  write(root, 'golem.yaml', 'version: 1\nmobx: false\nvalidation: true\nmodels:\n  root: .\n');
+  write(root, 'golem.yaml', 'version: 1\nvalidation: true\nmodel: {}\n');
   write(root, 'src/money.model.ts', [
     "import type { IModel } from '@exprtlabs/golem/model';",
     "import type { MinLength } from '@exprtlabs/golem/tags';",
@@ -236,8 +236,8 @@ test('parse of a shared alias runs under the Node loader with no import of its c
   const app = path.join(outer, 'app');
   write(outer, 'shared/package.json', JSON.stringify({ name: '@acme/shared', type: 'module' }));
   write(outer, 'shared/customer.model.ts', "import type { IModel } from '@exprtlabs/golem/model';\nimport type { MinLength } from '@exprtlabs/golem/tags';\nexport type TCustomer = IModel<{ name: string & MinLength<3> }>;\n");
-  write(app, 'package.json', JSON.stringify({ name: 'shared-app', private: true, type: 'module' }));
-  write(app, 'golem.yaml', 'version: 1\nmobx: false\nvalidation: true\nmodels:\n  root: .\n');
+  write(app, 'package.json', JSON.stringify({ name: 'shared-app', private: true, type: 'module', dependencies: { '@exprtlabs/golem-model': '*' } }));
+  write(app, 'golem.yaml', 'version: 1\nvalidation: true\nmodel: {}\n');
   write(app, 'tsconfig.json', JSON.stringify({ compilerOptions: { strict: true, target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', skipLibCheck: true, noEmit: true, allowImportingTsExtensions: true }, include: ['src/**/*.ts', '../shared/**/*.ts'] }));
   write(app, 'src/main.ts', `import { parse } from '${SERDE}';
 import type { TCustomer } from '../../shared/customer.model.ts';
@@ -270,7 +270,8 @@ test('a .cts file with a rewrite fails the run: a rewrite cannot give CommonJS a
 
 test('CommonJS TypeScript with no rewrite still runs', async (t) => {
   const root = await project(t, 'loader-cjs-plain');
-  write(root, 'package.json', '{}');
+  // No "type": the files load as CommonJS; the project still lists the golem packages.
+  write(root, 'package.json', JSON.stringify({ dependencies: { '@exprtlabs/golem-model': '*' } }));
   write(root, 'src/plain.cts', CJS_PLAIN);
   write(root, 'src/plain.ts', CJS_PLAIN);
   for (const file of ['src/plain.cts', 'src/plain.ts']) {

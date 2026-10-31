@@ -152,7 +152,7 @@ test('a generated file beside a shared model file gives one warning each, and ge
 function appWithShared(outer: string, name: string, validation: boolean, files: Readonly<Record<string, string>>, include = ['src/**/*.ts', '../shared/**/*.ts']): string {
   const root = path.join(outer, name);
   writeModelSources(root, {
-    'package.json': JSON.stringify({ name, private: true, type: 'module' }),
+    'package.json': JSON.stringify({ name, private: true, type: 'module', dependencies: { '@exprtlabs/golem-model': '*' } }),
     'tsconfig.json': JSON.stringify({ compilerOptions: { strict: true, target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', skipLibCheck: true, noEmit: true }, include }),
     ...files,
   });
@@ -194,7 +194,7 @@ test('a field typed with an app class of a shared model generates, imports the s
   const outer = sharedFolder(t);
   linkProjectPackages(outer, { '@exprtlabs/golem-model': path.join(workspace, 'packages/golem-model') });
   const order = "import type { IModel } from '@exprtlabs/golem/model';\nimport type { Customer } from './customer.js';\nexport type TOrder = IModel<{ customer: Customer }>;\n";
-  const app = appWithShared(outer, 'web', false, { 'src/order.model.ts': order, 'src/customer.ts': SHARED_CUSTOMER_BASE, 'golem.yaml': 'version: 1\nmodels:\n  root: .\n' });
+  const app = appWithShared(outer, 'web', false, { 'src/order.model.ts': order, 'src/customer.ts': SHARED_CUSTOMER_BASE, 'golem.yaml': 'version: 1\nmodel: {}\n' });
 
   fs.writeFileSync(path.join(app, 'tsconfig.json'), JSON.stringify({ compilerOptions: { strict: true, target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', skipLibCheck: true, outDir: 'build', rootDir: '..' }, include: ['src/**/*.ts', '../shared/**/*.ts'] }));
 
@@ -544,7 +544,7 @@ test('a golem run that skips the models job still writes its RUNM1076 warning, o
   const outer = sharedFolder(t);
   linkProjectPackages(outer, { '@exprtlabs/golem-model': path.join(workspace, 'packages/golem-model') });
   fs.writeFileSync(path.join(outer, 'shared/golem.yaml'), 'version: 1\n');
-  const app = appWithShared(outer, 'web', false, { 'src/order.model.ts': SHARED_ORDER('../../shared/customer.model.js'), 'golem.yaml': 'version: 1\nmodels:\n  root: src\n' });
+  const app = appWithShared(outer, 'web', false, { 'src/order.model.ts': SHARED_ORDER('../../shared/customer.model.js'), 'golem.yaml': 'version: 1\nmodel: {}\n' });
 
   const first = await command(app, process.execPath, [golem, 'generate']);
   const second = await command(app, process.execPath, [golem, 'generate']);

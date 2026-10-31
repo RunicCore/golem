@@ -26,7 +26,7 @@ function openApiProject(directory: string, output: string, job: GolemJob = openA
 
 function modelJob(root: string, output: string, sources?: readonly string[]): GolemJob {
   // The output and the folders of the sources come first, the root last: the narrower destination is the one a file records.
-  return jobWithFacts('models:.', '@exprtlabs/golem-model', { ownedRoots: [output, ...(sources === undefined ? [path.join(root, 'src')] : sources.map(source => path.dirname(source))), root] });
+  return jobWithFacts('model', '@exprtlabs/golem-model', { ownedRoots: [output, ...(sources === undefined ? [path.join(root, 'src')] : sources.map(source => path.dirname(source))), root] });
 }
 
 function fixture(t: TestContext): string {
