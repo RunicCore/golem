@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
+import { listProjectDependencies } from './fixture-project.js';
 import { createModelProject, MINIMAL_GOLEM_YAML } from './model-project.js';
 import { build, golemBuild, TSC, write } from './support/build-project.js';
 import { count, watching } from './support/build-watching.js';
@@ -15,6 +16,7 @@ function project(t: TestContext, compilerOptions: Readonly<Record<string, unknow
   const { root: outer } = createModelProject(t, { prefix: 'golem-build-layout-', name: 'build-layout', linkTypescript: true, packages: { '@exprtlabs/golem-model': path.join(workspace, 'packages/golem-model') } });
   const app = path.join(outer, 'app');
   write(app, 'package.json', '{"name":"layout-app","type":"module"}');
+  listProjectDependencies(app, ['@exprtlabs/golem-model']);
   write(app, 'tsconfig.json', JSON.stringify({
     compilerOptions: { strict: true, target: 'ES2022', module: 'ESNext', moduleResolution: 'Bundler', skipLibCheck: true, declaration: true, sourceMap: true, outDir: 'build', ...compilerOptions },
     include,
