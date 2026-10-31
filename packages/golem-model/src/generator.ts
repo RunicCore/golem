@@ -11,12 +11,8 @@ import type {
 } from '@exprtlabs/golem/generator-api';
 import { buildCodecValidationPlan, compileLevel, compileSdkValidators, type CodecSchemaClosureEntry } from '@exprtlabs/golem/internal/validation-plan';
 import { GolemDiagnosticSeverity, compareText, isInsideDirectory, resolveProfile, type GolemDiagnostic, type ResolvedGolemProfile } from '@exprtlabs/golem/generator-api';
-import {
-  canonicalPath,
-  DEFAULT_MODEL_SUFFIXES,
-  displayPath,
-  outsideModelsRootMessage,
-} from '@exprtlabs/golem/internal/generator-support';
+import { canonicalPath, displayPath } from '@exprtlabs/golem/internal/generator-support';
+import { DEFAULT_MODEL_SUFFIXES, outsideModelsRootMessage } from './plan.js';
 import { codecKeysPath, defaultModelOutput } from '@exprtlabs/golem/internal/generated-paths';
 import { AmbiguousUnionConversionError, ObjectUnionDiscriminatorError, reachesRecursiveNode } from '@exprtlabs/golem/internal/emitter';
 import { emitCodecDeclarationTable } from '@exprtlabs/golem/internal/schema-graph';
@@ -410,8 +406,8 @@ function assertListedSourceIsOwn(boundary: ModelBoundary, source: string): void 
   if (!isInsideDirectory(boundary.root, real)) throw new Error(outsideModelsRootMessage(real, boundary.root));
   if (!isOwnModelFile(boundary, source)) {
     throw new Error(real.split(sep).includes('node_modules')
-      ? `models.sources entry ${displayPath(real)} is in node_modules. Golem does not generate models in node_modules.`
-      : `models.sources entry ${displayPath(real)} is a declaration file. Golem generates models from .ts sources.`);
+      ? `model.sources entry ${displayPath(real)} is in node_modules. Golem does not generate models in node_modules.`
+      : `model.sources entry ${displayPath(real)} is a declaration file. Golem generates models from .ts sources.`);
   }
 }
 
@@ -490,7 +486,7 @@ export function generate(context: GolemModelContext): GolemModelResult {
   const { checker, specifications } = collectSpecifications(program, [...ownCandidates, ...sharedCandidates], normalized.exact, (file) => companionFilename(boundary, file));
   assertModelLevelsWithinProject(specifications, normalized.profile.validation);
   // A discovered file with no IModel or IObject alias is not a model file: it is skipped, and so is its companion.
-  // A file that `models.sources` names must have one.
+  // A file that `model.sources` names must have one.
   const withModels = new Set(specifications.map((specification) => canonicalFilename(specification.sourceFile.fileName)));
   const ownSources = listed ? ownCandidates : ownCandidates.filter((source) => withModels.has(canonicalFilename(source)));
   // A shared model file of the program is a source of the job: this app writes its companion in models.output.

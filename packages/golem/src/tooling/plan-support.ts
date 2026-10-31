@@ -2,6 +2,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+/** The names of the two contracts that core owns, so a plan entry declares them without importing the rest of golem. */
+export { CODECS_HOST, MODEL_BOUNDARY } from './job-facts.js';
+
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
