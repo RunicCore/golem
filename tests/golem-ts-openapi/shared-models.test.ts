@@ -71,7 +71,7 @@ export class CustomersController {
 
 /** The controller source as the build rewrites it, found with the codec keys and companions of the app. */
 function rewrittenController(app: string): string {
-  const scanned = scanProject({ root: app, directory: app, modelsRoot: app, output: path.join(app, 'src/generated/models'), configFile: path.join(app, 'tsconfig.json'), codecKeysFile: path.join(app, '.golem/codec-keys.json') });
+  const scanned = scanProject({ root: app, boundary: { root: app, directory: app, output: path.join(app, 'src/generated/models') }, configFile: path.join(app, 'tsconfig.json'), codecKeysFile: path.join(app, '.golem/codec-keys.json') });
   assert.deepEqual(scanned.diagnostics, []);
   return applyRewrites(readText(app, 'src/customers.controller.ts'), scanned.files.get('src/customers.controller.ts')!).code;
 }

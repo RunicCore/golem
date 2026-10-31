@@ -15,6 +15,7 @@ import { createModelProject, writeModelSources } from './model-project.js';
 import { writeFixture } from './support/consumer.js';
 import { runRewritten } from './support/rewritten-module.js';
 import { workspace } from './support/process.js';
+import { defaultModelOutput } from '#golem/generated-paths';
 
 const BASE = ['payment.model.ts', 'payment.model.generated.ts'];
 const CODEC_KEYS = '.golem/codec-keys.json';
@@ -39,7 +40,7 @@ function scan(root: string, interceptor = false): ProgramScan {
 function withScanner<T>(root: string, use: (scanner: RewriteScanner) => T): T {
   const info = createProjectProgram(root, undefined, undefined, path.join(root, 'tsconfig.json'));
   using program = info.program;
-  return use(new RewriteScanner({ root, directory: root, modelsRoot: root, program, checker: program.getTypeChecker(), codecKeysFile: path.join(root, CODEC_KEYS) }));
+  return use(new RewriteScanner({ root, boundary: { root, directory: root, output: defaultModelOutput(root) }, program, checker: program.getTypeChecker(), codecKeysFile: path.join(root, CODEC_KEYS) }));
 }
 
 function scanned(result: ProgramScan, file: string): FileScanResult {
