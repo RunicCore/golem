@@ -44,3 +44,4 @@ export type {
 } from './generator-core.js';
 export type { HookFill, HookParticipants } from './extension-hooks.js';
 export type { JobFacts, JobOutput, WatchRule } from './job-facts.js';
+export type { GolemExtension, RewriteCore, RewriteParticipant, RewriteParticipantInput, RewriteParticipantResult } from './rewrite-participant.js';

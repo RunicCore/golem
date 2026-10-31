@@ -8,7 +8,7 @@ export const apiVersion = 1;
 
 /**
  * Writes one `IModel` declaration per entry of `options.events`.
- * @param {import('@exprtlabs/golem/generator-api').GeneratorJobContext} context
+ * @param {import('@exprtlabs/golem/generator-api').GeneratorHostContext & { output: string, options?: { events?: Record<string, Record<string, string>> } }} context
  */
 export function generate(context) {
   const events = context.options?.events;
@@ -40,6 +40,7 @@ export function generate(context) {
 }
 // #endregion event-generator
 
+// #region event-plan
 /**
  * The plan entry of the `payment-events` block of golem.yaml (`golem.plan` in package.json): it declares the one job that owns the `output` folder.
  * @type {import('@exprtlabs/golem/generator-api').GolemPlanEntry}
@@ -55,3 +56,4 @@ export const plan = {
     }];
   },
 };
+// #endregion event-plan

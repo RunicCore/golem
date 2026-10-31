@@ -47,20 +47,20 @@ Golem also checks the version of a package that pins `@exprtlabs/golem` to its o
 
 ### The plan entry
 
-The `plan` module exports `plan`. It imports no TypeScript, no generator code and no `yaml`. Take its helpers from `@exprtlabs/golem/internal/plan-support` (`isRecord`, `canonicalPath`, `displayPath`, `isInsideDirectory`, and the names `MODEL_BOUNDARY` and `CODECS_HOST`).
+The `plan` module exports `plan`. It imports no TypeScript, no generator code and no `yaml`, so it takes only types from `@exprtlabs/golem/generator-api`. Name a contract by its text: `ModelBoundary` or `CodecsHost`.
 
 ```ts
 import path from 'node:path';
 import type { GolemPlanEntry } from '@exprtlabs/golem/generator-api';
-import { isRecord } from '@exprtlabs/golem/internal/plan-support';
 
 export const plan: GolemPlanEntry = {
   declare({ directory, block, profile }) {
-    if (!isRecord(block) || typeof block.output !== 'string') throw new TypeError('events.output must be a string.');
-    const output = path.resolve(directory, block.output);
+    const { output } = (block ?? {}) as { output?: unknown };
+    if (typeof output !== 'string') throw new TypeError('events.output must be a string.');
+    const folder = path.resolve(directory, output);
     return [{
-      facts: { id: 'events', outputs: [{ path: output, kind: 'folder' }], ownedRoots: [], inputFiles: [], inputFolders: [], readsProgram: false, provides: [], needs: [], hooks: [], watch: [] },
-      options: { output, profile },
+      facts: { id: 'events', outputs: [{ path: folder, kind: 'folder' }], ownedRoots: [], inputFiles: [], inputFolders: [], readsProgram: false, provides: [], needs: [], hooks: [], watch: [] },
+      options: { output: folder, profile },
     }];
   },
 };
@@ -152,7 +152,7 @@ events:
 The entry is a module that exports `extension`. Golem loads it when a build tool or the CLI starts, after the host picks the project's TypeScript, and it never loads an extension that the block does not name.
 
 ```ts
-import type { GolemExtension } from '@exprtlabs/golem/internal/rewrite-participant';
+import type { GolemExtension } from '@exprtlabs/golem/generator-api';
 
 export const extension: GolemExtension = {
   rewrite({ ts, checker, file, options, core }) {
@@ -279,7 +279,7 @@ Usage: [Run the generators from code](/guide/generator-api#check-the-result).
 import type { GolemProvider, ModelContext } from '@exprtlabs/golem/generator-api';
 ```
 
-The subpath is the extension API. It exports the contracts above and the types `ModelContext`, `OpenApiContext`, `ControllerContext`, `ControllerModels`, `ControllerTag`, `ControllerUriVersioning`, `ControllerUriVersioningType`, `GolemDiagnosticCode`, `ResolvedGolemProfile` and `SourceDiscoveryOptions`. It follows semver, and an extension package keeps its own version.
+The subpath is the extension API. It exports the contracts above and the types `GolemExtension`, `RewriteParticipant`, `RewriteParticipantInput`, `RewriteParticipantResult`, `RewriteCore`, `ModelContext`, `OpenApiContext`, `ControllerContext`, `ControllerModels`, `ControllerTag`, `ControllerUriVersioning`, `ControllerUriVersioningType`, `GolemDiagnosticCode`, `ResolvedGolemProfile` and `SourceDiscoveryOptions`. It follows semver, and an extension package keeps its own version.
 
 | Export | Signature | Behavior |
 | --- | --- | --- |
