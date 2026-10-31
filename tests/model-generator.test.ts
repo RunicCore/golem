@@ -934,25 +934,26 @@ const modelJobOf = (filename: string) => {
 };
 
 test('an empty model block scans from the golem.yaml folder, writes the default output and provides both contracts', (t: TestContext) => {
-  // protects: R4 the models job scans from the golem.yaml folder; page "Packages": golem-model provides ModelBoundary and CodecsHost, owns its model folder and reads the program
+  // protects: R4 the models job scans from the golem.yaml folder; page "Packages": golem-model provides ModelBoundary and CodecsHost, owns its model folder (an exclusive output the app imports) and reads the program
   const { app, filename } = configProject(t, 'model:\n');
   const { config, job } = modelJobOf(filename);
   const output = path.join(app, 'src/generated/models');
   assert.equal(job.id, 'model');
   assert.equal(job.package, '@exprtlabs/golem-model');
   assert.deepEqual(job.facts, {
-    id: 'model', outputs: [], ownedRoots: [output, app], inputFiles: [], inputFolders: [], readsProgram: true,
+    id: 'model', outputs: [{ path: output, kind: 'folder', importedByApp: true }], ownedRoots: [app], inputFiles: [], inputFolders: [], readsProgram: true,
     provides: ['ModelBoundary', 'CodecsHost'], needs: [], hooks: [], watch: ['**/*.model.ts', '**/*.models.ts'],
   });
   assert.deepEqual(job.options, { root: app, directory: app, output, tsconfig: path.join(app, 'tsconfig.json'), profile: config.profile });
   assert.deepEqual(config.contracts, { ModelBoundary: { root: app, directory: app, output }, CodecsHost: { modelsOutput: output, configDirectory: app } });
 });
 
-test('model sources, suffixes and output reach the options and the boundary; the owned roots run from the narrow output and source folders to the root', (t: TestContext) => {
-  // protects: page "What a job declares": owned roots, narrow to wide, so a file is recorded under its narrowest owner; the boundary carries the suffixes the rewrite reads
+test('model sources, suffixes and output reach the options and the boundary; the owned roots run from the source folders to the root', (t: TestContext) => {
+  // protects: page "What a job declares": the model folder is an exclusive output and the owned roots run narrow to wide, so a file is recorded under its narrowest owner; the boundary carries the suffixes the rewrite reads
   const { app, filename } = configProject(t, 'exact: false\nmodel:\n  output: gen/models\n  suffixes: [.entity.ts, .record.mts]\n  sources: [a/b/x.entity.ts, a/y.record.mts]\n');
   const { job, config } = modelJobOf(filename);
-  assert.deepEqual(job.facts.ownedRoots, [path.join(app, 'gen/models'), path.join(app, 'a/b'), path.join(app, 'a'), app]);
+  assert.deepEqual(job.facts.outputs, [{ path: path.join(app, 'gen/models'), kind: 'folder', importedByApp: true }]);
+  assert.deepEqual(job.facts.ownedRoots, [path.join(app, 'a/b'), path.join(app, 'a'), app]);
   assert.deepEqual(job.facts.watch, ['**/*.entity.ts', '**/*.record.mts']);
   assert.deepEqual(job.options, {
     root: app, directory: app, output: path.join(app, 'gen/models'), tsconfig: path.join(app, 'tsconfig.json'), profile: config.profile, exact: false,
@@ -1020,10 +1021,17 @@ for (const [name, output, resolved] of [
     fs.mkdirSync(path.join(root, 'outside'));
     fs.symlinkSync(path.join(root, 'outside'), path.join(app, 'linked'), 'dir');
     assert.throws(() => resolveConfig(filename), (error: unknown) => error instanceof JobRuleError
-      && error.message === `Job model: root ${path.join(root, resolved)} is outside ${app}; use one golem.yaml per tsconfig.`);
+      && error.message === `Job model: output ${path.join(root, resolved)} is outside the tsconfig directory ${app}. Move it inside.`);
     assert.deepEqual(fs.readdirSync(path.join(root, 'outside')), []);
   });
 }
+
+test('a model output that overlaps an SDK output stops loading', (t: TestContext) => {
+  // protects: A1 overlap rule: exclusive outputs never overlap, so the model folder and an SDK folder cannot share files (master's check of the models output)
+  const { app, filename } = configProject(t, 'model:\n  output: gen\nshop:\n  jobs:\n    - { id: sdk, needs: [CodecsHost], outputs: [{ path: gen/sdk, kind: folder }] }\n');
+  assert.throws(() => resolveConfig(filename), (error: unknown) => error instanceof JobRuleError
+    && error.rule === 'overlap' && error.message === `Overlapping outputs: ${path.join(app, 'gen')} (job model) and ${path.join(app, 'gen/sdk')} (job sdk).`);
+});
 
 test('the models job reads the SDK folders of the jobs that need the codecs host, and so runs after them', (t: TestContext) => {
   // protects: page "When": the SDK folders that the models job reads come from CodecsHost in the second pass, so docs, SDKs, models is the order when an SDK links them

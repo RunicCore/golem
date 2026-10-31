@@ -87,9 +87,10 @@ export const plan: GolemPlanEntry<ModelOptions> = {
     };
     const facts: JobFacts = {
       id: 'model',
-      outputs: [],
-      // A companion lies beside its source, a shared or SDK file in the output, anything else below the root.
-      ownedRoots: narrowToWide([output, ...(sources ?? []).map(source => path.dirname(source)), root]),
+      // The model folder is the job's own: nothing else writes in it, and the app imports its files.
+      outputs: [{ path: output, kind: 'folder', importedByApp: true }],
+      // A companion lies beside its source, anything else below the root.
+      ownedRoots: narrowToWide([...(sources ?? []).map(source => path.dirname(source)), root]),
       inputFiles: [],
       inputFolders: [],
       readsProgram: true,
