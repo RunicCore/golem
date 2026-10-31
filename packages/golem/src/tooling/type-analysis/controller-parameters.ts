@@ -1,5 +1,6 @@
 import * as ts from '../typescript-ns.js';
 import { evaluateStaticValue } from '../static-value.js';
+import { owningPackageName } from './package-specifier.js';
 import { resolveSymbol } from './symbols.js';
 
 /**
@@ -59,11 +60,10 @@ export function decoratorPackageOf(checker: ts.TypeChecker, expression: ts.Expre
     const decoratorPackage = canonicalPackage(importedPackageFromDeclaration(declaration));
     if (decoratorPackage) return decoratorPackage;
   }
-  const target = resolveSymbol(checker, symbol);
-  for (const declaration of target?.declarations ?? []) {
-    const source = declaration.getSourceFile().fileName.replace(/\\/g, '/');
-    const installed = DECORATOR_PACKAGES.find((decoratorPackage) => source.includes(`/node_modules/${decoratorPackage}/`));
-    if (installed) return installed;
+  // Through a re-export, the package is the one that owns the declaring file, wherever it is installed or mapped to.
+  for (const declaration of resolveSymbol(checker, symbol)?.declarations ?? []) {
+    const decoratorPackage = canonicalPackage(owningPackageName(declaration.getSourceFile().fileName));
+    if (decoratorPackage) return decoratorPackage;
   }
   return undefined;
 }
@@ -83,11 +83,12 @@ export function decoratorIdentity(checker: ts.TypeChecker, decorator: ts.Decorat
   return { ...(name ? { name } : {}), ...(packageName ? { packageName } : {}) };
 }
 
-/** The key `@Body('key')`-style decorators name when it is a static string; a pipe, a computed key or no argument names none. */
+/** The key `@Body('key')`-style decorators name when it is a static non-empty string; a pipe, a computed key, an empty string or no argument names none. */
 export function staticDecoratorKey(checker: ts.TypeChecker, decorator: ts.Decorator): string | undefined {
   const argument = ts.isCallExpression(decorator.expression) ? decorator.expression.arguments[0] : undefined;
   const key = argument === undefined ? undefined : evaluateStaticValue(checker, argument);
-  return key?.ok === true && typeof key.value === 'string' ? key.value : undefined;
+  // An empty key names no field: Nest and the interceptor read @Body('') as a whole body.
+  return key?.ok === true && typeof key.value === 'string' && key.value !== '' ? key.value : undefined;
 }
 
 /** The item type node of `T[]`, `Array<T>`, `ReadonlyArray<T>` or a qualified spelling such as `globalThis.Array<T>`, through parentheses and `readonly`; one level. */

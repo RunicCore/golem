@@ -17,7 +17,8 @@ import {
   type StaticValueResult,
 } from '@exprtlabs/golem/internal/static-value';
 import { hasAnyDecorator, hasDecorator } from './analysis-utils.js';
-import { NEST_SWAGGER, callArguments, decoratorPackageOf, decoratorsOf } from './symbols.js';
+import { NEST_SWAGGER, decoratorPackageOf } from '@exprtlabs/golem/internal/type-analysis';
+import { callArguments, decoratorsOf } from './symbols.js';
 import type { DecoratorInfo, TypeReference } from './types.js';
 
 /** What decorator metadata reading needs: the checker plus optional component and warning sinks. */

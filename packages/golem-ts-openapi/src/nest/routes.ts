@@ -11,7 +11,8 @@ import {
 import { baseClassDeclarations, classHierarchyBaseToDerived, evaluateContextExpression, evaluateStringValues, hasAnyDecorator, hasDecorator, staticMethodName } from './analysis-utils.js';
 import { callStringValues, decoratorOptions, parseSecurity, parseTags, readBoolean, type MetadataReader } from './metadata.js';
 import { resolveValueSymbol, unwrapExpression } from '@exprtlabs/golem/internal/static-value';
-import { NEST_COMMON, NEST_SWAGGER, callArguments, decoratorsOf, propertyInitializer, staticObject } from './symbols.js';
+import { NEST_COMMON, NEST_SWAGGER } from '@exprtlabs/golem/internal/type-analysis';
+import { callArguments, decoratorsOf, propertyInitializer, staticObject } from './symbols.js';
 import { classParameterDecorators, parseParameters, parseParameterOverride } from './parameters.js';
 import { assertManualResponseContract, parseRequestBody, parseResponses } from './responses.js';
 import type {

@@ -64,6 +64,11 @@ function nearestManifest(file: string): PackageManifest | undefined {
   }
 }
 
+/** The name of the package that owns `file`: the nearest package.json with a name. */
+export function owningPackageName(file: string): string | undefined {
+  return nearestManifest(file)?.name;
+}
+
 /** Conditions a generated TypeScript file matches under Node's ESM rules, besides `default`. */
 const IMPORT_CONDITIONS: ReadonlySet<string> = new Set(['types', 'import', 'node', 'default']);
 

@@ -938,7 +938,7 @@ function scanFile(
       if (!parameter.type || found === undefined) continue;
       const { node, name: decorator } = found;
       const binding = bindParameter(parameter.type, decorator);
-      const field = staticDecoratorKey(checker, node) || undefined;
+      const field = staticDecoratorKey(checker, node);
       // A type that is no model, or a union in one field, has its own report; the interceptor throws on it before it compares anything.
       if ((binding.id === '' && binding.union === undefined) || (binding.union !== undefined && (binding.array || field !== undefined))) continue;
       inputs.push({ parameter, decorator, node, field, array: binding.array, model: handlerInputModel(binding) });
