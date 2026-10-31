@@ -17,6 +17,8 @@ import { buildModelProject, createModelProject, writeModelGolemYaml, writeModelS
 import { taggedModelSource } from './fixture-templates/models/model-tags.js';
 import { COUNT_DIST_FILES, writeCodecPackage } from './fixture-templates/models/codec-package.js';
 import { tsSource } from './source-template.js';
+import { resolveConfig } from '#golem/config';
+import { JobRuleError } from '#golem/job-rules';
 
 import {
   apiVersion,
@@ -812,7 +814,7 @@ test('a sources entry outside the models root stops generation with RUNM1075 nam
 
   assert.throws(
     () => generate({ root, sources: [path.join(root, 'src/order.model.ts'), money], profile: { mobx: false, validation: true } }),
-    { message: `RUNM1075: models.sources entry ${path.relative(process.cwd(), money)} is outside the models root ${path.relative(process.cwd(), root)}. A models job generates only files inside its root.` },
+    { message: `RUNM1075: model.sources entry ${path.relative(process.cwd(), money)} is outside the models root ${path.relative(process.cwd(), root)}. A models job generates only files inside its root.` },
   );
 });
 
@@ -824,7 +826,7 @@ test('a sources entry that links to a file outside the models root stops generat
 
   assert.throws(
     () => generate({ root, sources: [path.join(root, 'src/money.model.ts')], profile: { mobx: false, validation: true } }),
-    { message: `RUNM1075: models.sources entry ${path.relative(process.cwd(), money)} is outside the models root ${path.relative(process.cwd(), root)}. A models job generates only files inside its root.` },
+    { message: `RUNM1075: model.sources entry ${path.relative(process.cwd(), money)} is outside the models root ${path.relative(process.cwd(), root)}. A models job generates only files inside its root.` },
   );
 });
 
@@ -904,4 +906,154 @@ export type TA = IModel<{ big: bigint & TSerde<typeof $e, typeof $d> }>;
   });
   const source = generate({ root, profile: { mobx: false, validation: false } }).artifacts.find(artifact => artifact.path.endsWith('a.model.generated.ts'))?.content ?? '';
   assert.match(source, /import \{ \$e as __golemSerialize0Source, \$d as __golemDeserialize0Source \} from "\.\/codecs\.js";/);
+});
+
+/** A project whose golem.yaml (in `app`) holds `yaml`, with golem-model installed as a dependency and `@fixture/shop`, the scripted plan entry, as the block `shop`. */
+function configProject(t: TestContext, yaml: string): { root: string; app: string; filename: string } {
+  const root = createFixtureProject(t, 'golem-model-config-');
+  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'app', dependencies: { '@exprtlabs/golem-model': '1.0.0', '@fixture/shop': '1.0.0' } }));
+  linkProjectPackages(root, { '@exprtlabs/golem-model': path.join(workspace, 'packages/golem-model') });
+  const shop = path.join(root, 'node_modules/@fixture/shop');
+  fs.mkdirSync(path.dirname(shop), { recursive: true });
+  copyFixture(shop, 'config/scripted-plan');
+  const template = JSON.parse(fs.readFileSync(path.join(shop, 'package.json'), 'utf8')) as { golem: object };
+  fs.writeFileSync(path.join(shop, 'package.json'), JSON.stringify({ ...template, name: '@fixture/shop', golem: { ...template.golem, block: 'shop' } }));
+  const app = path.join(root, 'app');
+  fs.mkdirSync(path.join(app, 'src'), { recursive: true });
+  fs.writeFileSync(path.join(app, 'tsconfig.json'), '{}');
+  const filename = path.join(app, 'golem.yaml');
+  fs.writeFileSync(filename, `version: 1\n${yaml}`);
+  return { root, app, filename };
+}
+
+const modelJobOf = (filename: string) => {
+  const config = resolveConfig(filename);
+  const job = config.jobs.find(candidate => candidate.block === 'model');
+  assert.ok(job, 'the config holds the models job');
+  return { config, job };
+};
+
+test('an empty model block scans from the golem.yaml folder, writes the default output and provides both contracts', (t: TestContext) => {
+  // protects: R4 the models job scans from the golem.yaml folder; page "Packages": golem-model provides ModelBoundary and CodecsHost, owns its model folder and reads the program
+  const { app, filename } = configProject(t, 'model:\n');
+  const { config, job } = modelJobOf(filename);
+  const output = path.join(app, 'src/generated/models');
+  assert.equal(job.id, 'model');
+  assert.equal(job.package, '@exprtlabs/golem-model');
+  assert.deepEqual(job.facts, {
+    id: 'model', outputs: [], ownedRoots: [output, app], inputFiles: [], inputFolders: [], readsProgram: true,
+    provides: ['ModelBoundary', 'CodecsHost'], needs: [], hooks: [], watch: ['**/*.model.ts', '**/*.models.ts'],
+  });
+  assert.deepEqual(job.options, { root: app, directory: app, output, tsconfig: path.join(app, 'tsconfig.json'), profile: config.profile });
+  assert.deepEqual(config.contracts, { ModelBoundary: { root: app, directory: app, output }, CodecsHost: { modelsOutput: output, configDirectory: app } });
+});
+
+test('model sources, suffixes and output reach the options and the boundary; the owned roots run from the narrow output and source folders to the root', (t: TestContext) => {
+  // protects: page "What a job declares": owned roots, narrow to wide, so a file is recorded under its narrowest owner; the boundary carries the suffixes the rewrite reads
+  const { app, filename } = configProject(t, 'exact: false\nmodel:\n  output: gen/models\n  suffixes: [.entity.ts, .record.mts]\n  sources: [a/b/x.entity.ts, a/y.record.mts]\n');
+  const { job, config } = modelJobOf(filename);
+  assert.deepEqual(job.facts.ownedRoots, [path.join(app, 'gen/models'), path.join(app, 'a/b'), path.join(app, 'a'), app]);
+  assert.deepEqual(job.facts.watch, ['**/*.entity.ts', '**/*.record.mts']);
+  assert.deepEqual(job.options, {
+    root: app, directory: app, output: path.join(app, 'gen/models'), tsconfig: path.join(app, 'tsconfig.json'), profile: config.profile, exact: false,
+    sources: [path.join(app, 'a/b/x.entity.ts'), path.join(app, 'a/y.record.mts')], suffixes: ['.entity.ts', '.record.mts'],
+  });
+  assert.deepEqual(config.contracts.ModelBoundary, { root: app, directory: app, output: path.join(app, 'gen/models'), suffixes: ['.entity.ts', '.record.mts'] });
+});
+
+const MODEL_SUFFIX_CASES: readonly (readonly [string, string])[] = [
+  ['[]', 'model.suffixes must be a nonempty array.'],
+  ['.model.ts', 'model.suffixes must be a nonempty array.'],
+  ['[""]', 'model.suffixes[0] must be a string that starts with "." and ends in .ts, .mts or .cts.'],
+  ['[.model.ts, model.ts]', 'model.suffixes[1] must be a string that starts with "." and ends in .ts, .mts or .cts.'],
+  ['[.model.js]', 'model.suffixes[0] must be a string that starts with "." and ends in .ts, .mts or .cts.'],
+  ['[.model.ts, 3]', 'model.suffixes[1] must be a string that starts with "." and ends in .ts, .mts or .cts.'],
+  ['[.d.ts]', 'model.suffixes[0] must not end in .d.ts, .d.mts or .d.cts: a declaration file cannot be a source.'],
+  ['[.model.generated.ts]', 'model.suffixes[0] must not end in .generated.ts, .generated.mts or .generated.cts: golem writes those files.'],
+  ['[.model.generated.cts]', 'model.suffixes[0] must not end in .generated.ts, .generated.mts or .generated.cts: golem writes those files.'],
+  ['[.model.ts, .models.ts, .model.ts]', 'model.suffixes lists .model.ts twice.'],
+];
+for (const [suffixes, message] of MODEL_SUFFIX_CASES) {
+  test(`model.suffixes ${suffixes} stops loading with a message that names the entry`, (t: TestContext) => {
+    // protects: a suffix that is empty, malformed, repeated, a declaration or a generated file would make golem read its own output or nothing
+    const { filename } = configProject(t, `model:\n  suffixes: ${suffixes}\n`);
+    assert.throws(() => resolveConfig(filename), { message });
+  });
+}
+
+const MODEL_BLOCK_CASES: readonly (readonly [string, string])[] = [
+  ['model: [a]', 'model must be an object.'],
+  ['model:\n  sourcs: [a.model.ts]', 'Unknown model key: sourcs.'],
+  ['model:\n  output: ""', 'model.output must be a nonempty string.'],
+  ['model:\n  output: tsconfig.json', 'model.output must be a directory.'],
+  ['model:\n  sources: []', 'model.sources must be a nonempty array.'],
+  ['model:\n  sources: [a.model.ts, ./a.model.ts]', 'Duplicate model sources.'],
+];
+for (const [block, message] of MODEL_BLOCK_CASES) {
+  test(`the model block ${JSON.stringify(block)} stops loading with ${JSON.stringify(message)}`, (t: TestContext) => {
+    // protects: the block is validated whole at config time, so a misspelled key or a bad value never reaches a generator
+    const { filename } = configProject(t, `${block}\n`);
+    assert.throws(() => resolveConfig(filename), { message });
+  });
+}
+
+for (const [name, link] of [['a source outside the root', false], ['a source that links to a file outside the root', true]] as const) {
+  test(`${name} stops loading with RUNM1075 naming the real path and the root`, (t: TestContext) => {
+    // protects: a models job generates only files inside its root (RUNM1075), and a link shows as the file it points to
+    const { root, app, filename } = configProject(t, `model:\n  sources: [${link ? 'src/money.model.ts' : '../shared/money.model.ts'}]\n`);
+    fs.mkdirSync(path.join(root, 'shared'));
+    fs.writeFileSync(path.join(root, 'shared/money.model.ts'), 'export {};\n');
+    if (link) fs.symlinkSync('../../shared/money.model.ts', path.join(app, 'src/money.model.ts'));
+    assert.throws(() => resolveConfig(filename), {
+      message: `RUNM1075: model.sources entry ${path.relative(process.cwd(), path.join(root, 'shared/money.model.ts'))} is outside the models root ${path.relative(process.cwd(), app)}. A models job generates only files inside its root.`,
+    });
+  });
+}
+
+for (const [name, output, resolved] of [
+  ['a model output', '../outside', 'outside'],
+  ['a model output behind a link to a folder', 'linked/models', 'outside/models'],
+] as const) {
+  test(`${name} outside the tsconfig directory stops loading and writes nothing`, (t: TestContext) => {
+    // protects: F-42 the models output stays inside the tsconfig directory (T-182)
+    const { root, app, filename } = configProject(t, `model:\n  output: ${output}\n`);
+    fs.mkdirSync(path.join(root, 'outside'));
+    fs.symlinkSync(path.join(root, 'outside'), path.join(app, 'linked'), 'dir');
+    assert.throws(() => resolveConfig(filename), (error: unknown) => error instanceof JobRuleError
+      && error.message === `Job model: root ${path.join(root, resolved)} is outside ${app}; use one golem.yaml per tsconfig.`);
+    assert.deepEqual(fs.readdirSync(path.join(root, 'outside')), []);
+  });
+}
+
+test('the models job reads the SDK folders of the jobs that need the codecs host, and so runs after them', (t: TestContext) => {
+  // protects: page "When": the SDK folders that the models job reads come from CodecsHost in the second pass, so docs, SDKs, models is the order when an SDK links them
+  const shop = (jobs: string): string => `model:\nshop:\n  jobs:\n${jobs}`;
+  const linked = modelJobOf(configProject(t, shop([
+    '    - { id: sdk-a, readsProgram: true, needs: [CodecsHost], outputs: [{ path: sdk/a, kind: folder }] }',
+    '    - { id: sdk-b, needs: [CodecsHost], outputs: [{ path: sdk/b, kind: folder }] }',
+    '    - { id: docs, readsProgram: true, outputs: [{ path: api.yaml }] }',
+  ].join('\n') + '\n')).filename);
+  const app = path.dirname(linked.config.configFile);
+  assert.deepEqual(linked.job.facts.inputFolders, [path.join(app, 'sdk/a'), path.join(app, 'sdk/b')]);
+  assert.deepEqual(Reflect.get(linked.job.options as object, 'sdkOutputs'), [path.join(app, 'sdk/a'), path.join(app, 'sdk/b')]);
+  assert.deepEqual(linked.config.jobs.map(job => job.id).filter(id => id !== 'sdk-b'), ['sdk-a', 'model', 'docs']);
+
+  const unlinked = modelJobOf(configProject(t, shop('    - { id: docs, outputs: [{ path: api.yaml }] }\n')).filename);
+  assert.deepEqual(unlinked.job.facts.inputFolders, []);
+  assert.equal('sdkOutputs' in (unlinked.job.options as object), false);
+});
+
+test('the plan entry of golem-model loads without TypeScript, yaml or the generator', async () => {
+  // protects: T-767 anchor: the plan entry imports no TypeScript, no generator code and no yaml, because core loads it at config time
+  const script = [
+    "const { registerHooks, createRequire } = require('node:module');",
+    'const urls = [];',
+    'registerHooks({ resolve(specifier, context, next) { const resolved = next(specifier, context); urls.push(resolved.url); return resolved; } });',
+    'createRequire(process.cwd() + "/")(process.argv[1]);',
+    'console.log(JSON.stringify(urls));',
+  ].join('\n');
+  const { stdout } = await command(workspace, process.execPath, ['-e', script, path.join(workspace, 'packages/golem-model/dist/plan.js')]);
+  const urls = JSON.parse(stdout) as string[];
+  assert.ok(urls.some(url => url.endsWith('/golem/dist/tooling/plan-support.js')), 'the hook sees the plan entry load its core helpers');
+  assert.deepEqual(urls.filter(url => /\/(typescript|yaml)\/|generator(-core)?\.js$/.test(url)), []);
 });

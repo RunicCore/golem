@@ -13,6 +13,7 @@ const CONFIG = [
   'acme:',
   '  output: src/ext',
   '  fields: { name: string, age: number }',
+  'model:',
   '',
 ].join('\n');
 
@@ -28,8 +29,8 @@ function installPublicGolem(compileRoot: string): void {
   fs.symlinkSync(path.join(workspace, 'node_modules/@types'), path.join(compileRoot, 'node_modules/@types'), 'dir');
 }
 
-test('a third-party package that imports only public golem subpaths registers its own block, and its job writes the output; the project validation level reaches it', async (t: TestContext) => {
-  // protects: T-654 an extension package builds with the public API alone (its plan entry and generator)
+test('a third-party package that imports only public golem subpaths registers its own block, its job writes the output, and the model block generates and compiles it; the project validation level reaches it', async (t: TestContext) => {
+  // protects: T-654 an extension package builds with the public API alone (its plan entry and generator), and its output goes through the models job and compiles
   // protects: T-766 a third-party package registers its own block and the pipeline runs its job from the registry
   // protects: T-663 the validation level of golem.yaml reaches a third-party job through GolemProfile
   const compileRoot = createFixtureProject(t, 'golem-extension-build-');
@@ -38,12 +39,13 @@ test('a third-party package that imports only public golem subpaths registers it
   await command(compileRoot, process.execPath, [TSC, '-p', 'tsconfig.json']);
 
   const root = createFixtureProject(t, 'golem-extension-project-');
-  linkProjectPackages(root, { '@exprtlabs/golem': path.join(workspace, 'packages/golem') });
+  linkProjectPackages(root, Object.fromEntries(['golem', 'golem-model'].map((name) => [`@exprtlabs/${name}`, path.join(workspace, 'packages', name)])));
   const extension = path.join(root, 'node_modules/@fixture/extension');
   fs.mkdirSync(extension, { recursive: true });
   fs.copyFileSync(path.join(compileRoot, 'package.json'), path.join(extension, 'package.json'));
   fs.cpSync(path.join(compileRoot, 'dist'), path.join(extension, 'dist'), { recursive: true });
-  fs.writeFileSync(path.join(root, 'package.json'), '{"name":"golem-extension-fixture","type":"module","dependencies":{"@fixture/extension":"*"}}');
+  fs.writeFileSync(path.join(root, 'package.json'), '{"name":"golem-extension-fixture","type":"module","dependencies":{"@fixture/extension":"*","@exprtlabs/golem-model":"*"}}');
+  copyFixtureFile(root, 'packed/profile/tsconfig.json', 'tsconfig.json');
   fs.writeFileSync(path.join(root, 'golem.yaml'), CONFIG);
 
   await runPipeline(path.join(root, 'golem.yaml'));
@@ -51,4 +53,6 @@ test('a third-party package that imports only public golem subpaths registers it
   const card = fs.readFileSync(path.join(root, 'src/ext/card.model.ts'), 'utf8');
   assert.match(card, /^\/\* profile: \{"mobx":false,"validation":"sanity"\} \*\/$/m);
   assert.match(card, /^ {2}age: number;\n {2}name: string;$/m);
+
+  await command(root, process.execPath, [TSC, '-p', 'tsconfig.json', '--noEmit']);
 });
