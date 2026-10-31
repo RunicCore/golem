@@ -273,7 +273,7 @@ for (const preserveSymlinks of [false, true]) {
     const id = keys.keys['../shared/customer.model.ts#TCustomer'];
     assert.match(id ?? '', /^TCustomer_[0-9a-f]{8}$/);
 
-    const scan = scanProject({ root: app, directory: app, modelsRoot: app, output: path.join(app, 'src/generated/models'), configFile: path.join(app, 'tsconfig.json'), nest: false, codecKeysFile: path.join(app, '.golem/codec-keys.json') });
+    const scan = scanProject({ root: app, directory: app, modelsRoot: app, output: path.join(app, 'src/generated/models'), configFile: path.join(app, 'tsconfig.json'), codecKeysFile: path.join(app, '.golem/codec-keys.json') });
 
     assert.deepEqual(scan.diagnostics, []);
     const code = applyRewrites(fs.readFileSync(path.join(app, 'src/use.ts'), 'utf8'), scan.files.get('src/use.ts')!).code;

@@ -186,7 +186,7 @@ class ScanningProject {
   /** Files that the tsconfig's own file list misses, such as `.mts`: the program gets them as roots. */
   private readonly extras = new Set<string>();
 
-  constructor(private readonly config: GolemConfig, private readonly nest: boolean, private readonly compiler: Compiler) {
+  constructor(private readonly config: GolemConfig, private readonly compiler: Compiler) {
     this.root = path.dirname(config.tsconfig);
     this.configFile = config.configFile;
     this.expectedGenerated = config.jobs.some((job) => job.kind === 'models') ? [codecKeysPath(config.directory)] : [];
@@ -211,7 +211,7 @@ class ScanningProject {
     this.program?.close();
     this.program = program;
     const models = this.config.jobs.find((job) => job.kind === 'models');
-    this.scanner = new this.compiler.RewriteScanner({ root: this.root, directory: this.config.directory, modelsRoot: modelsRootOf(this.config), suffixes: models?.options.suffixes, output: models?.options.output, program, codecKeysFile: codecKeysPath(this.config.directory), checker: program.getTypeChecker(), nest: this.nest, nonModelInputs: this.config.nonModelInputs });
+    this.scanner = new this.compiler.RewriteScanner({ root: this.root, directory: this.config.directory, modelsRoot: modelsRootOf(this.config), suffixes: models?.options.suffixes, output: models?.options.output, program, codecKeysFile: codecKeysPath(this.config.directory), checker: program.getTypeChecker(), nonModelInputs: this.config.nonModelInputs });
     this.stale = false;
     this.recordSignature = signature;
     this.recorded = recorded;
@@ -383,7 +383,7 @@ export async function openRewriteProject(options: GolemHostOptions & { cwd: stri
         // The compiler seam loads once per process, so the project's TypeScript is requested before the seam is imported.
         requestTypeScriptRoot(path.dirname(config.tsconfig));
         const [seam, scan, analysis] = await Promise.all([import('./typescript-ns.js'), import('./rewrite-scan.js'), import('./type-analysis/project.js')]);
-        return new ScanningProject(config, config.jobs.some((job) => job.kind === 'controllers'),
+        return new ScanningProject(config,
           { ts: seam, RewriteScanner: scan.RewriteScanner, canonicalFilename: analysis.canonicalFilename });
       })(),
     };

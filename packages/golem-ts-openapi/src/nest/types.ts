@@ -40,12 +40,6 @@ export interface ControllerParameter {
   /** The parameter name. A part of the request body (`location: 'body'`) has one when it is a one-field `@Body('name')` and none when it is a whole `@Body()`. */
   readonly name?: string;
   readonly required: boolean;
-  /** The model id of the whole `@Query()` model that OpenAPI 3.1 flattened into this parameter. */
-  readonly wholeQueryModel?: string;
-  /** The model id of the items of a whole `@Body()` that is an array of models (`TPayment[]`, `readonly TPayment[]`, `ReadonlyArray<TPayment>`). */
-  readonly bodyItemModel?: string;
-  /** The model ids of the variants of a whole `@Body()` or `@Query()` that is a union of models. */
-  readonly unionModels?: readonly string[];
 }
 
 export interface RequestBodyDescription {

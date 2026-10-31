@@ -302,8 +302,6 @@ interface RewriteRoot {
   readonly job?: GolemJob;
   /** The root the borrowed compiler is kept under: its job's root, or the config directory without a job. */
   readonly root: string;
-  /** The config has a controllers job, so the scan stamps and checks the project's `@Body()` and `@Query()` parameters. */
-  readonly nest: boolean;
 }
 
 /**
@@ -314,10 +312,7 @@ interface RewriteRoot {
 function rewriteRoot(config: GolemConfig): RewriteRoot {
   const job = config.jobs.find((candidate): candidate is Extract<GolemJob, { kind: 'models' }> => candidate.kind === 'models')
     ?? config.jobs.find((candidate): candidate is Extract<GolemJob, { kind: 'controllers' }> => candidate.kind === 'controllers');
-  return {
-    ...(job ? { job, root: job.options.root } : { root: config.directory }),
-    nest: config.jobs.some(candidate => candidate.kind === 'controllers'),
-  };
+  return job ? { job, root: job.options.root } : { root: config.directory };
 }
 
 /**
@@ -705,7 +700,7 @@ function absorbOutcome(progress: PipelineProgress, job: GolemJob, outcome: JobOu
 async function scanRewriteSites(config: GolemConfig, session: GeneratorSessionResources, used: Map<string, Set<string>>): Promise<void> {
   const rewriteScan = fs.existsSync(config.tsconfig) ? await loadRewriteScan(rewriteRoot(config).job !== undefined) : undefined;
   if (!rewriteScan) return;
-  const { job, root, nest } = rewriteRoot(config);
+  const { job, root } = rewriteRoot(config);
   const keys = job ? used.get(job.id) ?? new Set<string>() : undefined;
   if (job && keys) used.set(job.id, keys);
   const scanned = rewriteScan.scanProject({
@@ -715,7 +710,6 @@ async function scanRewriteSites(config: GolemConfig, session: GeneratorSessionRe
     suffixes: job?.kind === 'models' ? job.options.suffixes : undefined,
     output: job?.kind === 'models' ? job.options.output : undefined,
     configFile: config.tsconfig,
-    nest,
     nonModelInputs: config.nonModelInputs,
     codecKeysFile: codecKeysPath(config.directory),
     // Without a job there is no compiler to borrow; the scan opens its own and closes it when idle.

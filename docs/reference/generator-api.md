@@ -150,7 +150,7 @@ Every [build tool](/guide/build) scans each TypeScript file it compiles or loads
 | `toWireFormat<T>(value)` | the generated `toWireFormat` for `T` |
 | `fromWireFormat<T>(wire)` | the generated `fromWireFormat` for `T`, constructing your class when `T` is a class |
 
-With a `controllers` job in `golem.yaml`, the rewrite also marks `@Body()` and `@Query()` parameters that take a model, and handlers that return a model, so that `NestModelInterceptor` can convert them. `golem build`, [`loader`](/reference/runtime-api#loader), [`vite`](/reference/runtime-api#vite) and [`esbuild`](/reference/runtime-api#esbuild) use this subpath to apply their edits.
+When a source of the project imports `@exprtlabs/golem/nest`, the rewrite also marks `@Body()` and `@Query()` parameters that take a model, and handlers that return a model, so that `NestModelInterceptor` can convert them. `golem build`, [`loader`](/reference/runtime-api#loader), [`vite`](/reference/runtime-api#vite) and [`esbuild`](/reference/runtime-api#esbuild) use this subpath to apply their edits.
 
 | Member | Signature | Behavior |
 | --- | --- | --- |

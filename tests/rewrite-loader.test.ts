@@ -299,12 +299,13 @@ const codec = objectCodecFromMetatype<{ id: string; note: string }>(types[0]);
 console.log(JSON.stringify({ stamped: codec !== undefined, parsed: codec?.parse('{"id":"1","note":"hello"}') }));
 `;
 
-test('a Nest controller with a @Body() model parameter carries nestModelCodec metadata when the loader runs it, in a project whose yaml has a controllers job', async (t) => {
+test('a Nest controller with a @Body() model parameter carries nestModelCodec metadata when the loader runs it, in a project whose yaml has no controllers job', async (t) => {
+  // protects: T-761 R-92 the Node loader turns the NestJS side on from the import of golem's interceptor module, not from a controllers job
   const root = await nestCodecProject(t, NEST_CONTROLLER, NEST_MAIN);
   assert.deepEqual(await runJson(root, 'src/main.ts'), { stamped: true, parsed: { id: '1', note: 'hello' } });
 });
 
-/** A Nest project with a controllers job; `controller` and `main` are its source files. */
+/** A Nest project with a models job and no controllers job; `controller` and `main` are its source files, and `main` imports golem's interceptor module. */
 async function nestCodecProject(t: TestContext, controller: string, main: string): Promise<string> {
   const root = createControllerFixture(t, {
     prefix: 'golem-loader-nest-codec-',
@@ -321,7 +322,6 @@ async function nestCodecProject(t: TestContext, controller: string, main: string
     },
   });
   await runPipeline(path.join(root, 'golem.yaml'));
-  write(root, 'golem.yaml', `${MODELS_YAML}controllers:\n  - root: .\n    output: generated/api.json\n    info: { title: Payments, version: "1" }\n`);
   return root;
 }
 
@@ -362,6 +362,7 @@ test('a model named only in an async Promise return has its codec registered wit
   ].join('\n'), [
     "import 'reflect-metadata';",
     "import fs from 'node:fs';",
+    "import '@exprtlabs/golem/nest';",
     "import { getObjectCodec } from '@exprtlabs/golem/serde';",
     "import './payments.controller.ts';",
     "const keys = JSON.parse(fs.readFileSync('.golem/codec-keys.json', 'utf8')).keys;",
