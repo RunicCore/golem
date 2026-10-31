@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { modelsRootOf, resolveConfig, validateConfigInputs } from './config.js';
+import { resolveConfig, validateConfigInputs } from './config.js';
 import type { GolemConfig, GolemJob } from './config.js';
 import { codecKeysPath } from './generated-paths.js';
 import { loadInventory, applyJob, removeRetiredJobs } from './outputs.js';
@@ -9,7 +9,7 @@ import type { FileChanges, Inventory, OutputFiles } from './outputs.js';
 import { absoluteRecordPath, golemCode, insideAny, inventoryPaths, JobInputs, jobIsCurrent, loadJobRecords, recordPath, registrationCode, sameSetup, saveJobRecords } from './job-cache.js';
 import type { JobRecord } from './job-cache.js';
 import { GolemDiagnosticSeverity, displayPath, errorMessage, isInsideDirectory, isRecord } from './generator-core.js';
-import { isJobOutput, MODEL_BOUNDARY, watchedBy } from './job-facts.js';
+import { isJobOutput, watchedBy } from './job-facts.js';
 import { loadPackageRegistry, registrationForBlock } from './package-registry.js';
 import { validateModelManifest } from './model-manifest-core.js';
 import type { GolemArtifact, GolemDiagnostic, GolemResult, GeneratorSession } from './generator-core.js';
@@ -64,9 +64,20 @@ function disposeAll(resources: Iterable<Disposable>): void {
   if (errors.length > 1) throw new AggregateError(errors, 'Closing generator session resources failed.');
 }
 
-/** Owns provider resources, per job, for one pipeline run or watch session. */
-export class GeneratorSessionResources implements Disposable {
+/**
+ * Owns provider resources, per job, for one pipeline run or watch session, and the resources that every job and the rewrite share:
+ * the one program session.
+ */
+export class GeneratorSessionResources implements Disposable, Pick<GeneratorSession, 'share'> {
   private readonly jobs = new Map<string, Map<string, SessionResource>>();
+  private readonly shared = new Map<string, SessionResource>();
+
+  /** The resource under `key`, created by its first request and kept until the session ends. */
+  share<Resource extends Disposable>(key: string, create: () => Resource): Resource {
+    let resource = this.shared.get(key);
+    if (!resource) this.shared.set(key, resource = create());
+    return resource as Resource;
+  }
 
   /** The session a job's provider sees; `used` collects the keys it retains in this run. */
   forJob(jobId: string, used: Set<string>): GeneratorSession {
@@ -79,6 +90,7 @@ export class GeneratorSessionResources implements Disposable {
         used.add(key);
         return resource as Resource;
       },
+      share: (key, create) => this.share(key, create),
     };
   }
 
@@ -87,6 +99,7 @@ export class GeneratorSessionResources implements Disposable {
     for (const resources of this.jobs.values()) {
       for (const resource of resources.values()) resource.inputsChanged?.(filenames);
     }
+    for (const resource of this.shared.values()) resource.inputsChanged?.(filenames);
   }
 
   /**
@@ -108,8 +121,9 @@ export class GeneratorSessionResources implements Disposable {
   }
 
   [Symbol.dispose](): void {
-    const resources: Disposable[] = [...this.jobs.values()].flatMap((job) => [...job.values()]);
+    const resources: Disposable[] = [...this.jobs.values()].flatMap((job) => [...job.values()]).concat([...this.shared.values()]);
     this.jobs.clear();
+    this.shared.clear();
     disposeAll(resources);
   }
 }
@@ -239,27 +253,9 @@ function assertNoDiagnosticErrors(job: GolemJob, result: Pick<GolemResult, 'diag
   throw new Error(errorDiagnosticsMessage(job.package, errors));
 }
 
-interface RewriteRoot {
-  /** The job whose compiler the scan borrows; none for a config without a models or controllers job. */
-  readonly job?: GolemJob;
-  /** The root the borrowed compiler is kept under: its job's root, or the config directory without a job. */
-  readonly root: string;
-}
-
-/**
- * The project whose sources `golem check` scans: the tsconfig the golem.yaml names (`golem build` starts from the same
- * yaml). The scan borrows the compiler of the job that provides the models boundary, else of the first job that reads the program; a
- * config with neither opens its own, so an app that only calls an SDK is checked too. A yaml with no tsconfig file has no project.
- */
-function rewriteRoot(config: GolemConfig): RewriteRoot {
-  const job = config.jobs.find(candidate => candidate.facts.provides.includes(MODEL_BOUNDARY))
-    ?? config.jobs.find(candidate => candidate.facts.readsProgram);
-  return { ...(job ? { job } : {}), root: modelsRootOf(config) };
-}
-
 /**
  * The rewrite scan needs TypeScript, so its module (and the compiler seam behind it) loads only when a scan runs. A config with
- * a models or controllers job has a compiler by construction. One without scans only when TypeScript is installed: an
+ * a job that reads the program has a compiler by construction. One without scans only when TypeScript is installed: an
  * OpenAPI-only project need not have it, and without TypeScript it has no sources to scan. A TypeScript
  * that is installed but unsupported still fails here.
  */
@@ -565,6 +561,7 @@ async function runJob(job: GolemJob, run: PipelineRun, plan: PipelinePlan, progr
       manifestInputs: [...progress.manifests],
       onInput: (input: string) => { observer.observe(input); read?.read(input); },
       session: session.forJob(job.id, keys),
+      ...(plan.config.jobPlan.programViews[job.id] ? { programView: plan.config.jobPlan.programViews[job.id] } : {}),
     });
   } catch (error) {
     throw new Error(`Generator ${job.package} failed for ${job.id}: ${errorMessage(error)}`, { cause: error });
@@ -591,6 +588,8 @@ async function runJob(job: GolemJob, run: PipelineRun, plan: PipelinePlan, progr
     if (typeof error === 'object' && error !== null) failedWhileWriting.add(error);
     throw error;
   }
+  // The next job that reads the program gets a program that holds the files this job wrote or removed.
+  session.inputsChanged([...changes.written, ...changes.removed]);
   // The job's record and its written output change together: a later job's failure leaves a record that matches the files.
   if (nextRecord) {
     try {
@@ -634,35 +633,24 @@ function absorbOutcome(progress: PipelineProgress, job: GolemJob, outcome: JobOu
 }
 
 /**
- * `golem check` reads the project's sources too: it reports the sites golem cannot rewrite, and writes nothing. A yaml
- * without a tsconfig, an openapi-only one for instance, has no project to scan.
+ * `golem check` reads the project's sources too: it reports the sites golem cannot rewrite, and writes nothing. It requests the run's
+ * one program session, as the jobs do. A yaml without a tsconfig, an openapi-only one for instance, has no project to scan.
  */
-async function scanRewriteSites(config: GolemConfig, session: GeneratorSessionResources, used: Map<string, Set<string>>): Promise<void> {
-  const rewriteScan = fs.existsSync(config.tsconfig) ? await loadRewriteScan(rewriteRoot(config).job !== undefined) : undefined;
+async function scanRewriteSites(config: GolemConfig, session: GeneratorSessionResources): Promise<void> {
+  const rewriteScan = fs.existsSync(config.tsconfig) ? await loadRewriteScan(config.jobs.some(job => job.facts.readsProgram)) : undefined;
   if (!rewriteScan) return;
-  const { job, root } = rewriteRoot(config);
-  const boundary = config.contracts.ModelBoundary;
-  const keys = job ? used.get(job.id) ?? new Set<string>() : undefined;
-  if (job && keys) used.set(job.id, keys);
+  const root = path.dirname(config.tsconfig);
   const scanned = rewriteScan.scanProject({
     root,
-    directory: config.directory,
-    modelsRoot: modelsRootOf(config),
-    suffixes: boundary?.suffixes,
-    output: boundary?.output,
+    boundary: config.contracts.ModelBoundary,
     configFile: config.tsconfig,
     nonModelInputs: config.nonModelInputs,
     codecKeysFile: codecKeysPath(config.directory),
-    // Without a job there is no compiler to borrow; the scan opens its own and closes it when idle.
-    ...(job && keys ? {
-      session: session.forJob(job.id, keys),
-      // The models job's compiler is its retained session, keyed by golem-model's SESSION_OWNER, which is its package name.
-      sessionOwner: job.package,
-    } : {}),
+    session,
   });
   const errors = scanned.diagnostics.filter(diagnostic => diagnostic.severity === GolemDiagnosticSeverity.Error);
-  if (errors.length > 0) throw new Error(errorDiagnosticsMessage('golem rewrite scan', errors, path.dirname(config.tsconfig)));
-  writeWarnings(scanned.diagnostics, path.dirname(config.tsconfig));
+  if (errors.length > 0) throw new Error(errorDiagnosticsMessage('golem rewrite scan', errors, root));
+  writeWarnings(scanned.diagnostics, root);
 }
 
 /** Scan the sources for `check`, save the records of the jobs still configured, and hand the provider keys back to the session. */
@@ -670,7 +658,7 @@ async function finalizePipeline(run: PipelineRun, plan: PipelinePlan, progress: 
   const { options, session, observer } = run;
   const { config } = plan;
   const used = new Map(progress.used);
-  if (options.check) await scanRewriteSites(config, session, used);
+  if (options.check) await scanRewriteSites(config, session);
   // The last save drops the records of removed jobs, which a run where every job is current has not saved. `check` writes nothing.
   if (!options.check) saveJobRecords(config, progress.nextRecords, options.files);
   for (const output of progress.owned) observer.inputs.delete(output);

@@ -100,7 +100,7 @@ function validateContext(context: TsToOpenApiContext): {
     models.suffixes,
     { directory: assertAbsolute(models.directory, 'context.models.directory'), output: assertAbsolute(models.output, 'context.models.output') },
   );
-  const laterOutputs = (context.laterOutputs ?? []).map((later) => assertAbsolute(later, 'context.laterOutputs entry'));
+  const laterOutputs = (context.programView?.laterOutputs ?? []).map((later) => assertAbsolute(later, 'context.programView.laterOutputs entry'));
   return { root, output, ...(sources ? { sources } : {}), suffixes: context.suffixes ?? DEFAULT_CONTROLLER_SUFFIXES, ...(context.tsconfig === undefined ? {} : { tsconfig: assertAbsolute(context.tsconfig, 'context.tsconfig') }), openapiVersion, maxResultBytes, profile, exact: context.exact, ...(boundary ? { boundary } : {}), laterOutputs, onInput: context.onInput };
 }
 
@@ -493,7 +493,7 @@ export async function generate(context: TsToOpenApiContext): Promise<TsToOpenApi
   const normalized = validateContext(context);
   const { observed, observe } = inputObserver(normalized.onInput);
   const sources = controllerSources(normalized, observe);
-  const session = retainedProgramSession(context.session, '@exprtlabs/golem-ts-openapi', normalized.root);
+  const session = retainedProgramSession(context.session, normalized.tsconfig === undefined ? normalized.root : path.dirname(normalized.tsconfig));
   const programInfo = openProgram(sources, normalized, observe, session);
   using program = programInfo.program;
   const checker = program.getTypeChecker();

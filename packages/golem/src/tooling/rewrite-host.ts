@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 
-import { modelsRootOf, resolveConfig } from './config.js';
+import { resolveConfig } from './config.js';
 import { codecKeysPath } from './generated-paths.js';
 import type { GolemConfig } from './config.js';
 import { displayPath, GolemDiagnosticSeverity } from './generator-core.js';
@@ -121,7 +121,7 @@ export interface GolemHostOptions {
 }
 
 export interface RewriteProject {
-  /** The codec key file the yaml's models job writes, whether or not it exists yet: what a host watches after a failed rewrite so that `golem generate` brings it back. */
+  /** The codec key file that the job providing the `ModelBoundary` contract writes, whether or not it exists yet: what a host watches after a failed rewrite so that `golem generate` brings it back. Empty without a provider. */
   readonly expectedGenerated: readonly string[];
   /**
    * Edits for one file as the host will compile it, `dependencies` as absolute paths; undefined when the file has no
@@ -189,7 +189,7 @@ class ScanningProject {
   constructor(private readonly config: GolemConfig, private readonly compiler: Compiler) {
     this.root = path.dirname(config.tsconfig);
     this.configFile = config.configFile;
-    this.expectedGenerated = config.jobs.some((job) => job.kind === 'models') ? [codecKeysPath(config.directory)] : [];
+    this.expectedGenerated = config.contracts.ModelBoundary === undefined ? [] : [codecKeysPath(config.directory)];
     this.session = new compiler.ts.ProgramSession({ cwd: this.root });
   }
 
@@ -210,8 +210,7 @@ class ScanningProject {
     const program = this.session.openProgram({ root: this.root, sources, configFile: this.config.tsconfig, overlays: new Map(this.overlays) });
     this.program?.close();
     this.program = program;
-    const models = this.config.jobs.find((job) => job.kind === 'models');
-    this.scanner = new this.compiler.RewriteScanner({ root: this.root, directory: this.config.directory, modelsRoot: modelsRootOf(this.config), suffixes: models?.options.suffixes, output: models?.options.output, program, codecKeysFile: codecKeysPath(this.config.directory), checker: program.getTypeChecker(), nonModelInputs: this.config.nonModelInputs });
+    this.scanner = new this.compiler.RewriteScanner({ root: this.root, boundary: this.config.contracts.ModelBoundary, program, codecKeysFile: codecKeysPath(this.config.directory), checker: program.getTypeChecker(), nonModelInputs: this.config.nonModelInputs });
     this.stale = false;
     this.recordSignature = signature;
     this.recorded = recorded;

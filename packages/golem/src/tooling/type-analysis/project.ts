@@ -441,15 +441,13 @@ function openProject(
 }
 
 /**
- * The compiler session a provider keeps for one project root across the
- * generation runs of a CLI pipeline or watch session.
+ * The program session of the run: core owns one, and every job and the rewrite request the same one, so a program opened after
+ * a job wrote its files holds them. The session works from the folder of the project it is first requested for.
  */
-export function retainedProgramSession(
-  session: GeneratorSession | undefined,
-  owner: string,
-  root: string,
-): ts.ProgramSession | undefined {
-  return session?.retain(`${owner}:${canonicalFilename(root)}`, () => new ts.ProgramSession({ cwd: root }));
+export function retainedProgramSession(session: Pick<GeneratorSession, 'share'>, root: string): ts.ProgramSession;
+export function retainedProgramSession(session: Pick<GeneratorSession, 'share'> | undefined, root: string): ts.ProgramSession | undefined;
+export function retainedProgramSession(session: Pick<GeneratorSession, 'share'> | undefined, root: string): ts.ProgramSession | undefined {
+  return session?.share('program', () => new ts.ProgramSession({ cwd: root }));
 }
 
 /** The tsconfig a job's programs open with: the referenced project that holds the sources of a solution tsconfig, else the tsconfig itself. */

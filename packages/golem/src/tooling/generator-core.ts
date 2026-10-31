@@ -3,7 +3,7 @@ import path from 'node:path';
 import { inspect } from 'node:util';
 import YAML from 'yaml';
 import { canonicalPath, displayPath, isInsideDirectory, isRecord } from './plan-support.js';
-import type { JobFacts } from './job-facts.js';
+import type { JobFacts, ProgramView } from './job-facts.js';
 
 // The helpers live in plan-support, which plan entries may import; the rest of core reads them here.
 export { canonicalPath, displayPath, isInsideDirectory, isRecord };
@@ -148,6 +148,11 @@ export type InputObserver = (absolutePath: string) => void;
  */
 export interface GeneratorSession {
   retain<Resource extends Disposable>(key: string, create: () => Resource): Resource;
+  /**
+   * A resource that every job and core's rewrite share for the run or watch session, such as the one TypeScript program session.
+   * The first request under `key` creates it; it is not tied to a job, so no job's removal closes it.
+   */
+  share<Resource extends Disposable>(key: string, create: () => Resource): Resource;
 }
 
 export interface ModelContext {
@@ -175,6 +180,8 @@ export interface GeneratorHostContext {
   /** Call with each local file path before reading it, so golem can skip the job when its inputs are unchanged. */
   readonly onInput?: InputObserver;
   readonly session?: GeneratorSession;
+  /** What the program of a job that reads the program leaves out or stubs of the jobs after it; omitted for a job that reads no program. */
+  readonly programView?: ProgramView;
 }
 
 /**
@@ -330,11 +337,11 @@ export interface ControllerContext {
    */
   readonly models?: ControllerModels;
   /**
-   * Where the jobs after this one in the same golem.yaml write, absolute: a directory for an openapi job, a file for a controllers job.
-   * The models job is not listed: its generated files are stubbed in the controllers program. A model file that imports one of these
-   * paths is not read by the controllers analysis, because the import does not resolve until that job has run.
+   * What this job's program leaves out or stubs of the jobs after it (`laterOutputs`, `stubbedProviders`), set by the host as for every
+   * job that reads the program. A model file that imports a later output is not read by the controllers analysis, because the import
+   * does not resolve until that job has run. A later provider's generated files are stubbed in the program.
    */
-  readonly laterOutputs?: readonly string[];
+  readonly programView?: ProgramView;
   readonly onInput?: InputObserver;
   readonly session?: GeneratorSession;
 }

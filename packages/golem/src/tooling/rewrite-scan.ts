@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import * as ts from './typescript-ns.js';
 import { GolemDiagnosticSeverity, canonicalPath, compareText, displayPath, errorMessage, hasErrorCode, isRecord } from './generator-core.js';
-import type { GeneratorSession, GolemDiagnostic } from './generator-core.js';
+import type { GeneratorSession, GolemDiagnostic, ModelBoundaryValue } from './generator-core.js';
 import type { DiscriminatorValue } from '../model-registry.js';
 import { REWRITE_IMPORT_PREFIX } from './rewrite.js';
 import type { FileRewrite, RewriteEdit, RewriteImport } from './rewrite.js';
@@ -18,14 +18,8 @@ import { declaredModelAlias, foreignModelReason, modelDeclarationKind, propertyT
 interface ScanInput {
   /** Absolute project root; file paths in results are relative to it. */
   readonly root: string;
-  /** The directory of the golem.yaml: where the search for a shared model file's package folder stops. */
-  readonly directory: string;
-  /** `models.root` of the project's models job. */
-  readonly modelsRoot: string;
-  /** The `suffixes` of the models job: a model is declared in a file whose name ends in one of them. Defaults to the golem default. */
-  readonly suffixes?: readonly string[] | undefined;
-  /** `models.output` of the project's models job: the generated file of a shared model is there. Without it every companion is beside its model file. */
-  readonly output?: string | undefined;
+  /** The `ModelBoundary` value of the job that provides it: the models root, the suffixes of a model file and the folder of the generated files of shared models. Absent without a provider: the rewrite serves SDK models only. */
+  readonly boundary?: ModelBoundaryValue | undefined;
   readonly program: ts.Program;
   readonly checker: ts.TypeChecker;
   /** The project's `.golem/codec-keys.json`, which the program does not hold; a missing file holds no keys. */
@@ -119,7 +113,7 @@ class CodecKeys {
   private readonly base: string;
   private readonly keysByFile = new Map<string, string>();
 
-  constructor(private readonly program: ts.Program, root: string, codecKeysFile: string, private readonly boundary: ModelBoundary) {
+  constructor(private readonly program: ts.Program, root: string, codecKeysFile: string, private readonly boundary: ModelBoundary | undefined) {
     this.base = canonicalPath(root);
     const table = portable(root, codecKeysFile);
     for (const [declaration, id] of Object.entries(readCodecKeysFile(codecKeysFile))) {
@@ -856,7 +850,7 @@ function pendingGeneration(boundary: ModelBoundary, alias: ts.TypeAliasDeclarati
 }
 
 function scanFile(
-  input: { readonly root: string; readonly checker: ts.TypeChecker; readonly keys: CodecKeys; readonly nest: boolean; readonly nonModelInputs: 'error' | 'warn'; readonly boundary: ModelBoundary; readonly modelClasses: () => ReadonlyMap<string, number> },
+  input: { readonly root: string; readonly checker: ts.TypeChecker; readonly keys: CodecKeys; readonly nest: boolean; readonly nonModelInputs: 'error' | 'warn'; readonly boundary: ModelBoundary | undefined; readonly modelClasses: () => ReadonlyMap<string, number> },
   file: ts.SourceFile,
 ): FileScan {
   const { root, checker, keys, nest, nonModelInputs, boundary } = input;
@@ -894,7 +888,7 @@ function scanFile(
       const model = fieldProvenance(checker, call.typeArguments[0], []).anonymous;
       const alias = model && declaredModelAlias(model);
       const foreign = alias ? foreignModelReason(alias, boundary) : undefined;
-      const pending = alias && foreign === undefined ? pendingGeneration(boundary, alias) : undefined;
+      const pending = alias && foreign === undefined && boundary ? pendingGeneration(boundary, alias) : undefined;
       scan.diagnostics.push(foreign !== undefined
         ? locate(root, file, call, CODE_FOREIGN_MODEL, foreign)
         : locate(root, file, call, CODE_NO_CODEC, `${method}<${call.typeArguments[0].getText(file)}> has no unique codec id${pending === undefined ? '' : `. ${pending}`}`));
@@ -1108,12 +1102,12 @@ export class RewriteScanner {
   private nestSide: boolean | undefined;
   private readonly nonModelInputs: 'error' | 'warn';
   private readonly keys: CodecKeys;
-  private readonly boundary: ModelBoundary;
+  private readonly boundary: ModelBoundary | undefined;
   private modelClassCounts: ReadonlyMap<string, number> | undefined;
 
   constructor(input: ScanInput) {
     this.root = input.root;
-    this.boundary = modelBoundary(input.modelsRoot, input.suffixes, input.output === undefined ? undefined : { directory: input.directory, output: input.output });
+    this.boundary = input.boundary && modelBoundary(input.boundary.root, input.boundary.suffixes, { directory: input.boundary.directory, output: input.boundary.output });
     this.program = input.program;
     this.checker = input.checker;
     this.nonModelInputs = input.nonModelInputs ?? 'error';
@@ -1199,29 +1193,22 @@ export interface ProgramScan {
 /** What opening a project's program for a scan needs. */
 interface ProjectScanInput {
   readonly root: string;
-  /** The directory of the golem.yaml. */
-  readonly directory: string;
-  /** `models.root` of the project's models job. */
-  readonly modelsRoot: string;
-  /** The `suffixes` of the models job. Defaults to the golem default. */
-  readonly suffixes?: readonly string[] | undefined;
-  /** `models.output` of the project's models job. */
-  readonly output?: string | undefined;
+  /** The `ModelBoundary` value; absent without a provider. */
+  readonly boundary?: ModelBoundaryValue | undefined;
   /** The tsconfig whose files are scanned, from the golem.yaml; its directory is what the file paths are relative to. */
   readonly configFile: string;
   readonly nonModelInputs?: 'error' | 'warn' | undefined;
   /** The yaml's `.golem/codec-keys.json`. */
   readonly codecKeysFile: string;
-  /** The session and owner of the job that reads this project, so one compiler serves its generation and this scan; the session is kept under `root`. */
-  readonly session?: GeneratorSession;
-  readonly sessionOwner?: string;
+  /** Core's session of the run: the scan requests the same program session as the jobs. Without one, the scan opens its own and closes it when idle. */
+  readonly session?: Pick<GeneratorSession, 'share'>;
 }
 
 /** Open the project's program and ask the scanner about its sources: what `golem check` reports. Writes nothing. */
 export function scanProject(input: ProjectScanInput): ProgramScan {
-  const { root, directory, modelsRoot, suffixes, output, configFile, nonModelInputs, codecKeysFile, session, sessionOwner } = input;
-  const info = createProjectProgram(root, undefined, sessionOwner === undefined ? undefined : retainedProgramSession(session, sessionOwner, root), configFile);
+  const { root, boundary, configFile, nonModelInputs, codecKeysFile, session } = input;
+  const info = createProjectProgram(root, undefined, retainedProgramSession(session, root), configFile);
   using program = info.program;
-  const { files, diagnostics } = new RewriteScanner({ root: path.dirname(configFile), directory, modelsRoot, suffixes, output, program, checker: program.getTypeChecker(), nonModelInputs, codecKeysFile }).scanProgram();
+  const { files, diagnostics } = new RewriteScanner({ root: path.dirname(configFile), boundary, program, checker: program.getTypeChecker(), nonModelInputs, codecKeysFile }).scanProgram();
   return { files, diagnostics };
 }

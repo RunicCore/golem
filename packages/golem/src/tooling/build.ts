@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { canonicalFile, modelsRootOf, resolveConfig } from './config.js';
+import { canonicalFile, resolveConfig } from './config.js';
 import type { GolemConfig } from './config.js';
 import { codecKeysPath } from './generated-paths.js';
 import { displayPath, errorMessage, failureText, GolemDiagnosticSeverity, hasErrorCode, isInsideDirectory } from './generator-core.js';
@@ -14,6 +14,7 @@ import type { PipelineState } from './pipeline.js';
 import { applyRewrites } from './rewrite.js';
 import type { FileRewrite } from './rewrite.js';
 import { emitsJavaScript, projectSources, RewriteScanner } from './rewrite-scan.js';
+import { retainedProgramSession } from './type-analysis/project.js';
 import { inlineEmittedSourceMap, pointDeclarationMap, pointSourceMap } from './source-map.js';
 import type { SourceMapV3 } from './source-map.js';
 import { assertNotSolutionTsconfig, referenceClosure, referencedCommand, referencesRefusal } from './typescript-config.js';
@@ -489,8 +490,7 @@ async function buildOnce(session: ts.ProgramSession, run: BuildRun, changed?: re
     return checkCode;
   }
   const checker = program.getTypeChecker();
-  const models = golemConfig.jobs.find((job) => job.kind === 'models');
-  const scanned = new RewriteScanner({ root, directory: golemConfig.directory, modelsRoot: modelsRootOf(golemConfig), suffixes: models?.options.suffixes, output: models?.options.output, program, checker, codecKeysFile: codecKeysPath(golemConfig.directory), nonModelInputs: golemConfig.nonModelInputs })
+  const scanned = new RewriteScanner({ root, boundary: golemConfig.contracts.ModelBoundary, program, checker, codecKeysFile: codecKeysPath(golemConfig.directory), nonModelInputs: golemConfig.nonModelInputs })
     .scanFiles(sources.map((source) => source.fileName));
   const errors = scanned.diagnostics.filter((diagnostic) => diagnostic.severity === GolemDiagnosticSeverity.Error);
   if (errors.length > 0) throw scanFailure(root, errors);
@@ -555,14 +555,15 @@ export async function runBuild(options: BuildOptions): Promise<{ exitCode: numbe
   const first = readGolemConfig(options.config, () => {});
   const root = path.dirname(first.tsconfig);
   const label = displayPath(options.project === undefined ? first.tsconfig : path.resolve(options.project));
-  using session = new ts.ProgramSession({ cwd: root });
+  // Core owns one program session: the generation jobs, the rewrite scan and the build's own programs request this one.
+  using generation = new GeneratorSessionResources();
+  const session = retainedProgramSession(generation, root);
   // `-b` is refused here, once, before anything is generated or watched: a refusal inside a watching build would be reported and the watch would go on.
   if (options.compilerBuild) {
     const configFile = resolveProject(options.project, first);
     requestTypeScriptRoot(root);
     throw referencesRefusal(configFile, session.parseConfigFile(configFile).projectReferences, 'golem build does not take -b or --build: `tsc -b` would also build projects that have no golem.yaml, whose calls golem would not rewrite. A golem.yaml names one project.');
   }
-  using generation = new GeneratorSessionResources();
   const inputs = new Set<string>();
   const outputs = new Set<string>();
   const outputsPresent = (): boolean => [...outputs].every((directory) => fs.existsSync(directory));

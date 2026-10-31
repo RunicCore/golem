@@ -136,8 +136,6 @@ function validateContext(context: GolemModelContext): NormalizedContext {
   };
 }
 
-const SESSION_OWNER = '@exprtlabs/golem-model';
-
 /** A job without model files still watches the project, so a model file added later is seen. */
 function emptyResult(info: ProgramInfo, program: ts.Program, root: string): GolemModelResult {
   const watchInputs = projectWatchInputs(info, program, [], discoverModelManifests(root));
@@ -446,7 +444,7 @@ export function generate(context: GolemModelContext): GolemModelResult {
     boundary,
     discovered,
     normalized.onInput,
-    retainedProgramSession(normalized.session, SESSION_OWNER, normalized.root),
+    retainedProgramSession(normalized.session, normalized.tsconfig === undefined ? normalized.root : dirname(normalized.tsconfig)),
     normalized.tsconfig,
   );
   using program = programInfo.program;

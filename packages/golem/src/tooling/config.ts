@@ -173,11 +173,6 @@ export function resolveConfig(filename = 'golem.yaml', onInput?: InputObserver):
   };
 }
 
-/** The `ModelBoundary` root of the config: where the app's own model sources are. Without a provider of the boundary, the directory of the golem.yaml. */
-export function modelsRootOf(config: Pick<GolemConfig, 'directory' | 'contracts'>): string {
-  return config.contracts.ModelBoundary?.root ?? config.directory;
-}
-
 /** Whether an earlier job's exclusive output holds `input`. */
 function writtenBefore(jobs: readonly GolemJob[], input: string): boolean {
   return jobs.some(job => job.facts.outputs.some(output => output.kind === 'file' ? output.path === input : isInsideDirectory(output.path, input)));
