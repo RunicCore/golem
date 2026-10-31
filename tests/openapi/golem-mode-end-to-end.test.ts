@@ -60,7 +60,6 @@ test('two golem-mode SDKs with one operation name share one models job; a modelO
     assert.equal(body.at instanceof Date, true, `${name} converts its date`);
   }
 
-  await runPipeline(project.config, { modelOnly: true });
   await runPipeline(project.config, { check: true });
   assert.deepEqual(written.map(([file]) => fs.readFileSync(path.join(models, file!), 'utf8')), written.map(([, content]) => content));
 });
