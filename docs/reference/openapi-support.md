@@ -1,6 +1,6 @@
 # OpenAPI support
 
-Check what the client generator supports for each OpenAPI version, feature and profile. The generator turns the validation keywords of a schema into client validation, whichever tool produced the document. A [`golem` mode SDK](/reference/config#sdk-modes) hands them to the `models` job, which compiles them with your models.
+Check what the client generator supports for each OpenAPI version, feature and profile. The generator turns the validation keywords of a schema into client validation, whichever tool produced the document. A [`golem` mode SDK](/reference/config#sdk-modes) hands them to the models job, which compiles them with your models.
 
 ## Feature support
 

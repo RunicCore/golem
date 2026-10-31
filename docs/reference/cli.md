@@ -64,7 +64,7 @@ When the system cannot watch a folder:
 Each good run of `watch` prints one line: the result of each job, then the time of the run.
 
 ```text
-models: 2 files updated · openapi:sdk: unchanged · 412 ms
+openapi:sdk: unchanged · model: 2 files updated · 412 ms
 ```
 
 - A job shows the files it updated or removed.
@@ -214,18 +214,18 @@ The build stops before it writes when an output would land outside its folder. T
 
 - The directory of the tsconfig is the project root. The build covers every file that the tsconfig includes.
 - For a parent tsconfig that includes several packages, put `golem.yaml` in a package and point `tsconfig` at the parent, as in `tsconfig: ../../tsconfig.json`.
-- The build adds the Nest codec decorators to every file of the project when a source of the project imports `@exprtlabs/golem/nest`. A `controllers` job is not needed.
-- A `golem.yaml` with no tsconfig file, such as one with only `openapi` jobs, has nothing to build.
+- The build adds the Nest codec decorators to every file of the project when a source of the project imports `@exprtlabs/golem/nest`. A docs job is not needed.
+- A `golem.yaml` with no tsconfig file, such as one with only SDK jobs, has nothing to build.
 
 One `golem.yaml` serves one tsconfig. `generate`, `check` and `build` stop in these cases:
 
 | Case | Message | What to do |
 | --- | --- | --- |
-| The `root` of a `models` or `controllers` job lies outside the directory of the tsconfig | `job root <root> is outside <directory>; use one golem.yaml per tsconfig.` | Give each package that has its own tsconfig its own `golem.yaml`. |
-| The `output` of the `models` job lies outside that directory | `Job <id>: output <path> is outside the tsconfig directory <directory>. Move it inside.` | Move the output inside. |
+| A root of the models job or of a docs job lies outside the directory of the tsconfig | `job root <root> is outside <directory>; use one golem.yaml per tsconfig.` | Give each package that has its own tsconfig its own `golem.yaml`. |
+| The `output` of the models job, or any output that the app imports, lies outside that directory | `Job <id>: output <path> is outside the tsconfig directory <directory>. Move it inside.` | Move the output inside. |
 | The tsconfig that `golem.yaml` names has no files and only `references` | The message names each referenced project. | Name one referenced project in `tsconfig`, such as `tsconfig.app.json`. |
 
-Every job reads the tsconfig that `golem.yaml` names. A tsconfig nearer to a job root is not read. The `output` of any other job, such as an `openapi` SDK, may lie anywhere.
+Every job reads the tsconfig that `golem.yaml` names. A tsconfig nearer to a job root is not read. The `output` of any other job, such as an SDK, may lie anywhere.
 
 ## Exit status
 

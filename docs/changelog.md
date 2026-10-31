@@ -8,6 +8,10 @@ Golem 1.1.0 is a breaking release with a 1.x number. It supports TypeScript 6.0+
 
 - **Breaking:** TypeScript 7.0 fails at load. Install TypeScript 7.1 or 6, or stay on Golem 1.0 with TypeScript 7.0 ([Generation](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#generation)).
 - Run generation on TypeScript 6.0+ and 7.1+, including 7.1.0-beta ([Compatibility](/compatibility#ts)).
+- **Breaking:** each package registers one `golem.yaml` block. Write `model`, `ts-openapi` with `docs`, and `openapi-ts` with `sdks`, in place of `models`, `controllers`, `openapi` and `generators` ([Configuration](/reference/config#blocks), [Register a block](/reference/generator-api#register-a-block)).
+- **Breaking:** golem derives the job order from what each job reads and writes ([Job order](/reference/config#job-order)).
+- **Breaking:** the `model` block has no `root` key and scans from the folder of `golem.yaml`.
+- **Breaking:** `@exprtlabs/golem-openapi` and `@exprtlabs/golem-ts-openapi` take `@exprtlabs/golem` as a peer, and `typescript` as an optional peer. Install `typescript` in your project.
 - **Breaking:** `golem build` checks and emits inside the `golem` process and starts no `tsc`. It keeps no `.golem/build` stage ([Generation](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#generation)).
 - **Breaking:** a `golem.yaml` whose tsconfig is a solution file, with only `references`, stops `golem generate` and `golem check`. Name the app's tsconfig, such as `tsconfig.app.json` ([Generation](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#generation)).
 - **Breaking:** one `golem generate` from a clean tree passes when a model of a `controllers` root imports the SDK of an `openapi` job, and a controller that reaches such a model stops with `RUNM1084` ([Generation](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#generation)).

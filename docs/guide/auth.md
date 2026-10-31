@@ -57,7 +57,7 @@ Golem reads security from the OpenAPI document. It needs two parts:
 A document that lacks one part gives a client with no `auth` option. To get one:
 
 - Ask the owner of the document to add both parts. Then run `npx golem generate` again.
-- Or keep a copy of the document in your repository and add both parts to the copy. Set `input` of the OpenAPI job to the copy ([OpenAPI jobs](/reference/config#openapi-jobs)). Apply your parts again when the owner publishes a new version.
+- Or keep a copy of the document in your repository and add both parts to the copy. Set `input` of the SDK job to the copy ([the `openapi-ts` block](/reference/config#openapi-ts-block)). Apply your parts again when the owner publishes a new version.
 - Or add the credential yourself with the `headers` or `fetchImpl` option of the client. Golem then does not know the scheme. The client has no `auth` option and no type check for the credential.
 
 ## Mutual TLS

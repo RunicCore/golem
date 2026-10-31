@@ -43,15 +43,15 @@ Change `provider.yaml` and generate again when the contract changes.
 
 ## Choose a mode
 
-An `openapi` job has a `mode` key ([SDK modes](/reference/config#sdk-modes)). The calls are the same in both modes.
+An SDK job has a `mode` key ([SDK modes](/reference/config#sdk-modes)). The calls are the same in both modes.
 
 | Mode | Use it when | What the SDK holds |
 | --- | --- | --- |
 | `standalone` (default) | You get a ready SDK and have no golem setup, or you publish the SDK | The client, the types, the checks and conversions, and a copy of the golem runtime that it uses |
-| `golem` | Your app runs golem and has models in the same `golem.yaml` | The client and the types. The `models` job writes the checks and conversions with your models |
+| `golem` | Your app runs golem and has models in the same `golem.yaml` | The client and the types. The models job writes the checks and conversions with your models |
 
 - A standalone SDK imports nothing from `@exprtlabs/golem`. With `dates: temporal`, install `temporal-polyfill` and load it before the first call.
-- A golem mode SDK needs a `models` section in the same file. Add `mode: golem` to the job.
+- A golem mode SDK needs a `model` block in the same file. Add `mode: golem` to the job.
 - An SDK with `mobx: true` needs `mode: golem` ([MobX and React](/guide/mobx)).
 
 ## First call
