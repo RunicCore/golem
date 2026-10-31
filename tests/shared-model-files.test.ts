@@ -124,7 +124,7 @@ export type TAddress = IObject<{ street: string }>;
 
 test('a golem.yaml of another app beside a shared model file gives a warning that says to move the model', (t: TestContext) => {
   // protects: D-34 another app's golem.yaml warning names the way out
-  const { outer, root } = appBesideShared(t, undefined, { 'golem.yaml': 'version: 1\nmodels:\n  root: .\n' });
+  const { outer, root } = appBesideShared(t, undefined, { 'golem.yaml': 'version: 1\nmodel: {}\n' });
 
   const { diagnostics } = generate({ root, profile: PROFILE });
 
@@ -513,7 +513,7 @@ test('a .model.d.ts file of an installed package whose manifest names the .ts fi
   assert.match(artifacts.find((artifact) => artifact.path === path.join(app, 'src/order.model.generated.ts'))?.content ?? '', /currency: string/);
 });
 
-for (const [kind, yaml] of [['controllers', 'version: 1\ncontrollers:\n  root: .\n'], ['openapi', 'version: 1\nopenapi:\n  input: api.json\n'], ['generators', 'version: 1\ngenerators:\n  - package: x\n']] as const) {
+for (const [kind, yaml] of [['model', 'version: 1\nmodel: {}\n'], ['ts-openapi', 'version: 1\nts-openapi:\n  docs:\n    - output: api.json\n      info: { title: Api, version: "1" }\n'], ['openapi-ts', 'version: 1\nopenapi-ts:\n  sdks:\n    - input: api.json\n      output: sdk\n']] as const) {
   test(`a golem.yaml with only the ${kind} job beside a shared model file is another app: the warning says to move the model`, (t: TestContext) => {
     // protects: D-34 another app's golem.yaml warning names the way out, whichever job it has
     const { diagnostics } = generate({ root: appBesideShared(t, undefined, { 'golem.yaml': yaml }).root, profile: PROFILE });
