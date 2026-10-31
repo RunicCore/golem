@@ -285,7 +285,7 @@ test('a class that reaches the generated base through a renamed re-export counts
 test('a @Body() class that reaches the generated base through another class gets the codec of its model', (t) => {
   // protects: T-195 review: a chain class was a model in the document and had no codec at run time
   const root = project(t);
-  fs.writeFileSync(path.join(root, 'src/rush.controller.ts'), 'import type { Payment } from \'./payment.model.js\';\nexport class RushPayment extends Payment {}\ndeclare const Body: () => ParameterDecorator;\nexport class RushController {\n  create(@Body() input: RushPayment): void {}\n}\n');
+  fs.writeFileSync(path.join(root, 'src/rush.controller.ts'), 'import { Body } from \'@nestjs/common\';\nimport type { Payment } from \'./payment.model.js\';\nexport class RushPayment extends Payment {}\nexport class RushController {\n  create(@Body() input: RushPayment): void {}\n}\n');
 
   const result = scan(root, true);
 
@@ -296,7 +296,7 @@ test('a @Body() class that reaches the generated base through another class gets
 test('a @Body() model that is a default export says to export the class by name', (t) => {
   // protects: T-195 review: "run golem generate" never fixes a default export, so the message names the fix
   const root = project(t, ['default-class.model.ts', 'default-class.model.generated.ts']);
-  fs.writeFileSync(path.join(root, 'src/default.controller.ts'), 'import type DefaultClass from \'./default-class.model.js\';\ndeclare const Body: () => ParameterDecorator;\nexport class DefaultController {\n  create(@Body() input: DefaultClass): void {}\n}\n');
+  fs.writeFileSync(path.join(root, 'src/default.controller.ts'), 'import { Body } from \'@nestjs/common\';\nimport type DefaultClass from \'./default-class.model.js\';\nexport class DefaultController {\n  create(@Body() input: DefaultClass): void {}\n}\n');
 
   const { diagnostics } = scan(root, true);
 

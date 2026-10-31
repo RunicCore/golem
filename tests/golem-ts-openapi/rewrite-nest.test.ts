@@ -141,6 +141,26 @@ test('a decorator that is already present, plain, through a namespace or aliased
   assert.equal(result.files.get('src/aliased.controller.ts'), undefined);
 });
 
+test('a @Body() or @Query() imported under another name or through a re-export is rewritten, and a local decorator of that name is not', (t) => {
+  // protects: T-757 the scan finds a parameter decorator by its resolved symbol, not by the name it is written under
+  const root = paymentsProject(t, {
+    'src/decorators.ts': "export { Query as Filter } from '@nestjs/common';\nexport function Body(): ParameterDecorator { return () => undefined; }\n",
+    'src/aliased.controller.ts': [
+      "import { Body as Input, Controller, Post } from '@nestjs/common';",
+      "import { Filter, Body } from './decorators.js';",
+      "import type { TPaymentFilter, TPaymentInput } from './payment.model.js';",
+      "@Controller('aliased')",
+      'export class AliasedController {',
+      '  @Post() create(@Input() input: TPaymentInput, @Filter() filter: TPaymentFilter): number { return 1; }',
+      '  @Post() local(@Body() input: string): number { return 1; }',
+      '}',
+    ].join('\n'),
+  });
+  const result = scan(root);
+  assert.deepEqual(result.diagnostics, []);
+  assert.match(rewritten(root, result, 'src/aliased.controller.ts'), /create\(@Input\(\) @__golem_nestModelCodec\("TPaymentInput_[0-9a-f]{8}"\) input: TPaymentInput, @Filter\(\) @__golem_nestModelCodec\("TPaymentFilter_[0-9a-f]{8}"\) filter: TPaymentFilter/);
+});
+
 // The key table names a `Payment` model; the `Payment` of the second controller is a plain interface of its own file.
 for (const { name, fixture, type } of [
   { name: 'a primitive @Body()', fixture: 'rewrite-skips-a-primitive-body', type: 'string' },

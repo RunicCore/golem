@@ -5,10 +5,10 @@ import { GolemDiagnosticSeverity, canonicalPath, compareText, displayPath, error
 import type { GeneratorSession, GolemDiagnostic } from './generator-core.js';
 import type { DiscriminatorValue } from '../model-registry.js';
 import { REWRITE_IMPORT_PREFIX } from './rewrite.js';
-import { evaluateStaticValue } from './static-value.js';
 import type { FileRewrite, RewriteEdit, RewriteImport } from './rewrite.js';
 import { inNodeModules, isInstalledFile } from './type-analysis/path-identity.js';
 import { createProjectProgram, canonicalFilename, companionFilename, isGeneratedCompanion, modelBoundary, retainedProgramSession, type ModelBoundary } from './type-analysis/project.js';
+import { NEST_COMMON, arrayItemNode, decoratorIdentity, staticDecoratorKey } from './type-analysis/controller-parameters.js';
 import { packageSpecifier } from './type-analysis/package-specifier.js';
 import { fieldProvenance } from './type-analysis/projections.js';
 import { authoredUnionMembers } from './type-analysis/projection-names.js';
@@ -421,46 +421,32 @@ function isNamed(typeName: ts.EntityName, ...names: readonly string[]): boolean 
 function nestModelType(typeNode: ts.TypeNode, forReturn: boolean): { readonly model: ts.TypeNode; readonly array: boolean } | undefined {
   let node = typeNode;
   let array = false;
-  const wrapArray = (element: ts.TypeNode): boolean => {
-    if (array) return false;
-    array = true;
-    node = element;
-    return true;
-  };
   for (;;) {
-    if (ts.isParenthesizedTypeNode(node)) node = node.type;
-    else if (ts.isArrayTypeNode(node)) { if (!wrapArray(node.elementType)) return undefined; }
+    const item = arrayItemNode(node);
+    if (item !== undefined) {
+      if (array) return undefined;
+      array = true;
+      node = item;
+    } else if (ts.isParenthesizedTypeNode(node)) node = node.type;
     else if (ts.isTypeOperatorNode(node) && node.operator === ts.SyntaxKind.ReadonlyKeyword) node = node.type;
     else if (ts.isTypeOperatorNode(node) || ts.isUnionTypeNode(node)) return forReturn ? undefined : { model: node, array };
     else if (forReturn && ts.isTypeReferenceNode(node) && node.typeArguments?.length === 1 && isNamed(node.typeName, 'Promise')) node = node.typeArguments[0];
-    else if (ts.isTypeReferenceNode(node) && node.typeArguments?.length === 1 && isNamed(node.typeName, 'Array', 'ReadonlyArray')) { if (!wrapArray(node.typeArguments[0])) return undefined; }
     else return { model: node, array };
   }
 }
 
-/** The name a decorator is called by, as `@Name()`, `@Name` or `@namespace.Name()`; the receiver is not checked. */
-function decoratorName(decorator: ts.Decorator): string | undefined {
-  const expression = ts.isCallExpression(decorator.expression) ? decorator.expression.expression : decorator.expression;
-  if (ts.isIdentifier(expression)) return expression.text;
-  if (ts.isPropertyAccessExpression(expression)) return expression.name.text;
+/** The `@Body()` or `@Query()` of NestJS that a parameter carries, found by the symbol it resolves to: an aliased or re-exported import is found, a local decorator of the same name is not. */
+function nestParameterDecorator(checker: ts.TypeChecker, parameter: ts.ParameterDeclaration): { readonly node: ts.Decorator; readonly name: string } | undefined {
+  for (const node of ts.getDecorators(parameter) ?? []) {
+    const { name, packageName } = decoratorIdentity(checker, node);
+    if (packageName === NEST_COMMON && name !== undefined && NEST_PARAMETER_DECORATORS.includes(name)) return { node, name };
+  }
   return undefined;
 }
 
-function decoratorNames(node: ts.Node): readonly string[] {
-  return (ts.getDecorators(node) ?? []).flatMap((decorator) => decoratorName(decorator) ?? []);
-}
-
-/** The static string a `@Body()` or `@Query()` parameter names a field with, as the controllers job reads it; any other first argument is a pipe, and no argument names no field. */
-function staticFieldKey(checker: ts.TypeChecker, parameter: ts.ParameterDeclaration, decorator: string): string | undefined {
-  const expression = ts.getDecorators(parameter)?.find((each) => decoratorName(each) === decorator)?.expression;
-  const argument = expression !== undefined && ts.isCallExpression(expression) ? expression.arguments[0] : undefined;
-  const key = argument === undefined ? undefined : evaluateStaticValue(checker, argument);
-  return key?.ok === true && typeof key.value === 'string' ? key.value : undefined;
-}
-
-/** Whether the node carries the decorator, written plainly or as the aliased import an earlier rewrite added. */
-function hasDecorator(names: readonly string[], name: string): boolean {
-  return names.includes(name) || names.includes(`${REWRITE_IMPORT_PREFIX}${name}`);
+/** Whether the node carries the golem decorator `name`, plainly or under an alias. */
+function hasDecorator(checker: ts.TypeChecker, node: ts.Node, name: string): boolean {
+  return (ts.getDecorators(node) ?? []).some((decorator) => decoratorIdentity(checker, decorator).name === name);
 }
 
 /**
@@ -646,6 +632,8 @@ function nestBinding(
 interface HandlerInput {
   readonly parameter: ts.ParameterDeclaration;
   readonly decorator: string;
+  /** The decorator as written, for the message. */
+  readonly node: ts.Decorator;
   /** The field a one-field parameter reads; undefined for a whole one. */
   readonly field: string | undefined;
   /** The type is an array of the model. */
@@ -669,8 +657,7 @@ function handlerInputModel(binding: NestBinding): string {
  */
 function handlerInputFaults(file: ts.SourceFile, inputs: readonly HandlerInput[]): readonly { readonly parameter: ts.ParameterDeclaration; readonly message: string }[] {
   const faults: { parameter: ts.ParameterDeclaration; message: string }[] = [];
-  const expression = ({ parameter, decorator }: HandlerInput): string =>
-    `@${ts.getDecorators(parameter)?.find((each) => decoratorName(each) === decorator)?.expression.getText(file) ?? decorator}`;
+  const expression = ({ node }: HandlerInput): string => `@${node.expression.getText(file)}`;
   const written = (input: HandlerInput): string => `${expression(input)} ${input.parameter.name.getText(file)}`;
   inputs.forEach((input, index) => {
     const { parameter, decorator, field } = input;
@@ -944,13 +931,14 @@ function scanFile(
   const visitHandler = (method: ts.MethodDeclaration): void => {
     const inputs: HandlerInput[] = [];
     for (const parameter of method.parameters) {
-      const decorator = decoratorNames(parameter).find((name) => NEST_PARAMETER_DECORATORS.includes(name));
-      if (!parameter.type || decorator === undefined) continue;
+      const found = nestParameterDecorator(checker, parameter);
+      if (!parameter.type || found === undefined) continue;
+      const { node, name: decorator } = found;
       const binding = bindParameter(parameter.type, decorator);
-      const field = staticFieldKey(checker, parameter, decorator) || undefined;
+      const field = staticDecoratorKey(checker, node) || undefined;
       // A type that is no model, or a union in one field, has its own report; the interceptor throws on it before it compares anything.
       if ((binding.id === '' && binding.union === undefined) || (binding.union !== undefined && (binding.array || field !== undefined))) continue;
-      inputs.push({ parameter, decorator, field, array: binding.array, model: handlerInputModel(binding) });
+      inputs.push({ parameter, decorator, node, field, array: binding.array, model: handlerInputModel(binding) });
     }
     for (const { parameter, message } of handlerInputFaults(file, inputs)) {
       scan.diagnostics.push(locate(root, file, parameter, CODE_NEST_NOT_A_MODEL, `${message} ${nonModelAdvice}`, nonModelSeverity));
@@ -959,13 +947,13 @@ function scanFile(
 
   /** A `@Body()` or `@Query()` parameter of a model gets `@nestModelCodec(id)` before its name, and one of a tagged union of models `@nestModelUnion(tag, variants)`. */
   const visitParameter = (parameter: ts.ParameterDeclaration): void => {
-    const names = decoratorNames(parameter);
-    const decorator = names.find((name) => NEST_PARAMETER_DECORATORS.includes(name));
-    if (!parameter.type || decorator === undefined || hasDecorator(names, NEST_CODEC_DECORATOR) || hasDecorator(names, NEST_UNION_DECORATOR)) return;
+    const found = nestParameterDecorator(checker, parameter);
+    if (!parameter.type || found === undefined || hasDecorator(checker, parameter, NEST_CODEC_DECORATOR) || hasDecorator(checker, parameter, NEST_UNION_DECORATOR)) return;
+    const { node: decoratorNode, name: decorator } = found;
     const typeNode = parameter.type;
     const { id, golemModel, label, array, name, defaultExport, union, unionFault } = bindParameter(typeNode, decorator);
     // A union converts as a whole input only; golem describes no array of a union and no one-field union.
-    const unionUnsupported = union !== undefined && (array || staticFieldKey(checker, parameter, decorator) !== undefined);
+    const unionUnsupported = union !== undefined && (array || staticDecoratorKey(checker, decoratorNode) !== undefined);
     if ((id === '' && union === undefined) || unionUnsupported) {
       const [reason, advice] = unionFault
         ? unionFault
@@ -996,7 +984,7 @@ function scanFile(
     // A decorator is a syntax error on an object literal method, an abstract method and an overload signature.
     if (!method.type || !method.body || !ts.isClassLike(method.parent)) return;
     const returned = nestModelType(method.type, true);
-    if (!returned || hasDecorator(decoratorNames(method), NEST_RETURN_DECORATOR)) return;
+    if (!returned || hasDecorator(checker, method, NEST_RETURN_DECORATOR)) return;
     const { id, primitive, name } = nestBinding({ root, checker, keys, file, dependencies: scan.dependencies }, returned.model);
     if (primitive || id === '') return;
     scan.edits.push(insertion(method.getStart(file), `@${REWRITE_IMPORT_PREFIX}${NEST_RETURN_DECORATOR}(${JSON.stringify(id)}${returned.array ? ', true' : ''}) `));

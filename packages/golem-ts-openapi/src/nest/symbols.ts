@@ -1,85 +1,19 @@
 import * as ts from '@exprtlabs/golem/internal/ts';
-import { resolveSymbol } from '@exprtlabs/golem/internal/type-analysis';
+import { NEST_COMMON, NEST_SWAGGER, decoratorCallee, decoratorIdentity, nestPackageOf } from '@exprtlabs/golem/internal/type-analysis';
 import { unwrapExpression } from '@exprtlabs/golem/internal/static-value';
 import type { DecoratorInfo } from './types.js';
 
-export const NEST_COMMON = '@nestjs/common' as const;
-export const NEST_SWAGGER = '@nestjs/swagger' as const;
-type NestPackage = typeof NEST_COMMON | typeof NEST_SWAGGER;
-
-function expressionOfDecorator(decorator: ts.Decorator): ts.Expression {
-  return ts.isCallExpression(decorator.expression)
-    ? decorator.expression.expression
-    : decorator.expression;
-}
-
-function importedPackageFromDeclaration(declaration: ts.Declaration): string | undefined {
-  let current: ts.Node | undefined = declaration;
-  while (current) {
-    if (ts.isImportDeclaration(current) && ts.isStringLiteral(current.moduleSpecifier)) {
-      return current.moduleSpecifier.text;
-    }
-    if (ts.isImportSpecifier(current) || ts.isNamespaceImport(current) || ts.isImportClause(current)) {
-      const parent = current.parent;
-      if (ts.isNamedImports(parent) || ts.isNamespaceImport(parent) || ts.isImportClause(parent)) {
-        const importDeclaration = parent.parent;
-        if (ts.isImportDeclaration(importDeclaration) && ts.isStringLiteral(importDeclaration.moduleSpecifier)) {
-          return importDeclaration.moduleSpecifier.text;
-        }
-      }
-    }
-    current = current.parent;
-  }
-  return undefined;
-}
-
-function canonicalNestPackage(source: string | undefined): NestPackage | undefined {
-  if (!source) return undefined;
-  for (const nestPackage of [NEST_COMMON, NEST_SWAGGER]) {
-    if (source === nestPackage || source.startsWith(`${nestPackage}/`)) return nestPackage;
-  }
-  return undefined;
-}
-
-export function nestPackageOf(
-  checker: ts.TypeChecker,
-  expression: ts.Expression,
-): string | undefined {
-  const symbol = checker.getSymbolAtLocation(
-    ts.isPropertyAccessExpression(expression) ? expression.name : expression,
-  );
-  if (!symbol) return undefined;
-  for (const declaration of symbol.declarations ?? []) {
-    const imported = importedPackageFromDeclaration(declaration);
-    const nestPackage = canonicalNestPackage(imported);
-    if (nestPackage) return nestPackage;
-  }
-  const target = resolveSymbol(checker, symbol);
-  for (const declaration of target?.declarations ?? []) {
-    const source = declaration.getSourceFile().fileName.replace(/\\/g, '/');
-    if (source.includes(`/node_modules/${NEST_COMMON}/`)) return NEST_COMMON;
-    if (source.includes(`/node_modules/${NEST_SWAGGER}/`)) return NEST_SWAGGER;
-  }
-  return undefined;
-}
+export { NEST_COMMON, NEST_SWAGGER, nestPackageOf };
 
 function decoratorInfo(
   checker: ts.TypeChecker,
   decorator: ts.Decorator,
 ): DecoratorInfo {
-  const expression = expressionOfDecorator(decorator);
-  const symbol = checker.getSymbolAtLocation(
-    ts.isPropertyAccessExpression(expression) ? expression.name : expression,
-  );
-  const target = resolveSymbol(checker, symbol);
-  const name = target?.getName() ?? symbol?.getName();
-  const packageName = nestPackageOf(checker, expression);
   return {
     decorator,
-    expression,
+    expression: decoratorCallee(decorator),
     ...(ts.isCallExpression(decorator.expression) ? { call: decorator.expression } : {}),
-    ...(name ? { name } : {}),
-    ...(packageName ? { packageName } : {}),
+    ...decoratorIdentity(checker, decorator),
   };
 }
 

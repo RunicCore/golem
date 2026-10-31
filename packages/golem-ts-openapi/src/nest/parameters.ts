@@ -22,7 +22,8 @@ import {
   typeReference,
   unionModelIds,
 } from './analysis-utils.js';
-import { evaluateStaticValue, isStaticArray } from '@exprtlabs/golem/internal/static-value';
+import { isStaticArray } from '@exprtlabs/golem/internal/static-value';
+import { arrayItemNode, staticDecoratorKey } from '@exprtlabs/golem/internal/type-analysis';
 import { decoratorOptions, headerOptionsList, inApplicationOrder, readString, type DecoratorOptions, type MetadataReader } from './metadata.js';
 import { NEST_COMMON, NEST_SWAGGER, callArguments, decoratorsOf, staticObject } from './symbols.js';
 import type { ControllerParameter, DecoratorInfo, NestAnalysisContext, TypeReference } from './types.js';
@@ -145,11 +146,10 @@ export function parseParameterOverride(
  * instead be a pipe (`@Query(ParseIntPipe)`), which names no key.
  */
 function parameterKey(reader: MetadataReader, decorator: DecoratorInfo): string | undefined {
+  const key = staticDecoratorKey(reader.checker, decorator.decorator);
+  if (key !== undefined) return key;
   const argument = callArguments(decorator)[0];
-  if (!argument) return undefined;
-  const result = evaluateStaticValue(reader.checker, argument);
-  if (result.ok && typeof result.value === 'string') return result.value;
-  if ((reader.checker.getTypeAtLocation(argument).flags & ts.TypeFlags.StringLike) === 0) return undefined;
+  if (!argument || (reader.checker.getTypeAtLocation(argument).flags & ts.TypeFlags.StringLike) === 0) return undefined;
   return readString(reader, argument, `@${decorator.name}() key`);
 }
 
@@ -298,18 +298,6 @@ function assertDistinctParameters(context: NestAnalysisContext, parameters: read
     TsToOpenApiDiagnosticCode.NonPortableParameter,
     `OpenAPI ${context.openapiVersion ?? '3.2.0'} sends a whole @Query() object as one querystring parameter, which cannot be combined with another @Query() object or with named query parameters (@Query('name') or @ApiQuery). Move the field into the query DTO and document it with @ApiProperty.`,
   ));
-}
-
-/** The item type node of `T[]`, `Array<T>`, `ReadonlyArray<T>` or a qualified spelling such as `globalThis.Array<T>`, through parentheses and `readonly`: the array forms the rewrite stamps with a model. */
-function arrayItemNode(node: ts.TypeNode | undefined): ts.TypeNode | undefined {
-  if (node === undefined) return undefined;
-  if (ts.isParenthesizedTypeNode(node)) return arrayItemNode(node.type);
-  if (ts.isTypeOperatorNode(node)) return node.operator === ts.SyntaxKind.ReadonlyKeyword ? arrayItemNode(node.type) : undefined;
-  let item: ts.TypeNode | undefined;
-  if (ts.isArrayTypeNode(node)) item = node.elementType;
-  else if (ts.isTypeReferenceNode(node) && ['Array', 'ReadonlyArray'].includes(ts.isIdentifier(node.typeName) ? node.typeName.text : node.typeName.right.text)) item = node.typeArguments?.length === 1 ? node.typeArguments[0] : undefined;
-  while (item !== undefined && ts.isParenthesizedTypeNode(item)) item = item.type;
-  return item;
 }
 
 interface OneFieldKind {
