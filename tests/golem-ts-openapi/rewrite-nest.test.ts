@@ -5,12 +5,15 @@ import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { runPipeline } from '#golem/cli';
 import { applyRewrites } from '#golem/rewrite';
+import { loadRewriteParticipants } from '#golem/rewrite-participant';
+import { openRewriteProject } from '#golem/rewrite-host';
 import { scanProject, type ProgramScan } from '#golem/rewrite-scan';
 import { generate } from '#model/generator';
 import { readFixture, writeGeneratedArtifacts } from '../fixture-project.js';
 import { NEST_INTERCEPTOR_SOURCE, createControllerFixture } from '../fixture-templates/controllers/project.js';
 import { paymentModelSource } from '../fixture-templates/controllers/payment-model.js';
 import { defaultModelOutput } from '#golem/generated-paths';
+import { workspace } from '../support/process.js';
 
 const PLUGIN = 'controllers/nest-plugin';
 const FORMS = `${PLUGIN}/rewrite-covers-qualified-array-and-serde-forms`;
@@ -39,10 +42,15 @@ function paymentsProject(t: TestContext, extra: Readonly<Record<string, string>>
   });
 }
 
-const notAModel = (decorator: string, type: string, mode: 'error' | 'warn' = 'error'): string => `${type} is not a golem model, and NestModelInterceptor answers HTTP 500 for a @${decorator}() parameter of that type. Declare the input as a golem model (IModel or IObject), or bind one field of a model type. ${mode === 'warn' ? 'Generation continues, because golem.yaml sets nonModelInputs: warn.' : 'An app with its own interceptor can set nonModelInputs: warn in golem.yaml.'}`;
+const notAModel = (decorator: string, type: string, mode: 'error' | 'warn' = 'error'): string => `${type} is not a golem model, and NestModelInterceptor answers HTTP 500 for a @${decorator}() parameter of that type. Declare the input as a golem model (IModel or IObject), or bind one field of a model type. ${mode === 'warn' ? 'Generation continues, because golem.yaml sets nonModelInputs: warn.' : 'An app with its own interceptor can set nonModelInputs: warn on the nest extension in golem.yaml.'}`;
 
-function scan(root: string, nonModelInputs?: 'error' | 'warn'): ProgramScan {
-  return scanProject({ root, boundary: { root, directory: root, output: defaultModelOutput(root), suffixes: ['.model.ts', '.models.ts'] }, configFile: path.join(root, 'tsconfig.json'), nonModelInputs, codecKeysFile: path.join(root, '.golem/codec-keys.json') });
+/** The participant of the nest extension, loaded once for each `nonModelInputs` value. */
+const NEST = Object.fromEntries(await Promise.all((['error', 'warn'] as const).map(async (nonModelInputs) => [nonModelInputs, await loadRewriteParticipants([{
+  package: '@exprtlabs/golem-ts-openapi', block: 'ts-openapi', name: 'nest', entry: path.join(workspace, 'packages/golem-ts-openapi/dist/nest/rewrite-participant.js'), options: { nonModelInputs },
+}])] as const))) as Record<'error' | 'warn', Awaited<ReturnType<typeof loadRewriteParticipants>>>;
+
+function scan(root: string, nonModelInputs: 'error' | 'warn' = 'error'): ProgramScan {
+  return scanProject({ root, participants: NEST[nonModelInputs], boundary: { root, directory: root, output: defaultModelOutput(root), suffixes: ['.model.ts', '.models.ts'] }, configFile: path.join(root, 'tsconfig.json'), codecKeysFile: path.join(root, '.golem/codec-keys.json') });
 }
 
 function rewritten(root: string, result: ProgramScan, relative: string): string {
@@ -265,7 +273,7 @@ for (const mode of ['error', 'warn'] as const) {
     // protects: T-755 R-92 each limit the interceptor sets on the inputs of one handler stops the build here, not only in the controllers job
     const root = paymentsProject(t, { 'src/limits.controller.ts': HANDLER_LIMITS_CONTROLLER });
     const severity = mode === 'warn' ? 'warning' : 'error';
-    const advice = mode === 'warn' ? 'Generation continues, because golem.yaml sets nonModelInputs: warn.' : 'An app with its own interceptor can set nonModelInputs: warn in golem.yaml.';
+    const advice = mode === 'warn' ? 'Generation continues, because golem.yaml sets nonModelInputs: warn.' : 'An app with its own interceptor can set nonModelInputs: warn on the nest extension in golem.yaml.';
     assert.deepEqual(scan(root, mode).diagnostics.map(({ code, severity, file, line, column, message }) => ({ code, severity, file, line, column, message })), [
       { line: 5, column: 24, message: `@Body('input') input is an optional one-field model, and NestModelInterceptor answers HTTP 400 for a request that omits the field. Make the parameter required, or declare the field optional in a whole @Body() model. ${advice}` },
       { line: 6, column: 25, message: `@Query('filter') filter is an optional one-field model, and NestModelInterceptor answers HTTP 400 for a request that omits the field. Make the parameter required, or declare the field optional in a whole @Query() model. ${advice}` },
@@ -520,7 +528,7 @@ test('a union whose tag is written through an alias of the tag gets RUNM1081 wit
   const root = project(t, { 'src/shapes.model.ts': SHAPES_MODEL, 'src/shapes.controller.ts': controller });
   const result = scan(root);
   const fix = "Write the tag on the union itself, (A | B) & Discriminator<'kind'>, or give the whole tagged union a type alias: type TShape = (A | B) & Discriminator<'kind'>.";
-  const refused = (type: string, reason: string): string => `${type} ${reason}, and NestModelInterceptor answers HTTP 500 for a @Body() parameter of that type. ${fix} An app with its own interceptor can set nonModelInputs: warn in golem.yaml.`;
+  const refused = (type: string, reason: string): string => `${type} ${reason}, and NestModelInterceptor answers HTTP 500 for a @Body() parameter of that type. ${fix} An app with its own interceptor can set nonModelInputs: warn on the nest extension in golem.yaml.`;
   assert.deepEqual(result.diagnostics.map(({ code, line, message }) => ({ code, line, message })), [
     { code: 'RUNM1081', line: 7, message: refused('(TCircle | TRect) & Kind', 'is a union whose Discriminator tag is written through the alias Kind, which golem does not read') },
   ]);
@@ -540,7 +548,7 @@ test('a generic wrapper that adds more than the tag to a @Body() union gets RUNM
   ].join('\n');
   const root = project(t, { 'src/shapes.model.ts': SHAPES_MODEL, 'src/shapes.controller.ts': controller });
   assert.deepEqual(scan(root).diagnostics.map(({ code, line, message }) => ({ code, line, message })), [
-    { code: 'RUNM1081', line: 7, message: "Wrapped<TCircle | TRect> is a generic wrapper of a union that holds more than the type parameter and its Discriminator tag, which golem does not read, and NestModelInterceptor answers HTTP 500 for a @Body() parameter of that type. Use a wrapper that is only U & Discriminator<'kind'>, or write the tag on the union itself, (A | B) & Discriminator<'kind'>. An app with its own interceptor can set nonModelInputs: warn in golem.yaml." },
+    { code: 'RUNM1081', line: 7, message: "Wrapped<TCircle | TRect> is a generic wrapper of a union that holds more than the type parameter and its Discriminator tag, which golem does not read, and NestModelInterceptor answers HTTP 500 for a @Body() parameter of that type. Use a wrapper that is only U & Discriminator<'kind'>, or write the tag on the union itself, (A | B) & Discriminator<'kind'>. An app with its own interceptor can set nonModelInputs: warn on the nest extension in golem.yaml." },
   ]);
 });
 
@@ -581,7 +589,7 @@ test('a whole @Body() or @Query() union of tagged models is stamped with its tag
   // protects: T-390 E-50 a tagged union binds a union codec; an untagged union (T-258, T-377) and the forms golem does not describe still stop the build
   const root = project(t, { 'src/shapes.model.ts': SHAPES_MODEL, 'src/shapes.controller.ts': SHAPES_CONTROLLER });
   const result = scan(root);
-  const refused = (type: string, decorator: string, reason: string, advice: string): string => `${type} ${reason}, and NestModelInterceptor answers HTTP 500 for a @${decorator}() parameter of that type. ${advice} An app with its own interceptor can set nonModelInputs: warn in golem.yaml.`;
+  const refused = (type: string, decorator: string, reason: string, advice: string): string => `${type} ${reason}, and NestModelInterceptor answers HTTP 500 for a @${decorator}() parameter of that type. ${advice} An app with its own interceptor can set nonModelInputs: warn on the nest extension in golem.yaml.`;
   const addTag = "Declare the tag key on the union: (A | B) & Discriminator<'kind'>, and give each model a required literal field kind with a value of its own, such as kind: 'circle'. Or bind one field of a model type.";
   const whole = 'is a union of golem models, which NestModelInterceptor converts only as a whole input';
   const wholeAdvice = 'Declare the parameter as the union itself in a whole @Body(), or as one model.';
@@ -605,4 +613,19 @@ test('a whole @Body() or @Query() union of tagged models is stamped with its tag
     `  @Post() query(@Query() @__golem_nestModelUnion("kind", ${variants}) shape: (TCircle | TRect) & Discriminator<'kind'>): number { return 1; }`,
     `  @Post() bodyMixed(@Body() @__golem_nestModelUnion("v", [[[1],"${shapeId(root, 'TNumberTag')}"],[["1"],"${shapeId(root, 'TTextTag')}"]]) tag: (TNumberTag | TTextTag) & Discriminator<'v'>): number { return 1; }`,
   ]);
+});
+
+test('the nest entry in a ts-openapi block with no docs job stamps a model @Body(), and no entry stamps nothing even with the interceptor imported', async (t) => {
+  // protects: R-93 a config entry is the only switch for the NestJS checks
+  // protects: T-761 a model @Body() failed at run time with HTTP 500 after a clean build
+  const source = readFixture(`${PLUGIN}/project/payments.controller.ts`);
+  const stamped = async (golemYaml: string): Promise<string | undefined> => {
+    const root = paymentsProject(t, { 'golem.yaml': golemYaml });
+    const rewriting = await openRewriteProject({ cwd: root });
+    try { return rewriting.rewrite(path.join(root, CONTROLLER), source)?.code; } finally { rewriting.close(); }
+  };
+
+  const on = await stamped('version: 1\nts-openapi:\n  extensions:\n    nest: {}\nmodel: {}\n');
+  assert.match(on ?? '', /@Body\(\) @__golem_nestModelCodec\("TPaymentInput_[0-9a-f]{8}"\) input: TPaymentInput/);
+  assert.equal(await stamped('version: 1\nmodel: {}\n'), undefined);
 });
