@@ -16,7 +16,7 @@ test('an IModel union variant tagged by several literal values is selected by ea
   for (const validation of [false, true]) {
     const { root } = createModelProject(t, { prefix: 'golem-union-multi-tag-', name: 'union-multi-tag' });
     copyFixtureFile(root, 'models/multi-tag/pets.model.ts', 'src/pets.model.ts');
-    writeModelGolemYaml(root, { mobx: false, validation });
+    writeModelGolemYaml(root, { validation });
     await buildModelProject(root);
     const { Owner, Cat, Dog } = await loadPets(root);
     const json = {
@@ -40,7 +40,7 @@ test('union members are emitted in canonical order whichever order the checker c
   const fieldLines = (name: 'a' | 'b'): string[] => {
     const project = createModelProject(t, { prefix: `golem-union-order-${name}-`, name: `union-order-${name}` });
     for (const source of [`${name}.model.ts`, 'other.model.ts']) writeFileSync(path.join(project.sourceRoot, source), readFixture(`models/union-order/${source}`));
-    const artifact = generate({ root: project.root, profile: { mobx: false, validation: true } }).artifacts
+    const artifact = generate({ root: project.root, profile: { validation: true } }).artifacts
       .find(candidate => candidate.path.endsWith(`${name}.model.generated.ts`));
     assert.ok(artifact, `${name}.model.generated.ts must be generated`);
     // Every generated type alias that mentions a field, with the alias name normalised (codec-id lines carry hashes and are excluded).
@@ -65,7 +65,7 @@ for (const validation of [false, true]) {
       const { root, sourceRoot } = createModelProject(t, { prefix: `golem-untagged-${fixture}-`, name: `untagged-${fixture}` });
       writeFileSync(path.join(sourceRoot, 'pets.model.ts'), readFixture(`models/untagged-union/${fixture}.model.ts`));
       assert.throws(
-        () => generate({ root, profile: { mobx: false, validation } }),
+        () => generate({ root, profile: { validation } }),
         error => error instanceof Error
           && /pets\.model\.ts:\d+:\d+ RUNM1080: /.test(error.message)
           && message.test(error.message)
@@ -105,7 +105,7 @@ function generationError(t: Parameters<typeof createModelProject>[0], source: st
   const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-union-place-', name: 'union-place' });
   writeFileSync(path.join(sourceRoot, 'pets.model.ts'), source);
   try {
-    generate({ root, profile: { mobx: false, validation } });
+    generate({ root, profile: { validation } });
     return undefined;
   } catch (thrown) {
     return thrown as Error;
@@ -152,7 +152,7 @@ test('a union whose scalar variants cannot be told apart stops generation with R
   const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-ambiguous-scalars-', name: 'ambiguous-scalars' });
   writeFileSync(path.join(sourceRoot, 'when.model.ts'), readFixture('models/untagged-union/scalars.model.ts'));
   assert.throws(
-    () => generate({ root, profile: { mobx: false, validation: true } }),
+    () => generate({ root, profile: { validation: true } }),
     /when\.model\.ts RUNM1082: Union has ambiguous conversions\. Use a discriminated object union or one serde pair for the value\. The variants are /,
   );
 });
@@ -169,7 +169,7 @@ test('a Date beside an array converts by the wire form: a string is the Date, an
   for (const validation of [false, true]) {
     const { root } = createModelProject(t, { prefix: 'golem-date-or-dates-', name: 'date-or-dates', linkWorkspaceNodeModules: true });
     copyFixtureFile(root, 'models/date-or-dates/when.model.ts', 'src/when.model.ts');
-    writeModelGolemYaml(root, { mobx: false, validation });
+    writeModelGolemYaml(root, { validation });
     await buildModelProject(root);
     const { When } = await import(pathToFileURL(path.join(root, 'build/when.model.js')).href) as { When: GeneratedModelClass };
     const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TWhen'));
@@ -196,7 +196,7 @@ import { TAmountBaseModel } from './amount.model.generated.js';
 export type TAmount = IModel<{ v: number | number[] | null }>;
 export class Amount extends TAmountBaseModel {}
 `);
-    writeModelGolemYaml(root, { mobx: false, validation });
+    writeModelGolemYaml(root, { validation });
     await buildModelProject(root);
     const { Amount } = await import(pathToFileURL(path.join(root, 'build/amount.model.js')).href) as { Amount: GeneratedModelClass };
     const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TAmount'));

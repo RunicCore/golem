@@ -25,7 +25,7 @@ test('generates a static Nest document with evaluated routes, inheritance, URI v
     info: { title: 'Catalog', version: '1' },
     globalPrefix: 'api',
     uriVersioning: { type: 'URI', prefix: 'v' },
-    profile: { mobx: false, validation: false },
+    profile: { validation: false },
   });
   const document = documentOf(result);
   assert.equal(document.openapi, '3.2.0');
@@ -49,7 +49,7 @@ test('emits a whole query object as OpenAPI 3.2 querystring content', async (t: 
     root,
     output: path.join(root, 'openapi.json'),
     info: { title: 'Search', version: '1' },
-    profile: { mobx: false, validation: false },
+    profile: { validation: false },
   }));
   const parameter = parameterOf(document, '/search', 'get');
   assert.equal(parameter.in, 'querystring');
@@ -66,7 +66,7 @@ test('emits flattened primitive query parameters with OpenAPI form style and sup
     output: path.join(root, 'openapi.yaml'),
     openapiVersion: '3.1.2',
     info: { title: 'Search', version: '1' },
-    profile: { mobx: false, validation: false },
+    profile: { validation: false },
   });
   const artifact = result.artifacts[0];
   assert.ok(artifact);
@@ -93,7 +93,7 @@ test('preserves Swagger status, media, and parameter metadata', async (t: TestCo
     root,
     output: path.join(root, 'openapi.json'),
     info: { title: 'Results', version: '1' },
-    profile: { mobx: false, validation: false },
+    profile: { validation: false },
   }));
   const term = parameterOf(document, '/results', 'get');
   assert.equal(term.required, false);
@@ -115,7 +115,7 @@ test('rejects conflicting static routes with a structured diagnostic', async (t:
       root,
       output: path.join(root, 'openapi.json'),
       info: { title: 'Conflicts', version: '1' },
-      profile: { mobx: false, validation: false },
+      profile: { validation: false },
     }),
     (error: unknown) => {
       return diagnosticsOf(error).some(item => item.code === 'NEST1306');
@@ -129,7 +129,7 @@ test('applies actual Swagger DTO property metadata without consulting class-vali
     root,
     output: path.join(root, 'openapi.json'),
     info: { title: 'Addresses', version: '1' },
-    profile: { mobx: false, validation: false },
+    profile: { validation: false },
   }));
   const schema = responseSchema(document, '/addresses', 'get', '200');
   assert.equal(propertySchema(schema, 'city').description, 'Postal city');
@@ -150,7 +150,7 @@ test('resolves imported and re-exported DTO constructors in ApiProperty type met
     root,
     output: path.join(root, 'openapi.json'),
     info: { title: 'Imported DTO', version: '1' },
-    profile: { mobx: false, validation: false },
+    profile: { validation: false },
   }));
   const schema = responseSchema(document, '/imported-dto', 'get', '200');
   const address = propertySchema(schema, 'address');
@@ -166,7 +166,7 @@ test('does not treat a project-local String function as a Swagger primitive cons
       root,
       output: path.join(root, 'openapi.json'),
       info: { title: 'Local constructor', version: '1' },
-      profile: { mobx: false, validation: false },
+      profile: { validation: false },
     }),
     (error: unknown) => String(error).includes('NEST1503'),
   );
@@ -179,7 +179,7 @@ test('rejects a Swagger schema that conflicts with an authoritative IModel wire 
       root,
       output: path.join(root, 'openapi.json'),
       info: { title: 'Payments', version: '1' },
-      profile: { mobx: false, validation: false },
+      profile: { validation: false },
     }),
     (error: unknown) => diagnosticsOf(error).some(item => item.code === 'NEST1503'
       // The message names the keyword path, both values, and how to change the contract.
@@ -197,7 +197,7 @@ test('rejects stream responses without explicit Swagger content', async (t: Test
       root,
       output: path.join(root, 'openapi.json'),
       info: { title: 'Files', version: '1' },
-      profile: { mobx: false, validation: false },
+      profile: { validation: false },
     }),
     (error: unknown) => String(error).includes('NEST1310'),
   );
@@ -213,7 +213,7 @@ test('recognizes Nest decorators through local reexports of public package expor
     root,
     output: path.join(root, 'openapi.json'),
     info: { title: 'Reexported', version: '1' },
-    profile: { mobx: false, validation: false },
+    profile: { validation: false },
   }));
   assert.ok(operationOf(document, '/reexported', 'get'));
 });
@@ -226,7 +226,7 @@ test('resolves HttpStatus enum members and preserves Nest URI version concatenat
     output: path.join(root, 'openapi.json'),
     uriVersioning: { type: 'URI', prefix: 'v' },
     info: { title: 'Status', version: '1' },
-    profile: { mobx: false, validation: false },
+    profile: { validation: false },
   }));
   assert.deepEqual(document.paths, {
     '/v1/status/get': { get: { operationId: 'StatusController_get', responses: { '200': { description: '' } } } },
@@ -246,7 +246,7 @@ test('a route helper result over 1 MiB stops with RUNT2106 until maxResultBytes 
   const root = fixture(t, `import { Controller, Get } from '@nestjs/common';
 function bigPath() { return '${'a'.repeat(1024 * 1024)}'; }
 @Controller(bigPath()) export class BigController { @Get() get(): void {} }`);
-  const context = { root, output: path.join(root, 'openapi.json'), info: { title: 'Big', version: '1' }, profile: { mobx: false, validation: false } };
+  const context = { root, output: path.join(root, 'openapi.json'), info: { title: 'Big', version: '1' }, profile: { validation: false } };
   await assert.rejects(generate(context), (error: unknown) => diagnosticsOf(error).some(item => item.code === 'RUNT2106'));
   assert.equal(Object.keys(documentOf(await generate({ ...context, maxResultBytes: 2 * 1024 * 1024 })).paths).length, 1);
 });
@@ -260,7 +260,7 @@ test('rejects @HostParam routes', async (t: TestContext) => {
       root,
       output: path.join(root, 'openapi.json'),
       info: { title: 'Unsupported', version: '1' },
-      profile: { mobx: false, validation: false },
+      profile: { validation: false },
     }),
     (error: unknown) => diagnosticsOf(error).some(item => item.code === 'NEST1101'),
   );
@@ -278,7 +278,7 @@ test('keeps Nest runtime status authoritative over a contradicting Swagger succe
         root,
         output: path.join(root, 'openapi.json'),
         info: { title, version: '1' },
-        profile: { mobx: false, validation: false },
+        profile: { validation: false },
       }),
       (error: unknown) => String(error).includes('NEST1311'),
     );
@@ -295,7 +295,7 @@ const ERROR_STATUS = '4XX';
     root: constantRoot,
     output: path.join(constantRoot, 'openapi.json'),
     info: { title: 'Constant response status', version: '1' },
-    profile: { mobx: false, validation: false },
+    profile: { validation: false },
   }));
   assert.deepEqual(Object.keys(constantDocument.paths['/constant-status']?.get?.responses ?? {}).sort(), ['204', '4XX']);
 });
@@ -306,7 +306,7 @@ test('allows manually managed responses with explicit Swagger response metadata'
     root: acceptedRoot,
     output: path.join(acceptedRoot, 'openapi.json'),
     info: { title: 'Manual response', version: '1' },
-    profile: { mobx: false, validation: false },
+    profile: { validation: false },
   }));
   assert.deepEqual(expectValue(responseOf(document, '/manual-response', 'get', '200').content, 'manual response content'), {
     'application/json': { schema: { type: 'string' } },
@@ -320,7 +320,7 @@ test('rejects unresolved local component references in raw Swagger response meta
       root,
       output: path.join(root, 'openapi.json'),
       info: { title: 'Unresolved reference', version: '1' },
-      profile: { mobx: false, validation: false },
+      profile: { validation: false },
     }),
     (error: unknown) => String(error).includes('NEST1505'),
   );
@@ -342,7 +342,7 @@ export class ${name} {
     files: { 'src/dogs.controller.ts': controller('DogsController', 'dogs') },
   });
   // A variable keeps the test free of the context type, which names the suffixes only once they exist.
-  const context = { root, output: path.join(root, 'openapi.json'), suffixes: ['.api.ts'], info: { title: 'Pets', version: '1' }, profile: { mobx: false, validation: false } };
+  const context = { root, output: path.join(root, 'openapi.json'), suffixes: ['.api.ts'], info: { title: 'Pets', version: '1' }, profile: { validation: false } };
   const document = documentOf(await generate(context));
   assert.equal(operationOf(document, '/cats', 'get').operationId, 'CatsController_list');
   assert.equal(document.paths['/dogs'], undefined, 'a file without a configured suffix is not a controller source');
@@ -372,7 +372,7 @@ export class HiddenController {
     root,
     output: path.join(root, 'openapi.json'),
     info: { title: 'Exclude controller', version: '1' },
-    profile: { mobx: false, validation: false },
+    profile: { validation: false },
   }));
   assert.deepEqual(Object.keys(document.paths), ['/shown']);
 });
@@ -400,7 +400,7 @@ export class JsonController {
     root,
     output: path.join(root, 'openapi.json'),
     info: { title: 'Json', version: '1' },
-    profile: { mobx: false, validation: false },
+    profile: { validation: false },
   }));
   const components = (document as unknown as { readonly components: { readonly schemas: Readonly<Record<string, OpenApiSchema>> } }).components.schemas;
   const names = Object.keys(components).filter((name) => name.startsWith('JsonValue'));

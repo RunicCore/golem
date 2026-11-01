@@ -10,14 +10,16 @@ import { generate, type OpenApiGenerationContext, writeSdk as WriteSdk } from '#
 import { generate as generateModels } from '#model/generator';
 import { GolemDiagnosticSeverity } from '@exprtlabs/golem/generator-api';
 import { sdkCodecsFile } from '@exprtlabs/golem/internal/emitter';
-import type { OpenApiGenerationProfile } from '#openapi/profile';
+import type { OpenApiGenerationProfile as GeneratorProfile } from '#openapi/profile';
+import { generatorSettings, type WithMobx } from '../support/mobx-extension.js';
 import { buildOperationValidationSchemas } from '#openapi/client/emit';
 import { normalizeAndValidate } from '#openapi/document';
 import { generateModelManifest } from '#openapi/model-manifest';
 import { analyzeOpenApiModels, requestBodyKey } from '#openapi/model-schema-graph';
 import { buildSchemaData } from '#openapi/schemas';
 
-export type { OpenApiGenerationProfile };
+/** The profile of an SDK test; `mobx: true` turns on the mobx extension, as `extensions: mobx: {}` does in golem.yaml. */
+export type OpenApiGenerationProfile = WithMobx<GeneratorProfile>;
 
 export function repoRoot(): string {
   const golemDist = dirname(fileURLToPath(import.meta.resolve('@exprtlabs/golem/model')));
@@ -33,7 +35,6 @@ export function tscBin(): string {
 }
 
 export const defaultTestProfile: OpenApiGenerationProfile = Object.freeze({
-  mobx: false,
   validation: true,
 });
 
@@ -60,14 +61,16 @@ function writeSdkCodecs(output: string, profile: OpenApiGenerationProfile, mode:
   // Without `skipLibCheck` the job checks every library declaration file, which takes seconds for each SDK.
   const tsconfig = join(directory, 'tsconfig.models.json');
   writeFileSync(tsconfig, JSON.stringify({ compilerOptions: { target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', strict: true, skipLibCheck: true, lib: ['ES2023', 'DOM', 'DOM.Iterable'] }, include: [] }));
+  const settings = generatorSettings(profile);
   const result = generateModels({
+    ...(settings.hooks ? { hooks: settings.hooks } : {}),
     root: directory,
     directory,
     tsconfig,
     output: join(output, 'codecs'),
     manifestInputs: [join(output, 'model-manifest.json')],
     sdkOutputs: [output],
-    profile,
+    profile: settings.profile,
   });
   requireNoErrorDiagnostics(result);
   writeGeneratedArtifacts(result.artifacts);
@@ -86,7 +89,8 @@ export function writeGeneratedSdk(
   const output = resolve(options.output);
   const profile = options.profile ?? defaultTestProfile;
   const mode = modeOf(profile, output);
-  const result = writeSdk(document, { output, name: options.name, profile, ...mode });
+  const settings = generatorSettings(profile);
+  const result = writeSdk(document, { output, name: options.name, profile: settings.profile, ...(settings.hooks ? { hooks: settings.hooks } : {}), ...mode });
   requireNoErrorDiagnostics(result);
   writeGeneratedArtifacts(result.artifacts);
   writeSdkCodecs(output, profile, mode);
@@ -183,8 +187,8 @@ export function compileStrictUnusedSdk(output: string, extraFiles: string[] = []
 }
 
 export const ALL_GENERATION_PROFILES: readonly OpenApiGenerationProfile[] = [
-  { mobx: false, validation: false },
-  { mobx: false, validation: true },
+  { validation: false },
+  { validation: true },
   { mobx: true, validation: false },
   { mobx: true, validation: true },
 ];
@@ -219,7 +223,7 @@ export async function assertGenerationRejected(
     () => generate({
       input,
       output: options.output ?? join(dirname(input), 'sdk'),
-      profile: options.profile ?? { mobx: false, validation: false },
+      profile: generatorSettings(options.profile ?? { validation: false }).profile,
     }),
     (error: unknown) => {
       assert.ok(error instanceof Error);
@@ -284,11 +288,13 @@ export async function generateMaterializedSdk(
   const directory = dirname(options.output);
   const input = writeOpenApiDocument(directory, document);
   const mode = modeOf(options.profile ?? defaultTestProfile, resolve(options.output), options.mode);
+  const settings = generatorSettings(options.profile ?? defaultTestProfile);
   const context: OpenApiGenerationContext = {
     input,
     output: resolve(options.output),
     name: options.name,
-    profile: options.profile ?? defaultTestProfile,
+    profile: settings.profile,
+    ...(settings.hooks ? { hooks: settings.hooks } : {}),
     ...mode,
     allowRemoteRefs: options.allowRemoteRefs,
     remoteHosts: options.remoteHosts,

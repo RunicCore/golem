@@ -44,7 +44,7 @@ after(() => {
 async function loadSdk(): Promise<{ root: string; Client: GeneratedClientClass }> {
   if (sdk) return sdk;
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'golem-openapi-reserved-schemes-')));
-  await generateMaterializedSdk(reservedDocument(), { output: path.join(root, 'sdk'), name: 'Reserved', profile: { mobx: false, validation: false } });
+  await generateMaterializedSdk(reservedDocument(), { output: path.join(root, 'sdk'), name: 'Reserved', profile: { validation: false } });
   compileGeneratedSdk(path.join(root, 'sdk'), [], { strict: true });
   const module = requireRecord(await import(pathToFileURL(path.join(root, 'sdk/dist/index.js')).href), 'reserved client');
   if (!isGeneratedClientClass(module.ReservedClient)) throw new TypeError('ReservedClient must be a class');
@@ -81,7 +81,7 @@ test('a requirement that names an undeclared reserved word is rejected at genera
   const paths = document.paths as Record<string, unknown>;
   paths['/auth/valueOf'] = { get: { operationId: 'use_valueOf', security: [{ valueOf: [] }], responses: noContent } };
   await assert.rejects(
-    () => generateMaterializedSdk(document, { output: path.join(os.tmpdir(), 'golem-openapi-undeclared-reserved'), name: 'Undeclared', profile: { mobx: false, validation: false } }),
+    () => generateMaterializedSdk(document, { output: path.join(os.tmpdir(), 'golem-openapi-undeclared-reserved'), name: 'Undeclared', profile: { validation: false } }),
     /operation-security-defined: security requirement names "valueOf", which is not declared in components\.securitySchemes \(openapi\.json#\/paths\/~1auth~1valueOf\/get\/security\/0\/valueOf\)/,
   );
 });

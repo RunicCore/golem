@@ -47,7 +47,7 @@ async function componentNames(t: TestContext, source: string): Promise<string[]>
   });
   const result = await generate({
     root, output: path.join(root, 'api.json'), openapiVersion: '3.2.0',
-    info: { title: 'Projection names', version: '1' }, profile: { mobx: false, validation: false },
+    info: { title: 'Projection names', version: '1' }, profile: { validation: false },
   });
   const document = JSON.parse(result.artifacts[0]!.content) as { components: { schemas: Record<string, unknown> } };
   return Object.keys(document.components.schemas).sort();
@@ -117,11 +117,11 @@ export type TOrder = IModel<{ a: Omit<TMerchant, 'id'>; b: Omit<TOtherMerchant, 
   });
   await assert.rejects(generate({
     root, output: path.join(root, 'api.json'), openapiVersion: '3.2.0',
-    info: { title: 'Clash', version: '1' }, profile: { mobx: false, validation: false },
+    info: { title: 'Clash', version: '1' }, profile: { validation: false },
   }), /RUNM1059/);
 });
 
-const GENERATE_OPTIONS = { openapiVersion: '3.2.0' as const, info: { title: 'Projection names', version: '1' }, profile: { mobx: false, validation: false } };
+const GENERATE_OPTIONS = { openapiVersion: '3.2.0' as const, info: { title: 'Projection names', version: '1' }, profile: { validation: false } };
 
 async function generateSource(t: TestContext, source: string, files: Record<string, string> = {}) {
   const root = createControllerFixture(t, {

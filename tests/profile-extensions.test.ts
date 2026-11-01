@@ -38,7 +38,6 @@ test('a project that turns on a flagged extension writes its options, as golem.y
   assert.deepEqual(await manifestProfile(root, profile), {
     allowAny: false,
     extensions: { '@fixture/profiled': { shape: { names: ['b', 'a'], precision: 2 } } },
-    mobx: false,
     unknownFormats: 'error',
     validation: true,
   });
@@ -49,7 +48,7 @@ test('an extension with no profile flag writes no extensions key into the manife
   const { root, profile } = await profileOf(t, 'probe:\n  extensions:\n    mark:\n      label: probe\n');
 
   assert.equal(Object.hasOwn(profile, 'extensions'), false);
-  assert.deepEqual(await manifestProfile(root, profile), { allowAny: false, mobx: false, unknownFormats: 'error', validation: true });
+  assert.deepEqual(await manifestProfile(root, profile), { allowAny: false, unknownFormats: 'error', validation: true });
 });
 
 test('a flagged extension turned on with no options is recorded as used, with no settings', async (t) => {

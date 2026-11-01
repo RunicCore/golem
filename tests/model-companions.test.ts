@@ -19,7 +19,7 @@ import { runRewritten } from './support/rewritten-module.js';
 import { tsSource } from './source-template.js';
 import { generate } from '#model/generator';
 
-function writeManifest(filename: string, profile: { readonly mobx: boolean; readonly validation: boolean }): void {
+function writeManifest(filename: string, profile: { readonly mobx?: boolean; readonly validation: boolean }): void {
   fs.writeFileSync(filename, JSON.stringify({
     profile: { ...profile, allowAny: false, unknownFormats: 'error' },
     models: [{
@@ -46,7 +46,7 @@ import type { MinLength } from '@exprtlabs/golem/tags';
 export type TA = IModel<{ title: string & MinLength<1> }>;
 `,
   });
-  writeModelGolemYaml(root, { mobx: false, validation: false });
+  writeModelGolemYaml(root, { validation: false });
   await buildModelProject(root);
   return { root, sourceRoot };
 });
@@ -64,7 +64,7 @@ import type { TNode } from './node.model.js';
 export type TLink = IObject<{ node: TNode }>;
 `,
   });
-  writeModelGolemYaml(root, { mobx: false, validation: true });
+  writeModelGolemYaml(root, { validation: true });
   await buildModelProject(root);
   return { root };
 });
@@ -75,7 +75,7 @@ test('generated model names are scoped to their companion modules', (t) => {
     'first.model.ts': tsSource`import type { IModel } from '@exprtlabs/golem/model';\nexport type TItem = IModel<{ first: string }>;\n`,
     'second.model.ts': tsSource`import type { IModel } from '@exprtlabs/golem/model';\nexport type TItem = IModel<{ second: string }>;\n`,
   });
-  const result = generate({ root, profile: { mobx: false, validation: false } });
+  const result = generate({ root, profile: { validation: false } });
   assert.equal(result.artifacts.length, 3);
   assert.equal(result.artifacts.filter((artifact) => artifact.content.includes('export abstract class TItemBaseModel')).length, 2);
   assert.equal(result.artifacts.some((artifact) => artifact.content.includes('first')), true);
@@ -104,10 +104,10 @@ test('automatic empty discovery returns an empty expected artifact set', (t) => 
   const { root, sourceRoot } = modelProject(t);
   const source = path.join(sourceRoot, 'item.model.ts');
   writeModelSources(sourceRoot, { 'item.model.ts': tsSource`import type { IModel } from '@exprtlabs/golem/model';\nexport type TItem = IModel<{ value: string }>;\n` });
-  const first = generate({ root, profile: { mobx: false, validation: false } });
+  const first = generate({ root, profile: { validation: false } });
   writeGeneratedArtifacts(first.artifacts);
   fs.rmSync(source);
-  const empty = generate({ root, profile: { mobx: false, validation: false } });
+  const empty = generate({ root, profile: { validation: false } });
   assert.deepEqual(empty.artifacts, []);
   assert.equal(empty.manifestPaths.length, 0);
 });
@@ -122,7 +122,7 @@ function ambientInvoiceProject(t: TestContext): { readonly root: string; readonl
 
 test('tsconfig ambient declarations participate in executable validation', async (t) => {
   const { root } = ambientInvoiceProject(t);
-  writeModelGolemYaml(root, { mobx: false, validation: true });
+  writeModelGolemYaml(root, { validation: true });
   await buildModelProject(root);
   const invoiceId = generatedCodecIdFromRoot(root, 'TInvoice');
   const verifier = copyFixtureFile(root, 'models/model-companions/verify-ambient-validation.mjs', 'verify-ambient-validation.mjs');
@@ -131,7 +131,7 @@ test('tsconfig ambient declarations participate in executable validation', async
 
 test('tsconfig ambient declarations are inputs a watching build follows', (t) => {
   const { root, ambient } = ambientInvoiceProject(t);
-  const result = generate({ root, profile: { mobx: false, validation: true } });
+  const result = generate({ root, profile: { validation: true } });
   assert.equal(result.watchInputs.includes(ambient), true);
 });
 
@@ -140,9 +140,9 @@ test('public generation compiles and executes conversion and rest tuple behavior
   const sdk = path.join(sourceRoot, 'sdk');
   fs.mkdirSync(sdk, { recursive: true });
   copyFixtureFile(root, 'models/model-companions/sdk-types/types.ts', 'src/sdk/types.ts');
-  writeManifest(path.join(sdk, 'model-manifest.json'), { mobx: false, validation: true });
+  writeManifest(path.join(sdk, 'model-manifest.json'), { validation: true });
   copyFixtureFile(root, 'models/model-companions/public-generation-compiles-and-executes-conversion-and-rest-tuple-behavior/wallet.model.ts', 'src/wallet.model.ts');
-  writeModelGolemYaml(root, { mobx: false, validation: true });
+  writeModelGolemYaml(root, { validation: true });
   await buildModelProject(root);
   const verifier = copyFixtureFile(root, 'models/model-companions/verify-public-generation.mjs', 'verify-public-generation.mjs');
   await command(root, process.execPath, [verifier]);
@@ -183,7 +183,7 @@ test('the first generation after an upgrade deletes the old models.generated.ts'
 export type TA = IModel<{ title: string }>;
 `,
   });
-  writeModelGolemYaml(root, { mobx: false, validation: true });
+  writeModelGolemYaml(root, { validation: true });
   await buildModelProject(root);
   // The inventory a release before this change wrote: it owns models.generated.ts beside the validators.
   const inventoryFile = path.join(root, '.golem/outputs.json');
@@ -214,7 +214,7 @@ import { isEven } from './rules.js';
 export type TItem = IModel<{ count: number & TValidation<typeof isEven> }>;
 `,
   });
-  const result = generate({ root, profile: { mobx: false, validation: true } });
+  const result = generate({ root, profile: { validation: true } });
   const validators = result.artifacts.find(artifact => artifact.path.endsWith('models.validators.generated.ts'));
   assert.ok(validators, 'the validators file is written');
   assert.ok(runRewritten(validators.content).imports.some((specifier) => specifier.endsWith('rules.js')), 'the validators module imports the user function');

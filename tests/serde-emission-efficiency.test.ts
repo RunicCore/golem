@@ -34,7 +34,7 @@ test('model decoder leaves unchanged fields in the initializer copy', async (t) 
     'models/serde-emission-efficiency/model-decoder-leaves-unchanged-fields-in-the-initializer-copy/codecs.ts',
     'src/codecs.ts',
   );
-  writeModelGolemYaml(value.root, { mobx: false, validation: false });
+  writeModelGolemYaml(value.root, { validation: false });
   await buildModelProject(value.root);
   const spy = await spyOnBuild(value.root, { '@exprtlabs/golem/internal/model-runtime': ['defineModelProperty'] });
   try {
@@ -58,7 +58,7 @@ test('generated decoding preserves the constructor and initializer boundaries', 
   writeFileSync(path.join(value.sourceRoot, 'optional-codec.ts'), readFixture("models/serde-emission-efficiency/generated-decoding-preserves-the-constructor-and-initializer-boundaries/optional-codec.ts"));
   writeFileSync(path.join(value.sourceRoot, 'parent.model.ts'), readFixture("models/serde-emission-efficiency/generated-decoding-preserves-the-constructor-and-initializer-boundaries/parent.model.ts"));
 
-  writeModelGolemYaml(value.root, { mobx: false, validation: false });
+  writeModelGolemYaml(value.root, { validation: false });
   await buildModelProject(value.root);
   // Parent's generated companion imports Child through the ordinary module
   // URL. Keep the test imports on that same URL so constructor identity and
@@ -154,7 +154,7 @@ export class Member extends TMemberBaseModel {}
 export type TTeam = IModel<{ lead: Member; members: Member[] }>;
 export class Team extends TTeamBaseModel {}
 `);
-  writeModelGolemYaml(value.root, { mobx: false, validation: false });
+  writeModelGolemYaml(value.root, { validation: false });
   await buildModelProject(value.root);
   const spy = await spyOnBuild(value.root, { '@exprtlabs/golem/internal/model-runtime': ['decodeCheckedInput', 'decodeDetachedInput'] });
   try {
@@ -195,7 +195,7 @@ import { TNoteBaseModel } from './note.model.generated.js';
 export type TNote = IModel<{ title: string; body?: string; pinned: boolean }>;
 export class Note extends TNoteBaseModel {}
 `);
-  writeModelGolemYaml(value.root, { mobx: false, validation: false });
+  writeModelGolemYaml(value.root, { validation: false });
   await buildModelProject(value.root);
   return value;
 }
@@ -240,7 +240,7 @@ export class Directory extends TDirectoryBaseModel {}
 export class Shelf extends TShelfBaseModel {}
 export class Stamps extends TStampsBaseModel {}
 `);
-  writeModelGolemYaml(value.root, { mobx: false, validation: false });
+  writeModelGolemYaml(value.root, { validation: false });
   await buildModelProject(value.root);
   const spy = await spyOnBuild(value.root, {
     '@exprtlabs/golem/serde': ['stringifyJsonScalar', 'stringifyJsonString', 'stringifyJsonNumber', 'stringifyJsonBoolean', 'stringifyJsonArray'],
@@ -275,7 +275,7 @@ export type TSeries = IModel<{ [key: string]: number[] }>;
 export class Counts extends TCountsBaseModel {}
 export class Series extends TSeriesBaseModel {}
 `);
-  writeModelGolemYaml(value.root, { mobx: false, validation: false });
+  writeModelGolemYaml(value.root, { validation: false });
   await buildModelProject(value.root);
   const codecs = await import(pathToFileURL(path.join(value.root, 'build/counts.model.generated.js')).href) as Record<string, (value: unknown) => unknown>;
   const isSerializationError = (error: unknown): boolean => error instanceof LibError && error.kind === LibErrorKind.Serialization;
@@ -292,7 +292,7 @@ import { TCountsBaseModel } from './counts.model.generated.js';
 export type TCounts = IModel<{ [key: string]: number }>;
 export class Counts extends TCountsBaseModel {}
 `);
-  writeModelGolemYaml(value.root, { mobx: false, validation: false });
+  writeModelGolemYaml(value.root, { validation: false });
   await buildModelProject(value.root);
   const codecs = await import(pathToFileURL(path.join(value.root, 'build/counts.model.generated.js')).href) as Record<string, (value: unknown) => unknown>;
   class Tally {

@@ -54,7 +54,7 @@ test('model predicates never strengthen wire or OpenAPI contracts', async t => {
     const result = await generateControllers({
       root, output: path.join(root, 'openapi.json'), openapiVersion,
       info: { title: 'Contracts', version: '1' },
-      profile: { mobx: false, validation: true },
+      profile: { validation: true },
     });
     assert.ok(result.diagnostics?.some(item => item.code === 'NEST1502' && item.severity === 'warning'));
     const content = result.artifacts[0]!.content;
@@ -69,7 +69,7 @@ test('model predicates never strengthen wire or OpenAPI contracts', async t => {
     path: path.join(root, 'src/verify.ts'),
     content: readFixture('models/constraint-portability/verifier/verify.ts'),
   }]);
-  writeModelGolemYaml(root, { mobx: false, validation: true });
+  writeModelGolemYaml(root, { validation: true });
   await buildModelProject(root);
   const aId = generatedCodecIdFromRoot(root, 'TA');
   await command(root, process.execPath, [

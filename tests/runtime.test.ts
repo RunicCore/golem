@@ -9,8 +9,8 @@ import { autorun, observable, runInAction } from 'mobx';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import * as model from '@exprtlabs/golem/internal/model-runtime';
 import * as validation from '@exprtlabs/golem/validation';
-import * as mobxRuntime from '@exprtlabs/golem/mobx';
-import * as mobxValidation from '@exprtlabs/golem/mobx-validation';
+import * as mobxRuntime from '@exprtlabs/golem-openapi-ts/mobx';
+import * as mobxValidation from '@exprtlabs/golem-openapi-ts/mobx-validation';
 import * as emitter from '@exprtlabs/golem/internal/emitter';
 import { installCodecModel } from './register-codec-model.js';
 import { copyFixtureFile, createFixtureProject, linkProjectPackages } from './fixture-project.js';
@@ -295,7 +295,7 @@ test('shared emitter emits exact generated-model conversion expressions', () => 
 
 test('model manifests validate profile and keep identity independent of profile', () => {
   const base = {
-    profile: { mobx: false, validation: true, allowAny: false },
+    profile: { validation: true, allowAny: false },
     models: [{
       id: 'fixture:payment',
       codecId: 'Payment_a1b2c3d4',
@@ -305,12 +305,12 @@ test('model manifests validate profile and keep identity independent of profile'
   };
   const profileVariant = {
     ...base,
-    profile: { mobx: true, validation: false, allowAny: true },
+    profile: { validation: false, allowAny: true },
   };
   assert.strictEqual(manifest.validateModelManifest(base), base);
   assert.equal(sourceDigest(base), sourceDigest(profileVariant));
   assert.throws(
-    () => manifest.validateModelManifest({ ...base, profile: { mobx: true } }),
+    () => manifest.validateModelManifest({ ...base, profile: { allowAny: true } }),
     /profile must include mobx, validation and allowAny booleans/,
   );
   assert.equal(manifest.validateModelManifest({ ...base, profile: { ...base.profile, unknownFormats: 'warn' } }).profile.unknownFormats, 'warn');

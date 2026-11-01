@@ -40,7 +40,7 @@ function useDocsPackage(root: string): void {
 }
 
 function writeConfig(filename: string, body: string, boundary = 'boundary:\n  root: .\n'): void {
-  fs.writeFileSync(filename, ['version: 1', 'mobx: false', 'validation: true', body, boundary].join('\n'));
+  fs.writeFileSync(filename, ['version: 1', 'validation: true', body, boundary].join('\n'));
 }
 
 /** A `ts-openapi` block with one docs job; `extra` lines belong to that job. */

@@ -41,7 +41,7 @@ const rejectsAsInputAt = (limit: number) => (error: unknown): boolean =>
   error instanceof LibError && error.causedByInput === true && new RegExp(`deeper than ${limit} levels`).test(error.message);
 
 async function buildDepthProject(t: TestContext) {
-  const { root } = await buildRecursiveProject(t, 'golem-max-depth-', sources, { mobx: false, validation: true });
+  const { root } = await buildRecursiveProject(t, 'golem-max-depth-', sources, { validation: true });
   const { Link } = await import(pathToFileURL(path.join(root, 'build/depth.model.js')).href) as { Link: new (values: object) => object };
   return { Link, link: requireObjectCodec<{ name: string }>(generatedCodecIdFromRoot(root, 'TLink')), bag: requireObjectCodec<unknown>(generatedCodecIdFromRoot(root, 'TBag')), id: generatedCodecIdFromRoot(root, 'TLink') };
 }

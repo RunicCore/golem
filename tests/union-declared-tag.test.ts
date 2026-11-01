@@ -21,7 +21,7 @@ const TAG = "Discriminator<'kind'>";
 type ContactCodecs = Record<string, (value: unknown, options?: object) => unknown>;
 
 async function buildContactCodecs(root: string, validation: boolean): Promise<ContactCodecs> {
-  writeModelGolemYaml(root, { mobx: false, validation });
+  writeModelGolemYaml(root, { validation });
   await buildModelProject(root);
   return requireRecord(await import(pathToFileURL(path.join(root, 'build/contact.model.generated.js')).href), 'contact companion') as ContactCodecs;
 }
@@ -76,7 +76,7 @@ for (const validation of [false, true]) {
     // protects: T-593 Discriminator<'kind'> on the union, an alias, a nullable, optional, array and record position drives conversion
     const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-declared-tag-', name: 'declared-tag', linkWorkspaceNodeModules: true });
     writeModelSources(sourceRoot, { 'contact.model.ts': CONTACT_MODEL });
-    writeModelGolemYaml(root, { mobx: false, validation });
+    writeModelGolemYaml(root, { validation });
     await buildModelProject(root);
     const { Contact, Email, Phone } = await loadContact(root);
     const wire = {
@@ -111,7 +111,7 @@ test('toWireFormat with validation off rejects an unknown tag and a tag of anoth
   // protects: T-650 the encode tests of an unknown and a mutated tag went with the class-level encode; toWireFormat keeps the rule
   const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-declared-write-tag-', name: 'declared-write-tag', linkWorkspaceNodeModules: true });
   writeModelSources(sourceRoot, { 'contact.model.ts': CONTACT_MODEL });
-  writeModelGolemYaml(root, { mobx: false, validation: false });
+  writeModelGolemYaml(root, { validation: false });
   await buildModelProject(root);
   const loaded = await loadContact(root);
   const [Email, Phone] = [loaded.Email, loaded.Phone] as unknown as (new (values: object) => object)[];
@@ -135,7 +135,7 @@ test('a declared key picks the variant even when another shared literal field wo
   // protects: T-593 the declared key, not an inferred one, selects the variant (kind comes first, the declared key is mode)
   const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-declared-key-', name: 'declared-key', linkWorkspaceNodeModules: true });
   writeModelSources(sourceRoot, { 'contact.model.ts': CONTACT_MODEL });
-  writeModelGolemYaml(root, { mobx: false, validation: false });
+  writeModelGolemYaml(root, { validation: false });
   await buildModelProject(root);
   const { Probe, Alpha } = await loadContact(root);
   const probe = requireRecord(modelCodec(Probe).fromWireFormat({ item: { kind: 'b', mode: 'x', at: DAY } }, { validate: false }), 'probe');
@@ -146,7 +146,7 @@ test('the generated model types carry no Discriminator tag', t => {
   // protects: T-593 a tag does not change the application type (F-31), so it stays out of the generated file
   const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-declared-text-', name: 'declared-text' });
   writeModelSources(sourceRoot, { 'contact.model.ts': CONTACT_MODEL });
-  const artifacts = generate({ root, profile: { mobx: false, validation: true } }).artifacts;
+  const artifacts = generate({ root, profile: { validation: true } }).artifacts;
   const generated = artifacts.find(artifact => artifact.path.endsWith('contact.model.generated.ts'));
   assert.ok(generated, 'contact.model.generated.ts must be generated');
   assert.ok(/TEmail/.test(generated.content));
@@ -158,7 +158,7 @@ for (const validation of [false, true]) {
     // protects: T-617 (F-129) one selector per union and direction serves every writer and position, not a copy in each
     const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-declared-selector-', name: 'declared-selector' });
     writeModelSources(sourceRoot, { 'contact.model.ts': CONTACT_MODEL });
-    const generated = generate({ root, profile: { mobx: false, validation } }).artifacts.find(artifact => artifact.path.endsWith('contact.model.generated.ts'));
+    const generated = generate({ root, profile: { validation } }).artifacts.find(artifact => artifact.path.endsWith('contact.model.generated.ts'));
     assert.ok(generated, 'contact.model.generated.ts must be generated');
     // The kind union and the mode union each get a decode and an encode selector, whatever number of positions use them.
     assert.equal(generated.content.match(/^function __golemVariant_\w+\(/gm)?.length, 4);
@@ -185,7 +185,7 @@ type Scale = { scale: 1 | 2 };
 export type TPlace = IModel<{ spot: ((Geo & Scale & { shape: 'point' }) | (Scale & { shape: 'name' })) & ${TAG_SHAPE} }>;
 `,
   });
-  const artifacts = generate({ root, profile: { mobx: false, validation: true } }).artifacts;
+  const artifacts = generate({ root, profile: { validation: true } }).artifacts;
   const generated = artifacts.find(artifact => artifact.path.endsWith('parts.model.generated.ts'));
   assert.ok(generated, 'parts.model.generated.ts must be generated');
   assert.ok(/lat: number; scale: 1 \| 2; shape: "point"/.test(generated.content));
@@ -199,7 +199,7 @@ export type TEmail = IModel<{ kind: 'email'; added: Date }>;
 `;
 
 for (const validation of [false, true]) {
-  const profile = { mobx: false, validation };
+  const profile = { validation };
   for (const [name, source, message] of [
     [
       'a variant without the key',
@@ -249,7 +249,7 @@ async function writeMoneySdk(sourceRoot: string, validation: boolean, document?:
     input: path.join(sourceRoot, 'money.yaml'),
     output: path.join(sourceRoot, 'sdk'),
     name: 'Payments',
-    profile: { mobx: false, validation },
+    profile: { validation },
   })).artifacts);
 }
 
@@ -266,7 +266,7 @@ import type { Money } from './sdk/index.js';
 export type TItem = IModel<{ value: ${valueType} }>;
 `,
   });
-  writeModelGolemYaml(root, { mobx: false, validation });
+  writeModelGolemYaml(root, { validation });
   await buildModelProject(root);
   const generated = requireRecord(await import(pathToFileURL(path.join(root, 'build/item.model.generated.js')).href), 'item companion');
   return { root, Item: generated.TItemBaseModel as GeneratedModelClass };
@@ -332,7 +332,7 @@ for (const validation of [false, true]) {
     // protects: T-603 a tagged object union can sit beside scalars, arrays and null (R-55): JSON type first, then the declared tag
     const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-declared-json-', name: 'declared-json', linkWorkspaceNodeModules: true });
     writeModelSources(sourceRoot, { 'box.model.ts': BOX_MODEL });
-    writeModelGolemYaml(root, { mobx: false, validation });
+    writeModelGolemYaml(root, { validation });
     await buildModelProject(root);
     const models = requireRecord(await import(pathToFileURL(path.join(root, 'build/box.model.js')).href), 'box');
     const { Box, Email, Phone } = models as Record<'Box' | 'Email' | 'Phone', GeneratedModelClass>;
@@ -392,7 +392,7 @@ export class Email extends TEmailBaseModel {}
 export class Item extends TItemBaseModel {}
 `,
   });
-  writeModelGolemYaml(root, { mobx: false, validation });
+  writeModelGolemYaml(root, { validation });
   await buildModelProject(root);
   const { Item, Email } = requireRecord(await import(pathToFileURL(path.join(root, 'build/item.model.js')).href), 'item') as Record<string, new () => Record<string, unknown>>;
   const itemOf = (fields: Record<string, unknown>): Record<string, unknown> => Object.assign(new Item(), { value: Object.assign(new Email(), fields) });
@@ -446,7 +446,7 @@ import type { TEmail, TPhone } from './variants.model.js';
 export type TItem = IModel<{ value: (TEmail | TPhone) & ${TAG} }>;
 `,
     });
-    writeModelGolemYaml(root, { mobx: false, validation: false });
+    writeModelGolemYaml(root, { validation: false });
     await buildModelProject(root);
     const load = async (name: string) => requireRecord(await import(pathToFileURL(path.join(root, name)).href), name);
     const Email = (await load('build/variants.model.generated.js')).TEmailBaseModel as new () => Record<string, unknown>;
@@ -471,7 +471,7 @@ export type TPhone = IModel<{ kind: 'phone'; number: string }>;
 export type TItem = IModel<{ tagged: (TEmail | TPhone | Date) & ${TAG}; untagged: TEmail | Date | string[] }>;
 `,
     });
-    writeModelGolemYaml(root, { mobx: false, validation });
+    writeModelGolemYaml(root, { validation });
     await buildModelProject(root);
     const Item = (requireRecord(await import(pathToFileURL(path.join(root, 'build/item.model.generated.js')).href), 'item')).TItemBaseModel as new () => Record<string, unknown>;
     const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TItem'));
@@ -507,7 +507,7 @@ export type TRoot = IModel<{ value: (TAlpha | TBeta) & ${TAG} }>;
 export type TInner = IModel<{ value: (TAlpha | TBeta) & ${TAG} }>;
 `,
   });
-  writeModelGolemYaml(root, { mobx: false, validation: false });
+  writeModelGolemYaml(root, { validation: false });
   await buildModelProject(root);
   const bases = requireRecord(await import(pathToFileURL(path.join(root, 'build/item.model.generated.js')).href), 'item companion');
   const make = (name: string, values: object): object => Object.assign(new (bases[name] as new () => object)(), values);
@@ -640,7 +640,7 @@ export type TContact = IObject<{ value: (Link | TEmail | TPhone) & ${TAG} }>;
 export class Email extends TEmailBaseModel {}
 `,
   });
-  writeModelGolemYaml(root, { mobx: false, validation: true });
+  writeModelGolemYaml(root, { validation: true });
   await buildModelProject(root);
   const companion = await import(pathToFileURL(path.join(root, 'build/contact.model.generated.js')).href) as Record<string, (value: unknown, options?: object) => unknown>;
   const { Email } = await import(pathToFileURL(path.join(root, 'build/contact.model.js')).href) as { Email: new (values: object) => object };
@@ -702,6 +702,6 @@ export type TPhone = IObject<{ kind: 'phone'; number: string }>;
 export type TContact = IObject<{ value: (Link | TEmail | TPhone) & ${TAG} }>;
 `,
   });
-  writeModelGolemYaml(root, { mobx: false, validation: false });
+  writeModelGolemYaml(root, { validation: false });
   await assert.rejects(buildModelProject(root), /RUNM1082/);
 });

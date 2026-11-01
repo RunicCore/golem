@@ -1,3 +1,4 @@
+import { generatorSettings } from './mobx-extension.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { generate as generateControllers } from '#controllers/generator';
@@ -28,14 +29,14 @@ function describeError(stage: string, error: unknown): string {
 async function generateStage(item: IdentityProject, lines: string[]): Promise<readonly { readonly path: string; readonly content: string }[] | undefined> {
   try {
     const result = item.kind === 'model'
-      ? generateModels({ root: item.root, profile: { mobx: item.mobx, validation: true } })
+      ? generateModels({ root: item.root, ...generatorSettings({ mobx: item.mobx, validation: true }) })
       : await generateControllers({
         root: item.root,
         output: path.join(item.root, 'openapi.json'),
         info: { title: 'Catalog', version: '1' },
         globalPrefix: 'api',
         uriVersioning: { type: 'URI', prefix: 'v' },
-        profile: { mobx: false, validation: false },
+        profile: { validation: false },
       });
     for (const diagnostic of result.diagnostics ?? []) lines.push(describeDiagnostic('generate', diagnostic));
     return result.artifacts;

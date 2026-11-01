@@ -37,7 +37,7 @@ function twoServerDocument(): unknown {
 
 async function loadSdk(t: TestContext, document: unknown, name: string, assertSource: string) {
   const output = path.join(createFixtureProject(t, 'golem-openapi-servers-'), 'sdk');
-  const { diagnostics = [] } = await generateMaterializedSdk(document, { output, name, profile: { mobx: false, validation: false } });
+  const { diagnostics = [] } = await generateMaterializedSdk(document, { output, name, profile: { validation: false } });
   const assertFile = path.join(output, 'servers-assert.ts');
   writeFileSync(assertFile, assertSource);
   compileGeneratedSdk(output, [assertFile], { strict: true });

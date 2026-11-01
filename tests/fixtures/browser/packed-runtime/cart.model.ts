@@ -10,7 +10,7 @@ export type TCart = IModel<{
   code: number & TSerde<typeof encode, typeof decode>;
 }>;
 
-import { asGenObservable } from '@exprtlabs/golem/mobx';
+import { asGenObservable } from '@exprtlabs/golem-openapi-ts/mobx';
 import { TCartBaseModel, type TCartInit } from './cart.model.generated.js';
 
 export class Cart extends TCartBaseModel {

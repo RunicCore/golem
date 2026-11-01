@@ -126,7 +126,7 @@ async function generatedOpenApiFixture(
     input,
     output,
     name: 'Payments',
-    profile: { mobx: false, validation, allowAny: false },
+    profile: { validation, allowAny: false },
   });
   writeGeneratedArtifacts(result.artifacts);
   fs.writeFileSync(path.join(output, 'package.json'), '{"type":"module"}');
@@ -423,7 +423,7 @@ test('public OpenAPI generation rejects names colliding across exported index mo
         input,
         output: path.join(root, 'sdk'),
         name: 'Payments',
-        profile: { mobx: false, validation: true, allowAny: false },
+        profile: { validation: true, allowAny: false },
       }),
       new RegExp(`collision.*${schemaName}|${schemaName}.*collision`, 'i'),
       `${schemaName} must be rejected before emitting an invalid public index`,
@@ -451,7 +451,7 @@ test('pipeline rejects malformed or profile-mismatched returned manifests before
     {
       name: 'malformed',
       manifest: {
-        profile: { mobx: false, validation: true, allowAny: false },
+        profile: { validation: true, allowAny: false },
         models: [{ id: 'bad-entry' }],
       },
       error: /Invalid model entry/,
@@ -459,7 +459,7 @@ test('pipeline rejects malformed or profile-mismatched returned manifests before
     {
       name: 'profile-missing-allow-any',
       manifest: {
-        profile: { mobx: false, validation: true },
+        profile: { validation: true },
         models: [],
       },
       error: /profile must include mobx, validation and allowAny booleans/,
@@ -467,7 +467,7 @@ test('pipeline rejects malformed or profile-mismatched returned manifests before
     {
       name: 'profile-mismatch',
       manifest: {
-        profile: { mobx: false, validation: true, allowAny: true },
+        profile: { validation: true, allowAny: true },
         models: [],
       },
       error: /different generation profile/,
@@ -479,7 +479,7 @@ test('pipeline rejects malformed or profile-mismatched returned manifests before
 
     fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'manifest-fixture', private: true, type: 'module' }));
     linkGolemPackages(root, ['golem', 'golem-model', 'golem-openapi-ts']);
-    writeFixture(root, { mobx: false, validation: true }, false);
+    writeFixture(root, { validation: true }, false);
     installFakeOpenApiProvider(root, entry.manifest);
 
     const output = path.join(root, 'sdk');

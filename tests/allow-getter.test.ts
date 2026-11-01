@@ -24,7 +24,7 @@ class Named { get title(): string { return 'from getter'; } }
 async function buildModels(t: TestContext) {
   const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-allow-getter-', name: 'allow-getter', linkWorkspaceNodeModules: true });
   fs.writeFileSync(path.join(sourceRoot, 'getters.model.ts'), readFixture('models/allow-getter/getters/getters.model.ts'));
-  writeModelGolemYaml(root, { mobx: false, validation: true });
+  writeModelGolemYaml(root, { validation: true });
   await buildModelProject(root);
   const models = await import(pathToFileURL(path.join(root, 'build/getters.model.js')).href);
   const codec = (name: string) => requireObjectCodec(generatedCodecIdFromRoot(root, name));

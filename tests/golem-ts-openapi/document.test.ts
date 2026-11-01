@@ -45,7 +45,7 @@ test('rejects a server entry without the required URL', async t => {
       output: path.join(root, 'openapi.json'),
       info: { title: 'Catalog', version: '1' },
       servers: [{}],
-      profile: { mobx: false, validation: false },
+      profile: { validation: false },
     }),
     'NEST1403',
     /servers\[0\]\.url must be a non-empty string/,
@@ -62,7 +62,7 @@ test('validates server variables as OpenAPI server objects', async t => {
       url: 'https://{region}.example.test',
       variables: { region: { default: 'us', enum: ['us', 'eu'] } },
     }],
-    profile: { mobx: false, validation: false },
+    profile: { validation: false },
   });
   const document = JSON.parse(result.artifacts[0]!.content) as { readonly servers?: readonly Record<string, unknown>[] };
   assert.equal(document.servers?.[0]?.url, 'https://{region}.example.test');
@@ -77,7 +77,7 @@ test('rejects malformed security scheme metadata with a typed diagnostic', async
       output: path.join(root, 'openapi.json'),
       info: { title: 'Catalog', version: '1' },
       securitySchemes: { bearer: { type: 'http' } },
-      profile: { mobx: false, validation: false },
+      profile: { validation: false },
     }),
     'NEST1404',
     /components\.securitySchemes\.bearer\.scheme must be a non-empty string/,
@@ -91,7 +91,7 @@ test('keeps valid security schemes and static ApiSecurity requirements', async t
     output: path.join(root, 'openapi.json'),
     info: { title: 'Catalog', version: '1' },
     securitySchemes: { bearer: { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' } },
-    profile: { mobx: false, validation: false },
+    profile: { validation: false },
   });
   const document = JSON.parse(result.artifacts[0]!.content) as {
     readonly components?: { readonly securitySchemes?: Record<string, unknown> };
@@ -109,7 +109,7 @@ test('rejects a security decorator that references an unconfigured scheme', asyn
       output: path.join(root, 'openapi.json'),
       info: { title: 'Catalog', version: '1' },
       securitySchemes: { bearer: { type: 'http', scheme: 'bearer' } },
-      profile: { mobx: false, validation: false },
+      profile: { validation: false },
     }),
     'NEST1405',
     /references security scheme "missing"/,

@@ -50,7 +50,7 @@ test('operation schema closures preserve resource references and schema-looking 
   await generateMaterializedSdk(document, {
     output,
     name: 'Scoped',
-    profile: { mobx: false, validation: true },
+    profile: { validation: true },
   });
   compileGeneratedSdk(output, [], {
     strict: true,

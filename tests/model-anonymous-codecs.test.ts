@@ -26,7 +26,7 @@ export class Other extends TOtherBaseModel {}
 function companion(t: TestContext, sources: Record<string, string>): string {
   const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-anonymous-codecs-', name: null, linkWorkspaceNodeModules: true });
   writeModelSources(sourceRoot, sources);
-  const result = generate({ root, profile: { mobx: false, validation: true } });
+  const result = generate({ root, profile: { validation: true } });
   const file = result.artifacts.find(artifact => artifact.path.endsWith('contracts.model.generated.ts'));
   assert.ok(file);
   return file.content;
@@ -52,7 +52,7 @@ test('unnamed object types with different shapes in one project generate with di
   // Per-file counter ids used to name both `__anon_1`, and generation threw a schema identity conflict.
   const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-anonymous-shapes-', name: null, linkWorkspaceNodeModules: true });
   writeModelSources(sourceRoot, { 'contracts.model.ts': contracts('billingAddress'), 'other.model.ts': other });
-  const result = generate({ root, profile: { mobx: false, validation: true } });
+  const result = generate({ root, profile: { validation: true } });
   const idIn = (name: string) => result.artifacts.find(artifact => artifact.path.endsWith(name))?.content.match(/"(Anonymous_[0-9a-f]{8})"/)?.[1];
   assert.ok(idIn('contracts.model.generated.ts'));
   assert.ok(idIn('other.model.generated.ts'));

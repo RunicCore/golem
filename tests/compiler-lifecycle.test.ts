@@ -94,7 +94,7 @@ function controllerContext(root: string, source: string, output: string) {
     sources: [source],
     output,
     info: { title: 'Lifecycle fixture', version: '1' },
-    profile: { mobx: false, validation: false },
+    profile: { validation: false },
   } as const;
 }
 
@@ -133,7 +133,7 @@ function errorRecord(error: unknown): { readonly name?: unknown; readonly error?
     : {};
 }
 
-const lifecycleProfile = { mobx: false, validation: false } as const;
+const lifecycleProfile = { validation: false } as const;
 
 function modelSourceFixture(t: TestContext, name: string): { readonly fixture: Fixture; readonly source: string } {
   const fixture = projectFixture(t, name);
@@ -258,7 +258,7 @@ test('owned generator scope preserves its primary error when API cleanup also fa
   const closing = failTimingRecordOnClose(t);
 
   assert.throws(
-    () => generateModel({ root: fixture.root, sources: [source], profile: { mobx: false, validation: false } }),
+    () => generateModel({ root: fixture.root, sources: [source], profile: { validation: false } }),
     (error: unknown) => {
       const record = errorRecord(error);
       assert.equal(record.name, 'SuppressedError');

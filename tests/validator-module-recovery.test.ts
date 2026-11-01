@@ -22,7 +22,7 @@ function sdkValidatorModules(root: string): string[] {
 
 function fixture(t: TestContext) {
   const root = workspaceLinkedProject(t, 'golem-validator-recovery-', '{"type":"module"}');
-  writeFixture(root, { mobx: false, validation: true });
+  writeFixture(root, { validation: true });
   const model = path.join(root, 'src/cart.model.ts');
   copyFixtureFile(root, 'pipeline/validator-module-recovery/cart.model.ts', 'src/cart.model.ts');
   const config = path.join(root, 'golem.yaml');

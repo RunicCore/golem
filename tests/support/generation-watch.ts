@@ -19,7 +19,7 @@ export function generationWatchFixture(t: TestContext): { root: string; config: 
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   fs.writeFileSync(path.join(root, 'package.json'), '{"name":"watch-fixture","type":"module"}');
   linkGolemPackages(root, ['golem', 'golem-model', 'golem-openapi-ts']);
-  writeFixture(root, { mobx: false, validation: true });
+  writeFixture(root, { validation: true });
   const config = path.join(root, 'golem.yaml');
   fs.writeFileSync(config, fs.readFileSync(config, 'utf8').replace(
     'validation: true\n',

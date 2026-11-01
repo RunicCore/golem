@@ -47,13 +47,13 @@ test('the shared root keys are read by core and reach every plan entry, and a ke
   // protects: T-765 page "Root keys stay shared": version, tsconfig, validation, allowAny, exact, unknownFormats (and mobx for now) stay at the root
   const defaults = project(t, `version: 1\n${DOCS}`);
   const config = await loadConfig(defaults.filename);
-  assert.deepEqual(config.profile, { mobx: false, validation: true, allowAny: false, unknownFormats: 'error' });
+  assert.deepEqual(config.profile, { validation: true, allowAny: false, unknownFormats: 'error' });
   assert.equal(config.tsconfig, path.join(defaults.root, 'tsconfig.json'));
   assert.deepEqual(optionsOf(config.jobs[0]).seen, { profile: config.profile, tsconfig: config.tsconfig });
 
-  const explicit = project(t, `version: 1\nmobx: true\nvalidation: sanity\nallowAny: true\nexact: false\nunknownFormats: warn\n${DOCS}`);
+  const explicit = project(t, `version: 1\nvalidation: sanity\nallowAny: true\nexact: false\nunknownFormats: warn\n${DOCS}`);
   const explicitConfig = await loadConfig(explicit.filename);
-  assert.deepEqual(explicitConfig.profile, { mobx: true, validation: 'sanity', allowAny: true, unknownFormats: 'warn' });
+  assert.deepEqual(explicitConfig.profile, { validation: 'sanity', allowAny: true, unknownFormats: 'warn' });
   assert.deepEqual(optionsOf(explicitConfig.jobs[0]).seen, { profile: explicitConfig.profile, tsconfig: explicitConfig.tsconfig, exact: false });
 });
 

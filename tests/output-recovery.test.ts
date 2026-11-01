@@ -19,7 +19,7 @@ function fixture(t: TestContext, inventory = true): OutputFixture {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'golem-recovery-'));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const job = jobWithFacts('model', '@exprtlabs/golem-model', { ownedRoots: [directory] });
-  const config: GolemConfig = { ...configFor(directory, job), profile: { mobx: false, validation: false } };
+  const config: GolemConfig = { ...configFor(directory, job), profile: { validation: false } };
   if (inventory) fs.mkdirSync(path.dirname(config.inventoryFile), { recursive: true });
   return { directory, config, job };
 }

@@ -5,7 +5,7 @@ import { buildModelProject, createModelProject, generatedModelFiles, writeModelG
 import type { TestContext } from 'node:test';
 
 /** The generation profile of every scale project. */
-export const SCALE_PROFILE = { mobx: false, validation: true } as const;
+export const SCALE_PROFILE = { validation: true } as const;
 
 /** Write `count` scale models into the source folder of a model project. */
 export function writeScaleModels(sourceRoot: string, count: number): void {

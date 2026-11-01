@@ -8,7 +8,7 @@ import type { GolemConfig, GolemJob } from '#golem/config';
 import { applyJob, loadInventory } from '#golem/outputs';
 import { generate } from '#openapi/generator';
 import type { OpenApiGenerationResult } from '#openapi/generator';
-import type { OpenApiGenerationProfile } from '#openapi/profile';
+import type { OpenApiGenerationProfile } from './openapi/helpers.js';
 import { repoRoot, tscBin } from './openapi/helpers.js';
 import { snapshotFilesystem } from './fixture-project.js';
 import { configFor, jobWithFacts } from './support/output-config.js';
@@ -22,7 +22,7 @@ interface OpenApiFixture {
   readonly options: Parameters<typeof generate>[0];
 }
 
-const profile = (validation: boolean): OpenApiGenerationProfile => ({ mobx: false, validation });
+const profile = (validation: boolean): OpenApiGenerationProfile => ({ validation });
 
 function metadata(title: string): Record<string, unknown> {
   return { openapi: '3.1.0', info: { title, version: '1' } };

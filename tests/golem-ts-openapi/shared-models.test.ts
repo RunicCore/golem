@@ -110,7 +110,7 @@ const SDK_PACKAGE: Readonly<Record<string, string>> = {
   'money.model.d.ts': "/* @golem-model-manifest ./model-manifest.json */\nimport type { IObject } from '@exprtlabs/golem/model';\nexport type TMoney = IObject<{ currency: string }>;\n",
   'models.ts': 'export class MoneyModel {}\n',
   'model-manifest.json': JSON.stringify({
-    profile: { mobx: false, validation: true, allowAny: false, unknownFormats: 'error' },
+    profile: { validation: true, allowAny: false, unknownFormats: 'error' },
     models: [{ id: 'sdk:money', codecId: 'Money_0a1b2c3d', allowAny: false, type: { module: './money.model.d.ts', export: 'TMoney' }, generated: { module: './models.ts', export: 'MoneyModel' } }],
   }),
 };
@@ -184,7 +184,7 @@ for (const validation of [false, true]) {
     const generated = writeSdk({
       openapi: '3.1.0', info: { title: 'Sdk', version: '1' },
       components: { schemas: { Money: { type: 'object', required: ['currency'], properties: { currency: { type: 'string' } } } } },
-    }, { output: sdk, name: 'sdk', profile: { mobx: false, validation } });
+    }, { output: sdk, name: 'sdk', profile: { validation } });
     writeGeneratedArtifacts([...generated.artifacts, { path: path.join(sdk, 'package.json'), content: JSON.stringify({ name: '@acme/sdk', version: '1.0.0', type: 'module', types: './index.ts', main: './index.ts' }) }]);
 
     await runPipeline(config);

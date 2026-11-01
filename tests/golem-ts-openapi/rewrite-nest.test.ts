@@ -29,7 +29,7 @@ function project(t: TestContext, files: Readonly<Record<string, string>>): strin
     links: 'workspace',
     files: { 'golem.yaml': 'version: 1\nts-openapi:\n  extensions:\n    nest: {}\nmodel: {}\n', ...files },
   });
-  writeGeneratedArtifacts(generate({ root, profile: { mobx: false, validation: true } }).artifacts);
+  writeGeneratedArtifacts(generate({ root, profile: { validation: true } }).artifacts);
   return root;
 }
 

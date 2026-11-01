@@ -4,7 +4,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { generate } from '#openapi/generator';
 
-const profile = { mobx: false, validation: true };
+const profile = { validation: true };
 
 test('generate takes the standalone or golem mode of the job and refuses any other value', async (t) => {
   // protects: T-695 the mode reaches the generator and is validated there

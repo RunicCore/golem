@@ -59,7 +59,7 @@ export class Clash extends TClashBaseModel {
 }
 `,
   });
-  writeModelGolemYaml(root, { mobx: false, validation: false });
+  writeModelGolemYaml(root, { validation: false });
   await buildModelProject(root, ['--noUnusedLocals', '--noUnusedParameters']);
   fs.writeFileSync(path.join(root, 'verify.mjs'), `import assert from 'node:assert/strict';
 import { findGeneratedModelDefinition, requireObjectCodec } from '@exprtlabs/golem/internal/model-runtime';
@@ -78,7 +78,7 @@ test('golem build rewrites nested model serde calls and preserves class construc
   const sourceFile = path.join(sourceRoot, 'item.model.ts');
   fs.writeFileSync(sourceFile, source);
 
-  writeModelGolemYaml(root, { mobx: false, validation: true });
+  writeModelGolemYaml(root, { validation: true });
   await buildModelProject(root);
 
   const emitted = fs.readFileSync(path.join(root, 'build/item.model.js'), 'utf8');
@@ -101,7 +101,7 @@ test('golem build rewrites nested model serde calls and preserves class construc
 });
 
 /** Builds the project at `profile` and imports its built `use.js`; `files` are the generated files of that build. */
-async function buildAndImport<Exports>(root: string, profile: { readonly mobx: boolean; readonly validation: boolean }): Promise<{ readonly loaded: Exports; readonly files: ReturnType<typeof generatedModelFiles> }> {
+async function buildAndImport<Exports>(root: string, profile: { readonly mobx?: boolean; readonly validation: boolean }): Promise<{ readonly loaded: Exports; readonly files: ReturnType<typeof generatedModelFiles> }> {
   writeModelGolemYaml(root, profile);
   await buildModelProject(root);
   const files = generatedModelFiles(root);
@@ -118,7 +118,7 @@ test('a field typed with an app class from its own file builds, parses and write
     'order.model.ts': `${imodel}import type { Customer } from './customer.js';\nexport type TOrder = IModel<{ id: string; customer: Customer }>;\n`,
     'use.ts': "import { parse, stringify } from '@exprtlabs/golem/serde';\nimport type { TOrder } from './order.model.js';\nexport { Customer } from './customer.js';\nexport const order = parse<TOrder>('{\"id\":\"o1\",\"customer\":{\"name\":\"Ada\"}}');\nexport const text = stringify<TOrder>(order);\n",
   });
-  const { loaded, files: firstFiles } = await buildAndImport<{ Customer: new () => object; order: { customer: object }; text: string }>(root, { mobx: false, validation: true });
+  const { loaded, files: firstFiles } = await buildAndImport<{ Customer: new () => object; order: { customer: object }; text: string }>(root, { validation: true });
   assert.ok(loaded.order.customer instanceof loaded.Customer);
   assert.equal(loaded.text, '{"id":"o1","customer":{"name":"Ada"}}');
   await generateModels(root);
@@ -136,7 +136,7 @@ test('a class field that a projection reaches builds: a model that picks it from
     'invoice.model.ts': `${imodel}import type { TOrder } from './order.model.js';\nexport type TInvoice = IObject<{ order: Pick<TOrder, 'customer'> }>;\n`,
     'use.ts': "import { parse } from '@exprtlabs/golem/serde';\nimport type { TInvoice } from './invoice.model.js';\nexport { Customer } from './customer.js';\nexport const invoice = parse<TInvoice>('{\"order\":{\"customer\":{\"name\":\"Ada\"}}}');\n",
   });
-  const { loaded } = await buildAndImport<{ Customer: new () => object; invoice: { order: { customer: object } } }>(root, { mobx: false, validation: true });
+  const { loaded } = await buildAndImport<{ Customer: new () => object; invoice: { order: { customer: object } } }>(root, { validation: true });
   assert.ok(loaded.invoice.order.customer instanceof loaded.Customer);
 });
 
@@ -151,7 +151,7 @@ test('two models that name each other through their app classes build, and each 
     'order.ts': "import { TOrderBaseModel } from './order.model.generated.js';\nexport class Order extends TOrderBaseModel {}\n",
     'use.ts': "import { parse } from '@exprtlabs/golem/serde';\nimport type { TCustomer } from './customer.model.js';\nimport type { TOrder } from './order.model.js';\nexport { Customer } from './customer.js';\nexport { Order } from './order.js';\nexport const customer = parse<TCustomer>('{\"name\":\"Ada\",\"orders\":[{\"id\":\"o1\",\"customer\":{\"name\":\"Ada\",\"orders\":[]}}]}');\nexport const order = parse<TOrder>('{\"id\":\"o1\",\"customer\":{\"name\":\"Ada\",\"orders\":[]}}');\n",
   });
-  const { loaded } = await buildAndImport<{ Customer: new () => object; Order: new () => object; customer: { orders: object[] }; order: { customer: object } }>(root, { mobx: false, validation: true });
+  const { loaded } = await buildAndImport<{ Customer: new () => object; Order: new () => object; customer: { orders: object[] }; order: { customer: object } }>(root, { validation: true });
   assert.ok(loaded.customer.orders[0] instanceof loaded.Order);
   assert.ok(loaded.order.customer instanceof loaded.Customer);
 });
@@ -166,7 +166,7 @@ test('a field typed with a projection of an app class builds on the first run, k
     'order.model.ts': `${imodel}import type { Customer } from './customer.js';\nexport type TOrder = IModel<{ id: string; summary: Pick<Customer, 'name' | 'age'> }>;\n`,
     'use.ts': "import { parse, stringify } from '@exprtlabs/golem/serde';\nimport type { TOrder } from './order.model.js';\nexport { Customer } from './customer.js';\nexport const order = parse<TOrder>('{\"id\":\"o1\",\"summary\":{\"name\":\"Ada\"}}');\nexport const text = stringify<TOrder>(order);\n",
   });
-  const { loaded, files: firstFiles } = await buildAndImport<{ order: { id: string; summary: { name: string } }; text: string }>(root, { mobx: false, validation: true });
+  const { loaded, files: firstFiles } = await buildAndImport<{ order: { id: string; summary: { name: string } }; text: string }>(root, { validation: true });
   assert.deepEqual({ ...loaded.order.summary }, { name: 'Ada' });
   assert.equal(loaded.text, '{"id":"o1","summary":{"name":"Ada"}}');
   await generateModels(root);
@@ -190,7 +190,7 @@ for (const row of [
       'order.model.ts': `${imodel}import type { Customer } from './customer.js';\nexport type TOrder = IModel<{ id: string; summary: ${row.projection} }>;\n`,
       'use.ts': `import { parse, stringify } from '@exprtlabs/golem/serde';\nimport type { TOrder } from './order.model.js';\nexport { Customer } from './customer.js';\nexport const order = parse<TOrder>('{"id":"o1","summary":${row.json}}');\nexport const text = stringify<TOrder>(order);\n`,
     });
-    writeModelGolemYaml(root, { mobx: false, validation: true });
+    writeModelGolemYaml(root, { validation: true });
     await buildModelProject(root);
     const firstFiles = generatedModelFiles(root);
     const companion = firstFiles.find(file => file.path.endsWith('order.model.generated.ts'))?.content ?? '';
@@ -216,7 +216,7 @@ function orderProject(t: TestContext, options: { readonly projection: string; re
     'order.model.ts': `${IMODEL}import type { ${imports} } from './customer.js';\n${before}export type TOrder = IModel<{ id: string; summary: ${projection} }>;\n`,
     'use.ts': "import { parse } from '@exprtlabs/golem/serde';\nimport type { TOrder } from './order.model.js';\nexport { Customer } from './customer.js';\nexport const accepts = (summary: string): boolean => { try { parse<TOrder>(`{\"id\":\"o1\",\"summary\":${summary}}`); return true; } catch { return false; } };\n",
   });
-  writeModelGolemYaml(project.root, { mobx: false, validation: true });
+  writeModelGolemYaml(project.root, { validation: true });
   return project;
 }
 
@@ -280,7 +280,7 @@ test('a model defined by a keyof of its own class stops the build with a diagnos
     'customer.model.ts': `${IMODEL}import type { Customer } from './customer.js';\nexport type TCustomer = IModel<{ [K in keyof Customer]: Customer[K] }>;\n`,
     'customer.ts': CUSTOMER_CLASS,
   });
-  writeModelGolemYaml(root, { mobx: false, validation: true });
+  writeModelGolemYaml(root, { validation: true });
   await assert.rejects(buildModelProject(root), /RUNM1058: .*TCustomer maps over its own class Customer/);
 });
 
@@ -348,6 +348,6 @@ export const hole = run(() => stringify<TList>({ names: ['x', , ] } as never));
 export const anyHole = run(() => stringify<TAny>({ values: ['x', , ] } as never));
 `,
   });
-  const { loaded } = await buildAndImport<{ undefinedItem: string; hole: string; anyHole: string }>(root, { mobx: false, validation: true });
+  const { loaded } = await buildAndImport<{ undefinedItem: string; hole: string; anyHole: string }>(root, { validation: true });
   assert.deepEqual({ ...loaded }, { undefinedItem: '{"names":["x",null]}', hole: 'Model validation failed.', anyHole: 'Model validation failed.' });
 });

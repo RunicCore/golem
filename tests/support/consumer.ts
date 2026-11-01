@@ -1,3 +1,4 @@
+import { type WithMobx } from './mobx-extension.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { GolemProfile } from '@exprtlabs/golem/generator-api';
@@ -12,7 +13,7 @@ export function workspaceLinkedProject(t: TestContext, prefix: string, packageJs
   return root;
 }
 
-export function writeFixture(root: string, profile: GolemProfile, includeModels = true): void {
+export function writeFixture(root: string, profile: WithMobx<GolemProfile>, includeModels = true): void {
   copyFixtureFile(root, 'packed/profile/api.json', 'api.json');
   copyFixtureFile(root, 'packed/profile/tsconfig.json', 'tsconfig.json');
   if (includeModels) copyFixtureFile(root, 'packed/profile/src/cart.model.ts', 'src/cart.model.ts');
@@ -20,7 +21,6 @@ export function writeFixture(root: string, profile: GolemProfile, includeModels 
 
   const configuration = [
     'version: 1',
-    `mobx: ${profile.mobx}`,
     `validation: ${profile.validation}`,
     'openapi-ts:',
     '  sdks:',
@@ -29,6 +29,7 @@ export function writeFixture(root: string, profile: GolemProfile, includeModels 
     '      name: Profile',
     // MobX needs the golem mode, which needs the model block.
     ...(profile.mobx && includeModels ? ['      mode: golem'] : []),
+    ...(profile.mobx ? ['  extensions:', '    mobx: {}'] : []),
     ...(includeModels ? ['model: {}'] : []),
     '',
   ].join('\n');

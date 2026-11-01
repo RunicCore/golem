@@ -17,7 +17,6 @@ import { identifier, tsSource, type SourceFragment } from './source-template.js'
 
 function profile(overrides: Partial<GolemProfile> = {}): GolemProfile {
   return {
-    mobx: false,
     validation: true,
     allowAny: false,
     ...overrides,
@@ -294,11 +293,11 @@ const show = (level: Level): string => (level === 'sanity' ? "'sanity'" : String
 test('resolveProfile takes validation true, false and sanity and refuses every other value', () => {
   // protects: T-663 an extension author's GolemProfile carries validation: 'sanity'; other values are a TypeError
   for (const validation of [true, false, 'sanity'] as const) {
-    assert.deepEqual(resolveProfile({ mobx: false, validation }), { mobx: false, validation, allowAny: false, unknownFormats: 'error' });
+    assert.deepEqual(resolveProfile({ validation }), { validation, allowAny: false, unknownFormats: 'error' });
   }
   for (const validation of ['full', 'true', 1, null, undefined]) {
     assert.throws(
-      () => resolveProfile({ mobx: false, validation } as unknown as GolemProfile),
+      () => resolveProfile({ validation } as unknown as GolemProfile),
       { name: 'TypeError', message: 'Generation profile validation must be true, false or "sanity".' },
       String(validation),
     );
@@ -351,7 +350,7 @@ function writeManifestProject(t: TestContext, manifest: Level): { readonly root:
   const { root, source } = modelProject(t);
   fs.writeFileSync(source, "import type { IModel } from '@exprtlabs/golem/model';\nexport type TCard = IModel<{ id: string }>;\n");
   const manifestFile = path.join(root, 'external-model-manifest.json');
-  fs.writeFileSync(manifestFile, JSON.stringify({ profile: { mobx: false, validation: manifest, allowAny: false, unknownFormats: 'error' }, models: [] }));
+  fs.writeFileSync(manifestFile, JSON.stringify({ profile: { validation: manifest, allowAny: false, unknownFormats: 'error' }, models: [] }));
   return { root, source, manifestFile };
 }
 
@@ -367,7 +366,7 @@ for (const [manifest, project] of [['sanity', true], [true, 'sanity'], [false, '
     const { root, source, manifestFile } = writeManifestProject(t, manifest);
     assert.throws(
       () => generate({ root, sources: [source], profile: profile({ validation: project }), manifestInputs: [manifestFile] }),
-      new RegExp(`profile mismatch in .*: validation: manifest ${manifest}, project ${project}\\. The project expects \\{ mobx: false, validation: ${project},`),
+      new RegExp(`profile mismatch in .*: validation: manifest ${manifest}, project ${project}\\. The project expects \\{ validation: ${project},`),
     );
   });
 }

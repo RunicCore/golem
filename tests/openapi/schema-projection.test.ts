@@ -93,7 +93,7 @@ async function generateProjection(t: TestContext, openapi: string) {
 }
 
 /** Operations of a validating SDK check with their generated validator modules. */
-const validatingProfile = { mobx: false, validation: true } as const;
+const validatingProfile = { validation: true } as const;
 
 interface OperationProbe {
   /** True when the client let the input through to the transport. */
@@ -577,7 +577,7 @@ test('literal example and default $ref values are not treated as schema referenc
     const result = await generateMaterializedSdk(document, {
       output,
       name: 'LiteralRef',
-      profile: { mobx: false, validation: true },
+      profile: { validation: true },
     });
     assert.ok(result.artifacts.some((artifact) => artifact.path.endsWith('/validators.generated.ts') && artifact.content.includes('export function validate_putX_input(')));
     compileGeneratedSdk(output, []);
@@ -727,7 +727,7 @@ test('an external ./nested.json $ref projects directionally without cloning comp
     input: path.join(directory, 'openapi.json'),
     output,
     name: 'External',
-    profile: { mobx: false, validation: true },
+    profile: { validation: true },
   });
   const inputSchemas = result.artifacts.find((artifact) => artifact.path.endsWith('/input-schemas.ts'))?.content ?? '';
   // protects: security: a readOnly field of an external $ref never enters the request schema (a client cannot set a server field)

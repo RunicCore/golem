@@ -29,7 +29,7 @@ for (const { claim, fixture, spec } of SDK_CLAIMS) {
       input: path.join(sourceRoot, spec),
       output: path.join(sourceRoot, 'sdk'),
       name: 'Payments',
-      profile: { mobx: false, validation: true },
+      profile: { validation: true },
     })).artifacts);
     await assertWireClaimBuilds(root);
   });
@@ -39,7 +39,7 @@ test('WireFormat<T> equals the emitted JSON type: nested and omitted-field SDK m
   // MobX needs the golem mode, whose SDK the build writes from the openapi job before the models job reads it.
   const { root } = wireClaimProject(t, 'nested-sdk', true);
   listProjectDependencies(root, ['@exprtlabs/golem-openapi-ts']);
-  fs.writeFileSync(path.join(root, 'golem.yaml'), 'version: 1\nmobx: true\nvalidation: true\nopenapi-ts:\n  sdks:\n    - input: src/payments.yaml\n      output: src/sdk\n      name: Payments\n      mode: golem\nmodel: {}\n');
+  fs.writeFileSync(path.join(root, 'golem.yaml'), 'version: 1\nvalidation: true\nopenapi-ts:\n  sdks:\n    - input: src/payments.yaml\n      output: src/sdk\n      name: Payments\n      mode: golem\n  extensions:\n    mobx: {}\nmodel: {}\n');
   await assertWireClaimBuilds(root);
 });
 
@@ -63,7 +63,7 @@ export class PaymentEditor extends TPaymentEditorBaseModel {
 }
 `,
   });
-  writeModelGolemYaml(root, { mobx: false, validation: true });
+  writeModelGolemYaml(root, { validation: true });
   writeModelSources(sourceRoot, {
     'main.ts': `import { toWireFormat } from '@exprtlabs/golem/serde';
 import { PaymentEditor, type TPaymentEditor } from './payment-editor.model.js';
@@ -111,7 +111,7 @@ export class Slot extends TSlotBaseModel {}
 export class Visit extends TVisitBaseModel {}
 `,
   });
-  writeModelGolemYaml(root, { mobx: false, validation: true });
+  writeModelGolemYaml(root, { validation: true });
   await buildModelProject(root);
   const generated = await import(pathToFileURL(path.join(root, 'build/visit.model.generated.js')).href) as {
     readonly toWireFormatTVisit: (value: unknown) => Record<string, unknown>;

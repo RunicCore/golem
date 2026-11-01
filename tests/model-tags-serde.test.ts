@@ -22,7 +22,7 @@ test('validation false retains Date and serde conversions without a validator re
     imports: tsSource`import type { TSerde } from '@exprtlabs/golem/tags';\nimport { encode, decode } from './codecs.js';`,
     fields: tsSource`when?: Date; token: number & TSerde<typeof encode, typeof decode>`,
   }).text);
-  await buildModelProjectWith(root, { mobx: false, validation: false });
+  await buildModelProjectWith(root, { validation: false });
   const generated = generatedModelFiles(root).find((artifact) => artifact.path.endsWith('/a.model.generated.ts'))?.content ?? '';
   assert.match(generated, /__golemSerialize0Source/);
   const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
@@ -47,8 +47,8 @@ export function decode(wire: unknown): number { return Number(wire); }
     imports: tsSource`import type { TSerde } from '@exprtlabs/golem/tags';\nimport { encode, decode } from './codecs.js';`,
     fields: tsSource`value: number & TSerde<typeof encode, typeof decode>`,
   }).text);
-  assert.throws(() => generate({ root, profile: { mobx: false, validation: true } }), /RUNM1011.*contains unknown/);
-  assert.doesNotThrow(() => generate({ root, profile: { mobx: false, validation: true, allowAny: true } }));
+  assert.throws(() => generate({ root, profile: { validation: true } }), /RUNM1011.*contains unknown/);
+  assert.doesNotThrow(() => generate({ root, profile: { validation: true, allowAny: true } }));
 });
 
 test('serde wire descriptors validate nested constraints before decode and after encode', async t => {
@@ -59,7 +59,7 @@ test('serde wire descriptors validate nested constraints before decode and after
     imports: tsSource`import type { TSerde, MinLength } from '@exprtlabs/golem/tags';\nimport { encode, decode } from './codecs.js';`,
     fields: tsSource`value: number & TSerde<typeof encode, typeof decode>`,
   }).text);
-  await buildModelProjectWith(root, { mobx: false, validation: true });
+  await buildModelProjectWith(root, { validation: true });
   const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
   const codecs = await import(path.toNamespacedPath(path.join(root, 'build/codecs.js')));
   assert.throws(() => requireObjectCodec(generatedCodecIdFromRoot(root, 'TA')).parse( JSON.stringify({ value: { code: 'x' } })));
@@ -76,7 +76,7 @@ test('serde wire predicates run on the wire plane', async t => {
     imports: tsSource`import type { TSerde, TValidation } from '@exprtlabs/golem/tags';\nimport { encode, decode, positive } from './codecs.js';`,
     fields: tsSource`value: number & TValidation<typeof positive> & TSerde<typeof encode, typeof decode>`,
   }).text);
-  await buildModelProjectWith(root, { mobx: false, validation: true });
+  await buildModelProjectWith(root, { validation: true });
   const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
   const codecs = await import(path.toNamespacedPath(path.join(root, 'build/codecs.js')));
 
@@ -164,7 +164,7 @@ export function decode(value: string): Date { return new Date(value); }`,
 import * as bindings from './bindings.js';`,
     }).text);
     assert.throws(
-      () => generate({ root, profile: { mobx: false, validation: true } }),
+      () => generate({ root, profile: { validation: true } }),
       item.error,
       item.name,
     );
@@ -180,7 +180,7 @@ test('conflicting serde pairs are rejected during model analysis', t => {
     fields: tsSource`value: number & TSerde<typeof encodeA, typeof decodeA> & TSerde<typeof encodeB, typeof decodeB>`,
   }).text);
   assert.throws(
-    () => generate({ root, profile: { mobx: false, validation: false } }),
+    () => generate({ root, profile: { validation: false } }),
     /Conflicting serde tags/,
   );
 });
@@ -193,7 +193,7 @@ test('generic utility aliases retain nested constraints, predicates, and serde b
     imports: tsSource`import type { MinLength, TSerde, TValidation } from '@exprtlabs/golem/tags';\nimport { encodeDate, decodeDate, valid } from './bindings.js';\ntype Tagged<T extends string> = T & MinLength<3> & TValidation<typeof valid>;\ntype Box<T> = { value: T };\ntype Payload = Partial<Pick<Box<Tagged<string>>, 'value'>> & { when: Date & TSerde<typeof encodeDate, typeof decodeDate> };`,
     fields: tsSource`payload: Payload`,
   }).text);
-  await buildModelProjectWith(root, { mobx: false, validation: true });
+  await buildModelProjectWith(root, { validation: true });
   const shared = generatedModelFiles(root).map((artifact) => artifact.content).join('\n');
   assert.match(shared, /__golemSerialize0Source/);
   const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
@@ -228,7 +228,7 @@ export type TA = IObject<{ token: number & TSerde<typeof encode, typeof decode>;
 import type { TA } from './a.model.js';
 export type TB = IObject<{ back?: TA; copy: Pick<TA, 'token'> }>;
 `.text);
-  await buildModelProjectWith(root, { mobx: false, validation: true });
+  await buildModelProjectWith(root, { validation: true });
   const a = await import(path.toNamespacedPath(path.join(root, 'build/a.model.generated.js')));
   const b = await import(path.toNamespacedPath(path.join(root, 'build/b.model.generated.js')));
 
@@ -252,7 +252,7 @@ export function fromFlag(wire: boolean): 'yes' | 'no' { return wire ? 'yes' : 'n
       imports: tsSource`import type { TSerde } from '@exprtlabs/golem/tags';\nimport { toCents, fromCents, toFlag, fromFlag } from './codecs.js';`,
       fields: tsSource`amount: number & TSerde<typeof toCents, typeof fromCents>; answer: ('yes' | 'no') & TSerde<typeof toFlag, typeof fromFlag>`,
     }).text);
-    await buildModelProjectWith(root, { mobx: false, validation });
+    await buildModelProjectWith(root, { validation });
     const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
     const parsed = requireObjectCodec(generatedCodecIdFromRoot(root, 'TA')).parse('{"amount":500,"answer":true}') as { amount: number; answer: string };
     assert.deepEqual({ amount: parsed.amount, answer: parsed.answer }, { amount: 5, answer: 'yes' });
@@ -277,7 +277,7 @@ type Token = number & TSerde<typeof encode, typeof decode>;
 export type TBoth = IModel<{ token: Token; label: string } & { token: Token; at: Date }>;
 export type TEither = IModel<{ value: ({ kind: 'one'; token: Token } | { kind: 'two'; other: Token }) & Discriminator<'kind'> }>;
 `);
-    await buildModelProjectWith(root, { mobx: false, validation });
+    await buildModelProjectWith(root, { validation });
     await import(path.toNamespacedPath(path.join(root, 'build/a.model.generated.js')));
     const codecs = await import(path.toNamespacedPath(path.join(root, 'build/codecs.js')));
     const both = requireObjectCodec(generatedCodecIdFromRoot(root, 'TBoth'));

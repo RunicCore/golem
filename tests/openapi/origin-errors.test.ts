@@ -6,7 +6,7 @@ import { generate, loadValidatedDocument, writeSdk } from '#openapi/generator';
 import { createFixtureProject } from '../fixture-project.js';
 import { writeOpenApiDocument } from './helpers.js';
 
-const profile = { mobx: false, validation: false };
+const profile = { validation: false };
 
 function rootDocument(components: Record<string, unknown>): Record<string, unknown> {
   return { openapi: '3.1.0', info: { title: 'Origins', version: '1' }, components: { schemas: components } };

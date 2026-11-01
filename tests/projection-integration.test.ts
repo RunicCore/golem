@@ -52,7 +52,7 @@ test('public directional projection handles repeated aliases and allOf requireme
       RequiredOnly: { type: 'object', required: ['token'], additionalProperties: { type: 'string' } },
     } },
   }));
-  const result = await generate({ input, output: path.join(root, 'sdk'), name: 'Projection', profile: { mobx: false, validation: true } });
+  const result = await generate({ input, output: path.join(root, 'sdk'), name: 'Projection', profile: { validation: true } });
   assert.equal(fs.existsSync(path.join(root, 'sdk')), false, 'public generation remains pure');
   for (const artifact of result.artifacts) {
     fs.mkdirSync(path.dirname(artifact.path), { recursive: true });

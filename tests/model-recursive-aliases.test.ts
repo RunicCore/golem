@@ -8,8 +8,8 @@ import { buildRecursiveProject, importCodecs, json } from './support/recursive-f
 
 
 const profiles: readonly (readonly [string, GolemProfile])[] = [
-  ['validation off', { mobx: false, validation: false }],
-  ['validation on', { mobx: false, validation: true }],
+  ['validation off', { validation: false }],
+  ['validation on', { validation: true }],
 ];
 
 const sources = {

@@ -74,7 +74,7 @@ export type Charge = { id: string; at: Temporal.Instant; day?: Temporal.PlainDat
 export type TChargeRecord = IModel<Charge>;
 `,
   });
-  writeModelGolemYaml(root, { mobx: false, validation: true });
+  writeModelGolemYaml(root, { validation: true });
   await buildModelProject(root);
   const generated = await importBuilt(root, 'charge.model.generated.js');
   const wire = { id: 'c1', at: '2025-01-02T03:04:05Z', day: '2025-01-02', spent: 'PT5M' };
@@ -185,7 +185,7 @@ test('parse<T> reads an app model over an SDK model of golem mode, with the limi
 test('a standalone model over an SDK type with Temporal dates derives from the plain type and converts the dates', async () => {
   // protects: T-700 R-83 an app model over a standalone SDK type with global Temporal fields derives (it stopped with RUNM1004)
   const { root, sourceRoot } = createModelProject(scope, { prefix: 'sdk-app-model-standalone-', name: 'standalone-sdk-model', linkWorkspaceNodeModules: true, compilerOptions: { lib: ['ES2023', 'DOM', 'DOM.Iterable', 'esnext.temporal'] } });
-  await generateMaterializedSdk(chargeDocument(), { output: path.join(sourceRoot, 'sdk'), name: 'Charges', dates: 'temporal', profile: { mobx: false, validation: true, allowAny: false } });
+  await generateMaterializedSdk(chargeDocument(), { output: path.join(sourceRoot, 'sdk'), name: 'Charges', dates: 'temporal', profile: { validation: true, allowAny: false } });
   writeModelSources(sourceRoot, {
     'charge.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
 import type { Charge } from './sdk/index.js';
@@ -199,7 +199,7 @@ export const read = (text: string) => parse<ChargeRecord>(text);
 export const write = (value: ChargeRecord) => stringify<ChargeRecord>(value);
 `,
   });
-  writeModelGolemYaml(root, { mobx: false, validation: true });
+  writeModelGolemYaml(root, { validation: true });
   await buildModelProject(root);
   const { ChargeRecord } = await importBuilt(root, 'charge.model.js');
   const { read, write } = await importBuilt(root, 'use.js');

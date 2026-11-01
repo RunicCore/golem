@@ -24,8 +24,8 @@ export class Right extends TRightBaseModel {}
 };
 
 const profiles: readonly (readonly [string, GolemProfile])[] = [
-  ['validation off', { mobx: false, validation: false }],
-  ['validation on', { mobx: false, validation: true }],
+  ['validation off', { validation: false }],
+  ['validation on', { validation: true }],
 ];
 
 for (const [label, profile] of profiles) {
@@ -184,7 +184,7 @@ test('a model two files away from a recursive model throws a Serialization LibEr
   // protects: T-165 a model that reaches a recursive model through a non-recursive file still checks for a cycle
   const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-encode-cycle-chain-', linkTypescript: true });
   writeModelSources(sourceRoot, chainedFileSources);
-  writeModelGolemYaml(root, { mobx: false, validation: true });
+  writeModelGolemYaml(root, { validation: true });
   await buildModelProject(root);
   const top = await import(pathToFileURL(path.join(root, 'build/top.model.generated.js')).href) as Codecs;
 
@@ -237,7 +237,7 @@ for (const validation of [false, true]) {
   test(`a recursive oneOf model encodes a nested branch and still throws on a cycle (validation ${validation ? 'on' : 'off'})`, async (t: TestContext) => {
     // protects: T-165 a recursive union encodes a nested value and a real cycle still throws
     const output = path.join(createFixtureProject(t, 'golem-openapi-recursive-union-'), 'sdk');
-    await generateMaterializedSdk(withRootOperations(unionDocument, 'Branch', 'Owner'), { output, name: 'Expr', profile: { mobx: false, validation, allowAny: false } });
+    await generateMaterializedSdk(withRootOperations(unionDocument, 'Branch', 'Owner'), { output, name: 'Expr', profile: { validation, allowAny: false } });
     compileGeneratedSdk(output, [], { strict: true, skipLibCheck: true });
     const branch = await sdkBodyCodec(output, 'Expr', 'Branch');
     const owner = await sdkBodyCodec(output, 'Expr', 'Owner');
@@ -278,9 +278,9 @@ const sdkDocument = {
 test('a model that holds an SDK model walks for cycles only when that model is recursive', async (t: TestContext) => {
   // protects: T-165 a parent of a non-recursive SDK model pays no cycle walk; a recursive SDK model still throws on a cycle
   const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-sdk-recursion-', linkTypescript: true });
-  writeGeneratedSdk(writeSdk, sdkDocument, { output: path.join(sourceRoot, 'sdk'), profile: { mobx: false, validation: true, allowAny: false } });
+  writeGeneratedSdk(writeSdk, sdkDocument, { output: path.join(sourceRoot, 'sdk'), profile: { validation: true, allowAny: false } });
   writeModelSources(sourceRoot, sdkHolderSources);
-  writeModelGolemYaml(root, { mobx: false, validation: true });
+  writeModelGolemYaml(root, { validation: true });
   await buildModelProject(root);
   const generated = fs.readFileSync(path.join(root, 'src/holder.model.generated.ts'), 'utf8');
   const walkers = [...generated.matchAll(/^(?:export )?function (\w+)\([^)]*\)[^{]*\{\n(?:(?!^\}).*\n)*?\s+assertAcyclicEncodeInput\(/gm)].map(match => match[1]);
@@ -310,7 +310,7 @@ test('a recursive inline discriminated union generates with validation on and ju
   // protects: T-199 a recursive tagged union of models builds with validation on instead of overflowing the stack
   const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-recursive-inline-union-', linkTypescript: true });
   writeModelSources(sourceRoot, inlineUnionSources);
-  writeModelGolemYaml(root, { mobx: false, validation: true });
+  writeModelGolemYaml(root, { validation: true });
   await buildModelProject(root);
   const codecs = await import(pathToFileURL(path.join(root, 'build/expr.model.generated.js')).href) as Codecs;
   const tree = (value: unknown) => ({ kind: 'branch', children: [{ kind: 'branch', children: [{ kind: 'branch', children: [{ kind: 'leaf', value }] }] }] });

@@ -32,7 +32,7 @@ function fixture(t: TestContext, options: { readonly noUnusedLocals?: boolean } 
 
 /** Builds the project without validation and records the calls its built modules make to the conversion exports `spied`. */
 async function buildAndSpy(project: ModelProject, spied: readonly string[]): ReturnType<typeof spyOnBuild> {
-  writeModelGolemYaml(project.root, { mobx: false, validation: false });
+  writeModelGolemYaml(project.root, { validation: false });
   await buildModelProject(project.root);
   return spyOnBuild(project.root, { '@exprtlabs/golem/internal/model-runtime': spied });
 }
@@ -61,7 +61,7 @@ test('equivalent MinLength tags of two companions compile to one validators modu
   const source = path.join(fixtureValue.sourceRoot, 'item.model.ts');
   writeFileSync(source, readFixture('models/model-artifact-efficiency/codec-compiles-equivalent-minlength-tags-in-each-companion/item.model.ts'));
   writeFileSync(path.join(fixtureValue.sourceRoot, 'other.model.ts'), readFixture("models/model-artifact-efficiency/codec-compiles-equivalent-minlength-tags-in-each-companion/other.model.ts"));
-  writeModelGolemYaml(fixtureValue.root, { mobx: false, validation: true });
+  writeModelGolemYaml(fixtureValue.root, { validation: true });
   await buildModelProject(fixtureValue.root);
   const artifacts = generatedModelFiles(fixtureValue.root);
   assert.equal(artifacts.filter((item) => item.path.endsWith('.validators.generated.ts')).length, 1, 'one validators module serves every companion');
@@ -96,7 +96,7 @@ test('validator bindings survive strict companion regeneration', async (t) => {
   const source = path.join(fixtureValue.sourceRoot, 'cart.model.ts');
   writeFileSync(path.join(fixtureValue.sourceRoot, 'rules.ts'), readFixture('models/model-artifact-efficiency/validator-regeneration/rules.ts'));
   writeFileSync(source, readFixture('models/model-artifact-efficiency/validator-regeneration/cart-initial.model.ts'));
-  const profile = { mobx: false, validation: true } as const;
+  const profile = { validation: true } as const;
 
   // The first pass emits the base class. Adding the handwritten class mirrors
   // consumer use and forces prospective validation on the second generation.
@@ -117,7 +117,7 @@ test('wire-only serde predicates do not create model-plane tag validators', asyn
   mkdirSync(fixtureValue.sourceRoot, { recursive: true });
   writeFileSync(path.join(fixtureValue.sourceRoot, 'codecs.ts'), readFixture("models/model-artifact-efficiency/wire-only-serde-predicates-do-not-create-model-plane-tag-validators/codecs.ts"));
   writeFileSync(path.join(fixtureValue.sourceRoot, 'item.model.ts'), readFixture("models/model-artifact-efficiency/wire-only-serde-predicates-do-not-create-model-plane-tag-validators/item.model.ts"));
-  writeModelGolemYaml(fixtureValue.root, { mobx: false, validation: true });
+  writeModelGolemYaml(fixtureValue.root, { validation: true });
   await buildModelProject(fixtureValue.root);
   const { Item } = await import(pathToFileURL(path.join(fixtureValue.root, 'build/item.model.js')).href) as {
     Item: new (values?: { value?: number }) => { value: number };
@@ -142,7 +142,7 @@ test('generated tag schemas retain distinct reference closures for duplicate loc
   writeFileSync(path.join(fixtureValue.sourceRoot, 'one/things.model.ts'), duplicateLocalNameReferenceModelSource({ valueType: 'string' }).text);
   writeFileSync(path.join(fixtureValue.sourceRoot, 'two/things.model.ts'), duplicateLocalNameReferenceModelSource({ valueType: 'number' }).text);
 
-  writeModelGolemYaml(fixtureValue.root, { mobx: false, validation: true });
+  writeModelGolemYaml(fixtureValue.root, { validation: true });
   await buildModelProject(fixtureValue.root);
   const [
     { Parent: OneParent, Child: OneChild },
@@ -185,7 +185,7 @@ test('generated tag schemas retain distinct reference closures for duplicate loc
 test('shared projection helpers retain distinct validators', async t => {
   const value = fixture(t);
   writeFileSync(path.join(value.sourceRoot, 'item.model.ts'), readFixture("models/model-artifact-efficiency/model-artifact-efficiency-item-model/item.model.ts"));
-  writeModelGolemYaml(value.root, { mobx: false, validation: true });
+  writeModelGolemYaml(value.root, { validation: true });
   await buildModelProject(value.root);
   const companion = generatedModelFiles(value.root).find(item => item.path.endsWith('/item.model.generated.ts'))?.content ?? '';
   assert.equal((companion.match(/function decodeTShortPickValue\(/g) ?? []).length, 1);
@@ -205,7 +205,7 @@ test('validation-disabled serde artifacts omit executable predicate bindings', a
   const value = fixture(t, { noUnusedLocals: true });
   writeFileSync(path.join(value.sourceRoot, 'codecs.ts'), readFixture("models/model-artifact-efficiency/validation-disabled-serde-artifacts-omit-executable-predicate-bindings/codecs.ts"));
   writeFileSync(path.join(value.sourceRoot, 'item.model.ts'), readFixture("models/model-artifact-efficiency/validation-disabled-serde-artifacts-omit-executable-predicate-bindings/item.model.ts"));
-  writeModelGolemYaml(value.root, { mobx: false, validation: false });
+  writeModelGolemYaml(value.root, { validation: false });
   await buildModelProject(value.root);
   // The deployed codecs module has no predicate: a companion that still referenced it would not link.
   writeFileSync(path.join(value.root, 'build/codecs.js'), 'export const encode = (value) => String(value);\nexport const decode = (value) => Number(value);\n');
@@ -223,7 +223,7 @@ test('array item models validate at their full path, recursive ones included', a
   const fixtureValue = fixture(t);
   writeFileSync(path.join(fixtureValue.sourceRoot, 'company.model.ts'),
     readFixture('models/model-artifact-efficiency/array-items-inline/company.model.ts'));
-  const profile = { mobx: false, validation: true } as const;
+  const profile = { validation: true } as const;
   writeModelGolemYaml(fixtureValue.root, profile);
   await buildModelProject(fixtureValue.root);
   const { Company, Node } = await import(pathToFileURL(path.join(fixtureValue.root, 'build/company.model.js')).href);
@@ -250,7 +250,7 @@ test('array item models that live in another file validate at their full path', 
     writeFileSync(path.join(fixtureValue.sourceRoot, `${name}.model.ts`),
       readFixture(`models/model-artifact-efficiency/array-items-inline/cross-file/${name}.model.ts`));
   }
-  writeModelGolemYaml(fixtureValue.root, { mobx: false, validation: true });
+  writeModelGolemYaml(fixtureValue.root, { validation: true });
   await buildModelProject(fixtureValue.root);
 
   const { Roster } = await import(pathToFileURL(path.join(fixtureValue.root, 'build/roster.model.js')).href);

@@ -38,7 +38,7 @@ test('an SDK job declares its document as the input and one output folder, and i
   });
   assert.deepEqual(job.options as OpenApiOptions, {
     input: path.join(root, 'api.yaml'), output: path.join(root, 'sdk'),
-    profile: { mobx: false, validation: true, allowAny: false, unknownFormats: 'error' },
+    profile: { validation: true, allowAny: false, unknownFormats: 'error' },
     allowRemoteRefs: false, remoteHosts: [], mode: 'standalone',
     maxRefBytes: 5 * 1024 * 1024, maxRefDocuments: 256, refTimeoutMs: 10000,
   });
@@ -104,9 +104,9 @@ test('SDK outputs that overlap stop loading, also through a link to a folder', a
   await assert.rejects(() => loadConfig(alias.filename), /Overlapping outputs/);
 });
 
-test('a standalone SDK job with mobx: true shows the generator error, not a manifest error', async (t: TestContext) => {
+test('a standalone SDK job with the mobx extension shows the generator error, not a manifest error', async (t: TestContext) => {
   // protects: T-735 golem generate prints a generator's error diagnostics before it checks the result for a manifest
-  const { root, filename } = project(t, 'version: 1\nmobx: true\nopenapi-ts:\n  sdks:\n    - input: api.json\n      output: sdk\n      name: Profile\n');
+  const { root, filename } = project(t, 'version: 1\nopenapi-ts:\n  sdks:\n    - input: api.json\n      output: sdk\n      name: Profile\n  extensions:\n    mobx: {}\n');
   copyFixtureFile(root, 'packed/profile/api.json', 'api.json');
 
   await assert.rejects(() => runPipeline(filename), /OPENAPI_MOBX_NEEDS_GOLEM_MODE/);

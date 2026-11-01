@@ -47,7 +47,7 @@ async function generateFixture(
     output: path.join(root, `openapi-${openapiVersion}.json`),
     openapiVersion,
     info: { title: 'Contract fixture', version: '1' },
-    profile: { mobx: false, validation: false },
+    profile: { validation: false },
   });
 }
 
@@ -239,7 +239,7 @@ test('exact: false gives a model with no exact option an open schema', async t =
     root,
     output: path.join(root, 'openapi.json'),
     info: { title: 'Contract fixture', version: '1' },
-    profile: { mobx: false, validation: false },
+    profile: { validation: false },
     exact: false,
   });
   assert.equal(schemaOf(documentOf(contracts), 'TPayment').additionalProperties, true);
@@ -373,7 +373,7 @@ export class OrdersController {
   const declaration = fs.realpathSync(path.join(root, 'node_modules/@acme/money/index.d.ts'));
 
   await assert.rejects(
-    generate({ root, output: path.join(root, 'openapi.json'), info: { title: 'Contract fixture', version: '1' }, profile: { mobx: false, validation: false }, models: { root, directory: root, output: path.join(root, 'src/generated/models'), suffixes: ['.entity.ts', '.record.ts'] } }),
+    generate({ root, output: path.join(root, 'openapi.json'), info: { title: 'Contract fixture', version: '1' }, profile: { validation: false }, models: { root, directory: root, output: path.join(root, 'src/generated/models'), suffixes: ['.entity.ts', '.record.ts'] } }),
     (error: unknown) => String(error).includes(`RUNM1074: ${path.relative(process.cwd(), declaration)}#TPkgMoney is declared in a file whose name has no model suffix. Golem reads a model from a file whose name ends in .entity.ts or .record.ts. Move the model into such a file.`),
   );
 });
@@ -450,7 +450,7 @@ export class Filter extends TFilterBaseModel {}
 `,
     },
   });
-  writeGeneratedArtifacts((await generateModels({ root, profile: { mobx: false, validation: true } })).artifacts);
+  writeGeneratedArtifacts((await generateModels({ root, profile: { validation: true } })).artifacts);
   const document = documentOf(await generateFixture(root));
   assert.deepEqual(operationOf(document, '/items', 'get').parameters?.map(parameter => `${parameter.in}:${parameter.name}`), ['header:term', 'header:page']);
 });
@@ -617,7 +617,7 @@ export function decodeMoney(value: string): Money { throw new Error(value); }
 `,
     },
   });
-  writeGeneratedArtifacts((await generateModels({ root, profile: { mobx: false, validation: true } })).artifacts);
+  writeGeneratedArtifacts((await generateModels({ root, profile: { validation: true } })).artifacts);
   const { program } = createProgram([path.join(root, 'src/contracts.controller.ts'), path.join(root, 'src/money.model.ts')], root);
   const analysis = createContractAnalysis(program, { root });
   const checker = program.getTypeChecker();
@@ -672,7 +672,7 @@ export class OrdersController {
     output: path.join(root, 'openapi.json'),
     openapiVersion: '3.2.0',
     info: { title: 'Contract fixture', version: '1' },
-    profile: { mobx: false, validation: false },
+    profile: { validation: false },
     programView: { laterOutputs: [path.join(root, 'src/sdk')] },
   });
   assert.equal(result.artifacts.length, 1);

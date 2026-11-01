@@ -312,7 +312,7 @@ test('public directional resources preserve nested scopes and run through genera
     input,
     output,
     name: 'ResourceProjection',
-    profile: { mobx: false, validation: true },
+    profile: { validation: true },
   });
   assert.deepEqual(result.diagnostics ?? [], []);
   assert.equal(result.artifacts.every(({ path: filename }) => path.isAbsolute(filename)), true);
@@ -393,7 +393,7 @@ test('public resource graph distinguishes whole, scalar, and nested targets with
       input,
       output,
       name: 'ResourceGraph',
-      profile: { mobx: false, validation: true },
+      profile: { validation: true },
     });
   } finally {
     globalThis.fetch = originalFetch;

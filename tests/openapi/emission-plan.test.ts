@@ -35,7 +35,7 @@ test('applicable custom codecs override built-in request, parameter, response an
     } } },
   };
   const output = outputDir(t, 'overrides');
-  await generateMaterializedSdk(document, { output, name: 'Overrides', profile: { mobx: false, validation: true } });
+  await generateMaterializedSdk(document, { output, name: 'Overrides', profile: { validation: true } });
   compileStrictUnusedSdk(output);
   const module = requireRecord(await import(pathToFileURL(path.join(output, 'dist/client.js')).href), 'override client');
   const Client = module.OverridesClient;
@@ -104,7 +104,7 @@ test('generated clients bind the default fetch to globalThis and call an explici
         },
       },
     },
-  }, { output, name: 'FetchReceiver', profile: { mobx: false, validation: false } });
+  }, { output, name: 'FetchReceiver', profile: { validation: false } });
   compileStrictUnusedSdk(output);
   const module = requireRecord(
     await import(pathToFileURL(path.join(output, 'dist/client.js')).href),
@@ -187,7 +187,7 @@ test('directional imports follow schema references while literal data and keywor
         requestBody: { content: { 'application/json': { schema } } },
         responses: { '200': { description: 'value', content: { 'application/json': { schema } } } },
       } } },
-    }, { output, name: 'Literal', profile: { mobx: false, validation: false } });
+    }, { output, name: 'Literal', profile: { validation: false } });
     // An import the types do not use fails the strict unused compile; a missing one fails on the name the types use.
     compileStrictUnusedSdk(output);
   }
@@ -255,7 +255,7 @@ test('operation names are typed inside client.ts and links.ts', async t => {
       } },
       '/b': { get: { operationId: 'getB', responses: { '204': { description: 'ok' } } } },
     },
-  }, { output, name: 'Names', profile: { mobx: false, validation: true } });
+  }, { output, name: 'Names', profile: { validation: true } });
   const assertFile = writeAssertFile(output, 'names-assert.ts', `import type { OperationRuntimeValidators } from '@exprtlabs/golem/validation';
 import type { NamesClientOptions } from './client.js';
 import type { ResponseLink } from './links.js';
@@ -304,7 +304,7 @@ test('generated SDKs of golem mode import the client runtime instead of copying 
       parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
       responses: { '200': { description: 'item', content: { 'application/json': { schema: { type: 'object' } } } } },
     } } },
-  }, { output, name: 'Shared', profile: { mobx: false, validation: true }, mode: 'golem' });
+  }, { output, name: 'Shared', profile: { validation: true }, mode: 'golem' });
   compileStrictUnusedSdk(output);
   const Client = (await importClient(output, 'shared client')).SharedClient;
   assert.ok(isGeneratedClientClass(Client));
@@ -332,7 +332,7 @@ test('minimal GET without content omits codec options and unused helpers', async
   await generateMaterializedSdk(pingDocument(), {
     output,
     name: 'Ping',
-    profile: { mobx: false, validation: false },
+    profile: { validation: false },
   });
   const assertFile = copyFixtureFile(output, 'openapi/emission-plan/ping-client-assert.ts', 'ping-client-assert.ts');
   compileStrictUnusedSdk(output, [assertFile]);
@@ -369,7 +369,7 @@ test('minimal GET without content omits codec options and unused helpers', async
         },
       },
     },
-  }, { output: surfacesOutput, name: 'PingSurfaces', profile: { mobx: false, validation: false } });
+  }, { output: surfacesOutput, name: 'PingSurfaces', profile: { validation: false } });
   assert.ok(surfaces.artifacts.some(artifact => artifact.path.endsWith('client.ts')));
   const surfacesAssertFile = copyFixtureFile(
     surfacesOutput, 'openapi/emission-plan/ping-surfaces-client-assert.ts', 'ping-surfaces-client-assert.ts',
@@ -411,7 +411,7 @@ test('stream and mutual-TLS surfaces are emitted when an operation uses them', a
         },
       },
     },
-  }, { output, name: 'StreamSecurity', profile: { mobx: false, validation: false } });
+  }, { output, name: 'StreamSecurity', profile: { validation: false } });
   const assertFile = writeAssertFile(output, 'surfaces-assert.ts', `import type {
   StreamSecurityClientOptions,
   StreamSecurityMutualTlsTransport,
@@ -471,7 +471,7 @@ test('an operation with no effective security requirement sends no credentials a
       '/open': { get: { operationId: 'open', security: [], responses: respond } },
       '/optional': { get: { operationId: 'optionalAuth', security: [{}], responses: respond } },
     },
-  }, { output, name: 'Unsecured', profile: { mobx: false, validation: false } });
+  }, { output, name: 'Unsecured', profile: { validation: false } });
   compileStrictUnusedSdk(output);
 
   const module = await importClient(output, 'unsecured client');
@@ -506,7 +506,7 @@ test('the SDK index exports its client and guard, and the client returns the che
       responses: { 200: { description: 'ok', content: { 'application/json': { schema: money } } } },
     } } },
     components: { schemas: { Money: { type: 'object', properties: { amount: { type: 'string' } }, required: ['amount'] } } },
-  }, { output, name: 'Surface', profile: { mobx: false, validation: true } });
+  }, { output, name: 'Surface', profile: { validation: true } });
   compileStrictUnusedSdk(output);
   const entry = requireRecord(await import(pathToFileURL(path.join(output, 'dist/index.js')).href), 'SDK entry');
   assert.deepEqual(Object.keys(entry).sort(), ['SurfaceClient', 'isSurfaceUndeclaredResponseError']);
@@ -534,7 +534,7 @@ test('a validation SDK with operations compiles under strict unused checks', asy
       requestBody: { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/Item' } } } },
       responses: { 200: { description: 'ok', content: { 'application/json': { schema: { $ref: '#/components/schemas/Item' } } } } },
     } } },
-  }, { output, name: 'Strict', profile: { mobx: false, validation: true } });
+  }, { output, name: 'Strict', profile: { validation: true } });
   compileStrictUnusedSdk(output);
 });
 
@@ -552,7 +552,7 @@ test('an operation module declares only the request locals it uses', async t => 
         },
       },
     },
-  }, { output, name: 'Locals', profile: { mobx: false, validation: false } });
+  }, { output, name: 'Locals', profile: { validation: false } });
   // Unused locals fail the strict compile; the behavior is the request each module builds.
   compileStrictUnusedSdk(output);
   const Client = (await importClient(output, 'locals client')).LocalsClient;

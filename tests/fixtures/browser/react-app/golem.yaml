@@ -1,5 +1,4 @@
 version: 1
-mobx: true
 validation: true
 openapi-ts:
   sdks:
@@ -7,4 +6,6 @@ openapi-ts:
       output: sdk
       name: Payments
       mode: golem
+  extensions:
+    mobx: {}
 model: {}

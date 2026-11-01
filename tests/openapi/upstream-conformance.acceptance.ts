@@ -331,7 +331,7 @@ async function executeCase(
   }
 }
 
-function assertManifestProfile(output: string, profile: { readonly mobx: boolean; readonly validation: boolean }): void {
+function assertManifestProfile(output: string, profile: { readonly mobx?: boolean; readonly validation: boolean }): void {
   const manifestValue: unknown = JSON.parse(fs.readFileSync(path.join(output, 'model-manifest.json'), 'utf8'));
   assert.ok(isRecord(manifestValue));
   const manifestProfile = manifestValue && Reflect.get(manifestValue, 'profile');

@@ -50,7 +50,7 @@ function loadPayloadClass(marker: string): Promise<GeneratedClientClass> {
 
 async function generatePayloadClass(marker: string): Promise<GeneratedClientClass> {
   const output = path.join(payloadRoot, marker);
-  writeGeneratedSdk(writeSdk, sdkDocument(marker), { output, name: 'Engine', profile: { mobx: false, validation: true } });
+  writeGeneratedSdk(writeSdk, sdkDocument(marker), { output, name: 'Engine', profile: { validation: true } });
   compileGeneratedSdk(output, []);
   const module: Record<string, unknown> = await import(pathToFileURL(path.join(output, 'dist/client.js')).href);
   const Client = module.EngineClient;
@@ -144,7 +144,7 @@ test('an operation named validators generates, compiles and validates', async (t
     } } },
   };
   const output = path.join(createFixtureProject(t, 'golem-sdk-validators-name-'), 'N');
-  writeGeneratedSdk(writeSdk, document, { output, name: 'Named', profile: { mobx: false, validation: true } });
+  writeGeneratedSdk(writeSdk, document, { output, name: 'Named', profile: { validation: true } });
   compileGeneratedSdk(output, []);
   const module: Record<string, unknown> = await import(pathToFileURL(path.join(output, 'dist/client.js')).href);
   const Client = module.NamedClient;
@@ -164,7 +164,7 @@ test('responses declared by a status range or default, with a parametric content
     },
   };
   const output = path.join(createFixtureProject(t, 'golem-sdk-ranges-'), 'R');
-  writeGeneratedSdk(writeSdk, document, { output, name: 'Ranges', profile: { mobx: false, validation: true } });
+  writeGeneratedSdk(writeSdk, document, { output, name: 'Ranges', profile: { validation: true } });
   compileGeneratedSdk(output, []);
   const module: Record<string, unknown> = await import(pathToFileURL(path.join(output, 'dist/client.js')).href);
   const Client = module.RangesClient;
@@ -208,7 +208,7 @@ test('a discriminated response is validated against the variant its tag selects'
     } } },
   };
   const output = path.join(createFixtureProject(t, 'golem-sdk-response-variants-'), 'P');
-  writeGeneratedSdk(writeSdk, document, { output, name: 'Pets', profile: { mobx: false, validation: true } });
+  writeGeneratedSdk(writeSdk, document, { output, name: 'Pets', profile: { validation: true } });
   compileGeneratedSdk(output, []);
   const module: Record<string, unknown> = await import(pathToFileURL(path.join(output, 'dist/client.js')).href);
   const Client = module.PetsClient;
@@ -248,7 +248,7 @@ test('same-title SDKs keep their schema contracts', async t => {
   };
   for (const marker of ['A', 'B']) {
     const output = path.join(root, marker);
-    writeGeneratedSdk(writeSdk, sharedTitleDocument(marker), { output, name: 'Shared', profile: { mobx: false, validation: true } });
+    writeGeneratedSdk(writeSdk, sharedTitleDocument(marker), { output, name: 'Shared', profile: { validation: true } });
     compileGeneratedSdk(output, [], { strict: true, exactOptionalPropertyTypes: true, noUncheckedIndexedAccess: true });
     const module: Record<string, unknown> = await import(pathToFileURL(path.join(output, 'dist/client.js')).href);
     assert.ok(isGeneratedClientClass(module.SharedClient));
@@ -273,7 +273,7 @@ test('a format golem does not check is reported once for the component, however 
     components: { schemas: { Amount: { type: 'string', format: 'money' } } },
     paths: { '/credit': operation('credit'), '/debit': operation('debit'), '/refund': operation('refund') },
   };
-  const result = writeSdk(document, { output: path.join(tmpdir(), 'golem-unknown-format-once'), name: 'Ledger', profile: { mobx: false, validation: true, unknownFormats: 'warn' } });
+  const result = writeSdk(document, { output: path.join(tmpdir(), 'golem-unknown-format-once'), name: 'Ledger', profile: { validation: true, unknownFormats: 'warn' } });
   const warnings = (result.diagnostics ?? []).filter(entry => entry.code === 'VALIDATE_UNKNOWN_FORMAT');
   assert.equal(warnings.length, 1, JSON.stringify(warnings, null, 1));
   assert.match(warnings[0].message, /#\/components\/schemas\/Amount\/format/);
@@ -294,7 +294,7 @@ test('a format golem does not check is reported at the component key, however th
       responses: { 200: { description: 'ok', content: { 'application/json': { schema: item } } } },
     } } },
   };
-  const result = writeSdk(document, { output: path.join(tmpdir(), 'golem-unknown-format-key'), name: 'Pets', profile: { mobx: false, validation: true, unknownFormats: 'warn' } });
+  const result = writeSdk(document, { output: path.join(tmpdir(), 'golem-unknown-format-key'), name: 'Pets', profile: { validation: true, unknownFormats: 'warn' } });
   const warnings = (result.diagnostics ?? []).filter(entry => entry.code === 'VALIDATE_UNKNOWN_FORMAT');
   assert.ok(warnings.length > 0);
   for (const warning of warnings) assert.ok(warning.path?.startsWith('#/components/schemas/pet-item'), JSON.stringify(warning));
@@ -312,14 +312,14 @@ test('an OpenAPI format golem does not check stops generation by default, and un
     } } },
   };
   const output = path.join(tmpdir(), 'golem-unknown-format-default');
-  const stopped = writeSdk(document, { output, name: 'Ledger', profile: { mobx: false, validation: true } });
+  const stopped = writeSdk(document, { output, name: 'Ledger', profile: { validation: true } });
   assert.deepEqual(stopped.artifacts, []);
   assert.deepEqual(
     (stopped.diagnostics ?? []).filter(entry => entry.code === 'VALIDATE_UNKNOWN_FORMAT').map(entry => entry.severity),
     [GolemDiagnosticSeverity.Error],
   );
   assert.match((stopped.diagnostics ?? [])[0]?.message ?? '', /the format "money" is not implemented, so golem cannot check it\./);
-  const warned = writeSdk(document, { output, name: 'Ledger', profile: { mobx: false, validation: true, unknownFormats: 'warn' } });
+  const warned = writeSdk(document, { output, name: 'Ledger', profile: { validation: true, unknownFormats: 'warn' } });
   assert.ok(warned.artifacts.some(artifact => artifact.path === path.join(output, 'validators.generated.ts')), 'the warned run writes the SDK validators');
   assert.ok((warned.diagnostics ?? []).some(entry => entry.code === 'VALIDATE_UNKNOWN_FORMAT' && entry.severity === GolemDiagnosticSeverity.Warning));
 });
@@ -335,12 +335,12 @@ test('an unknown format in an inline operation schema is reported with the opera
     } } },
   };
   const output = path.join(tmpdir(), 'golem-unknown-format-inline');
-  const stopped = writeSdk(document, { output, name: 'Ledger', profile: { mobx: false, validation: true } });
+  const stopped = writeSdk(document, { output, name: 'Ledger', profile: { validation: true } });
   assert.deepEqual(stopped.artifacts, []);
   const errors = (stopped.diagnostics ?? []).filter(entry => entry.code === 'VALIDATE_UNKNOWN_FORMAT');
   assert.deepEqual(errors.map(entry => entry.severity), [GolemDiagnosticSeverity.Error]);
   assert.match(errors[0].message, /^operation "credit" at \/input\/properties\/body\/format: /);
-  const warned = writeSdk(document, { output, name: 'Ledger', profile: { mobx: false, validation: true, unknownFormats: 'warn' } });
+  const warned = writeSdk(document, { output, name: 'Ledger', profile: { validation: true, unknownFormats: 'warn' } });
   assert.ok(warned.artifacts.some(artifact => artifact.path === path.join(output, 'validators.generated.ts')), 'the warned run writes the SDK validators');
   assert.ok((warned.diagnostics ?? []).some(entry => entry.code === 'VALIDATE_UNKNOWN_FORMAT' && entry.severity === GolemDiagnosticSeverity.Warning));
 });
@@ -356,7 +356,7 @@ test('an unknown format inside a oneOf branch of an inline schema that also hold
       responses: { 200: { description: 'ok' } },
     } } },
   };
-  const stopped = writeSdk(document, { output: path.join(tmpdir(), 'golem-unknown-format-both-unions'), name: 'Ledger', profile: { mobx: false, validation: true } });
+  const stopped = writeSdk(document, { output: path.join(tmpdir(), 'golem-unknown-format-both-unions'), name: 'Ledger', profile: { validation: true } });
   assert.deepEqual(stopped.artifacts, []);
   assert.deepEqual((stopped.diagnostics ?? []).filter(entry => entry.code === 'VALIDATE_UNKNOWN_FORMAT').map(entry => entry.message.split(': ')[0]),
     ['operation "credit" at /input/properties/body/oneOf/0/format']);
@@ -371,7 +371,7 @@ test('writeSdk reports each standard keyword with a wrong shape that a document 
     openapi: '3.1.0', info: { title: 'Shapes', version: '1' },
     paths: { '/a': { post: { operationId: 'send', requestBody: { content: { 'application/json': { schema } } }, responses: { 200: { description: 'ok' } } } } },
   };
-  const result = writeSdk(document, { output: path.join(tmpdir(), 'golem-wrong-shapes'), profile: { mobx: false, validation: true } });
+  const result = writeSdk(document, { output: path.join(tmpdir(), 'golem-wrong-shapes'), profile: { validation: true } });
   assert.deepEqual(result.artifacts, []);
   assert.deepEqual((result.diagnostics ?? []).map(entry => [entry.code, entry.severity, entry.message]), [
     ['VALIDATE_UNSUPPORTED_KEYWORD', GolemDiagnosticSeverity.Error, 'operation "send" at /input/properties/body/properties/kind/type: the value of type is not valid: expected a type name or a non-empty list of type names (string, number, integer, boolean, null, object, array)'],
@@ -390,7 +390,7 @@ test('writeSdk reports each schema keyword that holds a value that is no schema,
     openapi: '3.1.0', info: { title: 'Schemas', version: '1' },
     paths: { '/a': { post: { operationId: 'send', requestBody: { content: { 'application/json': { schema } } }, responses: { 200: { description: 'ok' } } } } },
   };
-  const result = writeSdk(document, { output: path.join(tmpdir(), 'golem-non-schema-values'), profile: { mobx: false, validation: true } });
+  const result = writeSdk(document, { output: path.join(tmpdir(), 'golem-non-schema-values'), profile: { validation: true } });
   assert.deepEqual(result.artifacts, []);
   const expected = 'expected a boolean or a schema object';
   assert.deepEqual((result.diagnostics ?? []).map(entry => [entry.code, entry.severity, entry.message]), [
@@ -409,7 +409,7 @@ test('a sanity SDK compiles its validators without value limits, records sanity 
   const document = sdkDocument('S');
   const payload = (document.components as { schemas: { Payload: { properties: Record<string, unknown> } } }).schemas.Payload;
   payload.properties.name = { type: 'string', minLength: 3 };
-  writeGeneratedSdk(writeSdk, document, { output, name: 'Engine', profile: { mobx: false, validation: 'sanity' } });
+  writeGeneratedSdk(writeSdk, document, { output, name: 'Engine', profile: { validation: 'sanity' } });
   compileGeneratedSdk(output, []);
   const validators = fs.readFileSync(path.join(output, 'validators.generated.ts'), 'utf8');
   assert.equal(/codePointLength|\.length\s*</.test(validators), false, 'the validators module holds no length check');

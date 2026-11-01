@@ -5,8 +5,8 @@ import test from 'node:test';
 import { reaction } from 'mobx';
 import type { ApiOperation } from '@exprtlabs/golem/client';
 import { createApiOperation } from '@exprtlabs/golem/internal/client-runtime';
-import { createObservableApiOperation } from '@exprtlabs/golem/internal/mobx-runtime';
-import type { ObservableApiOperation } from '@exprtlabs/golem/mobx';
+import { createObservableApiOperation } from '@exprtlabs/golem-openapi-ts/internal/mobx-runtime';
+import type { ObservableApiOperation } from '@exprtlabs/golem-openapi-ts/mobx';
 import { captureWarnings, delay, deferred, enforceActions, rejectOnAbort } from './support/client-test-utils.js';
 
 type Warn = typeof console.warn;
@@ -280,7 +280,7 @@ test('stream execute loading ends when the response wrapper is available', async
 
 test('golem client runtime stays dependency-free of MobX and HTTP types', async () => {
   const clientUrl = import.meta.resolve('@exprtlabs/golem/client');
-  const mobxUrl = import.meta.resolve('@exprtlabs/golem/mobx');
+  const mobxUrl = import.meta.resolve('@exprtlabs/golem-openapi-ts/mobx');
   const trackedUrl = new URL('./api-operation.js', clientUrl);
   const clientSource = readFileSync(fileURLToPath(clientUrl), 'utf8');
   const clientTypes = readFileSync(fileURLToPath(new URL('./client.d.ts', clientUrl)), 'utf8');

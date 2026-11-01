@@ -268,7 +268,7 @@ export class Loose extends TLooseBaseModel {
   constructor(values: Partial<TLooseFields> = {}) { super(values); }
 }
 `);
-  writeModelGolemYaml(root, { mobx: false, validation: true, exact: false });
+  writeModelGolemYaml(root, { validation: true, exact: false });
   await buildModelProject(root);
   const { Loose } = await import(pathToFileURL(path.join(root, 'build/loose.model.js')).href) as { Loose: new (values?: object) => object };
   const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TLoose'));
@@ -281,7 +281,7 @@ export class Loose extends TLooseBaseModel {
 async function buildLooseIn(scope: FixtureScope) {
   const { root, sourceRoot } = createModelProject(scope, { prefix: 'golem-model-loose-state-', name: 'model-loose-state', linkWorkspaceNodeModules: true });
   fs.writeFileSync(path.join(sourceRoot, 'loose.model.ts'), readFixture('models/model-instance-state/loose-state/loose.model.ts'));
-  writeModelGolemYaml(root, { mobx: false, validation: true, exact: false });
+  writeModelGolemYaml(root, { validation: true, exact: false });
   await buildModelProject(root);
   const models = await import(pathToFileURL(path.join(root, 'build/loose.model.js')).href);
   const codec = (name: string) => requireObjectCodec(generatedCodecIdFromRoot(root, name));
@@ -350,7 +350,7 @@ export class View extends TViewBaseModel {
   constructor(values: Partial<TViewFields> = {}) { super(values); }
 }
 `);
-  writeModelGolemYaml(root, { mobx: false, validation: true, exact: false });
+  writeModelGolemYaml(root, { validation: true, exact: false });
   await buildModelProject(root);
   const { View } = await import(pathToFileURL(path.join(root, 'build/view.model.js')).href) as { View: new (values?: object) => object };
   const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TView'));
@@ -371,7 +371,7 @@ import { TNestBaseModel, type TNestFields } from './nest.model.generated.js';
 export type TNest = IModel<{ inner: { id: string; when?: Date } }>;
 export class Nest extends TNestBaseModel { constructor(values: Partial<TNestFields> = {}) { super(values); } }
 `);
-  writeModelGolemYaml(root, { mobx: false, validation: true });
+  writeModelGolemYaml(root, { validation: true });
   await buildModelProject(root);
   const { Nest } = await import(pathToFileURL(path.join(root, 'build/nest.model.js')).href) as { Nest: new (values?: object) => object };
   const text = '2020-01-02T03:04:05.000Z';
@@ -394,7 +394,7 @@ export type TStamp = IModel<{ id: string; at: Date | undefined }>;
 export class Profile extends TProfileBaseModel { constructor(values: Partial<TProfileFields> = {}) { super(values); } }
 export class Stamp extends TStampBaseModel { constructor(values: Partial<TStampFields> = {}) { super(values); } }
 `);
-  writeModelGolemYaml(root, { mobx: false, validation: true });
+  writeModelGolemYaml(root, { validation: true });
   await buildModelProject(root);
   const models = await import(pathToFileURL(path.join(root, 'build/undefined-field.model.js')).href) as { Profile: new (values?: object) => object; Stamp: new (values?: object) => object };
   const profile = requireObjectCodec(generatedCodecIdFromRoot(root, 'TProfile'));
@@ -424,7 +424,7 @@ export class Optional extends TOptionalBaseModel { constructor(values: Partial<T
 export class Required extends TRequiredBaseModel { constructor(values: Partial<TRequiredFields> = {}) { super(values); } }
 export class Dated extends TDatedBaseModel { constructor(values: Partial<TDatedFields> = {}) { super(values); } }
 `);
-  writeModelGolemYaml(root, { mobx: false, validation: true });
+  writeModelGolemYaml(root, { validation: true });
   await buildModelProject(root);
   const models = await import(pathToFileURL(path.join(root, 'build/nested-undefined.model.js')).href) as Record<'Optional' | 'Required' | 'Dated', new (values?: object) => object>;
   const optional = requireObjectCodec(generatedCodecIdFromRoot(root, 'TOptional'));

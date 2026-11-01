@@ -1,3 +1,4 @@
+import { generatorSettings } from './support/mobx-extension.js';
 // TypeScript 6 and 7 must write the same bytes. Each case of the identity corpus (tests/support/identity-corpus.ts) is generated and
 // rewritten in child processes of each version: the generated files, the rewritten source text and the diagnostics are compared.
 import assert from 'node:assert/strict';
@@ -57,7 +58,7 @@ async function createProject(t: FixtureScope, item: IdentityCase, label: string)
       input: fixturePath(item.sdkSpec),
       output: path.join(root, 'src/sdk'),
       name: 'Payments',
-      profile: { mobx: item.mobx, validation: true },
+      ...generatorSettings({ mobx: item.mobx, validation: true }),
     })).artifacts);
   }
   return { name: item.name, kind: item.kind, mobx: item.mobx, root };
@@ -180,7 +181,7 @@ async function createCompileTree(shards: readonly ShardRun[]): Promise<{ readonl
     input: path.join(sdkSource, 'payments.yaml'),
     output: path.join(sdkSource, 'sdk'),
     name: 'Payments',
-    profile: { mobx: false, validation: true },
+    profile: { validation: true },
   })).artifacts);
   casesByFolder.set(caseFolder(SDK_ONLY_WIRE_CLAIM), SDK_ONLY_WIRE_CLAIM);
   return { root, casesByFolder };

@@ -19,7 +19,7 @@ export class SettingsModel extends TSettingsBaseModel {}
 export class ListModel extends TListBaseModel {}
 `;
 
-for (const [label, profile] of [['validation off', { mobx: false, validation: false }], ['validation on', { mobx: false, validation: true }]] as readonly (readonly [string, GolemProfile])[]) {
+for (const [label, profile] of [['validation off', { validation: false }], ['validation on', { validation: true }]] as readonly (readonly [string, GolemProfile])[]) {
   test(`a type that holds Partial of itself round-trips (${label})`, async (t: TestContext) => {
     // protects: T-440 a type with a field of Partial of itself no longer overflows the stack; the projection refers back to itself
     const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-recursive-partial-', linkTypescript: true });
@@ -46,7 +46,7 @@ for (const [form, declaration] of EXPANDING) {
     // protects: T-440 a type that expands without end stops with a coded diagnostic, not a stack overflow
     const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-expanding-type-', name: 'expanding-type' });
     writeModelSources(sourceRoot, { 'box.model.ts': `import type { IModel } from '@exprtlabs/golem/model';\n${declaration}\nexport type TBox = IModel<{ box: Box<string> }>;\n` });
-    assert.throws(() => generate({ root, sources: [path.join(sourceRoot, 'box.model.ts')], profile: { mobx: false, validation: false } }),
+    assert.throws(() => generate({ root, sources: [path.join(sourceRoot, 'box.model.ts')], profile: { validation: false } }),
       /box\.model\.ts:\d+:\d+ RUNM1083: The generic type Box expands without end/);
   });
 }
@@ -60,6 +60,6 @@ test('valid finite types nest without a diagnostic', (t: TestContext) => {
       + "export type Chain<N extends unknown[]> = N['length'] extends 12 ? { end: true } : { next: Chain<[...N, 1]> };\n"
       + `export type TDeep = IModel<{ arrays: string${'[]'.repeat(40)}; wraps: ${wrap(10)}; chain: Chain<[]> }>;\n`,
   });
-  const result = generate({ root, sources: [path.join(sourceRoot, 'deep.model.ts')], profile: { mobx: false, validation: false } });
+  const result = generate({ root, sources: [path.join(sourceRoot, 'deep.model.ts')], profile: { validation: false } });
   assert.ok(result.artifacts.some(artifact => artifact.path.endsWith('deep.model.generated.ts')));
 });

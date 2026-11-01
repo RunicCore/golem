@@ -182,7 +182,7 @@ const cases: readonly {
 ];
 
 const profiles: readonly OpenApiGenerationProfile[] = [
-  { mobx: false, validation: false },
+  { validation: false },
   { mobx: true, validation: true },
 ];
 
@@ -265,7 +265,7 @@ test('a union variant used on its own keeps its declared tag type and any tag va
   for (const validation of [false, true]) {
     const suffix = validation ? 'SoloV' : 'SoloN';
     const output = path.join(createFixtureProject(t, 'golem-openapi-discriminator-solo-'), 'sdk');
-    await generateMaterializedSdk(withRootOperations(petDocument(suffix, explicitMapping(suffix)), `cat${suffix}`), { output, name: 'Pets', profile: { mobx: false, validation } });
+    await generateMaterializedSdk(withRootOperations(petDocument(suffix, explicitMapping(suffix)), `cat${suffix}`), { output, name: 'Pets', profile: { validation } });
     const consumer = path.join(output, 'standalone-cat.ts');
     writeFileSync(consumer, [
       `import type { Cat${suffix} } from './types.js';`,
@@ -283,9 +283,9 @@ test('a union variant used on its own keeps its declared tag type and any tag va
 
 test('a standalone variant without its tag is rejected by the base only when validation is on', async t => {
   const untagged = { name: 'Miso' };
-  const off = await generatePets(t, petDocument('SoloOff', explicitMapping('SoloOff')), ['catSoloOff'], { mobx: false, validation: false });
+  const off = await generatePets(t, petDocument('SoloOff', explicitMapping('SoloOff')), ['catSoloOff'], { validation: false });
   assert.deepEqual(await (await off.codec('catSoloOff')).decode(untagged), untagged);
-  const on = await generatePets(t, petDocument('SoloOn', explicitMapping('SoloOn')), ['catSoloOn'], { mobx: false, validation: true });
+  const on = await generatePets(t, petDocument('SoloOn', explicitMapping('SoloOn')), ['catSoloOn'], { validation: true });
   await assert.rejects(
     async () => (await on.codec('catSoloOn')).decode(untagged),
     (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.Validation,
@@ -338,7 +338,7 @@ test('a discriminator over a non-model variant is reported and left to the union
   };
   delete schemas[`Owner${suffix}`];
   const output = path.join(createFixtureProject(t, 'golem-openapi-discriminator-inline-'), 'sdk');
-  const result = await generateMaterializedSdk(document, { output, name: 'Pets', profile: { mobx: false, validation: false } });
+  const result = await generateMaterializedSdk(document, { output, name: 'Pets', profile: { validation: false } });
   assert.deepEqual((result.diagnostics ?? []).map(diagnostic => diagnostic.code), ['OPENAPI_DISCRIMINATOR_NOT_LOWERED']);
   assert.match(result.diagnostics?.[0]?.message ?? '', /"PetInline"/);
 });
@@ -351,7 +351,7 @@ test('a discriminator mapping must target one of the union variants', async t =>
   });
   const output = path.join(createFixtureProject(t, 'golem-openapi-discriminator-stray-'), 'sdk');
   await assert.rejects(
-    () => generateMaterializedSdk(document, { output, name: 'Pets', profile: { mobx: false, validation: false } }),
+    () => generateMaterializedSdk(document, { output, name: 'Pets', profile: { validation: false } }),
     /discriminator mapping "stray" of schema "PetStray" \(openapi\.json#\/components\/schemas\/PetStray\) targets "#\/components\/schemas\/OwnerStray", which is not one of its variants/,
   );
 });
@@ -363,7 +363,7 @@ test('every variant must declare the discriminator property', async t => {
     () => generateMaterializedSdk(petDocument(suffix, explicitMapping(suffix), { baseWithoutTag: true }), {
       output,
       name: 'Pets',
-      profile: { mobx: false, validation: false },
+      profile: { validation: false },
     }),
     /discriminator property "kind" of schema "PetUntagged" \(openapi\.json#\/components\/schemas\/PetUntagged\) is not declared by variant "catUntagged" \(openapi\.json#\/components\/schemas\/catUntagged\)/,
   );
@@ -377,7 +377,7 @@ test('a discriminator inherited through allOf without oneOf is reported as unsup
   delete schemas[`Owner${suffix}`];
   requireRecord(schemas[`Base${suffix}`], 'base').discriminator = { propertyName: 'kind' };
   const output = path.join(createFixtureProject(t, 'golem-openapi-discriminator-inherited-'), 'sdk');
-  const result = await generateMaterializedSdk(document, { output, name: 'Pets', profile: { mobx: false, validation: false } });
+  const result = await generateMaterializedSdk(document, { output, name: 'Pets', profile: { validation: false } });
   assert.deepEqual(
     (result.diagnostics ?? []).map(diagnostic => [diagnostic.code, diagnostic.severity]),
     [['OPENAPI_DISCRIMINATOR_INHERITANCE_UNSUPPORTED', 'warning']],
@@ -388,7 +388,7 @@ test('a discriminator inherited through allOf without oneOf is reported as unsup
 test('discriminator-less object unions name the schema and suggest a discriminator', async t => {
   const output = path.join(createFixtureProject(t, 'golem-openapi-undiscriminated-'), 'sdk');
   await assert.rejects(
-    () => generateMaterializedSdk(petDocument('Plain', undefined), { output, name: 'Pets', profile: { mobx: false, validation: false } }),
+    () => generateMaterializedSdk(petDocument('Plain', undefined), { output, name: 'Pets', profile: { validation: false } }),
     /schema "PetPlain".*discriminator/s,
   );
 });
@@ -420,7 +420,7 @@ for (const { shape, schemas, error } of untaggedUnions) {
       const output = path.join(createFixtureProject(t, 'golem-openapi-untagged-'), 'sdk');
       const document = { openapi: '3.1.0', info: { title: 'Untagged', version: '1' }, paths: {}, components: { schemas } };
       await assert.rejects(
-        () => generateMaterializedSdk(document, { output, name: 'Untagged', profile: { mobx: false, validation } }),
+        () => generateMaterializedSdk(document, { output, name: 'Untagged', profile: { validation } }),
         error,
       );
     });
@@ -455,7 +455,7 @@ for (const [form, defaultMapping] of [['a component name', 'Other'], ['a $ref', 
       },
     };
     const output = path.join(createFixtureProject(t, 'golem-openapi-discriminator-default-'), 'sdk');
-    await generateMaterializedSdk(withRootOperations(document, `Owner${suffix}`), { output, name: 'Payments', profile: { mobx: false, validation: true } });
+    await generateMaterializedSdk(withRootOperations(document, `Owner${suffix}`), { output, name: 'Payments', profile: { validation: true } });
     compileGeneratedSdk(output, [], { strict: true });
     const owner = await sdkBodyCodec(output, 'Payments', `Owner${suffix}`);
     const at = '2026-01-02T03:04:05.000Z';
@@ -512,7 +512,7 @@ for (const [name, version, defaultMapping, suffix] of [
     const output = path.join(createFixtureProject(t, 'golem-openapi-discriminator-key-'), 'sdk');
     // Cat has no value of its own, so nothing selects it: generation stops and names the key, its target and the fix.
     await assert.rejects(
-      generateMaterializedSdk(document, { output, name: 'Pets', profile: { mobx: false, validation: true } }),
+      generateMaterializedSdk(document, { output, name: 'Pets', profile: { validation: true } }),
       new RegExp(`OPENAPI_DISCRIMINATOR_VARIANT_UNSELECTED: .*Cat${suffix}.*the mapping key "Cat${suffix}" sends that value to .*${defaultMapping ?? 'Dog'}${suffix}.*mapping value of its own, or remove`),
     );
   });
@@ -537,7 +537,7 @@ test('a variant given a mapping value of its own is selected by it while the key
       },
     },
   };
-  const pets = await generatePets(t, document, ['OwnerOwn'], { mobx: false, validation: true });
+  const pets = await generatePets(t, document, ['OwnerOwn'], { validation: true });
   const owner = await pets.codec('OwnerOwn');
   assert.deepEqual(await owner.decode({ pet: { kind: 'feline', born: BORN } }), { pet: { kind: 'feline', born: new Date(BORN) } });
   assert.deepEqual(await owner.decode({ pet: { kind: 'CatOwn', adopted: ADOPTED } }), { pet: { kind: 'CatOwn', adopted: new Date(ADOPTED) } });
@@ -561,7 +561,7 @@ test('a default variant that extends a tagged variant is chosen for an unmapped 
       },
     },
   };
-  const pets = await generatePets(t, document, ['OwnerBase'], { mobx: false, validation: false });
+  const pets = await generatePets(t, document, ['OwnerBase'], { validation: false });
   const owner = await pets.codec('OwnerBase');
   const wire = { pet: { kind: 'zzz', name: 'Rex', bark: true, adopted: ADOPTED } };
   const value = { pet: { kind: 'zzz', name: 'Rex', bark: true, adopted: new Date(ADOPTED) } };
@@ -590,7 +590,7 @@ for (const validation of [false, true]) {
         },
       },
     };
-    const pets = await generatePets(t, document, ['OwnerUntagged'], { mobx: false, validation });
+    const pets = await generatePets(t, document, ['OwnerUntagged'], { validation });
     const owner = await pets.codec('OwnerUntagged');
     const issued = '2026-01-02T03:04:05.000Z';
     const money = { payout: { amount: 3, issued } };

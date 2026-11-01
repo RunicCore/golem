@@ -108,7 +108,7 @@ test('public generate types URI $id refs, directional imports, nested models, an
   const result = await generateMaterializedSdk(resourceTypesDocument(), {
     output,
     name: 'ResourceTypes',
-    profile: { mobx: false, validation: true },
+    profile: { validation: true },
   });
   copyFixtureFile(output, "openapi/resource-types/resource-types-assert.ts", "resource-types-assert.ts");
   compileStrictUnusedSdk(output, [path.join(output, 'resource-types-assert.ts')]);

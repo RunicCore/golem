@@ -23,7 +23,7 @@ test('generated validation formats nested errors without replaying field getters
   }));
   writeFileSync(path.join(root, 'src/getter-replay.model.ts'), readFixture("models/generated-validation-execution/generated-validation-formats-nested-errors-without-replaying-field-getters/example.model.ts"));
   writeFileSync(path.join(root, 'src/tag-message.model.ts'), readFixture("models/generated-validation-execution/nested-whole-object-tag-messages-keep-the-child-path-and-serde-state-unchang/example.model.ts"));
-  writeModelGolemYaml(root, { mobx: false, validation: true });
+  writeModelGolemYaml(root, { validation: true });
   await buildModelProject(root);
   const module = await import(pathToFileURL(path.join(root, 'build/getter-replay.model.js')).href) as {
     exercise(): Promise<{ plain: readonly { path: readonly (string | number)[] }[]; withState: readonly { path: readonly (string | number)[]; message: string }[]; plainReads: number[]; stateReads: number[]; stateUnchanged: boolean }>;

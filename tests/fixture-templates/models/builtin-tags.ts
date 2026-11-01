@@ -1,7 +1,7 @@
 import { literal, tsSource, type SourceFragment } from '../../source-template.js';
 
 export function builtinTagsModelSource({ mobx }: { readonly mobx: boolean }): SourceFragment {
-  const mobxImport = mobx ? tsSource`import { asGenObservable } from '@exprtlabs/golem/mobx';` : tsSource``;
+  const mobxImport = mobx ? tsSource`import { asGenObservable } from '@exprtlabs/golem-openapi-ts/mobx';` : tsSource``;
   const mobxInitialization = mobx ? tsSource`asGenObservable(this);` : tsSource``;
   const emailPattern = literal('^\\p{Letter}+$');
   return tsSource`import type { IModel } from '@exprtlabs/golem/model';

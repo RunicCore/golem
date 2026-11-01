@@ -26,7 +26,7 @@ for (const [name, variants, place] of [
       '',
     ].join('\n'));
     assert.throws(
-      () => generate({ root, profile: { mobx: false, validation: true } }),
+      () => generate({ root, profile: { validation: true } }),
       new RegExp(`comment\\.model\\.ts${place}RUNM1053: .*IObject<\\{ (text|body): string \\}>`),
     );
   });

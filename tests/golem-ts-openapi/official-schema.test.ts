@@ -223,7 +223,7 @@ async function documentFor(t: TestContext, source: string, openapiVersion: Versi
     securitySchemes: SECURITY_SCHEMES,
     servers: [{ url: 'https://api.example.com/{base}', description: 'Production', variables: { base: { default: 'v1', enum: ['v1', 'v2'] } } }],
     tags: [{ name: 'metadata', description: 'Metadata', externalDocs: { url: 'https://example.com/docs' } }],
-    profile: { mobx: false, validation: false },
+    profile: { validation: false },
   });
   const artifact = result.artifacts[0];
   assert.ok(artifact);

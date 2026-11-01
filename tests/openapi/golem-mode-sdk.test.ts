@@ -8,7 +8,7 @@ import { createFixtureProject, linkGolemPackages } from '../fixture-project.js';
 import { loadConfig } from '../support/load-config.js';
 import { writeOpenApiDocument } from './helpers.js';
 
-const PROFILE = { mobx: false, validation: true, allowAny: false } as const;
+const PROFILE = { validation: true, allowAny: false } as const;
 const DOCUMENT = {
   openapi: '3.1.0',
   info: { title: 'Charges', version: '1' },

@@ -27,7 +27,7 @@ test('generate returns absolute pure artifacts and local watch inputs', async (t
     input,
     output,
     name: 'StandalonePayments',
-    profile: { mobx: false, validation: false },
+    profile: { validation: false },
   });
 
   assert.equal(result.apiVersion, 1);
@@ -65,7 +65,7 @@ test('SDK generated with mobx and validation disabled loads and runs an operatio
       },
     },
   }));
-  const result = await generate({ input, output, name: 'NoPeerDeps', profile: { mobx: false, validation: false } });
+  const result = await generate({ input, output, name: 'NoPeerDeps', profile: { validation: false } });
   writeGeneratedArtifacts(result.artifacts);
   writeFileSync(path.join(output, 'package.json'), '{"type":"module"}\n');
 
@@ -118,7 +118,7 @@ test('an input document that is not YAML fails with its path relative to the wor
   const input = path.join(directory, 'broken.yaml');
   writeFileSync(input, 'openapi: 3.1.0\ninfo:\n  title: a: b\npaths: {}\n');
   await assert.rejects(
-    () => generate({ input, output: path.join(directory, 'out'), profile: { mobx: false, validation: false } }),
+    () => generate({ input, output: path.join(directory, 'out'), profile: { validation: false } }),
     (error: unknown) => error instanceof Error && error.message.startsWith(`${path.relative(process.cwd(), input)}:3:10 `) && error.cause instanceof YAML.YAMLParseError,
   );
 });
@@ -132,7 +132,7 @@ test('profile is mandatory and source validation remains enabled for all profile
     /profile is required/,
   );
   await assert.rejects(
-    () => generate({ input, output: path.join(directory, 'out'), profile: { mobx: false, validation: false } }),
+    () => generate({ input, output: path.join(directory, 'out'), profile: { validation: false } }),
     /unsupported OpenAPI version/,
   );
 });

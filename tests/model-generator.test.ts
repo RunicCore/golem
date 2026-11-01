@@ -31,11 +31,11 @@ function project(t: TestContext) {
   return createModelProject(t, { prefix: 'golem-model-generator-', name: 'model-generator' });
 }
 
-function profileCases(): readonly [{ mobx: boolean; validation: boolean }, { mobx: boolean; validation: boolean }][] {
+function profileCases(): readonly [{ mobx?: boolean; validation: boolean }, { mobx?: boolean; validation: boolean }][] {
   return [
-    [{ mobx: false, validation: false }, { mobx: false, validation: false }],
+    [{ validation: false }, { validation: false }],
     [{ mobx: true, validation: false }, { mobx: true, validation: false }],
-    [{ mobx: false, validation: true }, { mobx: false, validation: true }],
+    [{ validation: true }, { validation: true }],
     [{ mobx: true, validation: true }, { mobx: true, validation: true }],
   ];
 }
@@ -77,7 +77,7 @@ import type { MinLength } from '@exprtlabs/golem/tags';
 export type TMoney = IObject<{ currency: string & MinLength<3> }>;
 `,
       'payment.model.ts': tsSource`import type { IModel } from '@exprtlabs/golem/model';
-import { asGenObservable } from '@exprtlabs/golem/mobx';
+import { asGenObservable } from '@exprtlabs/golem-openapi-ts/mobx';
 import type { TMoney } from './money.model.js';
 import { TPaymentBaseModel } from './payment.model.generated.js';
 export type TPayment = IModel<{ id: string; amount: number; total: TMoney }>;
@@ -121,7 +121,7 @@ export const wrong: Payment[typeof generatedModelFieldsBrand] = { id: 1, amount:
 test('getValidator infers generated fields and rejects handwritten subclass fields', async (t: TestContext) => {
   const { root } = project(t);
   copyFixture(root, 'models/model-generator/validation-fields');
-  writeModelGolemYaml(root, { mobx: false, validation: true });
+  writeModelGolemYaml(root, { validation: true });
   await buildModelProject(root);
 });
 
@@ -133,7 +133,7 @@ test('discovers model sources, reports project inputs, and excludes generated co
 export type TAccount = IModel<{ id: string }>;`,
   });
   assert.deepEqual(discoverModelSources(root), [source]);
-  const result = generate({ root, profile: { mobx: false, validation: false } });
+  const result = generate({ root, profile: { validation: false } });
   assert.deepEqual(result.artifacts.map((artifact) => artifact.path).sort(), [path.join(root, '.golem/codec-keys.json'), path.join(sourceRoot, 'nested/account.models.generated.ts')], 'the run writes the companion and the codec keys under .golem/');
   assert.deepEqual(result.watchInputs, [source, path.join(root, 'tsconfig.json')]);
   assert.equal(result.watchInputs.some((filename) => filename.endsWith('.generated.ts')), false);
@@ -144,7 +144,7 @@ test('a model named with a non-ASCII letter generates a companion that keeps the
   const { root, sourceRoot } = project(t);
   const source = path.join(sourceRoot, 'cafe.model.ts');
   fs.writeFileSync(source, "import type { IModel } from '@exprtlabs/golem/model';\nexport type TCafé = IModel<{ label: string }>;\n");
-  const result = generate({ root, sources: [source], profile: { mobx: false, validation: true } });
+  const result = generate({ root, sources: [source], profile: { validation: true } });
   assert.ok(result.artifacts.some(artifact => artifact.content.includes('TCaféBaseModel')));
 });
 
@@ -153,19 +153,19 @@ test('rejects missing sources and profile-mismatched manifests before emitting a
   const { root, sourceRoot } = project(t);
   const manifest = path.join(root, 'external-model-manifest.json');
   fs.writeFileSync(manifest, JSON.stringify({
-    profile: { mobx: true, validation: true, allowAny: false },
+    profile: { validation: true, allowAny: false },
     models: [],
   }));
   assert.throws(
-    () => generate({ root, profile: { mobx: false, validation: false }, manifestInputs: [manifest], sources: [] }),
+    () => generate({ root, profile: { validation: false }, manifestInputs: [manifest], sources: [] }),
     (error: Error) => /`sources` is empty.*List at least one model file in `sources`/.test(error.message) && !/context\./.test(error.message),
   );
   const source = copyFixtureFile(root, 'models/model-generator/api-profiles/src/payment.model.ts', 'src/x.model.ts');
   assert.throws(
-    () => generate({ root, sources: [source], profile: { mobx: false, validation: false }, manifestInputs: [manifest] }),
+    () => generate({ root, sources: [source], profile: { validation: false }, manifestInputs: [manifest] }),
     /profile mismatch/,
   );
-  const profile = { mobx: false, validation: true, allowAny: false };
+  const profile = { validation: true, allowAny: false };
   fs.writeFileSync(manifest, JSON.stringify({ profile: { ...profile, allowAny: true }, models: [] }));
   assert.throws(() => generate({ root, sources: [source], profile, manifestInputs: [manifest] }), /profile mismatch/);
   assert.equal(fs.existsSync(path.join(sourceRoot, 'x.model.generated.ts')), false);
@@ -179,7 +179,7 @@ test('an SDK manifest with no unknownFormats record is a profile mismatch that s
   const { root, sourceRoot } = project(t);
   const manifest = path.join(root, 'external-model-manifest.json');
   const source = copyFixtureFile(root, 'models/model-generator/api-profiles/src/payment.model.ts', 'src/x.model.ts');
-  const profile = { mobx: false, validation: true, allowAny: false };
+  const profile = { validation: true, allowAny: false };
   fs.writeFileSync(manifest, JSON.stringify({ profile, models: [] }));
   assert.throws(
     () => generate({ root, sources: [source], profile, manifestInputs: [manifest] }),
@@ -193,7 +193,7 @@ test('a profile mismatch names each setting that differs and how to align it', (
   const { root } = project(t);
   const manifest = path.join(root, 'external-model-manifest.json');
   const source = copyFixtureFile(root, 'models/model-generator/api-profiles/src/payment.model.ts', 'src/x.model.ts');
-  const profile = { mobx: false, validation: true, allowAny: false };
+  const profile = { validation: true, allowAny: false };
   fs.writeFileSync(manifest, JSON.stringify({ profile: { ...profile, validation: false, unknownFormats: 'warn' }, models: [] }));
   assert.throws(
     () => generate({ root, sources: [source], profile, manifestInputs: [manifest] }),
@@ -207,15 +207,15 @@ test('prospective companions permit a concrete subclass field rename and still r
   const { root, sourceRoot } = project(t);
   const source = path.join(sourceRoot, 'account.model.ts');
   writeModelSources(sourceRoot, { 'account.model.ts': accountModelWithField({ field: 'done' }) });
-  const first = generate({ root, sources: [source], profile: { mobx: false, validation: true } });
+  const first = generate({ root, sources: [source], profile: { validation: true } });
   writeGeneratedArtifacts(first.artifacts);
   writeModelSources(sourceRoot, { 'account.model.ts': accountModelWithField({ field: 'complete' }) });
-  const second = generate({ root, sources: [source], profile: { mobx: false, validation: true } });
+  const second = generate({ root, sources: [source], profile: { validation: true } });
   // The validating job writes the companion, the codec keys and the generated validators.
   assert.equal(second.artifacts.length, 3);
   writeModelSources(sourceRoot, { 'account.model.ts': accountModelWithMissingImport({ field: 'complete' }) });
   assert.throws(
-    () => generate({ root, sources: [source], profile: { mobx: false, validation: true } }),
+    () => generate({ root, sources: [source], profile: { validation: true } }),
     /unrelated-missing-module/,
   );
 });
@@ -229,7 +229,7 @@ test('generated validation executes local references and exact-object rules', as
 export const construct = () => new TPaymentBaseModel();
 `,
   });
-  writeModelGolemYaml(root, { mobx: false, validation: true });
+  writeModelGolemYaml(root, { validation: true });
   await buildModelProject(root);
   const paymentId = generatedCodecIdFromRoot(root, 'TPayment');
   const verifier = path.join(root, 'verify.mjs');
@@ -247,19 +247,19 @@ test('rejects unsupported and duplicate model manifests', (t: TestContext) => {
     allowAny: false,
     type: { module: './types.ts', export: 'Money' },
   };
-  const manifest = (profile: { mobx: boolean; validation: boolean }) => ({
+  const manifest = (profile: { mobx?: boolean; validation: boolean }) => ({
     profile: { ...profile, allowAny: false, unknownFormats: 'error' },
     models: [model],
   });
-  fs.writeFileSync(first, JSON.stringify({ ...manifest({ mobx: false, validation: false }), manifestVersion: 99 }));
+  fs.writeFileSync(first, JSON.stringify({ ...manifest({ validation: false }), manifestVersion: 99 }));
   assert.throws(
-    () => generate({ root, sources: [source], profile: { mobx: false, validation: false }, manifestInputs: [first] }),
+    () => generate({ root, sources: [source], profile: { validation: false }, manifestInputs: [first] }),
     /Outdated model manifest/,
   );
-  fs.writeFileSync(first, JSON.stringify(manifest({ mobx: false, validation: false })));
-  fs.writeFileSync(second, JSON.stringify(manifest({ mobx: false, validation: false })));
+  fs.writeFileSync(first, JSON.stringify(manifest({ validation: false })));
+  fs.writeFileSync(second, JSON.stringify(manifest({ validation: false })));
   assert.throws(
-    () => generate({ root, sources: [source], profile: { mobx: false, validation: false }, manifestInputs: [first, second] }),
+    () => generate({ root, sources: [source], profile: { validation: false }, manifestInputs: [first, second] }),
     /Duplicate model manifest id/,
   );
 });
@@ -268,7 +268,7 @@ test('a job leaves the real companions of other jobs under the same tsconfig alo
   // One tsconfig covers both jobs' sources. Job two's program holds job one's handwritten class, which extends the
   // base class of job one's companion; only job one's own run may replace that companion.
   const { root } = createModelProject(t, { prefix: 'golem-two-jobs-', name: 'two-jobs', rootDir: '.', include: ['jobs/*/src/**/*.ts'] });
-  const profile = { mobx: false, validation: true } as const;
+  const profile = { validation: true } as const;
   for (const job of ['one', 'two']) {
     const jobRoot = path.join(root, 'jobs', job);
     writeModelSources(path.join(jobRoot, 'src'), { 'item.model.ts': taggedModelSource({ name: 'Item', fields: tsSource`name: string` }) });
@@ -309,7 +309,7 @@ test('a solution tsconfig generates with the options of the referenced project t
     'lib/ids.ts': 'export type Id = string;\nexport const sizeOf = (blob: Blob): number => blob.size;\n',
     'item.model.ts': taggedModelSource({ name: 'Item', imports: tsSource`import type { Id } from '@lib/ids';`, fields: tsSource`id: Id` }),
   });
-  const result = generate({ root, profile: { mobx: false, validation: true } });
+  const result = generate({ root, profile: { validation: true } });
   assert.ok(generatedModelPaths(result.artifacts).includes(path.join(sourceRoot, 'item.model.generated.ts')));
 });
 
@@ -321,7 +321,7 @@ test('a solution tsconfig that starts with a byte-order mark generates with the 
     'lib/ids.ts': 'export type Id = string;\n',
     'item.model.ts': taggedModelSource({ name: 'Item', imports: tsSource`import type { Id } from '@lib/ids';`, fields: tsSource`id: Id` }),
   });
-  const result = generate({ root, profile: { mobx: false, validation: true } });
+  const result = generate({ root, profile: { validation: true } });
   assert.ok(generatedModelPaths(result.artifacts).includes(path.join(sourceRoot, 'item.model.generated.ts')));
 });
 
@@ -329,7 +329,7 @@ test('a solution tsconfig whose references hold no model source names the soluti
   const { root, sourceRoot } = solutionProject(t, ['./tsconfig.other.json']);
   writeModelSources(sourceRoot, { 'item.model.ts': taggedModelSource({ name: 'Item', fields: tsSource`id: string` }) });
   assert.throws(
-    () => generate({ root, profile: { mobx: false, validation: true } }),
+    () => generate({ root, profile: { validation: true } }),
     (error: unknown) => error instanceof Error
       && error.message.includes(path.join(root, 'tsconfig.json'))
       && error.message.includes(path.join(sourceRoot, 'item.model.ts')),
@@ -341,7 +341,7 @@ test('a project root reached through a symlink opens its own project', (t: TestC
   writeModelSources(sourceRoot, { 'item.model.ts': taggedModelSource({ name: 'Item', fields: tsSource`id: string` }) });
   const alias = path.join(createFixtureProject(t, 'golem-root-alias-'), 'alias');
   fs.symlinkSync(root, alias, 'dir');
-  const result = generate({ root: alias, profile: { mobx: false, validation: true } });
+  const result = generate({ root: alias, profile: { validation: true } });
   assert.ok(result.artifacts.some(artifact => artifact.path.endsWith('item.model.generated.ts')));
 });
 
@@ -355,7 +355,7 @@ export type TBroken = IModel<{ id: string }>;
 export { wrong };
 `);
   assert.throws(
-    () => generate({ root, profile: { mobx: false, validation: false } }),
+    () => generate({ root, profile: { validation: false } }),
     (error: unknown) => error instanceof Error && error.message.startsWith(`${path.relative(process.cwd(), broken)}(2,7): error TS2322: Type 'number' is not assignable to type 'string'.`),
   );
 });
@@ -364,7 +364,7 @@ test('a type error in a handwritten file that is not a model source does not sto
   const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-generate-unrelated-error-', linkTypescript: true, compilerOptions: { declaration: false } });
   writeModelSources(sourceRoot, { 'item.model.ts': taggedModelSource({ name: 'Item', fields: tsSource`id: string` }) });
   fs.writeFileSync(path.join(sourceRoot, 'unrelated.ts'), "export const wrong: string = 5;\nexport const Anonymous = class { private x = 1; };\n");
-  const result = generate({ root, profile: { mobx: false, validation: false } });
+  const result = generate({ root, profile: { validation: false } });
   assert.ok(result.artifacts.some(artifact => artifact.path.endsWith('item.model.generated.ts')), 'the companion is generated; the compiler reports the other file');
 });
 
@@ -379,7 +379,7 @@ declare module '@exprtlabs/golem/model' {
 export {};
 `);
   assert.throws(
-    () => generate({ root, profile: { mobx: false, validation: false } }),
+    () => generate({ root, profile: { validation: false } }),
     /item\.model\.generated\.ts\(\d+,\d+\): error TS2420: Class 'TItemBaseModel' incorrectly implements interface 'GeneratedModel/,
   );
 });
@@ -393,7 +393,7 @@ export type TOrder = IModel<{ id: string }>;`,
 export type TIgnored = IModel<{ id: string }>;`,
   });
   // A variable keeps the test free of the context type, which names the suffixes only once they exist.
-  const context = { root, suffixes: ['.entity.ts'], profile: { mobx: false, validation: false } };
+  const context = { root, suffixes: ['.entity.ts'], profile: { validation: false } };
   const result = generate(context);
   const paths = result.artifacts.map(artifact => artifact.path);
   assert.ok(paths.includes(path.join(sourceRoot, 'order.entity.generated.ts')), 'the companion keeps the whole source name');
@@ -405,7 +405,7 @@ test('an explicit source may have any TypeScript file name, whatever the suffixe
   const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-generate-any-name-', linkTypescript: true });
   writeModelSources(sourceRoot, { 'anything.ts': tsSource`import type { IModel } from '@exprtlabs/golem/model';
 export type TAnything = IModel<{ id: string }>;` });
-  const result = generate({ root, sources: [path.join(sourceRoot, 'anything.ts')], profile: { mobx: false, validation: false } });
+  const result = generate({ root, sources: [path.join(sourceRoot, 'anything.ts')], profile: { validation: false } });
   assert.ok(result.artifacts.some(artifact => artifact.path === path.join(sourceRoot, 'anything.generated.ts')));
 });
 
@@ -419,7 +419,7 @@ import type { TLine } from './line.entity.mjs';
 export type TOrder = IModel<{ lines: TLine[] }>;`,
   });
   // A variable keeps the test free of the context type, which names the suffixes only once they exist.
-  const context = { root, suffixes: ['.entity.mts'], profile: { mobx: false, validation: false } };
+  const context = { root, suffixes: ['.entity.mts'], profile: { validation: false } };
   const result = generate(context);
   const order = result.artifacts.find(artifact => artifact.path === path.join(sourceRoot, 'order.entity.generated.mts'));
   assert.ok(order, 'the companion of an .mts source is a .generated.mts file');
@@ -441,7 +441,7 @@ test('the codec keys go under .golem/ of the golem.yaml directory when the job h
 export type TAccount = IModel<{ id: string }>;`,
   });
   const directory = path.join(root, 'config');
-  const result = generate({ root, directory, profile: { mobx: false, validation: false } });
+  const result = generate({ root, directory, profile: { validation: false } });
   const keys = result.artifacts.find((artifact) => artifact.path === path.join(directory, '.golem/codec-keys.json'));
   assert.ok(keys, 'the codec key file lies under the configuration directory');
   const table = JSON.parse(keys.content) as { version: number; keys: Record<string, string> };
@@ -501,7 +501,7 @@ test('one package installed at two paths and used by models of one job is one bi
   fs.writeFileSync(copyManifest, JSON.stringify({ ...JSON.parse(fs.readFileSync(copyManifest, 'utf8')) as object, version: '0.0.1' }));
   const model = (name: string): string => taggedModelSource({ name, imports: tsSource`import type { PkgCount } from '@fixture/pg/tags';`, fields: tsSource`count: PkgCount` }).text;
   writeModelSources(sourceRoot, { 'a.model.ts': model('A'), 'two/b.model.ts': model('B') });
-  const result = generate({ root, profile: { mobx: false, validation: true } });
+  const result = generate({ root, profile: { validation: true } });
   for (const name of ['a.model.generated.ts', 'two/b.model.generated.ts']) {
     const generated = result.artifacts.find(artifact => artifact.path.endsWith(name))?.content ?? '';
     assert.equal([...generated.matchAll(/^import \{ encodeCount as __golemSerialize0Source, decodeCount as __golemDeserialize0Source \} from "@fixture\/pg\/codecs";$/gm)].length, 1, `${name} binds the package import, not a copy`);
@@ -523,7 +523,7 @@ export type TParent = IModel<{ name: string & MinLength<3>; child: TChild }>;
 `,
   });
   // verify-open-child.mjs runs the validators of the parent and shows that the nested model with validation off stays open.
-  writeModelGolemYaml(root, { mobx: false, validation: true });
+  writeModelGolemYaml(root, { validation: true });
   await buildModelProject(root);
   const verifier = copyFixtureFile(root, 'models/model-generator/verify-open-child.mjs', 'verify-open-child.mjs');
   await command(root, process.execPath, [verifier, generatedCodecIdFromRoot(root, 'TParent'), generatedCodecIdFromRoot(root, 'TChild')]);
@@ -565,7 +565,7 @@ test('a discovered model file without an IModel or IObject alias is skipped, and
     'payment.model.generated.ts': SDK_COMPANION,
   });
 
-  const { artifacts } = generate({ root, profile: { mobx: false, validation: true } });
+  const { artifacts } = generate({ root, profile: { validation: true } });
   const companions = generatedModelPaths(artifacts);
   assert.deepEqual(companions, [path.join(sourceRoot, 'order.model.generated.ts')]);
 });
@@ -574,7 +574,7 @@ test('a job whose discovered model files all lack an alias generates nothing', (
   const { root, sourceRoot } = project(t);
   writeModelSources(sourceRoot, { 'payment.model.ts': BASE_CLASS_MODEL, 'payment.model.generated.ts': SDK_COMPANION });
 
-  const result = generate({ root, profile: { mobx: false, validation: true } });
+  const result = generate({ root, profile: { validation: true } });
   assert.deepEqual(result.artifacts, []);
 });
 
@@ -583,7 +583,7 @@ test('a model file that models.sources names must hold an IModel or IObject alia
   writeModelSources(sourceRoot, { 'payment.model.ts': BASE_CLASS_MODEL, 'payment.model.generated.ts': SDK_COMPANION });
 
   assert.throws(
-    () => generate({ root, sources: [path.join(sourceRoot, 'payment.model.ts')], profile: { mobx: false, validation: true } }),
+    () => generate({ root, sources: [path.join(sourceRoot, 'payment.model.ts')], profile: { validation: true } }),
     { message: 'No exported IModel<...> type aliases were found.' },
   );
 });
@@ -612,7 +612,7 @@ export type TMoney = IObject<{ currency: string }>;
 test('a model file of a folder outside the root with its own golem.yaml is generated by each app in its own models.output, and by that job in its own folder', (t: TestContext) => {
   // protects: R-20 each app writes the companion of a shared model; golem writes nothing into the shared folder
   const { root, sharedFolder } = sharedFolderWithConfig(t, 'version: 1\nmodel: {}\n');
-  const profile = { mobx: false, validation: true };
+  const profile = { validation: true };
 
   const app = generate({ root, profile });
   assert.deepEqual(
@@ -633,7 +633,7 @@ test('a model source that does not exist is named relative to the working direct
   const missing = path.join(sourceRoot, 'missing.model.ts');
 
   assert.throws(
-    () => generate({ root, sources: [missing], profile: { mobx: false, validation: true } }),
+    () => generate({ root, sources: [missing], profile: { validation: true } }),
     (error: unknown) => error instanceof Error && error.message.match(/^Model source does not exist: (.*)$/)?.[1] === path.relative(process.cwd(), missing),
   );
 });
@@ -650,7 +650,7 @@ export type TMoney = IObject<{ currency: string }>;
   });
 
   assert.throws(
-    () => generate({ root, profile: { mobx: false, validation: true } }),
+    () => generate({ root, profile: { validation: true } }),
     { message: `RUNM1077: ${path.relative(process.cwd(), path.join(sourceRoot, 'lib/golem.yaml'))} declares a model block below the golem.yaml folder ${path.relative(process.cwd(), root)}, where the model block of ${path.relative(process.cwd(), path.join(root, 'golem.yaml'))} already generates the same model files. Two blocks would write one generated file. Remove the model block from its golem.yaml, or move the folder out of the golem.yaml folder.` },
   );
 });
@@ -672,7 +672,7 @@ import { isEven } from '../../shared/rules.js';
 export type TOrder = IModel<{ count: number & TValidation<typeof isEven> }>;
 `,
     });
-    const { artifacts } = generate({ root, profile: { mobx: false, validation: true } });
+    const { artifacts } = generate({ root, profile: { validation: true } });
     return new Map(artifacts.map(artifact => [path.relative(root, artifact.path), artifact.content]));
   };
   const first = generateAtNewLocation();
@@ -692,7 +692,7 @@ test('a golem.yaml above the golem.yaml of the job is not another job: the sourc
   }));
   writeModelSources(path.join(root, 'src'), { 'order.model.ts': ORDER_MODEL });
 
-  const { artifacts } = generate({ root, profile: { mobx: false, validation: true } });
+  const { artifacts } = generate({ root, profile: { validation: true } });
   assert.deepEqual(
     generatedModelPaths(artifacts),
     [path.join(root, 'src/order.model.generated.ts')],
@@ -738,7 +738,7 @@ for (const [shape, { position, source }] of Object.entries(PACKAGE_MODEL_FIELDS)
     writeModelSources(path.join(root, 'src'), { 'order.model.ts': source });
 
     assert.throws(
-      () => generate({ root, profile: { mobx: false, validation: true } }),
+      () => generate({ root, profile: { validation: true } }),
       { code: 'RUNM1074', message: `${path.relative(process.cwd(), path.join(root, 'src/order.model.ts'))}:${position} RUNM1074: ${path.relative(process.cwd(), declaration)}#TPkgMoney is declared in a file whose name has no model suffix. Golem reads a model from a file whose name ends in .model.ts or .models.ts. Move the model into such a file.` },
     );
   });
@@ -760,7 +760,7 @@ export type TOrder = IObject<{ total: TPlain; shared: TShared }>;
 `,
   });
 
-  const { artifacts } = generate({ root, profile: { mobx: false, validation: true } });
+  const { artifacts } = generate({ root, profile: { validation: true } });
   assert.deepEqual(generatedModelPaths(artifacts), [path.join(root, 'src/order.model.generated.ts')]);
 });
 
@@ -782,7 +782,7 @@ test('models.root reached through a folder link still owns its model files', (t:
   const root = path.join(outer, 'app-link');
   fs.symlinkSync(real, root, 'dir');
 
-  const { artifacts } = generate({ root, profile: { mobx: false, validation: true } });
+  const { artifacts } = generate({ root, profile: { validation: true } });
   assert.deepEqual(
     generatedModelPaths(artifacts),
     [path.join(root, 'src/order.model.generated.ts')],
@@ -801,7 +801,7 @@ export type TOrder = IObject<{ shared: TShared }>;
 `,
   });
 
-  const { artifacts } = generate({ root, profile: { mobx: false, validation: true } });
+  const { artifacts } = generate({ root, profile: { validation: true } });
   writeGeneratedArtifacts(artifacts);
   assert.deepEqual(fs.readdirSync(path.join(outer, 'shared')).sort(), ['money.model.ts', 'package.json', 'plain.ts']);
   assert.deepEqual(artifacts.map(artifact => artifact.path).filter(file => !file.startsWith(`${root}${path.sep}`)), []);
@@ -814,7 +814,7 @@ test('a sources entry outside the models root stops generation with RUNM1075 nam
   writeModelSources(path.join(root, 'src'), { 'order.model.ts': ORDER_MODEL });
 
   assert.throws(
-    () => generate({ root, sources: [path.join(root, 'src/order.model.ts'), money], profile: { mobx: false, validation: true } }),
+    () => generate({ root, sources: [path.join(root, 'src/order.model.ts'), money], profile: { validation: true } }),
     { message: `RUNM1075: model.sources entry ${path.relative(process.cwd(), money)} is outside the golem.yaml folder ${path.relative(process.cwd(), root)}. The model block generates only files inside that folder.` },
   );
 });
@@ -826,7 +826,7 @@ test('a sources entry that links to a file outside the models root stops generat
   fs.symlinkSync(money, path.join(root, 'src/money.model.ts'));
 
   assert.throws(
-    () => generate({ root, sources: [path.join(root, 'src/money.model.ts')], profile: { mobx: false, validation: true } }),
+    () => generate({ root, sources: [path.join(root, 'src/money.model.ts')], profile: { validation: true } }),
     { message: `RUNM1075: model.sources entry ${path.relative(process.cwd(), money)} is outside the golem.yaml folder ${path.relative(process.cwd(), root)}. The model block generates only files inside that folder.` },
   );
 });
@@ -843,7 +843,7 @@ export type TMoney = IObject<{ currency: string }>;
   });
 
   assert.throws(
-    () => generate({ root, sources: [path.join(root, 'src/lib/money.model.ts')], profile: { mobx: false, validation: true } }),
+    () => generate({ root, sources: [path.join(root, 'src/lib/money.model.ts')], profile: { validation: true } }),
     (error: unknown) => error instanceof Error
       && error.message.startsWith(`RUNM1077: ${path.relative(process.cwd(), path.join(fs.realpathSync(root), 'src/lib/golem.yaml'))} declares a model block below the golem.yaml folder ${path.relative(process.cwd(), fs.realpathSync(root))}, where `),
   );
@@ -863,7 +863,7 @@ export type TA = IModel<{ n: number & TValidation<typeof $v0> }>;
 `,
   });
   assert.throws(
-    () => generate({ root, profile: { mobx: false, validation: true } }),
+    () => generate({ root, profile: { validation: true } }),
     (error: unknown) => error instanceof Error && error.message.endsWith(
       'a.model.ts:4:51 RUNM1088: The validation function is named "$v0", which has the form of a local of generated code (a $, one lowercase letter and digits). Generated code cannot import it under that name. Rename it.',
     ),
@@ -885,7 +885,7 @@ export type TA = IModel<{ b: $b }>;
 `,
   });
   assert.throws(
-    () => generate({ root, profile: { mobx: false, validation: true } }),
+    () => generate({ root, profile: { validation: true } }),
     (error: unknown) => error instanceof Error && error.message.endsWith(
       'b.model.ts:4:14 RUNM1088: The class is named "$b", which has the form of a local of generated code (a $, one lowercase letter and digits). Generated code cannot import it under that name. Rename it.',
     ),
@@ -905,7 +905,7 @@ import { $d, $e } from './codecs.js';
 export type TA = IModel<{ big: bigint & TSerde<typeof $e, typeof $d> }>;
 `,
   });
-  const source = generate({ root, profile: { mobx: false, validation: false } }).artifacts.find(artifact => artifact.path.endsWith('a.model.generated.ts'))?.content ?? '';
+  const source = generate({ root, profile: { validation: false } }).artifacts.find(artifact => artifact.path.endsWith('a.model.generated.ts'))?.content ?? '';
   assert.match(source, /import \{ \$e as __golemSerialize0Source, \$d as __golemDeserialize0Source \} from "\.\/codecs\.js";/);
 });
 

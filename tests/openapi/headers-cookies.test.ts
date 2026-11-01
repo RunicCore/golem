@@ -17,7 +17,7 @@ async function loadClient(t: TestContext, document: unknown, name: string) {
   await generateMaterializedSdk(document, {
     output,
     name,
-    profile: { mobx: false, validation: false },
+    profile: { validation: false },
   });
   compileGeneratedSdk(output);
   return loadGeneratedClient(output, name);
@@ -191,7 +191,7 @@ test('style cookie is accepted for a cookie parameter and rejected for a header 
   await generate({
     input: valid,
     output: path.join(directory, 'sdk'),
-    profile: { mobx: false, validation: false },
+    profile: { validation: false },
   });
 
   await assert.rejects(
@@ -212,7 +212,7 @@ test('style cookie is accepted for a cookie parameter and rejected for a header 
         },
       }, 'header.json'),
       output: path.join(directory, 'sdk-header'),
-      profile: { mobx: false, validation: false },
+      profile: { validation: false },
     }),
     /^Error: OpenAPI validation failed with 1 error\(s\):\nstruct: Must be "simple" \(header\.json#\/paths\/~1bad\/get\/parameters\/0\/style\)$/,
   );

@@ -23,7 +23,7 @@ const document = {
 
 test('model manifest entries carry no top-level additionalProperties; field descriptors own that fact', async t => {
   const output = path.join(createFixtureProject(t, 'golem-manifest-entries-'), 'sdk');
-  const result = await generateMaterializedSdk(document, { output, name: 'Manifest', profile: { mobx: false, validation: true } });
+  const result = await generateMaterializedSdk(document, { output, name: 'Manifest', profile: { validation: true } });
   const manifest = JSON.parse(result.artifacts.find(item => item.path.endsWith('/model-manifest.json'))?.content ?? '{}') as {
     models?: { id?: unknown; type?: { export?: string } }[];
   };
@@ -38,7 +38,7 @@ test('model manifest entries carry no top-level additionalProperties; field desc
 
 test('every model manifest entry carries the codec id a rewrite stamps, and validation refuses a manifest without it and says to regenerate', async t => {
   const output = path.join(createFixtureProject(t, 'golem-manifest-codec-'), 'sdk');
-  const result = await generateMaterializedSdk(document, { output, name: 'Manifest', profile: { mobx: false, validation: true } });
+  const result = await generateMaterializedSdk(document, { output, name: 'Manifest', profile: { validation: true } });
   const manifest = JSON.parse(result.artifacts.find(item => item.path.endsWith('/model-manifest.json'))?.content ?? '{}') as {
     models: { codecId?: string; type: { export: string } }[];
   };
@@ -56,13 +56,13 @@ test('every model manifest entry carries the codec id a rewrite stamps, and vali
 test('a manifest error names an absolute manifest file relative to the working directory', () => {
   // protects: T-375 messages print a local file relative to the working directory
   const beside = path.join(path.dirname(process.cwd()), 'other/model-manifest.json');
-  assert.throws(() => validateModelManifest({ profile: { mobx: false, validation: true, allowAny: false }, models: 'none' }, beside), {
+  assert.throws(() => validateModelManifest({ profile: { validation: true, allowAny: false }, models: 'none' }, beside), {
     message: 'Invalid model manifest ../other/model-manifest.json: models must be an array.',
   });
 });
 
 test('a manifest profile with a field golem no longer reads is rejected and says to regenerate', () => {
-  const profile = { mobx: false, validation: true, allowAny: false, retiredOption: true };
+  const profile = { validation: true, allowAny: false, retiredOption: true };
   assert.throws(
     () => validateModelManifest({ profile, models: [] }, 'sdk/model-manifest.json'),
     /Invalid model manifest sdk\/model-manifest\.json: profile has unsupported field\(s\): retiredOption\. Regenerate or remove the older generated SDK\./,
@@ -72,20 +72,20 @@ test('a manifest profile with a field golem no longer reads is rejected and says
 test('an SDK generated at validation sanity records sanity in its manifest, and the manifest reader takes true, false and sanity only', async t => {
   // protects: T-663 SDK manifests record the sanity level and the reader accepts it
   const output = path.join(createFixtureProject(t, 'golem-manifest-sanity-'), 'sdk');
-  const result = await generateMaterializedSdk(document, { output, name: 'Manifest', profile: { mobx: false, validation: 'sanity' } });
+  const result = await generateMaterializedSdk(document, { output, name: 'Manifest', profile: { validation: 'sanity' } });
   const manifest = JSON.parse(result.artifacts.find(item => item.path.endsWith('/model-manifest.json'))?.content ?? '{}') as { profile?: unknown };
-  assert.deepEqual(manifest.profile, { allowAny: false, mobx: false, unknownFormats: 'error', validation: 'sanity' });
+  assert.deepEqual(manifest.profile, { allowAny: false, unknownFormats: 'error', validation: 'sanity' });
   assert.doesNotThrow(() => validateModelManifest(manifest));
   for (const validation of [true, false, 'sanity']) {
-    assert.equal(validateModelManifest({ profile: { mobx: false, validation, allowAny: false }, models: [] }).profile.validation, validation);
+    assert.equal(validateModelManifest({ profile: { validation, allowAny: false }, models: [] }).profile.validation, validation);
   }
   assert.throws(
-    () => validateModelManifest({ profile: { mobx: false, validation: 'full', allowAny: false }, models: [] }, 'sdk/model-manifest.json'),
+    () => validateModelManifest({ profile: { validation: 'full', allowAny: false }, models: [] }, 'sdk/model-manifest.json'),
     /Invalid model manifest sdk\/model-manifest\.json: profile must include mobx, validation and allowAny booleans \(validation may also be "sanity"\)\. Regenerate the models\./,
   );
 });
 
-const BASE_PROFILE = { mobx: false, validation: true, allowAny: false, unknownFormats: 'error' } as const;
+const BASE_PROFILE = { validation: true, allowAny: false, unknownFormats: 'error' } as const;
 
 /** A project that generates its models against one SDK manifest holding `manifestProfile`; returns the call with the project profile. */
 function modelsAgainstManifest(t: test.TestContext, manifestProfile: Record<string, unknown>) {
@@ -100,14 +100,14 @@ test('an SDK manifest records the extension settings of the profile by package n
   // protects: T-782 profile.extensions records the settings by package name; no extension writes no key
   const output = path.join(createFixtureProject(t, 'golem-manifest-extension-record-'), 'sdk');
   const manifestProfile = async (profile: Record<string, unknown>) => {
-    const result = await generateMaterializedSdk(document, { output, name: 'Manifest', profile: { mobx: false, validation: true, ...profile } });
+    const result = await generateMaterializedSdk(document, { output, name: 'Manifest', profile: { validation: true, ...profile } });
     return (JSON.parse(result.artifacts.find(item => item.path.endsWith('/model-manifest.json'))?.content ?? '{}') as { profile: unknown }).profile;
   };
   assert.deepEqual(await manifestProfile({ extensions: { '@scope/pack': { level: 2, mode: 'fast' } } }), {
-    allowAny: false, extensions: { '@scope/pack': { level: 2, mode: 'fast' } }, mobx: false, unknownFormats: 'error', validation: true,
+    allowAny: false, extensions: { '@scope/pack': { level: 2, mode: 'fast' } }, unknownFormats: 'error', validation: true,
   });
-  assert.deepEqual(await manifestProfile({ extensions: {} }), { allowAny: false, mobx: false, unknownFormats: 'error', validation: true });
-  assert.deepEqual(await manifestProfile({}), { allowAny: false, mobx: false, unknownFormats: 'error', validation: true });
+  assert.deepEqual(await manifestProfile({ extensions: {} }), { allowAny: false, unknownFormats: 'error', validation: true });
+  assert.deepEqual(await manifestProfile({}), { allowAny: false, unknownFormats: 'error', validation: true });
 });
 
 test('the models job accepts an SDK manifest whose extension settings equal the project settings, whatever their key order, and one written before extensions existed when the project has none', t => {
@@ -126,7 +126,7 @@ test('the models job refuses an SDK manifest whose extension settings differ fro
   const generateWith = modelsAgainstManifest(t, manifestProfile);
   assert.throws(
     () => generateWith({ '@scope/pack': { mode: 'slow' }, '@scope/other': { on: true } }),
-    /profile mismatch in .*: extensions of @scope\/pack: manifest \{"mode":"fast"\}, project \{"mode":"slow"\}\. The project expects \{ mobx: false, validation: true, allowAny: false, unknownFormats: error, extensions: \{"@scope\/other":\{"on":true\},"@scope\/pack":\{"mode":"slow"\}\} \}\./,
+    /profile mismatch in .*: extensions of @scope\/pack: manifest \{"mode":"fast"\}, project \{"mode":"slow"\}\. The project expects \{ validation: true, allowAny: false, unknownFormats: error, extensions: \{"@scope\/other":\{"on":true\},"@scope\/pack":\{"mode":"slow"\}\} \}\./,
   );
   assert.throws(() => generateWith({ '@scope/pack': { mode: 'fast' } }), /extensions of @scope\/other: manifest \{"on":true\}, project not used\./);
   const older = modelsAgainstManifest(t, BASE_PROFILE);
@@ -135,10 +135,10 @@ test('the models job refuses an SDK manifest whose extension settings differ fro
 
 test('the manifest reader keeps an older profile without extensions and refuses extensions that are no object per package', () => {
   // protects: T-782 an older manifest reads as no extensions
-  assert.deepEqual(validateModelManifest({ profile: { mobx: false, validation: true, allowAny: false }, models: [] }).profile, { mobx: false, validation: true, allowAny: false });
-  assert.deepEqual(validateModelManifest({ profile: { mobx: false, validation: true, allowAny: false, extensions: { '@scope/pack': { a: 1 } } }, models: [] }).profile.extensions, { '@scope/pack': { a: 1 } });
+  assert.deepEqual(validateModelManifest({ profile: { validation: true, allowAny: false }, models: [] }).profile, { validation: true, allowAny: false });
+  assert.deepEqual(validateModelManifest({ profile: { validation: true, allowAny: false, extensions: { '@scope/pack': { a: 1 } } }, models: [] }).profile.extensions, { '@scope/pack': { a: 1 } });
   assert.throws(
-    () => validateModelManifest({ profile: { mobx: false, validation: true, allowAny: false, extensions: { '@scope/pack': true } }, models: [] }, 'sdk/model-manifest.json'),
+    () => validateModelManifest({ profile: { validation: true, allowAny: false, extensions: { '@scope/pack': true } }, models: [] }, 'sdk/model-manifest.json'),
     /Invalid model manifest sdk\/model-manifest\.json: profile extensions must map a package name to an object of settings\. Regenerate the models\./,
   );
 });

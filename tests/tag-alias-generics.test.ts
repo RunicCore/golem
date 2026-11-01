@@ -20,7 +20,7 @@ async function validity(t: TestContext, prelude: SourceFragment, field: SourceFr
   const { root, sourceRoot } = fixture(t);
   fs.writeFileSync(path.join(sourceRoot, 'rules.ts'), `export function notBlank(value: string): boolean | string { return value.trim() !== '' || 'blank'; }\n`);
   writeModelA(sourceRoot, prelude, field);
-  writeModelGolemYaml(root, { mobx: false, validation: true });
+  writeModelGolemYaml(root, { validation: true });
   await buildModelProject(root);
   const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
   const results: boolean[] = [];
@@ -82,7 +82,7 @@ for (const item of [
     const { root, sourceRoot } = fixture(t);
     fs.writeFileSync(path.join(sourceRoot, 'rules.ts'), `export function notBlank(value: string): boolean { return value.trim() !== ''; }\n`);
     writeModelA(sourceRoot, tsSource`${tags}\n${item.prelude}`, item.field);
-    assert.throws(() => generate({ root, profile: { mobx: false, validation: true } }), error => { assert.match(String(error), item.expected); return true; });
+    assert.throws(() => generate({ root, profile: { validation: true } }), error => { assert.match(String(error), item.expected); return true; });
   });
 }
 

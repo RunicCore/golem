@@ -270,7 +270,7 @@ test('a direct operation entrypoint loads only its generated closure', async t =
   writeGeneratedSdk(writeSdk, moduleDocument(), {
     output: source,
     name: 'Modular',
-    profile: { mobx: false, validation: true },
+    profile: { validation: true },
   });
   compileGeneratedSdk(source, [], {
     strict: true,
@@ -311,7 +311,7 @@ test('directional resource aliases never shadow another exact resource ID in gen
   writeGeneratedSdk(writeSdk, resourceAliasCollisionDocument(), {
     output: source,
     name: 'ResourceAliases',
-    profile: { mobx: false, validation: true },
+    profile: { validation: true },
   });
   compileGeneratedSdk(source, [], {
     strict: true,
@@ -337,7 +337,7 @@ test('a Nest-style Payment keeps its canonical codec ID across repeated SDK gene
   const document = parse(readFixture('openapi/canonical-codec-identity/openapi.yaml'));
   const codecIdOfPayment = (name: string): string => {
     const output = path.join(root, name);
-    const result = writeSdk(document, { output, name: 'Payments', profile: { mobx: false, validation: true } });
+    const result = writeSdk(document, { output, name: 'Payments', profile: { validation: true } });
     writeGeneratedArtifacts(result.artifacts);
     const manifest = JSON.parse(readFileSync(path.join(output, 'model-manifest.json'), 'utf8')) as { models: { type: { export: string }; codecId: string }[] };
     const payment = manifest.models.find(model => model.type.export === 'Payment');
@@ -356,7 +356,7 @@ test('10 and 100 operations share one validators module and the generated source
     const result = writeGeneratedSdk(writeSdk, scaleDocument(count), {
       output: path.join(root, `src-${count}`),
       name: 'Scale',
-      profile: { mobx: false, validation: true },
+      profile: { validation: true },
     });
     const operationArtifacts = result.artifacts.filter(artifact => artifact.path.includes(`${path.sep}operations${path.sep}`)
       && artifact.path.endsWith('.ts'));
@@ -387,8 +387,8 @@ test('sequential same-title generation jobs keep schema and resource contexts is
   const alpha = fixture(t).source;
   const beta = fixture(t).source;
   const sdks = [
-    writeGeneratedSdk(writeSdk, contextDocument('alpha'), { output: alpha, name: 'Context', profile: { mobx: false, validation: true } }),
-    writeGeneratedSdk(writeSdk, contextDocument('beta'), { output: beta, name: 'Context', profile: { mobx: false, validation: true } }),
+    writeGeneratedSdk(writeSdk, contextDocument('alpha'), { output: alpha, name: 'Context', profile: { validation: true } }),
+    writeGeneratedSdk(writeSdk, contextDocument('beta'), { output: beta, name: 'Context', profile: { validation: true } }),
   ];
   assert.deepEqual(sdks.map(sdk => sdkValidatorArtifacts(sdk.artifacts).length), [1, 1]);
   compileGeneratedSdk(alpha, [], STRICT_OPTIONS);
@@ -427,7 +427,7 @@ test('a model with a constant field only and a model with no field compile under
       '/empty': operation('putEmpty', { type: 'object', properties: {}, additionalProperties: false }),
       '/empty-model': operation('putEmptyModel', { $ref: '#/components/schemas/Empty' }),
     },
-  }, { output: source, name: 'Fieldless', profile: { mobx: false, validation: true } });
+  }, { output: source, name: 'Fieldless', profile: { validation: true } });
   compileGeneratedSdk(source, [], STRICT_OPTIONS);
   const fixed = await loadOperation(source, 'putFixed');
   await fixed.operation.execute({ body: { kind: 'only' } });
@@ -440,7 +440,7 @@ test('a model with a constant field only and a model with no field compile under
 
 test('the SDK validators module exports one named function per root and no record', async t => {
   const { source } = fixture(t);
-  const result = writeGeneratedSdk(writeSdk, contextDocument('alpha'), { output: source, name: 'Context', profile: { mobx: false, validation: true } });
+  const result = writeGeneratedSdk(writeSdk, contextDocument('alpha'), { output: source, name: 'Context', profile: { validation: true } });
   assert.equal(sdkValidatorArtifacts(result.artifacts).length, 1);
   compileGeneratedSdk(source, [], STRICT_OPTIONS);
   const module = requireRecord(await import(pathToFileURL(path.join(source, 'dist/validators.generated.js')).href), 'validators module');
@@ -463,7 +463,7 @@ const amountObject = { type: 'object', properties: { amount: { type: 'number' },
 
 async function generateShortened(t: TestContext, schemas: Record<string, unknown>) {
   const { source } = fixture(t);
-  writeGeneratedSdk(writeSdk, shortenedDocument(schemas), { output: source, name: 'Shortened', profile: { mobx: false, validation: false } });
+  writeGeneratedSdk(writeSdk, shortenedDocument(schemas), { output: source, name: 'Shortened', profile: { validation: false } });
   compileGeneratedSdk(source, [], STRICT_OPTIONS);
   return source;
 }

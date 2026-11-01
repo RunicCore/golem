@@ -38,7 +38,7 @@ async function assertNestedProjections(root: string, buildFile: string, validati
 async function buildPlaceProject(t: TestContext): Promise<string> {
   const { root, sourceRoot } = fixture(t);
   fs.writeFileSync(path.join(sourceRoot, 'place.model.ts'), readFixture("models/model-composition/projection-decoders-copy-fields-with-assignments/place.model.ts"));
-  writeModelGolemYaml(root, { mobx: false, validation: false });
+  writeModelGolemYaml(root, { validation: false });
   await buildModelProject(root);
   return root;
 }
@@ -46,7 +46,7 @@ async function buildPlaceProject(t: TestContext): Promise<string> {
 test('nested projections strip omitted fields and retain intact child models with validation=false', async t => {
   const { root, sourceRoot } = fixture(t);
   fs.writeFileSync(path.join(sourceRoot, 'address.model.ts'), readFixture("models/model-composition/model-composition-address-model/address.model.ts"));
-  writeModelGolemYaml(root, { mobx: false, validation: false });
+  writeModelGolemYaml(root, { validation: false });
   await buildModelProject(root);
   await assertNestedProjections(root, 'build/address.model.js', false);
 });
@@ -76,7 +76,7 @@ test('a projection decoder leaves out a field that is undefined or not enumerabl
 test('a projection decoder leaves out an undeclared key whose value is undefined', async t => {
   const { root, sourceRoot } = fixture(t);
   fs.writeFileSync(path.join(sourceRoot, 'board.model.ts'), readFixture("models/model-composition/projection-extras/board.model.ts"));
-  writeModelGolemYaml(root, { mobx: false, validation: false });
+  writeModelGolemYaml(root, { validation: false });
   await buildModelProject(root);
   const { Board } = await import(path.join(root, 'build/board.model.js'));
   const board = modelCodec(Board).fromWireFormat({ slots: { x: undefined, y: { at: '2026-01-02T00:00:00.000Z' } } }, { validate: false });
@@ -88,7 +88,7 @@ test('equivalent projections share helpers and execute only retained field codec
   const { root, sourceRoot } = fixture(t);
   fs.writeFileSync(path.join(sourceRoot, 'codecs.ts'), readFixture("models/model-composition/equivalent-projections-share-helpers-and-execute-only-retained-field-codecs/codecs.ts"));
   fs.writeFileSync(path.join(sourceRoot, 'item.model.ts'), readFixture("models/model-composition/equivalent-projections-share-helpers-and-execute-only-retained-field-codecs/item.model.ts"));
-  writeModelGolemYaml(root, { mobx: false, validation: false });
+  writeModelGolemYaml(root, { validation: false });
   await buildModelProject(root);
   const companion = generatedModelFiles(root).find(artifact => artifact.path.endsWith('item.model.generated.ts'))!.content;
   assert.equal([...companion.matchAll(/function decodeTItemOmitId\(/g)].length, 1);
@@ -124,7 +124,7 @@ test('validation-on projection cases share one generated project', async t => {
     'intact-child/item.model.ts': composition('an-intact-child-model-keeps-its-own-allowany-policy-inside-a-strict-parent', 'item.model.ts'),
     'projected-child/item.model.ts': composition('a-projected-child-applies-the-containing-model-allowany-policy', 'item.model-2.ts'),
   });
-  writeModelGolemYaml(root, { mobx: false, validation: true });
+  writeModelGolemYaml(root, { validation: true });
   await buildModelProject(root);
   const load = (directory: string, file: string) => import(path.join(root, 'build', directory, file));
   // Codec ids are read from the one directory's companion, since several directories declare a Container.
@@ -227,7 +227,7 @@ test('validation-on projection cases share one generated project', async t => {
     const strict = fixture(t);
     fs.writeFileSync(path.join(strict.sourceRoot, 'item.model.ts'), readFixture("models/model-composition/a-projected-child-applies-the-containing-model-allowany-policy/item.model.ts"));
     assert.throws(
-      () => generate({ root: strict.root, profile: { mobx: false, validation: true } }),
+      () => generate({ root: strict.root, profile: { validation: true } }),
       /RUNM1011.*contains any\. Replace it with a concrete type, or allow it with .*IModel<Fields, \{ allowAny: true \}>.*allowAny: true in golem\.yaml/,
     );
     const { Container } = await load('projected-child', 'item.model.js');
@@ -266,9 +266,9 @@ components:
     input: path.join(sourceRoot, 'envelope.yaml'),
     output: path.join(sourceRoot, 'sdk'),
     name: 'Envelopes',
-    profile: { mobx: false, validation: true },
+    profile: { validation: true },
   })).artifacts);
-  writeModelGolemYaml(root, { mobx: false, validation: true });
+  writeModelGolemYaml(root, { validation: true });
   const writeView = (field: string, options = ''): void => writeModelSources(sourceRoot, {
     'view.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
 import type { Envelope } from './sdk/index.js';
@@ -316,7 +316,7 @@ test('a projection over a source object drops the brand keys of an SDK model and
 test('a projection keeps a source field whose string key is spelled like a brand key', async t => {
   // protects: F-213 a generated-model brand key is found by its symbol, so a string key spelled like one stays a field
   const { root, sourceRoot } = fixture(t);
-  writeModelGolemYaml(root, { mobx: false, validation: true });
+  writeModelGolemYaml(root, { validation: true });
   writeModelSources(sourceRoot, {
     'view.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
 import { TViewBaseModel } from './view.model.generated.js';
@@ -334,7 +334,7 @@ export class View extends TViewBaseModel {}
 test('an indexed access to an anonymous field of a model stays a plain object, not an instance of an unrelated model with the same fields', async t => {
   // protects: bug sweep 3 TOrder['shipping'] kept TOrder as its model, so the structural match bound the field to TAddress
   const { root, sourceRoot } = fixture(t);
-  writeModelGolemYaml(root, { mobx: false, validation: false });
+  writeModelGolemYaml(root, { validation: false });
   writeModelSources(sourceRoot, {
     'invoice.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
 import { TAddressBaseModel, TInvoiceBaseModel, TOrderBaseModel } from './invoice.model.generated.js';

@@ -17,7 +17,7 @@ import { runLines } from './support/watch-runs.js';
 
 function fixture(t: TestContext): { root: string; config: string } {
   const root = workspaceLinkedProject(t, 'golem-pipeline-', '{"name":"pipeline-fixture","type":"module"}');
-  writeFixture(root, { mobx: false, validation: true });
+  writeFixture(root, { validation: true });
   return { root, config: path.join(root, 'golem.yaml') };
 }
 
@@ -43,7 +43,7 @@ test('global profile changes remove obsolete validation and keep manifest identi
   const manifestFile = path.join(root, 'sdk/model-manifest.json');
   const before = JSON.parse(fs.readFileSync(manifestFile, 'utf8')) as {
     models: { id: string }[];
-    profile: { mobx: boolean; validation: boolean };
+    profile: { mobx?: boolean; validation: boolean };
   };
   // A fresh process reads the built SDK, so no module of an earlier build stays cached.
   const validateBreakingMoney = async (): Promise<string> => {
@@ -58,10 +58,10 @@ test('global profile changes remove obsolete validation and keep manifest identi
   await runPipeline(config);
   const after = JSON.parse(fs.readFileSync(manifestFile, 'utf8')) as {
     models: { id: string }[];
-    profile: { mobx: boolean; validation: boolean };
+    profile: { mobx?: boolean; validation: boolean };
   };
   assert.deepEqual(after.models.map((model) => model.id), before.models.map((model) => model.id));
-  assert.deepEqual(after.profile, { mobx: false, validation: false, allowAny: false, unknownFormats: 'error' });
+  assert.deepEqual(after.profile, { validation: false, allowAny: false, unknownFormats: 'error' });
   assert.equal(await validateBreakingMoney(), 'accepted', 'validation off: the client has no validator left');
   await runPipeline(config, { check: true });
 });

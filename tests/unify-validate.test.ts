@@ -52,7 +52,7 @@ test('global validation true binds IObject and IModel codecs to generated valida
     path: path.join(sourceRoot, 'payload.model.ts'),
     content: readFixture('models/unify-validate/global-validation-true-emits-codec-validator-for-iobject-and-imodel/payload.model.ts'),
   }]);
-  writeModelGolemYaml(root, { mobx: false, validation: true });
+  writeModelGolemYaml(root, { validation: true });
   await compile(root);
   const source = generatedText(root);
   assertGeneratedValidatorsBound(source);
@@ -85,7 +85,7 @@ test('a model registers its own validation level as the default of its calls', a
   // protects: T-678 the generated code records each model's level (R-76: the model's level is a default, not a cap)
   const { root, sourceRoot } = fixture(t);
   writeMixedModels(sourceRoot);
-  writeModelGolemYaml(root, { mobx: false, validation: true });
+  writeModelGolemYaml(root, { validation: true });
   await compile(root);
   const { Checked } = await import(pathToFileURL(path.join(root, 'build/mixed.model.js')).href);
   assert.deepEqual(findGeneratedModelDefinition(new Checked({ title: 'abc' }))?.profile, { validation: 'sanity' });
@@ -101,7 +101,7 @@ test('a sanity project emits no value limit and no validation function, and its 
   // protects: T-678 a sanity project emits no value-limit or TValidation code
   const { root, sourceRoot } = fixture(t);
   writeMixedModels(sourceRoot);
-  writeModelGolemYaml(root, { mobx: false, validation: 'sanity' });
+  writeModelGolemYaml(root, { validation: 'sanity' });
   await compile(root);
   const validators = validatorsText(sourceRoot);
   assert.notEqual(validators, '', 'the sanity project writes its validators module');
@@ -119,7 +119,7 @@ test('a project at true whose models are all off writes no validators module', a
     path: path.join(sourceRoot, 'off.model.ts'),
     content: "import type { IObject } from '@exprtlabs/golem/model';\nimport type { MinLength } from '@exprtlabs/golem/tags';\nexport type TOff = IObject<{ id: string & MinLength<3> }, { validation: false }>;\n",
   }]);
-  writeModelGolemYaml(root, { mobx: false, validation: true });
+  writeModelGolemYaml(root, { validation: true });
   await compile(root);
   assert.equal(validatorsText(sourceRoot), '');
 });
@@ -133,7 +133,7 @@ test('an off model with a validation function in its own file, held by a validat
     'parent.model.ts': "import type { IModel } from '@exprtlabs/golem/model';\nimport type { TChild } from './child.model.js';\nexport type TParent = IModel<{ child: TChild; note: string }>;\n",
   };
   writeGeneratedArtifacts(Object.entries(files).map(([name, content]) => ({ path: path.join(sourceRoot, name), content })));
-  writeModelGolemYaml(root, { mobx: false, validation: true });
+  writeModelGolemYaml(root, { validation: true });
   await compile(root);
   await import(pathToFileURL(path.join(root, 'build/parent.model.generated.js')).href);
   const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TParent'));
@@ -153,7 +153,7 @@ test('nested interned child with validation false is opaque; parent field tags s
       content: readFixture('models/unify-validate/nested-interned-child-with-validation-false-is-opaque-parent-field-tags-stil/nested.model.ts'),
     },
   ]);
-  writeModelGolemYaml(root, { mobx: false, validation: true });
+  writeModelGolemYaml(root, { validation: true });
   await compile(root);
   const { Parent } = await import(pathToFileURL(path.join(root, 'build/nested.model.js')).href);
   const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TParent'));

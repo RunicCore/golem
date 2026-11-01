@@ -98,7 +98,7 @@ test('fills a response media schema from the declared contract while preserving 
     root,
     output: path.join(root, 'openapi.json'),
     info: { title: 'Response overlay', version: '1' },
-    profile: { mobx: false, validation: false },
+    profile: { validation: false },
   });
   const document = documentOf<OpenApiDocument>(result);
   const media = document.paths['/payments']?.get?.responses['200']?.content?.['application/json'];
@@ -113,7 +113,7 @@ test('normalizes ordinary DTO nullable properties, enums, and response overlays'
     output: path.join(root, 'openapi.json'),
     openapiVersion: '3.1.2',
     info: { title: 'Nullable DTO overlay', version: '1' },
-    profile: { mobx: false, validation: false },
+    profile: { validation: false },
   }));
   assertNoLegacyNullable(document);
   const response = document.paths['/results']?.get?.responses['200']?.content?.['application/json']?.schema;
@@ -142,7 +142,7 @@ for (const openapiVersion of ['3.2.0', '3.1.2'] as const) {
   test(`keeps the TypeScript schema under a nullable type or Record overlay on ${openapiVersion}`, async t => {
     // protects: T-419 nullable and additionalProperties overlays keep the TypeScript schema, as Nest Swagger keeps them; T-457 a matching additionalProperties is accepted and written
     const root = fixture(t, readFixture('controllers/overlay/keeps-the-typescript-schema-under-a-nullable-type-or-record-overlay/controller.ts'));
-    const document = documentOf<OpenApiDocument>(await generate({ root, output: path.join(root, 'openapi.json'), openapiVersion, info: { title: 'Overlay', version: '1' }, profile: { mobx: false, validation: false } }));
+    const document = documentOf<OpenApiDocument>(await generate({ root, output: path.join(root, 'openapi.json'), openapiVersion, info: { title: 'Overlay', version: '1' }, profile: { validation: false } }));
     const properties = document.paths['/widgets']?.get?.responses['200']?.content?.['application/json']?.schema?.properties;
     assert.ok(properties?.middle && properties.scores);
     const middle = await compileDocumentSchema(document, properties.middle);
@@ -163,7 +163,7 @@ test('allows nullable:false narrowing for ordinary DTOs while keeping the standa
     output: path.join(root, 'openapi.json'),
     openapiVersion: '3.1.2',
     info: { title: 'Nonnullable DTO overlay', version: '1' },
-    profile: { mobx: false, validation: false },
+    profile: { validation: false },
   }));
   assertNoLegacyNullable(document);
   const propertyResponse = document.paths['/narrow/property']?.get?.responses['200']?.content?.['application/json']?.schema;
@@ -194,7 +194,7 @@ test('rejects nullable Swagger overlays that widen a nonnullable IModel response
       output: path.join(root, 'openapi.json'),
       openapiVersion: '3.1.2',
       info: { title: 'Nullable overlay', version: '1' },
-      profile: { mobx: false, validation: false },
+      profile: { validation: false },
     }),
     error => expectCode(error, 'NEST1503'),
     'nullable widening is rejected',
@@ -213,7 +213,7 @@ test('rejects Swagger required:false for required IModel querystring contracts a
         root,
         output: path.join(root, 'openapi.json'),
         info: { title: 'Required overlay', version: '1' },
-        profile: { mobx: false, validation: false },
+        profile: { validation: false },
       }),
       error => expectCode(error, 'NEST1503'),
     );
@@ -224,7 +224,7 @@ test('rejects an @ApiProperty additionalProperties that conflicts with a Record 
   // protects: T-457 additionalProperties on @ApiProperty was dropped, so a conflict with Record<string, number> went unreported
   const root = fixture(t, readFixture('controllers/overlay/rejects-an-apiproperty-additionalproperties-that-conflicts-with-a-record/controller.ts'));
   await assert.rejects(
-    generate({ root, output: path.join(root, 'openapi.json'), info: { title: 'Overlay', version: '1' }, profile: { mobx: false, validation: false } }),
+    generate({ root, output: path.join(root, 'openapi.json'), info: { title: 'Overlay', version: '1' }, profile: { validation: false } }),
     error => expectCode(error, 'NEST1503'),
   );
 });

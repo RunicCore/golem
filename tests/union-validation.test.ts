@@ -292,7 +292,7 @@ test('model-plane validation selects the variant class the encoder selects', asy
 test('IModel object unions with validation load, validate and reject an unknown tag', async (t) => {
   const { root } = createModelProject(t, { prefix: 'golem-union-validation-', name: 'union-validation' });
   copyFixtureFile(root, 'models/union-validation/pets.model.ts', 'src/pets.model.ts');
-  writeModelGolemYaml(root, { mobx: false, validation: true });
+  writeModelGolemYaml(root, { validation: true });
   await buildModelProject(root);
   // Without the build-time rewrite, nested values construct the generated bases.
   const { Owner, Cat, Dog } = await loadPets(root);

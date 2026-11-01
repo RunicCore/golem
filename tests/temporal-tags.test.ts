@@ -17,7 +17,7 @@ async function buildCodecs(scope: FixtureScope, name: string, source: Parameters
   });
   for (const [file, text] of Object.entries(files)) fs.writeFileSync(path.join(sourceRoot, file), text);
   fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource(source).text);
-  writeModelGolemYaml(root, { mobx: false, validation: true });
+  writeModelGolemYaml(root, { validation: true });
   await buildModelProject(root);
   return import(path.toNamespacedPath(path.join(root, 'build/a.model.generated.js'))) as Promise<{
     parseTA: (text: string) => Record<string, unknown>;

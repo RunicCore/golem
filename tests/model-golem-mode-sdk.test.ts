@@ -10,7 +10,7 @@ import { golemModeManifest } from './openapi/helpers.js';
 import { createModelProject, writeModelSources } from './model-project.js';
 import { exportsOf, runModuleScope } from './support/run-module.js';
 
-const PROFILE = { mobx: false, validation: true, allowAny: false } as const;
+const PROFILE = { validation: true, allowAny: false } as const;
 const ref = (name: string) => ({ $ref: `#/components/schemas/${name}` });
 
 function document(format: string, chargeExtra: Record<string, unknown> = {}) {
@@ -48,7 +48,7 @@ function golemModeProject(t: TestContext, format: string, withAppModel = true) {
 test('the models job compiles the SDK operation roots and the app models into one validators module', t => {
   // protects: T-698 T-699 one validator set for SDK types, SDK operations and app models; no SDK validator is copied (E-52)
   const { manifest, context } = golemModeProject(t, 'date');
-  const result = generate({ ...context, profile: { mobx: false, validation: true } });
+  const result = generate({ ...context, profile: { validation: true } });
   const { graph, valueNodes } = sdkSchemaGraph(manifest, true);
   const requestRoot = graph.nodes.get(valueNodes.get(JSON.stringify(['createCharge', 'request', 'application/json'])) ?? '')?.codecId ?? '';
   const responseRoot = graph.nodes.get(valueNodes.get(JSON.stringify(['createCharge', 'response', '200', 'application/json'])) ?? '')?.codecId ?? '';
@@ -76,7 +76,7 @@ test('the models job compiles the SDK operation roots and the app models into on
 test('the models job writes the sdkCodecs table: a member per operation in the shape of a standalone codec module', t => {
   // protects: T-699 the file sdkCodecsFile names exports sdkCodecs, one member per operation, with the SDK node codecs it names
   const { manifest, context } = golemModeProject(t, 'date');
-  const result = generate({ ...context, profile: { mobx: false, validation: true } });
+  const result = generate({ ...context, profile: { validation: true } });
   const file = result.artifacts.find(artifact => artifact.path === path.join(context.root, 'src/generated/models/src/sdk.sdk.generated.ts'));
   const { graph, valueNodes } = sdkSchemaGraph(manifest, true);
   const requestNode = valueNodes.get(JSON.stringify(['createCharge', 'request', 'application/json'])) ?? '';
@@ -103,7 +103,7 @@ test('the models job writes the sdkCodecs table: a member per operation in the s
 test('the models job reports the diagnostics of the SDK types: an unknown format in an SDK operation stops generation', t => {
   // protects: T-698 SDK validator diagnostics come from the models job now that a golem-mode SDK compiles nothing
   const { context } = golemModeProject(t, 'no-such-format');
-  const result = generate({ ...context, profile: { mobx: false, validation: true } });
+  const result = generate({ ...context, profile: { validation: true } });
   assert.deepEqual(result.artifacts, []);
   assert.equal(result.diagnostics?.some(diagnostic => diagnostic.severity === GolemDiagnosticSeverity.Error && diagnostic.message.includes('no-such-format')), true, JSON.stringify(result.diagnostics));
 });
@@ -128,7 +128,7 @@ test('two golem-mode SDKs with one operation name compile to separate roots in t
     sources: [path.join(sourceRoot, 'ledger.model.ts')],
     manifestInputs: ['first', 'second'].map(folder => path.join(sourceRoot, folder, 'model-manifest.json')),
     sdkOutputs: ['first', 'second'].map(folder => path.join(sourceRoot, folder)),
-    profile: { mobx: false, validation: true },
+    profile: { validation: true },
   });
   const source = result.artifacts.find(artifact => artifact.path.endsWith('.validators.generated.ts'))?.content ?? '';
   const exports = Object.keys(exportsOf(source));
@@ -143,13 +143,13 @@ test('two golem-mode SDKs with one operation name compile to separate roots in t
 test('a golem-mode manifest that no openapi job of the golem.yaml writes is refused', t => {
   // protects: T-699 the models job takes the codecs file from the config and never from where a manifest lies
   const { context } = golemModeProject(t, 'date');
-  assert.throws(() => generate({ ...context, sdkOutputs: [], profile: { mobx: false, validation: true } }), (error: unknown) => (error as { code?: string }).code === 'GOLEM_SDK_JOB_MISSING' && /Set the SDK to mode standalone, or add its openapi job with mode golem/.test((error as Error).message));
+  assert.throws(() => generate({ ...context, sdkOutputs: [], profile: { validation: true } }), (error: unknown) => (error as { code?: string }).code === 'GOLEM_SDK_JOB_MISSING' && /Set the SDK to mode standalone, or add its openapi job with mode golem/.test((error as Error).message));
 });
 
 test('an app with no model file and one golem-mode SDK still writes the validators and the codecs file', t => {
   // protects: T-699 the models job does not return early when the only thing to write is for an SDK of mode golem
   const { context } = golemModeProject(t, 'date', false);
-  const result = generate({ ...context, profile: { mobx: false, validation: true } });
+  const result = generate({ ...context, profile: { validation: true } });
   assert.deepEqual(result.artifacts.map(artifact => path.basename(artifact.path)).sort(), ['models.validators.generated.ts', 'sdk.sdk.generated.ts']);
   assert.match(result.artifacts.find(artifact => artifact.path.endsWith('sdk.sdk.generated.ts'))?.content ?? '', /export const sdkCodecs = \{\n  createCharge: \{\n    input: validate_src_sdk_createCharge_input,/);
 });

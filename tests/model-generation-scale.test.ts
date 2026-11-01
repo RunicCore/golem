@@ -53,7 +53,7 @@ test('model identity checks grow linearly with the model count', t => {
     });
     writeScaleModels(sourceRoot, count);
     const before = calls;
-    const result = generate({ root, profile: { mobx: false, validation: true } });
+    const result = generate({ root, profile: { validation: true } });
     assert.equal(result.artifacts.filter(artifact => artifact.path.endsWith('.model.generated.ts')).length, count);
     counts.push(calls - before);
   }
@@ -70,6 +70,6 @@ test('a model that nests a generic thirty levels deep generates', t => {
       + "export type Chain<N extends unknown[]> = N['length'] extends 30 ? { end: true } : { next: Chain<[...N, 1]> };\n"
       + `export type TDeep = IModel<{ plain: ${wrap('string')}; dates: ${wrap('Date')}; chain: Chain<[]> }>;\n`,
   });
-  const result = generate({ root, sources: [path.join(sourceRoot, 'deep.model.ts')], profile: { mobx: false, validation: false } });
+  const result = generate({ root, sources: [path.join(sourceRoot, 'deep.model.ts')], profile: { validation: false } });
   assert.ok(result.artifacts.some(artifact => artifact.path.endsWith('deep.model.generated.ts')));
 });

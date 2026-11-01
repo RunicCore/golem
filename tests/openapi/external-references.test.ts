@@ -5,7 +5,7 @@ import { generate, loadValidatedDocument } from '#openapi/generator';
 import { createFixtureProject } from '../fixture-project.js';
 import { assertGenerationRejected, writeOpenApiDocument } from './helpers.js';
 
-const profile = { mobx: false, validation: false };
+const profile = { validation: false };
 
 test('multi-file documents generate with path-based model names and watch every file', async (t) => {
   const directory = createFixtureProject(t, 'golem-external-generate-');
@@ -210,7 +210,7 @@ test('a format golem does not check is reported at the file and pointer that dec
       '/debit': { post: { operationId: 'debit', requestBody: { required: true, content: { 'application/json': { schema: money } } }, responses: { 200: { description: 'ok' } } } },
     },
   }, 'api.json');
-  const result = await generate({ input, output: path.join(directory, 'sdk'), name: 'Ledger', profile: { mobx: false, validation: true, unknownFormats: 'warn' } });
+  const result = await generate({ input, output: path.join(directory, 'sdk'), name: 'Ledger', profile: { validation: true, unknownFormats: 'warn' } });
   const warnings = result.diagnostics?.filter(entry => entry.code === 'VALIDATE_UNKNOWN_FORMAT') ?? [];
   // The operation validators name the exact pointer; the model names the component, which is the whole file.
   assert.deepEqual(warnings.map(entry => [entry.file, entry.path]).sort(), [

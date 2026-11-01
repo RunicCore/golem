@@ -25,7 +25,7 @@ import type { GolemProfile } from '@exprtlabs/golem/generator-api';
 
 function fixture(
   t: TestContext,
-  profile: GolemProfile = { mobx: false, validation: true },
+  profile: GolemProfile = { validation: true },
 ) {
   const { root } = createModelProject(t, {
     prefix: 'golem-serde-',
@@ -142,7 +142,7 @@ test('IObject TSerde stringify/parse convert declared fields in one pass', async
   });
   fs.writeFileSync(path.join(sourceRoot, 'codecs.ts'), readFixture("models/serde/iobject-tserde-stringify-parse-convert-declared-fields-in-one-pass/codecs.ts"));
   fs.writeFileSync(path.join(sourceRoot, 'permission.model.ts'), readFixture("models/serde/iobject-tserde-stringify-parse-convert-declared-fields-in-one-pass/permission.model.ts"));
-  writeModelGolemYaml(root, { mobx: false, validation: true });
+  writeModelGolemYaml(root, { validation: true });
   await compile(root);
   const permissionCodecs = await import(pathToFileURL(path.join(root, 'build/codecs.js')).href) as {
     deserializeCalls: number;
@@ -210,7 +210,7 @@ test('same-type TSerde emits one validator and global validation false rejects {
   });
   fs.writeFileSync(path.join(sourceRoot, 'codecs.ts'), readFixture("models/serde/same-type-tserde-emits-one-validator-and-global-validation-false-rejects-va/codecs.ts"));
   fs.writeFileSync(path.join(sourceRoot, 'label.model.ts'), readFixture("models/serde/same-type-tserde-emits-one-validator-and-global-validation-false-rejects-va/label.model.ts"));
-  writeModelGolemYaml(identityRoot, { mobx: false, validation: true });
+  writeModelGolemYaml(identityRoot, { validation: true });
   await compile(identityRoot);
   const codecs = await import(pathToFileURL(path.join(identityRoot, 'build/label.model.generated.js')).href) as {
     stringifyTLabel: (value: object, options?: { validate?: boolean }) => string;
@@ -225,7 +225,7 @@ test('same-type TSerde emits one validator and global validation false rejects {
       && error.issues[0]?.representation === IssueRepresentation.Model,
   );
 
-  const { root } = fixture(t, { mobx: false, validation: false });
+  const { root } = fixture(t, { validation: false });
   await compile(root);
   const off = await import(pathToFileURL(path.join(root, 'build/money.model.generated.js')).href) as PaymentCodecs;
   const trusted = off.stringifyTPayment(
@@ -251,7 +251,7 @@ test('same-file nested IModel companions compile without naming the handwritten 
 });
 
 test('nested class-typed IModel fields construct; type-only parse fills like IObject', async (t) => {
-  const { root } = fixture(t, { mobx: false, validation: false });
+  const { root } = fixture(t, { validation: false });
   fs.writeFileSync(path.join(root, 'src/money.model.ts'), readFixture("models/serde/nested-class-typed-imodel-fields-construct-type-only-parse-fills-like-iobjec/money.model.ts"));
   await compile(root);
   const generated = fs.readFileSync(path.join(root, 'src/money.model.generated.ts'), 'utf8');
@@ -275,7 +275,7 @@ test('nested class-typed IModel fields construct; type-only parse fills like IOb
 });
 
 test('type-only IModel parse fills nested models from the generated base', async (t) => {
-  const { root } = fixture(t, { mobx: false, validation: false });
+  const { root } = fixture(t, { validation: false });
   fs.writeFileSync(path.join(root, 'src/money.model.ts'), readFixture("models/serde/type-only-imodel-parse-fills-nested-models-from-the-generated-base/money.model.ts"));
   await compile(root);
   const { TIsolatedPointBaseModel } = await import(pathToFileURL(path.join(root, 'build/money.model.generated.js')).href) as {
@@ -315,7 +315,7 @@ test('toWireFormat encodes nullable nested IModel fields to plain objects, not c
 });
 
 test('fromWireFormat copies identity arrays and tuples instead of aliasing the input containers', async (t) => {
-  const { root } = fixture(t, { mobx: false, validation: false });
+  const { root } = fixture(t, { validation: false });
   fs.writeFileSync(path.join(root, 'src/money.model.ts'), readFixture("models/serde/fromwireformat-copies-identity-arrays-and-tuples-without-aliasing-input/money.model.ts"));
   await compile(root);
   const codecs = await import(pathToFileURL(path.join(root, 'build/money.model.generated.js')).href) as {

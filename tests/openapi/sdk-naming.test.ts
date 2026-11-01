@@ -27,7 +27,7 @@ test('allows a single Foo-Bar component name and rejects Foo-Bar with Foo.Bar', 
   const allowedResult = await generate({
     input: allowedInput,
     output: path.join(allowed, 'sdk'),
-    profile: { mobx: false, validation: false },
+    profile: { validation: false },
   });
   const types = allowedResult.artifacts.find((artifact) => artifact.path.endsWith('/types.ts'))?.content ?? '';
   assert.match(types, /export type FooBar =/);
@@ -50,7 +50,7 @@ test('operation names that were client helpers before the shared runtime generat
   const input = writeOpenApiDocument(directory, documentBase('3.1.0', {
     paths: Object.fromEntries(names.map(name => [`/${name}`, { get: { operationId: name, responses: { 200: { description: 'ok' } } } }])),
   }));
-  const result = await generate({ input, output: path.join(directory, 'sdk'), profile: { mobx: false, validation: false } });
+  const result = await generate({ input, output: path.join(directory, 'sdk'), profile: { validation: false } });
   const client = result.artifacts.find(artifact => artifact.path.endsWith('client.ts'))?.content ?? '';
   for (const name of names) assert.match(client, new RegExp(`^  ${name}\\(\\): ApiOperation<`, 'm'), name);
 });
@@ -143,7 +143,7 @@ test('components named Array and Blob do not shadow generated global types', asy
         },
       },
     },
-  }), { output, name: 'Shadow', profile: { mobx: false, validation: true } });
+  }), { output, name: 'Shadow', profile: { validation: true } });
   const consumer = path.join(output, 'shadow-consumer.ts');
   writeFileSync(consumer, [
     "import type { Blob as BlobComponent, GetFileOperationSuccessBody, Holder } from './types.js';",

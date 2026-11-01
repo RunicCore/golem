@@ -15,7 +15,7 @@ export function configFor(directory: string, job: GolemJob): GolemConfig {
     configFile: path.join(directory, 'golem.yaml'),
     inventoryFile: path.join(directory, '.golem/outputs.json'),
     tsconfig: path.join(directory, 'tsconfig.json'),
-    profile: { mobx: false, validation: true },
+    profile: { validation: true },
     jobs: [job],
     jobPlan: { order: [job.id], providers: Object.fromEntries(job.facts.provides.map(contract => [contract, job.id])), programViews: {} },
     contracts: {},

@@ -11,7 +11,7 @@ import { environment, gitState } from './results.js';
 // Run nothing else meanwhile: concurrent compiles change the timings severalfold.
 
 const root = fileURLToPath(new URL('../../../', import.meta.url));
-const profile = { mobx: false, validation: true };
+const profile = { validation: true };
 
 interface GenerationCase {
   readonly id: string;

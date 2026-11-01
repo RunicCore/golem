@@ -8,7 +8,7 @@ import { buildModelProject, createModelProject, writeModelGolemYaml, writeModelS
 export async function buildRecursiveNames(t: TestContext, sources: Record<string, string>): Promise<{ readonly root: string; readonly names: string[] }> {
   const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-recursive-names-', name: 'recursive-names' });
   writeModelSources(sourceRoot, sources);
-  writeModelGolemYaml(root, { mobx: false, validation: true });
+  writeModelGolemYaml(root, { validation: true });
   const built = await buildModelProject(root);
   assert.equal(built.code, 0, `${built.stdout}${built.stderr}`);
   const generated = Object.keys(sources).map(file => fs.readFileSync(path.join(sourceRoot, file.replace(/\.ts$/, '.generated.ts')), 'utf8')).join('\n');

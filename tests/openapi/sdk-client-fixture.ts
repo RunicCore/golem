@@ -24,7 +24,7 @@ export interface LoadedSdk<Client> {
 
 export async function loadSdk<Client>(scope: FixtureScope, prefix: string, setup: SdkSetup): Promise<LoadedSdk<Client>> {
   const output = path.join(createFixtureProject(scope, prefix), 'sdk');
-  await generateMaterializedSdk(setup.document, { output, name: setup.name, profile: { mobx: false, validation: setup.validation, allowAny: false }, dates: setup.dates });
+  await generateMaterializedSdk(setup.document, { output, name: setup.name, profile: { validation: setup.validation, allowAny: false }, dates: setup.dates });
   compileGeneratedSdk(output, [], { strict: true, lib: ['ES2023', 'DOM', 'DOM.Iterable', 'esnext.temporal'] });
   const Constructor = (await importGeneratedModule(output, 'generated SDK'))[`${setup.name}Client`];
   assert.ok(isGeneratedClientClass(Constructor), 'generated client');
@@ -74,7 +74,7 @@ export function writeGolemModeProject(scope: FixtureScope, prefix: string, sdks:
     return [`    - input: api${index}.json`, `      output: ${sdk.folder}`, `      name: ${sdk.name}`, '      mode: golem', ...(sdk.dates ? [`      dates: ${sdk.dates}`] : [])];
   });
   const config = path.join(root, 'golem.yaml');
-  fs.writeFileSync(config, ['version: 1', 'mobx: false', `validation: ${validation}`, 'openapi-ts:', '  sdks:', ...jobs.flat(), 'model: {}', ''].join('\n'));
+  fs.writeFileSync(config, ['version: 1', `validation: ${validation}`, 'openapi-ts:', '  sdks:', ...jobs.flat(), 'model: {}', ''].join('\n'));
   return { root, config };
 }
 
