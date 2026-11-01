@@ -8,7 +8,7 @@ import { coreRecordsOf, digest, loadInventory, applyJob, removeRetiredJobs } fro
 import type { FileChanges, Inventory, OutputFiles } from './outputs.js';
 import { absoluteRecordPath, golemCode, insideAny, inventoryPaths, JobInputs, hookCode, jobIsCurrent, loadJobRecords, recordPath, registrationCode, sameSetup, saveJobRecords } from './job-cache.js';
 import type { JobRecord } from './job-cache.js';
-import { GolemDiagnosticSeverity, displayPath, errorMessage, isInsideDirectory, isRecord } from './generator-core.js';
+import { GolemDiagnosticSeverity, displayPath, errorMessage, isInsideDirectory, isRecord, stableJson } from './generator-core.js';
 import { observedFolders, watchingJobs } from './job-facts.js';
 import { writeEditorSchema } from './editor-schema.js';
 import { loadPackageRegistry, PackageRegistryError, registrationForBlock, registryFiles } from './package-registry.js';
@@ -244,7 +244,7 @@ function validateResult(result: unknown, job: GolemJob, profile: GolemConfig['pr
     const artifact = artifacts.find(artifact => artifact.path === filename);
     if (!artifact) throw new Error(`${job.package} returned a manifest without an artifact: ${displayPath(filename)}`);
     const manifest = validateModelManifest(JSON.parse(artifact.content) as unknown, filename);
-    if (Object.entries(profile).some(([key, value]) => Reflect.get(manifest.profile, key) !== value)) {
+    if (Object.entries(profile).some(([key, value]) => stableJson(Reflect.get(manifest.profile, key)) !== stableJson(value))) {
       throw new Error(`${job.package} returned a manifest with a different generation profile. Regenerate with a compatible provider.`);
     }
   }

@@ -5,8 +5,9 @@ import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 
 import { resolveConfig } from '#golem/config';
+import { runPipeline } from '#golem/cli';
 
-import { copyFixture, listProjectDependencies } from './fixture-project.js';
+import { copyFixture, linkGolemPackages, listProjectDependencies } from './fixture-project.js';
 import { createModelProject } from './model-project.js';
 import { generateMaterializedSdk } from './openapi/helpers.js';
 import { write } from './support/build-project.js';
@@ -56,4 +57,18 @@ test('a flagged extension turned on with no options is recorded as used, with no
   const { profile } = await profileOf(t, 'profiled:\n  extensions:\n    shape:\n');
 
   assert.deepEqual(profile.extensions, { '@fixture/profiled': { shape: {} } });
+});
+
+test('generate and check pass for a project with a flagged extension and a golem SDK job', async (t) => {
+  // protects: T-786 the profile an SDK writes into its manifest is compared by value, so an extension record does not stop every run
+  const { root } = createModelProject(t, { prefix: 'golem-profile-sdk-', name: 'profile-sdk' });
+  copyFixture(path.join(root, 'node_modules/@fixture/profiled'), 'extensions/profiled');
+  linkGolemPackages(root, ['golem-openapi']);
+  listProjectDependencies(root, ['@fixture/profiled']);
+  write(root, 'api/payments.json', JSON.stringify(DOCUMENT));
+  write(root, 'golem.yaml', 'version: 1\nmodel: {}\nprofiled:\n  extensions:\n    shape:\n      precision: 2\nopenapi-ts:\n  sdks:\n    - input: api/payments.json\n      output: sdk\n      mode: golem\n');
+  const config = path.join(root, 'golem.yaml');
+
+  await runPipeline(config);
+  await runPipeline(config, { check: true });
 });
