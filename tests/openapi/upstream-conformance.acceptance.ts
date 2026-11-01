@@ -335,7 +335,8 @@ function assertManifestProfile(output: string, profile: { readonly mobx?: boolea
   const manifestValue: unknown = JSON.parse(fs.readFileSync(path.join(output, 'model-manifest.json'), 'utf8'));
   assert.ok(isRecord(manifestValue));
   const manifestProfile = manifestValue && Reflect.get(manifestValue, 'profile');
-  assert.deepEqual(manifestProfile, { ...profile, allowAny: false, unknownFormats: 'warn' });
+  const { mobx, ...recorded } = profile;
+  assert.deepEqual(manifestProfile, { ...recorded, ...(mobx ? { extensions: { '@exprtlabs/golem-openapi-ts': { mobx: {} } } } : {}), allowAny: false, unknownFormats: 'warn' });
 }
 
 test('typed upstream corpus cases generate, strict-compile, and execute every accounted outbound operation', async t => {
