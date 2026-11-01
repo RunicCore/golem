@@ -184,26 +184,6 @@ export interface GeneratorSession {
   share<Resource extends Disposable>(key: string, create: () => Resource): Resource;
 }
 
-export interface ModelContext {
-  readonly root: string;
-  /** The golem.yaml's directory, whose `.golem/` holds the codec keys; defaults to `root`. */
-  readonly directory?: string;
-  /** File-name endings that make a file below `root/src` a model source; defaults to `.model.ts` and `.models.ts`. */
-  readonly suffixes?: readonly string[];
-  readonly output?: string;
-  readonly sources?: readonly string[];
-  /** The tsconfig the job's program opens from, absolute: the one the golem.yaml names. Omitted means the nearest `tsconfig.json` from `root` upward. */
-  readonly tsconfig?: string;
-  readonly profile: GolemProfile;
-  /** The `golem.yaml` default for the `exact` option of a model that sets none; omitted means `true`. */
-  readonly exact?: boolean;
-  readonly manifestInputs?: readonly string[];
-  /** The absolute output folders of the golem-mode SDK jobs in the same golem.yaml: the model job writes one codecs file for each (`sdkCodecsFile`). */
-  readonly sdkOutputs?: readonly string[];
-  readonly onInput?: InputObserver;
-  readonly session?: GeneratorSession;
-}
-
 /** What a job receives from the host on top of its own options: a way to report each local input it reads, and the resources it keeps across runs. */
 export interface GeneratorHostContext {
   /** Call with each local file path before reading it, so golem can skip the job when its inputs are unchanged. */
@@ -316,24 +296,6 @@ export interface GolemJob<Options = unknown> {
   readonly block: string;
   readonly facts: JobFacts;
   readonly options: Options;
-}
-
-export interface OpenApiContext {
-  readonly input: string;
-  readonly output: string;
-  readonly name?: string;
-  readonly remoteHosts?: readonly string[];
-  readonly maxRefBytes?: number;
-  readonly maxRefDocuments?: number;
-  readonly refTimeoutMs?: number;
-  /** `temporal` maps `format: date-time`, `date` and `duration` to Temporal types; the default is `date`. */
-  readonly dates?: 'date' | 'temporal';
-  /** `standalone` (the default) is an SDK that needs no models job; `golem` leaves validators and conversion to the models job of the same golem.yaml. */
-  readonly mode?: 'standalone' | 'golem';
-  /** Mode `golem` only: the absolute path of the file the models job writes for this SDK and the operation modules import (`sdkCodecsFile`). The config sets it. */
-  readonly codecsFile?: string;
-  readonly profile: GolemProfile;
-  readonly onInput?: InputObserver;
 }
 
 export interface GolemProvider<Context> {

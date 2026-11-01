@@ -2,21 +2,21 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
-import { DEFAULT_MODEL_OUTPUT, defaultModelOutput } from '#golem/generated-paths';
+import { DEFAULT_MODEL_OUTPUT, defaultModelOutput } from '@exprtlabs/golem-model/plan';
 import { workspace } from './support/process.js';
 
 test('default generated paths resolve under the job root', () => {
   assert.equal(defaultModelOutput('/project'), path.join('/project', 'src/generated/models'));
 });
 
-// Budget (Spec A D4): default paths have one owner. Only generated-paths.ts may spell them.
-test('no package source outside generated-paths.ts spells a default generated path', () => {
+// Budget (Spec A D4): default paths have one owner. Only the plan entry of golem-model may spell them.
+test('no package source outside the plan entry of golem-model spells a default generated path', () => {
   const offenders: string[] = [];
   const visit = (directory: string): void => {
     for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
       const file = path.join(directory, entry.name);
       if (entry.isDirectory()) { visit(file); continue; }
-      if (!file.endsWith('.ts') || file.endsWith('generated-paths.ts')) continue;
+      if (!file.endsWith('.ts') || file.endsWith(path.join('golem-model', 'src', 'plan.ts'))) continue;
       if (fs.readFileSync(file, 'utf8').includes('src/generated')) offenders.push(path.relative(workspace, file));
     }
   };

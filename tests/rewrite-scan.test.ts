@@ -15,7 +15,7 @@ import { createModelProject, writeModelSources } from './model-project.js';
 import { writeFixture } from './support/consumer.js';
 import { runRewritten } from './support/rewritten-module.js';
 import { workspace } from './support/process.js';
-import { defaultModelOutput } from '#golem/generated-paths';
+import { defaultModelOutput } from '@exprtlabs/golem-model/plan';
 
 const BASE = ['payment.model.ts', 'payment.model.generated.ts'];
 const CODEC_KEYS = '.golem/codec-keys.json';

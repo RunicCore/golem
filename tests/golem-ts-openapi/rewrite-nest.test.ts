@@ -12,7 +12,7 @@ import { generate } from '#model/generator';
 import { readFixture, writeGeneratedArtifacts } from '../fixture-project.js';
 import { NEST_PARTICIPANTS, createControllerFixture } from '../fixture-templates/controllers/project.js';
 import { paymentModelSource } from '../fixture-templates/controllers/payment-model.js';
-import { defaultModelOutput } from '#golem/generated-paths';
+import { defaultModelOutput } from '@exprtlabs/golem-model/plan';
 
 const PLUGIN = 'controllers/nest-plugin';
 const FORMS = `${PLUGIN}/rewrite-covers-qualified-array-and-serde-forms`;

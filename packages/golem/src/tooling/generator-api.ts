@@ -27,8 +27,6 @@ export type {
   GolemResult,
   InputObserver,
   ModelBoundaryValue,
-  ModelContext,
-  OpenApiContext,
   PlanContext,
   PlannedJob,
   ResolvedGolemProfile,

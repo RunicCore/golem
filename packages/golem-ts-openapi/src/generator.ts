@@ -6,7 +6,6 @@ import {
   assertGeneratorRoot,
   assertNoSyntaxErrors,
   canonicalFilename,
-  createContractAnalysis,
   createModelStubProgram,
   createProgram,
   discoverModelSources,
@@ -16,7 +15,6 @@ import {
   projectFilenames,
   retainedProgramSession,
   projectWatchInputs,
-  type ContractAnalysis,
   type ModelBoundary,
   type ProgramInfo,
 } from '@exprtlabs/golem/internal/type-analysis';
@@ -37,6 +35,7 @@ import {
   TsToOpenApiError,
   type TsToOpenApiDiagnostic,
 } from './diagnostics.js';
+import { createContractAnalysis, type ContractAnalysis } from './contracts.js';
 import { buildDocument, serializeForOutput } from './document.js';
 import { swaggerDtoRule } from './nest/dto-rule.js';
 import { DEFAULT_CONTROLLER_SUFFIXES, type ControllerContext } from './plan.js';

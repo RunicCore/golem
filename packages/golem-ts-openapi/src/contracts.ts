@@ -1,17 +1,13 @@
 import * as path from 'node:path';
-import * as ts from '../typescript-ns.js';
-import { collectSpecifications, type DtoRule, type ModelSpecification, type TypeAnalysisContext } from './models.js';
-import { descriptorBuilder, type ModelConversionDescriptor } from './types.js';
-import { byRealPath, companionFilename, filesReadingOutputs, includedModelSources, isGeneratedCompanion, isUnderOutputs, typeScriptErrorAt, type ModelBoundary } from './project.js';
-import { inNodeModules } from './path-identity.js';
-import { pascalIdentifier } from './projection-names.js';
-import { fieldProvenance } from './projections.js';
-import { canonicalPath, displayPath } from '../generator-core.js';
-import { canonicalDescriptorKey } from '../schema.js';
-import { deduplicateProjections } from './graph.js';
-import { diagnostic, linkedClasses, modelSpecificationForClass, resolveSymbol } from './symbols.js';
-import { manifestModelOfSymbol, type ManifestIndex } from './provenance.js';
-import { codecPublicId, createSchemaGraph, internDescriptors } from '../schema-graph.js';
+import * as ts from '@exprtlabs/golem/internal/ts';
+import {
+  byRealPath, collectSpecifications, companionFilename, deduplicateProjections, descriptorBuilder, diagnostic, fieldProvenance, filesReadingOutputs, includedModelSources,
+  inNodeModules, isGeneratedCompanion, isUnderOutputs, linkedClasses, manifestModelOfSymbol, modelSpecificationForClass, pascalIdentifier, resolveSymbol, typeScriptErrorAt,
+  type DtoRule, type ManifestIndex, type ModelBoundary, type ModelConversionDescriptor, type ModelSpecification, type TypeAnalysisContext,
+} from '@exprtlabs/golem/internal/type-analysis';
+import { canonicalPath, displayPath } from '@exprtlabs/golem/internal/generator-support';
+import { canonicalDescriptorKey } from '@exprtlabs/golem/internal/schema';
+import { codecPublicId, createSchemaGraph, internDescriptors } from '@exprtlabs/golem/internal/schema-graph';
 
 export interface ContractAnalysis {
   readonly specifications: readonly ModelSpecification[];

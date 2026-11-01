@@ -2,8 +2,26 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { Code } from '@exprtlabs/golem/internal/emitter';
-import type { CodecsHostValue, GolemDiagnostic, GolemPlanEntry, JobFacts, OpenApiContext, PlanContext, PlannedJob } from '@exprtlabs/golem/generator-api';
+import type { CodecsHostValue, GolemDiagnostic, GolemPlanEntry, InputObserver, JobFacts, GolemProfile, PlanContext, PlannedJob } from '@exprtlabs/golem/generator-api';
 import { canonicalPath, CODECS_HOST, isRecord, sdkCodecsFile } from '@exprtlabs/golem/internal/plan-support';
+
+export interface OpenApiContext {
+  readonly input: string;
+  readonly output: string;
+  readonly name?: string;
+  readonly remoteHosts?: readonly string[];
+  readonly maxRefBytes?: number;
+  readonly maxRefDocuments?: number;
+  readonly refTimeoutMs?: number;
+  /** `temporal` maps `format: date-time`, `date` and `duration` to Temporal types; the default is `date`. */
+  readonly dates?: 'date' | 'temporal';
+  /** `standalone` (the default) is an SDK that needs no models job; `golem` leaves validators and conversion to the models job of the same golem.yaml. */
+  readonly mode?: 'standalone' | 'golem';
+  /** Mode `golem` only: the absolute path of the file the models job writes for this SDK and the operation modules import (`sdkCodecsFile`). The config sets it. */
+  readonly codecsFile?: string;
+  readonly profile: GolemProfile;
+  readonly onInput?: InputObserver;
+}
 
 /** What the generator receives: the context of an SDK job without what the host adds. */
 export type OpenApiOptions = Omit<OpenApiContext, 'onInput'>;

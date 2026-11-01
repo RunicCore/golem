@@ -1,11 +1,37 @@
 // The plan entry of golem-model (`golem.plan`): it reads the `model` block of golem.yaml and declares the models job. It is light: it imports no TypeScript, no yaml and no generator code.
 import fs from 'node:fs';
 import path from 'node:path';
-import type { GolemPlanEntry, JobFacts, ModelBoundaryValue, CodecsHostValue, ModelContext, PlanContext, PlannedJob } from '@exprtlabs/golem/generator-api';
+import type { GolemPlanEntry, JobFacts, ModelBoundaryValue, CodecsHostValue, GeneratorSession, GolemProfile, InputObserver, PlanContext, PlannedJob } from '@exprtlabs/golem/generator-api';
 import type { Code } from '@exprtlabs/golem/internal/emitter';
 import type { SchemaGraph, SchemaNode } from '@exprtlabs/golem/internal/schema-graph';
-import { defaultModelOutput } from '@exprtlabs/golem/internal/generated-paths';
 import { canonicalPath, checkedSuffixes, CODECS_HOST, displayPath, isInsideDirectory, isRecord, MODEL_BOUNDARY } from '@exprtlabs/golem/internal/plan-support';
+
+/** Default directory for shared model files, relative to the models job root. */
+export const DEFAULT_MODEL_OUTPUT = 'src/generated/models';
+
+export function defaultModelOutput(root: string): string {
+  return path.join(root, DEFAULT_MODEL_OUTPUT);
+}
+
+export interface ModelContext {
+  readonly root: string;
+  /** The golem.yaml's directory, whose `.golem/` holds the codec keys; defaults to `root`. */
+  readonly directory?: string;
+  /** File-name endings that make a file below `root/src` a model source; defaults to `.model.ts` and `.models.ts`. */
+  readonly suffixes?: readonly string[];
+  readonly output?: string;
+  readonly sources?: readonly string[];
+  /** The tsconfig the job's program opens from, absolute: the one the golem.yaml names. Omitted means the nearest `tsconfig.json` from `root` upward. */
+  readonly tsconfig?: string;
+  readonly profile: GolemProfile;
+  /** The `golem.yaml` default for the `exact` option of a model that sets none; omitted means `true`. */
+  readonly exact?: boolean;
+  readonly manifestInputs?: readonly string[];
+  /** The absolute output folders of the golem-mode SDK jobs in the same golem.yaml: the model job writes one codecs file for each (`sdkCodecsFile`). */
+  readonly sdkOutputs?: readonly string[];
+  readonly onInput?: InputObserver;
+  readonly session?: GeneratorSession;
+}
 
 /** What the generator receives: the context of the models job without what the host adds. */
 export type ModelOptions = Omit<ModelContext, 'onInput' | 'session'>;

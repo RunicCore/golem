@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import { generate } from '#openapi/generator';
-import type { OpenApiContext } from '@exprtlabs/golem/generator-api';
+import type { OpenApiContext } from '@exprtlabs/golem-openapi-ts/generator';
 import { createFixtureProject, linkGolemPackages } from '../fixture-project.js';
 import { loadConfig } from '../support/load-config.js';
 import { writeOpenApiDocument } from './helpers.js';
