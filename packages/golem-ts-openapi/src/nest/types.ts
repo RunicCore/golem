@@ -1,6 +1,6 @@
 import type * as ts from '@exprtlabs/golem/internal/ts';
 import type { TsToOpenApiDiagnostic } from '../diagnostics.js';
-import type { ContractAnalysis } from '@exprtlabs/golem/internal/type-analysis';
+import type { ContractAnalysis } from '../contracts.js';
 
 export const NEST_HTTP_METHODS = [
   'get',

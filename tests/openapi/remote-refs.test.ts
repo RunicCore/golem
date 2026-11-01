@@ -26,7 +26,6 @@ async function generateDocument(
   directory: string,
   document: Record<string, unknown>,
   options: {
-    allowRemoteRefs?: boolean;
     remoteHosts?: readonly string[];
     maxRefBytes?: number;
     maxRefDocuments?: number;
@@ -37,7 +36,6 @@ async function generateDocument(
     input: writeOpenApiDocument(directory, document),
     output: path.join(directory, 'sdk'),
     profile: { validation: false },
-    allowRemoteRefs: options.allowRemoteRefs ?? true,
     remoteHosts: options.remoteHosts ?? ['schemas.example'],
     maxRefBytes: options.maxRefBytes,
     maxRefDocuments: options.maxRefDocuments,
@@ -261,6 +259,44 @@ test('remote redirects are rejected and the resolver requests redirect errors', 
   }
 });
 
+// protects: T-822 a list entry without a port names the default https port only, and an entry with a port names that port only; a wider match would widen a safety list
+for (const [name, hosts, reference, refused] of [
+  ['a listed host on another port', ['schemas.example'], 'https://schemas.example:8443/money.json', 'schemas.example:8443'],
+  ['a listed host with a port, on the same port', ['schemas.example:8443'], 'https://schemas.example:8443/money.json', undefined],
+  ['a listed host with a port, on the default port', ['schemas.example:8443'], 'https://schemas.example/money.json', 'schemas.example'],
+  ['a listed host with the default port written out', ['SCHEMAS.example:443'], 'https://schemas.example/money.json', undefined],
+] as const) {
+  test(`${name} ${refused === undefined ? 'loads' : 'is refused before any request'}`, async (t) => {
+    const directory = createFixtureProject(t, 'golem-openapi-remote-port-');
+    let requests = 0;
+    const restore = mockFetch(async () => {
+      requests += 1;
+      return new Response(remoteSchema, { status: 200, headers: { 'content-type': 'application/json' } });
+    });
+    try {
+      const generation = generateDocument(directory, remoteDocument(reference), { remoteHosts: hosts });
+      if (refused === undefined) await generation; else await assert.rejects(() => generation, { message: `remote reference host is not allowed: ${refused}` });
+      assert.equal(requests, refused === undefined ? 1 : 0);
+    } finally {
+      restore();
+    }
+  });
+}
+
+// protects: T-822 a refused redirect names the URL and the reason, not `fetch failed`
+test('a fetch that fails on a redirect names the URL and the redirect', async (t) => {
+  const directory = createFixtureProject(t, 'golem-openapi-remote-redirect-error-');
+  const restore = mockFetch(async () => { throw new TypeError('fetch failed', { cause: new Error('unexpected redirect') }); });
+  try {
+    await assert.rejects(
+      () => generateDocument(directory, remoteDocument()),
+      /^Error: remote reference could not be loaded: https:\/\/schemas\.example\/money\.json: the server answered with a redirect, which golem does not follow$/,
+    );
+  } finally {
+    restore();
+  }
+});
+
 test('local file references cannot escape the input directory by file URL, ../ or symlink', async (t) => {
   const escapes: Record<string, (directory: string, input: string) => Promise<void>> = {
     'a file:// URL during input collection': async (directory, input) => {
@@ -281,7 +317,7 @@ test('local file references cannot escape the input directory by file URL, ../ o
         openapi: '3.2.0',
         info: { title: 'Local parent', version: '1' },
         components: { schemas: { Escaped: { $ref: '../outside.json' } } },
-      }, { allowRemoteRefs: false, remoteHosts: [] });
+      }, { remoteHosts: [] });
     },
     'a symlink to a file outside': async (directory, input) => {
       const outside = path.join(directory, 'outside');
@@ -292,7 +328,7 @@ test('local file references cannot escape the input directory by file URL, ../ o
         openapi: '3.2.0',
         info: { title: 'Local symlink', version: '1' },
         components: { schemas: { Escaped: { $ref: './linked.json' } } },
-      }, { allowRemoteRefs: false, remoteHosts: [] });
+      }, { remoteHosts: [] });
     },
   };
   for (const [spelling, escape] of Object.entries(escapes)) {

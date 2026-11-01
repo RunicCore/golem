@@ -29,9 +29,9 @@ export {
   type Code, type Helper, type ImportGroup, type ImportOptions, type InputSlot, type JsonValue, type NameSlot, type RenderedModule,
 } from './code.js';
 export { copiedRuntimeSpecifiers, rt, rtType, type RuntimeModule } from './rt.js';
-/** The operation codec module writer that golem-openapi-ts and golem-model share. */
+/** The operation codec module writer that the OpenAPI-to-TypeScript generator and the model generator share. */
 export { moduleSpecifier, SDK_CODECS_EXPORT, sdkCodecsFile, sdkCodecsTable, writeOperationCodecs, type OperationCodecsModule, type SdkOperationShape } from './sdk-codecs.js';
-/** The allOf object merge, for generators that read schemas (golem-openapi-ts). */
+/** The allOf object merge, for generators that read schemas (the OpenAPI-to-TypeScript generator). */
 export {
   composeObjects,
   CompositionConflictError,
@@ -485,7 +485,7 @@ const SERDE_IMPORT_ORDER: readonly string[] = [
   'validationUnavailableStub', 'withoutInstanceState', 'IssueRepresentation', 'IssueSource', 'SerdeOptions', 'ValidateOptions',
 ];
 
-/** The order of the names in the model, conversion and serde imports of a generated model file: golem-model and golem-openapi-ts write the same. */
+/** The order of the names in the model, conversion and serde imports of a generated model file: the model generator and the OpenAPI-to-TypeScript generator write the same. */
 export const MODEL_IMPORT_ORDER: NonNullable<ImportOptions['order']> = {
   model: [
     'findGeneratedModelDefinition', 'findGeneratedModelDefinitionForConstructor', 'GeneratedModel', 'GeneratedModelConstructor',

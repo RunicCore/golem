@@ -153,14 +153,12 @@ Disabling validation does not disable conversion guards, codecs, JSON representa
 
 Install `@exprtlabs/golem-ts-openapi` to use the `ts-openapi` block. Its `docs` list holds one docs job for each document. A job reads static NestJS controller contracts. It does not start Nest and does not reproduce module registration. Use `sources` to read only selected controllers. Its `extensions` key turns on [the `nest` extension](#nest-extension). The block needs `docs`, `extensions`, or both.
 
-Each entry of `docs` takes these keys. `docs` holds at least one entry. A docs job uses the `model` block of the same file, when there is one, to match a shared model of the app to its model.
+Each entry of `docs` takes these keys. `docs` holds at least one entry. A docs job scans from the folder of `golem.yaml`. That folder must lie inside the folder of the `tsconfig`. To read the controllers of another project, put `golem.yaml` in that project. A docs job uses the `model` block of the same file, when there is one, to match a shared model of the app to its model.
 
 | Key | Type | Required | Default | Meaning |
 | --- | --- | --- | --- | --- |
-| `framework` | literal `'nestjs'` | No | `nestjs` (NestJS 11) | Controller framework that the job reads. |
-| `root` | path | No | `.` | TypeScript project directory. |
-| `sources` | array of paths | No | — | Config-relative controller files. Without it, the job scans `src/**` below `root` for the `suffixes`. |
-| `suffixes` | array of strings | No | `[".controller.ts"]` | File-name endings that make a file below `root/src` a controller source. Each entry starts with `.`, ends in `.ts`, `.mts` or `.cts`, appears once, and does not end in `.generated.<ext>`. A suffix does not end in `.d.ts`, `.d.mts` or `.d.cts`, because a declaration file is not a source. |
+| `sources` | array of paths | No | — | Config-relative controller files. Without it, the job scans `src/**` below the folder of `golem.yaml` for the `suffixes`. |
+| `suffixes` | array of strings | No | `[".controller.ts"]` | File-name endings that make a file below `src` of the folder of `golem.yaml` a controller source. Each entry starts with `.`, ends in `.ts`, `.mts` or `.cts`, appears once, and does not end in `.generated.<ext>`. A suffix does not end in `.d.ts`, `.d.mts` or `.d.cts`, because a declaration file is not a source. |
 | `output` | path | Yes | — | One config-relative `.json`, `.yaml` or `.yml` document. |
 | `openapiVersion` | `'3.2.0'` or `'3.1.2'` | No | `3.2.0` | Document dialect. Use `3.1.2` for consumers that need it. A contract that `3.1.2` cannot represent stops generation. |
 | `info` | object | Yes | — | OpenAPI information object with the API `title` and `version`. |
@@ -172,13 +170,11 @@ Each entry of `docs` takes these keys. `docs` holds at least one entry. A docs j
 | `maxResultBytes` | positive integer | No | `1048576` (1 MiB) | The largest result of a [route helper](/reference/nestjs#route-helpers), counted in bytes of JSON. A path or version that folds to more stops generation with [`RUNT2106`](/reference/diagnostics#runt2106). Raise it only when a result is large on purpose. A changed value runs the job again. |
 
 ```yaml
+# backend/golem.yaml
 version: 1
-tsconfig: backend/tsconfig.json
 ts-openapi:
   docs:
-    - framework: nestjs
-      root: backend
-      output: api/payments.yaml
+    - output: api/payments.yaml
       info:
         title: Payments API
         version: '1'
@@ -193,7 +189,7 @@ openapi-ts:
       name: Payments
 ```
 
-- The `backend` folder in this example has its own `tsconfig.json`, so `tsconfig` names it. Without one, leave `tsconfig` out to use the file beside `golem.yaml`.
+- This `golem.yaml` lies in the `backend` folder, beside that folder's `tsconfig.json`. Every path is relative to `golem.yaml`. To use another file, set [`tsconfig`](#root-keys).
 - Route helpers and query objects follow the rules of [NestJS controllers](/reference/nestjs). A query object on each OpenAPI version follows [query compatibility](/reference/nestjs#query-compatibility).
 
 ### The `nest` extension {#nest-extension}
@@ -230,8 +226,7 @@ Each entry of `sdks` takes these keys:
 | `input` | path | Yes | — | Config-relative OpenAPI YAML or JSON file. A docs job of the file may write it. |
 | `output` | path | Yes | — | Config-relative SDK output directory. |
 | `name` | string | No | — | Prefix for generated client and operation types. |
-| `allowRemoteRefs` | boolean | No | `false` | Permit HTTPS `$ref` documents. |
-| `remoteHosts` | array of strings | No | `[]` | Hostname allowlist. Required when you permit remote references. |
+| `remoteHosts` | array of strings | No | `[]` | The hosts that a remote reference can load from. An entry such as `schemas.example` allows the default HTTPS port only. An entry with a port, such as `schemas.example:8443`, allows that port only. Without a list, the job loads no remote reference. |
 | `maxRefBytes` | positive integer | No | `5242880` | Maximum bytes to read from one referenced document, local or remote. |
 | `maxRefDocuments` | positive integer | No | `256` | Maximum referenced documents, local ones included. |
 | `refTimeoutMs` | positive integer | No | `10000` | Timeout for a remote reference read, in milliseconds. |

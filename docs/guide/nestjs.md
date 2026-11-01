@@ -35,9 +35,7 @@ Add `golem.yaml` beside the project's TypeScript configuration and run `npx gole
 version: 1
 ts-openapi:
   docs:
-    - framework: nestjs
-      root: .
-      output: ./api/openapi.yaml
+    - output: ./api/openapi.yaml
       info:
         title: Payments API
         version: '1'

@@ -39,7 +39,7 @@ test('an SDK job declares its document as the input and one output folder, and i
   assert.deepEqual(job.options as OpenApiOptions, {
     input: path.join(root, 'api.yaml'), output: path.join(root, 'sdk'),
     profile: { validation: true, allowAny: false, unknownFormats: 'error' },
-    allowRemoteRefs: false, remoteHosts: [], mode: 'standalone',
+    remoteHosts: [], mode: 'standalone',
     maxRefBytes: 5 * 1024 * 1024, maxRefDocuments: 256, refTimeoutMs: 10000,
   });
 });
@@ -48,13 +48,13 @@ test('the SDK options mode, name, dates, remoteHosts and the reference limits re
   // protects: T-695 mode and its default; remoteHosts, maxRefBytes and the other reference limits stay options of the SDK job
   const { filename } = project(t, [
     'version: 1', 'openapi-ts:', '  sdks:', '    - input: api.yaml', '      output: sdk', '      name: Payments', '      dates: temporal',
-    '      allowRemoteRefs: true', '      remoteHosts: [schemas.example]', '      maxRefBytes: 1024', '      maxRefDocuments: 4', '      refTimeoutMs: 500', '',
+    '      remoteHosts: [schemas.example]', '      maxRefBytes: 1024', '      maxRefDocuments: 4', '      refTimeoutMs: 500', '',
   ].join('\n'));
   const [job] = (await loadConfig(filename)).jobs;
   assert.ok(job);
-  const { name, dates, allowRemoteRefs, remoteHosts, maxRefBytes, maxRefDocuments, refTimeoutMs } = job.options as OpenApiOptions;
-  assert.deepEqual({ name, dates, allowRemoteRefs, remoteHosts, maxRefBytes, maxRefDocuments, refTimeoutMs },
-    { name: 'Payments', dates: 'temporal', allowRemoteRefs: true, remoteHosts: ['schemas.example'], maxRefBytes: 1024, maxRefDocuments: 4, refTimeoutMs: 500 });
+  const { name, dates, remoteHosts, maxRefBytes, maxRefDocuments, refTimeoutMs } = job.options as OpenApiOptions;
+  assert.deepEqual({ name, dates, remoteHosts, maxRefBytes, maxRefDocuments, refTimeoutMs },
+    { name: 'Payments', dates: 'temporal', remoteHosts: ['schemas.example'], maxRefBytes: 1024, maxRefDocuments: 4, refTimeoutMs: 500 });
 });
 
 test('a golem-mode SDK needs the codecs host, takes its codecs file from it and runs before the model job that writes that file', async (t: TestContext) => {
@@ -85,8 +85,10 @@ test('the openapi-ts block refuses an unknown key, a wrong value and an empty li
     [`${SDK}      mode: hybrid\n`, /openapi-ts\.sdks\[0\]\.mode must be "standalone" or "golem"/],
     [`${SDK}      mode: 1\n`, /openapi-ts\.sdks\[0\]\.mode must be "standalone" or "golem"/],
     [`${SDK}      dates: iso\n`, /openapi-ts\.sdks\[0\]\.dates must be "date" or "temporal"/],
-    [`${SDK}      allowRemoteRefs: true\n`, /openapi-ts\.sdks\[0\]\.allowRemoteRefs requires remoteHosts/],
+    [`${SDK}      allowRemoteRefs: true\n`, /Unknown openapi-ts\.sdks\[0\] key: allowRemoteRefs\./],
     [`${SDK}      remoteHosts: schemas.example\n`, /openapi-ts\.sdks\[0\]\.remoteHosts must be an array/],
+    [`${SDK}      remoteHosts: [schemas.example/v1]\n`, /remoteHosts entry "schemas\.example\/v1" must be a host/],
+    [`${SDK}      remoteHosts: ['https://schemas.example']\n`, /remoteHosts entry "https:\/\/schemas\.example" must be a host/],
     [`${SDK}      maxRefBytes: 0\n`, /openapi-ts\.sdks\[0\]\.maxRefBytes must be a positive safe integer/],
     ['openapi-ts:\n  sdks:\n    - output: sdk\n', /openapi-ts\.sdks\[0\]\.input must be a nonempty string/],
   ];

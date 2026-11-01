@@ -84,7 +84,6 @@ export async function readLimitedBody(
 }
 
 export interface ReferenceResolutionOptions {
-  readonly allowRemoteRefs?: boolean;
   readonly remoteHosts?: readonly string[];
   readonly maxRefBytes?: number;
   readonly maxRefDocuments?: number;
@@ -238,7 +237,16 @@ function registerAbsoluteIds(uri: string, node: unknown, pointer: string, ids: M
 
 async function fetchRemoteDocument(uri: string, maxBytes: number, timeoutMs: number): Promise<string> {
   const signal = AbortSignal.timeout(timeoutMs);
-  const response = await fetch(uri, { redirect: 'error', signal, headers: { Accept: REMOTE_ACCEPT } });
+  let response: Response;
+  try {
+    response = await fetch(uri, { redirect: 'error', signal, headers: { Accept: REMOTE_ACCEPT } });
+  } catch (error) {
+    // A timeout or an abort keeps its own error. Any other failure names the URL: `fetch failed` alone does not say which reference.
+    if (signal.aborted) throw error;
+    const cause = error instanceof Error && error.cause !== undefined ? error.cause : error;
+    const reason = cause instanceof Error ? cause.message || String((cause as NodeJS.ErrnoException).code ?? cause.name) : String(cause);
+    throw new Error(`remote reference could not be loaded: ${uri}: ${reason === 'unexpected redirect' ? 'the server answered with a redirect, which golem does not follow' : reason}`, { cause: error });
+  }
   if (!response.ok) {
     await cancelResponseBody(response);
     throw new Error(`remote reference returned HTTP ${response.status}: ${uri}`);
@@ -282,7 +290,8 @@ export async function loadReferenceGraph(
   const maxBytes = options.maxRefBytes || 5 * 1024 * 1024;
   const maxDocuments = options.maxRefDocuments || 256;
   const timeoutMs = options.refTimeoutMs || 10_000;
-  const allowedHosts = new Set((options.remoteHosts ?? []).map((host) => String(host).toLowerCase()));
+  // A list entry without a port names the default port of https; an entry with a port names that port only. `URL.host` keeps a port that is not the default.
+  const allowedHosts = new Set((options.remoteHosts ?? []).map((host) => new URL(`https://${host}`).host));
   const onInput: InputObserver | undefined = options.onInput;
 
   const documents = new Map<string, LoadedDocument>([[rootUri, { uri: rootUri, document: rootDocument }]]);
@@ -426,13 +435,12 @@ export async function loadReferenceGraph(
     resolved.hash = '';
     const uri = resolved.href;
     if (options.skipRemote) return { target: null, preserve: false };
-    if (!options.allowRemoteRefs) {
-      throw new Error(`remote reference blocked at ${item.walkerPointer}: ${item.reference}; set allowRemoteRefs: true and remoteHosts in golem.yaml to opt in`);
+    if (allowedHosts.size === 0) {
+      throw new Error(`remote reference blocked at ${item.walkerPointer}: ${item.reference}; list the hosts in remoteHosts in golem.yaml to opt in`);
     }
-    if (allowedHosts.size === 0) throw new Error('remote references require at least one explicitly allowed remote host');
     if (resolved.protocol !== 'https:') throw new Error(`remote reference must use HTTPS: ${uri}`);
-    if (!allowedHosts.has(resolved.hostname.toLowerCase())) {
-      throw new Error(`remote reference host is not allowed: ${resolved.hostname}`);
+    if (!allowedHosts.has(resolved.host)) {
+      throw new Error(`remote reference host is not allowed: ${resolved.host}`);
     }
     return { target: { uri, pointer: fragment }, preserve: false };
   };

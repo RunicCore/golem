@@ -2,8 +2,26 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { Code } from '@exprtlabs/golem/internal/emitter';
-import type { CodecsHostValue, GolemDiagnostic, GolemPlanEntry, JobFacts, OpenApiContext, PlanContext, PlannedJob } from '@exprtlabs/golem/generator-api';
+import type { CodecsHostValue, GolemDiagnostic, GolemPlanEntry, InputObserver, JobFacts, GolemProfile, PlanContext, PlannedJob } from '@exprtlabs/golem/generator-api';
 import { canonicalPath, CODECS_HOST, isRecord, sdkCodecsFile } from '@exprtlabs/golem/internal/plan-support';
+
+export interface OpenApiContext {
+  readonly input: string;
+  readonly output: string;
+  readonly name?: string;
+  readonly remoteHosts?: readonly string[];
+  readonly maxRefBytes?: number;
+  readonly maxRefDocuments?: number;
+  readonly refTimeoutMs?: number;
+  /** `temporal` maps `format: date-time`, `date` and `duration` to Temporal types; the default is `date`. */
+  readonly dates?: 'date' | 'temporal';
+  /** `standalone` (the default) is an SDK that needs no models job; `golem` leaves validators and conversion to the models job of the same golem.yaml. */
+  readonly mode?: 'standalone' | 'golem';
+  /** Mode `golem` only: the absolute path of the file the models job writes for this SDK and the operation modules import (`sdkCodecsFile`). The config sets it. */
+  readonly codecsFile?: string;
+  readonly profile: GolemProfile;
+  readonly onInput?: InputObserver;
+}
 
 /** What the generator receives: the context of an SDK job without what the host adds. */
 export type OpenApiOptions = Omit<OpenApiContext, 'onInput'>;
@@ -24,7 +42,7 @@ export type OperationWrapperResult = { readonly wrapper: OperationWrapper } | { 
 export type OperationWrapperParticipant = (mode: 'standalone' | 'golem') => OperationWrapperResult;
 
 const BLOCK_KEYS: readonly string[] = ['sdks', 'extensions'];
-const SDK_KEYS: readonly string[] = ['input', 'output', 'name', 'allowRemoteRefs', 'remoteHosts', 'maxRefBytes', 'maxRefDocuments', 'refTimeoutMs', 'dates', 'mode'];
+const SDK_KEYS: readonly string[] = ['input', 'output', 'name', 'remoteHosts', 'maxRefBytes', 'maxRefDocuments', 'refTimeoutMs', 'dates', 'mode'];
 
 function keys(value: unknown, allowed: readonly string[], label: string): asserts value is Record<string, unknown> {
   if (!isRecord(value)) throw new TypeError(`${label} must be an object.`);
@@ -35,12 +53,6 @@ function keys(value: unknown, allowed: readonly string[], label: string): assert
 
 function nonempty(value: unknown, label: string): string {
   if (typeof value !== 'string' || !value.trim()) throw new TypeError(`${label} must be a nonempty string.`);
-  return value;
-}
-
-function boolean(value: unknown, fallback: boolean, label: string): boolean {
-  if (value === undefined) return fallback;
-  if (typeof value !== 'boolean') throw new TypeError(`${label} must be a boolean.`);
   return value;
 }
 
@@ -57,6 +69,14 @@ function sdksOf(block: unknown): readonly unknown[] {
   if (block.sdks === undefined) return [];
   if (!Array.isArray(block.sdks) || !block.sdks.length) throw new Error('openapi-ts.sdks must be a nonempty array of jobs.');
   return block.sdks;
+}
+
+/** A `remoteHosts` entry: a host with an optional port, and nothing else. A path or a scheme would name more or less than the entry reads. */
+function remoteHost(entry: string, label: string): string {
+  let url: URL | undefined;
+  try { url = new URL(`https://${entry}`); } catch { url = undefined; }
+  if (url === undefined || `${url.pathname}${url.search}${url.hash}` !== '/' || url.username || url.password || entry.endsWith('/')) throw new Error(`${label} entry "${entry}" must be a host with an optional port, such as schemas.example:8443.`);
+  return entry;
 }
 
 /** The settings of the extensions the block turns on. Core has checked that each name is registered; the package checks what each holds. */
@@ -79,15 +99,13 @@ export const plan: GolemPlanEntry<OpenApiOptions> = {
       onInput?.(input);
       const output = canonicalPath(path.resolve(directory, nonempty(entry.output, `${label}.output`)));
       if (fs.existsSync(output) && !fs.statSync(output).isDirectory()) throw new Error(`${label}.output must be a directory.`);
-      const allowRemoteRefs = boolean(entry.allowRemoteRefs, false, `${label}.allowRemoteRefs`);
       if (entry.remoteHosts !== undefined && !Array.isArray(entry.remoteHosts)) throw new Error(`${label}.remoteHosts must be an array of nonempty hostnames.`);
-      const remoteHosts = (entry.remoteHosts ?? []).map((host: unknown) => nonempty(host, `${label}.remoteHosts`));
-      if (allowRemoteRefs && !remoteHosts.length) throw new Error(`${label}.allowRemoteRefs requires remoteHosts.`);
+      const remoteHosts = (entry.remoteHosts ?? []).map((host: unknown) => remoteHost(nonempty(host, `${label}.remoteHosts`), `${label}.remoteHosts`));
       if (entry.dates !== undefined && entry.dates !== 'date' && entry.dates !== 'temporal') throw new Error(`${label}.dates must be "date" or "temporal".`);
       if (entry.mode !== undefined && entry.mode !== 'standalone' && entry.mode !== 'golem') throw new Error(`${label}.mode must be "standalone" or "golem".`);
       const mode = entry.mode ?? 'standalone';
       const options: OpenApiOptions = {
-        input, output, profile, allowRemoteRefs, remoteHosts, mode,
+        input, output, profile, remoteHosts, mode,
         ...(entry.name === undefined ? {} : { name: nonempty(entry.name, `${label}.name`) }),
         ...(entry.dates === undefined ? {} : { dates: entry.dates }),
         maxRefBytes: positive(entry.maxRefBytes, 5 * 1024 * 1024, `${label}.maxRefBytes`),

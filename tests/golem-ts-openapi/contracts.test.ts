@@ -8,7 +8,8 @@ import test, { type TestContext } from 'node:test';
 
 import { generate } from '#controllers/generator';
 import { generate as generateModels } from '#model/generator';
-import { createContractAnalysis, createProgram } from '@exprtlabs/golem/internal/type-analysis';
+import { createProgram } from '@exprtlabs/golem/internal/type-analysis';
+import { createContractAnalysis } from '#controllers/contracts';
 import * as ts from '@exprtlabs/golem/internal/ts';
 import { createControllerFixture } from '../fixture-templates/controllers/project.js';
 import { contentSchema, diagnosticsOf, documentOf, expectSchema, expectValue, operationOf, propertySchema, responseOf, schemaOf, type OpenApiSchema } from './openapi-document.js';

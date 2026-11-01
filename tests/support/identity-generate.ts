@@ -11,7 +11,7 @@ import { writeGeneratedArtifacts } from '../fixture-project.js';
 import { NEST_PARTICIPANTS } from '../fixture-templates/controllers/project.js';
 import { editProjectSources } from './node-specifiers-project.js';
 import { caseFolder, DIAGNOSTICS, GENERATED, REWRITTEN, type IdentityProject } from './identity-corpus.js';
-import { defaultModelOutput } from '#golem/generated-paths';
+import { defaultModelOutput } from '@exprtlabs/golem-model/plan';
 
 function describeDiagnostic(stage: string, diagnostic: GolemDiagnostic): string {
   return `${stage} ${diagnostic.code} ${diagnostic.file ?? '-'} ${diagnostic.line ?? '-'}:${diagnostic.column ?? '-'} ${diagnostic.message}`;

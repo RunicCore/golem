@@ -65,7 +65,7 @@ export interface SdkOperationValue {
 }
 
 /**
- * The validators of one operation, as the data the models job compiles: the name of the root that checks the plain input, the header parameters, each response
+ * The validators of one operation, as the data the reader of the manifest compiles: the name of the root that checks the plain input, the header parameters, each response
  * body or stream item (key `status:contentType`) and each response header (key `status:name`), and the roots themselves. A root names its schema in the
  * manifest's `validationResources`.
  */
@@ -77,7 +77,7 @@ export interface SdkOperationValidation {
   readonly roots: Readonly<Record<string, unknown>>;
 }
 
-/** A manifest of an SDK in golem mode: the models job compiles the SDK types from these fields. */
+/** A manifest of an SDK in golem mode: the reader of the manifest compiles the SDK types from these fields. */
 export interface GolemModeManifest extends ModelManifest {
   readonly mode: 'golem';
   readonly dates: 'date' | 'temporal';
@@ -217,7 +217,7 @@ function isOperationValidation(value: unknown): boolean {
     && keyed(value.responses, 'root') && keyed(value.responseHeaders, 'root') && isRecord(value.roots);
 }
 
-/** A manifest with `mode: "golem"` carries the schema graph the models job compiles; one that lacks it was written by an older generator. */
+/** A manifest with `mode: "golem"` carries the schema graph that its reader compiles; one that lacks it was written by an older generator. */
 function validateGolemModeGraph(manifest: Record<string, unknown>, filename: string): void {
   const invalid = (reason: string): Error => new Error(`Invalid model manifest ${displayPath(filename)}: ${reason}. Regenerate the SDK with this golem version.`);
   if (manifest.dates !== 'date' && manifest.dates !== 'temporal') throw invalid('dates must be "date" or "temporal"');

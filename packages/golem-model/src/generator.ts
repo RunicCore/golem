@@ -8,13 +8,12 @@ import type {
   GeneratorSession,
   HookParticipants,
   InputObserver,
-  ModelContext,
 } from '@exprtlabs/golem/generator-api';
 import { buildCodecValidationPlan, compileLevel, compileSdkValidators, type CodecSchemaClosureEntry } from '@exprtlabs/golem/internal/validation-plan';
 import { GolemDiagnosticSeverity, compareText, isInsideDirectory, resolveProfile, type GolemDiagnostic, type ResolvedGolemProfile } from '@exprtlabs/golem/generator-api';
 import { canonicalPath, displayPath } from '@exprtlabs/golem/internal/generator-support';
-import { CODEC_DATA_HOOK, DEFAULT_MODEL_SUFFIXES, MODEL_BLOCK, outsideModelsRootMessage, VALIDATOR_ENHANCER_HOOK, type CodecDataParticipant, type ValidatorEnhancerParticipant } from './plan.js';
-import { codecKeysPath, defaultModelOutput } from '@exprtlabs/golem/internal/generated-paths';
+import { CODEC_DATA_HOOK, DEFAULT_MODEL_SUFFIXES, defaultModelOutput, MODEL_BLOCK, outsideModelsRootMessage, VALIDATOR_ENHANCER_HOOK, type CodecDataParticipant, type ModelContext, type ValidatorEnhancerParticipant } from './plan.js';
+import { codecKeysPath } from '@exprtlabs/golem/internal/generated-paths';
 import { AmbiguousUnionConversionError, ObjectUnionDiscriminatorError, reachesRecursiveNode, type Code } from '@exprtlabs/golem/internal/emitter';
 import { emitCodecDeclarationTable } from '@exprtlabs/golem/internal/schema-graph';
 import {
@@ -64,6 +63,8 @@ import {
   type ModelBoundary,
   type ProgramInfo,
 } from '@exprtlabs/golem/internal/type-analysis';
+
+export type { ModelContext } from './plan.js';
 
 export interface GolemModelContext extends ModelContext {
   /** The participants of the extensions that fill the hooks this job offers (`model.validatorEnhancer`, `model.codecData`), as core routes them. */

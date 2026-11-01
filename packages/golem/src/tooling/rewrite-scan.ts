@@ -121,7 +121,7 @@ class CodecKeys {
 
   /**
    * The program's own name for the generated companion of the model file a key names, when the program holds it: beside an own file, in
-   * `models.output` for a shared one. A key is a real path, and a program reached through a folder link spells its files by the link.
+   * the models output for a shared one. A key is a real path, and a program reached through a folder link spells its files by the link.
    */
   private companionOf(declaration: string): string | undefined {
     const modelFile = path.resolve(this.base, declaration.slice(0, declaration.lastIndexOf('#')));

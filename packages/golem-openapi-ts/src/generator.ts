@@ -3,8 +3,8 @@ import {
   GolemDiagnosticSeverity,
   type GolemResult,
   type HookParticipants,
-  type OpenApiContext,
 } from '@exprtlabs/golem/generator-api';
+import type { OpenApiContext } from './plan.js';
 import { normalizeSchemaUnions } from './document.js';
 import { writeSdk as emitSdk } from './emit.js';
 import { API_VERSION } from './package-info.js';
@@ -16,7 +16,7 @@ import {
   type ReferenceResolutionOptions,
 } from './resolver.js';
 
-export type { OpenApiContext } from '@exprtlabs/golem/generator-api';
+export type { OpenApiContext } from './plan.js';
 
 export interface OpenApiGenerationContext extends OpenApiContext {
   /** The participants of the extensions that fill the hooks this job offers (`client.operationWrapper`), as core routes them. */
