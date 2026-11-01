@@ -220,9 +220,10 @@ function writtenBefore(jobs: readonly GolemJob[], input: string): boolean {
 
 export function validateConfigInputs(config: GolemConfig): void {
   for (const [index, job] of config.jobs.entries()) {
-    for (const root of [...job.facts.ownedRoots, ...(job.facts.scanRoots ?? [])]) existing(root, 'directory', `Job ${job.id}: root`);
-    // An input that an earlier job writes is absent on a clean clone until that job runs. Rule 1 keeps a producer before its reader.
-    for (const input of job.facts.inputFiles) if (!writtenBefore(config.jobs.slice(0, index), input)) existing(input, 'file', `Job ${job.id}: input file`);
+    const earlier = config.jobs.slice(0, index);
+    // A root or an input that an earlier job writes is absent on a clean clone until that job runs. Rule 1 keeps a producer before its reader.
+    for (const root of [...job.facts.ownedRoots, ...(job.facts.scanRoots ?? [])]) if (!writtenBefore(earlier, root)) existing(root, 'directory', `Job ${job.id}: root`);
+    for (const input of job.facts.inputFiles) if (!writtenBefore(earlier, input)) existing(input, 'file', `Job ${job.id}: input file`);
     for (const output of job.facts.outputs) {
       if (fs.existsSync(output.path) && fs.statSync(output.path).isDirectory() !== (output.kind === 'folder')) throw new Error(`Job ${job.id}: output must be a ${output.kind}: ${displayPath(output.path)}`);
     }
