@@ -2,7 +2,7 @@
  * Dependency-free model contracts.
  *
  * This module is intentionally safe to import from browser bundles that do
- * load an extension runtime.
+ * not load an extension runtime.
  */
 
 import type { TSerdeWire } from './tags.js';

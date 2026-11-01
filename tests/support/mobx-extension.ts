@@ -10,7 +10,7 @@ function fill(hook: string): HookFill {
 }
 
 /** The fills that the mobx extension gives the jobs that a project with `extensions: mobx: {}` runs, built from the real extension entry. */
-export function mobxHooks(): HookParticipants {
+function mobxHooks(): HookParticipants {
   return { 'model.validatorEnhancer': [fill('model.validatorEnhancer')], 'client.operationWrapper': [fill('client.operationWrapper')] };
 }
 
@@ -18,10 +18,4 @@ export function mobxHooks(): HookParticipants {
 export function generatorSettings<Profile extends { readonly mobx?: boolean }>(profile: Profile): { readonly profile: Omit<Profile, 'mobx'>; readonly hooks?: HookParticipants } {
   const { mobx, ...rest } = profile;
   return mobx === true ? { profile: rest, hooks: mobxHooks() } : { profile: rest };
-}
-
-/** The lines of the openapi-ts block of a golem.yaml for the extension, merged with the lines of the SDK block when it has some (`sdkLines` start with `  sdks:`). */
-export function openapiTsBlock(mobx: boolean | undefined, sdkLines: readonly string[] = []): readonly string[] {
-  if (!mobx) return sdkLines.length ? ['openapi-ts:', ...sdkLines] : [];
-  return ['openapi-ts:', ...sdkLines, '  extensions:', '    mobx: {}'];
 }

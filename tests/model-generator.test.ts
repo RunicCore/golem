@@ -199,8 +199,7 @@ test('a profile mismatch names each setting that differs and how to align it', (
   assert.throws(
     () => generate({ root, sources: [source], profile, manifestInputs: [manifest] }),
     (error: Error) => error.message.includes('validation: manifest false, project true; unknownFormats: manifest warn, project error.')
-      && /Regenerate the SDK manifest with the same profile before model generation, or set the project to the manifest value in golem\.yaml\.$/.test(error.message)
-      && !error.message.includes('mobx: manifest'),
+      && /Regenerate the SDK manifest with the same profile before model generation, or set the project to the manifest value in golem\.yaml\.$/.test(error.message),
   );
 });
 

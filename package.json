@@ -149,9 +149,6 @@
         ],
         "project": [
           "**/*.{ts,tsx,js}"
-        ],
-        "ignoreDependencies": [
-          "@exprtlabs/golem-openapi-ts"
         ]
       }
     },
