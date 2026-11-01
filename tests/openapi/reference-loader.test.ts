@@ -161,6 +161,7 @@ test('anchor fragments into external documents are rejected', async (t) => {
 });
 
 test('a remote ref inside a local file is blocked when remoteHosts lists no host', async (t) => {
+  // protects: F-176 and R5 a remote reference inside a local file follows the same rule as one in the root document
   const directory = createFixtureProject(t, 'golem-loader-nested-remote-');
   writeOpenApiDocument(directory, { $ref: 'https://schemas.example/y.json' }, 'x.json');
   const document = root({ components: { schemas: { A: { $ref: './x.json' } } } });
@@ -176,6 +177,7 @@ test('a remote ref inside a local file is blocked when remoteHosts lists no host
 });
 
 test('an empty remoteHosts blocks a remote reference before any request', async (t) => {
+  // protects: F-176 and R5 an empty remoteHosts list is no list
   const directory = createFixtureProject(t, 'golem-loader-no-hosts-');
   const document = root({ components: { schemas: { A: { $ref: 'https://schemas.example/y.json' } } } });
   const filename = writeOpenApiDocument(directory, document, 'api.json');
