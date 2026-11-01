@@ -17,7 +17,7 @@ export function generateFeatureMoneySdk(
   const script = `
 import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { generate } from ${JSON.stringify(generatorModule ? pathToFileURL(generatorModule).href : '@exprtlabs/golem-openapi/generator')};
+import { generate } from ${JSON.stringify(generatorModule ? pathToFileURL(generatorModule).href : '@exprtlabs/golem-openapi-ts/generator')};
 const result = await generate({
   input: ${JSON.stringify(path.join(project, 'money.yaml'))},
   output: ${JSON.stringify(output)},

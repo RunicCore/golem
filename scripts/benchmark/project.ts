@@ -59,7 +59,7 @@ export function prepare(directory: string, kind: ProjectKind, extraFixtures: rea
     include: ['src/**/*.ts'],
   }));
   const profile = { mobx, validation: kind !== 'plain' };
-  const manifest = generateFeatureMoneySdk(project, src, { validation: profile.validation, mobx }, path.join(golemRoot, 'packages/golem-openapi/dist/generator.js'));
+  const manifest = generateFeatureMoneySdk(project, src, { validation: profile.validation, mobx }, path.join(golemRoot, 'packages/golem-openapi-ts/dist/generator.js'));
   generateModels(golemRoot, project, profile, manifest);
   // The root keeps `ttsc` as a devDependency only for this call: typia's transform is a ttsc plugin. golem's own builds never use it.
   execFileSync(process.execPath, [path.join(root, 'node_modules/ttsc/lib/launcher/ttsc.js'), '-p', path.join(project, 'tsconfig.json')],

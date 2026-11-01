@@ -10,7 +10,7 @@ import {
   type ComplianceMetadata,
   type GenerationProfileId,
   type OpenApiVersion,
-} from '../packages/golem-openapi/compliance/capabilities.js';
+} from '../packages/golem-openapi-ts/compliance/capabilities.js';
 
 /**
  * These records remain useful to the internal compliance registry, but they

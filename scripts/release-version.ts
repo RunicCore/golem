@@ -6,7 +6,7 @@ import { EXAMPLE_NAMES, assertExampleInventory } from './maintained-examples.js'
 const PUBLIC_PACKAGE_NAMES = [
   '@exprtlabs/golem',
   '@exprtlabs/golem-model',
-  '@exprtlabs/golem-openapi',
+  '@exprtlabs/golem-openapi-ts',
   '@exprtlabs/golem-ts-openapi',
 ] as const;
 

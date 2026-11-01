@@ -15,7 +15,7 @@
   "packages": {
     "@exprtlabs/golem": "1.0.0",
     "@exprtlabs/golem-model": "1.0.0",
-    "@exprtlabs/golem-openapi": "1.0.0",
+    "@exprtlabs/golem-openapi-ts": "1.0.0",
     "typescript": "7.0.2",
     "typia": "14.0.6",
     "class-transformer": "0.5.1",

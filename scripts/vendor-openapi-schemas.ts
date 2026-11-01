@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 /**
  * Writes the official OpenAPI document schemas and the JSON Schema 2020-12
- * meta-schema as TypeScript modules for @exprtlabs/golem-openapi. golem's
+ * meta-schema as TypeScript modules for @exprtlabs/golem-openapi-ts. golem's
  * validator compiler does not support `$dynamicRef` and `$dynamicAnchor`, so
  * every `{"$dynamicRef": "#meta"}` becomes a plain `$ref` to the schema that
  * holds the one `$dynamicAnchor` the references can reach:
@@ -36,7 +36,7 @@ const DIALECT_ID = 'https://json-schema.org/draft/2020-12/schema';
 const DIALECT_VOCABULARIES = ['core', 'applicator', 'unevaluated', 'validation', 'meta-data', 'format-annotation', 'content'] as const;
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-const outputDirectory = path.join(root, 'packages/golem-openapi/src/openapi-schemas');
+const outputDirectory = path.join(root, 'packages/golem-openapi-ts/src/openapi-schemas');
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);

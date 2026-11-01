@@ -6,7 +6,7 @@ import { exportPublicSource, packedSetDigest } from './public-source.js';
 import { assertReleaseConsistency } from './release-version.js';
 import { readManifest, readPack, verifyPackedArchive, type PackedPackage } from './packed-archive.js';
 
-export const PACKAGE_FOLDERS = ['golem', 'golem-model', 'golem-openapi', 'golem-ts-openapi'] as const;
+export const PACKAGE_FOLDERS = ['golem', 'golem-model', 'golem-openapi-ts', 'golem-ts-openapi'] as const;
 
 function npm(cwd: string, args: readonly string[], env: NodeJS.ProcessEnv): string {
   const result = spawnSync('npm', args, { cwd, env, encoding: 'utf8', timeout: 240_000, killSignal: 'SIGKILL' });

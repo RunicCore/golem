@@ -336,7 +336,7 @@ function steps(tier: Tier, args: readonly string[], native: boolean): Group[] {
   return [
     ...inOrder(
       { label: 'public source', run: () => run(process.execPath, ['.build/scripts/public-source.js', 'check']) },
-      { label: 'OpenAPI compliance', run: () => run(process.execPath, ['.build/packages/golem-openapi/compliance/generate-matrix.js', '--check']) },
+      { label: 'OpenAPI compliance', run: () => run(process.execPath, ['.build/packages/golem-openapi-ts/compliance/generate-matrix.js', '--check']) },
       unit,
     ),
     [[typescript6(CONCURRENCY.beside)], [
