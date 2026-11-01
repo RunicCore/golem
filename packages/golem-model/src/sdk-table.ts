@@ -53,7 +53,7 @@ export function golemSdks(
   return index.golemModeManifests.map(({ file, manifest }) => {
     const sdkOutput = outputs.get(canonicalPath(file));
     if (sdkOutput === undefined) {
-      throw codedError('GOLEM_SDK_JOB_MISSING', `The SDK manifest ${file} is in mode golem, but no openapi job of mode golem in this golem.yaml writes its folder, so the models job cannot name the codecs file for it. Set the SDK to mode standalone, or add its openapi job with mode golem to this golem.yaml.`);
+      throw codedError('GOLEM_SDK_JOB_MISSING', `The SDK manifest ${file} is in mode golem, but no openapi job of mode golem in this golem.yaml writes its folder, so the model block cannot name the codecs file for it. Set the SDK to mode standalone, or add its openapi job with mode golem to this golem.yaml.`);
     }
     return { manifest, scope: relative(where.directory, sdkOutput).split(sep).join('/'), codecsFile: sdkCodecsFile({ modelsOutput: where.output, configDirectory: where.directory, sdkOutput }) };
   }).sort((left, right) => compareText(left.scope, right.scope));

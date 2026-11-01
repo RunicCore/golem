@@ -5,7 +5,7 @@ import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { pathToFileURL } from 'node:url';
 import { runPipeline } from '#golem/cli';
-import { copyFixtureFile, createFixtureProject, linkProjectPackages, readFixture } from './fixture-project.js';
+import { copyFixtureFile, createFixtureProject, linkGolemPackages, linkProjectPackages, readFixture } from './fixture-project.js';
 import { createControllerFixture } from './fixture-templates/controllers/project.js';
 import { command, workspace } from './support/process.js';
 import { createModelProject, MINIMAL_GOLEM_YAML } from './model-project.js';
@@ -91,7 +91,7 @@ test('a Nest controller builds with the design:paramtypes of a plain tsc emit of
     files: {
       'src/payment.model.ts': readFixture(`${nest}/payment.model.ts`),
       'src/payments.controller.ts': PAYMENTS_CONTROLLER,
-      'golem.yaml': 'version: 1\nmodels: { root: . }\n',
+      'golem.yaml': 'version: 1\nmodel: {}\n',
     },
   });
   assert.equal((await build(root, 'tsconfig.json', path.join(root, 'golem.yaml'))).exitCode, 0);
@@ -109,9 +109,10 @@ test('a Nest controller builds with the design:paramtypes of a plain tsc emit of
 test('a tsconfig that extends a file outside the root, with paths and a rootDir, builds', async (t) => {
   const parent = createFixtureProject(t, 'golem-build-forms-');
   const root = path.join(parent, 'app');
-  linkProjectPackages(root, { typescript: path.join(workspace, 'node_modules/typescript'), '@exprtlabs/golem-model': path.join(workspace, 'packages/golem-model') });
+  linkProjectPackages(root, { typescript: path.join(workspace, 'node_modules/typescript') });
   fs.writeFileSync(path.join(parent, 'tsconfig.base.json'), JSON.stringify({ compilerOptions: { strict: true, target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', sourceMap: true } }));
   fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ private: true, type: 'module' }));
+  linkGolemPackages(root, ['golem-model']);
   write(root, 'golem.yaml', MINIMAL_GOLEM_YAML);
   fs.writeFileSync(path.join(root, 'tsconfig.json'), JSON.stringify({
     extends: '../tsconfig.base.json',
@@ -130,8 +131,9 @@ test('a tsconfig that extends a file outside the root, with paths and a rootDir,
 test('golem build rejects a tsconfig it cannot emit', async (t) => {
   const parent = createFixtureProject(t, 'golem-build-rejected-');
   const root = path.join(parent, 'app');
-  linkProjectPackages(root, { typescript: path.join(workspace, 'node_modules/typescript'), '@exprtlabs/golem-model': path.join(workspace, 'packages/golem-model') });
+  linkProjectPackages(root, { typescript: path.join(workspace, 'node_modules/typescript') });
   fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ private: true, type: 'module' }));
+  linkGolemPackages(root, ['golem-model']);
   write(root, 'golem.yaml', MINIMAL_GOLEM_YAML);
   const base = { strict: true, target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext' };
   // The golem.yaml names this tsconfig; every config below is another build of the same directory.
@@ -162,7 +164,7 @@ function appBesideShared(t: TestContext, name: string, compilerOptions: Record<s
     packages: { '@exprtlabs/golem-model': path.join(workspace, 'packages/golem-model') },
   });
   const app = path.join(outer, 'app');
-  write(app, 'package.json', '{"name":"shared-app","type":"module"}');
+  write(app, 'package.json', '{"name":"shared-app","type":"module","dependencies":{"@exprtlabs/golem-model":"*"}}');
   write(app, 'golem.yaml', MINIMAL_GOLEM_YAML);
   write(app, 'tsconfig.json', JSON.stringify({
     compilerOptions: { strict: true, target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', skipLibCheck: true, declaration: true, outDir: 'build', rootDir: '..', ...compilerOptions },
@@ -270,7 +272,7 @@ test('an outside source resolves its own package.json and node_modules as it doe
   const { outer, app } = appBesideShared(t, 'build-shared-packages', { experimentalDecorators: true, emitDecoratorMetadata: true });
   // Everything above the shared folder is CommonJS, so a module that emits as ESM got its type from the shared folder's own package.json.
   write(outer, 'package.json', '{"private":true}');
-  write(app, 'package.json', '{"name":"shared-app"}');
+  write(app, 'package.json', '{"name":"shared-app","dependencies":{"@exprtlabs/golem-model":"*"}}');
   write(app, 'src/main.ts', 'export const main: number = 1;\n');
   write(outer, 'shared/package.json', JSON.stringify({ type: 'module', imports: { '#helper': './helper.js' } }));
   write(outer, 'shared/helper.ts', 'export class Helper { readonly name: string = \'helper\'; }\n');

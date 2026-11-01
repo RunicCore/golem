@@ -1,0 +1,7 @@
+{
+  "name": "@fixture/boundary",
+  "version": "1.0.0",
+  "type": "module",
+  "exports": { "./plan": "./plan.js", "./generator": "./generator.js" },
+  "golem": { "apiVersion": 2, "block": "boundary", "plan": "./plan", "generator": "./generator" }
+}

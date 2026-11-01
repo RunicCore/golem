@@ -91,7 +91,7 @@ test('a model file is own only inside the models root: a folder, a folder link, 
   fs.mkdirSync(path.join(root, 'node_modules/@acme/own'), { recursive: true });
   fs.writeFileSync(path.join(root, 'node_modules/@acme/own/own.model.ts'), '');
   fs.writeFileSync(path.join(root, 'src/types.model.d.ts'), '');
-  const boundary = modelBoundary(root);
+  const boundary = modelBoundary(root, ['.model.ts', '.models.ts']);
   const kinds = [
     path.join(root, 'src/order.model.ts'),
     path.join(outer, 'shared/customer.model.ts'),
@@ -124,7 +124,7 @@ export type TAddress = IObject<{ street: string }>;
 
 test('a golem.yaml of another app beside a shared model file gives a warning that says to move the model', (t: TestContext) => {
   // protects: D-34 another app's golem.yaml warning names the way out
-  const { outer, root } = appBesideShared(t, undefined, { 'golem.yaml': 'version: 1\nmodels:\n  root: .\n' });
+  const { outer, root } = appBesideShared(t, undefined, { 'golem.yaml': 'version: 1\nmodel: {}\n' });
 
   const { diagnostics } = generate({ root, profile: PROFILE });
 
@@ -152,7 +152,7 @@ test('a generated file beside a shared model file gives one warning each, and ge
 function appWithShared(outer: string, name: string, validation: boolean, files: Readonly<Record<string, string>>, include = ['src/**/*.ts', '../shared/**/*.ts']): string {
   const root = path.join(outer, name);
   writeModelSources(root, {
-    'package.json': JSON.stringify({ name, private: true, type: 'module' }),
+    'package.json': JSON.stringify({ name, private: true, type: 'module', dependencies: { '@exprtlabs/golem-model': '*' } }),
     'tsconfig.json': JSON.stringify({ compilerOptions: { strict: true, target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', skipLibCheck: true, noEmit: true }, include }),
     ...files,
   });
@@ -194,7 +194,7 @@ test('a field typed with an app class of a shared model generates, imports the s
   const outer = sharedFolder(t);
   linkProjectPackages(outer, { '@exprtlabs/golem-model': path.join(workspace, 'packages/golem-model') });
   const order = "import type { IModel } from '@exprtlabs/golem/model';\nimport type { Customer } from './customer.js';\nexport type TOrder = IModel<{ customer: Customer }>;\n";
-  const app = appWithShared(outer, 'web', false, { 'src/order.model.ts': order, 'src/customer.ts': SHARED_CUSTOMER_BASE, 'golem.yaml': 'version: 1\nmodels:\n  root: .\n' });
+  const app = appWithShared(outer, 'web', false, { 'src/order.model.ts': order, 'src/customer.ts': SHARED_CUSTOMER_BASE, 'golem.yaml': 'version: 1\nmodel: {}\n' });
 
   fs.writeFileSync(path.join(app, 'tsconfig.json'), JSON.stringify({ compilerOptions: { strict: true, target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', skipLibCheck: true, outDir: 'build', rootDir: '..' }, include: ['src/**/*.ts', '../shared/**/*.ts'] }));
 
@@ -213,7 +213,7 @@ test('on the first run an app class that imports the shared base through a paths
     'src/customer.ts': SHARED_CUSTOMER_BASE.replace('./generated/models/', '#models/'),
   });
   fs.writeFileSync(path.join(app, 'tsconfig.json'), JSON.stringify({ compilerOptions: { strict: true, target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', skipLibCheck: true, noEmit: true, paths: { '#models/*': ['./src/generated/models/*'] } }, include: ['src/**/*.ts', '../shared/**/*.ts'] }));
-  const boundary = modelBoundary(app, undefined, { directory: app, output: path.join(app, 'src/generated/models') });
+  const boundary = modelBoundary(app, ['.model.ts', '.models.ts'], { directory: app, output: path.join(app, 'src/generated/models') });
   const customer = path.join(app, 'src/customer.ts');
   const info = createProgram([path.join(app, 'src/order.model.ts'), customer], app);
   const { checker, specifications } = collectSpecifications(info.program, [path.join(outer, 'shared/customer.model.ts')], undefined, (file) => companionFilename(boundary, file));
@@ -273,7 +273,7 @@ for (const preserveSymlinks of [false, true]) {
     const id = keys.keys['../shared/customer.model.ts#TCustomer'];
     assert.match(id ?? '', /^TCustomer_[0-9a-f]{8}$/);
 
-    const scan = scanProject({ root: app, directory: app, modelsRoot: app, output: path.join(app, 'src/generated/models'), configFile: path.join(app, 'tsconfig.json'), codecKeysFile: path.join(app, '.golem/codec-keys.json') });
+    const scan = scanProject({ root: app, boundary: { root: app, directory: app, output: path.join(app, 'src/generated/models'), suffixes: ['.model.ts', '.models.ts'] }, configFile: path.join(app, 'tsconfig.json'), codecKeysFile: path.join(app, '.golem/codec-keys.json') });
 
     assert.deepEqual(scan.diagnostics, []);
     const code = applyRewrites(fs.readFileSync(path.join(app, 'src/use.ts'), 'utf8'), scan.files.get('src/use.ts')!).code;
@@ -513,7 +513,7 @@ test('a .model.d.ts file of an installed package whose manifest names the .ts fi
   assert.match(artifacts.find((artifact) => artifact.path === path.join(app, 'src/order.model.generated.ts'))?.content ?? '', /currency: string/);
 });
 
-for (const [kind, yaml] of [['controllers', 'version: 1\ncontrollers:\n  root: .\n'], ['openapi', 'version: 1\nopenapi:\n  input: api.json\n'], ['generators', 'version: 1\ngenerators:\n  - package: x\n']] as const) {
+for (const [kind, yaml] of [['model', 'version: 1\nmodel: {}\n'], ['ts-openapi', 'version: 1\nts-openapi:\n  docs:\n    - output: api.json\n      info: { title: Api, version: "1" }\n'], ['openapi-ts', 'version: 1\nopenapi-ts:\n  sdks:\n    - input: api.json\n      output: sdk\n']] as const) {
   test(`a golem.yaml with only the ${kind} job beside a shared model file is another app: the warning says to move the model`, (t: TestContext) => {
     // protects: D-34 another app's golem.yaml warning names the way out, whichever job it has
     const { diagnostics } = generate({ root: appBesideShared(t, undefined, { 'golem.yaml': yaml }).root, profile: PROFILE });
@@ -544,7 +544,7 @@ test('a golem run that skips the models job still writes its RUNM1076 warning, o
   const outer = sharedFolder(t);
   linkProjectPackages(outer, { '@exprtlabs/golem-model': path.join(workspace, 'packages/golem-model') });
   fs.writeFileSync(path.join(outer, 'shared/golem.yaml'), 'version: 1\n');
-  const app = appWithShared(outer, 'web', false, { 'src/order.model.ts': SHARED_ORDER('../../shared/customer.model.js'), 'golem.yaml': 'version: 1\nmodels:\n  root: src\n' });
+  const app = appWithShared(outer, 'web', false, { 'src/order.model.ts': SHARED_ORDER('../../shared/customer.model.js'), 'golem.yaml': 'version: 1\nmodel: {}\n' });
 
   const first = await command(app, process.execPath, [golem, 'generate']);
   const second = await command(app, process.execPath, [golem, 'generate']);

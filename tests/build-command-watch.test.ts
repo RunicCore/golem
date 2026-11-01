@@ -16,7 +16,7 @@ import { quietly, until } from './support/watch-wait.js';
 test('golem build --watch rebuilds for an edit to a source outside the tsconfig directory and for a file added beside it', async (t) => {
   const { root: outer } = createModelProject(t, { prefix: 'golem-build-watch-shared-', name: 'build-watch-shared', linkTypescript: true, packages: { '@exprtlabs/golem-model': path.join(workspace, 'packages/golem-model') } });
   const app = path.join(outer, 'app');
-  write(app, 'package.json', '{"name":"watch-shared-app","type":"module"}');
+  write(app, 'package.json', '{"name":"watch-shared-app","type":"module","dependencies":{"@exprtlabs/golem-model":"*"}}');
   write(app, 'golem.yaml', MINIMAL_GOLEM_YAML);
   write(app, 'tsconfig.json', JSON.stringify({
     compilerOptions: { strict: true, target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', skipLibCheck: true, outDir: 'build', rootDir: '..' },
@@ -72,7 +72,7 @@ test('golem build --watch regenerates and rebuilds once after a model edit; any 
   controller.abort();
   assert.equal((await finished).exitCode, 0);
   // Both jobs read the model source, and the generator reads nothing else: the use.ts edit reran the models job alone.
-  assert.deepEqual(ran, [['generator:out', 'models:.'], ['generator:out', 'models:.'], ['models:.']], 'each edit triggered one build, and the generate step\'s writes none');
+  assert.deepEqual(ran, [['generator:out', 'model'], ['generator:out', 'model'], ['model']], 'each edit triggered one build, and the generate step\'s writes none');
 
   const after = snapshot(root);
   for (const file of ['golem.yaml', 'package.json', 'tsconfig.json']) assert.equal(after.get(file), before.get(file), `${file} is not a file golem build owns`);
@@ -203,7 +203,7 @@ for (const [where, base] of [['outside the tsconfig directory', '../tsconfig.bas
     // protects: R-31 an input outside the root that is no source, or has a hidden name, still starts a build
     const { root: outer } = createModelProject(t, { prefix: 'golem-build-watch-base-', name: 'build-watch-base', linkTypescript: true, packages: { '@exprtlabs/golem-model': path.join(workspace, 'packages/golem-model') } });
     const app = path.join(outer, 'app');
-    write(app, 'package.json', '{"name":"watch-base-app","type":"module"}');
+    write(app, 'package.json', '{"name":"watch-base-app","type":"module","dependencies":{"@exprtlabs/golem-model":"*"}}');
     write(app, 'golem.yaml', MINIMAL_GOLEM_YAML);
     const baseFile = path.join(app, base);
     fs.writeFileSync(baseFile, JSON.stringify({ compilerOptions: { strict: true, target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', skipLibCheck: true } }));

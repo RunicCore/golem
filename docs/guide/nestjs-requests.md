@@ -22,7 +22,7 @@ Import `reflect-metadata` first in the application entry file, before any applic
 TypeScript erases the types of `@Body()`, `@Query()` and return values. The build rewrite records them for `NestModelInterceptor`.
 
 - The rewrite and its [`RUNM1081`](/reference/diagnostics#runm1081) checks run when a source of the project imports `@exprtlabs/golem/nest`, the module that exports `NestModelInterceptor`. A static import, a re-export and `import x = require(...)` count. A dynamic `import()` or `require()` call does not. A plain NestJS app that never imports it gets neither.
-- A `controllers` job is not needed for them, and it does not turn them on. The `controllers` job only writes the OpenAPI document.
+- A docs job is not needed for them, and it does not turn them on. The docs job only writes the OpenAPI document.
 
 - Every build tool applies the rewrite ([Build tools](/guide/build)).
 - The rewrite also loads the generated module of each model it records, so the codec exists before the first request.
@@ -76,11 +76,11 @@ A whole `@Query()` is an object, so declare it as one model and not as an array.
 
 - Give all whole `@Body()` parameters of a handler one model type. The same rule holds for whole `@Query()` parameters.
 - Name one field with `@Body('payment') payment: TPayment` or `@Query('filter') filter: TFilter` when the model sits under one key. Its type is an `IModel` or `IObject`, and the parameter is required: an optional `payment?: TPayment` makes the interceptor answer HTTP 400 for a missing value. `golem build` reports it under [`RUNM1081`](/reference/diagnostics#runm1081).
-- A one-field `@Body('items') items: TPayment[]` takes an array of models. The interceptor converts it item by item, and an invalid item returns HTTP 400 with the path `['items', 1, 'name']`. A one-field `@Query` cannot be an array of models: the `controllers` job reports [`NEST1107`](/reference/diagnostics#nest1107).
-- Do not mix a whole `@Body()` and a one-field `@Body('field')` in one handler. The same rule holds for `@Query()`. `golem build` reports the mix under `RUNM1081`. The `controllers` job still documents the handler.
-- A one-field `@Query` model has no array field at any depth. OpenAPI does not define arrays in a `deepObject` parameter, and the `controllers` job reports [`NEST1107`](/reference/diagnostics#nest1107). Send an array in a `@Body`, or in a whole `@Query()` on OpenAPI 3.2.
+- A one-field `@Body('items') items: TPayment[]` takes an array of models. The interceptor converts it item by item, and an invalid item returns HTTP 400 with the path `['items', 1, 'name']`. A one-field `@Query` cannot be an array of models: the docs job reports [`NEST1107`](/reference/diagnostics#nest1107).
+- Do not mix a whole `@Body()` and a one-field `@Body('field')` in one handler. The same rule holds for `@Query()`. `golem build` reports the mix under `RUNM1081`. The docs job still documents the handler.
+- A one-field `@Query` model has no array field at any depth. OpenAPI does not define arrays in a `deepObject` parameter, and the docs job reports [`NEST1107`](/reference/diagnostics#nest1107). Send an array in a `@Body`, or in a whole `@Query()` on OpenAPI 3.2.
 
-The `controllers` job writes the types the handler reads and enforces no limit of `NestModelInterceptor`:
+The docs job writes the types the handler reads and enforces no limit of `NestModelInterceptor`:
 
 - **One-field `@Body` parameters:** they are the properties of one object request body, whatever their type. An optional parameter is not in `required`. When all parts are optional, the request body is not required.
 - **Several body parts:** a second whole `@Body()`, or a whole `@Body()` beside a one-field one, combine with `allOf`. A part that repeats appears once. Two one-field parameters of one name are one property.
@@ -132,7 +132,7 @@ A whole `@Body()` or `@Query()` parameter can be a union of models, such as `(TC
 
 - The interceptor reads the declared key and converts the input with the model that its value picks. A missing or unknown value returns HTTP 400.
 - A query string holds the tag as text. The interceptor decodes it to the type that the picked model declares.
-- The `controllers` job documents a body as `oneOf` with a `discriminator` that names the declared key. A query union needs OpenAPI 3.2; OpenAPI 3.1.2 stops with [`NEST1108`](/reference/diagnostics#nest1108).
+- The docs job documents a body as `oneOf` with a `discriminator` that names the declared key. A query union needs OpenAPI 3.2; OpenAPI 3.1.2 stops with [`NEST1108`](/reference/diagnostics#nest1108).
 - A union converts only as a whole parameter. An array of a union and a union in `@Body('field')` stop with [`RUNM1081`](/reference/diagnostics#runm1081).
 - A union without the tag stops with [`RUNM1081`](/reference/diagnostics#runm1081). The message names the tag to add.
 - A [default variant](/guide/tags#add-a-default-variant) on a parameter union stops with [`RUNM1081`](/reference/diagnostics#runm1081), because the interceptor picks no default. Remove the default, or bind one model.

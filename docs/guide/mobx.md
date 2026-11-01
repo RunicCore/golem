@@ -33,7 +33,7 @@ Set the profile and regenerate:
 
 `mobx: true` applies to every generator in the configuration. The example also sets `validation: true`. Validation is independent of MobX ([Validate models](/guide/validation)).
 
-An SDK with `mobx: true` also gains observable operation loading ([Call operations](/guide/client-usage#observe-loading-with-mobx)). Such an SDK needs `mode: golem` on its `openapi` job, as the example sets. A `standalone` SDK carries its own copy of the runtime, and that copy has no MobX support, so generation stops with [`OPENAPI_MOBX_NEEDS_GOLEM_MODE`](/reference/diagnostics#openapi-mobx-needs-golem-mode). Set `mode: golem`, or set `mobx: false` ([SDK modes](/reference/config#sdk-modes)).
+An SDK with `mobx: true` also gains observable operation loading ([Call operations](/guide/client-usage#observe-loading-with-mobx)). Such an SDK needs `mode: golem` on its SDK job, as the example sets. A `standalone` SDK carries its own copy of the runtime, and that copy has no MobX support, so generation stops with [`OPENAPI_MOBX_NEEDS_GOLEM_MODE`](/reference/diagnostics#openapi-mobx-needs-golem-mode). Set `mode: golem`, or set `mobx: false` ([SDK modes](/reference/config#sdk-modes)).
 
 - An SDK has no model classes in either mode, so the data it returns is plain and not observable.
 - For observable data, declare your own model over the SDK type, such as `IModel<Charge>`, with `mobx: true`.

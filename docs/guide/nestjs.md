@@ -17,7 +17,7 @@ npm install @nestjs/swagger
 
 ## Describe a controller
 
-The generator reads every `*.controller.ts` file under `src/`. Set `suffixes` in the [controller job](/reference/config#controller-jobs) to use other endings, or list files under `sources` to choose them yourself. From the controller above it writes:
+The generator reads every `*.controller.ts` file under `src/`. Set `suffixes` in the [docs job](/reference/config#ts-openapi-block) to use other endings, or list files under `sources` to choose them yourself. From the controller above it writes:
 
 - `GET /payment-notes/{id}` with a required string path parameter `id`
 - a JSON response with `id` and `note`
@@ -31,16 +31,17 @@ Add `golem.yaml` beside the project's TypeScript configuration and run `npx gole
 
 ```yaml
 version: 1
-controllers:
-  - framework: nestjs
-    root: .
-    output: ./api/openapi.yaml
-    info:
-      title: Payments API
-      version: '1'
+ts-openapi:
+  docs:
+    - framework: nestjs
+      root: .
+      output: ./api/openapi.yaml
+      info:
+        title: Payments API
+        version: '1'
 ```
 
-You get `api/openapi.yaml`. Set `openapiVersion: '3.1.2'` in the controller job when a downstream tool does not support 3.2. That version handles whole query objects differently ([query compatibility](/reference/nestjs#query-compatibility)).
+You get `api/openapi.yaml`. Set `openapiVersion: '3.1.2'` in the docs job when a downstream tool does not support 3.2. That version handles whole query objects differently ([query compatibility](/reference/nestjs#query-compatibility)).
 
 ## Models in a controller
 
@@ -50,7 +51,7 @@ You get `api/openapi.yaml`. Set `openapiVersion: '3.1.2'` in the controller job 
 
 <<< ../../examples/payments/server/src/payment.model.ts#payment-class
 
-`Payment` extends the generated `TPaymentBaseModel`, which the `models` job writes ([Generate a client from the document](#generate-a-client-from-the-document)). `@ApiOperation({ operationId: 'createPayment' })` replaces the default, so the client method is `createPayment()`. `@ApiBadRequestResponse` and `@ApiBadGatewayResponse` from `@nestjs/swagger` produce the `400` and `502` responses. The component name `Payment` follows the [naming rules](/reference/nestjs#component-names). The controller above produces this operation in `api/openapi.yaml`:
+`Payment` extends the generated `TPaymentBaseModel`, which the models job writes ([Generate a client from the document](#generate-a-client-from-the-document)). `@ApiOperation({ operationId: 'createPayment' })` replaces the default, so the client method is `createPayment()`. `@ApiBadRequestResponse` and `@ApiBadGatewayResponse` from `@nestjs/swagger` produce the `400` and `502` responses. The component name `Payment` follows the [naming rules](/reference/nestjs#component-names). The controller above produces this operation in `api/openapi.yaml`:
 
 ```yaml
 post:
@@ -78,16 +79,16 @@ To convert and validate the request at runtime, [register the interceptor](/guid
 
 ## Generate a client from the document
 
-The controller job writes `api/openapi.yaml`. An OpenAPI job reads that document and generates the client ([Generate an SDK](/guide/client)). The example runs it from `web/golem.yaml`. The controller job in `server/golem.yaml`:
+The docs job writes `api/openapi.yaml`. An SDK job reads that document and generates the client ([Generate an SDK](/guide/client)). The example runs it from `web/golem.yaml`. The docs job in `server/golem.yaml`:
 
 <<< ../../examples/payments/server/golem.yaml#controllers-job
 
-`globalPrefix: api` must match `app.setGlobalPrefix()`, because the generator reads controllers and not your bootstrap code. The `models` job in the same configuration generates `TPaymentBaseModel`.
+`globalPrefix: api` must match `app.setGlobalPrefix()`, because the generator reads controllers and not your bootstrap code. The models job in the same configuration generates `TPaymentBaseModel`.
 
 Install the client and runtime packages:
 
 ```sh
-npm install --save-dev @exprtlabs/golem-openapi @exprtlabs/golem-model
+npm install --save-dev @exprtlabs/golem-openapi @exprtlabs/golem-model typescript@~7.1.0-beta
 npm install @exprtlabs/golem reflect-metadata
 ```
 

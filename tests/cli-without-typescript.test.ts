@@ -18,10 +18,18 @@ before(() => {
   fs.copyFileSync(path.join(workspace, 'packages/golem/package.json'), path.join(installed, 'package.json'));
   fs.symlinkSync(path.join(workspace, 'node_modules/yaml'), path.join(installRoot, 'node_modules/yaml'));
   binary = path.join(installed, 'dist/bin/golem.js');
-  // A third-party generator is a job that is neither models nor controllers: no job of golem's own, so no compiler is borrowed.
+  // A third-party generator is a job that is neither the model job nor a docs job: no job of golem's own, so no compiler is borrowed.
   const provider = path.join(installRoot, 'node_modules/@fixture/gen');
   fs.mkdirSync(provider, { recursive: true });
-  fs.writeFileSync(path.join(provider, 'package.json'), JSON.stringify({ name: '@fixture/gen', version: '1.0.0-rc', type: 'module', exports: { './generator': './index.js' } }));
+  fs.writeFileSync(path.join(provider, 'package.json'), JSON.stringify({ name: '@fixture/gen', version: '1.0.0-rc', type: 'module', exports: { './plan': './plan.js', './generator': './index.js' }, golem: { apiVersion: 2, block: 'gen', plan: './plan', generator: './generator' } }));
+  fs.writeFileSync(path.join(provider, 'plan.js'), `import path from 'node:path';
+export const plan = {
+  declare({ directory }) {
+    const output = path.join(directory, 'gen');
+    return [{ facts: { id: 'gen', outputs: [{ path: output, kind: 'folder' }], ownedRoots: [], inputFiles: [], inputFolders: [], readsProgram: false, provides: [], needs: [], hooks: [], watch: [] }, options: { directory, output } }];
+  },
+};
+`);
   fs.writeFileSync(path.join(provider, 'index.js'), `import path from 'node:path';
 export const apiVersion = 1;
 export function generate(context) {
@@ -32,11 +40,13 @@ export function generate(context) {
 
 // A user's own GOLEM_TYPESCRIPT_ROOT (the TypeScript 6 lane sets one) would replace the root golem chooses.
 const CHOSEN_ROOT = { GOLEM_TYPESCRIPT_ROOT: undefined };
-const GENERATOR_ONLY = ['version: 1', 'generators:', "  - package: '@fixture/gen'", '    output: gen', ''].join('\n');
+const GENERATOR_ONLY = ['version: 1', 'gen: {}', ''].join('\n');
 after(() => fs.rmSync(installRoot, { recursive: true, force: true }));
 
 function project(files: Record<string, string>): string {
   const root = fs.mkdtempSync(path.join(installRoot, 'project-'));
+  // The project lists the package that registers the block `gen`, as golem finds the packages of a project in its package.json.
+  fs.writeFileSync(path.join(root, 'package.json'), '{"dependencies":{"@fixture/gen":"*"}}');
   for (const [name, text] of Object.entries(files)) fs.writeFileSync(path.join(root, name), text);
   return root;
 }
@@ -48,13 +58,13 @@ test('golem --help does not need TypeScript', async () => {
 });
 
 test('a configured provider that is not installed is reported without TypeScript', async () => {
-  const root = project({ 'golem.yaml': 'version: 1\nopenapi:\n  - input: api.json\n    output: sdk\n    name: Api\n', 'api.json': '{}', 'tsconfig.json': '{}' });
+  const root = project({ 'golem.yaml': 'version: 1\nopenapi-ts:\n  sdks:\n    - input: api.json\n      output: sdk\n      name: Api\n', 'api.json': '{}', 'tsconfig.json': '{}' });
   const result = await command(root, process.execPath, [binary, 'generate'], { allowFailure: true, env: CHOSEN_ROOT });
   assert.notEqual(result.code, 0);
-  assert.match(result.stderr, /openapi is configured.*not installed/);
+  assert.match(result.stderr, /No installed package registers the golem block "openapi-ts"/);
 });
 
-test('a config with no models or controllers job generates without TypeScript', async () => {
+test('a config with no model block or docs job generates without TypeScript', async () => {
   const root = project({ 'golem.yaml': GENERATOR_ONLY, 'tsconfig.json': '{}' });
   await command(root, process.execPath, [binary, 'generate'], { env: CHOSEN_ROOT });
   await command(root, process.execPath, [binary, 'check'], { env: CHOSEN_ROOT });
@@ -87,7 +97,7 @@ test('the TypeScript of the directory of golem.yaml is the one used, wherever th
 });
 
 test('the TypeScript of the directory of the tsconfig golem.yaml names is the one used, not the yaml directory', async () => {
-  const root = project({ 'golem.yaml': 'version: 1\ntsconfig: app/tsconfig.json\nmodels:\n  root: app\n' });
+  const root = project({ 'golem.yaml': 'version: 1\ntsconfig: app/tsconfig.json\ngen: {}\n' });
   fs.mkdirSync(path.join(root, 'app/node_modules/typescript'), { recursive: true });
   fs.writeFileSync(path.join(root, 'app/tsconfig.json'), '{}');
   fs.writeFileSync(path.join(root, 'app/node_modules/typescript/package.json'), JSON.stringify({ name: 'typescript', version: '5.9.0' }));

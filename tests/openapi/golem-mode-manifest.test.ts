@@ -119,3 +119,12 @@ test('a golem-mode manifest without the graph, or with another mode is refused a
   const withoutCharge = (written.components as { name: string }[]).filter(component => component.name !== 'Charge');
   assert.throws(() => validateModelManifest({ ...written, components: withoutCharge }), /model entry Charge has no codecId\. Regenerate/);
 });
+
+test('a golem-mode manifest writes the extension settings of the profile in sorted key order, and reads back the same record', () => {
+  // protects: T-782 the manifest records profile.extensions by package name as stable JSON
+  const extensions = { '@scope/pack': { zeta: [1, { y: 2, x: 1 }], alpha: 'on' }, '@scope/another': {} };
+  const written = stableJson(golemModeManifest(DOCUMENT, { ...PROFILE, extensions }));
+  assert.match(written, /"profile": \{\n {4}"allowAny": false,\n {4}"extensions": \{\n {6}"@scope\/another": \{\},\n {6}"@scope\/pack": \{\n {8}"alpha": "on",\n {8}"zeta": \[\n {10}1,\n {10}\{\n {12}"x": 1,\n {12}"y": 2\n/);
+  assert.deepEqual(validateModelManifest(JSON.parse(written)).profile.extensions, { '@scope/another': {}, '@scope/pack': { alpha: 'on', zeta: [1, { x: 1, y: 2 }] } });
+  assert.equal(Object.hasOwn(JSON.parse(stableJson(golemModeManifest(DOCUMENT, PROFILE))).profile, 'extensions'), false);
+});

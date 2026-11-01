@@ -6,11 +6,28 @@ Put `golem.yaml` in the project that owns the source files. Paths in the file ar
 
 - `version: 1` selects the configuration format. It is independent of the package release.
 - `tsconfig` names the TypeScript project. Every job reads it: `golem generate`, `golem check` and `golem build`, and the Vite and esbuild plugins and the Node loader, which open the same project from `golem.yaml`. They read the `config` option of the plugin, then `GOLEM_CONFIG`, then `./golem.yaml`.
-- `mobx`, `validation` and `allowAny` apply to every job. `exact` applies to the models job and to the models that controller jobs describe. A named `IObject` or `IModel` can still set `validation`, `allowAny` and `exact` for that declaration.
+- `mobx`, `validation` and `allowAny` apply to every job. `exact` applies to the model block and to the models that the docs jobs describe. A named `IObject` or `IModel` can still set `validation`, `allowAny` and `exact` for that declaration.
+- A top-level key that is not a root key names a [block](#blocks). The package that registers the block validates it.
 - Unknown keys are errors.
-- Configure at least one `generators`, `controllers`, `openapi` or `models` job.
+- Golem writes `.golem/schema.json`, a JSON Schema for `golem.yaml` that holds the root keys and the keys of each installed package block. To get completion in your editor, put `# yaml-language-server: $schema=.golem/schema.json` on the first line of `golem.yaml`. A schema part that is missing or broken gives a warning, and the editor does not complete that block.
+- Configure at least one block that declares a job.
 
-The CLI runs [generator jobs](#generator-jobs) first, then controller jobs, then OpenAPI SDK jobs, and model jobs last. A model job can therefore read the manifest that an SDK job writes. A job that reads the output of a later job is a cycle error.
+## Blocks {#blocks}
+
+A block is a top-level key of `golem.yaml` that one installed package registers. The block holds the jobs of that package and its options. Golem knows no package by name: it reads the `golem` field in the `package.json` of each installed package ([register a block](/reference/generator-api#register-a-block)).
+
+| Block | Registered by | Jobs it declares |
+| --- | --- | --- |
+| [`model`](#model-block) | `@exprtlabs/golem-model` | One models job: the generated file of each model source |
+| [`ts-openapi`](#ts-openapi-block) | `@exprtlabs/golem-ts-openapi` | One docs job for each `docs` entry: an OpenAPI document from controllers |
+| [`openapi-ts`](#openapi-ts-block) | `@exprtlabs/golem-openapi` | One SDK job for each `sdks` entry: a TypeScript SDK from an OpenAPI document |
+
+A package from another author registers its own block name. Write that block under its name and follow the documentation of the package.
+
+- Golem finds the packages in the `dependencies`, `devDependencies` and `optionalDependencies` of every `package.json` from the folder of `golem.yaml` up to the first one with `workspaces` or a `pnpm-workspace.yaml` beside it. It also reads the nearest `package.json` itself, so an app can register its own block.
+- A block that no installed package registers stops loading. The message lists the installed golem packages and their blocks.
+- Two packages that register one block stop loading. The message names both.
+- A package cannot register a root key as its block.
 
 ## Root keys
 
@@ -18,16 +35,12 @@ The CLI runs [generator jobs](#generator-jobs) first, then controller jobs, then
 | --- | --- | --- | --- | --- |
 | `version` | literal `1` | Yes | — | Configuration format version |
 | `tsconfig` | path | No | `tsconfig.json` | The project's tsconfig, relative to `golem.yaml` |
-| `mobx` | boolean | No | `false` | MobX observability hooks. An `openapi` job with `mobx: true` needs `mode: golem` ([modes](#sdk-modes)). |
+| `mobx` | boolean | No | `false` | MobX observability hooks. An `openapi-ts` job with `mobx: true` needs `mode: golem` ([modes](#sdk-modes)). |
 | `validation` | `true`, `false` or `sanity` | No | `true` | Level of the generated runtime checks ([levels](#validation-profiles)). Any other value is an error. |
 | `allowAny` | boolean | No | `false` | Fields typed `any` or `unknown` in models |
 | `exact` | boolean | No | `true` | Rejection of extra properties in models |
 | `unknownFormats` | `warn` or `error` | No | `error` | Action for a schema `format` that golem does not check |
 | `nonModelInputs` | `warn` or `error` | No | `error` | Action for a `@Body()` or `@Query()` parameter that `NestModelInterceptor` rejects: a type that is no `IModel` or `IObject`, or a combination of parameters of one handler that it cannot convert |
-| `generators` | array of generator jobs | No | — | Non-empty list of [jobs from installed packages](#generator-jobs) |
-| `controllers` | array of controller jobs | No | — | Non-empty list of controller-to-OpenAPI jobs |
-| `openapi` | array of OpenAPI jobs | No | — | Non-empty list of OpenAPI SDK jobs |
-| `models` | object | No | — | One TypeScript model job |
 
 - `tsconfig` must name an existing file when you set the key. Name a build-specific file such as `tsconfig.build.json` or `tsconfig.app.json` to give every job its `paths` and options. A tsconfig nearer to a job root is not read.
 - One `golem.yaml` serves one tsconfig ([what the tsconfig needs](/reference/cli#what-the-tsconfig-needs)). A tsconfig that has only `references` stops every job: name one referenced project.
@@ -35,24 +48,39 @@ The CLI runs [generator jobs](#generator-jobs) first, then controller jobs, then
 - `allowAny: true` permits those fields. A declaration can override it ([`any` and `unknown`](/guide/field-types#any-and-unknown)).
 - `exact: false` admits keys that a model does not list. A declaration can override it ([Objects and exact](/guide/field-types#objects-and-exact)).
 - `unknownFormats: error` stops generation with [`VALIDATE_UNKNOWN_FORMAT`](/reference/diagnostics#validate-unknown-format). `warn` reports the format and skips its check.
-- `nonModelInputs` applies when a source of the project imports `@exprtlabs/golem/nest`. A `controllers` job in `golem.yaml` does not turn it on. A project that never imports that module gets no `RUNM1081`. It covers `golem build`, `golem check`, the Vite plugin, the esbuild plugin and the Node loader. It covers a parameter whose type is no model, whole or one field. It also covers the parameters of one handler that the interceptor cannot convert together: an optional one-field model or whole `@Body()`, a whole parameter with a one-field parameter of the same source, parameters that read the same value as different models, and a whole `@Query()` array. `error` stops with [`RUNM1081`](/reference/diagnostics#runm1081). `warn` continues. `golem build` and `golem check` print the warning. The plugins and the loader print nothing. Set `warn` when your own interceptor handles those parameters.
+- `nonModelInputs` applies when a source of the project imports `@exprtlabs/golem/nest`. A `ts-openapi` block in `golem.yaml` does not turn it on. A project that never imports that module gets no `RUNM1081`. It covers `golem build`, `golem check`, the Vite plugin, the esbuild plugin and the Node loader. It covers a parameter whose type is no model, whole or one field. It also covers the parameters of one handler that the interceptor cannot convert together: an optional one-field model or whole `@Body()`, a whole parameter with a one-field parameter of the same source, parameters that read the same value as different models, and a whole `@Query()` array. `error` stops with [`RUNM1081`](/reference/diagnostics#runm1081). `warn` continues. `golem build` and `golem check` print the warning. The plugins and the loader print nothing. Set `warn` when your own interceptor handles those parameters.
 
 ```yaml
 version: 1
-mobx: false
 validation: true
 allowAny: false
 exact: true
 unknownFormats: error
 nonModelInputs: error
-openapi:
-  - input: api.yaml
-    output: sdk
-    name: Tasks
-models:
-  root: .
-  output: src/generated/models
+openapi-ts:
+  sdks:
+    - input: api.yaml
+      output: sdk
+      name: Tasks
+model: {}
 ```
+
+## Job order {#job-order}
+
+Golem derives the order of the jobs from what each job reads and writes. The order of the blocks in the file does not set it, except as a tie-break.
+
+- A job runs after each job whose output file it reads. An SDK job reads its `input`, so the docs job that writes that document runs first.
+- A job that reads your TypeScript program is a program reader: the models job and each docs job. A job that does not read the program runs before the program readers, unless a read in the other direction decides the order.
+- The models job reads the SDK folders of the SDKs in `mode: golem`, because it writes their checks and conversions. Those SDK jobs run before it.
+- Two program readers that do not read each other run in the order of `golem.yaml`.
+- Jobs that read each other's output in a circle stop loading. The message names the jobs.
+
+So a docs job, an SDK job in `mode: golem` and the models job run in that order. Without a link between the docs job and the models job, the one listed first runs first. The document is the same in both orders.
+
+A program reader sees the files of the jobs that run after it like this:
+
+- The generated files of the models job that run later appear as stubs, so a controller that uses a model type still resolves.
+- Every other later output is left out of the program. A controller that reaches such a file stops with [`RUNM1084`](/reference/diagnostics#runm1084).
 
 ## Output paths
 
@@ -60,17 +88,19 @@ The `output` of a job marks where it writes its main files. Golem replaces only 
 
 Each kind of job writes its files in one place:
 
-- A `generators` or `openapi` job writes only below its `output` directory.
-- A `controllers` job writes only its `output` document.
-- A `models` job writes `models.validators.generated.ts` and the generated files of shared model files below its `output`. It writes the generated file of each model source beside that source inside `root`.
+- A job of another package writes below the folder or file that its package documents.
+- An SDK job writes only below its `output` directory.
+- A docs job writes only its `output` document.
+- The models job writes `models.validators.generated.ts` and the generated files of shared model files below its `output`. It writes the generated file of each model source beside that source.
 
 These rules apply to every `output`:
 
 - An `output` is relative to `golem.yaml`. For example, `output: ../shared-sdk` writes an SDK to a sibling folder.
 - Outputs of different jobs must not overlap. An output inside another output stops loading `golem.yaml`.
+- No output holds `golem.yaml` or the `.golem/` folder. Golem owns both.
 - Two artifacts for one file, or an artifact for `golem.yaml` itself, stop generation with `Generated output collision`.
 - A destination that leaves its `output` through a symbolic link stops generation before any write.
-- An OpenAPI `input` may be absent on the first run when an earlier controller job writes that exact file.
+- An SDK `input` may be absent on the first run when a docs job writes that exact file.
 
 ## Validation profiles
 
@@ -123,9 +153,11 @@ A `format` is checked only when golem implements it:
 
 Disabling validation does not disable conversion guards, codecs, JSON representability checks or generation diagnostics.
 
-## Controller jobs
+## The `ts-openapi` block {#ts-openapi-block}
 
-Install `@exprtlabs/golem-ts-openapi` to use `controllers`. A job reads static NestJS controller contracts. It does not start Nest and does not reproduce module registration. Use `sources` to read only selected controllers.
+Install `@exprtlabs/golem-ts-openapi` to use the `ts-openapi` block. Its `docs` list holds one docs job for each document. A job reads static NestJS controller contracts. It does not start Nest and does not reproduce module registration. Use `sources` to read only selected controllers.
+
+Each entry of `docs` takes these keys. `docs` is required and holds at least one entry. A docs job uses the `model` block of the same file, when there is one, to match a shared model of the app to its model.
 
 | Key | Type | Required | Default | Meaning |
 | --- | --- | --- | --- | --- |
@@ -146,33 +178,37 @@ Install `@exprtlabs/golem-ts-openapi` to use `controllers`. A job reads static N
 ```yaml
 version: 1
 tsconfig: backend/tsconfig.json
-controllers:
-  - framework: nestjs
-    root: backend
-    output: api/payments.yaml
-    info:
-      title: Payments API
-      version: '1'
-    globalPrefix: api
-    uriVersioning:
-      prefix: v
-      defaultVersion: '1'
-openapi:
-  - input: api/payments.yaml
-    output: sdk
-    name: Payments
+ts-openapi:
+  docs:
+    - framework: nestjs
+      root: backend
+      output: api/payments.yaml
+      info:
+        title: Payments API
+        version: '1'
+      globalPrefix: api
+      uriVersioning:
+        prefix: v
+        defaultVersion: '1'
+openapi-ts:
+  sdks:
+    - input: api/payments.yaml
+      output: sdk
+      name: Payments
 ```
 
 - The `backend` folder in this example has its own `tsconfig.json`, so `tsconfig` names it. Without one, leave `tsconfig` out to use the file beside `golem.yaml`.
 - Route helpers and query objects follow the rules of [NestJS controllers](/reference/nestjs). A query object on each OpenAPI version follows [query compatibility](/reference/nestjs#query-compatibility).
 
-## OpenAPI jobs
+## The `openapi-ts` block {#openapi-ts-block}
 
-Install `@exprtlabs/golem-openapi` to use `openapi`. Each job reads one YAML or JSON document and writes one SDK directory.
+Install `@exprtlabs/golem-openapi` to use the `openapi-ts` block. Its `sdks` list holds one SDK job for each SDK. Each job reads one YAML or JSON document and writes one SDK directory. A block with no `sdks` declares no job.
+
+Each entry of `sdks` takes these keys:
 
 | Key | Type | Required | Default | Meaning |
 | --- | --- | --- | --- | --- |
-| `input` | path | Yes | — | Config-relative OpenAPI YAML or JSON file. An earlier job of the file may write it. |
+| `input` | path | Yes | — | Config-relative OpenAPI YAML or JSON file. A docs job of the file may write it. |
 | `output` | path | Yes | — | Config-relative SDK output directory. |
 | `name` | string | No | — | Prefix for generated client and operation types. |
 | `allowRemoteRefs` | boolean | No | `false` | Permit HTTPS `$ref` documents. |
@@ -181,7 +217,7 @@ Install `@exprtlabs/golem-openapi` to use `openapi`. Each job reads one YAML or 
 | `maxRefDocuments` | positive integer | No | `256` | Maximum referenced documents, local ones included. |
 | `refTimeoutMs` | positive integer | No | `10000` | Timeout for a remote reference read, in milliseconds. |
 | `dates` | `date` or `temporal` | No | `date` | `temporal` maps `format: date-time` to `Temporal.Instant`, `date` to `Temporal.PlainDate` and `duration` to `Temporal.Duration`. [`@exprtlabs/golem/temporal`](/reference/runtime-api#temporal) converts them. `time` stays a string. Encoding a `Temporal.Instant` writes `Z`, so the original offset is lost. |
-| `mode` | `standalone` or `golem` | No | `standalone` | The kind of SDK ([modes](#sdk-modes)). `golem` needs a `models` section in the same file. |
+| `mode` | `standalone` or `golem` | No | `standalone` | The kind of SDK ([modes](#sdk-modes)). `golem` needs a `model` block in the same file. |
 
 ### SDK modes {#sdk-modes}
 
@@ -189,14 +225,14 @@ Install `@exprtlabs/golem-openapi` to use `openapi`. Each job reads one YAML or 
 | --- | --- | --- |
 | For | A team that gets a ready SDK and has no golem setup | An app that runs golem with its own models in the same `golem.yaml` |
 | The SDK holds | The client, types, checks, conversions and a copy of the golem runtime that it uses | The client and types only |
-| Checks and conversions | Written by the `openapi` job | Written by the `models` job, together with your models |
+| Checks and conversions | Written by the SDK job | Written by the models job, together with your models |
 | Installs | Nothing from golem; `temporal-polyfill` with `dates: temporal` | `@exprtlabs/golem` |
 | `mobx: true` | Error [`OPENAPI_MOBX_NEEDS_GOLEM_MODE`](/reference/diagnostics#openapi-mobx-needs-golem-mode) | Allowed |
 
 - Both modes write no model classes. A response is a plain object of the SDK type, with converted values such as `Temporal` dates. A class with methods is your own model over the SDK type ([SDK types in your models](/guide/models-and-client)).
-- `mode: golem` without a `models` section in the same `golem.yaml` stops generation with an error that names the key.
-- A `golem` SDK lies in a folder below the folder of `golem.yaml`. The `models` job writes its checks and conversions below `models.output`.
-- A `standalone` SDK needs no `models` job.
+- `mode: golem` without a `model` block in the same `golem.yaml` stops loading. The message says that no job provides `CodecsHost`.
+- A `golem` SDK lies in a folder below the folder of `golem.yaml`. The models job writes its checks and conversions below `model.output`.
+- A `standalone` SDK needs no `model` block.
 - An SDK that you install from a package is a `standalone` SDK.
 - The mode is part of the job input, so changing it generates the SDK again.
 - Both modes take the [`validate` option](/guide/client-usage#lower-the-checks) per client and per call.
@@ -216,38 +252,39 @@ components.schemas.Money: { $ref: './money.json' } → component Money
 
 Reference limits (`maxRefBytes`, `maxRefDocuments` and `refTimeoutMs`) apply also with `validation: false`. That flag controls only the generated runtime checks.
 
-## TypeScript models {#typescript-models}
+## The `model` block {#model-block}
 
-Install `@exprtlabs/golem-model` to use `models`.
+Install `@exprtlabs/golem-model` to use the `model` block. The block declares one models job. `model: {}` turns it on with every default. The job scans from the folder of `golem.yaml`.
 
 | Key | Type | Required | Default | Meaning |
 | --- | --- | --- | --- | --- |
-| `root` | path | No | `.` | TypeScript project directory. |
-| `sources` | array of paths | No | — | Config-relative model files with any `.ts`, `.mts` or `.cts` name. Each file must export an `IModel` or `IObject` alias and must lie inside `root` ([RUNM1075](/reference/diagnostics#runm1075)). Without `sources`, every file below `<root>/src` and every file that the tsconfig includes or imports is a model source when it ends in one of the `suffixes`. A model source outside `root` is a [shared model file](/guide/shared-models#where-each-app-writes). The job skips a discovered file that has no `IModel` or `IObject` alias. |
+| `sources` | array of paths | No | — | Config-relative model files with any `.ts`, `.mts` or `.cts` name. Each file must export an `IModel` or `IObject` alias and must lie inside the folder of `golem.yaml` ([RUNM1075](/reference/diagnostics#runm1075)). Without `sources`, every file below `src` of that folder and every file that the tsconfig includes or imports is a model source when it ends in one of the `suffixes`. A model source outside that folder is a [shared model file](/guide/shared-models#where-each-app-writes). The job skips a discovered file that has no `IModel` or `IObject` alias. |
 | `suffixes` | array of strings | No | `[".model.ts", ".models.ts"]` | File-name endings that make a file a model source. Each entry starts with `.`, ends in `.ts`, `.mts` or `.cts`, appears once, and does not end in `.generated.<ext>`. A suffix does not end in `.d.ts`, `.d.mts` or `.d.cts`, because the declaration form of each suffix is a model source already. |
-| `output` | path | No | `<root>/src/generated/models` | The folder of `models.validators.generated.ts` and of the generated files of shared model files. It must lie inside the tsconfig directory and must not overlap another job. |
+| `output` | path | No | `src/generated/models` | The folder of `models.validators.generated.ts` and of the generated files of shared model files. It must lie inside the tsconfig directory and must not overlap another job. |
 
 The generated file for each model source stays beside it and puts `.generated` before the final extension: `order.entity.ts` gets `order.entity.generated.ts`. Explicit `sources` must be non-empty and must not repeat a path. A source file may be one that an earlier job writes.
 
 ```yaml
 version: 1
 allowAny: false
-models:
-  root: .
+model:
   sources:
     - src/task.model.ts
     - src/payment-editor.model.ts
   output: src/generated/models
 ```
 
-Models from a [shared folder or package](/guide/shared-models) are generated in the `models.output` of each app.
+Models from a [shared folder or package](/guide/shared-models) are generated in the `model.output` of each app.
 
-## Generator jobs
+## Blocks from other packages {#other-blocks}
 
-Install a package that provides a generator and list it under `generators`. Its jobs run before the built-in jobs, so the models job processes the files that it writes. [Write a generator](/guide/generators) shows the package.
+A package that registers a block reads the key of that block. Install the package, list it in a `package.json` of your project, and write the block under the name that the package documents. For example, a package that registers the block `payment-events` is configured like this:
 
-| Key | Type | Required | Meaning |
-| --- | --- | --- | --- |
-| `package` | string | Yes | Installed third-party package that exports `./generator`. Its version is independent of golem's. Configure the built-in packages with `models`, `openapi` or `controllers`. |
-| `output` | path | Yes | Config-relative directory that the generator owns. |
-| `options` | object | No | Passed to the generator as written. The generator validates it. |
+```yaml
+payment-events:
+  output: src/events
+  events:
+    PaymentCaptured: { paymentId: string, amount: string }
+```
+
+The package decides the keys of its block and checks them. Each generated file of the package starts with `/* Generated by <package>. Do not edit. */` ([files Golem owns](/guide/watch#files-golem-owns)). To write such a package, [register a block](/reference/generator-api#register-a-block) as [Write a generator](/guide/generators) shows.

@@ -30,7 +30,7 @@ Both declare fields. `IObject` stops there: values stay plain objects, and you c
 
 ## Declare fields
 
-Put declarations in `src/**/*.model.ts` or `src/**/*.models.ts`. Set [`models.suffixes`](/reference/config#typescript-models) to use other endings, such as `.entity.ts`, and `models.sources` to name files directly. A field can have any of the [supported shapes](/guide/field-types) and carry [validation tags](/guide/tags).
+Put declarations in `src/**/*.model.ts` or `src/**/*.models.ts`. Set [`model.suffixes`](/reference/config#model-block) to use other endings, such as `.entity.ts`, and `model.sources` to name files directly. A field can have any of the [supported shapes](/guide/field-types) and carry [validation tags](/guide/tags).
 
 ## Set the validation level of a model
 
@@ -97,7 +97,7 @@ Generation type-checks the project first, then writes the files:
 
 - It stops on a TypeScript error in a model source or in a file the job writes. It reports the error in the compiler's form, `file(line,column): error TSnnnn: message`.
 - A type error in any other file does not stop generation.
-- It replaces every `*.model.generated.ts` file and the shared files under `models.output` (default `src/generated/models/`).
+- It replaces every `*.model.generated.ts` file and the shared files under `model.output` (default `src/generated/models/`).
 - Your classes do not change.
 
 `golem build` generates first, so a build needs no separate `golem generate`. In CI, run `golem build`, or run `golem generate` and then `npx golem check` ([Generate and watch](/guide/watch)). You choose whether to [ignore or commit the generated files](/reference/generated-files#gitignore).

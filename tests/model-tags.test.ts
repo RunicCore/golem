@@ -44,7 +44,8 @@ import { validate } from './validators.js';`,
   build(second.sourceRoot);
   const secondResult = generate({ root: second.root, profile: { mobx: false, validation: true } });
   const firstByRelative = new Map(firstArtifacts.map(artifact => [path.relative(first.root, artifact.path), artifact.content]));
-  for (const artifact of secondResult.artifacts) {
+  // The codec key table is core's own record, not one of the job's files, and the first run's map does not hold it.
+  for (const artifact of secondResult.artifacts.filter(candidate => path.basename(candidate.path) !== 'codec-keys.json')) {
     assert.equal(artifact.content, firstByRelative.get(path.relative(second.root, artifact.path)), path.relative(second.root, artifact.path));
   }
 });

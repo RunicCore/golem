@@ -15,6 +15,7 @@ import { createModelProject, writeModelSources } from './model-project.js';
 import { writeFixture } from './support/consumer.js';
 import { runRewritten } from './support/rewritten-module.js';
 import { workspace } from './support/process.js';
+import { defaultModelOutput } from '#golem/generated-paths';
 
 const BASE = ['payment.model.ts', 'payment.model.generated.ts'];
 const CODEC_KEYS = '.golem/codec-keys.json';
@@ -39,7 +40,7 @@ function scan(root: string, interceptor = false): ProgramScan {
 function withScanner<T>(root: string, use: (scanner: RewriteScanner) => T): T {
   const info = createProjectProgram(root, undefined, undefined, path.join(root, 'tsconfig.json'));
   using program = info.program;
-  return use(new RewriteScanner({ root, directory: root, modelsRoot: root, program, checker: program.getTypeChecker(), codecKeysFile: path.join(root, CODEC_KEYS) }));
+  return use(new RewriteScanner({ root, boundary: { root, directory: root, output: defaultModelOutput(root), suffixes: ['.model.ts', '.models.ts'] }, program, checker: program.getTypeChecker(), codecKeysFile: path.join(root, CODEC_KEYS) }));
 }
 
 function scanned(result: ProgramScan, file: string): FileScanResult {
@@ -463,7 +464,7 @@ function generatedProject(t: TestContext): { root: string; config: string } {
     linkTypescript: true,
     packages: { '@exprtlabs/golem-model': path.join(workspace, 'packages/golem-model') },
   });
-  fs.writeFileSync(path.join(root, 'golem.yaml'), 'version: 1\nmobx: false\nvalidation: false\nmodels:\n  root: .\n');
+  fs.writeFileSync(path.join(root, 'golem.yaml'), 'version: 1\nvalidation: false\nmodel: {}\n');
   copyFixtureFile(root, 'models/serde/base-payment-model/money.model.ts', 'src/money.model.ts');
   fs.writeFileSync(path.join(root, 'src/use.ts'), `import { parse } from '@exprtlabs/golem/serde';
 import { Payment } from './money.model.js';
@@ -472,11 +473,12 @@ export const payment = parse<Payment>('{}');
   return { root, config: path.join(root, 'golem.yaml') };
 }
 
-test('a models job owns .golem/codec-keys.json, and the project it generates passes the check with its codec ids', async (t) => {
+test('core keeps .golem/codec-keys.json beside the inventory, and the project the models job generates passes the check with its codec ids', async (t) => {
   const { root, config } = generatedProject(t);
   await runPipeline(config);
-  const inventory: { files: Record<string, { job: string }> } = JSON.parse(fs.readFileSync(path.join(root, '.golem/outputs.json'), 'utf8'));
-  assert.equal(inventory.files['.golem/codec-keys.json']?.job, 'models:.', 'the codec key file is an owned output of the models job');
+  const inventory: { files: Record<string, unknown> } = JSON.parse(fs.readFileSync(path.join(root, '.golem/outputs.json'), 'utf8'));
+  // The codec key table is core's own record: the inventory does not list it.
+  assert.equal(inventory.files['.golem/codec-keys.json'], undefined);
   const table: { version: number; keys: Record<string, string> } = JSON.parse(fs.readFileSync(path.join(root, '.golem/codec-keys.json'), 'utf8'));
   assert.equal(table.version, 1);
   assert.match(table.keys['src/money.model.ts#Payment'] ?? '', /^TPayment_[0-9a-f]{8}$/, 'keys name the source from the tsconfig directory');
@@ -487,7 +489,7 @@ test('a models job owns .golem/codec-keys.json, and the project it generates pas
  * An app beside a shared folder whose own golem.yaml has a models job, and an installed package `@acme/money` whose declaration
  * file declares the IObject alias `TPkgMoney`. The app's golem.yaml has a models job, and `src/use.ts` is the app's own site.
  */
-function appBesideForeignModels(t: TestContext, site: string): { readonly app: string; readonly shared: string; readonly declaration: string; readonly config: string } {
+function appBesideForeignModels(t: TestContext, site: string, golemYaml = 'version: 1\nvalidation: false\nmodel: {}\n'): { readonly app: string; readonly shared: string; readonly declaration: string; readonly config: string } {
   const { root: outer } = createModelProject(t, {
     prefix: 'golem-rewrite-foreign-',
     linkTypescript: true,
@@ -499,13 +501,13 @@ function appBesideForeignModels(t: TestContext, site: string): { readonly app: s
     fs.writeFileSync(path.join(outer, file), text);
   };
   write('shared/package.json', JSON.stringify({ name: '@acme/shared', private: true, type: 'module' }));
-  write('shared/golem.yaml', 'version: 1\nmodels:\n  root: .\n');
+  write('shared/golem.yaml', 'version: 1\nmodel: {}\n');
   write('shared/tsconfig.json', JSON.stringify({ compilerOptions, include: ['src/**/*.ts'] }));
   write('shared/src/money.model.ts', "import type { IObject } from '@exprtlabs/golem/model';\nexport type TMoney = IObject<{ currency: string }>;\n");
   write('node_modules/@acme/money/package.json', JSON.stringify({ name: '@acme/money', version: '1.0.0', type: 'module', types: './index.d.ts', exports: { '.': { types: './index.d.ts' } } }));
   write('node_modules/@acme/money/index.d.ts', "import type { IObject } from '@exprtlabs/golem/model';\nexport type TPkgMoney = IObject<{ currency: string }>;\n");
-  write('app/package.json', JSON.stringify({ name: 'app', private: true, type: 'module' }));
-  write('app/golem.yaml', 'version: 1\nmobx: false\nvalidation: false\nmodels:\n  root: .\n');
+  write('app/package.json', JSON.stringify({ name: 'app', private: true, type: 'module', dependencies: { '@exprtlabs/golem-model': '*' } }));
+  write('app/golem.yaml', golemYaml);
   write('app/tsconfig.json', JSON.stringify({ compilerOptions, include: ['src/**/*.ts', '../shared/**/*.ts'] }));
   write('app/src/order.model.ts', "import type { IModel } from '@exprtlabs/golem/model';\nexport type TOrder = IModel<{ id: string }>;\n");
   write('app/src/use.ts', site);
@@ -529,6 +531,22 @@ export const text = stringify<TPkgMoney>(money);
   await assert.rejects(
     runPipeline(config, { check: true }),
     { message: `golem rewrite scan reported 1 error diagnostic:\n  RUNM1074 (${path.relative(process.cwd(), path.join(app, 'src/use.ts'))}:4:21): ${path.relative(process.cwd(), declaration)}#TPkgMoney is declared in a file whose name has no model suffix. Golem reads a model from a file whose name ends in .model.ts or .models.ts. Move the model into such a file.` },
+  );
+});
+
+const FOREIGN_SITE = `import { stringify } from '@exprtlabs/golem/serde';
+import type { TPkgMoney } from '@acme/money';
+declare const money: TPkgMoney;
+export const text = stringify<TPkgMoney>(money);
+`;
+
+test('golem check names the model suffixes of the models block in the reason a model file has no model suffix', async (t) => {
+  // protects: T-786 the suffixes of the job that provides the model contract reach the reason, with no default in core
+  const { app, declaration, config } = appBesideForeignModels(t, FOREIGN_SITE, 'version: 1\nvalidation: false\nmodel:\n  suffixes: [.entity.ts, .record.ts]\n');
+  await runPipeline(config);
+  await assert.rejects(
+    runPipeline(config, { check: true }),
+    { message: `golem rewrite scan reported 1 error diagnostic:\n  RUNM1074 (${path.relative(process.cwd(), path.join(app, 'src/use.ts'))}:4:21): ${path.relative(process.cwd(), declaration)}#TPkgMoney is declared in a file whose name has no model suffix. Golem reads a model from a file whose name ends in .entity.ts or .record.ts. Move the model into such a file.` },
   );
 });
 

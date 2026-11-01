@@ -11,15 +11,15 @@ import type { OpenApiGenerationResult } from '#openapi/generator';
 import type { OpenApiGenerationProfile } from '#openapi/profile';
 import { repoRoot, tscBin } from './openapi/helpers.js';
 import { snapshotFilesystem } from './fixture-project.js';
-
-type OpenApiJob = Extract<GolemJob, { kind: 'openapi' }>;
+import { configFor, jobWithFacts } from './support/output-config.js';
 
 interface OpenApiFixture {
   readonly root: string;
   readonly input: string;
   readonly output: string;
   readonly config: GolemConfig;
-  readonly job: OpenApiJob;
+  readonly job: GolemJob;
+  readonly options: Parameters<typeof generate>[0];
 }
 
 const profile = (validation: boolean): OpenApiGenerationProfile => ({ mobx: false, validation });
@@ -53,25 +53,13 @@ function fixture(
   const input = path.join(root, 'api.json');
   const output = path.join(root, 'sdk');
   fs.writeFileSync(input, `${JSON.stringify(document, null, 2)}\n`);
-  const job: OpenApiJob = {
-    id: 'openapi:sdk',
-    kind: 'openapi',
-    package: '@exprtlabs/golem-openapi',
-    options: { input, output, name: 'Retirement', profile: generationProfile },
-  };
-  const config: GolemConfig = {
-    directory: root,
-    configFile: path.join(root, 'golem.yaml'),
-    inventoryFile: path.join(root, '.golem/outputs.json'),
-    tsconfig: path.join(root, 'tsconfig.json'),
-    profile: generationProfile,
-    jobs: [job],
-  };
-  return { root, input, output, config, job };
+  const job = jobWithFacts('openapi:sdk', '@exprtlabs/golem-openapi', { outputs: [{ path: output, kind: 'folder' }] });
+  const config: GolemConfig = { ...configFor(root, job), profile: generationProfile };
+  return { root, input, output, config, job, options: { input, output, name: 'Retirement', profile: generationProfile } };
 }
 
 async function generateArtifacts(fixtureValue: OpenApiFixture): Promise<OpenApiGenerationResult> {
-  return generate({ ...fixtureValue.job.options });
+  return generate({ ...fixtureValue.options });
 }
 
 function compileGeneratedSdk(fixtureValue: OpenApiFixture): void {

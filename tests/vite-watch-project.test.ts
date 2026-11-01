@@ -31,7 +31,7 @@ async function generatedProject(t: TestContext, name: string): Promise<string> {
     compilerOptions: { noEmit: true },
   });
   const write = (relative: string, content: string): void => writeGeneratedArtifacts([{ path: path.join(root, relative), content }]);
-  write('golem.yaml', 'version: 1\nmobx: false\nvalidation: false\nmodels:\n  root: .\n');
+  write('golem.yaml', 'version: 1\nvalidation: false\nmodel: {}\n');
   copyFixtureFile(root, 'models/serde/base-payment-model/money.model.ts', 'src/money.model.ts');
   write('src/main.ts', MAIN);
   await runPipeline(path.join(root, 'golem.yaml'));

@@ -1,0 +1,18 @@
+{
+  "name": "@fixture/block-a",
+  "version": "1.0.0",
+  "exports": {
+    "./plan": "./plan.js",
+    "./generator": "./generator.js",
+    "./nest": "./nest.js",
+    "./golem-schema.json": "./golem-schema.json"
+  },
+  "golem": {
+    "apiVersion": 2,
+    "block": "alpha",
+    "plan": "./plan",
+    "generator": "./generator",
+    "extensions": { "nest": "./nest" },
+    "schema": "./golem-schema.json"
+  }
+}

@@ -3,7 +3,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import { generate } from '#openapi/generator';
-import { createFixtureProject } from '../fixture-project.js';
+import type { OpenApiContext } from '@exprtlabs/golem/generator-api';
+import { createFixtureProject, linkGolemPackages } from '../fixture-project.js';
 import { loadConfig } from '../support/load-config.js';
 import { writeOpenApiDocument } from './helpers.js';
 
@@ -32,20 +33,22 @@ const DOCUMENT = {
   components: { schemas: { Charge: { type: 'object', required: ['when'], properties: { when: { type: 'string', format: 'date-time' } } } } },
 };
 
-/** A project whose golem.yaml has a models section and an SDK of the given mode, and the job the config makes of it. */
-function project(t: test.TestContext, mode: 'golem' | 'standalone') {
+/** A project whose golem.yaml has a model block and an SDK of the given mode, and the job the config makes of it. */
+async function project(t: test.TestContext, mode: 'golem' | 'standalone') {
   const directory = createFixtureProject(t, 'golem-mode-sdk-');
   writeOpenApiDocument(directory, DOCUMENT, 'api.json');
+  fs.writeFileSync(path.join(directory, 'package.json'), JSON.stringify({ name: 'golem-mode-sdk-fixture', private: true, type: 'module' }));
+  linkGolemPackages(directory, ['golem', 'golem-model', 'golem-openapi']);
   const config = path.join(directory, 'golem.yaml');
-  fs.writeFileSync(config, `version: 1\nopenapi:\n  - input: api.json\n    output: sdk/charges\n    name: Charges\n    mode: ${mode}\nmodels:\n  root: .\n`);
-  const job = loadConfig(config).jobs.find(candidate => candidate.kind === 'openapi');
-  assert.ok(job && job.kind === 'openapi');
-  return { directory, options: { ...job.options, profile: PROFILE } };
+  fs.writeFileSync(config, `version: 1\nopenapi-ts:\n  sdks:\n    - input: api.json\n      output: sdk/charges\n      name: Charges\n      mode: ${mode}\nmodel: {}\n`);
+  const job = (await loadConfig(config)).jobs.find(candidate => candidate.block === 'openapi-ts');
+  assert.ok(job);
+  return { directory, options: { ...(job.options as OpenApiContext), profile: PROFILE } };
 }
 
 test('an openapi job in golem mode writes types and the client, and imports its codecs from the file the models job writes', async t => {
   // protects: T-697 in golem mode the SDK writes types and the client only; the import path comes from models.output (F-779)
-  const { directory, options } = project(t, 'golem');
+  const { directory, options } = await project(t, 'golem');
   const sdk = path.join(directory, 'sdk/charges');
   const codecsFile = path.join(directory, 'src/generated/models/sdk/charges.sdk.generated.ts');
   assert.equal(options.codecsFile, codecsFile);
@@ -66,9 +69,9 @@ test('an openapi job in golem mode writes types and the client, and imports its 
 
 test('an openapi job in golem mode needs a SDK folder inside the golem.yaml folder and the codecs file', async t => {
   // protects: T-697 one rule names the codecs file; an SDK it cannot name is refused where the key is set
-  const { directory, options } = project(t, 'golem');
+  const { directory, options } = await project(t, 'golem');
   const { codecsFile: _codecsFile, ...withoutFile } = options;
   await assert.rejects(generate(withoutFile), /context\.codecsFile must be an absolute path when mode is "golem"/);
-  fs.writeFileSync(path.join(directory, 'outside.yaml'), 'version: 1\nopenapi:\n  - input: api.json\n    output: ../sdk\n    mode: golem\nmodels:\n  root: .\n');
-  assert.throws(() => loadConfig(path.join(directory, 'outside.yaml')), /An SDK of mode golem lies in a folder below the golem\.yaml folder/);
+  fs.writeFileSync(path.join(directory, 'outside.yaml'), 'version: 1\nopenapi-ts:\n  sdks:\n    - input: api.json\n      output: ../sdk\n      mode: golem\nmodel: {}\n');
+  await assert.rejects(() => loadConfig(path.join(directory, 'outside.yaml')), /An SDK of mode golem lies in a folder below the golem\.yaml folder/);
 });

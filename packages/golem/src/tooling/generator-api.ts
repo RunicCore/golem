@@ -1,6 +1,6 @@
 /**
- * The extension API (`@exprtlabs/golem/generator-api`): the job contract that an extension generator package implements, and the
- * helpers it shares with the built-in generators. Providers return contents; the CLI owns all writes.
+ * The extension API (`@exprtlabs/golem/generator-api`): the plan entry and generator entry that a golem package implements, and the
+ * helpers it shares with golem's own packages. Providers return contents; the CLI owns all writes.
  */
 export {
   compareText,
@@ -14,22 +14,31 @@ export {
   YamlFileError,
 } from './generator-core.js';
 export type {
+  CodecsHostValue,
   ControllerContext,
   ControllerModels,
   ControllerTag,
   ControllerUriVersioning,
   ControllerUriVersioningType,
-  GeneratorJobContext,
+  GeneratorHostContext,
   GeneratorSession,
   GolemArtifact,
   GolemDiagnostic,
   GolemDiagnosticCode,
+  GolemGeneratorEntry,
+  GolemPlanEntry,
   GolemProfile,
   GolemProvider,
   GolemResult,
   InputObserver,
+  ModelBoundaryValue,
   ModelContext,
   OpenApiContext,
+  PlanContext,
+  PlannedJob,
   ResolvedGolemProfile,
   SourceDiscoveryOptions,
 } from './generator-core.js';
+export type { HookFill, HookParticipants } from './extension-hooks.js';
+export type { JobFacts, JobOutput } from './job-facts.js';
+export type { GolemExtension, RewriteCore, RewriteParticipant, RewriteParticipantInput, RewriteParticipantResult } from './rewrite-participant.js';

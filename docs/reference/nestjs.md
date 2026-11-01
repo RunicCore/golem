@@ -40,7 +40,7 @@ The supported keywords depend on the OpenAPI version and profile ([OpenAPI suppo
 
 ### Tag keywords
 
-A controllers job writes each validation tag of a model into the document as one OpenAPI keyword:
+A docs job writes each validation tag of a model into the document as one OpenAPI keyword:
 
 | TypeScript tag | OpenAPI keyword |
 | --- | --- |

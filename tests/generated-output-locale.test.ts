@@ -2,10 +2,10 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
-import { copyFixture, copyFixtureFile, createFixtureProject, linkProjectPackages } from './fixture-project.js';
+import { copyFixture, copyFixtureFile, createFixtureProject, linkGolemPackages, linkProjectPackages } from './fixture-project.js';
 import { command, golem, workspace } from './support/process.js';
 
-const GOLEM_YAML = ['version: 1', 'mobx: false', 'validation: true', 'openapi:', '  - input: api.json', '    output: sdk', '    name: LocaleOrder', 'models:', '  root: .', ''].join('\n');
+const GOLEM_YAML = ['version: 1', 'validation: true', 'openapi-ts:', '  sdks:', '    - input: api.json', '      output: sdk', '      name: LocaleOrder', 'model: {}', ''].join('\n');
 
 /**
  * Runs `golem generate` on the fixture in a child process whose machine locale is `locale`. Returns the files the jobs wrote and the
@@ -14,13 +14,11 @@ const GOLEM_YAML = ['version: 1', 'mobx: false', 'validation: true', 'openapi:',
  */
 async function generateUnderLocale(t: TestContext, locale: string): Promise<ReadonlyMap<string, string>> {
   const root = createFixtureProject(t, 'golem-output-locale-');
-  linkProjectPackages(root, {
-    ...Object.fromEntries(['golem', 'golem-model', 'golem-openapi'].map(name => [`@exprtlabs/${name}`, path.join(workspace, 'packages', name)])),
-    typescript: path.join(workspace, 'node_modules/typescript'),
-  });
+  linkProjectPackages(root, { typescript: path.join(workspace, 'node_modules/typescript') });
   copyFixture(root, 'generated-output-locale');
   copyFixtureFile(root, 'packed/profile/tsconfig.json', 'tsconfig.json');
   fs.writeFileSync(path.join(root, 'package.json'), '{"name":"generated-output-locale-fixture","type":"module"}');
+  linkGolemPackages(root, ['golem', 'golem-model', 'golem-openapi']);
   fs.writeFileSync(path.join(root, 'golem.yaml'), GOLEM_YAML);
   await command(root, process.execPath, [golem, 'generate'], { env: { LANG: locale, LC_ALL: locale } });
   const inventory = JSON.parse(fs.readFileSync(path.join(root, '.golem/outputs.json'), 'utf8')) as { readonly files: Readonly<Record<string, unknown>> };
@@ -29,7 +27,7 @@ async function generateUnderLocale(t: TestContext, locale: string): Promise<Read
   return new Map(names.map(name => [name, fs.readFileSync(path.join(root, name), 'utf8')]));
 }
 
-test('a models job and an openapi job write the same files under a Danish and an English machine locale', async t => {
+test('a model job and an SDK job write the same files under a Danish and an English machine locale', async t => {
   const danish = await generateUnderLocale(t, 'da_DK.UTF-8');
   const english = await generateUnderLocale(t, 'en_US.UTF-8');
 

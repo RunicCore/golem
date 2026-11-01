@@ -1,0 +1,7 @@
+{
+  "name": "@fixture/scripted-plan",
+  "version": "1.0.0",
+  "type": "module",
+  "exports": { "./plan": "./plan.js" },
+  "golem": { "apiVersion": 2, "block": "shop", "plan": "./plan" }
+}

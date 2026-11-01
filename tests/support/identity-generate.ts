@@ -9,6 +9,7 @@ import type { GolemDiagnostic } from '#golem/generator-api';
 import { writeGeneratedArtifacts } from '../fixture-project.js';
 import { editProjectSources } from './node-specifiers-project.js';
 import { caseFolder, DIAGNOSTICS, GENERATED, REWRITTEN, type IdentityProject } from './identity-corpus.js';
+import { defaultModelOutput } from '#golem/generated-paths';
 
 function describeDiagnostic(stage: string, diagnostic: GolemDiagnostic): string {
   return `${stage} ${diagnostic.code} ${diagnostic.file ?? '-'} ${diagnostic.line ?? '-'}:${diagnostic.column ?? '-'} ${diagnostic.message}`;
@@ -49,8 +50,7 @@ function rewriteStage(item: IdentityProject, lines: string[]): ReadonlyMap<strin
   try {
     const scan = scanProject({
       root: item.root,
-      directory: item.root,
-      modelsRoot: item.root,
+      boundary: { root: item.root, directory: item.root, output: defaultModelOutput(item.root), suffixes: ['.model.ts', '.models.ts'] },
       configFile: path.join(item.root, 'tsconfig.json'),
       codecKeysFile: path.join(item.root, '.golem/codec-keys.json'),
     });

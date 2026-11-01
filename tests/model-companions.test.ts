@@ -11,7 +11,6 @@ import { generatedCodecIdFromRoot } from './support/consumer.js';
 import { companionModelProject, modelProject } from './support/model-companion-project.js';
 import {
   buildModelProject,
-  generatedModelFiles,
   writeModelGolemYaml,
   writeModelSources,
 } from './model-project.js';
@@ -49,7 +48,7 @@ export type TA = IModel<{ title: string & MinLength<1> }>;
   });
   writeModelGolemYaml(root, { mobx: false, validation: false });
   await buildModelProject(root);
-  return { root, sourceRoot, artifacts: generatedModelFiles(root) };
+  return { root, sourceRoot };
 });
 
 /** Models with validation on: two models that import each other. */
@@ -90,10 +89,11 @@ test('generated model names are scoped to their companion modules', (t) => {
 });
 
 test('same-file aliases that differ only by the T prefix generate two separate models', async () => {
-  const { root, artifacts } = await trustedProject();
+  const { root } = await trustedProject();
   const built = await import(path.toNamespacedPath(path.join(root, 'build/payment.model.generated.js'))) as Record<string, unknown>;
   assert.deepEqual(Object.keys(built).filter((name) => name.endsWith('BaseModel')).sort(), ['PaymentBaseModel', 'TPaymentBaseModel']);
-  const keys = artifacts.find((artifact) => artifact.path.endsWith('codec-keys.json'))?.content ?? '';
+  // The codec ids are core's own record, which no job's inventory lists.
+  const keys = fs.readFileSync(path.join(root, '.golem/codec-keys.json'), 'utf8');
   const tId = keys.match(/payment\.model\.ts#TPayment": "([^"]+)"/)?.[1];
   const id = keys.match(/payment\.model\.ts#Payment": "([^"]+)"/)?.[1];
   assert.match(tId ?? '', /^TPayment_[0-9a-f]{8}$/);

@@ -14,14 +14,7 @@ import { portableRelativeFilename } from './type-analysis/path-identity.js';
  */
 export const SDK_CODECS_EXPORT = 'sdkCodecs';
 
-/** The file the models job writes for the SDK in `sdkOutput`: below `modelsOutput`, at the SDK's folder relative to the golem.yaml folder, ending `.sdk.generated.ts`. */
-export function sdkCodecsFile(where: { readonly modelsOutput: string; readonly configDirectory: string; readonly sdkOutput: string }): string {
-  const relative = path.relative(where.configDirectory, where.sdkOutput);
-  if (relative === '' || relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
-    throw new Error(`An SDK of mode golem lies in a folder below the golem.yaml folder; ${where.sdkOutput} does not (golem.yaml folder ${where.configDirectory}).`);
-  }
-  return path.join(where.modelsOutput, `${relative}.sdk.generated.ts`);
-}
+export { sdkCodecsFile } from './plan-support.js';
 
 /** The specifier by which the generated file `fromFile` imports the generated TypeScript file `toFile`: relative, with `/` and the `.js` ending. */
 export function moduleSpecifier(fromFile: string, toFile: string): string {

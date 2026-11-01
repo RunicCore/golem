@@ -12,7 +12,7 @@ You declare the body once, as a TypeScript type with tags. Golem uses that one t
 | --- | --- |
 | The request | `NestModelInterceptor` converts and validates `@Body()` before the handler runs. Bad input gets HTTP 400. |
 | The handler | It receives a valid model, not raw JSON. |
-| The OpenAPI document | The `controllers` job reads the controller and the type. It writes the document, and the tags become OpenAPI keywords. |
+| The OpenAPI document | The docs job reads the controller and the type. It writes the document, and the tags become OpenAPI keywords. |
 
 The steps build `POST /api/payments/transactions` from [`examples/payments`](https://github.com/RunicCore/golem/tree/master/examples/payments). For your own `POST /orders`, use the names `OrdersController` and `TOrderInput`.
 
@@ -28,7 +28,7 @@ npm install --save-dev @exprtlabs/golem-model @exprtlabs/golem-ts-openapi typesc
 | `@exprtlabs/golem` | The `golem` command, and the runtime that holds `NestModelInterceptor` |
 | `@exprtlabs/golem-model` | Generates the files of your models |
 | `@exprtlabs/golem-ts-openapi` | Generates the OpenAPI document from your controllers |
-| `@nestjs/swagger` | The `Api…` decorators that the `controllers` job reads |
+| `@nestjs/swagger` | The `Api…` decorators that the docs job reads |
 | `typescript` | The compiler that the generators and `golem build` use |
 
 Check the [requirements](/guide/quick-start#requirements) and add `"type": "module"` to `package.json`.
@@ -101,15 +101,15 @@ The steps for each request and the rules for arrays and query objects are in [Ne
 
 ## Step 6: Configure golem.yaml
 
-Add `golem.yaml` at the project root. Start it with `version: 1`. The excerpts below leave out `version: 1` and the other jobs of the example. A `controllers` job writes the OpenAPI document:
+Add `golem.yaml` at the project root. Start it with `version: 1`. The excerpts below leave out `version: 1` and the other jobs of the example. A docs job writes the OpenAPI document:
 
 <<< ../../examples/payments/server/golem.yaml#controllers-job
 
 - `output` is the path of the document.
 - `info` holds the `title` and the `version` of the API.
-- `globalPrefix` must match `setGlobalPrefix()`. The generator reads controllers, not your bootstrap code ([controller jobs](/reference/config#controller-jobs)).
+- `globalPrefix` must match `setGlobalPrefix()`. The generator reads controllers, not your bootstrap code ([the `ts-openapi` block](/reference/config#ts-openapi-block)).
 
-The `models` job is required. It writes the generated file of each model that your controllers use, and the build needs it to bind each `@Body()` model. Without it, the build reports `has no unique codec id; run golem generate`.
+The models job is required. It writes the generated file of each model that your controllers use, and the build needs it to bind each `@Body()` model. Without it, the build reports `has no unique codec id; run golem generate`.
 
 <<< ../../examples/payments/server/golem.yaml#models-job
 
@@ -141,7 +141,7 @@ The frontend team gets `api/openapi.yaml`. It holds the operation `createPayment
 - **Tags:** each validation tag of the model becomes one keyword. `MinLength<2>` becomes `minLength: 2`, and `Pattern<'…'>` becomes `pattern`. The table of all tags is in [tag keywords](/reference/nestjs#tag-keywords). `TSerde` and `TValidation` write no keyword.
 - **The 400 response:** the document holds it because of `@ApiBadRequestResponse`. Without that decorator the document has no `400` response, although the interceptor still answers HTTP 400.
 
-The frontend project sets the document as the `input` of an `openapi` job. This example reads the document of the server project:
+The frontend project sets the document as the `input` of an SDK job. This example reads the document of the server project:
 
 <<< ../../examples/payments/web/golem.yaml
 
@@ -150,7 +150,7 @@ Then `npx golem generate` in the frontend project writes the client ([Generate a
 ## Details in the reference
 
 - [NestJS requests](/guide/nestjs-requests): parameter types, arrays, one-field parameters, query objects and responses.
-- [OpenAPI from controllers](/guide/nestjs): the controller job and the document it writes.
+- [OpenAPI from controllers](/guide/nestjs): the docs job and the document it writes.
 - [NestJS controllers](/reference/nestjs): route helpers, tag keywords, component names, status codes and Swagger decorators.
-- [Configuration](/reference/config#controller-jobs): every key of a `controllers` job.
+- [Configuration](/reference/config#ts-openapi-block): every key of a docs job.
 - [Generated files](/reference/generated-files#gitignore): ignore or commit them, and how the document reaches other projects.

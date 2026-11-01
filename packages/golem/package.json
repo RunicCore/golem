@@ -120,6 +120,11 @@
       "import": "./dist/tooling/generator-support.js",
       "default": "./dist/tooling/generator-support.js"
     },
+    "./internal/plan-support": {
+      "types": "./dist/tooling/plan-support.d.ts",
+      "import": "./dist/tooling/plan-support.js",
+      "default": "./dist/tooling/plan-support.js"
+    },
     "./generator-api": {
       "types": "./dist/tooling/generator-api.d.ts",
       "import": "./dist/tooling/generator-api.js",

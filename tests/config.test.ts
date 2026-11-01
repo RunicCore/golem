@@ -1,250 +1,225 @@
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import YAML from 'yaml';
-import { resolveConfig } from '#golem/config';
+import { resolveConfig, type GolemJob } from '#golem/config';
+import { JobRuleError } from '#golem/job-rules';
+import { PackageRegistryError } from '#golem/package-registry';
 import { loadConfig } from './support/load-config.js';
 import { YamlFileError } from '#golem/generator-api';
-import { parseArguments, providersFor } from '#golem/cli';
+import { parseArguments } from '#golem/cli';
+import { copyFixture, createFixtureProject, fixturePath } from './fixture-project.js';
 
-function fixture(t: TestContext, yaml: string): { root: string; filename: string } {
-  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'golem-config-')));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  fs.writeFileSync(path.join(root, 'api.yaml'), 'openapi: 3.1.0');
+/** What the scripted plan entry (`tests/fixtures/config/scripted-plan`) records in the options of each job. */
+interface Seen {
+  readonly seen: { readonly profile: unknown; readonly tsconfig: string; readonly exact?: boolean };
+  readonly needed: Readonly<Record<string, unknown>>;
+  readonly consumers: Readonly<Record<string, readonly string[]>>;
+}
+
+const optionsOf = (job: GolemJob | undefined): Seen => {
+  assert.ok(job, 'the job exists');
+  return job.options as Seen;
+};
+
+const BLOCKS: Readonly<Record<string, string>> = { '@fixture/shop': 'shop', '@fixture/host': 'host' };
+
+/** A project whose golem.yaml holds `yaml` and whose app lists one package for each of `blocks`, each running the scripted plan entry. */
+function project(t: TestContext, yaml: string, blocks: Readonly<Record<string, string>> = BLOCKS): { root: string; filename: string } {
+  const root = createFixtureProject(t, 'golem-config-');
+  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'app', dependencies: Object.fromEntries(Object.keys(blocks).map((name) => [name, '1.0.0'])) }));
+  const template = JSON.parse(fs.readFileSync(path.join(fixturePath('config/scripted-plan'), 'package.json'), 'utf8')) as { golem: object };
+  for (const [name, block] of Object.entries(blocks)) {
+    const directory = path.join(root, 'node_modules', name);
+    copyFixture(directory, 'config/scripted-plan');
+    fs.writeFileSync(path.join(directory, 'package.json'), JSON.stringify({ ...template, name, golem: { ...template.golem, block } }));
+  }
   const filename = path.join(root, 'golem.yaml');
   fs.writeFileSync(filename, yaml);
   return { root, filename };
 }
 
-test('defaults and relative paths are anchored to the config rather than process cwd', (t: TestContext) => {
-  const { root, filename } = fixture(t, 'version: 1\nopenapi:\n  - input: api.yaml\n    output: sdk\nmodels:\n  root: .\n');
-  const config = loadConfig(filename);
+const SHOP = (jobs: string): string => `shop:\n  jobs:\n${jobs}`;
+const DOCS = SHOP('    - { id: docs, roots: [.] }\n');
+
+test('the shared root keys are read by core and reach every plan entry, and a key outside the list is a block', async (t: TestContext) => {
+  // protects: T-765 page "Root keys stay shared": version, tsconfig, validation, allowAny, exact, unknownFormats (and mobx, nonModelInputs for now) stay at the root
+  const defaults = project(t, `version: 1\n${DOCS}`);
+  const config = await loadConfig(defaults.filename);
   assert.deepEqual(config.profile, { mobx: false, validation: true, allowAny: false, unknownFormats: 'error' });
   assert.equal(config.nonModelInputs, 'error');
-  const job0 = config.jobs[0];
-  const job1 = config.jobs[1];
-  assert.ok(job0 && job0.kind === 'openapi');
-  assert.equal(job0.options.input, path.join(root, 'api.yaml'));
-  assert.equal(job0.options.output, path.join(root, 'sdk'));
-  assert.ok(job1 && job1.kind === 'models');
-  assert.equal(job1.options.root, root);
-  assert.equal(job1.options.output, path.join(root, 'src/generated/models'));
+  assert.equal(config.tsconfig, path.join(defaults.root, 'tsconfig.json'));
+  assert.deepEqual(optionsOf(config.jobs[0]).seen, { profile: config.profile, tsconfig: config.tsconfig });
 
-  const explicit = fixture(t, [
-    'version: 1',
-    'mobx: true',
-    'validation: true',
-    'allowAny: true',
-    'unknownFormats: warn',
-    'nonModelInputs: warn',
-    'models:',
-    '  root: project',
-    '  output: generated/models',
-    '',
-  ].join('\n'));
-  fs.mkdirSync(path.join(explicit.root, 'project'), { recursive: true });
-  const explicitConfig = loadConfig(explicit.filename);
-  assert.deepEqual(explicitConfig.profile, { mobx: true, validation: true, allowAny: true, unknownFormats: 'warn' });
+  const explicit = project(t, `version: 1\nmobx: true\nvalidation: sanity\nallowAny: true\nexact: false\nunknownFormats: warn\nnonModelInputs: warn\n${DOCS}`);
+  const explicitConfig = await loadConfig(explicit.filename);
+  assert.deepEqual(explicitConfig.profile, { mobx: true, validation: 'sanity', allowAny: true, unknownFormats: 'warn' });
   assert.equal(explicitConfig.nonModelInputs, 'warn');
-  const modelJob = explicitConfig.jobs.find((job) => job.kind === 'models');
-  assert.ok(modelJob && modelJob.kind === 'models');
-  assert.equal(modelJob.options.root, path.join(explicit.root, 'project'));
-  assert.equal(modelJob.options.output, path.join(explicit.root, 'generated/models'));
-  assert.deepEqual(modelJob.options.profile, explicitConfig.profile);
+  assert.deepEqual(optionsOf(explicitConfig.jobs[0]).seen, { profile: explicitConfig.profile, tsconfig: explicitConfig.tsconfig, exact: false });
 });
 
-test('the tsconfig key names the project tsconfig, relative to golem.yaml, and defaults to the one beside it', (t: TestContext) => {
-  const { root, filename } = fixture(t, 'version: 1\nmodels:\n  root: .\n');
-  const config = loadConfig(filename);
-  assert.equal(config.tsconfig, path.join(root, 'tsconfig.json'), 'a missing default tsconfig is not an error');
+test('a block that no installed package registers stops loading and lists the installed packages and their blocks', async (t: TestContext) => {
+  // protects: T-765 page failure row: an unknown block lists the installed golem packages and their blocks (also the retired generators and section keys)
+  for (const key of ['retiredOption', 'generators', 'models']) {
+    const { filename } = project(t, `version: 1\n${key}: {}\n${DOCS}`);
+    await assert.rejects(() => resolveConfig(filename), (error: unknown) => error instanceof PackageRegistryError
+      && error.message === `No installed package registers the golem block "${key}". Installed golem packages and their blocks: @fixture/host (block host), @fixture/shop (block shop). A package that only devDependencies lists is gone after a production install.`, key);
+  }
+});
+
+test('a config with no block, or only blocks that declare no job, stops loading', async (t: TestContext) => {
+  // protects: T-765 a golem.yaml with nothing to run is refused with the packages it could use
+  await assert.rejects(() => resolveConfig(project(t, 'version: 1\n').filename), { message: 'Configure at least one golem block. Installed golem packages and their blocks: @fixture/host (block host), @fixture/shop (block shop).' });
+  await assert.rejects(() => resolveConfig(project(t, `version: 1\n${SHOP('    []\n')}`).filename), { message: 'Configure at least one job: the blocks of golem.yaml declare none.' });
+  await assert.rejects(() => resolveConfig(project(t, 'version: 1\nshop: {}\n').filename), { name: 'TypeError' }, 'a block the plan entry cannot read is its own error');
+});
+
+test('a package that registers a block without a plan entry stops loading and names the package', async (t: TestContext) => {
+  // protects: T-765 core reads a block only through the plan entry of its package
+  const { root, filename } = project(t, 'version: 1\nbare: {}\n', {});
+  fs.mkdirSync(path.join(root, 'node_modules/@fixture/bare'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'node_modules/@fixture/bare/package.json'), JSON.stringify({ name: '@fixture/bare', version: '1.0.0', golem: { apiVersion: 2, block: 'bare' } }));
+  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'app', dependencies: { '@fixture/bare': '1.0.0' } }));
+  await assert.rejects(() => resolveConfig(filename), { message: '@fixture/bare registers the golem block "bare" but declares no golem.plan entry, so golem cannot read its block.' });
+});
+
+test('plan pass 1 declares facts, pass 2 hands each job the contract values it needs, and the order comes from the pass-2 facts', async (t: TestContext) => {
+  // protects: T-765 page "What a job declares": two passes, then the order; the golem SDK folders that the models job reads come from pass 2
+  const { root, filename } = project(t, [
+    'version: 1',
+    'host:',
+    '  jobs:',
+    '    - { id: models, roots: [.], readsProgram: true, provides: [CodecsHost] }',
+    SHOP('    - { id: sdk, needs: [CodecsHost], outputs: [{ path: sdk, kind: folder }] }'),
+  ].join('\n'));
+
+  const config = await loadConfig(filename);
+
+  // The host block comes first in golem.yaml; the SDK runs first because the host reads the SDK folder, a fact that only pass 2 adds.
+  assert.deepEqual(config.jobs.map((job) => [job.id, job.package, job.block]), [['sdk', '@fixture/shop', 'shop'], ['models', '@fixture/host', 'host']]);
+  assert.deepEqual(config.jobPlan.order, ['sdk', 'models']);
+  assert.deepEqual(config.jobPlan.providers, { CodecsHost: 'models' });
+  assert.deepEqual(config.jobs[1]?.facts.inputFolders, [path.join(root, 'sdk')]);
+  assert.deepEqual(config.contracts, { CodecsHost: { from: 'models', directory: root } });
+  assert.deepEqual(optionsOf(config.jobs[0]).needed, { CodecsHost: { from: 'models', directory: root } });
+  assert.deepEqual(optionsOf(config.jobs[1]).consumers, { CodecsHost: ['sdk'] });
+});
+
+test('the generic rules stop loading: a needed contract with no provider, an id declared twice, a root outside the tsconfig folder', async (t: TestContext) => {
+  // protects: T-765 page failure rows: a missing contract names it; containment F-42 holds for a block's roots and outputs
+  const missing = project(t, `version: 1\n${SHOP('    - { id: sdk, needs: [CodecsHost] }\n')}`);
+  await assert.rejects(() => resolveConfig(missing.filename), (error: unknown) => error instanceof JobRuleError && error.rule === 'contract-missing' && error.message === 'Job sdk needs the contract CodecsHost, but no job provides it.');
+
+  const twice = project(t, `version: 1\n${DOCS}host:\n  jobs:\n    - { id: docs }\n`);
+  await assert.rejects(() => resolveConfig(twice.filename), { message: 'Job id docs is declared twice, by @fixture/shop and @fixture/host. A job id is unique in one golem.yaml.' });
+
+  const outside = project(t, `version: 1\n${SHOP('    - { id: docs, roots: [..] }\n')}`);
+  fs.mkdirSync(path.join(outside.root, 'pkg'));
+  fs.writeFileSync(path.join(outside.root, 'pkg/golem.yaml'), `version: 1\n${SHOP('    - { id: docs, roots: [..] }\n')}`);
+  await assert.rejects(() => resolveConfig(path.join(outside.root, 'pkg/golem.yaml')), (error: unknown) => error instanceof JobRuleError && error.rule === 'containment');
+});
+
+test('the tsconfig key names the project tsconfig, relative to golem.yaml, and defaults to the one beside it', async (t: TestContext) => {
+  const { root, filename } = project(t, `version: 1\n${DOCS}`);
+  assert.equal((await loadConfig(filename)).tsconfig, path.join(root, 'tsconfig.json'), 'a missing default tsconfig is not an error');
 
   fs.mkdirSync(path.join(root, 'app/configs'), { recursive: true });
   fs.writeFileSync(path.join(root, 'tsconfig.base.json'), '{}');
   fs.writeFileSync(path.join(root, 'app/configs/tsconfig.app.json'), '{}');
   // The job root lies in the directory of the tsconfig the yaml names.
   for (const [value, expected, jobRoot] of [['app/configs/tsconfig.app.json', 'app/configs/tsconfig.app.json', 'app/configs'], ['./tsconfig.base.json', 'tsconfig.base.json', '.']] as const) {
-    const named = fixture(t, `version: 1\ntsconfig: ${value}\nmodels:\n  root: ${jobRoot}\n`);
-    fs.cpSync(root, named.root, { recursive: true, filter: (source) => !source.endsWith('golem.yaml') });
-    const loaded = loadConfig(named.filename);
-    assert.equal(loaded.tsconfig, path.join(named.root, expected));
+    fs.writeFileSync(filename, `version: 1\ntsconfig: ${value}\n${SHOP(`    - { id: docs, roots: [${jobRoot}] }\n`)}`);
+    const loaded = await loadConfig(filename);
+    assert.equal(loaded.tsconfig, path.join(root, expected));
+    // protects: T-480 every job reads the tsconfig of golem.yaml
+    assert.equal(optionsOf(loaded.jobs[0]).seen.tsconfig, path.join(root, expected));
   }
 
-  const parent = fixture(t, 'version: 1\nmodels:\n  root: .\n');
-  fs.mkdirSync(path.join(parent.root, 'packages/api'), { recursive: true });
-  fs.writeFileSync(path.join(parent.root, 'tsconfig.json'), '{}');
-  fs.writeFileSync(path.join(parent.root, 'packages/api/golem.yaml'), 'version: 1\ntsconfig: ../../tsconfig.json\nmodels:\n  root: .\n');
-  assert.equal(loadConfig(path.join(parent.root, 'packages/api/golem.yaml')).tsconfig, path.join(parent.root, 'tsconfig.json'));
+  fs.mkdirSync(path.join(root, 'packages/api'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'tsconfig.json'), '{}');
+  fs.writeFileSync(path.join(root, 'packages/api/golem.yaml'), `version: 1\ntsconfig: ../../tsconfig.json\n${DOCS}`);
+  assert.equal((await loadConfig(path.join(root, 'packages/api/golem.yaml'))).tsconfig, path.join(root, 'tsconfig.json'));
 });
 
-test('the tsconfig key resolves the directory through links and keeps the file name', (t: TestContext) => {
-  const { root, filename } = fixture(t, 'version: 1\ntsconfig: alias/tsconfig.json\nmodels:\n  root: alias\n');
+test('the tsconfig key resolves the directory through links and keeps the file name', async (t: TestContext) => {
+  const { root, filename } = project(t, `version: 1\ntsconfig: alias/tsconfig.json\n${SHOP('    - { id: docs, roots: [real] }\n')}`);
   fs.mkdirSync(path.join(root, 'real'));
   fs.writeFileSync(path.join(root, 'real/tsconfig.json'), '{}');
   fs.symlinkSync(path.join(root, 'real'), path.join(root, 'alias'), 'dir');
-  assert.equal(loadConfig(filename).tsconfig, path.join(root, 'real/tsconfig.json'), 'a linked directory resolves');
+  assert.equal((await loadConfig(filename)).tsconfig, path.join(root, 'real/tsconfig.json'), 'a linked directory resolves');
 
   // A linked file keeps its own directory: the project is where the link is, not where it points.
-  const linked = fixture(t, 'version: 1\nmodels:\n  root: .\n');
+  const linked = project(t, `version: 1\n${DOCS}`);
   fs.mkdirSync(path.join(linked.root, 'shared'));
   fs.writeFileSync(path.join(linked.root, 'shared/tsconfig.real.json'), '{}');
   fs.symlinkSync(path.join('shared', 'tsconfig.real.json'), path.join(linked.root, 'tsconfig.json'));
-  assert.equal(loadConfig(linked.filename).tsconfig, path.join(linked.root, 'tsconfig.json'));
+  assert.equal((await loadConfig(linked.filename)).tsconfig, path.join(linked.root, 'tsconfig.json'));
 });
 
-test('a tsconfig key must be a nonempty string that names an existing file', (t: TestContext) => {
-  for (const [yaml, error] of [
-    ['version: 1\ntsconfig: 3\nmodels: {}\n', /tsconfig must be a nonempty string/],
-    ['version: 1\ntsconfig: ""\nmodels: {}\n', /tsconfig must be a nonempty string/],
-    ['version: 1\ntsconfig: missing.json\nmodels: {}\n', /tsconfig does not exist: .*missing\.json/],
-    ['version: 1\ntsconfig: src\nmodels: {}\n', /tsconfig must be a file: .*src/],
+test('a tsconfig key must be a nonempty string that names an existing file', async (t: TestContext) => {
+  for (const [value, error] of [
+    ['3', /tsconfig must be a nonempty string/],
+    ['""', /tsconfig must be a nonempty string/],
+    ['missing.json', /tsconfig does not exist: .*missing\.json/],
+    ['src', /tsconfig must be a file: .*src/],
   ] as const) {
-    const { root, filename } = fixture(t, yaml);
+    const { root, filename } = project(t, `version: 1\ntsconfig: ${value}\n${DOCS}`);
     fs.mkdirSync(path.join(root, 'src'));
-    assert.throws(() => loadConfig(filename), error);
+    await assert.rejects(() => loadConfig(filename), error);
   }
-});
-
-test('a misspelled tsconfig path reports that the file does not exist, not the tsconfig the job finds', (t: TestContext) => {
-  const { root, filename } = fixture(t, 'version: 1\ntsconfig: tsconfg.json\nmodels:\n  root: .\n');
+  // A misspelled path is that, not a tsconfig the jobs happen to find elsewhere.
+  const { root, filename } = project(t, `version: 1\ntsconfig: tsconfg.json\n${DOCS}`);
   fs.writeFileSync(path.join(root, 'tsconfig.json'), '{}');
-  for (const load of [loadConfig, resolveConfig]) assert.throws(() => load(filename), /tsconfig does not exist: .*tsconfg\.json/);
+  for (const load of [loadConfig, resolveConfig]) await assert.rejects(() => load(filename), /tsconfig does not exist: .*tsconfg\.json/);
 });
 
-test('a models or controllers job root must lie inside the directory of the yaml tsconfig, and other outputs may be anywhere', (t: TestContext) => {
-  const controllers = 'controllers:\n  - root: other\n    output: api.json\n    info: { title: Api, version: "1" }\n';
-  const layouts = [
-    // The tsconfig key puts the project directory below the job root.
-    { yaml: `version: 1\ntsconfig: app/tsconfig.json\nmodels:\n  root: other\n`, directory: '.', project: 'app', jobRoot: 'other' },
-    { yaml: `version: 1\ntsconfig: app/tsconfig.json\n${controllers}`, directory: '.', project: 'app', jobRoot: 'other' },
-    // The default tsconfig sits beside the yaml: a root above it is outside.
-    { yaml: 'version: 1\nmodels:\n  root: ..\n', directory: 'pkg', project: 'pkg', jobRoot: '.' },
-  ] as const;
-  for (const layout of layouts) {
-    const { root } = fixture(t, layout.yaml);
-    for (const directory of ['app', 'other', 'pkg']) {
-      fs.mkdirSync(path.join(root, directory));
-      fs.writeFileSync(path.join(root, directory, 'tsconfig.json'), '{}');
-    }
-    const filename = path.join(root, layout.directory, 'golem.yaml');
-    fs.writeFileSync(filename, layout.yaml);
-    assert.throws(() => loadConfig(filename), (error: Error) => {
-      assert.equal(error.message, `job root ${path.relative(process.cwd(), path.join(root, layout.jobRoot))} is outside ${path.relative(process.cwd(), path.join(root, layout.project))}; use one golem.yaml per tsconfig.`);
-      return true;
-    });
-  }
-
-  // A root inside the directory is fine, and so is an openapi output outside it.
-  const inside = fixture(t, 'version: 1\ntsconfig: app/tsconfig.json\nopenapi:\n  - input: api.yaml\n    output: sdk\nmodels:\n  root: app/nested\n');
-  fs.mkdirSync(path.join(inside.root, 'app/nested'), { recursive: true });
-  fs.writeFileSync(path.join(inside.root, 'app/tsconfig.json'), '{}');
-  assert.equal(loadConfig(inside.filename).jobs.length, 2);
+test('an output that the app imports lies inside the tsconfig directory, and nothing is written', async (t: TestContext) => {
+  // protects: F-42 an output the app imports stays inside the tsconfig directory (T-182)
+  const { root } = project(t, '');
+  fs.mkdirSync(path.join(root, 'project'));
+  fs.mkdirSync(path.join(root, 'outside'));
+  const filename = path.join(root, 'project/golem.yaml');
+  fs.writeFileSync(filename, `version: 1\n${SHOP('    - { id: models, outputs: [{ path: ../outside, kind: folder, importedByApp: true }] }\n')}`);
+  await assert.rejects(() => resolveConfig(filename), (error: unknown) => error instanceof JobRuleError && error.rule === 'containment'
+    && error.message === `Job models: output ${path.relative(process.cwd(), path.join(root, 'outside'))} is outside the tsconfig directory ${path.relative(process.cwd(), path.join(root, 'project'))}. Move it inside.`);
+  assert.deepEqual(fs.readdirSync(path.join(root, 'outside')), []);
 });
 
-// protects: F-42 the models output stays inside the tsconfig directory (T-182)
-for (const [name, output, resolved] of [
-  ['a models output', '../outside', 'outside'],
-  ['a models output behind a link to a folder', 'linked/models', 'outside/models'],
-] as const) {
-  test(`${name} outside the tsconfig directory stops loading and writes nothing`, (t: TestContext) => {
-    const { root } = fixture(t, '');
-    fs.mkdirSync(path.join(root, 'project'));
-    fs.mkdirSync(path.join(root, 'outside'));
-    fs.symlinkSync(path.join(root, 'outside'), path.join(root, 'project/linked'), 'dir');
-    const filename = path.join(root, 'project/golem.yaml');
-    fs.writeFileSync(filename, `version: 1\nmodels:\n  root: .\n  output: ${output}\n`);
-    assert.throws(() => loadConfig(filename), (error: Error) => {
-      assert.equal(error.message, `Job models:.: output ${path.relative(process.cwd(), path.join(root, resolved))} is outside the tsconfig directory ${path.relative(process.cwd(), path.join(root, 'project'))}. Move it inside.`);
-      return true;
-    });
-    assert.deepEqual(fs.readdirSync(path.join(root, 'outside')), []);
-  });
-}
-
-test('a models or controllers job reads the tsconfig the yaml names, not the one nearer to its root', (t: TestContext) => {
-  // protects: T-480 every job reads the tsconfig of golem.yaml
-  const named = fixture(t, 'version: 1\ntsconfig: ./tsconfig.app.json\nmodels:\n  root: .\n');
-  fs.writeFileSync(path.join(named.root, 'tsconfig.json'), '{}');
-  fs.writeFileSync(path.join(named.root, 'tsconfig.app.json'), '{}');
-  const [models] = loadConfig(named.filename).jobs;
-  assert.equal(models!.kind === 'models' && models.options.tsconfig, path.join(named.root, 'tsconfig.app.json'));
-
-  // A controllers job in a package with its own tsconfig, under the default tsconfig beside the yaml.
-  const nested = fixture(t, 'version: 1\ncontrollers:\n  - root: packages/api\n    output: api.json\n    info: { title: Api, version: "1" }\n');
-  fs.mkdirSync(path.join(nested.root, 'packages/api'), { recursive: true });
-  fs.writeFileSync(path.join(nested.root, 'tsconfig.json'), '{}');
-  fs.writeFileSync(path.join(nested.root, 'packages/api/tsconfig.json'), '{}');
-  const [controllers] = loadConfig(nested.filename).jobs;
-  assert.equal(controllers!.kind === 'controllers' && controllers.options.tsconfig, path.join(nested.root, 'tsconfig.json'));
-});
-
-test('an openapi job reads mode as standalone by default, and mode golem needs a models section', (t: TestContext) => {
-  // protects: T-695 the mode key, its default and its checks
-  const sdk = 'openapi:\n  - input: api.yaml\n    output: sdk\n';
-  const accepted: [string, string][] = [
-    ['version: 1\n' + sdk, 'standalone'],
-    ['version: 1\n' + sdk + '    mode: standalone\n', 'standalone'],
-    ['version: 1\n' + sdk + '    mode: golem\nmodels:\n  root: .\n', 'golem'],
-  ];
-  for (const [yaml, mode] of accepted) {
-    const job = loadConfig(fixture(t, yaml).filename).jobs[0];
-    assert.ok(job && job.kind === 'openapi');
-    assert.equal(job.options.mode, mode);
-  }
-  const refused: [string, RegExp][] = [
-    ['version: 1\n' + sdk + '    mode: hybrid\nmodels:\n  root: .\n', /openapi\[0\]\.mode must be "standalone" or "golem"/],
-    ['version: 1\n' + sdk + '    mode: 1\n', /openapi\[0\]\.mode must be "standalone" or "golem"/],
-    ['version: 1\n' + sdk + '    mode: golem\n', /openapi\[0\]\.mode "golem" needs a models section in the same golem\.yaml/],
-  ];
-  for (const [yaml, error] of refused) {
-    assert.throws(() => loadConfig(fixture(t, yaml).filename), error);
-  }
-});
-
-test('configuration errors reject unknown overrides, duplicate keys and overlapping outputs', (t: TestContext) => {
-  const testCases: [string, RegExp][] = [
-    ['version: 2\nmodels: {}', /version/],
-    ['version: 1\nmobx: maybe\nmodels: {}', /boolean/],
-    ['version: 1\nmodels: {mobx: true}', /Unknown models key/],
-    ['version: 1\nversion: 1\nmodels: {}', /unique/],
-    ['version: 1\nopenapi: [{input: api.yaml, output: sdk}, {input: api.yaml, output: sdk/nested}]', /Overlapping/],
-    ['version: 1\nopenapi: [{input: api.yaml, output: sdk, allowRemoteRefs: true}]', /remoteHosts/],
-    ['version: 1\nopenapi: [{input: api.yaml, output: sdk, maxRefBytes: 0}]', /positive/],
-    ['version: 1\nallowAny: maybe\nmodels: {}\n', /allowAny must be a boolean/],
-    ['version: 1\nunknownFormats: strict\nmodels: {}\n', /unknownFormats must be "warn" or "error"/],
-    ['version: 1\nnonModelInputs: strict\nmodels: {}\n', /nonModelInputs must be "warn" or "error"/],
-    ['version: 1\nretiredOption: true\nmodels: {}\n', /Unknown configuration key: retiredOption\./],
-    ['version: 1\nopenapi:\n  - input: api.yaml\n    output: sdk\n    retiredOption: true\n', /Unknown openapi\[0\] key/],
-    ['version: 1\nopenapi:\n  - input: api.yaml\n    output: sdk\nmodels:\n  root: .\n  output: sdk/models\n', /Overlapping/],
-    ['version: 1\nopenapi:\n  - input: api.yaml\n    output: src\nmodels:\n  root: .\n', /Overlapping/],
-  ];
-  for (const [yaml, error] of testCases) {
-    const { filename } = fixture(t, yaml);
-    assert.throws(() => loadConfig(filename), error);
-  }
-});
-
-test('golem.yaml validation accepts true, false and sanity, defaults to true, and refuses any other value', (t: TestContext) => {
+test('golem.yaml validation accepts true, false and sanity, defaults to true, and refuses any other value', async (t: TestContext) => {
   // protects: T-663 validation: sanity reaches the profile of every job; other values stop with the key and the allowed values
   const accepted: [string, boolean | 'sanity'][] = [['', true], ['validation: true\n', true], ['validation: false\n', false], ['validation: sanity\n', 'sanity']];
   for (const [line, level] of accepted) {
-    const config = loadConfig(fixture(t, `version: 1\n${line}models:\n  root: .\n`).filename);
+    const config = await loadConfig(project(t, `version: 1\n${line}${DOCS}`).filename);
     assert.equal(config.profile.validation, level, line || 'validation absent');
-    const job = config.jobs.find((item) => item.kind === 'models');
-    assert.ok(job && job.kind === 'models');
-    assert.equal(job.options.profile.validation, level, `the models job profile for ${line || 'validation absent'}`);
+    assert.deepEqual(optionsOf(config.jobs[0]).seen.profile, config.profile, `the profile of the job for ${line || 'validation absent'}`);
   }
   for (const value of ['full', '"true"', '1', 'null', '[sanity]']) {
-    const { filename } = fixture(t, `version: 1\nvalidation: ${value}\nmodels:\n  root: .\n`);
-    assert.throws(() => loadConfig(filename), { name: 'TypeError', message: 'validation must be true, false or "sanity".' }, value);
+    const { filename } = project(t, `version: 1\nvalidation: ${value}\n${DOCS}`);
+    await assert.rejects(() => loadConfig(filename), { name: 'TypeError', message: 'validation must be true, false or "sanity".' }, value);
   }
 });
 
-test('a golem.yaml that is not YAML fails with its path relative to the working directory, the line, the column and the parse error as its cause', (t: TestContext) => {
+test('configuration errors reject a wrong version, wrong root values and duplicate keys', async (t: TestContext) => {
+  const testCases: [string, RegExp][] = [
+    ['version: 2\n', /version/],
+    ['version: 1\nmobx: maybe\n', /boolean/],
+    ['version: 1\nversion: 1\n', /unique/],
+    ['version: 1\nallowAny: maybe\n', /allowAny must be a boolean/],
+    ['version: 1\nexact: maybe\n', /exact must be a boolean/],
+    ['version: 1\nunknownFormats: strict\n', /unknownFormats must be "warn" or "error"/],
+    ['version: 1\nnonModelInputs: strict\n', /nonModelInputs must be "warn" or "error"/],
+  ];
+  for (const [root, error] of testCases) {
+    const { filename } = project(t, `${root}${DOCS}`);
+    await assert.rejects(() => loadConfig(filename), error, root);
+  }
+});
+
+test('a golem.yaml that is not YAML fails with its path relative to the working directory, the line, the column and the parse error as its cause', async (t: TestContext) => {
   // protects: T-311 a YAML parse error names the file
-  const { filename } = fixture(t, 'version: 1\nversion: 1\nmodels: {}\n');
-  assert.throws(() => loadConfig(filename), (error: unknown) => {
+  const { filename } = project(t, `version: 1\nversion: 1\n${DOCS}`);
+  await assert.rejects(() => loadConfig(filename), (error: unknown) => {
     assert.ok(error instanceof YamlFileError);
     assert.ok(error.message.startsWith(`${path.relative(process.cwd(), filename)}:2:1 `), error.message);
     assert.ok(error.cause instanceof YAML.YAMLParseError);
@@ -252,28 +227,22 @@ test('a golem.yaml that is not YAML fails with its path relative to the working 
   });
 });
 
-test('configured provider absence and incompatible API have distinct actionable errors', async (t: TestContext) => {
-  const { root, filename } = fixture(t, 'version: 1\nmodels: {}\n');
-  // The hint installs the generator from the same npm channel as the running golem (a stable version -> latest).
-  const { version } = JSON.parse(fs.readFileSync(new URL('../../packages/golem/package.json', import.meta.url), 'utf8')) as { version: string };
-  const channel = /^\d+\.\d+\.\d+-([0-9A-Za-z-]+)/.exec(version)?.[1] ?? 'latest';
-  await assert.rejects(
-    providersFor(loadConfig(filename)),
-    (error: unknown) => error instanceof Error && error.message.includes('@exprtlabs/golem-model is not installed')
-      && error.message.includes(`npm install -D @exprtlabs/golem-model@${channel}.`),
-  );
-  const provider = path.join(root, 'node_modules/@exprtlabs/golem-model');
-  fs.mkdirSync(provider, { recursive: true });
-  fs.writeFileSync(path.join(provider, 'package.json'), JSON.stringify({ name: '@exprtlabs/golem-model', version, type: 'module', exports: { './generator': './index.js' } }));
-  fs.writeFileSync(path.join(provider, 'index.js'), 'export const apiVersion = 99;\nexport function generate() {}\n');
-  await assert.rejects(providersFor(loadConfig(filename)), /CLI supports API 1.*99/);
-});
+test('inputs are checked against the files on disk, and an input that an earlier job writes is not required to exist', async (t: TestContext) => {
+  // protects: T-765 validateConfigInputs reads job facts, not job kinds
+  const { root, filename } = project(t, `version: 1\n${SHOP([
+    '    - { id: docs, outputs: [{ path: api/payments.yaml }] }',
+    '    - { id: sdk, roots: [src], inputFiles: [api/payments.yaml], outputs: [{ path: sdk, kind: folder }] }',
+  ].join('\n') + '\n')}`);
+  await assert.rejects(() => loadConfig(filename), { message: `Job sdk: root does not exist: ${path.relative(process.cwd(), path.join(root, 'src'))}` });
+  fs.mkdirSync(path.join(root, 'src'));
+  assert.deepEqual((await loadConfig(filename)).jobs.map((job) => job.id), ['docs', 'sdk'], 'a clean clone has no api/payments.yaml until docs runs');
 
-test('output collision checking resolves directory aliases before generation', (t: TestContext) => {
-  const { root, filename } = fixture(t, 'version: 1\nopenapi: [{input: api.yaml, output: sdk}, {input: api.yaml, output: alias/nested}]');
-  fs.mkdirSync(path.join(root, 'sdk'));
-  fs.symlinkSync(path.join(root, 'sdk'), path.join(root, 'alias'), 'dir');
-  assert.throws(() => loadConfig(filename), /Overlapping/);
+  fs.writeFileSync(filename, `version: 1\n${SHOP('    - { id: sdk, inputFiles: [api/payments.yaml] }\n')}`);
+  await assert.rejects(() => loadConfig(filename), { message: `Job sdk: input file does not exist: ${path.relative(process.cwd(), path.join(root, 'api/payments.yaml'))}` });
+
+  fs.mkdirSync(path.join(root, 'out'));
+  fs.writeFileSync(filename, `version: 1\n${SHOP('    - { id: docs, outputs: [{ path: out, kind: file }] }\n')}`);
+  await assert.rejects(() => loadConfig(filename), { message: `Job docs: output must be a file: ${path.relative(process.cwd(), path.join(root, 'out'))}` });
 });
 
 test('CLI rejects per-command feature overrides and preserves child arguments', () => {
@@ -283,73 +252,29 @@ test('CLI rejects per-command feature overrides and preserves child arguments', 
   });
 });
 
-const CONTROLLER_YAML = (suffixes: string): string => `version: 1\ncontrollers:\n  - root: .\n    output: api.json\n    info: { title: T, version: "1" }\n    suffixes: ${suffixes}\n`;
+test('a root that an earlier job writes into, or holds, need not exist; a root nothing writes must', async (t: TestContext) => {
+  // protects: T-786 a writer of the file src/gen/a.model.ts makes the root src/gen of a later job, on a clean clone
+  const { root, filename } = project(t, `version: 1\n${SHOP([
+    '    - { id: writer, outputs: [{ path: src/gen/a.model.ts }] }',
+    '    - { id: reader, roots: [src/gen], inputFiles: [src/gen/a.model.ts] }',
+  ].join('\n') + '\n')}`);
+  assert.deepEqual((await loadConfig(filename)).jobs.map((job) => job.id), ['writer', 'reader']);
 
-test('model and controller suffixes are read per job, and a job without them has none', (t: TestContext) => {
-  const models = fixture(t, 'version: 1\nmodels:\n  root: .\n  suffixes: [.entity.ts, .record.mts]\n');
-  const modelJob = loadConfig(models.filename).jobs[0];
-  assert.ok(modelJob && modelJob.kind === 'models');
-  assert.deepEqual(Reflect.get(modelJob.options, 'suffixes'), ['.entity.ts', '.record.mts']);
+  fs.writeFileSync(filename, `version: 1\n${SHOP([
+    '    - { id: writer, outputs: [{ path: src/gen, kind: folder }] }',
+    '    - { id: reader, roots: [src/gen/deep] }',
+  ].join('\n') + '\n')}`);
+  assert.deepEqual((await loadConfig(filename)).jobs.map((job) => job.id), ['writer', 'reader'], 'a folder that holds the root');
 
-  const controllers = fixture(t, CONTROLLER_YAML('[.api.ts]'));
-  const controllerJob = loadConfig(controllers.filename).jobs[0];
-  assert.ok(controllerJob && controllerJob.kind === 'controllers');
-  assert.deepEqual(Reflect.get(controllerJob.options, 'suffixes'), ['.api.ts']);
-
-  const defaults = fixture(t, 'version: 1\nmodels:\n  root: .\n');
-  const defaultJob = loadConfig(defaults.filename).jobs[0];
-  assert.ok(defaultJob && defaultJob.kind === 'models');
-  assert.equal('suffixes' in defaultJob.options, false, 'the generator applies its own defaults');
+  fs.writeFileSync(filename, `version: 1\n${SHOP([
+    '    - { id: writer, outputs: [{ path: src/gen/a.model.ts }] }',
+    '    - { id: reader, roots: [src/other] }',
+  ].join('\n') + '\n')}`);
+  await assert.rejects(() => loadConfig(filename), { message: `Job reader: root does not exist: ${path.relative(process.cwd(), path.join(root, 'src/other'))}` });
 });
 
-test('a suffix that is empty, malformed, repeated or names a generated file is a configuration error', (t: TestContext) => {
-  const models = (suffixes: string): string => `version: 1\nmodels:\n  root: .\n  suffixes: ${suffixes}\n`;
-  const form = (label: string): string => `${label} must be a string that starts with "." and ends in .ts, .mts or .cts.`;
-  const generated = (label: string): string => `${label} must not end in .generated.ts, .generated.mts or .generated.cts: golem writes those files.`;
-  const testCases: [string, string][] = [
-    [models('[]'), 'models.suffixes must be a nonempty array.'],
-    [models('.model.ts'), 'models.suffixes must be a nonempty array.'],
-    [models('[""]'), form('models.suffixes[0]')],
-    [models('[.model.ts, model.ts]'), form('models.suffixes[1]')],
-    [models('[.model.js]'), form('models.suffixes[0]')],
-    [models('[.model.ts, 3]'), form('models.suffixes[1]')],
-    [models('[.d.ts]'), 'models.suffixes[0] must not end in .d.ts, .d.mts or .d.cts: a declaration file cannot be a source.'],
-    [models('[.model.generated.ts]'), generated('models.suffixes[0]')],
-    [models('[.model.generated.cts]'), generated('models.suffixes[0]')],
-    [models('[.model.ts, .models.ts, .model.ts]'), 'models.suffixes lists .model.ts twice.'],
-    [CONTROLLER_YAML('[]'), 'controllers[0].suffixes must be a nonempty array.'],
-    [CONTROLLER_YAML('[api.ts]'), form('controllers[0].suffixes[0]')],
-    [CONTROLLER_YAML('[.api.generated.mts]'), generated('controllers[0].suffixes[0]')],
-    [CONTROLLER_YAML('[.api.ts, .api.ts]'), 'controllers[0].suffixes lists .api.ts twice.'],
-  ];
-  for (const [yaml, message] of testCases) {
-    const { filename } = fixture(t, yaml);
-    assert.throws(() => loadConfig(filename), (error: unknown) => error instanceof Error && error.message === message, message);
-  }
-});
-
-/** `fixture` with an empty tsconfig, an `app/src` folder for the models root, and `shared/money.model.ts` outside that root. */
-function outsideRootFixture(t: TestContext, yaml: string): { root: string; filename: string } {
-  const project = fixture(t, yaml);
-  fs.writeFileSync(path.join(project.root, 'tsconfig.json'), '{}');
-  fs.mkdirSync(path.join(project.root, 'app/src'), { recursive: true });
-  fs.mkdirSync(path.join(project.root, 'shared'));
-  fs.writeFileSync(path.join(project.root, 'shared/money.model.ts'), 'export {};\n');
-  return project;
-}
-
-test('a models.sources entry outside models.root stops with RUNM1075 naming the entry and the root', (t: TestContext) => {
-  // protects: T-375 a config error names its local files relative to the working directory
-  const { root, filename } = outsideRootFixture(t, 'version: 1\nmodels:\n  root: app\n  sources: [shared/money.model.ts]\n');
-
-  assert.throws(() => loadConfig(filename), (error: unknown) => error instanceof Error
-    && error.message === `RUNM1075: models.sources entry ${path.relative(process.cwd(), path.join(root, 'shared/money.model.ts'))} is outside the models root ${path.relative(process.cwd(), path.join(root, 'app'))}. A models job generates only files inside its root.`);
-});
-
-test('a models.sources entry that links to a file outside the root stops with RUNM1075', (t: TestContext) => {
-  const { root, filename } = outsideRootFixture(t, 'version: 1\nmodels:\n  root: app\n  sources: [app/src/money.model.ts]\n');
-  fs.symlinkSync('../../shared/money.model.ts', path.join(root, 'app/src/money.model.ts'));
-
-  assert.throws(() => loadConfig(filename), (error: unknown) => error instanceof Error
-    && error.message === `RUNM1075: models.sources entry ${path.relative(process.cwd(), path.join(root, 'shared/money.model.ts'))} is outside the models root ${path.relative(process.cwd(), path.join(root, 'app'))}. A models job generates only files inside its root.`);
+test('a provider of the model boundary that leaves out the suffixes stops loading and names the package', async (t: TestContext) => {
+  // protects: T-786 core owns the ModelBoundary value, so a JS provider that omits suffixes fails at load, not later with a TypeError
+  const { filename } = project(t, `version: 1\n${SHOP('    - { id: models, provides: [ModelBoundary], noSuffixes: true }\n')}`);
+  await assert.rejects(() => loadConfig(filename), (error: unknown) => error instanceof PackageRegistryError && /^Job models of @fixture\/shop provides the contract ModelBoundary whose value must hold "suffixes", an array of strings\.$/.test(error.message));
 });

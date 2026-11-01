@@ -8,11 +8,11 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### NEST1001
 
-**No exported controllers.** No exported class decorated with `@Controller` exists among the configured source files. **Fix:** Export at least one `@Controller` class, or list the files that declare it in `sources` of the controller job. When you call `generate` in code, pass them as its `sources` option.
+**No exported controllers.** No exported class decorated with `@Controller` exists among the configured source files. **Fix:** Export at least one `@Controller` class, or list the files that declare it in `sources` of the docs job. When you call `generate` in code, pass them as its `sources` option.
 
 ### NEST1002
 
-**No controller sources.** No file that ends in one of the controller `suffixes` (default `.controller.ts`) exists under `src` of the job `root`, and the controller job has no `sources`. **Fix:** Add a controller file, or list the controller files in `sources` of the controller job. When you call `generate` in code, pass them as its `sources` option.
+**No controller sources.** No file that ends in one of the controller `suffixes` (default `.controller.ts`) exists under `src` of the job `root`, and the docs job has no `sources`. **Fix:** Add a controller file, or list the controller files in `sources` of the docs job. When you call `generate` in code, pass them as its `sources` option.
 
 ### NEST1101
 
@@ -80,7 +80,7 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### NEST1202
 
-**Version without URI routing.** A method or class declares `@Version()`, but `uriVersioning` of the controller job isn't URI versioning, so the version has no distinct OpenAPI path. **Fix:** Set `uriVersioning: { type: URI }` in the controller job, or remove `@Version()`.
+**Version without URI routing.** A method or class declares `@Version()`, but `uriVersioning` of the docs job isn't URI versioning, so the version has no distinct OpenAPI path. **Fix:** Set `uriVersioning: { type: URI }` in the docs job, or remove `@Version()`.
 
 ### NEST1203
 
@@ -152,15 +152,15 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### NEST1401
 
-**Invalid info.** `info` of the controller job, or its `title` or `version` field, is missing, not an object, or not a non-empty string. **Fix:** Set `info` with a `title` and a `version` that are non-empty strings.
+**Invalid info.** `info` of the docs job, or its `title` or `version` field, is missing, not an object, or not a non-empty string. **Fix:** Set `info` with a `title` and a `version` that are non-empty strings.
 
 ### NEST1402
 
-**Unsupported OpenAPI version.** `openapiVersion` of the controller job names something other than `'3.2.0'` or `'3.1.2'`. **Fix:** Set `openapiVersion` to `'3.2.0'` or `'3.1.2'`, or omit it to use the default.
+**Unsupported OpenAPI version.** `openapiVersion` of the docs job names something other than `'3.2.0'` or `'3.1.2'`. **Fix:** Set `openapiVersion` to `'3.2.0'` or `'3.1.2'`, or omit it to use the default.
 
 ### NEST1403
 
-**Invalid server.** A `servers` entry of the controller job doesn't match the OpenAPI Server Object shape. Cases:
+**Invalid server.** A `servers` entry of the docs job doesn't match the OpenAPI Server Object shape. Cases:
 
 - A non-object entry.
 - An unsupported property.
@@ -175,11 +175,11 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### NEST1404
 
-**Invalid security scheme.** A security scheme in `securitySchemes` of the controller job doesn't match its type's OpenAPI shape — an unsupported `type`, an unsupported property for that type, or an OAuth2 flow missing a required URL or `scopes`. **Fix:** Match the OpenAPI Security Scheme Object for the chosen `type` (`apiKey`, `http`, `mutualTLS`, `oauth2`, or `openIdConnect`).
+**Invalid security scheme.** A security scheme in `securitySchemes` of the docs job doesn't match its type's OpenAPI shape — an unsupported `type`, an unsupported property for that type, or an OAuth2 flow missing a required URL or `scopes`. **Fix:** Match the OpenAPI Security Scheme Object for the chosen `type` (`apiKey`, `http`, `mutualTLS`, `oauth2`, or `openIdConnect`).
 
 ### NEST1405
 
-**Invalid security requirement.** A route's security requirement names a scheme that isn't in `securitySchemes` of the controller job, its scopes aren't an array of strings, or `@ApiSecurity()` doesn't resolve to a scheme name or a record of scheme scopes. **Fix:** Add the scheme to `securitySchemes`, or fix the `@ApiSecurity()` or security requirement shape.
+**Invalid security requirement.** A route's security requirement names a scheme that isn't in `securitySchemes` of the docs job, its scopes aren't an array of strings, or `@ApiSecurity()` doesn't resolve to a scheme name or a record of scheme scopes. **Fix:** Add the scheme to `securitySchemes`, or fix the `@ApiSecurity()` or security requirement shape.
 
 ### NEST1501
 
@@ -217,7 +217,7 @@ An error prints its code, location when known, and message, then stops generatio
 **Route result too large.** A route path or version folds to a value larger than the limit, 1 MiB when written as JSON. **Fix:**
 
 - Use a shorter path or version value.
-- Or raise `maxResultBytes` in the [controller job](/reference/config#controller-jobs) of `golem.yaml`.
+- Or raise `maxResultBytes` in the [docs job](/reference/config#ts-openapi-block) of `golem.yaml`.
 
 ## Model generator (RUNM)
 
@@ -536,23 +536,24 @@ The message shows the decorator and the type, such as `@Body() type Payment has 
 
 ### RUNM1074
 
-**Model declared in a file that is not a model file.** A model field, or a `stringify`, `parse`, `validate`, `assertValue`, `toWireFormat` or `fromWireFormat` call, names an `IModel` or `IObject` alias that sits in a file whose name does not end in one of the `models.suffixes`.
+**Model declared in a file that is not a model file.** A model field, or a `stringify`, `parse`, `validate`, `assertValue`, `toWireFormat` or `fromWireFormat` call, names an `IModel` or `IObject` alias that sits in a file whose name does not end in one of the `model.suffixes`.
 
-Golem reads a model from a model file only. A shared folder or an installed package declares its models in model files too, such as `customer.model.ts` or `customer.model.d.ts` ([shared folder](/guide/shared-models)). The message names the alias as `file#export`.
+Golem reads a model from a model file only. A shared folder or an installed package declares its models in model files too, such as `customer.model.ts` or `customer.model.d.ts` ([shared folder](/guide/shared-models)). The message names the alias as `file#export`. When no job of the `golem.yaml` reads model files, the message says so, and no file name ends in a model suffix that golem reads.
 
 **Fix:**
 
 - Move the alias into a file whose name ends in a model suffix.
+- Or add the `model` block, so a job reads model files.
 
 ### RUNM1075
 
-**`models.sources` entry outside the models root.** An entry of `models.sources` has a real path outside `models.root`. A link to a file outside the root counts as that file. A `models` job generates only files inside its root, so the job stops before it generates. The message names the entry and the root.
+**`model.sources` entry outside the golem.yaml folder.** An entry of `model.sources` has a real path outside the folder of `golem.yaml`. A link to a file outside the folder counts as that file. The `model` block generates only files inside that folder, so loading stops before it generates. The message names the entry and the folder.
 
 **Fix:**
 
 - Remove the entry.
-- Or move the file into the root.
-- Or set `models.root` to a folder that holds the file.
+- Or move the file into the folder of `golem.yaml`.
+- Or move `golem.yaml` to a folder that holds the file.
 
 ### RUNM1076
 
@@ -561,7 +562,7 @@ Golem reads a model from a model file only. A shared folder or an installed pack
 - A `golem.yaml` in its package folder, or in a folder between the file and its package folder.
 - A generated file beside it: `customer.model.generated.ts`, `.generated.js` or `.generated.d.ts`.
 
-Golem does not read the `golem.yaml` and does not use the generated file. The app uses its own generated file in `models.output`. This is a warning: generation continues.
+Golem does not read the `golem.yaml` and does not use the generated file. The app uses its own generated file in `model.output`. This is a warning: generation continues.
 
 The message names the file, and golem writes it once for each run. When the `golem.yaml` configures another app that generates the same model file, the message tells you to move the model into a shared package that holds no `golem.yaml`.
 
@@ -572,18 +573,18 @@ The message names the file, and golem writes it once for each run. When the `gol
 
 ### RUNM1077
 
-**Models job below the root of another models job.** A `golem.yaml` with a `models` job lies below the `models.root` of another `golem.yaml`, in a folder with model files. Both jobs would write the generated files of those model files, so `golem generate` and `golem check` stop.
+**`model` block below another `model` block.** A `golem.yaml` with a `model` block lies below the folder of another `golem.yaml` that has a `model` block, in a folder with model files. Both blocks would write the generated files of those model files, so `golem generate` and `golem check` stop.
 
 The message names each nested `golem.yaml`.
 
 **Fix:**
 
-- Remove the `models` job from the nested `golem.yaml`.
-- Or move its folder out of the `models.root`.
+- Remove the `model` block from the nested `golem.yaml`.
+- Or move its folder out of the folder of the other `golem.yaml`.
 
 ### RUNM1078
 
-**Two shared model files have one generated file.** Each app writes the generated file of a shared model file in `models.output`, at `<package name>/<path of the file in the package>.generated.ts`. Generation stops when two shared model files would write one file:
+**Two shared model files have one generated file.** Each app writes the generated file of a shared model file in `model.output`, at `<package name>/<path of the file in the package>.generated.ts`. Generation stops when two shared model files would write one file:
 
 - They are in different folders.
 - They have the same package name.
@@ -698,14 +699,14 @@ One case is allowed: a `TSerde` value whose JSON form is a scalar, such as a `UR
 
 ### RUNM1084
 
-**A controller reaches a later job's output.** A type of a controller reaches a file that a later job of the same `golem.yaml` writes, or a model file that imports one. The later jobs are the `openapi` jobs, which write the SDK directory, and the `controllers` jobs after this one, which write their document. The jobs run in the order `generators`, `controllers`, `openapi`, `models`, so the `controllers` job cannot read that file. Any reach counts: the model itself, an array or a union of it, a `Pick` of it that keeps no field of the SDK type, a model that holds it, and an SDK type that the controller imports. The message names the file.
+**A controller reaches a later job's output.** A type of a controller reaches a file that a later job of the same `golem.yaml` writes, or a model file that imports one. The later jobs are the SDK jobs, which write the SDK directory, and the docs jobs after this one, which write their document. Golem runs the jobs in the order that their reads and writes give ([job order](/reference/config#job-order)), so the docs job cannot read that file. Any reach counts: the model itself, an array or a union of it, a `Pick` of it that keeps no field of the SDK type, a model that holds it, and an SDK type that the controller imports. The message names the file.
 
-Golem reads relative imports (`./sdk/index.js`) for this rule, and reads them the same way whether or not the SDK exists yet. A model file that imports a later output, directly or through the files it imports, is left out of the `controllers` job. Its models are generated by the `models` job after the file exists. An import by package name or by a `paths` alias stops with [RUNM1058](#runm1058) until the file exists.
+Golem reads relative imports (`./sdk/index.js`) for this rule, and reads them the same way whether or not the SDK exists yet. A model file that imports a later output, directly or through the files it imports, is left out of the docs job. Its models are generated by the models job after the file exists. An import by package name or by a `paths` alias stops with [RUNM1058](#runm1058) until the file exists.
 
 **Fix:**
 
 - Move the model out of the controllers root, so that no controller reaches it.
-- Or do not import a later job's output from a model that the `controllers` job reads.
+- Or do not import a later job's output from a model that the docs job reads.
 
 ### RUNM1085
 
@@ -749,14 +750,23 @@ Golem reads relative imports (`./sdk/index.js`) for this rule, and reads them th
 
 **Fix:** Set the option to `true`, `false` or `'sanity'`, at or below the project level, or raise `validation` in `golem.yaml`.
 
+### RUNM1091
+
+**Two rewrites edit the same text.** An edit of an extension covers text that an edit of golem or of another extension covers. Golem does not pick one, so the build stops. The message names the extension, its package and both ranges.
+
+**Fix:**
+
+- Edit text that no other rewrite covers.
+- Or turn off one of the extensions in the `extensions:` list of its block.
+
 ### GOLEM_SDK_JOB_MISSING
 
-**SDK in mode golem with no openapi job.** The models job finds an SDK whose `model-manifest.json` says `mode: golem`. No openapi job of mode `golem` in this `golem.yaml` writes the folder of that SDK. The models job has no codecs file to name for the SDK, so generation stops. The message names the manifest.
+**SDK in mode golem with no SDK job.** The models job finds an SDK whose `model-manifest.json` says `mode: golem`. No SDK job of mode `golem` in this `golem.yaml` writes the folder of that SDK. The models job has no codecs file to name for the SDK, so generation stops. The message names the manifest.
 
 **Fix:**
 
 - Set the SDK to mode `standalone`, and generate it again.
-- Or add the openapi job of the SDK to this `golem.yaml` with `mode: golem`.
+- Or add the SDK job to the `sdks` list of the `openapi-ts` block of this `golem.yaml` with `mode: golem`.
 
 ## Validators (VALIDATE)
 
@@ -928,7 +938,7 @@ A schema that carries these keywords does not stop an SDK. The SDK client checks
 
 **Fix:**
 
-- Set `mode: golem` on the `openapi` job.
+- Set `mode: golem` on the SDK job.
 - Or set `mobx: false`.
 
 ### OPENAPI_OPERATION_RENAMED

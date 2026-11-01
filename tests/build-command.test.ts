@@ -6,6 +6,7 @@ import test from 'node:test';
 import { parseArguments } from '#golem/cli';
 import { assertMoneyCodec } from './support/rewritten-module.js';
 
+import { listProjectDependencies } from './fixture-project.js';
 import { command, golem } from './support/process.js';
 import { write, SERDE_GOLEM_YAML, editTsconfig, serdeProject, sourceOnlyProject, countingGenerator, USE, snapshot, build, buildAndListJobs, mtimes, importBuilt, golemBuild, assertCallMap } from './support/build-project.js';
 
@@ -77,7 +78,7 @@ test('a second build with no change runs no job and emits nothing again', async 
   countingGenerator(root);
   const first = await buildAndListJobs(root);
   assert.equal(first.exitCode, 0);
-  assert.deepEqual(first.ran, ['generator:out', 'models:.'], 'the first build ran every job');
+  assert.deepEqual(first.ran, ['generator:out', 'model'], 'the first build ran every job');
   const companion = path.join(root, 'src/money.model.generated.ts');
   const emitted = mtimes(path.join(root, 'build'), '.js');
   assert.ok(emitted.size > 0);
@@ -198,18 +199,27 @@ test('-b and --build are rejected', async (t) => {
 test('golem build prints the stack and cause of an internal failure, and only the message of a condition the user fixes', async (t) => {
   // protects: T-490 the CLI entry printed errorMessage only, so a TypeError in a generator lost its stack and cause
   const root = sourceOnlyProject(t, 'build-failure-text');
-  write(root, 'node_modules/@fixture/throwing/package.json', JSON.stringify({ name: '@fixture/throwing', version: '1.0.0', type: 'module', exports: { './generator': './index.js' } }));
+  write(root, 'node_modules/@fixture/throwing/package.json', JSON.stringify({ name: '@fixture/throwing', version: '1.0.0', type: 'module', exports: { './plan': './plan.js', './generator': './index.js' }, golem: { apiVersion: 2, block: 'throwing', plan: './plan', generator: './generator' } }));
+  write(root, 'node_modules/@fixture/throwing/plan.js', `import path from 'node:path';
+export const plan = {
+  declare({ directory }) {
+    const output = path.join(directory, 'out');
+    return [{ facts: { id: 'throwing', outputs: [{ path: output, kind: 'folder' }], ownedRoots: [], inputFiles: [], inputFolders: [], readsProgram: false, provides: [], needs: [], hooks: [], watch: [] }, options: { directory, output } }];
+  },
+};
+`);
   write(root, 'node_modules/@fixture/throwing/index.js', `export const apiVersion = 1;
 export function generate() { throw new TypeError('generator state is broken', { cause: new RangeError('index out of range') }); }
 `);
-  write(root, 'golem.yaml', `${fs.readFileSync(path.join(root, 'golem.yaml'), 'utf8')}generators:\n  - package: '@fixture/throwing'\n    output: out\n`);
+  listProjectDependencies(root, ['@fixture/throwing']);
+  write(root, 'golem.yaml', `${fs.readFileSync(path.join(root, 'golem.yaml'), 'utf8')}throwing: {}\n`);
   const internal = await golemBuild(root, []);
   assert.equal(internal.code, 1);
   assert.match(internal.stderr, /TypeError: generator state is broken\n\s+at /);
   assert.match(internal.stderr, /\[cause\]: RangeError: index out of range/);
 
   // Conditions the user fixes print as their message: a golem.yaml key it does not know.
-  write(root, 'golem.yaml', 'version: 1\nmobx: false\nvalidation: true\nmodels:\n  root: .\nunknownKey: true\n');
+  write(root, 'golem.yaml', 'version: 1\nvalidation: true\nmodel: {}\nunknownKey: true\n');
   const named = await golemBuild(root, []);
   assert.equal(named.code, 1);
   assert.doesNotMatch(named.stderr, /\n\s+at /);

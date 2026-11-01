@@ -26,7 +26,7 @@ async function bodySchema(t: TestContext, decorators: string, method: string): P
         '}',
         '',
       ].join('\n'),
-      'golem.yaml': 'version: 1\nmobx: false\nvalidation: true\ncontrollers:\n  - root: .\n    sources:\n      - src/a.controller.ts\n    output: generated/api.json\n    openapiVersion: "3.2.0"\n    info: { title: T, version: "1" }\nmodels:\n  root: .\n',
+      'golem.yaml': 'version: 1\nvalidation: true\nts-openapi:\n  docs:\n    - sources:\n        - src/a.controller.ts\n      output: generated/api.json\n      openapiVersion: "3.2.0"\n      info: { title: T, version: "1" }\nmodel: {}\n',
     },
   });
   await runPipeline(path.join(root, 'golem.yaml'));

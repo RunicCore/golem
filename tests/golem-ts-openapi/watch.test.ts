@@ -215,7 +215,7 @@ test('check stops at stale controller output before running downstream SDK and m
   fs.appendFileSync(fixtureData.document, '\n');
   await assert.rejects(
     runPipeline(fixtureData.config, { check: true }),
-    (error: unknown) => String(error).includes('Generated outputs are stale for controllers:')
+    (error: unknown) => String(error).includes('Generated outputs are stale for docs:generated/openapi.json:')
       && String(error).includes('generated/openapi.json'),
   );
   assert.equal(readGeneratedClientSource(path.dirname(fixtureData.sdkClient)), sdkBefore, 'upstream check failure must leave the SDK untouched');

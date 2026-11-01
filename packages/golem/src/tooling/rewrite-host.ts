@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 
-import { modelsRootOf, resolveConfig } from './config.js';
+import { resolveConfig } from './config.js';
 import { codecKeysPath } from './generated-paths.js';
 import type { GolemConfig } from './config.js';
 import { displayPath, GolemDiagnosticSeverity } from './generator-core.js';
@@ -13,6 +13,8 @@ import type { GolemDiagnostic } from './generator-core.js';
 import { applyRewrites } from './rewrite.js';
 import { assertNotSolutionTsconfig } from './typescript-config.js';
 import { requestTypeScriptRoot } from './typescript-selection.js';
+import { loadRewriteParticipants } from './rewrite-participant.js';
+import type { LoadedParticipant } from './rewrite-participant.js';
 import type { FileScanResult, RewriteScanner } from './rewrite-scan.js';
 import { composeSourceMaps, decodeMappings } from './source-map.js';
 import type { SourceMapV3 } from './source-map.js';
@@ -121,8 +123,8 @@ export interface GolemHostOptions {
 }
 
 export interface RewriteProject {
-  /** The codec key file the yaml's models job writes, whether or not it exists yet: what a host watches after a failed rewrite so that `golem generate` brings it back. */
-  readonly expectedGenerated: readonly string[];
+  /** The codec key file that the job providing the `ModelBoundary` contract writes, whether or not it exists yet: what a host watches after a failed rewrite so that `golem generate` brings it back. Empty without a provider. */
+  readonly generatedWatchFiles: readonly string[];
   /**
    * Edits for one file as the host will compile it, `dependencies` as absolute paths; undefined when the file has no
    * rewrite. A file outside the tsconfig's directory is scanned and rewritten like any other. Throws a `GolemHostError` (file, line, "run golem generate") on scan diagnostics.
@@ -163,13 +165,15 @@ interface Compiler {
   readonly ts: typeof ts;
   readonly RewriteScanner: typeof RewriteScanner;
   readonly canonicalFilename: (filename: string) => string;
+  /** The rewrite participants of the extensions that golem.yaml turns on. */
+  readonly participants: readonly LoadedParticipant[];
 }
 
 /** A project's compiler session and the program of its latest state; a changed or new file reopens the program. */
 class ScanningProject {
   readonly root: string;
   readonly configFile: string;
-  readonly expectedGenerated: readonly string[];
+  readonly generatedWatchFiles: readonly string[];
   private readonly session: ts.ProgramSession;
   private program: ts.Program | undefined;
   /** The tsconfig's compiler options as the latest program was opened with them. */
@@ -189,7 +193,7 @@ class ScanningProject {
   constructor(private readonly config: GolemConfig, private readonly compiler: Compiler) {
     this.root = path.dirname(config.tsconfig);
     this.configFile = config.configFile;
-    this.expectedGenerated = config.jobs.some((job) => job.kind === 'models') ? [codecKeysPath(config.directory)] : [];
+    this.generatedWatchFiles = config.contracts.ModelBoundary === undefined ? [] : [codecKeysPath(config.directory)];
     this.session = new compiler.ts.ProgramSession({ cwd: this.root });
   }
 
@@ -210,8 +214,7 @@ class ScanningProject {
     const program = this.session.openProgram({ root: this.root, sources, configFile: this.config.tsconfig, overlays: new Map(this.overlays) });
     this.program?.close();
     this.program = program;
-    const models = this.config.jobs.find((job) => job.kind === 'models');
-    this.scanner = new this.compiler.RewriteScanner({ root: this.root, directory: this.config.directory, modelsRoot: modelsRootOf(this.config), suffixes: models?.options.suffixes, output: models?.options.output, program, codecKeysFile: codecKeysPath(this.config.directory), checker: program.getTypeChecker(), nonModelInputs: this.config.nonModelInputs });
+    this.scanner = new this.compiler.RewriteScanner({ root: this.root, boundary: this.config.contracts.ModelBoundary, program, codecKeysFile: codecKeysPath(this.config.directory), checker: program.getTypeChecker(), nonModelInputs: this.config.nonModelInputs, participants: this.compiler.participants });
     this.stale = false;
     this.recordSignature = signature;
     this.recorded = recorded;
@@ -265,7 +268,7 @@ class ScanningProject {
     }
     if (this.program !== undefined && fileSignature(this.config.inventoryFile) !== this.recordSignature) {
       // The files of the old record too: one that `golem generate` removed is changed as well.
-      this.changed([...this.recorded, ...this.recordedFiles(), ...this.expectedGenerated]);
+      this.changed([...this.recorded, ...this.recordedFiles(), ...this.generatedWatchFiles]);
     }
   }
 
@@ -372,7 +375,7 @@ export async function openRewriteProject(options: GolemHostOptions & { cwd: stri
   const named = options.config || process.env.GOLEM_CONFIG || undefined;
   const requested = path.resolve(options.cwd, named ?? 'golem.yaml');
   if (!existsSync(requested)) throw new GolemHostError(named === undefined ? NO_GOLEM_YAML : `${NO_GOLEM_YAML} (${displayPath(requested)} does not exist)`);
-  const config = resolveConfig(requested);
+  const config = await resolveConfig(requested);
   const key = config.configFile;
   let shared = projects.get(key);
   if (shared === undefined) {
@@ -383,8 +386,10 @@ export async function openRewriteProject(options: GolemHostOptions & { cwd: stri
         // The compiler seam loads once per process, so the project's TypeScript is requested before the seam is imported.
         requestTypeScriptRoot(path.dirname(config.tsconfig));
         const [seam, scan, analysis] = await Promise.all([import('./typescript-ns.js'), import('./rewrite-scan.js'), import('./type-analysis/project.js')]);
+        // The extension entries load after the project's TypeScript is picked: a participant gets the seam and never picks TypeScript itself.
+        const participants = await loadRewriteParticipants(config.extensions);
         return new ScanningProject(config,
-          { ts: seam, RewriteScanner: scan.RewriteScanner, canonicalFilename: analysis.canonicalFilename });
+          { ts: seam, RewriteScanner: scan.RewriteScanner, canonicalFilename: analysis.canonicalFilename, participants });
       })(),
     };
     projects.set(key, shared);
@@ -402,7 +407,7 @@ export async function openRewriteProject(options: GolemHostOptions & { cwd: stri
   }
   let closed = false;
   return {
-    expectedGenerated: project.expectedGenerated,
+    generatedWatchFiles: project.generatedWatchFiles,
     rewrite: (filename, text) => project.rewrite(filename, text),
     diagnose: (filename, text) => project.diagnose(filename, text),
     comments: (filename, text) => project.comments(filename, text),

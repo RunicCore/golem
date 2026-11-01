@@ -318,8 +318,8 @@ test('a model with a class is the component named by the class; a model without 
   assert.ok(schemas.TInvoice, 'a model without a class keeps its alias');
 });
 
-test('a controller field that nests a model of an installed package whose file has no model suffix stops with RUNM1074', async t => {
-  // protects: R-20 RUNM1074 keeps one reason in the controllers job: the model file has no model suffix
+test('a controller field that nests a model alias stops with RUNM1074 when no job of the golem.yaml reads model files', async t => {
+  // protects: T-786 with no job that provides the model contract, the reason names no file ending
   const root = fixture(t, `import { Controller, Get } from '@nestjs/common';
 import { ApiOkResponse } from '@nestjs/swagger';
 import type { TPkgMoney } from '@acme/money';
@@ -344,7 +344,37 @@ export class OrdersController {
 
   await assert.rejects(
     generateFixture(root),
-    (error: unknown) => String(error).includes(`RUNM1074: ${path.relative(process.cwd(), declaration)}#TPkgMoney is declared in a file whose name has no model suffix. Golem reads a model from a file whose name ends in .model.ts or .models.ts. Move the model into such a file.`),
+    (error: unknown) => String(error).includes(`RUNM1074: ${path.relative(process.cwd(), declaration)}#TPkgMoney is a model alias, but no job of this golem.yaml reads model files, so golem has no codec for it.`),
+  );
+});
+
+test('a controller field that nests a model of an installed package whose file has no model suffix stops with RUNM1074 and names the suffixes of the provider', async t => {
+  // protects: R-20 RUNM1074 keeps one reason in the controllers job: the model file has no model suffix
+  const root = fixture(t, `import { Controller, Get } from '@nestjs/common';
+import { ApiOkResponse } from '@nestjs/swagger';
+import type { TPkgMoney } from '@acme/money';
+
+class OrderDto {
+  total!: TPkgMoney;
+}
+
+@Controller('orders')
+export class OrdersController {
+  @Get()
+  @ApiOkResponse({ type: OrderDto })
+  value(): OrderDto { return { total: { currency: 'USD' } }; }
+}
+`, {
+    files: {
+      'node_modules/@acme/money/package.json': JSON.stringify({ name: '@acme/money', version: '1.0.0', type: 'module', types: './index.d.ts', exports: { '.': { types: './index.d.ts' } } }),
+      'node_modules/@acme/money/index.d.ts': "import type { IObject } from '@exprtlabs/golem/model';\nexport type TPkgMoney = IObject<{ currency: string }>;\n",
+    },
+  });
+  const declaration = fs.realpathSync(path.join(root, 'node_modules/@acme/money/index.d.ts'));
+
+  await assert.rejects(
+    generate({ root, output: path.join(root, 'openapi.json'), info: { title: 'Contract fixture', version: '1' }, profile: { mobx: false, validation: false }, models: { root, directory: root, output: path.join(root, 'src/generated/models'), suffixes: ['.entity.ts', '.record.ts'] } }),
+    (error: unknown) => String(error).includes(`RUNM1074: ${path.relative(process.cwd(), declaration)}#TPkgMoney is declared in a file whose name has no model suffix. Golem reads a model from a file whose name ends in .entity.ts or .record.ts. Move the model into such a file.`),
   );
 });
 
@@ -599,4 +629,51 @@ export function decodeMoney(value: string): Money { throw new Error(value); }
   };
   assert.equal(analysis.isModel(typeOf('plain').type, typeOf('plain').node), true);
   assert.equal(analysis.isModel(typeOf('price').type, typeOf('price').node), false);
+});
+
+test('a docs job with no model block stops on a syntax error in a file its controller imports', async t => {
+  // protects: T-786 one rule for the controllers job: a syntax error in any file of the project stops it, with or without a models job
+  const root = fixture(t, `import { Controller, Get } from '@nestjs/common';
+import { ApiOkResponse } from '@nestjs/swagger';
+import type { OrderDto } from './order.js';
+
+@Controller('orders')
+export class OrdersController {
+  @Get()
+  @ApiOkResponse({ type: Object })
+  value(): OrderDto { return { id: '1' }; }
+}
+`, {
+    files: { 'src/order.ts': 'export interface OrderDto { id: string;\n' },
+  });
+
+  await assert.rejects(generateFixture(root), /order\.ts.*'\}' expected/s);
+});
+
+test('a docs job does not stop on a syntax error in the output of a later job', async t => {
+  // protects: T-786 the later job writes its output again, so a broken file there must not stop the job before it
+  const root = fixture(t, `import { Controller, Get } from '@nestjs/common';
+import { ApiOkResponse } from '@nestjs/swagger';
+
+export class OrderDto { id!: string; }
+
+@Controller('orders')
+export class OrdersController {
+  @Get()
+  @ApiOkResponse({ type: OrderDto })
+  value(): OrderDto { return { id: '1' }; }
+}
+`, {
+    files: { 'src/sdk/client.ts': 'export interface Broken { id: string;\n' },
+  });
+
+  const result = await generate({
+    root,
+    output: path.join(root, 'openapi.json'),
+    openapiVersion: '3.2.0',
+    info: { title: 'Contract fixture', version: '1' },
+    profile: { mobx: false, validation: false },
+    programView: { laterOutputs: [path.join(root, 'src/sdk')] },
+  });
+  assert.equal(result.artifacts.length, 1);
 });

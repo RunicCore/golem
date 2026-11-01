@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { createFixtureProject, linkProjectPackages, writeGeneratedArtifacts, type FixtureScope } from '../../fixture-project.js';
+import { createFixtureProject, linkProjectPackages, listProjectDependencies, writeGeneratedArtifacts, type FixtureScope } from '../../fixture-project.js';
 import { workspace } from '../../support/process.js';
 
 export interface ControllerFixtureOptions {
@@ -29,6 +29,9 @@ const defaultTsconfig = {
   include: ['src/**/*.ts'],
 };
 
+const GOLEM_PACKAGES = ['golem', 'golem-model', 'golem-openapi', 'golem-ts-openapi'].map(name => `@exprtlabs/${name}`);
+
+/** A project that links the workspace packages (every link but `none`) lists the golem packages as dependencies, so a block of golem.yaml finds its package. */
 export function createControllerFixture(t: FixtureScope, options: ControllerFixtureOptions): string {
   const root = createFixtureProject(t, options.prefix);
 
@@ -38,7 +41,7 @@ export function createControllerFixture(t: FixtureScope, options: ControllerFixt
     linkProjectPackages(root, {
       '@nestjs/common': path.join(workspace, 'node_modules/@nestjs/common'),
       '@nestjs/swagger': path.join(workspace, 'node_modules/@nestjs/swagger'),
-      '@exprtlabs/golem': path.join(workspace, 'packages/golem'),
+      ...Object.fromEntries(GOLEM_PACKAGES.map(name => [name, path.join(workspace, 'packages', name.slice('@exprtlabs/'.length))])),
     });
   }
 
@@ -58,5 +61,6 @@ export function createControllerFixture(t: FixtureScope, options: ControllerFixt
     path: path.join(root, relative),
     content,
   })));
+  if (options.links !== 'none') listProjectDependencies(root, GOLEM_PACKAGES);
   return root;
 }

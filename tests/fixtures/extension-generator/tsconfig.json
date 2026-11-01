@@ -10,5 +10,5 @@
     "types": ["node"],
     "typeRoots": ["./node_modules/@types"]
   },
-  "include": ["generator.ts"]
+  "include": ["generator.ts", "plan.ts"]
 }

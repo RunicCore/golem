@@ -1,5 +1,5 @@
 // lane: typescript6 ProgramSession resolution updates and the `golem build` driver in the pipeline
-import { copyFixtureFile, createFixtureProject, linkProjectPackages } from './fixture-project.js';
+import { copyFixtureFile, createFixtureProject, linkProjectPackages, linkGolemPackages, listProjectDependencies } from './fixture-project.js';
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -74,8 +74,9 @@ test('a built-in generator package of another version than the installed runtime
   fs.mkdirSync(path.join(provider, 'dist'), { recursive: true });
   const source = path.join(workspace, 'packages/golem-openapi');
   const manifest = JSON.parse(fs.readFileSync(path.join(source, 'package.json'), 'utf8')) as { version: string };
-  fs.writeFileSync(path.join(provider, 'package.json'), JSON.stringify({ ...manifest, version: '1.99.0' }));
-  fs.copyFileSync(path.join(source, 'dist/generator.js'), path.join(provider, 'dist/generator.js'));
+  // A release pins golem to its own version; the registry compares that pin with the runtime.
+  fs.writeFileSync(path.join(provider, 'package.json'), JSON.stringify({ ...manifest, version: '1.99.0', dependencies: { '@exprtlabs/golem': '1.99.0' } }));
+  for (const entry of ['generator', 'plan']) fs.copyFileSync(path.join(source, `dist/${entry}.js`), path.join(provider, `dist/${entry}.js`));
   await assert.rejects(runPipeline(config), /@exprtlabs\/golem \S+ and @exprtlabs\/golem-openapi 1\.99\.0 must have the same version/);
   assert.equal(fs.existsSync(path.join(root, 'sdk')), false);
   assert.equal(fs.existsSync(path.join(root, '.golem')), false);
@@ -185,8 +186,8 @@ test('the companion of a shared alias is a recorded output of the app in models.
   const write = (file: string, text: string): void => writeFile(outer, file, text);
   write('shared/package.json', '{"name":"@acme/shared","type":"module"}');
   write('shared/customer.model.ts', "import type { IModel } from '@exprtlabs/golem/model';\nexport type TCustomer = IModel<{ name: string }>;\n");
-  write('app/package.json', '{"name":"shared-app","type":"module"}');
-  write('app/golem.yaml', 'version: 1\nmobx: false\nvalidation: false\nmodels:\n  root: .\n');
+  write('app/package.json', '{"name":"shared-app","type":"module","dependencies":{"@exprtlabs/golem-model":"*"}}');
+  write('app/golem.yaml', 'version: 1\nvalidation: false\nmodel: {}\n');
   write('app/tsconfig.json', JSON.stringify({ compilerOptions: { strict: true, target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', skipLibCheck: true, noEmit: true }, include: ['src/**/*.ts', '../shared/**/*.ts'] }));
   write('app/src/use.ts', 'export {};\n');
   const config = path.join(outer, 'app/golem.yaml');
@@ -226,17 +227,16 @@ test('an unreferenced OpenAPI document does not regenerate model companions', as
   }));
   fs.writeFileSync(config, [
     'version: 1',
-    'mobx: false',
     'validation: true',
-    'openapi:',
-    '  - input: api.json',
-    '    output: sdk',
-    '    name: Profile',
-    '  - input: other.json',
-    '    output: other-sdk',
-    '    name: Other',
-    'models:',
-    '  root: .',
+    'openapi-ts:',
+    '  sdks:',
+    '    - input: api.json',
+    '      output: sdk',
+    '      name: Profile',
+    '    - input: other.json',
+    '      output: other-sdk',
+    '      name: Other',
+    'model: {}',
     '',
   ].join('\n'));
   const first = await runPipeline(config);
@@ -284,7 +284,7 @@ test('deleting a model while editing the model its companion imports still gener
 test('an openapi-only golem.yaml with no tsconfig has no project to check, and golem build names the missing tsconfig', async (t: TestContext) => {
   const { root, config } = fixture(t);
   fs.rmSync(path.join(root, 'tsconfig.json'));
-  fs.writeFileSync(config, 'version: 1\nmobx: false\nvalidation: true\nopenapi:\n  - input: api.json\n    output: sdk\n    name: Profile\n');
+  fs.writeFileSync(config, 'version: 1\nvalidation: true\nopenapi-ts:\n  sdks:\n    - input: api.json\n      output: sdk\n      name: Profile\n');
   await runPipeline(config);
   assert.equal(fs.existsSync(path.join(root, 'sdk')), true);
   await runPipeline(config, { check: true });
@@ -295,15 +295,15 @@ test('an openapi-only golem.yaml with no tsconfig has no project to check, and g
 // The job cache: a run skips the jobs whose inputs did not change
 // ---------------------------------------------------------------------------
 
-/** The kinds of the jobs that executed in a run, in a stable order. */
-function ranKinds(state: PipelineState): string[] {
-  return state.config.jobs.filter((job) => state.ran.has(job.id)).map((job) => job.kind);
+/** The blocks of the jobs that executed in a run, in a stable order. */
+function ranBlocks(state: PipelineState): string[] {
+  return state.config.jobs.filter((job) => state.ran.has(job.id)).map((job) => job.block);
 }
 
 test('a second generate with no input change runs no job and rewrites no output', async (t: TestContext) => {
   const { config } = fixture(t);
   const first = await runPipeline(config);
-  assert.deepEqual(ranKinds(first), ['openapi', 'models']);
+  assert.deepEqual(ranBlocks(first), ['openapi-ts', 'model']);
   const modifiedAt = new Map([...first.owned].map((output) => [output, fs.statSync(output).mtimeMs]));
   const second = await runPipeline(config);
   assert.deepEqual([...second.ran], []);
@@ -317,13 +317,13 @@ test('an edited model source reruns the models job, an edited OpenAPI document r
   const modelSource = path.join(root, 'src/cart.model.ts');
   fs.writeFileSync(modelSource, fs.readFileSync(modelSource, 'utf8').replace('note: string', 'note: string; selected?: boolean'));
   const edited = await runPipeline(config);
-  assert.deepEqual(ranKinds(edited), ['models'], 'the OpenAPI job reads no model source');
+  assert.deepEqual(ranBlocks(edited), ['model'], 'the OpenAPI job reads no model source');
   assert.match(fs.readFileSync(path.join(root, 'src/cart.model.generated.ts'), 'utf8'), /selected/);
-  assert.deepEqual(ranKinds(await runPipeline(config)), []);
+  assert.deepEqual(ranBlocks(await runPipeline(config)), []);
 
   const api = path.join(root, 'api.json');
   fs.writeFileSync(api, JSON.stringify(JSON.parse(fs.readFileSync(api, 'utf8')), null, 4));
-  assert.deepEqual(ranKinds(await runPipeline(config)), ['openapi', 'models'], 'the manifest the OpenAPI job writes is the same, the job after it still runs');
+  assert.deepEqual(ranBlocks(await runPipeline(config)), ['openapi-ts', 'model'], 'the manifest the OpenAPI job writes is the same, the job after it still runs');
 });
 
 test('a deleted output reruns its job, and a changed option or golem code reruns the jobs it applies to', async (t: TestContext) => {
@@ -332,20 +332,20 @@ test('a deleted output reruns its job, and a changed option or golem code reruns
   const companion = path.join(root, 'src/cart.model.generated.ts');
   const original = fs.readFileSync(companion, 'utf8');
   fs.rmSync(companion);
-  assert.deepEqual(ranKinds(await runPipeline(config)), ['models']);
+  assert.deepEqual(ranBlocks(await runPipeline(config)), ['model']);
   assert.equal(fs.readFileSync(companion, 'utf8'), original);
 
   const records = path.join(root, '.golem/jobs.json');
   const written = JSON.parse(fs.readFileSync(records, 'utf8')) as { jobs: Record<string, { golemCode: string }> };
-  const modelsId = Object.keys(written.jobs).find((id) => id.startsWith('models:'));
-  assert.ok(modelsId, 'the models job has a record');
+  const modelsId = Object.keys(written.jobs).find((id) => id === 'model');
+  assert.ok(modelsId, 'the model job has a record');
   written.jobs[modelsId].golemCode = 'other-golem-code-digest';
   fs.writeFileSync(records, JSON.stringify(written));
-  assert.deepEqual(ranKinds(await runPipeline(config)), ['models']);
+  assert.deepEqual(ranBlocks(await runPipeline(config)), ['model']);
 
   fs.writeFileSync(config, fs.readFileSync(config, 'utf8').replace('validation: true', 'validation: false'));
-  assert.deepEqual(ranKinds(await runPipeline(config)), ['openapi', 'models']);
-  assert.deepEqual(ranKinds(await runPipeline(config)), []);
+  assert.deepEqual(ranBlocks(await runPipeline(config)), ['openapi-ts', 'model']);
+  assert.deepEqual(ranBlocks(await runPipeline(config)), []);
 });
 
 test('the mode of an openapi job is recorded with the job, and a mode change reruns that job', async (t: TestContext) => {
@@ -357,9 +357,9 @@ test('the mode of an openapi job is recorded with the job, and a mode change rer
   assert.ok(openapiId, 'the openapi job has a record');
   assert.equal((JSON.parse(records.jobs[openapiId].options) as { mode: string }).mode, 'standalone');
 
-  fs.writeFileSync(config, fs.readFileSync(config, 'utf8').replace('    name: Profile', '    name: Profile\n    mode: golem'));
-  assert.deepEqual(ranKinds(await runPipeline(config)), ['openapi', 'models']);
-  assert.deepEqual(ranKinds(await runPipeline(config)), []);
+  fs.writeFileSync(config, fs.readFileSync(config, 'utf8').replace('      name: Profile', '      name: Profile\n      mode: golem'));
+  assert.deepEqual(ranBlocks(await runPipeline(config)), ['openapi-ts', 'model']);
+  assert.deepEqual(ranBlocks(await runPipeline(config)), []);
 });
 
 test('a generated file or the codec key table edited by hand is restored by the next run, because its job is not current', async (t: TestContext) => {
@@ -369,19 +369,39 @@ test('a generated file or the codec key table edited by hand is restored by the 
     const filename = path.join(root, edited);
     const original = fs.readFileSync(filename, 'utf8');
     fs.writeFileSync(filename, `${original}\n// edited by hand\n`);
-    assert.deepEqual(ranKinds(await runPipeline(config)), ['models'], edited);
+    assert.deepEqual(ranBlocks(await runPipeline(config)), ['model'], edited);
     assert.equal(fs.readFileSync(filename, 'utf8'), original, edited);
-    assert.deepEqual(ranKinds(await runPipeline(config)), [], `${edited} is current again`);
+    assert.deepEqual(ranBlocks(await runPipeline(config)), [], `${edited} is current again`);
   }
 });
+
+/** The plan entry of the fixture packages below: the block `{ output }` declares one job `generator:<output>` that writes the folder `output`. */
+const GENERATOR_PLAN = `import path from 'node:path';
+export const plan = {
+  declare({ directory, block }) {
+    const output = path.resolve(directory, block.output);
+    return [{
+      facts: { id: 'generator:' + block.output, outputs: [{ path: output, kind: 'folder' }], ownedRoots: [], inputFiles: [], inputFolders: [], readsProgram: false, provides: [], needs: [], hooks: [], watch: [] },
+      options: { directory, output },
+    }];
+  },
+};
+`;
+
+/** Installs `@fixture/<name>`, which registers the block `<name>`, with the source of its generator, and lists it in the package.json of `root`. */
+function installGenerator(root: string, name: string, generator: string, version = '1.0.0'): void {
+  const provider = path.join(root, 'node_modules/@fixture', name);
+  fs.mkdirSync(provider, { recursive: true });
+  fs.writeFileSync(path.join(provider, 'package.json'), JSON.stringify({ name: `@fixture/${name}`, version, type: 'module', exports: { './plan': './plan.js', './generator': './generator.js' }, golem: { apiVersion: 2, block: name, plan: './plan', generator: './generator' } }));
+  fs.writeFileSync(path.join(provider, 'plan.js'), GENERATOR_PLAN);
+  fs.writeFileSync(path.join(provider, 'generator.js'), generator);
+  listProjectDependencies(root, [`@fixture/${name}`]);
+}
 
 test('a job that edits an input after it read it runs again, because its record holds the digest from the read', async (t: TestContext) => {
   const root = createFixtureProject(t, 'golem-pipeline-read-');
   fs.writeFileSync(path.join(root, 'package.json'), '{"name":"read-fixture","type":"module"}');
-  const provider = path.join(root, 'node_modules/@fixture/rewriter');
-  fs.mkdirSync(provider, { recursive: true });
-  fs.writeFileSync(path.join(provider, 'package.json'), JSON.stringify({ name: '@fixture/rewriter', version: '1.0.0', type: 'module', exports: { './generator': './index.js' } }));
-  fs.writeFileSync(path.join(provider, 'index.js'), `import fs from 'node:fs';
+  installGenerator(root, 'rewriter', `import fs from 'node:fs';
 import path from 'node:path';
 export const apiVersion = 1;
 export function generate(context) {
@@ -393,7 +413,7 @@ export function generate(context) {
 }
 `);
   fs.writeFileSync(path.join(root, 'input.txt'), 'x');
-  fs.writeFileSync(path.join(root, 'golem.yaml'), ['version: 1', 'generators:', "  - package: '@fixture/rewriter'", '    output: out', ''].join('\n'));
+  fs.writeFileSync(path.join(root, 'golem.yaml'), ['version: 1', 'rewriter:', '  output: out', ''].join('\n'));
   const config = path.join(root, 'golem.yaml');
   assert.deepEqual([...(await runPipeline(config)).ran].length, 1);
   assert.deepEqual([...(await runPipeline(config)).ran].length, 1, 'the file changed after the job read it, so the second run is not a cache hit');
@@ -404,12 +424,12 @@ test('a watch run after a cached start reruns the job that reads an output of an
   await runPipeline(config);
   fs.rmSync(path.join(root, 'src/cart.model.generated.ts'));
   const cachedStart = await runPipeline(config);
-  assert.deepEqual(ranKinds(cachedStart), ['models'], 'the OpenAPI job is skipped and has no result');
+  assert.deepEqual(ranBlocks(cachedStart), ['model'], 'the OpenAPI job is skipped and has no result');
   assert.equal(cachedStart.results.size, 1);
   const api = path.join(root, 'api.json');
   fs.writeFileSync(api, JSON.stringify(JSON.parse(fs.readFileSync(api, 'utf8')), null, 4));
   const next = await runPipeline(config, { previous: cachedStart, changedInputs: [api] });
-  assert.deepEqual(ranKinds(next), ['openapi', 'models'], 'the models job reads the manifest of the OpenAPI job');
+  assert.deepEqual(ranBlocks(next), ['openapi-ts', 'model'], 'the models job reads the manifest of the OpenAPI job');
 });
 
 test('check reports an unresolved parse call with its code and writes no file', async (t: TestContext) => {
@@ -426,7 +446,7 @@ test('check reports an unresolved parse call with its code and writes no file', 
 test('removing the OpenAPI job reruns the models job that read its output instead of skipping it', async (t: TestContext) => {
   const { root, config } = fixture(t);
   await runPipeline(config);
-  fs.writeFileSync(config, ['version: 1', 'mobx: false', 'validation: true', 'models:', '  root: .', ''].join('\n'));
+  fs.writeFileSync(config, ['version: 1', 'validation: true', 'model: {}', ''].join('\n'));
   await assert.rejects(runPipeline(config), /Cannot find module|cannot find module|TS2307|sdk[\\/]index/);
   assert.equal(fs.existsSync(path.join(root, 'sdk/index.ts')), false);
 });
@@ -435,11 +455,8 @@ test('removing the OpenAPI job reruns the models job that read its output instea
 function generatorProject(t: TestContext, announce: boolean): { root: string; config: string; install: (version: string) => void } {
   const root = createFixtureProject(t, 'golem-pipeline-generator-');
   fs.writeFileSync(path.join(root, 'package.json'), '{"name":"generator-fixture","type":"module"}');
-  const provider = path.join(root, 'node_modules/@fixture/reader');
   const install = (version: string): void => {
-    fs.mkdirSync(provider, { recursive: true });
-    fs.writeFileSync(path.join(provider, 'package.json'), JSON.stringify({ name: '@fixture/reader', version, type: 'module', exports: { './generator': './index.js' } }));
-    fs.writeFileSync(path.join(provider, 'index.js'), `import fs from 'node:fs';
+    installGenerator(root, 'reader', `import fs from 'node:fs';
 import path from 'node:path';
 export const apiVersion = 1;
 export function generate(context) {
@@ -450,11 +467,11 @@ export function generate(context) {
   if (fs.existsSync(path.join(context.directory, 'touch.flag'))) { const later = new Date(Date.now() + 60000); fs.utimesSync(input, later, later); }
   return { apiVersion: 1, artifacts: [{ path: path.join(context.output, 'out.txt'), content: '# Generated by @fixture/reader. Do not edit.\\n' + text }], manifestPaths: [], watchInputs: fs.existsSync(notes) ? [input, notes] : [input] };
 }
-`);
+`, version);
   };
   install('1.0.0');
   fs.writeFileSync(path.join(root, 'input.txt'), 'x');
-  fs.writeFileSync(path.join(root, 'golem.yaml'), ['version: 1', 'generators:', "  - package: '@fixture/reader'", '    output: out', ''].join('\n'));
+  fs.writeFileSync(path.join(root, 'golem.yaml'), ['version: 1', 'reader:', '  output: out', ''].join('\n'));
   return { root, config: path.join(root, 'golem.yaml'), install };
 }
 
@@ -514,10 +531,7 @@ test('a run that fails after a job wrote new output leaves that job to run again
     ['first', "return { apiVersion: 1, artifacts: [{ path: path.join(context.output, 'out.txt'), content: '# Generated by @fixture/first. Do not edit.\\n' + text }], manifestPaths: [], watchInputs: [input] };"],
     ['second', "if (fs.existsSync(flag)) throw new Error('second job fails'); return { apiVersion: 1, artifacts: [{ path: path.join(context.output, 'out.txt'), content: '# Generated by @fixture/second. Do not edit.\\n' }], manifestPaths: [], watchInputs: [flag] };"],
   ] as const) {
-    const provider = path.join(root, `node_modules/@fixture/${name}`);
-    fs.mkdirSync(provider, { recursive: true });
-    fs.writeFileSync(path.join(provider, 'package.json'), JSON.stringify({ name: `@fixture/${name}`, version: '1.0.0', type: 'module', exports: { './generator': './index.js' } }));
-    fs.writeFileSync(path.join(provider, 'index.js'), `import fs from 'node:fs';
+    installGenerator(root, name, `import fs from 'node:fs';
 import path from 'node:path';
 export const apiVersion = 1;
 export function generate(context) {
@@ -530,7 +544,7 @@ export function generate(context) {
 }
 `);
   }
-  fs.writeFileSync(path.join(root, 'golem.yaml'), ['version: 1', 'generators:', "  - package: '@fixture/first'", '    output: out-first', "  - package: '@fixture/second'", '    output: out-second', ''].join('\n'));
+  fs.writeFileSync(path.join(root, 'golem.yaml'), ['version: 1', 'first:', '  output: out-first', 'second:', '  output: out-second', ''].join('\n'));
   const config = path.join(root, 'golem.yaml');
   const first = path.join(root, 'out-first/out.txt');
   fs.writeFileSync(path.join(root, 'input.txt'), 'A');
@@ -552,14 +566,11 @@ export function generate(context) {
 test('a clean clone runs an OpenAPI job on the document that an earlier generator writes, and still rejects an input nothing produces', async (t: TestContext) => {
   // protects: T-168 a job that reads an earlier job's output builds on a clean clone
   const root = createFixtureProject(t, 'golem-pipeline-produced-input-');
-  linkProjectPackages(root, Object.fromEntries(['golem', 'golem-openapi'].map(name => [`@exprtlabs/${name}`, path.join(workspace, 'packages', name)])));
   fs.writeFileSync(path.join(root, 'package.json'), '{"name":"produced-input-fixture","type":"module"}');
+  linkGolemPackages(root, ['golem', 'golem-openapi']);
   copyFixtureFile(root, 'packed/profile/tsconfig.json', 'tsconfig.json');
   copyFixtureFile(root, 'packed/profile/api.json', 'spec-source.json');
-  const provider = path.join(root, 'node_modules/@fixture/spec');
-  fs.mkdirSync(provider, { recursive: true });
-  fs.writeFileSync(path.join(provider, 'package.json'), JSON.stringify({ name: '@fixture/spec', version: '1.0.0', type: 'module', exports: { './generator': './index.js' } }));
-  fs.writeFileSync(path.join(provider, 'index.js'), `import fs from 'node:fs';
+  installGenerator(root, 'spec', `import fs from 'node:fs';
 import path from 'node:path';
 export const apiVersion = 1;
 export function generate(context) {
@@ -570,26 +581,24 @@ export function generate(context) {
 }
 `);
   const config = path.join(root, 'golem.yaml');
-  const yaml = (input: string): string => ['version: 1', 'generators:', "  - package: '@fixture/spec'", '    output: gen', 'openapi:', `  - input: ${input}`, '    output: sdk', '    name: Profile', ''].join('\n');
+  const yaml = (input: string): string => ['version: 1', 'spec:', '  output: gen', 'openapi-ts:', '  sdks:', `    - input: ${input}`, '      output: sdk', '      name: Profile', ''].join('\n');
   fs.writeFileSync(config, yaml('gen/api.json'));
   assert.equal(fs.existsSync(path.join(root, 'gen/api.json')), false);
   assert.deepEqual([...(await runPipeline(config)).ran], ['generator:gen', 'openapi:sdk']);
   assert.equal(fs.existsSync(path.join(root, 'sdk/index.ts')), true);
 
   fs.writeFileSync(config, yaml('elsewhere/api.json'));
-  await assert.rejects(runPipeline(config), /OpenAPI input does not exist: .*elsewhere[\\/]api\.json/);
+  await assert.rejects(runPipeline(config), /input file does not exist: .*elsewhere[\\/]api\.json/);
 });
 
 /**
- * A project whose models job has its root in `pkg/`, a folder without a tsconfig.json. The tsconfig one folder up holds the
+ * A project whose golem.yaml lies in `pkg/`, a folder without a tsconfig.json. The golem.yaml names the tsconfig one folder up, which holds the
  * options the model source needs: a `paths` alias and bundler module resolution, which allows the extensionless import.
  */
-function parentTsconfigProject(t: TestContext, yamlLines: readonly string[]): { root: string; jobRoot: string } {
+function parentTsconfigProject(t: TestContext): { root: string; jobRoot: string; config: string } {
   const root = createFixtureProject(t, 'golem-parent-tsconfig-');
-  linkProjectPackages(root, Object.fromEntries(
-    ['golem', 'golem-model'].map(name => [`@exprtlabs/${name}`, path.join(workspace, 'packages', name)]),
-  ));
   fs.writeFileSync(path.join(root, 'package.json'), '{"name":"parent-tsconfig-fixture","type":"module"}');
+  linkGolemPackages(root, ['golem', 'golem-model']);
   fs.writeFileSync(path.join(root, 'tsconfig.json'), JSON.stringify({
     compilerOptions: {
       strict: true,
@@ -613,8 +622,9 @@ function parentTsconfigProject(t: TestContext, yamlLines: readonly string[]): { 
     'export type TItem = IModel<{ id: Id; label: Label }>;',
     '',
   ].join('\n'));
-  fs.writeFileSync(path.join(root, 'golem.yaml'), [...yamlLines, ''].join('\n'));
-  return { root, jobRoot: path.join(root, 'pkg') };
+  const config = path.join(root, 'pkg/golem.yaml');
+  fs.writeFileSync(config, 'version: 1\ntsconfig: ../tsconfig.json\nmodel: {}\n');
+  return { root, jobRoot: path.join(root, 'pkg'), config };
 }
 
 /** Type-checks a file that assigns values to the generated `TItemFields`: the alias and the extensionless import resolve under the parent options, or both fields are `unknown` and the bad assignment compiles. */
@@ -629,23 +639,23 @@ async function assertItemFieldsTyped(jobRoot: string, root: string): Promise<voi
   await command(root, process.execPath, [TSC, '-p', 'tsconfig.json', '--noEmit']);
 }
 
-test('a models job whose root has no tsconfig.json analyses with the tsconfig beside golem.yaml and warns of nothing', async (t: TestContext) => {
-  const { root, jobRoot } = parentTsconfigProject(t, ['version: 1', 'models:', '  root: pkg']);
+test('a models job analyses with the tsconfig that golem.yaml names and warns of nothing', async (t: TestContext) => {
+  const { root, jobRoot, config } = parentTsconfigProject(t);
   const binary = path.join(workspace, 'packages/golem/dist/bin/golem.js');
-  const result = await command(root, process.execPath, [binary, 'generate']);
+  const result = await command(root, process.execPath, [binary, 'generate', '--config', config]);
   // The alias and the extensionless import resolve only under the parent's options; without them both fields are `unknown`.
   await assertItemFieldsTyped(jobRoot, root);
   assert.equal(result.stderr, '');
 });
 
 /** The models job of the fixture, the config it came from, and a folder beside the project that the job does not own. */
-function modelsJobWithSiblingFolder(t: TestContext): { config: ReturnType<typeof loadConfig>; job: ReturnType<typeof loadConfig>['jobs'][number]; shared: string } {
+async function modelsJobWithSiblingFolder(t: TestContext): Promise<{ config: Awaited<ReturnType<typeof loadConfig>>; job: Awaited<ReturnType<typeof loadConfig>>['jobs'][number]; shared: string }> {
   const { root, config: file } = fixture(t);
   const shared = path.join(root, '..', `${path.basename(root)}-shared`);
   fs.mkdirSync(shared, { recursive: true });
   t.after(() => fs.rmSync(shared, { recursive: true, force: true }));
-  const config = loadConfig(file);
-  const job = config.jobs.find(candidate => candidate.kind === 'models');
+  const config = await loadConfig(file);
+  const job = config.jobs.find(candidate => candidate.id === 'model');
   assert.ok(job, 'the fixture has a models job');
   return { config, job, shared };
 }
@@ -653,7 +663,7 @@ function modelsJobWithSiblingFolder(t: TestContext): { config: ReturnType<typeof
 const COMPANION_TEXT = '// Generated by @exprtlabs/golem-model. Do not edit.\nexport {};\n';
 
 test('a models job writes no file for a model source outside its root that its tsconfig includes', async (t: TestContext) => {
-  const { config: loaded, shared } = modelsJobWithSiblingFolder(t);
+  const { config: loaded, shared } = await modelsJobWithSiblingFolder(t);
   const root = loaded.directory;
   const config = loaded.configFile;
   linkProjectPackages(shared, { '@exprtlabs/golem': path.join(workspace, 'packages/golem') });
@@ -669,8 +679,8 @@ test('a models job writes no file for a model source outside its root that its t
   assert.deepEqual(fs.readdirSync(shared).sort(), ['node_modules', 'other.model.ts']);
 });
 
-test('a models job does not write a generated file outside its root, even beside a model source', (t: TestContext) => {
-  const { config, job, shared } = modelsJobWithSiblingFolder(t);
+test('a models job does not write a generated file outside its root, even beside a model source', async (t: TestContext) => {
+  const { config, job, shared } = await modelsJobWithSiblingFolder(t);
   fs.writeFileSync(path.join(shared, 'other.model.ts'), 'export type TOther = unknown;\n');
   const stray = path.join(shared, 'other.model.generated.ts');
 

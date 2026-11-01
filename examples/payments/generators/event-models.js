@@ -8,7 +8,7 @@ export const apiVersion = 1;
 
 /**
  * Writes one `IModel` declaration per entry of `options.events`.
- * @param {import('@exprtlabs/golem/generator-api').GeneratorJobContext} context
+ * @param {import('@exprtlabs/golem/generator-api').GeneratorHostContext & { output: string, options?: { events?: Record<string, Record<string, string>> } }} context
  */
 export function generate(context) {
   const events = context.options?.events;
@@ -39,3 +39,21 @@ export function generate(context) {
   };
 }
 // #endregion event-generator
+
+// #region event-plan
+/**
+ * The plan entry of the `payment-events` block of golem.yaml (`golem.plan` in package.json): it declares the one job that owns the `output` folder.
+ * @type {import('@exprtlabs/golem/generator-api').GolemPlanEntry}
+ */
+export const plan = {
+  declare({ directory, block, profile }) {
+    const { output, events } = block ?? {};
+    if (typeof output !== 'string') throw new TypeError('payment-events.output must be a string.');
+    const folder = path.resolve(directory, output);
+    return [{
+      facts: { id: 'payment-events', outputs: [{ path: folder, kind: 'folder' }], ownedRoots: [], inputFiles: [], inputFolders: [], readsProgram: false, provides: [], needs: [], hooks: [], watch: [] },
+      options: { directory, output: folder, options: { events }, profile },
+    }];
+  },
+};
+// #endregion event-plan

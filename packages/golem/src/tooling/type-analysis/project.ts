@@ -4,8 +4,9 @@ import { basename, dirname, isAbsolute, join, parse, relative, resolve, sep } fr
 import * as ts from '../typescript-ns.js';
 import { assertNotSolutionTsconfig } from '../typescript-config.js';
 import { readManifest } from './package-specifier.js';
-import { DEFAULT_MODEL_SUFFIXES, displayPath, GolemDiagnosticSeverity, canonicalPath, compareText, discoverSources, hasErrorCode, isInsideDirectory, parseYamlFile, suffixPattern, YamlFileError, type GeneratorSession, type GolemDiagnostic, type InputObserver } from '../generator-core.js';
+import { displayPath, GolemDiagnosticSeverity, canonicalPath, compareText, discoverSources, hasErrorCode, isInsideDirectory, parseYamlFile, suffixPattern, YamlFileError, type GeneratorSession, type GolemDiagnostic, type InputObserver } from '../generator-core.js';
 import { canonicalFilename, inNodeModules, portableRelativeFilename } from './path-identity.js';
+import { ROOT_KEYS } from '../editor-schema.js';
 
 export { canonicalFilename, portableRelativeFilename };
 
@@ -64,9 +65,9 @@ export function isModelSource(filename: string): boolean {
 }
 
 export function discoverModelSources(
-  root = process.cwd(),
-  onInput?: InputObserver,
-  suffixes: readonly string[] = DEFAULT_MODEL_SUFFIXES,
+  root: string,
+  onInput: InputObserver | undefined,
+  suffixes: readonly string[],
 ): string[] {
   return discoverSources(join(root, 'src'), { source: suffixPattern(suffixes), normalize: canonicalFilename, onInput });
 }
@@ -98,7 +99,7 @@ export function byRealPath(files: readonly string[]): string[] {
   return [...byReal.values()];
 }
 
-/** What decides which files are the own model sources of one models job. */
+/** What decides which files are the own model sources of one model job. */
 export interface ModelBoundary {
   /** The real path of `models.root`. */
   readonly root: string;
@@ -108,12 +109,12 @@ export interface ModelBoundary {
   readonly companions?: {
     /** The real path of the directory of the golem.yaml: the search for a shared file's package folder stops there. */
     readonly directory: string;
-    /** `models.output`. */
+    /** `model.output`. */
     readonly output: string;
   };
 }
 
-export function modelBoundary(modelsRoot: string, suffixes: readonly string[] = DEFAULT_MODEL_SUFFIXES, companions?: { readonly directory: string; readonly output: string }): ModelBoundary {
+export function modelBoundary(modelsRoot: string, suffixes: readonly string[], companions?: { readonly directory: string; readonly output: string }): ModelBoundary {
   return { root: canonicalPath(modelsRoot), suffixes, ...(companions ? { companions: { directory: canonicalPath(companions.directory), output: canonicalFilename(companions.output) } } : {}) };
 }
 
@@ -123,7 +124,7 @@ export function isModelFileName(boundary: Pick<ModelBoundary, 'suffixes'>, filen
 }
 
 /**
- * Whether the models job of `boundary` owns `filename` as a model source: its real path is inside the models root, no folder
+ * Whether the model job of `boundary` owns `filename` as a model source: its real path is inside its root (the golem.yaml folder), no folder
  * between the root and the file is `node_modules`, and it is not a declaration file. The job writes the file's generated
  * companion beside it. Any other model file is a shared file: it is the type definition of a shared folder or package.
  */
@@ -135,32 +136,30 @@ export function isOwnModelFile(boundary: ModelBoundary, filename: string): boole
 }
 
 /**
- * The golem.yaml files of other models jobs below the root that cover one of `files`, sorted. A file is covered when such a
- * yaml lies in the file's directory or in a directory above it, up to the root. The walk stops at the directory of this
- * job's own golem.yaml: that one and every one above it is never another job. The answer for a directory is read once.
+ * The golem.yaml files below the root that declare the block `block` and cover one of `files`, sorted: another job of the caller's
+ * block would write the same files. A file is covered when such a yaml lies in the file's directory or in a directory above it,
+ * up to the root. The walk stops at the directory of this job's own golem.yaml: that one and every one above it is never another
+ * job. The answer for a directory is read once.
  */
-export function nestedModelsJobs(root: string, own: string, files: readonly string[], onInput?: InputObserver): string[] {
-  const hasModelsJob = new Map<string, boolean>();
-  const directoryHasModelsJob = (directory: string): boolean => {
-    const known = hasModelsJob.get(directory);
+export function nestedJobsOfBlock(block: string, root: string, own: string, files: readonly string[], onInput?: InputObserver): string[] {
+  const hasBlock = new Map<string, boolean>();
+  const directoryHasBlock = (directory: string): boolean => {
+    const known = hasBlock.get(directory);
     if (known !== undefined) return known;
-    const found = declaresModelsJob(join(directory, 'golem.yaml'), onInput);
-    hasModelsJob.set(directory, found);
+    const found = declaresBlock(join(directory, 'golem.yaml'), block, onInput);
+    hasBlock.set(directory, found);
     return found;
   };
   const found = new Set<string>();
   for (const file of files) {
     for (let directory = dirname(canonicalPath(file)); isInsideDirectory(root, directory); directory = dirname(directory)) {
       if (directory === own || own.startsWith(`${directory}${sep}`)) break;
-      if (directoryHasModelsJob(directory)) found.add(join(directory, 'golem.yaml'));
+      if (directoryHasBlock(directory)) found.add(join(directory, 'golem.yaml'));
       if (directory === root || dirname(directory) === directory) break;
     }
   }
   return [...found].sort();
 }
-
-/** The job keys of a golem.yaml: a file with one of them configures an app. */
-const JOB_KEYS = ['generators', 'controllers', 'openapi', 'models'] as const;
 
 /** The parsed `golemYaml`, or undefined when it does not exist. Throws the parse error or the file-read error. */
 function readGolemYaml(golemYaml: string, onInput?: InputObserver): unknown {
@@ -175,9 +174,15 @@ function declaresAny(configuration: unknown, keys: readonly string[]): boolean {
     && keys.some((key) => Reflect.get(configuration, key) !== null && Reflect.get(configuration, key) !== undefined);
 }
 
-/** Whether `golemYaml` exists and has a `models` job. A file that is not YAML is the project's to fix: its parse error stops the run. */
-function declaresModelsJob(golemYaml: string, onInput?: InputObserver): boolean {
-  return declaresAny(readGolemYaml(golemYaml, onInput), ['models']);
+/** Whether `configuration` has a value under a key that is no root key of core: any such key is the block of a package, so the file configures an app. */
+function declaresAnyBlock(configuration: unknown): boolean {
+  return typeof configuration === 'object' && configuration !== null
+    && declaresAny(configuration, Object.keys(configuration).filter((key) => !ROOT_KEYS.includes(key)));
+}
+
+/** Whether `golemYaml` exists and has the block `block`. A file that is not YAML is the project's to fix: its parse error stops the run. */
+function declaresBlock(golemYaml: string, block: string, onInput?: InputObserver): boolean {
+  return declaresAny(readGolemYaml(golemYaml, onInput), [block]);
 }
 
 /**
@@ -198,21 +203,21 @@ function packageFolderOf(filename: string, appDirectory: string): string | undef
 
 /**
  * The name of the package that holds a shared model file: the `name` of the package folder's package.json, else the folder's name.
- * The name becomes a folder in `models.output`, so one that leaves it (an absolute name, or one with a `..` segment) is an error.
+ * The name becomes a folder in `model.output`, so one that leaves it (an absolute name, or one with a `..` segment) is an error.
  */
 function packageNameOf(packageFolder: string): string {
   const manifestFile = join(packageFolder, 'package.json');
   const name = readManifest(manifestFile)?.name;
   if (typeof name !== 'string' || name === '') return basename(packageFolder);
   if (isAbsolute(name) || /^[a-zA-Z]:/.test(name) || name.split(/[\\/]/).includes('..')) {
-    throw new Error(`${displayPath(manifestFile)} names the package "${name}". The generated files of the package go in a folder of that name in models.output, so the name cannot be absolute or have a ".." segment. Rename the package.`);
+    throw new Error(`${displayPath(manifestFile)} names the package "${name}". The generated files of the package go in a folder of that name in model.output, so the name cannot be absolute or have a ".." segment. Rename the package.`);
   }
   return name;
 }
 
 /**
  * The generated companion of a model file. An own file's is beside it: `.generated` before its final extension. A shared file's
- * is in `models.output`: `<package name>/<path of the file in its package folder>`, a declaration file's `.d.ts`, `.d.cts` or `.d.mts` becomes `.ts`.
+ * is in `model.output`: `<package name>/<path of the file in its package folder>`, a declaration file's `.d.ts`, `.d.cts` or `.d.mts` becomes `.ts`.
  * Two shared files can give one path: `assertDistinctCompanions` stops the job.
  */
 export function companionFilename(boundary: ModelBoundary | undefined, modelFile: string): string {
@@ -270,7 +275,7 @@ export function ignoredSharedFileWarnings(sharedFiles: readonly string[], appDir
     for (const companion of companionsBeside(modelFile)) {
       onInput?.(companion);
       if (existsSync(companion) && !warnings.has(companion)) {
-        warn(companion, `${displayPath(companion)} is a generated file beside the shared model file ${displayPath(modelFile)}. Golem does not use it: this app uses its own generated file in models.output. Delete it.`);
+        warn(companion, `${displayPath(companion)} is a generated file beside the shared model file ${displayPath(modelFile)}. Golem does not use it: this app uses its own generated file in model.output. Delete it.`);
       }
     }
   }
@@ -281,7 +286,7 @@ function ignoredGolemYamlMessage(golemYaml: string, modelFile: string): string {
   const ignored = `${displayPath(golemYaml)} is a golem.yaml in the shared folder of the model file ${displayPath(modelFile)}. Golem does not read it.`;
   let belongsToAnApp = false;
   try {
-    belongsToAnApp = declaresAny(readGolemYaml(golemYaml), JOB_KEYS);
+    belongsToAnApp = declaresAnyBlock(readGolemYaml(golemYaml));
   } catch (error) {
     // Golem ignores this file, so a file that is not YAML or that it cannot read is ignored like any other.
     if (!(error instanceof YamlFileError || ['EACCES', 'EPERM', 'EISDIR', 'ENOENT'].some((code) => hasErrorCode(error, code)))) throw error;
@@ -295,7 +300,7 @@ function ignoredGolemYamlMessage(golemYaml: string, modelFile: string): string {
  * The project files that `file` imports or re-exports, by canonical filename. A declaration file and a file in `node_modules`
  * are left out, unless it is a model file: a shared model can be declared there.
  */
-export function projectFilesImportedBy(file: ts.SourceFile, checker: ts.TypeChecker, suffixes: readonly string[] = DEFAULT_MODEL_SUFFIXES): string[] {
+export function projectFilesImportedBy(file: ts.SourceFile, checker: ts.TypeChecker, suffixes: readonly string[]): string[] {
   const isModelFile = modelFilePattern(suffixes);
   const found = new Set<string>();
   for (const statement of file.statements) {
@@ -441,15 +446,13 @@ function openProject(
 }
 
 /**
- * The compiler session a provider keeps for one project root across the
- * generation runs of a CLI pipeline or watch session.
+ * The program session of the run: core owns one, and every job and the rewrite request the same one, so a program opened after
+ * a job wrote its files holds them. The session works from the folder of the project it is first requested for.
  */
-export function retainedProgramSession(
-  session: GeneratorSession | undefined,
-  owner: string,
-  root: string,
-): ts.ProgramSession | undefined {
-  return session?.retain(`${owner}:${canonicalFilename(root)}`, () => new ts.ProgramSession({ cwd: root }));
+export function retainedProgramSession(session: Pick<GeneratorSession, 'share'>, root: string): ts.ProgramSession;
+export function retainedProgramSession(session: Pick<GeneratorSession, 'share'> | undefined, root: string): ts.ProgramSession | undefined;
+export function retainedProgramSession(session: Pick<GeneratorSession, 'share'> | undefined, root: string): ts.ProgramSession | undefined {
+  return session?.share('program', () => new ts.ProgramSession({ cwd: root }));
 }
 
 /** The tsconfig a job's programs open with: the referenced project that holds the sources of a solution tsconfig, else the tsconfig itself. */
@@ -519,7 +522,7 @@ export function isOrphanCompanion(companion: string, suffixes: readonly string[]
  * The names of the class models a model file declares: the exported aliases `type Name = IModel<...>`, where `IModel` is
  * the name the file imports it by (`import { IModel as Model }` too) or a member of a namespace import. The names come
  * from the top-level statements of the parsed file, so a declaration in a comment or a string gives none. A file where it
- * finds no name gets no stub: its own companion stays as it is on disk, and a companion in `models.output`, which golem
+ * finds no name gets no stub: its own companion stays as it is on disk, and a companion in `model.output`, which golem
  * owns, reads as `export {}`.
  */
 export function classModelNames(file: ts.SourceFile): string[] {
@@ -651,9 +654,14 @@ export function programFilenames(program: ts.Program): string[] {
     .map((sourceFile) => sourceFile.fileName);
 }
 
+/** The files of the project in `program`: every file but the TypeScript libraries and the files of installed packages. */
+export function projectFilenames(program: ts.Program): string[] {
+  return programFilenames(program).filter((filename) => !inNodeModules(filename));
+}
+
 /**
  * Stops with the compiler's own message when one of `files` has a syntax error. The analysis reads a broken type as any and would
- * report RUNM1011 for it instead. `files` are the sources of one job, not every file of the program: a type error in any other file does not stop generation.
+ * report RUNM1011 for it instead. `files` are the files a job analyses, not every file of the program: a type error in any other file does not stop generation.
  */
 export function assertNoSyntaxErrors(program: ts.Program, files: readonly string[]): void {
   const errors = files.flatMap((file) => program.getSyntacticDiagnostics(file));

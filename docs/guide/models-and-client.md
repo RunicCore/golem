@@ -16,9 +16,9 @@ Use an SDK type such as `TMoney` as a field of your own model, add your methods 
 | | Golem mode | Standalone mode |
 | --- | --- | --- |
 | Your model reads | The schema graph of the SDK, as data | The TypeScript fields of the SDK type |
-| Checks and conversions | One set for the SDK and your models, written by the `models` job | The SDK keeps its own. Your model gets its own |
+| Checks and conversions | One set for the SDK and your models, written by the models job | The SDK keeps its own. Your model gets its own |
 | Limits of the schema | Kept in your model, such as `maxLength` | Only what the TypeScript type states |
-| Needs | `mode: golem` and a `models` section | A TypeScript type that golem can derive |
+| Needs | `mode: golem` and a `model` block | A TypeScript type that golem can derive |
 
 ## Install
 
@@ -31,21 +31,21 @@ Choose how to build in [Build tools](/guide/build). Include both `src/**/*.ts` a
 
 ## Configure both generators
 
-One configuration runs the OpenAPI job first. The model job then resolves SDK types such as `TMoney`. This example uses golem mode, so the `models` job writes the checks and conversions of the SDK together with your model.
+One configuration runs the SDK job first. The model job then resolves SDK types such as `TMoney`. This example uses golem mode, so the models job writes the checks and conversions of the SDK together with your model.
 
 <<< ../../examples/payments/web/golem.yaml
 
-The `createPayment` operation of the Payments API takes `money` as a `TMoney`, not the whole editor. The OpenAPI `input` is the document that the server's `controllers` job writes. Run `golem generate` in `server/` before you generate the web project. The controller that produces this operation is:
+The `createPayment` operation of the Payments API takes `money` as a `TMoney`, not the whole editor. The OpenAPI `input` is the document that the server's docs job writes. Run `golem generate` in `server/` before you generate the web project. The controller that produces this operation is:
 
 <<< ../../examples/payments/server/src/payments.controller.ts#create-payment
 
-- `mode: golem` needs a `models` section in the same file.
+- `mode: golem` needs a `model` block in the same file.
 - Leave `mode` out for a standalone SDK. The model job then derives your model from the TypeScript fields of the SDK type.
 - With `dates: temporal`, the SDK types name the global `Temporal`. Add `"esnext.temporal"` to `compilerOptions.lib`, or set `skipLibCheck: true`, and load a `Temporal` at run time ([Dates and times](/guide/field-types#dates-and-times)).
 
 ## Declare the model
 
-Write the declaration at the top of this page before the first generation. The SDK import is type-only, so it can point at the `sdk/` directory that the OpenAPI job is about to create.
+Write the declaration at the top of this page before the first generation. The SDK import is type-only, so it can point at the `sdk/` directory that the SDK job is about to create.
 
 Run `npx golem generate`. It writes `sdk/` and `src/payment-editor.model.generated.ts`. Then add your `PaymentEditor` class, as at the top of this page. Regeneration leaves it alone.
 

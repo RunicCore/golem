@@ -40,10 +40,10 @@ npm install --save-dev @exprtlabs/golem-openapi @exprtlabs/golem-model typescrip
 | `input` | The partner's document |
 | `output` | The directory that golem fills with the client |
 | `name` | The prefix of the client, so `Provider` gives `ProviderClient` |
-| `dates: temporal` | Temporal values for dates and times in place of `Date` ([OpenAPI jobs](/reference/config#openapi-jobs)) |
-| `mode` | Leave it out for a standalone SDK, which runs alone. `golem` leaves checks and conversions to the `models` job ([SDK modes](/reference/config#sdk-modes)) |
+| `dates: temporal` | Temporal values for dates and times in place of `Date` ([the `openapi-ts` block](/reference/config#openapi-ts-block)) |
+| `mode` | Leave it out for a standalone SDK, which runs alone. `golem` leaves checks and conversions to the models job ([SDK modes](/reference/config#sdk-modes)) |
 
-The `models` job lets your own model class use the SDK types (Step 8):
+The models job lets your own model class use the SDK types (Step 8):
 
 <<< ../../examples/payments/server/golem.yaml#models-job
 
@@ -154,7 +154,7 @@ Build the model from the body of a response with the constructor. The client has
 
 ## Reference
 
-- [OpenAPI jobs](/reference/config#openapi-jobs): every key of the `openapi` job.
+- [the `openapi-ts` block](/reference/config#openapi-ts-block): every key of the SDK job.
 - [Generated client](/reference/runtime-api#generated-client): options, results and failures of the client.
 - [Client authentication](/reference/runtime-api#client-authentication): the schemes and what the client sends.
 - [Generated SDK names](/reference/generated-files#generated-sdk-names): the names for each schema.

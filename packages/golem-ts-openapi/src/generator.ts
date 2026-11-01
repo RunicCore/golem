@@ -10,10 +10,10 @@ import {
   createModelStubProgram,
   createProgram,
   discoverModelSources,
-  includedModelSources,
+  isUnderOutputs,
   loadModelManifests,
   modelBoundary,
-  programFilenames,
+  projectFilenames,
   retainedProgramSession,
   projectWatchInputs,
   type ContractAnalysis,
@@ -30,7 +30,7 @@ import type {
   ResolvedGolemProfile,
 } from '@exprtlabs/golem/generator-api';
 import { resolveProfile } from '@exprtlabs/golem/generator-api';
-import { DEFAULT_CONTROLLER_SUFFIXES, DEFAULT_MODEL_SUFFIXES, displayPath } from '@exprtlabs/golem/internal/generator-support';
+import { canonicalPath, displayPath } from '@exprtlabs/golem/internal/generator-support';
 import {
   GolemDiagnosticSeverity,
   diagnostic,
@@ -39,6 +39,7 @@ import {
   type TsToOpenApiDiagnostic,
 } from './diagnostics.js';
 import { buildDocument, serializeForOutput } from './document.js';
+import { DEFAULT_CONTROLLER_SUFFIXES } from './plan.js';
 import { validateRouteEvaluationOptions } from './evaluation/dependencies.js';
 import { apiSchemaName } from './nest/metadata.js';
 import { analyzeControllers, discoverControllerSources } from './nest/routes.js';
@@ -99,7 +100,7 @@ function validateContext(context: TsToOpenApiContext): {
     models.suffixes,
     { directory: assertAbsolute(models.directory, 'context.models.directory'), output: assertAbsolute(models.output, 'context.models.output') },
   );
-  const laterOutputs = (context.laterOutputs ?? []).map((later) => assertAbsolute(later, 'context.laterOutputs entry'));
+  const laterOutputs = (context.programView?.laterOutputs ?? []).map((later) => assertAbsolute(later, 'context.programView.laterOutputs entry'));
   return { root, output, ...(sources ? { sources } : {}), suffixes: context.suffixes ?? DEFAULT_CONTROLLER_SUFFIXES, ...(context.tsconfig === undefined ? {} : { tsconfig: assertAbsolute(context.tsconfig, 'context.tsconfig') }), openapiVersion, maxResultBytes, profile, exact: context.exact, ...(boundary ? { boundary } : {}), laterOutputs, onInput: context.onInput };
 }
 
@@ -469,8 +470,9 @@ function analyzeContracts(
   normalized: NormalizedContext,
   observe: InputObserver,
 ): ContractAnalysis {
-  // The controllers job analyses the models its controllers use, so a syntax error in a model file stops here too.
-  assertNoSyntaxErrors(programInfo.program, [...sources, ...includedModelSources(programFilenames(programInfo.program), normalized.boundary?.suffixes ?? DEFAULT_MODEL_SUFFIXES)]);
+  // The controllers job analyses the models its controllers use, with a models job or without one, so a syntax error in any file of the project stops here. A later job's output is left out: that job writes it again.
+  const laterOutputs = normalized.laterOutputs.map(canonicalPath);
+  assertNoSyntaxErrors(programInfo.program, [...new Set([...sources, ...projectFilenames(programInfo.program).filter(file => !isUnderOutputs(laterOutputs, file))])]);
   return createContractAnalysis(programInfo.program, {
     root: normalized.root,
     allowAny: normalized.profile.allowAny,
@@ -492,7 +494,7 @@ export async function generate(context: TsToOpenApiContext): Promise<TsToOpenApi
   const normalized = validateContext(context);
   const { observed, observe } = inputObserver(normalized.onInput);
   const sources = controllerSources(normalized, observe);
-  const session = retainedProgramSession(context.session, '@exprtlabs/golem-ts-openapi', normalized.root);
+  const session = retainedProgramSession(context.session, normalized.tsconfig === undefined ? normalized.root : path.dirname(normalized.tsconfig));
   const programInfo = openProgram(sources, normalized, observe, session);
   using program = programInfo.program;
   const checker = program.getTypeChecker();

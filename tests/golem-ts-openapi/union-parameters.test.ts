@@ -34,7 +34,7 @@ export class ShapesController {
 }
 `;
 
-const yaml = (openapiVersion: string) => `version: 1\nmobx: false\nvalidation: true\ncontrollers:\n  - root: .\n    sources:\n      - src/shapes.controller.ts\n    output: generated/api.json\n    openapiVersion: "${openapiVersion}"\n    info: { title: T, version: "1" }\nmodels:\n  root: .\n`;
+const yaml = (openapiVersion: string) => `version: 1\nvalidation: true\nts-openapi:\n  docs:\n    - sources:\n        - src/shapes.controller.ts\n      output: generated/api.json\n      openapiVersion: "${openapiVersion}"\n      info: { title: T, version: "1" }\nmodel: {}\n`;
 
 function project(t: Parameters<typeof createControllerFixture>[0], openapiVersion = '3.2.0') {
   return createControllerFixture(t, {

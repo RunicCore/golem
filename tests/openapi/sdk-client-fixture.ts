@@ -3,8 +3,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { runPipeline } from '#golem/cli';
-import { createFixtureProject, linkProjectPackages, type FixtureScope } from '../fixture-project.js';
-import { command, workspace } from '../support/process.js';
+import { createFixtureProject, linkGolemPackages, type FixtureScope } from '../fixture-project.js';
+import { command } from '../support/process.js';
 import { TSC } from '../support/build-project.js';
 import { compileGeneratedSdk, generateMaterializedSdk, importGeneratedModule, isGeneratedClientClass } from './helpers.js';
 
@@ -62,8 +62,8 @@ export interface GolemModeProject {
 
 export function writeGolemModeProject(scope: FixtureScope, prefix: string, sdks: readonly GolemModeSdkSetup[], validation: boolean | 'sanity'): { readonly root: string; readonly config: string } {
   const root = createFixtureProject(scope, prefix);
-  linkProjectPackages(root, Object.fromEntries(['golem', 'golem-model', 'golem-openapi'].map(name => [`@exprtlabs/${name}`, path.join(workspace, 'packages', name)])));
   fs.writeFileSync(path.join(root, 'package.json'), '{"name":"golem-mode-project","type":"module"}');
+  linkGolemPackages(root, ['golem', 'golem-model', 'golem-openapi']);
   fs.mkdirSync(path.join(root, 'src'));
   fs.writeFileSync(path.join(root, 'tsconfig.json'), JSON.stringify({
     compilerOptions: { target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', strict: true, skipLibCheck: true, rootDir: '.', outDir: 'build', lib: ['ES2023', 'DOM', 'DOM.Iterable', 'esnext.temporal'] },
@@ -71,10 +71,10 @@ export function writeGolemModeProject(scope: FixtureScope, prefix: string, sdks:
   }));
   const jobs = sdks.map((sdk, index) => {
     fs.writeFileSync(path.join(root, `api${index}.json`), JSON.stringify(sdk.document));
-    return [`  - input: api${index}.json`, `    output: ${sdk.folder}`, `    name: ${sdk.name}`, '    mode: golem', ...(sdk.dates ? [`    dates: ${sdk.dates}`] : [])];
+    return [`    - input: api${index}.json`, `      output: ${sdk.folder}`, `      name: ${sdk.name}`, '      mode: golem', ...(sdk.dates ? [`      dates: ${sdk.dates}`] : [])];
   });
   const config = path.join(root, 'golem.yaml');
-  fs.writeFileSync(config, ['version: 1', 'mobx: false', `validation: ${validation}`, 'openapi:', ...jobs.flat(), 'models:', '  root: .', ''].join('\n'));
+  fs.writeFileSync(config, ['version: 1', 'mobx: false', `validation: ${validation}`, 'openapi-ts:', '  sdks:', ...jobs.flat(), 'model: {}', ''].join('\n'));
   return { root, config };
 }
 

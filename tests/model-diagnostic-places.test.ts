@@ -32,14 +32,14 @@ for (const [name, variants, place] of [
   });
 }
 
-/** A project with a controllers job and a model `tags: strin[]` that names a type that does not exist. */
+/** A project with a docs job and a model `tags: strin[]` that names a type that does not exist. */
 function brokenModelProject(t: TestContext): string {
   return createControllerFixture(t, {
     prefix: 'golem-unresolved-contract-',
     packageName: 'unresolved-contract',
     links: 'workspace',
     files: {
-      'golem.yaml': 'version: 1\ncontrollers:\n  - framework: nestjs\n    root: .\n    output: ./generated/openapi.json\n    info:\n      title: Catalog API\n      version: "1"\nmodels:\n  root: .\n',
+      'golem.yaml': 'version: 1\nts-openapi:\n  docs:\n    - output: ./generated/openapi.json\n      info:\n        title: Catalog API\n        version: "1"\nmodel: {}\n',
       'src/catalog.controller.ts': readFixture('controllers/watch/project/controller.ts').replace("import { routeFor } from './route-helper.js';\n", '').replace("routeFor('list')", "'list'"),
       'src/item.model.ts': [
         "import type { IModel } from '@exprtlabs/golem/model';",

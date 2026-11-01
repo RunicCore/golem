@@ -31,10 +31,23 @@
   },
   "files": [
     "dist",
+    "golem-schema.json",
     "README.md",
     "LICENSE"
   ],
+  "golem": {
+    "apiVersion": 2,
+    "block": "ts-openapi",
+    "plan": "./plan",
+    "generator": "./generator",
+    "schema": "./golem-schema.json"
+  },
   "exports": {
+    "./plan": {
+      "types": "./dist/plan.d.ts",
+      "import": "./dist/plan.js",
+      "default": "./dist/plan.js"
+    },
     "./generator": {
       "types": "./dist/generator.d.ts",
       "import": "./dist/generator.js",
@@ -42,11 +55,16 @@
     }
   },
   "dependencies": {
-    "@exprtlabs/golem": "1.1.0-rc.0",
     "yaml": "^2.9.0"
   },
   "peerDependencies": {
+    "@exprtlabs/golem": "1.1.0-rc.0",
     "typescript": ">=6.0.0 <7 || >=7.1.0-0 <8"
+  },
+  "peerDependenciesMeta": {
+    "typescript": {
+      "optional": true
+    }
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",

@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { after } from 'node:test';
+import { workspace } from './support/process.js';
 
 const fixtures = path.resolve(fileURLToPath(new URL('../../tests/fixtures/', import.meta.url)));
 
@@ -67,6 +68,26 @@ export function linkProjectPackages(root: string, packages: Readonly<Record<stri
     fs.mkdirSync(path.dirname(destination), { recursive: true });
     if (!fs.existsSync(destination)) fs.symlinkSync(source, destination, 'dir');
   }
+}
+
+const DEPENDENCY_FIELDS = ['dependencies', 'devDependencies', 'optionalDependencies'] as const;
+
+/** Lists `names` as dependencies in the package.json of `root`, which must exist: golem finds the packages that register a golem.yaml block there. A name that a dependency field already lists keeps its range. */
+export function listProjectDependencies(root: string, names: readonly string[]): void {
+  const filename = path.join(root, 'package.json');
+  const manifest = JSON.parse(fs.readFileSync(filename, 'utf8')) as Record<string, Record<string, string> | undefined>;
+  const dependencies = { ...manifest.dependencies };
+  for (const name of names) {
+    if (!DEPENDENCY_FIELDS.some((field) => manifest[field]?.[name] !== undefined)) dependencies[name] = '*';
+  }
+  fs.writeFileSync(filename, JSON.stringify({ ...manifest, dependencies }));
+}
+
+/** Links the workspace packages `names` (`golem-model` for `@exprtlabs/golem-model`) into the node_modules of `root` and lists them as dependencies in its package.json, which must exist. */
+export function linkGolemPackages(root: string, names: readonly string[]): void {
+  const packages = names.map((name) => `@exprtlabs/${name}`);
+  linkProjectPackages(root, Object.fromEntries(packages.map((name) => [name, path.join(workspace, 'packages', name.slice('@exprtlabs/'.length))])));
+  listProjectDependencies(root, packages);
 }
 
 export function writeGeneratedArtifacts(artifacts: readonly { readonly path: string; readonly content: string }[]): void {

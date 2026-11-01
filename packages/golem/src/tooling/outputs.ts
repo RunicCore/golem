@@ -4,7 +4,8 @@ import crypto from 'node:crypto';
 
 import { canonicalPath, compareText, displayPath, errorMessage, hasErrorCode, isInsideDirectory, isRecord } from './generator-core.js';
 import type { GolemArtifact } from './generator-core.js';
-import { codecKeysPath, defaultModelOutput } from './generated-paths.js';
+import { codecKeysPath } from './generated-paths.js';
+import { MODEL_BOUNDARY } from './job-facts.js';
 import type { GolemConfig, GolemJob } from './config.js';
 
 export interface InventoryEntry {
@@ -13,17 +14,13 @@ export interface InventoryEntry {
   digest: string;
   /** Destination relative to the configuration directory. */
   destination: string;
-  /** A controllers job owns exact files; other jobs own directories. */
+  /** A job's `file` output is one exact file; its `folder` outputs and owned roots are directories. */
   destinationKind: 'file' | 'directory';
 }
 export interface Inventory { version: 1; files: Record<string, InventoryEntry> }
-interface ExpectedArtifact { filename: string; content: string; destination: string }
-const BUILT_IN_OWNERS = new Set(['@exprtlabs/golem-model', '@exprtlabs/golem-openapi', '@exprtlabs/golem-ts-openapi']);
+interface ExpectedArtifact { filename: string; content: string; destination: string; destinationKind: InventoryEntry['destinationKind'] }
+interface Destination { path: string; kind: InventoryEntry['destinationKind'] }
 
-/** Packages whose ownership header marks a generated file: the built-in generators plus every configured generator job. */
-function ownersOf(config: GolemConfig): ReadonlySet<string> {
-  return new Set([...BUILT_IN_OWNERS, ...config.jobs.filter(job => job.kind === 'generator').map(job => job.package)]);
-}
 export const digest = (content: string): string => crypto.createHash('sha256').update(content).digest('hex');
 const portable = (filename: string): string => filename.split(path.sep).join('/');
 
@@ -118,60 +115,40 @@ function assertDestinationPath(filename: string, destination: string, label: str
   }
 }
 
-function modelOutputOf(job: Extract<GolemJob, { kind: 'models' }>): string {
-  return job.options.output ?? defaultModelOutput(job.options.root);
-}
-
-/** The directories of a models job's own model sources: `src` of its root, or the folders of the listed sources. */
-function modelSourceDirectories(job: Extract<GolemJob, { kind: 'models' }>): readonly string[] {
-  return job.options.sources === undefined
-    ? [path.join(job.options.root, 'src')]
-    : job.options.sources.map(source => path.dirname(source));
-}
-
 /**
- * A models job writes anywhere inside its root: a model outside `src` that its tsconfig includes gets its generated file
- * beside it. It also owns the codec key file under the configuration directory's `.golem/`. The narrower directories come
- * first, so the inventory keeps recording them as the destination of their files. The whole root is a destination, so the
- * generator's `isOwnModelFile` is what keeps `node_modules` and the folders of nested jobs out.
+ * The destinations a job declares: its exclusive outputs (a `file` is one exact file, a `folder` a directory) and its owned roots.
+ * The narrower destinations come first, so the inventory keeps recording them as the destination of their files.
  */
-function jobDestinations(config: GolemConfig, job: GolemJob): readonly string[] {
-  if (job.kind === 'generator') return [job.options.output];
-  if (job.kind === 'controllers' || job.kind === 'openapi') return [job.options.output];
-  return [modelOutputOf(job), ...modelSourceDirectories(job), path.dirname(codecKeysPath(config.directory)), job.options.root];
+function jobDestinations(job: GolemJob): readonly Destination[] {
+  return [
+    ...job.facts.outputs.map((output): Destination => ({ path: output.path, kind: output.kind === 'file' ? 'file' : 'directory' })),
+    ...job.facts.ownedRoots.map((root): Destination => ({ path: root, kind: 'directory' })),
+  ];
 }
 
-function artifactDestination(config: GolemConfig, job: GolemJob, filename: string): string {
-  const destinations = jobDestinations(config, job);
-  if (job.kind === 'controllers' && !samePath(filename, job.options.output)) {
+function insideDestination(destination: Destination, filename: string): boolean {
+  if (destination.kind === 'file') return samePath(filename, destination.path);
+  if (isInsideDirectory(path.resolve(destination.path), filename)) return true;
+  try {
+    return isInsideDirectory(canonicalPath(destination.path), canonicalPath(filename));
+  } catch { return false; }
+}
+
+function artifactDestination(config: GolemConfig, job: GolemJob, filename: string): { destination: string; destinationKind: InventoryEntry['destinationKind'] } {
+  const found = jobDestinations(job).find(candidate => insideDestination(candidate, filename));
+  if (found === undefined) {
     throw new Error(`Generated output escapes the ${job.id} destination: ${displayPath(filename)}`);
   }
-  const destination = destinations.find(candidate => {
-    if (isInsideDirectory(path.resolve(candidate), filename)) return true;
-    try {
-      return isInsideDirectory(canonicalPath(candidate), canonicalPath(filename));
-    } catch { return false; }
-  });
-  if (destination === undefined) {
-    throw new Error(`Generated output escapes the ${job.id} destination: ${displayPath(filename)}`);
-  }
-  const configured = configuredDestinationPath(destination);
+  const configured = configuredDestinationPath(found.path);
   assertDestinationPath(filename, configured, 'job');
-  return relativePath(config, configured);
-}
-
-function destinationKind(owner: string): InventoryEntry['destinationKind'] {
-  return owner === '@exprtlabs/golem-ts-openapi' ? 'file' : 'directory';
+  return { destination: relativePath(config, configured), destinationKind: found.kind };
 }
 
 function inventoryDestination(config: GolemConfig, filename: string, entry: InventoryEntry): string {
   const destination = recordedDestinationPath(config, entry.destination);
-  if (entry.destinationKind === 'file') {
-    // A controllers job owns exactly its configured document.
-    const configured = path.resolve(config.directory, entry.job.slice('controllers:'.length));
-    if (path.resolve(filename) !== path.resolve(destination) || !samePath(configured, destination)) {
-      throw new Error(`Generated output escapes its exact file destination: ${displayPath(filename)}`);
-    }
+  if (entry.destinationKind === 'file' && path.resolve(filename) !== path.resolve(destination)) {
+    // A file output is exactly its one file.
+    throw new Error(`Generated output escapes its exact file destination: ${displayPath(filename)}`);
   }
   return destination;
 }
@@ -221,8 +198,6 @@ export function marker(content: string, owner: string): boolean {
   }
   try {
     const manifest: unknown = JSON.parse(content);
-    // The codec key file has no header of its own: it is the models job's table of `<source>#<name>` ids.
-    if (owner === '@exprtlabs/golem-model' && isRecord(manifest) && manifest.version === 1 && isRecord(manifest.keys)) return true;
     return isRecord(manifest) && (manifest['x-generator'] === owner
       || (Array.isArray(manifest.models) && isRecord(manifest.generator) && manifest.generator.name === owner));
   } catch { return false; }
@@ -240,19 +215,12 @@ export function loadInventory(config: GolemConfig): Inventory {
     const key = validateRelativePath(filename, 'inventory path');
     const shown = displayPath(inventoryPath(config, key));
     if (!isRecord(entry) || typeof entry.owner !== 'string' || !entry.owner || typeof entry.job !== 'string' || typeof entry.digest !== 'string' || !/^[a-f0-9]{64}$/.test(entry.digest)) throw new Error(`Invalid generated inventory entry: ${shown}`);
-    // Any other owner is a generator package; the entry itself records it, so a retired generator's files stay known.
-    const prefix = entry.owner === '@exprtlabs/golem-model'
-      ? 'models:'
-      : entry.owner === '@exprtlabs/golem-ts-openapi'
-        ? 'controllers:'
-        : entry.owner === '@exprtlabs/golem-openapi'
-          ? 'openapi:'
-          : 'generator:';
-    if (!entry.job.startsWith(prefix) || entry.job.length === prefix.length) throw new Error(`Generated output ownership conflict: ${shown}. Inventory owner and job disagree.`);
+    if (!entry.job) throw new Error(`Invalid generated inventory entry: ${shown}`);
     if (typeof entry.destination !== 'string') throw new Error(`Invalid generated inventory entry: ${shown}`);
     const destination = validateRelativePath(entry.destination, 'inventory destination', true);
-    const kind = destinationKind(entry.owner);
-    if (entry.destinationKind !== kind) throw new Error(`Invalid generated inventory destination kind: ${shown}`);
+    // The entry records its owner, so a retired package's files stay known.
+    const kind = entry.destinationKind;
+    if (kind !== 'file' && kind !== 'directory') throw new Error(`Invalid generated inventory destination kind: ${shown}`);
     const absolute = inventoryPath(config, key);
     assertProtectedPath(config, absolute);
     const recorded: InventoryEntry = { job: entry.job, owner: entry.owner, digest: entry.digest, destination, destinationKind: kind };
@@ -316,39 +284,36 @@ function saveInventory(config: GolemConfig, inventory: Inventory, files: OutputF
 }
 
 /** `golem check` only: a file that carries a generator's marker, sits in a job's destination and no inventory entry or artifact names. A run that writes does not look. */
-function assertNoUnrecordedOutputs(config: GolemConfig, inventory: Inventory, job: GolemJob, expected: ReadonlyMap<string, ExpectedArtifact>): void {
-  const owners = ownersOf(config);
+function assertNoUnrecordedOutputs(config: GolemConfig, inventory: Inventory, job: GolemJob, expected: ReadonlyMap<string, ExpectedArtifact>, compilerOutputs: readonly string[]): void {
+  // The packages whose ownership header marks a generated file: the package of every configured job.
+  const owners = new Set(config.jobs.map(candidate => candidate.package));
   const drift: string[] = [];
-  if (job.kind === 'controllers') {
-    const filename = path.resolve(job.options.output);
+  const visited = new Set<string>();
+  const visit = (directory: string): void => {
+    const canonicalDirectory = canonicalPath(directory);
+    if (visited.has(canonicalDirectory)) return;
+    visited.add(canonicalDirectory);
+    // The compiler output of the project is the build's own: a generated file compiled there is no drift.
+    if (compilerOutputs.some(output => isInsideDirectory(canonicalPath(output), canonicalDirectory))) return;
+    let entries: fs.Dirent[];
+    try { entries = fs.readdirSync(directory, { withFileTypes: true }); }
+    catch (error) { if (hasErrorCode(error, 'ENOENT')) return; throw error; }
+    for (const entry of entries) {
+      if (entry.name.startsWith('.') || entry.name === 'node_modules') continue;
+      const filename = path.join(directory, entry.name);
+      if (entry.isDirectory()) { visit(filename); continue; }
+      if (!entry.isFile() || (!entry.name.endsWith('.ts') && !entry.name.endsWith('.js') && !entry.name.endsWith('.NOTICES.txt') && entry.name !== 'model-manifest.json')) continue;
+      const key = inventoryKey(config, filename);
+      if (expected.has(key) || inventory.files[key]) continue;
+      if (knownOwner(fs.readFileSync(filename, 'utf8'), owners) !== undefined) drift.push(filename);
+    }
+  };
+  for (const destination of jobDestinations(job)) {
+    if (destination.kind === 'directory') { visit(destination.path); continue; }
+    const filename = path.resolve(destination.path);
     const key = inventoryKey(config, filename);
     const current = readFile(filename);
     if (current !== undefined && !expected.has(key) && !inventory.files[key] && knownOwner(current, owners) !== undefined) drift.push(filename);
-  } else {
-    const roots = job.kind === 'openapi' || job.kind === 'generator'
-      ? [job.options.output]
-      : job.kind === 'models'
-        ? [modelOutputOf(job), ...modelSourceDirectories(job)]
-        : [];
-    const visited = new Set<string>();
-    const visit = (directory: string): void => {
-      const canonicalDirectory = canonicalPath(directory);
-      if (visited.has(canonicalDirectory)) return;
-      visited.add(canonicalDirectory);
-      let entries: fs.Dirent[];
-      try { entries = fs.readdirSync(directory, { withFileTypes: true }); }
-      catch (error) { if (hasErrorCode(error, 'ENOENT')) return; throw error; }
-      for (const entry of entries) {
-        if (entry.name.startsWith('.') || entry.name === 'node_modules') continue;
-        const filename = path.join(directory, entry.name);
-        if (entry.isDirectory()) { visit(filename); continue; }
-        if (!entry.isFile() || (!entry.name.endsWith('.ts') && !entry.name.endsWith('.js') && !entry.name.endsWith('.NOTICES.txt') && entry.name !== 'model-manifest.json')) continue;
-        const key = inventoryKey(config, filename);
-        if (expected.has(key) || inventory.files[key]) continue;
-        if (knownOwner(fs.readFileSync(filename, 'utf8'), owners) !== undefined) drift.push(filename);
-      }
-    };
-    for (const root of roots) visit(root);
   }
   if (drift.length) throw new Error(`Unrecorded generated output drift for ${job.id}:\n${drift.sort().map(filename => `  ${displayPath(filename)}`).join('\n')}`);
 }
@@ -361,17 +326,39 @@ export interface FileChanges {
 
 const NO_CHANGES: FileChanges = { written: [], removed: [] };
 
-export function applyJob(config: GolemConfig, inventory: Inventory, job: GolemJob, artifacts: readonly GolemArtifact[], check = false, files: OutputFiles = realOutputFiles): FileChanges {
+/**
+ * The codec key table is core's own record under `.golem/`: no job's output and no inventory entry. Core writes it from the
+ * artifacts of the one job that provides the models boundary, and removes it when that job returns none.
+ */
+function providesCodecKeys(config: GolemConfig, job: GolemJob): boolean {
+  return config.jobPlan.providers[MODEL_BOUNDARY] === job.id;
+}
+
+/** The files core owns that it writes from the artifacts of `job`: no job output and no inventory entry. Today only the codec key table. */
+export function coreRecordsOf(config: GolemConfig, job: GolemJob): readonly string[] {
+  return providesCodecKeys(config, job) ? [codecKeysPath(config.directory)] : [];
+}
+
+/** `compilerOutputs` are the folders the project's compiler writes (outDir, declarationDir): the check for unrecorded files leaves them out. */
+export function applyJob(config: GolemConfig, inventory: Inventory, job: GolemJob, artifacts: readonly GolemArtifact[], check = false, files: OutputFiles = realOutputFiles, compilerOutputs: readonly string[] = []): FileChanges {
   assertInventoryPath(config);
   if (!Array.isArray(artifacts)) throw new Error(`${job.package} returned invalid artifacts.`);
   const expected = new Map<string, ExpectedArtifact>();
+  const recordFile = codecKeysPath(config.directory);
+  let record: string | undefined;
   for (const artifact of artifacts) {
     if (!artifact || !path.isAbsolute(artifact.path) || typeof artifact.content !== 'string') throw new Error(`${job.package} returned an invalid artifact.`);
     const filename = path.normalize(artifact.path);
     const key = inventoryKey(config, filename);
     if (!key || expected.has(key)) throw new Error(`Generated output collision: ${displayPath(filename)}`);
     assertProtectedPath(config, filename);
-    const destination = artifactDestination(config, job, filename);
+    if (providesCodecKeys(config, job) && samePath(filename, recordFile)) {
+      if (record !== undefined) throw new Error(`Generated output collision: ${displayPath(filename)}`);
+      assertDestinationPath(filename, path.dirname(recordFile), 'record');
+      record = artifact.content;
+      continue;
+    }
+    const { destination, destinationKind } = artifactDestination(config, job, filename);
     assertDestinationPath(filename, recordedDestinationPath(config, destination), 'job');
     if (!marker(artifact.content, job.package)) throw new Error(`Missing generator ownership marker: ${displayPath(filename)}`);
     const old = inventory.files[key];
@@ -381,15 +368,15 @@ export function applyJob(config: GolemConfig, inventory: Inventory, job: GolemJo
     if (current !== undefined && !marker(current, job.package)) {
       throw new Error(`Refusing to overwrite ${displayPath(filename)}: it was not generated by ${job.package}. Remove or rename it, or change the job's output path.`);
     }
-    expected.set(key, { filename, content: artifact.content, destination });
+    expected.set(key, { filename, content: artifact.content, destination, destinationKind });
   }
-  if (check) assertNoUnrecordedOutputs(config, inventory, job, expected);
+  if (check) assertNoUnrecordedOutputs(config, inventory, job, expected, compilerOutputs);
   const stale: string[] = [];
   const deletions: Array<{ key: string; filename: string }> = [];
   for (const [key, artifact] of expected) {
     const current = readFile(artifact.filename);
     const entry = inventory.files[key];
-    if (current !== artifact.content || !entry || entry.digest !== digest(artifact.content) || entry.destination !== artifact.destination || entry.destinationKind !== destinationKind(job.package)) stale.push(key);
+    if (current !== artifact.content || !entry || entry.digest !== digest(artifact.content) || entry.destination !== artifact.destination || entry.destinationKind !== artifact.destinationKind) stale.push(key);
   }
   for (const [key, entry] of Object.entries(inventory.files)) {
     if (entry.job !== job.id || expected.has(key)) continue;
@@ -402,6 +389,8 @@ export function applyJob(config: GolemConfig, inventory: Inventory, job: GolemJo
     deletions.push({ key, filename });
     stale.push(key);
   }
+  const recordChanged = providesCodecKeys(config, job) && readFile(recordFile) !== record;
+  if (recordChanged) stale.push(inventoryKey(config, recordFile));
   if (check && stale.length) throw new Error(`Generated outputs are stale for ${job.id}:\n${stale.sort().map(key => `  ${displayPath(inventoryPath(config, key))}`).join('\n')}`);
   if (check) return NO_CHANGES;
   const written: string[] = [];
@@ -414,8 +403,14 @@ export function applyJob(config: GolemConfig, inventory: Inventory, job: GolemJo
       owner: job.package,
       digest: digest(artifact.content),
       destination: artifact.destination,
-      destinationKind: destinationKind(job.package),
+      destinationKind: artifact.destinationKind,
     };
+  }
+  if (recordChanged) {
+    if (record === undefined) {
+      files.unlink(recordFile);
+      removed.push(recordFile);
+    } else if (atomicWrite(recordFile, record, files)) written.push(recordFile);
   }
   for (const { key, filename } of deletions) {
     if (readFile(filename) !== undefined) {
@@ -440,8 +435,18 @@ export function removeRetiredJobs(config: GolemConfig, inventory: Inventory, che
     assertDestinationPath(filename, destination, 'recorded');
     assertDeletable(filename, entry);
   }
-  if (check && retired.length) throw new Error(`Generated outputs belong to removed jobs:\n${retired.map(([key]) => `  ${displayPath(inventoryPath(config, key))}`).join('\n')}`);
+  // The codec key table follows its provider: with no job that provides the models boundary, it is left over.
+  const recordFile = codecKeysPath(config.directory);
+  const leftoverRecord = config.jobPlan.providers[MODEL_BOUNDARY] === undefined && readFile(recordFile) !== undefined;
+  if (check && (retired.length || leftoverRecord)) {
+    const shown = [...retired.map(([key]) => inventoryPath(config, key)), ...(leftoverRecord ? [recordFile] : [])];
+    throw new Error(`Generated outputs belong to removed jobs:\n${shown.map(filename => `  ${displayPath(filename)}`).join('\n')}`);
+  }
   const removed: string[] = [];
+  if (!check && leftoverRecord) {
+    files.unlink(recordFile);
+    removed.push(recordFile);
+  }
   if (!check && retired.length) {
     for (const [key] of retired) {
       const filename = inventoryPath(config, key);

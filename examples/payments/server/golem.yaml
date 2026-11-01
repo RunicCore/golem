@@ -1,35 +1,31 @@
 version: 1
-mobx: false
 validation: true
 # region generator-job
-generators:
-  - package: payments-example
-    output: src/events
-    options:
-      events:
-        PaymentCaptured: { paymentId: string, amount: string }
-        PaymentRefunded: { paymentId: string, reason: string }
+payment-events:
+  output: src/events
+  events:
+    PaymentCaptured: { paymentId: string, amount: string }
+    PaymentRefunded: { paymentId: string, reason: string }
 # endregion generator-job
 # region controllers-job
-controllers:
-  - framework: nestjs
-    root: .
-    output: ./api/openapi.yaml
-    info:
-      title: Payments API
-      version: '1'
-    globalPrefix: api
+ts-openapi:
+  docs:
+    - output: ./api/openapi.yaml
+      info:
+        title: Payments API
+        version: '1'
+      globalPrefix: api
 # endregion controllers-job
+openapi-ts:
+  sdks:
 # region openapi-dates-job
 # region openapi-job
-openapi:
-  - input: provider/provider.yaml
-    output: provider/sdk
-    name: Provider
+    - input: provider/provider.yaml
+      output: provider/sdk
+      name: Provider
 # endregion openapi-job
-    dates: temporal
+      dates: temporal
 # endregion openapi-dates-job
 # region models-job
-models:
-  root: .
+model: {}
 # endregion models-job

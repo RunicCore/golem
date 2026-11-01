@@ -32,10 +32,23 @@
   },
   "files": [
     "dist",
+    "golem-schema.json",
     "README.md",
     "LICENSE"
   ],
+  "golem": {
+    "apiVersion": 2,
+    "block": "model",
+    "plan": "./plan",
+    "generator": "./generator",
+    "schema": "./golem-schema.json"
+  },
   "exports": {
+    "./plan": {
+      "types": "./dist/plan.d.ts",
+      "import": "./dist/plan.js",
+      "default": "./dist/plan.js"
+    },
     "./generator": {
       "types": "./dist/generator.d.ts",
       "import": "./dist/generator.js",

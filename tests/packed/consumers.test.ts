@@ -68,7 +68,7 @@ test('packed binary ownership survives either generator installation order and u
 
 test('packed controller generator installs independently and resolves real Nest and Swagger packages', async t => {
   const root = registry().create(t, 'controller-only');
-  await npm(root, ['install', '--save-dev', packageSpec(registry(), '@exprtlabs/golem-ts-openapi'), NEST_COMMON, NEST_SWAGGER]);
+  await npm(root, ['install', '--save-dev', packageSpec(registry(), '@exprtlabs/golem-ts-openapi'), NEST_COMMON, NEST_SWAGGER, TYPESCRIPT]);
   copyFixture(root, 'packed/controller-only');
   await cli(root, ['generate']);
   await cli(root, ['check']);
@@ -152,7 +152,7 @@ test('CLI resolves configured providers from a project with spaces outside cwd a
   const before = registry().requests.length;
   const missing = await command(workspace, binary, ['generate', '--config', config], { allowFailure: true });
   assert.notEqual(missing.code, 0);
-  assert.match(missing.stderr, /openapi is configured.*not installed/);
+  assert.match(missing.stderr, /No installed package registers the golem block "openapi-ts"/);
   assert.equal(registry().requests.length, before);
   assert.equal(fs.existsSync(path.join(root, 'sdk')), false);
 
@@ -167,11 +167,11 @@ test('CLI resolves configured providers from a project with spaces outside cwd a
   await command(workspace, binary, ['check', '--config', config]);
 
   const provider = path.join(root, 'node_modules/@exprtlabs/golem-openapi');
-  copyFixtureFile(provider, 'packed/incompatible-provider/package.json', 'package.json');
+  // The provider keeps its block registration and its plan entry; its generator is the incompatible one.
   // The runtime version check runs before the provider loads, so the fake needs the packed release version.
-  const providerManifest: Record<string, unknown> = JSON.parse(fs.readFileSync(path.join(provider, 'package.json'), 'utf8'));
+  const providerManifest: { exports: Record<string, unknown> } = JSON.parse(fs.readFileSync(path.join(provider, 'package.json'), 'utf8'));
   const packedRelease: { version: string } = JSON.parse(fs.readFileSync(path.join(root, 'node_modules/@exprtlabs/golem/package.json'), 'utf8'));
-  fs.writeFileSync(path.join(provider, 'package.json'), JSON.stringify({ ...providerManifest, version: packedRelease.version }));
+  fs.writeFileSync(path.join(provider, 'package.json'), JSON.stringify({ ...providerManifest, version: packedRelease.version, exports: { ...providerManifest.exports, './generator': './incompatible.js' } }));
   copyFixtureFile(provider, 'packed/incompatible-provider/incompatible.js', 'incompatible.js');
   const beforeIncompatible = registry().requests.length;
   const incompatible = await command(workspace, binary, ['check', '--config', config], { allowFailure: true });
@@ -208,4 +208,31 @@ test('packed model and SDK validators work without code generation from strings'
   await command(root, process.execPath, ['--disallow-code-generation-from-strings', 'verify.mjs']);
   const browser = await build({ entryPoints: [path.join(root, 'build/src/cart.model.js'), path.join(root, 'build/sdk/index.js')], outdir: 'browser', bundle: true, platform: 'browser', format: 'esm', write: false, metafile: true });
   assert.doesNotMatch(Object.keys(browser.metafile.inputs).join('\n'), /node:|\/tooling\/|\/esbuild\/|\/mobx\//);
+});
+
+// Every directory below `modules` that holds an installed @exprtlabs/golem, as paths relative to `root`, nested node_modules included.
+function installedGolemCopies(root: string, modules: string = path.join(root, 'node_modules')): string[] {
+  const copies: string[] = [];
+  for (const entry of fs.readdirSync(modules, { withFileTypes: true })) {
+    if (entry.name.startsWith('.') || !entry.isDirectory()) continue;
+    const packages = entry.name.startsWith('@') ? fs.readdirSync(path.join(modules, entry.name)).map(name => path.join(modules, entry.name, name)) : [path.join(modules, entry.name)];
+    for (const folder of packages) {
+      if (fs.existsSync(path.join(folder, 'package.json')) && path.relative(modules, folder) === path.join('@exprtlabs', 'golem')) copies.push(path.relative(root, folder));
+      if (fs.existsSync(path.join(folder, 'node_modules'))) copies.push(...installedGolemCopies(root, path.join(folder, 'node_modules')));
+    }
+  }
+  return copies;
+}
+
+test('an app that installs golem and every generator package holds one golem copy', async t => {
+  // protects: T-783 golem is a peer of the generator packages, so an app holds one golem copy
+  const root = registry().create(t, 'one-golem-copy');
+  await npm(root, ['install', '--save-prod', packageSpec(registry(), '@exprtlabs/golem')]);
+  await npm(root, ['install', '--save-dev', ...['golem-model', 'golem-openapi', 'golem-ts-openapi'].map(name => packageSpec(registry(), `@exprtlabs/${name}`)), TYPESCRIPT]);
+  assert.deepEqual(installedGolemCopies(root), [path.join('node_modules', '@exprtlabs', 'golem')],
+    'The app must hold exactly one @exprtlabs/golem. A second copy, for example node_modules/@exprtlabs/golem-openapi/node_modules/@exprtlabs/golem, has its own codec registry: models from one copy fail the checks of the other.');
+  for (const name of ['golem-openapi', 'golem-ts-openapi']) {
+    const manifest: { peerDependencies?: Record<string, string> } = JSON.parse(fs.readFileSync(path.join(root, 'node_modules/@exprtlabs', name, 'package.json'), 'utf8'));
+    assert.equal(manifest.peerDependencies?.['@exprtlabs/golem'], registry().workspaceVersion, `${name} takes golem as a peer`);
+  }
 });

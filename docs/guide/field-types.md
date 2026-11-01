@@ -77,7 +77,7 @@ Validation checks the model value of a `Date` or Temporal field with `instanceof
 
 ### Use Temporal values in a client
 
-Set `dates: temporal` on the [OpenAPI job](/reference/config#openapi-jobs). The generated client then maps `format: date-time` to `Temporal.Instant`, `format: date` to `Temporal.PlainDate` and `format: duration` to `Temporal.Duration`. Without the key, the same fields are `Date` values.
+Set `dates: temporal` on the [SDK job](/reference/config#openapi-ts-block). The generated client then maps `format: date-time` to `Temporal.Instant`, `format: date` to `Temporal.PlainDate` and `format: duration` to `Temporal.Duration`. Without the key, the same fields are `Date` values.
 
 <<< ../../examples/payments/server/golem.yaml#openapi-dates-job
 
@@ -105,7 +105,7 @@ The second type argument of `IModel` and `IObject` sets two options for that dec
 | `allowAny` | `false` | The root of `golem.yaml` for every model, or the options of one `IObject` or `IModel` | `false`: a field typed `any` or `unknown` fails with [`RUNM1011`](/reference/diagnostics#runm1011). `true`: the field is allowed ([`any` and `unknown`](#any-and-unknown)). |
 
 - The option on the declaration overrides `golem.yaml`, and `golem.yaml` overrides the default. `{ allowAny: false }` tightens a permissive `golem.yaml`.
-- A controllers job reads the types that a controller signature spells out, such as an inline body, with `exact: false`, whatever `golem.yaml` says. A model that a signature names keeps its own `exact` ([derived type names](/reference/generated-files#derived-type-names)).
+- A docs job reads the types that a controller signature spells out, such as an inline body, with `exact: false`, whatever `golem.yaml` says. A model that a signature names keeps its own `exact` ([derived type names](/reference/generated-files#derived-type-names)).
 - A key on an instance that its model does not declare is program state, not an extra property. Codecs never report it as an unknown key and never write it to JSON, also inside an `unknown` or `any` field.
 - Input from JSON or a request stays exact. Constructors assign declared fields only.
 

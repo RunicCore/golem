@@ -10,6 +10,7 @@ import { generate } from '#model/generator';
 import { readFixture, writeGeneratedArtifacts } from '../fixture-project.js';
 import { NEST_INTERCEPTOR_SOURCE, createControllerFixture } from '../fixture-templates/controllers/project.js';
 import { paymentModelSource } from '../fixture-templates/controllers/payment-model.js';
+import { defaultModelOutput } from '#golem/generated-paths';
 
 const PLUGIN = 'controllers/nest-plugin';
 const FORMS = `${PLUGIN}/rewrite-covers-qualified-array-and-serde-forms`;
@@ -24,7 +25,7 @@ function project(t: TestContext, files: Readonly<Record<string, string>>): strin
   const root = createControllerFixture(t, {
     prefix: 'golem-rewrite-nest-',
     links: 'workspace',
-    files: { 'golem.yaml': 'version: 1\nmodels: { root: . }\n', 'src/interceptor.ts': NEST_INTERCEPTOR_SOURCE, ...files },
+    files: { 'golem.yaml': 'version: 1\nmodel: {}\n', 'src/interceptor.ts': NEST_INTERCEPTOR_SOURCE, ...files },
   });
   writeGeneratedArtifacts(generate({ root, profile: { mobx: false, validation: true } }).artifacts);
   return root;
@@ -41,7 +42,7 @@ function paymentsProject(t: TestContext, extra: Readonly<Record<string, string>>
 const notAModel = (decorator: string, type: string, mode: 'error' | 'warn' = 'error'): string => `${type} is not a golem model, and NestModelInterceptor answers HTTP 500 for a @${decorator}() parameter of that type. Declare the input as a golem model (IModel or IObject), or bind one field of a model type. ${mode === 'warn' ? 'Generation continues, because golem.yaml sets nonModelInputs: warn.' : 'An app with its own interceptor can set nonModelInputs: warn in golem.yaml.'}`;
 
 function scan(root: string, nonModelInputs?: 'error' | 'warn'): ProgramScan {
-  return scanProject({ root, directory: root, modelsRoot: root, configFile: path.join(root, 'tsconfig.json'), nonModelInputs, codecKeysFile: path.join(root, '.golem/codec-keys.json') });
+  return scanProject({ root, boundary: { root, directory: root, output: defaultModelOutput(root), suffixes: ['.model.ts', '.models.ts'] }, configFile: path.join(root, 'tsconfig.json'), nonModelInputs, codecKeysFile: path.join(root, '.golem/codec-keys.json') });
 }
 
 function rewritten(root: string, result: ProgramScan, relative: string): string {
@@ -421,11 +422,9 @@ function nestAppProject(t: TestContext, options: { readonly controllersJob: bool
       ...(options.interceptor ? { 'src/interceptor.ts': NEST_INTERCEPTOR_SOURCE } : {}),
       'golem.yaml': [
         'version: 1',
-        'mobx: false',
         'validation: true',
-        ...(options.controllersJob ? ['controllers:', '  - root: .', '    sources:', `      - ${CONTROLLER}`, '    output: generated/api.json', '    info: { title: Test API, version: "1" }'] : []),
-        'models:',
-        '  root: .',
+        ...(options.controllersJob ? ['ts-openapi:', '  docs:', '    - sources:', `        - ${CONTROLLER}`, '      output: generated/api.json', '      info: { title: Test API, version: "1" }'] : []),
+        'model: {}',
         '',
       ].join('\n'),
     },

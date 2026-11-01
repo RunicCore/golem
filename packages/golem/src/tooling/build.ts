@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { canonicalFile, modelsRootOf, resolveConfig } from './config.js';
+import { canonicalFile, resolveConfig } from './config.js';
 import type { GolemConfig } from './config.js';
 import { codecKeysPath } from './generated-paths.js';
 import { displayPath, errorMessage, failureText, GolemDiagnosticSeverity, hasErrorCode, isInsideDirectory } from './generator-core.js';
@@ -13,7 +13,9 @@ import { GeneratorSessionResources, runPipeline } from './pipeline.js';
 import type { PipelineState } from './pipeline.js';
 import { applyRewrites } from './rewrite.js';
 import type { FileRewrite } from './rewrite.js';
+import { loadRewriteParticipants } from './rewrite-participant.js';
 import { emitsJavaScript, projectSources, RewriteScanner } from './rewrite-scan.js';
+import { retainedProgramSession } from './type-analysis/project.js';
 import { inlineEmittedSourceMap, pointDeclarationMap, pointSourceMap } from './source-map.js';
 import type { SourceMapV3 } from './source-map.js';
 import { assertNotSolutionTsconfig, referenceClosure, referencedCommand, referencesRefusal } from './typescript-config.js';
@@ -74,7 +76,7 @@ function stringOption(options: ts.CompilerOptions, name: string): string | undef
 }
 
 /** The golem.yaml a build starts from. Nothing above the working directory is searched. */
-function readGolemConfig(requested: string | undefined, observe: (filename: string) => void): GolemConfig {
+async function readGolemConfig(requested: string | undefined, observe: (filename: string) => void): Promise<GolemConfig> {
   const file = path.resolve(requested ?? 'golem.yaml');
   observe(file);
   if (!fs.existsSync(file)) throw new Error(requested === undefined ? NO_GOLEM_YAML : `golem build cannot find ${displayPath(file)}.`);
@@ -412,8 +414,10 @@ function assertContained(project: Project, configFile: string, javascript: Reado
 }
 
 /** One build: generate, check the original sources, emit the rewritten ones. `changed` are the inputs that changed since the build before. */
-async function buildOnce(session: ts.ProgramSession, run: BuildRun, changed?: readonly string[]): Promise<number> {
+async function buildOnce(requestSession: () => ts.ProgramSession, run: BuildRun, changed?: readonly string[]): Promise<number> {
   const { inputs, outputs } = run;
+  // Requested in each build, so the generation step's end closes no program session that this build still reads.
+  const session = requestSession();
   // The folder of an input outside the root is recorded as it is when the run first reads it, like the input itself.
   let root: string | undefined;
   const observe = (filename: string): void => {
@@ -423,7 +427,7 @@ async function buildOnce(session: ts.ProgramSession, run: BuildRun, changed?: re
     const folder = root === undefined ? undefined : outsideFolder(root, file);
     if (folder !== undefined) run.baseline?.observeFolder(folder);
   };
-  const golemConfig = readGolemConfig(run.config, observe);
+  const golemConfig = await readGolemConfig(run.config, observe);
   const configFile = resolveProject(run.project, golemConfig);
   root = path.dirname(configFile);
   for (const input of inputs) {
@@ -489,8 +493,8 @@ async function buildOnce(session: ts.ProgramSession, run: BuildRun, changed?: re
     return checkCode;
   }
   const checker = program.getTypeChecker();
-  const models = golemConfig.jobs.find((job) => job.kind === 'models');
-  const scanned = new RewriteScanner({ root, directory: golemConfig.directory, modelsRoot: modelsRootOf(golemConfig), suffixes: models?.options.suffixes, output: models?.options.output, program, checker, codecKeysFile: codecKeysPath(golemConfig.directory), nonModelInputs: golemConfig.nonModelInputs })
+  const participants = await loadRewriteParticipants(golemConfig.extensions);
+  const scanned = new RewriteScanner({ root, boundary: golemConfig.contracts.ModelBoundary, program, checker, codecKeysFile: codecKeysPath(golemConfig.directory), nonModelInputs: golemConfig.nonModelInputs, participants })
     .scanFiles(sources.map((source) => source.fileName));
   const errors = scanned.diagnostics.filter((diagnostic) => diagnostic.severity === GolemDiagnosticSeverity.Error);
   if (errors.length > 0) throw scanFailure(root, errors);
@@ -552,17 +556,18 @@ async function buildOnce(session: ts.ProgramSession, run: BuildRun, changed?: re
  * compiler checks and emits in process, to memory; the build writes each output that differs from the file on disk. With `watch`, the build repeats when an input changes and ends on `signal`.
  */
 export async function runBuild(options: BuildOptions): Promise<{ exitCode: number }> {
-  const first = readGolemConfig(options.config, () => {});
+  const first = await readGolemConfig(options.config, () => {});
   const root = path.dirname(first.tsconfig);
   const label = displayPath(options.project === undefined ? first.tsconfig : path.resolve(options.project));
-  using session = new ts.ProgramSession({ cwd: root });
+  // Core owns one program session: the generation jobs, the rewrite scan and the build's own programs request this one.
+  using generation = new GeneratorSessionResources();
+  const program = (): ts.ProgramSession => retainedProgramSession(generation, root);
   // `-b` is refused here, once, before anything is generated or watched: a refusal inside a watching build would be reported and the watch would go on.
   if (options.compilerBuild) {
     const configFile = resolveProject(options.project, first);
     requestTypeScriptRoot(root);
-    throw referencesRefusal(configFile, session.parseConfigFile(configFile).projectReferences, 'golem build does not take -b or --build: `tsc -b` would also build projects that have no golem.yaml, whose calls golem would not rewrite. A golem.yaml names one project.');
+    throw referencesRefusal(configFile, program().parseConfigFile(configFile).projectReferences, 'golem build does not take -b or --build: `tsc -b` would also build projects that have no golem.yaml, whose calls golem would not rewrite. A golem.yaml names one project.');
   }
-  using generation = new GeneratorSessionResources();
   const inputs = new Set<string>();
   const outputs = new Set<string>();
   const outputsPresent = (): boolean => [...outputs].every((directory) => fs.existsSync(directory));
@@ -582,7 +587,7 @@ export async function runBuild(options: BuildOptions): Promise<{ exitCode: numbe
     ...(options.onGenerated === undefined ? {} : { onGenerated: options.onGenerated }),
   };
   const run = async (changed?: readonly string[], beforeAnnouncing: () => void = () => {}): Promise<number> => {
-    const exitCode = await buildOnce(session, state, changed);
+    const exitCode = await buildOnce(program, state, changed);
     wrote = exitCode === 0 && outputsPresent();
     // The watch baseline is recorded before the build is announced: whoever reacts to the announcement may edit a source at once.
     beforeAnnouncing();
@@ -640,7 +645,7 @@ export async function runBuild(options: BuildOptions): Promise<{ exitCode: numbe
           return;
         }
         if (changed.length === 0 && !installed && !(wrote && !outputsPresent())) return;
-        session.inputsChanged(changed);
+        program().inputsChanged(changed);
         // An install can change any package a job or the compiler read: everything is built again.
         await attempt(installed ? undefined : changed, current);
       } finally {

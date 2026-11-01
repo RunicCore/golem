@@ -164,7 +164,10 @@ function validateModelProfile(profile: unknown, filename = MODEL_MANIFEST_FILENA
   if (profile.unknownFormats !== undefined && profile.unknownFormats !== 'warn' && profile.unknownFormats !== 'error') {
     throw new Error(`Invalid model manifest ${displayPath(filename)}: profile unknownFormats must be "warn" or "error". Regenerate the models.`);
   }
-  const unknown = Object.keys(profile).filter((key) => !['mobx', 'validation', 'allowAny', 'unknownFormats'].includes(key));
+  if (profile.extensions !== undefined && (!isRecord(profile.extensions) || !Object.values(profile.extensions).every(isRecord))) {
+    throw new Error(`Invalid model manifest ${displayPath(filename)}: profile extensions must map a package name to an object of settings. Regenerate the models.`);
+  }
+  const unknown = Object.keys(profile).filter((key) => !['mobx', 'validation', 'allowAny', 'unknownFormats', 'extensions'].includes(key));
   if (unknown.length > 0) {
     throw new Error(
       `Invalid model manifest ${displayPath(filename)}: profile has unsupported field(s): ${unknown.join(', ')}. Regenerate or remove the older generated SDK.`,

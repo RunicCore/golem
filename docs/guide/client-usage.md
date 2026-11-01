@@ -6,7 +6,7 @@ These examples use the `ProviderClient` that [Generate an SDK](/guide/client) cr
 
 The client is the only door to the API. It checks and converts each request and each response by itself:
 
-- A response body is a plain object of the SDK type. A `date` or `date-time` value is already a `Date` or a `Temporal` value ([`dates`](/reference/config#openapi-jobs)).
+- A response body is a plain object of the SDK type. A `date` or `date-time` value is already a `Date` or a `Temporal` value ([`dates`](/reference/config#openapi-ts-block)).
 - A request takes plain values. The client writes them in their JSON form.
 - The SDK has no model classes. A class with methods is your own model over the SDK type ([SDK types in your models](/guide/models-and-client)).
 - Both [SDK modes](/reference/config#sdk-modes) give the same calls.
@@ -133,7 +133,7 @@ For an API that sends one JSON object per line, describe the response in `provid
 
 <<< ../../examples/payments/server/provider/provider.yaml#events-operation
 
-The `openapi` job in `golem.yaml` reads that document, as in [Generate an SDK](/guide/client#point-to-your-openapi-document). Run `npx golem generate` to update the client.
+The SDK job in `golem.yaml` reads that document, as in [Generate an SDK](/guide/client#point-to-your-openapi-document). Run `npx golem generate` to update the client.
 
 ### Read items
 

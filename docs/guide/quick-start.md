@@ -37,7 +37,7 @@ Then mark a type with `IModel` in `src/task.model.ts`. The `TSerde` tag ties `pr
 
 <<< ../../examples/models/src/task.model.ts#task-declaration
 
-The generator reads `src/**/*.model.ts` and `src/**/*.models.ts`. [`models.suffixes`](/reference/config#typescript-models) changes the endings and `models.sources` names the files.
+The generator reads `src/**/*.model.ts` and `src/**/*.models.ts`. [`model.suffixes`](/reference/config#model-block) changes the endings and `model.sources` names the files.
 
 Declare an `IObject` instead to keep plain objects ([IObject or IModel](/guide/models#iobject-or-imodel)).
 
@@ -47,7 +47,7 @@ Add `golem.yaml` at the project root and run the generator. Your editor needs th
 
 <<< ../../examples/models/golem.yaml
 
-`models: {}` turns on the [models job](/reference/config#typescript-models) with its defaults.
+`model: {}` turns on the [models job](/reference/config#model-block) with its defaults.
 
 ```sh
 npx golem generate
@@ -57,7 +57,7 @@ npx golem generate
 Generated configured outputs.
 ```
 
-You get `src/task.model.generated.ts` beside the declaration, with the generated class `TTaskBaseModel` and the `TTaskFields` type. Shared files go to `models.output` (default `src/generated/models/`). You choose whether to commit the generated files ([commit or ignore them](/reference/generated-files#gitignore)).
+You get `src/task.model.generated.ts` beside the declaration, with the generated class `TTaskBaseModel` and the `TTaskFields` type. Shared files go to `model.output` (default `src/generated/models/`). You choose whether to commit the generated files ([commit or ignore them](/reference/generated-files#gitignore)).
 
 ## Add methods
 
@@ -104,13 +104,13 @@ Golem uses the `typescript` installed in your project. Generation writes the sam
 
 ## Packages for each generator
 
-Each generator is a development dependency:
+Each generator is a development dependency. Install it with `typescript`, which none of them brings:
 
 | To generate | Development dependency |
 | --- | --- |
-| TypeScript models | `npm install --save-dev @exprtlabs/golem-model` |
-| An OpenAPI to TypeScript SDK | `npm install --save-dev @exprtlabs/golem-openapi` |
-| OpenAPI from NestJS controllers | `npm install --save-dev @exprtlabs/golem-ts-openapi` |
+| TypeScript models | `npm install --save-dev @exprtlabs/golem-model typescript@~7.1.0-beta` |
+| An OpenAPI to TypeScript SDK | `npm install --save-dev @exprtlabs/golem-openapi typescript@~7.1.0-beta` |
+| OpenAPI from NestJS controllers | `npm install --save-dev @exprtlabs/golem-ts-openapi typescript@~7.1.0-beta` |
 
 Generated models and clients import the runtime:
 
@@ -130,13 +130,13 @@ The `@exprtlabs/*` package subpaths are ESM-only. Import them from ESM applicati
 
 ## Peer dependencies
 
-The generators declare the compiler as a peer dependency, so npm installs one copy in your project:
+`@exprtlabs/golem-model` declares the compiler as a peer dependency. The two OpenAPI packages declare it as an optional peer, and declare `@exprtlabs/golem` as a peer, so your project holds one copy of each:
 
 | Package | Peer dependencies |
 | --- | --- |
 | `@exprtlabs/golem-model` | `typescript` `>=6.0.0 <7` or `>=7.1.0-0 <8` |
-| `@exprtlabs/golem-ts-openapi` | `typescript` `>=6.0.0 <7` or `>=7.1.0-0 <8` |
-| `@exprtlabs/golem-openapi` | none, add `typescript` to compile the SDK |
+| `@exprtlabs/golem-ts-openapi` | `@exprtlabs/golem`, and `typescript` `>=6.0.0 <7` or `>=7.1.0-0 <8` (optional) |
+| `@exprtlabs/golem-openapi` | `@exprtlabs/golem`, and `typescript` `>=6.0.0 <7` or `>=7.1.0-0 <8` (optional) |
 
 `@exprtlabs/golem` has only optional peer dependencies:
 

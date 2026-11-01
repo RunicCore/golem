@@ -7,6 +7,7 @@ import type { GolemConfig, GolemJob } from '#golem/config';
 import { applyJob, digest, loadInventory, realOutputFiles, removeRetiredJobs } from '#golem/outputs';
 import type { OutputFiles } from '#golem/outputs';
 import { snapshotFilesystem } from './fixture-project.js';
+import { configFor, jobWithFacts } from './support/output-config.js';
 
 interface OutputFixture {
   readonly directory: string;
@@ -17,21 +18,8 @@ interface OutputFixture {
 function fixture(t: TestContext, inventory = true): OutputFixture {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'golem-recovery-'));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
-  const profile = { mobx: false, validation: false };
-  const job: GolemJob = {
-    id: 'models:.',
-    kind: 'models',
-    package: '@exprtlabs/golem-model',
-    options: { root: directory, profile },
-  };
-  const config: GolemConfig = {
-    directory,
-    profile,
-    configFile: path.join(directory, 'golem.yaml'),
-    inventoryFile: path.join(directory, '.golem/outputs.json'),
-    tsconfig: path.join(directory, 'tsconfig.json'),
-    jobs: [job],
-  };
+  const job = jobWithFacts('model', '@exprtlabs/golem-model', { ownedRoots: [directory] });
+  const config: GolemConfig = { ...configFor(directory, job), profile: { mobx: false, validation: false } };
   if (inventory) fs.mkdirSync(path.dirname(config.inventoryFile), { recursive: true });
   return { directory, config, job };
 }
