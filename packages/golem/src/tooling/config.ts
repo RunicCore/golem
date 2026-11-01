@@ -7,6 +7,7 @@ import { providersOf, resolveJobPlan } from './job-rules.js';
 import { loadPackageRegistry, PackageRegistryError, registrationForBlock } from './package-registry.js';
 import type { PackageRegistration, PackageRegistry } from './package-registry.js';
 import type { EnabledExtension } from './rewrite-participant.js';
+import { MODEL_BOUNDARY } from './job-facts.js';
 import type { JobFacts, JobPlan } from './job-facts.js';
 import type {
   ContractValues,
@@ -90,6 +91,11 @@ function plannedJobs(registration: PackageRegistration, planned: unknown): reado
     for (const contract of Array.isArray(job.facts.provides) ? job.facts.provides : []) {
       if (!isRecord(job.provided) || job.provided[String(contract)] === undefined) {
         throw new PackageRegistryError(`Job ${job.facts.id} of ${registration.name} provides the contract ${String(contract)} but returns no value for it.`);
+      }
+      // Core reads the suffixes of the model boundary to find the model files; a provider that leaves them out would fail later.
+      const boundary = job.provided[String(contract)];
+      if (contract === MODEL_BOUNDARY && !(isRecord(boundary) && Array.isArray(boundary.suffixes) && boundary.suffixes.every(suffix => typeof suffix === 'string'))) {
+        throw new PackageRegistryError(`Job ${job.facts.id} of ${registration.name} provides the contract ${MODEL_BOUNDARY} whose value must hold "suffixes", an array of strings.`);
       }
     }
   }
@@ -218,11 +224,16 @@ function writtenBefore(jobs: readonly GolemJob[], input: string): boolean {
   return jobs.some(job => job.facts.outputs.some(output => output.kind === 'file' ? output.path === input : isInsideDirectory(output.path, input)));
 }
 
+/** Whether an earlier job writes into `root`, or writes a folder that holds it: the folder exists once that job has run. */
+function writtenInside(jobs: readonly GolemJob[], root: string): boolean {
+  return jobs.some(job => job.facts.outputs.some(output => isInsideDirectory(root, output.path) || isInsideDirectory(output.path, root)));
+}
+
 export function validateConfigInputs(config: GolemConfig): void {
   for (const [index, job] of config.jobs.entries()) {
     const earlier = config.jobs.slice(0, index);
     // A root or an input that an earlier job writes is absent on a clean clone until that job runs. Rule 1 keeps a producer before its reader.
-    for (const root of [...job.facts.ownedRoots, ...(job.facts.scanRoots ?? [])]) if (!writtenBefore(earlier, root)) existing(root, 'directory', `Job ${job.id}: root`);
+    for (const root of [...job.facts.ownedRoots, ...(job.facts.scanRoots ?? [])]) if (!writtenInside(earlier, root)) existing(root, 'directory', `Job ${job.id}: root`);
     for (const input of job.facts.inputFiles) if (!writtenBefore(earlier, input)) existing(input, 'file', `Job ${job.id}: input file`);
     for (const output of job.facts.outputs) {
       if (fs.existsSync(output.path) && fs.statSync(output.path).isDirectory() !== (output.kind === 'folder')) throw new Error(`Job ${job.id}: output must be a ${output.kind}: ${displayPath(output.path)}`);

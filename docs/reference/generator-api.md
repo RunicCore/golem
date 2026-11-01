@@ -91,7 +91,7 @@ The facts of a job drive the [job order](/reference/config#job-order) and the ch
 | `id` | A name unique in one `golem.yaml`. Golem prints it in every message. |
 | `outputs` | Destinations that only this job writes, each a `file` or a `folder`. They never overlap another job, and none holds `golem.yaml` or `.golem/`. Add `importedByApp: true` when the app imports the files: the output then lies in the tsconfig folder. |
 | `ownedRoots` | Folders the job owns but does not claim alone. They lie in the tsconfig folder. |
-| `scanRoots` | Folders the job only reads and scans. They exist and lie in the tsconfig folder. |
+| `scanRoots` | Folders the job only reads and scans. They lie in the tsconfig folder and exist, unless an earlier job writes into them. |
 | `inputFiles`, `inputFolders` | What the job reads. A job that reads the output of another job runs after it. |
 | `readsProgram` | `true` when the job opens the app's TypeScript program. This decides its place in the order and which later outputs it sees. |
 | `provides`, `needs`, `wants` | Contracts, below. |

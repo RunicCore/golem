@@ -949,6 +949,18 @@ test('an empty model block scans from the golem.yaml folder, writes the default 
   assert.deepEqual(config.contracts, { ModelBoundary: { root: app, directory: app, output, suffixes: ['.model.ts', '.models.ts'] }, CodecsHost: { modelsOutput: output, configDirectory: app } });
 });
 
+test('a model source inside the output folder of the job loads, and the job reads no file it writes into', async (t: TestContext) => {
+  // protects: T-786 sources in the output folder are not input files, so the job does not "write what it reads"
+  const { app, filename } = configProject(t, 'model:\n  output: src/models\n  sources: [src/models/a.model.ts, src/b.model.ts]\n');
+  fs.mkdirSync(path.join(app, 'src/models'), { recursive: true });
+  fs.writeFileSync(path.join(app, 'src/models/a.model.ts'), 'export {};\n');
+  fs.writeFileSync(path.join(app, 'src/b.model.ts'), 'export {};\n');
+
+  const { job } = await modelJobOf(filename);
+
+  assert.deepEqual(job.facts.inputFiles, [path.join(app, 'src/b.model.ts')]);
+});
+
 test('model sources, suffixes and output reach the options and the boundary; the owned roots run from the source folders to the root', async (t: TestContext) => {
   // protects: page "What a job declares": the model folder is an exclusive output and the owned roots run narrow to wide, so a file is recorded under its narrowest owner; the boundary carries the suffixes the rewrite reads
   const { app, filename } = configProject(t, 'exact: false\nmodel:\n  output: gen/models\n  suffixes: [.entity.ts, .record.mts]\n  sources: [a/b/x.entity.ts, a/y.record.mts]\n');

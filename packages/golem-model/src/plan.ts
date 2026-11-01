@@ -83,8 +83,8 @@ export const plan: GolemPlanEntry<ModelOptions> = {
       outputs: [{ path: output, kind: 'folder', importedByApp: true }],
       // A companion lies beside its source, anything else below the root.
       ownedRoots: narrowToWide([...(sources ?? []).map(source => path.dirname(source)), root]),
-      // A source may be a file that an earlier job writes, so the job reads it after that job.
-      inputFiles: sources ?? [],
+      // A source may be a file that an earlier job writes, so the job reads it after that job. A source in the job's own output is its own to write.
+      inputFiles: (sources ?? []).filter(source => !isInsideDirectory(output, source)),
       inputFolders: [],
       readsProgram: true,
       provides: [MODEL_BOUNDARY, CODECS_HOST],

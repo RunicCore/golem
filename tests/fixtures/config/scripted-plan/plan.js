@@ -19,7 +19,8 @@ export const plan = {
         watch: [],
       },
       options: { seen: { profile, tsconfig, ...(exact === undefined ? {} : { exact }) } },
-      provided: Object.fromEntries(list(job.provides).map((name) => [name, { from: job.id, directory }])),
+      // A job that provides the ModelBoundary also gives its `suffixes`, unless `noSuffixes` leaves them out as a careless provider would.
+      provided: Object.fromEntries(list(job.provides).map((name) => [name, { from: job.id, directory, ...(name === 'ModelBoundary' && job.noSuffixes !== true ? { suffixes: ['.model.ts'] } : {}) }])),
     }));
   },
   // The second pass: a job that provides a contract reads the folders of the jobs that need it, and every job keeps the values it was given.

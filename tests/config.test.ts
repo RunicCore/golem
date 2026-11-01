@@ -251,3 +251,30 @@ test('CLI rejects per-command feature overrides and preserves child arguments', 
     action: 'exec', config: 'other.yaml', watch: true, command: ['node', '-e', 'process.exit(7)'],
   });
 });
+
+test('a root that an earlier job writes into, or holds, need not exist; a root nothing writes must', async (t: TestContext) => {
+  // protects: T-786 a writer of the file src/gen/a.model.ts makes the root src/gen of a later job, on a clean clone
+  const { root, filename } = project(t, `version: 1\n${SHOP([
+    '    - { id: writer, outputs: [{ path: src/gen/a.model.ts }] }',
+    '    - { id: reader, roots: [src/gen], inputFiles: [src/gen/a.model.ts] }',
+  ].join('\n') + '\n')}`);
+  assert.deepEqual((await loadConfig(filename)).jobs.map((job) => job.id), ['writer', 'reader']);
+
+  fs.writeFileSync(filename, `version: 1\n${SHOP([
+    '    - { id: writer, outputs: [{ path: src/gen, kind: folder }] }',
+    '    - { id: reader, roots: [src/gen/deep] }',
+  ].join('\n') + '\n')}`);
+  assert.deepEqual((await loadConfig(filename)).jobs.map((job) => job.id), ['writer', 'reader'], 'a folder that holds the root');
+
+  fs.writeFileSync(filename, `version: 1\n${SHOP([
+    '    - { id: writer, outputs: [{ path: src/gen/a.model.ts }] }',
+    '    - { id: reader, roots: [src/other] }',
+  ].join('\n') + '\n')}`);
+  await assert.rejects(() => loadConfig(filename), { message: `Job reader: root does not exist: ${path.relative(process.cwd(), path.join(root, 'src/other'))}` });
+});
+
+test('a provider of the model boundary that leaves out the suffixes stops loading and names the package', async (t: TestContext) => {
+  // protects: T-786 core owns the ModelBoundary value, so a JS provider that omits suffixes fails at load, not later with a TypeError
+  const { filename } = project(t, `version: 1\n${SHOP('    - { id: models, provides: [ModelBoundary], noSuffixes: true }\n')}`);
+  await assert.rejects(() => loadConfig(filename), (error: unknown) => error instanceof PackageRegistryError && /^Job models of @fixture\/shop provides the contract ModelBoundary whose value must hold "suffixes", an array of strings\.$/.test(error.message));
+});
