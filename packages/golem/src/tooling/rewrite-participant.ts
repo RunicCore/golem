@@ -145,19 +145,36 @@ export async function loadRewriteParticipants(extensions: readonly EnabledExtens
   return (await loadExtensions(extensions)).flatMap(({ extension, rewrite }) => rewrite === undefined ? [] : [{ extension, participant: rewrite }]);
 }
 
-/** The edits of a participant's result, each checked against the file text: whole numbers, in range, and `expect` the text of the range. */
-export function checkedEdits(extension: EnabledExtension, file: string, text: string, result: unknown): readonly RewriteEdit[] {
+/** What a participant's result holds once checked: the edits fit the file text, `reads` lists files and `diagnostics` lists objects. */
+export interface CheckedRewriteResult {
+  readonly edits: readonly RewriteEdit[];
+  readonly reads: readonly string[];
+  readonly diagnostics: readonly GolemDiagnostic[];
+}
+
+/**
+ * The result of a participant, checked: no promise (the call is synchronous, so an `async` rewrite would return one that holds the edits
+ * nobody applies), `reads` an array of strings, `diagnostics` an array of objects, and each edit whole numbers, in range, and `expect`
+ * the text of the range.
+ */
+export function checkedResult(extension: EnabledExtension, file: string, text: string, result: unknown): CheckedRewriteResult {
+  if (typeof (result as { then?: unknown } | null | undefined)?.then === 'function') {
+    // The fault below is the report; a rejection of the promise later must not stop the process as an unhandled one.
+    (result as PromiseLike<unknown>).then(undefined, () => undefined);
+    throw new ExtensionFaultError(extension, `returned a promise for ${displayPath(file)}; "rewrite" must return its result at once, not from an async function`);
+  }
   if (!isRecord(result)) throw new ExtensionFaultError(extension, `returned no result object for ${displayPath(file)}`);
-  const { edits } = result;
-  if (edits === undefined) return [];
+  const { edits = [], reads = [], diagnostics = [] } = result;
   if (!Array.isArray(edits)) throw new ExtensionFaultError(extension, `returned edits that are no array for ${displayPath(file)}`);
+  if (!Array.isArray(reads) || reads.some(read => typeof read !== 'string')) throw new ExtensionFaultError(extension, `returned reads that are no array of file paths for ${displayPath(file)}`);
+  if (!Array.isArray(diagnostics) || diagnostics.some(diagnostic => !isRecord(diagnostic))) throw new ExtensionFaultError(extension, `returned diagnostics that are no array of objects for ${displayPath(file)}`);
   for (const edit of edits as unknown[]) {
     const fits = isRecord(edit) && Number.isInteger(edit.start) && Number.isInteger(edit.end) && typeof edit.expect === 'string' && typeof edit.text === 'string'
       && (edit.start as number) >= 0 && (edit.start as number) <= (edit.end as number) && (edit.end as number) <= text.length
       && text.slice(edit.start as number, edit.end as number) === edit.expect;
     if (!fits) throw new ExtensionFaultError(extension, `returned an edit for ${displayPath(file)} that is out of range or does not match the text it expects: ${JSON.stringify(edit)}`);
   }
-  return edits as readonly RewriteEdit[];
+  return { edits: edits as readonly RewriteEdit[], reads: reads as readonly string[], diagnostics: diagnostics as readonly GolemDiagnostic[] };
 }
 
 /** Whether two edits cover some of the same text. Two insertions never do; an insertion at the border of an edit does not; one inside it does. */

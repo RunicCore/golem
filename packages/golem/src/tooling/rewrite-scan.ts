@@ -5,7 +5,7 @@ import { GolemDiagnosticSeverity, canonicalPath, compareText, displayPath, error
 import type { GeneratorSession, GolemDiagnostic, ModelBoundaryValue } from './generator-core.js';
 import type { DiscriminatorValue } from '../model-registry.js';
 import { REWRITE_IMPORT_PREFIX } from './rewrite.js';
-import { ExtensionFaultError, checkedEdits, editsOverlap } from './rewrite-participant.js';
+import { ExtensionFaultError, checkedResult, editsOverlap } from './rewrite-participant.js';
 import type { LoadedParticipant, RewriteCore } from './rewrite-participant.js';
 import type { FileRewrite, RewriteEdit, RewriteImport } from './rewrite.js';
 import { inNodeModules, isInstalledFile } from './type-analysis/path-identity.js';
@@ -880,7 +880,7 @@ function runParticipants(
     } catch (error) {
       throw new ExtensionFaultError(extension, `threw while it rewrote ${displayPath(file.fileName)}: ${errorMessage(error)}`, { cause: error });
     }
-    const edits = checkedEdits(extension, file.fileName, file.text, result);
+    const { edits, reads, diagnostics } = checkedResult(extension, file.fileName, file.text, result);
     // An edit may not cover text that an edit of core, of an earlier participant or of this one covers, and a clash is not picked silently.
     const placed = [...scan.edits];
     let clash: { readonly edit: RewriteEdit; readonly other: RewriteEdit } | undefined;
@@ -898,8 +898,8 @@ function runParticipants(
     } else {
       scan.edits.push(...edits);
     }
-    for (const read of result.reads ?? []) scan.dependencies.add(portable(root, read));
-    scan.diagnostics.push(...result.diagnostics ?? []);
+    for (const read of reads) scan.dependencies.add(portable(root, read));
+    scan.diagnostics.push(...diagnostics);
   }
 }
 

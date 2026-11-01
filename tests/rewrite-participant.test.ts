@@ -1,6 +1,7 @@
 // The rewrite participant of an extension that a golem.yaml block turns on. The test extension is tests/fixtures/extensions/probe, which registers the block `probe`
 // and the extension `mark`. Core runs its participant in golem check, golem build, Vite, esbuild and the Node loader alike.
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 
@@ -152,4 +153,43 @@ test('an extension the package does not register stops loading and lists the one
   // protects: R-94 a block turns on only the extensions its package registers
   const root = await app(t, TAG, 'version: 1\nmodel: {}\nprobe:\n  extensions:\n    nope: {}\n', false);
   await assert.rejects(resolveConfig(path.join(root, 'golem.yaml')), /probe\.extensions turns on "nope", which @fixture\/probe does not register\. It registers: mark, note, stray, broken\./);
+});
+
+// A participant that returns a result the contract refuses: the options say which.
+const BAD_RESULT = `export const extension = {
+  rewrite({ options }) {
+    if (options.result === 'promise') return (async () => ({ edits: [] }))();
+    if (options.result === 'reads') return { reads: 'tag.txt' };
+    return { diagnostics: {} };
+  },
+};
+`;
+
+test('a participant that returns a promise, reads that are no list of paths or diagnostics that are no list stops the run with the package named', async (t) => {
+  // protects: T-786 an async rewrite is not a silent no-op, and a wrong reads or diagnostics is a fault of the package, not a TypeError
+  const cases = [
+    ['a promise', 'promise', /returned a promise for .*main\.ts; "rewrite" must return its result at once/],
+    ['reads that are no array of paths', 'reads', /returned reads that are no array of file paths for .*main\.ts/],
+    ['diagnostics that are no array of objects', 'diagnostics', /returned diagnostics that are no array of objects for .*main\.ts/],
+  ] as const;
+  for (const [name, result, message] of cases) {
+    await t.test(name, async (u) => {
+      const root = await app(u, TAG, `version: 1\nvalidation: false\nmodel: {}\nprobe:\n  extensions:\n    bad:\n      result: ${result}\n`, false);
+      const installed = path.join(root, 'node_modules/@fixture/probe');
+      write(installed, 'bad.mjs', BAD_RESULT);
+      const manifest = JSON.parse(fs.readFileSync(path.join(installed, 'package.json'), 'utf8'));
+      manifest.exports['./bad'] = './bad.mjs';
+      manifest.golem.extensions.bad = './bad';
+      write(installed, 'package.json', JSON.stringify(manifest));
+
+      await runPipeline(path.join(root, 'golem.yaml'));
+
+      await assert.rejects(runPipeline(path.join(root, 'golem.yaml'), { check: true }), (error: Error) => {
+        assert.match(error.message, /Extension "bad" of @fixture\/probe \(block probe\)/);
+        assert.match(error.message, message);
+        assert.match(error.message, /This is a fault in @fixture\/probe/);
+        return true;
+      });
+    });
+  }
 });
