@@ -153,7 +153,7 @@ Disabling validation does not disable conversion guards, codecs, JSON representa
 
 Install `@exprtlabs/golem-ts-openapi` to use the `ts-openapi` block. Its `docs` list holds one docs job for each document. A job reads static NestJS controller contracts. It does not start Nest and does not reproduce module registration. Use `sources` to read only selected controllers. Its `extensions` key turns on [the `nest` extension](#nest-extension). The block needs `docs`, `extensions`, or both.
 
-Each entry of `docs` takes these keys. `docs` holds at least one entry. A docs job scans from the folder of `golem.yaml`. To scan another folder, move `golem.yaml` there or list `sources`. A docs job uses the `model` block of the same file, when there is one, to match a shared model of the app to its model.
+Each entry of `docs` takes these keys. `docs` holds at least one entry. A docs job scans from the folder of `golem.yaml`. That folder must lie inside the folder of the `tsconfig`. To read the controllers of another project, put `golem.yaml` in that project. A docs job uses the `model` block of the same file, when there is one, to match a shared model of the app to its model.
 
 | Key | Type | Required | Default | Meaning |
 | --- | --- | --- | --- | --- |
@@ -226,7 +226,7 @@ Each entry of `sdks` takes these keys:
 | `input` | path | Yes | — | Config-relative OpenAPI YAML or JSON file. A docs job of the file may write it. |
 | `output` | path | Yes | — | Config-relative SDK output directory. |
 | `name` | string | No | — | Prefix for generated client and operation types. |
-| `remoteHosts` | array of strings | No | `[]` | The hosts that a remote reference can load from. Without a list, the job loads no remote reference. |
+| `remoteHosts` | array of strings | No | `[]` | The hosts that a remote reference can load from. An entry such as `schemas.example` allows the default HTTPS port only. An entry with a port, such as `schemas.example:8443`, allows that port only. Without a list, the job loads no remote reference. |
 | `maxRefBytes` | positive integer | No | `5242880` | Maximum bytes to read from one referenced document, local or remote. |
 | `maxRefDocuments` | positive integer | No | `256` | Maximum referenced documents, local ones included. |
 | `refTimeoutMs` | positive integer | No | `10000` | Timeout for a remote reference read, in milliseconds. |

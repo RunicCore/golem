@@ -11,7 +11,8 @@ Golem 1.1.0 is a breaking release with a 1.x number. It supports TypeScript 6.0+
 - **Breaking:** each package registers one `golem.yaml` block. Write `model`, `ts-openapi` with `docs`, and `openapi-ts` with `sdks`, in place of `models`, `controllers`, `openapi` and `generators` ([Configuration](/reference/config#blocks), [Register a block](/reference/generator-api#register-a-block)).
 - **Breaking:** golem derives the job order from what each job reads and writes ([Job order](/reference/config#job-order)).
 - **Breaking:** the `model` block has no `root` key and scans from the folder of `golem.yaml`.
-- **Breaking:** a `ts-openapi` docs job has no `root` key. It scans from the folder of `golem.yaml`. If you set another root, move `golem.yaml` there or list `sources` ([Configuration](/reference/config#ts-openapi-block)).
+- **Breaking:** a `ts-openapi` docs job has no `root` key. It scans from the folder of `golem.yaml`, which must lie inside the folder of the tsconfig. If you set another root, put `golem.yaml` in the project that owns the controllers ([Configuration](/reference/config#ts-openapi-block)).
+- **Breaking:** `@exprtlabs/golem/generator-api` no longer exports `ModelContext` and `OpenApiContext`. Import them from `@exprtlabs/golem-model/generator` and `@exprtlabs/golem-openapi-ts/generator`.
 - **Breaking:** a `ts-openapi` docs job has no `framework` key. NestJS is the only framework ([Configuration](/reference/config#ts-openapi-block)).
 - **Breaking:** the `openapi-ts` SDK job has no `allowRemoteRefs` key. A non-empty `remoteHosts` list turns on remote references for those hosts only. Without it, the job loads none ([Configuration](/reference/config#openapi-ts-block)).
 - **Breaking:** `@exprtlabs/golem-openapi` is renamed `@exprtlabs/golem-openapi-ts`. Install and import it under the new name ([OpenAPI](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#openapi)).
