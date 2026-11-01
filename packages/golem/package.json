@@ -256,7 +256,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.runtime.json && tsc -p tsconfig.tooling.json && node ../../scripts/build-sdk-runtime.mjs && node -e \"require('node:fs').chmodSync('dist/bin/golem.js', 0o755)\"",
-    "clean": "node -e \"for (const target of ['dist', '../../.build/golem-runtime.tsbuildinfo', '../../.build/golem-tooling.tsbuildinfo', '../golem-openapi/sdk-runtime']) require('node:fs').rmSync(target, { recursive: true, force: true })\"",
+    "clean": "node -e \"for (const target of ['dist', '../../.build/golem-runtime.tsbuildinfo', '../../.build/golem-tooling.tsbuildinfo', '../golem-openapi-ts/sdk-runtime']) require('node:fs').rmSync(target, { recursive: true, force: true })\"",
     "prepack": "npm run clean && npm run build && tsc -p ../../tsconfig.package-check.json && node ../../.build/scripts/verify-package.js ."
   }
 }

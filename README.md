@@ -22,7 +22,7 @@ npm install --save-dev @exprtlabs/golem-model typescript@~7.1.0-beta
 Or, for an existing OpenAPI document:
 
 ```sh
-npm install --save-dev @exprtlabs/golem-openapi typescript@~7.1.0-beta
+npm install --save-dev @exprtlabs/golem-openapi-ts typescript@~7.1.0-beta
 ```
 
 Or, for NestJS controllers only:

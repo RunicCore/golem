@@ -210,7 +210,7 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions, moved:
     : undefined;
   const validators: { compiled?: PlanValidators } = {};
   const validatorOptions = {
-    owner: '@exprtlabs/golem-openapi',
+    owner: '@exprtlabs/golem-openapi-ts',
     unknownFormats: profile.unknownFormats,
     level: compileLevel(profile.validation),
     documentName: 'the OpenAPI document',

@@ -1,4 +1,4 @@
-// The plan entry of golem-openapi (`golem.plan`): it reads the `openapi-ts` block of golem.yaml and declares one job for each entry of `sdks`. It is light: it imports no TypeScript, no yaml and no generator code.
+// The plan entry of golem-openapi-ts (`golem.plan`): it reads the `openapi-ts` block of golem.yaml and declares one job for each entry of `sdks`. It is light: it imports no TypeScript, no yaml and no generator code.
 import fs from 'node:fs';
 import path from 'node:path';
 import type { CodecsHostValue, GolemPlanEntry, JobFacts, OpenApiContext, PlanContext, PlannedJob } from '@exprtlabs/golem/generator-api';
