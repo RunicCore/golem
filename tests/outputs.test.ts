@@ -324,6 +324,26 @@ test('check reports an unrecorded file in a folder output that carries the marke
   );
 });
 
+// protects: T-822 the check treats each artifact alike by its marker: a third-party JSON artifact with a documented marker generates and checks
+test('a third-party JSON artifact with an x-generator or generator.name marker generates and checks, and an unrecorded one is drift', (t: TestContext) => {
+  const { config } = fixture(t);
+  const output = path.join(config.directory, 'docs');
+  const job = jobWithFacts('docs:acme', '@acme/docs', { outputs: [{ path: output, kind: 'folder' }] });
+  const docsConfig = { ...config, jobs: [job], jobPlan: { ...config.jobPlan, order: [job.id] } };
+  const artifacts = [
+    { path: path.join(output, 'api.json'), content: '{"x-generator":"@acme/docs","paths":{}}\n' },
+    { path: path.join(output, 'manifest.json'), content: '{"generator":{"name":"@acme/docs","version":"1"}}\n' },
+  ];
+  applyJob(docsConfig, loadInventory(docsConfig), job, artifacts);
+  assert.doesNotThrow(() => applyJob(docsConfig, loadInventory(docsConfig), job, artifacts, true));
+  fs.writeFileSync(path.join(output, 'left.json'), '{"x-generator":"@acme/docs"}\n');
+  assert.throws(
+    () => applyJob(docsConfig, loadInventory(docsConfig), job, artifacts, true),
+    new Error(`Unrecorded generated output drift for docs:acme:\n  ${path.relative(process.cwd(), path.join(output, 'left.json'))}`),
+  );
+  assert.throws(() => applyJob(docsConfig, loadInventory(docsConfig), job, [{ path: path.join(output, 'plain.json'), content: '{"paths":{}}\n' }]), /Missing generator ownership marker/);
+});
+
 // protects: T-770 the codec key table is core's own record, not a job output
 test('the codec key table is written and removed by core for the boundary provider, outside the inventory and the markers', (t: TestContext) => {
   const { config, filename } = fixture(t);
