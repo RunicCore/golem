@@ -2,6 +2,7 @@ import path from 'node:path';
 import {
   GolemDiagnosticSeverity,
   type GolemResult,
+  type HookParticipants,
   type OpenApiContext,
 } from '@exprtlabs/golem/generator-api';
 import { normalizeSchemaUnions } from './document.js';
@@ -17,7 +18,10 @@ import {
 
 export type { OpenApiContext } from '@exprtlabs/golem/generator-api';
 
-export interface OpenApiGenerationContext extends OpenApiContext {}
+export interface OpenApiGenerationContext extends OpenApiContext {
+  /** The participants of the extensions that fill the hooks this job offers (`client.operationWrapper`), as core routes them. */
+  readonly hooks?: HookParticipants;
+}
 
 export interface OpenApiGenerationResult extends GolemResult {
   readonly apiVersion: 1;
@@ -58,7 +62,7 @@ export async function generate(context: OpenApiGenerationContext): Promise<OpenA
   const input = path.resolve(context.input);
   const output = path.resolve(context.output);
   const loaded = await loadOpenApiInput(input, context);
-  const result = writeSdk(loaded.document, { output, name: context.name, profile, locate: loaded.locate, ...(context.dates === undefined ? {} : { dates: context.dates }), ...(context.mode === undefined ? {} : { mode: context.mode }), ...(context.codecsFile === undefined ? {} : { codecsFile: context.codecsFile }) });
+  const result = writeSdk(loaded.document, { output, name: context.name, profile, locate: loaded.locate, ...(context.dates === undefined ? {} : { dates: context.dates }), ...(context.mode === undefined ? {} : { mode: context.mode }), ...(context.codecsFile === undefined ? {} : { codecsFile: context.codecsFile }), ...(context.hooks === undefined ? {} : { hooks: context.hooks }) });
   const failed = result.diagnostics?.some((diagnostic) => diagnostic.severity === GolemDiagnosticSeverity.Error) ?? false;
   return {
     apiVersion: API_VERSION,

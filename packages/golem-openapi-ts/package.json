@@ -46,6 +46,12 @@
     "block": "openapi-ts",
     "plan": "./plan",
     "generator": "./generator",
+    "extensions": {
+      "mobx": {
+        "entry": "./mobx-extension",
+        "profile": true
+      }
+    },
     "schema": "./golem-schema.json"
   },
   "exports": {
@@ -58,6 +64,11 @@
       "types": "./dist/generator.d.ts",
       "import": "./dist/generator.js",
       "default": "./dist/generator.js"
+    },
+    "./mobx-extension": {
+      "types": "./dist/mobx/extension.d.ts",
+      "import": "./dist/mobx/extension.js",
+      "default": "./dist/mobx/extension.js"
     },
     "./mobx": {
       "types": "./dist/runtime/mobx.d.ts",
@@ -82,10 +93,14 @@
   },
   "peerDependencies": {
     "@exprtlabs/golem": "1.1.0-rc.0",
+    "@exprtlabs/golem-model": "1.1.0-rc.0",
     "mobx": "^6.13.0",
     "typescript": ">=6.0.0 <7 || >=7.1.0-0 <8"
   },
   "peerDependenciesMeta": {
+    "@exprtlabs/golem-model": {
+      "optional": true
+    },
     "mobx": {
       "optional": true
     },

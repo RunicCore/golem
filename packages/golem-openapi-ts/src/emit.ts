@@ -1,5 +1,6 @@
 import path from 'node:path';
-import { GolemDiagnosticSeverity, type GolemDiagnostic, type GolemResult } from '@exprtlabs/golem/generator-api';
+import { GolemDiagnosticSeverity, type GolemDiagnostic, type GolemResult, type HookParticipants } from '@exprtlabs/golem/generator-api';
+import { OPERATION_WRAPPER_HOOK, type OperationWrapper, type OperationWrapperParticipant } from './plan.js';
 import { stableJson } from '@exprtlabs/golem/generator-api';
 import { assertPortableFilenames, identifier, isRecord } from '@exprtlabs/golem/internal/generator-support';
 import { buildOperationValidationSchemas, generateClientModules, operationValidatorNames } from './client/emit.js';
@@ -43,6 +44,8 @@ interface WriteSdkOptions {
   readonly codecsFile?: string;
   /** Names where a bundled component came from; generator errors that name one append it. */
   readonly locate?: OriginLocator;
+  /** The participants of the extensions that fill the hooks of the SDK job. */
+  readonly hooks?: HookParticipants;
 }
 
 function generateLinks(operations: readonly NormalizedOperation[]): RenderedModule {
@@ -158,17 +161,21 @@ interface GeneratedFiles {
   diagnostics: readonly GolemDiagnostic[];
 }
 
-/** A standalone SDK carries no MobX runtime, so a profile with `mobx: true` needs the golem mode. */
-function mobxStandaloneDiagnostics(profile: OpenApiGenerationProfile): GolemDiagnostic[] {
-  return profile.mobx ? [{
-    code: 'OPENAPI_MOBX_NEEDS_GOLEM_MODE',
-    severity: GolemDiagnosticSeverity.Error,
-    message: 'mobx: true needs the MobX runtime of @exprtlabs/golem, which a standalone SDK does not carry. Set mode: golem on this openapi job, or set mobx: false.',
-  }] : [];
+/** The operation wrapper that the extension on `client.operationWrapper` makes for the mode of the job, and the diagnostic when it refuses the mode. */
+function operationWrapperOf(hooks: HookParticipants | undefined, mode: 'standalone' | 'golem'): { readonly wrapper?: OperationWrapper; readonly diagnostics: readonly GolemDiagnostic[] } {
+  const fills = hooks?.[OPERATION_WRAPPER_HOOK] ?? [];
+  if (fills.length > 1) throw new Error(`Two extensions fill the hook "${OPERATION_WRAPPER_HOOK}": ${fills.map((fill) => fill.package).join(', ')}. Turn one off.`);
+  const answer = fills[0]?.use((participant) => {
+    if (typeof participant !== 'function') throw new TypeError(`it fills the hook "${OPERATION_WRAPPER_HOOK}" with ${typeof participant}, not a function`);
+    return (participant as OperationWrapperParticipant)(mode);
+  });
+  if (answer === undefined) return { diagnostics: [] };
+  return 'wrapper' in answer ? { wrapper: answer.wrapper, diagnostics: [] } : { diagnostics: [answer.diagnostic] };
 }
 
 function buildGeneratedFiles(document: unknown, options: WriteSdkOptions, moved: MovedUnions): GeneratedFiles {
   const profile = requireProfile(options.profile);
+  const wrapped = operationWrapperOf(options.hooks, options.mode ?? 'standalone');
   const ir = normalizeAndValidate(document, options.locate);
   unsupportedHttpAuthSchemes(document);
   const operations = ir.operations;
@@ -258,6 +265,7 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions, moved:
       modelAnalysis.convertedNodeIds,
       codecsFor,
       specifiers,
+      wrapped.wrapper,
     );
     files.set('client.ts', clientModules.client.source);
     modules.set('client.ts', { exports: clientModules.client.exports, stars: [] });
@@ -288,7 +296,7 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions, moved:
   // The runtime copy is written whole beside the files that import it, and only an SDK with operations imports it.
   if (specifiers && plan.artifacts.has('client.ts')) for (const [name, source] of runtimeCopy()) files.set(name, source);
   assertPortableFilenames(files.keys());
-  return { files, output, clientName, operations, diagnostics: uniqueDiagnostics([...(specifiers ? mobxStandaloneDiagnostics(profile) : []), ...ir.diagnostics, ...browserCookieDiagnostics(document, operations), ...serverOverrideDiagnostics(document, operations), ...modelAnalysis.diagnostics, ...inlineDiagnostics, ...modelDiagnostics]) };
+  return { files, output, clientName, operations, diagnostics: uniqueDiagnostics([...wrapped.diagnostics, ...ir.diagnostics, ...browserCookieDiagnostics(document, operations), ...serverOverrideDiagnostics(document, operations), ...modelAnalysis.diagnostics, ...inlineDiagnostics, ...modelDiagnostics]) };
 }
 
 /**

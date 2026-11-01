@@ -20,6 +20,9 @@
   ],
   "references": [
     {
+      "path": "../golem-model/tsconfig.json"
+    },
+    {
       "path": "../golem/tsconfig.runtime.json"
     },
     {
