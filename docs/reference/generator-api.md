@@ -107,7 +107,7 @@ A contract is a typed value that one job provides and others use. Golem knows tw
 | Contract | Value | Used for |
 | --- | --- | --- |
 | `ModelBoundary` | `ModelBoundaryValue`: the models `root`, `directory`, `output` and `suffixes` | Golem's rewrite and the docs jobs find the models of the app. It is optional: without a provider, the rewrite serves SDK models only. |
-| `CodecsHost` | `CodecsHostValue`: `modelsOutput` and `configDirectory` | An SDK in `mode: golem` imports the codecs file that its provider writes. `sdkCodecsFile` names it. |
+| `CodecsHost` | `CodecsHostValue`: `modelsOutput` and `configDirectory` | An SDK in `mode: golem` imports the codecs file that its provider writes. |
 
 - A job lists a contract in `provides` and returns its value in `provided`, in the first pass.
 - A job lists a contract in `needs` to get its value in `link`. A needed contract with no provider stops loading and names the contract.
@@ -122,7 +122,7 @@ The `generator` module exports `apiVersion` (`1`) and `generate(context)`, as in
 | --- | --- |
 | `onInput` | Call it with each local file path before you read it. Golem skips a job whose inputs did not change. |
 | `session` | `retain` and `share` keep a resource, such as a compiler, across runs. |
-| `programView` | For a job with `readsProgram: true`. `stubbedProviders` and `laterOutputs` say what the program leaves out or stubs of the jobs that run later. |
+| `programView` | For a job with `readsProgram: true`. `laterOutputs` lists the outputs of the jobs that run later, which the program leaves out. |
 | `hooks` | For a job that offers hooks: the participants of the extensions that fill each, in the order of `golem.yaml`. |
 | `manifestInputs` | The `model-manifest.json` files that earlier jobs wrote. |
 
@@ -211,6 +211,8 @@ interface GolemProfile {
   readonly allowAny?: boolean;
   /** `error` (the default) fails generation on a schema format that golem does not implement; `warn` skips its check. */
   readonly unknownFormats?: 'warn' | 'error';
+  /** The options of the extensions flagged `profile: true`, by package name and extension name. Omitted when none is turned on. */
+  readonly extensions?: Readonly<Record<string, Readonly<Record<string, unknown>>>>;
 }
 
 interface GolemArtifact {
@@ -244,6 +246,8 @@ type InputObserver = (absolutePath: string) => void;
 
 interface GeneratorSession {
   retain<Resource extends Disposable>(key: string, create: () => Resource): Resource;
+  /** A resource that every job and the rewrite share for the run, such as one compiler session. The first request under `key` creates it. */
+  share<Resource extends Disposable>(key: string, create: () => Resource): Resource;
 }
 
 interface GolemProvider<Context> {
