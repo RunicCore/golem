@@ -14,6 +14,11 @@ npm install @exprtlabs/golem
 npm install --save-dev @exprtlabs/golem-openapi-ts typescript@~7.1.0-beta
 ```
 
+MobX is the `mobx` extension of the `openapi-ts` block. An app that uses it
+installs this package in `dependencies`, with `mobx`, and imports
+`@exprtlabs/golem-openapi-ts/mobx`
+([MobX extension](../../docs/reference/config.md#mobx-extension)).
+
 [Generate an SDK](../../docs/guide/client.md) walks through calling the
 generated SDK. [Compatibility](../../docs/compatibility.md) has supported
 versions. Feature support by OpenAPI version and profile is in

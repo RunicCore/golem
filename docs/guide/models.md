@@ -25,7 +25,7 @@ Both declare fields. `IObject` stops there: values stay plain objects, and you c
 | Generates | validation and JSON conversion | the same, plus a class (`TTaskBaseModel`) |
 | Value from `parse` | plain object: `parse<TComment>(json)` | your class with `parse<Task>(json)`; a plain object with `parse<TTask>(json)` |
 | Methods and getters | no | yes, on your class |
-| [MobX](/guide/mobx) (`mobx: true`) | observable only as a field of a generated model | observable fields once your constructor calls `asGenObservable(this)` |
+| [MobX](/guide/mobx) | observable only as a field of a generated model | observable fields once your constructor calls `asGenObservable(this)` |
 | Use it for | DTOs and nested data | domain objects with behavior |
 
 ## Declare fields
@@ -67,7 +67,7 @@ The generated file puts `.generated` before the final extension of its source: `
 
 ## Add behavior
 
-Your class holds methods, getters, defaults and extra constructor state. The base constructor assigns the supplied values, so call `super(values)` before you read a field. With [MobX](/guide/mobx) on, call `asGenObservable(this)` right after `super(values)`.
+Your class holds methods, getters, defaults and extra constructor state. The base constructor assigns the supplied values, so call `super(values)` before you read a field. With [MobX](/guide/mobx), call `asGenObservable(this)` right after `super(values)`.
 
 `toWireFormat` emits declared fields only. Getters and other state on your class stay on the instance. A key on an instance that its model does not declare is program state, and codecs ignore it. The `exact` option of the model decides whether extra keys in input fail validation ([options `exact` and `allowAny`](/guide/field-types#the-options-exact-and-allowany)).
 

@@ -53,7 +53,7 @@ When neither the project nor Golem has `typescript`, a command that needs the co
 
 ## Defaults
 
-- Validation and `exact` are enabled by default. MobX and `allowAny` are disabled by default ([which jobs each flag covers](/reference/config#root-keys)).
+- Validation and `exact` are enabled by default. `allowAny` is disabled by default ([which jobs each flag covers](/reference/config#root-keys)). MobX is off until the `openapi-ts` block turns on [the `mobx` extension](/reference/config#mobx-extension).
 - An individual `IObject` or `IModel` can override `exact`, `allowAny` and `validation`.
 - Callback and webhook payloads are generated as types, like any other SDK type. The SDK has no handler for them: your application receives the request. An app model over a payload type converts it like any SDK type: in golem mode with the limits of the SDK, in standalone mode without them.
 - Response links are emitted as metadata. Clients do not follow them automatically.

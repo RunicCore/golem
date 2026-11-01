@@ -187,13 +187,13 @@ Declare `application/vnd.provider.events` with `itemSchema` on a `readEventIds` 
 
 ## Observe loading with MobX
 
-Set `mobx: true` in `golem.yaml`, install `mobx`, and generate again.
+Turn on the [`mobx` extension](/reference/config#mobx-extension) in the `openapi-ts` block of `golem.yaml`, install `mobx` and `@exprtlabs/golem-openapi-ts`, and generate again.
 
 <<< ../../examples/payments/web/src/payment-store.ts#loading
 
 - `loading` is observable without more setup.
 - It stays true until every pending call ends, including failed and cancelled calls.
-- With MobX off, the operation has no `loading` property.
+- Without the extension, the operation has no `loading` property.
 - For a streaming response, `loading` ends when `execute` resolves, before you read the body ([Streaming responses](#streaming-responses)).
 
 ## Share headers

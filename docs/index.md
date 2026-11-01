@@ -38,7 +38,7 @@ hero:
 <span class="home-card-foot">devDependencies</span>
 </article>
 <article class="home-card">
-<code class="home-card-name">@exprtlabs/golem-openapi</code>
+<code class="home-card-name">@exprtlabs/golem-openapi-ts</code>
 <h3>You have an OpenAPI document</h3>
 <p>You get typed operations and request and response models. The client checks what it sends and what it receives.</p>
 <span class="home-card-foot">devDependencies</span>
@@ -112,8 +112,8 @@ hero:
 </article>
 <article class="home-card">
 <div class="home-card-head"><h3>MobX and React</h3><span class="home-card-peer">^6.13</span></div>
-<code class="home-card-path">@exprtlabs/golem/mobx</code>
-<p>With <code>mobx: true</code>, generated fields are observable. Validators keep form state, and client operations have an observable <code>loading</code>.</p>
+<code class="home-card-path">@exprtlabs/golem-openapi-ts/mobx</code>
+<p>With the <code>mobx</code> extension, validators keep observable form state, and client operations have an observable <code>loading</code>. <code>asGenObservable</code> makes generated fields observable.</p>
 </article>
 <article class="home-card">
 <div class="home-card-head"><h3>Vite</h3><span class="home-card-peer">≥5</span></div>
@@ -158,7 +158,7 @@ npm install --save-dev @exprtlabs/golem-model typescript@~7.1.0-beta
 
 ```sh [OpenAPI document]
 npm install @exprtlabs/golem
-npm install --save-dev @exprtlabs/golem-openapi typescript@~7.1.0-beta
+npm install --save-dev @exprtlabs/golem-openapi-ts typescript@~7.1.0-beta
 ```
 
 ```sh [Server controllers]

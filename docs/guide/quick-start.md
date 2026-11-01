@@ -109,7 +109,7 @@ Each generator is a development dependency. Install it with `typescript`, which 
 | To generate | Development dependency |
 | --- | --- |
 | TypeScript models | `npm install --save-dev @exprtlabs/golem-model typescript@~7.1.0-beta` |
-| An OpenAPI to TypeScript SDK | `npm install --save-dev @exprtlabs/golem-openapi typescript@~7.1.0-beta` |
+| An OpenAPI to TypeScript SDK | `npm install --save-dev @exprtlabs/golem-openapi-ts typescript@~7.1.0-beta` |
 | OpenAPI from NestJS controllers | `npm install --save-dev @exprtlabs/golem-ts-openapi typescript@~7.1.0-beta` |
 
 Generated models and clients import the runtime:
@@ -119,6 +119,8 @@ npm install @exprtlabs/golem
 ```
 
 Generating OpenAPI from controllers needs no runtime. A NestJS app that registers `NestModelInterceptor` does need it, so it lists `@exprtlabs/golem-ts-openapi` in `dependencies`.
+
+An app with the [MobX extension](/reference/config#mobx-extension) imports `@exprtlabs/golem-openapi-ts` at run time, so it lists that package in `dependencies`, with `mobx`.
 
 The `golem` command comes from `@exprtlabs/golem`, which every generator depends on:
 
@@ -136,7 +138,7 @@ The `@exprtlabs/*` package subpaths are ESM-only. Import them from ESM applicati
 | --- | --- |
 | `@exprtlabs/golem-model` | `typescript` `>=6.0.0 <7` or `>=7.1.0-0 <8` |
 | `@exprtlabs/golem-ts-openapi` | `@exprtlabs/golem`, and `typescript` `>=6.0.0 <7` or `>=7.1.0-0 <8`, `@nestjs/common` `^11.0.0` and `rxjs` `^7.8.0` (all three optional; the last two for `NestModelInterceptor`) |
-| `@exprtlabs/golem-openapi` | `@exprtlabs/golem`, and `typescript` `>=6.0.0 <7` or `>=7.1.0-0 <8` (optional) |
+| `@exprtlabs/golem-openapi-ts` | `@exprtlabs/golem`, and `typescript` `>=6.0.0 <7` or `>=7.1.0-0 <8` and `mobx` `^6.13.0` (both optional; `mobx` for the MobX extension) |
 
 `@exprtlabs/golem` has only optional peer dependencies:
 
@@ -144,7 +146,6 @@ The `@exprtlabs/*` package subpaths are ESM-only. Import them from ESM applicati
 - `vite` `>=5`, for the Vite plugin
 - `esbuild` `^0.25.12`, for the esbuild plugin
 - `eslint` `^9.0.0 || ^10.0.0`, for the ESLint rule
-- `mobx` `^6.13.0`, for MobX models
 
 ```sh
 npm install --save-dev typescript@~7.1.0-beta
@@ -169,7 +170,7 @@ Validation is on and MobX is off by default. `validation` also takes `sanity`, w
 | --- | --- |
 | Validation on (`validation: true`) | none |
 | Shape checks only (`validation: sanity`) | none |
-| MobX on (`mobx: true`) | `npm install mobx` |
+| MobX on (`extensions: { mobx: {} }` in the `openapi-ts` block) | `npm install mobx @exprtlabs/golem-openapi-ts` |
 | Validation off (`validation: false`) | none |
 
-These keys go at the top level of `golem.yaml` ([all settings](/reference/config#validation-profiles)).
+`validation` goes at the top level of `golem.yaml` ([all settings](/reference/config#validation-profiles)). The MobX extension goes in the `openapi-ts` block ([MobX extension](/reference/config#mobx-extension)).

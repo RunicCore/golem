@@ -205,7 +205,6 @@ import type {
 } from '@exprtlabs/golem/generator-api';
 
 interface GolemProfile {
-  readonly mobx: boolean;
   /** `true` checks every rule, `'sanity'` the JSON shape only, `false` nothing. */
   readonly validation: boolean | 'sanity';
   readonly allowAny?: boolean;
@@ -258,7 +257,7 @@ interface GolemProvider<Context> {
 
 | Export | Signature | Behavior |
 | --- | --- | --- |
-| `resolveProfile` | `(profile: GolemProfile): ResolvedGolemProfile` | Applies the defaults `allowAny: false` and `unknownFormats: 'error'` and returns a frozen profile. Throws `TypeError` for an unknown key, a `mobx` or `allowAny` that is not a boolean, a `validation` that is not `true`, `false` or `'sanity'`, or an `unknownFormats` other than `'warn'` or `'error'`. |
+| `resolveProfile` | `(profile: GolemProfile): ResolvedGolemProfile` | Applies the defaults `allowAny: false` and `unknownFormats: 'error'` and returns a frozen profile. Throws `TypeError` for an unknown key, an `allowAny` that is not a boolean, a `validation` that is not `true`, `false` or `'sanity'`, or an `unknownFormats` other than `'warn'` or `'error'`. |
 | `GolemProvider` | `{ apiVersion: 1; generate(context) }` | The shape each generator module exports. |
 | `GolemDiagnosticSeverity` | `Error`, `Warning` | Severity of a returned diagnostic. |
 | `GolemPlanEntry` | `{ declare(context); link?(job, contracts) }` | The shape each plan module exports as `plan` ([the plan entry](#register-a-block)). |
@@ -344,7 +343,7 @@ Each module exports `apiVersion` (`1`) and `generate`. Usage: [Run the generator
 | Module | Signature | Result |
 | --- | --- | --- |
 | `@exprtlabs/golem-ts-openapi/generator` | `generate(context: ControllerContext): Promise<TsToOpenApiResult>` | The first artifact is the OpenAPI document. A second artifact is a generated file that the rewrite reads. `manifestPaths` is empty. |
-| `@exprtlabs/golem-openapi/generator` | `generate(context: OpenApiContext): Promise<OpenApiGenerationResult>` | The SDK files. `manifestPaths` holds the SDK's `model-manifest.json`. |
+| `@exprtlabs/golem-openapi-ts/generator` | `generate(context: OpenApiContext): Promise<OpenApiGenerationResult>` | The SDK files. `manifestPaths` holds the SDK's `model-manifest.json`. |
 | `@exprtlabs/golem-model/generator` | `generate(context: ModelContext): GolemModelResult` | The generated model files. |
 
 ## `ControllerContext` {#controllercontext}
@@ -377,7 +376,7 @@ const result = await generate({
   root: '/absolute/app/backend',
   output: '/absolute/app/api/payments.yaml',
   info: { title: 'Payments API', version: '1' },
-  profile: { mobx: false, validation: true },
+  profile: { validation: true },
 });
 
 console.log(result.artifacts[0]?.path); // /absolute/app/api/payments.yaml
@@ -411,13 +410,13 @@ The context of the SDK generator. Usage: [Generate an OpenAPI SDK](/guide/genera
 Example:
 
 ```ts
-import { apiVersion, generate } from '@exprtlabs/golem-openapi/generator';
+import { apiVersion, generate } from '@exprtlabs/golem-openapi-ts/generator';
 
 const result = await generate({
   input: '/absolute/app/api.yaml',
   output: '/absolute/app/sdk',
   name: 'Payments',
-  profile: { mobx: false, validation: true },
+  profile: { validation: true },
 });
 
 console.log(apiVersion, result.artifacts.map(artifact => artifact.path));
@@ -425,7 +424,7 @@ console.log(apiVersion, result.artifacts.map(artifact => artifact.path));
 
 ### `writeSdk` and `loadValidatedDocument` {#writesdk}
 
-Both are exports of `@exprtlabs/golem-openapi/generator`. Usage: [Start from a loaded document](/guide/generator-api#start-from-a-loaded-document).
+Both are exports of `@exprtlabs/golem-openapi-ts/generator`. Usage: [Start from a loaded document](/guide/generator-api#start-from-a-loaded-document).
 
 ```ts
 function writeSdk(
@@ -442,12 +441,12 @@ function loadValidatedDocument(filename: string, options?: ReferenceResolutionOp
 Example:
 
 ```ts
-import { loadValidatedDocument, writeSdk } from '@exprtlabs/golem-openapi/generator';
+import { loadValidatedDocument, writeSdk } from '@exprtlabs/golem-openapi-ts/generator';
 
 const document = await loadValidatedDocument('/absolute/app/api.yaml');
 const result = writeSdk(document, {
   output: '/absolute/app/sdk',
-  profile: { mobx: false, validation: true },
+  profile: { validation: true },
 });
 ```
 
@@ -483,7 +482,7 @@ import { apiVersion, generate } from '@exprtlabs/golem-model/generator';
 
 const result = generate({
   root: '/absolute/app',
-  profile: { mobx: false, validation: true },
+  profile: { validation: true },
 });
 
 console.log(apiVersion, result.artifacts.length);

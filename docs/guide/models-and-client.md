@@ -24,7 +24,7 @@ Use an SDK type such as `TMoney` as a field of your own model, add your methods 
 
 ```sh
 npm install @exprtlabs/golem
-npm install --save-dev @exprtlabs/golem-model @exprtlabs/golem-openapi typescript@~7.1.0-beta
+npm install --save-dev @exprtlabs/golem-model @exprtlabs/golem-openapi-ts typescript@~7.1.0-beta
 ```
 
 Choose how to build in [Build tools](/guide/build). Include both `src/**/*.ts` and the generated `sdk/**/*.ts` in your TypeScript program.

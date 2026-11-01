@@ -90,7 +90,7 @@ The docs job writes `api/openapi.yaml`. An SDK job reads that document and gener
 Install the client and runtime packages:
 
 ```sh
-npm install --save-dev @exprtlabs/golem-openapi @exprtlabs/golem-model typescript@~7.1.0-beta
+npm install --save-dev @exprtlabs/golem-openapi-ts @exprtlabs/golem-model typescript@~7.1.0-beta
 npm install @exprtlabs/golem reflect-metadata
 ```
 

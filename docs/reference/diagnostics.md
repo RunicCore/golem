@@ -934,12 +934,12 @@ A schema that carries these keywords does not stop an SDK. The SDK client checks
 
 ### OPENAPI_MOBX_NEEDS_GOLEM_MODE
 
-**MobX with a standalone SDK.** The profile sets `mobx: true`, and the job has `mode: standalone`, which is the default. A standalone SDK carries its own copy of the runtime, and that copy has no MobX support. This is an error: generation writes nothing.
+**MobX with a standalone SDK.** The `openapi-ts` block turns on the [`mobx` extension](/reference/config#mobx-extension), and the SDK job has `mode: standalone`, which is the default. A standalone SDK carries its own copy of the runtime, and that copy has no MobX support. This is an error: generation writes nothing.
 
 **Fix:**
 
 - Set `mode: golem` on the SDK job.
-- Or set `mobx: false`.
+- Or remove `mobx` from `extensions` in the `openapi-ts` block.
 
 ### OPENAPI_OPERATION_RENAMED
 

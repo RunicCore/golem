@@ -2,8 +2,7 @@
 
 `@exprtlabs/golem` is the runtime for generated models and SDKs, plus the
 `golem` command that runs configured generators. Install it in the
-application: generated code imports its runtime entry points, and the
-observable profile also needs `mobx`.
+application: generated code imports its runtime entry points.
 
 ## Install
 
