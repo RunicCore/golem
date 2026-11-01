@@ -90,7 +90,7 @@ export interface GolemExtension {
   readonly rewrite?: RewriteParticipant;
   /**
    * The participants that fill hooks, by hook name. A job offers a hook by name (`JobFacts.hooks`) and defines its contract, so the type of a participant
-   * belongs to the package of that job; core only routes it. A name that no job of the golem.yaml offers stops the run.
+   * belongs to the package of that job; core only routes it. A name that no job of the golem.yaml offers stays unfilled; an extension with no `rewrite` and no hook that a job offers stops the run.
    */
   readonly hooks?: Readonly<Record<string, unknown>>;
 }

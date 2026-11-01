@@ -82,6 +82,27 @@ test('an installed TypeScript that golem does not support is still an error', as
   assert.match(result.stderr, /golem supports TypeScript 6\.0\+ and 7\.1\+; found 5\.9\.0/);
 });
 
+test('an extension that loads the TypeScript seam with no TypeScript reports the install, not a fault in the extension', async () => {
+  // protects: T-795 a user's install problem must not read as a bug in the extension's package
+  const provider = path.join(installRoot, 'node_modules/@fixture/seam');
+  fs.mkdirSync(provider, { recursive: true });
+  fs.writeFileSync(path.join(provider, 'package.json'), JSON.stringify({ name: '@fixture/seam', version: '1.0.0-rc', type: 'module', exports: { './plan': './plan.js', './generator': './plan.js', './seam': './seam.js' }, golem: { apiVersion: 2, block: 'seam', plan: './plan', generator: './generator', extensions: { seam: './seam' } } }));
+  fs.writeFileSync(path.join(provider, 'plan.js'), `import path from 'node:path';
+export const plan = {
+  declare({ directory }) {
+    return [{ facts: { id: 'seam', outputs: [{ path: path.join(directory, 'seam'), kind: 'folder' }], ownedRoots: [], inputFiles: [], inputFolders: [], readsProgram: false, provides: [], needs: [], hooks: [], watch: [] }, options: {} }];
+  },
+};
+`);
+  fs.writeFileSync(path.join(provider, 'seam.js'), "import '@exprtlabs/golem/internal/ts';\nexport const extension = {};\n");
+  const root = project({ 'golem.yaml': 'version: 1\nseam:\n  extensions:\n    seam: {}\n', 'tsconfig.json': '{}' });
+  fs.writeFileSync(path.join(root, 'package.json'), '{"dependencies":{"@fixture/seam":"*"}}');
+  const result = await command(root, process.execPath, [binary, 'generate'], { allowFailure: true, env: CHOSEN_ROOT });
+  assert.notEqual(result.code, 0);
+  assert.match(result.stderr, /TypeScript/);
+  assert.doesNotMatch(result.stderr, /fault in @fixture\/seam/);
+});
+
 test('the TypeScript of the directory of golem.yaml is the one used, wherever the command runs from, unless the user names another', async () => {
   const configured = project({ 'golem.yaml': GENERATOR_ONLY, 'tsconfig.json': '{}' });
   fs.mkdirSync(path.join(configured, 'node_modules/typescript'), { recursive: true });

@@ -6,7 +6,7 @@ import type * as ts from '@exprtlabs/golem/internal/ts';
 import { GolemDiagnosticSeverity } from '@exprtlabs/golem/generator-api';
 import type { GolemDiagnostic, GolemExtension, RewriteCore, RewriteParticipantInput, RewriteParticipantResult } from '@exprtlabs/golem/generator-api';
 import { REWRITE_IMPORT_PREFIX, type RewriteEdit } from '@exprtlabs/golem/rewrite';
-import { arrayItemNode, authoredUnionMembers, decoratorCallee, decoratorIdentity, isDiscriminatorTag, modelDeclarationKind, propertyType, readTags, resolvedSymbolAt, serdeTypeName, staticDecoratorKey } from '@exprtlabs/golem/internal/type-analysis';
+import { arrayItemNode, authoredUnionMembers, decoratorIdentity, isDiscriminatorTag, modelDeclarationKind, propertyType, readTags, resolvedSymbolAt, serdeTypeName, staticDecoratorKey } from '@exprtlabs/golem/internal/type-analysis';
 import { NEST_COMMON, OWN_PACKAGE } from './packages.js';
 import { nodeQueryFields } from './query-fields.js';
 
