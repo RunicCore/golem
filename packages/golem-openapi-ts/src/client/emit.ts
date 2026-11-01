@@ -25,6 +25,7 @@ import {
   rt,
   rtType,
   type Code,
+  packageKeysOf,
   runtimeLinesOf,
   type ImportGroup,
   type ImportOptions,
@@ -421,9 +422,10 @@ ${!isEmpty(validatorSetup) ? code`${validatorSetup}\n` : BLANK}${!isEmpty(decode
 `;
   const file = join([declarations, functions], code`\n`);
   // The imports are the names the code uses, in the order the generated modules have always listed them.
+  const extensionModules = packageKeysOf(file);
   const imports: ImportOptions = {
     typeNames: 'ordered',
-    modules: ['client', 'mobx', 'validation'],
+    modules: ['client', ...extensionModules, 'validation'],
     ...(specifiers ? { specifiers: specifiers(`operations/${operation.name}.ts`) } : {}),
     order: { client: ['ClientRuntime', ...[...usedFunctions].sort(), 'createApiOperation', 'ApiOperation', 'RuntimeResponseContract', 'RuntimeSecuritySchemes', 'OperationCodecs'] },
   };
@@ -439,7 +441,7 @@ ${!isEmpty(validatorSetup) ? code`${validatorSetup}\n` : BLANK}${!isEmpty(decode
     ...clientImports,
     ...typesImports,
     ...serversImports,
-    ...runtimeLines('mobx'),
+    ...runtimeLines(...extensionModules),
     ...codecsImportLines,
     ...runtimeLines('validation'),
     BLANK,
@@ -671,7 +673,8 @@ ${metadata}
 `;
   const imports = join(fileImports(tail, localSources, { quote: '"', elsewhere: [runtimeTypes, typesModule] }), code`\n`);
   const rest = code`${imports}${tail}`;
-  const imports_: ImportOptions = { modules: ['client', 'mobx', 'validation'], ...(specifiers ? { specifiers: specifiers('client.ts') } : {}) };
+  const extensionModules = packageKeysOf(rest);
+  const imports_: ImportOptions = { modules: ['client', ...extensionModules, 'validation'], ...(specifiers ? { specifiers: specifiers('client.ts') } : {}) };
   const groups = importGroups(rest, imports_);
   const written = new Set<string>();
   // The statements of the runtime groups that `wanted` picks: the values come from the internal entry, the types from the public subpaths.
@@ -684,7 +687,7 @@ ${metadata}
     ...fileImports(rest, [runtimeTypes], { elsewhere: [typesModule, ...localSources] }),
     ...lines((group) => group.modules.includes('validation')),
     ...fileImports(rest, [typesModule], { elsewhere: [runtimeTypes, ...localSources] }),
-    ...lines((group) => group.modules.includes('mobx')),
+    ...lines((group) => group.modules.some((module) => extensionModules.includes(module))),
     ...lines((group) => group.modules.includes('client')),
   ];
   const unwritten = groups.find((group) => !written.has(group.specifier));

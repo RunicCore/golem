@@ -305,7 +305,7 @@ export function runtimeCode(module: RuntimeModule, name: string, typeOnly: boole
 }
 
 /** Where a package module that is no part of the `rt` tables is imported from: a value from `specifier`, a type from `typeSpecifier`. */
-export interface PackageSpecifiers { readonly specifier: string; readonly typeSpecifier: string }
+interface PackageSpecifiers { readonly specifier: string; readonly typeSpecifier: string }
 
 /**
  * The Code of one export of any package module. `key` names the import line, as an `rt` key does: lines without a file order stand in the code point order of
@@ -694,6 +694,15 @@ function collect(root: Code): Collected {
   return known;
 }
 
+/** Gives a runtime module the specifiers of a package export; one key has one pair. */
+function setSpecifiers(names: RuntimeNames, module: string, specifiers: PackageSpecifiers | undefined): void {
+  if (!specifiers) return;
+  if (names.specifiers && (names.specifiers.specifier !== specifiers.specifier || names.specifiers.typeSpecifier !== specifiers.typeSpecifier)) {
+    throw new Error(`the package export key "${module}" names two pairs of specifiers`);
+  }
+  names.specifiers = specifiers;
+}
+
 /** What the parts of one Code name: the runtime names, the imported names, and the helpers. */
 interface Scanned {
   readonly runtime: Map<string, RuntimeNames>;
@@ -709,12 +718,7 @@ function scanParts(piece: Code): Scanned {
     if (part.kind === 'runtime') {
       let names = runtime.get(part.module);
       if (!names) { names = { values: new Map<string, ImportedName>(), types: new Map<string, ImportedName>() }; runtime.set(part.module, names); }
-      if (part.specifiers) {
-        if (names.specifiers && (names.specifiers.specifier !== part.specifiers.specifier || names.specifiers.typeSpecifier !== part.specifiers.typeSpecifier)) {
-          throw new Error(`the package export key "${part.module}" names two pairs of specifiers`);
-        }
-        names.specifiers = part.specifiers;
-      }
+      setSpecifiers(names, part.module, part.specifiers);
       const kept = part.typeOnly ? names.types : names.values;
       const key = runtimeKey(part);
       if (!kept.has(key)) kept.set(key, { name: part.name, ...(part.alias === undefined ? {} : { alias: part.alias }), ...(part.typeOnly ? { typeOnly: true as const } : {}) });
@@ -756,8 +760,9 @@ function collectFrom(root: Code): Collected {
     }
     const { definition, scanned } = defined;
     for (const [module, names] of scanned.runtime) {
-      const into = runtime.get(module);
-      if (!into) { runtime.set(module, { values: new Map(names.values), types: new Map(names.types) }); continue; }
+      let into = runtime.get(module);
+      if (!into) runtime.set(module, into = { values: new Map(names.values), types: new Map(names.types) });
+      setSpecifiers(into, module, names.specifiers);
       for (const [key, name] of names.values) if (!into.values.has(key)) into.values.set(key, name);
       for (const [key, name] of names.types) if (!into.types.has(key)) into.types.set(key, name);
     }
@@ -822,6 +827,11 @@ function importSet(root: Code, options: Pick<ImportOptions, 'order' | 'modules'>
     }));
 }
 
+/** The keys of the package exports (`packageExport`) that a Code and the helpers it needs use, in code point order: the modules a file adds to `ImportOptions.modules` for what an extension gave it. */
+export function packageKeysOf(root: Code): readonly string[] {
+  return [...collect(root).runtime].filter(([, names]) => names.specifiers !== undefined).map(([module]) => module).sort(compareText);
+}
+
 /** How a file writes the imports of its runtime parts. */
 export interface ImportOptions {
   /**
@@ -841,7 +851,7 @@ export interface ImportOptions {
    * has type names only is always one `import type` statement.
    */
   readonly typeNames?: 'separate' | 'inline' | 'ordered';
-  /** The runtime modules this call writes, in this order; a module that the code uses and the list lacks is an error. Without it, every module in the fixed order. */
+  /** The runtime modules this call writes, in this order; a module that the code uses and the list lacks is an error. Without it, every module the code uses, in the code point order of the keys. */
   readonly modules?: readonly string[];
   /** The names of a module that a file with a fixed order lists: they come first, in this order, for values and types alike; the others follow in code point order. */
   readonly order?: Partial<Readonly<Record<string, readonly string[]>>>;

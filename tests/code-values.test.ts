@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
   ImportSource, NameTable, aliased, bindRead, fileImports, code, helper, helperDefinitions, helperName, helperSet, selfPlacedHelper, identifier, importGroups, inputOf, isEmpty, inputSlot, join, literal,
-  localCode, nameOf, nameSlot, propertyKey, render, runtimeImports, sameCode, nest, lineBreak, packageExport, placeHelpers, runtimeCode,
+  localCode, nameOf, nameSlot, propertyKey, render, runtimeImports, sameCode, nest, lineBreak, packageExport, packageKeysOf, placeHelpers, runtimeCode,
 } from '#golem/code';
 import { rt, rtType } from '#golem/rt';
 import { runModule } from './support/run-module.js';
@@ -235,4 +235,16 @@ test('an export of a package module is imported from its own specifiers, in the 
   );
   assert.throws(() => packageExport({ key: 'model', specifier: '@acme/pkg', typeSpecifier: '@acme/pkg', name: 'wrap' }), /key of the golem runtime table/);
   assert.throws(() => runtimeImports(code`${wrap} ${packageExport({ key: 'extra', specifier: '@acme/other', typeSpecifier: '@acme/pkg/api', name: 'again' })}`), /two pairs of specifiers/);
+});
+
+test('a package export in a helper definition is imported from its own specifiers, and a second pair for the key stops', () => {
+  // protects: P-41 an extension may name its package export inside a helper; the helper merge keeps the specifiers and checks them
+  const wrap = packageExport({ key: 'extra', specifier: '@acme/pkg/internal/run', typeSpecifier: '@acme/pkg/api', name: 'wrap' });
+  const inside = helper('insideHelper', () => code`const inside = ${wrap};`);
+  const body = code`${helperName(inside)}`;
+  assert.equal(render(join(runtimeImports(body), code`\n`)), "import { wrap } from '@acme/pkg/internal/run';");
+  assert.deepEqual(packageKeysOf(body), ['extra']);
+  assert.deepEqual(packageKeysOf(code`${rt.model.registerGeneratedModel}`), []);
+  const other = packageExport({ key: 'extra', specifier: '@acme/other', typeSpecifier: '@acme/pkg/api', name: 'again' });
+  assert.throws(() => runtimeImports(code`${other} ${helperName(inside)}`), /two pairs of specifiers/);
 });
