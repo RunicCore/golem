@@ -999,6 +999,7 @@ for (const [suffixes, message] of MODEL_SUFFIX_CASES) {
 const MODEL_BLOCK_CASES: readonly (readonly [string, string])[] = [
   ['model: [a]', 'model must be an object.'],
   ['model:\n  sourcs: [a.model.ts]', 'Unknown model key: sourcs.'],
+  ['model:\n  root: .', 'Unknown model key: root.'],
   ['model:\n  output: ""', 'model.output must be a nonempty string.'],
   ['model:\n  output: tsconfig.json', 'model.output must be a directory.'],
   ['model:\n  sources: []', 'model.sources must be a nonempty array.'],

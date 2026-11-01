@@ -197,14 +197,15 @@ test('a docs suffix that is empty, malformed, repeated or names a generated file
   }
 });
 
-test('a docs root must lie inside the directory of the yaml tsconfig, and the job reads the tsconfig the yaml names', async (t: TestContext) => {
+test('a docs job must lie inside the directory of the yaml tsconfig, and the job reads the tsconfig the yaml names', async (t: TestContext) => {
   // protects: F-42 one golem.yaml serves one tsconfig (old config.test, controllers layout); T-480 every job reads the tsconfig of golem.yaml
   const { root, config } = fixture(t);
   useDocsPackage(root);
   for (const directory of ['app', 'other']) fs.mkdirSync(path.join(root, directory));
   fs.writeFileSync(path.join(root, 'app/tsconfig.json'), '{}');
-  writeConfig(config, `tsconfig: app/tsconfig.json\n${docs('api.json').replace('- output:', '- root: other\n      output:')}`);
-  await assert.rejects(() => loadConfig(config), new RegExp(`Job docs:api\\.json: root ${path.relative(process.cwd(), path.join(root, 'other'))} is outside ${path.relative(process.cwd(), path.join(root, 'app'))}; use one golem.yaml per tsconfig\\.`));
+  const otherConfig = path.join(root, 'other/golem.yaml');
+  writeConfig(otherConfig, `tsconfig: ../app/tsconfig.json\n${docs('api.json')}`);
+  await assert.rejects(() => loadConfig(otherConfig), new RegExp(`Job docs:api\\.json: root ${path.relative(process.cwd(), path.join(root, 'other'))} is outside ${path.relative(process.cwd(), path.join(root, 'app'))}; use one golem.yaml per tsconfig\\.`));
 
   fs.writeFileSync(path.join(root, 'tsconfig.json'), '{}');
   fs.writeFileSync(path.join(root, 'tsconfig.app.json'), '{}');
@@ -222,15 +223,16 @@ test('controller maxResultBytes from golem.yaml reaches the job options and must
   await assert.rejects(() => loadConfig(config), /ts-openapi\.docs\[0\]\.maxResultBytes must be a positive safe integer/);
 });
 
-test('the ts-openapi block takes a nonempty docs list of known keys, and a docs job keeps the framework nestjs', async (t: TestContext) => {
-  // protects: the block shape of page "golem.yaml" (docs list); old "controller framework accepts NestJS and rejects unsupported adapters" (T-768 keeps framework and root until plan D)
+test('the ts-openapi block takes a nonempty docs list of known keys', async (t: TestContext) => {
+  // protects: the block shape of page "golem.yaml" (docs list), which has no framework and no root key (R4)
   const { root, config } = fixture(t);
   useDocsPackage(root);
-  writeConfig(config, docs('api.json', '      framework: nestjs\n'));
+  writeConfig(config, docs('api.json'));
   assert.equal((await loadConfig(config)).jobs.some(job => job.block === 'ts-openapi'), true);
   const refused: [string, RegExp][] = [
-    [docs('api.json', '      framework: express\n'), /ts-openapi\.docs\[0\]\.framework must be nestjs/],
     [docs('api.json', '      retiredOption: true\n'), /Unknown ts-openapi\.docs\[0\] key: retiredOption\./],
+    [docs('api.json', '      framework: nestjs\n'), /Unknown ts-openapi\.docs\[0\] key: framework\./],
+    [docs('api.json', '      root: .\n'), /Unknown ts-openapi\.docs\[0\] key: root\./],
     ['ts-openapi:\n  docs: []\n', /ts-openapi\.docs must be a nonempty array of jobs/],
     ['ts-openapi:\n  jobs: []\n', /Unknown ts-openapi key: jobs\./],
   ];

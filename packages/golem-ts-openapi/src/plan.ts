@@ -34,7 +34,7 @@ export interface ControllerContext {
   readonly output: string;
   /** Optional controller entrypoints; omitted means provider discovery below root/src. */
   readonly sources?: readonly string[];
-  /** File-name endings that make a file below `root/src` a controller source; defaults to `.controller.ts`. */
+  /** File-name endings that make a file below `src` of the golem.yaml folder a controller source; defaults to `.controller.ts`. */
   readonly suffixes?: readonly string[];
   /** Defaults to OpenAPI 3.2.0; 3.1.2 is the supported explicit target. */
   readonly openapiVersion?: '3.2.0' | '3.1.2';
@@ -69,12 +69,12 @@ export interface ControllerContext {
 /** What the controllers analysis needs to know of the models job: the inputs of its model boundary. */
 export type ControllerModels = ModelBoundaryValue;
 
-/** File-name endings that make a file below `root/src` a controller source when a docs job sets none. */
+/** File-name endings that make a file below `src` of the golem.yaml folder a controller source when a docs job sets none. */
 export const DEFAULT_CONTROLLER_SUFFIXES: readonly string[] = ['.controller.ts'];
 
 const BLOCK = 'ts-openapi';
 const DOCS_KEYS: readonly string[] = [
-  'framework', 'root', 'sources', 'suffixes', 'output', 'openapiVersion', 'info', 'servers',
+  'sources', 'suffixes', 'output', 'openapiVersion', 'info', 'servers',
   'securitySchemes', 'tags', 'globalPrefix', 'uriVersioning', 'maxResultBytes',
 ];
 
@@ -161,8 +161,7 @@ function inputPath(directory: string, onInput: InputObserver | undefined, value:
 function docsJob(context: PlanContext, entry: unknown, label: string): PlannedJob<ControllerContext> {
   const { directory, onInput } = context;
   keys(entry, DOCS_KEYS, label);
-  if (entry.framework !== undefined && entry.framework !== 'nestjs') throw new Error(`${label}.framework must be nestjs.`);
-  const root = inputPath(directory, onInput, entry.root ?? '.', `${label}.root`);
+  const root = inputPath(directory, onInput, '.', `${label}.directory`);
   const output = canonicalPath(path.resolve(directory, nonempty(entry.output, `${label}.output`)));
   if (!/\.(?:json|ya?ml)$/i.test(output)) throw new Error(`${label}.output must be a JSON or YAML file.`);
   let sources: string[] | undefined;

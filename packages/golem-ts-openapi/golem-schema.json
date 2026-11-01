@@ -30,8 +30,6 @@
         "type": "object",
         "required": ["output", "info"],
         "properties": {
-          "framework": { "description": "The controller framework. Only nestjs is known, and it is the default.", "const": "nestjs" },
-          "root": { "description": "The folder that the job scans for controllers. The default is the folder of golem.yaml.", "type": "string", "minLength": 1 },
           "sources": {
             "description": "Controller files. The job reads these and no others.",
             "type": "array",
