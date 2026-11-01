@@ -4,7 +4,7 @@ import { basename, dirname, isAbsolute, join, parse, relative, resolve, sep } fr
 import * as ts from '../typescript-ns.js';
 import { assertNotSolutionTsconfig } from '../typescript-config.js';
 import { readManifest } from './package-specifier.js';
-import { DEFAULT_MODEL_SUFFIXES, displayPath, GolemDiagnosticSeverity, canonicalPath, compareText, discoverSources, hasErrorCode, isInsideDirectory, parseYamlFile, suffixPattern, YamlFileError, type GeneratorSession, type GolemDiagnostic, type InputObserver } from '../generator-core.js';
+import { displayPath, GolemDiagnosticSeverity, canonicalPath, compareText, discoverSources, hasErrorCode, isInsideDirectory, parseYamlFile, suffixPattern, YamlFileError, type GeneratorSession, type GolemDiagnostic, type InputObserver } from '../generator-core.js';
 import { canonicalFilename, inNodeModules, portableRelativeFilename } from './path-identity.js';
 import { ROOT_KEYS } from '../editor-schema.js';
 
@@ -65,9 +65,9 @@ export function isModelSource(filename: string): boolean {
 }
 
 export function discoverModelSources(
-  root = process.cwd(),
-  onInput?: InputObserver,
-  suffixes: readonly string[] = DEFAULT_MODEL_SUFFIXES,
+  root: string,
+  onInput: InputObserver | undefined,
+  suffixes: readonly string[],
 ): string[] {
   return discoverSources(join(root, 'src'), { source: suffixPattern(suffixes), normalize: canonicalFilename, onInput });
 }
@@ -114,7 +114,7 @@ export interface ModelBoundary {
   };
 }
 
-export function modelBoundary(modelsRoot: string, suffixes: readonly string[] = DEFAULT_MODEL_SUFFIXES, companions?: { readonly directory: string; readonly output: string }): ModelBoundary {
+export function modelBoundary(modelsRoot: string, suffixes: readonly string[], companions?: { readonly directory: string; readonly output: string }): ModelBoundary {
   return { root: canonicalPath(modelsRoot), suffixes, ...(companions ? { companions: { directory: canonicalPath(companions.directory), output: canonicalFilename(companions.output) } } : {}) };
 }
 
@@ -300,7 +300,7 @@ function ignoredGolemYamlMessage(golemYaml: string, modelFile: string): string {
  * The project files that `file` imports or re-exports, by canonical filename. A declaration file and a file in `node_modules`
  * are left out, unless it is a model file: a shared model can be declared there.
  */
-export function projectFilesImportedBy(file: ts.SourceFile, checker: ts.TypeChecker, suffixes: readonly string[] = DEFAULT_MODEL_SUFFIXES): string[] {
+export function projectFilesImportedBy(file: ts.SourceFile, checker: ts.TypeChecker, suffixes: readonly string[]): string[] {
   const isModelFile = modelFilePattern(suffixes);
   const found = new Set<string>();
   for (const statement of file.statements) {

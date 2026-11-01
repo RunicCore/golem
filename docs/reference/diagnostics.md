@@ -538,11 +538,12 @@ The message shows the decorator and the type, such as `@Body() type Payment has 
 
 **Model declared in a file that is not a model file.** A model field, or a `stringify`, `parse`, `validate`, `assertValue`, `toWireFormat` or `fromWireFormat` call, names an `IModel` or `IObject` alias that sits in a file whose name does not end in one of the `model.suffixes`.
 
-Golem reads a model from a model file only. A shared folder or an installed package declares its models in model files too, such as `customer.model.ts` or `customer.model.d.ts` ([shared folder](/guide/shared-models)). The message names the alias as `file#export`.
+Golem reads a model from a model file only. A shared folder or an installed package declares its models in model files too, such as `customer.model.ts` or `customer.model.d.ts` ([shared folder](/guide/shared-models)). The message names the alias as `file#export`. When no job of the `golem.yaml` reads model files, the message says so, and no file name ends in a model suffix that golem reads.
 
 **Fix:**
 
 - Move the alias into a file whose name ends in a model suffix.
+- Or add the `model` block, so a job reads model files.
 
 ### RUNM1075
 

@@ -46,7 +46,7 @@ import {
   companionFilename,
   createModelStubProgram,
   createOverlayProgram,
-  discoverModelSources,
+  discoverModelSources as discoverModelSourcesWith,
   formatDiagnostics,
   generatedFilename,
   ignoredSharedFileWarnings,
@@ -69,6 +69,11 @@ export interface GolemModelContext extends ModelContext {}
 export interface GolemModelResult extends GolemResult {}
 
 export const apiVersion = 1 as const;
+
+/** The model files below `<root>/src`, sorted: those that end in `suffixes`, which default to the model suffixes of this package. */
+function discoverModelSources(root = process.cwd(), onInput?: InputObserver, suffixes: readonly string[] = DEFAULT_MODEL_SUFFIXES): string[] {
+  return discoverModelSourcesWith(root, onInput, suffixes);
+}
 
 interface NormalizedContext {
   readonly root: string;

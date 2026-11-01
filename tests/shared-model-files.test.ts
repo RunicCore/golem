@@ -91,7 +91,7 @@ test('a model file is own only inside the models root: a folder, a folder link, 
   fs.mkdirSync(path.join(root, 'node_modules/@acme/own'), { recursive: true });
   fs.writeFileSync(path.join(root, 'node_modules/@acme/own/own.model.ts'), '');
   fs.writeFileSync(path.join(root, 'src/types.model.d.ts'), '');
-  const boundary = modelBoundary(root);
+  const boundary = modelBoundary(root, ['.model.ts', '.models.ts']);
   const kinds = [
     path.join(root, 'src/order.model.ts'),
     path.join(outer, 'shared/customer.model.ts'),
@@ -213,7 +213,7 @@ test('on the first run an app class that imports the shared base through a paths
     'src/customer.ts': SHARED_CUSTOMER_BASE.replace('./generated/models/', '#models/'),
   });
   fs.writeFileSync(path.join(app, 'tsconfig.json'), JSON.stringify({ compilerOptions: { strict: true, target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', skipLibCheck: true, noEmit: true, paths: { '#models/*': ['./src/generated/models/*'] } }, include: ['src/**/*.ts', '../shared/**/*.ts'] }));
-  const boundary = modelBoundary(app, undefined, { directory: app, output: path.join(app, 'src/generated/models') });
+  const boundary = modelBoundary(app, ['.model.ts', '.models.ts'], { directory: app, output: path.join(app, 'src/generated/models') });
   const customer = path.join(app, 'src/customer.ts');
   const info = createProgram([path.join(app, 'src/order.model.ts'), customer], app);
   const { checker, specifications } = collectSpecifications(info.program, [path.join(outer, 'shared/customer.model.ts')], undefined, (file) => companionFilename(boundary, file));
@@ -273,7 +273,7 @@ for (const preserveSymlinks of [false, true]) {
     const id = keys.keys['../shared/customer.model.ts#TCustomer'];
     assert.match(id ?? '', /^TCustomer_[0-9a-f]{8}$/);
 
-    const scan = scanProject({ root: app, boundary: { root: app, directory: app, output: path.join(app, 'src/generated/models') }, configFile: path.join(app, 'tsconfig.json'), codecKeysFile: path.join(app, '.golem/codec-keys.json') });
+    const scan = scanProject({ root: app, boundary: { root: app, directory: app, output: path.join(app, 'src/generated/models'), suffixes: ['.model.ts', '.models.ts'] }, configFile: path.join(app, 'tsconfig.json'), codecKeysFile: path.join(app, '.golem/codec-keys.json') });
 
     assert.deepEqual(scan.diagnostics, []);
     const code = applyRewrites(fs.readFileSync(path.join(app, 'src/use.ts'), 'utf8'), scan.files.get('src/use.ts')!).code;

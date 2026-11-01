@@ -42,7 +42,7 @@ function paymentsProject(t: TestContext, extra: Readonly<Record<string, string>>
 const notAModel = (decorator: string, type: string, mode: 'error' | 'warn' = 'error'): string => `${type} is not a golem model, and NestModelInterceptor answers HTTP 500 for a @${decorator}() parameter of that type. Declare the input as a golem model (IModel or IObject), or bind one field of a model type. ${mode === 'warn' ? 'Generation continues, because golem.yaml sets nonModelInputs: warn.' : 'An app with its own interceptor can set nonModelInputs: warn in golem.yaml.'}`;
 
 function scan(root: string, nonModelInputs?: 'error' | 'warn'): ProgramScan {
-  return scanProject({ root, boundary: { root, directory: root, output: defaultModelOutput(root) }, configFile: path.join(root, 'tsconfig.json'), nonModelInputs, codecKeysFile: path.join(root, '.golem/codec-keys.json') });
+  return scanProject({ root, boundary: { root, directory: root, output: defaultModelOutput(root), suffixes: ['.model.ts', '.models.ts'] }, configFile: path.join(root, 'tsconfig.json'), nonModelInputs, codecKeysFile: path.join(root, '.golem/codec-keys.json') });
 }
 
 function rewritten(root: string, result: ProgramScan, relative: string): string {

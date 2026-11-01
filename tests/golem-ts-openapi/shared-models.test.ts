@@ -71,7 +71,7 @@ export class CustomersController {
 
 /** The controller source as the build rewrites it, found with the codec keys and companions of the app. */
 function rewrittenController(app: string): string {
-  const scanned = scanProject({ root: app, boundary: { root: app, directory: app, output: path.join(app, 'src/generated/models') }, configFile: path.join(app, 'tsconfig.json'), codecKeysFile: path.join(app, '.golem/codec-keys.json') });
+  const scanned = scanProject({ root: app, boundary: { root: app, directory: app, output: path.join(app, 'src/generated/models'), suffixes: ['.model.ts', '.models.ts'] }, configFile: path.join(app, 'tsconfig.json'), codecKeysFile: path.join(app, '.golem/codec-keys.json') });
   assert.deepEqual(scanned.diagnostics, []);
   return applyRewrites(readText(app, 'src/customers.controller.ts'), scanned.files.get('src/customers.controller.ts')!).code;
 }
@@ -126,7 +126,7 @@ test('a model file that the program holds under two names is one model source of
   const app = path.join(outer, 'app');
   const { program } = createProgram([path.join(app, 'link/customer.model.ts'), path.join(outer, 'shared/customer.model.ts')], app);
 
-  const analysis = createContractAnalysis(program, { root: app, boundary: modelBoundary(app, undefined, { directory: app, output: path.join(app, 'generated') }) });
+  const analysis = createContractAnalysis(program, { root: app, boundary: modelBoundary(app, ['.model.ts', '.models.ts'], { directory: app, output: path.join(app, 'generated') }) });
 
   assert.deepEqual(analysis.specifications.map(({ name }) => name), ['TCustomer']);
 });

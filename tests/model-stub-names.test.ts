@@ -31,7 +31,7 @@ test('the first analysis stubs the class models a file declares, by syntax', (t)
   fs.writeFileSync(file, MODEL);
   const app = path.join(root, 'app.ts');
   fs.writeFileSync(app, "import type { MultiBaseModel } from './order.model.generated.js';\nexport type Base = MultiBaseModel;\n");
-  const boundary = modelBoundary(root);
+  const boundary = modelBoundary(root, ['.model.ts', '.models.ts']);
   const info = createModelStubProgram([file, app], root, boundary, [file]);
   t.after(() => info.program[Symbol.dispose]());
   const stub = info.program.getSourceFile(canonicalFilename(companionFilename(boundary, file)))?.text ?? '';

@@ -1,4 +1,5 @@
 import { assertImportableClassName, deduplicateProjections, exportedConcreteClass, isGeneratedBrandKey, isGolemTagKey, linkedClassNames } from '@exprtlabs/golem/internal/type-analysis';
+import { DEFAULT_MODEL_SUFFIXES } from './plan.js';
 import * as ts from '@exprtlabs/golem/internal/ts';
 import { PACKAGE_VERSION } from './package-info.js';
 import {
@@ -610,7 +611,7 @@ function directImports(job: JobAnalysis, file: ts.SourceFile): readonly string[]
   const key = canonicalFilename(file.fileName);
   const known = job.directImports.get(key);
   if (known) return known;
-  const imports = projectFilesImportedBy(file, job.checker, job.suffixes);
+  const imports = projectFilesImportedBy(file, job.checker, job.suffixes ?? DEFAULT_MODEL_SUFFIXES);
   job.directImports.set(key, imports);
   return imports;
 }

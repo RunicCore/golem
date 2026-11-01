@@ -1,5 +1,5 @@
 import * as ts from '../typescript-ns.js';
-import { DEFAULT_MODEL_SUFFIXES, canonicalPath, displayPath } from '../generator-core.js';
+import { canonicalPath, displayPath } from '../generator-core.js';
 import { canonicalFilename, generatedFilename, isModelFileName, type ModelBoundary } from './project.js';
 import type { ModelSpecification } from './models.js';
 import { isGolemSourceFile, isGolemTagKey } from './tags.js';
@@ -87,14 +87,15 @@ export function isGeneratedBrandKey(checker: ts.TypeChecker, property: ts.Symbol
 /**
  * Why golem cannot generate `declaration`, an IModel or IObject alias that no model of this job declares, or undefined when
  * the declaration has no such reason: a type that is only nested without a name, for one. A model is `file#export`, with the
- * real path of the file. The one reason: the file name has no model suffix, so golem does not read the file as a model file.
- * Without a boundary (an analysis that has no models job, such as the controllers analysis) the default suffixes apply.
+ * real path of the file. With a boundary the reason is that the file name has no model suffix, so golem does not read the file as a
+ * model file. Without a boundary no job of the golem.yaml reads model files (the contract has no provider), so no alias has a codec.
  */
 export function foreignModelReason(declaration: ts.TypeAliasDeclaration, boundary: Pick<ModelBoundary, 'suffixes'> | undefined): string | undefined {
   const filename = canonicalPath(declaration.getSourceFile().fileName);
-  const suffixes = boundary?.suffixes ?? DEFAULT_MODEL_SUFFIXES;
-  if (isModelFileName({ suffixes }, filename)) return undefined;
-  return `${displayPath(filename)}#${declaration.name.text} is declared in a file whose name has no model suffix. Golem reads a model from a file whose name ends in ${suffixes.join(' or ')}. Move the model into such a file.`;
+  const name = `${displayPath(filename)}#${declaration.name.text}`;
+  if (boundary === undefined) return `${name} is a model alias, but no job of this golem.yaml reads model files, so golem has no codec for it.`;
+  if (isModelFileName(boundary, filename)) return undefined;
+  return `${name} is declared in a file whose name has no model suffix. Golem reads a model from a file whose name ends in ${boundary.suffixes.join(' or ')}. Move the model into such a file.`;
 }
 
 /** The alias that declares the model the type reference names, when it is written as `type Name = IModel<...>` or `IObject<...>`. */

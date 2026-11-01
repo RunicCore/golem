@@ -50,7 +50,7 @@ function rewriteStage(item: IdentityProject, lines: string[]): ReadonlyMap<strin
   try {
     const scan = scanProject({
       root: item.root,
-      boundary: { root: item.root, directory: item.root, output: defaultModelOutput(item.root) },
+      boundary: { root: item.root, directory: item.root, output: defaultModelOutput(item.root), suffixes: ['.model.ts', '.models.ts'] },
       configFile: path.join(item.root, 'tsconfig.json'),
       codecKeysFile: path.join(item.root, '.golem/codec-keys.json'),
     });

@@ -211,8 +211,8 @@ export interface ModelBoundaryValue {
   readonly directory: string;
   /** The folder of the generated model files, absolute. */
   readonly output: string;
-  /** The file-name endings of a model file; omitted means the default of the providing package. */
-  readonly suffixes?: readonly string[];
+  /** The file-name endings of a model file. */
+  readonly suffixes: readonly string[];
 }
 
 /**
@@ -415,9 +415,6 @@ export function failureText(error: unknown): string {
 export function hasErrorCode(error: unknown, code: string): boolean {
   return isRecord(error) && error.code === code;
 }
-
-export const DEFAULT_MODEL_SUFFIXES: readonly string[] = ['.model.ts', '.models.ts'];
-export const DEFAULT_CONTROLLER_SUFFIXES: readonly string[] = ['.controller.ts'];
 
 /** Matches a source file name that ends in one of `suffixes` and is not a generated companion (`*.generated.ts`, `.mts`, `.cts`). */
 export function suffixPattern(suffixes: readonly string[]): RegExp {

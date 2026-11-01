@@ -106,7 +106,7 @@ A contract is a typed value that one job provides and others use. Golem knows tw
 
 | Contract | Value | Used for |
 | --- | --- | --- |
-| `ModelBoundary` | `ModelBoundaryValue`: the models `root`, `directory`, `output` and optional `suffixes` | Golem's rewrite and the docs jobs find the models of the app. It is optional: without a provider, the rewrite serves SDK models only. |
+| `ModelBoundary` | `ModelBoundaryValue`: the models `root`, `directory`, `output` and `suffixes` | Golem's rewrite and the docs jobs find the models of the app. It is optional: without a provider, the rewrite serves SDK models only. |
 | `CodecsHost` | `CodecsHostValue`: `modelsOutput` and `configDirectory` | An SDK in `mode: golem` imports the codecs file that its provider writes. `sdkCodecsFile` names it. |
 
 - A job lists a contract in `provides` and returns its value in `provided`, in the first pass.
@@ -354,7 +354,7 @@ The context of the generator that writes an OpenAPI document from controllers. U
 | `info` | Yes | — | OpenAPI `info` object. |
 | `profile` | Yes | — | `GolemProfile`. |
 | `exact` | No | `true` | Default for the `exact` option of a model that sets none. `golem.yaml` passes its root `exact`. |
-| `models` | No | omitted | The `model` block of the same `golem.yaml`: `root`, `directory` and `output` as absolute paths, and optional `suffixes`. With it, a shared model of the app, or a class that extends the generated base class of one, matches its model. `golem.yaml` passes it. |
+| `models` | No | omitted | The `model` block of the same `golem.yaml`: `root`, `directory` and `output` as absolute paths, and `suffixes`. With it, a shared model of the app, or a class that extends the generated base class of one, matches its model. `golem.yaml` passes it. |
 | `sources` | No | files that end in `suffixes` below `<root>/src` | Non-empty list of controller files. |
 | `suffixes` | No | `['.controller.ts']` | File-name endings that make a file below `<root>/src` a controller source. |
 | `openapiVersion` | No | `'3.2.0'` | `'3.2.0'` or `'3.1.2'`. |

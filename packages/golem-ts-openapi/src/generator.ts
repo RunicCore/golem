@@ -30,7 +30,7 @@ import type {
   ResolvedGolemProfile,
 } from '@exprtlabs/golem/generator-api';
 import { resolveProfile } from '@exprtlabs/golem/generator-api';
-import { DEFAULT_MODEL_SUFFIXES, displayPath } from '@exprtlabs/golem/internal/generator-support';
+import { displayPath } from '@exprtlabs/golem/internal/generator-support';
 import {
   GolemDiagnosticSeverity,
   diagnostic,
@@ -471,7 +471,7 @@ function analyzeContracts(
   observe: InputObserver,
 ): ContractAnalysis {
   // The controllers job analyses the models its controllers use, so a syntax error in a model file stops here too.
-  assertNoSyntaxErrors(programInfo.program, [...sources, ...includedModelSources(programFilenames(programInfo.program), normalized.boundary?.suffixes ?? DEFAULT_MODEL_SUFFIXES)]);
+  assertNoSyntaxErrors(programInfo.program, [...sources, ...(normalized.boundary ? includedModelSources(programFilenames(programInfo.program), normalized.boundary.suffixes) : [])]);
   return createContractAnalysis(programInfo.program, {
     root: normalized.root,
     allowAny: normalized.profile.allowAny,

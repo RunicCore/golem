@@ -40,7 +40,7 @@ function scan(root: string, interceptor = false): ProgramScan {
 function withScanner<T>(root: string, use: (scanner: RewriteScanner) => T): T {
   const info = createProjectProgram(root, undefined, undefined, path.join(root, 'tsconfig.json'));
   using program = info.program;
-  return use(new RewriteScanner({ root, boundary: { root, directory: root, output: defaultModelOutput(root) }, program, checker: program.getTypeChecker(), codecKeysFile: path.join(root, CODEC_KEYS) }));
+  return use(new RewriteScanner({ root, boundary: { root, directory: root, output: defaultModelOutput(root), suffixes: ['.model.ts', '.models.ts'] }, program, checker: program.getTypeChecker(), codecKeysFile: path.join(root, CODEC_KEYS) }));
 }
 
 function scanned(result: ProgramScan, file: string): FileScanResult {
@@ -489,7 +489,7 @@ test('core keeps .golem/codec-keys.json beside the inventory, and the project th
  * An app beside a shared folder whose own golem.yaml has a models job, and an installed package `@acme/money` whose declaration
  * file declares the IObject alias `TPkgMoney`. The app's golem.yaml has a models job, and `src/use.ts` is the app's own site.
  */
-function appBesideForeignModels(t: TestContext, site: string): { readonly app: string; readonly shared: string; readonly declaration: string; readonly config: string } {
+function appBesideForeignModels(t: TestContext, site: string, golemYaml = 'version: 1\nvalidation: false\nmodel: {}\n'): { readonly app: string; readonly shared: string; readonly declaration: string; readonly config: string } {
   const { root: outer } = createModelProject(t, {
     prefix: 'golem-rewrite-foreign-',
     linkTypescript: true,
@@ -507,7 +507,7 @@ function appBesideForeignModels(t: TestContext, site: string): { readonly app: s
   write('node_modules/@acme/money/package.json', JSON.stringify({ name: '@acme/money', version: '1.0.0', type: 'module', types: './index.d.ts', exports: { '.': { types: './index.d.ts' } } }));
   write('node_modules/@acme/money/index.d.ts', "import type { IObject } from '@exprtlabs/golem/model';\nexport type TPkgMoney = IObject<{ currency: string }>;\n");
   write('app/package.json', JSON.stringify({ name: 'app', private: true, type: 'module', dependencies: { '@exprtlabs/golem-model': '*' } }));
-  write('app/golem.yaml', 'version: 1\nvalidation: false\nmodel: {}\n');
+  write('app/golem.yaml', golemYaml);
   write('app/tsconfig.json', JSON.stringify({ compilerOptions, include: ['src/**/*.ts', '../shared/**/*.ts'] }));
   write('app/src/order.model.ts', "import type { IModel } from '@exprtlabs/golem/model';\nexport type TOrder = IModel<{ id: string }>;\n");
   write('app/src/use.ts', site);
@@ -531,6 +531,22 @@ export const text = stringify<TPkgMoney>(money);
   await assert.rejects(
     runPipeline(config, { check: true }),
     { message: `golem rewrite scan reported 1 error diagnostic:\n  RUNM1074 (${path.relative(process.cwd(), path.join(app, 'src/use.ts'))}:4:21): ${path.relative(process.cwd(), declaration)}#TPkgMoney is declared in a file whose name has no model suffix. Golem reads a model from a file whose name ends in .model.ts or .models.ts. Move the model into such a file.` },
+  );
+});
+
+const FOREIGN_SITE = `import { stringify } from '@exprtlabs/golem/serde';
+import type { TPkgMoney } from '@acme/money';
+declare const money: TPkgMoney;
+export const text = stringify<TPkgMoney>(money);
+`;
+
+test('golem check names the model suffixes of the models block in the reason a model file has no model suffix', async (t) => {
+  // protects: T-786 the suffixes of the job that provides the model contract reach the reason, with no default in core
+  const { app, declaration, config } = appBesideForeignModels(t, FOREIGN_SITE, 'version: 1\nvalidation: false\nmodel:\n  suffixes: [.entity.ts, .record.ts]\n');
+  await runPipeline(config);
+  await assert.rejects(
+    runPipeline(config, { check: true }),
+    { message: `golem rewrite scan reported 1 error diagnostic:\n  RUNM1074 (${path.relative(process.cwd(), path.join(app, 'src/use.ts'))}:4:21): ${path.relative(process.cwd(), declaration)}#TPkgMoney is declared in a file whose name has no model suffix. Golem reads a model from a file whose name ends in .entity.ts or .record.ts. Move the model into such a file.` },
   );
 });
 

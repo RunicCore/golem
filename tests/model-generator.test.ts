@@ -946,7 +946,7 @@ test('an empty model block scans from the golem.yaml folder, writes the default 
     provides: ['ModelBoundary', 'CodecsHost'], needs: [], hooks: ['model.validatorEnhancer', 'model.codecData'], watch: [{ suffixes: ['.model.ts', '.models.ts'] }],
   });
   assert.deepEqual(job.options, { root: app, directory: app, output, tsconfig: path.join(app, 'tsconfig.json'), profile: config.profile });
-  assert.deepEqual(config.contracts, { ModelBoundary: { root: app, directory: app, output }, CodecsHost: { modelsOutput: output, configDirectory: app } });
+  assert.deepEqual(config.contracts, { ModelBoundary: { root: app, directory: app, output, suffixes: ['.model.ts', '.models.ts'] }, CodecsHost: { modelsOutput: output, configDirectory: app } });
 });
 
 test('model sources, suffixes and output reach the options and the boundary; the owned roots run from the source folders to the root', async (t: TestContext) => {
