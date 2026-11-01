@@ -53,14 +53,9 @@ export interface JobFacts {
   /**
    * Where a new file reruns this job. A file added or removed inside `folder` whose name ends with one of `suffixes` reruns it. Without a `folder`, each folder of
    * `watchFolders` applies, so one entry can name every source below the folders the job owns, scans or reads. A file elsewhere is never seen.
-   * A file that a job output holds never reruns a job by its name (`isJobOutput`). A file that the job read before reruns it without an entry. An empty list means none.
+   * A file that a job wrote never reruns a job: the watcher leaves it out. A file that the job read before reruns it without an entry. An empty list means none.
    */
   readonly watch: readonly WatchRule[];
-}
-
-/** Whether `filename` lies in an output that one of `jobs` writes: the output file itself, or a file below an output folder. Such a file is generated, so core never reruns a job because of it. */
-function isJobOutput(jobs: readonly Pick<JobFacts, 'outputs'>[], filename: string): boolean {
-  return jobs.some(({ outputs }) => outputs.some(output => (output.kind === 'file' ? output.path === filename : within(output.path, filename))));
 }
 
 type WatchedJob = Pick<JobFacts, 'watch' | 'ownedRoots' | 'scanRoots' | 'inputFolders'>;
@@ -76,11 +71,9 @@ function ruleNames(job: WatchedJob, filename: string, observed: readonly string[
 
 /**
  * The jobs a file reruns by name, for a file that no run has read: a job whose watch rule has the file inside its folder and its name ending with one of its suffixes.
- * A file that a job output holds is generated, so it reruns none. `observed` is each job's `observedFolders`; it lets a source added beside a file the job read outside
- * its own folders, such as in a shared folder, rerun it.
+ * `observed` is each job's `observedFolders`; it lets a source added beside a file the job read outside its own folders, such as in a shared folder, rerun it.
  */
-export function watchingJobs<Job extends WatchedJob & Pick<JobFacts, 'id' | 'outputs'>>(jobs: readonly Job[], filename: string, observed: ReadonlyMap<string, readonly string[]>): Job[] {
-  if (isJobOutput(jobs, filename)) return [];
+export function watchingJobs<Job extends WatchedJob & Pick<JobFacts, 'id'>>(jobs: readonly Job[], filename: string, observed: ReadonlyMap<string, readonly string[]>): Job[] {
   return jobs.filter(job => ruleNames(job, filename, observed.get(job.id) ?? []));
 }
 

@@ -365,8 +365,8 @@ test('a file that is no source, added to a watched folder, starts no run', async
   assert.deepEqual(errors, []);
 });
 
-test('an edit of a source in the model output folder starts a run', async (t: TestContext) => {
-  // protects: T-786 a file a job read and no job wrote reruns the job, also when it lies in the job's output folder
+test('an edit of a source and a new source in the model output folder each start a run', async (t: TestContext) => {
+  // protects: T-786 a file a job read and a new source rerun the job, also when they lie in the job's output folder; only a file a job wrote does not
   const { root, config } = generationWatchFixture(t);
   const parsed = YAML.parse(fs.readFileSync(config, 'utf8')) as Record<string, unknown>;
   fs.writeFileSync(config, YAML.stringify({ ...parsed, model: { output: 'src' } }));
@@ -376,6 +376,8 @@ test('an edit of a source in the model output folder starts a run', async (t: Te
     await until(() => runs() === 1, () => `initial generation ${context()}`);
     fs.writeFileSync(source, fs.readFileSync(source, 'utf8').replace('note: string', 'note: string; sentinel?: boolean'));
     await until(() => fs.readFileSync(path.join(root, 'src/cart.model.generated.ts'), 'utf8').includes('sentinel'), () => `the edit is generated ${context()}`);
+    fs.writeFileSync(path.join(root, 'src/pet.model.ts'), "import type { IModel } from '@exprtlabs/golem/model';\n\nexport type TPet = IModel<{ name: string }>;\n");
+    await until(() => fs.existsSync(path.join(root, 'src/pet.model.generated.ts')), () => `the new source is generated ${context()}`);
   } finally {
     stop();
   }

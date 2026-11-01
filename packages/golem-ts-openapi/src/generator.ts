@@ -30,7 +30,7 @@ import type {
   ResolvedGolemProfile,
 } from '@exprtlabs/golem/generator-api';
 import { resolveProfile } from '@exprtlabs/golem/generator-api';
-import { displayPath } from '@exprtlabs/golem/internal/generator-support';
+import { canonicalPath, displayPath } from '@exprtlabs/golem/internal/generator-support';
 import {
   GolemDiagnosticSeverity,
   diagnostic,
@@ -471,7 +471,8 @@ function analyzeContracts(
   observe: InputObserver,
 ): ContractAnalysis {
   // The controllers job analyses the models its controllers use, with a models job or without one, so a syntax error in any file of the project stops here. A later job's output is left out: that job writes it again.
-  assertNoSyntaxErrors(programInfo.program, [...new Set([...sources, ...projectFilenames(programInfo.program).filter(file => !isUnderOutputs(normalized.laterOutputs, file))])]);
+  const laterOutputs = normalized.laterOutputs.map(canonicalPath);
+  assertNoSyntaxErrors(programInfo.program, [...new Set([...sources, ...projectFilenames(programInfo.program).filter(file => !isUnderOutputs(laterOutputs, file))])]);
   return createContractAnalysis(programInfo.program, {
     root: normalized.root,
     allowAny: normalized.profile.allowAny,

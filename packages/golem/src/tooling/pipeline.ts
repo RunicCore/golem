@@ -281,7 +281,7 @@ function readsAny(config: GolemConfig, record: JobRecord, outputs: ReadonlySet<s
 /**
  * Select source consumers and then follow generated-artifact edges in pipeline order. A changed file reruns the jobs that read it
  * (the recorded reads and a declared input file) and the jobs whose watch rules name it, which finds a file the last run did not
- * read: a new source. A file that a job output holds matches no rule. A change to golem.yaml or to a file the registry read reruns every job.
+ * read: a new source. A change to golem.yaml or to a file the registry read reruns every job.
  */
 function affectedJobs(config: GolemConfig, options: PipelineOptions): ReadonlySet<string> | undefined {
   const previous = options.previous;
