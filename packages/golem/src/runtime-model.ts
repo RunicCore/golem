@@ -9,11 +9,12 @@ export {
   assertAcyclicEncodeInput, assertPropertyAcyclic, assertWireAcyclic, beginDecode, beginEncode, convertModelField, convertModelItems,
   convertModelRecord, convertModelTupleItems, copyModelRecord, decodeCheckedInput, decodeDetachedInput, decodeGeneratedModelTrusted,
   defineModelProperty, deserializeDate, endDecode, endEncode, isVariantObject, jsonWithDiscriminator, rejectModelObject, wireChecked,
-  requireModelObject, serializeDate, unknownDiscriminatorValue, withDeclaredFields, withDiscriminatorValue,
+  requireModelObject, resolveMaxDepth, serializeDate, unknownDiscriminatorValue, withDeclaredFields, withDiscriminatorValue,
 } from './conversion.js';
 export {
   assertModelValue, createObjectCodec, fastable, isValidModelValue, parseJson, registerIModelClass, requireIModelClass, requireObjectCodec, serdeValidates,
   stringifyJsonArray, stringifyJsonBoolean, stringifyJsonNumber, stringifyJsonScalar, stringifyJsonString, validationUnavailableStub,
 } from './object-codec.js';
 export { IssueRepresentation, IssueSource } from './errors.js';
-export { withoutInstanceState } from './presence.js';
+export { presentValue, withoutInstanceState } from './presence.js';
+export { decodeQueryField } from './query-decode.js';

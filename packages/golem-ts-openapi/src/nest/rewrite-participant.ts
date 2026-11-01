@@ -6,7 +6,7 @@ import { GolemDiagnosticSeverity } from '@exprtlabs/golem/generator-api';
 import type { GolemDiagnostic, GolemExtension, RewriteCore, RewriteParticipantInput, RewriteParticipantResult } from '@exprtlabs/golem/generator-api';
 import { REWRITE_IMPORT_PREFIX, type RewriteEdit } from '@exprtlabs/golem/rewrite';
 import {
-  GOLEM_PACKAGE, NEST_COMMON, arrayItemNode, authoredUnionMembers, decoratorIdentity, isDiscriminatorTag, modelDeclarationKind, propertyType, readTags,
+  NEST_COMMON, arrayItemNode, authoredUnionMembers, decoratorCallee, decoratorIdentity, isDiscriminatorTag, modelDeclarationKind, propertyType, readTags,
   resolvedSymbolAt, serdeTypeName, staticDecoratorKey,
 } from '@exprtlabs/golem/internal/type-analysis';
 
@@ -14,7 +14,7 @@ type TypeScript = typeof ts;
 type DiscriminatorValue = string | number | boolean;
 
 /** The module that exports the decorators the stamps name. */
-const NEST_MODULE = '@exprtlabs/golem/internal/nest-runtime';
+const NEST_MODULE = '@exprtlabs/golem-ts-openapi/internal/nest-runtime';
 const NEST_PARAMETER_DECORATORS: readonly string[] = ['Body', 'Query'];
 const NEST_CODEC_DECORATOR = 'nestModelCodec';
 const NEST_UNION_DECORATOR = 'nestModelUnion';
@@ -78,11 +78,15 @@ function nestParameterDecorator({ ts, checker }: Scope, parameter: ts.ParameterD
   return undefined;
 }
 
-/** Whether the node carries golem's own decorator `name`, plainly or under an alias; a decorator of that name from another package is not it. */
+/** Whether the node carries the decorator `name` of this package, plainly or under an alias; a decorator of that name from another package is not it. */
 function hasDecorator({ ts, checker }: Scope, node: ts.Node, name: string): boolean {
   return (ts.getDecorators(node) ?? []).some((decorator) => {
-    const identity = decoratorIdentity(checker, decorator);
-    return identity.packageName === GOLEM_PACKAGE && identity.name === name;
+    const callee = decoratorCallee(decorator);
+    const symbol = resolvedSymbolAt(checker, ts.isPropertyAccessExpression(callee) ? callee.name : callee);
+    return symbol?.getName() === name && (symbol.declarations ?? []).some((declaration) => {
+      const filename = declaration.getSourceFile().fileName.replace(/\\/g, '/');
+      return filename.includes('/@exprtlabs/golem-ts-openapi/') || filename.includes('/packages/golem-ts-openapi/');
+    });
   });
 }
 

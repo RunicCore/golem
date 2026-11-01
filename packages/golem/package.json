@@ -110,11 +110,6 @@
       "import": "./dist/runtime-temporal.js",
       "default": "./dist/runtime-temporal.js"
     },
-    "./internal/nest-runtime": {
-      "types": "./dist/runtime-nest.d.ts",
-      "import": "./dist/runtime-nest.js",
-      "default": "./dist/runtime-nest.js"
-    },
     "./internal/generator-support": {
       "types": "./dist/tooling/generator-support.d.ts",
       "import": "./dist/tooling/generator-support.js",
@@ -200,11 +195,6 @@
       "import": "./dist/serde.js",
       "default": "./dist/serde.js"
     },
-    "./nest": {
-      "types": "./dist/nest.d.ts",
-      "import": "./dist/nest.js",
-      "default": "./dist/nest.js"
-    },
     "./internal/validation-plan": {
       "types": "./dist/tooling/validation-plan.d.ts",
       "import": "./dist/tooling/validation-plan.js",
@@ -235,18 +225,13 @@
     "yaml": "^2.9.0"
   },
   "peerDependencies": {
-    "@nestjs/common": "^11.0.0",
     "esbuild": "^0.25.12",
     "eslint": "^9.0.0 || ^10.0.0",
     "mobx": "^6.13.0",
-    "rxjs": "^7.8.0",
     "typescript": ">=6.0.0 <7 || >=7.1.0-0 <8",
     "vite": ">=5"
   },
   "peerDependenciesMeta": {
-    "@nestjs/common": {
-      "optional": true
-    },
     "mobx": {
       "optional": true
     },
@@ -254,9 +239,6 @@
       "optional": true
     },
     "eslint": {
-      "optional": true
-    },
-    "rxjs": {
       "optional": true
     },
     "typescript": {
@@ -267,11 +249,9 @@
     }
   },
   "devDependencies": {
-    "@nestjs/common": "11.2.3",
     "esbuild": "0.25.12",
     "eslint": "10.13.0",
     "mobx": "^6.16.1",
-    "rxjs": "7.8.2",
     "typescript": "7.1.0-beta"
   },
   "scripts": {

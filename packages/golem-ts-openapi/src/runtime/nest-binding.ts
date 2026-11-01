@@ -1,13 +1,12 @@
 /**
  * The decorators that the build-time rewrite inserts on controller sources, the parameter tokens they place, and the readers of
- * those tokens (`@exprtlabs/golem/internal/nest-runtime`). `nest.ts` reads the tokens in `NestModelInterceptor` and
+ * those tokens (`@exprtlabs/golem-ts-openapi/internal/nest-runtime`). `nest.ts` reads the tokens in `NestModelInterceptor` and
  * `objectCodecFromMetatype`; the decorators are internal because only generated code calls them.
  */
-import type { DiscriminatorValue } from './model-registry.js';
-import { requireModelObject, unknownDiscriminatorValue } from './conversion.js';
-import { getIModelClass, getObjectCodec, type ObjectCodec, type SerdeOptions } from './object-codec.js';
-import { decodeQueryField } from './query-decode.js';
-import { presentValue } from './presence.js';
+import { decodeQueryField, presentValue, requireModelObject, unknownDiscriminatorValue } from '@exprtlabs/golem/internal/model-runtime';
+import { getIModelClass, getObjectCodec, type ObjectCodec, type SerdeOptions } from '@exprtlabs/golem/serde';
+
+type DiscriminatorValue = string | number | boolean;
 
 const NEST_MODEL_CODEC_ID = Symbol.for('@exprtlabs/golem:nestModelCodec');
 const NEST_MODEL_CODEC = Symbol.for('@exprtlabs/golem:nestModelCodec.codec');
