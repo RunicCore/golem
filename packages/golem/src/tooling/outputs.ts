@@ -292,7 +292,8 @@ function assertNoUnrecordedOutputs(config: GolemConfig, inventory: Inventory, jo
   const owners = new Set(config.jobs.map(candidate => candidate.package));
   const drift: string[] = [];
   const visited = new Set<string>();
-  const visit = (directory: string): void => {
+  // A job's output folder holds only what jobs write, so each file there counts. An owned root is the app's own source folder, which may hold a copy of a generated file: only code counts there.
+  const visit = (directory: string, everyFile: boolean): void => {
     const canonicalDirectory = canonicalPath(directory);
     if (visited.has(canonicalDirectory)) return;
     visited.add(canonicalDirectory);
@@ -304,20 +305,21 @@ function assertNoUnrecordedOutputs(config: GolemConfig, inventory: Inventory, jo
     for (const entry of entries) {
       if (entry.name.startsWith('.') || entry.name === 'node_modules') continue;
       const filename = path.join(directory, entry.name);
-      if (entry.isDirectory()) { visit(filename); continue; }
-      if (!entry.isFile()) continue;
+      if (entry.isDirectory()) { visit(filename, everyFile); continue; }
+      if (!entry.isFile() || (!everyFile && !/\.[jt]s$/.test(entry.name))) continue;
       const key = inventoryKey(config, filename);
       if (expected.has(key) || inventory.files[key]) continue;
       if (knownOwner(fs.readFileSync(filename, 'utf8'), owners) !== undefined) drift.push(filename);
     }
   };
-  for (const destination of jobDestinations(job)) {
-    if (destination.kind === 'directory') { visit(destination.path); continue; }
-    const filename = path.resolve(destination.path);
+  for (const output of job.facts.outputs) {
+    if (output.kind !== 'file') { visit(output.path, true); continue; }
+    const filename = path.resolve(output.path);
     const key = inventoryKey(config, filename);
     const current = readFile(filename);
     if (current !== undefined && !expected.has(key) && !inventory.files[key] && knownOwner(current, owners) !== undefined) drift.push(filename);
   }
+  for (const root of job.facts.ownedRoots) visit(root, false);
   if (drift.length) throw new Error(`Unrecorded generated output drift for ${job.id}:\n${drift.sort().map(filename => `  ${displayPath(filename)}`).join('\n')}`);
 }
 

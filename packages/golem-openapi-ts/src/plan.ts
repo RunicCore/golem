@@ -71,6 +71,14 @@ function sdksOf(block: unknown): readonly unknown[] {
   return block.sdks;
 }
 
+/** A `remoteHosts` entry: a host with an optional port, and nothing else. A path or a scheme would name more or less than the entry reads. */
+function remoteHost(entry: string, label: string): string {
+  let url: URL | undefined;
+  try { url = new URL(`https://${entry}`); } catch { url = undefined; }
+  if (url === undefined || `${url.pathname}${url.search}${url.hash}` !== '/' || url.username || url.password || entry.endsWith('/')) throw new Error(`${label} entry "${entry}" must be a host with an optional port, such as schemas.example:8443.`);
+  return entry;
+}
+
 /** The settings of the extensions the block turns on. Core has checked that each name is registered; the package checks what each holds. */
 function checkExtensions(block: unknown): void {
   if (!isRecord(block) || block.extensions === undefined) return;
@@ -92,7 +100,7 @@ export const plan: GolemPlanEntry<OpenApiOptions> = {
       const output = canonicalPath(path.resolve(directory, nonempty(entry.output, `${label}.output`)));
       if (fs.existsSync(output) && !fs.statSync(output).isDirectory()) throw new Error(`${label}.output must be a directory.`);
       if (entry.remoteHosts !== undefined && !Array.isArray(entry.remoteHosts)) throw new Error(`${label}.remoteHosts must be an array of nonempty hostnames.`);
-      const remoteHosts = (entry.remoteHosts ?? []).map((host: unknown) => nonempty(host, `${label}.remoteHosts`));
+      const remoteHosts = (entry.remoteHosts ?? []).map((host: unknown) => remoteHost(nonempty(host, `${label}.remoteHosts`), `${label}.remoteHosts`));
       if (entry.dates !== undefined && entry.dates !== 'date' && entry.dates !== 'temporal') throw new Error(`${label}.dates must be "date" or "temporal".`);
       if (entry.mode !== undefined && entry.mode !== 'standalone' && entry.mode !== 'golem') throw new Error(`${label}.mode must be "standalone" or "golem".`);
       const mode = entry.mode ?? 'standalone';

@@ -18,7 +18,7 @@ export interface ModelSpecification {
   readonly emitClass: boolean;
   /** Override of the generation-profile validation level, never above it; undefined inherits. */
   readonly validation?: GolemProfile['validation'];
-  /** The generated companion of the model's file, when it is not beside the file: a shared file's, in `models.output`. */
+  /** The generated companion of the model's file, when it is not beside the file: a shared file's, in the models output. */
   readonly companionFile?: string;
 }
 

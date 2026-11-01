@@ -87,6 +87,8 @@ test('the openapi-ts block refuses an unknown key, a wrong value and an empty li
     [`${SDK}      dates: iso\n`, /openapi-ts\.sdks\[0\]\.dates must be "date" or "temporal"/],
     [`${SDK}      allowRemoteRefs: true\n`, /Unknown openapi-ts\.sdks\[0\] key: allowRemoteRefs\./],
     [`${SDK}      remoteHosts: schemas.example\n`, /openapi-ts\.sdks\[0\]\.remoteHosts must be an array/],
+    [`${SDK}      remoteHosts: [schemas.example/v1]\n`, /remoteHosts entry "schemas\.example\/v1" must be a host/],
+    [`${SDK}      remoteHosts: ['https://schemas.example']\n`, /remoteHosts entry "https:\/\/schemas\.example" must be a host/],
     [`${SDK}      maxRefBytes: 0\n`, /openapi-ts\.sdks\[0\]\.maxRefBytes must be a positive safe integer/],
     ['openapi-ts:\n  sdks:\n    - output: sdk\n', /openapi-ts\.sdks\[0\]\.input must be a nonempty string/],
   ];

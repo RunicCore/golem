@@ -177,6 +177,8 @@ This file is the complete list of changes. The documentation site's
 - **Breaking:** a `ts-openapi` docs job has no `root` key. It scans from the folder of `golem.yaml`, as the model job does, and that folder must lie inside the folder of the tsconfig. A project that set another root puts its `golem.yaml` in the project that owns the controllers.
 - **Breaking:** `@exprtlabs/golem/generator-api` no longer exports `ModelContext` and `OpenApiContext`. Import them from `@exprtlabs/golem-model/generator` and `@exprtlabs/golem-openapi-ts/generator`.
 - **Breaking:** a `ts-openapi` docs job has no `framework` key. NestJS is the only framework.
+- **Breaking:** a `remoteHosts` entry is a host with an optional port. An entry with no port allows the default HTTPS port only, and any other shape stops loading.
+- `golem check` reads every file of a job's output folder for a generator's ownership marker, not only code.
 - **Breaking:** an `openapi-ts` SDK job has no `allowRemoteRefs` key. A non-empty `remoteHosts` list turns on remote references for those hosts. Without a list, the job loads none.
 - An extension that a block turns on can rewrite source files and fill the hooks of a job. Two edits of one text stop the build with [`RUNM1091`](docs/reference/diagnostics.md#runm1091).
 - **Breaking:** `@exprtlabs/golem-openapi` and `@exprtlabs/golem-ts-openapi` take `@exprtlabs/golem` as a peer dependency, so an app holds one copy of it. `typescript` is an optional peer of both: an install of either no longer brings TypeScript, so install `typescript` in your project.

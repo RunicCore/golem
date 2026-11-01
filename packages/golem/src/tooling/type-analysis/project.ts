@@ -101,7 +101,7 @@ export function byRealPath(files: readonly string[]): string[] {
 
 /** What decides which files are the own model sources of the job that provides `ModelBoundary`. */
 export interface ModelBoundary {
-  /** The real path of `models.root`. */
+  /** The real path of the models root. */
   readonly root: string;
   /** The file-name endings that make a file a model file. */
   readonly suffixes: readonly string[];

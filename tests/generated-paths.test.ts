@@ -11,6 +11,7 @@ test('default generated paths resolve under the job root', () => {
 
 // Budget (Spec A D4): default paths have one owner. Only the plan entry of golem-model may spell them.
 test('no package source outside the plan entry of golem-model spells a default generated path', () => {
+  // protects: Spec A D4 default paths have one owner, the package that registers the block
   const offenders: string[] = [];
   const visit = (directory: string): void => {
     for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {

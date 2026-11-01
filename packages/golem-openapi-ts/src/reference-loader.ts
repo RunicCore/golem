@@ -244,8 +244,8 @@ async function fetchRemoteDocument(uri: string, maxBytes: number, timeoutMs: num
     // A timeout or an abort keeps its own error. Any other failure names the URL: `fetch failed` alone does not say which reference.
     if (signal.aborted) throw error;
     const cause = error instanceof Error && error.cause !== undefined ? error.cause : error;
-    const reason = cause instanceof Error ? cause.message : String(cause);
-    throw new Error(`remote reference could not be loaded: ${uri}: ${/redirect/i.test(reason) ? 'the server answered with a redirect, which golem does not follow' : reason}`, { cause: error });
+    const reason = cause instanceof Error ? cause.message || String((cause as NodeJS.ErrnoException).code ?? cause.name) : String(cause);
+    throw new Error(`remote reference could not be loaded: ${uri}: ${reason === 'unexpected redirect' ? 'the server answered with a redirect, which golem does not follow' : reason}`, { cause: error });
   }
   if (!response.ok) {
     await cancelResponseBody(response);
@@ -291,9 +291,7 @@ export async function loadReferenceGraph(
   const maxDocuments = options.maxRefDocuments || 256;
   const timeoutMs = options.refTimeoutMs || 10_000;
   // A list entry without a port names the default port of https; an entry with a port names that port only. `URL.host` keeps a port that is not the default.
-  const allowedHosts = new Set((options.remoteHosts ?? []).map((host) => {
-    try { return new URL(`https://${String(host)}`).host; } catch { return String(host).toLowerCase(); }
-  }));
+  const allowedHosts = new Set((options.remoteHosts ?? []).map((host) => new URL(`https://${host}`).host));
   const onInput: InputObserver | undefined = options.onInput;
 
   const documents = new Map<string, LoadedDocument>([[rootUri, { uri: rootUri, document: rootDocument }]]);
