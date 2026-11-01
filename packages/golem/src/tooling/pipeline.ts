@@ -8,7 +8,7 @@ import { coreRecordsOf, digest, loadInventory, applyJob, removeRetiredJobs } fro
 import type { FileChanges, Inventory, OutputFiles } from './outputs.js';
 import { absoluteRecordPath, golemCode, insideAny, inventoryPaths, JobInputs, hookCode, jobIsCurrent, loadJobRecords, programViewOf, recordPath, registrationCode, sameSetup, saveJobRecords } from './job-cache.js';
 import type { JobRecord } from './job-cache.js';
-import { GolemDiagnosticSeverity, displayPath, errorMessage, isInsideDirectory, isRecord, stableJson } from './generator-core.js';
+import { GolemDiagnosticSeverity, checkedDiagnostics, displayPath, errorMessage, isInsideDirectory, isRecord, stableJson } from './generator-core.js';
 import { observedFolders, watchingJobs } from './job-facts.js';
 import { writeEditorSchema } from './editor-schema.js';
 import { loadPackageRegistry, PackageRegistryError, registrationForBlock, registryFiles } from './package-registry.js';
@@ -199,44 +199,7 @@ function validateResult(result: unknown, job: GolemJob, profile: GolemConfig['pr
     if (typeof filename !== 'string' || !path.isAbsolute(filename)) throw new Error(`${job.package} returned a non-absolute input or manifest path.`);
     return path.normalize(filename);
   });
-  const diagnostics = result.diagnostics === undefined
-    ? undefined
-    : (() => {
-      if (!Array.isArray(result.diagnostics)) throw new Error(`${job.package} returned invalid diagnostics.`);
-      return result.diagnostics.map((diagnostic: unknown): GolemDiagnostic => {
-        if (!isRecord(diagnostic)
-            || (diagnostic.severity !== GolemDiagnosticSeverity.Error && diagnostic.severity !== GolemDiagnosticSeverity.Warning)
-          || typeof diagnostic.code !== 'string'
-          || !diagnostic.code.trim()
-          || typeof diagnostic.message !== 'string') {
-          throw new Error(`${job.package} returned an invalid diagnostic.`);
-        }
-        for (const key of ['file', 'path'] as const) {
-          if (diagnostic[key] !== undefined && typeof diagnostic[key] !== 'string') {
-            throw new Error(`${job.package} returned an invalid diagnostic ${key}.`);
-          }
-        }
-        for (const key of ['line', 'column'] as const) {
-          if (diagnostic[key] !== undefined
-            && (typeof diagnostic[key] !== 'number' || !Number.isSafeInteger(diagnostic[key]) || diagnostic[key] < 1)) {
-            throw new Error(`${job.package} returned an invalid diagnostic ${key}.`);
-          }
-        }
-        const file = typeof diagnostic.file === 'string' ? diagnostic.file : undefined;
-        const pathValue = typeof diagnostic.path === 'string' ? diagnostic.path : undefined;
-        const line = typeof diagnostic.line === 'number' ? diagnostic.line : undefined;
-        const column = typeof diagnostic.column === 'number' ? diagnostic.column : undefined;
-        return {
-          severity: diagnostic.severity,
-          code: diagnostic.code,
-          message: diagnostic.message,
-          ...(file === undefined ? {} : { file }),
-          ...(line === undefined ? {} : { line }),
-          ...(column === undefined ? {} : { column }),
-          ...(pathValue === undefined ? {} : { path: pathValue }),
-        };
-      });
-    })();
+  const diagnostics = result.diagnostics === undefined ? undefined : checkedDiagnostics(result.diagnostics, problem => new Error(`${job.package} returned ${problem}.`));
   // The generator's own error diagnostics come first: a failed run has no artifacts to check, and the user needs its cause.
   assertNoDiagnosticErrors(job, { diagnostics });
   const manifestPaths = paths(result.manifestPaths);

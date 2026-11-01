@@ -1,10 +1,11 @@
 // The rewrite participant of an extension (page "What an extension declares"). Core runs the participants of the extensions that a
 // golem.yaml block turns on, in golem check, golem build, Vite, esbuild and the Node loader alike. Core names no package and no extension.
 // This file holds the contract and the loading; it imports no TypeScript at run time.
+import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
+import { checkedDiagnostics, type GolemDiagnostic, type ModelBoundaryValue } from './generator-core.js';
 import { displayPath, isRecord } from './plan-support.js';
-import type { GolemDiagnostic, ModelBoundaryValue } from './generator-core.js';
 import type { RewriteEdit } from './rewrite.js';
 import type * as ts from './typescript-ns.js';
 
@@ -154,7 +155,7 @@ export interface CheckedRewriteResult {
 
 /**
  * The result of a participant, checked: no promise (the call is synchronous, so an `async` rewrite would return one that holds the edits
- * nobody applies), `reads` an array of strings, `diagnostics` an array of objects, and each edit whole numbers, in range, and `expect`
+ * nobody applies), `reads` an array of absolute paths, `diagnostics` valid diagnostics (`checkedDiagnostics`), and each edit whole numbers, in range, and `expect`
  * the text of the range.
  */
 export function checkedResult(extension: EnabledExtension, file: string, text: string, result: unknown): CheckedRewriteResult {
@@ -166,15 +167,15 @@ export function checkedResult(extension: EnabledExtension, file: string, text: s
   if (!isRecord(result)) throw new ExtensionFaultError(extension, `returned no result object for ${displayPath(file)}`);
   const { edits = [], reads = [], diagnostics = [] } = result;
   if (!Array.isArray(edits)) throw new ExtensionFaultError(extension, `returned edits that are no array for ${displayPath(file)}`);
-  if (!Array.isArray(reads) || reads.some(read => typeof read !== 'string')) throw new ExtensionFaultError(extension, `returned reads that are no array of file paths for ${displayPath(file)}`);
-  if (!Array.isArray(diagnostics) || diagnostics.some(diagnostic => !isRecord(diagnostic))) throw new ExtensionFaultError(extension, `returned diagnostics that are no array of objects for ${displayPath(file)}`);
+  if (!Array.isArray(reads) || reads.some(read => typeof read !== 'string' || !path.isAbsolute(read))) throw new ExtensionFaultError(extension, `returned reads that are no array of absolute file paths for ${displayPath(file)}`);
+  const checkedList = checkedDiagnostics(diagnostics, problem => new ExtensionFaultError(extension, `returned ${problem} for ${displayPath(file)}`));
   for (const edit of edits as unknown[]) {
     const fits = isRecord(edit) && Number.isInteger(edit.start) && Number.isInteger(edit.end) && typeof edit.expect === 'string' && typeof edit.text === 'string'
       && (edit.start as number) >= 0 && (edit.start as number) <= (edit.end as number) && (edit.end as number) <= text.length
       && text.slice(edit.start as number, edit.end as number) === edit.expect;
     if (!fits) throw new ExtensionFaultError(extension, `returned an edit for ${displayPath(file)} that is out of range or does not match the text it expects: ${JSON.stringify(edit)}`);
   }
-  return { edits: edits as readonly RewriteEdit[], reads: reads as readonly string[], diagnostics: diagnostics as readonly GolemDiagnostic[] };
+  return { edits: edits as readonly RewriteEdit[], reads: reads as readonly string[], diagnostics: checkedList };
 }
 
 /** Whether two edits cover some of the same text. Two insertions never do; an insertion at the border of an edit does not; one inside it does. */

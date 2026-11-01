@@ -160,17 +160,23 @@ const BAD_RESULT = `export const extension = {
   rewrite({ options }) {
     if (options.result === 'promise') return (async () => ({ edits: [] }))();
     if (options.result === 'reads') return { reads: 'tag.txt' };
+    if (options.result === 'relative') return { reads: ['tag.txt'] };
+    if (options.result === 'severity') return { diagnostics: [{ code: 'X', severity: 'fatal', message: 'm' }] };
+    if (options.result === 'nocode') return { diagnostics: [{ severity: 'error' }] };
     return { diagnostics: {} };
   },
 };
 `;
 
-test('a participant that returns a promise, reads that are no list of paths or diagnostics that are no list stops the run with the package named', async (t) => {
+test('a participant that returns a promise, reads that are not absolute paths or a diagnostic that is no diagnostic stops the run with the package named', async (t) => {
   // protects: T-786 an async rewrite is not a silent no-op, and a wrong reads or diagnostics is a fault of the package, not a TypeError
   const cases = [
     ['a promise', 'promise', /returned a promise for .*main\.ts; "rewrite" must return its result at once/],
-    ['reads that are no array of paths', 'reads', /returned reads that are no array of file paths for .*main\.ts/],
-    ['diagnostics that are no array of objects', 'diagnostics', /returned diagnostics that are no array of objects for .*main\.ts/],
+    ['reads that are no array', 'reads', /returned reads that are no array of absolute file paths for .*main\.ts/],
+    ['a relative path in reads', 'relative', /returned reads that are no array of absolute file paths for .*main\.ts/],
+    ['diagnostics that are no array', 'diagnostics', /returned invalid diagnostics for .*main\.ts/],
+    ['a diagnostic with a severity that is no severity', 'severity', /returned an invalid diagnostic for .*main\.ts/],
+    ['a diagnostic with no code and no message', 'nocode', /returned an invalid diagnostic for .*main\.ts/],
   ] as const;
   for (const [name, result, message] of cases) {
     await t.test(name, async (u) => {

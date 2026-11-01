@@ -121,6 +121,45 @@ export interface GolemDiagnostic {
   readonly path?: string;
 }
 
+/**
+ * The diagnostics a job or a rewrite participant returned, checked and copied: an array of objects with a severity `error` or `warning`,
+ * a nonempty string `code`, a string `message`, string `file` and `path`, and `line` and `column` whole numbers from 1. `fail` makes the
+ * error for a problem, which it gets as a phrase such as `an invalid diagnostic line`.
+ */
+export function checkedDiagnostics(value: unknown, fail: (problem: string) => Error): GolemDiagnostic[] {
+  if (!Array.isArray(value)) throw fail('invalid diagnostics');
+  return value.map((diagnostic: unknown): GolemDiagnostic => {
+    if (!isRecord(diagnostic)
+      || (diagnostic.severity !== GolemDiagnosticSeverity.Error && diagnostic.severity !== GolemDiagnosticSeverity.Warning)
+      || typeof diagnostic.code !== 'string'
+      || !diagnostic.code.trim()
+      || typeof diagnostic.message !== 'string') {
+      throw fail('an invalid diagnostic');
+    }
+    for (const key of ['file', 'path'] as const) {
+      if (diagnostic[key] !== undefined && typeof diagnostic[key] !== 'string') throw fail(`an invalid diagnostic ${key}`);
+    }
+    for (const key of ['line', 'column'] as const) {
+      if (diagnostic[key] !== undefined && (typeof diagnostic[key] !== 'number' || !Number.isSafeInteger(diagnostic[key]) || diagnostic[key] < 1)) {
+        throw fail(`an invalid diagnostic ${key}`);
+      }
+    }
+    const file = typeof diagnostic.file === 'string' ? diagnostic.file : undefined;
+    const pathValue = typeof diagnostic.path === 'string' ? diagnostic.path : undefined;
+    const line = typeof diagnostic.line === 'number' ? diagnostic.line : undefined;
+    const column = typeof diagnostic.column === 'number' ? diagnostic.column : undefined;
+    return {
+      severity: diagnostic.severity,
+      code: diagnostic.code,
+      message: diagnostic.message,
+      ...(file === undefined ? {} : { file }),
+      ...(line === undefined ? {} : { line }),
+      ...(column === undefined ? {} : { column }),
+      ...(pathValue === undefined ? {} : { path: pathValue }),
+    };
+  });
+}
+
 export type ControllerUriVersioningType = 'URI' | 'uri' | 0;
 
 /** The subset of Nest URI versioning options which has a static OpenAPI meaning. */
