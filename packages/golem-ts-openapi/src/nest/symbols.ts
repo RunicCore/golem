@@ -1,6 +1,7 @@
 import * as ts from '@exprtlabs/golem/internal/ts';
 import { decoratorCallee, decoratorIdentity } from '@exprtlabs/golem/internal/type-analysis';
 import { unwrapExpression } from '@exprtlabs/golem/internal/static-value';
+import { DECORATOR_PACKAGES } from './packages.js';
 import type { DecoratorInfo } from './types.js';
 
 function decoratorInfo(
@@ -11,7 +12,7 @@ function decoratorInfo(
     decorator,
     expression: decoratorCallee(decorator),
     ...(ts.isCallExpression(decorator.expression) ? { call: decorator.expression } : {}),
-    ...decoratorIdentity(checker, decorator),
+    ...decoratorIdentity(checker, decorator, DECORATOR_PACKAGES),
   };
 }
 

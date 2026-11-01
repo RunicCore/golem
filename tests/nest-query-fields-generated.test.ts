@@ -30,18 +30,18 @@ const openApiDocument = {
   },
 };
 
-/** Builds the project and returns the `queryFields` of each codec the script loads, by the name of its model. */
+/** Builds the project and returns the nest data (the query-field table) of each codec the script loads, by the name of its model; null for a codec with none. */
 async function queryFieldsOf(root: string, modules: readonly string[], ids: readonly string[]): Promise<Record<string, unknown>> {
   await command(root, process.execPath, [golem, 'build', '--config', path.join(root, 'golem.yaml')]);
   const script = `
     for (const file of ${JSON.stringify(modules)}) await import(file);
     const { getObjectCodec } = await import('@exprtlabs/golem/serde');
     const ids = JSON.parse(process.argv[1]);
-    console.log(JSON.stringify(Object.fromEntries(ids.map((id) => [id.replace(/_[0-9a-f]{8}$/, ''), getObjectCodec(id)?.queryFields ?? null]))));`;
+    console.log(JSON.stringify(Object.fromEntries(ids.map((id) => [id.replace(/_[0-9a-f]{8}$/, ''), getObjectCodec(id)?.data?.nest ?? null]))));`;
   return JSON.parse((await command(root, process.execPath, ['--input-type=module', '-e', script, JSON.stringify(ids)])).stdout.trim()) as Record<string, unknown>;
 }
 
-/** The `queryFields` of the `TFilter` model that `src/filter.model.ts` declares, after the pipeline ran. */
+/** The nest data of the `TFilter` model that `src/filter.model.ts` declares, after the pipeline ran. */
 async function filterQueryFields(root: string): Promise<unknown> {
   const id = (JSON.parse(fs.readFileSync(path.join(root, '.golem/codec-keys.json'), 'utf8')) as { keys: Record<string, string> }).keys['src/filter.model.ts#TFilter'];
   return (await queryFieldsOf(root, ['./build/src/filter.model.generated.js'], [id])).TFilter;
@@ -50,7 +50,7 @@ async function filterQueryFields(root: string): Promise<unknown> {
 function project(t: test.TestContext, prefix: string, yaml: readonly string[], document: object = openApiDocument): string {
   const root = createFixtureProject(t, prefix);
   fs.writeFileSync(path.join(root, 'package.json'), `{"name":"${prefix}fixture","type":"module"}`);
-  linkGolemPackages(root, ['golem', 'golem-model', 'golem-openapi']);
+  linkGolemPackages(root, ['golem', 'golem-model', 'golem-openapi', 'golem-ts-openapi']);
   fs.writeFileSync(path.join(root, 'api.json'), JSON.stringify(document));
   copyFixtureFile(root, 'packed/profile/tsconfig.json', 'tsconfig.json');
   fs.mkdirSync(path.join(root, 'src'));
@@ -60,7 +60,7 @@ function project(t: test.TestContext, prefix: string, yaml: readonly string[], d
 
 // protects: T-549 I-42 a query field typed by a named alias of an SDK, and the fields of an allOf base, stayed raw strings
 test('an app model over SDK types lists the query fields of their aliases and of an allOf base', async (t) => {
-  const root = project(t, 'golem-query-fields-', ['openapi-ts:', '  sdks:', '    - input: api.json', '      output: sdk', '      name: QueryFields', '      mode: golem', 'model: {}']);
+  const root = project(t, 'golem-query-fields-', ['ts-openapi:', '  extensions:', '    nest: {}', 'openapi-ts:', '  sdks:', '    - input: api.json', '      output: sdk', '      name: QueryFields', '      mode: golem', 'model: {}']);
   fs.writeFileSync(path.join(root, 'src/page.model.ts'), [
     "import type { IModel } from '@exprtlabs/golem/model';",
     "import type { Level, Flag, IntLimit, Tags } from '../sdk/index.js';",
@@ -86,7 +86,7 @@ test('an app model over SDK types lists the query fields of their aliases and of
 
 // protects: T-549 I-42 a golem-model @Query() model field typed by a named alias, also a recursive one, stayed a raw string
 test('a model that golem-model generates lists the query fields of its named and recursive aliases', async (t) => {
-  const root = project(t, 'golem-query-fields-model-', ['model: {}']);
+  const root = project(t, 'golem-query-fields-model-', ['ts-openapi:', '  extensions:', '    nest: {}', 'model: {}']);
   fs.writeFileSync(path.join(root, 'src/filter.model.ts'), [
     "import type { IModel } from '@exprtlabs/golem/model';",
     '',
@@ -117,7 +117,7 @@ test('a model that golem-model generates lists the query fields of an SDK alias 
       },
     },
   };
-  const root = project(t, 'golem-query-fields-sdk-', ['openapi-ts:', '  sdks:', '    - input: api.json', '      output: sdk', '      name: QuerySdkFields', 'model: {}'], sdkDocument);
+  const root = project(t, 'golem-query-fields-sdk-', ['ts-openapi:', '  extensions:', '    nest: {}', 'openapi-ts:', '  sdks:', '    - input: api.json', '      output: sdk', '      name: QuerySdkFields', 'model: {}'], sdkDocument);
   fs.writeFileSync(path.join(root, 'src/filter.model.ts'), [
     "import type { IModel } from '@exprtlabs/golem/model';",
     "import type { Level, Range } from '../sdk/index.js';",
@@ -141,7 +141,7 @@ test('a @Query() model built on an SDK model has the query fields of that SDK mo
       },
     },
   };
-  const root = project(t, 'golem-query-sdk-base-', ['openapi-ts:', '  sdks:', '    - input: api.json', '      output: sdk', '      name: QuerySdk', 'model: {}'], sdkDocument);
+  const root = project(t, 'golem-query-sdk-base-', ['ts-openapi:', '  extensions:', '    nest: {}', 'openapi-ts:', '  sdks:', '    - input: api.json', '      output: sdk', '      name: QuerySdk', 'model: {}'], sdkDocument);
   fs.writeFileSync(path.join(root, 'src/filter.model.ts'), [
     "import type { IModel } from '@exprtlabs/golem/model';",
     "import type { Page } from '../sdk/index.js';",
@@ -151,4 +151,18 @@ test('a @Query() model built on an SDK model has the query fields of that SDK mo
   ].join('\n'));
   await runPipeline(path.join(root, 'golem.yaml'));
   assert.deepEqual(await filterQueryFields(root), { active: { types: ['boolean'] }, limit: { types: ['number'] } });
+});
+
+// protects: T-791 core keeps no query table: without the nest extension a model codec carries no data, with a query-typed field
+test('a model that golem-model generates carries no codec data without the nest extension', async (t) => {
+  const root = project(t, 'golem-query-fields-off-', ['model: {}']);
+  fs.writeFileSync(path.join(root, 'src/filter.model.ts'), [
+    "import type { IModel } from '@exprtlabs/golem/model';",
+    '',
+    'export type TFilter = IModel<{ limit: number; active: boolean }>;',
+    '',
+  ].join('\n'));
+  await runPipeline(path.join(root, 'golem.yaml'));
+  assert.equal(await filterQueryFields(root), null);
+  assert.doesNotMatch(fs.readFileSync(path.join(root, 'src/filter.model.generated.ts'), 'utf8'), /\bdata:/);
 });

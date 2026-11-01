@@ -1,7 +1,7 @@
 import 'reflect-metadata';
 import { Module } from '@nestjs/common';
 import { NestFactory, type AbstractHttpAdapter } from '@nestjs/core';
-import { NestModelInterceptor } from '@exprtlabs/golem/nest';
+import { NestModelInterceptor } from '@exprtlabs/golem-ts-openapi/nest';
 import { PaymentsController } from './payments.controller.js';
 // Load the model module so its generated codec is registered before requests arrive.
 import './payment.model.js';

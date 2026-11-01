@@ -214,7 +214,7 @@ The build stops before it writes when an output would land outside its folder. T
 
 - The directory of the tsconfig is the project root. The build covers every file that the tsconfig includes.
 - For a parent tsconfig that includes several packages, put `golem.yaml` in a package and point `tsconfig` at the parent, as in `tsconfig: ../../tsconfig.json`.
-- The build adds the Nest codec decorators to every file of the project when a source of the project imports `@exprtlabs/golem/nest`. A docs job is not needed.
+- The build adds the Nest codec decorators to every file of the project when the `ts-openapi` block of `golem.yaml` holds the [`nest` extension](/reference/config#nest-extension). A docs job is not needed.
 - A `golem.yaml` with no tsconfig file, such as one with only SDK jobs, has nothing to build.
 
 One `golem.yaml` serves one tsconfig. `generate`, `check` and `build` stop in these cases:

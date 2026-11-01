@@ -21,9 +21,9 @@ import {
   type NestInterceptor,
 } from '@nestjs/common';
 import { mergeMap, type Observable } from 'rxjs';
-import { IssueRepresentation, IssueSource, LibError, LibErrorKind, type IssuePath } from './errors.js';
-import { resolveMaxDepth } from './conversion.js';
-import { getIModelClass, getObjectCodec, type ObjectCodec } from './object-codec.js';
+import { LibError, LibErrorKind, type IssuePath } from '@exprtlabs/golem/errors';
+import { IssueRepresentation, IssueSource, resolveMaxDepth } from '@exprtlabs/golem/internal/model-runtime';
+import { getIModelClass, getObjectCodec, type ObjectCodec } from '@exprtlabs/golem/serde';
 import {
   asToken,
   boundArray,
@@ -375,7 +375,7 @@ export class NestModelInterceptor implements NestInterceptor {
             const variantIds = asToken(metatype)?.[NEST_MODEL_UNION_IDS];
             const missing = variantIds?.filter((variant) => getObjectCodec(variant) === undefined).map((variant) => `"${variant}"`).join(' and ');
             throw new TypeError(id === undefined
-              ? `NestModelInterceptor needs an IModel or IObject type for ${where}. Declare the input as an IModel or IObject, or write your own interceptor.`
+              ? `NestModelInterceptor needs an IModel or IObject type for ${where}. Declare the input as an IModel or IObject. If it is a model, add extensions: { nest: {} } to the ts-openapi block in golem.yaml, so the build stamps the codec. Or write your own interceptor.`
               : `golem fault: NestModelInterceptor found no registered codec ${missing ?? `"${id}"`}${variantIds ? ` for the union "${id}"` : ''} for ${where}. The rewrite loads the generated module of the model, and that module did not load. Run golem generate and rewrite the file again.`);
           }
           const construct = boundConstruct(metatype);

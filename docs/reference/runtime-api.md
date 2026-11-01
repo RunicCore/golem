@@ -1,6 +1,6 @@
 # Runtime API
 
-Find every `@exprtlabs/golem` subpath that your application, NestJS app or build tool imports, with its signatures.
+Find every `@exprtlabs/golem` subpath that your application or build tool imports, and the NestJS entry of `@exprtlabs/golem-ts-openapi`, with their signatures.
 
 | Subpath | Use | Extra dependency |
 | --- | --- | --- |
@@ -13,7 +13,7 @@ Find every `@exprtlabs/golem` subpath that your application, NestJS app or build
 | [`tags`](#tags) | Type-only validation constraints, `TValidation`, `TSerde` | none |
 | [`temporal`](#temporal) | Temporal field types and their codecs | a `Temporal` global, such as `temporal-polyfill` |
 | [`serde`](#serde) | `parse<T>`, `stringify<T>`, `assertValue<T>`, `toWireFormat<T>`, `fromWireFormat<T>` | none |
-| [`nest`](#nest) | `NestModelInterceptor` and the helpers for your own interceptor | `@nestjs/common`, `rxjs` |
+| [`@exprtlabs/golem-ts-openapi/nest`](#nest) | `NestModelInterceptor` and the helpers for your own interceptor | `@exprtlabs/golem-ts-openapi`, `@nestjs/common`, `rxjs` |
 | [`generator-api`](/reference/generator-api#generator-api) | Contracts shared by the generators | none |
 | [`manifest`](/reference/generator-api#manifest) | Read and find `model-manifest.json` files | none |
 | [`rewrite`](/reference/generator-api#rewrite) | Apply a file's rewrite edits to its text and get its source map | none |
@@ -599,15 +599,15 @@ Pass one `ModelValidationContext` to repeated serde, `validateInstance` and `Mod
 | `getObjectCodec` | `(id): ObjectCodec \| undefined` | Returns the codec whose id is exactly `id`. A short model name finds nothing. |
 | `getIModelClass` | `(id): class \| undefined` | Returns the `IModel` class registered under the exact id `id`. |
 
-`ObjectCodec.queryFields` is the table of fields that `NestModelInterceptor` decodes from a query string, by field name; it is absent when no field needs decoding. `QueryFieldTable` is its type, and `QueryFieldShape` is the scalar types, literals and array item shape of one field.
+Types: `AllowGetterOptions`, `ObjectCodec`, `SerdeOptions`, `ValidateOptions`, `ValidationPlane`, `WireFormat`. `IssueRepresentation` and `IssueSource` are re-exported from [`errors`](#errors).
 
-Types: `AllowGetterOptions`, `ObjectCodec`, `QueryFieldShape`, `QueryFieldTable`, `SerdeOptions`, `ValidateOptions`, `ValidationPlane`, `WireFormat`. `IssueRepresentation` and `IssueSource` are re-exported from [`errors`](#errors).
-
-## `@exprtlabs/golem/nest` {#nest}
+## `@exprtlabs/golem-ts-openapi/nest` {#nest}
 
 ```ts
-import { NestModelInterceptor } from '@exprtlabs/golem/nest';
+import { NestModelInterceptor } from '@exprtlabs/golem-ts-openapi/nest';
 ```
+
+Install `@exprtlabs/golem-ts-openapi` in `dependencies`. `@nestjs/common` and `rxjs` are its optional peers. The interceptor needs the [`nest` extension](/reference/config#nest-extension) in `golem.yaml`.
 
 <<< ../../examples/payments/server/src/application.ts#global-model-http
 

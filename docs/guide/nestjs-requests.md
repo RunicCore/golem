@@ -21,14 +21,19 @@ Import `reflect-metadata` first in the application entry file, before any applic
 
 TypeScript erases the types of `@Body()`, `@Query()` and return values. The build rewrite records them for `NestModelInterceptor`.
 
-- The rewrite and its [`RUNM1081`](/reference/diagnostics#runm1081) checks run when a source of the project imports `@exprtlabs/golem/nest`, the module that exports `NestModelInterceptor`. A static import, a re-export and `import x = require(...)` count. A dynamic `import()` or `require()` call does not. A plain NestJS app that never imports it gets neither.
-- A docs job is not needed for them, and it does not turn them on. The docs job only writes the OpenAPI document.
+Add the [`nest` extension](/reference/config#nest-extension) to the `ts-openapi` block of `golem.yaml`. It turns on the rewrite and its [`RUNM1081`](/reference/diagnostics#runm1081) checks:
 
+<<< ../../examples/payments/server/golem.yaml#controllers-job
+
+- A docs job is not needed for them, and it does not turn them on. The docs job only writes the OpenAPI document. A block with only `extensions` is valid.
+- Without the extension, the build adds nothing, and `NestModelInterceptor` throws an error that tells you to add it.
 - Every build tool applies the rewrite ([Build tools](/guide/build)).
 - The rewrite also loads the generated module of each model it records, so the codec exists before the first request.
 - Write the parameter type and the return type explicitly, because the rewrite reads the annotation.
 
 ## Register the interceptor
+
+`NestModelInterceptor` comes from `@exprtlabs/golem-ts-openapi/nest`. Install `@exprtlabs/golem-ts-openapi` in `dependencies`, because the app imports it at run time. `@nestjs/common` and `rxjs` are its optional peers.
 
 `NestModelInterceptor` runs `fromWireFormat` on `@Body()` and `@Query()` before the handler. It writes an `IModel` or `IObject` return with `stringify`. It works with the Express and Fastify adapters.
 
@@ -62,7 +67,7 @@ Every `@Body()` and `@Query()` parameter needs an `IModel` or `IObject` type, or
 
 - **Accepted types:** an `IModel`, an `IObject`, your class that extends a generated model class, or a tagged union of models.
 - **`@Query()`:** it needs one object model or a tagged union of models.
-- **Option `nonModelInputs`:** if your own interceptor handles parameters of other types, set `nonModelInputs: warn` in [golem.yaml](/reference/config#root-keys). `golem build` then reports [`RUNM1081`](/reference/diagnostics#runm1081) as a warning, not an error.
+- **Option `nonModelInputs`:** if your own interceptor handles parameters of other types, set `nonModelInputs: warn` on the [`nest` extension](/reference/config#nest-extension). `golem build` then reports [`RUNM1081`](/reference/diagnostics#runm1081) as a warning, not an error.
 
 A whole `@Body()` parameter reads the request body as follows:
 

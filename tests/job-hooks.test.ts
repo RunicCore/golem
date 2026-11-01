@@ -42,8 +42,15 @@ test('the participant of an enabled extension reaches the job that offers the ho
 test('an extension that fills a hook that no job offers stops the run before a job runs, naming the extension, the hook and the hooks offered', async (t) => {
   // protects: T-781 an extension on a hook no job offers is a configuration error
   const root = app(t, 'probe:\n  extensions:\n    stray:\n');
-  await assert.rejects(generate(root), /Extension "stray" of @fixture\/probe \(block probe\) fills the hook "nobody\.offers", which no job of this golem\.yaml offers\. Hooks offered: hooked\.note\./);
+  await assert.rejects(generate(root), /Extension "stray" of @fixture\/probe \(block probe\) fills the hook "nobody\.offers", which no job of this golem\.yaml offers, and has no rewrite\. Hooks offered: hooked\.note\./);
   assert.equal(fs.existsSync(path.join(root, 'runs.log')), false);
+});
+
+test('an extension with a rewrite runs when no job of the project offers its hook, and the hook stays unfilled', async (t) => {
+  // protects: T-795 the nest extension fills model.codecData, and an app with a docs job and no model block still takes its rewrite
+  const root = app(t, 'probe:\n  extensions:\n    rewriting:\n');
+  await generate(root);
+  assert.equal(read(root, 'notes.txt'), `${HEADER}\nhello\n`);
 });
 
 test('a participant that throws, or an entry that does not load, stops the run as a fault of its extension package', async (t) => {

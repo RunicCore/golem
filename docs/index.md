@@ -107,8 +107,8 @@ hero:
 <div class="home-grid home-grid-3">
 <article class="home-card">
 <div class="home-card-head"><h3>NestJS</h3><span class="home-card-peer">^11</span></div>
-<code class="home-card-path">@exprtlabs/golem/nest</code>
-<p>The model interceptor converts and checks <code>@Body()</code> and <code>@Query()</code> models, and answers bad input with HTTP 400 (a default; your own interceptor can answer otherwise). A docs job writes the OpenAPI document.</p>
+<code class="home-card-path">@exprtlabs/golem-ts-openapi/nest</code>
+<p>The model interceptor converts and checks <code>@Body()</code> and <code>@Query()</code> models, and answers bad input with HTTP 400 (a default; your own interceptor can answer otherwise). A docs job writes the OpenAPI document, and the <code>nest</code> extension turns on the build rewrite that the interceptor needs.</p>
 </article>
 <article class="home-card">
 <div class="home-card-head"><h3>MobX and React</h3><span class="home-card-peer">^6.13</span></div>

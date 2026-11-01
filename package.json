@@ -151,9 +151,7 @@
           "**/*.{ts,tsx,js}"
         ],
         "ignoreDependencies": [
-          "@exprtlabs/golem-model",
-          "@exprtlabs/golem-openapi",
-          "@exprtlabs/golem-ts-openapi"
+          "@exprtlabs/golem-openapi"
         ]
       }
     },

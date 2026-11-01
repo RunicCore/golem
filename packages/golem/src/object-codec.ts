@@ -73,20 +73,17 @@ export interface SerdeOptions extends MaxDepthOptions {
   readonly construct?: abstract new (values?: never) => object;
 }
 
-/** What a query string can carry for one field: the scalar types it admits, its literals, and the shape of an array item. */
-export interface QueryFieldShape {
-  readonly types: readonly ('string' | 'number' | 'integer' | 'boolean')[];
-  readonly literals?: readonly (string | number | boolean)[];
-  readonly item?: QueryFieldShape;
-}
+/**
+ * What extensions add to a codec, by extension name. An extension adds its key by declaration merging, so the code that reads the key sees its type.
+ * The model job writes the values that the extensions give it (the hook `model.codecData`).
+ */
+export interface CodecExtensionData {}
 
-/** The fields of a model that a query string decodes, by name. */
-export type QueryFieldTable = Readonly<Record<string, QueryFieldShape>>;
+/** The data of a registered codec: each key is the name of an extension, and its value is that extension's. */
+export type CodecData = { readonly [Name in keyof CodecExtensionData]?: CodecExtensionData[Name] };
 
 export interface ObjectCodec<T = unknown> {
   readonly id: string;
-  /** The query fields `NestModelInterceptor` decodes from strings; absent when no field needs it. */
-  readonly queryFields?: QueryFieldTable;
   /** Origin of generated issues; TypeScript IObject/IModel vs OpenAPI SDK. */
   readonly issueSource?: IssueSource;
   stringify(value: T, options?: SerdeOptions & AllowGetterOptions): string;
@@ -98,6 +95,11 @@ export interface ObjectCodec<T = unknown> {
   fromWireFormat(wire: unknown, options?: SerdeOptions): T;
 }
 
+/** A registered codec as the runtime of an extension sees it: `data` is on this type only, not on the public `ObjectCodec`. */
+export interface InternalObjectCodec<T = unknown> extends ObjectCodec<T> {
+  readonly data?: CodecData;
+}
+
 export interface ObjectCodecImpl<T = unknown> {
   stringify(value: T, options?: SerdeOptions): string;
   parse(text: string, options?: SerdeOptions): T;
@@ -105,7 +107,8 @@ export interface ObjectCodecImpl<T = unknown> {
   assert(value: unknown, options?: ValidateOptions): T;
   toWireFormat(value: T, options?: SerdeOptions): unknown;
   fromWireFormat(wire: unknown, options?: SerdeOptions): T;
-  readonly queryFields?: QueryFieldTable;
+  /** The data that extensions add to the codec, by extension name; absent when none adds any. */
+  readonly data?: CodecData;
   /** The declared field names of a root object; `allowGetter` reads these. Another root has none, and the option has no effect. */
   readonly fields?: readonly string[];
   /** Set when the model reaches a recursive model: its input is bounded by `maxDepth` before it is converted or checked. */
@@ -410,10 +413,10 @@ export function createObjectCodec<T>(id: string, impl: ObjectCodecImpl<T>): Obje
     if (valueNestsDeeperThan(value, limit)) throw nestingDepthError(limit);
   };
   // Without `allowGetter` the value is the root as it is: the check is written in each call, so no function call and no copy.
-  const codec: ObjectCodec<T> = {
+  const codec: InternalObjectCodec<T> = {
     id,
     issueSource: impl.issueSource,
-    ...(impl.queryFields ? { queryFields: impl.queryFields } : {}),
+    ...(impl.data ? { data: impl.data } : {}),
     stringify: (value, options) => impl.stringify(options?.allowGetter === true && fields !== undefined ? readRootFields(value, fields) as typeof value : value, options),
     parse: (text, options) => {
       if (bounded) rejectDeepText(text, options);

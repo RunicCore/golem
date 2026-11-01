@@ -23,7 +23,8 @@ import {
   unionModelIds,
 } from './analysis-utils.js';
 import { isStaticArray } from '@exprtlabs/golem/internal/static-value';
-import { NEST_COMMON, NEST_SWAGGER, arrayItemNode, staticDecoratorKey } from '@exprtlabs/golem/internal/type-analysis';
+import { arrayItemNode, staticDecoratorKey } from '@exprtlabs/golem/internal/type-analysis';
+import { NEST_COMMON, NEST_SWAGGER } from './packages.js';
 import { decoratorOptions, headerOptionsList, inApplicationOrder, readString, type DecoratorOptions, type MetadataReader } from './metadata.js';
 import { callArguments, decoratorsOf, staticObject } from './symbols.js';
 import type { ControllerParameter, DecoratorInfo, NestAnalysisContext, TypeReference } from './types.js';

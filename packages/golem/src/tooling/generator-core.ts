@@ -160,20 +160,6 @@ export function checkedDiagnostics(value: unknown, fail: (problem: string) => Er
   });
 }
 
-export type ControllerUriVersioningType = 'URI' | 'uri' | 0;
-
-/** The subset of Nest URI versioning options which has a static OpenAPI meaning. */
-export interface ControllerUriVersioning {
-  readonly type?: ControllerUriVersioningType;
-  readonly prefix?: string;
-  readonly defaultVersion?: string | readonly string[];
-}
-
-/** OpenAPI root tag metadata supplied by a controller job. */
-export interface ControllerTag extends Readonly<Record<string, unknown>> {
-  readonly name: string;
-}
-
 export interface GolemResult {
   readonly artifacts: readonly GolemArtifact[];
   readonly manifestPaths: readonly string[];
@@ -352,49 +338,6 @@ export interface OpenApiContext {
   readonly profile: GolemProfile;
   readonly onInput?: InputObserver;
 }
-
-/** Static Nest controller analysis context consumed by @exprtlabs/golem-ts-openapi. */
-export interface ControllerContext {
-  /** Absolute project root used for TypeScript configuration and dependency resolution. */
-  readonly root: string;
-  /** Exact absolute OpenAPI file to emit. */
-  readonly output: string;
-  /** Optional controller entrypoints; omitted means provider discovery below root/src. */
-  readonly sources?: readonly string[];
-  /** File-name endings that make a file below `root/src` a controller source; defaults to `.controller.ts`. */
-  readonly suffixes?: readonly string[];
-  /** Defaults to OpenAPI 3.2.0; 3.1.2 is the supported explicit target. */
-  readonly openapiVersion?: '3.2.0' | '3.1.2';
-  readonly info: Readonly<Record<string, unknown>>;
-  readonly servers?: readonly Readonly<Record<string, unknown>>[];
-  readonly securitySchemes?: Readonly<Record<string, Readonly<Record<string, unknown>>>>;
-  readonly tags?: readonly ControllerTag[];
-  readonly globalPrefix?: string;
-  readonly uriVersioning?: ControllerUriVersioning;
-  /** The most bytes of JSON that a route path or version can fold to, a positive safe integer; omitted means 1 MiB (1048576). A larger result stops with RUNT2106. */
-  readonly maxResultBytes?: number;
-  /** The tsconfig the job's program opens from, absolute: the one the golem.yaml names. Omitted means the nearest `tsconfig.json` from `root` upward. */
-  readonly tsconfig?: string;
-  readonly profile: GolemProfile;
-  /** The `golem.yaml` default for the `exact` option of a model that sets none; omitted means `true`. */
-  readonly exact?: boolean;
-  /**
-   * The models job of the same golem.yaml, absent when it has none. A controller type that is a shared model of the app, or a
-   * class that extends the generated base of one, is matched to its model through the file this job writes for it.
-   */
-  readonly models?: ControllerModels;
-  /**
-   * What this job's program leaves out or stubs of the jobs after it (`laterOutputs`), set by the host as for every
-   * job that reads the program. A model file that imports a later output is not read by the controllers analysis, because the import
-   * does not resolve until that job has run. A later provider's generated files are stubbed in the program.
-   */
-  readonly programView?: ProgramView;
-  readonly onInput?: InputObserver;
-  readonly session?: GeneratorSession;
-}
-
-/** What the controllers analysis needs to know of the models job: the inputs of its model boundary. */
-export type ControllerModels = ModelBoundaryValue;
 
 export interface GolemProvider<Context> {
   readonly apiVersion: 1;

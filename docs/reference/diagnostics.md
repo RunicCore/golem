@@ -653,7 +653,7 @@ The type can be:
 
 A parameter of another kind, such as `@Body()` with `@Query()`, or two one-field parameters with different names, does not conflict.
 
-What golem does depends on [`nonModelInputs`](/reference/config#root-keys) in `golem.yaml`:
+These checks run only when the `ts-openapi` block of `golem.yaml` holds the [`nest` extension](/reference/config#nest-extension). What golem does depends on its `nonModelInputs` option:
 
 - By default this is an error. `golem build`, `golem check`, the Vite plugin, the esbuild plugin and the Node loader stop before a request arrives.
 - With `nonModelInputs: warn` it is a warning, and generation continues. `golem build` and `golem check` print it, and the message ends with `Generation continues, because golem.yaml sets nonModelInputs: warn.` The plugins and the loader print nothing.
@@ -665,7 +665,7 @@ What golem does depends on [`nonModelInputs`](/reference/config#root-keys) in `g
 - For a whole and a one-field parameter, declare the whole input as one model, or use one-field parameters only.
 - Give parameters that read the same value one model type, or declare one parameter.
 - Declare a whole `@Query()` as one model, not as an array.
-- An app that handles these parameters with its own interceptor sets `nonModelInputs: warn`.
+- An app that handles these parameters with its own interceptor sets `nonModelInputs: warn` on the `nest` extension.
 
 ### RUNM1082
 

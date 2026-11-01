@@ -146,30 +146,27 @@ test('a nested trusted call to a model of another module shares one frozen optio
   assert.ok(received.every((options) => options === received[0]), 'every nested call passes the same constant');
 });
 
-test('a codec registers the query fields that a query string decodes, and no JSON Schema', () => {
-  // protects: T-640 R-58 a registered codec holds no JSON Schema; Nest query decoding reads queryFields
+test('a codec registers the data that the codecData callback returns for its node, and no JSON Schema', () => {
+  // protects: T-640 R-58 a registered codec holds no JSON Schema; T-791 the extension data comes through one generic callback
   const filter: ModelTypeDescriptor = {
     kind: 'object',
-    properties: {
-      name: { kind: 'string' },
-      limit: { kind: 'number' },
-      active: { kind: 'boolean' },
-      ids: { kind: 'array', item: { kind: 'number', constraints: [{ kind: 'integer' }] } },
-    },
+    properties: { name: { kind: 'string' }, limit: { kind: 'number' } },
     required: [],
     additionalProperties: false,
   };
   const graph = createSchemaGraph();
   graph.intern(filter, 'Filter');
   graph.seal();
-  const registered: Record<string, unknown>[] = [];
-  const createObjectCodec = (_id: string, codec: Record<string, unknown>): void => { registered.push(codec); };
-  instantiateRuntime(emitCodecRuntimeText(graph, { validationLevel: false }), { createObjectCodec });
-  assert.equal(registered.length, 1);
-  assert.deepEqual(registered[0]?.queryFields, {
-    active: { types: ['boolean'] },
-    ids: { types: [], item: { types: ['number', 'integer'] } },
-    limit: { types: ['number'] },
-  });
-  assert.deepEqual(Object.keys(registered[0] ?? {}).filter((key) => /schema/i.test(key)), []);
+  const register = (options: Parameters<typeof emitCodecRuntimeText>[1]): Record<string, unknown> => {
+    const registered: Record<string, unknown>[] = [];
+    const createObjectCodec = (_id: string, codec: Record<string, unknown>): void => { registered.push(codec); };
+    instantiateRuntime(emitCodecRuntimeText(graph, options), { createObjectCodec });
+    assert.equal(registered.length, 1);
+    return registered[0]!;
+  };
+  const withData = register({ validationLevel: false, codecData: () => ({ demo: { limit: 'number' }, other: [1, 2] }) });
+  assert.deepEqual(withData.data, { demo: { limit: 'number' }, other: [1, 2] });
+  assert.deepEqual(Object.keys(withData).filter((key) => /schema/i.test(key)), []);
+  assert.equal(Object.hasOwn(register({ validationLevel: false }), 'data'), false);
+  assert.equal(Object.hasOwn(register({ validationLevel: false, codecData: () => undefined }), 'data'), false);
 });

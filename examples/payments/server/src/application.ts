@@ -2,7 +2,7 @@
 import 'reflect-metadata';
 import { Module, type DynamicModule } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
-import { NestModelInterceptor } from '@exprtlabs/golem/nest';
+import { NestModelInterceptor } from '@exprtlabs/golem-ts-openapi/nest';
 import { PaymentNotesController } from './payment-notes.controller.js';
 import { PaymentsController } from './payments.controller.js';
 import { ProviderCharges, type ProviderOptions } from './provider-charges.js';

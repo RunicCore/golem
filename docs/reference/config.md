@@ -40,7 +40,6 @@ A package from another author registers its own block name. Write that block und
 | `allowAny` | boolean | No | `false` | Fields typed `any` or `unknown` in models |
 | `exact` | boolean | No | `true` | Rejection of extra properties in models |
 | `unknownFormats` | `warn` or `error` | No | `error` | Action for a schema `format` that golem does not check |
-| `nonModelInputs` | `warn` or `error` | No | `error` | Action for a `@Body()` or `@Query()` parameter that `NestModelInterceptor` rejects: a type that is no `IModel` or `IObject`, or a combination of parameters of one handler that it cannot convert |
 
 - `tsconfig` must name an existing file when you set the key. Name a build-specific file such as `tsconfig.build.json` or `tsconfig.app.json` to give every job its `paths` and options. A tsconfig nearer to a job root is not read.
 - One `golem.yaml` serves one tsconfig ([what the tsconfig needs](/reference/cli#what-the-tsconfig-needs)). A tsconfig that has only `references` stops every job: name one referenced project.
@@ -48,7 +47,6 @@ A package from another author registers its own block name. Write that block und
 - `allowAny: true` permits those fields. A declaration can override it ([`any` and `unknown`](/guide/field-types#any-and-unknown)).
 - `exact: false` admits keys that a model does not list. A declaration can override it ([Objects and exact](/guide/field-types#objects-and-exact)).
 - `unknownFormats: error` stops generation with [`VALIDATE_UNKNOWN_FORMAT`](/reference/diagnostics#validate-unknown-format). `warn` reports the format and skips its check.
-- `nonModelInputs` applies when a source of the project imports `@exprtlabs/golem/nest`. A `ts-openapi` block in `golem.yaml` does not turn it on. A project that never imports that module gets no `RUNM1081`. It covers `golem build`, `golem check`, the Vite plugin, the esbuild plugin and the Node loader. It covers a parameter whose type is no model, whole or one field. It also covers the parameters of one handler that the interceptor cannot convert together: an optional one-field model or whole `@Body()`, a whole parameter with a one-field parameter of the same source, parameters that read the same value as different models, and a whole `@Query()` array. `error` stops with [`RUNM1081`](/reference/diagnostics#runm1081). `warn` continues. `golem build` and `golem check` print the warning. The plugins and the loader print nothing. Set `warn` when your own interceptor handles those parameters.
 
 ```yaml
 version: 1
@@ -56,7 +54,6 @@ validation: true
 allowAny: false
 exact: true
 unknownFormats: error
-nonModelInputs: error
 openapi-ts:
   sdks:
     - input: api.yaml
@@ -155,9 +152,9 @@ Disabling validation does not disable conversion guards, codecs, JSON representa
 
 ## The `ts-openapi` block {#ts-openapi-block}
 
-Install `@exprtlabs/golem-ts-openapi` to use the `ts-openapi` block. Its `docs` list holds one docs job for each document. A job reads static NestJS controller contracts. It does not start Nest and does not reproduce module registration. Use `sources` to read only selected controllers.
+Install `@exprtlabs/golem-ts-openapi` to use the `ts-openapi` block. Its `docs` list holds one docs job for each document. A job reads static NestJS controller contracts. It does not start Nest and does not reproduce module registration. Use `sources` to read only selected controllers. Its `extensions` key turns on [the `nest` extension](#nest-extension). The block needs `docs`, `extensions`, or both.
 
-Each entry of `docs` takes these keys. `docs` is required and holds at least one entry. A docs job uses the `model` block of the same file, when there is one, to match a shared model of the app to its model.
+Each entry of `docs` takes these keys. `docs` holds at least one entry. A docs job uses the `model` block of the same file, when there is one, to match a shared model of the app to its model.
 
 | Key | Type | Required | Default | Meaning |
 | --- | --- | --- | --- | --- |
@@ -199,6 +196,29 @@ openapi-ts:
 
 - The `backend` folder in this example has its own `tsconfig.json`, so `tsconfig` names it. Without one, leave `tsconfig` out to use the file beside `golem.yaml`.
 - Route helpers and query objects follow the rules of [NestJS controllers](/reference/nestjs). A query object on each OpenAPI version follows [query compatibility](/reference/nestjs#query-compatibility).
+
+### The `nest` extension {#nest-extension}
+
+The `nest` extension turns on the NestJS side of the build rewrite for `NestModelInterceptor`: the codec decorators on `@Body()` and `@Query()` parameters and on returns, and the [`RUNM1081`](/reference/diagnostics#runm1081) checks. Write it under `extensions` in the `ts-openapi` block. An empty entry takes the defaults.
+
+```yaml
+version: 1
+ts-openapi:
+  extensions:
+    nest: {}
+model: {}
+```
+
+| Key | Type | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `nonModelInputs` | `warn` or `error` | No | `error` | Action for a `@Body()` or `@Query()` parameter that `NestModelInterceptor` rejects: a type that is no `IModel` or `IObject`, or a combination of parameters of one handler that it cannot convert |
+
+- A docs job does not turn the extension on, and an import of `NestModelInterceptor` does not turn it on. A block with only `extensions` and no `docs` is valid, for an app that has a `model` block and no docs job.
+- Without the extension there is no `RUNM1081`, and `NestModelInterceptor` throws an error that tells you to add it.
+- The extension covers `golem build`, `golem check`, the Vite plugin, the esbuild plugin and the Node loader.
+- `nonModelInputs` covers a parameter whose type is no model, whole or one field. It also covers the parameters of one handler that the interceptor cannot convert together: an optional one-field model or whole `@Body()`, a whole parameter with a one-field parameter of the same source, parameters that read the same value as different models, and a whole `@Query()` array.
+- `error` stops with [`RUNM1081`](/reference/diagnostics#runm1081). `warn` continues. `golem build` and `golem check` print the warning. The plugins and the loader print nothing. Set `warn` when your own interceptor handles those parameters.
+- The app imports `NestModelInterceptor` from `@exprtlabs/golem-ts-openapi/nest`. Install `@exprtlabs/golem-ts-openapi` in `dependencies`, with `@nestjs/common` and `rxjs` ([NestJS requests](/guide/nestjs-requests)).
 
 ## The `openapi-ts` block {#openapi-ts-block}
 

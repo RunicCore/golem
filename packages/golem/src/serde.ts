@@ -12,7 +12,7 @@ import type { WireFormat } from './model.js';
 import { untransformedCallError, type AllowGetterOptions, type SerdeOptions, type ValidateOptions } from './object-codec.js';
 
 export { getIModelClass, getObjectCodec, objectCodecValidationReference } from './object-codec.js';
-export type { AllowGetterOptions, ObjectCodec, QueryFieldShape, QueryFieldTable, SerdeOptions, ValidateOptions, ValidationPlane } from './object-codec.js';
+export type { AllowGetterOptions, ObjectCodec, SerdeOptions, ValidateOptions, ValidationPlane } from './object-codec.js';
 export type { WireFormat } from './model.js';
 export { IssueRepresentation, IssueSource } from './errors.js';
 

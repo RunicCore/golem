@@ -1,13 +1,20 @@
 /**
  * The decorators that the build-time rewrite inserts on controller sources, the parameter tokens they place, and the readers of
- * those tokens (`@exprtlabs/golem/internal/nest-runtime`). `nest.ts` reads the tokens in `NestModelInterceptor` and
+ * those tokens (`@exprtlabs/golem-ts-openapi/internal/nest-runtime`). `nest.ts` reads the tokens in `NestModelInterceptor` and
  * `objectCodecFromMetatype`; the decorators are internal because only generated code calls them.
  */
-import type { DiscriminatorValue } from './model-registry.js';
-import { requireModelObject, unknownDiscriminatorValue } from './conversion.js';
-import { getIModelClass, getObjectCodec, type ObjectCodec, type SerdeOptions } from './object-codec.js';
-import { decodeQueryField } from './query-decode.js';
-import { presentValue } from './presence.js';
+import { presentValue, requireModelObject, unknownDiscriminatorValue, type InternalObjectCodec } from '@exprtlabs/golem/internal/model-runtime';
+import { getIModelClass, getObjectCodec, type ObjectCodec, type SerdeOptions } from '@exprtlabs/golem/serde';
+import { decodeQueryField, type QueryFieldTable } from './query-decode.js';
+
+declare module '@exprtlabs/golem/internal/model-runtime' {
+  /** The nest extension's data on a codec: the fields of the model that a query string decodes, by name. */
+  interface CodecExtensionData {
+    readonly nest?: QueryFieldTable;
+  }
+}
+
+type DiscriminatorValue = string | number | boolean;
 
 const NEST_MODEL_CODEC_ID = Symbol.for('@exprtlabs/golem:nestModelCodec');
 const NEST_MODEL_CODEC = Symbol.for('@exprtlabs/golem:nestModelCodec.codec');
@@ -47,7 +54,7 @@ export interface NestUnionBinding extends NestUnionInput {
 }
 
 /** What the interceptor converts a whole or one-field input with. */
-export type ModelInput = ObjectCodec | NestUnionBinding;
+export type ModelInput = InternalObjectCodec | NestUnionBinding;
 
 type NestModelToken = Function & {
   readonly [NEST_MODEL_CODEC_ID]?: unknown;
@@ -172,7 +179,7 @@ function nestUnionInput(property: string, variants: readonly NestUnionVariant[])
 
 type QueryWireDecoder = (query: unknown) => unknown;
 
-const queryWireDecoders = new WeakMap<ObjectCodec, QueryWireDecoder>();
+const queryWireDecoders = new WeakMap<InternalObjectCodec, QueryWireDecoder>();
 
 export function schemaRecord(value: unknown): Readonly<Record<string, unknown>> | undefined {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -182,7 +189,7 @@ export function schemaRecord(value: unknown): Readonly<Record<string, unknown>> 
 
 /**
  * Query values arrive as strings or repeated-key string arrays. Decode each
- * field to the scalar or array type the codec's `queryFields` table declares
+ * field to the scalar or array type the codec's query-field table (`data.nest`) declares
  * before the model's wire validation runs. A value that does not fit stays a
  * string, so the validator reports it. Body JSON keeps its own types and is
  * not decoded.
@@ -192,7 +199,7 @@ export function queryWireDecoder(input: ModelInput): QueryWireDecoder {
   const codec = input;
   const cached = queryWireDecoders.get(codec);
   if (cached) return cached;
-  const decoded = Object.entries(codec.queryFields ?? {});
+  const decoded = Object.entries(codec.data?.nest ?? {});
   const decoder: QueryWireDecoder = decoded.length === 0 ? (query) => query : (query) => {
     const record = schemaRecord(query);
     if (!record) return query;

@@ -1,6 +1,14 @@
 /** The rule that turns a query string value into the scalar or array a field declares. A value that does not fit stays text, so the validator reports it. */
 
-import type { QueryFieldShape } from './object-codec.js';
+/** What a query string can carry for one field: the scalar types it admits, its literals, and the shape of an array item. */
+export interface QueryFieldShape {
+  readonly types: readonly ('string' | 'number' | 'integer' | 'boolean')[];
+  readonly literals?: readonly (string | number | boolean)[];
+  readonly item?: QueryFieldShape;
+}
+
+/** The fields of a model that a query string decodes, by name. */
+export type QueryFieldTable = Readonly<Record<string, QueryFieldShape>>;
 
 const NOT_DECODED = Symbol('not decoded');
 const JSON_NUMBER = /^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?$/;

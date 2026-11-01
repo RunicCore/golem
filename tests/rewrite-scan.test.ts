@@ -9,7 +9,7 @@ import { RewriteScanner, type FileScanResult } from '#golem/rewrite-scan';
 import { decodeMappings } from '#golem/source-map';
 import { createProjectProgram } from '@exprtlabs/golem/internal/type-analysis';
 import { writeSdk } from '#openapi/generator';
-import { NEST_INTERCEPTOR_SOURCE } from './fixture-templates/controllers/project.js';
+import { NEST_PARTICIPANTS } from './fixture-templates/controllers/project.js';
 import { copyFixtureFile, readFixture, writeGeneratedArtifacts } from './fixture-project.js';
 import { createModelProject, writeModelSources } from './model-project.js';
 import { writeFixture } from './support/consumer.js';
@@ -30,17 +30,16 @@ function project(t: TestContext, files: readonly string[] = []): string {
 
 type ProgramScan = ReturnType<RewriteScanner['scanProgram']>;
 
-/** The scanner's answer for every file of the project's own program; `interceptor` adds the source that imports `NestModelInterceptor`, which turns the NestJS side on. */
-function scan(root: string, interceptor = false): ProgramScan {
-  if (interceptor) fs.writeFileSync(path.join(root, 'src/interceptor.ts'), NEST_INTERCEPTOR_SOURCE);
-  return withScanner(root, (scanner) => scanner.scanProgram());
+/** The scanner's answer for every file of the project's own program; `nest` runs the participant of the nest extension, which `extensions: { nest: {} }` in golem.yaml turns on. */
+function scan(root: string, nest = false): ProgramScan {
+  return withScanner(root, (scanner) => scanner.scanProgram(), nest);
 }
 
 /** Run `use` against a scanner of the project's own program, which closes with it. */
-function withScanner<T>(root: string, use: (scanner: RewriteScanner) => T): T {
+function withScanner<T>(root: string, use: (scanner: RewriteScanner) => T, nest = false): T {
   const info = createProjectProgram(root, undefined, undefined, path.join(root, 'tsconfig.json'));
   using program = info.program;
-  return use(new RewriteScanner({ root, boundary: { root, directory: root, output: defaultModelOutput(root), suffixes: ['.model.ts', '.models.ts'] }, program, checker: program.getTypeChecker(), codecKeysFile: path.join(root, CODEC_KEYS) }));
+  return use(new RewriteScanner({ root, boundary: { root, directory: root, output: defaultModelOutput(root), suffixes: ['.model.ts', '.models.ts'] }, program, checker: program.getTypeChecker(), participants: nest ? NEST_PARTICIPANTS.error : [], codecKeysFile: path.join(root, CODEC_KEYS) }));
 }
 
 function scanned(result: ProgramScan, file: string): FileScanResult {
@@ -294,17 +293,6 @@ test('a @Body() class that reaches the generated base through another class gets
 
   assert.deepEqual(result.diagnostics, []);
   assert.ok(rewritten(root, result, 'rush.controller.ts').includes('@__golem_nestModelCodec("TPayment_22222222") input: RushPayment'));
-});
-
-test('an import-equals require of @exprtlabs/golem/nest turns the NestJS side on, and a dynamic import of it does not', (t) => {
-  // protects: T-761 the switch counts import x = require(...) and leaves a dynamic import() out
-  const root = project(t);
-  fs.writeFileSync(path.join(root, 'src/rush.controller.ts'), 'import { Body } from \'@nestjs/common\';\nimport type { Payment } from \'./payment.model.js\';\nexport class RushController {\n  create(@Body() input: Payment): void {}\n}\n');
-  fs.writeFileSync(path.join(root, 'src/interceptor.ts'), "export const load = () => import('@exprtlabs/golem/nest');\n");
-  assert.equal(scan(root).files.get('src/rush.controller.ts'), undefined);
-
-  fs.writeFileSync(path.join(root, 'src/interceptor.ts'), "import nest = require('@exprtlabs/golem/nest');\nexport const interceptor = nest.NestModelInterceptor;\n");
-  assert.ok(rewritten(root, scan(root), 'rush.controller.ts').includes('@__golem_nestModelCodec("TPayment_22222222") input: Payment'));
 });
 
 test('a @Body() model that is a default export says to export the class by name', (t) => {

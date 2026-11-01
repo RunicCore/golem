@@ -135,7 +135,7 @@ A hook is a named place where extensions add code to a job. The job that offers 
 - List the hook name in `facts.hooks`.
 - Call each participant through `fill.use`: `context.hooks['acme.note'].map(fill => fill.use(note => note({ options: fill.options })))`.
 - A participant that throws stops the run, and the message names the package of the extension. This is a fault in that package.
-- An extension that fills a hook that no job of the `golem.yaml` offers stops loading. The message lists the hooks offered.
+- A hook that no job of the `golem.yaml` offers stays unfilled. An extension with no `rewrite` whose hooks no job offers stops loading, and the message lists the hooks offered.
 - Golem runs the job again when the code or options of an extension on its hooks change.
 
 ### Write an extension {#extensions}
@@ -172,7 +172,7 @@ export const extension: GolemExtension = {
 | `codecKeys` | `idFor(filename, name)` and `moduleOf(id)`, from `.golem/codec-keys.json`. |
 | `boundary` | The `ModelBoundary` value. `undefined` without a provider. |
 | `modelClasses()` | How many classes register for each model, by model key. |
-| `core` | Helpers: `importName(node, name, from)`, `loadCodecModule(id)`, `codecIdOf(symbol)`, `isGolemModel(symbol)` and `locate(node, code, message)`. |
+| `core` | Helpers: `importName(node, name, from)`, `loadCodecModule(id)`, `codecIdOf(symbol)`, `isGolemModel(symbol)`, `readAliasChain(name)`, `readWrittenIn(node)` and `locate(node, code, message)`. |
 
 | Result | Meaning |
 | --- | --- |
@@ -283,7 +283,7 @@ Usage: [Run the generators from code](/guide/generator-api#check-the-result).
 import type { GolemProvider, ModelContext } from '@exprtlabs/golem/generator-api';
 ```
 
-The subpath is the extension API. It exports the contracts above and the types `GolemExtension`, `RewriteParticipant`, `RewriteParticipantInput`, `RewriteParticipantResult`, `RewriteCore`, `ModelContext`, `OpenApiContext`, `ControllerContext`, `ControllerModels`, `ControllerTag`, `ControllerUriVersioning`, `ControllerUriVersioningType`, `GolemDiagnosticCode`, `ResolvedGolemProfile` and `SourceDiscoveryOptions`. It follows semver, and an extension package keeps its own version.
+The subpath is the extension API. It exports the contracts above and the types `GolemExtension`, `RewriteParticipant`, `RewriteParticipantInput`, `RewriteParticipantResult`, `RewriteCore`, `ModelContext`, `OpenApiContext`, `GolemDiagnosticCode`, `ResolvedGolemProfile` and `SourceDiscoveryOptions`. It follows semver, and an extension package keeps its own version.
 
 | Export | Signature | Behavior |
 | --- | --- | --- |
@@ -328,7 +328,7 @@ Every [build tool](/guide/build) scans each TypeScript file it compiles or loads
 | `toWireFormat<T>(value)` | the generated `toWireFormat` for `T` |
 | `fromWireFormat<T>(wire)` | the generated `fromWireFormat` for `T`, constructing your class when `T` is a class |
 
-When a source of the project imports `@exprtlabs/golem/nest`, the rewrite also marks `@Body()` and `@Query()` parameters that take a model, and handlers that return a model, so that `NestModelInterceptor` can convert them. `golem build`, [`loader`](/reference/runtime-api#loader), [`vite`](/reference/runtime-api#vite) and [`esbuild`](/reference/runtime-api#esbuild) use this subpath to apply their edits.
+When the `ts-openapi` block of `golem.yaml` holds the [`nest` extension](/reference/config#nest-extension), the rewrite also marks `@Body()` and `@Query()` parameters that take a model, and handlers that return a model, so that `NestModelInterceptor` can convert them. `golem build`, [`loader`](/reference/runtime-api#loader), [`vite`](/reference/runtime-api#vite) and [`esbuild`](/reference/runtime-api#esbuild) use this subpath to apply their edits.
 
 | Member | Signature | Behavior |
 | --- | --- | --- |
@@ -349,7 +349,7 @@ Each module exports `apiVersion` (`1`) and `generate`. Usage: [Run the generator
 
 ## `ControllerContext` {#controllercontext}
 
-The context of the generator that writes an OpenAPI document from controllers. Usage: [Generate OpenAPI from controllers](/guide/generator-api#generate-openapi-from-controllers).
+The context of the generator that writes an OpenAPI document from controllers. `@exprtlabs/golem-ts-openapi/generator` exports it with `ControllerModels`, `ControllerTag`, `ControllerUriVersioning` and `ControllerUriVersioningType`. Usage: [Generate OpenAPI from controllers](/guide/generator-api#generate-openapi-from-controllers).
 
 | Field | Required | Default | Effect |
 | --- | --- | --- | --- |

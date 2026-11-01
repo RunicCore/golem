@@ -15,11 +15,6 @@ export {
 } from './generator-core.js';
 export type {
   CodecsHostValue,
-  ControllerContext,
-  ControllerModels,
-  ControllerTag,
-  ControllerUriVersioning,
-  ControllerUriVersioningType,
   GeneratorHostContext,
   GeneratorSession,
   GolemArtifact,

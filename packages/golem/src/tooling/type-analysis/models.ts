@@ -22,6 +22,14 @@ export interface ModelSpecification {
   readonly companionFile?: string;
 }
 
+/** What a caller that reads controller DTOs tells the analysis about the metadata of a DTO field. */
+export interface DtoRule {
+  /** Whether the property carries metadata that states its schema itself, so a Map or Set field needs no model. */
+  readonly statesSchema: (checker: ts.TypeChecker, property: ts.Symbol) => boolean;
+  /** The error for a Map or Set in a DTO. `decoratable` is true for a class field, which metadata can reach. */
+  readonly mapOrSetError: (sourceFile: ts.SourceFile, node: ts.Node, where: string, collection: string, decoratable: boolean) => Error;
+}
+
 /** Analysis context for a field contract, including controller DTOs. */
 export interface TypeAnalysisContext {
   readonly sourceFile: ts.SourceFile;
@@ -33,7 +41,10 @@ export interface TypeAnalysisContext {
   readonly fieldsType: ts.Type;
   readonly exact: boolean;
   readonly allowAny: boolean | undefined;
+  /** A controller DTO class field: no model converts it, so a union in it needs no tag and a method is no field. */
   readonly dto?: boolean;
+  /** The rule of the caller that reads DTOs. Without it, no decorator counts as metadata that states a schema, and a Map or Set stops with RUNM1004. */
+  readonly dtoRule?: DtoRule;
   /** Nested TypeScript-shaped JSON Schema values are metadata, not model fields. */
   readonly schemaData?: boolean;
   /** The field being described, for a diagnostic; absent at the root of a model. */

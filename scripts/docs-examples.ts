@@ -3,7 +3,7 @@ import path from 'node:path';
 import { listPublicSourceFiles, publicContentOptions, scanPublicContent } from './public-source.js';
 import { SOURCE_EXAMPLES } from './maintained-examples.js';
 const packageSnippetSources = new Set([
-  'packages/golem/src/nest.ts',
+  'packages/golem-ts-openapi/src/runtime/nest.ts',
 ]);
 /** The benchmark page shows the fixtures it times and the feature models it shares with the acceptance test; they are in the public source inventory. */
 const benchmarkSnippetPrefixes = ['scripts/benchmark/fixtures/', 'tests/fixtures/models/serde-features/'];

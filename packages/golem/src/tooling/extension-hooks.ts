@@ -51,20 +51,19 @@ function fill(hook: string, extension: EnabledExtension, participant: unknown): 
 }
 
 /**
- * Loads the enabled extensions and routes their participants to the jobs that offer the hooks they fill. An extension that fills a hook that
- * no job of the golem.yaml offers is a configuration error: it names the extension and the hook, and lists the hooks offered. Returns an
+ * Loads the enabled extensions and routes their participants to the jobs that offer the hooks they fill. An extension with no rewrite whose hooks
+ * no job of the golem.yaml offers is a configuration error: it names the extension and the hooks, and lists the hooks offered. Returns an
  * entry for each job that offers a hook, with an empty list for a hook that no extension fills; no extension is loaded when the config enables none.
  */
 export async function routeHooks(jobs: readonly GolemJob[], extensions: readonly EnabledExtension[]): Promise<ReadonlyMap<string, JobHooks>> {
   const routes = new Map<string, JobHooks>();
   const loaded = extensions.length ? await loadExtensions(extensions) : [];
   const offered = [...new Set(jobs.flatMap(job => job.facts.hooks))].sort();
-  for (const { extension, hooks } of loaded) {
-    for (const hook of Object.keys(hooks)) {
-      if (!offered.includes(hook)) {
-        throw new Error(`Extension "${extension.name}" of ${extension.package} (block ${extension.block}) fills the hook "${hook}", which no job of this golem.yaml offers. ${offered.length ? `Hooks offered: ${offered.join(', ')}.` : 'No job offers a hook.'}`);
-      }
-    }
+  for (const { extension, rewrite, hooks } of loaded) {
+    const names = Object.keys(hooks);
+    // A hook of a job this golem.yaml does not hold stays unfilled: the extension still works through its rewrite or its other hooks. One that can do nothing here is a configuration error.
+    if (rewrite !== undefined || !names.length || names.some(hook => offered.includes(hook))) continue;
+    throw new Error(`Extension "${extension.name}" of ${extension.package} (block ${extension.block}) fills the hook ${names.map(hook => `"${hook}"`).join(', ')}, which no job of this golem.yaml offers, and has no rewrite. ${offered.length ? `Hooks offered: ${offered.join(', ')}.` : 'No job offers a hook.'}`);
   }
   for (const job of jobs) {
     if (!job.facts.hooks.length) continue;

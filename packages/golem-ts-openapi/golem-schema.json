@@ -1,8 +1,27 @@
 {
   "description": "The ts-openapi block: documents that golem reads from controller sources.",
   "type": "object",
-  "required": ["docs"],
+  "anyOf": [{ "required": ["docs"] }, { "required": ["extensions"] }],
   "properties": {
+    "extensions": {
+      "description": "The extensions that the block turns on. An entry turns an extension on; an empty entry takes its defaults.",
+      "type": "object",
+      "properties": {
+        "nest": {
+          "description": "The NestJS checks of the rewrite: the codec of each @Body() and @Query() parameter and return, and the report of an input that NestModelInterceptor rejects.",
+          "type": ["object", "null"],
+          "properties": {
+            "nonModelInputs": {
+              "description": "The action for a @Body() or @Query() parameter that NestModelInterceptor rejects: error stops, warn reports and continues.",
+              "enum": ["error", "warn"],
+              "default": "error"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
     "docs": {
       "description": "The documents to write, one job for each entry.",
       "type": "array",

@@ -15,7 +15,7 @@ import {
 } from './analysis-utils.js';
 import { decoratorOptions, readNumber, readString, type DecoratorOptions, type MetadataReader } from './metadata.js';
 import { evaluateStaticValue } from '@exprtlabs/golem/internal/static-value';
-import { NEST_COMMON, NEST_SWAGGER } from '@exprtlabs/golem/internal/type-analysis';
+import { NEST_COMMON, NEST_SWAGGER } from './packages.js';
 import { callArguments, decoratorsOf } from './symbols.js';
 import type { DecoratorInfo, NestAnalysisContext, NestHttpMethod, RequestBodyDescription, ResponseDescription, TypeReference } from './types.js';
 const DEFAULT_RESPONSE_STATUS: Record<NestHttpMethod, string> = {

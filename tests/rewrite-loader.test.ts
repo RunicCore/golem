@@ -11,7 +11,7 @@ import { createFixtureProject, linkProjectPackages, readFixture, snapshotFilesys
 import { createControllerFixture } from './fixture-templates/controllers/project.js';
 import { createModelProject } from './model-project.js';
 import { command, workspace } from './support/process.js';
-import { MAIN, MODELS_YAML, NODE_FLAGS, SERDE, frameLine, lineOf, project, run, workspacePackage, write } from './support/loader-project.js';
+import { MAIN, NODE_FLAGS, SERDE, frameLine, lineOf, project, run, workspacePackage, write } from './support/loader-project.js';
 import { ORDER_WIRE, runSite, sharedFolderProject } from './support/shared-folder-project.js';
 
 const MODEL_RUNTIME = '@exprtlabs/golem/internal/model-runtime';
@@ -291,7 +291,7 @@ export class PaymentsController {
 }
 `;
 const NEST_MAIN = `import 'reflect-metadata';
-import { objectCodecFromMetatype } from '@exprtlabs/golem/nest';
+import { objectCodecFromMetatype } from '@exprtlabs/golem-ts-openapi/nest';
 import './payment.model.ts';
 import { PaymentsController } from './payments.controller.ts';
 
@@ -301,7 +301,7 @@ console.log(JSON.stringify({ stamped: codec !== undefined, parsed: codec?.parse(
 `;
 
 test('a Nest controller with a @Body() model parameter carries nestModelCodec metadata when the loader runs it, in a project whose yaml has no controllers job', async (t) => {
-  // protects: T-761 R-92 the Node loader turns the NestJS side on from the import of golem's interceptor module, not from a controllers job
+  // protects: T-761 R-92 the Node loader turns the NestJS side on from extensions: nest in golem.yaml, not from a controllers job or an import
   const root = await nestCodecProject(t, NEST_CONTROLLER, NEST_MAIN);
   assert.deepEqual(await runJson(root, 'src/main.ts'), { stamped: true, parsed: { id: '1', note: 'hello' } });
 });
@@ -316,7 +316,7 @@ async function nestCodecProject(t: TestContext, controller: string, main: string
       include: ['src/**/*.ts'],
     },
     files: {
-      'golem.yaml': MODELS_YAML,
+      'golem.yaml': 'version: 1\nvalidation: false\nts-openapi:\n  extensions:\n    nest: {}\nmodel: {}\n',
       'src/payment.model.ts': readFixture('controllers/nest-plugin/project/payment.model.ts').replace('.generated.js', '.generated.ts'),
       'src/payments.controller.ts': controller,
       'src/main.ts': main,
@@ -339,7 +339,7 @@ test('a @Body() IObject alias named only as a type has its codec registered with
     '',
   ].join('\n'), [
     "import 'reflect-metadata';",
-    "import { objectCodecFromMetatype } from '@exprtlabs/golem/nest';",
+    "import { objectCodecFromMetatype } from '@exprtlabs/golem-ts-openapi/nest';",
     "import { PaymentsController } from './payments.controller.ts';",
     "const types = Reflect.getMetadata('design:paramtypes', PaymentsController.prototype, 'create') as unknown[];",
     "const codec = objectCodecFromMetatype<{ note: string }>(types[0]);",
@@ -363,7 +363,7 @@ test('a model named only in an async Promise return has its codec registered wit
   ].join('\n'), [
     "import 'reflect-metadata';",
     "import fs from 'node:fs';",
-    "import '@exprtlabs/golem/nest';",
+    "import '@exprtlabs/golem-ts-openapi/nest';",
     "import { getObjectCodec } from '@exprtlabs/golem/serde';",
     "import './payments.controller.ts';",
     "const keys = JSON.parse(fs.readFileSync('.golem/codec-keys.json', 'utf8')).keys;",

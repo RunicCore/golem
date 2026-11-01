@@ -467,7 +467,7 @@ async function planPipeline(filename: string, run: PipelineRun): Promise<{ reado
     return code;
   };
   const codeOf = (job: GolemJob): string => blockCodeOf(job.block);
-  // The extension entries load here: the cache key needs the hooks they fill, and an extension on a hook no job offers stops the run before any job does.
+  // The extension entries load here: the cache key needs the hooks they fill, and an extension that can do nothing here stops the run before any job does.
   const hooks = await routeHooks(config.jobs, config.extensions);
   const hookCodeOf = (job: GolemJob): string => hookCode(hooks.get(job.id)?.filled ?? [], extension => blockCodeOf(extension.block));
   const current = new Set<string>();
@@ -662,7 +662,6 @@ async function scanRewriteSites(config: GolemConfig, session: GeneratorSessionRe
     participants,
     boundary: config.contracts.ModelBoundary,
     configFile: config.tsconfig,
-    nonModelInputs: config.nonModelInputs,
     codecKeysFile: codecKeysPath(config.directory),
     session,
   });

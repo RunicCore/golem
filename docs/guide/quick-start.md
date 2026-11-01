@@ -118,7 +118,7 @@ Generated models and clients import the runtime:
 npm install @exprtlabs/golem
 ```
 
-Generating OpenAPI from controllers needs no runtime. A NestJS app that registers `NestModelInterceptor` does need it.
+Generating OpenAPI from controllers needs no runtime. A NestJS app that registers `NestModelInterceptor` does need it, so it lists `@exprtlabs/golem-ts-openapi` in `dependencies`.
 
 The `golem` command comes from `@exprtlabs/golem`, which every generator depends on:
 
@@ -135,7 +135,7 @@ The `@exprtlabs/*` package subpaths are ESM-only. Import them from ESM applicati
 | Package | Peer dependencies |
 | --- | --- |
 | `@exprtlabs/golem-model` | `typescript` `>=6.0.0 <7` or `>=7.1.0-0 <8` |
-| `@exprtlabs/golem-ts-openapi` | `@exprtlabs/golem`, and `typescript` `>=6.0.0 <7` or `>=7.1.0-0 <8` (optional) |
+| `@exprtlabs/golem-ts-openapi` | `@exprtlabs/golem`, and `typescript` `>=6.0.0 <7` or `>=7.1.0-0 <8`, `@nestjs/common` `^11.0.0` and `rxjs` `^7.8.0` (all three optional; the last two for `NestModelInterceptor`) |
 | `@exprtlabs/golem-openapi` | `@exprtlabs/golem`, and `typescript` `>=6.0.0 <7` or `>=7.1.0-0 <8` (optional) |
 
 `@exprtlabs/golem` has only optional peer dependencies:
@@ -145,7 +145,6 @@ The `@exprtlabs/*` package subpaths are ESM-only. Import them from ESM applicati
 - `esbuild` `^0.25.12`, for the esbuild plugin
 - `eslint` `^9.0.0 || ^10.0.0`, for the ESLint rule
 - `mobx` `^6.13.0`, for MobX models
-- `@nestjs/common` `^11.0.0` and `rxjs` `^7.8.0`, for `NestModelInterceptor`
 
 ```sh
 npm install --save-dev typescript@~7.1.0-beta

@@ -40,6 +40,9 @@
     "block": "ts-openapi",
     "plan": "./plan",
     "generator": "./generator",
+    "extensions": {
+      "nest": "./nest-extension"
+    },
     "schema": "./golem-schema.json"
   },
   "exports": {
@@ -52,6 +55,21 @@
       "types": "./dist/generator.d.ts",
       "import": "./dist/generator.js",
       "default": "./dist/generator.js"
+    },
+    "./nest-extension": {
+      "types": "./dist/nest/rewrite-participant.d.ts",
+      "import": "./dist/nest/rewrite-participant.js",
+      "default": "./dist/nest/rewrite-participant.js"
+    },
+    "./nest": {
+      "types": "./dist/runtime/nest.d.ts",
+      "import": "./dist/runtime/nest.js",
+      "default": "./dist/runtime/nest.js"
+    },
+    "./internal/nest-runtime": {
+      "types": "./dist/runtime/runtime-nest.d.ts",
+      "import": "./dist/runtime/runtime-nest.js",
+      "default": "./dist/runtime/runtime-nest.js"
     }
   },
   "dependencies": {
@@ -59,12 +77,28 @@
   },
   "peerDependencies": {
     "@exprtlabs/golem": "1.1.0-rc.0",
+    "@exprtlabs/golem-model": "1.1.0-rc.0",
+    "@nestjs/common": "^11.0.0",
+    "rxjs": "^7.8.0",
     "typescript": ">=6.0.0 <7 || >=7.1.0-0 <8"
   },
   "peerDependenciesMeta": {
+    "@exprtlabs/golem-model": {
+      "optional": true
+    },
+    "@nestjs/common": {
+      "optional": true
+    },
+    "rxjs": {
+      "optional": true
+    },
     "typescript": {
       "optional": true
     }
+  },
+  "devDependencies": {
+    "@nestjs/common": "11.2.3",
+    "rxjs": "7.8.2"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",

@@ -7,13 +7,13 @@ import test, { type TestContext } from 'node:test';
 import { pathToFileURL } from 'node:url';
 import { NestFactory } from '@nestjs/core';
 import { Module } from '@nestjs/common';
-import { NestModelInterceptor } from '@exprtlabs/golem/nest';
+import { NestModelInterceptor } from '@exprtlabs/golem-ts-openapi/nest';
 import { runPipeline } from '#golem/cli';
 import { scanProject } from '#golem/rewrite-scan';
 import { createContractAnalysis, createProgram, modelBoundary } from '@exprtlabs/golem/internal/type-analysis';
 import { applyRewrites } from '#golem/rewrite';
 import { writeSdk } from '#openapi/generator';
-import { NEST_INTERCEPTOR_SOURCE } from '../fixture-templates/controllers/project.js';
+import { NEST_PARTICIPANTS } from '../fixture-templates/controllers/project.js';
 import { createFixtureProject, linkProjectPackages, writeGeneratedArtifacts } from '../fixture-project.js';
 import { command, golem, workspace } from '../support/process.js';
 
@@ -45,10 +45,9 @@ function appWithSharedModel(t: TestContext, shared: string, files: Readonly<Reco
     }),
     'app/golem.yaml': [
       'version: 1', 'validation: true',
-      'ts-openapi:', '  docs:', '    - sources:', '        - src/customers.controller.ts', '      output: generated/api.json', '      info: { title: Test API, version: "1" }',
+      'ts-openapi:', '  docs:', '    - sources:', '        - src/customers.controller.ts', '      output: generated/api.json', '      info: { title: Test API, version: "1" }', '  extensions:', '    nest: {}',
       'model: {}', '',
     ].join('\n'),
-    'app/src/interceptor.ts': NEST_INTERCEPTOR_SOURCE,
     ...Object.fromEntries(Object.entries(files).map(([relative, content]) => [`app/${relative}`, content])),
   };
   writeGeneratedArtifacts(Object.entries(sources).map(([relative, content]) => ({ path: path.join(outer, relative), content })));
@@ -71,7 +70,7 @@ export class CustomersController {
 
 /** The controller source as the build rewrites it, found with the codec keys and companions of the app. */
 function rewrittenController(app: string): string {
-  const scanned = scanProject({ root: app, boundary: { root: app, directory: app, output: path.join(app, 'src/generated/models'), suffixes: ['.model.ts', '.models.ts'] }, configFile: path.join(app, 'tsconfig.json'), codecKeysFile: path.join(app, '.golem/codec-keys.json') });
+  const scanned = scanProject({ root: app, boundary: { root: app, directory: app, output: path.join(app, 'src/generated/models'), suffixes: ['.model.ts', '.models.ts'] }, configFile: path.join(app, 'tsconfig.json'), participants: NEST_PARTICIPANTS.error, codecKeysFile: path.join(app, '.golem/codec-keys.json') });
   assert.deepEqual(scanned.diagnostics, []);
   return applyRewrites(readText(app, 'src/customers.controller.ts'), scanned.files.get('src/customers.controller.ts')!).code;
 }

@@ -494,7 +494,7 @@ async function buildOnce(requestSession: () => ts.ProgramSession, run: BuildRun,
   }
   const checker = program.getTypeChecker();
   const participants = await loadRewriteParticipants(golemConfig.extensions);
-  const scanned = new RewriteScanner({ root, boundary: golemConfig.contracts.ModelBoundary, program, checker, codecKeysFile: codecKeysPath(golemConfig.directory), nonModelInputs: golemConfig.nonModelInputs, participants })
+  const scanned = new RewriteScanner({ root, boundary: golemConfig.contracts.ModelBoundary, program, checker, codecKeysFile: codecKeysPath(golemConfig.directory), participants })
     .scanFiles(sources.map((source) => source.fileName));
   const errors = scanned.diagnostics.filter((diagnostic) => diagnostic.severity === GolemDiagnosticSeverity.Error);
   if (errors.length > 0) throw scanFailure(root, errors);

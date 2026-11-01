@@ -28,8 +28,6 @@ export interface GolemConfig {
   /** The project's tsconfig: where `golem generate` and `golem build` start. Its directory is the project root a rewrite names files from. A tsconfig the yaml names exists; the default beside the yaml need not. */
   readonly tsconfig: string;
   readonly profile: GolemProfile;
-  /** What the rewrite scan does with a `@Body()` or `@Query()` parameter that is no golem model: `error` (the default) stops, `warn` reports and continues. Not part of the profile: no generated file records it. */
-  readonly nonModelInputs?: 'error' | 'warn';
   /** The jobs of every block, in run order. */
   readonly jobs: readonly GolemJob[];
   /** What core derived from the facts of the jobs: the run order, the provider of each contract and what each program reader sees of the later jobs. */
@@ -145,8 +143,6 @@ export async function resolveConfig(filename = 'golem.yaml', onInput?: InputObse
   if (!isRecord(value)) throw new TypeError('configuration must be an object.');
   if (value.version !== 1) throw new Error('Configuration version must be 1.');
   if (value.unknownFormats !== undefined && value.unknownFormats !== 'warn' && value.unknownFormats !== 'error') throw new Error('unknownFormats must be "warn" or "error".');
-  if (value.nonModelInputs !== undefined && value.nonModelInputs !== 'warn' && value.nonModelInputs !== 'error') throw new Error('nonModelInputs must be "warn" or "error".');
-  const nonModelInputs = value.nonModelInputs ?? 'error';
   const settings: GolemProfile = {
     mobx: boolean(value.mobx, false, 'mobx'), validation: validationLevel(value.validation),
     allowAny: boolean(value.allowAny, false, 'allowAny'),
@@ -213,7 +209,7 @@ export async function resolveConfig(filename = 'golem.yaml', onInput?: InputObse
   if (value.tsconfig !== undefined) existing(tsconfig, 'file', 'tsconfig');
   const byId = new Map(jobs.map(job => [job.id, job] as const));
   return {
-    configFile, directory, tsconfig, profile, nonModelInputs,
+    configFile, directory, tsconfig, profile,
     jobs: jobPlan.order.map(id => byId.get(id) as GolemJob), jobPlan, contracts, extensions,
     inventoryFile: path.join(directory, '.golem', 'outputs.json'),
   };

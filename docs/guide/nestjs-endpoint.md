@@ -19,15 +19,15 @@ The steps build `POST /api/payments/transactions` from [`examples/payments`](htt
 ## Step 1: Install the packages
 
 ```sh
-npm install @exprtlabs/golem @nestjs/common @nestjs/core @nestjs/platform-express @nestjs/swagger reflect-metadata rxjs
-npm install --save-dev @exprtlabs/golem-model @exprtlabs/golem-ts-openapi typescript@~7.1.0-beta
+npm install @exprtlabs/golem @exprtlabs/golem-ts-openapi @nestjs/common @nestjs/core @nestjs/platform-express @nestjs/swagger reflect-metadata rxjs
+npm install --save-dev @exprtlabs/golem-model typescript@~7.1.0-beta
 ```
 
 | Package | Why you need it |
 | --- | --- |
-| `@exprtlabs/golem` | The `golem` command, and the runtime that holds `NestModelInterceptor` |
+| `@exprtlabs/golem` | The `golem` command, and the runtime of the generated files |
 | `@exprtlabs/golem-model` | Generates the files of your models |
-| `@exprtlabs/golem-ts-openapi` | Generates the OpenAPI document from your controllers |
+| `@exprtlabs/golem-ts-openapi` | Generates the OpenAPI document from your controllers. It also holds `NestModelInterceptor`, which the app imports at run time, so it goes in `dependencies`. |
 | `@nestjs/swagger` | The `Api…` decorators that the docs job reads |
 | `typescript` | The compiler that the generators and `golem build` use |
 
@@ -87,7 +87,7 @@ Type the `@Body()` parameter with the model. Write the return type too, because 
 
 ## Step 5: Register the interceptor
 
-Register `NestModelInterceptor` once, for the whole app:
+Register `NestModelInterceptor` from `@exprtlabs/golem-ts-openapi/nest` once, for the whole app:
 
 <<< ../../examples/payments/server/src/application.ts#global-model-http
 
@@ -101,13 +101,14 @@ The steps for each request and the rules for arrays and query objects are in [Ne
 
 ## Step 6: Configure golem.yaml
 
-Add `golem.yaml` at the project root. Start it with `version: 1`. The excerpts below leave out `version: 1` and the other jobs of the example. A docs job writes the OpenAPI document:
+Add `golem.yaml` at the project root. Start it with `version: 1`. The excerpts below leave out `version: 1` and the other jobs of the example. The `ts-openapi` block holds a docs job that writes the OpenAPI document, and the `nest` extension:
 
 <<< ../../examples/payments/server/golem.yaml#controllers-job
 
 - `output` is the path of the document.
 - `info` holds the `title` and the `version` of the API.
 - `globalPrefix` must match `setGlobalPrefix()`. The generator reads controllers, not your bootstrap code ([the `ts-openapi` block](/reference/config#ts-openapi-block)).
+- `extensions: { nest: {} }` turns on the request conversion that `NestModelInterceptor` needs ([the `nest` extension](/reference/config#nest-extension)). Without it the interceptor throws an error that tells you to add it.
 
 The models job is required. It writes the generated file of each model that your controllers use, and the build needs it to bind each `@Body()` model. Without it, the build reports `has no unique codec id; run golem generate`.
 

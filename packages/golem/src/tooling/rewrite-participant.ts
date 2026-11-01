@@ -6,6 +6,7 @@ import { pathToFileURL } from 'node:url';
 
 import { checkedDiagnostics, type GolemDiagnostic, type ModelBoundaryValue } from './generator-core.js';
 import { displayPath, isRecord } from './plan-support.js';
+import { UnsupportedTypeScriptError } from './typescript-version.js';
 import type { RewriteEdit } from './rewrite.js';
 import type * as ts from './typescript-ns.js';
 
@@ -39,6 +40,10 @@ export interface RewriteCore {
   codecIdOf(symbol: ts.Symbol): string;
   /** Whether the symbol is a golem model by its declaration, not by a key table that a new model may not be in yet. */
   isGolemModel(symbol: ts.Symbol): boolean;
+  /** Counts the files that the name passes through before its declaration (the modules that import or re-export it) as files the rewrite read: retargeting one of them can change the codec id. */
+  readAliasChain(name: ts.Node): void;
+  /** Counts the project file that wrote `node` as a file the rewrite read when it is not the file in hand and not an installed one. */
+  readWrittenIn(node: ts.Node): void;
   /** A diagnostic located at `node`. */
   locate(node: ts.Node, code: string, message: string, severity?: GolemDiagnostic['severity']): GolemDiagnostic;
 }
@@ -85,7 +90,7 @@ export interface GolemExtension {
   readonly rewrite?: RewriteParticipant;
   /**
    * The participants that fill hooks, by hook name. A job offers a hook by name (`JobFacts.hooks`) and defines its contract, so the type of a participant
-   * belongs to the package of that job; core only routes it. A name that no job of the golem.yaml offers stops the run.
+   * belongs to the package of that job; core only routes it. A name that no job of the golem.yaml offers stays unfilled; an extension with no `rewrite` and no hook that a job offers stops the run.
    */
   readonly hooks?: Readonly<Record<string, unknown>>;
 }
@@ -129,7 +134,11 @@ export async function loadExtensions(extensions: readonly EnabledExtension[]): P
   for (const extension of extensions) {
     let module: unknown;
     try { module = await import(pathToFileURL(extension.entry).href); }
-    catch (error) { throw new ExtensionFaultError(extension, `did not load (${displayPath(extension.entry)}): ${describe(error)}`, { cause: error }); }
+    catch (error) {
+      // An entry that loads the TypeScript seam reports a missing or unsupported TypeScript: that is the project's install, not a fault in the extension.
+      if (error instanceof UnsupportedTypeScriptError) throw error;
+      throw new ExtensionFaultError(extension, `did not load (${displayPath(extension.entry)}): ${describe(error)}`, { cause: error });
+    }
     const exported = isRecord(module) ? module.extension : undefined;
     if (!isRecord(exported)) throw new ExtensionFaultError(extension, `must export "extension" from ${displayPath(extension.entry)}`);
     if (exported.rewrite !== undefined && typeof exported.rewrite !== 'function') throw new ExtensionFaultError(extension, 'exports an "extension" whose "rewrite" is not a function');

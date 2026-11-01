@@ -15,6 +15,8 @@ npm install --save-dev @exprtlabs/golem-ts-openapi typescript@~7.1.0-beta
 npm install @nestjs/swagger
 ```
 
+An app that registers `NestModelInterceptor` imports `@exprtlabs/golem-ts-openapi/nest` at run time. Install `@exprtlabs/golem-ts-openapi` without `--save-dev` then, and add the [`nest` extension](/reference/config#nest-extension) to the `ts-openapi` block.
+
 ## Describe a controller
 
 The generator reads every `*.controller.ts` file under `src/`. Set `suffixes` in the [docs job](/reference/config#ts-openapi-block) to use other endings, or list files under `sources` to choose them yourself. From the controller above it writes:
@@ -75,11 +77,11 @@ post:
       description: The payment provider declined or is unavailable.
 ```
 
-To convert and validate the request at runtime, [register the interceptor](/guide/nestjs-requests).
+To convert and validate the request at runtime, add the `nest` extension and [register the interceptor](/guide/nestjs-requests).
 
 ## Generate a client from the document
 
-The docs job writes `api/openapi.yaml`. An SDK job reads that document and generates the client ([Generate an SDK](/guide/client)). The example runs it from `web/golem.yaml`. The docs job in `server/golem.yaml`:
+The docs job writes `api/openapi.yaml`. An SDK job reads that document and generates the client ([Generate an SDK](/guide/client)). The example runs it from `web/golem.yaml`. The `ts-openapi` block in `server/golem.yaml`, with the docs job and the `nest` extension:
 
 <<< ../../examples/payments/server/golem.yaml#controllers-job
 

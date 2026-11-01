@@ -13,7 +13,6 @@ import {
   aliased, asObjectLiteral, bindInput, bindRead, code, documentLiteral, helper, helperName, helperSet, selfPlacedHelper, identifier, indentation, inputCount, inputOf, inputSlot, isEmpty, join, literal, localCode, readShape, sameCode,
   type Code, type Helper, type InputSlot, type JsonValue, type ReadShape,
 } from './code.js';
-import { nodeQueryFields } from './query-fields.js';
 import { rt, rtType, runtimeFunctionCode } from './rt.js';
 import { calleeOf, emitArrayConversion, emitTupleConversion, JSON_SCALAR } from './sequence-conversion.js';
 import {
@@ -141,6 +140,11 @@ export interface CodecRuntimeOptions {
   readonly registerCodecs?: boolean;
   /** Codecs whose functions stay module-private, such as a model job's derived projections. */
   readonly privateCodec?: (node: SchemaNode) => boolean;
+  /**
+   * The data that extensions add to the codec of a node, by extension name, or undefined for none. A codec registration writes `data: { <name>: <value> }`;
+   * a value must be JSON data. Without this callback no codec carries data.
+   */
+  readonly codecData?: (graph: SchemaGraph, node: SchemaNode) => Readonly<Record<string, unknown>> | undefined;
   /** The bases the generator declares for each model, by model name. */
   readonly modelBases: ModelBases;
 }
@@ -168,6 +172,7 @@ interface EmitCtx
     | 'projectsInstanceState'
     | 'registerCodecs'
     | 'privateCodec'
+    | 'codecData'
   > {
   readonly graph: SchemaGraph;
   readonly modelBases: ModelBases;
@@ -2361,10 +2366,10 @@ function emitPlaneAssertSection(runtime: NodeRuntime): Code {
     : []);
 }
 
-/** The registration of the node's functions as an object codec, with the query fields a query string decodes. */
+/** The registration of the node's functions as an object codec, with the data that extensions add to it. */
 function emitCodecRegistrationSection(runtime: NodeRuntime): Code {
   const { node, ctx, names, stringifyId, validateId, assertId, objectDescriptor } = runtime;
-  const queryFields = nodeQueryFields(ctx.graph, node);
+  const data = ctx.codecData?.(ctx.graph, node);
   return rowsToText([
     code`${rt.serde.createObjectCodec}(${literal(node.codecId)}, {`,
     code`  stringify: ${stringifyId} as (value: never, options?: ${SERDE_OPTIONS}) => string,`,
@@ -2375,7 +2380,7 @@ function emitCodecRegistrationSection(runtime: NodeRuntime): Code {
     ...(objectDescriptor ? [code`  fields: ${literal(Object.keys(objectDescriptor.properties))},`] : []),
     ...(runtime.reachesCycle ? [code`  recursive: true,`] : []),
     code`  fromWireFormat: ${names.fromWire},`,
-    ...(queryFields ? [code`  queryFields: ${documentLiteral(queryFields)},`] : []),
+    ...(data && Object.keys(data).length > 0 ? [code`  data: ${documentLiteral(data)},`] : []),
     code`  issueSource: ${rt.serde.IssueSource}.${identifier(ctx.issueSource)},`,
     code`});`,
   ]);
@@ -2442,6 +2447,7 @@ export function emitCodecRuntimeCode(
     projectsInstanceState: options.projectsInstanceState,
     registerCodecs: options.registerCodecs,
     privateCodec: options.privateCodec,
+    codecData: options.codecData,
     modelBases: options.modelBases,
     fillThrows: new Map(),
     patternConstants,

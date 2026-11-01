@@ -52,6 +52,29 @@ export function resolveSymbol(checker: ts.TypeChecker, symbol: ts.Symbol | undef
   return symbol;
 }
 
+/** The symbol at a node; a qualified name or a property access resolves to its last segment. */
+export function symbolAt(checker: ts.TypeChecker, node: ts.Node): ts.Symbol | undefined {
+  const direct = checker.getSymbolAtLocation(node);
+  if (direct) return direct;
+  if (ts.isQualifiedName(node)) return checker.getSymbolAtLocation(node.right);
+  if (ts.isPropertyAccessExpression(node)) return checker.getSymbolAtLocation(node.name);
+  return undefined;
+}
+
+/** The symbol at a node, with imported aliases resolved to their declarations. */
+export function resolvedSymbolAt(checker: ts.TypeChecker, node: ts.Node): ts.Symbol | undefined {
+  return resolveSymbol(checker, symbolAt(checker, node));
+}
+
+/** The name a serde type argument stands for: a type reference without type arguments or `typeof X`. */
+export function serdeTypeName(typeNode: ts.TypeNode): ts.EntityName | undefined {
+  let node = typeNode;
+  while (ts.isParenthesizedTypeNode(node)) node = node.type;
+  if (ts.isTypeReferenceNode(node)) return node.typeArguments?.length ? undefined : node.typeName;
+  if (ts.isTypeQueryNode(node)) return node.typeArguments?.length ? undefined : node.exprName;
+  return undefined;
+}
+
 export function isModelDeclarationReference(checker: ts.TypeChecker, node: ts.TypeNode): boolean {
   return modelDeclarationKind(checker, node) !== undefined;
 }

@@ -16,15 +16,16 @@ import {
   type NestInterceptor,
 } from '@nestjs/common';
 import { defaultIfEmpty, firstValueFrom, map, of, type Observable } from 'rxjs';
-import { NestModelInterceptor, type NestModelInterceptorOptions, nestModelStringifyInterceptor, nestUnionFromMetatype, objectCodecFromMetatype } from '@exprtlabs/golem/nest';
-import { nestModelCodec, nestModelReturn, nestModelUnion } from '@exprtlabs/golem/internal/nest-runtime';
+import { NestModelInterceptor, type NestModelInterceptorOptions, nestModelStringifyInterceptor, nestUnionFromMetatype, objectCodecFromMetatype } from '@exprtlabs/golem-ts-openapi/nest';
+import { nestModelCodec, nestModelReturn, nestModelUnion } from '@exprtlabs/golem-ts-openapi/internal/nest-runtime';
 import { LibError, type LibErrorKind } from '@exprtlabs/golem/errors';
 import { deserializeDate, unknownDiscriminatorValue, assertModelValue, isValidModelValue } from '@exprtlabs/golem/internal/model-runtime';
 import type { ModelTypeDescriptor } from '@exprtlabs/golem/internal/schema';
 import { schemaForDescriptor } from '@exprtlabs/golem/internal/schema';
 import { createSchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
-import { nodeQueryFields } from '#golem/query-fields';
-import { getObjectCodec, IssueRepresentation, IssueSource, type QueryFieldTable } from '@exprtlabs/golem/serde';
+import { nodeQueryFields } from '#controllers/nest/query-fields';
+import type { QueryFieldTable } from '#controllers/runtime/query-decode';
+import { getObjectCodec, IssueRepresentation, IssueSource } from '@exprtlabs/golem/serde';
 
 import { readFixture } from './fixture-project.js';
 import { buildModelProject, createModelProject, writeModelGolemYaml } from './model-project.js';
@@ -51,7 +52,7 @@ async function registerValidatingCodec(id: string, descriptor: ModelTypeDescript
   assert.ok(node);
   const queryFields = nodeQueryFields(graph, node);
   registerPassThroughCodec(id, {
-    ...(queryFields ? { queryFields } : {}),
+    ...(queryFields ? { data: { nest: queryFields } } : {}),
     validate: (value) => isValidModelValue(value, undefined, validate, id),
     fromWireFormat: (wire) => {
       assertModelValue(wire, undefined, validate, id, IssueRepresentation.Wire, IssueSource.OpenAPI);
@@ -464,11 +465,12 @@ const namedParameter: Record<string, string> = {
 
 for (const [label, decorator, field, metatype, name] of inputWithoutModel) {
   test(`NestModelInterceptor throws a TypeError naming the parameter for ${label}`, () => {
+    // protects: R-93 page failure row: a parameter with no stamp says to add the nest extension to the ts-openapi block
     const klass = inputController(name, decorator, field, metatype);
     const context = httpContext(klass, klass.prototype.handle, { body: { note: 'raw' }, query: {} });
     assert.throws(
       () => new NestModelInterceptor().intercept(context, { handle: () => of(undefined) }),
-      new TypeError(`NestModelInterceptor needs an IModel or IObject type for ${namedParameter[name]} parameter 0 of ${name}.handle. Declare the input as an IModel or IObject, or write your own interceptor.`),
+      new TypeError(`NestModelInterceptor needs an IModel or IObject type for ${namedParameter[name]} parameter 0 of ${name}.handle. Declare the input as an IModel or IObject. If it is a model, add extensions: { nest: {} } to the ts-openapi block in golem.yaml, so the build stamps the codec. Or write your own interceptor.`),
     );
   });
 }
@@ -671,7 +673,7 @@ test('NestModelInterceptor passes @Query() through unchanged unless a present fi
       received.push(wire);
       return wire as never;
     },
-    ...(queryFields ? { queryFields } : {}),
+    ...(queryFields ? { data: { nest: queryFields } } : {}),
   });
   // A model with only string fields has no table.
   register('QueryStrings_ffffffff');
@@ -903,7 +905,7 @@ test('NestModelInterceptor answers 500 for a marked return with no codec and pas
 function variantCodec(id: string, queryFields?: QueryFieldTable) {
   return registerPassThroughCodec(id, {
     fromWireFormat: (wire) => ({ variant: id, wire }),
-    ...(queryFields ? { queryFields } : {}),
+    ...(queryFields ? { data: { nest: queryFields } } : {}),
   });
 }
 

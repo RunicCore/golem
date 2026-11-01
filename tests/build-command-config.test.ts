@@ -65,7 +65,7 @@ test('golem build --config from the parent folder builds the yaml tsconfig and k
     files: {
       'packages/api/src/payment.model.ts': readFixture(`${nest}/payment.model.ts`),
       'packages/api/src/payments.controller.ts': PAYMENTS_CONTROLLER,
-      'packages/api/golem.yaml': 'version: 1\ntsconfig: ../../tsconfig.json\nmodel: {}\nts-openapi:\n  docs:\n    - output: generated/api.json\n      info: { title: Payments, version: "1" }\n',
+      'packages/api/golem.yaml': 'version: 1\ntsconfig: ../../tsconfig.json\nmodel: {}\nts-openapi:\n  docs:\n    - output: generated/api.json\n      info: { title: Payments, version: "1" }\n  extensions:\n    nest: {}\n',
     },
   });
   const config = path.join(root, 'packages/api/golem.yaml');
