@@ -13,6 +13,9 @@ Add the generator to an existing NestJS project:
 npm install --save-dev @exprtlabs/golem-ts-openapi typescript@~7.1.0-beta
 ```
 
+An app that registers `NestModelInterceptor` imports `@exprtlabs/golem-ts-openapi/nest` at run time. Install the package in `dependencies` then, and add `extensions: { nest: {} }` to the `ts-openapi` block of `golem.yaml`
+([the `nest` extension](../../docs/reference/config.md#nest-extension)).
+
 [OpenAPI from controllers](../../docs/guide/nestjs.md) walks through a
 controller.
 [Compatibility](../../docs/compatibility.md) has supported versions.
