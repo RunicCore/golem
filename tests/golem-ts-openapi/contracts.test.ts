@@ -649,3 +649,31 @@ export class OrdersController {
 
   await assert.rejects(generateFixture(root), /order\.ts.*'\}' expected/s);
 });
+
+test('a docs job does not stop on a syntax error in the output of a later job', async t => {
+  // protects: T-786 the later job writes its output again, so a broken file there must not stop the job before it
+  const root = fixture(t, `import { Controller, Get } from '@nestjs/common';
+import { ApiOkResponse } from '@nestjs/swagger';
+
+export class OrderDto { id!: string; }
+
+@Controller('orders')
+export class OrdersController {
+  @Get()
+  @ApiOkResponse({ type: OrderDto })
+  value(): OrderDto { return { id: '1' }; }
+}
+`, {
+    files: { 'src/sdk/client.ts': 'export interface Broken { id: string;\n' },
+  });
+
+  const result = await generate({
+    root,
+    output: path.join(root, 'openapi.json'),
+    openapiVersion: '3.2.0',
+    info: { title: 'Contract fixture', version: '1' },
+    profile: { mobx: false, validation: false },
+    programView: { laterOutputs: [path.join(root, 'src/sdk')] },
+  });
+  assert.equal(result.artifacts.length, 1);
+});

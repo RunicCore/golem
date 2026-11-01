@@ -10,6 +10,7 @@ import {
   createModelStubProgram,
   createProgram,
   discoverModelSources,
+  isUnderOutputs,
   loadModelManifests,
   modelBoundary,
   projectFilenames,
@@ -469,8 +470,8 @@ function analyzeContracts(
   normalized: NormalizedContext,
   observe: InputObserver,
 ): ContractAnalysis {
-  // The controllers job analyses the models its controllers use, with a models job or without one, so a syntax error in any file of the project stops here.
-  assertNoSyntaxErrors(programInfo.program, [...new Set([...sources, ...projectFilenames(programInfo.program)])]);
+  // The controllers job analyses the models its controllers use, with a models job or without one, so a syntax error in any file of the project stops here. A later job's output is left out: that job writes it again.
+  assertNoSyntaxErrors(programInfo.program, [...new Set([...sources, ...projectFilenames(programInfo.program).filter(file => !isUnderOutputs(normalized.laterOutputs, file))])]);
   return createContractAnalysis(programInfo.program, {
     root: normalized.root,
     allowAny: normalized.profile.allowAny,

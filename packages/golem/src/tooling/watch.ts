@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { errorMessage, failureText } from './generator-core.js';
-import { isJobOutput, observedFolders, watchFolders, watchingJobs } from './job-facts.js';
+import { observedFolders, watchFolders, watchingJobs } from './job-facts.js';
 import type { JobFacts } from './job-facts.js';
 import { changedPaths, InputScan, InputWatcher, outsideFolder, OwnedOutputIndex, realInputFiles, RunBaseline } from './input-watcher.js';
 import type { InputFiles } from './input-watcher.js';
@@ -134,8 +134,8 @@ export function watchPipeline(initial: PipelineState | string, reportError: (err
   let watched = watch();
   const firstSnapshot = watcher.snapshotWatching(watched.scan);
   let previous = firstBaseline?.settle(firstSnapshot) ?? firstSnapshot;
-  /** Whether a changed path reruns a job: an input, or else a source that a watch rule names and that was added or removed. A generated file and a name that is no source are not a change. */
-  const rerunsJob = (input: string): boolean => (watched.inputs.has(input) ? !isJobOutput(watched.jobs, input) : watchingJobs(watched.jobs, input, watched.observed).length > 0);
+  /** Whether a changed path reruns a job: an input that no job wrote, also in a job's output folder, or else a source that a watch rule names and that was added or removed. A generated file and a name that is no source are not a change. */
+  const rerunsJob = (input: string): boolean => watched.inputs.has(input) || watchingJobs(watched.jobs, input, watched.observed).length > 0;
   const tick = async (installed: boolean): Promise<void> => {
     if (stopped) return;
     busy = true;

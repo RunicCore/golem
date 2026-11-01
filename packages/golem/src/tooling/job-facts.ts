@@ -59,7 +59,7 @@ export interface JobFacts {
 }
 
 /** Whether `filename` lies in an output that one of `jobs` writes: the output file itself, or a file below an output folder. Such a file is generated, so core never reruns a job because of it. */
-export function isJobOutput(jobs: readonly Pick<JobFacts, 'outputs'>[], filename: string): boolean {
+function isJobOutput(jobs: readonly Pick<JobFacts, 'outputs'>[], filename: string): boolean {
   return jobs.some(({ outputs }) => outputs.some(output => (output.kind === 'file' ? output.path === filename : within(output.path, filename))));
 }
 

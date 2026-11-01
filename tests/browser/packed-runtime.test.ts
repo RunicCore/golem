@@ -60,8 +60,7 @@ after(async () => {
 
 test('packed browser executes reusable APIs, nested MobX models and custom codecs', async t => {
   const root = registry.create(t, 'browser');
-  // The plugin opens golem.yaml, which loads the plan entry of each block, so the packages of the blocks stay installed in production.
-  await npm(root, ['install', '--save-prod', packageSpec(registry, '@exprtlabs/golem-model'), packageSpec(registry, '@exprtlabs/golem-openapi')]);
+  await npm(root, ['install', '--save-dev', packageSpec(registry, '@exprtlabs/golem-model'), packageSpec(registry, '@exprtlabs/golem-openapi')]);
   await npm(root, ['install', '--save-dev', ESBUILD]);
   await npm(root, ['install', '--save-prod', packageSpec(registry, '@exprtlabs/golem'), MOBX]);
   writeFixture(root, { mobx: true, validation: true });

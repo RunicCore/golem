@@ -211,7 +211,7 @@ test('a package.json above the nearest one that does not parse ends the walk and
 
   const registry = loadPackageRegistry(config);
   assert.deepEqual(registry.packages.map(({ block }) => block), ['beta']);
-  assert.match(thrown(() => registrationForBlock(registry, 'gamma')).message, /Installed golem packages and their blocks: @fixture\/block-b \(block beta\)\. [^\n]*package\.json did not parse, so its dependency list was not read\. A package that only devDependencies lists is gone after a production install\.$/);
+  assert.match(thrown(() => registrationForBlock(registry, 'gamma')).message, /Installed golem packages and their blocks: @fixture\/block-b \(block beta\)\. [^\n]*package\.json is no valid JSON object, so its dependency list was not read\. A package that only devDependencies lists is gone after a production install\.$/);
 
   fs.writeFileSync(path.join(root, 'group/app/package.json'), '{ "name": ');
   assert.match(thrown(() => loadPackageRegistry(config)).message, /^[^\n]*package\.json is not valid JSON: /);

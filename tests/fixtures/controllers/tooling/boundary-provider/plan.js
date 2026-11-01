@@ -8,7 +8,7 @@ export const plan = {
     return [{
       facts: { id: 'boundary', outputs: [{ path: output, kind: 'folder' }], ownedRoots: [root], inputFiles: [], inputFolders: [], readsProgram: false, provides: ['ModelBoundary'], needs: [], hooks: [], watch: [] },
       options: {},
-      provided: { ModelBoundary: { root, directory, output, ...(block.suffixes ? { suffixes: block.suffixes } : {}) } },
+      provided: { ModelBoundary: { root, directory, output, suffixes: block.suffixes ?? ['.model.ts', '.models.ts'] } },
     }];
   },
 };

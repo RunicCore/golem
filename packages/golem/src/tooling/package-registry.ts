@@ -67,7 +67,7 @@ export function registrationForBlock(registry: PackageRegistry, block: string): 
   const registration = registry.blocks.get(block);
   if (registration) return registration;
   const installed = registry.packages.map(({ name, block: own }) => `${name} (block ${own})`);
-  const skipped = registry.skippedManifest === undefined ? '' : ` ${displayPath(registry.skippedManifest)} did not parse, so its dependency list was not read.`;
+  const skipped = registry.skippedManifest === undefined ? '' : ` ${displayPath(registry.skippedManifest)} is no valid JSON object, so its dependency list was not read.`;
   throw new PackageRegistryError(`No installed package registers the golem block "${block}". ${installed.length ? `Installed golem packages and their blocks: ${installed.join(', ')}.` : 'No installed package registers a golem block.'}${skipped} A package that only devDependencies lists is gone after a production install.`);
 }
 

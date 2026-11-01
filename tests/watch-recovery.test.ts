@@ -365,6 +365,23 @@ test('a file that is no source, added to a watched folder, starts no run', async
   assert.deepEqual(errors, []);
 });
 
+test('an edit of a source in the model output folder starts a run', async (t: TestContext) => {
+  // protects: T-786 a file a job read and no job wrote reruns the job, also when it lies in the job's output folder
+  const { root, config } = generationWatchFixture(t);
+  const parsed = YAML.parse(fs.readFileSync(config, 'utf8')) as Record<string, unknown>;
+  fs.writeFileSync(config, YAML.stringify({ ...parsed, model: { output: 'src' } }));
+  const source = path.join(root, 'src/cart.model.ts');
+  const { runs, errors, context, stop } = startGenerationWatch(config);
+  try {
+    await until(() => runs() === 1, () => `initial generation ${context()}`);
+    fs.writeFileSync(source, fs.readFileSync(source, 'utf8').replace('note: string', 'note: string; sentinel?: boolean'));
+    await until(() => fs.readFileSync(path.join(root, 'src/cart.model.generated.ts'), 'utf8').includes('sentinel'), () => `the edit is generated ${context()}`);
+  } finally {
+    stop();
+  }
+  assert.deepEqual(errors, []);
+});
+
 test('an editor save by renaming over the file, a save through a backup file and a delete each start one run', async (t: TestContext) => {
   // protects: R-31 the events of an editor's save and of a delete reach the watch as one run each
   const { root, config } = generationWatchFixture(t);
