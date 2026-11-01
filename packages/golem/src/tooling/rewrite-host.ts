@@ -214,7 +214,7 @@ class ScanningProject {
     const program = this.session.openProgram({ root: this.root, sources, configFile: this.config.tsconfig, overlays: new Map(this.overlays) });
     this.program?.close();
     this.program = program;
-    this.scanner = new this.compiler.RewriteScanner({ root: this.root, boundary: this.config.contracts.ModelBoundary, program, codecKeysFile: codecKeysPath(this.config.directory), checker: program.getTypeChecker(), nonModelInputs: this.config.nonModelInputs, participants: this.compiler.participants });
+    this.scanner = new this.compiler.RewriteScanner({ root: this.root, boundary: this.config.contracts.ModelBoundary, program, codecKeysFile: codecKeysPath(this.config.directory), checker: program.getTypeChecker(), participants: this.compiler.participants });
     this.stale = false;
     this.recordSignature = signature;
     this.recorded = recorded;

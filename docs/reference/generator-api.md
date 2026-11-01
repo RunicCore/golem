@@ -172,7 +172,7 @@ export const extension: GolemExtension = {
 | `codecKeys` | `idFor(filename, name)` and `moduleOf(id)`, from `.golem/codec-keys.json`. |
 | `boundary` | The `ModelBoundary` value. `undefined` without a provider. |
 | `modelClasses()` | How many classes register for each model, by model key. |
-| `core` | Helpers: `importName(node, name, from)`, `loadCodecModule(id)`, `codecIdOf(symbol)`, `isGolemModel(symbol)` and `locate(node, code, message)`. |
+| `core` | Helpers: `importName(node, name, from)`, `loadCodecModule(id)`, `codecIdOf(symbol)`, `isGolemModel(symbol)`, `readAliasChain(name)`, `readWrittenIn(node)` and `locate(node, code, message)`. |
 
 | Result | Meaning |
 | --- | --- |

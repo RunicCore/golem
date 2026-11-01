@@ -25,7 +25,6 @@ const ROOT_PROPERTIES: JsonObject = {
   exact: { type: 'boolean', default: true, description: 'Reject extra properties in models.' },
   unknownFormats: { enum: ['warn', 'error'], default: 'error', description: 'The action for a schema format that golem does not check.' },
   mobx: { type: 'boolean', default: false, description: 'MobX observability hooks.' },
-  nonModelInputs: { enum: ['warn', 'error'], default: 'error', description: 'The action for a @Body() or @Query() parameter that NestModelInterceptor rejects.' },
 };
 
 /** The names of the root keys, in schema order. */

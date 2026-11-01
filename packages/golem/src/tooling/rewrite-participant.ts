@@ -39,6 +39,10 @@ export interface RewriteCore {
   codecIdOf(symbol: ts.Symbol): string;
   /** Whether the symbol is a golem model by its declaration, not by a key table that a new model may not be in yet. */
   isGolemModel(symbol: ts.Symbol): boolean;
+  /** Counts the files that the name passes through before its declaration (the modules that import or re-export it) as files the rewrite read: retargeting one of them can change the codec id. */
+  readAliasChain(name: ts.Node): void;
+  /** Counts the project file that wrote `node` as a file the rewrite read when it is not the file in hand and not an installed one. */
+  readWrittenIn(node: ts.Node): void;
   /** A diagnostic located at `node`. */
   locate(node: ts.Node, code: string, message: string, severity?: GolemDiagnostic['severity']): GolemDiagnostic;
 }

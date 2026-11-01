@@ -15,6 +15,8 @@ import type {
 export const DEFAULT_CONTROLLER_SUFFIXES: readonly string[] = ['.controller.ts'];
 
 const BLOCK = 'ts-openapi';
+/** The extensions this package registers (`golem.extensions` in package.json). */
+const EXTENSION_NAMES: readonly string[] = ['nest'];
 const DOCS_KEYS: readonly string[] = [
   'framework', 'root', 'sources', 'suffixes', 'output', 'openapiVersion', 'info', 'servers',
   'securitySchemes', 'tags', 'globalPrefix', 'uriVersioning', 'maxResultBytes',
@@ -160,10 +162,24 @@ function docsJob(context: PlanContext, entry: unknown, label: string): PlannedJo
   };
 }
 
+/** The settings of the extensions the block turns on. Core has checked that each name is registered; the package checks what each holds. */
+function checkExtensions(value: unknown): void {
+  if (value === undefined) return;
+  const label = `${BLOCK}.extensions`;
+  keys(value, EXTENSION_NAMES, label);
+  const nest = value.nest;
+  if (nest === undefined || nest === null) return;
+  keys(nest, ['nonModelInputs'], `${label}.nest`);
+  if (nest.nonModelInputs !== undefined && nest.nonModelInputs !== 'warn' && nest.nonModelInputs !== 'error') throw new Error(`${label}.nest.nonModelInputs must be "warn" or "error".`);
+}
+
 export const plan: GolemPlanEntry<ControllerContext> = {
   declare(context) {
-    keys(context.block, ['docs'], BLOCK);
-    const { docs } = context.block;
+    keys(context.block, ['docs', 'extensions'], BLOCK);
+    const { docs, extensions } = context.block;
+    checkExtensions(extensions);
+    // A block that turns on an extension and lists no docs job declares no job: the extension alone is the block.
+    if (docs === undefined && extensions !== undefined) return [];
     if (!Array.isArray(docs) || !docs.length) throw new Error(`${BLOCK}.docs must be a nonempty array of jobs.`);
     return docs.map((entry: unknown, index) => docsJob(context, entry, `${BLOCK}.docs[${index}]`));
   },

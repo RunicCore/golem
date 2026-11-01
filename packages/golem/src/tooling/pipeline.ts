@@ -662,7 +662,6 @@ async function scanRewriteSites(config: GolemConfig, session: GeneratorSessionRe
     participants,
     boundary: config.contracts.ModelBoundary,
     configFile: config.tsconfig,
-    nonModelInputs: config.nonModelInputs,
     codecKeysFile: codecKeysPath(config.directory),
     session,
   });
