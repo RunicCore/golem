@@ -10,8 +10,7 @@
     "serialization",
     "openapi",
     "nestjs",
-    "models",
-    "mobx"
+    "models"
   ],
   "author": "exprtlabs.ai",
   "license": "MIT",
@@ -55,16 +54,6 @@
       "import": "./dist/validation.js",
       "default": "./dist/validation.js"
     },
-    "./mobx": {
-      "types": "./dist/mobx.d.ts",
-      "import": "./dist/mobx.js",
-      "default": "./dist/mobx.js"
-    },
-    "./mobx-validation": {
-      "types": "./dist/mobx-validation.d.ts",
-      "import": "./dist/mobx-validation.js",
-      "default": "./dist/mobx-validation.js"
-    },
     "./manifest": {
       "types": "./dist/tooling/model-manifest.d.ts",
       "import": "./dist/tooling/model-manifest.js",
@@ -94,16 +83,6 @@
       "types": "./dist/runtime-client-validation.d.ts",
       "import": "./dist/runtime-client-validation.js",
       "default": "./dist/runtime-client-validation.js"
-    },
-    "./internal/mobx-runtime": {
-      "types": "./dist/runtime-mobx.d.ts",
-      "import": "./dist/runtime-mobx.js",
-      "default": "./dist/runtime-mobx.js"
-    },
-    "./internal/mobx-validation-runtime": {
-      "types": "./dist/runtime-mobx-validation.d.ts",
-      "import": "./dist/runtime-mobx-validation.js",
-      "default": "./dist/runtime-mobx-validation.js"
     },
     "./internal/temporal-runtime": {
       "types": "./dist/runtime-temporal.d.ts",
@@ -227,14 +206,10 @@
   "peerDependencies": {
     "esbuild": "^0.25.12",
     "eslint": "^9.0.0 || ^10.0.0",
-    "mobx": "^6.13.0",
     "typescript": ">=6.0.0 <7 || >=7.1.0-0 <8",
     "vite": ">=5"
   },
   "peerDependenciesMeta": {
-    "mobx": {
-      "optional": true
-    },
     "esbuild": {
       "optional": true
     },
@@ -251,7 +226,6 @@
   "devDependencies": {
     "esbuild": "0.25.12",
     "eslint": "10.13.0",
-    "mobx": "^6.16.1",
     "typescript": "7.1.0-beta"
   },
   "scripts": {

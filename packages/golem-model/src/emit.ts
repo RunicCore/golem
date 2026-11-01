@@ -6,6 +6,7 @@ import {
   emitModelFromJSON,
   blockComment,
   isCode,
+  packageExport,
   runtimeLinesOf,
   MODEL_IMPORT_ORDER,
   wrapRootConversion,
@@ -1581,6 +1582,9 @@ function observesValidator(context: EmitContext, specification: ModelSpecificati
 
 const BLANK = code``;
 
+/** The enhancer that the mobx extension of @exprtlabs/golem-openapi-ts offers; it moves behind the `model.validatorEnhancer` hook. */
+const MOBX_ENHANCER = packageExport({ key: 'mobx-validation', specifier: '@exprtlabs/golem-openapi-ts/internal/mobx-validation-runtime', typeSpecifier: '@exprtlabs/golem-openapi-ts/mobx-validation', name: 'enhanceValidatorWithMobX' });
+
 /** The serde functions the file calls: each import, typed `unknown` to `unknown`. */
 function emitSerdeFunctions(context: EmitContext): Piece[] {
   if (context.serdeBindings.length === 0) return [];
@@ -1691,7 +1695,7 @@ function emitClassModel(context: EmitContext, emission: ModelFieldEmission): Pie
     code`  },`,
     code`  codecId: ${codecId},`,
     code`  profile: { validation: ${literal(specification.validation ?? profile.validation)} },`,
-    ...(observesValidator(context, specification) ? [code`  enhanceValidator: ${rt['mobx-validation'].enhanceValidatorWithMobX},`] : []),
+    ...(observesValidator(context, specification) ? [code`  enhanceValidator: ${MOBX_ENHANCER},`] : []),
     // A model with a dynamic map, or an explicit additionalProperties true, has no program state: the keys outside its
     // fields are data. A default-open model declares none, so its other own keys are program state.
     ...(definition.kind === 'object' && (typeof definition.additionalProperties === 'object' || definition.additionalPropertiesDeclared) ? [code`  additionalProperties: true,`] : []),

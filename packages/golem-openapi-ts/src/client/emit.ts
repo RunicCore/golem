@@ -25,6 +25,7 @@ import {
   rt,
   rtType,
   type Code,
+  packageExport,
   runtimeLinesOf,
   type ImportGroup,
   type ImportOptions,
@@ -50,6 +51,11 @@ import { textCodecRequirement } from '../types.js';
 /** A client runtime function: the name is a key of the client module, so a misspelled name is a type error. */
 type ClientFunction = keyof typeof rt.client;
 
+
+/** The observable operation of the mobx extension of this package; it moves behind the `client.operationWrapper` hook. */
+const MOBX_RUNTIME = { key: 'mobx', specifier: '@exprtlabs/golem-openapi-ts/internal/mobx-runtime', typeSpecifier: '@exprtlabs/golem-openapi-ts/mobx' } as const;
+const MOBX_OPERATION_TYPE = packageExport({ ...MOBX_RUNTIME, name: 'ObservableApiOperation', typeOnly: true });
+const MOBX_CREATE_OPERATION = packageExport({ ...MOBX_RUNTIME, name: 'createObservableApiOperation' });
 const BLANK = code``;
 
 const CONTENT_PARAMETER_LOCATION = { path: code`'path'`, query: code`'query'`, header: code`'header'`, cookie: code`'cookie'` } as const;
@@ -351,8 +357,8 @@ function operationSource(
   const clientOptions = clientModule.name(`${clientName}ClientOptions`, { alias: 'ClientOptions' });
   const requestOptions = clientModule.name(`${clientName}RequestOptions`, { alias: 'RequestOptions' });
   const clientRuntime = rt.client.ClientRuntime;
-  const apiOperation = profile.mobx ? aliased(rtType.mobx.ObservableApiOperation, 'ApiOperation') : rtType.client.ApiOperation;
-  const createApiOperation = profile.mobx ? aliased(rt.mobx.createObservableApiOperation, 'createApiOperation') : rt.client.createApiOperation;
+  const apiOperation = profile.mobx ? aliased(MOBX_OPERATION_TYPE, 'ApiOperation') : rtType.client.ApiOperation;
+  const createApiOperation = profile.mobx ? aliased(MOBX_CREATE_OPERATION, 'createApiOperation') : rt.client.createApiOperation;
   const codecsDeclaration = usesCodecs
     ? code`const ${codecsName}: ${rtType.client.OperationCodecs} = ${codecsAt.read(operation.name, codecsModuleName)};`
     : BLANK;
@@ -590,7 +596,7 @@ ${join(securityCodes.map((alias) => code`  ...${alias},`), code`\n`)}
   const exported = (suffix: string): Code => exportedName(`${clientName}${suffix}`);
   const inputTypeOf = (operation: NormalizedOperation): Code => code`${typesNamespace}.${identifierPart(`${operation.typeName}OperationInput`)}`;
   const responseTypeOf = (operation: NormalizedOperation): Code => code`${typesNamespace}.${identifierPart(`${operation.typeName}OperationHttpResponse`)}`;
-  const apiOperation = profile.mobx ? aliased(rtType.mobx.ObservableApiOperation, 'ApiOperation') : rtType.client.ApiOperation;
+  const apiOperation = profile.mobx ? aliased(MOBX_OPERATION_TYPE, 'ApiOperation') : rtType.client.ApiOperation;
   const methods = join(operations.map((operation) =>
     code`  ${identifierPart(operation.name)}(): ${apiOperation}<${inputTypeOf(operation)}, ${responseTypeOf(operation)}, ${named('RequestOptions')}>;`,
   ), code`\n`);

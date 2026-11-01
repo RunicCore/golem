@@ -3,7 +3,7 @@ import type { Money as WireMoney } from '../sdk/index.js';
 
 export type TCart = IModel<{ money: WireMoney; note: string }>;
 
-import { asGenObservable } from '@exprtlabs/golem/mobx';
+import { asGenObservable } from '@exprtlabs/golem-openapi-ts/mobx';
 import { TCartBaseModel } from './cart.model.generated.js';
 import type { TCartFields } from './cart.model.generated.js';
 

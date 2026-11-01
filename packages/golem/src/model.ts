@@ -2,7 +2,7 @@
  * Dependency-free model contracts.
  *
  * This module is intentionally safe to import from browser bundles that do
- * not install MobX.
+ * load an extension runtime.
  */
 
 import type { TSerdeWire } from './tags.js';

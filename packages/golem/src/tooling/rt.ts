@@ -5,14 +5,11 @@
  * error, so a misspelled or removed export fails golem's build. The value table copies no list of names: the types are the list.
  */
 import type * as client from '../client.js';
-import type * as mobx from '../mobx.js';
 import type * as model from '../model.js';
 import type * as serde from '../serde.js';
 import type * as validation from '../validation.js';
 import type * as clientEntry from '../runtime-client.js';
 import type * as clientValidationEntry from '../runtime-client-validation.js';
-import type * as mobxEntry from '../runtime-mobx.js';
-import type * as mobxValidationEntry from '../runtime-mobx-validation.js';
 import type * as modelEntry from '../runtime-model.js';
 import type * as temporalEntry from '../runtime-temporal.js';
 import type * as validationEntry from '../runtime-validation.js';
@@ -23,8 +20,6 @@ import { runtimeCode, type Code } from './code.js';
 interface RuntimeExports {
   readonly client: typeof clientEntry;
   readonly conversion: typeof modelEntry;
-  readonly mobx: typeof mobxEntry;
-  readonly 'mobx-validation': typeof mobxValidationEntry;
   readonly model: typeof modelEntry;
   readonly serde: typeof modelEntry;
   readonly temporal: typeof temporalEntry;
@@ -56,7 +51,6 @@ interface RuntimeTypeExports {
     readonly RuntimeSecuritySchemes: client.RuntimeSecuritySchemes;
   };
   readonly validation: { readonly OperationRuntimeValidators: validation.OperationRuntimeValidators; readonly SchemaIssue: validation.SchemaIssue };
-  readonly mobx: { readonly ObservableApiOperation: mobx.ObservableApiOperation<never, never, never> };
   readonly serde: { readonly SerdeOptions: serde.SerdeOptions; readonly ValidateOptions: serde.ValidateOptions };
 }
 
@@ -64,8 +58,6 @@ interface RuntimeTypeExports {
 export const RUNTIME_SPECIFIER = {
   client: '@exprtlabs/golem/internal/client-runtime',
   conversion: '@exprtlabs/golem/internal/model-runtime',
-  mobx: '@exprtlabs/golem/internal/mobx-runtime',
-  'mobx-validation': '@exprtlabs/golem/internal/mobx-validation-runtime',
   model: '@exprtlabs/golem/internal/model-runtime',
   serde: '@exprtlabs/golem/internal/model-runtime',
   temporal: '@exprtlabs/golem/internal/temporal-runtime',

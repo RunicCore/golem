@@ -7,7 +7,7 @@ import {
 import {
   getValidator as getPlainValidator,
   ModelValidator as PlainModelValidator,
-} from './validation.js';
+} from '@exprtlabs/golem/validation';
 
 const enhancedValidators = new WeakSet<object>();
 
@@ -72,4 +72,4 @@ export type {
   Issue,
   ValidationMessage,
   ValidationMessages,
-} from './validation.js';
+} from '@exprtlabs/golem/validation';

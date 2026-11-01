@@ -9,7 +9,8 @@
     "golem",
     "codegen",
     "client",
-    "validation"
+    "validation",
+    "mobx"
   ],
   "author": "exprtlabs.ai",
   "license": "MIT",
@@ -57,16 +58,43 @@
       "types": "./dist/generator.d.ts",
       "import": "./dist/generator.js",
       "default": "./dist/generator.js"
+    },
+    "./mobx": {
+      "types": "./dist/runtime/mobx.d.ts",
+      "import": "./dist/runtime/mobx.js",
+      "default": "./dist/runtime/mobx.js"
+    },
+    "./mobx-validation": {
+      "types": "./dist/runtime/mobx-validation.d.ts",
+      "import": "./dist/runtime/mobx-validation.js",
+      "default": "./dist/runtime/mobx-validation.js"
+    },
+    "./internal/mobx-runtime": {
+      "types": "./dist/runtime/runtime-mobx.d.ts",
+      "import": "./dist/runtime/runtime-mobx.js",
+      "default": "./dist/runtime/runtime-mobx.js"
+    },
+    "./internal/mobx-validation-runtime": {
+      "types": "./dist/runtime/runtime-mobx-validation.d.ts",
+      "import": "./dist/runtime/runtime-mobx-validation.js",
+      "default": "./dist/runtime/runtime-mobx-validation.js"
     }
   },
   "peerDependencies": {
     "@exprtlabs/golem": "1.1.0-rc.0",
+    "mobx": "^6.13.0",
     "typescript": ">=6.0.0 <7 || >=7.1.0-0 <8"
   },
   "peerDependenciesMeta": {
+    "mobx": {
+      "optional": true
+    },
     "typescript": {
       "optional": true
     }
+  },
+  "devDependencies": {
+    "mobx": "^6.16.1"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
