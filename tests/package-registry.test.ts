@@ -201,3 +201,16 @@ test('an extension registers the profile flag beside its entry; a flag that is n
   register({ entry: './shape', profile: 'yes' });
   assert.equal(thrown(() => loadPackageRegistry(config)).message, 'golem.extensions.shape.profile of @fixture/flagged must be true or false, not "yes".');
 });
+
+test('a package.json above the nearest one that does not parse ends the walk, and a broken nearest one still stops loading', (t) => {
+  // protects: T-786 a package.json above the project may be a file outside it, so its syntax error is no error of the project
+  const { root, config } = project(t, 'group/app');
+  install(root, 'block-b', '@fixture/block-b');
+  writeJson(path.join(root, 'group/app/package.json'), { name: 'app', dependencies: { '@fixture/block-b': '1.0.0' } });
+  fs.writeFileSync(path.join(root, 'package.json'), '{ "name": ');
+
+  assert.deepEqual(loadPackageRegistry(config).packages.map(({ block }) => block), ['beta']);
+
+  fs.writeFileSync(path.join(root, 'group/app/package.json'), '{ "name": ');
+  assert.match(thrown(() => loadPackageRegistry(config)).message, /^[^\n]*package\.json is not valid JSON: /);
+});

@@ -94,20 +94,29 @@ function describe(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function readManifest(file: string): Manifest {
+/** The manifest in `file`. With `lenient`, a file that is not a JSON object has none: it may be a file outside the project. A file that cannot be read stops either way. */
+function readManifest(file: string): Manifest;
+function readManifest(file: string, lenient: boolean): Manifest | undefined;
+function readManifest(file: string, lenient = false): Manifest | undefined {
   let text: string;
   try { text = fs.readFileSync(file, 'utf8'); }
   catch (error) { throw new PackageRegistryError(`Cannot read ${displayPath(file)}: ${describe(error)}`, { cause: error }); }
   let data: unknown;
   try { data = JSON.parse(text); }
-  catch (error) { throw new PackageRegistryError(`${displayPath(file)} is not valid JSON: ${describe(error)}`, { cause: error }); }
-  if (!isRecord(data)) throw new PackageRegistryError(`${displayPath(file)} must hold a JSON object.`);
+  catch (error) {
+    if (lenient) return undefined;
+    throw new PackageRegistryError(`${displayPath(file)} is not valid JSON: ${describe(error)}`, { cause: error });
+  }
+  if (!isRecord(data)) {
+    if (lenient) return undefined;
+    throw new PackageRegistryError(`${displayPath(file)} must hold a JSON object.`);
+  }
   return { file, directory: path.dirname(file), data };
 }
 
 /**
  * The package.json files that name candidates: from the golem.yaml folder up to the first one with `workspaces` or with a
- * pnpm-workspace.yaml beside it, else only the nearest. Every file looked at is stamped.
+ * pnpm-workspace.yaml beside it, else only the nearest. Every file looked at is stamped. A file above the nearest that is not a JSON object ends the walk, as no workspace root.
  */
 function walkManifests(configDirectory: string, stamps: Map<string, string>): readonly Manifest[] {
   const found: Manifest[] = [];
@@ -116,7 +125,9 @@ function walkManifests(configDirectory: string, stamps: Map<string, string>): re
     const stamp = stampOf(file);
     stamps.set(file, stamp);
     if (stamp !== 'missing') {
-      const manifest = readManifest(file);
+      // The nearest package.json is the project's and stops loading when it is broken. One above it may belong to a folder outside the project: the walk ends there.
+      const manifest = readManifest(file, found.length > 0);
+      if (manifest === undefined) return found.slice(0, 1);
       found.push(manifest);
       const pnpmFile = path.join(directory, 'pnpm-workspace.yaml');
       const pnpmStamp = stampOf(pnpmFile);
