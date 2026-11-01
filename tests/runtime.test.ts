@@ -311,7 +311,7 @@ test('model manifests validate profile and keep identity independent of profile'
   assert.equal(sourceDigest(base), sourceDigest(profileVariant));
   assert.throws(
     () => manifest.validateModelManifest({ ...base, profile: { allowAny: true } }),
-    /profile must include mobx, validation and allowAny booleans/,
+    /profile must include validation and an allowAny boolean/,
   );
   assert.equal(manifest.validateModelManifest({ ...base, profile: { ...base.profile, unknownFormats: 'warn' } }).profile.unknownFormats, 'warn');
   assert.throws(

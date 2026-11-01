@@ -81,7 +81,7 @@ test('an SDK generated at validation sanity records sanity in its manifest, and 
   }
   assert.throws(
     () => validateModelManifest({ profile: { validation: 'full', allowAny: false }, models: [] }, 'sdk/model-manifest.json'),
-    /Invalid model manifest sdk\/model-manifest\.json: profile must include mobx, validation and allowAny booleans \(validation may also be "sanity"\)\. Regenerate the models\./,
+    /Invalid model manifest sdk\/model-manifest\.json: profile must include validation and an allowAny boolean \(validation may also be "sanity"\)\. Regenerate the models\./,
   );
 });
 

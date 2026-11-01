@@ -462,7 +462,7 @@ test('pipeline rejects malformed or profile-mismatched returned manifests before
         profile: { validation: true },
         models: [],
       },
-      error: /profile must include mobx, validation and allowAny booleans/,
+      error: /profile must include validation and an allowAny boolean/,
     },
     {
       name: 'profile-mismatch',
