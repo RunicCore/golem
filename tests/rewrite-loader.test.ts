@@ -291,7 +291,7 @@ export class PaymentsController {
 }
 `;
 const NEST_MAIN = `import 'reflect-metadata';
-import { objectCodecFromMetatype } from '@exprtlabs/golem/nest';
+import { objectCodecFromMetatype } from '@exprtlabs/golem-ts-openapi/nest';
 import './payment.model.ts';
 import { PaymentsController } from './payments.controller.ts';
 
@@ -339,7 +339,7 @@ test('a @Body() IObject alias named only as a type has its codec registered with
     '',
   ].join('\n'), [
     "import 'reflect-metadata';",
-    "import { objectCodecFromMetatype } from '@exprtlabs/golem/nest';",
+    "import { objectCodecFromMetatype } from '@exprtlabs/golem-ts-openapi/nest';",
     "import { PaymentsController } from './payments.controller.ts';",
     "const types = Reflect.getMetadata('design:paramtypes', PaymentsController.prototype, 'create') as unknown[];",
     "const codec = objectCodecFromMetatype<{ note: string }>(types[0]);",
@@ -363,7 +363,7 @@ test('a model named only in an async Promise return has its codec registered wit
   ].join('\n'), [
     "import 'reflect-metadata';",
     "import fs from 'node:fs';",
-    "import '@exprtlabs/golem/nest';",
+    "import '@exprtlabs/golem-ts-openapi/nest';",
     "import { getObjectCodec } from '@exprtlabs/golem/serde';",
     "import './payments.controller.ts';",
     "const keys = JSON.parse(fs.readFileSync('.golem/codec-keys.json', 'utf8')).keys;",

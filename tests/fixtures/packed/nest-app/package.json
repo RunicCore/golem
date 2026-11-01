@@ -5,6 +5,7 @@
   "type": "module",
   "dependencies": {
     "@exprtlabs/golem": "latest",
+    "@exprtlabs/golem-ts-openapi": "latest",
     "@nestjs/common": "11.2.3",
     "@nestjs/core": "11.2.3",
     "@nestjs/platform-express": "11.2.3",
@@ -16,7 +17,6 @@
   "devDependencies": {
     "@exprtlabs/golem-model": "latest",
     "@exprtlabs/golem-openapi": "latest",
-    "@exprtlabs/golem-ts-openapi": "latest",
     "typescript": "~7.1.0-beta",
     "@types/node": "22.20.1"
   }

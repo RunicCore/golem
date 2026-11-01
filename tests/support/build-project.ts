@@ -91,7 +91,7 @@ export function serdeProject(t: TestContext, name: string): string {
 
 /** A Nest controller over the payment models of the nest-plugin fixture, which sit beside it as `payment.model.ts`. The project's golem.yaml turns the NestJS side of the rewrite on with `extensions: { nest: {} }` in its ts-openapi block. */
 export const PAYMENTS_CONTROLLER = `import { Body, Controller, Get, Post, Query, UseInterceptors } from '@nestjs/common';
-import { NestModelInterceptor } from '@exprtlabs/golem/nest';
+import { NestModelInterceptor } from '@exprtlabs/golem-ts-openapi/nest';
 import type { TPaymentFilter, TPaymentInput, TPayment } from './payment.model.js';
 @Controller('payments')
 @UseInterceptors(NestModelInterceptor)

@@ -7,7 +7,7 @@ import test, { type TestContext } from 'node:test';
 import { pathToFileURL } from 'node:url';
 import { NestFactory } from '@nestjs/core';
 import { Module } from '@nestjs/common';
-import { NestModelInterceptor } from '@exprtlabs/golem/nest';
+import { NestModelInterceptor } from '@exprtlabs/golem-ts-openapi/nest';
 import { runPipeline } from '#golem/cli';
 import { scanProject } from '#golem/rewrite-scan';
 import { createContractAnalysis, createProgram, modelBoundary } from '@exprtlabs/golem/internal/type-analysis';

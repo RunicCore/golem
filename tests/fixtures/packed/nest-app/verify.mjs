@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { ExpressAdapter } from '@nestjs/platform-express';
 import { FastifyAdapter } from '@nestjs/platform-fastify';
-import { nestModelConstruct, objectCodecFromMetatype } from '@exprtlabs/golem/nest';
+import { nestModelConstruct, objectCodecFromMetatype } from '@exprtlabs/golem-ts-openapi/nest';
 import { getObjectCodec } from '@exprtlabs/golem/serde';
 import { findGeneratedModelDefinition, requireObjectCodec } from '@exprtlabs/golem/internal/model-runtime';
 import { PaymentsClient } from './.build/sdk/index.js';
