@@ -208,7 +208,7 @@ async function assertFilesPerProfile(
   mode?: 'golem',
 ): Promise<void> {
   for (const profile of ALL_GENERATION_PROFILES) {
-    const output = outputDir(t, `${name}-${profile.mobx}-${profile.validation}`);
+    const output = outputDir(t, `${name}-${profile.mobx ?? false}-${profile.validation}`);
     const result = await generateMaterializedSdk(document, { output, name, profile, ...(mode ? { mode } : {}) });
     assert.deepEqual(emittedFiles(result.artifacts, output), [...expected(profile)].sort());
     if (compileDefaultProfile && profile.mobx === defaultTestProfile.mobx && profile.validation === defaultTestProfile.validation) {

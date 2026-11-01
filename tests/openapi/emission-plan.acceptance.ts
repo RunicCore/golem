@@ -14,7 +14,7 @@ import {
 test('full-feature fixture compiles with noUnusedLocals for every profile', async (t) => {
   const document = await loadValidatedDocument(openApiFixture('complex-openapi.yaml'), {});
   for (const profile of ALL_GENERATION_PROFILES) {
-    const output = path.join(createFixtureProject(t, `golem-openapi-complex-${profile.mobx}-${profile.validation}-`), 'sdk');
+    const output = path.join(createFixtureProject(t, `golem-openapi-complex-${profile.mobx ?? false}-${profile.validation}-`), 'sdk');
     // MobX needs the golem mode: the helper generates that SDK and runs the models job for its codecs.
     const result = await generateMaterializedSdk(document, { output, name: 'MerchantPayments', profile });
     assert.ok(artifactBasenames(result.artifacts).includes('client.ts'));

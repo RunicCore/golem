@@ -7,7 +7,7 @@ import { loadPackageRegistry, type PackageRegistration, type PackageRegistry } f
 import { runPipeline } from '#golem/cli';
 import { copyFixture, copyFixtureFile, createFixtureProject, linkGolemPackages } from './fixture-project.js';
 
-const ROOT_KEYS = ['version', 'tsconfig', 'validation', 'allowAny', 'exact', 'unknownFormats', 'mobx'];
+const ROOT_KEYS = ['version', 'tsconfig', 'validation', 'allowAny', 'exact', 'unknownFormats'];
 
 /** A registry of hand-made packages: `parts` maps a block to the text of its schema part file, or to undefined for a package that declares none. */
 function registryOf(t: TestContext, parts: Readonly<Record<string, string | undefined>>): PackageRegistry {
@@ -40,7 +40,6 @@ test('the editor schema holds the core keys and, under its block name, the part 
       allowAny: { type: 'boolean', default: false, description: 'Permit fields typed any or unknown in models.' },
       exact: { type: 'boolean', default: true, description: 'Reject extra properties in models.' },
       unknownFormats: { enum: ['warn', 'error'], default: 'error', description: 'The action for a schema format that golem does not check.' },
-      mobx: { type: 'boolean', default: false, description: 'MobX observability hooks.' },
       alpha: { type: 'object', properties: { size: { type: 'integer' } } },
       bare: {},
     },

@@ -1,3 +1,4 @@
+import { generatorSettings } from './support/mobx-extension.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -48,13 +49,13 @@ function generatedModelPaths(artifacts: ReturnType<typeof generate>['artifacts']
 const isValidationUnavailable = (error: unknown): boolean => error instanceof LibError && error.kind === LibErrorKind.ValidationUnavailable;
 
 for (const [profile, expected] of profileCases()) {
-  test(`exports API 1 and emits the model companions of mobx ${profile.mobx} validation ${profile.validation} without writes`, async (t: TestContext) => {
+  test(`exports API 1 and emits the model companions of mobx ${profile.mobx ?? false} validation ${profile.validation} without writes`, async (t: TestContext) => {
     // protects: a profile writes exactly the files it needs, and the built companions run with that profile's validators and MobX hooks
     const { root, sourceRoot } = project(t);
     const source = copyFixtureFile(root, 'models/model-generator/api-profiles/src/payment.model.ts', 'src/payment.model.ts');
     const { isComputedProp } = await import('mobx');
     assert.equal(apiVersion, 1);
-    const result = generate({ root, sources: [source], profile });
+    const result = generate({ root, sources: [source], ...generatorSettings(profile) });
     assert.deepEqual(result.manifestPaths, []);
     // Every job writes the companion and the codec keys. A validating job also writes the generated validators.
     assert.equal(result.artifacts.length, expected.validation ? 3 : 2);
@@ -108,7 +109,7 @@ export const wrong: Payment[typeof generatedModelFieldsBrand] = { id: 1, amount:
       const validator = getValidator(payment);
       assert.equal(await validator.validate(), true);
       assert.equal(await getValidator(new Payment({ id: 'p1', amount: 'five', total: wire.total })).validate(), false);
-      assert.equal(isComputedProp(validator, 'valid'), expected.mobx, 'the validator is observable exactly when the profile uses MobX');
+      assert.equal(isComputedProp(validator, 'valid'), expected.mobx === true, 'the validator is observable exactly when the profile uses MobX');
       assert.equal(codec.validate(payment), true);
     } else {
       assert.deepEqual(codec.parse(shortCurrency), { ...wire, total: { currency: 'US' } });

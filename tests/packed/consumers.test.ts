@@ -90,8 +90,8 @@ for (const profile of [
   { mobx: true, validation: false },
   { mobx: true, validation: true },
 ]) {
-  test(`packed SDK and frontend model compose with mobx=${profile.mobx}, validation=${profile.validation}`, async t => {
-    const root = await consumerWithGenerators(t, `profile-${profile.mobx}-${profile.validation}`, profile.mobx === true);
+  test(`packed SDK and frontend model compose with mobx=${profile.mobx ?? false}, validation=${profile.validation}`, async t => {
+    const root = await consumerWithGenerators(t, `profile-${profile.mobx ?? false}-${profile.validation}`, profile.mobx === true);
     writeFixture(root, profile);
     await cli(root, ['generate']);
     const manifest = JSON.parse(fs.readFileSync(path.join(root, 'sdk/model-manifest.json'), 'utf8'));
@@ -124,7 +124,7 @@ for (const profile of [
     if (!profile.mobx) assert.equal(fs.existsSync(path.join(root, 'node_modules/mobx')), false);
     copyFixtureFile(root, 'packed/profile/verify-profile.mjs', 'verify-profile.mjs');
     copyFixtureFile(root, 'packed/profile/browser-exports.ts', 'browser-exports.ts');
-    fs.writeFileSync(path.join(root, 'profile.json'), JSON.stringify(profile));
+    fs.writeFileSync(path.join(root, 'profile.json'), JSON.stringify({ mobx: profile.mobx ?? false, validation: profile.validation }));
     await command(root, process.execPath, ['verify-profile.mjs']);
     await command(root, process.execPath, ['verify-profile.mjs']);
     const browser = await build({ entryPoints: [path.join(root, 'browser-exports.ts')], bundle: true, platform: 'browser', format: 'esm', write: false, metafile: true });

@@ -211,7 +211,7 @@ test('OAS discriminator mappings select allOf variants in decode and encode', as
   for (const [caseIndex, example] of cases.entries()) {
     // Each case exercises a distinct lowering path; the second profile only re-runs the first case.
     for (const [profileIndex, profile] of (caseIndex === 0 ? profiles : profiles.slice(1)).entries()) {
-      await suite.test(`${example.name} (mobx=${profile.mobx}, validation=${profile.validation})`, async t => {
+      await suite.test(`${example.name} (mobx=${profile.mobx ?? false}, validation=${profile.validation})`, async t => {
         const suffix = `X${caseIndex}${profileIndex}`;
         const catTags = example.cat(suffix);
         const dogTag = example.dog(suffix);

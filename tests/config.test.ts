@@ -44,7 +44,7 @@ const SHOP = (jobs: string): string => `shop:\n  jobs:\n${jobs}`;
 const DOCS = SHOP('    - { id: docs, roots: [.] }\n');
 
 test('the shared root keys are read by core and reach every plan entry, and a key outside the list is a block', async (t: TestContext) => {
-  // protects: T-765 page "Root keys stay shared": version, tsconfig, validation, allowAny, exact, unknownFormats (and mobx for now) stay at the root
+  // protects: T-765 page "Root keys stay shared": version, tsconfig, validation, allowAny, exact, unknownFormats stay at the root
   const defaults = project(t, `version: 1\n${DOCS}`);
   const config = await loadConfig(defaults.filename);
   assert.deepEqual(config.profile, { validation: true, allowAny: false, unknownFormats: 'error' });
@@ -201,7 +201,7 @@ test('golem.yaml validation accepts true, false and sanity, defaults to true, an
 test('configuration errors reject a wrong version, wrong root values and duplicate keys', async (t: TestContext) => {
   const testCases: [string, RegExp][] = [
     ['version: 2\n', /version/],
-    ['version: 1\nmobx: maybe\n', /boolean/],
+    ['version: 1\nmobx: true\n', /mobx/],
     ['version: 1\nversion: 1\n', /unique/],
     ['version: 1\nallowAny: maybe\n', /allowAny must be a boolean/],
     ['version: 1\nexact: maybe\n', /exact must be a boolean/],

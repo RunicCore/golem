@@ -246,7 +246,7 @@ export function materializeGeneratedSdk(
 function prepareSdkProject(output: string): void {
   const packageManifest = join(output, 'package.json');
   if (!existsSync(packageManifest)) writeFileSync(packageManifest, '{"type":"module"}\n');
-  linkProjectPackages(output, { '@exprtlabs/golem': join(repoRoot(), 'packages/golem') });
+  linkProjectPackages(output, { '@exprtlabs/golem': join(repoRoot(), 'packages/golem'), '@exprtlabs/golem-openapi-ts': join(repoRoot(), 'packages/golem-openapi-ts') });
 }
 
 export function artifactBasenames(artifacts: readonly { path: string }[]): string[] {

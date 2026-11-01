@@ -475,7 +475,7 @@ after(() => {
 });
 
 function loadContractClient(profile: OpenApiGenerationProfile): Promise<GeneratedClientClass> {
-  const key = `mobx=${profile.mobx},validation=${profile.validation}`;
+  const key = `mobx=${profile.mobx ?? false},validation=${profile.validation}`;
   const cached = contractClients.get(key);
   if (cached) return cached;
   const loaded = generateContractClient(profile);

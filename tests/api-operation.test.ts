@@ -278,7 +278,7 @@ test('stream execute loading ends when the response wrapper is available', async
   assert.deepEqual(collected, [1, 2]);
 });
 
-test('golem client runtime stays dependency-free of MobX and HTTP types', async () => {
+test('golem client runtime stays free of HTTP types, and the MobX runtime tracks through the shared operation', async () => {
   const clientUrl = import.meta.resolve('@exprtlabs/golem/client');
   const mobxUrl = import.meta.resolve('@exprtlabs/golem-openapi-ts/mobx');
   const trackedUrl = new URL('./api-operation.js', clientUrl);
@@ -286,15 +286,13 @@ test('golem client runtime stays dependency-free of MobX and HTTP types', async 
   const clientTypes = readFileSync(fileURLToPath(new URL('./client.d.ts', clientUrl)), 'utf8');
   const mobxSource = readFileSync(fileURLToPath(mobxUrl), 'utf8');
   const trackedSource = readFileSync(fileURLToPath(trackedUrl), 'utf8');
-  assert.doesNotMatch(clientSource, /mobx/i);
   assert.doesNotMatch(clientSource, /AbortSignal|RequestInit|LibError|Headers/);
   assert.doesNotMatch(clientSource, /onPendingChange|Concurrent execute/);
   assert.doesNotMatch(clientTypes, /onPendingChange/);
   assert.match(clientSource, /createApiOperation/);
   assert.equal(createApiOperation.length, 2);
   assert.doesNotMatch(mobxSource, /Concurrent execute|pending \+= 1/);
-  assert.match(mobxSource, /api-operation\.js/);
-  assert.doesNotMatch(trackedSource, /mobx/i);
+  assert.match(mobxSource, /createTrackedApiOperation/);
   assert.match(trackedSource, /Concurrent execute\(\) invocation/);
   const unpublished = '@exprtlabs/golem/api-operation';
   await assert.rejects(

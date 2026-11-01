@@ -163,7 +163,7 @@ after(() => {
 });
 
 function loadItemsClient(profile: OpenApiGenerationProfile): Promise<ItemsClientModule> {
-  const key = `mobx=${profile.mobx},validation=${profile.validation}`;
+  const key = `mobx=${profile.mobx ?? false},validation=${profile.validation}`;
   const cached = itemsClients.get(key);
   if (cached) return cached;
   const loaded = generateItemsClient(profile);

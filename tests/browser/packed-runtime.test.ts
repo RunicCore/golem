@@ -60,9 +60,9 @@ after(async () => {
 
 test('packed browser executes reusable APIs, nested MobX models and custom codecs', async t => {
   const root = registry.create(t, 'browser');
-  await npm(root, ['install', '--save-dev', packageSpec(registry, '@exprtlabs/golem-model'), packageSpec(registry, '@exprtlabs/golem-openapi-ts')]);
+  await npm(root, ['install', '--save-dev', packageSpec(registry, '@exprtlabs/golem-model')]);
   await npm(root, ['install', '--save-dev', ESBUILD]);
-  await npm(root, ['install', '--save-prod', packageSpec(registry, '@exprtlabs/golem'), MOBX]);
+  await npm(root, ['install', '--save-prod', packageSpec(registry, '@exprtlabs/golem'), packageSpec(registry, '@exprtlabs/golem-openapi-ts'), MOBX]);
   writeFixture(root, { mobx: true, validation: true });
   const apiFile = path.join(root, 'api.json');
   const apiDocument = JSON.parse(fs.readFileSync(apiFile, 'utf8'));
