@@ -3,8 +3,8 @@ import { code, exportedName, fileImports, ImportSource, join, lineBreak, nest, p
 import { portableRelativeFilename } from './type-analysis/path-identity.js';
 
 /**
- * What both generated-SDK writers share: the codec module of an operation the client reads. golem-openapi-ts writes
- * the modules of a standalone SDK and golem-model those of a golem-mode SDK, so neither imports the other (generators do not import each other).
+ * What both generated-SDK writers share: the codec module of an operation the client reads. The OpenAPI-to-TypeScript generator writes
+ * the modules of a standalone SDK and the model generator those of a golem-mode SDK, so neither imports the other (generators do not import each other).
  */
 
 /**

@@ -395,8 +395,7 @@ The context of the SDK generator. Usage: [Generate an OpenAPI SDK](/guide/genera
 | `dates` | No | `'date'` | `'temporal'` maps date and date-time strings to Temporal types ([`dates`](/reference/config#openapi-ts-block)). |
 | `mode` | No | `'standalone'` | `'standalone'` writes an SDK that carries its own checks, conversions and runtime. `'golem'` writes types and the client only, and leaves checks and conversions to the model job ([`mode`](/reference/config#openapi-ts-block)). |
 | `codecsFile` | With `mode: 'golem'` | omitted | The absolute path of the file that the model job writes for this SDK. The operation modules import the operation codecs from it. `golem.yaml` sets it for you. |
-| `allowRemoteRefs` | No | `false` | Reads HTTPS `$ref` documents when `true`. |
-| `remoteHosts` | No | `[]` | Hosts remote references may use. Required with `allowRemoteRefs`. |
+| `remoteHosts` | No | `[]` | Hosts that remote references may use. With an empty list, the generator loads no remote reference. |
 | `maxRefBytes` | No | `5242880` | Maximum bytes read from one referenced document. |
 | `maxRefDocuments` | No | `256` | Maximum referenced documents, local ones included. |
 | `refTimeoutMs` | No | `10000` | Timeout of each remote read, in milliseconds. |
