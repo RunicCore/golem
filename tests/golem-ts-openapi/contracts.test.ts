@@ -630,3 +630,22 @@ export function decodeMoney(value: string): Money { throw new Error(value); }
   assert.equal(analysis.isModel(typeOf('plain').type, typeOf('plain').node), true);
   assert.equal(analysis.isModel(typeOf('price').type, typeOf('price').node), false);
 });
+
+test('a docs job with no model block stops on a syntax error in a file its controller imports', async t => {
+  // protects: T-786 one rule for the controllers job: a syntax error in any file of the project stops it, with or without a models job
+  const root = fixture(t, `import { Controller, Get } from '@nestjs/common';
+import { ApiOkResponse } from '@nestjs/swagger';
+import type { OrderDto } from './order.js';
+
+@Controller('orders')
+export class OrdersController {
+  @Get()
+  @ApiOkResponse({ type: Object })
+  value(): OrderDto { return { id: '1' }; }
+}
+`, {
+    files: { 'src/order.ts': 'export interface OrderDto { id: string;\n' },
+  });
+
+  await assert.rejects(generateFixture(root), /order\.ts.*'\}' expected/s);
+});

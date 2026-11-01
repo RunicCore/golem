@@ -10,10 +10,9 @@ import {
   createModelStubProgram,
   createProgram,
   discoverModelSources,
-  includedModelSources,
   loadModelManifests,
   modelBoundary,
-  programFilenames,
+  projectFilenames,
   retainedProgramSession,
   projectWatchInputs,
   type ContractAnalysis,
@@ -470,8 +469,8 @@ function analyzeContracts(
   normalized: NormalizedContext,
   observe: InputObserver,
 ): ContractAnalysis {
-  // The controllers job analyses the models its controllers use, so a syntax error in a model file stops here too.
-  assertNoSyntaxErrors(programInfo.program, [...sources, ...(normalized.boundary ? includedModelSources(programFilenames(programInfo.program), normalized.boundary.suffixes) : [])]);
+  // The controllers job analyses the models its controllers use, with a models job or without one, so a syntax error in any file of the project stops here.
+  assertNoSyntaxErrors(programInfo.program, [...new Set([...sources, ...projectFilenames(programInfo.program)])]);
   return createContractAnalysis(programInfo.program, {
     root: normalized.root,
     allowAny: normalized.profile.allowAny,
