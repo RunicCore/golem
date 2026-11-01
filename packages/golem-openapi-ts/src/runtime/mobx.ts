@@ -12,7 +12,7 @@ import {
   type AnnotationsMap,
   type IObservableValue,
 } from 'mobx';
-import { createTrackedApiOperation } from '@exprtlabs/golem/internal/client-runtime';
+import { createTrackedApiOperation } from '@exprtlabs/golem/internal/api-operation-runtime';
 import type {
   ApiOperation,
   ApiOperationRun,

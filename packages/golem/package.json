@@ -79,6 +79,11 @@
       "import": "./dist/runtime-client.js",
       "default": "./dist/runtime-client.js"
     },
+    "./internal/api-operation-runtime": {
+      "types": "./dist/runtime-api-operation.d.ts",
+      "import": "./dist/runtime-api-operation.js",
+      "default": "./dist/runtime-api-operation.js"
+    },
     "./internal/client-validation-runtime": {
       "types": "./dist/runtime-client-validation.d.ts",
       "import": "./dist/runtime-client-validation.js",
