@@ -84,7 +84,6 @@ export async function readLimitedBody(
 }
 
 export interface ReferenceResolutionOptions {
-  readonly allowRemoteRefs?: boolean;
   readonly remoteHosts?: readonly string[];
   readonly maxRefBytes?: number;
   readonly maxRefDocuments?: number;
@@ -426,10 +425,9 @@ export async function loadReferenceGraph(
     resolved.hash = '';
     const uri = resolved.href;
     if (options.skipRemote) return { target: null, preserve: false };
-    if (!options.allowRemoteRefs) {
-      throw new Error(`remote reference blocked at ${item.walkerPointer}: ${item.reference}; set allowRemoteRefs: true and remoteHosts in golem.yaml to opt in`);
+    if (allowedHosts.size === 0) {
+      throw new Error(`remote reference blocked at ${item.walkerPointer}: ${item.reference}; list the hosts in remoteHosts in golem.yaml to opt in`);
     }
-    if (allowedHosts.size === 0) throw new Error('remote references require at least one explicitly allowed remote host');
     if (resolved.protocol !== 'https:') throw new Error(`remote reference must use HTTPS: ${uri}`);
     if (!allowedHosts.has(resolved.hostname.toLowerCase())) {
       throw new Error(`remote reference host is not allowed: ${resolved.hostname}`);

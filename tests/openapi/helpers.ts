@@ -275,7 +275,6 @@ export async function generateMaterializedSdk(
     output: string;
     name?: string;
     profile?: OpenApiGenerationProfile;
-    allowRemoteRefs?: boolean;
     remoteHosts?: readonly string[];
     maxRefBytes?: number;
     maxRefDocuments?: number;
@@ -296,7 +295,6 @@ export async function generateMaterializedSdk(
     profile: settings.profile,
     ...(settings.hooks ? { hooks: settings.hooks } : {}),
     ...mode,
-    allowRemoteRefs: options.allowRemoteRefs,
     remoteHosts: options.remoteHosts,
     maxRefBytes: options.maxRefBytes,
     maxRefDocuments: options.maxRefDocuments,

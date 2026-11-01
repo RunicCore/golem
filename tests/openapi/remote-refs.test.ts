@@ -26,7 +26,6 @@ async function generateDocument(
   directory: string,
   document: Record<string, unknown>,
   options: {
-    allowRemoteRefs?: boolean;
     remoteHosts?: readonly string[];
     maxRefBytes?: number;
     maxRefDocuments?: number;
@@ -37,7 +36,6 @@ async function generateDocument(
     input: writeOpenApiDocument(directory, document),
     output: path.join(directory, 'sdk'),
     profile: { validation: false },
-    allowRemoteRefs: options.allowRemoteRefs ?? true,
     remoteHosts: options.remoteHosts ?? ['schemas.example'],
     maxRefBytes: options.maxRefBytes,
     maxRefDocuments: options.maxRefDocuments,
@@ -281,7 +279,7 @@ test('local file references cannot escape the input directory by file URL, ../ o
         openapi: '3.2.0',
         info: { title: 'Local parent', version: '1' },
         components: { schemas: { Escaped: { $ref: '../outside.json' } } },
-      }, { allowRemoteRefs: false, remoteHosts: [] });
+      }, { remoteHosts: [] });
     },
     'a symlink to a file outside': async (directory, input) => {
       const outside = path.join(directory, 'outside');
@@ -292,7 +290,7 @@ test('local file references cannot escape the input directory by file URL, ../ o
         openapi: '3.2.0',
         info: { title: 'Local symlink', version: '1' },
         components: { schemas: { Escaped: { $ref: './linked.json' } } },
-      }, { allowRemoteRefs: false, remoteHosts: [] });
+      }, { remoteHosts: [] });
     },
   };
   for (const [spelling, escape] of Object.entries(escapes)) {

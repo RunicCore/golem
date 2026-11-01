@@ -160,7 +160,7 @@ test('anchor fragments into external documents are rejected', async (t) => {
   );
 });
 
-test('a remote ref inside a local file is blocked unless remote refs are allowed', async (t) => {
+test('a remote ref inside a local file is blocked when remoteHosts lists no host', async (t) => {
   const directory = createFixtureProject(t, 'golem-loader-nested-remote-');
   writeOpenApiDocument(directory, { $ref: 'https://schemas.example/y.json' }, 'x.json');
   const document = root({ components: { schemas: { A: { $ref: './x.json' } } } });
@@ -175,15 +175,31 @@ test('a remote ref inside a local file is blocked unless remote refs are allowed
   }
 });
 
-test('allowing remote refs without an allowed host fails before any request', async (t) => {
+test('an empty remoteHosts blocks a remote reference before any request', async (t) => {
   const directory = createFixtureProject(t, 'golem-loader-no-hosts-');
   const document = root({ components: { schemas: { A: { $ref: 'https://schemas.example/y.json' } } } });
   const filename = writeOpenApiDocument(directory, document, 'api.json');
   const restore = failingFetch();
   try {
     await assert.rejects(
-      () => loadReferenceGraph(filename, document, { allowRemoteRefs: true, remoteHosts: [] }),
-      /^Error: remote references require at least one explicitly allowed remote host$/,
+      () => loadReferenceGraph(filename, document, { remoteHosts: [] }),
+      /^Error: remote reference blocked at #\/components\/schemas\/A\/\$ref: https:\/\/schemas\.example\/y\.json; list the hosts in remoteHosts in golem\.yaml to opt in$/,
+    );
+  } finally {
+    restore();
+  }
+});
+
+test('an http reference stops when remoteHosts is not set, and no request is made', async (t) => {
+  // protects: F-176 and R5 no remoteHosts list means no remote reference; the list alone turns them on
+  const directory = createFixtureProject(t, 'golem-loader-http-no-hosts-');
+  const document = root({ components: { schemas: { A: { $ref: 'http://schemas.example/y.json' } } } });
+  const filename = writeOpenApiDocument(directory, document, 'api.json');
+  const restore = failingFetch();
+  try {
+    await assert.rejects(
+      () => loadReferenceGraph(filename, document),
+      /^Error: remote reference blocked at #\/components\/schemas\/A\/\$ref: http:\/\/schemas\.example\/y\.json; list the hosts in remoteHosts in golem\.yaml to opt in$/,
     );
   } finally {
     restore();
@@ -201,7 +217,7 @@ test('a site declared before its absolute-$id target still resolves locally with
   const document = root({
     components: { schemas: { Order: { $ref: './order.json' }, Money: { $ref: './money.json' } } },
   });
-  const graph = await loadWithoutFetch(directory, document, { allowRemoteRefs: true, remoteHosts: ['schemas.example'] });
+  const graph = await loadWithoutFetch(directory, document, { remoteHosts: ['schemas.example'] });
   assert.deepEqual(targetsOf(graph, directory), [
     'schemas ./money.json# preserve=false',
     'schemas ./money.json# preserve=true',
@@ -284,7 +300,6 @@ test('a fetched remote document cannot reference a local file', async (t) => {
   try {
     await assert.rejects(
       () => loadReferenceGraph(filename, document, {
-        allowRemoteRefs: true,
         remoteHosts: ['schemas.example'],
         onInput: (file) => { observed.push(file); },
       }),
@@ -388,7 +403,6 @@ test('a remote document cannot shadow a local file with a file: $id', async (t) 
   );
   try {
     const graph = await loadReferenceGraph(writeOpenApiDocument(directory, document, 'api.json'), document, {
-      allowRemoteRefs: true,
       remoteHosts: ['schemas.example'],
     });
     assert.deepEqual(targetsOf(graph, directory), [

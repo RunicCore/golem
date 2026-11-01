@@ -24,7 +24,7 @@ export type OperationWrapperResult = { readonly wrapper: OperationWrapper } | { 
 export type OperationWrapperParticipant = (mode: 'standalone' | 'golem') => OperationWrapperResult;
 
 const BLOCK_KEYS: readonly string[] = ['sdks', 'extensions'];
-const SDK_KEYS: readonly string[] = ['input', 'output', 'name', 'allowRemoteRefs', 'remoteHosts', 'maxRefBytes', 'maxRefDocuments', 'refTimeoutMs', 'dates', 'mode'];
+const SDK_KEYS: readonly string[] = ['input', 'output', 'name', 'remoteHosts', 'maxRefBytes', 'maxRefDocuments', 'refTimeoutMs', 'dates', 'mode'];
 
 function keys(value: unknown, allowed: readonly string[], label: string): asserts value is Record<string, unknown> {
   if (!isRecord(value)) throw new TypeError(`${label} must be an object.`);
@@ -35,12 +35,6 @@ function keys(value: unknown, allowed: readonly string[], label: string): assert
 
 function nonempty(value: unknown, label: string): string {
   if (typeof value !== 'string' || !value.trim()) throw new TypeError(`${label} must be a nonempty string.`);
-  return value;
-}
-
-function boolean(value: unknown, fallback: boolean, label: string): boolean {
-  if (value === undefined) return fallback;
-  if (typeof value !== 'boolean') throw new TypeError(`${label} must be a boolean.`);
   return value;
 }
 
@@ -79,15 +73,13 @@ export const plan: GolemPlanEntry<OpenApiOptions> = {
       onInput?.(input);
       const output = canonicalPath(path.resolve(directory, nonempty(entry.output, `${label}.output`)));
       if (fs.existsSync(output) && !fs.statSync(output).isDirectory()) throw new Error(`${label}.output must be a directory.`);
-      const allowRemoteRefs = boolean(entry.allowRemoteRefs, false, `${label}.allowRemoteRefs`);
       if (entry.remoteHosts !== undefined && !Array.isArray(entry.remoteHosts)) throw new Error(`${label}.remoteHosts must be an array of nonempty hostnames.`);
       const remoteHosts = (entry.remoteHosts ?? []).map((host: unknown) => nonempty(host, `${label}.remoteHosts`));
-      if (allowRemoteRefs && !remoteHosts.length) throw new Error(`${label}.allowRemoteRefs requires remoteHosts.`);
       if (entry.dates !== undefined && entry.dates !== 'date' && entry.dates !== 'temporal') throw new Error(`${label}.dates must be "date" or "temporal".`);
       if (entry.mode !== undefined && entry.mode !== 'standalone' && entry.mode !== 'golem') throw new Error(`${label}.mode must be "standalone" or "golem".`);
       const mode = entry.mode ?? 'standalone';
       const options: OpenApiOptions = {
-        input, output, profile, allowRemoteRefs, remoteHosts, mode,
+        input, output, profile, remoteHosts, mode,
         ...(entry.name === undefined ? {} : { name: nonempty(entry.name, `${label}.name`) }),
         ...(entry.dates === undefined ? {} : { dates: entry.dates }),
         maxRefBytes: positive(entry.maxRefBytes, 5 * 1024 * 1024, `${label}.maxRefBytes`),

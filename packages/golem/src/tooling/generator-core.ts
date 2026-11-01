@@ -322,7 +322,6 @@ export interface OpenApiContext {
   readonly input: string;
   readonly output: string;
   readonly name?: string;
-  readonly allowRemoteRefs?: boolean;
   readonly remoteHosts?: readonly string[];
   readonly maxRefBytes?: number;
   readonly maxRefDocuments?: number;
