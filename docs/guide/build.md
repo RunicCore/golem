@@ -28,6 +28,8 @@ The plugins and the loader open your project from `golem.yaml`:
 - A plugin uses its `config` option first. Then it reads the `GOLEM_CONFIG` environment variable, then it opens `./golem.yaml`.
 - The loader reads `GOLEM_CONFIG`, then `./golem.yaml`.
 
+When a plugin or the loader runs without dev dependencies, list the packages of the `golem.yaml` blocks in `dependencies`. They read the blocks of `golem.yaml` and need those packages installed.
+
 The plugins and the loader scan your files themselves. They need the generated files to exist. Run `golem generate` once before you use them.
 
 ## Node versions
