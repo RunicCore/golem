@@ -20,11 +20,16 @@ const sharedFeatureSources = ['feature-tags.ts', 'features.model.ts', 'features.
 
 /** Runs the model generator that `golemRoot` built, in a process of its own: the generator is an ES module with top-level await, so a synchronous caller cannot load it. */
 function generateModels(golemRoot: string, project: string, profile: { readonly mobx: boolean; readonly validation: boolean }, manifest: string): void {
+  // A project with `extensions: mobx: {}` gives the generator the fill that the real extension entry gives the hook `model.validatorEnhancer`.
+  const hooks = profile.mobx
+    ? `{ 'model.validatorEnhancer': [{ package: '@exprtlabs/golem-openapi-ts', extension: 'mobx', options: {}, participant: mobxExtension.hooks['model.validatorEnhancer'], use: (call) => call(mobxExtension.hooks['model.validatorEnhancer']) }] }`
+    : 'undefined';
   const script = `
 import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { generate } from ${JSON.stringify(pathToFileURL(path.join(golemRoot, 'packages/golem-model/dist/generator.js')).href)};
-const { artifacts } = generate({ root: ${JSON.stringify(project)}, profile: ${JSON.stringify(profile)}, manifestInputs: [${JSON.stringify(manifest)}] });
+import { extension as mobxExtension } from ${JSON.stringify(pathToFileURL(path.join(golemRoot, 'packages/golem-openapi-ts/dist/mobx/extension.js')).href)};
+const { artifacts } = generate({ root: ${JSON.stringify(project)}, profile: { validation: ${profile.validation} }, hooks: ${hooks}, manifestInputs: [${JSON.stringify(manifest)}] });
 for (const artifact of artifacts) {
   mkdirSync(path.dirname(artifact.path), { recursive: true });
   writeFileSync(artifact.path, artifact.content);
@@ -36,7 +41,7 @@ for (const artifact of artifacts) {
 
 /**
  * `extraFixtures` are directories copied into the project beside the upstream fixtures; the other benchmarks pass none.
- * `mobx` is the generation profile's `mobx` flag: the MobX twins of the typia comparison need a project of their own.
+ * `mobx` stands for `extensions: mobx: {}`: the MobX twins of the typia comparison need a project of their own.
  * `golemRoot` is the checkout whose built golem packages the project generates with and runs against: this checkout by
  * default, the base ref's export for the release check. The fixtures and the harness are always this checkout's.
  */
@@ -59,7 +64,7 @@ export function prepare(directory: string, kind: ProjectKind, extraFixtures: rea
     include: ['src/**/*.ts'],
   }));
   const profile = { mobx, validation: kind !== 'plain' };
-  const manifest = generateFeatureMoneySdk(project, src, { validation: profile.validation, mobx }, path.join(golemRoot, 'packages/golem-openapi-ts/dist/generator.js'));
+  const manifest = generateFeatureMoneySdk(project, src, { validation: profile.validation }, path.join(golemRoot, 'packages/golem-openapi-ts/dist/generator.js'));
   generateModels(golemRoot, project, profile, manifest);
   // The root keeps `ttsc` as a devDependency only for this call: typia's transform is a ttsc plugin. golem's own builds never use it.
   execFileSync(process.execPath, [path.join(root, 'node_modules/ttsc/lib/launcher/ttsc.js'), '-p', path.join(project, 'tsconfig.json')],
