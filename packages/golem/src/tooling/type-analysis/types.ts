@@ -5,7 +5,6 @@ import { assertNoSymbolKey, declaredModelAlias, isDefaultLibraryProperty, isSymb
 import { projectionIdentity } from './graph.js';
 import { aliasProjectionName, isProjectionName, pascalIdentifier, policySuffix, headQualifiers, projectionBaseName, keysReadAlike, safeNameHint, unionVariantNaming } from './projection-names.js';
 import { commonDirectory, canonicalFilename, companionFilename, portableRelativeFilename, type ModelBoundary } from './project.js';
-import { NEST_SWAGGER, decoratorIdentity } from './controller-parameters.js';
 import { packageSpecifier } from './package-specifier.js';
 import { builtinClassDescriptor, type BuiltinClass } from '../builtin-classes.js';
 import { enclosureOf, findBuiltinClass, isGlobalDeclaration } from './builtin-class.js';
@@ -79,30 +78,9 @@ function mapOrSetName(type: ts.Type): string | undefined {
   return name === 'Map' || name === 'Set' || name === 'ReadonlyMap' || name === 'ReadonlySet' ? name : undefined;
 }
 
-/** The RUNM1086 message; only a class field can take the `@ApiProperty` advice. */
-function mapOrSetDtoMessage(where: string, collection: string, decoratable: boolean): string {
-  return `${where} is a ${collection}. JSON writes a ${collection} as {}, so no schema describes it. `
-    + (decoratable ? 'Give the field an @ApiProperty with type, schema or additionalProperties, or use a Record or an array.' : 'Use a Record or an array.');
-}
-
 /** True when the property is declared as a class field, which a decorator can reach; a type literal or interface member has none. */
 function isClassProperty(property: ts.Symbol): boolean {
   return (property.declarations ?? []).some(declaration => ts.isPropertyDeclaration(declaration));
-}
-
-/** True when the property has `@ApiProperty` or `@ApiPropertyOptional` of `@nestjs/swagger` with a `type`, `schema` or `additionalProperties` the user wrote. */
-function carriesExplicitSwaggerSchema(checker: ts.TypeChecker, property: ts.Symbol): boolean {
-  return (property.declarations ?? []).some(declaration => ts.canHaveDecorators(declaration) && (ts.getDecorators(declaration) ?? []).some(decorator => {
-    if (!ts.isCallExpression(decorator.expression)) return false;
-    const { name, packageName } = decoratorIdentity(checker, decorator);
-    if (packageName !== NEST_SWAGGER || (name !== 'ApiProperty' && name !== 'ApiPropertyOptional')) return false;
-    const [options] = decorator.expression.arguments;
-    return options !== undefined && ts.isObjectLiteralExpression(options) && options.properties.some(item => (
-      (ts.isPropertyAssignment(item) || ts.isShorthandPropertyAssignment(item))
-      && (ts.isIdentifier(item.name) || ts.isStringLiteral(item.name))
-      && ['type', 'schema', 'additionalProperties'].includes(item.name.text)
-    ));
-  }));
 }
 
 function propertyTypeNode(checker: ts.TypeChecker, property: ts.Symbol, valueType: ts.Type): ts.TypeNode | undefined {
@@ -697,7 +675,7 @@ function declaredTagTable(
  * Rule: a union of two or more object-like variants declares its tag key. Golem never finds the key in the variants, so an
  * untagged union stops here with RUNM1080, at every position, whatever the variants convert. A variant with its own serde pair is no object,
  * a union of types that only default library files declare (`ArrayBuffer | SharedArrayBuffer`) is not the user's union, and a union in
- * a controller DTO class field (`context.dto`) is Nest's own to document: no model converts it.
+ * a controller DTO class field (`context.dto`) is the controller framework's own to document: no model converts it.
  */
 function rejectUntaggedObjectUnion(
   checker: ts.TypeChecker,
@@ -1379,11 +1357,9 @@ export function descriptorBuilder(
         const collection = mapOrSetName(type);
         if (collection) {
           const where = context.field ? `Field "${context.field}"${context.dto ? '' : ` of ${context.name}`}` : `Type ${context.name}`;
-          // A decorated DTO field that states its own schema never reaches here, and the property loop below stops an undecorated one
-          // with the advice to decorate it; any other Map or Set in a DTO is out of a decorator's reach and has no schema to write.
-          if (context.dto) {
-            throw diagnostic(context.sourceFile, node ?? context.declaration, '1086', mapOrSetDtoMessage(where, collection, false));
-          }
+          // A DTO field whose metadata states its own schema never reaches here, and the property loop below stops an undecorated one
+          // with the advice of the rule; any other Map or Set in a DTO is out of a decorator's reach and has no schema to write.
+          if (context.dtoRule) throw context.dtoRule.mapOrSetError(context.sourceFile, node ?? context.declaration, where, collection, false);
           throw diagnostic(context.sourceFile, node ?? context.declaration, '1004',
             `${where} is a ${collection}, which golem cannot represent. Use a Record or an array.`);
         }
@@ -1454,19 +1430,19 @@ export function descriptorBuilder(
               `Field "${name}" is callable and cannot be represented by ${context.name}.`,
             );
           }
-          // A DTO field with a written Swagger schema is an open object: the schema is the Swagger overlay's to state, and a Map has no field of its own.
+          // A DTO field whose metadata states a schema is an open object: the schema is the overlay's to state, and a Map has no field of its own.
           // An optional field has `undefined` in its type; a `null` member makes a different schema, which this shortcut does not write.
           const present = valueType.isUnion() ? valueType.types.filter(member => (member.flags & ts.TypeFlags.Undefined) === 0) : [valueType];
-          if (context.dto && present.length === 1 && mapOrSetName(present[0]!) && carriesExplicitSwaggerSchema(checker, property)) {
+          if (context.dto && present.length === 1 && mapOrSetName(present[0]!) && context.dtoRule?.statesSchema(checker, property)) {
             properties[name] = { kind: 'object', properties: {}, required: [], additionalProperties: true };
             if (!optional) required.push(name);
             continue;
           }
           const propertyNode = authoredPropertyTypeNode(childNode, name) ?? propertyTypeNode(checker, property, valueType);
-          if (context.dto && present.length === 1 && isClassProperty(property)) {
+          if (context.dtoRule && present.length === 1 && isClassProperty(property)) {
             const collection = mapOrSetName(present[0]!);
             if (collection) {
-              throw diagnostic(context.sourceFile, propertyNode ?? context.declaration, '1086', mapOrSetDtoMessage(`Field "${name}"`, collection, true));
+              throw context.dtoRule.mapOrSetError(context.sourceFile, propertyNode ?? context.declaration, `Field "${name}"`, collection, true);
             }
           }
           const described = describe(

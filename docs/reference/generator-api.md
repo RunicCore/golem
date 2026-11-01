@@ -283,7 +283,7 @@ Usage: [Run the generators from code](/guide/generator-api#check-the-result).
 import type { GolemProvider, ModelContext } from '@exprtlabs/golem/generator-api';
 ```
 
-The subpath is the extension API. It exports the contracts above and the types `GolemExtension`, `RewriteParticipant`, `RewriteParticipantInput`, `RewriteParticipantResult`, `RewriteCore`, `ModelContext`, `OpenApiContext`, `ControllerContext`, `ControllerModels`, `ControllerTag`, `ControllerUriVersioning`, `ControllerUriVersioningType`, `GolemDiagnosticCode`, `ResolvedGolemProfile` and `SourceDiscoveryOptions`. It follows semver, and an extension package keeps its own version.
+The subpath is the extension API. It exports the contracts above and the types `GolemExtension`, `RewriteParticipant`, `RewriteParticipantInput`, `RewriteParticipantResult`, `RewriteCore`, `ModelContext`, `OpenApiContext`, `GolemDiagnosticCode`, `ResolvedGolemProfile` and `SourceDiscoveryOptions`. It follows semver, and an extension package keeps its own version.
 
 | Export | Signature | Behavior |
 | --- | --- | --- |
@@ -349,7 +349,7 @@ Each module exports `apiVersion` (`1`) and `generate`. Usage: [Run the generator
 
 ## `ControllerContext` {#controllercontext}
 
-The context of the generator that writes an OpenAPI document from controllers. Usage: [Generate OpenAPI from controllers](/guide/generator-api#generate-openapi-from-controllers).
+The context of the generator that writes an OpenAPI document from controllers. `@exprtlabs/golem-ts-openapi/generator` exports it with `ControllerModels`, `ControllerTag`, `ControllerUriVersioning` and `ControllerUriVersioningType`. Usage: [Generate OpenAPI from controllers](/guide/generator-api#generate-openapi-from-controllers).
 
 | Field | Required | Default | Effect |
 | --- | --- | --- | --- |

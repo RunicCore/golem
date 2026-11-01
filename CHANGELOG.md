@@ -229,6 +229,8 @@ This file is the complete list of changes. The documentation site's
 - **Breaking:** `@exprtlabs/golem/manifest` no longer exports `manifestMarker`. Nothing in golem called it.
 - **Breaking:** `GolemProfile.validation` has the type `boolean | 'sanity'`, and `resolveProfile` accepts `true`, `false` and `'sanity'`. A generator that tests `profile.validation === true` must treat `'sanity'` as a level that still validates ([Generator API](docs/reference/generator-api.md)).
 
+- **Breaking:** `@exprtlabs/golem/generator-api` no longer exports `ControllerContext`, `ControllerModels`, `ControllerTag`, `ControllerUriVersioning` and `ControllerUriVersioningType`. `@exprtlabs/golem-ts-openapi/generator` exports them. The core decorator reader names no framework package, and the docs job passes the DTO rule (Swagger `@ApiProperty` and the RUNM1086 error for a `Map` or `Set`) as the option `dtoRule` of `createContractAnalysis`.
+
 ### Package subpaths
 
 `@exprtlabs/golem` has 18 public subpaths and 18 under `internal/`.

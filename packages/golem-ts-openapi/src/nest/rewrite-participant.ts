@@ -6,10 +6,8 @@ import type * as ts from '@exprtlabs/golem/internal/ts';
 import { GolemDiagnosticSeverity } from '@exprtlabs/golem/generator-api';
 import type { GolemDiagnostic, GolemExtension, RewriteCore, RewriteParticipantInput, RewriteParticipantResult } from '@exprtlabs/golem/generator-api';
 import { REWRITE_IMPORT_PREFIX, type RewriteEdit } from '@exprtlabs/golem/rewrite';
-import {
-  NEST_COMMON, arrayItemNode, authoredUnionMembers, decoratorCallee, decoratorIdentity, isDiscriminatorTag, modelDeclarationKind, propertyType, readTags,
-  resolvedSymbolAt, serdeTypeName, staticDecoratorKey,
-} from '@exprtlabs/golem/internal/type-analysis';
+import { arrayItemNode, authoredUnionMembers, decoratorCallee, decoratorIdentity, isDiscriminatorTag, modelDeclarationKind, propertyType, readTags, resolvedSymbolAt, serdeTypeName, staticDecoratorKey } from '@exprtlabs/golem/internal/type-analysis';
+import { NEST_COMMON } from './packages.js';
 import { nodeQueryFields } from './query-fields.js';
 
 type TypeScript = typeof ts;
@@ -74,7 +72,7 @@ function nestModelType(ts: TypeScript, typeNode: ts.TypeNode, forReturn: boolean
 /** The `@Body()` or `@Query()` of NestJS that a parameter carries, found by the symbol it resolves to: an aliased or re-exported import is found, a local decorator of the same name is not. */
 function nestParameterDecorator({ ts, checker }: Scope, parameter: ts.ParameterDeclaration): { readonly node: ts.Decorator; readonly name: string } | undefined {
   for (const node of ts.getDecorators(parameter) ?? []) {
-    const { name, packageName } = decoratorIdentity(checker, node);
+    const { name, packageName } = decoratorIdentity(checker, node, [NEST_COMMON]);
     if (packageName === NEST_COMMON && name !== undefined && NEST_PARAMETER_DECORATORS.includes(name)) return { node, name };
   }
   return undefined;

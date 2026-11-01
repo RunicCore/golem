@@ -25,7 +25,6 @@ import type {
   GolemArtifact,
   GolemDiagnostic,
   GolemResult,
-  ControllerContext,
   InputObserver,
   ResolvedGolemProfile,
 } from '@exprtlabs/golem/generator-api';
@@ -39,7 +38,10 @@ import {
   type TsToOpenApiDiagnostic,
 } from './diagnostics.js';
 import { buildDocument, serializeForOutput } from './document.js';
-import { DEFAULT_CONTROLLER_SUFFIXES } from './plan.js';
+import { swaggerDtoRule } from './nest/dto-rule.js';
+import { DEFAULT_CONTROLLER_SUFFIXES, type ControllerContext } from './plan.js';
+
+export type { ControllerContext, ControllerModels, ControllerTag, ControllerUriVersioning, ControllerUriVersioningType } from './plan.js';
 import { validateRouteEvaluationOptions } from './evaluation/dependencies.js';
 import { apiSchemaName } from './nest/metadata.js';
 import { analyzeControllers, discoverControllerSources } from './nest/routes.js';
@@ -479,6 +481,7 @@ function analyzeContracts(
     exact: normalized.exact,
     laterOutputs: normalized.laterOutputs,
     classComponentName: declaration => apiSchemaName(programInfo.program.getTypeChecker(), declaration),
+    dtoRule: swaggerDtoRule,
     // With the models job known, the manifests the program advertises decide which model files are SDK files, as they do for that job.
     // A manifest that a later job writes is not read, as no file under a later output is.
     ...(normalized.boundary ? { boundary: normalized.boundary, manifests: loadModelManifests(normalized.root, programInfo, [], normalized.profile, observe, normalized.laterOutputs) } : {}),

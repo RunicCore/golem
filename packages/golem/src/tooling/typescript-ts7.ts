@@ -3,7 +3,7 @@
  *
  * TS 7's main `typescript` export is version-only. Analysis uses
  * `typescript/ast` plus `typescript/sync` (TypeScript 7.1 and newer). This module keeps
- * the previous checker-shaped API so model and Nest generators do not walk
+ * the previous checker-shaped API so model and controller generators do not walk
  * schemas by hand.
  */
 

@@ -1,6 +1,6 @@
 import * as path from 'node:path';
 import * as ts from '../typescript-ns.js';
-import { collectSpecifications, type ModelSpecification, type TypeAnalysisContext } from './models.js';
+import { collectSpecifications, type DtoRule, type ModelSpecification, type TypeAnalysisContext } from './models.js';
 import { descriptorBuilder, type ModelConversionDescriptor } from './types.js';
 import { byRealPath, companionFilename, filesReadingOutputs, includedModelSources, isGeneratedCompanion, isUnderOutputs, typeScriptErrorAt, type ModelBoundary } from './project.js';
 import { inNodeModules } from './path-identity.js';
@@ -45,6 +45,8 @@ export function createContractAnalysis(
     readonly laterOutputs?: readonly string[];
     /** The component name a class declares for its model, such as `@ApiSchema({ name })`. It renames the OpenAPI component only; the model name and the codec ids stay. */
     readonly classComponentName?: (declaration: ts.ClassDeclaration) => string | undefined;
+    /** How a controller DTO field states its schema in metadata, and the error for a Map or Set in a DTO. Without it a DTO Map or Set stops with RUNM1004. */
+    readonly dtoRule?: DtoRule;
   },
 ): ContractAnalysis {
   const checker = program.getTypeChecker();
@@ -224,7 +226,7 @@ export function createContractAnalysis(
       name: type.aliasSymbol?.getName() ?? type.getSymbol()?.getName() ?? 'controller field',
       ownerName: controllerOwnerName(node),
       fieldsNode: location, fieldsType: type,
-      exact: false, allowAny: undefined, dto: true,
+      exact: false, allowAny: undefined, dto: true, ...(options.dtoRule ? { dtoRule: options.dtoRule } : {}),
     };
     return describe(type, context, undefined, syntax);
   };

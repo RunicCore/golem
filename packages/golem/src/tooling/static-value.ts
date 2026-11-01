@@ -15,8 +15,8 @@ export type StaticValueResult =
   | { readonly ok: false; readonly node: ts.Node; readonly reason: string };
 
 /**
- * A call the caller treats as a compile-time constant, such as Nest Swagger's
- * `getSchemaPath(Model)`. Return undefined for calls it does not recognise.
+ * A call the caller treats as a compile-time constant, such as the
+ * `getSchemaPath(Model)` of a Swagger library. Return undefined for calls it does not recognise.
  */
 export type StaticIntrinsic = (call: ts.CallExpression) => StaticValueResult | undefined;
 

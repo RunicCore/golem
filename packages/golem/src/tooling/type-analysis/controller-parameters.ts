@@ -4,17 +4,10 @@ import { owningPackageName } from './package-specifier.js';
 import { resolveSymbol } from './symbols.js';
 
 /**
- * What the controllers job, the model analysis and the rewrite scan read from NestJS decorators and controller
- * parameters, and nothing they judge: which decorator a node carries, which key it names and which type an array
- * holds. Whether a type is a model stays in each job.
+ * What a package that reads controller decorators takes from them, and nothing it judges: which decorator a node
+ * carries, which key it names and which type an array holds. Whether a type is a model stays in each job. The caller
+ * names the packages whose decorators it reads.
  */
-
-export const NEST_COMMON = '@nestjs/common' as const;
-export const NEST_SWAGGER = '@nestjs/swagger' as const;
-/** The package of golem's own NestJS decorators (`nestModelCodec`, `nestModelUnion`, `nestModelReturn`). */
-export const GOLEM_PACKAGE = '@exprtlabs/golem' as const;
-const DECORATOR_PACKAGES = [NEST_COMMON, NEST_SWAGGER, GOLEM_PACKAGE] as const;
-type DecoratorPackage = (typeof DECORATOR_PACKAGES)[number];
 
 /** The decorator's own expression: the callee of `@Name(...)`, or `Name` of `@Name`. */
 export function decoratorCallee(decorator: ts.Decorator): ts.Expression {
@@ -43,26 +36,26 @@ function importedPackageFromDeclaration(declaration: ts.Declaration): string | u
   return undefined;
 }
 
-function canonicalPackage(source: string | undefined): DecoratorPackage | undefined {
+function canonicalPackage(source: string | undefined, packages: readonly string[]): string | undefined {
   if (!source) return undefined;
-  return DECORATOR_PACKAGES.find((decoratorPackage) => source === decoratorPackage || source.startsWith(`${decoratorPackage}/`));
+  return packages.find((decoratorPackage) => source === decoratorPackage || source.startsWith(`${decoratorPackage}/`));
 }
 
 function calleeSymbol(checker: ts.TypeChecker, expression: ts.Expression): ts.Symbol | undefined {
   return checker.getSymbolAtLocation(ts.isPropertyAccessExpression(expression) ? expression.name : expression);
 }
 
-/** The package an expression's symbol comes from, through an import (also a namespace import), an alias or a re-export. */
-export function decoratorPackageOf(checker: ts.TypeChecker, expression: ts.Expression): DecoratorPackage | undefined {
+/** The one of `packages` that an expression's symbol comes from, through an import (also a namespace import), an alias or a re-export. */
+export function decoratorPackageOf(checker: ts.TypeChecker, expression: ts.Expression, packages: readonly string[]): string | undefined {
   const symbol = calleeSymbol(checker, expression);
   const receiver = ts.isPropertyAccessExpression(expression) ? checker.getSymbolAtLocation(expression.expression) : undefined;
   for (const declaration of [...symbol?.declarations ?? [], ...receiver?.declarations ?? []]) {
-    const decoratorPackage = canonicalPackage(importedPackageFromDeclaration(declaration));
+    const decoratorPackage = canonicalPackage(importedPackageFromDeclaration(declaration), packages);
     if (decoratorPackage) return decoratorPackage;
   }
   // Through a re-export, the package is the one that owns the declaring file, wherever it is installed or mapped to.
   for (const declaration of resolveSymbol(checker, symbol)?.declarations ?? []) {
-    const decoratorPackage = canonicalPackage(owningPackageName(declaration.getSourceFile().fileName));
+    const decoratorPackage = canonicalPackage(owningPackageName(declaration.getSourceFile().fileName), packages);
     if (decoratorPackage) return decoratorPackage;
   }
   return undefined;
@@ -71,15 +64,16 @@ export function decoratorPackageOf(checker: ts.TypeChecker, expression: ts.Expre
 export interface DecoratorIdentity {
   /** The name the decorator is declared with, not the name it is imported or called by. */
   readonly name?: string;
-  readonly packageName?: DecoratorPackage;
+  /** The one of the caller's packages that the decorator comes from. */
+  readonly packageName?: string;
 }
 
-/** Which decorator a node is, by its resolved symbol: an aliased, namespaced or re-exported import is the decorator it resolves to. */
-export function decoratorIdentity(checker: ts.TypeChecker, decorator: ts.Decorator): DecoratorIdentity {
+/** Which decorator a node is, by its resolved symbol: an aliased, namespaced or re-exported import is the decorator it resolves to. A decorator of any other package has no `packageName`. */
+export function decoratorIdentity(checker: ts.TypeChecker, decorator: ts.Decorator, packages: readonly string[]): DecoratorIdentity {
   const expression = decoratorCallee(decorator);
   const symbol = calleeSymbol(checker, expression);
   const name = resolveSymbol(checker, symbol)?.getName() ?? symbol?.getName();
-  const packageName = decoratorPackageOf(checker, expression);
+  const packageName = decoratorPackageOf(checker, expression, packages);
   return { ...(name ? { name } : {}), ...(packageName ? { packageName } : {}) };
 }
 
@@ -87,7 +81,7 @@ export function decoratorIdentity(checker: ts.TypeChecker, decorator: ts.Decorat
 export function staticDecoratorKey(checker: ts.TypeChecker, decorator: ts.Decorator): string | undefined {
   const argument = ts.isCallExpression(decorator.expression) ? decorator.expression.arguments[0] : undefined;
   const key = argument === undefined ? undefined : evaluateStaticValue(checker, argument);
-  // An empty key names no field: Nest and the interceptor read @Body('') as a whole body.
+  // An empty key names no field: the framework reads @Body('') as a whole body.
   return key?.ok === true && typeof key.value === 'string' && key.value !== '' ? key.value : undefined;
 }
 

@@ -6,7 +6,8 @@ import {
   diagnostic,
   type TsToOpenApiDiagnostic,
 } from '../diagnostics.js';
-import { NEST_SWAGGER, findBuiltinClass } from '@exprtlabs/golem/internal/type-analysis';
+import { findBuiltinClass } from '@exprtlabs/golem/internal/type-analysis';
+import { NEST_SWAGGER } from './packages.js';
 import { evaluateStaticValue, isStaticArray, resolveValueSymbol, singleReturnExpression, unwrapExpression } from '@exprtlabs/golem/internal/static-value';
 import { hasDecorator, isTypeScriptBuiltinConstructor, unwrapAsyncType } from './analysis-utils.js';
 import {
