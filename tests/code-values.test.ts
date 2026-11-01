@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
   ImportSource, NameTable, aliased, bindRead, fileImports, code, helper, helperDefinitions, helperName, helperSet, selfPlacedHelper, identifier, importGroups, inputOf, isEmpty, inputSlot, join, literal,
-  localCode, nameOf, nameSlot, propertyKey, render, runtimeImports, sameCode, nest, lineBreak, placeHelpers, runtimeCode,
+  localCode, nameOf, nameSlot, propertyKey, render, runtimeImports, sameCode, nest, lineBreak, packageExport, placeHelpers, runtimeCode,
 } from '#golem/code';
 import { rt, rtType } from '#golem/rt';
 import { runModule } from './support/run-module.js';
@@ -220,4 +220,19 @@ test('a local of generated code has a form that no other name can take, and a pr
   assert.throws(() => localCode('value3' as never), /needs one of the kinds/);
   assert.equal(render(propertyKey('$v3')), '$v3');
   assert.equal(render(identifier('$value')), '$value');
+});
+
+test('an export of a package module is imported from its own specifiers, in the code point order of the import keys', () => {
+  // protects: T-801 core names no package: generated code reaches any package module through packageExport, and the import lines keep the order they had
+  const wrap = packageExport({ key: 'extra', specifier: '@acme/pkg/internal/run', typeSpecifier: '@acme/pkg/api', name: 'wrap' });
+  const wrapped = packageExport({ key: 'extra', specifier: '@acme/pkg/internal/run', typeSpecifier: '@acme/pkg/api', name: 'Wrapped', typeOnly: true });
+  const body = code`${rt.model.registerGeneratedModel} ${wrap} ${wrapped} ${rt.client.ClientRuntime}`;
+  assert.equal(
+    render(join(runtimeImports(body), code`\n`)),
+    "import { ClientRuntime } from '@exprtlabs/golem/internal/client-runtime';\n"
+      + "import { wrap } from '@acme/pkg/internal/run';\nimport type { Wrapped } from '@acme/pkg/api';\n"
+      + "import { registerGeneratedModel } from '@exprtlabs/golem/internal/model-runtime';",
+  );
+  assert.throws(() => packageExport({ key: 'model', specifier: '@acme/pkg', typeSpecifier: '@acme/pkg', name: 'wrap' }), /key of the golem runtime table/);
+  assert.throws(() => runtimeImports(code`${wrap} ${packageExport({ key: 'extra', specifier: '@acme/other', typeSpecifier: '@acme/pkg/api', name: 'again' })}`), /two pairs of specifiers/);
 });
