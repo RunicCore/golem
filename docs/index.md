@@ -41,13 +41,13 @@ hero:
 <code class="home-card-name">@exprtlabs/golem-openapi-ts</code>
 <h3>You have an OpenAPI document</h3>
 <p>You get typed operations and request and response models. The client checks what it sends and what it receives.</p>
-<span class="home-card-foot">devDependencies</span>
+<span class="home-card-foot">devDependencies; dependencies with MobX</span>
 </article>
 <article class="home-card">
 <code class="home-card-name">@exprtlabs/golem-ts-openapi</code>
 <h3>You have server controllers</h3>
 <p>You get an OpenAPI document from controller routes and types. It reads NestJS 11 controllers without starting the app.</p>
-<span class="home-card-foot">devDependencies</span>
+<span class="home-card-foot">devDependencies; dependencies with NestJS</span>
 </article>
 </div>
 
