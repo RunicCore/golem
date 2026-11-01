@@ -8,14 +8,16 @@ The SDK is a client and types. The client checks and converts each request and e
 
 ```sh
 npm install @exprtlabs/golem
-npm install --save-dev @exprtlabs/golem-openapi typescript@~7.1.0-beta
+npm install --save-dev @exprtlabs/golem-openapi-ts typescript@~7.1.0-beta
 ```
+
+With the [MobX extension](/guide/mobx), install `@exprtlabs/golem-openapi-ts` in `dependencies`, because generated files import its MobX runtime.
 
 Requests and responses are validated by default ([validation profiles](/reference/config#validation-profiles)). Choose how to build in [Build tools](/guide/build). Include the generated `sdk/` directory in the TypeScript program that builds your app. Ignore it in git with the other [generated files](/reference/generated-files#gitignore).
 
 ## Point to your OpenAPI document
 
-Add `golem.yaml` at the project root. The example keeps it in `server/`. Paths are relative to this file. `name: Provider` names the client `ProviderClient`. This excerpt leaves out two root keys. The [`mobx`](/reference/config#root-keys) key sets MobX observability for the generated code. The [`validation`](/reference/config#validation-profiles) key sets runtime validation.
+Add `golem.yaml` at the project root. The example keeps it in `server/`. Paths are relative to this file. `name: Provider` names the client `ProviderClient`. This excerpt leaves out two keys. The [`validation`](/reference/config#validation-profiles) root key sets runtime validation. The [`extensions`](/reference/config#mobx-extension) key of the block turns on MobX.
 
 <<< ../../examples/payments/server/golem.yaml#openapi-job
 
@@ -52,7 +54,7 @@ An SDK job has a `mode` key ([SDK modes](/reference/config#sdk-modes)). The call
 
 - A standalone SDK imports nothing from `@exprtlabs/golem`. With `dates: temporal`, install `temporal-polyfill` and load it before the first call.
 - A golem mode SDK needs a `model` block in the same file. Add `mode: golem` to the job.
-- An SDK with `mobx: true` needs `mode: golem` ([MobX and React](/guide/mobx)).
+- An SDK in a block with the `mobx` extension needs `mode: golem` ([MobX and React](/guide/mobx)).
 
 ## First call
 

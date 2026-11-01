@@ -13,9 +13,9 @@ import type {
 import { buildCodecValidationPlan, compileLevel, compileSdkValidators, type CodecSchemaClosureEntry } from '@exprtlabs/golem/internal/validation-plan';
 import { GolemDiagnosticSeverity, compareText, isInsideDirectory, resolveProfile, type GolemDiagnostic, type ResolvedGolemProfile } from '@exprtlabs/golem/generator-api';
 import { canonicalPath, displayPath } from '@exprtlabs/golem/internal/generator-support';
-import { CODEC_DATA_HOOK, DEFAULT_MODEL_SUFFIXES, MODEL_BLOCK, outsideModelsRootMessage, type CodecDataParticipant } from './plan.js';
+import { CODEC_DATA_HOOK, DEFAULT_MODEL_SUFFIXES, MODEL_BLOCK, outsideModelsRootMessage, VALIDATOR_ENHANCER_HOOK, type CodecDataParticipant, type ValidatorEnhancerParticipant } from './plan.js';
 import { codecKeysPath, defaultModelOutput } from '@exprtlabs/golem/internal/generated-paths';
-import { AmbiguousUnionConversionError, ObjectUnionDiscriminatorError, reachesRecursiveNode } from '@exprtlabs/golem/internal/emitter';
+import { AmbiguousUnionConversionError, ObjectUnionDiscriminatorError, reachesRecursiveNode, type Code } from '@exprtlabs/golem/internal/emitter';
 import { emitCodecDeclarationTable } from '@exprtlabs/golem/internal/schema-graph';
 import {
   analyzeSourceGraph,
@@ -98,7 +98,7 @@ interface NormalizedContext {
 function validateContext(context: GolemModelContext): NormalizedContext {
   const root = assertGeneratorRoot(context);
   if (!context.profile || typeof context.profile !== 'object' || Array.isArray(context.profile)) {
-    throw new TypeError('context.profile is required and must be an object with mobx and validation.');
+    throw new TypeError('context.profile is required and must be an object with validation.');
   }
   const profile = resolveProfile(context.profile);
   const output = assertAbsolute(
@@ -169,6 +169,20 @@ function codecDataOf(hooks: HookParticipants | undefined): ((graph: SchemaGraph,
     }
     return Object.keys(data).length === 0 ? undefined : data;
   };
+}
+
+function isValidatorEnhancerParticipant(participant: unknown): participant is ValidatorEnhancerParticipant {
+  return typeof participant === 'function';
+}
+
+/** The Code of the enhancer that the extension on `model.validatorEnhancer` offers, or undefined for none. Two extensions on it are a configuration error. */
+function validatorEnhancerOf(hooks: HookParticipants | undefined): Code | undefined {
+  const fills = hooks?.[VALIDATOR_ENHANCER_HOOK] ?? [];
+  if (fills.length > 1) throw new Error(`Two extensions fill the hook "${VALIDATOR_ENHANCER_HOOK}": ${fills.map((fill) => fill.package).join(', ')}. Turn one off.`);
+  return fills[0]?.use((participant) => {
+    if (!isValidatorEnhancerParticipant(participant)) throw new TypeError(`it fills the hook "${VALIDATOR_ENHANCER_HOOK}" with ${typeof participant}, not a function`);
+    return participant();
+  });
 }
 
 /** A job without model files still watches the project, so a model file added later is seen. */
@@ -622,6 +636,7 @@ export function generate(context: GolemModelContext): GolemModelResult {
     artifacts.push({ path: sdk.codecsFile, content: sdkCodecsSource(sdk, sdkGraphs[index]!, validators && { file: validatorsOutput, compiled: validators }, normalized.profile) });
   }
   const codecData = codecDataOf(normalized.hooks);
+  const validatorEnhancer = validatorEnhancerOf(normalized.hooks);
   for (const { graph, schemaGraph, siblingWireCodecIds, siblingRecursion, cyclicSiblings } of graphSchemaPairs) {
     const { source, output } = graph;
     const content = withUnionDiscriminatorCode(source, () => emitSource(
@@ -638,6 +653,7 @@ export function generate(context: GolemModelContext): GolemModelResult {
         sdkCodecs: sdks.map((sdk, index) => ({ file: sdk.codecsFile, graph: sdkGraphs[index]!.graph, types: sdkOwnTypes(manifestIndex, sdk.manifest) })),
       },
       codecData,
+      validatorEnhancer,
     ));
     if (content !== undefined) artifacts.push({ path: output, content });
   }

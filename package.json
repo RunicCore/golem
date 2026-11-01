@@ -11,7 +11,7 @@
     "node": ">=22.15.0"
   },
   "scripts": {
-    "build": "npm run build -w @exprtlabs/golem && tsc -p packages/golem-model/tsconfig.json && tsc -p packages/golem-openapi/tsconfig.json && tsc -p packages/golem-ts-openapi/tsconfig.json",
+    "build": "npm run build -w @exprtlabs/golem && tsc -p packages/golem-model/tsconfig.json && tsc -p packages/golem-openapi-ts/tsconfig.json && tsc -p packages/golem-ts-openapi/tsconfig.json",
     "build:tests": "npm run build && npm run build:scripts && node .build/scripts/clean-tests.js && tsc -p tsconfig.tests.json",
     "build:scripts": "tsc -p tsconfig.scripts.json",
     "vendor:openapi-schemas": "npm run build:scripts && node .build/scripts/vendor-openapi-schemas.js",
@@ -24,8 +24,8 @@
     "test:prepare": "bash scripts/test-runner/run.sh prepare",
     "test:native": "npm run build:tests && node .build/scripts/test-tier.js full --native",
     "generate:examples": "npm run build && npm run build:scripts && node .build/scripts/examples.js generate",
-    "generate:openapi-compliance": "npm run build:scripts && node .build/packages/golem-openapi/compliance/generate-matrix.js",
-    "check:openapi-compliance": "npm run build:scripts && node .build/packages/golem-openapi/compliance/generate-matrix.js --check",
+    "generate:openapi-compliance": "npm run build:scripts && node .build/packages/golem-openapi-ts/compliance/generate-matrix.js",
+    "check:openapi-compliance": "npm run build:scripts && node .build/packages/golem-openapi-ts/compliance/generate-matrix.js --check",
     "docs:dev": "vitepress dev docs",
     "docs:build": "npm run generate:openapi-compliance && vitepress build docs",
     "docs:check": "bash scripts/test-runner/run.sh docs",
@@ -66,7 +66,7 @@
   },
   "imports": {
     "#golem/*": "./packages/golem/dist/tooling/*.js",
-    "#openapi/*": "./packages/golem-openapi/dist/*.js",
+    "#openapi/*": "./packages/golem-openapi-ts/dist/*.js",
     "#model/*": "./packages/golem-model/dist/*.js",
     "#controllers/*": "./packages/golem-ts-openapi/dist/*.js"
   },
@@ -130,7 +130,7 @@
           "src/**/*.ts"
         ]
       },
-      "packages/golem-openapi": {
+      "packages/golem-openapi-ts": {
         "entry": [
           "compliance/generate-matrix.ts"
         ],
@@ -149,9 +149,6 @@
         ],
         "project": [
           "**/*.{ts,tsx,js}"
-        ],
-        "ignoreDependencies": [
-          "@exprtlabs/golem-openapi"
         ]
       }
     },
@@ -164,7 +161,7 @@
     "path": [
       "packages/golem/src",
       "packages/golem-model/src",
-      "packages/golem-openapi/src",
+      "packages/golem-openapi-ts/src",
       "packages/golem-ts-openapi/src",
       "scripts",
       "tests",

@@ -163,7 +163,7 @@ after(() => {
 });
 
 function loadItemsClient(profile: OpenApiGenerationProfile): Promise<ItemsClientModule> {
-  const key = `mobx=${profile.mobx},validation=${profile.validation}`;
+  const key = `mobx=${profile.mobx ?? false},validation=${profile.validation}`;
   const cached = itemsClients.get(key);
   if (cached) return cached;
   const loaded = generateItemsClient(profile);
@@ -193,7 +193,7 @@ async function generateItemsClient(profile: OpenApiGenerationProfile): Promise<I
 }
 
 test('generated factory is inert, reusable, and reads auth at execute time', async (t) => {
-  const { Client, output } = await loadItemsClient({ mobx: false, validation: true });
+  const { Client, output } = await loadItemsClient({ validation: true });
   copyFixtureFile(output, "openapi/api-operation/loading-boundary.ts", "loading-boundary.ts");
   compileGeneratedSdk(output, [path.join(output, 'loading-boundary.ts')], { noEmit: true, strict: true });
 
@@ -547,7 +547,7 @@ test('operation names that collide with the factory remain reserved', async (t) 
       }),
       output: path.join(directory, 'sdk'),
       name: 'Reserved',
-      profile: { mobx: false, validation: false },
+      profile: { validation: false },
     }),
     /createApiOperation/,
   );

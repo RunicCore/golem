@@ -25,7 +25,7 @@ export interface BuildInput {
   readonly loadAverage?: { readonly start: readonly number[]; readonly end: readonly number[] };
 }
 
-const PACKAGE_NAMES = ['@exprtlabs/golem', '@exprtlabs/golem-model', '@exprtlabs/golem-openapi', 'typescript', 'typia', 'class-transformer', 'class-validator', 'zod', 'ajv'] as const;
+const PACKAGE_NAMES = ['@exprtlabs/golem', '@exprtlabs/golem-model', '@exprtlabs/golem-openapi-ts', 'typescript', 'typia', 'class-transformer', 'class-validator', 'zod', 'ajv'] as const;
 
 function opsPerSecond(sample: BatchSample): number {
   return sample.iterations * 1000 / sample.elapsedMs;

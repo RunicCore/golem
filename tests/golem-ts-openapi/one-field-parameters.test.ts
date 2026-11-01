@@ -144,7 +144,7 @@ for (const openapiVersion of ['3.2.0', '3.1.2'] as const) {
       prefix: 'golem-one-field-shape-',
       source: `import { Body, Controller, Get, Post, Query } from '@nestjs/common';\nimport { ApiBody, ApiProperty } from '@nestjs/swagger';\n${MODEL}class NoteDto { @ApiProperty() text!: string; }\n@Controller('a')\nexport class AController {\n${methods}\n}\n`,
     });
-    const result = await generate({ root, output: path.join(root, 'openapi.json'), openapiVersion, info: { title: 'T', version: '1' }, profile: { mobx: false, validation: false } });
+    const result = await generate({ root, output: path.join(root, 'openapi.json'), openapiVersion, info: { title: 'T', version: '1' }, profile: { validation: false } });
     const document = JSON.parse(result.artifacts[0]!.content) as { paths: Record<string, Record<string, Operation>> };
     const problems = validateOpenApiDocument(document);
     assert.deepEqual(problems, [], formatOpenApiProblems(problems, pointer => pointer));
@@ -161,7 +161,7 @@ test('OpenAPI 3.1 documents a named model query beside a whole query as a deepOb
     prefix: 'golem-one-field-mixed-',
     source: `import { Controller, Get, Query } from '@nestjs/common';\n${MODEL}@Controller('a')\nexport class AController {\n  @Get() list(@Query() whole: TFilter, @Query('filter') filter: TFilter): void {}\n}\n`,
   });
-  const result = await generate({ root, output: path.join(root, 'openapi.json'), openapiVersion: '3.1.2', info: { title: 'T', version: '1' }, profile: { mobx: false, validation: false } });
+  const result = await generate({ root, output: path.join(root, 'openapi.json'), openapiVersion: '3.1.2', info: { title: 'T', version: '1' }, profile: { validation: false } });
   const document = JSON.parse(result.artifacts[0]!.content) as { paths: Record<string, Record<string, Operation>> };
   const problems = validateOpenApiDocument(document);
   assert.deepEqual(problems, [], formatOpenApiProblems(problems, pointer => pointer));

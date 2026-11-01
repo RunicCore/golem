@@ -23,6 +23,14 @@
         },
         "additionalProperties": false
       }
+    },
+    "extensions": {
+      "description": "The extensions that the block turns on. An entry turns an extension on; an empty entry takes its defaults.",
+      "type": "object",
+      "properties": {
+        "mobx": { "description": "MobX: observable SDK operations (mode golem) and observable validators of class models.", "type": ["object", "null"], "additionalProperties": false }
+      },
+      "additionalProperties": false
     }
   },
   "additionalProperties": false

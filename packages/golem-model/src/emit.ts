@@ -6,6 +6,7 @@ import {
   emitModelFromJSON,
   blockComment,
   isCode,
+  packageKeysOf,
   runtimeLinesOf,
   MODEL_IMPORT_ORDER,
   wrapRootConversion,
@@ -1046,6 +1047,8 @@ interface EmitContext {
   readonly appOutputs: AppOutputs;
   /** The data that extensions add to the codec of a node, by extension name (`CodecRuntimeOptions.codecData`). */
   readonly codecData?: CodecDataCallback;
+  /** The Code of the enhancer that the extension on `model.validatorEnhancer` offers. */
+  readonly validatorEnhancer?: Code;
   readonly sdkNodes: SdkNodeCodecs;
   readonly graph: SourceModelGraph;
   readonly schemaGraph: SchemaGraph;
@@ -1183,6 +1186,7 @@ function buildEmitContext(
   siblingCodecs: SiblingCodecOptions,
   appOutputs: AppOutputs,
   codecData: CodecDataCallback | undefined,
+  validatorEnhancer: Code | undefined,
 ): EmitContext {
   const { definitions, registry } = graph;
   const { cyclicSiblings } = siblingCodecs;
@@ -1252,7 +1256,7 @@ function buildEmitContext(
     cyclicSiblings, serdeBindings, serdeNames, classEntries, classNames,
   );
   return {
-    source, output, checker, profile, siblingCodecs, appOutputs, codecData, sdkNodes: sdkNodeCodecs(appOutputs.sdkCodecs, output), graph, schemaGraph,
+    source, output, checker, profile, siblingCodecs, appOutputs, codecData, ...(validatorEnhancer === undefined ? {} : { validatorEnhancer }), sdkNodes: sdkNodeCodecs(appOutputs.sdkCodecs, output), graph, schemaGraph,
     local, localNames, fileLocalNames, classModelNames, objectOnlyNames, siblingObjects, siblingObjectNames, localImports,
     concreteNames, linkedByName, referenceNames, projectionNames, identityProjections, imports,
     serdeBindings, serdeNames,
@@ -1574,12 +1578,13 @@ function buildFieldEmissions(context: EmitContext, resolvers: ModelResolvers): M
   });
 }
 
-/** A class model registers the MobX validator hook when the app validates it and uses MobX. */
-function observesValidator(context: EmitContext, specification: ModelSpecification): boolean {
-  return context.profile.mobx && (specification.validation ?? context.profile.validation) !== false;
+/** The lines of the `enhanceValidator` property of a class model: the enhancer that an extension offers, when the app validates the model. */
+function validatorEnhancerLines(context: EmitContext, specification: ModelSpecification): readonly Code[] {
+  return context.validatorEnhancer !== undefined && (specification.validation ?? context.profile.validation) !== false ? [code`  enhanceValidator: ${context.validatorEnhancer},`] : [];
 }
 
 const BLANK = code``;
+
 
 /** The serde functions the file calls: each import, typed `unknown` to `unknown`. */
 function emitSerdeFunctions(context: EmitContext): Piece[] {
@@ -1691,7 +1696,7 @@ function emitClassModel(context: EmitContext, emission: ModelFieldEmission): Pie
     code`  },`,
     code`  codecId: ${codecId},`,
     code`  profile: { validation: ${literal(specification.validation ?? profile.validation)} },`,
-    ...(observesValidator(context, specification) ? [code`  enhanceValidator: ${rt['mobx-validation'].enhanceValidatorWithMobX},`] : []),
+    ...validatorEnhancerLines(context, specification),
     // A model with a dynamic map, or an explicit additionalProperties true, has no program state: the keys outside its
     // fields are data. A default-open model declares none, so its other own keys are program state.
     ...(definition.kind === 'object' && (typeof definition.additionalProperties === 'object' || definition.additionalPropertiesDeclared) ? [code`  additionalProperties: true,`] : []),
@@ -1806,12 +1811,12 @@ function emitCodecSection(context: EmitContext): CodecSection {
   };
 }
 
-/** The order of the names in each import line of a model file. */
+/** The runtime modules of a model file and the order of the names in each import line; the package modules of the extensions that filled its hooks follow the core modules. */
 const IMPORT_OPTIONS: ImportOptions = {
   typeNames: 'inline',
-  modules: ['model', 'conversion', 'serde', 'mobx-validation', 'temporal'],
   order: MODEL_IMPORT_ORDER,
 };
+const RUNTIME_MODULES = ['model', 'conversion', 'serde', 'temporal'] as const;
 
 /** Writes the model file of one source: one section after another, in the order of the file. */
 export function emitSource(
@@ -1825,8 +1830,9 @@ export function emitSource(
   siblingCodecs: SiblingCodecOptions = {},
   appOutputs: AppOutputs = {},
   codecData?: CodecDataCallback,
+  validatorEnhancer?: Code,
 ): string | undefined {
-  const context = buildEmitContext(source, output, checker, specifications, profile, graph, preparedSchemaGraph, siblingCodecs, appOutputs, codecData);
+  const context = buildEmitContext(source, output, checker, specifications, profile, graph, preparedSchemaGraph, siblingCodecs, appOutputs, codecData, validatorEnhancer);
   const projections = buildProjections(context);
   const emissions = buildFieldEmissions(context, modelResolvers(context, projections.helpers));
   const codecs = emitCodecSection(context);
@@ -1840,14 +1846,15 @@ export function emitSource(
   ];
   // What the file calls decides its imports and which helpers it defines: a helper stands where its definition goes.
   const calls = join(pieces.filter(isCode), code`\n`);
-  const runtimeLines = runtimeLinesOf(calls, IMPORT_OPTIONS);
+  const extensionModules = packageKeysOf(calls);
+  const runtimeLines = runtimeLinesOf(calls, { ...IMPORT_OPTIONS, modules: [...RUNTIME_MODULES, ...extensionModules] });
   const otherSources = [...codecs.sources, ...context.imports.classSources, ...context.imports.sources];
   const lines: readonly Code[] = [
     blockComment(`Generated by @exprtlabs/golem-model ${PACKAGE_VERSION}. Do not edit.`),
     ...fileImports(calls, codecs.sources, { quote: '"', elsewhere: otherSources }),
     ...runtimeLines('model', 'conversion'),
     ...fileImports(calls, context.imports.classSources, { quote: '"', elsewhere: otherSources }),
-    ...runtimeLines('serde', 'temporal', 'mobx-validation'),
+    ...runtimeLines('serde', 'temporal', ...extensionModules),
     ...context.imports.siblingCompanions,
     ...fileImports(calls, context.imports.sources, { quote: '"', elsewhere: otherSources }),
     BLANK,

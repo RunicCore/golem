@@ -24,7 +24,6 @@ const ROOT_PROPERTIES: JsonObject = {
   allowAny: { type: 'boolean', default: false, description: 'Permit fields typed any or unknown in models.' },
   exact: { type: 'boolean', default: true, description: 'Reject extra properties in models.' },
   unknownFormats: { enum: ['warn', 'error'], default: 'error', description: 'The action for a schema format that golem does not check.' },
-  mobx: { type: 'boolean', default: false, description: 'MobX observability hooks.' },
 };
 
 /** The names of the root keys, in schema order. */

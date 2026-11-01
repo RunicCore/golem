@@ -1,7 +1,8 @@
-// The plan entry of golem-openapi (`golem.plan`): it reads the `openapi-ts` block of golem.yaml and declares one job for each entry of `sdks`. It is light: it imports no TypeScript, no yaml and no generator code.
+// The plan entry of golem-openapi-ts (`golem.plan`): it reads the `openapi-ts` block of golem.yaml and declares one job for each entry of `sdks`. It is light: it imports no TypeScript, no yaml and no generator code.
 import fs from 'node:fs';
 import path from 'node:path';
-import type { CodecsHostValue, GolemPlanEntry, JobFacts, OpenApiContext, PlanContext, PlannedJob } from '@exprtlabs/golem/generator-api';
+import type { Code } from '@exprtlabs/golem/internal/emitter';
+import type { CodecsHostValue, GolemDiagnostic, GolemPlanEntry, JobFacts, OpenApiContext, PlanContext, PlannedJob } from '@exprtlabs/golem/generator-api';
 import { canonicalPath, CODECS_HOST, isRecord, sdkCodecsFile } from '@exprtlabs/golem/internal/plan-support';
 
 /** What the generator receives: the context of an SDK job without what the host adds. */
@@ -10,7 +11,19 @@ export type OpenApiOptions = Omit<OpenApiContext, 'onInput'>;
 /** The hook where an extension wraps the operations that an SDK job emits. Its participant type belongs to this package. */
 export const OPERATION_WRAPPER_HOOK = 'client.operationWrapper';
 
-const BLOCK_KEYS: readonly string[] = ['sdks'];
+/** What an extension on `client.operationWrapper` makes of the operations: the type each operation function returns and the function that creates it. */
+export interface OperationWrapper {
+  readonly operationType: Code;
+  readonly createOperation: Code;
+}
+
+/** The answer of a participant of `OPERATION_WRAPPER_HOOK`: the wrapper, or the diagnostic that stops the job for the mode it was asked about. */
+export type OperationWrapperResult = { readonly wrapper: OperationWrapper } | { readonly diagnostic: GolemDiagnostic };
+
+/** The participant of `OPERATION_WRAPPER_HOOK`. It takes the mode of the SDK job. At most one extension fills the hook. */
+export type OperationWrapperParticipant = (mode: 'standalone' | 'golem') => OperationWrapperResult;
+
+const BLOCK_KEYS: readonly string[] = ['sdks', 'extensions'];
 const SDK_KEYS: readonly string[] = ['input', 'output', 'name', 'allowRemoteRefs', 'remoteHosts', 'maxRefBytes', 'maxRefDocuments', 'refTimeoutMs', 'dates', 'mode'];
 
 function keys(value: unknown, allowed: readonly string[], label: string): asserts value is Record<string, unknown> {
@@ -46,8 +59,17 @@ function sdksOf(block: unknown): readonly unknown[] {
   return block.sdks;
 }
 
+/** The settings of the extensions the block turns on. Core has checked that each name is registered; the package checks what each holds. */
+function checkExtensions(block: unknown): void {
+  if (!isRecord(block) || block.extensions === undefined) return;
+  if (!isRecord(block.extensions)) throw new TypeError('openapi-ts.extensions must be an object.');
+  const mobx = block.extensions.mobx;
+  if (mobx !== undefined && mobx !== null) keys(mobx, [], 'openapi-ts.extensions.mobx');
+}
+
 export const plan: GolemPlanEntry<OpenApiOptions> = {
   declare({ directory, profile, block, onInput }: PlanContext): readonly PlannedJob<OpenApiOptions>[] {
+    checkExtensions(block);
     return sdksOf(block).map((entry, index): PlannedJob<OpenApiOptions> => {
       const label = `openapi-ts.sdks[${index}]`;
       keys(entry, SDK_KEYS, label);

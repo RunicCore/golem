@@ -19,7 +19,7 @@ for (const mode of ['conversion-only', 'validating'] as const) {
       prefix: 'golem-serde-features-',
       linkWorkspaceNodeModules: true,
       // The workspace node_modules holds the package; the project lists it so the `openapi-ts` block finds it.
-      packages: { '@exprtlabs/golem-openapi': path.join(workspace, 'packages/golem-openapi') },
+      packages: { '@exprtlabs/golem-openapi-ts': path.join(workspace, 'packages/golem-openapi-ts') },
       compilerOptions: { types: ['node'] },
     });
     copyFixture(root, 'models/serde-features');

@@ -2,6 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { GolemPlanEntry, JobFacts, ModelBoundaryValue, CodecsHostValue, ModelContext, PlanContext, PlannedJob } from '@exprtlabs/golem/generator-api';
+import type { Code } from '@exprtlabs/golem/internal/emitter';
 import type { SchemaGraph, SchemaNode } from '@exprtlabs/golem/internal/schema-graph';
 import { defaultModelOutput } from '@exprtlabs/golem/internal/generated-paths';
 import { canonicalPath, checkedSuffixes, CODECS_HOST, displayPath, isInsideDirectory, isRecord, MODEL_BOUNDARY } from '@exprtlabs/golem/internal/plan-support';
@@ -14,6 +15,12 @@ export const MODEL_BLOCK = 'model';
 
 /** The hook where an extension changes the code the model job emits for a validator. Its participant type belongs to this package. */
 export const VALIDATOR_ENHANCER_HOOK = 'model.validatorEnhancer';
+
+/**
+ * The participant of `VALIDATOR_ENHANCER_HOOK`. It takes nothing and returns the Code of the enhancer function that a class model passes as `enhanceValidator`,
+ * which the generated file calls with each validator of a model that validates. At most one extension fills the hook.
+ */
+export type ValidatorEnhancerParticipant = () => Code;
 
 /** The hook where an extension adds data, keyed by its name, to the codec the model job emits. Its participant type is `CodecDataParticipant`. */
 export const CODEC_DATA_HOOK = 'model.codecData';

@@ -71,7 +71,7 @@ function writeApp(app: string, shared: string, name: string, profile: string, so
   const toShared = relativeSpecifier(path.join(app, 'src'), shared);
   const toOuter = relativeSpecifier(app, path.dirname(shared));
   const files: Record<string, string> = {
-    'package.json': JSON.stringify({ name, private: true, type: 'module', dependencies: { '@exprtlabs/golem': '*', '@exprtlabs/golem-model': '*' } }),
+    'package.json': JSON.stringify({ name, private: true, type: 'module', dependencies: { '@exprtlabs/golem': '*', '@exprtlabs/golem-model': '*', '@exprtlabs/golem-openapi-ts': '*' } }),
     'golem.yaml': `version: 1\n${profile}model: {}\n`,
     'tsconfig.json': JSON.stringify({
       compilerOptions: { strict: true, target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', skipLibCheck: true, declaration: true, sourceMap: true, outDir: 'build', rootDir: toOuter },
@@ -95,7 +95,7 @@ export function sharedFolderProject(t: TestContext, name: string): SharedFolderP
     { path: path.join(shared, 'package.json'), content: JSON.stringify({ type: 'module' }) },
     { path: path.join(shared, 'src/money.ts'), content: MONEY },
   ]);
-  writeApp(appA, shared, 'app-a', 'mobx: true\nvalidation: true\n', (toShared) => ({ 'src/order.model.ts': ORDER(toShared), 'src/site.ts': SITE_A }));
+  writeApp(appA, shared, 'app-a', 'validation: true\nopenapi-ts:\n  extensions:\n    mobx: {}\n', (toShared) => ({ 'src/order.model.ts': ORDER(toShared), 'src/site.ts': SITE_A }));
   writeApp(appB, shared, 'app-b', 'validation: false\n', (toShared) => ({ 'src/money.model.ts': MONEY_B(toShared), 'src/site.ts': SITE_B }));
   return { outer, shared, appA, appB };
 }

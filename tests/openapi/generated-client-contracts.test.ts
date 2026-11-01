@@ -19,8 +19,8 @@ import {
 } from './helpers.js';
 
 const validationProfiles: readonly OpenApiGenerationProfile[] = [
-  { mobx: false, validation: false },
-  { mobx: false, validation: true },
+  { validation: false },
+  { validation: true },
 ];
 
 const okEmpty = { 204: { description: 'ok' } };
@@ -475,7 +475,7 @@ after(() => {
 });
 
 function loadContractClient(profile: OpenApiGenerationProfile): Promise<GeneratedClientClass> {
-  const key = `mobx=${profile.mobx},validation=${profile.validation}`;
+  const key = `mobx=${profile.mobx ?? false},validation=${profile.validation}`;
   const cached = contractClients.get(key);
   if (cached) return cached;
   const loaded = generateContractClient(profile);
@@ -517,7 +517,7 @@ function fetchExpectingAuthorization(expected: string): (url: string | URL | Req
 }
 
 test('own configured auth keys are required before providers run, including special names', async () => {
-  const Client = await loadContractClient({ mobx: false, validation: false });
+  const Client = await loadContractClient({ validation: false });
   const inherited = Object.create({
     toString() {
       return 'inherited-token';
@@ -599,7 +599,7 @@ test('own configured auth keys are required before providers run, including spec
 });
 
 test('media essence selects builtins and custom codecs without depending on insertion order', async () => {
-  const Client = await loadContractClient({ mobx: false, validation: false });
+  const Client = await loadContractClient({ validation: false });
   const captured: Array<{ path: string; contentType: string | null; body: string | null; form: boolean }> = [];
   const builtin = new Client({
     baseUrl: 'https://api.example',
@@ -743,7 +743,7 @@ test('media essence selects builtins and custom codecs without depending on inse
 
 test('non-string text schemas require selected-path codecs for every validation profile', async () => {
   for (const validation of [false, true]) {
-    const Client = await loadContractClient({ mobx: false, validation });
+    const Client = await loadContractClient({ validation });
     let fetchCount = 0;
     const missing = new Client({
       baseUrl: 'https://api.example',
@@ -915,7 +915,7 @@ test('non-string text schemas require selected-path codecs for every validation 
 });
 
 test('response header decoding strips only SP/HTAB around list tokens and keeps own __proto__', async () => {
-  const Client = await loadContractClient({ mobx: false, validation: false });
+  const Client = await loadContractClient({ validation: false });
   const client = new Client({
     baseUrl: 'https://api.example',
     fetchImpl: async () => new Response('{}', {
@@ -1021,7 +1021,7 @@ test('unsupported HTTP Digest authentication fails generation without Bearer fal
     },
   }));
   await assert.rejects(
-    () => generate({ input, output: path.join(directory, 'sdk'), profile: { mobx: false, validation: false } }),
+    () => generate({ input, output: path.join(directory, 'sdk'), profile: { validation: false } }),
     /unsupported HTTP authentication scheme "Digest"/,
   );
 });

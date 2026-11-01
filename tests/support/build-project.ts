@@ -13,7 +13,7 @@ import { createModelProject } from '../model-project.js';
 import { command, golem, workspace } from './process.js';
 
 export const TSC = path.join(resolveTypeScript(process.env.GOLEM_TYPESCRIPT_ROOT ?? workspace).packageDir, 'bin/tsc');
-const PROFILE = { mobx: false, validation: true } as const;
+const PROFILE = { validation: true } as const;
 
 // Fixture projects
 

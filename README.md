@@ -22,7 +22,7 @@ npm install --save-dev @exprtlabs/golem-model typescript@~7.1.0-beta
 Or, for an existing OpenAPI document:
 
 ```sh
-npm install --save-dev @exprtlabs/golem-openapi typescript@~7.1.0-beta
+npm install --save-dev @exprtlabs/golem-openapi-ts typescript@~7.1.0-beta
 ```
 
 Or, for NestJS controllers only:
@@ -34,6 +34,10 @@ npm install --save-dev @exprtlabs/golem-ts-openapi typescript@~7.1.0-beta
 An app that registers `NestModelInterceptor` imports
 `@exprtlabs/golem-ts-openapi/nest` at run time, so it installs that package
 without `--save-dev` ([the `nest` extension](docs/reference/config.md#nest-extension)).
+
+An app with the `mobx` extension imports `@exprtlabs/golem-openapi-ts/mobx` at
+run time, so it installs that package without `--save-dev`, with `mobx`
+([the `mobx` extension](docs/reference/config.md#mobx-extension)).
 
 ## Documentation
 

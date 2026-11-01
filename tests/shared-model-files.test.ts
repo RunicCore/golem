@@ -17,7 +17,7 @@ import { scanProject } from '#golem/rewrite-scan';
 import { collectSpecifications, companionFilename, createProgram, isOwnModelFile, loadModelManifests, modelBoundary, modelSpecificationForClass } from '@exprtlabs/golem/internal/type-analysis';
 
 const workspace = fileURLToPath(new URL('../../', import.meta.url));
-const PROFILE = { mobx: false, validation: false };
+const PROFILE = { validation: false };
 const CUSTOMER = tsSource`import type { IModel } from '@exprtlabs/golem/model';
 import type { MinLength } from '@exprtlabs/golem/tags';
 export type TCustomer = IModel<{ name: string & MinLength<3> }>;
@@ -176,7 +176,7 @@ test('two apps with different profiles each write the companion of a shared alia
   const worker = appWithShared(outer, 'worker', false, { 'src/order.model.ts': SHARED_ORDER('../../shared/customer.model.js'), 'src/customer.ts': SHARED_CUSTOMER_BASE });
 
   for (const [root, validation] of [[web, true], [worker, false]] as const) {
-    writeGeneratedArtifacts(generate({ root, profile: { mobx: false, validation } }).artifacts);
+    writeGeneratedArtifacts(generate({ root, profile: { validation } }).artifacts);
   }
 
   assert.deepEqual(fs.readdirSync(path.join(outer, 'shared')).sort(), ['customer.model.ts', 'package.json']);
@@ -471,7 +471,7 @@ function writeSdkPackage(directory: string, typeModule: string): void {
     'money.model.d.ts': `/* @golem-model-manifest ./model-manifest.json */\nimport type { IObject } from '@exprtlabs/golem/model';\nexport interface Money { currency: string }\nexport type Extra = IObject<{ note: string }>;\n`,
     'money.model.generated.d.ts': 'export {};\n',
     'model-manifest.json': JSON.stringify({
-      profile: { mobx: false, validation: false, allowAny: false, unknownFormats: 'error' },
+      profile: { validation: false, allowAny: false, unknownFormats: 'error' },
       models: [{ id: 'sdk:money', codecId: 'Money_0a1b2c3d', allowAny: false, type: { module: typeModule, export: 'Money' } }],
     }),
   });

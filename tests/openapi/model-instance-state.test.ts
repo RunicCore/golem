@@ -47,7 +47,7 @@ const document = withRootOperations({
 const scope = fileFixtureScope();
 const buildSdk = (name: string, validation: boolean) => async () => {
   const output = path.join(createFixtureProject(scope, `golem-openapi-${name}-`), 'sdk');
-  await generateMaterializedSdk(document, { output, name, profile: { mobx: false, validation, allowAny: false } });
+  await generateMaterializedSdk(document, { output, name, profile: { validation, allowAny: false } });
   compileGeneratedSdk(output, [], { strict: true, skipLibCheck: true, outDir: path.join(output, 'dist') });
   return (root: keyof typeof SCHEMAS): Promise<SdkBodyCodec> => sdkBodyCodec(output, name, root);
 };

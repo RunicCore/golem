@@ -30,7 +30,7 @@ async function loadClientAt(
   output: string,
   document: unknown,
   name: string,
-  profile: { mobx: boolean; validation: boolean },
+  profile: { mobx?: boolean; validation: boolean },
 ): Promise<GeneratedClientClass> {
   await generateMaterializedSdk(document, { output, name, profile });
   compileGeneratedSdk(output);
@@ -41,7 +41,7 @@ function loadClient(
   t: TestContext,
   document: unknown,
   name: string,
-  profile: { mobx: boolean; validation: boolean },
+  profile: { mobx?: boolean; validation: boolean },
 ): Promise<GeneratedClientClass> {
   return loadClientAt(path.join(createFixtureProject(t, 'golem-openapi-streams-'), 'sdk'), document, name, profile);
 }
@@ -76,7 +76,7 @@ test('JSON-seq validates its records', async (t) => {
   const OnClient = await loadClient(
     t, streamDoc('application/json-seq', objectItem),
     'Streams',
-    { mobx: false, validation: true },
+    { validation: true },
   );
   const valid = new OnClient({
     baseUrl: 'https://api.example',
@@ -131,7 +131,7 @@ function loadNeverStreamClient(): Promise<GeneratedClientClass> {
       },
     },
   };
-  neverStreamClient = loadClientAt(path.join(root, 'sdk'), document, 'NeverStream', { mobx: false, validation: true });
+  neverStreamClient = loadClientAt(path.join(root, 'sdk'), document, 'NeverStream', { validation: true });
   return neverStreamClient;
 }
 
@@ -139,7 +139,7 @@ test('itemSchema false emits AsyncIterable<never> and validation-on rejects the 
   const typesOff = await generateMaterializedSdk(streamDoc('application/x-ndjson', false), {
     output: path.join(createFixtureProject(t, 'golem-openapi-itemschema-'), 'sdk'),
     name: 'NeverStream',
-    profile: { mobx: false, validation: false },
+    profile: { validation: false },
   });
   const types = typesOff.artifacts.find((artifact) => artifact.path.endsWith('/types.ts'))?.content ?? '';
   assert.match(types, /AsyncIterable<never>/);

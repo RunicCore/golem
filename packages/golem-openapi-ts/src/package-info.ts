@@ -16,7 +16,7 @@ function isJsonObject(value: unknown): value is { readonly [key: string]: unknow
 }
 
 export const PACKAGE_VERSION = readPackageVersion(JSON.parse(readFileSync(packageJsonPath, 'utf8')));
-export const GENERATOR_NAME = '@exprtlabs/golem-openapi';
+export const GENERATOR_NAME = '@exprtlabs/golem-openapi-ts';
 export const API_VERSION = 1 as const;
 
 /** The banner comment of a generated file, as Code. */

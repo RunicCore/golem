@@ -23,6 +23,7 @@
   },
   "dependencies": {
     "@exprtlabs/golem": "1.1.0-rc.0",
+    "@exprtlabs/golem-openapi-ts": "1.1.0-rc.0",
     "@exprtlabs/golem-ts-openapi": "1.1.0-rc.0",
     "@nestjs/common": "11.2.3",
     "@nestjs/core": "11.2.3",
@@ -38,7 +39,6 @@
   },
   "devDependencies": {
     "@exprtlabs/golem-model": "1.1.0-rc.0",
-    "@exprtlabs/golem-openapi": "1.1.0-rc.0",
     "@types/node": "22.20.1",
     "@types/react": "18.3.31",
     "@types/react-dom": "18.3.7",

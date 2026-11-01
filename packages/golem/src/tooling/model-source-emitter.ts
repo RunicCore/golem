@@ -25,13 +25,13 @@ export { presentKeysCode } from './union-conversion.js';
 export { BUILTIN_CLASS_ROOTS, builtinClassByOpenApiFormat, builtinClassDescriptor, type BuiltinClass } from './builtin-classes.js';
 /** The Code values and the functions that build, join and render them: generators write their files from these. */
 export {
-  aliased, bindInput, blockComment, code, codeKey, docComment, documentLiteral, exportedName, exportedNames, fileImports, helper, helperName, helperSet, identifier, importedNames, indentation, inputCount, importGroups, importLines, ImportSource, inputOf, inputSlot, isEmpty, join, lineBreak, literal, localCode, nameOf, NameTable, nameSlot, nest, placeHelpers, propertyKey, render, renderModule, sameCode, sideEffectImport,
+  aliased, bindInput, blockComment, code, codeKey, docComment, documentLiteral, exportedName, exportedNames, fileImports, helper, helperName, helperSet, identifier, importedNames, indentation, inputCount, importGroups, importLines, ImportSource, inputOf, inputSlot, isEmpty, join, lineBreak, literal, localCode, nameOf, NameTable, nameSlot, nest, packageExport, packageKeysOf, placeHelpers, propertyKey, render, renderModule, sameCode, sideEffectImport,
   type Code, type Helper, type ImportGroup, type ImportOptions, type InputSlot, type JsonValue, type NameSlot, type RenderedModule,
 } from './code.js';
 export { copiedRuntimeSpecifiers, rt, rtType, type RuntimeModule } from './rt.js';
-/** The operation codec module writer that golem-openapi and golem-model share. */
+/** The operation codec module writer that golem-openapi-ts and golem-model share. */
 export { moduleSpecifier, SDK_CODECS_EXPORT, sdkCodecsFile, sdkCodecsTable, writeOperationCodecs, type OperationCodecsModule, type SdkOperationShape } from './sdk-codecs.js';
-/** The allOf object merge, for generators that read schemas (golem-openapi). */
+/** The allOf object merge, for generators that read schemas (golem-openapi-ts). */
 export {
   composeObjects,
   CompositionConflictError,
@@ -46,7 +46,7 @@ export {
   type SlotRule,
 } from './composition.js';
 import { blockComment, bindInput, code, codeKey, identifier, importGroups, importLines, inputOf, inputSlot, isEmpty, join, literal, localCode, sameCode, type Code, type Helper, type ImportOptions } from './code.js';
-import { rt, type RuntimeModule } from './rt.js';
+import { rt } from './rt.js';
 import { MODEL_MANIFEST_FILENAME, MODEL_MANIFEST_MARKER } from './model-manifest-core.js';
 export { assertUniqueExportNames, type PublicModule } from './names.js';
 import { CompositionConflictError, requireComposedObject, type ModelBases } from './composition.js';
@@ -485,7 +485,7 @@ const SERDE_IMPORT_ORDER: readonly string[] = [
   'validationUnavailableStub', 'withoutInstanceState', 'IssueRepresentation', 'IssueSource', 'SerdeOptions', 'ValidateOptions',
 ];
 
-/** The order of the names in the model, conversion and serde imports of a generated model file: golem-model and golem-openapi write the same. */
+/** The order of the names in the model, conversion and serde imports of a generated model file: golem-model and golem-openapi-ts write the same. */
 export const MODEL_IMPORT_ORDER: NonNullable<ImportOptions['order']> = {
   model: [
     'findGeneratedModelDefinition', 'findGeneratedModelDefinitionForConstructor', 'GeneratedModel', 'GeneratedModelConstructor',
@@ -504,7 +504,7 @@ export const MODEL_IMPORT_ORDER: NonNullable<ImportOptions['order']> = {
  * The runtime import lines of what `root` calls: each call lists the runtime modules to write, and a specifier that serves
  * several of them is written once, by the first call that lists one of them. A module that the code does not use writes none.
  */
-export function runtimeLinesOf(root: Code, options: ImportOptions): (...modules: readonly RuntimeModule[]) => readonly Code[] {
+export function runtimeLinesOf(root: Code, options: ImportOptions): (...modules: readonly string[]) => readonly Code[] {
   const groups = importGroups(root, options);
   const written = new Set<string>();
   return (...modules) => modules.flatMap((module) => groups.flatMap((group) => {

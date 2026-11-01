@@ -10,9 +10,9 @@ import { buildModelProject, createModelProject, writeModelGolemYaml, writeModelS
 import { command } from './support/process.js';
 
 const profiles: readonly (readonly [string, GolemProfile])[] = [
-  ['validation off', { mobx: false, validation: false }],
+  ['validation off', { validation: false }],
   // Models validate with the generated validators so one validating profile covers them.
-  ['generated validators', { mobx: false, validation: true }],
+  ['generated validators', { validation: true }],
 ];
 
 function project(t: TestContext, prefix: string) {
@@ -122,14 +122,14 @@ export type TPlain = IModel<{ at: Date }, { validation: false }>;
 export type TOpted = IModel<{ at: Date }>;
 `,
   });
-  const { artifacts } = generate({ root, profile: { mobx: false, validation: true } });
+  const { artifacts } = generate({ root, profile: { validation: true } });
   const content = (name: string): string => artifacts.find((artifact) => artifact.path.endsWith(name))?.content ?? '';
   assert.match(content('opted.model.generated.ts'), /import \{ [^}]*validate_TOpted_\w+[^}]* \} from "[^"]*models\.validators\.generated\.js";/);
   assert.doesNotMatch(content('plain.model.generated.ts'), /models\.validators\.generated/);
   assert.match(content('plain.model.generated.ts'), /profile: \{ validation: false \}/);
   assert.match(content('opted.model.generated.ts'), /profile: \{ validation: true \}/);
   // With validation off in the project there is no validators file at all.
-  const plainOnly = generate({ root, sources: [path.join(sourceRoot, 'plain.model.ts')], profile: { mobx: false, validation: false } });
+  const plainOnly = generate({ root, sources: [path.join(sourceRoot, 'plain.model.ts')], profile: { validation: false } });
   assert.equal(plainOnly.artifacts.some((artifact) => artifact.path.endsWith('.validators.generated.ts')), false);
 });
 
@@ -173,7 +173,7 @@ console.log(JSON.stringify({
 `;
 
 test('editing a leaf model regenerates the ids its dependents reference', (t: TestContext) => {
-  const profile: GolemProfile = { mobx: false, validation: true };
+  const profile: GolemProfile = { validation: true };
   const { root, sourceRoot } = project(t, 'golem-model-leaf-edit-');
   writeModelSources(sourceRoot, chainSources(3));
   const ids = (): { readonly owned: string; readonly referenced: readonly string[] } => {

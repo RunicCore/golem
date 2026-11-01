@@ -48,7 +48,7 @@ async function writeAndRoundTrip(t: TestContext, exports: Record<string, unknown
   const { root, sourceRoot } = project(t);
   writeCodecPackage(path.join(root, 'node_modules/@fixture/pg'), { name: '@fixture/pg', exports, files });
   fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), model);
-  writeModelGolemYaml(root, { mobx: false, validation: true });
+  writeModelGolemYaml(root, { validation: true });
   await roundTrip(root);
 }
 
@@ -69,7 +69,7 @@ export function decodeCount(value: CountWire): number { return Number(value); }
   } });
   const { root, sourceRoot } = project(t, { '@fixture/pg': vendor });
   fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), model);
-  const generated = generate({ root, profile: { mobx: false, validation: true } }).artifacts.find(a => a.path.endsWith(MODEL_FILE))?.content ?? '';
+  const generated = generate({ root, profile: { validation: true } }).artifacts.find(a => a.path.endsWith(MODEL_FILE))?.content ?? '';
   assert.ok(importsOf(generated).includes('@fixture/pg/codecs'));
 });
 
@@ -95,7 +95,7 @@ import { TABaseModel, type TAFields } from './a.model.generated.js';
 export type TA = IModel<{ count: PkgCount }>;
 export class A extends TABaseModel { constructor(values: Partial<TAFields> = {}) { super(values); } }
 `);
-  writeModelGolemYaml(root, { mobx: false, validation: true });
+  writeModelGolemYaml(root, { validation: true });
 
   await buildModelProject(root);
 
@@ -135,14 +135,14 @@ export type TA = IObject<{ currency: string & TValidation<typeof isCurrencyCode>
 
 test('a shared folder with no name of its own keeps its functions relative when only the named root above the app owns it', t => {
   const web = monorepo(t);
-  const artifacts = generate({ root: web, profile: { mobx: false, validation: true } }).artifacts;
+  const artifacts = generate({ root: web, profile: { validation: true } }).artifacts;
   const validators = artifacts.find(a => a.path.endsWith('models.validators.generated.ts'))?.content ?? '';
   assert.ok(importsOf(validators).some((specifier) => /^(\.\.\/)+shared\/rules\.js$/.test(specifier)), importsOf(validators).join('\n'));
 });
 
 test('RUNM1060 when a shared folder with its own name has no export that reaches the function', t => {
   const web = monorepo(t, { name: '@acme/shared', version: '0.0.0', type: 'module' });
-  assert.throws(() => generate({ root: web, profile: { mobx: false, validation: true } }), /RUNM1060: .*isCurrencyCode.*@acme\/shared.*rules\.ts/);
+  assert.throws(() => generate({ root: web, profile: { validation: true } }), /RUNM1060: .*isCurrencyCode.*@acme\/shared.*rules\.ts/);
 });
 
 test('a TValidation predicate that only an installed package declares checks the field directly and through its tag alias', async t => {
@@ -166,7 +166,7 @@ import type { isEven } from '@fixture/rules/rules';
 import type { EvenCount } from '@fixture/rules/tags';
 export type TA = IObject<{ viaAlias: EvenCount; direct: number & TValidation<typeof isEven> }>;
 `.text);
-  writeModelGolemYaml(root, { mobx: false, validation: true });
+  writeModelGolemYaml(root, { validation: true });
   await buildModelProject(root);
   const { parseTA } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.generated.js')));
 
@@ -191,7 +191,7 @@ test('two codecs from one package share one specifier', t => {
   const { root, sourceRoot } = project(t);
   writeCodecPackage(path.join(root, 'node_modules/@fixture/pg'), { name: '@fixture/pg', exports: EXPORTS, files: COUNT_DIST_FILES });
   fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({ name: 'A', imports: tsSource`import type { PkgCount } from '@fixture/pg/tags';`, fields: tsSource`one: PkgCount; two: PkgCount[]` }).text);
-  const generated = generate({ root, profile: { mobx: false, validation: true } }).artifacts.find(a => a.path.endsWith(MODEL_FILE))?.content ?? '';
+  const generated = generate({ root, profile: { validation: true } }).artifacts.find(a => a.path.endsWith(MODEL_FILE))?.content ?? '';
   assert.equal([...generated.matchAll(/import \{ encodeCount as /g)].length, 1);
   assert.equal([...generated.matchAll(/from "@fixture\/pg\/codecs"/g)].length, 1); // the encode and the decode share one import
 });
@@ -200,7 +200,7 @@ test('RUNM1060 when no export reaches the codec', t => {
   const { root, sourceRoot } = project(t);
   writeCodecPackage(path.join(root, 'node_modules/@fixture/pg'), { name: '@fixture/pg', exports: { './tags': EXPORTS['./tags'] }, files: COUNT_DIST_FILES });
   fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), model);
-  assert.throws(() => generate({ root, profile: { mobx: false, validation: true } }), error => {
+  assert.throws(() => generate({ root, profile: { validation: true } }), error => {
     assert.match(String(error), /RUNM1060: .*encodeCount.*@fixture\/pg.*dist\/codecs\.d\.ts/);
     return true;
   });
@@ -211,7 +211,7 @@ test('a package with no exports field hosts a codec at its package-relative path
   const { root, sourceRoot } = project(t);
   writeCodecPackage(path.join(root, 'node_modules/@fixture/pg'), { name: '@fixture/pg', files: COUNT_DIST_FILES });
   fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({ name: 'A', imports: tsSource`import type { PkgCount } from '@fixture/pg/dist/tags.js';`, fields: tsSource`count: PkgCount` }).text);
-  writeModelGolemYaml(root, { mobx: false, validation: true });
+  writeModelGolemYaml(root, { validation: true });
   await buildModelProject(root);
   const generated = fs.readFileSync(path.join(root, MODEL_FILE), 'utf8');
   assert.ok(importsOf(generated).includes('@fixture/pg/dist/codecs.js'));
@@ -234,7 +234,7 @@ test('a nameless package.json in the project keeps project codecs relative', t =
   fs.writeFileSync(path.join(sourceRoot, 'lib/codecs.ts'), "export function encodeCount(value: number): string { return String(value); }\nexport function decodeCount(value: string): number { return Number(value); }\n");
   fs.writeFileSync(path.join(sourceRoot, 'models/package.json'), '{"type":"module"}');
   fs.writeFileSync(path.join(sourceRoot, 'models/a.model.ts'), taggedModelSource({ name: 'A', imports: tsSource`import type { TSerde } from '@exprtlabs/golem/tags';\nimport { encodeCount, decodeCount } from '../lib/codecs.js';\ntype Count = number & TSerde<typeof encodeCount, typeof decodeCount>;`, fields: tsSource`count: Count` }).text);
-  const generated = generate({ root, profile: { mobx: false, validation: true } }).artifacts.find(a => a.path.endsWith('src/models/a.model.generated.ts'))?.content ?? '';
+  const generated = generate({ root, profile: { validation: true } }).artifacts.find(a => a.path.endsWith('src/models/a.model.generated.ts'))?.content ?? '';
   assert.ok(importsOf(generated).includes('../lib/codecs.js'));
 });
 
@@ -243,9 +243,9 @@ test('an edited package.json is read again by the next generation in the same pr
   const packageRoot = path.join(root, 'node_modules/@fixture/pg');
   writeCodecPackage(packageRoot, { name: '@fixture/pg', exports: { './tags': EXPORTS['./tags'] }, files: COUNT_DIST_FILES });
   fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), model);
-  assert.throws(() => generate({ root, profile: { mobx: false, validation: true } }), /RUNM1060/);
+  assert.throws(() => generate({ root, profile: { validation: true } }), /RUNM1060/);
   writeCodecPackage(packageRoot, { name: '@fixture/pg', exports: EXPORTS, files: {} });
-  assert.doesNotThrow(() => generate({ root, profile: { mobx: false, validation: true } }));
+  assert.doesNotThrow(() => generate({ root, profile: { validation: true } }));
 });
 
 test('a malformed package.json names its path and keeps the parse error as the cause', t => {
@@ -254,7 +254,7 @@ test('a malformed package.json names its path and keeps the parse error as the c
   writeCodecPackage(packageRoot, { name: '@fixture/pg', exports: EXPORTS, files: COUNT_DIST_FILES });
   fs.writeFileSync(path.join(packageRoot, 'dist/package.json'), '{"type": ');
   fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), model);
-  assert.throws(() => generate({ root, profile: { mobx: false, validation: true } }), (error: unknown) => {
+  assert.throws(() => generate({ root, profile: { validation: true } }), (error: unknown) => {
     assert.ok(error instanceof Error);
     assert.ok(error.message.includes(path.join(packageRoot, 'dist/package.json')), error.message);
     assert.ok(error.cause instanceof SyntaxError);
@@ -270,7 +270,7 @@ function generatedFor(t: TestContext, exports: Record<string, unknown>, nested =
   const { root, sourceRoot } = project(t);
   writeCodecPackage(path.join(root, 'node_modules/@fixture/pg'), { name: '@fixture/pg', exports, files: nested ? NESTED_FILES : COUNT_DIST_FILES });
   fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), nested ? model.replace('@fixture/pg/tags', '@fixture/pg/sub/tags') : model);
-  return generate({ root, profile: { mobx: false, validation: true } }).artifacts.find(a => a.path.endsWith(MODEL_FILE))?.content ?? '';
+  return generate({ root, profile: { validation: true } }).artifacts.find(a => a.path.endsWith(MODEL_FILE))?.content ?? '';
 }
 
 function rejected(t: TestContext, exports: Record<string, unknown>, nested = false): void {
@@ -311,7 +311,7 @@ test('one package installed at two paths collapses to one binding', t => {
   writeCodecPackage(path.join(root, 'node_modules/dep'), { name: 'dep', exports: { '.': { types: './index.d.ts' } }, files: { 'index.d.ts': "export type { PkgCount as DepCount } from '@fixture/pg/tags';\n" } });
   writeCodecPackage(path.join(root, 'node_modules/dep/node_modules/@fixture/pg'), { name: '@fixture/pg', exports: EXPORTS, files: COUNT_DIST_FILES });
   fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({ name: 'A', imports: tsSource`import type { PkgCount } from '@fixture/pg/tags';\nimport type { DepCount } from 'dep';`, fields: tsSource`one: PkgCount; two: DepCount` }).text);
-  const generated = generate({ root, profile: { mobx: false, validation: true } }).artifacts.find(a => a.path.endsWith(MODEL_FILE))?.content ?? '';
+  const generated = generate({ root, profile: { validation: true } }).artifacts.find(a => a.path.endsWith(MODEL_FILE))?.content ?? '';
   assert.equal([...generated.matchAll(/\bencodeCount as /g)].length, 1);
   assert.equal([...generated.matchAll(/\bdecodeCount as /g)].length, 1);
 });

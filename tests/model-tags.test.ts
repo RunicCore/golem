@@ -30,7 +30,7 @@ import { validate } from './validators.js';`,
   };
   const first = fixture(t);
   build(first.sourceRoot);
-  await buildModelProjectWith(first.root, { mobx: false, validation: true });
+  await buildModelProjectWith(first.root, { validation: true });
   const firstArtifacts = generatedModelFiles(first.root);
   const firstShared = firstArtifacts.filter((artifact) => artifact.path.endsWith('.model.generated.ts')).map((artifact) => artifact.content).join('\n');
   assert.ok(firstShared);
@@ -42,7 +42,7 @@ import { validate } from './validators.js';`,
 
   const second = fixture(t);
   build(second.sourceRoot);
-  const secondResult = generate({ root: second.root, profile: { mobx: false, validation: true } });
+  const secondResult = generate({ root: second.root, profile: { validation: true } });
   const firstByRelative = new Map(firstArtifacts.map(artifact => [path.relative(first.root, artifact.path), artifact.content]));
   // The codec key table is core's own record, not one of the job's files, and the first run's map does not hold it.
   for (const artifact of secondResult.artifacts.filter(candidate => path.basename(candidate.path) !== 'codec-keys.json')) {
@@ -59,7 +59,7 @@ type ValueObject = { foo?: string; bar?: string; x_value?: number };
 type ValueArray = Array<string>;`,
     fields: tsSource`values: ValueArray & Contains<string & Pattern<'^ok$'>> & MinItems<1> & MinContains<1> & MaxContains<2>; objectValue: ValueObject & MinProperties<1> & MaxProperties<3> & PropertyNames<string & Pattern<'^[a-z_]+$'>> & PatternProperties<{ '^x_': number; '^z_': boolean }> & AdditionalProperties<never> & UnevaluatedProperties<never> & DependentRequired<{ foo: ['bar'] }> & DependentSchemas<{ foo: { bar: string } }> & OneOf<[{ foo: string }, { bar: string }]> & Not<{ forbidden: string }> & IfThenElse<{ bar: string }, { bar: string }, { foo: string }>;`,
   }).text);
-  await buildModelProjectWith(root, { mobx: false, validation: true });
+  await buildModelProjectWith(root, { validation: true });
   const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
   const valid = new A({ values: ['ok'], objectValue: { bar: 'yes', x_value: 1 } });
   assert.equal(await getValidator(valid).validate(), true);
@@ -149,7 +149,7 @@ import { first, second } from './predicates.js';`,
   write('recursive-alias', {
     'node.model.ts': taggedModelSource({ name: 'Node', fields: tsSource`name: string; children?: TNode[]` }).text,
   });
-  await buildModelProjectWith(root, { mobx: false, validation: true });
+  await buildModelProjectWith(root, { validation: true });
   const load = (directory: string, file: string) => import(path.toNamespacedPath(path.join(root, 'build', directory, file)));
 
   await t.test('builtin constraints run before custom predicates and distinct predicates compose once', async () => {
@@ -307,7 +307,7 @@ export function decode(value: number & MinLength<3>): number { return value; }`,
       ]);
       fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({ name: 'A', imports, fields: item.field }).text);
       assert.throws(
-        () => generate({ root, profile: { mobx: false, validation } }),
+        () => generate({ root, profile: { validation } }),
         error => {
           assert.match(String(error), item.expected, item.name);
           return true;
@@ -326,7 +326,7 @@ test('nullable and optional tagged branches retain their supported family', t =>
     imports: tsSource`import type { Format, MinItems, MinLength } from '@exprtlabs/golem/tags';`,
     fields: tsSource`required: (string & MinLength<3>) | null; optional?: string & Format<'domain-specific'>; values: (number[] & MinItems<1>) | undefined`,
   }).text);
-  assert.doesNotThrow(() => generate({ root, profile: { mobx: false, validation: true } }));
+  assert.doesNotThrow(() => generate({ root, profile: { validation: true } }));
 });
 
 test('a recursive type whose property name ends in a tag key name is a plain user type', t => {
@@ -337,7 +337,7 @@ test('a recursive type whose property name ends in a tag key name is a plain use
     imports: tsSource`type Chain = { notTag: string; next?: Chain };`,
     fields: tsSource`chain: Chain`,
   }).text);
-  const shared = generate({ root, profile: { mobx: false, validation: true } }).artifacts.map((artifact) => artifact.content).join('\n');
+  const shared = generate({ root, profile: { validation: true } }).artifacts.map((artifact) => artifact.content).join('\n');
   assert.match(shared, /notTag/);
 });
 
@@ -362,7 +362,7 @@ for (const [name, rules] of Object.entries(typedRules)) {
       imports: tsSource`import type { TSerde, TValidation } from '@exprtlabs/golem/tags';\nimport { check, other, read, write } from './rules.js';`,
       fields: tsSource`valid: string & TValidation<typeof check>; second: string & TValidation<typeof other>; coded: string & TSerde<typeof write, typeof read>`,
     }).text);
-    const generated = generate({ root, profile: { mobx: false, validation: true } }).artifacts.map((artifact) => artifact.content).join('\n');
+    const generated = generate({ root, profile: { validation: true } }).artifacts.map((artifact) => artifact.content).join('\n');
     for (const bound of ['check', 'other', 'write', 'read']) assert.ok(importsOf(generated, bound) > 0, `${bound} is bound`);
   });
 }
@@ -376,7 +376,7 @@ test('two validators that share one type alias in one field are refused, not bou
     imports: tsSource`import type { TValidation } from '@exprtlabs/golem/tags';\nimport { check, other } from './rules.js';`,
     fields: tsSource`both: string & TValidation<typeof check> & TValidation<typeof other>`,
   }).text);
-  assert.throws(() => generate({ root, profile: { mobx: false, validation: true } }), /RUNM1040.*shares its type with another function in this field/);
+  assert.throws(() => generate({ root, profile: { validation: true } }), /RUNM1040.*shares its type with another function in this field/);
 });
 
 test('a nullable member written through a tag alias is refused, not given a phantom-key validator', t => {
@@ -387,7 +387,7 @@ test('a nullable member written through a tag alias is refused, not given a phan
     imports: tsSource`import type { MaxLength } from '@exprtlabs/golem/tags';\ntype Inner<N extends number> = MaxLength<N>;`,
     fields: tsSource`name: Inner<5> & string | null`,
   }).text);
-  assert.throws(() => generate({ root, profile: { mobx: false, validation: true } }), /RUNM1064/);
+  assert.throws(() => generate({ root, profile: { validation: true } }), /RUNM1064/);
 });
 
 for (const [form, field] of [['optional', tsSource`email?: string & TValidation<typeof check>`], ['nullable', tsSource`email: (string & TValidation<typeof check>) | null`]] as const) {
@@ -400,7 +400,7 @@ for (const [form, field] of [['optional', tsSource`email?: string & TValidation<
       imports: tsSource`import type { TValidation } from '@exprtlabs/golem/tags';\nimport { check } from './rules.js';`,
       fields: field,
     }).text);
-    const generated = generate({ root, profile: { mobx: false, validation: true } }).artifacts.map((artifact) => artifact.content).join('\n');
+    const generated = generate({ root, profile: { validation: true } }).artifacts.map((artifact) => artifact.content).join('\n');
     assert.ok(importsOf(generated, 'check') > 0, 'check is bound');
   });
 }
@@ -430,7 +430,7 @@ test('model validators are a generated TypeScript artifact that the built output
     imports: tsSource`import type { TValidation } from '@exprtlabs/golem/tags';\nimport { valid } from './predicates.js';`,
     fields: tsSource`value: string & TValidation<typeof valid>`,
   }).text);
-  await buildModelProjectWith(root, { mobx: false, validation: true });
+  await buildModelProjectWith(root, { validation: true });
   const artifacts = generatedModelFiles(root);
   const validators = artifacts.find((artifact) => artifact.path.endsWith('/models.validators.generated.ts'));
   assert.ok(validators);
@@ -451,7 +451,7 @@ export function noDigits(value: string): boolean | string { return !/\\d/.test(v
       imports: tsSource`import type { MaxLength, MinLength, Pattern, TValidation } from '@exprtlabs/golem/tags';\nimport { notBlank, noDigits } from './rules.js';`,
       fields: tsSource`value: ${type}`,
     }).text);
-    return generate({ root, profile: { mobx: false, validation: true } }).artifacts
+    return generate({ root, profile: { validation: true } }).artifacts
       .map(artifact => [path.relative(root, artifact.path), artifact.content] as const)
       .sort(([left], [right]) => left.localeCompare(right));
   };
@@ -473,7 +473,7 @@ for (const item of [
     // protects: F-31 only the global Date is read as a date; a user type named Date keeps its shape
     const { root, sourceRoot } = fixture(t);
     fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({ name: 'A', imports: item.declaration, fields: tsSource`when: Date` }).text);
-    await buildModelProjectWith(root, { mobx: false, validation: true });
+    await buildModelProjectWith(root, { validation: true });
     const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
     const model = modelCodec(A).fromWireFormat(item.wire);
     assert.equal(model.when instanceof Date, item.isDate);

@@ -1,5 +1,5 @@
 import { fixturePath, readFixture, writeGeneratedArtifacts } from './fixture-project.js';
-import { generate as generateOpenApi } from '@exprtlabs/golem-openapi/generator';
+import { generate as generateOpenApi } from '@exprtlabs/golem-openapi-ts/generator';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -16,7 +16,7 @@ import { modelCodec } from './support/model-codec.js';
 test('an unrelated same-name class does not become a model constructor', async t => {
   const { root, sourceRoot } = fixture(t);
   fs.writeFileSync(path.join(sourceRoot, 'item.model.ts'), readFixture("models/model-composition/an-unrelated-same-name-class-does-not-become-a-model-constructor/item.model.ts"));
-  writeModelGolemYaml(root, { mobx: false, validation: false });
+  writeModelGolemYaml(root, { validation: false });
   await buildModelProject(root);
   const generated = await import(`${path.join(root, 'build/item.model.generated.js')}?${Date.now()}`);
   const authored = await import(`${path.join(root, 'build/item.model.js')}?${Date.now()}`);
@@ -34,7 +34,7 @@ test('first generation resolves model class bases through project path aliases',
   fs.writeFileSync(path.join(root, 'tsconfig.json'), JSON.stringify(config));
   fs.writeFileSync(path.join(sourceRoot, 'item.model.ts'), readFixture("models/model-composition/first-generation-resolves-model-class-bases-through-project-path-aliases/item.model.ts"));
   fs.writeFileSync(path.join(sourceRoot, 'parent.model.ts'), readFixture("models/model-composition/first-generation-resolves-model-class-bases-through-project-path-aliases/parent.model.ts"));
-  writeModelGolemYaml(root, { mobx: false, validation: false });
+  writeModelGolemYaml(root, { validation: false });
   await buildModelProject(root);
   const generated = await import(`${path.join(root, 'build/parent.model.generated.js')}?${Date.now()}`);
   const authored = await import(path.join(root, 'build/item.model.js'));
@@ -51,7 +51,7 @@ test('IModel exposes fields and rejects root unions before emitting artifacts', 
   await buildModelProject(root);
   fs.writeFileSync(path.join(sourceRoot, 'item.model.ts'), readFixture("models/model-composition/imodel-exposes-fields-and-rejects-root-unions-before-emitting-artifacts/item.model.ts"));
   for (const validation of [true, false]) {
-    assert.throws(() => generate({ root, profile: { mobx: false, validation } }), /RUNM1052.*The IModel fields type must be an object type, but TItem has a union/);
+    assert.throws(() => generate({ root, profile: { validation } }), /RUNM1052.*The IModel fields type must be an object type, but TItem has a union/);
   }
   assert.equal(fs.existsSync(path.join(sourceRoot, 'item.model.generated.ts')), false);
 });
@@ -72,7 +72,7 @@ for (const { name, declaration, fields, validation, found } of nonObjectRoots) {
     const { root, sourceRoot } = fixture(t);
     fs.writeFileSync(path.join(sourceRoot, 'item.model.ts'), `import type { ${declaration} } from '@exprtlabs/golem/model';\nexport type TItem = ${declaration}<${fields}>;\n`);
     assert.throws(
-      () => generate({ root, profile: { mobx: false, validation } }),
+      () => generate({ root, profile: { validation } }),
       new RegExp(`RUNM1052: The ${declaration} fields type must be an object type, but TItem has ${found}\\.`),
     );
     assert.equal(fs.existsSync(path.join(sourceRoot, 'item.model.generated.ts')), false);
@@ -85,7 +85,7 @@ for (const validation of [true, false]) {
     const { root, sourceRoot } = fixture(t);
     fs.writeFileSync(path.join(sourceRoot, 'item.model.ts'), `import type { IModel } from '@exprtlabs/golem/model';\nimport type { Missing } from './missing.js';\nexport type TItem = IModel<Missing>;\n`);
     assert.throws(
-      () => generate({ root, profile: { mobx: false, validation } }),
+      () => generate({ root, profile: { validation } }),
       /RUNM1058: The fields type of TItem could not be resolved\. Fix its declaration or import\./,
     );
   });
@@ -106,7 +106,7 @@ export type TItem = IModel<Box & TSerde<typeof boxToJson, typeof boxFromJson>>;
 `,
   });
   assert.throws(
-    () => generate({ root, profile: { mobx: false, validation: true } }),
+    () => generate({ root, profile: { validation: true } }),
     /RUNM1052: The IModel fields type must be an object type, but TItem has a type that a TSerde converts as a whole\./,
   );
 });
@@ -118,7 +118,7 @@ async function writeMoneySdk(sourceRoot: string): Promise<void> {
     input: path.join(sourceRoot, 'money.yaml'),
     output: path.join(sourceRoot, 'sdk'),
     name: 'Payments',
-    profile: { mobx: false, validation: true },
+    profile: { validation: true },
   })).artifacts);
 }
 
@@ -153,7 +153,7 @@ import type { Money } from './sdk/index.js';
 export type TItem = IModel<{ value: (Money | { kind: 'a' | 'b'; x: number } | { kind: 'c' }) & Discriminator<'kind', Money> }>;
 `,
   });
-  await buildModelProjectWith(root, { mobx: false, validation: true });
+  await buildModelProjectWith(root, { validation: true });
   const generated = await import(`${path.join(root, 'build/item.model.generated.js')}?${Date.now()}`);
   for (const value of [{ kind: 'a', x: 1 }, { kind: 'b', x: 2 }, { kind: 'c' }, { amount: 5, currency: 'EUR' }]) {
     assert.deepEqual(modelCodec(generated.TItemBaseModel).toWireFormat(modelCodec(generated.TItemBaseModel).fromWireFormat({ value })), { value });
@@ -172,7 +172,7 @@ export type TItem = IModel<{ value: (Money | { kind: 'a' | 'b'; x: number } | { 
 `,
   });
   assert.throws(
-    () => generate({ root, profile: { mobx: false, validation: true } }),
+    () => generate({ root, profile: { validation: true } }),
     /item\.model\.ts:\d+:\d+ RUNM1087: Union variants .* share the "kind" value "b"\./,
   );
   assert.equal(fs.existsSync(path.join(sourceRoot, 'item.model.generated.ts')), false);
@@ -200,7 +200,7 @@ components:
     input: path.join(sourceRoot, 'odd.yaml'),
     output: path.join(sourceRoot, 'sdk'),
     name: 'Odd',
-    profile: { mobx: false, validation },
+    profile: { validation },
   })).artifacts);
   writeModelSources(sourceRoot, {
     'item.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
@@ -222,7 +222,7 @@ type SymbolKeys<T> = Extract<keyof T, symbol>;
 export const brandKeysDropped: [SymbolKeys<Item>] extends [SymbolKeys<Plain>] ? ([SymbolKeys<Plain>] extends [SymbolKeys<Item>] ? true : false) : false = true;
 `,
   });
-  await buildModelProjectWith(root, { mobx: false, validation });
+  await buildModelProjectWith(root, { validation });
   const authored = await import(`${path.join(root, 'build/item.model.js')}?${Date.now()}`);
   const item = new authored.Item({ amount: 1, '__@generatedModelWireBrand@1': 'plain' });
   assert.deepEqual(modelCodec(item).toWireFormat(item), { amount: 1, '__@generatedModelWireBrand@1': 'plain' });
@@ -239,7 +239,7 @@ export type TItem = IModel<{ ${fields} }>;
 `,
     });
     assert.throws(
-      () => generate({ root, profile: { mobx: false, validation: true } }),
+      () => generate({ root, profile: { validation: true } }),
       /item\.model\.ts:\d+:\d+ RUNM1070: Model TItem has the property \[sym\] with a symbol key\. JSON cannot carry a symbol key\. Use a string key, or remove the property\./,
     );
   });
@@ -248,7 +248,7 @@ export type TItem = IModel<{ ${fields} }>;
 test('generated readonly fields remain readonly to TypeScript consumers', async t => {
   const { root, sourceRoot } = fixture(t);
   fs.writeFileSync(path.join(sourceRoot, 'item.model.ts'), readFixture("models/model-composition/generated-readonly-fields-remain-readonly-to-typescript-consumers/item.model.ts"));
-  writeModelGolemYaml(root, { mobx: false, validation: false });
+  writeModelGolemYaml(root, { validation: false });
   fs.writeFileSync(path.join(sourceRoot, 'readonly-consumer.ts'), readFixture("models/model-composition/generated-readonly-fields-remain-readonly-to-typescript-consumers/readonly-consumer.ts"));
   await buildModelProject(root);
 });
@@ -257,7 +257,7 @@ test('anonymous nested IModel declarations fail with an actionable diagnostic', 
   const { root, sourceRoot } = fixture(t);
   fs.writeFileSync(path.join(sourceRoot, 'item.model.ts'), readFixture("models/model-composition/anonymous-nested-imodel-declarations-fail-with-an-actionable-diagnostic/item.model.ts"));
   assert.throws(
-    () => generate({ root, profile: { mobx: false, validation: true } }),
+    () => generate({ root, profile: { validation: true } }),
     /RUNM1053.*named, exported declaration/,
   );
 });
@@ -268,7 +268,7 @@ for (const tag of ['serde', 'validation'] as const) {
     fs.writeFileSync(path.join(sourceRoot, 'codecs.ts'), discardedProjectionCodecsSource({ metadata: tag }).text);
     fs.writeFileSync(path.join(sourceRoot, 'item.model.ts'), discardedProjectionMetadataSource({ metadata: tag }).text);
     assert.throws(
-      () => generate({ root, profile: { mobx: false, validation: true } }),
+      () => generate({ root, profile: { validation: true } }),
       /RUNM1055.*whole-object constraints or serialization/,
     );
   });
@@ -277,7 +277,7 @@ for (const tag of ['serde', 'validation'] as const) {
 test('generic model templates require a concrete named declaration', t => {
   const { root, sourceRoot } = fixture(t);
   fs.writeFileSync(path.join(sourceRoot, 'item.model.ts'), readFixture("models/model-composition/generic-model-templates-require-a-concrete-named-declaration/item.model.ts"));
-  assert.throws(() => generate({ root, profile: { mobx: false, validation: true } }), /RUNM1057.*concrete fields/);
+  assert.throws(() => generate({ root, profile: { validation: true } }), /RUNM1057.*concrete fields/);
 });
 
 test('MobX projections retain nested observability', async t => {
@@ -318,7 +318,7 @@ export type TAddress = IModel<{ city: string }>;
 export type TItem = IModel<${fields}>;
 `);
     assert.throws(
-      () => generate({ root, profile: { mobx: false, validation } }),
+      () => generate({ root, profile: { validation } }),
       new RegExp(`RUNM1085: Field "x" of TItem combines ${scalar} with an object type, and no value is both\\. Keep one of the two types, or move the object into its own field`),
     );
     assert.equal(fs.existsSync(path.join(sourceRoot, 'item.model.generated.ts')), false);
@@ -339,7 +339,7 @@ for (const { fields, kind } of mapOrSetModelFields) for (const validation of [tr
 export type TItem = IModel<${fields}>;
 `);
     assert.throws(
-      () => generate({ root, profile: { mobx: false, validation } }),
+      () => generate({ root, profile: { validation } }),
       new RegExp(`RUNM1004: Field "x" of TItem is a ${kind}, which golem cannot represent\\. Use a Record or an array\\.`),
     );
   });
@@ -354,7 +354,7 @@ export type Timestamp = Date & { readonly __brand: 'Timestamp' };
 export type Optional = Date & { readonly __brand?: 'Optional' };
 export type TItem = IModel<{ at: Timestamp; later?: Optional }>;
 `);
-    writeModelGolemYaml(root, { mobx: false, validation });
+    writeModelGolemYaml(root, { validation });
     await buildModelProject(root);
     const generated = await import(`${path.join(root, 'build/item.model.generated.js')}?${Date.now()}`);
     const decoded = modelCodec(generated.TItemBaseModel).fromWireFormat({ at: '2024-05-06T07:08:09.000Z', later: '2025-01-02T03:04:05.000Z' });
@@ -372,7 +372,7 @@ for (const exact of [true, false]) {
 export type Email = string & { readonly __brand: 'Email' };
 export type TItem = IModel<{ email: Email }>;
 `);
-    await buildModelProjectWith(root, { mobx: false, validation: true, exact });
+    await buildModelProjectWith(root, { validation: true, exact });
     await import(`${path.join(root, 'build/item.model.generated.js')}?${Date.now()}`);
     const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TItem'));
     assert.deepEqual(codec.parse('{"email":"a@b.c"}'), { email: 'a@b.c' });
@@ -383,7 +383,7 @@ export type TItem = IModel<{ email: Email }>;
 
 /** Build the project with validation on and return the codec of its `TItem`. */
 async function builtItemCodec(root: string): Promise<ReturnType<typeof requireObjectCodec>> {
-  await buildModelProjectWith(root, { mobx: false, validation: true });
+  await buildModelProjectWith(root, { validation: true });
   await import(`${path.join(root, 'build/item.model.generated.js')}?${Date.now()}`);
   return requireObjectCodec(generatedCodecIdFromRoot(root, 'TItem'));
 }
@@ -417,11 +417,11 @@ for (const key of ['${number}', '${string}_${number}', 'Uppercase<string>']) {
 export type TItem = IModel<{ seen: Record<${keyType}, Date> }>;
 `);
     assert.throws(
-      () => generate({ root, profile: { mobx: false, validation: true } }),
+      () => generate({ root, profile: { validation: true } }),
       /item\.model\.ts:\d+:\d+ RUNM1004: Field "seen" of TItem is keyed by a template literal type that golem cannot state as a key pattern\. Use string-only holes, such as `id_\$\{string\}`, or a plain string key\./,
     );
     // With validation off golem states no key rule, so the key type does not stop generation.
-    assert.doesNotThrow(() => generate({ root, profile: { mobx: false, validation: false } }));
+    assert.doesNotThrow(() => generate({ root, profile: { validation: false } }));
   });
 }
 
@@ -433,10 +433,10 @@ for (const shape of ['[string, ...number[], boolean]', '[...number[], boolean]']
 export type TItem = IModel<{ row: ${shape} }>;
 `);
     assert.throws(
-      () => generate({ root, profile: { mobx: false, validation: true } }),
+      () => generate({ root, profile: { validation: true } }),
       /item\.model\.ts:\d+:\d+ RUNM1021: Field "row" of TItem has fixed elements after its rest element, which a JSON Schema cannot validate in order\. Move the fixed elements before the rest element, or set `\{ validation: false \}` on the model\./,
     );
-    assert.doesNotThrow(() => generate({ root, profile: { mobx: false, validation: false } }));
+    assert.doesNotThrow(() => generate({ root, profile: { validation: false } }));
   });
 }
 
@@ -446,7 +446,7 @@ test('a tuple with a fixed element after its rest element generates when the mod
   fs.writeFileSync(path.join(sourceRoot, 'item.model.ts'), `import type { IModel } from '@exprtlabs/golem/model';
 export type TItem = IModel<{ row: [string, ...number[], boolean] }, { validation: false }>;
 `);
-  assert.doesNotThrow(() => generate({ root, profile: { mobx: false, validation: true } }));
+  assert.doesNotThrow(() => generate({ root, profile: { validation: true } }));
 });
 
 // protects: T-585 validation off keeps the positional conversion of a rest element in the middle
@@ -455,7 +455,7 @@ test('a tuple with a rest element in the middle round-trips its items in order w
   fs.writeFileSync(path.join(sourceRoot, 'item.model.ts'), `import type { IModel } from '@exprtlabs/golem/model';
 export type TItem = IModel<{ row: [string, ...Date[], number] }>;
 `);
-  writeModelGolemYaml(root, { mobx: false, validation: false });
+  writeModelGolemYaml(root, { validation: false });
   await buildModelProject(root);
   const generated = await import(`${path.join(root, 'build/item.model.generated.js')}?${Date.now()}`);
   const wire = { row: ['a', '2024-01-01T00:00:00.000Z', '2024-01-02T00:00:00.000Z', 3] };
@@ -472,7 +472,7 @@ export type TItem = IModel<{ seen: { [key: \`a_\${string}\`]: Date; [key: \`n_\$
 `);
   for (const validation of [true, false]) {
     assert.throws(
-      () => generate({ root, profile: { mobx: false, validation } }),
+      () => generate({ root, profile: { validation } }),
       /item\.model\.ts:\d+:\d+ RUNM1004: Field "seen" of TItem has index signatures of different value types, which golem cannot state as one value type\. Give them one value type, or use one index signature\./,
     );
   }
@@ -487,7 +487,7 @@ export type TItem = IModel<{ seen: { [key: string]: ${stringValue}; [key: \`at_\
 `);
     for (const validation of [true, false]) {
       assert.throws(
-        () => generate({ root, profile: { mobx: false, validation } }),
+        () => generate({ root, profile: { validation } }),
         /item\.model\.ts:\d+:\d+ RUNM1004: Field "seen" of TItem has index signatures of different value types, which golem cannot state as one value type\. Give them one value type, or use one index signature\./,
       );
     }
@@ -523,7 +523,7 @@ test('a bigint with a phantom brand keeps the TSerde message, not RUNM1085', t =
   fs.writeFileSync(path.join(sourceRoot, 'item.model.ts'), `import type { IModel } from '@exprtlabs/golem/model';
 export type TItem = IModel<{ x: bigint & { readonly __brand: 'Id' } }>;
 `);
-  assert.throws(() => generate({ root, profile: { mobx: false, validation: false } }), /bigint has no JSON representation; declare a TSerde wire codec/);
+  assert.throws(() => generate({ root, profile: { validation: false } }), /bigint has no JSON representation; declare a TSerde wire codec/);
 });
 
 // protects: T-559 a derived model that narrowed an array-of-models field decoded its items as plain objects
@@ -536,7 +536,7 @@ export type TCat = IModel<{ name: string; lives: number }>;
 export type TOwner = IModel<{ pet: TPet; pets: TPet[] }>;
 export type TCatOwner = IModel<TOwner & { pet: TCat; pets: TCat[] }>;
 `);
-    writeModelGolemYaml(root, { mobx: false, validation });
+    writeModelGolemYaml(root, { validation });
     await buildModelProject(root);
     const generated = await import(`${path.join(root, 'build/pets.model.generated.js')}?${Date.now()}`);
     const wire = { pet: { name: 'Tom', lives: 9 }, pets: [{ name: 'Kit', lives: 3 }] };
@@ -560,7 +560,7 @@ export type TContainer = IModel<{ projected: Wrap<string> }>;
 `,
   });
   assert.throws(
-    () => generate({ root, profile: { mobx: false, validation: true } }),
+    () => generate({ root, profile: { validation: true } }),
     /RUNM1055.*Projection of TAddress would discard whole-object constraints/,
   );
 });

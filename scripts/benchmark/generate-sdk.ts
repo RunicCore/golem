@@ -9,7 +9,7 @@ const moneyYaml = path.join(root, 'tests/fixtures/models/serde-features/money.ya
 export function generateFeatureMoneySdk(
   project: string,
   source: string,
-  options: { readonly validation: boolean; readonly mobx?: boolean },
+  options: { readonly validation: boolean },
   generatorModule?: string,
 ): string {
   copyFileSync(moneyYaml, path.join(project, 'money.yaml'));
@@ -17,12 +17,12 @@ export function generateFeatureMoneySdk(
   const script = `
 import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { generate } from ${JSON.stringify(generatorModule ? pathToFileURL(generatorModule).href : '@exprtlabs/golem-openapi/generator')};
+import { generate } from ${JSON.stringify(generatorModule ? pathToFileURL(generatorModule).href : '@exprtlabs/golem-openapi-ts/generator')};
 const result = await generate({
   input: ${JSON.stringify(path.join(project, 'money.yaml'))},
   output: ${JSON.stringify(output)},
   name: 'Payments',
-  profile: { mobx: ${options.mobx === true}, validation: ${options.validation} },
+  profile: { validation: ${options.validation} },
 });
 for (const artifact of result.artifacts) {
   mkdirSync(path.dirname(artifact.path), { recursive: true });

@@ -31,7 +31,7 @@ async function buildTuple(scope: FixtureScope, name: string, validation: boolean
   const { root, sourceRoot } = tupleModelProject(scope, name);
   const file = validation ? 'tuple-rest-last' : 'tuple';
   fs.writeFileSync(path.join(sourceRoot, `${file}.model.ts`), readFixture(`models/model-tuples/${file}.model.ts`));
-  writeModelGolemYaml(root, { mobx: false, validation });
+  writeModelGolemYaml(root, { validation });
   await buildModelProject(root);
   const loaded = await import(pathToFileURL(path.join(root, `build/${file}.model.js`)).href) as Record<string, BuiltTuple['Tuple']>;
   return { Tuple: loaded[validation ? 'TupleRestLast' : 'Tuple']!, codec: requireObjectCodec(generatedCodecIdFromRoot(root, validation ? 'TTupleRestLast' : 'TTuple')) };
@@ -106,7 +106,7 @@ test('readonly array and tuple contracts survive model generation and strict con
     compilerOptions: { exactOptionalPropertyTypes: true, noUncheckedIndexedAccess: true },
   });
   copyFixture(root, 'models/model-tuples/readonly');
-  writeModelGolemYaml(root, { mobx: false, validation: false });
+  writeModelGolemYaml(root, { validation: false });
   await buildModelProject(root);
 });
 
@@ -137,7 +137,7 @@ test('validation-enabled codec emission compiles and preserves array and tuple g
     compilerOptions: { exactOptionalPropertyTypes: true, noUncheckedIndexedAccess: true },
   });
   copyFixture(root, 'models/model-tuples/getter');
-  writeModelGolemYaml(root, { mobx: false, validation: true });
+  writeModelGolemYaml(root, { validation: true });
   await buildModelProject(root);
   const codecId = generatedCodecIdFromRoot(root, 'TSnapshot');
   const verifier = path.join(root, 'verify-array-getters.mjs');

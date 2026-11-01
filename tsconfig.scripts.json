@@ -15,7 +15,7 @@
   },
   "include": [
     "scripts/**/*.ts",
-    "packages/golem-openapi/compliance/*.ts"
+    "packages/golem-openapi-ts/compliance/*.ts"
   ],
   "exclude": ["scripts/benchmark/fixtures/**"]
 }

@@ -51,7 +51,7 @@ test('a third-party package that imports only public golem subpaths registers it
   await runPipeline(path.join(root, 'golem.yaml'));
 
   const card = fs.readFileSync(path.join(root, 'src/ext/card.model.ts'), 'utf8');
-  assert.match(card, /^\/\* profile: \{"mobx":false,"validation":"sanity"\} \*\/$/m);
+  assert.match(card, /^\/\* profile: \{"validation":"sanity"\} \*\/$/m);
   assert.match(card, /^ {2}age: number;\n {2}name: string;$/m);
 
   await command(root, process.execPath, [TSC, '-p', 'tsconfig.json', '--noEmit']);

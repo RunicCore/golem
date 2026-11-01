@@ -13,7 +13,7 @@ import {
 } from 'mobx';
 
 import * as model from '@exprtlabs/golem/internal/model-runtime';
-import * as mobxRuntime from '@exprtlabs/golem/mobx';
+import * as mobxRuntime from '@exprtlabs/golem-openapi-ts/mobx';
 
 interface ChildFields {
   value: number;

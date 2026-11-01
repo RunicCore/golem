@@ -36,7 +36,7 @@ async function generateDocument(
   await generate({
     input: writeOpenApiDocument(directory, document),
     output: path.join(directory, 'sdk'),
-    profile: { mobx: false, validation: false },
+    profile: { validation: false },
     allowRemoteRefs: options.allowRemoteRefs ?? true,
     remoteHosts: options.remoteHosts ?? ['schemas.example'],
     maxRefBytes: options.maxRefBytes,

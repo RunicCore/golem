@@ -1,7 +1,7 @@
 // #region model-definition
 // #region model-declaration
 import type { IModel } from '@exprtlabs/golem/model';
-import { asGenObservable } from '@exprtlabs/golem/mobx';
+import { asGenObservable } from '@exprtlabs/golem-openapi-ts/mobx';
 import { getValidator } from '@exprtlabs/golem/validation';
 import { action, computed } from 'mobx';
 import type { TMoney } from '../sdk/index.js';

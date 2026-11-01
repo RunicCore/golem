@@ -11,7 +11,7 @@ const fields: Readonly<Record<CompanionModelName, SourceFragment>> = {
 export function companionModelSource({ name, mobx }: { readonly name: CompanionModelName; readonly mobx: boolean }): SourceFragment {
   const modelName = identifier(name);
   const generatedModule = literal(`./${name.toLowerCase()}.model.generated.js`);
-  const mobxImport = mobx ? tsSource`import { asGenObservable } from '@exprtlabs/golem/mobx';\n` : tsSource``;
+  const mobxImport = mobx ? tsSource`import { asGenObservable } from '@exprtlabs/golem-openapi-ts/mobx';\n` : tsSource``;
   const observable = mobx ? tsSource`    asGenObservable(this);\n` : tsSource``;
   return tsSource`import type { IModel } from '@exprtlabs/golem/model';
 import { T${modelName}BaseModel, type T${modelName}Fields } from ${generatedModule};

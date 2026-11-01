@@ -5,14 +5,11 @@
  * error, so a misspelled or removed export fails golem's build. The value table copies no list of names: the types are the list.
  */
 import type * as client from '../client.js';
-import type * as mobx from '../mobx.js';
 import type * as model from '../model.js';
 import type * as serde from '../serde.js';
 import type * as validation from '../validation.js';
 import type * as clientEntry from '../runtime-client.js';
 import type * as clientValidationEntry from '../runtime-client-validation.js';
-import type * as mobxEntry from '../runtime-mobx.js';
-import type * as mobxValidationEntry from '../runtime-mobx-validation.js';
 import type * as modelEntry from '../runtime-model.js';
 import type * as temporalEntry from '../runtime-temporal.js';
 import type * as validationEntry from '../runtime-validation.js';
@@ -23,8 +20,6 @@ import { runtimeCode, type Code } from './code.js';
 interface RuntimeExports {
   readonly client: typeof clientEntry;
   readonly conversion: typeof modelEntry;
-  readonly mobx: typeof mobxEntry;
-  readonly 'mobx-validation': typeof mobxValidationEntry;
   readonly model: typeof modelEntry;
   readonly serde: typeof modelEntry;
   readonly temporal: typeof temporalEntry;
@@ -56,7 +51,6 @@ interface RuntimeTypeExports {
     readonly RuntimeSecuritySchemes: client.RuntimeSecuritySchemes;
   };
   readonly validation: { readonly OperationRuntimeValidators: validation.OperationRuntimeValidators; readonly SchemaIssue: validation.SchemaIssue };
-  readonly mobx: { readonly ObservableApiOperation: mobx.ObservableApiOperation<never, never, never> };
   readonly serde: { readonly SerdeOptions: serde.SerdeOptions; readonly ValidateOptions: serde.ValidateOptions };
 }
 
@@ -64,8 +58,6 @@ interface RuntimeTypeExports {
 export const RUNTIME_SPECIFIER = {
   client: '@exprtlabs/golem/internal/client-runtime',
   conversion: '@exprtlabs/golem/internal/model-runtime',
-  mobx: '@exprtlabs/golem/internal/mobx-runtime',
-  'mobx-validation': '@exprtlabs/golem/internal/mobx-validation-runtime',
   model: '@exprtlabs/golem/internal/model-runtime',
   serde: '@exprtlabs/golem/internal/model-runtime',
   temporal: '@exprtlabs/golem/internal/temporal-runtime',
@@ -96,19 +88,6 @@ export type RuntimeTable = {
   readonly [M in RuntimeModule]: { readonly [N in keyof RuntimeExports[M] & string]: Code };
 };
 
-/** The fixed order of the import lines of the runtime parts. A module added to `RuntimeExports` must be ranked here. */
-export const RUNTIME_MODULE_RANK = {
-  client: 0,
-  conversion: 1,
-  mobx: 2,
-  'mobx-validation': 3,
-  model: 4,
-  serde: 5,
-  temporal: 6,
-  validation: 7,
-  'validation-runtime': 8,
-} as const satisfies Record<RuntimeModule, number>;
-
 function moduleTable(module: RuntimeModule, typeOnly: boolean): object {
   const codes = new Map<string, Code>();
   return new Proxy({}, {
@@ -121,15 +100,15 @@ function moduleTable(module: RuntimeModule, typeOnly: boolean): object {
   });
 }
 
-// The names of a module exist only as types, and loading the runtime modules here would load mobx on every run of the
+// The names of a module exist only as types, and loading the runtime modules here would load every runtime peer on each run of the
 // tooling. The cast is the one place where the table takes its type from them.
 export const rt = Object.fromEntries(
-  (Object.keys(RUNTIME_MODULE_RANK) as RuntimeModule[]).map((module) => [module, moduleTable(module, false)]),
+  (Object.keys(RUNTIME_SPECIFIER) as RuntimeModule[]).map((module) => [module, moduleTable(module, false)]),
 ) as unknown as RuntimeTable;
 
 /** The type names, as Code with a type-only runtime part: `rtType.validation.SchemaIssue`. */
 export const rtType = Object.fromEntries(
-  (Object.keys(RUNTIME_MODULE_RANK) as RuntimeModule[]).map((module) => [module, moduleTable(module, true)]),
+  (Object.keys(RUNTIME_SPECIFIER) as RuntimeModule[]).map((module) => [module, moduleTable(module, true)]),
 ) as unknown as RuntimeTypeTable;
 
 /** A function of a runtime module in the shape of the function a TSerde tag names: a binding of the runtime and a binding of the project are the same kind of value. */

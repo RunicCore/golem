@@ -36,7 +36,7 @@ const unavailable = (error: unknown): boolean => error instanceof LibError && er
 async function load(t: TestContext, files: Readonly<Record<string, string>>) {
   const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-shared-anonymous-', name: 'shared-anonymous', linkWorkspaceNodeModules: true });
   writeGeneratedArtifacts(Object.entries(files).map(([name, content]) => ({ path: path.join(sourceRoot, name), content })));
-  writeModelGolemYaml(root, { mobx: false, validation: true });
+  writeModelGolemYaml(root, { validation: true });
   await buildModelProject(root);
   for (const name of Object.keys(files)) await import(pathToFileURL(path.join(root, 'build', name.replace(/\.ts$/, '.generated.js'))).href);
   return root;

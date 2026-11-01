@@ -70,7 +70,7 @@ function generateAt(root: string): ReturnType<typeof generate> {
     root,
     output: path.join(root, 'openapi.json'),
     info: { title: 'Swagger metadata', version: '1' },
-    profile: { mobx: false, validation: false },
+    profile: { validation: false },
   });
 }
 
@@ -85,7 +85,7 @@ async function generated(
     root,
     output: path.join(root, 'openapi.json'),
     info: { title: 'Swagger metadata', version: '1' },
-    profile: { mobx: false, validation: false, allowAny },
+    profile: { validation: false, allowAny },
   });
 }
 

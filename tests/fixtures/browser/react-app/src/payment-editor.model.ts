@@ -1,5 +1,5 @@
 import type { IModel } from '@exprtlabs/golem/model';
-import { asGenObservable } from '@exprtlabs/golem/mobx';
+import { asGenObservable } from '@exprtlabs/golem-openapi-ts/mobx';
 import { getValidator } from '@exprtlabs/golem/validation';
 import { action, computed, observable } from 'mobx';
 import type { Money } from '../sdk/index.js';

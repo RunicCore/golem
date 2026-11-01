@@ -1,3 +1,4 @@
+import { generatorSettings } from './support/mobx-extension.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -30,7 +31,7 @@ function exportedNames(program: ts.Program, file: string): string[] {
 
 /** The generated SDK profiles whose public layout is frozen: MobX needs the golem mode, which imports the codecs file the models job writes. */
 const PROFILES = {
-  'mobx-off': { profile: { mobx: false, validation: true }, mode: 'standalone', ownValidators: true },
+  'mobx-off': { profile: { validation: true }, mode: 'standalone', ownValidators: true },
   'mobx-on': { profile: { mobx: true, validation: true }, mode: 'golem', ownValidators: false },
 } as const;
 
@@ -60,7 +61,7 @@ test('the public SDK layout generated from a fixture document matches the frozen
   const actual: Layout = {};
   for (const [name, { profile, mode, ownValidators }] of Object.entries(PROFILES)) {
     const sdk = path.join(createFixtureProject(t, `golem-sdk-layout-${name}-`), 'sdk');
-    writeGeneratedArtifacts(writeSdk(document, { output: sdk, name: 'Payments', profile, mode, codecsFile: path.resolve(sdk, 'codecs.generated.ts') }).artifacts);
+    writeGeneratedArtifacts(writeSdk(document, { output: sdk, name: 'Payments', ...generatorSettings<{ readonly mobx?: boolean; readonly validation: boolean }>(profile), mode, codecsFile: path.resolve(sdk, 'codecs.generated.ts') }).artifacts);
     actual[name] = publicLayout(sdk);
     // A standalone SDK carries its validators module at its root (internal: the layout lists index.ts and the operations); a golem-mode SDK compiles them in the models job.
     assert.equal(fs.existsSync(path.join(sdk, 'validators.generated.ts')), ownValidators, name);

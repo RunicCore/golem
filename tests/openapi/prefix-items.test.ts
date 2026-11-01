@@ -94,7 +94,7 @@ test('prefixItems closed and rest tuples compile in strict TypeScript and valida
   }), {
     output,
     name: 'Prefix',
-    profile: { mobx: false, validation: true },
+    profile: { validation: true },
   });
   copyFixtureFile(output, "openapi/prefix-items/prefix-assert.ts", "prefix-assert.ts");
   copyFixtureFile(output, "openapi/prefix-items/prefix-rest-assert.ts", "prefix-rest-assert.ts");

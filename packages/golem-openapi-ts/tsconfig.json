@@ -5,7 +5,7 @@
     "sourceMap": false,
     "rootDir": "src",
     "outDir": "dist",
-    "tsBuildInfoFile": "../../.build/golem-openapi.tsbuildinfo",
+    "tsBuildInfoFile": "../../.build/golem-openapi-ts.tsbuildinfo",
     "lib": [
       "ES2023",
       "DOM",
@@ -19,6 +19,9 @@
     "src/**/*.ts"
   ],
   "references": [
+    {
+      "path": "../golem-model/tsconfig.json"
+    },
     {
       "path": "../golem/tsconfig.runtime.json"
     },

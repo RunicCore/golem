@@ -2,7 +2,7 @@
 
 Generate model bases from TypeScript `IModel` definitions. Keep methods and
 defaults in your handwritten class; the generated base supplies fields,
-conversion metadata and optional validation or MobX support. Generated files
+conversion metadata and optional validation. Generated files
 are not committed: `golem build` generates first
 ([ignore generated files](../../docs/reference/generated-files.md#gitignore)).
 

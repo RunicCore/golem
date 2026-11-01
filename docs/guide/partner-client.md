@@ -19,7 +19,7 @@ Golem reads the partner's document and writes a TypeScript client from it. The e
 
 ```sh
 npm install @exprtlabs/golem temporal-polyfill
-npm install --save-dev @exprtlabs/golem-openapi @exprtlabs/golem-model typescript@~7.1.0-beta
+npm install --save-dev @exprtlabs/golem-openapi-ts @exprtlabs/golem-model typescript@~7.1.0-beta
 ```
 
 - `@exprtlabs/golem-model` is for your own model in Step 8. Leave it out when you do not write one.

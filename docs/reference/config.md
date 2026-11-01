@@ -6,7 +6,7 @@ Put `golem.yaml` in the project that owns the source files. Paths in the file ar
 
 - `version: 1` selects the configuration format. It is independent of the package release.
 - `tsconfig` names the TypeScript project. Every job reads it: `golem generate`, `golem check` and `golem build`, and the Vite and esbuild plugins and the Node loader, which open the same project from `golem.yaml`. They read the `config` option of the plugin, then `GOLEM_CONFIG`, then `./golem.yaml`.
-- `mobx`, `validation` and `allowAny` apply to every job. `exact` applies to the model block and to the models that the docs jobs describe. A named `IObject` or `IModel` can still set `validation`, `allowAny` and `exact` for that declaration.
+- `validation` and `allowAny` apply to every job. `exact` applies to the model block and to the models that the docs jobs describe. A named `IObject` or `IModel` can still set `validation`, `allowAny` and `exact` for that declaration.
 - A top-level key that is not a root key names a [block](#blocks). The package that registers the block validates it.
 - Unknown keys are errors.
 - Golem writes `.golem/schema.json`, a JSON Schema for `golem.yaml` that holds the root keys and the keys of each installed package block. To get completion in your editor, put `# yaml-language-server: $schema=.golem/schema.json` on the first line of `golem.yaml`. A schema part that is missing or broken gives a warning, and the editor does not complete that block.
@@ -20,7 +20,7 @@ A block is a top-level key of `golem.yaml` that one installed package registers.
 | --- | --- | --- |
 | [`model`](#model-block) | `@exprtlabs/golem-model` | One models job: the generated file of each model source |
 | [`ts-openapi`](#ts-openapi-block) | `@exprtlabs/golem-ts-openapi` | One docs job for each `docs` entry: an OpenAPI document from controllers |
-| [`openapi-ts`](#openapi-ts-block) | `@exprtlabs/golem-openapi` | One SDK job for each `sdks` entry: a TypeScript SDK from an OpenAPI document |
+| [`openapi-ts`](#openapi-ts-block) | `@exprtlabs/golem-openapi-ts` | One SDK job for each `sdks` entry: a TypeScript SDK from an OpenAPI document |
 
 A package from another author registers its own block name. Write that block under its name and follow the documentation of the package.
 
@@ -35,7 +35,6 @@ A package from another author registers its own block name. Write that block und
 | --- | --- | --- | --- | --- |
 | `version` | literal `1` | Yes | — | Configuration format version |
 | `tsconfig` | path | No | `tsconfig.json` | The project's tsconfig, relative to `golem.yaml` |
-| `mobx` | boolean | No | `false` | MobX observability hooks. An `openapi-ts` job with `mobx: true` needs `mode: golem` ([modes](#sdk-modes)). |
 | `validation` | `true`, `false` or `sanity` | No | `true` | Level of the generated runtime checks ([levels](#validation-profiles)). Any other value is an error. |
 | `allowAny` | boolean | No | `false` | Fields typed `any` or `unknown` in models |
 | `exact` | boolean | No | `true` | Rejection of extra properties in models |
@@ -222,7 +221,7 @@ model: {}
 
 ## The `openapi-ts` block {#openapi-ts-block}
 
-Install `@exprtlabs/golem-openapi` to use the `openapi-ts` block. Its `sdks` list holds one SDK job for each SDK. Each job reads one YAML or JSON document and writes one SDK directory. A block with no `sdks` declares no job.
+Install `@exprtlabs/golem-openapi-ts` to use the `openapi-ts` block. Its `sdks` list holds one SDK job for each SDK. Each job reads one YAML or JSON document and writes one SDK directory. A block with no `sdks` declares no job. Its `extensions` key turns on [the `mobx` extension](#mobx-extension). The block needs `sdks`, `extensions`, or both.
 
 Each entry of `sdks` takes these keys:
 
@@ -247,7 +246,7 @@ Each entry of `sdks` takes these keys:
 | The SDK holds | The client, types, checks, conversions and a copy of the golem runtime that it uses | The client and types only |
 | Checks and conversions | Written by the SDK job | Written by the models job, together with your models |
 | Installs | Nothing from golem; `temporal-polyfill` with `dates: temporal` | `@exprtlabs/golem` |
-| `mobx: true` | Error [`OPENAPI_MOBX_NEEDS_GOLEM_MODE`](/reference/diagnostics#openapi-mobx-needs-golem-mode) | Allowed |
+| [`mobx` extension](#mobx-extension) | Error [`OPENAPI_MOBX_NEEDS_GOLEM_MODE`](/reference/diagnostics#openapi-mobx-needs-golem-mode) | Allowed |
 
 - Both modes write no model classes. A response is a plain object of the SDK type, with converted values such as `Temporal` dates. A class with methods is your own model over the SDK type ([SDK types in your models](/guide/models-and-client)).
 - `mode: golem` without a `model` block in the same `golem.yaml` stops loading. The message says that no job provides `CodecsHost`.
@@ -271,6 +270,25 @@ components.schemas.Money: { $ref: './money.json' } → component Money
 ```
 
 Reference limits (`maxRefBytes`, `maxRefDocuments` and `refTimeoutMs`) apply also with `validation: false`. That flag controls only the generated runtime checks.
+
+### The `mobx` extension {#mobx-extension}
+
+The `mobx` extension makes the validators of your class models and the operations of a `golem` SDK observable. Write it under `extensions` in the `openapi-ts` block. The extension has no keys: an empty entry turns it on.
+
+```yaml
+version: 1
+openapi-ts:
+  extensions:
+    mobx: {}
+model: {}
+```
+
+- A block with only `extensions` and no `sdks` is valid, for a project with a `model` block and no SDK job. The validators of the models are then observable, with `validation` other than `false`.
+- Each operation of a `golem` SDK gets an observable `loading` ([Call operations](/guide/client-usage#observe-loading-with-mobx)). An SDK in `mode: golem` needs a `model` block in the same file.
+- A `standalone` SDK in a block with the extension stops generation with [`OPENAPI_MOBX_NEEDS_GOLEM_MODE`](/reference/diagnostics#openapi-mobx-needs-golem-mode). Set `mode: golem`, or remove the extension.
+- Without the extension, generated files import no MobX.
+- The app imports `asGenObservable` from `@exprtlabs/golem-openapi-ts/mobx` and `getValidator` from `@exprtlabs/golem-openapi-ts/mobx-validation` ([Runtime API](/reference/runtime-api#mobx)).
+- The generated files import the MobX runtime of `@exprtlabs/golem-openapi-ts` at run time. Install `@exprtlabs/golem-openapi-ts` in `dependencies`, with `mobx` ([MobX and React](/guide/mobx)).
 
 ## The `model` block {#model-block}
 

@@ -8,7 +8,7 @@ import type { ModelValidationContext } from '@exprtlabs/golem/model';
 import { validateInstance, type Validator } from '@exprtlabs/golem/validation';
 import { readFixture, writeGeneratedArtifacts } from './fixture-project.js';
 import { generatedCodecIdFromRoot } from './support/consumer.js';
-import { generate as generateOpenApi } from '@exprtlabs/golem-openapi/generator';
+import { generate as generateOpenApi } from '@exprtlabs/golem-openapi-ts/generator';
 import { buildModelProject, createModelProject, generatedModelFiles, writeModelGolemYaml, writeModelSources } from './model-project.js';
 
 const COUNTER = `export let calls = 0;
@@ -40,7 +40,7 @@ const good = { note: 'hi', code: 'ff', when: '2026-01-02T03:04:05.000Z', sku: 'A
 const validationError = (error: unknown): boolean => error instanceof LibError && error.kind === LibErrorKind.Validation;
 const firstIssue = (error: unknown) => (error as LibError).issues[0];
 
-async function project(t: TestContext, profile: { mobx: false; validation: true }) {
+async function project(t: TestContext, profile: { validation: true }) {
   const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-single-pass-', name: 'single-pass' });
   writeModelSources(sourceRoot, { 'counter.ts': COUNTER, 'order.model.ts': ORDER });
   writeModelGolemYaml(root, profile);
@@ -52,7 +52,7 @@ async function project(t: TestContext, profile: { mobx: false; validation: true 
 }
 
 test('each rule runs once per conversion; IObject parse enforces model-only rules', async t => {
-  const { counter, Order, RuleOnly, order, plain, ruleOnly, source } = await project(t, { mobx: false, validation: true });
+  const { counter, Order, RuleOnly, order, plain, ruleOnly, source } = await project(t, { validation: true });
   const count = (run: () => unknown): number => { counter.reset(); run(); return counter.calls; };
 
   // The IObject bug: model-only rules after decoding.
@@ -92,7 +92,7 @@ test('each rule runs once per conversion; IObject parse enforces model-only rule
 const MONEY_FIXTURE = 'models/unify-validate/sdk-money-ref-plus-extra-tvalidation-local-tvalidation-and-tserde-share-one-';
 
 test('a rule on an SDK model runs once per parse and IObject enforces it', async t => {
-  const profile = { mobx: false, validation: true } as const;
+  const profile = { validation: true } as const;
   const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-single-pass-sdk-', name: 'single-pass-sdk' });
   writeModelSources(root, { 'money.yaml': readFixture(`${MONEY_FIXTURE}/money.yaml`) });
   writeGeneratedArtifacts((await generateOpenApi({ input: path.join(root, 'money.yaml'), output: path.join(sourceRoot, 'sdk'), name: 'Payments', profile })).artifacts);
@@ -159,7 +159,7 @@ const CALLS: readonly ToggleCall[] = ['omitted', 'true', 'false'];
 async function loadToggles(t: TestContext, source: string, validation: boolean) {
   const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-single-pass-toggles-', name: 'single-pass-toggles' });
   writeModelSources(sourceRoot, { 'counter.ts': COUNTER, 'toggles.model.ts': source });
-  writeModelGolemYaml(root, { mobx: false, validation });
+  writeModelGolemYaml(root, { validation });
   await buildModelProject(root);
   const counter = await import(pathToFileURL(path.join(root, 'build/counter.js')).href) as { calls: number; reset(): void };
   const models = await import(pathToFileURL(path.join(root, 'build/toggles.model.js')).href) as Record<string, new (v?: object) => object>;
@@ -224,7 +224,7 @@ test('toggled models in a validating project: an opaque child, an unvalidated pa
 });
 
 test('rules inside constraints the wire drops (Contains, Not) still run once on parse', async t => {
-  const profile = { mobx: false, validation: true } as const;
+  const profile = { validation: true } as const;
   const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-single-pass-constraints-', name: 'single-pass-constraints' });
   writeModelSources(sourceRoot, {
     'predicates.ts': readFixture('models/constraint-callback-composition/constraint-callback-composition-predicates/predicates.ts'),
@@ -253,7 +253,7 @@ export class Stop extends TStopBaseModel {}
 export type TTrip = IModel<{ at: Date; stop: Stop }>;
 export class Trip extends TTripBaseModel {}
 ` });
-  writeModelGolemYaml(root, { mobx: false, validation: true });
+  writeModelGolemYaml(root, { validation: true });
   await buildModelProject(root);
   const { Trip } = await import(pathToFileURL(path.join(root, 'build/visit.model.js')).href) as { Trip: new (v?: object) => object };
   const validatorsFile = generatedModelFiles(root).find(item => item.path.endsWith('/models.validators.generated.ts'));

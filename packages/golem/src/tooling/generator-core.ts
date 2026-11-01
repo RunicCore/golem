@@ -29,7 +29,6 @@ export function stableJson(value: unknown): string {
 }
 
 export interface GolemProfile {
-  readonly mobx: boolean;
   /**
    * How much a generated codec checks: `true` (default) the whole schema, `'sanity'` the shape only (types, required and extra keys,
    * enums, union tags), `false` nothing. The order is `false` < `'sanity'` < `true`.
@@ -71,11 +70,10 @@ export function validationRank(level: GolemProfile['validation']): number {
 export function resolveProfile(profile: GolemProfile): ResolvedGolemProfile {
   if (!isRecord(profile)) throw new TypeError('Generation profile must be an object.');
   for (const key of Object.keys(profile)) {
-    if (!['mobx', 'validation', 'allowAny', 'unknownFormats', 'extensions'].includes(key)) {
+    if (!['validation', 'allowAny', 'unknownFormats', 'extensions'].includes(key)) {
       throw new TypeError(`Unknown generation profile option: ${key}.`);
     }
   }
-  if (typeof profile.mobx !== 'boolean') throw new TypeError('Generation profile mobx must be a boolean.');
   if (!isValidationLevel(profile.validation)) throw new TypeError(invalidValidationLevelMessage('Generation profile validation'));
   if (profile.allowAny !== undefined && typeof profile.allowAny !== 'boolean') {
     throw new TypeError('Generation profile allowAny must be a boolean.');

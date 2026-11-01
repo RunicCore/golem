@@ -8,7 +8,7 @@ import { createFixtureProject, linkGolemPackages } from '../fixture-project.js';
 import { loadConfig } from '../support/load-config.js';
 import { writeOpenApiDocument } from './helpers.js';
 
-const PROFILE = { mobx: false, validation: true, allowAny: false } as const;
+const PROFILE = { validation: true, allowAny: false } as const;
 const DOCUMENT = {
   openapi: '3.1.0',
   info: { title: 'Charges', version: '1' },
@@ -38,7 +38,7 @@ async function project(t: test.TestContext, mode: 'golem' | 'standalone') {
   const directory = createFixtureProject(t, 'golem-mode-sdk-');
   writeOpenApiDocument(directory, DOCUMENT, 'api.json');
   fs.writeFileSync(path.join(directory, 'package.json'), JSON.stringify({ name: 'golem-mode-sdk-fixture', private: true, type: 'module' }));
-  linkGolemPackages(directory, ['golem', 'golem-model', 'golem-openapi']);
+  linkGolemPackages(directory, ['golem', 'golem-model', 'golem-openapi-ts']);
   const config = path.join(directory, 'golem.yaml');
   fs.writeFileSync(config, `version: 1\nopenapi-ts:\n  sdks:\n    - input: api.json\n      output: sdk/charges\n      name: Charges\n      mode: ${mode}\nmodel: {}\n`);
   const job = (await loadConfig(config)).jobs.find(candidate => candidate.block === 'openapi-ts');

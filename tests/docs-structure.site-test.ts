@@ -194,7 +194,7 @@ function emittedDiagnosticCodes(): Record<'NEST' | 'RUNM' | 'OPENAPI', string[]>
         ...[...text.matchAll(/\bRUNM\d{4}\b/g)].map(m => m[0]),
       ];
     });
-  const openapi = tsFiles(path.join(root, 'packages/golem-openapi/src'))
+  const openapi = tsFiles(path.join(root, 'packages/golem-openapi-ts/src'))
     .flatMap(f => [...readFileSync(f, 'utf8').matchAll(/'(OPENAPI_[A-Z_]+)'/g)].map(m => m[1]));
   return { NEST: [...new Set(nest)], RUNM: [...new Set(runm)], OPENAPI: [...new Set(openapi)] };
 }

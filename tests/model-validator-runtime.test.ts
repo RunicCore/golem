@@ -6,10 +6,10 @@ import test from 'node:test';
 import { autorun } from 'mobx';
 
 import type * as ModelRuntimeModule from '@exprtlabs/golem/internal/model-runtime';
-import type * as MobxValidationRuntimeModule from '@exprtlabs/golem/internal/mobx-validation-runtime';
+import type * as MobxValidationRuntimeModule from '@exprtlabs/golem-openapi-ts/internal/mobx-validation-runtime';
 import type * as ValidationModule from '@exprtlabs/golem/validation';
-import type * as MobxModule from '@exprtlabs/golem/mobx';
-import type * as MobxValidationModule from '@exprtlabs/golem/mobx-validation';
+import type * as MobxModule from '@exprtlabs/golem-openapi-ts/mobx';
+import type * as MobxValidationModule from '@exprtlabs/golem-openapi-ts/mobx-validation';
 import { installCodecModel } from './register-codec-model.js';
 import type { GeneratedModelValidatorEnhancer } from '@exprtlabs/golem/internal/model-runtime';
 import type { ModelTypeDescriptor } from '@exprtlabs/golem/internal/schema';

@@ -9,7 +9,7 @@ import { createFixtureProject, fileFixtureScope, onceShared } from './fixture-pr
 import { repoRoot, tscBin, writePlainTscProject } from './openapi/helpers.js';
 
 const scope = fileFixtureScope();
-const shipped = path.join(repoRoot(), 'packages/golem-openapi/sdk-runtime');
+const shipped = path.join(repoRoot(), 'packages/golem-openapi-ts/sdk-runtime');
 
 const consumer = `import { ClientRuntime, LibError, deserializeDate, serializeDate } from './rt/runtime.js';
 import type { ClientRuntime as Runtime, SchemaIssue, ValidateOptions } from './rt/runtime.types.js';

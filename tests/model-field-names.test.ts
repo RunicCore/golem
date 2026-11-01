@@ -52,7 +52,7 @@ test('model generation rejects Object.prototype-colliding data fields across val
       '',
     ].join('\n'));
     assert.throws(
-      () => generate({ root, sources: [source], profile: { mobx: false, validation: false } }),
+      () => generate({ root, sources: [source], profile: { validation: false } }),
       (error: unknown) => error instanceof Error
         && error.message.includes(prototypeDiagnostic(scenario.field)),
       `${scenario.field} must be rejected during analysis even with validation disabled`,
@@ -64,7 +64,7 @@ test('model generation rejects Object.prototype-colliding data fields across val
     '',
   ].join('\n'));
   assert.throws(
-    () => generate({ root, sources: [source], profile: { mobx: false, validation: true } }),
+    () => generate({ root, sources: [source], profile: { validation: true } }),
     (error: unknown) => error instanceof Error
       && error.message.includes(prototypeDiagnostic('valueOf')),
     'valueOf must be rejected during analysis when validation is enabled',
@@ -75,7 +75,7 @@ test('model generation rejects Object.prototype-colliding data fields across val
     'export type TMethods = IModel<{ toString(): string; hasOwnProperty(name: PropertyKey): boolean }>;',
     '',
   ].join('\n'));
-  assert.doesNotThrow(() => generate({ root, sources: [source], profile: { mobx: false, validation: false } }));
+  assert.doesNotThrow(() => generate({ root, sources: [source], profile: { validation: false } }));
 });
 
 test('generated model API members are rejected before emitting companions', (t) => {
@@ -87,7 +87,7 @@ export type TValidator = IModel<{ '$validator': string }>;
 `,
   });
   assert.throws(
-    () => generate({ root, sources: [source], profile: { mobx: false, validation: false } }),
+    () => generate({ root, sources: [source], profile: { validation: false } }),
     /collides with a generated API member/,
     'Expected reserved field $validator to be rejected',
   );

@@ -62,7 +62,7 @@ async function buildScenarioProject(t: TestContext, names: readonly string[]): P
       fs.writeFileSync(path.join(sourceRoot, directory, name), readFixture(fixturePath));
     }
   }
-  writeModelGolemYaml(root, { mobx: false, validation: true });
+  writeModelGolemYaml(root, { validation: true });
   await buildModelProject(root);
   return {
     root,

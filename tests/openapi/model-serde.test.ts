@@ -212,7 +212,7 @@ async function generateSerdeSdk(t: FixtureScope, prefix: string, document: Recor
   await generateMaterializedSdk(withRootOperations(document, 'Visit'), {
     output,
     name: 'SequenceSerde',
-    profile: { mobx: false, validation, allowAny: false },
+    profile: { validation, allowAny: false },
   });
   return output;
 }
@@ -284,7 +284,7 @@ test('nested Date, inherited, and dictionary conversions work in a standalone SD
   await generateMaterializedSdk(withRootOperations(modelSerdeDocument(), 'Event', 'DerivedEvent', 'Dictionary', 'DerivedDictionary'), {
     output,
     name: 'ModelSerde',
-    profile: { mobx: false, validation: true, allowAny: false },
+    profile: { validation: true, allowAny: false },
   });
   // Nested contracts: Date is the converted value, the wire contract stays a string.
   copyFixtureFile(output, "openapi/model-serde/model-serde-types.ts", "model-serde-types.ts");
@@ -363,7 +363,7 @@ test('a tuple field converts each item by its own schema: the prefix stays a str
   await generateMaterializedSdk(withRootOperations(tupleSerdeDocument(), 'Itinerary'), {
     output,
     name: 'TupleSerde',
-    profile: { mobx: false, validation: false, allowAny: false },
+    profile: { validation: false, allowAny: false },
   });
   compileSerdeTypes(output, 'tuple-types');
 
@@ -416,7 +416,7 @@ test('an SDK body with a property that has no type generates under the default a
   }, 'Envelope'), {
     output,
     name: 'Untyped',
-    profile: { mobx: false, validation: true, allowAny: false },
+    profile: { validation: true, allowAny: false },
   });
   compileGeneratedSdk(output, [], { strict: true, skipLibCheck: true });
 
@@ -968,7 +968,7 @@ test('a body field that is only a map of dates compiles with noUnusedLocals and 
   const dates = { type: 'object', additionalProperties: { type: 'string', format: 'date-time' } };
   await generateMaterializedSdk(withRootOperations(documentBase('3.1.0', {
     components: { schemas: { Problem: { type: 'object', required: ['field'], properties: { field: dates } } } },
-  }), 'Problem'), { output, name: 'DateMap', profile: { mobx: false, validation: false } });
+  }), 'Problem'), { output, name: 'DateMap', profile: { validation: false } });
   compileStrictUnusedSdk(output);
   const problem = await sdkBodyCodec(output, 'DateMap', 'Problem');
   assert.deepEqual(await problem.decode({ field: { a: '2024-05-06T07:08:09.000Z' } }), { field: { a: new Date('2024-05-06T07:08:09.000Z') } });
@@ -984,7 +984,7 @@ const untaggedUnionVariants = {
 
 for (const validation of [true, false]) for (const form of ['inline', 'components', 'inline with an unresolved discriminator keyword'] as const) {
   test(`a oneOf of ${form} objects with a required const tag and no resolved discriminator converts each variant (validation ${validation})`, async t => {
-    // protects: T-594 golem-openapi writes the tag table of a document union itself, so golem need not infer the tag
+    // protects: T-594 golem-openapi-ts writes the tag table of a document union itself, so golem need not infer the tag
     const unresolved = form.startsWith('inline with');
     const output = await generateSerdeSdk(t, 'golem-openapi-oneof-untagged-', sequenceSerdeDocument({
       event: {

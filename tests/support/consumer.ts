@@ -1,18 +1,19 @@
+import { type WithMobx } from './mobx-extension.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { GolemProfile } from '@exprtlabs/golem/generator-api';
 import type { TestContext } from 'node:test';
 import { copyFixtureFile, createFixtureProject, linkGolemPackages } from '../fixture-project.js';
 
-/** A fixture project whose node_modules link the workspace packages golem, golem-model and golem-openapi, with `packageJson` as its package.json plus a dependency on each of them that it does not list. */
+/** A fixture project whose node_modules link the workspace packages golem, golem-model and golem-openapi-ts, with `packageJson` as its package.json plus a dependency on each of them that it does not list. */
 export function workspaceLinkedProject(t: TestContext, prefix: string, packageJson: string): string {
   const root = createFixtureProject(t, prefix);
   fs.writeFileSync(path.join(root, 'package.json'), packageJson);
-  linkGolemPackages(root, ['golem', 'golem-model', 'golem-openapi']);
+  linkGolemPackages(root, ['golem', 'golem-model', 'golem-openapi-ts']);
   return root;
 }
 
-export function writeFixture(root: string, profile: GolemProfile, includeModels = true): void {
+export function writeFixture(root: string, profile: WithMobx<GolemProfile>, includeModels = true): void {
   copyFixtureFile(root, 'packed/profile/api.json', 'api.json');
   copyFixtureFile(root, 'packed/profile/tsconfig.json', 'tsconfig.json');
   if (includeModels) copyFixtureFile(root, 'packed/profile/src/cart.model.ts', 'src/cart.model.ts');
@@ -20,7 +21,6 @@ export function writeFixture(root: string, profile: GolemProfile, includeModels 
 
   const configuration = [
     'version: 1',
-    `mobx: ${profile.mobx}`,
     `validation: ${profile.validation}`,
     'openapi-ts:',
     '  sdks:',
@@ -29,6 +29,7 @@ export function writeFixture(root: string, profile: GolemProfile, includeModels 
     '      name: Profile',
     // MobX needs the golem mode, which needs the model block.
     ...(profile.mobx && includeModels ? ['      mode: golem'] : []),
+    ...(profile.mobx ? ['  extensions:', '    mobx: {}'] : []),
     ...(includeModels ? ['model: {}'] : []),
     '',
   ].join('\n');

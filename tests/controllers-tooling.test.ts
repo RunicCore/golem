@@ -26,7 +26,7 @@ function fixture(t: TestContext): { root: string; config: string } {
     content: 'export class AppController {}\n',
   }, {
     path: path.join(root, 'package.json'),
-    content: JSON.stringify({ name: 'app', dependencies: { '@exprtlabs/golem-ts-openapi': '*', '@exprtlabs/golem-openapi': '*', '@fixture/boundary': '*' } }),
+    content: JSON.stringify({ name: 'app', dependencies: { '@exprtlabs/golem-ts-openapi': '*', '@exprtlabs/golem-openapi-ts': '*', '@fixture/boundary': '*' } }),
   }]);
   copyFixture(path.join(root, 'node_modules/@fixture/boundary'), 'controllers/tooling/boundary-provider');
   return { root, config: path.join(root, 'golem.yaml') };
@@ -40,7 +40,7 @@ function useDocsPackage(root: string): void {
 }
 
 function writeConfig(filename: string, body: string, boundary = 'boundary:\n  root: .\n'): void {
-  fs.writeFileSync(filename, ['version: 1', 'mobx: false', 'validation: true', body, boundary].join('\n'));
+  fs.writeFileSync(filename, ['version: 1', 'validation: true', body, boundary].join('\n'));
 }
 
 /** A `ts-openapi` block with one docs job; `extra` lines belong to that job. */
@@ -84,7 +84,7 @@ function installPipelineProvider(
 ): void {
   const { fixture: providerFixture, ...providerOptions } = options;
   const docsPackage = packageName === '@exprtlabs/golem-ts-openapi';
-  installPackage(root, packageName, docsPackage ? 'golem-ts-openapi' : 'golem-openapi', docsPackage ? 'ts-openapi' : 'openapi-ts', providerFixture, providerOptions);
+  installPackage(root, packageName, docsPackage ? 'golem-ts-openapi' : 'golem-openapi-ts', docsPackage ? 'ts-openapi' : 'openapi-ts', providerFixture, providerOptions);
 }
 
 const SAMPLE = `ts-openapi:
@@ -344,7 +344,7 @@ test('pipeline executes controller output before the SDK consumes its exact file
   );
   installPipelineProvider(
     root,
-    '@exprtlabs/golem-openapi',
+    '@exprtlabs/golem-openapi-ts',
     { fixture: 'pipeline-sdk-output', logPath: path.join(root, 'provider-order.log') },
   );
 
@@ -402,7 +402,7 @@ openapi-ts:
     orderLogPath: path.join(root, 'provider-order.log'),
     sharedInputPath: path.join(root, 'src/shared.ts'),
   });
-  installPipelineProvider(root, '@exprtlabs/golem-openapi', {
+  installPipelineProvider(root, '@exprtlabs/golem-openapi-ts', {
     fixture: 'invalidation-sdk',
     logPath: path.join(root, 'jobs.log'),
     orderLogPath: path.join(root, 'provider-order.log'),

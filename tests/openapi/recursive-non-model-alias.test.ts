@@ -53,7 +53,7 @@ function groupSources(output: string): string[] {
 test('a recursive non-model component generates and its body round-trips through the client', async t => {
   // protects: A-60 case 10 recursive non-object component generates
   const output = path.join(createFixtureProject(t, 'golem-openapi-recursive-json-'), 'sdk');
-  await generateMaterializedSdk(withRootOperations(jsonDocument, 'Note'), { output, name: 'RecursiveJson', profile: { mobx: false, validation: true } });
+  await generateMaterializedSdk(withRootOperations(jsonDocument, 'Note'), { output, name: 'RecursiveJson', profile: { validation: true } });
   compileGeneratedSdk(output, [], { strict: true, skipLibCheck: true, noUnusedLocals: true });
 
   const note = await sdkBodyCodec(output, 'RecursiveJson', 'Note');
@@ -66,7 +66,7 @@ test('a recursive non-model component generates and its body round-trips through
 test('two model groups that hold one recursive component share its functions, defined once', async t => {
   // protects: A-60 case 11 alias shared across groups defines no function twice
   const output = path.join(createFixtureProject(t, 'golem-openapi-recursive-groups-'), 'sdk');
-  await generateMaterializedSdk(datedDocument, { output, name: 'RecursiveDated', profile: { mobx: false, validation: true } });
+  await generateMaterializedSdk(datedDocument, { output, name: 'RecursiveDated', profile: { validation: true } });
   compileGeneratedSdk(output, [], { strict: true, skipLibCheck: true, noUnusedLocals: true });
   const sources = groupSources(output);
   assert.equal(sources.length, 3);
@@ -79,7 +79,7 @@ test('two model groups that hold one recursive component share its functions, de
 test('a recursive component that holds a date-time value decodes the date at each level and encodes it back', async t => {
   // protects: A-60 case 16 recursive component with a date decodes the date
   const output = path.join(createFixtureProject(t, 'golem-openapi-recursive-date-'), 'sdk');
-  await generateMaterializedSdk(withRootOperations(datedDocument, 'Log'), { output, name: 'RecursiveDated', profile: { mobx: false, validation: true } });
+  await generateMaterializedSdk(withRootOperations(datedDocument, 'Log'), { output, name: 'RecursiveDated', profile: { validation: true } });
   compileGeneratedSdk(output, [], { strict: true, skipLibCheck: true, noUnusedLocals: true });
 
   const log = await sdkBodyCodec(output, 'RecursiveDated', 'Log');
@@ -112,7 +112,7 @@ const forestDocument = {
 test('a recursive component that holds a model checks the model at each level', async t => {
   // protects: T-251 recursive alias that reaches a model is checked at each level
   const output = path.join(createFixtureProject(t, 'golem-openapi-recursive-model-'), 'sdk');
-  await generateMaterializedSdk(withRootOperations(forestDocument, 'Garden'), { output, name: 'RecursiveForest', profile: { mobx: false, validation: true } });
+  await generateMaterializedSdk(withRootOperations(forestDocument, 'Garden'), { output, name: 'RecursiveForest', profile: { validation: true } });
   compileGeneratedSdk(output, [], { strict: true, skipLibCheck: true, noUnusedLocals: true });
 
   const garden = await sdkBodyCodec(output, 'RecursiveForest', 'Garden');
@@ -136,7 +136,7 @@ test('a component that is only a $ref to itself stops generation with the ref cy
   const result = await generate({
     input: writeOpenApiDocument(directory, loop),
     output: path.join(directory, 'sdk'),
-    profile: { mobx: false, validation: true },
+    profile: { validation: true },
   });
   assert.deepEqual(result.artifacts, []);
   const diagnostics = result.diagnostics ?? [];

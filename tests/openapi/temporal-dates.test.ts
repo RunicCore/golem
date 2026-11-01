@@ -18,7 +18,7 @@ import {
   type SdkBodyCodec,
 } from './helpers.js';
 
-const PROFILE = { mobx: false, validation: true, allowAny: false } as const;
+const PROFILE = { validation: true, allowAny: false } as const;
 
 function document(event: Record<string, unknown>): unknown {
   return {

@@ -23,7 +23,7 @@ function releaseFixture(root: string, version = '1.0.0', tag = 'latest'): void {
   for (const [directory, name, dependencies] of [
     ['golem', '@exprtlabs/golem', {}],
     ['golem-model', '@exprtlabs/golem-model', { '@exprtlabs/golem': version }],
-    ['golem-openapi', '@exprtlabs/golem-openapi', { '@exprtlabs/golem': version }],
+    ['golem-openapi-ts', '@exprtlabs/golem-openapi-ts', { '@exprtlabs/golem': version }],
     ['golem-ts-openapi', '@exprtlabs/golem-ts-openapi', { '@exprtlabs/golem': version }],
   ] as const) {
     writeJson(path.join(root, 'packages', directory, 'package.json'), {

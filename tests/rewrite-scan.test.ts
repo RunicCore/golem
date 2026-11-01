@@ -315,7 +315,7 @@ function installSdk(root: string): string {
     openapi: '3.1.0',
     info: { title: 'Sdk', version: '1' },
     components: { schemas: { Money: { type: 'object', required: ['cents'], properties: { cents: { type: 'number' } } } } },
-  }, { output: sdk, name: 'sdk', profile: { mobx: false, validation: false } }).artifacts);
+  }, { output: sdk, name: 'sdk', profile: { validation: false } }).artifacts);
   fs.writeFileSync(path.join(sdk, 'package.json'), JSON.stringify({ name: 'sdk', type: 'module', types: './index.ts', main: './index.ts' }));
   return sdk;
 }
@@ -542,9 +542,9 @@ test('a config without a models or controllers job still checks the project that
   const { root } = createModelProject(t, {
     prefix: 'golem-rewrite-consumer-',
     linkTypescript: true,
-    packages: { '@exprtlabs/golem-openapi': path.join(workspace, 'packages/golem-openapi') },
+    packages: { '@exprtlabs/golem-openapi-ts': path.join(workspace, 'packages/golem-openapi-ts') },
   });
-  writeFixture(root, { mobx: false, validation: false }, false);
+  writeFixture(root, { validation: false }, false);
   const use = path.join(root, 'src/use.ts');
   fs.writeFileSync(use, `import { parse } from '@exprtlabs/golem/serde';
 import { ProfileClient } from '../sdk/client.js';

@@ -52,7 +52,7 @@ function generateAt(root: string, options: GenerateOptions = {}): ReturnType<typ
     root,
     output: path.join(root, 'openapi.json'),
     info: { title: 'Spec validity', version: '1' },
-    profile: { mobx: false, validation: false },
+    profile: { validation: false },
     ...options,
   });
 }

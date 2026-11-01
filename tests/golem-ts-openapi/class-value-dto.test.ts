@@ -44,7 +44,7 @@ test('a controller DTO with a class-valued TSerde field and Temporal fields docu
     files: { 'src/money.ts': MONEY },
     tsconfig: TSCONFIG,
   });
-  const result = await generate({ root, output: path.join(root, 'openapi.json'), openapiVersion: '3.2.0', info: { title: 'Orders', version: '1' }, profile: { mobx: false, validation: false } });
+  const result = await generate({ root, output: path.join(root, 'openapi.json'), openapiVersion: '3.2.0', info: { title: 'Orders', version: '1' }, profile: { validation: false } });
   const document = JSON.parse(result.artifacts[0]!.content) as { components: { schemas: Record<string, Schema> } };
   const order = document.components.schemas.TOrder;
   assert.ok(order, 'TOrder component');
@@ -74,7 +74,7 @@ export class EventsController {
 `,
     tsconfig: TSCONFIG,
   });
-  const result = await generate({ root, output: path.join(root, 'openapi.json'), openapiVersion: '3.2.0', info: { title: 'Events', version: '1' }, profile: { mobx: false, validation: false } });
+  const result = await generate({ root, output: path.join(root, 'openapi.json'), openapiVersion: '3.2.0', info: { title: 'Events', version: '1' }, profile: { validation: false } });
   const event = (JSON.parse(result.artifacts[0]!.content) as { components: { schemas: Record<string, Schema> } }).components.schemas.TEvent;
   assert.deepEqual(event?.properties?.at, { type: 'string', format: 'date-time' });
   assert.deepEqual(event?.properties?.day, { type: 'string', format: 'date' });

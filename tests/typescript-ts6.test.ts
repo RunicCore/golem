@@ -34,7 +34,7 @@ import { encodeBytes, decodeBytes } from './codecs.js';
 type Bytes = Uint8Array & TSerde<typeof encodeBytes, typeof decodeBytes>;`,
     fields: tsSource`bytes: Bytes`,
   }).text);
-  const result = generate({ root, profile: { mobx: false, validation: true } });
+  const result = generate({ root, profile: { validation: true } });
   const generated = result.artifacts.find(artifact => artifact.path.endsWith('a.model.generated.ts'))?.content ?? '';
   // Kept pin: the generated companion imports the user's file, so it does not run here; the field type it writes is the only observation.
   assert.match(generated, /\bUint8Array\b/);

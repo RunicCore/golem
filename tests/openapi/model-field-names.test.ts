@@ -28,7 +28,7 @@ test('quotes wire keys in the types and converts a quoted wire key through the c
         },
       },
     },
-  }), 'Payment'), { output, name: 'Quoted', profile: { mobx: false, validation: false } });
+  }), 'Payment'), { output, name: 'Quoted', profile: { validation: false } });
   compileStrictUnusedSdk(output);
   const types = result.artifacts.find((artifact) => artifact.path.endsWith('/types.ts'))?.content ?? '';
   assert.match(types, /"wired-key"\?: string/);
@@ -67,7 +67,7 @@ test('SDK generation rejects declared Object.prototype field names and directs c
       components: { schemas },
     };
     assert.throws(
-      () => writeGeneratedSdk(writeSdk, document, { output: path.join(output, String(index)), profile: { mobx: false, validation: false } }),
+      () => writeGeneratedSdk(writeSdk, document, { output: path.join(output, String(index)), profile: { validation: false } }),
       (error: unknown) => error instanceof Error
         && /Declared model field/.test(error.message)
         && /rename/.test(error.message)
@@ -81,7 +81,7 @@ test('SDK generation rejects declared Object.prototype field names and directs c
     () => writeGeneratedSdk(writeSdk, {
       openapi: '3.1.0', info: { title: 'Validation-enabled field', version: '1' },
       components: { schemas: { Special: { type: 'object', properties: { valueOf: { type: 'string' } } } } },
-    }, { output: path.join(output, 'validation-enabled'), profile: { mobx: false, validation: true } }),
+    }, { output: path.join(output, 'validation-enabled'), profile: { validation: true } }),
     (error: unknown) => error instanceof Error
       && /Declared model field/.test(error.message)
       && /"valueOf"/.test(error.message)
@@ -108,7 +108,7 @@ test('SDK generation rejects declared Object.prototype field names and directs c
         entries: { type: 'object', additionalProperties: { type: 'object' } },
       },
     } } },
-  }, { output: path.join(output, 'metadata'), profile: { mobx: false, validation: false } }));
+  }, { output: path.join(output, 'metadata'), profile: { validation: false } }));
 });
 
 for (const validation of [false, true]) {
@@ -130,7 +130,7 @@ for (const validation of [false, true]) {
           },
         },
       },
-    }), 'Echo'), { output, name: 'RuntimeNames', profile: { mobx: false, validation } });
+    }), 'Echo'), { output, name: 'RuntimeNames', profile: { validation } });
     compileStrictUnusedSdk(output);
     const echo = await sdkBodyCodec(output, 'RuntimeNames', 'Echo');
     const wire = { parseJson: 'a', beginDecode: 'b', registerIModelClass: 'c', at: '2024-05-06T07:08:09.000Z' };
@@ -148,7 +148,7 @@ for (const validation of [false, true]) {
     await generateMaterializedSdk(withRootOperations(documentBase('3.1.0', {
       paths: { '/ping': { get: { operationId: '$v', responses: { 200: { description: 'ok', content: { 'application/json': { schema: { $ref: '#/components/schemas/Holder' } } } } } } } },
       components: { schemas: { Holder: { type: 'object', required: ['item', 'items'], properties: { item: item, items: { type: 'array', items: item } } } } },
-    }), 'Holder'), { output, name: 'LocalNames', profile: { mobx: false, validation } });
+    }), 'Holder'), { output, name: 'LocalNames', profile: { validation } });
     compileStrictUnusedSdk(output);
     const holder = await sdkBodyCodec(output, 'LocalNames', 'Holder');
     const wire = { item: { $k: 'a', $v0: 'b', when: '2024-05-06T07:08:09.000Z' }, items: [{ $k: 'c', $v0: 'd', when: '2024-05-06T07:08:09.000Z' }] };

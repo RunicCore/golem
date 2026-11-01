@@ -1,4 +1,4 @@
-// Bundles the SDK runtime entry of @exprtlabs/golem into the files that @exprtlabs/golem-openapi ships in `sdk-runtime/`.
+// Bundles the SDK runtime entry of @exprtlabs/golem into the files that @exprtlabs/golem-openapi-ts ships in `sdk-runtime/`.
 // A standalone SDK copies them, so its runtime needs no installed golem. The files are:
 //   runtime.impl.ts   the minified bundle behind `// @ts-nocheck`; tsc copies a .ts value file to the SDK's outDir, but not a .js and .d.ts pair
 //   runtime.ts        the facade: it casts each name of the bundle to its declared type in the entry, one statement per name so that a bundler keeps only the names an SDK imports
@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dist = path.join(root, 'packages/golem/dist');
-const output = path.join(root, 'packages/golem-openapi/sdk-runtime');
+const output = path.join(root, 'packages/golem-openapi-ts/sdk-runtime');
 const entry = 'runtime-sdk';
 // The types that generated SDK code names besides the values of the entry.
 const barrelTypes = [

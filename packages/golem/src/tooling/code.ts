@@ -6,7 +6,7 @@
  */
 import { compareText } from './generator-core.js';
 import { hasLocalForm } from './names.js';
-import { RUNTIME_MODULE_RANK, RUNTIME_SPECIFIER, runtimeTypeSpecifier, type RuntimeModule } from './rt.js';
+import { RUNTIME_SPECIFIER, runtimeTypeSpecifier, type RuntimeModule } from './rt.js';
 
 /** A name the file decides. The slot is its identity: two slots with one label are two names. */
 export interface NameSlot { readonly label: string }
@@ -42,7 +42,8 @@ export interface Helper {
 export type Part =
   /** `identifier` marks the text as one name that `identifier` checked, so a conversion that calls it on its value is a call of a function name (`calleeOf`). */
   | { readonly kind: 'text'; readonly text: string; readonly identifier?: true }
-  | { readonly kind: 'runtime'; readonly module: RuntimeModule; readonly name: string; readonly typeOnly?: true; readonly alias?: string }
+  /** `module` is the key of the import line: an `rt` key, or the key of a `packageExport`, which carries its own `specifiers`. */
+  | { readonly kind: 'runtime'; readonly module: string; readonly name: string; readonly typeOnly?: true; readonly alias?: string; readonly specifiers?: PackageSpecifiers }
   | { readonly kind: 'imported'; readonly source: ImportSource; readonly name: string; readonly typeOnly?: true; readonly alias?: string }
   | { readonly kind: 'helper'; readonly helper: Helper }
   | { readonly kind: 'name'; readonly slot: NameSlot }
@@ -301,6 +302,19 @@ export function isEmpty(piece: Code): boolean {
 /** The Code of one runtime part: the value `name` of a runtime module, or its type when `typeOnly`. The rt tables make these. */
 export function runtimeCode(module: RuntimeModule, name: string, typeOnly: boolean = false): Code {
   return new PartsCode([{ kind: 'runtime', module, name, ...(typeOnly ? { typeOnly: true } : {}) }]);
+}
+
+/** Where a package module that is no part of the `rt` tables is imported from: a value from `specifier`, a type from `typeSpecifier`. */
+interface PackageSpecifiers { readonly specifier: string; readonly typeSpecifier: string }
+
+/**
+ * The Code of one export of any package module. `key` names the import line, as an `rt` key does: lines without a file order stand in the code point order of
+ * their keys. A value comes from `specifier` and a type (`typeOnly`) from `typeSpecifier`. A key of the `rt` tables is refused, and one key has one pair of specifiers.
+ */
+export function packageExport(options: { readonly key: string; readonly specifier: string; readonly typeSpecifier: string; readonly name: string; readonly typeOnly?: boolean }): Code {
+  const { key, specifier, typeSpecifier, name, typeOnly = false } = options;
+  if (Object.hasOwn(RUNTIME_SPECIFIER, key)) throw new TypeError(`packageExport key "${key}" is a key of the golem runtime table`);
+  return new PartsCode([{ kind: 'runtime', module: key, name: checkedIdentifier(name, 'name'), specifiers: { specifier, typeSpecifier }, ...(typeOnly ? { typeOnly: true } : {}) }]);
 }
 
 /** The runtime part `named` under a local name of the file: `rtType.serde.SerdeOptions` as `__GolemSerdeOptions` imports `SerdeOptions as __GolemSerdeOptions` and writes the alias. */
@@ -643,13 +657,15 @@ export class NameTable {
 interface RuntimeNames {
   readonly values: Map<string, ImportedName>;
   readonly types: Map<string, ImportedName>;
+  /** The specifiers of a `packageExport` key; none for an `rt` key. */
+  specifiers?: PackageSpecifiers;
 }
 
 /** A name a file imports from a runtime module, and the local name it binds when that differs. */
 interface ImportedName { readonly name: string; readonly alias?: string; readonly typeOnly?: true }
 
 interface Collected {
-  readonly runtime: Map<RuntimeModule, RuntimeNames>;
+  readonly runtime: Map<string, RuntimeNames>;
   /** The imported parts of each source, by the Code that `ImportSource.name` made. */
   readonly imported: Map<ImportSource, Set<Code>>;
   /** The helpers by id, in the order a file can define them: a helper comes after the helpers its definition names. */
@@ -678,21 +694,31 @@ function collect(root: Code): Collected {
   return known;
 }
 
+/** Gives a runtime module the specifiers of a package export; one key has one pair. */
+function setSpecifiers(names: RuntimeNames, module: string, specifiers: PackageSpecifiers | undefined): void {
+  if (!specifiers) return;
+  if (names.specifiers && (names.specifiers.specifier !== specifiers.specifier || names.specifiers.typeSpecifier !== specifiers.typeSpecifier)) {
+    throw new Error(`the package export key "${module}" names two pairs of specifiers`);
+  }
+  names.specifiers = specifiers;
+}
+
 /** What the parts of one Code name: the runtime names, the imported names, and the helpers. */
 interface Scanned {
-  readonly runtime: Map<RuntimeModule, RuntimeNames>;
+  readonly runtime: Map<string, RuntimeNames>;
   readonly imported: Map<ImportSource, Set<Code>>;
   readonly needs: readonly Helper[];
 }
 
 function scanParts(piece: Code): Scanned {
-  const runtime = new Map<RuntimeModule, RuntimeNames>();
+  const runtime = new Map<string, RuntimeNames>();
   const imported = new Map<ImportSource, Set<Code>>();
   let needs: Set<Helper> | undefined;
   for (const part of piece.parts) {
     if (part.kind === 'runtime') {
       let names = runtime.get(part.module);
       if (!names) { names = { values: new Map<string, ImportedName>(), types: new Map<string, ImportedName>() }; runtime.set(part.module, names); }
+      setSpecifiers(names, part.module, part.specifiers);
       const kept = part.typeOnly ? names.types : names.values;
       const key = runtimeKey(part);
       if (!kept.has(key)) kept.set(key, { name: part.name, ...(part.alias === undefined ? {} : { alias: part.alias }), ...(part.typeOnly ? { typeOnly: true as const } : {}) });
@@ -734,8 +760,9 @@ function collectFrom(root: Code): Collected {
     }
     const { definition, scanned } = defined;
     for (const [module, names] of scanned.runtime) {
-      const into = runtime.get(module);
-      if (!into) { runtime.set(module, { values: new Map(names.values), types: new Map(names.types) }); continue; }
+      let into = runtime.get(module);
+      if (!into) runtime.set(module, into = { values: new Map(names.values), types: new Map(names.types) });
+      setSpecifiers(into, module, names.specifiers);
       for (const [key, name] of names.values) if (!into.values.has(key)) into.values.set(key, name);
       for (const [key, name] of names.types) if (!into.types.has(key)) into.types.set(key, name);
     }
@@ -764,7 +791,8 @@ function collectFrom(root: Code): Collected {
 }
 
 interface RuntimeImport {
-  readonly module: RuntimeModule;
+  readonly module: string;
+  readonly specifiers?: PackageSpecifiers;
   /** Each value name once, in the order of the file (see `ImportOptions.order`). */
   readonly names: readonly ImportedName[];
   /** Each type name once, with `typeOnly`. A name the code also uses as a value is not here. */
@@ -782,32 +810,37 @@ function spelledName({ name, alias }: ImportedName): string {
   return alias === undefined ? name : `${name} as ${alias}`;
 }
 
-/** The runtime parts of a Code and of the helpers it needs, grouped by module in the fixed module order. */
+/** The runtime parts of a Code and of the helpers it needs, grouped by module: in the order of `modules`, or by the code point order of the keys. */
 function importSet(root: Code, options: Pick<ImportOptions, 'order' | 'modules'> = {}): readonly RuntimeImport[] {
   const { order = {}, modules } = options;
-  const position = (module: RuntimeModule): number => modules ? modules.indexOf(module) : RUNTIME_MODULE_RANK[module];
   const found = [...collect(root).runtime];
-  const unlisted = found.find(([module]) => position(module) < 0);
+  const unlisted = modules ? found.find(([module]) => !modules.includes(module)) : undefined;
   if (unlisted) throw new Error(`the code uses the runtime module "${unlisted[0]}", which the file does not list in its module order`);
   return found
-    .sort(([left], [right]) => position(left) - position(right))
-    .map(([module, { values, types }]) => ({
+    .sort(([left], [right]) => modules ? modules.indexOf(left) - modules.indexOf(right) : compareText(left, right))
+    .map(([module, { values, types, specifiers }]) => ({
       module,
+      ...(specifiers ? { specifiers } : {}),
       names: inOrder(values.values(), order[module]),
       // A name the code uses as a value and as a type is imported once, as the value.
       types: inOrder([...types].filter(([key]) => !values.has(key)).map(([, type]) => type), order[module]),
     }));
 }
 
+/** The keys of the package exports (`packageExport`) that a Code and the helpers it needs use, in code point order: the modules a file adds to `ImportOptions.modules` for what an extension gave it. */
+export function packageKeysOf(root: Code): readonly string[] {
+  return [...collect(root).runtime].filter(([, names]) => names.specifiers !== undefined).map(([module]) => module).sort(compareText);
+}
+
 /** How a file writes the imports of its runtime parts. */
 export interface ImportOptions {
   /**
    * The specifier a runtime module is imported from, for its values and for its types apart; a module not listed is imported from
-   * `RUNTIME_SPECIFIER` for values and `runtimeTypeSpecifier` for types. A standalone SDK names its copied runtime here.
+   * `RUNTIME_SPECIFIER` for values and `runtimeTypeSpecifier` for types, and a package export from its own specifiers. A standalone SDK names its copied runtime here.
    */
   readonly specifiers?: {
-    readonly values?: Partial<Readonly<Record<RuntimeModule, string>>>;
-    readonly types?: Partial<Readonly<Record<RuntimeModule, string>>>;
+    readonly values?: Partial<Readonly<Record<string, string>>>;
+    readonly types?: Partial<Readonly<Record<string, string>>>;
   };
   /** The quote of a specifier; a single quote by default. */
   readonly quote?: "'" | '"';
@@ -818,16 +851,16 @@ export interface ImportOptions {
    * has type names only is always one `import type` statement.
    */
   readonly typeNames?: 'separate' | 'inline' | 'ordered';
-  /** The runtime modules this call writes, in this order; a module that the code uses and the list lacks is an error. Without it, every module in the fixed order. */
-  readonly modules?: readonly RuntimeModule[];
+  /** The runtime modules this call writes, in this order; a module that the code uses and the list lacks is an error. Without it, every module the code uses, in the code point order of the keys. */
+  readonly modules?: readonly string[];
   /** The names of a module that a file with a fixed order lists: they come first, in this order, for values and types alike; the others follow in code point order. */
-  readonly order?: Partial<Readonly<Record<RuntimeModule, readonly string[]>>>;
+  readonly order?: Partial<Readonly<Record<string, readonly string[]>>>;
 }
 
 /** The names that a file takes from one specifier, and the runtime modules (rt keys) they come from. */
 export interface ImportGroup {
   readonly specifier: string;
-  readonly modules: readonly RuntimeModule[];
+  readonly modules: readonly string[];
   /** Each value name once, in the order of the file (see `ImportOptions.order`). */
   readonly names: readonly ImportedName[];
   /** Each type name once, with `typeOnly`. A name the code also uses as a value is not here. */
@@ -840,8 +873,8 @@ export interface ImportGroup {
  * (rt keys) it serves.
  */
 export function importGroups(root: Code, options: Pick<ImportOptions, 'order' | 'modules' | 'specifiers'> = {}): readonly ImportGroup[] {
-  const groups = new Map<string, { modules: RuntimeModule[]; names: ImportedName[]; types: ImportedName[] }>();
-  const into = (specifier: string, module: RuntimeModule): { modules: RuntimeModule[]; names: ImportedName[]; types: ImportedName[] } => {
+  const groups = new Map<string, { modules: string[]; names: ImportedName[]; types: ImportedName[] }>();
+  const into = (specifier: string, module: string): { modules: string[]; names: ImportedName[]; types: ImportedName[] } => {
     let group = groups.get(specifier);
     if (!group) groups.set(specifier, group = { modules: [], names: [], types: [] });
     if (!group.modules.includes(module)) group.modules.push(module);
@@ -851,9 +884,13 @@ export function importGroups(root: Code, options: Pick<ImportOptions, 'order' | 
   const addOnce = (into: ImportedName[], added: readonly ImportedName[]): void => {
     for (const next of added) if (!into.some((have) => have.name === next.name && have.alias === next.alias)) into.push(next);
   };
-  for (const { module, names, types } of importSet(root, options)) {
-    if (names.length > 0) addOnce(into(options.specifiers?.values?.[module] ?? RUNTIME_SPECIFIER[module], module).names, names);
-    if (types.length > 0) addOnce(into(options.specifiers?.types?.[module] ?? runtimeTypeSpecifier(module), module).types, types);
+  const core = (module: string): module is RuntimeModule => Object.hasOwn(RUNTIME_SPECIFIER, module);
+  for (const { module, names, types, specifiers } of importSet(root, options)) {
+    const valueSpecifier = options.specifiers?.values?.[module] ?? specifiers?.specifier ?? (core(module) ? RUNTIME_SPECIFIER[module] : undefined);
+    const typeSpecifier = options.specifiers?.types?.[module] ?? specifiers?.typeSpecifier ?? (core(module) ? runtimeTypeSpecifier(module) : undefined);
+    if (valueSpecifier === undefined || typeSpecifier === undefined) throw new Error(`the runtime module "${module}" has no specifier`);
+    if (names.length > 0) addOnce(into(valueSpecifier, module).names, names);
+    if (types.length > 0) addOnce(into(typeSpecifier, module).types, types);
   }
   return [...groups].map(([specifier, group]) => ({ specifier, ...group }));
 }
@@ -969,7 +1006,7 @@ export function codeKey(root: Code): string {
     }
     if (text !== '') { key += `${JSON.stringify(text)},`; text = ''; }
     switch (part.kind) {
-      case 'runtime': key += `r${JSON.stringify([part.module, part.name, part.alias ?? null, part.typeOnly === true])},`; break;
+      case 'runtime': key += `r${JSON.stringify([part.module, part.name, part.alias ?? null, part.typeOnly === true, part.specifiers?.specifier ?? null, part.specifiers?.typeSpecifier ?? null])},`; break;
       case 'imported': key += `i${JSON.stringify([identityOf(part.source), part.name, part.alias ?? null, part.typeOnly === true])},`; break;
       case 'helper': key += part.helper.selfPlaced ? `s${JSON.stringify(part.helper.id)},` : `h${identityOf(part.helper)},`; break;
       case 'name': key += `n${identityOf(part.slot)},`; break;

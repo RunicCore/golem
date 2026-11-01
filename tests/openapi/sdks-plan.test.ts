@@ -8,10 +8,10 @@ import { copyFixtureFile } from '../fixture-project.js';
 import { workspaceLinkedProject } from '../support/consumer.js';
 import { loadConfig } from '../support/load-config.js';
 
-/** An app that lists golem-openapi and golem-model, with a document `api.yaml`, and `yaml` as its golem.yaml. */
+/** An app that lists golem-openapi-ts and golem-model, with a document `api.yaml`, and `yaml` as its golem.yaml. */
 function project(t: TestContext, yaml: string): { root: string; filename: string } {
   const root = workspaceLinkedProject(t, 'golem-openapi-ts-block-', JSON.stringify({
-    name: 'app', type: 'module', dependencies: { '@exprtlabs/golem-openapi': '1.0.0', '@exprtlabs/golem-model': '1.0.0' },
+    name: 'app', type: 'module', dependencies: { '@exprtlabs/golem-openapi-ts': '1.0.0', '@exprtlabs/golem-model': '1.0.0' },
   }));
   fs.writeFileSync(path.join(root, 'api.yaml'), 'openapi: 3.1.0');
   const filename = path.join(root, 'golem.yaml');
@@ -28,7 +28,7 @@ test('an SDK job declares its document as the input and one output folder, and i
   assert.deepEqual(others, []);
   assert.ok(job);
   assert.equal(job.id, 'openapi:sdk');
-  assert.equal(job.package, '@exprtlabs/golem-openapi');
+  assert.equal(job.package, '@exprtlabs/golem-openapi-ts');
   assert.equal(job.block, 'openapi-ts');
   assert.deepEqual(job.facts, {
     id: 'openapi:sdk',
@@ -38,7 +38,7 @@ test('an SDK job declares its document as the input and one output folder, and i
   });
   assert.deepEqual(job.options as OpenApiOptions, {
     input: path.join(root, 'api.yaml'), output: path.join(root, 'sdk'),
-    profile: { mobx: false, validation: true, allowAny: false, unknownFormats: 'error' },
+    profile: { validation: true, allowAny: false, unknownFormats: 'error' },
     allowRemoteRefs: false, remoteHosts: [], mode: 'standalone',
     maxRefBytes: 5 * 1024 * 1024, maxRefDocuments: 256, refTimeoutMs: 10000,
   });
@@ -104,9 +104,9 @@ test('SDK outputs that overlap stop loading, also through a link to a folder', a
   await assert.rejects(() => loadConfig(alias.filename), /Overlapping outputs/);
 });
 
-test('a standalone SDK job with mobx: true shows the generator error, not a manifest error', async (t: TestContext) => {
+test('a standalone SDK job with the mobx extension shows the generator error, not a manifest error', async (t: TestContext) => {
   // protects: T-735 golem generate prints a generator's error diagnostics before it checks the result for a manifest
-  const { root, filename } = project(t, 'version: 1\nmobx: true\nopenapi-ts:\n  sdks:\n    - input: api.json\n      output: sdk\n      name: Profile\n');
+  const { root, filename } = project(t, 'version: 1\nopenapi-ts:\n  sdks:\n    - input: api.json\n      output: sdk\n      name: Profile\n  extensions:\n    mobx: {}\n');
   copyFixtureFile(root, 'packed/profile/api.json', 'api.json');
 
   await assert.rejects(() => runPipeline(filename), /OPENAPI_MOBX_NEEDS_GOLEM_MODE/);

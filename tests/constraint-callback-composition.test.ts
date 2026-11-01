@@ -40,7 +40,7 @@ test('nested Contains callback composition composes callbacks through generated 
     },
   ]);
 
-  writeModelGolemYaml(fixtureData.root, { mobx: false, validation: true });
+  writeModelGolemYaml(fixtureData.root, { validation: true });
   await compile(fixtureData.root);
 
   const generated = await import(path.toNamespacedPath(path.join(fixtureData.root, 'build/a.model.js')));

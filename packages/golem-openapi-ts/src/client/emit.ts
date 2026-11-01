@@ -25,6 +25,7 @@ import {
   rt,
   rtType,
   type Code,
+  packageKeysOf,
   runtimeLinesOf,
   type ImportGroup,
   type ImportOptions,
@@ -38,6 +39,7 @@ import {
 import { operationNameType } from '../names.js';
 import { generatedBannerComment } from '../package-info.js';
 import type { RuntimeSpecifiers } from '../runtime-copy.js';
+import type { OperationWrapper } from '../plan.js';
 import type { OpenApiGenerationProfile } from '../profile.js';
 import { requireProfile } from '../profile.js';
 import { operationConverts, parameterKey, requestBodyKey, responseBodyKey, responseHeaderKey } from '../model-schema-graph.js';
@@ -49,6 +51,7 @@ import { textCodecRequirement } from '../types.js';
 
 /** A client runtime function: the name is a key of the client module, so a misspelled name is a type error. */
 type ClientFunction = keyof typeof rt.client;
+
 
 const BLANK = code``;
 
@@ -213,6 +216,7 @@ function operationSource(
   convertedNodeIds: ReadonlyMap<string, string>,
   codecsFor: OperationCodecsFor,
   specifiers: RuntimeSpecifiers | undefined,
+  wrapper: OperationWrapper | undefined,
 ): string {
   const usedFunctions = new Set<string>();
   const use = (name: ClientFunction): Code => {
@@ -351,8 +355,8 @@ function operationSource(
   const clientOptions = clientModule.name(`${clientName}ClientOptions`, { alias: 'ClientOptions' });
   const requestOptions = clientModule.name(`${clientName}RequestOptions`, { alias: 'RequestOptions' });
   const clientRuntime = rt.client.ClientRuntime;
-  const apiOperation = profile.mobx ? aliased(rtType.mobx.ObservableApiOperation, 'ApiOperation') : rtType.client.ApiOperation;
-  const createApiOperation = profile.mobx ? aliased(rt.mobx.createObservableApiOperation, 'createApiOperation') : rt.client.createApiOperation;
+  const apiOperation = wrapper ? wrapper.operationType : rtType.client.ApiOperation;
+  const createApiOperation = wrapper ? wrapper.createOperation : rt.client.createApiOperation;
   const codecsDeclaration = usesCodecs
     ? code`const ${codecsName}: ${rtType.client.OperationCodecs} = ${codecsAt.read(operation.name, codecsModuleName)};`
     : BLANK;
@@ -418,9 +422,10 @@ ${!isEmpty(validatorSetup) ? code`${validatorSetup}\n` : BLANK}${!isEmpty(decode
 `;
   const file = join([declarations, functions], code`\n`);
   // The imports are the names the code uses, in the order the generated modules have always listed them.
+  const extensionModules = packageKeysOf(file);
   const imports: ImportOptions = {
     typeNames: 'ordered',
-    modules: ['client', 'mobx', 'validation'],
+    modules: ['client', ...extensionModules, 'validation'],
     ...(specifiers ? { specifiers: specifiers(`operations/${operation.name}.ts`) } : {}),
     order: { client: ['ClientRuntime', ...[...usedFunctions].sort(), 'createApiOperation', 'ApiOperation', 'RuntimeResponseContract', 'RuntimeSecuritySchemes', 'OperationCodecs'] },
   };
@@ -436,7 +441,7 @@ ${!isEmpty(validatorSetup) ? code`${validatorSetup}\n` : BLANK}${!isEmpty(decode
     ...clientImports,
     ...typesImports,
     ...serversImports,
-    ...runtimeLines('mobx'),
+    ...runtimeLines(...extensionModules),
     ...codecsImportLines,
     ...runtimeLines('validation'),
     BLANK,
@@ -531,6 +536,7 @@ function emitClient(
   plan: EmissionPlan,
   rawSecuritySchemes: Readonly<Record<string, unknown>>,
   specifiers: RuntimeSpecifiers | undefined,
+  wrapper: OperationWrapper | undefined,
 ): RenderedModule {
   const scope = new NameScope(`${clientName}Client`);
   const surfaces = plan.clientSurfaces;
@@ -590,7 +596,7 @@ ${join(securityCodes.map((alias) => code`  ...${alias},`), code`\n`)}
   const exported = (suffix: string): Code => exportedName(`${clientName}${suffix}`);
   const inputTypeOf = (operation: NormalizedOperation): Code => code`${typesNamespace}.${identifierPart(`${operation.typeName}OperationInput`)}`;
   const responseTypeOf = (operation: NormalizedOperation): Code => code`${typesNamespace}.${identifierPart(`${operation.typeName}OperationHttpResponse`)}`;
-  const apiOperation = profile.mobx ? aliased(rtType.mobx.ObservableApiOperation, 'ApiOperation') : rtType.client.ApiOperation;
+  const apiOperation = wrapper ? wrapper.operationType : rtType.client.ApiOperation;
   const methods = join(operations.map((operation) =>
     code`  ${identifierPart(operation.name)}(): ${apiOperation}<${inputTypeOf(operation)}, ${responseTypeOf(operation)}, ${named('RequestOptions')}>;`,
   ), code`\n`);
@@ -667,7 +673,8 @@ ${metadata}
 `;
   const imports = join(fileImports(tail, localSources, { quote: '"', elsewhere: [runtimeTypes, typesModule] }), code`\n`);
   const rest = code`${imports}${tail}`;
-  const imports_: ImportOptions = { modules: ['client', 'mobx', 'validation'], ...(specifiers ? { specifiers: specifiers('client.ts') } : {}) };
+  const extensionModules = packageKeysOf(rest);
+  const imports_: ImportOptions = { modules: ['client', ...extensionModules, 'validation'], ...(specifiers ? { specifiers: specifiers('client.ts') } : {}) };
   const groups = importGroups(rest, imports_);
   const written = new Set<string>();
   // The statements of the runtime groups that `wanted` picks: the values come from the internal entry, the types from the public subpaths.
@@ -680,7 +687,7 @@ ${metadata}
     ...fileImports(rest, [runtimeTypes], { elsewhere: [typesModule, ...localSources] }),
     ...lines((group) => group.modules.includes('validation')),
     ...fileImports(rest, [typesModule], { elsewhere: [runtimeTypes, ...localSources] }),
-    ...lines((group) => group.modules.includes('mobx')),
+    ...lines((group) => group.modules.some((module) => extensionModules.includes(module))),
     ...lines((group) => group.modules.includes('client')),
   ];
   const unwritten = groups.find((group) => !written.has(group.specifier));
@@ -762,6 +769,7 @@ export function generateClientModules(
   convertedNodeIds: ReadonlyMap<string, string>,
   codecsFor: OperationCodecsFor,
   specifiers?: RuntimeSpecifiers,
+  wrapper?: OperationWrapper,
 ): GeneratedClientModules {
   requireProfile(profile);
   const rawSecuritySchemes = Object.fromEntries(plan.referencedAuthSchemes);
@@ -792,8 +800,9 @@ export function generateClientModules(
       convertedNodeIds,
       codecsFor,
       specifiers,
+      wrapper,
     ));
   }
-  const client = emitClient(clientName, operations, profile, plan, rawSecuritySchemes, specifiers);
+  const client = emitClient(clientName, operations, profile, plan, rawSecuritySchemes, specifiers, wrapper);
   return { client, operations: emittedOperations };
 }

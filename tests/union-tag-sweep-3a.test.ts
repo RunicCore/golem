@@ -12,7 +12,7 @@ import type { Discriminator, TSerde } from '@exprtlabs/golem/tags';
 `;
 
 for (const validation of [false, true]) {
-  const profile = { mobx: false, validation };
+  const profile = { validation };
   const when = `with validation ${validation ? 'on' : 'off'}`;
 
   test(`a variant made of several parts prints without the Discriminator tag in the diagnostic, ${when}`, t => {
@@ -58,7 +58,7 @@ export type TCat = IModel<{ kind: 'cat' }>;
 export type TDog = IModel<{ kind: 'dog' }>;
 export type TBox = IModel<{ value: (TCat | TDog) & Tag }>;
 ` });
-  assert.throws(() => generate({ root, profile: { mobx: false, validation: true } }), /bad\.model\.ts:\d+:\d+ RUNM1045: Discriminator<'kind'> must be intersected with a model value type\./);
+  assert.throws(() => generate({ root, profile: { validation: true } }), /bad\.model\.ts:\d+:\d+ RUNM1045: Discriminator<'kind'> must be intersected with a model value type\./);
 });
 
 test('a tag in a generic wrapper alias still decodes the variants to their models', async t => {
@@ -72,7 +72,7 @@ export type TA = IModel<{ value: Tagged<TCat | TDog> }>;
 export class Cat extends TCatBaseModel {}
 export class A extends TABaseModel {}
 ` });
-  writeModelGolemYaml(root, { mobx: false, validation: true });
+  writeModelGolemYaml(root, { validation: true });
   await buildModelProject(root);
   const models = requireRecord(await import(pathToFileURL(path.join(root, 'build/a.model.js')).href), 'a');
   const decoded = requireRecord(modelCodec(models.A as GeneratedModelClass).fromWireFormat({ value: { kind: 'cat', lives: 9 } }), 'a');
@@ -94,7 +94,7 @@ export type TDog = IModel<{ kind: 'dog'; bark: string }>;
 export type TA = IModel<{ plain: Amount | boolean[] | null; tagged: ((TCat | TDog) & Discriminator<'kind'>) | Amount | null }>;
 export class A extends TABaseModel {}
 ` });
-  writeModelGolemYaml(root, { mobx: false, validation: false });
+  writeModelGolemYaml(root, { validation: false });
   await buildModelProject(root);
   const models = requireRecord(await import(pathToFileURL(path.join(root, 'build/a.model.js')).href), 'a');
   const A = models.A as GeneratedModelClass;

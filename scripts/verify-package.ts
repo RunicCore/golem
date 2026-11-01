@@ -57,7 +57,7 @@ export function verifyPackage(directory: string): void {
   assertDistMatchesSource(root);
   const license = fs.readFileSync(path.join(root, 'LICENSE'), 'utf8');
   if (!license.includes('exprtlabs.ai') || !license.includes('MIT License')) throw new Error(`Missing MIT attribution: ${root}`);
-  if (manifest.name === '@exprtlabs/golem-openapi') {
+  if (manifest.name === '@exprtlabs/golem-openapi-ts') {
     for (const file of ['THIRD_PARTY_NOTICES.md', 'MATRIX.md', 'LICENSES/Apache-2.0.txt']) {
       if (!fs.statSync(path.join(root, file)).isFile()) throw new Error(`Missing third-party or conformance artifact: ${file}`);
     }

@@ -16,6 +16,6 @@ test('a package that registers a block named like a root key stops loading, and 
 
   await assert.rejects(() => resolveConfig(path.join(root, 'golem.yaml')), {
     name: 'PackageRegistryError',
-    message: '@fixture/greedy registers the golem block "validation", which is a root key of golem.yaml. Core reads the root keys (version, tsconfig, validation, allowAny, exact, unknownFormats, mobx); the package must register another block name.',
+    message: '@fixture/greedy registers the golem block "validation", which is a root key of golem.yaml. Core reads the root keys (version, tsconfig, validation, allowAny, exact, unknownFormats); the package must register another block name.',
   });
 });

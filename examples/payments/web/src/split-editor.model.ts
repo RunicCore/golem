@@ -1,6 +1,6 @@
 // #region split-model
 import type { IModel } from '@exprtlabs/golem/model';
-import { asGenObservable } from '@exprtlabs/golem/mobx';
+import { asGenObservable } from '@exprtlabs/golem-openapi-ts/mobx';
 import type { Integer, Minimum } from '@exprtlabs/golem/tags';
 import { action } from 'mobx';
 import { TSplitEditorBaseModel, type TSplitEditorInit } from './split-editor.model.generated.js';

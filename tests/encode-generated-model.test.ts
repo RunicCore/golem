@@ -40,7 +40,7 @@ async function buildCards(t: TestContext, profile: GolemProfile) {
 
 test('the toWireFormat of a model codec validates when the profile does, and validate false skips it', async (t) => {
   // protects: D-105 toWireFormat of a model codec validates by profile; { validate: false } skips
-  const { Card, Link } = await buildCards(t, { mobx: false, validation: true });
+  const { Card, Link } = await buildCards(t, { validation: true });
   const codec = modelCodec(Card);
   assert.deepEqual(codec.toWireFormat(new Card({ title: 'a', count: 2 })), { title: 'a', count: 2 });
   const invalid = new Card({ title: 5 });
@@ -64,7 +64,7 @@ test('the toWireFormat of a model codec validates when the profile does, and val
 
 test('the toWireFormat of a model codec does not validate when the profile has validation off', async (t) => {
   // protects: D-105 the profile decides: validation off encodes without checks
-  const { Card } = await buildCards(t, { mobx: false, validation: false });
+  const { Card } = await buildCards(t, { validation: false });
   assert.deepEqual(modelCodec(Card).toWireFormat(new Card({ title: 5 })), { title: 5 });
 });
 
@@ -77,7 +77,7 @@ test('the request body of an SDK client validates and accepts validate false', a
     info: { title: 'Items', version: '1' },
     components: { schemas: { Item: item } },
   }, 'Item');
-  await generateMaterializedSdk(document, { output, name: 'Items', profile: { mobx: false, validation: true, allowAny: false } });
+  await generateMaterializedSdk(document, { output, name: 'Items', profile: { validation: true, allowAny: false } });
   compileGeneratedSdk(output, [], { strict: true, skipLibCheck: true, outDir: path.join(output, 'dist') });
   const codec = await sdkBodyCodec(output, 'Items', 'Item');
   assert.deepEqual(await codec.encode({ name: 'n' }), { name: 'n' });
@@ -106,7 +106,7 @@ export type TWallet = IModel<{ money: TMoney }>;
 export class Wallet extends TWalletBaseModel {}
 `,
   });
-  writeModelGolemYaml(root, { mobx: false, validation: true });
+  writeModelGolemYaml(root, { validation: true });
   await buildModelProject(root);
   const rules = await import(pathToFileURL(path.join(root, 'build/rules.js')).href) as { calls: number };
   const { Money } = await import(pathToFileURL(path.join(root, 'build/money.model.js')).href) as { Money: Model };

@@ -41,7 +41,7 @@ function builtFixture(name: string, validation: boolean): Promise<string> {
         linkWorkspaceNodeModules: true,
       });
       fs.writeFileSync(path.join(sourceRoot, `${name}.model.ts`), readFixture(`models/serde-isolation/${name}.model.ts`));
-      writeModelGolemYaml(root, { mobx: false, validation });
+      writeModelGolemYaml(root, { validation });
       await buildModelProject(root);
       return root;
     });
@@ -145,7 +145,7 @@ test('fromWireFormat leaves out a field that is undefined or not enumerable in t
 test('the generated constructor and decode leave out a field that is undefined or not enumerable in the input', async (t) => {
   const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-serde-isolation-', name: 'serde-isolation', linkWorkspaceNodeModules: true });
   fs.writeFileSync(path.join(sourceRoot, 'payment.model.ts'), readFixture('models/serde-isolation/payment.model.ts'));
-  writeModelGolemYaml(root, { mobx: false, validation: false });
+  writeModelGolemYaml(root, { validation: false });
   await buildModelProject(root);
   const { Payment } = await import(pathToFileURL(path.join(root, 'build/payment.model.js')).href);
   assert.equal(hasOwnCharge(new Payment(wireWithCharge('undefined'))), false);
@@ -382,7 +382,7 @@ function generatedSource(t: TestContext, name: string): string {
     linkWorkspaceNodeModules: true,
   });
   fs.writeFileSync(path.join(sourceRoot, `${name}.model.ts`), readFixture(`models/serde-isolation/${name}.model.ts`));
-  const artifact = generate({ root, profile: { mobx: false, validation: false } }).artifacts.find((item) => item.path.endsWith(`${name}.model.generated.ts`));
+  const artifact = generate({ root, profile: { validation: false } }).artifacts.find((item) => item.path.endsWith(`${name}.model.generated.ts`));
   assert.ok(artifact);
   return artifact.content;
 }

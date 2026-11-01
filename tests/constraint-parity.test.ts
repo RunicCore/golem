@@ -44,7 +44,7 @@ async function controllerValidators(root: string): Promise<readonly Validator[]>
     const result = await generateControllers({
       root, output: path.join(root, `openapi-${openapiVersion}.json`), openapiVersion,
       info: { title: 'Constraint parity', version: '1' },
-      profile: { mobx: false, validation: true },
+      profile: { validation: true },
     });
     const document: {
       components: { schemas: Record<string, unknown> };
@@ -62,7 +62,7 @@ async function controllerValidators(root: string): Promise<readonly Validator[]>
 
 function canonicalModelSchema(root: string, sourceRoot: string): unknown {
   const source = path.join(sourceRoot, 'a.model.ts');
-  const profile = { mobx: false, validation: true } as const;
+  const profile = { validation: true } as const;
   const programInfo = createProgram([source], root);
   const { checker, specifications } = collectSpecifications(programInfo.program, [source]);
   const manifestIndex = loadModelManifests(
@@ -154,7 +154,7 @@ test('generated extended constraints accept and reject the same wire values as t
   // Read the same authored contract before model companions exist. Each
   // document dialect must accept and reject exactly the same wire values.
   const openApiValidators = await controllerValidators(root);
-  writeModelGolemYaml(root, { mobx: false, validation: true });
+  writeModelGolemYaml(root, { validation: true });
   await compile(root);
 
   const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
@@ -214,7 +214,7 @@ for (const validation of [true, false] as const) {
         content: containsSiblingConstraintSource({ tag }).text,
       }]);
       assert.throws(
-        () => generate({ root, profile: { mobx: false, validation } }),
+        () => generate({ root, profile: { validation } }),
         /(?:MinContains|MaxContains)[\s\S]*(?:Contains|requires)/,
       );
     });

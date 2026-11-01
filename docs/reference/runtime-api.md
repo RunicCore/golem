@@ -1,13 +1,13 @@
 # Runtime API
 
-Find every `@exprtlabs/golem` subpath that your application or build tool imports, and the NestJS entry of `@exprtlabs/golem-ts-openapi`, with their signatures.
+Find every `@exprtlabs/golem` subpath that your application or build tool imports, the NestJS entry of `@exprtlabs/golem-ts-openapi`, and the MobX entries of `@exprtlabs/golem-openapi-ts`, with their signatures.
 
 | Subpath | Use | Extra dependency |
 | --- | --- | --- |
 | [`model`](#model) | `IModel`, `IObject` and generated-model types | none |
 | [`validation`](#validation) | `validate<T>`, `validateInstance`, `getValidator`, `ModelValidator` | none |
-| [`mobx`](#mobx) | `asGenObservable` and observable API operations | `mobx` |
-| [`mobx-validation`](#mobx-validation) | Observable validator state | `mobx` |
+| [`@exprtlabs/golem-openapi-ts/mobx`](#mobx) | `asGenObservable` and observable API operations | `@exprtlabs/golem-openapi-ts`, `mobx` |
+| [`@exprtlabs/golem-openapi-ts/mobx-validation`](#mobx-validation) | Observable validator state | `@exprtlabs/golem-openapi-ts`, `mobx` |
 | [`errors`](#errors) | `LibError`, `LibErrorKind` and the `Issue` type | none |
 | [`client`](#client) | `ApiOperation` and `createApiOperation` | none |
 | [`tags`](#tags) | Type-only validation constraints, `TValidation`, `TSerde` | none |
@@ -23,7 +23,7 @@ Find every `@exprtlabs/golem` subpath that your application or build tool import
 | [`esbuild`](#esbuild) | esbuild plugin that rewrites TypeScript before esbuild strips its types | `esbuild` |
 | [`eslint`](#eslint) | ESLint config with a rule that reports code no build tool can rewrite | `eslint` |
 
-A path that starts with `internal/` is for the generators and may change in any release. These subpaths are internal: `internal/emitter`, `internal/generated-paths`, `internal/generator-support`, `internal/plan-support`, `internal/schema`, `internal/schema-graph`, `internal/static-value`, `internal/ts`, `internal/type-analysis`, `internal/validation-plan`, `internal/validator-compiler` and the eight runtime entries `internal/model-runtime`, `internal/validation-runtime`, `internal/client-runtime`, `internal/client-validation-runtime`, `internal/mobx-runtime`, `internal/mobx-validation-runtime`, `internal/temporal-runtime` and `internal/nest-runtime`. Do not import them ([Compatibility](/compatibility#public-api)).
+A path that starts with `internal/` is for the generators and may change in any release. These subpaths are internal: `internal/emitter`, `internal/generated-paths`, `internal/generator-support`, `internal/plan-support`, `internal/schema`, `internal/schema-graph`, `internal/static-value`, `internal/ts`, `internal/type-analysis`, `internal/validation-plan`, `internal/validator-compiler` the runtime entries `internal/model-runtime`, `internal/validation-runtime`, `internal/client-runtime`, `internal/api-operation-runtime`, `internal/client-validation-runtime` and `internal/temporal-runtime`, and the runtime entries of the extension packages: `@exprtlabs/golem-openapi-ts/internal/mobx-runtime`, `@exprtlabs/golem-openapi-ts/internal/mobx-validation-runtime` and `@exprtlabs/golem-ts-openapi/internal/nest-runtime`. Do not import them ([Compatibility](/compatibility#public-api)).
 
 With `validation: true` or `validation: sanity`, generated files import their own validator modules and need no extra package ([validation profiles](/reference/config#validation-profiles)). Generated files also import runtime helpers from the internal entries ([Generated code](/reference/generator-api#generated-code)).
 
@@ -115,11 +115,13 @@ function runValidation(validator: Validator, value: unknown, all = true): Promis
 | `OperationRuntimeValidators` | The value type of a client's `operationValidators` option: the input validator, the optional `requestHeaders` validator, the response validators keyed `status:contentType`, and the optional `responseHeaders` validators keyed `status:name`. |
 | `SchemaIssue`, `SchemaIssueDetail` | Issue types of a `Validator`. |
 
-## `@exprtlabs/golem/mobx` {#mobx}
+## `@exprtlabs/golem-openapi-ts/mobx` {#mobx}
 
 ```ts
-import { asGenObservable } from '@exprtlabs/golem/mobx';
+import { asGenObservable } from '@exprtlabs/golem-openapi-ts/mobx';
 ```
+
+Install `@exprtlabs/golem-openapi-ts` in `dependencies`, with `mobx`. Generated files import the same MobX runtime when the [`mobx` extension](/reference/config#mobx-extension) is on.
 
 <<< ../../examples/payments/web/src/payment-editor.model.ts#model-definition
 
@@ -128,12 +130,12 @@ import { asGenObservable } from '@exprtlabs/golem/mobx';
 | `asGenObservable` | `(model, annotations?: ModelAnnotations<Model>): void` | Makes every generated field observable, then nested generated models ([MobX](/guide/mobx#initialize-your-class)). A second call on the same instance throws. |
 | `ModelAnnotations` | `AnnotationsMap<Model, never>` | MobX annotations for your class members. They override the field defaults. |
 | `ObservableApiOperation` | `ApiOperation` plus `readonly loading: boolean` | `loading` is observable and stays `true` until every execution settles. |
-| `createObservableApiOperation` | `(name: string, run): ObservableApiOperation` | [`createApiOperation`](#client) with `loading`. Generated clients with `mobx: true` return it. |
+| `createObservableApiOperation` | `(name: string, run): ObservableApiOperation` | [`createApiOperation`](#client) with `loading`. Generated clients of a project with the `mobx` extension return it. |
 
-## `@exprtlabs/golem/mobx-validation` {#mobx-validation}
+## `@exprtlabs/golem-openapi-ts/mobx-validation` {#mobx-validation}
 
 ```ts
-import { getValidator } from '@exprtlabs/golem/mobx-validation';
+import { getValidator } from '@exprtlabs/golem-openapi-ts/mobx-validation';
 ```
 
 | Member | Signature | Behavior |

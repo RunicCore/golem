@@ -5,8 +5,8 @@ import { type GeneratedModel, type generatedModelFieldsBrand, type generatedMode
 import { type GeneratedModelValidatorEnhancer, registerGeneratedModel, findGeneratedModelDefinition, findGeneratedModelDefinitionForConstructor } from '@exprtlabs/golem/internal/model-runtime';
 import { type ModelTypeDescriptor } from '@exprtlabs/golem/internal/schema';
 import { installCodecModel } from './register-codec-model.js';
-import { enhanceValidatorWithMobX } from '@exprtlabs/golem/mobx-validation';
-import { asGenObservable } from '@exprtlabs/golem/mobx';
+import { enhanceValidatorWithMobX } from '@exprtlabs/golem-openapi-ts/mobx-validation';
+import { asGenObservable } from '@exprtlabs/golem-openapi-ts/mobx';
 import {
   getValidator,
   validateInstance,

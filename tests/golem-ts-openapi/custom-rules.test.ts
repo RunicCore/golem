@@ -40,7 +40,7 @@ test('keeps custom TValidation server-side with a typed warning and no executabl
     root,
     output: path.join(root, 'openapi.json'),
     info: { title: 'Custom rules', version: '1' },
-    profile: { mobx: false, validation: false },
+    profile: { validation: false },
   });
   const diagnostics = diagnosticsOf(result);
   const warning = diagnostics.find(item => item.code === 'NEST1502');

@@ -82,7 +82,7 @@ async function generateClient() {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'golem-openapi-select-')));
   selectRoots.push(root);
   const output = path.join(root, 'sdk');
-  await generateMaterializedSdk(document(), { output, name: 'Select', profile: { mobx: false, validation: false } });
+  await generateMaterializedSdk(document(), { output, name: 'Select', profile: { validation: false } });
   compileGeneratedSdk(output);
   const module = requireRecord(
     await import(pathToFileURL(path.join(output, 'dist/client.js')).href),

@@ -46,7 +46,7 @@ export function createModelProject(t: FixtureScope, options: ModelProjectOptions
   };
   fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify(packageManifest));
   // The project lists the golem packages it links, golem-model for its `model:` block among them.
-  const golemPackages = new Set(['@exprtlabs/golem', '@exprtlabs/golem-model', ...Object.keys(options.packages ?? {}).filter((name) => name.startsWith('@exprtlabs/'))]);
+  const golemPackages = new Set(['@exprtlabs/golem', '@exprtlabs/golem-model', '@exprtlabs/golem-openapi-ts', ...Object.keys(options.packages ?? {}).filter((name) => name.startsWith('@exprtlabs/'))]);
   listProjectDependencies(root, [...golemPackages]);
 
   if (options.linkWorkspaceNodeModules) {
@@ -55,6 +55,7 @@ export function createModelProject(t: FixtureScope, options: ModelProjectOptions
     const packages: Record<string, string> = {
       '@exprtlabs/golem': path.join(workspace, 'packages/golem'),
       '@exprtlabs/golem-model': path.join(workspace, 'packages/golem-model'),
+      '@exprtlabs/golem-openapi-ts': path.join(workspace, 'packages/golem-openapi-ts'),
       ...(options.linkTypescript ? { typescript: path.join(workspace, 'node_modules/typescript') } : {}),
       ...options.packages,
     };
@@ -96,8 +97,10 @@ export const MINIMAL_GOLEM_YAML = 'version: 1\nmodel: {}\n';
 
 /** The golem.yaml of a project whose models job generates with `profile`: the profile its own `generate` calls used, so a build regenerates the same files. `exact` is the root default for the `exact` model option, not a profile key. */
 export function writeModelGolemYaml(root: string, profile: Readonly<{ mobx?: boolean; validation?: boolean | 'sanity'; allowAny?: boolean; exact?: boolean }>): void {
-  const keys = Object.entries(profile).filter(([key, value]) => key !== 'mobx' || value !== false).map(([key, value]) => `${key}: ${String(value)}\n`).join('');
-  fs.writeFileSync(path.join(root, 'golem.yaml'), `version: 1\n${keys}model: {}\n`);
+  const keys = Object.entries(profile).filter(([key]) => key !== 'mobx').map(([key, value]) => `${key}: ${String(value)}\n`).join('');
+  // The test-only switch `mobx` turns on the mobx extension of the openapi-ts block, a block that holds no SDK.
+  const extension = profile.mobx ? 'openapi-ts:\n  extensions:\n    mobx: {}\n' : '';
+  fs.writeFileSync(path.join(root, 'golem.yaml'), `version: 1\n${keys}${extension}model: {}\n`);
 }
 
 /** Write the project's golem.yaml for `profile` and run `golem build` on it. */

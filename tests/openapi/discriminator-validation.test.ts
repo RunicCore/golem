@@ -64,7 +64,7 @@ const expected: Readonly<Record<string, boolean>> = {
 
 test('discriminator mapping: the client judges a pet by its tag in a request and in a response', async (t) => {
   const output = path.join(createFixtureProject(t, 'golem-openapi-discriminator-validation-'), 'sdk');
-  await generateMaterializedSdk(petDocument, { output, name: 'Pets', profile: { mobx: false, validation: true } });
+  await generateMaterializedSdk(petDocument, { output, name: 'Pets', profile: { validation: true } });
   compileGeneratedSdk(output, [], { strict: true });
   copyFixtureFile(output, 'openapi/standalone-discriminator/verify.mjs', 'verify.mjs');
   // Generated validators must run where code generation from strings is blocked.
@@ -138,7 +138,7 @@ function mappedDocument(cases: readonly MappedNames[]): Record<string, unknown> 
 test('discriminator mappings select variants for escaped names and $id references', async (t) => {
   const output = path.join(createFixtureProject(t, 'golem-openapi-mapped-names-'), 'sdk');
   // These component names are outside the OpenAPI component-key pattern, so the document is not re-validated.
-  writeGeneratedSdk(writeSdk, mappedDocument(mappedCases), { output, name: 'Names', profile: { mobx: false, validation: true } });
+  writeGeneratedSdk(writeSdk, mappedDocument(mappedCases), { output, name: 'Names', profile: { validation: true } });
   compileGeneratedSdk(output, [], { strict: true });
   copyFixtureFile(output, 'openapi/standalone-discriminator/verify-mapping.mjs', 'verify-mapping.mjs');
   const requests = Object.fromEntries(mappedCases.map((mapped) => [mapped.id, {
@@ -209,7 +209,7 @@ const dateDocument = {
 
 test('inherited date fields decode and validate in allOf variants and their union', async (t) => {
   const output = path.join(createFixtureProject(t, 'golem-openapi-variant-dates-'), 'sdk');
-  await generateMaterializedSdk(withRootOperations(dateDocument, 'Payment', 'CardPayment', 'PaymentBase'), { output, name: 'Dates', profile: { mobx: false, validation: true } });
+  await generateMaterializedSdk(withRootOperations(dateDocument, 'Payment', 'CardPayment', 'PaymentBase'), { output, name: 'Dates', profile: { validation: true } });
   compileGeneratedSdk(output, [], { strict: true });
   copyFixtureFile(output, 'openapi/standalone-discriminator/verify-dates.mjs', 'verify-dates.mjs');
   const result = await command(output, process.execPath, ['--disallow-code-generation-from-strings', 'verify-dates.mjs']);
@@ -252,7 +252,7 @@ test('component names that collide once escaped keep separate validators, not ea
     },
   };
   const output = path.join(createFixtureProject(t, 'golem-openapi-urn-collision-'), 'sdk');
-  writeGeneratedSdk(writeSdk, document, { output, name: 'Collide', profile: { mobx: false, validation: true } });
+  writeGeneratedSdk(writeSdk, document, { output, name: 'Collide', profile: { validation: true } });
   compileGeneratedSdk(output);
   const module = requireRecord(
     await import(pathToFileURL(path.join(output, 'dist/client.js')).href),
@@ -301,7 +301,7 @@ for (const validation of [false, true]) {
           Owner: { type: 'object', required: ['pet'], properties: { pet: { $ref: '#/components/schemas/Pet' } } },
         },
       },
-    }, 'Owner'), { output, name: 'Optional', profile: { mobx: false, validation } });
+    }, 'Owner'), { output, name: 'Optional', profile: { validation } });
     compileGeneratedSdk(output, [], { strict: true });
     const owner = await sdkBodyCodec(output, 'Optional', 'Owner');
     await assert.rejects(owner.decode({ pet: {} }), (error: unknown) => error instanceof LibError && error.causedByInput === true);

@@ -16,7 +16,7 @@ function generateRoot(t: TestContext): string {
   const { root } = createModelProject(t, { prefix: 'golem-union-serde-', name: 'union-serde', linkTypescript: true });
   copyFixtureFile(root, 'models/union-serde/nested-serde/codecs.ts', 'src/codecs.ts');
   copyFixtureFile(root, 'models/union-serde/nested-serde/order.model.ts', 'src/order.model.ts');
-  writeModelGolemYaml(root, { mobx: false, validation: true });
+  writeModelGolemYaml(root, { validation: true });
   return root;
 }
 

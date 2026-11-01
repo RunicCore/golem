@@ -28,7 +28,7 @@ import {
 
 const example = openApiFixture('example.openapi.yaml');
 
-function writeSdk(document: unknown, options: { output: string; name?: string; profile?: { mobx: boolean; validation: boolean | 'sanity' }; check?: boolean }) {
+function writeSdk(document: unknown, options: { output: string; name?: string; profile?: { mobx?: boolean; validation: boolean | 'sanity' }; check?: boolean }) {
   return writeGeneratedSdk(writeSdkFiles, document, options);
 }
 
@@ -232,7 +232,7 @@ test('OpenAPI 3.1 generation preserves its dialect', async (t) => {
     },
   };
   const output = createFixtureProject(t, 'golem-openapi-31-');
-  writeGeneratedSdk(writeSdk, document, { output, name: 'Oas31', profile: { mobx: false, validation: true } });
+  writeGeneratedSdk(writeSdk, document, { output, name: 'Oas31', profile: { validation: true } });
   compileGeneratedSdk(output, []);
   const module = requireRecord(await import(pathToFileURL(path.join(output, 'dist/client.js')).href), 'oas31 client');
   const Client = module.Oas31Client;
@@ -377,7 +377,7 @@ test('normalizes callbacks and webhooks into payload types of the SDK', (t) => {
 test('generation is deterministic', async (t) => {
   const document = await loadValidatedDocument(example, {});
   const output = createFixtureProject(t, 'golem-openapi-test-');
-  const profile = { mobx: false, validation: true };
+  const profile = { validation: true };
   const first = writeSdkFiles(document, { output, name: 'ExamplePayments', profile });
   const second = writeSdkFiles(document, { output, name: 'ExamplePayments', profile });
   assert.deepEqual(second.artifacts, first.artifacts, 'repeated generation from the same document produces identical artifacts');
@@ -389,7 +389,7 @@ test('generation is deterministic', async (t) => {
   const manifest = requireRecord(JSON.parse(manifestText), 'manifest');
   // golem's own reader accepts the generated manifest.
   assert.doesNotThrow(() => validateModelManifest(manifest));
-  assert.deepEqual(manifest.profile, { mobx: false, validation: true, allowAny: false, unknownFormats: 'error' });
+  assert.deepEqual(manifest.profile, { validation: true, allowAny: false, unknownFormats: 'error' });
   const source = requireRecord(manifest.source, 'source');
   assert.equal(source.dialect, requireRecord(document, 'document').openapi);
   assert.match(String(source.digest), /^[a-f0-9]{64}$/);

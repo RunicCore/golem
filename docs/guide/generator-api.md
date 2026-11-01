@@ -13,7 +13,7 @@ Each generator module exports `apiVersion` and `generate(context)`:
 | Module | `generate` | Returns |
 | --- | --- | --- |
 | `@exprtlabs/golem-ts-openapi/generator` | Asynchronous | The OpenAPI document of your controllers |
-| `@exprtlabs/golem-openapi/generator` | Asynchronous | The SDK files of an OpenAPI document |
+| `@exprtlabs/golem-openapi-ts/generator` | Asynchronous | The SDK files of an OpenAPI document |
 | `@exprtlabs/golem-model/generator` | Synchronous | The generated files of your models |
 
 Signatures and context fields are in the [Generator and tool API](/reference/generator-api).

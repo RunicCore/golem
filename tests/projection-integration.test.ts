@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
-import { generate } from '@exprtlabs/golem-openapi/generator';
+import { generate } from '@exprtlabs/golem-openapi-ts/generator';
 import { command, workspace } from './support/process.js';
 import { buildModelProject } from './model-project.js';
 
@@ -52,7 +52,7 @@ test('public directional projection handles repeated aliases and allOf requireme
       RequiredOnly: { type: 'object', required: ['token'], additionalProperties: { type: 'string' } },
     } },
   }));
-  const result = await generate({ input, output: path.join(root, 'sdk'), name: 'Projection', profile: { mobx: false, validation: true } });
+  const result = await generate({ input, output: path.join(root, 'sdk'), name: 'Projection', profile: { validation: true } });
   assert.equal(fs.existsSync(path.join(root, 'sdk')), false, 'public generation remains pure');
   for (const artifact of result.artifacts) {
     fs.mkdirSync(path.dirname(artifact.path), { recursive: true });

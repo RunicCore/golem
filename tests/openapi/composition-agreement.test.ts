@@ -869,7 +869,7 @@ function builder(row: Row, validation: boolean): () => Promise<Built> {
     const result = await generateMaterializedSdk(withRootOperations(row.document, row.root), {
       output,
       name: 'Composition',
-      profile: { mobx: false, validation, allowAny: false },
+      profile: { validation, allowAny: false },
     });
     compileGeneratedSdk(output, [], { strict: true, skipLibCheck: true });
     return {
@@ -1213,7 +1213,7 @@ for (const { shape, error: expected, document } of stopped) {
   test(`${shape}: generation stops with a coded error`, async t => {
     const output = path.join(createFixtureProject(t, 'golem-composition-stopped-'), 'sdk');
     await assert.rejects(
-      generateMaterializedSdk(document, { output, name: 'Composition', profile: { mobx: false, validation: true, allowAny: false } }),
+      generateMaterializedSdk(document, { output, name: 'Composition', profile: { validation: true, allowAny: false } }),
       (error: unknown): true => {
         assert.ok(error instanceof Error);
         assert.match(error.message, expected);
@@ -1243,14 +1243,14 @@ test('an inline response narrows an inherited oneOf property to one of its varia
     schema: { allOf: [ref('Base'), object({ pet: ref('Cat'), pets: { type: 'array', items: ref('Cat') } })] },
   } } } } } };
   const output = path.join(createFixtureProject(t, 'golem-composition-variant-'), 'sdk');
-  const result = await generateMaterializedSdk(document, { output, name: 'Composition', profile: { mobx: false, validation: true, allowAny: false } });
+  const result = await generateMaterializedSdk(document, { output, name: 'Composition', profile: { validation: true, allowAny: false } });
   assert.deepEqual((result.diagnostics ?? []).map(diagnostic => diagnostic.code), []);
   compileGeneratedSdk(output, [], { strict: true, skipLibCheck: true });
 });
 
 /** Generates the SDK with validation on, asserts that generation gave no diagnostic, and compiles the result. */
 async function generateCompiledSdk(document: Record<string, unknown>, output: string): Promise<void> {
-  const result = await generateMaterializedSdk(document, { output, name: 'Composition', profile: { mobx: false, validation: true, allowAny: false } });
+  const result = await generateMaterializedSdk(document, { output, name: 'Composition', profile: { validation: true, allowAny: false } });
   assert.deepEqual((result.diagnostics ?? []).map(diagnostic => diagnostic.code), []);
   compileGeneratedSdk(output, [], { strict: true, skipLibCheck: true });
 }
@@ -1289,7 +1289,7 @@ test('a diagnostic inside a oneOf branch of a schema with both keywords names th
   const root = createFixtureProject(t, 'golem-composition-path-');
   const input = path.join(root, 'openapi.json');
   writeFileSync(input, JSON.stringify(visitDocument({ m: bothKeywords })));
-  const result = await generate({ input, output: path.join(root, 'sdk'), name: 'Composition', profile: { mobx: false, validation: true, allowAny: false } });
+  const result = await generate({ input, output: path.join(root, 'sdk'), name: 'Composition', profile: { validation: true, allowAny: false } });
   const messages = (result.diagnostics ?? []).map(diagnostic => diagnostic.message);
   assert.deepEqual(messages.filter(message => message.includes('/allOf/')), []);
   assert.equal(messages.filter(message => message.includes('#/components/schemas/Visit/properties/m/oneOf/0/properties/code/format: the format "no-such-format"')).length, 1, JSON.stringify(messages));

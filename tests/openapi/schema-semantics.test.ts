@@ -42,8 +42,8 @@ test('public generation accepts OAS 3.1/3.2 boolean schemas in direct, nested, a
   const inputs = { putDirect: 1, putNested: { extra: 1 }, putRef: 1 } as const;
   for (const openapi of ['3.1.0', '3.2.0']) {
     const profiles = openapi === '3.2.0'
-      ? [{ mobx: false, validation: false }, { mobx: false, validation: true }]
-      : [{ mobx: false, validation: false }];
+      ? [{ validation: false }, { validation: true }]
+      : [{ validation: false }];
     for (const profile of profiles) {
       const directory = createFixtureProject(t, 'golem-openapi-r13-');
       const output = path.join(directory, 'sdk');
@@ -90,7 +90,7 @@ test('rejects malformed or unresolved documents', async (t) => {
     () => generate({
       input: malformedInput,
       output: path.join(malformed, 'sdk'),
-      profile: { mobx: false, validation: false },
+      profile: { validation: false },
     }),
     /OpenAPI validation failed/,
   );
@@ -115,7 +115,7 @@ test('rejects malformed or unresolved documents', async (t) => {
     () => generate({
       input: unresolvedInput,
       output: path.join(unresolved, 'sdk'),
-      profile: { mobx: false, validation: false },
+      profile: { validation: false },
     }),
     /^Error: OpenAPI validation failed with 1 error\(s\):\nno-unresolved-refs: Can't resolve \$ref #\/components\/schemas\/Missing \(openapi\.json#\/paths\/~1values\/get\/responses\/200\/content\/application~1json\/schema\/\$ref\)$/,
   );
@@ -170,7 +170,7 @@ test('nullable binary response decodes to Blob or null and both pass runtime val
       },
     },
   });
-  await generateMaterializedSdk(document, { output, name: 'NullableBinary', profile: { mobx: false, validation: true } });
+  await generateMaterializedSdk(document, { output, name: 'NullableBinary', profile: { validation: true } });
   const typeAssertion = path.join(output, 'nullable-binary-assert.ts');
   writeFileSync(typeAssertion, [
     "import type * as Types from './types.js';",
@@ -268,7 +268,7 @@ test('an allOf alias of one closed schema checks bodies exactly as its base does
         Price: { allOf: [{ $ref: '#/components/schemas/Money' }] },
       },
     },
-  }), 'Money', 'Price'), { output, name: 'Alias', profile: { mobx: false, validation: true } });
+  }), 'Money', 'Price'), { output, name: 'Alias', profile: { validation: true } });
   compileGeneratedSdk(output, [], { strict: true });
   const money = await sdkBodyCodec(output, 'Alias', 'Money');
   const price = await sdkBodyCodec(output, 'Alias', 'Price');

@@ -20,7 +20,7 @@ test('a model number field accepts the int32, int64, float and double formats, c
     imports: tsSource`import type { Format } from '@exprtlabs/golem/tags';`,
     fields: tsSource`small: number & Format<'int32'>; big: number & Format<'int64'>; single: number & Format<'float'>; wide: number & Format<'double'>; text: string & Format<'email'>`,
   }).text);
-  await buildModelProjectWith(root, { mobx: false, validation: true });
+  await buildModelProjectWith(root, { validation: true });
   const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
   const inRange = { small: 2 ** 31 - 1, big: Number.MAX_SAFE_INTEGER, single: 1.5, wide: 1e300, text: 'a@b.co' };
   assert.equal(await getValidator(new A(inRange)).validate(), true);
@@ -45,7 +45,7 @@ test('parse rejects an int64 value beyond the safe integer range instead of roun
     imports: tsSource`import type { Format } from '@exprtlabs/golem/tags';`,
     fields: tsSource`id: number & Format<'int64'>; ratio: number & Format<'double'>`,
   }).text);
-  await buildModelProjectWith(root, { mobx: false, validation: true });
+  await buildModelProjectWith(root, { validation: true });
   await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
   const codec = requireObjectCodec<{ id: number }>(generatedCodecIdFromRoot(root, 'TA'));
   assert.equal(codec.parse('{"id":9007199254740991,"ratio":9007199254740993}').id, 9007199254740991);

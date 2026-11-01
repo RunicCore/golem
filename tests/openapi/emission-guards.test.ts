@@ -8,7 +8,7 @@ import { writeOpenApiDocument } from './helpers.js';
 const text = { type: 'string' };
 const tag = (value: string) => ({ type: 'string', const: value });
 const tagged = (value: string) => ({ type: 'object', required: ['kind'], properties: { kind: tag(value) } });
-const profile = { mobx: false, validation: false };
+const profile = { validation: false };
 
 async function generated(t: test.TestContext, schemas: Record<string, unknown>) {
   const directory = createFixtureProject(t, 'golem-openapi-emission-guards-');

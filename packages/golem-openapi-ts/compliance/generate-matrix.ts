@@ -11,7 +11,7 @@ import { buildSupportProjection } from '../../../scripts/support-projection.js';
 const nearbyPackage = fileURLToPath(new URL('..', import.meta.url));
 const packageDirectory = existsSync(path.join(nearbyPackage, 'package.json'))
   ? nearbyPackage
-  : fileURLToPath(new URL('../../../../packages/golem-openapi/', import.meta.url));
+  : fileURLToPath(new URL('../../../../packages/golem-openapi-ts/', import.meta.url));
 
 function escapeCell(value: string): string {
   return value.replace(/\|/g, '\\|').replace(/\n/g, '<br>');

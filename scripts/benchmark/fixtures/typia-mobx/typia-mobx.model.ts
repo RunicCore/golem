@@ -1,5 +1,5 @@
 import type { IModel } from '@exprtlabs/golem/model';
-import { asGenObservable } from '@exprtlabs/golem/mobx';
+import { asGenObservable } from '@exprtlabs/golem-openapi-ts/mobx';
 import {
   TMobxAddressBaseModel, TMobxArrayBaseModel, TMobxCircleBaseModel, TMobxFlatBaseModel, TMobxItemBaseModel,
   TMobxLabelBaseModel, TMobxNestedBaseModel, TMobxOptionalBaseModel, TMobxOwnerBaseModel, TMobxRectBaseModel,

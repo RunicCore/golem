@@ -16,7 +16,7 @@ function inventoryOf(root: string, files: readonly string[]): Inventory {
     version: 1,
     files: Object.fromEntries(files.map(file => [file, {
       job: 'openapi:sdk',
-      owner: '@exprtlabs/golem-openapi',
+      owner: '@exprtlabs/golem-openapi-ts',
       digest: digest(fs.readFileSync(path.join(root, file), 'utf8')),
       destination: 'sdk',
       destinationKind: 'directory' as const,
@@ -32,7 +32,7 @@ async function project(t: TestContext): Promise<{ root: string; record: JobRecor
   fs.writeFileSync(path.join(root, 'src/a.model.ts'), 'export {};\n');
   fs.writeFileSync(path.join(root, 'sdk.ts'), 'export {};\n');
   fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'job-cache-fixture', private: true, type: 'module' }));
-  linkGolemPackages(root, ['golem', 'golem-openapi']);
+  linkGolemPackages(root, ['golem', 'golem-openapi-ts']);
   fs.writeFileSync(path.join(root, 'golem.yaml'), 'version: 1\nopenapi-ts:\n  sdks:\n    - input: api.yaml\n      output: sdk\n');
   const config = await loadConfig(path.join(root, 'golem.yaml'));
   const job = config.jobs[0];

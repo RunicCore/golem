@@ -35,7 +35,7 @@ function project(t: test.TestContext, fields: ReturnType<typeof tsSource>) {
   fs.writeFileSync(path.join(made.sourceRoot, 'codecs.ts'), CODECS);
   fs.writeFileSync(path.join(made.sourceRoot, 'money.ts'), MONEY);
   fs.writeFileSync(path.join(made.sourceRoot, 'a.model.ts'), taggedModelSource({ name: 'A', imports: IMPORTS, fields }).text);
-  writeModelGolemYaml(made.root, { mobx: false, validation: true });
+  writeModelGolemYaml(made.root, { validation: true });
   return made;
 }
 

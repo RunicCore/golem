@@ -114,7 +114,7 @@ const SHAPE_ERRORS: Record<string, unknown> = { 'a wrong type': WRONG_TYPE, 'a m
 async function load(t: TestContext, validation: Level, models: string) {
   const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-sanity-calls-', name: 'sanity-calls' });
   writeModelSources(sourceRoot, { 'rules.ts': RULES, 'models.model.ts': models });
-  writeModelGolemYaml(root, { mobx: false, validation });
+  writeModelGolemYaml(root, { validation });
   await buildModelProject(root);
   const rules = await import(pathToFileURL(path.join(root, 'build/rules.js')).href) as { calls: number; reset(): void };
   const classes = await import(pathToFileURL(path.join(root, 'build/models.model.js')).href) as Record<string, new (values: object) => object>;
@@ -288,7 +288,7 @@ import type { TemporalDuration, TemporalInstant, TemporalPlainDate, TemporalPlai
 export type ${name} = IModel<{ at: TemporalInstant; zoned: TemporalZonedDateTime; day: TemporalPlainDate; local: TemporalPlainDateTime; time: TemporalPlainTime; span: TemporalDuration; when: Date }>;
 `,
   });
-  writeModelGolemYaml(root, { mobx: false, validation: level === 'sanity' ? 'sanity' : false });
+  writeModelGolemYaml(root, { validation: level === 'sanity' ? 'sanity' : false });
   await buildModelProject(root);
   await import(pathToFileURL(path.join(root, 'build/event.model.generated.js')).href);
   return requireObjectCodec(generatedCodecIdFromRoot(root, name));

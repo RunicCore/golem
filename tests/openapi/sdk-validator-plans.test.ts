@@ -76,7 +76,7 @@ test('the whole-graph plan validates every model as the plan of its own group do
   t.after(() => rmSync(directory, { recursive: true, force: true }));
   let whole: CodecValidationPlan | undefined;
   let groups: ReadonlyMap<string, CodecValidationPlan> | undefined;
-  generateOpenApiModelArtifacts(document, { mobx: false, validation: true, allowAny: false }, analyzeOpenApiModels(document, true), {
+  generateOpenApiModelArtifacts(document, { validation: true, allowAny: false }, analyzeOpenApiModels(document, true), {
     compileValidators: ({ plan, groupPlans }) => {
       whole = plan;
       groups = groupPlans;

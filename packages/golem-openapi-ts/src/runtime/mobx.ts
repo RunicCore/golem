@@ -12,12 +12,12 @@ import {
   type AnnotationsMap,
   type IObservableValue,
 } from 'mobx';
-import { createTrackedApiOperation } from './api-operation.js';
+import { createTrackedApiOperation } from '@exprtlabs/golem/internal/api-operation-runtime';
 import type {
   ApiOperation,
   ApiOperationRun,
-} from './client.js';
-import { findGeneratedModelDefinition } from './model-registry.js';
+} from '@exprtlabs/golem/client';
+import { findGeneratedModelDefinition } from '@exprtlabs/golem/internal/model-runtime';
 
 export type ModelAnnotations<Model extends object> = AnnotationsMap<Model, never>;
 

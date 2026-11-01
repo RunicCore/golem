@@ -35,7 +35,7 @@ function fixture(t: TestContext): ModelProject {
 function validationProject(t: TestContext, filename: string, lines: readonly string[]): ModelProject {
   const value = fixture(t);
   writeFileSync(path.join(value.sourceRoot, filename), lines.join('\n'));
-  writeModelGolemYaml(value.root, { mobx: false, validation: true });
+  writeModelGolemYaml(value.root, { validation: true });
   return value;
 }
 
@@ -243,7 +243,7 @@ test('generated object codecs close nested schemas and keep first/all and contex
   const value = fixture(t);
   writeFileSync(path.join(value.sourceRoot, 'root.model.ts'), readFixture("models/generated-validators/generated-object-codecs-close-nested-schemas-and-preserve-first-all-sync-and-context/root.model.ts"));
 
-  writeModelGolemYaml(value.root, { mobx: false, validation: true });
+  writeModelGolemYaml(value.root, { validation: true });
   await compile(value.root);
   const generated = generatedModelFiles(value.root).filter(item => item.path.endsWith('.ts')).map(item => item.content).join('\n');
   assert.match(generated, /\(options\?\.validationContext === undefined && is_(\w+_[0-9a-f]{8})\(value\)\) \|\| isValidModelValue\(value, options, validate_\1, "\1"\)/, 'object codecs call the fast check, then the validator, they import');
@@ -356,7 +356,7 @@ test('generated validators permit equal model names in independent source graphs
   writeFileSync(path.join(value.sourceRoot, 'first/item.model.ts'), readFixture("models/generated-validators/generated-validators-permit-equal-model-names-in-independent-source-graphs/item.model.ts"));
   writeFileSync(path.join(value.sourceRoot, 'second/item.model.ts'), readFixture("models/generated-validators/generated-validators-permit-equal-model-names-in-independent-source-graphs/item.model-2.ts"));
 
-  writeModelGolemYaml(value.root, { mobx: false, validation: true });
+  writeModelGolemYaml(value.root, { validation: true });
   await compile(value.root);
   assert.ok(generatedModelFiles(value.root).some(item => item.path.endsWith('/models.validators.generated.ts')));
   const [{ Item: FirstItem }, { Item: SecondItem }] = await Promise.all([

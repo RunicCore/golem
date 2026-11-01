@@ -29,7 +29,7 @@ type Models = Record<string, new (values?: object) => object>;
 const buildFor = (validation: boolean) => onceShared(async () => {
   const { root, sourceRoot } = createModelProject(fileFixtureScope(), { prefix: 'golem-nested-non-object-', name: 'nested-non-object', linkWorkspaceNodeModules: true });
   fs.writeFileSync(path.join(sourceRoot, 'nested.model.ts'), SOURCE);
-  writeModelGolemYaml(root, { mobx: false, validation, exact: false });
+  writeModelGolemYaml(root, { validation, exact: false });
   await buildModelProject(root);
   const models = await import(pathToFileURL(path.join(root, 'build/nested.model.js')).href) as Models;
   const codec = (name: string) => requireObjectCodec(generatedCodecIdFromRoot(root, name));

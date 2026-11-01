@@ -31,7 +31,7 @@ async function build(
     output: path.join(root, 'openapi.json'),
     info: { title: 'Items', version: '1' },
     securitySchemes: { bearer: { type: 'http', scheme: 'bearer' }, basic: { type: 'http', scheme: 'basic' } },
-    profile: { mobx: false, validation: false },
+    profile: { validation: false },
     ...options,
   });
   return JSON.parse(result.artifacts[0]!.content) as Doc;

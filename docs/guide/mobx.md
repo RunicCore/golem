@@ -2,7 +2,7 @@
 
 Make generated models observable and use them in React components.
 
-With `mobx: true`, generated model fields are MobX observables.
+The `mobx` extension makes validators and SDK operations observable. `asGenObservable` makes the fields of a generated model observable.
 
 - Annotate your class's own fields, getters and actions with normal MobX annotations.
 - Nested generated models are initialized recursively and keep their identity.
@@ -15,10 +15,10 @@ MobX changes observability only. Construction, `fromWireFormat` / `toWireFormat`
 
 ## Enable MobX
 
-Install MobX in the application. Your class constructors and the generated models import it at runtime:
+Install MobX and `@exprtlabs/golem-openapi-ts` in the application. Your class constructors and the generated files import them at run time, so `@exprtlabs/golem-openapi-ts` belongs in `dependencies`, not in `devDependencies`:
 
 ```sh
-npm install mobx
+npm install mobx @exprtlabs/golem-openapi-ts
 ```
 
 A React app also needs `mobx-react-lite`, which provides `observer` ([Use it in React](#use-it-in-react)):
@@ -27,16 +27,16 @@ A React app also needs `mobx-react-lite`, which provides `observer` ([Use it in 
 npm install mobx-react-lite
 ```
 
-Set the profile and regenerate:
+Turn on the extension in the `openapi-ts` block and regenerate:
 
 <<< ../../examples/payments/web/golem.yaml
 
-`mobx: true` applies to every generator in the configuration. The example also sets `validation: true`. Validation is independent of MobX ([Validate models](/guide/validation)).
+`extensions: { mobx: {} }` makes the validators of your models observable. The example also sets `validation: true`. Validation is independent of MobX ([Validate models](/guide/validation)). A project with models and no SDK writes the block with only `extensions` ([MobX extension](/reference/config#mobx-extension)).
 
-An SDK with `mobx: true` also gains observable operation loading ([Call operations](/guide/client-usage#observe-loading-with-mobx)). Such an SDK needs `mode: golem` on its SDK job, as the example sets. A `standalone` SDK carries its own copy of the runtime, and that copy has no MobX support, so generation stops with [`OPENAPI_MOBX_NEEDS_GOLEM_MODE`](/reference/diagnostics#openapi-mobx-needs-golem-mode). Set `mode: golem`, or set `mobx: false` ([SDK modes](/reference/config#sdk-modes)).
+An SDK in a block with the extension also gains observable operation loading ([Call operations](/guide/client-usage#observe-loading-with-mobx)). Such an SDK needs `mode: golem` on its SDK job and a `model` block in the same file, as the example sets. A `standalone` SDK carries its own copy of the runtime, and that copy has no MobX support, so generation stops with [`OPENAPI_MOBX_NEEDS_GOLEM_MODE`](/reference/diagnostics#openapi-mobx-needs-golem-mode). Set `mode: golem`, or remove `mobx` from `extensions` ([SDK modes](/reference/config#sdk-modes)).
 
 - An SDK has no model classes in either mode, so the data it returns is plain and not observable.
-- For observable data, declare your own model over the SDK type, such as `IModel<Charge>`, with `mobx: true`.
+- For observable data, declare your own model over the SDK type, such as `IModel<Charge>`, and call `asGenObservable` in its constructor.
 
 ## Initialize your class
 
@@ -75,7 +75,7 @@ Calling `setAmount('12.50')` changes `money.amount`, and the reaction above repo
 
 Put annotations on your class, after `super`. When a union field holds one of your classes, construct it with `new YourClass(…)`. Generated [union conversion](/guide/field-types#unions) builds only generated classes.
 
-With `mobx: false`, generated files import no MobX.
+Without the extension, generated files import no MobX.
 
 ## Use it in React
 
@@ -87,8 +87,8 @@ The amount field in [`src/App.tsx`](https://github.com/RunicCore/golem/blob/mast
 
 `getValidator` reads the editor's validation issues ([Validate models](/guide/validation)) for the field to render. The field calls an action method, `setAmount`, on change.
 
-- Import `getValidator` from `@exprtlabs/golem/validation`. When the model is generated with `mobx: true` and `validation: true`, the validator it returns is already observable, so `observer` re-renders when its issues change.
-- Import it from `@exprtlabs/golem/mobx-validation` when a model is generated without both settings and a component must still re-render on its issues. It returns the same validator for that instance, made observable.
+- Import `getValidator` from `@exprtlabs/golem/validation`. When the `mobx` extension is on and `validation` is `true`, the validator it returns is already observable, so `observer` re-renders when its issues change.
+- Import it from `@exprtlabs/golem-openapi-ts/mobx-validation` when a model is generated without both settings and a component must still re-render on its issues. It returns the same validator for that instance, made observable.
 
 ### Bind a text input to a number field
 

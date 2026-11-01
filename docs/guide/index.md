@@ -9,9 +9,9 @@ Each generator installs on its own and runs through the same `golem` command and
 | You have | Feature and package | You get |
 | --- | --- | --- |
 | TypeScript fields and app behavior | Objects and models: [`@exprtlabs/golem-model`](/guide/models) | A generated class with validation and JSON conversion |
-| An OpenAPI document | OpenAPI to TypeScript SDK: [`@exprtlabs/golem-openapi`](/guide/client) | Typed operations, request and response models |
+| An OpenAPI document | OpenAPI to TypeScript SDK: [`@exprtlabs/golem-openapi-ts`](/guide/client) | Typed operations, request and response models |
 | TypeScript controllers, with NestJS as the supported framework | TypeScript to OpenAPI: [`@exprtlabs/golem-ts-openapi`](/guide/nestjs) | An OpenAPI document from routes and types |
-| An OpenAPI document and app models | [`golem-openapi` and `golem-model`](/guide/models-and-client) | App models that reuse the SDK's types |
+| An OpenAPI document and app models | [`golem-openapi-ts` and `golem-model`](/guide/models-and-client) | App models that reuse the SDK's types |
 
 NestJS is not required. Every generated model and client imports the runtime package `@exprtlabs/golem` ([packages](/guide/quick-start#packages-for-each-generator)).
 
@@ -34,7 +34,7 @@ An `IObject` declares fields whose values stay plain objects. An `IModel` is an 
 | Generator | Reads | Then |
 | --- | --- | --- |
 | `@exprtlabs/golem-model` | Your `IObject` and `IModel` declarations | Runs steps 1 to 5 |
-| `@exprtlabs/golem-openapi` | An OpenAPI 3.1 or 3.2 document | Resolves its `$ref`s across local files and the HTTPS hosts you allow, checks it against the official OpenAPI schema and the cross-field rules of the specification, then runs steps 2 to 4 to build a typed SDK |
+| `@exprtlabs/golem-openapi-ts` | An OpenAPI 3.1 or 3.2 document | Resolves its `$ref`s across local files and the HTTPS hosts you allow, checks it against the official OpenAPI schema and the cross-field rules of the specification, then runs steps 2 to 4 to build a typed SDK |
 | `@exprtlabs/golem-ts-openapi` | TypeScript controllers, with NestJS as the supported framework, and their types, without starting the app | Writes an OpenAPI document |
 
 ## What you need

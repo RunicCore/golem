@@ -54,7 +54,7 @@ test('operation parameters override path parameters by (in, name) and repeated p
   }), {
     output,
     name: 'ParameterOverrides',
-    profile: { mobx: false, validation: false },
+    profile: { validation: false },
   });
   copyFixtureFile(output, 'openapi/parameters/parameters-assert.ts', 'parameters-assert.ts');
   compileStrictUnusedSdk(output, [path.join(output, 'parameters-assert.ts')]);
@@ -102,7 +102,7 @@ test('a path value that forms a whole segment may not be a dot-segment, and one 
       '/named/{id}.json': operation('named'),
       '/v{id}': operation('versioned'),
     },
-  }), { output, name: 'DotSegments', profile: { mobx: false, validation: false } });
+  }), { output, name: 'DotSegments', profile: { validation: false } });
   compileGeneratedSdk(output);
   const module = requireRecord(await import(pathToFileURL(path.join(output, 'dist/client.js')).href), 'dot segment client');
   const Client = module.DotSegmentsClient;
@@ -195,7 +195,7 @@ test('generated content parameters validate before execute', async t => {
   await generateMaterializedSdk(document, {
     output,
     name: 'ContentParameters',
-    profile: { mobx: false, validation: true },
+    profile: { validation: true },
   });
   copyFixtureFile(output, 'openapi/parameters/parameters-content-false-assert.ts', 'parameters-content-false-assert.ts');
   compileGeneratedSdk(output, [path.join(output, 'parameters-content-false-assert.ts')]);
@@ -299,7 +299,7 @@ test('a parameter $ref into a separate file resolves to its declared type after 
     },
   }));
   const output = path.join(directory, 'sdk');
-  const result = await generate({ input, output, name: 'External', profile: { mobx: false, validation: false } });
+  const result = await generate({ input, output, name: 'External', profile: { validation: false } });
   const types = result.artifacts.find(artifact => artifact.path.endsWith('/types.ts'))?.content ?? '';
   assert.match(types, /limit: number/, types);
 });

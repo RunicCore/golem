@@ -6,7 +6,7 @@ import test, { type TestContext } from 'node:test';
 import {
   checkComplianceMatrix,
   writeComplianceMatrix,
-} from '../../packages/golem-openapi/compliance/generate-matrix.js';
+} from '../../packages/golem-openapi-ts/compliance/generate-matrix.js';
 
 function currentPackageCopy(t: TestContext): string {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'golem-compliance-matrix-'));

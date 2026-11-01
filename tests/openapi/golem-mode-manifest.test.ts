@@ -13,7 +13,7 @@ import { analyzeOpenApiModels } from '#openapi/model-schema-graph';
 import { createFixtureProject } from '../fixture-project.js';
 import { golemModeManifest, writeOpenApiDocument } from './helpers.js';
 
-const PROFILE = { mobx: false, validation: true, allowAny: false } as const;
+const PROFILE = { validation: true, allowAny: false } as const;
 const ref = (name: string) => ({ $ref: `#/components/schemas/${name}` });
 const DOCUMENT = {
   openapi: '3.1.0',

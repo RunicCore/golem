@@ -14,7 +14,7 @@ test('client validation failures use library errors while network failures prese
     paths: { '/value': { get: { operationId: 'getValue', responses: {
       200: { description: 'Value', content: { 'application/json': { schema: { type: 'number' } } } },
     } } } },
-  }, { output, name: 'Failures', profile: { mobx: false, validation: true } });
+  }, { output, name: 'Failures', profile: { validation: true } });
   compileGeneratedSdk(output);
   const { FailuresClient } = await import(pathToFileURL(path.join(output, 'dist/client.js')).href);
   assert.ok(isGeneratedClientClass(FailuresClient));

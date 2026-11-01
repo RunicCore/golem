@@ -17,7 +17,7 @@ import { runLines } from './support/watch-runs.js';
 
 function fixture(t: TestContext): { root: string; config: string } {
   const root = workspaceLinkedProject(t, 'golem-pipeline-', '{"name":"pipeline-fixture","type":"module"}');
-  writeFixture(root, { mobx: false, validation: true });
+  writeFixture(root, { validation: true });
   return { root, config: path.join(root, 'golem.yaml') };
 }
 
@@ -43,7 +43,7 @@ test('global profile changes remove obsolete validation and keep manifest identi
   const manifestFile = path.join(root, 'sdk/model-manifest.json');
   const before = JSON.parse(fs.readFileSync(manifestFile, 'utf8')) as {
     models: { id: string }[];
-    profile: { mobx: boolean; validation: boolean };
+    profile: { mobx?: boolean; validation: boolean };
   };
   // A fresh process reads the built SDK, so no module of an earlier build stays cached.
   const validateBreakingMoney = async (): Promise<string> => {
@@ -58,10 +58,10 @@ test('global profile changes remove obsolete validation and keep manifest identi
   await runPipeline(config);
   const after = JSON.parse(fs.readFileSync(manifestFile, 'utf8')) as {
     models: { id: string }[];
-    profile: { mobx: boolean; validation: boolean };
+    profile: { mobx?: boolean; validation: boolean };
   };
   assert.deepEqual(after.models.map((model) => model.id), before.models.map((model) => model.id));
-  assert.deepEqual(after.profile, { mobx: false, validation: false, allowAny: false, unknownFormats: 'error' });
+  assert.deepEqual(after.profile, { validation: false, allowAny: false, unknownFormats: 'error' });
   assert.equal(await validateBreakingMoney(), 'accepted', 'validation off: the client has no validator left');
   await runPipeline(config, { check: true });
 });
@@ -69,15 +69,15 @@ test('global profile changes remove obsolete validation and keep manifest identi
 test('a built-in generator package of another version than the installed runtime is rejected before any file is written', async (t: TestContext) => {
   // protects: T-653 a built-in generator of another version than the runtime stops golem build before it writes
   const { root, config } = fixture(t);
-  const provider = path.join(root, 'node_modules/@exprtlabs/golem-openapi');
+  const provider = path.join(root, 'node_modules/@exprtlabs/golem-openapi-ts');
   fs.rmSync(provider, { recursive: true });
   fs.mkdirSync(path.join(provider, 'dist'), { recursive: true });
-  const source = path.join(workspace, 'packages/golem-openapi');
+  const source = path.join(workspace, 'packages/golem-openapi-ts');
   const manifest = JSON.parse(fs.readFileSync(path.join(source, 'package.json'), 'utf8')) as { version: string };
   // A release pins golem to its own version; the registry compares that pin with the runtime.
   fs.writeFileSync(path.join(provider, 'package.json'), JSON.stringify({ ...manifest, version: '1.99.0', dependencies: { '@exprtlabs/golem': '1.99.0' } }));
   for (const entry of ['generator', 'plan']) fs.copyFileSync(path.join(source, `dist/${entry}.js`), path.join(provider, `dist/${entry}.js`));
-  await assert.rejects(runPipeline(config), /@exprtlabs\/golem \S+ and @exprtlabs\/golem-openapi 1\.99\.0 must have the same version/);
+  await assert.rejects(runPipeline(config), /@exprtlabs\/golem \S+ and @exprtlabs\/golem-openapi-ts 1\.99\.0 must have the same version/);
   assert.equal(fs.existsSync(path.join(root, 'sdk')), false);
   assert.equal(fs.existsSync(path.join(root, '.golem')), false);
 });
@@ -567,7 +567,7 @@ test('a clean clone runs an OpenAPI job on the document that an earlier generato
   // protects: T-168 a job that reads an earlier job's output builds on a clean clone
   const root = createFixtureProject(t, 'golem-pipeline-produced-input-');
   fs.writeFileSync(path.join(root, 'package.json'), '{"name":"produced-input-fixture","type":"module"}');
-  linkGolemPackages(root, ['golem', 'golem-openapi']);
+  linkGolemPackages(root, ['golem', 'golem-openapi-ts']);
   copyFixtureFile(root, 'packed/profile/tsconfig.json', 'tsconfig.json');
   copyFixtureFile(root, 'packed/profile/api.json', 'spec-source.json');
   installGenerator(root, 'spec', `import fs from 'node:fs';

@@ -10,8 +10,8 @@ import { LibError, LibErrorKind, IssueSource } from '@exprtlabs/golem/errors';
 import {
   GENERATION_PROFILES,
   PROFILE_IDS,
-} from '../../packages/golem-openapi/compliance/capabilities.js';
-import { generate, loadValidatedDocument } from '@exprtlabs/golem-openapi/generator';
+} from '../../packages/golem-openapi-ts/compliance/capabilities.js';
+import { generate, loadValidatedDocument } from '@exprtlabs/golem-openapi-ts/generator';
 import { normalizeDocument } from '#openapi/normalize';
 import {
   assertCaseTableIntegrity,
@@ -331,11 +331,13 @@ async function executeCase(
   }
 }
 
-function assertManifestProfile(output: string, profile: { readonly mobx: boolean; readonly validation: boolean }): void {
+function assertManifestProfile(output: string, profile: { readonly mobx?: boolean; readonly validation: boolean }): void {
   const manifestValue: unknown = JSON.parse(fs.readFileSync(path.join(output, 'model-manifest.json'), 'utf8'));
   assert.ok(isRecord(manifestValue));
   const manifestProfile = manifestValue && Reflect.get(manifestValue, 'profile');
-  assert.deepEqual(manifestProfile, { ...profile, allowAny: false, unknownFormats: 'warn' });
+  // The helper calls the generators directly, so the extension setting that a pipeline run records is not in this profile.
+  const { mobx: _mobx, ...recorded } = profile;
+  assert.deepEqual(manifestProfile, { ...recorded, allowAny: false, unknownFormats: 'warn' });
 }
 
 test('typed upstream corpus cases generate, strict-compile, and execute every accounted outbound operation', async t => {

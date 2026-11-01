@@ -170,8 +170,8 @@ export interface GeneratedModelConversion<Model extends object = object, Wire = 
 }
 
 /**
- * Optional runtime enhancement supplied by an integration such as MobX.
- * The validation type is imported type-only, so no validation or MobX runtime
+ * Optional runtime enhancement supplied by an extension of a generator package.
+ * The validation type is imported type-only, so no validation or extension runtime
  * is loaded by the dependency-free model entrypoint.
  */
 export type GeneratedModelValidatorEnhancer = <Fields extends object, Owner extends object = Fields>(

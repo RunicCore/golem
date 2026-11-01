@@ -99,7 +99,7 @@ test('a parent tsconfig that includes a package with its own tsconfig.json is th
 test('a context without tsconfig passed to the model generator opens the nearest tsconfig.json', (t) => {
   // protects: T-480 a caller of the published generator outside golem.yaml keeps the nearest-tsconfig lookup
   const { app } = parentWithPackageProject(t, 'job-tsconfig-nearest');
-  const result = generate({ root: app, profile: { mobx: false, validation: false } });
+  const result = generate({ root: app, profile: { validation: false } });
   assert.ok(result.artifacts.some((artifact) => artifact.path.endsWith('item.model.generated.ts')), 'the alias of the nearest tsconfig resolved');
   assert.deepEqual(result.watchInputs.filter((input) => input.endsWith('tsconfig.json')), [path.join(app, 'tsconfig.json')]);
 });

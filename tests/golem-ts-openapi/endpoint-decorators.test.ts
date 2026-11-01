@@ -21,7 +21,7 @@ function generateDocument(root: string, title: string): Promise<Awaited<ReturnTy
     root,
     output: path.join(root, 'openapi.json'),
     info: { title, version: '1' },
-    profile: { mobx: false, validation: false },
+    profile: { validation: false },
   });
 }
 

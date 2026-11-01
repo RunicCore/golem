@@ -47,7 +47,7 @@ function importedRuntimeModules(directory: string): { readonly values: readonly 
       const file = path.join(current, entry.name);
       if (entry.isDirectory() && entry.name !== 'node_modules' && entry.name !== 'dist') visit(file);
       else if (/\.(?:ts|generated\.js)$/.test(entry.name)) {
-        for (const match of fs.readFileSync(file, 'utf8').matchAll(/^import (type )?[^;]*? from ["'](@exprtlabs\/golem\/[^"']+)["']/gm)) (match[1] ? types : values).add(match[2]!);
+        for (const match of fs.readFileSync(file, 'utf8').matchAll(/^import (type )?[^;]*? from ["'](@exprtlabs\/golem(?:-openapi-ts)?\/[^"']+)["']/gm)) (match[1] ? types : values).add(match[2]!);
       }
     }
   };
@@ -57,10 +57,10 @@ function importedRuntimeModules(directory: string): { readonly values: readonly 
 
 const profiles: readonly [string, OpenApiGenerationProfile, readonly string[], readonly string[]][] = [
   // A standalone SDK carries its runtime and imports nothing from @exprtlabs/golem.
-  ['plain', { mobx: false, validation: false }, [], []],
+  ['plain', { validation: false }, [], []],
   ['mobx and validation', { mobx: true, validation: true }, [
-    '@exprtlabs/golem/internal/client-runtime', '@exprtlabs/golem/internal/client-validation-runtime', '@exprtlabs/golem/internal/mobx-runtime', '@exprtlabs/golem/internal/model-runtime', '@exprtlabs/golem/internal/validation-runtime',
-  ], ['@exprtlabs/golem/client', '@exprtlabs/golem/mobx', '@exprtlabs/golem/serde', '@exprtlabs/golem/validation']],
+    '@exprtlabs/golem/internal/client-runtime', '@exprtlabs/golem/internal/client-validation-runtime', '@exprtlabs/golem-openapi-ts/internal/mobx-runtime', '@exprtlabs/golem/internal/model-runtime', '@exprtlabs/golem/internal/validation-runtime',
+  ], ['@exprtlabs/golem/client', '@exprtlabs/golem-openapi-ts/mobx', '@exprtlabs/golem/serde', '@exprtlabs/golem/validation']],
 ];
 
 for (const [label, profile, valueModules, typeModules] of profiles) {
@@ -68,7 +68,7 @@ for (const [label, profile, valueModules, typeModules] of profiles) {
     // protects: T-653 generated files reach their runtime helpers only through the internal runtime entries; the types that apps see stay public
     const output = path.join(createFixtureProject(t, 'golem-runtime-entries-'), 'sdk');
     await generateMaterializedSdk(document, { output, name: 'Entries', profile });
-    assert.deepEqual(importedRuntimeModules(output), { values: valueModules, types: typeModules });
+    assert.deepEqual(importedRuntimeModules(output), { values: [...valueModules].sort(), types: [...typeModules].sort() });
     compileGeneratedSdk(output);
     const Client = await loadGeneratedClient(output, 'Entries');
     const sent: ReturnType<typeof captureRequest>[] = [];
@@ -99,7 +99,7 @@ export type TItem = IModel<{ id: string; name: string }>;
 export class Item extends TItemBaseModel {}
 `,
   });
-  const imported = new Set(generate({ root, profile: { mobx: false, validation: false } }).artifacts
+  const imported = new Set(generate({ root, profile: { validation: false } }).artifacts
     .flatMap(({ content }) => [...content.matchAll(/^import [^;]*? from '(@exprtlabs\/golem\/[^']+)'/gm)].map(match => match[1]!)));
   assert.deepEqual([...imported].sort(), ['@exprtlabs/golem/internal/model-runtime', '@exprtlabs/golem/model', '@exprtlabs/golem/serde']);
 });

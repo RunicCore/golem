@@ -29,7 +29,7 @@ const document = {
 test('a body with a date writes a recursive object or oneOf, with and without a date, and rejects an invalid nested value', async t => {
   // protects: T-200 recursive oneOf/object under a dated model generates with validation on
   const output = path.join(createFixtureProject(t, 'golem-openapi-recursive-wire-'), 'sdk');
-  await generateMaterializedSdk(withRootOperations(document, 'Report'), { output, name: 'RecursiveWire', profile: { mobx: false, validation: true } });
+  await generateMaterializedSdk(withRootOperations(document, 'Report'), { output, name: 'RecursiveWire', profile: { validation: true } });
   compileGeneratedSdk(output, [], { strict: true, skipLibCheck: true, noUnusedLocals: true });
   const report = await sdkBodyCodec(output, 'RecursiveWire', 'Report');
 

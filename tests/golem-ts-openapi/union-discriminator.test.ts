@@ -28,7 +28,7 @@ test('a union of model references documents a discriminator that maps each tag t
     sourceFile: 'src/drawings.controller.ts',
     source: CONTROLLER,
   });
-  const result = await generate({ root, output: path.join(root, 'openapi.json'), openapiVersion: '3.2.0', info: { title: 'Drawings', version: '1' }, profile: { mobx: false, validation: false } });
+  const result = await generate({ root, output: path.join(root, 'openapi.json'), openapiVersion: '3.2.0', info: { title: 'Drawings', version: '1' }, profile: { validation: false } });
   const document = JSON.parse(result.artifacts[0]!.content) as { components: { schemas: Record<string, Schema> } };
   const drawing = document.components.schemas.TDrawing;
   assert.ok(drawing, 'TDrawing component');

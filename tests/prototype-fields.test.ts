@@ -11,11 +11,11 @@ import { modelCodec } from './support/model-codec.js';
 // One run keeps mobx and the other keeps validation; the other two profile
 // combinations add no generated init path for dictionary keys.
 const profiles = [
-  { mobx: false, validation: false },
+  { validation: false },
   { mobx: true, validation: true },
 ] as const;
 
-for (const { mobx, validation } of profiles) {
+for (const { mobx, validation } of profiles as readonly { readonly mobx?: boolean; readonly validation: boolean }[]) {
   test(`dictionary data keys survive generation (mobx=${mobx}, validation=${validation})`, async (t) => {
     const { root, sourceRoot } = createModelProject(t, {
       prefix: 'golem-model-prototype-',

@@ -837,7 +837,7 @@ test('NestModelInterceptor answers 200 with the declared fields of a returned mo
   // protects: bug T-148 a handler that returns a model instance with program state answered 500
   const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-nest-instance-state-', name: 'nest-instance-state', linkWorkspaceNodeModules: true });
   fs.writeFileSync(path.join(sourceRoot, 'state.model.ts'), readFixture('models/model-instance-state/own-state/state.model.ts'));
-  writeModelGolemYaml(root, { mobx: false, validation: true });
+  writeModelGolemYaml(root, { validation: true });
   await buildModelProject(root);
   const { Task } = await import(pathToFileURL(path.join(root, 'build/state.model.js')).href) as { Task: new (values: object) => object };
   const id = generatedCodecIdFromRoot(root, 'TTask');
@@ -973,7 +973,7 @@ const LEVEL_MODEL = "import type { IModel } from '@exprtlabs/golem/model';\nimpo
 async function postStatuses(t: TestContext, validation: true | 'sanity', cases: readonly (readonly [NestModelInterceptorOptions, unknown])[]): Promise<number[]> {
   const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-nest-level-', name: 'nest-level', linkWorkspaceNodeModules: true });
   fs.writeFileSync(path.join(sourceRoot, 'input.model.ts'), LEVEL_MODEL);
-  writeModelGolemYaml(root, { mobx: false, validation });
+  writeModelGolemYaml(root, { validation });
   await buildModelProject(root);
   await import(pathToFileURL(path.join(root, 'build/input.model.generated.js')).href);
   const id = generatedCodecIdFromRoot(root, 'TInput');

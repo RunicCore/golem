@@ -50,7 +50,7 @@ async function filterQueryFields(root: string): Promise<unknown> {
 function project(t: test.TestContext, prefix: string, yaml: readonly string[], document: object = openApiDocument): string {
   const root = createFixtureProject(t, prefix);
   fs.writeFileSync(path.join(root, 'package.json'), `{"name":"${prefix}fixture","type":"module"}`);
-  linkGolemPackages(root, ['golem', 'golem-model', 'golem-openapi', 'golem-ts-openapi']);
+  linkGolemPackages(root, ['golem', 'golem-model', 'golem-openapi-ts', 'golem-ts-openapi']);
   fs.writeFileSync(path.join(root, 'api.json'), JSON.stringify(document));
   copyFixtureFile(root, 'packed/profile/tsconfig.json', 'tsconfig.json');
   fs.mkdirSync(path.join(root, 'src'));

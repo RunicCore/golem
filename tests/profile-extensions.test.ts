@@ -38,7 +38,6 @@ test('a project that turns on a flagged extension writes its options, as golem.y
   assert.deepEqual(await manifestProfile(root, profile), {
     allowAny: false,
     extensions: { '@fixture/profiled': { shape: { names: ['b', 'a'], precision: 2 } } },
-    mobx: false,
     unknownFormats: 'error',
     validation: true,
   });
@@ -49,7 +48,7 @@ test('an extension with no profile flag writes no extensions key into the manife
   const { root, profile } = await profileOf(t, 'probe:\n  extensions:\n    mark:\n      label: probe\n');
 
   assert.equal(Object.hasOwn(profile, 'extensions'), false);
-  assert.deepEqual(await manifestProfile(root, profile), { allowAny: false, mobx: false, unknownFormats: 'error', validation: true });
+  assert.deepEqual(await manifestProfile(root, profile), { allowAny: false, unknownFormats: 'error', validation: true });
 });
 
 test('a flagged extension turned on with no options is recorded as used, with no settings', async (t) => {
@@ -63,7 +62,7 @@ test('generate and check pass for a project with a flagged extension and a golem
   // protects: T-786 the profile an SDK writes into its manifest is compared by value, so an extension record does not stop every run
   const { root } = createModelProject(t, { prefix: 'golem-profile-sdk-', name: 'profile-sdk' });
   copyFixture(path.join(root, 'node_modules/@fixture/profiled'), 'extensions/profiled');
-  linkGolemPackages(root, ['golem-openapi']);
+  linkGolemPackages(root, ['golem-openapi-ts']);
   listProjectDependencies(root, ['@fixture/profiled']);
   write(root, 'api/payments.json', JSON.stringify(DOCUMENT));
   write(root, 'golem.yaml', 'version: 1\nmodel: {}\nprofiled:\n  extensions:\n    shape:\n      precision: 2\nopenapi-ts:\n  sdks:\n    - input: api/payments.json\n      output: sdk\n      mode: golem\n');

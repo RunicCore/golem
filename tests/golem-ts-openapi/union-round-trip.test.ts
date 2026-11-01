@@ -24,14 +24,14 @@ type Version = '3.2.0' | '3.1.2';
 
 async function controllersDocument(t: TestContext, source: string, openapiVersion: Version): Promise<{ readonly components: { readonly schemas: Record<string, Record<string, unknown>> } }> {
   const root = createControllerFixture(t, { prefix: 'golem-ts-openapi-union-round-trip-', sourceFile: 'src/items.controller.ts', source });
-  const result = await generate({ root, output: path.join(root, 'openapi.json'), openapiVersion, info: { title: 'Items', version: '1' }, profile: { mobx: false, validation: false } });
+  const result = await generate({ root, output: path.join(root, 'openapi.json'), openapiVersion, info: { title: 'Items', version: '1' }, profile: { validation: false } });
   return JSON.parse(result.artifacts[0]!.content) as { components: { schemas: Record<string, Record<string, unknown>> } };
 }
 
 /** The client body codec of the SDK generated from `document` for the component `root`. */
 async function sdkRoot(t: TestContext, document: Record<string, unknown>, root: string): Promise<SdkBodyCodec> {
   const output = path.join(createFixtureProject(t, 'golem-union-round-trip-sdk-'), 'sdk');
-  await generateMaterializedSdk(withRootOperations(document, root), { output, name: 'Items', profile: { mobx: false, validation: true } });
+  await generateMaterializedSdk(withRootOperations(document, root), { output, name: 'Items', profile: { validation: true } });
   compileGeneratedSdk(output, [], { strict: true });
   return sdkBodyCodec(output, 'Items', root);
 }
@@ -80,7 +80,7 @@ test('a declared default variant is the defaultMapping of the 3.2 document', asy
 });
 
 test('the SDK generated from the 3.2 document decodes a value with an unmapped tag to the declared default and encodes it back', async t => {
-  // protects: T-604 the declared default round-trips on 3.2 (golem-openapi reads defaultMapping)
+  // protects: T-604 the declared default round-trips on 3.2 (golem-openapi-ts reads defaultMapping)
   const document = await controllersDocument(t, controllerOf(PAYMENT, 'TPayment'), '3.2.0');
   const payment = await sdkRoot(t, document, 'TPayment');
   const card = { method: { kind: 'card', number: '1234' } };

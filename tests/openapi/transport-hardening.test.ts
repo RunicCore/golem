@@ -79,7 +79,7 @@ async function generateTransportSdk(): Promise<TransportSdk> {
   const result = await generateMaterializedSdk(transportDocument(), {
     output,
     name: 'Transport',
-    profile: { mobx: false, validation: false },
+    profile: { validation: false },
   });
   compileGeneratedSdk(output, [], { strict: true });
   const module = requireRecord(await import(pathToFileURL(path.join(output, 'dist/index.js')).href), 'transport client');

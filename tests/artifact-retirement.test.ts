@@ -8,7 +8,7 @@ import type { GolemConfig, GolemJob } from '#golem/config';
 import { applyJob, loadInventory } from '#golem/outputs';
 import { generate } from '#openapi/generator';
 import type { OpenApiGenerationResult } from '#openapi/generator';
-import type { OpenApiGenerationProfile } from '#openapi/profile';
+import type { OpenApiGenerationProfile } from './openapi/helpers.js';
 import { repoRoot, tscBin } from './openapi/helpers.js';
 import { snapshotFilesystem } from './fixture-project.js';
 import { configFor, jobWithFacts } from './support/output-config.js';
@@ -22,7 +22,7 @@ interface OpenApiFixture {
   readonly options: Parameters<typeof generate>[0];
 }
 
-const profile = (validation: boolean): OpenApiGenerationProfile => ({ mobx: false, validation });
+const profile = (validation: boolean): OpenApiGenerationProfile => ({ validation });
 
 function metadata(title: string): Record<string, unknown> {
   return { openapi: '3.1.0', info: { title, version: '1' } };
@@ -53,7 +53,7 @@ function fixture(
   const input = path.join(root, 'api.json');
   const output = path.join(root, 'sdk');
   fs.writeFileSync(input, `${JSON.stringify(document, null, 2)}\n`);
-  const job = jobWithFacts('openapi:sdk', '@exprtlabs/golem-openapi', { outputs: [{ path: output, kind: 'folder' }] });
+  const job = jobWithFacts('openapi:sdk', '@exprtlabs/golem-openapi-ts', { outputs: [{ path: output, kind: 'folder' }] });
   const config: GolemConfig = { ...configFor(root, job), profile: generationProfile };
   return { root, input, output, config, job, options: { input, output, name: 'Retirement', profile: generationProfile } };
 }

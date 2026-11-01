@@ -40,7 +40,7 @@ test('a oneOf of a string and a tuple converts the tuple by item and keeps the s
   await generateMaterializedSdk(withRootOperations(scalarOrTupleDocument(), 'Schedule'), {
     output,
     name: 'ScalarOrTuple',
-    profile: { mobx: false, validation: false, allowAny: false },
+    profile: { validation: false, allowAny: false },
   });
   compileGeneratedSdk(output, [], { strict: true, skipLibCheck: true });
 

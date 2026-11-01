@@ -103,7 +103,7 @@ test('decoder failures cancel an unconsumed generated response body', async t =>
     }, {
       output,
       name,
-      profile: { mobx: false, validation },
+      profile: { validation },
     });
     compileStrictUnusedSdk(output);
 

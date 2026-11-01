@@ -94,7 +94,7 @@ type Link = URL & TSerde<typeof encodeLink, typeof decodeLink>;
 type Big = bigint & TSerde<typeof encodeBig, typeof decodeBig>;
 type Cents = bigint & TSerde<typeof encodeCents, typeof decodeCents>;
 type Flag = bigint & TSerde<typeof encodeFlag, typeof decodeFlag>;`, fields }).text);
-  writeModelGolemYaml(root, { mobx: false, validation: true });
+  writeModelGolemYaml(root, { validation: true });
   fs.mkdirSync(path.join(root, 'build'), { recursive: true });
   fs.copyFileSync(path.join(sourceRoot, 'temporal-runtime.js'), path.join(root, 'build/temporal-runtime.js'));
   await import(path.toNamespacedPath(path.join(root, 'build/temporal-runtime.js')));
@@ -146,7 +146,7 @@ type Column<T extends keyof Entities, C extends keyof Entities[T]> = T extends k
 type Final = { [T in keyof Entities]: { [C in keyof Entities[T]]: Column<T, C> } };
 export type TA = IObject<${item.model}>;
 `);
-    writeModelGolemYaml(root, { mobx: false, validation: true });
+    writeModelGolemYaml(root, { validation: true });
     await buildModelProject(root);
     const codecs = await import(path.toNamespacedPath(path.join(root, 'build/a.model.generated.js'))) as {
       parseTA: (text: string) => { amount: bigint };
@@ -253,14 +253,14 @@ export function decodeMoney(value: string): Money { return Money.parse(value); }
   fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({ name: 'A', imports: tsSource`import type { TSerde } from '@exprtlabs/golem/tags';
 import { type Money, encodeMoney, decodeMoney } from '@fixture/money';
 type Price = Money & TSerde<typeof encodeMoney, typeof decodeMoney>;`, fields: tsSource`price: Price` }).text);
-  writeGeneratedArtifacts(generate({ root, profile: { mobx: false, validation: true } }).artifacts);
+  writeGeneratedArtifacts(generate({ root, profile: { validation: true } }).artifacts);
   await assertFieldClasses(root, sourceRoot, ["import type { Money } from '@fixture/money';"], { price: 'Money' });
 });
 
 test('class field without TSerde is still rejected', t => {
   const { root, sourceRoot } = fixture(t);
   fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({ name: 'A', fields: tsSource`bytes: Uint8Array` }).text);
-  assert.throws(() => generate({ root, profile: { mobx: false, validation: true } }), /RUNM1004/);
+  assert.throws(() => generate({ root, profile: { validation: true } }), /RUNM1004/);
 });
 
 test('class-value output does not depend on the checkout directory', t => {
@@ -271,7 +271,7 @@ test('class-value output does not depend on the checkout directory', t => {
 import type { Money } from './money.js';
 import { encodeMoney, decodeMoney } from './codecs.js';
 type Price = Money & TSerde<typeof encodeMoney, typeof decodeMoney>;`, fields: tsSource`price: Price` }).text);
-    return generate({ root, profile: { mobx: false, validation: true } }).artifacts
+    return generate({ root, profile: { validation: true } }).artifacts
       .map(artifact => [path.relative(root, artifact.path), artifact.content] as const)
       .sort(([left], [right]) => left.localeCompare(right));
   });
@@ -318,7 +318,7 @@ for (const item of [
     fs.writeFileSync(path.join(sourceRoot, 'ambient.d.ts'), AMBIENT);
     fs.writeFileSync(path.join(sourceRoot, 'legacy.ts'), LEGACY_CODECS);
     fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({ name: 'A', imports: SHAPES_IMPORTS, fields: item.field }).text);
-    assert.throws(() => generate({ root, profile: { mobx: false, validation: true } }), error => { assert.match(String(error), item.expected); return true; });
+    assert.throws(() => generate({ root, profile: { validation: true } }), error => { assert.match(String(error), item.expected); return true; });
   });
 }
 
@@ -351,7 +351,7 @@ import { encodeThird, decodeThird } from './third.js';
 type First = Cash & TSerde<typeof encodeFirst, typeof decodeFirst>;
 type Second = SecondMoney & TSerde<typeof encodeSecond, typeof decodeSecond>;
 type Third = ThirdMoney & TSerde<typeof encodeThird, typeof decodeThird>;`, fields: tsSource`first: First; second: Second; third: Third` }).text);
-  writeModelGolemYaml(root, { mobx: false, validation: true });
+  writeModelGolemYaml(root, { validation: true });
   await buildModelProject(root);
   await assertFieldClasses(root, sourceRoot, [
     "import type { Cash } from './first/money.js';",

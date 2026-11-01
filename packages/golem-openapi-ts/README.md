@@ -1,6 +1,6 @@
-# @exprtlabs/golem-openapi
+# @exprtlabs/golem-openapi-ts
 
-`@exprtlabs/golem-openapi` turns an OpenAPI 3.1 or 3.2 document into a
+`@exprtlabs/golem-openapi-ts` turns an OpenAPI 3.1 or 3.2 document into a
 TypeScript SDK: typed operations, request and response models, and a
 `model-manifest.json` for `@exprtlabs/golem-model` consumers. It works
 independently of the other generators and does not start or host the API.
@@ -11,8 +11,13 @@ Use npm with Node.js 22.15 or newer:
 
 ```sh
 npm install @exprtlabs/golem
-npm install --save-dev @exprtlabs/golem-openapi typescript@~7.1.0-beta
+npm install --save-dev @exprtlabs/golem-openapi-ts typescript@~7.1.0-beta
 ```
+
+MobX is the `mobx` extension of the `openapi-ts` block. An app that uses it
+installs this package in `dependencies`, with `mobx`, and imports
+`@exprtlabs/golem-openapi-ts/mobx`
+([MobX extension](../../docs/reference/config.md#mobx-extension)).
 
 [Generate an SDK](../../docs/guide/client.md) walks through calling the
 generated SDK. [Compatibility](../../docs/compatibility.md) has supported

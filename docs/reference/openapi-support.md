@@ -4,7 +4,7 @@ Check what the client generator supports for each OpenAPI version, feature and p
 
 ## Feature support
 
-The table shows one row for each feature, for one OpenAPI version and one set of generation settings. It opens on OpenAPI 3.1 with MobX off and validation on.
+The table shows one row for each feature, for one OpenAPI version and one set of generation settings. It opens on OpenAPI 3.1 with the MobX extension off and validation on.
 
 - Choose the OpenAPI version and the generation settings above the table. The rows change with your choice.
 - The small label under a feature name is its surface: runtime behavior, TypeScript types or generated metadata. A feature with more than one surface has one row for each surface.
@@ -63,4 +63,4 @@ The `itemSchema` streaming contract needs an OpenAPI 3.2 document. The generator
 
 ## Full compliance matrix
 
-The complete matrix by OpenAPI version and profile is the [`MATRIX.md` file](https://github.com/RunicCore/golem/blob/master/packages/golem-openapi/MATRIX.md) of the package.
+The complete matrix by OpenAPI version and profile is the [`MATRIX.md` file](https://github.com/RunicCore/golem/blob/master/packages/golem-openapi-ts/MATRIX.md) of the package.

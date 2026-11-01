@@ -86,7 +86,6 @@ function validatedDocument(): Record<string, unknown> {
 }
 
 const profile = Object.freeze({
-  mobx: false,
   validation: true,
   allowAny: false,
 });
@@ -316,7 +315,7 @@ test('a validation-off SDK writes no validators module and no import of one', ()
   const result = writeSdk(validatedDocument(), {
     output: path.join(tmpdir(), 'validators-off'),
     name: 'Validated',
-    profile: { mobx: false, validation: false, allowAny: false },
+    profile: { validation: false, allowAny: false },
   });
   assert.equal(result.artifacts.some(item => item.path.endsWith('validators.generated.ts')), false);
   assert.equal(result.artifacts.some(item => item.content.includes('validators.generated')), false, 'no module imports one');

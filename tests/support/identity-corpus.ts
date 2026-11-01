@@ -12,7 +12,7 @@ export interface IdentityCase {
   readonly kind: 'model' | 'controller' | 'rewrite' | 'specifiers';
   readonly files: readonly IdentityFile[];
   /** The generation profile's `mobx`. */
-  readonly mobx: boolean;
+  readonly mobx?: boolean;
   /** An OpenAPI document (relative to tests/fixtures) whose SDK, generated with the same `mobx`, the project holds under `src/sdk`. */
   readonly sdkSpec?: string;
 }
@@ -22,7 +22,7 @@ export interface IdentityProject {
   readonly name: string;
   readonly kind: IdentityCase['kind'];
   readonly root: string;
-  readonly mobx: boolean;
+  readonly mobx?: boolean;
 }
 
 /**
@@ -44,14 +44,13 @@ const CONTROLLER_PROJECT_SOURCE = 'src/catalog.controller.ts';
 /** The five cases that exist since the first identity test. They keep their names, and discovery skips their directories. */
 const EXPLICIT: readonly IdentityCase[] = [
   // Each union-order model is generated alone, so the two programs create their literal types in different orders.
-  { name: 'union-order-a', kind: 'model', mobx: false, files: modelFiles('models/union-order', ['a.model.ts', 'other.model.ts']) },
-  { name: 'union-order-b', kind: 'model', mobx: false, files: modelFiles('models/union-order', ['b.model.ts', 'other.model.ts']) },
-  { name: 'generic-default', kind: 'model', mobx: false, files: modelFiles('models/identity/generic-default', ['codecs.ts', 'blob.model.ts']) },
-  { name: 'intersection', kind: 'model', mobx: false, files: modelFiles('models/identity/intersection', ['parts.model.ts']) },
+  { name: 'union-order-a', kind: 'model', files: modelFiles('models/union-order', ['a.model.ts', 'other.model.ts']) },
+  { name: 'union-order-b', kind: 'model', files: modelFiles('models/union-order', ['b.model.ts', 'other.model.ts']) },
+  { name: 'generic-default', kind: 'model', files: modelFiles('models/identity/generic-default', ['codecs.ts', 'blob.model.ts']) },
+  { name: 'intersection', kind: 'model', files: modelFiles('models/identity/intersection', ['parts.model.ts']) },
   {
     name: 'controller',
     kind: 'controller',
-    mobx: false,
     files: [{ from: 'controllers/controller/generates-a-static-nest-document-with-evaluated-routes-inheritance-uri-version/controller.ts', to: CONTROLLER_PROJECT_SOURCE }],
   },
 ];
@@ -62,7 +61,7 @@ const MODEL_GROUPS = [
   'constraint-callback-composition', 'constraint-parity', 'constraint-portability', 'projection-integration', 'multi-tag',
 ] as const;
 
-/** The cases whose model is generated with `mobx: true`; every other case uses `mobx: false`. */
+/** The cases whose model is generated with `mobx: true`. */
 const MOBX_CASES: ReadonlySet<string> = new Set([
   'model-composition/model-composition-item-model',
 ]);
@@ -147,11 +146,11 @@ function modelClaims(group: string): IdentityCase[] {
   return entries(directory).flatMap((entry): IdentityCase[] => {
     if (entry.isDirectory()) {
       const files = claimFiles(`${directory}/${entry.name}`);
-      return files.some(file => file.to.endsWith('.model.ts')) ? [{ name: `${group}/${entry.name}`, kind: 'model', mobx: false, files }] : [];
+      return files.some(file => file.to.endsWith('.model.ts')) ? [{ name: `${group}/${entry.name}`, kind: 'model', files }] : [];
     }
     // A model file beside the claim directories is a claim of its own, with the files of the group that it imports.
     return entry.name.endsWith('.model.ts')
-      ? [{ name: `${group}/${entry.name.slice(0, -'.model.ts'.length)}`, kind: 'model', mobx: false, files: placed(directory, 'src', withLocalImports(directory, [entry.name])) }]
+      ? [{ name: `${group}/${entry.name.slice(0, -'.model.ts'.length)}`, kind: 'model', files: placed(directory, 'src', withLocalImports(directory, [entry.name])) }]
       : [];
   });
 }
@@ -163,7 +162,6 @@ function wireClaims(): IdentityCase[] {
     return {
       name: directory,
       kind: 'model',
-      mobx: false,
       files: [...placed(directory, 'src', sourcesUnder(directory)), { from: 'wire-format/wire-assert.ts', to: 'src/wire-assert.ts' }],
       ...(spec ? { sdkSpec: `${directory}/${spec.name}` } : {}),
     };
@@ -171,7 +169,7 @@ function wireClaims(): IdentityCase[] {
 }
 
 function publicModelLayout(): IdentityCase {
-  return { name: 'public-model-layout', kind: 'model', mobx: false, files: placed('public-model-layout/src', 'src', sourcesUnder('public-model-layout/src')) };
+  return { name: 'public-model-layout', kind: 'model', files: placed('public-model-layout/src', 'src', sourcesUnder('public-model-layout/src')) };
 }
 
 function controllerClaims(): IdentityCase[] {
@@ -181,7 +179,6 @@ function controllerClaims(): IdentityCase[] {
     return {
       name: `controller/${entry.name}`,
       kind: 'controller',
-      mobx: false,
       files: sourcesUnder(claim).map(relative => ({ from: `${claim}/${relative}`, to: relative === 'controller.ts' ? CONTROLLER_PROJECT_SOURCE : `src/${relative}` })),
     };
   });
@@ -193,7 +190,6 @@ function nodeSpecifierCase(): IdentityCase {
   return {
     name: 'node-specifiers',
     kind: 'specifiers',
-    mobx: false,
     files: [
       ...placed('node-specifiers/src', 'src', filesUnder('node-specifiers/src', all)),
       ...placed('node-specifiers/edges/src', 'src/edges', filesUnder('node-specifiers/edges/src', all)),
@@ -230,7 +226,7 @@ function rewriteFiles(useFile: string): IdentityFile[] {
 function rewriteClaims(): IdentityCase[] {
   return entries('rewrite')
     .filter(entry => entry.isFile() && entry.name.endsWith('.ts') && !MODEL_PAIR.test(entry.name))
-    .map((entry): IdentityCase => ({ name: `rewrite/${entry.name.slice(0, -'.ts'.length)}`, kind: 'rewrite', mobx: false, files: rewriteFiles(entry.name) }));
+    .map((entry): IdentityCase => ({ name: `rewrite/${entry.name.slice(0, -'.ts'.length)}`, kind: 'rewrite', files: rewriteFiles(entry.name) }));
 }
 
 function discover(): IdentityCase[] {

@@ -79,9 +79,9 @@ Give `Discriminator` a second type argument to name the default variant. The def
 A docs job writes a tagged union as `oneOf` with `discriminator.propertyName` set to `Key`, and a `mapping` from each value to its schema.
 
 - OpenAPI 3.2 states a default variant as `defaultMapping`.
-- OpenAPI 3.1 has no `defaultMapping`, so the docs job writes a union with a default as `anyOf` with no `discriminator`. A `golem-openapi` job that reads that 3.1 document stops with [`OPENAPI_UNION_DISCRIMINATOR_MISSING`](/reference/diagnostics#openapi-union-discriminator-missing) when the variants are models. For a union with a default, use OpenAPI 3.2. It is the default `openapiVersion`.
-- A `golem-openapi` job rejects an OpenAPI 3.1 document that writes `defaultMapping`: it is a keyword of 3.2.
-- An SDK that `golem-openapi` generates follows the `discriminator` of its document. On OpenAPI 3.2 it follows `defaultMapping` too.
+- OpenAPI 3.1 has no `defaultMapping`, so the docs job writes a union with a default as `anyOf` with no `discriminator`. A `golem-openapi-ts` job that reads that 3.1 document stops with [`OPENAPI_UNION_DISCRIMINATOR_MISSING`](/reference/diagnostics#openapi-union-discriminator-missing) when the variants are models. For a union with a default, use OpenAPI 3.2. It is the default `openapiVersion`.
+- A `golem-openapi-ts` job rejects an OpenAPI 3.1 document that writes `defaultMapping`: it is a keyword of 3.2.
+- An SDK that `golem-openapi-ts` generates follows the `discriminator` of its document. On OpenAPI 3.2 it follows `defaultMapping` too.
 
 ## Formats
 
