@@ -416,7 +416,7 @@ const untaggedUnions: readonly { readonly shape: string; readonly schemas: Recor
 for (const { shape, schemas, error } of untaggedUnions) {
   for (const validation of [false, true]) {
     test(`${shape} with no literal tag stops generation with OPENAPI_UNION_DISCRIMINATOR_MISSING, with validation ${validation ? 'on' : 'off'}`, async t => {
-      // protects: T-232 coded diagnostic for an untagged object union (golem-openapi path)
+      // protects: T-232 coded diagnostic for an untagged object union (golem-openapi-ts path)
       const output = path.join(createFixtureProject(t, 'golem-openapi-untagged-'), 'sdk');
       const document = { openapi: '3.1.0', info: { title: 'Untagged', version: '1' }, paths: {}, components: { schemas } };
       await assert.rejects(
@@ -429,7 +429,7 @@ for (const { shape, schemas, error } of untaggedUnions) {
 
 for (const [form, defaultMapping] of [['a component name', 'Other'], ['a $ref', '#/components/schemas/Other']] as const) {
   test(`a 3.2 discriminator defaultMapping as ${form} selects the variant that has no tag, in decode and encode`, async t => {
-    // protects: T-604 golem-openapi reads discriminator.defaultMapping; the default variant may lack the tag property
+    // protects: T-604 golem-openapi-ts reads discriminator.defaultMapping; the default variant may lack the tag property
     const suffix = form === 'a $ref' ? 'DefRef' : 'DefName';
     const ref = (name: string) => ({ $ref: `#/components/schemas/${name}${suffix}` });
     const stamp = (name: string) => ({ [name]: { type: 'string', format: 'date-time' } });
@@ -571,7 +571,7 @@ test('a default variant that extends a tagged variant is chosen for an unmapped 
 
 for (const validation of [false, true]) {
   test(`a oneOf with no discriminator keyword takes a model with no tag as the default of its tagged objects, with validation ${validation ? 'on' : 'off'}`, async t => {
-    // protects: T-602 golem-openapi keeps a no-discriminator oneOf of one untagged model beside tagged objects: the model takes every other object
+    // protects: T-602 golem-openapi-ts keeps a no-discriminator oneOf of one untagged model beside tagged objects: the model takes every other object
     const stamp = { type: 'string', format: 'date-time' };
     const document = {
       openapi: '3.1.0',

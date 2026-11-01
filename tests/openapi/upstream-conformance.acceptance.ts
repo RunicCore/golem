@@ -10,8 +10,8 @@ import { LibError, LibErrorKind, IssueSource } from '@exprtlabs/golem/errors';
 import {
   GENERATION_PROFILES,
   PROFILE_IDS,
-} from '../../packages/golem-openapi/compliance/capabilities.js';
-import { generate, loadValidatedDocument } from '@exprtlabs/golem-openapi/generator';
+} from '../../packages/golem-openapi-ts/compliance/capabilities.js';
+import { generate, loadValidatedDocument } from '@exprtlabs/golem-openapi-ts/generator';
 import { normalizeDocument } from '#openapi/normalize';
 import {
   assertCaseTableIntegrity,

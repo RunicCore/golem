@@ -5,7 +5,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 
-import { generate as generateOpenApi } from '@exprtlabs/golem-openapi/generator';
+import { generate as generateOpenApi } from '@exprtlabs/golem-openapi-ts/generator';
 import { command } from './support/process.js';
 import { listProjectDependencies, writeGeneratedArtifacts } from './fixture-project.js';
 import { buildModelProject, createModelProject, writeModelGolemYaml, writeModelSources } from './model-project.js';
@@ -38,7 +38,7 @@ for (const { claim, fixture, spec } of SDK_CLAIMS) {
 test('WireFormat<T> equals the emitted JSON type: nested and omitted-field SDK models with mobx', async t => {
   // MobX needs the golem mode, whose SDK the build writes from the openapi job before the models job reads it.
   const { root } = wireClaimProject(t, 'nested-sdk', true);
-  listProjectDependencies(root, ['@exprtlabs/golem-openapi']);
+  listProjectDependencies(root, ['@exprtlabs/golem-openapi-ts']);
   fs.writeFileSync(path.join(root, 'golem.yaml'), 'version: 1\nmobx: true\nvalidation: true\nopenapi-ts:\n  sdks:\n    - input: src/payments.yaml\n      output: src/sdk\n      name: Payments\n      mode: golem\nmodel: {}\n');
   await assertWireClaimBuilds(root);
 });

@@ -18,7 +18,7 @@ async function generateUnderLocale(t: TestContext, locale: string): Promise<Read
   copyFixture(root, 'generated-output-locale');
   copyFixtureFile(root, 'packed/profile/tsconfig.json', 'tsconfig.json');
   fs.writeFileSync(path.join(root, 'package.json'), '{"name":"generated-output-locale-fixture","type":"module"}');
-  linkGolemPackages(root, ['golem', 'golem-model', 'golem-openapi']);
+  linkGolemPackages(root, ['golem', 'golem-model', 'golem-openapi-ts']);
   fs.writeFileSync(path.join(root, 'golem.yaml'), GOLEM_YAML);
   await command(root, process.execPath, [golem, 'generate'], { env: { LANG: locale, LC_ALL: locale } });
   const inventory = JSON.parse(fs.readFileSync(path.join(root, '.golem/outputs.json'), 'utf8')) as { readonly files: Readonly<Record<string, unknown>> };

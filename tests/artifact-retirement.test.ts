@@ -53,7 +53,7 @@ function fixture(
   const input = path.join(root, 'api.json');
   const output = path.join(root, 'sdk');
   fs.writeFileSync(input, `${JSON.stringify(document, null, 2)}\n`);
-  const job = jobWithFacts('openapi:sdk', '@exprtlabs/golem-openapi', { outputs: [{ path: output, kind: 'folder' }] });
+  const job = jobWithFacts('openapi:sdk', '@exprtlabs/golem-openapi-ts', { outputs: [{ path: output, kind: 'folder' }] });
   const config: GolemConfig = { ...configFor(root, job), profile: generationProfile };
   return { root, input, output, config, job, options: { input, output, name: 'Retirement', profile: generationProfile } };
 }

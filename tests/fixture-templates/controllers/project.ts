@@ -32,7 +32,7 @@ const defaultTsconfig = {
   include: ['src/**/*.ts'],
 };
 
-const GOLEM_PACKAGES = ['golem', 'golem-model', 'golem-openapi', 'golem-ts-openapi'].map(name => `@exprtlabs/${name}`);
+const GOLEM_PACKAGES = ['golem', 'golem-model', 'golem-openapi-ts', 'golem-ts-openapi'].map(name => `@exprtlabs/${name}`);
 
 /** A project that links the workspace packages (every link but `none`) lists the golem packages as dependencies, so a block of golem.yaml finds its package. */
 export function createControllerFixture(t: FixtureScope, options: ControllerFixtureOptions): string {

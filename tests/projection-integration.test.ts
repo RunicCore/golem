@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
-import { generate } from '@exprtlabs/golem-openapi/generator';
+import { generate } from '@exprtlabs/golem-openapi-ts/generator';
 import { command, workspace } from './support/process.js';
 import { buildModelProject } from './model-project.js';
 

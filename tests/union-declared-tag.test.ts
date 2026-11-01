@@ -6,7 +6,7 @@ import test, { type TestContext } from 'node:test';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { requireObjectCodec } from '@exprtlabs/golem/internal/model-runtime';
 import { getValidator, validateInstance } from '@exprtlabs/golem/validation';
-import { generate as generateOpenApi } from '@exprtlabs/golem-openapi/generator';
+import { generate as generateOpenApi } from '@exprtlabs/golem-openapi-ts/generator';
 import { generate } from '#model/generator';
 import { fixturePath, writeGeneratedArtifacts } from './fixture-project.js';
 import { generatedCodecIdFromRoot } from './support/consumer.js';

@@ -7,8 +7,8 @@ import {
   isModelSource,
 } from '@exprtlabs/golem-model/generator';
 import type { GolemModelContext, GolemModelResult } from '@exprtlabs/golem-model/generator';
-import { generate as openapi, apiVersion as openapiVersion } from '@exprtlabs/golem-openapi/generator';
-import type { OpenApiGenerationContext, OpenApiGenerationResult } from '@exprtlabs/golem-openapi/generator';
+import { generate as openapi, apiVersion as openapiVersion } from '@exprtlabs/golem-openapi-ts/generator';
+import type { OpenApiGenerationContext, OpenApiGenerationResult } from '@exprtlabs/golem-openapi-ts/generator';
 import type { GolemArtifact, GolemResult } from '@exprtlabs/golem/generator-api';
 
 const modelVersion: 1 = modelsVersion;

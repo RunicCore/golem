@@ -542,7 +542,7 @@ test('a config without a models or controllers job still checks the project that
   const { root } = createModelProject(t, {
     prefix: 'golem-rewrite-consumer-',
     linkTypescript: true,
-    packages: { '@exprtlabs/golem-openapi': path.join(workspace, 'packages/golem-openapi') },
+    packages: { '@exprtlabs/golem-openapi-ts': path.join(workspace, 'packages/golem-openapi-ts') },
   });
   writeFixture(root, { mobx: false, validation: false }, false);
   const use = path.join(root, 'src/use.ts');

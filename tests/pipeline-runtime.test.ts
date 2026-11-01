@@ -34,18 +34,18 @@ function workspaceReleaseVersion(): string {
 }
 
 function installFakeOpenApiProvider(root: string, manifest: unknown): void {
-  const packageRoot = path.join(root, 'node_modules/@exprtlabs/golem-openapi');
+  const packageRoot = path.join(root, 'node_modules/@exprtlabs/golem-openapi-ts');
   fs.rmSync(packageRoot, { recursive: true, force: true });
   fs.mkdirSync(packageRoot, { recursive: true });
   fs.writeFileSync(path.join(packageRoot, 'package.json'), JSON.stringify({
-    name: '@exprtlabs/golem-openapi',
+    name: '@exprtlabs/golem-openapi-ts',
     version: workspaceReleaseVersion(),
     type: 'module',
     exports: { './plan': './plan.js', './generator': './generator.js' },
     golem: { apiVersion: 2, block: 'openapi-ts', plan: './plan', generator: './generator' },
   }));
   // The real plan entry reads the block; the fake generator returns the manifest.
-  fs.copyFileSync(path.join(workspace, 'packages/golem-openapi/dist/plan.js'), path.join(packageRoot, 'plan.js'));
+  fs.copyFileSync(path.join(workspace, 'packages/golem-openapi-ts/dist/plan.js'), path.join(packageRoot, 'plan.js'));
   copyFixtureFile(packageRoot, 'pipeline/returned-manifest-provider/generator.js', 'generator.js');
   fs.writeFileSync(path.join(packageRoot, 'fixture-manifest.json'), JSON.stringify(manifest));
 }
@@ -478,7 +478,7 @@ test('pipeline rejects malformed or profile-mismatched returned manifests before
     const root = createFixtureProject(t, `golem-pipeline-manifest-${entry.name}-`);
 
     fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'manifest-fixture', private: true, type: 'module' }));
-    linkGolemPackages(root, ['golem', 'golem-model', 'golem-openapi']);
+    linkGolemPackages(root, ['golem', 'golem-model', 'golem-openapi-ts']);
     writeFixture(root, { mobx: false, validation: true }, false);
     installFakeOpenApiProvider(root, entry.manifest);
 

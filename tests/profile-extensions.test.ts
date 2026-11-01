@@ -63,7 +63,7 @@ test('generate and check pass for a project with a flagged extension and a golem
   // protects: T-786 the profile an SDK writes into its manifest is compared by value, so an extension record does not stop every run
   const { root } = createModelProject(t, { prefix: 'golem-profile-sdk-', name: 'profile-sdk' });
   copyFixture(path.join(root, 'node_modules/@fixture/profiled'), 'extensions/profiled');
-  linkGolemPackages(root, ['golem-openapi']);
+  linkGolemPackages(root, ['golem-openapi-ts']);
   listProjectDependencies(root, ['@fixture/profiled']);
   write(root, 'api/payments.json', JSON.stringify(DOCUMENT));
   write(root, 'golem.yaml', 'version: 1\nmodel: {}\nprofiled:\n  extensions:\n    shape:\n      precision: 2\nopenapi-ts:\n  sdks:\n    - input: api/payments.json\n      output: sdk\n      mode: golem\n');

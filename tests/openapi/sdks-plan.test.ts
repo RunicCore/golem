@@ -8,10 +8,10 @@ import { copyFixtureFile } from '../fixture-project.js';
 import { workspaceLinkedProject } from '../support/consumer.js';
 import { loadConfig } from '../support/load-config.js';
 
-/** An app that lists golem-openapi and golem-model, with a document `api.yaml`, and `yaml` as its golem.yaml. */
+/** An app that lists golem-openapi-ts and golem-model, with a document `api.yaml`, and `yaml` as its golem.yaml. */
 function project(t: TestContext, yaml: string): { root: string; filename: string } {
   const root = workspaceLinkedProject(t, 'golem-openapi-ts-block-', JSON.stringify({
-    name: 'app', type: 'module', dependencies: { '@exprtlabs/golem-openapi': '1.0.0', '@exprtlabs/golem-model': '1.0.0' },
+    name: 'app', type: 'module', dependencies: { '@exprtlabs/golem-openapi-ts': '1.0.0', '@exprtlabs/golem-model': '1.0.0' },
   }));
   fs.writeFileSync(path.join(root, 'api.yaml'), 'openapi: 3.1.0');
   const filename = path.join(root, 'golem.yaml');
@@ -28,7 +28,7 @@ test('an SDK job declares its document as the input and one output folder, and i
   assert.deepEqual(others, []);
   assert.ok(job);
   assert.equal(job.id, 'openapi:sdk');
-  assert.equal(job.package, '@exprtlabs/golem-openapi');
+  assert.equal(job.package, '@exprtlabs/golem-openapi-ts');
   assert.equal(job.block, 'openapi-ts');
   assert.deepEqual(job.facts, {
     id: 'openapi:sdk',

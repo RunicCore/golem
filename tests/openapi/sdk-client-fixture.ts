@@ -63,7 +63,7 @@ export interface GolemModeProject {
 export function writeGolemModeProject(scope: FixtureScope, prefix: string, sdks: readonly GolemModeSdkSetup[], validation: boolean | 'sanity'): { readonly root: string; readonly config: string } {
   const root = createFixtureProject(scope, prefix);
   fs.writeFileSync(path.join(root, 'package.json'), '{"name":"golem-mode-project","type":"module"}');
-  linkGolemPackages(root, ['golem', 'golem-model', 'golem-openapi']);
+  linkGolemPackages(root, ['golem', 'golem-model', 'golem-openapi-ts']);
   fs.mkdirSync(path.join(root, 'src'));
   fs.writeFileSync(path.join(root, 'tsconfig.json'), JSON.stringify({
     compilerOptions: { target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', strict: true, skipLibCheck: true, rootDir: '.', outDir: 'build', lib: ['ES2023', 'DOM', 'DOM.Iterable', 'esnext.temporal'] },

@@ -8,7 +8,7 @@ import type { ModelValidationContext } from '@exprtlabs/golem/model';
 import { validateInstance, type Validator } from '@exprtlabs/golem/validation';
 import { readFixture, writeGeneratedArtifacts } from './fixture-project.js';
 import { generatedCodecIdFromRoot } from './support/consumer.js';
-import { generate as generateOpenApi } from '@exprtlabs/golem-openapi/generator';
+import { generate as generateOpenApi } from '@exprtlabs/golem-openapi-ts/generator';
 import { buildModelProject, createModelProject, generatedModelFiles, writeModelGolemYaml, writeModelSources } from './model-project.js';
 
 const COUNTER = `export let calls = 0;

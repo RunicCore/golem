@@ -21,7 +21,7 @@ test('model-only packed installation validates structure with no OpenAPI or MobX
   await cli(root, ['generate']);
   await cli(root, ['build']);
   await npm(root, ['prune', '--omit=dev'], { includeOptional: false });
-  for (const name of ['mobx', 'typescript', '@exprtlabs/golem-model', '@exprtlabs/golem-openapi']) assert.equal(fs.existsSync(path.join(root, 'node_modules', name)), false, `${name} should not be installed`);
+  for (const name of ['mobx', 'typescript', '@exprtlabs/golem-model', '@exprtlabs/golem-openapi-ts']) assert.equal(fs.existsSync(path.join(root, 'node_modules', name)), false, `${name} should not be installed`);
   await command(root, process.execPath, ['verify.mjs']);
   const browser = await build({ entryPoints: [path.join(root, 'build/item.model.js')], bundle: true, platform: 'browser', format: 'esm', write: false, metafile: true });
   assert.doesNotMatch(Object.keys(browser.metafile.inputs).join('\n'), /node:|\/tooling\/|\/mobx\//);

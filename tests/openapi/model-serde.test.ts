@@ -984,7 +984,7 @@ const untaggedUnionVariants = {
 
 for (const validation of [true, false]) for (const form of ['inline', 'components', 'inline with an unresolved discriminator keyword'] as const) {
   test(`a oneOf of ${form} objects with a required const tag and no resolved discriminator converts each variant (validation ${validation})`, async t => {
-    // protects: T-594 golem-openapi writes the tag table of a document union itself, so golem need not infer the tag
+    // protects: T-594 golem-openapi-ts writes the tag table of a document union itself, so golem need not infer the tag
     const unresolved = form.startsWith('inline with');
     const output = await generateSerdeSdk(t, 'golem-openapi-oneof-untagged-', sequenceSerdeDocument({
       event: {

@@ -80,7 +80,7 @@ test('a declared default variant is the defaultMapping of the 3.2 document', asy
 });
 
 test('the SDK generated from the 3.2 document decodes a value with an unmapped tag to the declared default and encodes it back', async t => {
-  // protects: T-604 the declared default round-trips on 3.2 (golem-openapi reads defaultMapping)
+  // protects: T-604 the declared default round-trips on 3.2 (golem-openapi-ts reads defaultMapping)
   const document = await controllersDocument(t, controllerOf(PAYMENT, 'TPayment'), '3.2.0');
   const payment = await sdkRoot(t, document, 'TPayment');
   const card = { method: { kind: 'card', number: '1234' } };

@@ -21,7 +21,7 @@ test(`packed Nest consumer round trips on ${ADAPTERS.join(' and ')}`, async t =>
   await cli(root, ['check']);
   await cli(root, ['build']);
   await npm(root, ['prune', '--omit=dev'], { includeOptional: false });
-  for (const name of ['@exprtlabs/golem-model', '@exprtlabs/golem-openapi', 'typescript']) {
+  for (const name of ['@exprtlabs/golem-model', '@exprtlabs/golem-openapi-ts', 'typescript']) {
     assert.equal(fs.existsSync(path.join(root, 'node_modules', name)), false, `${name} must not be a production dependency`);
   }
   // The app imports the NestJS runtime from golem-ts-openapi, so a production install holds it.

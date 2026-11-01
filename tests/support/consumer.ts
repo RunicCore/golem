@@ -4,11 +4,11 @@ import type { GolemProfile } from '@exprtlabs/golem/generator-api';
 import type { TestContext } from 'node:test';
 import { copyFixtureFile, createFixtureProject, linkGolemPackages } from '../fixture-project.js';
 
-/** A fixture project whose node_modules link the workspace packages golem, golem-model and golem-openapi, with `packageJson` as its package.json plus a dependency on each of them that it does not list. */
+/** A fixture project whose node_modules link the workspace packages golem, golem-model and golem-openapi-ts, with `packageJson` as its package.json plus a dependency on each of them that it does not list. */
 export function workspaceLinkedProject(t: TestContext, prefix: string, packageJson: string): string {
   const root = createFixtureProject(t, prefix);
   fs.writeFileSync(path.join(root, 'package.json'), packageJson);
-  linkGolemPackages(root, ['golem', 'golem-model', 'golem-openapi']);
+  linkGolemPackages(root, ['golem', 'golem-model', 'golem-openapi-ts']);
   return root;
 }
 

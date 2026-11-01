@@ -53,7 +53,7 @@ const built = onceShared(async () => {
   fs.writeFileSync(path.join(root, 'package.json'), '{"name":"standalone-fixture","type":"module"}\n');
   fs.writeFileSync(path.join(root, 'api.json'), JSON.stringify(document));
   fs.writeFileSync(path.join(root, 'golem.yaml'), 'version: 1\nvalidation: true\nopenapi-ts:\n  sdks:\n    - input: api.json\n      output: src/sdk\n      name: Pay\n');
-  linkGolemPackages(root, ['golem', 'golem-openapi']);
+  linkGolemPackages(root, ['golem', 'golem-openapi-ts']);
   await runPipeline(path.join(root, 'golem.yaml'));
   const generated = (): Record<string, string> => Object.fromEntries(fs.readdirSync(path.join(root, 'src/sdk'), { recursive: true, encoding: 'utf8' })
     .filter((name) => fs.statSync(path.join(root, 'src/sdk', name)).isFile()).sort().map((name) => [name, fs.readFileSync(path.join(root, 'src/sdk', name), 'utf8')]));

@@ -47,7 +47,7 @@ const EVALUATED = { allOf: [{ type: 'object', properties: { title: { type: 'stri
 const EVALUATED_VALUED = { allOf: [{ type: 'object', properties: { title: { type: 'string' } } }], unevaluatedProperties: { type: 'number' } };
 const branch = (tag: string, key: string): object => ({ type: 'object', required: ['kind', key], properties: { kind: { const: tag }, [key]: { type: 'number' } }, additionalProperties: false });
 const TAGGED = { oneOf: [branch('a', 'x'), branch('b', 'y')], discriminator: { propertyName: 'kind' } };
-// An open model that lists its names, as golem-openapi writes `unevaluatedProperties: false` over an open base.
+// An open model that lists its names, as golem-openapi-ts writes `unevaluatedProperties: false` over an open base.
 const NAMED = { type: 'object', properties: { title: { type: 'string' } }, propertyNames: { enum: ['title'] } };
 const COUNTED_MAX = { type: 'object', properties: { title: { type: 'string' } }, maxProperties: 1 };
 const COUNTED_MAX_NAMED = { type: 'object', properties: { title: { type: 'string' }, note: { type: 'string' } }, maxProperties: 1 };

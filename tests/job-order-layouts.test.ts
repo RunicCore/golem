@@ -32,7 +32,7 @@ const DOC_FILE = 'api/payments.yaml';
 function app(t: TestContext, blocks: string): string {
   const root = createFixtureProject(t, 'golem-job-order-');
   const folder = path.join(root, 'app');
-  const golemPackages = ['golem', 'golem-model', 'golem-ts-openapi', 'golem-openapi'];
+  const golemPackages = ['golem', 'golem-model', 'golem-ts-openapi', 'golem-openapi-ts'];
   fs.mkdirSync(path.join(folder, 'node_modules/@exprtlabs'), { recursive: true });
   for (const name of golemPackages) fs.symlinkSync(path.join(workspace, 'packages', name), path.join(folder, `node_modules/@exprtlabs/${name}`), 'dir');
   copyFixture(path.join(folder, 'node_modules/@fixture/acme-generator'), 'job-order/acme');

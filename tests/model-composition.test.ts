@@ -1,5 +1,5 @@
 import { fixturePath, readFixture, writeGeneratedArtifacts } from './fixture-project.js';
-import { generate as generateOpenApi } from '@exprtlabs/golem-openapi/generator';
+import { generate as generateOpenApi } from '@exprtlabs/golem-openapi-ts/generator';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
