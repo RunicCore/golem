@@ -1,5 +1,5 @@
 import { Body, Controller, Post } from '@nestjs/common';
-import { nestModelCodec as __golem_nestModelCodec, nestModelReturn as __golem_nestModelReturn } from '@exprtlabs/golem/internal/nest-runtime';
+import { nestModelCodec as __golem_nestModelCodec, nestModelReturn as __golem_nestModelReturn } from '@exprtlabs/golem-ts-openapi/internal/nest-runtime';
 import type { TPayment, TPaymentInput } from './payment.model.js';
 @Controller('aliased')
 export class AliasedController {

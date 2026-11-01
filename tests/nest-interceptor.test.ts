@@ -16,8 +16,8 @@ import {
   type NestInterceptor,
 } from '@nestjs/common';
 import { defaultIfEmpty, firstValueFrom, map, of, type Observable } from 'rxjs';
-import { NestModelInterceptor, type NestModelInterceptorOptions, nestModelStringifyInterceptor, nestUnionFromMetatype, objectCodecFromMetatype } from '@exprtlabs/golem/nest';
-import { nestModelCodec, nestModelReturn, nestModelUnion } from '@exprtlabs/golem/internal/nest-runtime';
+import { NestModelInterceptor, type NestModelInterceptorOptions, nestModelStringifyInterceptor, nestUnionFromMetatype, objectCodecFromMetatype } from '@exprtlabs/golem-ts-openapi/nest';
+import { nestModelCodec, nestModelReturn, nestModelUnion } from '@exprtlabs/golem-ts-openapi/internal/nest-runtime';
 import { LibError, type LibErrorKind } from '@exprtlabs/golem/errors';
 import { deserializeDate, unknownDiscriminatorValue, assertModelValue, isValidModelValue } from '@exprtlabs/golem/internal/model-runtime';
 import type { ModelTypeDescriptor } from '@exprtlabs/golem/internal/schema';
@@ -464,11 +464,12 @@ const namedParameter: Record<string, string> = {
 
 for (const [label, decorator, field, metatype, name] of inputWithoutModel) {
   test(`NestModelInterceptor throws a TypeError naming the parameter for ${label}`, () => {
+    // protects: R-93 page failure row: a parameter with no stamp says to add the nest extension to the ts-openapi block
     const klass = inputController(name, decorator, field, metatype);
     const context = httpContext(klass, klass.prototype.handle, { body: { note: 'raw' }, query: {} });
     assert.throws(
       () => new NestModelInterceptor().intercept(context, { handle: () => of(undefined) }),
-      new TypeError(`NestModelInterceptor needs an IModel or IObject type for ${namedParameter[name]} parameter 0 of ${name}.handle. Declare the input as an IModel or IObject, or write your own interceptor.`),
+      new TypeError(`NestModelInterceptor needs an IModel or IObject type for ${namedParameter[name]} parameter 0 of ${name}.handle. Declare the input as an IModel or IObject. If it is a model, add extensions: { nest: {} } to the ts-openapi block in golem.yaml, so the build stamps the codec. Or write your own interceptor.`),
     );
   });
 }

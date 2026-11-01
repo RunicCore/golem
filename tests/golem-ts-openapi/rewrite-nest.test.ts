@@ -20,7 +20,7 @@ const CONTROLLERS_JOB = `${PLUGIN}/rewrite-scans-a-controllers-job-project`;
 const CONTROLLER = 'src/payments.controller.ts';
 /** The load of the module that registers the payment codecs, added for any codec the controller names. */
 const PAYMENT_MODULE = "import './payment.model.generated.js';";
-const NEST_IMPORT = "import { nestModelCodec as __golem_nestModelCodec, nestModelReturn as __golem_nestModelReturn } from '@exprtlabs/golem/internal/nest-runtime';";
+const NEST_IMPORT = "import { nestModelCodec as __golem_nestModelCodec, nestModelReturn as __golem_nestModelReturn } from '@exprtlabs/golem-ts-openapi/internal/nest-runtime';";
 
 /** A project of the named source files (under `src/`) with the models job's generated files written. */
 function project(t: TestContext, files: Readonly<Record<string, string>>): string {
@@ -94,7 +94,7 @@ test('with nest on, a model @Body() or @Query() parameter and a model return gai
   assert.deepEqual(code.split('\n').slice(0, 2), [PAYMENT_MODULE, NEST_IMPORT]);
   assert.deepEqual(result.files.get(CONTROLLER)?.imports, [
     { from: './payment.model.generated.js', names: [] },
-    { from: '@exprtlabs/golem/internal/nest-runtime', names: ['nestModelCodec', 'nestModelReturn'] },
+    { from: '@exprtlabs/golem-ts-openapi/internal/nest-runtime', names: ['nestModelCodec', 'nestModelReturn'] },
   ]);
 
   const model = /@__golem_nestModelReturn\("TPayment_[0-9a-f]{8}"\) @Post\(\)/;
@@ -129,7 +129,7 @@ test('with nest on, a model @Body() or @Query() parameter and a model return gai
 test('a scan without the nest extension gets no stamps and no RUNM1081, even when a source imports the interceptor', (t) => {
   // protects: R-93 the nest entry in golem.yaml is the only switch: the import of the interceptor does not turn the NestJS side on
   // protects: T-761 a plain Nest app without the extension gets neither the stamps nor the checks
-  const root = paymentsProject(t, { 'src/interceptor.ts': "export { NestModelInterceptor } from '@exprtlabs/golem/nest';\n", 'src/plain.controller.ts': "import { Body, Controller, Post } from '@nestjs/common';\ninterface Note { text: string }\n@Controller('notes')\nexport class PlainController {\n  @Post() create(@Body() note: Note): void {}\n}\n" });
+  const root = paymentsProject(t, { 'src/interceptor.ts': "export { NestModelInterceptor } from '@exprtlabs/golem-ts-openapi/nest';\n", 'src/plain.controller.ts': "import { Body, Controller, Post } from '@nestjs/common';\ninterface Note { text: string }\n@Controller('notes')\nexport class PlainController {\n  @Post() create(@Body() note: Note): void {}\n}\n" });
   const result = scan(root, 'error', false);
   assert.deepEqual(result.diagnostics, []);
   assert.equal(result.files.get(CONTROLLER), undefined);
@@ -395,8 +395,8 @@ test('a method that calls parse and carries nest decorators gets both rewrites a
   const code = rewritten(root, result, 'src/mixed.controller.ts');
   assert.deepEqual(result.files.get('src/mixed.controller.ts')?.imports, [
     { from: './payment.model.generated.js', names: [] },
+    { from: '@exprtlabs/golem-ts-openapi/internal/nest-runtime', names: ['nestModelCodec', 'nestModelReturn'] },
     { from: '@exprtlabs/golem/internal/model-runtime', names: ['requireObjectCodec'] },
-    { from: '@exprtlabs/golem/internal/nest-runtime', names: ['nestModelCodec', 'nestModelReturn'] },
   ]);
   assert.deepEqual(
     result.files.get('src/mixed.controller.ts')?.edits.map(edit => /^@?(__golem_\w+)/.exec(edit.text)?.[1]),
@@ -405,8 +405,8 @@ test('a method that calls parse and carries nest decorators gets both rewrites a
   );
   assert.deepEqual(code.split('\n').slice(0, 3), [
     PAYMENT_MODULE,
+    "import { nestModelCodec as __golem_nestModelCodec, nestModelReturn as __golem_nestModelReturn } from '@exprtlabs/golem-ts-openapi/internal/nest-runtime';",
     "import { requireObjectCodec as __golem_requireObjectCodec } from '@exprtlabs/golem/internal/model-runtime';",
-    "import { nestModelCodec as __golem_nestModelCodec, nestModelReturn as __golem_nestModelReturn } from '@exprtlabs/golem/internal/nest-runtime';",
   ]);
   assertLines(code, [
     `  @__golem_nestModelReturn("${payment}") @Post()`,
@@ -430,7 +430,7 @@ function nestAppProject(t: TestContext, options: { readonly controllersJob: bool
     files: {
       'src/payment.model.ts': readFixture(`${PLUGIN}/project/payment.model.ts`),
       [CONTROLLER]: readFixture(`${CONTROLLERS_JOB}/payments.controller.ts`),
-      ...(options.interceptor ? { 'src/interceptor.ts': "export { NestModelInterceptor } from '@exprtlabs/golem/nest';\n" } : {}),
+      ...(options.interceptor ? { 'src/interceptor.ts': "export { NestModelInterceptor } from '@exprtlabs/golem-ts-openapi/nest';\n" } : {}),
       'golem.yaml': nestAppYaml(options),
     },
   });
