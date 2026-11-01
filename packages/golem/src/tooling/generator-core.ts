@@ -39,7 +39,7 @@ export interface GolemProfile {
   readonly unknownFormats?: 'warn' | 'error';
   /**
    * The settings of the extensions that change generated code, by the name of the package whose block holds them. A manifest records
-   * them as written and a model job compares them as stable JSON. A missing package, or no record at all, means "not used".
+   * them as written and the job that reads a manifest compares them as stable JSON. A missing package, or no record at all, means "not used".
    */
   readonly extensions?: Readonly<Record<string, Readonly<Record<string, unknown>>>>;
 }

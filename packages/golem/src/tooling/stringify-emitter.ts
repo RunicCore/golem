@@ -138,7 +138,7 @@ export interface CodecRuntimeOptions {
   readonly projectsInstanceState?: boolean;
   /** Whether each codec is registered by id (`createObjectCodec`); default true. A standalone SDK reads no registry, so it registers nothing. */
   readonly registerCodecs?: boolean;
-  /** Codecs whose functions stay module-private, such as a model job's derived projections. */
+  /** Codecs whose functions stay module-private, such as derived projections. */
   readonly privateCodec?: (node: SchemaNode) => boolean;
   /**
    * The data that extensions add to the codec of a node, by extension name, or undefined for none. A codec registration writes `data: { <name>: <value> }`;

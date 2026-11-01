@@ -8,9 +8,9 @@ import { portableRelativeFilename } from './type-analysis/path-identity.js';
  */
 
 /**
- * Where a golem-mode SDK reads its codecs. The openapi job writes no codec of such an SDK: the models job of the same golem.yaml writes one file for it,
+ * Where a golem-mode SDK reads its codecs. The SDK's job writes no codec of such an SDK: the job that provides `CodecsHost` in the same golem.yaml writes one file for it,
  * which exports `SDK_CODECS_EXPORT`, an object with a member for every operation of the SDK, and the operation modules import that file by this name.
- * The openapi job writes its imports and the models job writes the file, so both take the path from `sdkCodecsFile`.
+ * The SDK's job writes its imports and the host of the codecs writes the file, so both take the path from `sdkCodecsFile`.
  */
 export const SDK_CODECS_EXPORT = 'sdkCodecs';
 

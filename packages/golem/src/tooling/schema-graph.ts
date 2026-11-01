@@ -368,7 +368,7 @@ function codecDeclarationKeys(source: string, name: string, classNames: readonly
   return [...new Set([name, ...classNames])].map((declared) => `${file}#${declared}`);
 }
 
-/** The `.golem/codec-keys.json` text of a models job: every `<source>#<name>` declaration and the codec id it stands for. */
+/** The `.golem/codec-keys.json` text of the job that provides `ModelBoundary`: every `<source>#<name>` declaration and the codec id it stands for. */
 export function emitCodecDeclarationTable(
   entries: ReadonlyArray<{ readonly source: string; readonly name: string; readonly codecId: string; readonly classNames?: readonly string[] }>,
 ): string {

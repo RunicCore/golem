@@ -99,7 +99,7 @@ export function byRealPath(files: readonly string[]): string[] {
   return [...byReal.values()];
 }
 
-/** What decides which files are the own model sources of one model job. */
+/** What decides which files are the own model sources of the job that provides `ModelBoundary`. */
 export interface ModelBoundary {
   /** The real path of `models.root`. */
   readonly root: string;
@@ -124,7 +124,7 @@ export function isModelFileName(boundary: Pick<ModelBoundary, 'suffixes'>, filen
 }
 
 /**
- * Whether the model job of `boundary` owns `filename` as a model source: its real path is inside its root (the golem.yaml folder), no folder
+ * Whether the job that provides `boundary` owns `filename` as a model source: its real path is inside its root (the golem.yaml folder), no folder
  * between the root and the file is `node_modules`, and it is not a declaration file. The job writes the file's generated
  * companion beside it. Any other model file is a shared file: it is the type definition of a shared folder or package.
  */

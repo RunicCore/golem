@@ -75,7 +75,7 @@ export interface SerdeOptions extends MaxDepthOptions {
 
 /**
  * What extensions add to a codec, by extension name. An extension adds its key by declaration merging, so the code that reads the key sees its type.
- * The model job writes the values that the extensions give it (the hook `model.codecData`).
+ * The job that writes the codec writes the values that the extensions give it through a hook.
  */
 export interface CodecExtensionData {}
 

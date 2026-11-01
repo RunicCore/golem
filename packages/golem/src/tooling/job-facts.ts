@@ -32,7 +32,7 @@ export interface JobFacts {
   readonly id: string;
   /** Destinations only this job writes. They never overlap another, and none lies in golem.yaml or the `.golem/` folder. */
   readonly outputs: readonly JobOutput[];
-  /** Folders the job owns without an exclusive claim: the models job owns its model folder, and an SDK inside the app is allowed. Each lies inside the tsconfig folder. */
+  /** Folders the job owns without an exclusive claim: a job may own a source folder, and another job's output may lie inside it. Each lies inside the tsconfig folder. */
   readonly ownedRoots: readonly string[];
   /** Files the job reads. A file that another job's output holds orders the reader after that job. */
   readonly inputFiles: readonly string[];

@@ -1,6 +1,6 @@
 import path from 'node:path';
 
-/** The codec ids a models job writes under `.golem/`, beside the owned-output inventory: the table a rewrite reads. */
+/** The codec ids the job that provides `ModelBoundary` writes under `.golem/`, beside the owned-output inventory: the table a rewrite reads. */
 export const CODEC_KEYS_FILE = 'codec-keys.json';
 
 /** The codec key file of the golem.yaml in `configDirectory`. */
