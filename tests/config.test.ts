@@ -64,7 +64,7 @@ test('a block that no installed package registers stops loading and lists the in
   for (const key of ['retiredOption', 'generators', 'models']) {
     const { filename } = project(t, `version: 1\n${key}: {}\n${DOCS}`);
     await assert.rejects(() => resolveConfig(filename), (error: unknown) => error instanceof PackageRegistryError
-      && error.message === `No installed package registers the golem block "${key}". Installed golem packages and their blocks: @fixture/host (block host), @fixture/shop (block shop).`, key);
+      && error.message === `No installed package registers the golem block "${key}". Installed golem packages and their blocks: @fixture/host (block host), @fixture/shop (block shop). A package that only devDependencies lists is gone after a production install.`, key);
   }
 });
 

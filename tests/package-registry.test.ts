@@ -107,7 +107,7 @@ test('an unknown block lists the installed golem packages and their blocks', (t)
 
   assert.equal(registrationForBlock(registry, 'beta').name, '@fixture/block-b');
   assert.equal(thrown(() => registrationForBlock(registry, 'gamma')).message,
-    'No installed package registers the golem block "gamma". Installed golem packages and their blocks: @fixture/block-a (block alpha), @fixture/block-b (block beta).');
+    'No installed package registers the golem block "gamma". Installed golem packages and their blocks: @fixture/block-a (block alpha), @fixture/block-b (block beta). A package that only devDependencies lists is gone after a production install.');
 });
 
 test('a package that declares another apiVersion stops loading, also when it holds no other key', (t) => {
@@ -202,14 +202,16 @@ test('an extension registers the profile flag beside its entry; a flag that is n
   assert.equal(thrown(() => loadPackageRegistry(config)).message, 'golem.extensions.shape.profile of @fixture/flagged must be true or false, not "yes".');
 });
 
-test('a package.json above the nearest one that does not parse ends the walk, and a broken nearest one still stops loading', (t) => {
+test('a package.json above the nearest one that does not parse ends the walk and is named when a block is not found, and a broken nearest one still stops loading', (t) => {
   // protects: T-786 a package.json above the project may be a file outside it, so its syntax error is no error of the project
   const { root, config } = project(t, 'group/app');
   install(root, 'block-b', '@fixture/block-b');
   writeJson(path.join(root, 'group/app/package.json'), { name: 'app', dependencies: { '@fixture/block-b': '1.0.0' } });
   fs.writeFileSync(path.join(root, 'package.json'), '{ "name": ');
 
-  assert.deepEqual(loadPackageRegistry(config).packages.map(({ block }) => block), ['beta']);
+  const registry = loadPackageRegistry(config);
+  assert.deepEqual(registry.packages.map(({ block }) => block), ['beta']);
+  assert.match(thrown(() => registrationForBlock(registry, 'gamma')).message, /Installed golem packages and their blocks: @fixture\/block-b \(block beta\)\. [^\n]*package\.json did not parse, so its dependency list was not read\. A package that only devDependencies lists is gone after a production install\.$/);
 
   fs.writeFileSync(path.join(root, 'group/app/package.json'), '{ "name": ');
   assert.match(thrown(() => loadPackageRegistry(config)).message, /^[^\n]*package\.json is not valid JSON: /);

@@ -53,6 +53,8 @@ export interface PackageRegistry {
   /** The registering packages in name order. */
   readonly packages: readonly PackageRegistration[];
   readonly blocks: ReadonlyMap<string, PackageRegistration>;
+  /** The package.json above the nearest one that did not parse: the walk ended there and its dependency list was not read. Omitted when every file read. */
+  readonly skippedManifest?: string;
   /**
    * The files the registry read or looked for: golem.yaml, each package.json and pnpm-workspace.yaml of the walk, and the package.json of each
    * dependency name. The watch reloads the config when one changes, appears or goes.
@@ -65,7 +67,8 @@ export function registrationForBlock(registry: PackageRegistry, block: string): 
   const registration = registry.blocks.get(block);
   if (registration) return registration;
   const installed = registry.packages.map(({ name, block: own }) => `${name} (block ${own})`);
-  throw new PackageRegistryError(`No installed package registers the golem block "${block}". ${installed.length ? `Installed golem packages and their blocks: ${installed.join(', ')}.` : 'No installed package registers a golem block.'}`);
+  const skipped = registry.skippedManifest === undefined ? '' : ` ${displayPath(registry.skippedManifest)} did not parse, so its dependency list was not read.`;
+  throw new PackageRegistryError(`No installed package registers the golem block "${block}". ${installed.length ? `Installed golem packages and their blocks: ${installed.join(', ')}.` : 'No installed package registers a golem block.'}${skipped} A package that only devDependencies lists is gone after a production install.`);
 }
 
 const DEPENDENCY_FIELDS = ['dependencies', 'devDependencies', 'optionalDependencies'] as const;
@@ -116,9 +119,9 @@ function readManifest(file: string, lenient = false): Manifest | undefined {
 
 /**
  * The package.json files that name candidates: from the golem.yaml folder up to the first one with `workspaces` or with a
- * pnpm-workspace.yaml beside it, else only the nearest. Every file looked at is stamped. A file above the nearest that is not a JSON object ends the walk, as no workspace root.
+ * pnpm-workspace.yaml beside it, else only the nearest. Every file looked at is stamped. A file above the nearest that is not a JSON object ends the walk, as no workspace root, and is returned as `skipped`.
  */
-function walkManifests(configDirectory: string, stamps: Map<string, string>): readonly Manifest[] {
+function walkManifests(configDirectory: string, stamps: Map<string, string>): { readonly manifests: readonly Manifest[]; readonly skipped?: string } {
   const found: Manifest[] = [];
   for (let directory = configDirectory; ; directory = path.dirname(directory)) {
     const file = path.join(directory, 'package.json');
@@ -127,14 +130,14 @@ function walkManifests(configDirectory: string, stamps: Map<string, string>): re
     if (stamp !== 'missing') {
       // The nearest package.json is the project's and stops loading when it is broken. One above it may belong to a folder outside the project: the walk ends there.
       const manifest = readManifest(file, found.length > 0);
-      if (manifest === undefined) return found.slice(0, 1);
+      if (manifest === undefined) return { manifests: found.slice(0, 1), skipped: file };
       found.push(manifest);
       const pnpmFile = path.join(directory, 'pnpm-workspace.yaml');
       const pnpmStamp = stampOf(pnpmFile);
       stamps.set(pnpmFile, pnpmStamp);
-      if (manifest.data.workspaces !== undefined || pnpmStamp !== 'missing') return found;
+      if (manifest.data.workspaces !== undefined || pnpmStamp !== 'missing') return { manifests: found };
     }
-    if (path.dirname(directory) === directory) return found.slice(0, 1);
+    if (path.dirname(directory) === directory) return { manifests: found.slice(0, 1) };
   }
 }
 
@@ -238,7 +241,7 @@ function registrationOf(requireFromConfig: NodeJS.Require, configDirectory: stri
 function buildRegistry(configFile: string, stamps: Map<string, string>): PackageRegistry {
   const configDirectory = path.dirname(configFile);
   stamps.set(configFile, stampOf(configFile));
-  const manifests = walkManifests(configDirectory, stamps);
+  const { manifests, skipped } = walkManifests(configDirectory, stamps);
   // The nearest package is a candidate itself; it is not found in node_modules.
   const own = manifests[0];
   const requireFromConfig = createRequire(path.join(configDirectory, 'package.json'));
@@ -263,7 +266,7 @@ function buildRegistry(configFile: string, stamps: Map<string, string>): Package
     packages.push(registration);
   }
   packages.sort((left, right) => (left.name < right.name ? -1 : left.name > right.name ? 1 : 0));
-  return { packages, blocks, files: [...stamps.keys()] };
+  return { packages, blocks, ...(skipped === undefined ? {} : { skippedManifest: skipped }), files: [...stamps.keys()] };
 }
 
 interface CachedRegistry { readonly stamps: ReadonlyMap<string, string>; readonly registry: PackageRegistry }
