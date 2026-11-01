@@ -1,9 +1,9 @@
 import 'reflect-metadata';
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { queryFieldTable } from '#golem/query-fields';
+import { queryFieldTable } from '#controllers/nest/query-fields';
+import type { QueryFieldTable } from '#controllers/runtime/query-decode';
 import type { JsonSchema } from '#golem/schema';
-import type { QueryFieldTable } from '@exprtlabs/golem/serde';
 import { decorateQueryModel, startNestApp } from './support/nest-app.js';
 import { registerPassThroughCodec } from './support/pass-through-codec.js';
 
@@ -127,7 +127,7 @@ test('a model with only string fields has no query fields', () => {
 });
 
 test('NestModelInterceptor decodes a whole @Query() model with the fields of its codec', async () => {
-  // protects: T-640 the interceptor decodes a query string by the queryFields of the registered codec, not by a schema
-  registerPassThroughCodec('QueryRoot_0', { queryFields: BASE_FIELDS });
+  // protects: T-640 the interceptor decodes a query string by the nest data of the registered codec, not by a schema
+  registerPassThroughCodec('QueryRoot_0', { data: { nest: BASE_FIELDS } });
   assert.deepEqual(await queryReceived('QueryRoot_0', 'limit=10&active=true&name=7&page=2'), { limit: 10, active: true, name: '7', page: '2' });
 });

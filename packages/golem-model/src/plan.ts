@@ -2,6 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { GolemPlanEntry, JobFacts, ModelBoundaryValue, CodecsHostValue, ModelContext, PlanContext, PlannedJob } from '@exprtlabs/golem/generator-api';
+import type { SchemaGraph, SchemaNode } from '@exprtlabs/golem/internal/schema-graph';
 import { defaultModelOutput } from '@exprtlabs/golem/internal/generated-paths';
 import { canonicalPath, checkedSuffixes, CODECS_HOST, displayPath, isInsideDirectory, isRecord, MODEL_BOUNDARY } from '@exprtlabs/golem/internal/plan-support';
 
@@ -14,8 +15,15 @@ export const MODEL_BLOCK = 'model';
 /** The hook where an extension changes the code the model job emits for a validator. Its participant type belongs to this package. */
 export const VALIDATOR_ENHANCER_HOOK = 'model.validatorEnhancer';
 
-/** The hook where an extension adds data, keyed by its name, to the codec the model job emits. Its participant type belongs to this package. */
+/** The hook where an extension adds data, keyed by its name, to the codec the model job emits. Its participant type is `CodecDataParticipant`. */
 export const CODEC_DATA_HOOK = 'model.codecData';
+
+/**
+ * The participant of `CODEC_DATA_HOOK`. It takes the schema graph and one node, and returns the value for that node's codec, or undefined for none. The
+ * value must be JSON data. The model job writes it as `data: { <extension name>: <value> }`, and the extension adds the type of its key to
+ * `CodecExtensionData` of `@exprtlabs/golem/internal/model-runtime` by declaration merging.
+ */
+export type CodecDataParticipant = (graph: SchemaGraph, node: SchemaNode) => unknown;
 
 /** The file-name endings of a model file when the block lists none. */
 export const DEFAULT_MODEL_SUFFIXES: readonly string[] = ['.model.ts', '.models.ts'];

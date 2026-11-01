@@ -6,13 +6,14 @@ import type {
   GolemProfile,
   GolemResult,
   GeneratorSession,
+  HookParticipants,
   InputObserver,
   ModelContext,
 } from '@exprtlabs/golem/generator-api';
 import { buildCodecValidationPlan, compileLevel, compileSdkValidators, type CodecSchemaClosureEntry } from '@exprtlabs/golem/internal/validation-plan';
 import { GolemDiagnosticSeverity, compareText, isInsideDirectory, resolveProfile, type GolemDiagnostic, type ResolvedGolemProfile } from '@exprtlabs/golem/generator-api';
 import { canonicalPath, displayPath } from '@exprtlabs/golem/internal/generator-support';
-import { DEFAULT_MODEL_SUFFIXES, MODEL_BLOCK, outsideModelsRootMessage } from './plan.js';
+import { CODEC_DATA_HOOK, DEFAULT_MODEL_SUFFIXES, MODEL_BLOCK, outsideModelsRootMessage, type CodecDataParticipant } from './plan.js';
 import { codecKeysPath, defaultModelOutput } from '@exprtlabs/golem/internal/generated-paths';
 import { AmbiguousUnionConversionError, ObjectUnionDiscriminatorError, reachesRecursiveNode } from '@exprtlabs/golem/internal/emitter';
 import { emitCodecDeclarationTable } from '@exprtlabs/golem/internal/schema-graph';
@@ -28,7 +29,7 @@ import {
   validatedShapeKeys,
   type SourceModelGraph,
 } from './emit.js';
-import type { SchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
+import type { SchemaGraph, SchemaNode } from '@exprtlabs/golem/internal/schema-graph';
 import type { ModelSpecification } from '@exprtlabs/golem/internal/type-analysis';
 import { assertModelLevelsWithinProject, collectSpecifications } from '@exprtlabs/golem/internal/type-analysis';
 import { discoverModelManifests } from '@exprtlabs/golem/manifest';
@@ -64,7 +65,10 @@ import {
   type ProgramInfo,
 } from '@exprtlabs/golem/internal/type-analysis';
 
-export interface GolemModelContext extends ModelContext {}
+export interface GolemModelContext extends ModelContext {
+  /** The participants of the extensions that fill the hooks this job offers (`model.validatorEnhancer`, `model.codecData`), as core routes them. */
+  readonly hooks?: HookParticipants;
+}
 
 export interface GolemModelResult extends GolemResult {}
 
@@ -88,6 +92,7 @@ interface NormalizedContext {
   readonly sdkOutputs: readonly string[];
   readonly onInput?: InputObserver;
   readonly session?: GeneratorSession;
+  readonly hooks?: HookParticipants;
 }
 
 function validateContext(context: GolemModelContext): NormalizedContext {
@@ -138,6 +143,31 @@ function validateContext(context: GolemModelContext): NormalizedContext {
     sdkOutputs,
     onInput: context.onInput,
     session: context.session,
+    hooks: context.hooks,
+  };
+}
+
+function isCodecDataParticipant(participant: unknown): participant is CodecDataParticipant {
+  return typeof participant === 'function';
+}
+
+/**
+ * The data that the extensions on `model.codecData` add to the codec of a node, by extension name, or undefined for none. A participant that returns
+ * undefined adds no key. Each call goes through `fill.use`, so a fault in a participant stops the run with its package named.
+ */
+function codecDataOf(hooks: HookParticipants | undefined): ((graph: SchemaGraph, node: SchemaNode) => Record<string, unknown> | undefined) | undefined {
+  const fills = hooks?.[CODEC_DATA_HOOK] ?? [];
+  if (fills.length === 0) return undefined;
+  return (graph, node) => {
+    const data: Record<string, unknown> = {};
+    for (const fill of fills) {
+      const value = fill.use((participant) => {
+        if (!isCodecDataParticipant(participant)) throw new TypeError(`it fills the hook "${CODEC_DATA_HOOK}" with ${typeof participant}, not a function`);
+        return participant(graph, node);
+      });
+      if (value !== undefined) data[fill.extension] = value;
+    }
+    return Object.keys(data).length === 0 ? undefined : data;
   };
 }
 
@@ -591,6 +621,7 @@ export function generate(context: GolemModelContext): GolemModelResult {
   for (const [index, sdk] of sdks.entries()) {
     artifacts.push({ path: sdk.codecsFile, content: sdkCodecsSource(sdk, sdkGraphs[index]!, validators && { file: validatorsOutput, compiled: validators }, normalized.profile) });
   }
+  const codecData = codecDataOf(normalized.hooks);
   for (const { graph, schemaGraph, siblingWireCodecIds, siblingRecursion, cyclicSiblings } of graphSchemaPairs) {
     const { source, output } = graph;
     const content = withUnionDiscriminatorCode(source, () => emitSource(
@@ -606,6 +637,7 @@ export function generate(context: GolemModelContext): GolemModelResult {
         ...(validators ? { validators: { module: validatorsOutput, exports: validators.exports, fastExports: validators.fastExports, passExports: validators.passExports } } : {}),
         sdkCodecs: sdks.map((sdk, index) => ({ file: sdk.codecsFile, graph: sdkGraphs[index]!.graph, types: sdkOwnTypes(manifestIndex, sdk.manifest) })),
       },
+      codecData,
     ));
     if (content !== undefined) artifacts.push({ path: output, content });
   }

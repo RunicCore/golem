@@ -1,6 +1,7 @@
 // The rewrite participant of the nest extension (the extension entry `./nest-extension`). Core runs it for each source file when a ts-openapi block turns on
 // `extensions: { nest: {} }`, in golem check, golem build, Vite, esbuild and the Node loader alike. It stamps the codec of a `@Body()` or `@Query()` parameter
 // and of a return, and reports the inputs that `NestModelInterceptor` would reject. It uses the TypeScript seam that core passes and never picks TypeScript itself.
+import type { CodecDataParticipant } from '@exprtlabs/golem-model/plan';
 import type * as ts from '@exprtlabs/golem/internal/ts';
 import { GolemDiagnosticSeverity } from '@exprtlabs/golem/generator-api';
 import type { GolemDiagnostic, GolemExtension, RewriteCore, RewriteParticipantInput, RewriteParticipantResult } from '@exprtlabs/golem/generator-api';
@@ -9,6 +10,7 @@ import {
   NEST_COMMON, arrayItemNode, authoredUnionMembers, decoratorCallee, decoratorIdentity, isDiscriminatorTag, modelDeclarationKind, propertyType, readTags,
   resolvedSymbolAt, serdeTypeName, staticDecoratorKey,
 } from '@exprtlabs/golem/internal/type-analysis';
+import { nodeQueryFields } from './query-fields.js';
 
 type TypeScript = typeof ts;
 type DiscriminatorValue = string | number | boolean;
@@ -395,4 +397,7 @@ function rewriteFile(input: RewriteParticipantInput): RewriteParticipantResult {
   return { edits, diagnostics };
 }
 
-export const extension: GolemExtension = { rewrite: rewriteFile };
+/** Fills `model.codecData` (the hook name is plain text, as a third party writes it): the codec of a model carries the query fields that a query string decodes. */
+const codecData: CodecDataParticipant = nodeQueryFields;
+
+export const extension: GolemExtension = { rewrite: rewriteFile, hooks: { 'model.codecData': codecData } };

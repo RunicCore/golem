@@ -34,6 +34,7 @@ import {
   stringifyFunctionName,
   toWireFunctionName,
   type Code,
+  type CodecRuntimeOptions,
   type Helper,
   type ImportOptions,
   type JsonValue,
@@ -1034,6 +1035,8 @@ interface FileImports {
  * Everything about one source that the sections of its model file read. `buildEmitContext` makes it once; no section
  * changes it, and each section returns its code.
  */
+type CodecDataCallback = NonNullable<CodecRuntimeOptions['codecData']>;
+
 interface EmitContext {
   readonly source: string;
   readonly output: string;
@@ -1041,6 +1044,8 @@ interface EmitContext {
   readonly profile: GolemProfile;
   readonly siblingCodecs: SiblingCodecOptions;
   readonly appOutputs: AppOutputs;
+  /** The data that extensions add to the codec of a node, by extension name (`CodecRuntimeOptions.codecData`). */
+  readonly codecData?: CodecDataCallback;
   readonly sdkNodes: SdkNodeCodecs;
   readonly graph: SourceModelGraph;
   readonly schemaGraph: SchemaGraph;
@@ -1177,6 +1182,7 @@ function buildEmitContext(
   preparedSchemaGraph: SchemaGraph | undefined,
   siblingCodecs: SiblingCodecOptions,
   appOutputs: AppOutputs,
+  codecData: CodecDataCallback | undefined,
 ): EmitContext {
   const { definitions, registry } = graph;
   const { cyclicSiblings } = siblingCodecs;
@@ -1246,7 +1252,7 @@ function buildEmitContext(
     cyclicSiblings, serdeBindings, serdeNames, classEntries, classNames,
   );
   return {
-    source, output, checker, profile, siblingCodecs, appOutputs, sdkNodes: sdkNodeCodecs(appOutputs.sdkCodecs, output), graph, schemaGraph,
+    source, output, checker, profile, siblingCodecs, appOutputs, codecData, sdkNodes: sdkNodeCodecs(appOutputs.sdkCodecs, output), graph, schemaGraph,
     local, localNames, fileLocalNames, classModelNames, objectOnlyNames, siblingObjects, siblingObjectNames, localImports,
     concreteNames, linkedByName, referenceNames, projectionNames, identityProjections, imports,
     serdeBindings, serdeNames,
@@ -1777,6 +1783,7 @@ function emitCodecSection(context: EmitContext): CodecSection {
       } : {}),
       // Type analysis flattens object intersections, so golem-model has no declared bases.
       modelBases: { basesOf: () => [] },
+      ...(context.codecData ? { codecData: context.codecData } : {}),
       serde: serdeResolver(context),
       nestedConstruct,
       modelClassName: (node) => localNames.has(node.name) ? `${node.name}BaseModel` : undefined,
@@ -1817,8 +1824,9 @@ export function emitSource(
   preparedSchemaGraph?: SchemaGraph,
   siblingCodecs: SiblingCodecOptions = {},
   appOutputs: AppOutputs = {},
+  codecData?: CodecDataCallback,
 ): string | undefined {
-  const context = buildEmitContext(source, output, checker, specifications, profile, graph, preparedSchemaGraph, siblingCodecs, appOutputs);
+  const context = buildEmitContext(source, output, checker, specifications, profile, graph, preparedSchemaGraph, siblingCodecs, appOutputs, codecData);
   const projections = buildProjections(context);
   const emissions = buildFieldEmissions(context, modelResolvers(context, projections.helpers));
   const codecs = emitCodecSection(context);

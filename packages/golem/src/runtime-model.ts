@@ -3,7 +3,7 @@
  * The path is internal: golem build requires each built-in generator at the runtime's exact version, so the names may change in any release.
  */
 export type { GeneratedModelConversion, GeneratedModelValidatorEnhancer } from './model-registry.js';
-export type { ObjectCodecImpl } from './object-codec.js';
+export type { CodecData, CodecExtensionData, InternalObjectCodec, ObjectCodecImpl } from './object-codec.js';
 export { findGeneratedModelDefinition, findGeneratedModelDefinitionForConstructor, registerGeneratedModel } from './model-registry.js';
 export {
   assertAcyclicEncodeInput, assertPropertyAcyclic, assertWireAcyclic, beginDecode, beginEncode, convertModelField, convertModelItems,
@@ -17,4 +17,3 @@ export {
 } from './object-codec.js';
 export { IssueRepresentation, IssueSource } from './errors.js';
 export { presentValue, withoutInstanceState } from './presence.js';
-export { decodeQueryField } from './query-decode.js';

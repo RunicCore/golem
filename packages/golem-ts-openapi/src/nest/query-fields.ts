@@ -4,11 +4,10 @@
  * at run time.
  */
 
-import type { QueryFieldShape, QueryFieldTable } from '../object-codec.js';
-import { GENERATED_MODEL_SCHEMA_REF_PREFIX, VALIDATION_KEYWORD } from '../schema-keywords.js';
-import { compareText } from './generator-core.js';
-import { codecShortName, type SchemaGraph, type SchemaNode } from './schema-graph.js';
-import type { JsonSchema } from './schema.js';
+import { compareText } from '@exprtlabs/golem/generator-api';
+import { GENERATED_MODEL_SCHEMA_REF_PREFIX, VALIDATION_KEYWORD, type JsonSchema } from '@exprtlabs/golem/internal/schema';
+import { codecShortName, type SchemaGraph, type SchemaNode } from '@exprtlabs/golem/internal/schema-graph';
+import type { QueryFieldShape, QueryFieldTable } from '../runtime/query-decode.js';
 
 type SchemaRecord = Readonly<Record<string, unknown>>;
 type QueryScalar = QueryFieldShape['types'][number];

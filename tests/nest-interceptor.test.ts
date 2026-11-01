@@ -23,8 +23,9 @@ import { deserializeDate, unknownDiscriminatorValue, assertModelValue, isValidMo
 import type { ModelTypeDescriptor } from '@exprtlabs/golem/internal/schema';
 import { schemaForDescriptor } from '@exprtlabs/golem/internal/schema';
 import { createSchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
-import { nodeQueryFields } from '#golem/query-fields';
-import { getObjectCodec, IssueRepresentation, IssueSource, type QueryFieldTable } from '@exprtlabs/golem/serde';
+import { nodeQueryFields } from '#controllers/nest/query-fields';
+import type { QueryFieldTable } from '#controllers/runtime/query-decode';
+import { getObjectCodec, IssueRepresentation, IssueSource } from '@exprtlabs/golem/serde';
 
 import { readFixture } from './fixture-project.js';
 import { buildModelProject, createModelProject, writeModelGolemYaml } from './model-project.js';
@@ -51,7 +52,7 @@ async function registerValidatingCodec(id: string, descriptor: ModelTypeDescript
   assert.ok(node);
   const queryFields = nodeQueryFields(graph, node);
   registerPassThroughCodec(id, {
-    ...(queryFields ? { queryFields } : {}),
+    ...(queryFields ? { data: { nest: queryFields } } : {}),
     validate: (value) => isValidModelValue(value, undefined, validate, id),
     fromWireFormat: (wire) => {
       assertModelValue(wire, undefined, validate, id, IssueRepresentation.Wire, IssueSource.OpenAPI);
@@ -672,7 +673,7 @@ test('NestModelInterceptor passes @Query() through unchanged unless a present fi
       received.push(wire);
       return wire as never;
     },
-    ...(queryFields ? { queryFields } : {}),
+    ...(queryFields ? { data: { nest: queryFields } } : {}),
   });
   // A model with only string fields has no table.
   register('QueryStrings_ffffffff');
@@ -904,7 +905,7 @@ test('NestModelInterceptor answers 500 for a marked return with no codec and pas
 function variantCodec(id: string, queryFields?: QueryFieldTable) {
   return registerPassThroughCodec(id, {
     fromWireFormat: (wire) => ({ variant: id, wire }),
-    ...(queryFields ? { queryFields } : {}),
+    ...(queryFields ? { data: { nest: queryFields } } : {}),
   });
 }
 
