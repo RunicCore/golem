@@ -7,7 +7,7 @@ import { GolemDiagnosticSeverity } from '@exprtlabs/golem/generator-api';
 import type { GolemDiagnostic, GolemExtension, RewriteCore, RewriteParticipantInput, RewriteParticipantResult } from '@exprtlabs/golem/generator-api';
 import { REWRITE_IMPORT_PREFIX, type RewriteEdit } from '@exprtlabs/golem/rewrite';
 import { arrayItemNode, authoredUnionMembers, decoratorCallee, decoratorIdentity, isDiscriminatorTag, modelDeclarationKind, propertyType, readTags, resolvedSymbolAt, serdeTypeName, staticDecoratorKey } from '@exprtlabs/golem/internal/type-analysis';
-import { NEST_COMMON } from './packages.js';
+import { NEST_COMMON, OWN_PACKAGE } from './packages.js';
 import { nodeQueryFields } from './query-fields.js';
 
 type TypeScript = typeof ts;
@@ -81,12 +81,8 @@ function nestParameterDecorator({ ts, checker }: Scope, parameter: ts.ParameterD
 /** Whether the node carries the decorator `name` of this package, plainly or under an alias; a decorator of that name from another package is not it. */
 function hasDecorator({ ts, checker }: Scope, node: ts.Node, name: string): boolean {
   return (ts.getDecorators(node) ?? []).some((decorator) => {
-    const callee = decoratorCallee(decorator);
-    const symbol = resolvedSymbolAt(checker, ts.isPropertyAccessExpression(callee) ? callee.name : callee);
-    return symbol?.getName() === name && (symbol.declarations ?? []).some((declaration) => {
-      const filename = declaration.getSourceFile().fileName.replace(/\\/g, '/');
-      return filename.includes('/@exprtlabs/golem-ts-openapi/') || filename.includes('/packages/golem-ts-openapi/');
-    });
+    const identity = decoratorIdentity(checker, decorator, [OWN_PACKAGE]);
+    return identity.name === name && identity.packageName === OWN_PACKAGE;
   });
 }
 

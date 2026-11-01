@@ -135,7 +135,7 @@ A hook is a named place where extensions add code to a job. The job that offers 
 - List the hook name in `facts.hooks`.
 - Call each participant through `fill.use`: `context.hooks['acme.note'].map(fill => fill.use(note => note({ options: fill.options })))`.
 - A participant that throws stops the run, and the message names the package of the extension. This is a fault in that package.
-- An extension that fills a hook that no job of the `golem.yaml` offers stops loading. The message lists the hooks offered.
+- A hook that no job of the `golem.yaml` offers stays unfilled. An extension with no `rewrite` whose hooks no job offers stops loading, and the message lists the hooks offered.
 - Golem runs the job again when the code or options of an extension on its hooks change.
 
 ### Write an extension {#extensions}

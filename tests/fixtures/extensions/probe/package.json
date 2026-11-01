@@ -7,7 +7,8 @@
     "./label": "./label.mjs",
     "./note": "./note.mjs",
     "./stray": "./stray.mjs",
-    "./broken": "./broken.mjs"
+    "./broken": "./broken.mjs",
+    "./rewriting": "./rewriting.mjs"
   },
   "golem": {
     "apiVersion": 2,
@@ -17,7 +18,8 @@
       "mark": "./mark",
       "note": "./note",
       "stray": "./stray",
-      "broken": "./broken"
+      "broken": "./broken",
+      "rewriting": "./rewriting"
     }
   }
 }

@@ -2,6 +2,7 @@
 import path from 'node:path';
 import { canonicalPath, checkedSuffixes, isRecord, MODEL_BOUNDARY } from '@exprtlabs/golem/internal/plan-support';
 import type {
+  GeneratorHostContext,
   GeneratorSession,
   GolemPlanEntry,
   GolemProfile,
@@ -9,7 +10,6 @@ import type {
   ModelBoundaryValue,
   PlanContext,
   PlannedJob,
-  ProgramView,
 } from '@exprtlabs/golem/generator-api';
 
 export type ControllerUriVersioningType = 'URI' | 'uri' | 0;
@@ -61,7 +61,7 @@ export interface ControllerContext {
    * job that reads the program. A model file that imports a later output is not read by the controllers analysis, because the import
    * does not resolve until that job has run. A later provider's generated files are stubbed in the program.
    */
-  readonly programView?: ProgramView;
+  readonly programView?: GeneratorHostContext['programView'];
   readonly onInput?: InputObserver;
   readonly session?: GeneratorSession;
 }
@@ -73,8 +73,6 @@ export type ControllerModels = ModelBoundaryValue;
 export const DEFAULT_CONTROLLER_SUFFIXES: readonly string[] = ['.controller.ts'];
 
 const BLOCK = 'ts-openapi';
-/** The extensions this package registers (`golem.extensions` in package.json). */
-const EXTENSION_NAMES: readonly string[] = ['nest'];
 const DOCS_KEYS: readonly string[] = [
   'framework', 'root', 'sources', 'suffixes', 'output', 'openapiVersion', 'info', 'servers',
   'securitySchemes', 'tags', 'globalPrefix', 'uriVersioning', 'maxResultBytes',
@@ -224,8 +222,7 @@ function docsJob(context: PlanContext, entry: unknown, label: string): PlannedJo
 function checkExtensions(value: unknown): void {
   if (value === undefined) return;
   const label = `${BLOCK}.extensions`;
-  keys(value, EXTENSION_NAMES, label);
-  const nest = value.nest;
+  const nest = (value as { readonly nest?: unknown }).nest;
   if (nest === undefined || nest === null) return;
   keys(nest, ['nonModelInputs'], `${label}.nest`);
   if (nest.nonModelInputs !== undefined && nest.nonModelInputs !== 'warn' && nest.nonModelInputs !== 'error') throw new Error(`${label}.nest.nonModelInputs must be "warn" or "error".`);

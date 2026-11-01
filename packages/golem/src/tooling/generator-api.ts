@@ -35,5 +35,5 @@ export type {
   SourceDiscoveryOptions,
 } from './generator-core.js';
 export type { HookFill, HookParticipants } from './extension-hooks.js';
-export type { JobFacts, JobOutput, ProgramView } from './job-facts.js';
+export type { JobFacts, JobOutput } from './job-facts.js';
 export type { GolemExtension, RewriteCore, RewriteParticipant, RewriteParticipantInput, RewriteParticipantResult } from './rewrite-participant.js';
