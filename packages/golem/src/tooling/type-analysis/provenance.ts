@@ -119,7 +119,7 @@ function validateManifestProfile(
   profile: GolemProfile,
 ): void {
   const advertised = manifest.profile;
-  const expected = { mobx: profile.mobx, validation: profile.validation, allowAny: profile.allowAny ?? false, unknownFormats: profile.unknownFormats };
+  const expected = { validation: profile.validation, allowAny: profile.allowAny ?? false, unknownFormats: profile.unknownFormats };
   const differing = (Object.keys(expected) as (keyof typeof expected)[])
     .filter((key) => advertised[key] !== expected[key])
     .map((key) => `${key}: manifest ${advertised[key] ?? 'not recorded'}, project ${expected[key]}`);
@@ -132,7 +132,7 @@ function validateManifestProfile(
   if (differing.length > 0) {
     throw new Error(
       `Model manifest profile mismatch in ${displayPath(filename)}: ${differing.join('; ')}. The project expects `
-      + `{ mobx: ${expected.mobx}, validation: ${expected.validation}, allowAny: ${expected.allowAny}, unknownFormats: ${expected.unknownFormats}${profile.extensions === undefined ? '' : `, extensions: ${JSON.stringify(stableValue(profile.extensions))}`} }. `
+      + `{ validation: ${expected.validation}, allowAny: ${expected.allowAny}, unknownFormats: ${expected.unknownFormats}${profile.extensions === undefined ? '' : `, extensions: ${JSON.stringify(stableValue(profile.extensions))}`} }. `
       + 'Regenerate the SDK manifest with the same profile before model generation, or set the project to the manifest value in golem.yaml.',
     );
   }

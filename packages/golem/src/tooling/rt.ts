@@ -100,7 +100,7 @@ function moduleTable(module: RuntimeModule, typeOnly: boolean): object {
   });
 }
 
-// The names of a module exist only as types, and loading the runtime modules here would load mobx on every run of the
+// The names of a module exist only as types, and loading the runtime modules here would load every runtime peer on each run of the
 // tooling. The cast is the one place where the table takes its type from them.
 export const rt = Object.fromEntries(
   (Object.keys(RUNTIME_SPECIFIER) as RuntimeModule[]).map((module) => [module, moduleTable(module, false)]),

@@ -98,7 +98,7 @@ interface NormalizedContext {
 function validateContext(context: GolemModelContext): NormalizedContext {
   const root = assertGeneratorRoot(context);
   if (!context.profile || typeof context.profile !== 'object' || Array.isArray(context.profile)) {
-    throw new TypeError('context.profile is required and must be an object with mobx and validation.');
+    throw new TypeError('context.profile is required and must be an object with validation.');
   }
   const profile = resolveProfile(context.profile);
   const output = assertAbsolute(

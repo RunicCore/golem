@@ -149,7 +149,7 @@ export function sourceDigest(value: unknown): string {
 }
 
 function isProfile(profile: unknown): profile is GolemProfile {
-  return isRecord(profile) && ['mobx', 'allowAny'].every(key => typeof profile[key] === 'boolean') && isValidationLevel(profile.validation);
+  return isRecord(profile) && typeof profile.allowAny === 'boolean' && isValidationLevel(profile.validation);
 }
 
 function validateModelProfile(profile: unknown, filename = MODEL_MANIFEST_FILENAME): GolemProfile {
@@ -158,7 +158,7 @@ function validateModelProfile(profile: unknown, filename = MODEL_MANIFEST_FILENA
   }
   if (!isProfile(profile)) {
     throw new Error(
-      `Invalid model manifest ${displayPath(filename)}: profile must include mobx, validation and allowAny booleans (validation may also be "sanity"). Regenerate the models.`,
+      `Invalid model manifest ${displayPath(filename)}: profile must include validation and an allowAny boolean (validation may also be "sanity"). Regenerate the models.`,
     );
   }
   if (profile.unknownFormats !== undefined && profile.unknownFormats !== 'warn' && profile.unknownFormats !== 'error') {
@@ -167,7 +167,7 @@ function validateModelProfile(profile: unknown, filename = MODEL_MANIFEST_FILENA
   if (profile.extensions !== undefined && (!isRecord(profile.extensions) || !Object.values(profile.extensions).every(isRecord))) {
     throw new Error(`Invalid model manifest ${displayPath(filename)}: profile extensions must map a package name to an object of settings. Regenerate the models.`);
   }
-  const unknown = Object.keys(profile).filter((key) => !['mobx', 'validation', 'allowAny', 'unknownFormats', 'extensions'].includes(key));
+  const unknown = Object.keys(profile).filter((key) => !['validation', 'allowAny', 'unknownFormats', 'extensions'].includes(key));
   if (unknown.length > 0) {
     throw new Error(
       `Invalid model manifest ${displayPath(filename)}: profile has unsupported field(s): ${unknown.join(', ')}. Regenerate or remove the older generated SDK.`,

@@ -144,7 +144,7 @@ export async function resolveConfig(filename = 'golem.yaml', onInput?: InputObse
   if (value.version !== 1) throw new Error('Configuration version must be 1.');
   if (value.unknownFormats !== undefined && value.unknownFormats !== 'warn' && value.unknownFormats !== 'error') throw new Error('unknownFormats must be "warn" or "error".');
   const settings: GolemProfile = {
-    mobx: boolean(value.mobx, false, 'mobx'), validation: validationLevel(value.validation),
+    validation: validationLevel(value.validation),
     allowAny: boolean(value.allowAny, false, 'allowAny'),
     ...(value.unknownFormats === undefined ? {} : { unknownFormats: value.unknownFormats }),
   };
