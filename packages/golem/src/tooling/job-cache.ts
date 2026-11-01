@@ -189,7 +189,7 @@ export function inputDigest(filename: string, excluded: (filename: string) => bo
  * path relative to `directory` and its content, in path order. A version string does not stand for code: a generator that changes under
  * the same version, as one does during development or in a linked install, must run its jobs again.
  */
-export function codeDigest(directory: string): string {
+function codeDigest(directory: string): string {
   const files: string[] = [];
   const walk = (current: string, prefix: string): void => {
     for (const entry of fs.readdirSync(current, { withFileTypes: true })) {

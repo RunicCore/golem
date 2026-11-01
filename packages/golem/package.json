@@ -125,11 +125,6 @@
       "import": "./dist/tooling/plan-support.js",
       "default": "./dist/tooling/plan-support.js"
     },
-    "./internal/rewrite-participant": {
-      "types": "./dist/tooling/rewrite-participant.d.ts",
-      "import": "./dist/tooling/rewrite-participant.js",
-      "default": "./dist/tooling/rewrite-participant.js"
-    },
     "./generator-api": {
       "types": "./dist/tooling/generator-api.d.ts",
       "import": "./dist/tooling/generator-api.js",

@@ -265,7 +265,7 @@ export interface PlannedJob<Options = unknown> extends JobPlanParts<Options> {
 }
 
 /** What core hands to a plan entry for one of its jobs in the second pass. */
-export interface PlanContracts {
+interface PlanContracts {
   /** The value of each contract in the job's `facts.needs`, from the one job that provides it. */
   readonly needed: ContractValues;
   /** For each contract in the job's `facts.provides`: the first-pass facts of the jobs that need it. */
@@ -274,7 +274,7 @@ export interface PlanContracts {
 
 /**
  * The plan entry of a golem package (`golem.plan`): the light module, which imports no TypeScript, no generator code and no yaml, that the
- * module exports as `plan`. Core loads it synchronously when it reads golem.yaml.
+ * module exports as `plan`. Core loads it with `import()` when it reads golem.yaml.
  */
 export interface GolemPlanEntry<Options = unknown> {
   /** First pass: validate the whole block and declare its jobs with their facts, in the order the block lists them. */
@@ -345,7 +345,7 @@ export interface ControllerContext {
    */
   readonly models?: ControllerModels;
   /**
-   * What this job's program leaves out or stubs of the jobs after it (`laterOutputs`, `stubbedProviders`), set by the host as for every
+   * What this job's program leaves out or stubs of the jobs after it (`laterOutputs`), set by the host as for every
    * job that reads the program. A model file that imports a later output is not read by the controllers analysis, because the import
    * does not resolve until that job has run. A later provider's generated files are stubbed in the program.
    */

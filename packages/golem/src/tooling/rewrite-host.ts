@@ -124,7 +124,7 @@ export interface GolemHostOptions {
 
 export interface RewriteProject {
   /** The codec key file that the job providing the `ModelBoundary` contract writes, whether or not it exists yet: what a host watches after a failed rewrite so that `golem generate` brings it back. Empty without a provider. */
-  readonly expectedGenerated: readonly string[];
+  readonly generatedWatchFiles: readonly string[];
   /**
    * Edits for one file as the host will compile it, `dependencies` as absolute paths; undefined when the file has no
    * rewrite. A file outside the tsconfig's directory is scanned and rewritten like any other. Throws a `GolemHostError` (file, line, "run golem generate") on scan diagnostics.
@@ -173,7 +173,7 @@ interface Compiler {
 class ScanningProject {
   readonly root: string;
   readonly configFile: string;
-  readonly expectedGenerated: readonly string[];
+  readonly generatedWatchFiles: readonly string[];
   private readonly session: ts.ProgramSession;
   private program: ts.Program | undefined;
   /** The tsconfig's compiler options as the latest program was opened with them. */
@@ -193,7 +193,7 @@ class ScanningProject {
   constructor(private readonly config: GolemConfig, private readonly compiler: Compiler) {
     this.root = path.dirname(config.tsconfig);
     this.configFile = config.configFile;
-    this.expectedGenerated = config.contracts.ModelBoundary === undefined ? [] : [codecKeysPath(config.directory)];
+    this.generatedWatchFiles = config.contracts.ModelBoundary === undefined ? [] : [codecKeysPath(config.directory)];
     this.session = new compiler.ts.ProgramSession({ cwd: this.root });
   }
 
@@ -268,7 +268,7 @@ class ScanningProject {
     }
     if (this.program !== undefined && fileSignature(this.config.inventoryFile) !== this.recordSignature) {
       // The files of the old record too: one that `golem generate` removed is changed as well.
-      this.changed([...this.recorded, ...this.recordedFiles(), ...this.expectedGenerated]);
+      this.changed([...this.recorded, ...this.recordedFiles(), ...this.generatedWatchFiles]);
     }
   }
 
@@ -407,7 +407,7 @@ export async function openRewriteProject(options: GolemHostOptions & { cwd: stri
   }
   let closed = false;
   return {
-    expectedGenerated: project.expectedGenerated,
+    generatedWatchFiles: project.generatedWatchFiles,
     rewrite: (filename, text) => project.rewrite(filename, text),
     diagnose: (filename, text) => project.diagnose(filename, text),
     comments: (filename, text) => project.comments(filename, text),

@@ -8,7 +8,7 @@ import { displayPath, isRecord } from './plan-support.js';
 import { assertRuntimeCompatible } from './runtime-compatibility.js';
 
 /** The `golem` field version that this golem reads. */
-export const REGISTRATION_API_VERSION = 2;
+const REGISTRATION_API_VERSION = 2;
 
 /** A package.json or an installed package that the registry cannot use: the developer's input to fix. */
 export class PackageRegistryError extends Error {
@@ -27,7 +27,7 @@ export class PackageRegistryError extends Error {
  * `profile.extensions` of every manifest that a generator writes. Core cannot normalize them, so every option of a flagged extension
  * must change generated code and none may have a silent default. An extension that only rewrites source sets no flag.
  */
-export interface RegisteredExtension {
+interface RegisteredExtension {
   /** The absolute file that Node resolves for the entry; it is not loaded here. */
   readonly entry: string;
   readonly profile: boolean;

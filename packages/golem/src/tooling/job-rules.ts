@@ -210,7 +210,6 @@ export function resolveJobPlan(jobs: readonly JobFacts[], context: JobRuleContex
     const later = order.slice(position + 1);
     const stubbed = later.filter(other => other.provides.includes(MODEL_BOUNDARY));
     programViews[job.id] = {
-      stubbedProviders: stubbed.map(other => other.id),
       laterOutputs: later.filter(other => !stubbed.includes(other)).flatMap(other => other.outputs.map(output => output.path)),
     };
   }

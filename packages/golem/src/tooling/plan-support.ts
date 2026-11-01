@@ -44,3 +44,20 @@ export function sdkCodecsFile(where: { readonly modelsOutput: string; readonly c
   }
   return path.join(where.modelsOutput, `${relative}.sdk.generated.ts`);
 }
+
+/** The `suffixes` of a block, `label` naming it in an error: file-name endings that start with `.`, end in `.ts`, `.mts` or `.cts`, never repeat, never name a declaration file and never name a generated file. */
+export function checkedSuffixes(value: unknown, label: string): readonly string[] | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value) || !value.length) throw new Error(`${label} must be a nonempty array.`);
+  const seen = new Set<string>();
+  for (const [index, entry] of value.entries()) {
+    if (typeof entry !== 'string' || !entry.startsWith('.') || !/\.[cm]?ts$/.test(entry)) {
+      throw new Error(`${label}[${index}] must be a string that starts with "." and ends in .ts, .mts or .cts.`);
+    }
+    if (/\.d\.[cm]?ts$/.test(entry)) throw new Error(`${label}[${index}] must not end in .d.ts, .d.mts or .d.cts: a declaration file cannot be a source.`);
+    if (/\.generated\.[cm]?ts$/.test(entry)) throw new Error(`${label}[${index}] must not end in .generated.ts, .generated.mts or .generated.cts: golem writes those files.`);
+    if (seen.has(entry)) throw new Error(`${label} lists ${entry} twice.`);
+    seen.add(entry);
+  }
+  return value;
+}

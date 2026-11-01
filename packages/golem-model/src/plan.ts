@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { GolemPlanEntry, JobFacts, ModelBoundaryValue, CodecsHostValue, ModelContext, PlanContext, PlannedJob } from '@exprtlabs/golem/generator-api';
 import { defaultModelOutput } from '@exprtlabs/golem/internal/generated-paths';
-import { canonicalPath, CODECS_HOST, displayPath, isInsideDirectory, isRecord, MODEL_BOUNDARY } from '@exprtlabs/golem/internal/plan-support';
+import { canonicalPath, checkedSuffixes, CODECS_HOST, displayPath, isInsideDirectory, isRecord, MODEL_BOUNDARY } from '@exprtlabs/golem/internal/plan-support';
 
 /** What the generator receives: the context of the models job without what the host adds. */
 export type ModelOptions = Omit<ModelContext, 'onInput' | 'session'>;
@@ -27,23 +27,6 @@ export function outsideModelsRootMessage(entry: string, root: string): string {
 
 function nonempty(value: unknown, label: string): string {
   if (typeof value !== 'string' || !value.trim()) throw new TypeError(`${label} must be a nonempty string.`);
-  return value;
-}
-
-/** The `suffixes` of the block: file-name endings that start with `.`, end in `.ts`, `.mts` or `.cts`, never repeat, never name a declaration file and never name a generated file. */
-function suffixes(value: unknown, label: string): readonly string[] | undefined {
-  if (value === undefined) return undefined;
-  if (!Array.isArray(value) || !value.length) throw new Error(`${label} must be a nonempty array.`);
-  const seen = new Set<string>();
-  for (const [index, entry] of value.entries()) {
-    if (typeof entry !== 'string' || !entry.startsWith('.') || !/\.[cm]?ts$/.test(entry)) {
-      throw new Error(`${label}[${index}] must be a string that starts with "." and ends in .ts, .mts or .cts.`);
-    }
-    if (/\.d\.[cm]?ts$/.test(entry)) throw new Error(`${label}[${index}] must not end in .d.ts, .d.mts or .d.cts: a declaration file cannot be a source.`);
-    if (/\.generated\.[cm]?ts$/.test(entry)) throw new Error(`${label}[${index}] must not end in .generated.ts, .generated.mts or .generated.cts: golem writes those files.`);
-    if (seen.has(entry)) throw new Error(`${label} lists ${entry} twice.`);
-    seen.add(entry);
-  }
   return value;
 }
 
@@ -87,7 +70,7 @@ export const plan: GolemPlanEntry<ModelOptions> = {
       // The paths are real paths already, so a link to a file outside the root shows as that file.
       for (const source of sources) if (!isInsideDirectory(root, source)) throw new Error(outsideModelsRootMessage(source, root));
     }
-    const sourceSuffixes = suffixes(value.suffixes, 'model.suffixes');
+    const sourceSuffixes = checkedSuffixes(value.suffixes, 'model.suffixes');
     const options: ModelOptions = {
       root, directory, output, tsconfig, profile,
       ...(exact === undefined ? {} : { exact }),

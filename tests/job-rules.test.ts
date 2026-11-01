@@ -109,8 +109,8 @@ const layouts: readonly { name: string; jobs: readonly JobFacts[]; order: readon
     jobs: [docs(), sdk('/sibling/sdk', false), models([])],
     order: ['docs', 'sdk', 'models'],
     views: {
-      docs: { stubbedProviders: ['models'], laterOutputs: ['/sibling/sdk'] },
-      models: { stubbedProviders: [], laterOutputs: [] },
+      docs: { laterOutputs: ['/sibling/sdk'] },
+      models: { laterOutputs: [] },
     },
   },
   {
@@ -118,8 +118,8 @@ const layouts: readonly { name: string; jobs: readonly JobFacts[]; order: readon
     jobs: [docs(), models([]), generator('/elsewhere/gen')],
     order: ['gen', 'docs', 'models'],
     views: {
-      docs: { stubbedProviders: ['models'], laterOutputs: [] },
-      models: { stubbedProviders: [], laterOutputs: [] },
+      docs: { laterOutputs: [] },
+      models: { laterOutputs: [] },
     },
   },
   {
@@ -127,8 +127,8 @@ const layouts: readonly { name: string; jobs: readonly JobFacts[]; order: readon
     jobs: [docs(), generator('/app/src/generated/acme'), models([])],
     order: ['gen', 'docs', 'models'],
     views: {
-      docs: { stubbedProviders: ['models'], laterOutputs: [] },
-      models: { stubbedProviders: [], laterOutputs: [] },
+      docs: { laterOutputs: [] },
+      models: { laterOutputs: [] },
     },
   },
   {
@@ -136,8 +136,8 @@ const layouts: readonly { name: string; jobs: readonly JobFacts[]; order: readon
     jobs: [models(['/app/src/generated/acme']), docs(), generator('/app/src/generated/acme')],
     order: ['gen', 'models', 'docs'],
     views: {
-      models: { stubbedProviders: [], laterOutputs: [documentFile] },
-      docs: { stubbedProviders: [], laterOutputs: [] },
+      models: { laterOutputs: [documentFile] },
+      docs: { laterOutputs: [] },
     },
   },
   {
@@ -145,23 +145,23 @@ const layouts: readonly { name: string; jobs: readonly JobFacts[]; order: readon
     jobs: [docs(), models([]), generator('/app/src/generated/acme', { inputFiles: [documentFile] })],
     order: ['docs', 'gen', 'models'],
     views: {
-      docs: { stubbedProviders: ['models'], laterOutputs: ['/app/src/generated/acme'] },
-      models: { stubbedProviders: [], laterOutputs: [] },
+      docs: { laterOutputs: ['/app/src/generated/acme'] },
+      models: { laterOutputs: [] },
     },
   },
   {
     name: 'no doc job',
     jobs: [models(['/app/sdk']), sdk('/app/sdk', true)],
     order: ['sdk', 'models'],
-    views: { models: { stubbedProviders: [], laterOutputs: [] } },
+    views: { models: { laterOutputs: [] } },
   },
   {
     name: 'a controller that imports a companion, doc block first',
     jobs: [docs(), models([])],
     order: ['docs', 'models'],
     views: {
-      docs: { stubbedProviders: ['models'], laterOutputs: [] },
-      models: { stubbedProviders: [], laterOutputs: [] },
+      docs: { laterOutputs: [] },
+      models: { laterOutputs: [] },
     },
   },
   {
@@ -169,8 +169,8 @@ const layouts: readonly { name: string; jobs: readonly JobFacts[]; order: readon
     jobs: [models([]), docs()],
     order: ['models', 'docs'],
     views: {
-      models: { stubbedProviders: [], laterOutputs: [documentFile] },
-      docs: { stubbedProviders: [], laterOutputs: [] },
+      models: { laterOutputs: [documentFile] },
+      docs: { laterOutputs: [] },
     },
   },
   {
@@ -178,8 +178,8 @@ const layouts: readonly { name: string; jobs: readonly JobFacts[]; order: readon
     jobs: [models(['/app/sdk']), sdk('/app/sdk', true), docs()],
     order: ['docs', 'sdk', 'models'],
     views: {
-      docs: { stubbedProviders: ['models'], laterOutputs: ['/app/sdk'] },
-      models: { stubbedProviders: [], laterOutputs: [] },
+      docs: { laterOutputs: ['/app/sdk'] },
+      models: { laterOutputs: [] },
     },
   },
 ];

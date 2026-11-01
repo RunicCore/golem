@@ -21,7 +21,7 @@ export interface JobOutput {
 }
 
 /** One place a job looks for new files: the files below `folder` (absolute) with a name that ends with one of `suffixes`. */
-export interface WatchRule {
+interface WatchRule {
   /** Absolute. Without it, each of the job's `watchFolders` applies. */
   readonly folder?: string;
   readonly suffixes: readonly string[];
@@ -112,9 +112,7 @@ export interface JobRuleContext {
 
 /** What one program reader sees of the jobs that run after it. */
 export interface ProgramView {
-  /** Ids of the jobs after this reader that provide the models boundary. Core stubs their companion files from the boundary. */
-  readonly stubbedProviders: readonly string[];
-  /** Output paths of every other later job, left out of the program this reader opens. */
+  /** Output paths of the later jobs, left out of the program this reader opens. The files of a later job that provides the models boundary are stubbed from the boundary instead. */
   readonly laterOutputs: readonly string[];
 }
 

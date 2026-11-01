@@ -21,10 +21,6 @@ export interface Inventory { version: 1; files: Record<string, InventoryEntry> }
 interface ExpectedArtifact { filename: string; content: string; destination: string; destinationKind: InventoryEntry['destinationKind'] }
 interface Destination { path: string; kind: InventoryEntry['destinationKind'] }
 
-/** Packages whose ownership header marks a generated file: the package of every configured job. */
-function ownersOf(config: GolemConfig): ReadonlySet<string> {
-  return new Set(config.jobs.map(job => job.package));
-}
 export const digest = (content: string): string => crypto.createHash('sha256').update(content).digest('hex');
 const portable = (filename: string): string => filename.split(path.sep).join('/');
 
@@ -289,7 +285,8 @@ function saveInventory(config: GolemConfig, inventory: Inventory, files: OutputF
 
 /** `golem check` only: a file that carries a generator's marker, sits in a job's destination and no inventory entry or artifact names. A run that writes does not look. */
 function assertNoUnrecordedOutputs(config: GolemConfig, inventory: Inventory, job: GolemJob, expected: ReadonlyMap<string, ExpectedArtifact>, compilerOutputs: readonly string[]): void {
-  const owners = ownersOf(config);
+  // The packages whose ownership header marks a generated file: the package of every configured job.
+  const owners = new Set(config.jobs.map(candidate => candidate.package));
   const drift: string[] = [];
   const visited = new Set<string>();
   const visit = (directory: string): void => {

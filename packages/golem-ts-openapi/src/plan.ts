@@ -1,6 +1,6 @@
 // The plan entry of the ts-openapi block (`golem.plan`). Core loads it when it reads golem.yaml, so it imports no TypeScript, no yaml and no generator code.
 import path from 'node:path';
-import { canonicalPath, isRecord, MODEL_BOUNDARY } from '@exprtlabs/golem/internal/plan-support';
+import { canonicalPath, checkedSuffixes, isRecord, MODEL_BOUNDARY } from '@exprtlabs/golem/internal/plan-support';
 import type {
   ControllerContext,
   ControllerTag,
@@ -29,23 +29,6 @@ function keys(value: unknown, allowed: readonly string[], label: string): assert
 
 function nonempty(value: unknown, label: string): string {
   if (typeof value !== 'string' || !value.trim()) throw new TypeError(`${label} must be a nonempty string.`);
-  return value;
-}
-
-/** The `suffixes` of a docs job: file-name endings that start with `.`, end in `.ts`, `.mts` or `.cts`, never repeat, never name a declaration file and never name a generated file. */
-function suffixes(value: unknown, label: string): readonly string[] | undefined {
-  if (value === undefined) return undefined;
-  if (!Array.isArray(value) || !value.length) throw new Error(`${label} must be a nonempty array.`);
-  const seen = new Set<string>();
-  for (const [index, entry] of value.entries()) {
-    if (typeof entry !== 'string' || !entry.startsWith('.') || !/\.[cm]?ts$/.test(entry)) {
-      throw new Error(`${label}[${index}] must be a string that starts with "." and ends in .ts, .mts or .cts.`);
-    }
-    if (/\.d\.[cm]?ts$/.test(entry)) throw new Error(`${label}[${index}] must not end in .d.ts, .d.mts or .d.cts: a declaration file cannot be a source.`);
-    if (/\.generated\.[cm]?ts$/.test(entry)) throw new Error(`${label}[${index}] must not end in .generated.ts, .generated.mts or .generated.cts: golem writes those files.`);
-    if (seen.has(entry)) throw new Error(`${label} lists ${entry} twice.`);
-    seen.add(entry);
-  }
   return value;
 }
 
@@ -130,7 +113,7 @@ function docsJob(context: PlanContext, entry: unknown, label: string): PlannedJo
     sources = entry.sources.map(source => inputPath(directory, onInput, source, `${label}.source`));
     if (new Set(sources).size !== sources.length) throw new Error(`Duplicate ${label}.sources paths.`);
   }
-  const sourceSuffixes = suffixes(entry.suffixes, `${label}.suffixes`);
+  const sourceSuffixes = checkedSuffixes(entry.suffixes, `${label}.suffixes`);
   const openapiVersion = entry.openapiVersion === undefined ? '3.2.0' : entry.openapiVersion;
   if (openapiVersion !== '3.2.0' && openapiVersion !== '3.1.2') throw new Error(`${label}.openapiVersion must be 3.2.0 or 3.1.2.`);
   const info = record(entry.info, `${label}.info`);

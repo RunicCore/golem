@@ -60,7 +60,7 @@ export function golem(options: GolemHostOptions = {}): Plugin {
           if (!(error instanceof Error)) throw error;
           const location = error instanceof GolemHostError ? error.location : undefined;
           // A failed rewrite lists no dependencies, so the key tables golem generate writes are watched, though they may not exist yet.
-          const watchFiles = project?.expectedGenerated ?? [];
+          const watchFiles = project?.generatedWatchFiles ?? [];
           for (const generated of watchFiles) touched.add(generated);
           return { errors: [{ text: error.message, location: { file: location?.file ?? file, ...(location?.line === undefined ? {} : { line: location.line }) } }], watchFiles: [...watchFiles] };
         }

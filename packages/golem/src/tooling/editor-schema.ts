@@ -7,7 +7,7 @@ import type { OutputFiles } from './outputs.js';
 import { displayPath, isRecord } from './plan-support.js';
 import type { PackageRegistry, PackageRegistration } from './package-registry.js';
 
-export const EDITOR_SCHEMA_FILE = 'schema.json';
+const EDITOR_SCHEMA_FILE = 'schema.json';
 
 /** The editor schema of the golem.yaml in `configDirectory`. */
 export function editorSchemaPath(configDirectory: string): string {

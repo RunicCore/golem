@@ -15,7 +15,6 @@ export {
 } from './generator-core.js';
 export type {
   CodecsHostValue,
-  ContractValues,
   ControllerContext,
   ControllerModels,
   ControllerTag,
@@ -32,16 +31,14 @@ export type {
   GolemProvider,
   GolemResult,
   InputObserver,
-  JobPlanParts,
   ModelBoundaryValue,
   ModelContext,
   OpenApiContext,
   PlanContext,
-  PlanContracts,
   PlannedJob,
   ResolvedGolemProfile,
   SourceDiscoveryOptions,
 } from './generator-core.js';
 export type { HookFill, HookParticipants } from './extension-hooks.js';
-export type { JobFacts, JobOutput, WatchRule } from './job-facts.js';
+export type { JobFacts, JobOutput } from './job-facts.js';
 export type { GolemExtension, RewriteCore, RewriteParticipant, RewriteParticipantInput, RewriteParticipantResult } from './rewrite-participant.js';

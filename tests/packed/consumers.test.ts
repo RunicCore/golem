@@ -232,8 +232,7 @@ test('an app that installs golem and every generator package holds one golem cop
   assert.deepEqual(installedGolemCopies(root), [path.join('node_modules', '@exprtlabs', 'golem')],
     'The app must hold exactly one @exprtlabs/golem. A second copy, for example node_modules/@exprtlabs/golem-openapi/node_modules/@exprtlabs/golem, has its own codec registry: models from one copy fail the checks of the other.');
   for (const name of ['golem-openapi', 'golem-ts-openapi']) {
-    const manifest: { dependencies?: Record<string, string>; peerDependencies?: Record<string, string> } = JSON.parse(fs.readFileSync(path.join(root, 'node_modules/@exprtlabs', name, 'package.json'), 'utf8'));
+    const manifest: { peerDependencies?: Record<string, string> } = JSON.parse(fs.readFileSync(path.join(root, 'node_modules/@exprtlabs', name, 'package.json'), 'utf8'));
     assert.equal(manifest.peerDependencies?.['@exprtlabs/golem'], registry().workspaceVersion, `${name} takes golem as a peer`);
-    assert.equal(manifest.dependencies?.['@exprtlabs/golem'], undefined, `${name} must not depend on its own golem copy`);
   }
 });

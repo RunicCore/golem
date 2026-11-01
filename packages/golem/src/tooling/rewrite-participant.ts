@@ -1,6 +1,6 @@
 // The rewrite participant of an extension (page "What an extension declares"). Core runs the participants of the extensions that a
 // golem.yaml block turns on, in golem check, golem build, Vite, esbuild and the Node loader alike. Core names no package and no extension.
-// This file holds the contract and the loading; it imports no TypeScript at run time, so an extension entry may import it.
+// This file holds the contract and the loading; it imports no TypeScript at run time.
 import { pathToFileURL } from 'node:url';
 
 import { displayPath, isRecord } from './plan-support.js';

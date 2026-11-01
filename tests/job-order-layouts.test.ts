@@ -49,7 +49,7 @@ interface Layout {
   readonly blocks: string;
   readonly jobs: readonly string[];
   /** The program views by job id; the later outputs are paths below the app folder. */
-  readonly views: Readonly<Record<string, { stubbedProviders: readonly string[]; laterOutputs: readonly string[] }>>;
+  readonly views: Readonly<Record<string, { laterOutputs: readonly string[] }>>;
 }
 
 const LAYOUTS: readonly Layout[] = [
@@ -58,63 +58,63 @@ const LAYOUTS: readonly Layout[] = [
     protects: 'round 1: the docs, SDK, models, docs cycle; an SDK outside the app is left out of the doc job program',
     blocks: DOCS + sdks('../sibling/sdk', 'standalone') + MODEL,
     jobs: [DOC_JOB, 'openapi:../sibling/sdk', 'model'],
-    views: { [DOC_JOB]: { stubbedProviders: ['model'], laterOutputs: ['../sibling/sdk'] }, model: { stubbedProviders: [], laterOutputs: [] } },
+    views: { [DOC_JOB]: { laterOutputs: ['../sibling/sdk'] }, model: { laterOutputs: [] } },
   },
   {
     name: 'a generator outside the app',
     protects: 'round 3: a generator that no job reads runs first and its output never reaches a program',
     blocks: DOCS + MODEL + acme({ output: '../elsewhere/gen' }),
     jobs: ['acme', DOC_JOB, 'model'],
-    views: { [DOC_JOB]: { stubbedProviders: ['model'], laterOutputs: [] }, model: { stubbedProviders: [], laterOutputs: [] } },
+    views: { [DOC_JOB]: { laterOutputs: [] }, model: { laterOutputs: [] } },
   },
   {
     name: 'a generator listed after the doc block',
     protects: 'round 3: the doc job needs no list position to run after a generator whose files the app imports',
     blocks: DOCS + acme({ output: 'src/generated/acme' }) + MODEL,
     jobs: ['acme', DOC_JOB, 'model'],
-    views: { [DOC_JOB]: { stubbedProviders: ['model'], laterOutputs: [] }, model: { stubbedProviders: [], laterOutputs: [] } },
+    views: { [DOC_JOB]: { laterOutputs: [] }, model: { laterOutputs: [] } },
   },
   {
     name: 'a generator that the models job reads',
     protects: 'round 2: file edges alone missed the models job reading an earlier generator (a job that needs the codecs host)',
     blocks: MODEL + DOCS + acme({ output: 'src/generated/acme', needsCodecs: true }),
     jobs: ['acme', 'model', DOC_JOB],
-    views: { model: { stubbedProviders: [], laterOutputs: [DOC_FILE] }, [DOC_JOB]: { stubbedProviders: [], laterOutputs: [] } },
+    views: { model: { laterOutputs: [DOC_FILE] }, [DOC_JOB]: { laterOutputs: [] } },
   },
   {
     name: 'a generator that reads the document',
     protects: 'round 4: only the models provider is stubbed; the later generator output is left out of the doc program',
     blocks: DOCS + MODEL + acme({ output: 'src/generated/acme', input: DOC_FILE }),
     jobs: [DOC_JOB, 'acme', 'model'],
-    views: { [DOC_JOB]: { stubbedProviders: ['model'], laterOutputs: ['src/generated/acme'] }, model: { stubbedProviders: [], laterOutputs: [] } },
+    views: { [DOC_JOB]: { laterOutputs: ['src/generated/acme'] }, model: { laterOutputs: [] } },
   },
   {
     name: 'no doc job',
     protects: 'round 4: a project without a doc job still orders the golem SDK before the models job',
     blocks: MODEL + sdks('sdk', 'golem'),
     jobs: ['openapi:sdk', 'model'],
-    views: { model: { stubbedProviders: [], laterOutputs: [] } },
+    views: { model: { laterOutputs: [] } },
   },
   {
     name: 'a controller that imports a companion',
     protects: 'round 3: the doc job runs first and sees the companions of the models job as stubs, so it keeps its controllers',
     blocks: DOCS + MODEL,
     jobs: [DOC_JOB, 'model'],
-    views: { [DOC_JOB]: { stubbedProviders: ['model'], laterOutputs: [] }, model: { stubbedProviders: [], laterOutputs: [] } },
+    views: { [DOC_JOB]: { laterOutputs: [] }, model: { laterOutputs: [] } },
   },
   {
     name: 'a controller that imports a companion, models block listed first',
     protects: 'round 4: two program readers that do not read each other keep the config order',
     blocks: MODEL + DOCS,
     jobs: ['model', DOC_JOB],
-    views: { model: { stubbedProviders: [], laterOutputs: [DOC_FILE] }, [DOC_JOB]: { stubbedProviders: [], laterOutputs: [] } },
+    views: { model: { laterOutputs: [DOC_FILE] }, [DOC_JOB]: { laterOutputs: [] } },
   },
   {
     name: 'a golem SDK inside the app between the doc job and the models job',
     protects: 'round 1: the docs, SDK, models, docs cycle',
     blocks: MODEL + sdks('sdk', 'golem') + DOCS,
     jobs: [DOC_JOB, 'openapi:sdk', 'model'],
-    views: { [DOC_JOB]: { stubbedProviders: ['model'], laterOutputs: ['sdk'] }, model: { stubbedProviders: [], laterOutputs: [] } },
+    views: { [DOC_JOB]: { laterOutputs: ['sdk'] }, model: { laterOutputs: [] } },
   },
 ];
 
@@ -127,7 +127,7 @@ for (const layout of LAYOUTS) {
 
     assert.deepEqual(config.jobs.map((job) => job.id), layout.jobs, layout.protects);
     const views: Record<string, ProgramView> = {};
-    for (const [id, view] of Object.entries(layout.views)) views[id] = { stubbedProviders: view.stubbedProviders, laterOutputs: view.laterOutputs.map((output) => path.join(folder, output)) };
+    for (const [id, view] of Object.entries(layout.views)) views[id] = { laterOutputs: view.laterOutputs.map((output) => path.join(folder, output)) };
     assert.deepEqual(config.jobPlan.programViews, views, layout.protects);
   });
 }
