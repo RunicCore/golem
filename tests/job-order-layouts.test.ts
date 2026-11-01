@@ -3,8 +3,10 @@ import test, { type TestContext } from 'node:test';
 import fs from 'node:fs';
 import path from 'node:path';
 import { resolveConfig } from '#golem/config';
+import { runPipeline } from '#golem/cli';
 import type { ProgramView } from '#golem/job-facts';
 import { copyFixture, createFixtureProject } from './fixture-project.js';
+import { createControllerFixture } from './fixture-templates/controllers/project.js';
 import { workspace } from './support/process.js';
 
 const DOCS = `ts-openapi:
@@ -129,3 +131,17 @@ for (const layout of LAYOUTS) {
     assert.deepEqual(config.jobPlan.programViews, views, layout.protects);
   });
 }
+
+test('a doc job whose program view changes runs again, with its options and inputs as they were', async (t) => {
+  // protects: T-786 the job cache key holds the program view, so a golem SDK added after the doc job does not leave its document stale
+  const controller = "import { Controller, Get } from '@nestjs/common';\n@Controller('ping')\nexport class PingController {\n  @Get()\n  ping(): void {}\n}\n";
+  const folder = createControllerFixture(t, { prefix: 'golem-view-cache-', packageName: 'view-cache', sourceFile: 'src/ping.controller.ts', source: controller, files: { 'golem.yaml': `version: 1\n${DOCS + MODEL}` } });
+  const config = path.join(folder, 'golem.yaml');
+  assert.deepEqual([...(await runPipeline(config)).ran], [DOC_JOB, 'model']);
+  assert.deepEqual([...(await runPipeline(config)).ran], [], 'nothing changed, so every job is skipped');
+
+  fs.writeFileSync(config, `version: 1\n${DOCS + MODEL + sdks('sdk', 'golem')}`);
+  const second = await runPipeline(config);
+
+  assert.equal(second.ran.has(DOC_JOB), true);
+});

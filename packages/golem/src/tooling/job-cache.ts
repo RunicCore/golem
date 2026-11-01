@@ -21,6 +21,8 @@ export interface JobRecord {
   readonly providerCode: string;
   /** The digest of every extension on the job's hooks (`hookCode`); empty when none fills a hook of the job. */
   readonly hookCode: string;
+  /** Stable JSON of the program view the job received (`programView`): what it stubs and what later jobs write, which its options do not show. */
+  readonly programView: string;
   /** JSON of the job's resolved options. */
   readonly options: string;
   /** Every input, by the digest it had when the job read it: a file's content, the file listing of a directory under the golem.yaml's directory, `directory` for one outside it, `missing` for an absent path, `untracked` for a reported input the job never announced that is a directory or changed while the job ran. A reported file the job never announced, and unchanged during the run, has the digest it had when the job returned. */
@@ -62,6 +64,7 @@ function isJobRecord(value: unknown): value is JobRecord {
     && typeof value.golemCode === 'string'
     && typeof value.providerCode === 'string'
     && typeof value.hookCode === 'string'
+    && typeof value.programView === 'string'
     && typeof value.options === 'string'
     && strings(value.manifestInputs)
     && isRecord(value.inputs) && Object.values(value.inputs).every(digest => typeof digest === 'string')
@@ -104,6 +107,7 @@ export function saveJobRecords(config: GolemConfig, records: ReadonlyMap<string,
       golemCode: record.golemCode,
       providerCode: record.providerCode,
       hookCode: record.hookCode,
+      programView: record.programView,
       options: record.options,
       inputs: Object.fromEntries(Object.entries(record.inputs).sort(([left], [right]) => compareText(left, right))),
       manifestInputs: record.manifestInputs,
@@ -223,17 +227,24 @@ export function hookCode(filled: readonly { readonly hook: string; readonly exte
   return hashText(JSON.stringify(filled.map(({ hook, extension }) => [hook, extension.package, extension.name, stableJson(extension.options), codeOf(extension)])));
 }
 
-/** What the run supplies to a job besides its inputs: the digest of the code of the package that registers its block, the digest of its hook extensions (`hookCode`), and the manifests of the jobs before it (absolute paths). */
+/** What the run supplies to a job besides its inputs: the digest of the code of the package that registers its block, the digest of its hook extensions (`hookCode`), its program view (`programViewOf`), and the manifests of the jobs before it (absolute paths). */
 export interface JobSetup {
   readonly providerCode: string;
   readonly hookCode: string;
+  readonly programView: string;
   readonly manifestInputs: readonly string[];
 }
 
-/** Whether the provider code and the manifest set are those the record holds. */
+/** The program view of `job` as the record holds it: stable JSON, `null` when the job has none. */
+export function programViewOf(config: GolemConfig, job: GolemJob): string {
+  return stableJson(config.jobPlan.programViews[job.id] ?? null);
+}
+
+/** Whether the provider code, hook extensions, program view and manifest set are those the record holds. */
 export function sameSetup(config: GolemConfig, record: JobRecord, setup: JobSetup): boolean {
   return record.providerCode === setup.providerCode
     && record.hookCode === setup.hookCode
+    && record.programView === setup.programView
     && JSON.stringify(record.manifestInputs) === JSON.stringify(setup.manifestInputs.map(manifest => recordPath(config, manifest)));
 }
 
@@ -259,7 +270,7 @@ function outputIsRecorded(entry: InventoryEntry | undefined, filename: string): 
 }
 
 /**
- * Whether the job would produce what its record holds: the golem code, provider code, hook extensions, options and manifest set
+ * Whether the job would produce what its record holds: the golem code, provider code, hook extensions, program view, options and manifest set
  * match, every output still has the digest the inventory recorded for it and every input still has the digest it had when the job
  * read it. An output that is missing, edited or absent from the inventory, or a core record that is missing or edited, is not current: the job runs again and rewrites it. The
  * files the inventory records are left out of directory listings; `inventory` defaults to the one on disk.

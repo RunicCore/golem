@@ -8,7 +8,7 @@ import { digest, type Inventory } from '#golem/outputs';
 import type { EnabledExtension } from '#golem/rewrite-participant';
 import { createFixtureProject, linkGolemPackages } from './fixture-project.js';
 
-const SETUP: JobSetup = { providerCode: 'provider-code-digest', hookCode: 'hook-code-digest', manifestInputs: [] };
+const SETUP: JobSetup = { providerCode: 'provider-code-digest', hookCode: 'hook-code-digest', programView: '{"laterOutputs":[]}', manifestInputs: [] };
 
 /** The inventory of a job's files: each as it is on disk now. */
 function inventoryOf(root: string, files: readonly string[]): Inventory {
@@ -41,6 +41,7 @@ async function project(t: TestContext): Promise<{ root: string; record: JobRecor
     golemCode: golemCode(),
     providerCode: SETUP.providerCode ?? '',
     hookCode: SETUP.hookCode,
+    programView: SETUP.programView,
     options: JSON.stringify(job.options),
     inputs: {
       'api.yaml': inputDigest(path.join(root, 'api.yaml'), () => false, root),
@@ -76,6 +77,7 @@ test('a job is current while its golem code, provider code, options, outputs and
   assert.equal(jobIsCurrent(config, job, { ...record, golemCode: 'other-golem-code-digest' }, SETUP, inventory), false, 'other golem code');
   assert.equal(jobIsCurrent(config, job, { ...record, options: '{}' }, SETUP, inventory), false, 'other options');
   assert.equal(jobIsCurrent(config, job, record, { ...SETUP, hookCode: 'other-hook-code-digest' }, inventory), false, 'other extensions on the job\'s hooks');
+  assert.equal(jobIsCurrent(config, job, record, { ...SETUP, programView: '{"laterOutputs":["sdk"]}' }, inventory), false, 'another program view');
   assert.equal(jobIsCurrent(config, job, { ...record, outputs: ['sdk.ts', 'gone.ts'] }, SETUP, inventory), false, 'an output is gone');
   assert.equal(jobIsCurrent(config, job, record, SETUP, inventory), true);
   fs.appendFileSync(path.join(root, 'api.yaml'), '\n');
@@ -128,6 +130,7 @@ test('a directory outside the golem.yaml directory is recorded by existence, one
     golemCode: golemCode(),
     providerCode: SETUP.providerCode ?? '',
     hookCode: SETUP.hookCode,
+    programView: SETUP.programView,
     options: JSON.stringify(job.options),
     inputs: { ...inputs, [path.relative(root, outside)]: inputDigest(outside, () => false, root), src: inputDigest(path.join(root, 'src'), () => false, root) },
     manifestInputs: [],

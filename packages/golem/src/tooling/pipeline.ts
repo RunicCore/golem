@@ -6,7 +6,7 @@ import type { GolemConfig, GolemJob } from './config.js';
 import { codecKeysPath } from './generated-paths.js';
 import { coreRecordsOf, digest, loadInventory, applyJob, removeRetiredJobs } from './outputs.js';
 import type { FileChanges, Inventory, OutputFiles } from './outputs.js';
-import { absoluteRecordPath, golemCode, insideAny, inventoryPaths, JobInputs, hookCode, jobIsCurrent, loadJobRecords, recordPath, registrationCode, sameSetup, saveJobRecords } from './job-cache.js';
+import { absoluteRecordPath, golemCode, insideAny, inventoryPaths, JobInputs, hookCode, jobIsCurrent, loadJobRecords, programViewOf, recordPath, registrationCode, sameSetup, saveJobRecords } from './job-cache.js';
 import type { JobRecord } from './job-cache.js';
 import { GolemDiagnosticSeverity, displayPath, errorMessage, isInsideDirectory, isRecord, stableJson } from './generator-core.js';
 import { observedFolders, watchingJobs } from './job-facts.js';
@@ -514,7 +514,7 @@ async function planPipeline(filename: string, run: PipelineRun): Promise<{ reado
     for (const job of config.jobs) {
       const record = records.get(job.id);
       if (record && !readsAny(config, record, retired)
-        && jobIsCurrent(config, job, record, { providerCode: codeOf(job), hookCode: hookCodeOf(job), manifestInputs: expectedManifests }, inventory, options.ignoredDirectories ?? [])) current.add(job.id);
+        && jobIsCurrent(config, job, record, { providerCode: codeOf(job), hookCode: hookCodeOf(job), programView: programViewOf(config, job), manifestInputs: expectedManifests }, inventory, options.ignoredDirectories ?? [])) current.add(job.id);
       expectedManifests.push(...(record?.manifests ?? []).map(manifest => absoluteRecordPath(config, manifest)));
     }
   }
@@ -562,7 +562,7 @@ async function runJob(job: GolemJob, run: PipelineRun, plan: PipelinePlan, progr
     && previous
     && JSON.stringify(previousJob?.options) === JSON.stringify(job.options);
   const record = plan.records.get(job.id);
-  if (plan.jobCache && record && plan.current.has(job.id) && !readsAny(config, record, progress.ranOutputs) && sameSetup(config, record, { providerCode: plan.providerCode(job), hookCode: plan.hookCode(job), manifestInputs: progress.manifests })) {
+  if (plan.jobCache && record && plan.current.has(job.id) && !readsAny(config, record, progress.ranOutputs) && sameSetup(config, record, { providerCode: plan.providerCode(job), hookCode: plan.hookCode(job), programView: programViewOf(config, job), manifestInputs: progress.manifests })) {
     // Its inputs and outputs are as its record holds them: there is no result to reuse, and nothing to write.
     const outputs = [...record.outputs, ...Object.keys(record.records)].map(output => absoluteRecordPath(config, output));
     assertUnowned(progress.owned, outputs);
@@ -620,6 +620,7 @@ async function runJob(job: GolemJob, run: PipelineRun, plan: PipelinePlan, progr
     golemCode: golemCode(),
     providerCode: plan.providerCode(job),
     hookCode: plan.hookCode(job),
+    programView: programViewOf(config, job),
     options: JSON.stringify(job.options),
     manifestInputs: progress.manifests.map(manifest => recordPath(config, manifest)),
     inputs: read.finish(config, result.watchInputs, new Set([...previousOutputs, ...result.artifacts.map(artifact => artifact.path)])),
