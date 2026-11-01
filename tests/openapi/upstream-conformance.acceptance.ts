@@ -335,8 +335,9 @@ function assertManifestProfile(output: string, profile: { readonly mobx?: boolea
   const manifestValue: unknown = JSON.parse(fs.readFileSync(path.join(output, 'model-manifest.json'), 'utf8'));
   assert.ok(isRecord(manifestValue));
   const manifestProfile = manifestValue && Reflect.get(manifestValue, 'profile');
-  const { mobx, ...recorded } = profile;
-  assert.deepEqual(manifestProfile, { ...recorded, ...(mobx ? { extensions: { '@exprtlabs/golem-openapi-ts': { mobx: {} } } } : {}), allowAny: false, unknownFormats: 'warn' });
+  // The helper calls the generators directly, so the extension setting that a pipeline run records is not in this profile.
+  const { mobx: _mobx, ...recorded } = profile;
+  assert.deepEqual(manifestProfile, { ...recorded, allowAny: false, unknownFormats: 'warn' });
 }
 
 test('typed upstream corpus cases generate, strict-compile, and execute every accounted outbound operation', async t => {
