@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { createFixtureProject, linkProjectPackages, listProjectDependencies, writeGeneratedArtifacts, type FixtureScope } from '../../fixture-project.js';
+import { loadRewriteParticipants } from '#golem/rewrite-participant';
 import { workspace } from '../../support/process.js';
 
 export interface ControllerFixtureOptions {
@@ -14,8 +15,10 @@ export interface ControllerFixtureOptions {
   readonly links?: 'nest-declarations' | 'workspace' | 'none';
 }
 
-/** A project source that imports the module of `NestModelInterceptor`. It turns the NestJS side of the rewrite on, as the file that registers the interceptor does in an app. */
-export const NEST_INTERCEPTOR_SOURCE = "export { NestModelInterceptor } from '@exprtlabs/golem/nest';\n";
+/** The rewrite participant of the nest extension as core loads it for `extensions: { nest: { nonModelInputs } }`, for each `nonModelInputs` value: what a golem.yaml with that entry gives a scan. */
+export const NEST_PARTICIPANTS = Object.fromEntries(await Promise.all((['error', 'warn'] as const).map(async (nonModelInputs) => [nonModelInputs, await loadRewriteParticipants([{
+  package: '@exprtlabs/golem-ts-openapi', block: 'ts-openapi', name: 'nest', entry: path.join(workspace, 'packages/golem-ts-openapi/dist/nest/rewrite-participant.js'), options: { nonModelInputs },
+}])] as const))) as Record<'error' | 'warn', Awaited<ReturnType<typeof loadRewriteParticipants>>>;
 
 const defaultTsconfig = {
   compilerOptions: {

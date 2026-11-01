@@ -4,16 +4,15 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { runPipeline } from '#golem/cli';
+import { resolveConfig } from '#golem/config';
 import { applyRewrites } from '#golem/rewrite';
-import { loadRewriteParticipants } from '#golem/rewrite-participant';
 import { openRewriteProject } from '#golem/rewrite-host';
 import { scanProject, type ProgramScan } from '#golem/rewrite-scan';
 import { generate } from '#model/generator';
 import { readFixture, writeGeneratedArtifacts } from '../fixture-project.js';
-import { NEST_INTERCEPTOR_SOURCE, createControllerFixture } from '../fixture-templates/controllers/project.js';
+import { NEST_PARTICIPANTS, createControllerFixture } from '../fixture-templates/controllers/project.js';
 import { paymentModelSource } from '../fixture-templates/controllers/payment-model.js';
 import { defaultModelOutput } from '#golem/generated-paths';
-import { workspace } from '../support/process.js';
 
 const PLUGIN = 'controllers/nest-plugin';
 const FORMS = `${PLUGIN}/rewrite-covers-qualified-array-and-serde-forms`;
@@ -28,7 +27,7 @@ function project(t: TestContext, files: Readonly<Record<string, string>>): strin
   const root = createControllerFixture(t, {
     prefix: 'golem-rewrite-nest-',
     links: 'workspace',
-    files: { 'golem.yaml': 'version: 1\nmodel: {}\n', 'src/interceptor.ts': NEST_INTERCEPTOR_SOURCE, ...files },
+    files: { 'golem.yaml': 'version: 1\nts-openapi:\n  extensions:\n    nest: {}\nmodel: {}\n', ...files },
   });
   writeGeneratedArtifacts(generate({ root, profile: { mobx: false, validation: true } }).artifacts);
   return root;
@@ -44,13 +43,8 @@ function paymentsProject(t: TestContext, extra: Readonly<Record<string, string>>
 
 const notAModel = (decorator: string, type: string, mode: 'error' | 'warn' = 'error'): string => `${type} is not a golem model, and NestModelInterceptor answers HTTP 500 for a @${decorator}() parameter of that type. Declare the input as a golem model (IModel or IObject), or bind one field of a model type. ${mode === 'warn' ? 'Generation continues, because golem.yaml sets nonModelInputs: warn.' : 'An app with its own interceptor can set nonModelInputs: warn on the nest extension in golem.yaml.'}`;
 
-/** The participant of the nest extension, loaded once for each `nonModelInputs` value. */
-const NEST = Object.fromEntries(await Promise.all((['error', 'warn'] as const).map(async (nonModelInputs) => [nonModelInputs, await loadRewriteParticipants([{
-  package: '@exprtlabs/golem-ts-openapi', block: 'ts-openapi', name: 'nest', entry: path.join(workspace, 'packages/golem-ts-openapi/dist/nest/rewrite-participant.js'), options: { nonModelInputs },
-}])] as const))) as Record<'error' | 'warn', Awaited<ReturnType<typeof loadRewriteParticipants>>>;
-
-function scan(root: string, nonModelInputs: 'error' | 'warn' = 'error'): ProgramScan {
-  return scanProject({ root, participants: NEST[nonModelInputs], boundary: { root, directory: root, output: defaultModelOutput(root), suffixes: ['.model.ts', '.models.ts'] }, configFile: path.join(root, 'tsconfig.json'), codecKeysFile: path.join(root, '.golem/codec-keys.json') });
+function scan(root: string, nonModelInputs: 'error' | 'warn' = 'error', nest = true): ProgramScan {
+  return scanProject({ root, participants: nest ? NEST_PARTICIPANTS[nonModelInputs] : [], boundary: { root, directory: root, output: defaultModelOutput(root), suffixes: ['.model.ts', '.models.ts'] }, configFile: path.join(root, 'tsconfig.json'), codecKeysFile: path.join(root, '.golem/codec-keys.json') });
 }
 
 function rewritten(root: string, result: ProgramScan, relative: string): string {
@@ -132,10 +126,11 @@ test('with nest on, a model @Body() or @Query() parameter and a model return gai
   assert.equal(code.match(/__golem_nestModelCodec\(/g)?.length, 6);
 });
 
-test('a program that imports nothing from @exprtlabs/golem/nest gets no stamps and no RUNM1081', (t) => {
-  // protects: T-761 a plain Nest app without golem's interceptor gets neither the stamps nor the checks
-  const root = paymentsProject(t, { 'src/interceptor.ts': 'export {};\n', 'src/plain.controller.ts': "import { Body, Controller, Post } from '@nestjs/common';\ninterface Note { text: string }\n@Controller('notes')\nexport class PlainController {\n  @Post() create(@Body() note: Note): void {}\n}\n" });
-  const result = scan(root);
+test('a scan without the nest extension gets no stamps and no RUNM1081, even when a source imports the interceptor', (t) => {
+  // protects: R-93 the nest entry in golem.yaml is the only switch: the import of the interceptor does not turn the NestJS side on
+  // protects: T-761 a plain Nest app without the extension gets neither the stamps nor the checks
+  const root = paymentsProject(t, { 'src/interceptor.ts': "export { NestModelInterceptor } from '@exprtlabs/golem/nest';\n", 'src/plain.controller.ts': "import { Body, Controller, Post } from '@nestjs/common';\ninterface Note { text: string }\n@Controller('notes')\nexport class PlainController {\n  @Post() create(@Body() note: Note): void {}\n}\n" });
+  const result = scan(root, 'error', false);
   assert.deepEqual(result.diagnostics, []);
   assert.equal(result.files.get(CONTROLLER), undefined);
 });
@@ -419,22 +414,24 @@ test('a method that calls parse and carries nest decorators gets both rewrites a
   ]);
 });
 
-/** A project over the payments controller whose golem.yaml has the models job and, with `controllersJob`, a controllers (doc) job. The `interceptor` source imports golem's NestModelInterceptor. */
-function nestAppProject(t: TestContext, options: { readonly controllersJob: boolean; readonly interceptor: boolean }): string {
+/** The golem.yaml of a nest app: the models job, with `controllersJob` a docs job, and with `nest` the nest extension (`warn` sets its `nonModelInputs`). */
+function nestAppYaml(options: { readonly controllersJob: boolean; readonly nest: false | 'error' | 'warn' }): string {
+  const docs = ['  docs:', '    - sources:', `        - ${CONTROLLER}`, '      output: generated/api.json', '      info: { title: Test API, version: "1" }'];
+  const nest = ['  extensions:', ...(options.nest === 'warn' ? ['    nest:', '      nonModelInputs: warn'] : ['    nest: {}'])];
+  const block = [...(options.controllersJob ? docs : []), ...(options.nest ? nest : [])];
+  return ['version: 1', 'validation: true', ...(block.length ? ['ts-openapi:', ...block] : []), 'model: {}', ''].join('\n');
+}
+
+/** A project over the payments controller with the golem.yaml of `nestAppYaml`. */
+function nestAppProject(t: TestContext, options: { readonly controllersJob: boolean; readonly nest: false | 'error' | 'warn'; readonly interceptor?: boolean }): string {
   return createControllerFixture(t, {
     prefix: 'golem-rewrite-nest-pipeline-',
     links: 'workspace',
     files: {
       'src/payment.model.ts': readFixture(`${PLUGIN}/project/payment.model.ts`),
       [CONTROLLER]: readFixture(`${CONTROLLERS_JOB}/payments.controller.ts`),
-      ...(options.interceptor ? { 'src/interceptor.ts': NEST_INTERCEPTOR_SOURCE } : {}),
-      'golem.yaml': [
-        'version: 1',
-        'validation: true',
-        ...(options.controllersJob ? ['ts-openapi:', '  docs:', '    - sources:', `        - ${CONTROLLER}`, '      output: generated/api.json', '      info: { title: Test API, version: "1" }'] : []),
-        'model: {}',
-        '',
-      ].join('\n'),
+      ...(options.interceptor ? { 'src/interceptor.ts': "export { NestModelInterceptor } from '@exprtlabs/golem/nest';\n" } : {}),
+      'golem.yaml': nestAppYaml(options),
     },
   });
 }
@@ -450,15 +447,15 @@ const NOTE_CONTROLLER = [
 
 test('golem check stops on a body or query parameter that is no model, and nonModelInputs: warn reports it and continues', async (t) => {
   // protects: T-258 R-13 the user's choice: error by default, a golem.yaml setting makes it a warning
-  // protects: T-761 the checks run for a models job and the interceptor, with no controllers job in golem.yaml
-  const root = nestAppProject(t, { controllersJob: false, interceptor: true });
+  // protects: R-93 T-761 the checks run for a models job with the nest extension, with no docs job in golem.yaml
+  const root = nestAppProject(t, { controllersJob: false, nest: 'error' });
   const config = path.join(root, 'golem.yaml');
   const site = path.relative(process.cwd(), path.join(root, 'src/note.controller.ts'));
   await runPipeline(config);
   fs.writeFileSync(path.join(root, 'src/note.controller.ts'), NOTE_CONTROLLER);
   await assert.rejects(runPipeline(config, { check: true }), (error: Error) => error.message.includes(`RUNM1081 (${site}:5:32): ${notAModel('Body', 'Note')}`) && error.message.includes(`RUNM1081 (${site}:5:59): ${notAModel('Query', 'number')}`));
 
-  fs.writeFileSync(config, `nonModelInputs: warn\n${fs.readFileSync(config, 'utf8')}`);
+  fs.writeFileSync(config, nestAppYaml({ controllersJob: false, nest: 'warn' }));
   const written: string[] = [];
   t.mock.method(process.stderr, 'write', (chunk: string | Uint8Array) => { written.push(String(chunk)); return true; });
   await runPipeline(config, { check: true });
@@ -468,9 +465,9 @@ test('golem check stops on a body or query parameter that is no model, and nonMo
   ]);
 });
 
-test('golem check runs no NestJS checks for a controllers job when no source imports @exprtlabs/golem/nest', async (t) => {
-  // protects: T-761 R-92 the doc job is separate from the NestJS side: the doc job alone does not turn the checks on
-  const root = nestAppProject(t, { controllersJob: true, interceptor: false });
+test('golem check runs no NestJS checks for a docs job without the nest extension, also with the interceptor imported', async (t) => {
+  // protects: R-92 R-93 the doc job is separate from the NestJS side: neither the doc job nor the interceptor import turns the checks on
+  const root = nestAppProject(t, { controllersJob: true, nest: false, interceptor: true });
   const config = path.join(root, 'golem.yaml');
   await runPipeline(config);
   fs.writeFileSync(path.join(root, 'src/note.controller.ts'), NOTE_CONTROLLER);
@@ -628,4 +625,12 @@ test('the nest entry in a ts-openapi block with no docs job stamps a model @Body
   const on = await stamped('version: 1\nts-openapi:\n  extensions:\n    nest: {}\nmodel: {}\n');
   assert.match(on ?? '', /@Body\(\) @__golem_nestModelCodec\("TPaymentInput_[0-9a-f]{8}"\) input: TPaymentInput/);
   assert.equal(await stamped('version: 1\nmodel: {}\n'), undefined);
+});
+
+test('nonModelInputs on the nest extension must be warn or error', async (t) => {
+  // protects: R-93 a bad value of the extension setting stops loading, in the plan entry
+  const root = nestAppProject(t, { controllersJob: false, nest: 'error' });
+  const config = path.join(root, 'golem.yaml');
+  fs.writeFileSync(config, fs.readFileSync(config, 'utf8').replace('nest: {}', 'nest: { nonModelInputs: strict }'));
+  await assert.rejects(resolveConfig(config), /nonModelInputs must be "warn" or "error"/);
 });

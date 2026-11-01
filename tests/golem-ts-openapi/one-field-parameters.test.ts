@@ -8,7 +8,7 @@ import { pathToFileURL } from 'node:url';
 import { generate } from '#controllers/generator';
 import { runPipeline } from '#golem/cli';
 import { formatOpenApiProblems, validateOpenApiDocument } from '#openapi/openapi-validator';
-import { NEST_INTERCEPTOR_SOURCE, createControllerFixture } from '../fixture-templates/controllers/project.js';
+import { createControllerFixture } from '../fixture-templates/controllers/project.js';
 import { startNestApp } from '../support/nest-app.js';
 import { command, golem } from '../support/process.js';
 
@@ -204,7 +204,6 @@ test('the generated client sends a one-field body model and a one-field query mo
     links: 'workspace',
     tsconfig: { compilerOptions: { target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', strict: true, experimentalDecorators: true, emitDecoratorMetadata: true, skipLibCheck: true, outDir: 'build', rootDir: 'src', types: ['node'] }, include: ['src/**/*.ts'] },
     files: {
-      'src/interceptor.ts': NEST_INTERCEPTOR_SOURCE,
       'src/payment.model.ts': `${MODEL}export type TReceipt = IModel<{ amount: number }>;\n`,
       'src/a.controller.ts': `import { Body, Controller, Get, Post, Query } from '@nestjs/common';
 import type { TPayment, TFilter, TReceipt } from './payment.model.js';
@@ -215,7 +214,7 @@ export class AController {
   @Get() list(@Query('filter') filter: TFilter): TFilter { return filter; }
 }
 `,
-      'golem.yaml': 'version: 1\nvalidation: true\nts-openapi:\n  docs:\n    - sources:\n        - src/a.controller.ts\n      output: generated/api.json\n      info: { title: T, version: "1" }\nopenapi-ts:\n  sdks:\n    - input: generated/api.json\n      output: src/sdk\n      name: Api\nmodel: {}\n',
+      'golem.yaml': 'version: 1\nvalidation: true\nts-openapi:\n  docs:\n    - sources:\n        - src/a.controller.ts\n      output: generated/api.json\n      info: { title: T, version: "1" }\n  extensions:\n    nest: {}\nopenapi-ts:\n  sdks:\n    - input: generated/api.json\n      output: src/sdk\n      name: Api\nmodel: {}\n',
     },
   });
   const built = await command(root, process.execPath, [golem, 'build', '--config', path.join(root, 'golem.yaml')]);

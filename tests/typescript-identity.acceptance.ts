@@ -6,7 +6,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { generate as generateOpenApi } from '@exprtlabs/golem-openapi/generator';
 import { copyFixtureFile, createFixtureProject, fileFixtureScope, fixturePath, onceShared, readFixture, writeGeneratedArtifacts, type FixtureScope } from './fixture-project.js';
-import { NEST_INTERCEPTOR_SOURCE, createControllerFixture } from './fixture-templates/controllers/project.js';
+import { createControllerFixture } from './fixture-templates/controllers/project.js';
 import { resolveTypeScript } from '#golem/typescript-version';
 import { createModelProject } from './model-project.js';
 import { caseFolder, DIAGNOSTICS, EXPECTED_REJECTIONS, GENERATED, IDENTITY_CASES, isCompiled, shardOf, type IdentityCase, type IdentityProject } from './support/identity-corpus.js';
@@ -41,8 +41,7 @@ async function createProject(t: FixtureScope, item: IdentityCase, label: string)
   const slug = item.name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
   const prefix = `golem-identity-${label}-`;
   if (item.kind === 'controller') {
-    // The rewrite's NestJS side is on for a program that imports golem's interceptor module.
-    const files = { 'src/interceptor.ts': NEST_INTERCEPTOR_SOURCE, ...Object.fromEntries(item.files.map(file => [file.to, readFixture(file.from)])) };
+    const files = Object.fromEntries(item.files.map(file => [file.to, readFixture(file.from)]));
     return { name: item.name, kind: item.kind, mobx: item.mobx, root: createControllerFixture(t, { prefix, files }) };
   }
   if (item.kind === 'specifiers') {

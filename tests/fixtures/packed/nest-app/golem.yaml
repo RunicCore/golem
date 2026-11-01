@@ -6,6 +6,8 @@ ts-openapi:
         title: Packed Nest API
         version: '1'
       globalPrefix: api
+  extensions:
+    nest: {}
 openapi-ts:
   sdks:
     - input: ./api/openapi.yaml

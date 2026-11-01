@@ -7,6 +7,7 @@ import { scanProject } from '#golem/rewrite-scan';
 import { typescriptVersion } from '#golem/typescript-ns';
 import type { GolemDiagnostic } from '#golem/generator-api';
 import { writeGeneratedArtifacts } from '../fixture-project.js';
+import { NEST_PARTICIPANTS } from '../fixture-templates/controllers/project.js';
 import { editProjectSources } from './node-specifiers-project.js';
 import { caseFolder, DIAGNOSTICS, GENERATED, REWRITTEN, type IdentityProject } from './identity-corpus.js';
 import { defaultModelOutput } from '#golem/generated-paths';
@@ -52,6 +53,8 @@ function rewriteStage(item: IdentityProject, lines: string[]): ReadonlyMap<strin
       root: item.root,
       boundary: { root: item.root, directory: item.root, output: defaultModelOutput(item.root), suffixes: ['.model.ts', '.models.ts'] },
       configFile: path.join(item.root, 'tsconfig.json'),
+      // The NestJS side of the rewrite is what a controller case compares; extensions: nest in golem.yaml turns it on.
+      participants: item.kind === 'controller' ? NEST_PARTICIPANTS.error : [],
       codecKeysFile: path.join(item.root, '.golem/codec-keys.json'),
     });
     for (const diagnostic of scan.diagnostics) lines.push(describeDiagnostic('rewrite', diagnostic));

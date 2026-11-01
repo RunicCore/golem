@@ -91,7 +91,7 @@ test('a Nest controller builds with the design:paramtypes of a plain tsc emit of
     files: {
       'src/payment.model.ts': readFixture(`${nest}/payment.model.ts`),
       'src/payments.controller.ts': PAYMENTS_CONTROLLER,
-      'golem.yaml': 'version: 1\nmodel: {}\n',
+      'golem.yaml': 'version: 1\nts-openapi:\n  extensions:\n    nest: {}\nmodel: {}\n',
     },
   });
   assert.equal((await build(root, 'tsconfig.json', path.join(root, 'golem.yaml'))).exitCode, 0);
