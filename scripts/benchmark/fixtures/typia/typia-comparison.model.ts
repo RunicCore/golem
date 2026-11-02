@@ -1,4 +1,5 @@
 import type { IObject } from '@exprtlabs/golem/model';
+import type { Discriminator } from '@exprtlabs/golem/tags';
 
 // Validation against typia on one set of models: golem generates its validator from each IObject, typia from the same
 // type. Plain types only: no constraint tags, so both sides check types and structure. `Date` fields give decode and
@@ -37,10 +38,11 @@ export type TCompareNested = IObject<{
 
 export type TCompareUnion = IObject<{
   id: number;
-  shape:
+  shape: (
     | { kind: 'circle'; radius: number; at: Date }
     | { kind: 'rect'; width: number; height: number; at: Date }
-    | { kind: 'label'; text: string; at: Date };
+    | { kind: 'label'; text: string; at: Date }
+  ) & Discriminator<'kind'>;
 }>;
 
 export type TCompareItem = IObject<{

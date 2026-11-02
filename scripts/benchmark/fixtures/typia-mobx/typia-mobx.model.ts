@@ -1,4 +1,5 @@
 import type { IModel } from '@exprtlabs/golem/model';
+import type { Discriminator } from '@exprtlabs/golem/tags';
 import { asGenObservable } from '@exprtlabs/golem-openapi-ts/mobx';
 import {
   TMobxAddressBaseModel, TMobxArrayBaseModel, TMobxCircleBaseModel, TMobxFlatBaseModel, TMobxItemBaseModel,
@@ -69,7 +70,7 @@ export class MobxLabel extends TMobxLabelBaseModel {
 
 export type TMobxUnion = IModel<{
   id: number;
-  shape: MobxCircle | MobxRect | MobxLabel;
+  shape: (MobxCircle | MobxRect | MobxLabel) & Discriminator<'kind'>;
 }>;
 export class MobxUnion extends TMobxUnionBaseModel {
   public constructor(values: TMobxUnionInit) { super(values); asGenObservable(this); }
