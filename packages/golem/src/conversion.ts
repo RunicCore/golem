@@ -221,22 +221,19 @@ export function textNestsDeeperThan(text: string, maxDepth: number): boolean {
 }
 
 /**
- * The error of a failed conversion: a LibError stays as it is. Any other throw is the application's converter, wrapped
- * with the active path. A deserializer reads wire input, so its throw is bad input; a serializer writes the
- * application's own value, so its throw is not.
+ * The error of a failed conversion: a LibError stays as it is. Any other throw is the application's deserializer,
+ * wrapped with the active path. It reads wire input, so its throw is bad input. The generated code calls a serializer
+ * outside these scopes, so a serializer's throw reaches the caller as it is.
  */
-function itemFailure(direction: 'serialize' | 'deserialize', error: unknown): LibError {
+function itemFailure(error: unknown): LibError {
   if (error instanceof LibError) return error;
-  const kind = direction === 'serialize' ? LibErrorKind.Serialization : LibErrorKind.Deserialization;
-  const message = error instanceof Error && error.message
-    ? error.message
-    : `Field ${direction === 'serialize' ? 'serialization' : 'deserialization'} failed.`;
-  return conversionError(kind, message, activeConversionPath, error, direction === 'deserialize');
+  const message = error instanceof Error && error.message ? error.message : 'Field deserialization failed.';
+  return conversionError(LibErrorKind.Deserialization, message, activeConversionPath, error, true);
 }
 
 /** Generated synchronous conversion scope; no instance or result state is retained. A converter that throws fails as `itemFailure` says. */
 export function convertModelField<Arg, Value>(
-  direction: 'serialize' | 'deserialize',
+  direction: 'deserialize',
   field: string | number,
   convert: (arg: Arg) => Value,
   arg: Arg,
@@ -245,7 +242,7 @@ export function convertModelField<Arg, Value>(
   try {
     return convert(arg);
   } catch (error) {
-    throw itemFailure(direction, error);
+    throw itemFailure(error);
   } finally {
     activeConversionPath.pop();
   }
@@ -257,7 +254,7 @@ export function convertModelField<Arg, Value>(
  * for every item, so the call shape is fixed before the loop and no closure is made per item.
  */
 function convertEachItem<Value>(
-  direction: 'serialize' | 'deserialize',
+  direction: 'deserialize',
   convert: (item: unknown, index: number, items: readonly unknown[]) => Value,
   items: readonly unknown[],
   withPosition: boolean,
@@ -272,7 +269,7 @@ function convertEachItem<Value>(
       converted[index] = withPosition ? convert(items[index], index, items) : (convert as (item: unknown) => Value)(items[index]);
     }
   } catch (error) {
-    throw itemFailure(direction, error);
+    throw itemFailure(error);
   } finally {
     activeConversionPath.length = depth;
   }
@@ -284,7 +281,7 @@ function convertEachItem<Value>(
  * so a converter with an optional second parameter, such as `deserializeDate`, keeps its default path.
  */
 export function convertModelItems<Value>(
-  direction: 'serialize' | 'deserialize',
+  direction: 'deserialize',
   convert: (item: unknown) => Value,
   items: readonly unknown[],
 ): Value[] {
@@ -293,7 +290,7 @@ export function convertModelItems<Value>(
 
 /** Generated synchronous conversion of each tuple item, under its index in the error path. `convert` gets the item, its index and the array. */
 export function convertModelTupleItems<Value>(
-  direction: 'serialize' | 'deserialize',
+  direction: 'deserialize',
   convert: (item: unknown, index: number, items: readonly unknown[]) => Value,
   items: readonly unknown[],
 ): Value[] {
@@ -306,7 +303,7 @@ export function convertModelTupleItems<Value>(
  * runs under its key in the error path, as `convertModelField` does; without it, an error passes as it is.
  */
 function convertEachEntry(
-  direction: 'serialize' | 'deserialize' | undefined,
+  direction: 'deserialize' | undefined,
   convert: ((value: unknown) => unknown) | undefined,
   source: Record<string, unknown>,
 ): Record<string, unknown> {
@@ -319,7 +316,7 @@ function convertEachEntry(
       defineModelProperty(out, key, convert === undefined ? value : convert(value));
     }
   } catch (error) {
-    throw direction === undefined ? error : itemFailure(direction, error);
+    throw direction === undefined ? error : itemFailure(error);
   } finally {
     if (depth >= 0) activeConversionPath.length = depth;
   }
@@ -328,7 +325,7 @@ function convertEachEntry(
 
 /** Generated synchronous conversion of each value of a record under its key in the error path. `convert` gets the value only. */
 export function convertModelRecord(
-  direction: 'serialize' | 'deserialize',
+  direction: 'deserialize',
   convert: (value: unknown) => unknown,
   source: Record<string, unknown>,
 ): Record<string, unknown> {

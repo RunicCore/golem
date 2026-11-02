@@ -172,7 +172,7 @@ import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 | `Response` | `response` | A generated client receives a status or media type the operation does not declare. |
 
 - `ModelValidator.validate()` returns `false` for an invalid value. Checked serde calls and generated client checks throw `LibError` instead.
-- A `TSerde` function that throws is wrapped once with its `cause`.
+- A `Deserialize` function that throws becomes a `LibError` of kind `Deserialization` with the exception as its `cause`. A `Serialize` function that throws is not wrapped. Its exception reaches your code unchanged, in `stringify` and `toWireFormat`, at any depth.
 - A [`TValidation`](#tvalidation) predicate that throws, or returns neither a boolean nor a string, makes every checked call throw `LibError` of kind `Validation` with the message `Model validation could not finish.`, `causedByInput` set to `false` and the original error as `cause`. This covers `parse`, `stringify`, `toWireFormat`, `fromWireFormat`, `validate<T>`, `assertValue<T>`, `validateInstance` and `ModelValidator.validate`.
 - A thrown `LibError` passes through unchanged.
 
@@ -416,7 +416,8 @@ type TSerde<
 
 | Failure | Where | Result |
 | --- | --- | --- |
-| A function throws | `parse`, `stringify`, `fromWireFormat`, `toWireFormat` | `LibError` of kind `Serialization` (`Serialize`) or `Deserialization` (`Deserialize`). `cause` holds the exception, and the issue has source `serde`. `causedByInput` is `true` for a `Deserialize` function, because it reads wire input, and `false` for a `Serialize` function. A `LibError` that a function throws passes through. |
+| A `Deserialize` function throws | `parse`, `fromWireFormat` | `LibError` of kind `Deserialization`. `cause` holds the exception, the issue has source `serde`, and `causedByInput` is `true`, because the function reads wire input. A `LibError` that the function throws passes through. |
+| A `Serialize` function throws | `stringify`, `toWireFormat` | The exception reaches your code unchanged. It is not bad input, and the call does not wrap it. |
 | JSON or model value fails a check | the same calls | `LibError` of kind `Validation` with the issues. |
 | A function is not usable | generation | [RUNM1040](/reference/diagnostics#runm1040), [RUNM1042](/reference/diagnostics#runm1042), [RUNM1046](/reference/diagnostics#runm1046), [RUNM1047](/reference/diagnostics#runm1047) |
 | A type does not fit the pair | generation | [RUNM1049](/reference/diagnostics#runm1049) |

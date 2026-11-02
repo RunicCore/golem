@@ -462,7 +462,7 @@ export const isCode = (piece: Piece): piece is Code => 'parts' in piece;
 export function wrapRootConversion(
   helpers: Code[],
   helperName: (index: number) => string,
-  direction: 'serialize' | 'deserialize',
+  direction: 'deserialize',
   field: Code,
   input: Code,
   emit: (value: Code) => Code,

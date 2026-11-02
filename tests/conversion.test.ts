@@ -25,9 +25,9 @@ test('conversion scopes preserve LibError identity and restore paths after failu
     source: IssueSource.Custom, representation: IssueRepresentation.Wire,
   }]);
   assert.throws(() => convertModelField('deserialize', 'outer', (failure: LibError) => { throw failure; }, original), error => error === original);
-  assertConversionError(() => convertModelField('serialize', 'items', (value: unknown) =>
-    convertModelField('serialize', 2, serializeDate, value), 'invalid'),
-  LibErrorKind.Serialization, IssueRepresentation.Model, ['items', 2]);
+  assertConversionError(() => convertModelField('deserialize', 'items', (value: unknown) =>
+    convertModelField('deserialize', 2, deserializeDate, value), 'invalid'),
+  LibErrorKind.Deserialization, IssueRepresentation.Wire, ['items', 2]);
   for (const invalid of ['invalid', 1, null, {}]) {
     assertConversionError(() => convertModelField('deserialize', 'at', deserializeDate, invalid),
       LibErrorKind.Deserialization, IssueRepresentation.Wire, ['at']);
@@ -38,9 +38,9 @@ test('convertModelItems runs each item under its index and passes the item only'
   assert.deepEqual(convertModelItems('deserialize', deserializeDate, ['1970-01-01T00:00:00.000Z']), [new Date(0)]);
   assertConversionError(() => convertModelItems('deserialize', deserializeDate, ['1970-01-01T00:00:00.000Z', 'bad']),
     LibErrorKind.Deserialization, IssueRepresentation.Wire, [1]);
-  assertConversionError(() => convertModelField('serialize', 'dates', (value: unknown) =>
-    convertModelItems('serialize', serializeDate, value as unknown[]), [new Date(0), 'bad']),
-  LibErrorKind.Serialization, IssueRepresentation.Model, ['dates', 1]);
+  assertConversionError(() => convertModelField('deserialize', 'dates', (value: unknown) =>
+    convertModelItems('deserialize', deserializeDate, value as unknown[]), ['1970-01-01T00:00:00.000Z', 'bad']),
+  LibErrorKind.Deserialization, IssueRepresentation.Wire, ['dates', 1]);
 });
 
 test('convertModelTupleItems gives the item, its index and the array', () => {
@@ -79,24 +79,23 @@ test('the item loops send a LibError out as it is and keep holes', () => {
   assert.equal(converted.length, 3);
   assert.equal(0 in converted, false);
   assert.equal(converted[2], 'C');
-  assertConversionError(() => convertModelItems('serialize', () => { throw new Error('boom'); }, [1]),
-    LibErrorKind.Serialization, IssueRepresentation.Model, [0]);
-  assertConversionError(() => convertModelField('serialize', 'after', () => { throw new Error('boom'); }, 1),
-    LibErrorKind.Serialization, IssueRepresentation.Model, ['after']);
+  assertConversionError(() => convertModelItems('deserialize', () => { throw new Error('boom'); }, [1]),
+    LibErrorKind.Deserialization, IssueRepresentation.Wire, [0]);
+  assertConversionError(() => convertModelField('deserialize', 'after', () => { throw new Error('boom'); }, 1),
+    LibErrorKind.Deserialization, IssueRepresentation.Wire, ['after']);
 });
 
 const refuse = (): never => { throw new Error('refused'); };
-const converterScopes: readonly (readonly [string, IssuePath, (direction: 'serialize' | 'deserialize') => unknown])[] = [
-  ['field', ['at'], (direction) => convertModelField(direction, 'at', refuse, 1)],
-  ['array items', [0], (direction) => convertModelItems(direction, refuse, [1])],
-  ['tuple items', [0], (direction) => convertModelTupleItems(direction, refuse, [1])],
-  ['record values', ['a'], (direction) => convertModelRecord(direction, refuse, { a: 1 })],
+const converterScopes: readonly (readonly [string, IssuePath, () => unknown])[] = [
+  ['field', ['at'], () => convertModelField('deserialize', 'at', refuse, 1)],
+  ['array items', [0], () => convertModelItems('deserialize', refuse, [1])],
+  ['tuple items', [0], () => convertModelTupleItems('deserialize', refuse, [1])],
+  ['record values', ['a'], () => convertModelRecord('deserialize', refuse, { a: 1 })],
 ];
 for (const [scope, path, run] of converterScopes) {
-  test(`${scope}: a throwing application converter is bad input when it decodes wire input and not when it encodes`, () => {
-    // protects: R-70 T-660 a deserializer throw on wire input has causedByInput true; a serializer throw stays false
-    assert.equal(assertConversionError(() => run('deserialize'), LibErrorKind.Deserialization, IssueRepresentation.Wire, path).causedByInput, true);
-    assert.equal(assertConversionError(() => run('serialize'), LibErrorKind.Serialization, IssueRepresentation.Model, path).causedByInput, false);
+  test(`${scope}: a throwing application deserializer is bad input`, () => {
+    // protects: R-70 T-660 a deserializer throw on wire input has causedByInput true
+    assert.equal(assertConversionError(run, LibErrorKind.Deserialization, IssueRepresentation.Wire, path).causedByInput, true);
   });
 }
 

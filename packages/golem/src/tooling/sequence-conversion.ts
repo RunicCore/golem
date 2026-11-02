@@ -25,7 +25,7 @@ export interface SequenceItems {
   /** 'value': a new array of converted values. 'json': JSON text. */
   readonly output: 'value' | 'json';
   /** The error kind for the path of an item that throws. Absent: no paths. */
-  readonly paths?: 'serialize' | 'deserialize';
+  readonly paths?: 'deserialize';
   /** The conversion of one item, written against `value`. */
   readonly item: (descriptor: ModelTypeDescriptor, value: Code) => SequenceItem;
 }
