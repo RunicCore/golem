@@ -637,6 +637,20 @@ function allOfMemberTypes(item: unknown, requirements: AllOfRequirements, contex
   return [schemaTypeNode(member, context)];
 }
 
+/**
+ * The values that `const` or `enum` lists and the `type` of the schema admits; `undefined` when the schema has neither keyword.
+ * `const` decides over `enum`. `integer` admits a whole number and `number` any number, so 1 and 1.0 are one value. The one rule
+ * for the generated type and for the model: a schema left with no value accepts none.
+ */
+export function typedListedValues(schema: { readonly const?: unknown; readonly enum?: unknown; readonly type?: unknown }): readonly unknown[] | undefined {
+  const values = Array.isArray(schema.enum) ? schema.enum : undefined;
+  if (!values) return undefined;
+  const types = effectiveSchemaTypes(schema);
+  if (types.length === 0) return values;
+  const kindOf = (value: unknown): string => value === null ? 'null' : Array.isArray(value) ? 'array' : typeof value === 'number' && Number.isInteger(value) ? 'integer' : typeof value;
+  return values.filter((value) => types.includes(kindOf(value)) || (typeof value === 'number' && types.includes('number')));
+}
+
 function schemaTypeNode(rawSchema: unknown, context: SchemaTypeContext = {}): TypeCode {
   if (rawSchema === true) return UNKNOWN_TYPE;
   if (rawSchema === false) return NEVER_TYPE;
@@ -667,8 +681,9 @@ function schemaTypeNode(rawSchema: unknown, context: SchemaTypeContext = {}): Ty
   }
   if (schema.not === true) return NEVER_TYPE;
   if (schema.const !== undefined) return typeCode(literal(schema.const as JsonValue));
-  if (Array.isArray(schema.enum)) {
-    if (schema.enum.length === 0) return NEVER_TYPE;
+  const listed = typedListedValues(schema);
+  if (listed) {
+    if (listed.length === 0) return NEVER_TYPE;
     const excluded = isJsonObject(schema.not)
       ? new Set(
         schema.not.const !== undefined
@@ -678,7 +693,7 @@ function schemaTypeNode(rawSchema: unknown, context: SchemaTypeContext = {}): Ty
             : [],
       )
       : new Set<string>();
-    const values = schema.enum.filter((value) => !excluded.has(JSON.stringify(value)));
+    const values = listed.filter((value) => !excluded.has(JSON.stringify(value)));
     return unionType(values.map((value) => typeCode(literal(value as JsonValue)))) ?? NEVER_TYPE;
   }
   const types = effectiveSchemaTypes(schema);

@@ -21,7 +21,7 @@ import {
   unionVariants,
 } from './composition.js';
 import { effectiveSchemaTypes } from './normalize.js';
-import { schemaContext, dateClassOf, type NeverPropertiesOf } from './types.js';
+import { schemaContext, dateClassOf, typedListedValues, type NeverPropertiesOf } from './types.js';
 import {
   collectCanonicalResources,
   nextSchemaBase,
@@ -441,9 +441,9 @@ function isSequenceDescriptor(descriptor: ModelTypeDescriptor): boolean {
   return descriptor.kind === 'array' || descriptor.kind === 'tuple';
 }
 
-/** A schema that no value satisfies: `false`, `not: true`, or an empty `enum`. */
+/** A schema that no value satisfies: `false`, `not: true`, or an `enum` or `const` that is empty or that its `type` empties. */
 function acceptsNoValue(schema: unknown): boolean {
-  return schema === false || (isJsonObject(schema) && (schema.not === true || (Array.isArray(schema.enum) && schema.enum.length === 0)));
+  return schema === false || (isJsonObject(schema) && (schema.not === true || typedListedValues(schema)?.length === 0));
 }
 
 /**
@@ -451,14 +451,11 @@ function acceptsNoValue(schema: unknown): boolean {
  * A list of scalars is a literal union without the values that the declared `type` excludes. A list with an object or an array has no literal form: the keyword constraints carry it as an `enum` constraint.
  */
 function openApiEnumDescriptor(schema: { readonly enum?: unknown; readonly type?: unknown }): ModelTypeDescriptor | undefined {
-  const values = schema.enum;
-  if (!Array.isArray(values)) return undefined;
-  if (values.some((value) => value !== null && typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean')) return undefined;
-  const types = effectiveSchemaTypes(schema);
-  const admitted = (value: unknown): boolean => types.length === 0
-    || types.includes(value === null ? 'null' : typeof value === 'number' && Number.isInteger(value) ? 'integer' : typeof value)
-    || (typeof value === 'number' && types.includes('number'));
-  const variants = values.filter(admitted).map((value): ModelTypeDescriptor => value === null ? { kind: 'null' } : { kind: 'literal', value });
+  const values = typedListedValues(schema);
+  if (!values) return undefined;
+  const listed = schema.enum as readonly unknown[];
+  if (listed.some((value) => value !== null && typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean')) return undefined;
+  const variants = values.map((value): ModelTypeDescriptor => value === null ? { kind: 'null' } : { kind: 'literal', value: value as string | number | boolean });
   if (variants.length === 0) return { kind: 'never' };
   return variants.length === 1 ? variants[0]! : { kind: 'union', variants };
 }
@@ -773,7 +770,7 @@ export function modelConversionDescriptor(
       : [];
     const empty = objectEntries(schema.properties).filter(([name, child]) => required.includes(name) && acceptsNoValue(child)).map(([name]) => name);
     if (empty.length > 0) {
-      throw new CompositionError(COMPOSITION_UNSATISFIABLE, `No object satisfies this schema: the required ${empty.length > 1 ? 'properties' : 'property'} ${empty.map((name) => JSON.stringify(name)).join(', ')} accept${empty.length > 1 ? '' : 's'} no value, because the schema is an empty enum, \`not: true\` or \`false\`. Remove ${empty.length > 1 ? 'them' : 'it'} from required, or give ${empty.length > 1 ? 'them' : 'it'} a schema that accepts a value.`);
+      throw new CompositionError(COMPOSITION_UNSATISFIABLE, `No object satisfies this schema: the required ${empty.length > 1 ? 'properties' : 'property'} ${empty.map((name) => JSON.stringify(name)).join(', ')} accept${empty.length > 1 ? '' : 's'} no value, because the schema is an empty enum, an enum or const that its type excludes, \`not: true\` or \`false\`. Remove ${empty.length > 1 ? 'them' : 'it'} from required, or give ${empty.length > 1 ? 'them' : 'it'} a schema that accepts a value.`);
     }
     // Beside `properties` alone, `unevaluatedProperties` judges the names that `properties` does not list, as `additionalProperties` does.
     const { unevaluatedProperties: _held, ...own } = schema;

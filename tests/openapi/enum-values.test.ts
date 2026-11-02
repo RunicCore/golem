@@ -1,5 +1,6 @@
 import { createFixtureProject } from '../fixture-project.js';
 import assert from 'node:assert/strict';
+import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
@@ -125,4 +126,35 @@ test('a scalar enum keeps the keywords beside it and drops a listed value that i
   for (const [field, value] of [['count', 1], ['word', 1], ['short', 'bb'], ['code', 'b'], ['whole', 1.5], ['free', 1]] as const) {
     assert.equal(await requestAccepts(shelf, { ...body, [field]: value }), false, `${field} = ${String(value)}`);
   }
+});
+
+for (const [label, schema] of [
+  ['an enum that its type empties', { type: 'string', enum: [1, 2] }],
+] as const) {
+  test(`a required property whose schema is ${label} stops generation as unsatisfiable`, async t => {
+    // protects: T-667 an enum keeps only the values that type admits; a required property left with none stops generation (T-644 rule)
+    const output = path.join(createFixtureProject(t, 'golem-openapi-enum-type-empty-'), 'sdk');
+    await assert.rejects(
+      generateMaterializedSdk(shelfDocument({ none: schema, name: { type: 'string' } }), { output, name: 'Shelves', profile: { validation: true } }),
+      /schema "Shelf" at #\/components\/schemas\/Shelf[^:]*: OPENAPI_COMPOSITION_UNSATISFIABLE: No object satisfies this schema: the required property "none" accepts no value/,
+    );
+  });
+}
+
+test('an enum keeps the type beside it, in the model and in the generated type', async t => {
+  // protects: T-667 the generated type lists only the enum values that type admits
+  const output = path.join(createFixtureProject(t, 'golem-openapi-const-keywords-'), 'sdk');
+  await generateMaterializedSdk(shelfDocument({
+    word: { type: 'string', enum: ['a', 1] },
+  }, ['word']), { output, name: 'Shelves', profile: { validation: true } });
+  compileGeneratedSdk(output, [], { strict: true });
+  const shelf = await sdkBodyCodec(output, 'Shelves', 'Shelf');
+  const body = { word: 'a' };
+  assert.equal(await requestAccepts(shelf, body), true);
+  for (const [field, value] of [['word', 1]] as const) {
+    assert.equal(await requestAccepts(shelf, { ...body, [field]: value }), false, `${field} = ${JSON.stringify(value)}`);
+  }
+  const source = readdirSync(output, { recursive: true, encoding: 'utf8' }).filter(file => file.endsWith('.ts') && !file.endsWith('.d.ts') && !file.includes('node_modules'))
+    .map(file => readFileSync(path.join(output, file), 'utf8')).join('\n');
+  assert.match(source, /word: "a";/);
 });
