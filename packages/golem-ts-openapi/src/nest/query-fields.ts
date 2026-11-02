@@ -28,6 +28,8 @@ interface FieldShape {
   readonly types: Set<string>;
   readonly literals: unknown[];
   item?: FieldShape;
+  /** The shape of each position a tuple lists (`prefixItems`); `item` holds the entries after them. */
+  prefix?: FieldShape[];
 }
 
 const SCALARS: readonly QueryScalar[] = ['string', 'number', 'integer', 'boolean'];
@@ -76,9 +78,13 @@ function collectShape(schema: unknown, shape: FieldShape, scope: Scope): void {
   if ('const' in record) shape.literals.push(record.const);
   if (Array.isArray(record.enum)) shape.literals.push(...record.enum);
   // An `items` keyword stands for an array also when the schema names no type.
-  if (types.includes('array') || record.items !== undefined) {
+  if (types.includes('array') || record.items !== undefined || record.prefixItems !== undefined) {
     shape.item ??= newShape();
     collectShape(record.items, shape.item, scope);
+  }
+  if (Array.isArray(record.prefixItems)) {
+    const prefix = shape.prefix ??= [];
+    record.prefixItems.forEach((position, index) => collectShape(position, prefix[index] ??= newShape(), scope));
   }
   for (const keyword of ['allOf', 'anyOf', 'oneOf'] as const) {
     const branches = record[keyword];
@@ -131,7 +137,7 @@ function decodesField(shape: FieldShape): boolean {
   if (decodesScalar(shape)) return true;
   if (!shape.item) return false;
   // A single string becomes a one-item array unless the field also admits a string.
-  return !shape.types.has('string') || decodesScalar(shape.item);
+  return !shape.types.has('string') || decodesScalar(shape.item) || (shape.prefix?.some(decodesScalar) ?? false);
 }
 
 function tableShape(shape: FieldShape): QueryFieldShape {
@@ -144,6 +150,7 @@ function tableShape(shape: FieldShape): QueryFieldShape {
     types,
     ...(literals.length > 0 ? { literals } : {}),
     ...(shape.item ? { item: tableShape(shape.item) } : {}),
+    ...(shape.prefix ? { prefix: shape.prefix.map(tableShape) } : {}),
   };
 }
 

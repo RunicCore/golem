@@ -1,10 +1,14 @@
 /** The rule that turns a query string value into the scalar or array a field declares. A value that does not fit stays text, so the validator reports it. */
 
-/** What a query string can carry for one field: the scalar types it admits, its literals, and the shape of an array item. */
+/**
+ * What a query string can carry for one field: the scalar types it admits, its literals, and the shape of an array item.
+ * A tuple adds `prefix`, the shape of each listed position; `item` is then the rest rule for the entries after them.
+ */
 export interface QueryFieldShape {
   readonly types: readonly ('string' | 'number' | 'integer' | 'boolean')[];
   readonly literals?: readonly (string | number | boolean)[];
   readonly item?: QueryFieldShape;
+  readonly prefix?: readonly QueryFieldShape[];
 }
 
 /** The fields of a model that a query string decodes, by name. */
@@ -28,9 +32,10 @@ function decodeQueryScalar(text: string, shape: QueryFieldShape): unknown {
   return NOT_DECODED;
 }
 
-function decodeQueryItems(values: readonly unknown[], item: QueryFieldShape): unknown[] {
-  return values.map((entry) => {
-    if (typeof entry !== 'string') return entry;
+function decodeQueryItems(values: readonly unknown[], shape: QueryFieldShape): unknown[] {
+  return values.map((entry, index) => {
+    const item = shape.prefix?.[index] ?? shape.item;
+    if (typeof entry !== 'string' || !item) return entry;
     const decoded = decodeQueryScalar(entry, item);
     return decoded === NOT_DECODED ? entry : decoded;
   });
@@ -38,10 +43,10 @@ function decodeQueryItems(values: readonly unknown[], item: QueryFieldShape): un
 
 /** The field value decoded to what `shape` declares; text that does not fit stays as it is. */
 export function decodeQueryField(value: unknown, shape: QueryFieldShape): unknown {
-  if (Array.isArray(value)) return shape.item ? decodeQueryItems(value, shape.item) : value;
+  if (Array.isArray(value)) return shape.item || shape.prefix ? decodeQueryItems(value, shape) : value;
   if (typeof value !== 'string') return value;
   const decoded = decodeQueryScalar(value, shape);
   if (decoded !== NOT_DECODED) return decoded;
   // A single occurrence of a repeatable key arrives as a string.
-  return shape.item ? decodeQueryItems([value], shape.item) : value;
+  return shape.item || shape.prefix ? decodeQueryItems([value], shape) : value;
 }

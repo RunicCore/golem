@@ -126,6 +126,26 @@ test('a model with only string fields has no query fields', () => {
   assert.equal(table({ type: 'object', properties: { name: { type: 'string' }, either: { type: ['string', 'array'], items: { type: 'string' } } } }), undefined);
 });
 
+// protects: T-823 a query tuple decoded every position by the item types merged over all positions
+test('NestModelInterceptor decodes each position of a query tuple by its own type', async () => {
+  const fields = table({
+    type: 'object',
+    properties: {
+      pair: { type: 'array', minItems: 2, prefixItems: [{ type: 'integer' }, { type: 'string' }], items: false, maxItems: 2 },
+      mixed: { type: 'array', minItems: 1, prefixItems: [{ type: 'integer' }], items: { type: 'boolean' } },
+    },
+  });
+  assert.deepEqual(fields, {
+    mixed: { types: [], item: { types: ['boolean'] }, prefix: [{ types: ['integer'] }] },
+    pair: { types: [], item: { types: [] }, prefix: [{ types: ['integer'] }, { types: ['string'] }] },
+  });
+  registerPassThroughCodec('QueryTuple_0', { data: { nest: fields } });
+  assert.deepEqual(
+    await queryReceived('QueryTuple_0', 'pair=1&pair=2&pair=3&mixed=1&mixed=true&mixed=false&mixed=x'),
+    { pair: [1, '2', '3'], mixed: [1, true, false, 'x'] },
+  );
+});
+
 test('NestModelInterceptor decodes a whole @Query() model with the fields of its codec', async () => {
   // protects: T-640 the interceptor decodes a query string by the nest data of the registered codec, not by a schema
   registerPassThroughCodec('QueryRoot_0', { data: { nest: BASE_FIELDS } });
