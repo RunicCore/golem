@@ -79,6 +79,95 @@ export function jsonEqual(left: unknown, right: unknown): boolean {
   return count === 0;
 }
 
+/**
+ * The pair `[first, second]` that a double loop over `jsonEqual` finds in `list`: the lowest index that has a later equal
+ * item, and the lowest later index equal to it; `undefined` when all items differ. One pass, linear in the size of the
+ * items. A primitive is its own key in a `Map`, so `0` and `-0` meet and `1` and `'1'` do not; `NaN` equals nothing. An
+ * object, array or date is keyed by `structuralKey`, a text that two items share exactly when `jsonEqual` says they are equal.
+ * No hash is used: a hash lets a crafted list collide and fall back to the quadratic search.
+ */
+export function duplicateItems(list: readonly unknown[]): readonly [first: number, second: number] | undefined {
+  // Primitives, and objects that equal only themselves, by identity.
+  const firstOf = new Map<unknown, number>();
+  let structured: Map<string, number> | undefined;
+  let identities: Map<unknown, number> | undefined;
+  let first = -1;
+  let second = -1;
+  for (let index = 0; index < list.length; index++) {
+    // The JSON view of an `undefined` item is `null`.
+    const item = list[index] ?? null;
+    let earlier: number | undefined;
+    const key = typeof item === 'object' && item !== null ? structuralKey(item, (identities ??= new Map())) : undefined;
+    if (key === undefined) {
+      if (item !== item) continue;
+      earlier = firstOf.get(item);
+      if (earlier === undefined) firstOf.set(item, index);
+    } else {
+      earlier = (structured ??= new Map()).get(key);
+      if (earlier === undefined) structured.set(key, index);
+    }
+    // The pair of the lowest first index wins; for one first index the first later match comes first.
+    if (earlier !== undefined && (first < 0 || earlier < first)) {
+      first = earlier;
+      second = index;
+    }
+  }
+  return first < 0 ? undefined : [first, second];
+}
+
+/**
+ * The text of `value` that equals the text of another value exactly when `jsonEqual` says the two are equal, or `undefined`
+ * when `value` equals only itself (it holds a `NaN` or an invalid date, which `jsonEqual` accepts only as the same object).
+ * A member that equals only itself, such as a function, a symbol or such an inner object, is written as the number of its
+ * identity. Strings and key names carry their length, so no text can forge the structure around it.
+ */
+function structuralKey(value: object, identities: Map<unknown, number>): string | undefined {
+  if (value instanceof Date) {
+    const time = value.getTime();
+    return time === time ? `d${time}` : undefined;
+  }
+  let key: string;
+  if (Array.isArray(value)) {
+    key = '[';
+    for (let index = 0; index < value.length; index++) {
+      const member = memberKey(value[index] ?? null, identities);
+      if (member === undefined) return undefined;
+      key += `${member},`;
+    }
+    return `${key}]`;
+  }
+  key = '{';
+  for (const name of Object.keys(value).sort()) {
+    const present = presentValue(value, name);
+    if (present === undefined) continue;
+    const member = memberKey(present, identities);
+    if (member === undefined) return undefined;
+    key += `${name.length}:${name}=${member},`;
+  }
+  return `${key}}`;
+}
+
+function memberKey(member: unknown, identities: Map<unknown, number>): string | undefined {
+  switch (typeof member) {
+    case 'string': return `s${member.length}:${member}`;
+    case 'number': return member === member ? `n${member}` : undefined;
+    case 'boolean': return member ? 't' : 'f';
+    case 'bigint': return `b${member}`;
+    case 'object': return member === null ? 'z' : structuralKey(member, identities) ?? identityKey(member, identities);
+    default: return identityKey(member, identities);
+  }
+}
+
+/** A function, a symbol or an object that equals only itself, as the number of its identity. */
+function identityKey(member: unknown, identities: Map<unknown, number>): string {
+  let id = identities.get(member);
+  if (id === undefined) {
+    id = identities.size;
+    identities.set(member, id);
+  }
+  return `@${id}`;
+}
+
 const DIGIT = '[0-9]';
 const DURATION_TIME = `T(?:${DIGIT}+H(?:${DIGIT}+M(?:${DIGIT}+S)?)?|${DIGIT}+M(?:${DIGIT}+S)?|${DIGIT}+S)`;
 const DURATION_DATE = `(?:${DIGIT}+Y(?:${DIGIT}+M(?:${DIGIT}+D)?)?|${DIGIT}+M(?:${DIGIT}+D)?|${DIGIT}+D)(?:${DURATION_TIME})?`;
