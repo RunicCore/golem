@@ -643,7 +643,7 @@ function allOfMemberTypes(item: unknown, requirements: AllOfRequirements, contex
  * for the generated type and for the model: a schema left with no value accepts none.
  */
 export function typedListedValues(schema: { readonly const?: unknown; readonly enum?: unknown; readonly type?: unknown }): readonly unknown[] | undefined {
-  const values = Array.isArray(schema.enum) ? schema.enum : undefined;
+  const values = schema.const !== undefined ? [schema.const] : Array.isArray(schema.enum) ? schema.enum : undefined;
   if (!values) return undefined;
   const types = effectiveSchemaTypes(schema);
   if (types.length === 0) return values;
@@ -680,7 +680,6 @@ function schemaTypeNode(rawSchema: unknown, context: SchemaTypeContext = {}): Ty
     return referencedSchemaType(schema.$dynamicRef, inner);
   }
   if (schema.not === true) return NEVER_TYPE;
-  if (schema.const !== undefined) return typeCode(literal(schema.const as JsonValue));
   const listed = typedListedValues(schema);
   if (listed) {
     if (listed.length === 0) return NEVER_TYPE;

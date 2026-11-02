@@ -78,6 +78,7 @@ Golem 1.1.0 is a breaking release with a 1.x number. It supports TypeScript 6.0+
 - An `openapi` job takes `mode: standalone | golem`. A standalone SDK (the default) runs alone with a bundled copy of the runtime. A golem mode SDK leaves checks and conversions to the `models` job ([SDK modes](/reference/config#sdk-modes)).
 - **Breaking:** the `mobx` extension on a standalone SDK stops generation with `OPENAPI_MOBX_NEEDS_GOLEM_MODE`. Set `mode: golem` ([OpenAPI](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#openapi)).
 - The generated client takes a `validate` option for each client and each call, with a level for requests and responses apart ([Lower the checks](/guide/client-usage#lower-the-checks)).
+- An OpenAPI `enum` or `const` keeps only the values that its `type` admits, and a `const` keeps the keywords beside it. A required property that its `type` leaves with no value stops generation with `OPENAPI_COMPOSITION_UNSATISFIABLE` ([Diagnostics](/reference/diagnostics#openapi-composition-unsatisfiable)).
 
 Move an SDK to 1.1 with this table, then generate again:
 

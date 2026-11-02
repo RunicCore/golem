@@ -447,13 +447,13 @@ function acceptsNoValue(schema: unknown): boolean {
 }
 
 /**
- * `enum` limits a value to its listed values, with or without `type` (JSON Schema 2020-12 section 6.1.2). An empty list admits no value.
+ * `enum` and `const` limit a value to the listed values, with or without `type` (JSON Schema 2020-12 sections 6.1.2 and 6.1.3). An empty list admits no value.
  * A list of scalars is a literal union without the values that the declared `type` excludes. A list with an object or an array has no literal form: the keyword constraints carry it as an `enum` constraint.
  */
-function openApiEnumDescriptor(schema: { readonly enum?: unknown; readonly type?: unknown }): ModelTypeDescriptor | undefined {
+function openApiEnumDescriptor(schema: { readonly const?: unknown; readonly enum?: unknown; readonly type?: unknown }): ModelTypeDescriptor | undefined {
   const values = typedListedValues(schema);
   if (!values) return undefined;
-  const listed = schema.enum as readonly unknown[];
+  const listed = schema.const !== undefined ? [schema.const] : (schema.enum as readonly unknown[]);
   if (listed.some((value) => value !== null && typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean')) return undefined;
   const variants = values.map((value): ModelTypeDescriptor => value === null ? { kind: 'null' } : { kind: 'literal', value: value as string | number | boolean });
   if (variants.length === 0) return { kind: 'never' };
@@ -788,13 +788,13 @@ export function modelConversionDescriptor(
     }, own, sub, 'typed');
     return withOpenApiWholeValue(admitsNull(schema) ? { kind: 'union', variants: [object, { kind: 'null' }] } : object, schema, sub);
   }
-  if (isJsonObject(schema) && schema.const !== undefined
-    && (typeof schema.const === 'string' || typeof schema.const === 'number' || typeof schema.const === 'boolean')) {
-    return { kind: 'literal', value: schema.const };
-  }
   if (isJsonObject(schema)) {
     const listed = openApiEnumDescriptor(schema);
-    if (listed) return withOpenApiConstraints(listed, schema, sub);
+    if (listed) {
+      // A scalar `const` is held by the literal; the keyword constraints must not list it again.
+      const { const: _held, ...keywords } = schema;
+      return withOpenApiConstraints(listed, keywords, sub);
+    }
   }
   if (isJsonObject(schema)) {
     const primitive = openApiPrimitiveDescriptor(schema);
