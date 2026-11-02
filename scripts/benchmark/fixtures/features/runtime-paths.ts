@@ -4,13 +4,13 @@ import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { registerIModelClass, requireObjectCodec } from '@exprtlabs/golem/internal/model-runtime';
 import { codecIdOf } from './codec-id.js';
 import type { ComparisonFixture } from './fixture-contract.js';
-import { TemporalFields, TreeNode, UniqueLists } from './runtime-paths.model.js';
+import { TemporalFields, TreeNode, UniqueObjects, UniqueStrings } from './runtime-paths.model.js';
 
-for (const [name, model] of [['TTemporalFields', TemporalFields], ['TTreeNode', TreeNode], ['TUniqueLists', UniqueLists]] as const) {
+for (const [name, model] of [['TTemporalFields', TemporalFields], ['TTreeNode', TreeNode], ['TUniqueStrings', UniqueStrings], ['TUniqueObjects', UniqueObjects]] as const) {
   registerIModelClass(codecIdOf(name), model);
 }
 
-export type RuntimePathName = 'temporal' | 'recursive' | 'unique-items';
+export type RuntimePathName = 'temporal' | 'recursive' | 'unique-strings' | 'unique-objects';
 
 const TREE_BREADTH = [5, 4, 4] as const;
 const UNIQUE_NAMES = 1000;
@@ -39,13 +39,11 @@ function treeWire(): TreeWire {
 
 const nodesOf = (tree: { children: unknown[] }): number => 1 + (tree.children as { children: unknown[] }[]).reduce((sum, child) => sum + nodesOf(child), 0);
 
-/** Distinct strings, and distinct objects that share their keys, so a `jsonEqual` walk compares object with object. */
-function uniqueWire() {
-  return {
-    names: Array.from({ length: UNIQUE_NAMES }, (_, index) => `name ${index}`),
-    points: Array.from({ length: UNIQUE_POINTS }, (_, index) => ({ x: index, y: index * 2, label: `point ${index}` })),
-  };
-}
+/** 1,000 distinct strings. */
+const stringsWire = () => ({ names: Array.from({ length: UNIQUE_NAMES }, (_, index) => `name ${index}`) });
+
+/** 100 distinct objects that share their keys, so a `jsonEqual` walk compares object with object. */
+const objectsWire = () => ({ points: Array.from({ length: UNIQUE_POINTS }, (_, index) => ({ x: index, y: index * 2, label: `point ${index}` })) });
 
 function consume(value: unknown): number {
   if (typeof value === 'boolean') return value ? 1 : 0;
@@ -86,19 +84,20 @@ const paths: readonly RuntimePath[] = [
     broken: () => { const tree = treeWire(); tree.children[0]!.children[0]!.children[0]!.label = 5 as never; return tree; }, isRejection: validationError,
   },
   {
-    name: 'unique-items', codecName: 'TUniqueLists', construct: UniqueLists, wire: uniqueWire(),
-    checkModel: model => {
-      const lists = model as ReturnType<typeof uniqueWire>;
-      assert.equal(lists.names.length, UNIQUE_NAMES);
-      assert.equal(lists.points.length, UNIQUE_POINTS);
-    },
-    broken: () => { const lists = uniqueWire(); lists.points[UNIQUE_POINTS - 1] = { ...lists.points[0]! }; return lists; }, isRejection: validationError,
+    name: 'unique-strings', codecName: 'TUniqueStrings', construct: UniqueStrings, wire: stringsWire(),
+    checkModel: model => assert.equal((model as ReturnType<typeof stringsWire>).names.length, UNIQUE_NAMES),
+    broken: () => { const lists = stringsWire(); lists.names[UNIQUE_NAMES - 1] = lists.names[0]!; return lists; }, isRejection: validationError,
+  },
+  {
+    name: 'unique-objects', codecName: 'TUniqueObjects', construct: UniqueObjects, wire: objectsWire(),
+    checkModel: model => assert.equal((model as ReturnType<typeof objectsWire>).points.length, UNIQUE_POINTS),
+    broken: () => { const lists = objectsWire(); lists.points[UNIQUE_POINTS - 1] = { ...lists.points[0]! }; return lists; }, isRejection: validationError,
   },
 ];
 
 /**
  * The payloads of the golem cost table that time a runtime path no other payload reaches: Temporal conversion (`temporal`, on the polyfill
- * `temporal-polyfill`), a recursive model (`recursive`) and the `UniqueItems` check of a string list and an object list (`unique-items`).
+ * `temporal-polyfill`), a recursive model (`recursive`) and the `UniqueItems` check of a string list (`unique-strings`) and of an object list (`unique-objects`).
  * Each is timed on the IModel adapters only. The verify step proves a round trip back to the same JSON and, in a validating build,
  * that a broken value is rejected.
  */
