@@ -1,4 +1,4 @@
-import { compareText } from '../generator-core.js';
+import { compareText, stripSourceSuffix } from '../generator-core.js';
 import * as ts from '../typescript-ns.js';
 import { resolveSymbol } from './symbols.js';
 import { isDiscriminatorTag, untaggedMembers } from './tags.js';
@@ -195,11 +195,13 @@ function typeArgumentName(checker: ts.TypeChecker, argument: ts.Type): string | 
   return pascalIdentifier(orderIndependentTypeText(checker, argument));
 }
 
+/** The endings of a TypeScript source or declaration file: a name that ends in no model suffix loses its longest one of these. */
+const SOURCE_ENDINGS = ['.ts', '.mts', '.cts', '.tsx', '.d.ts', '.d.mts', '.d.cts'];
+
 /** A file name without the longest model suffix it ends in, declaration forms included (`b.model.d.ts` for `.model.ts`), or without its extension when it ends in none. */
 function modelFileStem(name: string, suffixes: readonly string[]): string {
-  const endings = suffixes.flatMap(suffix => [suffix, ...['ts', 'cts', 'mts'].map(extension => suffix.replace(/\.[cm]?ts$/, `.d.${extension}`))]);
-  const ending = endings.filter(candidate => name.endsWith(candidate)).sort((left, right) => right.length - left.length)[0];
-  return ending === undefined ? name.replace(/(?:\.d)?\.[cm]?tsx?$/, '') : name.slice(0, -ending.length);
+  const declarations = suffixes.flatMap(suffix => ['ts', 'cts', 'mts'].map(extension => suffix.replace(/\.[cm]?ts$/, `.d.${extension}`)));
+  return stripSourceSuffix(name, [...suffixes, ...declarations, ...SOURCE_ENDINGS]);
 }
 
 /**
