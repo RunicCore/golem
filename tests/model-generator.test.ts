@@ -655,23 +655,29 @@ export type TMoney = IObject<{ currency: string }>;
   );
 });
 
-test('a TValidation function of a folder outside the root is imported by a path that does not depend on the location', (t: TestContext) => {
-  // protects: T-640 the same sources give the same generated files at any location
-  // The files are kept in a repository, so the import of the function and every other path in them follow the layout, never the machine path.
-  const generateAtNewLocation = (): ReadonlyMap<string, string> => {
-    const outer = sharedWorkspace(t);
-    writeModelSources(path.join(outer, 'shared'), {
-      'package.json': JSON.stringify({ private: true, type: 'module' }),
-      'rules.ts': rulesSource,
-    });
-    const root = appProject(outer, 'a', '../shared/**/*.ts');
-    writeModelSources(path.join(root, 'src'), {
-      'order.model.ts': tsSource`import type { IModel } from '@exprtlabs/golem/model';
+/** An app with one model whose TValidation function sits in a shared folder outside the root. */
+function sharedRulesApp(t: TestContext): string {
+  const outer = sharedWorkspace(t);
+  writeModelSources(path.join(outer, 'shared'), {
+    'package.json': JSON.stringify({ private: true, type: 'module' }),
+    'rules.ts': rulesSource,
+  });
+  const root = appProject(outer, 'a', '../shared/**/*.ts');
+  writeModelSources(path.join(root, 'src'), {
+    'order.model.ts': tsSource`import type { IModel } from '@exprtlabs/golem/model';
 import type { TValidation } from '@exprtlabs/golem/tags';
 import { isEven } from '../../shared/rules.js';
 export type TOrder = IModel<{ count: number & TValidation<typeof isEven> }>;
 `,
-    });
+  });
+  return root;
+}
+
+test('a TValidation function of a folder outside the root is imported by a path that does not depend on the location', (t: TestContext) => {
+  // protects: T-640 the same sources give the same generated files at any location
+  // The files are kept in a repository, so the import of the function and every other path in them follow the layout, never the machine path.
+  const generateAtNewLocation = (): ReadonlyMap<string, string> => {
+    const root = sharedRulesApp(t);
     const { artifacts } = generate({ root, profile: { validation: true } });
     return new Map(artifacts.map(artifact => [path.relative(root, artifact.path), artifact.content]));
   };
@@ -681,23 +687,11 @@ export type TOrder = IModel<{ count: number & TValidation<typeof isEven> }>;
 
 test('a TValidation function of a folder outside the root runs in the built app', async (t: TestContext) => {
   // protects: T-640 the import of a shared function resolves from the generated file, so the built validator calls it
-  const outer = sharedWorkspace(t);
-  writeModelSources(path.join(outer, 'shared'), {
-    'package.json': JSON.stringify({ private: true, type: 'module' }),
-    'rules.ts': rulesSource,
-  });
-  const root = appProject(outer, 'a', '../shared/**/*.ts');
+  const root = sharedRulesApp(t);
   fs.writeFileSync(path.join(root, 'tsconfig.json'), JSON.stringify({
     compilerOptions: { strict: true, target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', skipLibCheck: true, outDir: 'build', rootDir: '..' },
     include: ['src/**/*.ts', '../shared/**/*.ts'],
   }));
-  writeModelSources(path.join(root, 'src'), {
-    'order.model.ts': tsSource`import type { IModel } from '@exprtlabs/golem/model';
-import type { TValidation } from '@exprtlabs/golem/tags';
-import { isEven } from '../../shared/rules.js';
-export type TOrder = IModel<{ count: number & TValidation<typeof isEven> }>;
-`,
-  });
   await buildModelProjectWith(root, { validation: true });
   const { TOrderBaseModel } = await import(pathToFileURL(path.join(root, 'build/a/src/order.model.generated.js')).href);
   const order = modelCodec(TOrderBaseModel);
