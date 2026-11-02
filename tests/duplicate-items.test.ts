@@ -12,6 +12,13 @@ const NAN_OBJECT = { n: Number.NaN };
 const INVALID_DATE = new Date(Number.NaN);
 const SHARED_FUNCTION = (): number => 1;
 const SHARED_SYMBOL = Symbol('shared');
+/** Two values that hold themselves, with other member names, so `jsonEqual` settles a comparison of them with each other. */
+const CYCLE_A: { self?: unknown } = {};
+CYCLE_A.self = CYCLE_A;
+const CYCLE_B: { loop?: unknown } = {};
+CYCLE_B.loop = CYCLE_B;
+const SHARED_LEAF = [1];
+const SHARED_NODE = { l: SHARED_LEAF, r: SHARED_LEAF };
 
 /** Lists with the pair a double loop over `jsonEqual` reports: the lowest first index with a later equal item, and the lowest later index. */
 const ROWS: readonly { readonly name: string; readonly list: readonly unknown[]; readonly pair: readonly [number, number] | undefined }[] = [
@@ -81,7 +88,7 @@ function seeded(seed: number): () => number {
   };
 }
 
-const LEAVES: readonly unknown[] = [0, -0, 1, '1', '', 'a,b', 's1:a', null, undefined, true, false, Number.NaN, 1n, new Date(0), new Date(Number.NaN), NAN_OBJECT, SHARED_FUNCTION, SHARED_SYMBOL];
+const LEAVES: readonly unknown[] = [0, -0, 1, '1', '', 'a,b', 's1:a', null, undefined, true, false, Number.NaN, 1n, new Date(0), new Date(Number.NaN), NAN_OBJECT, SHARED_FUNCTION, SHARED_SYMBOL, CYCLE_A, CYCLE_B, SHARED_NODE];
 
 function randomValue(random: () => number, depth: number): unknown {
   const pick = random();
@@ -123,13 +130,53 @@ function nested(levels: number, leaf: unknown, wrap: boolean): unknown {
   return value;
 }
 
-test('duplicateItems builds the key of an item nested 100000 levels without a deep call stack', () => {
+test('duplicateItems builds the key of an item nested 100000 levels without a deep call stack, at any list length', () => {
   // protects: T-849 one request item nested very deep must not raise RangeError in the key builder
   const deepArray = nested(100_000, 'end', true);
   const deepObject = nested(100_000, 'end', false);
+  assert.deepEqual(duplicateItems([deepArray, nested(100_000, 'end', true)]), [0, 1]);
+  assert.deepEqual(duplicateItems([deepObject, nested(100_000, 'end', false)]), [0, 1]);
   assert.deepEqual(duplicateItems([deepArray, ...FILLER.slice(0, 5), nested(100_000, 'end', true)]), [0, 6]);
-  assert.deepEqual(duplicateItems([deepObject, ...FILLER.slice(0, 5), nested(100_000, 'end', false)]), [0, 6]);
   assert.equal(duplicateItems([deepArray, ...FILLER, nested(100_000, 'other', true), nested(99_999, 'end', true), deepObject]), undefined);
+  assert.equal(duplicateItems([deepArray, nested(100_000, 'other', true)]), undefined);
+});
+
+class Child {
+  constructor(readonly id: number, readonly owner: { readonly children: unknown[] }) {}
+}
+
+/** `count` instances with program state: each holds its `owner`, and the owner holds the instances. */
+function cyclicItems(count: number): Child[] {
+  const owner: { children: unknown[] } = { children: [] };
+  const items = Array.from({ length: count }, (_, id) => new Child(id, owner));
+  owner.children.push(...items);
+  return items;
+}
+
+test('duplicateItems ends on items that hold a cycle, in a list of 7 and of 2, and finds the same object twice', async () => {
+  // protects: T-849 an item that holds a cycle must not grow the walk without end
+  const seven = cyclicItems(7);
+  const two = cyclicItems(2);
+  assert.equal(duplicateItems(seven), undefined);
+  assert.equal(duplicateItems(two), undefined);
+  assert.deepEqual(duplicateItems([...seven, seven[3]]), [3, 7]);
+  assert.deepEqual(duplicateItems([two[0], two[0]]), [0, 1]);
+  const validate = await compileSchema({ type: 'array', uniqueItems: true });
+  assert.deepEqual(validate(seven, true), []);
+  assert.deepEqual(validate([...seven, seven[3]], true), [{ path: [], code: 'unique', indexes: [3, 7] }]);
+});
+
+test('duplicateItems walks a value that shares its members once per distinct object', () => {
+  // protects: T-849 a value of shared nodes must not expand to its full tree
+  const build = (): unknown => {
+    let shared: unknown = {};
+    for (let level = 0; level < 40; level++) shared = { l: shared, r: shared };
+    return shared;
+  };
+  assert.deepEqual(duplicateItems([build(), build()]), [0, 1]);
+  assert.deepEqual(duplicateItems([build(), 1, 2, 3, 4, 5, 6, build()]), [0, 7]);
+  const big = { a: [1, { b: 'x' }] };
+  assert.deepEqual(duplicateItems(Array.from({ length: 100_000 }, () => big)), [0, 1]);
 });
 
 test('a uniqueItems validator reports the first duplicate pair in both modes', async () => {

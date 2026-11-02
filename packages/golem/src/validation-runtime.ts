@@ -79,44 +79,43 @@ export function jsonEqual(left: unknown, right: unknown): boolean {
   return count === 0;
 }
 
-/** Lists of at most this many items are compared pairwise: for a few items the double loop beats building a `Map`. */
+/** A list of at most this many primitives is compared pairwise: for a few items the double loop beats building a `Map`. */
 const PAIRWISE_ITEMS = 6;
 
 /**
  * The pair `[first, second]` that a double loop over `jsonEqual` finds in `list`: the lowest index that has a later equal
- * item, and the lowest later index equal to it; `undefined` when all items differ. A short list is that double loop. A longer
- * list takes one pass, linear in the size of the items. A primitive is its own key in a `Map`, so `0` and `-0` meet and `1`
- * and `'1'` do not; `NaN` equals nothing. An object, array or date is keyed by `structuralKey`, a text that two items share
- * exactly when `jsonEqual` says they are equal. No hash is used: a hash lets a crafted list collide and fall back to the
- * quadratic search.
+ * item, and the lowest later index equal to it; `undefined` when all items differ. A short list of primitives is a double
+ * loop over `===`. Any other list takes one pass, linear in the size of the items. A primitive is its own key in a `Map`,
+ * so `0` and `-0` meet and `1` and `'1'` do not; `NaN` equals nothing. An object, array or date is keyed by its reference in
+ * a `KeyWalk`: two items have one reference exactly when `jsonEqual` says they are equal. No hash is used: a hash lets a
+ * crafted list collide and fall back to the quadratic search.
  */
 export function duplicateItems(list: readonly unknown[]): readonly [first: number, second: number] | undefined {
-  if (list.length <= PAIRWISE_ITEMS) {
+  if (list.length <= PAIRWISE_ITEMS && !holdsObject(list)) {
     for (let first = 0; first < list.length - 1; first++) {
       for (let second = first + 1; second < list.length; second++) {
-        if (jsonEqual(list[first] ?? null, list[second] ?? null)) return [first, second];
+        if ((list[first] ?? null) === (list[second] ?? null)) return [first, second];
       }
     }
     return undefined;
   }
-  // Primitives, and objects that equal only themselves, by identity.
   const firstOf = new Map<unknown, number>();
-  let structured: Map<string, number> | undefined;
-  let identities: Map<unknown, number> | undefined;
+  const structured = new Map<string, number>();
+  let walk: KeyWalk | undefined;
   let first = -1;
   let second = -1;
   for (let index = 0; index < list.length; index++) {
     // The JSON view of an `undefined` item is `null`.
     const item = list[index] ?? null;
     let earlier: number | undefined;
-    const key = typeof item === 'object' && item !== null ? structuralKey(item, (identities ??= new Map())) : undefined;
-    if (key === undefined) {
+    if (typeof item === 'object' && item !== null) {
+      const reference = (walk ??= new KeyWalk()).reference(item);
+      earlier = structured.get(reference);
+      if (earlier === undefined) structured.set(reference, index);
+    } else {
       if (item !== item) continue;
       earlier = firstOf.get(item);
       if (earlier === undefined) firstOf.set(item, index);
-    } else {
-      earlier = (structured ??= new Map()).get(key);
-      if (earlier === undefined) structured.set(key, index);
     }
     // The pair of the lowest first index wins; for one first index the first later match comes first.
     if (earlier !== undefined && (first < 0 || earlier < first)) {
@@ -127,7 +126,15 @@ export function duplicateItems(list: readonly unknown[]): readonly [first: numbe
   return first < 0 ? undefined : [first, second];
 }
 
-/** An array or object being keyed: its members are read from `index`, and `text` holds the keys of the members read so far. */
+function holdsObject(list: readonly unknown[]): boolean {
+  for (let index = 0; index < list.length; index++) {
+    const item = list[index];
+    if (typeof item === 'object' && item !== null) return true;
+  }
+  return false;
+}
+
+/** An array or object being walked: its members are read from `index`, and `text` holds the references of the members read so far. */
 class KeyFrame {
   index = 0;
   failed = false;
@@ -141,80 +148,115 @@ class KeyFrame {
   }
 }
 
-function openFrame(value: object, prefix: string): KeyFrame {
-  return Array.isArray(value) ? new KeyFrame(value, prefix, value, []) : new KeyFrame(value, prefix, undefined, Object.keys(value).sort());
-}
+const NO_NAMES: readonly string[] = [];
 
 /**
- * The text of `value` that equals the text of another value exactly when `jsonEqual` says the two are equal, or `undefined`
- * when `value` equals only itself (it holds a `NaN` or an invalid date, which `jsonEqual` accepts only as the same object).
- * A member that equals only itself, such as a function, a symbol or such an inner object, is written as the number of its
- * identity. Strings and key names carry their length, so no text can forge the structure around it. The walk keeps its own
- * stack of frames, so an item nested to any depth builds its text without a deep call stack.
+ * The references of the objects of one `duplicateItems` call. A reference is a short text, and two objects have one reference
+ * exactly when `jsonEqual` calls them equal:
+ * - A finished object gets the number of its text, `#n`. The text holds the references of its members, not their text, so
+ *   each distinct object is walked once, a text stays short at any depth, and a value that shares members does not grow.
+ * - An object that equals only itself gets an identity, `@n`: one that holds a `NaN` or an invalid date (`jsonEqual` accepts
+ *   them only as the same object), and one that a cycle leads back to. `jsonEqual` calls two distinct cyclic values equal
+ *   only if the walk ends at a shared object, else it does not end; so a value on a cycle equals only itself here.
+ * A function and a symbol also have an identity. Strings and names carry their length, so no text can forge the structure around it.
+ * The walk keeps its own stack of frames, so an item nested to any depth needs no deep call stack.
  */
-function structuralKey(value: object, identities: Map<unknown, number>): string | undefined {
-  if (value instanceof Date) return dateKey(value);
-  const stack = [openFrame(value, '')];
-  for (;;) {
-    const frame = stack[stack.length - 1]!;
-    let inner: object | undefined;
-    while (inner === undefined && !frame.failed && frame.index < frame.size) {
-      const position = frame.index++;
-      let prefix = '';
-      let member: unknown;
-      if (frame.list !== undefined) {
-        member = frame.list[position] ?? null;
-      } else {
-        const name = frame.names[position]!;
-        member = presentValue(frame.value, name);
-        if (member === undefined) continue;
-        prefix = `${name.length}:${name}=`;
+class KeyWalk {
+  private readonly finished = new Map<object, string>();
+  private readonly numbers = new Map<string, string>();
+  private readonly identities = new Map<unknown, number>();
+  private readonly onPath = new Set<object>();
+  private readonly cyclic = new Set<object>();
+
+  /** The reference of `root`, an array, an object or a date. */
+  reference(root: object): string {
+    const known = this.finished.get(root);
+    if (known !== undefined) return known;
+    if (root instanceof Date) return this.dateReference(root);
+    const stack = [this.open(root, '')];
+    for (;;) {
+      const frame = stack[stack.length - 1]!;
+      let inner: object | undefined;
+      while (inner === undefined && !frame.failed && frame.index < frame.size) {
+        const position = frame.index++;
+        let prefix = '';
+        let member: unknown;
+        if (frame.list !== undefined) {
+          member = frame.list[position] ?? null;
+        } else {
+          const name = frame.names[position]!;
+          member = presentValue(frame.value, name);
+          if (member === undefined) continue;
+          prefix = `${name.length}:${name}=`;
+        }
+        if (typeof member !== 'object' || member === null) {
+          const text = this.primitiveReference(member);
+          if (text === undefined) frame.failed = true;
+          else frame.text += `${prefix}${text},`;
+        } else if (member instanceof Date) {
+          frame.text += `${prefix}${this.dateReference(member)},`;
+        } else if (this.finished.has(member)) {
+          frame.text += `${prefix}${this.finished.get(member)},`;
+        } else if (this.onPath.has(member)) {
+          this.cyclic.add(member);
+          frame.text += `${prefix}${this.identity(member)},`;
+        } else {
+          inner = member;
+          stack.push(this.open(member, prefix));
+        }
       }
-      if (typeof member !== 'object' || member === null) {
-        const text = scalarKey(member, identities);
-        if (text === undefined) frame.failed = true;
-        else frame.text += `${prefix}${text},`;
-      } else if (member instanceof Date) {
-        frame.text += `${prefix}${dateKey(member) ?? identityKey(member, identities)},`;
-      } else {
-        inner = member;
-        stack.push(openFrame(member, prefix));
-      }
+      if (inner !== undefined) continue;
+      stack.pop();
+      this.onPath.delete(frame.value);
+      const reference = this.close(frame);
+      this.finished.set(frame.value, reference);
+      const parent = stack[stack.length - 1];
+      if (parent === undefined) return reference;
+      parent.text += `${frame.prefix}${reference},`;
     }
-    if (inner !== undefined) continue;
-    stack.pop();
-    const text = frame.failed ? undefined : `${frame.text}${frame.list === undefined ? '}' : ']'}`;
-    const parent = stack[stack.length - 1];
-    if (parent === undefined) return text;
-    parent.text += `${frame.prefix}${text ?? identityKey(frame.value, identities)},`;
   }
-}
 
-function dateKey(date: Date): string | undefined {
-  const time = date.getTime();
-  return time === time ? `d${time}` : undefined;
-}
-
-/** The text of a member that is not an object; `undefined` for `NaN`, which equals nothing. */
-function scalarKey(member: unknown, identities: Map<unknown, number>): string | undefined {
-  switch (typeof member) {
-    case 'string': return `s${member.length}:${member}`;
-    case 'number': return member === member ? `n${member}` : undefined;
-    case 'boolean': return member ? 't' : 'f';
-    case 'bigint': return `b${member}`;
-    case 'object': return 'z';
-    default: return identityKey(member, identities);
+  private open(value: object, prefix: string): KeyFrame {
+    this.onPath.add(value);
+    return Array.isArray(value) ? new KeyFrame(value, prefix, value, NO_NAMES) : new KeyFrame(value, prefix, undefined, Object.keys(value).sort());
   }
-}
 
-/** A function, a symbol or an object that equals only itself, as the number of its identity. */
-function identityKey(member: unknown, identities: Map<unknown, number>): string {
-  let id = identities.get(member);
-  if (id === undefined) {
-    id = identities.size;
-    identities.set(member, id);
+  private close(frame: KeyFrame): string {
+    if (frame.failed || this.cyclic.has(frame.value)) return this.identity(frame.value);
+    const text = `${frame.text}${frame.list === undefined ? '}' : ']'}`;
+    let reference = this.numbers.get(text);
+    if (reference === undefined) {
+      reference = `#${this.numbers.size}`;
+      this.numbers.set(text, reference);
+    }
+    return reference;
   }
-  return `@${id}`;
+
+  private dateReference(date: Date): string {
+    const time = date.getTime();
+    return time === time ? `d${time}` : this.identity(date);
+  }
+
+  /** The text of a member that is not an object; `undefined` for `NaN`, which equals nothing. */
+  private primitiveReference(member: unknown): string | undefined {
+    switch (typeof member) {
+      case 'string': return `s${member.length}:${member}`;
+      case 'number': return member === member ? `n${member}` : undefined;
+      case 'boolean': return member ? 't' : 'f';
+      case 'bigint': return `b${member}`;
+      case 'object': return 'z';
+      default: return this.identity(member);
+    }
+  }
+
+  private identity(member: unknown): string {
+    let id = this.identities.get(member);
+    if (id === undefined) {
+      id = this.identities.size;
+      this.identities.set(member, id);
+    }
+    return `@${id}`;
+  }
 }
 
 const DIGIT = '[0-9]';
