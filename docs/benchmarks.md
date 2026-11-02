@@ -161,8 +161,16 @@ A case is one payload, one operation and one setup. The tables show the median s
 | Checkout, no conversion | Nothing |
 | Serde none | Nothing, in 21 fields |
 | Serde many | Every one of the same 21 fields |
+| Union, tagged | One date in each of 100 events |
+| Union, class-first | One date in each of 100 events |
+| Temporal fields | All 20 fields, with the `temporal-polyfill` package as `Temporal` |
+| Recursive model | Each of 106 nodes to its class |
+| Unique strings | Nothing. Validate compares 1,000 strings |
+| Unique objects | Nothing. Validate compares 100 objects |
+| Nest query | Six query strings to their declared types |
+| Client call | The request body and the response of one generated client call |
 
-The cost tab adds Serde none and Serde many.
+The speed tab shows the first five payloads. The cost tab shows every payload. Nest query shows the Decode row only. Client call shows the Call row only: it runs the generated client against a stub `fetch` that builds a new `Response`, so its time includes that `Response` and no network.
 
 The run is short, so read the ratios between setups in one run and not the absolute numbers. Do not compare numbers from two machines or from two runs.
 
@@ -192,7 +200,7 @@ Reproduce one number on your machine. Name one setup and one payload:
 npm run bench -- --adapters golem-object --payloads simple
 ```
 
-- The payloads are `simple`, `nested`, `array`, `checkout`, `checkout-plain`, `serde-none`, `serde-many`, `union-tagged` and `union-class`.
+- The payloads are `simple`, `nested`, `array`, `checkout`, `checkout-plain`, `serde-none`, `serde-many`, `union-tagged`, `union-class`, `temporal`, `recursive`, `unique-strings`, `unique-objects`, `nest-query` and `client-call`.
 - The run prints its tables to the console and writes `.cache/benchmark/results.json`.
 - A name that is not valid stops the run before it starts, with exit code 2. The message lists the valid names.
 - The run stores the machine load with the numbers, so stop other work on the machine first.
