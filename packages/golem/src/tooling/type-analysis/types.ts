@@ -332,6 +332,12 @@ function isPhantomTagType(checker: ts.TypeChecker, type: ts.Type): boolean {
   return checker.getPropertiesOfType(type).some((property) => isGolemTagKey(checker, property));
 }
 
+/** Whether a type node names a type parameter anywhere inside: the node is then the uninstantiated declaration, not the type of the use. */
+function holdsTypeParameter(checker: ts.TypeChecker, node: ts.TypeNode): boolean {
+  if (ts.isTypeReferenceNode(node) && (checker.getTypeFromTypeNode(node).flags & ts.TypeFlags.TypeParameter) !== 0) return true;
+  return ts.forEachChild(node, (child) => ts.isTypeNode(child) && holdsTypeParameter(checker, child) ? true : undefined) === true;
+}
+
 function stripPhantomIntersection(
   checker: ts.TypeChecker,
   type: ts.Type,
@@ -845,8 +851,7 @@ function openDescribeCall(scope: DescribeScope, input: DescribeInput): DescribeC
   const hasBaseTags = metadata.validations.length > 0 || metadata.serde !== undefined || metadata.constraints.length > 0;
   const type = stripPhantomIntersection(
     checker,
-    hasTagMetadata && hasBaseTags && analysis.baseNode
-      && !(checker.getTypeFromTypeNode(analysis.baseNode).flags & ts.TypeFlags.TypeParameter)
+    hasTagMetadata && hasBaseTags && analysis.baseNode && !holdsTypeParameter(checker, analysis.baseNode)
       ? checker.getTypeFromTypeNode(analysis.baseNode)
       : originalType,
     metadata,
