@@ -7,6 +7,8 @@ import {
   type NormalizedDocument,
 } from './normalize.js';
 import { SCHEMA_ARRAY_KEYWORDS, SCHEMA_MAP_KEYWORDS, SCHEMA_SINGLE_KEYWORDS } from './schema-keywords.js';
+import type { OpenApiDates } from './model-resolution.js';
+import { dateClassOf } from './date-class.js';
 
 export type SchemaDirection = 'input' | 'output';
 
@@ -58,6 +60,8 @@ interface DuplicateSchemaId {
 interface ProjectionContext {
   readonly document: unknown;
   readonly direction: SchemaDirection;
+  /** The `dates` value of the SDK. A string schema that it converts to a built-in class is checked by that class's wire form. `null`: the schemas keep the formats of the document. */
+  readonly dates: OpenApiDates | null;
   readonly extraExcluded?: ReadonlySet<string>;
   readonly resources?: ResourceIndex;
   readonly exclusionCache?: Map<string, boolean>;
@@ -1032,7 +1036,22 @@ export function projectSchema(schema: unknown, context: ProjectionContext): unkn
     }
     next[key] = value;
   }
-  return next;
+  return withClassWire(schema, next, ctx.dates);
+}
+
+/**
+ * The check schema of a string that `dates` converts to a built-in class. A class whose wire form is a pattern, not the
+ * format of the document (`Temporal.Duration`), replaces the `format` with that pattern; any other class has the format
+ * of the document as its wire form, and the schema stays as it is.
+ */
+function withClassWire(schema: JsonObject, next: Record<string, unknown>, dates: OpenApiDates | null): Record<string, unknown> {
+  if (dates === null) return next;
+  const wire = dateClassOf(schema, dates)?.wire;
+  const constraint = wire?.kind === 'string' ? wire.constraints?.[0] : undefined;
+  if (constraint?.kind !== 'pattern') return next;
+  const { format: _format, ...rest } = next;
+  if (rest.pattern === undefined) return { ...rest, pattern: constraint.value };
+  return { ...rest, allOf: [...(Array.isArray(rest.allOf) ? rest.allOf : []), { pattern: constraint.value }] };
 }
 
 function uriFragment(reference: string): string {
@@ -1179,10 +1198,11 @@ function projectDirectionalResource(
   direction: SchemaDirection,
   packId: string,
   resources: ResourceIndex,
+  dates: OpenApiDates,
 ): Record<string, unknown> {
   const defs: Record<string, unknown> = {};
   for (const resource of idBearingResources(resources)) {
-    const projected = projectSchema(resource.schema, { document, direction, resources, currentBase: resource.canonical });
+    const projected = projectSchema(resource.schema, { document, direction, dates, resources, currentBase: resource.canonical });
     defs[resource.canonical] = rewriteProjectedSchema(projected, {
       document,
       direction,
@@ -1200,7 +1220,7 @@ function projectDirectionalResource(
       if (resource?.hasId) {
         return [name, { $ref: directionalUri(resource, direction, packId) }];
       }
-      const projected = projectSchema(schema, { document, direction, resources });
+      const projected = projectSchema(schema, { document, direction, dates, resources });
       return [name, rewriteProjectedSchema(projected, {
         document,
         direction,
@@ -1223,15 +1243,16 @@ export function buildRuntimeProjections(
   document: unknown,
   ir: NormalizedDocument,
   rootId: string,
+  dates: OpenApiDates,
   resources: ResourceIndex = collectCanonicalResources(document),
 ): RuntimeProjectionBundle {
   const inputResourceId = projectionResourceId(rootId, 'input');
   const outputResourceId = projectionResourceId(rootId, 'output');
-  const inputResource = projectDirectionalResource(document, ir, 'input', inputResourceId, resources);
+  const inputResource = projectDirectionalResource(document, ir, 'input', inputResourceId, resources, dates);
   // Compare in the same reference scope. Resources with their own $id keep
   // directional identities; merging those requires rebasing their entire graph.
   if (idBearingResources(resources).length === 0) {
-    const outputInInputScope = projectDirectionalResource(document, ir, 'output', inputResourceId, resources);
+    const outputInInputScope = projectDirectionalResource(document, ir, 'output', inputResourceId, resources, dates);
     if (canonicalSchemaKey(inputResource) === canonicalSchemaKey(outputInInputScope)) {
       return { inputResourceId, outputResourceId: inputResourceId, inputResource, outputResource: inputResource };
     }
@@ -1240,7 +1261,7 @@ export function buildRuntimeProjections(
     inputResourceId,
     outputResourceId,
     inputResource,
-    outputResource: projectDirectionalResource(document, ir, 'output', outputResourceId, resources),
+    outputResource: projectDirectionalResource(document, ir, 'output', outputResourceId, resources, dates),
   };
 }
 
@@ -1249,10 +1270,11 @@ export function projectOperationSchema(
   document: unknown,
   direction: SchemaDirection,
   resourceId: string,
+  dates: OpenApiDates,
   resources: ResourceIndex = collectCanonicalResources(document),
 ): unknown {
   return rewriteProjectedSchema(
-    projectSchema(schema, { document, direction, resources }),
+    projectSchema(schema, { document, direction, dates, resources }),
     {
       document,
       direction,

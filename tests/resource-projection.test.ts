@@ -15,7 +15,7 @@ import {
 
 /** The registries every SDK's operation schemas are built from. */
 function schemaRegistries(document: unknown): Record<string, unknown> {
-  const data = buildSchemaData(document);
+  const data = buildSchemaData(document, 'date');
   return { schemaRegistry: data.registry, runtimeSchemaRegistry: data.normalizedRegistry };
 }
 

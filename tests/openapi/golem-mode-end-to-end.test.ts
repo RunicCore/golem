@@ -45,6 +45,18 @@ test('a golem-mode call converts its request and its response, Temporal values i
   assert.match(outputs, /src\/generated\/models\/sdk\/charges\.sdk\.generated\.ts/);
 });
 
+test('a golem-mode call reads the duration text that Temporal writes: fractional seconds, hours with seconds, years with days', async () => {
+  // protects: T-682 the golem-mode response check uses the Temporal.Duration wire form, not the RFC 3339 duration format
+  const sdk: GolemModeSdkSetup = { document: charges('createCharge'), folder: 'sdk/durations', name: 'Charges', dates: 'temporal' };
+  const project = await loadGolemModeProject(scope, 'golem-mode-duration-', [sdk]);
+  const spans = ['PT0.5S', 'PT1H30S', 'P1Y2D'];
+  const read = async (spent: string) => {
+    const client = await project.client<ChargesClient>(sdk, { fetchImpl: async () => Response.json({ ...WIRE, spent }) });
+    return String((await client.createCharge().execute({ body: { at: Temporal.Instant.from('2025-01-02T03:04:05Z') } })).body.spent);
+  };
+  assert.deepEqual([await read(spans[0]!), await read(spans[1]!), await read(spans[2]!)], spans);
+});
+
 test('two golem-mode SDKs with one operation name share one models job; a modelOnly rerun and check change nothing', async () => {
   // protects: T-699 root and export names carry the SDK scope; --modelOnly and golem check are clean (F-34, F-125)
   const first: GolemModeSdkSetup = { document: charges('createCharge'), folder: 'sdk/charges', name: 'Charges' };

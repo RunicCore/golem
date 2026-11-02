@@ -78,3 +78,35 @@ for (const validation of [true, false]) {
     assert.match(outcome(() => tree.fromWireFormat(TREE, options)), /^decoded \{"leaf":\{"id":"a"\},"leaves":\[\{"id":"a"\},\{"id":"a"\}\],"maybe":null\}$/);
   });
 }
+
+test('a model constructor that throws at the root is a fault of the program, not bad input', async () => {
+  // protects: T-660 a constructor that threw at the root reached the caller raw, and inside a field conversion it was reported as bad input
+  const { models, tree } = await builds.get(false)!();
+  class Failing extends models.Tree { constructor(values?: object) { super(values); throw new Error('db down'); } }
+  const fault = (decode: () => unknown): string => {
+    try { decode(); } catch (error) {
+      return error instanceof LibError ? `${error.message} input=${error.causedByInput} cause=${String((error.cause as Error | undefined)?.message)}` : `not a LibError: ${String(error)}`;
+    }
+    return 'decoded';
+  };
+  assert.equal(fault(() => tree.fromWireFormat(TREE, { validate: false, construct: Failing as never })), 'db down input=false cause=db down');
+});
+
+test('a nested model whose constructor throws is a fault of the program, not bad input', async () => {
+  // protects: T-660 the decode of a nested model ran its constructor inside the parent field conversion, so a program fault answered as bad input
+  const { root, sourceRoot } = createModelProject(fileFixtureScope(), { prefix: 'golem-nested-constructor-', name: 'nested-constructor', linkWorkspaceNodeModules: true });
+  fs.writeFileSync(path.join(sourceRoot, 'fault.model.ts'), `import type { IModel } from '@exprtlabs/golem/model';
+import { TInnerBaseModel, TOuterBaseModel } from './fault.model.generated.js';
+export type TInner = IModel<{ id: string }>;
+export type TOuter = IModel<{ inner: TInner }>;
+export class Inner extends TInnerBaseModel { constructor(values: { id?: string } = {}) { super(values as never); if (values.id === 'boom') throw new Error('db down'); } }
+export class Outer extends TOuterBaseModel {}
+`);
+  writeModelGolemYaml(root, { validation: false, exact: false });
+  await buildModelProject(root);
+  const models = await import(pathToFileURL(path.join(root, 'build/fault.model.js')).href) as Models;
+  const outer = requireObjectCodec(generatedCodecIdFromRoot(root, 'TOuter'));
+  const options = { validate: false, construct: models.Outer as never };
+  assert.equal(outcome(() => outer.fromWireFormat({ inner: { id: 'fine' } }, options)).startsWith('decoded'), true);
+  assert.equal(outcome(() => outer.fromWireFormat({ inner: { id: 'boom' } }, options)), 'db down @[[]] input=false');
+});

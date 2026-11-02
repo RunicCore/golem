@@ -289,7 +289,7 @@ test('shared emitter emits exact generated-model conversion expressions', () => 
       emitter.identifier('value'),
       resolveModel,
     )),
-    'Array.isArray(value) ? convertModelItems("deserialize", (item) => (item == null || item instanceof MoneyModel ? item : decodeMoneyModel(MoneyModel, item)), value as readonly unknown[]) : value',
+    'Array.isArray(value) ? convertModelItems((item) => (item == null || item instanceof MoneyModel ? item : decodeMoneyModel(MoneyModel, item)), value as readonly unknown[]) : value',
   );
 });
 

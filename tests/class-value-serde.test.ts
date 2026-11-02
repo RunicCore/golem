@@ -12,7 +12,7 @@ import { command } from './support/process.js';
 import { TSC } from './support/build-project.js';
 import { modelCodec } from './support/model-codec.js';
 import { validateInstance } from '@exprtlabs/golem/validation';
-import { LibError } from '@exprtlabs/golem/errors';
+import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { decodeGeneratedModelTrusted } from '@exprtlabs/golem/internal/model-runtime';
 
 function fixture(t: FixtureScope) {
@@ -216,6 +216,67 @@ for (const [name, wrong] of [['a string', '2025-01-02T03:04:05.000Z'], ['a numbe
     assert.deepEqual(await validateInstance(model, { failFast: false }), []);
     const issues = await validateInstance(Object.assign(model, { at: wrong }), { failFast: false });
     assert.deepEqual(issues.map(issue => ({ path: issue.path, code: issue.code, message: issue.message })), [{ path: ['at'], code: 'instance', message: 'Expected an instance of Date' }]);
+  });
+}
+
+// A TSerde whose deserializer refuses the wire text 'bad' and whose serializer always refuses, in every position a decode or an encode can stand.
+type GateCodecs = Record<string, (value: unknown, options?: object) => unknown>;
+const gateProject = onceShared(async () => {
+  const { root, sourceRoot } = fixture(fileScope);
+  fs.writeFileSync(path.join(sourceRoot, 'codecs.ts'), `export class Gate { constructor(readonly text: string) {} }
+export function encodeGate(_value: Gate): string { throw new Error('encode refused'); }
+export function decodeGate(value: string): Gate { if (value === 'bad') throw new Error('decode refused'); return new Gate(value); }
+`);
+  fs.writeFileSync(path.join(sourceRoot, 'gate.model.ts'), `import type { IObject } from '@exprtlabs/golem/model';
+import type { TSerde } from '@exprtlabs/golem/tags';
+import { encodeGate, decodeGate, type Gate } from './codecs.js';
+type Door = Gate & TSerde<typeof encodeGate, typeof decodeGate>;
+export type TPlain = IObject<{ door: Door }>;
+export type TItems = IObject<{ doors: Door[] }>;
+export type TRecord = IObject<{ doors: Record<string, Door> }>;
+export type TTuple = IObject<{ doors: [string, Door] }>;
+export type TNested = IObject<{ inner: TPlain }>;
+export type TMaybe = IObject<{ door: Door | null }>;
+`);
+  writeModelGolemYaml(root, { validation: true });
+  await buildModelProject(root);
+  const gate = await import(path.toNamespacedPath(path.join(root, 'build/codecs.js'))) as { Gate: new (text: string) => object };
+  const codecs = await import(path.toNamespacedPath(path.join(root, 'build/gate.model.generated.js'))) as GateCodecs;
+  return { codecs, ok: new gate.Gate('ok') };
+});
+
+const GATE_POSITIONS = [
+  { name: 'TPlain', wire: (door: string) => ({ door }), value: (ok: object) => ({ door: ok }) },
+  { name: 'TItems', wire: (door: string) => ({ doors: ['ok', door] }), value: (ok: object) => ({ doors: [ok] }) },
+  { name: 'TRecord', wire: (door: string) => ({ doors: { a: 'ok', b: door } }), value: (ok: object) => ({ doors: { a: ok } }) },
+  { name: 'TTuple', wire: (door: string) => ({ doors: ['x', door] }), value: (ok: object) => ({ doors: ['x', ok] }) },
+  { name: 'TMaybe', wire: (door: string) => ({ door }), value: (ok: object) => ({ door: ok }) },
+  { name: 'TNested', wire: (door: string) => ({ inner: { door } }), value: (ok: object) => ({ inner: { door: ok } }) },
+] as const;
+
+for (const position of GATE_POSITIONS) {
+  test(`${position.name}: a deserializer that throws on wire input is bad input through fromWireFormat and parse`, async () => {
+    // protects: R-70 T-660 a TSerde deserializer throw on wire input gives LibError with causedByInput true
+    const { codecs } = await gateProject();
+    const wire = position.wire('bad');
+    for (const validate of [true, false]) {
+      for (const read of [
+        () => codecs[`fromWireFormat${position.name}`]!(wire, { validate }),
+        () => codecs[`parse${position.name}`]!(JSON.stringify(wire), { validate }),
+      ]) {
+        assert.throws(read, (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.Deserialization && error.causedByInput === true && /decode refused/.test(error.message));
+      }
+    }
+    assert.ok(codecs[`fromWireFormat${position.name}`]!(position.wire('ok')));
+  });
+
+  test(`${position.name}: a serializer that throws on the application's own value is not bad input through toWireFormat and stringify`, async () => {
+    // protects: R-70 T-660 a TSerde serializer throw stays causedByInput false
+    const { codecs, ok } = await gateProject();
+    const value = position.value(ok);
+    for (const write of [() => codecs[`toWireFormat${position.name}`]!(value), () => codecs[`stringify${position.name}`]!(value)]) {
+      assert.throws(write, (error: unknown) => error instanceof Error && !(error instanceof LibError) && error.message === 'encode refused' && error.cause === undefined);
+    }
   });
 }
 

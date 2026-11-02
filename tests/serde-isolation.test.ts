@@ -390,10 +390,10 @@ function generatedSource(t: TestContext, name: string): string {
 test('fill paths pass converters as module-level functions, not per-value closures', (t) => {
   const source = generatedSource(t, 'calendar');
   // Kept pins (here and below): the claim is an allocation budget of the emitted code, which only its text shows; the conversion results are proven by the tests above.
-  assert.match(source, /convertModelField\("deserialize", "event", __golemDecode_TCalendar_\d+, /);
-  assert.match(source, /convertModelItems\("deserialize", __golemDecode_TCalendar_\d+, [$\w]+ as readonly unknown\[\]\)/);
-  assert.doesNotMatch(source, /convertModelItems\("deserialize", [^\n]*=>/);
-  assert.doesNotMatch(source, /convertModelField\("deserialize", [^\n]*, \(\w+\) =>/);
+  assert.match(source, /convertModelField\("event", __golemDecode_TCalendar_\d+, /);
+  assert.match(source, /convertModelItems\(__golemDecode_TCalendar_\d+, [$\w]+ as readonly unknown\[\]\)/);
+  assert.doesNotMatch(source, /convertModelItems\([^\n]*=>/);
+  assert.doesNotMatch(source, /convertModelField\([^\n]*, \(\w+\) =>/);
 });
 
 test('a nested fill that cannot throw runs without a conversion scope', (t) => {

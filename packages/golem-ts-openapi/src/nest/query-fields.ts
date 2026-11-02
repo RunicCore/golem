@@ -28,6 +28,10 @@ interface FieldShape {
   readonly types: Set<string>;
   readonly literals: unknown[];
   item?: FieldShape;
+  /** The shape of each position a tuple lists (`prefixItems`); `item` holds the entries after them. */
+  prefix?: FieldShape[];
+  /** The `items` of each array branch read so far, with the first position it covers: a position that a later branch lists takes them too. */
+  rests?: { readonly from: number; readonly items: unknown; readonly scope: Scope }[];
 }
 
 const SCALARS: readonly QueryScalar[] = ['string', 'number', 'integer', 'boolean'];
@@ -64,6 +68,27 @@ function resolveReference(reference: string, scope: Scope): { readonly schema: u
   return schema === undefined ? undefined : { schema, scope: { ...scope, root: schema } };
 }
 
+/**
+ * The positions that a tuple lists (`prefixItems`), and the `items` that follow them. A position decodes by every branch that
+ * reaches it: the branch that lists it, and each branch whose `items` start at or before it, whichever branch is read first.
+ */
+function collectPositions(shape: FieldShape, listed: readonly unknown[], items: unknown, scope: Scope): void {
+  if (listed.length > 0) {
+    const prefix = shape.prefix ??= [];
+    listed.forEach((position, index) => {
+      if (prefix[index] === undefined) {
+        prefix[index] = newShape();
+        for (const earlier of shape.rests ?? []) if (earlier.from <= index) collectShape(earlier.items, prefix[index], earlier.scope);
+      }
+      collectShape(position, prefix[index], scope);
+    });
+  }
+  if (items === undefined || items === false) return;
+  const rest = { from: listed.length, items, scope };
+  (shape.rests ??= []).push(rest);
+  shape.prefix?.forEach((position, index) => { if (index >= rest.from) collectShape(items, position, scope); });
+}
+
 function collectShape(schema: unknown, shape: FieldShape, scope: Scope): void {
   if (schema === true) {
     shape.types.add('string');
@@ -76,9 +101,11 @@ function collectShape(schema: unknown, shape: FieldShape, scope: Scope): void {
   if ('const' in record) shape.literals.push(record.const);
   if (Array.isArray(record.enum)) shape.literals.push(...record.enum);
   // An `items` keyword stands for an array also when the schema names no type.
-  if (types.includes('array') || record.items !== undefined) {
+  const listed: unknown[] = Array.isArray(record.prefixItems) ? record.prefixItems : [];
+  if (types.includes('array') || record.items !== undefined || listed.length > 0) {
     shape.item ??= newShape();
     collectShape(record.items, shape.item, scope);
+    collectPositions(shape, listed, record.items, scope);
   }
   for (const keyword of ['allOf', 'anyOf', 'oneOf'] as const) {
     const branches = record[keyword];
@@ -131,7 +158,7 @@ function decodesField(shape: FieldShape): boolean {
   if (decodesScalar(shape)) return true;
   if (!shape.item) return false;
   // A single string becomes a one-item array unless the field also admits a string.
-  return !shape.types.has('string') || decodesScalar(shape.item);
+  return !shape.types.has('string') || decodesScalar(shape.item) || (shape.prefix?.some(decodesScalar) ?? false);
 }
 
 function tableShape(shape: FieldShape): QueryFieldShape {
@@ -144,6 +171,7 @@ function tableShape(shape: FieldShape): QueryFieldShape {
     types,
     ...(literals.length > 0 ? { literals } : {}),
     ...(shape.item ? { item: tableShape(shape.item) } : {}),
+    ...(shape.prefix ? { prefix: shape.prefix.map(tableShape) } : {}),
   };
 }
 

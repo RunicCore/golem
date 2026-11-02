@@ -79,6 +79,8 @@ Validation checks the model value of a `Date` or Temporal field with `instanceof
 
 Set `dates: temporal` on the [SDK job](/reference/config#openapi-ts-block). The generated client then maps `format: date-time` to `Temporal.Instant`, `format: date` to `Temporal.PlainDate` and `format: duration` to `Temporal.Duration`. Without the key, the same fields are `Date` values.
 
+With `dates: temporal`, `format: duration` means the Temporal form in every position of the document. It accepts the text that `Temporal.Duration` writes, such as `PT0.5S`, `PT1H30S` and `P1Y2D`. Without `dates: temporal`, a `duration` string must follow the RFC 3339 format, which has no fractional seconds.
+
 <<< ../../examples/payments/server/golem.yaml#openapi-dates-job
 
 The client converts the JSON strings for you, so the response `body` holds the Temporal values:

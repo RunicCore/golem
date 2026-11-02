@@ -86,7 +86,7 @@ export function builtinClassByOpenApiFormat(dates: OpenApiDatesMode, format: str
   return BY_OPENAPI_FORMAT.get(dates)?.get(format);
 }
 
-/** The descriptor of a field of the class. A generator whose document states the wire form itself passes its own `wire`. */
-export function builtinClassDescriptor(entry: BuiltinClass, wire: ModelConversionDescriptor = entry.wire): ModelConversionDescriptor {
-  return { kind: 'class-value', typeName: entry.qualifiedName, classRef: { path: entry.classPath }, serde: { ...entry.serde, wireDescriptor: wire } };
+/** The descriptor of a field of the class, with the wire form of the class. */
+export function builtinClassDescriptor(entry: BuiltinClass): ModelConversionDescriptor {
+  return { kind: 'class-value', typeName: entry.qualifiedName, classRef: { path: entry.classPath }, serde: { ...entry.serde, wireDescriptor: entry.wire } };
 }

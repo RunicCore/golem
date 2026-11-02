@@ -294,15 +294,15 @@ test('converted model fields call their converter without a per-field closure', 
     const { Wallet } = await import(pathToFileURL(path.join(project.root, 'build/wallet.model.js')).href);
     const wire = { balance: { amount: '1', currency: 'USD' }, rebate: { amount: '2', currency: 'EUR' } };
     // The model's own decode hook is not on the codec's fromWireFormat path; the nested-model decode of generated code (decodeGeneratedModelTrusted) is its only caller.
-    // One decode: the converter each field passes, by direction and field.
+    // One decode: the converter each field passes, by field.
     const round = () => {
       spy.calls.length = 0;
       decodeGeneratedModelTrusted(Wallet, wire);
-      return new Map(spy.calls.map((call) => [`${String(call.args[0])} ${String(call.args[1])}`, call.args[2]]));
+      return new Map(spy.calls.map((call) => [String(call.args[0]), call.args[1]]));
     };
     const first = round();
     const second = round();
-    assert.deepEqual([...first.keys()].sort(), ['deserialize balance', 'deserialize rebate']);
+    assert.deepEqual([...first.keys()].sort(), ['balance', 'rebate']);
     for (const [key, convert] of first) {
       assert.equal(typeof convert, 'function', key);
       assert.strictEqual(second.get(key), convert, `${key} passes one function on every call, not a closure made per call`);
@@ -329,12 +329,12 @@ test('converted model items inside an array call their converter without a per-i
       spy.calls.length = 0;
       const wallet = decodeGeneratedModelTrusted(Wallet, wire);
       assert.deepEqual(modelCodec(wallet).toWireFormat(wallet), wire);
-      return spy.calls.map((call) => ({ call: `${call.name} ${String(call.args[0])}`, convert: call.args.find((arg) => typeof arg === 'function') }));
+      return spy.calls.map((call) => ({ call: call.name, convert: call.args.find((arg) => typeof arg === 'function') }));
     };
     const first = round();
     const second = round();
     // One call converts every item, so no item gets a converter of its own.
-    assert.deepEqual(first.map((entry) => entry.call).filter((call) => call.startsWith('convertModelItems')).sort(), ['convertModelItems deserialize']);
+    assert.deepEqual(first.map((entry) => entry.call).filter((call) => call.startsWith('convertModelItems')).sort(), ['convertModelItems']);
     assert.equal(first.length, second.length);
     first.forEach((entry, index) => {
       assert.equal(typeof entry.convert, 'function', entry.call);

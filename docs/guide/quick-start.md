@@ -137,8 +137,8 @@ The `@exprtlabs/*` package subpaths are ESM-only. Import them from ESM applicati
 | Package | Peer dependencies |
 | --- | --- |
 | `@exprtlabs/golem-model` | `typescript` `>=6.0.0 <7` or `>=7.1.0-0 <8` |
-| `@exprtlabs/golem-ts-openapi` | `@exprtlabs/golem`, and `typescript` `>=6.0.0 <7` or `>=7.1.0-0 <8`, `@nestjs/common` `^11.0.0` and `rxjs` `^7.8.0` (all three optional; the last two for `NestModelInterceptor`) |
-| `@exprtlabs/golem-openapi-ts` | `@exprtlabs/golem`, and `typescript` `>=6.0.0 <7` or `>=7.1.0-0 <8` and `mobx` `^6.13.0` (both optional; `mobx` for the MobX extension) |
+| `@exprtlabs/golem-ts-openapi` | `@exprtlabs/golem`, and `@exprtlabs/golem-model`, `typescript` `>=6.0.0 <7` or `>=7.1.0-0 <8`, `@nestjs/common` `^11.0.0` and `rxjs` `^7.8.0` (all four optional; the last two for `NestModelInterceptor`) |
+| `@exprtlabs/golem-openapi-ts` | `@exprtlabs/golem`, and `@exprtlabs/golem-model`, `typescript` `>=6.0.0 <7` or `>=7.1.0-0 <8` and `mobx` `^6.13.0` (all three optional; `mobx` for the MobX extension) |
 
 `@exprtlabs/golem` has only optional peer dependencies:
 

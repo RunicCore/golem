@@ -230,7 +230,7 @@ Each entry of `sdks` takes these keys:
 | `maxRefBytes` | positive integer | No | `5242880` | Maximum bytes to read from one referenced document, local or remote. |
 | `maxRefDocuments` | positive integer | No | `256` | Maximum referenced documents, local ones included. |
 | `refTimeoutMs` | positive integer | No | `10000` | Timeout for a remote reference read, in milliseconds. |
-| `dates` | `date` or `temporal` | No | `date` | `temporal` maps `format: date-time` to `Temporal.Instant`, `date` to `Temporal.PlainDate` and `duration` to `Temporal.Duration`. [`@exprtlabs/golem/temporal`](/reference/runtime-api#temporal) converts them. `time` stays a string. Encoding a `Temporal.Instant` writes `Z`, so the original offset is lost. |
+| `dates` | `date` or `temporal` | No | `date` | `temporal` maps `format: date-time` to `Temporal.Instant`, `date` to `Temporal.PlainDate` and `duration` to `Temporal.Duration`. [`@exprtlabs/golem/temporal`](/reference/runtime-api#temporal) converts them. `time` stays a string. With `temporal`, `format: duration` in the document means the Temporal form, in every position. It accepts the text that Temporal writes, such as `PT0.5S`, `PT1H30S` and `P1Y2D`. With `date`, a `duration` string keeps the RFC 3339 format. Encoding a `Temporal.Instant` writes `Z`, so the original offset is lost. |
 | `mode` | `standalone` or `golem` | No | `standalone` | The kind of SDK ([modes](#sdk-modes)). `golem` needs a `model` block in the same file. |
 
 ### SDK modes {#sdk-modes}

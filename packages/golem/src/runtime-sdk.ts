@@ -11,7 +11,7 @@ export * from './runtime-client-validation.js';
 export * from './runtime-temporal.js';
 export * from './runtime-validation.js';
 export {
-  assertAcyclicEncodeInput, assertPropertyAcyclic, assertWireAcyclic, beginDecode, beginEncode, convertModelField, convertModelItems,
+  assertAcyclicEncodeInput, assertPropertyAcyclic, assertWireAcyclic, beginDecode, beginEncode, constructModel, convertModelField, convertModelItems,
   convertModelRecord, convertModelTupleItems, copyModelRecord, decodeCheckedInput, decodeDetachedInput, defineModelProperty,
   deserializeDate, endDecode, endEncode, isVariantObject, jsonWithDiscriminator, rejectModelObject, wireChecked, requireModelObject, serializeDate,
   unknownDiscriminatorValue, withDeclaredFields, withDiscriminatorValue,

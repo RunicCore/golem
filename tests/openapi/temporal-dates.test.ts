@@ -11,6 +11,8 @@ import {
   generateMaterializedSdk,
   importGeneratedModule,
   isGeneratedClientClass,
+  loadGeneratedClient,
+  recordingFetch,
   requireRecord,
   sdkBodyCodec,
   withRootOperations,
@@ -253,4 +255,101 @@ test('dates: temporal converts fields of models that reference each other across
   assert.ok(model.events[0]!.venue.closes[0] instanceof Temporal.Instant);
   assert.ok(model.span instanceof Temporal.Duration);
   assert.deepEqual(await client.encode(model), wire);
+});
+
+// The generated SDK bundles its own runtime, so its LibError is not this test's class.
+const isValidationError = (error: unknown): boolean => (error as { kind?: unknown } | null)?.kind === 'validation';
+
+test('dates: temporal round-trips the duration text that Temporal writes in a field, an array item and a union branch', async t => {
+  // protects: T-682 a Temporal.Duration field writes PT0.5S, PT1H30S and P1Y2D, and reads them back under the class wire form, not the RFC 3339 duration format
+  const client = await generateTemporalClient(t, 'golem-openapi-temporal-duration-', document({
+    required: ['span', 'spans', 'maybe', 'either'],
+    properties: {
+      span: { type: 'string', format: 'duration' },
+      spans: { type: 'array', items: { type: 'string', format: 'duration' } },
+      maybe: { type: ['string', 'null'], format: 'duration' },
+      either: { anyOf: [{ type: 'string', format: 'duration' }, { type: 'null' }] },
+    },
+  }) as Record<string, unknown>, 'Event');
+  const rows = [
+    [Temporal.Duration.from({ milliseconds: 500 }), 'PT0.5S'],
+    [Temporal.Duration.from({ hours: 1, seconds: 30 }), 'PT1H30S'],
+    [Temporal.Duration.from({ years: 1, days: 2 }), 'P1Y2D'],
+  ] as const;
+  for (const [span, text] of rows) {
+    const written = await client.encode({ span, spans: [span], maybe: span, either: span });
+    assert.deepEqual(written, { span: text, spans: [text], maybe: text, either: text }, text);
+    const read = await client.decode(written) as { span: Temporal.Duration; spans: Temporal.Duration[]; maybe: Temporal.Duration; either: Temporal.Duration };
+    for (const value of [read.span, read.spans[0], read.maybe, read.either]) assert.equal(value?.toString(), text);
+  }
+});
+
+test('dates: temporal still rejects a duration text outside the wire form, and a pattern beside the format still applies', async t => {
+  // protects: T-682 the class wire form replaces the RFC 3339 format only; bad text and a keyword beside the format are still checked
+  const client = await generateTemporalClient(t, 'golem-openapi-temporal-duration-bad-', document({
+    required: ['span', 'timed'],
+    properties: { span: { type: 'string', format: 'duration' }, timed: { type: 'string', format: 'duration', pattern: '^PT' } },
+  }) as Record<string, unknown>, 'Event');
+  await assert.rejects(client.decode({ span: 'P1e2D', timed: 'PT1S' }), isValidationError);
+  await assert.rejects(client.decode({ span: 'P1D', timed: 'P1D' }), isValidationError);
+  assert.equal(((await client.decode({ span: 'P1D', timed: 'PT0.5S' })) as { timed: Temporal.Duration }).timed.toString(), 'PT0.5S');
+});
+
+test('dates: temporal reads format: duration as the Temporal form in every position, a keyword that only checks included', async t => {
+  // protects: T-682 one rule for the SDK: with dates: temporal, format: duration means the Temporal wire form in every check schema
+  const client = await generateTemporalClient(t, 'golem-openapi-temporal-duration-keywords-', document({
+    required: ['span', 'plain', 'times'],
+    properties: {
+      span: { type: 'string', format: 'duration' },
+      tag: { type: 'string' },
+      plain: { type: 'string', not: { type: 'string', format: 'duration' } },
+      times: { type: 'array', items: { type: 'string', format: 'date-time' }, contains: { type: 'string', format: 'date-time' } },
+    },
+    if: { properties: { span: { type: 'string', format: 'duration' } }, required: ['span'] },
+    then: { required: ['tag'] },
+  }) as Record<string, unknown>, 'Event');
+  const base = { span: 'P1D', plain: 'x', times: ['2025-01-02T03:04:05Z'], tag: 't' };
+  assert.equal(((await client.decode({ ...base, span: 'PT0.5S' })) as { span: Temporal.Duration }).span.toString(), 'PT0.5S');
+  await assert.rejects(client.decode({ ...base, plain: 'PT0.5S' }), isValidationError);
+  const { tag: _tag, ...withoutTag } = base;
+  await assert.rejects(client.decode({ ...withoutTag, span: 'PT0.5S' }), isValidationError);
+});
+
+test('dates: date keeps the RFC 3339 duration format on a plain string field', async t => {
+  // protects: T-682 without dates: temporal a duration string is not converted and keeps the RFC 3339 format
+  const output = path.join(createFixtureProject(t, 'golem-openapi-date-duration-'), 'sdk');
+  await generateMaterializedSdk(withRootOperations(document({ required: ['span'], properties: { span: { type: 'string', format: 'duration' } } }) as Record<string, unknown>, 'Event'), { output, name: 'Events', profile: PROFILE, dates: 'date' });
+  compileGeneratedSdk(output, [], { strict: true });
+  const client = await sdkBodyCodec(output, 'Events', 'Event');
+  assert.deepEqual(await client.decode({ span: 'PT1H30M' }), { span: 'PT1H30M' });
+  await assert.rejects(client.decode({ span: 'PT0.5S' }), isValidationError);
+});
+
+test('dates: temporal sends a duration query parameter and a duration header in the form Temporal writes, and reads one in a response header', async t => {
+  // protects: T-682 the check of a parameter or a header uses the Temporal.Duration wire form, as the check of a body does
+  const output = path.join(createFixtureProject(t, 'golem-openapi-temporal-duration-params-'), 'sdk');
+  const doc = {
+    openapi: '3.1.0',
+    info: { title: 'Events', version: '1.0.0' },
+    paths: { '/spans': { get: {
+      operationId: 'listSpans',
+      parameters: [
+        { name: 'span', in: 'query', schema: { type: 'string', format: 'duration' } },
+        { name: 'X-Span', in: 'header', schema: { type: 'string', format: 'duration' } },
+      ],
+      responses: { 204: { description: 'None', headers: { 'X-Left': { schema: { type: 'string', format: 'duration' } } } } },
+    } } },
+  };
+  await generateMaterializedSdk(doc, { output, name: 'Events', profile: PROFILE, dates: 'temporal' });
+  compileGeneratedSdk(output, [], TEMPORAL_LIB);
+  const Client = await loadGeneratedClient(output, 'Events');
+  const { fetchImpl, sent } = recordingFetch(() => new Response(null, { status: 204, headers: { 'X-Left': 'PT1H30S' } }));
+  const requests: { url: string; headers: Record<string, string> }[] = [];
+  const client = new Client({ baseUrl: 'https://api.test', fetchImpl: (async (url: RequestInfo | URL, init?: RequestInit) => {
+    requests.push({ url: String(url), headers: Object.fromEntries(new Headers(init?.headers)) });
+    return fetchImpl(url, init);
+  }) as typeof fetch }) as unknown as { listSpans(): { execute(input: unknown): Promise<{ headers: Record<string, unknown> }> } };
+  const response = await client.listSpans().execute({ query: { span: Temporal.Duration.from({ milliseconds: 500 }) }, header: { 'X-Span': Temporal.Duration.from({ years: 1, days: 2 }) } });
+  assert.deepEqual([requests[0]?.url, requests[0]?.headers['x-span'], sent.length], ['https://api.test/spans?span=PT0.5S', 'P1Y2D', 1]);
+  assert.equal(String(response.headers['X-Left'] ?? response.headers['x-left']), 'PT1H30S');
 });

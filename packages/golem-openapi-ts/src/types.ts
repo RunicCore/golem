@@ -1,8 +1,10 @@
+import { isDeepStrictEqual } from 'node:util';
 import { isBinaryMediaType, isBuiltinTextMediaType } from './client/codecs.js';
 import { asRecord, isJsonObject, objectEntries, type JsonObject } from './json.js';
 import { identifier, NameScope } from '@exprtlabs/golem/internal/generator-support';
-import { BUILTIN_CLASS_ROOTS, builtinClassByOpenApiFormat, type BuiltinClass, code, codeKey, manifestMarkerComment, docComment, exportedName, fileImports, identifier as identifierPart, ImportSource, isEmpty, join, lineBreak, literal, nest, propertyKey, render, renderModule, sameCode, type RenderedModule, type Code, type JsonValue } from '@exprtlabs/golem/internal/emitter';
+import { BUILTIN_CLASS_ROOTS, code, codeKey, manifestMarkerComment, docComment, exportedName, fileImports, identifier as identifierPart, ImportSource, isEmpty, join, lineBreak, literal, nest, propertyKey, render, renderModule, sameCode, type RenderedModule, type Code, type JsonValue } from '@exprtlabs/golem/internal/emitter';
 import { unionVariants } from './composition.js';
+import { dateClassOf } from './date-class.js';
 import { refName } from './names.js';
 import {
   effectiveSchemaTypes,
@@ -92,11 +94,13 @@ function withNullAlternative(
 }
 
 function classifyTextSchemaLocal(schema: JsonObject): TextSchemaClassification {
-  if (schema.const !== undefined) return classifyConstValue(schema.const);
-  if (Array.isArray(schema.enum)) {
-    if (schema.enum.length === 0) return { kind: 'ambiguous', schemaType: 'never' };
-    const hasNull = schema.enum.some((value) => value === null);
-    const concrete = schema.enum.filter((value) => value !== null);
+  // The values the schema admits, by the one rule that reads `const`, `enum` and `type` together.
+  const listed = typedListedValues(schema);
+  if (listed !== undefined) {
+    if (listed.length === 0) return { kind: 'ambiguous', schemaType: 'never' };
+    if (schema.const !== undefined) return classifyConstValue(listed[0]);
+    const hasNull = listed.some((value) => value === null);
+    const concrete = listed.filter((value) => value !== null);
     if (concrete.length === 0) return { kind: 'non-string', schemaType: 'null' };
     const kinds = new Set(concrete.map((value) => typeof value));
     if (kinds.size === 1 && kinds.has('string')) {
@@ -256,13 +260,6 @@ interface ConvertedTypes {
   readonly dates: OpenApiDates;
   /** The globals `Date` and `Temporal` that a component of the same name shadows in the module: they are reached through `globalThis`. */
   readonly shadowed: ReadonlySet<string>;
-}
-
-/** The built-in class that a string schema converts to under the `dates` value (a `date-time` string is a Date, or a Temporal.Instant); any other schema has none. */
-export function dateClassOf(schema: unknown, dates: OpenApiDates): BuiltinClass | undefined {
-  if (!isJsonObject(schema) || typeof schema.format !== 'string') return undefined;
-  if (!(schema.type === 'string' || (Array.isArray(schema.type) && schema.type.includes('string')))) return undefined;
-  return builtinClassByOpenApiFormat(dates, schema.format);
 }
 
 /** The type that a string schema converts to, or undefined when its value stays a string. */
@@ -432,7 +429,7 @@ export function schemaType(schema: unknown, context: PublicSchemaTypeContext = {
 
 function schemaTypeCode(schema: unknown, context: SchemaTypeContext = {}): TypeCode {
   const projected = context.direction
-    ? projectSchema(schema, { document: context.document ?? {}, direction: context.direction })
+    ? projectSchema(schema, { document: context.document ?? {}, direction: context.direction, dates: null })
     : schema;
   return schemaTypeNode(projected, context);
 }
@@ -470,6 +467,7 @@ function projectedResourceSchema(schema: unknown, context: SchemaTypeContext): u
   return projectSchema(schema, {
     document: context.document,
     direction: context.direction,
+    dates: null,
     resources: context.resources,
   });
 }
@@ -637,6 +635,22 @@ function allOfMemberTypes(item: unknown, requirements: AllOfRequirements, contex
   return [schemaTypeNode(member, context)];
 }
 
+/**
+ * The values that `const` or `enum` lists and the `type` of the schema admits; `undefined` when the schema has neither keyword.
+ * With both keywords the value must satisfy both: the `const` value when `enum` lists an equal JSON value, else none. `integer` admits a whole number and `number` any number, so 1 and 1.0 are one value. The one rule
+ * for the generated type and for the model: a schema left with no value accepts none.
+ */
+export function typedListedValues(schema: { readonly const?: unknown; readonly enum?: unknown; readonly type?: unknown }): readonly unknown[] | undefined {
+  const values = schema.const === undefined
+    ? Array.isArray(schema.enum) ? schema.enum : undefined
+    : Array.isArray(schema.enum) && !schema.enum.some((value) => isDeepStrictEqual(value, schema.const)) ? [] : [schema.const];
+  if (!values) return undefined;
+  const types = effectiveSchemaTypes(schema);
+  if (types.length === 0) return values;
+  const kindOf = (value: unknown): string => value === null ? 'null' : Array.isArray(value) ? 'array' : typeof value === 'number' && Number.isInteger(value) ? 'integer' : typeof value;
+  return values.filter((value) => types.includes(kindOf(value)) || (typeof value === 'number' && types.includes('number')));
+}
+
 function schemaTypeNode(rawSchema: unknown, context: SchemaTypeContext = {}): TypeCode {
   if (rawSchema === true) return UNKNOWN_TYPE;
   if (rawSchema === false) return NEVER_TYPE;
@@ -666,9 +680,9 @@ function schemaTypeNode(rawSchema: unknown, context: SchemaTypeContext = {}): Ty
     return referencedSchemaType(schema.$dynamicRef, inner);
   }
   if (schema.not === true) return NEVER_TYPE;
-  if (schema.const !== undefined) return typeCode(literal(schema.const as JsonValue));
-  if (Array.isArray(schema.enum)) {
-    if (schema.enum.length === 0) return NEVER_TYPE;
+  const listed = typedListedValues(schema);
+  if (listed) {
+    if (listed.length === 0) return NEVER_TYPE;
     const excluded = isJsonObject(schema.not)
       ? new Set(
         schema.not.const !== undefined
@@ -678,7 +692,7 @@ function schemaTypeNode(rawSchema: unknown, context: SchemaTypeContext = {}): Ty
             : [],
       )
       : new Set<string>();
-    const values = schema.enum.filter((value) => !excluded.has(JSON.stringify(value)));
+    const values = listed.filter((value) => !excluded.has(JSON.stringify(value)));
     return unionType(values.map((value) => typeCode(literal(value as JsonValue)))) ?? NEVER_TYPE;
   }
   const types = effectiveSchemaTypes(schema);

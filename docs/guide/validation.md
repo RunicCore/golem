@@ -131,7 +131,7 @@ A `LibError` from `@exprtlabs/golem/errors` has these members:
 | --- | --- |
 | `kind` | the failure category: `validation`, `invalid_json`, `serialization`, `deserialization`, `validation_unavailable` or `response` |
 | `issues` | a frozen list of failed checks |
-| `causedByInput` | `true` when the rejected value is at fault, `false` for a program fault |
+| `causedByInput` | `true` when the rejected value is at fault, such as a failed check or a `Deserialize` function that throws on wire input. `false` for a program fault |
 | `cause` | the exception that a `LibError` wraps, if any |
 
 Each issue has a `code`, a `path`, a `message` and a `source`. Check `issue.code` and TypeScript narrows to the fields of that code, such as `issue.limit` after `issue.code === 'tooSmall'`. A `path` such as `['items', 0, 'amount']` names the field. Every kind, code and field is in the [runtime reference](/reference/runtime-api#errors).

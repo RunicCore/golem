@@ -54,10 +54,10 @@ Golem marks a rejected value with a `LibError` whose `causedByInput` is true. Th
 The interceptor converts HTTP handlers. A handler of another context, such as RPC, passes through unchanged.
 
 1. `fromWireFormat` runs on each `@Body()` and `@Query()` parameter with fail-fast validation.
-2. Input that fails validation or cannot be decoded returns HTTP 400 with `issues` (`LibError.causedByInput`). Examples are a broken constraint, an unknown discriminator tag and an unparsable date.
+2. Input that fails validation or cannot be decoded returns HTTP 400 with `issues` (`LibError.causedByInput`). Examples are a broken constraint, an unknown discriminator tag, an unparsable date and a `Deserialize` function that throws.
 3. Valid input reaches the handler as a model. A type alias stays a plain object, and your class is constructed.
 4. An `IModel` or `IObject` return is stringified with that type. This includes a `Promise` or an array of that type. A return that the rewrite did not mark stays Nest JSON. Examples are a handler with no written return type and a handler that returns a union.
-5. An application converter that throws, and missing generated metadata, return HTTP 500. A marked return whose generated model did not load fails the request with HTTP 500 before the handler runs.
+5. A `Serialize` function that throws, and missing generated metadata, return HTTP 500. A marked return whose generated model did not load fails the request with HTTP 500 before the handler runs.
 
 `@Param()` and `@Headers()` stay as Nest received them.
 

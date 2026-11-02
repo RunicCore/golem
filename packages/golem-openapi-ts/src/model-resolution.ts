@@ -20,8 +20,9 @@ import {
   type CompositionReader,
   unionVariants,
 } from './composition.js';
+import { dateClassOf } from './date-class.js';
 import { effectiveSchemaTypes } from './normalize.js';
-import { schemaContext, dateClassOf, type NeverPropertiesOf } from './types.js';
+import { schemaContext, typedListedValues, type NeverPropertiesOf } from './types.js';
 import {
   collectCanonicalResources,
   nextSchemaBase,
@@ -441,24 +442,21 @@ function isSequenceDescriptor(descriptor: ModelTypeDescriptor): boolean {
   return descriptor.kind === 'array' || descriptor.kind === 'tuple';
 }
 
-/** A schema that no value satisfies: `false`, `not: true`, or an empty `enum`. */
+/** A schema that no value satisfies: `false`, `not: true`, or an `enum` or `const` that is empty or that its `type` empties. */
 function acceptsNoValue(schema: unknown): boolean {
-  return schema === false || (isJsonObject(schema) && (schema.not === true || (Array.isArray(schema.enum) && schema.enum.length === 0)));
+  return schema === false || (isJsonObject(schema) && (schema.not === true || typedListedValues(schema)?.length === 0));
 }
 
 /**
- * `enum` limits a value to its listed values, with or without `type` (JSON Schema 2020-12 section 6.1.2). An empty list admits no value.
+ * `enum` and `const` limit a value to the listed values, with or without `type` (JSON Schema 2020-12 sections 6.1.2 and 6.1.3). An empty list admits no value.
  * A list of scalars is a literal union without the values that the declared `type` excludes. A list with an object or an array has no literal form: the keyword constraints carry it as an `enum` constraint.
  */
-function openApiEnumDescriptor(schema: { readonly enum?: unknown; readonly type?: unknown }): ModelTypeDescriptor | undefined {
-  const values = schema.enum;
-  if (!Array.isArray(values)) return undefined;
-  if (values.some((value) => value !== null && typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean')) return undefined;
-  const types = effectiveSchemaTypes(schema);
-  const admitted = (value: unknown): boolean => types.length === 0
-    || types.includes(value === null ? 'null' : typeof value === 'number' && Number.isInteger(value) ? 'integer' : typeof value)
-    || (typeof value === 'number' && types.includes('number'));
-  const variants = values.filter(admitted).map((value): ModelTypeDescriptor => value === null ? { kind: 'null' } : { kind: 'literal', value });
+function openApiEnumDescriptor(schema: { readonly const?: unknown; readonly enum?: unknown; readonly type?: unknown }): ModelTypeDescriptor | undefined {
+  const values = typedListedValues(schema);
+  if (!values) return undefined;
+  const listed = schema.const !== undefined ? [schema.const] : (schema.enum as readonly unknown[]);
+  if (listed.some((value) => value !== null && typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean')) return undefined;
+  const variants = values.map((value): ModelTypeDescriptor => value === null ? { kind: 'null' } : { kind: 'literal', value: value as string | number | boolean });
   if (variants.length === 0) return { kind: 'never' };
   return variants.length === 1 ? variants[0]! : { kind: 'union', variants };
 }
@@ -598,7 +596,6 @@ function referenceTarget(schema: unknown, env: ModelResolveEnv): Readonly<Record
 function uncarriedKeywords(schema: unknown, dates: OpenApiDates, target?: Readonly<Record<string, unknown>>): string[] {
   if (!isJsonObject(schema)) return [];
   const present = (names: readonly string[]): string[] => names.filter((name) => schema[name] !== undefined);
-  const isString = schema.type === 'string' || (Array.isArray(schema.type) && schema.type.includes('string'));
   // The model holds a date value, not its text.
   const dated = dateClassOf(schema, dates) !== undefined;
   // With an allOf the composition holds `unevaluatedProperties`; with none, a union or a condition evaluates names that the descriptor does not list.
@@ -679,8 +676,7 @@ export function modelConversionDescriptor(
   const sub = subschemaConverter(definitions, nested, direction, seen);
   const builtin = dateClassOf(schema, env.dates);
   if (builtin) {
-    // The document states the wire form: a string of its own format, which the wire check of a component keeps.
-    const value = builtinClassDescriptor(builtin, { kind: 'string', constraints: [{ kind: 'format', value: String(asRecord(schema).format) }] });
+    const value = builtinClassDescriptor(builtin);
     return admitsNull(asRecord(schema)) ? { kind: 'union', variants: [value, { kind: 'null' }] } : value;
   }
   if (isJsonObject(schema) && hasAllOfMembers(schema)) {
@@ -773,7 +769,7 @@ export function modelConversionDescriptor(
       : [];
     const empty = objectEntries(schema.properties).filter(([name, child]) => required.includes(name) && acceptsNoValue(child)).map(([name]) => name);
     if (empty.length > 0) {
-      throw new CompositionError(COMPOSITION_UNSATISFIABLE, `No object satisfies this schema: the required ${empty.length > 1 ? 'properties' : 'property'} ${empty.map((name) => JSON.stringify(name)).join(', ')} accept${empty.length > 1 ? '' : 's'} no value, because the schema is an empty enum, \`not: true\` or \`false\`. Remove ${empty.length > 1 ? 'them' : 'it'} from required, or give ${empty.length > 1 ? 'them' : 'it'} a schema that accepts a value.`);
+      throw new CompositionError(COMPOSITION_UNSATISFIABLE, `No object satisfies this schema: the required ${empty.length > 1 ? 'properties' : 'property'} ${empty.map((name) => JSON.stringify(name)).join(', ')} accept${empty.length > 1 ? '' : 's'} no value, because the schema is an empty enum, an enum or const that its type excludes, \`not: true\` or \`false\`. Remove ${empty.length > 1 ? 'them' : 'it'} from required, or give ${empty.length > 1 ? 'them' : 'it'} a schema that accepts a value.`);
     }
     // Beside `properties` alone, `unevaluatedProperties` judges the names that `properties` does not list, as `additionalProperties` does.
     const { unevaluatedProperties: _held, ...own } = schema;
@@ -791,13 +787,13 @@ export function modelConversionDescriptor(
     }, own, sub, 'typed');
     return withOpenApiWholeValue(admitsNull(schema) ? { kind: 'union', variants: [object, { kind: 'null' }] } : object, schema, sub);
   }
-  if (isJsonObject(schema) && schema.const !== undefined
-    && (typeof schema.const === 'string' || typeof schema.const === 'number' || typeof schema.const === 'boolean')) {
-    return { kind: 'literal', value: schema.const };
-  }
   if (isJsonObject(schema)) {
     const listed = openApiEnumDescriptor(schema);
-    if (listed) return withOpenApiConstraints(listed, schema, sub);
+    if (listed) {
+      // A scalar `const` is held by the literal; the keyword constraints must not list it again.
+      const { const: _held, ...keywords } = schema;
+      return withOpenApiConstraints(listed, keywords, sub);
+    }
   }
   if (isJsonObject(schema)) {
     const primitive = openApiPrimitiveDescriptor(schema);

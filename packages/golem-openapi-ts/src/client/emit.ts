@@ -713,11 +713,12 @@ export function buildOperationValidationSchemas(
   operations: readonly NormalizedOperation[],
   document: unknown,
   profile: OpenApiGenerationProfile,
-  schemaData?: ReturnType<typeof buildSchemaData>,
+  schemaData: ReturnType<typeof buildSchemaData> | undefined,
   locate?: OriginLocator,
   moved: MovedUnions = new Map(),
 ): OperationValidationSchemas | undefined {
-  if (!profile.validation) return undefined;
+  // The schema data exists exactly when the profile validates and the document has an operation.
+  if (!profile.validation || schemaData === undefined) return undefined;
   const bundles = buildOperationValidationSchemaBundles(document, operations, schemaData);
   const list = operations.map((operation) => {
     const bundle = bundles.get(operation.name);

@@ -6,7 +6,7 @@ export type { GeneratedModelConversion, GeneratedModelValidatorEnhancer } from '
 export type { CodecData, CodecExtensionData, InternalObjectCodec, ObjectCodecImpl } from './object-codec.js';
 export { findGeneratedModelDefinition, findGeneratedModelDefinitionForConstructor, registerGeneratedModel } from './model-registry.js';
 export {
-  assertAcyclicEncodeInput, assertPropertyAcyclic, assertWireAcyclic, beginDecode, beginEncode, convertModelField, convertModelItems,
+  assertAcyclicEncodeInput, assertPropertyAcyclic, assertWireAcyclic, beginDecode, beginEncode, constructModel, convertModelField, convertModelItems,
   convertModelRecord, convertModelTupleItems, copyModelRecord, decodeCheckedInput, decodeDetachedInput, decodeGeneratedModelTrusted,
   defineModelProperty, deserializeDate, endDecode, endEncode, isVariantObject, jsonWithDiscriminator, rejectModelObject, wireChecked,
   requireModelObject, resolveMaxDepth, serializeDate, unknownDiscriminatorValue, withDeclaredFields, withDiscriminatorValue,

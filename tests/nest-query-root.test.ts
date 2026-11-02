@@ -126,6 +126,40 @@ test('a model with only string fields has no query fields', () => {
   assert.equal(table({ type: 'object', properties: { name: { type: 'string' }, either: { type: ['string', 'array'], items: { type: 'string' } } } }), undefined);
 });
 
+// protects: T-823 a query tuple decoded every position by the item types merged over all positions
+test('NestModelInterceptor decodes each position of a query tuple by its own type', async () => {
+  const fields = table({
+    type: 'object',
+    properties: {
+      pair: { type: 'array', minItems: 2, prefixItems: [{ type: 'integer' }, { type: 'string' }], items: false, maxItems: 2 },
+      mixed: { type: 'array', minItems: 1, prefixItems: [{ type: 'integer' }], items: { type: 'boolean' } },
+    },
+  });
+  assert.deepEqual(fields, {
+    mixed: { types: [], item: { types: ['boolean'] }, prefix: [{ types: ['integer'] }] },
+    pair: { types: [], item: { types: [] }, prefix: [{ types: ['integer'] }, { types: ['string'] }] },
+  });
+  registerPassThroughCodec('QueryTuple_0', { data: { nest: fields } });
+  assert.deepEqual(
+    await queryReceived('QueryTuple_0', 'pair=1&pair=2&pair=3&mixed=1&mixed=true&mixed=false&mixed=x'),
+    { pair: [1, '2', '3'], mixed: [1, true, false, 'x'] },
+  );
+});
+
+// protects: T-823 a branch's items reached no position that another branch lists, so a valid request for a union of an array and a tuple stayed text
+for (const [name, schema, query, expected] of [
+  ['a tuple, then an array', { oneOf: [{ type: 'array', prefixItems: [{ type: 'number' }, { type: 'number' }], items: false }, { type: 'array', items: { type: 'boolean' } }] }, 'x=true&x=false', [true, false]],
+  ['an array, then a tuple', { oneOf: [{ type: 'array', items: { type: 'boolean' } }, { type: 'array', prefixItems: [{ type: 'number' }, { type: 'number' }], items: false }] }, 'x=true&x=false', [true, false]],
+  ['a tuple with a rest, then a tuple', { oneOf: [{ type: 'array', prefixItems: [{ type: 'number' }], items: { type: 'boolean' } }, { type: 'array', prefixItems: [{ type: 'number' }, { type: 'number' }], items: false }] }, 'x=1&x=true', [1, true]],
+  ['a tuple, then a tuple with a rest', { oneOf: [{ type: 'array', prefixItems: [{ type: 'number' }, { type: 'number' }], items: false }, { type: 'array', prefixItems: [{ type: 'number' }], items: { type: 'boolean' } }] }, 'x=1&x=true', [1, true]],
+] as const) {
+  test(`NestModelInterceptor decodes a query union of ${name} by every branch that reaches a position`, async () => {
+    const id = `QueryUnion_${name.replaceAll(/\W/g, '')}`;
+    registerPassThroughCodec(id, { data: { nest: table({ type: 'object', properties: { x: schema } }) } });
+    assert.deepEqual(await queryReceived(id, query), { x: expected });
+  });
+}
+
 test('NestModelInterceptor decodes a whole @Query() model with the fields of its codec', async () => {
   // protects: T-640 the interceptor decodes a query string by the nest data of the registered codec, not by a schema
   registerPassThroughCodec('QueryRoot_0', { data: { nest: BASE_FIELDS } });

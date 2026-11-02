@@ -116,7 +116,7 @@ test('the built quick start page shows both TypeScript ranges in the peer row of
   assert.ok(existsSync(quickStartHtml), 'run npm run docs:build first');
   const rows = [...readFileSync(quickStartHtml, 'utf8').matchAll(/<tr[^>]*>[\s\S]*?<\/tr>/g)].map(m => m[0]);
   for (const name of ['@exprtlabs/golem-model', '@exprtlabs/golem-ts-openapi']) {
-    const row = rows.filter(r => r.includes(`<code>${name}</code>`));
+    const row = rows.filter(r => r.includes(`<td><code>${name}</code></td>`));
     assert.equal(row.length, 1, `one peer row for ${name}`);
     for (const range of ['&gt;=6.0.0 &lt;7', '&gt;=7.1.0-0 &lt;8']) assert.ok(row[0].includes(range), `${name} row lacks "${range}"`);
   }
