@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import type { GolemConfig, GolemJob } from './config.js';
 import { GolemDiagnosticSeverity, compareText, hasErrorCode, isInsideDirectory, isRecord, stableJson } from './generator-core.js';
 import type { GolemDiagnostic } from './generator-core.js';
-import { loadedFilesUnder } from './load-record.js';
+import { loadedFileDigests } from './load-record.js';
 import type { EnabledExtension } from './rewrite-participant.js';
 import { atomicWrite, digest, loadInventory } from './outputs.js';
 import type { Inventory, InventoryEntry, OutputFiles } from './outputs.js';
@@ -228,22 +228,43 @@ export function hookCode(filled: readonly { readonly hook: string; readonly exte
   return hashText(JSON.stringify(filled.map(({ hook, extension }) => [hook, extension.package, extension.name, stableJson(extension.options)])));
 }
 
-/** The files under `folder` that the process has loaded (`loadedFilesUnder`), each digested now. A file that is gone is left out. */
-export function loadedCode(folder: string): LoadedCode {
-  const files: Record<string, string> = {};
-  for (const filename of loadedFilesUnder(folder)) {
-    const fileHash = fileDigest(filename);
-    if (fileHash !== undefined) files[path.relative(folder, filename).split(path.sep).join('/')] = fileHash;
-  }
-  return files;
+/** The package behind a block whose code a job loads: its folder, and the files golem resolved for it, which the record always holds (the plan and generator of a block's package, the entry of an extension). */
+export interface CodePackage {
+  readonly folder: string;
+  readonly entries: readonly string[];
+}
+
+/** A file's name in a record of loaded code: its path from the package folder, with `/` separators. */
+function codeKey(folder: string, filename: string): string {
+  return path.relative(folder, filename).split(path.sep).join('/');
 }
 
 /**
- * What the run supplies to a job besides its inputs: the folder of the package behind each block whose code the job loads (its own block, and the block of each
- * extension on its hooks), the digest of its hook extensions (`hookCode`), its program view (`programViewOf`), and the manifests of the jobs before it (absolute paths).
+ * The code of a package that the process loaded, each file with the digest it had when it loaded: the files under the package folder, its own `node_modules` left out,
+ * and the files golem resolved for the package, read from disk when the load hook missed them. A rebuilt file therefore stays recorded as the code that ran.
+ */
+export function loadedCode(code: CodePackage): LoadedCode {
+  const files = new Map<string, string>();
+  for (const [filename, loadDigest] of loadedFileDigests()) {
+    const key = codeKey(code.folder, filename);
+    if (isInsideDirectory(code.folder, filename) && !key.split('/').includes('node_modules')) files.set(key, loadDigest);
+  }
+  for (const entry of code.entries) {
+    const key = codeKey(code.folder, entry);
+    const entryDigest = files.has(key) ? undefined : fileDigest(entry);
+    if (entryDigest !== undefined) files.set(key, entryDigest);
+  }
+  return Object.fromEntries([...files].sort(([left], [right]) => compareText(left, right)));
+}
+
+/**
+ * What the run supplies to a job besides its inputs: the package behind each block whose code the job loads (its own block, and the block of each extension on its
+ * hooks), the digest of its hook extensions (`hookCode`), its program view (`programViewOf`), and the manifests of the jobs before it (absolute paths).
+ * `fileDigests` holds what the run has read of each code file, so the jobs of one package read it once.
  */
 export interface JobSetup {
-  readonly codeFolders: ReadonlyMap<string, string>;
+  readonly code: ReadonlyMap<string, CodePackage>;
+  readonly fileDigests?: Map<string, string | undefined>;
   readonly hookCode: string;
   readonly programView: string;
   readonly manifestInputs: readonly string[];
@@ -254,18 +275,28 @@ export function programViewOf(config: GolemConfig, job: GolemJob): string {
   return stableJson(config.jobPlan.programViews[job.id] ?? null);
 }
 
-/** Whether the record holds the code of exactly these packages, and every file in it is as it was: a changed or missing file is not. */
-function codeIsCurrent(record: JobRecord, folders: ReadonlyMap<string, string>): boolean {
+/**
+ * Whether the record holds the code of exactly these packages, with at least one file each and every file the run resolved for them, and every file is as it was.
+ * A changed or missing file is not. An empty block is not: nothing shows what ran.
+ */
+function codeIsCurrent(record: JobRecord, code: ReadonlyMap<string, CodePackage>, fileDigests: Map<string, string | undefined> | undefined): boolean {
+  const digestOf = (filename: string): string | undefined => {
+    if (!fileDigests) return fileDigest(filename);
+    if (!fileDigests.has(filename)) fileDigests.set(filename, fileDigest(filename));
+    return fileDigests.get(filename);
+  };
   const recorded = Object.entries(record.code);
-  return recorded.length === folders.size && recorded.every(([block, files]) => {
-    const folder = folders.get(block);
-    return folder !== undefined && Object.entries(files).every(([file, expected]) => fileDigest(path.join(folder, file)) === expected);
+  return recorded.length === code.size && recorded.every(([block, files]) => {
+    const entry = code.get(block);
+    return entry !== undefined && Object.keys(files).length > 0
+      && entry.entries.every(file => Object.hasOwn(files, codeKey(entry.folder, file)))
+      && Object.entries(files).every(([file, expected]) => digestOf(path.join(entry.folder, file)) === expected);
   });
 }
 
 /** Whether the loaded code, hook extensions, program view and manifest set are those the record holds. */
 export function sameSetup(config: GolemConfig, record: JobRecord, setup: JobSetup): boolean {
-  return codeIsCurrent(record, setup.codeFolders)
+  return codeIsCurrent(record, setup.code, setup.fileDigests)
     && record.hookCode === setup.hookCode
     && record.programView === setup.programView
     && JSON.stringify(record.manifestInputs) === JSON.stringify(setup.manifestInputs.map(manifest => recordPath(config, manifest)));

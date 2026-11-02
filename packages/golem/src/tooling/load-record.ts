@@ -1,33 +1,52 @@
-import { registerHooks } from 'node:module';
+import { readFileSync } from 'node:fs';
+import { registerHooks, type ModuleHooks } from 'node:module';
 import { fileURLToPath } from 'node:url';
-import { isInsideDirectory } from './generator-core.js';
-
-/** The URL of every file this process has loaded since `recordLoadedFiles` ran. A module that is loaded again fires no second load, so the set is process-wide. */
-const loaded = new Set<string>();
-let recording = false;
+import { digest } from './outputs.js';
 
 /**
- * Starts recording the files the process loads, by a `load` hook (`module.registerHooks`, Node 22.15 and later) that passes every load on unchanged.
- * Call it before the first import of provider or extension code: a file loaded earlier is not recorded. Once per process; a second call does nothing.
- * The hook stays for the life of the process, because a lazy import after one run ends is code that a later run needs to know about.
+ * The digest of each file this process loaded while a recording was on, as the file was when it loaded. A module that is loaded again fires no second load, so the
+ * map is process-wide: a later run in the same process (watch) still finds a file that an earlier run loaded. A file loaded again by a changed URL gets its new digest.
  */
-export function recordLoadedFiles(): void {
-  if (recording) return;
-  recording = true;
-  registerHooks({
-    load(url, context, nextLoad) {
-      if (url.startsWith('file:')) loaded.add(url);
-      return nextLoad(url, context);
-    },
-  });
+const loaded = new Map<string, string>();
+let recordings = 0;
+let hooks: ModuleHooks | undefined;
+
+/** The text of a loaded source, or undefined when the load gave none (a CommonJS module that Node reads itself). */
+function sourceText(source: unknown): string | undefined {
+  if (typeof source === 'string') return source;
+  if (source instanceof ArrayBuffer) return Buffer.from(source).toString('utf8');
+  return ArrayBuffer.isView(source) ? Buffer.from(source.buffer, source.byteOffset, source.byteLength).toString('utf8') : undefined;
 }
 
-/** The files under `folder` that this process has loaded, as absolute paths, in path order. Another job's files in the same folder are included: a larger set can only add a rerun. */
-export function loadedFilesUnder(folder: string): string[] {
-  const files = new Set<string>();
-  for (const url of loaded) {
-    const filename = fileURLToPath(url);
-    if (isInsideDirectory(folder, filename)) files.add(filename);
-  }
-  return [...files].sort();
+/**
+ * Records the files the process loads until the returned value is disposed, by a `load` hook (`module.registerHooks`, Node 22.15 and later) on the main thread
+ * that passes every load on unchanged. Runs overlap: the hook stays until the last recording ends. Only the pipeline records. It never runs in a plugin, a
+ * rewrite host or a loader, because app code must not carry a hook of golem.
+ */
+export function recordLoadedFiles(): Disposable {
+  recordings += 1;
+  hooks ??= registerHooks({
+    load(url, context, nextLoad) {
+      const result = nextLoad(url, context);
+      if (url.startsWith('file:')) {
+        // A file that Node just resolved but cannot be read would fail to load in Node too; the error reaches the importer.
+        const filename = fileURLToPath(url);
+        loaded.set(filename, digest(sourceText(result.source) ?? readFileSync(filename, 'utf8')));
+      }
+      return result;
+    },
+  });
+  return {
+    [Symbol.dispose]() {
+      recordings -= 1;
+      if (recordings > 0) return;
+      hooks?.deregister();
+      hooks = undefined;
+    },
+  };
+}
+
+/** The digest at load of each file this process has loaded, by absolute path. */
+export function loadedFileDigests(): ReadonlyMap<string, string> {
+  return loaded;
 }

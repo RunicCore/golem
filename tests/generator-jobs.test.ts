@@ -2,6 +2,8 @@ import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { loadedFileDigests } from '#golem/load-record';
 import { providersFor, runPipeline } from '#golem/cli';
 import { loadConfig } from './support/load-config.js';
 import { copyFixtureFile, createFixtureProject, linkProjectPackages, listProjectDependencies } from './fixture-project.js';
@@ -273,6 +275,77 @@ test('a changed file that the generator imports while it runs runs the job again
   await generate();
   assert.equal(runs(), 2);
   assert.match(fs.readFileSync(path.join(root, EMITTED), 'utf8'), /\/\/ one two\n$/);
+});
+
+/** The body of a generator that imports `./emitter.<extension>`, appends a line to runs.log and stamps its output with the emitter; `rebuild` runs after the import, as a build that finishes while the generator runs. */
+function stampedGenerator(extension: 'js' | 'cjs', rebuild = ''): string {
+  const body = `  fs.appendFileSync(path.join(context.directory, 'runs.log'), 'run\\n');
+  ${rebuild}
+  const input = path.join(context.directory, 'generator-input.txt');
+  context.onInput(input);
+  return { apiVersion: 1, artifacts: [{ path: path.join(context.output, 'item.model.ts'), content: ${JSON.stringify(ITEM)} + '// ' + emitter + '\\n' }], manifestPaths: [], watchInputs: [input] };`;
+  return extension === 'cjs'
+    ? `const fs = require('node:fs');\nconst path = require('node:path');\nconst { emitter } = require('./emitter.cjs');\nexports.apiVersion = 1;\nexports.generate = function generate(context) {\n${body}\n};\n`
+    : `import fs from 'node:fs';\nimport path from 'node:path';\nimport { emitter } from './emitter.js';\nexport const apiVersion = 1;\nexport function generate(context) {\n${body}\n}\n`;
+}
+
+test('a generator file that is rebuilt while the job runs makes the next run run the job again', async t => {
+  // protects: T-825 the record holds the digest a file had when it loaded, so a rebuild after the load is not recorded as the code that ran
+  const { root, generate, runs, edit } = importingProject(t);
+  edit('index.js', stampedGenerator('js', "fs.writeFileSync(new URL('./emitter.js', import.meta.url), \"export const emitter = 'rebuilt';\\n\");"));
+  await generate();
+  await generate();
+  assert.equal(runs(), 2);
+  assert.match(fs.readFileSync(path.join(root, EMITTED), 'utf8'), /\/\/ rebuilt\n$/);
+});
+
+test('a renamed generator entry runs the job again although the old file stays', async t => {
+  // protects: T-825 the record holds the entry golem resolves, so an entry that moved is not the code that ran
+  const { root, generate, runs, edit } = importingProject(t);
+  edit('index.js', stampedGenerator('js'));
+  await generate();
+  edit('index-renamed.js', stampedGenerator('js'));
+  const manifest = path.join(root, 'node_modules/@fixture/gen/package.json');
+  fs.writeFileSync(manifest, fs.readFileSync(manifest, 'utf8').replace('"./generator":"./index.js"', '"./generator":"./index-renamed.js"'));
+  await generate();
+  assert.equal(runs(), 2);
+});
+
+test('a CommonJS generator is recorded with the files it requires, and a change in one runs the job again', async t => {
+  // protects: T-825 the hook sees CommonJS modules, entry and required
+  const { root, generate, runs, edit } = importingProject(t);
+  edit('index.cjs', stampedGenerator('cjs'));
+  edit('emitter.cjs', "exports.emitter = 'one';\n");
+  const manifest = path.join(root, 'node_modules/@fixture/gen/package.json');
+  fs.writeFileSync(manifest, fs.readFileSync(manifest, 'utf8').replace('"./generator":"./index.js"', '"./generator":"./index.cjs"'));
+  await generate();
+  await generate();
+  assert.equal(runs(), 1);
+  edit('emitter.cjs', "exports.emitter = 'two';\n");
+  await generate();
+  assert.equal(runs(), 2);
+  assert.match(fs.readFileSync(path.join(root, EMITTED), 'utf8'), /\/\/ two\n$/);
+});
+
+test('golem generate runs under node --import with an asynchronous module loader', async t => {
+  // protects: T-825 the load hook never runs in a loader thread: on Node 22.15 registerHooks there fails with loadSync is not a function
+  const { root, runs } = cachedProject(t);
+  fs.writeFileSync(path.join(root, 'loader-hooks.mjs'), 'export async function load(url, context, nextLoad) { return nextLoad(url, context); }\n');
+  fs.writeFileSync(path.join(root, 'register-loader.mjs'), "import { register } from 'node:module';\nregister('./loader-hooks.mjs', import.meta.url);\n");
+  await command(root, process.execPath, ['--import', pathToFileURL(path.join(root, 'register-loader.mjs')).href, golem, 'generate']);
+  assert.equal(runs(), 1);
+});
+
+test('a file imported after the pipeline returned is not recorded, and one imported during the run is', async t => {
+  // protects: T-825 the hook ends with the run, so an app that runs golem in its own process keeps no hook of golem
+  const { root, config } = project(t);
+  await runPipeline(config);
+  const late = path.join(root, 'late.mjs');
+  fs.writeFileSync(late, 'export const late = 1;\n');
+  await import(pathToFileURL(late).href);
+  const recorded = loadedFileDigests();
+  assert.equal(recorded.has(fs.realpathSync(path.join(root, 'node_modules/@fixture/gen/index.js'))), true);
+  assert.equal(recorded.has(fs.realpathSync(late)), false);
 });
 
 test('two jobs of one package both run again when a file they share changes', async t => {

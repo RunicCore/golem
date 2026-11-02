@@ -1,6 +1,7 @@
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { loadConfig } from './support/load-config.js';
 import { golemCode, hookCode, inputDigest, insideAny, jobIsCurrent, loadJobRecords, saveJobRecords, type JobRecord, type JobSetup } from '#golem/job-cache';
@@ -8,7 +9,12 @@ import { digest, type Inventory } from '#golem/outputs';
 import type { EnabledExtension } from '#golem/rewrite-participant';
 import { createFixtureProject, linkGolemPackages } from './fixture-project.js';
 
-const SETUP: JobSetup = { codeFolders: new Map([['acme', '/golem-job-cache-no-such-folder']]), hookCode: 'hook-code-digest', programView: '{"laterOutputs":[]}', manifestInputs: [] };
+/** The code folder of the packages the records below load: one file that no test changes. */
+const CODE_FOLDER = fs.mkdtempSync(path.join(os.tmpdir(), 'golem-job-cache-code-'));
+fs.writeFileSync(path.join(CODE_FOLDER, 'lib.js'), 'a');
+process.on('exit', () => fs.rmSync(CODE_FOLDER, { recursive: true, force: true }));
+const CODE = { acme: { 'lib.js': digest('a') } };
+const SETUP: JobSetup = { code: new Map([['acme', { folder: CODE_FOLDER, entries: [] }]]), hookCode: 'hook-code-digest', programView: '{"laterOutputs":[]}', manifestInputs: [] };
 
 /** The inventory of a job's files: each as it is on disk now. */
 function inventoryOf(root: string, files: readonly string[]): Inventory {
@@ -39,7 +45,7 @@ async function project(t: TestContext): Promise<{ root: string; record: JobRecor
   assert.ok(job);
   const record: JobRecord = {
     golemCode: golemCode(),
-    code: { acme: {} },
+    code: CODE,
     hookCode: SETUP.hookCode,
     programView: SETUP.programView,
     options: JSON.stringify(job.options),
@@ -99,20 +105,26 @@ test('the hook digest follows the extensions on a job\'s hooks and their options
   assert.notEqual(hookCode([note, { hook: 'hooked.other', extension: extension('other', {}) }]), base, 'one more extension');
 });
 
-test('a job is stale when a file it loaded is edited or gone, and not when a file it never loaded appears', async (t: TestContext) => {
-  // protects: T-825 a generator is digested by the files it loaded, not by its whole folder
+test('a job is stale when a file it loaded is edited or gone, or the code it records is empty or lacks a resolved entry', async (t: TestContext) => {
+  // protects: T-825 a generator is digested by the files it loaded, not by its whole folder; an empty list shows nothing
   const { root, config, record, inventory } = await project(t);
   const job = config.jobs[0];
   assert.ok(job);
   const folder = path.join(root, 'gen');
   fs.mkdirSync(folder);
   fs.writeFileSync(path.join(folder, 'lib.js'), 'a');
-  const setup = { ...SETUP, codeFolders: new Map([['acme', folder]]) };
+  const withEntries = (entries: string[]): JobSetup => ({ ...SETUP, code: new Map([['acme', { folder, entries }]]) });
+  const setup = withEntries([path.join(folder, 'lib.js')]);
   const loaded = { ...record, code: { acme: { 'lib.js': digest('a') } } };
   assert.equal(jobIsCurrent(config, job, loaded, setup, inventory), true);
   fs.writeFileSync(path.join(folder, 'build-output.js'), 'b');
   assert.equal(jobIsCurrent(config, job, loaded, setup, inventory), true, 'a file the job never loaded');
-  assert.equal(jobIsCurrent(config, job, loaded, { ...setup, codeFolders: new Map([['acme', folder], ['ext', folder]]) }, inventory), false, 'another package set');
+  assert.equal(jobIsCurrent(config, job, loaded, { ...setup, code: new Map([...setup.code, ['ext', { folder, entries: [] }]]) }, inventory), false, 'another package set');
+  assert.equal(jobIsCurrent(config, job, { ...record, code: { acme: {} } }, setup, inventory), false, 'an empty list');
+  assert.equal(jobIsCurrent(config, job, loaded, withEntries([path.join(folder, 'renamed-entry.js')]), inventory), false, 'an entry that the record does not hold');
+  const cache = new Map<string, string | undefined>();
+  assert.equal(jobIsCurrent(config, job, loaded, { ...setup, fileDigests: cache }, inventory), true);
+  assert.deepEqual([...cache.keys()], [path.join(folder, 'lib.js')], 'the run reads each code file into its map');
   fs.writeFileSync(path.join(folder, 'lib.js'), 'c');
   assert.equal(jobIsCurrent(config, job, loaded, setup, inventory), false, 'an edited file');
   fs.rmSync(path.join(folder, 'lib.js'));
@@ -149,7 +161,7 @@ test('a directory outside the golem.yaml directory is recorded by existence, one
   const inputs = { 'api.yaml': inputDigest(path.join(root, 'api.yaml'), () => false, root) };
   const recorded = {
     golemCode: golemCode(),
-    code: { acme: {} },
+    code: CODE,
     hookCode: SETUP.hookCode,
     programView: SETUP.programView,
     options: JSON.stringify(job.options),

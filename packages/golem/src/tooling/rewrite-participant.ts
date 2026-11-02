@@ -6,7 +6,6 @@ import { pathToFileURL } from 'node:url';
 
 import { checkedDiagnostics, type GolemDiagnostic, type ModelBoundaryValue } from './generator-core.js';
 import { displayPath, isRecord } from './plan-support.js';
-import { recordLoadedFiles } from './load-record.js';
 import { UnsupportedTypeScriptError } from './typescript-version.js';
 import type { RewriteEdit } from './rewrite.js';
 import type * as ts from './typescript-ns.js';
@@ -132,7 +131,6 @@ function describe(error: unknown): string {
  */
 export async function loadExtensions(extensions: readonly EnabledExtension[]): Promise<readonly LoadedExtension[]> {
   const loaded: LoadedExtension[] = [];
-  recordLoadedFiles();
   for (const extension of extensions) {
     let module: unknown;
     try { module = await import(pathToFileURL(extension.entry).href); }
