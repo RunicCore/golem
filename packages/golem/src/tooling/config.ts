@@ -8,6 +8,7 @@ import { loadPackageRegistry, PackageRegistryError, registrationForBlock } from 
 import type { PackageRegistration, PackageRegistry } from './package-registry.js';
 import type { EnabledExtension } from './rewrite-participant.js';
 import { MODEL_BOUNDARY } from './job-facts.js';
+import { recordLoadedFiles } from './load-record.js';
 import type { JobFacts, JobPlan } from './job-facts.js';
 import type {
   ContractValues,
@@ -72,6 +73,7 @@ export function canonicalFile(filename: string): string {
 async function loadPlanEntry(registration: PackageRegistration): Promise<GolemPlanEntry> {
   if (registration.plan === undefined) throw new PackageRegistryError(`${registration.name} registers the golem block "${registration.block}" but declares no golem.plan entry, so golem cannot read its block.`);
   let loaded: unknown;
+  recordLoadedFiles();
   try { loaded = await import(pathToFileURL(registration.plan).href); }
   catch (error) { throw new PackageRegistryError(`Cannot load the plan entry of ${registration.name}: ${error instanceof Error ? error.message : String(error)}`, { cause: error }); }
   const entry = isRecord(loaded) ? loaded.plan : undefined;

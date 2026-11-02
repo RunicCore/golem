@@ -245,6 +245,7 @@ This file is the complete list of changes. The documentation site's
 - **Breaking:** `GolemProfile.validation` has the type `boolean | 'sanity'`, and `resolveProfile` accepts `true`, `false` and `'sanity'`. A generator that tests `profile.validation === true` must treat `'sanity'` as a level that still validates ([Generator API](docs/reference/generator-api.md)).
 
 - **Breaking:** `@exprtlabs/golem/generator-api` no longer exports `ControllerContext`, `ControllerModels`, `ControllerTag`, `ControllerUriVersioning` and `ControllerUriVersioningType`. `@exprtlabs/golem-ts-openapi/generator` exports them. The core decorator reader names no framework package, and the docs job passes the DTO rule (Swagger `@ApiProperty` and the RUNM1086 error for a `Map` or `Set`) as the option `dtoRule` of `createContractAnalysis`.
+- A job reruns when a file of its generator package that the run loaded has changed, not when any JavaScript file in the package folder has. An app that builds its own generator keeps its build output in that folder without a rerun after each build. The same holds for the package of an extension on the job's hooks.
 
 ### Package subpaths
 

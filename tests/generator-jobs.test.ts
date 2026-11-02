@@ -223,3 +223,95 @@ test('a second generate with the generator code and its inputs unchanged runs no
   await generate();
   assert.equal(runs(), 1);
 });
+
+/** A provider folder whose entry imports `emitter.js` and, while it runs, `lazy.js`; `edit` rewrites one of its files. */
+function importingProject(t: TestContext): ReturnType<typeof cachedProject> & { edit: (file: string, text: string) => void } {
+  const cached = cachedProject(t);
+  const folder = path.join(cached.root, 'node_modules/@fixture/gen');
+  const write = (file: string, text: string): void => fs.writeFileSync(path.join(folder, file), text);
+  write('emitter.js', "export const emitter = 'one';\n");
+  write('lazy.js', "export const lazy = 'one';\n");
+  write('index.js', `import fs from 'node:fs';
+import path from 'node:path';
+import { emitter } from './emitter.js';
+export const apiVersion = 1;
+export async function generate(context) {
+  fs.appendFileSync(path.join(context.directory, 'runs.log'), 'run\\n');
+  const { lazy } = await import('./lazy.js');
+  const input = path.join(context.directory, 'generator-input.txt');
+  context.onInput(input);
+  return { apiVersion: 1, artifacts: [{ path: path.join(context.output, 'item.model.ts'), content: ${JSON.stringify(ITEM)} + '// ' + emitter + ' ' + lazy + '\\n' }], manifestPaths: [], watchInputs: [input] };
+}
+`);
+  return { ...cached, edit: write };
+}
+
+test('a new JavaScript file in the generator package that nothing loads does not run the job again', async t => {
+  // protects: T-825 an app that builds its own generator keeps its build output beside it without a rerun after each build
+  const { generate, runs, edit } = importingProject(t);
+  await generate();
+  edit('unrelated-build-output.js', 'export const built = 1;\n');
+  await generate();
+  assert.equal(runs(), 1);
+});
+
+test('a changed file that the generator entry imports runs the job again', async t => {
+  // protects: T-825 a file the entry loads is part of the generator code
+  const { root, generate, runs, edit } = importingProject(t);
+  await generate();
+  edit('emitter.js', "export const emitter = 'two';\n");
+  await generate();
+  assert.equal(runs(), 2);
+  assert.match(fs.readFileSync(path.join(root, EMITTED), 'utf8'), /\/\/ two one\n$/);
+});
+
+test('a changed file that the generator imports while it runs runs the job again', async t => {
+  // protects: T-825 the record is taken when the job ends, so a lazy import counts
+  const { root, generate, runs, edit } = importingProject(t);
+  await generate();
+  edit('lazy.js', "export const lazy = 'two';\n");
+  await generate();
+  assert.equal(runs(), 2);
+  assert.match(fs.readFileSync(path.join(root, EMITTED), 'utf8'), /\/\/ one two\n$/);
+});
+
+test('two jobs of one package both run again when a file they share changes', async t => {
+  // protects: T-825 a file loaded for the first job of a process is still in the code of the second
+  const { root } = project(t);
+  const folder = path.join(root, 'node_modules/@fixture/gen');
+  const write = (file: string, text: string): void => fs.writeFileSync(path.join(folder, file), text);
+  write('plan.js', `import path from 'node:path';
+export const plan = {
+  declare({ directory, block }) {
+    return ['a', 'b'].map(name => {
+      const output = path.resolve(directory, block.output + '-' + name);
+      return {
+        facts: { id: 'acme-' + name, outputs: [{ path: output, kind: 'folder' }], ownedRoots: [], inputFiles: [], inputFolders: [], readsProgram: false, provides: [], needs: [], hooks: [], watch: [] },
+        options: { directory, output, name },
+      };
+    });
+  },
+};
+`);
+  write('shared.js', "export const stamp = 'one';\n");
+  write('index.js', `import fs from 'node:fs';
+import path from 'node:path';
+import { stamp } from './shared.js';
+export const apiVersion = 1;
+export function generate(context) {
+  fs.appendFileSync(path.join(context.directory, 'runs.log'), context.name + '\\n');
+  const input = path.join(context.directory, 'generator-input.txt');
+  context.onInput(input);
+  return { apiVersion: 1, artifacts: [{ path: path.join(context.output, 'item.model.ts'), content: ${JSON.stringify(ITEM)} + '// ' + stamp + '\\n' }], manifestPaths: [], watchInputs: [input] };
+}
+`);
+  fs.writeFileSync(path.join(root, 'generator-input.txt'), 'input');
+  const generate = async (): Promise<void> => { await command(root, process.execPath, [golem, 'generate']); };
+  const runLog = (): string[] => fs.readFileSync(path.join(root, 'runs.log'), 'utf8').split('\n').filter(Boolean).sort();
+  await generate();
+  await generate();
+  assert.deepEqual(runLog(), ['a', 'b'], 'nothing changed');
+  write('shared.js', "export const stamp = 'two';\n");
+  await generate();
+  assert.deepEqual(runLog(), ['a', 'a', 'b', 'b']);
+});

@@ -8,7 +8,7 @@ import { digest, type Inventory } from '#golem/outputs';
 import type { EnabledExtension } from '#golem/rewrite-participant';
 import { createFixtureProject, linkGolemPackages } from './fixture-project.js';
 
-const SETUP: JobSetup = { providerCode: 'provider-code-digest', hookCode: 'hook-code-digest', programView: '{"laterOutputs":[]}', manifestInputs: [] };
+const SETUP: JobSetup = { codeFolders: new Map([['acme', '/golem-job-cache-no-such-folder']]), hookCode: 'hook-code-digest', programView: '{"laterOutputs":[]}', manifestInputs: [] };
 
 /** The inventory of a job's files: each as it is on disk now. */
 function inventoryOf(root: string, files: readonly string[]): Inventory {
@@ -39,7 +39,7 @@ async function project(t: TestContext): Promise<{ root: string; record: JobRecor
   assert.ok(job);
   const record: JobRecord = {
     golemCode: golemCode(),
-    providerCode: SETUP.providerCode ?? '',
+    code: { acme: {} },
     hookCode: SETUP.hookCode,
     programView: SETUP.programView,
     options: JSON.stringify(job.options),
@@ -67,9 +67,12 @@ test('records survive a save and load, and an absent or unreadable file holds no
   assert.equal(loadJobRecords(config).size, 0);
   fs.writeFileSync(path.join(root, '.golem/jobs.json'), JSON.stringify({ version: 1, jobs: { 'openapi:sdk': { golemCode: 1 } } }));
   assert.equal(loadJobRecords(config).size, 0, 'a record of the wrong shape is no record');
+  const { code: _code, ...withoutCode } = record;
+  fs.writeFileSync(path.join(root, '.golem/jobs.json'), JSON.stringify({ version: 3, jobs: { 'openapi:sdk': withoutCode } }));
+  assert.equal(loadJobRecords(config).size, 0, 'a record with no file list is no record, so the job runs again');
 });
 
-test('a job is current while its golem code, provider code, options, outputs and every input are as its record holds them', async (t: TestContext) => {
+test('a job is current while its golem code, loaded code, options, outputs and every input are as its record holds them', async (t: TestContext) => {
   const { root, config, record, inventory } = await project(t);
   const job = config.jobs[0];
   assert.ok(job);
@@ -84,18 +87,36 @@ test('a job is current while its golem code, provider code, options, outputs and
   assert.equal(jobIsCurrent(config, job, record, SETUP, inventory), false, 'an edited file');
 });
 
-test('the hook digest follows the extensions on a job\'s hooks, their options and their code, and not the order of an options object\'s keys', () => {
+test('the hook digest follows the extensions on a job\'s hooks and their options, and not the order of an options object\'s keys', () => {
   // protects: T-781 the cache key holds the digest of every extension on the job's hooks
   const extension = (name: string, options: Record<string, unknown>): EnabledExtension => ({ package: '@fixture/probe', block: 'probe', name, entry: '/entry.mjs', options });
-  const codeOf = (code: string) => () => code;
   const note = { hook: 'hooked.note', extension: extension('note', { prefix: '>', width: 2 }) };
-  const base = hookCode([note], codeOf('code-1'));
+  const base = hookCode([note]);
 
-  assert.equal(hookCode([], codeOf('code-1')), '', 'no extension on a hook of the job');
-  assert.equal(hookCode([{ ...note, extension: extension('note', { width: 2, prefix: '>' }) }], codeOf('code-1')), base, 'the same options in another key order');
-  assert.notEqual(hookCode([{ ...note, extension: extension('note', { prefix: '#', width: 2 }) }], codeOf('code-1')), base, 'other options');
-  assert.notEqual(hookCode([note], codeOf('code-2')), base, 'other code');
-  assert.notEqual(hookCode([note, { hook: 'hooked.other', extension: extension('other', {}) }], codeOf('code-1')), base, 'one more extension');
+  assert.equal(hookCode([]), '', 'no extension on a hook of the job');
+  assert.equal(hookCode([{ ...note, extension: extension('note', { width: 2, prefix: '>' }) }]), base, 'the same options in another key order');
+  assert.notEqual(hookCode([{ ...note, extension: extension('note', { prefix: '#', width: 2 }) }]), base, 'other options');
+  assert.notEqual(hookCode([note, { hook: 'hooked.other', extension: extension('other', {}) }]), base, 'one more extension');
+});
+
+test('a job is stale when a file it loaded is edited or gone, and not when a file it never loaded appears', async (t: TestContext) => {
+  // protects: T-825 a generator is digested by the files it loaded, not by its whole folder
+  const { root, config, record, inventory } = await project(t);
+  const job = config.jobs[0];
+  assert.ok(job);
+  const folder = path.join(root, 'gen');
+  fs.mkdirSync(folder);
+  fs.writeFileSync(path.join(folder, 'lib.js'), 'a');
+  const setup = { ...SETUP, codeFolders: new Map([['acme', folder]]) };
+  const loaded = { ...record, code: { acme: { 'lib.js': digest('a') } } };
+  assert.equal(jobIsCurrent(config, job, loaded, setup, inventory), true);
+  fs.writeFileSync(path.join(folder, 'build-output.js'), 'b');
+  assert.equal(jobIsCurrent(config, job, loaded, setup, inventory), true, 'a file the job never loaded');
+  assert.equal(jobIsCurrent(config, job, loaded, { ...setup, codeFolders: new Map([['acme', folder], ['ext', folder]]) }, inventory), false, 'another package set');
+  fs.writeFileSync(path.join(folder, 'lib.js'), 'c');
+  assert.equal(jobIsCurrent(config, job, loaded, setup, inventory), false, 'an edited file');
+  fs.rmSync(path.join(folder, 'lib.js'));
+  assert.equal(jobIsCurrent(config, job, loaded, setup, inventory), false, 'a missing file');
 });
 
 test('a job is stale when an output is edited or is not in the inventory', async (t: TestContext) => {
@@ -128,7 +149,7 @@ test('a directory outside the golem.yaml directory is recorded by existence, one
   const inputs = { 'api.yaml': inputDigest(path.join(root, 'api.yaml'), () => false, root) };
   const recorded = {
     golemCode: golemCode(),
-    providerCode: SETUP.providerCode ?? '',
+    code: { acme: {} },
     hookCode: SETUP.hookCode,
     programView: SETUP.programView,
     options: JSON.stringify(job.options),
@@ -191,13 +212,12 @@ test('a job that recorded no input is never current', async (t: TestContext) => 
   assert.equal(jobIsCurrent(config, job, { ...record, inputs: {} }, SETUP, inventory), false);
 });
 
-test('a job is stale when its provider code or the manifests it receives are not those of its record', async (t: TestContext) => {
+test('a job is stale when the manifests it receives are not those of its record', async (t: TestContext) => {
   const { root, config, record, inventory } = await project(t);
   const job = config.jobs[0];
   assert.ok(job);
   const manifest = path.join(root, 'sdk/model-manifest.json');
   assert.equal(jobIsCurrent(config, job, record, SETUP, inventory), true);
-  assert.equal(jobIsCurrent(config, job, record, { ...SETUP, providerCode: 'other-provider-code-digest' }, inventory), false, 'other provider code');
   assert.equal(jobIsCurrent(config, job, record, { ...SETUP, manifestInputs: [manifest] }, inventory), false, 'a manifest the record did not receive');
   const received = { ...record, manifestInputs: ['sdk/model-manifest.json'] };
   assert.equal(jobIsCurrent(config, job, received, { ...SETUP, manifestInputs: [manifest] }, inventory), true);
