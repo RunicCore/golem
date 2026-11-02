@@ -49,7 +49,7 @@ import {
   presentKeysCode,
   wireCheckedDeserializer,
 } from '@exprtlabs/golem/internal/emitter';
-import { anonymousShapeKeys, createSchemaGraph, codecPublicId, codecShortName, internDescriptors, mapNamedTypes, type SchemaGraph, type SchemaNode } from '@exprtlabs/golem/internal/schema-graph';
+import { anonymousShapeKeys, childDescriptors, createSchemaGraph, codecPublicId, codecShortName, internDescriptors, mapNamedTypes, type SchemaGraph, type SchemaNode } from '@exprtlabs/golem/internal/schema-graph';
 import { compareText, type GolemProfile } from '@exprtlabs/golem/generator-api';
 import { displayPath, RESERVED_MODEL_MEMBERS } from '@exprtlabs/golem/internal/generator-support';
 import type { ManifestIndex } from '@exprtlabs/golem/internal/type-analysis';
@@ -136,20 +136,7 @@ function walkDescriptor(descriptor: ModelConversionDescriptor, visitor: Descript
   if (reach === 'all') {
     for (const constraint of rich.constraints ?? []) constraintSchemaValues(constraint).filter(isModelDescriptor).forEach(walk);
   }
-  switch (descriptor.kind) {
-    case 'array': walk(descriptor.item); break;
-    case 'tuple':
-      descriptor.items.forEach(walk);
-      if (descriptor.rest) walk(descriptor.rest.item);
-      break;
-    case 'union':
-    case 'intersection': descriptor.variants.forEach(walk); break;
-    case 'object':
-      Object.values(descriptor.properties).forEach(walk);
-      if (typeof descriptor.additionalProperties === 'object') walk(descriptor.additionalProperties);
-      break;
-    default: break;
-  }
+  childDescriptors(descriptor).forEach(walk);
   visitor.leave?.(descriptor);
 }
 
