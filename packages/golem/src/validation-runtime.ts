@@ -211,6 +211,7 @@ class KeyFrame {
  * a primitive, else as a marker with the length of an array. Items with different texts are different.
  */
 function shallowKey(item: object): string {
+  if (item instanceof Date) return '{';
   const frame = new KeyFrame(item);
   for (let position = 0; position < frame.size; position++) {
     const member = frame.read(position);
@@ -250,7 +251,8 @@ function primitiveText(member: unknown): string | undefined {
  * The walk keeps its own stack of frames, so an item nested to any depth needs no deep call stack.
  */
 class KeyWalk {
-  private readonly finished = new Map<object, string[]>();
+  /** The references of the finished objects, one map for each depth, made when first needed. */
+  private readonly finished: Map<object, string>[] = [];
   private readonly numbers = new Map<string, string>();
   private readonly identities = new Map<unknown, number>();
   private readonly onPath = new Set<object>();
@@ -283,7 +285,7 @@ class KeyWalk {
         } else if (stack.length === this.limit) {
           frame.add('~');
         } else {
-          const known = this.finished.get(member)?.[stack.length];
+          const known = this.finished[stack.length]?.get(member);
           if (known !== undefined) {
             frame.add(known);
           } else {
@@ -299,9 +301,7 @@ class KeyWalk {
       const reference = text === undefined || this.cyclic.has(frame.value) ? this.identity(frame.value) : text;
       const parent = stack[stack.length - 1];
       if (parent === undefined) return text ?? reference;
-      let byDepth = this.finished.get(frame.value);
-      if (byDepth === undefined) this.finished.set(frame.value, (byDepth = []));
-      byDepth[stack.length] = reference;
+      (this.finished[stack.length] ??= new Map()).set(frame.value, reference);
       parent.add(reference);
     }
   }

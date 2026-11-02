@@ -18,6 +18,9 @@ CYCLE_A.self = CYCLE_A;
 const CYCLE_B: { loop?: unknown } = {};
 CYCLE_B.loop = CYCLE_B;
 const SHARED_PAIR = { n: { x: 1 } };
+/** A date with an own key: `jsonEqual` compares dates by their time alone. */
+const DATE_WITH_KEY = Object.assign(new Date(5), { x: 1 });
+class LaterDate extends Date {}
 /** One node met at two depths inside two equal items: the copy holds an equal node of its own where the first holds the shared one. */
 const DEEP_NODE = { x: { y: [1] } };
 const AT_TWO_DEPTHS = { deep: { inner: DEEP_NODE }, k: DEEP_NODE };
@@ -51,6 +54,8 @@ const ROWS: readonly { readonly name: string; readonly list: readonly unknown[];
   { name: 'items of equal id that share a cyclic owner', list: [TWIN_A, TWIN_B], pair: [0, 1] },
   { name: 'the same items of a cyclic owner in the other order', list: [TWIN_B, TWIN_A], pair: [0, 1] },
   { name: 'equal items that meet a shared node at two depths', list: [AT_TWO_DEPTHS, AT_TWO_DEPTHS_COPY], pair: [0, 1] },
+  { name: 'a date with an own key equals a plain date of its time', list: [DATE_WITH_KEY, new Date(5)], pair: [0, 1] },
+  { name: 'an instance of a class that extends Date equals a plain date of its time', list: [new LaterDate(5), new Date(5)], pair: [0, 1] },
   { name: 'no items', list: [], pair: undefined },
   { name: 'one item', list: ['a'], pair: undefined },
   { name: 'six items with one duplicate', list: [1, 2, 3, 4, 5, 3], pair: [2, 5] },
@@ -113,7 +118,7 @@ function seeded(seed: number): () => number {
   };
 }
 
-const LEAVES: readonly unknown[] = [0, -0, 1, '1', '', 'a,b', 's1:a', null, undefined, true, false, Number.NaN, 1n, new Date(0), new Date(Number.NaN), NAN_OBJECT, SHARED_FUNCTION, SHARED_SYMBOL, CYCLE_A, CYCLE_B, SHARED_NODE, AT_TWO_DEPTHS, AT_TWO_DEPTHS_COPY];
+const LEAVES: readonly unknown[] = [0, -0, 1, '1', '', 'a,b', 's1:a', null, undefined, true, false, Number.NaN, 1n, new Date(0), new Date(Number.NaN), NAN_OBJECT, SHARED_FUNCTION, SHARED_SYMBOL, CYCLE_A, CYCLE_B, DATE_WITH_KEY, SHARED_NODE, AT_TWO_DEPTHS, AT_TWO_DEPTHS_COPY];
 
 function randomValue(random: () => number, depth: number): unknown {
   const pick = random();
@@ -215,6 +220,17 @@ test('duplicateItems finishes on a spine of 256 levels with a look-alike beside 
   }
   assert.deepEqual(lists.map(duplicateItems), lists.map(() => undefined));
   assert.deepEqual(duplicateItems([...lists[255]!, lookAlike()]), [0, 2]);
+});
+
+test('duplicateItems finds the pair of two equal spines 500 levels deep with a wide list of small nodes at the bottom', () => {
+  // protects: T-849 the memo of one walk must not hold a slot for each depth in each object
+  const spine = (last: number): unknown => {
+    let node: unknown = { wide: Array.from({ length: 20_000 }, (_, id) => ({ id: id === 19_999 ? last : id })) };
+    for (let level = 0; level < 500; level++) node = { next: node };
+    return node;
+  };
+  assert.deepEqual(duplicateItems([spine(19_999), spine(19_999)]), [0, 1]);
+  assert.equal(duplicateItems([spine(19_999), spine(-1)]), undefined);
 });
 
 test('a uniqueItems validator reports the first duplicate pair in both modes', async () => {
