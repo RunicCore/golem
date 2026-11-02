@@ -14,7 +14,7 @@ import { getValidator } from '@exprtlabs/golem/validation';
 
 import { copyFixture, copyFixtureFile, createFixtureProject, linkProjectPackages, writeGeneratedArtifacts } from './fixture-project.js';
 import { accountModelWithField, accountModelWithMissingImport } from './fixture-templates/models/model-generator.js';
-import { buildModelProject, createModelProject, writeModelGolemYaml, writeModelSources } from './model-project.js';
+import { buildModelProject, buildModelProjectWith, createModelProject, writeModelGolemYaml, writeModelSources } from './model-project.js';
 import { taggedModelSource } from './fixture-templates/models/model-tags.js';
 import { COUNT_DIST_FILES, writeCodecPackage } from './fixture-templates/models/codec-package.js';
 import { tsSource } from './source-template.js';
@@ -676,8 +676,36 @@ export type TOrder = IModel<{ count: number & TValidation<typeof isEven> }>;
     return new Map(artifacts.map(artifact => [path.relative(root, artifact.path), artifact.content]));
   };
   const first = generateAtNewLocation();
-  assert.match(first.get('src/generated/models/models.validators.generated.ts') ?? '', /import \{ isEven as \w+ \} from "\.\.\/\.\.\/\.\.\/\.\.\/shared\/rules\.js"/, 'the validators file imports the function by its path from the generated file to the shared folder');
   assert.deepEqual(generateAtNewLocation(), first);
+});
+
+test('a TValidation function of a folder outside the root runs in the built app', async (t: TestContext) => {
+  // protects: T-640 the import of a shared function resolves from the generated file, so the built validator calls it
+  const outer = sharedWorkspace(t);
+  writeModelSources(path.join(outer, 'shared'), {
+    'package.json': JSON.stringify({ private: true, type: 'module' }),
+    'rules.ts': rulesSource,
+  });
+  const root = appProject(outer, 'a', '../shared/**/*.ts');
+  fs.writeFileSync(path.join(root, 'tsconfig.json'), JSON.stringify({
+    compilerOptions: { strict: true, target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', skipLibCheck: true, outDir: 'build', rootDir: '..' },
+    include: ['src/**/*.ts', '../shared/**/*.ts'],
+  }));
+  writeModelSources(path.join(root, 'src'), {
+    'order.model.ts': tsSource`import type { IModel } from '@exprtlabs/golem/model';
+import type { TValidation } from '@exprtlabs/golem/tags';
+import { isEven } from '../../shared/rules.js';
+export type TOrder = IModel<{ count: number & TValidation<typeof isEven> }>;
+`,
+  });
+  await buildModelProjectWith(root, { validation: true });
+  const { TOrderBaseModel } = await import(pathToFileURL(path.join(root, 'build/a/src/order.model.generated.js')).href);
+  const order = modelCodec(TOrderBaseModel);
+  assert.deepEqual(order.toWireFormat(order.fromWireFormat({ count: 2 })), { count: 2 });
+  assert.throws(
+    () => order.fromWireFormat({ count: 3 }),
+    (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.Validation && JSON.stringify(error.issues).includes('must be even'),
+  );
 });
 
 test('a golem.yaml above the golem.yaml of the job is not another job: the sources of the app are generated', (t: TestContext) => {
@@ -892,7 +920,7 @@ export type TA = IModel<{ b: $b }>;
   );
 });
 
-test('serde functions exported under the form of a generated local are imported under an alias and generate', (t: TestContext) => {
+test('serde functions exported under the form of a generated local are imported under an alias and convert', async (t: TestContext) => {
   // protects: T-643 R-59 only a name that generated code binds is refused; an aliased import binds the alias
   const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-local-form-', name: 'local-form', linkWorkspaceNodeModules: true });
   writeModelSources(sourceRoot, {
@@ -905,8 +933,11 @@ import { $d, $e } from './codecs.js';
 export type TA = IModel<{ big: bigint & TSerde<typeof $e, typeof $d> }>;
 `,
   });
-  const source = generate({ root, profile: { validation: false } }).artifacts.find(artifact => artifact.path.endsWith('a.model.generated.ts'))?.content ?? '';
-  assert.match(source, /import \{ \$e as __golemSerialize0Source, \$d as __golemDeserialize0Source \} from "\.\/codecs\.js";/);
+  await buildModelProjectWith(root, { validation: false });
+  const { TABaseModel } = await import(pathToFileURL(path.join(root, 'build/a.model.generated.js')).href);
+  const model = modelCodec(TABaseModel).fromWireFormat({ big: '12' });
+  assert.equal(model.big, 12n);
+  assert.deepEqual(modelCodec(model).toWireFormat(model), { big: '12' });
 });
 
 /** A project whose golem.yaml (in `app`) holds `yaml`, with golem-model installed as a dependency and `@fixture/shop`, the scripted plan entry, as the block `shop`. */
