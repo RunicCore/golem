@@ -133,6 +133,7 @@ for (const [label, schema] of [
   ['a const that its type excludes', { type: 'string', const: 1 }],
   ['a const of another type', { type: 'integer', const: 'a' }],
   ['a const object under a scalar type', { type: 'string', const: { a: 1 } }],
+  ['a const that its enum does not list', { const: 1, enum: [2] }],
 ] as const) {
   test(`a required property whose schema is ${label} stops generation as unsatisfiable`, async t => {
     // protects: T-667 T-668 enum and const keep only the values that type admits; a required property left with none stops generation (T-644 rule)
@@ -154,16 +155,18 @@ test('an enum and a const keep the type and the keywords beside them, in the mod
     fixed: { type: 'integer', minimum: 2, const: 2 },
     same: { type: 'integer', const: 1.0 },
     deep: { type: 'string', const: { a: 1 } },
-  }, ['word', 'fixed', 'same']), { output, name: 'Shelves', profile: { validation: true } });
+    both: { const: 1, enum: [1, 2] },
+  }, ['word', 'fixed', 'same', 'both']), { output, name: 'Shelves', profile: { validation: true } });
   compileGeneratedSdk(output, [], { strict: true });
   const shelf = await sdkBodyCodec(output, 'Shelves', 'Shelf');
-  const body = { word: 'a', fixed: 2, same: 1 };
+  const body = { word: 'a', fixed: 2, same: 1, both: 1 };
   assert.equal(await requestAccepts(shelf, body), true);
-  for (const [field, value] of [['word', 1], ['fixed', 3], ['same', 2], ['never', 1], ['never', '1'], ['low', 1], ['low', 2], ['deep', 'x'], ['deep', { a: 1 }]] as const) {
+  for (const [field, value] of [['word', 1], ['fixed', 3], ['same', 2], ['never', 1], ['never', '1'], ['low', 1], ['low', 2], ['deep', 'x'], ['deep', { a: 1 }], ['both', 2]] as const) {
     assert.equal(await requestAccepts(shelf, { ...body, [field]: value }), false, `${field} = ${JSON.stringify(value)}`);
   }
   const source = readdirSync(output, { recursive: true, encoding: 'utf8' }).filter(file => file.endsWith('.ts') && !file.endsWith('.d.ts') && !file.includes('node_modules'))
     .map(file => readFileSync(path.join(output, file), 'utf8')).join('\n');
   assert.match(source, /word: "a";/);
   assert.match(source, /never\?: never;/);
+  assert.match(source, /both: 1;/);
 });

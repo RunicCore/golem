@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from 'node:util';
 import { isBinaryMediaType, isBuiltinTextMediaType } from './client/codecs.js';
 import { asRecord, isJsonObject, objectEntries, type JsonObject } from './json.js';
 import { identifier, NameScope } from '@exprtlabs/golem/internal/generator-support';
@@ -639,11 +640,13 @@ function allOfMemberTypes(item: unknown, requirements: AllOfRequirements, contex
 
 /**
  * The values that `const` or `enum` lists and the `type` of the schema admits; `undefined` when the schema has neither keyword.
- * `const` decides over `enum`. `integer` admits a whole number and `number` any number, so 1 and 1.0 are one value. The one rule
+ * With both keywords the value must satisfy both: the `const` value when `enum` lists an equal JSON value, else none. `integer` admits a whole number and `number` any number, so 1 and 1.0 are one value. The one rule
  * for the generated type and for the model: a schema left with no value accepts none.
  */
 export function typedListedValues(schema: { readonly const?: unknown; readonly enum?: unknown; readonly type?: unknown }): readonly unknown[] | undefined {
-  const values = schema.const !== undefined ? [schema.const] : Array.isArray(schema.enum) ? schema.enum : undefined;
+  const values = schema.const === undefined
+    ? Array.isArray(schema.enum) ? schema.enum : undefined
+    : Array.isArray(schema.enum) && !schema.enum.some((value) => isDeepStrictEqual(value, schema.const)) ? [] : [schema.const];
   if (!values) return undefined;
   const types = effectiveSchemaTypes(schema);
   if (types.length === 0) return values;
