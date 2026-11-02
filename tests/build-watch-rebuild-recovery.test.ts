@@ -6,7 +6,7 @@ import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { runBuild } from '#golem/build';
 import { write, serdeProject, USE, snapshot } from './support/build-project.js';
-import { quietly, until } from './support/watch-wait.js';
+import { editUntil, quietly, until } from './support/watch-wait.js';
 
 /** Collects what the code under test writes to stdout and stderr, and still lets it through. */
 function capturedOutput(t: TestContext): () => string {
@@ -136,4 +136,28 @@ test('golem build --watch prints the stack and cause of a failure that is not on
   controller.abort();
   assert.deepEqual(codes, [1, 1]);
   await finished;
+});
+
+test('golem build --watch started on a golem.yaml that is not YAML reports it, builds once the file is fixed, and a build without --watch fails', async (t) => {
+  // protects: T-869 build --watch must wait for a fix of a broken golem.yaml, as golem watch does and docs/reference/cli.md says
+  const root = serdeProject(t, 'build-watch-broken-config');
+  write(root, 'src/use.ts', USE);
+  const config = path.join(root, 'golem.yaml');
+  const valid = fs.readFileSync(config, 'utf8');
+  fs.writeFileSync(config, 'version: [\nmodel: {}\n');
+  await assert.rejects(runBuild({ watch: false, config }), /golem\.yaml:\d+:\d+ /);
+  const controller = new AbortController();
+  t.after(() => controller.abort());
+  const printed = capturedOutput(t);
+  const runs: { readonly label: string; readonly exitCode: number }[] = [];
+  const finished = runBuild({ watch: true, config, signal: controller.signal, onBuilt: (run) => { runs.push(run); } });
+  await until(() => runs.length === 1, 'the first build fails on the broken golem.yaml');
+  assert.deepEqual(runs.map((run) => run.exitCode), [1]);
+  assert.match(printed(), /golem\.yaml:\d+:\d+ /);
+  await editUntil(() => fs.writeFileSync(config, valid), () => runs.length >= 2, () => `the fixed golem.yaml is built (output=${printed()})`);
+  assert.equal(runs.at(-1)?.exitCode, 0);
+  assert.match(runs.at(-1)?.label ?? '', /tsconfig\.json$/);
+  assert.ok(fs.existsSync(path.join(root, 'build/use.js')));
+  controller.abort();
+  assert.equal((await finished).exitCode, 0);
 });
