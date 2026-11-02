@@ -163,18 +163,12 @@ function waitForClose(child: ChildProcess): Promise<ChildResult> {
   });
 }
 
-async function waitForCloseWithin(child: ChildProcess, message: string, timeout = 10_000): Promise<ChildResult> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  try {
-    return await Promise.race([
-      waitForClose(child),
-      new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new Error(`Timed out: ${message}`)), timeout);
-      }),
-    ]);
-  } finally {
-    if (timer !== undefined) clearTimeout(timer);
-  }
+/** Waits for `child` to close (its output read to the end), polled by the shared `until` deadline. */
+async function waitForCloseWithin(child: ChildProcess, message: string): Promise<ChildResult> {
+  const closed: { result?: ChildResult } = {};
+  void waitForClose(child).then((result) => { closed.result = result; });
+  await until(() => closed.result !== undefined, message);
+  return closed.result as ChildResult;
 }
 
 test('initial watch failure records a missing configured input and recovers on creation, and a config edit to another missing input recovers the same way', async (t: TestContext) => {
