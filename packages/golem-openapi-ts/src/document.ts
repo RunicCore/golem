@@ -137,29 +137,26 @@ export function expandOas32MediaTypes(document: unknown): unknown {
 
   const projected = structuredClone(document);
 
-  const expand = (value: unknown, insideMediaType = false, resolving = new Set<string>()): unknown => {
+  /** Replaces each reference to a media type component with a copy of it; the references inside the copy keep their identity. */
+  const expand = (value: unknown, resolving = new Set<string>()): unknown => {
     if (Array.isArray(value)) {
-      return value.map((item) => expand(item, insideMediaType, resolving));
+      return value.map((item) => expand(item, resolving));
     }
     if (!isJsonObject(value)) return value;
 
     const ref = typeof value.$ref === 'string' ? value.$ref : undefined;
-    const mediaTypeRef = ref !== undefined && ref.startsWith('#/components/mediaTypes/');
-    if (ref && (insideMediaType || mediaTypeRef) && !resolving.has(ref)) {
+    if (ref?.startsWith('#/components/mediaTypes/') && !resolving.has(ref)) {
       const target = resolveLocalPointer(projected, ref);
       if (target !== undefined) {
         const nextResolving = new Set(resolving).add(ref);
         const siblings = Object.fromEntries(
           Object.entries(value).filter(([key]) => key !== '$ref'),
         );
-        return expand({ ...structuredClone(target), ...siblings }, true, nextResolving);
+        return expand({ ...structuredClone(target), ...siblings }, nextResolving);
       }
     }
 
-    return Object.fromEntries(Object.entries(value).map(([key, child]) => [
-      key,
-      expand(child, insideMediaType || Boolean(mediaTypeRef), resolving),
-    ]));
+    return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, expand(child, resolving)]));
   };
 
   const visitContent = (value: unknown): void => {
