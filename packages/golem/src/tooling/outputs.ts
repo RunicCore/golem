@@ -252,10 +252,22 @@ export const realOutputFiles: OutputFiles = {
   unlink: filename => { fs.unlinkSync(filename); },
 };
 
+const TEMPORARY_NAME = /^(.+)\.\d+\.[0-9a-f]{12}\.tmp$/;
+
+/** The temporary file `atomicWrite` writes beside `filename` before it renames it over `filename`: `<file>.<pid>.<12 hex digits>.tmp`. */
+function temporaryName(filename: string): string {
+  return `${filename}.${process.pid}.${crypto.randomBytes(6).toString('hex')}.tmp`;
+}
+
+/** The name of the file whose `atomicWrite` left `name` behind, or `undefined` when `name` is no such temporary file. */
+function temporaryTarget(name: string): string | undefined {
+  return TEMPORARY_NAME.exec(name)?.[1];
+}
+
 export function atomicWrite(filename: string, content: string, files: OutputFiles = realOutputFiles): boolean {
   if (readFile(filename) === content) return false;
   fs.mkdirSync(path.dirname(filename), { recursive: true });
-  const temporary = `${filename}.${process.pid}.${crypto.randomBytes(6).toString('hex')}.tmp`;
+  const temporary = temporaryName(filename);
   try {
     files.create(temporary, content);
     files.rename(temporary, filename);
@@ -304,6 +316,8 @@ function assertNoUnrecordedOutputs(config: GolemConfig, inventory: Inventory, jo
     catch (error) { if (hasErrorCode(error, 'ENOENT')) return; throw error; }
     for (const entry of entries) {
       if (entry.name.startsWith('.') || entry.name === 'node_modules') continue;
+      // A write that was killed leaves its temporary file; the next generate removes it, so it is no drift.
+      if (temporaryTarget(entry.name) !== undefined) continue;
       const filename = path.join(directory, entry.name);
       if (entry.isDirectory()) { visit(filename, everyFile); continue; }
       if (!entry.isFile() || (!everyFile && !/\.[jt]s$/.test(entry.name))) continue;
@@ -337,6 +351,27 @@ const NO_CHANGES: FileChanges = { written: [], removed: [] };
  */
 function providesCodecKeys(config: GolemConfig, job: GolemJob): boolean {
   return config.jobPlan.providers[MODEL_BOUNDARY] === job.id;
+}
+
+/** Removes the temporary files that a killed `atomicWrite` left beside `filenames`, when they carry the marker of `owner`, the package that writes them. */
+export function removeLeftoverTemporaries(owner: string, filenames: readonly string[], files: OutputFiles = realOutputFiles): void {
+  const targets = new Map<string, Set<string>>();
+  for (const filename of filenames) {
+    const directory = path.dirname(filename);
+    targets.set(directory, (targets.get(directory) ?? new Set<string>()).add(path.basename(filename)));
+  }
+  for (const [directory, names] of targets) {
+    let entries: string[];
+    try { entries = fs.readdirSync(directory); }
+    catch (error) { if (hasErrorCode(error, 'ENOENT')) continue; throw error; }
+    for (const entry of entries) {
+      const target = temporaryTarget(entry);
+      if (target === undefined || !names.has(target)) continue;
+      const leftover = path.join(directory, entry);
+      const content = readFile(leftover);
+      if (content !== undefined && marker(content, owner)) files.unlink(leftover);
+    }
+  }
 }
 
 /** The files core owns that it writes from the artifacts of `job`: no job output and no inventory entry. Today only the codec key table. */
@@ -417,6 +452,7 @@ export function applyJob(config: GolemConfig, inventory: Inventory, job: GolemJo
       removed.push(recordFile);
     } else if (atomicWrite(recordFile, record, files)) written.push(recordFile);
   }
+  removeLeftoverTemporaries(job.package, [...expected.values()].map(artifact => artifact.filename), files);
   for (const { key, filename } of deletions) {
     if (readFile(filename) !== undefined) {
       files.unlink(filename);
