@@ -5,7 +5,7 @@ export const BENCH_SERIES_COUNT = 4;
 
 export const REPOSITORY_BLOB_URL = 'https://github.com/RunicCore/golem/blob/master';
 
-export type PayloadId = 'simple' | 'nested' | 'array' | 'checkout' | 'checkout-plain' | 'serde-none' | 'serde-many' | 'union-tagged' | 'union-class';
+export type PayloadId = 'simple' | 'nested' | 'array' | 'checkout' | 'checkout-plain' | 'serde-none' | 'serde-many' | 'union-tagged' | 'union-class' | 'temporal' | 'recursive' | 'unique-items';
 /** The operations of the compare table. */
 export type CompareOperationId = 'parse' | 'stringify' | 'validate';
 /** The operations that only the golem cost table times: value to and from a plain object, with no JSON text. */
@@ -46,13 +46,17 @@ export const PAYLOADS: readonly PayloadSpec[] = [
 /**
  * The payloads that only the golem cost table times: one shape of 21 fields, with every field converting (serde-many) or
  * none converting (serde-none). The compare table does not list them. The union pair is one wire value in two models, a union of
- * inline tagged objects and a union of model classes, timed on the IModel adapters only (E-42).
+ * inline tagged objects and a union of model classes, timed on the IModel adapters only (E-42). Temporal, recursive and
+ * unique-items time one runtime path each, on the same adapters.
  */
 const COST_PAYLOADS: readonly PayloadSpec[] = [
   { id: 'serde-none', fixture: 'serde-none', label: 'Serde none', description: 'Twenty-one fields on plain strings and numbers: nothing converts.', sourceFile: 'scripts/benchmark/fixtures/features/payloads.ts' },
   { id: 'serde-many', fixture: 'serde-many', label: 'Serde many', description: 'The same shape with every field converting: money, hex codes, permission bits, yes/no flags, dates and date tuples.', sourceFile: 'scripts/benchmark/fixtures/features/payloads.ts' },
   { id: 'union-tagged', fixture: 'union-tagged', label: 'Union, tagged', description: 'A hundred events, each one of four shapes picked by a kind tag. The shapes are inline objects, so the encoder dispatches on the tag. Each event holds one date.', sourceFile: 'scripts/benchmark/fixtures/features/union-dispatch.ts', adapters: ['golem', 'golem-validated'], noInvalid: true },
   { id: 'union-class', fixture: 'union-class', label: 'Union, class-first', description: 'The same hundred events and the same JSON text, with the four shapes as generated model classes, so the encoder picks the branch by class first. Each event holds one date.', sourceFile: 'scripts/benchmark/fixtures/features/union-dispatch.ts', adapters: ['golem', 'golem-validated'], noInvalid: true },
+  { id: 'temporal', fixture: 'temporal', label: 'Temporal fields', description: 'Twenty fields on the six Temporal classes (instants, zoned date-times, dates, date-times, times and durations), each an ISO 8601 string in JSON. The Temporal in use is the temporal-polyfill package, so the numbers include the polyfill. Serde none is the same field count with no conversion.', sourceFile: 'scripts/benchmark/fixtures/features/runtime-paths.ts', adapters: ['golem', 'golem-validated'], noInvalid: true },
+  { id: 'recursive', fixture: 'recursive', label: 'Recursive model', description: 'A tree of one model that lists itself as children: 106 nodes, three levels below the root, each with a label.', sourceFile: 'scripts/benchmark/fixtures/features/runtime-paths.ts', adapters: ['golem', 'golem-validated'], noInvalid: true },
+  { id: 'unique-items', fixture: 'unique-items', label: 'Unique items', description: 'One model with a list of 1,000 strings and a list of 100 small objects, both under the UniqueItems tag. Validate checks that no two items are equal.', sourceFile: 'scripts/benchmark/fixtures/features/runtime-paths.ts', adapters: ['golem', 'golem-validated'], noInvalid: true },
 ];
 
 /** Every payload a run can time. */

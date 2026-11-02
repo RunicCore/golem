@@ -13,7 +13,7 @@ const sharedFeatureDirectory = path.join(root, 'tests/fixtures/models/serde-feat
 const featureSources = [
   'payloads.ts',
   'features-class-transformer.models.ts', 'features-class-validator.models.ts',
-  'comparison-features-golem.ts', 'comparison-features-golem-object.ts', 'union-dispatch.model.ts', 'union-dispatch.ts',
+  'comparison-features-golem.ts', 'comparison-features-golem-object.ts', 'union-dispatch.model.ts', 'union-dispatch.ts', 'runtime-paths.model.ts', 'runtime-paths.ts',
   'comparison-features-class-transformer.ts', 'comparison-features-class-validator.ts',
 ];
 const sharedFeatureSources = ['feature-tags.ts', 'features.model.ts', 'features.iobject.model.ts', 'access-rules.ts'];
@@ -57,7 +57,7 @@ export function prepare(directory: string, kind: ProjectKind, extraFixtures: rea
   for (const name of sharedFeatureSources) copyFileSync(path.join(sharedFeatureDirectory, name), path.join(src, name));
   writeFileSync(path.join(project, 'tsconfig.json'), JSON.stringify({
     compilerOptions: {
-      target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', strict: true, skipLibCheck: true,
+      target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', strict: true, skipLibCheck: true, lib: ['es2022', 'esnext.temporal'],
       experimentalDecorators: true, emitDecoratorMetadata: true, rootDir: 'src', outDir: 'build', types: ['node'],
       plugins: [{ transform: 'typia/lib/transform' }],
     },
