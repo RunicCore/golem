@@ -252,16 +252,29 @@ export const realOutputFiles: OutputFiles = {
   unlink: filename => { fs.unlinkSync(filename); },
 };
 
-const TEMPORARY_NAME = /^(.+)\.\d+\.[0-9a-f]{12}\.tmp$/;
+const TEMPORARY_NAME = /^(.+)\.(\d+)\.[0-9a-f]{12}\.tmp$/;
 
 /** The temporary file `atomicWrite` writes beside `filename` before it renames it over `filename`: `<file>.<pid>.<12 hex digits>.tmp`. */
 function temporaryName(filename: string): string {
   return `${filename}.${process.pid}.${crypto.randomBytes(6).toString('hex')}.tmp`;
 }
 
-/** The name of the file whose `atomicWrite` left `name` behind, or `undefined` when `name` is no such temporary file. */
-function temporaryTarget(name: string): string | undefined {
-  return TEMPORARY_NAME.exec(name)?.[1];
+/** The file whose `atomicWrite` left `name` behind and the process that ran it, or `undefined` when `name` is no such temporary file. */
+function temporaryOf(name: string): { readonly target: string; readonly pid: number } | undefined {
+  const match = TEMPORARY_NAME.exec(name);
+  return match ? { target: match[1]!, pid: Number(match[2]) } : undefined;
+}
+
+/** Whether a process with `pid` exists: a signal 0 only tests. A process of another user exists too (EPERM). */
+function processAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    if (hasErrorCode(error, 'ESRCH')) return false;
+    if (hasErrorCode(error, 'EPERM')) return true;
+    throw error;
+  }
 }
 
 export function atomicWrite(filename: string, content: string, files: OutputFiles = realOutputFiles): boolean {
@@ -317,7 +330,7 @@ function assertNoUnrecordedOutputs(config: GolemConfig, inventory: Inventory, jo
     for (const entry of entries) {
       if (entry.name.startsWith('.') || entry.name === 'node_modules') continue;
       // A write that was killed leaves its temporary file; the next generate removes it, so it is no drift.
-      if (temporaryTarget(entry.name) !== undefined) continue;
+      if (temporaryOf(entry.name) !== undefined) continue;
       const filename = path.join(directory, entry.name);
       if (entry.isDirectory()) { visit(filename, everyFile); continue; }
       if (!entry.isFile() || (!everyFile && !/\.[jt]s$/.test(entry.name))) continue;
@@ -353,7 +366,7 @@ function providesCodecKeys(config: GolemConfig, job: GolemJob): boolean {
   return config.jobPlan.providers[MODEL_BOUNDARY] === job.id;
 }
 
-/** Removes the temporary files that a killed `atomicWrite` left beside `filenames`, when they carry the marker of `owner`, the package that writes them. */
+/** Removes the temporary files that a killed `atomicWrite` left beside `filenames`, when they carry the marker of `owner`, the package that writes them. A file of a process that still runs is another run's write in flight: it stays. */
 export function removeLeftoverTemporaries(owner: string, filenames: readonly string[], files: OutputFiles = realOutputFiles): void {
   const targets = new Map<string, Set<string>>();
   for (const filename of filenames) {
@@ -365,8 +378,8 @@ export function removeLeftoverTemporaries(owner: string, filenames: readonly str
     try { entries = fs.readdirSync(directory); }
     catch (error) { if (hasErrorCode(error, 'ENOENT')) continue; throw error; }
     for (const entry of entries) {
-      const target = temporaryTarget(entry);
-      if (target === undefined || !names.has(target)) continue;
+      const temporary = temporaryOf(entry);
+      if (temporary === undefined || !names.has(temporary.target) || processAlive(temporary.pid)) continue;
       const leftover = path.join(directory, entry);
       const content = readFile(leftover);
       if (content !== undefined && marker(content, owner)) files.unlink(leftover);
