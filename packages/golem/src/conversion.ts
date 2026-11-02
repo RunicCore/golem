@@ -610,9 +610,11 @@ export function decodeGeneratedModelTrusted(
 /**
  * Restore a model Date from a `date-time` text. The text must fit the `date-time` format
  * at every level of validation, off included, because `new Date('5')` reads text that is no time (F-39).
+ * A leap second (`isDateTime` allows second 60 only at 23:59:60 UTC) reads as second 59 with its fraction, as `Temporal.Instant.from` does,
+ * because `new Date` rejects second 60.
  */
 export function deserializeDate(value: unknown, path: IssuePath = activeConversionPath): Date {
-  const date = typeof value === 'string' && isDateTime(value) ? new Date(value) : undefined;
+  const date = typeof value === 'string' && isDateTime(value) ? new Date(value.startsWith('60', 17) ? `${value.slice(0, 17)}59${value.slice(19)}` : value) : undefined;
   if (!date || !Number.isFinite(date.getTime())) {
     throw conversionError(LibErrorKind.Deserialization, 'Expected a date-time string.', path, undefined, true);
   }
