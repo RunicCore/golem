@@ -3,7 +3,7 @@ import { displayPath } from '../generator-core.js';
 import { hasLocalForm, localFormMessage } from '../names.js';
 import * as ts from '../typescript-ns.js';
 import { canonicalFilename, portableRelativeFilename } from './project.js';
-import { packageSpecifier } from './package-specifier.js';
+import { nearestManifest, packageSpecifier } from './package-specifier.js';
 import { canonicalConstraintKey } from '../schema.js';
 import type { ConstraintSchemaValue, ModelConstraint } from '../schema.js';
 import type { ImportedFunction } from '../../model-registry.js';
@@ -244,8 +244,10 @@ function canonicalIdentity(declaration: ts.Declaration, exportName: string, iden
 
 /** Whether `filename` is the golem source or declaration file named `stem` (`tags`, `model`), in a package install or in this workspace. */
 export function isGolemSourceFile(filename: string, stem: 'tags' | 'model'): boolean {
-  const normalized = filename.replace(/\\/g, '/');
-  return new RegExp(`(?:^|/)(?:node_modules/@exprtlabs/golem|packages/golem)/(?:src|dist)/${stem}(?:\\.d)?\\.(?:c|m)?ts$`).test(normalized);
+  const owner = nearestManifest(filename);
+  if (owner?.name !== '@exprtlabs/golem') return false;
+  const file = portableRelativeFilename(filename, owner.root);
+  return ['src', 'dist'].some((directory) => ['ts', 'mts', 'cts', 'd.ts', 'd.mts', 'd.cts'].some((extension) => file === `${directory}/${stem}.${extension}`));
 }
 
 function isGolemTagSymbol(checker: ts.TypeChecker, symbol: ts.Symbol | undefined): boolean {

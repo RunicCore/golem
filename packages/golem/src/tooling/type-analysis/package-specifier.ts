@@ -33,6 +33,12 @@ export function readManifest(filename: string): { readonly name?: string; readon
   return manifest;
 }
 
+/** The package name at the start of a bare specifier: `pkg` or `@scope/pkg`. */
+export function packageName(specifier: string): string {
+  const segments = specifier.split('/');
+  return specifier.startsWith('@') ? segments.slice(0, 2).join('/') : segments[0]!;
+}
+
 /**
  * Throws when a package.json that a lookup of the package import `specifier` (a package name or a `#` import) from `importer`
  * reads is not a JSON object: the nearest one above `importer`, which scopes `imports` and self references, and for a package
@@ -41,8 +47,7 @@ export function readManifest(filename: string): { readonly name?: string; readon
  */
 export function assertPackageManifestsParse(specifier: string, importer: string): void {
   if (specifier.startsWith('.') || path.isAbsolute(specifier)) return;
-  const segments = specifier.split('/');
-  const name = specifier.startsWith('#') ? undefined : segments.slice(0, specifier.startsWith('@') ? 2 : 1).join('/');
+  const name = specifier.startsWith('#') ? undefined : packageName(specifier);
   const nearest = (relative: (directory: string) => string): void => {
     for (let directory = path.dirname(importer); ; directory = path.dirname(directory)) {
       if (readManifest(relative(directory)) !== undefined || path.dirname(directory) === directory) return;
@@ -53,7 +58,7 @@ export function assertPackageManifestsParse(specifier: string, importer: string)
 }
 
 /** The package that owns `file`: the nearest package.json with a name. A nameless one (such as `{"type":"module"}`) only scopes module format. */
-function nearestManifest(file: string): PackageManifest | undefined {
+export function nearestManifest(file: string): PackageManifest | undefined {
   let dir = path.dirname(file);
   for (;;) {
     const manifest = readManifest(path.join(dir, 'package.json'));

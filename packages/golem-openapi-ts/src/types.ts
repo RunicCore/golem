@@ -1,7 +1,7 @@
 import { isDeepStrictEqual } from 'node:util';
 import { isBinaryMediaType, isBuiltinTextMediaType } from './client/codecs.js';
 import { asRecord, isJsonObject, objectEntries, type JsonObject } from './json.js';
-import { identifier, NameScope } from '@exprtlabs/golem/internal/generator-support';
+import { identifier, NameScope, responseStatusKind } from '@exprtlabs/golem/internal/generator-support';
 import { BUILTIN_CLASS_ROOTS, code, codeKey, manifestMarkerComment, docComment, exportedName, fileImports, identifier as identifierPart, ImportSource, isEmpty, join, lineBreak, literal, nest, propertyKey, render, renderModule, sameCode, type RenderedModule, type Code, type JsonValue } from '@exprtlabs/golem/internal/emitter';
 import { unionVariants } from './composition.js';
 import { dateClassOf } from './date-class.js';
@@ -845,14 +845,12 @@ function responseHeadersType(document: unknown, response: NormalizedResponse, co
 }
 
 function responseMatchType(status: string): Code {
-  if (status === 'default') return code`'default'`;
-  if (/^[1-5]XX$/i.test(status)) return code`'range'`;
-  return code`'status'`;
+  const kind = responseStatusKind(status);
+  return kind === 'default' ? code`'default'` : kind === 'range' ? code`'range'` : code`'status'`;
 }
 
 function responseStatusType(status: string): Code {
-  if (/^\d{3}$/.test(status)) return literal(Number(status));
-  return code`number`;
+  return responseStatusKind(status) === 'status' ? literal(Number(status)) : code`number`;
 }
 
 function responseVariantTypes(document: unknown, response: NormalizedResponse, context: SchemaTypeContext = {}): TypeCode[] {

@@ -3,6 +3,7 @@ import type { ValidationLevel } from '../object-codec.js';
 import type { OperationRuntimeValidators } from '../schema-registry-validation.js';
 import type { Validator } from '../validation-runtime.js';
 import { mediaEssence, parseMediaType } from './media-type.js';
+import { responseStatusKind } from './response-status.js';
 
 export interface ParameterSerializerContext {
   readonly operation: string;
@@ -399,9 +400,12 @@ export class ClientRuntime {
   }
 
   private matchesStatus(status: number, expected: string): boolean {
-    if (/^\d{3}$/.test(expected)) return status === Number(expected);
-    if (/^[1-5]XX$/i.test(expected)) return String(status)[0] === expected[0];
-    return expected === 'default';
+    switch (responseStatusKind(expected)) {
+      case 'status': return status === Number(expected);
+      case 'range': return String(status)[0] === expected[0];
+      case 'default': return true;
+      default: return false;
+    }
   }
 
   private selectResponse(
@@ -415,12 +419,13 @@ export class ClientRuntime {
     let range: (typeof contracts)[number] | undefined;
     let fallback: (typeof contracts)[number] | undefined;
     for (const contract of contracts) {
-      if (/^\d{3}$/.test(contract.status) && this.matchesStatus(response.status, contract.status)) {
+      const kind = responseStatusKind(contract.status);
+      if (kind === 'status' && this.matchesStatus(response.status, contract.status)) {
         selected = contract;
         break;
       }
-      if (!range && /^[1-5]XX$/i.test(contract.status) && this.matchesStatus(response.status, contract.status)) range = contract;
-      if (!fallback && contract.status === 'default') fallback = contract;
+      if (!range && kind === 'range' && this.matchesStatus(response.status, contract.status)) range = contract;
+      if (!fallback && kind === 'default') fallback = contract;
     }
     selected ??= range ?? fallback;
     if (!selected) throw undeclaredResponseError(this.client, operation, response, mediaType);
@@ -566,7 +571,7 @@ export class ClientRuntime {
     const contract = contracts.find((item) => item.status === declaredStatus);
     if (!contract) throw new Error(`Missing generated response contract for ${operation} ${declaredStatus}`);
     return {
-      matched: declaredStatus === 'default' ? 'default' : /^[1-5]XX$/i.test(declaredStatus) ? 'range' : 'status',
+      matched: responseStatusKind(declaredStatus) ?? 'status',
       status: response.status,
       contentType,
       body,
