@@ -620,9 +620,10 @@ Install `@exprtlabs/golem-ts-openapi` in `dependencies`. `@nestjs/common` and `r
 | `nestModelStringifyInterceptor` | `(codec: ObjectCodec): NestInterceptor` | Writes every non-null result with that codec's `stringify`, an array item by item. |
 | `objectCodecFromMetatype` | `<T>(metatype: unknown): ObjectCodec<T> \| undefined` | The codec of a parameter token that the rewrite placed, such as the `design:paramtypes` entry of a `@Body()` parameter. `undefined` for a raw class. |
 | `nestUnionFromMetatype` | `(metatype: unknown): NestUnionInput \| undefined` | The converter of a parameter token for a union of models, such as the `design:paramtypes` entry of a `@Body()` or `@Query()` parameter typed `TCircle \| TRect`. `fromWireFormat(wire, options?)` returns the model of the variant that the tag picks and throws a `LibError` for a missing or unknown tag or invalid input. `decodeQuery(query)` turns query strings into the types that variant declares. `undefined` for any other token. |
+| `nestQueryDecoder` | `(metatype: unknown): ((query: unknown) => unknown) \| undefined` | The function that decodes a query of a parameter token to the numbers, booleans and arrays that its model declares, for a single model or a union of models, such as the `design:paramtypes` entry of a `@Query()` parameter. A value that does not fit stays text, so `fromWireFormat` rejects it. `undefined` for any other token, and for a union whose variant codecs are not registered yet. |
 | `nestModelConstruct` | `(metatype: unknown)` | The class that token constructs, or `undefined`. |
 
-For inbound conversion in your own interceptor or pipe, get the codec with `objectCodecFromMetatype` and call its `fromWireFormat`. For a union of models, use `nestUnionFromMetatype`.
+For inbound conversion in your own interceptor or pipe, get the codec with `objectCodecFromMetatype` and call its `fromWireFormat`. For a union of models, use `nestUnionFromMetatype`. For a `@Query()`, pass `request.query` through `nestQueryDecoder` before `fromWireFormat`.
 
 ## `@exprtlabs/golem/loader` {#loader}
 
