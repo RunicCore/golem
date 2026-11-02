@@ -55,6 +55,7 @@ type ClientFunction = keyof typeof rt.client;
 
 const BLANK = code``;
 
+const RESERVED_HEADER_PARAMETERS: ReadonlySet<string> = new Set(['accept', 'content-type', 'authorization']);
 const CONTENT_PARAMETER_LOCATION = { path: code`'path'`, query: code`'query'`, header: code`'header'`, cookie: code`'cookie'` } as const;
 
 /** A parameter that carries its value as a media type: the runtime serializes it by the first media type its `content` names. */
@@ -247,7 +248,9 @@ function operationSource(
   const route = routeExpression(operation, use, parameterInput);
   const queryParameters = operation.parameters.filter((item) => item.in === 'query');
   const queryStringParameter = operation.parameters.find((item) => item.in === 'querystring');
-  const headerParameters = operation.parameters.filter((item) => item.in === 'header');
+  // A header parameter named Accept, Content-Type or Authorization is ignored (OpenAPI Parameter Object); the request carries those from the body, the response types and the security schemes.
+  const headerParameters = operation.parameters.filter((item) =>
+    item.in === 'header' && !RESERVED_HEADER_PARAMETERS.has(item.name.toLowerCase()));
   const cookieParameters = operation.parameters.filter((item) => item.in === 'cookie');
   const requestBody = operation.requestContent.length > 0;
   const singleContentType = operation.requestContent.length === 1
@@ -285,7 +288,8 @@ function operationSource(
     if (parameter.content) {
       return code`    if (${parameterInput}.header?.[${literal(parameter.name)}] !== undefined) headers.set(${literal(parameter.name)}, ${serializedContentParameter(operation, use, 'header', parameter.name, parameter.content, code`${parameterInput}.header[${literal(parameter.name)}]`)});`;
     }
-    return code`    if (${parameterInput}.header?.[${literal(parameter.name)}] !== undefined) headers.set(${literal(parameter.name)}, ${use('serializeHeaderSimple')}(runtime, ${parameterInput}.header[${literal(parameter.name)}], ${literal(parameter.explode === true)}, ${literal(parameter.name)}));`;
+    // A null value sends no header, as it sends no query or cookie parameter.
+    return code`    if (${parameterInput}.header?.[${literal(parameter.name)}] !== undefined && ${parameterInput}.header[${literal(parameter.name)}] !== null) headers.set(${literal(parameter.name)}, ${use('serializeHeaderSimple')}(runtime, ${parameterInput}.header[${literal(parameter.name)}], ${literal(parameter.explode === true)}, ${literal(parameter.name)}));`;
   });
   const cookieLines = cookieParameters.map((parameter) => {
     if (parameter.content) {

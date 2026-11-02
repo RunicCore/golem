@@ -316,3 +316,39 @@ test('an empty object response header decodes to an empty object, exploded or no
   const filled = await clientReturning(Client, { 'X-Plain': 'x,1', 'X-Exploded': 'x=2' }).point().execute({});
   assert.deepEqual(filled.headers, { 'X-Plain': { x: 1 }, 'X-Exploded': { x: 2 } });
 });
+
+test('a header parameter named Accept, Content-Type or Authorization is ignored, and a null header parameter is not sent', async (t) => {
+  // protects: T-873, T-875 OpenAPI ignores those three header parameters; a null header parameter sends nothing, as a null query or cookie parameter does
+  const Client = await loadClient(t, {
+    openapi: '3.1.0',
+    info: { title: 'ReservedHeaders', version: '1' },
+    paths: {
+      '/a': {
+        get: {
+          operationId: 'opA',
+          parameters: [
+            { name: 'Accept', in: 'header', schema: { type: 'string' } },
+            { name: 'content-type', in: 'header', schema: { type: 'string' } },
+            { name: 'AUTHORIZATION', in: 'header', schema: { type: 'string' } },
+            { name: 'X-Id', in: 'header', schema: { type: ['string', 'null'] } },
+            { name: 'X-Kept', in: 'header', schema: { type: 'string' } },
+          ],
+          responses: { 204: { description: 'none' } },
+        },
+      },
+    },
+  }, 'ReservedHeaders');
+  let sent: Headers | undefined;
+  const client = new Client({
+    baseUrl: 'https://api.example',
+    fetchImpl: async (url: string | URL | Request, init?: RequestInit) => {
+      sent = captureRequest(url, init).init.headers;
+      return new Response(null, { status: 204 });
+    },
+  }) as unknown as { opA(): { execute(input: unknown): Promise<unknown> } };
+  await client.opA().execute({ header: { Accept: 'x/a', 'content-type': 'x/b', AUTHORIZATION: 'Bearer c', 'X-Id': null, 'X-Kept': 'kept' } });
+  assert.deepEqual(
+    { accept: sent?.get('accept'), contentType: sent?.get('content-type'), authorization: sent?.get('authorization'), id: sent?.get('x-id'), kept: sent?.get('x-kept') },
+    { accept: null, contentType: null, authorization: null, id: null, kept: 'kept' },
+  );
+});
