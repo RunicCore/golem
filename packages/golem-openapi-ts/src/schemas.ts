@@ -3,7 +3,7 @@ import { asRecord, isJsonObject, objectEntries } from './json.js';
 import { unionVariants } from './composition.js';
 import { SCHEMA_ARRAY_KEYWORDS, SCHEMA_MAP_KEYWORDS, SCHEMA_SINGLE_KEYWORDS } from './schema-keywords.js';
 import { identifier, sourceDigest } from '@exprtlabs/golem/internal/generator-support';
-import { decodeUriFragment, escapePointerToken, unescapePointerToken } from '@exprtlabs/golem/internal/schema';
+import { decodeUriFragment, escapePointerToken, splitFirstFragmentToken } from '@exprtlabs/golem/internal/schema';
 import {
   normalizeDocument,
   parameterSchema,
@@ -584,9 +584,8 @@ function rewriteOperationSchemaRefs(
       ...(documentRelative ? ['#/components/schemas/'] : [])];
     const prefix = prefixes.find(candidate => reference.startsWith(candidate));
     if (prefix === undefined) return undefined;
-    const [encodedName = '', ...fragment] = reference.slice(prefix.length).split('/');
-    const suffix = fragment.length ? `/${fragment.join('/')}` : '';
-    return `${componentId(index, unescapePointerToken(encodedName), direction)}${suffix ? `#${suffix}` : ''}`;
+    const { name, rest } = splitFirstFragmentToken(reference.slice(prefix.length));
+    return `${componentId(index, name, direction)}${rest ? `#${rest}` : ''}`;
   };
   return mapSchemaPositions(value, (result) => {
     for (const key of ['$ref', '$dynamicRef'] as const) {
@@ -619,7 +618,7 @@ function rewriteOperationSchemaRefs(
         const component = componentReference(reference, true);
         const resource = rewriteResourceReference(index, reference, direction, '$ref');
         const name = reference.startsWith('#/components/schemas/')
-          ? unescapePointerToken(reference.slice('#/components/schemas/'.length).split('/')[0] ?? '')
+          ? splitFirstFragmentToken(reference.slice('#/components/schemas/'.length)).name
           : undefined;
         const candidates = [
           componentReference(reference, localComponentScope) ?? resource,

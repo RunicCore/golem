@@ -1,7 +1,7 @@
 import { asRecord, isJsonObject, jsonPointerJoin, objectEntries, type JsonObject } from './json.js';
 import { compareText } from '@exprtlabs/golem/generator-api';
 import { identifier } from '@exprtlabs/golem/internal/generator-support';
-import { canonicalSchemaKey, escapePointerToken, unescapePointerToken } from '@exprtlabs/golem/internal/schema';
+import { canonicalSchemaKey, escapePointerToken, fragmentPointerTokens, unescapePointerToken } from '@exprtlabs/golem/internal/schema';
 import {
   resolveLocalPointer,
   type NormalizedDocument,
@@ -278,7 +278,7 @@ function applySchemaPointer(
   const raw = pointer.startsWith('#') ? pointer.slice(1) : pointer;
   if (raw === '' || raw === '/') return { schema, currentBase };
   if (!raw.startsWith('/')) return undefined;
-  const tokens = raw.slice(1).split('/').map(unescapePointerToken);
+  const tokens = fragmentPointerTokens(raw);
   let current: unknown = schema;
   let base = currentBase;
   for (const token of tokens) {

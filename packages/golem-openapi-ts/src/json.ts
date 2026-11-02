@@ -1,3 +1,5 @@
+import { escapeJsonPointerToken, jsonPointerTokens, unescapeJsonPointerToken } from '@exprtlabs/golem/internal/schema';
+
 export type JsonObject = { readonly [key: string]: JsonValue | undefined };
 type JsonValue =
   | null
@@ -27,21 +29,9 @@ export function objectEntries(value: unknown): ReadonlyArray<readonly [string, u
   return isJsonObject(value) ? Object.entries(value) : [];
 }
 
-/**
- * Plain RFC 6901 JSON Pointer token escaping (`~` -> `~0`, `/` -> `~1`), with
- * no percent-encoding. `escapePointerToken`/`unescapePointerToken` from
- * `@exprtlabs/golem/internal/schema` additionally apply `encodeURIComponent`; that
- * is for URI-fragment `$ref` values (e.g. `#/components/schemas/A%20B`), not
- * for a plain in-document JSON Pointer like `OpenApiProblem.pointer`.
- */
-export function escapeJsonPointerToken(token: string): string {
-  return token.replace(/~/g, '~0').replace(/\//g, '~1');
-}
-
-/** Reverses {@link escapeJsonPointerToken}; no percent-decoding. */
-export function unescapeJsonPointerToken(token: string): string {
-  return token.replace(/~1/g, '/').replace(/~0/g, '~');
-}
+// Plain RFC 6901 token escaping (no percent-encoding) is `@exprtlabs/golem/internal/schema`'s definition; the
+// URI-fragment form of `$ref` values (`#/components/schemas/A%20B`) is its percent-encoding sibling.
+export { escapeJsonPointerToken, jsonPointerTokens, unescapeJsonPointerToken };
 
 /** Append one raw token to a plain JSON Pointer, escaping it per RFC 6901. */
 export function jsonPointerJoin(parent: string, token: string): string {
@@ -65,7 +55,7 @@ export function resolveJsonPointer(document: unknown, pointer: string): unknown 
   if (pointer === '') return document;
   if (!pointer.startsWith('/')) return undefined;
   let current: unknown = document;
-  for (const token of pointer.slice(1).split('/').map(unescapeJsonPointerToken)) {
+  for (const token of jsonPointerTokens(pointer)) {
     if (Array.isArray(current)) {
       current = /^(0|[1-9]\d*)$/.test(token) ? current[Number(token)] : undefined;
     } else if (isJsonObject(current)) {

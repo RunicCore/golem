@@ -1,4 +1,5 @@
 import { findGeneratedModelDefinition, findGeneratedModelDefinitionForConstructor } from './model-registry.js';
+import { escapeJsonPointerToken } from './json-pointer.js';
 import { presentValue } from './presence.js';
 import type { generatedModelFieldsBrand, GeneratedModelConstructor, ModelField, ModelValidationContext } from './model.js';
 import type { ModelTypeDescriptor, RegisteredGeneratedModelDefinition } from './model-registry.js';
@@ -169,7 +170,7 @@ function objectCodecForDefinition(definition: RegisteredGeneratedModelDefinition
 }
 
 function issuePointer(path: IssuePath): string {
-  return path.map(segment => `/${String(segment).replace(/~/g, '~0').replace(/\//g, '~1')}`).join('');
+  return path.map(segment => `/${escapeJsonPointerToken(String(segment))}`).join('');
 }
 
 /** An issue from a model rule, which carries its own message when it has one. */

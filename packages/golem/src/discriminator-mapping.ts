@@ -6,7 +6,7 @@
  * so validation keeps the mapping's meaning.
  */
 
-import { escapePointerToken, unescapePointerToken } from './json-pointer.js';
+import { escapePointerToken, fragmentPointerTokens, unescapePointerToken } from './json-pointer.js';
 
 type SchemaRecord = Readonly<Record<string, unknown>>;
 
@@ -62,9 +62,9 @@ function referencedSchema(index: SchemaIndex, reference: string, base: string | 
     : index.resources.get(resolveUri(uri, base));
   if (!resource || (fragment !== '' && !fragment.startsWith('/'))) return undefined;
   let current: unknown = resource;
-  for (const token of fragment === '' ? [] : fragment.slice(1).split('/')) {
+  for (const token of fragmentPointerTokens(fragment)) {
     if (!isRecord(current) && !Array.isArray(current)) return undefined;
-    current = (current as Record<string, unknown>)[unescapePointerToken(token)];
+    current = (current as Record<string, unknown>)[token];
   }
   return isRecord(current) ? current : undefined;
 }

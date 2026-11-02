@@ -1,4 +1,5 @@
 import { lowerDiscriminatorMappings } from '../discriminator-mapping.js';
+import { unescapeJsonPointerToken } from '../json-pointer.js';
 import { GENERATED_MODEL_SCHEMA_REF_PREFIX, MODEL_INSTANCE_KEYWORD } from '../schema-keywords.js';
 import { compareText, type GolemDiagnostic, type GolemProfile } from './generator-core.js';
 import { codecShortName, type SchemaGraph, type SchemaNode } from './schema-graph.js';
@@ -94,7 +95,7 @@ export function localDefinitionName(reference: string): string | undefined {
   if (!reference.startsWith(prefix)) return undefined;
   const segment = reference.slice(prefix.length);
   if (segment.length === 0 || segment.includes('/')) return undefined;
-  return segment.replaceAll('~1', '/').replaceAll('~0', '~');
+  return unescapeJsonPointerToken(segment);
 }
 
 function stableSchema(value: unknown): string {
