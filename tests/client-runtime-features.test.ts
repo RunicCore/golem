@@ -84,6 +84,15 @@ test('a multipart JSON part that is null sends the JSON text null', async () => 
   assert.equal(await part.text(), 'null');
 });
 
+test('a multipart JSON part sends every value as JSON text, a text part sends the string itself', async () => {
+  // protects: T-852 a string in a multipart JSON part was sent as abc, not as the JSON text "abc"
+  const metadata = { 'multipart/form-data': { encoding: { meta: { contentType: 'application/json' }, note: { contentType: 'text/plain' } }, prefixEncoding: [], itemEncoding: null } };
+  const encoded = encodeBody(runtime, 'upload', { meta: ['abc', 7], note: 'abc' }, 'multipart/form-data', metadata);
+  const form = encoded.body as FormData;
+  assert.deepEqual(await Promise.all(form.getAll('meta').map((part) => (part as Blob).text())), ['"abc"', '7']);
+  assert.equal(await (form.get('note') as Blob).text(), 'abc');
+});
+
 test('an empty-object query parameter adds no entry and a non-primitive one is a TypeError naming the parameter', () => {
   // protects: bug a query or path parameter that was an empty object or a Date became "[object Object]" or a locale string
   const query: string[] = [];
