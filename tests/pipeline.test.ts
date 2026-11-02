@@ -123,8 +123,9 @@ test('watch regenerates model edits without rewriting SDKs or looping on outputs
     const api = path.join(root, 'api.json');
     const validApi = fs.readFileSync(api, 'utf8');
     const quietLength = stderr.length;
+    assert.equal(quietLength, 0, 'the good runs wrote nothing to stderr');
     fs.writeFileSync(api, '{}');
-    await until(() => stderr.length > quietLength, 'failed OpenAPI change is reported');
+    await until(() => /OpenAPI|validation failed|unsupported/i.test(stderr.slice(quietLength)), () => `failed OpenAPI change is reported (stderr=${stderr})`);
     const previousErrorLength = stderr.length;
     fs.writeFileSync(modelSource, fs.readFileSync(modelSource, 'utf8').replace('selected?: boolean', 'selected?: boolean; attempt?: number'));
     await until(() => stderr.length > previousErrorLength, 'model edit retries failed upstream generation');
