@@ -167,18 +167,51 @@ const LEAVE = Symbol('leave');
 /** A level of the depth walk: an array, a plain object or a golem model instance. Bytes, dates, maps and other class values are leaves. */
 function isNestingLevel(entry: object): boolean {
   if (Array.isArray(entry)) return true;
-  const prototype = Object.getPrototypeOf(entry);
+  const prototype: unknown = Object.getPrototypeOf(entry);
   return prototype === Object.prototype || prototype === null || instanceFields(entry) !== undefined;
 }
 
+/** The deepest level the plain walk follows, so its recursion stays far from the call stack limit whatever `maxDepth` a caller sets. Changes speed only. */
+const PLAIN_WALK_MAX_DEPTH = 512;
+/** The most objects the plain walk visits, so a value that many paths share ends it fast and the exact walk decides. Changes speed only. */
+const PLAIN_WALK_BUDGET = 16_384;
+
+/** The objects the running plain walk may still visit. A getter that starts another walk only resets it, which gives that walk more objects and never a wrong answer. */
+let plainWalkBudget = 0;
+
 /**
- * True when `value` nests arrays, plain objects and model instances deeper than `maxDepth`. It walks with an explicit
+ * True when `level` and everything below it fits in `levels` levels and the budget. Cycles and shared nodes spend the budget or
+ * reach the depth, so it answers false for them. When it answers false the exact walk reads the value again, so a getter runs
+ * twice. It allocates one array of values for each object (`Object.values`); an array level allocates nothing.
+ */
+function fitsPlainWalk(level: object, levels: number): boolean {
+  if (levels < 1 || --plainWalkBudget < 0) return false;
+  if (Array.isArray(level)) {
+    for (let index = 0; index < level.length; index++) {
+      const item: unknown = level[index];
+      if (typeof item === 'object' && item !== null && isNestingLevel(item) && !fitsPlainWalk(item, levels - 1)) return false;
+    }
+    return true;
+  }
+  const items: unknown[] = Object.values(level);
+  for (let index = 0; index < items.length; index++) {
+    const item = items[index];
+    if (typeof item === 'object' && item !== null && isNestingLevel(item) && !fitsPlainWalk(item, levels - 1)) return false;
+  }
+  return true;
+}
+
+/**
+ * True when `value` nests arrays, plain objects and model instances deeper than `maxDepth`. A plain recursive walk answers
+ * first for the common value, which fits; it never answers "too deep". Otherwise the walk below decides. It uses an explicit
  * stack, so a deep value cannot end the call stack, the root is always a level, and an object already on the current path is a cycle, which the cycle
  * checks report. An object that several paths share is walked again only when a path reaches it deeper than before,
  * so a DAG costs one walk for each node and depth, not one for each path.
  */
 export function valueNestsDeeperThan(value: unknown, maxDepth: number): boolean {
   if (maxDepth === Infinity || value === null || typeof value !== 'object') return false;
+  plainWalkBudget = PLAIN_WALK_BUDGET;
+  if (fitsPlainWalk(value, Math.min(maxDepth, PLAIN_WALK_MAX_DEPTH))) return false;
   const onPath = new Set<object>();
   const walkedAt = new Map<object, number>();
   const stack: unknown[] = [value];

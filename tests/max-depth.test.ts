@@ -145,6 +145,44 @@ test('the depth walk reaches the objects of a model instance, and a cycle ends t
   assert.equal(valueNestsDeeperThan(loop, 5), false);
 });
 
+test('maxDepth accepts a value exactly at the limit and rejects one level more, on validate, fromWireFormat and parse', async (t) => {
+  // protects: F-250 the plain depth walk answers "fits" only inside the limit, so the answer stays what the exact walk gave
+  const { link } = await buildDepthProject(t);
+  for (const limit of [1, 5, 511, 512, 513, 1000]) {
+    const exact = chain(limit);
+    const over = chain(limit + 1);
+    assert.equal(link.validate(exact.value, { maxDepth: limit }), true, `validate at ${limit}`);
+    assert.equal(typeof link.fromWireFormat(exact.value, { maxDepth: limit }).name, 'string', `fromWireFormat at ${limit}`);
+    assert.equal(typeof link.parse(exact.text, { maxDepth: limit }).name, 'string', `parse at ${limit}`);
+    assert.equal(link.validate(over.value, { maxDepth: limit }), false, `validate over ${limit}`);
+    assert.throws(() => link.fromWireFormat(over.value, { maxDepth: limit }), rejectsAsInputAt(limit), `fromWireFormat over ${limit}`);
+    assert.throws(() => link.parse(over.text, { maxDepth: limit }), rejectsAsInputAt(limit), `parse over ${limit}`);
+  }
+});
+
+test('the depth walk takes a value far deeper than the call stack when maxDepth allows it, and still counts it when maxDepth does not', () => {
+  // protects: T-848 a plain recursive walk bounded by a caller's large maxDepth would end the stack
+  let nested: unknown[] = [];
+  for (let level = 1; level < 100_000; level += 1) nested = [nested];
+  assert.equal(valueNestsDeeperThan(nested, 200_000), false);
+  assert.equal(valueNestsDeeperThan(nested, 99_999), true);
+});
+
+test('the depth walk ends on a cycle under a huge maxDepth and on a value of more objects than the plain walk may visit', () => {
+  // protects: T-848 the plain walk spends a fixed budget, then the exact walk decides: a cycle or a wide value must give today's answer
+  const loop: { child?: unknown } = {};
+  loop.child = loop;
+  assert.equal(valueNestsDeeperThan(loop, 1_000_000), false);
+  const wide: unknown[] = Array.from({ length: 20_000 }, () => ({ name: 'n' }));
+  assert.equal(valueNestsDeeperThan(wide, 2), false);
+  wide.push({ child: { child: {} } });
+  assert.equal(valueNestsDeeperThan(wide, 3), true);
+  let shared: { left?: object; right?: object } = {};
+  for (let level = 0; level < 100; level += 1) shared = { left: shared, right: shared };
+  assert.equal(valueNestsDeeperThan(shared, 512), false);
+  assert.equal(valueNestsDeeperThan(shared, 100), true);
+});
+
 test('allowGetter judges the depth of the root fields a getter supplies', async (t) => {
   // protects: R-57 review finding 3 - nesting below a root getter was not counted by the bound before the generated code walked it
   const { link } = await buildDepthProject(t);

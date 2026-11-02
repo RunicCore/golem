@@ -435,18 +435,11 @@ export class FunctionWriter {
       this.close();
       if (check.contains !== undefined) this.containsCheck(check.contains, value);
       if (check.uniqueItems) this.unlessSanity(() => {
-        const first = this.fresh('x');
-        const second = this.fresh('y');
-        // With all errors the search stops at the first duplicate pair; a mode that leaves at a failure needs no label.
-        const label = this.mode.fail.leaves ? undefined : this.fresh('unique');
-        this.open(code`${label === undefined ? code`` : code`${label}: `}for (let ${first} = 0; ${first} < ${value}.length - 1; ${first}++)`);
-        this.open(code`for (let ${second} = ${first} + 1; ${second} < ${value}.length; ${second}++)`);
-        // An `undefined` item is `null` in the JSON view, as in every array keyword and as `jsonEqual` reads nested items.
-        this.open(code`if (${runtime.jsonEqual}(${value}[${first}] ?? null, ${value}[${second}] ?? null))`);
-        this.issue(code`code: 'unique', indexes: [${first}, ${second}]`);
-        if (label !== undefined) this.line(code`break ${label};`);
-        this.close();
-        this.close();
+        // One pass over the items reports the first duplicate pair, the one a double loop over `jsonEqual` finds.
+        const duplicate = this.fresh('d');
+        this.line(code`const ${duplicate} = ${runtime.duplicateItems}(${value});`);
+        this.open(code`if (${duplicate} !== undefined)`);
+        this.issue(code`code: 'unique', indexes: [${duplicate}[0], ${duplicate}[1]]`);
         this.close();
       });
     }, true);

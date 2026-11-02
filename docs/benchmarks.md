@@ -139,14 +139,14 @@ Hand-written code copies each field and converts each date, and checks nothing. 
 
 | Model | Decode | Encode | Parse | Stringify |
 | --- | --- | --- | --- | --- |
-| Flat | 0.44 | 0.78 | 0.69 | 1.04 |
-| Nested | 0.34 | 0.74 | 0.80 | 0.85 |
-| Union | 0.32 | 0.66 | 0.61 | 0.82 |
-| Array of 100 items | 0.47 | 0.77 | 0.73 | 0.81 |
-| Tuple | 0.42 | 0.79 | 0.66 | 0.77 |
-| Optional fields | 0.64 | 0.83 | 0.77 | 0.86 |
+| Flat | 0.79 | 0.93 | 0.76 | 0.83 |
+| Nested | 0.39 | 0.80 | 0.84 | 0.90 |
+| Union | 0.29 | 0.65 | 0.57 | 0.88 |
+| Array of 100 items | 0.48 | 0.92 | 0.60 | 0.92 |
+| Tuple | 0.34 | 0.91 | 0.50 | 0.97 |
+| Optional fields | 0.54 | 0.95 | 0.66 | 0.84 |
 
-They were measured at commit 201b03e. To measure them on your machine, run `npm run bench:handwritten`.
+They were measured at commit 455c6c2. To measure them on your machine, run `npm run bench:handwritten`.
 
 ## What is measured
 
@@ -167,6 +167,8 @@ A case is one payload, one operation and one setup. The tables show the median s
 | Recursive model | Each of 106 nodes to its class |
 | Unique strings | Nothing. Validate compares 1,000 strings |
 | Unique objects | Nothing. Validate compares 100 objects |
+| Unique small list | Nothing. Validate compares 3 objects |
+| Unique nested objects | Nothing. Validate compares 20 objects that differ only in a nested field |
 | Nest query | Six query strings to their declared types |
 | Client call | The request body and the response of one generated client call |
 
@@ -200,7 +202,7 @@ Reproduce one number on your machine. Name one setup and one payload:
 npm run bench -- --adapters golem-object --payloads simple
 ```
 
-- The payloads are `simple`, `nested`, `array`, `checkout`, `checkout-plain`, `serde-none`, `serde-many`, `union-tagged`, `union-class`, `temporal`, `recursive`, `unique-strings`, `unique-objects`, `nest-query` and `client-call`.
+- The payloads are `simple`, `nested`, `array`, `checkout`, `checkout-plain`, `serde-none`, `serde-many`, `union-tagged`, `union-class`, `temporal`, `recursive`, `unique-strings`, `unique-objects`, `unique-small`, `unique-nested`, `nest-query` and `client-call`.
 - The run prints its tables to the console and writes `.cache/benchmark/results.json`.
 - A name that is not valid stops the run before it starts, with exit code 2. The message lists the valid names.
 - The run stores the machine load with the numbers, so stop other work on the machine first.

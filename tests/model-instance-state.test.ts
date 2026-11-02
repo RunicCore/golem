@@ -11,6 +11,7 @@ import { fileFixtureScope, onceShared, readFixture, type FixtureScope } from './
 import { buildModelProject, createModelProject, writeModelGolemYaml } from './model-project.js';
 import { compileValidatorModule } from './support/compiled-validators.js';
 import { instanceFields } from '../packages/golem/src/presence.js';
+import { MODEL_FIELDS_KEY } from '../packages/golem/src/schema-keywords.js';
 import { render } from '#golem/code';
 import { instanceFieldsCode } from '#golem/union-conversion';
 import { generatedCodecIdFromRoot } from './support/consumer.js';
@@ -146,14 +147,15 @@ for (const root of ['valued', 'patterned'] as const) {
 }
 
 test('the runtime walk of the field entry and the walk the validators generate return the same names', () => {
-  // protects: T-150 review the allowGetter copy and the generated validators decide program state by one rule
+  // protects: T-150 review the allowGetter copy and the generated validators decide program state by one rule; T-848 a Proxy prototype is no model
   const generated = runModule(render(instanceFieldsCode()), {}, { exports: ['instanceFields'] }).instanceFields as (value: object) => readonly string[] | undefined;
   const values = [
     instance(Task, { cache: 1 }), instance(Kid, {}), instance(Bag, {}), Object.create(Task.prototype), new (class extends Task {})(),
     { title: 'a' }, Object.create(null), Object.create({ inherited: 1 }), [],
+    Object.create(new Proxy({}, { get: () => () => 1 })), Object.create({ [Symbol.for(MODEL_FIELDS_KEY)]: 'title' }),
   ];
   assert.deepEqual(values.map(value => instanceFields(value)), values.map(value => generated(value)));
-  assert.deepEqual(values.map(value => instanceFields(value)), [['title', 'done'], ['title', 'done', 'mode'], undefined, ['title', 'done'], ['title', 'done'], undefined, undefined, undefined, undefined]);
+  assert.deepEqual(values.map(value => instanceFields(value)), [['title', 'done'], ['title', 'done', 'mode'], undefined, ['title', 'done'], ['title', 'done'], undefined, undefined, undefined, undefined, undefined, undefined]);
 });
 
 async function buildStateIn(scope: FixtureScope, mobx: boolean) {

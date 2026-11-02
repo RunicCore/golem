@@ -92,20 +92,18 @@ export function keyIsNotListed(key: Code, names: readonly string[]): Code {
 /**
  * The names that the own model of a golem model instance declares, or `undefined` when the value holds no program state: the
  * declaration of the `instanceFields` function and its key, as code. The nearest prototype that owns a field entry decides,
- * also when the entry is `null` (a model that allows additional keys has no program state). A plain value, or a model of an
+ * and only an array of names is an answer: a `null` entry (a model that allows additional keys has no program state) and a prototype that answers any key (a Proxy) give `undefined`. A plain value, or a model of an
  * older runtime, has no entry. An own key outside the names is program state, never an unknown key. The runtime function
- * `instanceFields` (presence.ts) walks the same way, and a test holds the two to the same answers.
+ * `instanceFields` (presence.ts) follows the same rule, and a test holds the two to the same answers.
  */
 export function instanceFieldsCode(): Code {
   return join([
     code`const fieldsKey = /*#__PURE__*/ Symbol.for(${literal(MODEL_FIELDS_KEY)});`,
     code`function instanceFields(value) {`,
-    code`  let prototype = Object.getPrototypeOf(value);`,
-    code`  if (prototype === Object.prototype) return undefined;`,
-    code`  for (; prototype !== null; prototype = Object.getPrototypeOf(prototype)) {`,
-    code`    if (Object.hasOwn(prototype, fieldsKey)) return prototype[fieldsKey] ?? undefined;`,
-    code`  }`,
-    code`  return undefined;`,
+    code`  const prototype = Object.getPrototypeOf(value);`,
+    code`  if (prototype === Object.prototype || prototype === null) return undefined;`,
+    code`  const declared = prototype[fieldsKey];`,
+    code`  return Array.isArray(declared) ? declared : undefined;`,
     code`}`,
   ], code`\n`);
 }

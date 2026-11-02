@@ -4,17 +4,19 @@ import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { registerIModelClass, requireObjectCodec } from '@exprtlabs/golem/internal/model-runtime';
 import { codecIdOf } from './codec-id.js';
 import type { ComparisonFixture } from './fixture-contract.js';
-import { TemporalFields, TreeNode, UniqueObjects, UniqueStrings } from './runtime-paths.model.js';
+import { TemporalFields, TreeNode, UniqueNested, UniqueObjects, UniqueSmall, UniqueStrings } from './runtime-paths.model.js';
 
-for (const [name, model] of [['TTemporalFields', TemporalFields], ['TTreeNode', TreeNode], ['TUniqueStrings', UniqueStrings], ['TUniqueObjects', UniqueObjects]] as const) {
+for (const [name, model] of [['TTemporalFields', TemporalFields], ['TTreeNode', TreeNode], ['TUniqueStrings', UniqueStrings], ['TUniqueObjects', UniqueObjects], ['TUniqueSmall', UniqueSmall], ['TUniqueNested', UniqueNested]] as const) {
   registerIModelClass(codecIdOf(name), model);
 }
 
-export type RuntimePathName = 'temporal' | 'recursive' | 'unique-strings' | 'unique-objects';
+export type RuntimePathName = 'temporal' | 'recursive' | 'unique-strings' | 'unique-objects' | 'unique-small' | 'unique-nested';
 
 const TREE_BREADTH = [5, 4, 4] as const;
 const UNIQUE_NAMES = 1000;
 const UNIQUE_POINTS = 100;
+const UNIQUE_SMALL = 3;
+const UNIQUE_NESTED = 20;
 
 interface TreeWire { label: string; children: TreeWire[] }
 
@@ -44,6 +46,12 @@ const stringsWire = () => ({ names: Array.from({ length: UNIQUE_NAMES }, (_, ind
 
 /** 100 distinct objects that share their keys, so a `jsonEqual` walk compares object with object. */
 const objectsWire = () => ({ points: Array.from({ length: UNIQUE_POINTS }, (_, index) => ({ x: index, y: index * 2, label: `point ${index}` })) });
+
+/** 3 distinct small objects: the common real list. */
+const smallWire = () => ({ tags: Array.from({ length: UNIQUE_SMALL }, (_, index) => ({ id: index, name: `tag ${index}` })) });
+
+/** 20 objects that share every top-level field and differ only in a nested one, so the check has to look inside them. */
+const nestedWire = () => ({ items: Array.from({ length: UNIQUE_NESTED }, (_, index) => ({ kind: 'item', detail: { id: index, tags: ['a', 'b'] } })) });
 
 function consume(value: unknown): number {
   if (typeof value === 'boolean') return value ? 1 : 0;
@@ -93,11 +101,21 @@ const paths: readonly RuntimePath[] = [
     checkModel: model => assert.equal((model as ReturnType<typeof objectsWire>).points.length, UNIQUE_POINTS),
     broken: () => { const lists = objectsWire(); lists.points[UNIQUE_POINTS - 1] = { ...lists.points[0]! }; return lists; }, isRejection: validationError,
   },
+  {
+    name: 'unique-small', codecName: 'TUniqueSmall', construct: UniqueSmall, wire: smallWire(),
+    checkModel: model => assert.equal((model as ReturnType<typeof smallWire>).tags.length, UNIQUE_SMALL),
+    broken: () => { const lists = smallWire(); lists.tags[UNIQUE_SMALL - 1] = { ...lists.tags[0]! }; return lists; }, isRejection: validationError,
+  },
+  {
+    name: 'unique-nested', codecName: 'TUniqueNested', construct: UniqueNested, wire: nestedWire(),
+    checkModel: model => assert.equal((model as ReturnType<typeof nestedWire>).items.length, UNIQUE_NESTED),
+    broken: () => { const lists = nestedWire(); lists.items[UNIQUE_NESTED - 1] = structuredClone(lists.items[0]!); return lists; }, isRejection: validationError,
+  },
 ];
 
 /**
  * The payloads of the golem cost table that time a runtime path no other payload reaches: Temporal conversion (`temporal`, on the polyfill
- * `temporal-polyfill`), a recursive model (`recursive`) and the `UniqueItems` check of a string list (`unique-strings`) and of an object list (`unique-objects`).
+ * `temporal-polyfill`), a recursive model (`recursive`) and the `UniqueItems` check of a string list (`unique-strings`) and of an object list (`unique-objects`), of three small objects (`unique-small`) and of twenty objects that differ only in a nested field (`unique-nested`).
  * Each is timed on the IModel adapters only. The verify step proves a round trip back to the same JSON and, in a validating build,
  * that a broken value is rejected.
  */
