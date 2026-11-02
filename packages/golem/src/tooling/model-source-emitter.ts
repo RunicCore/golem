@@ -491,7 +491,7 @@ export const MODEL_IMPORT_ORDER: NonNullable<ImportOptions['order']> = {
     'generatedModelFieldsBrand', 'generatedModelResultBrand', 'GeneratedModelWire', 'generatedModelWireBrand', 'ModelInit', 'registerGeneratedModel',
   ],
   conversion: [
-    'assertAcyclicEncodeInput', 'assertPropertyAcyclic', 'assertWireAcyclic', 'beginDecode', 'beginEncode', 'convertModelField', 'convertModelItems',
+    'assertAcyclicEncodeInput', 'assertPropertyAcyclic', 'assertWireAcyclic', 'beginDecode', 'beginEncode', 'constructModel', 'convertModelField', 'convertModelItems',
     'convertModelRecord', 'convertModelTupleItems', 'copyModelRecord', 'decodeCheckedInput', 'decodeDetachedInput', 'decodeGeneratedModelTrusted', 'defineModelProperty', 'deserializeDate',
     'endDecode', 'endEncode', 'isVariantObject', 'jsonWithDiscriminator', 'rejectModelObject', 'requireModelObject', 'serializeDate', 'unknownDiscriminatorValue',
     'wireChecked', 'withDeclaredFields', 'withDiscriminatorValue',

@@ -2205,10 +2205,10 @@ function emitDecodeSection(runtime: NodeRuntime): { readonly fill: Code; readonl
       ? [
         code`      const copy = { ...${wireRecord} };`,
         ...(recursive ? [code`      ${rt.conversion.beginDecode}(wire);`, code`      try {`] : []),
-        code`      result = Reflect.construct(options.construct, [${fillId}(copy, copy${fill.copyIdentity ? code`, false` : code``})]);`,
+        code`      result = ${rt.conversion.constructModel}(options.construct, ${fillId}(copy, copy${fill.copyIdentity ? code`, false` : code``}));`,
         ...(recursive ? [code`      } finally {`, code`        ${rt.conversion.endDecode}(wire);`, code`      }`] : []),
       ]
-      : [code`      result = Reflect.construct(options.construct, [{ ...${wireRecord} }]);`];
+      : [code`      result = ${rt.conversion.constructModel}(options.construct, { ...${wireRecord} });`];
     convertLines.push(
       code`  let result: unknown = wire;`,
       code`  if (wire !== null && typeof wire === 'object' && !Array.isArray(wire)) {`,

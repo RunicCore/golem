@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import {
+  constructModel,
   convertModelField,
   convertModelItems,
   convertModelRecord,
@@ -201,4 +202,14 @@ test('a class instance keeps its own and accessor fields; a name only Object.pro
   assert.deepEqual(Object.keys(declared), ['__proto__']);
   assert.equal(withDeclaredFields(new Account(), ['__proto__']) instanceof Object, true);
   assert.deepEqual(Object.keys(withDeclaredFields(new Account(), ['__proto__']) as object), []);
+});
+
+test('a model constructor that throws is a LibError that is not bad input, in a field and at the root', () => {
+  // protects: T-660 a constructor that threw inside convertModelField was reported as bad input
+  class Failing { constructor() { throw new Error('db down'); } }
+  const nested = assertConversionError(() => convertModelField('leaf', () => constructModel(Failing, {}), 1), LibErrorKind.Deserialization, IssueRepresentation.Wire, ['leaf']);
+  assert.deepEqual([nested.message, nested.causedByInput, (nested.cause as Error).message], ['db down', false, 'db down']);
+  const original = new LibError(LibErrorKind.Validation, 'invalid');
+  assert.throws(() => constructModel(class { constructor() { throw original; } }, {}), (error) => error === original);
+  assert.equal((constructModel(class { constructor(readonly value: unknown) {} }, 7) as { value: unknown }).value, 7);
 });

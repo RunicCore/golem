@@ -19,7 +19,7 @@ import { defaultIfEmpty, firstValueFrom, map, of, type Observable } from 'rxjs';
 import { NestModelInterceptor, type NestModelInterceptorOptions, nestModelStringifyInterceptor, nestUnionFromMetatype, objectCodecFromMetatype } from '@exprtlabs/golem-ts-openapi/nest';
 import { nestModelCodec, nestModelReturn, nestModelUnion } from '@exprtlabs/golem-ts-openapi/internal/nest-runtime';
 import { LibError, type LibErrorKind } from '@exprtlabs/golem/errors';
-import { convertModelField, deserializeDate, unknownDiscriminatorValue, assertModelValue, isValidModelValue } from '@exprtlabs/golem/internal/model-runtime';
+import { constructModel, convertModelField, deserializeDate, unknownDiscriminatorValue, assertModelValue, isValidModelValue } from '@exprtlabs/golem/internal/model-runtime';
 import type { ModelTypeDescriptor } from '@exprtlabs/golem/internal/schema';
 import { schemaForDescriptor } from '@exprtlabs/golem/internal/schema';
 import { createSchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
@@ -715,11 +715,15 @@ test('NestModelInterceptor answers 400 for request input the decoder rejects and
   // protects: T-686 the interceptor sees a LibError from a second golem copy as bad input; R-70 T-660 a throwing TSerde deserializer is bad input
   const secondCopy = await import(`${import.meta.resolve('@exprtlabs/golem/errors')}?second-copy`) as { LibError: typeof LibError; LibErrorKind: typeof LibErrorKind };
   class UnregisteredModel {}
+  class ThrowingModel { constructor() { throw new Error('db down'); } }
   const decoders: Record<string, (wire: Record<string, unknown>) => unknown> = {
     unknownTag: (wire) => unknownDiscriminatorValue('kind', wire.kind, 'deserialize'),
     invalidDate: (wire) => ({ at: deserializeDate(wire.at) }),
     // A TSerde deserializer that throws on the wire value.
     throwingDeserializer: (wire) => convertModelField('at', () => { throw new Error('refused'); }, wire.at),
+    // A model constructor that throws is a program fault at the root and inside a field.
+    rootConstructor: (wire) => constructModel(ThrowingModel, wire),
+    nestedConstructor: (wire) => convertModelField('leaf', () => constructModel(ThrowingModel, {}), wire.leaf),
     // A LibError from another golem copy (a standalone SDK) is bad input too.
     foreignCopy: () => { throw new (secondCopy.LibError)(secondCopy.LibErrorKind.Validation, 'from the SDK'); },
     // Missing conversion metadata is a program fault, not bad input.
@@ -758,6 +762,8 @@ test('NestModelInterceptor answers 400 for request input the decoder rejects and
     assert.equal((await post('throwingDeserializer', { at: 'x' })).status, 400);
     assert.equal((await post('foreignCopy', {})).status, 400);
     assert.equal((await post('serverFault', {})).status, 500);
+    assert.equal((await post('rootConstructor', {})).status, 500);
+    assert.equal((await post('nestedConstructor', { leaf: {} })).status, 500);
     assert.equal((await post('brokenValidator', {})).status, 500);
   } finally {
     await application.close();

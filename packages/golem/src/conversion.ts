@@ -222,13 +222,29 @@ export function textNestsDeeperThan(text: string, maxDepth: number): boolean {
 
 /**
  * The error of a failed conversion: a LibError stays as it is. Any other throw is the application's deserializer,
- * wrapped with the active path. It reads wire input, so its throw is bad input. The generated code calls a serializer
- * outside these scopes, so a serializer's throw reaches the caller as it is.
+ * wrapped with the active path. It reads wire input, so its throw is bad input. A model constructor is not a
+ * deserializer: `constructModel` has already made its throw a LibError that is not bad input, so it stays as it is here.
+ * The generated code calls a serializer outside these scopes, so a serializer's throw reaches the caller as it is.
  */
 function itemFailure(error: unknown): LibError {
   if (error instanceof LibError) return error;
   const message = error instanceof Error && error.message ? error.message : 'Field deserialization failed.';
   return conversionError(LibErrorKind.Deserialization, message, activeConversionPath, error, true);
+}
+
+/**
+ * Builds a model over the decoded fields, for every generated decode. A LibError stays as it is. Any other throw is the
+ * application's constructor, a fault of the program and not of the input: it becomes a LibError with `causedByInput`
+ * false and the exception as its `cause`, at the root and inside a field, an item or a record value alike.
+ */
+export function constructModel(constructor: abstract new (...args: never[]) => unknown, init: unknown): unknown {
+  try {
+    return Reflect.construct(constructor, [init]);
+  } catch (error) {
+    if (error instanceof LibError) throw error;
+    const message = error instanceof Error && error.message ? error.message : 'A model constructor failed.';
+    throw conversionError(LibErrorKind.Deserialization, message, activeConversionPath, error, false);
+  }
 }
 
 /** Generated synchronous conversion scope; no instance or result state is retained. A converter that throws fails as `itemFailure` says. */

@@ -78,3 +78,16 @@ for (const validation of [true, false]) {
     assert.match(outcome(() => tree.fromWireFormat(TREE, options)), /^decoded \{"leaf":\{"id":"a"\},"leaves":\[\{"id":"a"\},\{"id":"a"\}\],"maybe":null\}$/);
   });
 }
+
+test('a model constructor that throws at the root is a fault of the program, not bad input', async () => {
+  // protects: T-660 a constructor that threw at the root reached the caller raw, and inside a field conversion it was reported as bad input
+  const { models, tree } = await builds.get(false)!();
+  class Failing extends models.Tree { constructor(values?: object) { super(values); throw new Error('db down'); } }
+  const fault = (decode: () => unknown): string => {
+    try { decode(); } catch (error) {
+      return error instanceof LibError ? `${error.message} input=${error.causedByInput} cause=${String((error.cause as Error | undefined)?.message)}` : `not a LibError: ${String(error)}`;
+    }
+    return 'decoded';
+  };
+  assert.equal(fault(() => tree.fromWireFormat(TREE, { validate: false, construct: Failing as never })), 'db down input=false cause=db down');
+});

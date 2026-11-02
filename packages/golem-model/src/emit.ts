@@ -1682,10 +1682,10 @@ function emitClassModel(context: EmitContext, emission: ModelFieldEmission): Pie
       ? [
         code`  const result: Record<string, unknown> = { ...values };`,
         ...decodeFields,
-        code`  return Reflect.construct(constructor, [result]) as ${baseName};`,
+        code`  return ${rt.conversion.constructModel}(constructor, result) as ${baseName};`,
       ]
       : [
-        code`  return Reflect.construct(constructor, [values]) as ${baseName};`,
+        code`  return ${rt.conversion.constructModel}(constructor, values) as ${baseName};`,
       ]),
     code`}`,
     BLANK,
