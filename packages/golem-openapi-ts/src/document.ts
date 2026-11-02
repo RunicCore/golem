@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { asRecord, isJsonObject, objectEntries, unescapeJsonPointerToken } from './json.js';
+import { asRecord, isJsonObject, jsonPointerJoin, jsonPointerTokens, objectEntries } from './json.js';
 import { assertSupportedModelFieldName } from '@exprtlabs/golem/internal/schema';
 import { componentOrigin, LocatedError, type OriginLocator } from './origin.js';
 import { normalizeDocument, resolveLocalPointer, type NormalizedDocument, type NormalizedOperation } from './normalize.js';
@@ -248,11 +248,11 @@ export type MovedUnions = ReadonlyMap<object, number>;
  * returns to the union's keyword. It serves schemas that no document pointer names, such as an inline operation schema.
  */
 export function authoredPointer(schema: unknown, pointer: string, moved: MovedUnions): string {
-  const tokens = pointer.split('/').slice(1);
+  const tokens = jsonPointerTokens(pointer);
   const kept: string[] = [];
   let current = schema;
   for (let index = 0; index < tokens.length; index += 1) {
-    const token = unescapeJsonPointerToken(tokens[index]!);
+    const token = tokens[index]!;
     const members = isJsonObject(current) ? moved.get(current) : undefined;
     const position = Number(tokens[index + 1]);
     if (members !== undefined && token === 'allOf' && (position === members || position === members + 1)) {
@@ -260,10 +260,10 @@ export function authoredPointer(schema: unknown, pointer: string, moved: MovedUn
       index += 1;
       continue;
     }
-    kept.push(tokens[index]!);
+    kept.push(token);
     current = Array.isArray(current) ? current[Number(token)] : isJsonObject(current) ? current[token] : undefined;
   }
-  return kept.length === 0 ? '' : `/${kept.join('/')}`;
+  return kept.reduce(jsonPointerJoin, '');
 }
 
 export function unsupportedHttpAuthSchemes(document: unknown): void {

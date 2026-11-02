@@ -5,7 +5,7 @@
  */
 
 import { compareText } from '@exprtlabs/golem/generator-api';
-import { GENERATED_MODEL_SCHEMA_REF_PREFIX, VALIDATION_KEYWORD, type JsonSchema } from '@exprtlabs/golem/internal/schema';
+import { fragmentPointerTokens, GENERATED_MODEL_SCHEMA_REF_PREFIX, VALIDATION_KEYWORD, type JsonSchema } from '@exprtlabs/golem/internal/schema';
 import { codecShortName, type SchemaGraph, type SchemaNode } from '@exprtlabs/golem/internal/schema-graph';
 import type { QueryFieldShape, QueryFieldTable } from '../runtime/query-decode.js';
 
@@ -53,8 +53,7 @@ function resolveReference(reference: string, scope: Scope): { readonly schema: u
   if (reference === '#' || reference.startsWith('#/')) {
     let schema = scope.root;
     if (reference !== '#') {
-      for (const segment of reference.slice(2).split('/')) {
-        const key = segment.replaceAll('~1', '/').replaceAll('~0', '~');
+      for (const key of fragmentPointerTokens(reference.slice(1))) {
         schema = typeof schema === 'object' && schema !== null && Object.hasOwn(schema, key)
           ? (schema as Record<string, unknown>)[key]
           : undefined;

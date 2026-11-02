@@ -18,7 +18,7 @@ import {
   type ModelBoundary,
   type ProgramInfo,
 } from '@exprtlabs/golem/internal/type-analysis';
-import { schemaForDescriptor } from '@exprtlabs/golem/internal/schema';
+import { schemaForDescriptor, splitFirstFragmentToken } from '@exprtlabs/golem/internal/schema';
 import type {
   GolemArtifact,
   GolemDiagnostic,
@@ -126,9 +126,7 @@ function componentReferenceName(value: string): string | undefined {
   const prefix = '#/components/schemas/';
   if (!value.startsWith(prefix)) return undefined;
   // The component is the first pointer token; later tokens (`/properties/name`) point inside it.
-  const rest = value.slice(prefix.length);
-  const slash = rest.indexOf('/');
-  return (slash < 0 ? rest : rest.slice(0, slash)).replaceAll('~1', '/').replaceAll('~0', '~');
+  return splitFirstFragmentToken(value.slice(prefix.length)).name;
 }
 
 /** Maps whose keys are names the document author picks, so a key such as `example` or `$ref` there is a name, not a keyword. */

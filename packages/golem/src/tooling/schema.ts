@@ -21,7 +21,8 @@ import { canonicalSchemaKey } from './canonical-schema-key.js';
 import { compareText, isRecord } from './generator-core.js';
 
 export { assertSupportedModelFieldName } from '../model-field-names.js';
-export { decodeUriFragment, escapePointerToken, unescapePointerToken } from '../json-pointer.js';
+import { escapeJsonPointerToken } from '../json-pointer.js';
+export { decodeUriFragment, escapeJsonPointerToken, escapePointerToken, fragmentPointerTokens, jsonPointerTokens, splitFirstFragmentToken, unescapeJsonPointerToken, unescapePointerToken } from '../json-pointer.js';
 export { canonicalSchemaKey };
 /** The schema descriptor types that generators read (`@exprtlabs/golem/internal/schema`). */
 export type { ConstraintSchemaValue, DiscriminatorValue, ModelConstraint, ModelTypeDescriptor, ModelTypeMetadata, UnionDiscriminator } from '../model-registry.js';
@@ -447,7 +448,7 @@ function residualSchema(given: unknown, plane: ResidualPlane, state: SchemaAssem
     case 'reference': {
       const name = typeof value.name === 'string' ? value.name : '';
       if (options.opaqueReferenceIds?.has(name) || !has?.has(name)) return nothing();
-      const escaped = name.replaceAll('~', '~0').replaceAll('/', '~1');
+      const escaped = escapeJsonPointerToken(name);
       return wrap({ $ref: `${options.referencePrefix ?? '#/$defs/'}${escaped}#${plane}` });
     }
     case 'generated-model': {
@@ -500,7 +501,7 @@ function descriptorSchema(
         const resolved = options.resolveReference?.(name) ?? options.definitions?.[name];
         if (resolved === undefined) throw new TypeError(`Unresolved schema reference: ${name}.`);
         state.references.add(name);
-        const escaped = name.replaceAll('~', '~0').replaceAll('/', '~1');
+        const escaped = escapeJsonPointerToken(name);
         schema = { $ref: `${options.referencePrefix ?? '#/$defs/'}${escaped}` };
         break;
       }

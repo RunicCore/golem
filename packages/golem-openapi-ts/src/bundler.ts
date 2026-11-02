@@ -1,7 +1,7 @@
 import { compareText } from '@exprtlabs/golem/generator-api';
 import { identifier } from '@exprtlabs/golem/internal/generator-support';
 import { escapePointerToken } from '@exprtlabs/golem/internal/schema';
-import { escapeJsonPointerToken, isJsonObject, resolveJsonPointer, unescapeJsonPointerToken } from './json.js';
+import { escapeJsonPointerToken, isJsonObject, jsonPointerTokens, resolveJsonPointer, unescapeJsonPointerToken } from './json.js';
 import { displayLocation, displayUri } from './origin.js';
 import type { ReferenceGraph, ReferenceSite, ReferenceTarget } from './reference-loader.js';
 import type { OpenApiComponentKind } from './schema-projection.js';
@@ -42,7 +42,7 @@ function siteLocation(site: ReferenceSite, rootDirectory: string): string {
  */
 function fragmentRef(pointer: string): string {
   if (pointer === '') return '#';
-  return `#${pointer.slice(1).split('/').map((token) => `/${escapePointerToken(unescapeJsonPointerToken(token))}`).join('')}`;
+  return `#${jsonPointerTokens(pointer).map((token) => `/${escapePointerToken(token)}`).join('')}`;
 }
 
 /**
@@ -56,7 +56,7 @@ export function componentNameFor(target: ReferenceTarget, rootDirectory: string)
   const url = new URL(target.uri);
   const sourcePath = url.protocol === 'file:' ? source : `${url.hostname}${url.pathname}`;
   const sourceSegments = sourcePath.replace(/\.[^./]+$/, '').split('/').filter((segment) => segment !== '' && segment !== '.');
-  const tokens = target.pointer === '' ? [] : target.pointer.slice(1).split('/').map(unescapeJsonPointerToken);
+  const tokens = jsonPointerTokens(target.pointer);
   const [first, second, third] = tokens;
   const fragmentSegments = tokens.length === 3 && first === 'components' && third !== undefined
     ? [third]

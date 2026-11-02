@@ -3,7 +3,7 @@ import path from 'node:path';
 import * as ts from './typescript-ns.js';
 import { isRecord } from './generator-core.js';
 import { matchStarPattern } from './star-pattern.js';
-import { readManifest } from './type-analysis/package-specifier.js';
+import { packageName, readManifest } from './type-analysis/package-specifier.js';
 import type { RewriteEdit } from './rewrite.js';
 
 /** Pass one object for all the files of a build: it also keys what the build reads from the disk (package roots and files), so each is read once. */
@@ -75,12 +75,6 @@ function suffixFor(p: string, target: string, extension: string): Suffix | undef
 /** Whether `specifier` matches a key of the `paths` option. */
 function matchesPaths(specifier: string, paths: unknown): boolean {
   return isRecord(paths) && Object.keys(paths).some((pattern) => matchStarPattern(pattern, specifier) !== undefined);
-}
-
-/** The package name at the start of a bare specifier: `pkg` or `@scope/pkg`. */
-function packageName(specifier: string): string {
-  const segments = specifier.split('/');
-  return specifier.startsWith('@') ? segments.slice(0, 2).join('/') : segments[0]!;
 }
 
 /** What one build learned from the disk, kept for the options object it passes to every file: a package root, a file. */

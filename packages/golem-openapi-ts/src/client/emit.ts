@@ -195,6 +195,24 @@ interface GeneratedClientModules {
   readonly operations: ReadonlyMap<string, string>;
 }
 
+/**
+ * The names the file binds for the operation function or type of a wrapper: the local name of each import it makes (the alias, when it has one) and each
+ * identifier it writes. Without a wrapper, the file binds `runtimeName` of the golem client runtime.
+ */
+function wrapperNames(wrapped: Code | undefined, runtimeName: string): string[] {
+  if (wrapped === undefined) return [runtimeName];
+  return wrapped.parts.flatMap((part) => part.kind === 'runtime' || part.kind === 'imported' ? [part.alias ?? part.name] : part.kind === 'text' && part.identifier ? [part.text] : []);
+}
+
+/** The names the operation file binds for a wrapper, each once with the origin of its first use: one name can serve the factory and the type. */
+function wrapperClaims(wrapper: OperationWrapper | undefined): Array<readonly [string, string]> {
+  const claims = new Map<string, string>();
+  for (const [names, origin] of [[wrapperNames(wrapper?.createOperation, 'createApiOperation'), 'API operation factory import'], [wrapperNames(wrapper?.operationType, 'ApiOperation'), 'API operation type import']] as const) {
+    for (const name of names) if (!claims.has(name)) claims.set(name, origin);
+  }
+  return [...claims];
+}
+
 function operationFactoryName(operation: NormalizedOperation): string {
   return `create${identifier(operation.name)}Operation`;
 }
@@ -304,8 +322,7 @@ function operationSource(
     ['RequestOptions', 'request options import'],
     ['RuntimeResponseContract', 'response contract type import'],
     ['Types', 'generated types import'],
-    ['createApiOperation', 'API operation factory import'],
-    ['ApiOperation', 'API operation type import'],
+    ...wrapperClaims(wrapper),
     ['responseContracts', 'response metadata'],
     ...runtimeFunctions.map((name): readonly [string, string] => [name, `client runtime function ${name}`]),
     ...validationFunctions.map((name): readonly [string, string] => [name, `operation validation function ${name}`]),
@@ -545,7 +562,7 @@ function emitClient(
   scope.claim('ClientOptions', 'client options import');
   scope.claim('RequestOptions', 'request options import');
   scope.claim('Types', 'generated types import');
-  scope.claim('ApiOperation', 'API operation type import');
+  for (const name of new Set(wrapperNames(wrapper?.operationType, 'ApiOperation'))) scope.claim(name, 'API operation type import');
   scope.claim(`${clientName}Client`, 'client class');
   scope.claim(`${clientName}ClientPort`, 'client interface');
   if (plan.helpers.has('selectResponse')) scope.claim(`${clientName}UndeclaredResponseError`, 'undeclared response error export');

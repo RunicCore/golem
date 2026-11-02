@@ -25,8 +25,7 @@ export function encode(value: unknown, allowReserved = false): string {
   // would change the query's structure (# [ ] & +); existing %XX triples pass through.
   return text.split(/(%[0-9A-Fa-f]{2})/).map((part, index) => index % 2 === 1
     ? part
-    : encodeURIComponent(part).replace(/%(3A|2F|3F|40|21|24|27|28|29|2A|2C|3B|3D)/gi, (match) =>
-      String.fromCharCode(Number.parseInt(match.slice(1), 16)))).join('');
+    : encodeURIComponent(part).replace(/%(?:3A|2F|3F|40|21|24|27|28|29|2A|2C|3B|3D)/gi, decodeURIComponent)).join('');
 }
 
 function entries(value: unknown): Array<[string, unknown]> {

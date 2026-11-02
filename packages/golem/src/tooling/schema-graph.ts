@@ -164,7 +164,8 @@ function namedIdentity(descriptor: ModelTypeDescriptor): string | undefined {
   return undefined;
 }
 
-function childDescriptors(descriptor: ModelTypeDescriptor): readonly ModelTypeDescriptor[] {
+/** The descriptors held directly below `descriptor`: properties then the additional-properties value, items then the rest item, or variants. */
+export function childDescriptors(descriptor: ModelTypeDescriptor): readonly ModelTypeDescriptor[] {
   switch (descriptor.kind) {
     case 'object': {
       const extra = typeof descriptor.additionalProperties === 'object'

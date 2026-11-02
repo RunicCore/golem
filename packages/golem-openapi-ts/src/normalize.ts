@@ -1,7 +1,7 @@
-import { asRecord, escapeJsonPointerToken, isJsonObject, objectEntries, readBoolean, readString, resolveJsonPointer, type JsonObject } from './json.js';
+import { asRecord, isJsonObject, jsonPointerJoin, objectEntries, readBoolean, readString, resolveJsonPointer, type JsonObject } from './json.js';
 import { GolemDiagnosticSeverity, type GolemDiagnostic } from '@exprtlabs/golem/generator-api';
 import { identifier, parameterStyleRule, type ParameterLocation } from '@exprtlabs/golem/internal/generator-support';
-import { unescapePointerToken } from '@exprtlabs/golem/internal/schema';
+import { fragmentPointerTokens } from '@exprtlabs/golem/internal/schema';
 import { inboundOperationName, operationName } from './names.js';
 
 const HTTP_METHODS_31 = ['get', 'put', 'post', 'delete', 'options', 'head', 'patch', 'trace'] as const;
@@ -90,7 +90,7 @@ export interface NormalizedDocument {
 export function resolveLocalPointer(document: unknown, ref: string): unknown {
   if (!ref.startsWith('#/')) return undefined;
   // `$ref` is a URI fragment: each token is percent-decoded, then `~1`/`~0`-unescaped; a numeric token indexes an array.
-  const pointer = ref.slice(1).split('/').map((token) => escapeJsonPointerToken(unescapePointerToken(token))).join('/');
+  const pointer = fragmentPointerTokens(ref.slice(1)).reduce(jsonPointerJoin, '');
   return resolveJsonPointer(document, pointer);
 }
 

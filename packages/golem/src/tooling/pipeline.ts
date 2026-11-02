@@ -6,11 +6,12 @@ import type { GolemConfig, GolemJob } from './config.js';
 import { codecKeysPath } from './generated-paths.js';
 import { coreRecordsOf, digest, loadInventory, applyJob, removeRetiredJobs } from './outputs.js';
 import type { FileChanges, Inventory, OutputFiles } from './outputs.js';
-import { absoluteRecordPath, golemCode, insideAny, inventoryPaths, JobInputs, hookCode, jobIsCurrent, loadJobRecords, programViewOf, recordPath, registrationCode, sameSetup, saveJobRecords } from './job-cache.js';
-import type { JobRecord } from './job-cache.js';
+import { absoluteRecordPath, golemCode, insideAny, inventoryPaths, JobInputs, hookCode, jobIsCurrent, loadedCode, loadJobRecords, programViewOf, recordPath, sameSetup, saveJobRecords } from './job-cache.js';
+import type { CodePackage, JobRecord } from './job-cache.js';
 import { GolemDiagnosticSeverity, checkedDiagnostics, displayPath, errorMessage, isInsideDirectory, isRecord, stableJson } from './generator-core.js';
 import { observedFolders, watchingJobs } from './job-facts.js';
 import { writeEditorSchema } from './editor-schema.js';
+import { recordLoadedFiles } from './load-record.js';
 import { loadPackageRegistry, PackageRegistryError, registrationForBlock, registryFiles } from './package-registry.js';
 import { validateModelManifest } from './model-manifest-core.js';
 import { routeHooks } from './extension-hooks.js';
@@ -155,11 +156,6 @@ export class GeneratorSessionResources implements Disposable, Pick<GeneratorSess
     this.hostRequested.clear();
     disposeAll(resources);
   }
-}
-
-/** The digest of the code of the package that registers `block`. */
-function blockCode(config: GolemConfig, block: string): string {
-  return registrationCode(registrationForBlock(loadPackageRegistry(config.configFile), block));
 }
 
 /**
@@ -350,7 +346,10 @@ interface PipelinePlan {
   readonly records: ReadonlyMap<string, JobRecord>;
   /** The ids of the jobs whose record still holds, judged before anything runs. */
   readonly current: ReadonlySet<string>;
-  readonly providerCode: (job: GolemJob) => string;
+  /** The package behind each block whose code the job loads: its own block and the block of each extension on its hooks. */
+  readonly code: (job: GolemJob) => ReadonlyMap<string, CodePackage>;
+  /** What the plan has read of each code file: a package of twenty jobs reads each file once. The check just before a job reads the files again, because an earlier job can have changed one. */
+  readonly fileDigests: Map<string, string | undefined>;
   /** The hook participants of each job that offers a hook, and the digest of the extensions behind them (`hookCode`). */
   readonly hooks: ReadonlyMap<string, JobHooks>;
   readonly hookCode: (job: GolemJob) => string;
@@ -460,16 +459,16 @@ async function planPipeline(filename: string, run: PipelineRun): Promise<{ reado
   // The outputs of removed jobs go before the first job runs, so a job that reads one is not current.
   const active = new Set(config.jobs.map(job => job.id));
   const retired = new Set(Object.entries(inventory.files).filter(([, entry]) => !active.has(entry.job)).map(([key]) => path.resolve(config.directory, key)));
-  const blockCodes = new Map<string, string>();
-  const blockCodeOf = (block: string): string => {
-    let code = blockCodes.get(block);
-    if (code === undefined) blockCodes.set(block, code = blockCode(config, block));
-    return code;
-  };
-  const codeOf = (job: GolemJob): string => blockCodeOf(job.block);
   // The extension entries load here: the cache key needs the hooks they fill, and an extension that can do nothing here stops the run before any job does.
   const hooks = await routeHooks(config.jobs, config.extensions);
-  const hookCodeOf = (job: GolemJob): string => hookCode(hooks.get(job.id)?.filled ?? [], extension => blockCodeOf(extension.block));
+  const hookCodeOf = (job: GolemJob): string => hookCode(hooks.get(job.id)?.filled ?? []);
+  const fileDigests = new Map<string, string | undefined>();
+  const codeOf = (job: GolemJob): ReadonlyMap<string, CodePackage> => {
+    const provider = registrationForBlock(registry, job.block);
+    const entries = new Map<string, string[]>([[job.block, [provider.plan, provider.generator].filter((entry): entry is string => entry !== undefined)]]);
+    for (const { extension } of hooks.get(job.id)?.filled ?? []) entries.set(extension.block, [...(entries.get(extension.block) ?? []), extension.entry]);
+    return new Map([...entries].map(([block, files]) => [block, { folder: registrationForBlock(registry, block).directory, entries: files }] as const));
+  };
   const current = new Set<string>();
   // The manifests a job receives are those of the jobs before it; their records say what to expect before anything runs.
   const expectedManifests: string[] = [];
@@ -477,7 +476,7 @@ async function planPipeline(filename: string, run: PipelineRun): Promise<{ reado
     for (const job of config.jobs) {
       const record = records.get(job.id);
       if (record && !readsAny(config, record, retired)
-        && jobIsCurrent(config, job, record, { providerCode: codeOf(job), hookCode: hookCodeOf(job), programView: programViewOf(config, job), manifestInputs: expectedManifests }, inventory, options.ignoredDirectories ?? [])) current.add(job.id);
+        && jobIsCurrent(config, job, record, { code: codeOf(job), fileDigests, hookCode: hookCodeOf(job), programView: programViewOf(config, job), manifestInputs: expectedManifests }, inventory, options.ignoredDirectories ?? [])) current.add(job.id);
       expectedManifests.push(...(record?.manifests ?? []).map(manifest => absoluteRecordPath(config, manifest)));
     }
   }
@@ -493,7 +492,7 @@ async function planPipeline(filename: string, run: PipelineRun): Promise<{ reado
   const providers = await providersFor(config, jobCache ? planned : undefined);
   options.onOwned?.([config.inventoryFile, ...Object.keys(inventory.files).map(key => path.resolve(config.directory, key))]);
   const retiredFiles = removeRetiredJobs(config, inventory, Boolean(options.check), options.files);
-  return { plan: { config, inventory, generated, jobCache, records, current, providerCode: codeOf, hooks, hookCode: hookCodeOf, affected: affectedJobs(config, options), retired: retiredFiles }, providers };
+  return { plan: { config, inventory, generated, jobCache, records, current, code: codeOf, fileDigests, hooks, hookCode: hookCodeOf, affected: affectedJobs(config, options), retired: retiredFiles }, providers };
 }
 
 /** Start the accumulator with the records of the jobs still configured. */
@@ -525,7 +524,7 @@ async function runJob(job: GolemJob, run: PipelineRun, plan: PipelinePlan, progr
     && previous
     && JSON.stringify(previousJob?.options) === JSON.stringify(job.options);
   const record = plan.records.get(job.id);
-  if (plan.jobCache && record && plan.current.has(job.id) && !readsAny(config, record, progress.ranOutputs) && sameSetup(config, record, { providerCode: plan.providerCode(job), hookCode: plan.hookCode(job), programView: programViewOf(config, job), manifestInputs: progress.manifests })) {
+  if (plan.jobCache && record && plan.current.has(job.id) && !readsAny(config, record, progress.ranOutputs) && sameSetup(config, record, { code: plan.code(job), hookCode: plan.hookCode(job), programView: programViewOf(config, job), manifestInputs: progress.manifests })) {
     // Its inputs and outputs are as its record holds them: there is no result to reuse, and nothing to write.
     const outputs = [...record.outputs, ...Object.keys(record.records)].map(output => absoluteRecordPath(config, output));
     assertUnowned(progress.owned, outputs);
@@ -581,7 +580,8 @@ async function runJob(job: GolemJob, run: PipelineRun, plan: PipelinePlan, progr
   const coreRecords = new Set(coreRecordsOf(config, job).map(filename => path.normalize(filename)));
   const nextRecord = read && {
     golemCode: golemCode(),
-    providerCode: plan.providerCode(job),
+    // Taken now, after the run: a file the generator imported lazily is loaded by then.
+    code: Object.fromEntries([...plan.code(job)].map(([block, code]) => [block, loadedCode(code)])),
     hookCode: plan.hookCode(job),
     programView: programViewOf(config, job),
     options: JSON.stringify(job.options),
@@ -692,6 +692,8 @@ async function checkedCompilerOutputs(config: GolemConfig, session: GeneratorSes
 export async function runPipeline(filename: string, options: PipelineOptions = {}): Promise<PipelineState> {
   const session = options.session ?? new GeneratorSessionResources();
   using ownedSession = options.session ? undefined : session;
+  // The hook records what the generators load, from before the config loads the first plan entry until the run ends. Nothing outside the pipeline installs it.
+  using recording = recordLoadedFiles();
   const planned: PipelineRun = { options, session, observer: new InputObserver(options.onInput) };
   const { plan, providers } = await planPipeline(filename, planned);
   const run: PipelineRun = options.check && options.ignoredDirectories === undefined

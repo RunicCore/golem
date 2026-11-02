@@ -29,6 +29,15 @@ test('two recursive interfaces with one name in two files both generate', async 
   }, [['a', 'TA', chain('id')], ['b', 'TB', { n: { label: 1, next: { label: 2 } } }]], ['Node', 'NodeB', 'TA', 'TB']);
 });
 
+test('two recursive interfaces with one name in files of a custom model suffix take the file name without that suffix', async (t: TestContext) => {
+  // protects: T-826 the file part of a recursive type name drops the models job's own suffix, not a fixed .model
+  const { names } = await buildRecursiveNames(t, {
+    'a.entity.ts': `${HEAD}export interface Node { id: string; next?: Node }\nexport type TA = IModel<{ n: Node }>;\n`,
+    'b.entity.ts': `${HEAD}export interface Node { label: number; next?: Node }\nexport type TB = IModel<{ n: Node }>;\n`,
+  }, ['.entity.ts']);
+  assert.deepEqual(names, ['Node', 'NodeB', 'TA', 'TB']);
+});
+
 test('a recursive interface beside a recursive alias of the same name both generate', async (t: TestContext) => {
   // protects: T-439 a recursive interface named like a recursive alias no longer stops with RUNM1059
   await roundTrips(t, {

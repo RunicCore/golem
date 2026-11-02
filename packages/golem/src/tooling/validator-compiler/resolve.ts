@@ -1,4 +1,4 @@
-import { unescapePointerToken } from '../../json-pointer.js';
+import { escapeJsonPointerToken, fragmentPointerTokens } from '../../json-pointer.js';
 import { isRecord } from '../generator-core.js';
 
 /** A schema node with the context its keywords and references are read in. */
@@ -21,7 +21,7 @@ const HIERARCHICAL_URI = /^[A-Za-z][A-Za-z0-9+.-]*:\/\//;
 
 /** One RFC 6901 pointer segment. */
 export function pointerSegment(token: string | number): string {
-  return `/${String(token).replace(/~/g, '~0').replace(/\//g, '~1')}`;
+  return `/${escapeJsonPointerToken(String(token))}`;
 }
 
 function resolveUrl(reference: string, base: string): URL | undefined {
@@ -131,8 +131,7 @@ export class SchemaResolver {
     let node = document.node;
     let base = document.base;
     let pointer = document.pointer;
-    for (const segment of fragment.slice(1).split('/')) {
-      const token = unescapePointerToken(segment);
+    for (const token of fragmentPointerTokens(fragment)) {
       base = baseInside(node, base);
       if (Array.isArray(node) && /^(?:0|[1-9][0-9]*)$/.test(token) && Number(token) < node.length) {
         node = node[Number(token)];

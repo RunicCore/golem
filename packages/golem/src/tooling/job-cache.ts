@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import type { GolemConfig, GolemJob } from './config.js';
 import { GolemDiagnosticSeverity, compareText, hasErrorCode, isInsideDirectory, isRecord, stableJson } from './generator-core.js';
 import type { GolemDiagnostic } from './generator-core.js';
-import type { PackageRegistration } from './package-registry.js';
+import { loadedFileDigests } from './load-record.js';
 import type { EnabledExtension } from './rewrite-participant.js';
 import { atomicWrite, digest, loadInventory } from './outputs.js';
 import type { Inventory, InventoryEntry, OutputFiles } from './outputs.js';
@@ -17,8 +17,11 @@ import type { Inventory, InventoryEntry, OutputFiles } from './outputs.js';
 export interface JobRecord {
   /** The digest of the JavaScript of the golem package that ran the job. */
   readonly golemCode: string;
-  /** The digest of the JavaScript of the package that registers the job's block, which can change with its options and inputs unchanged. */
-  readonly providerCode: string;
+  /**
+   * The code the job loaded, by the block of the package that holds it: the package that registers the job's block, and each package that registers an extension on its hooks.
+   * Code can change with the job's options and inputs unchanged. A file of a package that the process did not load, such as the build output of an app next to its generator, is not here.
+   */
+  readonly code: Readonly<Record<string, LoadedCode>>;
   /** The digest of every extension on the job's hooks (`hookCode`); empty when none fills a hook of the job. */
   readonly hookCode: string;
   /** Stable JSON of the program view the job received (`programView`): what it stubs and what later jobs write, which its options do not show. */
@@ -39,11 +42,14 @@ export interface JobRecord {
   readonly warnings: readonly GolemDiagnostic[];
 }
 
+/** The files of one package that the process had loaded when a job ended: each by its path from the package folder (`/` separators) and the digest of its content. */
+export type LoadedCode = Readonly<Record<string, string>>;
+
 const MISSING = 'missing';
 /** A digest no read gives, so the next run finds the input changed and runs the job again. A reported input the job never announced gets it when golem cannot trust the digest from the return: a directory, whose listing shows no edit of a file inside it, or a file that changed while the job ran. */
 const UNTRACKED = 'untracked';
 const OUTSIDE_DIRECTORY = 'directory';
-const RECORDS_VERSION = 2;
+const RECORDS_VERSION = 3;
 
 function jobsFile(config: GolemConfig): string {
   return path.join(path.dirname(config.inventoryFile), 'jobs.json');
@@ -62,7 +68,7 @@ function isJobRecord(value: unknown): value is JobRecord {
   const strings = (items: unknown): boolean => Array.isArray(items) && items.every(item => typeof item === 'string');
   return isRecord(value)
     && typeof value.golemCode === 'string'
-    && typeof value.providerCode === 'string'
+    && isRecord(value.code) && Object.values(value.code).every(files => isRecord(files) && Object.values(files).every(hash => typeof hash === 'string'))
     && typeof value.hookCode === 'string'
     && typeof value.programView === 'string'
     && typeof value.options === 'string'
@@ -105,7 +111,7 @@ export function saveJobRecords(config: GolemConfig, records: ReadonlyMap<string,
     .sort(([left], [right]) => compareText(left, right))
     .map(([id, record]) => [id, {
       golemCode: record.golemCode,
-      providerCode: record.providerCode,
+      code: Object.fromEntries(Object.entries(record.code).sort(([left], [right]) => compareText(left, right))),
       hookCode: record.hookCode,
       programView: record.programView,
       options: record.options,
@@ -185,9 +191,9 @@ export function inputDigest(filename: string, excluded: (filename: string) => bo
 }
 
 /**
- * The digest of the JavaScript in a package: the `.js`, `.cjs` and `.mjs` files under `directory`, node_modules left out, each by its
- * path relative to `directory` and its content, in path order. A version string does not stand for code: a generator that changes under
- * the same version, as one does during development or in a linked install, must run its jobs again.
+ * The digest of the JavaScript in golem's own package: the `.js`, `.cjs` and `.mjs` files under `directory`, node_modules left out, each by its
+ * path relative to `directory` and its content, in path order. A version string does not stand for code: golem under the same version,
+ * as it is during development or in a linked install, must run its jobs again.
  */
 function codeDigest(directory: string): string {
   const files: string[] = [];
@@ -204,11 +210,6 @@ function codeDigest(directory: string): string {
   return digest.digest('hex');
 }
 
-/** The digest of the JavaScript of the package that a registry entry names: its folder as the registry resolved it. */
-export function registrationCode(registration: PackageRegistration): string {
-  return codeDigest(registration.directory);
-}
-
 let golemCodeDigest: string | undefined;
 
 /** The digest of the golem package that is running, found from this module: `dist/tooling` sits two directories below the package. Computed once. */
@@ -219,17 +220,51 @@ export function golemCode(): string {
 
 /**
  * The digest of what the extensions on a job's hooks contribute: for each hook and extension that fills it, in the order of golem.yaml, the package that registers the
- * extension, its name, its options and the JavaScript of that package (`codeDigest`, as for the provider: the participant can live in any module of the package). It
- * changes when an extension is added, removed, reordered, given other options or changed in code, and not with the rest of the app. Empty for a job with no filled hook.
+ * extension, its name and its options. It changes when an extension is added, removed, reordered or given other options. Its code is in the record's `code`.
+ * Empty for a job with no filled hook.
  */
-export function hookCode(filled: readonly { readonly hook: string; readonly extension: EnabledExtension }[], codeOf: (extension: EnabledExtension) => string): string {
+export function hookCode(filled: readonly { readonly hook: string; readonly extension: EnabledExtension }[]): string {
   if (!filled.length) return '';
-  return hashText(JSON.stringify(filled.map(({ hook, extension }) => [hook, extension.package, extension.name, stableJson(extension.options), codeOf(extension)])));
+  return hashText(JSON.stringify(filled.map(({ hook, extension }) => [hook, extension.package, extension.name, stableJson(extension.options)])));
 }
 
-/** What the run supplies to a job besides its inputs: the digest of the code of the package that registers its block, the digest of its hook extensions (`hookCode`), its program view (`programViewOf`), and the manifests of the jobs before it (absolute paths). */
+/** The package behind a block whose code a job loads: its folder, and the files golem resolved for it, which the record always holds (the plan and generator of a block's package, the entry of an extension). */
+export interface CodePackage {
+  readonly folder: string;
+  readonly entries: readonly string[];
+}
+
+/** A file's name in a record of loaded code: its path from the package folder, with `/` separators. */
+function codeKey(folder: string, filename: string): string {
+  return path.relative(folder, filename).split(path.sep).join('/');
+}
+
+/**
+ * The code of a package that the process loaded, each file with the digest it had when it loaded: the files under the package folder, its own `node_modules` left out,
+ * and the files golem resolved for the package, read from disk when the load hook missed them. A rebuilt file therefore stays recorded as the code that ran.
+ */
+export function loadedCode(code: CodePackage): LoadedCode {
+  const files = new Map<string, string>();
+  for (const [filename, loadDigest] of loadedFileDigests()) {
+    const key = codeKey(code.folder, filename);
+    if (isInsideDirectory(code.folder, filename) && !key.split('/').includes('node_modules')) files.set(key, loadDigest);
+  }
+  for (const entry of code.entries) {
+    const key = codeKey(code.folder, entry);
+    const entryDigest = files.has(key) ? undefined : fileDigest(entry);
+    if (entryDigest !== undefined) files.set(key, entryDigest);
+  }
+  return Object.fromEntries([...files].sort(([left], [right]) => compareText(left, right)));
+}
+
+/**
+ * What the run supplies to a job besides its inputs: the package behind each block whose code the job loads (its own block, and the block of each extension on its
+ * hooks), the digest of its hook extensions (`hookCode`), its program view (`programViewOf`), and the manifests of the jobs before it (absolute paths).
+ * `fileDigests` holds what the run has read of each code file, so the jobs of one package read it once.
+ */
 export interface JobSetup {
-  readonly providerCode: string;
+  readonly code: ReadonlyMap<string, CodePackage>;
+  readonly fileDigests?: Map<string, string | undefined>;
   readonly hookCode: string;
   readonly programView: string;
   readonly manifestInputs: readonly string[];
@@ -240,9 +275,28 @@ export function programViewOf(config: GolemConfig, job: GolemJob): string {
   return stableJson(config.jobPlan.programViews[job.id] ?? null);
 }
 
-/** Whether the provider code, hook extensions, program view and manifest set are those the record holds. */
+/**
+ * Whether the record holds the code of exactly these packages, with at least one file each and every file the run resolved for them, and every file is as it was.
+ * A changed or missing file is not. An empty block is not: nothing shows what ran.
+ */
+function codeIsCurrent(record: JobRecord, code: ReadonlyMap<string, CodePackage>, fileDigests: Map<string, string | undefined> | undefined): boolean {
+  const digestOf = (filename: string): string | undefined => {
+    if (!fileDigests) return fileDigest(filename);
+    if (!fileDigests.has(filename)) fileDigests.set(filename, fileDigest(filename));
+    return fileDigests.get(filename);
+  };
+  const recorded = Object.entries(record.code);
+  return recorded.length === code.size && recorded.every(([block, files]) => {
+    const entry = code.get(block);
+    return entry !== undefined && Object.keys(files).length > 0
+      && entry.entries.every(file => Object.hasOwn(files, codeKey(entry.folder, file)))
+      && Object.entries(files).every(([file, expected]) => digestOf(path.join(entry.folder, file)) === expected);
+  });
+}
+
+/** Whether the loaded code, hook extensions, program view and manifest set are those the record holds. */
 export function sameSetup(config: GolemConfig, record: JobRecord, setup: JobSetup): boolean {
-  return record.providerCode === setup.providerCode
+  return codeIsCurrent(record, setup.code, setup.fileDigests)
     && record.hookCode === setup.hookCode
     && record.programView === setup.programView
     && JSON.stringify(record.manifestInputs) === JSON.stringify(setup.manifestInputs.map(manifest => recordPath(config, manifest)));
@@ -270,7 +324,7 @@ function outputIsRecorded(entry: InventoryEntry | undefined, filename: string): 
 }
 
 /**
- * Whether the job would produce what its record holds: the golem code, provider code, hook extensions, program view, options and manifest set
+ * Whether the job would produce what its record holds: the golem code, the code the job loaded, hook extensions, program view, options and manifest set
  * match, every output still has the digest the inventory recorded for it and every input still has the digest it had when the job
  * read it. An output that is missing, edited or absent from the inventory, or a core record that is missing or edited, is not current: the job runs again and rewrites it. The
  * files the inventory records are left out of directory listings; `inventory` defaults to the one on disk.

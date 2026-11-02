@@ -7,19 +7,22 @@ type PackageSpecifierResult =
   | { readonly kind: 'package'; readonly specifier: string }
   | { readonly kind: 'unexported'; readonly packageName: string; readonly packageRoot: string };
 
-interface PackageManifest { readonly root: string; readonly name: string; readonly exports?: unknown }
+export interface PackageManifest { readonly root: string; readonly name: string; readonly exports?: unknown }
 
 /** Parsed package.json files, re-read when the file changes (watch mode keeps this process alive). */
 const manifests = new Map<string, { readonly mtimeMs: number; readonly name?: string; readonly exports?: unknown }>();
 
-/** The JSON object in the text of the package.json `filename`. Text that is not a JSON object throws an error that names the file and keeps the parse error as its cause. */
-function parseManifest(filename: string, text: string): Record<string, unknown> {
+/** A package.json that cannot be read or is no JSON object. The message names the file; the cause is the read or parse error. */
+export class ManifestError extends Error {}
+
+/** The JSON object in the package.json `filename`. A file that cannot be read, or whose text is not a JSON object, throws a `ManifestError` that names the file. */
+function parseManifest(filename: string): Record<string, unknown> {
   try {
-    const parsed: unknown = JSON.parse(text.replace(/^\uFEFF/, ''));
+    const parsed: unknown = JSON.parse(fs.readFileSync(filename, 'utf8').replace(/^\uFEFF/, ''));
     if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('the JSON is not an object');
     return parsed as Record<string, unknown>;
   }
-  catch (error) { throw new Error(`Cannot read ${displayPath(filename)} to resolve a package import: ${error instanceof Error ? error.message : String(error)}`, { cause: error }); }
+  catch (error) { throw new ManifestError(`Cannot read ${displayPath(filename)} to resolve a package import: ${error instanceof Error ? error.message : String(error)}`, { cause: error }); }
 }
 
 export function readManifest(filename: string): { readonly name?: string; readonly exports?: unknown } | undefined {
@@ -27,10 +30,16 @@ export function readManifest(filename: string): { readonly name?: string; readon
   try { mtimeMs = fs.statSync(filename).mtimeMs; } catch { return undefined; }
   const cached = manifests.get(filename);
   if (cached?.mtimeMs === mtimeMs) return cached;
-  const json = parseManifest(filename, fs.readFileSync(filename, 'utf8'));
+  const json = parseManifest(filename);
   const manifest = { mtimeMs, name: json.name as string | undefined, exports: json.exports };
   manifests.set(filename, manifest);
   return manifest;
+}
+
+/** The package name at the start of a bare specifier: `pkg` or `@scope/pkg`. */
+export function packageName(specifier: string): string {
+  const segments = specifier.split('/');
+  return specifier.startsWith('@') ? segments.slice(0, 2).join('/') : segments[0]!;
 }
 
 /**
@@ -41,8 +50,7 @@ export function readManifest(filename: string): { readonly name?: string; readon
  */
 export function assertPackageManifestsParse(specifier: string, importer: string): void {
   if (specifier.startsWith('.') || path.isAbsolute(specifier)) return;
-  const segments = specifier.split('/');
-  const name = specifier.startsWith('#') ? undefined : segments.slice(0, specifier.startsWith('@') ? 2 : 1).join('/');
+  const name = specifier.startsWith('#') ? undefined : packageName(specifier);
   const nearest = (relative: (directory: string) => string): void => {
     for (let directory = path.dirname(importer); ; directory = path.dirname(directory)) {
       if (readManifest(relative(directory)) !== undefined || path.dirname(directory) === directory) return;
@@ -52,16 +60,29 @@ export function assertPackageManifestsParse(specifier: string, importer: string)
   if (name !== undefined) nearest((directory) => path.join(directory, 'node_modules', name, 'package.json'));
 }
 
-/** The package that owns `file`: the nearest package.json with a name. A nameless one (such as `{"type":"module"}`) only scopes module format. */
-function nearestManifest(file: string): PackageManifest | undefined {
-  let dir = path.dirname(file);
-  for (;;) {
-    const manifest = readManifest(path.join(dir, 'package.json'));
-    if (manifest?.name) return { root: dir, name: manifest.name, exports: manifest.exports };
-    const parent = path.dirname(dir);
-    if (parent === dir) return undefined;
-    dir = parent;
+/**
+ * The package that owns `file`: the nearest package.json with a name. A nameless one (such as `{"type":"module"}`) only scopes module format.
+ * `owners` remembers the answer for each directory the walk passes, a directory under an unreadable package.json as no owner, so files of one directory read the file system once. The caller owns its lifetime:
+ * keep it only as long as the package.json files cannot change, such as one type checker.
+ */
+export function nearestManifest(file: string, owners?: Map<string, PackageManifest | undefined>): PackageManifest | undefined {
+  const walked: string[] = [];
+  let found: PackageManifest | undefined;
+  for (let dir = path.dirname(file); ; dir = path.dirname(dir)) {
+    if (owners?.has(dir)) { found = owners.get(dir); break; }
+    walked.push(dir);
+    let manifest: ReturnType<typeof readManifest>;
+    try { manifest = readManifest(path.join(dir, 'package.json')); }
+    catch (error) {
+      // A package.json that cannot be read stays a miss for every directory below it, so the file is read once. The error still reaches this caller.
+      if (error instanceof ManifestError && owners) for (const missed of walked) owners.set(missed, undefined);
+      throw error;
+    }
+    if (manifest?.name) { found = { root: dir, name: manifest.name, exports: manifest.exports }; break; }
+    if (path.dirname(dir) === dir) break;
   }
+  if (owners) for (const dir of walked) owners.set(dir, found);
+  return found;
 }
 
 /** The name of the package that owns `file`: the nearest package.json with a name. */

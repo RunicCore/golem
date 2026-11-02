@@ -271,14 +271,14 @@ test('models with one name and different schemas in different directories are qu
 
 test('models with one name and different schemas in one directory are qualified by file', async t => {
   assert.deepEqual(
-    await clashComponents(t, { 'shared/payment.model.ts': 'amount', 'shared/refund.model.ts': 'destination' }),
+    await clashComponents(t, { 'shared/payment.ts': 'amount', 'shared/refund.ts': 'destination' }),
     ['shared.payment.TPayment', 'shared.refund.TPayment'],
   );
 });
 
 test('a three-way name clash qualifies by the shortest distinguishing directory run and then by file', async t => {
   assert.deepEqual(
-    await clashComponents(t, { 'orders/payment.model.ts': 'amount', 'billing/payment.model.ts': 'destination', 'billing/refund.model.ts': 'reason' }),
+    await clashComponents(t, { 'orders/payment.ts': 'amount', 'billing/payment.ts': 'destination', 'billing/refund.ts': 'reason' }),
     ['billing.payment.TPayment', 'billing.refund.TPayment', 'orders.TPayment'],
   );
 });

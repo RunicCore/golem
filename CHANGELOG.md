@@ -84,6 +84,7 @@ This file is the complete list of changes. The documentation site's
 - `NestModelInterceptor` takes `validate: true | 'sanity'` to choose the level of the request check. Input that fails the check answers HTTP 400 at every level, and a level above the project answers HTTP 500 ([NestJS controllers](docs/reference/nestjs.md#request-validation-level)).
 - Fix: a model with `{ validation: false }` that uses a validation function from its own file no longer stops generation.
 - Fix: an unnamed object type that several models share validates for every model that holds it, in whatever order the files are read.
+- A project that sets `model.suffixes` gets shorter names for a clashing model or a recursive type. Golem now drops the model suffix of the project from the file part of the name. Before, it dropped only `.model` and `.models`: `a.entity.ts` gave `dir.a_entity.Name` and `NodeBEntity`, and now gives `dir.a.Name` and `NodeB`. A project with the default suffixes keeps its names, except that a clashing model in `a.models.ts` is now qualified as `a`, not `a_models`. A project with no models job has no model suffix, so golem drops only the file extension: `a.model.ts` gives `dir.a_model.Name`.
 
 ### OpenAPI
 
@@ -244,6 +245,7 @@ This file is the complete list of changes. The documentation site's
 - **Breaking:** `GolemProfile.validation` has the type `boolean | 'sanity'`, and `resolveProfile` accepts `true`, `false` and `'sanity'`. A generator that tests `profile.validation === true` must treat `'sanity'` as a level that still validates ([Generator API](docs/reference/generator-api.md)).
 
 - **Breaking:** `@exprtlabs/golem/generator-api` no longer exports `ControllerContext`, `ControllerModels`, `ControllerTag`, `ControllerUriVersioning` and `ControllerUriVersioningType`. `@exprtlabs/golem-ts-openapi/generator` exports them. The core decorator reader names no framework package, and the docs job passes the DTO rule (Swagger `@ApiProperty` and the RUNM1086 error for a `Map` or `Set`) as the option `dtoRule` of `createContractAnalysis`.
+- A job reruns when a file of its generator package that the run loaded has changed, not when any JavaScript file in the package folder has. An app that builds its own generator keeps its build output in that folder without a rerun after each build. The same holds for the package of an extension on the job's hooks.
 
 ### Package subpaths
 

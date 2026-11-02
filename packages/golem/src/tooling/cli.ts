@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { resolveConfig } from './config.js';
+import { recordLoadedFiles } from './load-record.js';
 import { GeneratorSessionResources, runPipeline } from './pipeline.js';
 import type { PipelineState } from './pipeline.js';
 import { requestTypeScriptRoot } from './typescript-selection.js';
@@ -92,6 +93,8 @@ const printRun = (line: string): void => { process.stdout.write(`${line}\n`); };
 
 export async function main(argv = process.argv.slice(2)) {
   const options = parseArguments(argv);
+  // The hook records for the whole command: the config reads every plan entry before the pipeline runs, and a file shared by the plan and the generator loads there. Nothing but a tool command and the pipeline installs it.
+  using recording = recordLoadedFiles();
   if (options.action === 'help') {
     process.stdout.write('Usage: golem <generate|check|watch|exec> [--config golem.yaml]\n       golem exec [--watch] -- <command> [args...]\n       golem build [--config golem.yaml] [-p tsconfig.build.json] [--watch] [tsc arguments...]\n');
     return;
