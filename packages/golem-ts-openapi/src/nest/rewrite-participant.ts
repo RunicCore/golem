@@ -9,6 +9,7 @@ import { REWRITE_IMPORT_PREFIX, type RewriteEdit } from '@exprtlabs/golem/rewrit
 import { arrayItemNode, authoredUnionMembers, decoratorIdentity, isDiscriminatorTag, modelDeclarationKind, propertyType, readTags, resolvedSymbolAt, serdeTypeName, staticDecoratorKey } from '@exprtlabs/golem/internal/type-analysis';
 import { NEST_COMMON, OWN_PACKAGE } from './packages.js';
 import { nodeQueryFields } from './query-fields.js';
+import { NEST_ROUTE_DECORATORS } from './types.js';
 
 type TypeScript = typeof ts;
 type DiscriminatorValue = string | number | boolean;
@@ -76,6 +77,14 @@ function nestParameterDecorator({ ts, checker }: Scope, parameter: ts.ParameterD
     if (packageName === NEST_COMMON && name !== undefined && NEST_PARAMETER_DECORATORS.includes(name)) return { node, name };
   }
   return undefined;
+}
+
+/** Whether a method carries a NestJS route decorator, found by the symbol it resolves to. Nest calls the interceptor for a route method only, and a route method always carries one. */
+function isRouteMethod({ ts, checker }: Scope, method: ts.MethodDeclaration): boolean {
+  return (ts.getDecorators(method) ?? []).some((node) => {
+    const { name, packageName } = decoratorIdentity(checker, node, [NEST_COMMON]);
+    return packageName === NEST_COMMON && name !== undefined && NEST_ROUTE_DECORATORS.has(name);
+  });
 }
 
 /** Whether the node carries the decorator `name` of this package, plainly or under an alias; a decorator of that name from another package is not it. */
@@ -369,10 +378,10 @@ function rewriteFile(input: RewriteParticipantInput): RewriteParticipantResult {
     }
   };
 
-  /** A class method that returns a model gets `@nestModelReturn(id[, true])` before its other decorators. */
+  /** A route method that returns a model gets `@nestModelReturn(id[, true])` before its other decorators. */
   const visitMethod = (method: ts.MethodDeclaration): void => {
     // A decorator is a syntax error on an object literal method, an abstract method and an overload signature.
-    if (!method.type || !method.body || !ts.isClassLike(method.parent)) return;
+    if (!method.type || !method.body || !ts.isClassLike(method.parent) || !isRouteMethod(scope, method)) return;
     const returned = nestModelType(ts, method.type, true);
     if (!returned || hasDecorator(scope, method, NEST_RETURN_DECORATOR)) return;
     const { id, primitive, name } = nestBinding(scope, returned.model);

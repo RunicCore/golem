@@ -75,6 +75,13 @@ function findForms(compiler: typeof ts, node: ts.Node, forms: Forms): boolean {
   return compiler.forEachChild(node, (child) => findForms(compiler, child, forms) || undefined) === true;
 }
 
+/** Whether a parsed file holds a construct that needs the compile. */
+function holdsCompiledForm(compiler: typeof ts, file: ts.SourceFile): boolean {
+  const forms: Forms = { compiled: false };
+  findForms(compiler, file, forms);
+  return forms.compiled;
+}
+
 /**
  * A construct that Node's type stripping rejects, because it needs code and not only the removal of types: a decorator, an
  * `enum`, a namespace with a value, or a constructor parameter with an accessibility, `override` or `readonly` modifier.
@@ -306,6 +313,8 @@ class ScanningProject {
         : ['import <name> = require()', "import <name> from '<module>' or import * as <name> from '<module>'"];
       throw new GolemHostError(`golem cannot load ${displayPath(file)}:${line}: ${form} is CommonJS only, and golem compiles to ES modules only. Write ${instead}`, { file, line });
     }
+    // A participant can add a construct, such as a decorator, to a file that has none, so the text a rewrite wrote is read too.
+    if (!forms.compiled && rewritten !== undefined) forms.compiled = holdsCompiledForm(this.compiler.ts, this.session.parseSourceFile(file, rewritten.code));
     if (!tsx && !forms.compiled && commonJsOnly === undefined) return undefined;
     const { ts } = this.compiler;
     // Node cannot run JSX, so a file that no `jsx` option turns into calls would fail later with a syntax error.
