@@ -376,6 +376,7 @@ Every export is a type. Intersect a tag with a field type. Assignment is unchang
 | --- | --- | --- |
 | Built-in constraints | `Integer`, `Minimum<N>`, `MinLength<N>`, `Pattern<S>`, `Format<S>`, … | JSON Schema keywords ([built-in tags](#built-in-tags)). |
 | Short names | `Min`, `Max`, `ExclusiveMin`, `ExclusiveMax`, `MinProps`, `MaxProps` | Aliases of `Minimum`, `Maximum`, `ExclusiveMinimum`, `ExclusiveMaximum`, `MinProperties`, `MaxProperties`. |
+| `Discriminator` | `Discriminator<Key, Default?>` | Names the property that tells the variants of a model union apart ([name the tag](/guide/tags#name-the-tag-of-a-union)). |
 | `TValidation` | `TValidation<typeof predicate>` | Runs an exported synchronous function that returns `true`, `false` or an error message ([`TValidation`](#tvalidation)). |
 | `TSerde` | `TSerde<typeof serialize, typeof deserialize>` | Converts the field between model value and JSON value ([`TSerde`](#tserde)). |
 | `TSerdeWire` | `TSerdeWire<Value>` | `[Wire]`, the deserializer's input type, or `[]` without `TSerde`. |

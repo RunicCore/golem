@@ -769,7 +769,7 @@ export function modelConversionDescriptor(
       : [];
     const empty = objectEntries(schema.properties).filter(([name, child]) => required.includes(name) && acceptsNoValue(child)).map(([name]) => name);
     if (empty.length > 0) {
-      throw new CompositionError(COMPOSITION_UNSATISFIABLE, `No object satisfies this schema: the required ${empty.length > 1 ? 'properties' : 'property'} ${empty.map((name) => JSON.stringify(name)).join(', ')} accept${empty.length > 1 ? '' : 's'} no value, because the schema is an empty enum, an enum or const that its type excludes, \`not: true\` or \`false\`. Remove ${empty.length > 1 ? 'them' : 'it'} from required, or give ${empty.length > 1 ? 'them' : 'it'} a schema that accepts a value.`);
+      throw new CompositionError(COMPOSITION_UNSATISFIABLE, `No object satisfies this schema: the required ${empty.length > 1 ? 'properties' : 'property'} ${empty.map((name) => JSON.stringify(name)).join(', ')} accept${empty.length > 1 ? '' : 's'} no value, because the schema is an empty enum, an enum or const that its type, a keyword beside it or its not excludes, \`not: true\` or \`false\`. Remove ${empty.length > 1 ? 'them' : 'it'} from required, or give ${empty.length > 1 ? 'them' : 'it'} a schema that accepts a value.`);
     }
     // Beside `properties` alone, `unevaluatedProperties` judges the names that `properties` does not list, as `additionalProperties` does.
     const { unevaluatedProperties: _held, ...own } = schema;
