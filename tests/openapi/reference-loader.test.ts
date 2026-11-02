@@ -448,3 +448,15 @@ test('discriminator mapping values are sites addressed by their mapping key; com
   ]);
   assert.ok(graph.localFiles.includes(path.join(directory, 'cat.json')));
 });
+
+test('local documents with a UTF-8 byte order mark load, as root and as referenced files', async (t) => {
+  // protects: T-878 a local file that begins with a byte order mark failed to parse
+  const directory = createFixtureProject(t, 'golem-loader-bom-');
+  writeOpenApiDocument(directory, `﻿${JSON.stringify({ type: 'string' })}`, 'schemas/name.json');
+  writeOpenApiDocument(directory, '﻿type: integer\n', 'schemas/count.yaml');
+  const filename = writeOpenApiDocument(directory, `﻿${JSON.stringify(root({
+    paths: { '/a': { get: { responses: { 200: { description: 'ok', content: { 'application/json': { schema: { properties: { name: { $ref: './schemas/name.json' }, count: { $ref: './schemas/count.yaml' } } } } } } } } } },
+  }))}`, 'openapi.json');
+  const document = await loadValidatedDocument(filename);
+  assert.deepEqual(Reflect.get(Object(document), 'components'), { schemas: { 'schemas.count': { type: 'integer' }, 'schemas.name': { type: 'string' } } });
+});
