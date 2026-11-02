@@ -1,10 +1,12 @@
 import { readFileSync } from 'node:fs';
 import { registerHooks, type ModuleHooks } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { hasErrorCode } from './generator-core.js';
 import { digest } from './outputs.js';
 
 /**
- * The digest of each file this process loaded while a recording was on, as the file was when it loaded. A module that is loaded again fires no second load, so the
+ * The digest of each file this process loaded while a recording was on, as the file on disk was when it loaded (not the text a loader transformed it to, so it is the digest
+ * that a later run reads from disk). A module that is loaded again fires no second load, so the
  * map is process-wide: a later run in the same process (watch) still finds a file that an earlier run loaded. A file loaded again by a changed URL gets its new digest.
  */
 const loaded = new Map<string, string>();
@@ -13,11 +15,14 @@ const imports = new Map<string, Set<string>>();
 let recordings = 0;
 let hooks: ModuleHooks | undefined;
 
-/** The text of a loaded source, or undefined when the load gave none (a CommonJS module that Node reads itself). */
-function sourceText(source: unknown): string | undefined {
-  if (typeof source === 'string') return source;
-  if (source instanceof ArrayBuffer) return Buffer.from(source).toString('utf8');
-  return ArrayBuffer.isView(source) ? Buffer.from(source.buffer, source.byteOffset, source.byteLength).toString('utf8') : undefined;
+/** The digest of the file on disk, or undefined when the loaded URL has no file (a missing path or a directory). */
+function diskDigest(filename: string): string | undefined {
+  try {
+    return digest(readFileSync(filename, 'utf8'));
+  } catch (error) {
+    if (hasErrorCode(error, 'ENOENT') || hasErrorCode(error, 'EISDIR')) return undefined;
+    throw error;
+  }
 }
 
 /**
@@ -39,9 +44,9 @@ export function recordLoadedFiles(): Disposable {
     load(url, context, nextLoad) {
       const result = nextLoad(url, context);
       if (url.startsWith('file:')) {
-        // A file that Node just resolved but cannot be read would fail to load in Node too; the error reaches the importer.
         const filename = fileURLToPath(url);
-        loaded.set(filename, digest(sourceText(result.source) ?? readFileSync(filename, 'utf8')));
+        const loadDigest = diskDigest(filename);
+        if (loadDigest !== undefined) loaded.set(filename, loadDigest);
       }
       return result;
     },

@@ -403,139 +403,103 @@ export function generate(context) {
   assert.deepEqual(runLog(), ['a', 'a', 'b', 'b']);
 });
 
-/** The project of `importingProject` whose emitter comes from `@fixture/shared`, a package in `packages/shared` that node_modules links to; `setStamp` rewrites its helper. */
-function linkedHelperProject(t: TestContext): ReturnType<typeof importingProject> & { setStamp: (stamp: string) => void; helper: string } {
-  const project = importingProject(t);
-  const shared = path.join(project.root, 'packages/shared');
-  const helper = path.join(shared, 'helper.js');
-  fs.mkdirSync(shared, { recursive: true });
-  fs.writeFileSync(path.join(shared, 'package.json'), JSON.stringify({ name: '@fixture/shared', version: '1.0.0', type: 'module', exports: { './helper.js': './helper.js', './helper.cjs': './helper.cjs' } }));
-  linkProjectPackages(project.root, { '@fixture/shared': shared });
-  project.edit('emitter.js', "export { stamp as emitter } from '@fixture/shared/helper.js';\n");
-  project.edit('index.js', stampedGenerator('js'));
-  const setStamp = (stamp: string): void => fs.writeFileSync(helper, `export const stamp = '${stamp}';\n`);
-  setStamp('one');
-  return { ...project, setStamp, helper };
-}
-
-test('a changed helper in a linked package that the generator imports runs the job again', async t => {
-  // protects: T-842 (E-57) a helper in another workspace package is generator code, so an edit to it does not leave old output
-  const { root, generate, runs, setStamp } = linkedHelperProject(t);
-  await generate();
-  await generate();
-  assert.equal(runs(), 1);
-  setStamp('two');
-  await generate();
-  assert.equal(runs(), 2);
-  assert.match(fs.readFileSync(path.join(root, EMITTED), 'utf8'), /\/\/ two\n$/);
-});
-
-test('a deleted helper in a linked package makes the job stale', async t => {
-  // protects: T-842 a helper that is gone cannot be skipped over: the job runs again and stops on the missing import
-  const { root, helper } = linkedHelperProject(t);
-  await command(root, process.execPath, [golem, 'generate']);
-  fs.rmSync(helper);
-  const result = await command(root, process.execPath, [golem, 'generate'], { allowFailure: true });
-  assert.notEqual(result.code, 0);
-  assert.match(result.stderr, /@fixture\/shared/);
-});
-
-test('an edit inside one block package runs its job and not the job of another package', async t => {
-  // protects: T-842 a file under another block's folder stays out of this block's record, so an unrelated job is not rerun
-  const { root, generate, runs, edit } = importingProject(t);
-  const other = path.join(root, 'node_modules/@fixture/other');
-  fs.mkdirSync(other, { recursive: true });
-  fs.writeFileSync(path.join(other, 'package.json'), JSON.stringify({ name: '@fixture/other', version: VERSION, type: 'module', exports: { './plan': './plan.js', './generator': './index.js' }, golem: { apiVersion: 2, block: 'beta', plan: './plan', generator: './generator' } }));
-  fs.writeFileSync(path.join(other, 'plan.js'), PLAN_SOURCE.replace("id: 'acme'", "id: 'beta'"));
-  fs.writeFileSync(path.join(other, 'index.js'), cachedProviderSource('beta').replaceAll('@fixture/gen', '@fixture/other').replace("'runs.log'", "'runs-beta.log'"));
-  listProjectDependencies(root, ['@fixture/other']);
-  fs.appendFileSync(path.join(root, 'golem.yaml'), 'beta:\n  output: src/beta\n  options: { label: y }\n');
-  const betaRuns = (): number => fs.readFileSync(path.join(root, 'runs-beta.log'), 'utf8').split('\n').filter(Boolean).length;
-  await generate();
-  edit('emitter.js', "export const emitter = 'two';\n");
-  await generate();
-  assert.deepEqual([runs(), betaRuns()], [2, 1]);
-});
-
-test('a CommonJS generator that requires a helper from a linked package runs the job again when it changes', async t => {
-  // protects: T-842 the import graph sees require() too, so a CommonJS helper in another package counts
-  const { root, generate, runs, edit } = linkedHelperProject(t);
-  const helper = path.join(root, 'packages/shared/helper.cjs');
-  fs.writeFileSync(helper, "exports.stamp = 'one';\n");
-  edit('index.cjs', stampedGenerator('cjs'));
-  edit('emitter.cjs', "exports.emitter = require('@fixture/shared/helper.cjs').stamp;\n");
-  const manifest = path.join(root, 'node_modules/@fixture/gen/package.json');
-  fs.writeFileSync(manifest, fs.readFileSync(manifest, 'utf8').replace('"./generator":"./index.js"', '"./generator":"./index.cjs"'));
-  await generate();
-  await generate();
-  assert.equal(runs(), 1);
-  fs.writeFileSync(helper, "exports.stamp = 'two';\n");
-  await generate();
-  assert.equal(runs(), 2);
-  assert.match(fs.readFileSync(path.join(root, EMITTED), 'utf8'), /\/\/ two\n$/);
-});
-
-/** A generator of the package `@fixture/<name>` for `block`: it counts its runs in runs-<block>.log and stamps its output with `stamp` from `specifier`. */
-function stampingGenerator(name: string, block: string, specifier: string): string {
-  const header = MARKER.replace('@fixture/gen', `@fixture/${name}`);
+/** A generator of the package `@fixture/<name>` for `block`: it counts its runs in runs-<block>.log and stamps its output with the `stamp` that the `load` line defines. */
+function stampingGenerator(name: string, block: string, load: string): string {
   return `import fs from 'node:fs';
 import path from 'node:path';
-import { stamp } from '${specifier}';
+${load}
 export const apiVersion = 1;
-export function generate(context) {
-  fs.appendFileSync(path.join(context.directory, 'runs-${block}.log'), 'run\\n');
-  const input = path.join(context.directory, 'generator-input.txt');
-  context.onInput(input);
-  return { apiVersion: 1, artifacts: [{ path: path.join(context.output, 'item.model.ts'), content: ${JSON.stringify(header)} + '// ' + stamp + '\\n' }], manifestPaths: [], watchInputs: [input] };
+export function generate(c) {
+  fs.appendFileSync(path.join(c.directory, 'runs-${block}.log'), 'run\\n');
+  c.onInput(path.join(c.directory, 'generator-input.txt'));
+  return { apiVersion: 1, artifacts: [{ path: path.join(c.output, 'item.model.ts'), content: ${JSON.stringify(MARKER.replace('@fixture/gen', `@fixture/${name}`))} + '// ' + stamp + '\\n' }], manifestPaths: [], watchInputs: [path.join(c.directory, 'generator-input.txt')] };
 }
 `;
 }
 
-/**
- * Three generator packages: `@fixture/gen` (block acme, in node_modules) imports its stamp from `acmeStamp`; `@fixture/b` (beta) and `@fixture/c` (gamma) sit in
- * packages/ and are linked into node_modules, each with a `helper.js` of its own that its generator imports. `@fixture/shared` is a package without a block.
- * `edit` rewrites the helper of `b`, `c` or `shared`.
- */
-function threeBlocks(t: TestContext, acmeStamp: string): { generate: () => Promise<void>; runs: (block: string) => number; edit: (name: 'b' | 'c' | 'shared', stamp: string) => void } {
+/** Three generator packages: `@fixture/gen` (acme, in node_modules) whose `load` line defines `stamp`, `@fixture/b` and `@fixture/c` (beta, gamma) in linked packages/ folders, and a block-less `@fixture/shared`; `generate` takes an `--import` preload. */
+function blocks(t: TestContext, acmeLoad: string): { generate: (preload?: string) => Promise<{ code: number | null; stderr: string }>; runs: () => number[]; file: (name: string, file: string) => string } {
   const { root } = project(t);
   const folder = (name: string): string => path.join(root, 'packages', name);
-  const link = (name: string, registration?: { block: string; plan: string; generator: string }): void => {
+  const file = (name: string, entry: string): string => path.join(folder(name), entry);
+  const helpers = { 'helper.js': "export const stamp = 'one';\n", 'helper.cjs': "exports.stamp = 'one';\n", 'helper.ts': "export const stamp: string = 'one';\n" };
+  for (const [name, block] of [['shared', ''], ['b', 'beta'], ['c', 'gamma']]) {
     fs.mkdirSync(folder(name), { recursive: true });
-    fs.writeFileSync(path.join(folder(name), 'package.json'), JSON.stringify({ name: `@fixture/${name}`, version: VERSION, type: 'module', exports: { './plan': './plan.js', './generator': './index.js', './helper.js': './helper.js' }, ...(registration ? { golem: { apiVersion: 2, ...registration } } : {}) }));
-    fs.writeFileSync(path.join(folder(name), 'helper.js'), "export const stamp = 'one';\n");
+    const exports = { './plan': './plan.js', './generator': './index.js', './helper.js': './helper.js', './helper.cjs': './helper.cjs', './helper.ts': './helper.ts' };
+    fs.writeFileSync(file(name, 'package.json'), JSON.stringify({ name: `@fixture/${name}`, version: VERSION, type: 'module', exports, ...(block && { golem: { apiVersion: 2, block, plan: './plan', generator: './generator' } }) }));
+    for (const [helper, text] of Object.entries(helpers)) fs.writeFileSync(file(name, helper), text);
     linkProjectPackages(root, { [`@fixture/${name}`]: folder(name) });
-  };
-  link('shared');
-  for (const [name, block] of [['b', 'beta'], ['c', 'gamma']] as const) {
-    link(name, { block, plan: './plan', generator: './generator' });
-    fs.writeFileSync(path.join(folder(name), 'plan.js'), PLAN_SOURCE.replace("id: 'acme'", `id: '${block}'`));
-    fs.writeFileSync(path.join(folder(name), 'index.js'), stampingGenerator(name, block, './helper.js'));
+    if (!block) continue;
+    fs.writeFileSync(file(name, 'plan.js'), PLAN_SOURCE.replace("id: 'acme'", `id: '${block}'`));
+    fs.writeFileSync(file(name, 'index.js'), stampingGenerator(name, block, "import { stamp } from './helper.js';"));
     fs.appendFileSync(path.join(root, 'golem.yaml'), `${block}:\n  output: src/${block}\n  options: { label: y }\n`);
   }
-  fs.writeFileSync(path.join(root, 'node_modules/@fixture/gen/index.js'), stampingGenerator('gen', 'acme', acmeStamp));
+  fs.writeFileSync(path.join(root, 'node_modules/@fixture/gen/index.js'), stampingGenerator('gen', 'acme', acmeLoad));
   listProjectDependencies(root, ['@fixture/b', '@fixture/c']);
   fs.writeFileSync(path.join(root, 'generator-input.txt'), 'input');
   return {
-    generate: async () => { await command(root, process.execPath, [golem, 'generate']); },
-    runs: block => fs.readFileSync(path.join(root, `runs-${block}.log`), 'utf8').split('\n').filter(Boolean).length,
-    edit: (name, stamp) => fs.writeFileSync(path.join(folder(name), 'helper.js'), `export const stamp = '${stamp}';\n`),
+    generate: async preload => {
+      if (preload) fs.writeFileSync(path.join(root, 'preload.mjs'), preload);
+      return command(root, process.execPath, [...(preload ? ['--import', pathToFileURL(path.join(root, 'preload.mjs')).href] : []), golem, 'generate'], { allowFailure: true });
+    },
+    runs: () => ['acme', 'beta', 'gamma'].map(block => fs.readFileSync(path.join(root, `runs-${block}.log`), 'utf8').split('\n').filter(Boolean).length),
+    file,
   };
 }
 
-test('a helper in another generator package that a generator imports runs the jobs of both packages and no unrelated job', async t => {
-  // protects: T-842 (E-57) the record follows what a generator imports, so an edit in another block package reruns its importer
-  const { generate, runs, edit } = threeBlocks(t, '@fixture/b/helper.js');
+const SHARED_LOAD = "import { stamp } from '@fixture/shared/helper.js';";
+
+test('a changed helper in a linked package runs the jobs that import it and no other, and a deleted one makes the job stale', async t => {
+  // protects: T-842 (E-57) a helper in another workspace package is generator code of the generators that import it
+  const { generate, runs, file } = blocks(t, SHARED_LOAD);
   await generate();
-  edit('b', 'two');
   await generate();
-  assert.deepEqual([runs('acme'), runs('beta'), runs('gamma')], [2, 2, 1]);
+  assert.deepEqual(runs(), [1, 1, 1]);
+  fs.writeFileSync(file('shared', 'helper.js'), "export const stamp = 'two';\n");
+  await generate();
+  assert.deepEqual(runs(), [2, 1, 1]);
+  fs.rmSync(file('shared', 'helper.js'));
+  const result = await generate();
+  assert.notEqual(result.code, 0);
+  assert.match(result.stderr, /@fixture\/shared/);
 });
 
-test('a helper outside every generator package that only one generator imports runs only that job', async t => {
-  // protects: T-842 an outside file counts for the generators that import it, not for every job
-  const { generate, runs, edit } = threeBlocks(t, '@fixture/shared/helper.js');
+test('a helper in another generator package that a generator imports runs the jobs of both packages and no unrelated job', async t => {
+  // protects: T-842 (E-57) an edit in another block package reruns its importer
+  const { generate, runs, file } = blocks(t, "import { stamp } from '@fixture/b/helper.js';");
   await generate();
-  edit('shared', 'two');
+  fs.writeFileSync(file('b', 'helper.js'), "export const stamp = 'two';\n");
   await generate();
-  assert.deepEqual([runs('acme'), runs('beta'), runs('gamma')], [2, 1, 1]);
+  assert.deepEqual(runs(), [2, 2, 1]);
+});
+
+test('a generator that requires a CommonJS helper and one that imports golem rerun only for their own files', async t => {
+  // protects: T-842 the import graph sees require(), and it stops at golem's folder: golem imports the plan of every block, which no generator depends on
+  const { generate, runs, file } = blocks(t, "import { createRequire } from 'node:module';\nimport '@exprtlabs/golem/vite';\nconst { stamp } = createRequire(import.meta.url)('@fixture/shared/helper.cjs');");
+  await generate();
+  fs.appendFileSync(file('c', 'plan.js'), '// edited\n');
+  await generate();
+  assert.deepEqual(runs(), [1, 1, 2]);
+  fs.writeFileSync(file('shared', 'helper.cjs'), "exports.stamp = 'two';\n");
+  await generate();
+  assert.deepEqual(runs(), [2, 1, 2]);
+});
+
+test('a helper that a loader transformed is digested as it is on disk, so the second run skips the job', async t => {
+  // protects: T-842 a linked helper.ts that a loader transpiles at load is compared by its disk text, as the next run reads it
+  const { generate, runs } = blocks(t, "import { stamp } from '@fixture/shared/helper.ts';");
+  const transform = "import { registerHooks } from 'node:module';\nimport { readFileSync } from 'node:fs';\nregisterHooks({ load: (url, context, next) => url.endsWith('.ts') ? { format: 'module', shortCircuit: true, source: readFileSync(new URL(url), 'utf8').replace(': string', '') } : next(url, context) });\n";
+  await generate(transform);
+  await generate(transform);
+  assert.deepEqual(runs(), [1, 1, 1]);
+});
+
+test('a helper that a preload imported before the run is still recorded, so an edit to it runs the job again', async t => {
+  // protects: T-842 a file loaded before the recording began has no load digest and is digested from disk
+  const { generate, runs, file } = blocks(t, SHARED_LOAD);
+  const preload = "await import('@fixture/shared/helper.js');\n";
+  await generate(preload);
+  fs.writeFileSync(file('shared', 'helper.js'), "export const stamp = 'two';\n");
+  await generate(preload);
+  assert.deepEqual(runs(), [2, 1, 1]);
 });

@@ -248,7 +248,7 @@ function codeKey(folder: string, filename: string): string {
 /**
  * The code of a package that the process loaded, each file with the digest it had when it loaded: the files under the package folder, its own `node_modules` left out,
  * the files that the package's resolved entries import, directly or not, outside `node_modules` and golem's own folder (a helper in a linked workspace package, in
- * another block's package too), by their path from the package folder, and the entries themselves, read from disk when the load hook missed them. A job therefore counts
+ * another block's package too), by their path from the package folder (a file that was loaded before the recording began has its current disk text as digest), and the entries themselves, read from disk when the load hook missed them. A job therefore counts
  * the code its own generator imports and no other block's. A rebuilt file stays recorded as the code that ran.
  */
 export function loadedCode(code: CodePackage): LoadedCode {
@@ -259,7 +259,8 @@ export function loadedCode(code: CodePackage): LoadedCode {
   }
   // Traversal passes through node_modules files, which can import a linked package; only the record leaves them out.
   for (const filename of loadedClosure(code.entries, file => isInsideDirectory(golemFolder(), file))) {
-    const loadDigest = loadedFileDigests().get(filename);
+    // A file that a preload imported before the recording began has no load digest; its digest is its current disk text.
+    const loadDigest = loadedFileDigests().get(filename) ?? fileDigest(filename);
     if (loadDigest !== undefined && !filename.split(path.sep).includes('node_modules')) files.set(codeKey(code.folder, filename), loadDigest);
   }
   for (const entry of code.entries) {
