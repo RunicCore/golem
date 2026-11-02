@@ -11,7 +11,7 @@ import { NestModelInterceptor } from '@exprtlabs/golem-ts-openapi/nest';
 import { runPipeline } from '#golem/cli';
 import { scanProject } from '#golem/rewrite-scan';
 import { createProgram, modelBoundary } from '@exprtlabs/golem/internal/type-analysis';
-import { createContractAnalysis } from '#controllers/contracts';
+import { createContractAnalysis } from '#ts-openapi/contracts';
 import { applyRewrites } from '#golem/rewrite';
 import { writeSdk } from '#openapi/generator';
 import { NEST_PARTICIPANTS } from '../fixture-templates/controllers/project.js';

@@ -4,8 +4,8 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 import * as ts from '@exprtlabs/golem/internal/ts';
-import { evaluateRouteExpression } from '#controllers/evaluation/evaluate';
-import { TsToOpenApiError } from '#controllers/diagnostics';
+import { evaluateRouteExpression } from '#ts-openapi/evaluation/evaluate';
+import { TsToOpenApiError } from '#ts-openapi/diagnostics';
 
 interface Project {
   readonly root: string;

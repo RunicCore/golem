@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import type { generate } from '#controllers/generator';
+import type { generate } from '#ts-openapi/generator';
 
 export type OpenApiSchemaValue = boolean | OpenApiSchema;
 

@@ -7,7 +7,7 @@ import test, { type TestContext } from 'node:test';
 
 import * as ts from '@exprtlabs/golem/internal/ts';
 import { createFixtureProject, readFixture } from './fixture-project.js';
-import { generate as generateController } from '#controllers/generator';
+import { generate as generateController } from '#ts-openapi/generator';
 import { generate as generateModel } from '#model/generator';
 import { workspace } from './support/process.js';
 import { pathMappedProject } from './support/path-mapped-project.js';

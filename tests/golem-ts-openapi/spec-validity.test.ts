@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
-import { generate } from '#controllers/generator';
+import { generate } from '#ts-openapi/generator';
 import { createControllerFixture } from '../fixture-templates/controllers/project.js';
 
 interface OpenApiParameter {

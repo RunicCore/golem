@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { LibError } from '@exprtlabs/golem/errors';
-import { generate } from '#controllers/generator';
+import { generate } from '#ts-openapi/generator';
 import { createControllerFixture } from '../fixture-templates/controllers/project.js';
 import { createFixtureProject } from '../fixture-project.js';
 import { compileGeneratedSdk, generateMaterializedSdk, sdkBodyCodec, withRootOperations, type SdkBodyCodec } from '../openapi/helpers.js';

@@ -23,8 +23,8 @@ import { constructModel, convertModelField, deserializeDate, unknownDiscriminato
 import type { ModelTypeDescriptor } from '@exprtlabs/golem/internal/schema';
 import { schemaForDescriptor } from '@exprtlabs/golem/internal/schema';
 import { createSchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
-import { nodeQueryFields } from '#controllers/nest/query-fields';
-import type { QueryFieldTable } from '#controllers/runtime/query-decode';
+import { nodeQueryFields } from '#ts-openapi/nest/query-fields';
+import type { QueryFieldTable } from '#ts-openapi/runtime/query-decode';
 import { getObjectCodec, IssueRepresentation, IssueSource } from '@exprtlabs/golem/serde';
 
 import { readFixture } from './fixture-project.js';

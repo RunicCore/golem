@@ -11,7 +11,7 @@ import { generate } from '#model/generator';
 import { collectSpecifications } from '@exprtlabs/golem/internal/type-analysis';
 import { loadModelManifests } from '@exprtlabs/golem/internal/type-analysis';
 import { createProgram, generatedFilename } from '@exprtlabs/golem/internal/type-analysis';
-import { generate as generateControllers } from '#controllers/generator';
+import { generate as generateControllers } from '#ts-openapi/generator';
 import { workspace } from './support/process.js';
 import { buildModelProject, createModelProject, writeModelGolemYaml, type ModelProject } from './model-project.js';
 import { generatedCodecIdFromRoot } from './support/consumer.js';
