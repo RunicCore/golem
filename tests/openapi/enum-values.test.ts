@@ -170,3 +170,45 @@ test('an enum and a const keep the type and the keywords beside them, in the mod
   assert.match(source, /never\?: never;/);
   assert.match(source, /both: 1;/);
 });
+
+for (const [label, schema] of [
+  ['a const that its minimum excludes', { type: 'integer', minimum: 2, const: 1 }],
+  ['an enum that its multipleOf empties', { enum: [1, 3], multipleOf: 2 }],
+  ['a const string that its pattern excludes', { const: 'x', pattern: '^a' }],
+  ['an enum of strings that its minLength empties', { enum: ['a', 'bb'], minLength: 3 }],
+  ['an enum of arrays that its maxItems empties', { enum: [[1, 2], [3]], maxItems: 0 }],
+] as const) {
+  test(`a required property whose schema is ${label} stops generation as unsatisfiable`, async t => {
+    // protects: T-840 a required enum or const that its sibling keywords exclude stops generation (it generated a model that rejected every value)
+    const output = path.join(createFixtureProject(t, 'golem-openapi-enum-keywords-empty-'), 'sdk');
+    await assert.rejects(
+      generateMaterializedSdk(shelfDocument({ none: schema, name: { type: 'string' } }), { output, name: 'Shelves', profile: { validation: true } }),
+      /schema "Shelf" at #\/components\/schemas\/Shelf[^:]*: OPENAPI_COMPOSITION_UNSATISFIABLE: No object satisfies this schema: the required property "none" accepts no value/,
+    );
+  });
+}
+
+test('an enum drops each listed value that a keyword beside it excludes, in the generated type and in the validator, and an optional field still generates', async t => {
+  // protects: T-840 one rule drops the listed values that minimum, multipleOf, pattern and minLength exclude, for the type and the validator alike
+  const output = path.join(createFixtureProject(t, 'golem-openapi-enum-keywords-'), 'sdk');
+  await generateMaterializedSdk(shelfDocument({
+    count: { enum: [1, 2, 3], minimum: 2 },
+    even: { enum: [1, 2, 3, 4], multipleOf: 2 },
+    word: { enum: ['ab', 'b', 'abc'], pattern: '^a', minLength: 3 },
+    low: { type: 'integer', minimum: 2, const: 1 },
+  }, ['count', 'even', 'word']), { output, name: 'Shelves', profile: { validation: true } });
+  compileGeneratedSdk(output, [], { strict: true });
+  const shelf = await sdkBodyCodec(output, 'Shelves', 'Shelf');
+  const body = { count: 2, even: 4, word: 'abc' };
+  assert.equal(await requestAccepts(shelf, body), true);
+  assert.equal(await requestAccepts(shelf, { ...body, count: 3, even: 2 }), true);
+  for (const [field, value] of [['count', 1], ['even', 1], ['even', 3], ['word', 'ab'], ['word', 'b'], ['low', 1], ['low', 2]] as const) {
+    assert.equal(await requestAccepts(shelf, { ...body, [field]: value }), false, `${field} = ${JSON.stringify(value)}`);
+  }
+  const source = readdirSync(output, { recursive: true, encoding: 'utf8' }).filter(file => file.endsWith('.ts') && !file.endsWith('.d.ts') && !file.includes('node_modules'))
+    .map(file => readFileSync(path.join(output, file), 'utf8')).join('\n');
+  assert.match(source, /count: 2 \| 3;/);
+  assert.match(source, /even: 2 \| 4;/);
+  assert.match(source, /word: "abc";/);
+  assert.match(source, /low\?: never;/);
+});

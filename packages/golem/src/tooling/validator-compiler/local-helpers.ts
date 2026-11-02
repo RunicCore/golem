@@ -1,9 +1,12 @@
 import { code, helper, helperName, join, literal as literalCode, type Code, type Helper } from '../code.js';
 import { MODEL_CODEC_IDS_KEY } from '../../schema-keywords.js';
 import { instanceFieldsCode, ownEnumerableCode } from '../union-conversion.js';
+import { rt } from '../rt.js';
 import { NEWLINE } from './function-names.js';
 
-type LocalHelper = 'isPresent' | 'definedKeys' | 'readAll' | 'isObject' | 'instanceFields' | 'isInstanceState' | 'isMultipleOf' | 'isMultipleOfScaled' | 'selectedModel' | 'newEvaluation' | 'mergeEvaluation' | 'leafPasses';
+const runtime = rt['validation-runtime'];
+
+type LocalHelper = 'isPresent' | 'definedKeys' | 'readAll' | 'isObject' | 'instanceFields' | 'isInstanceState' | 'isMultipleOfScaled' | 'selectedModel' | 'newEvaluation' | 'mergeEvaluation' | 'leafPasses';
 
 /** A helper function of a generated module: the file holds its definition once, where the code that names it asks for it. */
 function localHelper(id: LocalHelper, rank: number, define: (self: Code) => Code): Helper {
@@ -28,25 +31,6 @@ const HELPERS: Readonly<Record<LocalHelper, Helper>> = {
   // An own key that the value's own model does not declare is program state, never an unknown key (see `instanceFieldsCode`).
   instanceFields: localHelper('instanceFields', 4, () => instanceFieldsCode()),
   isInstanceState: localHelper('isInstanceState', 5, self => code`function ${self}(value, key) { const fields = ${localName('instanceFields')}(value); return fields !== undefined && !fields.includes(key); }`),
-  // A number is judged by the decimal digits JSON writes for it (its shortest text), so 0.3 is a multiple of 0.1 although
-  // 0.3 / 0.1 is off by rounding, and 3.000000000000001 is not a multiple of 1. A whole divisor needs a whole value and an
-  // exact remainder. Any other divisor compares both numbers as integers scaled by the smaller decimal exponent.
-  isMultipleOf: localHelper('isMultipleOf', 6, self => join([
-    code`function ${self}(value, divisor) {`,
-    code`  if (Number.isInteger(divisor)) return Number.isInteger(value) && value % divisor === 0;`,
-    code`  if (!Number.isFinite(value)) return false;`,
-    code`  const split = number => {`,
-    code`    const match = /^-?([0-9]+)(?:[.]([0-9]+))?(?:e([+-][0-9]+))?$/.exec(String(number));`,
-    code`    const fraction = match[2] || '';`,
-    code`    return [BigInt(match[1] + fraction), Number(match[3] || 0) - fraction.length];`,
-    code`  };`,
-    code`  const [valueDigits, valueExponent] = split(value);`,
-    code`  const [divisorDigits, divisorExponent] = split(divisor);`,
-    code`  const exponent = Math.min(valueExponent, divisorExponent);`,
-    code`  const scale = shift => BigInt(10) ** BigInt(shift - exponent);`,
-    code`  return (valueDigits * scale(valueExponent)) % (divisorDigits * scale(divisorExponent)) === BigInt(0);`,
-    code`}`,
-  ], NEWLINE)),
   // The fast form of `isMultipleOf` for a decimal divisor the compiler wrote as `units / scale` (see `scaledDivisor`). A value
   // is a multiple when it is `whole / scale` for a whole number below 2 ** 52 (4503599627370496) that `units` divides.
   // `whole / scale` is the double nearest to the decimal `whole * 10 ** -d`, and at that size no other decimal with d digits
@@ -57,7 +41,7 @@ const HELPERS: Readonly<Record<LocalHelper, Helper>> = {
     code`function ${self}(value, divisor, units, scale) {`,
     code`  const whole = Math.round(value * scale);`,
     code`  if (Math.abs(whole) < 4503599627370496 && whole / scale === value) return whole % units === 0;`,
-    code`  return ${localName('isMultipleOf')}(value, divisor);`,
+    code`  return ${runtime.isMultipleOf}(value, divisor);`,
     code`}`,
   ], NEWLINE)),
   // The registered model class a value is an instance of, as `golemModelInstance` reads it. The symbol key is

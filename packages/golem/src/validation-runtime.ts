@@ -25,6 +25,28 @@ export function codePointLength(text: string): number {
 }
 
 /**
+ * Whether `value` is a multiple of `divisor` (a finite number above 0). A number is judged by the decimal digits JSON writes for
+ * it (its shortest text), so 0.3 is a multiple of 0.1 although 0.3 / 0.1 is off by rounding, and 3.000000000000001 is not a
+ * multiple of 1. A whole divisor needs a whole value and an exact remainder. Any other divisor compares both numbers as integers
+ * scaled by the smaller decimal exponent.
+ */
+export function isMultipleOf(value: number, divisor: number): boolean {
+  if (Number.isInteger(divisor)) return Number.isInteger(value) && value % divisor === 0;
+  if (!Number.isFinite(value)) return false;
+  const split = (number: number): [digits: bigint, exponent: number] => {
+    const match = /^-?([0-9]+)(?:[.]([0-9]+))?(?:e([+-][0-9]+))?$/.exec(String(number));
+    if (match === null) throw new RangeError(`${number} has no decimal text`);
+    const fraction = match[2] ?? '';
+    return [BigInt(match[1]! + fraction), Number(match[3] ?? 0) - fraction.length];
+  };
+  const [valueDigits, valueExponent] = split(value);
+  const [divisorDigits, divisorExponent] = split(divisor);
+  const exponent = Math.min(valueExponent, divisorExponent);
+  const scale = (shift: number): bigint => BigInt(10) ** BigInt(shift - exponent);
+  return (valueDigits * scale(valueExponent)) % (divisorDigits * scale(divisorExponent)) === BigInt(0);
+}
+
+/**
  * JSON Schema equality over the JSON view, as `JSON.stringify` writes a value: numbers by value; arrays by position,
  * with an `undefined` item and a hole equal to `null`; objects by their own enumerable keys whose value is not
  * `undefined`, in any order.

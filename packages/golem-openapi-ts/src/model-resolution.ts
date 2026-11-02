@@ -442,7 +442,7 @@ function isSequenceDescriptor(descriptor: ModelTypeDescriptor): boolean {
   return descriptor.kind === 'array' || descriptor.kind === 'tuple';
 }
 
-/** A schema that no value satisfies: `false`, `not: true`, or an `enum` or `const` that is empty or that its `type` empties. */
+/** A schema that no value satisfies: `false`, `not: true`, or an `enum` or `const` that is empty or that its `type` or its value keywords (`typedListedValues`) empty. */
 function acceptsNoValue(schema: unknown): boolean {
   return schema === false || (isJsonObject(schema) && (schema.not === true || typedListedValues(schema)?.length === 0));
 }
@@ -451,7 +451,7 @@ function acceptsNoValue(schema: unknown): boolean {
  * `enum` and `const` limit a value to the listed values, with or without `type` (JSON Schema 2020-12 sections 6.1.2 and 6.1.3). An empty list admits no value.
  * A list of scalars is a literal union without the values that the declared `type` excludes. A list with an object or an array has no literal form: the keyword constraints carry it as an `enum` constraint.
  */
-function openApiEnumDescriptor(schema: { readonly const?: unknown; readonly enum?: unknown; readonly type?: unknown }): ModelTypeDescriptor | undefined {
+function openApiEnumDescriptor(schema: Readonly<Record<string, unknown>>): ModelTypeDescriptor | undefined {
   const values = typedListedValues(schema);
   if (!values) return undefined;
   const listed = schema.const !== undefined ? [schema.const] : (schema.enum as readonly unknown[]);

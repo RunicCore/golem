@@ -409,7 +409,7 @@ export class FunctionWriter {
       const divisor = literalCode(check.multipleOf);
       const scaled = scaledDivisor(check.multipleOf);
       const test = scaled === undefined
-        ? code`${localName('isMultipleOf')}(${value}, ${divisor})`
+        ? code`${runtime.isMultipleOf}(${value}, ${divisor})`
         : code`${localName('isMultipleOfScaled')}(${value}, ${divisor}, ${literalCode(scaled.units)}, ${literalCode(scaled.scale)})`;
       this.leaf({ fails: code`!${test}`, issue: code`code: 'multipleOf', divisor: ${divisor}`, skip: 'costly' });
     }
