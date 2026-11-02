@@ -6,7 +6,7 @@ import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { changedPaths, InputScan, InputWatcher, realInputFiles, RunBaseline } from '#golem/input-watcher';
 import type { InputFiles } from '#golem/input-watcher';
-import { countingInputFiles, quietly, until, watchStarted } from './support/watch-wait.js';
+import { countingInputFiles, editUntil, quietly, until } from './support/watch-wait.js';
 
 /** A root with `src/a.model.ts`, and a folder beside it that stands for a shared folder outside the root. */
 function projectFolders(t: TestContext): { root: string; shared: string } {
@@ -161,10 +161,8 @@ for (const [name, act] of FILE_EVENTS) {
     const { root } = projectFolders(t);
     const folder = path.join(root, 'src');
     const { ticks } = ticking(t, root, [folder]);
-    await watchStarted();
-    act(folder);
-    await until(() => ticks.length > 0, name);
-    assert.deepEqual(ticks, [false]);
+    await editUntil(() => act(folder), () => ticks.length > 0, name);
+    assert.equal(ticks[0], false);
   });
 }
 
@@ -240,10 +238,10 @@ test('an event during a tick starts exactly one more tick after it, and events i
   });
   t.after(() => watcher.close());
   watcher.sync([folder]);
-  await watchStarted();
-  fs.writeFileSync(path.join(folder, 'a.model.ts'), '1');
-  fs.writeFileSync(path.join(folder, 'a.model.ts'), '2');
-  await until(() => ticks.length === 1, 'the first tick, held open');
+  await editUntil(() => {
+    fs.writeFileSync(path.join(folder, 'a.model.ts'), '1');
+    fs.writeFileSync(path.join(folder, 'a.model.ts'), '2');
+  }, () => ticks.length === 1, 'the first tick, held open');
   fs.writeFileSync(path.join(folder, 'b.model.ts'), '3');
   fs.writeFileSync(path.join(folder, 'c.model.ts'), '4');
   await quietly();
@@ -260,10 +258,10 @@ test('a folder deleted and created again is watched again', async (t) => {
   const { root } = projectFolders(t);
   const folder = path.join(root, 'src');
   const { ticks, watcher } = ticking(t, root, [folder]);
-  await watchStarted();
-  fs.rmSync(folder, { recursive: true });
-  fs.mkdirSync(folder);
-  await until(() => ticks.length > 0, 'the events of the delete and the create');
+  await editUntil(() => {
+    fs.rmSync(folder, { recursive: true });
+    fs.mkdirSync(folder);
+  }, () => ticks.length > 0, 'the events of the delete and the create');
   // inotify (Linux) kills the watcher of a deleted folder, so this sync opens a new one; FSEvents (macOS) watches the path and keeps its watcher.
   watcher.sync([folder]);
   await quietly();
