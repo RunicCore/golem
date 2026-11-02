@@ -18,6 +18,19 @@ CYCLE_A.self = CYCLE_A;
 const CYCLE_B: { loop?: unknown } = {};
 CYCLE_B.loop = CYCLE_B;
 const SHARED_PAIR = { n: { x: 1 } };
+/** One node met at two depths inside two equal items: the copy holds an equal node of its own where the first holds the shared one. */
+const DEEP_NODE = { x: { y: [1] } };
+const AT_TWO_DEPTHS = { deep: { inner: DEEP_NODE }, k: DEEP_NODE };
+const AT_TWO_DEPTHS_COPY = { deep: { inner: DEEP_NODE }, k: { x: { y: [1] } } };
+
+/** Two items of one id that hold one owner, and the owner holds both. */
+function twinsOfOneOwner(): readonly [object, object] {
+  const owner: { children: unknown[] } = { children: [] };
+  const twins = [{ id: 1, owner }, { id: 1, owner }] as const;
+  owner.children.push(...twins);
+  return twins;
+}
+const [TWIN_A, TWIN_B] = twinsOfOneOwner();
 const SHARED_LEAF = [1];
 const SHARED_NODE = { l: SHARED_LEAF, r: SHARED_LEAF };
 
@@ -31,10 +44,13 @@ const ROWS: readonly { readonly name: string; readonly list: readonly unknown[];
   { name: 'items that differ at the top level with equal deep subtrees', list: [{ a: 1, b: { c: [1, 2] } }, { a: 2, b: { c: [1, 2] } }], pair: undefined },
   { name: 'arrays of one length and equal primitives with different nested items', list: [[1, { a: 1 }], [1, { a: 2 }]], pair: undefined },
   { name: 'arrays of one length and equal primitives with equal nested items', list: [[1, { a: 1 }], [1, { a: 1 }]], pair: [0, 1] },
-  { name: 'an exact group next to a walked group: the exact pair has the lowest first index', list: [{ k: 1 }, { n: { x: 1 } }, { k: 2 }, { k: 1 }, { n: { x: 2 } }, { n: { x: 1 } }], pair: [0, 3] },
-  { name: 'an exact group next to a walked group: the walked pair has the lowest first index', list: [{ n: { x: 1 } }, { k: 1 }, { n: { x: 2 } }, { k: 1 }, { n: { x: 1 } }], pair: [0, 4] },
+  { name: 'flat items next to nested items: the flat pair has the lowest first index', list: [{ k: 1 }, { n: { x: 1 } }, { k: 2 }, { k: 1 }, { n: { x: 2 } }, { n: { x: 1 } }], pair: [0, 3] },
+  { name: 'flat items next to nested items: the nested pair has the lowest first index', list: [{ n: { x: 1 } }, { k: 1 }, { n: { x: 2 } }, { k: 1 }, { n: { x: 1 } }], pair: [0, 4] },
   { name: 'the same object again comes after an equal copy', list: [SHARED_PAIR, { n: { x: 1 } }, SHARED_PAIR], pair: [0, 1] },
   { name: 'the same object again comes before an equal copy', list: [SHARED_PAIR, SHARED_PAIR, { n: { x: 1 } }], pair: [0, 1] },
+  { name: 'items of equal id that share a cyclic owner', list: [TWIN_A, TWIN_B], pair: [0, 1] },
+  { name: 'the same items of a cyclic owner in the other order', list: [TWIN_B, TWIN_A], pair: [0, 1] },
+  { name: 'equal items that meet a shared node at two depths', list: [AT_TWO_DEPTHS, AT_TWO_DEPTHS_COPY], pair: [0, 1] },
   { name: 'no items', list: [], pair: undefined },
   { name: 'one item', list: ['a'], pair: undefined },
   { name: 'six items with one duplicate', list: [1, 2, 3, 4, 5, 3], pair: [2, 5] },
@@ -97,7 +113,7 @@ function seeded(seed: number): () => number {
   };
 }
 
-const LEAVES: readonly unknown[] = [0, -0, 1, '1', '', 'a,b', 's1:a', null, undefined, true, false, Number.NaN, 1n, new Date(0), new Date(Number.NaN), NAN_OBJECT, SHARED_FUNCTION, SHARED_SYMBOL, CYCLE_A, CYCLE_B, SHARED_NODE];
+const LEAVES: readonly unknown[] = [0, -0, 1, '1', '', 'a,b', 's1:a', null, undefined, true, false, Number.NaN, 1n, new Date(0), new Date(Number.NaN), NAN_OBJECT, SHARED_FUNCTION, SHARED_SYMBOL, CYCLE_A, CYCLE_B, SHARED_NODE, AT_TWO_DEPTHS, AT_TWO_DEPTHS_COPY];
 
 function randomValue(random: () => number, depth: number): unknown {
   const pick = random();
@@ -186,6 +202,19 @@ test('duplicateItems walks a value that shares its members once per distinct obj
   assert.deepEqual(duplicateItems([build(), 1, 2, 3, 4, 5, 6, build()]), [0, 7]);
   const big = { a: [1, { b: 'x' }] };
   assert.deepEqual(duplicateItems(Array.from({ length: 100_000 }, () => big)), [0, 1]);
+});
+
+test('duplicateItems finishes on a spine of 256 levels with a look-alike beside the spine at each level', () => {
+  // protects: T-849 look-alike siblings must not make each level walk the whole subtree below it
+  const lookAlike = (): unknown => ({ name: 'a', children: [{ id: 2 }, { id: 3 }] });
+  const lists: unknown[][] = [];
+  let spine: unknown = { name: 'a', children: [{ id: 1 }, { id: 1 }] };
+  for (let level = 0; level < 256; level++) {
+    lists.push([lookAlike(), spine]);
+    spine = { name: 'a', children: [{ id: 1 }, spine] };
+  }
+  assert.deepEqual(lists.map(duplicateItems), lists.map(() => undefined));
+  assert.deepEqual(duplicateItems([...lists[255]!, lookAlike()]), [0, 2]);
 });
 
 test('a uniqueItems validator reports the first duplicate pair in both modes', async () => {

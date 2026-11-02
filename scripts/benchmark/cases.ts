@@ -5,7 +5,7 @@ export const BENCH_SERIES_COUNT = 4;
 
 export const REPOSITORY_BLOB_URL = 'https://github.com/RunicCore/golem/blob/master';
 
-export type PayloadId = 'simple' | 'nested' | 'array' | 'checkout' | 'checkout-plain' | 'serde-none' | 'serde-many' | 'union-tagged' | 'union-class' | 'temporal' | 'recursive' | 'unique-strings' | 'unique-objects' | 'nest-query' | 'client-call';
+export type PayloadId = 'simple' | 'nested' | 'array' | 'checkout' | 'checkout-plain' | 'serde-none' | 'serde-many' | 'union-tagged' | 'union-class' | 'temporal' | 'recursive' | 'unique-strings' | 'unique-objects' | 'unique-small' | 'unique-nested' | 'nest-query' | 'client-call';
 /** The operations of the compare table. */
 export type CompareOperationId = 'parse' | 'stringify' | 'validate';
 /** The operations that only the golem cost table times: value to and from a plain object, with no JSON text. */
@@ -51,7 +51,7 @@ export const PAYLOADS: readonly PayloadSpec[] = [
  * The payloads that only the golem cost table times: one shape of 21 fields, with every field converting (serde-many) or
  * none converting (serde-none). The compare table does not list them. The union pair is one wire value in two models, a union of
  * inline tagged objects and a union of model classes, timed on the IModel adapters only (E-42). Temporal, recursive,
- * unique-strings and unique-objects time one runtime path each, on the same adapters. Nest-query and client-call time
+ * unique-strings, unique-objects, unique-small and unique-nested time one runtime path each, on the same adapters. Nest-query and client-call time
  * an HTTP edge on golem-validated only, each on the one cost row that reads true for it.
  */
 const COST_PAYLOADS: readonly PayloadSpec[] = [
@@ -63,6 +63,8 @@ const COST_PAYLOADS: readonly PayloadSpec[] = [
   { id: 'recursive', fixture: 'recursive', label: 'Recursive model', description: 'A tree of one model that lists itself as children: 106 nodes, three levels below the root, each with a label.', sourceFile: 'scripts/benchmark/fixtures/features/runtime-paths.ts', adapters: ['golem', 'golem-validated'], noInvalid: true },
   { id: 'unique-strings', fixture: 'unique-strings', label: 'Unique strings', description: 'One list of 1,000 strings under the UniqueItems tag. Validate checks that no two strings are equal.', sourceFile: 'scripts/benchmark/fixtures/features/runtime-paths.ts', adapters: ['golem', 'golem-validated'], noInvalid: true },
   { id: 'unique-objects', fixture: 'unique-objects', label: 'Unique objects', description: 'One list of 100 small objects (x, y and a label) under the UniqueItems tag. Validate checks that no two objects are equal.', sourceFile: 'scripts/benchmark/fixtures/features/runtime-paths.ts', adapters: ['golem', 'golem-validated'], noInvalid: true },
+  { id: 'unique-small', fixture: 'unique-small', label: 'Unique small list', description: 'One list of 3 small objects (an id and a name) under the UniqueItems tag: the common real list. Validate checks that no two objects are equal.', sourceFile: 'scripts/benchmark/fixtures/features/runtime-paths.ts', adapters: ['golem', 'golem-validated'], noInvalid: true },
+  { id: 'unique-nested', fixture: 'unique-nested', label: 'Unique nested objects', description: 'One list of 20 objects under the UniqueItems tag that share their top-level fields and differ only in a nested one. Validate has to look inside the objects to tell them apart.', sourceFile: 'scripts/benchmark/fixtures/features/runtime-paths.ts', adapters: ['golem', 'golem-validated'], noInvalid: true },
   { id: 'nest-query', fixture: 'nest-query', label: 'Nest query', description: 'A NestJS query of six strings, as Express gives it (a number, a boolean, a number list, a string list, an optional string and a date), decoded by nestQueryDecoder and then by fromWireFormat. Each call resolves the decoder from the parameter token, as the interceptor does for every request (a cache lookup).', sourceFile: 'scripts/benchmark/fixtures/features/http-paths.ts', adapters: ['golem-validated'], operations: ['decode'], noInvalid: true, requires: { module: '@exprtlabs/golem-ts-openapi/nest', export: 'nestQueryDecoder' } },
   { id: 'client-call', fixture: 'client-call', label: 'Client call', description: 'One call of a generated client (a POST with a JSON body of two fields and a JSON response of the same model) on a fetch stub. The call encodes the input, builds the request and reads and decodes the response. A body can be read once, so the stub builds a new Response per call: that is part of the time, and it is the cheapest way to hand the client a fresh body.', sourceFile: 'scripts/benchmark/fixtures/features/http-paths.ts', adapters: ['golem-validated'], operations: ['call'], noInvalid: true },
 ];

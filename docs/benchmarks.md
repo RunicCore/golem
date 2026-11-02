@@ -167,6 +167,8 @@ A case is one payload, one operation and one setup. The tables show the median s
 | Recursive model | Each of 106 nodes to its class |
 | Unique strings | Nothing. Validate compares 1,000 strings |
 | Unique objects | Nothing. Validate compares 100 objects |
+| Unique small list | Nothing. Validate compares 3 objects |
+| Unique nested objects | Nothing. Validate compares 20 objects that differ only in a nested field |
 | Nest query | Six query strings to their declared types |
 | Client call | The request body and the response of one generated client call |
 
@@ -200,7 +202,7 @@ Reproduce one number on your machine. Name one setup and one payload:
 npm run bench -- --adapters golem-object --payloads simple
 ```
 
-- The payloads are `simple`, `nested`, `array`, `checkout`, `checkout-plain`, `serde-none`, `serde-many`, `union-tagged`, `union-class`, `temporal`, `recursive`, `unique-strings`, `unique-objects`, `nest-query` and `client-call`.
+- The payloads are `simple`, `nested`, `array`, `checkout`, `checkout-plain`, `serde-none`, `serde-many`, `union-tagged`, `union-class`, `temporal`, `recursive`, `unique-strings`, `unique-objects`, `unique-small`, `unique-nested`, `nest-query` and `client-call`.
 - The run prints its tables to the console and writes `.cache/benchmark/results.json`.
 - A name that is not valid stops the run before it starts, with exit code 2. The message lists the valid names.
 - The run stores the machine load with the numbers, so stop other work on the machine first.

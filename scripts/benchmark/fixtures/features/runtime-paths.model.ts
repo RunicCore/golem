@@ -1,7 +1,7 @@
 import type { IModel } from '@exprtlabs/golem/model';
 import type { UniqueItems } from '@exprtlabs/golem/tags';
 import type { TemporalDuration, TemporalInstant, TemporalPlainDate, TemporalPlainDateTime, TemporalPlainTime, TemporalZonedDateTime } from '@exprtlabs/golem/temporal';
-import { TTemporalFieldsBaseModel, TTreeNodeBaseModel, TUniqueObjectsBaseModel, TUniqueStringsBaseModel } from './runtime-paths.model.generated.js';
+import { TTemporalFieldsBaseModel, TTreeNodeBaseModel, TUniqueNestedBaseModel, TUniqueObjectsBaseModel, TUniqueSmallBaseModel, TUniqueStringsBaseModel } from './runtime-paths.model.generated.js';
 
 /** Twenty fields on the six Temporal classes: four instants, three zoned date-times, four dates, three date-times, three times and three durations. */
 export type TTemporalFields = IModel<{
@@ -25,3 +25,11 @@ export class UniqueStrings extends TUniqueStringsBaseModel {}
 /** A list of 100 small objects under the `UniqueItems` tag. */
 export type TUniqueObjects = IModel<{ points: { x: number; y: number; label: string }[] & UniqueItems }>;
 export class UniqueObjects extends TUniqueObjectsBaseModel {}
+
+/** A list of 3 small objects under the `UniqueItems` tag: the common real list. */
+export type TUniqueSmall = IModel<{ tags: { id: number; name: string }[] & UniqueItems }>;
+export class UniqueSmall extends TUniqueSmallBaseModel {}
+
+/** A list of 20 objects under the `UniqueItems` tag that differ only in a nested field. */
+export type TUniqueNested = IModel<{ items: { kind: string; detail: { id: number; tags: string[] } }[] & UniqueItems }>;
+export class UniqueNested extends TUniqueNestedBaseModel {}
