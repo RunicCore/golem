@@ -12,14 +12,17 @@ export interface PackageManifest { readonly root: string; readonly name: string;
 /** Parsed package.json files, re-read when the file changes (watch mode keeps this process alive). */
 const manifests = new Map<string, { readonly mtimeMs: number; readonly name?: string; readonly exports?: unknown }>();
 
-/** The JSON object in the text of the package.json `filename`. Text that is not a JSON object throws an error that names the file and keeps the parse error as its cause. */
-function parseManifest(filename: string, text: string): Record<string, unknown> {
+/** A package.json that cannot be read or is no JSON object. The message names the file; the cause is the read or parse error. */
+export class ManifestError extends Error {}
+
+/** The JSON object in the package.json `filename`. A file that cannot be read, or whose text is not a JSON object, throws a `ManifestError` that names the file. */
+function parseManifest(filename: string): Record<string, unknown> {
   try {
-    const parsed: unknown = JSON.parse(text.replace(/^\uFEFF/, ''));
+    const parsed: unknown = JSON.parse(fs.readFileSync(filename, 'utf8').replace(/^\uFEFF/, ''));
     if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('the JSON is not an object');
     return parsed as Record<string, unknown>;
   }
-  catch (error) { throw new Error(`Cannot read ${displayPath(filename)} to resolve a package import: ${error instanceof Error ? error.message : String(error)}`, { cause: error }); }
+  catch (error) { throw new ManifestError(`Cannot read ${displayPath(filename)} to resolve a package import: ${error instanceof Error ? error.message : String(error)}`, { cause: error }); }
 }
 
 export function readManifest(filename: string): { readonly name?: string; readonly exports?: unknown } | undefined {
@@ -27,7 +30,7 @@ export function readManifest(filename: string): { readonly name?: string; readon
   try { mtimeMs = fs.statSync(filename).mtimeMs; } catch { return undefined; }
   const cached = manifests.get(filename);
   if (cached?.mtimeMs === mtimeMs) return cached;
-  const json = parseManifest(filename, fs.readFileSync(filename, 'utf8'));
+  const json = parseManifest(filename);
   const manifest = { mtimeMs, name: json.name as string | undefined, exports: json.exports };
   manifests.set(filename, manifest);
   return manifest;

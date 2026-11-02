@@ -4,6 +4,7 @@ import { hasLocalForm, localFormMessage } from '../names.js';
 import * as ts from '../typescript-ns.js';
 import { canonicalFilename, portableRelativeFilename } from './project.js';
 import { nearestManifest, packageSpecifier } from './package-specifier.js';
+import { ManifestError } from './package-specifier.js';
 import type { PackageManifest } from './package-specifier.js';
 import { canonicalConstraintKey } from '../schema.js';
 import type { ConstraintSchemaValue, ModelConstraint } from '../schema.js';
@@ -248,7 +249,10 @@ const ownersByChecker = new WeakMap<ts.TypeChecker, Map<string, PackageManifest 
 
 /** Whether `filename` is the golem source or declaration file named `stem` (`tags`, `model`), in a package install or in this workspace. `owners` remembers the owning package of each directory. */
 export function isGolemSourceFile(filename: string, stem: 'tags' | 'model', owners?: Map<string, PackageManifest | undefined>): boolean {
-  const owner = nearestManifest(filename, owners);
+  let owner: PackageManifest | undefined;
+  // A package.json above the file that cannot be read gives the file no owner: a symbol of an app file is no golem tag, and the run goes on.
+  try { owner = nearestManifest(filename, owners); }
+  catch (error) { if (error instanceof ManifestError) return false; throw error; }
   if (owner?.name !== '@exprtlabs/golem') return false;
   const file = portableRelativeFilename(filename, owner.root);
   return ['src', 'dist'].some((directory) => ['ts', 'mts', 'cts', 'd.ts', 'd.mts', 'd.cts'].some((extension) => file === `${directory}/${stem}.${extension}`));
