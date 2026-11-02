@@ -7,7 +7,7 @@ const INPUTS = [
 ] as const;
 const GENERATORS = [
   { y: 58, name: 'golem-model', sub: 'models' },
-  { y: 158, name: 'golem-openapi', sub: 'typed client' },
+  { y: 158, name: 'golem-openapi-ts', sub: 'typed client' },
   { y: 258, name: 'golem-ts-openapi', sub: 'OpenAPI from controllers' },
 ] as const;
 const OUTPUTS = [

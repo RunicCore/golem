@@ -1,6 +1,7 @@
 import { isDeepStrictEqual } from 'node:util';
 import { isBinaryMediaType, isBuiltinTextMediaType } from './client/codecs.js';
 import { asRecord, isJsonObject, objectEntries, type JsonObject } from './json.js';
+import { codePointLength, isMultipleOf } from '@exprtlabs/golem/internal/validation-runtime';
 import { identifier, NameScope, responseStatusKind } from '@exprtlabs/golem/internal/generator-support';
 import { BUILTIN_CLASS_ROOTS, code, codeKey, manifestMarkerComment, docComment, exportedName, fileImports, identifier as identifierPart, ImportSource, isEmpty, join, lineBreak, literal, nest, propertyKey, render, renderModule, sameCode, type RenderedModule, type Code, type JsonValue } from '@exprtlabs/golem/internal/emitter';
 import { unionVariants } from './composition.js';
@@ -636,19 +637,50 @@ function allOfMemberTypes(item: unknown, requirements: AllOfRequirements, contex
 }
 
 /**
- * The values that `const` or `enum` lists and the `type` of the schema admits; `undefined` when the schema has neither keyword.
- * With both keywords the value must satisfy both: the `const` value when `enum` lists an equal JSON value, else none. `integer` admits a whole number and `number` any number, so 1 and 1.0 are one value. The one rule
- * for the generated type and for the model: a schema left with no value accepts none.
+ * The values that `const` or `enum` lists and that the `type` and the value keywords beside them admit; `undefined` when the schema has neither `const` nor `enum`.
+ * With both `const` and `enum` the value must satisfy both: the `const` value when `enum` lists an equal JSON value, else none. `integer` admits a whole number and `number` any number, so 1 and 1.0 are one value.
+ * A value that `not` lists as its `const` or in its `enum` is dropped too. The keywords are `minimum`, `maximum`, `exclusiveMinimum`, `exclusiveMaximum` and `multipleOf` for a number, `minLength`, `maxLength` and `pattern` for a string, `minItems` and `maxItems` for an array, and `minProperties` and `maxProperties` for an object; each judges a value of its own kind only, as the generated validator does. `format` is not read here.
+ * The one rule for the generated type and for the model: a schema left with no value accepts none.
  */
-export function typedListedValues(schema: { readonly const?: unknown; readonly enum?: unknown; readonly type?: unknown }): readonly unknown[] | undefined {
+export function typedListedValues(schema: Readonly<Record<string, unknown>>): readonly unknown[] | undefined {
   const values = schema.const === undefined
     ? Array.isArray(schema.enum) ? schema.enum : undefined
     : Array.isArray(schema.enum) && !schema.enum.some((value) => isDeepStrictEqual(value, schema.const)) ? [] : [schema.const];
   if (!values) return undefined;
   const types = effectiveSchemaTypes(schema);
-  if (types.length === 0) return values;
   const kindOf = (value: unknown): string => value === null ? 'null' : Array.isArray(value) ? 'array' : typeof value === 'number' && Number.isInteger(value) ? 'integer' : typeof value;
-  return values.filter((value) => types.includes(kindOf(value)) || (typeof value === 'number' && types.includes('number')));
+  const excluded = isJsonObject(schema.not)
+    ? schema.not.const !== undefined ? [schema.not.const] : Array.isArray(schema.not.enum) ? schema.not.enum : []
+    : [];
+  return values.filter((value) => (types.length === 0 || types.includes(kindOf(value)) || (typeof value === 'number' && types.includes('number'))) && withinKeywords(value, schema)
+    && !excluded.some((other) => isDeepStrictEqual(value, other)));
+}
+
+/** Whether the keywords of `schema` that judge the JSON kind of `value` admit it; a keyword of another kind, or with a value the validator ignores, admits it. */
+function withinKeywords(value: unknown, schema: Readonly<Record<string, unknown>>): boolean {
+  const below = (limit: unknown, size: number, inclusive = true): boolean => typeof limit === 'number' && Number.isFinite(limit) && (inclusive ? size < limit : size <= limit);
+  const above = (limit: unknown, size: number, inclusive = true): boolean => typeof limit === 'number' && Number.isFinite(limit) && (inclusive ? size > limit : size >= limit);
+  if (typeof value === 'number') {
+    const divisor = schema.multipleOf;
+    return !below(schema.minimum, value) && !above(schema.maximum, value) && !below(schema.exclusiveMinimum, value, false) && !above(schema.exclusiveMaximum, value, false)
+      && !(typeof divisor === 'number' && Number.isFinite(divisor) && divisor > 0 && !isMultipleOf(value, divisor));
+  }
+  if (typeof value === 'string') {
+    return !below(schema.minLength, codePointLength(value)) && !above(schema.maxLength, codePointLength(value)) && (typeof schema.pattern !== 'string' || matchesPattern(schema.pattern, value));
+  }
+  if (Array.isArray(value)) return !below(schema.minItems, value.length) && !above(schema.maxItems, value.length);
+  if (typeof value === 'object' && value !== null) return !below(schema.minProperties, Object.keys(value).length) && !above(schema.maxProperties, Object.keys(value).length);
+  return true;
+}
+
+/** Whether `pattern` matches `text` as the generated validator tests it (flag `u`); a pattern that is no regular expression is the validator's error, not an exclusion. */
+function matchesPattern(pattern: string, text: string): boolean {
+  try {
+    return new RegExp(pattern, 'u').test(text);
+  } catch (error) {
+    if (error instanceof SyntaxError) return true;
+    throw error;
+  }
 }
 
 function schemaTypeNode(rawSchema: unknown, context: SchemaTypeContext = {}): TypeCode {
@@ -683,17 +715,7 @@ function schemaTypeNode(rawSchema: unknown, context: SchemaTypeContext = {}): Ty
   const listed = typedListedValues(schema);
   if (listed) {
     if (listed.length === 0) return NEVER_TYPE;
-    const excluded = isJsonObject(schema.not)
-      ? new Set(
-        schema.not.const !== undefined
-          ? [JSON.stringify(schema.not.const)]
-          : Array.isArray(schema.not.enum)
-            ? schema.not.enum.map((value) => JSON.stringify(value))
-            : [],
-      )
-      : new Set<string>();
-    const values = listed.filter((value) => !excluded.has(JSON.stringify(value)));
-    return unionType(values.map((value) => typeCode(literal(value as JsonValue)))) ?? NEVER_TYPE;
+    return unionType(listed.map((value) => typeCode(literal(value as JsonValue)))) ?? NEVER_TYPE;
   }
   const types = effectiveSchemaTypes(schema);
   const nullable = types.includes('null');

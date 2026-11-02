@@ -3,7 +3,7 @@
  * copied into each temporary project's src/ as fixture-contract.ts, so it must
  * not import anything.
  */
-export const OPERATIONS = ['object-to-model', 'model-to-object', 'text-to-model', 'model-to-text', 'validate'] as const;
+export const OPERATIONS = ['object-to-model', 'model-to-object', 'text-to-model', 'model-to-text', 'validate', 'call'] as const;
 export type Operation = typeof OPERATIONS[number];
 
 /** Keys the fixture modules switch on. */

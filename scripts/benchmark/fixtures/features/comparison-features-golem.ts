@@ -5,6 +5,8 @@ import { codecIdOf } from './codec-id.js';
 import { rejects, rejectsValidate, type Adapter, type ComparisonFixture, type InvalidOperations } from './fixture-contract.js';
 import { Checkout, CheckoutPlain, LineItem, SerdeMany, SerdeManyLine, SerdeNone, SerdeNoneLine } from './features.model.js';
 import './sdk/index.js';
+import { createHttpPathFixtures } from './http-paths.js';
+import { createRuntimePathFixtures } from './runtime-paths.js';
 import { createUnionDispatchFixtures } from './union-dispatch.js';
 import { assertFeatureWire, assertSerdeModel, checkoutInput, checkoutPlainInput, checkoutPlainInvalidWires, featureComparison, serdeComparison, serdeInput, serdeInvalidWires, type SerdeDensity } from './payloads.js';
 
@@ -192,5 +194,5 @@ export async function createGolemFeatureFixtures(adapter: Adapter): Promise<read
   });
   // The broken variant of the verify step: the reserved currency.
   const invalidWire = () => ({ ...structuredClone(input.payload), money: { amount: 12, currency: 'XXX' } });
-  return [...serdeFixtures(validation), ...createUnionDispatchFixtures(validation), checkoutPlainFixture(validation), validation ? { ...fixture, invalidOperations: invalidOperationsOf(checkout, Checkout, invalidWire) } : fixture];
+  return [...serdeFixtures(validation), ...createUnionDispatchFixtures(validation), ...createRuntimePathFixtures(validation), ...createHttpPathFixtures(validation), checkoutPlainFixture(validation), validation ? { ...fixture, invalidOperations: invalidOperationsOf(checkout, Checkout, invalidWire) } : fixture];
 }

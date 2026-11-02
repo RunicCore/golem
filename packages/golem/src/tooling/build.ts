@@ -48,6 +48,11 @@ interface BuildOptions {
    * with it, and a build of a watch, the first included, is reported through the watch's own error path while the watch goes on.
    */
   readonly onBuilt?: (run: { readonly label: string; readonly exitCode: number }) => void;
+  /**
+   * Called with the text of the compiler's report, right after the build wrote it to stdout, during the run and before the emit step; not called for an empty report.
+   * An exception from this function fails the build as any other exception of a build does: a build without `watch` rejects with it, a watching build reports it and goes on.
+   */
+  readonly onCompilerReport?: (report: string) => void;
 }
 
 const NO_GOLEM_YAML = 'golem build needs a golem.yaml; run it next to one or pass --config';
@@ -321,6 +326,7 @@ interface BuildRun {
   oldStateRemoved: boolean;
   readonly generation: GeneratorSessionResources;
   readonly onGenerated?: (ran: ReadonlySet<string>) => void;
+  readonly onCompilerReport?: (report: string) => void;
   /** The last generate run that finished: the next run reruns only the jobs a changed input reaches. Empty after a failed run. */
   pipeline?: PipelineState;
 }
@@ -329,12 +335,14 @@ interface BuildRun {
  * Print what `tsc -p` prints for a check: each diagnostic, plain or pretty (the `pretty` option, else when stdout is a terminal), then the
  * files of `listFiles`, then in the pretty form the line that counts the errors.
  */
-function reportCheck(root: string, program: ts.Program, diagnostics: readonly ts.Diagnostic[]): void {
+function reportCheck(root: string, program: ts.Program, diagnostics: readonly ts.Diagnostic[], onReport?: (report: string) => void): void {
   const host = diagnosticHost(root);
   const options = program.getCompilerOptions();
   const listed = options.listFiles === true ? program.getSourceFiles().map((file) => `${file.fileName}${host.getNewLine()}`).join('') : '';
   const output = `${diagnosticText(root, options, diagnostics)}${listed}${isPretty(options) ? ts.formatErrorSummary(diagnostics, host) : ''}`;
-  if (output !== '') process.stdout.write(output);
+  if (output === '') return;
+  process.stdout.write(output);
+  onReport?.(output);
 }
 
 function diagnosticHost(root: string): ts.DiagnosticFormatHost {
@@ -471,7 +479,7 @@ async function buildOnce(requestSession: () => ts.ProgramSession, run: BuildRun,
   const writesDeclarations = project.declaration && !project.noEmit;
   const declarations = writesDeclarations ? program.emitToMemory('declarations') : undefined;
   const diagnostics = ts.getTscDiagnostics(program, declarations?.diagnostics);
-  reportCheck(root, program, diagnostics);
+  reportCheck(root, program, diagnostics, run.onCompilerReport);
   // An import that reached a referenced project with no output yet: name the project to build first, and write nothing.
   const unbuilt = unbuiltReferences(referenced, program.unbuiltReferences());
   if (unbuilt.length > 0) {
@@ -587,6 +595,7 @@ export async function runBuild(options: BuildOptions): Promise<{ exitCode: numbe
     oldStateRemoved: false,
     generation,
     ...(options.onGenerated === undefined ? {} : { onGenerated: options.onGenerated }),
+    ...(options.onCompilerReport === undefined ? {} : { onCompilerReport: options.onCompilerReport }),
   };
   const run = async (changed?: readonly string[], beforeAnnouncing: () => void = () => {}): Promise<number> => {
     const exitCode = await buildOnce(program, state, changed);

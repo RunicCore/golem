@@ -11,7 +11,7 @@
  * stringifies it. Any other return type stays Nest JSON. Consumers may
  * register the interceptor or write their own interceptor or pipe with
  * `objectCodecFromMetatype`, or `nestUnionFromMetatype` for a union of
- * models. `nestModelStringifyInterceptor` stays for a response whose codec is
+ * models, and decode a query with `nestQueryDecoder`. `nestModelStringifyInterceptor` stays for a response whose codec is
  * not the declared return type.
  */
 import {
@@ -119,6 +119,18 @@ export function objectCodecFromMetatype<T = unknown>(metatype: unknown): ObjectC
  */
 export function nestUnionFromMetatype(metatype: unknown): NestUnionInput | undefined {
   return boundUnion(metatype);
+}
+
+/**
+ * The decoder of a query for a parameter token, such as the `design:paramtypes` entry of a `@Query()` parameter typed as one model or a union of models.
+ * It turns query strings into the scalar and array types the model declares; a value that does not fit stays a string, so
+ * `fromWireFormat` reports it. Pass the result to `fromWireFormat`. `undefined` for any other token, and for a union whose variant codecs are not registered yet.
+ */
+export function nestQueryDecoder(metatype: unknown): ((query: unknown) => unknown) | undefined {
+  const union = boundUnion(metatype);
+  if (union) return union.decodeQuery;
+  const codec = objectCodecFromMetatype(metatype);
+  return codec && queryWireDecoder(codec);
 }
 
 export function nestModelConstruct(metatype: unknown): (abstract new (values?: never) => object) | undefined {

@@ -16,7 +16,7 @@ import {
   type NestInterceptor,
 } from '@nestjs/common';
 import { defaultIfEmpty, firstValueFrom, map, of, type Observable } from 'rxjs';
-import { NestModelInterceptor, type NestModelInterceptorOptions, nestModelStringifyInterceptor, nestUnionFromMetatype, objectCodecFromMetatype } from '@exprtlabs/golem-ts-openapi/nest';
+import { NestModelInterceptor, type NestModelInterceptorOptions, nestModelStringifyInterceptor, nestQueryDecoder, nestUnionFromMetatype, objectCodecFromMetatype } from '@exprtlabs/golem-ts-openapi/nest';
 import { nestModelCodec, nestModelReturn, nestModelUnion } from '@exprtlabs/golem-ts-openapi/internal/nest-runtime';
 import { LibError, type LibErrorKind } from '@exprtlabs/golem/errors';
 import { constructModel, convertModelField, deserializeDate, unknownDiscriminatorValue, assertModelValue, isValidModelValue } from '@exprtlabs/golem/internal/model-runtime';
@@ -974,6 +974,31 @@ test('a custom interceptor converts a union @Body() and @Query() with nestUnionF
   } finally {
     await application.close();
   }
+});
+
+test('nestQueryDecoder decodes a model or union @Query() for an app that calls fromWireFormat itself; any other token gives undefined', async () => {
+  // protects: T-681 an app decodes a model @Query() in its own interceptor with public API
+  const id = 'AppQuery_55555555';
+  await registerValidatingCodec(id, { kind: 'object', required: [], additionalProperties: false, properties: {
+    limit: { kind: 'number' }, active: { kind: 'boolean' }, ids: { kind: 'array', item: { kind: 'number' } },
+  } });
+  const token = (klass: Function) => (Reflect.getMetadata('design:paramtypes', klass.prototype, 'handle') as unknown[])[0];
+  const model = inputController('AppQuery', Query, undefined, Object);
+  nestModelCodec(id)(model.prototype, 'handle', 0);
+  const codec = objectCodecFromMetatype(token(model))!;
+  const decode = nestQueryDecoder(token(model))!;
+  assert.deepEqual(codec.fromWireFormat(decode({ limit: '10', active: 'false', ids: ['1', '2.5'] })), { limit: 10, active: false, ids: [1, 2.5] });
+  assert.deepEqual(decode({ limit: 'abc' }), { limit: 'abc' }, 'a value that does not fit stays a string');
+  assert.throws(() => codec.fromWireFormat(decode({ limit: 'abc' })), (error) => error instanceof LibError && error.causedByInput);
+  variantCodec('QueryCircle_66666666', { radius: { types: ['number'] } });
+  variantCodec('QueryRect_77777777', { width: { types: ['number'] } });
+  const union = inputController('QueryUnion', Query, undefined, Object);
+  nestModelUnion('kind', [[['circle'], 'QueryCircle_66666666'], [['rect'], 'QueryRect_77777777']])(union.prototype, 'handle', 0);
+  assert.deepEqual(nestQueryDecoder(token(union))!({ kind: 'rect', width: '3', radius: '2.5' }), { kind: 'rect', width: 3, radius: '2.5' });
+  assert.equal(nestQueryDecoder(Object), undefined);
+  const late = inputController('QueryLate', Query, undefined, Object);
+  nestModelUnion('kind', [[['a'], 'QueryLateA_88888888']])(late.prototype, 'handle', 0);
+  assert.equal(nestQueryDecoder(token(late)), undefined, 'a union whose codec is not registered yet');
 });
 
 const LEVEL_MODEL = "import type { IModel } from '@exprtlabs/golem/model';\nimport type { MaxLength } from '@exprtlabs/golem/tags';\nexport type TInput = IModel<{ name: string & MaxLength<3>; qty: number }>;\n";

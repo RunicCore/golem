@@ -5,11 +5,11 @@ export const BENCH_SERIES_COUNT = 4;
 
 export const REPOSITORY_BLOB_URL = 'https://github.com/RunicCore/golem/blob/master';
 
-export type PayloadId = 'simple' | 'nested' | 'array' | 'checkout' | 'checkout-plain' | 'serde-none' | 'serde-many' | 'union-tagged' | 'union-class';
+export type PayloadId = 'simple' | 'nested' | 'array' | 'checkout' | 'checkout-plain' | 'serde-none' | 'serde-many' | 'union-tagged' | 'union-class' | 'temporal' | 'recursive' | 'unique-strings' | 'unique-objects' | 'nest-query' | 'client-call';
 /** The operations of the compare table. */
 export type CompareOperationId = 'parse' | 'stringify' | 'validate';
 /** The operations that only the golem cost table times: value to and from a plain object, with no JSON text. */
-export type CostOperationId = 'decode' | 'encode';
+export type CostOperationId = 'decode' | 'encode' | 'call';
 export type OperationId = CompareOperationId | CostOperationId;
 export type AdapterId = 'golem' | 'golem-validated' | 'golem-object' | 'golem-object-off' | 'control' | 'class-transformer' | 'class-validator' | 'typia' | 'zod' | 'ajv';
 export type GroupId = 'plain' | 'classes' | 'validated-classes';
@@ -21,6 +21,10 @@ export interface PayloadSpec { readonly id: PayloadId; readonly fixture: string;
   readonly adapters?: readonly AdapterId[];
   /** The payload has no broken variant, so the invalid-input timing skips it. */
   readonly noInvalid?: true;
+  /** The cost rows that time the payload; the five standard rows (parse, stringify, decode, encode, validate) when absent. */
+  readonly operations?: readonly OperationId[];
+  /** A package export the payload's fixture needs. The release check leaves the payload out when the base ref does not export it. */
+  readonly requires?: { readonly module: string; readonly export: string };
 }
 export interface OperationSpec<Id extends OperationId = OperationId> { readonly id: Id; readonly fixtureOperation: Operation; readonly label: string; readonly description: string }
 export interface GroupSpec {
@@ -46,13 +50,21 @@ export const PAYLOADS: readonly PayloadSpec[] = [
 /**
  * The payloads that only the golem cost table times: one shape of 21 fields, with every field converting (serde-many) or
  * none converting (serde-none). The compare table does not list them. The union pair is one wire value in two models, a union of
- * inline tagged objects and a union of model classes, timed on the IModel adapters only (E-42).
+ * inline tagged objects and a union of model classes, timed on the IModel adapters only (E-42). Temporal, recursive,
+ * unique-strings and unique-objects time one runtime path each, on the same adapters. Nest-query and client-call time
+ * an HTTP edge on golem-validated only, each on the one cost row that reads true for it.
  */
 const COST_PAYLOADS: readonly PayloadSpec[] = [
   { id: 'serde-none', fixture: 'serde-none', label: 'Serde none', description: 'Twenty-one fields on plain strings and numbers: nothing converts.', sourceFile: 'scripts/benchmark/fixtures/features/payloads.ts' },
   { id: 'serde-many', fixture: 'serde-many', label: 'Serde many', description: 'The same shape with every field converting: money, hex codes, permission bits, yes/no flags, dates and date tuples.', sourceFile: 'scripts/benchmark/fixtures/features/payloads.ts' },
   { id: 'union-tagged', fixture: 'union-tagged', label: 'Union, tagged', description: 'A hundred events, each one of four shapes picked by a kind tag. The shapes are inline objects, so the encoder dispatches on the tag. Each event holds one date.', sourceFile: 'scripts/benchmark/fixtures/features/union-dispatch.ts', adapters: ['golem', 'golem-validated'], noInvalid: true },
   { id: 'union-class', fixture: 'union-class', label: 'Union, class-first', description: 'The same hundred events and the same JSON text, with the four shapes as generated model classes, so the encoder picks the branch by class first. Each event holds one date.', sourceFile: 'scripts/benchmark/fixtures/features/union-dispatch.ts', adapters: ['golem', 'golem-validated'], noInvalid: true },
+  { id: 'temporal', fixture: 'temporal', label: 'Temporal fields', description: 'Twenty fields on the six Temporal classes (instants, zoned date-times, dates, date-times, times and durations), each an ISO 8601 string in JSON. The Temporal in use is the temporal-polyfill package, so the numbers include the polyfill. Serde none has 21 fields with no conversion.', sourceFile: 'scripts/benchmark/fixtures/features/runtime-paths.ts', adapters: ['golem', 'golem-validated'], noInvalid: true },
+  { id: 'recursive', fixture: 'recursive', label: 'Recursive model', description: 'A tree of one model that lists itself as children: 106 nodes, three levels below the root, each with a label.', sourceFile: 'scripts/benchmark/fixtures/features/runtime-paths.ts', adapters: ['golem', 'golem-validated'], noInvalid: true },
+  { id: 'unique-strings', fixture: 'unique-strings', label: 'Unique strings', description: 'One list of 1,000 strings under the UniqueItems tag. Validate checks that no two strings are equal.', sourceFile: 'scripts/benchmark/fixtures/features/runtime-paths.ts', adapters: ['golem', 'golem-validated'], noInvalid: true },
+  { id: 'unique-objects', fixture: 'unique-objects', label: 'Unique objects', description: 'One list of 100 small objects (x, y and a label) under the UniqueItems tag. Validate checks that no two objects are equal.', sourceFile: 'scripts/benchmark/fixtures/features/runtime-paths.ts', adapters: ['golem', 'golem-validated'], noInvalid: true },
+  { id: 'nest-query', fixture: 'nest-query', label: 'Nest query', description: 'A NestJS query of six strings, as Express gives it (a number, a boolean, a number list, a string list, an optional string and a date), decoded by nestQueryDecoder and then by fromWireFormat. Each call resolves the decoder from the parameter token, as the interceptor does for every request (a cache lookup).', sourceFile: 'scripts/benchmark/fixtures/features/http-paths.ts', adapters: ['golem-validated'], operations: ['decode'], noInvalid: true, requires: { module: '@exprtlabs/golem-ts-openapi/nest', export: 'nestQueryDecoder' } },
+  { id: 'client-call', fixture: 'client-call', label: 'Client call', description: 'One call of a generated client (a POST with a JSON body of two fields and a JSON response of the same model) on a fetch stub. The call encodes the input, builds the request and reads and decodes the response. A body can be read once, so the stub builds a new Response per call: that is part of the time, and it is the cheapest way to hand the client a fresh body.', sourceFile: 'scripts/benchmark/fixtures/features/http-paths.ts', adapters: ['golem-validated'], operations: ['call'], noInvalid: true },
 ];
 
 /** Every payload a run can time. */
@@ -68,6 +80,7 @@ export const BENCH_OPERATIONS: readonly OperationSpec<CompareOperationId>[] = [
 export const COST_OPERATIONS: readonly OperationSpec<CostOperationId>[] = [
   { id: 'decode', fixtureOperation: 'object-to-model', label: 'Decode', description: 'A plain wire object to the model value.' },
   { id: 'encode', fixtureOperation: 'model-to-object', label: 'Encode', description: 'Model value to a plain wire object.' },
+  { id: 'call', fixtureOperation: 'call', label: 'Call', description: 'A whole generated client call on a stubbed fetch: encode the input, build the request, read and decode the response.' },
 ];
 
 const F = 'scripts/benchmark/fixtures/upstream';
@@ -130,13 +143,14 @@ export const VALIDATION_COLUMNS = {
 } as const satisfies Record<string, Record<'off' | 'on', AdapterId>>;
 
 /** The operations of a cost table row, in row order. */
-export const COST_ROW_OPERATIONS: readonly OperationId[] = ['parse', 'stringify', 'decode', 'encode', 'validate'];
+export const COST_ROW_OPERATIONS: readonly OperationId[] = ['parse', 'stringify', 'decode', 'encode', 'validate', 'call'];
+const STANDARD_COST_OPERATIONS: readonly OperationId[] = COST_ROW_OPERATIONS.filter(operation => operation !== 'call');
 
 /**
  * The cases only the cost table times: every cost row of the four adapters that the compare table does not time already.
  * Validate has no "off" mode: a build with validation off has nothing to call.
  */
-export const COST_CASES: readonly CaseSpec[] = ALL_PAYLOADS.flatMap(payload => COST_ROW_OPERATIONS.flatMap(operation =>
+export const COST_CASES: readonly CaseSpec[] = ALL_PAYLOADS.flatMap(payload => (payload.operations ?? STANDARD_COST_OPERATIONS).flatMap(operation =>
   Object.values(VALIDATION_COLUMNS).flatMap(pair => (['off', 'on'] as const)
     .filter(mode => operation !== 'validate' || mode === 'on')
     .filter(mode => payload.adapters === undefined || payload.adapters.includes(pair[mode]))

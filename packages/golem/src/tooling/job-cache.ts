@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import type { GolemConfig, GolemJob } from './config.js';
 import { GolemDiagnosticSeverity, compareText, hasErrorCode, isInsideDirectory, isRecord, stableJson } from './generator-core.js';
 import type { GolemDiagnostic } from './generator-core.js';
-import { loadedFileDigests } from './load-record.js';
+import { loadedClosure, loadedFileDigests } from './load-record.js';
 import type { EnabledExtension } from './rewrite-participant.js';
 import { atomicWrite, digest, loadInventory } from './outputs.js';
 import type { Inventory, InventoryEntry, OutputFiles } from './outputs.js';
@@ -20,6 +20,7 @@ export interface JobRecord {
   /**
    * The code the job loaded, by the block of the package that holds it: the package that registers the job's block, and each package that registers an extension on its hooks.
    * Code can change with the job's options and inputs unchanged. A file of a package that the process did not load, such as the build output of an app next to its generator, is not here.
+   * A file outside the package that an entry of the block imports, such as a helper in a linked workspace package, is under that block, by its path from the block's folder (`../shared/helper.js`).
    */
   readonly code: Readonly<Record<string, LoadedCode>>;
   /** The digest of every extension on the job's hooks (`hookCode`); empty when none fills a hook of the job. */
@@ -49,7 +50,7 @@ const MISSING = 'missing';
 /** A digest no read gives, so the next run finds the input changed and runs the job again. A reported input the job never announced gets it when golem cannot trust the digest from the return: a directory, whose listing shows no edit of a file inside it, or a file that changed while the job ran. */
 const UNTRACKED = 'untracked';
 const OUTSIDE_DIRECTORY = 'directory';
-const RECORDS_VERSION = 3;
+const RECORDS_VERSION = 4;
 
 function jobsFile(config: GolemConfig): string {
   return path.join(path.dirname(config.inventoryFile), 'jobs.json');
@@ -212,9 +213,14 @@ function codeDigest(directory: string): string {
 
 let golemCodeDigest: string | undefined;
 
-/** The digest of the golem package that is running, found from this module: `dist/tooling` sits two directories below the package. Computed once. */
+/** The folder of the golem package that is running, found from this module: `dist/tooling` sits two directories below the package. */
+function golemFolder(): string {
+  return fileURLToPath(new URL('../../', import.meta.url));
+}
+
+/** The digest of the golem package that is running (`golemFolder`). Computed once. */
 export function golemCode(): string {
-  golemCodeDigest ??= codeDigest(fileURLToPath(new URL('../../', import.meta.url)));
+  golemCodeDigest ??= codeDigest(golemFolder());
   return golemCodeDigest;
 }
 
@@ -241,13 +247,21 @@ function codeKey(folder: string, filename: string): string {
 
 /**
  * The code of a package that the process loaded, each file with the digest it had when it loaded: the files under the package folder, its own `node_modules` left out,
- * and the files golem resolved for the package, read from disk when the load hook missed them. A rebuilt file therefore stays recorded as the code that ran.
+ * the files that the package's resolved entries import, directly or not, outside `node_modules` and golem's own folder (a helper in a linked workspace package, in
+ * another block's package too), by their path from the package folder (a file that was loaded before the recording began has its current disk text as digest), and the entries themselves, read from disk when the load hook missed them. A job therefore counts
+ * the code its own generator imports and no other block's. A rebuilt file stays recorded as the code that ran.
  */
 export function loadedCode(code: CodePackage): LoadedCode {
   const files = new Map<string, string>();
   for (const [filename, loadDigest] of loadedFileDigests()) {
     const key = codeKey(code.folder, filename);
     if (isInsideDirectory(code.folder, filename) && !key.split('/').includes('node_modules')) files.set(key, loadDigest);
+  }
+  // Traversal passes through node_modules files, which can import a linked package; only the record leaves them out.
+  for (const filename of loadedClosure(code.entries, file => isInsideDirectory(golemFolder(), file))) {
+    // A file that a preload imported before the recording began has no load digest; its digest is its current disk text.
+    const loadDigest = loadedFileDigests().get(filename) ?? fileDigest(filename);
+    if (loadDigest !== undefined && !filename.split(path.sep).includes('node_modules')) files.set(codeKey(code.folder, filename), loadDigest);
   }
   for (const entry of code.entries) {
     const key = codeKey(code.folder, entry);

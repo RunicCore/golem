@@ -13,7 +13,7 @@ const sharedFeatureDirectory = path.join(root, 'tests/fixtures/models/serde-feat
 const featureSources = [
   'payloads.ts',
   'features-class-transformer.models.ts', 'features-class-validator.models.ts',
-  'comparison-features-golem.ts', 'comparison-features-golem-object.ts', 'union-dispatch.model.ts', 'union-dispatch.ts',
+  'comparison-features-golem.ts', 'comparison-features-golem-object.ts', 'union-dispatch.model.ts', 'union-dispatch.ts', 'runtime-paths.model.ts', 'runtime-paths.ts', 'http-paths.model.ts', 'http-paths.ts',
   'comparison-features-class-transformer.ts', 'comparison-features-class-validator.ts',
 ];
 const sharedFeatureSources = ['feature-tags.ts', 'features.model.ts', 'features.iobject.model.ts', 'access-rules.ts'];
@@ -21,14 +21,18 @@ const sharedFeatureSources = ['feature-tags.ts', 'features.model.ts', 'features.
 /** Runs the model generator that `golemRoot` built, in a process of its own: the generator is an ES module with top-level await, so a synchronous caller cannot load it. */
 function generateModels(golemRoot: string, project: string, profile: { readonly mobx: boolean; readonly validation: boolean }, manifest: string): void {
   // A project with `extensions: mobx: {}` gives the generator the fill that the real extension entry gives the hook `model.validatorEnhancer`.
-  const hooks = profile.mobx
-    ? `{ 'model.validatorEnhancer': [{ package: '@exprtlabs/golem-openapi-ts', extension: 'mobx', options: {}, participant: mobxExtension.hooks['model.validatorEnhancer'], use: (call) => call(mobxExtension.hooks['model.validatorEnhancer']) }] }`
-    : 'undefined';
+  // The nest extension fills `model.codecData` with the query-field table (`codec.data.nest`) that `nestQueryDecoder` reads; every project has it, as a Nest app's build does.
+  const fills = [
+    ...(profile.mobx ? [`'model.validatorEnhancer': [{ package: '@exprtlabs/golem-openapi-ts', extension: 'mobx', options: {}, participant: mobxExtension.hooks['model.validatorEnhancer'], use: (call) => call(mobxExtension.hooks['model.validatorEnhancer']) }]`] : []),
+    `'model.codecData': [{ package: '@exprtlabs/golem-ts-openapi', extension: 'nest', options: {}, participant: nestExtension.hooks['model.codecData'], use: (call) => call(nestExtension.hooks['model.codecData']) }]`,
+  ];
+  const hooks = `{ ${fills.join(', ')} }`;
   const script = `
 import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { generate } from ${JSON.stringify(pathToFileURL(path.join(golemRoot, 'packages/golem-model/dist/generator.js')).href)};
 import { extension as mobxExtension } from ${JSON.stringify(pathToFileURL(path.join(golemRoot, 'packages/golem-openapi-ts/dist/mobx/extension.js')).href)};
+import { extension as nestExtension } from ${JSON.stringify(pathToFileURL(path.join(golemRoot, 'packages/golem-ts-openapi/dist/nest/rewrite-participant.js')).href)};
 const { artifacts } = generate({ root: ${JSON.stringify(project)}, profile: { validation: ${profile.validation} }, hooks: ${hooks}, manifestInputs: [${JSON.stringify(manifest)}] });
 for (const artifact of artifacts) {
   mkdirSync(path.dirname(artifact.path), { recursive: true });
@@ -57,7 +61,7 @@ export function prepare(directory: string, kind: ProjectKind, extraFixtures: rea
   for (const name of sharedFeatureSources) copyFileSync(path.join(sharedFeatureDirectory, name), path.join(src, name));
   writeFileSync(path.join(project, 'tsconfig.json'), JSON.stringify({
     compilerOptions: {
-      target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', strict: true, skipLibCheck: true,
+      target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', strict: true, skipLibCheck: true, lib: ['es2022', 'esnext.temporal'],
       experimentalDecorators: true, emitDecoratorMetadata: true, rootDir: 'src', outDir: 'build', types: ['node'],
       plugins: [{ transform: 'typia/lib/transform' }],
     },

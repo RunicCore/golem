@@ -1,4 +1,5 @@
 import type { IModel } from '@exprtlabs/golem/model';
+import type { Discriminator } from '@exprtlabs/golem/tags';
 import type { TwinFactories } from './compare-case.js';
 import {
   TTwinAddressBaseModel, TTwinArrayBaseModel, TTwinCircleBaseModel, TTwinFlatBaseModel, TTwinItemBaseModel,
@@ -55,7 +56,7 @@ export class TwinLabel extends TTwinLabelBaseModel {}
 
 export type TTwinUnion = IModel<{
   id: number;
-  shape: TwinCircle | TwinRect | TwinLabel;
+  shape: (TwinCircle | TwinRect | TwinLabel) & Discriminator<'kind'>;
 }>;
 export class TwinUnion extends TTwinUnionBaseModel {}
 

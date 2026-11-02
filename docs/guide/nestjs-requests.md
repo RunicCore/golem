@@ -143,7 +143,9 @@ A whole `@Body()` or `@Query()` parameter can be a union of models, such as `(TC
 - A [default variant](/guide/tags#add-a-default-variant) on a parameter union stops with [`RUNM1081`](/reference/diagnostics#runm1081), because the interceptor picks no default. Remove the default, or bind one model.
 - A union return stays Nest JSON.
 
-Your own interceptor or pipe converts a union parameter with [`nestUnionFromMetatype`](/reference/runtime-api#nest), as it uses [`objectCodecFromMetatype`](/reference/runtime-api#nest) for one model. Pass it the `design:paramtypes` entry of the parameter, which `Reflect.getMetadata('design:paramtypes', Controller.prototype, 'method')` returns, such as `nestUnionFromMetatype(type)?.fromWireFormat(request.body, { failFast: true })`. For a query, call `decodeQuery(request.query)` first.
+Your own interceptor or pipe converts a model parameter with [`objectCodecFromMetatype`](/reference/runtime-api#nest), and a union parameter with [`nestUnionFromMetatype`](/reference/runtime-api#nest). Pass either the `design:paramtypes` entry of the parameter, which `Reflect.getMetadata('design:paramtypes', Controller.prototype, 'method')` returns, such as `nestUnionFromMetatype(type)?.fromWireFormat(request.body, { failFast: true })`.
+
+A query holds text. [`nestQueryDecoder`](/reference/runtime-api#nest) takes the same entry for a model or a union and returns the function that decodes `request.query` to the numbers, booleans and arrays the model declares. Pass its result to `fromWireFormat`, as in `codec.fromWireFormat(nestQueryDecoder(type)?.(request.query), { failFast: true })`. A value that does not fit stays text, and `fromWireFormat` rejects it as bad input.
 
 ## Model responses
 

@@ -1,17 +1,19 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+import { isMultipleOf } from '@exprtlabs/golem/internal/validation-runtime';
 import { compileSchema, compileValidatorModule } from './support/compiled-validators.js';
 
 type MultipleOf = (value: number, divisor: number, units?: number, scale?: number) => boolean;
 
-/** The generated exact `isMultipleOf` and its fast form `isMultipleOfScaled`, read from a compiled module. */
+/** The runtime `isMultipleOf` and the generated fast form `isMultipleOfScaled`, read from a compiled module; the fast form falls back to the runtime function. */
 async function generatedHelpers(): Promise<{ exact: MultipleOf; scaled: MultipleOf }> {
   const { source } = await compileValidatorModule({ roots: { root: { type: 'number', multipleOf: 0.1 } } });
-  const exact = /function (\w+)\(value, divisor\) \{\n[\s\S]*?\n\}/.exec(source);
   const scaled = /function (\w+)\(value, divisor, units, scale\) \{\n[\s\S]*?\n\}/.exec(source);
-  assert.ok(exact !== null && scaled !== null);
-  return new Function(`${exact[0]}\n${scaled[0]}\nreturn { exact: ${exact[1]}, scaled: ${scaled[1]} };`)();
+  assert.ok(scaled !== null);
+  const fallback = /return ([\w$]+)\(value, divisor\);/.exec(scaled[0]);
+  assert.ok(fallback !== null);
+  return { exact: isMultipleOf, scaled: new Function(fallback[1]!, `${scaled[0]}\nreturn ${scaled[1]};`)(isMultipleOf) };
 }
 
 /** Divisors the compiler writes in the scaled form: the divisor, its `units` and its `scale`. */

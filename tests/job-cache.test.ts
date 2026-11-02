@@ -74,7 +74,7 @@ test('records survive a save and load, and an absent or unreadable file holds no
   fs.writeFileSync(path.join(root, '.golem/jobs.json'), JSON.stringify({ version: 1, jobs: { 'openapi:sdk': { golemCode: 1 } } }));
   assert.equal(loadJobRecords(config).size, 0, 'a record of the wrong shape is no record');
   const { code: _code, ...withoutCode } = record;
-  fs.writeFileSync(path.join(root, '.golem/jobs.json'), JSON.stringify({ version: 3, jobs: { 'openapi:sdk': withoutCode } }));
+  fs.writeFileSync(path.join(root, '.golem/jobs.json'), JSON.stringify({ version: 4, jobs: { 'openapi:sdk': withoutCode } }));
   assert.equal(loadJobRecords(config).size, 0, 'a record with no file list is no record, so the job runs again');
 });
 
