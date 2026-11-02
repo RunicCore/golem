@@ -756,7 +756,7 @@ export interface TypeScriptBackend {
   readonly NodeFlags: { readonly Const: NodeFlags };
   readonly NodeBuilderFlags: { readonly NoTruncation: NodeBuilderFlags };
   readonly SignatureKind: { readonly Call: SignatureKind };
-  readonly IndexKind: { readonly String: IndexKind };
+  readonly IndexKind: { readonly String: IndexKind; readonly Number: IndexKind };
   readonly JsxEmit: { readonly Preserve: JsxEmit; readonly ReactNative: JsxEmit };
   readonly ModuleKind: { readonly ESNext: ModuleKind; readonly NodeNext: ModuleKind };
   readonly ModuleResolutionKind: { readonly NodeNext: ModuleResolutionKind };

@@ -338,6 +338,11 @@ function holdsTypeParameter(checker: ts.TypeChecker, node: ts.TypeNode): boolean
   return ts.forEachChild(node, (child) => ts.isTypeNode(child) && holdsTypeParameter(checker, child) ? true : undefined) === true;
 }
 
+/** The value type of the index signature of an object: its JSON keys are strings, so a `number` signature describes the values like a `string` one. */
+function indexValueType(checker: ts.TypeChecker, type: ts.Type): ts.Type | undefined {
+  return checker.getIndexTypeOfType(type, ts.IndexKind.String) ?? checker.getIndexTypeOfType(type, ts.IndexKind.Number);
+}
+
 function stripPhantomIntersection(
   checker: ts.TypeChecker,
   type: ts.Type,
@@ -1251,7 +1256,7 @@ function describeProperties(scope: DescribeScope, call: DescribeCall, nextSeen: 
     const valueType = propertyType(checker, property, context.declaration);
     // A member the source type lacks makes the checker's picked type `unknown`; the field is not typed unknown, so `allowAny` is no fix.
     // A string index signature holds the member, and then the field is really typed by it.
-    if (absentFromSource && !checker.getIndexTypeOfType(sourceObject!, ts.IndexKind.String) && !context.schemaData && (valueType.flags & ts.TypeFlags.Unknown) !== 0 && !(context.allowAny ?? allowAny)) {
+    if (absentFromSource && !indexValueType(checker, sourceObject!) && !context.schemaData && (valueType.flags & ts.TypeFlags.Unknown) !== 0 && !(context.allowAny ?? allowAny)) {
       throw diagnostic(
         context.sourceFile,
         node ?? context.declaration,
@@ -1332,7 +1337,7 @@ function describeObject(scope: DescribeScope, call: DescribeCall, seen: Readonly
   // The members kept above exclude the brand keys of an SDK base; a readonly modifier counts only for a kept member.
   const memberNames = new Set(members.map(member => member.name));
   const readonlyProperties = readonlyPropertyNames(checker, type).filter(name => memberNames.has(name));
-  const indexType = checker.getIndexTypeOfType(type, ts.IndexKind.String);
+  const indexType = indexValueType(checker, type);
   // One `additionalProperties` value describes every extra key, so signatures keyed by templates need one value type.
   // Two value types are one when each is assignable to the other: `{ x: number }` written twice is two type objects.
   // A plain `string` signature beside a template one also describes the template's keys, so its value type joins the comparison.
@@ -1576,7 +1581,7 @@ export function descriptorBuilder(
       const valueType = propertyType(checker, property, location);
       if (valueType.getCallSignatures().length === 0) held.push(valueType);
     }
-    const indexType = checker.getIndexTypeOfType(type, ts.IndexKind.String);
+    const indexType = indexValueType(checker, type);
     if (indexType) held.push(indexType);
     return held;
   };

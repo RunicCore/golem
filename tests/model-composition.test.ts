@@ -409,6 +409,19 @@ export type TItem = IModel<{ seen: Record<\`id_\${string}\`, Date>; both: Record
   assert.equal(codec.validate({ seen: {}, both: {}, mixed: { x: 1 } }), false);
 });
 
+// protects: T-856 a number-keyed index signature left its values unconverted, though JSON keys are strings
+test('a Record<number, Date> and an index signature [id: number] decode the values like a string-keyed record', async t => {
+  const { root, sourceRoot } = fixture(t);
+  fs.writeFileSync(path.join(sourceRoot, 'item.model.ts'), `import type { IModel, IObject } from '@exprtlabs/golem/model';
+export type TDated = IObject<{ at: Date }>;
+export type TItem = IModel<{ byId: Record<number, Date>; items: { [id: number]: TDated } }>;
+`);
+  const codec = await builtItemCodec(root);
+  const day = '2024-01-01T00:00:00.000Z';
+  const decoded = codec.parse(`{"byId":{"1":"${day}"},"items":{"2":{"at":"${day}"}}}`) as { byId: Record<number, Date>; items: Record<number, { at: Date }> };
+  assert.deepEqual([decoded.byId[1], decoded.items[2]?.at], [new Date(day), new Date(day)]);
+});
+
 for (const key of ['${number}', '${string}_${number}', 'Uppercase<string>']) {
   test(`a Record keyed by ${key} that golem cannot state as one key pattern stops generation with RUNM1004`, t => {
     const { root, sourceRoot } = fixture(t);
