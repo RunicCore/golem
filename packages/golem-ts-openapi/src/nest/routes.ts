@@ -193,6 +193,18 @@ function classControllerPath(
   if (!controller) throw new Error(`Controller class ${classDeclaration.name?.text ?? '<anonymous>'} has no @Controller decorator.`);
   const argument = callArguments(controller)[0];
   const object = staticObject(argument);
+  // `path`, `version` and `host` are read from the written properties, so a spread or a computed key could hide any of them.
+  const unreadable = object?.properties.find(property => ts.isSpreadAssignment(property) || (property.name !== undefined && ts.isComputedPropertyName(property.name)));
+  if (unreadable) {
+    throw new TsToOpenApiError(diagnostic(
+      classDeclaration.getSourceFile(),
+      unreadable,
+      TsToOpenApiDiagnosticCode.UnsupportedRouteDecorator,
+      ts.isSpreadAssignment(unreadable)
+        ? '@Controller() options must not spread another object; write path and version in the options object.'
+        : '@Controller() options must use static property names.',
+    ));
+  }
   if (object && propertyInitializer(object, 'host')) {
     throw new TsToOpenApiError(diagnostic(
       classDeclaration.getSourceFile(),

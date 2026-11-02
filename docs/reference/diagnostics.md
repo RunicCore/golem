@@ -70,6 +70,7 @@ An error prints its code, location when known, and message, then stops generatio
 - An unmapped `@RequestMapping({ method })`.
 - A non-constant option on a route-level decorator such as `@Header()` or `@Version()`.
 - A route method with a computed name, such as `[NAME]()`.
+- A spread or a computed key in the options of `@Controller({ ... })`.
 
 **Fix:**
 

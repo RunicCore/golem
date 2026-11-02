@@ -121,6 +121,16 @@ class Base<T extends object> { @Get() 'find-one'(): T { return {} as T; } }
   assert.match(computed.text, /\[NAME\].*identifier/);
 });
 
+test('a spread or a computed key in @Controller options stops with NEST1201, not a dropped path', async t => {
+  // protects: T-860 a spread supplying the path left a document with the controller path missing
+  const spread = await rejection(build(t, `${ITEM}const base = { path: 'users' };\n@Controller({ ...base, version: '2' }) export class ItemsController { @Get() list(): TItem { return { id: 'a' }; } }`));
+  assert.ok(spread.codes.includes('NEST1201'), spread.text);
+  assert.match(spread.text, /@Controller\(\) options must not spread/);
+  const computed = await rejection(build(t, `${ITEM}const KEY = 'path';\n@Controller({ [KEY]: 'users' }) export class ItemsController { @Get() list(): TItem { return { id: 'a' }; } }`));
+  assert.ok(computed.codes.includes('NEST1201'), computed.text);
+  assert.match(computed.text, /@Controller\(\) options must use static property names/);
+});
+
 test('stacked tags and security follow the order Nest applies them, bottom decorator first', async t => {
   // protects: T-493 stacked @ApiTags and @ApiBearerAuth lists match @nestjs/swagger, class and method alike
   const document = await build(t, `${ITEM}
