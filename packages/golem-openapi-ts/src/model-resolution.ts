@@ -27,6 +27,7 @@ import {
   collectCanonicalResources,
   nextSchemaBase,
   resolveExactComponent,
+  resolveSchemaTarget,
   schemaDocumentBase,
   type ExactComponentTarget,
   type ResourceIndex,
@@ -183,6 +184,14 @@ export function componentSchemaTarget(schema: unknown, env: ModelResolveEnv): un
   const schemas = asRecord(asRecord(asRecord(env.document).components).schemas);
   const byTypeName = objectEntries(schemas).find(([raw]) => identifier(raw) === name);
   return byTypeName?.[1];
+}
+
+/** The schema that a `$ref` to part of a component names (a property, a nested `$anchor`, a nested `$id`), and the environment that its own references resolve in; the type path reads the same target. */
+function partSchemaTarget(schema: unknown, env: ModelResolveEnv): { readonly schema: unknown; readonly env: ModelResolveEnv } | undefined {
+  if (!isJsonObject(schema)) return undefined;
+  const reference = typeof schema.$ref === 'string' ? schema.$ref : typeof schema.$dynamicRef === 'string' ? schema.$dynamicRef : undefined;
+  const target = reference === undefined ? undefined : resolveSchemaTarget(reference, env.currentBase, env.resources, env.document);
+  return target && target.exactComponent === null ? { schema: target.schema, env: { ...env, currentBase: target.currentBase } } : undefined;
 }
 
 /** One nullability rule for model fields, shared with types and runtime schemas. */
@@ -673,6 +682,8 @@ export function modelConversionDescriptor(
   const seen = new Set(visiting).add(schema);
   const target = componentSchemaTarget(schema, nested);
   if (target !== undefined && target !== schema) return modelConversionDescriptor(target, definitions, nested, direction, seen);
+  const part = partSchemaTarget(schema, nested);
+  if (part && !seen.has(part.schema)) return modelConversionDescriptor(part.schema, definitions, part.env, direction, seen);
   const sub = subschemaConverter(definitions, nested, direction, seen);
   const builtin = dateClassOf(schema, env.dates);
   if (builtin) {
