@@ -92,8 +92,7 @@ export type OpenApiDates = 'date' | 'temporal';
 
 export interface ModelResolveEnv {
   readonly document: unknown;
-  /** `null` in a position that only checks a value (`not`, `if`, `contains`, `propertyNames`): no class converts there. */
-  readonly dates: OpenApiDates | null;
+  readonly dates: OpenApiDates;
   readonly resources: ResourceIndex;
   readonly currentBase: string;
   readonly anchors?: ReadonlyMap<string, string>;
@@ -154,7 +153,7 @@ export function modelEnv(
   anchors?: ReadonlyMap<string, string>,
   resources?: ResourceIndex,
   selections?: DiscriminatorSelections,
-  dates: OpenApiDates | null = 'date',
+  dates: OpenApiDates = 'date',
 ): ModelResolveEnv {
   return {
     document,
@@ -270,8 +269,8 @@ function modelSchemaReference(schema: unknown, env: ModelResolveEnv): string | n
   return directComponentSchemaRef(schema, withSchemaBase(env, schema));
 }
 
-/** Converts a sub-schema of a keyword (`not`, `contains`, `if`, ...) with the descriptor builder that converts a field. `checkOnly`: the keyword judges a value and converts none, so its format keeps the rule of the document. */
-type SubSchema = (schema: unknown, checkOnly?: boolean) => ConstraintSchemaValue;
+/** Converts a sub-schema of a keyword (`not`, `contains`, `if`, ...) with the descriptor builder that converts a field. */
+type SubSchema = (schema: unknown) => ConstraintSchemaValue;
 
 /**
  * Which keywords a call carries. `typed` keywords judge one JSON type and pass any other value, so they sit on the value's own
@@ -296,9 +295,9 @@ function openApiKeywordConstraints(schema: Readonly<Record<string, unknown>>, su
     const value = schema[key];
     if (typeof value === 'number') constraints.push({ kind, value });
   };
-  const subschema = (value: unknown, checkOnly = false): ConstraintSchemaValue | undefined => typeof value === 'boolean' || isJsonObject(value) ? sub(value, checkOnly) : undefined;
+  const subschema = (value: unknown): ConstraintSchemaValue | undefined => typeof value === 'boolean' || isJsonObject(value) ? sub(value) : undefined;
   const withSubschema = (kind: 'contains' | 'propertyNames' | 'unevaluatedProperties' | 'unevaluatedItems' | 'not'): void => {
-    const converted = subschema(schema[kind], kind === 'contains' || kind === 'propertyNames' || kind === 'not');
+    const converted = subschema(schema[kind]);
     if (converted !== undefined) constraints.push({ kind, schema: converted });
   };
   if (part !== 'any') {
@@ -337,10 +336,10 @@ function openApiKeywordConstraints(schema: Readonly<Record<string, unknown>>, su
   }
   if (part !== 'typed') {
     withSubschema('not');
-    const condition = subschema(schema.if, true);
+    const condition = subschema(schema.if);
     if (condition !== undefined) {
-      const then = subschema(schema.then, true);
-      const otherwise = subschema(schema.else, true);
+      const then = subschema(schema.then);
+      const otherwise = subschema(schema.else);
       constraints.push({ kind: 'ifThenElse', if: condition, ...(then === undefined ? {} : { then }), ...(otherwise === undefined ? {} : { else: otherwise }) });
     }
     // A scalar `const` is a literal descriptor where the schema converts as a scalar; here it limits a value of another shape.
@@ -594,7 +593,7 @@ function referenceTarget(schema: unknown, env: ModelResolveEnv): Readonly<Record
 }
 
 /** The keywords of a schema that its descriptor does not carry. The first three rules name keywords that no descriptor kind holds. */
-function uncarriedKeywords(schema: unknown, dates: OpenApiDates | null, target?: Readonly<Record<string, unknown>>): string[] {
+function uncarriedKeywords(schema: unknown, dates: OpenApiDates, target?: Readonly<Record<string, unknown>>): string[] {
   if (!isJsonObject(schema)) return [];
   const present = (names: readonly string[]): string[] => names.filter((name) => schema[name] !== undefined);
   // The model holds a date value, not its text.
@@ -642,7 +641,7 @@ function typesDescriptor(schema: Readonly<Record<string, unknown>>, holds: Model
 
 /** The converter of the sub-schemas of a keyword, which reads them as it reads a field. */
 function subschemaConverter(definitions: ModelDefinitions, env: ModelResolveEnv, direction: 'from' | 'to', seen: ReadonlySet<unknown>): SubSchema {
-  return (child, checkOnly = false) => typeof child === 'boolean' ? child : withRequiredNames(modelConversionDescriptor(child, definitions, { ...env, holds: 'sub', ...(checkOnly ? { dates: null } : {}) }, direction, seen), child);
+  return (child) => typeof child === 'boolean' ? child : withRequiredNames(modelConversionDescriptor(child, definitions, { ...env, holds: 'sub' }, direction, seen), child);
 }
 
 export function modelConversionDescriptor(

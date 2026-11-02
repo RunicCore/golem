@@ -295,18 +295,34 @@ test('dates: temporal still rejects a duration text outside the wire form, and a
   assert.equal(((await client.decode({ span: 'P1D', timed: 'PT0.5S' })) as { timed: Temporal.Duration }).timed.toString(), 'PT0.5S');
 });
 
-test('dates: temporal keeps the RFC 3339 duration format where a keyword only checks a value', async t => {
-  // protects: T-682 not, if, contains and propertyNames judge a value and convert none, so they keep the document format
-  const client = await generateTemporalClient(t, 'golem-openapi-temporal-duration-check-', document({
-    required: ['plain', 'names'],
+test('dates: temporal reads format: duration as the Temporal form in every position, a keyword that only checks included', async t => {
+  // protects: T-682 one rule for the SDK: with dates: temporal, format: duration means the Temporal wire form in every check schema
+  const client = await generateTemporalClient(t, 'golem-openapi-temporal-duration-keywords-', document({
+    required: ['span', 'plain', 'times'],
     properties: {
+      span: { type: 'string', format: 'duration' },
+      tag: { type: 'string' },
       plain: { type: 'string', not: { type: 'string', format: 'duration' } },
-      names: { type: 'object', additionalProperties: { type: 'integer' }, propertyNames: { type: 'string', format: 'duration' } },
+      times: { type: 'array', items: { type: 'string', format: 'date-time' }, contains: { type: 'string', format: 'date-time' } },
     },
+    if: { properties: { span: { type: 'string', format: 'duration' } }, required: ['span'] },
+    then: { required: ['tag'] },
   }) as Record<string, unknown>, 'Event');
-  assert.deepEqual(await client.decode({ plain: 'PT0.5S', names: { P1D: 1 } }), { plain: 'PT0.5S', names: { P1D: 1 } });
-  await assert.rejects(client.decode({ plain: 'P1D', names: {} }), isValidationError);
-  await assert.rejects(client.decode({ plain: 'x', names: { 'PT0.5S': 1 } }), isValidationError);
+  const base = { span: 'P1D', plain: 'x', times: ['2025-01-02T03:04:05Z'], tag: 't' };
+  assert.equal(((await client.decode({ ...base, span: 'PT0.5S' })) as { span: Temporal.Duration }).span.toString(), 'PT0.5S');
+  await assert.rejects(client.decode({ ...base, plain: 'PT0.5S' }), isValidationError);
+  const { tag: _tag, ...withoutTag } = base;
+  await assert.rejects(client.decode({ ...withoutTag, span: 'PT0.5S' }), isValidationError);
+});
+
+test('dates: date keeps the RFC 3339 duration format on a plain string field', async t => {
+  // protects: T-682 without dates: temporal a duration string is not converted and keeps the RFC 3339 format
+  const output = path.join(createFixtureProject(t, 'golem-openapi-date-duration-'), 'sdk');
+  await generateMaterializedSdk(withRootOperations(document({ required: ['span'], properties: { span: { type: 'string', format: 'duration' } } }) as Record<string, unknown>, 'Event'), { output, name: 'Events', profile: PROFILE, dates: 'date' });
+  compileGeneratedSdk(output, [], { strict: true });
+  const client = await sdkBodyCodec(output, 'Events', 'Event');
+  assert.deepEqual(await client.decode({ span: 'PT1H30M' }), { span: 'PT1H30M' });
+  await assert.rejects(client.decode({ span: 'PT0.5S' }), isValidationError);
 });
 
 test('dates: temporal sends a duration query parameter and a duration header in the form Temporal writes, and reads one in a response header', async t => {
