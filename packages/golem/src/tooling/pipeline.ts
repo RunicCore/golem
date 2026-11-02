@@ -463,11 +463,14 @@ async function planPipeline(filename: string, run: PipelineRun): Promise<{ reado
   const hooks = await routeHooks(config.jobs, config.extensions);
   const hookCodeOf = (job: GolemJob): string => hookCode(hooks.get(job.id)?.filled ?? []);
   const fileDigests = new Map<string, string | undefined>();
+  // The folder of every block package that a job or a hook extension of this run loads code from: a loaded file under none of them counts for every block (`loadedCode`).
+  const blockFolders = [...new Set([...config.jobs.map(job => job.block), ...[...hooks.values()].flatMap(({ filled }) => filled.map(({ extension }) => extension.block))])]
+    .map(block => registrationForBlock(registry, block).directory);
   const codeOf = (job: GolemJob): ReadonlyMap<string, CodePackage> => {
     const provider = registrationForBlock(registry, job.block);
     const entries = new Map<string, string[]>([[job.block, [provider.plan, provider.generator].filter((entry): entry is string => entry !== undefined)]]);
     for (const { extension } of hooks.get(job.id)?.filled ?? []) entries.set(extension.block, [...(entries.get(extension.block) ?? []), extension.entry]);
-    return new Map([...entries].map(([block, files]) => [block, { folder: registrationForBlock(registry, block).directory, entries: files }] as const));
+    return new Map([...entries].map(([block, files]) => [block, { folder: registrationForBlock(registry, block).directory, entries: files, folders: blockFolders }] as const));
   };
   const current = new Set<string>();
   // The manifests a job receives are those of the jobs before it; their records say what to expect before anything runs.

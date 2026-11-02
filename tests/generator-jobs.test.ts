@@ -402,3 +402,57 @@ export function generate(context) {
   await generate();
   assert.deepEqual(runLog(), ['a', 'a', 'b', 'b']);
 });
+
+/** The project of `importingProject` whose emitter comes from `@fixture/shared`, a package in `packages/shared` that node_modules links to; `setStamp` rewrites its helper. */
+function linkedHelperProject(t: TestContext): ReturnType<typeof importingProject> & { setStamp: (stamp: string) => void; helper: string } {
+  const project = importingProject(t);
+  const shared = path.join(project.root, 'packages/shared');
+  const helper = path.join(shared, 'helper.js');
+  fs.mkdirSync(shared, { recursive: true });
+  fs.writeFileSync(path.join(shared, 'package.json'), JSON.stringify({ name: '@fixture/shared', version: '1.0.0', type: 'module', exports: { './helper.js': './helper.js' } }));
+  linkProjectPackages(project.root, { '@fixture/shared': shared });
+  project.edit('emitter.js', "export { stamp as emitter } from '@fixture/shared/helper.js';\n");
+  project.edit('index.js', stampedGenerator('js'));
+  const setStamp = (stamp: string): void => fs.writeFileSync(helper, `export const stamp = '${stamp}';\n`);
+  setStamp('one');
+  return { ...project, setStamp, helper };
+}
+
+test('a changed helper in a linked package that the generator imports runs the job again', async t => {
+  // protects: T-842 (E-57) a helper in another workspace package is generator code, so an edit to it does not leave old output
+  const { root, generate, runs, setStamp } = linkedHelperProject(t);
+  await generate();
+  await generate();
+  assert.equal(runs(), 1);
+  setStamp('two');
+  await generate();
+  assert.equal(runs(), 2);
+  assert.match(fs.readFileSync(path.join(root, EMITTED), 'utf8'), /\/\/ two\n$/);
+});
+
+test('a deleted helper in a linked package makes the job stale', async t => {
+  // protects: T-842 a helper that is gone cannot be skipped over: the job runs again and stops on the missing import
+  const { root, helper } = linkedHelperProject(t);
+  await command(root, process.execPath, [golem, 'generate']);
+  fs.rmSync(helper);
+  const result = await command(root, process.execPath, [golem, 'generate'], { allowFailure: true });
+  assert.notEqual(result.code, 0);
+  assert.match(result.stderr, /@fixture\/shared/);
+});
+
+test('an edit inside one block package runs its job and not the job of another package', async t => {
+  // protects: T-842 a file under another block's folder stays out of this block's record, so an unrelated job is not rerun
+  const { root, generate, runs, edit } = importingProject(t);
+  const other = path.join(root, 'node_modules/@fixture/other');
+  fs.mkdirSync(other, { recursive: true });
+  fs.writeFileSync(path.join(other, 'package.json'), JSON.stringify({ name: '@fixture/other', version: VERSION, type: 'module', exports: { './plan': './plan.js', './generator': './index.js' }, golem: { apiVersion: 2, block: 'beta', plan: './plan', generator: './generator' } }));
+  fs.writeFileSync(path.join(other, 'plan.js'), PLAN_SOURCE.replace("id: 'acme'", "id: 'beta'"));
+  fs.writeFileSync(path.join(other, 'index.js'), cachedProviderSource('beta').replaceAll('@fixture/gen', '@fixture/other').replace("'runs.log'", "'runs-beta.log'"));
+  listProjectDependencies(root, ['@fixture/other']);
+  fs.appendFileSync(path.join(root, 'golem.yaml'), 'beta:\n  output: src/beta\n  options: { label: y }\n');
+  const betaRuns = (): number => fs.readFileSync(path.join(root, 'runs-beta.log'), 'utf8').split('\n').filter(Boolean).length;
+  await generate();
+  edit('emitter.js', "export const emitter = 'two';\n");
+  await generate();
+  assert.deepEqual([runs(), betaRuns()], [2, 1]);
+});
