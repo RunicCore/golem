@@ -236,6 +236,7 @@ export type TItems = IObject<{ doors: Door[] }>;
 export type TRecord = IObject<{ doors: Record<string, Door> }>;
 export type TTuple = IObject<{ doors: [string, Door] }>;
 export type TNested = IObject<{ inner: TPlain }>;
+export type TMaybe = IObject<{ door: Door | null }>;
 `);
   writeModelGolemYaml(root, { validation: true });
   await buildModelProject(root);
@@ -249,6 +250,7 @@ const GATE_POSITIONS = [
   { name: 'TItems', wire: (door: string) => ({ doors: ['ok', door] }), value: (ok: object) => ({ doors: [ok] }) },
   { name: 'TRecord', wire: (door: string) => ({ doors: { a: 'ok', b: door } }), value: (ok: object) => ({ doors: { a: ok } }) },
   { name: 'TTuple', wire: (door: string) => ({ doors: ['x', door] }), value: (ok: object) => ({ doors: ['x', ok] }) },
+  { name: 'TMaybe', wire: (door: string) => ({ door }), value: (ok: object) => ({ door: ok }) },
   { name: 'TNested', wire: (door: string) => ({ inner: { door } }), value: (ok: object) => ({ inner: { door: ok } }) },
 ] as const;
 
@@ -273,7 +275,7 @@ for (const position of GATE_POSITIONS) {
     const { codecs, ok } = await gateProject();
     const value = position.value(ok);
     for (const write of [() => codecs[`toWireFormat${position.name}`]!(value), () => codecs[`stringify${position.name}`]!(value)]) {
-      assert.throws(write, (error: unknown) => error instanceof Error && /encode refused/.test(error.message) && (error as { causedByInput?: unknown }).causedByInput !== true);
+      assert.throws(write, (error: unknown) => error instanceof Error && !(error instanceof LibError) && error.message === 'encode refused' && error.cause === undefined);
     }
   });
 }

@@ -20,11 +20,14 @@ import {
   type IssuePath,
 } from '@exprtlabs/golem/errors';
 
+/** A LibError that a converter throws on purpose, which the conversion scopes must send out as it is. */
+const explicitFailure = (): LibError => new LibError(LibErrorKind.Deserialization, 'Explicit callback failure', [{
+  code: 'deserialization', message: 'Explicit callback failure', path: ['custom'],
+  source: IssueSource.Custom, representation: IssueRepresentation.Wire,
+}]);
+
 test('conversion scopes preserve LibError identity and restore paths after failure', () => {
-  const original = new LibError(LibErrorKind.Deserialization, 'Explicit callback failure', [{
-    code: 'deserialization', message: 'Explicit callback failure', path: ['custom'],
-    source: IssueSource.Custom, representation: IssueRepresentation.Wire,
-  }]);
+  const original = explicitFailure();
   assert.throws(() => convertModelField('outer', (failure: LibError) => { throw failure; }, original), error => error === original);
   assertConversionError(() => convertModelField('items', (value: unknown) =>
     convertModelField(2, deserializeDate, value), 'invalid'),
@@ -69,10 +72,7 @@ test('the record loops drop undefined values, run each value under its key and k
 });
 
 test('the item loops send a LibError out as it is and keep holes', () => {
-  const original = new LibError(LibErrorKind.Deserialization, 'Explicit callback failure', [{
-    code: 'deserialization', message: 'Explicit callback failure', path: ['custom'],
-    source: IssueSource.Custom, representation: IssueRepresentation.Wire,
-  }]);
+  const original = explicitFailure();
   assert.throws(() => convertModelItems(() => { throw original; }, [1]), error => error === original);
   const holes: unknown[] = [];
   holes[2] = 'c';
