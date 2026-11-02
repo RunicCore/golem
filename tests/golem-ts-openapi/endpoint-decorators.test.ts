@@ -3,7 +3,7 @@ import { readFixture } from '../fixture-project.js';
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
-import { generate } from '#controllers/generator';
+import { generate } from '#ts-openapi/generator';
 import { createControllerFixture, type ControllerFixtureOptions } from '../fixture-templates/controllers/project.js';
 import { documentOf, expectValue, operationOf, responseOf, responseSchema } from './openapi-document.js';
 

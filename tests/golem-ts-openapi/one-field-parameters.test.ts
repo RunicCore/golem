@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { pathToFileURL } from 'node:url';
-import { generate } from '#controllers/generator';
+import { generate } from '#ts-openapi/generator';
 import { runPipeline } from '#golem/cli';
 import { formatOpenApiProblems, validateOpenApiDocument } from '#openapi/openapi-validator';
 import { createControllerFixture } from '../fixture-templates/controllers/project.js';

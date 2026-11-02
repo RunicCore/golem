@@ -17,11 +17,16 @@ export function quietly(ms = 400): Promise<void> {
 }
 
 /**
- * Waits for a folder watch that just opened to be live. fs.watch returns before FSEvents (macOS) starts its stream, and a change
- * made in that first moment is lost; the stream has no ready event, so there is nothing to poll.
+ * Makes a change to a folder that a watch has just opened, and makes it again until `check` holds. fs.watch returns before FSEvents (macOS)
+ * starts its stream and the stream has no ready event, so a change made in that first moment is lost; the same change made again is seen.
+ * `edit` writes the same content each time, so a repeat changes nothing the first write did not.
  */
-export function watchStarted(ms = 200): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+export async function editUntil(edit: () => void, check: () => boolean, message: string | (() => string), timeout = 25_000, repeatAfter = 1_000): Promise<void> {
+  let editedAt = Number.NEGATIVE_INFINITY;
+  await until(() => {
+    if (!check() && Date.now() - editedAt >= repeatAfter) { edit(); editedAt = Date.now(); }
+    return check();
+  }, message, timeout);
 }
 
 /**

@@ -68,7 +68,7 @@
     "#golem/*": "./packages/golem/dist/tooling/*.js",
     "#openapi/*": "./packages/golem-openapi-ts/dist/*.js",
     "#model/*": "./packages/golem-model/dist/*.js",
-    "#controllers/*": "./packages/golem-ts-openapi/dist/*.js"
+    "#ts-openapi/*": "./packages/golem-ts-openapi/dist/*.js"
   },
   "description": "Generate OpenAPI from TypeScript controllers and generate TypeScript models and API clients, with validation, serialization and optional MobX integration.",
   "license": "MIT",

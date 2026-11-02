@@ -637,6 +637,89 @@ async function generateWireClient() {
   return loadGeneratedClient(output, 'Wire');
 }
 
+type WireClientConstructor = Awaited<ReturnType<typeof compileWireClient>>;
+
+const jsonResponse = (status: number, body: string) => new Response(body, {
+  status,
+  headers: { 'content-type': 'application/json' },
+});
+
+/** A Wire client whose mutualTls fetch answers the XML route with XML and every other route with `{}`; its own fetchImpl must never run. */
+function mutualTlsWireClient(WireClient: WireClientConstructor) {
+  const seen = {
+    request: undefined as CapturedRequest | undefined,
+    authContexts: [] as unknown[],
+    responseHeaderContexts: [] as unknown[],
+    mutualTlsFetchCount: 0,
+  };
+  const mutualTlsFetch = async (url: string | URL | Request, init?: RequestInit) => {
+    seen.mutualTlsFetchCount += 1;
+    seen.request = captureRequest(url, init);
+    if (new URL(String(url)).pathname === '/xml') {
+      return new Response('<value>decoded</value>', {
+        status: 200,
+        headers: {
+          'content-type': 'application/xml; charset=utf-8',
+          'X-Rate': '25',
+          'X-Flags': 'true,false',
+          'X-Meta': 'count=3,active=true',
+          'X-Envelope': '<value>header</value>',
+        },
+      });
+    }
+    return jsonResponse(200, '{}');
+  };
+  const client = new WireClient({
+    baseUrl: 'https://api.example',
+    auth: {
+      apiKey: 'secret',
+      oauth: (context: unknown) => {
+        seen.authContexts.push(context);
+        return 'oauth-token';
+      },
+      oidc: (context: unknown) => {
+        seen.authContexts.push(context);
+        return 'oidc-token';
+      },
+    },
+    mutualTls: { fetchImpl: mutualTlsFetch },
+    bodyEncoders: {
+      'application/xml': (value: { value: string }) => `<value>${value.value}</value>`,
+    },
+    responseDecoders: {
+      'application/xml': async (response: Response) => ({
+        value: (await response.text()).replace(/^<value>|<\/value>$/g, ''),
+      }),
+    },
+    responseHeaderDecoders: {
+      'application/xml': (value: string, context: unknown) => {
+        seen.responseHeaderContexts.push(context);
+        return { value: value.replace(/^<value>|<\/value>$/g, '') };
+      },
+    },
+    fetchImpl: async () => {
+      throw new Error('fallback fetch must not be used when mutualTLS is configured');
+    },
+  });
+  return { client, seen };
+}
+
+/** A Wire client with API-key auth whose fetch returns what `answer` builds and counts its calls. */
+function countingWireClient(WireClient: WireClientConstructor, answer: () => Response) {
+  const calls = { fetchCount: 0 };
+  const client = new WireClient({
+    baseUrl: 'https://api.example',
+    auth: { apiKey: 'secret' },
+    fetchImpl: async () => {
+      calls.fetchCount += 1;
+      return answer();
+    },
+  });
+  return { client, calls };
+}
+
+const isOpenApiValidationError = (error: unknown): boolean => error instanceof LibError && error.kind === LibErrorKind.Validation && error.issues.some(issue => issue.source === IssueSource.OpenAPI);
+
 test('generated client serializes path, repeated query, form body and API-key auth', async () => {
   const WireClient = await compileWireClient();
   let request: CapturedRequest | undefined;
@@ -645,10 +728,7 @@ test('generated client serializes path, repeated query, form body and API-key au
     auth: { apiKey: 'secret' },
     fetchImpl: async (url: string | URL | Request, init?: RequestInit) => {
       request = captureRequest(url, init);
-      return new Response('{}', {
-        status: 200,
-        headers: { 'content-type': 'application/json' },
-      });
+      return jsonResponse(200, '{}');
     },
   });
   const controller = new AbortController();
@@ -671,211 +751,160 @@ test('generated client serializes path, repeated query, form body and API-key au
     'amount=125&memo=invoice%207&tags=urgent,merchant&state=settled&rail=NPS&redirect=https://merchant.example/payments/7',
   );
   assert.equal(request.init.signal, controller.signal);
+});
 
-  // OAuth/OIDC, mTLS, XML and undeclared-response handling on the same Wire client.
-  {
-    let request: CapturedRequest | undefined;
-    const authContexts: unknown[] = [];
-    const responseHeaderContexts: unknown[] = [];
-    let mutualTlsFetchCount = 0;
-    const mutualTlsFetch = async (url: string | URL | Request, init?: RequestInit) => {
-      mutualTlsFetchCount += 1;
-      request = captureRequest(url, init);
-      if (new URL(String(url)).pathname === '/xml') {
-        return new Response('<value>decoded</value>', {
-          status: 200,
-          headers: {
-            'content-type': 'application/xml; charset=utf-8',
-            'X-Rate': '25',
-            'X-Flags': 'true,false',
-            'X-Meta': 'count=3,active=true',
-            'X-Envelope': '<value>header</value>',
-          },
-        });
-      }
-      return new Response('{}', {
-        status: 200,
-        headers: { 'content-type': 'application/json' },
-      });
-    };
-    const client = new WireClient({
-      baseUrl: 'https://api.example',
-      auth: {
-        apiKey: 'secret',
-        oauth: (context: unknown) => {
-          authContexts.push(context);
-          return 'oauth-token';
-        },
-        oidc: (context: unknown) => {
-          authContexts.push(context);
-          return 'oidc-token';
-        },
-      },
-      mutualTls: { fetchImpl: mutualTlsFetch },
-      bodyEncoders: {
-        'application/xml': (value: { value: string }) => `<value>${value.value}</value>`,
-      },
-      responseDecoders: {
-        'application/xml': async (response: Response) => ({
-          value: (await response.text()).replace(/^<value>|<\/value>$/g, ''),
-        }),
-      },
-      responseHeaderDecoders: {
-        'application/xml': (value: string, context: unknown) => {
-          responseHeaderContexts.push(context);
-          return { value: value.replace(/^<value>|<\/value>$/g, '') };
-        },
-      },
-      fetchImpl: async () => {
-        throw new Error('fallback fetch must not be used when mutualTLS is configured');
-      },
-    });
-    await client.secure().execute({});
-    assert.ok(request);
-    assert.equal(request.url, 'https://api.example/secure');
-    assert.equal(request.init.headers.get('authorization'), 'Bearer oauth-token');
-    await client.openIdProfile().execute({});
-    assert.ok(request);
-    assert.equal(request.url, 'https://api.example/oidc');
-    assert.equal(request.init.headers.get('authorization'), 'Bearer oidc-token');
-    assert.deepEqual(authContexts, [
-      {
-        scheme: 'oauth',
-        type: 'oauth2',
-        scopes: ['payments:read'],
-        flows: {
-          clientCredentials: {
-            tokenUrl: 'https://identity.example/token',
-            scopes: {
-              'payments:read': 'Read payments',
-              'payments:write': 'Write payments',
-            },
+test('generated client sends an OAuth bearer token through the mutualTls fetch with the scheme context', async () => {
+  const { client, seen } = mutualTlsWireClient(await compileWireClient());
+  await client.secure().execute({});
+  assert.ok(seen.request);
+  assert.equal(seen.request.url, 'https://api.example/secure');
+  assert.equal(seen.request.init.headers.get('authorization'), 'Bearer oauth-token');
+  assert.deepEqual(seen.authContexts, [
+    {
+      scheme: 'oauth',
+      type: 'oauth2',
+      scopes: ['payments:read'],
+      flows: {
+        clientCredentials: {
+          tokenUrl: 'https://identity.example/token',
+          scopes: {
+            'payments:read': 'Read payments',
+            'payments:write': 'Write payments',
           },
         },
-        openIdConnectUrl: undefined,
       },
-      {
-        scheme: 'oidc',
-        type: 'openIdConnect',
-        scopes: ['openid', 'profile'],
-        flows: undefined,
-        openIdConnectUrl: 'https://identity.example/.well-known/openid-configuration',
-      },
-    ]);
-    const xml = await client.xmlRoundTrip().execute({ body: { value: 'encoded' } });
-    assert.ok(request);
-    assert.equal(request.init.headers.get('content-type'), 'application/xml');
-    assert.equal(request.init.body, '<value>encoded</value>');
-    assert.equal(xml.status, 200);
-    assert.deepEqual(xml.body, { value: 'decoded' });
-    assert.deepEqual(xml.headers, {
-      'X-Rate': 25,
-      'X-Flags': [true, false],
-      'X-Meta': { count: 3, active: true },
-      'X-Envelope': { value: 'header' },
-    });
-    assert.deepEqual(responseHeaderContexts, [{
-      operation: 'xmlRoundTrip',
-      name: 'X-Envelope',
-      contentType: 'application/xml',
-    }]);
-    assert.equal(mutualTlsFetchCount, 3);
+      openIdConnectUrl: undefined,
+    },
+  ]);
+  assert.equal(seen.mutualTlsFetchCount, 1);
+});
 
-    const missingHeaderDecoderClient = new WireClient({
-      baseUrl: 'https://api.example',
-      auth: { apiKey: 'secret' },
-      fetchImpl: async () => new Response('<value>decoded</value>', {
-        status: 200,
-        headers: {
-          'content-type': 'application/xml',
-          'X-Envelope': '<value>header</value>',
-        },
-      }),
-      bodyEncoders: { 'application/xml': () => '<value>encoded</value>' },
-      responseDecoders: {
-        'application/xml': async () => ({ value: 'decoded' }),
-      },
-    });
-    await assert.rejects(
-      () => missingHeaderDecoderClient.xmlRoundTrip().execute({ body: { value: 'encoded' } }),
-      /No response header decoder configured/,
-    );
+test('generated client sends an OIDC bearer token through the mutualTls fetch with the scheme context', async () => {
+  const { client, seen } = mutualTlsWireClient(await compileWireClient());
+  await client.openIdProfile().execute({});
+  assert.ok(seen.request);
+  assert.equal(seen.request.url, 'https://api.example/oidc');
+  assert.equal(seen.request.init.headers.get('authorization'), 'Bearer oidc-token');
+  assert.deepEqual(seen.authContexts, [
+    {
+      scheme: 'oidc',
+      type: 'openIdConnect',
+      scopes: ['openid', 'profile'],
+      flows: undefined,
+      openIdConnectUrl: 'https://identity.example/.well-known/openid-configuration',
+    },
+  ]);
+  assert.equal(seen.mutualTlsFetchCount, 1);
+});
 
-    let insecureFetchCalled = false;
-    const missingMutualTlsClient = new WireClient({
-      baseUrl: 'https://api.example',
-      auth: { oauth: 'oauth-token' },
-      fetchImpl: async () => {
-        insecureFetchCalled = true;
-        return new Response('{}', {
-          status: 200,
-          headers: { 'content-type': 'application/json' },
-        });
-      },
-    });
-    await assert.rejects(
-      () => missingMutualTlsClient.secure().execute({}),
-      /No configured credentials satisfy/,
-    );
-    assert.equal(insecureFetchCalled, false);
+test('generated client encodes an XML body and decodes the XML body and headers through the configured codecs', async () => {
+  const { client, seen } = mutualTlsWireClient(await compileWireClient());
+  const xml = await client.xmlRoundTrip().execute({ body: { value: 'encoded' } });
+  assert.ok(seen.request);
+  assert.equal(seen.request.init.headers.get('content-type'), 'application/xml');
+  assert.equal(seen.request.init.body, '<value>encoded</value>');
+  assert.equal(xml.status, 200);
+  assert.deepEqual(xml.body, { value: 'decoded' });
+  assert.deepEqual(xml.headers, {
+    'X-Rate': 25,
+    'X-Flags': [true, false],
+    'X-Meta': { count: 3, active: true },
+    'X-Envelope': { value: 'header' },
+  });
+  assert.deepEqual(seen.responseHeaderContexts, [{
+    operation: 'xmlRoundTrip',
+    name: 'X-Envelope',
+    contentType: 'application/xml',
+  }]);
+  assert.equal(seen.mutualTlsFetchCount, 1);
+});
 
-    const undeclaredClient = new WireClient({
-      baseUrl: 'https://api.example',
-      auth: { apiKey: 'secret' },
-      fetchImpl: async () => new Response('{}', {
-        status: 201,
-        headers: { 'content-type': 'application/json' },
-      }),
-    });
-    await assert.rejects(
-      () => undeclaredClient.submitForm().execute({
-        path: { id: 'pay_1' },
-        body: { amount: 1 },
-      }),
-      /Undeclared OpenAPI response/,
-    );
-  }
-
-  // Operation validators and the client enforce request/response schema constraints at runtime.
-  {
-    let fetchCount = 0;
-    let responseBody = { amount: 0, currency: 'vnd' };
-    const client = new WireClient({
-      baseUrl: 'https://api.example',
-      auth: { apiKey: 'secret' },
-      fetchImpl: async () => {
-        fetchCount += 1;
-        return new Response(JSON.stringify(responseBody), {
-          status: 200,
-          headers: { 'content-type': 'application/json' },
-        });
+test('generated client rejects an XML response header that has no configured header decoder', async () => {
+  const WireClient = await compileWireClient();
+  const client = new WireClient({
+    baseUrl: 'https://api.example',
+    auth: { apiKey: 'secret' },
+    fetchImpl: async () => new Response('<value>decoded</value>', {
+      status: 200,
+      headers: {
+        'content-type': 'application/xml',
+        'X-Envelope': '<value>header</value>',
       },
-    });
-    await assert.rejects(
-      () => client.putMoney().execute({
-        path: { id: 'invalid' },
-        body: { amount: 0, currency: 'vnd' },
-      }),
-      (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.Validation && error.issues.some(issue => issue.source === IssueSource.OpenAPI),
-    );
-    assert.equal(fetchCount, 0);
-    await assert.rejects(
-      () => client.putMoney().execute({
-        path: { id: 'pay_7' },
-        body: { amount: 25, currency: 'VND' },
-      }),
-      (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.Validation && error.issues.some(issue => issue.source === IssueSource.OpenAPI),
-    );
-    assert.equal(fetchCount, 1);
-    responseBody = { amount: 25, currency: 'VND' };
-    const putMoneyResponse = await client.putMoney().execute({
+    }),
+    bodyEncoders: { 'application/xml': () => '<value>encoded</value>' },
+    responseDecoders: {
+      'application/xml': async () => ({ value: 'decoded' }),
+    },
+  });
+  await assert.rejects(
+    () => client.xmlRoundTrip().execute({ body: { value: 'encoded' } }),
+    /No response header decoder configured/,
+  );
+});
+
+test('generated client does not fall back to the plain fetch when mutualTls is not configured for a secured operation', async () => {
+  const WireClient = await compileWireClient();
+  let insecureFetchCalled = false;
+  const client = new WireClient({
+    baseUrl: 'https://api.example',
+    auth: { oauth: 'oauth-token' },
+    fetchImpl: async () => {
+      insecureFetchCalled = true;
+      return jsonResponse(200, '{}');
+    },
+  });
+  await assert.rejects(
+    () => client.secure().execute({}),
+    /No configured credentials satisfy/,
+  );
+  assert.equal(insecureFetchCalled, false);
+});
+
+test('generated client rejects a response status the operation does not declare', async () => {
+  const { client } = countingWireClient(await compileWireClient(), () => jsonResponse(201, '{}'));
+  await assert.rejects(
+    () => client.submitForm().execute({
+      path: { id: 'pay_1' },
+      body: { amount: 1 },
+    }),
+    /Undeclared OpenAPI response/,
+  );
+});
+
+test('generated client rejects a request body that breaks its schema before it calls fetch', async () => {
+  const { client, calls } = countingWireClient(await compileWireClient(), () => jsonResponse(200, JSON.stringify({ amount: 0, currency: 'vnd' })));
+  await assert.rejects(
+    () => client.putMoney().execute({
+      path: { id: 'invalid' },
+      body: { amount: 0, currency: 'vnd' },
+    }),
+    isOpenApiValidationError,
+  );
+  assert.equal(calls.fetchCount, 0);
+});
+
+test('generated client rejects a response body that breaks its schema after the request is sent', async () => {
+  const { client, calls } = countingWireClient(await compileWireClient(), () => jsonResponse(200, JSON.stringify({ amount: 0, currency: 'vnd' })));
+  await assert.rejects(
+    () => client.putMoney().execute({
       path: { id: 'pay_7' },
       body: { amount: 25, currency: 'VND' },
-    });
-    assert.equal(putMoneyResponse.status, 200);
-    assert.deepEqual(putMoneyResponse.body, responseBody);
-    assert.equal(fetchCount, 2);
-  }
+    }),
+    isOpenApiValidationError,
+  );
+  assert.equal(calls.fetchCount, 1);
+});
+
+test('generated client returns a response body that satisfies its schema', async () => {
+  const responseBody = { amount: 25, currency: 'VND' };
+  const { client, calls } = countingWireClient(await compileWireClient(), () => jsonResponse(200, JSON.stringify(responseBody)));
+  const putMoneyResponse = await client.putMoney().execute({
+    path: { id: 'pay_7' },
+    body: { amount: 25, currency: 'VND' },
+  });
+  assert.equal(putMoneyResponse.status, 200);
+  assert.deepEqual(putMoneyResponse.body, responseBody);
+  assert.equal(calls.fetchCount, 1);
 });
 
 function stylesDocument() {

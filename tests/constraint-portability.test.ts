@@ -2,7 +2,7 @@ import { readFixture, writeGeneratedArtifacts } from './fixture-project.js';
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import test from 'node:test';
-import { generate as generateControllers } from '#controllers/generator';
+import { generate as generateControllers } from '#ts-openapi/generator';
 import { command, workspace } from './support/process.js';
 import { buildModelProject, createModelProject, writeModelGolemYaml } from './model-project.js';
 import { generatedCodecIdFromRoot } from './support/consumer.js';

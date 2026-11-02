@@ -6,10 +6,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 
-import { generate } from '#controllers/generator';
+import { generate } from '#ts-openapi/generator';
 import { generate as generateModels } from '#model/generator';
 import { createProgram } from '@exprtlabs/golem/internal/type-analysis';
-import { createContractAnalysis } from '#controllers/contracts';
+import { createContractAnalysis } from '#ts-openapi/contracts';
 import * as ts from '@exprtlabs/golem/internal/ts';
 import { createControllerFixture } from '../fixture-templates/controllers/project.js';
 import { contentSchema, diagnosticsOf, documentOf, expectSchema, expectValue, operationOf, propertySchema, responseOf, schemaOf, type OpenApiSchema } from './openapi-document.js';

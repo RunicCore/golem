@@ -1,18 +1,19 @@
 // lane: typescript6 ProgramSession resolution updates and the compiler process of a watch
+import { spawn } from 'node:child_process';
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import YAML from 'yaml';
-import { runPipeline, watchPipeline } from '#golem/cli';
+import { runPipeline } from '#golem/cli';
 import { isInsideDirectory } from '#golem/generator-api';
 import { GeneratorSessionResources } from '#golem/pipeline';
 import { OwnedOutputIndex, realInputFiles } from '#golem/input-watcher';
 import type { InputFiles } from '#golem/input-watcher';
 import { listProjectDependencies } from './fixture-project.js';
 import { write } from './support/build-project.js';
-import { workspace } from './support/process.js';
+import { golem, stopChild, workspace } from './support/process.js';
 import { compilerChildren, generationWatchFixture, skipOnTypeScript6, startGenerationWatch } from './support/generation-watch.js';
 import { countingInputFiles, quietly, until } from './support/watch-wait.js';
 
@@ -682,14 +683,15 @@ export function generate() { throw new TypeError('generator state is broken', { 
 `);
   const document = YAML.parse(fs.readFileSync(config, 'utf8')) as Record<string, unknown>;
   fs.writeFileSync(config, YAML.stringify({ ...document, throwing: {} }));
+  // `golem watch` reports with the default reporter; its stderr is what the user reads.
+  const watch = spawn(process.execPath, [golem, 'watch', '--config', config], { cwd: root, stdio: ['ignore', 'ignore', 'pipe'] });
   let printed = '';
-  t.mock.method(process.stderr, 'write', (chunk: string | Uint8Array) => { printed += typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString(); return true; });
-  const stop = watchPipeline(config);
+  watch.stderr.on('data', (chunk: Buffer) => { printed += chunk.toString(); });
   try {
     await until(() => printed.includes('index out of range'), () => `the failure is reported (output=${printed})`);
     assert.match(printed, /TypeError: generator state is broken\n\s+at /);
     assert.match(printed, /\[cause\]: RangeError: index out of range/);
   } finally {
-    stop();
+    await stopChild(watch);
   }
 });

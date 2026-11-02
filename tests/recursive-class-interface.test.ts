@@ -3,7 +3,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test, { type TestContext } from 'node:test';
 import type { GolemProfile } from '@exprtlabs/golem/generator-api';
-import { generate } from '#controllers/generator';
+import { generate } from '#ts-openapi/generator';
 import { validateOpenApiDocument } from '#openapi/openapi-validator';
 import { createControllerFixture } from './fixture-templates/controllers/project.js';
 import { buildModelProject, createModelProject, writeModelGolemYaml, writeModelSources } from './model-project.js';

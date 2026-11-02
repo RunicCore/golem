@@ -1,7 +1,7 @@
 import { generatorSettings } from './mobx-extension.js';
 import fs from 'node:fs';
 import path from 'node:path';
-import { generate as generateControllers } from '#controllers/generator';
+import { generate as generateControllers } from '#ts-openapi/generator';
 import { generate as generateModels } from '#model/generator';
 import { applyRewrites } from '#golem/rewrite';
 import { scanProject } from '#golem/rewrite-scan';

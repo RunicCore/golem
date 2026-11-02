@@ -1,8 +1,8 @@
 import 'reflect-metadata';
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { queryFieldTable } from '#controllers/nest/query-fields';
-import type { QueryFieldTable } from '#controllers/runtime/query-decode';
+import { queryFieldTable } from '#ts-openapi/nest/query-fields';
+import type { QueryFieldTable } from '#ts-openapi/runtime/query-decode';
 import type { JsonSchema } from '#golem/schema';
 import { decorateQueryModel, startNestApp } from './support/nest-app.js';
 import { registerPassThroughCodec } from './support/pass-through-codec.js';

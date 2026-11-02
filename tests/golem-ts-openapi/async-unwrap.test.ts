@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import test from 'node:test';
 import * as ts from '@exprtlabs/golem/internal/ts';
-import { unwrapAsyncType } from '#controllers/nest/analysis-utils';
+import { unwrapAsyncType } from '#ts-openapi/nest/analysis-utils';
 import { createControllerFixture } from '../fixture-templates/controllers/project.js';
 
 test('unwrapAsyncType keeps the type argument node only when the syntax spells the wrapper', t => {

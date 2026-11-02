@@ -10,6 +10,7 @@ import { openRewriteProject } from '#golem/rewrite-host';
 import { scanProject, type ProgramScan } from '#golem/rewrite-scan';
 import { generate } from '#model/generator';
 import { readFixture, writeGeneratedArtifacts } from '../fixture-project.js';
+import { command, golem } from '../support/process.js';
 import { NEST_PARTICIPANTS, createControllerFixture } from '../fixture-templates/controllers/project.js';
 import { paymentModelSource } from '../fixture-templates/controllers/payment-model.js';
 import { defaultModelOutput } from '@exprtlabs/golem-model/plan';
@@ -456,12 +457,11 @@ test('golem check stops on a body or query parameter that is no model, and nonMo
   await assert.rejects(runPipeline(config, { check: true }), (error: Error) => error.message.includes(`RUNM1081 (${site}:5:32): ${notAModel('Body', 'Note')}`) && error.message.includes(`RUNM1081 (${site}:5:59): ${notAModel('Query', 'number')}`));
 
   fs.writeFileSync(config, nestAppYaml({ controllersJob: false, nest: 'warn' }));
-  const written: string[] = [];
-  t.mock.method(process.stderr, 'write', (chunk: string | Uint8Array) => { written.push(String(chunk)); return true; });
-  await runPipeline(config, { check: true });
-  assert.deepEqual(written.filter(line => line.startsWith('RUNM1081')), [
-    `RUNM1081 (${site}:5:32): ${notAModel('Body', 'Note', 'warn')}\n`,
-    `RUNM1081 (${site}:5:59): ${notAModel('Query', 'number', 'warn')}\n`,
+  // The warnings are what `golem check` prints on its stderr; the site is relative to the working directory the command runs in.
+  const checked = await command(process.cwd(), process.execPath, [golem, 'check', '--config', config]);
+  assert.deepEqual(checked.stderr.split('\n').filter(line => line.startsWith('RUNM1081')), [
+    `RUNM1081 (${site}:5:32): ${notAModel('Body', 'Note', 'warn')}`,
+    `RUNM1081 (${site}:5:59): ${notAModel('Query', 'number', 'warn')}`,
   ]);
 });
 

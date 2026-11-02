@@ -14,7 +14,7 @@ import { createModelProject } from './model-project.js';
 import { build, buildAndListJobs, sourceOnlyProject, USE, write } from './support/build-project.js';
 import { workspace } from './support/process.js';
 import { runRewritten } from './support/rewritten-module.js';
-import { quietly, until, watchStarted } from './support/watch-wait.js';
+import { editUntil, quietly, until } from './support/watch-wait.js';
 
 const OPTIONS = { strict: true, target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', skipLibCheck: true, noEmit: true };
 const SOLUTION = JSON.stringify({ files: [], references: [{ path: './tsconfig.app.json' }] });
@@ -135,7 +135,6 @@ async function watching(yaml: string, act: (watch: { readonly runs: () => number
   const stop = watchPipeline(yaml, (error) => { errors.push(error); }, { onRun: (line) => { lines.push(line); } });
   try {
     await until(() => lines.length === 1, 'the first run');
-    await watchStarted();
     await act({ runs: () => lines.length, errors });
   } finally {
     stop();
@@ -151,9 +150,8 @@ for (const [name, edited, edit] of [
     const { root, yaml } = watchedProject(t);
     await watching(yaml, async ({ errors }) => {
       assert.deepEqual(errors, []);
-      json(root, edited, edit);
       // The edit drops the alias, so the job that runs again reports it: a run that read nothing new would stay quiet.
-      await until(() => errors.length === 1, 'the job to run again with the edited tsconfig');
+      await editUntil(() => json(root, edited, edit), () => errors.length > 0, 'the job to run again with the edited tsconfig');
       assert.match((errors[0] as Error).message, /TS2307: Cannot find module '@lib\/ids\.js'/);
     });
   });
@@ -163,12 +161,13 @@ test('in a watch, an edit of a tsconfig nearer to the job root that golem.yaml d
   // protects: T-480 only the tsconfig golem.yaml names is read, so only it is watched
   const { root, yaml } = watchedProject(t);
   await watching(yaml, async ({ runs, errors }) => {
+    // The watch is live once an edit of the named tsconfig that drops the alias runs the job again.
+    await editUntil(() => json(root, 'tsconfig.base.json', { compilerOptions: OPTIONS }), () => errors.length > 0, 'the job to run again with the edited tsconfig');
+    await quietly();
+    const [runsBefore, errorsBefore] = [runs(), errors.length];
     json(root, 'pkg/tsconfig.json', { compilerOptions: OPTIONS, include: [] });
     await quietly(600);
-    assert.equal(runs(), 1, 'no second run');
-    assert.deepEqual(errors, []);
-    // The watch is alive: an edit of the named tsconfig that drops the alias does run the job.
-    json(root, 'tsconfig.base.json', { compilerOptions: OPTIONS });
-    await until(() => errors.length === 1, 'the job to run again with the edited tsconfig');
+    assert.equal(runs(), runsBefore, 'no second run');
+    assert.equal(errors.length, errorsBefore, 'the job did not run again');
   });
 });

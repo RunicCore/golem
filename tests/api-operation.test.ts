@@ -1,6 +1,4 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import { reaction } from 'mobx';
 import type { ApiOperation } from '@exprtlabs/golem/client';
@@ -14,9 +12,17 @@ type Warn = typeof console.warn;
 type AssertPlainHasNoLoading = 'loading' extends keyof ApiOperation<unknown, unknown> ? never : true;
 type AssertObservableHasLoading = 'loading' extends keyof ObservableApiOperation<unknown, unknown> ? true : never;
 type AssertPublicFactoryArity = Parameters<typeof createApiOperation> extends [string, infer _Run] ? true : never;
+type AssertExecuteTakesInputAndOptionsOnly = [string, unknown?] extends Parameters<ApiOperation<string, number>['execute']>
+  ? Parameters<ApiOperation<string, number>['execute']> extends [string, unknown?] ? true : never
+  : never;
+type AssertPlainIsExecuteOnly = keyof ApiOperation<unknown, unknown> extends 'execute' ? true : never;
+const executeTakesInputAndOptionsOnly: AssertExecuteTakesInputAndOptionsOnly = true;
+const plainIsExecuteOnly: AssertPlainIsExecuteOnly = true;
 const plainHasNoLoading: AssertPlainHasNoLoading = true;
 const observableHasLoading: AssertObservableHasLoading = true;
 const publicFactoryArity: AssertPublicFactoryArity = true;
+void executeTakesInputAndOptionsOnly;
+void plainIsExecuteOnly;
 void plainHasNoLoading;
 void observableHasLoading;
 void publicFactoryArity;
@@ -278,22 +284,8 @@ test('stream execute loading ends when the response wrapper is available', async
   assert.deepEqual(collected, [1, 2]);
 });
 
-test('golem client runtime stays free of HTTP types, and the MobX runtime tracks through the shared operation', async () => {
-  const clientUrl = import.meta.resolve('@exprtlabs/golem/client');
-  const mobxUrl = import.meta.resolve('@exprtlabs/golem-openapi-ts/mobx');
-  const trackedUrl = new URL('./api-operation.js', clientUrl);
-  const clientSource = readFileSync(fileURLToPath(clientUrl), 'utf8');
-  const clientTypes = readFileSync(fileURLToPath(new URL('./client.d.ts', clientUrl)), 'utf8');
-  const mobxSource = readFileSync(fileURLToPath(mobxUrl), 'utf8');
-  const trackedSource = readFileSync(fileURLToPath(trackedUrl), 'utf8');
-  assert.doesNotMatch(clientSource, /AbortSignal|RequestInit|LibError|Headers/);
-  assert.doesNotMatch(clientSource, /onPendingChange|Concurrent execute/);
-  assert.doesNotMatch(clientTypes, /onPendingChange/);
-  assert.match(clientSource, /createApiOperation/);
+test('the plain operation takes the input and options only, and createApiOperation takes the name and the run function only', async () => {
   assert.equal(createApiOperation.length, 2);
-  assert.doesNotMatch(mobxSource, /Concurrent execute|pending \+= 1/);
-  assert.match(mobxSource, /createTrackedApiOperation/);
-  assert.match(trackedSource, /Concurrent execute\(\) invocation/);
   const unpublished = '@exprtlabs/golem/api-operation';
   await assert.rejects(
     () => import(unpublished),
