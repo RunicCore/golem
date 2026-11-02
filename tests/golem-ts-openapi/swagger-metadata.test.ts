@@ -590,3 +590,29 @@ export type TB = IModel<{ b: number }>;
   });
   await assert.rejects(generateAt(root), /pair\.model\.ts:\d+:\d+ RUNM1005: Component name "Same" is already taken in this model source\./);
 });
+
+test('writes the enum of an isArray @ApiProperty on the items of the array', async t => {
+  // protects: T-854 an array carrying the enum matched no valid value
+  const root = inlineFixture(t, `import { Controller, Get } from '@nestjs/common';
+import { ApiProperty } from '@nestjs/swagger';
+class Dto { @ApiProperty({ enum: ['a', 'b'], isArray: true }) tags!: string[]; }
+@Controller('d') export class DController { @Get() get(): Dto { return { tags: [] }; } }
+`);
+  const document = documentOf<OpenApiDocument>(await generateAt(root));
+  const dto = objectSchema(document, jsonSchema(document.paths['/d']?.get, '200'));
+  assert.deepEqual(property(document, dto, 'tags'), { type: 'array', items: { type: 'string', enum: ['a', 'b'] } });
+});
+
+test('writes the enum of an isArray @ApiQuery on the items of the array', async t => {
+  // protects: T-854 an array carrying the enum matched no valid value
+  const root = inlineFixture(t, `import { Controller, Get, Query } from '@nestjs/common';
+import { ApiQuery } from '@nestjs/swagger';
+@Controller('q') export class QController {
+  @Get() @ApiQuery({ name: 'roles', enum: ['admin', 'user'], isArray: true })
+  list(@Query('roles') roles: string[]): void { roles.length; }
+}
+`);
+  const document = documentOf<OpenApiDocument>(await generateAt(root));
+  const parameter = document.paths['/q']?.get?.parameters?.find(item => item.name === 'roles');
+  assert.deepEqual(parameter?.schema, { type: 'array', items: { type: 'string', enum: ['admin', 'user'] } });
+});

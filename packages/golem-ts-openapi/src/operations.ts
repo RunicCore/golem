@@ -172,6 +172,37 @@ function parameterOverride(
 const PARAMETER_SCHEMA_KEYS = ['enum', 'default', 'example', 'examples', 'minimum', 'maximum', 'minLength', 'maxLength', 'pattern'] as const;
 
 /**
+ * The schema keywords an `@ApiQuery` override sets. Nest documents the `enum` of an `isArray` query parameter on
+ * the items of the array, so the array keeps it out (`withItemsEnum` writes it there).
+ */
+function parameterKeywords(override: Readonly<Record<string, unknown>>): Record<string, unknown> {
+  return Object.fromEntries(PARAMETER_SCHEMA_KEYS
+    .filter(key => override[key] !== undefined && !(key === 'enum' && override.enumOnItems === true))
+    .map(key => [key, override[key]]));
+}
+
+/** Write the `enum` of an `enumOnItems` override on the items of the array schema, as Nest does. */
+function withItemsEnum(
+  schema: OpenApiSchema,
+  override: Readonly<Record<string, unknown>> | undefined,
+  options: Parameters<typeof mergeSchemaMetadata>[2] & { readonly sourceFile: ts.SourceFile; readonly node: ts.Node },
+): OpenApiSchema {
+  const values = override?.enumOnItems === true ? override.enum : undefined;
+  if (values === undefined) return schema;
+  const target = record(schema);
+  const items = record(target?.items);
+  if (!target || !items) {
+    throw new TsToOpenApiError(diagnostic(
+      options.sourceFile,
+      options.node,
+      TsToOpenApiDiagnosticCode.ConflictingSchemaMetadata,
+      `Swagger ${options.location ?? 'parameter'} sets enum with isArray but the parameter type is not an array.`,
+    ));
+  }
+  return { ...target, items: mergeSchemaMetadata(items, { enum: values }, options) };
+}
+
+/**
  * Apply `@ApiQuery({ name })` metadata for fields of an OAS 3.2 querystring
  * DTO to that field's schema, as OpenAPI 3.1 applies it to the flattened
  * parameter. An implicit `required: true` default does not override an
@@ -191,18 +222,23 @@ function querystringPropertyOverrides(
   for (const name of Object.keys(properties)) {
     const override = name === parameter.name ? undefined : route.parameterOverrides?.[parameterOverrideKey('query', name)];
     if (!override) continue;
-    const propertySchema: Record<string, unknown> = { ...record(override.schema) };
-    for (const key of ['description', 'deprecated', ...PARAMETER_SCHEMA_KEYS] as const) {
+    const propertySchema: Record<string, unknown> = { ...record(override.schema), ...parameterKeywords(override) };
+    for (const key of ['description', 'deprecated'] as const) {
       if (override[key] !== undefined) propertySchema[key] = override[key];
     }
-    const merged = mergeSchemaMetadata(result, { properties: { [name]: propertySchema } }, {
+    const mergeOptions = {
       authoritative,
       resolveReference: context.resolveSchemaReference,
       sourceFile: route.sourceFile,
       node: parameter.node,
       location: `querystring.${name}`,
-    });
-    result = record(merged) ?? result;
+    };
+    const merged = record(mergeSchemaMetadata(result, { properties: { [name]: propertySchema } }, mergeOptions));
+    result = merged ?? result;
+    const mergedProperty = record(record(result.properties)?.[name]);
+    if (mergedProperty && override.enumOnItems === true) {
+      result = { ...result, properties: { ...record(result.properties), [name]: withItemsEnum(mergedProperty, override, mergeOptions) } };
+    }
     if (typeof override.required !== 'boolean' || (override.requiredDefaulted === true && authoritative)) continue;
     const required = new Set(Array.isArray(result.required) ? result.required.map(String) : []);
     if (authoritative && required.has(name) !== override.required) {
@@ -268,10 +304,7 @@ async function openApiParameter(
     ? overrideType as TypeReference
     : parameter.type;
   const overrideRecord = record(overrideSchema);
-  const schemaOverride: Record<string, unknown> = { ...(overrideRecord ?? {}) };
-  for (const key of PARAMETER_SCHEMA_KEYS) {
-    if (override?.[key] !== undefined) schemaOverride[key] = override[key];
-  }
+  const schemaOverride: Record<string, unknown> = { ...(overrideRecord ?? {}), ...(override ? parameterKeywords(override) : {}) };
   let schema: OpenApiSchema;
   if (overrideType && overrideReference !== parameter.type) {
     const declaredSchema = await schemaFor(context, parameter.type, 'parameter', `${location}.${parameter.name}.declared`);
@@ -295,6 +328,13 @@ async function openApiParameter(
     `${location}.${parameter.name}`,
     Object.keys(schemaOverride).length > 0 ? schemaOverride : undefined,
   );
+  schema = withItemsEnum(schema, override, {
+    authoritative: parameter.type.modelContractName !== undefined,
+    resolveReference: context.resolveSchemaReference,
+    sourceFile: route.sourceFile,
+    node: parameter.node,
+    location: `${location}.${parameter.name}`,
+  });
   const schemaValue = record(schema);
   const schemaRecord = schemaValue ? { ...schemaValue } : undefined;
   if (schemaRecord) schema = schemaRecord;
