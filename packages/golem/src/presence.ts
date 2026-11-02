@@ -21,12 +21,10 @@ const fieldsKey = Symbol.for(MODEL_FIELDS_KEY);
  * state. `instanceFieldsCode` (tooling/union-conversion.ts) is the same walk as code for the generated validators.
  */
 export function instanceFields(value: object): readonly string[] | undefined {
-  let prototype = Object.getPrototypeOf(value);
-  if (prototype === Object.prototype) return undefined;
-  for (; prototype !== null; prototype = Object.getPrototypeOf(prototype)) {
-    if (Object.prototype.hasOwnProperty.call(prototype, fieldsKey)) return prototype[fieldsKey] ?? undefined;
-  }
-  return undefined;
+  const prototype = Object.getPrototypeOf(value);
+  if (prototype === Object.prototype || prototype === null) return undefined;
+  // The lookup finds the nearest prototype that owns the key, as a walk of the chain would.
+  return prototype[fieldsKey] ?? undefined;
 }
 
 /**
