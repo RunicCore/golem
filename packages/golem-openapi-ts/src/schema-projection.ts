@@ -8,7 +8,7 @@ import {
 } from './normalize.js';
 import { SCHEMA_ARRAY_KEYWORDS, SCHEMA_MAP_KEYWORDS, SCHEMA_SINGLE_KEYWORDS } from './schema-keywords.js';
 import type { OpenApiDates } from './model-resolution.js';
-import { dateClassOf } from './types.js';
+import { dateClassOf } from './date-class.js';
 
 export type SchemaDirection = 'input' | 'output';
 

@@ -2,8 +2,9 @@ import { isDeepStrictEqual } from 'node:util';
 import { isBinaryMediaType, isBuiltinTextMediaType } from './client/codecs.js';
 import { asRecord, isJsonObject, objectEntries, type JsonObject } from './json.js';
 import { identifier, NameScope } from '@exprtlabs/golem/internal/generator-support';
-import { BUILTIN_CLASS_ROOTS, builtinClassByOpenApiFormat, type BuiltinClass, code, codeKey, manifestMarkerComment, docComment, exportedName, fileImports, identifier as identifierPart, ImportSource, isEmpty, join, lineBreak, literal, nest, propertyKey, render, renderModule, sameCode, type RenderedModule, type Code, type JsonValue } from '@exprtlabs/golem/internal/emitter';
+import { BUILTIN_CLASS_ROOTS, code, codeKey, manifestMarkerComment, docComment, exportedName, fileImports, identifier as identifierPart, ImportSource, isEmpty, join, lineBreak, literal, nest, propertyKey, render, renderModule, sameCode, type RenderedModule, type Code, type JsonValue } from '@exprtlabs/golem/internal/emitter';
 import { unionVariants } from './composition.js';
+import { dateClassOf } from './date-class.js';
 import { refName } from './names.js';
 import {
   effectiveSchemaTypes,
@@ -257,13 +258,6 @@ interface ConvertedTypes {
   readonly dates: OpenApiDates;
   /** The globals `Date` and `Temporal` that a component of the same name shadows in the module: they are reached through `globalThis`. */
   readonly shadowed: ReadonlySet<string>;
-}
-
-/** The built-in class that a string schema converts to under the `dates` value (a `date-time` string is a Date, or a Temporal.Instant); any other schema has none. */
-export function dateClassOf(schema: unknown, dates: OpenApiDates): BuiltinClass | undefined {
-  if (!isJsonObject(schema) || typeof schema.format !== 'string') return undefined;
-  if (!(schema.type === 'string' || (Array.isArray(schema.type) && schema.type.includes('string')))) return undefined;
-  return builtinClassByOpenApiFormat(dates, schema.format);
 }
 
 /** The type that a string schema converts to, or undefined when its value stays a string. */

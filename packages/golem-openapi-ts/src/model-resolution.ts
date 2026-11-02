@@ -20,8 +20,9 @@ import {
   type CompositionReader,
   unionVariants,
 } from './composition.js';
+import { dateClassOf } from './date-class.js';
 import { effectiveSchemaTypes } from './normalize.js';
-import { schemaContext, dateClassOf, typedListedValues, type NeverPropertiesOf } from './types.js';
+import { schemaContext, typedListedValues, type NeverPropertiesOf } from './types.js';
 import {
   collectCanonicalResources,
   nextSchemaBase,
