@@ -431,7 +431,8 @@ async function collectCodecIssues(
   // Sanity is the shape only: the instance rules are validation functions of the application, which it skips.
   const sanity = (requested ?? definition.profile?.validation) === 'sanity';
   const overlay = sanity || (mode === 'first' && generated.length) ? [] : await evaluateInstanceRules(model, mode, generated);
-  const issues = formatIssues(model, [...generated, ...overlay]);
+  // The rule issues of the overlay leave `evaluateInstanceRules` formatted; only the generated issues are formatted here.
+  const issues = [...formatIssues(model, generated), ...overlay];
   return mode === 'first' ? issues.slice(0, 1) : issues;
 }
 
