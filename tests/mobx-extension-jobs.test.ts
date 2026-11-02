@@ -106,5 +106,6 @@ test('a wrapper whose factory and type are one name generates, with the name cla
   } }));
   const output = path.join(createFixtureProject(t, 'golem-acme-sdk-'), 'sdk');
   const result = writeSdk(document, { output, name: 'Items', profile: { validation: false }, hooks: { 'client.operationWrapper': [one] } });
-  assert.match(result.artifacts.filter(({ path: filename }) => filename.includes('/operations/')).map(({ content }) => content).join('\n'), /import \{ AcmeOperation \} from '@acme\/pkg\/internal\/run';/);
+  const imports = result.artifacts.filter(({ path: filename }) => filename.includes('/operations/')).map(({ content }) => content).join('\n').match(/^import .*\bAcmeOperation\b.* from .*$/gm);
+  assert.deepEqual(imports, ["import { AcmeOperation } from '@acme/pkg/internal/run';"]);
 });
