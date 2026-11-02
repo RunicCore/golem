@@ -378,6 +378,27 @@ ${ROUTE('TOrder', 'TOrder')}`;
   assert.deepEqual(Object.keys(schemas[second!.split('/').pop()!]!.properties!), ['total']);
 });
 
+test('models of one name in files of a custom model suffix are qualified by the file name without that suffix', async t => {
+  // protects: T-826 the component name drops the models job's own suffix, not a fixed .model.ts
+  const source = `${PRELUDE}
+import type { TName as TFirst } from './dir/a.entity.js';
+import type { TName as TSecond } from './dir/b.js';
+export type TOrder = IModel<{ first: TFirst; second: TSecond }>;
+${ROUTE('TOrder', 'TOrder')}`;
+  const root = createControllerFixture(t, {
+    prefix: 'golem-projection-names-', packageName: 'projection-names-fixture',
+    sourceFile: 'src/order.controller.ts', source,
+    files: {
+      'src/dir/a.entity.ts': "import type { IModel } from '@exprtlabs/golem/model';\nexport type TName = IModel<{ id: string }>;\n",
+      'src/dir/b.ts': "import type { IModel } from '@exprtlabs/golem/model';\nexport type TName = IModel<{ total: number }>;\n",
+    },
+  });
+  const models = { root, directory: root, output: path.join(root, 'src/generated'), suffixes: ['.entity.ts'] };
+  const result = await generate({ root, output: path.join(root, 'api.json'), ...GENERATE_OPTIONS, models });
+  const { components: { schemas } } = JSON.parse(result.artifacts[0]!.content) as Document;
+  assert.deepEqual(Object.keys(schemas).filter(name => name.endsWith('TName')).sort(), ['dir.a.TName', 'dir.b.TName']);
+});
+
 // protects: T-588 two files whose names clean alike (a-b.ts, a_b.ts; folders x-y, x_y) once shared one component name for two different schemas
 const cleanAlike: readonly [place: string, first: string, second: string][] = [
   ['files', 'src/dir/a-b.ts', 'src/dir/a_b.ts'],

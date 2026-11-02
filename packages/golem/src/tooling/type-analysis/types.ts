@@ -772,7 +772,7 @@ export function descriptorBuilder(
     const known = headNames.get(type)?.get(suffix);
     if (known !== undefined) return known;
     const free = (name: string): boolean => !modelLocations.has(name) && (projectionOwners.get(name) ?? type) === type;
-    const qualifiers = headQualifiers(checker, type);
+    const qualifiers = headQualifiers(checker, type, boundary?.suffixes ?? []);
     const options = [stem, ...qualifiers.map((part) => `${stem}${part}`)];
     let name = options.map((option) => `${option}${suffix}`).find(free);
     // Names that stay equal after qualifying get a number, so every valid program generates.

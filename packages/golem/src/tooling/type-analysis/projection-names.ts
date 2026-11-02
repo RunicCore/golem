@@ -195,18 +195,26 @@ function typeArgumentName(checker: ts.TypeChecker, argument: ts.Type): string | 
   return pascalIdentifier(orderIndependentTypeText(checker, argument));
 }
 
+/** A file name without the longest model suffix it ends in, declaration forms included (`b.model.d.ts` for `.model.ts`), or without its extension when it ends in none. */
+function modelFileStem(name: string, suffixes: readonly string[]): string {
+  const endings = suffixes.flatMap(suffix => [suffix, ...['ts', 'cts', 'mts'].map(extension => suffix.replace(/\.[cm]?ts$/, `.d.${extension}`))]);
+  const ending = endings.filter(candidate => name.endsWith(candidate)).sort((left, right) => right.length - left.length)[0];
+  return ending === undefined ? name.replace(/(?:\.d)?\.[cm]?tsx?$/, '') : name.slice(0, -ending.length);
+}
+
 /**
  * The parts that tell a recursive type from another one of its declared name, best first: the type arguments of a generic instance
- * (`Page<number>` gives `Number`), the name of its file without `.model.ts` or `.ts` (`b.model.ts` gives `B`), and both together.
+ * (`Page<number>` gives `Number`), the name of its file without a model suffix (`suffixes`, the model file endings of the models job, such as `.model.ts`) or `.ts`
+ * (`b.model.ts` gives `B`), and both together.
  */
-export function headQualifiers(checker: ts.TypeChecker, type: ts.Type): readonly string[] {
+export function headQualifiers(checker: ts.TypeChecker, type: ts.Type, suffixes: readonly string[]): readonly string[] {
   const declaration = (type.aliasSymbol ?? type.getSymbol())?.declarations?.[0];
   const generic = declaration !== undefined && (ts.isTypeAliasDeclaration(declaration) || ts.isInterfaceDeclaration(declaration) || ts.isClassDeclaration(declaration))
     && (declaration.typeParameters?.length ?? 0) > 0;
   const argumentNames = !generic ? [] : (type.aliasSymbol ? type.aliasTypeArguments ?? [] : checker.getTypeArguments(type)).map(argument => typeArgumentName(checker, argument));
   const argumentPart = argumentNames.length > 0 && argumentNames.every((name): name is string => name !== undefined) ? argumentNames.join('') : undefined;
   const fileName = declaration?.getSourceFile().fileName;
-  const filePart = fileName === undefined ? undefined : pascalIdentifier(fileName.slice(fileName.lastIndexOf('/') + 1).replace(/(?:\.models?)?(?:\.d)?\.[cm]?tsx?$/, ''));
+  const filePart = fileName === undefined ? undefined : pascalIdentifier(modelFileStem(fileName.slice(fileName.lastIndexOf('/') + 1), suffixes));
   return [argumentPart, filePart, argumentPart !== undefined && filePart !== undefined ? `${argumentPart}${filePart}` : undefined]
     .filter((part): part is string => part !== undefined);
 }

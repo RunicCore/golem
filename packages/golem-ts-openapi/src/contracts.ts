@@ -5,7 +5,7 @@ import {
   inNodeModules, isGeneratedCompanion, isUnderOutputs, linkedClasses, manifestModelOfSymbol, modelSpecificationForClass, pascalIdentifier, resolveSymbol, typeScriptErrorAt,
   type DtoRule, type ManifestIndex, type ModelBoundary, type ModelConversionDescriptor, type ModelSpecification, type TypeAnalysisContext,
 } from '@exprtlabs/golem/internal/type-analysis';
-import { canonicalPath, displayPath } from '@exprtlabs/golem/internal/generator-support';
+import { canonicalPath, displayPath, stripSourceSuffix } from '@exprtlabs/golem/internal/generator-support';
 import { canonicalDescriptorKey } from '@exprtlabs/golem/internal/schema';
 import { codecPublicId, createSchemaGraph, internDescriptors } from '@exprtlabs/golem/internal/schema-graph';
 
@@ -89,7 +89,7 @@ export function createContractAnalysis(
   let describe = buildDescribe(baseName);
   let described = describeAll(describe);
   // Models whose names are equal but whose schemas differ are qualified by where they are declared.
-  const componentNames = qualifiedComponentNames(specifications, described, baseName, options.root);
+  const componentNames = qualifiedComponentNames(specifications, described, baseName, options.root, options.boundary?.suffixes ?? []);
   const componentName = (specification: ModelSpecification): string => componentNames.get(specification) ?? baseName(specification);
   if (specifications.some((specification) => componentName(specification) !== baseName(specification))) {
     describe = buildDescribe(componentName);
@@ -302,7 +302,7 @@ function controllerOwnerName(node: ts.Node): string {
  * component. Models that share a name but not a schema are qualified: `<directory>.<Name>`, where
  * `<directory>` is the shortest trailing run of the declaring file's directory segments, relative
  * to `root`, that tells the different directories apart, joined with `.`. Models of one directory
- * that clash add the file name without `.model.ts` or `.ts`: `<directory>.<file>.<Name>`; files whose names
+ * that clash add the file name without the model suffix of the models job or `.ts`: `<directory>.<file>.<Name>`; files whose names
  * then read alike (`a.ts` and `a.model.ts`) add the whole file name. Characters
  * other than letters, digits and underscores in a segment become `_`.
  */
@@ -311,6 +311,7 @@ function qualifiedComponentNames(
   described: ReadonlyMap<ModelSpecification, ModelConversionDescriptor>,
   baseName: (specification: ModelSpecification) => string,
   root: string,
+  suffixes: readonly string[],
 ): Map<ModelSpecification, string> {
   const names = new Map<ModelSpecification, string>();
   const groups = new Map<string, ModelSpecification[]>();
@@ -322,7 +323,7 @@ function qualifiedComponentNames(
   const place = (specification: ModelSpecification): { readonly directory: readonly string[]; readonly stem: string; readonly file: string } => {
     const relative = path.relative(root, specification.sourceFile.fileName).split(path.sep);
     const file = relative.pop() ?? '';
-    return { directory: relative.filter((segment) => segment !== '' && segment !== '..').map(clean), stem: clean(file.replace(/\.model\.ts$|\.ts$/, '')), file: clean(file) };
+    return { directory: relative.filter((segment) => segment !== '' && segment !== '..').map(clean), stem: clean(stripSourceSuffix(file, suffixes)), file: clean(file) };
   };
   const qualifiedBy = new Map<string, ModelSpecification>();
   for (const [name, members] of groups) {
