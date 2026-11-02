@@ -684,7 +684,7 @@ export function generate() { throw new TypeError('generator state is broken', { 
   const document = YAML.parse(fs.readFileSync(config, 'utf8')) as Record<string, unknown>;
   fs.writeFileSync(config, YAML.stringify({ ...document, throwing: {} }));
   // `golem watch` reports with the default reporter; its stderr is what the user reads.
-  const watch = spawn(process.execPath, [golem, 'watch', '--config', config], { cwd: root, stdio: ['ignore', 'pipe', 'pipe'] });
+  const watch = spawn(process.execPath, [golem, 'watch', '--config', config], { cwd: root, stdio: ['ignore', 'ignore', 'pipe'] });
   let printed = '';
   watch.stderr.on('data', (chunk: Buffer) => { printed += chunk.toString(); });
   try {
