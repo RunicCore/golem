@@ -26,6 +26,10 @@ const FILES: Readonly<Record<string, string>> = {
     'export const ELEMENT_ENUM_KEY = MAP[SortOrder.Asc];',
     "export const ELEMENT_LITERAL_KEY = MAP['a'];",
     "export const ENUM_LITERAL_KEY = Level['High'];",
+    'export const REVERSE_BY_MEMBER = Level[Level.High];',
+    'export const REVERSE_BY_NUMBER = Level[1];',
+    'export const REVERSE_MISSING = Level[3];',
+    'export const REVERSE_STRING_ENUM = SortOrder[SortOrder.Asc];',
     'const BASE = { a: 1, b: 1 };',
     'export const SPREAD_ORDER = { a: 0, ...BASE, b: 2 };',
     'export const REEXPORTED = [SortOrder.Asc, PREFIX, enums.Level.Low];',
@@ -84,6 +88,18 @@ test('reads const and enum element keys as keys, not as the member value', () =>
   assert.equal(valueOf(evaluate('ELEMENT_ENUM_KEY')), 'ascending');
   assert.equal(valueOf(evaluate('ELEMENT_LITERAL_KEY')), 1);
   assert.equal(valueOf(evaluate('ENUM_LITERAL_KEY')), 2);
+});
+
+test('reads an enum reverse lookup as the member name, and a missing key or a string enum as unresolvable', () => {
+  // protects: T-863 Level[Level.High] was read as the array of member values at index 2
+  assert.equal(valueOf(evaluate('REVERSE_BY_MEMBER')), 'High');
+  assert.equal(valueOf(evaluate('REVERSE_BY_NUMBER')), 'Low');
+  const missing = evaluate('REVERSE_MISSING');
+  const stringEnum = evaluate('REVERSE_STRING_ENUM');
+  assert.deepEqual(
+    [missing.ok ? 'value' : missing.reason, stringEnum.ok ? 'value' : stringEnum.reason],
+    ['enum key 3 is not a member name or a numeric member value', 'enum key asc is not a member name or a numeric member value'],
+  );
 });
 
 test('applies object spreads in source order and keeps __proto__ as an own key', () => {

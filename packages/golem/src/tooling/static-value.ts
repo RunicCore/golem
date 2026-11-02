@@ -123,6 +123,23 @@ function enumMemberValue(member: ts.EnumMember, state: EvaluationState): string 
   return fail(member, `enum member ${member.name.getText()} has no constant value`);
 }
 
+/**
+ * `Enum[key]`, read like the compiled enum object: a member name gives its value, and a number gives the name of
+ * the numeric member with that value (the last one, as the later assignment wins). A string member has no reverse
+ * entry.
+ */
+function enumLookup(declarations: readonly ts.EnumDeclaration[], key: string, node: ts.Node, state: EvaluationState): StaticValue {
+  const members = declarations.flatMap(declaration => {
+    state.options.onDeclaration?.(declaration);
+    return [...declaration.members];
+  });
+  const named = members.find(member => propertyKey(member.name, state) === key);
+  if (named) return enumMemberValue(named, state);
+  const reverse = members.filter(member => String(enumMemberValue(member, state)) === key && typeof enumMemberValue(member, state) === 'number').pop();
+  if (reverse) return propertyKey(reverse.name, state);
+  return fail(node, `enum key ${key} is not a member name or a numeric member value`);
+}
+
 function withDeclaration<T>(declaration: ts.Declaration, state: EvaluationState, read: () => T): T {
   if (state.active.has(declaration)) fail(declaration, 'value refers to itself');
   state.active.add(declaration);
@@ -174,6 +191,8 @@ function memberValue(
       if (typeof value === 'string' || typeof value === 'number') return String(value);
       return fail(expression.argumentExpression, 'element key is not a static string or number');
     })();
+  const enums = (resolveValueSymbol(state.checker, expression.expression)?.declarations ?? []).filter(ts.isEnumDeclaration);
+  if (enums.length > 0) return enumLookup(enums, key, expression, state);
   const target = evaluate(expression.expression, state);
   if (isStaticRecord(target) && Object.hasOwn(target, key)) return target[key];
   if (isStaticArray(target) && /^\d+$/.test(key) && Number(key) < target.length) return target[Number(key)];
