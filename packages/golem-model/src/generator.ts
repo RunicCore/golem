@@ -536,7 +536,9 @@ export function generate(context: GolemModelContext): GolemModelResult {
   // A discovered file with no IModel or IObject alias is not a model file: it is skipped, and so is its companion.
   // A file that `model.sources` names must have one.
   const withModels = new Set(specifications.map((specification) => canonicalFilename(specification.sourceFile.fileName)));
-  const ownSources = listed ? ownCandidates : ownCandidates.filter((source) => withModels.has(canonicalFilename(source)));
+  const unmodeled = listed ? ownCandidates.find((source) => !withModels.has(canonicalFilename(source))) : undefined;
+  if (unmodeled !== undefined) throw new Error(`No exported IModel<...> type aliases were found in ${displayPath(unmodeled)}.`);
+  const ownSources = ownCandidates.filter((source) => withModels.has(canonicalFilename(source)));
   // A shared model file of the program is a source of the job: this app writes its companion in model.output.
   const sharedSources = sharedCandidates.filter((source) => withModels.has(canonicalFilename(source)));
   const sources = [...ownSources, ...sharedSources];

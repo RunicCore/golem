@@ -584,7 +584,18 @@ test('a model file that models.sources names must hold an IModel or IObject alia
 
   assert.throws(
     () => generate({ root, sources: [path.join(sourceRoot, 'payment.model.ts')], profile: { validation: true } }),
-    { message: 'No exported IModel<...> type aliases were found.' },
+    { message: /^No exported IModel<\.\.\.> type aliases were found in .*payment\.model\.ts\.$/ },
+  );
+});
+
+// protects: T-862 a listed file with no alias was skipped without a word while another listed file had models
+test('a model file that models.sources names stops generation by name when another listed file has models', (t: TestContext) => {
+  const { root, sourceRoot } = project(t);
+  writeModelSources(sourceRoot, { 'order.model.ts': ORDER_MODEL, 'notes.ts': 'export const note = 1;\n' });
+
+  assert.throws(
+    () => generate({ root, sources: [path.join(sourceRoot, 'order.model.ts'), path.join(sourceRoot, 'notes.ts')], profile: { validation: true } }),
+    { message: /^No exported IModel<\.\.\.> type aliases were found in .*notes\.ts\.$/ },
   );
 });
 
