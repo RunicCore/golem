@@ -78,3 +78,21 @@ test('an operation wrapper with an import key that no emitter lists still genera
   assert.match(operations, /import \{ createAcmeOperation \} from '@acme\/pkg\/internal\/run';/);
   assert.match(operations, /import type \{ AcmeOperation \} from '@acme\/pkg';/);
 });
+
+/** A wrapper whose factory and type bind the names `createAcmeOperation` and `acmeOperation`, with no alias. */
+const ACME_WRAPPER = acmeFill(() => ({ wrapper: {
+  operationType: packageExport({ key: 'acme', specifier: '@acme/pkg/internal/run', typeSpecifier: '@acme/pkg', name: 'acmeOperation', typeOnly: true }),
+  createOperation: packageExport({ key: 'acme', specifier: '@acme/pkg/internal/run', typeSpecifier: '@acme/pkg', name: 'createAcmeOperation' }),
+} }));
+
+for (const operationId of ['createAcmeOperation', 'acmeOperation']) {
+  test(`an operation id that equals the wrapper's name ${operationId} stops generation with a name collision`, (t: TestContext) => {
+    // protects: T-827 an operation wrapper's own names are claimed in the scope, so an operation id cannot import and export one name
+    const document = documentBase('3.1.0', { paths: { '/items': { get: { operationId, responses: { 200: { description: 'ok' } } } } } });
+    const output = path.join(createFixtureProject(t, 'golem-acme-sdk-'), 'sdk');
+    assert.throws(
+      () => writeSdk(document, { output, name: 'Items', profile: { validation: false }, hooks: { 'client.operationWrapper': [ACME_WRAPPER] } }),
+      new RegExp(`generated name collision for "${operationId}" in `),
+    );
+  });
+}
