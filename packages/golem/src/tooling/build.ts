@@ -9,6 +9,7 @@ import { displayPath, errorMessage, failureText, GolemDiagnosticSeverity, hasErr
 import type { GolemDiagnostic } from './generator-core.js';
 import { nodeSpecifierEdits } from './node-specifiers.js';
 import { atomicWrite } from './outputs.js';
+import { recordLoadedFiles } from './load-record.js';
 import { GeneratorSessionResources, runPipeline } from './pipeline.js';
 import type { PipelineState } from './pipeline.js';
 import { applyRewrites } from './rewrite.js';
@@ -556,6 +557,7 @@ async function buildOnce(requestSession: () => ts.ProgramSession, run: BuildRun,
  * compiler checks and emits in process, to memory; the build writes each output that differs from the file on disk. With `watch`, the build repeats when an input changes and ends on `signal`.
  */
 export async function runBuild(options: BuildOptions): Promise<{ exitCode: number }> {
+  using recording = recordLoadedFiles();
   const first = await readGolemConfig(options.config, () => {});
   const root = path.dirname(first.tsconfig);
   const label = displayPath(options.project === undefined ? first.tsconfig : path.resolve(options.project));

@@ -348,7 +348,7 @@ interface PipelinePlan {
   readonly current: ReadonlySet<string>;
   /** The package behind each block whose code the job loads: its own block and the block of each extension on its hooks. */
   readonly code: (job: GolemJob) => ReadonlyMap<string, CodePackage>;
-  /** What this run has read of each code file: a package of twenty jobs reads each file once. */
+  /** What the plan has read of each code file: a package of twenty jobs reads each file once. The check just before a job reads the files again, because an earlier job can have changed one. */
   readonly fileDigests: Map<string, string | undefined>;
   /** The hook participants of each job that offers a hook, and the digest of the extensions behind them (`hookCode`). */
   readonly hooks: ReadonlyMap<string, JobHooks>;
@@ -524,7 +524,7 @@ async function runJob(job: GolemJob, run: PipelineRun, plan: PipelinePlan, progr
     && previous
     && JSON.stringify(previousJob?.options) === JSON.stringify(job.options);
   const record = plan.records.get(job.id);
-  if (plan.jobCache && record && plan.current.has(job.id) && !readsAny(config, record, progress.ranOutputs) && sameSetup(config, record, { code: plan.code(job), fileDigests: plan.fileDigests, hookCode: plan.hookCode(job), programView: programViewOf(config, job), manifestInputs: progress.manifests })) {
+  if (plan.jobCache && record && plan.current.has(job.id) && !readsAny(config, record, progress.ranOutputs) && sameSetup(config, record, { code: plan.code(job), hookCode: plan.hookCode(job), programView: programViewOf(config, job), manifestInputs: progress.manifests })) {
     // Its inputs and outputs are as its record holds them: there is no result to reuse, and nothing to write.
     const outputs = [...record.outputs, ...Object.keys(record.records)].map(output => absoluteRecordPath(config, output));
     assertUnowned(progress.owned, outputs);

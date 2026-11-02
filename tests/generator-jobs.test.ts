@@ -327,6 +327,20 @@ test('a CommonJS generator is recorded with the files it requires, and a change 
   assert.match(fs.readFileSync(path.join(root, EMITTED), 'utf8'), /\/\/ two\n$/);
 });
 
+test('a file that the plan entry and the generator both import is recorded, and a change in it runs the job again', async t => {
+  // protects: T-825 the plan loads before the pipeline, so a file it shares with the generator is already cached when the generator imports it
+  const { root, generate, runs, edit } = importingProject(t);
+  edit('plan.js', `import './emitter.js';\n${PLAN_SOURCE}`);
+  edit('index.js', stampedGenerator('js'));
+  await generate();
+  await generate();
+  assert.equal(runs(), 1);
+  edit('emitter.js', "export const emitter = 'two';\n");
+  await generate();
+  assert.equal(runs(), 2);
+  assert.match(fs.readFileSync(path.join(root, EMITTED), 'utf8'), /\/\/ two\n$/);
+});
+
 test('golem generate runs under node --import with an asynchronous module loader', async t => {
   // protects: T-825 the load hook never runs in a loader thread: on Node 22.15 registerHooks there fails with loadSync is not a function
   const { root, runs } = cachedProject(t);
