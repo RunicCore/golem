@@ -104,22 +104,16 @@ test('a source fixed while the first build is still running starts the next buil
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 20_000);
   t.after(() => clearTimeout(timer));
-  const stdout = process.stdout.write.bind(process.stdout);
   let fixed = false;
   const finished: number[] = [];
-  // The only patch left: no option reports the middle of a run. The compiler's report is forwarded to stdout while the first build is still
-  // running, and the fix must land then, not after the build has ended. A child process cannot keep that order: its parent reads the report
-  // after the write, while the build goes on to its emit step, so the fix could land after the build ended and the claim would go unproved.
-  t.mock.method(process.stdout, 'write', (chunk: string | Uint8Array, ...rest: unknown[]) => {
-    const text = typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString();
-    if (!fixed && text.includes('error TS')) {
-      fixed = true;
-      fs.writeFileSync(path.join(root, 'src/use.ts'), USE);
-    }
-    return (stdout as (chunk: string | Uint8Array, ...rest: unknown[]) => boolean)(chunk, ...rest);
-  });
   await runBuild({
     watch: true, config: path.join(root, 'golem.yaml'), signal: controller.signal,
+    // The fix must land while the first build is still running, not after it has ended: the report is the only point of the run that is told.
+    onCompilerReport: (report) => {
+      if (fixed || !report.includes('error TS')) return;
+      fixed = true;
+      fs.writeFileSync(path.join(root, 'src/use.ts'), USE);
+    },
     onBuilt: ({ exitCode }) => { finished.push(exitCode); if (exitCode === 0) controller.abort(); },
   });
   assert.ok(fixed, 'the first build reported the type error');
