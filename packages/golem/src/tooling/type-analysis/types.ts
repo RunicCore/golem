@@ -339,7 +339,7 @@ function stripPhantomIntersection(
 ): ts.Type {
   if (!metadata.validations.length && !metadata.serde && !metadata.constraints.length && metadata.discriminator === undefined) return type;
   if (!type.isIntersection()) return type;
-  const members = type.types.filter((member) => !isPhantomTagType(checker, member));
+  const members = type.types.filter((member) => !isPhantomTagType(checker, member) && !isBrandMember(checker, member));
   return members.length === 1 ? members[0] : type;
 }
 
