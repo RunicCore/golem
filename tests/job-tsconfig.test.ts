@@ -161,12 +161,13 @@ test('in a watch, an edit of a tsconfig nearer to the job root that golem.yaml d
   // protects: T-480 only the tsconfig golem.yaml names is read, so only it is watched
   const { root, yaml } = watchedProject(t);
   await watching(yaml, async ({ runs, errors }) => {
+    // The watch is live once an edit of the named tsconfig that drops the alias runs the job again.
+    await editUntil(() => json(root, 'tsconfig.base.json', { compilerOptions: OPTIONS }), () => errors.length > 0, 'the job to run again with the edited tsconfig');
+    await quietly();
+    const [runsBefore, errorsBefore] = [runs(), errors.length];
     json(root, 'pkg/tsconfig.json', { compilerOptions: OPTIONS, include: [] });
     await quietly(600);
-    assert.equal(runs(), 1, 'no second run');
-    assert.deepEqual(errors, []);
-    // The watch is alive: an edit of the named tsconfig that drops the alias does run the job.
-    json(root, 'tsconfig.base.json', { compilerOptions: OPTIONS });
-    await until(() => errors.length === 1, 'the job to run again with the edited tsconfig');
+    assert.equal(runs(), runsBefore, 'no second run');
+    assert.equal(errors.length, errorsBefore, 'the job did not run again');
   });
 });

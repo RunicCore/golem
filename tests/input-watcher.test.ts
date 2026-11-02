@@ -152,7 +152,7 @@ function ticking(t: TestContext, root: string, folders: readonly string[], files
 }
 
 const FILE_EVENTS: readonly (readonly [string, (folder: string) => void])[] = [
-  ['a file is created', (folder) => fs.writeFileSync(path.join(folder, 'new.model.ts'), 'export {};\n')],
+  ['a file is created', (folder) => { fs.rmSync(path.join(folder, 'new.model.ts'), { force: true }); fs.writeFileSync(path.join(folder, 'new.model.ts'), 'export {};\n'); }],
   ['a file is edited', (folder) => fs.writeFileSync(path.join(folder, 'a.model.ts'), 'export type TA = 2;\n')],
 ];
 for (const [name, act] of FILE_EVENTS) {
