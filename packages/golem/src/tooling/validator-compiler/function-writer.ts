@@ -711,7 +711,7 @@ export class FunctionWriter {
         this.line(code`${unevaluated}++;`);
       } else {
         const item = this.fresh('item');
-        this.line(code`const ${item} = ${value}[${index}];`);
+        this.line(code`const ${item} = ${value}[${index}] ?? null;`);
         this.atChild(index, () => this.schema(schema, item));
       }
       this.close();
