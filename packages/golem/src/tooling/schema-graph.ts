@@ -673,13 +673,15 @@ export function createSchemaGraph(
       const interned = byRawName.get(raw);
       const rawHit = interned === undefined ? undefined : nodes.get(interned);
       if (rawHit) return applyFlags(rawHit);
-      const found = nodeFor(descriptor, named) ?? nodeFor(asReference(named), named);
+      // A reference to a model this graph is interning (a recursive model) is that model, not a sibling's.
+      const siblingId = descriptor.kind === 'reference' && !internRawStack.has(raw) ? fixedCodecId(raw) : undefined;
+      const foundByShortName = nodeFor(descriptor, named) ?? nodeFor(asReference(named), named);
+      // The job fixes the id of a sibling by the name the source writes: a node of another id is another model that shares the short name.
+      const found = foundByShortName && (siblingId === undefined || foundByShortName.codecId === siblingId) ? foundByShortName : undefined;
       if (found) return applyFlags(found);
       // A reference to an ambiguous short name must not take the id of a node interned under it.
       const taken = nodes.get(identifierFromName(named));
-      const id = taken && taken.kind !== 'reference' ? identifierFromName(`${raw}__reference`) : identifierFromName(named);
-      // A reference to a model this graph is interning (a recursive model) is that model, not a sibling's.
-      const siblingId = descriptor.kind === 'reference' && !internRawStack.has(raw) ? fixedCodecId(raw) : undefined;
+      const id = taken && (taken.kind !== 'reference' || foundByShortName !== undefined) ? identifierFromName(`${raw}__reference`) : identifierFromName(named);
       const placeholder: SchemaNode = {
         id,
         name: named,

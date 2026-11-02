@@ -599,6 +599,31 @@ test('a model file that models.sources names stops generation by name when anoth
   );
 });
 
+// protects: T-867 models whose names differ only in a character that a codec name drops (`A$`, `A_`) shared one codec node: "Unresolved schema reference" across files, mixed types in one file
+for (const layout of ['sibling files', 'one file'] as const) {
+  test(`models A$ and A_ in ${layout} each get their own codec`, async (t: TestContext) => {
+    const { root, sourceRoot } = project(t);
+    const objectModel = (name: string, field: string): string => `export type ${name} = IObject<{ ${field}: Date }>;\n`;
+    const header = `import type { IObject } from '@exprtlabs/golem/model';\n`;
+    writeModelSources(sourceRoot, {
+      ...(layout === 'one file'
+        ? { 'a.model.ts': header + objectModel('TA$', 'v') + objectModel('TA_', 'w') }
+        : { 'a1.model.ts': header + objectModel('TA$', 'v'), 'a2.model.ts': header + objectModel('TA_', 'w') }),
+      'b.model.ts': taggedModelSource({
+        name: 'B',
+        imports: layout === 'one file'
+          ? tsSource`import type { TA$, TA_ } from './a.model.js';`
+          : tsSource`import type { TA$ } from './a1.model.js';\nimport type { TA_ } from './a2.model.js';`,
+        fields: tsSource`s: TA$; u: TA_`,
+      }).text,
+    });
+    await buildModelProjectWith(root, { validation: true });
+    const { B } = await import(pathToFileURL(path.join(root, 'build', 'b.model.js')).href) as { B: new (values: object) => object };
+    const decoded = modelCodec(B).fromWireFormat({ s: { v: '2020-01-01T00:00:00.000Z' }, u: { w: '2020-01-01T00:00:00.000Z' } }) as { s: { v: unknown }; u: { w: unknown } };
+    assert.deepEqual([decoded.s.v instanceof Date, decoded.u.w instanceof Date], [true, true]);
+  });
+}
+
 /** A shared folder `outer/shared` with a golem.yaml of its own, and an app that includes it and has a model of its own. */
 function sharedFolderWithConfig(t: TestContext, configuration: string): { readonly root: string; readonly sharedFolder: string } {
   const outer = sharedWorkspace(t);
