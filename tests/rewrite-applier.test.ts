@@ -211,6 +211,27 @@ test('a file that ends right after its shebang or directive gets the import on i
   assert.equal(applyRewrites('#!/usr/bin/env node', rewriteOf([], imports, importsAtOf('#!/usr/bin/env node'))).code, `#!/usr/bin/env node\n${IMPORT_LINE}`);
 });
 
+test('imports go after the pragmas that lead the file and before any other comment', () => {
+  // protects: T-859 a rewrite insert before a leading @ts-nocheck or @jsxImportSource pragma made the compiler ignore it
+  // Each case is the head of the file before the imports and the head after them.
+  const cases: ReadonlyArray<readonly [string, string]> = [
+    ['// @ts-nocheck\n', ''],
+    ['/// <reference types="node" />\n// @ts-check\n', ''],
+    ['/** @jsxImportSource fake-b */\n', ''],
+    ['/* @jsxRuntime classic */ /** @jsx h */\n', ''],
+    ['/* Licence */\n// @ts-nocheck\n', '/** The result. */\n'],
+    ['', '/* Licence */\n/** The result. */\n'],
+    ["#!/usr/bin/env node\n'use strict';\n// @ts-nocheck\n", ''],
+    ['// @ts-nocheck\r\n', ''],
+  ];
+  for (const [before, after] of cases) {
+    const text = `${before}${after}const result = parse<TPayment>(text);\n`;
+    const applied = applyRewrites(text, callRewrite(text));
+    assert.equal(applied.code, `${before}${IMPORT_LINE}${after}const result = ${CALL_TEXT}(text);\n`, JSON.stringify(before + after));
+    assert.deepEqual(originalPosition(applied.code, applied.map, 'const result'), originalPositionOf(text, 'const result'), JSON.stringify(before + after));
+  }
+});
+
 test('one aliased import line is added per entry, and the map stays correct after the prepended lines', () => {
   const text = "'use strict';\r\nconst result = parse<TPayment>(text);\r\nconst next = 1;\r\n";
   const imports = [

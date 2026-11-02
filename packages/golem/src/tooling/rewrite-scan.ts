@@ -734,9 +734,20 @@ function directiveEnd(text: string, end: number): number {
   return at >= text.length ? at : afterLineBreak(text, at) ?? end;
 }
 
+const TRIPLE_SLASH_DIRECTIVE = /^\/\/\/\s*</;
+const TS_COMMENT_DIRECTIVE = /^\/\/\s*@ts-/;
+const JSX_PRAGMA = /@jsx(?:ImportSource|Frag|Runtime)?\b/;
+
+/** A comment the compiler reads only while it leads the file: a triple-slash directive, a `// @ts-` directive, or a JSX pragma. */
+function isFilePragma(comment: string): boolean {
+  return TRIPLE_SLASH_DIRECTIVE.test(comment) || TS_COMMENT_DIRECTIVE.test(comment) || JSX_PRAGMA.test(comment);
+}
+
 /**
  * Where a rewrite's imports go: after a leading shebang line and the directive prologue (`'use strict'`, `'use client'`, ...), which
  * is the run of string-literal expression statements that opens the file. A string that continues into an expression is no directive.
+ * The pragmas that follow (see `isFilePragma`) stay first in the file, so the imports go after the last of them.
+ * Any other comment, such as a licence or the JSDoc of the first statement, stays after the imports.
  */
 export function importInsertOffset(file: ts.SourceFile): number {
   const { text } = file;
@@ -749,6 +760,16 @@ export function importInsertOffset(file: ts.SourceFile): number {
   for (const statement of file.statements) {
     if (!ts.isExpressionStatement(statement) || !ts.isStringLiteral(statement.expression)) break;
     offset = directiveEnd(text, statement.end);
+  }
+  // A comment only leads from the line after `offset`, so the scan starts at the line break that ends the line before it.
+  if (offset === 0 || LINE_BREAKS.includes(text.charAt(offset - 1))) {
+    const leading = ts.getLeadingCommentRanges(text, offset === 0 ? 0 : offset - 1) ?? [];
+    const last = leading.filter((range) => isFilePragma(text.slice(range.pos, range.end))).at(-1);
+    if (last) {
+      let at = last.end;
+      while (text.charAt(at) === ' ' || text.charAt(at) === '\t') at++;
+      offset = afterLineBreak(text, at) ?? last.end;
+    }
   }
   return offset;
 }
