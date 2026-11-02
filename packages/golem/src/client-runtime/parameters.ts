@@ -153,6 +153,8 @@ export function addQueryParameter(
   const encoded = (text: string): string => encode(text, allowReserved);
   const joined = joinedText(name, value, rule, encoded);
   if (Array.isArray(value)) {
+    // An empty array has no entries to send, as an empty object has none, whatever the style (RFC 6570).
+    if (!value.length) return;
     if (rule.array.layout === 'repeated') {
       for (const item of value) appendQuery(runtime, query, name, primitive(name, item), allowReserved);
     } else {

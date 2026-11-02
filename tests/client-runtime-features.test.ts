@@ -93,6 +93,16 @@ test('a multipart JSON part sends every value as JSON text, a text part sends th
   assert.equal(await (form.get('note') as Blob).text(), 'abc');
 });
 
+test('an empty array in the query adds no entry in any style, as an empty object adds none', () => {
+  // protects: T-874 a non-exploded empty array was sent as an empty parameter
+  const query: string[] = [];
+  addQueryParameter(runtime, query, 'a', [], 'form', true, false);
+  addQueryParameter(runtime, query, 'b', [], 'form', false, false);
+  addQueryParameter(runtime, query, 'c', [], 'spaceDelimited', false, false);
+  addQueryParameter(runtime, query, 'd', [], 'pipeDelimited', false, false);
+  assert.deepEqual(query, []);
+});
+
 test('an empty-object query parameter adds no entry and a non-primitive one is a TypeError naming the parameter', () => {
   // protects: bug a query or path parameter that was an empty object or a Date became "[object Object]" or a locale string
   const query: string[] = [];
