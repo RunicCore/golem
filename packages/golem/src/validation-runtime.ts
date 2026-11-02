@@ -85,10 +85,15 @@ const PAIRWISE_ITEMS = 6;
 /**
  * The pair `[first, second]` that a double loop over `jsonEqual` finds in `list`: the lowest index that has a later equal
  * item, and the lowest later index equal to it; `undefined` when all items differ. A short list of primitives is a double
- * loop over `===`. Any other list takes one pass, linear in the size of the items. A primitive is its own key in a `Map`,
- * so `0` and `-0` meet and `1` and `'1'` do not; `NaN` equals nothing. An object, array or date is keyed by its reference in
- * a `KeyWalk`: two items have one reference exactly when `jsonEqual` says they are equal. No hash is used: a hash lets a
- * crafted list collide and fall back to the quadratic search.
+ * loop over `===`. Any other list takes one pass, linear in the size of the items, and no hash, which a crafted list could
+ * make collide into the quadratic search:
+ * - A primitive is its own key in a `Map`, so `0` and `-0` meet and `1` and `'1'` do not; `NaN` equals nothing.
+ * - An object already seen in the list is a duplicate at once.
+ * - Any other object, array or date gets a `shallowKey`, which equal items always share. Items that share an exact key are
+ *   equal; an item alone under its key is unique and is never walked. Only the items of a group of two or more inexact
+ *   keys go through a `KeyWalk`, which tells equal items by the references of their members.
+ * Each of these steps finds pairs `(first, later)`; the answer is the lowest `first`, then the lowest `later`. Every pair
+ * of equal items falls in one group, so the best pair of all groups is the best pair of the list.
  */
 export function duplicateItems(list: readonly unknown[]): readonly [first: number, second: number] | undefined {
   if (list.length <= PAIRWISE_ITEMS && !holdsObject(list)) {
@@ -99,31 +104,50 @@ export function duplicateItems(list: readonly unknown[]): readonly [first: numbe
     }
     return undefined;
   }
-  const firstOf = new Map<unknown, number>();
-  const structured = new Map<string, number>();
-  let walk: KeyWalk | undefined;
-  let first = -1;
-  let second = -1;
+  let firstOf: Map<unknown, number> | undefined;
+  const seen = new Map<object, number>();
+  // The first index of an exact key, or the indexes of an inexact key once a second item has it.
+  const shallow = new Map<string, number | number[]>();
+  // The lengths are the "none yet" pair: any real index is lower.
+  let first = list.length;
+  let second = list.length;
   for (let index = 0; index < list.length; index++) {
     // The JSON view of an `undefined` item is `null`.
     const item = list[index] ?? null;
     let earlier: number | undefined;
-    if (typeof item === 'object' && item !== null) {
-      const reference = (walk ??= new KeyWalk()).reference(item);
-      earlier = structured.get(reference);
-      if (earlier === undefined) structured.set(reference, index);
-    } else {
+    if (typeof item !== 'object' || item === null) {
       if (item !== item) continue;
-      earlier = firstOf.get(item);
+      earlier = (firstOf ??= new Map()).get(item);
       if (earlier === undefined) firstOf.set(item, index);
+    } else if ((earlier = seen.get(item)) === undefined) {
+      seen.set(item, index);
+      const key = shallowKey(item);
+      const entry = shallow.get(key);
+      if (entry === undefined) shallow.set(key, index);
+      else if (typeof entry !== 'number') entry.push(index);
+      else if (key.charCodeAt(0) === EXACT) earlier = entry;
+      else shallow.set(key, [entry, index]);
     }
-    // The pair of the lowest first index wins; for one first index the first later match comes first.
-    if (earlier !== undefined && (first < 0 || earlier < first)) {
+    if (earlier !== undefined && (earlier < first || (earlier === first && index < second))) {
       first = earlier;
       second = index;
     }
   }
-  return first < 0 ? undefined : [first, second];
+  let walk: KeyWalk | undefined;
+  let firstOfReference: Map<string, number> | undefined;
+  for (const group of shallow.values()) {
+    if (typeof group === 'number') continue;
+    for (const index of group) {
+      const reference = (walk ??= new KeyWalk()).reference(list[index] as object);
+      const earlier = (firstOfReference ??= new Map()).get(reference);
+      if (earlier === undefined) firstOfReference.set(reference, index);
+      else if (earlier < first || (earlier === first && index < second)) {
+        first = earlier;
+        second = index;
+      }
+    }
+  }
+  return first === list.length ? undefined : [first, second];
 }
 
 function holdsObject(list: readonly unknown[]): boolean {
@@ -132,6 +156,70 @@ function holdsObject(list: readonly unknown[]): boolean {
     if (typeof item === 'object' && item !== null) return true;
   }
   return false;
+}
+
+/** The first character, `e`, of a `shallowKey` that decides equality. */
+const EXACT = 101;
+/** The first character, `?`, of the text of a member that a `shallowKey` cannot decide. */
+const UNDECIDED = 63;
+const NO_NAMES: readonly string[] = [];
+
+/**
+ * The text of an object, array or date item that two equal items always share, written without descending: the sorted
+ * present names, and each member in full when it is a primitive or a date, else as a marker of its kind. It starts with `e`
+ * when it met no nested object, no `NaN`, no function and no invalid date: then equal keys mean equal items. Otherwise it
+ * starts with `x`, and equal keys only put the items in one group.
+ */
+function shallowKey(item: object): string {
+  if (item instanceof Date) {
+    const time = item.getTime();
+    return time === time ? `ed${time}` : 'x?D';
+  }
+  const list = Array.isArray(item) ? item : undefined;
+  const names = list === undefined ? Object.keys(item).sort() : NO_NAMES;
+  const size = list === undefined ? names.length : list.length;
+  let exact = true;
+  let text = '';
+  for (let position = 0; position < size; position++) {
+    let prefix = '';
+    let member: unknown;
+    if (list !== undefined) {
+      member = list[position] ?? null;
+    } else {
+      const name = names[position]!;
+      member = presentValue(item, name);
+      if (member === undefined) continue;
+      prefix = `${name.length}:${name}=`;
+    }
+    const part = shallowMember(member);
+    if (part.charCodeAt(0) === UNDECIDED) exact = false;
+    text += `${prefix}${part},`;
+  }
+  return `${exact ? 'e' : 'x'}${list === undefined ? '{' : '['}${text}`;
+}
+
+function shallowMember(member: unknown): string {
+  const text = primitiveText(member);
+  if (text !== undefined) return text;
+  if (member instanceof Date) return dateText(member) ?? '?D';
+  return typeof member !== 'object' ? '?x' : Array.isArray(member) ? '?[' : '?{';
+}
+
+/** The text of a member that is no object, or `null`; `undefined` for `NaN`, a function and a symbol, which no text can decide. */
+function primitiveText(member: unknown): string | undefined {
+  switch (typeof member) {
+    case 'string': return `s${member.length}:${member}`;
+    case 'number': return member === member ? `n${member}` : undefined;
+    case 'boolean': return member ? 't' : 'f';
+    case 'bigint': return `b${member}`;
+    case 'object': return member === null ? 'z' : undefined;
+    default: return undefined;
+  }
+}
+
+function dateText(date: Date): string | undefined {
+  const time = date.getTime();
+  return time === time ? `d${time}` : undefined;
 }
 
 /** An array or object being walked: its members are read from `index`, and `text` holds the references of the members read so far. */
@@ -148,8 +236,6 @@ class KeyFrame {
   }
 }
 
-const NO_NAMES: readonly string[] = [];
-
 /**
  * The references of the objects of one `duplicateItems` call. A reference is a short text, and two objects have one reference
  * exactly when `jsonEqual` calls them equal:
@@ -157,7 +243,9 @@ const NO_NAMES: readonly string[] = [];
  *   each distinct object is walked once, a text stays short at any depth, and a value that shares members does not grow.
  * - An object that equals only itself gets an identity, `@n`: one that holds a `NaN` or an invalid date (`jsonEqual` accepts
  *   them only as the same object), and one that a cycle leads back to. `jsonEqual` calls two distinct cyclic values equal
- *   only if the walk ends at a shared object, else it does not end; so a value on a cycle equals only itself here.
+ *   only if the walk ends at a shared object, else it does not end; so a value on a cycle equals only itself here. Hence one
+ *   edge case differs from `jsonEqual`: two distinct objects that hold one cycle member through a back edge are not called
+ *   equal, though `jsonEqual` would; only program values, never parsed input, can hold a cycle.
  * A function and a symbol also have an identity. Strings and names carry their length, so no text can forge the structure around it.
  * The walk keeps its own stack of frames, so an item nested to any depth needs no deep call stack.
  */
@@ -190,9 +278,10 @@ class KeyWalk {
           prefix = `${name.length}:${name}=`;
         }
         if (typeof member !== 'object' || member === null) {
-          const text = this.primitiveReference(member);
-          if (text === undefined) frame.failed = true;
-          else frame.text += `${prefix}${text},`;
+          const text = primitiveText(member);
+          if (text !== undefined) frame.text += `${prefix}${text},`;
+          else if (typeof member === 'number') frame.failed = true;
+          else frame.text += `${prefix}${this.identity(member)},`;
         } else if (member instanceof Date) {
           frame.text += `${prefix}${this.dateReference(member)},`;
         } else if (this.finished.has(member)) {
@@ -233,20 +322,7 @@ class KeyWalk {
   }
 
   private dateReference(date: Date): string {
-    const time = date.getTime();
-    return time === time ? `d${time}` : this.identity(date);
-  }
-
-  /** The text of a member that is not an object; `undefined` for `NaN`, which equals nothing. */
-  private primitiveReference(member: unknown): string | undefined {
-    switch (typeof member) {
-      case 'string': return `s${member.length}:${member}`;
-      case 'number': return member === member ? `n${member}` : undefined;
-      case 'boolean': return member ? 't' : 'f';
-      case 'bigint': return `b${member}`;
-      case 'object': return 'z';
-      default: return this.identity(member);
-    }
+    return dateText(date) ?? this.identity(date);
   }
 
   private identity(member: unknown): string {

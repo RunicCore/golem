@@ -17,6 +17,7 @@ const CYCLE_A: { self?: unknown } = {};
 CYCLE_A.self = CYCLE_A;
 const CYCLE_B: { loop?: unknown } = {};
 CYCLE_B.loop = CYCLE_B;
+const SHARED_PAIR = { n: { x: 1 } };
 const SHARED_LEAF = [1];
 const SHARED_NODE = { l: SHARED_LEAF, r: SHARED_LEAF };
 
@@ -26,6 +27,14 @@ const ROWS: readonly { readonly name: string; readonly list: readonly unknown[];
   { name: 'the lowest later index of the first repeated item', list: [1, 2, 1, 1], pair: [0, 2] },
   { name: 'the first of two inner pairs', list: [1, 2, 2, 3, 3], pair: [1, 2] },
   { name: 'a late pair for the lowest first index beats an earlier-found pair', list: [1, 2, 3, 2, 1], pair: [0, 4] },
+  { name: 'items equal at the top level that differ deep', list: [{ a: 1, b: { c: 1 } }, { a: 1, b: { c: 2 } }], pair: undefined },
+  { name: 'items that differ at the top level with equal deep subtrees', list: [{ a: 1, b: { c: [1, 2] } }, { a: 2, b: { c: [1, 2] } }], pair: undefined },
+  { name: 'arrays of one length and equal primitives with different nested items', list: [[1, { a: 1 }], [1, { a: 2 }]], pair: undefined },
+  { name: 'arrays of one length and equal primitives with equal nested items', list: [[1, { a: 1 }], [1, { a: 1 }]], pair: [0, 1] },
+  { name: 'an exact group next to a walked group: the exact pair has the lowest first index', list: [{ k: 1 }, { n: { x: 1 } }, { k: 2 }, { k: 1 }, { n: { x: 2 } }, { n: { x: 1 } }], pair: [0, 3] },
+  { name: 'an exact group next to a walked group: the walked pair has the lowest first index', list: [{ n: { x: 1 } }, { k: 1 }, { n: { x: 2 } }, { k: 1 }, { n: { x: 1 } }], pair: [0, 4] },
+  { name: 'the same object again comes after an equal copy', list: [SHARED_PAIR, { n: { x: 1 } }, SHARED_PAIR], pair: [0, 1] },
+  { name: 'the same object again comes before an equal copy', list: [SHARED_PAIR, SHARED_PAIR, { n: { x: 1 } }], pair: [0, 1] },
   { name: 'no items', list: [], pair: undefined },
   { name: 'one item', list: ['a'], pair: undefined },
   { name: 'six items with one duplicate', list: [1, 2, 3, 4, 5, 3], pair: [2, 5] },
