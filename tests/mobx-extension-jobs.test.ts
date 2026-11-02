@@ -96,3 +96,15 @@ for (const operationId of ['createAcmeOperation', 'acmeOperation']) {
     );
   });
 }
+
+test('a wrapper whose factory and type are one name generates, with the name claimed once', (t: TestContext) => {
+  // protects: T-827 a name that serves both the wrapper's factory and its type does not collide with itself
+  const document = documentBase('3.1.0', { paths: { '/items': { get: { operationId: 'listItems', responses: { 200: { description: 'ok' } } } } } });
+  const one = acmeFill(() => ({ wrapper: {
+    operationType: packageExport({ key: 'acme', specifier: '@acme/pkg/internal/run', typeSpecifier: '@acme/pkg', name: 'AcmeOperation' }),
+    createOperation: packageExport({ key: 'acme', specifier: '@acme/pkg/internal/run', typeSpecifier: '@acme/pkg', name: 'AcmeOperation' }),
+  } }));
+  const output = path.join(createFixtureProject(t, 'golem-acme-sdk-'), 'sdk');
+  const result = writeSdk(document, { output, name: 'Items', profile: { validation: false }, hooks: { 'client.operationWrapper': [one] } });
+  assert.match(result.artifacts.filter(({ path: filename }) => filename.includes('/operations/')).map(({ content }) => content).join('\n'), /import \{ AcmeOperation \} from '@acme\/pkg\/internal\/run';/);
+});
