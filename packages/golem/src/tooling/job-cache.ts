@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import type { GolemConfig, GolemJob } from './config.js';
 import { GolemDiagnosticSeverity, compareText, hasErrorCode, isInsideDirectory, isRecord, stableJson } from './generator-core.js';
 import type { GolemDiagnostic } from './generator-core.js';
-import { loadedFileDigests } from './load-record.js';
+import { loadedClosure, loadedFileDigests } from './load-record.js';
 import type { EnabledExtension } from './rewrite-participant.js';
 import { atomicWrite, digest, loadInventory } from './outputs.js';
 import type { Inventory, InventoryEntry, OutputFiles } from './outputs.js';
@@ -20,7 +20,7 @@ export interface JobRecord {
   /**
    * The code the job loaded, by the block of the package that holds it: the package that registers the job's block, and each package that registers an extension on its hooks.
    * Code can change with the job's options and inputs unchanged. A file of a package that the process did not load, such as the build output of an app next to its generator, is not here.
-   * A file that no block package holds, such as a helper in a linked workspace package, is under every block, by its path from that block's folder (`../shared/helper.js`).
+   * A file outside the package that an entry of the block imports, such as a helper in a linked workspace package, is under that block, by its path from the block's folder (`../shared/helper.js`).
    */
   readonly code: Readonly<Record<string, LoadedCode>>;
   /** The digest of every extension on the job's hooks (`hookCode`); empty when none fills a hook of the job. */
@@ -238,8 +238,6 @@ export function hookCode(filled: readonly { readonly hook: string; readonly exte
 export interface CodePackage {
   readonly folder: string;
   readonly entries: readonly string[];
-  /** The folder of every block package the run loads code from, this one among them: a loaded file under none of them (and not under golem or a node_modules folder) is a helper in a linked package and belongs to every block. */
-  readonly folders: readonly string[];
 }
 
 /** A file's name in a record of loaded code: its path from the package folder, with `/` separators. */
@@ -249,17 +247,20 @@ function codeKey(folder: string, filename: string): string {
 
 /**
  * The code of a package that the process loaded, each file with the digest it had when it loaded: the files under the package folder, its own `node_modules` left out,
- * the files golem resolved for the package, read from disk when the load hook missed them, and the loaded files that no block package of the run holds (a helper in a linked
- * workspace package), by their path from the package folder. The load record does not say which block loaded a file, so such a file counts for every block: an edit to it
- * runs every job again. A file under another block's folder, golem's own folder or a `node_modules` folder is not here. A rebuilt file stays recorded as the code that ran.
+ * the files that the package's resolved entries import, directly or not, outside `node_modules` and golem's own folder (a helper in a linked workspace package, in
+ * another block's package too), by their path from the package folder, and the entries themselves, read from disk when the load hook missed them. A job therefore counts
+ * the code its own generator imports and no other block's. A rebuilt file stays recorded as the code that ran.
  */
 export function loadedCode(code: CodePackage): LoadedCode {
   const files = new Map<string, string>();
   for (const [filename, loadDigest] of loadedFileDigests()) {
     const key = codeKey(code.folder, filename);
-    const own = isInsideDirectory(code.folder, filename) && !key.split('/').includes('node_modules');
-    const linked = !insideAny([...code.folders, golemFolder()], filename) && !filename.split(path.sep).includes('node_modules');
-    if (own || linked) files.set(key, loadDigest);
+    if (isInsideDirectory(code.folder, filename) && !key.split('/').includes('node_modules')) files.set(key, loadDigest);
+  }
+  // Traversal passes through node_modules files, which can import a linked package; only the record leaves them out.
+  for (const filename of loadedClosure(code.entries, file => isInsideDirectory(golemFolder(), file))) {
+    const loadDigest = loadedFileDigests().get(filename);
+    if (loadDigest !== undefined && !filename.split(path.sep).includes('node_modules')) files.set(codeKey(code.folder, filename), loadDigest);
   }
   for (const entry of code.entries) {
     const key = codeKey(code.folder, entry);

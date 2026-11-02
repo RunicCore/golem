@@ -409,7 +409,7 @@ function linkedHelperProject(t: TestContext): ReturnType<typeof importingProject
   const shared = path.join(project.root, 'packages/shared');
   const helper = path.join(shared, 'helper.js');
   fs.mkdirSync(shared, { recursive: true });
-  fs.writeFileSync(path.join(shared, 'package.json'), JSON.stringify({ name: '@fixture/shared', version: '1.0.0', type: 'module', exports: { './helper.js': './helper.js' } }));
+  fs.writeFileSync(path.join(shared, 'package.json'), JSON.stringify({ name: '@fixture/shared', version: '1.0.0', type: 'module', exports: { './helper.js': './helper.js', './helper.cjs': './helper.cjs' } }));
   linkProjectPackages(project.root, { '@fixture/shared': shared });
   project.edit('emitter.js', "export { stamp as emitter } from '@fixture/shared/helper.js';\n");
   project.edit('index.js', stampedGenerator('js'));
@@ -455,4 +455,87 @@ test('an edit inside one block package runs its job and not the job of another p
   edit('emitter.js', "export const emitter = 'two';\n");
   await generate();
   assert.deepEqual([runs(), betaRuns()], [2, 1]);
+});
+
+test('a CommonJS generator that requires a helper from a linked package runs the job again when it changes', async t => {
+  // protects: T-842 the import graph sees require() too, so a CommonJS helper in another package counts
+  const { root, generate, runs, edit } = linkedHelperProject(t);
+  const helper = path.join(root, 'packages/shared/helper.cjs');
+  fs.writeFileSync(helper, "exports.stamp = 'one';\n");
+  edit('index.cjs', stampedGenerator('cjs'));
+  edit('emitter.cjs', "exports.emitter = require('@fixture/shared/helper.cjs').stamp;\n");
+  const manifest = path.join(root, 'node_modules/@fixture/gen/package.json');
+  fs.writeFileSync(manifest, fs.readFileSync(manifest, 'utf8').replace('"./generator":"./index.js"', '"./generator":"./index.cjs"'));
+  await generate();
+  await generate();
+  assert.equal(runs(), 1);
+  fs.writeFileSync(helper, "exports.stamp = 'two';\n");
+  await generate();
+  assert.equal(runs(), 2);
+  assert.match(fs.readFileSync(path.join(root, EMITTED), 'utf8'), /\/\/ two\n$/);
+});
+
+/** A generator of the package `@fixture/<name>` for `block`: it counts its runs in runs-<block>.log and stamps its output with `stamp` from `specifier`. */
+function stampingGenerator(name: string, block: string, specifier: string): string {
+  const header = MARKER.replace('@fixture/gen', `@fixture/${name}`);
+  return `import fs from 'node:fs';
+import path from 'node:path';
+import { stamp } from '${specifier}';
+export const apiVersion = 1;
+export function generate(context) {
+  fs.appendFileSync(path.join(context.directory, 'runs-${block}.log'), 'run\\n');
+  const input = path.join(context.directory, 'generator-input.txt');
+  context.onInput(input);
+  return { apiVersion: 1, artifacts: [{ path: path.join(context.output, 'item.model.ts'), content: ${JSON.stringify(header)} + '// ' + stamp + '\\n' }], manifestPaths: [], watchInputs: [input] };
+}
+`;
+}
+
+/**
+ * Three generator packages: `@fixture/gen` (block acme, in node_modules) imports its stamp from `acmeStamp`; `@fixture/b` (beta) and `@fixture/c` (gamma) sit in
+ * packages/ and are linked into node_modules, each with a `helper.js` of its own that its generator imports. `@fixture/shared` is a package without a block.
+ * `edit` rewrites the helper of `b`, `c` or `shared`.
+ */
+function threeBlocks(t: TestContext, acmeStamp: string): { generate: () => Promise<void>; runs: (block: string) => number; edit: (name: 'b' | 'c' | 'shared', stamp: string) => void } {
+  const { root } = project(t);
+  const folder = (name: string): string => path.join(root, 'packages', name);
+  const link = (name: string, registration?: { block: string; plan: string; generator: string }): void => {
+    fs.mkdirSync(folder(name), { recursive: true });
+    fs.writeFileSync(path.join(folder(name), 'package.json'), JSON.stringify({ name: `@fixture/${name}`, version: VERSION, type: 'module', exports: { './plan': './plan.js', './generator': './index.js', './helper.js': './helper.js' }, ...(registration ? { golem: { apiVersion: 2, ...registration } } : {}) }));
+    fs.writeFileSync(path.join(folder(name), 'helper.js'), "export const stamp = 'one';\n");
+    linkProjectPackages(root, { [`@fixture/${name}`]: folder(name) });
+  };
+  link('shared');
+  for (const [name, block] of [['b', 'beta'], ['c', 'gamma']] as const) {
+    link(name, { block, plan: './plan', generator: './generator' });
+    fs.writeFileSync(path.join(folder(name), 'plan.js'), PLAN_SOURCE.replace("id: 'acme'", `id: '${block}'`));
+    fs.writeFileSync(path.join(folder(name), 'index.js'), stampingGenerator(name, block, './helper.js'));
+    fs.appendFileSync(path.join(root, 'golem.yaml'), `${block}:\n  output: src/${block}\n  options: { label: y }\n`);
+  }
+  fs.writeFileSync(path.join(root, 'node_modules/@fixture/gen/index.js'), stampingGenerator('gen', 'acme', acmeStamp));
+  listProjectDependencies(root, ['@fixture/b', '@fixture/c']);
+  fs.writeFileSync(path.join(root, 'generator-input.txt'), 'input');
+  return {
+    generate: async () => { await command(root, process.execPath, [golem, 'generate']); },
+    runs: block => fs.readFileSync(path.join(root, `runs-${block}.log`), 'utf8').split('\n').filter(Boolean).length,
+    edit: (name, stamp) => fs.writeFileSync(path.join(folder(name), 'helper.js'), `export const stamp = '${stamp}';\n`),
+  };
+}
+
+test('a helper in another generator package that a generator imports runs the jobs of both packages and no unrelated job', async t => {
+  // protects: T-842 (E-57) the record follows what a generator imports, so an edit in another block package reruns its importer
+  const { generate, runs, edit } = threeBlocks(t, '@fixture/b/helper.js');
+  await generate();
+  edit('b', 'two');
+  await generate();
+  assert.deepEqual([runs('acme'), runs('beta'), runs('gamma')], [2, 2, 1]);
+});
+
+test('a helper outside every generator package that only one generator imports runs only that job', async t => {
+  // protects: T-842 an outside file counts for the generators that import it, not for every job
+  const { generate, runs, edit } = threeBlocks(t, '@fixture/shared/helper.js');
+  await generate();
+  edit('shared', 'two');
+  await generate();
+  assert.deepEqual([runs('acme'), runs('beta'), runs('gamma')], [2, 1, 1]);
 });

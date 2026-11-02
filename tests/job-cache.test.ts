@@ -14,7 +14,7 @@ const CODE_FOLDER = fs.mkdtempSync(path.join(os.tmpdir(), 'golem-job-cache-code-
 fs.writeFileSync(path.join(CODE_FOLDER, 'lib.js'), 'a');
 process.on('exit', () => fs.rmSync(CODE_FOLDER, { recursive: true, force: true }));
 const CODE = { acme: { 'lib.js': digest('a') } };
-const SETUP: JobSetup = { code: new Map([['acme', { folder: CODE_FOLDER, entries: [], folders: [CODE_FOLDER] }]]), hookCode: 'hook-code-digest', programView: '{"laterOutputs":[]}', manifestInputs: [] };
+const SETUP: JobSetup = { code: new Map([['acme', { folder: CODE_FOLDER, entries: [] }]]), hookCode: 'hook-code-digest', programView: '{"laterOutputs":[]}', manifestInputs: [] };
 
 /** The inventory of a job's files: each as it is on disk now. */
 function inventoryOf(root: string, files: readonly string[]): Inventory {
@@ -113,13 +113,13 @@ test('a job is stale when a file it loaded is edited or gone, or the code it rec
   const folder = path.join(root, 'gen');
   fs.mkdirSync(folder);
   fs.writeFileSync(path.join(folder, 'lib.js'), 'a');
-  const withEntries = (entries: string[]): JobSetup => ({ ...SETUP, code: new Map([['acme', { folder, entries, folders: [folder] }]]) });
+  const withEntries = (entries: string[]): JobSetup => ({ ...SETUP, code: new Map([['acme', { folder, entries }]]) });
   const setup = withEntries([path.join(folder, 'lib.js')]);
   const loaded = { ...record, code: { acme: { 'lib.js': digest('a') } } };
   assert.equal(jobIsCurrent(config, job, loaded, setup, inventory), true);
   fs.writeFileSync(path.join(folder, 'build-output.js'), 'b');
   assert.equal(jobIsCurrent(config, job, loaded, setup, inventory), true, 'a file the job never loaded');
-  assert.equal(jobIsCurrent(config, job, loaded, { ...setup, code: new Map([...setup.code, ['ext', { folder, entries: [], folders: [folder] }]]) }, inventory), false, 'another package set');
+  assert.equal(jobIsCurrent(config, job, loaded, { ...setup, code: new Map([...setup.code, ['ext', { folder, entries: [] }]]) }, inventory), false, 'another package set');
   assert.equal(jobIsCurrent(config, job, { ...record, code: { acme: {} } }, setup, inventory), false, 'an empty list');
   assert.equal(jobIsCurrent(config, job, loaded, withEntries([path.join(folder, 'renamed-entry.js')]), inventory), false, 'an entry that the record does not hold');
   const cache = new Map<string, string | undefined>();
