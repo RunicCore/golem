@@ -139,14 +139,14 @@ Hand-written code copies each field and converts each date, and checks nothing. 
 
 | Model | Decode | Encode | Parse | Stringify |
 | --- | --- | --- | --- | --- |
-| Flat | 0.49 | 0.79 | 0.74 | 1.06 |
-| Nested | 0.36 | 0.65 | 0.83 | 0.85 |
-| Union | 0.40 | 0.71 | 0.70 | 0.91 |
-| Array of 100 items | 0.53 | 0.78 | 0.75 | 0.82 |
-| Tuple | 0.44 | 0.76 | 0.71 | 0.85 |
-| Optional fields | 0.64 | 0.85 | 0.77 | 0.84 |
+| Flat | 0.44 | 0.78 | 0.69 | 1.04 |
+| Nested | 0.34 | 0.74 | 0.80 | 0.85 |
+| Union | 0.32 | 0.66 | 0.61 | 0.82 |
+| Array of 100 items | 0.47 | 0.77 | 0.73 | 0.81 |
+| Tuple | 0.42 | 0.79 | 0.66 | 0.77 |
+| Optional fields | 0.64 | 0.83 | 0.77 | 0.86 |
 
-They were measured at commit c7513ad. To measure them on your machine, run `npm run bench:handwritten`.
+They were measured at commit 201b03e. To measure them on your machine, run `npm run bench:handwritten`.
 
 ## What is measured
 
