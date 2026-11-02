@@ -18,13 +18,15 @@ const fieldsKey = Symbol.for(MODEL_FIELDS_KEY);
 
 /**
  * The names that the own model of a golem model instance declares, or `undefined` when the value holds no program
- * state. `instanceFieldsCode` (tooling/union-conversion.ts) is the same walk as code for the generated validators.
+ * state. The nearest prototype that owns the field entry decides, and only an array of names counts as an answer, so a
+ * prototype that answers any key (a Proxy) holds no program state. `instanceFieldsCode` (tooling/union-conversion.ts)
+ * is the same rule as code for the generated validators.
  */
 export function instanceFields(value: object): readonly string[] | undefined {
   const prototype = Object.getPrototypeOf(value);
   if (prototype === Object.prototype || prototype === null) return undefined;
-  // The lookup finds the nearest prototype that owns the key, as a walk of the chain would.
-  return prototype[fieldsKey] ?? undefined;
+  const declared: unknown = prototype[fieldsKey];
+  return Array.isArray(declared) ? declared as readonly string[] : undefined;
 }
 
 /**

@@ -179,7 +179,11 @@ const PLAIN_WALK_BUDGET = 16_384;
 /** The objects the running plain walk may still visit. A getter that starts another walk only resets it, which gives that walk more objects and never a wrong answer. */
 let plainWalkBudget = 0;
 
-/** True when `level` and everything below it fits in `levels` levels and the budget. Cycles and shared nodes spend the budget or reach the depth, so it answers false for them. */
+/**
+ * True when `level` and everything below it fits in `levels` levels and the budget. Cycles and shared nodes spend the budget or
+ * reach the depth, so it answers false for them. When it answers false the exact walk reads the value again, so a getter runs
+ * twice. It allocates one array of values for each object (`Object.values`); an array level allocates nothing.
+ */
 function fitsPlainWalk(level: object, levels: number): boolean {
   if (levels < 1 || --plainWalkBudget < 0) return false;
   if (Array.isArray(level)) {

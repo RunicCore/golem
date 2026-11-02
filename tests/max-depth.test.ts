@@ -145,21 +145,20 @@ test('the depth walk reaches the objects of a model instance, and a cycle ends t
   assert.equal(valueNestsDeeperThan(loop, 5), false);
 });
 
-const limitRows = [1, 5, 511, 512, 513, 1000];
-for (const limit of limitRows) {
-  test(`maxDepth ${limit} accepts a value exactly ${limit} levels deep and rejects one level more, on validate, fromWireFormat and parse`, async (t) => {
-    // protects: F-250 the plain depth walk answers "fits" only inside the limit, so the answer stays what the exact walk gave
-    const { link } = await buildDepthProject(t);
+test('maxDepth accepts a value exactly at the limit and rejects one level more, on validate, fromWireFormat and parse', async (t) => {
+  // protects: F-250 the plain depth walk answers "fits" only inside the limit, so the answer stays what the exact walk gave
+  const { link } = await buildDepthProject(t);
+  for (const limit of [1, 5, 511, 512, 513, 1000]) {
     const exact = chain(limit);
     const over = chain(limit + 1);
-    assert.equal(link.validate(exact.value, { maxDepth: limit }), true);
-    assert.equal(typeof link.fromWireFormat(exact.value, { maxDepth: limit }).name, 'string');
-    assert.equal(typeof link.parse(exact.text, { maxDepth: limit }).name, 'string');
-    assert.equal(link.validate(over.value, { maxDepth: limit }), false);
-    assert.throws(() => link.fromWireFormat(over.value, { maxDepth: limit }), rejectsAsInputAt(limit));
-    assert.throws(() => link.parse(over.text, { maxDepth: limit }), rejectsAsInputAt(limit));
-  });
-}
+    assert.equal(link.validate(exact.value, { maxDepth: limit }), true, `validate at ${limit}`);
+    assert.equal(typeof link.fromWireFormat(exact.value, { maxDepth: limit }).name, 'string', `fromWireFormat at ${limit}`);
+    assert.equal(typeof link.parse(exact.text, { maxDepth: limit }).name, 'string', `parse at ${limit}`);
+    assert.equal(link.validate(over.value, { maxDepth: limit }), false, `validate over ${limit}`);
+    assert.throws(() => link.fromWireFormat(over.value, { maxDepth: limit }), rejectsAsInputAt(limit), `fromWireFormat over ${limit}`);
+    assert.throws(() => link.parse(over.text, { maxDepth: limit }), rejectsAsInputAt(limit), `parse over ${limit}`);
+  }
+});
 
 test('the depth walk takes a value far deeper than the call stack when maxDepth allows it, and still counts it when maxDepth does not', () => {
   // protects: T-848 a plain recursive walk bounded by a caller's large maxDepth would end the stack
