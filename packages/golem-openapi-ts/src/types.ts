@@ -94,11 +94,13 @@ function withNullAlternative(
 }
 
 function classifyTextSchemaLocal(schema: JsonObject): TextSchemaClassification {
-  if (schema.const !== undefined) return classifyConstValue(schema.const);
-  if (Array.isArray(schema.enum)) {
-    if (schema.enum.length === 0) return { kind: 'ambiguous', schemaType: 'never' };
-    const hasNull = schema.enum.some((value) => value === null);
-    const concrete = schema.enum.filter((value) => value !== null);
+  // The values the schema admits, by the one rule that reads `const`, `enum` and `type` together.
+  const listed = typedListedValues(schema);
+  if (listed !== undefined) {
+    if (listed.length === 0) return { kind: 'ambiguous', schemaType: 'never' };
+    if (schema.const !== undefined) return classifyConstValue(listed[0]);
+    const hasNull = listed.some((value) => value === null);
+    const concrete = listed.filter((value) => value !== null);
     if (concrete.length === 0) return { kind: 'non-string', schemaType: 'null' };
     const kinds = new Set(concrete.map((value) => typeof value));
     if (kinds.size === 1 && kinds.has('string')) {

@@ -1025,3 +1025,18 @@ test('unsupported HTTP Digest authentication fails generation without Bearer fal
     /unsupported HTTP authentication scheme "Digest"/,
   );
 });
+
+test('a text/plain body whose enum lists a value of another type than its type reads as a string', async t => {
+  // protects: T-668 classifyTextSchemaLocal read enum outside the one rule, so {type: string, enum: [a, 1]} was ambiguous and asked for custom encoders
+  const output = path.join(createFixtureProject(t, 'golem-openapi-text-enum-'), 'sdk');
+  const plain = { 'text/plain': { schema: { type: 'string', enum: ['a', 1] } } };
+  await generateMaterializedSdk({
+    openapi: '3.1.0',
+    info: { title: 'Texts', version: '1.0.0' },
+    paths: { '/text': { post: { operationId: 'sendText', requestBody: { required: true, content: plain }, responses: { 200: { description: 'ok', content: plain } } } } },
+  }, { output, name: 'Texts', profile: { validation: false, allowAny: false } });
+  compileGeneratedSdk(output, []);
+  const Client = await loadGeneratedClient(output, 'Texts');
+  const client = new Client({ baseUrl: 'https://api.test', fetchImpl: (async () => new Response('a', { status: 200, headers: { 'content-type': 'text/plain' } })) as typeof fetch }) as unknown as { sendText(): { execute(input: unknown): Promise<{ body: unknown }> } };
+  assert.equal((await client.sendText().execute({ body: 'a' })).body, 'a');
+});
