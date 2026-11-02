@@ -961,6 +961,9 @@ function projectRequired(
   return required.map(String).filter((name) => !excluded.has(name));
 }
 
+/** The keywords whose subschema judges the value and converts none: a format there keeps the rule of the document. */
+const CHECK_ONLY_KEYWORDS: ReadonlySet<string> = new Set(['not', 'if', 'then', 'else', 'contains', 'propertyNames']);
+
 function mapSchemaKeyword(
   value: unknown,
   context: ProjectionContext,
@@ -1024,6 +1027,10 @@ export function projectSchema(schema: unknown, context: ProjectionContext): unkn
     }
     if (SCHEMA_MAP_KEYWORDS.includes(key) && isJsonObject(value)) {
       next[key] = mapSchemaKeyword(value, ctx, projectSchema);
+      continue;
+    }
+    if (CHECK_ONLY_KEYWORDS.has(key)) {
+      next[key] = typeof value === 'boolean' ? value : projectSchema(value, { ...ctx, dates: null });
       continue;
     }
     if (SCHEMA_SINGLE_KEYWORDS.includes(key)) {
@@ -1198,7 +1205,7 @@ function projectDirectionalResource(
   direction: SchemaDirection,
   packId: string,
   resources: ResourceIndex,
-  dates: OpenApiDates | null,
+  dates: OpenApiDates,
 ): Record<string, unknown> {
   const defs: Record<string, unknown> = {};
   for (const resource of idBearingResources(resources)) {
@@ -1243,7 +1250,7 @@ export function buildRuntimeProjections(
   document: unknown,
   ir: NormalizedDocument,
   rootId: string,
-  dates: OpenApiDates | null,
+  dates: OpenApiDates,
   resources: ResourceIndex = collectCanonicalResources(document),
 ): RuntimeProjectionBundle {
   const inputResourceId = projectionResourceId(rootId, 'input');
@@ -1270,7 +1277,7 @@ export function projectOperationSchema(
   document: unknown,
   direction: SchemaDirection,
   resourceId: string,
-  dates: OpenApiDates | null,
+  dates: OpenApiDates,
   resources: ResourceIndex = collectCanonicalResources(document),
 ): unknown {
   return rewriteProjectedSchema(

@@ -713,14 +713,13 @@ export function buildOperationValidationSchemas(
   operations: readonly NormalizedOperation[],
   document: unknown,
   profile: OpenApiGenerationProfile,
-  schemaData?: ReturnType<typeof buildSchemaData>,
+  schemaData: ReturnType<typeof buildSchemaData> | undefined,
   locate?: OriginLocator,
   moved: MovedUnions = new Map(),
 ): OperationValidationSchemas | undefined {
-  if (!profile.validation) return undefined;
-  // Without schema data there is no operation to validate.
-  if (schemaData === undefined && operations.length > 0) throw new Error('The validation schemas of the operations need their schema data.');
-  const bundles = schemaData === undefined ? new Map<string, OperationValidationBundle>() : buildOperationValidationSchemaBundles(document, operations, schemaData);
+  // The schema data exists exactly when the profile validates and the document has an operation.
+  if (!profile.validation || schemaData === undefined) return undefined;
+  const bundles = buildOperationValidationSchemaBundles(document, operations, schemaData);
   const list = operations.map((operation) => {
     const bundle = bundles.get(operation.name);
     if (!bundle) throw new Error(`Missing generated validation schema bundle for operation ${operation.name}`);

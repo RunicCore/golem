@@ -260,46 +260,53 @@ test('dates: temporal converts fields of models that reference each other across
 // The generated SDK bundles its own runtime, so its LibError is not this test's class.
 const isValidationError = (error: unknown): boolean => (error as { kind?: unknown } | null)?.kind === 'validation';
 
-// protects: T-682 a Temporal.Duration field writes PT0.5S, PT1H30S and P1Y2D, and the same field reads them back under the class wire form, not the RFC 3339 duration format
-const TEMPORAL_DURATION_ROWS = [
-  ['fractional seconds', Temporal.Duration.from({ milliseconds: 500 }), 'PT0.5S'],
-  ['hours and seconds with no minutes', Temporal.Duration.from({ hours: 1, seconds: 30 }), 'PT1H30S'],
-  ['years and days with no months', Temporal.Duration.from({ years: 1, days: 2 }), 'P1Y2D'],
-] as const;
-for (const [name, span, text] of TEMPORAL_DURATION_ROWS) {
-  test(`dates: temporal round-trips a duration with ${name} in a field, an array item and a union branch`, async t => {
-    const client = await generateTemporalClient(t, 'golem-openapi-temporal-duration-', document({
-      required: ['span', 'spans', 'maybe', 'either'],
-      properties: {
-        span: { type: 'string', format: 'duration' },
-        spans: { type: 'array', items: { type: 'string', format: 'duration' } },
-        maybe: { type: ['string', 'null'], format: 'duration' },
-        either: { anyOf: [{ type: 'string', format: 'duration' }, { type: 'null' }] },
-      },
-    }) as Record<string, unknown>, 'Event');
-    const wire = { span: text, spans: [text], maybe: text, either: text };
+test('dates: temporal round-trips the duration text that Temporal writes in a field, an array item and a union branch', async t => {
+  // protects: T-682 a Temporal.Duration field writes PT0.5S, PT1H30S and P1Y2D, and reads them back under the class wire form, not the RFC 3339 duration format
+  const client = await generateTemporalClient(t, 'golem-openapi-temporal-duration-', document({
+    required: ['span', 'spans', 'maybe', 'either'],
+    properties: {
+      span: { type: 'string', format: 'duration' },
+      spans: { type: 'array', items: { type: 'string', format: 'duration' } },
+      maybe: { type: ['string', 'null'], format: 'duration' },
+      either: { anyOf: [{ type: 'string', format: 'duration' }, { type: 'null' }] },
+    },
+  }) as Record<string, unknown>, 'Event');
+  const rows = [
+    [Temporal.Duration.from({ milliseconds: 500 }), 'PT0.5S'],
+    [Temporal.Duration.from({ hours: 1, seconds: 30 }), 'PT1H30S'],
+    [Temporal.Duration.from({ years: 1, days: 2 }), 'P1Y2D'],
+  ] as const;
+  for (const [span, text] of rows) {
     const written = await client.encode({ span, spans: [span], maybe: span, either: span });
-    assert.deepEqual(written, wire);
+    assert.deepEqual(written, { span: text, spans: [text], maybe: text, either: text }, text);
     const read = await client.decode(written) as { span: Temporal.Duration; spans: Temporal.Duration[]; maybe: Temporal.Duration; either: Temporal.Duration };
     for (const value of [read.span, read.spans[0], read.maybe, read.either]) assert.equal(value?.toString(), text);
-  });
-}
-
-test('dates: temporal still rejects a duration text outside the wire form', async t => {
-  const client = await generateTemporalClient(t, 'golem-openapi-temporal-duration-bad-', document({
-    required: ['span'],
-    properties: { span: { type: 'string', format: 'duration' } },
-  }) as Record<string, unknown>, 'Event');
-  await assert.rejects(client.decode({ span: 'P1e2D' }), isValidationError);
+  }
 });
 
-test('dates: date keeps the RFC 3339 duration format on a plain string field', async t => {
-  const output = path.join(createFixtureProject(t, 'golem-openapi-date-duration-'), 'sdk');
-  await generateMaterializedSdk(withRootOperations(document({ required: ['span'], properties: { span: { type: 'string', format: 'duration' } } }) as Record<string, unknown>, 'Event'), { output, name: 'Events', profile: PROFILE, dates: 'date' });
-  compileGeneratedSdk(output, [], { strict: true });
-  const client = await sdkBodyCodec(output, 'Events', 'Event');
-  assert.deepEqual(await client.decode({ span: 'PT1H30M' }), { span: 'PT1H30M' });
-  await assert.rejects(client.decode({ span: 'PT0.5S' }), isValidationError);
+test('dates: temporal still rejects a duration text outside the wire form, and a pattern beside the format still applies', async t => {
+  // protects: T-682 the class wire form replaces the RFC 3339 format only; bad text and a keyword beside the format are still checked
+  const client = await generateTemporalClient(t, 'golem-openapi-temporal-duration-bad-', document({
+    required: ['span', 'timed'],
+    properties: { span: { type: 'string', format: 'duration' }, timed: { type: 'string', format: 'duration', pattern: '^PT' } },
+  }) as Record<string, unknown>, 'Event');
+  await assert.rejects(client.decode({ span: 'P1e2D', timed: 'PT1S' }), isValidationError);
+  await assert.rejects(client.decode({ span: 'P1D', timed: 'P1D' }), isValidationError);
+  assert.equal(((await client.decode({ span: 'P1D', timed: 'PT0.5S' })) as { timed: Temporal.Duration }).timed.toString(), 'PT0.5S');
+});
+
+test('dates: temporal keeps the RFC 3339 duration format where a keyword only checks a value', async t => {
+  // protects: T-682 not, if, contains and propertyNames judge a value and convert none, so they keep the document format
+  const client = await generateTemporalClient(t, 'golem-openapi-temporal-duration-check-', document({
+    required: ['plain', 'names'],
+    properties: {
+      plain: { type: 'string', not: { type: 'string', format: 'duration' } },
+      names: { type: 'object', additionalProperties: { type: 'integer' }, propertyNames: { type: 'string', format: 'duration' } },
+    },
+  }) as Record<string, unknown>, 'Event');
+  assert.deepEqual(await client.decode({ plain: 'PT0.5S', names: { P1D: 1 } }), { plain: 'PT0.5S', names: { P1D: 1 } });
+  await assert.rejects(client.decode({ plain: 'P1D', names: {} }), isValidationError);
+  await assert.rejects(client.decode({ plain: 'x', names: { 'PT0.5S': 1 } }), isValidationError);
 });
 
 test('dates: temporal sends a duration query parameter and a duration header in the form Temporal writes, and reads one in a response header', async t => {

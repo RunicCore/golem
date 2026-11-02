@@ -121,7 +121,7 @@ function operationRuntimeSchemas(
   inputResourceId: string,
   outputResourceId: string,
   resources: ResourceIndex,
-  dates: OpenApiDates | null,
+  dates: OpenApiDates,
   bodyChecked: BodyChecked,
 ): Record<string, unknown> {
   return Object.fromEntries(operations.map((operation) => {
@@ -257,7 +257,7 @@ function runtimeRegistry(registry: Record<string, unknown>): Record<string, unkn
 }
 
 /** `bodyChecked` names the request bodies that the input root leaves to their own conversion (see `operationInputSchema`). */
-export function buildSchemaData(document: unknown, dates: OpenApiDates | null, preparedIr?: NormalizedDocument, bodyChecked: BodyChecked = () => false) {
+export function buildSchemaData(document: unknown, dates: OpenApiDates, preparedIr?: NormalizedDocument, bodyChecked: BodyChecked = () => false) {
   const ir = preparedIr ?? normalizeDocument(document);
   const operations = ir.operations;
   const rootId = `urn:golem:openapi:${identifier(asRecord(asRecord(document).info).title, 'api').toLowerCase()}:${sourceDigest(document)}:schemas`;
