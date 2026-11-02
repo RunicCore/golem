@@ -21,6 +21,7 @@ import {
   componentSite,
   discriminatorSelection,
   checkComposition,
+  convertedSubschemas,
   type OpenApiDates,
 } from './model-resolution.js';
 
@@ -63,12 +64,7 @@ function findRecursiveAliases(env: ModelResolveEnv): ReadonlyMap<string, Recursi
       if (components.has(reference)) edges.add(reference);
       return;
     }
-    for (const keyword of ['allOf', 'oneOf', 'anyOf', 'prefixItems'] as const) {
-      for (const item of Array.isArray(schema[keyword]) ? schema[keyword] : []) collect(item, nested, edges);
-    }
-    for (const [, child] of objectEntries(schema.properties)) collect(child, nested, edges);
-    collect(schema.items, nested, edges);
-    collect(schema.additionalProperties, nested, edges);
+    for (const { child } of convertedSubschemas(schema)) collect(child, nested, edges);
   };
   const edges = (name: string): ReadonlySet<string> => {
     let found = edgesOf.get(name);

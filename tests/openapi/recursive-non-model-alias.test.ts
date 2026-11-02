@@ -143,3 +143,53 @@ test('a component that is only a $ref to itself stops generation with the ref cy
   assert.notEqual(diagnostics.length, 0);
   assert.deepEqual([...new Set(diagnostics.map(({ code, severity }) => `${code} ${severity}`))], ['VALIDATE_REF_CYCLE error']);
 });
+
+/** A component `JsonValue` that is a string or a `branch` schema, so it reaches itself only through a keyword of the branch. */
+function recursesThrough(branch: Record<string, unknown>): Record<string, unknown> {
+  return withRootOperations({
+    openapi: '3.1.0',
+    info: { title: 'RecursiveKeyword', version: '1' },
+    paths: {},
+    components: { schemas: { JsonValue: { oneOf: [{ type: 'string' }, branch] } } },
+  }, 'JsonValue');
+}
+
+for (const { keyword, branch, valid, invalid } of [
+  { keyword: 'patternProperties', branch: { type: 'object', patternProperties: { '^.*$': ref('JsonValue') } }, valid: { a: 'x' }, invalid: [{ a: 1 }] },
+  { keyword: 'unevaluatedProperties', branch: { type: 'object', unevaluatedProperties: ref('JsonValue') }, valid: { a: 'x' }, invalid: [{ a: 1 }] },
+  { keyword: 'contains', branch: { type: 'array', contains: ref('JsonValue') }, valid: ['x'], invalid: [[1]] },
+  { keyword: 'propertyNames', branch: { type: 'object', propertyNames: ref('JsonValue') }, valid: { a: 1 }, invalid: [] },
+]) {
+  test(`a component that recurses only through ${keyword} generates and checks each level`, async t => {
+    // protects: T-866 a component that reached itself only through a constraint keyword failed generation
+    const output = path.join(createFixtureProject(t, 'golem-openapi-recursive-keyword-'), 'sdk');
+    await generateMaterializedSdk(recursesThrough(branch), { output, name: 'RecursiveKeyword', profile: { validation: true } });
+    compileGeneratedSdk(output, [], { strict: true, skipLibCheck: true });
+    const codec = await sdkBodyCodec(output, 'RecursiveKeyword', 'JsonValue');
+    assert.deepEqual(await codec.decode(valid), valid);
+    await Promise.all(invalid.map(value => assert.rejects(() => codec.decode(value), (error: unknown) => error instanceof LibError)));
+  });
+}
+
+for (const [keyword, branch] of [
+  ['not', { type: 'object', not: ref('JsonValue') }],
+  ['if', { type: 'object', if: ref('JsonValue'), then: { type: 'object' } }],
+] as const) {
+  test(`a component that returns to itself through ${keyword} without reading the value stops generation with a located ref cycle error`, async t => {
+    // protects: T-866 a component that reached itself only through not or if ended in an internal error
+    const directory = createFixtureProject(t, 'golem-openapi-recursive-keyword-');
+    const result = await generate({
+      input: writeOpenApiDocument(directory, recursesThrough(branch)),
+      output: path.join(directory, 'sdk'),
+      profile: { validation: true },
+    });
+    assert.deepEqual(result.artifacts, []);
+    assert.deepEqual(
+      (result.diagnostics ?? []).map(({ code, severity, message }) => `${code} ${severity} ${message.split(':')[0]}`),
+      [
+        'VALIDATE_REF_CYCLE error openapi.json#/components/schemas/JsonValue',
+        `VALIDATE_REF_CYCLE error openapi.json#/components/schemas/JsonValue/oneOf/1/${keyword}/$ref`,
+      ],
+    );
+  });
+}
