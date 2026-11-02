@@ -21,6 +21,8 @@ const ROWS: readonly { readonly name: string; readonly list: readonly unknown[];
   { name: 'a late pair for the lowest first index beats an earlier-found pair', list: [1, 2, 3, 2, 1], pair: [0, 4] },
   { name: 'no items', list: [], pair: undefined },
   { name: 'one item', list: ['a'], pair: undefined },
+  { name: 'six items with one duplicate', list: [1, 2, 3, 4, 5, 3], pair: [2, 5] },
+  { name: 'seven items with one duplicate', list: [{ a: 1 }, { a: 2 }, 3, 4, 5, 6, { a: 1 }], pair: [0, 6] },
   { name: 'number and its text differ', list: [1, '1'], pair: undefined },
   { name: 'zero and negative zero are equal', list: [0, -0], pair: [0, 1] },
   { name: 'true and 1 differ', list: [true, 1], pair: undefined },
@@ -57,10 +59,14 @@ const ROWS: readonly { readonly name: string; readonly list: readonly unknown[];
   { name: 'a class instance equals a plain object of its fields', list: [new Point(1, 2), { x: 1, y: 2 }], pair: [0, 1] },
 ];
 
+/** Seven items that equal nothing in a row; behind a row's list they make it longer than the pairwise limit and leave its pair as it is. */
+const FILLER = ['filler-0', 'filler-1', 'filler-2', 'filler-3', 'filler-4', 'filler-5', 'filler-6'];
+
 for (const { name, list, pair } of ROWS) {
   test(`duplicateItems: ${name}`, () => {
-    // protects: T-849 the one-pass search reports the pair of the double loop over jsonEqual
+    // protects: T-849 both the pairwise and the one-pass search report the pair of the double loop over jsonEqual
     assert.deepEqual(duplicateItems(list), pair);
+    assert.deepEqual(duplicateItems([...list, ...FILLER]), pair);
   });
 }
 
@@ -95,10 +101,10 @@ function doubleLoop(list: readonly unknown[]): readonly [number, number] | undef
   return undefined;
 }
 
-test('duplicateItems answers as the double loop over jsonEqual for 4000 random small lists of a fixed seed', () => {
+test('duplicateItems answers as the double loop over jsonEqual for 4000 random lists of 0 to 14 items of a fixed seed', () => {
   // protects: T-849 the one-pass search equals the double loop over jsonEqual on mixed values
   const random = seeded(849);
-  const lists = Array.from({ length: 4000 }, () => Array.from({ length: Math.floor(random() * 7) }, () => randomValue(random, 3)));
+  const lists = Array.from({ length: 4000 }, () => Array.from({ length: Math.floor(random() * 15) }, () => randomValue(random, 3)));
   assert.deepEqual(lists.map(duplicateItems), lists.map(doubleLoop));
 });
 
@@ -108,6 +114,22 @@ test('duplicateItems finds the one duplicate at the end of 100000 strings and of
   assert.deepEqual(duplicateItems([...strings, 'item-0']), [0, 100_000]);
   const objects = Array.from({ length: 100_000 }, (_, position) => ({ id: position, tags: ['a', String(position)] }));
   assert.deepEqual(duplicateItems([...objects, { tags: ['a', '0'], id: 0 }]), [0, 100_000]);
+});
+
+/** `levels` arrays (or objects, with `wrap` false) around `leaf`, built without recursion. */
+function nested(levels: number, leaf: unknown, wrap: boolean): unknown {
+  let value = leaf;
+  for (let level = 0; level < levels; level++) value = wrap ? [value] : { next: value };
+  return value;
+}
+
+test('duplicateItems builds the key of an item nested 100000 levels without a deep call stack', () => {
+  // protects: T-849 one request item nested very deep must not raise RangeError in the key builder
+  const deepArray = nested(100_000, 'end', true);
+  const deepObject = nested(100_000, 'end', false);
+  assert.deepEqual(duplicateItems([deepArray, ...FILLER.slice(0, 5), nested(100_000, 'end', true)]), [0, 6]);
+  assert.deepEqual(duplicateItems([deepObject, ...FILLER.slice(0, 5), nested(100_000, 'end', false)]), [0, 6]);
+  assert.equal(duplicateItems([deepArray, ...FILLER, nested(100_000, 'other', true), nested(99_999, 'end', true), deepObject]), undefined);
 });
 
 test('a uniqueItems validator reports the first duplicate pair in both modes', async () => {
