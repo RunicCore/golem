@@ -198,7 +198,7 @@ function atField(emit: (value: Code) => Code, input: Code, field: Code, directio
   const converted = emit(FIELD_INPUT);
   if (sameCode(converted, FIELD_INPUT)) return input;
   const convert = calleeOf(converted) ?? code`(${FIELD_INPUT}: unknown) => (${converted})`;
-  return code`${rt.conversion.convertModelField}(${literal('deserialize')}, ${field}, ${convert}, ${input})`;
+  return code`${rt.conversion.convertModelField}(${field}, ${convert}, ${input})`;
 }
 
 /** The item conversion of a tuple or an array in the model family: `fromInit` has no error paths, the other directions have. */
@@ -210,7 +210,7 @@ function sequenceItems(
 ): SequenceItems {
   return {
     output: 'value',
-    ...(direction === 'fromInit' ? {} : { paths: 'deserialize' as const }),
+    ...(direction === 'fromInit' ? {} : { paths: true }),
     item: (item, value) => {
       const converted = emitNested(item, value, direction, resolveModel, resolveSerde, memo);
       return { code: converted, throws: !sameCode(converted, value) };
@@ -397,7 +397,7 @@ function emitNestedUncached(
           : FIELD_INPUT;
         const convert = sameCode(converted, FIELD_INPUT) ? undefined : calleeOf(converted) ?? code`(${FIELD_INPUT}: unknown) => (${converted})`;
         const walk = direction !== 'fromInit' && convert
-          ? code`${rt.conversion.convertModelRecord}(${literal('deserialize')}, ${convert}, ${recordExpression(expression)})`
+          ? code`${rt.conversion.convertModelRecord}(${convert}, ${recordExpression(expression)})`
           : code`${rt.conversion.copyModelRecord}(${recordExpression(expression)}${convert ? code`, ${convert}` : code``})`;
         return code`${objectValueExpression(expression)} ? ${walk} : ${value}`;
       }
@@ -462,7 +462,6 @@ export const isCode = (piece: Piece): piece is Code => 'parts' in piece;
 export function wrapRootConversion(
   helpers: Code[],
   helperName: (index: number) => string,
-  direction: 'deserialize',
   field: Code,
   input: Code,
   emit: (value: Code) => Code,
@@ -476,7 +475,7 @@ export function wrapRootConversion(
     helpers.push(code`function ${name}(${FIELD_INPUT}: ${inputType}) { return ${converted}; }`);
     convert = name;
   }
-  return code`${rt.conversion.convertModelField}(${literal(direction)}, ${field}, ${convert}, ${input})`;
+  return code`${rt.conversion.convertModelField}(${field}, ${convert}, ${input})`;
 }
 
 const SERDE_IMPORT_ORDER: readonly string[] = [

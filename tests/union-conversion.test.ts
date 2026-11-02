@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import * as modelRuntime from '@exprtlabs/golem/internal/model-runtime';
-import { bindInput, emitModelFromInit, emitModelFromJSON, inputOf, inputSlot, code, identifier, literal, type Code } from '@exprtlabs/golem/internal/emitter';
+import { bindInput, emitModelFromInit, emitModelFromJSON, inputOf, inputSlot, code, identifier, type Code } from '@exprtlabs/golem/internal/emitter';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import type { DiscriminatorValue, ModelTypeDescriptor } from '@exprtlabs/golem/internal/schema';
 import { createSchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
@@ -138,21 +138,21 @@ test('model conversion reads a variant by class and rejects an unknown tag', () 
     decode: (value: Code) => code`Object.assign(new ${identifier(classNames[id])}(), ${value})`,
     fromInit: (value: Code) => code`Object.assign(new ${identifier(classNames[id])}(), ${value})`,
   });
-  const compile = (converted: Code, direction: 'deserialize'): RuntimeFunction => {
+  const compile = (converted: Code): RuntimeFunction => {
     const { convert } = runModule(
-      renderWithHelpers(code`const convert = (value: unknown) => convertModelField(${literal(direction)}, 'pet', (value: unknown) => ${converted}, value);`),
+      renderWithHelpers(code`const convert = (value: unknown) => convertModelField('pet', (value: unknown) => ${converted}, value);`),
       { ModelCat, ModelDog, unknownDiscriminatorValue: modelRuntime.unknownDiscriminatorValue, withDiscriminatorValue: modelRuntime.withDiscriminatorValue,
         convertModelField: modelRuntime.convertModelField },
       { exports: ['convert'] },
     );
     return convert as RuntimeFunction;
   };
-  const fromJson = compile(emitModelFromJSON(union, identifier('value'), resolveModel), 'deserialize');
+  const fromJson = compile(emitModelFromJSON(union, identifier('value'), resolveModel));
   assert.ok(fromJson({ kind: 'cat', name: 'Miso' }) instanceof ModelCat);
   assert.ok(!(fromJson({ kind: 'cat', name: 'Miso' }) instanceof ModelDog));
 
   for (const emit of [emitModelFromJSON, emitModelFromInit]) {
-    const decode = compile(emit(union, identifier('value'), resolveModel), 'deserialize');
+    const decode = compile(emit(union, identifier('value'), resolveModel));
     const decodedKitty = decode({ kind: 'kitty' });
     assert.ok(decodedKitty instanceof ModelCat, emit.name);
     assert.ok(!(decodedKitty instanceof ModelDog), emit.name);
@@ -185,7 +185,7 @@ test('a union whose branch reads an input of its writer still selects by class a
   });
   const converted = bindInput(emitModelFromJSON(union, identifier('value'), resolveModel), owner, identifier('writerOwner'));
   const { convert } = runModule(
-    renderWithHelpers(code`const writerOwner = 'writer'; const convert = (value: unknown) => convertModelField('deserialize', 'pet', (value: unknown) => ${converted}, value);`),
+    renderWithHelpers(code`const writerOwner = 'writer'; const convert = (value: unknown) => convertModelField('pet', (value: unknown) => ${converted}, value);`),
     { ModelCat, ModelDog, unknownDiscriminatorValue: modelRuntime.unknownDiscriminatorValue, convertModelField: modelRuntime.convertModelField },
     { exports: ['convert'] },
   ) as { convert: RuntimeFunction };

@@ -951,7 +951,7 @@ function emitFieldConversion(field: Code, local: Code, property: ModelTypeDescri
   const scope: EmitCtx = { ...ctx, decodeLocals: [], knownReads: undefined };
   const decoded = emitDecodeValue(property, local, scope);
   const { converter } = hoistConverter(local, decoded, scope.decodeLocals ?? [], ctx);
-  return code`${rt.conversion.convertModelField}("deserialize", ${field}, ${converter}, ${input})`;
+  return code`${rt.conversion.convertModelField}(${field}, ${converter}, ${input})`;
 }
 
 /** Whether the fill of `node` can throw, so a caller runs it under its field's path. */
@@ -1392,7 +1392,7 @@ function emitUnionDecode(
   const value = expression;
   return emitUnion('decode', descriptor, value, ctx, {
     walk: (variant, scope) => emitDecodeValue(variant, value, scope),
-    items: { output: 'value', paths: 'deserialize', item: decodeItem(ctx) },
+    items: { output: 'value', paths: true, item: decodeItem(ctx) },
   });
 }
 
@@ -1457,12 +1457,12 @@ function emitDecodeValue(descriptor: ModelTypeDescriptor, expression: Code, ctx:
     return emitInternedObjectDecode(named, descriptor, value, ctx);
   }
   if (descriptor.kind === 'array') {
-    return emitArrayConversion(descriptor.item, value, { output: 'value', paths: 'deserialize', item: decodeItem(ctx) });
+    return emitArrayConversion(descriptor.item, value, { output: 'value', paths: true, item: decodeItem(ctx) });
   }
   if (descriptor.kind === 'tuple') {
     return emitTupleConversion(descriptor, value, {
       output: 'value',
-      paths: 'deserialize',
+      paths: true,
       item: (item, itemValue) => {
         const before = fallibleCount(ctx);
         const decoded = emitDecodeValue(item, itemValue, { ...ctx, knownReads: undefined });

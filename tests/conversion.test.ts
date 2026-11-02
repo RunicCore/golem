@@ -24,43 +24,43 @@ test('conversion scopes preserve LibError identity and restore paths after failu
     code: 'deserialization', message: 'Explicit callback failure', path: ['custom'],
     source: IssueSource.Custom, representation: IssueRepresentation.Wire,
   }]);
-  assert.throws(() => convertModelField('deserialize', 'outer', (failure: LibError) => { throw failure; }, original), error => error === original);
-  assertConversionError(() => convertModelField('deserialize', 'items', (value: unknown) =>
-    convertModelField('deserialize', 2, deserializeDate, value), 'invalid'),
+  assert.throws(() => convertModelField('outer', (failure: LibError) => { throw failure; }, original), error => error === original);
+  assertConversionError(() => convertModelField('items', (value: unknown) =>
+    convertModelField(2, deserializeDate, value), 'invalid'),
   LibErrorKind.Deserialization, IssueRepresentation.Wire, ['items', 2]);
   for (const invalid of ['invalid', 1, null, {}]) {
-    assertConversionError(() => convertModelField('deserialize', 'at', deserializeDate, invalid),
+    assertConversionError(() => convertModelField('at', deserializeDate, invalid),
       LibErrorKind.Deserialization, IssueRepresentation.Wire, ['at']);
   }
 });
 
 test('convertModelItems runs each item under its index and passes the item only', () => {
-  assert.deepEqual(convertModelItems('deserialize', deserializeDate, ['1970-01-01T00:00:00.000Z']), [new Date(0)]);
-  assertConversionError(() => convertModelItems('deserialize', deserializeDate, ['1970-01-01T00:00:00.000Z', 'bad']),
+  assert.deepEqual(convertModelItems(deserializeDate, ['1970-01-01T00:00:00.000Z']), [new Date(0)]);
+  assertConversionError(() => convertModelItems(deserializeDate, ['1970-01-01T00:00:00.000Z', 'bad']),
     LibErrorKind.Deserialization, IssueRepresentation.Wire, [1]);
-  assertConversionError(() => convertModelField('deserialize', 'dates', (value: unknown) =>
-    convertModelItems('deserialize', deserializeDate, value as unknown[]), ['1970-01-01T00:00:00.000Z', 'bad']),
+  assertConversionError(() => convertModelField('dates', (value: unknown) =>
+    convertModelItems(deserializeDate, value as unknown[]), ['1970-01-01T00:00:00.000Z', 'bad']),
   LibErrorKind.Deserialization, IssueRepresentation.Wire, ['dates', 1]);
 });
 
 test('convertModelTupleItems gives the item, its index and the array', () => {
-  const positions = convertModelTupleItems('deserialize', (item, index, items) => `${String(item)}:${index}/${items.length}`, ['a', 'b']);
+  const positions = convertModelTupleItems((item, index, items) => `${String(item)}:${index}/${items.length}`, ['a', 'b']);
   assert.deepEqual(positions, ['a:0/2', 'b:1/2']);
-  assertConversionError(() => convertModelTupleItems('deserialize', (item, index) =>
+  assertConversionError(() => convertModelTupleItems((item, index) =>
     index === 0 ? item : deserializeDate(item), ['x', 'bad']),
   LibErrorKind.Deserialization, IssueRepresentation.Wire, [1]);
 });
 
 test('the record loops drop undefined values, run each value under its key and keep a __proto__ key as data', () => {
   // protects: R-58 generic record copies come from the runtime (T-641)
-  assert.deepEqual(convertModelRecord('deserialize', deserializeDate, { a: '1970-01-01T00:00:00.000Z', b: undefined }), { a: new Date(0) });
-  assertConversionError(() => convertModelField('deserialize', 'dates', (value: unknown) =>
-    convertModelRecord('deserialize', deserializeDate, value as Record<string, unknown>), { ok: '1970-01-01T00:00:00.000Z', bad: 'x' }),
+  assert.deepEqual(convertModelRecord(deserializeDate, { a: '1970-01-01T00:00:00.000Z', b: undefined }), { a: new Date(0) });
+  assertConversionError(() => convertModelField('dates', (value: unknown) =>
+    convertModelRecord(deserializeDate, value as Record<string, unknown>), { ok: '1970-01-01T00:00:00.000Z', bad: 'x' }),
   LibErrorKind.Deserialization, IssueRepresentation.Wire, ['dates', 'bad']);
   assert.deepEqual(copyModelRecord({ a: 1, b: undefined, c: 3 }), { a: 1, c: 3 });
   assert.deepEqual(copyModelRecord({ a: 1 }, (value) => Number(value) + 1), { a: 2 });
   const hostile = JSON.parse('{"__proto__":1}') as Record<string, unknown>;
-  for (const copy of [copyModelRecord(hostile), convertModelRecord('deserialize', (value) => value, hostile)]) {
+  for (const copy of [copyModelRecord(hostile), convertModelRecord((value) => value, hostile)]) {
     assert.deepEqual(Object.keys(copy), ['__proto__'], 'the key stays an own key');
     assert.equal(Object.getOwnPropertyDescriptor(copy, '__proto__')?.value, 1);
     assert.equal(Object.getPrototypeOf(copy), Object.prototype, 'the prototype is unchanged');
@@ -72,25 +72,25 @@ test('the item loops send a LibError out as it is and keep holes', () => {
     code: 'deserialization', message: 'Explicit callback failure', path: ['custom'],
     source: IssueSource.Custom, representation: IssueRepresentation.Wire,
   }]);
-  assert.throws(() => convertModelItems('deserialize', () => { throw original; }, [1]), error => error === original);
+  assert.throws(() => convertModelItems(() => { throw original; }, [1]), error => error === original);
   const holes: unknown[] = [];
   holes[2] = 'c';
-  const converted = convertModelItems('deserialize', (item: unknown) => String(item).toUpperCase(), holes);
+  const converted = convertModelItems((item: unknown) => String(item).toUpperCase(), holes);
   assert.equal(converted.length, 3);
   assert.equal(0 in converted, false);
   assert.equal(converted[2], 'C');
-  assertConversionError(() => convertModelItems('deserialize', () => { throw new Error('boom'); }, [1]),
+  assertConversionError(() => convertModelItems(() => { throw new Error('boom'); }, [1]),
     LibErrorKind.Deserialization, IssueRepresentation.Wire, [0]);
-  assertConversionError(() => convertModelField('deserialize', 'after', () => { throw new Error('boom'); }, 1),
+  assertConversionError(() => convertModelField('after', () => { throw new Error('boom'); }, 1),
     LibErrorKind.Deserialization, IssueRepresentation.Wire, ['after']);
 });
 
 const refuse = (): never => { throw new Error('refused'); };
 const converterScopes: readonly (readonly [string, IssuePath, () => unknown])[] = [
-  ['field', ['at'], () => convertModelField('deserialize', 'at', refuse, 1)],
-  ['array items', [0], () => convertModelItems('deserialize', refuse, [1])],
-  ['tuple items', [0], () => convertModelTupleItems('deserialize', refuse, [1])],
-  ['record values', ['a'], () => convertModelRecord('deserialize', refuse, { a: 1 })],
+  ['field', ['at'], () => convertModelField('at', refuse, 1)],
+  ['array items', [0], () => convertModelItems(refuse, [1])],
+  ['tuple items', [0], () => convertModelTupleItems(refuse, [1])],
+  ['record values', ['a'], () => convertModelRecord(refuse, { a: 1 })],
 ];
 for (const [scope, path, run] of converterScopes) {
   test(`${scope}: a throwing application deserializer is bad input`, () => {
@@ -148,7 +148,7 @@ test('deserializes timestamps with ECMAScript Date parse', () => {
 test('deserializeDate rejects an existing Invalid Date like an unparsable string', () => {
   // protects: bug an existing Invalid Date passed through deserializeDate and a later serializeDate threw
   const error = assertConversionError(
-    () => convertModelField('deserialize', 'at', deserializeDate, new Date(Number.NaN)),
+    () => convertModelField('at', deserializeDate, new Date(Number.NaN)),
     LibErrorKind.Deserialization,
     IssueRepresentation.Wire,
     ['at'],

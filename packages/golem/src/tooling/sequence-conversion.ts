@@ -24,8 +24,8 @@ export interface SequenceItem {
 export interface SequenceItems {
   /** 'value': a new array of converted values. 'json': JSON text. */
   readonly output: 'value' | 'json';
-  /** The error kind for the path of an item that throws. Absent: no paths. */
-  readonly paths?: 'deserialize';
+  /** Whether an item that throws runs under its index in the error path. Absent: no paths. */
+  readonly paths?: boolean;
   /** The conversion of one item, written against `value`. */
   readonly item: (descriptor: ModelTypeDescriptor, value: Code) => SequenceItem;
 }
@@ -108,7 +108,7 @@ function arrayItems(item: ModelTypeDescriptor, value: Code, items: SequenceItems
   if (sameCode(converted.code, ITEM)) return { code: value, unchanged: true };
   if (items.paths && converted.throws) {
     return {
-      code: code`${rt.conversion.convertModelItems}(${literal(items.paths)}, ${converted.callee ?? code`(${ITEM}) => (${converted.code})`}, ${asArray(value)})`,
+      code: code`${rt.conversion.convertModelItems}(${converted.callee ?? code`(${ITEM}) => (${converted.code})`}, ${asArray(value)})`,
       unchanged: false,
     };
   }
@@ -202,12 +202,11 @@ function tupleItems(descriptor: TupleConversionDescriptor, value: Code, items: S
   const params = usesIndex ? code`${ITEM}, ${INDEX}` : ITEM;
   if (pathed && items.paths) {
     // An item that throws runs under its index. A loop that selects by position gets the index and the array.
-    const direction = literal(items.paths);
     const array = asArray(value);
     return {
       code: usesIndex
-        ? code`${rt.conversion.convertModelTupleItems}(${direction}, (${usesTuple ? code`${params}, ${TUPLE}` : params}) => ${arrowBody(selected.code)}, ${array})`
-        : code`${rt.conversion.convertModelItems}(${direction}, ${selected.callee ?? code`(${ITEM}) => (${selected.code})`}, ${array})`,
+        ? code`${rt.conversion.convertModelTupleItems}((${usesTuple ? code`${params}, ${TUPLE}` : params}) => ${arrowBody(selected.code)}, ${array})`
+        : code`${rt.conversion.convertModelItems}(${selected.callee ?? code`(${ITEM}) => (${selected.code})`}, ${array})`,
       unchanged: false,
     };
   }

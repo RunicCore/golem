@@ -1539,7 +1539,7 @@ function buildFieldEmissions(context: EmitContext, resolvers: ModelResolvers): M
         },
       );
       const fromInit = emitModelFromInit(descriptor, input, resolveFromAny);
-      const converted = wrapRootConversion(helpers, rootHelperName(specification.name), 'deserialize', name, input, emitDecode, code`unknown`);
+      const converted = wrapRootConversion(helpers, rootHelperName(specification.name), name, input, emitDecode, code`unknown`);
       if (!sameCode(converted, input)) {
         decodeCaptures.push([field.getName(), input]);
         decode.push(code`  if (${input} !== undefined) ${rt.conversion.defineModelProperty}(result, ${name}, ${converted});`);
@@ -1567,7 +1567,7 @@ function buildFieldEmissions(context: EmitContext, resolvers: ModelResolvers): M
       const known = identifier(`__knownKeys_${specification.name}`);
       helpers.push(code`const ${known}: ReadonlySet<string> = new Set<string>([${join(fields.map((field) => literal(field.getName())), code`, `)}]);`);
       const serde = serdeResolver(context);
-      const decodeMapValue = wrapRootConversion(helpers, rootHelperName(specification.name), 'deserialize', identifier('key'), identifier('value'), (value) => emitModelFromJSON(mapValue, value, resolveFromAny, { ...serde, serialize: (_id, value) => value }), code`unknown`);
+      const decodeMapValue = wrapRootConversion(helpers, rootHelperName(specification.name), identifier('key'), identifier('value'), (value) => emitModelFromJSON(mapValue, value, resolveFromAny, { ...serde, serialize: (_id, value) => value }), code`unknown`);
       const initMapValue = emitModelFromInit(mapValue, identifier('value'), resolveFromAny);
       if (!sameCode(decodeMapValue, identifier('value'))) {
         decode.push(code`  for (const key of Object.keys(result)) if (!${known}.has(key)) { const value = result[key]; if (value !== undefined) ${rt.conversion.defineModelProperty}(result, key, ${decodeMapValue}); }`);

@@ -52,7 +52,7 @@ function jsonConversion(descriptor: TupleConversionDescriptor) {
 }
 
 function deserializeConversion(descriptor: TupleConversionDescriptor) {
-  return compile(render(emitTupleConversion(descriptor, identifier('input'), { output: 'value', paths: 'deserialize', item: dateItem })));
+  return compile(render(emitTupleConversion(descriptor, identifier('input'), { output: 'value', paths: true, item: dateItem })));
 }
 
 function issuePath(action: () => unknown): readonly (string | number)[] | undefined {
@@ -166,7 +166,7 @@ test('the items of a scalar-or-array union change the array and leave an unchang
 });
 
 test('a failing array item names its index, and the date converter keeps its default path', () => {
-  const convert = compile(render(emitArrayConversion(date, identifier('input'), { output: 'value', paths: 'deserialize', item: dateItem })));
+  const convert = compile(render(emitArrayConversion(date, identifier('input'), { output: 'value', paths: true, item: dateItem })));
   const good = '2024-05-06T07:08:09.000Z';
   assert.deepEqual(convert([good]), [new Date(good)]);
   assert.deepEqual(issuePath(() => convert([good, 'bad'])), [1]);

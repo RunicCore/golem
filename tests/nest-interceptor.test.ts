@@ -719,7 +719,7 @@ test('NestModelInterceptor answers 400 for request input the decoder rejects and
     unknownTag: (wire) => unknownDiscriminatorValue('kind', wire.kind, 'deserialize'),
     invalidDate: (wire) => ({ at: deserializeDate(wire.at) }),
     // A TSerde deserializer that throws on the wire value.
-    throwingDeserializer: (wire) => convertModelField('deserialize', 'at', () => { throw new Error('refused'); }, wire.at),
+    throwingDeserializer: (wire) => convertModelField('at', () => { throw new Error('refused'); }, wire.at),
     // A LibError from another golem copy (a standalone SDK) is bad input too.
     foreignCopy: () => { throw new (secondCopy.LibError)(secondCopy.LibErrorKind.Validation, 'from the SDK'); },
     // Missing conversion metadata is a program fault, not bad input.

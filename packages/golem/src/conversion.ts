@@ -233,7 +233,6 @@ function itemFailure(error: unknown): LibError {
 
 /** Generated synchronous conversion scope; no instance or result state is retained. A converter that throws fails as `itemFailure` says. */
 export function convertModelField<Arg, Value>(
-  direction: 'deserialize',
   field: string | number,
   convert: (arg: Arg) => Value,
   arg: Arg,
@@ -254,7 +253,6 @@ export function convertModelField<Arg, Value>(
  * for every item, so the call shape is fixed before the loop and no closure is made per item.
  */
 function convertEachItem<Value>(
-  direction: 'deserialize',
   convert: (item: unknown, index: number, items: readonly unknown[]) => Value,
   items: readonly unknown[],
   withPosition: boolean,
@@ -281,34 +279,32 @@ function convertEachItem<Value>(
  * so a converter with an optional second parameter, such as `deserializeDate`, keeps its default path.
  */
 export function convertModelItems<Value>(
-  direction: 'deserialize',
   convert: (item: unknown) => Value,
   items: readonly unknown[],
 ): Value[] {
-  return convertEachItem(direction, convert, items, false);
+  return convertEachItem(convert, items, false);
 }
 
 /** Generated synchronous conversion of each tuple item, under its index in the error path. `convert` gets the item, its index and the array. */
 export function convertModelTupleItems<Value>(
-  direction: 'deserialize',
   convert: (item: unknown, index: number, items: readonly unknown[]) => Value,
   items: readonly unknown[],
 ): Value[] {
-  return convertEachItem(direction, convert, items, true);
+  return convertEachItem(convert, items, true);
 }
 
 /**
  * The one loop under `convertModelRecord` and `copyModelRecord`: a new record with each own entry of `source` whose value
- * is not undefined, in key order, the value converted by `convert` when there is one. With `direction`, a throwing entry
+ * is not undefined, in key order, the value converted by `convert` when there is one. With `withPath`, a throwing entry
  * runs under its key in the error path, as `convertModelField` does; without it, an error passes as it is.
  */
 function convertEachEntry(
-  direction: 'deserialize' | undefined,
+  withPath: boolean,
   convert: ((value: unknown) => unknown) | undefined,
   source: Record<string, unknown>,
 ): Record<string, unknown> {
   const out: Record<string, unknown> = {};
-  const depth = direction === undefined ? -1 : activeConversionPath.push('') - 1;
+  const depth = withPath ? activeConversionPath.push('') - 1 : -1;
   try {
     for (const [key, value] of Object.entries(source)) {
       if (value === undefined) continue;
@@ -316,7 +312,7 @@ function convertEachEntry(
       defineModelProperty(out, key, convert === undefined ? value : convert(value));
     }
   } catch (error) {
-    throw direction === undefined ? error : itemFailure(error);
+    throw withPath ? itemFailure(error) : error;
   } finally {
     if (depth >= 0) activeConversionPath.length = depth;
   }
@@ -325,11 +321,10 @@ function convertEachEntry(
 
 /** Generated synchronous conversion of each value of a record under its key in the error path. `convert` gets the value only. */
 export function convertModelRecord(
-  direction: 'deserialize',
   convert: (value: unknown) => unknown,
   source: Record<string, unknown>,
 ): Record<string, unknown> {
-  return convertEachEntry(direction, convert, source);
+  return convertEachEntry(true, convert, source);
 }
 
 /** A copy of a record without its undefined values, each other value converted by `convert` (as it is when absent), with no error path. */
@@ -337,7 +332,7 @@ export function copyModelRecord(
   source: Record<string, unknown>,
   convert?: (value: unknown) => unknown,
 ): Record<string, unknown> {
-  return convertEachEntry(undefined, convert, source);
+  return convertEachEntry(false, convert, source);
 }
 
 let activeDecodeValues: WeakMap<object, Function | Set<Function>> | undefined;
