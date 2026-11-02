@@ -954,6 +954,16 @@ A schema that carries these keywords does not stop an SDK. The SDK client checks
 
 **Fix:** Use a style that OpenAPI allows for the place of the parameter, or leave the style out.
 
+### OPENAPI_RESERVED_HEADER
+
+**Reserved header parameter ignored.** A header parameter is named `Accept`, `Content-Type` or `Authorization`, in any letter case. OpenAPI says to ignore such a parameter. The generated input has no field for it and the client does not send it. The message names the operation and the header. This is a warning: generation continues.
+
+**Fix:**
+
+- Remove the parameter from the document.
+- To send `Authorization`, declare a security scheme.
+- To set `Content-Type` or `Accept`, declare the media types of the request body or the responses.
+
 ### OPENAPI_SERVER_OVERRIDE_IGNORED
 
 **Operation servers ignored.** The document has no root `servers`, and an operation, or its path item, lists its own `servers`. A client of a document without servers requires `baseUrl`, and `baseUrl` wins over every server list, so the client uses `baseUrl` for that operation. This is a warning: generation continues.

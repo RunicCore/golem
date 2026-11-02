@@ -79,7 +79,30 @@ export function normalizeAndValidate(document: unknown, locate?: OriginLocator):
   validateDeclaredSchemaFields(document, locate);
   const normalized = normalizeDocument(document);
   validateNormalizedOperationFields(normalized);
-  return normalized;
+  return withoutReservedHeaderParameters(normalized);
+}
+
+/** OpenAPI's Parameter Object: a header parameter named Accept, Content-Type or Authorization is ignored. */
+const RESERVED_HEADER_PARAMETERS: ReadonlySet<string> = new Set(['accept', 'content-type', 'authorization']);
+
+/** The document without those header parameters, so no input type, validator or request carries them, and one warning for each. */
+function withoutReservedHeaderParameters(normalized: NormalizedDocument): NormalizedDocument {
+  const diagnostics: GolemDiagnostic[] = [];
+  const strip = (operation: NormalizedOperation): NormalizedOperation => {
+    const reserved = (parameter: NormalizedOperation['parameters'][number]): boolean => parameter.in === 'header' && RESERVED_HEADER_PARAMETERS.has(parameter.name.toLowerCase());
+    if (!operation.parameters.some(reserved)) return operation;
+    for (const parameter of operation.parameters.filter(reserved)) {
+      diagnostics.push({
+        code: 'OPENAPI_RESERVED_HEADER',
+        severity: GolemDiagnosticSeverity.Warning,
+        message: `operation ${operation.name} header parameter ${JSON.stringify(parameter.name)} is ignored: OpenAPI leaves Accept, Content-Type and Authorization to the request body, the responses and the security schemes`,
+      });
+    }
+    return { ...operation, parameters: operation.parameters.filter((parameter) => !reserved(parameter)) };
+  };
+  const operations = normalized.operations.map(strip);
+  const inboundOperations = normalized.inboundOperations.map(strip);
+  return diagnostics.length ? { ...normalized, operations, inboundOperations, diagnostics: [...normalized.diagnostics, ...diagnostics] } : normalized;
 }
 
 export function validate(document: unknown, preparedIr?: NormalizedDocument, locate?: OriginLocator): void {

@@ -55,7 +55,6 @@ type ClientFunction = keyof typeof rt.client;
 
 const BLANK = code``;
 
-const RESERVED_HEADER_PARAMETERS: ReadonlySet<string> = new Set(['accept', 'content-type', 'authorization']);
 const CONTENT_PARAMETER_LOCATION = { path: code`'path'`, query: code`'query'`, header: code`'header'`, cookie: code`'cookie'` } as const;
 
 /** A parameter that carries its value as a media type: the runtime serializes it by the first media type its `content` names. */
@@ -248,9 +247,7 @@ function operationSource(
   const route = routeExpression(operation, use, parameterInput);
   const queryParameters = operation.parameters.filter((item) => item.in === 'query');
   const queryStringParameter = operation.parameters.find((item) => item.in === 'querystring');
-  // A header parameter named Accept, Content-Type or Authorization is ignored (OpenAPI Parameter Object); the request carries those from the body, the response types and the security schemes.
-  const headerParameters = operation.parameters.filter((item) =>
-    item.in === 'header' && !RESERVED_HEADER_PARAMETERS.has(item.name.toLowerCase()));
+  const headerParameters = operation.parameters.filter((item) => item.in === 'header');
   const cookieParameters = operation.parameters.filter((item) => item.in === 'cookie');
   const requestBody = operation.requestContent.length > 0;
   const singleContentType = operation.requestContent.length === 1
