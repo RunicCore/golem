@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:
 import { loadavg } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { CONTROL_ID, GOLEM_ADAPTERS, type AdapterId, type PayloadId } from './cases.js';
+import { ALL_PAYLOADS, CONTROL_ID, GOLEM_ADAPTERS, type AdapterId, type PayloadId, type PayloadSpec } from './cases.js';
 import { prepareProjects, root } from './project.js';
 import { environment, gitState, summarize, writeFilesTogether, type BatchSample, type MeasuredCase, type Settings } from './results.js';
 import { adapterRounds, BenchmarkUsageError, measureAdapter, parseRunArguments, planRun, verifyAdapter } from './run.js';
@@ -15,7 +15,9 @@ const BUILT_MARK = '.release-built';
 /**
  * More rounds than `npm run bench`, one batch in each: a worker process can land on a slow core for its whole run, and that
  * shifts the median of its batches. Four processes on each side keep one such process from setting the ratio, and base and
- * head swap places in every second round. The full check fits the five minutes of T-243 only at this many batches.
+ * head swap places in every second round. Time of the full check: a case takes 4 rounds x 2 sides x (120 ms warmup + 90 ms batch) = 1.68 s, and
+ * the 213 cases (192 valid, 21 invalid) take 6 minutes. Add about 2 s for each of the 48 worker processes and about 1 minute to generate and compile
+ * (fitted to two filtered runs of 105 s and 187 s at load average 25): about 8.5 minutes, of which the cases since T-844 and T-845 are 38 and 1 minute.
  */
 export const RELEASE_SETTINGS: Settings = { warmupMs: 120, batchMs: 90, batches: 4, rounds: 4 };
 type Side = 'base' | 'head';
@@ -83,14 +85,31 @@ function exportBase(ref: string, log: (line: string) => void): { readonly sha: s
   return { sha, directory };
 }
 
+/** Whether the built base exports what the payload's fixture needs (true for a payload that needs nothing). */
+function baseExports(directory: string, payload: PayloadSpec): boolean {
+  if (payload.requires === undefined) return true;
+  const { module, export: name } = payload.requires;
+  const script = `import(${JSON.stringify(module)}).then(m => process.stdout.write(String(${JSON.stringify(name)} in m)))`;
+  return execFileSync(process.execPath, ['--input-type=module', '--eval', script], { cwd: directory, encoding: 'utf8', timeout: 60_000 }).trim() === 'true';
+}
+
 export interface ReleaseOptions extends ReleaseArguments { readonly outputFile: string; readonly log?: (line: string) => void }
 
 /** Times this checkout and the base in one session and returns the console text and the verdict. */
 export function runReleaseCheck(options: ReleaseOptions): { readonly text: string; readonly stop: boolean } {
   const started = Date.now();
   const log = options.log ?? ((line: string) => process.stderr.write(`${line}\n`));
-  const { adapters, payloadsOf, payloadIds } = planRun(options.adapters ?? GOLEM_ADAPTERS, options.payloads);
+  let plan = planRun(options.adapters ?? GOLEM_ADAPTERS, options.payloads);
   const base = exportBase(options.base, log);
+  // A payload whose fixture needs an export that the base lacks cannot be timed on both sides: the check leaves it out, so no side has a row for it.
+  const lacking = ALL_PAYLOADS.filter(p => plan.payloadIds.includes(p.id) && !baseExports(base.directory, p));
+  if (lacking.length > 0) {
+    for (const p of lacking) log(`Leaving out ${p.id}: base ${base.sha.slice(0, 7)} has no ${p.requires?.export}`);
+    const kept = plan.payloadIds.filter(id => !lacking.some(p => p.id === id));
+    if (kept.length === 0) throw new BenchmarkUsageError(`Base ${options.base} lacks what every selected payload needs (${lacking.map(p => p.requires?.export).join(', ')}).`);
+    plan = planRun(options.adapters ?? GOLEM_ADAPTERS, kept);
+  }
+  const { adapters, payloadsOf, payloadIds } = plan;
   const loadStart = loadavg();
   mkdirSync(path.join(root, '.cache'), { recursive: true });
   const directory = mkdtempSync(path.join(root, '.cache/release-work-'));

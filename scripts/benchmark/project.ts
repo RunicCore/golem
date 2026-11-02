@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { copyFileSync, cpSync, existsSync, mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
+import { copyFileSync, cpSync, mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import type { ProjectKind } from './cases.js';
@@ -22,20 +22,17 @@ const sharedFeatureSources = ['feature-tags.ts', 'features.model.ts', 'features.
 function generateModels(golemRoot: string, project: string, profile: { readonly mobx: boolean; readonly validation: boolean }, manifest: string): void {
   // A project with `extensions: mobx: {}` gives the generator the fill that the real extension entry gives the hook `model.validatorEnhancer`.
   // The nest extension fills `model.codecData` with the query-field table (`codec.data.nest`) that `nestQueryDecoder` reads; every project has it, as a Nest app's build does.
-  // A checkout without the extension (an older base ref of the release check) generates without the table.
-  const nestExtensionFile = path.join(golemRoot, 'packages/golem-ts-openapi/dist/nest/rewrite-participant.js');
-  const nest = existsSync(nestExtensionFile);
   const fills = [
     ...(profile.mobx ? [`'model.validatorEnhancer': [{ package: '@exprtlabs/golem-openapi-ts', extension: 'mobx', options: {}, participant: mobxExtension.hooks['model.validatorEnhancer'], use: (call) => call(mobxExtension.hooks['model.validatorEnhancer']) }]`] : []),
-    ...(nest ? [`'model.codecData': [{ package: '@exprtlabs/golem-ts-openapi', extension: 'nest', options: {}, participant: nestExtension.hooks['model.codecData'], use: (call) => call(nestExtension.hooks['model.codecData']) }]`] : []),
+    `'model.codecData': [{ package: '@exprtlabs/golem-ts-openapi', extension: 'nest', options: {}, participant: nestExtension.hooks['model.codecData'], use: (call) => call(nestExtension.hooks['model.codecData']) }]`,
   ];
-  const hooks = fills.length > 0 ? `{ ${fills.join(', ')} }` : 'undefined';
+  const hooks = `{ ${fills.join(', ')} }`;
   const script = `
 import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { generate } from ${JSON.stringify(pathToFileURL(path.join(golemRoot, 'packages/golem-model/dist/generator.js')).href)};
 import { extension as mobxExtension } from ${JSON.stringify(pathToFileURL(path.join(golemRoot, 'packages/golem-openapi-ts/dist/mobx/extension.js')).href)};
-${nest ? `import { extension as nestExtension } from ${JSON.stringify(pathToFileURL(nestExtensionFile).href)};` : ''}
+import { extension as nestExtension } from ${JSON.stringify(pathToFileURL(path.join(golemRoot, 'packages/golem-ts-openapi/dist/nest/rewrite-participant.js')).href)};
 const { artifacts } = generate({ root: ${JSON.stringify(project)}, profile: { validation: ${profile.validation} }, hooks: ${hooks}, manifestInputs: [${JSON.stringify(manifest)}] });
 for (const artifact of artifacts) {
   mkdirSync(path.dirname(artifact.path), { recursive: true });

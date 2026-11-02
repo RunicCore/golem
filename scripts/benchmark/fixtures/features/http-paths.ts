@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { nestQueryDecoder } from '@exprtlabs/golem-ts-openapi/nest';
+import * as nest from '@exprtlabs/golem-ts-openapi/nest';
 import { nestModelCodec } from '@exprtlabs/golem-ts-openapi/internal/nest-runtime';
 import { LibError } from '@exprtlabs/golem/errors';
 import { registerIModelClass, requireObjectCodec } from '@exprtlabs/golem/internal/model-runtime';
@@ -11,7 +11,13 @@ import { PaymentsClient } from './sdk/index.js';
 
 registerIModelClass(codecIdOf('TNestQuery'), NestQuery);
 
-export type HttpPathName = 'nest-query' | 'client-call';
+type QueryDecoderOf = (metatype: unknown) => ((query: unknown) => unknown) | undefined;
+
+/**
+ * The release check compiles this file against the packages of a base ref, and an older base has no `nestQueryDecoder`. A namespace import
+ * keeps the file compiling there; without the export the `nest-query` fixture is left out, and the release check skips the payload (`requires` in cases.ts).
+ */
+const nestQueryDecoder: QueryDecoderOf | undefined = 'nestQueryDecoder' in nest ? nest.nestQueryDecoder as QueryDecoderOf : undefined;
 
 const consume = (value: unknown): number => typeof value === 'object' && value !== null ? 1 : 0;
 
@@ -32,11 +38,17 @@ function queryToken(codecId: string): unknown {
  * `nest-query`: the decode a NestJS handler does on its query. The query-field table (`codec.data.nest`) comes from the nest extension's
  * `model.codecData` hook, which project.ts turns on for the generated models, as a Nest app's build does.
  */
-function nestQueryFixture(validation: boolean): ComparisonFixture {
+function nestQueryFixture(validation: boolean, resolve: QueryDecoderOf): ComparisonFixture {
   const codecId = codecIdOf('TNestQuery');
   const codec = requireObjectCodec(codecId);
-  const decodeQuery = nestQueryDecoder(queryToken(codecId));
-  assert.ok(decodeQuery, 'nestQueryDecoder found no codec for the query model');
+  const token = queryToken(codecId);
+  // The interceptor resolves the decoder on every request (a cache lookup in `queryWireDecoder`), so each timed call does too.
+  const decodeQuery = (query: unknown): unknown => {
+    const decoder = resolve(token);
+    if (!decoder) throw new Error('nestQueryDecoder found no codec for the query model');
+    return decoder(query);
+  };
+  decodeQuery(queryWire());
   const payload = queryWire();
   const decodeOptions = { ...(validation ? {} : { validate: false as const }), construct: NestQuery };
   return {
@@ -85,5 +97,5 @@ function clientCallFixture(): ComparisonFixture {
 
 /** The HTTP-edge payloads of the golem cost table: the NestJS query decode and a generated client call. */
 export function createHttpPathFixtures(validation: boolean): readonly ComparisonFixture[] {
-  return [nestQueryFixture(validation), clientCallFixture()];
+  return [...(nestQueryDecoder ? [nestQueryFixture(validation, nestQueryDecoder)] : []), clientCallFixture()];
 }
