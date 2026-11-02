@@ -616,3 +616,27 @@ import { ApiQuery } from '@nestjs/swagger';
   const parameter = document.paths['/q']?.get?.parameters?.find(item => item.name === 'roles');
   assert.deepEqual(parameter?.schema, { type: 'array', items: { type: 'string', enum: ['admin', 'user'] } });
 });
+
+test('marks the body of an @ApiBody that sets no required as required', async t => {
+  // protects: T-870 @nestjs/swagger defaults an @ApiBody to required: true
+  const root = inlineFixture(t, `import { Body, Controller, Post, Req } from '@nestjs/common';
+import { ApiBody, ApiProperty } from '@nestjs/swagger';
+class Dto { @ApiProperty() name!: string; }
+@Controller('b') export class BController {
+  @Post('schema') @ApiBody({ schema: { type: 'object', properties: { a: { type: 'string' } } } })
+  schema(@Req() request: unknown): void { request; }
+  @Post('typed') @ApiBody({ type: Dto })
+  typed(@Body() body?: Dto): void { body; }
+  @Post('explicit') @ApiBody({ type: Dto, required: false })
+  explicit(@Body() body: Dto): void { body; }
+  @Post('none')
+  none(@Body() body?: Dto): void { body; }
+}
+`);
+  const document = documentOf<OpenApiDocument>(await generateAt(root));
+  const required = (route: string): unknown => (document.paths[route]?.post?.requestBody as { readonly required?: boolean } | undefined)?.required;
+  assert.deepEqual(
+    { schema: required('/b/schema'), typed: required('/b/typed'), explicit: required('/b/explicit'), none: required('/b/none') },
+    { schema: true, typed: true, explicit: false, none: false },
+  );
+});
