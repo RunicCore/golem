@@ -639,7 +639,7 @@ function allOfMemberTypes(item: unknown, requirements: AllOfRequirements, contex
 /**
  * The values that `const` or `enum` lists and that the `type` and the value keywords beside them admit; `undefined` when the schema has neither `const` nor `enum`.
  * With both `const` and `enum` the value must satisfy both: the `const` value when `enum` lists an equal JSON value, else none. `integer` admits a whole number and `number` any number, so 1 and 1.0 are one value.
- * The keywords are `minimum`, `maximum`, `exclusiveMinimum`, `exclusiveMaximum` and `multipleOf` for a number, `minLength`, `maxLength` and `pattern` for a string, `minItems` and `maxItems` for an array, and `minProperties` and `maxProperties` for an object; each judges a value of its own kind only, as the generated validator does. `format` is not read here.
+ * A value that `not` lists as its `const` or in its `enum` is dropped too. The keywords are `minimum`, `maximum`, `exclusiveMinimum`, `exclusiveMaximum` and `multipleOf` for a number, `minLength`, `maxLength` and `pattern` for a string, `minItems` and `maxItems` for an array, and `minProperties` and `maxProperties` for an object; each judges a value of its own kind only, as the generated validator does. `format` is not read here.
  * The one rule for the generated type and for the model: a schema left with no value accepts none.
  */
 export function typedListedValues(schema: Readonly<Record<string, unknown>>): readonly unknown[] | undefined {
@@ -649,7 +649,11 @@ export function typedListedValues(schema: Readonly<Record<string, unknown>>): re
   if (!values) return undefined;
   const types = effectiveSchemaTypes(schema);
   const kindOf = (value: unknown): string => value === null ? 'null' : Array.isArray(value) ? 'array' : typeof value === 'number' && Number.isInteger(value) ? 'integer' : typeof value;
-  return values.filter((value) => (types.length === 0 || types.includes(kindOf(value)) || (typeof value === 'number' && types.includes('number'))) && withinKeywords(value, schema));
+  const excluded = isJsonObject(schema.not)
+    ? schema.not.const !== undefined ? [schema.not.const] : Array.isArray(schema.not.enum) ? schema.not.enum : []
+    : [];
+  return values.filter((value) => (types.length === 0 || types.includes(kindOf(value)) || (typeof value === 'number' && types.includes('number'))) && withinKeywords(value, schema)
+    && !excluded.some((other) => isDeepStrictEqual(value, other)));
 }
 
 /** Whether the keywords of `schema` that judge the JSON kind of `value` admit it; a keyword of another kind, or with a value the validator ignores, admits it. */
@@ -711,17 +715,7 @@ function schemaTypeNode(rawSchema: unknown, context: SchemaTypeContext = {}): Ty
   const listed = typedListedValues(schema);
   if (listed) {
     if (listed.length === 0) return NEVER_TYPE;
-    const excluded = isJsonObject(schema.not)
-      ? new Set(
-        schema.not.const !== undefined
-          ? [JSON.stringify(schema.not.const)]
-          : Array.isArray(schema.not.enum)
-            ? schema.not.enum.map((value) => JSON.stringify(value))
-            : [],
-      )
-      : new Set<string>();
-    const values = listed.filter((value) => !excluded.has(JSON.stringify(value)));
-    return unionType(values.map((value) => typeCode(literal(value as JsonValue)))) ?? NEVER_TYPE;
+    return unionType(listed.map((value) => typeCode(literal(value as JsonValue)))) ?? NEVER_TYPE;
   }
   const types = effectiveSchemaTypes(schema);
   const nullable = types.includes('null');

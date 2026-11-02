@@ -177,6 +177,14 @@ for (const [label, schema] of [
   ['a const string that its pattern excludes', { const: 'x', pattern: '^a' }],
   ['an enum of strings that its minLength empties', { enum: ['a', 'bb'], minLength: 3 }],
   ['an enum of arrays that its maxItems empties', { enum: [[1, 2], [3]], maxItems: 0 }],
+  ['an enum that its maximum empties', { enum: [3, 4], maximum: 2 }],
+  ['an enum that its exclusiveMinimum empties at the limit', { enum: [1, 2], exclusiveMinimum: 2 }],
+  ['an enum that its exclusiveMaximum empties at the limit', { enum: [2, 3], exclusiveMaximum: 2 }],
+  ['an enum of strings that its maxLength empties', { enum: ['ab', 'abc'], maxLength: 1 }],
+  ['an enum of arrays that its minItems empties', { enum: [[1], []], minItems: 2 }],
+  ['an enum of objects that its minProperties empties', { enum: [{ a: 1 }, {}], minProperties: 2 }],
+  ['an enum of objects that its maxProperties empties', { enum: [{ a: 1 }, { a: 1, b: 2 }], maxProperties: 0 }],
+  ['an enum that its not lists in full', { enum: [1], not: { enum: [1] } }],
 ] as const) {
   test(`a required property whose schema is ${label} stops generation as unsatisfiable`, async t => {
     // protects: T-840 a required enum or const that its sibling keywords exclude stops generation (it generated a model that rejected every value)
