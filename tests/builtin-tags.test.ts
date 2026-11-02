@@ -7,6 +7,7 @@ import os from 'node:os';
 import { builtinTagsModelSource } from './fixture-templates/models/builtin-tags.js';
 import { buildModelProject, createModelProject, generatedModelFiles, writeModelGolemYaml, writeModelSources } from './model-project.js';
 import { getValidator } from '@exprtlabs/golem/validation';
+import { nearestManifest } from '#golem/type-analysis/package-specifier';
 import { isGolemSourceFile } from '#golem/type-analysis/tags';
 
 const valid = {
@@ -81,4 +82,8 @@ test('a package.json above a file that is not valid JSON gives the file no owner
   fs.mkdirSync(path.join(root, 'src'));
   fs.writeFileSync(path.join(root, 'package.json'), '{');
   assert.equal(isGolemSourceFile(path.join(root, 'src/tags.ts'), 'tags'), false);
+  // The miss is remembered for the walked directories: the second file is not parsed against the broken manifest again.
+  const owners = new Map();
+  assert.throws(() => nearestManifest(path.join(root, 'src/a.ts'), owners), /Cannot read .*package\.json/);
+  assert.equal(nearestManifest(path.join(root, 'src/b.ts'), owners), undefined);
 });

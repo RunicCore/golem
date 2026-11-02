@@ -62,7 +62,7 @@ export function assertPackageManifestsParse(specifier: string, importer: string)
 
 /**
  * The package that owns `file`: the nearest package.json with a name. A nameless one (such as `{"type":"module"}`) only scopes module format.
- * `owners` remembers the answer for each directory the walk passes, so files of one directory read the file system once. The caller owns its lifetime:
+ * `owners` remembers the answer for each directory the walk passes, a directory under an unreadable package.json as no owner, so files of one directory read the file system once. The caller owns its lifetime:
  * keep it only as long as the package.json files cannot change, such as one type checker.
  */
 export function nearestManifest(file: string, owners?: Map<string, PackageManifest | undefined>): PackageManifest | undefined {
@@ -71,7 +71,13 @@ export function nearestManifest(file: string, owners?: Map<string, PackageManife
   for (let dir = path.dirname(file); ; dir = path.dirname(dir)) {
     if (owners?.has(dir)) { found = owners.get(dir); break; }
     walked.push(dir);
-    const manifest = readManifest(path.join(dir, 'package.json'));
+    let manifest: ReturnType<typeof readManifest>;
+    try { manifest = readManifest(path.join(dir, 'package.json')); }
+    catch (error) {
+      // A package.json that cannot be read stays a miss for every directory below it, so the file is read once. The error still reaches this caller.
+      if (error instanceof ManifestError && owners) for (const missed of walked) owners.set(missed, undefined);
+      throw error;
+    }
     if (manifest?.name) { found = { root: dir, name: manifest.name, exports: manifest.exports }; break; }
     if (path.dirname(dir) === dir) break;
   }
