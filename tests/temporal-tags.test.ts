@@ -79,6 +79,13 @@ for (const [field, bad] of [
   });
 }
 
+test('Instant decodes a date-time with more than nine fraction digits and keeps nine', async () => {
+  // protects: bug T-877 the date-time format accepted a text that the Instant decode rejected
+  const { deserializeTemporalInstant } = await import('@exprtlabs/golem/temporal');
+  assert.equal(deserializeTemporalInstant('2020-01-01T00:00:00.1234567890Z' as never).toString(), '2020-01-01T00:00:00.123456789Z');
+  assert.equal(deserializeTemporalInstant('2020-01-01T00:00:00.123456789987+01:00' as never).toString(), '2019-12-31T23:00:00.123456789Z');
+});
+
 test('a missing Temporal gives the load-a-polyfill error', async () => {
   const { deserializeTemporalInstant } = await import('@exprtlabs/golem/temporal');
   const saved = globalThis.Temporal;

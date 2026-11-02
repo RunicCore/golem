@@ -31,7 +31,10 @@ export type TemporalDurationWire = string & Pattern<typeof DURATION_PATTERN>;
 
 const matches = (pattern: string) => { const expression = new RegExp(pattern, 'u'); return (text: string): boolean => expression.test(text); };
 
-function codec<Model extends { toString(): string }, Wire extends string>(className: TemporalClassName, accepts: (text: string) => boolean) {
+/** The `date-time` format reads a fraction of any length, and `Temporal.Instant.from` reads nine digits at most: the digits past the ninth are dropped, as a `Date` drops its own. */
+const cutFraction = (text: string): string => text.replace(/(\.[0-9]{9})[0-9]+/, '$1');
+
+function codec<Model extends { toString(): string }, Wire extends string>(className: TemporalClassName, accepts: (text: string) => boolean, read: (text: string) => string = text => text) {
   return {
     serialize(value: Model): Wire {
       const Class = runtime(LibErrorKind.Serialization)[className] as unknown as abstract new (...args: never[]) => Model;
@@ -44,14 +47,14 @@ function codec<Model extends { toString(): string }, Wire extends string>(classN
     deserialize(value: Wire): Model {
       const Class = runtime(LibErrorKind.Deserialization)[className] as unknown as { from(text: string): Model };
       if (typeof value !== 'string' || !accepts(value)) throw conversionError(LibErrorKind.Deserialization, `Expected a Temporal.${className} string.`, activeConversionPath, undefined, true);
-      try { return Class.from(value); }
+      try { return Class.from(read(value)); }
       catch (cause) { throw conversionError(LibErrorKind.Deserialization, `Expected a Temporal.${className} string.`, activeConversionPath, cause, true); }
     },
   };
 }
 
 // The generator binds `typeof` to exported function declarations, so each class gets its own pair.
-const instant = codec<Temporal.Instant, TemporalInstantWire>('Instant', isDateTime);
+const instant = codec<Temporal.Instant, TemporalInstantWire>('Instant', isDateTime, cutFraction);
 export function serializeTemporalInstant(value: Temporal.Instant): TemporalInstantWire { return instant.serialize(value); }
 export function deserializeTemporalInstant(value: TemporalInstantWire): Temporal.Instant { return instant.deserialize(value); }
 export type TemporalInstant = Temporal.Instant & TSerde<typeof serializeTemporalInstant, typeof deserializeTemporalInstant>;
