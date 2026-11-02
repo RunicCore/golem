@@ -406,7 +406,7 @@ function assertValidateOption(options: Pick<ValidateOptions, 'validate'> | undef
 async function collectCodecIssues(
   model: object,
   mode: ValidationMode,
-  options: Pick<ValidateOptions, 'validate' | 'validationContext'> = {},
+  options: Pick<ValidateOptions, 'maxDepth' | 'validate' | 'validationContext'> = {},
 ): Promise<readonly Issue[]> {
   const requested = options.validate;
   assertAcyclicValue(model, LibErrorKind.Serialization);
@@ -425,7 +425,7 @@ async function collectCodecIssues(
     generated = codecIssues(
       requireObjectCodec(codecId),
       codecValidationValue(model, definition),
-      { failFast, ...(options.validationContext === undefined ? {} : { validationContext: options.validationContext }), ...(requested === undefined ? {} : { validate: requested }) },
+      { failFast, ...(options.maxDepth === undefined ? {} : { maxDepth: options.maxDepth }), ...(options.validationContext === undefined ? {} : { validationContext: options.validationContext }), ...(requested === undefined ? {} : { validate: requested }) },
     );
   }
   // Sanity is the shape only: the instance rules are validation functions of the application, which it skips.

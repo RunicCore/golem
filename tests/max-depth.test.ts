@@ -10,8 +10,10 @@ import { valueNestsDeeperThan } from '../packages/golem/src/conversion.js';
 import { NestModelInterceptor } from '@exprtlabs/golem-ts-openapi/nest';
 import { nestModelCodec } from '@exprtlabs/golem-ts-openapi/internal/nest-runtime';
 import { requireObjectCodec } from '@exprtlabs/golem/internal/model-runtime';
+import { getValidator, validateInstance } from '@exprtlabs/golem/validation';
 
 import { generatedCodecIdFromRoot } from './support/consumer.js';
+import { modelCodec } from './support/model-codec.js';
 import { startNestApp } from './support/nest-app.js';
 import { buildRecursiveProject } from './support/recursive-fixtures.js';
 
@@ -143,6 +145,14 @@ test('the depth walk reaches the objects of a model instance, and a cycle ends t
   const loop: { child?: unknown } = {};
   loop.child = loop;
   assert.equal(valueNestsDeeperThan(loop, 5), false);
+});
+
+test('validateInstance and ModelValidator.validate take maxDepth for an instance of a deep recursive model', async (t) => {
+  // protects: bug T-861 validateInstance and ModelValidator.validate dropped maxDepth and rejected a deep instance
+  const { Link } = await buildDepthProject(t);
+  const deep = modelCodec(Link).fromWireFormat(chain(600).value, { maxDepth: 1000 });
+  assert.deepEqual(await validateInstance(deep, { maxDepth: 1000 }), []);
+  assert.equal(await getValidator(deep).validate({ maxDepth: 1000 }), true);
 });
 
 test('maxDepth accepts a value exactly at the limit and rejects one level more, on validate, fromWireFormat and parse', async (t) => {
