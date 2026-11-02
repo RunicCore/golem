@@ -159,7 +159,7 @@ import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 | `constructor` | `(kind, message, issues?, options?: LibErrorOptions)` | `options` takes `cause` and `causedByInput`. |
 | `kind` | `LibErrorKind` | The failure category. |
 | `issues` | `readonly Issue[]` | Frozen copy of the issues. |
-| `causedByInput` | `boolean` | `true` when the rejected value is at fault, `false` for a program fault. Defaults to `true` for `Validation` and `InvalidJson`. |
+| `causedByInput` | `boolean` | `true` when the rejected value is at fault, `false` for a program fault. Defaults to `true` for `Validation` and `InvalidJson`. A `Deserialize` function that throws on wire input sets it to `true`. |
 | `cause` | `unknown` | The original exception a `LibError` wraps. |
 
 | `LibErrorKind` | Value | Thrown when |
@@ -416,7 +416,7 @@ type TSerde<
 
 | Failure | Where | Result |
 | --- | --- | --- |
-| A function throws | `parse`, `stringify`, `fromWireFormat`, `toWireFormat` | `LibError` of kind `Serialization` (`Serialize`) or `Deserialization` (`Deserialize`). `cause` holds the exception, `causedByInput` is `false`, and the issue has source `serde`. A `LibError` that a function throws passes through. |
+| A function throws | `parse`, `stringify`, `fromWireFormat`, `toWireFormat` | `LibError` of kind `Serialization` (`Serialize`) or `Deserialization` (`Deserialize`). `cause` holds the exception, and the issue has source `serde`. `causedByInput` is `true` for a `Deserialize` function, because it reads wire input, and `false` for a `Serialize` function. A `LibError` that a function throws passes through. |
 | JSON or model value fails a check | the same calls | `LibError` of kind `Validation` with the issues. |
 | A function is not usable | generation | [RUNM1040](/reference/diagnostics#runm1040), [RUNM1042](/reference/diagnostics#runm1042), [RUNM1046](/reference/diagnostics#runm1046), [RUNM1047](/reference/diagnostics#runm1047) |
 | A type does not fit the pair | generation | [RUNM1049](/reference/diagnostics#runm1049) |

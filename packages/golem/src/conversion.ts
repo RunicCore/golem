@@ -220,7 +220,21 @@ export function textNestsDeeperThan(text: string, maxDepth: number): boolean {
   return false;
 }
 
-/** Generated synchronous conversion scope; no instance or result state is retained. */
+/**
+ * The error of a failed conversion: a LibError stays as it is. Any other throw is the application's converter, wrapped
+ * with the active path. A deserializer reads wire input, so its throw is bad input; a serializer writes the
+ * application's own value, so its throw is not.
+ */
+function itemFailure(direction: 'serialize' | 'deserialize', error: unknown): LibError {
+  if (error instanceof LibError) return error;
+  const kind = direction === 'serialize' ? LibErrorKind.Serialization : LibErrorKind.Deserialization;
+  const message = error instanceof Error && error.message
+    ? error.message
+    : `Field ${direction === 'serialize' ? 'serialization' : 'deserialization'} failed.`;
+  return conversionError(kind, message, activeConversionPath, error, direction === 'deserialize');
+}
+
+/** Generated synchronous conversion scope; no instance or result state is retained. A converter that throws fails as `itemFailure` says. */
 export function convertModelField<Arg, Value>(
   direction: 'serialize' | 'deserialize',
   field: string | number,
@@ -231,25 +245,10 @@ export function convertModelField<Arg, Value>(
   try {
     return convert(arg);
   } catch (error) {
-    if (error instanceof LibError) throw error;
-    const kind = direction === 'serialize' ? LibErrorKind.Serialization : LibErrorKind.Deserialization;
-    const message = error instanceof Error && error.message
-      ? error.message
-      : `Field ${direction === 'serialize' ? 'serialization' : 'deserialization'} failed.`;
-    throw conversionError(kind, message, activeConversionPath, error);
+    throw itemFailure(direction, error);
   } finally {
     activeConversionPath.pop();
   }
-}
-
-/** The error `convertModelItems` and `convertModelTupleItems` throw for a failed item, with the rules of `convertModelField`. */
-function itemFailure(direction: 'serialize' | 'deserialize', error: unknown): LibError {
-  if (error instanceof LibError) return error;
-  const kind = direction === 'serialize' ? LibErrorKind.Serialization : LibErrorKind.Deserialization;
-  const message = error instanceof Error && error.message
-    ? error.message
-    : `Field ${direction === 'serialize' ? 'serialization' : 'deserialization'} failed.`;
-  return conversionError(kind, message, activeConversionPath, error);
 }
 
 /**

@@ -662,8 +662,8 @@ export class Email extends TEmailBaseModel {}
 });
 
 for (const validation of [true, false]) {
-  test(`a deserializer of a class value beside tagged objects that throws on its wire value gives a LibError, with validation ${validation ? 'on' : 'off'}`, async (t) => {
-    // protects: T-637 the deserializer of a TSerde class value in a tagged union is wrapped like one on a plain field (a LibError of the field, not a raw TypeError)
+  test(`a deserializer of a class value beside tagged objects that throws on its wire value gives a LibError caused by the input, with validation ${validation ? 'on' : 'off'}`, async (t) => {
+    // protects: T-637 the deserializer of a TSerde class value in a tagged union is wrapped like one on a plain field (a LibError of the field with causedByInput true, not a raw TypeError)
     const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-declared-url-reject-', name: 'declared-url-reject', linkWorkspaceNodeModules: true });
     writeModelSources(sourceRoot, {
       'codecs.ts': `export function encodeUrl(value: URL): string { return value.href; }
@@ -681,7 +681,7 @@ export type TContact = IObject<{ beside: Link | ((TEmail | TPhone) & ${TAG}) }>;
     const codecs = await buildContactCodecs(root, validation);
     assert.throws(
       () => codecs.fromWireFormatTContact({ beside: 'not a url' }, { validate: validation }),
-      (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.Deserialization && !error.causedByInput && error.issues[0]?.path.join('.') === 'beside',
+      (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.Deserialization && error.causedByInput && error.issues[0]?.path.join('.') === 'beside',
     );
   });
 }

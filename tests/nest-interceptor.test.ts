@@ -19,7 +19,7 @@ import { defaultIfEmpty, firstValueFrom, map, of, type Observable } from 'rxjs';
 import { NestModelInterceptor, type NestModelInterceptorOptions, nestModelStringifyInterceptor, nestUnionFromMetatype, objectCodecFromMetatype } from '@exprtlabs/golem-ts-openapi/nest';
 import { nestModelCodec, nestModelReturn, nestModelUnion } from '@exprtlabs/golem-ts-openapi/internal/nest-runtime';
 import { LibError, type LibErrorKind } from '@exprtlabs/golem/errors';
-import { deserializeDate, unknownDiscriminatorValue, assertModelValue, isValidModelValue } from '@exprtlabs/golem/internal/model-runtime';
+import { convertModelField, deserializeDate, unknownDiscriminatorValue, assertModelValue, isValidModelValue } from '@exprtlabs/golem/internal/model-runtime';
 import type { ModelTypeDescriptor } from '@exprtlabs/golem/internal/schema';
 import { schemaForDescriptor } from '@exprtlabs/golem/internal/schema';
 import { createSchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
@@ -712,12 +712,14 @@ test('NestModelInterceptor passes @Query() through unchanged unless a present fi
 });
 
 test('NestModelInterceptor answers 400 for request input the decoder rejects and 500 for server faults', async () => {
-  // protects: T-686 the interceptor sees a LibError from a second golem copy as bad input
+  // protects: T-686 the interceptor sees a LibError from a second golem copy as bad input; R-70 T-660 a throwing TSerde deserializer is bad input
   const secondCopy = await import(`${import.meta.resolve('@exprtlabs/golem/errors')}?second-copy`) as { LibError: typeof LibError; LibErrorKind: typeof LibErrorKind };
   class UnregisteredModel {}
   const decoders: Record<string, (wire: Record<string, unknown>) => unknown> = {
     unknownTag: (wire) => unknownDiscriminatorValue('kind', wire.kind, 'deserialize'),
     invalidDate: (wire) => ({ at: deserializeDate(wire.at) }),
+    // A TSerde deserializer that throws on the wire value.
+    throwingDeserializer: (wire) => convertModelField('deserialize', 'at', () => { throw new Error('refused'); }, wire.at),
     // A LibError from another golem copy (a standalone SDK) is bad input too.
     foreignCopy: () => { throw new (secondCopy.LibError)(secondCopy.LibErrorKind.Validation, 'from the SDK'); },
     // Missing conversion metadata is a program fault, not bad input.
@@ -753,6 +755,7 @@ test('NestModelInterceptor answers 400 for request input the decoder rejects and
     assert.match(JSON.stringify(await unknownTag.json()), /Unknown kind discriminator value/);
     assert.equal((await post('invalidDate', { at: 'not a date' })).status, 400);
     assert.equal((await post('invalidDate', { at: 1 })).status, 400, 'a date must be text');
+    assert.equal((await post('throwingDeserializer', { at: 'x' })).status, 400);
     assert.equal((await post('foreignCopy', {})).status, 400);
     assert.equal((await post('serverFault', {})).status, 500);
     assert.equal((await post('brokenValidator', {})).status, 500);

@@ -66,6 +66,7 @@ A function, a symbol or an array hole is not a JSON value and fails the JSON che
 - Declare the encoder and decoder in their own module, like a `TValidation` predicate. The generated file imports them, and the model file imports the generated file. A function in the model file makes the two files import each other, and generation stops with [RUNM1065](/reference/diagnostics#runm1065).
 - `TSerde` functions run during conversion, never during generation.
 - A function that throws is wrapped once in a `LibError` with the exception as its `cause`.
+- A `Deserialize` function reads wire input. When it throws, the `LibError` has `causedByInput: true`. A `Serialize` function writes your own value. When it throws, `causedByInput` is `false`.
 - An encoder must return JSON-compatible data. Non-finite numbers, cycles and other values that JSON cannot hold still fail with validation disabled.
 - The signature and the failures are in the [`TSerde` reference](/reference/runtime-api#tserde).
 

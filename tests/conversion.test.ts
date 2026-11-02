@@ -16,6 +16,7 @@ import {
   IssueSource,
   LibError,
   LibErrorKind,
+  type IssuePath,
 } from '@exprtlabs/golem/errors';
 
 test('conversion scopes preserve LibError identity and restore paths after failure', () => {
@@ -83,6 +84,21 @@ test('the item loops send a LibError out as it is and keep holes', () => {
   assertConversionError(() => convertModelField('serialize', 'after', () => { throw new Error('boom'); }, 1),
     LibErrorKind.Serialization, IssueRepresentation.Model, ['after']);
 });
+
+const refuse = (): never => { throw new Error('refused'); };
+const converterScopes: readonly (readonly [string, IssuePath, (direction: 'serialize' | 'deserialize') => unknown])[] = [
+  ['field', ['at'], (direction) => convertModelField(direction, 'at', refuse, 1)],
+  ['array items', [0], (direction) => convertModelItems(direction, refuse, [1])],
+  ['tuple items', [0], (direction) => convertModelTupleItems(direction, refuse, [1])],
+  ['record values', ['a'], (direction) => convertModelRecord(direction, refuse, { a: 1 })],
+];
+for (const [scope, path, run] of converterScopes) {
+  test(`${scope}: a throwing application converter is bad input when it decodes wire input and not when it encodes`, () => {
+    // protects: R-70 T-660 a deserializer throw on wire input has causedByInput true; a serializer throw stays false
+    assert.equal(assertConversionError(() => run('deserialize'), LibErrorKind.Deserialization, IssueRepresentation.Wire, path).causedByInput, true);
+    assert.equal(assertConversionError(() => run('serialize'), LibErrorKind.Serialization, IssueRepresentation.Model, path).causedByInput, false);
+  });
+}
 
 function thrown(action: () => unknown): unknown {
   try {

@@ -145,9 +145,10 @@ export class LibError extends Error {
   public readonly kind: LibErrorKind;
   public readonly issues: readonly Issue[];
   /**
-   * True when the rejected value is at fault: validation, invalid JSON, and
-   * wire input that conversion cannot decode. False for program faults such
-   * as missing generated metadata or a throwing application converter.
+   * True when the rejected value is at fault: validation, invalid JSON, wire
+   * input that conversion cannot decode, and a TSerde deserializer that throws
+   * on wire input. False for program faults such as missing generated metadata
+   * or a throwing serializer.
    */
   public readonly causedByInput: boolean;
 
