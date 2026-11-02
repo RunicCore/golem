@@ -7,7 +7,7 @@ type PackageSpecifierResult =
   | { readonly kind: 'package'; readonly specifier: string }
   | { readonly kind: 'unexported'; readonly packageName: string; readonly packageRoot: string };
 
-interface PackageManifest { readonly root: string; readonly name: string; readonly exports?: unknown }
+export interface PackageManifest { readonly root: string; readonly name: string; readonly exports?: unknown }
 
 /** Parsed package.json files, re-read when the file changes (watch mode keeps this process alive). */
 const manifests = new Map<string, { readonly mtimeMs: number; readonly name?: string; readonly exports?: unknown }>();
@@ -57,16 +57,23 @@ export function assertPackageManifestsParse(specifier: string, importer: string)
   if (name !== undefined) nearest((directory) => path.join(directory, 'node_modules', name, 'package.json'));
 }
 
-/** The package that owns `file`: the nearest package.json with a name. A nameless one (such as `{"type":"module"}`) only scopes module format. */
-export function nearestManifest(file: string): PackageManifest | undefined {
-  let dir = path.dirname(file);
-  for (;;) {
+/**
+ * The package that owns `file`: the nearest package.json with a name. A nameless one (such as `{"type":"module"}`) only scopes module format.
+ * `owners` remembers the answer for each directory the walk passes, so files of one directory read the file system once. The caller owns its lifetime:
+ * keep it only as long as the package.json files cannot change, such as one type checker.
+ */
+export function nearestManifest(file: string, owners?: Map<string, PackageManifest | undefined>): PackageManifest | undefined {
+  const walked: string[] = [];
+  let found: PackageManifest | undefined;
+  for (let dir = path.dirname(file); ; dir = path.dirname(dir)) {
+    if (owners?.has(dir)) { found = owners.get(dir); break; }
+    walked.push(dir);
     const manifest = readManifest(path.join(dir, 'package.json'));
-    if (manifest?.name) return { root: dir, name: manifest.name, exports: manifest.exports };
-    const parent = path.dirname(dir);
-    if (parent === dir) return undefined;
-    dir = parent;
+    if (manifest?.name) { found = { root: dir, name: manifest.name, exports: manifest.exports }; break; }
+    if (path.dirname(dir) === dir) break;
   }
+  if (owners) for (const dir of walked) owners.set(dir, found);
+  return found;
 }
 
 /** The name of the package that owns `file`: the nearest package.json with a name. */

@@ -4,6 +4,7 @@ import { hasLocalForm, localFormMessage } from '../names.js';
 import * as ts from '../typescript-ns.js';
 import { canonicalFilename, portableRelativeFilename } from './project.js';
 import { nearestManifest, packageSpecifier } from './package-specifier.js';
+import type { PackageManifest } from './package-specifier.js';
 import { canonicalConstraintKey } from '../schema.js';
 import type { ConstraintSchemaValue, ModelConstraint } from '../schema.js';
 import type { ImportedFunction } from '../../model-registry.js';
@@ -242,9 +243,12 @@ function canonicalIdentity(declaration: ts.Declaration, exportName: string, iden
   return `${portableRelativeFilename(declaration.getSourceFile().fileName, identityRoot)}#${exportName}`;
 }
 
-/** Whether `filename` is the golem source or declaration file named `stem` (`tags`, `model`), in a package install or in this workspace. */
-export function isGolemSourceFile(filename: string, stem: 'tags' | 'model'): boolean {
-  const owner = nearestManifest(filename);
+/** The owning package of each directory, for each type checker: a checker lives for one run, so a package.json edited in watch mode is read again by the next one. */
+const ownersByChecker = new WeakMap<ts.TypeChecker, Map<string, PackageManifest | undefined>>();
+
+/** Whether `filename` is the golem source or declaration file named `stem` (`tags`, `model`), in a package install or in this workspace. `owners` remembers the owning package of each directory. */
+export function isGolemSourceFile(filename: string, stem: 'tags' | 'model', owners?: Map<string, PackageManifest | undefined>): boolean {
+  const owner = nearestManifest(filename, owners);
   if (owner?.name !== '@exprtlabs/golem') return false;
   const file = portableRelativeFilename(filename, owner.root);
   return ['src', 'dist'].some((directory) => ['ts', 'mts', 'cts', 'd.ts', 'd.mts', 'd.cts'].some((extension) => file === `${directory}/${stem}.${extension}`));
@@ -252,7 +256,9 @@ export function isGolemSourceFile(filename: string, stem: 'tags' | 'model'): boo
 
 function isGolemTagSymbol(checker: ts.TypeChecker, symbol: ts.Symbol | undefined): boolean {
   const target = targetSymbol(checker, symbol);
-  return Boolean(target?.declarations?.some((declaration) => isGolemSourceFile(declaration.getSourceFile().fileName, 'tags')));
+  let owners = ownersByChecker.get(checker);
+  if (!owners) ownersByChecker.set(checker, owners = new Map());
+  return Boolean(target?.declarations?.some((declaration) => isGolemSourceFile(declaration.getSourceFile().fileName, 'tags', owners)));
 }
 
 /** Whether `property` is the key of a golem tag: a property named by one of the unique symbols that tags.ts declares. */
