@@ -676,8 +676,7 @@ export function modelConversionDescriptor(
   const sub = subschemaConverter(definitions, nested, direction, seen);
   const builtin = dateClassOf(schema, env.dates);
   if (builtin) {
-    // The document states the wire form: a string of its own format, which the wire check of a component keeps.
-    const value = builtinClassDescriptor(builtin, { kind: 'string', constraints: [{ kind: 'format', value: String(asRecord(schema).format) }] });
+    const value = builtinClassDescriptor(builtin);
     return admitsNull(asRecord(schema)) ? { kind: 'union', variants: [value, { kind: 'null' }] } : value;
   }
   if (isJsonObject(schema) && hasAllOfMembers(schema)) {

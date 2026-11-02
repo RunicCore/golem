@@ -718,7 +718,9 @@ export function buildOperationValidationSchemas(
   moved: MovedUnions = new Map(),
 ): OperationValidationSchemas | undefined {
   if (!profile.validation) return undefined;
-  const bundles = buildOperationValidationSchemaBundles(document, operations, schemaData);
+  // Without schema data there is no operation to validate.
+  if (schemaData === undefined && operations.length > 0) throw new Error('The validation schemas of the operations need their schema data.');
+  const bundles = schemaData === undefined ? new Map<string, OperationValidationBundle>() : buildOperationValidationSchemaBundles(document, operations, schemaData);
   const list = operations.map((operation) => {
     const bundle = bundles.get(operation.name);
     if (!bundle) throw new Error(`Missing generated validation schema bundle for operation ${operation.name}`);

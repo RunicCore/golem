@@ -433,7 +433,7 @@ export function schemaType(schema: unknown, context: PublicSchemaTypeContext = {
 
 function schemaTypeCode(schema: unknown, context: SchemaTypeContext = {}): TypeCode {
   const projected = context.direction
-    ? projectSchema(schema, { document: context.document ?? {}, direction: context.direction })
+    ? projectSchema(schema, { document: context.document ?? {}, direction: context.direction, dates: null })
     : schema;
   return schemaTypeNode(projected, context);
 }
@@ -471,6 +471,7 @@ function projectedResourceSchema(schema: unknown, context: SchemaTypeContext): u
   return projectSchema(schema, {
     document: context.document,
     direction: context.direction,
+    dates: null,
     resources: context.resources,
   });
 }

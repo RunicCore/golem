@@ -78,7 +78,7 @@ function directionalComponents(openapi: string): Record<string, unknown> {
 
 /** The registry the operation schemas are built from, in the JSON form of a loaded document. */
 function runtimeRegistry(document: unknown): Record<string, unknown> {
-  return requireRecord(JSON.parse(JSON.stringify(buildSchemaData(document).normalizedRegistry)), 'runtimeSchemaRegistry');
+  return requireRecord(JSON.parse(JSON.stringify(buildSchemaData(document, 'date').normalizedRegistry)), 'runtimeSchemaRegistry');
 }
 
 async function generateProjection(t: TestContext, openapi: string) {
@@ -169,7 +169,7 @@ test('a readOnly schema reached by a relative $ref resolves against the enclosin
   };
   const schemas = requireRecord(requireRecord(document.components, 'components').schemas, 'schemas');
   const account = requireRecord(schemas.Account, 'Account');
-  assert.deepEqual(projectSchema(account, { document, direction: 'input' }), {
+  assert.deepEqual(projectSchema(account, { document, direction: 'input', dates: null }), {
     $id: 'https://example.test/account/',
     type: 'object',
     properties: { name: { type: 'string' } },
@@ -214,11 +214,12 @@ test('repeated readOnly aliases drop every matching property and required entry'
     },
   };
   const schemas = requireRecord(requireRecord(document.components, 'components').schemas, 'schemas');
-  const projected = projectSchema(requireRecord(schemas.Thing, 'Thing'), { document, direction: 'input' });
+  const projected = projectSchema(requireRecord(schemas.Thing, 'Thing'), { document, direction: 'input', dates: null });
   assert.deepEqual(projected, { type: 'object' });
   const sibling = projectSchema(requireRecord(schemas.AllOfSibling, 'AllOfSibling'), {
     document,
     direction: 'output',
+    dates: null,
   });
   assert.deepEqual(sibling, {
     allOf: [
@@ -449,7 +450,7 @@ async function assertDirectionalEnvelope(
   userId: string,
 ): Promise<void> {
   compileGeneratedSdk(output);
-  const registry = buildSchemaData(document).registry;
+  const registry = buildSchemaData(document, 'date').registry;
   const defs = requireRecord(registry.$defs, '$defs');
   // Every key, `$id` and `$ref` of a registry node: the places a projection is named.
   const names = (node: unknown): string[] => node !== null && typeof node === 'object'
@@ -673,7 +674,7 @@ test('directional projection is consistent on OAS 3.1 and 3.2 and keeps neutral 
       } } },
     });
     for (const [readOnly, ownId] of [[false, false], [true, false], [false, true]] as const) {
-      const data = buildSchemaData(document(readOnly, ownId));
+      const data = buildSchemaData(document(readOnly, ownId), 'date');
       const registry = requireRecord(data.normalizedRegistry, 'registry');
       assert.equal(Object.keys(requireRecord(registry.$defs, 'directional resources')).length, readOnly || ownId ? 2 : 1);
       const id = String(registry.$id);

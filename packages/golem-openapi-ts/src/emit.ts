@@ -192,7 +192,7 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions, moved:
   const inlineDiagnostics = checkOperationCompositions([...operations, ...inboundOperations], modelAnalysis, document);
   const schemaData = profile.validation && plan.hasOutboundOperations
     // A request body that converts and whose descriptors carry every keyword of its schema is checked by its own conversion, so the input root of its client operation leaves it open; any other request body keeps the wire check of the root.
-    ? buildSchemaData(document, ir, (operation, contentType) => modelAnalysis.convertedNodeIds.has(requestBodyKey(operation.name, contentType)) && !modelAnalysis.uncarriedValues.has(requestBodyKey(operation.name, contentType)))
+    ? buildSchemaData(document, options.dates ?? 'date', ir, (operation, contentType) => modelAnalysis.convertedNodeIds.has(requestBodyKey(operation.name, contentType)) && !modelAnalysis.uncarriedValues.has(requestBodyKey(operation.name, contentType)))
     : undefined;
   const files = new Map<string, string>();
   const specifiers: RuntimeSpecifiers | undefined = golem ? undefined : standaloneRuntimeSpecifiers;

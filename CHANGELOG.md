@@ -171,6 +171,7 @@ This file is the complete list of changes. The documentation site's
 - **Breaking:** a generated client writes a `style: cookie` array or object parameter that sets no `explode` as one cookie for each item or key, as OpenAPI 3.2 sets `explode` to true for `style: cookie` and `style: form`. Before, it wrote one cookie with the items joined by commas.
 - A generated client decodes an empty response header that the document declares as an object, with or without `explode`, to `{}`. Before, it threw a `TypeError`.
 - A Nest `@Query()` model field that is a tuple, such as `[number, string]`, decodes each position by its own type: `?pair=1&pair=2` gives `[1, '2']`. Before, every position was decoded by the types of all positions together, so a tuple of a number and a string kept both as text. An entry after the listed positions follows the rest type of the tuple, and stays text when the tuple has none.
+- With `dates: temporal`, a `format: duration` field is checked by the wire form of `Temporal.Duration`, in a body, a parameter and a header. The field now accepts the text that Temporal writes, such as `PT0.5S` (fractional seconds), `PT1H30S` and `P1Y2D`. Before, the RFC 3339 `duration` format rejected them, so a `Temporal.Duration` value failed on write and on read. Without `temporal`, a `duration` string keeps the RFC 3339 format.
 
 ### Generation
 

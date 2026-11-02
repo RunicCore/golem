@@ -1,3 +1,4 @@
+import type { OpenApiDates } from './model-resolution.js';
 import { asRecord, isJsonObject, objectEntries } from './json.js';
 import { unionVariants } from './composition.js';
 import { SCHEMA_ARRAY_KEYWORDS, SCHEMA_MAP_KEYWORDS, SCHEMA_SINGLE_KEYWORDS } from './schema-keywords.js';
@@ -120,6 +121,7 @@ function operationRuntimeSchemas(
   inputResourceId: string,
   outputResourceId: string,
   resources: ResourceIndex,
+  dates: OpenApiDates | null,
   bodyChecked: BodyChecked,
 ): Record<string, unknown> {
   return Object.fromEntries(operations.map((operation) => {
@@ -127,20 +129,20 @@ function operationRuntimeSchemas(
     return [
       operation.name,
       {
-        input: projectOperationSchema(source.input, document, 'input', inputResourceId, resources),
-        ...(source.headers === undefined ? {} : { headers: projectOperationSchema(source.headers, document, 'input', inputResourceId, resources) }),
+        input: projectOperationSchema(source.input, document, 'input', inputResourceId, dates, resources),
+        ...(source.headers === undefined ? {} : { headers: projectOperationSchema(source.headers, document, 'input', inputResourceId, dates, resources) }),
         responses: Object.fromEntries(Object.entries(source.responses).map(([status, content]) => [
           status,
           Object.fromEntries(Object.entries(content).map(([mediaType, schema]) => [
             mediaType,
-            projectOperationSchema(schema, document, 'output', outputResourceId, resources),
+            projectOperationSchema(schema, document, 'output', outputResourceId, dates, resources),
           ])),
         ])),
         responseHeaders: Object.fromEntries(Object.entries(source.responseHeaders).map(([status, headers]) => [
           status,
           Object.fromEntries(Object.entries(headers).map(([name, schema]) => [
             name,
-            projectOperationSchema(schema, document, 'output', outputResourceId, resources),
+            projectOperationSchema(schema, document, 'output', outputResourceId, dates, resources),
           ])),
         ])),
       },
@@ -255,13 +257,13 @@ function runtimeRegistry(registry: Record<string, unknown>): Record<string, unkn
 }
 
 /** `bodyChecked` names the request bodies that the input root leaves to their own conversion (see `operationInputSchema`). */
-export function buildSchemaData(document: unknown, preparedIr?: NormalizedDocument, bodyChecked: BodyChecked = () => false) {
+export function buildSchemaData(document: unknown, dates: OpenApiDates | null, preparedIr?: NormalizedDocument, bodyChecked: BodyChecked = () => false) {
   const ir = preparedIr ?? normalizeDocument(document);
   const operations = ir.operations;
   const rootId = `urn:golem:openapi:${identifier(asRecord(asRecord(document).info).title, 'api').toLowerCase()}:${sourceDigest(document)}:schemas`;
   const resources = collectCanonicalResources(document);
   const projections = operations.length
-    ? buildRuntimeProjections(document, ir, rootId, resources)
+    ? buildRuntimeProjections(document, ir, rootId, dates, resources)
     : null;
   const registry: Record<string, unknown> = {
     $id: rootId,
@@ -272,6 +274,7 @@ export function buildSchemaData(document: unknown, preparedIr?: NormalizedDocume
       projections?.inputResourceId ?? `${rootId}:input`,
       projections?.outputResourceId ?? `${rootId}:output`,
       resources,
+      dates,
       bodyChecked,
     ),
     ...(projections ? {
@@ -471,9 +474,8 @@ function resourceBaseId(value: string): string {
 
 function createOperationValidationSchemaIndex(
   document: unknown,
-  preparedData?: ReturnType<typeof buildSchemaData>,
+  data: ReturnType<typeof buildSchemaData>,
 ): OperationValidationSchemaIndex {
-  const data = preparedData ?? buildSchemaData(document);
   const rootId = String(data.registry.$id);
   const projectionDefinitions = asRecord(data.normalizedRegistry.$defs);
   const inputProjection = asRecord(projectionDefinitions['golem-input']);
@@ -815,7 +817,7 @@ function operationBundleFromIndex(
 export function buildOperationValidationSchemaBundles(
   document: unknown,
   operations: readonly NormalizedOperation[],
-  preparedData?: ReturnType<typeof buildSchemaData>,
+  preparedData: ReturnType<typeof buildSchemaData>,
 ): ReadonlyMap<string, OpenApiOperationValidationSchemaBundle> {
   const index = createOperationValidationSchemaIndex(document, preparedData);
   return new Map(operations.map((operation) => [operation.name, operationBundleFromIndex(index, operation)]));
@@ -825,7 +827,7 @@ export function buildOperationValidationSchemaBundles(
 export function buildOperationValidationSchemaBundle(
   document: unknown,
   operation: NormalizedOperation,
-  preparedData?: ReturnType<typeof buildSchemaData>,
+  preparedData: ReturnType<typeof buildSchemaData>,
 ): OpenApiOperationValidationSchemaBundle {
   const bundle = buildOperationValidationSchemaBundles(document, [operation], preparedData).get(operation.name);
   if (!bundle) throw new Error(`Missing OpenAPI operation ${JSON.stringify(operation.name)}.`);

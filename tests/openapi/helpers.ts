@@ -441,7 +441,7 @@ export function golemModeManifest(document: unknown, profile: OpenApiGenerationP
   const operations = ir.operations;
   const analysis = analyzeOpenApiModels(document, profile.validation, dates, [...operations, ...ir.inboundOperations]);
   const schemaData = profile.validation && operations.length > 0
-    ? buildSchemaData(document, ir, (operation, contentType) => analysis.convertedNodeIds.has(requestBodyKey(operation.name, contentType)) && !analysis.uncarriedValues.has(requestBodyKey(operation.name, contentType)))
+    ? buildSchemaData(document, dates, ir, (operation, contentType) => analysis.convertedNodeIds.has(requestBodyKey(operation.name, contentType)) && !analysis.uncarriedValues.has(requestBodyKey(operation.name, contentType)))
     : undefined;
   return generateModelManifest(document, profile, analysis, 'golem', { operations, validation: buildOperationValidationSchemas(operations, document, profile, schemaData) }) as Record<string, unknown>;
 }
