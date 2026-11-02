@@ -108,7 +108,8 @@ test('a source fixed while the first build is still running starts the next buil
   let fixed = false;
   const finished: number[] = [];
   // The only patch left: no option reports the middle of a run. The compiler's report is forwarded to stdout while the first build is still
-  // running, and the fix must land then, not after the build has ended.
+  // running, and the fix must land then, not after the build has ended. A child process cannot keep that order: its parent reads the report
+  // after the write, while the build goes on to its emit step, so the fix could land after the build ended and the claim would go unproved.
   t.mock.method(process.stdout, 'write', (chunk: string | Uint8Array, ...rest: unknown[]) => {
     const text = typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString();
     if (!fixed && text.includes('error TS')) {
