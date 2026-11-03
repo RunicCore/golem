@@ -284,7 +284,7 @@ test('an allOf alias of one closed schema checks bodies exactly as its base does
   await assert.rejects(() => price.decode({ amount: 'three' }), isLibError);
 });
 
-test('a $ref to a property, a nested $anchor or a nested $id decodes like the schema it names', async (t) => {
+for (const mode of ['standalone', 'golem'] as const) test(`a $ref to a property, a nested $anchor or a nested $id decodes like the schema it names (${mode} mode)`, async (t) => {
   // protects: T-857 the model path read a $ref to part of a component as an unknown value, while the type path read it as the part
   const output = path.join(createFixtureProject(t, 'golem-openapi-part-ref-'), 'sdk');
   const document = withRootOperations(documentBase('3.1.0', {
@@ -303,7 +303,7 @@ test('a $ref to a property, a nested $anchor or a nested $id decodes like the sc
       },
     } },
   }), 'Pet');
-  await generateMaterializedSdk(document, { output, name: 'Repro', profile: { validation: true } });
+  await generateMaterializedSdk(document, { output, name: 'Repro', profile: { validation: true }, mode });
   compileGeneratedSdk(output, [], { strict: true, skipLibCheck: true });
   const pet = await sdkBodyCodec(output, 'Repro', 'Pet');
   const decoded = await pet.decode({ createdAt: '2024-01-02T03:04:05Z', byProperty: '2024-01-02T03:04:05Z', byAnchor: '2024-01-02T03:04:05Z', byId: '2024-01-02T03:04:05Z' }) as Record<string, unknown>;
