@@ -290,13 +290,12 @@ test('a response is checked once: the client check is the only wire check before
   assert.deepEqual(response.body, { amount: 'x', when: new Date(WHEN) });
 });
 
-test('a leap-second date passes the wire check and is still rejected when it cannot convert', async () => {
+test('a leap-second date passes the wire check and arrives as a real Date at second 59', async () => {
   // protects: R-86 skipping the decoder's own check loses nothing: a wire date that is no Date never arrives as one
+  // protects: T-851 a text the wire check accepts is a text the converter reads
   const client = (await sdks.full()).createClient({ fetchImpl: async () => Response.json({ amount: 1, when: '2025-12-31T23:59:60Z' }) });
-  await assert.rejects(
-    client.createCharge().execute({ body: { amount: 1, when: new Date(WHEN) } }),
-    (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.Deserialization,
-  );
+  const answer = await client.createCharge().execute({ body: { amount: 1, when: new Date(WHEN) } });
+  assert.equal((answer.body.when as Date).toISOString(), '2025-12-31T23:59:59.000Z');
 });
 
 test('with response validation off a bad date is a deserialization error: conversion still runs', async () => {

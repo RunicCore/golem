@@ -536,9 +536,7 @@ export function generate(context: GolemModelContext): GolemModelResult {
   // A discovered file with no IModel or IObject alias is not a model file: it is skipped, and so is its companion.
   // A file that `model.sources` names must have one.
   const withModels = new Set(specifications.map((specification) => canonicalFilename(specification.sourceFile.fileName)));
-  const unmodeled = listed ? ownCandidates.find((source) => !withModels.has(canonicalFilename(source))) : undefined;
-  if (unmodeled !== undefined) throw new Error(`No exported IModel<...> type aliases were found in ${displayPath(unmodeled)}.`);
-  const ownSources = ownCandidates.filter((source) => withModels.has(canonicalFilename(source)));
+  const ownSources = listed ? ownCandidates : ownCandidates.filter((source) => withModels.has(canonicalFilename(source)));
   // A shared model file of the program is a source of the job: this app writes its companion in model.output.
   const sharedSources = sharedCandidates.filter((source) => withModels.has(canonicalFilename(source)));
   const sources = [...ownSources, ...sharedSources];
@@ -555,11 +553,14 @@ export function generate(context: GolemModelContext): GolemModelResult {
     normalized.onInput,
   );
   const tsconfigDirectory = programInfo.configPath === undefined ? normalized.root : dirname(programInfo.configPath);
+  const unmodeled = ownSources.find((source) => !withModels.has(canonicalFilename(source)));
+  const noModels = (): Error => new Error(`No exported IModel<...> type aliases were found${unmodeled === undefined ? '' : ` in ${displayPath(unmodeled)}`}.`);
   if (specifications.length === 0 && !hasGolemSdks()) {
     const diagnostics = ownDiagnostics(ts.getPreEmitDiagnostics(programInfo.program), sources.map(companionOf), sources);
     if (diagnostics.length > 0) throw new Error(formatDiagnostics(diagnostics));
-    throw new Error('No exported IModel<...> type aliases were found.');
+    throw noModels();
   }
+  if (unmodeled !== undefined) throw noModels();
 
   // Analyze the complete job before emitting companions. Each model is
   // described once; a companion emits code only for its own models and
