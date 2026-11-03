@@ -341,6 +341,8 @@ const IDENTIFIER = /^[\p{ID_Start}_$][\p{ID_Continue}$\u200c\u200d]*$/u;
  */
 const LOCAL_LETTERS = {
   value: 'v',
+  converted: 'c',
+  self: 'o',
   piece: 'p',
   field: 'f',
   present: 'e',

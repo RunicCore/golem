@@ -88,6 +88,31 @@ export function defineModelProperty(target: object, name: string, value: unknown
   });
 }
 
+const assignableFieldsByClass = new WeakMap<object, boolean>();
+
+/**
+ * Whether a model class that is being constructed can take its declared fields by plain assignment: no field name is a
+ * member of the class's prototype chain (an accessor, a method or an `Object.prototype` member such as `__proto__`), so
+ * assignment makes the same own data property as `defineModelProperty`. The answer is kept for the class from its first
+ * construction, so a generated constructor pays one lookup and writes each field at its own site.
+ */
+export function modelFieldsAssignable(constructor: { readonly prototype: object }, fields: readonly string[]): boolean {
+  let assignable = assignableFieldsByClass.get(constructor);
+  if (assignable === undefined) {
+    assignable = !fields.some((name) => name in constructor.prototype);
+    assignableFieldsByClass.set(constructor, assignable);
+  }
+  return assignable;
+}
+
+/** The fields of a model class that `modelFieldsAssignable` refused: each defined value of `values`, by the position of its name in `names`. */
+export function defineModelFields(target: object, names: readonly string[], values: readonly unknown[]): void {
+  for (const [index, name] of names.entries()) {
+    const value = values[index];
+    if (value !== undefined) defineModelProperty(target, name, value);
+  }
+}
+
 /**
  * The root of a call with `allowGetter`: a copy with the root's prototype, so a model instance keeps its model. Each
  * declared field is read once, so its getter runs once and the copy never runs a prototype getter again: a defined

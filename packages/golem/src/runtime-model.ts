@@ -8,7 +8,7 @@ export { findGeneratedModelDefinition, findGeneratedModelDefinitionForConstructo
 export {
   assertAcyclicEncodeInput, assertPropertyAcyclic, assertWireAcyclic, beginDecode, beginEncode, constructModel, convertModelField, convertModelItems,
   convertModelRecord, convertModelTupleItems, copyModelRecord, decodeCheckedInput, decodeDetachedInput, decodeGeneratedModelTrusted,
-  defineModelProperty, deserializeDate, endDecode, endEncode, isVariantObject, jsonWithDiscriminator, rejectModelObject, wireChecked,
+  defineModelFields, defineModelProperty, deserializeDate, endDecode, endEncode, isVariantObject, jsonWithDiscriminator, modelFieldsAssignable, rejectModelObject, wireChecked,
   requireModelObject, resolveMaxDepth, serializeDate, unknownDiscriminatorValue, withDeclaredFields, withDiscriminatorValue,
 } from './conversion.js';
 export {

@@ -40,6 +40,7 @@ interface RuntimeTypeExports {
     readonly GeneratedModelWire: model.GeneratedModelWire<unknown>;
     readonly generatedModelFieldsBrand: typeof model.generatedModelFieldsBrand;
     readonly generatedModelResultBrand: typeof model.generatedModelResultBrand;
+    readonly ModelField: model.ModelField<object>;
     readonly ModelInit: model.ModelInit<unknown>;
     readonly generatedModelWireBrand: typeof model.generatedModelWireBrand;
   };
