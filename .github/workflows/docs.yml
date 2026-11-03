@@ -1,9 +1,9 @@
-# Publishes the documentation site to GitHub Pages each time master changes.
+# Publishes the documentation site to GitHub Pages when a release tag (v*) is pushed, or when run by hand.
 name: Docs
 
 on:
   push:
-    branches: [master]
+    tags: ['v*']
   workflow_dispatch:
 
 permissions:
@@ -11,7 +11,7 @@ permissions:
   pages: write
   id-token: write
 
-# One publish at a time; a newer push waits for the running one to finish.
+# One publish at a time; a newer run waits for the running one to finish.
 concurrency:
   group: pages
   cancel-in-progress: false
@@ -28,6 +28,8 @@ jobs:
       # package-lock.json is resolved on macOS and holds only that platform's native packages, so `npm ci` refuses it;
       # `npm install` keeps its pinned versions and adds the packages of this runner.
       - run: npm install --no-audit --no-fund
+      # The docs build compiles scripts that import the packages' built output.
+      - run: npm run build
       - run: npm run docs:build
       - uses: actions/configure-pages@v6
       - uses: actions/upload-pages-artifact@v5
