@@ -12,6 +12,7 @@ import { evaluateStaticValue, isStaticArray, resolveValueSymbol, singleReturnExp
 import { hasDecorator, isTypeScriptBuiltinConstructor, unwrapAsyncType } from './analysis-utils.js';
 import {
   isAssertionFormat,
+  mapArrayItems,
   mergeSchemaMetadata,
   normalizeNullable,
   resolvedSchema,
@@ -379,13 +380,15 @@ function applyPropertyMetadata(
     const enumValue = read?.value('enum');
     if (enumValue !== undefined) {
       if (!isStaticArray(enumValue)) return fail(TsToOpenApiDiagnosticCode.UnsupportedSchemaMetadata, `Swagger property ${name} enum must be a static array or an enum.`);
-      // Nest documents the enum of an `isArray` property on the items of the array.
-      const items = typeSpec?.isArray && isRecord(schemaRecord.items) ? schemaRecord.items : undefined;
-      const expected = schemaValues(items ?? propertySchema);
+      // Nest documents the enum of an `isArray` property on the items of the array, also the array branch of a nullable `anyOf`.
+      let expected = schemaValues(propertySchema);
+      const onItems = typeSpec?.isArray
+        ? mapArrayItems(schemaRecord, (items) => { expected = schemaValues(items); return { ...items, enum: enumValue }; })
+        : undefined;
       if (options.authoritative && expected && !sameValue([...expected].sort(), [...enumValue].sort())) {
         conflict(`Swagger property ${name} enum conflicts with the authoritative IModel wire schema.`);
       }
-      if (items) schemaRecord.items = { ...items, enum: enumValue };
+      if (onItems) Object.assign(schemaRecord, onItems);
       else schemaRecord.enum = enumValue;
     }
     const nullable = read?.boolean('nullable');

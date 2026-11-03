@@ -450,6 +450,24 @@ function mergeSchema(
 }
 
 /**
+ * Change the `items` of the array a schema describes: the schema itself, or the array branch of a nullable `anyOf`.
+ * Returns undefined when the schema holds no array with an object `items`.
+ */
+export function mapArrayItems(
+  schema: DtoSchema,
+  change: (items: Record<string, unknown>) => DtoSchema,
+): Record<string, unknown> | undefined {
+  if (!isRecord(schema)) return undefined;
+  if (isRecord(schema.items)) return { ...schema, items: change(schema.items) };
+  const branches: readonly unknown[] = Array.isArray(schema.anyOf) ? schema.anyOf : [];
+  for (const [at, branch] of branches.entries()) {
+    const mapped = mapArrayItems(branch as DtoSchema, change);
+    if (mapped) return { ...schema, anyOf: branches.map((item, index) => (index === at ? mapped : item)) };
+  }
+  return undefined;
+}
+
+/**
  * Merge explicit Swagger schema metadata without allowing it to replace a
  * TypeScript/IModel contract. Structural keys are checked recursively; the
  * canonical schema remains the emitted source of fields, requiredness, and

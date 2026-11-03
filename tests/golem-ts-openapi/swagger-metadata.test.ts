@@ -595,12 +595,16 @@ test('writes the enum of an isArray @ApiProperty on the items of the array', asy
   // protects: T-854 an array carrying the enum matched no valid value
   const root = inlineFixture(t, `import { Controller, Get } from '@nestjs/common';
 import { ApiProperty } from '@nestjs/swagger';
-class Dto { @ApiProperty({ enum: ['a', 'b'], isArray: true }) tags!: string[]; }
-@Controller('d') export class DController { @Get() get(): Dto { return { tags: [] }; } }
+class Dto {
+  @ApiProperty({ enum: ['a', 'b'], isArray: true }) tags!: string[];
+  @ApiProperty({ enum: ['a', 'b'], isArray: true }) maybe!: string[] | null;
+}
+@Controller('d') export class DController { @Get() get(): Dto { return { tags: [], maybe: null }; } }
 `);
   const document = documentOf<OpenApiDocument>(await generateAt(root));
   const dto = objectSchema(document, jsonSchema(document.paths['/d']?.get, '200'));
   assert.deepEqual(property(document, dto, 'tags'), { type: 'array', items: { type: 'string', enum: ['a', 'b'] } });
+  assert.deepEqual(property(document, dto, 'maybe'), { anyOf: [{ type: 'array', items: { type: 'string', enum: ['a', 'b'] } }, { type: 'null' }] });
 });
 
 test('writes the enum of an isArray @ApiQuery on the items of the array', async t => {

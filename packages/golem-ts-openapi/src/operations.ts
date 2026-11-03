@@ -1,7 +1,7 @@
 import { compareText } from '@exprtlabs/golem/generator-api';
 import * as ts from '@exprtlabs/golem/internal/ts';
 import { TsToOpenApiDiagnosticCode, TsToOpenApiError, diagnostic } from './diagnostics.js';
-import { mergeSchemaMetadata } from './nest/json-schema-merge.js';
+import { mapArrayItems, mergeSchemaMetadata } from './nest/json-schema-merge.js';
 import type { ControllerParameter, ControllerRoute, ResponseDescription, TypeReference } from './nest/types.js';
 import { parameterOverrideKey } from './nest/parameters.js';
 
@@ -189,9 +189,8 @@ function withItemsEnum(
 ): OpenApiSchema {
   const values = override?.enumOnItems === true ? override.enum : undefined;
   if (values === undefined) return schema;
-  const target = record(schema);
-  const items = record(target?.items);
-  if (!target || !items) {
+  const result = mapArrayItems(schema, items => mergeSchemaMetadata(items, { enum: values }, options));
+  if (!result) {
     throw new TsToOpenApiError(diagnostic(
       options.sourceFile,
       options.node,
@@ -199,7 +198,7 @@ function withItemsEnum(
       `Swagger ${options.location ?? 'parameter'} sets enum with isArray but the parameter type is not an array.`,
     ));
   }
-  return { ...target, items: mergeSchemaMetadata(items, { enum: values }, options) };
+  return result;
 }
 
 /**
