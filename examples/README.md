@@ -25,7 +25,7 @@ The guides walk through them: [Define models](../docs/guide/models.md),
 
 ## Install and run
 
-Every example depends on `1.1.0-rc.0` of `@exprtlabs/golem*`. Run them from this repository checkout: run `npm install` once at
+Every example depends on `1.1.0-rc.1` of `@exprtlabs/golem*`. Run them from this repository checkout: run `npm install` once at
 the repository root, then in the example directory:
 
 ```sh

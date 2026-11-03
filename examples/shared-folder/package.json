@@ -9,10 +9,10 @@
     "test": "npm run link-shared && golem build --config apps/web/golem.yaml && golem build --config apps/worker/golem.yaml && node --test shared-folder.test.js \"apps/*/.build/**/*.test.js\""
   },
   "dependencies": {
-    "@exprtlabs/golem": "1.1.0-rc.0"
+    "@exprtlabs/golem": "1.1.0-rc.1"
   },
   "devDependencies": {
-    "@exprtlabs/golem-model": "1.1.0-rc.0",
+    "@exprtlabs/golem-model": "1.1.0-rc.1",
     "typescript": "7.1.0-beta",
     "@types/node": "22.20.1"
   }

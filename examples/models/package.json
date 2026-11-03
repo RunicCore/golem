@@ -11,11 +11,11 @@
     "start:loader": "golem generate && node --experimental-strip-types --import @exprtlabs/golem/register src/main.ts"
   },
   "dependencies": {
-    "@exprtlabs/golem": "1.1.0-rc.0",
+    "@exprtlabs/golem": "1.1.0-rc.1",
     "temporal-polyfill": "^1.0.5"
   },
   "devDependencies": {
-    "@exprtlabs/golem-model": "1.1.0-rc.0",
+    "@exprtlabs/golem-model": "1.1.0-rc.1",
     "esbuild": "0.25.12",
     "typescript": "7.1.0-beta",
     "@types/node": "22.20.1"
