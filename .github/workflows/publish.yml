@@ -1,4 +1,5 @@
-# Publishes the four golem packages to npm when a release tag (v*) is pushed.
+# Stages the four golem packages on npm when a release tag (v*) is pushed; a maintainer approves each one on
+# npmjs.com or with `npm stage approve` before it is public.
 # npm trusts this workflow by OIDC (trusted publishing), so it needs no token and adds provenance.
 name: Publish
 
@@ -29,7 +30,7 @@ jobs:
           for package in golem golem-model golem-openapi-ts golem-ts-openapi; do
             version=$(node -p "require('./packages/$package/package.json').version")
             if [ "$GITHUB_REF_NAME" != "v$version" ]; then
-              echo "::error::Tag $GITHUB_REF_NAME does not match $package $version; tag v$version, or set the version with scripts/release-version.ts."
+              echo "::error::Tag $GITHUB_REF_NAME does not match $package $version; tag v$version, or set that version in the package files."
               exit 1
             fi
           done
@@ -37,4 +38,4 @@ jobs:
       # `npm install` keeps its pinned versions and adds the packages of this runner.
       - run: npm install --no-audit --no-fund
       - run: npm run build && npm run build:scripts
-      - run: bash scripts/publish-packages.sh
+      - run: bash scripts/publish-packages.sh stage
