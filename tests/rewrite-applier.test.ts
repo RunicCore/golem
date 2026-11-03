@@ -212,7 +212,7 @@ test('a file that ends right after its shebang or directive gets the import on i
 });
 
 test('imports go after the pragmas that lead the file and before any other comment', () => {
-  // protects: T-859 a rewrite insert before a leading @ts-nocheck or @jsxImportSource pragma made the compiler ignore it
+  // protects: T-859 a rewrite insert before a leading ts-nocheck or JSX pragma made the compiler ignore it
   // Each case is the head of the file before the imports and the head after them.
   const cases: ReadonlyArray<readonly [string, string]> = [
     ['// @ts-nocheck\n', ''],
