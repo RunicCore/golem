@@ -262,7 +262,9 @@ function temporaryName(filename: string): string {
 /** The file whose `atomicWrite` left `name` behind and the process that ran it, or `undefined` when `name` is no such temporary file. */
 function temporaryOf(name: string): { readonly target: string; readonly pid: number } | undefined {
   const match = TEMPORARY_NAME.exec(name);
-  return match ? { target: match[1]!, pid: Number(match[2]) } : undefined;
+  const pid = Number(match?.[2]);
+  // A pid beyond what the operating system has (`process.kill` takes a 32-bit integer) names no process: the file is no write of golem.
+  return match && Number.isInteger(pid) && pid > 0 && pid <= 2 ** 31 - 1 ? { target: match[1]!, pid } : undefined;
 }
 
 /** Whether a process with `pid` exists: a signal 0 only tests. A process of another user exists too (EPERM). */
