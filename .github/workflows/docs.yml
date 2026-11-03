@@ -28,6 +28,8 @@ jobs:
       # package-lock.json is resolved on macOS and holds only that platform's native packages, so `npm ci` refuses it;
       # `npm install` keeps its pinned versions and adds the packages of this runner.
       - run: npm install --no-audit --no-fund
+      # The docs build compiles scripts that import the packages' built output.
+      - run: npm run build
       - run: npm run docs:build
       - uses: actions/configure-pages@v6
       - uses: actions/upload-pages-artifact@v5
