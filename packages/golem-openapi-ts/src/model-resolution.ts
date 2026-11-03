@@ -187,7 +187,7 @@ export function componentSchemaTarget(schema: unknown, env: ModelResolveEnv): un
 }
 
 /** The schema that a `$ref` to part of a component names (a property, a nested `$anchor`, a nested `$id`), and the environment that its own references resolve in; the type path reads the same target. */
-function partSchemaTarget(schema: unknown, env: ModelResolveEnv): { readonly schema: unknown; readonly env: ModelResolveEnv } | undefined {
+export function partSchemaTarget(schema: unknown, env: ModelResolveEnv): { readonly schema: unknown; readonly env: ModelResolveEnv } | undefined {
   if (!isJsonObject(schema)) return undefined;
   const reference = typeof schema.$ref === 'string' ? schema.$ref : typeof schema.$dynamicRef === 'string' ? schema.$dynamicRef : undefined;
   const target = reference === undefined ? undefined : resolveSchemaTarget(reference, env.currentBase, env.resources, env.document);

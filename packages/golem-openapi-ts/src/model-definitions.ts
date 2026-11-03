@@ -22,6 +22,7 @@ import {
   discriminatorSelection,
   checkComposition,
   convertedSubschemas,
+  partSchemaTarget,
   type OpenApiDates,
 } from './model-resolution.js';
 
@@ -56,7 +57,7 @@ function findRecursiveAliases(env: ModelResolveEnv): ReadonlyMap<string, Recursi
     if (!isModelSchema(env, resolveLocal(env.document, rawSchema))) components.set(identifier(schemaName), { schemaName, rawSchema });
   }
   const edgesOf = new Map<string, ReadonlySet<string>>();
-  const collect = (schema: unknown, scope: ModelResolveEnv, edges: Set<string>): void => {
+  const collect = (schema: unknown, scope: ModelResolveEnv, edges: Set<string>, parts = new Set<unknown>()): void => {
     if (!isJsonObject(schema)) return;
     const nested = withSchemaBase(scope, schema);
     const reference = directComponentSchemaRef(schema, nested);
@@ -64,7 +65,13 @@ function findRecursiveAliases(env: ModelResolveEnv): ReadonlyMap<string, Recursi
       if (components.has(reference)) edges.add(reference);
       return;
     }
-    for (const { child } of convertedSubschemas(schema)) collect(child, nested, edges);
+    // A reference to part of a component (a property, a nested anchor) continues in that part, as the conversion does.
+    const part = partSchemaTarget(schema, nested);
+    if (part) {
+      if (!parts.has(part.schema)) collect(part.schema, part.env, edges, new Set(parts).add(part.schema));
+      return;
+    }
+    for (const { child } of convertedSubschemas(schema)) collect(child, nested, edges, parts);
   };
   const edges = (name: string): ReadonlySet<string> => {
     let found = edgesOf.get(name);

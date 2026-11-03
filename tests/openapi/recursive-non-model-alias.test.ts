@@ -193,3 +193,22 @@ for (const [keyword, branch] of [
     );
   });
 }
+
+test('a component that reaches itself through a $ref to a property of a model generates and checks each level', async t => {
+  // protects: T-866 a cycle through a part reference ended in an internal error, though it generated before T-857
+  const output = path.join(createFixtureProject(t, 'golem-openapi-recursive-part-'), 'sdk');
+  const document = withRootOperations({
+    openapi: '3.1.0',
+    info: { title: 'RecursivePart', version: '1' },
+    paths: {},
+    components: { schemas: {
+      Items: { type: 'array', items: { $ref: '#/components/schemas/Holder/properties/next' } },
+      Holder: object({ next: ref('Items') }, []),
+    } },
+  }, 'Items');
+  await generateMaterializedSdk(document, { output, name: 'RecursivePart', profile: { validation: true } });
+  compileGeneratedSdk(output, [], { strict: true, skipLibCheck: true });
+  const items = await sdkBodyCodec(output, 'RecursivePart', 'Items');
+  assert.deepEqual(await items.decode([[], [[]]]), [[], [[]]]);
+  await assert.rejects(() => items.decode([1]), (error: unknown) => error instanceof LibError);
+});
