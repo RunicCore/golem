@@ -1483,6 +1483,17 @@ interface ModelFieldEmission {
   readonly init: readonly Code[];
 }
 
+const CONSTRUCTOR_VIEW = localCode('self');
+
+/**
+ * The statement of a constructor that defines one declared field. A name that `this` already reaches (a setter, an accessor or a method of a
+ * subclass prototype, or an `Object.prototype` member such as `__proto__`) goes through `defineModelProperty`, so no inherited setter runs and
+ * the field is an own data property. Any other name is assigned at its own site, which V8 keeps monomorphic and much faster than the shared helper.
+ * The test runs at each write, so a setter added to a prototype after the first construction is still bypassed.
+ */
+const constructorWrite = (name: Code, value: Code): Code =>
+  code`${name} in this ? ${rt.conversion.defineModelProperty}(this, ${name}, ${value}) : ${CONSTRUCTOR_VIEW}[${name}] = ${value};`;
+
 /** The name of the module-level function that converts one root field of a model. */
 const rootHelperName = (model: string) => (index: number): string => `__convert_${model}_${index}_decode`;
 
@@ -1511,8 +1522,11 @@ function buildFieldEmissions(context: EmitContext, resolvers: ModelResolvers): M
     const init: Code[] = [];
     const decodeCaptures: [key: string, local: Code][] = [];
     const initCaptures: [key: string, local: Code][] = [];
+    // The constructor writes through a loosely typed view of `this`: the input type of a field and its model type can differ with no conversion (a recursive alias), as `defineModelProperty` takes any value.
+    if (fields.length > 0) init.push(code`    const ${CONSTRUCTOR_VIEW} = this as unknown as Record<string, unknown>;`);
     for (const [index, field] of fields.entries()) {
       const name = literal(field.getName());
+      const initialized = localCode('converted', index);
       // The JSON view, read once into a local by one Object.keys pass. Decode reads the own copy in `result`, so a
       // getter of the input runs once.
       const input = localCode('value', index);
@@ -1534,7 +1548,9 @@ function buildFieldEmissions(context: EmitContext, resolvers: ModelResolvers): M
         decode.push(code`  if (${input} !== undefined) ${rt.conversion.defineModelProperty}(result, ${name}, ${converted});`);
       }
       initCaptures.push([field.getName(), input]);
-      init.push(code`    if (${input} !== undefined) ${rt.conversion.defineModelProperty}(this, ${name}, ${fromInit});`);
+      init.push(sameCode(fromInit, input)
+        ? code`    if (${input} !== undefined) ${constructorWrite(name, input)}`
+        : code`    if (${input} !== undefined) { const ${initialized} = ${fromInit}; ${constructorWrite(name, initialized)} }`);
     }
     if (decodeCaptures.length > 0) decode.unshift(code`  ${presentKeysCode(identifier('result'), decodeCaptures, { declare: (local) => code`${local}: unknown` })}`);
     if (initCaptures.length > 0) {
