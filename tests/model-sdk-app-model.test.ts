@@ -355,6 +355,23 @@ export type TRecord = IModel<{ tags: Tags; ident: Ident; extra: Extra }>;
   assert.throws(() => generated.fromWireFormatTRecord({ ...valid, extra: { a: 1.5 } }), /Model validation failed/);
 });
 
+test('a data part beside an SDK alias is part of the type: the alias does not replace the intersection', async () => {
+  // protects: T-855 `Contact & { extra: string }` kept the alias and dropped `extra` with no error
+  const sdk: GolemModeSdkSetup = {
+    folder: 'sdk/charges',
+    name: 'Charges',
+    document: chargesDocument({
+      Contact: { anyOf: [{ type: 'object', required: ['a'], properties: { a: { type: 'string' } } }, { type: 'object', required: ['b'], properties: { b: { type: 'string' } } }] },
+      Charge: { type: 'object', required: ['id'], properties: { id: { type: 'string' }, contact: ref('Contact') } },
+    }),
+  };
+  const model = `import type { IModel } from '@exprtlabs/golem/model';
+import type { Contact } from '../sdk/charges/index.js';
+export type TRecord = IModel<{ both: Contact & { extra: string } }>;
+`;
+  await assert.rejects(loadGolemModeProject(scope, 'sdk-app-model-alias-part-', [sdk], true, { 'src/record.model.ts': model }), /RUNM1080[^]*\{ extra: string; \}/);
+});
+
 test('an app model over an SDK alias with a keyword that no descriptor carries stops generation and names the keyword', async () => {
   // protects: T-739 OPENAPI_KEYWORD_NOT_CARRIED also holds for an alias that is no model: the model plane is the only check of an app model
   const sdk: GolemModeSdkSetup = {

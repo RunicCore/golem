@@ -974,10 +974,17 @@ function describeSdkType(scope: DescribeScope, call: DescribeCall, isRoot: boole
   // An alias of the SDK that is no model (`type Currency = string`, `type Tags = number[]`) is the plain type to the checker, so the node names it.
   const aliasNode = hasBaseTags && analysis.baseNode ? analysis.baseNode : node ?? nameNode;
   // Several data parts make the whole intersection the base node (`Currency & { __brand: 'C' } & MinLength<3>`): the alias is one of its parts.
-  const sdkAliasOf = (candidate: ts.TypeNode): ReturnType<typeof manifestIndex.sdkAliasForNode> =>
-    ts.isParenthesizedTypeNode(candidate) ? sdkAliasOf(candidate.type)
-      : ts.isIntersectionTypeNode(candidate) ? candidate.types.map(sdkAliasOf).find((found) => found !== undefined)
-        : manifestIndex.sdkAliasForNode(checker, candidate);
+  // Only tags and brands may stand beside it: another data part (`Contact & { extra: string }`) is a type of its own, not the alias.
+  const isTagOrBrand = (part: ts.TypeNode): boolean => {
+    const partType = checker.getTypeFromTypeNode(part);
+    return isPhantomTagType(checker, partType) || isBrandMember(checker, partType);
+  };
+  const sdkAliasOf = (candidate: ts.TypeNode): ReturnType<typeof manifestIndex.sdkAliasForNode> => {
+    if (ts.isParenthesizedTypeNode(candidate)) return sdkAliasOf(candidate.type);
+    if (!ts.isIntersectionTypeNode(candidate)) return manifestIndex.sdkAliasForNode(checker, candidate);
+    const found = candidate.types.map((part) => ({ part, alias: sdkAliasOf(part) })).find((entry) => entry.alias !== undefined);
+    return found !== undefined && candidate.types.every((part) => part === found.part || isTagOrBrand(part)) ? found.alias : undefined;
+  };
   const sdkAlias = aliasNode === undefined ? undefined : sdkAliasOf(aliasNode);
   const uncarried = manifestIndex.sdkUncarriedForType(type) ?? sdkAlias?.uncarried;
   if (uncarried !== undefined) {
