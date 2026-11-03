@@ -36,17 +36,5 @@ jobs:
       # package-lock.json is resolved on macOS and holds only that platform's native packages, so `npm ci` refuses it;
       # `npm install` keeps its pinned versions and adds the packages of this runner.
       - run: npm install --no-audit --no-fund
-      # Each package's prepack builds it again and runs the package checks, which the scripts build provides.
       - run: npm run build && npm run build:scripts
-      # In dependency order. A version already on npm is skipped, so a run that stopped part way can run again.
-      - name: Publish
-        run: |
-          for package in golem golem-model golem-openapi-ts golem-ts-openapi; do
-            name=$(node -p "require('./packages/$package/package.json').name")
-            version=$(node -p "require('./packages/$package/package.json').version")
-            if npm view "$name@$version" version > /dev/null 2>&1; then
-              echo "$name@$version is already on npm; skipped."
-            else
-              npm publish --workspace "packages/$package"
-            fi
-          done
+      - run: bash scripts/publish-packages.sh
