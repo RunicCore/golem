@@ -605,6 +605,10 @@ export function createSchemaGraph(
   const nodeFor = (descriptor: ModelTypeDescriptor, name?: string, constructs?: boolean): SchemaNode | undefined => {
     const named = name ?? namedIdentity(descriptor);
     if (named) {
+      // A name the job gave an id of its own is that node: the hash of a shape is the same for `A$` and `A_`.
+      const fixedHit = fixedCodecId(named);
+      const fixedNode = fixedHit === undefined ? undefined : byPublicId.get(fixedHit);
+      if (fixedNode !== undefined && nodes.has(fixedNode)) return nodes.get(fixedNode);
       if (descriptor.kind === 'object' || (name !== undefined && descriptor.kind !== 'reference' && descriptor.kind !== 'generated-model')) {
         const lookup = internLookup();
         const hashed = (constructs === undefined ? [true, false] : [constructs])

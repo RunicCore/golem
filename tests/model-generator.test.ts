@@ -624,6 +624,33 @@ for (const layout of ['sibling files', 'one file'] as const) {
   });
 }
 
+// protects: T-867 two class models of equal shape whose names differ only in a character that a codec name drops registered one codec
+test('class models A$ and A_ of one shape decode to their own classes', async (t: TestContext) => {
+  const { root, sourceRoot } = project(t);
+  const classModel = (name: string, file: string): string => `import type { IModel } from '@exprtlabs/golem/model';
+import { T${name}BaseModel, type T${name}Fields } from './${file}.model.generated.js';
+export type T${name} = IModel<{ v: Date }>;
+export class ${name} extends T${name}BaseModel {
+  constructor(values: Partial<T${name}Fields> = {}) { super(values); }
+}
+`;
+  writeModelSources(sourceRoot, {
+    'a1.model.ts': classModel('A$', 'a1'),
+    'a2.model.ts': classModel('A_', 'a2'),
+    'b.model.ts': taggedModelSource({
+      name: 'B',
+      imports: tsSource`import type { TA$ } from './a1.model.js';\nimport type { TA_ } from './a2.model.js';`,
+      fields: tsSource`s: TA$; u: TA_`,
+    }).text,
+  });
+  await buildModelProjectWith(root, { validation: true });
+  const built = async (file: string) => await import(pathToFileURL(path.join(root, 'build', file)).href) as Record<string, new (values: object) => object>;
+  const [{ B }, first, second] = await Promise.all([built('b.model.js'), built('a1.model.js'), built('a2.model.js')]);
+  const day = '2020-01-01T00:00:00.000Z';
+  const decoded = modelCodec(B).fromWireFormat({ s: { v: day }, u: { v: day } }) as { s: object; u: object };
+  assert.deepEqual([decoded.s instanceof first['A$']!, decoded.u instanceof second['A_']!], [true, true]);
+});
+
 /** A shared folder `outer/shared` with a golem.yaml of its own, and an app that includes it and has a model of its own. */
 function sharedFolderWithConfig(t: TestContext, configuration: string): { readonly root: string; readonly sharedFolder: string } {
   const outer = sharedWorkspace(t);
