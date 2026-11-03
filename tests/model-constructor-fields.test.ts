@@ -19,7 +19,7 @@ const build = onceShared(async () => {
   await buildModelProject(root);
   const child = await import(pathToFileURL(path.join(root, 'build/child.model.js')).href);
   const item = await import(pathToFileURL(path.join(root, 'build/item.model.js')).href);
-  return { Child: child.Child as ItemClass, Item: item.Item as ItemClass, Guarded: item.Guarded as ItemClass, setterCalls: item.setterCalls as { count: number } };
+  return { Child: child.Child as ItemClass, Item: item.Item as ItemClass, Guarded: item.Guarded as ItemClass, Late: item.Late as ItemClass, setterCalls: item.setterCalls as { count: number } };
 });
 
 const ownData = (target: object, name: string) => Object.getOwnPropertyDescriptor(target, name);
@@ -27,7 +27,8 @@ const dataOf = (value: unknown) => ({ value, enumerable: true, configurable: tru
 
 test('a subclass with an accessor for a declared field gets an own data property from the constructor and from decode', async () => {
   // protects: F-33 a subclass of the generated base keeps working: its prototype setter never runs, and every field is an own data property
-  const { Child, Guarded, setterCalls } = await build();
+  const { Child, Item, Guarded, setterCalls } = await build();
+  new Item({ id: 0, label: 'plain', child: { name: 'first' } });
   const wire = { id: 1, label: 'a', child: { name: 'c' } };
   const made = [new Guarded({ id: 1, label: 'a', child: { name: 'c' } }), new Guarded({ id: 1, label: 'a', child: { name: 'c' } }), modelCodec(Guarded).fromWireFormat(wire)];
   assert.equal(setterCalls.count, 0);
@@ -53,4 +54,19 @@ test('a plain subclass of the generated base keeps its fields as own data proper
     assert.equal(JSON.stringify(model), '{"id":2,"label":"b","child":{"name":"d"}}');
   }
   assert.deepEqual(Object.keys(new Item({ label: 'only' })), ['label']);
+});
+
+test('a setter added to the prototype after the first construction is still bypassed', async () => {
+  // protects: F-33 a prototype setter never runs, also one added after the class built its first instance
+  const { Late } = await build();
+  const setterCalls: unknown[] = [];
+  const first = new Late({ id: 1, label: 'a' });
+  assert.deepEqual(ownData(first, 'id'), dataOf(1));
+  Object.defineProperty(Late.prototype, 'id', { configurable: true, get: () => undefined, set: (value: unknown) => { setterCalls.push(value); } });
+  const made = [new Late({ id: 2, label: 'b' }), modelCodec(Late).fromWireFormat({ id: 2, label: 'b' })];
+  assert.deepEqual(setterCalls, []);
+  for (const model of made) {
+    assert.deepEqual(ownData(model, 'id'), dataOf(2));
+    assert.deepEqual(ownData(model, 'label'), dataOf('b'));
+  }
 });

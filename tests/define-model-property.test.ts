@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { defineModelFields, defineModelProperty, modelFieldsAssignable } from '@exprtlabs/golem/internal/model-runtime';
+import { defineModelProperty } from '@exprtlabs/golem/internal/model-runtime';
 
 const ownData = (target: object, name: string) => Object.getOwnPropertyDescriptor(target, name);
 
@@ -41,17 +41,4 @@ test('a setter added to a prototype after first use is still bypassed', () => {
   defineModelProperty(target, 'value', 2);
   assert.equal(calls, 0);
   assert.equal(ownData(target, 'value')?.value, 2);
-});
-
-test('modelFieldsAssignable refuses a class whose prototype chain holds a field name, and defineModelFields skips undefined values', () => {
-  // protects: F-33 a field named like a prototype member (an accessor, __proto__) is defined as data, never assigned
-  class Plain {}
-  class WithSetter { set child(_value: unknown) { /* never called by the generated constructor */ } }
-  assert.equal(modelFieldsAssignable(Plain, ['id', 'name']), true);
-  assert.equal(modelFieldsAssignable(WithSetter, ['id', 'child']), false);
-  assert.equal(modelFieldsAssignable(class Inherits {}, ['id', '__proto__']), false);
-  const target = {};
-  defineModelFields(target, ['id', 'name', '__proto__'], [1, undefined, 'data']);
-  assert.deepEqual(Object.keys(target), ['id', '__proto__']);
-  assert.equal(Object.getPrototypeOf(target), Object.prototype);
 });

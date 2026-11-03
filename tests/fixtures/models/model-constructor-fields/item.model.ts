@@ -13,3 +13,5 @@ for (const field of ['id', 'child']) {
     set(_value: unknown): void { setterCalls.count += 1; },
   });
 }
+/** A subclass with no accessor until a test adds one after its first construction. */
+export class Late extends TItemBaseModel {}

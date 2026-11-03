@@ -1483,34 +1483,16 @@ interface ModelFieldEmission {
   readonly init: readonly Code[];
 }
 
-/** The module-level constant that holds the field names of a class model: the constructor passes it to the runtime, and no call builds a list. */
-const fieldNamesConstant = (model: string): Code => identifier(`__fields_${model}`);
-
-/** One field that the constructor of a class model writes: `written` is the local that holds the value to write, which is `input` when the field needs no conversion. */
-interface FieldWrite { readonly name: Code; readonly input: Code; readonly written: Code; readonly fromInit: Code }
+const CONSTRUCTOR_VIEW = localCode('self');
 
 /**
- * The lines of a constructor that write the declared fields. A class whose prototype chain holds none of the field names
- * (decided once for the class, `modelFieldsAssignable`) takes each field by assignment at its own site, which V8 keeps
- * monomorphic. Any other class takes the runtime's `defineModelProperty` for each field (`defineModelFields`), so an
- * inherited setter never runs and each field is an own data property. The conversion of a field runs once, before the branch.
+ * The statement of a constructor that defines one declared field. A name that `this` already reaches (a setter, an accessor or a method of a
+ * subclass prototype, or an `Object.prototype` member such as `__proto__`) goes through `defineModelProperty`, so no inherited setter runs and
+ * the field is an own data property. Any other name is assigned at its own site, which V8 keeps monomorphic and much faster than the shared helper.
+ * The test runs at each write, so a setter added to a prototype after the first construction is still bypassed.
  */
-function constructorWrites(model: string, fields: readonly FieldWrite[]): Code[] {
-  const names = fieldNamesConstant(model);
-  const converted = fields.filter((field) => !sameCode(field.written, field.input));
-  // The write goes through a loosely typed view of `this`: the input type of a field and its model type can differ with no conversion (a recursive alias), as `defineModelProperty` takes any value.
-  const self = localCode('self');
-  return [
-    ...(converted.length > 0 ? [
-      code`    let ${join(converted.map((field) => code`${field.written}: unknown`), code`, `)};`,
-      ...converted.map((field) => code`    if (${field.input} !== undefined) ${field.written} = ${field.fromInit};`),
-    ] : []),
-    code`    if (${rt.conversion.modelFieldsAssignable}(new.target, ${names})) {`,
-    code`      const ${self} = this as unknown as Record<string, unknown>;`,
-    ...fields.map((field) => code`      if (${field.input} !== undefined) ${self}[${field.name}] = ${field.written};`),
-    code`    } else ${rt.conversion.defineModelFields}(this, ${names}, [${join(fields.map((field) => field.written), code`, `)}]);`,
-  ];
-}
+const constructorWrite = (name: Code, value: Code): Code =>
+  code`${name} in this ? ${rt.conversion.defineModelProperty}(this, ${name}, ${value}) : ${CONSTRUCTOR_VIEW}[${name}] = ${value};`;
 
 /** The name of the module-level function that converts one root field of a model. */
 const rootHelperName = (model: string) => (index: number): string => `__convert_${model}_${index}_decode`;
@@ -1540,9 +1522,11 @@ function buildFieldEmissions(context: EmitContext, resolvers: ModelResolvers): M
     const init: Code[] = [];
     const decodeCaptures: [key: string, local: Code][] = [];
     const initCaptures: [key: string, local: Code][] = [];
-    const written: FieldWrite[] = [];
+    // The constructor writes through a loosely typed view of `this`: the input type of a field and its model type can differ with no conversion (a recursive alias), as `defineModelProperty` takes any value.
+    if (fields.length > 0) init.push(code`    const ${CONSTRUCTOR_VIEW} = this as unknown as Record<string, unknown>;`);
     for (const [index, field] of fields.entries()) {
       const name = literal(field.getName());
+      const initialized = localCode('converted', index);
       // The JSON view, read once into a local by one Object.keys pass. Decode reads the own copy in `result`, so a
       // getter of the input runs once.
       const input = localCode('value', index);
@@ -1564,9 +1548,10 @@ function buildFieldEmissions(context: EmitContext, resolvers: ModelResolvers): M
         decode.push(code`  if (${input} !== undefined) ${rt.conversion.defineModelProperty}(result, ${name}, ${converted});`);
       }
       initCaptures.push([field.getName(), input]);
-      written.push({ name, input, written: sameCode(fromInit, input) ? input : localCode('converted', index), fromInit });
+      init.push(sameCode(fromInit, input)
+        ? code`    if (${input} !== undefined) ${constructorWrite(name, input)}`
+        : code`    if (${input} !== undefined) { const ${initialized} = ${fromInit}; ${constructorWrite(name, initialized)} }`);
     }
-    if (written.length > 0) init.push(...constructorWrites(specification.name, written));
     if (decodeCaptures.length > 0) decode.unshift(code`  ${presentKeysCode(identifier('result'), decodeCaptures, { declare: (local) => code`${local}: unknown` })}`);
     if (initCaptures.length > 0) {
       const initType = (local: Code): Code => code`${local}: ${identifier(`${specification.name}Init`)}[${literal(initCaptures.find(([, captured]) => captured === local)?.[0] ?? null)}]`;
@@ -1680,7 +1665,6 @@ function emitClassModel(context: EmitContext, emission: ModelFieldEmission): Pie
     code`export type ${jsonName} = ${typeOf(context, definition, 'wire')};`,
     code`export type ${initName} = Partial<${typeOf(context, definition, 'init')}>;`,
     BLANK,
-    ...(fieldNames.length > 0 ? [code`const ${fieldNamesConstant(specification.name)}: readonly ${rtType.model.ModelField}<${baseName}>[] = [${join(fieldNames.map((name) => literal(name)), code`, `)}];`, BLANK] : []),
     code`export abstract class ${baseName} implements ${rtType.model.GeneratedModel}<${jsonName}, ${fieldsName}> {`,
     code`  declare readonly [${rtType.model.generatedModelWireBrand}]: ${jsonName};`,
     code`  declare readonly [${rtType.model.generatedModelFieldsBrand}]: ${fieldsName};`,
@@ -1711,7 +1695,7 @@ function emitClassModel(context: EmitContext, emission: ModelFieldEmission): Pie
     code`}`,
     BLANK,
     code`${rt.model.registerGeneratedModel}(${baseName}, {`,
-    code`  fields: ${fieldNames.length > 0 ? fieldNamesConstant(specification.name) : code`[]`},`,
+    code`  fields: [${join(fieldNames.map((name) => literal(name)), code`, `)}],`,
     code`  conversion: {`,
     code`    decode: (value, constructor) => ${decodeModel}(constructor ?? ${baseName}, value),`,
     code`  },`,
