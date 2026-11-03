@@ -7,6 +7,12 @@ This file is the complete list of changes. The documentation site's
 
 ### Models
 
+- A field typed as an intersection of several data parts and a tag, such as `{ a: string } & { b: number } & MinProperties<1>`, keeps every part. Before, only the first part stayed, so a declared field disappeared and valid data failed. A brand beside `string` works in either order.
+- A generic tag alias with a compound base, such as `type NonEmpty<T> = T[] & MinItems<1>`, generates. Before, it stopped with `RUNM1003`.
+- `Record<number, V>` and `{ [id: number]: V }` convert their values as a string-keyed record does. Before, they rejected valid data.
+- Models whose names differ only in a character that a short name drops, such as `A$` and `A_`, each get their own codec. Before, generation stopped with an unresolved reference.
+- `validateInstance` and `ModelValidator.validate` honor `maxDepth`. A function in `.messages()` runs once for each issue.
+- A `Date` field reads a leap second, such as `2026-10-06T23:59:60Z`, as second 59, as `Temporal.Instant` does. `Temporal.Instant` reads a fraction of more than nine digits and keeps nine.
 - A `UniqueItems` check takes one pass, so a list of any length validates in linear time. It reports the same `unique` issue and `indexes`. Before, the check compared every pair, so one long list could hold the event loop.
 - A model that reaches a recursive model checks `maxDepth` with a walk that allocates no set or map for each node, and `validate` runs about three times faster on a recursive model. The limit and the errors stay the same.
 - **Breaking:** a `Date` field now needs an RFC 3339 `date-time` text with an offset, such as `2025-01-02T03:04:05Z`, at every validation level, validation off included. Before, with validation off, texts such as `5`, `2025-01-02` and a time with no offset were read as a date. A Temporal field likewise accepts only its wire form: `20250102` is no longer a `TemporalPlainDate`, and `p1d` is no longer a `TemporalDuration`. A text that does not fit throws `Deserialization` with `causedByInput: true`. The write side follows: `stringify` and `toWireFormat` throw `Serialization` for a value outside the wire form. Before, with validation off, golem wrote such text, such as `2025-01-02[u-ca=gregory]`.
@@ -90,6 +96,17 @@ This file is the complete list of changes. The documentation site's
 
 ### OpenAPI
 
+- **Breaking:** a `@ApiBody()` that does not set `required` writes `required: true`, as `@nestjs/swagger` does, also on `@Body() body?: Dto`.
+- **Breaking:** a header parameter named `Accept`, `Content-Type` or `Authorization` is ignored, as OpenAPI says, with the warning [`OPENAPI_RESERVED_HEADER`](docs/reference/diagnostics.md#openapi-reserved-header). It leaves the generated input.
+- **Breaking:** a spread or a computed key in `@Controller({ ... })` stops with [`NEST1201`](docs/reference/diagnostics.md#nest1201). Before, the path was dropped with no error.
+- A `$ref` that points at another `$ref` resolves to its final target in a path item, a response, a request body and a parameter. Before, an operation, a response or a body could disappear with no error.
+- A `$ref` to part of a component, such as `#/components/schemas/Pet/properties/createdAt`, converts as its type says. Before, the type said `Date` and the value stayed a string.
+- A schema referenced inside a 3.2 media type component keeps its name.
+- A schema that recurses through `patternProperties`, `contains`, `propertyNames` or `unevaluatedProperties` generates. One that returns to itself through `not` or `if` without reading the value stops with a located error.
+- `enum` with `isArray` in `@ApiProperty` and `@ApiQuery` goes on `items`, also on a nullable array. Before, it went on the array, so no value matched.
+- An enum reverse lookup in a decorator argument, such as `Dir[Dir.Up]`, gives the member name. A key that no member has stops with a coded error.
+- A multipart part with a JSON media type sends a string as JSON text. A query array with no items and a `null` header parameter send nothing.
+- A local OpenAPI file that starts with a UTF-8 byte order mark loads.
 - An OpenAPI `enum` or `const` keeps only the values that its `type` admits, and a `const` keeps the keywords beside it, such as `minimum`, as an `enum` does. A required property whose `enum` or `const` its `type` empties, such as `{ type: string, const: 1 }`, stops generation with [`OPENAPI_COMPOSITION_UNSATISFIABLE`](docs/reference/diagnostics.md#openapi-composition-unsatisfiable). An optional one is `never`. `{ type: string, enum: ['a', 1] }` is the type `'a'`. Before, the required property generated, a `const` ignored its `type` and `minimum`, and the type listed every value.
 - **Breaking:** an OpenAPI `enum` or `const` also drops each value that a keyword beside it excludes: `minimum`, `maximum`, `exclusiveMinimum`, `exclusiveMaximum`, `multipleOf`, `minLength`, `maxLength`, `pattern`, `minItems`, `maxItems`, `minProperties`, `maxProperties` and `not`. A required property with no value left, such as `{ type: integer, minimum: 2, const: 1 }`, stops generation with [`OPENAPI_COMPOSITION_UNSATISFIABLE`](docs/reference/diagnostics.md#openapi-composition-unsatisfiable). `{ enum: [1, 2, 3], minimum: 2 }` is the type `2 | 3`. Before, the required property generated a model that rejects every value, and the type listed every value.
 - `nestQueryDecoder` in `@exprtlabs/golem-ts-openapi/nest` decodes `request.query` to the numbers, booleans and arrays that a model or a union of models declares. Your own interceptor or pipe passes its result to `fromWireFormat` ([NestJS requests](docs/guide/nestjs-requests.md)).
@@ -181,6 +198,12 @@ This file is the complete list of changes. The documentation site's
 
 ### Generation
 
+- **Breaking:** a file that `model.sources` names with no `IModel` or `IObject` alias stops generation, naming the file. Before, it was skipped when another listed file held models.
+- `golem build` without `--watch` stops at once on Ctrl-C or SIGTERM. Before, the first signal was ignored and the build finished with exit code 0.
+- `golem build --watch` started on a `golem.yaml` that cannot be read reports it and runs again when the file changes, as `golem watch` does.
+- The Node loader runs a plain class method that returns a model. Before, the rewrite added a decorator that Node could not read. Only a method with a decorator gets the return decorator.
+- A rewrite leaves `@jsxImportSource`, `// @ts-nocheck` and other pragmas first in the file, so they still apply.
+- A temporary file that a killed write left is no drift for `golem check`, and `golem generate` removes it when its process has ended.
 - A job runs again when a file changes that its generator imports from a linked workspace package or from another generator's package, and only the jobs that import the file run. Before, an edit to such a file kept the old generated code ([`golem build`](docs/reference/cli.md)).
 - **Breaking:** each package registers one `golem.yaml` block in the `golem` field of its `package.json`. The keys `models`, `controllers`, `openapi` and `generators` are gone. Write `model` (`@exprtlabs/golem-model`), `ts-openapi` with a `docs` list (`@exprtlabs/golem-ts-openapi`) and `openapi-ts` with an `sdks` list (`@exprtlabs/golem-openapi`). A package from another author registers its own block name ([Blocks](docs/reference/config.md#blocks), [Register a block](docs/reference/generator-api.md#register-a-block)).
 - **Breaking:** golem derives the job order from what each job reads and writes, not from a fixed order of sections. An SDK job runs after the docs job that writes its document, and two jobs that read your program and do not read each other run in the order of `golem.yaml` ([Job order](docs/reference/config.md#job-order)).
