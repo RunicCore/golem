@@ -15,7 +15,7 @@ import { canonicalPath, displayPath } from '@exprtlabs/golem/internal/generator-
 import { CODEC_DATA_HOOK, DEFAULT_MODEL_SUFFIXES, defaultModelOutput, MODEL_BLOCK, outsideModelsRootMessage, VALIDATOR_ENHANCER_HOOK, type CodecDataParticipant, type ModelContext, type ValidatorEnhancerParticipant } from './plan.js';
 import { codecKeysPath } from '@exprtlabs/golem/internal/generated-paths';
 import { AmbiguousUnionConversionError, ObjectUnionDiscriminatorError, reachesRecursiveNode, type Code } from '@exprtlabs/golem/internal/emitter';
-import { codecShortName, emitCodecDeclarationTable, hash8 } from '@exprtlabs/golem/internal/schema-graph';
+import { emitCodecDeclarationTable, sharedShortNameIds } from '@exprtlabs/golem/internal/schema-graph';
 import {
   analyzeSourceGraph,
   createJobAnalysis,
@@ -306,19 +306,9 @@ function internJobSchemaGraphs(
   }
   // An unnamed object type has one codec id for every source that holds the shape, so it validates when any source's validating model holds it.
   const validatedShapes = new Set(graphs.flatMap((graph) => [...validatedShapeKeys(graph.definitions, graph.emitted, { siblings: graph.siblings, defaultValidation })]));
-  // A codec id starts with the short name of its model, and `A$` and `A_` share one. Two such models of one shape would share one id, so the
-  // one written with a character the short name drops takes an id of its own; a model whose short name no other model shares keeps its id.
-  const namesByShort = new Map<string, Set<string>>();
-  for (const graph of graphs) {
-    for (const { name } of graph.emitted) namesByShort.set(codecShortName(name), (namesByShort.get(codecShortName(name)) ?? new Set()).add(name));
-  }
-  const sharedShortIds = new Map<string, string>();
-  for (const [short, names] of namesByShort) {
-    if (names.size > 1) for (const name of names) if (name !== short) sharedShortIds.set(name, `${short}_${hash8(name)}`);
-  }
+  const sharedShortIds = sharedShortNameIds(graphs.flatMap((graph) => graph.emitted.map((specification) => specification.name)));
   const byGraph = new Map<SourceModelGraph, SourceSchemaGraph>();
   const idsFor = (graph: SourceModelGraph, own: ReadonlyMap<string, string>): Map<string, string> => new Map([
-    ...sharedShortIds,
     ...own,
     ...graph.siblings.flatMap((sibling) => {
       const id = codecIds.get(sibling);
@@ -349,6 +339,7 @@ function internJobSchemaGraphs(
       const [graph] = component;
       const schemaGraph = internSourceDefinitions(graph.definitions, graph.emitted, {
         codecIds: idsFor(graph, new Map()),
+        fixedIds: sharedShortIds,
         siblings: graph.siblings,
         defaultValidation,
         validatedShapes,
@@ -380,10 +371,11 @@ function internJobSchemaGraphs(
       for (const [name, descriptor] of Object.entries(graph.definitions)) definitions[name] ??= descriptor;
     }
     const shared = internSourceDefinitions(definitions, emitted, {
-      codecIds: new Map([...sharedShortIds, ...outside.flatMap((sibling) => {
+      codecIds: new Map(outside.flatMap((sibling) => {
         const id = codecIds.get(sibling);
         return id === undefined ? [] : [[sibling.name, id] as const];
-      })]),
+      })),
+      fixedIds: sharedShortIds,
       siblings: outside,
       defaultValidation,
       validatedShapes,
@@ -400,6 +392,7 @@ function internJobSchemaGraphs(
         }));
       const schemaGraph = internSourceDefinitions(graph.definitions, graph.emitted, {
         codecIds: idsFor(graph, own),
+        fixedIds: sharedShortIds,
         siblings: graph.siblings,
         defaultValidation,
         validatedShapes,

@@ -651,6 +651,58 @@ export class ${name} extends T${name}BaseModel {
   assert.deepEqual([decoded.s instanceof first['A$']!, decoded.u instanceof second['A_']!], [true, true]);
 });
 
+// protects: T-867 class models of one shape that share a short name, in one file in either order, each decode to their own class
+for (const order of [['A$', 'A_'], ['A_', 'A$']] as const) {
+  test(`class models ${order.join(' then ')} of one shape in one file decode to their own classes`, async (t: TestContext) => {
+    const { root, sourceRoot } = project(t);
+    const classModel = (name: string): string => `export type T${name} = IModel<{ v: Date }>;
+export class ${name} extends T${name}BaseModel {
+  constructor(values: Partial<T${name}Fields> = {}) { super(values); }
+}
+`;
+    writeModelSources(sourceRoot, {
+      'a.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
+import { TA$BaseModel, TA_BaseModel, type TA$Fields, type TA_Fields } from './a.model.generated.js';
+${order.map(classModel).join('')}`,
+      'b.model.ts': taggedModelSource({
+        name: 'B',
+        imports: tsSource`import type { TA$, TA_ } from './a.model.js';`,
+        fields: tsSource`s: TA$; u: TA_`,
+      }).text,
+    });
+    await buildModelProjectWith(root, { validation: true });
+    const built = async (file: string) => await import(pathToFileURL(path.join(root, 'build', file)).href) as Record<string, new (values: object) => object>;
+    const [{ B }, classes] = await Promise.all([built('b.model.js'), built('a.model.js')]);
+    const day = '2020-01-01T00:00:00.000Z';
+    const decoded = modelCodec(B).fromWireFormat({ s: { v: day }, u: { v: day } }) as { s: object; u: object };
+    assert.deepEqual([decoded.s instanceof classes['A$']!, decoded.u instanceof classes['A_']!], [true, true]);
+  });
+}
+
+// protects: T-867 a model of a mutual recursion keeps its own node when another model of its file shares its short name
+test('A$ in a mutual recursion beside A_ of one shape decodes at every level', async (t: TestContext) => {
+  const { root, sourceRoot } = project(t);
+  writeModelSources(sourceRoot, {
+    'a.model.ts': `import type { IObject } from '@exprtlabs/golem/model';
+export type TB = IObject<{ a?: TA$; at: Date }>;
+export type TA$ = IObject<{ b?: TB }>;
+export type TA_ = IObject<{ b?: TB }>;
+`,
+    'b.model.ts': taggedModelSource({
+      name: 'B',
+      imports: tsSource`import type { TA$, TA_ } from './a.model.js';`,
+      fields: tsSource`s: TA$; u: TA_`,
+    }).text,
+  });
+  await buildModelProjectWith(root, { validation: true });
+  const { B } = await import(pathToFileURL(path.join(root, 'build', 'b.model.js')).href) as { B: new (values: object) => object };
+  const day = '2020-01-01T00:00:00.000Z';
+  const decoded = modelCodec(B).fromWireFormat({ s: { b: { at: day, a: { b: { at: day } } } }, u: { b: { at: day } } }) as {
+    s: { b: { at: unknown; a: { b: { at: unknown } } } }; u: { b: { at: unknown } };
+  };
+  assert.deepEqual([decoded.s.b.at instanceof Date, decoded.s.b.a.b.at instanceof Date, decoded.u.b.at instanceof Date], [true, true, true]);
+});
+
 /** A shared folder `outer/shared` with a golem.yaml of its own, and an app that includes it and has a model of its own. */
 function sharedFolderWithConfig(t: TestContext, configuration: string): { readonly root: string; readonly sharedFolder: string } {
   const outer = sharedWorkspace(t);

@@ -735,6 +735,8 @@ export function analyzeSourceGraph(
 interface SourceSchemaGraphOptions {
   /** Job-fixed codec ids by model name, for this source's models and its siblings. */
   readonly codecIds?: ReadonlyMap<string, string>;
+  /** Job-fixed codec ids of models that share a short name, for the models this source defines. */
+  readonly fixedIds?: ReadonlyMap<string, string>;
   /** Models emitted by another companion of the job. */
   readonly siblings?: readonly ModelSpecification[];
   /** What a model that sets no `validation` does: the validation of the app's profile. */
@@ -805,6 +807,7 @@ export function internSourceDefinitions(
   const validatedShapes = options.validatedShapes ?? validatedShapeKeys(definitions, emitted, options);
   const schemaGraph = createSchemaGraph({}, {
     ...(options.codecIds ? { codecIds: options.codecIds } : {}),
+    ...(options.fixedIds ? { fixedIds: options.fixedIds } : {}),
     ...(options.externalResidualIds ? { externalResidualIds: options.externalResidualIds } : {}),
     ...(options.externalWireIds ? { externalWireIds: options.externalWireIds } : {}),
     validatedShapes,

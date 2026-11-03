@@ -95,6 +95,11 @@ export interface SchemaGraphOptions {
    */
   readonly codecIds?: ReadonlyMap<string, string>;
   /**
+   * Codec ids fixed by the job for models this graph defines, by the name the source writes. Unlike `codecIds`, a reference to
+   * one of these names is no sibling: it is the model of this graph.
+   */
+  readonly fixedIds?: ReadonlyMap<string, string>;
+  /**
    * Codec ids and aliases of models emitted elsewhere (sibling companions,
    * SDK manifests) that publish `#model-only` / `#wire-only` schemas.
    */
@@ -187,6 +192,16 @@ export function childDescriptors(descriptor: ModelTypeDescriptor): readonly Mode
 function identifierFromName(name: string): string {
   const cleaned = name.replace(/[^A-Za-z0-9_]/g, '_');
   return /^[A-Za-z_]/.test(cleaned) ? cleaned : `_${cleaned}`;
+}
+
+/**
+ * Codec ids for the models of a job whose names share a short name (`A$` and `A_`): the short name leads every codec id, so two
+ * such models of one shape would share one id. Each of them takes `short_hash(name)`; a name that no other shares keeps its id.
+ */
+export function sharedShortNameIds(names: Iterable<string>): Map<string, string> {
+  const byShort = new Map<string, Set<string>>();
+  for (const name of names) byShort.set(codecShortName(name), (byShort.get(codecShortName(name)) ?? new Set()).add(name));
+  return new Map([...byShort].flatMap(([short, group]) => group.size > 1 ? [...group].map((name) => [name, `${short}_${hash8(name)}`] as const) : []));
 }
 
 export function codecShortName(name: string): string {
@@ -591,7 +606,7 @@ export function createSchemaGraph(
   });
 
   // The job keys its ids by the name the source writes (`$d`), not the short name (`_d`), which another source name can share.
-  const fixedCodecId = (raw: string): string | undefined => options.codecIds?.get(raw);
+  const fixedCodecId = (raw: string): string | undefined => options.codecIds?.get(raw) ?? options.fixedIds?.get(raw);
 
   const rememberShortName = (named: string, id: string): void => {
     const existing = byName.get(named);
@@ -678,10 +693,11 @@ export function createSchemaGraph(
       const rawHit = interned === undefined ? undefined : nodes.get(interned);
       if (rawHit) return applyFlags(rawHit);
       // A reference to a model this graph is interning (a recursive model) is that model, not a sibling's.
-      const siblingId = descriptor.kind === 'reference' && !internRawStack.has(raw) ? fixedCodecId(raw) : undefined;
+      const siblingId = descriptor.kind === 'reference' && !internRawStack.has(raw) ? options.codecIds?.get(raw) : undefined;
+      const exactId = fixedCodecId(raw);
       const foundByShortName = nodeFor(descriptor, named) ?? nodeFor(asReference(named), named);
       // The job fixes the id of a sibling by the name the source writes: a node of another id is another model that shares the short name.
-      const found = foundByShortName && (siblingId === undefined || foundByShortName.codecId === siblingId) ? foundByShortName : undefined;
+      const found = foundByShortName && (exactId === undefined || foundByShortName.codecId === exactId) ? foundByShortName : undefined;
       if (found) return applyFlags(found);
       // A reference to an ambiguous short name must not take the id of a node interned under it.
       const taken = nodes.get(identifierFromName(named));
