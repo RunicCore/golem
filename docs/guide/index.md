@@ -24,18 +24,17 @@ An `IObject` declares fields whose values stay plain objects. An `IModel` is an 
 <HowItWorks />
 
 1. The TypeScript type checker reads your `IObject` and `IModel` declarations, including tags such as `MinLength<3>`, `TValidation` and `TSerde`.
-2. Golem turns those types into JSON Schema: the full model and JSON schemas, plus the smaller checks that run after conversion.
-3. Golem compiles the schemas into validators, written as TypeScript beside the generated code.
-4. Golem writes the generated class, its JSON conversion and its types beside your file.
-5. A build tool rewrites calls such as `parse<T>` to that generated conversion when you build or load your code ([Build tools](/guide/build)).
+2. Golem turns each type and its tags into checks and writes them as TypeScript validators in one file, `models.validators.generated.ts`, in the [`output` folder of the `model` block](/reference/config#model-block).
+3. Golem writes a `.model.generated.ts` file beside each model file. It holds the JSON conversion and the types, and, for an `IModel`, the generated class that your class extends.
+4. When you build or load your code, a build tool rewrites calls such as `parse<T>` to that generated conversion: `golem build`, the Vite or esbuild plugin, or the Node loader ([Build tools](/guide/build)).
 
 ## How each generator uses these steps
 
 | Generator | Reads | Then |
 | --- | --- | --- |
-| `@exprtlabs/golem-model` | Your `IObject` and `IModel` declarations | Runs steps 1 to 5 |
-| `@exprtlabs/golem-openapi-ts` | An OpenAPI 3.1 or 3.2 document | Resolves its `$ref`s across local files and the HTTPS hosts you allow, checks it against the official OpenAPI schema and the cross-field rules of the specification, then runs steps 2 to 4 to build a typed SDK |
-| `@exprtlabs/golem-ts-openapi` | TypeScript controllers, with NestJS as the supported framework, and their types, without starting the app | Writes an OpenAPI document |
+| `@exprtlabs/golem-model` | Your `IObject` and `IModel` declarations | Runs steps 1 to 3. A build tool runs step 4. |
+| `@exprtlabs/golem-openapi-ts` | An OpenAPI 3.1 or 3.2 document | Resolves its `$ref`s across local files and the HTTPS hosts you allow, and checks it against the official OpenAPI schema and the cross-field rules of the specification. It reads the rules from the document's schemas, not from TypeScript types, and writes the typed SDK in its own `output` folder. A `standalone` SDK also gets its own validators. For a `golem` SDK, the models job writes them with your models ([SDK modes](/reference/config#sdk-modes)). |
+| `@exprtlabs/golem-ts-openapi` | TypeScript controllers, with NestJS as the supported framework, and their types, without starting the app | Runs step 1 on the types of each route, then writes an OpenAPI document. With the [`nest` extension](/reference/config#nest-extension), step 4 also adds the decorators that `NestModelInterceptor` reads to convert bodies, queries and returns. |
 
 ## What you need
 

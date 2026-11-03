@@ -32,7 +32,7 @@ test('the How it works illustration server-renders its final state', () => {
   // Scoped-style attributes are stripped so the checks read the markup.
   const figure = html.slice(start, html.indexOf('</figure>', start) + '</figure>'.length).replace(/ data-v-[0-9a-f]+/g, '');
   assert.match(figure, /data-step="4"/, 'the figure renders the last step before hydration');
-  for (const text of ['task.model.ts', 'MinLength&lt;1&gt;', '&quot;minLength&quot;: 1', '&quot;format&quot;: &quot;date-time&quot;', 'compiled validator', '<del>parse&lt;TTask&gt;(text)</del>', 'requireObjectCodec(']) {
+  for (const text of ['task.model.ts', 'MinLength&lt;1&gt;', 'codePointLength(v.title) &gt;= 1', 'isDateTime(v.due)', 'models.validators.generated.ts', '<del>parse&lt;TTask&gt;(text)</del>', 'requireObjectCodec(']) {
     assert.ok(figure.includes(text), `illustration lacks "${text}"`);
   }
   const steps = (figure.match(/class="[^"]*"/g) ?? []).filter(c => /\bln\b/.test(c) && /\bstep\b/.test(c));
