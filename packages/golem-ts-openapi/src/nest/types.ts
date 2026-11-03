@@ -13,19 +13,6 @@ export const NEST_HTTP_METHODS = [
 ] as const;
 
 export type NestHttpMethod = typeof NEST_HTTP_METHODS[number];
-
-/** `@nestjs/common` route decorators that have no lossless OpenAPI operation: catch-all and non-OpenAPI HTTP methods, and server-sent events. */
-export const NEST_UNSUPPORTED_ROUTE_METHODS = [
-  'All', 'Sse',
-  'Search', 'QueryMethod', 'Propfind', 'Proppatch', 'Mkcol', 'Copy', 'Move', 'Lock', 'Unlock',
-] as const;
-
-/** Every `@nestjs/common` decorator that makes a method an HTTP handler: Nest routes only a method that carries one of these. */
-export const NEST_ROUTE_DECORATORS: ReadonlySet<string> = new Set([
-  ...NEST_HTTP_METHODS.map(method => method[0]!.toUpperCase() + method.slice(1)),
-  ...NEST_UNSUPPORTED_ROUTE_METHODS,
-  'RequestMapping',
-]);
 type ParameterLocation = 'path' | 'query' | 'header' | 'cookie' | 'querystring';
 
 export interface TypeReference {

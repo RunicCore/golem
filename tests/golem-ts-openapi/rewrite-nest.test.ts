@@ -332,15 +332,17 @@ export class FreshController {
   assert.equal(result.files.get('src/fresh.controller.ts'), undefined);
 });
 
-test('only a route method gets the return decorator: a plain class and a controller helper get none', (t) => {
+test('only a decorated method gets the return decorator: a plain class and an undecorated helper get none, a composed route decorator gets it', (t) => {
   // protects: T-858 a plain class method got a decorator, and the Node loader crashed on a file that had none
   const root = paymentsProject(t, {
     'src/plain.ts': "import type { TPayment } from './payment.model.js';\nexport class Mapper { toPayment(): TPayment { return { id: '1', note: '' }; } }\n",
     'src/helper.controller.ts': [
-      "import { Controller, Get } from '@nestjs/common';",
+      "import { Controller, Get, applyDecorators } from '@nestjs/common';",
       "import type { TPayment } from './payment.model.js';",
+      "const Composed = (): MethodDecorator => applyDecorators(Get('composed'));",
       "@Controller('helper') export class HelperController {",
       '  @Get() list(): TPayment { return this.build(); }',
+      "  @Composed() composed(): TPayment { return { id: '1', note: '' }; }",
       "  build(): TPayment { return { id: '1', note: '' }; }",
       '}',
       '',
@@ -349,8 +351,9 @@ test('only a route method gets the return decorator: a plain class and a control
   const result = scan(root);
   assert.equal(result.files.get('src/plain.ts'), undefined);
   const code = rewritten(root, result, 'src/helper.controller.ts');
-  assert.equal(code.match(/__golem_nestModelReturn\(/g)?.length, 1, code);
+  assert.equal(code.match(/__golem_nestModelReturn\(/g)?.length, 2, code);
   assert.match(code, /@__golem_nestModelReturn\("TPayment_[0-9a-f]{8}"\) @Get\(\) list\(/);
+  assert.match(code, /@__golem_nestModelReturn\("TPayment_[0-9a-f]{8}"\) @Composed\(\) composed\(/);
 });
 
 test('a method that a decorator cannot decorate is not rewritten: an object literal, an abstract method, an overload signature', (t) => {

@@ -23,7 +23,7 @@ import type {
   NestAnalysisContext,
   NestHttpMethod,
 } from './types.js';
-import { NEST_HTTP_METHODS, NEST_UNSUPPORTED_ROUTE_METHODS } from './types.js';
+import { NEST_HTTP_METHODS } from './types.js';
 
 const ROUTE_DECORATORS = new Map<string, NestHttpMethod>(NEST_HTTP_METHODS.map(method => [method[0].toUpperCase() + method.slice(1), method]));
 /**
@@ -31,7 +31,10 @@ const ROUTE_DECORATORS = new Map<string, NestHttpMethod>(NEST_HTTP_METHODS.map(m
  * catch-all and non-OpenAPI HTTP methods (SEARCH, QUERY, WebDAV), server-sent
  * events, redirects, and the untyped `@RequestMapping`.
  */
-const UNSUPPORTED_ROUTE_DECORATORS = new Set<string>([...NEST_UNSUPPORTED_ROUTE_METHODS, 'Redirect']);
+const UNSUPPORTED_ROUTE_DECORATORS = new Set([
+  'All', 'Sse', 'Redirect',
+  'Search', 'QueryMethod', 'Propfind', 'Proppatch', 'Mkcol', 'Copy', 'Move', 'Lock', 'Unlock',
+]);
 
 /** `RequestMethod` enum values with an OpenAPI operation, by numeric value (ALL, SEARCH, QUERY and WebDAV have none). */
 const REQUEST_METHODS: Readonly<Record<number, NestHttpMethod>> = {
