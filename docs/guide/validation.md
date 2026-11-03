@@ -1,0 +1,141 @@
+# Validate models
+
+Check models and data, show field errors in a form, and read the errors that golem reports.
+
+Validation checks a value against the [validation tags](/guide/tags) on the field types of a model. Golem generates the checks. They run when you call a validation function and when you convert JSON ([Serialization](/guide/serialization#checks-during-conversion)). Constructors and field assignments do not run them, so you can keep an incomplete model while someone edits it.
+
+`failFast` is an option of the validation calls. A call stops at the first issue by default. Pass `{ failFast: false }` to collect every issue, for example to show all field errors in a form.
+
+The examples use a task form. Its title must not be blank. `MinLength<1>` rejects an empty string, and the custom rule `TValidation<typeof notBlank>` also rejects a title of spaces ([Validation tags](/guide/tags#add-a-custom-field-rule)).
+
+<<< ../../examples/models/src/task-input-rule.ts#custom-rule-fn
+
+<<< ../../examples/models/src/task-input.model.ts#custom-rule
+
+<<< ../../examples/models/src/task-input-checks.ts#validate-a-model
+
+`validation` defaults to `true`. It also takes `false` and `'sanity'`, which checks the [shape only](/reference/config#validation-profiles). `IObject` and `IModel` accept `{ validation: true | false | 'sanity' }` to set the default level of that declaration. The level is at or below the project level.
+
+## The calls
+
+| Call | Returns | Stops at the first issue | Throws |
+| --- | --- | --- | --- |
+| `validateInstance(model)` | A promise of the issue list, empty when the model is valid | Yes. `{ failFast: false }` returns every issue. | Nothing for an invalid value. `LibError` when validation cannot run. |
+| `getValidator(model).validate()` | A promise of `true` or `false`. It stores the field errors on the validator. | Yes. `{ failFast: false }` stores every field error. | Nothing for an invalid value. `LibError` when validation cannot run. |
+| `validate<T>(value)` | `true` or `false`, and narrows `value` to `T` | Yes. `{ failFast: false }` does not change the result. | Nothing for an invalid value. `LibError` when validation cannot run or no build rewrote the call. |
+| `assertValue<T>(value)` | The value, typed as `T` | Yes. `{ failFast: false }` puts every issue in the error. | `LibError` of kind `validation` with the issues when the value is invalid. |
+
+## Choose a check
+
+| Task | Call |
+| --- | --- |
+| Check a model you built | `validateInstance(model)` |
+| Show field errors in a form | `getValidator(model)` |
+| Check untrusted data against a type | `validate<T>(value)` (type predicate) |
+| Check while converting | the default in `parse` and `fromWireFormat` ([Serialization](/guide/serialization#checks-during-conversion)) |
+| Check the shape only | `validate: 'sanity'` ([Choose a level for one call](#choose-a-level-for-one-call)) |
+| Check `@Body()` and `@Query()` in NestJS | `NestModelInterceptor` ([NestJS requests](/guide/nestjs-requests)) |
+| Call an API | a generated client validates the request and response ([Call operations](/guide/client-usage)) |
+
+## Choose a level for one call
+
+A call checks at the default level of its model. Pass `validate` to choose another level for one call.
+
+<<< ../../examples/models/src/check-levels.ts#validation-levels
+
+| Call | `validate` takes |
+| --- | --- |
+| `parse<T>`, `stringify<T>`, `fromWireFormat<T>`, `toWireFormat<T>` | `true`, `'sanity'` or `false` |
+| `validate<T>`, `assertValue<T>`, `validateInstance`, `getValidator(model).validate` | `true` or `'sanity'` |
+
+- Without `validate`, the call uses the default level of its model. The model level is only a default.
+- A call can choose any level up to the project level. Off is always allowed.
+- A level above the project level throws a `LibError` of kind `ValidationUnavailable`, because golem wrote no validators for it.
+- For `parse`, `stringify`, `fromWireFormat` and `toWireFormat`, any other value throws a `TypeError`. `validateInstance` and `getValidator(model).validate` throw it too.
+- A nested model is checked at the level of the call that reaches it.
+
+The table shows the level of a call that names `validate`. Only the conversion calls take `false`.
+
+| Project level | `validate: true` | `validate: 'sanity'` | `validate: false` |
+| --- | --- | --- | --- |
+| `true` | Full check | Shape only | No check |
+| `'sanity'` | `ValidationUnavailable` | Shape only | No check |
+| `false` | `ValidationUnavailable` | `ValidationUnavailable` | No check |
+
+A model with `{ validation: false }` has no validators. A call cannot check it, at any project level.
+
+A call at `'sanity'` skips the instance rules that you add with `extend()`.
+
+## Validate a model
+
+`validateInstance(task)` returns the issues of the task. The check above reports one issue for the blank title and none once the title is fixed. Use `getValidator(model)` when a form needs the errors of each field.
+
+### Stored validation state
+
+`getValidator(model)` returns the cached stateful validator for editor flows. Its type uses the generated declared fields. Methods and other properties that only your class adds are not validation fields.
+
+| Property or method | Does |
+| --- | --- |
+| `await getValidator(model).validate()` | Returns `true` or `false` and replaces stored errors with the current results. Pass `{ failFast: false }` to store every field error. |
+| `error('title')` | The first message for a field, or `undefined`. |
+| `errorsFor('title')` | All messages for that field. |
+| `issues` | Structured errors with paths, codes, sources, messages and the fields of each code, such as `limit` on a `tooSmall` issue. |
+| `errors` | A map from each field's escaped path to its messages. |
+| `pending` | Whether validation is in progress. |
+| `valid` | Whether the stored issues are empty. It does not track unvalidated edits. |
+| `clear()` | Removes the stored issues and resets `pending`. |
+| `setErrors(map)` | Stores messages from outside generated or instance rules, such as a server response. |
+| `extend(rules)` | Adds a rule for this model instance, including asynchronous checks. |
+| `messages(overrides)` | Overrides the message for a generated check, by field and code, such as `'title.tooSmall'`. |
+
+Changing a field does not clear its old error. Validate again to refresh the result, or call `clear()` to remove the stored errors.
+
+## Nested field errors
+
+Pass a path array to read errors inside objects or arrays. Field names are strings. Array indexes are numbers.
+
+<<< ../../examples/models/src/checklist-input.model.ts#nested-field-errors
+
+Use `issues` when you need the code or source of an error as well as its message. The `errors` map keys messages by [escaped JSON Pointer](/reference/runtime-api#model-validator).
+
+## Instance rules
+
+Use `extend()` for a rule added to a particular model, including asynchronous checks. The callback receives the field value and the model, and returns `true` or an error message, directly or through a promise.
+
+<<< ../../examples/models/src/title-rule.ts#instance-rules
+
+- Generated checks run before instance rules. A rule that throws on a field the generated checks already rejected is skipped, and the generated issue stands.
+- Register the rule in your class constructor when every instance needs it, including instances created by `fromWireFormat<TaskInput>()`.
+- Use [`TValidation`](/guide/tags#add-a-custom-field-rule) for a reusable synchronous predicate attached to a field type.
+
+## Errors from an API
+
+`setErrors()` lets you display a server message beside local validation errors. It stores messages and does not add validation rules.
+
+<<< ../../examples/models/src/server-errors.ts#server-errors
+
+The next `validator.validate()` replaces these messages with its own results. The standalone `validateInstance(task)` leaves them unchanged. To customize messages for generated checks, use [`messages()`](/reference/runtime-api#validation) with the code of the issue, such as `tooSmall`.
+
+## Errors and issues
+
+- An invalid value is an ordinary result for `validateInstance` and `validate()`.
+- A call that converts a value throws a `LibError` instead: `parse`, `stringify`, `fromWireFormat`, `toWireFormat` and `assertValue`.
+- A validator also throws `LibError` when validation cannot run, for example when the model was generated with `validation: false`, or when a call asks for a level above the project level.
+- A validator throws `LibError` when a rule or a converter throws.
+
+<<< ../../examples/models/src/read-errors.ts#lib-error
+
+A `LibError` from `@exprtlabs/golem/errors` has these members:
+
+| Member | Holds |
+| --- | --- |
+| `kind` | the failure category: `validation`, `invalid_json`, `serialization`, `deserialization`, `validation_unavailable` or `response` |
+| `issues` | a frozen list of failed checks |
+| `causedByInput` | `true` when the rejected value is at fault, such as a failed check or a `Deserialize` function that throws on wire input. `false` for a program fault |
+| `cause` | the exception that a `LibError` wraps, if any |
+
+Each issue has a `code`, a `path`, a `message` and a `source`. Check `issue.code` and TypeScript narrows to the fields of that code, such as `issue.limit` after `issue.code === 'tooSmall'`. A `path` such as `['items', 0, 'amount']` names the field. Every kind, code and field is in the [runtime reference](/reference/runtime-api#errors).
+
+Constraints on the models of a NestJS controller reach the OpenAPI document that golem writes. Constraints in an OpenAPI document reach the generated validators and clients. The tag-to-keyword mapping is in [Model schemas](/reference/nestjs#model-schemas), and the supported keywords are in [OpenAPI support](/reference/openapi-support).
+
+Full example: [`examples/models`](https://github.com/RunicCore/golem/tree/master/examples/models).

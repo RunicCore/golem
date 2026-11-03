@@ -1,0 +1,6 @@
+{
+  "name": "@fixture/profiled",
+  "version": "1.0.0",
+  "exports": { "./plan": "./plan.js", "./shape": "./shape.mjs" },
+  "golem": { "apiVersion": 2, "block": "profiled", "plan": "./plan", "extensions": { "shape": { "entry": "./shape", "profile": true } } }
+}

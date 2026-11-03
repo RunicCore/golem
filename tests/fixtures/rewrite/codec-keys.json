@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "keys": {
+    "src/default-class.model.ts#DefaultClass": "TDefaultClass_66666666",
+    "src/default-class.model.ts#TDefaultClass": "TDefaultClass_66666666",
+    "src/ledger.model.ts#AdminLedger": "TLedger_33333333",
+    "src/ledger.model.ts#Ledger": "TLedger_33333333",
+    "src/ledger.model.ts#TLedger": "TLedger_33333333",
+    "src/payment.model.ts#Payment": "TPayment_22222222",
+    "src/payment.model.ts#TMoney": "TMoney_11111111",
+    "src/payment.model.ts#TPayment": "TPayment_22222222",
+    "src/registered.model.ts#Registered": "TRegistered_44444444",
+    "src/registered.model.ts#TRegistered": "TRegistered_44444444",
+    "src/rewritten.model.ts#Rewritten": "TRewritten_55555555",
+    "src/rewritten.model.ts#TRewritten": "TRewritten_55555555"
+  }
+}

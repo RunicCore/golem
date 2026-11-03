@@ -1,0 +1,16 @@
+import path from 'node:path';
+
+/** The codec ids the job that provides `ModelBoundary` writes under `.golem/`, beside the owned-output inventory: the table a rewrite reads. */
+export const CODEC_KEYS_FILE = 'codec-keys.json';
+
+/** The codec key file of the golem.yaml in `configDirectory`. */
+export function codecKeysPath(configDirectory: string): string {
+  return path.join(configDirectory, '.golem', CODEC_KEYS_FILE);
+}
+
+/** A generated companion (`*.generated.ts`, `.mts`, `.cts`) or the codec key file: the files a rewrite depends on. */
+export function isGeneratedModelFile(filename: string): boolean {
+  const base = path.basename(filename);
+  return /\.generated\.[cm]?ts$/.test(filename)
+    || (base === CODEC_KEYS_FILE && path.basename(path.dirname(filename)) === '.golem');
+}

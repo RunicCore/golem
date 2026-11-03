@@ -1,0 +1,93 @@
+openapi: 3.2.0
+info:
+  title: Example Payments API
+  version: 1.0.0
+servers:
+  - url: https://payments.example.invalid
+paths:
+  /payments/{paymentId}:
+    parameters:
+      - name: paymentId
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      operationId: getPayment
+      summary: Get a payment
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: includeHistory
+          in: query
+          schema:
+            type: boolean
+      responses:
+        "200":
+          description: Payment
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Payment"
+        "404":
+          description: Payment not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /payments:
+    post:
+      operationId: createPayment
+      summary: Create a payment
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePayment"
+      responses:
+        "201":
+          description: Created payment
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Payment"
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  schemas:
+    CreatePayment:
+      type: object
+      required: [idempotencyKey, amount, currency]
+      properties:
+        idempotencyKey:
+          type: string
+        amount:
+          type: integer
+          minimum: 1
+        currency:
+          type: string
+          pattern: "^[A-Z]{3}$"
+    Payment:
+      allOf:
+        - $ref: "#/components/schemas/CreatePayment"
+        - type: object
+          required: [id, state]
+          properties:
+            id:
+              type: string
+            state:
+              type: string
+              enum: [pending, settled, rejected]
+    Problem:
+      type: object
+      required: [title, status]
+      properties:
+        title:
+          type: string
+        status:
+          type: integer

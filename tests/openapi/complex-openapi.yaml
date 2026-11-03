@@ -1,0 +1,527 @@
+openapi: 3.2.0
+info:
+  title: Merchant Payments
+  version: 1.0.0
+  description: >
+    A realistic payment API example covering polymorphic models, directional
+    fields, multiple media types, callbacks, webhooks, and streaming results.
+jsonSchemaDialect: https://spec.openapis.org/oas/3.1/dialect/base
+security:
+  - bearerAuth: []
+  - apiKeyAuth: []
+paths:
+  /payments:
+    post:
+      operationId: createPayment
+      security:
+        - bearerAuth:
+            - payments:write
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePayment'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CreatePaymentWithEvidence'
+            encoding:
+              evidence:
+                contentType: application/pdf
+      responses:
+        '201':
+          description: Payment created and completed
+          headers:
+            Location:
+              $ref: '#/components/headers/Location'
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+            X-Rate-Limit-Remaining:
+              schema:
+                type: integer
+                minimum: 0
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Payment'
+          links:
+            payment:
+              operationId: getPayment
+              parameters:
+                paymentId: $response.body#/id
+        '202':
+          description: Payment accepted for asynchronous processing
+          headers:
+            Location:
+              $ref: '#/components/headers/Location'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentAccepted'
+        '409':
+          $ref: '#/components/responses/Problem'
+        default:
+          $ref: '#/components/responses/Problem'
+      callbacks:
+        paymentStatus:
+          '{$request.body#/callbackUrl}':
+            post:
+              operationId: receivePaymentStatus
+              requestBody:
+                required: true
+                content:
+                  application/json:
+                    schema:
+                      $ref: '#/components/schemas/PaymentStatusEvent'
+              responses:
+                '204':
+                  description: Event accepted
+  /payments/{paymentId}:
+    get:
+      operationId: getPayment
+      security:
+        - bearerAuth:
+            - payments:read
+        - apiKeyAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PaymentId'
+        - $ref: '#/components/parameters/RequestId'
+        - name: include
+          in: query
+          style: form
+          explode: true
+          schema:
+            type: array
+            uniqueItems: true
+            items:
+              type: string
+              enum:
+                - history
+                - evidence
+        - name: filter
+          in: query
+          style: deepObject
+          explode: true
+          schema:
+            type: object
+            additionalProperties: false
+            properties:
+              state:
+                $ref: '#/components/schemas/PaymentState'
+              createdAfter:
+                type: string
+                format: date-time
+        - name: X-Search-Expression
+          in: header
+          content:
+            application/xml:
+              schema:
+                type: object
+                required:
+                  - expression
+                properties:
+                  expression:
+                    type: string
+                additionalProperties: false
+      responses:
+        '200':
+          description: Payment
+          headers:
+            ETag:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Payment'
+            application/vnd.golem.payment+json:
+              schema:
+                $ref: '#/components/schemas/Payment'
+        '304':
+          description: Not modified
+        '404':
+          $ref: '#/components/responses/Problem'
+        default:
+          $ref: '#/components/responses/Problem'
+  /payments/{paymentId}/evidence:
+    put:
+      operationId: uploadEvidence
+      parameters:
+        - $ref: '#/components/parameters/PaymentId'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - evidence
+              properties:
+                evidence:
+                  type: string
+                  format: binary
+                attributes:
+                  type: object
+                  additionalProperties:
+                    type: string
+            encoding:
+              evidence:
+                contentType: application/pdf
+              attributes:
+                contentType: application/json
+                headers:
+                  X-Part-Version:
+                    schema:
+                      type: string
+      responses:
+        '204':
+          description: Evidence stored
+        '413':
+          $ref: '#/components/responses/Problem'
+  /payments/events:
+    get:
+      operationId: streamPaymentEvents
+      responses:
+        '200':
+          description: Sequential payment events
+          content:
+            application/json-seq:
+              itemSchema:
+                $ref: '#/components/schemas/PaymentStatusEvent'
+            multipart/mixed:
+              itemSchema:
+                $ref: '#/components/schemas/PaymentStatusEvent'
+        '401':
+          $ref: '#/components/responses/Problem'
+webhooks:
+  paymentReconciled:
+    post:
+      operationId: paymentReconciled
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReconciliationEvent'
+      responses:
+        '204':
+          description: Reconciliation event accepted
+components:
+  securitySchemes:
+    bearerAuth:
+      type: oauth2
+      flows:
+        clientCredentials:
+          tokenUrl: https://identity.example.test/oauth/token
+          scopes:
+            payments:read: Read payments
+            payments:write: Create payments
+    apiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+  parameters:
+    PaymentId:
+      name: paymentId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    RequestId:
+      name: X-Request-Id
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 8
+  headers:
+    Location:
+      required: true
+      schema:
+        type: string
+        format: uri-reference
+    RequestId:
+      required: true
+      schema:
+        type: string
+  responses:
+    Problem:
+      description: Request failed
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+  schemas:
+    Money:
+      type: object
+      additionalProperties: false
+      required:
+        - currency
+        - value
+      properties:
+        currency:
+          type: string
+          pattern: '^[A-Z]{3}$'
+        value:
+          type: string
+          pattern: '^-?[0-9]+(\.[0-9]{1,4})?$'
+    Party:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - displayName
+      properties:
+        id:
+          type: string
+          minLength: 1
+        displayName:
+          type: string
+          minLength: 1
+        email:
+          type:
+            - string
+            - 'null'
+          format: email
+    PaymentState:
+      type: string
+      enum:
+        - pending
+        - accepted
+        - completed
+        - rejected
+    PaymentBase:
+      type: object
+      required:
+        - id
+        - idempotencyKey
+        - amount
+        - payer
+        - payee
+        - state
+        - createdAt
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        idempotencyKey:
+          type: string
+          minLength: 8
+          maxLength: 128
+        amount:
+          $ref: '#/components/schemas/Money'
+        payer:
+          $ref: '#/components/schemas/Party'
+        payee:
+          $ref: '#/components/schemas/Party'
+        state:
+          $ref: '#/components/schemas/PaymentState'
+        createdAt:
+          type: string
+          format: date-time
+          readOnly: true
+        merchantSecret:
+          type: string
+          writeOnly: true
+        metadata:
+          type: object
+          maxProperties: 20
+          additionalProperties:
+            type: string
+    CardPayment:
+      unevaluatedProperties: false
+      allOf:
+        - $ref: '#/components/schemas/PaymentBase'
+        - type: object
+          required:
+            - kind
+            - cardNetwork
+            - maskedPan
+          properties:
+            kind:
+              const: card
+            cardNetwork:
+              type: string
+              enum:
+                - visa
+                - mastercard
+            maskedPan:
+              type: string
+              pattern: '^[0-9*]{12,19}$'
+    BankTransferPayment:
+      unevaluatedProperties: false
+      allOf:
+        - $ref: '#/components/schemas/PaymentBase'
+        - type: object
+          required:
+            - kind
+            - bankReference
+          properties:
+            kind:
+              const: bank-transfer
+            bankReference:
+              type: string
+              minLength: 1
+    Payment:
+      oneOf:
+        - $ref: '#/components/schemas/CardPayment'
+        - $ref: '#/components/schemas/BankTransferPayment'
+      discriminator:
+        propertyName: kind
+        mapping:
+          card: '#/components/schemas/CardPayment'
+          bank-transfer: '#/components/schemas/BankTransferPayment'
+    CreatePayment:
+      type: object
+      required:
+        - idempotencyKey
+        - amount
+        - payer
+        - payee
+        - kind
+        - callbackUrl
+      properties:
+        idempotencyKey:
+          type: string
+          minLength: 8
+          maxLength: 128
+        amount:
+          $ref: '#/components/schemas/Money'
+        payer:
+          $ref: '#/components/schemas/Party'
+        payee:
+          $ref: '#/components/schemas/Party'
+        kind:
+          type: string
+          enum:
+            - card
+            - bank-transfer
+        callbackUrl:
+          type: string
+          format: uri
+        merchantSecret:
+          type: string
+          writeOnly: true
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+    CreatePaymentWithEvidence:
+      unevaluatedProperties: false
+      allOf:
+        - $ref: '#/components/schemas/CreatePayment'
+        - type: object
+          required:
+            - evidence
+          properties:
+            evidence:
+              type: string
+              format: binary
+    PaymentAccepted:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - state
+        - statusUrl
+      properties:
+        id:
+          type: string
+          format: uuid
+        state:
+          const: accepted
+        statusUrl:
+          type: string
+          format: uri
+    PaymentStatusEvent:
+      type: object
+      additionalProperties: false
+      required:
+        - eventId
+        - paymentId
+        - state
+        - occurredAt
+      properties:
+        eventId:
+          type: string
+          format: uuid
+        paymentId:
+          type: string
+          format: uuid
+        state:
+          $ref: '#/components/schemas/PaymentState'
+        occurredAt:
+          type: string
+          format: date-time
+        failure:
+          oneOf:
+            - $ref: '#/components/schemas/Problem'
+            - type: 'null'
+    ReconciliationEvent:
+      type: object
+      additionalProperties: false
+      required:
+        - paymentId
+        - authority
+        - reconciledAt
+        - differences
+      properties:
+        paymentId:
+          type: string
+          format: uuid
+        authority:
+          type: string
+          enum:
+            - internal-ledger
+            - external-rail
+        reconciledAt:
+          type: string
+          format: date-time
+        differences:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required:
+              - field
+              - expected
+              - actual
+            properties:
+              field:
+                type: string
+              expected: true
+              actual: true
+    Problem:
+      type: object
+      additionalProperties: false
+      required:
+        - type
+        - title
+        - status
+      properties:
+        type:
+          type: string
+          format: uri-reference
+        title:
+          type: string
+        status:
+          type: integer
+          minimum: 400
+          maximum: 599
+        detail:
+          type: string
+        instance:
+          type: string
+          format: uri-reference
+        errors:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string

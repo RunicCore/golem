@@ -1,0 +1,314 @@
+import { createFixtureProject } from '../fixture-project.js';
+import assert from 'node:assert/strict';
+import { writeFileSync } from 'node:fs';
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
+import test from 'node:test';
+import { LibError, LibErrorKind, IssueSource } from '@exprtlabs/golem/errors';
+import { generate } from '#openapi/generator';
+import {
+  compileGeneratedSdk,
+  documentBase,
+  generateMaterializedSdk,
+  isGeneratedClientClass,
+  materializeGeneratedSdk,
+  requireRecord,
+  sdkBodyCodec,
+  withRootOperations,
+  writeOpenApiDocument,
+} from './helpers.js';
+
+/** Three operations whose request body is `false` directly, as `additionalProperties`, and by `$ref`; every response is `true`. */
+function booleanSchemaDocument(openapi: string): Record<string, unknown> {
+  const operation = (operationId: string, schema: unknown) => ({
+    post: {
+      operationId,
+      requestBody: { required: true, content: { 'application/json': { schema } } },
+      responses: { 200: { description: 'ok', content: { 'application/json': { schema: true } } } },
+    },
+  });
+  return documentBase(openapi, {
+    paths: {
+      '/direct': operation('putDirect', false),
+      '/nested': operation('putNested', { type: 'object', additionalProperties: false }),
+      '/ref': operation('putRef', { $ref: '#/components/schemas/Never' }),
+    },
+    // `Forbidden` is a schema-valued keyword (`not: true`) that generation must accept.
+    components: { schemas: { Never: false, Forbidden: { not: true } } },
+  });
+}
+
+test('public generation accepts OAS 3.1/3.2 boolean schemas in direct, nested, and $ref positions', async (t) => {
+  const inputs = { putDirect: 1, putNested: { extra: 1 }, putRef: 1 } as const;
+  for (const openapi of ['3.1.0', '3.2.0']) {
+    const profiles = openapi === '3.2.0'
+      ? [{ validation: false }, { validation: true }]
+      : [{ validation: false }];
+    for (const profile of profiles) {
+      const directory = createFixtureProject(t, 'golem-openapi-r13-');
+      const output = path.join(directory, 'sdk');
+      const input = writeOpenApiDocument(directory, booleanSchemaDocument(openapi));
+      const result = await generate({ input, output, name: 'BooleanSchema', profile });
+      const types = result.artifacts.find((artifact) => artifact.path.endsWith('/types.ts'))?.content ?? '';
+      assert.match(types, /body: never/, types);
+      assert.match(types, /body: \{ \[key: string\]: never \}/, types);
+      assert.match(types, /body: InputSchemas\.Never/, types);
+      assert.match(types, /body: unknown/, types);
+      // The 3.1 document is checked on its emitted types only; 3.2 also compiles and runs.
+      if (openapi === '3.1.0') continue;
+      materializeGeneratedSdk(result.artifacts, output);
+      compileGeneratedSdk(output);
+      const compiled = requireRecord(
+        await import(pathToFileURL(path.join(output, 'dist/client.js')).href),
+        'boolean schema client',
+      );
+      assert.equal(isGeneratedClientClass(compiled.BooleanSchemaClient), true);
+      if (!isGeneratedClientClass(compiled.BooleanSchemaClient)) throw new TypeError('BooleanSchemaClient');
+      const client = new compiled.BooleanSchemaClient({
+        baseUrl: 'https://api.example',
+        fetchImpl: async () => new Response('{"unexpected":true}', {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+      });
+      for (const [operation, body] of Object.entries(inputs)) {
+        const execute = () => client[operation]().execute({ body });
+        if (profile.validation) {
+          await assert.rejects(execute, /validation failed/, `${operation} rejects its body`);
+        } else {
+          assert.equal((await execute()).status, 200, `${operation} passes its body through`);
+        }
+      }
+    }
+  }
+});
+
+test('rejects malformed or unresolved documents', async (t) => {
+  const malformed = createFixtureProject(t, 'golem-openapi-r13-malformed-');
+  const malformedInput = writeOpenApiDocument(malformed, { openapi: '3.1.0', paths: {} });
+  await assert.rejects(
+    () => generate({
+      input: malformedInput,
+      output: path.join(malformed, 'sdk'),
+      profile: { validation: false },
+    }),
+    /OpenAPI validation failed/,
+  );
+
+  const unresolved = createFixtureProject(t, 'golem-openapi-r13-ref-');
+  const unresolvedInput = writeOpenApiDocument(unresolved, documentBase('3.1.0', {
+    paths: {
+      '/values': {
+        get: {
+          operationId: 'getValue',
+          responses: {
+            200: {
+              description: 'ok',
+              content: { 'application/json': { schema: { $ref: '#/components/schemas/Missing' } } },
+            },
+          },
+        },
+      },
+    },
+  }));
+  await assert.rejects(
+    () => generate({
+      input: unresolvedInput,
+      output: path.join(unresolved, 'sdk'),
+      profile: { validation: false },
+    }),
+    /^Error: OpenAPI validation failed with 1 error\(s\):\nno-unresolved-refs: Can't resolve \$ref #\/components\/schemas\/Missing \(openapi\.json#\/paths\/~1values\/get\/responses\/200\/content\/application~1json\/schema\/\$ref\)$/,
+  );
+});
+
+test('nullable binary response decodes to Blob or null and both pass runtime validation', async (t) => {
+  const output = path.join(createFixtureProject(t, 'golem-openapi-r14-'), 'sdk');
+  const conditionalPayment = {
+    type: 'object',
+    required: ['state'],
+    properties: {
+      state: { enum: ['pending', 'settled'] },
+      settledAt: { type: 'string' },
+    },
+    if: {
+      properties: { state: { const: 'settled' } },
+      required: ['state'],
+    },
+    then: { required: ['settledAt'] },
+  };
+  const document = documentBase('3.1.0', {
+    paths: {
+      '/payments': {
+        post: {
+          operationId: 'upsertPayment',
+          requestBody: {
+            required: true,
+            content: { 'application/json': { schema: conditionalPayment } },
+          },
+          responses: {
+            200: {
+              description: 'payment',
+              content: { 'application/json': { schema: conditionalPayment } },
+            },
+          },
+        },
+      },
+      '/file': {
+        get: {
+          operationId: 'getFile',
+          responses: {
+            200: {
+              description: 'ok',
+              content: {
+                'application/octet-stream': {
+                  schema: { type: ['string', 'null'], format: 'binary' },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  });
+  await generateMaterializedSdk(document, { output, name: 'NullableBinary', profile: { validation: true } });
+  const typeAssertion = path.join(output, 'nullable-binary-assert.ts');
+  writeFileSync(typeAssertion, [
+    "import type * as Types from './types.js';",
+    'const body: Types.GetFileOperationSuccessBody = null;',
+    'const narrowed: Blob | null = body;',
+    'void body; void narrowed;',
+  ].join('\n'));
+  compileGeneratedSdk(output, [typeAssertion], { strict: true });
+
+  const module = requireRecord(
+    await import(pathToFileURL(path.join(output, 'dist/client.js')).href),
+    'nullable binary client',
+  );
+  const Client = module.NullableBinaryClient;
+  if (!isGeneratedClientClass(Client)) throw new TypeError('NullableBinaryClient');
+
+  const bytesClient = new Client({
+    baseUrl: 'https://example.test',
+    fetchImpl: async () => new Response(new Uint8Array([1, 2, 3]), {
+      status: 200,
+      headers: { 'content-type': 'application/octet-stream' },
+    }),
+  });
+  const bytesResponse = await bytesClient.getFile().execute({});
+  assert.ok(bytesResponse.body instanceof Blob);
+  if (!(bytesResponse.body instanceof Blob)) throw new TypeError('decoded blob');
+  assert.equal(bytesResponse.body.size, 3);
+
+  const nullClient = new Client({
+    baseUrl: 'https://example.test',
+    fetchImpl: async () => new Response(new Uint8Array([9]), {
+      status: 200,
+      headers: { 'content-type': 'application/octet-stream' },
+    }),
+    responseDecoders: { 'application/octet-stream': () => null },
+  });
+  const nullResponse = await nullClient.getFile().execute({});
+  assert.equal(nullResponse.body, null);
+
+  // Conditional request and response schemas (if/then) are enforced by the same validating client.
+  {
+    let fetchCount = 0;
+    let responseBody: unknown = { state: 'settled' };
+    const client = new Client({
+      baseUrl: 'https://api.example',
+      fetchImpl: async () => {
+        fetchCount += 1;
+        return new Response(JSON.stringify(responseBody), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      },
+    });
+    const api = client.upsertPayment();
+    const invalidInput = { body: { state: 'settled' } };
+    await assert.rejects(
+      () => api.execute(invalidInput),
+      (error: unknown) => error instanceof LibError
+        && error.kind === LibErrorKind.Validation
+        && error.issues.some(issue => issue.source === IssueSource.OpenAPI),
+      'conditional request branch rejects a missing settledAt field',
+    );
+    assert.equal(fetchCount, 0, 'invalid conditional request did not reach fetch');
+
+    const validInput = { body: { state: 'settled', settledAt: '2026-09-11' } };
+    await assert.rejects(
+      () => api.execute(validInput),
+      (error: unknown) => error instanceof LibError
+        && error.kind === LibErrorKind.Validation
+        && error.issues.some(issue => issue.source === IssueSource.OpenAPI),
+      'conditional response branch rejects a missing settledAt field',
+    );
+    assert.equal(fetchCount, 1, 'valid request reached fetch before response validation');
+
+    responseBody = { state: 'settled', settledAt: '2026-09-11' };
+    const response = await api.execute(validInput);
+    assert.equal(response.status, 200);
+    assert.deepEqual(response.body, responseBody);
+    assert.equal(fetchCount, 2);
+  }
+});
+
+test('an allOf alias of one closed schema checks bodies exactly as its base does', async t => {
+  const output = path.join(createFixtureProject(t, 'golem-openapi-allof-alias-'), 'sdk');
+  await generateMaterializedSdk(withRootOperations(documentBase('3.1.0', {
+    paths: {},
+    components: {
+      schemas: {
+        Money: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['amount'],
+          properties: { amount: { type: 'number' } },
+        },
+        Price: { allOf: [{ $ref: '#/components/schemas/Money' }] },
+      },
+    },
+  }), 'Money', 'Price'), { output, name: 'Alias', profile: { validation: true } });
+  compileGeneratedSdk(output, [], { strict: true });
+  const money = await sdkBodyCodec(output, 'Alias', 'Money');
+  const price = await sdkBodyCodec(output, 'Alias', 'Price');
+
+  assert.deepEqual(await price.decode({ amount: 3 }), { amount: 3 });
+  assert.deepEqual(await price.encode({ amount: 3 }), { amount: 3 });
+  const isLibError = (error: unknown): boolean => error instanceof LibError;
+  const extra = { amount: 1, extra: 2 };
+  await assert.rejects(() => money.decode(extra), isLibError);
+  await assert.rejects(() => price.decode(extra), isLibError);
+  await assert.rejects(() => money.encode(extra), isLibError);
+  await assert.rejects(() => price.encode(extra), isLibError);
+  await assert.rejects(() => price.decode({ amount: 'three' }), isLibError);
+});
+
+for (const mode of ['standalone', 'golem'] as const) test(`a $ref to a property, a nested $anchor or a nested $id decodes like the schema it names (${mode} mode)`, async (t) => {
+  // protects: T-857 the model path read a $ref to part of a component as an unknown value, while the type path read it as the part
+  const output = path.join(createFixtureProject(t, 'golem-openapi-part-ref-'), 'sdk');
+  const document = withRootOperations(documentBase('3.1.0', {
+    components: { schemas: {
+      Pet: {
+        type: 'object',
+        required: ['createdAt', 'byProperty', 'byAnchor', 'byId'],
+        properties: {
+          createdAt: { type: 'string', format: 'date-time' },
+          byProperty: { $ref: '#/components/schemas/Pet/properties/createdAt' },
+          byAnchor: { $ref: '#born' },
+          byId: { $ref: 'https://example.test/instant' },
+          other: { $anchor: 'born', type: 'string', format: 'date-time' },
+          instant: { $id: 'https://example.test/instant', type: 'string', format: 'date-time' },
+        },
+      },
+    } },
+  }), 'Pet');
+  await generateMaterializedSdk(document, { output, name: 'Repro', profile: { validation: true }, mode });
+  compileGeneratedSdk(output, [], { strict: true, skipLibCheck: true });
+  const pet = await sdkBodyCodec(output, 'Repro', 'Pet');
+  const decoded = await pet.decode({ createdAt: '2024-01-02T03:04:05Z', byProperty: '2024-01-02T03:04:05Z', byAnchor: '2024-01-02T03:04:05Z', byId: '2024-01-02T03:04:05Z' }) as Record<string, unknown>;
+  assert.deepEqual(
+    Object.entries(decoded).map(([name, value]) => [name, value instanceof Date]),
+    [['createdAt', true], ['byProperty', true], ['byAnchor', true], ['byId', true]],
+  );
+});

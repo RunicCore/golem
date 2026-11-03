@@ -1,0 +1,5 @@
+.golem/
+*.generated.ts
+src/generated/
+.build/
+node_modules/

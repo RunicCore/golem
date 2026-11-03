@@ -1,0 +1,6 @@
+{
+  "extends": "./tsconfig.scripts.json",
+  "include": [
+    "scripts/verify-package.ts"
+  ]
+}

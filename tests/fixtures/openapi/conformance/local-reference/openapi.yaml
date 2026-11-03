@@ -1,0 +1,8 @@
+openapi: 3.2.0
+info:
+  title: Local ref
+  version: '1'
+components:
+  schemas:
+    Money:
+      $ref: ./money.yaml

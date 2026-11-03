@@ -1,0 +1,21 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "sourceMap": false,
+    "rootDir": "src",
+    "outDir": "dist",
+    "tsBuildInfoFile": "../../.build/golem-runtime.tsbuildinfo",
+    "lib": [
+      "ES2023",
+      "DOM",
+      "DOM.Iterable",
+      "esnext.temporal"
+    ],
+    "types": []
+  },
+  "include": [
+    "src/*.ts",
+    "src/client-runtime/*.ts"
+  ]
+}

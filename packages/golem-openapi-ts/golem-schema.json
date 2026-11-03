@@ -1,0 +1,36 @@
+{
+  "description": "The openapi-ts block: TypeScript SDKs that golem generates from OpenAPI documents.",
+  "type": ["object", "null"],
+  "properties": {
+    "sdks": {
+      "description": "The SDKs to generate, one job for each entry.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["input", "output"],
+        "properties": {
+          "input": { "description": "The OpenAPI document to read.", "type": "string", "minLength": 1 },
+          "output": { "description": "The folder that holds the SDK.", "type": "string", "minLength": 1 },
+          "name": { "description": "The name of the SDK client.", "type": "string", "minLength": 1 },
+          "remoteHosts": { "description": "The hosts that a remote reference may load from. Without a list, the job loads no remote reference.", "type": "array", "items": { "type": "string", "minLength": 1 } },
+          "maxRefBytes": { "description": "The most bytes of one remote document. The default is 5 MiB.", "type": "integer", "exclusiveMinimum": 0 },
+          "maxRefDocuments": { "description": "The most remote documents. The default is 256.", "type": "integer", "exclusiveMinimum": 0 },
+          "refTimeoutMs": { "description": "The time limit for one remote document, in milliseconds. The default is 10000.", "type": "integer", "exclusiveMinimum": 0 },
+          "dates": { "description": "The TypeScript type of a date-time field.", "enum": ["date", "temporal"] },
+          "mode": { "description": "standalone writes an SDK with no golem dependency. golem writes an SDK that uses the golem models.", "enum": ["standalone", "golem"], "default": "standalone" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "extensions": {
+      "description": "The extensions that the block turns on. An entry turns an extension on; an empty entry takes its defaults.",
+      "type": "object",
+      "properties": {
+        "mobx": { "description": "MobX: observable SDK operations (mode golem) and observable validators of class models.", "type": ["object", "null"], "additionalProperties": false }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

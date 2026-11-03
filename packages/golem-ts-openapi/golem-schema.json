@@ -1,0 +1,80 @@
+{
+  "description": "The ts-openapi block: documents that golem reads from controller sources.",
+  "type": "object",
+  "anyOf": [{ "required": ["docs"] }, { "required": ["extensions"] }],
+  "properties": {
+    "extensions": {
+      "description": "The extensions that the block turns on. An entry turns an extension on; an empty entry takes its defaults.",
+      "type": "object",
+      "properties": {
+        "nest": {
+          "description": "The NestJS checks of the rewrite: the codec of each @Body() and @Query() parameter and return, and the report of an input that NestModelInterceptor rejects.",
+          "type": ["object", "null"],
+          "properties": {
+            "nonModelInputs": {
+              "description": "The action for a @Body() or @Query() parameter that NestModelInterceptor rejects: error stops, warn reports and continues.",
+              "enum": ["error", "warn"],
+              "default": "error"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "docs": {
+      "description": "The documents to write, one job for each entry.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["output", "info"],
+        "properties": {
+          "sources": {
+            "description": "Controller files. The job reads these and no others.",
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": { "type": "string", "minLength": 1 }
+          },
+          "suffixes": {
+            "description": "File-name endings of a controller file. Each starts with a dot and ends in .ts, .mts or .cts. The default is .controller.ts.",
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": { "type": "string", "pattern": "^\\.(.*\\.)?[cm]?ts$" }
+          },
+          "output": { "description": "The OpenAPI document to write: a JSON or YAML file.", "type": "string" },
+          "openapiVersion": { "description": "The OpenAPI version of the document.", "enum": ["3.2.0", "3.1.2"], "default": "3.2.0" },
+          "info": { "description": "The OpenAPI info object.", "type": "object" },
+          "servers": { "description": "The OpenAPI servers.", "type": "array", "items": { "type": "object" } },
+          "securitySchemes": { "description": "Named OpenAPI security schemes that controller metadata references.", "type": "object", "additionalProperties": { "type": "object" } },
+          "tags": {
+            "description": "OpenAPI root tags.",
+            "type": "array",
+            "items": { "type": "object", "required": ["name"], "properties": { "name": { "type": "string", "minLength": 1 } } }
+          },
+          "globalPrefix": { "description": "A prefix for every route. Match the application configuration.", "type": "string" },
+          "uriVersioning": {
+            "description": "URI versioning. Set it when controllers declare versions.",
+            "type": "object",
+            "properties": {
+              "type": { "enum": ["URI", "uri", 0] },
+              "prefix": { "type": "string" },
+              "defaultVersion": {
+                "oneOf": [
+                  { "type": "string" },
+                  { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } }
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          "maxResultBytes": { "description": "The most bytes of JSON that a route path or version can fold to. The default is 1048576.", "type": "integer", "exclusiveMinimum": 0 }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

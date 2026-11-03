@@ -1,0 +1,10 @@
+version: 1
+validation: false
+ts-openapi:
+  docs:
+    - sources:
+        - src/app.controller.ts
+      output: generated/openapi.json
+      info:
+        title: Packed Controller API
+        version: "1"

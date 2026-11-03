@@ -1,0 +1,23 @@
+{
+  "name": "models-example",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "generate": "golem generate",
+    "check": "golem generate && golem check && tsc --noEmit",
+    "test": "golem build && node --test .build/src/app.test.js",
+    "start": "golem build && node .build/src/main.js",
+    "bundle": "golem generate && node bundle.mjs && node .build/bundle/main.js",
+    "start:loader": "golem generate && node --experimental-strip-types --import @exprtlabs/golem/register src/main.ts"
+  },
+  "dependencies": {
+    "@exprtlabs/golem": "1.1.0-rc.0",
+    "temporal-polyfill": "^1.0.5"
+  },
+  "devDependencies": {
+    "@exprtlabs/golem-model": "1.1.0-rc.0",
+    "esbuild": "0.25.12",
+    "typescript": "7.1.0-beta",
+    "@types/node": "22.20.1"
+  }
+}

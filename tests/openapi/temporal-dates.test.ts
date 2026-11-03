@@ -1,0 +1,355 @@
+import 'temporal-polyfill/global';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
+import test from 'node:test';
+import { createFixtureProject } from '../fixture-project.js';
+import {
+  captureRequest,
+  compileGeneratedSdk,
+  generateMaterializedSdk,
+  importGeneratedModule,
+  isGeneratedClientClass,
+  loadGeneratedClient,
+  recordingFetch,
+  requireRecord,
+  sdkBodyCodec,
+  withRootOperations,
+  type CapturedRequest,
+  type SdkBodyCodec,
+} from './helpers.js';
+
+const PROFILE = { validation: true, allowAny: false } as const;
+
+function document(event: Record<string, unknown>): unknown {
+  return {
+    openapi: '3.1.0',
+    info: { title: 'Events', version: '1.0.0' },
+    paths: {},
+    components: { schemas: { Event: { type: 'object', additionalProperties: false, ...event } } },
+  };
+}
+
+const EVENT = document({
+  required: ['at', 'day', 'span', 'clock', 'maybe'],
+  properties: {
+    at: { type: 'string', format: 'date-time' },
+    day: { type: 'string', format: 'date' },
+    span: { type: 'string', format: 'duration' },
+    clock: { type: 'string', format: 'time' },
+    maybe: { type: ['string', 'null'], format: 'date-time' },
+  },
+});
+
+const EVENT_REFERENCE = { $ref: '#/components/schemas/Event' };
+
+/** The Event document with `createEvent`, which takes and returns an Event, and `listEvents`, which returns no body. */
+const EVENT_OPERATIONS = {
+  ...(EVENT as Record<string, unknown>),
+  paths: {
+    '/events': {
+      post: {
+        operationId: 'createEvent',
+        requestBody: { required: true, content: { 'application/json': { schema: EVENT_REFERENCE } } },
+        responses: { 201: { description: 'Created', content: { 'application/json': { schema: EVENT_REFERENCE } } } },
+      },
+      get: { operationId: 'listEvents', responses: { 204: { description: 'None' } } },
+    },
+  },
+};
+
+test('dates: temporal maps date-time, date and duration to Temporal and keeps time a string', async t => {
+  const output = path.join(createFixtureProject(t, 'golem-openapi-temporal-dates-'), 'sdk');
+  await generateMaterializedSdk(withRootOperations(EVENT as Record<string, unknown>, 'Event'), { output, name: 'Events', profile: PROFILE, dates: 'temporal' });
+  compileGeneratedSdk(output, [], { strict: true, lib: ['ES2023', 'DOM', 'DOM.Iterable', 'esnext.temporal'] });
+  const client = await sdkBodyCodec(output, 'Events', 'Event');
+  const wire = { at: '2025-01-02T03:04:05Z', day: '2025-01-02', span: 'P1D', clock: '03:04:05Z', maybe: null };
+  const model = await client.decode(wire) as Record<string, unknown>;
+  assert.ok(model.at instanceof Temporal.Instant);
+  assert.ok(model.day instanceof Temporal.PlainDate);
+  assert.ok(model.span instanceof Temporal.Duration);
+  assert.equal(model.clock, '03:04:05Z');
+  assert.equal(model.maybe, null);
+  assert.deepEqual(await client.encode(model), wire);
+});
+
+test('dates: temporal models encode to the ISO strings the generated client sends and validates', async t => {
+  const output = path.join(createFixtureProject(t, 'golem-openapi-temporal-request-'), 'sdk');
+  await generateMaterializedSdk(EVENT_OPERATIONS, { output, name: 'Events', profile: PROFILE, dates: 'temporal' });
+  compileGeneratedSdk(output, [], { strict: true, lib: ['ES2023', 'DOM', 'DOM.Iterable', 'esnext.temporal'] });
+  const models = requireRecord(await import(pathToFileURL(path.join(output, 'dist/index.js')).href), 'generated models');
+  assert.ok(isGeneratedClientClass(models.EventsClient), 'generated client');
+  const wire = { at: '2025-01-02T03:04:05Z', day: '2025-01-02', span: 'P1D', clock: '03:04:05Z', maybe: null };
+  const requests: CapturedRequest[] = [];
+  const client = new models.EventsClient({
+    baseUrl: 'https://api.test',
+    fetchImpl: async (url: RequestInfo | URL, init?: RequestInit) => {
+      requests.push(captureRequest(url, init));
+      return Response.json(wire, { status: 201 });
+    },
+  });
+  const model = { at: Temporal.Instant.from('2025-01-02T03:04:05Z'), day: Temporal.PlainDate.from('2025-01-02'), span: Temporal.Duration.from('P1D'), clock: '03:04:05Z', maybe: null };
+  const response = await client.createEvent().execute({ body: model as never });
+  assert.equal(response.status, 201);
+  assert.deepEqual(JSON.parse(String(requests[0]?.init.body)), wire);
+});
+
+test('a standalone SDK writes one codec module for each operation that converts or validates', async t => {
+  // protects: T-690 an operation module imports only its own codecs, so an unused operation drops its codecs
+  const output = path.join(createFixtureProject(t, 'golem-openapi-sdk-codecs-'), 'sdk');
+  await generateMaterializedSdk(EVENT_OPERATIONS, { output, name: 'Events', profile: PROFILE, dates: 'temporal' });
+  compileGeneratedSdk(output, [], { strict: true, lib: ['ES2023', 'DOM', 'DOM.Iterable', 'esnext.temporal'] });
+  assert.deepEqual(fs.readdirSync(path.join(output, 'codecs')).sort(), ['createEvent.ts', 'listEvents.ts']);
+  const { operationCodecs: created } = requireRecord(await importGeneratedModule(output, 'create codecs', 'dist/codecs/createEvent.js'), 'create codecs module') as { operationCodecs: Record<string, Record<string, unknown>> };
+  assert.deepEqual(Object.keys(created), ['input', 'responses', 'encode', 'decode']);
+  assert.deepEqual(Object.keys(created.encode ?? {}), ['application/json']);
+  assert.deepEqual(Object.keys(created.decode ?? {}), ['201:application/json']);
+  const { operationCodecs: listed } = requireRecord(await importGeneratedModule(output, 'list codecs', 'dist/codecs/listEvents.js'), 'list codecs module') as { operationCodecs: Record<string, unknown> };
+  assert.deepEqual(Object.keys(listed), ['input']);
+  const wire = { at: '2025-01-02T03:04:05Z', day: '2025-01-02', span: 'P1D', clock: '03:04:05Z', maybe: null };
+  const decoded = (created.decode?.['201:application/json'] as (wire: unknown) => Record<string, unknown>)(wire);
+  assert.ok(decoded.at instanceof Temporal.Instant);
+  assert.deepEqual((created.encode?.['application/json'] as (value: unknown) => unknown)(decoded), wire);
+});
+
+test('dates omitted and dates: date generate the same SDK, with Date values', async t => {
+  const root = createFixtureProject(t, 'golem-openapi-temporal-default-');
+  const omitted = await generateMaterializedSdk(EVENT, { output: path.join(root, 'omitted', 'sdk'), name: 'Events', profile: PROFILE });
+  const explicit = await generateMaterializedSdk(EVENT, { output: path.join(root, 'explicit', 'sdk'), name: 'Events', profile: PROFILE, dates: 'date' });
+  const contents = (result: typeof omitted) => result.artifacts.map(artifact => [path.basename(artifact.path), artifact.content]).sort();
+  assert.deepEqual(contents(explicit), contents(omitted));
+  assert.match(contents(omitted).map(([, content]) => content).join('\n'), /\bat: Date\b/);
+});
+
+test('a component named Date or Temporal does not capture the converted date types', async t => {
+  // protects: T-689 the converted types name the global Date and Temporal, not a component of the same name
+  const root = createFixtureProject(t, 'golem-openapi-temporal-shadow-');
+  const shadowed = document({ required: ['at', 'day'], properties: { at: { type: 'string', format: 'date-time' }, day: { type: 'string', format: 'date' } } }) as { components: { schemas: Record<string, unknown> } };
+  shadowed.components.schemas.Date = { type: 'object', properties: { year: { type: 'integer' } } };
+  shadowed.components.schemas.Temporal = { type: 'object', properties: { zone: { type: 'string' } } };
+  for (const dates of ['date', 'temporal'] as const) {
+    const output = path.join(root, dates, 'sdk');
+    await generateMaterializedSdk(shadowed, { output, name: 'Events', profile: PROFILE, dates });
+    compileGeneratedSdk(output, [], { strict: true, lib: ['ES2023', 'DOM', 'DOM.Iterable', 'esnext.temporal'] });
+    const types = fs.readFileSync(path.join(output, 'types.ts'), 'utf8');
+    assert.match(types, dates === 'date' ? /at: globalThis\.Date;/ : /at: globalThis\.Temporal\.Instant;/);
+  }
+});
+
+test('dates: temporal rejects a date-time union with another string branch', async t => {
+  const output = path.join(createFixtureProject(t, 'golem-openapi-temporal-union-'), 'sdk');
+  const ambiguous = document({
+    required: ['when'],
+    properties: { when: { oneOf: [{ type: 'string', format: 'date-time' }, { type: 'string' }] } },
+  });
+  await assert.rejects(
+    generateMaterializedSdk(ambiguous, { output, name: 'Events', profile: PROFILE, dates: 'temporal' }),
+    /one Date or Temporal branch and optional null/,
+  );
+});
+
+test('dates: temporal rejects a date-time union with another string branch inside an inline allOf of an operation, and dates: date names Date', async t => {
+  // protects: round-2 finding 5: the inline schema check of an operation ran with dates: date whatever the option was
+  const inline = {
+    openapi: '3.1.0',
+    info: { title: 'Events', version: '1.0.0' },
+    paths: {
+      '/events': {
+        get: {
+          operationId: 'getEvent',
+          responses: {
+            200: {
+              description: 'ok',
+              content: { 'application/json': { schema: { allOf: [{ type: 'object', required: ['when'], properties: { when: { oneOf: [{ type: 'string', format: 'date-time' }, { type: 'string' }] } } }] } } },
+            },
+          },
+        },
+      },
+    },
+  };
+  const root = createFixtureProject(t, 'golem-openapi-temporal-inline-');
+  await assert.rejects(
+    generateMaterializedSdk(inline, { output: path.join(root, 'temporal', 'sdk'), name: 'Events', profile: PROFILE, dates: 'temporal' }),
+    /one Date or Temporal branch and optional null/,
+  );
+  await assert.rejects(
+    generateMaterializedSdk(inline, { output: path.join(root, 'date', 'sdk'), name: 'Events', profile: PROFILE, dates: 'date' }),
+    /cannot be converted to Date/,
+  );
+});
+
+test('dates: temporal rejects a date-time union with another string branch inside a component allOf, and dates: date names Date', async t => {
+  // protects: T-586 the allOf check of a component read dates: date whatever the option was
+  const component = {
+    openapi: '3.1.0',
+    info: { title: 'Events', version: '1.0.0' },
+    paths: {},
+    components: { schemas: { Event: { allOf: [{ type: 'object', required: ['when'], properties: { when: { oneOf: [{ type: 'string', format: 'date-time' }, { type: 'string' }] } } }] } } },
+  };
+  const root = createFixtureProject(t, 'golem-openapi-temporal-component-');
+  await assert.rejects(
+    generateMaterializedSdk(component, { output: path.join(root, 'temporal', 'sdk'), name: 'Events', profile: PROFILE, dates: 'temporal' }),
+    /one Date or Temporal branch and optional null/,
+  );
+  await assert.rejects(
+    generateMaterializedSdk(component, { output: path.join(root, 'date', 'sdk'), name: 'Events', profile: PROFILE, dates: 'date' }),
+    /cannot be converted to Date/,
+  );
+});
+
+const TEMPORAL_LIB = { strict: true, lib: ['ES2023', 'DOM', 'DOM.Iterable', 'esnext.temporal'] };
+
+/** The client of an SDK of `doc` with Temporal dates, whose operations carry the component `root`. */
+async function generateTemporalClient(t: Parameters<typeof createFixtureProject>[0], prefix: string, doc: Record<string, unknown>, root: string): Promise<SdkBodyCodec> {
+  const output = path.join(createFixtureProject(t, prefix), 'sdk');
+  await generateMaterializedSdk(withRootOperations(doc, root), { output, name: 'Events', profile: PROFILE, dates: 'temporal' });
+  compileGeneratedSdk(output, [], TEMPORAL_LIB);
+  return sdkBodyCodec(output, 'Events', root);
+}
+
+test('dates: temporal converts array items, nullable items and nested arrays', async t => {
+  const client = await generateTemporalClient(t, 'golem-openapi-temporal-arrays-', document({
+    required: ['instants', 'days', 'spans', 'grid'],
+    properties: {
+      instants: { type: 'array', items: { type: 'string', format: 'date-time' } },
+      days: { type: 'array', items: { type: ['string', 'null'], format: 'date' } },
+      spans: { type: 'array', items: { type: 'string', format: 'duration' } },
+      grid: { type: 'array', items: { type: 'array', items: { type: 'string', format: 'date-time' } } },
+    },
+  }) as Record<string, unknown>, 'Event');
+  const wire = { instants: ['2025-01-02T03:04:05Z'], days: ['2025-01-02', null], spans: ['P1D', 'PT1H'], grid: [['2025-01-02T03:04:05Z'], []] };
+  const model = await client.decode(wire) as Record<string, unknown[]>;
+  assert.ok(model.instants![0] instanceof Temporal.Instant);
+  assert.ok(model.days![0] instanceof Temporal.PlainDate);
+  assert.equal(model.days![1], null);
+  assert.ok(model.spans!.every(item => item instanceof Temporal.Duration));
+  assert.ok((model.grid![0] as unknown[])[0] instanceof Temporal.Instant);
+  assert.deepEqual(await client.encode(model), wire);
+});
+
+test('dates: temporal converts fields of models that reference each other across groups', async t => {
+  const client = await generateTemporalClient(t, 'golem-openapi-temporal-groups-', {
+    openapi: '3.1.0',
+    info: { title: 'Events', version: '1.0.0' },
+    paths: {},
+    components: { schemas: {
+      Venue: { type: 'object', additionalProperties: false, required: ['opens', 'closes'], properties: {
+        opens: { type: 'string', format: 'date' },
+        closes: { type: 'array', items: { type: 'string', format: 'date-time' } },
+      } },
+      Event: { type: 'object', additionalProperties: false, required: ['at', 'venue'], properties: {
+        at: { type: 'string', format: 'date-time' },
+        venue: { $ref: '#/components/schemas/Venue' },
+      } },
+      Booking: { type: 'object', additionalProperties: false, required: ['events', 'span'], properties: {
+        events: { type: 'array', items: { $ref: '#/components/schemas/Event' } },
+        span: { type: 'string', format: 'duration' },
+      } },
+    } },
+  }, 'Booking');
+  const wire = { events: [{ at: '2025-01-02T03:04:05Z', venue: { opens: '2025-01-02', closes: ['2025-01-02T10:00:00Z'] } }], span: 'P1D' };
+  const model = await client.decode(wire) as { events: { at: unknown; venue: { opens: unknown; closes: unknown[] } }[]; span: unknown };
+  assert.ok(model.events[0]!.at instanceof Temporal.Instant);
+  assert.ok(model.events[0]!.venue.opens instanceof Temporal.PlainDate);
+  assert.ok(model.events[0]!.venue.closes[0] instanceof Temporal.Instant);
+  assert.ok(model.span instanceof Temporal.Duration);
+  assert.deepEqual(await client.encode(model), wire);
+});
+
+// The generated SDK bundles its own runtime, so its LibError is not this test's class.
+const isValidationError = (error: unknown): boolean => (error as { kind?: unknown } | null)?.kind === 'validation';
+
+test('dates: temporal round-trips the duration text that Temporal writes in a field, an array item and a union branch', async t => {
+  // protects: T-682 a Temporal.Duration field writes PT0.5S, PT1H30S and P1Y2D, and reads them back under the class wire form, not the RFC 3339 duration format
+  const client = await generateTemporalClient(t, 'golem-openapi-temporal-duration-', document({
+    required: ['span', 'spans', 'maybe', 'either'],
+    properties: {
+      span: { type: 'string', format: 'duration' },
+      spans: { type: 'array', items: { type: 'string', format: 'duration' } },
+      maybe: { type: ['string', 'null'], format: 'duration' },
+      either: { anyOf: [{ type: 'string', format: 'duration' }, { type: 'null' }] },
+    },
+  }) as Record<string, unknown>, 'Event');
+  const rows = [
+    [Temporal.Duration.from({ milliseconds: 500 }), 'PT0.5S'],
+    [Temporal.Duration.from({ hours: 1, seconds: 30 }), 'PT1H30S'],
+    [Temporal.Duration.from({ years: 1, days: 2 }), 'P1Y2D'],
+  ] as const;
+  for (const [span, text] of rows) {
+    const written = await client.encode({ span, spans: [span], maybe: span, either: span });
+    assert.deepEqual(written, { span: text, spans: [text], maybe: text, either: text }, text);
+    const read = await client.decode(written) as { span: Temporal.Duration; spans: Temporal.Duration[]; maybe: Temporal.Duration; either: Temporal.Duration };
+    for (const value of [read.span, read.spans[0], read.maybe, read.either]) assert.equal(value?.toString(), text);
+  }
+});
+
+test('dates: temporal still rejects a duration text outside the wire form, and a pattern beside the format still applies', async t => {
+  // protects: T-682 the class wire form replaces the RFC 3339 format only; bad text and a keyword beside the format are still checked
+  const client = await generateTemporalClient(t, 'golem-openapi-temporal-duration-bad-', document({
+    required: ['span', 'timed'],
+    properties: { span: { type: 'string', format: 'duration' }, timed: { type: 'string', format: 'duration', pattern: '^PT' } },
+  }) as Record<string, unknown>, 'Event');
+  await assert.rejects(client.decode({ span: 'P1e2D', timed: 'PT1S' }), isValidationError);
+  await assert.rejects(client.decode({ span: 'P1D', timed: 'P1D' }), isValidationError);
+  assert.equal(((await client.decode({ span: 'P1D', timed: 'PT0.5S' })) as { timed: Temporal.Duration }).timed.toString(), 'PT0.5S');
+});
+
+test('dates: temporal reads format: duration as the Temporal form in every position, a keyword that only checks included', async t => {
+  // protects: T-682 one rule for the SDK: with dates: temporal, format: duration means the Temporal wire form in every check schema
+  const client = await generateTemporalClient(t, 'golem-openapi-temporal-duration-keywords-', document({
+    required: ['span', 'plain', 'times'],
+    properties: {
+      span: { type: 'string', format: 'duration' },
+      tag: { type: 'string' },
+      plain: { type: 'string', not: { type: 'string', format: 'duration' } },
+      times: { type: 'array', items: { type: 'string', format: 'date-time' }, contains: { type: 'string', format: 'date-time' } },
+    },
+    if: { properties: { span: { type: 'string', format: 'duration' } }, required: ['span'] },
+    then: { required: ['tag'] },
+  }) as Record<string, unknown>, 'Event');
+  const base = { span: 'P1D', plain: 'x', times: ['2025-01-02T03:04:05Z'], tag: 't' };
+  assert.equal(((await client.decode({ ...base, span: 'PT0.5S' })) as { span: Temporal.Duration }).span.toString(), 'PT0.5S');
+  await assert.rejects(client.decode({ ...base, plain: 'PT0.5S' }), isValidationError);
+  const { tag: _tag, ...withoutTag } = base;
+  await assert.rejects(client.decode({ ...withoutTag, span: 'PT0.5S' }), isValidationError);
+});
+
+test('dates: date keeps the RFC 3339 duration format on a plain string field', async t => {
+  // protects: T-682 without dates: temporal a duration string is not converted and keeps the RFC 3339 format
+  const output = path.join(createFixtureProject(t, 'golem-openapi-date-duration-'), 'sdk');
+  await generateMaterializedSdk(withRootOperations(document({ required: ['span'], properties: { span: { type: 'string', format: 'duration' } } }) as Record<string, unknown>, 'Event'), { output, name: 'Events', profile: PROFILE, dates: 'date' });
+  compileGeneratedSdk(output, [], { strict: true });
+  const client = await sdkBodyCodec(output, 'Events', 'Event');
+  assert.deepEqual(await client.decode({ span: 'PT1H30M' }), { span: 'PT1H30M' });
+  await assert.rejects(client.decode({ span: 'PT0.5S' }), isValidationError);
+});
+
+test('dates: temporal sends a duration query parameter and a duration header in the form Temporal writes, and reads one in a response header', async t => {
+  // protects: T-682 the check of a parameter or a header uses the Temporal.Duration wire form, as the check of a body does
+  const output = path.join(createFixtureProject(t, 'golem-openapi-temporal-duration-params-'), 'sdk');
+  const doc = {
+    openapi: '3.1.0',
+    info: { title: 'Events', version: '1.0.0' },
+    paths: { '/spans': { get: {
+      operationId: 'listSpans',
+      parameters: [
+        { name: 'span', in: 'query', schema: { type: 'string', format: 'duration' } },
+        { name: 'X-Span', in: 'header', schema: { type: 'string', format: 'duration' } },
+      ],
+      responses: { 204: { description: 'None', headers: { 'X-Left': { schema: { type: 'string', format: 'duration' } } } } },
+    } } },
+  };
+  await generateMaterializedSdk(doc, { output, name: 'Events', profile: PROFILE, dates: 'temporal' });
+  compileGeneratedSdk(output, [], TEMPORAL_LIB);
+  const Client = await loadGeneratedClient(output, 'Events');
+  const { fetchImpl, sent } = recordingFetch(() => new Response(null, { status: 204, headers: { 'X-Left': 'PT1H30S' } }));
+  const requests: { url: string; headers: Record<string, string> }[] = [];
+  const client = new Client({ baseUrl: 'https://api.test', fetchImpl: (async (url: RequestInfo | URL, init?: RequestInit) => {
+    requests.push({ url: String(url), headers: Object.fromEntries(new Headers(init?.headers)) });
+    return fetchImpl(url, init);
+  }) as typeof fetch }) as unknown as { listSpans(): { execute(input: unknown): Promise<{ headers: Record<string, unknown> }> } };
+  const response = await client.listSpans().execute({ query: { span: Temporal.Duration.from({ milliseconds: 500 }) }, header: { 'X-Span': Temporal.Duration.from({ years: 1, days: 2 }) } });
+  assert.deepEqual([requests[0]?.url, requests[0]?.headers['x-span'], sent.length], ['https://api.test/spans?span=PT0.5S', 'P1Y2D', 1]);
+  assert.equal(String(response.headers['X-Left'] ?? response.headers['x-left']), 'PT1H30S');
+});

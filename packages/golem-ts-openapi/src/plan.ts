@@ -1,0 +1,245 @@
+// The plan entry of the ts-openapi block (`golem.plan`). Core loads it when it reads golem.yaml, so it imports no TypeScript, no yaml and no generator code.
+import path from 'node:path';
+import { canonicalPath, checkedSuffixes, isRecord, MODEL_BOUNDARY } from '@exprtlabs/golem/internal/plan-support';
+import type {
+  GeneratorHostContext,
+  GeneratorSession,
+  GolemPlanEntry,
+  GolemProfile,
+  InputObserver,
+  ModelBoundaryValue,
+  PlanContext,
+  PlannedJob,
+} from '@exprtlabs/golem/generator-api';
+
+export type ControllerUriVersioningType = 'URI' | 'uri' | 0;
+
+/** The subset of Nest URI versioning options which has a static OpenAPI meaning. */
+export interface ControllerUriVersioning {
+  readonly type?: ControllerUriVersioningType;
+  readonly prefix?: string;
+  readonly defaultVersion?: string | readonly string[];
+}
+
+/** OpenAPI root tag metadata supplied by a controller job. */
+export interface ControllerTag extends Readonly<Record<string, unknown>> {
+  readonly name: string;
+}
+
+/** The context of the docs job: static controller analysis that writes an OpenAPI document. */
+export interface ControllerContext {
+  /** Absolute project root used for TypeScript configuration and dependency resolution. */
+  readonly root: string;
+  /** Exact absolute OpenAPI file to emit. */
+  readonly output: string;
+  /** Optional controller entrypoints; omitted means provider discovery below root/src. */
+  readonly sources?: readonly string[];
+  /** File-name endings that make a file below `src` of the golem.yaml folder a controller source; defaults to `.controller.ts`. */
+  readonly suffixes?: readonly string[];
+  /** Defaults to OpenAPI 3.2.0; 3.1.2 is the supported explicit target. */
+  readonly openapiVersion?: '3.2.0' | '3.1.2';
+  readonly info: Readonly<Record<string, unknown>>;
+  readonly servers?: readonly Readonly<Record<string, unknown>>[];
+  readonly securitySchemes?: Readonly<Record<string, Readonly<Record<string, unknown>>>>;
+  readonly tags?: readonly ControllerTag[];
+  readonly globalPrefix?: string;
+  readonly uriVersioning?: ControllerUriVersioning;
+  /** The most bytes of JSON that a route path or version can fold to, a positive safe integer; omitted means 1 MiB (1048576). A larger result stops with RUNT2106. */
+  readonly maxResultBytes?: number;
+  /** The tsconfig the job's program opens from, absolute: the one the golem.yaml names. Omitted means the nearest `tsconfig.json` from `root` upward. */
+  readonly tsconfig?: string;
+  readonly profile: GolemProfile;
+  /** The `golem.yaml` default for the `exact` option of a model that sets none; omitted means `true`. */
+  readonly exact?: boolean;
+  /**
+   * The models job of the same golem.yaml, absent when it has none. A controller type that is a shared model of the app, or a
+   * class that extends the generated base of one, is matched to its model through the file this job writes for it.
+   */
+  readonly models?: ControllerModels;
+  /**
+   * What this job's program leaves out or stubs of the jobs after it (`laterOutputs`), set by the host as for every
+   * job that reads the program. A model file that imports a later output is not read by the controllers analysis, because the import
+   * does not resolve until that job has run. A later provider's generated files are stubbed in the program.
+   */
+  readonly programView?: GeneratorHostContext['programView'];
+  readonly onInput?: InputObserver;
+  readonly session?: GeneratorSession;
+}
+
+/** What the controllers analysis needs to know of the models job: the inputs of its model boundary. */
+export type ControllerModels = ModelBoundaryValue;
+
+/** File-name endings that make a file below `src` of the golem.yaml folder a controller source when a docs job sets none. */
+export const DEFAULT_CONTROLLER_SUFFIXES: readonly string[] = ['.controller.ts'];
+
+const BLOCK = 'ts-openapi';
+const DOCS_KEYS: readonly string[] = [
+  'sources', 'suffixes', 'output', 'openapiVersion', 'info', 'servers',
+  'securitySchemes', 'tags', 'globalPrefix', 'uriVersioning', 'maxResultBytes',
+];
+
+function keys(value: unknown, allowed: readonly string[], label: string): asserts value is Record<string, unknown> {
+  if (!isRecord(value)) throw new TypeError(`${label} must be an object.`);
+  for (const key of Object.keys(value)) {
+    if (!allowed.includes(key)) throw new Error(`Unknown ${label} key: ${key}.`);
+  }
+}
+
+function nonempty(value: unknown, label: string): string {
+  if (typeof value !== 'string' || !value.trim()) throw new TypeError(`${label} must be a nonempty string.`);
+  return value;
+}
+
+function positive(value: unknown, label: string): number {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value <= 0) throw new Error(`${label} must be a positive safe integer.`);
+  return value;
+}
+
+function optionalString(value: unknown, label: string): string | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== 'string') throw new TypeError(`${label} must be a string.`);
+  return value;
+}
+
+function record(value: unknown, label: string): Record<string, unknown> {
+  if (!isRecord(value)) throw new TypeError(`${label} must be an object.`);
+  return value;
+}
+
+function recordArray(value: unknown, label: string): readonly Readonly<Record<string, unknown>>[] | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) throw new TypeError(`${label} must be an array of objects.`);
+  return value.map((item, index) => record(item, `${label}[${index}]`));
+}
+
+function recordMap(value: unknown, label: string): Readonly<Record<string, Readonly<Record<string, unknown>>>> | undefined {
+  if (value === undefined) return undefined;
+  const entries = Object.entries(record(value, label)).map(([name, item]) => [name, record(item, `${label}.${name}`)] as const);
+  return Object.fromEntries(entries);
+}
+
+function controllerTags(value: unknown, label: string): readonly ControllerTag[] | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) throw new TypeError(`${label} must be an array of tag objects.`);
+  return value.map((item, index) => {
+    const tag = record(item, `${label}[${index}]`);
+    if (typeof tag.name !== 'string' || !tag.name.trim()) throw new TypeError(`${label}[${index}].name must be a nonempty string.`);
+    return tag as ControllerTag;
+  });
+}
+
+function controllerUriVersioning(value: unknown, label: string): ControllerUriVersioning | undefined {
+  if (value === undefined) return undefined;
+  const options = record(value, label);
+  keys(options, ['type', 'prefix', 'defaultVersion'], label);
+  const type = options.type;
+  if (type !== undefined && type !== 'URI' && type !== 'uri' && type !== 0) throw new TypeError(`${label}.type must be URI or 0.`);
+  const prefix = optionalString(options.prefix, `${label}.prefix`);
+  const defaultVersion = options.defaultVersion;
+  if (defaultVersion !== undefined
+    && typeof defaultVersion !== 'string'
+    && !(Array.isArray(defaultVersion) && defaultVersion.every(item => typeof item === 'string' && item.length > 0))) {
+    throw new TypeError(`${label}.defaultVersion must be a string or a nonempty string array.`);
+  }
+  return {
+    ...(type === undefined ? {} : { type }),
+    ...(prefix === undefined ? {} : { prefix }),
+    ...(defaultVersion === undefined ? {} : { defaultVersion }),
+  } as ControllerUriVersioning;
+}
+
+/** A path the block names, made absolute from the golem.yaml folder and canonical. The observer sees it as written and as resolved, before the job reads it. */
+function inputPath(directory: string, onInput: InputObserver | undefined, value: unknown, label: string): string {
+  const requested = path.resolve(directory, nonempty(value, label));
+  onInput?.(requested);
+  const resolved = canonicalPath(requested);
+  onInput?.(resolved);
+  return resolved;
+}
+
+/** One docs job of the block: the document it writes, the sources it reads and the options its generator receives. */
+function docsJob(context: PlanContext, entry: unknown, label: string): PlannedJob<ControllerContext> {
+  const { directory, onInput } = context;
+  keys(entry, DOCS_KEYS, label);
+  const root = inputPath(directory, onInput, '.', `${label}.directory`);
+  const output = canonicalPath(path.resolve(directory, nonempty(entry.output, `${label}.output`)));
+  if (!/\.(?:json|ya?ml)$/i.test(output)) throw new Error(`${label}.output must be a JSON or YAML file.`);
+  let sources: string[] | undefined;
+  if (entry.sources !== undefined) {
+    if (!Array.isArray(entry.sources) || !entry.sources.length) throw new Error(`${label}.sources must be a nonempty array.`);
+    sources = entry.sources.map(source => inputPath(directory, onInput, source, `${label}.source`));
+    if (new Set(sources).size !== sources.length) throw new Error(`Duplicate ${label}.sources paths.`);
+  }
+  const sourceSuffixes = checkedSuffixes(entry.suffixes, `${label}.suffixes`);
+  const openapiVersion = entry.openapiVersion === undefined ? '3.2.0' : entry.openapiVersion;
+  if (openapiVersion !== '3.2.0' && openapiVersion !== '3.1.2') throw new Error(`${label}.openapiVersion must be 3.2.0 or 3.1.2.`);
+  const info = record(entry.info, `${label}.info`);
+  const servers = recordArray(entry.servers, `${label}.servers`);
+  const securitySchemes = recordMap(entry.securitySchemes, `${label}.securitySchemes`);
+  const tags = controllerTags(entry.tags, `${label}.tags`);
+  const globalPrefix = optionalString(entry.globalPrefix, `${label}.globalPrefix`);
+  const uriVersioning = controllerUriVersioning(entry.uriVersioning, `${label}.uriVersioning`);
+  const maxResultBytes = entry.maxResultBytes === undefined ? undefined : positive(entry.maxResultBytes, `${label}.maxResultBytes`);
+  const id = `docs:${path.relative(directory, output)}`;
+  return {
+    facts: {
+      id,
+      outputs: [{ path: output, kind: 'file' }],
+      ownedRoots: [],
+      scanRoots: [root],
+      inputFiles: sources ?? [],
+      inputFolders: [],
+      readsProgram: true,
+      provides: [],
+      needs: [],
+      wants: [MODEL_BOUNDARY],
+      hooks: [],
+      // A job with a list of sources reads those and no others. Otherwise a file below `src` of the root with a controller ending is a source, whether or not a run has read it.
+      watch: sources ? [] : [{ folder: path.join(root, 'src'), suffixes: sourceSuffixes ?? DEFAULT_CONTROLLER_SUFFIXES }],
+    },
+    options: {
+      root,
+      output,
+      tsconfig: context.tsconfig,
+      profile: context.profile,
+      ...(context.exact === undefined ? {} : { exact: context.exact }),
+      openapiVersion,
+      info,
+      ...(sources ? { sources } : {}),
+      ...(sourceSuffixes ? { suffixes: sourceSuffixes } : {}),
+      ...(servers ? { servers } : {}),
+      ...(securitySchemes ? { securitySchemes } : {}),
+      ...(tags ? { tags } : {}),
+      ...(globalPrefix === undefined ? {} : { globalPrefix }),
+      ...(uriVersioning === undefined ? {} : { uriVersioning }),
+      ...(maxResultBytes === undefined ? {} : { maxResultBytes }),
+    },
+  };
+}
+
+/** The settings of the extensions the block turns on. Core has checked that each name is registered; the package checks what each holds. */
+function checkExtensions(value: unknown): void {
+  if (value === undefined) return;
+  const label = `${BLOCK}.extensions`;
+  const nest = (value as { readonly nest?: unknown }).nest;
+  if (nest === undefined || nest === null) return;
+  keys(nest, ['nonModelInputs'], `${label}.nest`);
+  if (nest.nonModelInputs !== undefined && nest.nonModelInputs !== 'warn' && nest.nonModelInputs !== 'error') throw new Error(`${label}.nest.nonModelInputs must be "warn" or "error".`);
+}
+
+export const plan: GolemPlanEntry<ControllerContext> = {
+  declare(context) {
+    keys(context.block, ['docs', 'extensions'], BLOCK);
+    const { docs, extensions } = context.block;
+    checkExtensions(extensions);
+    // A block that turns on an extension and lists no docs job declares no job: the extension alone is the block.
+    if (docs === undefined && extensions !== undefined) return [];
+    if (!Array.isArray(docs) || !docs.length) throw new Error(`${BLOCK}.docs must be a nonempty array of jobs.`);
+    return docs.map((entry: unknown, index) => docsJob(context, entry, `${BLOCK}.docs[${index}]`));
+  },
+  // The second pass, when a job provides ModelBoundary: a controller type that is a shared model of the app is matched to its model through the boundary of the ModelBoundary provider.
+  link(job, { needed }) {
+    const { ModelBoundary: models } = needed;
+    return { facts: job.facts, options: { ...job.options, ...(models ? { models } : {}) } };
+  },
+};

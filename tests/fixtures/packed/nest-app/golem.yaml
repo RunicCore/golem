@@ -1,0 +1,17 @@
+version: 1
+ts-openapi:
+  docs:
+    - output: ./api/openapi.yaml
+      info:
+        title: Packed Nest API
+        version: '1'
+      globalPrefix: api
+  extensions:
+    nest: {}
+openapi-ts:
+  sdks:
+    - input: ./api/openapi.yaml
+      output: ./sdk
+      name: Payments
+      mode: golem
+model: {}
