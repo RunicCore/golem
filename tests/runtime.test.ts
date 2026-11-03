@@ -45,6 +45,28 @@ interface PaymentFields {
   note?: string;
 }
 
+test('a function message override formats a rule issue once, and a string result from the rule stays as written', async () => {
+  // protects: bug T-871 a function message override ran twice on a rule issue and gave "Invalid value!!"
+  class SlotModel {
+    public x?: unknown;
+    public constructor(values: { x?: unknown } = {}) { Object.assign(this, values); }
+  }
+  await installCodecModel({
+    constructor: SlotModel,
+    name: 'Slot',
+    fields: ['x'],
+    conversion: { decode: (value) => Object.assign(new SlotModel(), value as object), encode: (instance) => ({ x: instance.x }) },
+    definitions: { Slot: { kind: 'object', required: ['x'], additionalProperties: false, properties: { x: { kind: 'string' } } } },
+  });
+  const append = (issue: { message: string }): string => `${issue.message}!`;
+  const falseRule = validation.getValidator<{ x: string }, SlotModel>(new SlotModel({ x: 'a' })).extend({ x: () => false }).messages({ custom: append });
+  assert.equal(await falseRule.validate(), false);
+  assert.deepEqual(falseRule.issues.map(issue => issue.message), ['Invalid value!']);
+  const stringRule = validation.getValidator<{ x: string }, SlotModel>(new SlotModel({ x: 'a' })).extend({ x: () => 'Bad x' }).messages({ custom: append });
+  assert.equal(await stringRule.validate(), false);
+  assert.deepEqual(stringRule.issues.map(issue => issue.message), ['Bad x']);
+});
+
 test('dependency-free runtime entrypoints do not import optional integrations', () => {
   const modelSource = fs.readFileSync(join(distRoot, 'model.js'), 'utf8');
   const validationSources = ['validation.js', 'schema-registry-validation.js']

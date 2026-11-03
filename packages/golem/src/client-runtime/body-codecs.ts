@@ -1,7 +1,7 @@
 import { IssueRepresentation, IssueSource, LibError, LibErrorKind, toIssue } from '../errors.js';
 import type { ValidationLevel } from '../object-codec.js';
 import type { BodyEncoder, ClientRuntime, EncodedBody, EncodingMetadata, OperationCodecs, ResponseDecode } from './core.js';
-import { mediaEssence } from './media-type.js';
+import { isJsonMediaType, mediaEssence } from './media-type.js';
 import { addQueryParameter } from './parameters.js';
 import type { CallLevels } from './validation.js';
 
@@ -121,11 +121,13 @@ export function encodeBody(
         for (const entry of values) {
           if (entry === undefined) continue;
           const partType = ownEncoding(encoding, name)?.contentType;
+          const jsonPart = partType !== undefined && isJsonMediaType(partType);
           // A null is written only in a JSON part, as `null`; a text part has no form for it, as a form-urlencoded body has none.
-          if (entry === null && !partType?.toLowerCase().includes('json')) continue;
+          if (entry === null && !jsonPart) continue;
           if (entry instanceof Blob) form.append(name, entry);
           else if (partType) {
-            const serialized = typeof entry === 'object' && entry !== null ? JSON.stringify(entry) : String(entry);
+            // A JSON part holds JSON text for every value, so the string `abc` is sent as `"abc"`.
+            const serialized = jsonPart || (typeof entry === 'object' && entry !== null) ? JSON.stringify(entry) : String(entry);
             form.append(name, new Blob([serialized], { type: partType }));
           }
           else if (typeof entry === 'object' && entry !== null) {

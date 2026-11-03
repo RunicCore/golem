@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import test from 'node:test';
 
+import { openRewriteProject } from '#golem/rewrite-host';
 import { SERDE, frameLine, lineOf, project, run, write } from './support/loader-project.js';
 import { workspace } from './support/process.js';
 
@@ -197,4 +198,16 @@ test('export default and a type-only import = require() still load: they are typ
   const result = await run(root, 'src/default.ts');
   assert.equal(result.code, 0, result.stderr);
   assert.equal(result.stdout, '{"value":{"answer":42}}\n');
+});
+
+test('a file whose only decorator a participant added is compiled, not left for Node to reject', async (t) => {
+  // protects: T-858 a decorator that a rewrite added reached Node as a syntax error
+  const root = await project(t, 'loader-added-decorator');
+  const text = 'class M { run(): number { return 1; } }\n';
+  write(root, 'src/added.ts', text);
+  const host = await openRewriteProject({ cwd: root });
+  t.after(() => host.close());
+  const code = 'declare const mark: MethodDecorator;\nclass M { @mark run(): number { return 1; } }\n';
+  const compiled = host.transpile(path.join(root, 'src/added.ts'), text, { code, map: { version: 3, sources: ['src/added.ts'], names: [], mappings: '' } }, true);
+  assert.match(compiled?.code ?? '', /__decorate|__esDecorate/);
 });

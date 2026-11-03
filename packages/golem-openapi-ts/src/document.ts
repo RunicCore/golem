@@ -1,4 +1,3 @@
-import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { asRecord, isJsonObject, jsonPointerJoin, jsonPointerTokens, objectEntries } from './json.js';
 import { assertSupportedModelFieldName } from '@exprtlabs/golem/internal/schema';
@@ -6,6 +5,7 @@ import { componentOrigin, LocatedError, type OriginLocator } from './origin.js';
 import { normalizeDocument, resolveLocalPointer, type NormalizedDocument, type NormalizedOperation } from './normalize.js';
 import { GolemDiagnosticSeverity, parseYamlFile, type GolemDiagnostic } from '@exprtlabs/golem/generator-api';
 import { displayPath } from '@exprtlabs/golem/internal/generator-support';
+import { readDocumentFile } from './reference-loader.js';
 import {
   collectCanonicalResources,
   lookupCanonicalResource,
@@ -79,7 +79,30 @@ export function normalizeAndValidate(document: unknown, locate?: OriginLocator):
   validateDeclaredSchemaFields(document, locate);
   const normalized = normalizeDocument(document);
   validateNormalizedOperationFields(normalized);
-  return normalized;
+  return withoutReservedHeaderParameters(normalized);
+}
+
+/** OpenAPI's Parameter Object: a header parameter named Accept, Content-Type or Authorization is ignored. */
+const RESERVED_HEADER_PARAMETERS: ReadonlySet<string> = new Set(['accept', 'content-type', 'authorization']);
+
+/** The document without those header parameters, so no input type, validator or request carries them, and one warning for each. */
+function withoutReservedHeaderParameters(normalized: NormalizedDocument): NormalizedDocument {
+  const diagnostics: GolemDiagnostic[] = [];
+  const strip = (operation: NormalizedOperation): NormalizedOperation => {
+    const reserved = (parameter: NormalizedOperation['parameters'][number]): boolean => parameter.in === 'header' && RESERVED_HEADER_PARAMETERS.has(parameter.name.toLowerCase());
+    if (!operation.parameters.some(reserved)) return operation;
+    for (const parameter of operation.parameters.filter(reserved)) {
+      diagnostics.push({
+        code: 'OPENAPI_RESERVED_HEADER',
+        severity: GolemDiagnosticSeverity.Warning,
+        message: `operation ${operation.name} header parameter ${JSON.stringify(parameter.name)} is ignored: OpenAPI leaves Accept, Content-Type and Authorization to the request body, the responses and the security schemes`,
+      });
+    }
+    return { ...operation, parameters: operation.parameters.filter((parameter) => !reserved(parameter)) };
+  };
+  const operations = normalized.operations.map(strip);
+  const inboundOperations = normalized.inboundOperations.map(strip);
+  return diagnostics.length ? { ...normalized, operations, inboundOperations, diagnostics: [...normalized.diagnostics, ...diagnostics] } : normalized;
 }
 
 export function validate(document: unknown, preparedIr?: NormalizedDocument, locate?: OriginLocator): void {
@@ -119,7 +142,7 @@ export function findRemoteRefs(
 }
 
 export function parseSourceDocument(filename: string): unknown {
-  const source = readFileSync(filename, 'utf8');
+  const source = readDocumentFile(filename);
   if (path.extname(filename).toLowerCase() !== '.json') return parseYamlFile(source, filename);
   try {
     return JSON.parse(source);
@@ -137,29 +160,26 @@ export function expandOas32MediaTypes(document: unknown): unknown {
 
   const projected = structuredClone(document);
 
-  const expand = (value: unknown, insideMediaType = false, resolving = new Set<string>()): unknown => {
+  /** Replaces each reference to a media type component with a copy of it; the references inside the copy keep their identity. */
+  const expand = (value: unknown, resolving = new Set<string>()): unknown => {
     if (Array.isArray(value)) {
-      return value.map((item) => expand(item, insideMediaType, resolving));
+      return value.map((item) => expand(item, resolving));
     }
     if (!isJsonObject(value)) return value;
 
     const ref = typeof value.$ref === 'string' ? value.$ref : undefined;
-    const mediaTypeRef = ref !== undefined && ref.startsWith('#/components/mediaTypes/');
-    if (ref && (insideMediaType || mediaTypeRef) && !resolving.has(ref)) {
+    if (ref?.startsWith('#/components/mediaTypes/') && !resolving.has(ref)) {
       const target = resolveLocalPointer(projected, ref);
       if (target !== undefined) {
         const nextResolving = new Set(resolving).add(ref);
         const siblings = Object.fromEntries(
           Object.entries(value).filter(([key]) => key !== '$ref'),
         );
-        return expand({ ...structuredClone(target), ...siblings }, true, nextResolving);
+        return expand({ ...structuredClone(target), ...siblings }, nextResolving);
       }
     }
 
-    return Object.fromEntries(Object.entries(value).map(([key, child]) => [
-      key,
-      expand(child, insideMediaType || Boolean(mediaTypeRef), resolving),
-    ]));
+    return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, expand(child, resolving)]));
   };
 
   const visitContent = (value: unknown): void => {

@@ -4,13 +4,13 @@ import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { runPipeline, type PipelineState } from '#golem/cli';
 import { loadConfig } from './support/load-config.js';
 import { applyJob, loadInventory } from '#golem/outputs';
 import { runBuild } from '#golem/build';
 import { command, stopChild, workspace } from './support/process.js';
-import { TSC, write as writeFile } from './support/build-project.js';
+import { countingGenerator, sourceOnlyProject, TSC, write as writeFile } from './support/build-project.js';
 import { workspaceLinkedProject, writeFixture } from './support/consumer.js';
 import { until } from './support/watch-wait.js';
 import { runLines } from './support/watch-runs.js';
@@ -690,4 +690,20 @@ test('a models job does not write a generated file outside its root, even beside
     { message: `Generated output escapes the ${job.id} destination: ${path.relative(process.cwd(), stray)}` },
   );
   assert.equal(fs.existsSync(stray), false);
+});
+
+test('a run that skips a current job removes the temporary file a killed write left beside its output, and leaves one of a running process', async (t: TestContext) => {
+  // protects: T-872 golem generate removes a leftover temporary output, also when the job cache skips the job that wrote it
+  const root = sourceOnlyProject(t, 'pipeline-leftover');
+  countingGenerator(root);
+  const config = path.join(root, 'golem.yaml');
+  await runPipeline(config);
+  const content = fs.readFileSync(path.join(root, 'out/out.txt'), 'utf8');
+  const killed = path.join(root, `out/out.txt.${spawnSync(process.execPath, ['-e', '']).pid}.0123456789ab.tmp`);
+  const running = path.join(root, `out/out.txt.${process.pid}.0123456789ab.tmp`);
+  const beyondPid = path.join(root, 'out/out.txt.99999999999999.0123456789ab.tmp');
+  for (const leftover of [killed, running, beyondPid]) fs.writeFileSync(leftover, content);
+  const state = await runPipeline(config);
+  assert.equal(state.ran.has('generator:out'), false, 'the job cache skipped the job');
+  assert.deepEqual(fs.readdirSync(path.join(root, 'out')).sort(), ['out.txt', path.basename(beyondPid), path.basename(running)].sort());
 });

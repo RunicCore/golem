@@ -283,3 +283,32 @@ test('an allOf alias of one closed schema checks bodies exactly as its base does
   await assert.rejects(() => price.encode(extra), isLibError);
   await assert.rejects(() => price.decode({ amount: 'three' }), isLibError);
 });
+
+for (const mode of ['standalone', 'golem'] as const) test(`a $ref to a property, a nested $anchor or a nested $id decodes like the schema it names (${mode} mode)`, async (t) => {
+  // protects: T-857 the model path read a $ref to part of a component as an unknown value, while the type path read it as the part
+  const output = path.join(createFixtureProject(t, 'golem-openapi-part-ref-'), 'sdk');
+  const document = withRootOperations(documentBase('3.1.0', {
+    components: { schemas: {
+      Pet: {
+        type: 'object',
+        required: ['createdAt', 'byProperty', 'byAnchor', 'byId'],
+        properties: {
+          createdAt: { type: 'string', format: 'date-time' },
+          byProperty: { $ref: '#/components/schemas/Pet/properties/createdAt' },
+          byAnchor: { $ref: '#born' },
+          byId: { $ref: 'https://example.test/instant' },
+          other: { $anchor: 'born', type: 'string', format: 'date-time' },
+          instant: { $id: 'https://example.test/instant', type: 'string', format: 'date-time' },
+        },
+      },
+    } },
+  }), 'Pet');
+  await generateMaterializedSdk(document, { output, name: 'Repro', profile: { validation: true }, mode });
+  compileGeneratedSdk(output, [], { strict: true, skipLibCheck: true });
+  const pet = await sdkBodyCodec(output, 'Repro', 'Pet');
+  const decoded = await pet.decode({ createdAt: '2024-01-02T03:04:05Z', byProperty: '2024-01-02T03:04:05Z', byAnchor: '2024-01-02T03:04:05Z', byId: '2024-01-02T03:04:05Z' }) as Record<string, unknown>;
+  assert.deepEqual(
+    Object.entries(decoded).map(([name, value]) => [name, value instanceof Date]),
+    [['createdAt', true], ['byProperty', true], ['byAnchor', true], ['byId', true]],
+  );
+});

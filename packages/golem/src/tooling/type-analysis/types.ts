@@ -332,6 +332,28 @@ function isPhantomTagType(checker: ts.TypeChecker, type: ts.Type): boolean {
   return checker.getPropertiesOfType(type).some((property) => isGolemTagKey(checker, property));
 }
 
+/** Whether a type node names a type parameter anywhere inside: the node is then the uninstantiated declaration, not the type of the use. */
+function holdsTypeParameter(checker: ts.TypeChecker, node: ts.Node): boolean {
+  if (ts.isTypeReferenceNode(node) && (checker.getTypeFromTypeNode(node).flags & ts.TypeFlags.TypeParameter) !== 0) return true;
+  return ts.forEachChild(node, (child) => holdsTypeParameter(checker, child) ? true : undefined) === true;
+}
+
+/**
+ * The members of an intersection that carry data: the tag and brand members drop out. A scalar beside an object keeps only the scalar,
+ * since the object is a brand that is not spelled `__brand` (`string & { _brand: 'Id' }`).
+ */
+function taggedDataMembers(checker: ts.TypeChecker, type: ts.Type): readonly ts.Type[] {
+  if (!type.isIntersection()) return [type];
+  const members = type.types.filter((member) => !isPhantomTagType(checker, member) && !isBrandMember(checker, member));
+  const scalars = members.filter((member) => (member.flags & ts.TypeFlags.Object) === 0);
+  return scalars.length > 0 ? scalars : members;
+}
+
+/** The value type of the index signature of an object: its JSON keys are strings, so a `number` signature describes the values like a `string` one. */
+function indexValueType(checker: ts.TypeChecker, type: ts.Type): ts.Type | undefined {
+  return checker.getIndexTypeOfType(type, ts.IndexKind.String) ?? checker.getIndexTypeOfType(type, ts.IndexKind.Number);
+}
+
 function stripPhantomIntersection(
   checker: ts.TypeChecker,
   type: ts.Type,
@@ -339,7 +361,7 @@ function stripPhantomIntersection(
 ): ts.Type {
   if (!metadata.validations.length && !metadata.serde && !metadata.constraints.length && metadata.discriminator === undefined) return type;
   if (!type.isIntersection()) return type;
-  const members = type.types.filter((member) => !isPhantomTagType(checker, member));
+  const members = taggedDataMembers(checker, type);
   return members.length === 1 ? members[0] : type;
 }
 
@@ -439,7 +461,7 @@ function supportsConstraintFamily(
   if ((type.flags & (ts.TypeFlags.Any | ts.TypeFlags.Unknown | ts.TypeFlags.TypeParameter)) !== 0) return true;
   if ((type.flags & (ts.TypeFlags.Null | ts.TypeFlags.Undefined)) !== 0) return true;
   if (type.isUnion()) return type.types.every((member) => supportsConstraintFamily(checker, member, family, seen));
-  if (type.isIntersection()) return type.types.every((member) => supportsConstraintFamily(checker, member, family, seen));
+  if (type.isIntersection()) return taggedDataMembers(checker, type).every((member) => supportsConstraintFamily(checker, member, family, seen));
 
   switch (family) {
     case 'number': return (type.flags & ts.TypeFlags.NumberLike) !== 0;
@@ -544,7 +566,7 @@ function indexKeyPattern(checker: ts.TypeChecker, type: ts.Type, declaredNames: 
     if (expression === undefined) return null;
     expressions.push(expression);
   }
-  if (expressions.length === 0) return undefined;
+  if (expressions.length === 0 && !numbered) return undefined;
   return `^(?:${[...expressions, ...(numbered ? [NUMBER_KEY_EXPRESSION] : []), ...declaredNames.map(escapedKeyText)].join('|')})$`;
 }
 
@@ -845,8 +867,7 @@ function openDescribeCall(scope: DescribeScope, input: DescribeInput): DescribeC
   const hasBaseTags = metadata.validations.length > 0 || metadata.serde !== undefined || metadata.constraints.length > 0;
   const type = stripPhantomIntersection(
     checker,
-    hasTagMetadata && hasBaseTags && analysis.baseNode
-      && !(checker.getTypeFromTypeNode(analysis.baseNode).flags & ts.TypeFlags.TypeParameter)
+    hasTagMetadata && hasBaseTags && analysis.baseNode && !holdsTypeParameter(checker, analysis.baseNode)
       ? checker.getTypeFromTypeNode(analysis.baseNode)
       : originalType,
     metadata,
@@ -952,7 +973,19 @@ function describeSdkType(scope: DescribeScope, call: DescribeCall, isRoot: boole
   // refers to the SDK node. The validators compile once for both, since the compiler writes one function for equal schemas.
   // An alias of the SDK that is no model (`type Currency = string`, `type Tags = number[]`) is the plain type to the checker, so the node names it.
   const aliasNode = hasBaseTags && analysis.baseNode ? analysis.baseNode : node ?? nameNode;
-  const sdkAlias = aliasNode === undefined ? undefined : manifestIndex.sdkAliasForNode(checker, aliasNode);
+  // Several data parts make the whole intersection the base node (`Currency & { __brand: 'C' } & MinLength<3>`): the alias is one of its parts.
+  // Only tags and brands may stand beside it: another data part (`Contact & { extra: string }`) is a type of its own, not the alias.
+  const isTagOrBrand = (part: ts.TypeNode): boolean => {
+    const partType = checker.getTypeFromTypeNode(part);
+    return isPhantomTagType(checker, partType) || isBrandMember(checker, partType);
+  };
+  const sdkAliasOf = (candidate: ts.TypeNode): ReturnType<typeof manifestIndex.sdkAliasForNode> => {
+    if (ts.isParenthesizedTypeNode(candidate)) return sdkAliasOf(candidate.type);
+    if (!ts.isIntersectionTypeNode(candidate)) return manifestIndex.sdkAliasForNode(checker, candidate);
+    const found = candidate.types.map((part) => ({ part, alias: sdkAliasOf(part) })).find((entry) => entry.alias !== undefined);
+    return found !== undefined && candidate.types.every((part) => part === found.part || isTagOrBrand(part)) ? found.alias : undefined;
+  };
+  const sdkAlias = aliasNode === undefined ? undefined : sdkAliasOf(aliasNode);
   const uncarried = manifestIndex.sdkUncarriedForType(type) ?? sdkAlias?.uncarried;
   if (uncarried !== undefined) {
     const at = node ?? context.declaration;
@@ -1246,7 +1279,7 @@ function describeProperties(scope: DescribeScope, call: DescribeCall, nextSeen: 
     const valueType = propertyType(checker, property, context.declaration);
     // A member the source type lacks makes the checker's picked type `unknown`; the field is not typed unknown, so `allowAny` is no fix.
     // A string index signature holds the member, and then the field is really typed by it.
-    if (absentFromSource && !checker.getIndexTypeOfType(sourceObject!, ts.IndexKind.String) && !context.schemaData && (valueType.flags & ts.TypeFlags.Unknown) !== 0 && !(context.allowAny ?? allowAny)) {
+    if (absentFromSource && !indexValueType(checker, sourceObject!) && !context.schemaData && (valueType.flags & ts.TypeFlags.Unknown) !== 0 && !(context.allowAny ?? allowAny)) {
       throw diagnostic(
         context.sourceFile,
         node ?? context.declaration,
@@ -1327,7 +1360,7 @@ function describeObject(scope: DescribeScope, call: DescribeCall, seen: Readonly
   // The members kept above exclude the brand keys of an SDK base; a readonly modifier counts only for a kept member.
   const memberNames = new Set(members.map(member => member.name));
   const readonlyProperties = readonlyPropertyNames(checker, type).filter(name => memberNames.has(name));
-  const indexType = checker.getIndexTypeOfType(type, ts.IndexKind.String);
+  const indexType = indexValueType(checker, type);
   // One `additionalProperties` value describes every extra key, so signatures keyed by templates need one value type.
   // Two value types are one when each is assignable to the other: `{ x: number }` written twice is two type objects.
   // A plain `string` signature beside a template one also describes the template's keys, so its value type joins the comparison.
@@ -1571,7 +1604,7 @@ export function descriptorBuilder(
       const valueType = propertyType(checker, property, location);
       if (valueType.getCallSignatures().length === 0) held.push(valueType);
     }
-    const indexType = checker.getIndexTypeOfType(type, ts.IndexKind.String);
+    const indexType = indexValueType(checker, type);
     if (indexType) held.push(indexType);
     return held;
   };

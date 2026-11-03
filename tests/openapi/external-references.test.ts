@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import test from 'node:test';
+import { expandOas32MediaTypes } from '#openapi/document';
 import { generate, loadValidatedDocument } from '#openapi/generator';
 import { createFixtureProject } from '../fixture-project.js';
 import { assertGenerationRejected, writeOpenApiDocument } from './helpers.js';
@@ -217,4 +218,24 @@ test('a format golem does not check is reported at the file and pointer that dec
     ['schemas/money.json', '#'],
     ['schemas/money.json', '#/properties/amount/format'],
   ]);
+});
+
+test('a 3.2 media type reference becomes a copy of the media type whose schema $ref keeps its identity', () => {
+  // protects: T-865 a $ref inside a media type component was inlined, so the schema lost its component name
+  const document = {
+    openapi: '3.2.0',
+    paths: { '/things': { get: { responses: { 200: { description: 'ok', content: { 'application/json': { $ref: '#/components/mediaTypes/JsonThing' } } } } } } },
+    components: {
+      mediaTypes: { JsonThing: { schema: { $ref: '#/components/schemas/Thing' }, encoding: { part: { headers: { 'X-Id': { $ref: '#/components/headers/Id' } } } } } },
+      schemas: { Thing: { type: 'object' } },
+      headers: { Id: { schema: { type: 'string' } } },
+    },
+  };
+  const expanded = expandOas32MediaTypes(document) as typeof document;
+  assert.deepEqual(expanded.paths['/things'].get.responses[200].content, {
+    'application/json': {
+      schema: { $ref: '#/components/schemas/Thing' },
+      encoding: { part: { headers: { 'X-Id': { $ref: '#/components/headers/Id' } } } },
+    },
+  });
 });

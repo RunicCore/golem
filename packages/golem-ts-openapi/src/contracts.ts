@@ -7,7 +7,7 @@ import {
 } from '@exprtlabs/golem/internal/type-analysis';
 import { canonicalPath, displayPath, stripSourceSuffix } from '@exprtlabs/golem/internal/generator-support';
 import { canonicalDescriptorKey } from '@exprtlabs/golem/internal/schema';
-import { codecPublicId, createSchemaGraph, internDescriptors } from '@exprtlabs/golem/internal/schema-graph';
+import { codecPublicId, createSchemaGraph, internDescriptors, sharedShortNameIds } from '@exprtlabs/golem/internal/schema-graph';
 
 export interface ContractAnalysis {
   readonly specifications: readonly ModelSpecification[];
@@ -98,7 +98,8 @@ export function createContractAnalysis(
   // Codec ids hash descriptors named by alias and nesting an SDK model by its manifest, as the generated companions do; the document uses component names.
   const describeForIds = buildDescribe(undefined, options.manifests);
   const describedForIds = describeAll(describeForIds);
-  const internGraph = createSchemaGraph();
+  // The models job gives models that share a short name (`A$`, `A_`) ids of their own; the same ids go into the document.
+  const internGraph = createSchemaGraph({}, { fixedIds: sharedShortNameIds(specifications.map((specification) => specification.name)) });
   internDescriptors(internGraph, [
     ...specifications.flatMap((specification) => {
       const descriptor = describedForIds.get(specification);

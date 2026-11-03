@@ -27,6 +27,7 @@ import {
   collectCanonicalResources,
   nextSchemaBase,
   resolveExactComponent,
+  resolveSchemaTarget,
   schemaDocumentBase,
   type ExactComponentTarget,
   type ResourceIndex,
@@ -183,6 +184,14 @@ export function componentSchemaTarget(schema: unknown, env: ModelResolveEnv): un
   const schemas = asRecord(asRecord(asRecord(env.document).components).schemas);
   const byTypeName = objectEntries(schemas).find(([raw]) => identifier(raw) === name);
   return byTypeName?.[1];
+}
+
+/** The schema that a `$ref` to part of a component names (a property, a nested `$anchor`, a nested `$id`), and the environment that its own references resolve in; the type path reads the same target. */
+export function partSchemaTarget(schema: unknown, env: ModelResolveEnv): { readonly schema: unknown; readonly env: ModelResolveEnv } | undefined {
+  if (!isJsonObject(schema)) return undefined;
+  const reference = typeof schema.$ref === 'string' ? schema.$ref : typeof schema.$dynamicRef === 'string' ? schema.$dynamicRef : undefined;
+  const target = reference === undefined ? undefined : resolveSchemaTarget(reference, env.currentBase, env.resources, env.document);
+  return target && target.exactComponent === null ? { schema: target.schema, env: { ...env, currentBase: target.currentBase } } : undefined;
 }
 
 /** One nullability rule for model fields, shared with types and runtime schemas. */
@@ -673,6 +682,8 @@ export function modelConversionDescriptor(
   const seen = new Set(visiting).add(schema);
   const target = componentSchemaTarget(schema, nested);
   if (target !== undefined && target !== schema) return modelConversionDescriptor(target, definitions, nested, direction, seen);
+  const part = partSchemaTarget(schema, nested);
+  if (part && !seen.has(part.schema)) return modelConversionDescriptor(part.schema, definitions, part.env, direction, seen);
   const sub = subschemaConverter(definitions, nested, direction, seen);
   const builtin = dateClassOf(schema, env.dates);
   if (builtin) {
@@ -1014,6 +1025,26 @@ export interface CompositionSite {
 }
 
 /**
+ * The subschemas that the conversion of a schema walks, each with its pointer tokens from the schema: the shape keywords
+ * (`properties`, `items`, `prefixItems`, `additionalProperties`, the `allOf`, `oneOf` and `anyOf` members) and the keywords
+ * that become constraints (`not`, `contains`, `if`, `patternProperties`, ...). `checkComposition` and the search for
+ * recursive aliases read this one list.
+ */
+export function* convertedSubschemas(schema: Readonly<Record<string, unknown>>): Generator<{ readonly child: unknown; readonly tokens: readonly string[] }> {
+  for (const [name, child] of objectEntries(schema.properties)) yield { child, tokens: ['properties', name] };
+  for (const keyword of ['items', 'additionalProperties', 'unevaluatedProperties', 'unevaluatedItems', 'not', 'contains', 'propertyNames', 'if', 'then', 'else'] as const) {
+    yield { child: schema[keyword], tokens: [keyword] };
+  }
+  for (const keyword of ['patternProperties', 'dependentSchemas'] as const) {
+    for (const [name, child] of objectEntries(schema[keyword])) yield { child, tokens: [keyword, name] };
+  }
+  for (const keyword of ['prefixItems', 'allOf', 'oneOf', 'anyOf'] as const) {
+    const items = schema[keyword];
+    if (Array.isArray(items)) for (const [index, child] of items.entries()) yield { child, tokens: [keyword, String(index)] };
+  }
+}
+
+/**
  * Stops generation for an allOf that no object satisfies or that converts one property differently, and warns about each
  * property that no value can hold. Reads every schema inside the root, so the error names the schema's pointer. Such
  * a property of a model component becomes `never`, so its class field passes the value through. A component that is not
@@ -1046,16 +1077,8 @@ export function checkComposition(
       }
     }
     const nested = withSchemaBase(scope, schema);
-    for (const [name, child] of objectEntries(schema.properties)) visit(child, nested, 'field', `${pointer}/properties/${escapeJsonPointerToken(name)}`);
-    for (const keyword of ['items', 'additionalProperties', 'unevaluatedProperties', 'unevaluatedItems', 'not', 'contains', 'propertyNames', 'if', 'then', 'else'] as const) {
-      visit(schema[keyword], nested, 'field', `${pointer}/${keyword}`);
-    }
-    for (const keyword of ['patternProperties', 'dependentSchemas'] as const) {
-      for (const [name, child] of objectEntries(schema[keyword])) visit(child, nested, 'field', `${pointer}/${keyword}/${escapeJsonPointerToken(name)}`);
-    }
-    for (const keyword of ['prefixItems', 'allOf', 'oneOf', 'anyOf'] as const) {
-      const items = schema[keyword];
-      if (Array.isArray(items)) items.forEach((item, index) => visit(item, nested, 'field', `${pointer}/${keyword}/${index}`));
+    for (const { child, tokens } of convertedSubschemas(schema)) {
+      visit(child, nested, 'field', tokens.reduce((at, token) => `${at}/${escapeJsonPointerToken(token)}`, pointer));
     }
   };
   visit(rawSchema, env, definition ? 'definition' : 'field', '');

@@ -104,7 +104,10 @@ export async function main(argv = process.argv.slice(2)) {
   if (options.action === 'build') {
     const controller = new AbortController();
     let signalled: number | undefined;
-    for (const signal of ['SIGINT', 'SIGTERM'] as const) process.once(signal, () => { signalled = signal === 'SIGINT' ? 130 : 143; controller.abort(); });
+    // Only a watch ends on a signal, with 130 or 143. A build that runs once keeps the default: the signal ends the process at once.
+    if (options.watch) {
+      for (const signal of ['SIGINT', 'SIGTERM'] as const) process.once(signal, () => { signalled = signal === 'SIGINT' ? 130 : 143; controller.abort(); });
+    }
     // `golem build` loads its compiler seam only when it runs: no other command needs TypeScript to start.
     const { runBuild } = await import('./build.js');
     const onBuilt = ({ label, exitCode }: { readonly label: string; readonly exitCode: number }): void => {

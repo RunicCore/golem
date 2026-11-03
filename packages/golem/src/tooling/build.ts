@@ -325,6 +325,8 @@ interface BuildRun {
   /** Whether the leftovers of an older golem build were looked for: once for each run, not for each build of a watch. */
   oldStateRemoved: boolean;
   readonly generation: GeneratorSessionResources;
+  /** The tsconfig the golem.yaml of the last build that read one names. */
+  tsconfig?: string;
   readonly onGenerated?: (ran: ReadonlySet<string>) => void;
   readonly onCompilerReport?: (report: string) => void;
   /** The last generate run that finished: the next run reruns only the jobs a changed input reaches. Empty after a failed run. */
@@ -437,6 +439,7 @@ async function buildOnce(requestSession: () => ts.ProgramSession, run: BuildRun,
     if (folder !== undefined) run.baseline?.observeFolder(folder);
   };
   const golemConfig = await readGolemConfig(run.config, observe);
+  run.tsconfig = golemConfig.tsconfig;
   const configFile = resolveProject(run.project, golemConfig);
   root = path.dirname(configFile);
   for (const input of inputs) {
@@ -566,14 +569,19 @@ async function buildOnce(requestSession: () => ts.ProgramSession, run: BuildRun,
  */
 export async function runBuild(options: BuildOptions): Promise<{ exitCode: number }> {
   using recording = recordLoadedFiles();
-  const first = await readGolemConfig(options.config, () => {});
-  const root = path.dirname(first.tsconfig);
-  const label = displayPath(options.project === undefined ? first.tsconfig : path.resolve(options.project));
+  // A watching build whose golem.yaml cannot be read yet does not end: its first build reports the error, and the watch builds again when the file changes.
+  // A golem.yaml that does not exist, and `-b`, end the build as they do without `watch`.
+  const requested = path.resolve(options.config ?? 'golem.yaml');
+  const first = await readGolemConfig(options.config, () => {}).catch((error: unknown) => {
+    if (!options.watch || options.compilerBuild || !fs.existsSync(requested)) throw error;
+    return undefined;
+  });
+  let root = path.dirname(first?.tsconfig ?? requested);
   // Core owns one program session: the generation jobs, the rewrite scan and the build's own programs request this one.
   using generation = new GeneratorSessionResources();
   const program = (): ts.ProgramSession => retainedProgramSession(generation, root);
   // `-b` is refused here, once, before anything is generated or watched: a refusal inside a watching build would be reported and the watch would go on.
-  if (options.compilerBuild) {
+  if (options.compilerBuild && first) {
     const configFile = resolveProject(options.project, first);
     requestTypeScriptRoot(root);
     throw referencesRefusal(configFile, program().parseConfigFile(configFile).projectReferences, 'golem build does not take -b or --build: `tsc -b` would also build projects that have no golem.yaml, whose calls golem would not rewrite. A golem.yaml names one project.');
@@ -597,8 +605,11 @@ export async function runBuild(options: BuildOptions): Promise<{ exitCode: numbe
     ...(options.onGenerated === undefined ? {} : { onGenerated: options.onGenerated }),
     ...(options.onCompilerReport === undefined ? {} : { onCompilerReport: options.onCompilerReport }),
   };
+  // The tsconfig of the last golem.yaml a build could read; for a watch that started on an unreadable one, the golem.yaml's own folder until then.
+  const labelOf = (): string => displayPath(options.project === undefined ? state.tsconfig ?? requested : path.resolve(options.project));
   const run = async (changed?: readonly string[], beforeAnnouncing: () => void = () => {}): Promise<number> => {
     const exitCode = await buildOnce(program, state, changed);
+    if (state.tsconfig !== undefined) root = path.dirname(state.tsconfig);
     wrote = exitCode === 0 && outputsPresent();
     // The watch baseline is recorded before the build is announced: whoever reacts to the announcement may edit a source at once.
     beforeAnnouncing();
@@ -606,7 +617,7 @@ export async function runBuild(options: BuildOptions): Promise<{ exitCode: numbe
   };
   if (!options.watch) {
     const exitCode = await run();
-    options.onBuilt?.({ label, exitCode });
+    options.onBuilt?.({ label: labelOf(), exitCode });
     return { exitCode };
   }
 
@@ -691,7 +702,7 @@ export async function runBuild(options: BuildOptions): Promise<{ exitCode: numbe
       process.stderr.write(`${failureText(error)}\n`);
       record();
     }
-    options.onBuilt?.({ label, exitCode });
+    options.onBuilt?.({ label: labelOf(), exitCode });
   };
   await new Promise<void>((resolve) => {
     finish = () => { watcher.close(); resolve(); };

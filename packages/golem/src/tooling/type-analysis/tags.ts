@@ -910,6 +910,7 @@ export function readTags(
   if (ts.isParenthesizedTypeNode(node)) return readTags(context, node.type, seenAliases);
   if (ts.isIntersectionTypeNode(node)) {
     let baseNode: ts.TypeNode | undefined;
+    let dataParts = 0;
     let metadata = EMPTY;
     for (const part of node.types) {
       const tag = ts.isTypeReferenceNode(part) ? parseTag(context, part) : undefined;
@@ -918,10 +919,13 @@ export function readTags(
         continue;
       }
       const nested = readTags(context, part, seenAliases);
+      if (nested.baseNode) dataParts += 1;
       baseNode ??= nested.baseNode;
       metadata = mergeMetadata(context, part, metadata, nested.metadata);
     }
-    return baseNode ? { baseNode, metadata } : emptyBase(node);
+    // Several data parts (`{ a: string } & { b: number }`, a brand beside the type) are no single untagged part: the whole node is the
+    // base, and the type analysis drops the tag and brand members from its type.
+    return baseNode ? { baseNode: dataParts > 1 ? node : baseNode, metadata } : emptyBase(node);
   }
   if (ts.isTypeReferenceNode(node)) {
     const tag = parseTag(context, node);

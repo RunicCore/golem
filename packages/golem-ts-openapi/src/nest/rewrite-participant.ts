@@ -369,10 +369,14 @@ function rewriteFile(input: RewriteParticipantInput): RewriteParticipantResult {
     }
   };
 
-  /** A class method that returns a model gets `@nestModelReturn(id[, true])` before its other decorators. */
+  /**
+   * A class method with a decorator that returns a model gets `@nestModelReturn(id[, true])` before its other decorators.
+   * The interceptor reads it for an HTTP handler only, and a handler always carries the decorator that sets its route,
+   * a composed one such as `applyDecorators(Get())` included. A method with no decorator is no handler, and gets none.
+   */
   const visitMethod = (method: ts.MethodDeclaration): void => {
     // A decorator is a syntax error on an object literal method, an abstract method and an overload signature.
-    if (!method.type || !method.body || !ts.isClassLike(method.parent)) return;
+    if (!method.type || !method.body || !ts.isClassLike(method.parent) || (ts.getDecorators(method) ?? []).length === 0) return;
     const returned = nestModelType(ts, method.type, true);
     if (!returned || hasDecorator(scope, method, NEST_RETURN_DECORATOR)) return;
     const { id, primitive, name } = nestBinding(scope, returned.model);

@@ -185,6 +185,12 @@ function anchorFragmentError(reference: string, documentUri: string): Error {
   return new Error(`anchor fragments are only supported within the root document: ${reference} (in ${displayDocument(documentUri)})`);
 }
 
+/** The text of a local document file, without the UTF-8 byte order mark that some editors write first. */
+export function readDocumentFile(file: string): string {
+  const text = readFileSync(file, 'utf8');
+  return text.startsWith('\uFEFF') ? text.slice(1) : text;
+}
+
 /** A YAML document's parse error names the document with its line and column; a JSON one is wrapped here. */
 function parseDocumentText(text: string, name: string): unknown {
   if (!name.toLowerCase().endsWith('.json')) return parseYamlFile(text, name);
@@ -320,7 +326,7 @@ export async function loadReferenceGraph(
       onInput?.(file);
       if (!existsSync(file)) throw new Error(`referenced document does not exist: ${displayPath(file)}`);
       if (statSync(file).size > maxBytes) throw new Error(`referenced document exceeds ${maxBytes} bytes: ${displayPath(file)}`);
-      document = parseDocumentText(readFileSync(file, 'utf8'), file);
+      document = parseDocumentText(readDocumentFile(file), file);
     } else {
       document = parseDocumentText(await fetchRemoteDocument(uri, maxBytes, timeoutMs), uri);
     }

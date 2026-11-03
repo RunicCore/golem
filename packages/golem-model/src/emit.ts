@@ -49,7 +49,7 @@ import {
   presentKeysCode,
   wireCheckedDeserializer,
 } from '@exprtlabs/golem/internal/emitter';
-import { anonymousShapeKeys, childDescriptors, createSchemaGraph, codecPublicId, codecShortName, internDescriptors, mapNamedTypes, type SchemaGraph, type SchemaNode } from '@exprtlabs/golem/internal/schema-graph';
+import { anonymousShapeKeys, childDescriptors, createSchemaGraph, codecPublicId, internDescriptors, mapNamedTypes, type SchemaGraph, type SchemaNode } from '@exprtlabs/golem/internal/schema-graph';
 import { compareText, type GolemProfile } from '@exprtlabs/golem/generator-api';
 import { displayPath, RESERVED_MODEL_MEMBERS } from '@exprtlabs/golem/internal/generator-support';
 import type { ManifestIndex } from '@exprtlabs/golem/internal/type-analysis';
@@ -735,6 +735,8 @@ export function analyzeSourceGraph(
 interface SourceSchemaGraphOptions {
   /** Job-fixed codec ids by model name, for this source's models and its siblings. */
   readonly codecIds?: ReadonlyMap<string, string>;
+  /** Job-fixed codec ids of models that share a short name, for the models this source defines. */
+  readonly fixedIds?: ReadonlyMap<string, string>;
   /** Models emitted by another companion of the job. */
   readonly siblings?: readonly ModelSpecification[];
   /** What a model that sets no `validation` does: the validation of the app's profile. */
@@ -805,6 +807,7 @@ export function internSourceDefinitions(
   const validatedShapes = options.validatedShapes ?? validatedShapeKeys(definitions, emitted, options);
   const schemaGraph = createSchemaGraph({}, {
     ...(options.codecIds ? { codecIds: options.codecIds } : {}),
+    ...(options.fixedIds ? { fixedIds: options.fixedIds } : {}),
     ...(options.externalResidualIds ? { externalResidualIds: options.externalResidualIds } : {}),
     ...(options.externalWireIds ? { externalWireIds: options.externalWireIds } : {}),
     validatedShapes,
@@ -1061,16 +1064,15 @@ interface EmitContext {
   readonly serdeNames: ReadonlyMap<string, { readonly serialize: string; readonly deserialize: string }>;
 }
 
-/** The item whose source name has the same codec short name as `name`: a node carries the short name (`$d` is `_d`), a source its raw one. */
-function findByCodecName<T extends { readonly name: string }>(items: Iterable<T>, name: string): T | undefined {
-  const short = codecShortName(name);
-  for (const item of items) if (codecShortName(item.name) === short) return item;
-  return undefined;
+/** The sibling codec node of the model a source writes as `name`: the exact name, since `A$` and `A_` share a short name. */
+function siblingNodeOf(schemaGraph: SchemaGraph, name: string): SchemaNode | undefined {
+  const node = schemaGraph.nodeFor({ kind: 'reference', name }, name);
+  return node?.siblingCodec ? node : undefined;
 }
 
 /** The codec id of an object-only model of another source. */
 function siblingObjectCodecId(schemaGraph: SchemaGraph, name: string): string {
-  const node = findByCodecName([...schemaGraph.nodes.values()].filter((item) => item.siblingCodec), name);
+  const node = siblingNodeOf(schemaGraph, name);
   if (!node) throw new Error(`Generated sibling codec is missing: ${name}`);
   return node.codecId;
 }
@@ -1348,7 +1350,7 @@ function modelResolvers(context: EmitContext, helpers: ReadonlyMap<string, Proje
   });
   const siblingClass = (id: string): Code | undefined => {
     if (!cyclicSiblings?.has(id)) return undefined;
-    const node = findByCodecName([...context.schemaGraph.nodes.values()].filter((item) => item.siblingCodec), id);
+    const node = siblingNodeOf(context.schemaGraph, id);
     return node ? code`${rt.serde.requireIModelClass}(${literal(node.codecId)})` : undefined;
   };
   const resolveImportedModel = (id: string): FromJsonModelResolver => {
@@ -1721,9 +1723,16 @@ function emitCodecSection(context: EmitContext): CodecSection {
   const { definitions } = graph;
   const { localNames } = context;
   const { siblingWireCodecIds, siblingRecursion } = context.siblingCodecs;
+  // A node carries the short name of its model (`A$` and `A_` are both `A_`); the codec id tells which model the source wrote.
+  const sourceNames = new Map<string, string>();
+  for (const name of Object.keys(definitions)) {
+    const codecId = schemaGraph.nodeFor(descriptorOf(definitions, name), name)?.codecId;
+    if (codecId !== undefined && !sourceNames.has(codecId)) sourceNames.set(codecId, name);
+  }
+  const sourceName = (node: SchemaNode): string => sourceNames.get(node.codecId) ?? node.name;
   const nestedConstruct = (name: string, className?: string): Code => {
     const node = [...schemaGraph.nodes.values()].find((item) => item.codecId === name || item.name === name);
-    const short = node?.name ?? name;
+    const short = node === undefined ? name : sourceName(node);
     const id = node?.codecId ?? name;
     const cls = context.concreteNames.get(short);
     if (cls !== undefined && context.localImports.some((item) => item.name === short)) return imports.concrete.get(short) ?? identifier(cls);
@@ -1746,9 +1755,9 @@ function emitCodecSection(context: EmitContext): CodecSection {
   // Wire stringify functions of sibling codecs this module writes, imported from the companion of each.
   const siblingWires = new Map<string, Code>();
   const siblingWireSources: ImportSource[] = [];
-  for (const node of schemaGraph.nodes.values()) {
-    const sibling = node.siblingCodec ? findByCodecName(graph.siblings, node.name) : undefined;
-    if (!sibling) continue;
+  for (const sibling of graph.siblings) {
+    const node = siblingNodeOf(schemaGraph, sibling.name);
+    if (!node) continue;
     const wireSource = new ImportSource(sourceImportPath(companionOfSpecification(sibling), output));
     siblingWires.set(node.codecId, wireSource.name(wireStringifyExportName(node.codecId)));
     siblingWireSources.push(wireSource);
@@ -1778,13 +1787,13 @@ function emitCodecSection(context: EmitContext): CodecSection {
       ...(context.codecData ? { codecData: context.codecData } : {}),
       serde: serdeResolver(context),
       nestedConstruct,
-      modelClassName: (node) => localNames.has(node.name) ? `${node.name}BaseModel` : undefined,
+      modelClassName: (node) => localNames.has(sourceName(node)) ? `${sourceName(node)}BaseModel` : undefined,
       nestedBase,
       siblingWireName: (codecId) => siblingWires.get(codecId) ?? identifier(wireStringifyExportName(codecId)),
-      wireType: (node) => Object.hasOwn(definitions, node.name) || localNames.has(node.name) ? modelType(context, node.name, 'JSON') : undefined,
-      fieldsType: (node) => Object.hasOwn(definitions, node.name) || localNames.has(node.name) ? modelType(context, node.name, 'Fields') : undefined,
+      wireType: (node) => Object.hasOwn(definitions, sourceName(node)) || localNames.has(sourceName(node)) ? modelType(context, sourceName(node), 'JSON') : undefined,
+      fieldsType: (node) => Object.hasOwn(definitions, sourceName(node)) || localNames.has(sourceName(node)) ? modelType(context, sourceName(node), 'Fields') : undefined,
       // A derived projection (an Omit, Pick or alias of a model) is not a model the user declared; other files reach it by codec id.
-      privateCodec: (node) => Object.hasOwn(definitions, node.name) && !localNames.has(node.name),
+      privateCodec: (node) => Object.hasOwn(definitions, sourceName(node)) && !localNames.has(sourceName(node)),
       ...(siblingWireCodecIds ? { siblingWireCodecIds } : {}),
       ...(siblingRecursion ? { siblingRecursion } : {}),
       exportWireStringify: true,

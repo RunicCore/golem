@@ -584,8 +584,123 @@ test('a model file that models.sources names must hold an IModel or IObject alia
 
   assert.throws(
     () => generate({ root, sources: [path.join(sourceRoot, 'payment.model.ts')], profile: { validation: true } }),
-    { message: 'No exported IModel<...> type aliases were found.' },
+    { message: /^No exported IModel<\.\.\.> type aliases were found in .*payment\.model\.ts\.$/ },
   );
+});
+
+// protects: T-862 a listed file with no alias was skipped without a word while another listed file had models
+test('a model file that models.sources names stops generation by name when another listed file has models', (t: TestContext) => {
+  const { root, sourceRoot } = project(t);
+  writeModelSources(sourceRoot, { 'order.model.ts': ORDER_MODEL, 'notes.ts': 'export const note = 1;\n' });
+
+  assert.throws(
+    () => generate({ root, sources: [path.join(sourceRoot, 'order.model.ts'), path.join(sourceRoot, 'notes.ts')], profile: { validation: true } }),
+    { message: /^No exported IModel<\.\.\.> type aliases were found in .*notes\.ts\.$/ },
+  );
+});
+
+// protects: T-867 models whose names differ only in a character that a codec name drops (`A$`, `A_`) shared one codec node: "Unresolved schema reference" across files, mixed types in one file
+for (const layout of ['sibling files', 'one file'] as const) {
+  test(`models A$ and A_ in ${layout} each get their own codec`, async (t: TestContext) => {
+    const { root, sourceRoot } = project(t);
+    const objectModel = (name: string, field: string): string => `export type ${name} = IObject<{ ${field}: Date }>;\n`;
+    const header = `import type { IObject } from '@exprtlabs/golem/model';\n`;
+    writeModelSources(sourceRoot, {
+      ...(layout === 'one file'
+        ? { 'a.model.ts': header + objectModel('TA$', 'v') + objectModel('TA_', 'w') }
+        : { 'a1.model.ts': header + objectModel('TA$', 'v'), 'a2.model.ts': header + objectModel('TA_', 'w') }),
+      'b.model.ts': taggedModelSource({
+        name: 'B',
+        imports: layout === 'one file'
+          ? tsSource`import type { TA$, TA_ } from './a.model.js';`
+          : tsSource`import type { TA$ } from './a1.model.js';\nimport type { TA_ } from './a2.model.js';`,
+        fields: tsSource`s: TA$; u: TA_`,
+      }).text,
+    });
+    await buildModelProjectWith(root, { validation: true });
+    const { B } = await import(pathToFileURL(path.join(root, 'build', 'b.model.js')).href) as { B: new (values: object) => object };
+    const decoded = modelCodec(B).fromWireFormat({ s: { v: '2020-01-01T00:00:00.000Z' }, u: { w: '2020-01-01T00:00:00.000Z' } }) as { s: { v: unknown }; u: { w: unknown } };
+    assert.deepEqual([decoded.s.v instanceof Date, decoded.u.w instanceof Date], [true, true]);
+  });
+}
+
+// protects: T-867 two class models of equal shape whose names differ only in a character that a codec name drops registered one codec
+test('class models A$ and A_ of one shape decode to their own classes', async (t: TestContext) => {
+  const { root, sourceRoot } = project(t);
+  const classModel = (name: string, file: string): string => `import type { IModel } from '@exprtlabs/golem/model';
+import { T${name}BaseModel, type T${name}Fields } from './${file}.model.generated.js';
+export type T${name} = IModel<{ v: Date }>;
+export class ${name} extends T${name}BaseModel {
+  constructor(values: Partial<T${name}Fields> = {}) { super(values); }
+}
+`;
+  writeModelSources(sourceRoot, {
+    'a1.model.ts': classModel('A$', 'a1'),
+    'a2.model.ts': classModel('A_', 'a2'),
+    'b.model.ts': taggedModelSource({
+      name: 'B',
+      imports: tsSource`import type { TA$ } from './a1.model.js';\nimport type { TA_ } from './a2.model.js';`,
+      fields: tsSource`s: TA$; u: TA_`,
+    }).text,
+  });
+  await buildModelProjectWith(root, { validation: true });
+  const built = async (file: string) => await import(pathToFileURL(path.join(root, 'build', file)).href) as Record<string, new (values: object) => object>;
+  const [{ B }, first, second] = await Promise.all([built('b.model.js'), built('a1.model.js'), built('a2.model.js')]);
+  const day = '2020-01-01T00:00:00.000Z';
+  const decoded = modelCodec(B).fromWireFormat({ s: { v: day }, u: { v: day } }) as { s: object; u: object };
+  assert.deepEqual([decoded.s instanceof first['A$']!, decoded.u instanceof second['A_']!], [true, true]);
+});
+
+// protects: T-867 class models of one shape that share a short name, in one file in either order, each decode to their own class
+for (const order of [['A$', 'A_'], ['A_', 'A$']] as const) {
+  test(`class models ${order.join(' then ')} of one shape in one file decode to their own classes`, async (t: TestContext) => {
+    const { root, sourceRoot } = project(t);
+    const classModel = (name: string): string => `export type T${name} = IModel<{ v: Date }>;
+export class ${name} extends T${name}BaseModel {
+  constructor(values: Partial<T${name}Fields> = {}) { super(values); }
+}
+`;
+    writeModelSources(sourceRoot, {
+      'a.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
+import { TA$BaseModel, TA_BaseModel, type TA$Fields, type TA_Fields } from './a.model.generated.js';
+${order.map(classModel).join('')}`,
+      'b.model.ts': taggedModelSource({
+        name: 'B',
+        imports: tsSource`import type { TA$, TA_ } from './a.model.js';`,
+        fields: tsSource`s: TA$; u: TA_`,
+      }).text,
+    });
+    await buildModelProjectWith(root, { validation: true });
+    const built = async (file: string) => await import(pathToFileURL(path.join(root, 'build', file)).href) as Record<string, new (values: object) => object>;
+    const [{ B }, classes] = await Promise.all([built('b.model.js'), built('a.model.js')]);
+    const day = '2020-01-01T00:00:00.000Z';
+    const decoded = modelCodec(B).fromWireFormat({ s: { v: day }, u: { v: day } }) as { s: object; u: object };
+    assert.deepEqual([decoded.s instanceof classes['A$']!, decoded.u instanceof classes['A_']!], [true, true]);
+  });
+}
+
+// protects: T-867 a model of a mutual recursion keeps its own node when another model of its file shares its short name
+test('A$ in a mutual recursion beside A_ of one shape decodes at every level', async (t: TestContext) => {
+  const { root, sourceRoot } = project(t);
+  writeModelSources(sourceRoot, {
+    'a.model.ts': `import type { IObject } from '@exprtlabs/golem/model';
+export type TB = IObject<{ a?: TA$; at: Date }>;
+export type TA$ = IObject<{ b?: TB }>;
+export type TA_ = IObject<{ b?: TB }>;
+`,
+    'b.model.ts': taggedModelSource({
+      name: 'B',
+      imports: tsSource`import type { TA$, TA_ } from './a.model.js';`,
+      fields: tsSource`s: TA$; u: TA_`,
+    }).text,
+  });
+  await buildModelProjectWith(root, { validation: true });
+  const { B } = await import(pathToFileURL(path.join(root, 'build', 'b.model.js')).href) as { B: new (values: object) => object };
+  const day = '2020-01-01T00:00:00.000Z';
+  const decoded = modelCodec(B).fromWireFormat({ s: { b: { at: day, a: { b: { at: day } } } }, u: { b: { at: day } } }) as {
+    s: { b: { at: unknown; a: { b: { at: unknown } } } }; u: { b: { at: unknown } };
+  };
+  assert.deepEqual([decoded.s.b.at instanceof Date, decoded.s.b.a.b.at instanceof Date, decoded.u.b.at instanceof Date], [true, true, true]);
 });
 
 /** A shared folder `outer/shared` with a golem.yaml of its own, and an app that includes it and has a model of its own. */

@@ -4,7 +4,7 @@ import { pathToFileURL } from 'node:url';
 import { resolveConfig, validateConfigInputs } from './config.js';
 import type { GolemConfig, GolemJob } from './config.js';
 import { codecKeysPath } from './generated-paths.js';
-import { coreRecordsOf, digest, loadInventory, applyJob, removeRetiredJobs } from './outputs.js';
+import { coreRecordsOf, digest, loadInventory, applyJob, removeLeftoverTemporaries, removeRetiredJobs } from './outputs.js';
 import type { FileChanges, Inventory, OutputFiles } from './outputs.js';
 import { absoluteRecordPath, golemCode, insideAny, inventoryPaths, JobInputs, hookCode, jobIsCurrent, loadedCode, loadJobRecords, programViewOf, recordPath, sameSetup, saveJobRecords } from './job-cache.js';
 import type { CodePackage, JobRecord } from './job-cache.js';
@@ -529,6 +529,8 @@ async function runJob(job: GolemJob, run: PipelineRun, plan: PipelinePlan, progr
     const outputs = [...record.outputs, ...Object.keys(record.records)].map(output => absoluteRecordPath(config, output));
     assertUnowned(progress.owned, outputs);
     options.onOwned?.(outputs);
+    // A write that was killed left a temporary file beside an output; the job has nothing to write, so this run removes it.
+    if (!options.check) removeLeftoverTemporaries(job.package, outputs, options.files);
     for (const input of Object.keys(record.inputs)) observer.observe(absoluteRecordPath(config, input), job.id);
     // The job's inputs are as they were, so its warnings still hold: each run writes them once.
     writeWarnings(record.warnings);

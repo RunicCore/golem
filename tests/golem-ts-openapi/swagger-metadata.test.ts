@@ -590,3 +590,57 @@ export type TB = IModel<{ b: number }>;
   });
   await assert.rejects(generateAt(root), /pair\.model\.ts:\d+:\d+ RUNM1005: Component name "Same" is already taken in this model source\./);
 });
+
+test('writes the enum of an isArray @ApiProperty on the items of the array', async t => {
+  // protects: T-854 an array carrying the enum matched no valid value
+  const root = inlineFixture(t, `import { Controller, Get } from '@nestjs/common';
+import { ApiProperty } from '@nestjs/swagger';
+class Dto {
+  @ApiProperty({ enum: ['a', 'b'], isArray: true }) tags!: string[];
+  @ApiProperty({ enum: ['a', 'b'], isArray: true }) maybe!: string[] | null;
+}
+@Controller('d') export class DController { @Get() get(): Dto { return { tags: [], maybe: null }; } }
+`);
+  const document = documentOf<OpenApiDocument>(await generateAt(root));
+  const dto = objectSchema(document, jsonSchema(document.paths['/d']?.get, '200'));
+  assert.deepEqual(property(document, dto, 'tags'), { type: 'array', items: { type: 'string', enum: ['a', 'b'] } });
+  assert.deepEqual(property(document, dto, 'maybe'), { anyOf: [{ type: 'array', items: { type: 'string', enum: ['a', 'b'] } }, { type: 'null' }] });
+});
+
+test('writes the enum of an isArray @ApiQuery on the items of the array', async t => {
+  // protects: T-854 an array carrying the enum matched no valid value
+  const root = inlineFixture(t, `import { Controller, Get, Query } from '@nestjs/common';
+import { ApiQuery } from '@nestjs/swagger';
+@Controller('q') export class QController {
+  @Get() @ApiQuery({ name: 'roles', enum: ['admin', 'user'], isArray: true })
+  list(@Query('roles') roles: string[]): void { roles.length; }
+}
+`);
+  const document = documentOf<OpenApiDocument>(await generateAt(root));
+  const parameter = document.paths['/q']?.get?.parameters?.find(item => item.name === 'roles');
+  assert.deepEqual(parameter?.schema, { type: 'array', items: { type: 'string', enum: ['admin', 'user'] } });
+});
+
+test('marks the body of an @ApiBody that sets no required as required', async t => {
+  // protects: T-870 @nestjs/swagger defaults an @ApiBody to required: true
+  const root = inlineFixture(t, `import { Body, Controller, Post, Req } from '@nestjs/common';
+import { ApiBody, ApiProperty } from '@nestjs/swagger';
+class Dto { @ApiProperty() name!: string; }
+@Controller('b') export class BController {
+  @Post('schema') @ApiBody({ schema: { type: 'object', properties: { a: { type: 'string' } } } })
+  schema(@Req() request: unknown): void { request; }
+  @Post('typed') @ApiBody({ type: Dto })
+  typed(@Body() body?: Dto): void { body; }
+  @Post('explicit') @ApiBody({ type: Dto, required: false })
+  explicit(@Body() body: Dto): void { body; }
+  @Post('none')
+  none(@Body() body?: Dto): void { body; }
+}
+`);
+  const document = documentOf<OpenApiDocument>(await generateAt(root));
+  const required = (route: string): unknown => (document.paths[route]?.post?.requestBody as { readonly required?: boolean } | undefined)?.required;
+  assert.deepEqual(
+    { schema: required('/b/schema'), typed: required('/b/typed'), explicit: required('/b/explicit'), none: required('/b/none') },
+    { schema: true, typed: true, explicit: false, none: false },
+  );
+});

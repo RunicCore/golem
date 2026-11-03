@@ -87,18 +87,35 @@ export interface NormalizedDocument {
   readonly diagnostics: readonly GolemDiagnostic[];
 }
 
+/** The longest `$ref` chain that is followed; a chain that does not end by then (a cycle) stays an unresolved Reference Object. */
+const MAX_REF_HOPS = 32;
+
+/** The plain JSON Pointer of a local `$ref`; a `$ref` is a URI fragment: each token is percent-decoded, then `~1`/`~0`-unescaped. */
+function localRefPointer(ref: string): string {
+  return fragmentPointerTokens(ref.slice(1)).reduce(jsonPointerJoin, '');
+}
+
 export function resolveLocalPointer(document: unknown, ref: string): unknown {
-  if (!ref.startsWith('#/')) return undefined;
-  // `$ref` is a URI fragment: each token is percent-decoded, then `~1`/`~0`-unescaped; a numeric token indexes an array.
-  const pointer = fragmentPointerTokens(ref.slice(1)).reduce(jsonPointerJoin, '');
-  return resolveJsonPointer(document, pointer);
+  return ref.startsWith('#/') ? resolveJsonPointer(document, localRefPointer(ref)) : undefined;
+}
+
+/** Follow in-document Reference Objects to their final target; `pointer` is where that target lives. */
+export function followLocalRefs(document: unknown, value: unknown, pointer = ''): { readonly value: unknown; readonly pointer: string } {
+  let current = value;
+  let currentPointer = pointer;
+  for (let hop = 0; hop < MAX_REF_HOPS; hop += 1) {
+    if (!isJsonObject(current) || typeof current.$ref !== 'string' || !current.$ref.startsWith('#/')) break;
+    const targetPointer = localRefPointer(current.$ref);
+    const next = resolveJsonPointer(document, targetPointer);
+    if (next === undefined) break;
+    current = next;
+    currentPointer = targetPointer;
+  }
+  return { value: current, pointer: currentPointer };
 }
 
 export function resolveLocal(document: unknown, value: unknown): unknown {
-  if (!isJsonObject(value) || typeof value.$ref !== 'string' || !value.$ref.startsWith('#/')) {
-    return value;
-  }
-  return resolveLocalPointer(document, value.$ref) ?? value;
+  return followLocalRefs(document, value).value;
 }
 
 function contentEntries(content: unknown, featureLine?: OpenApiFeatureLine): OpenApiMediaType[] {

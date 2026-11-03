@@ -15,7 +15,7 @@ import { canonicalPath, displayPath } from '@exprtlabs/golem/internal/generator-
 import { CODEC_DATA_HOOK, DEFAULT_MODEL_SUFFIXES, defaultModelOutput, MODEL_BLOCK, outsideModelsRootMessage, VALIDATOR_ENHANCER_HOOK, type CodecDataParticipant, type ModelContext, type ValidatorEnhancerParticipant } from './plan.js';
 import { codecKeysPath } from '@exprtlabs/golem/internal/generated-paths';
 import { AmbiguousUnionConversionError, ObjectUnionDiscriminatorError, reachesRecursiveNode, type Code } from '@exprtlabs/golem/internal/emitter';
-import { emitCodecDeclarationTable } from '@exprtlabs/golem/internal/schema-graph';
+import { emitCodecDeclarationTable, sharedShortNameIds } from '@exprtlabs/golem/internal/schema-graph';
 import {
   analyzeSourceGraph,
   createJobAnalysis,
@@ -306,6 +306,7 @@ function internJobSchemaGraphs(
   }
   // An unnamed object type has one codec id for every source that holds the shape, so it validates when any source's validating model holds it.
   const validatedShapes = new Set(graphs.flatMap((graph) => [...validatedShapeKeys(graph.definitions, graph.emitted, { siblings: graph.siblings, defaultValidation })]));
+  const sharedShortIds = sharedShortNameIds(graphs.flatMap((graph) => graph.emitted.map((specification) => specification.name)));
   const byGraph = new Map<SourceModelGraph, SourceSchemaGraph>();
   const idsFor = (graph: SourceModelGraph, own: ReadonlyMap<string, string>): Map<string, string> => new Map([
     ...own,
@@ -338,6 +339,7 @@ function internJobSchemaGraphs(
       const [graph] = component;
       const schemaGraph = internSourceDefinitions(graph.definitions, graph.emitted, {
         codecIds: idsFor(graph, new Map()),
+        fixedIds: sharedShortIds,
         siblings: graph.siblings,
         defaultValidation,
         validatedShapes,
@@ -373,6 +375,7 @@ function internJobSchemaGraphs(
         const id = codecIds.get(sibling);
         return id === undefined ? [] : [[sibling.name, id] as const];
       })),
+      fixedIds: sharedShortIds,
       siblings: outside,
       defaultValidation,
       validatedShapes,
@@ -389,6 +392,7 @@ function internJobSchemaGraphs(
         }));
       const schemaGraph = internSourceDefinitions(graph.definitions, graph.emitted, {
         codecIds: idsFor(graph, own),
+        fixedIds: sharedShortIds,
         siblings: graph.siblings,
         defaultValidation,
         validatedShapes,
@@ -553,11 +557,14 @@ export function generate(context: GolemModelContext): GolemModelResult {
     normalized.onInput,
   );
   const tsconfigDirectory = programInfo.configPath === undefined ? normalized.root : dirname(programInfo.configPath);
+  const unmodeled = ownSources.find((source) => !withModels.has(canonicalFilename(source)));
+  const noModels = (): Error => new Error(`No exported IModel<...> type aliases were found${unmodeled === undefined ? '' : ` in ${displayPath(unmodeled)}`}.`);
   if (specifications.length === 0 && !hasGolemSdks()) {
     const diagnostics = ownDiagnostics(ts.getPreEmitDiagnostics(programInfo.program), sources.map(companionOf), sources);
     if (diagnostics.length > 0) throw new Error(formatDiagnostics(diagnostics));
-    throw new Error('No exported IModel<...> type aliases were found.');
+    throw noModels();
   }
+  if (unmodeled !== undefined) throw noModels();
 
   // Analyze the complete job before emitting companions. Each model is
   // described once; a companion emits code only for its own models and

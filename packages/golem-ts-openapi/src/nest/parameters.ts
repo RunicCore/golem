@@ -132,6 +132,8 @@ export function parseParameterOverride(
       example: options.documentation('example'),
       default: options.value('default'),
       enum: enumValues,
+      // @nestjs/swagger writes the enum of an `isArray` @ApiQuery on the items of the array; @ApiParam and @ApiHeader keep it on the schema.
+      enumOnItems: enumValues !== undefined && location === 'query' && (typed.isArray || options.boolean('isArray') === true) ? true : undefined,
       schema: options.record('schema'),
     };
     result[parameterOverrideKey(location, name)] = {

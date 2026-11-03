@@ -1,8 +1,10 @@
 import type { TestContext } from 'node:test';
 import { createFixtureProject } from '../fixture-project.js';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
+import { normalizeAndValidate } from '#openapi/document';
 import { generate } from '#openapi/generator';
 import {
   captureRequest,
@@ -315,4 +317,102 @@ test('an empty object response header decodes to an empty object, exploded or no
   assert.deepEqual(empty.headers, { 'X-Plain': {}, 'X-Exploded': {} });
   const filled = await clientReturning(Client, { 'X-Plain': 'x,1', 'X-Exploded': 'x=2' }).point().execute({});
   assert.deepEqual(filled.headers, { 'X-Plain': { x: 1 }, 'X-Exploded': { x: 2 } });
+});
+
+test('a header parameter named Accept, Content-Type or Authorization is ignored with a warning, and a null header parameter is not sent', async (t) => {
+  // protects: T-873, T-875 OpenAPI ignores those three header parameters, so a required one is no required input; a null header parameter sends nothing
+  const output = path.join(createFixtureProject(t, 'golem-openapi-headers-'), 'sdk');
+  const { diagnostics = [] } = await generateMaterializedSdk({
+    openapi: '3.1.0',
+    info: { title: 'ReservedHeaders', version: '1' },
+    paths: {
+      '/a': {
+        get: {
+          operationId: 'opA',
+          parameters: [
+            { name: 'Accept', in: 'header', required: true, schema: { type: 'string' } },
+            { name: 'content-type', in: 'header', schema: { type: 'string' } },
+            { name: 'AUTHORIZATION', in: 'header', schema: { type: 'string' } },
+            { name: 'X-Id', in: 'header', schema: { type: ['string', 'null'] } },
+            { name: 'X-Kept', in: 'header', schema: { type: 'string' } },
+          ],
+          responses: { 204: { description: 'none' } },
+        },
+      },
+    },
+  }, { output, name: 'ReservedHeaders', profile: { validation: false } });
+  // The input of the operation has no required field: a required Accept would make `execute({})` a type error.
+  const assertFile = path.join(output, 'reserved-assert.ts');
+  fs.writeFileSync(assertFile, "import type { ReservedHeadersClient } from './client.js';\ndeclare const client: ReservedHeadersClient;\nvoid client.opA().execute({});\n");
+  compileGeneratedSdk(output, [assertFile], { strict: true });
+  const Client = await loadGeneratedClient(output, 'ReservedHeaders');
+  let sent: Headers | undefined;
+  const client = new Client({
+    baseUrl: 'https://api.example',
+    fetchImpl: async (url: string | URL | Request, init?: RequestInit) => {
+      sent = captureRequest(url, init).init.headers;
+      return new Response(null, { status: 204 });
+    },
+  }) as unknown as { opA(): { execute(input: unknown): Promise<unknown> } };
+  await client.opA().execute({ header: { Accept: 'x/a', 'content-type': 'x/b', AUTHORIZATION: 'Bearer c', 'X-Id': null, 'X-Kept': 'kept' } });
+  assert.deepEqual(
+    { accept: sent?.get('accept'), contentType: sent?.get('content-type'), authorization: sent?.get('authorization'), id: sent?.get('x-id'), kept: sent?.get('x-kept') },
+    { accept: null, contentType: null, authorization: null, id: null, kept: 'kept' },
+  );
+  assert.deepEqual(
+    diagnostics.map(({ code, severity, message }) => ({ code, severity, message })),
+    ['"Accept"', '"content-type"', '"AUTHORIZATION"'].map((header) => ({
+      code: 'OPENAPI_RESERVED_HEADER',
+      severity: 'warning',
+      message: `operation opA header parameter ${header} is ignored: OpenAPI leaves Accept, Content-Type and Authorization to the request body, the responses and the security schemes`,
+    })),
+  );
+});
+
+test('a reserved header parameter that a path item shares by $ref is ignored for each operation of the path', async (t) => {
+  // protects: T-873 the strip runs after the parameters of the path item are merged and resolved
+  const output = path.join(createFixtureProject(t, 'golem-openapi-headers-'), 'sdk');
+  const { diagnostics = [] } = await generateMaterializedSdk({
+    openapi: '3.1.0',
+    info: { title: 'SharedHeader', version: '1' },
+    components: { parameters: { Accepted: { name: 'accept', in: 'header', required: true, schema: { type: 'string' } } } },
+    paths: {
+      '/b': {
+        parameters: [{ $ref: '#/components/parameters/Accepted' }],
+        get: { operationId: 'opB', responses: { 204: { description: 'none' } } },
+        put: { operationId: 'opC', responses: { 204: { description: 'none' } } },
+      },
+    },
+  }, { output, name: 'SharedHeader', profile: { validation: false } });
+  const assertFile = path.join(output, 'shared-assert.ts');
+  fs.writeFileSync(assertFile, "import type { SharedHeaderClient } from './client.js';\ndeclare const client: SharedHeaderClient;\nvoid client.opB().execute({});\nvoid client.opC().execute({});\n");
+  compileGeneratedSdk(output, [assertFile], { strict: true });
+  assert.deepEqual(diagnostics.map(({ code, message }) => ({ code, message })).sort((a, b) => a.message.localeCompare(b.message)), [
+    { code: 'OPENAPI_RESERVED_HEADER', message: 'operation opB header parameter "accept" is ignored: OpenAPI leaves Accept, Content-Type and Authorization to the request body, the responses and the security schemes' },
+    { code: 'OPENAPI_RESERVED_HEADER', message: 'operation opC header parameter "accept" is ignored: OpenAPI leaves Accept, Content-Type and Authorization to the request body, the responses and the security schemes' },
+  ]);
+});
+
+test('a reserved header parameter of a webhook operation is dropped from the operation and warned about', () => {
+  // protects: T-873 the inbound operations of webhooks and callbacks are stripped like the operations of paths
+  const ir = normalizeAndValidate({
+    openapi: '3.1.0',
+    info: { title: 'Hooks', version: '1' },
+    webhooks: {
+      settled: {
+        post: {
+          operationId: 'receiveSettlement',
+          parameters: [
+            { name: 'Authorization', in: 'header', required: true, schema: { type: 'string' } },
+            { name: 'X-Signature', in: 'header', schema: { type: 'string' } },
+          ],
+          responses: { 204: { description: 'accepted' } },
+        },
+      },
+    },
+  });
+  assert.deepEqual(ir.inboundOperations.map((operation) => operation.parameters.map((parameter) => parameter.name)), [['X-Signature']]);
+  assert.deepEqual(ir.diagnostics.map(({ code, message }) => ({ code, message })), [
+    { code: 'OPENAPI_RESERVED_HEADER', message: 'operation webhookReceiveSettlement header parameter "Authorization" is ignored: OpenAPI leaves Accept, Content-Type and Authorization to the request body, the responses and the security schemes' },
+  ]);
 });

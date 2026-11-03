@@ -8,7 +8,7 @@ import {
   type JsonObject,
 } from './json.js';
 import { decodeUriFragment } from '@exprtlabs/golem/internal/schema';
-import { HTTP_METHODS_32 } from './normalize.js';
+import { followLocalRefs, HTTP_METHODS_32 } from './normalize.js';
 import type { OpenApiProblem } from './openapi-validator.js';
 import { isMappingComponentName } from './reference-loader.js';
 import { collectCanonicalResources, findDuplicateSchemaIds, lookupCanonicalResource, visitOpenApiSchemaTree } from './schema-projection.js';
@@ -17,21 +17,6 @@ const TEMPLATE = /\{([^{}]*)\}/g;
 
 // A `$ref` fragment (the part after `#`) is a URI fragment and may be percent-encoded (e.g. `#/components/schemas/A%20B`);
 // `resolveJsonPointer` only understands plain RFC 6901 tokens, so every fragment goes through decodeUriFragment once before it.
-
-/** Follow in-document Reference Objects; the pointer is where the value actually lives. */
-function resolveWithPointer(document: unknown, value: unknown, pointer: string): { readonly value: unknown; readonly pointer: string } {
-  let current = value;
-  let currentPointer = pointer;
-  for (let depth = 0; depth < 32; depth += 1) {
-    if (!isJsonObject(current) || typeof current.$ref !== 'string' || !current.$ref.startsWith('#/')) break;
-    const targetPointer = decodeUriFragment(current.$ref.slice(1));
-    const next = resolveJsonPointer(document, targetPointer);
-    if (next === undefined) break;
-    current = next;
-    currentPointer = targetPointer;
-  }
-  return { value: current, pointer: currentPointer };
-}
 
 interface OperationEntry {
   readonly pointer: string;
@@ -51,7 +36,7 @@ function collectPathItemOperations(
   out: OperationEntry[],
   visited: Set<string>,
 ): void {
-  const { value: pathItem, pointer: pathItemPointer } = resolveWithPointer(document, rawPathItem, writtenPointer);
+  const { value: pathItem, pointer: pathItemPointer } = followLocalRefs(document, rawPathItem, writtenPointer);
   if (!isJsonObject(pathItem)) return;
   const visitKey = `${pathItemPointer}\u0000${route ?? ''}`;
   if (visited.has(visitKey)) return;
@@ -61,7 +46,7 @@ function collectPathItemOperations(
     out.push({ pointer, method, operation: rawOperation, pathItem, pathItemPointer, route });
     for (const [name, rawCallback] of objectEntries(rawOperation.callbacks)) {
       const callbackPointer = pointerJoin(pointerJoin(pointer, 'callbacks'), name);
-      const callback = resolveWithPointer(document, rawCallback, callbackPointer);
+      const callback = followLocalRefs(document, rawCallback, callbackPointer);
       for (const [expression, item] of objectEntries(callback.value)) {
         collectPathItemOperations(document, item, pointerJoin(callback.pointer, expression), null, out, visited);
       }
@@ -100,7 +85,7 @@ function resolvedParameters(document: unknown, list: unknown, listPointer: strin
   if (!Array.isArray(list)) return [];
   const parameters: ResolvedParameter[] = [];
   list.forEach((raw, index) => {
-    const parameter = resolveWithPointer(document, raw, `${listPointer}/${index}`).value;
+    const parameter = followLocalRefs(document, raw, `${listPointer}/${index}`).value;
     if (isJsonObject(parameter) && typeof parameter.name === 'string' && typeof parameter.in === 'string') {
       parameters.push({ name: parameter.name, location: parameter.in, pointer: `${listPointer}/${index}` });
     }

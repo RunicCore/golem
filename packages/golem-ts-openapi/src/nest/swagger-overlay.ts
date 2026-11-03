@@ -12,6 +12,7 @@ import { evaluateStaticValue, isStaticArray, resolveValueSymbol, singleReturnExp
 import { hasDecorator, isTypeScriptBuiltinConstructor, unwrapAsyncType } from './analysis-utils.js';
 import {
   isAssertionFormat,
+  mapArrayItems,
   mergeSchemaMetadata,
   normalizeNullable,
   resolvedSchema,
@@ -338,15 +339,6 @@ function applyPropertyMetadata(
       ['discriminator', read?.value('discriminator')],
     ];
     for (const [key, value] of docs) if (value !== undefined) schemaRecord[key] = value;
-    const enumValue = read?.value('enum');
-    if (enumValue !== undefined) {
-      if (!isStaticArray(enumValue)) return fail(TsToOpenApiDiagnosticCode.UnsupportedSchemaMetadata, `Swagger property ${name} enum must be a static array or an enum.`);
-      const expected = schemaValues(propertySchema);
-      if (options.authoritative && expected && !sameValue([...expected].sort(), [...enumValue].sort())) {
-        conflict(`Swagger property ${name} enum conflicts with the authoritative IModel wire schema.`);
-      }
-      schemaRecord.enum = enumValue;
-    }
     const structural: readonly [string, unknown][] = [
       ['pattern', read?.string('pattern')],
       ['minimum', read?.number('minimum')],
@@ -384,6 +376,20 @@ function applyPropertyMetadata(
     if (documentedShape && !options.authoritative) {
       schemaRecord.type = documentedShape.type;
       if (documentedShape.type === 'array') schemaRecord.items = documentedShape.items;
+    }
+    const enumValue = read?.value('enum');
+    if (enumValue !== undefined) {
+      if (!isStaticArray(enumValue)) return fail(TsToOpenApiDiagnosticCode.UnsupportedSchemaMetadata, `Swagger property ${name} enum must be a static array or an enum.`);
+      // Nest documents the enum of an `isArray` property on the items of the array, also the array branch of a nullable `anyOf`.
+      let expected = schemaValues(propertySchema);
+      const onItems = typeSpec?.isArray
+        ? mapArrayItems(schemaRecord, (items) => { expected = schemaValues(items); return { ...items, enum: enumValue }; })
+        : undefined;
+      if (options.authoritative && expected && !sameValue([...expected].sort(), [...enumValue].sort())) {
+        conflict(`Swagger property ${name} enum conflicts with the authoritative IModel wire schema.`);
+      }
+      if (onItems) Object.assign(schemaRecord, onItems);
+      else schemaRecord.enum = enumValue;
     }
     const nullable = read?.boolean('nullable');
     if (nullable !== undefined) {

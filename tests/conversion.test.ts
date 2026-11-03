@@ -146,6 +146,13 @@ test('deserializes timestamps with ECMAScript Date parse', () => {
   assert.throws(() => deserializeDate(new Date('2026-01-01T00:00:00.000Z')), (error: unknown) => error instanceof LibError && error.causedByInput === true);
 });
 
+test('a leap second date-time decodes to a Date as second 59 with its fraction and offset', () => {
+  // protects: bug T-851 a valid leap second date-time failed to decode to a Date
+  assert.equal(deserializeDate('2026-10-06T23:59:60.5Z').toISOString(), '2026-10-06T23:59:59.500Z');
+  assert.equal(deserializeDate('2026-10-07T00:59:60+01:00').toISOString(), '2026-10-06T23:59:59.000Z');
+  assertConversionError(() => convertModelField('at', deserializeDate, '2026-10-06T12:00:60Z'), LibErrorKind.Deserialization, IssueRepresentation.Wire, ['at']);
+});
+
 test('deserializeDate rejects an existing Invalid Date like an unparsable string', () => {
   // protects: bug an existing Invalid Date passed through deserializeDate and a later serializeDate threw
   const error = assertConversionError(

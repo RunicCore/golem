@@ -1,3 +1,4 @@
+import { Get } from '@nestjs/common';
 import type { TPayment } from './payment.model.js';
 export const handlers = {
   load(): TPayment { return { id: '1', note: '' }; },
@@ -5,5 +6,5 @@ export const handlers = {
 export abstract class Source {
   abstract fetch(): TPayment;
   find(id: string): TPayment;
-  find(id: string | number): TPayment { return { id: String(id), note: '' }; }
+  @Get() find(id: string | number): TPayment { return { id: String(id), note: '' }; }
 }

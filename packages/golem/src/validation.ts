@@ -406,7 +406,7 @@ function assertValidateOption(options: Pick<ValidateOptions, 'validate'> | undef
 async function collectCodecIssues(
   model: object,
   mode: ValidationMode,
-  options: Pick<ValidateOptions, 'validate' | 'validationContext'> = {},
+  options: Pick<ValidateOptions, 'maxDepth' | 'validate' | 'validationContext'> = {},
 ): Promise<readonly Issue[]> {
   const requested = options.validate;
   assertAcyclicValue(model, LibErrorKind.Serialization);
@@ -425,13 +425,14 @@ async function collectCodecIssues(
     generated = codecIssues(
       requireObjectCodec(codecId),
       codecValidationValue(model, definition),
-      { failFast, ...(options.validationContext === undefined ? {} : { validationContext: options.validationContext }), ...(requested === undefined ? {} : { validate: requested }) },
+      { failFast, ...(options.maxDepth === undefined ? {} : { maxDepth: options.maxDepth }), ...(options.validationContext === undefined ? {} : { validationContext: options.validationContext }), ...(requested === undefined ? {} : { validate: requested }) },
     );
   }
   // Sanity is the shape only: the instance rules are validation functions of the application, which it skips.
   const sanity = (requested ?? definition.profile?.validation) === 'sanity';
   const overlay = sanity || (mode === 'first' && generated.length) ? [] : await evaluateInstanceRules(model, mode, generated);
-  const issues = formatIssues(model, [...generated, ...overlay]);
+  // The rule issues of the overlay leave `evaluateInstanceRules` formatted; only the generated issues are formatted here.
+  const issues = [...formatIssues(model, generated), ...overlay];
   return mode === 'first' ? issues.slice(0, 1) : issues;
 }
 

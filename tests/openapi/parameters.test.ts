@@ -354,3 +354,29 @@ test('a parameter $ref with percent-encoded characters in its fragment resolves 
     [['path', 'id'], ['query', 'size']],
   );
 });
+
+test('a $ref that points at another $ref resolves to the final target in every document position', () => {
+  // protects: T-853 a chained $ref stopped at its first hop for path items, responses, request bodies and parameters
+  const [operation] = collectOperations(documentBase('3.1.0', {
+    paths: { '/a': { $ref: '#/components/pathItems/A' } },
+    components: {
+      pathItems: {
+        A: { $ref: '#/components/pathItems/B' },
+        B: {
+          post: {
+            operationId: 'opA',
+            parameters: [{ $ref: '#/components/parameters/A' }],
+            requestBody: { $ref: '#/components/requestBodies/A' },
+            responses: { 200: { $ref: '#/components/responses/A' } },
+          },
+        },
+      },
+      parameters: { A: { $ref: '#/components/parameters/B' }, B: { name: 'q', in: 'query' } },
+      requestBodies: { A: { $ref: '#/components/requestBodies/B' }, B: { content: { 'text/plain': { schema: { type: 'string' } } } } },
+      responses: { A: { $ref: '#/components/responses/B' }, B: { description: 'final' } },
+    },
+  }));
+  assert.deepEqual(operation?.parameters.map((parameter) => [parameter.in, parameter.name]), [['query', 'q']]);
+  assert.deepEqual(operation?.requestContent.map((media) => media.contentType), ['text/plain']);
+  assert.deepEqual(operation?.responses.map((response) => response.description), ['final']);
+});

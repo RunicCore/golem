@@ -1,6 +1,7 @@
 // golem build: type-checks the original sources and emits the rewritten ones, both in process.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { spawn } from 'node:child_process';
 import path from 'node:path';
 import test from 'node:test';
 import { parseArguments } from '#golem/cli';
@@ -8,6 +9,7 @@ import { assertMoneyCodec } from './support/rewritten-module.js';
 
 import { listProjectDependencies } from './fixture-project.js';
 import { command, golem } from './support/process.js';
+import { until } from './support/watch-wait.js';
 import { write, SERDE_GOLEM_YAML, editTsconfig, serdeProject, sourceOnlyProject, countingGenerator, USE, snapshot, build, buildAndListJobs, mtimes, importBuilt, golemBuild, assertCallMap } from './support/build-project.js';
 
 // Original sources are checked, rewritten sources are emitted
@@ -231,4 +233,29 @@ export function generate() { throw new TypeError('generator state is broken', { 
   assert.equal(missing.code, 1);
   assert.match(missing.stderr, /spawn golem-no-such-command ENOENT/);
   assert.doesNotMatch(missing.stderr, /\n\s+at /);
+});
+
+test('a signal ends a golem build that runs once at once, by the signal itself', async (t) => {
+  // protects: T-868 the first Ctrl-C was swallowed by a handler that only a watch uses, so the build finished and printed Built
+  const root = sourceOnlyProject(t, 'build-signal');
+  countingGenerator(root);
+  const started = path.join(root, 'generator-started');
+  // The generator holds the build, blocking the event loop as a long type check does, so the signal arrives while the build runs.
+  fs.writeFileSync(path.join(root, 'node_modules/@fixture/counter/generator.js'), `import fs from 'node:fs';
+export const apiVersion = 1;
+export function generate() {
+  fs.writeFileSync(${JSON.stringify(started)}, '');
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5000);
+  return { apiVersion: 1, artifacts: [], manifestPaths: [], watchInputs: [] };
+}
+`);
+  const child = spawn(process.execPath, [golem, 'build'], { cwd: root, stdio: ['ignore', 'pipe', 'pipe'] });
+  t.after(() => { child.kill('SIGKILL'); });
+  let output = '';
+  for (const stream of [child.stdout, child.stderr]) stream.on('data', (chunk: Buffer) => { output += chunk; });
+  const closed = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) => child.once('close', (code, signal) => resolve({ code, signal })));
+  await until(() => fs.existsSync(started), 'the build reaches the generator');
+  child.kill('SIGINT');
+  assert.deepEqual(await closed, { code: null, signal: 'SIGINT' });
+  assert.doesNotMatch(output, /^Built /m);
 });

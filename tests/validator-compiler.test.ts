@@ -404,11 +404,12 @@ test('uniqueItems compares items by the JSON view: an undefined item equals null
   await assertIssues({ uniqueItems: true }, [undefined, 0], []);
 });
 
-test('items, prefixItems and contains read an undefined item as null, as uniqueItems does', async () => {
-  // protects: T-183 one JSON view of an array item in every array keyword
+test('items, prefixItems, contains and unevaluatedItems read an undefined item as null, as uniqueItems does', async () => {
+  // protects: T-183 one JSON view of an array item in every array keyword (T-876 unevaluatedItems)
   await assertIssues({ items: { type: 'null' } }, [undefined, null], []);
   await assertIssues({ prefixItems: [{ type: 'null' }] }, [undefined], []);
   await assertIssues({ contains: { type: 'null' } }, ['a', undefined], []);
+  await assertIssues({ prefixItems: [{ type: 'string' }], unevaluatedItems: { type: 'null' } }, ['a', undefined], []);
 });
 
 test('a hole in an array is a type issue at its index', async () => {

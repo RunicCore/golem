@@ -285,7 +285,8 @@ function operationSource(
     if (parameter.content) {
       return code`    if (${parameterInput}.header?.[${literal(parameter.name)}] !== undefined) headers.set(${literal(parameter.name)}, ${serializedContentParameter(operation, use, 'header', parameter.name, parameter.content, code`${parameterInput}.header[${literal(parameter.name)}]`)});`;
     }
-    return code`    if (${parameterInput}.header?.[${literal(parameter.name)}] !== undefined) headers.set(${literal(parameter.name)}, ${use('serializeHeaderSimple')}(runtime, ${parameterInput}.header[${literal(parameter.name)}], ${literal(parameter.explode === true)}, ${literal(parameter.name)}));`;
+    // A null value sends no header, as it sends no query or cookie parameter.
+    return code`    if (${parameterInput}.header?.[${literal(parameter.name)}] !== undefined && ${parameterInput}.header[${literal(parameter.name)}] !== null) headers.set(${literal(parameter.name)}, ${use('serializeHeaderSimple')}(runtime, ${parameterInput}.header[${literal(parameter.name)}], ${literal(parameter.explode === true)}, ${literal(parameter.name)}));`;
   });
   const cookieLines = cookieParameters.map((parameter) => {
     if (parameter.content) {

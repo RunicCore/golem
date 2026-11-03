@@ -398,10 +398,11 @@ export function parseRequestBody(
   const content = options.record('content');
   const schema = options.record('schema');
   const description = options.documentationString('description');
-  const required = options.boolean('required');
+  // @nestjs/swagger defaults an @ApiBody to `required: true`, whatever the parameter says.
+  const required = options.boolean('required') ?? true;
   return {
     ...(description ? { description } : {}),
-    ...(required !== undefined ? { required } : {}),
+    required,
     ...(typed.type ? { type: authoritativeTypeReference(context, typed.type) } : {}),
     ...(typed.isArray || options.boolean('isArray') === true ? { isArray: true } : {}),
     ...(content ? { content } : schema ? { content: { 'application/json': { schema } } } : {}),
