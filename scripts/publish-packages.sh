@@ -22,7 +22,7 @@ for package in golem golem-model golem-openapi-ts golem-ts-openapi; do
   manifest="./packages/$package/package.json"
   name=$(node -p "require('$manifest').name")
   version=$(node -p "require('$manifest').version")
-  # npm ignores publishConfig.tag when it publishes a workspace, so the tag that release-version.ts set is passed here.
+  # npm ignores publishConfig.tag when it publishes a workspace, so the package's publishConfig.tag is passed here.
   tag=$(node -p "require('$manifest').publishConfig.tag")
   if npm view "$name@$version" version > /dev/null 2>&1; then
     echo "$name@$version is already on npm; skipped."
