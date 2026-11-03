@@ -11,7 +11,7 @@ const workspaceRoot = fileURLToPath(new URL('../..', import.meta.url));
 const releaseVersion = readWorkspaceReleaseVersion(workspaceRoot);
 
 function docsBase(): string {
-  const raw = (process.env.DOCS_BASE ?? '/').trim() || '/';
+  const raw = (process.env.DOCS_BASE ?? '/golem/').trim() || '/';
   const withLead = raw.startsWith('/') ? raw : `/${raw}`;
   return withLead.endsWith('/') ? withLead : `${withLead}/`;
 }
