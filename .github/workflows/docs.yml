@@ -1,9 +1,9 @@
-# Publishes the documentation site to GitHub Pages each time master changes.
+# Publishes the documentation site to GitHub Pages when a release tag (v*) is pushed, or when run by hand.
 name: Docs
 
 on:
   push:
-    branches: [master]
+    tags: ['v*']
   workflow_dispatch:
 
 permissions:
@@ -11,7 +11,7 @@ permissions:
   pages: write
   id-token: write
 
-# One publish at a time; a newer push waits for the running one to finish.
+# One publish at a time; a newer run waits for the running one to finish.
 concurrency:
   group: pages
   cancel-in-progress: false
