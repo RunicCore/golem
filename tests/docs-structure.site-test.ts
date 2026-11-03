@@ -37,6 +37,11 @@ test('repository markdown links into docs/ resolve', () => {
     for (const match of text.matchAll(/\]\((\/[a-z][^)#\s]*)(#[^)]*)?\)/g)) {
       assert.ok(pages.has(match[1]), `${source} has a site-absolute link to ${match[1]}, which is not a page`);
     }
+    // A link to the published site (GitHub Pages, base /golem/) names a page of the inventory.
+    for (const match of text.matchAll(/https:\/\/runiccore\.github\.io\/golem(\/[^)#\s]*)/g)) {
+      const page = match[1].replace(/\.html$/, '');
+      assert.ok(pages.has(page), `${source} links to ${match[0]}, which is not a page of the site`);
+    }
   }
 });
 

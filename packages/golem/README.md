@@ -13,10 +13,10 @@ npm install @exprtlabs/golem
 ```
 
 Six calls, such as `parse<T>` and `validate<T>`, need a build tool that
-rewrites them ([Build tools](../../docs/guide/build.md)).
+rewrites them ([Build tools](https://runiccore.github.io/golem/guide/build.html)).
 
-[Runtime API](../../docs/reference/runtime-api.md) lists every subpath, its
-signature and its extra dependency. [Compatibility](../../docs/compatibility.md)
+[Runtime API](https://runiccore.github.io/golem/reference/runtime-api.html) lists every subpath, its
+signature and its extra dependency. [Compatibility](https://runiccore.github.io/golem/compatibility.html)
 has supported versions.
 
 MIT License. Copyright (c) 2026 exprtlabs.ai.

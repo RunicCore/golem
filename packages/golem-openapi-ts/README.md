@@ -17,10 +17,10 @@ npm install --save-dev @exprtlabs/golem-openapi-ts typescript@~7.1.0-beta
 MobX is the `mobx` extension of the `openapi-ts` block. An app that uses it
 installs this package in `dependencies`, with `mobx`, and imports
 `@exprtlabs/golem-openapi-ts/mobx`
-([MobX extension](../../docs/reference/config.md#mobx-extension)).
+([MobX extension](https://runiccore.github.io/golem/reference/config.html#mobx-extension)).
 
-[Generate an SDK](../../docs/guide/client.md) walks through calling the
-generated SDK. [Compatibility](../../docs/compatibility.md) has supported
+[Generate an SDK](https://runiccore.github.io/golem/guide/client.html) walks through calling the
+generated SDK. [Compatibility](https://runiccore.github.io/golem/compatibility.html) has supported
 versions. Feature support by OpenAPI version and profile is in
 [MATRIX.md](MATRIX.md); third-party attribution is in
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
