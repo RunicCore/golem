@@ -12,7 +12,7 @@ An offline task tracker built from golem models: one TypeScript declaration per 
 - Errors: a `LibError` of bad input lists the failed checks by path.
 - Money is a decimal string with an ISO 4217 currency code, never a float.
 
-The example depends on `1.1.0-rc.0` of `@exprtlabs/golem*`. Run it from this repository checkout: it resolves the packages from the root `node_modules`, so run `npm install` at the repository root first.
+The example depends on `1.1.0-rc.1` of `@exprtlabs/golem*`. Run it from this repository checkout: it resolves the packages from the root `node_modules`, so run `npm install` at the repository root first.
 
 ## Install and run
 

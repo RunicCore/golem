@@ -11,7 +11,7 @@ A merchant payments app: one TypeScript contract becomes a NestJS API, an OpenAP
 - `generators/event-models.js`: a generator job that writes the provider's event models.
 - One package, two configurations and both SDK modes: `server/golem.yaml` has MobX off and the provider SDK in standalone mode, which carries its own checks and conversions. `web/golem.yaml` has MobX on and the payments SDK in golem mode (`mode: golem`), where the models step writes the checks and conversions together with the editor models.
 
-The example depends on `1.1.0-rc.0` of `@exprtlabs/golem*`. Run it from this repository checkout.
+The example depends on `1.1.0-rc.1` of `@exprtlabs/golem*`. Run it from this repository checkout.
 
 ## Install and run
 

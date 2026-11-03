@@ -2,7 +2,7 @@
 
 Two apps use one shared folder that declares a model. The web app checks its values and extends the model. The worker does not check them.
 
-The example depends on `1.1.0-rc.0` of `@exprtlabs/golem*`. Run it from this repository checkout. It resolves the packages from the root `node_modules`, so run `npm install` at the repository root first.
+The example depends on `1.1.0-rc.1` of `@exprtlabs/golem*`. Run it from this repository checkout. It resolves the packages from the root `node_modules`, so run `npm install` at the repository root first.
 
 ## What it shows
 
