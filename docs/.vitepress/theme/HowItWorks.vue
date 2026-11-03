@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from 'vue';
 
-// 0: declaration only · 1: JSON Schema · 2: validator · 3: call found · 4: call rewritten.
+// 0: declaration only · 1: generated check · 2: validator file · 3: call found · 4: call rewritten.
 const FINAL = 4;
 const STEP_MS = 1100;
 // Server render and reduced motion show the final state.
@@ -61,12 +61,12 @@ onBeforeUnmount(() => {
       </div>
       <span class="link across" :class="{ on: step >= 1 }" aria-hidden="true" />
       <div class="hud panel schema" :class="{ on: step >= 1 }">
-        <div class="fname">JSON Schema → validator</div>
-        <pre><code><span class="ln step" :class="{ on: step >= 1 }">"title": { "type": "string", <mark>"minLength": 1</mark> }</span><span class="ln step" :class="{ on: step >= 1 }">"due": { "type": "string", <mark>"format": "date-time"</mark> }</span><span class="ln step note" :class="{ on: step >= 2 }">→ compiled validator</span></code></pre>
+        <div class="fname">Generated check</div>
+        <pre><code><span class="ln step" :class="{ on: step >= 1 }">typeof v.title === "string" &amp;&amp; <mark>codePointLength(v.title) &gt;= 1</mark></span><span class="ln step" :class="{ on: step >= 1 }">typeof v.due === "string" &amp;&amp; <mark>isDateTime(v.due)</mark></span><span class="ln step note" :class="{ on: step >= 2 }">→ models.validators.generated.ts</span></code></pre>
       </div>
       <span class="link down" :class="{ on: step >= 3 }" aria-hidden="true" />
       <div class="hud panel call" :class="{ on: step >= 3 }">
-        <div class="fname">Your code, compiled by golem build</div>
+        <div class="fname">Your code, after a build tool</div>
         <pre><code><span class="ln step" :class="{ on: step >= 3 }"><del v-if="step >= 4">parse&lt;TTask&gt;(text)</del><template v-else>parse&lt;TTask&gt;(text)</template></span><span class="ln step" :class="{ on: step >= 4 }"><ins>requireObjectCodec("TTask_…").parse(text)</ins></span></code></pre>
       </div>
     </div>
