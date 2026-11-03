@@ -414,12 +414,18 @@ test('a Record<number, Date> and an index signature [id: number] decode the valu
   const { root, sourceRoot } = fixture(t);
   fs.writeFileSync(path.join(sourceRoot, 'item.model.ts'), `import type { IModel, IObject } from '@exprtlabs/golem/model';
 export type TDated = IObject<{ at: Date }>;
-export type TItem = IModel<{ byId: Record<number, Date>; items: { [id: number]: TDated } }>;
+export type TItem = IModel<{ byId: Record<number, Date>; items: { [id: number]: TDated }; at: Date; kids?: Record<number, TItem> }>;
 `);
   const codec = await builtItemCodec(root);
   const day = '2024-01-01T00:00:00.000Z';
-  const decoded = codec.parse(`{"byId":{"1":"${day}"},"items":{"2":{"at":"${day}"}}}`) as { byId: Record<number, Date>; items: Record<number, { at: Date }> };
+  const decoded = codec.parse(`{"byId":{"1":"${day}"},"items":{"2":{"at":"${day}"}},"at":"${day}"}`) as { byId: Record<number, Date>; items: Record<number, { at: Date }> };
   assert.deepEqual([decoded.byId[1], decoded.items[2]?.at], [new Date(day), new Date(day)]);
+  // The keys of a number index are numbers written as text.
+  assert.throws(() => codec.parse(`{"byId":{"abc":"${day}"},"items":{},"at":"${day}"}`), /Model validation failed/);
+  assert.deepEqual((codec.parse(`{"byId":{"-2.5":"${day}"},"items":{},"at":"${day}"}`) as { byId: Record<string, Date> }).byId['-2.5'], new Date(day));
+  // A model that holds itself through a number-keyed record converts the nested level.
+  const nested = codec.parse(`{"byId":{},"items":{},"at":"${day}","kids":{"1":{"byId":{},"items":{},"at":"${day}"}}}`) as { kids: Record<number, { at: Date }> };
+  assert.deepEqual(nested.kids[1]?.at, new Date(day));
 });
 
 for (const key of ['${number}', '${string}_${number}', 'Uppercase<string>']) {

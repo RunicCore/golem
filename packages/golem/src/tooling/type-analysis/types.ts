@@ -555,7 +555,7 @@ function indexKeyPattern(checker: ts.TypeChecker, type: ts.Type, declaredNames: 
     if (expression === undefined) return null;
     expressions.push(expression);
   }
-  if (expressions.length === 0) return undefined;
+  if (expressions.length === 0 && !numbered) return undefined;
   return `^(?:${[...expressions, ...(numbered ? [NUMBER_KEY_EXPRESSION] : []), ...declaredNames.map(escapedKeyText)].join('|')})$`;
 }
 
