@@ -1,7 +1,7 @@
 import { IssueRepresentation, IssueSource, LibError, LibErrorKind, toIssue } from '../errors.js';
 import type { ValidationLevel } from '../object-codec.js';
 import type { BodyEncoder, ClientRuntime, EncodedBody, EncodingMetadata, OperationCodecs, ResponseDecode } from './core.js';
-import { mediaEssence } from './media-type.js';
+import { isJsonMediaType, mediaEssence } from './media-type.js';
 import { addQueryParameter } from './parameters.js';
 import type { CallLevels } from './validation.js';
 
@@ -121,7 +121,7 @@ export function encodeBody(
         for (const entry of values) {
           if (entry === undefined) continue;
           const partType = ownEncoding(encoding, name)?.contentType;
-          const jsonPart = partType?.toLowerCase().includes('json') === true;
+          const jsonPart = partType !== undefined && isJsonMediaType(partType);
           // A null is written only in a JSON part, as `null`; a text part has no form for it, as a form-urlencoded body has none.
           if (entry === null && !jsonPart) continue;
           if (entry instanceof Blob) form.append(name, entry);

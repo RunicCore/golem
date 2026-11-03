@@ -86,11 +86,15 @@ test('a multipart JSON part that is null sends the JSON text null', async () => 
 
 test('a multipart JSON part sends every value as JSON text, a text part sends the string itself', async () => {
   // protects: T-852 a string in a multipart JSON part was sent as abc, not as the JSON text "abc"
-  const metadata = { 'multipart/form-data': { encoding: { meta: { contentType: 'application/json' }, note: { contentType: 'text/plain' } }, prefixEncoding: [], itemEncoding: null } };
-  const encoded = encodeBody(runtime, 'upload', { meta: ['abc', 7], note: 'abc' }, 'multipart/form-data', metadata);
+  const metadata = { 'multipart/form-data': { encoding: { meta: { contentType: 'application/json' }, vendor: { contentType: 'application/vnd.api+json; charset=utf-8' }, lines: { contentType: 'application/x-ndjson' }, note: { contentType: 'text/plain' } }, prefixEncoding: [], itemEncoding: null } };
+  const encoded = encodeBody(runtime, 'upload', { meta: ['abc', 7], vendor: 'abc', lines: 'abc', note: 'abc' }, 'multipart/form-data', metadata);
   const form = encoded.body as FormData;
   assert.deepEqual(await Promise.all(form.getAll('meta').map((part) => (part as Blob).text())), ['"abc"', '7']);
+  assert.equal(await (form.get('vendor') as Blob).text(), '"abc"');
+  assert.equal(await (form.get('lines') as Blob).text(), 'abc');
   assert.equal(await (form.get('note') as Blob).text(), 'abc');
+  const nullLines = encodeBody(runtime, 'upload', { lines: null }, 'multipart/form-data', metadata).body as FormData;
+  assert.deepEqual([...nullLines.keys()], []);
 });
 
 test('an empty array in the query adds no entry in any style, as an empty object adds none', () => {

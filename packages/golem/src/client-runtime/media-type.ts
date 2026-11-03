@@ -15,3 +15,9 @@ export function parseMediaType(value: string): MediaType {
 export function mediaEssence(value: string): string {
   return parseMediaType(value).essence;
 }
+
+/** Whether `value` is `application/json` or a structured syntax suffix `+json` type; `application/x-ndjson` is not (RFC 6839). */
+export function isJsonMediaType(value: string): boolean {
+  const { essence } = parseMediaType(value);
+  return essence === 'application/json' || essence.endsWith('+json');
+}
