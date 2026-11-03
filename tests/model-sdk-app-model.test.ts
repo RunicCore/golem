@@ -298,16 +298,19 @@ test('a golem-mode model over a scalar SDK alias takes the SDK limit, and a tag 
   const model = `import type { IModel } from '@exprtlabs/golem/model';
 import type { MinLength } from '@exprtlabs/golem/tags';
 import type { Code, Currency, Email, Legacy, Status } from '../sdk/charges/index.js';
-export type TRecord = IModel<{ plain: Currency; tagged: Currency & MinLength<2>; code: Code; legacy: Legacy; status: Status; email: Email; maybe: Currency | null }>;
+export type TRecord = IModel<{ plain: Currency; tagged: Currency & MinLength<2>; branded: Currency & { readonly __brand: 'C' } & MinLength<2>; code: Code; legacy: Legacy; status: Status; email: Email; maybe: Currency | null }>;
 `;
   const project = await loadGolemModeProject(scope, 'sdk-app-model-scalar-', [sdk], true, { 'src/record.model.ts': model });
   const generated = await importBuilt(project.root, 'src/record.model.generated.js');
-  const valid = { plain: 'AB', tagged: 'AB', code: null, legacy: 'AB', status: 'shut', email: 'a@b.co', maybe: null };
+  const valid = { plain: 'AB', tagged: 'AB', branded: 'AB', code: null, legacy: 'AB', status: 'shut', email: 'a@b.co', maybe: null };
   assert.deepEqual(generated.fromWireFormatTRecord(valid), valid);
   assert.deepEqual(generated.fromWireFormatTRecord({ ...valid, code: 'ABC' }).code, 'ABC');
   assert.throws(() => generated.fromWireFormatTRecord({ ...valid, plain: 'ABCDE' }), /Model validation failed/);
   assert.throws(() => generated.fromWireFormatTRecord({ ...valid, tagged: 'A' }), /Model validation failed/);
   assert.throws(() => generated.fromWireFormatTRecord({ ...valid, tagged: 'ABCDE' }), /Model validation failed/);
+  // protects: T-855 a brand beside an SDK alias and a tag keeps the limit of the SDK
+  assert.throws(() => generated.fromWireFormatTRecord({ ...valid, branded: 'ABCDE' }), /Model validation failed/);
+  assert.throws(() => generated.fromWireFormatTRecord({ ...valid, branded: 'A' }), /Model validation failed/);
   assert.throws(() => generated.fromWireFormatTRecord({ ...valid, code: 'ABCDE' }), /Model validation failed/);
   assert.throws(() => generated.fromWireFormatTRecord({ ...valid, legacy: 'ABCDE' }), /Model validation failed/);
   assert.throws(() => generated.fromWireFormatTRecord({ ...valid, status: 'gone' }), /Model validation failed/);

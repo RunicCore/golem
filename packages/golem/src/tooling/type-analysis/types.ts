@@ -333,9 +333,20 @@ function isPhantomTagType(checker: ts.TypeChecker, type: ts.Type): boolean {
 }
 
 /** Whether a type node names a type parameter anywhere inside: the node is then the uninstantiated declaration, not the type of the use. */
-function holdsTypeParameter(checker: ts.TypeChecker, node: ts.TypeNode): boolean {
+function holdsTypeParameter(checker: ts.TypeChecker, node: ts.Node): boolean {
   if (ts.isTypeReferenceNode(node) && (checker.getTypeFromTypeNode(node).flags & ts.TypeFlags.TypeParameter) !== 0) return true;
-  return ts.forEachChild(node, (child) => ts.isTypeNode(child) && holdsTypeParameter(checker, child) ? true : undefined) === true;
+  return ts.forEachChild(node, (child) => holdsTypeParameter(checker, child) ? true : undefined) === true;
+}
+
+/**
+ * The members of an intersection that carry data: the tag and brand members drop out. A scalar beside an object keeps only the scalar,
+ * since the object is a brand that is not spelled `__brand` (`string & { _brand: 'Id' }`).
+ */
+function taggedDataMembers(checker: ts.TypeChecker, type: ts.Type): readonly ts.Type[] {
+  if (!type.isIntersection()) return [type];
+  const members = type.types.filter((member) => !isPhantomTagType(checker, member) && !isBrandMember(checker, member));
+  const scalars = members.filter((member) => (member.flags & ts.TypeFlags.Object) === 0);
+  return scalars.length > 0 ? scalars : members;
 }
 
 /** The value type of the index signature of an object: its JSON keys are strings, so a `number` signature describes the values like a `string` one. */
@@ -350,7 +361,7 @@ function stripPhantomIntersection(
 ): ts.Type {
   if (!metadata.validations.length && !metadata.serde && !metadata.constraints.length && metadata.discriminator === undefined) return type;
   if (!type.isIntersection()) return type;
-  const members = type.types.filter((member) => !isPhantomTagType(checker, member) && !isBrandMember(checker, member));
+  const members = taggedDataMembers(checker, type);
   return members.length === 1 ? members[0] : type;
 }
 
@@ -450,7 +461,7 @@ function supportsConstraintFamily(
   if ((type.flags & (ts.TypeFlags.Any | ts.TypeFlags.Unknown | ts.TypeFlags.TypeParameter)) !== 0) return true;
   if ((type.flags & (ts.TypeFlags.Null | ts.TypeFlags.Undefined)) !== 0) return true;
   if (type.isUnion()) return type.types.every((member) => supportsConstraintFamily(checker, member, family, seen));
-  if (type.isIntersection()) return type.types.every((member) => supportsConstraintFamily(checker, member, family, seen));
+  if (type.isIntersection()) return taggedDataMembers(checker, type).every((member) => supportsConstraintFamily(checker, member, family, seen));
 
   switch (family) {
     case 'number': return (type.flags & ts.TypeFlags.NumberLike) !== 0;
@@ -962,7 +973,12 @@ function describeSdkType(scope: DescribeScope, call: DescribeCall, isRoot: boole
   // refers to the SDK node. The validators compile once for both, since the compiler writes one function for equal schemas.
   // An alias of the SDK that is no model (`type Currency = string`, `type Tags = number[]`) is the plain type to the checker, so the node names it.
   const aliasNode = hasBaseTags && analysis.baseNode ? analysis.baseNode : node ?? nameNode;
-  const sdkAlias = aliasNode === undefined ? undefined : manifestIndex.sdkAliasForNode(checker, aliasNode);
+  // Several data parts make the whole intersection the base node (`Currency & { __brand: 'C' } & MinLength<3>`): the alias is one of its parts.
+  const sdkAliasOf = (candidate: ts.TypeNode): ReturnType<typeof manifestIndex.sdkAliasForNode> =>
+    ts.isParenthesizedTypeNode(candidate) ? sdkAliasOf(candidate.type)
+      : ts.isIntersectionTypeNode(candidate) ? candidate.types.map(sdkAliasOf).find((found) => found !== undefined)
+        : manifestIndex.sdkAliasForNode(checker, candidate);
+  const sdkAlias = aliasNode === undefined ? undefined : sdkAliasOf(aliasNode);
   const uncarried = manifestIndex.sdkUncarriedForType(type) ?? sdkAlias?.uncarried;
   if (uncarried !== undefined) {
     const at = node ?? context.declaration;

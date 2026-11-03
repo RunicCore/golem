@@ -152,8 +152,8 @@ import { first, second } from './predicates.js';`,
   write('compound-bases', {
     'a.model.ts': taggedModelSource({
       name: 'A',
-      imports: tsSource`import type { MinItems, MinLength, MinProperties } from '@exprtlabs/golem/tags';\ntype NonEmpty<T> = T[] & MinItems<1>;`,
-      fields: tsSource`parts: { a: string } & { b: number } & MinProperties<1>; before: { readonly __brand: 'Id' } & string & MinLength<3>; after: string & { readonly __brand: 'Id' } & MinLength<3>; list: NonEmpty<string>`,
+      imports: tsSource`import type { MinItems, MinLength, MinProperties } from '@exprtlabs/golem/tags';\ntype NonEmpty<T> = T[] & MinItems<1>;\ntype Page<T> = { items: T[] } & MinProperties<1>;`,
+      fields: tsSource`parts: { a: string } & { b: number } & MinProperties<1>; before: { readonly __brand: 'Id' } & string & MinLength<3>; after: string & { readonly __brand: 'Id' } & MinLength<3>; list: NonEmpty<string>; page: Page<string>; legacy: string & { readonly _brand: 'Id' } & MinLength<3>; state: ('on' | 'off') & { readonly __brand: 'S' } & MinLength<1>`,
     }).text,
   });
   await buildModelProjectWith(root, { validation: true });
@@ -226,7 +226,7 @@ import { first, second } from './predicates.js';`,
   // protects: T-855 only the first data part of an intersection was kept beside a tag; T-864 a generic tag alias with an array base was not generated
   await t.test('an intersection keeps every data part beside a tag, and a generic tag alias with a compound base describes the instantiated type', async () => {
     const { A } = await load('compound-bases', 'a.model.js');
-    const valid = { parts: { a: 's', b: 1 }, before: 'abc', after: 'abc', list: ['x'] };
+    const valid = { parts: { a: 's', b: 1 }, before: 'abc', after: 'abc', list: ['x'], page: { items: ['x'] }, legacy: 'abc', state: 'on' };
     const invalid = async (override: object): Promise<boolean> => await getValidator(new A({ ...valid, ...override })).validate();
     assert.deepEqual([
       await invalid({}),
@@ -236,7 +236,10 @@ import { first, second } from './predicates.js';`,
       await invalid({ after: 'ab' }),
       await invalid({ list: [] }),
       await invalid({ list: [1] }),
-    ], [true, false, false, false, false, false, false]);
+      await invalid({ page: { items: [1] } }),
+      await invalid({ legacy: 'ab' }),
+      await invalid({ state: 'maybe' }),
+    ], [true, false, false, false, false, false, false, false, false, false]);
   });
 
   await t.test('recursive local IModel aliases remain concrete nested references', async () => {
