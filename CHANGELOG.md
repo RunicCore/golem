@@ -9,7 +9,7 @@ This file is the complete list of changes. The documentation site's
 
 - A field typed as an intersection of several data parts and a tag, such as `{ a: string } & { b: number } & MinProperties<1>`, keeps every part. Before, only the first part stayed, so a declared field disappeared and valid data failed. A brand beside `string` works in either order.
 - A generic tag alias with a compound base, such as `type NonEmpty<T> = T[] & MinItems<1>`, generates. Before, it stopped with `RUNM1003`.
-- `Record<number, V>` and `{ [id: number]: V }` convert their values as a string-keyed record does. Before, they rejected valid data.
+- `Record<number, V>` and `{ [id: number]: V }` convert their values as a string-keyed record does, and reject a key that is no number. Before, they rejected valid data.
 - Models whose names differ only in a character that a short name drops, such as `A$` and `A_`, each get their own codec. Before, generation stopped with an unresolved reference.
 - `validateInstance` and `ModelValidator.validate` honor `maxDepth`. A function in `.messages()` runs once for each issue.
 - A `Date` field reads a leap second, such as `2026-10-06T23:59:60Z`, as second 59, as `Temporal.Instant` does. `Temporal.Instant` reads a fraction of more than nine digits and keeps nine.
@@ -104,6 +104,7 @@ This file is the complete list of changes. The documentation site's
 - A schema referenced inside a 3.2 media type component keeps its name.
 - A schema that recurses through `patternProperties`, `contains`, `propertyNames` or `unevaluatedProperties` generates. One that returns to itself through `not` or `if` without reading the value stops with a located error.
 - `enum` with `isArray` in `@ApiProperty` and `@ApiQuery` goes on `items`, also on a nullable array. Before, it went on the array, so no value matched.
+- **Breaking:** `@ApiQuery({ enum, isArray: true })` on a parameter that is not an array stops generation.
 - An enum reverse lookup in a decorator argument, such as `Dir[Dir.Up]`, gives the member name. A key that no member has stops with a coded error.
 - A multipart part with a JSON media type sends a string as JSON text. A query array with no items and a `null` header parameter send nothing.
 - A local OpenAPI file that starts with a UTF-8 byte order mark loads.
