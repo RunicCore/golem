@@ -1,0 +1,191 @@
+{
+  "name": "golem-workspace",
+  "private": true,
+  "version": "1.1.0-rc.0",
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "examples/payments"
+  ],
+  "engines": {
+    "node": ">=22.15.0"
+  },
+  "scripts": {
+    "build": "npm run build -w @exprtlabs/golem && tsc -p packages/golem-model/tsconfig.json && tsc -p packages/golem-openapi-ts/tsconfig.json && tsc -p packages/golem-ts-openapi/tsconfig.json",
+    "build:tests": "npm run build && npm run build:scripts && node .build/scripts/clean-tests.js && tsc -p tsconfig.tests.json",
+    "build:scripts": "tsc -p tsconfig.scripts.json",
+    "vendor:openapi-schemas": "npm run build:scripts && node .build/scripts/vendor-openapi-schemas.js",
+    "bench": "npm run build && npm run build:scripts && node .build/scripts/benchmark/run.js",
+    "bench:handwritten": "npm run build && npm run build:scripts && node .build/scripts/benchmark/typia-validation.js",
+    "bench:release": "npm run build && npm run build:scripts && node .build/scripts/benchmark/release-check.js",
+    "test": "bash scripts/test-runner/run.sh focused",
+    "test:full": "bash scripts/test-runner/run.sh full",
+    "test:acceptance": "bash scripts/test-runner/run.sh acceptance",
+    "test:prepare": "bash scripts/test-runner/run.sh prepare",
+    "test:native": "npm run build:tests && node .build/scripts/test-tier.js full --native",
+    "generate:examples": "npm run build && npm run build:scripts && node .build/scripts/examples.js generate",
+    "generate:openapi-compliance": "npm run build:scripts && node .build/packages/golem-openapi-ts/compliance/generate-matrix.js",
+    "check:openapi-compliance": "npm run build:scripts && node .build/packages/golem-openapi-ts/compliance/generate-matrix.js --check",
+    "docs:dev": "vitepress dev docs",
+    "docs:build": "npm run generate:openapi-compliance && vitepress build docs",
+    "docs:check": "bash scripts/test-runner/run.sh docs",
+    "docs:preview": "vitepress preview docs",
+    "lint": "npm run build && npm run build:scripts && node .build/scripts/check-imports.js && node scripts/build-sdk-runtime.mjs --check",
+    "public:check": "npm run build:scripts && node .build/scripts/public-source.js check",
+    "public:export": "npm run build:scripts && node .build/scripts/public-source.js export",
+    "knip": "knip",
+    "jscpd": "jscpd"
+  },
+  "devDependencies": {
+    "@fontsource/inter": "5.3.0",
+    "@fontsource/jetbrains-mono": "5.3.0",
+    "@fontsource/space-grotesk": "5.3.0",
+    "@nestjs/common": "11.2.3",
+    "@nestjs/core": "11.2.3",
+    "@playwright/test": "1.63.0",
+    "@types/node": "22.20.1",
+    "ajv": "8.20.0",
+    "class-transformer": "0.5.1",
+    "class-validator": "0.15.1",
+    "esbuild": "0.25.12",
+    "eslint": "10.13.0",
+    "jscpd": "5.4.1",
+    "knip": "6.41.0",
+    "mobx": "^6.16.1",
+    "reflect-metadata": "0.2.2",
+    "rxjs": "7.8.2",
+    "temporal-polyfill": "^1.0.5",
+    "ttsc": "0.30.x",
+    "typescript": "7.1.0-beta",
+    "typia": "^14.0.6",
+    "vite": "5.4.21",
+    "vitepress": "1.6.4",
+    "vue": "3.5.42",
+    "yaml": "2.9.1",
+    "zod": "4.6.5"
+  },
+  "imports": {
+    "#golem/*": "./packages/golem/dist/tooling/*.js",
+    "#openapi/*": "./packages/golem-openapi-ts/dist/*.js",
+    "#model/*": "./packages/golem-model/dist/*.js",
+    "#ts-openapi/*": "./packages/golem-ts-openapi/dist/*.js"
+  },
+  "description": "Generate OpenAPI from TypeScript controllers and generate TypeScript models and API clients, with validation, serialization and optional MobX integration.",
+  "license": "MIT",
+  "knip": {
+    "$schema": "https://unpkg.com/knip@6.41.0/schema-package-json.json",
+    "ignore": [
+      "tests/fixtures/**",
+      "scripts/benchmark/fixtures/**",
+      "**/*.generated.ts"
+    ],
+    "workspaces": {
+      ".": {
+        "entry": [
+          "scripts/benchmark/generation.ts",
+          "scripts/benchmark/release-check.ts",
+          "scripts/benchmark/run.ts",
+          "scripts/benchmark/worker.ts",
+          "scripts/benchmark/typia-validation.ts",
+          "scripts/check-imports.ts",
+          "scripts/clean-tests.ts",
+          "scripts/examples.ts",
+          "scripts/public-source.ts",
+          "scripts/test-file-timings.ts",
+          "scripts/test-pack.ts",
+          "scripts/test-run-ordered.ts",
+          "scripts/test-runner/run-state.ts",
+          "scripts/test-tier.ts",
+          "scripts/test-warm.ts",
+          "scripts/third-party-installs.ts",
+          "scripts/vendor-openapi-schemas.ts",
+          "scripts/verify-package.ts",
+          "tests/**/*.{test,acceptance,site-test}.ts",
+          "docs/.vitepress/config.ts",
+          "docs/.vitepress/theme/index.ts",
+          "tests/support/identity-generate.ts"
+        ],
+        "project": [
+          "scripts/**/*.ts",
+          "tests/**/*.ts",
+          "docs/.vitepress/theme/**/*.{ts,vue}"
+        ],
+        "ignoreDependencies": [
+          "ttsc",
+          "ajv",
+          "typia",
+          "zod"
+        ]
+      },
+      "packages/*": {
+        "project": [
+          "src/**/*.ts"
+        ]
+      },
+      "packages/golem": {
+        "entry": [
+          "src/runtime-sdk.ts"
+        ],
+        "project": [
+          "src/**/*.ts"
+        ]
+      },
+      "packages/golem-openapi-ts": {
+        "entry": [
+          "compliance/generate-matrix.ts"
+        ],
+        "project": [
+          "src/**/*.ts",
+          "compliance/**/*.ts"
+        ]
+      },
+      "examples/payments": {
+        "entry": [
+          "server/**/*.ts",
+          "web/src/**/*.{ts,tsx}",
+          "scripts/*.js",
+          "dev/provider.ts",
+          "generators/*.js"
+        ],
+        "project": [
+          "**/*.{ts,tsx,js}"
+        ]
+      }
+    },
+    "ignoreUnresolved": [
+      "\\.generated\\.js$",
+      "^\\.\\./shared/"
+    ]
+  },
+  "jscpd": {
+    "path": [
+      "packages/golem/src",
+      "packages/golem-model/src",
+      "packages/golem-openapi-ts/src",
+      "packages/golem-ts-openapi/src",
+      "scripts",
+      "tests",
+      "examples"
+    ],
+    "format": [
+      "typescript",
+      "javascript",
+      "tsx"
+    ],
+    "ignore": [
+      "**/fixtures/**",
+      "**/*.generated.ts",
+      "**/sdk/**",
+      "**/generated/**",
+      "**/node_modules/**",
+      "**/.build/**",
+      "**/dist/**",
+      "**/openapi-schemas/**"
+    ],
+    "gitignore": true,
+    "minTokens": 50,
+    "reporters": [
+      "console"
+    ]
+  }
+}

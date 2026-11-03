@@ -1,0 +1,120 @@
+/* Palette: dark is the default appearance (config appearance: 'dark'). */
+:root {
+  --cg-lime: #a3e635;
+  --cg-ink: #0b1020;
+  --cg-font-display: 'Space Grotesk', var(--vp-font-family-base);
+  --cg-font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  --vp-font-family-base: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --vp-font-family-mono: var(--cg-font-mono);
+
+  /* Light "Marker": black ink; lime only as fill, highlight or underline. */
+  --cg-bg: #f6f7fb; --cg-panel: #ffffff; --cg-line: #e2e6ef; --cg-line-2: #cfd6e4; --cg-muted: #556079;
+  /* Benchmark series: one color for each Golem setup, in column order. */
+  --cg-series-1: #4d7c0f; --cg-series-2: #3b6ea5; --cg-series-3: #7c4dbd; --cg-series-4: #b45309;
+  --vp-c-bg: #ffffff; --vp-c-bg-alt: var(--cg-bg); --vp-c-bg-soft: #f1f3f8;
+  --vp-c-divider: var(--cg-line);
+  --vp-c-brand-1: var(--cg-ink); --vp-c-brand-2: #1f2937; --vp-c-brand-3: var(--cg-ink);
+  --vp-c-brand-soft: #ecfccb;
+  --vp-button-brand-bg: var(--cg-lime); --vp-button-brand-text: var(--cg-ink); --vp-button-brand-border: var(--cg-ink);
+  --vp-button-brand-hover-bg: #bef264; --vp-button-brand-hover-text: var(--cg-ink); --vp-button-brand-hover-border: var(--cg-ink);
+}
+
+.dark {
+  --cg-bg: #05070d; --cg-panel: #0a0f1a; --cg-line: #1a2336; --cg-line-2: #243049; --cg-muted: #7f8bab;
+  --cg-series-1: #a3e635; --cg-series-2: #7fa7c9; --cg-series-3: #b59ad8; --cg-series-4: #fb923c;
+  --vp-c-bg: var(--cg-bg); --vp-c-bg-alt: #070a12; --vp-c-bg-soft: var(--cg-panel); --vp-c-bg-elv: var(--cg-panel);
+  --vp-c-divider: var(--cg-line);
+  --vp-c-text-1: #e6ecff; --vp-c-text-2: var(--cg-muted);
+  --vp-c-brand-1: var(--cg-lime); --vp-c-brand-2: #bef264; --vp-c-brand-3: #84cc16; --vp-c-brand-soft: #27370f;
+  --vp-button-brand-bg: var(--cg-lime); --vp-button-brand-text: #121a05; --vp-button-brand-border: var(--cg-lime);
+  --vp-button-brand-hover-bg: #bef264; --vp-button-brand-hover-text: #121a05;
+}
+
+/* Headings use the display face. */
+.vp-doc h1, .vp-doc h2, .vp-doc h3, .VPHero .name, .VPHero .text { font-family: var(--cg-font-display); letter-spacing: -0.02em; }
+
+/* Light mode: ink links with a lime underline; primary button with a hard offset shadow (Marker). */
+:root:not(.dark) .vp-doc a { color: var(--cg-ink); text-decoration: underline; text-decoration-color: var(--cg-lime); text-decoration-thickness: 3px; text-underline-offset: 2px; }
+:root:not(.dark) .VPButton.brand { box-shadow: 3px 3px 0 var(--cg-ink); }
+:root:not(.dark) .VPSidebarItem.is-active > .item .link > .text { background: var(--cg-lime); color: var(--cg-ink) !important; border-radius: 4px; padding: 0 4px; }
+:root:not(.dark) .VPHero .text .clip { background: var(--cg-lime); color: var(--cg-ink); -webkit-text-fill-color: var(--cg-ink); box-shadow: 4px 0 0 var(--cg-lime), -4px 0 0 var(--cg-lime); -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+.dark .VPHero .text .clip { color: var(--cg-lime); -webkit-text-fill-color: var(--cg-lime); background: none; }
+.dark .VPButton.brand { box-shadow: 0 0 22px -6px var(--cg-lime); }
+
+/* HUD corner brackets on code blocks and custom containers. */
+.vp-doc div[class*='language-'], .vp-doc .custom-block { position: relative; }
+.vp-doc div[class*='language-']::before, .vp-doc div[class*='language-']::after,
+.vp-doc .custom-block::before, .vp-doc .custom-block::after { content: ''; position: absolute; width: 9px; height: 9px; border: 1.5px solid var(--vp-c-brand-1); opacity: .7; pointer-events: none; z-index: 1; }
+.vp-doc div[class*='language-']::before, .vp-doc .custom-block::before { top: 0; left: 0; border-right: 0; border-bottom: 0; }
+.vp-doc div[class*='language-']::after, .vp-doc .custom-block::after { bottom: 0; right: 0; border-left: 0; border-top: 0; }
+
+/* Home: dot-matrix texture only on the home layout. */
+.VPHome { position: relative; }
+.VPHome::before { content: ''; position: absolute; inset: 0 0 auto 0; height: 760px; pointer-events: none;
+  background-image: radial-gradient(var(--cg-line-2) 1.3px, transparent 1.6px); background-size: 20px 20px;
+  -webkit-mask-image: radial-gradient(ellipse 80% 70% at 70% 35%, #000 30%, transparent 80%); mask-image: radial-gradient(ellipse 80% 70% at 70% 35%, #000 30%, transparent 80%); }
+.VPHome > * { position: relative; }
+
+/* Keep headings visible when the browser opens a section link before hydration. */
+.vp-doc :is(h1, h2, h3, h4, h5, h6)[id] {
+  scroll-margin-top: 134px;
+}
+
+/* Long highlighted lines must scroll instead of painting over the next line. */
+.vp-doc div[class*='language-'] {
+  overflow-x: auto;
+}
+.vp-doc div[class*='language-'] code {
+  display: block;
+  overflow: hidden;
+  min-width: max-content;
+}
+.vp-doc div[class*='language-'] .line {
+  display: inline-block;
+  min-width: 100%;
+}
+
+.support-table-wrap {
+  overflow-x: auto;
+  margin: 1.25rem 0 2rem;
+}
+
+.support-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.84rem;
+}
+
+.support-table th,
+.support-table td {
+  border: 1px solid var(--vp-c-divider);
+  padding: 0.45rem 0.55rem;
+  vertical-align: top;
+  text-align: left;
+}
+
+.support-table th {
+  background: var(--vp-c-bg-soft);
+  white-space: nowrap;
+}
+
+.support-limits {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.support-controls { display: flex; flex-wrap: wrap; gap: 1rem; margin: 1.5rem 0; }
+.support-controls label { display: grid; gap: .35rem; font-size: .85rem; font-weight: 600; flex: 1 1 160px; }
+.support-controls select, .support-controls input { border: 1px solid var(--vp-c-divider); border-radius: 6px; padding: .55rem .7rem; background: var(--vp-c-bg); color: var(--vp-c-text-1); font: inherit; width: 100%; }
+.support-controls :focus-visible { outline: 2px solid var(--vp-c-brand-1); outline-offset: 2px; }
+.support-table small { display: block; color: var(--vp-c-text-2); margin-top: .35rem; }
+.support-status { font-weight: 600; white-space: nowrap; }
+.support-status[data-kind="supported"] { color: var(--vp-c-green-1); }
+.support-status[data-kind="partial"], .support-status[data-kind="opt-in"] { color: var(--vp-c-yellow-1); }
+.support-table td:first-child { min-width: 145px; }
+.support-table td:last-child { min-width: 240px; }
+
+@media (max-width: 600px) {
+  .support-controls label { flex-basis: 100%; }
+}
+

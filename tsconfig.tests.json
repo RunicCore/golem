@@ -1,0 +1,25 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": ".build",
+    "types": [
+      "node"
+    ],
+    "lib": [
+      "ES2023",
+      "DOM",
+      "DOM.Iterable",
+      "esnext.temporal"
+    ],
+    "declaration": false,
+    "incremental": true,
+    "tsBuildInfoFile": ".build/tests.tsbuildinfo"
+  },
+  "include": [
+    "tests/**/*.ts"
+  ],
+  "exclude": [
+    "tests/fixtures/**"
+  ]
+}

@@ -1,0 +1,83 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+}
+
+.page-shell {
+  align-items: center;
+  display: flex;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 32px 20px;
+}
+
+.editor-card {
+  border: 1px solid #dbe4ef;
+  border-radius: 24px;
+  max-width: 620px;
+  padding: clamp(24px, 5vw, 48px);
+  width: 100%;
+}
+
+h1 {
+  font-size: clamp(2rem, 6vw, 3rem);
+  margin: 12px 0;
+}
+
+.summary-panel {
+  border: 1px solid #d7e7ff;
+  border-radius: 16px;
+  display: grid;
+  gap: 4px;
+  margin-bottom: 28px;
+  padding: 16px 18px;
+}
+
+.payment-form {
+  display: grid;
+  gap: 20px;
+}
+
+.field-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: minmax(0, 1.4fr) minmax(120px, 0.6fr);
+}
+
+.field {
+  display: grid;
+  gap: 8px;
+}
+
+.field input,
+.field textarea {
+  border: 1px solid #c9d4e2;
+  border-radius: 10px;
+  padding: 11px 12px;
+  width: 100%;
+}
+
+.field-meta {
+  display: flex;
+  justify-content: space-between;
+}
+
+.form-status {
+  min-height: 1.5em;
+}
+
+@media (max-width: 520px) {
+  .field-grid {
+    grid-template-columns: 1fr;
+  }
+}

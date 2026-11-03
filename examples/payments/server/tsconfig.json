@@ -1,0 +1,16 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "skipLibCheck": true,
+    "lib": ["ES2023", "DOM", "DOM.Iterable", "esnext.temporal"],
+    "types": ["node"],
+    "outDir": "../.build/server",
+    "rootDir": "."
+  },
+  "include": ["src/**/*.ts", "provider/**/*.ts"]
+}

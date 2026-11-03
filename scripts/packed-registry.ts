@@ -1,0 +1,113 @@
+import { spawnSync } from 'node:child_process';
+import fs from 'node:fs';
+import http from 'node:http';
+import os from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import type { TestContext } from 'node:test';
+import type { PackedPackage, PackageManifest, PackResult } from './packed-archive.js';
+import { packedSetDigest } from './public-source.js';
+import { distTagForVersion } from '../packages/golem/src/tooling/dist-tag.js';
+
+// The registry serves the packed set built by test-pack.ts. It lives under
+// scripts/ because both the packed tests and the prepare step's cache warming
+// need it, and scripts must not import test-only code.
+const sourceRoot = fileURLToPath(new URL('../../', import.meta.url));
+
+export interface PreparedPackages { readonly workspaceVersion: string; readonly digest: string; readonly packages: ReadonlyMap<string, PackedPackage> }
+
+export function preparedPackages(root: string = sourceRoot, packedRoot: string | undefined = process.env.FE_DEPS_PACKED_DIR): PreparedPackages {
+  if (!packedRoot) throw new Error('FE_DEPS_PACKED_DIR is not set. Run packed tests through npm run test:full, test:acceptance, or npm run test -- <packed file>.');
+  const digest = packedSetDigest(root);
+  const directory = path.join(packedRoot, digest);
+  const manifestFile = path.join(directory, 'manifest.json');
+  if (!fs.existsSync(manifestFile)) throw new Error(`No packed set for source digest ${digest}. The tier runner packs before packed tests; run npm run test:full.`);
+  const value: { workspaceVersion: string; packages: { manifest: PackageManifest; pack: PackResult }[] } = JSON.parse(fs.readFileSync(manifestFile, 'utf8'));
+  return {
+    workspaceVersion: value.workspaceVersion,
+    digest,
+    packages: new Map(value.packages.map(entry => [entry.manifest.name, { ...entry, filename: path.join(directory, entry.pack.filename) }])),
+  };
+}
+
+/** The `.npmrc` that sends `@exprtlabs` installs to the fixture registry and keeps npm quiet and script-free. */
+export function registryNpmrc(url: string): string {
+  return `@exprtlabs:registry=${url}\naudit=false\nfund=false\nignore-scripts=true\n`;
+}
+
+export interface PackedRegistry extends PreparedPackages {
+  readonly url: string;
+  readonly distTags: Readonly<Record<string, string>>;
+  readonly npmVersion: string;
+  readonly requests: string[];
+  create(t: TestContext, label: string): string;
+  close(): Promise<void>;
+}
+
+// The registry is served under the packed-set digest because npm's packument cache is keyed by the full URL and
+// the port is random: a repeated port would otherwise reuse an earlier run's packument and install its tarball.
+export async function startRegistry(prepared: PreparedPackages = preparedPackages()): Promise<PackedRegistry> {
+  let url = '';
+  const prefix = `${prepared.digest}/`;
+  const requests: string[] = [];
+  const server = http.createServer((request, response) => {
+    const routed = decodeURIComponent((request.url ?? '/').split('?')[0]).replace(/^\//, '');
+    if (!routed.startsWith(prefix)) { response.writeHead(404); response.end(); return; }
+    const requested = routed.slice(prefix.length);
+    requests.push(requested);
+    if (requested.startsWith('tarballs/')) {
+      const filename = path.basename(requested);
+      const entry = [...prepared.packages.values()].find(item => item.pack.filename === filename);
+      if (!entry) { response.writeHead(404); response.end(); return; }
+      response.setHeader('content-type', 'application/octet-stream');
+      fs.createReadStream(entry.filename).pipe(response);
+      return;
+    }
+    const entry = prepared.packages.get(requested);
+    if (!entry) { response.writeHead(404); response.end(JSON.stringify({ error: 'Package not part of fixture registry' })); return; }
+    response.setHeader('content-type', 'application/json');
+    const distTags = { [distTagForVersion(entry.manifest.version)]: entry.manifest.version };
+    response.end(JSON.stringify({ name: requested, 'dist-tags': distTags, versions: {
+      [entry.manifest.version]: { ...entry.manifest, dist: { tarball: `${url}tarballs/${entry.pack.filename}`, shasum: entry.pack.shasum, integrity: entry.pack.integrity } },
+    } }));
+  });
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  if (!address || typeof address === 'string') throw new Error('Registry did not bind TCP.');
+  url = `http://127.0.0.1:${address.port}/${prefix}`;
+  const distTags: Readonly<Record<string, string>> = Object.freeze({ [distTagForVersion(prepared.workspaceVersion)]: prepared.workspaceVersion });
+  const version = spawnSync('npm', ['--version'], { cwd: os.tmpdir(), encoding: 'utf8' });
+  if (version.error || version.status !== 0) throw version.error ?? new Error(`npm --version failed: ${version.stderr}`);
+  return {
+    ...prepared, url, distTags, requests,
+    npmVersion: version.stdout.trim(),
+    create(t, label) {
+      const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), `golem-consumer-${label}-`)));
+      t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+      fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'packed-consumer', version: '1.0.0', private: true, type: 'module' }));
+      fs.writeFileSync(path.join(root, '.npmrc'), registryNpmrc(url));
+      return root;
+    },
+    async close() { await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())); },
+  };
+}
+
+/**
+ * A fixture app asks for each golem package as `latest`. Point those ranges at the dist-tag the workspace version is
+ * published under, as a user of that channel installs it: an rc has no `latest` tag.
+ */
+export function useReleaseChannel(directory: string, version: string): void {
+  const file = path.join(directory, 'package.json');
+  const manifest: Record<string, unknown> = JSON.parse(fs.readFileSync(file, 'utf8'));
+  for (const field of ['dependencies', 'devDependencies'] as const) {
+    const ranges = (manifest[field] ?? {}) as Record<string, string>;
+    for (const [name, range] of Object.entries(ranges)) if (name.startsWith('@exprtlabs/golem') && range === 'latest') ranges[name] = distTagForVersion(version);
+  }
+  fs.writeFileSync(file, `${JSON.stringify(manifest, null, 2)}\n`);
+}
+
+export function packageSpec(registry: { readonly packages: ReadonlyMap<string, PackedPackage> }, name: string): string {
+  const entry = registry.packages.get(name);
+  if (!entry) throw new Error(`Package is not part of the packed fixture: ${name}`);
+  return `${name}@${entry.manifest.version}`;
+}

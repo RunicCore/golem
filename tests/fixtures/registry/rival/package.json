@@ -1,0 +1,6 @@
+{
+  "name": "@fixture/rival",
+  "version": "1.0.0",
+  "exports": { "./plan": "./plan.js" },
+  "golem": { "apiVersion": 2, "block": "alpha", "plan": "./plan" }
+}

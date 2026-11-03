@@ -1,0 +1,119 @@
+{
+  "name": "@exprtlabs/golem-openapi-ts",
+  "version": "1.1.0-rc.0",
+  "description": "Generate TypeScript SDKs from OpenAPI documents",
+  "keywords": [
+    "openapi",
+    "typescript",
+    "sdk",
+    "golem",
+    "codegen",
+    "client",
+    "validation",
+    "mobx"
+  ],
+  "author": "exprtlabs.ai",
+  "license": "MIT",
+  "homepage": "https://exprtlabs.ai",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/RunicCore/golem.git",
+    "directory": "packages/golem-openapi-ts"
+  },
+  "bugs": {
+    "url": "https://github.com/RunicCore/golem/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "tag": "rc"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=22.15.0"
+  },
+  "files": [
+    "dist",
+    "golem-schema.json",
+    "sdk-runtime",
+    "README.md",
+    "LICENSE",
+    "MATRIX.md",
+    "THIRD_PARTY_NOTICES.md",
+    "LICENSES"
+  ],
+  "golem": {
+    "apiVersion": 2,
+    "block": "openapi-ts",
+    "plan": "./plan",
+    "generator": "./generator",
+    "extensions": {
+      "mobx": {
+        "entry": "./mobx-extension",
+        "profile": true
+      }
+    },
+    "schema": "./golem-schema.json"
+  },
+  "exports": {
+    "./plan": {
+      "types": "./dist/plan.d.ts",
+      "import": "./dist/plan.js",
+      "default": "./dist/plan.js"
+    },
+    "./generator": {
+      "types": "./dist/generator.d.ts",
+      "import": "./dist/generator.js",
+      "default": "./dist/generator.js"
+    },
+    "./mobx-extension": {
+      "types": "./dist/mobx/extension.d.ts",
+      "import": "./dist/mobx/extension.js",
+      "default": "./dist/mobx/extension.js"
+    },
+    "./mobx": {
+      "types": "./dist/runtime/mobx.d.ts",
+      "import": "./dist/runtime/mobx.js",
+      "default": "./dist/runtime/mobx.js"
+    },
+    "./mobx-validation": {
+      "types": "./dist/runtime/mobx-validation.d.ts",
+      "import": "./dist/runtime/mobx-validation.js",
+      "default": "./dist/runtime/mobx-validation.js"
+    },
+    "./internal/mobx-runtime": {
+      "types": "./dist/runtime/runtime-mobx.d.ts",
+      "import": "./dist/runtime/runtime-mobx.js",
+      "default": "./dist/runtime/runtime-mobx.js"
+    },
+    "./internal/mobx-validation-runtime": {
+      "types": "./dist/runtime/runtime-mobx-validation.d.ts",
+      "import": "./dist/runtime/runtime-mobx-validation.js",
+      "default": "./dist/runtime/runtime-mobx-validation.js"
+    }
+  },
+  "peerDependencies": {
+    "@exprtlabs/golem": "1.1.0-rc.0",
+    "@exprtlabs/golem-model": "1.1.0-rc.0",
+    "mobx": "^6.13.0",
+    "typescript": ">=6.0.0 <7 || >=7.1.0-0 <8"
+  },
+  "peerDependenciesMeta": {
+    "@exprtlabs/golem-model": {
+      "optional": true
+    },
+    "mobx": {
+      "optional": true
+    },
+    "typescript": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "mobx": "^6.16.1"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "clean": "node -e \"for (const target of ['dist', '../../.build/golem-openapi-ts.tsbuildinfo']) require('node:fs').rmSync(target, { recursive: true, force: true })\"",
+    "prepack": "npm run clean && npm run build && tsc -p ../../tsconfig.package-check.json && node ../../.build/scripts/verify-package.js ."
+  }
+}

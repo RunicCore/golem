@@ -1,0 +1,33 @@
+version: 1
+validation: true
+# region generator-job
+payment-events:
+  output: src/events
+  events:
+    PaymentCaptured: { paymentId: string, amount: string }
+    PaymentRefunded: { paymentId: string, reason: string }
+# endregion generator-job
+# region controllers-job
+ts-openapi:
+  docs:
+    - output: ./api/openapi.yaml
+      info:
+        title: Payments API
+        version: '1'
+      globalPrefix: api
+  extensions:
+    nest: {}
+# endregion controllers-job
+openapi-ts:
+  sdks:
+# region openapi-dates-job
+# region openapi-job
+    - input: provider/provider.yaml
+      output: provider/sdk
+      name: Provider
+# endregion openapi-job
+      dates: temporal
+# endregion openapi-dates-job
+# region models-job
+model: {}
+# endregion models-job

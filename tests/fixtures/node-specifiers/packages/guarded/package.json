@@ -1,0 +1,9 @@
+{
+  "name": "guarded",
+  "version": "1.0.0",
+  "type": "module",
+  "exports": {
+    "./feature": { "types": "./feature.d.ts", "default": "./feature.js" },
+    "./nested/*": { "types": "./nested/*.d.ts", "default": "./nested/*.js" }
+  }
+}

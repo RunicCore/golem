@@ -1,0 +1,7 @@
+{
+  "name": "@fixture/extension",
+  "version": "0.0.1",
+  "type": "module",
+  "exports": { "./plan": "./dist/plan.js", "./generator": "./dist/generator.js" },
+  "golem": { "apiVersion": 2, "block": "acme", "plan": "./plan", "generator": "./generator" }
+}

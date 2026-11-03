@@ -1,0 +1,8 @@
+version: 1
+validation: true
+openapi-ts:
+  sdks:
+    - input: api.json
+      output: sdk
+      name: Profile
+model: {}

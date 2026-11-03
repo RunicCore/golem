@@ -1,0 +1,11 @@
+version: 1
+validation: true
+openapi-ts:
+  sdks:
+    - input: ../server/api/openapi.yaml
+      output: sdk
+      name: Payments
+      mode: golem
+  extensions:
+    mobx: {}
+model: {}

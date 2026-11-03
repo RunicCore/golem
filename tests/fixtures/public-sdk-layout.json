@@ -1,0 +1,146 @@
+{
+  "mobx-off": {
+    "index.ts": [
+      "CreatePaymentAsClassOperationErrorBody",
+      "CreatePaymentAsClassOperationHttpResponse",
+      "CreatePaymentAsClassOperationInput",
+      "CreatePaymentAsClassOperationSuccessBody",
+      "CreatePaymentOperationErrorBody",
+      "CreatePaymentOperationHttpResponse",
+      "CreatePaymentOperationInput",
+      "CreatePaymentOperationSuccessBody",
+      "DeletePaymentOperationErrorBody",
+      "DeletePaymentOperationHttpResponse",
+      "DeletePaymentOperationInput",
+      "DeletePaymentOperationSuccessBody",
+      "GetPaymentOperationErrorBody",
+      "GetPaymentOperationHttpResponse",
+      "GetPaymentOperationInput",
+      "GetPaymentOperationSuccessBody",
+      "InputSchemas",
+      "LinkServer",
+      "ListPaymentsOperationErrorBody",
+      "ListPaymentsOperationHttpResponse",
+      "ListPaymentsOperationInput",
+      "ListPaymentsOperationSuccessBody",
+      "Merchant",
+      "MerchantOmitId",
+      "Money",
+      "OutputSchemas",
+      "Payment",
+      "PaymentInput",
+      "PaymentsBodyEncoder",
+      "PaymentsBodyEncoderContext",
+      "PaymentsClient",
+      "PaymentsClientOptions",
+      "PaymentsClientPort",
+      "PaymentsEncodedBody",
+      "PaymentsEncodingMetadata",
+      "PaymentsParameterSerializer",
+      "PaymentsParameterSerializerContext",
+      "PaymentsRequestOptions",
+      "PaymentsUndeclaredResponseError",
+      "ResponseLink",
+      "ResponseLinkRegistry",
+      "ResponseLinkTarget",
+      "WebhookPaymentSettledOperationErrorBody",
+      "WebhookPaymentSettledOperationHttpResponse",
+      "WebhookPaymentSettledOperationInput",
+      "WebhookPaymentSettledOperationSuccessBody",
+      "isPaymentsUndeclaredResponseError",
+      "responseLinks"
+    ],
+    "operations/createPayment.ts": [
+      "createCreatePaymentOperation",
+      "createPayment"
+    ],
+    "operations/createPaymentAsClass.ts": [
+      "createCreatePaymentAsClassOperation",
+      "createPaymentAsClass"
+    ],
+    "operations/deletePayment.ts": [
+      "createDeletePaymentOperation",
+      "deletePayment"
+    ],
+    "operations/getPayment.ts": [
+      "createGetPaymentOperation",
+      "getPayment"
+    ],
+    "operations/listPayments.ts": [
+      "createListPaymentsOperation",
+      "listPayments"
+    ]
+  },
+  "mobx-on": {
+    "index.ts": [
+      "CreatePaymentAsClassOperationErrorBody",
+      "CreatePaymentAsClassOperationHttpResponse",
+      "CreatePaymentAsClassOperationInput",
+      "CreatePaymentAsClassOperationSuccessBody",
+      "CreatePaymentOperationErrorBody",
+      "CreatePaymentOperationHttpResponse",
+      "CreatePaymentOperationInput",
+      "CreatePaymentOperationSuccessBody",
+      "DeletePaymentOperationErrorBody",
+      "DeletePaymentOperationHttpResponse",
+      "DeletePaymentOperationInput",
+      "DeletePaymentOperationSuccessBody",
+      "GetPaymentOperationErrorBody",
+      "GetPaymentOperationHttpResponse",
+      "GetPaymentOperationInput",
+      "GetPaymentOperationSuccessBody",
+      "InputSchemas",
+      "LinkServer",
+      "ListPaymentsOperationErrorBody",
+      "ListPaymentsOperationHttpResponse",
+      "ListPaymentsOperationInput",
+      "ListPaymentsOperationSuccessBody",
+      "Merchant",
+      "MerchantOmitId",
+      "Money",
+      "OutputSchemas",
+      "Payment",
+      "PaymentInput",
+      "PaymentsBodyEncoder",
+      "PaymentsBodyEncoderContext",
+      "PaymentsClient",
+      "PaymentsClientOptions",
+      "PaymentsClientPort",
+      "PaymentsEncodedBody",
+      "PaymentsEncodingMetadata",
+      "PaymentsParameterSerializer",
+      "PaymentsParameterSerializerContext",
+      "PaymentsRequestOptions",
+      "PaymentsUndeclaredResponseError",
+      "ResponseLink",
+      "ResponseLinkRegistry",
+      "ResponseLinkTarget",
+      "WebhookPaymentSettledOperationErrorBody",
+      "WebhookPaymentSettledOperationHttpResponse",
+      "WebhookPaymentSettledOperationInput",
+      "WebhookPaymentSettledOperationSuccessBody",
+      "isPaymentsUndeclaredResponseError",
+      "responseLinks"
+    ],
+    "operations/createPayment.ts": [
+      "createCreatePaymentOperation",
+      "createPayment"
+    ],
+    "operations/createPaymentAsClass.ts": [
+      "createCreatePaymentAsClassOperation",
+      "createPaymentAsClass"
+    ],
+    "operations/deletePayment.ts": [
+      "createDeletePaymentOperation",
+      "deletePayment"
+    ],
+    "operations/getPayment.ts": [
+      "createGetPaymentOperation",
+      "getPayment"
+    ],
+    "operations/listPayments.ts": [
+      "createListPaymentsOperation",
+      "listPayments"
+    ]
+  }
+}

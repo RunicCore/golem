@@ -1,0 +1,108 @@
+{
+  "name": "@exprtlabs/golem-ts-openapi",
+  "version": "1.1.0-rc.0",
+  "description": "Generate OpenAPI documents from TypeScript controllers without starting the application",
+  "keywords": [
+    "openapi",
+    "nestjs",
+    "typescript",
+    "golem",
+    "codegen",
+    "controllers"
+  ],
+  "author": "exprtlabs.ai",
+  "license": "MIT",
+  "homepage": "https://exprtlabs.ai",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/RunicCore/golem.git",
+    "directory": "packages/golem-ts-openapi"
+  },
+  "bugs": {
+    "url": "https://github.com/RunicCore/golem/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "tag": "rc"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=22.15.0"
+  },
+  "files": [
+    "dist",
+    "golem-schema.json",
+    "README.md",
+    "LICENSE"
+  ],
+  "golem": {
+    "apiVersion": 2,
+    "block": "ts-openapi",
+    "plan": "./plan",
+    "generator": "./generator",
+    "extensions": {
+      "nest": "./nest-extension"
+    },
+    "schema": "./golem-schema.json"
+  },
+  "exports": {
+    "./plan": {
+      "types": "./dist/plan.d.ts",
+      "import": "./dist/plan.js",
+      "default": "./dist/plan.js"
+    },
+    "./generator": {
+      "types": "./dist/generator.d.ts",
+      "import": "./dist/generator.js",
+      "default": "./dist/generator.js"
+    },
+    "./nest-extension": {
+      "types": "./dist/nest/rewrite-participant.d.ts",
+      "import": "./dist/nest/rewrite-participant.js",
+      "default": "./dist/nest/rewrite-participant.js"
+    },
+    "./nest": {
+      "types": "./dist/runtime/nest.d.ts",
+      "import": "./dist/runtime/nest.js",
+      "default": "./dist/runtime/nest.js"
+    },
+    "./internal/nest-runtime": {
+      "types": "./dist/runtime/runtime-nest.d.ts",
+      "import": "./dist/runtime/runtime-nest.js",
+      "default": "./dist/runtime/runtime-nest.js"
+    }
+  },
+  "dependencies": {
+    "yaml": "^2.9.0"
+  },
+  "peerDependencies": {
+    "@exprtlabs/golem": "1.1.0-rc.0",
+    "@exprtlabs/golem-model": "1.1.0-rc.0",
+    "@nestjs/common": "^11.0.0",
+    "rxjs": "^7.8.0",
+    "typescript": ">=6.0.0 <7 || >=7.1.0-0 <8"
+  },
+  "peerDependenciesMeta": {
+    "@exprtlabs/golem-model": {
+      "optional": true
+    },
+    "@nestjs/common": {
+      "optional": true
+    },
+    "rxjs": {
+      "optional": true
+    },
+    "typescript": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@nestjs/common": "11.2.3",
+    "rxjs": "7.8.2"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "clean": "node -e \"for (const target of ['dist', '../../.build/golem-ts-openapi.tsbuildinfo']) require('node:fs').rmSync(target, { recursive: true, force: true })\"",
+    "prepack": "npm run clean && npm run build && tsc -p ../../tsconfig.package-check.json && node ../../.build/scripts/verify-package.js ."
+  }
+}

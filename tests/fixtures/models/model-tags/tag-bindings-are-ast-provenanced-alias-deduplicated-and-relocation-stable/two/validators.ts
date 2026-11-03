@@ -1,0 +1,1 @@
+export function validate(value: unknown): boolean | string { return true; }

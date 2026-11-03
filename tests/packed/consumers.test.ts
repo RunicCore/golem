@@ -1,0 +1,285 @@
+import { test, after, type TestContext } from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { build } from 'esbuild';
+import { workspace, command, npm, cli } from '../support/process.js';
+import { writeFixture, filesUnder } from '../support/consumer.js';
+import { packageSpec, registryNpmrc } from '../../scripts/packed-registry.js';
+import { MOBX, NEST_COMMON, NEST_SWAGGER, TYPESCRIPT } from '../../scripts/third-party-installs.js';
+import { copyFixture, copyFixtureFile } from '../fixture-project.js';
+import { usePackedRegistry } from '../support/packed-registry.js';
+
+const registry = usePackedRegistry();
+after(() => {
+  for (const folder of setFolders) fs.rmSync(folder, { recursive: true, force: true });
+});
+
+// One install for each package set: the model and OpenAPI generators as dev dependencies, then golem (with mobx or
+// not) as production dependencies. A case that prunes or edits node_modules gets its own copy of the finished tree.
+const installedSets = new Map<string, Promise<string>>();
+const setFolders: string[] = [];
+
+function installPackageSet(mobx: boolean): Promise<string> {
+  const key = `mobx-${mobx}`;
+  let installed = installedSets.get(key);
+  if (!installed) {
+    const folder = fs.mkdtempSync(path.join(os.tmpdir(), `golem-consumer-set-${key}-`));
+    setFolders.push(folder);
+    fs.writeFileSync(path.join(folder, 'package.json'), JSON.stringify({ name: 'packed-consumer', version: '1.0.0', private: true, type: 'module' }));
+    fs.writeFileSync(path.join(folder, '.npmrc'), registryNpmrc(registry().url));
+    installed = (async () => {
+      await npm(folder, ['install', '--save-dev', packageSpec(registry(), '@exprtlabs/golem-model'), ...(mobx ? [] : [packageSpec(registry(), '@exprtlabs/golem-openapi-ts')])]);
+      // The app imports the MobX runtime of golem-openapi-ts, so it is a production dependency there.
+      await npm(folder, ['install', '--save-prod', packageSpec(registry(), '@exprtlabs/golem'), ...(mobx ? [packageSpec(registry(), '@exprtlabs/golem-openapi-ts'), MOBX] : [])]);
+      return folder;
+    })();
+    installedSets.set(key, installed);
+  }
+  return installed;
+}
+
+async function consumerWithGenerators(t: TestContext, label: string, mobx: boolean): Promise<string> {
+  const folder = await installPackageSet(mobx);
+  const root = registry().create(t, label);
+  for (const name of ['package.json', 'package-lock.json']) fs.copyFileSync(path.join(folder, name), path.join(root, name));
+  // Symlinks stay relative (node_modules/.bin) and timestamps stay, so npm still trusts the hidden lockfile.
+  fs.cpSync(path.join(folder, 'node_modules'), path.join(root, 'node_modules'), { recursive: true, verbatimSymlinks: true, preserveTimestamps: true });
+  return root;
+}
+
+test('packed binary ownership survives either generator installation order and uninstall', async t => {
+  for (const order of [
+    ['golem-model', 'golem-openapi-ts'], ['golem-openapi-ts', 'golem-model'],
+    ['golem-ts-openapi', 'golem-model', 'golem-openapi-ts'],
+  ]) {
+    const root = registry().create(t, order[0]);
+    for (const name of order) {
+      await npm(root, ['install', '--save-dev', packageSpec(registry(), `@exprtlabs/${name}`)]);
+      const help = await cli(root, ['--help']);
+      assert.match(help.stdout, /Usage: golem /);
+      assert.equal(fs.lstatSync(path.join(root, 'node_modules/@exprtlabs/golem')).isSymbolicLink(), false);
+    }
+    await npm(root, ['uninstall', `@exprtlabs/${order[0]}`]);
+    assert.match((await cli(root, ['--help'])).stdout, /golem/);
+    assert.equal(fs.existsSync(path.join(root, 'node_modules/@exprtlabs', order[1])), true);
+  }
+});
+
+test('packed controller generator installs independently and resolves real Nest and Swagger packages', async t => {
+  const root = registry().create(t, 'controller-only');
+  await npm(root, ['install', '--save-dev', packageSpec(registry(), '@exprtlabs/golem-ts-openapi'), NEST_COMMON, NEST_SWAGGER, TYPESCRIPT]);
+  copyFixture(root, 'packed/controller-only');
+  await cli(root, ['generate']);
+  await cli(root, ['check']);
+  const document = JSON.parse(fs.readFileSync(path.join(root, 'generated/openapi.json'), 'utf8')) as { openapi: string };
+  assert.equal(document.openapi, '3.2.0');
+  assert.equal(fs.existsSync(path.join(root, 'node_modules/@exprtlabs/golem-model')), false);
+  assert.equal(fs.existsSync(path.join(root, 'node_modules/@exprtlabs/golem-openapi-ts')), false);
+  assert.equal(fs.existsSync(path.join(root, 'node_modules/mobx')), false, 'mobx must not be installed');
+  assert.equal(fs.existsSync(path.join(root, 'node_modules/.bin/golem')), true);
+  assert.equal(fs.lstatSync(path.join(root, 'node_modules/@exprtlabs/golem')).isSymbolicLink(), false);
+  const golemManifest = JSON.parse(fs.readFileSync(path.join(root, 'node_modules/@exprtlabs/golem/package.json'), 'utf8')) as { bin?: Record<string, string> };
+  assert.deepEqual(Object.keys(golemManifest.bin ?? {}), ['golem']);
+});
+
+for (const profile of [
+  { validation: false },
+  { validation: true },
+  { mobx: true, validation: false },
+  { mobx: true, validation: true },
+]) {
+  test(`packed SDK and frontend model compose with mobx=${profile.mobx ?? false}, validation=${profile.validation}`, async t => {
+    const root = await consumerWithGenerators(t, `profile-${profile.mobx ?? false}-${profile.validation}`, profile.mobx === true);
+    writeFixture(root, profile);
+    await cli(root, ['generate']);
+    const manifest = JSON.parse(fs.readFileSync(path.join(root, 'sdk/model-manifest.json'), 'utf8'));
+    const { mobx, ...core } = profile;
+    assert.deepEqual(manifest.profile, { ...core, allowAny: false, unknownFormats: 'error', ...(mobx ? { extensions: { '@exprtlabs/golem-openapi-ts': { mobx: {} } } } : {}) });
+    copyFixtureFile(root, profile.mobx ? 'packed/profile-mobx-after-generation/cart.model.ts' : 'packed/profile-after-generation/cart.model.ts', 'src/cart.model.ts');
+    await cli(root, ['generate']);
+    const generated = [...filesUnder(path.join(root, 'sdk')), path.join(root, 'src/cart.model.generated.ts'), path.join(root, '.golem/outputs.json')];
+    const before = new Map(generated.map(filename => [filename, { content: fs.readFileSync(filename, 'utf8'), mtime: fs.statSync(filename).mtimeMs }]));
+    await cli(root, ['check']);
+    await command(root, process.execPath, [path.join(root, 'node_modules/@exprtlabs/golem/dist/bin/golem.js'), 'check']);
+    await cli(root, ['generate']);
+    for (const [filename, old] of before) {
+      assert.equal(fs.readFileSync(filename, 'utf8'), old.content, filename);
+      assert.equal(fs.statSync(filename).mtimeMs, old.mtime, filename);
+    }
+    const text = generated.filter(filename => filename.endsWith('.ts')).map(filename => fs.readFileSync(filename, 'utf8')).join('\n');
+    const generatedImports = [...text.matchAll(/\bfrom\s+['"]([^'"]+)['"]|^\s*import\s+['"]([^'"]+)['"]/gm)].map(match => match[1] ?? match[2]);
+    assert.ok(generatedImports.length > 0);
+    const generatedRuntimeEntry = /^@exprtlabs\/golem\/internal\/(?:model|client|client-validation|validation|nest|temporal)-runtime$/;
+    const mobxEntry = /^@exprtlabs\/golem-openapi-ts\/(?:mobx|mobx-validation|internal\/mobx-runtime|internal\/mobx-validation-runtime)$/;
+    assert.ok(generatedImports.every(source => source.startsWith('./') || source.startsWith('../') || (source.startsWith('@exprtlabs/golem/') && (!source.startsWith('@exprtlabs/golem/internal/') || generatedRuntimeEntry.test(source))) || mobxEntry.test(source)), generatedImports.join('\n'));
+    await cli(root, ['build']);
+    await npm(root, ['prune', '--omit=dev'], { includeOptional: false });
+    for (const name of ['typescript', '@redocly/openapi-core', '@exprtlabs/golem-model', ...(profile.mobx ? [] : ['@exprtlabs/golem-openapi-ts'])]) assert.equal(fs.existsSync(path.join(root, 'node_modules', name)), false, `${name} leaked into production`);
+    if (!profile.mobx) assert.equal(fs.existsSync(path.join(root, 'node_modules/mobx')), false);
+    copyFixtureFile(root, 'packed/profile/verify-profile.mjs', 'verify-profile.mjs');
+    copyFixtureFile(root, 'packed/profile/browser-exports.ts', 'browser-exports.ts');
+    fs.writeFileSync(path.join(root, 'profile.json'), JSON.stringify({ mobx: profile.mobx ?? false, validation: profile.validation }));
+    await command(root, process.execPath, ['verify-profile.mjs']);
+    await command(root, process.execPath, ['verify-profile.mjs']);
+    const browser = await build({ entryPoints: [path.join(root, 'browser-exports.ts')], bundle: true, platform: 'browser', format: 'esm', write: false, metafile: true });
+    const modules = Object.keys(browser.metafile.inputs).join('\n');
+    assert.doesNotMatch(modules, /node:|\/tooling\/|\/typescript\/|\/@redocly\//);
+    if (!profile.mobx) assert.doesNotMatch(modules, /\/mobx\//);
+    if (!profile.validation) assert.doesNotMatch(modules, /\/(?:validation|validation-runner|schema)\.js/);
+  });
+}
+
+test('packed OpenAPI-only install generates without loading the model generator', async t => {
+  const root = registry().create(t, 'openapi-only');
+  await npm(root, ['install', '--save-dev', packageSpec(registry(), '@exprtlabs/golem-openapi-ts')]);
+  writeFixture(root, { validation: false }, false);
+  assert.equal(fs.existsSync(path.join(root, 'node_modules/@exprtlabs/golem-model')), false);
+  await cli(root, ['generate']);
+  await cli(root, ['check']);
+  await npm(root, ['install', '--save-dev', TYPESCRIPT]);
+  await cli(root, ['build']);
+});
+
+test('CLI resolves configured providers from a project with spaces outside cwd and never downloads missing providers', async t => {
+  const root = registry().create(t, 'resolver with spaces');
+  await npm(root, ['install', '--save-prod', packageSpec(registry(), '@exprtlabs/golem')]);
+  writeFixture(root, { validation: false }, false);
+  const config = path.join(root, 'golem.yaml');
+  const binary = path.join(root, 'node_modules/.bin/golem');
+  const before = registry().requests.length;
+  const missing = await command(workspace, binary, ['generate', '--config', config], { allowFailure: true });
+  assert.notEqual(missing.code, 0);
+  assert.match(missing.stderr, /No installed package registers the golem block "openapi-ts"/);
+  assert.equal(registry().requests.length, before);
+  assert.equal(fs.existsSync(path.join(root, 'sdk')), false);
+
+  await npm(root, ['install', '--save-dev', packageSpec(registry(), '@exprtlabs/golem-openapi-ts')]);
+  await command(workspace, binary, ['generate', '--config', config]);
+  await command(workspace, process.execPath, [binary, 'check', '--config', config]);
+
+  // Executable loading does not inherit the consuming project's module format.
+  const manifest: Record<string, unknown> = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
+  manifest.type = 'commonjs';
+  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify(manifest));
+  await command(workspace, binary, ['check', '--config', config]);
+
+  const provider = path.join(root, 'node_modules/@exprtlabs/golem-openapi-ts');
+  // The provider keeps its block registration and its plan entry; its generator is the incompatible one.
+  // The runtime version check runs before the provider loads, so the fake needs the packed release version.
+  const providerManifest: { exports: Record<string, unknown> } = JSON.parse(fs.readFileSync(path.join(provider, 'package.json'), 'utf8'));
+  const packedRelease: { version: string } = JSON.parse(fs.readFileSync(path.join(root, 'node_modules/@exprtlabs/golem/package.json'), 'utf8'));
+  fs.writeFileSync(path.join(provider, 'package.json'), JSON.stringify({ ...providerManifest, version: packedRelease.version, exports: { ...providerManifest.exports, './generator': './incompatible.js' } }));
+  copyFixtureFile(provider, 'packed/incompatible-provider/incompatible.js', 'incompatible.js');
+  const beforeIncompatible = registry().requests.length;
+  const incompatible = await command(workspace, binary, ['check', '--config', config], { allowFailure: true });
+  assert.match(incompatible.stderr, /Incompatible generator.*API 1.*99/);
+  assert.equal(registry().requests.length, beforeIncompatible);
+});
+
+test('packed public generator declarations retain synchronous models and asynchronous OpenAPI API-1 fields', async t => {
+  const root = registry().create(t, 'declarations');
+  await npm(root, ['install', '--save-dev', packageSpec(registry(), '@exprtlabs/golem-model'), packageSpec(registry(), '@exprtlabs/golem-openapi-ts')]);
+  copyFixture(root, 'packed/declarations');
+  await command(root, process.execPath, [path.join(root, 'node_modules/typescript/bin/tsc'), '-p', 'tsconfig.contracts.json']);
+});
+
+
+test('packed model and SDK validators work without code generation from strings', async t => {
+  const root = await consumerWithGenerators(t, 'generated-runtime', false);
+  copyFixture(root, 'packed/generated-runtime');
+  copyFixtureFile(root, 'packed/profile/api.json', 'api.json');
+  await cli(root, ['generate']);
+  copyFixtureFile(root, 'packed/generated-runtime-after-generation/cart.model.ts', 'src/cart.model.ts');
+  await cli(root, ['generate']);
+  await cli(root, ['check']);
+  const manifest = JSON.parse(fs.readFileSync(path.join(root, 'sdk/model-manifest.json'), 'utf8'));
+  assert.deepEqual(manifest.profile, { validation: true, allowAny: false, unknownFormats: 'error' });
+  await cli(root, ['build']);
+  await npm(root, ['prune', '--omit=dev'], { includeOptional: false });
+  for (const name of ['mobx', 'typescript', '@exprtlabs/golem-model', '@exprtlabs/golem-openapi-ts']) {
+    assert.equal(fs.existsSync(path.join(root, 'node_modules', name)), false, `${name} must be absent from production`);
+  }
+  await command(root, process.execPath, ['--disallow-code-generation-from-strings', 'verify.mjs']);
+  const browser = await build({ entryPoints: [path.join(root, 'build/src/cart.model.js'), path.join(root, 'build/sdk/index.js')], outdir: 'browser', bundle: true, platform: 'browser', format: 'esm', write: false, metafile: true });
+  assert.doesNotMatch(Object.keys(browser.metafile.inputs).join('\n'), /node:|\/tooling\/|\/esbuild\/|\/mobx\//);
+});
+
+// Every directory below `modules` that holds an installed @exprtlabs/golem, as paths relative to `root`, nested node_modules included.
+function installedGolemCopies(root: string, modules: string = path.join(root, 'node_modules')): string[] {
+  const copies: string[] = [];
+  for (const entry of fs.readdirSync(modules, { withFileTypes: true })) {
+    if (entry.name.startsWith('.') || !entry.isDirectory()) continue;
+    const packages = entry.name.startsWith('@') ? fs.readdirSync(path.join(modules, entry.name)).map(name => path.join(modules, entry.name, name)) : [path.join(modules, entry.name)];
+    for (const folder of packages) {
+      if (fs.existsSync(path.join(folder, 'package.json')) && path.relative(modules, folder) === path.join('@exprtlabs', 'golem')) copies.push(path.relative(root, folder));
+      if (fs.existsSync(path.join(folder, 'node_modules'))) copies.push(...installedGolemCopies(root, path.join(folder, 'node_modules')));
+    }
+  }
+  return copies;
+}
+
+test('an app that installs golem and every generator package holds one golem copy', async t => {
+  // protects: T-783 golem is a peer of the generator packages, so an app holds one golem copy
+  const root = registry().create(t, 'one-golem-copy');
+  await npm(root, ['install', '--save-prod', packageSpec(registry(), '@exprtlabs/golem')]);
+  await npm(root, ['install', '--save-dev', ...['golem-model', 'golem-openapi-ts', 'golem-ts-openapi'].map(name => packageSpec(registry(), `@exprtlabs/${name}`)), TYPESCRIPT]);
+  assert.deepEqual(installedGolemCopies(root), [path.join('node_modules', '@exprtlabs', 'golem')],
+    'The app must hold exactly one @exprtlabs/golem. A second copy, for example node_modules/@exprtlabs/golem-openapi-ts/node_modules/@exprtlabs/golem, has its own codec registry: models from one copy fail the checks of the other.');
+  for (const name of ['golem-openapi-ts', 'golem-ts-openapi']) {
+    const manifest: { peerDependencies?: Record<string, string> } = JSON.parse(fs.readFileSync(path.join(root, 'node_modules/@exprtlabs', name, 'package.json'), 'utf8'));
+    assert.equal(manifest.peerDependencies?.['@exprtlabs/golem'], registry().workspaceVersion, `${name} takes golem as a peer`);
+  }
+});
+
+test('the plan entries and the run-time entries of every generator package import no TypeScript, no yaml and no generator code, and an extension entry imports no generator', async t => {
+  // protects: page "Install and run time": run-time and plan entries stay light, so an app holds no generator code. yaml stays installed after a prune (golem depends on it), so the bundled module graph of each entry is the proof.
+  const root = registry().create(t, 'light-entries');
+  await npm(root, ['install', '--save-prod', ...['golem', 'golem-model', 'golem-ts-openapi', 'golem-openapi-ts'].map(name => packageSpec(registry(), `@exprtlabs/${name}`)), TYPESCRIPT]);
+  const lightEntries = (name: string): string[] => {
+    const folder = path.join(root, 'node_modules/@exprtlabs', name);
+    const manifest: { golem: { generator: string; extensions?: Record<string, string | { entry: string }> }; exports: Record<string, { import: string }> } = JSON.parse(fs.readFileSync(path.join(folder, 'package.json'), 'utf8'));
+    // Every export but the generator and the extension entries: the plan entry and the run-time entries.
+    const extensions = Object.values(manifest.golem.extensions ?? {}).map(extension => typeof extension === 'string' ? extension : extension.entry);
+    return Object.entries(manifest.exports).filter(([key]) => key !== manifest.golem.generator && !extensions.includes(key)).map(([, target]) => path.join(folder, target.import));
+  };
+  const entries = ['golem-model', 'golem-ts-openapi', 'golem-openapi-ts'].flatMap(lightEntries);
+  assert.equal(entries.length, 9);
+  const planHelpers = /\/@exprtlabs\/golem\/dist\/tooling\/(?:job-facts|plan-support|generated-paths)\.js$/;
+  for (const entry of entries) {
+    // The nest and mobx peers are not installed: they are run-time imports of the app.
+    const graph = await build({ entryPoints: [entry], bundle: true, platform: 'node', format: 'esm', write: false, metafile: true, absWorkingDir: root, external: ['@nestjs/*', 'rxjs', 'mobx'], logLevel: 'silent' });
+    const modules = Object.keys(graph.metafile.inputs).map(file => path.join(root, file).split(path.sep).join('/'));
+    const forbidden = modules.filter(file => /\/node_modules\/(?:typescript|yaml)\/|\/dist\/generator\.js$|\/tooling\//.test(file) && !planHelpers.test(file));
+    assert.deepEqual(forbidden, [], `${path.relative(root, entry)} imports TypeScript, yaml or generator code`);
+  }
+  // An extension entry loads in a host that holds TypeScript, but a block with only an extension never loads the generator of its package.
+  for (const name of ['golem-ts-openapi', 'golem-openapi-ts']) {
+    const folder = path.join(root, 'node_modules/@exprtlabs', name);
+    const manifest: { golem: { extensions: Record<string, string | { entry: string }> }; exports: Record<string, { import: string }> } = JSON.parse(fs.readFileSync(path.join(folder, 'package.json'), 'utf8'));
+    for (const extension of Object.values(manifest.golem.extensions)) {
+      const entry = path.join(folder, manifest.exports[typeof extension === 'string' ? extension : extension.entry]!.import);
+      const graph = await build({ entryPoints: [entry], bundle: true, platform: 'node', format: 'esm', write: false, metafile: true, absWorkingDir: root, external: ['@nestjs/*', 'rxjs', 'mobx'], logLevel: 'silent' });
+      const generators = Object.keys(graph.metafile.inputs).filter(file => file.split(path.sep).join('/').endsWith(`/${name}/dist/generator.js`));
+      assert.deepEqual(generators, [], `${path.relative(root, entry)} imports the generator of ${name}`);
+    }
+  }
+});
+
+test('a workspace whose golem packages only the root package.json lists runs golem build in an app folder', async t => {
+  // protects: page step 6, a monorepo with packages listed only at the workspace root (package-registry.test.ts proves the discovery; this proves it on installed packages)
+  const root = registry().create(t, 'workspace-root-only');
+  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'workspace', version: '1.0.0', private: true, type: 'module', workspaces: ['apps/*'] }));
+  const app = path.join(root, 'apps/web');
+  copyFixture(app, 'packed/model-only');
+  fs.writeFileSync(path.join(app, 'package.json'), JSON.stringify({ name: 'web', version: '1.0.0', private: true, type: 'module' }));
+  await npm(root, ['install', '--save-dev', packageSpec(registry(), '@exprtlabs/golem-model')]);
+  await npm(root, ['install', '--save-prod', packageSpec(registry(), '@exprtlabs/golem')]);
+  const rootManifest: { dependencies: object; devDependencies: object } = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
+  assert.deepEqual([Object.keys(rootManifest.dependencies), Object.keys(rootManifest.devDependencies)], [['@exprtlabs/golem'], ['@exprtlabs/golem-model']]);
+  assert.deepEqual(Object.keys(JSON.parse(fs.readFileSync(path.join(app, 'package.json'), 'utf8'))).sort(), ['name', 'private', 'type', 'version']);
+  await command(app, path.join(root, 'node_modules/.bin/golem'), ['build']);
+  assert.equal(fs.existsSync(path.join(app, 'src/item.model.generated.ts')), true);
+  assert.equal(fs.existsSync(path.join(app, 'build/item.model.js')), true);
+});

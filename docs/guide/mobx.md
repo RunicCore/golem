@@ -1,0 +1,121 @@
+# MobX and React
+
+Make generated models observable and use them in React components.
+
+The `mobx` extension makes validators and SDK operations observable. `asGenObservable` makes the fields of a generated model observable.
+
+- Annotate your class's own fields, getters and actions with normal MobX annotations.
+- Nested generated models are initialized recursively and keep their identity.
+
+Create `src/payment-editor.model.ts`:
+
+<<< ../../examples/payments/web/src/payment-editor.model.ts#model-definition
+
+MobX changes observability only. Construction, `fromWireFormat` / `toWireFormat`, `parse` / `stringify` and validation keep their normal behavior.
+
+## Enable MobX
+
+Install MobX and `@exprtlabs/golem-openapi-ts` in the application. Your class constructors and the generated files import them at run time, so `@exprtlabs/golem-openapi-ts` belongs in `dependencies`, not in `devDependencies`:
+
+```sh
+npm install mobx @exprtlabs/golem-openapi-ts
+```
+
+A React app also needs `mobx-react-lite`, which provides `observer` ([Use it in React](#use-it-in-react)):
+
+```sh
+npm install mobx-react-lite
+```
+
+Turn on the extension in the `openapi-ts` block and regenerate:
+
+<<< ../../examples/payments/web/golem.yaml
+
+`extensions: { mobx: {} }` makes the validators of your models observable. The example also sets `validation: true`. Validation is independent of MobX ([Validate models](/guide/validation)). A project with models and no SDK writes the block with only `extensions` ([MobX extension](/reference/config#mobx-extension)).
+
+An SDK in a block with the extension also gains observable operation loading ([Call operations](/guide/client-usage#observe-loading-with-mobx)). Such an SDK needs `mode: golem` on its SDK job and a `model` block in the same file, as the example sets. A `standalone` SDK carries its own copy of the runtime, and that copy has no MobX support, so generation stops with [`OPENAPI_MOBX_NEEDS_GOLEM_MODE`](/reference/diagnostics#openapi-mobx-needs-golem-mode). Set `mode: golem`, or remove `mobx` from `extensions` ([SDK modes](/reference/config#sdk-modes)).
+
+- An SDK has no model classes in either mode, so the data it returns is plain and not observable.
+- For observable data, declare your own model over the SDK type, such as `IModel<Charge>`, and call `asGenObservable` in its constructor.
+
+## Initialize your class
+
+Call `asGenObservable(this, annotations)` once in your constructor, after `super(values)` and after your own field initializers. Later calls such as `getValidator(this).extend()` are fine. A second `asGenObservable` call on the same instance throws.
+
+- Extra annotations are optional: `asGenObservable(this, { label: computed, toggle: action })`.
+- Annotate writable state with `observable`, derived getters with `computed` and state-changing methods with `action`.
+- Use `observable.ref`, `observable.shallow`, `observable.struct`, or `false` when a field should not be deeply observable.
+- An empty `class Payment extends TPaymentBaseModel {}` is not observable until its constructor calls `asGenObservable(this)`. This holds for a model over an [SDK type](/guide/models-and-client) too.
+
+## Observe a model
+
+`autorun` runs once immediately and again when a value it reads changes. `summary` is the computed getter in the class above.
+
+`src/summary.ts`:
+
+<<< ../../examples/payments/web/src/summary.ts#observe-payment
+
+Dispose the reaction when the observation is no longer needed.
+
+## Nested models
+
+When an observable generated model contains another generated model or a plain object, `asGenObservable` walks nested values through arrays, records, maps and sets.
+
+The `golem.yaml` above generates the SDK into `sdk/` from `../server/api/openapi.yaml`. A [model that uses SDK types](/guide/models-and-client) is observable together with its nested SDK values. In `src/payment-editor.model.ts`, `setAmount` edits the nested `money` object:
+
+<<< ../../examples/payments/web/src/payment-editor.model.ts#nested-editing
+
+Calling `setAmount('12.50')` changes `money.amount`, and the reaction above reports the new summary.
+
+- `money` has the SDK type `TMoney`, a plain object type.
+- `asGenObservable` makes that nested object observable, so it needs no manual MobX call.
+- `setAmount` is an action. The reaction runs after it updates `money.amount`.
+
+## Unions and your classes
+
+Put annotations on your class, after `super`. When a union field holds one of your classes, construct it with `new YourClass(…)`. Generated [union conversion](/guide/field-types#unions) builds only generated classes.
+
+Without the extension, generated files import no MobX.
+
+## Use it in React
+
+A React component imports a generated model or client like any other module. Wrap a component that reads observable fields in `observer` from `mobx-react-lite`. It re-renders when a field it read changes. Operation `loading` is observable too ([Call operations](/guide/client-usage#observe-loading-with-mobx)).
+
+The amount field in [`src/App.tsx`](https://github.com/RunicCore/golem/blob/master/examples/payments/web/src/App.tsx), which wraps every field of the form the same way:
+
+<<< ../../examples/payments/web/src/App.tsx#observer-component
+
+`getValidator` reads the editor's validation issues ([Validate models](/guide/validation)) for the field to render. The field calls an action method, `setAmount`, on change.
+
+- Import `getValidator` from `@exprtlabs/golem/validation`. When the `mobx` extension is on and `validation` is `true`, the validator it returns is already observable, so `observer` re-renders when its issues change.
+- Import it from `@exprtlabs/golem-openapi-ts/mobx-validation` when a model is generated without both settings and a component must still re-render on its issues. It returns the same validator for that instance, made observable.
+
+### Bind a text input to a number field
+
+A text input holds a string. The amount field above holds text, so its input needs no draft. The instalments field holds a number, so its input keeps a draft string. The model has the number and an action:
+
+<<< ../../examples/payments/web/src/split-editor.model.ts#split-model
+
+The store converts the draft and calls the action only when the draft converts:
+
+<<< ../../examples/payments/web/src/payment-store.ts#draft-conversion
+
+<<< ../../examples/payments/web/src/payment-store.ts#draft-number
+
+In `makeObservable`, mark `partsDraft` observable, `partsDraftError` computed and `setPartsDraft` an action.
+
+The input shows the draft, never the number. It also shows the message for a draft that does not convert:
+
+<<< ../../examples/payments/web/src/App.tsx#number-input
+
+### Show field errors
+
+Validate the editor. The errors then appear in the validator that each field reads:
+
+<<< ../../examples/payments/web/src/payment-store.ts#validate-and-save
+
+- `validate({ failFast: false })` stores every error. A change to a field does not clear its old error, so validate again.
+- `validator.error('note')` returns the first message of a field. The other members are in [Stored validation state](/guide/validation#stored-validation-state).
+- The tags of the number field check the number. A negative amount fails `Minimum<0>`. The text of the draft is your check.
+
+Full example: [`examples/payments`](https://github.com/RunicCore/golem/tree/master/examples/payments) runs this editor against a local demo server.

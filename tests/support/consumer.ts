@@ -1,0 +1,66 @@
+import { type WithMobx } from './mobx-extension.js';
+import fs from 'node:fs';
+import path from 'node:path';
+import type { GolemProfile } from '@exprtlabs/golem/generator-api';
+import type { TestContext } from 'node:test';
+import { copyFixtureFile, createFixtureProject, linkGolemPackages } from '../fixture-project.js';
+
+/** A fixture project whose node_modules link the workspace packages golem, golem-model and golem-openapi-ts, with `packageJson` as its package.json plus a dependency on each of them that it does not list. */
+export function workspaceLinkedProject(t: TestContext, prefix: string, packageJson: string): string {
+  const root = createFixtureProject(t, prefix);
+  fs.writeFileSync(path.join(root, 'package.json'), packageJson);
+  linkGolemPackages(root, ['golem', 'golem-model', 'golem-openapi-ts']);
+  return root;
+}
+
+export function writeFixture(root: string, profile: WithMobx<GolemProfile>, includeModels = true): void {
+  copyFixtureFile(root, 'packed/profile/api.json', 'api.json');
+  copyFixtureFile(root, 'packed/profile/tsconfig.json', 'tsconfig.json');
+  if (includeModels) copyFixtureFile(root, 'packed/profile/src/cart.model.ts', 'src/cart.model.ts');
+  else fs.mkdirSync(path.join(root, 'src'), { recursive: true });
+
+  const configuration = [
+    'version: 1',
+    `validation: ${profile.validation}`,
+    'openapi-ts:',
+    '  sdks:',
+    '    - input: api.json',
+    '      output: sdk',
+    '      name: Profile',
+    // MobX needs the golem mode, which needs the model block.
+    ...(profile.mobx && includeModels ? ['      mode: golem'] : []),
+    ...(profile.mobx ? ['  extensions:', '    mobx: {}'] : []),
+    ...(includeModels ? ['model: {}'] : []),
+    '',
+  ].join('\n');
+  fs.writeFileSync(path.join(root, 'golem.yaml'), configuration);
+}
+
+export function generatedCodecId(source: string, shortName: string): string {
+  const escaped = shortName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = source.match(new RegExp(`createObjectCodec\\("(${escaped}_[0-9a-f]{8})"`));
+  if (!match) throw new Error(`Generated codec id for ${JSON.stringify(shortName)} is missing.`);
+  return match[1];
+}
+
+export function generatedCodecIdFromRoot(root: string, shortName: string): string {
+  return generatedCodecId(
+    filesUnder(root)
+      .filter((filename) => filename.endsWith('.generated.ts')
+        || (path.basename(path.dirname(filename)) === 'models' && /^_group-.*\.ts$/.test(path.basename(filename))))
+      .map((filename) => fs.readFileSync(filename, 'utf8'))
+      .join('\n'),
+    shortName,
+  );
+}
+
+export function filesUnder(root: string): string[] {
+  const result: string[] = [];
+  if (!fs.existsSync(root)) return result;
+  for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+    const filename = path.join(root, entry.name);
+    if (entry.isDirectory()) result.push(...filesUnder(filename));
+    else if (entry.isFile()) result.push(filename);
+  }
+  return result;
+}

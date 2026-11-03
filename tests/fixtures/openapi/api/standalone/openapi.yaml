@@ -1,0 +1,15 @@
+openapi: 3.2.0
+info:
+  title: Standalone
+  version: '1'
+paths:
+  /payments:
+    get:
+      operationId: listPayments
+      responses:
+        200:
+          description: ok
+          content:
+            application/json:
+              schema:
+                $ref: ./components.yaml

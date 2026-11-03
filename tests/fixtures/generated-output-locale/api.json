@@ -1,0 +1,184 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Locale order",
+    "version": "1"
+  },
+  "paths": {
+    "/letters": {
+      "get": {
+        "operationId": "getLetters",
+        "responses": {
+          "200": {
+            "description": "Letters",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Aa"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/zones": {
+      "get": {
+        "operationId": "getZones",
+        "responses": {
+          "200": {
+            "description": "Zones",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Z"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/all": {
+      "get": {
+        "operationId": "getAll",
+        "responses": {
+          "200": {
+            "description": "All",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LetterAll"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Aa": {
+        "type": "object",
+        "required": [
+          "z",
+          "b",
+          "aa"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "z": {
+            "$ref": "#/components/schemas/Z"
+          },
+          "b": {
+            "$ref": "#/components/schemas/B"
+          },
+          "aa": {
+            "type": "string",
+            "pattern": "aa",
+            "maxLength": 8
+          }
+        }
+      },
+      "B": {
+        "type": "object",
+        "required": [
+          "z",
+          "aa"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "z": {
+            "type": "number",
+            "maximum": 9
+          },
+          "aa": {
+            "type": "string",
+            "pattern": "z"
+          },
+          "back": {
+            "$ref": "#/components/schemas/Aa"
+          }
+        }
+      },
+      "Z": {
+        "type": "object",
+        "required": [
+          "b",
+          "aa"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "b": {
+            "enum": [
+              "z",
+              "b",
+              "aa"
+            ]
+          },
+          "aa": {
+            "type": "boolean"
+          }
+        }
+      },
+      "LetterAa": {
+        "type": "object",
+        "required": [
+          "aa"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "aa": {
+            "type": "string",
+            "pattern": "aa"
+          }
+        }
+      },
+      "LetterB": {
+        "type": "object",
+        "required": [
+          "b"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "b": {
+            "type": "integer"
+          }
+        }
+      },
+      "LetterZ": {
+        "type": "object",
+        "required": [
+          "z"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "z": {
+            "type": "boolean"
+          }
+        }
+      },
+      "LetterAll": {
+        "type": "object",
+        "required": [
+          "z",
+          "b",
+          "aa"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "z": {
+            "$ref": "#/components/schemas/LetterZ"
+          },
+          "b": {
+            "$ref": "#/components/schemas/LetterB"
+          },
+          "aa": {
+            "$ref": "#/components/schemas/LetterAa"
+          }
+        }
+      }
+    }
+  }
+}

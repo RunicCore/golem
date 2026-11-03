@@ -1,0 +1,241 @@
+{
+  "name": "@exprtlabs/golem",
+  "version": "1.1.0-rc.0",
+  "description": "Shared model runtime and independently extensible TypeScript generation CLI",
+  "keywords": [
+    "typescript",
+    "golem",
+    "codegen",
+    "validation",
+    "serialization",
+    "openapi",
+    "nestjs",
+    "models"
+  ],
+  "author": "exprtlabs.ai",
+  "license": "MIT",
+  "homepage": "https://exprtlabs.ai",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/RunicCore/golem.git",
+    "directory": "packages/golem"
+  },
+  "bugs": {
+    "url": "https://github.com/RunicCore/golem/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "tag": "rc"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=22.15.0"
+  },
+  "bin": {
+    "golem": "./dist/bin/golem.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "sideEffects": [
+    "./dist/bin/golem.js",
+    "./dist/tooling/register.js"
+  ],
+  "exports": {
+    "./model": {
+      "types": "./dist/model.d.ts",
+      "import": "./dist/model.js",
+      "default": "./dist/model.js"
+    },
+    "./validation": {
+      "types": "./dist/validation.d.ts",
+      "import": "./dist/validation.js",
+      "default": "./dist/validation.js"
+    },
+    "./manifest": {
+      "types": "./dist/tooling/model-manifest.d.ts",
+      "import": "./dist/tooling/model-manifest.js",
+      "default": "./dist/tooling/model-manifest.js"
+    },
+    "./internal/emitter": {
+      "types": "./dist/tooling/model-source-emitter.d.ts",
+      "import": "./dist/tooling/model-source-emitter.js",
+      "default": "./dist/tooling/model-source-emitter.js"
+    },
+    "./internal/model-runtime": {
+      "types": "./dist/runtime-model.d.ts",
+      "import": "./dist/runtime-model.js",
+      "default": "./dist/runtime-model.js"
+    },
+    "./internal/validation-runtime": {
+      "types": "./dist/runtime-validation.d.ts",
+      "import": "./dist/runtime-validation.js",
+      "default": "./dist/runtime-validation.js"
+    },
+    "./internal/client-runtime": {
+      "types": "./dist/runtime-client.d.ts",
+      "import": "./dist/runtime-client.js",
+      "default": "./dist/runtime-client.js"
+    },
+    "./internal/api-operation-runtime": {
+      "types": "./dist/runtime-api-operation.d.ts",
+      "import": "./dist/runtime-api-operation.js",
+      "default": "./dist/runtime-api-operation.js"
+    },
+    "./internal/client-validation-runtime": {
+      "types": "./dist/runtime-client-validation.d.ts",
+      "import": "./dist/runtime-client-validation.js",
+      "default": "./dist/runtime-client-validation.js"
+    },
+    "./internal/temporal-runtime": {
+      "types": "./dist/runtime-temporal.d.ts",
+      "import": "./dist/runtime-temporal.js",
+      "default": "./dist/runtime-temporal.js"
+    },
+    "./internal/generator-support": {
+      "types": "./dist/tooling/generator-support.d.ts",
+      "import": "./dist/tooling/generator-support.js",
+      "default": "./dist/tooling/generator-support.js"
+    },
+    "./internal/plan-support": {
+      "types": "./dist/tooling/plan-support.d.ts",
+      "import": "./dist/tooling/plan-support.js",
+      "default": "./dist/tooling/plan-support.js"
+    },
+    "./generator-api": {
+      "types": "./dist/tooling/generator-api.d.ts",
+      "import": "./dist/tooling/generator-api.js",
+      "default": "./dist/tooling/generator-api.js"
+    },
+    "./internal/generated-paths": {
+      "types": "./dist/tooling/generated-paths.d.ts",
+      "import": "./dist/tooling/generated-paths.js",
+      "default": "./dist/tooling/generated-paths.js"
+    },
+    "./rewrite": {
+      "types": "./dist/tooling/rewrite.d.ts",
+      "import": "./dist/tooling/rewrite.js",
+      "default": "./dist/tooling/rewrite.js"
+    },
+    "./loader": {
+      "types": "./dist/tooling/loader.d.ts",
+      "import": "./dist/tooling/loader.js",
+      "default": "./dist/tooling/loader.js"
+    },
+    "./vite": {
+      "types": "./dist/tooling/vite.d.ts",
+      "import": "./dist/tooling/vite.js",
+      "default": "./dist/tooling/vite.js"
+    },
+    "./esbuild": {
+      "types": "./dist/tooling/esbuild.d.ts",
+      "import": "./dist/tooling/esbuild.js",
+      "default": "./dist/tooling/esbuild.js"
+    },
+    "./eslint": {
+      "types": "./dist/tooling/eslint.d.ts",
+      "import": "./dist/tooling/eslint.js",
+      "default": "./dist/tooling/eslint.js"
+    },
+    "./register": {
+      "types": "./dist/tooling/register.d.ts",
+      "import": "./dist/tooling/register.js",
+      "default": "./dist/tooling/register.js"
+    },
+    "./errors": {
+      "types": "./dist/errors.d.ts",
+      "import": "./dist/errors.js",
+      "default": "./dist/errors.js"
+    },
+    "./client": {
+      "types": "./dist/client.d.ts",
+      "import": "./dist/client.js",
+      "default": "./dist/client.js"
+    },
+    "./tags": {
+      "types": "./dist/tags.d.ts",
+      "import": "./dist/tags.js",
+      "default": "./dist/tags.js"
+    },
+    "./temporal": {
+      "types": "./dist/temporal.d.ts",
+      "import": "./dist/temporal.js",
+      "default": "./dist/temporal.js"
+    },
+    "./internal/schema": {
+      "types": "./dist/tooling/schema.d.ts",
+      "import": "./dist/tooling/schema.js",
+      "default": "./dist/tooling/schema.js"
+    },
+    "./internal/schema-graph": {
+      "types": "./dist/tooling/schema-graph.d.ts",
+      "import": "./dist/tooling/schema-graph.js",
+      "default": "./dist/tooling/schema-graph.js"
+    },
+    "./serde": {
+      "types": "./dist/serde.d.ts",
+      "import": "./dist/serde.js",
+      "default": "./dist/serde.js"
+    },
+    "./internal/validation-plan": {
+      "types": "./dist/tooling/validation-plan.d.ts",
+      "import": "./dist/tooling/validation-plan.js",
+      "default": "./dist/tooling/validation-plan.js"
+    },
+    "./internal/validator-compiler": {
+      "types": "./dist/tooling/validator-compiler/index.d.ts",
+      "import": "./dist/tooling/validator-compiler/index.js",
+      "default": "./dist/tooling/validator-compiler/index.js"
+    },
+    "./internal/type-analysis": {
+      "types": "./dist/tooling/type-analysis/index.d.ts",
+      "import": "./dist/tooling/type-analysis/index.js",
+      "default": "./dist/tooling/type-analysis/index.js"
+    },
+    "./internal/static-value": {
+      "types": "./dist/tooling/static-value.d.ts",
+      "import": "./dist/tooling/static-value.js",
+      "default": "./dist/tooling/static-value.js"
+    },
+    "./internal/ts": {
+      "types": "./dist/tooling/typescript-ns.d.ts",
+      "import": "./dist/tooling/typescript-ns.js",
+      "default": "./dist/tooling/typescript-ns.js"
+    }
+  },
+  "dependencies": {
+    "yaml": "^2.9.0"
+  },
+  "peerDependencies": {
+    "esbuild": "^0.25.12",
+    "eslint": "^9.0.0 || ^10.0.0",
+    "typescript": ">=6.0.0 <7 || >=7.1.0-0 <8",
+    "vite": ">=5"
+  },
+  "peerDependenciesMeta": {
+    "esbuild": {
+      "optional": true
+    },
+    "eslint": {
+      "optional": true
+    },
+    "typescript": {
+      "optional": true
+    },
+    "vite": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "esbuild": "0.25.12",
+    "eslint": "10.13.0",
+    "typescript": "7.1.0-beta"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.runtime.json && tsc -p tsconfig.tooling.json && node ../../scripts/build-sdk-runtime.mjs && node -e \"require('node:fs').chmodSync('dist/bin/golem.js', 0o755)\"",
+    "clean": "node -e \"for (const target of ['dist', '../../.build/golem-runtime.tsbuildinfo', '../../.build/golem-tooling.tsbuildinfo', '../golem-openapi-ts/sdk-runtime']) require('node:fs').rmSync(target, { recursive: true, force: true })\"",
+    "prepack": "npm run clean && npm run build && tsc -p ../../tsconfig.package-check.json && node ../../.build/scripts/verify-package.js ."
+  }
+}

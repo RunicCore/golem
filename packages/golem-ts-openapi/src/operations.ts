@@ -1,0 +1,686 @@
+import { compareText } from '@exprtlabs/golem/generator-api';
+import * as ts from '@exprtlabs/golem/internal/ts';
+import { TsToOpenApiDiagnosticCode, TsToOpenApiError, diagnostic } from './diagnostics.js';
+import { mapArrayItems, mergeSchemaMetadata } from './nest/json-schema-merge.js';
+import type { ControllerParameter, ControllerRoute, ResponseDescription, TypeReference } from './nest/types.js';
+import { parameterOverrideKey } from './nest/parameters.js';
+
+type OpenApiSchema = Record<string, unknown> | boolean;
+
+export interface SchemaResolutionContext {
+  readonly checker: ts.TypeChecker;
+  readonly program: ts.Program;
+  readonly reference: TypeReference;
+  readonly sourceNode?: ts.Node;
+  readonly location?: string;
+}
+
+export type SchemaResolver = (
+  context: SchemaResolutionContext,
+) => OpenApiSchema | Promise<OpenApiSchema>;
+
+export interface OperationBuildContext {
+  readonly checker: ts.TypeChecker;
+  readonly program: ts.Program;
+  readonly openapiVersion?: '3.2.0' | '3.1.2';
+  readonly schemaResolver?: SchemaResolver;
+  /** Resolve shared component descriptors while checking explicit Swagger overlays. */
+  readonly resolveSchemaReference?: (reference: string) => OpenApiSchema | undefined;
+}
+
+interface OperationBuildResult {
+  readonly paths: Readonly<Record<string, Readonly<Record<string, unknown>>>>;
+}
+
+const HTTP_METHODS = new Set(['get', 'post', 'put', 'delete', 'patch', 'options', 'head']);
+
+function record(value: unknown): Record<string, unknown> | undefined {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : undefined;
+}
+
+async function schemaFor(
+  context: OperationBuildContext,
+  reference: TypeReference,
+  direction: 'request' | 'response' | 'parameter',
+  location?: string,
+  override?: OpenApiSchema,
+): Promise<OpenApiSchema> {
+  if (!context.schemaResolver) {
+    throw new TsToOpenApiError(diagnostic(
+      reference.sourceFile,
+      reference.node ?? reference.declaration,
+      TsToOpenApiDiagnosticCode.MissingSchemaResolver,
+      `No canonical schema resolver was supplied for ${direction} type ${context.checker.typeToString(reference.type)}. The Nest adapter does not infer schemas independently; connect the shared type-analysis assembler.`,
+    ));
+  }
+  const canonical = await context.schemaResolver({
+    checker: context.checker,
+    program: context.program,
+    reference,
+    ...(reference.sourceNode ? { sourceNode: reference.sourceNode } : {}),
+    ...(location ? { location } : {}),
+  });
+  if (override === undefined) return canonical;
+  return mergeSchemaMetadata(canonical, override, {
+    authoritative: reference.modelContractName !== undefined,
+    hint: contractHint(direction),
+    resolveReference: context.resolveSchemaReference,
+    sourceFile: reference.sourceFile,
+    node: reference.sourceNode ?? reference.node ?? reference.declaration,
+    ...(location ? { location } : {}),
+  });
+}
+
+/** What a user changes when Swagger metadata contradicts the TypeScript type at a site. */
+function contractHint(direction: 'request' | 'response' | 'parameter'): string {
+  const declaration = direction === 'response' ? 'the method return type' : 'the parameter type';
+  return `If the Swagger metadata describes the intended contract, declare ${declaration} explicitly with that type; otherwise correct the Swagger metadata.`;
+}
+
+/**
+ * An explicit Swagger schema that composes components (`$ref`, `oneOf`,
+ * `anyOf`, `allOf`) is the documented contract of an ordinary, non-IModel
+ * type. Merging it into the inline TypeScript schema would emit both shapes,
+ * so it replaces the inline schema; IModel contracts stay authoritative.
+ */
+function explicitCompositionSchema(reference: TypeReference, schema: unknown): OpenApiSchema | undefined {
+  const value = record(schema);
+  if (!value || reference.modelContractName !== undefined) return undefined;
+  return ['$ref', 'oneOf', 'anyOf', 'allOf'].some(key => key in value) ? value : undefined;
+}
+
+function arraySchema(schema: OpenApiSchema): OpenApiSchema {
+  return { type: 'array', items: schema };
+}
+
+function primitiveResponseType(checker: ts.TypeChecker, type: ts.Type, seen: ReadonlySet<ts.Type> = new Set()): boolean {
+  // A recursive alias (`type Json = ... | Json[]`) meets its own type again; a repeat adds no non-primitive member.
+  if (seen.has(type)) return true;
+  const inside = new Set(seen).add(type);
+  if (type.isUnion()) {
+    const members = type.types.filter(item => (item.flags & ts.TypeFlags.Undefined) === 0);
+    return members.length > 0 && members.every(item => primitiveResponseType(checker, item, inside));
+  }
+  if (checker.isArrayType(type)) {
+    const item = checker.getTypeArguments(type as ts.TypeReference)[0];
+    return item !== undefined && primitiveResponseType(checker, item, inside);
+  }
+  return (type.flags & (
+    ts.TypeFlags.StringLike
+    | ts.TypeFlags.NumberLike
+    | ts.TypeFlags.BooleanLike
+    | ts.TypeFlags.BigIntLike
+    | ts.TypeFlags.Null
+  )) !== 0;
+}
+
+function primitiveResponseSchema(checker: ts.TypeChecker, type: ts.Type): OpenApiSchema | undefined {
+  if (type.isUnion()) {
+    const members = type.types.filter(item => (item.flags & ts.TypeFlags.Undefined) === 0);
+    const schemas = members.map(member => primitiveResponseSchema(checker, member));
+    if (!schemas.every((item): item is OpenApiSchema => item !== undefined)) return undefined;
+    // `true | false` is one boolean schema, not two.
+    const distinct = [...new Map(schemas.map(item => [JSON.stringify(item), item])).values()];
+    return distinct.length === 1 ? distinct[0] : { anyOf: distinct };
+  }
+  if (checker.isArrayType(type)) {
+    const item = checker.getTypeArguments(type as ts.TypeReference)[0];
+    const itemSchema = item ? primitiveResponseSchema(checker, item) : undefined;
+    return itemSchema === undefined ? undefined : { type: 'array', items: itemSchema };
+  }
+  if ((type.flags & ts.TypeFlags.StringLike) !== 0) return { type: 'string' };
+  if ((type.flags & ts.TypeFlags.NumberLike) !== 0) return { type: 'number' };
+  if ((type.flags & ts.TypeFlags.BooleanLike) !== 0) return { type: 'boolean' };
+  if ((type.flags & ts.TypeFlags.BigIntLike) !== 0) return { type: 'integer', format: 'int64' };
+  if ((type.flags & ts.TypeFlags.Null) !== 0) return { type: 'null' };
+  return undefined;
+}
+
+function requiresExplicitResponseMetadata(checker: ts.TypeChecker, type: ts.Type): boolean {
+  if (type.isUnion()) return type.types.some(member => requiresExplicitResponseMetadata(checker, member));
+  const symbol = type.aliasSymbol ?? type.getSymbol?.();
+  const name = symbol?.getName() ?? checker.typeToString(type);
+  return new Set([
+    'StreamableFile',
+    'Readable',
+    'ReadableStream',
+    'ReadableStreamDefaultReader',
+    'Buffer',
+    'Uint8Array',
+    'Subject',
+    'AsyncIterable',
+  ]).has(name)
+    || /(?:^|\.)ReadableStream$/.test(checker.typeToString(type));
+}
+
+function pathParameterNames(pathname: string): readonly string[] {
+  return [...pathname.matchAll(/\{([^{}]+)\}/g)].map(match => match[1]);
+}
+
+function parameterOverride(
+  route: ControllerRoute,
+  parameter: ControllerParameter,
+): Readonly<Record<string, unknown>> | undefined {
+  return parameter.name && parameter.location
+    ? route.parameterOverrides?.[parameterOverrideKey(parameter.location, parameter.name)]
+    : undefined;
+}
+
+/** Schema keywords an `@ApiQuery` override may set on a parameter or query DTO field. */
+const PARAMETER_SCHEMA_KEYS = ['enum', 'default', 'example', 'examples', 'minimum', 'maximum', 'minLength', 'maxLength', 'pattern'] as const;
+
+/**
+ * The schema keywords an `@ApiQuery` override sets. Nest documents the `enum` of an `isArray` query parameter on
+ * the items of the array, so the array keeps it out (`withItemsEnum` writes it there).
+ */
+function parameterKeywords(override: Readonly<Record<string, unknown>>): Record<string, unknown> {
+  return Object.fromEntries(PARAMETER_SCHEMA_KEYS
+    .filter(key => override[key] !== undefined && !(key === 'enum' && override.enumOnItems === true))
+    .map(key => [key, override[key]]));
+}
+
+/** Write the `enum` of an `enumOnItems` override on the items of the array schema, as Nest does. */
+function withItemsEnum(
+  schema: OpenApiSchema,
+  override: Readonly<Record<string, unknown>> | undefined,
+  options: Parameters<typeof mergeSchemaMetadata>[2] & { readonly sourceFile: ts.SourceFile; readonly node: ts.Node },
+): OpenApiSchema {
+  const values = override?.enumOnItems === true ? override.enum : undefined;
+  if (values === undefined) return schema;
+  const result = mapArrayItems(schema, items => mergeSchemaMetadata(items, { enum: values }, options));
+  if (!result) {
+    throw new TsToOpenApiError(diagnostic(
+      options.sourceFile,
+      options.node,
+      TsToOpenApiDiagnosticCode.ConflictingSchemaMetadata,
+      `Swagger ${options.location ?? 'parameter'} sets enum with isArray but the parameter type is not an array.`,
+    ));
+  }
+  return result;
+}
+
+/**
+ * Apply `@ApiQuery({ name })` metadata for fields of an OAS 3.2 querystring
+ * DTO to that field's schema, as OpenAPI 3.1 applies it to the flattened
+ * parameter. An implicit `required: true` default does not override an
+ * authoritative IModel field; an explicit conflicting one is an error.
+ */
+function querystringPropertyOverrides(
+  context: OperationBuildContext,
+  route: ControllerRoute,
+  parameter: ControllerParameter,
+  schema: OpenApiSchema,
+): OpenApiSchema {
+  const target = record(schema);
+  const properties = record(target?.properties);
+  if (!target || !properties) return schema;
+  const authoritative = parameter.type.modelContractName !== undefined;
+  let result: Record<string, unknown> = target;
+  for (const name of Object.keys(properties)) {
+    const override = name === parameter.name ? undefined : route.parameterOverrides?.[parameterOverrideKey('query', name)];
+    if (!override) continue;
+    const propertySchema: Record<string, unknown> = { ...record(override.schema), ...parameterKeywords(override) };
+    for (const key of ['description', 'deprecated'] as const) {
+      if (override[key] !== undefined) propertySchema[key] = override[key];
+    }
+    const mergeOptions = {
+      authoritative,
+      resolveReference: context.resolveSchemaReference,
+      sourceFile: route.sourceFile,
+      node: parameter.node,
+      location: `querystring.${name}`,
+    };
+    const merged = record(mergeSchemaMetadata(result, { properties: { [name]: propertySchema } }, mergeOptions));
+    result = merged ?? result;
+    const mergedProperty = record(record(result.properties)?.[name]);
+    if (mergedProperty && override.enumOnItems === true) {
+      result = { ...result, properties: { ...record(result.properties), [name]: withItemsEnum(mergedProperty, override, mergeOptions) } };
+    }
+    if (typeof override.required !== 'boolean' || (override.requiredDefaulted === true && authoritative)) continue;
+    const required = new Set(Array.isArray(result.required) ? result.required.map(String) : []);
+    if (authoritative && required.has(name) !== override.required) {
+      throw new TsToOpenApiError(diagnostic(
+        route.sourceFile,
+        parameter.node,
+        TsToOpenApiDiagnosticCode.ConflictingSchemaMetadata,
+        `Swagger query field ${name} required:${String(override.required)} conflicts with the IModel querystring contract.`,
+      ));
+    }
+    if (override.required) required.add(name);
+    else required.delete(name);
+    const { required: _previous, ...rest } = result;
+    result = required.size > 0 ? { ...rest, required: [...required].sort() } : rest;
+  }
+  return result;
+}
+
+async function openApiParameter(
+  context: OperationBuildContext,
+  route: ControllerRoute,
+  parameter: ControllerParameter,
+): Promise<Record<string, unknown>> {
+  const location = parameter.location;
+  const override = parameterOverride(route, parameter);
+  const overrideSchema = record(override?.schema) as OpenApiSchema | undefined;
+  const hasAuthoritativeRequiredContract = parameter.required && parameter.type.modelContractName !== undefined;
+  if (override?.required === false && (location === 'path' || hasAuthoritativeRequiredContract)) {
+    throw new TsToOpenApiError(diagnostic(
+      route.sourceFile,
+      parameter.node,
+      TsToOpenApiDiagnosticCode.ConflictingSchemaMetadata,
+      `Swagger parameter ${parameter.name} required:false conflicts with the required IModel parameter contract. Path parameters are always required.`,
+    ));
+  }
+  if (location === 'querystring') {
+    if ((context.openapiVersion ?? '3.2.0') !== '3.2.0') {
+      throw new TsToOpenApiError(diagnostic(route.sourceFile, parameter.node, TsToOpenApiDiagnosticCode.NonPortableParameter, 'The OpenAPI querystring parameter is available only in OpenAPI 3.2.0. Use named scalar query parameters for OpenAPI 3.1.2.'));
+    }
+    const schema = querystringPropertyOverrides(
+      context,
+      route,
+      parameter,
+      await schemaFor(context, parameter.type, 'parameter', 'querystring', overrideSchema),
+    );
+    return {
+      name: parameter.name ?? 'query',
+      in: 'querystring',
+      required: parameter.required,
+      content: {
+        'application/x-www-form-urlencoded': { schema },
+      },
+    };
+  }
+  if (location !== 'path' && location !== 'query' && location !== 'header' && location !== 'cookie') {
+    throw new TsToOpenApiError(diagnostic(route.sourceFile, parameter.node, TsToOpenApiDiagnosticCode.UnsupportedParameterLocation, 'Only path, query, header, and cookie parameters can be emitted as OpenAPI parameters.'));
+  }
+  if (!parameter.name) {
+    throw new TsToOpenApiError(diagnostic(route.sourceFile, parameter.node, TsToOpenApiDiagnosticCode.MissingParameterName, `An OpenAPI ${location} parameter requires a name.`));
+  }
+  const overrideType = override?.type;
+  const overrideReference = overrideType && typeof overrideType === 'object' && 'type' in (overrideType as object)
+    ? overrideType as TypeReference
+    : parameter.type;
+  const overrideRecord = record(overrideSchema);
+  const schemaOverride: Record<string, unknown> = { ...(overrideRecord ?? {}), ...(override ? parameterKeywords(override) : {}) };
+  let schema: OpenApiSchema;
+  if (overrideType && overrideReference !== parameter.type) {
+    const declaredSchema = await schemaFor(context, parameter.type, 'parameter', `${location}.${parameter.name}.declared`);
+    let overrideTypeSchema = await schemaFor(context, overrideReference, 'parameter', `${location}.${parameter.name}.override`);
+    if (override?.isArray === true) overrideTypeSchema = arraySchema(overrideTypeSchema);
+    // The method parameter remains the runtime authority. A Swagger `type`
+    // annotation may document it, but cannot replace its wire shape.
+    mergeSchemaMetadata(declaredSchema, overrideTypeSchema, {
+      authoritative: parameter.type.modelContractName !== undefined,
+      resolveReference: context.resolveSchemaReference,
+      sourceFile: route.sourceFile,
+      node: parameter.node,
+      location: `${location}.${parameter.name}`,
+      hint: contractHint('parameter'),
+    });
+  }
+  schema = await schemaFor(
+    context,
+    parameter.type,
+    'parameter',
+    `${location}.${parameter.name}`,
+    Object.keys(schemaOverride).length > 0 ? schemaOverride : undefined,
+  );
+  schema = withItemsEnum(schema, override, {
+    authoritative: parameter.type.modelContractName !== undefined,
+    resolveReference: context.resolveSchemaReference,
+    sourceFile: route.sourceFile,
+    node: parameter.node,
+    location: `${location}.${parameter.name}`,
+  });
+  const schemaValue = record(schema);
+  const schemaRecord = schemaValue ? { ...schemaValue } : undefined;
+  if (schemaRecord) schema = schemaRecord;
+  const style = typeof override?.style === 'string'
+    ? override.style
+    // A model is an object: a query object is `name[field]=value`, which is what the interceptor reads.
+    : location === 'query' && parameter.type.modelContractName !== undefined ? 'deepObject'
+    : location === 'query' || location === 'cookie' ? 'form' : 'simple';
+  const explode = typeof override?.explode === 'boolean'
+    ? override.explode
+    : location === 'query' || location === 'cookie';
+  return {
+    name: parameter.name,
+    in: location,
+    required: location === 'path'
+      ? true
+      : override?.required !== undefined ? override.required === true : parameter.required,
+    schema,
+    style,
+    explode,
+    ...(typeof override?.description === 'string' ? { description: override.description } : {}),
+    ...(override?.deprecated === true ? { deprecated: true } : {}),
+  };
+}
+
+function explicitContent(value: unknown): Record<string, unknown> | undefined {
+  return record(value);
+}
+
+/** A type as the source writes it, for a message. */
+function typeText(context: OperationBuildContext, reference: TypeReference): string {
+  return reference.node?.getText() ?? context.checker.typeToString(reference.type);
+}
+
+/** The schema of one request body part, with how a message names the part. */
+interface BodyPartSchema {
+  readonly schema: OpenApiSchema;
+  readonly label: string;
+  readonly node: ts.Node;
+}
+
+/**
+ * The schema of the request body parts beyond the first whole `@Body()`: each
+ * further whole `@Body()` type, then one object that holds each one-field
+ * parameter under its name. A name is one property: a repeat adds nothing when
+ * it has the same schema. A one-field parameter that is optional is not
+ * `required`, and the property is required when any parameter of its name is.
+ */
+async function bodyExtraSchemas(
+  context: OperationBuildContext,
+  parts: readonly ControllerParameter[],
+): Promise<readonly BodyPartSchema[]> {
+  const schemas: BodyPartSchema[] = [];
+  for (const [index, part] of parts.filter(item => item.name === undefined).entries()) {
+    schemas.push({ schema: await schemaFor(context, part.type, 'request', `body.part${index + 1}`), label: `the whole @Body() ${typeText(context, part.type)}`, node: part.node });
+  }
+  const fields = parts.filter(item => item.name !== undefined);
+  if (fields.length === 0) return schemas;
+  const properties: Record<string, OpenApiSchema> = {};
+  const required = new Set<string>();
+  for (const field of fields) {
+    const name = field.name!;
+    const schema = await schemaFor(context, field.type, 'request', `body.${name}`);
+    if (properties[name] !== undefined && JSON.stringify(properties[name]) !== JSON.stringify(schema)) {
+      throw new TsToOpenApiError(diagnostic(field.node.getSourceFile(), field.node, TsToOpenApiDiagnosticCode.NonPortableParameter, `@Body("${name}") is declared twice with different types, and a request body property has one schema. Give both parameters one type, or read the body in one whole @Body().`));
+    }
+    properties[name] = schema;
+    if (field.required) required.add(name);
+  }
+  const names = Object.keys(properties).map(name => `@Body("${name}")`).join(' and ');
+  schemas.push({ schema: { type: 'object', properties, ...(required.size > 0 ? { required: [...required] } : {}) }, label: `the one-field ${names}`, node: fields[0]!.node });
+  return schemas;
+}
+
+/** The schema a `$ref` names, through references. Undefined when it cannot be read. */
+function resolvedSchema(context: OperationBuildContext, schema: OpenApiSchema, seen: ReadonlySet<string> = new Set()): Record<string, unknown> | undefined {
+  const value = record(schema);
+  if (value === undefined || typeof value.$ref !== 'string') return value;
+  if (seen.has(value.$ref)) return undefined;
+  const target = context.resolveSchemaReference?.(value.$ref);
+  return target === undefined ? undefined : resolvedSchema(context, target, new Set(seen).add(value.$ref));
+}
+
+/** The property names a schema declares (`key: 'properties'`) or requires (`key: 'required'`), through references and `allOf`. Undefined when a part cannot be read. */
+function propertyNames(context: OperationBuildContext, schema: OpenApiSchema, key: 'properties' | 'required'): ReadonlySet<string> | undefined {
+  const value = resolvedSchema(context, schema);
+  if (value === undefined) return undefined;
+  const names = new Set(key === 'properties' ? Object.keys(record(value.properties) ?? {}) : (Array.isArray(value.required) ? value.required as string[] : []));
+  for (const member of Array.isArray(value.allOf) ? value.allOf as OpenApiSchema[] : []) {
+    const inner = propertyNames(context, member, key);
+    if (inner === undefined) return undefined;
+    for (const name of inner) names.add(name);
+  }
+  return names;
+}
+
+/**
+ * The parts of a request body as one schema: a part that repeats appears once,
+ * and several parts combine with `allOf`. A closed part (`additionalProperties:
+ * false`, such as an exact model) beside a part that requires a property it
+ * lacks is an empty type, which no document can describe. A part that only
+ * declares an optional property leaves a valid body.
+ */
+function combineBodyParts(context: OperationBuildContext, parts: readonly BodyPartSchema[]): OpenApiSchema {
+  const unique = parts.filter((part, index) => parts.findIndex(other => JSON.stringify(other.schema) === JSON.stringify(part.schema)) === index);
+  if (unique.length === 1) return unique[0]!.schema;
+  for (const closed of unique) {
+    if (resolvedSchema(context, closed.schema)?.additionalProperties !== false) continue;
+    const declared = propertyNames(context, closed.schema, 'properties');
+    for (const other of unique.filter(item => item !== closed)) {
+      const extra = [...propertyNames(context, other.schema, 'required') ?? []].find(name => !declared?.has(name));
+      if (extra === undefined) continue;
+      throw new TsToOpenApiError(diagnostic(other.node.getSourceFile(), other.node, TsToOpenApiDiagnosticCode.NonPortableParameter, `${closed.label} is a closed model (additionalProperties: false) and ${other.label} requires the property "${extra}" that it does not declare, so no request body can satisfy both and OpenAPI cannot describe the empty type. Declare the property in the model, make the model open with { exact: false }, or read the body in one whole @Body().`));
+    }
+  }
+  return { allOf: unique.map(part => part.schema) };
+}
+
+async function requestBody(
+  context: OperationBuildContext,
+  route: ControllerRoute,
+): Promise<Record<string, unknown> | undefined> {
+  if (route.bodyParts.length === 0 && !route.requestBody) return undefined;
+  const override = route.requestBody;
+  // The first whole @Body() is the body the Swagger overrides refine; the other parts join it.
+  const [primary] = route.bodyParts.filter(part => part.name === undefined);
+  const declaredType = override?.declaredType ?? primary?.type;
+  const bodyType = declaredType ?? override?.type;
+  // An @ApiBody with a type replaces the body the handler parameters give, as @nestjs/swagger does (api-parameters.explorer.js, removeBodyMetadataIfExplicitExists).
+  const extraSchemas = override?.type ? [] : await bodyExtraSchemas(context, route.bodyParts.filter(part => part !== primary));
+  const primaryPart = { label: `the whole @Body() ${primary ? typeText(context, primary.type) : ''}`.trim(), node: primary?.node ?? route.method };
+  if (declaredType && override?.type && override.type !== declaredType) {
+    const declaredSchema = await schemaFor(context, declaredType, 'request', 'body.declared');
+    let overrideSchema = await schemaFor(context, override.type, 'request', 'body.override');
+    if (override.isArray === true) overrideSchema = arraySchema(overrideSchema);
+    mergeSchemaMetadata(declaredSchema, overrideSchema, {
+      authoritative: declaredType.modelContractName !== undefined,
+      resolveReference: context.resolveSchemaReference,
+      sourceFile: route.sourceFile,
+      node: primary?.node ?? route.method,
+      location: 'body',
+      hint: contractHint('request'),
+    });
+  }
+  const mediaTypes = override?.content
+    ? explicitContent(override.content)
+    : Object.fromEntries((route.consumes?.length ? route.consumes : ['application/json']).map(media => [media, {}]));
+  const content = override?.content
+    ? override.content
+    : (() => {
+      if (!bodyType) return mediaTypes;
+      return Object.fromEntries(Object.keys(mediaTypes ?? { 'application/json': {} }).map(media => [media, {
+        schema: undefined,
+      }]));
+    })();
+  const generatedContent: Record<string, unknown> = {};
+  if (content) {
+    for (const [media, mediaValue] of Object.entries(content)) {
+      const mediaRecord = record(mediaValue) ?? {};
+      if (mediaRecord.schema !== undefined) {
+        if (!bodyType) {
+          generatedContent[media] = mediaRecord;
+          continue;
+        }
+        const schema = explicitCompositionSchema(declaredType ?? bodyType, mediaRecord.schema)
+          ?? await schemaFor(context, declaredType ?? bodyType, 'request', `body.${media}`, mediaRecord.schema as OpenApiSchema);
+        generatedContent[media] = { ...mediaRecord, schema: combineBodyParts(context, [{ schema: override?.isArray ? arraySchema(schema) : schema, ...primaryPart }, ...extraSchemas]) };
+        continue;
+      }
+      if (!bodyType) {
+        generatedContent[media] = extraSchemas.length > 0 ? { ...mediaRecord, schema: combineBodyParts(context, extraSchemas) } : mediaRecord;
+        continue;
+      }
+      const schema = await schemaFor(context, declaredType ?? bodyType, 'request', `body.${media}`);
+      generatedContent[media] = {
+        ...mediaRecord,
+        schema: combineBodyParts(context, [{ schema: override?.isArray ? arraySchema(schema) : schema, ...primaryPart }, ...extraSchemas]),
+      };
+    }
+  }
+  // The body is required when any part the handler reads is.
+  const required = route.bodyParts.map(part => part.required);
+  const requiredBody = override?.required ?? (required.length > 0 ? required.some(Boolean) : undefined);
+  return {
+    ...(override?.description ? { description: override.description } : {}),
+    ...(requiredBody === undefined ? {} : { required: requiredBody }),
+    content: generatedContent,
+  };
+}
+
+async function responseObject(
+  context: OperationBuildContext,
+  route: ControllerRoute,
+  response: ResponseDescription,
+): Promise<Record<string, unknown>> {
+  const result: Record<string, unknown> = { description: response.description ?? '' };
+  if (response.headers) result.headers = response.headers;
+  const specialResponseType = response.type ?? response.declaredType;
+  const specialResponse = specialResponseType
+    ? requiresExplicitResponseMetadata(context.checker, specialResponseType.type)
+    : false;
+  if (!specialResponse && response.declaredType && response.type && response.declaredType !== response.type) {
+    const declaredSchema = await schemaFor(context, response.declaredType, 'response', `response.${response.status}.declared`);
+    let overrideSchema = await schemaFor(context, response.type, 'response', `response.${response.status}.override`);
+    if (response.isArray === true) overrideSchema = arraySchema(overrideSchema);
+    mergeSchemaMetadata(declaredSchema, overrideSchema, {
+      authoritative: response.declaredType.modelContractName !== undefined,
+      resolveReference: context.resolveSchemaReference,
+      sourceFile: route.sourceFile,
+      node: response.type.sourceNode ?? response.type.node ?? response.type.declaration ?? route.method,
+      location: `response.${response.status}`,
+      hint: contractHint('response'),
+    });
+  }
+  if (response.content) {
+    const contractType = specialResponse ? undefined : response.declaredType ?? response.type;
+    if (contractType) {
+      const content: Record<string, unknown> = {};
+      for (const [media, mediaValue] of Object.entries(response.content)) {
+        const mediaRecord = record(mediaValue) ?? {};
+        if (mediaRecord.schema === undefined) {
+          const schema = await schemaFor(
+            context,
+            contractType,
+            'response',
+            `response.${response.status}.${media}`,
+          );
+          content[media] = {
+            ...mediaRecord,
+            schema: response.isArray && !response.declaredType ? arraySchema(schema) : schema,
+          };
+          continue;
+        }
+        const schema = explicitCompositionSchema(contractType, mediaRecord.schema)
+          ?? await schemaFor(context, contractType, 'response', `response.${response.status}.${media}`, mediaRecord.schema as OpenApiSchema);
+        content[media] = { ...mediaRecord, schema: response.isArray && !response.declaredType ? arraySchema(schema) : schema };
+      }
+      result.content = content;
+    } else result.content = response.content;
+    return result;
+  }
+  if (!response.type || response.status === '204' || response.status === '304') return result;
+  if (requiresExplicitResponseMetadata(context.checker, response.type.type)) {
+    throw new TsToOpenApiError(diagnostic(
+      route.sourceFile,
+      response.type.sourceNode ?? response.type.node ?? response.type.declaration,
+      TsToOpenApiDiagnosticCode.PrimitiveResponseMetadata,
+      `File, stream, and Observable responses require explicit Swagger content and schema metadata.`,
+    ));
+  }
+  if (primitiveResponseType(context.checker, response.type.type)) {
+    if (!response.explicit) {
+      throw new TsToOpenApiError(diagnostic(
+        route.sourceFile,
+        response.type.sourceNode ?? response.type.node ?? response.type.declaration,
+        TsToOpenApiDiagnosticCode.PrimitiveResponseMetadata,
+        `Primitive response ${context.checker.typeToString(response.type.type)} requires explicit Swagger content and schema metadata.`,
+      ));
+    }
+    const schema = primitiveResponseSchema(context.checker, response.type.type);
+    if (!schema) {
+      throw new TsToOpenApiError(diagnostic(
+        route.sourceFile,
+        response.type.sourceNode ?? response.type.node ?? response.type.declaration,
+        TsToOpenApiDiagnosticCode.PrimitiveResponseMetadata,
+        `Primitive response ${context.checker.typeToString(response.type.type)} requires an explicit supported Swagger schema.`,
+      ));
+    }
+    const mediaTypes = response.mediaTypes ?? (route.produces?.length ? route.produces : ['application/json']);
+    result.content = Object.fromEntries(mediaTypes.map(media => [media, { schema: response.isArray ? arraySchema(schema) : schema }]));
+    return result;
+  }
+  const schema = await schemaFor(context, response.declaredType ?? response.type, 'response', `response.${response.status}`);
+  // A declared return type already describes the complete array shape.
+  const responseSchema = response.isArray && !response.declaredType ? arraySchema(schema) : schema;
+  const mediaTypes = response.mediaTypes ?? (route.produces?.length ? route.produces : ['application/json']);
+  result.content = Object.fromEntries(mediaTypes.map(media => [media, { schema: responseSchema }]));
+  return result;
+}
+
+async function operationObject(
+  context: OperationBuildContext,
+  route: ControllerRoute,
+): Promise<Record<string, unknown>> {
+  const parameters = await Promise.all(route.parameters.map(parameter => openApiParameter(context, route, parameter)));
+  const placeholders = pathParameterNames(route.path);
+  for (const placeholder of placeholders) {
+    if (!parameters.some(parameter => parameter.in === 'path' && parameter.name === placeholder)) {
+      throw new TsToOpenApiError(diagnostic(route.sourceFile, route.method, TsToOpenApiDiagnosticCode.MissingPathParameter, `Path parameter {${placeholder}} has no matching @Param("${placeholder}") declaration.`));
+    }
+  }
+  for (const parameter of route.parameters.filter(item => item.location === 'path')) {
+    if (!placeholders.includes(String(parameter.name))) {
+      throw new TsToOpenApiError(diagnostic(route.sourceFile, parameter.node, TsToOpenApiDiagnosticCode.ExtraPathParameter, `@Param("${parameter.name}") is not present in route path ${route.path}.`));
+    }
+  }
+  const responseEntries: [string, Record<string, unknown>][] = [];
+  const responseStatuses = new Set<string>();
+  for (const response of route.responses) {
+    if (response.status !== 'default' && !/^[1-5]XX$/.test(response.status) && !/^[1-5][0-9]{2}$/.test(response.status)) {
+      throw new TsToOpenApiError(diagnostic(route.sourceFile, route.method, TsToOpenApiDiagnosticCode.InvalidResponseStatus, `Invalid OpenAPI response status ${response.status} for ${route.operationId}.`));
+    }
+    if (responseStatuses.has(response.status)) {
+      throw new TsToOpenApiError(diagnostic(route.sourceFile, route.method, TsToOpenApiDiagnosticCode.DuplicateResponseStatus, `Response status ${response.status} is declared more than once for ${route.operationId}.`));
+    }
+    responseStatuses.add(response.status);
+    responseEntries.push([response.status, await responseObject(context, route, response)]);
+  }
+  const responses = Object.fromEntries(responseEntries);
+  const body = await requestBody(context, route);
+  const result: Record<string, unknown> = {
+    operationId: route.operationId,
+    ...(route.tags.length > 0 ? { tags: route.tags } : {}),
+    ...(route.summary ? { summary: route.summary } : {}),
+    ...(route.description ? { description: route.description } : {}),
+    ...(route.deprecated ? { deprecated: true } : {}),
+    ...(parameters.length > 0 ? { parameters } : {}),
+    ...(body ? { requestBody: body } : {}),
+    responses,
+    ...(route.security ? { security: route.security } : {}),
+  };
+  return result;
+}
+
+export async function collectOperations(
+  routes: readonly ControllerRoute[],
+  context: OperationBuildContext,
+): Promise<OperationBuildResult> {
+  const paths: Record<string, Record<string, unknown>> = {};
+  const operationIds = new Map<string, ControllerRoute>();
+  for (const route of routes) {
+    if (!HTTP_METHODS.has(route.httpMethod)) {
+      throw new TsToOpenApiError(diagnostic(route.sourceFile, route.method, TsToOpenApiDiagnosticCode.UnsupportedHttpMethod, `Unsupported HTTP method ${route.httpMethod}.`));
+    }
+    const previous = operationIds.get(route.operationId);
+    if (previous) {
+      throw new TsToOpenApiError(diagnostic(route.sourceFile, route.method, TsToOpenApiDiagnosticCode.DuplicateOperationId, `OperationId "${route.operationId}" is emitted by both ${previous.controller}.${previous.methodName} and ${route.controller}.${route.methodName}. Set distinct @ApiOperation({ operationId }) values or change the route expansion.`));
+    }
+    operationIds.set(route.operationId, route);
+    const pathItem = paths[route.path] ?? {};
+    if (pathItem[route.httpMethod]) {
+      throw new TsToOpenApiError(diagnostic(route.sourceFile, route.method, TsToOpenApiDiagnosticCode.DuplicateRoute, `Route ${route.httpMethod.toUpperCase()} ${route.path} is declared more than once.`));
+    }
+    pathItem[route.httpMethod] = await operationObject(context, route);
+    paths[route.path] = pathItem;
+  }
+  return {
+    paths: Object.fromEntries(Object.entries(paths).sort(([left], [right]) => compareText(left, right))),
+  };
+}

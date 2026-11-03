@@ -1,0 +1,75 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import test, { type TestContext } from 'node:test';
+import { runPipeline } from '#golem/cli';
+import { GeneratorSessionResources } from '#golem/pipeline';
+import { createControllerFixture } from './fixture-templates/controllers/project.js';
+import { subscribe } from './support/golem-channels.js';
+
+const model = (name: string, fields: string, imports = ''): string => [
+  "import type { IModel } from '@exprtlabs/golem/model';",
+  imports,
+  `export type ${name} = IModel<{ ${fields} }>;`,
+  '',
+].join('\n');
+
+const controller = [
+  "import { Controller, Get } from '@nestjs/common';",
+  "import type { THolder } from './holder.model.js';",
+  "@Controller('catalog')",
+  'export class CatalogController {',
+  '  @Get()',
+  '  list(): THolder { return undefined as never; }',
+  '}',
+  '',
+].join('\n');
+
+/** Models in two folders of one tsconfig: `src/holder.model.ts` holds a model of `lib/`, which no job lists and only an import reaches. */
+function twoFolderProject(t: TestContext): string {
+  return createControllerFixture(t, {
+    prefix: 'golem-stub-opens-',
+    packageName: 'stub-opens',
+    links: 'workspace',
+    tsconfig: {
+      compilerOptions: { target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', strict: true, skipLibCheck: true, experimentalDecorators: true, rootDir: '.', outDir: 'build' },
+      include: ['src/**/*.ts', 'lib/**/*.ts'],
+    },
+    files: {
+      'golem.yaml': 'version: 1\nvalidation: true\nts-openapi:\n  docs:\n    - output: generated/openapi.json\n      info: { title: Stub API, version: "1" }\nmodel: {}\n',
+      'src/catalog.controller.ts': controller,
+      'src/holder.model.ts': model('THolder', 'shared: TShared', "import type { TShared } from '../lib/shared.model.js';"),
+      'lib/shared.model.ts': model('TShared', 'name: string'),
+    },
+  });
+}
+
+function outputs(root: string): Record<string, string> {
+  const files = ['generated/openapi.json', 'src/holder.model.generated.ts', 'lib/shared.model.generated.ts'];
+  return Object.fromEntries(files.map((file) => [file, fs.readFileSync(path.join(root, file), 'utf8')]));
+}
+
+// Each job opens at most one stub program: the controllers job and the models job, plus the program of the models job's write gate. A job that opens a second stub program goes over.
+const programOpenCeiling = 1 + 1 + 1;
+
+// protects: T-466 a model folder the tsconfig lists is stubbed in the first program, so a job opens one stub program, not two
+test('the controllers and models jobs each open one stub program when every model lies in the tsconfig, and a rerun writes the same files', async (t: TestContext) => {
+  const root = twoFolderProject(t);
+  const yaml = path.join(root, 'golem.yaml');
+  const opened: (string | undefined)[] = [];
+  subscribe(t, 'programOpened', (message: { readonly configFile?: string }) => { opened.push(message.configFile); });
+  using session = new GeneratorSessionResources();
+
+  const first = await runPipeline(yaml, { session });
+  assert.ok(opened.length <= programOpenCeiling, `the jobs opened ${opened.length} programs, more than ${programOpenCeiling}`);
+  const clean = outputs(root);
+  assert.match(clean['generated/openapi.json']!, /"TShared"/);
+
+  // A watch run after an edit that changes no output: both jobs rerun on their warm sessions, because the models job reads the whole project.
+  opened.length = 0;
+  const edited = path.join(root, 'src/catalog.controller.ts');
+  fs.appendFileSync(edited, '// edited\n');
+  await runPipeline(yaml, { session, previous: first, changedInputs: [edited] });
+  assert.ok(opened.length <= programOpenCeiling, `the rerun opened ${opened.length} programs, more than ${programOpenCeiling}`);
+  assert.deepEqual(outputs(root), clean);
+});
