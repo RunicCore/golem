@@ -1,0 +1,52 @@
+# Publishes the four golem packages to npm when a release tag (v*) is pushed.
+# npm trusts this workflow by OIDC (trusted publishing), so it needs no token and adds provenance.
+name: Publish
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: npm-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          cache: npm
+      - name: Check that the tag names the package version
+        run: |
+          for package in golem golem-model golem-openapi-ts golem-ts-openapi; do
+            version=$(node -p "require('./packages/$package/package.json').version")
+            if [ "$GITHUB_REF_NAME" != "v$version" ]; then
+              echo "::error::Tag $GITHUB_REF_NAME does not match $package $version; tag v$version, or set the version with scripts/release-version.ts."
+              exit 1
+            fi
+          done
+      # package-lock.json is resolved on macOS and holds only that platform's native packages, so `npm ci` refuses it;
+      # `npm install` keeps its pinned versions and adds the packages of this runner.
+      - run: npm install --no-audit --no-fund
+      # Each package's prepack builds it again and runs the package checks, which the scripts build provides.
+      - run: npm run build && npm run build:scripts
+      # In dependency order. A version already on npm is skipped, so a run that stopped part way can run again.
+      - name: Publish
+        run: |
+          for package in golem golem-model golem-openapi-ts golem-ts-openapi; do
+            name=$(node -p "require('./packages/$package/package.json').name")
+            version=$(node -p "require('./packages/$package/package.json').version")
+            if npm view "$name@$version" version > /dev/null 2>&1; then
+              echo "$name@$version is already on npm; skipped."
+            else
+              npm publish --workspace "packages/$package"
+            fi
+          done
