@@ -170,7 +170,7 @@ export interface NestReturnCodec {
  * handler whose explicit return type is a model, a `Promise` of a model or an array of a model. `undefined` for a handler with no
  * mark, such as one with no written return type or one that returns a union. It throws a `TypeError` that starts with
  * `golem fault` when the build marked the handler and the codec of that model is not registered, because the generated
- * module of the model did not load. Call it for each request: the lookup is live, so a codec that registers late is found.
+ * module of the model did not load. The lookup runs at each call, so a codec that registers late is found. Cache the result for each handler if you need to.
  */
 export function nestReturnCodec(controllerClass: Function, handler: Function): NestReturnCodec | undefined {
   const declared = declaredReturn(controllerClass, handler.name);
