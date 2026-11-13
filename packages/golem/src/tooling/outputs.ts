@@ -340,7 +340,8 @@ function assertNoUnrecordedOutputs(config: GolemConfig, inventory: Inventory, jo
       if (temporaryOf(entry.name) !== undefined) continue;
       const filename = path.join(directory, entry.name);
       if (entry.isDirectory()) {
-        if (!isAnotherAppRoot(filename)) visit(filename, everyFile);
+        // Another app's root is skipped only in an owned root: a job's output folder holds only what jobs write, so a folder there that looks like an app root is still scanned.
+        if (everyFile || !isAnotherAppRoot(filename)) visit(filename, everyFile);
         continue;
       }
       if (!entry.isFile() || (!everyFile && !/\.[jt]s$/.test(entry.name))) continue;
