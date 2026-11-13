@@ -644,8 +644,19 @@ Install `@exprtlabs/golem-ts-openapi` in `dependencies`. `@nestjs/common` and `r
 | `nestQueryDecoder` | `(metatype: unknown): ((query: unknown) => unknown) \| undefined` | The function that decodes a query of a parameter token to the numbers, booleans and arrays that its model declares, for a single model or a union of models, such as the `design:paramtypes` entry of a `@Query()` parameter. A value that does not fit stays text, so `fromWireFormat` rejects it. `undefined` for any other token, and for a union whose variant codecs are not registered yet. |
 | `nestModelConstruct` | `(metatype: unknown): GeneratedModelConstructor \| undefined` | The class that token constructs, or `undefined`. |
 | `nestReturnCodec` | `(controllerClass: Function, handler: Function): NestReturnCodec \| undefined` | The codec of the declared return of a handler, as `{ codec, array }`. `array` is true when the handler returns an array of the model. `undefined` for a handler with no mark ([mark rules](/guide/nestjs-requests#what-happens-to-a-request)). It throws a `TypeError` that starts with `golem fault` when the build marked the handler and the codec of the model is not registered. The lookup runs at each call, so cache the result for each handler if you need to. |
+| `nestHeadersCodec` | `(controllerClass: Function, handler: Function): NestHeadersCodec \| undefined` | The codec and the class to construct of the whole `@Headers()` model of a handler, as `{ codec, construct }`. `undefined` for a handler with no header model ([rules](/guide/nestjs-requests#header-models)). It throws a `TypeError` that starts with `golem fault` when the build rewrote the parameter and the codec of its model is not registered. The lookup runs at each call, so cache the result for each handler if you need to. |
+| `setNestHeaders` | `(request: object, value: object): void` | Stores the decoded headers on the request. The `@Headers()` parameter of the handler gets them. `request.headers` does not change. A handler with a header model that runs with nothing stored fails with a `TypeError` that starts with `golem fault`. |
 
-For inbound conversion in your own interceptor or pipe, get the codec with `objectCodecFromMetatype` and call its `fromWireFormat`. For a union of models, use `nestUnionFromMetatype`. For a `@Query()`, pass `request.query` through `nestQueryDecoder` before `fromWireFormat`. For an outbound response in your own interceptor, get the codec of the handler with `nestReturnCodec(context.getClass(), context.getHandler())` and call its `stringify`.
+For inbound conversion in your own interceptor or pipe, get the codec with `objectCodecFromMetatype` and call its `fromWireFormat`. For a union of models, use `nestUnionFromMetatype`. For a `@Query()`, pass `request.query` through `nestQueryDecoder` before `fromWireFormat`. For an outbound response in your own interceptor, get the codec of the handler with `nestReturnCodec(context.getClass(), context.getHandler())` and call its `stringify`. For a `@Headers()` model, decode the headers and store the result:
+
+```ts
+const headers = nestHeadersCodec(context.getClass(), context.getHandler());
+if (headers) {
+  const request = context.switchToHttp().getRequest();
+  const decoded = headers.codec.fromWireFormat(request.headers, { strip: true, construct: headers.construct });
+  setNestHeaders(request, decoded);
+}
+```
 
 ## `@exprtlabs/golem/loader` {#loader}
 
