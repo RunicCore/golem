@@ -218,10 +218,24 @@ function matchesStripPattern(pattern: string, key: string): boolean {
   return expression.test(key);
 }
 
-/** What a strip walk carries: the depth limit, and whether the value is a model value (an encode) rather than a wire value (a decode). */
+/**
+ * What a strip walk carries: the depth limit, and whether the value is a model value (an encode) rather than a wire value (a decode).
+ * `onPath` holds the arrays and objects that the walk is inside, and exists only when no depth limit ends a cycle.
+ */
 interface StripWalk {
   readonly limit: number;
   readonly model: boolean;
+  readonly onPath?: Set<object>;
+}
+
+/** Puts the array or object that the walk enters on the path. One that is already on it is a cycle, with the error of the cycle check of the direction. A shared object is on the path only while the walk is inside it. */
+function enterStripPath(value: object, walk: StripWalk): void {
+  const onPath = walk.onPath;
+  if (onPath === undefined) return;
+  if (onPath.has(value)) {
+    throw conversionError(walk.model ? LibErrorKind.Serialization : LibErrorKind.Deserialization, 'Cyclic values cannot be converted.', [...activeConversionPath], undefined, !walk.model);
+  }
+  onPath.add(value);
 }
 
 function stripLevel(value: unknown, ref: StripPlanRef | undefined, depth: number, walk: StripWalk): unknown {
@@ -238,6 +252,7 @@ function stripLevel(value: unknown, ref: StripPlanRef | undefined, depth: number
 
 function stripArray(value: unknown[], plan: StripPlan | undefined, depth: number, walk: StripWalk): unknown {
   if (plan === undefined || (plan.items === undefined && plan.prefix === undefined)) return value;
+  enterStripPath(value, walk);
   let out: unknown[] | undefined;
   for (let index = 0; index < value.length; index++) {
     const item = value[index];
@@ -247,6 +262,7 @@ function stripArray(value: unknown[], plan: StripPlan | undefined, depth: number
     out ??= value.slice();
     out[index] = next;
   }
+  walk.onPath?.delete(value);
   return out ?? value;
 }
 
@@ -289,6 +305,13 @@ function stripObject(value: Record<string, unknown>, plan: StripPlan, depth: num
     const chosen = plan.variants?.has(tag) === true ? plan.variants.get(tag) : plan.default;
     return stripLevel(value, chosen, depth, walk);
   }
+  enterStripPath(value, walk);
+  const result = stripKeys(value, plan, depth, walk);
+  walk.onPath?.delete(value);
+  return result;
+}
+
+function stripKeys(value: Record<string, unknown>, plan: StripPlan, depth: number, walk: StripWalk): unknown {
   if (walk.model) {
     const prototype: unknown = Object.getPrototypeOf(value);
     if (prototype !== Object.prototype && prototype !== null) return stripInstance(value, plan, depth, walk);
@@ -344,12 +367,10 @@ function stripInstance(value: object, plan: StripPlan, depth: number, walk: Stri
  * that its declared fields and its data keys hold; it leaves the model value of a TSerde field as it is. A value that nests deeper than `maxDepth` is a cycle or too deep: the cycle check reports a cycle, else the depth error is thrown.
  */
 export function stripUndeclared(value: unknown, plan: StripPlanRef, maxDepth?: number, model?: true): unknown {
-  const walk: StripWalk = { limit: resolveMaxDepth(maxDepth), model: model === true };
-  // With the bound off no depth check ends a cycle, and the walk would end the call stack: the cycle check of the encoder or the decoder runs first.
-  if (walk.limit === Infinity) {
-    if (walk.model) assertAcyclicEncodeInput(value);
-    else assertWireAcyclic(value);
-  }
+  const limit = resolveMaxDepth(maxDepth);
+  // With the bound off no depth check ends a cycle, and the walk would end the call stack: the walk keeps the objects on its path and reports a revisit as the cycle error of the direction. It reads only the keys that it walks, so a getter of a key that a closed object removes never runs. A value parsed from JSON text has no cycle.
+  const onPath = limit === Infinity && (model === true || detachedInputDepth === 0) ? new Set<object>() : undefined;
+  const walk: StripWalk = { limit, model: model === true, onPath };
   try {
     return stripLevel(value, plan, 0, walk);
   } catch (error) {

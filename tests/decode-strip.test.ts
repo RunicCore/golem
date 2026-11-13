@@ -316,11 +316,35 @@ test('strip walks the values as the encoder and the decoder walk them', async (t
       assert.equal(reads, 0);
     });
 
-    await t.test(`a decode counts the levels of a value from the root, validate ${level}`, () => {
-      // protects: T-896 the root is the first level, so a value of three levels is deeper than a bound of two
-      const value = { name: 'a', kids: [{ name: 'b' }] };
-      assert.throws(() => m.tree.fromWireFormat(value, { ...strip, validate: level, maxDepth: 2 }), deeper(2, LibErrorKind.Deserialization));
-      assert.deepEqual(m.tree.fromWireFormat(value, { ...strip, validate: level, maxDepth: 3 }), value);
+    await t.test(`with the bound off, strip never reads the value of a key that a closed object removes, validate ${level}`, () => {
+      // protects: T-896 the cycle check of the bound off walks the keys that strip walks, so a getter of an undeclared key does not run
+      let reads = 0;
+      const row = { title: 'a' };
+      Object.defineProperty(row, 'secret', { enumerable: true, get() { reads += 1; throw new Error('secret read'); } });
+      const options = { ...strip, validate: level, maxDepth: Infinity };
+      assert.deepEqual(m.plain.toWireFormat(row, options), { title: 'a' });
+      assert.deepEqual(m.plain.fromWireFormat(row, options), { title: 'a' });
+      assert.equal(reads, 0);
+    });
+
+    await t.test(`with the bound off, a cycle under a key that a closed object removes is removed with no error, validate ${level}`, () => {
+      // protects: T-896 a cycle that strip removes before it reads is not a cycle of the call
+      const loop: { self?: unknown } = {};
+      loop.self = loop;
+      const row = { title: 'a', hidden: loop };
+      const options = { ...strip, validate: level, maxDepth: Infinity };
+      assert.deepEqual(m.plain.toWireFormat(row, options), { title: 'a' });
+      assert.deepEqual(m.plain.fromWireFormat(row, options), { title: 'a' });
+    });
+
+    await t.test(`with the bound off, an object that two fields share is not a cycle, validate ${level}`, () => {
+      // protects: T-896 the walk keeps the objects of its current path, not every object it has seen
+      const shared = { name: 'shared', extra: 1 };
+      const root = { name: 'a', kids: [shared, shared, { name: 'b', kids: [shared] }] };
+      const expected = { name: 'a', kids: [{ name: 'shared' }, { name: 'shared' }, { name: 'b', kids: [{ name: 'shared' }] }] };
+      const options = { ...strip, validate: level, maxDepth: Infinity };
+      assert.deepEqual(m.tree.toWireFormat(root, options), expected);
+      assert.deepEqual(m.tree.fromWireFormat(root, options), expected);
     });
 
     await t.test(`an encode with strip counts the levels of a value as a decode does, validate ${level}`, () => {

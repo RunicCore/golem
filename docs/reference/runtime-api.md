@@ -561,6 +561,7 @@ A model that reaches a recursive model (it refers to itself, directly or through
 - `validate` returns `false`.
 - Each array, plain object and model instance counts as one level; a class value such as a `Uint8Array`, a `Date` or a `Map` is a leaf. With `allowGetter: true`, the fields that a root getter supplies count too. A tree whose `children` array holds nodes adds two levels for each node.
 - Raise the bound for one call with `{ maxDepth: 2000 }`, or for the interceptor with `new NestModelInterceptor({ maxDepth: 2000 })`. `Infinity` turns it off. Very deep input can then end the call stack.
+- `strip: true` also bounds the value that it walks, on a decode and on an encode (`toWireFormat`, `stringify`). An encode that is too deep throws a `LibError` of kind `serialization` with `causedByInput: false`.
 - A value below 1 is a `TypeError`.
 
 ### `strip` {#strip}
