@@ -1,7 +1,7 @@
 /**
  * The strip plan of a model: the data `strip` reads to remove the keys that a closed object does not declare from a wire
- * value. A plan is a constant of the generated module, so a decode that does not strip reads none of it. The plan follows
- * the wire shape: an inline object, array or tuple has its plan inside its parent's, and a named model is reached by its plan
+ * or model value. A plan is a constant of the generated module, so a call that does not strip reads none of it. The plan follows
+ * the keys that the wire and the model share; a TSerde field, which has two shapes, is marked so that only a decode strips it. An inline object, array or tuple has its plan inside its parent's, and a named model is reached by its plan
  * function, so a model that holds itself has a plan, and another module's model by the plan that module exports. A union of objects with no tag has no plan, so it keeps exact matching.
  */
 
@@ -53,7 +53,11 @@ export class StripPlans {
 
   private ofDescriptor(descriptor: ModelTypeDescriptor): Code | undefined {
     const wire = serdeWireDescriptor(descriptor);
-    if (wire !== undefined && wire !== descriptor) return this.ofDescriptor(wire);
+    if (wire !== undefined && wire !== descriptor) {
+      // A TSerde value has the shape of its wire in a decode and its own shape in an encode, so the plan serves the decode only.
+      const inner = this.ofDescriptor(wire);
+      return inner === undefined ? undefined : code`{ serde: ${inner} }`;
+    }
     switch (descriptor.kind) {
       case 'object': return this.ofObject(descriptor);
       case 'intersection': {
@@ -114,17 +118,21 @@ export class StripPlans {
       // A tagged union picks its variant by the tag and strips that variant; a value whose tag selects none goes to the default, as decoding does.
       const entries: Code[] = [];
       let fallback: Code | undefined;
+      let planned = false;
       for (const { variant, index } of present) {
         const plan = this.ofDescriptor(variant);
-        if (plan === undefined) continue;
+        planned ||= plan !== undefined;
         if (index === table.defaultVariant) fallback = plan;
-        else for (const value of table.variants[index]?.values ?? []) entries.push(code`${literal(String(value))}: ${plan}`);
+        // A variant with no plan still names its tags: a value of that tag is left as it is, and not given to the default variant.
+        else for (const value of table.variants[index]?.values ?? []) entries.push(code`${literal(String(value))}: ${plan ?? code`undefined`}`);
       }
-      if (entries.length === 0 && fallback === undefined) return undefined;
+      if (!planned) return undefined;
       return code`{ tag: ${literal(table.propertyName)}${entries.length > 0 ? code`, variants: { ${join(entries, code`, `)} }` : code``}${fallback ? code`, default: ${fallback}` : code``} }`;
     }
     // No tag: one object variant takes every object, so its plan is the union's. Two or more keep exact matching.
     const leaves = present.flatMap(({ variant }) => this.leaves(variant, new Set()));
+    // A TSerde variant has one shape in the wire and another in the model, so the JSON type of a value does not tell which variant takes it.
+    if (leaves.some((leaf) => leaf.shape === 'serde')) return undefined;
     const objects = leaves.filter((leaf) => leaf.shape === 'object');
     const arrays = leaves.filter((leaf) => leaf.shape === 'array');
     const object = objects.length === 1 ? this.ofDescriptor(objects[0]!.descriptor) : undefined;
@@ -134,9 +142,9 @@ export class StripPlans {
   }
 
   /** The variants a value of a union may take, with the unions inside it and the named unions it refers to opened, and the JSON type of each. */
-  private leaves(descriptor: ModelTypeDescriptor, seen: Set<string>): { readonly descriptor: ModelTypeDescriptor; readonly shape: 'object' | 'array' | 'other' }[] {
+  private leaves(descriptor: ModelTypeDescriptor, seen: Set<string>): { readonly descriptor: ModelTypeDescriptor; readonly shape: 'object' | 'array' | 'other' | 'serde' }[] {
     const wire = serdeWireDescriptor(descriptor);
-    if (wire !== undefined && wire !== descriptor) return this.leaves(wire, seen);
+    if (wire !== undefined && wire !== descriptor) return [{ descriptor, shape: 'serde' }];
     switch (descriptor.kind) {
       case 'object': return [{ descriptor, shape: 'object' }];
       case 'intersection': return [{ descriptor, shape: this.env.resolveObject(descriptor) === undefined ? 'other' : 'object' }];

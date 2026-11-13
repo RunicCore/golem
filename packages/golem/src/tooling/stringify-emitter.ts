@@ -265,6 +265,8 @@ const CHECKED_HELPER: Helper = helper('__golemChecked', () => code`const __golem
 const VALIDATE_OPTIONS = aliased(rtType.serde.ValidateOptions, '__GolemValidateOptions');
 const SERDE_OPTIONS = aliased(rtType.serde.SerdeOptions, '__GolemSerdeOptions');
 const DECODE_OPTIONS = aliased(rtType.serde.DecodeOptions, '__GolemDecodeOptions');
+const ENCODE_OPTIONS = aliased(rtType.serde.EncodeOptions, '__GolemEncodeOptions');
+const STRIP_PLAN = aliased(rtType.serde.StripPlan, '__GolemStripPlan');
 
 function trustedOptions(ctx: EmitCtx): Code {
   return ctx.trustedOptions ?? TRUSTED;
@@ -2053,7 +2055,7 @@ function emitExternalNodeRuntime(node: SchemaNode, moduleCtx: EmitCtx): Code {
     code`  return ${rt.serde.requireObjectCodec}(${id}).fromWireFormat(wire, options);`,
     code`}`,
     code``,
-    code`export function ${identifier(toWireFunctionName(node.id))}(value: unknown, options?: ${SERDE_OPTIONS}): unknown {`,
+    code`export function ${identifier(toWireFunctionName(node.id))}(value: unknown, options?: ${ENCODE_OPTIONS}): unknown {`,
     code`  return ${rt.serde.requireObjectCodec}(${id}).toWireFormat(value as never, options);`,
     code`}`,
     code``,
@@ -2156,7 +2158,8 @@ function emitStringifySection(runtime: NodeRuntime): Code {
 
   return rowsToText([
     blocksToText([stringifySrc, lenientStringify ?? code``, wireStringifySrc]),
-    code`${exported}function ${stringifyId}(value: ${modelType}, options?: ${SERDE_OPTIONS}): string {`,
+    code`${exported}function ${stringifyId}(value: ${modelType}, options?: ${ENCODE_OPTIONS}): string {`,
+    ...stripModelLines(runtime, modelType),
     emitSerdeValidates(runtime.levels),
     ...(emitsValidatedWire ? inlineLocalLines(encoded) : []),
     ...(validationEnabled ? [
@@ -2200,7 +2203,7 @@ function emitDecodeSection(runtime: NodeRuntime): { readonly fill: Code; readonl
     emitSerdeValidates(runtime.levels),
   ];
   // Strip runs first, so the checks and the decoder below see a wire that holds the declared keys only.
-  if (runtime.stripPlan) convertLines.push(code`  if (options?.strip) wire = ${rt.conversion.stripWire}(wire, ${identifier(stripPlanName(node.codecId))}, options.maxDepth);`);
+  if (runtime.stripPlan) convertLines.push(code`  if (options?.strip) wire = ${rt.conversion.stripUndeclared}(wire, ${identifier(stripPlanName(node.codecId))}, options.maxDepth);`);
   if (validationEnabled) {
     // The wire and model schemas are one validator, which a validation context is asked for as the wire plane.
     const wireAssertCall = node.sameSchema
@@ -2303,7 +2306,8 @@ function emitToWireSection(runtime: NodeRuntime): Code {
   );
   return rowsToText([
     toWireCoreSource,
-    code`${exported}function ${names.toWire}(value: ${fieldsOrUnknown}, options?: ${SERDE_OPTIONS}): ${wireOrUnknown} {`,
+    code`${exported}function ${names.toWire}(value: ${fieldsOrUnknown}, options?: ${ENCODE_OPTIONS}): ${wireOrUnknown} {`,
+    ...stripModelLines(runtime, fieldsOrUnknown),
     ...(ctx.projectsInstanceState && objectDescriptor?.additionalProperties === false
       ? [code`  value = ${rt.conversion.withDeclaredFields}(value, ${literal(Object.keys(objectDescriptor.properties))}) as ${fieldsOrUnknown};`]
       : []),
@@ -2386,13 +2390,19 @@ function emitPlaneAssertSection(runtime: NodeRuntime): Code {
     : []);
 }
 
+/** The first line of an encode entry: `strip` removes the keys that the model does not declare before the value is checked. */
+function stripModelLines(runtime: NodeRuntime, valueType: Code): Code[] {
+  if (!runtime.stripPlan) return [];
+  return [code`  if (options?.strip) value = ${rt.conversion.stripUndeclared}(value, ${identifier(stripPlanName(runtime.node.codecId))}, options.maxDepth, true) as ${valueType};`];
+}
+
 /** The registration of the node's functions as an object codec, with the data that extensions add to it. */
 function emitCodecRegistrationSection(runtime: NodeRuntime): Code {
   const { node, ctx, names, stringifyId, validateId, assertId, objectDescriptor } = runtime;
   const data = ctx.codecData?.(ctx.graph, node);
   return rowsToText([
     code`${rt.serde.createObjectCodec}(${literal(node.codecId)}, {`,
-    code`  stringify: ${stringifyId} as (value: never, options?: ${SERDE_OPTIONS}) => string,`,
+    code`  stringify: ${stringifyId} as (value: never, options?: ${ENCODE_OPTIONS}) => string,`,
     code`  parse: ${names.parse} as (text: string, options?: ${DECODE_OPTIONS}) => never,`,
     code`  validate: ${validateId},`,
     code`  assert: ${assertId},`,
@@ -2421,14 +2431,15 @@ function emitNodeRuntime(
   const planeAsserts = emitPlaneAssertSection(runtime);
   const codec = moduleCtx.registerCodecs === false ? rowsToText([]) : emitCodecRegistrationSection(runtime);
   // The hoisted converters exist only after the decode section.
+  // The plan sits after the stringify function, which is never empty: the text before the first block may end with no line break, and `export` must start a line.
   // The plan is built at its first use, and the call is pure, so a module that never strips pays nothing at load.
   // A module that imports this node's plan finds it by name, also when the node holds nothing to strip.
   const exportsPlan = moduleCtx.exportStripPlans === true || codecIsExported(node, moduleCtx);
   const planName = identifier(stripPlanName(node.codecId));
   const stripPlan = runtime.stripPlan
-    ? code`${exportsPlan ? code`export ` : code``}const ${planName} = /*#__PURE__*/ ${rt.conversion.stripPlan}(() => (${runtime.stripPlan}));`
+    ? code`${exportsPlan ? code`export ` : code``}const ${planName}: () => ${STRIP_PLAN} = /*#__PURE__*/ ${rt.conversion.stripPlan}(() => (${runtime.stripPlan}));`
     : exportsPlan ? code`export const ${planName} = undefined;` : rowsToText([]);
-  return blocksToText([rowsToText(runtime.ctx.hoisted?.sources ?? []), stripPlan, decode.fill, stringify, decode.convert, decode.fromWire, toWire, parse, validate, planeAsserts, codec]);
+  return blocksToText([rowsToText(runtime.ctx.hoisted?.sources ?? []), decode.fill, stringify, stripPlan, decode.convert, decode.fromWire, toWire, parse, validate, planeAsserts, codec]);
 }
 
 function isExternalCodecNode(node: SchemaNode): boolean {

@@ -537,9 +537,9 @@ The error is a `LibError` of kind `ValidationUnavailable`. Its message starts wi
 | Member | Signature | Behavior |
 | --- | --- | --- |
 | `parse` | `<T>(text: string, options?: DecodeOptions): T` | JSON text to a value. Checks the JSON, runs `TSerde` decoders, checks the result. |
-| `stringify` | `<T>(value: T, options?: SerdeOptions & AllowGetterOptions): string` | Value to JSON text of the declared fields, with `TSerde` applied and both sides checked. |
+| `stringify` | `<T>(value: T, options?: EncodeOptions & AllowGetterOptions): string` | Value to JSON text of the declared fields, with `TSerde` applied and both sides checked. |
 | `fromWireFormat` | `<T>(wire: unknown, options?: DecodeOptions): T` | `parse` for a plain object instead of text. |
-| `toWireFormat` | `<T>(value: T, options?: SerdeOptions & AllowGetterOptions): WireFormat<T>` | `stringify` that returns the plain object, such as `TTaskJSON`. |
+| `toWireFormat` | `<T>(value: T, options?: EncodeOptions & AllowGetterOptions): WireFormat<T>` | `stringify` that returns the plain object, such as `TTaskJSON`. |
 | `assertValue` | `<T>(value: unknown, options?: ValidateOptions & AllowGetterOptions): T` | Checks the value and returns it unchanged, typed as `T`. Throws `LibError` `Validation` with the issues. |
 
 | Option | In | Default | Effect |
@@ -548,7 +548,7 @@ The error is a `LibError` of kind `ValidationUnavailable`. Its message starts wi
 | `failFast` | both | `true` | `false` reports every issue. It does not skip checks. |
 | `validationContext` | both | none | Resolves validators from your own function ([validation context](#validation-context)). |
 | `maxDepth` | both | `512` | Bounds how many levels of objects and arrays the input of a recursive model may nest ([below](#max-depth)). |
-| `strip` | `DecodeOptions` | `false` | `true` removes the keys that a closed object does not declare, before the checks run ([below](#strip)). |
+| `strip` | `DecodeOptions`, `EncodeOptions` | `false` | `true` removes the keys that a closed object does not declare, before the checks run ([below](#strip)). |
 | `allowGetter` | `AllowGetterOptions` | `false` | `true` reads declared root fields through getters and inherited values ([below](#allow-getter)). |
 
 `ValidateOptions` has `validate`, `failFast`, `validationContext` and `maxDepth`. The rewrite also passes `construct` in `SerdeOptions` for a class `T`. Each call runs the checks in the table of [Checks during conversion](/guide/serialization#checks-during-conversion).
@@ -565,17 +565,19 @@ A model that reaches a recursive model (it refers to itself, directly or through
 
 ### `strip` {#strip}
 
-`DecodeOptions` extends `SerdeOptions` with `strip?: true`. `parse` and `fromWireFormat` take it, and so do the same calls of an `ObjectCodec`. Encode calls do not.
+`DecodeOptions` and `EncodeOptions` extend `SerdeOptions` with `strip?: true`. `parse` and `fromWireFormat` take `DecodeOptions`, `stringify` and `toWireFormat` take `EncodeOptions`, and so do the same calls of an `ObjectCodec`.
 
 ```ts
 const env = fromWireFormat<TEnv>(process.env, { strip: true });
+const body = toWireFormat<TUser>(rowFromDatabase, { strip: true });
 ```
 
-By default an extra key of a closed object fails validation. With `strip: true`, golem removes that key at every level, before it checks the value, at each validation level. The result holds the declared keys only, also when it is a class instance. A declared key that has a bad value still reports its issue.
+By default an extra key of a closed object fails validation. With `strip: true`, golem removes that key at every level, before it checks the value, at each validation level. A declared key that has a bad value still reports its issue. A decode result holds the declared keys only, also when it is a class instance.
 
 - Strip keeps the data that a model declares as extra: a `Record`, an `AdditionalProperties` tag, `PatternProperties` and an object with `exact: false`.
-- A union of objects with a `Discriminator` tag chooses the variant by the tag, and strip then removes the keys that variant does not declare.
+- A union of objects with a `Discriminator` tag chooses the variant by the tag, and strip then removes the keys that variant does not declare. A union of objects with no tag keeps exact matching.
 - Strip copies the object that it changes. It does not change the input.
+- An encode strips a plain object. It leaves an instance of a class as it is, with the values inside it, because `stringify` and `toWireFormat` already write the declared fields of an instance only. It also leaves the value of a `TSerde` field as it is, because the shape of that value is the serializer's own.
 
 ### `allowGetter` {#allow-getter}
 
@@ -618,7 +620,7 @@ Pass one `ModelValidationContext` to repeated serde, `validateInstance` and `Mod
 | `getObjectCodec` | `(id): ObjectCodec \| undefined` | Returns the codec whose id is exactly `id`. A short model name finds nothing. |
 | `getIModelClass` | `(id): class \| undefined` | Returns the `IModel` class registered under the exact id `id`. |
 
-Types: `AllowGetterOptions`, `ObjectCodec`, `SerdeOptions`, `ValidateOptions`, `ValidationPlane`, `WireFormat`. `IssueRepresentation` and `IssueSource` are re-exported from [`errors`](#errors).
+Types: `AllowGetterOptions`, `DecodeOptions`, `EncodeOptions`, `ObjectCodec`, `SerdeOptions`, `ValidateOptions`, `ValidationPlane`, `WireFormat`. `IssueRepresentation` and `IssueSource` are re-exported from [`errors`](#errors).
 
 ## `@exprtlabs/golem-ts-openapi/nest` {#nest}
 

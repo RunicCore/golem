@@ -6,29 +6,31 @@ import { pathToFileURL } from 'node:url';
 
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { requireObjectCodec } from '@exprtlabs/golem/internal/model-runtime';
-import type { DecodeOptions } from '@exprtlabs/golem/serde';
+import type { DecodeOptions, EncodeOptions } from '@exprtlabs/golem/serde';
 
 import { readFixture } from './fixture-project.js';
 import { buildModelProject, createModelProject, writeModelGolemYaml } from './model-project.js';
+import { chargesDocument, loadGolemModeProject, loadSdk, type GolemModeSdkSetup } from './openapi/sdk-client-fixture.js';
 import { generatedCodecIdFromRoot } from './support/consumer.js';
 
-// `strip: true` on one decode call removes the keys that a closed object does not declare, at every level (R-65 G2).
-// The default decode is unchanged: an extra key of a closed object fails validation.
+// `strip: true` on one decode or encode call removes the keys that a closed object does not declare, at every level (R-65 G2).
+// The default is unchanged: an extra key of a closed object fails validation.
 
 type Model = new (values?: object) => object;
 const strip = { strip: true } as const;
 const isValidationError = (error: unknown): error is LibError => error instanceof LibError && error.kind === LibErrorKind.Validation;
 
 async function buildModels(t: TestContext) {
-  const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-decode-strip-', name: 'decode-strip', linkWorkspaceNodeModules: true });
-  fs.writeFileSync(path.join(sourceRoot, 'strip.model.ts'), readFixture('models/decode-strip/strip/strip.model.ts'));
+  // The project writes declarations, so a plan that its module exports must have a type that a declaration file can name.
+  const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-decode-strip-', name: 'decode-strip', linkWorkspaceNodeModules: true, compilerOptions: { declaration: true } });
+  for (const file of ['strip.model.ts', 'units.ts']) fs.writeFileSync(path.join(sourceRoot, file), readFixture(`models/decode-strip/strip/${file}`));
   writeModelGolemYaml(root, { validation: true });
   await buildModelProject(root);
   const models = await import(pathToFileURL(path.join(root, 'build/strip.model.js')).href);
   const codec = (name: string) => requireObjectCodec(generatedCodecIdFromRoot(root, name));
   return {
-    Card: models.Card as Model, Shelf: models.Shelf as Model, PetHolder: models.PetHolder as Model, Tree: models.Tree as Model, Tally: models.Tally as Model, Tagged: models.Tagged as Model,
-    plain: codec('TPlain'), nested: codec('TNested'), open: codec('TOpen'), mapHolder: codec('TMapHolder'), patterned: codec('TPatterned'), nullable: codec('TNullable'), tagged: codec('TTagged'),
+    Card: models.Card as Model, Shelf: models.Shelf as Model, PetHolder: models.PetHolder as Model, Tree: models.Tree as Model, Tally: models.Tally as Model, Tagged: models.Tagged as Model, TaggedOpen: models.TaggedOpen as Model,
+    plain: codec('TPlain'), nested: codec('TNested'), open: codec('TOpen'), mapHolder: codec('TMapHolder'), patterned: codec('TPatterned'), nullable: codec('TNullable'), tagged: codec('TTagged'), taggedOpen: codec('TTaggedOpen'), priced: codec('TPriced'),
     card: codec('TCard'), shelf: codec('TShelf'), petHolder: codec('TPetHolder'), tree: codec('TTree'), tally: codec('TTally'),
   };
 }
@@ -57,6 +59,8 @@ test('strip on decode', async (t) => {
       [`nullable single object variant, validate ${level}`, () => m.nullable.fromWireFormat({ child: { title: 'a', x: 1 } }, options(level)), [[['child'], ['title']]]],
       [`tagged union with a default variant: no tag goes to the default, validate ${level}`, () => m.tagged.fromWireFormat({ item: { amount: 1, junk: 1 } }, options(level, { construct: m.Tagged })), [[['item'], ['amount']]]],
       [`tagged union with a default variant: a known tag, validate ${level}`, () => m.tagged.fromWireFormat({ item: { kind: 'other', value: 1, junk: 1 } }, options(level, { construct: m.Tagged })), [[['item'], ['kind', 'value']]]],
+      [`tagged union whose default variant is closed and whose other variant is open: the open variant keeps its keys, validate ${level}`, () => m.taggedOpen.fromWireFormat({ item: { kind: 'open', value: 1, extra: 1 } }, options(level, { construct: m.TaggedOpen })), [[['item'], ['extra', 'kind', 'value']]]],
+      [`tagged union whose default variant is closed and whose other variant is open: the default variant is stripped, validate ${level}`, () => m.taggedOpen.fromWireFormat({ item: { amount: 1, junk: 1 } }, options(level, { construct: m.TaggedOpen })), [[['item'], ['amount']]]],
       [`recursive model, validate ${level}`, () => m.tree.fromWireFormat({ name: 'a', junk: 1, kids: [{ name: 'b', junk: 2, kids: [{ name: 'c', junk: 3 }] }] }, options(level, { construct: m.Tree })), [[[], ['kids', 'name']], [['kids', 0], ['kids', 'name']], [['kids', 0, 'kids', 0], ['name']]]],
     ] as const);
     for (const [name, decode, expectations] of rows) {
@@ -111,6 +115,72 @@ test('strip on decode', async (t) => {
   });
 });
 
+test('strip on encode', async (t) => {
+  const m = await buildModels(t);
+  const levels = [true, 'sanity', false] as const;
+  const options = (level: boolean | 'sanity'): EncodeOptions => ({ ...strip, validate: level });
+  const row = { title: 'a', count: 1, extra: 1 };
+
+  for (const level of levels) {
+    await t.test(`an exact model drops a key it does not declare, validate ${level}`, () => {
+      // protects: T-896 a handler that returns a database row with an extra column encodes it
+      assert.deepEqual(m.plain.toWireFormat(row, options(level)), { title: 'a', count: 1 });
+      assert.deepEqual(JSON.parse(m.plain.stringify(row, options(level))), { title: 'a', count: 1 });
+    });
+
+    await t.test(`a nested exact model, an array of them, a map value and a tagged union drop their extra keys, validate ${level}`, () => {
+      // protects: T-896 strip on encode reaches every level, as on decode
+      const nested = m.nested.toWireFormat({ inner: { title: 'a', x: 1 }, list: [{ title: 'b', y: 2 }], z: 3 }, options(level));
+      assert.deepEqual(nested, { inner: { title: 'a' }, list: [{ title: 'b' }] });
+      assert.deepEqual(m.mapHolder.toWireFormat({ tags: { a: { title: 'x', junk: 1 } } }, options(level)), { tags: { a: { title: 'x' } } });
+      assert.deepEqual(m.petHolder.toWireFormat({ pet: { kind: 'cat', lives: 9, junk: 1 }, extra: 1 }, options(level)), { pet: { kind: 'cat', lives: 9 } });
+    });
+
+    await t.test(`the data that a model declares as extra stays, and an open variant of a tagged union keeps its tag and value, validate ${level}`, () => {
+      // protects: T-896 strip on encode keeps declared extra data, and a variant without a plan is not given to the default variant
+      assert.deepEqual(m.tally.toWireFormat({ id: 'a', anything: 'x' }, options(level)), { id: 'a', anything: 'x' });
+      assert.deepEqual(m.patterned.toWireFormat({ known: 'a', x_1: 1, junk: 2 }, options(level)), m.patterned.toWireFormat({ known: 'a', x_1: 1 }, { validate: level }));
+      const open = { item: { kind: 'open', value: 1, extra: 1 } };
+      assert.deepEqual(m.taggedOpen.toWireFormat(open, options(level)), m.taggedOpen.toWireFormat(open, { validate: level }));
+      assert.equal((m.taggedOpen.toWireFormat(open, options(level)) as { item: { kind: string } }).item.kind, 'open');
+    });
+
+    await t.test(`an instance of a class and its nested instances encode the declared fields, validate ${level}`, () => {
+      // protects: T-896 strip on encode leaves a class instance to the encoder, which writes its declared fields
+      const card = new m.Card({ title: 'a' });
+      Object.assign(card, { program: 'state' });
+      assert.deepEqual(m.card.toWireFormat(card, options(level)), { title: 'a' });
+      assert.deepEqual(m.shelf.toWireFormat(new m.Shelf({ cards: [new m.Card({ title: 'b' })], main: card }), options(level)), { cards: [{ title: 'b' }], main: { title: 'a' } });
+    });
+  }
+
+  await t.test('a TSerde value keeps its model shape on encode and its wire shape on decode', () => {
+    // protects: T-896 the plan holds the keys of the wire, so an encode must not apply it to the model value of a TSerde field
+    assert.deepEqual(m.priced.toWireFormat({ price: { units: 5 }, note: 'n', extra: 1 }, strip), { price: { amount: '5' }, note: 'n' });
+    assert.deepEqual(m.priced.fromWireFormat({ price: { amount: '5', junk: 1 }, extra: 1 }, strip), { price: { units: 5 } });
+  });
+
+  await t.test('a declared key with a bad value still fails, and without the option an extra key still fails', () => {
+    // protects: T-896 strip on encode removes keys and does not hide a bad value; the default encode is unchanged
+    assert.throws(
+      () => m.plain.toWireFormat({ title: 5, extra: 1 }, strip),
+      (error: unknown) => isValidationError(error) && error.issues.map((issue) => issue.path.join('.')).join() === 'title',
+    );
+    assert.throws(
+      () => m.plain.toWireFormat(row),
+      (error: unknown) => isValidationError(error) && error.issues.map((issue) => issue.path.join('.')).join() === 'extra',
+    );
+    assert.throws(() => m.plain.stringify(row), isValidationError);
+  });
+
+  await t.test('the input is not changed', () => {
+    // protects: T-896 strip copies what it changes and never writes to the value
+    const value = { inner: { title: 'a', x: 1 }, list: [{ title: 'b', y: 2 }], z: 3 };
+    m.nested.toWireFormat(value, strip);
+    assert.deepEqual(value, { inner: { title: 'a', x: 1 }, list: [{ title: 'b', y: 2 }], z: 3 });
+  });
+});
+
 test('strip reaches a model of another module', async (t) => {
   const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-decode-strip-cross-', name: 'decode-strip-cross', linkWorkspaceNodeModules: true });
   for (const file of ['child.model.ts', 'parent.model.ts']) fs.writeFileSync(path.join(sourceRoot, file), readFixture(`models/decode-strip/cross/${file}`));
@@ -131,4 +201,58 @@ test('strip reaches a model of another module', async (t) => {
       assert.ok(at(result, 'child') instanceof children.Child);
     });
   }
+
+  await t.test('an encode drops the extra keys of the nested model of another file', () => {
+    // protects: T-896 the plan of the parent reaches the plan of a model of another module, on encode too
+    assert.deepEqual(parent.toWireFormat({ id: 1, extra: 1, child: { name: 'a', x: 1 }, children: [{ name: 'b', y: 2 }] }, { strip: true }), { id: 1, child: { name: 'a' }, children: [{ name: 'b' }] });
+  });
+});
+
+test('strip reaches the SDK type that an app model holds', async (t) => {
+  const closed = (properties: Record<string, unknown>, required: string[]) => ({ type: 'object', additionalProperties: false, required, properties });
+  const sdk: GolemModeSdkSetup = { document: chargesDocument({ Charge: closed({ id: { type: 'string' }, amount: { type: 'number' } }, ['id', 'amount']) }), folder: 'sdk/charges', name: 'Charges' };
+  const order = `import type { IModel } from '@exprtlabs/golem/model';
+import type { Charge } from '../sdk/charges/index.js';
+export type TOrder = IModel<{ ref: string; charge: Charge; charges: Charge[] }>;
+`;
+  const project = await loadGolemModeProject(t, 'decode-strip-sdk-', [sdk], true, { 'src/order.model.ts': order });
+  const generated = await import(pathToFileURL(path.join(project.root, 'build/src/order.model.generated.js')).href) as Record<string, (value: unknown, options?: object) => object>;
+  const wire = { ref: 'r', extra: 1, charge: { id: 'c', amount: 1, x: 1 }, charges: [{ id: 'd', amount: 2, y: 2 }] };
+  // protects: T-896 the plan of an app model reaches the plan of the SDK table node that it holds
+  const decoded = generated.fromWireFormatTOrder!(wire, strip);
+  assert.deepEqual(sorted(decoded), ['charge', 'charges', 'ref']);
+  assert.deepEqual(sorted(at(decoded, 'charge')), ['amount', 'id']);
+  assert.deepEqual(sorted(at(decoded, 'charges', 0)), ['amount', 'id']);
+  assert.deepEqual(generated.toWireFormatTOrder!(wire, strip), { ref: 'r', charge: { id: 'c', amount: 1 }, charges: [{ id: 'd', amount: 2 }] });
+});
+
+test('strip reaches the model of another dependency group of a generated SDK', async (t) => {
+  const closed = (properties: Record<string, unknown>, required: string[]) => ({ type: 'object', additionalProperties: false, required, properties });
+  const ref = (name: string) => ({ $ref: `#/components/schemas/${name}` });
+  const document = chargesDocument({
+    // A date makes the schemas convert a value, so each of them gets a model group of its own.
+    Leaf: closed({ label: { type: 'string' }, at: { type: 'string', format: 'date-time' } }, ['label', 'at']),
+    Group: closed({ items: { type: 'array', items: ref('Leaf') } }, ['items']),
+    Charge: closed({ group: ref('Group'), history: { type: 'array', items: ref('Group') } }, ['group', 'history']),
+  });
+  const sdk = await loadSdk(t, 'decode-strip-groups-', { document, name: 'Groups', dates: 'date', validation: true });
+  const folder = path.join(sdk.output, 'dist/models');
+  const groups = fs.readdirSync(folder).filter((file) => /^_group-.*\.js$/.test(file));
+  assert.ok(groups.length > 1, 'each of the three schemas is a group of its own');
+  const functions = new Map<string, (value: unknown, options?: object) => object>();
+  for (const file of groups) {
+    const exported = await import(pathToFileURL(path.join(folder, file)).href) as Record<string, unknown>;
+    for (const [name, value] of Object.entries(exported)) if (typeof value === 'function') functions.set(name, value as (value: unknown, options?: object) => object);
+  }
+  const named = (prefix: string) => functions.get([...functions.keys()].find((name) => name.startsWith(prefix) && /Charge/.test(name))!)!;
+  const instant = '2024-01-02T03:04:05.000Z';
+  const wire = { group: { items: [{ label: 'a', at: instant, x: 1 }], y: 1 }, history: [{ items: [], z: 1 }], w: 1 };
+  // protects: T-896 the plan of one group reaches the plan that another group exports, on decode and encode
+  const decoded = named('fromWireFormat')(wire, strip);
+  assert.deepEqual(sorted(decoded), ['group', 'history']);
+  assert.deepEqual(sorted(at(decoded, 'group')), ['items']);
+  assert.deepEqual(sorted(at(decoded, 'group', 'items', 0)), ['at', 'label']);
+  assert.deepEqual(sorted(at(decoded, 'history', 0)), ['items']);
+  const value = { group: { items: [{ label: 'a', at: new Date(instant), x: 1 }], y: 1 }, history: [{ items: [], z: 1 }], w: 1 };
+  assert.deepEqual(named('toWireFormat')(value, strip), { group: { items: [{ label: 'a', at: instant }] }, history: [{ items: [] }] });
 });

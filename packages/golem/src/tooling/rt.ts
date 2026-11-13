@@ -51,7 +51,7 @@ interface RuntimeTypeExports {
     readonly RuntimeSecuritySchemes: client.RuntimeSecuritySchemes;
   };
   readonly validation: { readonly OperationRuntimeValidators: validation.OperationRuntimeValidators; readonly SchemaIssue: validation.SchemaIssue };
-  readonly serde: { readonly DecodeOptions: serde.DecodeOptions; readonly SerdeOptions: serde.SerdeOptions; readonly ValidateOptions: serde.ValidateOptions };
+  readonly serde: { readonly DecodeOptions: serde.DecodeOptions; readonly EncodeOptions: serde.EncodeOptions; readonly StripPlan: serde.StripPlan; readonly SerdeOptions: serde.SerdeOptions; readonly ValidateOptions: serde.ValidateOptions };
 }
 
 /** The specifier that a runtime key is imported from in a generated file. */
