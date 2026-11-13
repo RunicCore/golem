@@ -268,6 +268,70 @@ test('strip on encode', async (t) => {
   });
 });
 
+test('strip walks the values as the encoder and the decoder walk them', async (t) => {
+  const m = await buildModels(t);
+  const levels = [true, false] as const;
+  const cyclic = (error: unknown, kind: LibErrorKind) => error instanceof LibError && error.kind === kind && error.causedByInput === (kind === LibErrorKind.Deserialization) && /^Cyclic values cannot be/.test(error.message);
+  const deeper = (limit: number, kind: LibErrorKind) => (error: unknown) => error instanceof LibError && error.kind === kind && error.message.includes(`deeper than ${limit} levels`);
+
+  const holes = new Array<unknown>(3);
+  holes[0] = { title: 'a', x: 1 };
+  holes[2] = { title: 'b', y: 2 };
+  const withHoles = { inner: { title: 'a' }, list: holes };
+  const holeCalls: [string, () => unknown][] = [
+    ['encode', () => m.nested.toWireFormat(withHoles, { validate: false })],
+    ['encode with strip', () => m.nested.toWireFormat(withHoles, { ...strip, validate: false })],
+    ['decode', () => m.nested.fromWireFormat(withHoles, { validate: false })],
+    ['decode with strip', () => m.nested.fromWireFormat(withHoles, { ...strip, validate: false })],
+  ];
+  for (const [name, call] of holeCalls) {
+    await t.test(`${name} keeps the holes of an array, validate false`, () => {
+      // protects: T-896 a hole of an array stays a hole when an item before it is converted or stripped, as the conversion of an array leaves it
+      const { list } = call() as { list: unknown[] };
+      assert.equal(list.length, 3);
+      assert.deepEqual(Object.keys(list), ['0', '2']);
+    });
+  }
+
+  for (const level of levels) {
+    await t.test(`a cyclic value with the bound off fails as it fails without strip, validate ${level}`, () => {
+      // protects: T-896 strip never ends the call stack on a cycle: the caller gets the cycle error of the encoder and of the decoder
+      const root: { name: string; kids: unknown[] } = { name: 'a', kids: [] };
+      root.kids.push(root);
+      const off = { validate: level, maxDepth: Infinity };
+      assert.throws(() => m.tree.toWireFormat(root, off), (error) => cyclic(error, LibErrorKind.Serialization));
+      assert.throws(() => m.tree.toWireFormat(root, { ...off, ...strip }), (error) => cyclic(error, LibErrorKind.Serialization));
+      assert.throws(() => m.tree.fromWireFormat(root, off), (error) => cyclic(error, LibErrorKind.Deserialization));
+      assert.throws(() => m.tree.fromWireFormat(root, { ...off, ...strip }), (error) => cyclic(error, LibErrorKind.Deserialization));
+    });
+
+    await t.test(`strip never reads the value of a key that a closed object removes, validate ${level}`, () => {
+      // protects: T-896 a getter of an undeclared key does not run, so a throwing getter does not fail the call
+      let reads = 0;
+      const row = { title: 'a' };
+      Object.defineProperty(row, 'secret', { enumerable: true, get() { reads += 1; throw new Error('secret read'); } });
+      const options = { ...strip, validate: level };
+      assert.deepEqual(m.plain.toWireFormat(row, options), { title: 'a' });
+      assert.deepEqual(m.plain.fromWireFormat(row, options), { title: 'a' });
+      assert.equal(reads, 0);
+    });
+
+    await t.test(`a decode counts the levels of a value from the root, validate ${level}`, () => {
+      // protects: T-896 the root is the first level, so a value of three levels is deeper than a bound of two
+      const value = { name: 'a', kids: [{ name: 'b' }] };
+      assert.throws(() => m.tree.fromWireFormat(value, { ...strip, validate: level, maxDepth: 2 }), deeper(2, LibErrorKind.Deserialization));
+      assert.deepEqual(m.tree.fromWireFormat(value, { ...strip, validate: level, maxDepth: 3 }), value);
+    });
+
+    await t.test(`an encode with strip counts the levels of a value as a decode does, validate ${level}`, () => {
+      // protects: T-896 strip agrees with the decoder on the level of the root
+      const value = { name: 'a', kids: [{ name: 'b' }] };
+      assert.throws(() => m.tree.toWireFormat(value, { ...strip, validate: level, maxDepth: 2 }), deeper(2, LibErrorKind.Serialization));
+      assert.deepEqual(m.tree.toWireFormat(value, { ...strip, validate: level, maxDepth: 3 }), value);
+    });
+  }
+});
+
 test('strip reaches a model of another module', async (t) => {
   // The project writes declarations and links the golem packages as an install does, so the plan that a module exports must have a type that a declaration file can name.
   const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-decode-strip-cross-', name: 'decode-strip-cross', compilerOptions: { declaration: true } });

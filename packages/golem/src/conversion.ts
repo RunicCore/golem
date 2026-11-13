@@ -228,7 +228,8 @@ function stripLevel(value: unknown, ref: StripPlanRef | undefined, depth: number
   if (ref === undefined || value === null || typeof value !== 'object') return value;
   const plan = typeof ref === 'function' ? ref() : ref;
   if (plan === undefined) return value;
-  if (depth > walk.limit) throw STRIP_TOO_DEEP;
+  // The root is level 1, as `valueNestsDeeperThan` and `textNestsDeeperThan` count it: the value at `depth` is level `depth + 1`.
+  if (depth >= walk.limit) throw STRIP_TOO_DEEP;
   if (plan.serde !== undefined) return walk.model ? value : stripLevel(value, plan.serde, depth, walk);
   if (Array.isArray(value)) return stripArray(value, plan.array === undefined ? plan : (typeof plan.array === 'function' ? plan.array() : plan.array), depth, walk);
   if (plan.array !== undefined || plan.object !== undefined) return stripLevel(value, plan.object, depth, walk);
@@ -241,19 +242,30 @@ function stripArray(value: unknown[], plan: StripPlan | undefined, depth: number
   for (let index = 0; index < value.length; index++) {
     const item = value[index];
     const next = stripLevel(item, index < (plan.prefix?.length ?? 0) ? plan.prefix?.[index] : plan.items, depth + 1, walk);
-    if (next !== item && out === undefined) out = value.slice(0, index);
-    if (out !== undefined) out.push(next);
+    if (next === item) continue;
+    // A copy keeps the holes of the array, as the conversion of an array keeps them; only a changed item is written.
+    out ??= value.slice();
+    out[index] = next;
   }
   return out ?? value;
 }
 
-/** What `stripEntry` gives for a key that a closed object does not declare: the key goes. */
-const STRIP_REMOVE = Symbol('strip remove');
+/**
+ * True when a closed object removes `key`: no declared key and no pattern names it. It is decided before the value is read,
+ * so the getter of a removed key never runs.
+ */
+function removesKey(key: string, plan: StripPlan): boolean {
+  if (plan.closed !== true || plan.keys?.has(key) === true) return false;
+  if (plan.patterns !== undefined) {
+    for (const entry of plan.patterns) if (matchesStripPattern(entry.pattern, key)) return false;
+  }
+  return true;
+}
 
 /**
- * The value of one key of an object after strip: a declared field by the plan of the field, a key that a pattern declares by the
- * plan of the pattern, any other key by `values`, or `STRIP_REMOVE` for an undeclared key of a closed object. Decode and encode, a plain object
- * and an instance of a class read a key by this one rule.
+ * The value of one key of an object that `removesKey` keeps, after strip: a declared field by the plan of the field, a key that a
+ * pattern declares by the plan of the pattern, any other key by `values`. Decode and encode, a plain object and an instance
+ * of a class read a key by this one rule.
  */
 function stripEntry(key: string, member: unknown, plan: StripPlan, depth: number, walk: StripWalk): unknown {
   let next = member;
@@ -267,8 +279,7 @@ function stripEntry(key: string, member: unknown, plan: StripPlan, depth: number
       next = stripLevel(next, entry.plan, depth + 1, walk);
     }
   }
-  if (declared) return next;
-  return plan.closed === true ? STRIP_REMOVE : stripLevel(member, plan.values, depth + 1, walk);
+  return declared ? next : stripLevel(member, plan.values, depth + 1, walk);
 }
 
 function stripObject(value: Record<string, unknown>, plan: StripPlan, depth: number, walk: StripWalk): unknown {
@@ -286,14 +297,14 @@ function stripObject(value: Record<string, unknown>, plan: StripPlan, depth: num
   const keys = Object.keys(value);
   for (let index = 0; index < keys.length; index++) {
     const key = keys[index] as string;
-    const member = value[key];
-    const next = stripEntry(key, member, plan, depth, walk);
-    const keep = next !== STRIP_REMOVE;
-    if (next !== member && out === undefined) {
+    const removed = removesKey(key, plan);
+    const member = removed ? undefined : value[key];
+    const next = removed ? undefined : stripEntry(key, member, plan, depth, walk);
+    if ((removed || next !== member) && out === undefined) {
       out = {};
       for (let earlier = 0; earlier < index; earlier++) defineModelProperty(out, keys[earlier] as string, value[keys[earlier] as string]);
     }
-    if (out !== undefined && keep) defineModelProperty(out, key, next);
+    if (out !== undefined && !removed) defineModelProperty(out, key, next);
   }
   return out ?? value;
 }
@@ -312,7 +323,7 @@ function stripInstance(value: object, plan: StripPlan, depth: number, walk: Stri
   const names = keepsData ? Object.keys(value) : plan.fields === undefined ? undefined : Object.keys(plan.fields);
   if (names === undefined) return value;
   let changed: PropertyDescriptorMap | undefined;
-  // A name here is a declared field or a key of a model that keeps other keys as data, so `stripEntry` never answers `STRIP_REMOVE`.
+  // A name here is a declared field or a key of a model that keeps other keys as data, so `removesKey` is false for it.
   for (const name of names) {
     if (!Object.prototype.propertyIsEnumerable.call(value, name)) continue;
     const member: unknown = Reflect.get(value, name);
@@ -334,6 +345,11 @@ function stripInstance(value: object, plan: StripPlan, depth: number, walk: Stri
  */
 export function stripUndeclared(value: unknown, plan: StripPlanRef, maxDepth?: number, model?: true): unknown {
   const walk: StripWalk = { limit: resolveMaxDepth(maxDepth), model: model === true };
+  // With the bound off no depth check ends a cycle, and the walk would end the call stack: the cycle check of the encoder or the decoder runs first.
+  if (walk.limit === Infinity) {
+    if (walk.model) assertAcyclicEncodeInput(value);
+    else assertWireAcyclic(value);
+  }
   try {
     return stripLevel(value, plan, 0, walk);
   } catch (error) {
