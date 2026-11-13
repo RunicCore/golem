@@ -14,7 +14,7 @@ export {
   assertAcyclicEncodeInput, assertPropertyAcyclic, assertWireAcyclic, beginDecode, beginEncode, constructModel, convertModelField, convertModelItems,
   convertModelRecord, convertModelTupleItems, copyModelRecord, decodeCheckedInput, decodeDetachedInput, defineModelProperty,
   deserializeDate, endDecode, endEncode, isVariantObject, jsonWithDiscriminator, rejectModelObject, wireChecked, requireModelObject, serializeDate,
-  unknownDiscriminatorValue, withDeclaredFields, withDiscriminatorValue,
+  stripPlan, stripWire, unknownDiscriminatorValue, withDeclaredFields, withDiscriminatorValue,
 } from './conversion.js';
 export {
   assertModelValue, fastable, isValidModelValue, parseJson, serdeValidates, stringifyJsonArray, stringifyJsonBoolean,

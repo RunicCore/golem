@@ -24,7 +24,7 @@ const barrelTypes = [
     'ParameterSerializerContext', 'RequestOptions', 'ResponseHeaderDecoder', 'ResponseHeaderDecoderContext', 'RuntimeResponseContract',
     'RuntimeSecuritySchemes', 'StreamDecoder', 'StreamDecoderContext', 'TokenAuthValue', 'UndeclaredResponseError',
   ]],
-  ['object-codec', ['SerdeOptions', 'ValidateOptions']],
+  ['object-codec', ['DecodeOptions', 'SerdeOptions', 'ValidateOptions']],
   ['schema-registry-validation', ['OperationRuntimeValidators']],
   ['issue-messages', ['SchemaIssue']],
 ];

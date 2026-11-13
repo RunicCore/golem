@@ -11,14 +11,14 @@ import {
   toIssue,
   type Issue,
 } from './errors.js';
-import { nestingDepthError, readRootFields, resolveMaxDepth, textNestsDeeperThan, valueNestsDeeperThan, type StripPlan } from './conversion.js';
+import { nestingDepthError, readRootFields, resolveMaxDepth, textNestsDeeperThan, valueNestsDeeperThan } from './conversion.js';
 import { withoutInstanceState } from './presence.js';
 import type { SchemaIssue } from './issue-messages.js';
 import type { ModelValidationContext, WireFormat } from './model.js';
 import type { Validator } from './validation-runtime.js';
 
 import { MODEL_CODEC_IDS_KEY } from './schema-keywords.js';
-import { getObjectCodec, linkConstructorToCodec, registerObjectCodec } from './codec-registry.js';
+import { linkConstructorToCodec, registerObjectCodec } from './codec-registry.js';
 
 export { findCodecIdForConstructor, getObjectCodec, registerObjectCodec, requireObjectCodec } from './codec-registry.js';
 
@@ -109,8 +109,6 @@ export interface ObjectCodec<T = unknown> {
 /** A registered codec as the runtime of an extension sees it: `data` is on this type only, not on the public `ObjectCodec`. */
 export interface InternalObjectCodec<T = unknown> extends ObjectCodec<T> {
   readonly data?: CodecData;
-  /** What `strip` removes from the wire of this model; absent when the model holds no closed object. */
-  readonly stripPlan?: StripPlan;
 }
 
 export interface ObjectCodecImpl<T = unknown> {
@@ -120,8 +118,6 @@ export interface ObjectCodecImpl<T = unknown> {
   assert(value: unknown, options?: ValidateOptions): T;
   toWireFormat(value: T, options?: SerdeOptions): unknown;
   fromWireFormat(wire: unknown, options?: DecodeOptions): T;
-  /** What `strip` removes from the wire of this model; a model of another module reads it from the registered codec (`stripPlanOf`). */
-  readonly stripPlan?: StripPlan;
   /** The data that extensions add to the codec, by extension name; absent when none adds any. */
   readonly data?: CodecData;
   /** The declared field names of a root object; `allowGetter` reads these. Another root has none, and the option has no effect. */
@@ -413,11 +409,6 @@ export function validationUnavailableStub(): never {
   return validationUnavailable();
 }
 
-/** The plan of `strip` for the codec of another module: a model that is not registered, or holds no plan, has nothing to strip. */
-export function stripPlanOf(id: string): StripPlan | undefined {
-  return (getObjectCodec(id) as InternalObjectCodec | undefined)?.stripPlan;
-}
-
 /** Registers the codec of `id`. */
 export function createObjectCodec<T>(id: string, impl: ObjectCodecImpl<T>): ObjectCodec<T> {
   const fields = impl.fields;
@@ -437,7 +428,6 @@ export function createObjectCodec<T>(id: string, impl: ObjectCodecImpl<T>): Obje
     id,
     issueSource: impl.issueSource,
     ...(impl.data ? { data: impl.data } : {}),
-    ...(impl.stripPlan ? { stripPlan: impl.stripPlan } : {}),
     stringify: (value, options) => impl.stringify(options?.allowGetter === true && fields !== undefined ? readRootFields(value, fields) as typeof value : value, options),
     parse: (text, options) => {
       if (bounded) rejectDeepText(text, options);

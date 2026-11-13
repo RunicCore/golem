@@ -21,6 +21,7 @@ import {
   fillFunctionName,
   sideEffectImport,
   reachesItself,
+  stripPlanName,
   wireStringifyExportName,
   RUNTIME_SERDE,
   writeOperationCodecs,
@@ -274,7 +275,7 @@ export function generateOpenApiModelArtifacts(
       codecFunctionImport: (nodeId, functionName) => {
         const dependencyGroupId = owner.get(nodeId);
         if (!dependencyGroupId || dependencyGroupId === group.id) return undefined;
-        return moduleSource(`./_${dependencyGroupId}.js`).name(generatedFunctionName(nodeId, functionName));
+        return moduleSource(`./_${dependencyGroupId}.js`).name(functionName === 'stripPlan' ? stripPlanName(analysis.nodesById.get(nodeId)?.codecId ?? nodeId) : generatedFunctionName(nodeId, functionName));
       },
       exportedFillFunctionIds: exportedFillFunctionsByGroup.get(group.id),
     });
@@ -340,7 +341,7 @@ function generateModels(
     /** The wire stringify that the companion of a sibling codec exports: a part imported from the group that holds it, or a local name. */
     readonly wireStringify?: (codecId: string) => Code;
     /** A function of a schema node that another module holds, as the part imported from it. */
-    readonly codecFunctionImport?: (nodeId: string, functionName: 'stringify' | 'fill' | 'fromWire' | 'toWire') => Code | undefined;
+    readonly codecFunctionImport?: (nodeId: string, functionName: 'stringify' | 'fill' | 'fromWire' | 'toWire' | 'stripPlan') => Code | undefined;
     /** The sources of the modules this module may import names from, in the order of their statements. */
     readonly moduleSources?: () => readonly ImportSource[];
     /** Where the module imports its runtime values and types from; the package's own entries when absent. */
@@ -402,6 +403,10 @@ function generateModels(
     })),
     ...(helpers.wireStringify ? { siblingWireName: helpers.wireStringify } : {}),
     ...(helpers.exportedFillFunctionIds ? { exportedFillFunctionIds: helpers.exportedFillFunctionIds } : {}),
+    importedStripPlan: (codecId) => {
+      const node = analysis.schemaGraph.nodeByCodecId(codecId) ?? analysis.nodesById.get(codecId);
+      return node === undefined || helpers.graphNodeIds?.has(node.id) ? undefined : helpers.codecFunctionImport?.(node.id, 'stripPlan');
+    },
     nestedImportedSerde: (codecId) => {
       if (!helpers.codecFunctionImport) return undefined;
       const node = analysis.schemaGraph.nodeByCodecId(codecId) ?? analysis.nodesById.get(codecId);

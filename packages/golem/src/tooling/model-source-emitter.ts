@@ -11,6 +11,7 @@ export {
   reachesItself,
   reachesRecursiveNode,
   stringifyFunctionName,
+  stripPlanName,
   wireStringifyExportName,
   toWireFunctionName,
   validateFunctionName,
@@ -480,7 +481,7 @@ export function wrapRootConversion(
 
 const SERDE_IMPORT_ORDER: readonly string[] = [
   'assertModelValue', 'createObjectCodec', 'fastable', 'isValidModelValue', 'parseJson', 'registerIModelClass', 'requireIModelClass', 'requireObjectCodec',
-  'serdeValidates', 'stringifyJsonArray', 'stringifyJsonBoolean', 'stringifyJsonNumber', 'stringifyJsonScalar', 'stringifyJsonString', 'stripPlanOf',
+  'serdeValidates', 'stringifyJsonArray', 'stringifyJsonBoolean', 'stringifyJsonNumber', 'stringifyJsonScalar', 'stringifyJsonString',
   'validationUnavailableStub', 'withoutInstanceState', 'IssueRepresentation', 'IssueSource', 'DecodeOptions', 'SerdeOptions', 'ValidateOptions',
 ];
 

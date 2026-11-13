@@ -6,14 +6,11 @@ import { pathToFileURL } from 'node:url';
 
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { requireObjectCodec } from '@exprtlabs/golem/internal/model-runtime';
-import type { ModelTypeDescriptor } from '@exprtlabs/golem/internal/schema';
-import { createSchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
 import type { DecodeOptions } from '@exprtlabs/golem/serde';
 
 import { readFixture } from './fixture-project.js';
 import { buildModelProject, createModelProject, writeModelGolemYaml } from './model-project.js';
 import { generatedCodecIdFromRoot } from './support/consumer.js';
-import { emitCodecRuntimeText, instantiateRuntime } from './emitted-runtime.js';
 
 // `strip: true` on one decode call removes the keys that a closed object does not declare, at every level (R-65 G2).
 // The default decode is unchanged: an extra key of a closed object fails validation.
@@ -30,8 +27,8 @@ async function buildModels(t: TestContext) {
   const models = await import(pathToFileURL(path.join(root, 'build/strip.model.js')).href);
   const codec = (name: string) => requireObjectCodec(generatedCodecIdFromRoot(root, name));
   return {
-    Card: models.Card as Model, Shelf: models.Shelf as Model, PetHolder: models.PetHolder as Model, Tree: models.Tree as Model, Tally: models.Tally as Model,
-    plain: codec('TPlain'), nested: codec('TNested'), open: codec('TOpen'), mapHolder: codec('TMapHolder'), patterned: codec('TPatterned'),
+    Card: models.Card as Model, Shelf: models.Shelf as Model, PetHolder: models.PetHolder as Model, Tree: models.Tree as Model, Tally: models.Tally as Model, Tagged: models.Tagged as Model,
+    plain: codec('TPlain'), nested: codec('TNested'), open: codec('TOpen'), mapHolder: codec('TMapHolder'), patterned: codec('TPatterned'), nullable: codec('TNullable'), tagged: codec('TTagged'),
     card: codec('TCard'), shelf: codec('TShelf'), petHolder: codec('TPetHolder'), tree: codec('TTree'), tally: codec('TTally'),
   };
 }
@@ -57,6 +54,9 @@ test('strip on decode', async (t) => {
       [`nested plain objects, validate ${level}`, () => m.nested.fromWireFormat({ inner: { title: 'a', x: 1 }, list: [{ title: 'b', y: 2 }], z: 3 }, options(level)), [[[], ['inner', 'list']], [['inner'], ['title']], [['list', 0], ['title']]]],
       [`nested class and array of class, validate ${level}`, () => m.shelf.fromWireFormat({ cards: [{ title: 'a', x: 1 }], main: { title: 'b', y: 2 }, z: 3 }, options(level, { construct: m.Shelf })), [[[], ['cards', 'main']], [['cards', 0], ['title']], [['main'], ['title']]]],
       [`tagged union, validate ${level}`, () => m.petHolder.fromWireFormat({ pet: { kind: 'cat', lives: 9, junk: 1 }, extra: 1 }, options(level, { construct: m.PetHolder })), [[[], ['pet']], [['pet'], ['kind', 'lives']]]],
+      [`nullable single object variant, validate ${level}`, () => m.nullable.fromWireFormat({ child: { title: 'a', x: 1 } }, options(level)), [[['child'], ['title']]]],
+      [`tagged union with a default variant: no tag goes to the default, validate ${level}`, () => m.tagged.fromWireFormat({ item: { amount: 1, junk: 1 } }, options(level, { construct: m.Tagged })), [[['item'], ['amount']]]],
+      [`tagged union with a default variant: a known tag, validate ${level}`, () => m.tagged.fromWireFormat({ item: { kind: 'other', value: 1, junk: 1 } }, options(level, { construct: m.Tagged })), [[['item'], ['kind', 'value']]]],
       [`recursive model, validate ${level}`, () => m.tree.fromWireFormat({ name: 'a', junk: 1, kids: [{ name: 'b', junk: 2, kids: [{ name: 'c', junk: 3 }] }] }, options(level, { construct: m.Tree })), [[[], ['kids', 'name']], [['kids', 0], ['kids', 'name']], [['kids', 0, 'kids', 0], ['name']]]],
     ] as const);
     for (const [name, decode, expectations] of rows) {
@@ -111,24 +111,24 @@ test('strip on decode', async (t) => {
   });
 });
 
-/** An Owner whose `shape` is the given union of closed objects: the codec runtime without validation. */
-function ownerWithShape(variants: readonly ModelTypeDescriptor[]) {
-  const closed = (properties: Record<string, ModelTypeDescriptor>): ModelTypeDescriptor => ({ kind: 'object', properties, required: Object.keys(properties), additionalProperties: false });
-  const graph = createSchemaGraph();
-  graph.intern(closed({ shape: { kind: 'union', variants } }), 'Owner');
-  graph.seal();
-  const runtime = instantiateRuntime(emitCodecRuntimeText(graph, { validationLevel: false }));
-  return (wire: unknown) => runtime.fromWireFormatOwner!(wire, strip) as { shape: object };
-}
+test('strip reaches a model of another module', async (t) => {
+  const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-decode-strip-cross-', name: 'decode-strip-cross', linkWorkspaceNodeModules: true });
+  for (const file of ['child.model.ts', 'parent.model.ts']) fs.writeFileSync(path.join(sourceRoot, file), readFixture(`models/decode-strip/cross/${file}`));
+  writeModelGolemYaml(root, { validation: true });
+  await buildModelProject(root);
+  const models = await import(pathToFileURL(path.join(root, 'build/parent.model.js')).href);
+  const children = await import(pathToFileURL(path.join(root, 'build/child.model.js')).href);
+  const parent = requireObjectCodec(generatedCodecIdFromRoot(root, 'TParent'));
+  const wire = { id: 1, extra: 1, child: { name: 'a', x: 1 }, children: [{ name: 'b', y: 2 }] };
 
-test('strip on a union with one object variant', async (t) => {
-  const square = { kind: 'object', properties: { side: { kind: 'number' } }, required: ['side'], additionalProperties: false } as const satisfies ModelTypeDescriptor;
-
-  await t.test('one object variant beside null or a scalar is that variant: it is stripped', () => {
-    // protects: T-896 a union with one object variant has one candidate, so strip is exact
-    const decode = ownerWithShape([square, { kind: 'null' }, { kind: 'string' }]);
-    assert.deepEqual(Object.keys(decode({ shape: { side: 1, junk: 1 } }).shape), ['side']);
-    assert.equal(decode({ shape: 'text' }).shape, 'text');
-    assert.equal(decode({ shape: null }).shape, null);
-  });
+  for (const level of [true, 'sanity', false] as const) {
+    await t.test(`a class result holds the declared keys of the nested model of another file, validate ${level}`, () => {
+      // protects: T-896 the plan of the parent reaches the plan of a model of another module
+      const result = parent.fromWireFormat(wire, { strip: true, validate: level, construct: models.Parent });
+      assert.deepEqual(sorted(result as object), ['child', 'children', 'id']);
+      assert.deepEqual(sorted(at(result, 'child')), ['name']);
+      assert.deepEqual(sorted(at(result, 'children', 0)), ['name']);
+      assert.ok(at(result, 'child') instanceof children.Child);
+    });
+  }
 });

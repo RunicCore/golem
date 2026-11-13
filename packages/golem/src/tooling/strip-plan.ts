@@ -1,13 +1,12 @@
 /**
  * The strip plan of a model: the data `strip` reads to remove the keys that a closed object does not declare from a wire
  * value. A plan is a constant of the generated module, so a decode that does not strip reads none of it. The plan follows
- * the wire shape: an inline object, array or tuple has its plan inside its parent's, and a named model is reached by a
- * function, so a model that holds itself has a plan. A union of objects with no tag has no plan, so it keeps exact matching.
+ * the wire shape: an inline object, array or tuple has its plan inside its parent's, and a named model is reached by its plan
+ * function, so a model that holds itself has a plan, and another module's model by the plan that module exports. A union of objects with no tag has no plan, so it keeps exact matching.
  */
 
 import type { ModelTypeDescriptor } from '../model-registry.js';
 import { code, identifier, join, literal, type Code } from './code.js';
-import { rt } from './rt.js';
 import { serdeWireDescriptor, type SchemaGraph, type SchemaNode } from './schema-graph.js';
 import type { ObjectTypeDescriptor } from './union-conversion.js';
 
@@ -20,8 +19,10 @@ export interface StripPlanEnv {
   readonly nodeOf: (descriptor: ModelTypeDescriptor) => SchemaNode | undefined;
   /** The type of the values of a map object or of its `additionalProperties`. */
   readonly extraValues: (descriptor: ObjectTypeDescriptor) => ModelTypeDescriptor | undefined;
-  /** Whether the codec of the node is another module's: its plan is read from the registered codec. */
+  /** Whether the codec of the node is another module's. */
   readonly external: (node: SchemaNode) => boolean;
+  /** The name this module imports the plan of another module's node under; undefined when that module offers none, so the node is left as it is. */
+  readonly importedPlan: (node: SchemaNode) => Code | undefined;
   /** The name of the constant that holds the plan of a node this module emits. */
   readonly planName: (node: SchemaNode) => string;
 }
@@ -45,9 +46,9 @@ export class StripPlans {
 
   /** The reference to the plan of the node, for the plan of a parent. */
   private nodeRef(node: SchemaNode): Code | undefined {
-    if (this.env.external(node)) return code`() => ${rt.serde.stripPlanOf}(${literal(node.codecId)})`;
+    if (this.env.external(node)) return this.env.importedPlan(node);
     if (!this.building.has(node.id) && this.ofNode(node) === undefined) return undefined;
-    return code`() => ${identifier(this.env.planName(node))}`;
+    return identifier(this.env.planName(node));
   }
 
   private ofDescriptor(descriptor: ModelTypeDescriptor): Code | undefined {

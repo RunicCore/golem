@@ -185,18 +185,23 @@ export interface StripPlan {
   readonly default?: StripPlanRef;
   /** The plan of each item of an array, or of each item of a tuple after `prefix`. */
   readonly items?: StripPlanRef;
-  readonly prefix?: readonly (StripPlanRef | undefined)[];
+  readonly prefix?: readonly StripPlanRef[];
   /** A union of an object and an array: the plan of each JSON type. */
   readonly object?: StripPlanRef;
   readonly array?: StripPlanRef;
 }
 
-/** The plan a generated module declares for its model; it gives a plan literal the type of its thunks. */
-export function stripPlan(plan: StripPlan): StripPlan {
-  return plan;
+/**
+ * The plan a generated module declares for its model: it builds the plan at its first use and keeps it, so a module that never
+ * strips builds none, and a bundler drops the call when nothing names the plan (the call carries a pure annotation).
+ */
+export function stripPlan(build: () => StripPlan): () => StripPlan {
+  let plan: StripPlan | undefined;
+  return () => plan ??= build();
 }
 
-export type StripPlanRef = StripPlan | (() => StripPlan | undefined);
+/** A plan, a function that gives it, or `undefined` for a value that holds nothing to strip (the plan another module exports for such a node). */
+export type StripPlanRef = StripPlan | (() => StripPlan | undefined) | undefined;
 
 /** Thrown inside the strip walk when it nests deeper than the limit; `stripWire` turns it into the cycle error or the depth error. */
 const STRIP_TOO_DEEP = Symbol('strip too deep');
