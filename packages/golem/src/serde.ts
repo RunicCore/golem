@@ -9,10 +9,10 @@
  */
 
 import type { WireFormat } from './model.js';
-import { untransformedCallError, type AllowGetterOptions, type SerdeOptions, type ValidateOptions } from './object-codec.js';
+import { untransformedCallError, type AllowGetterOptions, type DecodeOptions, type SerdeOptions, type ValidateOptions } from './object-codec.js';
 
 export { getIModelClass, getObjectCodec, objectCodecValidationReference } from './object-codec.js';
-export type { AllowGetterOptions, ObjectCodec, SerdeOptions, ValidateOptions, ValidationPlane } from './object-codec.js';
+export type { AllowGetterOptions, DecodeOptions, ObjectCodec, SerdeOptions, ValidateOptions, ValidationPlane } from './object-codec.js';
 export type { WireFormat } from './model.js';
 export { IssueRepresentation, IssueSource } from './errors.js';
 
@@ -24,7 +24,7 @@ export function stringify<T>(_value: T, _options?: SerdeOptions & AllowGetterOpt
   untransformed('stringify');
 }
 
-export function parse<T>(_text: string, _options?: SerdeOptions): T {
+export function parse<T>(_text: string, _options?: DecodeOptions): T {
   untransformed('parse');
 }
 
@@ -36,6 +36,6 @@ export function toWireFormat<T>(_value: T, _options?: SerdeOptions & AllowGetter
   untransformed('toWireFormat');
 }
 
-export function fromWireFormat<T>(_wire: unknown, _options?: SerdeOptions): T {
+export function fromWireFormat<T>(_wire: unknown, _options?: DecodeOptions): T {
   untransformed('fromWireFormat');
 }

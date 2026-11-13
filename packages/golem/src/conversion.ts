@@ -162,6 +162,126 @@ export function nestingDepthError(maxDepth: number): LibError {
   );
 }
 
+/**
+ * What `strip` removes from a wire value, as data a generated codec holds for each model. A plan describes one JSON
+ * value: an object (`keys`, `closed`, `patterns`, `fields`, `values`, `tag`), an array (`items`, `prefix`), or a union
+ * of an object and an array (`object`, `array`). A plan that names a model by a function is read when it is used, so a
+ * model that holds itself has a plan.
+ */
+export interface StripPlan {
+  /** The declared keys of an object. */
+  readonly keys?: ReadonlySet<string>;
+  /** The object declares no other key: a key that is not in `keys` and matches no pattern is removed. */
+  readonly closed?: true;
+  /** Patterns of keys that the object declares as data (`patternProperties`); a key that matches one is kept as it is. */
+  readonly patterns?: readonly string[];
+  /** The plan of the value of each declared key that holds something to strip. */
+  readonly fields?: { readonly [name: string]: StripPlanRef };
+  /** The plan of the value of each key that is not declared and is kept: a map value or an additional property. */
+  readonly values?: StripPlanRef;
+  /** The tag property of a tagged union, the plan of each tag value, and the plan of a value whose tag selects none. */
+  readonly tag?: string;
+  readonly variants?: { readonly [value: string]: StripPlanRef };
+  readonly default?: StripPlanRef;
+  /** The plan of each item of an array, or of each item of a tuple after `prefix`. */
+  readonly items?: StripPlanRef;
+  readonly prefix?: readonly (StripPlanRef | undefined)[];
+  /** A union of an object and an array: the plan of each JSON type. */
+  readonly object?: StripPlanRef;
+  readonly array?: StripPlanRef;
+}
+
+/** The plan a generated module declares for its model; it gives a plan literal the type of its thunks. */
+export function stripPlan(plan: StripPlan): StripPlan {
+  return plan;
+}
+
+export type StripPlanRef = StripPlan | (() => StripPlan | undefined);
+
+/** Thrown inside the strip walk when it nests deeper than the limit; `stripWire` turns it into the cycle error or the depth error. */
+const STRIP_TOO_DEEP = Symbol('strip too deep');
+
+const stripPatterns = new Map<string, RegExp>();
+
+function matchesStripPattern(patterns: readonly string[], key: string): boolean {
+  for (const pattern of patterns) {
+    let expression = stripPatterns.get(pattern);
+    if (expression === undefined) stripPatterns.set(pattern, expression = new RegExp(pattern, 'u'));
+    if (expression.test(key)) return true;
+  }
+  return false;
+}
+
+function stripLevel(wire: unknown, ref: StripPlanRef | undefined, depth: number, limit: number): unknown {
+  if (ref === undefined || wire === null || typeof wire !== 'object') return wire;
+  const plan = typeof ref === 'function' ? ref() : ref;
+  if (plan === undefined) return wire;
+  if (depth > limit) throw STRIP_TOO_DEEP;
+  if (Array.isArray(wire)) return stripArray(wire, plan.array === undefined ? plan : (typeof plan.array === 'function' ? plan.array() : plan.array), depth, limit);
+  if (plan.array !== undefined || plan.object !== undefined) return stripLevel(wire, plan.object, depth, limit);
+  return stripObject(wire as Record<string, unknown>, plan, depth, limit);
+}
+
+function stripArray(wire: unknown[], plan: StripPlan | undefined, depth: number, limit: number): unknown {
+  if (plan === undefined || (plan.items === undefined && plan.prefix === undefined)) return wire;
+  let out: unknown[] | undefined;
+  for (let index = 0; index < wire.length; index++) {
+    const item = wire[index];
+    const next = stripLevel(item, index < (plan.prefix?.length ?? 0) ? plan.prefix?.[index] : plan.items, depth + 1, limit);
+    if (next !== item && out === undefined) out = wire.slice(0, index);
+    if (out !== undefined) out.push(next);
+  }
+  return out ?? wire;
+}
+
+function stripObject(wire: Record<string, unknown>, plan: StripPlan, depth: number, limit: number): unknown {
+  if (plan.tag !== undefined) {
+    const tag = wire[plan.tag];
+    const variant = typeof tag === 'string' || typeof tag === 'number' || typeof tag === 'boolean' ? String(tag) : undefined;
+    const chosen = variant !== undefined && plan.variants !== undefined && Object.hasOwn(plan.variants, variant) ? plan.variants[variant] : plan.default;
+    return stripLevel(wire, chosen, depth, limit);
+  }
+  let out: Record<string, unknown> | undefined;
+  const keys = Object.keys(wire);
+  for (let index = 0; index < keys.length; index++) {
+    const key = keys[index] as string;
+    const value = wire[key];
+    let next = value;
+    let keep = true;
+    if (plan.keys?.has(key) === true) {
+      if (plan.fields !== undefined && Object.hasOwn(plan.fields, key)) next = stripLevel(value, plan.fields[key], depth + 1, limit);
+    } else if (plan.patterns !== undefined && matchesStripPattern(plan.patterns, key)) {
+      keep = true;
+    } else if (plan.closed === true) {
+      keep = false;
+    } else {
+      next = stripLevel(value, plan.values, depth + 1, limit);
+    }
+    if ((!keep || next !== value) && out === undefined) {
+      out = {};
+      for (let earlier = 0; earlier < index; earlier++) defineModelProperty(out, keys[earlier] as string, wire[keys[earlier] as string]);
+    }
+    if (out !== undefined && keep) defineModelProperty(out, key, next);
+  }
+  return out ?? wire;
+}
+
+/**
+ * The wire without the keys that a closed object of `plan` does not declare, at every level. It copies only an object or an
+ * array that changes and never writes to the input, so a wire that holds nothing to remove is returned as it is. A value
+ * that nests deeper than `maxDepth` is a cycle or too deep: the cycle check reports a cycle, else the depth error is thrown.
+ */
+export function stripWire(wire: unknown, plan: StripPlanRef, maxDepth?: number): unknown {
+  const limit = resolveMaxDepth(maxDepth);
+  try {
+    return stripLevel(wire, plan, 0, limit);
+  } catch (error) {
+    if (error !== STRIP_TOO_DEEP) throw error;
+    assertWireAcyclic(wire);
+    throw nestingDepthError(limit);
+  }
+}
+
 const LEAVE = Symbol('leave');
 
 /** A level of the depth walk: an array, a plain object or a golem model instance. Bytes, dates, maps and other class values are leaves. */

@@ -110,6 +110,7 @@ The second type argument of `IModel` and `IObject` sets two options for that dec
 - A docs job reads the types that a controller signature spells out, such as an inline body, with `exact: false`, whatever `golem.yaml` says. A model that a signature names keeps its own `exact` ([derived type names](/reference/generated-files#derived-type-names)).
 - A key on an instance that its model does not declare is program state, not an extra property. Codecs never report it as an unknown key and never write it to JSON, also inside an `unknown` or `any` field.
 - Input from JSON or a request stays exact. Constructors assign declared fields only.
+- To decode input that holds more keys than the model declares, such as `process.env` or the headers of a request, pass `{ strip: true }` to `parse` or `fromWireFormat`. A closed object then loses each key that it does not declare, at every level, and the check passes. A map, an `AdditionalProperties` tag, `PatternProperties` and an object with `exact: false` keep their extra keys. A union of objects that has a `Discriminator` tag picks the variant by the tag first ([`strip`](/reference/runtime-api#strip)).
 
 ## Nested models and derived types
 

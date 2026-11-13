@@ -536,9 +536,9 @@ The error is a `LibError` of kind `ValidationUnavailable`. Its message starts wi
 
 | Member | Signature | Behavior |
 | --- | --- | --- |
-| `parse` | `<T>(text: string, options?: SerdeOptions): T` | JSON text to a value. Checks the JSON, runs `TSerde` decoders, checks the result. |
+| `parse` | `<T>(text: string, options?: DecodeOptions): T` | JSON text to a value. Checks the JSON, runs `TSerde` decoders, checks the result. |
 | `stringify` | `<T>(value: T, options?: SerdeOptions & AllowGetterOptions): string` | Value to JSON text of the declared fields, with `TSerde` applied and both sides checked. |
-| `fromWireFormat` | `<T>(wire: unknown, options?: SerdeOptions): T` | `parse` for a plain object instead of text. |
+| `fromWireFormat` | `<T>(wire: unknown, options?: DecodeOptions): T` | `parse` for a plain object instead of text. |
 | `toWireFormat` | `<T>(value: T, options?: SerdeOptions & AllowGetterOptions): WireFormat<T>` | `stringify` that returns the plain object, such as `TTaskJSON`. |
 | `assertValue` | `<T>(value: unknown, options?: ValidateOptions & AllowGetterOptions): T` | Checks the value and returns it unchanged, typed as `T`. Throws `LibError` `Validation` with the issues. |
 
@@ -548,6 +548,7 @@ The error is a `LibError` of kind `ValidationUnavailable`. Its message starts wi
 | `failFast` | both | `true` | `false` reports every issue. It does not skip checks. |
 | `validationContext` | both | none | Resolves validators from your own function ([validation context](#validation-context)). |
 | `maxDepth` | both | `512` | Bounds how many levels of objects and arrays the input of a recursive model may nest ([below](#max-depth)). |
+| `strip` | `DecodeOptions` | `false` | `true` removes the keys that a closed object does not declare, before the checks run ([below](#strip)). |
 | `allowGetter` | `AllowGetterOptions` | `false` | `true` reads declared root fields through getters and inherited values ([below](#allow-getter)). |
 
 `ValidateOptions` has `validate`, `failFast`, `validationContext` and `maxDepth`. The rewrite also passes `construct` in `SerdeOptions` for a class `T`. Each call runs the checks in the table of [Checks during conversion](/guide/serialization#checks-during-conversion).
@@ -561,6 +562,20 @@ A model that reaches a recursive model (it refers to itself, directly or through
 - Each array, plain object and model instance counts as one level; a class value such as a `Uint8Array`, a `Date` or a `Map` is a leaf. With `allowGetter: true`, the fields that a root getter supplies count too. A tree whose `children` array holds nodes adds two levels for each node.
 - Raise the bound for one call with `{ maxDepth: 2000 }`, or for the interceptor with `new NestModelInterceptor({ maxDepth: 2000 })`. `Infinity` turns it off. Very deep input can then end the call stack.
 - A value below 1 is a `TypeError`.
+
+### `strip` {#strip}
+
+`DecodeOptions` extends `SerdeOptions` with `strip?: true`. `parse` and `fromWireFormat` take it, and so do the same calls of an `ObjectCodec`. Encode calls do not.
+
+```ts
+const env = fromWireFormat<TEnv>(process.env, { strip: true });
+```
+
+By default an extra key of a closed object fails validation. With `strip: true`, golem removes that key at every level, before it checks the value, at each validation level. The result holds the declared keys only, also when it is a class instance. A declared key that has a bad value still reports its issue.
+
+- Strip keeps the data that a model declares as extra: a `Record`, an `AdditionalProperties` tag, `PatternProperties` and an object with `exact: false`.
+- A union of objects with a `Discriminator` tag chooses the variant by the tag, and strip then removes the keys that variant does not declare.
+- Strip copies the object that it changes. It does not change the input.
 
 ### `allowGetter` {#allow-getter}
 

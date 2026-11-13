@@ -7,6 +7,7 @@ This file is the complete list of changes. The documentation site's
 
 ### Models
 
+- `strip: true` in the options of `parse` and `fromWireFormat` removes the keys that a closed object does not declare, at every level and every validation level, before the checks run. The result holds the declared keys only, also for a class. A `Record`, an `AdditionalProperties` tag, pattern properties and an object with `exact: false` keep their extra keys. Type: `DecodeOptions` from `@exprtlabs/golem/serde`. The default decode is unchanged. See [`strip`](docs/reference/runtime-api.md#strip).
 - A field typed as an intersection of several data parts and a tag, such as `{ a: string } & { b: number } & MinProperties<1>`, keeps every part. Before, only the first part stayed, so a declared field disappeared and valid data failed. A brand beside `string` works in either order.
 - A generic tag alias with a compound base, such as `type NonEmpty<T> = T[] & MinItems<1>`, generates. Before, it stopped with `RUNM1003`.
 - `Record<number, V>` and `{ [id: number]: V }` convert their values as a string-keyed record does, and reject a key that is no number. Before, they rejected valid data.
