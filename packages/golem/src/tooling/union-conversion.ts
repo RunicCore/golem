@@ -427,10 +427,39 @@ function inlineDispatch(options: DispatchOptions): Code {
   return code`(${converted})`;
 }
 
-/** The variants of a `scalar | scalar[]` or `scalar | [T, ...]` union: its one sequence, and the scalar variants beside it. */
+/** A named variant: a model, or a named alias that a node of the walker's graph holds. */
+type NamedTypeDescriptor = Extract<ModelTypeDescriptor, { readonly kind: 'reference' | 'generated-model' }>;
+
+function isNamed(descriptor: ModelTypeDescriptor): descriptor is NamedTypeDescriptor {
+  return descriptor.kind === 'reference' || descriptor.kind === 'generated-model';
+}
+
+/**
+ * A named variant whose node holds an array or tuple, as a walker reads it from its graph (a recursive array alias is a named node,
+ * not written inline). Its value is a sequence, and the union tells it from an object by `Array.isArray`. `converts`: the conversion
+ * of the node changes its value.
+ */
+export interface NamedSequence {
+  readonly converts: boolean;
+}
+
+/** The answer of a walker for a named variant: undefined unless its node holds an array or tuple, so any other named variant is an object that converts. */
+type NamedVariants = (variant: ModelTypeDescriptor) => NamedSequence | undefined;
+
+/** The variants of a `scalar | scalar[]` or `scalar | [T, ...]` union: its one sequence, and the scalar variants beside it. A named alias of an array is a sequence too. */
 interface ScalarOrArray {
-  readonly sequence: ArrayTypeDescriptor | TupleConversionDescriptor;
+  readonly sequence: ArrayTypeDescriptor | TupleConversionDescriptor | NamedTypeDescriptor;
   readonly scalars: readonly ModelTypeDescriptor[];
+}
+
+/** Whether the variant is an array or tuple, or a named node of one: its value is a JSON array. */
+function isSequenceVariant(variant: ModelTypeDescriptor, named: NamedVariants): variant is ScalarOrArray['sequence'] {
+  return variant.kind === 'array' || variant.kind === 'tuple' || (isNamed(variant) && named(variant) !== undefined);
+}
+
+/** A model, or a named node that holds an object or anything but an array: its value is a JSON object or the like. */
+function isObjectVariant(variant: ModelTypeDescriptor, named: NamedVariants): boolean {
+  return variant.kind === 'object' || (isNamed(variant) && !isSequenceVariant(variant, named));
 }
 
 /** A class value (a TSerde class or bigint) whose JSON form is a scalar, so the wire value tells it from an object or an array. */
@@ -450,11 +479,9 @@ function restInstance(scalars: readonly ModelTypeDescriptor[]): boolean {
  */
 function jsonTypeVariants(
   variants: readonly ModelTypeDescriptor[],
+  named: NamedVariants,
 ): { readonly sequence?: ScalarOrArray['sequence']; readonly scalars: readonly ModelTypeDescriptor[] } | undefined {
-  const sequences = variants.filter(
-    (variant): variant is ArrayTypeDescriptor | TupleConversionDescriptor =>
-      variant.kind === 'array' || variant.kind === 'tuple',
-  );
+  const sequences = variants.filter((variant): variant is ScalarOrArray['sequence'] => isSequenceVariant(variant, named));
   if (sequences.length > 1) return undefined;
   const scalars = variants.filter((variant) => variant !== sequences[0]);
   if (!scalars.every(isScalarishDescriptor) && !(scalars.length === 1 && isClassValueOfScalar(scalars[0]))) return undefined;
@@ -464,8 +491,9 @@ function jsonTypeVariants(
 /** A union of one array or tuple and scalar variants, the query-style shape: the wire value tells a string from an array. */
 function scalarOrArray(
   present: readonly ModelTypeDescriptor[],
+  named: NamedVariants,
 ): ScalarOrArray | undefined {
-  const types = jsonTypeVariants(present);
+  const types = jsonTypeVariants(present, named);
   return types?.sequence ? { sequence: types.sequence, scalars: types.scalars } : undefined;
 }
 
@@ -480,23 +508,26 @@ interface ScalarArrayObject extends ScalarOrArray {
  */
 function scalarArrayObject(
   present: readonly ModelTypeDescriptor[],
+  named: NamedVariants,
 ): ScalarArrayObject | undefined {
-  const objects = present.filter((variant) =>
-    variant.kind === 'object' || variant.kind === 'reference' || variant.kind === 'generated-model');
+  const objects = present.filter((variant) => isObjectVariant(variant, named));
   if (objects.length !== 1) return undefined;
-  const pair = scalarOrArray(present.filter((variant) => variant !== objects[0]));
+  const pair = scalarOrArray(present.filter((variant) => variant !== objects[0]), named);
   return pair ? { ...pair, object: objects[0] } : undefined;
 }
 
 /**
  * The sequence branch of a scalar-or-array union, converted by item and with no guard: the union tests
- * `Array.isArray` once. A tuple converts each position as it does outside the union.
+ * `Array.isArray` once. A tuple converts each position as it does outside the union. A named alias of an array converts as
+ * the node does.
  */
 function emitSequenceBranch(
   sequence: ScalarOrArray['sequence'],
   expression: Code,
   items: SequenceItems,
+  convert: (variant: ModelTypeDescriptor) => Code,
 ): Code {
+  if (isNamed(sequence)) return convert(sequence);
   return sequence.kind === 'array'
     ? emitArrayItems(sequence.item, expression, items)
     : emitTupleItems(sequence, expression, items);
@@ -577,6 +608,8 @@ export interface UnionConversion {
   readonly generated?: GeneratedWithObjects;
   /** A step after the generated-model one, which returns the whole conversion or undefined. */
   readonly afterGenerated?: (present: readonly ModelTypeDescriptor[]) => Code | undefined;
+  /** The named variants that hold an array or tuple, from the walker's graph (see `NamedSequence`). */
+  readonly named?: NamedVariants;
 }
 
 /** The variant kinds that sit beside one object or model in a value conversion and need no conversion. */
@@ -597,6 +630,11 @@ export function emitUnionConversion(
   const json = direction === 'stringify';
   const value = expression;
   const { convert } = conversion;
+  const named: NamedVariants = (variant) => conversion.named?.(variant);
+  const sequenceBranch = (sequence: ScalarOrArray['sequence']): Code => emitSequenceBranch(sequence, expression, conversion.items, convert);
+  // A walker's own join knows the items of an inline sequence; a named sequence converts by its node, so the plain join stands.
+  const joinSequence = (sequence: ScalarOrArray['sequence'], mapped: Code, other: Code): Code =>
+    (isNamed(sequence) ? undefined : conversion.joinSequence?.(mapped, other)) ?? emitScalarOrArrayConversion(expression, mapped, other);
   // A branch that converts nothing stays the value itself, so it has nothing to guard.
   const guarded = (variant: ModelTypeDescriptor, converted: Code): Code =>
     sameCode(converted, value) || !conversion.guard ? converted : conversion.guard(variant, converted);
@@ -629,7 +667,7 @@ export function emitUnionConversion(
     if (!table || taggedIndices.length === indices.length) return conversion.tagged({ indices: taggedIndices });
     const rest = indices.filter((index) => !taggedIndices.includes(index) && index !== table.defaultVariant)
       .map((index) => descriptor.variants[index]);
-    const types = jsonTypeVariants(rest);
+    const types = jsonTypeVariants(rest, named);
     if (!types) throw new AmbiguousUnionConversionError(rest);
     const declared = table.defaultVariant === undefined ? undefined : descriptor.variants[table.defaultVariant];
     const fallback = declared && (conversion.declaredDefault?.(declared) ?? convert(declared));
@@ -640,35 +678,35 @@ export function emitUnionConversion(
       ...(fallback === undefined ? {} : { fallback, fallbackVariant: declared }),
     });
     if (objects === undefined || !types.sequence) return objects;
-    const mapped = guarded(types.sequence, emitSequenceBranch(types.sequence, expression, conversion.items));
-    return conversion.joinSequence?.(mapped, objects) ?? emitScalarOrArrayConversion(expression, mapped, objects);
+    const mapped = guarded(types.sequence, sequenceBranch(types.sequence));
+    return joinSequence(types.sequence, mapped, objects);
   };
-  const pair = scalarOrArray(present);
+  const pair = scalarOrArray(present, named);
   if (pair) {
     const { sequence, scalars } = pair;
     const scalar = scalarBranch(scalars);
-    const mapped = guarded(sequence, emitSequenceBranch(sequence, expression, conversion.items));
-    return conversion.joinSequence?.(mapped, scalar) ?? emitScalarOrArrayConversion(expression, mapped, scalar);
+    const mapped = guarded(sequence, sequenceBranch(sequence));
+    return joinSequence(sequence, mapped, scalar);
   }
-  const jsonValue = scalarArrayObject(present);
+  const jsonValue = scalarArrayObject(present, named);
   if (jsonValue) {
     const { sequence, scalars, object } = jsonValue;
     const scalar = scalarBranch(scalars);
     const objectTest = objectValueExpression(expression, restInstance(scalars));
     const converted = guarded(object, convert(object));
-    const mapped = guarded(sequence, emitSequenceBranch(sequence, expression, conversion.items));
+    const mapped = guarded(sequence, sequenceBranch(sequence));
     const rest = sameCode(converted, plain) && sameCode(scalar, plain)
       ? plain
       : json
         ? code`(${objectTest} ? ${converted} : ${scalar})`
         : code`${objectTest} ? (${converted}) : ${scalar}`;
-    return conversion.joinSequence?.(mapped, rest) ?? emitScalarOrArrayConversion(expression, mapped, rest);
+    return joinSequence(sequence, mapped, rest);
   }
   const tagged = taggedConversion();
   if (tagged !== undefined) return tagged;
   const before = conversion.beforeGenerated?.(present);
   if (before !== undefined) return before;
-  const withObjects = conversion.generated && generatedWithObjects(present, expression, plain, conversion.generated);
+  const withObjects = conversion.generated && generatedWithObjects(present, expression, plain, conversion.generated, named);
   if (withObjects) return withObjects;
   const after = conversion.afterGenerated?.(present);
   if (after !== undefined) return after;
@@ -681,8 +719,7 @@ export function emitUnionConversion(
     const same = unchanged();
     if (same !== undefined) return same;
   }
-  const objectsOrModels = present.filter((variant) =>
-    variant.kind === 'object' || variant.kind === 'reference' || variant.kind === 'generated-model');
+  const objectsOrModels = present.filter((variant) => isObjectVariant(variant, named));
   if (
     objectsOrModels.length === 1
     && present.every((variant) => variant === objectsOrModels[0]
@@ -697,8 +734,9 @@ export function emitUnionConversion(
     const same = unchanged();
     if (same !== undefined) return same;
   }
-  if (direction === 'decode' || direction === 'encode') {
-    if (!descriptorNeedsConversion(descriptor)) return value;
+  // Without a tag, variants that convert nothing leave the value as it is. Untagged objects are the exception in JSON text, which rejects them.
+  if ((direction === 'decode' || direction === 'encode' || (json && objectsOrModels.length === 0)) && !present.some((variant) => variantNeedsConversion(variant, named))) {
+    return json ? plain : value;
   }
   if (objectsOrModels.length > 1) throw new ObjectUnionDiscriminatorError(present);
   throw new AmbiguousUnionConversionError(present);
@@ -709,8 +747,10 @@ function generatedWithObjects(
   expression: Code,
   plain: Code,
   options: GeneratedWithObjects,
+  named: NamedVariants,
 ): Code | undefined {
-  const generated = present.filter((variant): variant is GeneratedModelTypeDescriptor => variant.kind === 'generated-model');
+  // A generated model that holds an array is no object: an array value is not the one the model takes with every object.
+  const generated = present.filter((variant): variant is GeneratedModelTypeDescriptor => variant.kind === 'generated-model' && !isSequenceVariant(variant, named));
   if (generated.length !== 1) return undefined;
   const generatedCode = options.text(generated[0]);
   if (generatedCode === undefined) return undefined;
@@ -718,6 +758,11 @@ function generatedWithObjects(
     return code`(${objectValueExpression(expression)} ? ${generatedCode} : ${plain})`;
   }
   return undefined;
+}
+
+/** Whether a value of `variant` changes when it is converted: a named node by what its node says, any other variant by `descriptorNeedsConversion`. */
+function variantNeedsConversion(variant: ModelTypeDescriptor, named: NamedVariants): boolean {
+  return (isNamed(variant) ? named(variant)?.converts : undefined) ?? descriptorNeedsConversion(variant);
 }
 
 /** The descriptor a projection reference names, for the identity test to follow. */
