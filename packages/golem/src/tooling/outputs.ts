@@ -313,6 +313,11 @@ function saveInventory(config: GolemConfig, inventory: Inventory, files: OutputF
   atomicWrite(config.inventoryFile, `${JSON.stringify({ version: 1, files: recorded }, null, 2)}\n`, files);
 }
 
+/** A folder that holds its own golem.yaml or its own generation record is the root of another app: the output below it is recorded in that app's inventory, not in this one's. A config with another name leaves only the record. */
+function isAnotherAppRoot(directory: string): boolean {
+  return fs.existsSync(path.join(directory, 'golem.yaml')) || fs.existsSync(path.join(directory, '.golem', 'outputs.json'));
+}
+
 /** `golem check` only: a file that carries a generator's marker, sits in a job's destination and no inventory entry or artifact names. A run that writes does not look. */
 function assertNoUnrecordedOutputs(config: GolemConfig, inventory: Inventory, job: GolemJob, expected: ReadonlyMap<string, ExpectedArtifact>, compilerOutputs: readonly string[]): void {
   // The packages whose ownership header marks a generated file: the package of every configured job.
@@ -334,7 +339,11 @@ function assertNoUnrecordedOutputs(config: GolemConfig, inventory: Inventory, jo
       // A write that was killed leaves its temporary file; the next generate removes it, so it is no drift.
       if (temporaryOf(entry.name) !== undefined) continue;
       const filename = path.join(directory, entry.name);
-      if (entry.isDirectory()) { visit(filename, everyFile); continue; }
+      if (entry.isDirectory()) {
+        // Another app's root is skipped only in an owned root: a job's output folder holds only what jobs write, so a folder there that looks like an app root is still scanned.
+        if (everyFile || !isAnotherAppRoot(filename)) visit(filename, everyFile);
+        continue;
+      }
       if (!entry.isFile() || (!everyFile && !/\.[jt]s$/.test(entry.name))) continue;
       const key = inventoryKey(config, filename);
       if (expected.has(key) || inventory.files[key]) continue;
