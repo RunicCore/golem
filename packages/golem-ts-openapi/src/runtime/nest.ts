@@ -11,7 +11,8 @@
  * stringifies it. Any other return type stays Nest JSON. Consumers may
  * register the interceptor or write their own interceptor or pipe with
  * `objectCodecFromMetatype`, or `nestUnionFromMetatype` for a union of
- * models, and decode a query with `nestQueryDecoder`. `nestModelStringifyInterceptor` stays for a response whose codec is
+ * models, and decode a query with `nestQueryDecoder`. `nestReturnCodec` gives
+ * an interceptor the codec of the declared return. `nestModelStringifyInterceptor` stays for a response whose codec is
  * not the declared return type.
  */
 import {
@@ -156,6 +157,32 @@ function declaredReturn(klass: Function, name: string): NestReturnMeta | undefin
     current = Object.getPrototypeOf(current);
   }
   return undefined;
+}
+
+/** The codec of a handler's declared return, and whether the handler returns an array of that model. */
+export interface NestReturnCodec {
+  readonly codec: ObjectCodec;
+  readonly array: boolean;
+}
+
+/**
+ * The codec of the declared return of a controller handler, for an interceptor that writes the response itself. The build marks a
+ * handler whose explicit return type is a model, a `Promise` of a model or an array of a model. `undefined` for a handler with no
+ * mark, such as one with no written return type or one that returns a union. It throws a `TypeError` that starts with
+ * `golem fault` when the build marked the handler and the codec of that model is not registered, because the generated
+ * module of the model did not load. The lookup runs at each call, so a codec that registers late is found. Cache the result for each handler if you need to.
+ */
+export function nestReturnCodec(controllerClass: Function, handler: Function): NestReturnCodec | undefined {
+  const declared = declaredReturn(controllerClass, handler.name);
+  if (!declared) return undefined;
+  const codec = getObjectCodec(declared.id);
+  if (!codec) {
+    // The build marked this return, so a missing codec is a golem fault, not a controller declaration: Nest answers 500 before the handler runs.
+    throw new TypeError(
+      `golem fault: the build marked the return of ${controllerClass.name}.${handler.name} with model "${declared.id}", but the generated module of that model did not load, so its codec is not registered.`,
+    );
+  }
+  return { codec, array: declared.array };
 }
 
 function stringifyModel(codec: ObjectCodec, value: unknown, array: boolean): string {
@@ -318,14 +345,6 @@ export class NestModelInterceptor implements NestInterceptor {
     this.validate = options.validate;
   }
 
-  // Nest return decorators are installed before controllers run, so an absent
-  // method annotation is stable after the first lookup. Codec registration is
-  // independent and remains checked for every request below.
-  private readonly declaredReturns = new WeakMap<
-    Function,
-    WeakMap<Function, NestReturnMeta | null>
-  >();
-
   // Resolve the adapter only when a model value is first written. This initial
   // projection belongs to this interceptor and keeps null-only streams valid.
   private modelProjectionFactory: JsonModelProjectionFactory = (response, codec, array) => {
@@ -341,20 +360,6 @@ export class NestModelInterceptor implements NestInterceptor {
       return projection(value);
     };
   };
-
-  private returnMetadata(klass: Function, handler: Function): NestReturnMeta | undefined {
-    const handlers = this.declaredReturns.get(klass);
-    const cached = handlers?.get(handler);
-    if (cached !== undefined) return cached ?? undefined;
-    const metadata = declaredReturn(klass, handler.name);
-    let returnByHandler = handlers;
-    if (!returnByHandler) {
-      returnByHandler = new WeakMap<Function, NestReturnMeta | null>();
-      this.declaredReturns.set(klass, returnByHandler);
-    }
-    returnByHandler.set(handler, metadata ?? null);
-    return metadata;
-  }
 
   intercept(context: ExecutionContext, next: CallHandler<unknown>): Observable<unknown> {
     // Body and query parameters are HTTP request input. An RPC or WebSocket handler has other parameters under the same numbers.
@@ -437,19 +442,12 @@ export class NestModelInterceptor implements NestInterceptor {
     } catch (error) {
       httpError(error);
     }
-    const declared = this.returnMetadata(klass, handler);
+    const declared = nestReturnCodec(klass, handler);
     // A return without the golem mark stays plain Nest JSON.
     if (!declared) return next.handle();
-    const codec = getObjectCodec(declared.id);
-    if (!codec) {
-      // The build marked this return, so a missing codec is a golem fault, not a controller declaration: Nest answers 500 before the handler runs.
-      throw new TypeError(
-        `golem fault: the build marked the return of ${klass.name}.${handler.name} with model "${declared.id}", but the generated module of that model did not load, so its codec is not registered.`,
-      );
-    }
     const response = context.switchToHttp().getResponse<HttpResponse>();
     const source = next.handle();
-    const project = this.modelProjectionFactory(response, codec, declared.array);
+    const project = this.modelProjectionFactory(response, declared.codec, declared.array);
     return mergeMap(project)(source);
   }
 }

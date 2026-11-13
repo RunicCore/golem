@@ -16,7 +16,7 @@ import {
   type NestInterceptor,
 } from '@nestjs/common';
 import { defaultIfEmpty, firstValueFrom, map, of, type Observable } from 'rxjs';
-import { NestModelInterceptor, type NestModelInterceptorOptions, nestModelStringifyInterceptor, nestQueryDecoder, nestUnionFromMetatype, objectCodecFromMetatype } from '@exprtlabs/golem-ts-openapi/nest';
+import { NestModelInterceptor, type NestModelInterceptorOptions, nestModelStringifyInterceptor, nestQueryDecoder, nestReturnCodec, nestUnionFromMetatype, objectCodecFromMetatype } from '@exprtlabs/golem-ts-openapi/nest';
 import { nestModelCodec, nestModelReturn, nestModelUnion } from '@exprtlabs/golem-ts-openapi/internal/nest-runtime';
 import { LibError, type LibErrorKind } from '@exprtlabs/golem/errors';
 import { constructModel, convertModelField, deserializeDate, unknownDiscriminatorValue, assertModelValue, isValidModelValue } from '@exprtlabs/golem/internal/model-runtime';
@@ -908,6 +908,63 @@ test('NestModelInterceptor answers 500 for a marked return with no codec and pas
   } finally {
     await application.close();
   }
+});
+
+test('an app-written interceptor reads the return codec of a handler with nestReturnCodec; an unmarked handler gives undefined and a marked one with no codec throws', async () => {
+  const modelId = 'ReturnCodecModel_dddddddd';
+  const modelCodec = registerPassThroughCodec(modelId);
+  class ReturnCodecController {
+    model() { return { id: 'm' }; }
+    async promised() { return { id: 'p' }; }
+    list() { return [{ id: 'a' }]; }
+    plain() { return { id: 'plain' }; }
+    unloaded() { return { id: 'u' }; }
+  }
+  Controller('return-codec')(ReturnCodecController);
+  const marks: readonly [keyof ReturnCodecController, string | undefined, boolean][] = [
+    ['model', modelId, false],
+    ['promised', modelId, false],
+    ['list', modelId, true],
+    ['plain', undefined, false],
+    ['unloaded', 'ReturnCodecNeverLoaded_eeeeeeee', false],
+  ];
+  for (const [name, id, array] of marks) {
+    const descriptor = Object.getOwnPropertyDescriptor(ReturnCodecController.prototype, name);
+    assert.ok(descriptor);
+    Get(name)(ReturnCodecController.prototype, name, descriptor);
+    if (id !== undefined) nestModelReturn(id, array)(ReturnCodecController.prototype, name, descriptor);
+  }
+  const read = new Map<string, ReturnType<typeof nestReturnCodec>>();
+  const appInterceptor: NestInterceptor = {
+    intercept(context, next) {
+      // An app interceptor that does not write the response reads the codec for its own use, here only to record it.
+      if (context.getHandler().name !== 'unloaded') {
+        read.set(context.getHandler().name, nestReturnCodec(context.getClass(), context.getHandler()));
+      }
+      return next.handle();
+    },
+  };
+  const application = await startNestApp([ReturnCodecController], { interceptor: appInterceptor });
+  try {
+    const base = await application.getUrl();
+    for (const name of ['model', 'promised', 'list', 'plain']) {
+      assert.equal((await fetch(`${base}/return-codec/${name}`)).status, 200, name);
+    }
+  } finally {
+    await application.close();
+  }
+  assert.equal(read.get('model')?.codec, modelCodec);
+  assert.equal(read.get('model')?.array, false);
+  assert.equal(read.get('promised')?.codec, modelCodec);
+  assert.equal(read.get('promised')?.array, false);
+  assert.equal(read.get('list')?.codec, modelCodec);
+  assert.equal(read.get('list')?.array, true);
+  assert.equal(read.has('plain'), true);
+  assert.equal(read.get('plain'), undefined);
+  assert.throws(
+    () => nestReturnCodec(ReturnCodecController, ReturnCodecController.prototype.unloaded),
+    { name: 'TypeError', message: /^golem fault: the build marked the return of ReturnCodecController\.unloaded with model "ReturnCodecNeverLoaded_eeeeeeee", but the generated module of that model did not load/ },
+  );
 });
 
 /** A variant codec of a union that tells which variant converted the wire value. */
