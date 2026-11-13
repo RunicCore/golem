@@ -9,7 +9,7 @@ import type { ValidationLevel, ValidationPlane } from '../object-codec.js';
 import type { SchemaGraph, SchemaNode } from './schema-graph.js';
 import { codecShortName, serdeWireDescriptor } from './schema-graph.js';
 import { requireComposedObject, type ModelBases } from './composition.js';
-import { StripPlans, type StripPlanEnv } from './strip-plan.js';
+import { STRIP_PLAN, StripPlans, type StripPlanEnv } from './strip-plan.js';
 import {
   aliased, asObjectLiteral, bindInput, bindRead, code, documentLiteral, helper, helperName, helperSet, selfPlacedHelper, identifier, indentation, inputCount, inputOf, inputSlot, isEmpty, join, literal, localCode, readShape, sameCode,
   type Code, type Helper, type InputSlot, type JsonValue, type ReadShape,
@@ -266,7 +266,6 @@ const VALIDATE_OPTIONS = aliased(rtType.serde.ValidateOptions, '__GolemValidateO
 const SERDE_OPTIONS = aliased(rtType.serde.SerdeOptions, '__GolemSerdeOptions');
 const DECODE_OPTIONS = aliased(rtType.serde.DecodeOptions, '__GolemDecodeOptions');
 const ENCODE_OPTIONS = aliased(rtType.serde.EncodeOptions, '__GolemEncodeOptions');
-const STRIP_PLAN = aliased(rtType.serde.StripPlan, '__GolemStripPlan');
 
 function trustedOptions(ctx: EmitCtx): Code {
   return ctx.trustedOptions ?? TRUSTED;

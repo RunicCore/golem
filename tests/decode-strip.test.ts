@@ -29,7 +29,7 @@ async function buildModels(t: TestContext) {
   const codec = (name: string) => requireObjectCodec(generatedCodecIdFromRoot(root, name));
   return {
     Card: models.Card as Model, Shelf: models.Shelf as Model, PetHolder: models.PetHolder as Model, Tree: models.Tree as Model, Tally: models.Tally as Model, Tagged: models.Tagged as Model, TaggedOpen: models.TaggedOpen as Model,
-    plain: codec('TPlain'), nested: codec('TNested'), open: codec('TOpen'), mapHolder: codec('TMapHolder'), patterned: codec('TPatterned'), nullable: codec('TNullable'), tagged: codec('TTagged'), taggedOpen: codec('TTaggedOpen'), priced: codec('TPriced'),
+    plain: codec('TPlain'), nested: codec('TNested'), open: codec('TOpen'), mapHolder: codec('TMapHolder'), patterned: codec('TPatterned'), nullable: codec('TNullable'), tagged: codec('TTagged'), patternItems: codec('TPatternItems'), tagTypes: codec('TTagTypes'), tagProto: codec('TTagProto'), taggedOpen: codec('TTaggedOpen'), priced: codec('TPriced'),
     card: codec('TCard'), shelf: codec('TShelf'), petHolder: codec('TPetHolder'), tree: codec('TTree'), tally: codec('TTally'),
   };
 }
@@ -92,6 +92,24 @@ test('strip on decode', async (t) => {
     assert.deepEqual(sorted(at(mapped, 'tags', 'a')), ['title'], 'a closed value of the map is stripped');
     assert.deepEqual(sorted(m.tally.fromWireFormat({ id: 'a', anything: 'x' }, { ...strip, construct: m.Tally }) as object), ['anything', 'id']);
     assert.deepEqual(sorted(m.patterned.fromWireFormat({ known: 'a', x_1: 1, junk: 2 }, strip) as object), ['known', 'x_1']);
+  });
+
+  await t.test('a key that a pattern declares holds a closed object that is stripped', () => {
+    // protects: T-896 a pattern property whose schema is a closed object loses its undeclared keys on decode
+    const decoded = m.patternItems.fromWireFormat({ known: 'a', x_item: { name: 'n', extra: 1 }, junk: 2 }, strip);
+    assert.deepEqual(decoded, { known: 'a', x_item: { name: 'n' } });
+  });
+
+  await t.test('a tag of a number and a tag of the same text select their own variant', () => {
+    // protects: T-896 the tag 1 and the tag '1' do not share one plan
+    assert.deepEqual(m.tagTypes.fromWireFormat({ item: { kind: 1, a: 1, junk: 1 } }, strip), { item: { kind: 1, a: 1 } });
+    assert.deepEqual(m.tagTypes.fromWireFormat({ item: { kind: '1', b: 1, junk: 1 } }, strip), { item: { kind: '1', b: 1 } });
+  });
+
+  await t.test('a tag called __proto__ selects its variant', () => {
+    // protects: T-896 a tag value that an object literal cannot hold as a key still has its plan
+    assert.deepEqual(m.tagProto.fromWireFormat({ item: { kind: '__proto__', a: 1, junk: 1 } }, strip), { item: { kind: '__proto__', a: 1 } });
+    assert.deepEqual(m.tagProto.fromWireFormat({ item: { kind: 'plain', b: 1, junk: 1 } }, strip), { item: { kind: 'plain', b: 1 } });
   });
 
   await t.test('a declared key with a bad value still reports, and without the option an extra key still fails', () => {
@@ -198,6 +216,24 @@ test('strip on encode', async (t) => {
     );
     assert.throws(() => m.plain.stringify(row), isValidationError);
   });
+
+  await t.test('a tag of a number and a tag of the same text select their own variant, and a tag called __proto__ selects its variant', () => {
+    // protects: T-896 the tag plans of an encode are told apart by the type of the tag
+    assert.deepEqual(m.tagTypes.toWireFormat({ item: { kind: 1, a: 1, junk: 1 } }, strip), { item: { kind: 1, a: 1 } });
+    assert.deepEqual(m.tagTypes.toWireFormat({ item: { kind: '1', b: 1, junk: 1 } }, strip), { item: { kind: '1', b: 1 } });
+    assert.deepEqual(m.tagProto.toWireFormat({ item: { kind: '__proto__', a: 1, junk: 1 } }, strip), { item: { kind: '__proto__', a: 1 } });
+  });
+
+  const locks: [string, (value: object) => object][] = [['sealed', (value) => Object.seal(value)], ['frozen', (value) => Object.freeze(value)]];
+  for (const [kind, lock] of locks) {
+    await t.test(`a ${kind} instance whose field holds an object with extra keys encodes`, () => {
+      // protects: T-896 the copy of an instance does not redefine a property that the instance made non-configurable
+      const holder = lock(new m.PetHolder({ pet: { kind: 'cat', lives: 9, junk: 1 } }));
+      assert.deepEqual(m.petHolder.toWireFormat(holder, strip), { pet: { kind: 'cat', lives: 9 } });
+      assert.deepEqual(JSON.parse(m.petHolder.stringify(holder, strip)), { pet: { kind: 'cat', lives: 9 } });
+      assert.deepEqual((holder as { pet: unknown }).pet, { kind: 'cat', lives: 9, junk: 1 }, 'the instance is not changed');
+    });
+  }
 
   await t.test('the input is not changed', () => {
     // protects: T-896 strip copies what it changes and never writes to the value

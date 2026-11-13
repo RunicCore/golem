@@ -175,15 +175,15 @@ export interface StripPlan {
   readonly keys?: ReadonlySet<string>;
   /** The object declares no other key: a key that is not in `keys` and matches no pattern is removed. */
   readonly closed?: true;
-  /** Patterns of keys that the object declares as data (`patternProperties`); a key that matches one is kept as it is. */
-  readonly patterns?: readonly string[];
+  /** Patterns of keys that the object declares (`patternProperties`), each with the plan of its value when that holds something to strip; a key that matches one is kept. */
+  readonly patterns?: readonly { readonly pattern: string; readonly plan?: StripPlanRef }[];
   /** The plan of the value of each declared key that holds something to strip. */
   readonly fields?: { readonly [name: string]: StripPlanRef };
   /** The plan of the value of each key that is not declared and is kept: a map value or an additional property. */
   readonly values?: StripPlanRef;
-  /** The tag property of a tagged union, the plan of each tag value, and the plan of a value whose tag selects none. */
+  /** The tag property of a tagged union, the plan of each tag value (a number and the text of that number are two tags), and the plan of a value whose tag selects none. */
   readonly tag?: string;
-  readonly variants?: { readonly [value: string]: StripPlanRef };
+  readonly variants?: ReadonlyMap<string | number | boolean, StripPlanRef>;
   readonly default?: StripPlanRef;
   /** The plan of each item of an array, or of each item of a tuple after `prefix`. */
   readonly items?: StripPlanRef;
@@ -212,13 +212,10 @@ const STRIP_TOO_DEEP = Symbol('strip too deep');
 
 const stripPatterns = new Map<string, RegExp>();
 
-function matchesStripPattern(patterns: readonly string[], key: string): boolean {
-  for (const pattern of patterns) {
-    let expression = stripPatterns.get(pattern);
-    if (expression === undefined) stripPatterns.set(pattern, expression = new RegExp(pattern, 'u'));
-    if (expression.test(key)) return true;
-  }
-  return false;
+function matchesStripPattern(pattern: string, key: string): boolean {
+  let expression = stripPatterns.get(pattern);
+  if (expression === undefined) stripPatterns.set(pattern, expression = new RegExp(pattern, 'u'));
+  return expression.test(key);
 }
 
 /** What a strip walk carries: the depth limit, and whether the value is a model value (an encode) rather than a wire value (a decode). */
@@ -252,9 +249,9 @@ function stripArray(value: unknown[], plan: StripPlan | undefined, depth: number
 
 function stripObject(value: Record<string, unknown>, plan: StripPlan, depth: number, walk: StripWalk): unknown {
   if (plan.tag !== undefined) {
-    const tag = value[plan.tag];
-    const variant = typeof tag === 'string' || typeof tag === 'number' || typeof tag === 'boolean' ? String(tag) : undefined;
-    const chosen = variant !== undefined && plan.variants !== undefined && Object.hasOwn(plan.variants, variant) ? plan.variants[variant] : plan.default;
+    // A tag of another type is in no entry of the map, so it takes the default.
+    const tag = value[plan.tag] as string | number | boolean;
+    const chosen = plan.variants?.has(tag) === true ? plan.variants.get(tag) : plan.default;
     return stripLevel(value, chosen, depth, walk);
   }
   if (walk.model) {
@@ -268,14 +265,19 @@ function stripObject(value: Record<string, unknown>, plan: StripPlan, depth: num
     const member = value[key];
     let next = member;
     let keep = true;
-    if (plan.keys?.has(key) === true) {
-      if (plan.fields !== undefined && Object.hasOwn(plan.fields, key)) next = stripLevel(member, plan.fields[key], depth + 1, walk);
-    } else if (plan.patterns !== undefined && matchesStripPattern(plan.patterns, key)) {
-      keep = true;
-    } else if (plan.closed === true) {
-      keep = false;
-    } else {
-      next = stripLevel(member, plan.values, depth + 1, walk);
+    let declared = plan.keys?.has(key) === true;
+    if (declared && plan.fields !== undefined && Object.hasOwn(plan.fields, key)) next = stripLevel(member, plan.fields[key], depth + 1, walk);
+    // A key that a pattern declares holds a value that the pattern's plan strips, also when `keys` names the key too.
+    if (plan.patterns !== undefined) {
+      for (const entry of plan.patterns) {
+        if (!matchesStripPattern(entry.pattern, key)) continue;
+        declared = true;
+        next = stripLevel(next, entry.plan, depth + 1, walk);
+      }
+    }
+    if (!declared) {
+      if (plan.closed === true) keep = false;
+      else next = stripLevel(member, plan.values, depth + 1, walk);
     }
     if ((!keep || next !== member) && out === undefined) {
       out = {};
@@ -295,16 +297,18 @@ function stripObject(value: Record<string, unknown>, plan: StripPlan, depth: num
  */
 function stripInstance(value: object, plan: StripPlan, depth: number, walk: StripWalk): unknown {
   if (plan.fields === undefined) return value;
-  let copy: object | undefined;
+  let changed: PropertyDescriptorMap | undefined;
   for (const name of Object.keys(plan.fields)) {
     if (!Object.prototype.propertyIsEnumerable.call(value, name)) continue;
     const member: unknown = Reflect.get(value, name);
     const next = stripLevel(member, plan.fields[name], depth + 1, walk);
     if (next === member) continue;
-    copy ??= Object.create(Object.getPrototypeOf(value), Object.getOwnPropertyDescriptors(value)) as object;
-    defineModelProperty(copy, name, next);
+    // A sealed or frozen instance holds its fields as non-configurable properties, which a copy cannot redefine, so the copy takes the new value in its own descriptor.
+    (changed ??= {})[name] = { value: next, enumerable: true, configurable: true, writable: true };
   }
-  return copy ?? value;
+  if (changed === undefined) return value;
+  // The copy is read by the encoder only and is never returned to the caller, so it is not frozen again.
+  return Object.create(Object.getPrototypeOf(value), { ...Object.getOwnPropertyDescriptors(value), ...changed }) as object;
 }
 
 /**

@@ -6,9 +6,13 @@
  */
 
 import type { ModelTypeDescriptor } from '../model-registry.js';
-import { code, identifier, join, literal, type Code } from './code.js';
+import { aliased, code, identifier, join, literal, type Code } from './code.js';
+import { rtType } from './rt.js';
 import { serdeWireDescriptor, type SchemaGraph, type SchemaNode } from './schema-graph.js';
 import type { ObjectTypeDescriptor } from './union-conversion.js';
+
+/** The type of a plan, which a generated module imports under this name. */
+export const STRIP_PLAN = aliased(rtType.serde.StripPlan, '__GolemStripPlan');
 
 /** What the plan builder asks of the emitter that owns the descriptors. */
 export interface StripPlanEnv {
@@ -82,7 +86,10 @@ export class StripPlans {
   private ofObject(object: ObjectTypeDescriptor): Code | undefined {
     const extra = this.env.extraValues(object);
     const closed = object.additionalProperties === false && extra === undefined;
-    const patterns = (object.constraints ?? []).flatMap((constraint) => constraint.kind === 'patternProperties' ? [constraint.pattern] : []);
+    // The schema of a pattern is a descriptor, or a boolean or a keyword object that holds no model to strip.
+    const patterns = (object.constraints ?? []).flatMap((constraint) => constraint.kind === 'patternProperties'
+      ? [{ pattern: constraint.pattern, plan: typeof constraint.schema === 'object' && 'kind' in constraint.schema ? this.ofDescriptor(constraint.schema as ModelTypeDescriptor) : undefined }]
+      : []);
     const declared = Object.keys(object.properties);
     // A field called `__proto__` cannot be a key of an object literal, so its value is left as it is.
     const fields = declared.flatMap((name) => {
@@ -90,11 +97,11 @@ export class StripPlans {
       return plan === undefined ? [] : [code`${literal(name)}: ${plan}`];
     });
     const values = closed || extra === undefined ? undefined : this.ofDescriptor(extra);
-    if (!closed && fields.length === 0 && values === undefined) return undefined;
+    if (!closed && fields.length === 0 && values === undefined && patterns.every((entry) => entry.plan === undefined)) return undefined;
     const members: Code[] = [];
     if (declared.length > 0) members.push(code`keys: new Set(${literal(declared)})`);
     if (closed) members.push(code`closed: true`);
-    if (patterns.length > 0) members.push(code`patterns: ${literal(patterns)}`);
+    if (patterns.length > 0) members.push(code`patterns: [${join(patterns.map((entry) => entry.plan === undefined ? code`{ pattern: ${literal(entry.pattern)} }` : code`{ pattern: ${literal(entry.pattern)}, plan: ${entry.plan} }`), code`, `)}]`);
     if (fields.length > 0) members.push(code`fields: { ${join(fields, code`, `)} }`);
     if (values !== undefined) members.push(code`values: ${values}`);
     return code`{ ${join(members, code`, `)} }`;
@@ -124,10 +131,10 @@ export class StripPlans {
         planned ||= plan !== undefined;
         if (index === table.defaultVariant) fallback = plan;
         // A variant with no plan still names its tags: a value of that tag is left as it is, and not given to the default variant.
-        else for (const value of table.variants[index]?.values ?? []) entries.push(code`${literal(String(value))}: ${plan ?? code`undefined`}`);
+        else for (const value of table.variants[index]?.values ?? []) entries.push(code`[${literal(value)}, ${plan ?? code`undefined`}]`);
       }
       if (!planned) return undefined;
-      return code`{ tag: ${literal(table.propertyName)}${entries.length > 0 ? code`, variants: { ${join(entries, code`, `)} }` : code``}${fallback ? code`, default: ${fallback}` : code``} }`;
+      return code`{ tag: ${literal(table.propertyName)}${entries.length > 0 ? code`, variants: new Map<string | number | boolean, ${STRIP_PLAN}['default']>([${join(entries, code`, `)}])` : code``}${fallback ? code`, default: ${fallback}` : code``} }`;
     }
     // No tag: one object variant takes every object, so its plan is the union's. Two or more keep exact matching.
     const leaves = present.flatMap(({ variant }) => this.leaves(variant, new Set()));

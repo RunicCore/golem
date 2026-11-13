@@ -16,6 +16,12 @@ export type TMoney = IObject<{ amount: number }>;
 export type TOpen = IObject<{ title: string }, { exact: false }>;
 export type TMapHolder = IObject<{ tags: Record<string, TPlain> }>;
 export type TPatterned = IObject<{ known?: string } & PatternProperties<{ '^x_': number }> & AdditionalProperties<never>>;
+export type TItem = IObject<{ name: string }>;
+export type TPatternItems = IObject<{ known?: string } & PatternProperties<{ '^x_': TItem }> & AdditionalProperties<never>>;
+/** A tag that is the number 1 in one variant and the text '1' in the other. */
+export type TTagTypes = IObject<{ item: ({ kind: 1; a: number } | { kind: '1'; b: number }) & Discriminator<'kind'> }>;
+/** A tag called `__proto__`, which an object literal cannot hold as a key. */
+export type TTagProto = IObject<{ item: ({ kind: '__proto__'; a: number } | { kind: 'plain'; b: number }) & Discriminator<'kind'> }>;
 export type TCard = IModel<{ title: string; count?: number }>;
 export type TShelf = IModel<{ cards: TCard[]; main: TCard }>;
 export type TPetHolder = IModel<{ pet: (Cat | Dog) & Discriminator<'kind'> }>;
