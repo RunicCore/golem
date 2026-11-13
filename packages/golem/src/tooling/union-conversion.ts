@@ -435,16 +435,10 @@ function isNamed(descriptor: ModelTypeDescriptor): descriptor is NamedTypeDescri
 }
 
 /**
- * A named variant whose node holds an array or tuple, as a walker reads it from its graph (a recursive array alias is a named node,
- * not written inline). Its value is a sequence, and the union tells it from an object by `Array.isArray`. `converts`: the conversion
- * of the node changes its value.
+ * Whether a named variant is a sequence: its node holds an array or tuple, as a walker reads it from its graph (a recursive array alias
+ * is a named node, not written inline). The union tells its value from an object by `Array.isArray`. Any other named variant is an object.
  */
-export interface NamedSequence {
-  readonly converts: boolean;
-}
-
-/** The answer of a walker for a named variant: undefined unless its node holds an array or tuple, so any other named variant is an object that converts. */
-type NamedVariants = (variant: ModelTypeDescriptor) => NamedSequence | undefined;
+type NamedVariants = (variant: ModelTypeDescriptor) => boolean;
 
 /** The variants of a `scalar | scalar[]` or `scalar | [T, ...]` union: its one sequence, and the scalar variants beside it. A named alias of an array is a sequence too. */
 interface ScalarOrArray {
@@ -454,7 +448,7 @@ interface ScalarOrArray {
 
 /** Whether the variant is an array or tuple, or a named node of one: its value is a JSON array. */
 function isSequenceVariant(variant: ModelTypeDescriptor, named: NamedVariants): variant is ScalarOrArray['sequence'] {
-  return variant.kind === 'array' || variant.kind === 'tuple' || (isNamed(variant) && named(variant) !== undefined);
+  return variant.kind === 'array' || variant.kind === 'tuple' || (isNamed(variant) && named(variant));
 }
 
 /** A model, or a named node that holds an object or anything but an array: its value is a JSON object or the like. */
@@ -608,7 +602,7 @@ export interface UnionConversion {
   readonly generated?: GeneratedWithObjects;
   /** A step after the generated-model one, which returns the whole conversion or undefined. */
   readonly afterGenerated?: (present: readonly ModelTypeDescriptor[]) => Code | undefined;
-  /** The named variants that hold an array or tuple, from the walker's graph (see `NamedSequence`). */
+  /** The named variants that hold an array or tuple, from the walker's graph (see `NamedVariants`). */
   readonly named?: NamedVariants;
 }
 
@@ -630,7 +624,7 @@ export function emitUnionConversion(
   const json = direction === 'stringify';
   const value = expression;
   const { convert } = conversion;
-  const named: NamedVariants = (variant) => conversion.named?.(variant);
+  const named: NamedVariants = (variant) => conversion.named?.(variant) === true;
   const sequenceBranch = (sequence: ScalarOrArray['sequence']): Code => emitSequenceBranch(sequence, expression, conversion.items, convert);
   // A walker's own join knows the items of an inline sequence; a named sequence converts by its node, so the plain join stands.
   const joinSequence = (sequence: ScalarOrArray['sequence'], mapped: Code, other: Code): Code =>
@@ -734,9 +728,8 @@ export function emitUnionConversion(
     const same = unchanged();
     if (same !== undefined) return same;
   }
-  // Without a tag, variants that convert nothing leave the value as it is. Untagged objects are the exception in JSON text, which rejects them.
-  if ((direction === 'decode' || direction === 'encode' || (json && objectsOrModels.length === 0)) && !present.some((variant) => variantNeedsConversion(variant, named))) {
-    return json ? plain : value;
+  if (direction === 'decode' || direction === 'encode') {
+    if (!descriptorNeedsConversion(descriptor)) return value;
   }
   if (objectsOrModels.length > 1) throw new ObjectUnionDiscriminatorError(present);
   throw new AmbiguousUnionConversionError(present);
@@ -758,11 +751,6 @@ function generatedWithObjects(
     return code`(${objectValueExpression(expression)} ? ${generatedCode} : ${plain})`;
   }
   return undefined;
-}
-
-/** Whether a value of `variant` changes when it is converted: a named node by what its node says, any other variant by `descriptorNeedsConversion`. */
-function variantNeedsConversion(variant: ModelTypeDescriptor, named: NamedVariants): boolean {
-  return (isNamed(variant) ? named(variant)?.converts : undefined) ?? descriptorNeedsConversion(variant);
 }
 
 /** The descriptor a projection reference names, for the identity test to follow. */

@@ -29,7 +29,6 @@ import {
   unionDispatch,
   withUnionInput,
   type DispatchOptions,
-  type NamedSequence,
   type ObjectTypeDescriptor,
   type TaggedUnion,
   type UnionConversion,
@@ -1290,15 +1289,14 @@ interface UnionWalker extends Pick<UnionConversion, 'items' | 'joinSequence' | '
 }
 
 /**
- * A named variant of a union whose node holds an array or tuple (a recursive array alias): the union tells it from an object by
- * `Array.isArray`. It converts when its node needs a conversion or has a wire form of its own. A node that holds anything else, or only
- * its own name (a model of another module that this module holds no body of), is an object, so it has no answer.
+ * Whether a named variant of a union is a sequence: its node holds an array or tuple (a recursive array alias), so the union tells it
+ * from an object by `Array.isArray`. A variant with a serde of its own is no sequence, as it reads its own wire form. A node that holds
+ * anything else, or only its own name (a model of another module that this module holds no body of), is an object.
  */
-function namedSequence(variant: ModelTypeDescriptor, ctx: EmitCtx): NamedSequence | undefined {
-  const node = ctx.graph.nodeFor(variant) ?? (variant.kind === 'reference' ? ctx.graph.nodeFor(variant, codecShortName(variant.name)) : undefined);
-  const body = node?.descriptor;
-  if (node === undefined || (body?.kind !== 'array' && body?.kind !== 'tuple')) return undefined;
-  return { converts: descriptorNeedsConversion(body) || !node.sameSchema };
+function namedSequence(variant: ModelTypeDescriptor, ctx: EmitCtx): boolean {
+  if (serdeTags(variant).serde) return false;
+  const body = ctx.graph.nodeFor(variant)?.descriptor;
+  return body?.kind === 'array' || body?.kind === 'tuple';
 }
 
 /** The dispatch direction of each union direction. A decoder reads the wire; the others write a value or JSON text. */

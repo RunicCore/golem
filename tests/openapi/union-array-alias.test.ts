@@ -31,32 +31,16 @@ function treeDocument(extra: Record<string, unknown>, other: Record<string, unkn
 
 const codeItems = { type: 'array', items: closed({ code: { type: 'string' } }, ['code']) };
 
-test('a union of a recursive array and an inline array decodes and encodes each value as its own variant', async t => {
-  // protects: T-905 the Tree value was converted by the keys of the inline array and became [{ code: undefined }]
-  const output = path.join(createFixtureProject(t, 'golem-openapi-union-array-alias-'), 'sdk');
-  await generateMaterializedSdk(treeDocument({}, codeItems), { output, name: 'UnionArrayAlias', profile: { validation: true } });
-  compileGeneratedSdk(output, [], { strict: true, skipLibCheck: true, noUnusedLocals: true });
-  const holder = await sdkBodyCodec(output, 'UnionArrayAlias', 'Holder');
-
-  const instant = '2025-01-02T03:04:05.000Z';
-  for (const items of [
-    [{ label: 'a', children: [{ label: 'b', children: [] }] }],
-    [{ code: 'x' }],
-  ]) {
-    const decoded = await holder.decode({ when: instant, holder: items });
-    assert.deepEqual(decoded, { when: new Date(instant), holder: items });
-    assert.deepEqual(await holder.encode(decoded), { when: instant, holder: items });
-  }
-});
-
-test('a union of a recursive array whose items hold a date and an inline array stops generation with an ambiguous conversion', async t => {
-  // protects: T-905 the union was generated with the conversion of the inline array, so the dates of the Tree stayed strings
-  const output = path.join(createFixtureProject(t, 'golem-openapi-union-array-date-'), 'sdk');
-  await assert.rejects(
-    () => generateMaterializedSdk(treeDocument({ at: dateTime }, codeItems), { output, name: 'UnionArrayDate', profile: { validation: true } }),
-    /Union has ambiguous conversions\. Use a discriminated object union or one serde pair for the value\./,
-  );
-});
+for (const [what, extra] of [['plain', {}], ['whose items hold a date', { at: dateTime }]] as const) {
+  test(`a union of a recursive array ${what} and an inline array stops generation with an ambiguous conversion`, async t => {
+    // protects: T-905 the Tree was classed as an object, so the union converted each array value by the keys of the inline array
+    const output = path.join(createFixtureProject(t, 'golem-openapi-union-array-ambiguous-'), 'sdk');
+    await assert.rejects(
+      () => generateMaterializedSdk(treeDocument(extra, codeItems), { output, name: 'UnionArrayAmbiguous', profile: { validation: true } }),
+      /Union has ambiguous conversions\. Use a discriminated object union or one serde pair for the value\./,
+    );
+  });
+}
 
 test('a union of a recursive array whose items hold a date and a string decodes the dates of the array and keeps the string', async t => {
   // protects: T-905 an array value was no object for the union, so the Tree took the string branch and its dates stayed strings
