@@ -73,6 +73,24 @@ export interface SerdeOptions extends MaxDepthOptions {
   readonly construct?: abstract new (values?: never) => object;
 }
 
+/** The `strip` option, the same for a decode and an encode. */
+export interface StripOptions {
+  /**
+   * Removes each key that a closed object (`exact: true`, the default) does not declare, at every level and at every
+   * validation level, before the value is checked. The result holds the declared keys only, also when it is a class instance.
+   * It keeps the data of a map, an `AdditionalProperties` tag, pattern properties and an open object. A union of objects with
+   * no tag keeps exact matching, and a tagged union picks its variant by the tag and then strips that variant.
+   * An encode strips the plain objects of the model value, also those that an instance of a class holds in its declared fields, and leaves the value of a TSerde field as it is.
+   */
+  readonly strip?: true;
+}
+
+/** The options of one `parse` or `fromWireFormat` call. */
+export interface DecodeOptions extends SerdeOptions, StripOptions {}
+
+/** The options of one `stringify` or `toWireFormat` call. */
+export interface EncodeOptions extends SerdeOptions, StripOptions {}
+
 /**
  * What extensions add to a codec, by extension name. An extension adds its key by declaration merging, so the code that reads the key sees its type.
  * The job that writes the codec writes the values that the extensions give it through a hook.
@@ -86,13 +104,13 @@ export interface ObjectCodec<T = unknown> {
   readonly id: string;
   /** Origin of generated issues; TypeScript IObject/IModel vs OpenAPI SDK. */
   readonly issueSource?: IssueSource;
-  stringify(value: T, options?: SerdeOptions & AllowGetterOptions): string;
-  parse(text: string, options?: SerdeOptions): T;
+  stringify(value: T, options?: EncodeOptions & AllowGetterOptions): string;
+  parse(text: string, options?: DecodeOptions): T;
   validate(value: unknown, options?: ValidateOptions & AllowGetterOptions): value is T;
   assert(value: unknown, options?: ValidateOptions & AllowGetterOptions): T;
   /** Returns the wire type of the argument; a registry codec (`T = unknown`) still types a model argument. */
-  toWireFormat<Value extends T>(value: Value, options?: SerdeOptions & AllowGetterOptions): WireFormat<Value>;
-  fromWireFormat(wire: unknown, options?: SerdeOptions): T;
+  toWireFormat<Value extends T>(value: Value, options?: EncodeOptions & AllowGetterOptions): WireFormat<Value>;
+  fromWireFormat(wire: unknown, options?: DecodeOptions): T;
 }
 
 /** A registered codec as the runtime of an extension sees it: `data` is on this type only, not on the public `ObjectCodec`. */
@@ -101,12 +119,12 @@ export interface InternalObjectCodec<T = unknown> extends ObjectCodec<T> {
 }
 
 export interface ObjectCodecImpl<T = unknown> {
-  stringify(value: T, options?: SerdeOptions): string;
-  parse(text: string, options?: SerdeOptions): T;
+  stringify(value: T, options?: EncodeOptions): string;
+  parse(text: string, options?: DecodeOptions): T;
   validate(value: unknown, options?: ValidateOptions): boolean;
   assert(value: unknown, options?: ValidateOptions): T;
-  toWireFormat(value: T, options?: SerdeOptions): unknown;
-  fromWireFormat(wire: unknown, options?: SerdeOptions): T;
+  toWireFormat(value: T, options?: EncodeOptions): unknown;
+  fromWireFormat(wire: unknown, options?: DecodeOptions): T;
   /** The data that extensions add to the codec, by extension name; absent when none adds any. */
   readonly data?: CodecData;
   /** The declared field names of a root object; `allowGetter` reads these. Another root has none, and the option has no effect. */
@@ -439,7 +457,7 @@ export function createObjectCodec<T>(id: string, impl: ObjectCodecImpl<T>): Obje
       return checked === value ? result : value as T;
     },
     // The generated implementation returns the emitted JSON type, which WireFormat mirrors.
-    toWireFormat: <Value extends T>(value: Value, options?: SerdeOptions & AllowGetterOptions) => impl.toWireFormat(options?.allowGetter === true && fields !== undefined ? readRootFields(value, fields) as Value : value, options) as WireFormat<Value>,
+    toWireFormat: <Value extends T>(value: Value, options?: EncodeOptions & AllowGetterOptions) => impl.toWireFormat(options?.allowGetter === true && fields !== undefined ? readRootFields(value, fields) as Value : value, options) as WireFormat<Value>,
     fromWireFormat: (wire, options) => {
       if (bounded) rejectDeepValue(wire, options);
       return impl.fromWireFormat(wire, options);

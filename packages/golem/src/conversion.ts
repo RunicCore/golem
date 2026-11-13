@@ -162,6 +162,172 @@ export function nestingDepthError(maxDepth: number): LibError {
   );
 }
 
+/**
+ * What `strip` removes from a value, as data a generated codec holds for each model. A plan describes one JSON
+ * value: an object (`keys`, `closed`, `patterns`, `fields`, `values`, `tag`), an array (`items`, `prefix`), a union
+ * of an object and an array (`object`, `array`), or a value that a TSerde field holds (`serde`). A plan that names a model by
+ * a function is read when it is used, so a model that holds itself has a plan. The keys of a plan are the keys of the wire and
+ * of the model alike, so one plan serves decode and encode; only a `serde` value has two shapes. The generated code of a model
+ * holds and shares plans: this is a type for that code, which a user does not write or read.
+ */
+export interface StripPlan {
+  /** The declared keys of an object. */
+  readonly keys?: ReadonlySet<string>;
+  /** The object declares no other key: a key that is not in `keys` and matches no pattern is removed. */
+  readonly closed?: true;
+  /** Patterns of keys that the object declares as data (`patternProperties`); a key that matches one is kept as it is. */
+  readonly patterns?: readonly string[];
+  /** The plan of the value of each declared key that holds something to strip. */
+  readonly fields?: { readonly [name: string]: StripPlanRef };
+  /** The plan of the value of each key that is not declared and is kept: a map value or an additional property. */
+  readonly values?: StripPlanRef;
+  /** The tag property of a tagged union, the plan of each tag value, and the plan of a value whose tag selects none. */
+  readonly tag?: string;
+  readonly variants?: { readonly [value: string]: StripPlanRef };
+  readonly default?: StripPlanRef;
+  /** The plan of each item of an array, or of each item of a tuple after `prefix`. */
+  readonly items?: StripPlanRef;
+  readonly prefix?: readonly StripPlanRef[];
+  /** A union of an object and an array: the plan of each JSON type. */
+  readonly object?: StripPlanRef;
+  readonly array?: StripPlanRef;
+  /** The plan of the wire form of a TSerde value. A decode follows it; an encode leaves the model value as it is, because its shape is the serde's own. */
+  readonly serde?: StripPlanRef;
+}
+
+/**
+ * The plan a generated module declares for its model: it builds the plan at its first use and keeps it, so a module that never
+ * strips builds none, and a bundler drops the call when nothing names the plan (the call carries a pure annotation).
+ */
+export function stripPlan(build: () => StripPlan): () => StripPlan {
+  let plan: StripPlan | undefined;
+  return () => plan ??= build();
+}
+
+/** A plan, a function that gives it, or `undefined` for a value that holds nothing to strip (the plan another module exports for such a node). */
+export type StripPlanRef = StripPlan | (() => StripPlan | undefined) | undefined;
+
+/** Thrown inside the strip walk when it nests deeper than the limit; `stripUndeclared` turns it into the cycle error or the depth error. */
+const STRIP_TOO_DEEP = Symbol('strip too deep');
+
+const stripPatterns = new Map<string, RegExp>();
+
+function matchesStripPattern(patterns: readonly string[], key: string): boolean {
+  for (const pattern of patterns) {
+    let expression = stripPatterns.get(pattern);
+    if (expression === undefined) stripPatterns.set(pattern, expression = new RegExp(pattern, 'u'));
+    if (expression.test(key)) return true;
+  }
+  return false;
+}
+
+/** What a strip walk carries: the depth limit, and whether the value is a model value (an encode) rather than a wire value (a decode). */
+interface StripWalk {
+  readonly limit: number;
+  readonly model: boolean;
+}
+
+function stripLevel(value: unknown, ref: StripPlanRef | undefined, depth: number, walk: StripWalk): unknown {
+  if (ref === undefined || value === null || typeof value !== 'object') return value;
+  const plan = typeof ref === 'function' ? ref() : ref;
+  if (plan === undefined) return value;
+  if (depth > walk.limit) throw STRIP_TOO_DEEP;
+  if (plan.serde !== undefined) return walk.model ? value : stripLevel(value, plan.serde, depth, walk);
+  if (Array.isArray(value)) return stripArray(value, plan.array === undefined ? plan : (typeof plan.array === 'function' ? plan.array() : plan.array), depth, walk);
+  if (plan.array !== undefined || plan.object !== undefined) return stripLevel(value, plan.object, depth, walk);
+  return stripObject(value as Record<string, unknown>, plan, depth, walk);
+}
+
+function stripArray(value: unknown[], plan: StripPlan | undefined, depth: number, walk: StripWalk): unknown {
+  if (plan === undefined || (plan.items === undefined && plan.prefix === undefined)) return value;
+  let out: unknown[] | undefined;
+  for (let index = 0; index < value.length; index++) {
+    const item = value[index];
+    const next = stripLevel(item, index < (plan.prefix?.length ?? 0) ? plan.prefix?.[index] : plan.items, depth + 1, walk);
+    if (next !== item && out === undefined) out = value.slice(0, index);
+    if (out !== undefined) out.push(next);
+  }
+  return out ?? value;
+}
+
+function stripObject(value: Record<string, unknown>, plan: StripPlan, depth: number, walk: StripWalk): unknown {
+  if (plan.tag !== undefined) {
+    const tag = value[plan.tag];
+    const variant = typeof tag === 'string' || typeof tag === 'number' || typeof tag === 'boolean' ? String(tag) : undefined;
+    const chosen = variant !== undefined && plan.variants !== undefined && Object.hasOwn(plan.variants, variant) ? plan.variants[variant] : plan.default;
+    return stripLevel(value, chosen, depth, walk);
+  }
+  if (walk.model) {
+    const prototype: unknown = Object.getPrototypeOf(value);
+    if (prototype !== Object.prototype && prototype !== null) return stripInstance(value, plan, depth, walk);
+  }
+  let out: Record<string, unknown> | undefined;
+  const keys = Object.keys(value);
+  for (let index = 0; index < keys.length; index++) {
+    const key = keys[index] as string;
+    const member = value[key];
+    let next = member;
+    let keep = true;
+    if (plan.keys?.has(key) === true) {
+      if (plan.fields !== undefined && Object.hasOwn(plan.fields, key)) next = stripLevel(member, plan.fields[key], depth + 1, walk);
+    } else if (plan.patterns !== undefined && matchesStripPattern(plan.patterns, key)) {
+      keep = true;
+    } else if (plan.closed === true) {
+      keep = false;
+    } else {
+      next = stripLevel(member, plan.values, depth + 1, walk);
+    }
+    if ((!keep || next !== member) && out === undefined) {
+      out = {};
+      for (let earlier = 0; earlier < index; earlier++) defineModelProperty(out, keys[earlier] as string, value[keys[earlier] as string]);
+    }
+    if (out !== undefined && keep) defineModelProperty(out, key, next);
+  }
+  return out ?? value;
+}
+
+/**
+ * An instance of a class, for an encode: its own keys that its model does not declare are program state, which no codec writes
+ * or judges, so only its declared fields are walked, and the instance itself is returned when none of them changes. A field
+ * that changes gives a clone with the prototype and the own properties of the instance and the stripped value in place of that
+ * field, so the encoder reads the clone as it reads the instance. A field is read as the encoder reads it: an own enumerable
+ * property. A getter of the class counts only with `allowGetter`, which makes the codec read it into an own property first.
+ */
+function stripInstance(value: object, plan: StripPlan, depth: number, walk: StripWalk): unknown {
+  if (plan.fields === undefined) return value;
+  let copy: object | undefined;
+  for (const name of Object.keys(plan.fields)) {
+    if (!Object.prototype.propertyIsEnumerable.call(value, name)) continue;
+    const member: unknown = Reflect.get(value, name);
+    const next = stripLevel(member, plan.fields[name], depth + 1, walk);
+    if (next === member) continue;
+    copy ??= Object.create(Object.getPrototypeOf(value), Object.getOwnPropertyDescriptors(value)) as object;
+    defineModelProperty(copy, name, next);
+  }
+  return copy ?? value;
+}
+
+/**
+ * The value without the keys that a closed object of `plan` does not declare, at every level: a wire value for a decode, a model value
+ * for an encode (`model`). It copies only an object or an array that changes and never writes to the input, so a value that holds
+ * nothing to remove is returned as it is. A model value takes no key from an instance of a class, whose undeclared keys are program state, but strips the objects
+ * that its declared fields hold; it leaves the model value of a TSerde field as it is. A value that nests deeper than `maxDepth` is a cycle or too deep: the cycle check reports a cycle, else the depth error is thrown.
+ */
+export function stripUndeclared(value: unknown, plan: StripPlanRef, maxDepth?: number, model?: true): unknown {
+  const walk: StripWalk = { limit: resolveMaxDepth(maxDepth), model: model === true };
+  try {
+    return stripLevel(value, plan, 0, walk);
+  } catch (error) {
+    if (error !== STRIP_TOO_DEEP) throw error;
+    if (walk.model) {
+      assertAcyclicEncodeInput(value);
+      throw conversionError(LibErrorKind.Serialization, `The value nests objects and arrays deeper than ${walk.limit} levels. Raise the maxDepth option to encode a deeper value.`);
+    }
+    assertWireAcyclic(value);
+    throw nestingDepthError(walk.limit);
+  }
+}
+
 const LEAVE = Symbol('leave');
 
 /** A level of the depth walk: an array, a plain object or a golem model instance. Bytes, dates, maps and other class values are leaves. */
