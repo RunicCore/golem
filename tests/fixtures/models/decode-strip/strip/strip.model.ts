@@ -2,8 +2,8 @@ import type { IModel, IObject } from '@exprtlabs/golem/model';
 import type { AdditionalProperties, Discriminator, PatternProperties, TSerde } from '@exprtlabs/golem/tags';
 import { decodeUnits, encodeUnits } from './units.js';
 import {
-  TCardBaseModel, TPetHolderBaseModel, TShelfBaseModel, TTaggedBaseModel, TTaggedOpenBaseModel, TTallyBaseModel, TTreeBaseModel,
-  type TCardFields, type TPetHolderFields, type TShelfFields, type TTaggedFields, type TTaggedOpenFields, type TTallyFields, type TTreeFields,
+  TCardBaseModel, TLedgerBaseModel, TPetHolderBaseModel, TPatternLedgerBaseModel, TRegistryBaseModel, TShelfBaseModel, TTaggedBaseModel, TTaggedOpenBaseModel, TTallyBaseModel, TTreeBaseModel,
+  type TCardFields, type TLedgerFields, type TPetHolderFields, type TPatternLedgerFields, type TRegistryFields, type TShelfFields, type TTaggedFields, type TTaggedOpenFields, type TTallyFields, type TTreeFields,
 } from './strip.model.generated.js';
 
 type Cat = { kind: 'cat'; lives: number };
@@ -33,6 +33,11 @@ type Units = { units: number } & TSerde<typeof encodeUnits, typeof decodeUnits>;
 export type TPriced = IObject<{ price: Units; note?: string }>;
 export type TTree = IModel<{ name: string; kids?: TTree[] }>;
 export type TTally = IModel<{ id: string; [key: string]: string }>;
+/** A model whose other keys are map entries of a closed object, by `AdditionalProperties` and by an index signature. */
+export type TLedger = IModel<{ id: string } & AdditionalProperties<TItem>>;
+export type TRegistry = IModel<{ [key: string]: TItem }>;
+/** A model that is open and also declares a pattern whose value is a closed object. */
+export type TPatternLedger = IModel<{ id: string } & PatternProperties<{ '^x_': TItem }> & AdditionalProperties<unknown>>;
 
 export class Card extends TCardBaseModel {
   constructor(values: Partial<TCardFields> = {}) { super(values); }
@@ -48,6 +53,15 @@ export class Tree extends TTreeBaseModel {
 }
 export class Tally extends TTallyBaseModel {
   constructor(values: Partial<TTallyFields> = {}) { super(values); }
+}
+export class Ledger extends TLedgerBaseModel {
+  constructor(values: Partial<TLedgerFields> = {}) { super(values); }
+}
+export class Registry extends TRegistryBaseModel {
+  constructor(values: Partial<TRegistryFields> = {}) { super(values); }
+}
+export class PatternLedger extends TPatternLedgerBaseModel {
+  constructor(values: Partial<TPatternLedgerFields> = {}) { super(values); }
 }
 export class Tagged extends TTaggedBaseModel {
   constructor(values: Partial<TTaggedFields> = {}) { super(values); }

@@ -29,9 +29,9 @@ async function buildModels(t: TestContext) {
   const models = await import(pathToFileURL(path.join(root, 'build/strip.model.js')).href);
   const codec = (name: string) => requireObjectCodec(generatedCodecIdFromRoot(root, name));
   return {
-    Card: models.Card as Model, Shelf: models.Shelf as Model, PetHolder: models.PetHolder as Model, Tree: models.Tree as Model, Tally: models.Tally as Model, Tagged: models.Tagged as Model, TaggedOpen: models.TaggedOpen as Model,
+    Card: models.Card as Model, Ledger: models.Ledger as Model, PatternLedger: models.PatternLedger as Model, Registry: models.Registry as Model, Shelf: models.Shelf as Model, PetHolder: models.PetHolder as Model, Tree: models.Tree as Model, Tally: models.Tally as Model, Tagged: models.Tagged as Model, TaggedOpen: models.TaggedOpen as Model,
     plain: codec('TPlain'), nested: codec('TNested'), open: codec('TOpen'), mapHolder: codec('TMapHolder'), patterned: codec('TPatterned'), nullable: codec('TNullable'), tagged: codec('TTagged'), patternItems: codec('TPatternItems'), tagTypes: codec('TTagTypes'), tagProto: codec('TTagProto'), taggedOpen: codec('TTaggedOpen'), priced: codec('TPriced'),
-    card: codec('TCard'), shelf: codec('TShelf'), petHolder: codec('TPetHolder'), tree: codec('TTree'), tally: codec('TTally'),
+    card: codec('TCard'), ledger: codec('TLedger'), patternLedger: codec('TPatternLedger'), registry: codec('TRegistry'), shelf: codec('TShelf'), petHolder: codec('TPetHolder'), tree: codec('TTree'), tally: codec('TTally'),
   };
 }
 
@@ -180,6 +180,30 @@ test('strip on encode', async (t) => {
       assert.deepEqual(m.tagged.toWireFormat(new m.Tagged({ item: { kind: 'other', value: 1, junk: 1 } }), options(level)), { item: { kind: 'other', value: 1 } });
       assert.deepEqual(m.tagged.toWireFormat(new m.Tagged({ item: { amount: 1, junk: 1 } }), options(level)), { item: { amount: 1 } });
       assert.deepEqual(m.shelf.toWireFormat(new m.Shelf({ cards: [], main: new m.Card({ title: 'a' }) }), options(level)), { cards: [], main: { title: 'a' } });
+    });
+
+    await t.test(`an instance of an open model strips the closed objects that its other keys hold, validate ${level}`, () => {
+      // protects: T-896 the other keys of an instance of a model with AdditionalProperties or an index signature are map data, which the encoder writes and strip walks
+      const ledger = Object.assign(new m.Ledger({ id: 'a' }), { one: { name: 'n', extra: 1 }, two: { name: 'm' } });
+      assert.deepEqual(m.ledger.toWireFormat(ledger, options(level)), { id: 'a', one: { name: 'n' }, two: { name: 'm' } });
+      assert.deepEqual(JSON.parse(m.ledger.stringify(ledger, options(level))), { id: 'a', one: { name: 'n' }, two: { name: 'm' } });
+      assert.deepEqual((ledger as { one: unknown }).one, { name: 'n', extra: 1 }, 'the instance is not changed');
+      const registry = Object.assign(new m.Registry(), { one: { name: 'n', extra: 1 } });
+      assert.deepEqual(m.registry.toWireFormat(registry, options(level)), { one: { name: 'n' } });
+      assert.deepEqual(JSON.parse(m.registry.stringify(registry, options(level))), { one: { name: 'n' } });
+    });
+
+    await t.test(`a frozen instance of an open model strips the closed objects that its other keys hold, validate ${level}`, () => {
+      // protects: T-896 the copy of an instance takes a changed map entry in its own descriptor
+      const ledger = Object.freeze(Object.assign(new m.Ledger({ id: 'a' }), { one: { name: 'n', extra: 1 } }));
+      assert.deepEqual(m.ledger.toWireFormat(ledger, options(level)), { id: 'a', one: { name: 'n' } });
+      assert.deepEqual((ledger as { one: unknown }).one, { name: 'n', extra: 1 }, 'the instance is not changed');
+    });
+
+    await t.test(`an instance of an open model strips the closed object that a pattern key holds, validate ${level}`, () => {
+      // protects: T-896 a key that a pattern declares on an instance of an open model holds a closed object that strip walks
+      const ledger = Object.assign(new m.PatternLedger({ id: 'a' }), { x_1: { name: 'n', extra: 1 }, other: 5 });
+      assert.deepEqual(m.patternLedger.toWireFormat(ledger, options(level)), { id: 'a', x_1: { name: 'n' }, other: 5 });
     });
 
     await t.test(`an instance stays the same value when nothing in it changes, and a changed one keeps its class, validate ${level}`, () => {

@@ -247,6 +247,30 @@ function stripArray(value: unknown[], plan: StripPlan | undefined, depth: number
   return out ?? value;
 }
 
+/** What `stripEntry` gives for a key that a closed object does not declare: the key goes. */
+const STRIP_REMOVE = Symbol('strip remove');
+
+/**
+ * The value of one key of an object after strip: a declared field by the plan of the field, a key that a pattern declares by the
+ * plan of the pattern, any other key by `values`, or `STRIP_REMOVE` for an undeclared key of a closed object. Decode and encode, a plain object
+ * and an instance of a class read a key by this one rule.
+ */
+function stripEntry(key: string, member: unknown, plan: StripPlan, depth: number, walk: StripWalk): unknown {
+  let next = member;
+  let declared = plan.keys?.has(key) === true;
+  if (declared && plan.fields !== undefined && Object.hasOwn(plan.fields, key)) next = stripLevel(member, plan.fields[key], depth + 1, walk);
+  // A key that a pattern declares holds a value that the pattern's plan strips, also when `keys` names the key too.
+  if (plan.patterns !== undefined) {
+    for (const entry of plan.patterns) {
+      if (!matchesStripPattern(entry.pattern, key)) continue;
+      declared = true;
+      next = stripLevel(next, entry.plan, depth + 1, walk);
+    }
+  }
+  if (declared) return next;
+  return plan.closed === true ? STRIP_REMOVE : stripLevel(member, plan.values, depth + 1, walk);
+}
+
 function stripObject(value: Record<string, unknown>, plan: StripPlan, depth: number, walk: StripWalk): unknown {
   if (plan.tag !== undefined) {
     // A tag of another type is in no entry of the map, so it takes the default.
@@ -263,23 +287,9 @@ function stripObject(value: Record<string, unknown>, plan: StripPlan, depth: num
   for (let index = 0; index < keys.length; index++) {
     const key = keys[index] as string;
     const member = value[key];
-    let next = member;
-    let keep = true;
-    let declared = plan.keys?.has(key) === true;
-    if (declared && plan.fields !== undefined && Object.hasOwn(plan.fields, key)) next = stripLevel(member, plan.fields[key], depth + 1, walk);
-    // A key that a pattern declares holds a value that the pattern's plan strips, also when `keys` names the key too.
-    if (plan.patterns !== undefined) {
-      for (const entry of plan.patterns) {
-        if (!matchesStripPattern(entry.pattern, key)) continue;
-        declared = true;
-        next = stripLevel(next, entry.plan, depth + 1, walk);
-      }
-    }
-    if (!declared) {
-      if (plan.closed === true) keep = false;
-      else next = stripLevel(member, plan.values, depth + 1, walk);
-    }
-    if ((!keep || next !== member) && out === undefined) {
+    const next = stripEntry(key, member, plan, depth, walk);
+    const keep = next !== STRIP_REMOVE;
+    if (next !== member && out === undefined) {
       out = {};
       for (let earlier = 0; earlier < index; earlier++) defineModelProperty(out, keys[earlier] as string, value[keys[earlier] as string]);
     }
@@ -289,22 +299,27 @@ function stripObject(value: Record<string, unknown>, plan: StripPlan, depth: num
 }
 
 /**
- * An instance of a class, for an encode: its own keys that its model does not declare are program state, which no codec writes
- * or judges, so only its declared fields are walked, and the instance itself is returned when none of them changes. A field
- * that changes gives a clone with the prototype and the own properties of the instance and the stripped value in place of that
- * field, so the encoder reads the clone as it reads the instance. A field is read as the encoder reads it: an own enumerable
+ * An instance of a class, for an encode. Its own keys that its model does not declare are program state, which no codec writes
+ * or judges, unless the model keeps other keys as data (`values` or a pattern: a map, an index signature, `AdditionalProperties`
+ * or `patternProperties`). So a closed model walks its declared fields only, and a model with data keys walks every own key
+ * by the rule of a plain object (`stripEntry`). The instance itself is returned when nothing in it changes. A key that
+ * changes gives a clone with the prototype and the own properties of the instance and the stripped value in place of that
+ * key, so the encoder reads the clone as it reads the instance. A key is read as the encoder reads it: an own enumerable
  * property. A getter of the class counts only with `allowGetter`, which makes the codec read it into an own property first.
  */
 function stripInstance(value: object, plan: StripPlan, depth: number, walk: StripWalk): unknown {
-  if (plan.fields === undefined) return value;
+  const keepsData = plan.closed !== true && (plan.values !== undefined || plan.patterns !== undefined);
+  const names = keepsData ? Object.keys(value) : plan.fields === undefined ? undefined : Object.keys(plan.fields);
+  if (names === undefined) return value;
   let changed: PropertyDescriptorMap | undefined;
-  for (const name of Object.keys(plan.fields)) {
+  // A name here is a declared field or a key of a model that keeps other keys as data, so `stripEntry` never answers `STRIP_REMOVE`.
+  for (const name of names) {
     if (!Object.prototype.propertyIsEnumerable.call(value, name)) continue;
     const member: unknown = Reflect.get(value, name);
-    const next = stripLevel(member, plan.fields[name], depth + 1, walk);
+    const next = stripEntry(name, member, plan, depth, walk);
     if (next === member) continue;
-    // A sealed or frozen instance holds its fields as non-configurable properties, which a copy cannot redefine, so the copy takes the new value in its own descriptor.
-    (changed ??= {})[name] = { value: next, enumerable: true, configurable: true, writable: true };
+    // A sealed or frozen instance holds its keys as non-configurable properties, which a copy cannot redefine, so the copy takes the new value in its own descriptor. The map has no prototype, so a key called `__proto__` stays a key.
+    (changed ??= Object.create(null) as PropertyDescriptorMap)[name] = { value: next, enumerable: true, configurable: true, writable: true };
   }
   if (changed === undefined) return value;
   // The copy is read by the encoder only and is never returned to the caller, so it is not frozen again.
@@ -314,8 +329,8 @@ function stripInstance(value: object, plan: StripPlan, depth: number, walk: Stri
 /**
  * The value without the keys that a closed object of `plan` does not declare, at every level: a wire value for a decode, a model value
  * for an encode (`model`). It copies only an object or an array that changes and never writes to the input, so a value that holds
- * nothing to remove is returned as it is. A model value takes no key from an instance of a class, whose undeclared keys are program state, but strips the objects
- * that its declared fields hold; it leaves the model value of a TSerde field as it is. A value that nests deeper than `maxDepth` is a cycle or too deep: the cycle check reports a cycle, else the depth error is thrown.
+ * nothing to remove is returned as it is. A model value takes no key from an instance of a class, whose undeclared keys are program state unless its model keeps other keys as data, but strips the objects
+ * that its declared fields and its data keys hold; it leaves the model value of a TSerde field as it is. A value that nests deeper than `maxDepth` is a cycle or too deep: the cycle check reports a cycle, else the depth error is thrown.
  */
 export function stripUndeclared(value: unknown, plan: StripPlanRef, maxDepth?: number, model?: true): unknown {
   const walk: StripWalk = { limit: resolveMaxDepth(maxDepth), model: model === true };
