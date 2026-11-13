@@ -10,27 +10,31 @@ import { emitCodecRuntimeText, instantiateRuntime } from './emitted-runtime.js';
 // value cannot tell which of the two arrays takes it, so generation stops (F-39: golem rejects bad input, never coerces it).
 
 const closed = (properties: Record<string, ModelTypeDescriptor>): ModelTypeDescriptor => ({ kind: 'object', properties, required: Object.keys(properties), additionalProperties: false });
-const tree: ModelTypeDescriptor = { kind: 'array', item: closed({ label: { kind: 'string' } }) };
+const treeArray: ModelTypeDescriptor = { kind: 'array', item: closed({ label: { kind: 'string' } }) };
+const treeObject = closed({ label: { kind: 'string' } });
 const codes: ModelTypeDescriptor = { kind: 'array', item: closed({ code: { kind: 'string' } }) };
 
-/** The graph of a holder whose `items` is a union of a reference to the named array `Tree` and another array. */
-function graphOf(reference: (treeId: string) => ModelTypeDescriptor) {
+/** The runtime of a holder whose `items` is a union of a reference to the named node `Tree`, with a serde of its own, and another array. */
+function runtimeSource(body: ModelTypeDescriptor): string {
   const graph = createSchemaGraph();
-  const treeNode = graph.intern(tree, 'Tree');
-  graph.intern(closed({ items: { kind: 'union', variants: [reference(treeNode.codecId), codes] } }), 'Box');
+  const treeNode = graph.intern(body, 'Tree');
+  const reference = { kind: 'generated-model', id: treeNode.codecId, serde: { id: 'tree', wire: { kind: 'array', item: { kind: 'string' } } } } as ModelTypeDescriptor;
+  graph.intern(closed({ items: { kind: 'union', variants: [reference, codes] } }), 'Box');
   graph.seal();
-  return graph;
+  const resolver: StringifySerdeResolver = {
+    deserialize: (_serde, value) => code`decodeTree(${value} as never)`,
+    serialize: (_serde, value) => code`encodeTree(${value} as never)`,
+  };
+  return emitCodecRuntimeText(graph, { serde: resolver, validatorName: (id) => identifier(`validate_${id.replace(/[^\w$]/g, '_')}`) });
 }
 
-const resolver: StringifySerdeResolver = {
-  deserialize: (_serde, value) => code`decodeTree(${value} as never)`,
-  serialize: (_serde, value) => code`encodeTree(${value} as never)`,
-};
+test('a named array with a serde of its own beside another array stops generation', () => {
+  // protects: T-905 an array value took the inline array, so the serde of the reference never read its own array wire form
+  assert.throws(() => runtimeSource(treeArray), /Union has ambiguous conversions/);
+});
 
-test('a named array with a serde of its own beside another array is decoded by its serde', () => {
-  // protects: T-905 the serde of the reference was not read, so the union returned the value as it was and skipped the serde
-  const treeWithSerde = (id: string): ModelTypeDescriptor => ({ kind: 'generated-model', id, serde: { id: 'tree', wire: { kind: 'array', item: { kind: 'string' } } } } as ModelTypeDescriptor);
-  const source = emitCodecRuntimeText(graphOf(treeWithSerde), { serde: resolver, validatorName: (id) => identifier(`validate_${id.replace(/[^\w$]/g, '_')}`) });
-  const runtime = instantiateRuntime(source, { decodeTree: () => 'decoded', encodeTree: () => 'encoded' });
+test('a named object with a serde of its own beside an array is decoded by its serde', () => {
+  // protects: T-905 the rule above does not reach a serde reference whose node is no array: it reads its object value as before
+  const runtime = instantiateRuntime(runtimeSource(treeObject), { decodeTree: () => 'decoded', encodeTree: () => 'encoded' });
   assert.deepEqual(runtime.fromWireFormatBox({ items: { kind: 'tree' } }, { validate: false }), { items: 'decoded' });
 });

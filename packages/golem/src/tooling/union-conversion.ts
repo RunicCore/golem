@@ -604,6 +604,11 @@ export interface UnionConversion {
   readonly afterGenerated?: (present: readonly ModelTypeDescriptor[]) => Code | undefined;
   /** The named variants that hold an array or tuple, from the walker's graph (see `NamedVariants`). */
   readonly named?: NamedVariants;
+  /**
+   * The named variants with a serde of their own whose node holds an array or tuple. Their wire value is an array that the union cannot
+   * tell from another sequence, so a union of one of them and another sequence variant stops generation.
+   */
+  readonly serdeSequence?: NamedVariants;
 }
 
 /** The variant kinds that sit beside one object or model in a value conversion and need no conversion. */
@@ -638,6 +643,10 @@ export function emitUnionConversion(
     const converted = convert(present[0]);
     if (json) return code`(${value} == null ? 'null' : (${converted}))`;
     return sameCode(converted, value) ? value : code`${value} == null ? ${value} : (${converted})`;
+  }
+  const serdeSequence = (variant: ModelTypeDescriptor): boolean => isNamed(variant) && conversion.serdeSequence?.(variant) === true;
+  if (present.some(serdeSequence) && present.filter((variant) => serdeSequence(variant) || isSequenceVariant(variant, named)).length > 1) {
+    throw new AmbiguousUnionConversionError(present);
   }
   const nullable = present.length !== descriptor.variants.length;
   // A scalar that converts (a serde scalar), and in stringify any scalar writer other than the plain one, converts no
