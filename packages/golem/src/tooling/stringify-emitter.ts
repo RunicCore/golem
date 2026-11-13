@@ -9,6 +9,7 @@ import type { ValidationLevel, ValidationPlane } from '../object-codec.js';
 import type { SchemaGraph, SchemaNode } from './schema-graph.js';
 import { codecShortName, serdeWireDescriptor } from './schema-graph.js';
 import { requireComposedObject, type ModelBases } from './composition.js';
+import { STRIP_PLAN, StripPlans, type StripPlanEnv } from './strip-plan.js';
 import {
   aliased, asObjectLiteral, bindInput, bindRead, code, documentLiteral, helper, helperName, helperSet, selfPlacedHelper, identifier, indentation, inputCount, inputOf, inputSlot, isEmpty, join, literal, localCode, readShape, sameCode,
   type Code, type Helper, type InputSlot, type JsonValue, type ReadShape,
@@ -121,6 +122,10 @@ export interface CodecRuntimeOptions {
   readonly siblingWireName?: (codecId: string) => Code;
   /** Internal fill helpers needed by other generated graph modules. */
   readonly exportedFillFunctionIds?: ReadonlySet<string>;
+  /** The name this module imports the strip plan of another module's node under (by codec id); undefined for a node whose module exports none. */
+  readonly importedStripPlan?: (codecId: string) => Code | undefined;
+  /** Export the strip plan of every node, also of a node whose codec is private: another module's models reach it by name. */
+  readonly exportStripPlans?: boolean;
   readonly issueSource?: 'TypeScript' | 'OpenAPI';
   /** Type expression of a local node's emitted JSON type; `toWireFormat${id}` returns it. */
   readonly wireType?: (node: SchemaNode) => Code | undefined;
@@ -163,6 +168,8 @@ interface EmitCtx
     | 'nestedImportedSerde'
     | 'siblingWireName'
     | 'exportedFillFunctionIds'
+    | 'importedStripPlan'
+    | 'exportStripPlans'
     | 'wireType'
     | 'fieldsType'
     | 'siblingWireCodecIds'
@@ -176,6 +183,8 @@ interface EmitCtx
   > {
   readonly graph: SchemaGraph;
   readonly modelBases: ModelBases;
+  /** The strip plans of this module's nodes. */
+  readonly stripPlans?: StripPlans;
   /** The node is a recursive union: each inline array, tuple and object branch of its encoders checks its value for a cycle. */
   readonly guardInline?: boolean;
   readonly issueSource: 'TypeScript' | 'OpenAPI';
@@ -255,6 +264,8 @@ const CHECKED_HELPER: Helper = helper('__golemChecked', () => code`const __golem
 // `type SerdeOptions as __GolemSerdeOptions` from @exprtlabs/golem/serde.
 const VALIDATE_OPTIONS = aliased(rtType.serde.ValidateOptions, '__GolemValidateOptions');
 const SERDE_OPTIONS = aliased(rtType.serde.SerdeOptions, '__GolemSerdeOptions');
+const DECODE_OPTIONS = aliased(rtType.serde.DecodeOptions, '__GolemDecodeOptions');
+const ENCODE_OPTIONS = aliased(rtType.serde.EncodeOptions, '__GolemEncodeOptions');
 
 function trustedOptions(ctx: EmitCtx): Code {
   return ctx.trustedOptions ?? TRUSTED;
@@ -298,6 +309,11 @@ export function wireStringifyExportName(codecId: string): string {
 
 export function fillFunctionName(id: string): string {
   return `fill${id}`;
+}
+
+/** The constant that holds the strip plan of a node. It is named by the codec id, so another module that imports it finds it under the same name. */
+export function stripPlanName(codecId: string): string {
+  return `__golemStripPlan_${codecId.replace(/[^A-Za-z0-9_$]/g, '_')}`;
 }
 
 export function parseFunctionName(id: string): string {
@@ -2012,6 +2028,8 @@ interface NodeRuntime {
   readonly modelOnlyAssertId: Code;
   readonly wireOnlyAssertId: Code;
   readonly convertId: Code;
+  /** The plan that `strip` follows over the wire of the node; undefined when the node holds no closed object. */
+  readonly stripPlan: Code | undefined;
   /** `export ` when the node's functions are exported, else nothing. */
   readonly exported: Code;
   /** The type of the node's fields. Built at its first call: the type it names can declare an import, so the call decides the import order. */
@@ -2032,15 +2050,15 @@ function emitExternalNodeRuntime(node: SchemaNode, moduleCtx: EmitCtx): Code {
   const id = literal(node.codecId);
   return rowsToText([
     emitStringifyFunction(node, moduleCtx.graph, moduleCtx.serde, { modelBases: moduleCtx.modelBases }),
-    code`export function ${identifier(fromWireFunctionName(node.id))}(wire: unknown, options?: ${SERDE_OPTIONS}): unknown {`,
+    code`export function ${identifier(fromWireFunctionName(node.id))}(wire: unknown, options?: ${DECODE_OPTIONS}): unknown {`,
     code`  return ${rt.serde.requireObjectCodec}(${id}).fromWireFormat(wire, options);`,
     code`}`,
     code``,
-    code`export function ${identifier(toWireFunctionName(node.id))}(value: unknown, options?: ${SERDE_OPTIONS}): unknown {`,
+    code`export function ${identifier(toWireFunctionName(node.id))}(value: unknown, options?: ${ENCODE_OPTIONS}): unknown {`,
     code`  return ${rt.serde.requireObjectCodec}(${id}).toWireFormat(value as never, options);`,
     code`}`,
     code``,
-    code`export function ${identifier(parseFunctionName(node.id))}(text: string, options?: ${SERDE_OPTIONS}): unknown {`,
+    code`export function ${identifier(parseFunctionName(node.id))}(text: string, options?: ${DECODE_OPTIONS}): unknown {`,
     code`  return ${rt.serde.requireObjectCodec}(${id}).parse(text, options);`,
     code`}`,
   ]);
@@ -2095,6 +2113,7 @@ function nodeRuntime(node: SchemaNode, moduleCtx: EmitCtx, levels: NodeLevels): 
     modelOnlyAssertId: identifier(modelOnlyAssertName(node)),
     wireOnlyAssertId: identifier(wireOnlyAssertName(node)),
     convertId: identifier(`convertFromWire${node.id}`),
+    stripPlan: ctx.stripPlans?.ofNode(node),
     exported: codecIsExported(node, ctx) ? code`export ` : code``,
     fields: () => (fields ??= nodeFields(ctx.fieldsType?.(node))),
     objectDescriptor,
@@ -2138,7 +2157,8 @@ function emitStringifySection(runtime: NodeRuntime): Code {
 
   return rowsToText([
     blocksToText([stringifySrc, lenientStringify ?? code``, wireStringifySrc]),
-    code`${exported}function ${stringifyId}(value: ${modelType}, options?: ${SERDE_OPTIONS}): string {`,
+    code`${exported}function ${stringifyId}(value: ${modelType}, options?: ${ENCODE_OPTIONS}): string {`,
+    ...stripModelLines(runtime, modelType),
     emitSerdeValidates(runtime.levels),
     ...(emitsValidatedWire ? inlineLocalLines(encoded) : []),
     ...(validationEnabled ? [
@@ -2178,9 +2198,11 @@ function emitDecodeSection(runtime: NodeRuntime): { readonly fill: Code; readonl
     : bindInput(emitDecodeValue(node.descriptor, inputOf(wireRoot), rootScope), wireRoot, code`wire`);
 
   const convertLines: Code[] = [
-    code`function ${convertId}(wire: unknown, options: ${SERDE_OPTIONS} | undefined): unknown {`,
+    code`function ${convertId}(wire: unknown, options: ${DECODE_OPTIONS} | undefined): unknown {`,
     emitSerdeValidates(runtime.levels),
   ];
+  // Strip runs first, so the checks and the decoder below see a wire that holds the declared keys only.
+  if (runtime.stripPlan) convertLines.push(code`  if (options?.strip) wire = ${rt.conversion.stripUndeclared}(wire, ${identifier(stripPlanName(node.codecId))}, options.maxDepth);`);
   if (validationEnabled) {
     // The wire and model schemas are one validator, which a validation context is asked for as the wire plane.
     const wireAssertCall = node.sameSchema
@@ -2240,7 +2262,7 @@ function emitDecodeSection(runtime: NodeRuntime): { readonly fill: Code; readonl
     fill: fill?.source ?? code``,
     convert: rowsToText(convertLines),
     fromWire: rowsToText([
-      code`${exported}function ${names.fromWire}(wire: unknown, options?: ${SERDE_OPTIONS}): ${fields.orUnknown} {`,
+      code`${exported}function ${names.fromWire}(wire: unknown, options?: ${DECODE_OPTIONS}): ${fields.orUnknown} {`,
       code`  return ${rt.conversion.decodeCheckedInput}(${convertId}, wire, options)${fields.code ? code` as ${fields.code}` : code``};`,
       code`}`,
       code``,
@@ -2283,7 +2305,8 @@ function emitToWireSection(runtime: NodeRuntime): Code {
   );
   return rowsToText([
     toWireCoreSource,
-    code`${exported}function ${names.toWire}(value: ${fieldsOrUnknown}, options?: ${SERDE_OPTIONS}): ${wireOrUnknown} {`,
+    code`${exported}function ${names.toWire}(value: ${fieldsOrUnknown}, options?: ${ENCODE_OPTIONS}): ${wireOrUnknown} {`,
+    ...stripModelLines(runtime, fieldsOrUnknown),
     ...(ctx.projectsInstanceState && objectDescriptor?.additionalProperties === false
       ? [code`  value = ${rt.conversion.withDeclaredFields}(value, ${literal(Object.keys(objectDescriptor.properties))}) as ${fieldsOrUnknown};`]
       : []),
@@ -2310,7 +2333,7 @@ function emitParseSection(runtime: NodeRuntime): Code {
   const { names, convertId, exported } = runtime;
   const fields = runtime.fields();
   return rowsToText([
-    code`${exported}function ${names.parse}(text: string, options?: ${SERDE_OPTIONS}): ${fields.orUnknown} {`,
+    code`${exported}function ${names.parse}(text: string, options?: ${DECODE_OPTIONS}): ${fields.orUnknown} {`,
     code`  return ${rt.conversion.decodeDetachedInput}(${convertId}, ${rt.serde.parseJson}(text), options)${fields.code ? code` as ${fields.code}` : code``};`,
     code`}`,
     code``,
@@ -2366,14 +2389,20 @@ function emitPlaneAssertSection(runtime: NodeRuntime): Code {
     : []);
 }
 
+/** The first line of an encode entry: `strip` removes the keys that the model does not declare before the value is checked. */
+function stripModelLines(runtime: NodeRuntime, valueType: Code): Code[] {
+  if (!runtime.stripPlan) return [];
+  return [code`  if (options?.strip) value = ${rt.conversion.stripUndeclared}(value, ${identifier(stripPlanName(runtime.node.codecId))}, options.maxDepth, true) as ${valueType};`];
+}
+
 /** The registration of the node's functions as an object codec, with the data that extensions add to it. */
 function emitCodecRegistrationSection(runtime: NodeRuntime): Code {
   const { node, ctx, names, stringifyId, validateId, assertId, objectDescriptor } = runtime;
   const data = ctx.codecData?.(ctx.graph, node);
   return rowsToText([
     code`${rt.serde.createObjectCodec}(${literal(node.codecId)}, {`,
-    code`  stringify: ${stringifyId} as (value: never, options?: ${SERDE_OPTIONS}) => string,`,
-    code`  parse: ${names.parse} as (text: string, options?: ${SERDE_OPTIONS}) => never,`,
+    code`  stringify: ${stringifyId} as (value: never, options?: ${ENCODE_OPTIONS}) => string,`,
+    code`  parse: ${names.parse} as (text: string, options?: ${DECODE_OPTIONS}) => never,`,
     code`  validate: ${validateId},`,
     code`  assert: ${assertId},`,
     code`  toWireFormat: ${names.toWire},`,
@@ -2401,13 +2430,34 @@ function emitNodeRuntime(
   const planeAsserts = emitPlaneAssertSection(runtime);
   const codec = moduleCtx.registerCodecs === false ? rowsToText([]) : emitCodecRegistrationSection(runtime);
   // The hoisted converters exist only after the decode section.
-  return blocksToText([rowsToText(runtime.ctx.hoisted?.sources ?? []), decode.fill, stringify, decode.convert, decode.fromWire, toWire, parse, validate, planeAsserts, codec]);
+  // The plan sits after the stringify function, which is never empty: the text before the first block may end with no line break, and `export` must start a line.
+  // The plan is built at its first use, and the call is pure, so a module that never strips pays nothing at load.
+  // A module that imports this node's plan finds it by name, also when the node holds nothing to strip.
+  const exportsPlan = moduleCtx.exportStripPlans === true || codecIsExported(node, moduleCtx);
+  const planName = identifier(stripPlanName(node.codecId));
+  const stripPlan = runtime.stripPlan
+    ? code`${exportsPlan ? code`export ` : code``}const ${planName}: () => ${STRIP_PLAN} = /*#__PURE__*/ ${rt.conversion.stripPlan}(() => (${runtime.stripPlan}));`
+    : exportsPlan ? code`export const ${planName} = undefined;` : rowsToText([]);
+  return blocksToText([rowsToText(runtime.ctx.hoisted?.sources ?? []), decode.fill, stringify, stripPlan, decode.convert, decode.fromWire, toWire, parse, validate, planeAsserts, codec]);
 }
 
 function isExternalCodecNode(node: SchemaNode): boolean {
   return node.kind === 'reference'
     || node.descriptor.kind === 'generated-model'
     || node.descriptor.kind === 'reference';
+}
+
+/** What the strip plans of a module ask of this emitter: the objects its descriptors resolve to, and which codecs are another module's. */
+function stripPlanEnv(ctx: EmitCtx): StripPlanEnv {
+  return {
+    graph: ctx.graph,
+    resolveObject: (descriptor) => resolveObjectDescriptor(descriptor, ctx),
+    nodeOf: (descriptor) => ctx.graph.nodeFor(descriptor) ?? (descriptor.kind === 'reference' ? ctx.graph.nodeFor(descriptor, codecShortName(descriptor.name)) : undefined),
+    extraValues: mapValueDescriptor,
+    external: (node) => isExternalCodecNode(node) || ctx.nestedImportedSerde?.(node.codecId) !== undefined || ctx.nestedImportedSerde?.(node.id) !== undefined,
+    importedPlan: (node) => ctx.importedStripPlan?.(node.codecId),
+    planName: (node) => stripPlanName(node.codecId),
+  };
 }
 
 /** Specialized stringify/parse/validate and codec registration for every graph node. */
@@ -2419,7 +2469,7 @@ export function emitCodecRuntimeCode(
   const validates = (node: SchemaNode): boolean => validatesByDefault(nodeLevels(node, project));
   const nodes = [...graph.topo()];
   const patternConstants = new Map<string, Code>();
-  const ctx: EmitCtx = {
+  let ctx: EmitCtx = {
     graph,
     // emitNodeRuntime emits stringify<Id>Wire exactly for these nodes.
     wireStringifyIds: new Set(nodes.filter((node) => !isExternalCodecNode(node) && validates(node) && !node.sameSchema).map((node) => node.id)),
@@ -2440,6 +2490,8 @@ export function emitCodecRuntimeCode(
     nestedBase: options.nestedBase,
     nestedImportedSerde: options.nestedImportedSerde,
     exportedFillFunctionIds: options.exportedFillFunctionIds,
+    importedStripPlan: options.importedStripPlan,
+    exportStripPlans: options.exportStripPlans,
     issueSource: options.issueSource ?? 'TypeScript',
     wireType: options.wireType,
     fieldsType: options.fieldsType,
@@ -2452,6 +2504,7 @@ export function emitCodecRuntimeCode(
     fillThrows: new Map(),
     patternConstants,
   };
+  ctx = { ...ctx, stripPlans: new StripPlans(stripPlanEnv(ctx)) };
   const runtimes: Code[] = [];
   for (const node of nodes) {
     const runtime = emitNodeRuntime(node, ctx, nodeLevels(node, project));

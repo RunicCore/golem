@@ -11,6 +11,7 @@ export {
   reachesItself,
   reachesRecursiveNode,
   stringifyFunctionName,
+  stripPlanName,
   wireStringifyExportName,
   toWireFunctionName,
   validateFunctionName,
@@ -481,7 +482,7 @@ export function wrapRootConversion(
 const SERDE_IMPORT_ORDER: readonly string[] = [
   'assertModelValue', 'createObjectCodec', 'fastable', 'isValidModelValue', 'parseJson', 'registerIModelClass', 'requireIModelClass', 'requireObjectCodec',
   'serdeValidates', 'stringifyJsonArray', 'stringifyJsonBoolean', 'stringifyJsonNumber', 'stringifyJsonScalar', 'stringifyJsonString',
-  'validationUnavailableStub', 'withoutInstanceState', 'IssueRepresentation', 'IssueSource', 'SerdeOptions', 'ValidateOptions',
+  'validationUnavailableStub', 'withoutInstanceState', 'IssueRepresentation', 'IssueSource', 'DecodeOptions', 'EncodeOptions', 'SerdeOptions', 'StripPlan', 'ValidateOptions',
 ];
 
 /** The order of the names in the model, conversion and serde imports of a generated model file: the model generator and the OpenAPI-to-TypeScript generator write the same. */
@@ -493,7 +494,7 @@ export const MODEL_IMPORT_ORDER: NonNullable<ImportOptions['order']> = {
   conversion: [
     'assertAcyclicEncodeInput', 'assertPropertyAcyclic', 'assertWireAcyclic', 'beginDecode', 'beginEncode', 'constructModel', 'convertModelField', 'convertModelItems',
     'convertModelRecord', 'convertModelTupleItems', 'copyModelRecord', 'decodeCheckedInput', 'decodeDetachedInput', 'decodeGeneratedModelTrusted', 'defineModelProperty', 'deserializeDate',
-    'endDecode', 'endEncode', 'isVariantObject', 'jsonWithDiscriminator', 'rejectModelObject', 'requireModelObject', 'serializeDate', 'unknownDiscriminatorValue',
+    'endDecode', 'endEncode', 'isVariantObject', 'jsonWithDiscriminator', 'rejectModelObject', 'requireModelObject', 'serializeDate', 'stripPlan', 'stripUndeclared', 'unknownDiscriminatorValue',
     'wireChecked', 'withDeclaredFields', 'withDiscriminatorValue',
   ],
   serde: SERDE_IMPORT_ORDER,
