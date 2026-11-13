@@ -80,7 +80,7 @@ export interface StripOptions {
    * validation level, before the value is checked. The result holds the declared keys only, also when it is a class instance.
    * It keeps the data of a map, an `AdditionalProperties` tag, pattern properties and an open object. A union of objects with
    * no tag keeps exact matching, and a tagged union picks its variant by the tag and then strips that variant.
-   * An encode strips a plain object of the model value and leaves an instance of a class and the value of a TSerde field as they are.
+   * An encode strips the plain objects of the model value, also those that an instance of a class holds in its declared fields, and leaves the value of a TSerde field as it is.
    */
   readonly strip?: true;
 }

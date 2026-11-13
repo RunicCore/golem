@@ -151,7 +151,34 @@ test('strip on encode', async (t) => {
       assert.deepEqual(m.card.toWireFormat(card, options(level)), { title: 'a' });
       assert.deepEqual(m.shelf.toWireFormat(new m.Shelf({ cards: [new m.Card({ title: 'b' })], main: card }), options(level)), { cards: [{ title: 'b' }], main: { title: 'a' } });
     });
+
+    await t.test(`an instance of a class that holds plain objects with extra keys drops them, validate ${level}`, () => {
+      // protects: T-896 a handler that returns a model class that holds a database row encodes it
+      const holder = new m.PetHolder({ pet: { kind: 'cat', lives: 9, junk: 1 } });
+      Object.assign(holder, { program: 'state' });
+      assert.deepEqual(m.petHolder.toWireFormat(holder, options(level)), { pet: { kind: 'cat', lives: 9 } });
+      assert.deepEqual(JSON.parse(m.petHolder.stringify(holder, options(level))), { pet: { kind: 'cat', lives: 9 } });
+      assert.deepEqual(m.tagged.toWireFormat(new m.Tagged({ item: { kind: 'other', value: 1, junk: 1 } }), options(level)), { item: { kind: 'other', value: 1 } });
+      assert.deepEqual(m.tagged.toWireFormat(new m.Tagged({ item: { amount: 1, junk: 1 } }), options(level)), { item: { amount: 1 } });
+      assert.deepEqual(m.shelf.toWireFormat(new m.Shelf({ cards: [], main: new m.Card({ title: 'a' }) }), options(level)), { cards: [], main: { title: 'a' } });
+    });
+
+    await t.test(`an instance stays the same value when nothing in it changes, and a changed one keeps its class, validate ${level}`, () => {
+      // protects: T-896 strip copies an instance only when a field changes, and the copy is read as the instance is
+      const clean = new m.PetHolder({ pet: { kind: 'cat', lives: 9 } });
+      assert.deepEqual(m.petHolder.toWireFormat(clean, options(level)), { pet: { kind: 'cat', lives: 9 } });
+      const dirty = new m.PetHolder({ pet: { kind: 'cat', lives: 9, junk: 1 } });
+      m.petHolder.toWireFormat(dirty, options(level));
+      assert.deepEqual((dirty as { pet: unknown }).pet, { kind: 'cat', lives: 9, junk: 1 }, 'the instance is not changed');
+    });
   }
+
+  await t.test('a declared root field that a getter supplies is stripped with allowGetter, and a getter still does not count without it', () => {
+    // protects: T-896 strip reads a field as the encoder reads it; a getter value counts only with allowGetter
+    class Keeper { get pet() { return { kind: 'cat', lives: 9, junk: 1 }; } }
+    assert.deepEqual(m.petHolder.toWireFormat(new Keeper(), { ...strip, allowGetter: true }), { pet: { kind: 'cat', lives: 9 } });
+    assert.throws(() => m.petHolder.toWireFormat(new Keeper(), strip), isValidationError);
+  });
 
   await t.test('a TSerde value keeps its model shape on encode and its wire shape on decode', () => {
     // protects: T-896 the plan holds the keys of the wire, so an encode must not apply it to the model value of a TSerde field

@@ -577,7 +577,7 @@ By default an extra key of a closed object fails validation. With `strip: true`,
 - Strip keeps the data that a model declares as extra: a `Record`, an `AdditionalProperties` tag, `PatternProperties` and an object with `exact: false`.
 - A union of objects with a `Discriminator` tag chooses the variant by the tag, and strip then removes the keys that variant does not declare. A union of objects with no tag keeps exact matching.
 - Strip copies the object that it changes. It does not change the input.
-- An encode strips a plain object. It leaves an instance of a class as it is, with the values inside it, because `stringify` and `toWireFormat` already write the declared fields of an instance only. It also leaves the value of a `TSerde` field as it is, because the shape of that value is the serializer's own.
+- An encode strips the plain objects of the model value, also those that an instance of a class holds in its declared fields. An instance keeps its class and the keys that it holds, because `stringify` and `toWireFormat` already write the declared fields of an instance only. An encode leaves the value of a `TSerde` field as it is, because the shape of that value is the serializer's own.
 
 ### `allowGetter` {#allow-getter}
 
