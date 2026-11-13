@@ -164,7 +164,8 @@ export class StripPlans {
       case 'generated-model': {
         const node = this.env.nodeOf(descriptor);
         if (node === undefined) return [{ descriptor, shape: 'other' }];
-        if (this.env.external(node)) return [{ descriptor, shape: 'object' }];
+        // Another module's node is read by its own descriptor when this module holds it (a recursive array alias of another group is an array); a placeholder of a model holds only its name, and a model is an object.
+        if (this.env.external(node)) return [{ descriptor, shape: node.descriptor.kind === 'array' || node.descriptor.kind === 'tuple' ? 'array' : 'object' }];
         if (seen.has(node.id)) return [];
         seen.add(node.id);
         const target = node.descriptor;

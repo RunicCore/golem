@@ -1,3 +1,4 @@
+// lane: typescript6 The generated strip plans, which hold a typed Map of tag variants, compile with the TypeScript 6 shim
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -320,4 +321,31 @@ test('strip reaches the model of another dependency group of a generated SDK', a
   assert.deepEqual(sorted(at(decoded, 'history', 0)), ['items']);
   const value = { group: { items: [{ label: 'a', at: new Date(instant), x: 1 }], y: 1 }, history: [{ items: [], z: 1 }], w: 1 };
   assert.deepEqual(named('toWireFormat')(value, strip), { group: { items: [{ label: 'a', at: instant }] }, history: [{ items: [] }] });
+});
+
+test('a union of a recursive array of another group and an inline array keeps the items of the recursive array', async (t) => {
+  const closed = (properties: Record<string, unknown>, required: string[]) => ({ type: 'object', additionalProperties: false, required, properties });
+  const ref = (name: string) => ({ $ref: `#/components/schemas/${name}` });
+  const document = chargesDocument({
+    // `Tree` reaches itself through an inline object, so it is a named node of its own group and not written inline into the schemas that use it. The date of `Charge` makes it convert a value.
+    Tree: { type: 'array', items: closed({ label: { type: 'string' }, children: ref('Tree') }, ['label']) },
+    Charge: closed({
+      when: { type: 'string', format: 'date-time' },
+      holder: { oneOf: [ref('Tree'), { type: 'array', items: closed({ code: { type: 'string' } }, ['code']) }] },
+    }, ['when', 'holder']),
+  });
+  const sdk = await loadSdk(t, 'decode-strip-tree-', { document, name: 'Trees', dates: 'date', validation: true });
+  const folder = path.join(sdk.output, 'dist/models');
+  const functions = new Map<string, (value: unknown, options?: object) => object>();
+  for (const file of fs.readdirSync(folder).filter((entry) => /^_group-.*\.js$/.test(entry))) {
+    const exported = await import(pathToFileURL(path.join(folder, file)).href) as Record<string, unknown>;
+    for (const [name, value] of Object.entries(exported)) if (typeof value === 'function') functions.set(name, value as (value: unknown, options?: object) => object);
+  }
+  const named = (prefix: string) => functions.get([...functions.keys()].find((name) => name.startsWith(prefix) && /Charge/.test(name))!)!;
+  const instant = '2024-01-02T03:04:05.000Z';
+  const wire = { when: instant, holder: [{ label: 'a', children: [{ label: 'b', children: [] }] }] };
+  const value = { when: new Date(instant), holder: wire.holder };
+  // protects: T-896 the plan of the recursive array is not the plan of the inline array: a value with no undeclared key is the same value with strip
+  assert.deepEqual(named('fromWireFormat')(wire, strip), named('fromWireFormat')(wire));
+  assert.deepEqual(named('toWireFormat')(value, strip), named('toWireFormat')(value));
 });
