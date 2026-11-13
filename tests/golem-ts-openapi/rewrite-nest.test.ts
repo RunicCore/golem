@@ -700,3 +700,89 @@ test('nonModelInputs on the nest extension must be warn or error', async (t) => 
   fs.writeFileSync(config, fs.readFileSync(config, 'utf8').replace('nest: {}', 'nest: { nonModelInputs: strict }'));
   await assert.rejects(resolveConfig(config), /nonModelInputs must be "warn" or "error"/);
 });
+
+const TRACE_MODEL = `import type { IModel } from '@exprtlabs/golem/model';
+import { TTraceBaseModel } from './trace.model.generated.js';
+export type TTrace = IModel<{ 'x-trace': string; retry?: number }>;
+export class Trace extends TTraceBaseModel {}
+`;
+
+function traceId(root: string, name: string): string {
+  const id = new RegExp(`src/trace\\.model\\.ts#${name}": "([^"]+)"`).exec(fs.readFileSync(path.join(root, '.golem/codec-keys.json'), 'utf8'))?.[1];
+  assert.ok(id, `${name} has a key`);
+  return id;
+}
+
+test('a whole @Headers() parameter of a model, alias or class, is swapped for the decorator that reads the decoded headers', (t) => {
+  // protects: T-897 Nest reads request.headers for @Headers() and runs no pipe on it, so the build output must read the decoded slot instead
+  const root = project(t, {
+    'src/trace.model.ts': TRACE_MODEL,
+    'src/trace.controller.ts': [
+      "import { Controller, Get, Headers as Raw } from '@nestjs/common';",
+      "import { Trace, type TTrace } from './trace.model.js';",
+      "@Controller('trace')",
+      'export class TraceController {',
+      '  @Get() alias(@Raw() headers: TTrace): number { return 1; }',
+      '  @Get() klass(@Raw() headers: Trace): number { return 1; }',
+      '}',
+    ].join('\n'),
+  });
+  const result = scan(root);
+  assert.deepEqual(result.diagnostics, []);
+  const code = rewritten(root, result, 'src/trace.controller.ts');
+  assertLines(code, [
+    `  @Get() alias(@__golem_nestModelHeaders("${traceId(root, 'TTrace')}") headers: TTrace): number { return 1; }`,
+    `  @Get() klass(@__golem_nestModelHeaders("${traceId(root, 'Trace')}") headers: Trace): number { return 1; }`,
+  ]);
+  assert.deepEqual(result.files.get('src/trace.controller.ts')?.imports, [
+    { from: './trace.model.generated.js', names: [] },
+    { from: '@exprtlabs/golem-ts-openapi/internal/nest-runtime', names: ['nestModelHeaders'] },
+  ]);
+});
+
+test('a @Headers() that is no whole model parameter stays as written and reports nothing', (t) => {
+  // protects: T-897 only a whole @Headers() typed as a golem model is swapped; Record, any, IncomingHttpHeaders, a named header, an array and a union read the raw headers as before
+  const root = project(t, {
+    'src/trace.model.ts': TRACE_MODEL,
+    'src/plain.controller.ts': [
+      "import { Controller, Get, Headers } from '@nestjs/common';",
+      "import type { IncomingHttpHeaders } from 'node:http';",
+      "import type { TTrace } from './trace.model.js';",
+      "@Controller('plain')",
+      'export class PlainController {',
+      "  @Get() record(@Headers() headers: Record<string, string>): number { return 1; }",
+      "  @Get() any(@Headers() headers: any): number { return 1; }",
+      "  @Get() incoming(@Headers() headers: IncomingHttpHeaders): number { return 1; }",
+      "  @Get() named(@Headers('x-trace') trace: string): number { return 1; }",
+      "  @Get() namedModel(@Headers('x-trace') trace: TTrace): number { return 1; }",
+      "  @Get() list(@Headers() headers: TTrace[]): number { return 1; }",
+      "  @Get() either(@Headers() headers: TTrace | string): number { return 1; }",
+      "  @Get() untyped(@Headers() headers): number { return 1; }",
+      '}',
+    ].join('\n'),
+  });
+  const result = scan(root);
+  assert.deepEqual(result.diagnostics, []);
+  assert.equal(result.files.has('src/plain.controller.ts'), false, 'no edit, no import');
+});
+
+test('a @Headers() model field with an uppercase letter stops the build and names the lowercase field to use', (t) => {
+  // protects: T-897 Node lowercases header names and golem matches field names exactly, so such a field is never present
+  const root = project(t, {
+    'src/upper.model.ts': "import type { IModel } from '@exprtlabs/golem/model';\nexport type TUpper = IModel<{ xRequestId: string; 'x-ok': string }>;\n",
+    'src/upper.controller.ts': [
+      "import { Controller, Get, Headers } from '@nestjs/common';",
+      "import type { TUpper } from './upper.model.js';",
+      "@Controller('upper')",
+      'export class UpperController {',
+      '  @Get() read(@Headers() headers: TUpper): number { return 1; }',
+      '}',
+    ].join('\n'),
+  });
+  assert.deepEqual(scan(root).diagnostics.map(({ code, severity, line, message }) => ({ code, severity, line, message })), [{
+    code: 'RUNM1092',
+    severity: 'error',
+    line: 5,
+    message: 'The field "xRequestId" of the @Headers() model TUpper has an uppercase letter, so no request carries it: Node lowercases the name of each header, and golem matches field names exactly. Rename the field to "xrequestid".',
+  }]);
+});

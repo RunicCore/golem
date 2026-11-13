@@ -3,6 +3,7 @@
  * those tokens (`@exprtlabs/golem-ts-openapi/internal/nest-runtime`). `nest.ts` reads the tokens in `NestModelInterceptor` and
  * `objectCodecFromMetatype`; the decorators are internal because only generated code calls them.
  */
+import { createParamDecorator, type ExecutionContext } from '@nestjs/common';
 import { presentValue, recordOrUndefined, requireModelObject, unknownDiscriminatorValue, type DiscriminatorValue, type InternalObjectCodec } from '@exprtlabs/golem/internal/model-runtime';
 import type { GeneratedModelConstructor } from '@exprtlabs/golem/model';
 import { getIModelClass, getObjectCodec, type ObjectCodec, type SerdeOptions } from '@exprtlabs/golem/serde';
@@ -22,6 +23,9 @@ const NEST_MODEL_ARRAY = Symbol.for('@exprtlabs/golem:nestModelCodec.array');
 const NEST_MODEL_UNION = Symbol.for('@exprtlabs/golem:nestModelCodec.union');
 export const NEST_MODEL_UNION_IDS = Symbol.for('@exprtlabs/golem:nestModelCodec.unionIds');
 export const NEST_MODEL_RETURN = '@exprtlabs/golem:nestModelReturn';
+export const NEST_MODEL_HEADERS = '@exprtlabs/golem:nestModelHeaders';
+/** The key of the request slot that holds the decoded headers: `setNestHeaders` writes it and the `@Headers()` that the rewrite swaps reads it. */
+export const NEST_HEADERS_SLOT = Symbol.for('@exprtlabs/golem:nestHeaders');
 
 type ReflectParamtypes = {
   defineMetadata(key: string, value: unknown, target: object, propertyKey: string | symbol): void;
@@ -112,6 +116,30 @@ export function nestModelReturn(id: string, array?: boolean): MethodDecorator {
   return (target, propertyKey) => {
     if (propertyKey === undefined) return;
     reflectMeta().defineMetadata(NEST_MODEL_RETURN, meta, target, propertyKey);
+  };
+}
+
+/**
+ * The parameter decorator that the rewrite puts in place of a whole `@Headers()` typed as a model. It records the id of the model
+ * for `nestHeadersCodec` and hands the handler the decoded headers that an interceptor stored with `setNestHeaders`. The raw
+ * headers never reach the parameter: a request with no stored value is a fault of the app, so it throws.
+ */
+const nestHeadersSlot = createParamDecorator((_data: unknown, context: ExecutionContext): unknown => {
+  const decoded = (context.switchToHttp().getRequest() as Record<symbol, unknown>)[NEST_HEADERS_SLOT];
+  if (decoded === undefined || decoded === null) {
+    throw new TypeError(
+      `golem fault: no interceptor decoded the headers for the @Headers() parameter of ${context.getClass().name}.${context.getHandler().name}. Register an interceptor that calls setNestHeaders(request, decoded) before the handler runs.`,
+    );
+  }
+  return decoded;
+});
+
+export function nestModelHeaders(id: string): ParameterDecorator {
+  const read = nestHeadersSlot();
+  return (target, propertyKey, parameterIndex) => {
+    if (propertyKey === undefined) return;
+    reflectMeta().defineMetadata(NEST_MODEL_HEADERS, id, target, propertyKey);
+    read(target, propertyKey, parameterIndex);
   };
 }
 
