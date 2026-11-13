@@ -21,8 +21,7 @@ const strip = { strip: true } as const;
 const isValidationError = (error: unknown): error is LibError => error instanceof LibError && error.kind === LibErrorKind.Validation;
 
 async function buildModels(t: TestContext) {
-  // The project writes declarations, so a plan that its module exports must have a type that a declaration file can name.
-  const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-decode-strip-', name: 'decode-strip', linkWorkspaceNodeModules: true, compilerOptions: { declaration: true } });
+  const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-decode-strip-', name: 'decode-strip', linkWorkspaceNodeModules: true });
   for (const file of ['strip.model.ts', 'units.ts']) fs.writeFileSync(path.join(sourceRoot, file), readFixture(`models/decode-strip/strip/${file}`));
   writeModelGolemYaml(root, { validation: true });
   await buildModelProject(root);
@@ -182,10 +181,13 @@ test('strip on encode', async (t) => {
 });
 
 test('strip reaches a model of another module', async (t) => {
-  const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-decode-strip-cross-', name: 'decode-strip-cross', linkWorkspaceNodeModules: true });
+  // The project writes declarations and links the golem packages as an install does, so the plan that a module exports must have a type that a declaration file can name.
+  const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-decode-strip-cross-', name: 'decode-strip-cross', compilerOptions: { declaration: true } });
   for (const file of ['child.model.ts', 'parent.model.ts']) fs.writeFileSync(path.join(sourceRoot, file), readFixture(`models/decode-strip/cross/${file}`));
   writeModelGolemYaml(root, { validation: true });
-  await buildModelProject(root);
+  const built = await buildModelProject(root);
+  assert.equal(built.code, 0, `${built.stdout}${built.stderr}`);
+  assert.ok(fs.existsSync(path.join(root, 'build/parent.model.generated.d.ts')), 'the build wrote declarations');
   const models = await import(pathToFileURL(path.join(root, 'build/parent.model.js')).href);
   const children = await import(pathToFileURL(path.join(root, 'build/child.model.js')).href);
   const parent = requireObjectCodec(generatedCodecIdFromRoot(root, 'TParent'));
