@@ -91,10 +91,10 @@ export class StripPlans {
       ? [{ pattern: constraint.pattern, plan: typeof constraint.schema === 'object' && 'kind' in constraint.schema ? this.ofDescriptor(constraint.schema as ModelTypeDescriptor) : undefined }]
       : []);
     const declared = Object.keys(object.properties);
-    // A field called `__proto__` cannot be a key of an object literal, so its value is left as it is.
+    // A field called `__proto__` is a computed key: written as a plain key of an object literal it would set the prototype of the object, and the walk reads an own property only.
     const fields = declared.flatMap((name) => {
-      const plan = name === '__proto__' ? undefined : this.ofDescriptor(object.properties[name]!);
-      return plan === undefined ? [] : [code`${literal(name)}: ${plan}`];
+      const plan = this.ofDescriptor(object.properties[name]!);
+      return plan === undefined ? [] : [name === '__proto__' ? code`[${literal(name)}]: ${plan}` : code`${literal(name)}: ${plan}`];
     });
     const values = closed || extra === undefined ? undefined : this.ofDescriptor(extra);
     if (!closed && fields.length === 0 && values === undefined && patterns.every((entry) => entry.plan === undefined)) return undefined;
@@ -108,14 +108,19 @@ export class StripPlans {
   }
 
   private ofTuple(tuple: Extract<ModelTypeDescriptor, { readonly kind: 'tuple' }>): Code | undefined {
-    const fixed = tuple.rest === undefined ? tuple.items : tuple.items.slice(0, tuple.rest.index);
-    const prefix = fixed.map((item) => this.ofDescriptor(item));
-    // The items after a variadic part sit at positions the plan does not know, so such a tuple strips nothing in its rest.
-    const rest = tuple.rest !== undefined && tuple.rest.index >= tuple.items.length ? this.ofDescriptor(tuple.rest.item) : undefined;
+    // The items before the rest are the prefix and the items after it are the suffix, which the walk counts from the end of the array as the codec does.
+    const restIndex = tuple.rest?.index ?? tuple.items.length;
+    const prefix = tuple.items.slice(0, restIndex).map((item) => this.ofDescriptor(item));
+    const suffix = tuple.rest === undefined ? [] : tuple.items.slice(restIndex).map((item) => this.ofDescriptor(item));
+    const rest = tuple.rest === undefined ? undefined : this.ofDescriptor(tuple.rest.item);
+    if (rest === undefined && !prefix.some((plan) => plan !== undefined) && !suffix.some((plan) => plan !== undefined)) return undefined;
+    // The walk finds a position by the length of each list, so a list is complete, with `undefined` for an item that holds nothing to strip.
+    const list = (plans: readonly (Code | undefined)[]) => code`[${join(plans.map((plan) => plan ?? code`undefined`), code`, `)}]`;
     const members: Code[] = [];
-    if (prefix.some((plan) => plan !== undefined)) members.push(code`prefix: [${join(prefix.map((plan) => plan ?? code`undefined`), code`, `)}]`);
+    if (prefix.length > 0) members.push(code`prefix: ${list(prefix)}`);
+    if (suffix.length > 0) members.push(code`suffix: ${list(suffix)}`);
     if (rest !== undefined) members.push(code`items: ${rest}`);
-    return members.length === 0 ? undefined : code`{ ${join(members, code`, `)} }`;
+    return code`{ ${join(members, code`, `)} }`;
   }
 
   private ofUnion(union: Extract<ModelTypeDescriptor, { readonly kind: 'union' }>): Code | undefined {

@@ -30,7 +30,7 @@ async function buildModels(t: TestContext) {
   const codec = (name: string) => requireObjectCodec(generatedCodecIdFromRoot(root, name));
   return {
     Card: models.Card as Model, Ledger: models.Ledger as Model, PatternLedger: models.PatternLedger as Model, Registry: models.Registry as Model, Shelf: models.Shelf as Model, PetHolder: models.PetHolder as Model, Tree: models.Tree as Model, Tally: models.Tally as Model, Tagged: models.Tagged as Model, TaggedOpen: models.TaggedOpen as Model,
-    plain: codec('TPlain'), nested: codec('TNested'), open: codec('TOpen'), mapHolder: codec('TMapHolder'), patterned: codec('TPatterned'), nullable: codec('TNullable'), tagged: codec('TTagged'), patternItems: codec('TPatternItems'), tagTypes: codec('TTagTypes'), tagProto: codec('TTagProto'), taggedOpen: codec('TTaggedOpen'), priced: codec('TPriced'),
+    plain: codec('TPlain'), nested: codec('TNested'), open: codec('TOpen'), mapHolder: codec('TMapHolder'), patterned: codec('TPatterned'), nullable: codec('TNullable'), tagged: codec('TTagged'), patternItems: codec('TPatternItems'), tagTypes: codec('TTagTypes'), tagProto: codec('TTagProto'), suffixTuple: codec('TSuffixTuple'), leadingRest: codec('TLeadingRest'), headRest: codec('THeadRest'), taggedOpen: codec('TTaggedOpen'), priced: codec('TPriced'),
     card: codec('TCard'), ledger: codec('TLedger'), patternLedger: codec('TPatternLedger'), registry: codec('TRegistry'), shelf: codec('TShelf'), petHolder: codec('TPetHolder'), tree: codec('TTree'), tally: codec('TTally'),
   };
 }
@@ -111,6 +111,30 @@ test('strip on decode', async (t) => {
     // protects: T-896 a tag value that an object literal cannot hold as a key still has its plan
     assert.deepEqual(m.tagProto.fromWireFormat({ item: { kind: '__proto__', a: 1, junk: 1 } }, strip), { item: { kind: '__proto__', a: 1 } });
     assert.deepEqual(m.tagProto.fromWireFormat({ item: { kind: 'plain', b: 1, junk: 1 } }, strip), { item: { kind: 'plain', b: 1 } });
+  });
+
+  await t.test('a tuple with items after its rest strips the rest and the items counted from the end', () => {
+    // protects: T-896 a closed object in the middle or at the end of a tuple with a suffix loses its undeclared keys, and the open head keeps its own. A JSON Schema cannot validate such a tuple, so its model has no validation and `validate: false` is the only level.
+    const wire = { rows: [{ title: 'h', x: 1 }, { title: 'a', count: 1, y: 2 }, { title: 'b', z: 3 }, { name: 'n', w: 4 }, { amount: 5, v: 6 }] };
+    assert.deepEqual(m.suffixTuple.fromWireFormat(wire, options(false)), { rows: [{ title: 'h', x: 1 }, { title: 'a', count: 1 }, { title: 'b' }, { name: 'n' }, { amount: 5 }] });
+    assert.deepEqual(m.suffixTuple.fromWireFormat({ rows: [{ title: 'h' }, { name: 'n', w: 4 }, { amount: 5, v: 6 }] }, options(false)), { rows: [{ title: 'h' }, { name: 'n' }, { amount: 5 }] }, 'no rest items');
+    assert.deepEqual(m.leadingRest.fromWireFormat({ rows: [{ title: 'a', x: 1 }, { name: 'n', y: 2 }] }, options(false)), { rows: [{ title: 'a' }, { name: 'n' }] }, 'the rest is first');
+    assert.deepEqual(wire.rows[1], { title: 'a', count: 1, y: 2 }, 'the input is not changed');
+  });
+
+  await t.test('an array too short for the head and the suffix gives its last items to the suffix, as the codec does', () => {
+    // protects: T-896 the suffix never starts inside the head, and no item is stripped twice or by an index below zero
+    const short = { rows: [{ title: 'h', x: 1 }, { name: 'n', w: 4 }] };
+    assert.deepEqual(m.suffixTuple.fromWireFormat(short, options(false)), { rows: [{ title: 'h', x: 1 }, { name: 'n' }] });
+    assert.deepEqual(m.suffixTuple.fromWireFormat({ rows: [{ amount: 5, v: 6 }] }, options(false)), { rows: [{ amount: 5, v: 6 }] }, 'one item is the head');
+    assert.deepEqual(m.suffixTuple.fromWireFormat({ rows: [] }, options(false)), { rows: [] });
+  });
+
+  await t.test('an open head before a closed rest keeps its keys', () => {
+    // protects: T-896 the plan of the rest is applied to the items after the head only
+    for (const level of levels) {
+      assert.deepEqual(m.headRest.fromWireFormat({ rows: [{ title: 'h', x: 1 }, { title: 'a', y: 2 }] }, options(level)), { rows: [{ title: 'h', x: 1 }, { title: 'a' }] }, `validate ${level}`);
+    }
   });
 
   await t.test('a declared key with a bad value still reports, and without the option an extra key still fails', () => {
@@ -248,6 +272,23 @@ test('strip on encode', async (t) => {
     assert.deepEqual(m.tagTypes.toWireFormat({ item: { kind: '1', b: 1, junk: 1 } }, strip), { item: { kind: '1', b: 1 } });
     assert.deepEqual(m.tagProto.toWireFormat({ item: { kind: '__proto__', a: 1, junk: 1 } }, strip), { item: { kind: '__proto__', a: 1 } });
   });
+
+  await t.test('a tuple with items after its rest drops the extra keys of the rest and of the items counted from the end', () => {
+    // protects: T-896 a closed object in the middle or at the end of a tuple with a suffix loses its undeclared keys on encode too; the model has no validation, so `validate: false` is the only level
+    const value = { rows: [{ title: 'h', x: 1 }, { title: 'a', count: 1, y: 2 }, { title: 'b', z: 3 }, { name: 'n', w: 4 }, { amount: 5, v: 6 }] };
+    const expected = { rows: [{ title: 'h', x: 1 }, { title: 'a', count: 1 }, { title: 'b' }, { name: 'n' }, { amount: 5 }] };
+    assert.deepEqual(m.suffixTuple.toWireFormat(value, options(false)), expected);
+    assert.deepEqual(JSON.parse(m.suffixTuple.stringify(value, options(false))), expected);
+    assert.deepEqual(m.leadingRest.toWireFormat({ rows: [{ title: 'a', x: 1 }, { name: 'n', y: 2 }] }, options(false)), { rows: [{ title: 'a' }, { name: 'n' }] });
+    assert.deepEqual(value.rows[1], { title: 'a', count: 1, y: 2 }, 'the input is not changed');
+  });
+
+  for (const level of levels) {
+    await t.test(`an open head before a closed rest keeps its keys, validate ${level}`, () => {
+      // protects: T-896 the plan of the rest is applied to the items after the head only
+      assert.deepEqual(m.headRest.toWireFormat({ rows: [{ title: 'h', x: 1 }, { title: 'a', y: 2 }] }, options(level)), { rows: [{ title: 'h', x: 1 }, { title: 'a' }] });
+    });
+  }
 
   const locks: [string, (value: object) => object][] = [['sealed', (value) => Object.seal(value)], ['frozen', (value) => Object.freeze(value)]];
   for (const [kind, lock] of locks) {

@@ -185,9 +185,12 @@ export interface StripPlan {
   readonly tag?: string;
   readonly variants?: ReadonlyMap<string | number | boolean, StripPlanRef>;
   readonly default?: StripPlanRef;
-  /** The plan of each item of an array, or of each item of a tuple after `prefix`. */
+  /** The plan of each item of an array, or of each item of a tuple between `prefix` and `suffix`. */
   readonly items?: StripPlanRef;
+  /** The plan of each item of a tuple before its rest, from the start of the array; a list is complete, so its length is the count of those items. */
   readonly prefix?: readonly StripPlanRef[];
+  /** The plan of each item of a tuple after its rest, counted from the end of the array; a short array gives its last items to the suffix, as the codec does. */
+  readonly suffix?: readonly StripPlanRef[];
   /** A union of an object and an array: the plan of each JSON type. */
   readonly object?: StripPlanRef;
   readonly array?: StripPlanRef;
@@ -251,12 +254,15 @@ function stripLevel(value: unknown, ref: StripPlanRef | undefined, depth: number
 }
 
 function stripArray(value: unknown[], plan: StripPlan | undefined, depth: number, walk: StripWalk): unknown {
-  if (plan === undefined || (plan.items === undefined && plan.prefix === undefined)) return value;
+  if (plan === undefined || (plan.items === undefined && plan.prefix === undefined && plan.suffix === undefined)) return value;
   enterStripPath(value, walk);
   let out: unknown[] | undefined;
+  const prefixLength = plan.prefix?.length ?? 0;
+  // The suffix begins where the rest ends, and never inside the prefix: an array too short for both gives its last items to the suffix.
+  const suffixStart = plan.suffix === undefined ? Infinity : Math.max(prefixLength, value.length - plan.suffix.length);
   for (let index = 0; index < value.length; index++) {
     const item = value[index];
-    const next = stripLevel(item, index < (plan.prefix?.length ?? 0) ? plan.prefix?.[index] : plan.items, depth + 1, walk);
+    const next = stripLevel(item, index < prefixLength ? plan.prefix?.[index] : index >= suffixStart ? plan.suffix?.[index - suffixStart] : plan.items, depth + 1, walk);
     if (next === item) continue;
     // A copy keeps the holes of the array, as the conversion of an array keeps them; only a changed item is written.
     out ??= value.slice();

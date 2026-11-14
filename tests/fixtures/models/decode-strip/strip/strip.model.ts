@@ -22,6 +22,14 @@ export type TPatternItems = IObject<{ known?: string } & PatternProperties<{ '^x
 export type TTagTypes = IObject<{ item: ({ kind: 1; a: number } | { kind: '1'; b: number }) & Discriminator<'kind'> }>;
 /** A tag called `__proto__`, which an object literal cannot hold as a key. */
 export type TTagProto = IObject<{ item: ({ kind: '__proto__'; a: number } | { kind: 'plain'; b: number }) & Discriminator<'kind'> }>;
+/** An object that keeps its other keys, on decode and on encode. */
+export type TLoose = IObject<{ title: string } & AdditionalProperties<unknown>>;
+/** A tuple whose rest is in the middle: an open head, closed items, and two closed items counted from the end of the array. A JSON Schema cannot validate items after a rest, so the model turns validation off. */
+export type TSuffixTuple = IObject<{ rows: [TLoose, ...TPlain[], TItem, TMoney] }, { validation: false }>;
+/** A tuple whose rest is first. */
+export type TLeadingRest = IObject<{ rows: [...TPlain[], TItem] }, { validation: false }>;
+/** An open head before a closed rest: the plan of the rest is not the plan of the head. */
+export type THeadRest = IObject<{ rows: [TLoose, ...TPlain[]] }>;
 export type TCard = IModel<{ title: string; count?: number }>;
 export type TShelf = IModel<{ cards: TCard[]; main: TCard }>;
 export type TPetHolder = IModel<{ pet: (Cat | Dog) & Discriminator<'kind'> }>;
