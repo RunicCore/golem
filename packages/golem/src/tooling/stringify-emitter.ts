@@ -451,10 +451,11 @@ function emitValue(
   const value = expression;
   if (descriptor.kind === 'generated-model') {
     const named = ctx.graph.nodeFor(descriptor);
-    if (named) {
+    // A wire value of a generated model that holds an array is written by the wire writer of its node, below, as a recursive alias is.
+    if (named && !(ctx.wireIdentity && !serdeTags(descriptor).serde && holdsSequence(descriptor, ctx))) {
       return nestedStringifyCall(named.id, value, ctx);
     }
-    throw new Error(`Internal error: the schema graph has no node for the generated model ${JSON.stringify(descriptor.id)}.`);
+    if (!named) throw new Error(`Internal error: the schema graph has no node for the generated model ${JSON.stringify(descriptor.id)}.`);
   }
   const tags = serdeTags(descriptor);
   if (tags.serde) {
@@ -475,7 +476,7 @@ function emitValue(
   if (named && isObjectish(descriptor)) {
     if (
       ctx.wireIdentity
-      && (named.descriptor.kind === 'object' || (descriptor.kind === 'reference' && descriptor.projection === true))
+      && (named.descriptor.kind === 'object' || holdsSequence(descriptor, ctx) || (descriptor.kind === 'reference' && descriptor.projection === true))
       && (descriptorNeedsConversion(named.descriptor) || !named.sameSchema)
     ) {
       // Call the node's own wire stringify: inlining would repeat the child for

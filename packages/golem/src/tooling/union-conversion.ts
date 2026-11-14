@@ -632,8 +632,12 @@ export function emitUnionConversion(
   const named: NamedVariants = (variant) => conversion.named?.(variant) === true;
   const sequenceBranch = (sequence: ScalarOrArray['sequence']): Code => emitSequenceBranch(sequence, expression, conversion.items, convert);
   // A walker's own join knows the items of an inline sequence; a named sequence converts by its node, so the plain join stands.
-  const joinSequence = (sequence: ScalarOrArray['sequence'], mapped: Code, other: Code): Code =>
-    (isNamed(sequence) ? undefined : conversion.joinSequence?.(mapped, other)) ?? emitScalarOrArrayConversion(expression, mapped, other);
+  // A JSON join sits inside a concatenation, so it keeps its parentheses.
+  const joinSequence = (sequence: ScalarOrArray['sequence'], mapped: Code, other: Code): Code => {
+    if (!isNamed(sequence)) return conversion.joinSequence?.(mapped, other) ?? emitScalarOrArrayConversion(expression, mapped, other);
+    const joined = emitScalarOrArrayConversion(expression, mapped, other);
+    return json ? code`(${joined})` : joined;
+  };
   // A branch that converts nothing stays the value itself, so it has nothing to guard.
   const guarded = (variant: ModelTypeDescriptor, converted: Code): Code =>
     sameCode(converted, value) || !conversion.guard ? converted : conversion.guard(variant, converted);
