@@ -1,6 +1,6 @@
 import type { IModel, IObject } from '@exprtlabs/golem/model';
 import type { AdditionalProperties, Discriminator, PatternProperties, TSerde } from '@exprtlabs/golem/tags';
-import { decodeUnits, encodeUnits } from './units.js';
+import { decodePrice, decodeUnits, encodePrice, encodeUnits, type Price } from './units.js';
 import {
   TCardBaseModel, TLedgerBaseModel, TPetHolderBaseModel, TPatternLedgerBaseModel, TRegistryBaseModel, TShelfBaseModel, TTaggedBaseModel, TTaggedOpenBaseModel, TTallyBaseModel, TTreeBaseModel,
   type TCardFields, type TLedgerFields, type TPetHolderFields, type TPatternLedgerFields, type TRegistryFields, type TShelfFields, type TTaggedFields, type TTaggedOpenFields, type TTallyFields, type TTreeFields,
@@ -38,6 +38,10 @@ export type TOpenOther = IObject<{ kind: 'open'; value: number }, { exact: false
 export type TTaggedOpen = IModel<{ item: (TMoney | TOpenOther) & Discriminator<'kind', TMoney> }>;
 /** A value that is `{ units }` in the model and `{ amount }` on the wire. */
 type Units = { units: number } & TSerde<typeof encodeUnits, typeof decodeUnits>;
+/** A value of a class that the model holds as an instance. */
+export type TClassPriced = IObject<{ price: Price & TSerde<typeof encodePrice, typeof decodePrice> }>;
+/** A tagged union with an array variant, which takes its values by JSON type. */
+export type TPetList = IObject<{ pet: (Cat | Dog | TPlain[]) & Discriminator<'kind'> }>;
 export type TPriced = IObject<{ price: Units; note?: string }>;
 export type TTree = IModel<{ name: string; kids?: TTree[] }>;
 export type TTally = IModel<{ id: string; [key: string]: string }>;

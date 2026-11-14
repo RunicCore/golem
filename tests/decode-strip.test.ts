@@ -27,10 +27,12 @@ async function buildModels(t: TestContext) {
   writeModelGolemYaml(root, { validation: true });
   await buildModelProject(root);
   const models = await import(pathToFileURL(path.join(root, 'build/strip.model.js')).href);
+  const units = await import(pathToFileURL(path.join(root, 'build/units.js')).href) as { Price: new (units: number) => object };
   const codec = (name: string) => requireObjectCodec(generatedCodecIdFromRoot(root, name));
   return {
+    Price: units.Price,
     Card: models.Card as Model, Ledger: models.Ledger as Model, PatternLedger: models.PatternLedger as Model, Registry: models.Registry as Model, Shelf: models.Shelf as Model, PetHolder: models.PetHolder as Model, Tree: models.Tree as Model, Tally: models.Tally as Model, Tagged: models.Tagged as Model, TaggedOpen: models.TaggedOpen as Model,
-    plain: codec('TPlain'), nested: codec('TNested'), open: codec('TOpen'), mapHolder: codec('TMapHolder'), patterned: codec('TPatterned'), nullable: codec('TNullable'), tagged: codec('TTagged'), patternItems: codec('TPatternItems'), tagTypes: codec('TTagTypes'), tagProto: codec('TTagProto'), suffixTuple: codec('TSuffixTuple'), leadingRest: codec('TLeadingRest'), headRest: codec('THeadRest'), taggedOpen: codec('TTaggedOpen'), priced: codec('TPriced'),
+    plain: codec('TPlain'), nested: codec('TNested'), open: codec('TOpen'), mapHolder: codec('TMapHolder'), patterned: codec('TPatterned'), nullable: codec('TNullable'), tagged: codec('TTagged'), patternItems: codec('TPatternItems'), tagTypes: codec('TTagTypes'), tagProto: codec('TTagProto'), suffixTuple: codec('TSuffixTuple'), leadingRest: codec('TLeadingRest'), headRest: codec('THeadRest'), taggedOpen: codec('TTaggedOpen'), priced: codec('TPriced'), classPriced: codec('TClassPriced'), petList: codec('TPetList'),
     card: codec('TCard'), ledger: codec('TLedger'), patternLedger: codec('TPatternLedger'), registry: codec('TRegistry'), shelf: codec('TShelf'), petHolder: codec('TPetHolder'), tree: codec('TTree'), tally: codec('TTally'),
   };
 }
@@ -134,6 +136,23 @@ test('strip on decode', async (t) => {
     // protects: T-896 the plan of the rest is applied to the items after the head only
     for (const level of levels) {
       assert.deepEqual(m.headRest.fromWireFormat({ rows: [{ title: 'h', x: 1 }, { title: 'a', y: 2 }] }, options(level)), { rows: [{ title: 'h', x: 1 }, { title: 'a' }] }, `validate ${level}`);
+    }
+  });
+
+  await t.test('a tagged union with an array variant strips the array items and the object variants', () => {
+    // protects: T-896 the array variant of a tagged union, which takes its values by JSON type, has the plan of its items
+    for (const level of levels) {
+      assert.deepEqual(m.petList.fromWireFormat({ pet: [{ title: 'a', x: 1 }, { title: 'b' }] }, options(level)), { pet: [{ title: 'a' }, { title: 'b' }] }, `array, validate ${level}`);
+      assert.deepEqual(m.petList.fromWireFormat({ pet: { kind: 'cat', lives: 9, junk: 1 } }, options(level)), { pet: { kind: 'cat', lives: 9 } }, `object, validate ${level}`);
+    }
+  });
+
+  await t.test('a tag that is not an own enumerable property selects no variant, as in the decoder', () => {
+    // protects: T-896 strip reads a tag by the JSON view of the decoder, so a value with a hidden tag goes to the default variant and keeps its declared keys
+    for (const level of levels) {
+      const hidden = Object.defineProperty({ amount: 1, junk: 1 }, 'kind', { value: 'other', enumerable: false });
+      const decoded = m.tagged.fromWireFormat({ item: hidden }, options(level, { construct: m.Tagged }));
+      assert.deepEqual(sorted(at(decoded, 'item')), ['amount'], `validate ${level}`);
     }
   });
 
@@ -273,6 +292,21 @@ test('strip on encode', async (t) => {
     assert.deepEqual(m.tagProto.toWireFormat({ item: { kind: '__proto__', a: 1, junk: 1 } }, strip), { item: { kind: '__proto__', a: 1 } });
   });
 
+  await t.test('a tagged union with an array variant drops the extra keys of the array items and of the object variants', () => {
+    // protects: T-896 the array variant of a tagged union has the plan of its items on encode too
+    for (const level of levels) {
+      assert.deepEqual(m.petList.toWireFormat({ pet: [{ title: 'a', x: 1 }, { title: 'b' }] }, options(level)), { pet: [{ title: 'a' }, { title: 'b' }] }, `array, validate ${level}`);
+      assert.deepEqual(m.petList.toWireFormat({ pet: { kind: 'cat', lives: 9, junk: 1 } }, options(level)), { pet: { kind: 'cat', lives: 9 } }, `object, validate ${level}`);
+    }
+  });
+
+  await t.test('the model value of a TSerde field is not a level of strip, so a class value fits the bound of its parent', () => {
+    // protects: T-896 strip leaves the model value of a serde field before it counts a level, as the depth check of the codec counts a class value as a leaf
+    for (const level of levels) {
+      assert.deepEqual(m.classPriced.toWireFormat({ price: new m.Price(5) }, { ...strip, validate: level, maxDepth: 1 }), { price: { amount: '5' } }, `validate ${level}`);
+    }
+  });
+
   await t.test('a tuple with items after its rest drops the extra keys of the rest and of the items counted from the end', () => {
     // protects: T-896 a closed object in the middle or at the end of a tuple with a suffix loses its undeclared keys on encode too; the model has no validation, so `validate: false` is the only level
     const value = { rows: [{ title: 'h', x: 1 }, { title: 'a', count: 1, y: 2 }, { title: 'b', z: 3 }, { name: 'n', w: 4 }, { amount: 5, v: 6 }] };
@@ -344,6 +378,26 @@ test('strip walks the values as the encoder and the decoder walk them', async (t
       assert.throws(() => m.tree.toWireFormat(root, { ...off, ...strip }), (error) => cyclic(error, LibErrorKind.Serialization));
       assert.throws(() => m.tree.fromWireFormat(root, off), (error) => cyclic(error, LibErrorKind.Deserialization));
       assert.throws(() => m.tree.fromWireFormat(root, { ...off, ...strip }), (error) => cyclic(error, LibErrorKind.Deserialization));
+    });
+
+    await t.test(`a cyclic value with a finite bound that the call stack cannot reach fails with the cycle error, validate ${level}`, () => {
+      // protects: T-896 strip never ends the call stack on a cycle, whatever bound a caller sets
+      const root: { name: string; kids: unknown[] } = { name: 'a', kids: [] };
+      root.kids.push(root);
+      const far = { validate: level, maxDepth: 100_000 };
+      assert.throws(() => m.tree.toWireFormat(root, { ...far, ...strip }), (error) => cyclic(error, LibErrorKind.Serialization));
+      assert.throws(() => m.tree.fromWireFormat(root, { ...far, ...strip }), (error) => cyclic(error, LibErrorKind.Deserialization));
+    });
+
+    await t.test(`a value that is too deep reports the depth, and no key that strip removes is read or searched for a cycle, validate ${level}`, () => {
+      // protects: T-896 the check that tells a cycle from a value that is too deep follows the keys that strip walks only
+      let reads = 0;
+      const loop: { self?: unknown } = {};
+      loop.self = loop;
+      const row = { name: 'a', hidden: loop, kids: [{ name: 'b' }] };
+      Object.defineProperty(row, 'secret', { enumerable: true, get() { reads += 1; throw new Error('secret read'); } });
+      assert.throws(() => m.tree.toWireFormat(row, { ...strip, validate: level, maxDepth: 2 }), deeper(2, LibErrorKind.Serialization));
+      assert.equal(reads, 0);
     });
 
     await t.test(`strip never reads the value of a key that a closed object removes, validate ${level}`, () => {
@@ -501,4 +555,33 @@ test('a union of a recursive array of another group and an inline array keeps th
   // protects: T-896 the plan of the recursive array is not the plan of the inline array: a value with no undeclared key is the same value with strip
   assert.deepEqual(named('fromWireFormat')(wire, strip), named('fromWireFormat')(wire));
   assert.deepEqual(named('toWireFormat')(value, strip), named('toWireFormat')(value));
+});
+
+test('a union of a concrete union of another group and an inline array keeps the items of both arrays', async (t) => {
+  const closed = (properties: Record<string, unknown>, required: string[]) => ({ type: 'object', additionalProperties: false, required, properties });
+  const ref = (name: string) => ({ $ref: `#/components/schemas/${name}` });
+  const document = chargesDocument({
+    // `Tree` is an array or a leaf and reaches itself through an inline object, so it is a named node of its own group. The date of `Charge` makes it convert a value.
+    Tree: { oneOf: [{ type: 'array', items: closed({ label: { type: 'string' }, children: ref('Tree') }, ['label']) }, closed({ leaf: { type: 'string' } }, ['leaf'])] },
+    Charge: closed({
+      when: { type: 'string', format: 'date-time' },
+      holder: { oneOf: [ref('Tree'), { type: 'array', items: closed({ code: { type: 'string' } }, ['code']) }] },
+    }, ['when', 'holder']),
+  });
+  const sdk = await loadSdk(t, 'decode-strip-union-', { document, name: 'Unions', dates: 'date', validation: true });
+  const folder = path.join(sdk.output, 'dist/models');
+  const functions = new Map<string, (value: unknown, options?: object) => object>();
+  for (const file of fs.readdirSync(folder).filter((entry) => /^_group-.*\.js$/.test(entry))) {
+    const exported = await import(pathToFileURL(path.join(folder, file)).href) as Record<string, unknown>;
+    for (const [name, value] of Object.entries(exported)) if (typeof value === 'function') functions.set(name, value as (value: unknown, options?: object) => object);
+  }
+  const named = (prefix: string) => functions.get([...functions.keys()].find((name) => name.startsWith(prefix) && /Charge/.test(name))!)!;
+  const instant = '2024-01-02T03:04:05.000Z';
+  const tree = [{ label: 'a', children: { leaf: 'b' } }];
+  const wire = { when: instant, holder: tree };
+  const value = { when: new Date(instant), holder: tree };
+  // protects: T-896 a union of another group is read by its own variants: two arrays make exact matching, and the plan of the inline array does not strip the items of the tree
+  assert.deepEqual(named('fromWireFormat')(wire, strip), named('fromWireFormat')(wire));
+  assert.deepEqual(named('toWireFormat')(value, strip), named('toWireFormat')(value));
+  assert.deepEqual(named('fromWireFormat')({ when: instant, holder: { leaf: 'x', extra: 1 } }, strip), { when: new Date(instant), holder: { leaf: 'x' } }, 'the one object variant is stripped');
 });

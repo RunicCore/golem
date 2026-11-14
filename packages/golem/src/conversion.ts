@@ -2,7 +2,7 @@ import { LibError, LibErrorKind, type IssuePath } from './errors.js';
 import { activeConversionPath, conversionError } from './conversion-error.js';
 import { type GeneratedModelConstructor, type GeneratedModelResult } from './model.js';
 import { findGeneratedModelDefinition, findGeneratedModelDefinitionForConstructor, isGeneratedModel } from './model-registry.js';
-import { instanceFields } from './presence.js';
+import { instanceFields, presentValue } from './presence.js';
 import { isDateTime } from './rfc3339.js';
 
 /** The tag as JSON text. A tag comes from a request, so any value can arrive: `String` throws for an object whose `toString` is not a function. */
@@ -223,7 +223,7 @@ function matchesStripPattern(pattern: string, key: string): boolean {
 
 /**
  * What a strip walk carries: the depth limit, and whether the value is a model value (an encode) rather than a wire value (a decode).
- * `onPath` holds the arrays and objects that the walk is inside, and exists only when no depth limit ends a cycle.
+ * `onPath` holds the arrays and objects that the walk is inside, and exists only when the depth limit is too far to end a cycle before the call stack ends.
  */
 interface StripWalk {
   readonly limit: number;
@@ -245,9 +245,11 @@ function stripLevel(value: unknown, ref: StripPlanRef | undefined, depth: number
   if (ref === undefined || value === null || typeof value !== 'object') return value;
   const plan = typeof ref === 'function' ? ref() : ref;
   if (plan === undefined) return value;
+  // An encode leaves the model value of a TSerde field as it is, so it is not a level that strip walks: the depth check of the codec counts it as it counts any value.
+  if (plan.serde !== undefined && walk.model) return value;
   // The root is level 1, as `valueNestsDeeperThan` and `textNestsDeeperThan` count it: the value at `depth` is level `depth + 1`.
   if (depth >= walk.limit) throw STRIP_TOO_DEEP;
-  if (plan.serde !== undefined) return walk.model ? value : stripLevel(value, plan.serde, depth, walk);
+  if (plan.serde !== undefined) return stripLevel(value, plan.serde, depth, walk);
   if (Array.isArray(value)) return stripArray(value, plan.array === undefined ? plan : (typeof plan.array === 'function' ? plan.array() : plan.array), depth, walk);
   if (plan.array !== undefined || plan.object !== undefined) return stripLevel(value, plan.object, depth, walk);
   return stripObject(value as Record<string, unknown>, plan, depth, walk);
@@ -306,8 +308,9 @@ function stripEntry(key: string, member: unknown, plan: StripPlan, depth: number
 
 function stripObject(value: Record<string, unknown>, plan: StripPlan, depth: number, walk: StripWalk): unknown {
   if (plan.tag !== undefined) {
+    // A decode reads the tag as the decoder does, by the JSON view: an inherited or non-enumerable tag selects no variant, so the value takes the default. An encode reads the property, as the encoder does.
     // A tag of another type is in no entry of the map, so it takes the default.
-    const tag = value[plan.tag] as string | number | boolean;
+    const tag = (walk.model ? value[plan.tag] : presentValue(value, plan.tag)) as string | number | boolean;
     const chosen = plan.variants?.has(tag) === true ? plan.variants.get(tag) : plan.default;
     return stripLevel(value, chosen, depth, walk);
   }
@@ -370,23 +373,23 @@ function stripInstance(value: object, plan: StripPlan, depth: number, walk: Stri
  * The value without the keys that a closed object of `plan` does not declare, at every level: a wire value for a decode, a model value
  * for an encode (`model`). It copies only an object or an array that changes and never writes to the input, so a value that holds
  * nothing to remove is returned as it is. A model value takes no key from an instance of a class, whose undeclared keys are program state unless its model keeps other keys as data, but strips the objects
- * that its declared fields and its data keys hold; it leaves the model value of a TSerde field as it is. A value that nests deeper than `maxDepth` is a cycle or too deep: the cycle check reports a cycle, else the depth error is thrown.
+ * that its declared fields and its data keys hold; it leaves the model value of a TSerde field as it is. A value that nests deeper than `maxDepth` is a cycle or too deep: a cycle among the keys that strip reads is reported as a cycle, else the depth error is thrown.
  */
 export function stripUndeclared(value: unknown, plan: StripPlanRef, maxDepth?: number, model?: true): unknown {
   const limit = resolveMaxDepth(maxDepth);
-  // With the bound off no depth check ends a cycle, and the walk would end the call stack: the walk keeps the objects on its path and reports a revisit as the cycle error of the direction. It reads only the keys that it walks, so a getter of a key that a closed object removes never runs. A value parsed from JSON text has no cycle.
-  const onPath = limit === Infinity && (model === true || detachedInputDepth === 0) ? new Set<object>() : undefined;
-  const walk: StripWalk = { limit, model: model === true, onPath };
+  const encode = model === true;
+  // A value parsed from JSON text has no cycle.
+  const mayHoldCycle = encode || detachedInputDepth === 0;
+  // A limit up to the depth of the plain walk ends a cycle before the call stack ends. Above it, and with the bound off, the walk keeps the objects on its path and reports a revisit as the cycle error of the direction. It reads only the keys that it walks, so a getter of a key that a closed object removes never runs.
+  const walk: StripWalk = { limit, model: encode, onPath: mayHoldCycle && limit > PLAIN_WALK_MAX_DEPTH ? new Set<object>() : undefined };
   try {
     return stripLevel(value, plan, 0, walk);
   } catch (error) {
     if (error !== STRIP_TOO_DEEP) throw error;
-    if (walk.model) {
-      assertAcyclicEncodeInput(value);
-      throw conversionError(LibErrorKind.Serialization, `The value nests objects and arrays deeper than ${walk.limit} levels. Raise the maxDepth option to encode a deeper value.`);
-    }
-    assertWireAcyclic(value);
-    throw nestingDepthError(walk.limit);
+    // The value is a cycle or too deep. The same walk with no limit tells which, over the keys that the first walk read: it reports a cycle among them, and never reads a key that strip removes.
+    if (mayHoldCycle) stripLevel(value, plan, 0, { limit: Infinity, model: encode, onPath: new Set<object>() });
+    if (encode) throw conversionError(LibErrorKind.Serialization, `The value nests objects and arrays deeper than ${limit} levels. Raise the maxDepth option to encode a deeper value.`);
+    throw nestingDepthError(limit);
   }
 }
 
@@ -399,7 +402,7 @@ function isNestingLevel(entry: object): boolean {
   return prototype === Object.prototype || prototype === null || instanceFields(entry) !== undefined;
 }
 
-/** The deepest level the plain walk follows, so its recursion stays far from the call stack limit whatever `maxDepth` a caller sets. Changes speed only. */
+/** The deepest level the plain walk and the strip walk follow without the objects of their path, so their recursion stays far from the call stack limit whatever `maxDepth` a caller sets. Changes speed only. */
 const PLAIN_WALK_MAX_DEPTH = 512;
 /** The most objects the plain walk visits, so a value that many paths share ends it fast and the exact walk decides. Changes speed only. */
 const PLAIN_WALK_BUDGET = 16_384;

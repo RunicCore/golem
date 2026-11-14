@@ -131,15 +131,26 @@ export class StripPlans {
       const entries: Code[] = [];
       let fallback: Code | undefined;
       let planned = false;
+      // A variant with no tag value and no default role takes its values by JSON type, as decoding does: one array there is the array of the union.
+      const byType: { readonly descriptor: ModelTypeDescriptor; readonly shape: 'object' | 'array' | 'other' | 'serde' }[] = [];
       for (const { variant, index } of present) {
+        const values = table.variants[index]?.values ?? [];
+        if (values.length === 0 && index !== table.defaultVariant) {
+          byType.push(...this.leaves(variant, new Set()));
+          continue;
+        }
         const plan = this.ofDescriptor(variant);
         planned ||= plan !== undefined;
         if (index === table.defaultVariant) fallback = plan;
         // A variant with no plan still names its tags: a value of that tag is left as it is, and not given to the default variant.
-        else for (const value of table.variants[index]?.values ?? []) entries.push(code`[${literal(value)}, ${plan ?? code`undefined`}]`);
+        else for (const value of values) entries.push(code`[${literal(value)}, ${plan ?? code`undefined`}]`);
       }
-      if (!planned) return undefined;
-      return code`{ tag: ${literal(table.propertyName)}${entries.length > 0 ? code`, variants: new Map<string | number | boolean, ${STRIP_PLAN}['default']>([${join(entries, code`, `)}])` : code``}${fallback ? code`, default: ${fallback}` : code``} }`;
+      const arrays = byType.filter((leaf) => leaf.shape === 'array');
+      // A TSerde variant has one shape in the wire and another in the model, so the JSON type of a value does not tell which variant takes it.
+      const array = arrays.length === 1 && !byType.some((leaf) => leaf.shape === 'serde') ? this.ofDescriptor(arrays[0]!.descriptor) : undefined;
+      const objects = !planned ? undefined : code`{ tag: ${literal(table.propertyName)}${entries.length > 0 ? code`, variants: new Map<string | number | boolean, ${STRIP_PLAN}['default']>([${join(entries, code`, `)}])` : code``}${fallback ? code`, default: ${fallback}` : code``} }`;
+      if (array === undefined) return objects;
+      return objects === undefined ? code`{ array: ${array} }` : code`{ object: ${objects}, array: ${array} }`;
     }
     // No tag: one object variant takes every object, so its plan is the union's. Two or more keep exact matching.
     const leaves = present.flatMap(({ variant }) => this.leaves(variant, new Set()));
@@ -169,8 +180,9 @@ export class StripPlans {
       case 'generated-model': {
         const node = this.env.nodeOf(descriptor);
         if (node === undefined) return [{ descriptor, shape: 'other' }];
-        // Another module's node is read by its own descriptor when this module holds it (a recursive array alias of another group is an array); a placeholder of a model holds only its name, and a model is an object.
-        if (this.env.external(node)) return [{ descriptor, shape: node.descriptor.kind === 'array' || node.descriptor.kind === 'tuple' ? 'array' : 'object' }];
+        // Another module's node is read by its own descriptor when this module holds it (a recursive array alias of another group is an array, a union with no tag is its variants); a placeholder of a model holds only its name, and a model is an object.
+        const external = this.env.external(node);
+        if (external && node.descriptor.kind !== 'union') return [{ descriptor, shape: node.descriptor.kind === 'array' || node.descriptor.kind === 'tuple' ? 'array' : 'object' }];
         if (seen.has(node.id)) return [];
         seen.add(node.id);
         const target = node.descriptor;
