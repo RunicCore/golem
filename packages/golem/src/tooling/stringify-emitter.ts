@@ -1299,9 +1299,10 @@ function namedSequence(variant: ModelTypeDescriptor, ctx: EmitCtx): boolean {
   return !serdeTags(variant).serde && holdsSequence(variant, ctx);
 }
 
-/** A named variant that holds a sequence and has a serde of its own: its wire value is an array that the union cannot tell from another sequence. */
+/** A variant with a serde of its own whose wire form is an array or tuple, or a named node of one: its wire value is an array that the union cannot tell from another sequence, whatever type the serde reads it into (a class, a model). */
 function serdeSequence(variant: ModelTypeDescriptor, ctx: EmitCtx): boolean {
-  return Boolean(serdeTags(variant).serde) && holdsSequence(variant, ctx);
+  const wire = serdeWireDescriptor(variant);
+  return wire !== undefined && (wire.kind === 'array' || wire.kind === 'tuple' || holdsSequence(wire, ctx));
 }
 
 /** The dispatch direction of each union direction. A decoder reads the wire; the others write a value or JSON text. */

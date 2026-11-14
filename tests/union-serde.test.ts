@@ -5,7 +5,7 @@ import { pathToFileURL } from 'node:url';
 import test, { type TestContext } from 'node:test';
 
 import { IssueRepresentation } from '@exprtlabs/golem/errors';
-import { buildModelProject, createModelProject, writeModelGolemYaml } from './model-project.js';
+import { buildModelProject, createModelProject, writeModelGolemYaml, writeModelSources } from './model-project.js';
 import { validationFailure } from './support/validation-failure.js';
 
 async function compile(root: string): Promise<void> {
@@ -55,4 +55,22 @@ test('nested TSerde with exact and T|T[] fail-fast reports one issue', async (t)
     money: { amount: '12.50', currency: 'USD' },
     extra: true,
   }), 'exact extra-key rejection');
+});
+
+test('a class whose TSerde reads an array wire form beside another array stops generation', async (t) => {
+  // protects: T-905 the class was no sequence for the union, so an array wire value took the other array and the serde never read it
+  const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-union-serde-array-wire-', name: 'union-serde-array-wire', linkTypescript: true });
+  writeModelGolemYaml(root, { validation: false });
+  writeModelSources(sourceRoot, {
+    'codecs.ts': `export class Point { constructor(readonly x: number, readonly y: number) {} }
+export const writePoint = (point: Point): [number, number] => [point.x, point.y];
+export const readPoint = (wire: [number, number]): Point => new Point(wire[0], wire[1]);
+`,
+    'box.model.ts': `import type { IObject } from '@exprtlabs/golem/model';
+import type { TSerde } from '@exprtlabs/golem/tags';
+import type { Point, writePoint, readPoint } from './codecs.js';
+export type TBox = IObject<{ items: (Point & TSerde<typeof writePoint, typeof readPoint>) | { code: string }[] }>;
+`,
+  });
+  await assert.rejects(() => compile(root), /Union has ambiguous conversions/);
 });

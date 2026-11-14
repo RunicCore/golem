@@ -605,8 +605,8 @@ export interface UnionConversion {
   /** The named variants that hold an array or tuple, from the walker's graph (see `NamedVariants`). */
   readonly named?: NamedVariants;
   /**
-   * The named variants with a serde of their own whose node holds an array or tuple. Their wire value is an array that the union cannot
-   * tell from another sequence, so a union of one of them and another sequence variant stops generation.
+   * The variants with a serde of their own whose wire form is an array or tuple (a class or a model that reads an array). Their wire value
+   * is an array that the union cannot tell from another sequence, so a union of one of them and another sequence variant stops generation.
    */
   readonly serdeSequence?: NamedVariants;
 }
@@ -644,7 +644,7 @@ export function emitUnionConversion(
     if (json) return code`(${value} == null ? 'null' : (${converted}))`;
     return sameCode(converted, value) ? value : code`${value} == null ? ${value} : (${converted})`;
   }
-  const serdeSequence = (variant: ModelTypeDescriptor): boolean => isNamed(variant) && conversion.serdeSequence?.(variant) === true;
+  const serdeSequence = (variant: ModelTypeDescriptor): boolean => conversion.serdeSequence?.(variant) === true;
   if (present.some(serdeSequence) && present.filter((variant) => serdeSequence(variant) || isSequenceVariant(variant, named)).length > 1) {
     throw new AmbiguousUnionConversionError(present);
   }
