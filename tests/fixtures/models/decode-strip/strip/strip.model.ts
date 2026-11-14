@@ -30,6 +30,8 @@ export type TSuffixTuple = IObject<{ rows: [TLoose, ...TPlain[], TItem, TMoney] 
 export type TLeadingRest = IObject<{ rows: [...TPlain[], TItem] }, { validation: false }>;
 /** An open head before a closed rest: the plan of the rest is not the plan of the head. */
 export type THeadRest = IObject<{ rows: [TLoose, ...TPlain[]] }>;
+/** A closed recursive model whose `meta` field holds data that strip does not walk: `TLoose` keeps its other keys and has no plan. */
+export type TMetaTree = IObject<{ name: string; kids?: TMetaTree[]; meta?: TLoose }>;
 export type TCard = IModel<{ title: string; count?: number }>;
 export type TShelf = IModel<{ cards: TCard[]; main: TCard }>;
 export type TPetHolder = IModel<{ pet: (Cat | Dog) & Discriminator<'kind'> }>;

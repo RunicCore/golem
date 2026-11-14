@@ -161,7 +161,19 @@ export class StripPlans {
     const object = objects.length === 1 ? this.ofDescriptor(objects[0]!.descriptor) : undefined;
     const array = arrays.length === 1 ? this.ofDescriptor(arrays[0]!.descriptor) : undefined;
     if (object !== undefined && array !== undefined) return code`{ object: ${object}, array: ${array} }`;
+    // Two arrays make exact matching, so an array is left as it is: the object plan may be a tagged union's, which holds an array plan of its own.
+    if (object !== undefined && arrays.length > 1) return code`{ object: ${object} }`;
     return object ?? array;
+  }
+
+  /**
+   * The leaves of a tagged union: the union itself for its objects, then the leaves of the variants that take values by JSON type and are not objects,
+   * so a union that holds the array of a tagged union is not taken to hold one array only.
+   */
+  private taggedLeaves(union: Extract<ModelTypeDescriptor, { readonly kind: 'union' }>, seen: Set<string>): { readonly descriptor: ModelTypeDescriptor; readonly shape: 'object' | 'array' | 'other' | 'serde' }[] {
+    const table = union.discriminator!;
+    const byType = union.variants.flatMap((variant, index) => (table.variants[index]?.values ?? []).length === 0 && index !== table.defaultVariant && variant.kind !== 'null' && variant.kind !== 'undefined' ? this.leaves(variant, seen) : []);
+    return [{ descriptor: union, shape: 'object' }, ...byType.filter((leaf) => leaf.shape !== 'object')];
   }
 
   /** The variants a value of a union may take, with the unions inside it and the named unions it refers to opened, and the JSON type of each. */
@@ -174,7 +186,7 @@ export class StripPlans {
       case 'array':
       case 'tuple': return [{ descriptor, shape: 'array' }];
       case 'union':
-        if (descriptor.discriminator !== undefined) return [{ descriptor, shape: 'object' }];
+        if (descriptor.discriminator !== undefined) return this.taggedLeaves(descriptor, seen);
         return descriptor.variants.flatMap((variant) => variant.kind === 'null' || variant.kind === 'undefined' ? [] : this.leaves(variant, seen));
       case 'reference':
       case 'generated-model': {
@@ -187,7 +199,8 @@ export class StripPlans {
         seen.add(node.id);
         const target = node.descriptor;
         if (target.kind === 'array' || target.kind === 'tuple') return [{ descriptor, shape: 'array' }];
-        if (target.kind === 'object' || target.kind === 'intersection' || (target.kind === 'union' && target.discriminator !== undefined)) return [{ descriptor, shape: 'object' }];
+        if (target.kind === 'union' && target.discriminator !== undefined) return [{ descriptor, shape: 'object' }, ...this.taggedLeaves(target, seen).slice(1)];
+        if (target.kind === 'object' || target.kind === 'intersection') return [{ descriptor, shape: 'object' }];
         return target.kind === 'union' ? this.leaves(target, seen) : [{ descriptor, shape: 'other' }];
       }
       default: return [{ descriptor, shape: 'other' }];

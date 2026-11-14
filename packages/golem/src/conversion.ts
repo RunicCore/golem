@@ -374,23 +374,33 @@ function stripInstance(value: object, plan: StripPlan, depth: number, walk: Stri
  * for an encode (`model`). It copies only an object or an array that changes and never writes to the input, so a value that holds
  * nothing to remove is returned as it is. A model value takes no key from an instance of a class, whose undeclared keys are program state unless its model keeps other keys as data, but strips the objects
  * that its declared fields and its data keys hold; it leaves the model value of a TSerde field as it is. A value that nests deeper than `maxDepth` is a cycle or too deep: a cycle among the keys that strip reads is reported as a cycle, else the depth error is thrown.
+ * `bound` is for the decode of a recursive model, whose input a codec bounds by `maxDepth` before it recurses over it: the value that strip leaves is then bounded as a whole, the objects that the plan does not walk included, and what strip removes is never counted.
  */
-export function stripUndeclared(value: unknown, plan: StripPlanRef, maxDepth?: number, model?: true): unknown {
+export function stripUndeclared(value: unknown, plan: StripPlanRef, maxDepth?: number, model?: true, bound?: true): unknown {
   const limit = resolveMaxDepth(maxDepth);
   const encode = model === true;
   // A value parsed from JSON text has no cycle.
   const mayHoldCycle = encode || detachedInputDepth === 0;
   // A limit up to the depth of the plain walk ends a cycle before the call stack ends. Above it, and with the bound off, the walk keeps the objects on its path and reports a revisit as the cycle error of the direction. It reads only the keys that it walks, so a getter of a key that a closed object removes never runs.
   const walk: StripWalk = { limit, model: encode, onPath: mayHoldCycle && limit > PLAIN_WALK_MAX_DEPTH ? new Set<object>() : undefined };
+  let stripped: unknown;
   try {
-    return stripLevel(value, plan, 0, walk);
+    stripped = stripLevel(value, plan, 0, walk);
   } catch (error) {
     if (error !== STRIP_TOO_DEEP) throw error;
-    // The value is a cycle or too deep. The same walk with no limit tells which, over the keys that the first walk read: it reports a cycle among them, and never reads a key that strip removes.
-    if (mayHoldCycle) stripLevel(value, plan, 0, { limit: Infinity, model: encode, onPath: new Set<object>() });
+    // The value is a cycle or too deep. With no path kept, the same walk over the keys that the first walk read tells which: it keeps the path down to the depth of the plain walk, so a cycle among them is reported as a cycle, a value deeper than that is not searched, and no key that strip removes is read.
+    if (mayHoldCycle && walk.onPath === undefined) {
+      try {
+        stripLevel(value, plan, 0, { limit: PLAIN_WALK_MAX_DEPTH, model: encode, onPath: new Set<object>() });
+      } catch (again) {
+        if (again !== STRIP_TOO_DEEP) throw again;
+      }
+    }
     if (encode) throw conversionError(LibErrorKind.Serialization, `The value nests objects and arrays deeper than ${limit} levels. Raise the maxDepth option to encode a deeper value.`);
     throw nestingDepthError(limit);
   }
+  if (bound === true && valueNestsDeeperThan(stripped, limit)) throw nestingDepthError(limit);
+  return stripped;
 }
 
 const LEAVE = Symbol('leave');

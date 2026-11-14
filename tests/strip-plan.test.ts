@@ -27,3 +27,16 @@ test('the plan of a closed object that declares a field called __proto__ strips 
   assert.equal(JSON.stringify(stripped), '{"__proto__":{"title":"a"}}');
   assert.equal(JSON.stringify(stripUndeclared(wire, plan, undefined, true)), '{"__proto__":{"title":"a"}}', 'an encode strips it the same way');
 });
+
+test('a union whose tagged variant takes arrays does not give its arrays to the plan of another array variant', () => {
+  // protects: T-896 two variants that can take an array make exact matching, so no plan of one of them may strip an array
+  const closed = (name: string) => ({ kind: 'object', properties: { [name]: { kind: 'string' } }, required: [name], additionalProperties: false });
+  const arrayOf = (name: string) => ({ kind: 'array', item: closed(name) });
+  // An open variant has no plan, so the plan holds no generic map that `new Function` cannot read.
+  const cat = { kind: 'object', properties: { kind: { kind: 'string' } }, required: ['kind'] };
+  const tagged = { kind: 'union', variants: [cat, arrayOf('a')], discriminator: { propertyName: 'kind', variants: [{ values: ['cat'] }, { values: [] }] } };
+  const plan = planOf({ kind: 'union', variants: [tagged, arrayOf('b')] } as unknown as SchemaNode['descriptor']);
+  const items = [{ a: 'x', extra: 1 }];
+  assert.deepEqual(stripUndeclared(items, plan), items);
+  assert.deepEqual(stripUndeclared(items, plan, undefined, true), items);
+});

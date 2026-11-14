@@ -32,7 +32,7 @@ async function buildModels(t: TestContext) {
   return {
     Price: units.Price,
     Card: models.Card as Model, Ledger: models.Ledger as Model, PatternLedger: models.PatternLedger as Model, Registry: models.Registry as Model, Shelf: models.Shelf as Model, PetHolder: models.PetHolder as Model, Tree: models.Tree as Model, Tally: models.Tally as Model, Tagged: models.Tagged as Model, TaggedOpen: models.TaggedOpen as Model,
-    plain: codec('TPlain'), nested: codec('TNested'), open: codec('TOpen'), mapHolder: codec('TMapHolder'), patterned: codec('TPatterned'), nullable: codec('TNullable'), tagged: codec('TTagged'), patternItems: codec('TPatternItems'), tagTypes: codec('TTagTypes'), tagProto: codec('TTagProto'), suffixTuple: codec('TSuffixTuple'), leadingRest: codec('TLeadingRest'), headRest: codec('THeadRest'), taggedOpen: codec('TTaggedOpen'), priced: codec('TPriced'), classPriced: codec('TClassPriced'), petList: codec('TPetList'),
+    plain: codec('TPlain'), nested: codec('TNested'), open: codec('TOpen'), mapHolder: codec('TMapHolder'), patterned: codec('TPatterned'), nullable: codec('TNullable'), tagged: codec('TTagged'), patternItems: codec('TPatternItems'), tagTypes: codec('TTagTypes'), tagProto: codec('TTagProto'), suffixTuple: codec('TSuffixTuple'), leadingRest: codec('TLeadingRest'), headRest: codec('THeadRest'), taggedOpen: codec('TTaggedOpen'), priced: codec('TPriced'), classPriced: codec('TClassPriced'), metaTree: codec('TMetaTree'), petList: codec('TPetList'),
     card: codec('TCard'), ledger: codec('TLedger'), patternLedger: codec('TPatternLedger'), registry: codec('TRegistry'), shelf: codec('TShelf'), petHolder: codec('TPetHolder'), tree: codec('TTree'), tally: codec('TTally'),
   };
 }
@@ -153,6 +153,38 @@ test('strip on decode', async (t) => {
       const hidden = Object.defineProperty({ amount: 1, junk: 1 }, 'kind', { value: 'other', enumerable: false });
       const decoded = m.tagged.fromWireFormat({ item: hidden }, options(level, { construct: m.Tagged }));
       assert.deepEqual(sorted(at(decoded, 'item')), ['amount'], `validate ${level}`);
+    }
+  });
+
+  await t.test('data under a key that a closed object removes is not counted by the bound, and no getter of it runs', () => {
+    // protects: T-896 a recursive model bounds the value that strip keeps, so deep junk under an undeclared key decodes from a value and from text
+    const nested = (levels: number): unknown => (levels === 0 ? { end: 1 } : { next: nested(levels - 1) });
+    const limited = { ...strip, maxDepth: 5 };
+    for (const level of levels) {
+      assert.deepEqual(m.tree.fromWireFormat({ name: 'a', junk: nested(10) }, { ...limited, validate: level }), { name: 'a' }, `fromWireFormat, validate ${level}`);
+      assert.deepEqual(m.tree.parse(JSON.stringify({ name: 'a', junk: nested(10) }), { ...limited, validate: level }), { name: 'a' }, `parse, validate ${level}`);
+      let reads = 0;
+      const row = { name: 'a' };
+      Object.defineProperty(row, 'secret', { enumerable: true, get() { reads += 1; throw new Error('secret read'); } });
+      assert.deepEqual(m.tree.fromWireFormat(row, { ...strip, validate: level }), { name: 'a' }, `getter, validate ${level}`);
+      assert.equal(reads, 0);
+    }
+  });
+
+  await t.test('data that strip keeps and that is too deep is the depth error, also under a field that has no plan', () => {
+    // protects: T-896 the bound after strip covers the whole kept value, so deep data that strip does not walk cannot reach the recursive decoder
+    const depth = (limit: number) => (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.Deserialization && error.causedByInput && error.message.includes(`deeper than ${limit} levels`);
+    const deepTree = { name: 'a', kids: [{ name: 'b', kids: [{ name: 'c' }] }] };
+    // `meta` keeps its other keys, so strip has no plan for it and does not walk what it holds.
+    let deep: unknown = { x: 1 };
+    for (let index = 0; index < 8; index++) deep = { x: [deep] };
+    for (const level of levels) {
+      const options = { ...strip, maxDepth: 2, validate: level };
+      assert.throws(() => m.tree.fromWireFormat(deepTree, options), depth(2), `a planned level, fromWireFormat, validate ${level}`);
+      assert.throws(() => m.tree.parse(JSON.stringify(deepTree), options), depth(2), `a planned level, parse, validate ${level}`);
+      const holder = { name: 'h', meta: { title: 't', deep }, junk: 1 };
+      assert.throws(() => m.metaTree.fromWireFormat(holder, { ...options, maxDepth: 5 }), depth(5), `an unplanned subtree, fromWireFormat, validate ${level}`);
+      assert.throws(() => m.metaTree.parse(JSON.stringify(holder), { ...options, maxDepth: 5 }), depth(5), `an unplanned subtree, parse, validate ${level}`);
     }
   });
 
@@ -378,6 +410,20 @@ test('strip walks the values as the encoder and the decoder walk them', async (t
       assert.throws(() => m.tree.toWireFormat(root, { ...off, ...strip }), (error) => cyclic(error, LibErrorKind.Serialization));
       assert.throws(() => m.tree.fromWireFormat(root, off), (error) => cyclic(error, LibErrorKind.Deserialization));
       assert.throws(() => m.tree.fromWireFormat(root, { ...off, ...strip }), (error) => cyclic(error, LibErrorKind.Deserialization));
+    });
+
+    await t.test(`a retained chain of 50000 levels under the default bound is the depth error and never ends the call stack, validate ${level}`, () => {
+      // protects: T-896 the check that tells a cycle from a value that is too deep keeps to the depth of the plain walk
+      const chain: { name: string; kids?: unknown[] } = { name: 'a' };
+      let tip = chain;
+      for (let index = 0; index < 50_000; index++) {
+        const next: { name: string; kids?: unknown[] } = { name: 'b' };
+        tip.kids = [next];
+        tip = next;
+      }
+      const depth = (kind: LibErrorKind) => (error: unknown) => error instanceof LibError && error.kind === kind && error.message.includes('deeper than 512 levels');
+      assert.throws(() => m.tree.toWireFormat(chain, { ...strip, validate: level }), depth(LibErrorKind.Serialization));
+      assert.throws(() => m.tree.fromWireFormat(chain, { ...strip, validate: level }), depth(LibErrorKind.Deserialization));
     });
 
     await t.test(`a cyclic value with a finite bound that the call stack cannot reach fails with the cycle error, validate ${level}`, () => {

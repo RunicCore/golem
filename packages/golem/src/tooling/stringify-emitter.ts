@@ -2202,7 +2202,8 @@ function emitDecodeSection(runtime: NodeRuntime): { readonly fill: Code; readonl
     emitSerdeValidates(runtime.levels),
   ];
   // Strip runs first, so the checks and the decoder below see a wire that holds the declared keys only.
-  if (runtime.stripPlan) convertLines.push(code`  if (options?.strip) wire = ${rt.conversion.stripUndeclared}(wire, ${identifier(stripPlanName(node.codecId))}, options.maxDepth);`);
+  // A recursive model's codec leaves the bound of a call with `strip` to this line, which bounds the wire that strip keeps.
+  if (runtime.stripPlan) convertLines.push(code`  if (options?.strip) wire = ${rt.conversion.stripUndeclared}(wire, ${identifier(stripPlanName(node.codecId))}, options.maxDepth${runtime.reachesCycle ? code`, undefined, true` : code``});`);
   if (validationEnabled) {
     // The wire and model schemas are one validator, which a validation context is asked for as the wire plane.
     const wireAssertCall = node.sameSchema
@@ -2408,6 +2409,7 @@ function emitCodecRegistrationSection(runtime: NodeRuntime): Code {
     code`  toWireFormat: ${names.toWire},`,
     ...(objectDescriptor ? [code`  fields: ${literal(Object.keys(objectDescriptor.properties))},`] : []),
     ...(runtime.reachesCycle ? [code`  recursive: true,`] : []),
+    ...(runtime.reachesCycle && runtime.stripPlan ? [code`  stripBounds: true,`] : []),
     code`  fromWireFormat: ${names.fromWire},`,
     ...(data && Object.keys(data).length > 0 ? [code`  data: ${documentLiteral(data)},`] : []),
     code`  issueSource: ${rt.serde.IssueSource}.${identifier(ctx.issueSource)},`,
