@@ -8,7 +8,7 @@ import { codecKeysPath } from './generated-paths.js';
 import { displayPath, errorMessage, failureText, GolemDiagnosticSeverity, hasErrorCode, isInsideDirectory } from './generator-core.js';
 import type { GolemDiagnostic } from './generator-core.js';
 import { nodeSpecifierEdits } from './node-specifiers.js';
-import { atomicWrite } from './outputs.js';
+import { writeChanged } from './outputs.js';
 import { recordLoadedFiles } from './load-record.js';
 import { GeneratorSessionResources, runPipeline } from './pipeline.js';
 import type { PipelineState } from './pipeline.js';
@@ -394,17 +394,10 @@ const JS_SOURCE_MAP = /\.[cm]?jsx?\.map$/;
 /** A JavaScript output. */
 const JS_OUTPUT = /\.[cm]?jsx?$/;
 
-/**
- * Write one output when it differs from the file on disk, so a file another tool changed is repaired and a file that is current keeps its time stamp.
- * A file that exists is written in place, as `tsc` does: a link stays a link and the mode of the file, such as an exec bit, stays. A new file is
- * published whole, so no reader sees half of it. A failure names the file.
- */
+/** Write one output of the build in place, as `tsc` does (`writeChanged`). A failure names the file. */
 function writeOutput(file: string, text: string): void {
   try {
-    const existing = fs.statSync(file, { throwIfNoEntry: false });
-    if (existing === undefined) atomicWrite(file, text);
-    else if (existing.isFile() && fs.readFileSync(file, 'utf8') !== text) fs.writeFileSync(file, text);
-    else if (!existing.isFile()) throw new Error('it is not a file');
+    writeChanged(file, text, 'inPlace');
   } catch (error) {
     throw new Error(`golem build could not write ${displayPath(file)}: ${errorMessage(error)}`, { cause: error });
   }

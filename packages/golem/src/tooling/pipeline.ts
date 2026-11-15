@@ -6,7 +6,7 @@ import type { GolemConfig, GolemJob } from './config.js';
 import { codecKeysPath } from './generated-paths.js';
 import { coreRecordsOf, digest, loadInventory, applyJob, removeLeftoverTemporaries, removeRetiredJobs } from './outputs.js';
 import type { FileChanges, Inventory, OutputFiles } from './outputs.js';
-import { absoluteRecordPath, golemCode, insideAny, inventoryPaths, JobInputs, hookCode, jobIsCurrent, loadedCode, loadJobRecords, programViewOf, recordPath, sameSetup, saveJobRecords } from './job-cache.js';
+import { absoluteRecordPath, golemCode, insideAny, inventoryPaths, JobInputs, hookCode, jobIsCurrent, jobKey, loadedCode, loadJobRecords, programViewOf, recordPath, sameSetup, saveJobRecords } from './job-cache.js';
 import type { CodePackage, JobRecord } from './job-cache.js';
 import { GolemDiagnosticSeverity, checkedDiagnostics, displayPath, errorMessage, isInsideDirectory, isRecord, stableJson } from './generator-core.js';
 import { observedFolders, watchingJobs } from './job-facts.js';
@@ -261,12 +261,17 @@ async function loadRewriteScan(hasCompilerJob: boolean): Promise<typeof import('
 
 /** The inputs a job declares as facts, before it runs: the files and folders it reads, and the folders it owns or scans. */
 export function declaredInputs(job: GolemJob): readonly string[] {
-  return [...job.facts.inputFiles, ...job.facts.inputFolders, ...job.facts.ownedRoots, ...job.facts.scanRoots ?? []];
+  return [...readInputs(job), ...job.facts.ownedRoots, ...job.facts.scanRoots ?? []];
+}
+
+/** The files and folders a job reads, which order it after the job whose output lies in one. */
+function readInputs(job: GolemJob): readonly string[] {
+  return [...job.facts.inputFiles, ...job.facts.inputFolders];
 }
 
 /** Whether `output`, written by a job that reruns, is read by `consumer` as one of its declared files or inside one of its declared folders. */
 function readsOutput(consumer: GolemJob, output: string): boolean {
-  return consumer.facts.inputFiles.includes(output) || consumer.facts.inputFolders.some(folder => isInsideDirectory(folder, output));
+  return readInputs(consumer).some(input => isInsideDirectory(input, output));
 }
 
 /** Whether a record's inputs include any of `outputs`: a job downstream of one that ran. */
@@ -282,7 +287,9 @@ function readsAny(config: GolemConfig, record: JobRecord, outputs: ReadonlySet<s
 function affectedJobs(config: GolemConfig, options: PipelineOptions): ReadonlySet<string> | undefined {
   const previous = options.previous;
   if (!previous || !options.changedInputs || options.check) return undefined;
-  if (JSON.stringify(config.jobs) !== JSON.stringify(previous.config.jobs)) return undefined;
+  // The same jobs, each with its cache key and its facts: a changed fact widens to every job, and the job cache still decides which run.
+  const jobsText = (jobs: readonly GolemJob[]): string => JSON.stringify(jobs.map(job => [job.id, jobKey(job), job.facts]));
+  if (jobsText(config.jobs) !== jobsText(previous.config.jobs)) return undefined;
   const changed = new Set(options.changedInputs.map(input => path.resolve(input)));
   if (changed.has(config.configFile) || loadPackageRegistry(config.configFile).files.some(file => changed.has(file))) return undefined;
   const facts = config.jobs.map(job => job.facts);
@@ -518,11 +525,7 @@ async function runJob(job: GolemJob, run: PipelineRun, plan: PipelinePlan, progr
   const { config, inventory } = plan;
   const ignoredDirectories = options.ignoredDirectories ?? [];
   const previous = options.previous?.results.get(job.id);
-  const previousJob = options.previous?.config.jobs.find(candidate => candidate.id === job.id);
-  const cached = !options.check
-    && plan.affected?.has(job.id) === false
-    && previous
-    && JSON.stringify(previousJob?.options) === JSON.stringify(job.options);
+  const cached = !options.check && plan.affected?.has(job.id) === false && previous;
   const record = plan.records.get(job.id);
   if (plan.jobCache && record && plan.current.has(job.id) && !readsAny(config, record, progress.ranOutputs) && sameSetup(config, record, { code: plan.code(job), hookCode: plan.hookCode(job), programView: programViewOf(config, job), manifestInputs: progress.manifests })) {
     // Its inputs and outputs are as its record holds them: there is no result to reuse, and nothing to write.
@@ -586,7 +589,7 @@ async function runJob(job: GolemJob, run: PipelineRun, plan: PipelinePlan, progr
     code: Object.fromEntries([...plan.code(job)].map(([block, code]) => [block, loadedCode(code)])),
     hookCode: plan.hookCode(job),
     programView: programViewOf(config, job),
-    options: JSON.stringify(job.options),
+    options: jobKey(job),
     manifestInputs: progress.manifests.map(manifest => recordPath(config, manifest)),
     inputs: read.finish(config, result.watchInputs, new Set([...previousOutputs, ...result.artifacts.map(artifact => artifact.path)])),
     outputs: result.artifacts.filter(artifact => !coreRecords.has(path.normalize(artifact.path))).map(artifact => recordPath(config, artifact.path)).sort(),

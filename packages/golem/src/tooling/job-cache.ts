@@ -7,7 +7,7 @@ import { GolemDiagnosticSeverity, compareText, hasErrorCode, isInsideDirectory, 
 import type { GolemDiagnostic } from './generator-core.js';
 import { loadedClosure, loadedFileDigests } from './load-record.js';
 import type { EnabledExtension } from './rewrite-participant.js';
-import { atomicWrite, digest, loadInventory } from './outputs.js';
+import { digest, loadInventory, realOutputFiles, writeChanged } from './outputs.js';
 import type { Inventory, InventoryEntry, OutputFiles } from './outputs.js';
 
 /**
@@ -107,7 +107,7 @@ export function loadJobRecords(config: GolemConfig): Map<string, JobRecord> {
   return records;
 }
 
-export function saveJobRecords(config: GolemConfig, records: ReadonlyMap<string, JobRecord>, files?: OutputFiles): void {
+export function saveJobRecords(config: GolemConfig, records: ReadonlyMap<string, JobRecord>, files: OutputFiles = realOutputFiles): void {
   const jobs = Object.fromEntries([...records]
     .sort(([left], [right]) => compareText(left, right))
     .map(([id, record]) => [id, {
@@ -123,7 +123,7 @@ export function saveJobRecords(config: GolemConfig, records: ReadonlyMap<string,
       manifests: record.manifests,
       warnings: record.warnings,
     }]));
-  atomicWrite(jobsFile(config), `${JSON.stringify({ version: RECORDS_VERSION, jobs }, null, 2)}\n`, files);
+  writeChanged(jobsFile(config), `${JSON.stringify({ version: RECORDS_VERSION, jobs }, null, 2)}\n`, files);
 }
 
 /** The files the inventory records as generated, as absolute paths. */
@@ -308,6 +308,14 @@ function codeIsCurrent(record: JobRecord, code: ReadonlyMap<string, CodePackage>
   });
 }
 
+/**
+ * The key of a job in the job cache: its resolved options, as JSON. A record keeps it (`JobRecord.options`), and the cache and the watch loop test a job against it.
+ * The facts are not part of it: they come from the same plan entry as the options and the cache keys on the code of that entry. The watch loop compares them too.
+ */
+export function jobKey(job: GolemJob): string {
+  return JSON.stringify(job.options);
+}
+
 /** Whether the loaded code, hook extensions, program view and manifest set are those the record holds. */
 export function sameSetup(config: GolemConfig, record: JobRecord, setup: JobSetup): boolean {
   return codeIsCurrent(record, setup.code, setup.fileDigests)
@@ -351,7 +359,7 @@ export function jobIsCurrent(
   inventory: Inventory = loadInventory(config),
   ignoredDirectories: readonly string[] = [],
 ): boolean {
-  if (!record || record.golemCode !== golemCode() || record.options !== JSON.stringify(job.options) || !sameSetup(config, record, setup)) return false;
+  if (!record || record.golemCode !== golemCode() || record.options !== jobKey(job) || !sameSetup(config, record, setup)) return false;
   // A job that announced no input hides what it reads: nothing can show that it is still true.
   if (Object.keys(record.inputs).length === 0) return false;
   const outputs = new Set(record.outputs.map(output => absoluteRecordPath(config, output)));
