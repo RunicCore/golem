@@ -10,6 +10,7 @@ import type { GolemModeManifest, SdkOperationValidation, SdkOperationValue } fro
 import type { OperationValidationSchemas } from './client/emit.js';
 import type { NormalizedOperation } from './normalize.js';
 import { GENERATOR_NAME, PACKAGE_VERSION } from './package-info.js';
+import type { OpenApiModeKind } from './plan.js';
 import type { OpenApiGenerationProfile } from './profile.js';
 import { requireProfile } from './profile.js';
 import {
@@ -107,10 +108,11 @@ export function generateModelManifest(
   document: unknown,
   profile: OpenApiGenerationProfile,
   modelAnalysis: OpenApiModelAnalysis,
-  mode: 'standalone' | 'golem' = 'standalone',
+  mode: OpenApiModeKind = 'standalone',
   golem: GolemModeOperations = { operations: [], validation: undefined },
 ): unknown {
   profile = requireProfile(profile);
+  const golemMode = mode === 'golem';
   const { ordered, schemaGraph } = modelAnalysis;
   const digest = sourceDigest(document);
   const stableId = (definition: ModelDefinition) => modelStableId(digest, definition);
@@ -124,7 +126,7 @@ export function generateModelManifest(
     return {
       id: stableId(definition),
       // A golem-mode manifest keeps the codec id on the component of the model.
-      ...(mode === 'golem' ? {} : { codecId: openApiCodecId(modelAnalysis, definition.name) }),
+      ...(golemMode ? {} : { codecId: openApiCodecId(modelAnalysis, definition.name) }),
       sourceKind: 'openapi',
       allowAny: profile.allowAny ?? false,
       type: declaredType(definition.name),
@@ -140,7 +142,7 @@ export function generateModelManifest(
       version: PACKAGE_VERSION,
     },
     // A golem-mode SDK imports the installed @exprtlabs/golem and records the version it needs; a standalone SDK carries its own runtime and records none.
-    ...(mode === 'golem' ? { runtime: { name: '@exprtlabs/golem', minimumVersion: PACKAGE_VERSION } } : {}),
+    ...(golemMode ? { runtime: { name: '@exprtlabs/golem', minimumVersion: PACKAGE_VERSION } } : {}),
     source: {
       kind: 'openapi',
       dialect: asRecord(document).openapi,
@@ -148,7 +150,7 @@ export function generateModelManifest(
     },
     profile,
     models,
-    ...(mode === 'golem' ? golemModeGraph(document, modelAnalysis, golem, Boolean(profile.validation)) : {}),
+    ...(golemMode ? golemModeGraph(document, modelAnalysis, golem, Boolean(profile.validation)) : {}),
   };
 }
 

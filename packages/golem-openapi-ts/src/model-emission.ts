@@ -127,7 +127,7 @@ export function generateOpenApiModelArtifacts(
   analysis: OpenApiModelAnalysis,
   helpers: {
     readonly locate?: OriginLocator | undefined;
-    /** Where each model group imports its runtime from; the package's own entries when absent (see `standaloneRuntimeSpecifiers`). */
+    /** Where each model group imports its runtime from; the package's own entries when absent (see `runtimeSpecifiersOf`). */
     readonly specifiers?: RuntimeSpecifiers;
     /**
      * Compiles the SDK's validators module from the validation plan of every model and returns the name it exports

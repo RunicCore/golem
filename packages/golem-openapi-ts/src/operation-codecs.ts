@@ -1,5 +1,7 @@
 import path from 'node:path';
 import { code, ImportSource, literal, moduleSpecifier, SDK_CODECS_EXPORT, type Code } from '@exprtlabs/golem/internal/emitter';
+import { assertNever } from '@exprtlabs/golem/internal/generator-support';
+import type { OpenApiMode } from './plan.js';
 
 /** How one generated file of the SDK reads the codecs of operations. */
 interface OperationCodecsAt {
@@ -15,7 +17,7 @@ interface OperationCodecsAt {
 export type OperationCodecsFor = (importer: string) => OperationCodecsAt;
 
 /** A standalone SDK writes `codecs/<operation>.ts` for each operation with codecs, and the operation module imports the one it calls. */
-export const standaloneCodecs: OperationCodecsFor = (importer) => {
+const standaloneCodecs: OperationCodecsFor = (importer) => {
   const sources = new Map<string, ImportSource>();
   const sourceOf = (operation: string): ImportSource => {
     let source = sources.get(operation);
@@ -36,7 +38,7 @@ export const standaloneCodecs: OperationCodecsFor = (importer) => {
 const TABLE_ALIAS = '__golemSdkCodecs';
 
 /** An SDK of mode golem reads its codecs from the table the models job writes at `codecsFile`, by the operation name. */
-export function golemCodecs(output: string, codecsFile: string): OperationCodecsFor {
+function golemCodecs(output: string, codecsFile: string): OperationCodecsFor {
   return (importer) => {
     const table = new ImportSource(moduleSpecifier(path.join(output, importer), codecsFile));
     return {
@@ -45,4 +47,13 @@ export function golemCodecs(output: string, codecsFile: string): OperationCodecs
       read: (operation) => code`${table.name(SDK_CODECS_EXPORT, { alias: TABLE_ALIAS })}[${literal(operation)}]`,
     };
   };
+}
+
+/** How the files of the SDK in `output` read the codecs of operations, by its mode. */
+export function operationCodecsFor(mode: OpenApiMode, output: string): OperationCodecsFor {
+  switch (mode.kind) {
+    case 'standalone': return standaloneCodecs;
+    case 'golem': return golemCodecs(output, mode.codecsFile);
+    default: return assertNever(mode);
+  }
 }
