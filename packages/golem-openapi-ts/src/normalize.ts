@@ -1,6 +1,6 @@
 import { asRecord, entriesWithoutExtensions, isJsonObject, jsonPointerJoin, objectEntries, readBoolean, readString, resolveJsonPointer, type JsonObject } from './json.js';
 import { GolemDiagnosticSeverity, type GolemDiagnostic } from '@exprtlabs/golem/generator-api';
-import { identifier, parameterStyleRule, type ParameterLocation } from '@exprtlabs/golem/internal/generator-support';
+import { identifier, parameterIdentity, parameterStyleRule, type ParameterLocation } from '@exprtlabs/golem/internal/generator-support';
 import { fragmentPointerTokens } from '@exprtlabs/golem/internal/schema';
 import { inboundNameHoldsSource, inboundOperationName, operationName } from './names.js';
 
@@ -158,11 +158,6 @@ export function parameterSchema(parameter: unknown): OpenApiSchema | null {
   return preferredSchema(record.content);
 }
 
-function parameterKey(parameter: NormalizedParameter): string {
-  // A header name is case-insensitive (RFC 9110); every other location is case-sensitive.
-  return `${parameter.in}\0${parameter.in === 'header' ? parameter.name.toLowerCase() : parameter.name}`;
-}
-
 function isParameterLocation(location: string): location is ParameterLocation {
   return location === 'path' || location === 'query' || location === 'header' || location === 'cookie';
 }
@@ -202,7 +197,7 @@ function uniqueParameters(parameters: readonly unknown[], origin: string): Norma
   const result: NormalizedParameter[] = [];
   for (const [index, raw] of parameters.entries()) {
     const parameter = asParameter(raw, `${origin}[${index}]`);
-    const key = parameterKey(parameter);
+    const key = parameterIdentity(parameter.in, parameter.name);
     const previous = seen.get(key);
     if (previous !== undefined) {
       throw new Error(
@@ -226,6 +221,13 @@ function resolveParameterList(
   );
 }
 
+/** The parameters an operation sees: those of its path item, each replaced in place by the operation's own of the same identity, then the rest of the operation's own (OpenAPI "Path Item Object"). */
+export function overrideParameters<T extends { readonly name: string; readonly in: string }>(pathLevel: readonly T[], operationLevel: readonly T[]): T[] {
+  const merged = new Map<string, T>();
+  for (const parameter of [...pathLevel, ...operationLevel]) merged.set(parameterIdentity(parameter.in, parameter.name), parameter);
+  return [...merged.values()];
+}
+
 function mergeParameters(
   document: unknown,
   pathItemParameters: readonly unknown[],
@@ -235,10 +237,7 @@ function mergeParameters(
 ): NormalizedParameter[] {
   const pathParameters = resolveParameterList(document, pathItemParameters, pathOrigin);
   const operationLevel = resolveParameterList(document, operationParameters, operationOrigin);
-  const merged = new Map<string, NormalizedParameter>();
-  for (const parameter of pathParameters) merged.set(parameterKey(parameter), parameter);
-  for (const parameter of operationLevel) merged.set(parameterKey(parameter), parameter);
-  return [...merged.values()];
+  return overrideParameters(pathParameters, operationLevel);
 }
 
 function normalizeResponses(document: unknown, responses: unknown): NormalizedResponse[] {

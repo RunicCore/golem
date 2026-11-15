@@ -1,4 +1,5 @@
 import * as ts from '@exprtlabs/golem/internal/ts';
+import { parameterIdentity } from '@exprtlabs/golem/internal/generator-support';
 import {
   TsToOpenApiDiagnosticCode,
   TsToOpenApiError,
@@ -64,7 +65,7 @@ function parameterOptionsOf(
  * the spelling of the `@Headers()` decorator that declared it.
  */
 export function parameterOverrideKey(location: string, name: string): string {
-  return `${location === 'querystring' ? 'query' : location}:${location === 'header' ? name.toLowerCase() : name}`;
+  return parameterIdentity(location === 'querystring' ? 'query' : location, name);
 }
 
 /**

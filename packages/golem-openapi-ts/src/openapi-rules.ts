@@ -8,8 +8,9 @@ import {
   resolveJsonPointer,
   type JsonObject,
 } from './json.js';
+import { parameterIdentity } from '@exprtlabs/golem/internal/generator-support';
 import { decodeUriFragment } from '@exprtlabs/golem/internal/schema';
-import { followLocalRefs, visitOperationSites, type OperationSite } from './normalize.js';
+import { followLocalRefs, overrideParameters, visitOperationSites, type OperationSite } from './normalize.js';
 import type { OpenApiProblem } from './openapi-validator.js';
 import { isMappingComponentName } from './reference-loader.js';
 import { collectCanonicalResources, findDuplicateSchemaIds, lookupCanonicalResource, visitOpenApiSchemaTree } from './schema-projection.js';
@@ -21,7 +22,7 @@ const TEMPLATE = /\{([^{}]*)\}/g;
 
 interface ResolvedParameter {
   readonly name: string;
-  readonly location: string;
+  readonly in: string;
   readonly pointer: string;
 }
 
@@ -31,7 +32,7 @@ function resolvedParameters(document: unknown, list: unknown, listPointer: strin
   list.forEach((raw, index) => {
     const parameter = followLocalRefs(document, raw, `${listPointer}/${index}`).value;
     if (isJsonObject(parameter) && typeof parameter.name === 'string' && typeof parameter.in === 'string') {
-      parameters.push({ name: parameter.name, location: parameter.in, pointer: `${listPointer}/${index}` });
+      parameters.push({ name: parameter.name, in: parameter.in, pointer: `${listPointer}/${index}` });
     }
   });
   return parameters;
@@ -88,11 +89,6 @@ function checkOperationIds(operations: readonly OperationSite[]): OpenApiProblem
   return problems;
 }
 
-/** The identity of a parameter: its name and location. A header name is case-insensitive (RFC 9110). */
-function parameterKey(parameter: ResolvedParameter): string {
-  return `${parameter.location}\u0000${parameter.location === 'header' ? parameter.name.toLowerCase() : parameter.name}`;
-}
-
 function checkParameterLists(document: unknown, operations: readonly OperationSite[]): OpenApiProblem[] {
   const problems: OpenApiProblem[] = [];
   const checked = new Set<string>();
@@ -101,11 +97,11 @@ function checkParameterLists(document: unknown, operations: readonly OperationSi
     checked.add(listPointer);
     const seen = new Set<string>();
     for (const parameter of resolvedParameters(document, list, listPointer)) {
-      const key = parameterKey(parameter);
+      const key = parameterIdentity(parameter.in, parameter.name);
       if (seen.has(key)) {
         problems.push({
           ruleId: 'operation-parameters-unique',
-          message: `parameter ${JSON.stringify(parameter.name)} in ${parameter.location} is listed more than once`,
+          message: `parameter ${JSON.stringify(parameter.name)} in ${parameter.in} is listed more than once`,
           pointer: parameter.pointer,
         });
       }
@@ -131,13 +127,10 @@ function templateNames(route: string): string[] {
  * `checkQuerystring` (the 3.2 `querystring`/`query` exclusivity rules).
  */
 function effectiveParameters(document: unknown, entry: OperationSite): ResolvedParameter[] {
-  const own = resolvedParameters(document, entry.operation.parameters, `${entry.pointer}/parameters`);
-  const overridden = new Set(own.map(parameterKey));
-  return [
-    ...resolvedParameters(document, entry.pathItem.parameters, `${entry.pathItemPointer}/parameters`)
-      .filter((parameter) => !overridden.has(parameterKey(parameter))),
-    ...own,
-  ];
+  return overrideParameters(
+    resolvedParameters(document, entry.pathItem.parameters, `${entry.pathItemPointer}/parameters`),
+    resolvedParameters(document, entry.operation.parameters, `${entry.pointer}/parameters`),
+  );
 }
 
 function checkPathTemplates(document: unknown, operations: readonly OperationSite[]): OpenApiProblem[] {
@@ -161,7 +154,7 @@ function checkPathTemplates(document: unknown, operations: readonly OperationSit
     const templates = new Set(templateNames(entry.key).filter(Boolean));
     const declared = new Map<string, string>();
     for (const parameter of effectiveParameters(document, entry)) {
-      if (parameter.location === 'path') declared.set(parameter.name, parameter.pointer);
+      if (parameter.in === 'path') declared.set(parameter.name, parameter.pointer);
     }
     for (const name of templates) {
       if (!declared.has(name)) {
@@ -288,8 +281,8 @@ function checkQuerystring(document: unknown, operations: readonly OperationSite[
   const problems: OpenApiProblem[] = [];
   for (const entry of operations) {
     const effective = effectiveParameters(document, entry);
-    const querystring = effective.filter((parameter) => parameter.location === 'querystring');
-    const query = effective.filter((parameter) => parameter.location === 'query');
+    const querystring = effective.filter((parameter) => parameter.in === 'querystring');
+    const query = effective.filter((parameter) => parameter.in === 'query');
     const second = querystring[1];
     if (second) {
       problems.push({ ruleId: 'spec-querystring-parameters', message: 'an operation can have at most one querystring parameter', pointer: second.pointer });
