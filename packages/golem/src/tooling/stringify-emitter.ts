@@ -4,6 +4,7 @@
  * Date convert in the same pass as concat / JSON.parse.
  */
 
+import { assertNever } from '../assert-never.js';
 import type { ModelTypeDescriptor, SerdeFunctions } from '../model-registry.js';
 import type { ValidationLevel, ValidationPlane } from '../object-codec.js';
 import type { SchemaGraph, SchemaNode } from './schema-graph.js';
@@ -908,8 +909,9 @@ function isScalarDescriptor(descriptor: ModelTypeDescriptor): boolean {
     case 'union':
     case 'intersection':
       return descriptor.variants.every(isScalarDescriptor);
-    default:
+    case 'any': case 'array': case 'class-value': case 'generated-model': case 'object': case 'reference': case 'tuple': case 'unknown':
       return false;
+    default: return assertNever(descriptor);
   }
 }
 
@@ -1029,8 +1031,9 @@ function sharesInput(descriptor: ModelTypeDescriptor, ctx: EmitCtx, seen: Set<Mo
       // A node is decoded by its own fill or convert function, which checks what it carries by reference.
       return ctx.graph.nodeFor(descriptor) === undefined;
     }
-    default:
+    case 'bigint': case 'boolean': case 'class-value': case 'literal': case 'never': case 'null': case 'number': case 'string': case 'undefined':
       return false;
+    default: return assertNever(descriptor);
   }
 }
 
@@ -1053,8 +1056,10 @@ function ownDescriptors(descriptor: ModelTypeDescriptor): readonly ModelTypeDesc
       const values = mapValueDescriptor(descriptor);
       return [...Object.values(descriptor.properties), ...(values === undefined ? [] : [values]), ...patternSchemas(descriptor).flatMap(({ schema }) => schema === undefined ? [] : [schema])];
     }
-    default:
+    case 'any': case 'bigint': case 'boolean': case 'class-value': case 'generated-model': case 'literal': case 'never': case 'null': case 'number':
+    case 'reference': case 'string': case 'undefined': case 'unknown':
       return [];
+    default: return assertNever(descriptor);
   }
 }
 

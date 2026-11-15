@@ -3,6 +3,7 @@
  * validation compile once per node and compose by call / $ref.
  */
 
+import { assertNever } from '../assert-never.js';
 import type { ModelTypeDescriptor } from '../model-registry.js';
 import {
   canonicalDescriptorKey,
@@ -168,7 +169,9 @@ function nodeKind(descriptor: ModelTypeDescriptor): SchemaNodeKind {
     case 'intersection': return 'intersection';
     case 'reference':
     case 'generated-model': return 'reference';
-    default: return 'scalar';
+    case 'any': case 'bigint': case 'boolean': case 'class-value': case 'literal': case 'never': case 'null': case 'number': case 'string':
+    case 'undefined': case 'unknown': return 'scalar';
+    default: return assertNever(descriptor);
   }
 }
 
@@ -194,7 +197,9 @@ export function childDescriptors(descriptor: ModelTypeDescriptor): readonly Mode
     ];
     case 'union':
     case 'intersection': return descriptor.variants;
-    default: return [];
+    case 'any': case 'bigint': case 'boolean': case 'class-value': case 'generated-model': case 'literal': case 'never': case 'null': case 'number':
+    case 'reference': case 'string': case 'undefined': case 'unknown': return [];
+    default: return assertNever(descriptor);
   }
 }
 
@@ -478,8 +483,11 @@ export function mapNamedTypes(descriptor: ModelTypeDescriptor, replace: (named: 
     case 'intersection':
       mapped = { ...descriptor, variants: descriptor.variants.map(again) };
       break;
-    default:
+    case 'any': case 'bigint': case 'boolean': case 'class-value': case 'literal': case 'never': case 'null': case 'number': case 'string':
+    case 'undefined': case 'unknown':
       mapped = descriptor;
+      break;
+    default: return assertNever(descriptor);
   }
   const constraints = mapped.constraints?.map((constraint) => mapConstraintSchemaValues(constraint, (value) => (isTypeDescriptor(value) ? again(value) as ConstraintSchemaValue : value)));
   const wire = serdeWireDescriptor(mapped.serde);
@@ -568,9 +576,11 @@ function rewriteToRefs(
           )),
         };
         break;
-      default:
+      case 'any': case 'bigint': case 'boolean': case 'class-value': case 'generated-model': case 'literal': case 'never': case 'null':
+      case 'number': case 'reference': case 'string': case 'undefined': case 'unknown':
         rewritten = descriptor;
         break;
+      default: return assertNever(descriptor);
     }
   }
   return rewriteMetadata(rewritten, lookup);

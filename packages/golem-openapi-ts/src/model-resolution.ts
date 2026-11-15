@@ -1,7 +1,7 @@
 import { isDeepStrictEqual } from 'node:util';
 import { builtinClassDescriptor, descriptorNeedsConversion } from '@exprtlabs/golem/internal/emitter';
 import type { SchemaGraph, SchemaNode } from '@exprtlabs/golem/internal/schema-graph';
-import { identifier } from '@exprtlabs/golem/internal/generator-support';
+import { assertNever, identifier } from '@exprtlabs/golem/internal/generator-support';
 import { asRecord, escapeJsonPointerToken, isJsonObject, objectEntries, type JsonObject } from './json.js';
 import type { GolemDiagnostic } from '@exprtlabs/golem/generator-api';
 import { JSON_KINDS, aliasReference, followReference, isDiscriminatorValue, jsonKindOf, schemaReferenceOrDynamic, serdeWireDescriptor, type ConstraintSchemaValue, type DiscriminatorValue, type JsonKind, type ModelConstraint, type ModelTypeDescriptor, type UnionDiscriminator } from '@exprtlabs/golem/internal/schema';
@@ -389,7 +389,8 @@ function valueClasses(descriptor: ModelTypeDescriptor): readonly JsonKind[] {
     case 'tuple': return ['array'];
     case 'union': return [...new Set(descriptor.variants.flatMap(valueClasses))];
     case 'never': return [];
-    default: return JSON_KINDS;
+    case 'any': case 'bigint': case 'generated-model': case 'intersection': case 'reference': case 'undefined': case 'unknown': return JSON_KINDS;
+    default: return assertNever(descriptor);
   }
 }
 

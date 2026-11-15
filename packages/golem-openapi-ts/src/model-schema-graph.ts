@@ -1,3 +1,4 @@
+import { assertNever } from '@exprtlabs/golem/internal/generator-support';
 import { createHash } from 'node:crypto';
 import { createSchemaGraph, internDescriptors, type SchemaGraph, type SchemaNode } from '@exprtlabs/golem/internal/schema-graph';
 import type { ModelTypeDescriptor } from '@exprtlabs/golem/internal/schema';
@@ -115,7 +116,9 @@ function descriptorConverts(descriptor: ModelTypeDescriptor, graph: SchemaGraph,
     case 'object': return Object.values(descriptor.properties).some(converts) || (typeof descriptor.additionalProperties === 'object' && converts(descriptor.additionalProperties));
     case 'union':
     case 'intersection': return descriptor.variants.some(converts);
-    default: return false;
+    case 'any': case 'bigint': case 'boolean': case 'class-value': case 'literal': case 'never': case 'null': case 'number': case 'string':
+    case 'undefined': case 'unknown': return false;
+    default: return assertNever(descriptor);
   }
 }
 
