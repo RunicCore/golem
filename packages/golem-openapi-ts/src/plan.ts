@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { Code } from '@exprtlabs/golem/internal/emitter';
 import type { GolemDiagnostic, GolemPlanEntry, InputObserver, JobFacts, GolemProfile, PlanContext, PlannedJob } from '@exprtlabs/golem/generator-api';
-import { canonicalPath, CODECS_HOST, isRecord, sdkCodecsFile } from '@exprtlabs/golem/internal/plan-support';
+import { canonicalPath, CODECS_HOST, isRecord, nonempty, sdkCodecsFile } from '@exprtlabs/golem/internal/plan-support';
 
 export interface OpenApiContext {
   readonly input: string;
@@ -49,11 +49,6 @@ function keys(value: unknown, allowed: readonly string[], label: string): assert
   for (const key of Object.keys(value)) {
     if (!allowed.includes(key)) throw new Error(`Unknown ${label} key: ${key}.`);
   }
-}
-
-function nonempty(value: unknown, label: string): string {
-  if (typeof value !== 'string' || !value.trim()) throw new TypeError(`${label} must be a nonempty string.`);
-  return value;
 }
 
 function positive(value: unknown, fallback: number, label: string): number {

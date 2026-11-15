@@ -1,3 +1,4 @@
+import { isRecord } from '@exprtlabs/golem/internal/generator-support';
 import { escapeJsonPointerToken, jsonPointerTokens, resolveJsonPointer, unescapeJsonPointerToken } from '@exprtlabs/golem/internal/schema';
 
 export type JsonObject = { readonly [key: string]: JsonValue | undefined };
@@ -10,7 +11,7 @@ type JsonValue =
   | JsonObject;
 
 export function isJsonObject(value: unknown): value is JsonObject {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
+  return isRecord(value);
 }
 
 export function readString(value: unknown): string | undefined {

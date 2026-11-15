@@ -1,7 +1,7 @@
 import { lowerDiscriminatorMappings } from '../discriminator-mapping.js';
 import { unescapeJsonPointerToken } from '../json-pointer.js';
 import { GENERATED_MODEL_SCHEMA_REF_PREFIX, MODEL_INSTANCE_KEYWORD } from '../schema-keywords.js';
-import { compareText, type GolemDiagnostic, type GolemProfile } from './generator-core.js';
+import { compareText, isRecord, type GolemDiagnostic, type GolemProfile } from './generator-core.js';
 import { codecShortName, type SchemaGraph, type SchemaNode } from './schema-graph.js';
 import type { JsonSchema } from './schema.js';
 import { compile, type CompileInput, type CompileOptions, type CompileResult, type SchemaPlace } from './validator-compiler/index.js';
@@ -367,7 +367,7 @@ export function buildCodecValidationPlan(
               continue;
             }
           }
-          if (key === '$defs' && item !== null && typeof item === 'object' && !Array.isArray(item)) {
+          if (key === '$defs' && isRecord(item)) {
             const definitions: Record<string, unknown> = Object.create(null) as Record<string, unknown>;
             for (const [name, definition] of Object.entries(item)) {
               if (root && ownedDefinitions.has(name)) continue;

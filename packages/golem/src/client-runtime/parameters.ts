@@ -1,4 +1,5 @@
 import type { ClientRuntime, ParameterSerializerContext } from './core.js';
+import { isRecord } from '../record.js';
 import { parameterStyleRule, type ParameterLocation, type ParameterStyleRule } from './parameter-styles.js';
 
 /** `value` when it is a primitive; an object has no wire text, and an array or object nested in an array or object has none either. `parameter` names the parameter in the error. */
@@ -29,9 +30,7 @@ export function encode(value: unknown, allowReserved = false): string {
 }
 
 function entries(value: unknown): Array<[string, unknown]> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-    ? Object.entries(value)
-    : [];
+  return isRecord(value) ? Object.entries(value) : [];
 }
 
 /** The text of a parameter that is not an array or an object with entries; any other object has no wire text. */

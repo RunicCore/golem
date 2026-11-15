@@ -93,6 +93,14 @@ export interface ControllerRoute {
 /** File-name endings that make a file below `src` of the golem.yaml folder a controller source when a docs job sets none. */
 export const DEFAULT_CONTROLLER_SUFFIXES: readonly string[] = ['.controller.ts'];
 
+/** The media type of a request or response body when nothing declares one. */
+export const DEFAULT_MEDIA_TYPE = 'application/json';
+
+/** The media types a route declares (`@ApiConsumes`, `@ApiProduces`), or the default one when it declares none. */
+export function mediaTypesOrDefault(declared: readonly string[] | undefined): readonly string[] {
+  return declared?.length ? declared : [DEFAULT_MEDIA_TYPE];
+}
+
 export interface NestAnalysisContext {
   readonly root: string;
   readonly sources: readonly string[];

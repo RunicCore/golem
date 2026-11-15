@@ -127,7 +127,6 @@ function expect<T extends StaticValue>(
 const isString = (value: StaticValue): value is string => typeof value === 'string';
 const isNumber = (value: StaticValue): value is number => typeof value === 'number';
 const isBoolean = (value: StaticValue): value is boolean => typeof value === 'boolean';
-const isRecord = (value: StaticValue): value is { readonly [key: string]: StaticValue } => isStaticRecord(value);
 const isStringList = (value: StaticValue): value is readonly string[] => isStaticArray(value) && value.every(isString);
 
 export function readString(reader: MetadataReader, expression: ts.Expression | undefined, label: string, code = TsToOpenApiDiagnosticCode.UnsupportedSchemaMetadata): string | undefined {
@@ -219,7 +218,7 @@ export class DecoratorOptions {
   }
 
   record(name: string, code = TsToOpenApiDiagnosticCode.UnsupportedSchemaMetadata): Readonly<Record<string, StaticValue>> | undefined {
-    return this.typed(name, isRecord, 'an object', code);
+    return this.typed(name, isStaticRecord, 'an object', code);
   }
 
   /**
@@ -308,7 +307,7 @@ export function headerOptionsList(reader: MetadataReader, info: DecoratorInfo): 
   }
   const node = argument ?? info.decorator;
   const list = argument && readStatic(reader, argument, `${label}() options`, code);
-  if (!isStaticArray(list) || !list.every(isRecord)) {
+  if (!isStaticArray(list) || !list.every(isStaticRecord)) {
     return metadataError(node, code, `${label}() options must be a static array of header options.`);
   }
   return list.map(item => new DecoratorOptions(reader, label, new Map<string, OptionEntry>(

@@ -2,7 +2,7 @@
 import path from 'node:path';
 import { DEFAULT_CONTROLLER_SUFFIXES } from './nest/types.js';
 import { openApiVersionOf, type OpenApiVersion } from './openapi-version.js';
-import { canonicalPath, checkedSuffixes, isRecord, MODEL_BOUNDARY } from '@exprtlabs/golem/internal/plan-support';
+import { canonicalPath, checkedSuffixes, isRecord, MODEL_BOUNDARY, nonempty } from '@exprtlabs/golem/internal/plan-support';
 import type {
   GeneratorHostContext,
   GeneratorSession,
@@ -84,11 +84,6 @@ function keys(value: unknown, allowed: readonly string[], label: string): assert
   for (const key of Object.keys(value)) {
     if (!allowed.includes(key)) throw new Error(`Unknown ${label} key: ${key}.`);
   }
-}
-
-function nonempty(value: unknown, label: string): string {
-  if (typeof value !== 'string' || !value.trim()) throw new TypeError(`${label} must be a nonempty string.`);
-  return value;
 }
 
 function positive(value: unknown, label: string): number {
