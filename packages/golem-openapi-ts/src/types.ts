@@ -915,24 +915,24 @@ function convertedTypes(schemas: Record<string, unknown>, dates: OpenApiDates): 
 export function generateTypes(
   document: unknown,
   operations: readonly NormalizedOperation[],
-  plan?: {
+  plan: {
     readonly typesUsesInputSchemas: boolean;
     readonly typesUsesOutputSchemas: boolean;
   },
-  dates: OpenApiDates = 'date',
-  neverProperties?: NeverPropertiesOf,
+  dates: OpenApiDates,
+  neverProperties: NeverPropertiesOf,
 ): RenderedModule {
   const schemas = asRecord(asRecord(asRecord(document).components).schemas);
   const scope = new ComponentNameScope('types.ts');
-  const useInput = plan ? plan.typesUsesInputSchemas : Object.keys(schemas).length > 0 && operations.length > 0;
-  const useOutput = plan ? plan.typesUsesOutputSchemas : Object.keys(schemas).length > 0 && operations.length > 0;
+  const useInput = plan.typesUsesInputSchemas;
+  const useOutput = plan.typesUsesOutputSchemas;
   if (useInput) scope.claim('InputSchemas', 'import binding InputSchemas');
   if (useOutput) scope.claim('OutputSchemas', 'import binding OutputSchemas');
   const inputSchemas = new ImportSource('./input-schemas.js', true, { namespace: 'InputSchemas' });
   const outputSchemas = new ImportSource('./output-schemas.js', true, { namespace: 'OutputSchemas' });
   const blobTypeName = generatedBlobType(scope, objectEntries(schemas).map(([name]) => identifier(name)));
   const converted = convertedTypes(schemas, dates);
-  const baseContext = schemaContext(document, { blobType: blobTypeName, converted, ...(neverProperties ? { neverProperties } : {}) });
+  const baseContext = schemaContext(document, { blobType: blobTypeName, converted, neverProperties });
   const BLANK = code``;
   const body: Code[] = [];
   const blobTypeIndex = 0;
@@ -953,14 +953,14 @@ export function generateTypes(
       ...(useInput ? { qualifier: code`${inputSchemas.namespace()}.` } : {}),
       blobType: blobTypeName,
       converted,
-      ...(neverProperties ? { neverProperties } : {}),
+      neverProperties,
     });
     const outputContext = schemaContext(document, {
       direction: 'output',
       ...(useOutput ? { qualifier: code`${outputSchemas.namespace()}.` } : {}),
       blobType: blobTypeName,
       converted,
-      ...(neverProperties ? { neverProperties } : {}),
+      neverProperties,
     });
     scope.claim(`${operation.typeName}OperationInput`, `operation ${JSON.stringify(operation.name)} input type`);
     scope.claim(`${operation.typeName}OperationSuccessBody`, `operation ${JSON.stringify(operation.name)} success body`);
@@ -990,8 +990,8 @@ export function generateTypes(
 export function generateDirectionalSchemas(
   document: unknown,
   direction: 'input' | 'output',
-  dates: OpenApiDates = 'date',
-  neverProperties?: NeverPropertiesOf,
+  dates: OpenApiDates,
+  neverProperties: NeverPropertiesOf,
 ): string {
   const schemas = asRecord(asRecord(asRecord(document).components).schemas);
   const scope = new ComponentNameScope(`${direction}-schemas.ts`);
@@ -1000,7 +1000,7 @@ export function generateDirectionalSchemas(
     direction,
     blobType: blobTypeName,
     converted: convertedTypes(schemas, dates),
-    ...(neverProperties ? { neverProperties } : {}),
+    neverProperties,
   });
   const BLANK = code``;
   const body: Code[] = [];

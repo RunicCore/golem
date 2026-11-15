@@ -179,7 +179,7 @@ function nestUnionBinding(
   unbound: NestBinding,
   model: ts.TypeNode,
   members: readonly ts.TypeNode[],
-  unions: { readonly text: boolean },
+  site: { readonly text: boolean },
 ): NestBinding {
   const { checker, core } = scope;
   const variants = members.map((member) => {
@@ -192,7 +192,7 @@ function nestUnionBinding(
   });
   const golemModel = variants.every((variant) => variant.golemModel);
   if (!golemModel || variants.some((variant) => variant.id === '')) return { ...unbound, golemModel };
-  const tag = unionTag(scope, model, members, unions.text);
+  const tag = unionTag(scope, model, members, site.text);
   if ('fault' in tag) return { ...unbound, golemModel: true, id: '', unionFault: tag.fault };
   return {
     ...unbound,
