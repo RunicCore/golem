@@ -11,7 +11,7 @@ import {
   toIssue,
   type Issue,
 } from './errors.js';
-import { nestingDepthError, readRootFields, resolveMaxDepth, textNestsDeeperThan, valueNestsDeeperThan } from './conversion.js';
+import { nestingDepthError, readRootFields, resolveMaxDepth, textNestsDeeperThan, valueNestsDeeperThan, type StripPlanRef } from './conversion.js';
 import { withoutInstanceState } from './presence.js';
 import type { SchemaIssue } from './issue-messages.js';
 import type { ModelValidationContext, WireFormat } from './model.js';
@@ -133,6 +133,8 @@ export interface ObjectCodecImpl<T = unknown> {
   readonly recursive?: true;
   /** Set when a recursive model's decode strips and then bounds the value it keeps itself: a call with `strip` leaves the bound to it, so no key that strip removes is counted or read. */
   readonly stripBounds?: true;
+  /** The plan of the model, when it has one: a call with `allowGetter` and `strip` does not read a key of the root that the plan removes. */
+  readonly stripPlan?: StripPlanRef;
   readonly issueSource?: IssueSource;
 }
 
@@ -434,34 +436,34 @@ export function createObjectCodec<T>(id: string, impl: ObjectCodecImpl<T>): Obje
   };
   // A call with `strip` on a codec that bounds the value it keeps leaves the bound to the decode, which strips first.
   const boundsStripped = (options: DecodeOptions | undefined): boolean => options?.strip === true && impl.stripBounds === true;
-  // Without `allowGetter` the value is the root as it is: the check is written in each call, so no function call and no copy.
+  // Without `allowGetter` the value is the root as it is. With it, the root is read once into a copy, and a call that strips leaves out the keys that strip removes.
+  const readRoot = <Value>(value: Value, options: AllowGetterOptions | undefined, strip: StripPlanRef): Value => (
+    options?.allowGetter === true && fields !== undefined ? readRootFields(value, fields, strip) as Value : value
+  );
+  const stripOf = (options: StripOptions | undefined): StripPlanRef => options?.strip === true ? impl.stripPlan : undefined;
   const codec: InternalObjectCodec<T> = {
     id,
     issueSource: impl.issueSource,
     ...(impl.data ? { data: impl.data } : {}),
-    stringify: (value, options) => impl.stringify(options?.allowGetter === true && fields !== undefined ? readRootFields(value, fields) as typeof value : value, options),
+    stringify: (value, options) => impl.stringify(readRoot(value, options, stripOf(options)), options),
     parse: (text, options) => {
       if (bounded && !boundsStripped(options)) rejectDeepText(text, options);
       return impl.parse(text, options);
     },
     // The bound judges the root the implementation reads, so nesting that a root getter supplies counts with `allowGetter`.
     validate: (value, options): value is T => {
-      const checked = options?.allowGetter === true && fields !== undefined ? readRootFields(value, fields) : value;
+      const checked = readRoot(value, options, undefined);
       if (bounded && valueNestsDeeperThan(checked, resolveMaxDepth(options?.maxDepth))) return false;
       return impl.validate(checked, options);
     },
     assert: (value, options) => {
-      if (options?.allowGetter !== true || fields === undefined) {
-        if (bounded) rejectDeepValue(value, options);
-        return impl.assert(value, options);
-      }
-      const checked = readRootFields(value, fields);
+      const checked = readRoot(value, options, undefined);
       if (bounded) rejectDeepValue(checked, options);
       const result = impl.assert(checked, options);
       return checked === value ? result : value as T;
     },
     // The generated implementation returns the emitted JSON type, which WireFormat mirrors.
-    toWireFormat: <Value extends T>(value: Value, options?: EncodeOptions & AllowGetterOptions) => impl.toWireFormat(options?.allowGetter === true && fields !== undefined ? readRootFields(value, fields) as Value : value, options) as WireFormat<Value>,
+    toWireFormat: <Value extends T>(value: Value, options?: EncodeOptions & AllowGetterOptions) => impl.toWireFormat(readRoot(value, options, stripOf(options)), options) as WireFormat<Value>,
     fromWireFormat: (wire, options) => {
       if (bounded && !boundsStripped(options)) rejectDeepValue(wire, options);
       return impl.fromWireFormat(wire, options);

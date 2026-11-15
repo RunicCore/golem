@@ -2,7 +2,7 @@ import { LibError, LibErrorKind, type IssuePath } from './errors.js';
 import { activeConversionPath, conversionError } from './conversion-error.js';
 import { type GeneratedModelConstructor, type GeneratedModelResult } from './model.js';
 import { findGeneratedModelDefinition, findGeneratedModelDefinitionForConstructor, isGeneratedModel } from './model-registry.js';
-import { instanceFields } from './presence.js';
+import { instanceFields, presentValue } from './presence.js';
 import { isDateTime } from './rfc3339.js';
 
 /** The tag as JSON text. A tag comes from a request, so any value can arrive: `String` throws for an object whose `toString` is not a function. */
@@ -93,9 +93,10 @@ export function defineModelProperty(target: object, name: string, value: unknown
  * declared field is read once, so its getter runs once and the copy never runs a prototype getter again: a defined
  * value is an own enumerable property, and `undefined` is an own non-enumerable one, absent in the JSON view and
  * shadowing the prototype. Another own enumerable key keeps its defined value, except program state of a model
- * instance, which is left out and never read. Nested values are shared. A root that is no object stays as it is.
+ * instance and, in a call with `strip`, a key that `strip` (the plan of the root) removes: these are left out and never read.
+ * Nested values are shared. A root that is no object stays as it is. `strip` is `undefined` when the call does not strip.
  */
-export function readRootFields(value: unknown, fields: readonly string[]): unknown {
+export function readRootFields(value: unknown, fields: readonly string[], strip: StripPlanRef): unknown {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) return value;
   const root = value as Record<string, unknown>;
   const copy: object = Object.create(Object.getPrototypeOf(value));
@@ -105,8 +106,10 @@ export function readRootFields(value: unknown, fields: readonly string[]): unkno
     else defineModelProperty(copy, name, read);
   }
   const declared = instanceFields(value);
+  const plan = typeof strip === 'function' ? strip() : strip;
+  const stripped = plan?.kind === 'object' ? plan : undefined;
   for (const key of Object.keys(root)) {
-    if (Object.hasOwn(copy, key) || (declared !== undefined && !declared.includes(key))) continue;
+    if (Object.hasOwn(copy, key) || (declared !== undefined && !declared.includes(key)) || (stripped !== undefined && removesKey(key, stripped))) continue;
     const read = root[key];
     if (read !== undefined) defineModelProperty(copy, key, read);
   }
@@ -405,7 +408,7 @@ export interface StripWalkOptions {
   /** The `maxDepth` of the call: `undefined` is the default, `Infinity` turns the bound off. */
   readonly maxDepth: number | undefined;
   /**
-   * For a recursive model. A decode's input is bounded by `maxDepth` before the codec recurses over it, and a call with `strip` leaves that bound to strip;
+   * Whether the model reaches a recursive model. Only then does `maxDepth` apply: a model that reaches none has no bound, as the codec says. A decode's input is bounded by `maxDepth` before the codec recurses over it, and a call with `strip` leaves that bound to strip;
    * an encode has no bound of its own. The value that strip leaves is bounded as a whole, the objects that the plan does not walk included (a class value is a leaf,
    * as in the codec's own bound), and what strip removes is never counted.
    */
@@ -429,9 +432,10 @@ export function stripForDecode(value: unknown, plan: StripPlanRef, options: Stri
  * A value that nests deeper than `maxDepth` is a cycle or too deep: a cycle among the keys that strip reads is reported as a cycle, else the depth error is thrown.
  */
 function strip(value: unknown, plan: StripPlanRef, direction: StripDirection, { maxDepth, bound }: StripWalkOptions): unknown {
-  const limit = resolveMaxDepth(maxDepth);
+  // A model that reaches no recursive model has no bound, so `maxDepth` does not apply to it, and its plan is as deep as the model: no value can cycle in it.
+  const limit = bound ? resolveMaxDepth(maxDepth) : Infinity;
   // A value parsed from JSON text has no cycle.
-  const mayHoldCycle = direction === 'encode' || detachedInputDepth === 0;
+  const mayHoldCycle = bound && (direction === 'encode' || detachedInputDepth === 0);
   // A limit up to the depth of the plain walk ends a cycle before the call stack ends. Above it, and with the bound off, the walk keeps the objects on its path and reports a revisit as the cycle error of the direction. It reads only the keys that it walks, so a getter of a key that a closed object removes never runs.
   const walk: StripWalk = { limit, direction, onPath: mayHoldCycle && limit > PLAIN_WALK_MAX_DEPTH ? new Set<object>() : undefined };
   const tooDeep = (): LibError => direction === 'encode'
@@ -452,7 +456,7 @@ function strip(value: unknown, plan: StripPlanRef, direction: StripDirection, { 
     }
     throw tooDeep();
   }
-  if (bound && valueNestsDeeperThan(stripped, limit)) throw tooDeep();
+  if (valueNestsDeeperThan(stripped, limit)) throw tooDeep();
   return stripped;
 }
 
@@ -474,20 +478,24 @@ const PLAIN_WALK_BUDGET = 16_384;
 let plainWalkBudget = 0;
 
 /**
+ * The values one level of the depth walk follows: the items of an array, the declared fields that an instance of a model holds
+ * as own enumerable properties (its other keys are program state, which no codec writes, so they are never read), or every own
+ * enumerable value of a plain object. An array is returned as it is; any other level allocates one array.
+ */
+function levelValues(level: object): readonly unknown[] {
+  if (Array.isArray(level)) return level;
+  const declared = instanceFields(level);
+  return declared === undefined ? Object.values(level) : declared.map((name) => presentValue(level, name));
+}
+
+/**
  * True when `level` and everything below it fits in `levels` levels and the budget. Cycles and shared nodes spend the budget or
  * reach the depth, so it answers false for them. When it answers false the exact walk reads the value again, so a getter runs
- * twice. It allocates one array of values for each object (`Object.values`); an array level allocates nothing.
+ * twice. It allocates one array of values for each object (`levelValues`); an array level allocates nothing.
  */
 function fitsPlainWalk(level: object, levels: number): boolean {
   if (levels < 1 || --plainWalkBudget < 0) return false;
-  if (Array.isArray(level)) {
-    for (let index = 0; index < level.length; index++) {
-      const item: unknown = level[index];
-      if (typeof item === 'object' && item !== null && isNestingLevel(item) && !fitsPlainWalk(item, levels - 1)) return false;
-    }
-    return true;
-  }
-  const items: unknown[] = Object.values(level);
+  const items = levelValues(level);
   for (let index = 0; index < items.length; index++) {
     const item = items[index];
     if (typeof item === 'object' && item !== null && isNestingLevel(item) && !fitsPlainWalk(item, levels - 1)) return false;
@@ -523,8 +531,8 @@ export function valueNestsDeeperThan(value: unknown, maxDepth: number): boolean 
     walkedAt.set(entry, depth);
     onPath.add(entry);
     stack.push(entry, LEAVE);
-    if (Array.isArray(entry)) for (let index = 0; index < entry.length; index++) stack.push(entry[index]);
-    else for (const key of Object.keys(entry)) stack.push((entry as Record<string, unknown>)[key]);
+    const items = levelValues(entry);
+    for (let index = 0; index < items.length; index++) stack.push(items[index]);
   }
   return false;
 }

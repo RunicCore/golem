@@ -591,6 +591,7 @@ stringify<TTask>(task, { allowGetter: true });
 By default a field counts when it is an own enumerable property, as in `JSON.stringify`. With `allowGetter: true`, a declared field of the root object also counts when a getter or an inherited value supplies it.
 
 - It applies to the root value of an `IObject` or `IModel` codec. Nested values are judged as without it.
+- With `strip: true`, a getter of a key that strip removes is not read.
 - `parse`, `fromWireFormat`, `validateInstance` and `ModelValidator` do not take it.
 
 ### Validation context {#validation-context}

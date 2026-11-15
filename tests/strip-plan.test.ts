@@ -60,3 +60,21 @@ test('a union of an array node of another module and a closed object gets the pl
   assert.deepEqual(stripForDecode([{ label: 'a', extra: 1 }], holder, { maxDepth: undefined, bound: false }), [{ label: 'a' }]);
   assert.deepEqual(stripForDecode({ code: 'c', extra: 1 }, holder, { maxDepth: undefined, bound: false }), { code: 'c' });
 });
+
+test('a union of a scalar node of another module and a closed object gets the plan of the object', () => {
+  // protects: T-896 a scalar node of another module is no object: read as one it makes two objects, the union gets no plan, and the extra key of the object stays
+  const code = { kind: 'object', properties: { code: { kind: 'string' } }, required: ['code'], additionalProperties: false };
+  const scalar = { id: 'Scalar', descriptor: { kind: 'string' } } as SchemaNode;
+  const env = {
+    extraValues: () => undefined,
+    classOf: () => undefined,
+    nodeOf: () => scalar,
+    external: () => true,
+    importedPlan: () => undefined,
+  } as unknown as StripPlanEnv;
+  const union = { kind: 'union', variants: [{ kind: 'reference', name: 'Scalar' }, code] };
+  const plan = new StripPlans(env).ofNode({ id: 'holder', descriptor: union } as unknown as SchemaNode);
+  assert.ok(plan, 'the union holds one closed object');
+  const holder = new Function(`return ${render(plan)};`)() as Parameters<typeof stripForDecode>[1];
+  assert.deepEqual(stripForDecode({ code: 'c', extra: 1 }, holder, { maxDepth: undefined, bound: false }), { code: 'c' });
+});

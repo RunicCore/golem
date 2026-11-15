@@ -367,10 +367,42 @@ test('strip on encode', async (t) => {
     }
   });
 
-  await t.test('the model value of a TSerde field is not a level of strip, so a class value fits the bound of its parent', () => {
+  await t.test('the model value of a TSerde field of a recursive model is not a level of strip, so a class value fits the bound of its parent', () => {
     // protects: T-896 strip leaves the model value of a serde field before it counts a level, as the depth check of the codec counts a class value as a leaf
     for (const level of levels) {
       assert.deepEqual(m.classPriced.toWireFormat({ price: new m.Price(5) }, { ...strip, validate: level, maxDepth: 1 }), { price: { amount: '5' } }, `validate ${level}`);
+    }
+  });
+
+  await t.test('a model that reaches no recursive model has no bound, so maxDepth does not apply to a strip of it', () => {
+    // protects: T-896 the docs say a model that reaches no recursive model has no bound, so strip counts no level for it, on an encode and on a decode
+    const value = { inner: { title: 'a', x: 1 }, list: [{ title: 'b', y: 2 }], z: 3 };
+    for (const level of levels) {
+      assert.deepEqual(m.nested.toWireFormat(value, { ...strip, validate: level, maxDepth: 1 }), { inner: { title: 'a' }, list: [{ title: 'b' }] }, `encode, validate ${level}`);
+      assert.deepEqual(m.nested.fromWireFormat(value, { ...strip, validate: level, maxDepth: 1 }), { inner: { title: 'a' }, list: [{ title: 'b' }] }, `decode, validate ${level}`);
+    }
+  });
+
+  await t.test('a recursive model instance is bounded by what it holds in its declared fields, not by its program state', () => {
+    // protects: T-896 the depth walk of an encode reads the declared fields of an instance only, so a deep or throwing key of its program state neither fails the encode nor runs
+    let deep: unknown = { x: 1 };
+    for (let index = 0; index < 8; index++) deep = { x: [deep] };
+    for (const level of levels) {
+      const withDeepState = Object.assign(new m.Tree({ name: 'a' }), { cache: deep });
+      assert.deepEqual(m.tree.toWireFormat(withDeepState, { ...strip, validate: level, maxDepth: 5 }), { name: 'a' }, `deep state, validate ${level}`);
+    }
+    // The validator reads a key before it tells it from program state, so a getter of program state is judged at validate false only.
+    const withGetter = new m.Tree({ name: 'a' });
+    Object.defineProperty(withGetter, 'cache', { enumerable: true, get: () => { throw new Error('program state was read'); } });
+    assert.deepEqual(m.tree.toWireFormat(withGetter, { ...strip, validate: false }), { name: 'a' });
+  });
+
+  await t.test('allowGetter with strip does not read a key of the root that strip removes', () => {
+    // protects: T-896 the copy of the root that allowGetter makes leaves out the keys that strip removes, so a throwing getter of such a key never runs
+    const row = { title: 'a', get secret(): never { throw new Error('a removed key was read'); } };
+    for (const level of levels) {
+      assert.deepEqual(m.plain.toWireFormat(row, { ...strip, allowGetter: true, validate: level }), { title: 'a' }, `toWireFormat, validate ${level}`);
+      assert.deepEqual(JSON.parse(m.plain.stringify(row, { ...strip, allowGetter: true, validate: level })), { title: 'a' }, `stringify, validate ${level}`);
     }
   });
 

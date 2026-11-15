@@ -47,7 +47,7 @@ export type TTaggedOpen = IModel<{ item: (TMoney | TOpenOther) & Discriminator<'
 /** A value that is `{ units }` in the model and `{ amount }` on the wire. */
 type Units = { units: number } & TSerde<typeof encodeUnits, typeof decodeUnits>;
 /** A value of a class that the model holds as an instance. */
-export type TClassPriced = IObject<{ price: Price & TSerde<typeof encodePrice, typeof decodePrice> }>;
+export type TClassPriced = IObject<{ price: Price & TSerde<typeof encodePrice, typeof decodePrice>; kids?: TClassPriced[] }>;
 /** A tagged union with an array variant, which takes its values by JSON type. */
 export type TPetList = IObject<{ pet: (Cat | Dog | TPlain[]) & Discriminator<'kind'> }>;
 export type TPriced = IObject<{ price: Units; note?: string }>;

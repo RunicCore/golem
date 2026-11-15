@@ -2413,6 +2413,7 @@ function emitCodecRegistrationSection(runtime: NodeRuntime): Code {
     ...(objectDescriptor ? [code`  fields: ${literal(Object.keys(objectDescriptor.properties))},`] : []),
     ...(runtime.reachesCycle ? [code`  recursive: true,`] : []),
     ...(runtime.reachesCycle && runtime.stripPlan ? [code`  stripBounds: true,`] : []),
+    ...(runtime.stripPlan ? [code`  stripPlan: ${identifier(stripPlanName(node.codecId))},`] : []),
     code`  fromWireFormat: ${names.fromWire},`,
     ...(data && Object.keys(data).length > 0 ? [code`  data: ${documentLiteral(data)},`] : []),
     code`  issueSource: ${rt.serde.IssueSource}.${identifier(ctx.issueSource)},`,
