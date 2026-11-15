@@ -21,7 +21,7 @@ import {
   modelEnv,
   modelStableId,
 } from './model-resolution.js';
-import { uncarriedOf } from './model-schema-graph.js';
+import { parseValueKey, uncarriedOf } from './model-schema-graph.js';
 import { resolveLocal } from './normalize.js';
 
 /**
@@ -35,14 +35,12 @@ function golemModeGraph(document: unknown, analysis: OpenApiModelAnalysis, sdk: 
   for (const operation of sdk.operations) {
     const values: SdkOperationValue[] = [];
     for (const [key, node] of analysis.convertedNodeIds) {
-      // The key is one of the key functions of `model-schema-graph.ts`: a JSON array of strings that starts with the operation name.
-      const parts: unknown = JSON.parse(key);
-      const [name, ...at] = Array.isArray(parts) && parts.every((part): part is string => typeof part === 'string') ? parts : [];
-      if (name === undefined) throw new TypeError(`The key ${key} of a converted value is not the key of a body, a parameter or a response header.`);
-      if (name !== operation.name) continue;
+      const place = parseValueKey(key);
+      if (place === undefined) throw new TypeError(`The key ${key} of a converted value is not the key of a body, a parameter or a response header.`);
+      if (place.operation !== operation.name) continue;
       const input = analysis.graphInputs.values.get(key);
       const inline = input && { ...(input.name === undefined ? {} : { name: input.name }), descriptor: JSON.stringify(input.descriptor) };
-      values.push({ at, node, ...(inline ? { inline } : {}) });
+      values.push({ at: place.at, node, ...(inline ? { inline } : {}) });
     }
     const bundle = sdk.validation?.bundles.get(operation.name);
     const validation: SdkOperationValidation | undefined = bundle && {

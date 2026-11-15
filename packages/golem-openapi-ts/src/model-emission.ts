@@ -55,7 +55,7 @@ import {
   type CompositionSite,
 } from './model-resolution.js';
 import { openApiValidationSchemaClosure } from './model-manifest.js';
-import { analyzeOpenApiModels, reachableSchemaNodes, schemaGraphView } from './model-schema-graph.js';
+import { analyzeOpenApiModels, reachableSchemaNodes, schemaGraphView, valueKey, valuePlace } from './model-schema-graph.js';
 
 /** The bases of the model that `reference` names, when it has any. */
 function referenceBases(reference: string, definitions: ModelDefinitions): { readonly bases?: ReturnType<typeof modelBases> } {
@@ -300,7 +300,7 @@ function emitSchemaCodecRuntime(
     if (!failing) throw error;
     const definition = definitions.get(failing.name);
     const schemaName = definition?.schemaName ?? failing.name;
-    const advice = /union/i.test(message) && !(thrown instanceof ObjectUnionDiscriminatorError)
+    const advice = thrown instanceof AmbiguousUnionConversionError
       ? ' Declare an OpenAPI discriminator (propertyName and mapping) on the oneOf/anyOf, or give each object variant a required const tag.'
       : '';
     const named = `schema ${JSON.stringify(schemaName)}`;
@@ -435,7 +435,7 @@ export interface OperationValidatorNames {
 
 /** The node that converts the value of an operation at a place (see `SdkOperationShape`) and the group of models that holds it; none for a value that converts nothing. */
 function convertedValueAt(analysis: OpenApiModelAnalysis, operation: NormalizedOperation, at: readonly string[]): { readonly nodeId: string; readonly groupId: string } | undefined {
-  const nodeId = analysis.convertedNodeIds.get(JSON.stringify([operation.name, ...at]));
+  const nodeId = analysis.convertedNodeIds.get(valueKey(operation.name, at));
   const groupId = nodeId === undefined ? undefined : analysis.grouping.owner.get(nodeId);
   return nodeId !== undefined && groupId !== undefined ? { nodeId, groupId } : undefined;
 }
@@ -444,10 +444,10 @@ function convertedValueAt(analysis: OpenApiModelAnalysis, operation: NormalizedO
 function operationCodecShape(operation: NormalizedOperation, analysis: OpenApiModelAnalysis, checks: SdkOperationShape['checks']): SdkOperationShape {
   return {
     values: [
-      ...operation.requestContent.map((media) => ['request', media.contentType]),
-      ...operation.responses.flatMap((response) => response.content.map((media) => ['response', response.status, media.contentType])),
-      ...operation.parameters.map((parameter) => ['parameter', parameter.in, parameter.name]),
-      ...operation.responses.flatMap((response) => Object.keys(response.headers).map((name) => ['response-header', response.status, name])),
+      ...operation.requestContent.map((media) => valuePlace.requestBody(media.contentType)),
+      ...operation.responses.flatMap((response) => response.content.map((media) => valuePlace.responseBody(response.status, media.contentType))),
+      ...operation.parameters.map((parameter) => valuePlace.parameter(parameter.in, parameter.name)),
+      ...operation.responses.flatMap((response) => Object.keys(response.headers).map((name) => valuePlace.responseHeader(response.status, name))),
     ],
     ...(checks ? { checks } : {}),
   };

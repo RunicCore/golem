@@ -4,6 +4,8 @@ import {
   type GolemResult,
   type HookParticipants,
 } from '@exprtlabs/golem/generator-api';
+import { nonempty } from '@exprtlabs/golem/internal/plan-support';
+import { OPENAPI_DATES, optionChoice } from './plan-options.js';
 import { resolveOpenApiMode, type OpenApiContext, type OpenApiMode, type OpenApiModeSetting } from './plan.js';
 import { normalizeSchemaUnions } from './document.js';
 import { writeSdk as emitSdk } from './emit.js';
@@ -29,7 +31,7 @@ export interface OpenApiGenerationResult extends GolemResult {
 
 export const apiVersion = API_VERSION;
 
-function validateGenerateContext(context: OpenApiGenerationContext): { readonly profile: OpenApiGenerationProfile; readonly mode: OpenApiMode } {
+function validateGenerateContext(context: OpenApiGenerationContext): { readonly profile: OpenApiGenerationProfile; readonly mode: OpenApiMode; readonly dates: OpenApiContext['dates'] } {
   if (!context || typeof context !== 'object' || Array.isArray(context)) {
     throw new TypeError('generate context must be an object');
   }
@@ -38,14 +40,8 @@ function validateGenerateContext(context: OpenApiGenerationContext): { readonly 
       throw new TypeError(`context.${key} must be an absolute path`);
     }
   }
-  if (context.name !== undefined && (typeof context.name !== 'string' || !context.name.trim())) {
-    throw new TypeError('context.name must be a non-empty string when provided');
-  }
-  if (context.dates !== undefined && context.dates !== 'date' && context.dates !== 'temporal') {
-    throw new TypeError('context.dates must be "date" or "temporal" when provided');
-  }
-  const mode = resolveOpenApiMode(context);
-  return { profile: requireProfile(context.profile), mode };
+  if (context.name !== undefined) nonempty(context.name, 'context.name');
+  return { profile: requireProfile(context.profile), mode: resolveOpenApiMode(context), dates: optionChoice(context.dates, OPENAPI_DATES, 'context.dates') };
 }
 
 /**
@@ -53,11 +49,11 @@ function validateGenerateContext(context: OpenApiGenerationContext): { readonly 
  * outside the input/reference reads required by validation.
  */
 export async function generate(context: OpenApiGenerationContext): Promise<OpenApiGenerationResult> {
-  const { profile, mode } = validateGenerateContext(context);
+  const { profile, mode, dates } = validateGenerateContext(context);
   const input = path.resolve(context.input);
   const output = path.resolve(context.output);
   const loaded = await loadOpenApiInput(input, context);
-  const result = writeResolvedSdk(loaded.document, { output, name: context.name, profile, mode, locate: loaded.locate, ...(context.dates === undefined ? {} : { dates: context.dates }), ...(context.hooks === undefined ? {} : { hooks: context.hooks }) });
+  const result = writeResolvedSdk(loaded.document, { output, name: context.name, profile, mode, locate: loaded.locate, ...(dates === undefined ? {} : { dates }), ...(context.hooks === undefined ? {} : { hooks: context.hooks }) });
   const failed = result.diagnostics?.some((diagnostic) => diagnostic.severity === GolemDiagnosticSeverity.Error) ?? false;
   return {
     apiVersion: API_VERSION,
