@@ -519,6 +519,7 @@ async function loadGraph(
       walked.add(walkKey);
       const loaded = documents.get(next.target.uri) ?? await loadDocument(next.target.uri);
       const node = resolveJsonPointer(loaded.document, next.target.pointer);
+      // A pointer that names nothing is user input: `no-unresolved-refs` reports it after the bundle (`loadOpenApiInput`).
       if (node === undefined) continue;
       const base = next.target.uri === rootUri ? schemaDocumentBase(rootDocument) : next.target.uri;
       visitOpenApiComponent(next.kind, node, base, `#${next.target.pointer}`, handlersFor(next.target.uri));

@@ -574,35 +574,31 @@ function emitClient(
     scope.claim('__GolemOperationRuntimeValidators', 'operation validators type import');
   }
   const metadataName = `${clientName[0]?.toLowerCase() ?? 'c'}${clientName.slice(1)}SecuritySchemeMetadata`;
-  if (plan.clientSurfaces.auth || plan.clientSurfaces.mutualTls) scope.claim(metadataName, 'security metadata export');
-  const aliases = new Map<string, string>();
-  const securityAliases = new Map<string, string>();
-  operations.forEach((operation, index) => {
+  const usesSecurityMetadata = plan.clientSurfaces.auth || plan.clientSurfaces.mutualTls;
+  if (usesSecurityMetadata) scope.claim(metadataName, 'security metadata export');
+  // Each operation module is imported under the aliases that the scope decided; a name is imported when the code calls it.
+  const operationImports = operations.map((operation, index) => {
     scope.claim(operation.name, `operation ${JSON.stringify(operation.name)}`);
     let alias = `__golemOperationFactory${index}`;
     while (scope.has(alias)) alias += '_';
     scope.claim(alias, `operation factory ${JSON.stringify(operation.name)}`);
-    aliases.set(operation.name, alias);
-    if (plan.clientSurfaces.auth || plan.clientSurfaces.mutualTls) {
+    const source = new ImportSource(`./operations/${operation.name}.js`);
+    const factory = source.name(operationFactoryName(operation), { alias });
+    let security: Code | undefined;
+    if (usesSecurityMetadata) {
       let securityAlias = `__golemSecuritySchemes${index}`;
       while (scope.has(securityAlias)) securityAlias += '_';
       scope.claim(securityAlias, `security metadata ${JSON.stringify(operation.name)}`);
-      securityAliases.set(operation.name, securityAlias);
+      security = source.name('__golemSecuritySchemes', { alias: securityAlias });
     }
+    return { operation, source, factory, security };
   });
-  // Each operation module is imported under the aliases that the scope decided; a name is imported when the code calls it.
-  const operationSources = operations.map((operation) => new ImportSource(`./operations/${operation.name}.js`));
   const serversSource = new ImportSource('./servers.js');
-  const localSources = [...operationSources, serversSource];
+  const localSources = [...operationImports.map(({ source }) => source), serversSource];
   if (plan.servers.length) scope.claim('__golemServers', 'document servers import');
-  const factoryCodes = operations.map((operation, index) => operationSources[index]?.name(operationFactoryName(operation), { alias: aliases.get(operation.name) ?? '' }) ?? BLANK);
-  const securityCodes = operations.flatMap((operation, index) => {
-    const securityAlias = securityAliases.get(operation.name);
-    return securityAlias ? [operationSources[index]?.name('__golemSecuritySchemes', { alias: securityAlias }) ?? BLANK] : [];
-  });
-  const metadata = plan.clientSurfaces.auth || plan.clientSurfaces.mutualTls
+  const metadata = usesSecurityMetadata
     ? code`export const ${exportedName(metadataName)} = {
-${join(securityCodes.map((alias) => code`  ...${alias},`), code`\n`)}
+${join(operationImports.flatMap(({ security }) => security ? [code`  ...${security},`] : []), code`\n`)}
 } as const;`
     : BLANK;
   const clientRuntime = rt.client.ClientRuntime;
@@ -618,9 +614,9 @@ ${join(securityCodes.map((alias) => code`  ...${alias},`), code`\n`)}
   const methods = join(operations.map((operation) =>
     code`  ${identifierPart(operation.name)}(): ${apiOperation}<${inputTypeOf(operation)}, ${responseTypeOf(operation)}, ${named('RequestOptions')}>;`,
   ), code`\n`);
-  const implementations = join(operations.map((operation, index) =>
+  const implementations = join(operationImports.map(({ operation, factory }) =>
     code`  ${identifierPart(operation.name)}(): ${apiOperation}<${inputTypeOf(operation)}, ${responseTypeOf(operation)}, ${named('RequestOptions')}> {
-    return ${factoryCodes[index] ?? BLANK}(this.runtime);
+    return ${factory}(this.runtime);
   }`,
   ), code`\n\n`);
   const undeclared = plan.helpers.has('selectResponse');

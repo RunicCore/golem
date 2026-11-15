@@ -173,6 +173,7 @@ export function bundleReferenceGraph(graph: ReferenceGraph): BundledDocument {
       continue;
     }
     const node = resolveJsonPointer(graph.documents.get(target.uri)?.document, target.pointer);
+    // The loader walked no node here, so the reference stays as written and `no-unresolved-refs` reports it on the bundle.
     if (node === undefined) continue;
     const aliasName = primaryAliasNames.get(key);
     byKey.set(key, {
