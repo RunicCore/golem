@@ -855,6 +855,9 @@ export function compareDiagnostics(left: SyncDiagnostic, right: SyncDiagnostic, 
   return order(path(left), path(right)) || order(left.pos, right.pos) || order(left.end, right.end) || order(left.code, right.code) || order(diagnosticText(left), diagnosticText(right));
 }
 
+/** The option overrides of a program, flags included. */
+type OptionOverrides = NonNullable<OpenProgramOptions['compilerOptionOverrides']>;
+
 /** The user's configuration text with the program's option overrides written after its own options, and the way back to the user's text. */
 interface OverriddenConfig {
   readonly text: string;
@@ -865,9 +868,10 @@ interface OverriddenConfig {
 /**
  * The text of a configuration on disk with `overrides` written as the last properties of its `compilerOptions`, so that the compiler locates an
  * option error as `tsc` locates it: at the user's own option that the error names, and else at an override, which `relocate` moves to the
- * `compilerOptions` name. Without a `compilerOptions` object `tsc` has no place for the error either, so there is nothing to write.
+ * `compilerOptions` name. A `compilerOptions` that is no object (`null`) is replaced by one that holds the overrides; with no `compilerOptions`
+ * property `tsc` has no place for the error either, so there is nothing to write.
  */
-function overriddenConfig(api: API, configPath: string, overrides: Readonly<Record<string, unknown>>): OverriddenConfig | undefined {
+function overriddenConfig(api: API, configPath: string, overrides: OptionOverrides): OverriddenConfig | undefined {
   const text = sys.readFile(configPath);
   if (text === undefined) return undefined;
   const retained = api.createSourceFile(configPath, text);
@@ -876,12 +880,16 @@ function overriddenConfig(api: API, configPath: string, overrides: Readonly<Reco
     const [statement] = file.statements;
     if (statement === undefined || !ast.isExpressionStatement(statement) || !ast.isObjectLiteralExpression(statement.expression)) return undefined;
     const property = statement.expression.properties.find((candidate): candidate is ast.PropertyAssignment => ast.isPropertyAssignment(candidate) && ast.isStringLiteral(candidate.name) && candidate.name.text === 'compilerOptions');
-    if (property === undefined || !ast.isObjectLiteralExpression(property.initializer)) return undefined;
-    const last = property.initializer.properties.at(-1);
-    const boundary = last === undefined ? property.initializer.getStart(file) + 1 : last.end;
-    const written = `${last === undefined ? '' : ','}${Object.entries(overrides).map(([option, value]) => `${JSON.stringify(option)}:${JSON.stringify(value)}`).join(',')}`;
+    if (property === undefined) return undefined;
+    const entries = Object.entries(overrides).map(([option, value]) => `${JSON.stringify(option)}:${JSON.stringify(value)}`).join(',');
+    const { initializer } = property;
+    // The text from `start` to `end` is replaced by `written`: the overrides after the last option, or an object for a value that is none.
+    const last = ast.isObjectLiteralExpression(initializer) ? initializer.properties.at(-1) : undefined;
+    const [start, end, written] = !ast.isObjectLiteralExpression(initializer)
+      ? [initializer.getStart(file), initializer.end, `{${entries}}`] as const
+      : last === undefined ? [initializer.getStart(file) + 1, initializer.getStart(file) + 1, entries] as const : [last.end, last.end, `,${entries}`] as const;
     const name = { pos: property.name.getStart(file), end: property.name.end };
-    // The written text has no line break, so a line keeps its number; a position after it moves back by its length.
+    // The written text has no line break, so a line keeps its number; a position after it moves back by what the write added.
     const lineStarts = ast.computeLineStarts(text);
     const lineAt = (position: number): number => lineStarts.findLastIndex((start) => start <= position);
     const lineText = (line: number): string => text.slice(lineStarts[line], lineStarts[line + 1]);
@@ -890,19 +898,20 @@ function overriddenConfig(api: API, configPath: string, overrides: Readonly<Reco
       const { relatedInformation } = diagnostic;
       const related = relatedInformation && { relatedInformation: relatedInformation.map(relocate) };
       if (diagnostic.fileName === undefined || canonical(diagnostic.fileName) !== configPath) return { ...diagnostic, ...related };
-      const overridden = diagnostic.pos >= boundary && diagnostic.pos < boundary + written.length;
-      const { pos, end } = overridden ? name : { pos: diagnostic.pos < boundary ? diagnostic.pos : diagnostic.pos - written.length, end: diagnostic.end < boundary ? diagnostic.end : Math.max(boundary, diagnostic.end - written.length) };
+      const overridden = diagnostic.pos >= start && diagnostic.pos < start + written.length;
+      const back = (position: number): number => (position < start ? position : position >= start + written.length ? position - (written.length - (end - start)) : start);
+      const { pos, end: stop } = overridden ? name : { pos: back(diagnostic.pos), end: back(diagnostic.end) };
       return {
         ...diagnostic,
         ...related,
         pos,
-        end,
+        end: stop,
         startPosition: place(pos),
-        endPosition: place(end),
+        endPosition: place(stop),
         sourceLines: overridden ? [{ line: lineAt(pos), text: lineText(lineAt(pos)) }] : diagnostic.sourceLines?.map(({ line }) => ({ line, text: lineText(line) })),
       };
     };
-    return { text: `${text.slice(0, boundary)}${written}${text.slice(boundary)}`, relocate };
+    return { text: `${text.slice(0, start)}${written}${text.slice(end)}`, relocate };
   } finally {
     retained.dispose();
   }
@@ -988,7 +997,7 @@ interface SnapshotRequest extends ProgramRequest {
   /** The configuration of the user whose text the compiler's option errors name, when the program is not opened on it: a derived configuration extends it, a synthetic program has none. */
   readonly twinOf: string | undefined;
   /** The option overrides of the request, flags included: the derived configuration carries them, so the user's text has none of them. */
-  readonly overrides: Readonly<Record<string, unknown>>;
+  readonly overrides: OptionOverrides;
 }
 
 /**
@@ -1434,7 +1443,7 @@ export class ProgramSession implements Disposable {
    * The overrides of the program are written into the text it reads (`overriddenConfig`), so each option error is located as `tsc` locates it:
    * one that names an option of the user's text lies in that text, and one that only an override causes goes to the `compilerOptions` name.
    */
-  private diagnosticsOfConfig(configPath: string, overlays: ReadonlyMap<string, string>, overrides: Readonly<Record<string, unknown>>): readonly SyncDiagnostic[] {
+  private diagnosticsOfConfig(configPath: string, overlays: ReadonlyMap<string, string>, overrides: OptionOverrides): readonly SyncDiagnostic[] {
     return this.withCompiler('parse', (api) => {
       const previous = this.overlays;
       const overridden = Object.keys(overrides).length === 0 ? undefined : overriddenConfig(api, configPath, overrides);
