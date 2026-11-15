@@ -6,7 +6,8 @@ import test, { type TestContext } from 'node:test';
 import * as ts from '@exprtlabs/golem/internal/ts';
 import type * as Six from '#golem/typescript-ts6';
 import type * as Seven from '#golem/typescript-ts7';
-import { createProgramFromSources, forEachChild, isTypeAliasDeclaration } from '#golem/typescript-ts7';
+import { compareDiagnostics, createProgramFromSources, forEachChild, isTypeAliasDeclaration } from '#golem/typescript-ts7';
+import { CaseSensitivity, toRootedFilePath } from 'typescript/path';
 import type { TypeScriptBackend } from '#golem/typescript-types';
 import { createFixtureProject } from './fixture-project.js';
 import { countCheckerRequests } from './support/golem-channels.js';
@@ -431,4 +432,12 @@ test('the checker asks the compiler at most once for each distinct typeToString 
   const answers = [checker.isTypeAssignableTo(string, union), checker.isTypeAssignableTo(union, string), checker.isTypeAssignableTo(string, number), checker.isTypeAssignableTo(string, union), checker.isTypeAssignableTo(union, string)];
   assert.deepEqual(answers, [true, false, false, true, false], 'the order of the two types is part of the question');
   assert.ok(requests.isTypeAssignableTo <= 3, `isTypeAssignableTo asked the compiler ${requests.isTypeAssignableTo} times for 3 distinct questions`);
+});
+
+test('diagnostics of files that differ in case sort by canonical path, as tsc sorts them on a file system that ignores case', () => {
+  // protects: T-961 tsc orders by the lower-cased path on macOS and Windows; the test container is case-sensitive, so the comparator takes the host's rule
+  const at = (fileName: string): Parameters<typeof compareDiagnostics>[0] => ({ fileName: toRootedFilePath(fileName, undefined), pos: 0, end: 1, code: 2322, category: 1, text: 'Type mismatch.' });
+  const [upper, lower] = [at('/src/B.ts'), at('/src/a.ts')];
+  assert.ok(compareDiagnostics(upper, lower, CaseSensitivity.Insensitive) > 0, 'a.ts comes before B.ts when case is ignored');
+  assert.ok(compareDiagnostics(upper, lower, CaseSensitivity.Sensitive) < 0, 'B.ts comes before a.ts when case counts');
 });

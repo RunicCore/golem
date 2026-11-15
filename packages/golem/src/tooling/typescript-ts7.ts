@@ -24,6 +24,7 @@ import {
   join,
   resolve as resolvePath,
 } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import * as ast from 'typescript/ast';
 import { GOLEM_CHANNELS } from './diagnostics-channels.js';
 import { displayPath } from './generator-core.js';
@@ -60,6 +61,7 @@ import {
   type Type as SyncType,
 } from 'typescript/sync';
 import { serverFS, type FileSystemCallbacks } from 'typescript/fs';
+import { canonicalize, CaseSensitivity } from 'typescript/path';
 import type { Node, SourceFile, TypeNode } from 'typescript/ast';
 import type { EmitKind, MemoryEmit, OpenProgramOptions, ParsedProject, ProgramSessionOptions } from './typescript-types.js';
 
@@ -752,11 +754,18 @@ const resolveAtCurrentFolder = (api: API): ResolveAtCurrentFolder => (options) =
   { configFileName: join(process.cwd(), 'tsconfig.golem-flags.json') },
 ).options as Readonly<Record<string, unknown>>;
 
+/** Whether the file system tells `A.ts` from `a.ts`: the rule of the TypeScript 6 system and of the TypeScript 7 API, which probes the file of its own code spelled in the other case. */
+function fileSystemIsCaseSensitive(): boolean {
+  if (process.platform === 'win32') return false;
+  const swapped = fileURLToPath(import.meta.url).replace(/\w/g, (char) => (char === char.toUpperCase() ? char.toLowerCase() : char.toUpperCase()));
+  return statSync(swapped, { throwIfNoEntry: false }) === undefined;
+}
+
 export const sys: ModuleResolutionHost & {
   useCaseSensitiveFileNames: boolean;
   getCurrentDirectory(): string;
 } = {
-  useCaseSensitiveFileNames: process.platform !== 'win32',
+  useCaseSensitiveFileNames: fileSystemIsCaseSensitive(),
   getCurrentDirectory: () => process.cwd(),
   // Like the TypeScript 6 system: a file, so a folder named like a module is no module.
   fileExists: (filename) => statSync(filename, { throwIfNoEntry: false })?.isFile() === true,
@@ -793,6 +802,9 @@ export const sys: ModuleResolutionHost & {
   },
 };
 
+/** How `tsc` keys a file by its name on this file system: lower case when the file system ignores case. */
+const hostCaseSensitivity = sys.useCaseSensitiveFileNames ? CaseSensitivity.Sensitive : CaseSensitivity.Insensitive;
+
 export function createCompilerHost(options: CompilerOptions = {}, _setParentNodes?: boolean): CompilerHost {
   void options;
   return {
@@ -803,7 +815,7 @@ export function createCompilerHost(options: CompilerOptions = {}, _setParentNode
     getDirectories: (directory) => sys.getDirectories?.(directory) ?? [],
     realpath: (filename) => sys.realpath?.(filename) ?? filename,
     useCaseSensitiveFileNames: sys.useCaseSensitiveFileNames,
-    getCanonicalFileName: (filename) => filename,
+    getCanonicalFileName: (filename) => canonicalize(filename, hostCaseSensitivity),
     getNewLine: () => '\n',
   };
 }
@@ -837,10 +849,11 @@ export function getPreEmitDiagnostics(program: Program): readonly SyncDiagnostic
 /** The message of a diagnostic, its chain included. */
 const diagnosticText = (diagnostic: SyncDiagnostic): string => [diagnostic.text, ...(diagnostic.messageChain ?? []).map((chained) => chained.text)].join('\n');
 
-/** The order `tsc` sorts diagnostics in: file, start, end, code, message. A diagnostic without a file comes first. */
-function compareDiagnostics(left: SyncDiagnostic, right: SyncDiagnostic): number {
+/** The order `tsc` sorts diagnostics in: file by its canonical path, start, end, code, message. A diagnostic without a file comes first. */
+export function compareDiagnostics(left: SyncDiagnostic, right: SyncDiagnostic, caseSensitivity: CaseSensitivity): number {
   const order = (a: string | number | undefined, b: string | number | undefined): number => (a === b ? 0 : a === undefined ? -1 : b === undefined ? 1 : a < b ? -1 : 1);
-  return order(left.fileName, right.fileName) || order(left.pos, right.pos) || order(left.end, right.end) || order(left.code, right.code) || order(diagnosticText(left), diagnosticText(right));
+  const path = (diagnostic: SyncDiagnostic): string | undefined => (diagnostic.fileName === undefined ? undefined : canonicalize(diagnostic.fileName, caseSensitivity));
+  return order(path(left), path(right)) || order(left.pos, right.pos) || order(left.end, right.end) || order(left.code, right.code) || order(diagnosticText(left), diagnosticText(right));
 }
 
 /**
@@ -880,8 +893,9 @@ export function getTscDiagnostics(program: Program, emitDiagnostics: readonly Sy
     semantic: () => program.getSemanticDiagnostics(),
     declaration: () => program.getDeclarationDiagnostics(),
   }, program.getCompilerOptions());
-  const sorted = [...found, ...emitDiagnostics].sort(compareDiagnostics);
-  return sorted.filter((diagnostic, index) => index === 0 || compareDiagnostics(sorted[index - 1]!, diagnostic) !== 0);
+  const compare = (left: SyncDiagnostic, right: SyncDiagnostic): number => compareDiagnostics(left, right, hostCaseSensitivity);
+  const sorted = [...found, ...emitDiagnostics].sort(compare);
+  return sorted.filter((diagnostic, index) => index === 0 || compare(sorted[index - 1]!, diagnostic) !== 0);
 }
 
 export function canHaveDecorators(node: Node): boolean {
