@@ -57,7 +57,7 @@ test('an issue narrows to the typed fields of its code', () => {
 });
 
 test('messages() overrides a message by field and code or by code alone', () => {
-  const validator = new ModelValidator<{ name: string; nick: string }>({ name: '', nick: '' });
+  const validator = new ModelValidator<{ name: string; nick: string }>({ name: '', nick: '' }, { cache: 'attach' });
   validator.messages({ 'name.tooSmall': 'Too short', required: 'Fill this in' });
   const tooSmall = (field: string): Issue => toIssue({ path: [field], code: 'tooSmall', measure: 'length', limit: 3, inclusive: true }, IssueSource.TypeScript, IssueRepresentation.Model);
 

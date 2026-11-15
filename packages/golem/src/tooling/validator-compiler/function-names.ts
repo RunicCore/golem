@@ -26,32 +26,35 @@ export function functionParameters(fn: IrFunction): Code {
  * which functions turn out to be one: the survey writes every function against its own slots, and the final pass writes
  * each call against the slots of the function that stays (see `groupFunctions`), so a name has one slot.
  */
+/** The form of a schema function a name slot, a call or a declared name stands for: the full validator or its fast check. */
+export type CheckForm = 'full' | 'fast';
+
 export class FunctionSlots {
   private readonly full: readonly NameSlot[];
   private readonly fast: readonly NameSlot[];
-  private readonly owners = new Map<NameSlot, { readonly id: number; readonly fast: boolean }>();
+  private readonly owners = new Map<NameSlot, { readonly id: number; readonly form: CheckForm }>();
 
   public constructor(functions: readonly IrFunction[]) {
     this.full = functions.map(fn => nameSlot(`function ${fn.id}`));
     this.fast = functions.map(fn => nameSlot(`fast check ${fn.id}`));
     functions.forEach((fn, id) => {
-      this.owners.set(this.full[id], { id, fast: false });
-      this.owners.set(this.fast[id], { id, fast: true });
+      this.owners.set(this.full[id], { id, form: 'full' });
+      this.owners.set(this.fast[id], { id, form: 'fast' });
     });
   }
 
-  public of(id: number, fast: boolean): NameSlot {
-    return (fast ? this.fast : this.full)[id];
+  public of(id: number, form: CheckForm): NameSlot {
+    return (form === 'fast' ? this.fast : this.full)[id];
   }
 
-  /** The function a slot belongs to, and whether it is the slot of its fast check. */
-  public owner(slot: NameSlot): { readonly id: number; readonly fast: boolean } | undefined {
+  /** The function a slot belongs to, and the form its slot names. */
+  public owner(slot: NameSlot): { readonly id: number; readonly form: CheckForm } | undefined {
     return this.owners.get(slot);
   }
 }
 
 /** The slot a call names: the function `id` after forwarding, or its fast check. */
-export type CalleeSlot = (id: number, fast: boolean) => NameSlot;
+export type CalleeSlot = (id: number, form: CheckForm) => NameSlot;
 
 export interface CallArguments {
   readonly value: Code;

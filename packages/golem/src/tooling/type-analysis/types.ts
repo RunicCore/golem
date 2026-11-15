@@ -762,7 +762,7 @@ interface DescribeScope {
   readonly claimHeadName: (type: ts.Type, stem: string, suffix: string) => string;
   readonly isCycleHead: (type: ts.Type, location: ts.Node) => boolean;
   readonly rejectUnlessAllowAny: (context: TypeAnalysisContext, kind: 'any' | 'unknown') => void;
-  readonly modelOf: (type: ts.Type, node: ts.TypeNode | undefined, isRoot: boolean, serde: boolean) => ModelLookup;
+  readonly modelOf: (type: ts.Type, request: ModelRequest) => ModelLookup;
   readonly modelValidates: (context: TypeAnalysisContext) => boolean;
   /** The `describe` of the builder: every child type is described through it. */
   readonly describe: (
@@ -776,6 +776,16 @@ interface DescribeScope {
     nameHint?: string,
     nameNode?: ts.TypeNode,
   ) => ModelConversionDescriptor;
+}
+
+/** What `modelOf` is told about the type it looks up. */
+interface ModelRequest {
+  /** The authored type node, when the type has one. */
+  readonly node: ts.TypeNode | undefined;
+  /** The type is the fields type of the model being described, which is no model of its own. */
+  readonly isRoot: boolean;
+  /** A `TSerde` tag is on the type, so a bigint or class value converts by its codec. */
+  readonly serde: boolean;
 }
 
 /** The model a type stands for, with the evidence `modelOf` read. */
@@ -1037,10 +1047,19 @@ function describeScalar(scope: DescribeScope, call: DescribeCall): ModelConversi
   return undefined;
 }
 
+/** What `nameProjection` is told about the type: its place, and what `modelOf` and the shape test found. */
+interface ProjectionRequest {
+  readonly isRoot: boolean;
+  /** `modelOf` read the type as a projection of a model, or as a property mapping. */
+  readonly projection: boolean;
+  /** The type is a plain object shape, not a union, sequence, callable or primitive wrapper. */
+  readonly objectShape: boolean;
+}
+
 /**
  * The name of the projection a type becomes (a projected object of a model, or a type that reaches itself), or none. `reused` says an equal projection holds the name already.
  */
-function nameProjection(scope: DescribeScope, call: DescribeCall, isRoot: boolean, projection: boolean, objectShape: boolean): { readonly name: string | undefined; readonly reused: boolean } {
+function nameProjection(scope: DescribeScope, call: DescribeCall, { isRoot, projection, objectShape }: ProjectionRequest): { readonly name: string | undefined; readonly reused: boolean } {
   const { checker, allowAny, modelLocations, projectionCache, projectionOwners, projectionSources, cycleStems, modelNameOf, sourceLocation, claimHeadName, isCycleHead } = scope;
   const { context, representation, nameHint, nameNode, node, type } = call;
   const recursive = !isRoot && isCycleHead(type, context.declaration);
@@ -1444,26 +1463,35 @@ function registerProjection(scope: DescribeScope, call: DescribeCall, projection
   return projectionReference(projectionName);
 }
 
+/** What `descriptorBuilder` is given besides the checker, the specifications and the manifest index. Each field is required: a caller states each one, `undefined` where the job has none. */
+export interface DescriptorBuilderOptions {
+  readonly validationLevel: GolemProfile['validation'];
+  readonly allowAny: boolean;
+  readonly identityRoot: string | undefined;
+  /** Whether a type that did not resolve is described as `unknown` (true) or stops with RUNM1058, which names the first TypeScript error inside it (false). */
+  readonly allowUnresolved: boolean;
+  /** Name that references to a model and its derived projections use; the model's own name when undefined. */
+  readonly nameFor: ((specification: ModelSpecification) => string) | undefined;
+  /** Canonical model source files of the job, which have a generated companion; undefined when the analysis emits none. */
+  readonly modelSources: ReadonlySet<string> | undefined;
+  /** The models-job boundary, for the diagnostic of a field that nests a model this job does not own. */
+  readonly boundary: ModelBoundary | undefined;
+  /** The first TypeScript error that starts inside a node, for the diagnostic of a type that did not resolve. */
+  readonly typeErrorAt: ((node: ts.Node) => string | undefined) | undefined;
+  /** Whether a source file is a default library file: a symbol key it declares is the built-in type's own metadata, not a field. */
+  readonly isDefaultLibraryFile: (file: ts.SourceFile) => boolean;
+  /** How many instances of one generic declaration may be open at once before the walk stops with RUNM1083; `DEFAULT_MAX_EXPANSION_DEPTH` when omitted. */
+  readonly maxExpansionDepth?: number;
+}
+
 export function descriptorBuilder(
   checker: ts.TypeChecker,
   specifications: readonly ModelSpecification[],
   manifestIndex: ManifestIndex,
-  validationLevel: GolemProfile['validation'],
-  allowAny = false,
-  identityRoot: string | undefined,
-  allowUnresolved = true,
-  /** Name that references to a model and its derived projections use; the model's own name when omitted. */
-  nameFor: ((specification: ModelSpecification) => string) | undefined,
-  /** Canonical model source files of the job, which have a generated companion; omitted when the analysis emits none. */
-  modelSources: ReadonlySet<string> | undefined,
-  /** The models-job boundary, for the diagnostic of a field that nests a model this job does not own. */
-  boundary: ModelBoundary | undefined,
-  /** The first TypeScript error that starts inside a node, for the diagnostic of a type that did not resolve. */
-  typeErrorAt: ((node: ts.Node) => string | undefined) | undefined,
-  /** Whether a source file is a default library file: a symbol key it declares is the built-in type's own metadata, not a field. */
-  isDefaultLibraryFile: (file: ts.SourceFile) => boolean,
-  /** How many instances of one generic declaration may be open at once before the walk stops with RUNM1083. */
-  maxExpansionDepth = DEFAULT_MAX_EXPANSION_DEPTH,
+  {
+    validationLevel, allowAny, identityRoot, allowUnresolved, nameFor, modelSources, boundary, typeErrorAt, isDefaultLibraryFile,
+    maxExpansionDepth = DEFAULT_MAX_EXPANSION_DEPTH,
+  }: DescriptorBuilderOptions,
 ): {
   (type: ts.Type, context: TypeAnalysisContext, seen?: ReadonlySet<ts.Type>, node?: ts.TypeNode): ModelConversionDescriptor;
   readonly projections: ReadonlyMap<string, ModelConversionDescriptor>;
@@ -1697,7 +1725,7 @@ export function descriptorBuilder(
    * the model, or the fields it shares. It is the ladder `describeType` climbs and the answer to "is this a model?" for every caller:
    * it reads only the checker and the specifications, so it writes no projection name, owner or cache entry.
    */
-  const modelOf = (type: ts.Type, node: ts.TypeNode | undefined, isRoot: boolean, serde: boolean): ModelLookup => {
+  const modelOf = (type: ts.Type, { node, isRoot, serde }: ModelRequest): ModelLookup => {
     const provenance = fieldProvenance(checker, node, specifications);
     const projection = provenance.projection || isPropertyMapping(type);
     const candidates = provenance.models.filter(specification => checker.isTypeAssignableTo(type, specification.fieldsType)
@@ -1748,7 +1776,7 @@ export function descriptorBuilder(
     if (tagged) return tagged;
     const { type } = call;
     const isRoot = call.node === context.fieldsNode;
-    const found = modelOf(type, call.node ?? provenanceNode ?? call.analysis.baseNode, isRoot, call.metadata.serde !== undefined);
+    const found = modelOf(type, { node: call.node ?? provenanceNode ?? call.analysis.baseNode, isRoot, serde: call.metadata.serde !== undefined });
     const modelReference = describeModelReference(scope, call, found);
     if (modelReference) return modelReference;
     const sdkType = describeSdkType(scope, call, isRoot);
@@ -1760,7 +1788,7 @@ export function descriptorBuilder(
     const objectShape = !type.isUnion() && !(type.isIntersection() && !objectLikeIntersection) && !sequence
       && ((type.flags & ts.TypeFlags.Object) !== 0 || objectLikeIntersection)
       && !primitiveConstructorDescriptor(type) && type.getCallSignatures().length === 0 && type.getConstructSignatures().length === 0;
-    const { name: projectionName, reused } = nameProjection(scope, call, isRoot, found.projection, objectShape);
+    const { name: projectionName, reused } = nameProjection(scope, call, { isRoot, projection: found.projection, objectShape });
     if (projectionName && reused) return projectionReference(projectionName);
     if ((sequence || objectShape) && seen.has(type) && !projectionName) {
       throw diagnostic(context.sourceFile, call.node ?? context.declaration, '1056', 'Recursive anonymous object conversion needs a named model or projected type.');
@@ -1777,7 +1805,7 @@ export function descriptorBuilder(
   const modelOfType = (type: ts.Type): ModelSpecification | undefined => {
     const members = type.isIntersection() ? type.types.filter((member) => !isPhantomTagType(checker, member)) : [];
     const [only] = members;
-    return modelOf(members.length === 1 ? only : type, undefined, false, carriesSerdeTag(checker, type)).model;
+    return modelOf(members.length === 1 ? only : type, { node: undefined, isRoot: false, serde: carriesSerdeTag(checker, type) }).model;
   };
   return Object.assign(describe, { projections, modelOf: modelOfType });
 }

@@ -35,10 +35,10 @@ export interface CompileOptions {
   readonly typed?: boolean;
   /**
    * Also export `is_X(value)` beside `validate_X` for each root that has a fast check, or for each root of a set that
-   * names it: true exactly when `validate_X` reports no issue, with no issue or path built. Off by default; with it off
-   * the module is as without the option.
+   * names it (`'all'` or a set of root names): true exactly when `validate_X` reports no issue, with no issue or path built.
+   * Off when absent; the module is then as without the option.
    */
-  readonly fastPath?: boolean | ReadonlySet<string>;
+  readonly fastPath?: 'all' | ReadonlySet<string>;
   /**
    * `full` (the default) writes one module whose validators check everything, and skip the value limits (lengths, patterns,
    * ranges, formats other than `date-time`, `multipleOf`, counts, `uniqueItems`) and the validation functions when the
@@ -90,7 +90,7 @@ export function compile(input: CompileInput, options: CompileOptions): CompileRe
   const { source, fastExports, passExports } = emit(module, {
     ...(options.specifiers === undefined ? {} : { specifiers: options.specifiers }),
     ...(options.typed ? { typed: true } : {}),
-    ...(options.fastPath === undefined || options.fastPath === false ? {} : { fastPath: options.fastPath }),
+    ...(options.fastPath === undefined ? {} : { fastPath: options.fastPath }),
     ...(options.level === undefined ? {} : { level: options.level }),
   });
   return { source, exports, fastExports, passExports, diagnostics };

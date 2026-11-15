@@ -1,6 +1,6 @@
 import { assertNever } from '../../assert-never.js';
 import { codeKey, type Code, type InputSlot } from '../code.js';
-import { FunctionSlots } from './function-names.js';
+import { FunctionSlots, type CheckForm } from './function-names.js';
 
 /** The fast check of a function as text, with what it calls. */
 export interface WrittenFastCheck {
@@ -21,7 +21,7 @@ export interface WrittenFunction {
 }
 
 /** The function a name part calls, and whether it calls the fast check. */
-type Callee = { readonly id: number; readonly fast: boolean };
+type Callee = { readonly id: number; readonly form: CheckForm };
 
 /**
  * The key of a body: its parts, and for each name part the group of the function it calls (and whether it is the fast
@@ -83,7 +83,7 @@ function bodyKey({ head, calls }: BodyKey, groups: ReadonlyMap<number, number>):
   for (const { callee, after } of calls) {
     const group = groups.get(callee.id);
     if (group === undefined) throw new Error(`The validator compiler has no emitted function for the schema function ${callee.id}.`);
-    key += `n${callee.fast},${group},${after}`;
+    key += `n${callee.form},${group},${after}`;
   }
   return key;
 }

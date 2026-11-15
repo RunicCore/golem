@@ -111,7 +111,7 @@ interface ReadSet {
  * and the merged union pass. `marks`: the function keeps an evaluation record, so a check that accepts anything still
  * marks its key.
  */
-export function readSet(check: IrObject, marks: boolean): ReadSet {
+export function readSet(check: IrObject, { marks }: { readonly marks: boolean }): ReadSet {
   const declared = [...new Set([
     ...check.required,
     ...check.dependentRequired.flatMap(({ trigger, keys }) => keys.length > 0 ? [trigger, ...keys] : []),
@@ -188,7 +188,7 @@ export const FULL_VALIDATOR: WriterMode = {
   call: (writer, id, args) => {
     const target = writer.target(id);
     writer.calls.add(target);
-    return callFunction(writer.functions[target], nameOf(writer.calleeSlot(target, false)), args);
+    return callFunction(writer.functions[target], nameOf(writer.calleeSlot(target, 'full')), args);
   },
   child: (writer, token, body) => {
     writer.line(code`${PATH}.push(${token});`);
@@ -280,7 +280,7 @@ function fastKeyTest(writer: FunctionWriter, { check, value, captured, reads }: 
 export function fastCheckMode(plan: FastPlan): WriterMode {
   const leafCall = (writer: FunctionWriter, id: number, value: Code): Code => {
     writer.calls.add(id);
-    return code`${localName('leafPasses')}(${nameOf(writer.calleeSlot(id, false))}, ${value})`;
+    return code`${localName('leafPasses')}(${nameOf(writer.calleeSlot(id, 'full'))}, ${value})`;
   };
   return {
     fail: { start: [], end: code`return true;`, issue: () => [code`return false;`], fail: () => code`return false;`, leaves: true },
@@ -290,7 +290,7 @@ export function fastCheckMode(plan: FastPlan): WriterMode {
       const target = writer.target(id);
       if (!plan.has(target)) return leafCall(writer, target, args.value);
       writer.fastCalls.add(target);
-      return code`${nameOf(writer.calleeSlot(target, true))}(${args.value})`;
+      return code`${nameOf(writer.calleeSlot(target, 'fast'))}(${args.value})`;
     },
     child: (_writer, _token, body) => body(),
     records: false,

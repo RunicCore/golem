@@ -2,7 +2,7 @@ import { code, helperDefinitions, identifier as identifierCode, join, nameOf, Na
 import type { IrFunction, IrModule } from './ir.js';
 import { compareText } from '../generator-core.js';
 import { rtType } from '../rt.js';
-import { VALUE, NEWLINE, SANITY, functionParameters, FunctionSlots, callFunction, type CalleeSlot } from './function-names.js';
+import { VALUE, NEWLINE, SANITY, functionParameters, FunctionSlots, callFunction, type CalleeSlot, type CheckForm } from './function-names.js';
 import { FULL_VALIDATOR, fastCheckMode, type WriterMode } from './modes.js';
 import { ModuleState } from './module-state.js';
 import { FunctionWriter } from './function-writer.js';
@@ -15,8 +15,8 @@ interface EmitOptions {
   readonly specifiers?: ImportOptions['specifiers'];
   /** Types each exported validator as a `Validator`, for a TypeScript file. */
   readonly typed?: boolean;
-  /** Also writes the boolean fast check `is_X` beside `validate_X`, for each root, or each root named, that has one (see `FastPlan`). */
-  readonly fastPath?: boolean | ReadonlySet<string>;
+  /** Also writes the boolean fast check `is_X` beside `validate_X`, for each root (`'all'`) or each root named, that has one (see `FastPlan`). Absent: none. */
+  readonly fastPath?: 'all' | ReadonlySet<string>;
   /** `sanity` writes the module that checks the shape only (see `sanitize`); `full`, the default, one module whose validators skip the value limits when the caller passes the flag `s`. */
   readonly level?: 'full' | 'sanity';
 }
@@ -78,8 +78,8 @@ export function exportNames(rootNames: Iterable<string>): ReadonlyMap<string, Ro
  * The name of the function written at position `index` among the functions the module keeps (`f3_User`), or of its fast
  * check (`is3_User`). The index keeps names unique; the schema's name, when it has one, shows in stack traces and profiles.
  */
-function functionName(index: number, schemaName: string | undefined, fast: boolean): string {
-  const prefix = fast ? 'is' : 'f';
+function functionName(index: number, schemaName: string | undefined, form: CheckForm): string {
+  const prefix = form === 'fast' ? 'is' : 'f';
   return schemaName === undefined ? `${prefix}${index}` : `${prefix}${index}_${identifier(schemaName).slice(0, NAME_LIMIT)}`;
 }
 
@@ -130,8 +130,8 @@ interface Reached {
 function startEmission(whole: IrModule, fastPath: EmitOptions['fastPath'], level: EmitOptions['level']): Emission {
   const source = level === 'sanity' ? sanitize(whole) : whole;
   // A set of root names is any `ReadonlySet`, not only a `Set`.
-  const wantsFastCheck = (name: string): boolean => fastPath === true || (typeof fastPath === 'object' && fastPath.has(name));
-  const wanted = fastPath === true || (typeof fastPath === 'object' && fastPath.size > 0);
+  const wantsFastCheck = (name: string): boolean => fastPath === 'all' || (fastPath !== undefined && fastPath.has(name));
+  const wanted = fastPath === 'all' || (fastPath !== undefined && fastPath.size > 0);
   const sourceTarget = forwardingTarget(source.functions);
   // The passes are IR functions of their own, so the plan and the writers treat them as any other function.
   const passes = wanted ? projectPasses(source.functions, source.exports.filter(({ name }) => wantsFastCheck(name)).map(({ fn }) => sourceTarget(fn))) : undefined;
@@ -159,7 +159,7 @@ function startEmission(whole: IrModule, fastPath: EmitOptions['fastPath'], level
 function surveyFunctions({ module, target, plan, fastMode, slots }: Emission): ReadonlyMap<number, WrittenFunction> {
   const survey = new ModuleState();
   survey.importValidations(module.validations);
-  const ownSlot: CalleeSlot = (id, fast) => slots.of(id, fast);
+  const ownSlot: CalleeSlot = (id, form) => slots.of(id, form);
   return new Map(module.functions.filter(fn => target(fn.id) === fn.id).map(fn => [fn.id, {
     ...writeFunction(survey, module, target, ownSlot, fn, FULL_VALIDATOR),
     ...(fastMode !== undefined && (plan?.has(fn.id) ?? false) ? { fast: writeFastCheck(survey, module, target, ownSlot, fn, fastMode) } : {}),
@@ -186,18 +186,18 @@ function declareFunctionNames({ module, slots }: Emission, { kept, fastKept }: R
   const names = new NameTable();
   const keptFull = new Set(kept);
   [...new Set([...kept, ...fastKept])].sort((first, second) => first - second).forEach((id, index) => {
-    if (keptFull.has(id)) names.declare(slots.of(id, false), functionName(index, module.functions[id].name, false));
-    if (fastKept.has(id)) names.declare(slots.of(id, true), functionName(index, module.functions[id].name, true));
+    if (keptFull.has(id)) names.declare(slots.of(id, 'full'), functionName(index, module.functions[id].name, 'full'));
+    if (fastKept.has(id)) names.declare(slots.of(id, 'fast'), functionName(index, module.functions[id].name, 'fast'));
   });
   return names;
 }
 
 /** The slot of the function that stays, which every call of the functions grouped with it names: a name has one slot. */
 function stayingSlotOf({ slots }: Emission, { representative }: Reached): CalleeSlot {
-  return (id, fast) => {
+  return (id, form) => {
     const staying = representative.get(id);
     if (staying === undefined) throw new Error(`The validator compiler has no emitted function for the schema function ${id}.`);
-    return slots.of(staying, fast);
+    return slots.of(staying, form);
   };
 }
 
@@ -207,10 +207,10 @@ function writeStaying({ module, target, fastMode, slots }: Emission, { kept, fas
   state.importValidations(module.validations);
   const functions = kept.map(id => {
     const { parameters, body } = writeFunction(state, module, target, stayingSlot, module.functions[id], FULL_VALIDATOR);
-    return code`function ${nameOf(slots.of(id, false))}(${parameters}) {\n${body}`;
+    return code`function ${nameOf(slots.of(id, 'full'))}(${parameters}) {\n${body}`;
   });
   const fastFunctions = fastMode === undefined ? [] : [...fastKept].sort((first, second) => first - second)
-    .map(id => code`function ${nameOf(slots.of(id, true))}(${VALUE}) {\n${writeFastCheck(state, module, target, stayingSlot, module.functions[id], fastMode).body}`);
+    .map(id => code`function ${nameOf(slots.of(id, 'fast'))}(${VALUE}) {\n${writeFastCheck(state, module, target, stayingSlot, module.functions[id], fastMode).body}`);
   return { state, functions, fastFunctions };
 }
 
@@ -239,7 +239,7 @@ function writeExports({ module, target, fastRootExports, passRoots }: Emission, 
       : code`(value, all${sanity ? code`, ${SANITY}` : code``}) {`;
     return code`export function ${identifierCode(name)}${signature}
   const issues = [];
-  ${callFunction(module.functions[target(id)], nameOf(stayingSlot(target(id), false)), { value: identifierCode('value'), path: code`[]`, issues: identifierCode('issues'), all: identifierCode('all') })};
+  ${callFunction(module.functions[target(id)], nameOf(stayingSlot(target(id), 'full')), { value: identifierCode('value'), path: code`[]`, issues: identifierCode('issues'), all: identifierCode('all') })};
   return issues;
 }`;
   };
@@ -248,11 +248,11 @@ function writeExports({ module, target, fastRootExports, passRoots }: Emission, 
   const fastExports = new Map(fastNamed.map(({ name, exportName }) => [name, exportName] as const));
   // The fast check itself is the export: a valid value takes no extra call.
   const fastType = options.typed ? code`: (value: unknown) => boolean` : code``;
-  const fastWrappers = fastNamed.map(({ fn, exportName }) => code`export const ${identifierCode(exportName)}${fastType} = ${nameOf(stayingSlot(target(fn), true))};`);
+  const fastWrappers = fastNamed.map(({ fn, exportName }) => code`export const ${identifierCode(exportName)}${fastType} = ${nameOf(stayingSlot(target(fn), 'fast'))};`);
   const passNamed = passRoots.map(({ name, structure, predicates }) => ({ name, structure, predicates, passNames: exportsOf(name).passes }));
   const passExports = new Map(passNamed.map(({ name, passNames }) => [name, passNames] as const));
   const passWrappers = passNamed.flatMap(({ structure, predicates, passNames }) => [
-    code`export const ${identifierCode(passNames.structure)}${fastType} = ${nameOf(stayingSlot(target(structure), true))};`,
+    code`export const ${identifierCode(passNames.structure)}${fastType} = ${nameOf(stayingSlot(target(structure), 'fast'))};`,
     issuesOf(passNames.predicates, predicates),
   ]);
   return { wrappers, fastWrappers, passWrappers, fastExports, passExports };
