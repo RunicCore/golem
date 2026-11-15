@@ -855,10 +855,72 @@ export function compareDiagnostics(left: SyncDiagnostic, right: SyncDiagnostic, 
   return order(path(left), path(right)) || order(left.pos, right.pos) || order(left.end, right.end) || order(left.code, right.code) || order(diagnosticText(left), diagnosticText(right));
 }
 
+/** The option overrides of a program, flags included. */
+type OptionOverrides = NonNullable<OpenProgramOptions['compilerOptionOverrides']>;
+
+/** The user's configuration text with the program's option overrides written after its own options, and the way back to the user's text. */
+interface OverriddenConfig {
+  readonly text: string;
+  /** A diagnostic of the compiler on `text`, put where `tsc` puts it in the user's text: an error that names an option of the text lies there, and one that only an override causes is at the `compilerOptions` name. */
+  readonly relocate: (diagnostic: SyncDiagnostic) => SyncDiagnostic;
+}
+
+/**
+ * The text of a configuration on disk with `overrides` written as the last properties of its `compilerOptions`, so that the compiler locates an
+ * option error as `tsc` locates it: at the user's own option that the error names, and else at an override, which `relocate` moves to the
+ * `compilerOptions` name. A `compilerOptions` that is no object (`null`) is replaced by one that holds the overrides; with no `compilerOptions`
+ * property `tsc` has no place for the error either, so there is nothing to write.
+ */
+function overriddenConfig(api: API, configPath: string, overrides: OptionOverrides): OverriddenConfig | undefined {
+  const text = sys.readFile(configPath);
+  if (text === undefined) return undefined;
+  const retained = api.createSourceFile(configPath, text);
+  try {
+    const file = retained.sourceFile;
+    const [statement] = file.statements;
+    if (statement === undefined || !ast.isExpressionStatement(statement) || !ast.isObjectLiteralExpression(statement.expression)) return undefined;
+    const property = statement.expression.properties.find((candidate): candidate is ast.PropertyAssignment => ast.isPropertyAssignment(candidate) && ast.isStringLiteral(candidate.name) && candidate.name.text === 'compilerOptions');
+    if (property === undefined) return undefined;
+    const entries = Object.entries(overrides).map(([option, value]) => `${JSON.stringify(option)}:${JSON.stringify(value)}`).join(',');
+    const { initializer } = property;
+    // The text from `start` to `end` is replaced by `written`: the overrides after the last option, or an object for a value that is none.
+    const last = ast.isObjectLiteralExpression(initializer) ? initializer.properties.at(-1) : undefined;
+    const [start, end, written] = !ast.isObjectLiteralExpression(initializer)
+      ? [initializer.getStart(file), initializer.end, `{${entries}}`] as const
+      : last === undefined ? [initializer.getStart(file) + 1, initializer.getStart(file) + 1, entries] as const : [last.end, last.end, `,${entries}`] as const;
+    const name = { pos: property.name.getStart(file), end: property.name.end };
+    // The written text has no line break, so a line keeps its number; a position after it moves back by what the write added.
+    const lineStarts = ast.computeLineStarts(text);
+    const lineAt = (position: number): number => lineStarts.findLastIndex((start) => start <= position);
+    const lineText = (line: number): string => text.slice(lineStarts[line], lineStarts[line + 1]);
+    const place = (position: number): { readonly line: number; readonly character: number } => ({ line: lineAt(position), character: position - (lineStarts[lineAt(position)] ?? 0) });
+    const relocate = (diagnostic: SyncDiagnostic): SyncDiagnostic => {
+      const { relatedInformation } = diagnostic;
+      const related = relatedInformation && { relatedInformation: relatedInformation.map(relocate) };
+      if (diagnostic.fileName === undefined || canonical(diagnostic.fileName) !== configPath) return { ...diagnostic, ...related };
+      const overridden = diagnostic.pos >= start && diagnostic.pos < start + written.length;
+      const back = (position: number): number => (position < start ? position : position >= start + written.length ? position - (written.length - (end - start)) : start);
+      const { pos, end: stop } = overridden ? name : { pos: back(diagnostic.pos), end: back(diagnostic.end) };
+      return {
+        ...diagnostic,
+        ...related,
+        pos,
+        end: stop,
+        startPosition: place(pos),
+        endPosition: place(stop),
+        sourceLines: overridden ? [{ line: lineAt(pos), text: lineText(lineAt(pos)) }] : diagnostic.sourceLines?.map(({ line }) => ({ line, text: lineText(line) })),
+      };
+    };
+    return { text: `${text.slice(0, start)}${written}${text.slice(end)}`, relocate };
+  } finally {
+    retained.dispose();
+  }
+}
+
 /**
  * The user's configuration opened alone, for a program not opened on it. The compiler locates an option only in the text of the
  * configuration it opens, and the derived one only extends the user's, so an option error comes without a file. `lookup` gives the
- * options diagnostics of the user's own configuration; it runs once, and only when a diagnostic has no file.
+ * options diagnostics of the user's own configuration, with the program's overrides written into its text; it runs once, and only when a diagnostic has no file.
  */
 class ConfigTwin {
   private found: readonly SyncDiagnostic[] | undefined;
@@ -867,8 +929,8 @@ class ConfigTwin {
 
   /**
    * Each diagnostic with no file takes the twin's diagnostic of the same code and message; when several share them, the first takes the
-   * first, the second the second. A diagnostic with no match stays as it is (an error that a flag causes is not in the user's text), and a
-   * twin diagnostic that no one takes is dropped: the twin has other roots, so it can report what the program does not.
+   * first, the second the second. A diagnostic with no match stays as it is, and a twin diagnostic that no one takes is dropped: the twin has
+   * other roots, so it can report what the program does not.
    */
   positioned(diagnostics: readonly SyncDiagnostic[]): readonly SyncDiagnostic[] {
     if (diagnostics.every((diagnostic) => diagnostic.fileName !== undefined)) return diagnostics;
@@ -934,6 +996,8 @@ interface SnapshotRequest extends ProgramRequest {
   readonly synthetic?: SyntheticProgram;
   /** The configuration of the user whose text the compiler's option errors name, when the program is not opened on it: a derived configuration extends it, a synthetic program has none. */
   readonly twinOf: string | undefined;
+  /** The option overrides of the request, flags included: the derived configuration carries them, so the user's text has none of them. */
+  readonly overrides: OptionOverrides;
 }
 
 /**
@@ -1246,7 +1310,8 @@ export class ProgramSession implements Disposable {
   /** Open a program in a new snapshot that reflects every file change since the previous one. */
   openProgram(options: OpenProgramOptions): Program {
     if (programOpenedChannel.hasSubscribers) programOpenedChannel.publish({ session: this, configFile: options.configFile });
-    const base: SnapshotRequest = { ...programRequest(this.withFlags(options), sys, (configPath, overlays) => this.configReferencesOf(configPath, overlays)), twinOf: undefined };
+    const flagged = this.withFlags(options);
+    const base: SnapshotRequest = { ...programRequest(flagged, sys, (configPath, overlays) => this.configReferencesOf(configPath, overlays)), twinOf: undefined, overrides: flagged.compilerOptionOverrides ?? {} };
     return this.withCompiler('snapshot', (api, reused) => {
       const request = this.withRequestedRoots(api, base, options.onInput);
       // A program sees only its own overlays: a held program keeps the snapshot it was opened in.
@@ -1291,8 +1356,8 @@ export class ProgramSession implements Disposable {
         const project = created === undefined ? snapshot.getConfiguredProject(request.configPath) : snapshot.getProject(created);
         if (!project) throw new Error(`The compiler did not open the TypeScript project ${displayPath(request.configPath)} for ${displayPath(options.root)}.`);
         this.syntheticProgram = created ?? this.syntheticProgram;
-        const { twinOf } = request;
-        const program = new CompatProgram(this, snapshot, project, synthetic?.unbuilt, twinOf === undefined ? undefined : new ConfigTwin(() => this.diagnosticsOfConfig(twinOf, overlays)));
+        const { twinOf, overrides } = request;
+        const program = new CompatProgram(this, snapshot, project, synthetic?.unbuilt, twinOf === undefined ? undefined : new ConfigTwin(() => this.diagnosticsOfConfig(twinOf, overlays, overrides)));
         this.held.set(program, request);
         return program;
       } catch (error) {
@@ -1375,14 +1440,18 @@ export class ProgramSession implements Disposable {
    * The options diagnostics of one configuration opened alone, over the overlays of a program. It lives in a snapshot of its own that ends
    * with the call: the session's snapshot, its open project and its held programs stay as they are. A configuration with references opens them
    * here, and only here: the program that the session serves stays synthetic, and only the options diagnostics of this one are read.
+   * The overrides of the program are written into the text it reads (`overriddenConfig`), so each option error is located as `tsc` locates it:
+   * one that names an option of the user's text lies in that text, and one that only an override causes goes to the `compilerOptions` name.
    */
-  private diagnosticsOfConfig(configPath: string, overlays: ReadonlyMap<string, string>): readonly SyncDiagnostic[] {
+  private diagnosticsOfConfig(configPath: string, overlays: ReadonlyMap<string, string>, overrides: OptionOverrides): readonly SyncDiagnostic[] {
     return this.withCompiler('parse', (api) => {
       const previous = this.overlays;
-      this.setOverlays(overlays);
+      const overridden = Object.keys(overrides).length === 0 ? undefined : overriddenConfig(api, configPath, overrides);
+      this.setOverlays(overridden === undefined ? overlays : new Map([...overlays, [configPath, overridden.text]]));
       try {
         using alone = api.createSnapshot({ openProjects: [configPath], ensurePrograms: true });
-        return [...alone.getConfiguredProject(configPath)?.program.getProgramDiagnostics() ?? []];
+        const found = alone.getConfiguredProject(configPath)?.program.getProgramDiagnostics() ?? [];
+        return overridden === undefined ? [...found] : found.map(overridden.relocate);
       } finally {
         this.setOverlays(previous);
       }
