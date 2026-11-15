@@ -1,6 +1,6 @@
 import { isDeepStrictEqual } from 'node:util';
 import { builtinClassDescriptor, descriptorNeedsConversion } from '@exprtlabs/golem/internal/emitter';
-import type { SchemaGraph, SchemaNode } from '@exprtlabs/golem/internal/schema-graph';
+import { serdeWireDescriptor, type SchemaGraph, type SchemaNode } from '@exprtlabs/golem/internal/schema-graph';
 import { identifier } from '@exprtlabs/golem/internal/generator-support';
 import { asRecord, escapeJsonPointerToken, isJsonObject, objectEntries, type JsonObject } from './json.js';
 import type { GolemDiagnostic } from '@exprtlabs/golem/generator-api';
@@ -390,7 +390,7 @@ function valueClasses(descriptor: ModelTypeDescriptor): readonly JsonClass[] {
   switch (descriptor.kind) {
     case 'string': return ['string'];
     // A class value has the JSON types of its serde's wire form.
-    case 'class-value': return valueClasses((descriptor as { readonly serde?: { readonly wireDescriptor?: ModelTypeDescriptor } }).serde?.wireDescriptor ?? { kind: 'unknown' });
+    case 'class-value': return valueClasses(serdeWireDescriptor(descriptor) ?? { kind: 'unknown' });
     case 'number': return ['number'];
     case 'boolean': return ['boolean'];
     case 'null': return ['null'];

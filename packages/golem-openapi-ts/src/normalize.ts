@@ -126,11 +126,11 @@ export function resolveLocal(document: unknown, value: unknown): unknown {
   return followLocalRefs(document, value).value;
 }
 
-function contentEntries(content: unknown, featureLine?: OpenApiLine): OpenApiMediaType[] {
+function contentEntries(content: unknown, featureLine: OpenApiLine): OpenApiMediaType[] {
   return objectEntries(content).map(([contentType, media]) => {
     const mediaObject = asRecord(media);
     const itemSchema = schemaValue(mediaObject.itemSchema);
-    if (itemSchema !== null && featureLine !== undefined && featureLine !== '3.2') {
+    if (itemSchema !== null && featureLine !== '3.2') {
       throw new Error(`itemSchema is only supported in OpenAPI 3.2 (found ${featureLine} in ${contentType})`);
     }
     const base = {
@@ -246,7 +246,7 @@ function mergeParameters(
   return overrideParameters(pathParameters, operationLevel);
 }
 
-function normalizeResponses(document: unknown, responses: unknown): NormalizedResponse[] {
+function normalizeResponses(document: unknown, responses: unknown, featureLine: OpenApiLine): NormalizedResponse[] {
   return objectEntries(responses).map(([status, rawResponse]) => {
     const response = asRecord(resolveLocal(document, rawResponse));
     const links = Object.fromEntries(
@@ -257,7 +257,7 @@ function normalizeResponses(document: unknown, responses: unknown): NormalizedRe
       description: readString(response.description) ?? '',
       headers: asRecord(response.headers),
       links,
-      content: contentEntries(response.content, openApiLine(document)),
+      content: contentEntries(response.content, featureLine),
       schema: preferredSchema(response.content),
       success: /^2\d\d$/.test(status) || /^2XX$/i.test(status),
     };
@@ -290,7 +290,7 @@ function normalizeOperation(
   );
   const requestBodyValue = resolveLocal(document, operation.requestBody);
   const requestBody = isJsonObject(requestBodyValue) ? requestBodyValue : undefined;
-  const responses = normalizeResponses(document, operation.responses);
+  const responses = normalizeResponses(document, operation.responses, featureLine);
   const documentRecord = asRecord(document);
   const security = operation.security === undefined
     ? asSecurityRequirements(documentRecord.security)

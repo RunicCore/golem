@@ -195,16 +195,14 @@ describe('a model class with an id', () => {
     modules: { 'models.mjs': MODELS },
   };
 
-  test('is checked by instanceof at the full and the sanity level', async () => {
-    // protects: T-911 a sanity module imports the class its check names, so it loads and runs
-    for (const level of ['full', 'sanity'] as const) {
+  for (const level of ['full', 'sanity'] as const) {
+    test(`is checked by instanceof at the ${level} level`, async () => {
+      // protects: T-911 a sanity module imports the class its check names, so it loads and runs
       const { root } = await compileValidators({ ...input, level });
-      const Pet: unknown = Reflect.get(globalThis, 'importedPet');
-      assert.ok(typeof Pet === 'function', level);
-      assert.deepEqual(root(Reflect.construct(Pet, []), true), [], level);
-      assert.deepEqual(root({}, true), [{ path: [], code: 'instance', model: 'Pet' }], level);
-    }
-  });
+      assert.deepEqual(root(Reflect.construct(Reflect.get(globalThis, 'importedPet'), []), true), []);
+      assert.deepEqual(root({}, true), [{ path: [], code: 'instance', model: 'Pet' }]);
+    });
+  }
 });
 
 describe('a sanity module', () => {
