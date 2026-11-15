@@ -45,7 +45,9 @@ function installFakeOpenApiProvider(root: string, manifest: unknown): void {
     golem: { apiVersion: 2, block: 'openapi-ts', plan: './plan', generator: './generator' },
   }));
   // The real plan entry reads the block; the fake generator returns the manifest.
-  fs.copyFileSync(path.join(workspace, 'packages/golem-openapi-ts/dist/plan.js'), path.join(packageRoot, 'plan.js'));
+  for (const file of ['plan.js', 'plan-options.js']) {
+    fs.copyFileSync(path.join(workspace, 'packages/golem-openapi-ts/dist', file), path.join(packageRoot, file));
+  }
   copyFixtureFile(packageRoot, 'pipeline/returned-manifest-provider/generator.js', 'generator.js');
   fs.writeFileSync(path.join(packageRoot, 'fixture-manifest.json'), JSON.stringify(manifest));
 }
