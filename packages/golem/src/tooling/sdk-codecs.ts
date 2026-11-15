@@ -96,16 +96,16 @@ export type SdkValueCodec = (at: readonly string[], conversion: 'fromWire' | 'to
  */
 function operationCodecsOf(shape: SdkOperationShape, codecOf: SdkValueCodec): SdkOperationCodecs | undefined {
   // The request of a client operation leaves in its wire form and its response arrives in its plain form.
-  const keyed = (kind: string, key: (at: readonly string[]) => string, conversion: 'fromWire' | 'toWire'): SdkKeyedCode[] => shape.values
+  const keyed = (kind: string, conversion: 'fromWire' | 'toWire'): SdkKeyedCode[] => shape.values
     .filter((at) => at[0] === kind)
     .flatMap((at) => {
       const codec = codecOf(at, conversion);
-      return codec === undefined ? [] : [{ key: key(at.slice(1)), code: codec }];
+      return codec === undefined ? [] : [{ key: at.slice(1).join(':'), code: codec }];
     });
-  const encode = keyed('request', ([contentType]) => contentType!, 'toWire');
-  const decode = keyed('response', ([status, contentType]) => `${status}:${contentType}`, 'fromWire');
-  const parameters = keyed('parameter', ([location, name]) => `${location}:${name}`, 'toWire');
-  const headers = keyed('response-header', ([status, name]) => `${status}:${name}`, 'fromWire');
+  const encode = keyed('request', 'toWire');
+  const decode = keyed('response', 'fromWire');
+  const parameters = keyed('parameter', 'toWire');
+  const headers = keyed('response-header', 'fromWire');
   const codecs: SdkOperationCodecs = {
     ...shape.checks,
     ...(encode.length ? { encode } : {}),

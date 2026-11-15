@@ -198,7 +198,7 @@ export function flagsAsConfigOptions(flags: readonly string[], parse: (flags: re
 function parsedFlagOptions(flags: readonly string[], parse: (flags: readonly string[]) => ParsedArguments): Record<string, string | number | boolean | readonly string[]> {
   const options: Record<string, string | number | boolean | readonly string[]> = {};
   for (let index = 0; index < flags.length; index += 1) {
-    const flag = flags[index]!;
+    const flag = flags[index];
     const next = flags[index + 1];
     const together = next !== undefined && (!next.startsWith('-') || /^-\d+$/.test(next)) && (() => {
       const pair = parse([flag, next]);

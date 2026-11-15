@@ -1,6 +1,6 @@
 import type { Linter, Rule } from 'eslint';
 
-import { lineStarts } from './source-map.js';
+import { lineOf, lineStarts } from './source-map.js';
 import { openRewriteProject, type GolemHostOptions, type RewriteProject } from './rewrite-host.js';
 
 export type { GolemHostOptions };
@@ -16,13 +16,8 @@ export interface GolemEslintOptions extends GolemHostOptions {
 function locator(code: string): (offset: number) => { line: number; column: number } {
   const starts = lineStarts(code);
   return (offset) => {
-    let low = 0;
-    let high = starts.length - 1;
-    while (low < high) {
-      const middle = (low + high + 1) >> 1;
-      if (starts[middle]! <= offset) low = middle; else high = middle - 1;
-    }
-    return { line: low + 1, column: offset - starts[low]! };
+    const { line, start } = lineOf(starts, offset);
+    return { line: line + 1, column: offset - start };
   };
 }
 

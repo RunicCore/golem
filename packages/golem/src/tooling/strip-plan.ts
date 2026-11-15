@@ -6,7 +6,7 @@
  */
 
 import { assertNever } from '../assert-never.js';
-import type { DiscriminatorValue, ModelTypeDescriptor } from '../model-registry.js';
+import type { DiscriminatorValue, ModelTypeDescriptor, UnionDiscriminator } from '../model-registry.js';
 import { aliased, code, identifier, join, literal, type Code } from './code.js';
 import { rtType } from './rt.js';
 import { patternSchemas, serdeWireDescriptor, type SchemaGraph, type SchemaNode } from './schema-graph.js';
@@ -105,8 +105,8 @@ export class StripPlans {
     const patterns = patternSchemas(object).map(({ pattern, schema }) => ({ pattern, plan: schema === undefined ? undefined : this.ofDescriptor(schema) }));
     const declared = Object.keys(object.properties);
     // A field called `__proto__` is a computed key: written as a plain key of an object literal it would set the prototype of the object, and the walk reads an own property only.
-    const fields = declared.flatMap((name) => {
-      const plan = this.ofDescriptor(object.properties[name]!);
+    const fields = Object.entries(object.properties).flatMap(([name, property]) => {
+      const plan = this.ofDescriptor(property);
       return plan === undefined ? [] : [name === '__proto__' ? code`[${literal(name)}]: ${plan}` : code`${literal(name)}: ${plan}`];
     });
     const values = closed || extra === undefined ? undefined : this.ofDescriptor(extra);
@@ -152,7 +152,7 @@ export class StripPlans {
       const planned = fallback?.plan !== undefined || branches.some((branch) => branch.plan !== undefined);
       const arrays = byType.filter((leaf) => leaf.shape === 'array');
       // A TSerde variant has one shape in the wire and another in the model, so the JSON type of a value does not tell which variant takes it.
-      const array = arrays.length === 1 && !byType.some((leaf) => leaf.shape === 'serde') ? this.ofDescriptor(arrays[0]!.descriptor) : undefined;
+      const array = byType.some((leaf) => leaf.shape === 'serde') ? undefined : this.ofOnly(arrays);
       // The pick of each direction is built by the function that the writers of the union use, with the class that the codec of that direction tests, so strip and the codec choose the variant by one rule.
       const pick = (direction: VariantPick['direction']): Code => variantPick({
         property: table.propertyName,
@@ -174,20 +174,25 @@ export class StripPlans {
     if (leaves.some((leaf) => leaf.shape === 'serde')) return undefined;
     const objects = leaves.filter((leaf) => leaf.shape === 'object');
     const arrays = leaves.filter((leaf) => leaf.shape === 'array');
-    const object = objects.length === 1 ? this.ofDescriptor(objects[0]!.descriptor) : undefined;
-    const array = arrays.length === 1 ? this.ofDescriptor(arrays[0]!.descriptor) : undefined;
+    const object = this.ofOnly(objects);
+    const array = this.ofOnly(arrays);
     if (object !== undefined && array !== undefined) return code`{ kind: 'json-type', object: ${object}, array: ${array} }`;
     // Two arrays make exact matching, so an array is left as it is: the object plan may be a tagged union's, which holds an array plan of its own.
     if (object !== undefined && arrays.length > 1) return code`{ kind: 'json-type', object: ${object}, array: undefined }`;
     return object ?? array;
   }
 
+  /** The plan of the one leaf of a shape; undefined when the shape has none or several, which keep exact matching. */
+  private ofOnly(leaves: readonly { readonly descriptor: ModelTypeDescriptor }[]): Code | undefined {
+    const [only, second] = leaves;
+    return only === undefined || second !== undefined ? undefined : this.ofDescriptor(only.descriptor);
+  }
+
   /**
    * The leaves of a tagged union: the union itself for its objects, then the leaves of the variants that take values by JSON type and are not objects,
    * so a union that holds the array of a tagged union is not taken to hold one array only.
    */
-  private taggedLeaves(union: Extract<ModelTypeDescriptor, { readonly kind: 'union' }>, seen: Set<string>): { readonly descriptor: ModelTypeDescriptor; readonly shape: 'object' | 'array' | 'other' | 'serde' }[] {
-    const table = union.discriminator!;
+  private taggedLeaves(union: Extract<ModelTypeDescriptor, { readonly kind: 'union' }>, table: UnionDiscriminator, seen: Set<string>): { readonly descriptor: ModelTypeDescriptor; readonly shape: 'object' | 'array' | 'other' | 'serde' }[] {
     const byType = union.variants.flatMap((variant, index) => (table.variants[index]?.values ?? []).length === 0 && index !== table.defaultVariant && variant.kind !== 'null' && variant.kind !== 'undefined' ? this.leaves(variant, seen) : []);
     return [{ descriptor: union, shape: 'object' }, ...byType.filter((leaf) => leaf.shape !== 'object')];
   }
@@ -202,7 +207,7 @@ export class StripPlans {
       case 'array':
       case 'tuple': return [{ descriptor, shape: 'array' }];
       case 'union':
-        if (descriptor.discriminator !== undefined) return this.taggedLeaves(descriptor, seen);
+        if (descriptor.discriminator !== undefined) return this.taggedLeaves(descriptor, descriptor.discriminator, seen);
         return descriptor.variants.flatMap((variant) => variant.kind === 'null' || variant.kind === 'undefined' ? [] : this.leaves(variant, seen));
       case 'reference':
       case 'generated-model': {
@@ -214,7 +219,7 @@ export class StripPlans {
         seen.add(node.id);
         const target = node.descriptor;
         if (target.kind === 'array' || target.kind === 'tuple') return [{ descriptor, shape: 'array' }];
-        if (target.kind === 'union' && target.discriminator !== undefined) return [{ descriptor, shape: 'object' }, ...this.taggedLeaves(target, seen).slice(1)];
+        if (target.kind === 'union' && target.discriminator !== undefined) return [{ descriptor, shape: 'object' }, ...this.taggedLeaves(target, target.discriminator, seen).slice(1)];
         if (target.kind === 'object' || target.kind === 'intersection') return [{ descriptor, shape: 'object' }];
         return target.kind === 'union' ? this.leaves(target, seen) : [{ descriptor, shape: 'other' }];
       }

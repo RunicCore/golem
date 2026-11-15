@@ -1,5 +1,5 @@
 import { isAbsolute } from 'node:path';
-import { encodeMappings, LINE_BREAK, lineStarts, type MappingSegment, type SourceMapV3 } from './source-map.js';
+import { encodeMappings, LINE_BREAK, lineOf, lineStarts, type MappingSegment, type SourceMapV3 } from './source-map.js';
 import { displayPath } from './generator-core.js';
 
 export interface RewriteEdit {
@@ -56,7 +56,11 @@ const QUOTE_ESCAPES: Readonly<Record<string, string>> = {
 
 /** `from` as a single-quoted string literal. */
 function quote(from: string): string {
-  return `'${from.replace(QUOTE_ESCAPED, (character) => QUOTE_ESCAPES[character]!)}'`;
+  return `'${from.replace(QUOTE_ESCAPED, (character) => {
+    const escaped = QUOTE_ESCAPES[character];
+    if (escaped === undefined) throw new Error(`golem rewrite has no escape for ${JSON.stringify(character)} in a string literal`);
+    return escaped;
+  })}'`;
 }
 
 /**
@@ -99,16 +103,12 @@ export function applyRewrites(source: string, rewrite: FileRewrite, file?: strin
 
   const sourceLineStarts = lineStarts(text);
   const sourcePosition = (offset: number): { line: number; col: number } => {
-    let low = 0;
-    let high = sourceLineStarts.length - 1;
-    while (low < high) {
-      const middle = (low + high + 1) >> 1;
-      if (sourceLineStarts[middle]! <= offset) low = middle; else high = middle - 1;
-    }
-    return { line: low, col: offset - sourceLineStarts[low]! };
+    const { line, start } = lineOf(sourceLineStarts, offset);
+    return { line, col: offset - start };
   };
 
-  const lines: MappingSegment[][] = [[]];
+  let current: MappingSegment[] = [];
+  const lines = [current];
   let genCol = 0;
   let code = '';
   // Text maps run by run: every piece starts a segment, and so does every line it begins inside.
@@ -116,14 +116,15 @@ export function applyRewrites(source: string, rewrite: FileRewrite, file?: strin
     if (piece === '') return;
     const segment = (offset: number): void => {
       const { line, col } = sourcePosition(offset);
-      lines[lines.length - 1]!.push([genCol, 0, line, col]);
+      current.push([genCol, 0, line, col]);
     };
     segment(sourceOffset);
     let pieceStart = 0;
     LINE_BREAK.lastIndex = 0;
     for (let match = LINE_BREAK.exec(piece); match; match = LINE_BREAK.exec(piece)) {
       pieceStart = match.index + match[0].length;
-      lines.push([]);
+      current = [];
+      lines.push(current);
       genCol = 0;
       if (pieceStart < piece.length) segment(advances ? sourceOffset + pieceStart : sourceOffset);
     }

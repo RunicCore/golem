@@ -11,6 +11,18 @@ export function lineStarts(text: string): number[] {
   return starts;
 }
 
+/** The 0-based line that holds `offset` and the offset where that line starts: the last of the `starts` (ascending, the first is 0) at or before `offset`. */
+export function lineOf(starts: readonly number[], offset: number): { readonly line: number; readonly start: number } {
+  let line = 0;
+  let start = 0;
+  for (let low = 0, high = starts.length - 1; low <= high;) {
+    const middle = (low + high) >> 1;
+    const probe = starts[middle];
+    if (probe !== undefined && probe <= offset) { line = middle; start = probe; low = middle + 1; } else high = middle - 1;
+  }
+  return { line, start };
+}
+
 export interface SourceMapV3 {
   readonly version: 3;
   readonly file?: string;
@@ -52,6 +64,17 @@ export function encodeMappings(lines: readonly (readonly MappingSegment[])[]): s
   }).join(';');
 }
 
+type SegmentDeltas = readonly [number] | readonly [number, number, number, number] | readonly [number, number, number, number, number];
+
+/** The deltas of one segment: one for an unmapped segment, four with a source, five with a name; no other count is a segment. */
+function segmentDeltas(fields: readonly number[]): SegmentDeltas | undefined {
+  const [genCol, srcIndex, srcLine, srcCol, name, ...extra] = fields;
+  if (genCol === undefined || extra.length > 0) return undefined;
+  if (srcIndex === undefined) return [genCol];
+  if (srcLine === undefined || srcCol === undefined) return undefined;
+  return name === undefined ? [genCol, srcIndex, srcLine, srcCol] : [genCol, srcIndex, srcLine, srcCol, name];
+}
+
 /**
  * Decode to per-line segments of absolute values: `[genCol]` for an unmapped
  * segment, `[genCol, srcIndex, srcLine, srcCol]`, or the same plus a name index.
@@ -82,17 +105,18 @@ export function decodeMappings(mappings: string): number[][][] {
         shift = 0;
         accumulator = 0;
       }
-      if (shift !== 0 || ![1, 4, 5].includes(fields.length)) throw new Error(`Invalid source map segment '${segmentText}'`);
-      genCol += fields[0]!;
+      const deltas = segmentDeltas(fields);
+      if (shift !== 0 || deltas === undefined) throw new Error(`Invalid source map segment '${segmentText}'`);
+      genCol += deltas[0];
       const segment = [genCol];
-      if (fields.length >= 4) {
-        srcIndex += fields[1]!;
-        srcLine += fields[2]!;
-        srcCol += fields[3]!;
+      if (deltas.length !== 1) {
+        srcIndex += deltas[1];
+        srcLine += deltas[2];
+        srcCol += deltas[3];
         segment.push(srcIndex, srcLine, srcCol);
       }
-      if (fields.length === 5) {
-        nameIndex += fields[4]!;
+      if (deltas.length === 5) {
+        nameIndex += deltas[4];
         segment.push(nameIndex);
       }
       segments.push(segment);
@@ -107,22 +131,26 @@ export function decodeMappings(mappings: string): number[][][] {
  * `[srcIndex, srcLine, srcCol]`, or nothing when the map does not cover the line or starts after the column. Only an unchanged run advances
  * alike on both sides; text inserted or replaced by an edit maps to its start.
  */
-function locate(lines: readonly (readonly (readonly number[])[])[], line: number, col: number): readonly [number, number, number] | undefined {
+function locate(lines: readonly (readonly MappingSegment[])[], line: number, col: number): readonly [number, number, number] | undefined {
   const segments = lines[line];
   if (!segments) return undefined;
   let index = -1;
   for (let low = 0, high = segments.length - 1; low <= high;) {
     const middle = (low + high) >> 1;
-    if (segments[middle]![0]! <= col) { index = middle; low = middle + 1; } else high = middle - 1;
+    const probe = segments[middle];
+    if (probe !== undefined && probe[0] <= col) { index = middle; low = middle + 1; } else high = middle - 1;
   }
   const start = segments[index];
   if (!start) return undefined;
   const next = segments[index + 1];
-  const linear = !next || (next[1] === start[1] && next[2] === start[2] && next[3]! - start[3]! === next[0]! - start[0]!);
-  return [start[1]!, start[2]!, start[3]! + (linear ? col - start[0]! : 0)];
+  const linear = !next || (next[1] === start[1] && next[2] === start[2] && next[3] - start[3] === next[0] - start[0]);
+  return [start[1], start[2], start[3] + (linear ? col - start[0] : 0)];
 }
 
-const mappedSegments = (mappings: string): number[][][] => decodeMappings(mappings).map((line) => line.filter((segment) => segment.length >= 4));
+/** The segments of a map that name a source, as `[genCol, srcIndex, srcLine, srcCol]`; a name index is dropped. */
+const mappedSegments = (mappings: string): MappingSegment[][] => decodeMappings(mappings).map((line) => line.flatMap(([genCol, srcIndex, srcLine, srcCol]): MappingSegment[] => (
+  genCol === undefined || srcIndex === undefined || srcLine === undefined || srcCol === undefined ? [] : [[genCol, srcIndex, srcLine, srcCol]]
+)));
 
 /**
  * Compose by position: `outer` maps the rewritten text to the output, `inner`
@@ -137,8 +165,8 @@ export function composeSourceMaps(outer: SourceMapV3, inner: SourceMapV3): Sourc
   const lines = mappedSegments(outer.mappings).map((line) => {
     const composed: MappingSegment[] = [];
     for (const segment of line) {
-      const original = locate(innerLines, segment[2]!, segment[3]!);
-      if (original) composed.push([segment[0]!, ...original]);
+      const original = locate(innerLines, segment[2], segment[3]);
+      if (original) composed.push([segment[0], ...original]);
     }
     return composed;
   });
@@ -185,16 +213,16 @@ export function pointSourceMap(text: string, inner: SourceMapV3, filename: strin
 export function pointDeclarationMap(text: string, edit: SourceMapV3, filename: string): string {
   const emitted = parseEmittedMap(text, filename);
   // The edit read the other way: from a position of the compiler's text to its position in the edited text.
-  const edited: number[][][] = [];
-  decodeMappings(edit.mappings).forEach((line, editedLine) => {
-    for (const segment of line) if (segment.length >= 4) (edited[segment[2]!] ??= []).push([segment[3]!, 0, editedLine, segment[0]!]);
+  const edited: MappingSegment[][] = [];
+  mappedSegments(edit.mappings).forEach((line, editedLine) => {
+    for (const segment of line) (edited[segment[2]] ??= []).push([segment[3], 0, editedLine, segment[0]]);
   });
-  for (const line of edited) line?.sort((left, right) => left[0]! - right[0]!);
+  for (const line of edited) line?.sort((left, right) => left[0] - right[0]);
   const lines: MappingSegment[][] = [];
   mappedSegments(emitted.mappings).forEach((line, written) => {
     for (const segment of line) {
-      const place = locate(edited, written, segment[0]!);
-      if (place) (lines[place[1]] ??= []).push([place[2], segment[1]!, segment[2]!, segment[3]!]);
+      const place = locate(edited, written, segment[0]);
+      if (place) (lines[place[1]] ??= []).push([place[2], segment[1], segment[2], segment[3]]);
     }
   });
   for (const line of lines) line?.sort((left, right) => left[0] - right[0]);

@@ -112,8 +112,8 @@ export function sdkSchemaGraph(
   manifest: GolemModeManifest,
   validation: GolemProfile['validation'],
 ): { readonly graph: SchemaGraph; readonly valueNodes: ReadonlyMap<string, string> } {
-  const nodes = manifest.components.filter((component) => component.codecId !== undefined);
-  const graph = createSchemaGraph({}, { codecSource: 'openapi', codecIds: new Map(nodes.map((component) => [component.name, component.codecId!])) });
+  const nodes = manifest.components.flatMap(({ name, descriptor, codecId }) => codecId === undefined ? [] : [{ name, descriptor, codecId }]);
+  const graph = createSchemaGraph({}, { codecSource: 'openapi', codecIds: new Map(nodes.map((component) => [component.name, component.codecId])) });
   const parse = (text: string): ModelTypeDescriptor => JSON.parse(text) as ModelTypeDescriptor;
   internDescriptors(graph, nodes.map(({ name, descriptor }) => ({ name, descriptor: parse(descriptor), emitClass: false, validation })));
   const valueNodes = new Map<string, string>();
