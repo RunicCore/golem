@@ -32,16 +32,6 @@ export function diagnostic(
   return namedDiagnostic(sourceFile, node, `RUNM${code}`, message);
 }
 
-/** The declared type of a property, read at its own declaration. */
-export function propertyType(
-  checker: ts.TypeChecker,
-  property: ts.Symbol,
-  location: ts.Node,
-): ts.Type {
-  const declaration = property.valueDeclaration ?? property.declarations?.[0] ?? location;
-  return checker.getTypeOfSymbolAtLocation(property, declaration);
-}
-
 /** Resolve imported aliases without using the local spelling of a declaration. */
 export function resolveSymbol(checker: ts.TypeChecker, symbol: ts.Symbol | undefined): ts.Symbol | undefined {
   const seen = new Set<ts.Symbol>();

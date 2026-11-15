@@ -93,11 +93,8 @@ function sdkDescriptorOf(manifest: GolemModeManifest, name: string): ModelTypeDe
 /** The entry of an SDK type in a table keyed by the file and name of its declaration, found by the type's alias or its own symbol. */
 function sdkEntryOfType<Entry>(table: ReadonlyMap<string, Entry>, type: ts.Type): Entry | undefined {
   for (const symbol of [type.aliasSymbol, type.getSymbol?.()]) {
-    for (const declaration of symbol?.declarations ?? []) {
-      const file = canonicalFilename(declaration.getSourceFile().fileName);
-      const found = table.get(`${file}\0${symbol!.getName()}`) ?? table.get(`${file.replace(/\.d\.([cm]?ts)$/, '.$1')}\0${symbol!.getName()}`);
-      if (found !== undefined) return found;
-    }
+    const found = symbol && manifestModelOfSymbol(table, symbol);
+    if (found !== undefined) return found;
   }
   return undefined;
 }
@@ -110,7 +107,17 @@ function manifestProvenance(filename: string, moduleName: string, exportName: st
   const modulePath = isAbsolute(moduleName)
     ? moduleName
     : resolve(dirname(filename), moduleName);
-  return `${canonicalFilename(modulePath)}\0${exportName}`;
+  return provenanceKey(canonicalFilename(modulePath), exportName);
+}
+
+/** The key of a declaration in a table by provenance: its file and its name. */
+function provenanceKey(file: string, name: string): string {
+  return `${file}\0${name}`;
+}
+
+/** The `.ts` file that a `.d.ts` file declares: a published package ships `x.d.ts` for the `x.ts` its manifest names. */
+function declarationTwin(file: string): string {
+  return file.replace(/\.d\.([cm]?ts)$/, '.$1');
 }
 
 function validateManifestProfile(
@@ -180,16 +187,15 @@ export function advertisedModelManifests(program: ts.Program, onInput?: InputObs
   return advertised;
 }
 
-/** The manifest entry that lists a declaration of `symbol`. A published package ships `.d.ts` for the `.ts` file its manifest names. */
-export function manifestModelOfSymbol(
-  byProvenance: ReadonlyMap<string, ResolvedModelManifestEntry>,
+/** The entry that a table by provenance (`manifestProvenance`) holds for a declaration of `symbol`: the manifest's models, or the SDK types and aliases of a golem-mode manifest. A `.d.ts` declaration finds the entry of its `.ts` twin. */
+export function manifestModelOfSymbol<Entry>(
+  byProvenance: ReadonlyMap<string, Entry>,
   symbol: ts.Symbol,
-): ResolvedModelManifestEntry | undefined {
+): Entry | undefined {
   for (const declaration of symbol.declarations ?? []) {
     const file = canonicalFilename(declaration.getSourceFile().fileName);
-    const model = byProvenance.get(`${file}\0${symbol.getName()}`)
-      ?? byProvenance.get(`${file.replace(/\.d\.([cm]?ts)$/, '.$1')}\0${symbol.getName()}`);
-    if (model) return model;
+    const entry = byProvenance.get(provenanceKey(file, symbol.getName())) ?? byProvenance.get(provenanceKey(declarationTwin(file), symbol.getName()));
+    if (entry !== undefined) return entry;
   }
   return undefined;
 }
@@ -316,13 +322,7 @@ export function loadModelManifests(
       if (sdkAliases.size === 0 || !ts.isTypeReferenceNode(node)) return undefined;
       const named = checker.getSymbolAtLocation(node.typeName);
       const symbol = named !== undefined && (named.flags & ts.SymbolFlags.Alias) !== 0 ? checker.getAliasedSymbol(named) : named;
-      for (const declaration of symbol?.declarations ?? []) {
-        const file = canonicalFilename(declaration.getSourceFile().fileName);
-        const found = sdkAliases.get(`${file}\0${symbol!.getName()}`)
-          ?? sdkAliases.get(`${file.replace(/\.d\.([cm]?ts)$/, '.$1')}\0${symbol!.getName()}`);
-        if (found !== undefined) return found;
-      }
-      return undefined;
+      return symbol && manifestModelOfSymbol(sdkAliases, symbol);
     },
   };
 }

@@ -45,6 +45,16 @@ export interface TagMetadata {
   readonly discriminatorDefault?: ts.Type;
 }
 
+/** Whether a tag read holds a validation, a serde or a constraint: what a descriptor keeps. A `Discriminator` names the tag key of a union, and the descriptor of a variant holds none of it. */
+export function hasDescriptorTags(metadata: Pick<TagMetadata, 'validations' | 'constraints'> & { readonly serde?: unknown }): boolean {
+  return metadata.validations.length > 0 || metadata.serde !== undefined || metadata.constraints.length > 0;
+}
+
+/** Whether a tag read holds any tag, a `Discriminator` included. */
+export function hasTagMetadata(metadata: Pick<TagMetadata, 'validations' | 'constraints' | 'discriminator'> & { readonly serde?: unknown }): boolean {
+  return hasDescriptorTags(metadata) || metadata.discriminator !== undefined;
+}
+
 export interface TagReadResult {
   readonly baseNode?: ts.TypeNode;
   readonly metadata: TagMetadata;
@@ -510,9 +520,14 @@ export function propertyTypeNode(checker: ts.TypeChecker, property: ts.Symbol, v
   return nodes.find(node => checker.isTypeAssignableTo(checker.getTypeFromTypeNode(node), valueType)) ?? nodes[0];
 }
 
+/** The declared type of a property, read at its own declaration; `location` stands in for a property that has none. */
+export function propertyType(checker: ts.TypeChecker, property: ts.Symbol, location: ts.Node): ts.Type {
+  return checker.getTypeOfSymbolAtLocation(property, property.valueDeclaration ?? property.declarations?.[0] ?? location);
+}
+
 /** The type of one property of a tag argument's mapping, and the node that declares it. */
 function propertyValue(checker: ts.TypeChecker, property: ts.Symbol, owner: ts.Node): { readonly type: ts.Type; readonly node: ts.TypeNode | undefined } {
-  const type = checker.getTypeOfSymbolAtLocation(property, property.valueDeclaration ?? property.declarations?.[0] ?? owner);
+  const type = propertyType(checker, property, owner);
   return { type, node: propertyTypeNode(checker, property, type) };
 }
 
@@ -975,9 +990,7 @@ export function readTags(
         },
       };
       const nested = readTags(nestedContext, declaration.type, next);
-      if (nested.metadata.validations.length || nested.metadata.serde || nested.metadata.constraints.length || nested.metadata.discriminator !== undefined) {
-        return nested;
-      }
+      if (hasTagMetadata(nested.metadata)) return nested;
     }
   }
   return emptyBase(node);
@@ -993,9 +1006,5 @@ export function analyzeNode(
   const metadata = mergeMetadata(nodeContext, node ?? context.sourceFile, result.metadata, metadataFromType(nodeContext, type));
   // Tags that only the checker type carries mean the node is not where this type comes from (the declaration a
   // mapped property inherits is not the type its template computes), so the node is no untagged base.
-  const nodeCarriesTags = result.metadata.validations.length > 0
-    || result.metadata.serde !== undefined
-    || result.metadata.constraints.length > 0
-    || result.metadata.discriminator !== undefined;
-  return { baseNode: nodeCarriesTags ? result.baseNode : undefined, metadata };
+  return { baseNode: hasTagMetadata(result.metadata) ? result.baseNode : undefined, metadata };
 }

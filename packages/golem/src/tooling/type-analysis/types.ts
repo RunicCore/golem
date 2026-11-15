@@ -2,7 +2,7 @@ import path from 'node:path';
 import { assertNever } from '../../assert-never.js';
 import { fieldProvenance, isPropertyMapping, isReadonlySequenceType, readonlyPropertyNames, instantiatedTypeSource, substituteTypeNode, authoredPropertyTypeNode, type TypeSubstitutions } from './projections.js';
 import * as ts from '../typescript-ns.js';
-import { assertNoSymbolKey, declaredModelAlias, isDefaultLibraryProperty, isSymbolKeyedProperty, diagnostic, namedDiagnostic, foreignModelReason, isGeneratedBrandKey, modelSpecificationForClass, propertyType, resolveSymbol } from './symbols.js';
+import { assertNoSymbolKey, declaredModelAlias, isDefaultLibraryProperty, isSymbolKeyedProperty, diagnostic, namedDiagnostic, foreignModelReason, isGeneratedBrandKey, modelSpecificationForClass, resolveSymbol } from './symbols.js';
 import { projectionIdentity } from './graph.js';
 import { aliasProjectionName, isProjectionName, pascalIdentifier, policySuffix, headQualifiers, projectionBaseName, keysReadAlike, safeNameHint, unionVariantNaming } from './projection-names.js';
 import { commonDirectory, canonicalFilename, companionFilename, portableRelativeFilename, type ModelBoundary } from './project.js';
@@ -27,6 +27,9 @@ import {
   carriesSerdeTag,
   isAmbientOrGlobalSymbol,
   isGolemTagKey,
+  hasDescriptorTags,
+  hasTagMetadata,
+  propertyType,
   propertyTypeNode,
   publicExportName,
   type ModelConstraint,
@@ -344,7 +347,7 @@ function stripPhantomIntersection(
   type: ts.Type,
   metadata: TagMetadata,
 ): ts.Type {
-  if (!metadata.validations.length && !metadata.serde && !metadata.constraints.length && metadata.discriminator === undefined) return type;
+  if (!hasTagMetadata(metadata)) return type;
   if (!type.isIntersection()) return type;
   const members = taggedDataMembers(checker, type);
   return members.length === 1 ? members[0] : type;
@@ -593,7 +596,7 @@ function withMetadata(
   descriptor: ModelConversionDescriptor,
   metadata: TagMetadata,
 ): RichModelConversionDescriptor {
-  if (!metadata.validations.length && !metadata.serde && !metadata.constraints.length) {
+  if (!hasDescriptorTags(metadata)) {
     return descriptor as RichModelConversionDescriptor;
   }
   return {
@@ -626,6 +629,14 @@ function isObjectLikeVariant(descriptor: ModelConversionDescriptor): boolean {
   return descriptor.kind === 'object' || descriptor.kind === 'reference' || descriptor.kind === 'generated-model';
 }
 
+/** The value of a string, number or boolean literal type, or undefined for another type. */
+function literalTypeValue(checker: ts.TypeChecker, type: ts.Type): DiscriminatorValue | undefined {
+  if (type.flags & ts.TypeFlags.StringLiteral) return (type as ts.StringLiteralType).value;
+  if (type.flags & ts.TypeFlags.NumberLiteral) return (type as ts.NumberLiteralType).value;
+  if (type.flags & ts.TypeFlags.BooleanLiteral) return checker.typeToString(type) === 'true';
+  return undefined;
+}
+
 /** The required literal values of `key` on a variant type: its tag values, or undefined when the key is missing, optional or not a literal. */
 function requiredLiteralValues(checker: ts.TypeChecker, variant: ts.Type, key: string, at: ts.Node): DiscriminatorValue[] | undefined {
   const property = checker.getPropertyOfType(variant, key);
@@ -634,10 +645,9 @@ function requiredLiteralValues(checker: ts.TypeChecker, variant: ts.Type, key: s
   const members = type.isUnion() ? type.types : [type];
   const values: DiscriminatorValue[] = [];
   for (const member of members) {
-    if (member.flags & ts.TypeFlags.StringLiteral) values.push((member as ts.StringLiteralType).value);
-    else if (member.flags & ts.TypeFlags.NumberLiteral) values.push((member as ts.NumberLiteralType).value);
-    else if (member.flags & ts.TypeFlags.BooleanLiteral) values.push(checker.typeToString(member) === 'true');
-    else return undefined;
+    const value = literalTypeValue(checker, member);
+    if (value === undefined) return undefined;
+    values.push(value);
   }
   return values;
 }
@@ -817,7 +827,6 @@ interface DescribeCall extends DescribeInput {
   readonly tagContext: Parameters<typeof analyzeNode>[0];
   readonly analysis: ReturnType<typeof analyzeNode>;
   readonly metadata: InternalTagMetadata;
-  readonly hasBaseTags: boolean;
   readonly type: ts.Type;
 }
 
@@ -867,20 +876,15 @@ function openDescribeCall(scope: DescribeScope, input: DescribeInput): DescribeC
       serde: { ...metadata.serde, wireDescriptor },
     };
   }
-  const hasTagMetadata = metadata.validations.length > 0
-    || metadata.serde !== undefined
-    || metadata.constraints.length > 0
-    || metadata.discriminator !== undefined;
   // A Discriminator tag alone leaves the checker's own type: the union keeps its alias, which names a recursive union once.
-  const hasBaseTags = metadata.validations.length > 0 || metadata.serde !== undefined || metadata.constraints.length > 0;
   const type = stripPhantomIntersection(
     checker,
-    hasTagMetadata && hasBaseTags && analysis.baseNode && !holdsTypeParameter(checker, analysis.baseNode)
+    hasDescriptorTags(metadata) && analysis.baseNode && !holdsTypeParameter(checker, analysis.baseNode)
       ? checker.getTypeFromTypeNode(analysis.baseNode)
       : originalType,
     metadata,
   );
-  return { ...input, node, childNode, childSubstitutions, tagContext, analysis, metadata, hasBaseTags, type };
+  return { ...input, node, childNode, childSubstitutions, tagContext, analysis, metadata, type };
 }
 
 /** Stop on a tag that does not fit the type it sits on, before the type is described. */
@@ -953,7 +957,7 @@ function describeModelReference(scope: DescribeScope, call: DescribeCall, found:
   if (projection) {
     for (const original of provenance.models) {
       const whole = analyzeNode({ ...tagContext, sourceFile: original.sourceFile }, original.fieldsType, original.fieldsNode).metadata;
-      if (whole.serde || whole.validations.length || whole.constraints.length) {
+      if (hasDescriptorTags(whole)) {
         throw diagnostic(context.sourceFile, node ?? context.declaration, '1055', `Projection of ${original.name} would discard whole-object constraints or serialization. Declare an explicit projected contract.`);
       }
     }
@@ -977,11 +981,11 @@ function describeModelReference(scope: DescribeScope, call: DescribeCall, found:
 /** The descriptor of a golem-mode SDK type, or undefined. */
 function describeSdkType(scope: DescribeScope, call: DescribeCall, isRoot: boolean): ModelConversionDescriptor | undefined {
   const { checker, manifestIndex } = scope;
-  const { context, nameNode, node, analysis, metadata, hasBaseTags, type } = call;
+  const { context, nameNode, node, analysis, metadata, type } = call;
   // A type of a golem-mode SDK keeps the SDK's limits and conversions: the root of a model takes the SDK's descriptor, and a field
   // refers to the SDK node. The validators compile once for both, since the compiler writes one function for equal schemas.
   // An alias of the SDK that is no model (`type Currency = string`, `type Tags = number[]`) is the plain type to the checker, so the node names it.
-  const aliasNode = hasBaseTags && analysis.baseNode ? analysis.baseNode : node ?? nameNode;
+  const aliasNode = hasDescriptorTags(metadata) && analysis.baseNode ? analysis.baseNode : node ?? nameNode;
   // Several data parts make the whole intersection the base node (`Currency & { __brand: 'C' } & MinLength<3>`): the alias is one of its parts.
   // Only tags and brands may stand beside it: another data part (`Contact & { extra: string }`) is a type of its own, not the alias.
   const isTagOrBrand = (part: ts.TypeNode): boolean => {
@@ -1034,15 +1038,8 @@ function describeScalar(scope: DescribeScope, call: DescribeCall): ModelConversi
   if (type.flags & ts.TypeFlags.BigInt) return withMetadata({ kind: 'bigint' }, metadata);
   if (type.flags & ts.TypeFlags.Null) return withMetadata({ kind: 'null' }, metadata);
   if (type.flags & ts.TypeFlags.Undefined) return withMetadata({ kind: 'undefined' }, metadata);
-  if (type.flags & ts.TypeFlags.StringLiteral) {
-    return withMetadata({ kind: 'literal', value: String((type as ts.StringLiteralType).value) }, metadata);
-  }
-  if (type.flags & ts.TypeFlags.NumberLiteral) {
-    return withMetadata({ kind: 'literal', value: (type as ts.NumberLiteralType).value }, metadata);
-  }
-  if (type.flags & ts.TypeFlags.BooleanLiteral) {
-    return withMetadata({ kind: 'literal', value: checker.typeToString(type) === 'true' }, metadata);
-  }
+  const literal = literalTypeValue(checker, type);
+  if (literal !== undefined) return withMetadata({ kind: 'literal', value: literal }, metadata);
   if (type.flags & ts.TypeFlags.TemplateLiteral) return withMetadata({ kind: 'string' }, metadata);
   return undefined;
 }
@@ -1275,7 +1272,7 @@ function objectMembers(scope: DescribeScope, call: DescribeCall, facts: ShapeFac
 
 /** The descriptors of the fields of an object, and which are required. */
 function describeProperties(scope: DescribeScope, call: DescribeCall, nextSeen: ReadonlySet<ts.Type>, facts: ShapeFacts, members: readonly ObjectMember[]): { readonly properties: Record<string, ModelConversionDescriptor>; readonly required: string[] } {
-  const { checker, validationLevel, allowAny, describe } = scope;
+  const { checker, allowAny, describe } = scope;
   const { context, representation, provenanceNode, nameHint, node, childNode, childSubstitutions, type } = call;
   const { projectionName } = facts;
   // Keep discovered field names as data until the generation diagnostic
@@ -1305,17 +1302,14 @@ function describeProperties(scope: DescribeScope, call: DescribeCall, nextSeen: 
       );
     }
     if (valueType.getCallSignatures().length > 0) {
-      if (!validationLevel) {
-        properties[name] = { kind: 'unknown' };
-        if (!optional) required.push(name);
-        continue;
-      }
-      throw diagnostic(
+      properties[name] = unknownUnlessValidating(scope, () => diagnostic(
         context.sourceFile,
         property.valueDeclaration ?? context.declaration,
         '1004',
         `Field "${name}" is callable and cannot be represented by ${context.name}.`,
-      );
+      ));
+      if (!optional) required.push(name);
+      continue;
     }
     // A DTO field whose metadata states a schema is an open object: the schema is the overlay's to state, and a Map has no field of its own.
     // An optional field has `undefined` in its type; a `null` member makes a different schema, which this shortcut does not write.
@@ -1352,7 +1346,7 @@ function describeProperties(scope: DescribeScope, call: DescribeCall, nextSeen: 
 
 /** The descriptor of an object type: its fields, its index signature and its key pattern. */
 function describeObject(scope: DescribeScope, call: DescribeCall, seen: ReadonlySet<ts.Type>, facts: ShapeFacts): ModelConversionDescriptor {
-  const { checker, validationLevel, modelValidates, describe } = scope;
+  const { checker, modelValidates, describe } = scope;
   const { context, representation, nameHint, node, childNode, childSubstitutions, metadata, type } = call;
   const { projection, projectionName } = facts;
   const primitiveConstructor = primitiveConstructorDescriptor(type);
@@ -1367,8 +1361,7 @@ function describeObject(scope: DescribeScope, call: DescribeCall, seen: Readonly
       `${where} is a ${collection}, which golem cannot represent. Use a Record or an array.`);
   }
   if (type.getCallSignatures().length > 0 || type.getConstructSignatures().length > 0) {
-    if (!validationLevel) return withMetadata({ kind: 'unknown' }, metadata);
-    throw diagnostic(context.sourceFile, context.declaration, '1004', `Callable or constructible types cannot be represented by ${context.name}.`);
+    return withMetadata(unknownUnlessValidating(scope, () => diagnostic(context.sourceFile, context.declaration, '1004', `Callable or constructible types cannot be represented by ${context.name}.`)), metadata);
   }
   // An object breaks any sequence cycle through it: its own revisit is a projection reference or the 1056 diagnostic.
   const nextSeen = new Set([...seen].filter((entry) => !checker.isArrayType(entry) && !checker.isTupleType(entry)));
@@ -1420,17 +1413,22 @@ function describeObject(scope: DescribeScope, call: DescribeCall, seen: Readonly
   return descriptor;
 }
 
+/** A type golem cannot state: `unknown` when the job's validation is off, else generation stops with the error that `failure` makes. */
+function unknownUnlessValidating(scope: DescribeScope, failure: () => Error): { readonly kind: 'unknown' } {
+  if (!scope.validationLevel) return { kind: 'unknown' };
+  throw failure();
+}
+
 /** A type with no descriptor: unknown when validation is off, else a diagnostic. */
 function describeUnsupported(scope: DescribeScope, call: DescribeCall): ModelConversionDescriptor {
-  const { checker, validationLevel } = scope;
+  const { checker } = scope;
   const { context, metadata, type } = call;
-  if (!validationLevel) return withMetadata({ kind: 'unknown' }, metadata);
-  throw diagnostic(
+  return withMetadata(unknownUnlessValidating(scope, () => diagnostic(
     context.sourceFile,
     context.declaration,
     '1003',
     `Unsupported TypeScript type in ${context.name}: ${checker.typeToString(type)}`,
-  );
+  )), metadata);
 }
 
 /** The descriptor of the shape of a type, in the order of the checks: union, intersection, tuple, array, object. */

@@ -29,9 +29,8 @@ import * as ast from 'typescript/ast';
 import { GOLEM_CHANNELS } from './diagnostics-channels.js';
 import { displayPath } from './generator-core.js';
 import { fileSignature, MISSING } from './input-watcher.js';
-import { assertConfigParsed, assertNoSourceFiles, canonical, collectTscDiagnostics, configReferences, declarationOutputOf, emitWanted, flagPathOptions, flagsAsConfigOptions, hasDeclarationOutput, programConfig, referenceClosure, referencedConfigFile } from './typescript-config.js';
-import type { ConfigReference, ProgramConfig, ResolveAtCurrentFolder } from './typescript-config.js';
-import { inNodeModules } from './type-analysis/path-identity.js';
+import { affectsResolution, assertConfigParsed, assertNoSourceFiles, canonical, collectTscDiagnostics, configReferences, declarationOutputOf, emitWanted, flagPathOptions, flagsAsConfigOptions, hasDeclarationOutput, programRequest, referenceClosure, referencedConfigFile } from './typescript-config.js';
+import type { ConfigReference, ProgramRequest, ResolveAtCurrentFolder } from './typescript-config.js';
 import { assertPackageManifestsParse } from './type-analysis/package-specifier.js';
 import {
   API,
@@ -927,8 +926,7 @@ export function forEachChild<T>(node: Node, callback: (node: Node) => T | undefi
   return node.forEachChild(callback);
 }
 
-interface ProgramRequest extends ProgramConfig {
-  readonly files: readonly string[];
+interface SnapshotRequest extends ProgramRequest {
   /** Set for a project that has references: the compiler is given a synthetic program, not the project. */
   readonly synthetic?: SyntheticProgram;
   /** The configuration of the user that a derived configuration extends, whose text the compiler's option errors name; none for another request. */
@@ -962,21 +960,12 @@ function directoryEntries(directory: string): string {
   }
 }
 
-/** A change to a package manifest or an installed package invalidates cached module resolution. */
-function affectsResolution(filename: string): boolean {
-  return basename(filename) === 'package.json' || inNodeModules(filename);
-}
-
 /** The compiler process exited or its channel closed; a server-reported error leaves it running. */
 function compilerExited(error: unknown): boolean {
   const code = (error as { readonly code?: unknown } | undefined)?.code;
   if (code === 'EPIPE' || code === 'EBADF' || code === 'ECONNRESET') return true;
   const message = error instanceof Error ? error.message : String(error);
   return /Unexpected EOF while reading from child process|SyncRpcChannel is closed/.test(message);
-}
-
-function programRequest(options: OpenProgramOptions, referencesOf: (configPath: string, overlays: ReadonlyMap<string, string>) => readonly ConfigReference[]): ProgramRequest {
-  return { ...programConfig(options, (filename) => sys.fileExists(filename), referencesOf), files: [...new Set(options.sources.map(canonical))], twinOf: undefined };
 }
 
 // Internal notices for golem's own tests (`node:diagnostics_channel`, names in diagnostics-channels.ts), with no promise of stability; nothing is built unless a subscriber exists.
@@ -1080,7 +1069,7 @@ export class ProgramSession implements Disposable {
   /** Inputs a host saw change since the previous snapshot. */
   private readonly hinted = new Set<string>();
   private readonly openProjects = new Set<string>();
-  private readonly held = new Map<CompatProgram, ProgramRequest>();
+  private readonly held = new Map<CompatProgram, SnapshotRequest>();
   /** The compiler's module resolver of each set of options (by their JSON), made when a lookup first needs it. */
   private readonly resolvers = new Map<string, ModuleResolver>();
   /**
@@ -1254,7 +1243,7 @@ export class ProgramSession implements Disposable {
   /** Open a program in a new snapshot that reflects every file change since the previous one. */
   openProgram(options: OpenProgramOptions): Program {
     if (programOpenedChannel.hasSubscribers) programOpenedChannel.publish({ session: this, configFile: options.configFile });
-    const base = programRequest(this.withFlags(options), (configPath, overlays) => this.configReferencesOf(configPath, overlays));
+    const base: SnapshotRequest = { ...programRequest(this.withFlags(options), sys, (configPath, overlays) => this.configReferencesOf(configPath, overlays)), twinOf: undefined };
     return this.withCompiler('snapshot', (api, reused) => {
       const request = this.withRequestedRoots(api, base, options.onInput);
       // A program sees only its own overlays: a held program keeps the snapshot it was opened in.
@@ -1345,7 +1334,7 @@ export class ProgramSession implements Disposable {
    * user's own configuration opens the configuration itself, so its option errors keep the file and place that `tsc` gives. Every program parses
    * the configuration here, so a configuration with errors fails the same way on both backends.
    */
-  private withRequestedRoots(api: API, base: ProgramRequest, onInput: ((filename: string) => void) | undefined): ProgramRequest {
+  private withRequestedRoots(api: API, base: SnapshotRequest, onInput: ((filename: string) => void) | undefined): SnapshotRequest {
     const previous = this.overlays;
     this.setOverlays(base.overlays);
     this.observe(onInput, base.hidden);
@@ -1366,14 +1355,14 @@ export class ProgramSession implements Disposable {
     if (referenced.length > 0) {
       const options = parsed.options as CompilerOptions;
       const unbuilt = new Set<string>();
-      return { ...base, synthetic: { rootFiles: [...new Set([...parsed.fileNames.map(canonical), ...base.files])], compilerOptions: options, resolver: this.referenceResolverFor(api, options, referenced, unbuilt), unbuilt } };
+      return { ...base, synthetic: { rootFiles: [...new Set([...parsed.fileNames.map(canonical), ...base.rootNames])], compilerOptions: options, resolver: this.referenceResolverFor(api, options, referenced, unbuilt), unbuilt } };
     }
     const own = new Set(parsed.fileNames.map(canonical));
     // Every root is a file of the configuration, and the configuration is the user's own: the compiler reads it itself, so its option errors name its own text and place.
     // A hidden configuration is golem's overlay (the option overrides): it has no text of the user's to name, and the compiler's own glob would order its roots differently from `tsc`.
-    if (!base.hidden.has(base.configPath) && base.files.every((file) => own.has(file))) return base;
+    if (!base.hidden.has(base.configPath) && base.rootNames.every((file) => own.has(file))) return base;
     const configPath = join(dirname(base.configPath), `${basename(base.configPath, '.json')}.roots.json`);
-    const files = [...new Set([...own, ...base.files])];
+    const files = [...new Set([...own, ...base.rootNames])];
     const overlays = new Map(base.overlays);
     overlays.set(configPath, JSON.stringify({ extends: `./${basename(base.configPath)}`, files, include: [] }));
     return { ...base, configPath, overlays, hidden: new Set([...base.hidden, configPath]), twinOf: base.userConfigPath };
