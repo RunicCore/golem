@@ -576,7 +576,7 @@ test('strip reaches the model of another dependency group of a generated SDK', a
   assert.deepEqual(named('toWireFormat')(value, strip), { group: { items: [{ label: 'a', at: instant }] }, history: [{ items: [] }] });
 });
 
-test('a union of a recursive array of another group and an inline array keeps the items of the recursive array', async (t) => {
+test('a union of a recursive array of another group and a string strips the items of the array at every depth', async (t) => {
   const closed = (properties: Record<string, unknown>, required: string[]) => ({ type: 'object', additionalProperties: false, required, properties });
   const ref = (name: string) => ({ $ref: `#/components/schemas/${name}` });
   const document = chargesDocument({
@@ -584,7 +584,7 @@ test('a union of a recursive array of another group and an inline array keeps th
     Tree: { type: 'array', items: closed({ label: { type: 'string' }, children: ref('Tree') }, ['label']) },
     Charge: closed({
       when: { type: 'string', format: 'date-time' },
-      holder: { oneOf: [ref('Tree'), { type: 'array', items: closed({ code: { type: 'string' } }, ['code']) }] },
+      holder: { oneOf: [ref('Tree'), { type: 'string' }] },
     }, ['when', 'holder']),
   });
   const sdk = await loadSdk(t, 'decode-strip-tree-', { document, name: 'Trees', dates: 'date', validation: true });
@@ -596,11 +596,13 @@ test('a union of a recursive array of another group and an inline array keeps th
   }
   const named = (prefix: string) => functions.get([...functions.keys()].find((name) => name.startsWith(prefix) && /Charge/.test(name))!)!;
   const instant = '2024-01-02T03:04:05.000Z';
-  const wire = { when: instant, holder: [{ label: 'a', children: [{ label: 'b', children: [] }] }] };
-  const value = { when: new Date(instant), holder: wire.holder };
-  // protects: T-896 the plan of the recursive array is not the plan of the inline array: a value with no undeclared key is the same value with strip
-  assert.deepEqual(named('fromWireFormat')(wire, strip), named('fromWireFormat')(wire));
-  assert.deepEqual(named('toWireFormat')(value, strip), named('toWireFormat')(value));
+  const treeWire = [{ label: 'a', extra: 1, children: [{ label: 'b', junk: 2, children: [] }] }];
+  const treeStripped = [{ label: 'a', children: [{ label: 'b', children: [] }] }];
+  // protects: T-896 the recursive array of another group is read by its node: the plan of the array strips its items at every depth, on a decode and on an encode
+  assert.deepEqual(named('fromWireFormat')({ when: instant, holder: treeWire }, strip), { when: new Date(instant), holder: treeStripped });
+  assert.deepEqual(named('toWireFormat')({ when: new Date(instant), holder: treeWire }, strip), { when: instant, holder: treeStripped });
+  assert.deepEqual(named('fromWireFormat')({ when: instant, holder: 'text' }, strip), { when: new Date(instant), holder: 'text' }, 'the string is left as it is');
+  assert.deepEqual(named('fromWireFormat')({ when: instant, holder: treeStripped }, strip), named('fromWireFormat')({ when: instant, holder: treeStripped }), 'a value with no undeclared key is the same value');
 });
 
 test('a union of a concrete union of another group and an inline array keeps the items of both arrays', async (t) => {

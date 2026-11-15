@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { stripUndeclared } from '@exprtlabs/golem/internal/model-runtime';
-import { render } from '#golem/code';
+import { identifier, render } from '#golem/code';
 import type { SchemaNode } from '#golem/schema-graph';
 import { StripPlans, type StripPlanEnv } from '#golem/strip-plan';
 
@@ -39,4 +39,23 @@ test('a union whose tagged variant takes arrays does not give its arrays to the 
   const items = [{ a: 'x', extra: 1 }];
   assert.deepEqual(stripUndeclared(items, plan), items);
   assert.deepEqual(stripUndeclared(items, plan, undefined, true), items);
+});
+
+test('a union of an array node of another module and a closed object gets the plan of the array and the plan of the object', () => {
+  // protects: T-896 an array node of another module is an array leaf: read as an object it makes two objects and no array, the union gets no plan, and nothing is stripped
+  const closed = (properties: Record<string, unknown>, required: string[]) => ({ kind: 'object', properties, required, additionalProperties: false });
+  const treeDescriptor = { kind: 'array', item: closed({ label: { kind: 'string' } }, ['label']) } as unknown as SchemaNode['descriptor'];
+  const tree = { id: 'Tree', descriptor: treeDescriptor } as SchemaNode;
+  const env = {
+    extraValues: () => undefined,
+    nodeOf: () => tree,
+    external: () => true,
+    importedPlan: () => identifier('treePlan'),
+  } as unknown as StripPlanEnv;
+  const union = { kind: 'union', variants: [{ kind: 'reference', name: 'Tree' }, closed({ code: { kind: 'string' } }, ['code'])] };
+  const plan = new StripPlans(env).ofNode({ id: 'holder', descriptor: union } as unknown as SchemaNode);
+  assert.ok(plan, 'the union holds an array and a closed object');
+  const holder = new Function('treePlan', `return ${render(plan)};`)(planOf(treeDescriptor)) as Parameters<typeof stripUndeclared>[1];
+  assert.deepEqual(stripUndeclared([{ label: 'a', extra: 1 }], holder), [{ label: 'a' }]);
+  assert.deepEqual(stripUndeclared({ code: 'c', extra: 1 }, holder), { code: 'c' });
 });
