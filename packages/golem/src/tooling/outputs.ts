@@ -254,12 +254,12 @@ export const realOutputFiles: OutputFiles = {
 
 const TEMPORARY_NAME = /^(.+)\.(\d+)\.[0-9a-f]{12}\.tmp$/;
 
-/** The temporary file `atomicWrite` writes beside `filename` before it renames it over `filename`: `<file>.<pid>.<12 hex digits>.tmp`. */
+/** The temporary file `writeChanged` writes beside `filename` before it renames it over `filename`: `<file>.<pid>.<12 hex digits>.tmp`. */
 function temporaryName(filename: string): string {
   return `${filename}.${process.pid}.${crypto.randomBytes(6).toString('hex')}.tmp`;
 }
 
-/** The file whose `atomicWrite` left `name` behind and the process that ran it, or `undefined` when `name` is no such temporary file. */
+/** The file whose `writeChanged` left `name` behind and the process that ran it, or `undefined` when `name` is no such temporary file. */
 function temporaryOf(name: string): { readonly target: string; readonly pid: number } | undefined {
   const [, target, pidText] = TEMPORARY_NAME.exec(name) ?? [];
   const pid = Number(pidText);
@@ -279,7 +279,27 @@ function processAlive(pid: number): boolean {
   }
 }
 
-export function atomicWrite(filename: string, content: string, files: OutputFiles = realOutputFiles): boolean {
+/** How a write changes a file that exists. `inPlace` keeps the file itself, as `tsc` does: a link stays a link and the mode, such as an exec bit, stays. `replace` publishes the new content whole by a rename, so no reader sees half of it. */
+export type Publish = 'inPlace' | 'replace';
+
+/**
+ * Write `content` to `filename` only when it differs from what the file holds, and say whether it wrote. A current file keeps its time stamp and a file that another tool changed is repaired.
+ * A file that is not there is always published whole (`replace`); `publish` tells how a file that is there changes.
+ */
+export function writeChanged(filename: string, content: string, publish: Publish, files: OutputFiles = realOutputFiles): boolean {
+  if (publish === 'inPlace') {
+    const existing = fs.statSync(filename, { throwIfNoEntry: false });
+    if (existing !== undefined) {
+      if (!existing.isFile()) throw new Error('it is not a file');
+      if (fs.readFileSync(filename, 'utf8') === content) return false;
+      fs.writeFileSync(filename, content);
+      return true;
+    }
+  }
+  return replaceFile(filename, content, files);
+}
+
+function replaceFile(filename: string, content: string, files: OutputFiles): boolean {
   if (readFile(filename) === content) return false;
   fs.mkdirSync(path.dirname(filename), { recursive: true });
   const temporary = temporaryName(filename);
@@ -310,7 +330,7 @@ function saveInventory(config: GolemConfig, inventory: Inventory, files: OutputF
       destination: entry.destination,
       destinationKind: entry.destinationKind,
     }]));
-  atomicWrite(config.inventoryFile, `${JSON.stringify({ version: 1, files: recorded }, null, 2)}\n`, files);
+  writeChanged(config.inventoryFile, `${JSON.stringify({ version: 1, files: recorded }, null, 2)}\n`, 'replace', files);
 }
 
 /** A folder that holds its own golem.yaml or its own generation record is the root of another app: the output below it is recorded in that app's inventory, not in this one's. A config with another name leaves only the record. */
@@ -377,7 +397,7 @@ function providesCodecKeys(config: GolemConfig, job: GolemJob): boolean {
   return config.jobPlan.providers[MODEL_BOUNDARY] === job.id;
 }
 
-/** Removes the temporary files that a killed `atomicWrite` left beside `filenames`, when they carry the marker of `owner`, the package that writes them. A file of a process that still runs is another run's write in flight: it stays. */
+/** Removes the temporary files that a killed `writeChanged` left beside `filenames`, when they carry the marker of `owner`, the package that writes them. A file of a process that still runs is another run's write in flight: it stays. */
 export function removeLeftoverTemporaries(owner: string, filenames: readonly string[], files: OutputFiles = realOutputFiles): void {
   const targets = new Map<string, Set<string>>();
   for (const filename of filenames) {
@@ -396,6 +416,13 @@ export function removeLeftoverTemporaries(owner: string, filenames: readonly str
       if (content !== undefined && marker(content, owner)) files.unlink(leftover);
     }
   }
+}
+
+/** Whether the file of `artifact` holds its content on disk and the inventory records that content and destination for `key`. */
+function isRecorded(inventory: Inventory, key: string, artifact: ExpectedArtifact): boolean {
+  const entry = inventory.files[key];
+  return readFile(artifact.filename) === artifact.content && entry !== undefined && entry.digest === digest(artifact.content)
+    && entry.destination === artifact.destination && entry.destinationKind === artifact.destinationKind;
 }
 
 /** The files core owns that it writes from the artifacts of `job`: no job output and no inventory entry. Today only the codec key table. */
@@ -435,13 +462,7 @@ export function applyJob(config: GolemConfig, inventory: Inventory, job: GolemJo
     expected.set(key, { filename, content: artifact.content, destination, destinationKind });
   }
   if (check) assertNoUnrecordedOutputs(config, inventory, job, expected, compilerOutputs);
-  const stale: string[] = [];
   const deletions: Array<{ key: string; filename: string }> = [];
-  for (const [key, artifact] of expected) {
-    const current = readFile(artifact.filename);
-    const entry = inventory.files[key];
-    if (current !== artifact.content || !entry || entry.digest !== digest(artifact.content) || entry.destination !== artifact.destination || entry.destinationKind !== artifact.destinationKind) stale.push(key);
-  }
   for (const [key, entry] of Object.entries(inventory.files)) {
     if (entry.job !== job.id || expected.has(key)) continue;
     if (entry.owner !== job.package) throw new Error(`Generated output ownership conflict: ${displayPath(inventoryPath(config, key))}. Inventory owner does not match ${job.package}.`);
@@ -451,17 +472,22 @@ export function applyJob(config: GolemConfig, inventory: Inventory, job: GolemJo
     assertDestinationPath(filename, destination, 'recorded');
     assertDeletable(filename, entry);
     deletions.push({ key, filename });
-    stale.push(key);
   }
   const recordChanged = providesCodecKeys(config, job) && readFile(recordFile) !== record;
-  if (recordChanged) stale.push(inventoryKey(config, recordFile));
-  if (check && stale.length) throw new Error(`Generated outputs are stale for ${job.id}:\n${stale.sort().map(key => `  ${displayPath(inventoryPath(config, key))}`).join('\n')}`);
-  if (check) return NO_CHANGES;
+  if (check) {
+    const stale = [
+      ...[...expected].filter(([key, artifact]) => !isRecorded(inventory, key, artifact)).map(([key]) => key),
+      ...deletions.map(deletion => deletion.key),
+      ...recordChanged ? [inventoryKey(config, recordFile)] : [],
+    ];
+    if (stale.length) throw new Error(`Generated outputs are stale for ${job.id}:\n${stale.sort().map(key => `  ${displayPath(inventoryPath(config, key))}`).join('\n')}`);
+    return NO_CHANGES;
+  }
   const written: string[] = [];
   const removed: string[] = [];
   for (const [key, artifact] of expected) {
     assertDestinationPath(artifact.filename, recordedDestinationPath(config, artifact.destination), 'job');
-    if (atomicWrite(artifact.filename, artifact.content, files)) written.push(artifact.filename);
+    if (writeChanged(artifact.filename, artifact.content, 'replace', files)) written.push(artifact.filename);
     inventory.files[key] = {
       job: job.id,
       owner: job.package,
@@ -474,7 +500,7 @@ export function applyJob(config: GolemConfig, inventory: Inventory, job: GolemJo
     if (record === undefined) {
       files.unlink(recordFile);
       removed.push(recordFile);
-    } else if (atomicWrite(recordFile, record, files)) written.push(recordFile);
+    } else if (writeChanged(recordFile, record, 'replace', files)) written.push(recordFile);
   }
   removeLeftoverTemporaries(job.package, [...expected.values()].map(artifact => artifact.filename), files);
   for (const { key, filename } of deletions) {

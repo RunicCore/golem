@@ -7,7 +7,7 @@ import { GolemDiagnosticSeverity, compareText, hasErrorCode, isInsideDirectory, 
 import type { GolemDiagnostic } from './generator-core.js';
 import { loadedClosure, loadedFileDigests } from './load-record.js';
 import type { EnabledExtension } from './rewrite-participant.js';
-import { atomicWrite, digest, loadInventory } from './outputs.js';
+import { digest, loadInventory, writeChanged } from './outputs.js';
 import type { Inventory, InventoryEntry, OutputFiles } from './outputs.js';
 
 /**
@@ -123,7 +123,7 @@ export function saveJobRecords(config: GolemConfig, records: ReadonlyMap<string,
       manifests: record.manifests,
       warnings: record.warnings,
     }]));
-  atomicWrite(jobsFile(config), `${JSON.stringify({ version: RECORDS_VERSION, jobs }, null, 2)}\n`, files);
+  writeChanged(jobsFile(config), `${JSON.stringify({ version: RECORDS_VERSION, jobs }, null, 2)}\n`, 'replace', files);
 }
 
 /** The files the inventory records as generated, as absolute paths. */
@@ -308,6 +308,14 @@ function codeIsCurrent(record: JobRecord, code: ReadonlyMap<string, CodePackage>
   });
 }
 
+/**
+ * What makes a job the same job as one before: its resolved options, as JSON. A record keeps it (`JobRecord.options`) and the watch loop compares it between two
+ * configs. A job's facts follow from its options, since a plan entry derives both, so they are not part of it.
+ */
+export function jobKey(job: GolemJob): string {
+  return JSON.stringify(job.options);
+}
+
 /** Whether the loaded code, hook extensions, program view and manifest set are those the record holds. */
 export function sameSetup(config: GolemConfig, record: JobRecord, setup: JobSetup): boolean {
   return codeIsCurrent(record, setup.code, setup.fileDigests)
@@ -351,7 +359,7 @@ export function jobIsCurrent(
   inventory: Inventory = loadInventory(config),
   ignoredDirectories: readonly string[] = [],
 ): boolean {
-  if (!record || record.golemCode !== golemCode() || record.options !== JSON.stringify(job.options) || !sameSetup(config, record, setup)) return false;
+  if (!record || record.golemCode !== golemCode() || record.options !== jobKey(job) || !sameSetup(config, record, setup)) return false;
   // A job that announced no input hides what it reads: nothing can show that it is still true.
   if (Object.keys(record.inputs).length === 0) return false;
   const outputs = new Set(record.outputs.map(output => absoluteRecordPath(config, output)));

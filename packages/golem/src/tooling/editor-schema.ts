@@ -2,7 +2,7 @@
 // It is core's own record under `.golem/`, not a job output. Editors read it for completion; nothing in golem reads it back.
 import fs from 'node:fs';
 import path from 'node:path';
-import { atomicWrite, realOutputFiles } from './outputs.js';
+import { realOutputFiles, writeChanged } from './outputs.js';
 import type { OutputFiles } from './outputs.js';
 import { displayPath, isRecord } from './plan-support.js';
 import type { PackageRegistry, PackageRegistration } from './package-registry.js';
@@ -87,6 +87,6 @@ function partOf(registration: PackageRegistration, warnings: string[]): JsonObje
 /** Write the editor schema beside the other records of `.golem/`. Returns the warnings for the caller to show. */
 export function writeEditorSchema(configDirectory: string, registry: PackageRegistry, files: OutputFiles = realOutputFiles): readonly string[] {
   const { text, warnings } = buildEditorSchema(registry);
-  atomicWrite(editorSchemaPath(configDirectory), text, files);
+  writeChanged(editorSchemaPath(configDirectory), text, 'replace', files);
   return warnings;
 }
