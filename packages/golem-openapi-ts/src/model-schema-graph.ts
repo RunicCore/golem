@@ -285,10 +285,6 @@ export function analyzeOpenApiModels(
   const resources = collectCanonicalResources(document);
   const { definitions, ordered, diagnostics, selections } = collectOpenApiModelDefinitions(document, resources, dates);
   const { schemaGraph, nodeIdByDefinition, convertedNodeIds, uncarriedModels, uncarriedValues, graphInputs } = internOpenApiSchemaGraph(document, ordered, definitions, validation, resources, selections, dates, operations);
-  for (const alias of definitions.aliases.values()) {
-    const nodeId = nodeIdByDefinition.get(alias.name);
-    if (nodeId !== undefined) alias.nodeId = nodeId;
-  }
   const nodes = [...schemaGraph.nodes.values()];
   const nodesById = new Map(nodes.map((node) => [node.id, node]));
   const { nodesByName, definitionNameByNodeId } = nodesByDefinitionName(schemaGraph, new Map([...nodeIdByDefinition].filter(([name]) => definitions.has(name))));

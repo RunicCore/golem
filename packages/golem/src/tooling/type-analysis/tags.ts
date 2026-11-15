@@ -123,7 +123,9 @@ function mergeMetadata(context: TagAnalysisContext, at: ts.Node, first: TagMetad
   }
   if (first.serde && second.serde) {
     if (first.serde.id !== second.serde.id) {
-      throw new Error(
+      throw context.diagnostic(
+        at,
+        '1042',
         `Conflicting serde tags: ${first.serde.id} and ${second.serde.id}. `
         + 'A model value can have only one serialize/deserialize pair.',
       );

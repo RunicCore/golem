@@ -238,7 +238,8 @@ test('remote reference documents are bounded across a chained reference graph', 
   }
 });
 
-test('remote redirects are rejected and the resolver requests redirect errors', async (t) => {
+// protects: T-822 a refused redirect names the URL and the reason, not `fetch failed`
+test('a remote redirect is not followed and names the URL and the redirect', async (t) => {
   const directory = createFixtureProject(t, 'golem-openapi-remote-redirect-');
   let requestInit: RequestInit | undefined;
   const restore = mockFetch(async (_input, init) => {
@@ -251,9 +252,9 @@ test('remote redirects are rejected and the resolver requests redirect errors', 
   try {
     await assert.rejects(
       () => generateDocument(directory, remoteDocument()),
-      /remote reference returned HTTP 302/,
+      /^Error: remote reference could not be loaded: https:\/\/schemas\.example\/money\.json: the server answered with a redirect, which golem does not follow$/,
     );
-    assert.equal(requestInit?.redirect, 'error');
+    assert.equal(requestInit?.redirect, 'manual');
   } finally {
     restore();
   }
@@ -283,14 +284,14 @@ for (const [name, hosts, reference, refused] of [
   });
 }
 
-// protects: T-822 a refused redirect names the URL and the reason, not `fetch failed`
-test('a fetch that fails on a redirect names the URL and the redirect', async (t) => {
-  const directory = createFixtureProject(t, 'golem-openapi-remote-redirect-error-');
-  const restore = mockFetch(async () => { throw new TypeError('fetch failed', { cause: new Error('unexpected redirect') }); });
+// protects: T-822 a failed fetch names the URL and the cause, not `fetch failed`
+test('a fetch that fails names the URL and the cause', async (t) => {
+  const directory = createFixtureProject(t, 'golem-openapi-remote-fetch-error-');
+  const restore = mockFetch(async () => { throw new TypeError('fetch failed', { cause: new Error('getaddrinfo ENOTFOUND schemas.example') }); });
   try {
     await assert.rejects(
       () => generateDocument(directory, remoteDocument()),
-      /^Error: remote reference could not be loaded: https:\/\/schemas\.example\/money\.json: the server answered with a redirect, which golem does not follow$/,
+      /^Error: remote reference could not be loaded: https:\/\/schemas\.example\/money\.json: getaddrinfo ENOTFOUND schemas\.example$/,
     );
   } finally {
     restore();

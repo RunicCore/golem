@@ -303,7 +303,7 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### RUNM1042
 
-**Invalid TSerde arguments.** `TSerde` is missing its `serialize` or `deserialize` type argument, or one of them isn't `typeof` a function. **Fix:** Pass `typeof serialize` and `typeof deserialize` for both arguments.
+**Invalid TSerde arguments.** `TSerde` is missing its `serialize` or `deserialize` type argument, or one of them isn't `typeof` a function. Two different `TSerde` pairs on one value also stop here. **Fix:** Pass `typeof serialize` and `typeof deserialize` for both arguments, and tag a value with one pair only.
 
 ### RUNM1043
 
