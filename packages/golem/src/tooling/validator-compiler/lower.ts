@@ -169,7 +169,7 @@ function modelInstance(value: unknown): IrInstance | undefined {
   const { of, among, required } = value;
   if ((of !== undefined && typeof of !== 'string') || !Array.isArray(among) || typeof required !== 'boolean') return undefined;
   if (!among.every((id): id is string => typeof id === 'string')) return undefined;
-  return { kind: 'instance', ...(of === undefined ? {} : { of }), among, required };
+  return of === undefined ? { kind: 'instance', selects: 'none', among } : { kind: 'instance', selects: 'of', of, among, required };
 }
 
 /** The message of the error `new RegExp(source, 'u')` throws, or undefined when it compiles. */

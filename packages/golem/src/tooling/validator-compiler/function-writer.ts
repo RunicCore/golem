@@ -7,7 +7,7 @@ import { isTuple, keepsFormat } from './call-graph.js';
 import { JSON_TYPES, JSON_TYPE_NAMES, dispatchTest } from './json-types.js';
 import { localName, scaledDivisor, stateTest } from './local-helpers.js';
 import { patternExpression, type ModuleState } from './module-state.js';
-import { resolve, readSet, objectPresence, type Capture, type Lazy, type KeyTest, type WriterMode } from './modes.js';
+import { resolve, readSet, objectPresence, type Capture, type Lazy, type KeyList, type KeyTest, type RawKeys, type WriterMode } from './modes.js';
 
 const runtime = rt['validation-runtime'];
 
@@ -57,7 +57,7 @@ interface ObjectPass {
 }
 
 /** The key list or count that the key test made for a check that reads it. */
-function keyList(what: Code | undefined): Code {
+function leftByKeyTest<Left>(what: Left | undefined): Left {
   if (what === undefined) throw new Error('The key test of this validator mode left no key list or count for an object check that reads it.');
   return what;
 }
@@ -327,10 +327,14 @@ export class FunctionWriter {
   private instanceCheck(check: IrInstance, value: Code): void {
     const selected = this.fresh('selected');
     this.line(code`const ${selected} = ${selectedModelCall(this.state, value, check.among)};`);
-    const expected = check.of === undefined ? code`undefined` : literalCode(check.of);
+    if (check.selects === 'none') {
+      this.leaf({ fails: code`${selected} !== undefined`, issue: code`code: 'instance', model: ${literalCode(check.among[0])}` });
+      return;
+    }
+    const expected = literalCode(check.of);
     this.leaf({
-      fails: check.required || check.of === undefined ? code`${selected} !== ${expected}` : code`${selected} !== undefined && ${selected} !== ${expected}`,
-      issue: code`code: 'instance', model: ${literalCode(check.of ?? check.among[0])}`,
+      fails: check.required ? code`${selected} !== ${expected}` : code`${selected} !== undefined && ${selected} !== ${expected}`,
+      issue: code`code: 'instance', model: ${expected}`,
     });
   }
 
@@ -549,18 +553,19 @@ export class FunctionWriter {
     const patterns = check.patternProperties.map(entry => ({ entry, expression: patternExpression(this.state, entry.pattern) }));
     const test = prepared ?? this.mode.keyTest(this, { check, value, captured, reads });
     const pass: ObjectPass = { check, value, marks, test, patterns, patternsToRun: patterns.filter(({ entry }) => reads.patterns.includes(entry)) };
-    this.limitLeaves('properties', () => keyList(test.count), check.minProperties, check.maxProperties, undefined, 'cheap');
+    this.limitLeaves('properties', () => leftByKeyTest(test.count), check.minProperties, check.maxProperties, undefined, 'cheap');
     this.requiredKeys(pass);
     // Ahead of `properties`: with fail-fast the first issue is the object's own unknown key. A key test that made `unknown` ran it.
     if (test.unknown !== undefined) this.failWhen(test.unknown);
     // The passes below fail only after the values are read, which the key test left to them.
     const outer = this.mode;
     // A failure of the passes reads this object's values, then fails as the enclosing object does, which reads its own.
-    if (test.failure !== undefined) {
-      const chained = code`{ ${test.failure} ${outer.fail.fail()} }`;
+    const failure = test.list?.kind === 'raw' ? test.list.failure : undefined;
+    if (failure !== undefined) {
+      const chained = code`{ ${failure} ${outer.fail.fail()} }`;
       this.mode = { ...outer, fail: { ...outer.fail, issue: () => [chained], fail: () => chained } };
     }
-    if (check.additional && reads.visitsAdditional && test.keys !== undefined && test.unknown === undefined) this.additionalKeys(pass, check.additional, test.keys);
+    if (check.additional && reads.visitsAdditional && test.list !== undefined && test.unknown === undefined) this.additionalKeys(pass, check.additional, test.list);
     this.declaredProperties(pass);
     if (pass.patternsToRun.length > 0) this.patternKeys(pass);
     // `additionalProperties` takes every key the other two did not.
@@ -582,36 +587,42 @@ export class FunctionWriter {
   }
 
   /** The keys that neither `properties` nor `patternProperties` name: `additionalProperties`. */
-  private additionalKeys({ check, value, patterns, test: { stateFields, failure } }: ObjectPass, additional: NonNullable<IrObject['additional']>, keys: Code): void {
+  private additionalKeys({ check, value, patterns }: ObjectPass, additional: NonNullable<IrObject['additional']>, list: KeyList): void {
     const key = this.fresh('key');
     const known = check.properties.length > 0 ? this.state.constant('known', code`new Set(${literalCode(check.properties.map(property => property.key))})`, JSON.stringify([...new Set(check.properties.map(property => property.key))].sort())) : undefined;
     const skipped = [...(known === undefined ? [] : [code`${known}.has(${key})`]), ...patterns.map(({ expression }) => code`${expression}.test(${key})`)];
     const member = this.fresh('member');
-    this.open(code`for (const ${key} of ${keys})`);
+    const raw = list.kind === 'raw' ? list : undefined;
     // A key test that left the values unread has this pass read each one, also of a key it then skips; program state is never read.
-    if (failure !== undefined) {
-      this.skipState(stateFields, key);
-      this.line(code`const ${member} = ${value}[${key}];`);
-      this.line(code`if (${member} === undefined) continue;`);
-    }
+    const unread = raw?.failure !== undefined;
+    this.open(code`for (const ${key} of ${list.keys})`);
+    if (raw && unread) this.readHeld(raw, value, key, member);
     if (skipped.length > 0) this.line(code`if (${join(skipped, code` || `)}) continue;`);
-    if (failure === undefined) this.skipState(stateFields, key);
+    if (raw && !unread) this.skipState(raw.stateFields, key);
     if (additional.kind === 'forbid') {
       this.issue(code`code: 'unknownKey', key: ${key}`, code`[...${PATH}, ${key}]`);
     } else {
       const schema = additional.schema;
-      if (failure === undefined) {
+      if (!unread) {
         this.line(code`const ${member} = ${value}[${key}];`);
-        if (stateFields !== undefined) this.line(code`if (${member} === undefined) continue;`);
+        if (raw) this.line(code`if (${member} === undefined) continue;`);
       }
       this.atChild(key, () => this.schema(schema, member));
     }
     this.close();
   }
 
-  /** In a raw key list, a key that is program state of the instance is left out before any value is read. */
-  private skipState(stateFields: Code | undefined, key: Code): void {
-    if (stateFields !== undefined) this.line(code`if (${stateTest(stateFields, key)}) continue;`);
+  /** A key that is program state of the instance is left out before any value is read. */
+  private skipState(stateFields: Code, key: Code): void {
+    this.line(code`if (${stateTest(stateFields, key)}) continue;`);
+  }
+
+  /** Reads a member of a raw key list into `member`, after the keys of program state and before it leaves the keys whose value is `undefined`. */
+  private readHeld({ stateFields }: RawKeys, value: Code, key: Code, member: Code): Code {
+    this.skipState(stateFields, key);
+    this.line(code`const ${member} = ${value}[${key}];`);
+    this.line(code`if (${member} === undefined) continue;`);
+    return member;
   }
 
   /** `properties`: each declared key that is present, checked against its schema. */
@@ -634,16 +645,12 @@ export class FunctionWriter {
   }
 
   /** `patternProperties`: each key a pattern matches, checked against the schema of the pattern. */
-  private patternKeys({ value, patternsToRun, test: { keys, stateFields } }: ObjectPass): void {
+  private patternKeys({ value, patternsToRun, test }: ObjectPass): void {
     const key = this.fresh('key');
-    this.open(code`for (const ${key} of ${keyList(keys)})`);
+    const list = leftByKeyTest(test.list);
+    this.open(code`for (const ${key} of ${list.keys})`);
     // A raw key list is read once, its program state and its keys whose value is `undefined` are left out.
-    const held = stateFields === undefined ? undefined : this.fresh('member');
-    if (held !== undefined) {
-      this.skipState(stateFields, key);
-      this.line(code`const ${held} = ${value}[${key}];`);
-      this.line(code`if (${held} === undefined) continue;`);
-    }
+    const held = list.kind === 'raw' ? this.readHeld(list, value, key, this.fresh('member')) : undefined;
     for (const { entry, expression } of patternsToRun) {
       this.open(code`if (${expression}.test(${key}))`);
       this.mark(record => code`${record}.keys.add(${key});`);
@@ -659,11 +666,12 @@ export class FunctionWriter {
   }
 
   /** `propertyNames`: each key, checked as a value of its own. */
-  private propertyNames({ value, test: { keys, stateFields } }: ObjectPass, names: number): void {
+  private propertyNames({ value, test }: ObjectPass, names: number): void {
     const key = this.fresh('key');
-    this.open(code`for (const ${key} of ${keyList(keys)})`);
-    if (stateFields !== undefined) {
-      this.skipState(stateFields, key);
+    const list = leftByKeyTest(test.list);
+    this.open(code`for (const ${key} of ${list.keys})`);
+    if (list.kind === 'raw') {
+      this.skipState(list.stateFields, key);
       this.line(code`if (${value}[${key}] === undefined) continue;`);
     }
     this.leaf({ fails: code`!${this.call(names, { value: key, issues: code`[]`, all: code`false` })}`, issue: code`code: 'invalidKey', key: ${key}` });

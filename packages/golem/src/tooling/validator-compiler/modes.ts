@@ -54,27 +54,38 @@ interface KeyTestRequest {
   readonly reads: ReadSet;
 }
 
+/**
+ * The list of an object's own keys that a key test leaves for the passes that loop over the keys. `defined`: the list
+ * of `definedKeys`, which holds no program state and no key whose value is `undefined`. `raw`: each own key as it is,
+ * so a pass leaves out program state of a model instance (`stateFields`, the local that holds the names of the
+ * instance's own model, for `isStateKey`) and keys whose value is `undefined` before it reads a value. `failure`, when
+ * the key test left the own values unread: the statement that a failing check runs before it fails as it would without
+ * this object. It reads every value first, as the full validator does, and the passes over the key list read each value
+ * before they skip a key.
+ */
+export type KeyList = DefinedKeys | RawKeys;
+
+export interface DefinedKeys {
+  readonly kind: 'defined';
+  readonly keys: Code;
+}
+
+export interface RawKeys {
+  readonly kind: 'raw';
+  readonly keys: Code;
+  readonly stateFields: Code;
+  readonly failure?: Code;
+}
+
 /** What the key test of one object leaves for the checks after it. */
 export interface KeyTest {
   readonly presence: PresenceReader;
   /** An expression that holds the number of keys by the JSON view, when `minProperties` or `maxProperties` reads it. */
   readonly count?: Code;
-  /**
-   * An expression that lists the keys by the JSON view, for the checks that loop over them. Set with `stateFields`, the
-   * list holds each own key as it is: program state of a model instance and keys whose value is `undefined` too, and
-   * a loop leaves both out before it reads a value.
-   */
-  readonly keys?: Code;
-  /** The local that holds the names of the instance's own model (`instanceFields`), for `isStateKey`; set exactly when `keys` is a raw list. */
-  readonly stateFields?: Code;
+  /** The key list, for the checks that loop over the keys. */
+  readonly list?: KeyList;
   /** A local that is true when the key test met a key that `additionalProperties: false` forbids; the test runs after `required`. */
   readonly unknown?: Code;
-  /**
-   * Set when the key test left the own values unread: the statement that a failing check runs before it fails as it
-   * would without this object. It reads every value first, as the full validator does, and the passes over the key list read each value
-   * before they skip a key.
-   */
-  readonly failure?: Code;
 }
 
 /** Which own values of an object the full validator reads before its checks. */
@@ -164,8 +175,9 @@ export const FULL_VALIDATOR: WriterMode = {
     const keys = writer.fresh('keys');
     if (reads.all) writer.line(code`const ${keys} = ${localName('definedKeys')}(${value});`);
     // `definedKeys` leaves out the program state of a model instance, so it does not count.
-    if (check.minProperties === undefined && check.maxProperties === undefined) return { presence, ...(reads.all ? { keys } : {}) };
-    return { presence, count: code`${keys}.length`, keys };
+    const list: KeyList = { kind: 'defined', keys };
+    if (check.minProperties === undefined && check.maxProperties === undefined) return { presence, ...(reads.all ? { list } : {}) };
+    return { presence, count: code`${keys}.length`, list };
   },
   call: (writer, id, args) => {
     const target = writer.target(id);
@@ -191,7 +203,7 @@ export const FULL_VALIDATOR: WriterMode = {
  * not additional. A keyword that loops over the keys (a schema of `additionalProperties`, `patternProperties`,
  * `propertyNames`) gets the one key list, which also holds the keys whose value is `undefined`. The pass is written only
  * when it has a case, a count, an unknown key or a captured key to handle. Otherwise it would only read the values: the
- * passes over the key list read them, and a failure of theirs reads the rest before it leaves (`KeyTest.failure`).
+ * passes over the key list read them, and a failure of theirs reads the rest before it leaves (`KeyList.failure`).
  */
 function fastKeyTest(writer: FunctionWriter, { check, value, captured, reads }: KeyTestRequest): KeyTest {
   const presence = objectPresence(value, captured);
@@ -223,7 +235,7 @@ function fastKeyTest(writer: FunctionWriter, { check, value, captured, reads }: 
   // A pass with no case, no count, no unknown key and no captured key only reads the values. The passes over the key
   // list read them all too, and a failure of theirs reads the rest first (`failure`), so the pass is left out.
   if (list !== undefined && cases.length === 0 && bare.length === 0 && count === undefined && unknown === undefined && unnamed.length === 0) {
-    return { presence, keys: list, stateFields: fields, failure: code`${localName('readAll')}(${value}, ${list});` };
+    return { presence, list: { kind: 'raw', keys: list, stateFields: fields, failure: code`${localName('readAll')}(${value}, ${list});` } };
   }
   const item = writer.fresh('item');
   writer.open(code`for (const ${key} of ${list ?? code`Object.keys(${value})`})`);
@@ -250,7 +262,7 @@ function fastKeyTest(writer: FunctionWriter, { check, value, captured, reads }: 
     presence,
     ...(count === undefined ? {} : { count }),
     ...(unknown === undefined ? {} : { unknown }),
-    ...(list === undefined ? {} : { keys: list, stateFields: fields }),
+    ...(list === undefined ? {} : { list: { kind: 'raw', keys: list, stateFields: fields } }),
   };
 }
 

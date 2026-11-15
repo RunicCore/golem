@@ -817,11 +817,10 @@ interface ShapeFacts {
   readonly objectLikeIntersection: boolean;
 }
 
-interface ObjectMember {
-  readonly name: string;
-  readonly property: ts.Symbol;
-  readonly absentFromSource: boolean;
-}
+/** A field of an object type. `absent`: a projection picked it from a source type that has no such member. */
+type ObjectMember =
+  | { readonly kind: 'declared'; readonly name: string; readonly property: ts.Symbol }
+  | { readonly kind: 'absent'; readonly name: string; readonly property: ts.Symbol; readonly source: ts.Type };
 
 function projectionReference(name: string): ModelConversionDescriptor {
   return { kind: 'reference', name, projection: true };
@@ -1225,8 +1224,8 @@ function describeArray(scope: DescribeScope, call: DescribeCall, seen: ReadonlyS
   }, metadata);
 }
 
-/** The members of an object type that are fields, and the source type a projection reads them from. */
-function objectMembers(scope: DescribeScope, call: DescribeCall, facts: ShapeFacts): { readonly sourceObject: ts.Type | undefined; readonly members: readonly ObjectMember[] } {
+/** The members of an object type that are fields. */
+function objectMembers(scope: DescribeScope, call: DescribeCall, facts: ShapeFacts): readonly ObjectMember[] {
   const { checker, specifications, isDefaultLibraryFile } = scope;
   const { context, node, type } = call;
   const { projection } = facts;
@@ -1234,14 +1233,14 @@ function objectMembers(scope: DescribeScope, call: DescribeCall, facts: ShapeFac
   // the members of the model. An SDK base is real and also declares type-only brand members, which no projection takes.
   const projectedSource = projection && isPropertyMapping(type) ? projectedSourceType(checker, type) : undefined;
   const sourceObject = projectedSource && (projectedSource.flags & ts.TypeFlags.Object) !== 0 ? projectedSource : undefined;
-  const members: { readonly name: string; readonly property: ts.Symbol; readonly absentFromSource: boolean }[] = [];
+  const members: ObjectMember[] = [];
   for (const mapped of checker.getPropertiesOfType(type)) {
     const name = mapped.getName();
     if (sourceObject && isGeneratedBrandKey(checker, mapped)) continue;
     // A tag is type-only: a variant `A & B & Discriminator<'k'>` has the tag key beside its fields, and the key is no field.
     if (isGolemTagKey(checker, mapped)) continue;
     if (isSymbolKeyedProperty(checker, mapped) && isDefaultLibraryProperty(mapped, isDefaultLibraryFile)) continue;
-    members.push({ name, property: mapped, absentFromSource: sourceObject !== undefined && !sourceObject.getProperty(name) });
+    members.push(sourceObject !== undefined && !sourceObject.getProperty(name) ? { kind: 'absent', name, property: mapped, source: sourceObject } : { kind: 'declared', name, property: mapped });
   }
   // A model defined by a mapped type over its own class has no members: the base of the class is a stub of this very model.
   if (sourceObject && modelSpecificationForClass(checker, sourceObject, specifications)?.declaration === context.declaration && !context.schemaData && members.length === 0) {
@@ -1249,14 +1248,14 @@ function objectMembers(scope: DescribeScope, call: DescribeCall, facts: ShapeFac
       context.sourceFile,
       node ?? context.declaration,
       '1058',
-      `${context.name} maps over its own class ${checker.typeToString(sourceObject!)}, whose members are generated from ${context.name}, so golem finds no members in it. Declare the fields in ${context.name}.`,
+      `${context.name} maps over its own class ${checker.typeToString(sourceObject)}, whose members are generated from ${context.name}, so golem finds no members in it. Declare the fields in ${context.name}.`,
     );
   }
-  return { sourceObject, members };
+  return members;
 }
 
 /** The descriptors of the fields of an object, and which are required. */
-function describeProperties(scope: DescribeScope, call: DescribeCall, nextSeen: ReadonlySet<ts.Type>, facts: ShapeFacts, sourceObject: ts.Type | undefined, members: readonly ObjectMember[]): { readonly properties: Record<string, ModelConversionDescriptor>; readonly required: string[] } {
+function describeProperties(scope: DescribeScope, call: DescribeCall, nextSeen: ReadonlySet<ts.Type>, facts: ShapeFacts, members: readonly ObjectMember[]): { readonly properties: Record<string, ModelConversionDescriptor>; readonly required: string[] } {
   const { checker, validationLevel, allowAny, describe } = scope;
   const { context, representation, provenanceNode, nameHint, node, childNode, childSubstitutions, type } = call;
   const { projectionName } = facts;
@@ -1265,7 +1264,8 @@ function describeProperties(scope: DescribeScope, call: DescribeCall, nextSeen: 
   // would invoke the legacy setter for an own `__proto__` key.
   const properties: Record<string, ModelConversionDescriptor> = Object.create(null);
   const required: string[] = [];
-  for (const { name, property, absentFromSource } of members) {
+  for (const field of members) {
+    const { name, property } = field;
     const optional = (property.flags & ts.SymbolFlags.Optional) !== 0;
     const isMethod = (property.flags & ts.SymbolFlags.Method) !== 0
       || property.declarations?.some(declaration => ts.isMethodDeclaration(declaration) || ts.isMethodSignature(declaration)) === true;
@@ -1277,12 +1277,12 @@ function describeProperties(scope: DescribeScope, call: DescribeCall, nextSeen: 
     const valueType = propertyType(checker, property, context.declaration);
     // A member the source type lacks makes the checker's picked type `unknown`; the field is not typed unknown, so `allowAny` is no fix.
     // A string index signature holds the member, and then the field is really typed by it.
-    if (absentFromSource && !indexValueType(checker, sourceObject!) && !context.schemaData && (valueType.flags & ts.TypeFlags.Unknown) !== 0 && !(context.allowAny ?? allowAny)) {
+    if (field.kind === 'absent' && !indexValueType(checker, field.source) && !context.schemaData && (valueType.flags & ts.TypeFlags.Unknown) !== 0 && !(context.allowAny ?? allowAny)) {
       throw diagnostic(
         context.sourceFile,
         node ?? context.declaration,
         '1058',
-        `Field "${name}" is picked from ${checker.typeToString(sourceObject!)}, which has no member "${name}". Fix the key, or the import of the type that declares it.`,
+        `Field "${name}" is picked from ${checker.typeToString(field.source)}, which has no member "${name}". Fix the key, or the import of the type that declares it.`,
       );
     }
     if (valueType.getCallSignatures().length > 0) {
@@ -1353,8 +1353,8 @@ function describeObject(scope: DescribeScope, call: DescribeCall, seen: Readonly
   // An object breaks any sequence cycle through it: its own revisit is a projection reference or the 1056 diagnostic.
   const nextSeen = new Set([...seen].filter((entry) => !checker.isArrayType(entry) && !checker.isTupleType(entry)));
   nextSeen.add(type);
-  const { sourceObject, members } = objectMembers(scope, call, facts);
-  const { properties, required } = describeProperties(scope, call, nextSeen, facts, sourceObject, members);
+  const members = objectMembers(scope, call, facts);
+  const { properties, required } = describeProperties(scope, call, nextSeen, facts, members);
   // The members kept above exclude the brand keys of an SDK base; a readonly modifier counts only for a kept member.
   const memberNames = new Set(members.map(member => member.name));
   const readonlyProperties = readonlyPropertyNames(checker, type).filter(name => memberNames.has(name));
