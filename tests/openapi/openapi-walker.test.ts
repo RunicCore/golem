@@ -111,7 +111,7 @@ test('visitOpenApiSchemaTree reports discriminator mapping and defaultMapping va
   ]);
 });
 
-test('visitOpenApiSchemaTree skips x- extension keys under paths and webhooks', () => {
+test('visitOpenApiSchemaTree skips an x- extension key under paths, and walks a webhook named x-…', () => {
   const refs: string[] = [];
   const pathItem = () => ({ get: { responses: { 200: { description: 'ok', content: { 'application/json': { schema: { $ref: './ext.json' } } } } } } });
   visitOpenApiSchemaTree({
@@ -124,5 +124,6 @@ test('visitOpenApiSchemaTree skips x- extension keys under paths and webhooks', 
   assert.deepEqual(refs, [
     '#/paths/~1a/get/responses/200/content/application~1json/schema/$ref ./ext.json',
     '#/webhooks/event/get/responses/200/content/application~1json/schema/$ref ./ext.json',
+    '#/webhooks/x-notes/get/responses/200/content/application~1json/schema/$ref ./ext.json',
   ]);
 });

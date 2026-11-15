@@ -24,8 +24,8 @@ interface PetShape {
   readonly nestedToy?: boolean;
   /** The base declares the tag property without requiring it. */
   readonly optionalTag?: boolean;
-  /** The union also admits null. */
-  readonly nullBranch?: boolean;
+  /** The union also admits null, with this branch. */
+  readonly nullBranch?: Readonly<Record<string, unknown>>;
 }
 
 /**
@@ -74,7 +74,7 @@ function petDocument(
         }, ['name'], catTag),
         [`dog${suffix}`]: variant({ bark: { type: 'boolean' }, adopted: { type: 'string', format: 'date-time' } }, ['bark'], dogTag),
         [`Pet${suffix}`]: {
-          [shape.keyword ?? 'oneOf']: [ref('cat'), ref('dog'), ...(shape.nullBranch ? [{ type: 'null' }] : [])],
+          [shape.keyword ?? 'oneOf']: [ref('cat'), ref('dog'), ...(shape.nullBranch ? [shape.nullBranch] : [])],
           ...(discriminator ? { discriminator } : {}),
         },
         [`Owner${suffix}`]: {
@@ -171,14 +171,18 @@ const cases: readonly {
     unknown: 'bird',
     shape: { nestedToy: true },
   },
-  {
-    name: 'union that also admits null',
+  ...([
+    ['a type null branch', { type: 'null' }],
+    ['a const null branch', { const: null }],
+    ['an enum null branch', { enum: [null] }],
+  ] as const).map(([branch, nullBranch]) => ({
+    name: `union that also admits null as ${branch}`,
     discriminator: explicitMapping,
     cat: () => ['feline'],
     dog: () => 'canine',
     unknown: 'bird',
-    shape: { nullBranch: true },
-  },
+    shape: { nullBranch },
+  })),
 ];
 
 const profiles: readonly OpenApiGenerationProfile[] = [
@@ -253,7 +257,7 @@ test('OAS discriminator mappings select allOf variants in decode and encode', as
 
 test('a union that admits null decodes and encodes null beside its variants', async t => {
   const suffix = 'Nullable';
-  const pets = await generatePets(t, petDocument(suffix, explicitMapping(suffix), { nullBranch: true }), [`Owner${suffix}`], profiles[1]);
+  const pets = await generatePets(t, petDocument(suffix, explicitMapping(suffix), { nullBranch: { type: 'null' } }), [`Owner${suffix}`], profiles[1]);
   const owner = await pets.codec(`Owner${suffix}`);
   const wire = { pet: null, pets: [{ kind: 'feline', name: 'Miso', born: BORN }, { kind: 'canine', bark: true, adopted: ADOPTED }, null] };
   const value = { pet: null, pets: [{ kind: 'feline', name: 'Miso', born: new Date(BORN) }, { kind: 'canine', bark: true, adopted: new Date(ADOPTED) }, null] };

@@ -376,8 +376,7 @@ export function sanitize(module: IrModule): IrModule {
   const convert = (functions: readonly IrFunction[]): IrFunction[] => functions.map(fn => ({ ...fn, body: schemaOf(fn.body, fn.collects || fn.receives) }));
   const first = convert(module.functions);
   voided = new Set(first.filter(fn => fn.body.kind === 'always').map(fn => fn.id));
-  // No validation function is left to call, so the module imports none.
-  return { ...module, validations: [], functions: voided.size === 0 ? first : convert(first) };
+  return { ...module, functions: voided.size === 0 ? first : convert(first) };
 }
 
 /** The ids reachable from `start` through `next`. */

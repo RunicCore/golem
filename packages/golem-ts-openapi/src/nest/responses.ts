@@ -1,4 +1,5 @@
 import * as ts from '@exprtlabs/golem/internal/ts';
+import { parameterIdentity } from '@exprtlabs/golem/internal/generator-support';
 import {
   TsToOpenApiDiagnosticCode,
   TsToOpenApiError,
@@ -13,7 +14,7 @@ import {
   typeExpressionFromApiOption,
   unwrapAsyncType,
 } from './analysis-utils.js';
-import { decoratorOptions, readNumber, readString, type DecoratorOptions, type MetadataReader } from './metadata.js';
+import { decoratorOptions, inApplicationOrder, readNumber, readString, type DecoratorOptions, type MetadataReader } from './metadata.js';
 import { evaluateStaticValue } from '@exprtlabs/golem/internal/static-value';
 import { NEST_COMMON, NEST_SWAGGER } from './packages.js';
 import { callArguments, decoratorsOf } from './symbols.js';
@@ -230,7 +231,7 @@ function parseSwaggerResponse(
     type,
     isArray: typed.isArray,
     ...(content ? { content } : schema ? { content: { 'application/json': { schema } } } : {}),
-    ...(headers ? { headers } : {}),
+    ...(headers ? { headers: headersByName(headers) } : {}),
     explicit: true,
   };
 }
@@ -355,10 +356,17 @@ export function parseResponses(
   return [...inferred, ...annotated].map(response => response.status === runtimeStatus
     ? {
       ...response,
-      ...(Object.keys(headers).length > 0 ? { headers: { ...headers, ...response.headers } } : {}),
+      ...(Object.keys(headers).length > 0 ? { headers: headersByName(headers, response.headers ?? {}) } : {}),
       ...(mediaType ? { mediaTypes: [mediaType] } : {}),
     }
     : response);
+}
+
+/** The headers of the lists by name, a later entry replacing an earlier one of the same name: a header name is case-insensitive, so `X-A` and `x-a` are one header. */
+function headersByName(...lists: readonly Readonly<Record<string, unknown>>[]): Record<string, unknown> {
+  const byIdentity = new Map<string, readonly [string, unknown]>();
+  for (const entry of lists.flatMap(list => Object.entries(list))) byIdentity.set(parameterIdentity('header', entry[0]), entry);
+  return Object.fromEntries(byIdentity.values());
 }
 
 /**
@@ -370,9 +378,9 @@ function nestResponseHeaders(
   reader: MetadataReader,
   decorators: readonly DecoratorInfo[],
 ): { readonly headers: Record<string, unknown>; readonly mediaType?: string } {
-  const headers: Record<string, unknown> = {};
+  const headers: Record<string, unknown>[] = [];
   let mediaType: string | undefined;
-  for (const decorator of hasAnyDecorator(decorators, ['Header'], NEST_COMMON)) {
+  for (const decorator of hasAnyDecorator(inApplicationOrder(decorators), ['Header'], NEST_COMMON)) {
     const [nameArgument, valueArgument] = callArguments(decorator);
     const name = readString(reader, nameArgument, '@Header() name', TsToOpenApiDiagnosticCode.UnsupportedRouteDecorator);
     if (name === undefined) continue;
@@ -382,9 +390,9 @@ function nestResponseHeaders(
       mediaType = readString(reader, valueArgument, '@Header(\'Content-Type\') value', TsToOpenApiDiagnosticCode.UnsupportedRouteDecorator);
       continue;
     }
-    headers[name] = { schema: { type: 'string' }, ...(text === undefined ? {} : { example: text }) };
+    headers.push({ [name]: { schema: { type: 'string' }, ...(text === undefined ? {} : { example: text }) } });
   }
-  return { headers, ...(mediaType ? { mediaType } : {}) };
+  return { headers: headersByName(...headers), ...(mediaType ? { mediaType } : {}) };
 }
 
 export function parseRequestBody(

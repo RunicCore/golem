@@ -46,7 +46,7 @@ function newShape(): FieldShape {
 
 /**
  * The schema a `$ref` names, with the root that its own local references resolve against: a JSON pointer into the root
- * schema (`#/$defs/Name`), or a model by the name the reference carries (a placeholder, or an id with its plane). An
+ * schema (`#/$defs/Name`), or a model by the name the reference carries (a placeholder or an id). An
  * unknown reference names nothing; the validator reports it.
  */
 function resolveReference(reference: string, scope: Scope): { readonly schema: unknown; readonly scope: Scope } | undefined {
@@ -62,8 +62,7 @@ function resolveReference(reference: string, scope: Scope): { readonly schema: u
     return schema === undefined ? undefined : { schema, scope };
   }
   const bare = reference.startsWith(GENERATED_MODEL_SCHEMA_REF_PREFIX) ? reference.slice(GENERATED_MODEL_SCHEMA_REF_PREFIX.length) : reference;
-  const hash = bare.indexOf('#');
-  const schema = scope.resolve(hash < 0 ? bare : bare.slice(0, hash));
+  const schema = scope.resolve(bare);
   return schema === undefined ? undefined : { schema, scope: { ...scope, root: schema } };
 }
 

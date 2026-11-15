@@ -130,8 +130,12 @@ function literalUnionValues(branches: readonly unknown[]): readonly unknown[] | 
   const lists = branches.map(literalBranchValues);
   if (!lists.every((list): list is readonly unknown[] => list !== undefined)) return undefined;
   const values = lists.flat();
-  const distinct = values.every((value, position) => values.findIndex(other => jsonEqual(value, other)) === position);
-  return values.length > 0 && distinct ? values : undefined;
+  return values.length > 0 && allDistinct(values) ? values : undefined;
+}
+
+/** True when no two of `values` are equal as JSON, whatever the key order of an object. */
+function allDistinct(values: readonly unknown[]): boolean {
+  return values.every((value, position) => values.findIndex(other => jsonEqual(value, other)) === position);
 }
 
 /** What a `$ref` target is called: the last segment of its pointer; a whole resource has no segment, and its name may be a digest. */
@@ -332,8 +336,7 @@ class Lowering {
     const property = discriminator.propertyName;
     const tags = branches.map(branch => this.tagValues(branch, property));
     if (!tags.every((list): list is readonly unknown[] => list !== undefined)) return undefined;
-    const seen = new Set(tags.flat().map(tag => JSON.stringify(tag)));
-    if (seen.size !== tags.flat().length) return undefined;
+    if (!allDistinct(tags.flat())) return undefined;
     return branches.every(branch => this.requiresProperty(branch, property)) ? { property, tags } : { property, tags, optional: true };
   }
 

@@ -26,6 +26,7 @@ import {
   carriesSerdeTag,
   isAmbientOrGlobalSymbol,
   isGolemTagKey,
+  propertyTypeNode,
   publicExportName,
   type ModelConstraint,
   type SerdeBinding,
@@ -81,20 +82,6 @@ function mapOrSetName(type: ts.Type): string | undefined {
 /** True when the property is declared as a class field, which a decorator can reach; a type literal or interface member has none. */
 function isClassProperty(property: ts.Symbol): boolean {
   return (property.declarations ?? []).some(declaration => ts.isPropertyDeclaration(declaration));
-}
-
-function propertyTypeNode(checker: ts.TypeChecker, property: ts.Symbol, valueType: ts.Type): ts.TypeNode | undefined {
-  const roots = checker.getRootSymbols(property);
-  const root = roots.length === 1 ? roots[0] : undefined;
-  // A property merged from an intersection has a declaration in each member; the one whose type the merged type equals names it,
-  // as `pets: TCat[]` in `TOwner & { pets: TCat[] }` where TOwner declares `pets: TPet[]`.
-  const merged = property.valueDeclaration ? undefined : property.declarations?.find((candidate) =>
-    (ts.isPropertySignature(candidate) || ts.isPropertyDeclaration(candidate)) && candidate.type
-    && checker.isTypeAssignableTo(checker.getTypeFromTypeNode(candidate.type), valueType));
-  const declaration = property.valueDeclaration ?? merged ?? property.declarations?.[0] ?? root?.valueDeclaration ?? root?.declarations?.[0];
-  return declaration && (ts.isPropertySignature(declaration) || ts.isPropertyDeclaration(declaration))
-    ? declaration.type
-    : undefined;
 }
 
 function tupleTarget(type: ts.Type): ts.TypeReference {

@@ -35,7 +35,7 @@ interface OpenApiDocument {
 type GenerateOptions = Omit<Parameters<typeof generate>[0], 'root' | 'output' | 'info' | 'profile'>;
 
 const HEADER = "import { All, Controller, Get, Headers, Header, Param, Query, Redirect, RequestMapping, RequestMethod, Search, Sse, VERSION_NEUTRAL } from '@nestjs/common';\n"
-  + "import { ApiBearerAuth, ApiExcludeEndpoint, ApiHeader, ApiOperation, ApiParam, ApiProperty, ApiQuery, ApiSecurity, ApiTags } from '@nestjs/swagger';\n"
+  + "import { ApiBearerAuth, ApiExcludeEndpoint, ApiHeader, ApiOperation, ApiParam, ApiProperty, ApiQuery, ApiResponse, ApiSecurity, ApiTags } from '@nestjs/swagger';\n"
   + 'class FilterDto { @ApiProperty() term?: string; @ApiProperty() page?: string; }\n'
   + 'class ItemDto { @ApiProperty() id!: string; }\n';
 
@@ -218,6 +218,20 @@ test('rejects redirects and non-OpenAPI methods in any decorator order and docum
   const document = await documentOf(t, "@Controller('cached') export class CachedController { @Get() @Header('Cache-Control', 'no-store') get(): void {} }");
   const header = document.paths['/cached']?.get?.responses['200']?.headers?.['Cache-Control'];
   assert.deepEqual(header, { example: 'no-store', schema: { type: 'string' } });
+});
+
+test('documents one response header when @Header and @ApiResponse name it in different letter case', async t => {
+  // protects: T-920 a response header name is case-insensitive (RFC 9110); the Swagger header must replace the @Header one, and the top @Header, which Nest sets last, the lower one
+  const document = await documentOf(t, [
+    "@Controller('headers') export class HeadersController {",
+    "  @Get('swagger') @Header('X-Rate', '1') @ApiResponse({ status: 200, headers: { 'x-rate': { description: 'Rate', schema: { type: 'integer' } } } }) swagger(): void {}",
+    "  @Get('twice') @Header('X-Rate', '1') @Header('x-rate', '2') twice(): void {}",
+    "  @Get('record') @ApiResponse({ status: 200, headers: { 'X-Rate': { description: 'first' }, 'x-rate': { description: 'second' } } }) record(): void {}",
+    '}',
+  ].join('\n'));
+  assert.deepEqual(document.paths['/headers/swagger']?.get?.responses['200']?.headers, { 'x-rate': { description: 'Rate', schema: { type: 'integer' } } });
+  assert.deepEqual(document.paths['/headers/twice']?.get?.responses['200']?.headers, { 'X-Rate': { example: '1', schema: { type: 'string' } } });
+  assert.deepEqual(document.paths['/headers/record']?.get?.responses['200']?.headers, { 'x-rate': { description: 'second' } });
 });
 
 test('merges class tags and security along the controller chain with method security, as @nestjs/swagger does', async t => {

@@ -1,11 +1,11 @@
-import { asRecord, isJsonObject, jsonPointerJoin, objectEntries, readBoolean, readString, resolveJsonPointer, type JsonObject } from './json.js';
+import { asRecord, entriesWithoutExtensions, isJsonObject, jsonPointerJoin, objectEntries, openApiLine, readBoolean, readString, resolveJsonPointer, type JsonObject, type OpenApiLine } from './json.js';
 import { GolemDiagnosticSeverity, type GolemDiagnostic } from '@exprtlabs/golem/generator-api';
-import { identifier, parameterStyleRule, type ParameterLocation } from '@exprtlabs/golem/internal/generator-support';
+import { identifier, parameterIdentity, parameterStyleRule, type ParameterLocation } from '@exprtlabs/golem/internal/generator-support';
 import { fragmentPointerTokens } from '@exprtlabs/golem/internal/schema';
-import { inboundOperationName, operationName } from './names.js';
+import { inboundNameHoldsSource, inboundOperationName, operationName } from './names.js';
 
 const HTTP_METHODS_31 = ['get', 'put', 'post', 'delete', 'options', 'head', 'patch', 'trace'] as const;
-export const HTTP_METHODS_32 = [...HTTP_METHODS_31, 'query'] as const;
+const HTTP_METHODS_32 = [...HTTP_METHODS_31, 'query'] as const;
 
 const VERSION_ADAPTERS = {
   '3.1': {
@@ -22,17 +22,25 @@ const VERSION_ADAPTERS = {
   },
 } as const;
 
-type OpenApiFeatureLine = keyof typeof VERSION_ADAPTERS;
 export type OpenApiSchema = boolean | JsonObject;
 
-export interface OpenApiMediaType {
+interface MediaTypeBase {
   readonly contentType: string;
   readonly schema: OpenApiSchema | null;
-  readonly itemSchema: OpenApiSchema | null;
-  readonly itemSchemaPresent: boolean;
   readonly encoding: JsonObject;
   readonly prefixEncoding: readonly unknown[];
   readonly itemEncoding: unknown;
+}
+
+/** A media type has an `itemSchema` (a stream of items) or it has none; the flag and the schema never disagree. */
+export type OpenApiMediaType = MediaTypeBase & (
+  | { readonly itemSchemaPresent: true; readonly itemSchema: OpenApiSchema }
+  | { readonly itemSchemaPresent: false; readonly itemSchema: null }
+);
+
+/** The schema of one media type: its `itemSchema` when it has one, else its `schema`. `null` when it has neither. */
+export function mediaSchema(media: OpenApiMediaType): OpenApiSchema | null {
+  return media.itemSchemaPresent ? media.itemSchema : media.schema;
 }
 
 export interface NormalizedParameter {
@@ -76,7 +84,7 @@ export interface NormalizedOperation {
 
 export interface NormalizedDocument {
   readonly openapi: string;
-  readonly featureLine: OpenApiFeatureLine;
+  readonly featureLine: OpenApiLine;
   readonly schemaDialect: string;
   readonly operations: readonly NormalizedOperation[];
   readonly inboundOperations: readonly NormalizedOperation[];
@@ -118,23 +126,21 @@ export function resolveLocal(document: unknown, value: unknown): unknown {
   return followLocalRefs(document, value).value;
 }
 
-function contentEntries(content: unknown, featureLine?: OpenApiFeatureLine): OpenApiMediaType[] {
+function contentEntries(content: unknown, featureLine: OpenApiLine): OpenApiMediaType[] {
   return objectEntries(content).map(([contentType, media]) => {
     const mediaObject = asRecord(media);
-    const itemSchemaPresent = Object.prototype.hasOwnProperty.call(mediaObject, 'itemSchema')
-      && (typeof mediaObject.itemSchema === 'boolean' || isJsonObject(mediaObject.itemSchema));
-    if (itemSchemaPresent && featureLine !== undefined && featureLine !== '3.2') {
+    const itemSchema = schemaValue(mediaObject.itemSchema);
+    if (itemSchema !== null && featureLine !== '3.2') {
       throw new Error(`itemSchema is only supported in OpenAPI 3.2 (found ${featureLine} in ${contentType})`);
     }
-    return {
+    const base = {
       contentType,
       schema: 'schema' in mediaObject ? schemaValue(mediaObject.schema) : null,
-      itemSchema: itemSchemaPresent ? schemaValue(mediaObject.itemSchema) : null,
-      itemSchemaPresent,
       encoding: asRecord(mediaObject.encoding),
       prefixEncoding: Array.isArray(mediaObject.prefixEncoding) ? mediaObject.prefixEncoding : [],
       itemEncoding: mediaObject.itemEncoding ?? null,
     };
+    return itemSchema === null ? { ...base, itemSchema, itemSchemaPresent: false } : { ...base, itemSchema, itemSchemaPresent: true };
   });
 }
 
@@ -156,11 +162,6 @@ export function parameterSchema(parameter: unknown): OpenApiSchema | null {
   const record = asRecord(parameter);
   if ('schema' in record) return schemaValue(record.schema);
   return preferredSchema(record.content);
-}
-
-function parameterKey(parameter: NormalizedParameter): string {
-  // A header name is case-insensitive (RFC 9110); every other location is case-sensitive.
-  return `${parameter.in}\0${parameter.in === 'header' ? parameter.name.toLowerCase() : parameter.name}`;
 }
 
 function isParameterLocation(location: string): location is ParameterLocation {
@@ -202,7 +203,7 @@ function uniqueParameters(parameters: readonly unknown[], origin: string): Norma
   const result: NormalizedParameter[] = [];
   for (const [index, raw] of parameters.entries()) {
     const parameter = asParameter(raw, `${origin}[${index}]`);
-    const key = parameterKey(parameter);
+    const key = parameterIdentity(parameter.in, parameter.name);
     const previous = seen.get(key);
     if (previous !== undefined) {
       throw new Error(
@@ -226,6 +227,13 @@ function resolveParameterList(
   );
 }
 
+/** The parameters an operation sees: those of its path item, each replaced in place by the operation's own of the same identity, then the rest of the operation's own (OpenAPI "Path Item Object"). */
+export function overrideParameters<T extends { readonly name: string; readonly in: string }>(pathLevel: readonly T[], operationLevel: readonly T[]): T[] {
+  const merged = new Map<string, T>();
+  for (const parameter of [...pathLevel, ...operationLevel]) merged.set(parameterIdentity(parameter.in, parameter.name), parameter);
+  return [...merged.values()];
+}
+
 function mergeParameters(
   document: unknown,
   pathItemParameters: readonly unknown[],
@@ -235,13 +243,10 @@ function mergeParameters(
 ): NormalizedParameter[] {
   const pathParameters = resolveParameterList(document, pathItemParameters, pathOrigin);
   const operationLevel = resolveParameterList(document, operationParameters, operationOrigin);
-  const merged = new Map<string, NormalizedParameter>();
-  for (const parameter of pathParameters) merged.set(parameterKey(parameter), parameter);
-  for (const parameter of operationLevel) merged.set(parameterKey(parameter), parameter);
-  return [...merged.values()];
+  return overrideParameters(pathParameters, operationLevel);
 }
 
-function normalizeResponses(document: unknown, responses: unknown): NormalizedResponse[] {
+function normalizeResponses(document: unknown, responses: unknown, featureLine: OpenApiLine): NormalizedResponse[] {
   return objectEntries(responses).map(([status, rawResponse]) => {
     const response = asRecord(resolveLocal(document, rawResponse));
     const links = Object.fromEntries(
@@ -252,7 +257,7 @@ function normalizeResponses(document: unknown, responses: unknown): NormalizedRe
       description: readString(response.description) ?? '',
       headers: asRecord(response.headers),
       links,
-      content: contentEntries(response.content, featureLineOf(asRecord(document).openapi)),
+      content: contentEntries(response.content, featureLine),
       schema: preferredSchema(response.content),
       success: /^2\d\d$/.test(status) || /^2XX$/i.test(status),
     };
@@ -275,7 +280,7 @@ function normalizeOperation(
   sourceName = route,
   wireMethod = method.toUpperCase(),
 ): NormalizedOperation {
-  const featureLine = featureLineOf(asRecord(document).openapi);
+  const featureLine = openApiLine(document);
   const parameters = mergeParameters(
     document,
     Array.isArray(pathItem.parameters) ? pathItem.parameters : [],
@@ -285,7 +290,7 @@ function normalizeOperation(
   );
   const requestBodyValue = resolveLocal(document, operation.requestBody);
   const requestBody = isJsonObject(requestBodyValue) ? requestBodyValue : undefined;
-  const responses = normalizeResponses(document, operation.responses);
+  const responses = normalizeResponses(document, operation.responses, featureLine);
   const documentRecord = asRecord(document);
   const security = operation.security === undefined
     ? asSecurityRequirements(documentRecord.security)
@@ -344,10 +349,15 @@ export function effectiveSchemaTypes(schema: { readonly type?: unknown }): strin
   return Array.isArray(schema.type) ? schema.type.map(String) : schema.type ? [String(schema.type)] : [];
 }
 
-function featureLineOf(openapi: unknown): OpenApiFeatureLine {
-  const featureLine = String(openapi).split('.').slice(0, 2).join('.');
-  if (featureLine === '3.1' || featureLine === '3.2') return featureLine;
-  throw new Error(`no version adapter for OpenAPI ${String(openapi)}`);
+/**
+ * The one null rule: a value of the schema can be null. A `type` list must name null when it is given, and each of `const` and `enum` that is given must list null.
+ * A schema with no `type`, `const` or `enum` decides nothing about null.
+ */
+export function admitsNull(schema: { readonly type?: unknown; readonly const?: unknown; readonly enum?: unknown }): boolean {
+  const types = effectiveSchemaTypes(schema);
+  if (types.length > 0 && !types.includes('null')) return false;
+  const lists = [schema.const === undefined ? undefined : [schema.const], Array.isArray(schema.enum) ? schema.enum : undefined].filter((list) => list !== undefined);
+  return lists.length > 0 ? lists.every((list) => list.includes(null)) : types.length > 0;
 }
 
 export function collectOperations(document: unknown): readonly NormalizedOperation[] {
@@ -357,7 +367,7 @@ export function collectOperations(document: unknown): readonly NormalizedOperati
 function assertParameterStyles(
   document: unknown,
   operations: readonly NormalizedOperation[],
-  featureLine: OpenApiFeatureLine,
+  featureLine: OpenApiLine,
 ): void {
   for (const operation of operations) {
     for (const parameter of operation.parameters) {
@@ -380,72 +390,131 @@ function assertParameterStyles(
   }
 }
 
-/** The operations of a path item, named by their lowercase method; the standard methods first, then the OpenAPI 3.2 additional ones. */
-function* pathItemOperations(
-  document: unknown,
-  pathItem: JsonObject,
-  adapter: (typeof VERSION_ADAPTERS)[OpenApiFeatureLine],
-): Generator<{ method: string; wireMethod: string; operation: JsonObject }> {
+interface PathItemOperation {
+  readonly method: string;
+  readonly wireMethod: string;
+  readonly operation: unknown;
+  readonly suffix: string;
+}
+
+/**
+ * The operations that a path item holds: the standard methods of `line`, then the OpenAPI 3.2 `additionalOperations`.
+ * `suffix` is the JSON Pointer of the operation inside the path item. The caller checks that `operation` is an object.
+ */
+export function pathItemOperations(pathItem: JsonObject, line: OpenApiLine): PathItemOperation[] {
+  const adapter = VERSION_ADAPTERS[line];
+  const operations: PathItemOperation[] = [];
   for (const method of adapter.methods) {
-    if (pathItem[method] === undefined) continue;
-    yield { method, wireMethod: method.toUpperCase(), operation: asRecord(resolveLocal(document, pathItem[method])) };
+    if (pathItem[method] !== undefined) {
+      operations.push({ method, wireMethod: method.toUpperCase(), operation: pathItem[method], suffix: jsonPointerJoin('', method) });
+    }
   }
   if (adapter.additionalOperations) {
-    for (const [wireMethod, rawOperation] of objectEntries(pathItem.additionalOperations)) {
-      yield { method: wireMethod, wireMethod, operation: asRecord(resolveLocal(document, rawOperation)) };
+    for (const [method, operation] of objectEntries(pathItem.additionalOperations)) {
+      operations.push({ method, wireMethod: method, operation, suffix: jsonPointerJoin(jsonPointerJoin('', 'additionalOperations'), method) });
+    }
+  }
+  return operations;
+}
+
+interface OperationSiteBase {
+  /** The lowercase method of a standard operation, or the key under `additionalOperations`. */
+  readonly method: string;
+  readonly wireMethod: string;
+  readonly operation: JsonObject;
+  readonly pointer: string;
+  readonly pathItem: JsonObject;
+  readonly pathItemPointer: string;
+  /** The `paths` key, the webhook name, or the callback expression. */
+  readonly key: string;
+}
+
+/** Where an operation of the document sits: under `paths`, under `webhooks`, or in a callback of another operation. */
+export type OperationSite = OperationSiteBase & OperationOwner;
+type OperationOwner =
+  | { readonly kind: 'path' | 'webhook' }
+  | { readonly kind: 'callback'; readonly parentName: string; readonly callbackName: string };
+
+/**
+ * Calls `visit` for every operation of the document, in the order normalize names them: the path operations, the
+ * webhook operations, then the callbacks of each of those, each callback level after the level that holds it. `visit`
+ * returns the name under which the callbacks of that operation are listed (`parentName` of their sites).
+ * An `x-` key under `paths` or a callback is an extension, not a path item; a webhook may be named `x-…`.
+ * A callback operation is listed once for each name that normalize gives it: once with an `operationId`, once for each
+ * parent and callback name without one. The callbacks of an operation are listed once for each pointer, so a cycle of callbacks ends.
+ */
+export function visitOperationSites(document: unknown, line: OpenApiLine, visit: (site: OperationSite) => string): void {
+  const root = asRecord(document);
+  const sites: OperationSite[] = [];
+  const listedCallbacks = new Set<string>();
+  const expanded = new Set<string>();
+  const addPathItem = (rawPathItem: unknown, writtenPointer: string, key: string, owner: OperationOwner): void => {
+    const { value: pathItem, pointer: pathItemPointer } = followLocalRefs(document, rawPathItem, writtenPointer);
+    if (!isJsonObject(pathItem)) return;
+    for (const { method, wireMethod, operation, suffix } of pathItemOperations(pathItem, line)) {
+      const pointer = `${pathItemPointer}${suffix}`;
+      if (!isJsonObject(operation)) continue;
+      if (owner.kind === 'callback') {
+        const identity = inboundNameHoldsSource(operation) ? `${pointer}\u0000${owner.parentName}\u0000${owner.callbackName}` : pointer;
+        if (listedCallbacks.has(identity)) continue;
+        listedCallbacks.add(identity);
+      }
+      sites.push({ ...owner, method, wireMethod, operation, pointer, pathItem, pathItemPointer, key });
+    }
+  };
+  for (const [route, rawPathItem] of entriesWithoutExtensions(root.paths)) {
+    addPathItem(rawPathItem, jsonPointerJoin('/paths', route), route, { kind: 'path' });
+  }
+  for (const [name, rawPathItem] of objectEntries(root.webhooks)) {
+    addPathItem(rawPathItem, jsonPointerJoin('/webhooks', name), name, { kind: 'webhook' });
+  }
+  for (const site of sites) { // `sites` grows while this runs: the callbacks found here are visited after the level that holds them.
+    const parentName = visit(site);
+    const expansion = `${site.pointer}\u0000${site.kind === 'callback' ? '' : site.key}`;
+    if (expanded.has(expansion)) continue;
+    expanded.add(expansion);
+    for (const [callbackName, rawCallback] of objectEntries(site.operation.callbacks)) {
+      const callback = followLocalRefs(document, rawCallback, jsonPointerJoin(jsonPointerJoin(site.pointer, 'callbacks'), callbackName));
+      for (const [expression, rawPathItem] of entriesWithoutExtensions(callback.value)) {
+        addPathItem(rawPathItem, jsonPointerJoin(callback.pointer, expression), expression, { kind: 'callback', parentName, callbackName });
+      }
     }
   }
 }
 
 export function normalizeDocument(document: unknown): NormalizedDocument {
   const root = asRecord(document);
-  const featureLine = featureLineOf(root.openapi);
+  const featureLine = openApiLine(document);
   const adapter = VERSION_ADAPTERS[featureLine];
   const names: OperationNames = new Map();
   const diagnostics: GolemDiagnostic[] = [];
   const operations: NormalizedOperation[] = [];
-  for (const [route, rawPathItem] of objectEntries(root.paths)) {
-    const pathItem = asRecord(resolveLocal(document, rawPathItem));
-    for (const { method, wireMethod, operation } of pathItemOperations(document, pathItem, adapter)) {
-      const name = reserveOperationName(names, operationName(operation, method, route), diagnostics, `${wireMethod} ${route}`);
-      operations.push(normalizeOperation(document, pathItem, operation, method, route, name, 'path', route, wireMethod));
-    }
-  }
-
   const inboundOperations: NormalizedOperation[] = [];
-  for (const [webhookName, rawPathItem] of objectEntries(root.webhooks)) {
-    const pathItem = asRecord(resolveLocal(document, rawPathItem));
-    for (const { method, wireMethod, operation } of pathItemOperations(document, pathItem, adapter)) {
-      const name = reserveName(
-        names,
-        inboundOperationName('webhook', webhookName, operation, method, webhookName),
-        `webhook ${webhookName} ${wireMethod}`,
-      );
-      inboundOperations.push(
-        normalizeOperation(document, pathItem, operation, method, webhookName, name, 'webhook', webhookName, wireMethod),
-      );
-    }
-  }
-
-  for (const parentOperation of operations) {
-    for (const [callbackName, rawCallback] of objectEntries(parentOperation.callbacks)) {
-      const callback = asRecord(resolveLocal(document, rawCallback));
-      for (const [expression, rawPathItem] of objectEntries(callback)) {
-        const pathItem = asRecord(resolveLocal(document, rawPathItem));
-        for (const { method, wireMethod, operation } of pathItemOperations(document, pathItem, adapter)) {
-          const sourceName = `${parentOperation.name} ${callbackName}`;
-          const name = reserveName(
-            names,
-            inboundOperationName('callback', sourceName, operation, method, expression),
-            `callback ${sourceName} ${wireMethod} ${expression}`,
-          );
-          inboundOperations.push(
-            normalizeOperation(document, pathItem, operation, method, expression, name, 'callback', sourceName, wireMethod),
-          );
-        }
+  visitOperationSites(document, featureLine, (site) => {
+    const { method, wireMethod, operation, key, pathItem } = site;
+    switch (site.kind) {
+      case 'path': {
+        const name = reserveOperationName(names, operationName(operation, method, key), diagnostics, `${wireMethod} ${key}`);
+        operations.push(normalizeOperation(document, pathItem, operation, method, key, name, 'path', key, wireMethod));
+        return name;
+      }
+      case 'webhook': {
+        const name = reserveName(names, inboundOperationName('webhook', key, operation, method, key), `webhook ${key} ${wireMethod}`);
+        inboundOperations.push(normalizeOperation(document, pathItem, operation, method, key, name, 'webhook', key, wireMethod));
+        return name;
+      }
+      case 'callback': {
+        const sourceName = `${site.parentName} ${site.callbackName}`;
+        const name = reserveName(
+          names,
+          inboundOperationName('callback', sourceName, operation, method, key),
+          `callback ${sourceName} ${wireMethod} ${key}`,
+        );
+        inboundOperations.push(normalizeOperation(document, pathItem, operation, method, key, name, 'callback', sourceName, wireMethod));
+        return name;
       }
     }
-  }
+  });
 
   const components = asRecord(root.components);
   const normalized = Object.freeze({

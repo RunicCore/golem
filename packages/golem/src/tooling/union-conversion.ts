@@ -4,11 +4,9 @@
  */
 
 import type { DiscriminatorValue, ModelTypeDescriptor } from '../model-registry.js';
-import { MODEL_FIELDS_KEY } from '../schema-keywords.js';
 import { createHash } from 'node:crypto';
 import { bindInput, code, helperName, identifier, inputOf, inputSlot, join, literal, localCode, readShape, render, sameCode, selfPlacedHelper, type Code, type Helper, type InputSlot } from './code.js';
 import { rt } from './rt.js';
-import type { RichDescriptor } from './type-analysis/graph.js';
 import { serdeWireDescriptor } from './schema-graph.js';
 import {
   emitArrayItems,
@@ -88,25 +86,6 @@ export function keyIsListed(key: Code, names: readonly string[]): Code {
 
 export function keyIsNotListed(key: Code, names: readonly string[]): Code {
   return join(names.map((name) => code`${key} !== ${literal(name)}`), code` && `);
-}
-
-/**
- * The names that the own model of a golem model instance declares, or `undefined` when the value holds no program state: the
- * declaration of the `instanceFields` function and its key, as code. The nearest prototype that owns a field entry decides,
- * and only an array of names is an answer: a `null` entry (a model that allows additional keys has no program state) and a prototype that answers any key (a Proxy) give `undefined`. A plain value, or a model of an
- * older runtime, has no entry. An own key outside the names is program state, never an unknown key. The runtime function
- * `instanceFields` (presence.ts) follows the same rule, and a test holds the two to the same answers.
- */
-export function instanceFieldsCode(): Code {
-  return join([
-    code`const fieldsKey = /*#__PURE__*/ Symbol.for(${literal(MODEL_FIELDS_KEY)});`,
-    code`function instanceFields(value) {`,
-    code`  const prototype = Object.getPrototypeOf(value);`,
-    code`  if (prototype === Object.prototype || prototype === null) return undefined;`,
-    code`  const declared = prototype[fieldsKey];`,
-    code`  return Array.isArray(declared) ? declared : undefined;`,
-    code`}`,
-  ], code`\n`);
 }
 
 /**
@@ -499,7 +478,7 @@ function isObjectVariant(variant: ModelTypeDescriptor, named: NamedVariants): bo
 
 /** A class value (a TSerde class or bigint) whose JSON form is a scalar, so the wire value tells it from an object or an array. */
 function isClassValueOfScalar(descriptor: ModelTypeDescriptor): boolean {
-  const wire = (descriptor as RichDescriptor).serde?.wireDescriptor;
+  const wire = serdeWireDescriptor(descriptor);
   return descriptor.kind === 'class-value' && wire !== undefined && isScalarishDescriptor(wire);
 }
 

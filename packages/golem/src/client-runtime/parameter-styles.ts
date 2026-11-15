@@ -4,6 +4,11 @@
 
 export type ParameterLocation = 'path' | 'query' | 'header' | 'cookie';
 
+/** The identity of a parameter or a response header: its location and name. A header name is case-insensitive (RFC 9110); every other location is case-sensitive. */
+export function parameterIdentity(location: string, name: string): string {
+  return `${location}\0${location === 'header' ? name.toLowerCase() : name}`;
+}
+
 /** The characters that separate the items or the members in the text of a parameter. */
 type ParameterSeparator = ',' | ' ' | '|' | '.' | ';';
 

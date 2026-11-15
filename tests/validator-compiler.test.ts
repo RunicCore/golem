@@ -304,6 +304,9 @@ test('a discriminator is an annotation unless every branch states its own tag va
   await assertIssues(annotated, true, [{ path: [], code: 'union', matched: 0 }]);
   const shared = { oneOf: [{ properties: { kind: { const: 'a' } } }, { properties: { kind: { const: 'a' } } }], discriminator: { propertyName: 'kind' } };
   await assertIssues(shared, { kind: 'a' }, [{ path: [], code: 'union', matched: 2 }]);
+  // protects: T-918 two object tags that differ only in key order are one tag
+  const sharedObject = { oneOf: [{ properties: { kind: { const: { x: 1, y: 2 } } } }, { properties: { kind: { const: { y: 2, x: 1 } } } }], discriminator: { propertyName: 'kind' } };
+  await assertIssues(sharedObject, { kind: { x: 1, y: 2 } }, [{ path: [], code: 'union', matched: 2 }]);
 });
 
 test('a discriminator with an optional tag reports the issue of the branch a present tag picks, and plain oneOf results otherwise', async () => {

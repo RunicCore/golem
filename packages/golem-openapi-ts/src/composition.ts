@@ -29,7 +29,7 @@ import {
 import type { ModelConstraint, ModelTypeDescriptor } from '@exprtlabs/golem/internal/schema';
 
 import { asRecord, isJsonObject, objectEntries } from './json.js';
-import { effectiveSchemaTypes } from './normalize.js';
+import { admitsNull, effectiveSchemaTypes } from './normalize.js';
 
 export const COMPOSITION_CONVERSION_CONFLICT = 'OPENAPI_COMPOSITION_CONVERSION_CONFLICT';
 export const COMPOSITION_UNSATISFIABLE = 'OPENAPI_COMPOSITION_UNSATISFIABLE';
@@ -199,7 +199,7 @@ function resolveObjects<S>(
     slots: composed.slots,
     required: composed.required,
     extra,
-    nullable: admitsNull(schema, scope, reader, new Set()),
+    nullable: allOfAdmitsNull(schema, scope, reader, new Set()),
     declaredOpen: declaresOpen(schema, nested, reader, new Set()),
     constraints,
     never,
@@ -579,7 +579,7 @@ function declaresOpen<S>(schema: unknown, scope: S, reader: CompositionReader<S>
 }
 
 /** JSON Schema AND: null passes when every part that declares a `type` admits it, and at least one part declares one. */
-function admitsNull<S>(schema: unknown, scope: S, reader: CompositionReader<S>, visiting: Set<unknown>): boolean {
+function allOfAdmitsNull<S>(schema: unknown, scope: S, reader: CompositionReader<S>, visiting: Set<unknown>): boolean {
   const verdicts = nullVerdicts(schema, scope, reader, visiting);
   return verdicts.length > 0 && verdicts.every(Boolean);
 }
@@ -593,7 +593,7 @@ function nullVerdicts<S>(schema: unknown, scope: S, reader: CompositionReader<S>
     visiting.delete(schema);
     return verdicts;
   }
-  const own = schema.type === undefined ? [] : [effectiveSchemaTypes(schema).includes('null')];
+  const own = schema.type === undefined ? [] : [admitsNull(schema)];
   const nested = reader.nested(schema, scope);
   const members = Array.isArray(schema.allOf) ? schema.allOf : [];
   return [...own, ...members.flatMap((member) => nullVerdicts(member, nested, reader, visiting))];

@@ -5,6 +5,7 @@ import { SCHEMA_ARRAY_KEYWORDS, SCHEMA_MAP_KEYWORDS, SCHEMA_SINGLE_KEYWORDS } fr
 import { identifier, sourceDigest } from '@exprtlabs/golem/internal/generator-support';
 import { decodeUriFragment, escapePointerToken, splitFirstFragmentToken } from '@exprtlabs/golem/internal/schema';
 import {
+  mediaSchema,
   normalizeDocument,
   parameterSchema,
   resolveLocal,
@@ -109,7 +110,7 @@ export function operationSourceSchemas(operation: NormalizedOperation, document:
       response.status,
       Object.fromEntries(response.content.map((media) => [
         media.contentType,
-        media.itemSchemaPresent ? (media.itemSchema ?? false) : (media.schema ?? true),
+        mediaSchema(media) ?? true,
       ])),
     ])),
   };

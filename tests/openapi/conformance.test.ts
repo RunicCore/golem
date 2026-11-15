@@ -374,6 +374,68 @@ test('normalizes callbacks and webhooks into payload types of the SDK', (t) => {
   assert.equal(compiled.status, 0, compiled.stderr || compiled.stdout);
 });
 
+// protects: T-919 normalize builds the operations that the document rules check, and no extension key
+test('normalizes the callbacks of webhooks and of callbacks, and skips x- extension keys', () => {
+  const ok = { 200: { description: 'ok' } };
+  const hook = (operationId: string, callbacks?: Record<string, unknown>) => ({ post: { operationId, responses: ok, ...(callbacks ? { callbacks } : {}) } });
+  const document = {
+    openapi: '3.1.0',
+    info: { title: 'Inbound', version: '1' },
+    paths: { '/a': { get: { operationId: 'readA', responses: ok } }, 'x-notes': { get: { operationId: 'readNotes', responses: ok } } },
+    webhooks: {
+      event: hook('receiveEvent', {
+        onReply: {
+          '{$request.body#/url}': hook('receiveReply', { onAudit: { '{$request.body#/audit}': hook('receiveAudit') } }),
+          'x-notes': hook('receiveNotes'),
+        },
+      }),
+    },
+  };
+  const ir = normalizeDocument(document);
+  assert.deepEqual(ir.operations.map(({ name }) => name), ['readA']);
+  assert.deepEqual(
+    ir.inboundOperations.map(({ name, sourceKind, sourceName }) => [name, sourceKind, sourceName]),
+    [
+      ['webhookReceiveEvent', 'webhook', 'event'],
+      ['callbackReceiveReply', 'callback', 'webhookReceiveEvent onReply'],
+      ['callbackReceiveAudit', 'callback', 'callbackReceiveReply onAudit'],
+    ],
+  );
+});
+
+// protects: T-919 a callback shared by two operations or reaching itself yields one operation; a webhook may be named x-…
+test('lists a shared or cyclic callback operation once, and a webhook named x-…', () => {
+  const ok = { 200: { description: 'ok' } };
+  const document = {
+    openapi: '3.1.0',
+    info: { title: 'Shared', version: '1' },
+    paths: { '/a': { post: { operationId: 'createA', responses: ok, callbacks: { cb: { $ref: '#/components/callbacks/Cb' } } } } },
+    webhooks: { 'x-event': { post: { operationId: 'receiveX', responses: ok, callbacks: { cb: { $ref: '#/components/callbacks/Cb' } } } } },
+    components: {
+      callbacks: {
+        Cb: { '{$url}': { post: { operationId: 'onEvent', responses: ok, callbacks: { again: { $ref: '#/components/callbacks/Cb' } } } } },
+      },
+    },
+  };
+  assert.deepEqual(
+    normalizeDocument(document).inboundOperations.map(({ name, sourceKind, sourceName }) => [name, sourceKind, sourceName]),
+    [
+      ['webhookReceiveX', 'webhook', 'x-event'],
+      ['callbackOnEvent', 'callback', 'createA cb'],
+    ],
+  );
+  // Without an operationId the name holds the parent, so each parent keeps its own operation of the shared callback.
+  const callback = { cb: { $ref: '#/components/callbacks/Cb' } };
+  const unnamed = normalizeDocument({
+    openapi: '3.1.0',
+    info: { title: 'Shared', version: '1' },
+    paths: { '/a': { post: { operationId: 'createA', responses: ok, callbacks: callback } }, '/b': { post: { operationId: 'createB', responses: ok, callbacks: callback } } },
+    components: { callbacks: { Cb: { '{$url}': { post: { responses: ok, callbacks: { again: { $ref: '#/components/callbacks/Cb' } } } } } } },
+  });
+  assert.deepEqual(unnamed.inboundOperations.map(({ sourceName }) => sourceName).slice(0, 2), ['createA cb', 'createB cb']);
+  assert.equal(new Set(unnamed.inboundOperations.map(({ name }) => name)).size, unnamed.inboundOperations.length);
+});
+
 test('generation is deterministic', async (t) => {
   const document = await loadValidatedDocument(example, {});
   const output = createFixtureProject(t, 'golem-openapi-test-');

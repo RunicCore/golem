@@ -1,6 +1,6 @@
 import { isDeepStrictEqual } from 'node:util';
 import { builtinClassDescriptor, descriptorNeedsConversion } from '@exprtlabs/golem/internal/emitter';
-import type { SchemaGraph, SchemaNode } from '@exprtlabs/golem/internal/schema-graph';
+import { serdeWireDescriptor, type SchemaGraph, type SchemaNode } from '@exprtlabs/golem/internal/schema-graph';
 import { identifier } from '@exprtlabs/golem/internal/generator-support';
 import { asRecord, escapeJsonPointerToken, isJsonObject, objectEntries, type JsonObject } from './json.js';
 import type { GolemDiagnostic } from '@exprtlabs/golem/generator-api';
@@ -21,7 +21,7 @@ import {
   unionVariants,
 } from './composition.js';
 import { dateClassOf } from './date-class.js';
-import { effectiveSchemaTypes } from './normalize.js';
+import { admitsNull, effectiveSchemaTypes } from './normalize.js';
 import { schemaContext, typedListedValues, type NeverPropertiesOf } from './types.js';
 import {
   collectCanonicalResources,
@@ -192,11 +192,6 @@ export function partSchemaTarget(schema: unknown, env: ModelResolveEnv): { reado
   const reference = typeof schema.$ref === 'string' ? schema.$ref : typeof schema.$dynamicRef === 'string' ? schema.$dynamicRef : undefined;
   const target = reference === undefined ? undefined : resolveSchemaTarget(reference, env.currentBase, env.resources, env.document);
   return target && target.exactComponent === null ? { schema: target.schema, env: { ...env, currentBase: target.currentBase } } : undefined;
-}
-
-/** One nullability rule for model fields, shared with types and runtime schemas. */
-function admitsNull(schema: Readonly<Record<string, unknown>>): boolean {
-  return effectiveSchemaTypes(schema).includes('null');
 }
 
 /** A reference admits null when it says so, or when the component it names does. */
@@ -395,7 +390,7 @@ function valueClasses(descriptor: ModelTypeDescriptor): readonly JsonClass[] {
   switch (descriptor.kind) {
     case 'string': return ['string'];
     // A class value has the JSON types of its serde's wire form.
-    case 'class-value': return valueClasses((descriptor as { readonly serde?: { readonly wireDescriptor?: ModelTypeDescriptor } }).serde?.wireDescriptor ?? { kind: 'unknown' });
+    case 'class-value': return valueClasses(serdeWireDescriptor(descriptor) ?? { kind: 'unknown' });
     case 'number': return ['number'];
     case 'boolean': return ['boolean'];
     case 'null': return ['null'];
@@ -742,10 +737,7 @@ export function modelConversionDescriptor(
     const modelReferences = variants
       .map((item) => directComponentSchemaRef(item, nested))
       .filter((name): name is string => Boolean(name && definitions.has(name)));
-    const permitsNull = variants.some((item) =>
-      isJsonObject(item) &&
-      (item.type === 'null' || (Array.isArray(item.type) && item.type.includes('null')))
-    );
+    const permitsNull = variants.some((item) => isJsonObject(item) && admitsNull(item));
     // A reference with only null beside it is that model; any other branch (a string) stays a union branch.
     const onlyModelOrNull = convertedVariants.every((item) => item.kind === 'generated-model' || item.kind === 'null');
     if (modelReferences.length === 1 && onlyModelOrNull && (permitsNull || direction === 'to') && !isJsonObject(schema.discriminator)) {
@@ -1005,8 +997,11 @@ export function discriminatorSelection(
   return { propertyName: property, variants: selected, ...(defaultVariant === undefined ? {} : { defaultVariant }) };
 }
 
+/** A branch that admits null and no other value. */
 function isNullBranch(schema: unknown): boolean {
-  return isJsonObject(schema) && schema.type === 'null';
+  if (!isJsonObject(schema) || !admitsNull(schema)) return false;
+  const listed = typedListedValues(schema);
+  return listed ? listed.every((value) => value === null) : effectiveSchemaTypes(schema).every((type) => type === 'null');
 }
 
 function exactComponentTarget(schema: unknown, env: ModelResolveEnv): ExactComponentTarget | null {

@@ -8,9 +8,10 @@ import {
   type SchemaResolver,
 } from './operations.js';
 import type { ControllerRoute } from './nest/types.js';
+import type { OpenApiVersion } from './openapi-version.js';
 
 interface OpenApiDocumentContext extends OperationBuildContext {
-  readonly openapiVersion?: '3.2.0' | '3.1.2';
+  readonly openapiVersion: OpenApiVersion;
   readonly info: Readonly<Record<string, unknown>>;
   readonly servers?: readonly Readonly<Record<string, unknown>>[];
   readonly securitySchemes?: Readonly<Record<string, Readonly<Record<string, unknown>>>>;
@@ -95,7 +96,7 @@ function validateKnownKeys(
 }
 
 /** A server `name` is an OpenAPI 3.2 field; 3.1 servers have only a URL, a description and variables. */
-function validateServers(value: unknown, openapi: '3.2.0' | '3.1.2'): void {
+function validateServers(value: unknown, openapi: OpenApiVersion): void {
   if (value === undefined) return;
   if (!Array.isArray(value)) {
     invalidDocument(TsToOpenApiDiagnosticCode.InvalidServer, 'OpenAPI servers must be an array.');
@@ -161,7 +162,7 @@ function validateOAuthFlow(
   value: unknown,
   pathName: string,
   flowName: string,
-  openapi: '3.2.0' | '3.1.2',
+  openapi: OpenApiVersion,
 ): void {
   const flow = recordValue(value, pathName, TsToOpenApiDiagnosticCode.InvalidSecurityScheme);
   const allowed = ['authorizationUrl', 'tokenUrl', 'refreshUrl', 'scopes'];
@@ -191,7 +192,7 @@ function validateOAuthFlow(
 function validateOAuthFlows(
   value: unknown,
   pathName: string,
-  openapi: '3.2.0' | '3.1.2',
+  openapi: OpenApiVersion,
 ): void {
   const flows = recordValue(value, pathName, TsToOpenApiDiagnosticCode.InvalidSecurityScheme);
   const names = ['implicit', 'password', 'clientCredentials', 'authorizationCode'];
@@ -211,7 +212,7 @@ function validateOAuthFlows(
 function validateSecurityScheme(
   value: unknown,
   pathName: string,
-  openapi: '3.2.0' | '3.1.2',
+  openapi: OpenApiVersion,
 ): void {
   const scheme = recordValue(value, pathName, TsToOpenApiDiagnosticCode.InvalidSecurityScheme);
   if (scheme.$ref !== undefined) {
@@ -262,7 +263,7 @@ function validateSecurityScheme(
 
 function validateSecuritySchemes(
   value: unknown,
-  openapi: '3.2.0' | '3.1.2',
+  openapi: OpenApiVersion,
   pathName = 'components.securitySchemes',
 ): ReadonlySet<string> {
   if (value === undefined) return new Set();
@@ -306,14 +307,7 @@ function validateSecurityRequirements(
 export async function buildDocument(
   context: OpenApiDocumentContext,
 ): Promise<Readonly<Record<string, unknown>>> {
-  const openapi = context.openapiVersion ?? '3.2.0';
-  if (openapi !== '3.2.0' && openapi !== '3.1.2') {
-    throw new TsToOpenApiError({
-      severity: GolemDiagnosticSeverity.Error,
-      code: TsToOpenApiDiagnosticCode.UnsupportedOpenApiVersion,
-      message: `OpenAPI version ${openapi} is not supported; use 3.2.0 or 3.1.2.`,
-    });
-  }
+  const openapi = context.openapiVersion;
   const infoRecord = recordValue(context.info, 'info', TsToOpenApiDiagnosticCode.InvalidInfo);
   const info = {
     ...infoRecord,

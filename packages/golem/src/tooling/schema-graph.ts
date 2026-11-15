@@ -63,6 +63,11 @@ export function serdeWireDescriptor(descriptor: ModelTypeDescriptor): ModelTypeD
   return serde.wireDescriptor ?? serde.wire;
 }
 
+/** The serde with its wire form replaced, in the field that holds it: `wireDescriptor` in a descriptor read from source, `wire` in a generated one. */
+function serdeWithWire<S extends object>(serde: S, wire: ModelTypeDescriptor): S {
+  return { ...serde, ...('wireDescriptor' in serde ? { wireDescriptor: wire } : { wire }) };
+}
+
 /** Whether a node holds an array or tuple (a recursive array alias is a named node, not written inline). A node that holds anything else, or no node at all, does not. */
 export function nodeHoldsSequence(node: SchemaNode | undefined): boolean {
   const body = node?.descriptor;
@@ -490,7 +495,7 @@ export function mapNamedTypes(descriptor: ModelTypeDescriptor, replace: (named: 
   }
   const constraints = mapped.constraints?.map((constraint) => mapConstraintSchemaValues(constraint, (value) => (isTypeDescriptor(value) ? again(value) as ConstraintSchemaValue : value)));
   const wire = serdeWireDescriptor(mapped);
-  const serde = mapped.serde && wire ? { ...mapped.serde, ...('wireDescriptor' in mapped.serde ? { wireDescriptor: again(wire) } : { wire: again(wire) }) } : mapped.serde;
+  const serde = mapped.serde && wire ? serdeWithWire(mapped.serde, again(wire)) : mapped.serde;
   return { ...mapped, ...(constraints ? { constraints } : {}), ...(serde ? { serde } : {}) };
 }
 
@@ -510,7 +515,7 @@ function rewriteMetadata(
   const constraints = descriptor.constraints?.map((constraint) => rewriteConstraint(constraint, lookup));
   const wire = serdeWireDescriptor(descriptor);
   const serde = descriptor.serde && wire && wire !== descriptor
-    ? { ...descriptor.serde, wire: rewriteToRefs(wire, lookup) }
+    ? serdeWithWire(descriptor.serde, rewriteToRefs(wire, lookup))
     : descriptor.serde;
   if (constraints === undefined && serde === descriptor.serde) return descriptor;
   return {

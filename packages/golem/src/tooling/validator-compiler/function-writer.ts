@@ -5,7 +5,7 @@ import { presentValueCode } from '../union-conversion.js';
 import { VALUE, PATH, NEWLINE, COMMA, ISSUES, ALL, SANITY, INHERITED, EVALUATION, type CalleeSlot, type CallArguments } from './function-names.js';
 import { isTuple, keepsFormat } from './call-graph.js';
 import { JSON_TYPES, dispatchTest } from './json-types.js';
-import { localName, lazyStateTest, scaledDivisor } from './local-helpers.js';
+import { localName, scaledDivisor, stateTest } from './local-helpers.js';
 import { patternExpression, type ModuleState } from './module-state.js';
 import { resolve, readSet, objectPresence, type Capture, type Lazy, type KeyTest, type WriterMode } from './modes.js';
 
@@ -585,33 +585,36 @@ export class FunctionWriter {
   }
 
   /** The keys that neither `properties` nor `patternProperties` name: `additionalProperties`. */
-  private additionalKeys({ check, value, patterns, test: { undefinedToo, failure } }: ObjectPass, additional: NonNullable<IrObject['additional']>, keys: Code): void {
+  private additionalKeys({ check, value, patterns, test: { stateFields, failure } }: ObjectPass, additional: NonNullable<IrObject['additional']>, keys: Code): void {
     const key = this.fresh('key');
     const known = check.properties.length > 0 ? this.state.constant('known', code`new Set(${literalCode(check.properties.map(property => property.key))})`, JSON.stringify([...new Set(check.properties.map(property => property.key))].sort())) : undefined;
     const skipped = [...(known === undefined ? [] : [code`${known}.has(${key})`]), ...patterns.map(({ expression }) => code`${expression}.test(${key})`)];
-    // A key that the instance's own model does not declare is program state: no unknown key, no value to judge.
-    const fields = this.fresh('fields');
-    this.line(code`let ${fields};`);
-    this.open(code`for (const ${key} of ${keys})`);
-    // A key test that left the values unread has this pass read each one, also of a key it then skips.
     const member = this.fresh('member');
+    this.open(code`for (const ${key} of ${keys})`);
+    // A key test that left the values unread has this pass read each one, also of a key it then skips; program state is never read.
     if (failure !== undefined) {
+      this.skipState(stateFields, key);
       this.line(code`const ${member} = ${value}[${key}];`);
       this.line(code`if (${member} === undefined) continue;`);
     }
     if (skipped.length > 0) this.line(code`if (${join(skipped, code` || `)}) continue;`);
-    this.line(code`if (${lazyStateTest(fields, value, key, localName('instanceFields'))}) continue;`);
+    if (failure === undefined) this.skipState(stateFields, key);
     if (additional.kind === 'forbid') {
       this.issue(code`code: 'unknownKey', key: ${key}`, code`[...${PATH}, ${key}]`);
     } else {
       const schema = additional.schema;
       if (failure === undefined) {
         this.line(code`const ${member} = ${value}[${key}];`);
-        if (undefinedToo) this.line(code`if (${member} === undefined) continue;`);
+        if (stateFields !== undefined) this.line(code`if (${member} === undefined) continue;`);
       }
       this.atChild(key, () => this.schema(schema, member));
     }
     this.close();
+  }
+
+  /** In a raw key list, a key that is program state of the instance is left out before any value is read. */
+  private skipState(stateFields: Code | undefined, key: Code): void {
+    if (stateFields !== undefined) this.line(code`if (${stateTest(stateFields, key)}) continue;`);
   }
 
   /** `properties`: each declared key that is present, checked against its schema. */
@@ -634,21 +637,18 @@ export class FunctionWriter {
   }
 
   /** `patternProperties`: each key a pattern matches, checked against the schema of the pattern. */
-  private patternKeys({ value, patternsToRun, test: { keys, undefinedToo } }: ObjectPass): void {
-    const fields = this.fresh('fields');
-    this.line(code`let ${fields};`);
+  private patternKeys({ value, patternsToRun, test: { keys, stateFields } }: ObjectPass): void {
     const key = this.fresh('key');
     this.open(code`for (const ${key} of ${keyList(keys)})`);
-    // A key list that also holds the keys whose value is `undefined` (`undefinedToo`) is read once, and those keys are left out.
-    const held = undefinedToo ? this.fresh('member') : undefined;
+    // A raw key list is read once, its program state and its keys whose value is `undefined` are left out.
+    const held = stateFields === undefined ? undefined : this.fresh('member');
     if (held !== undefined) {
+      this.skipState(stateFields, key);
       this.line(code`const ${held} = ${value}[${key}];`);
       this.line(code`if (${held} === undefined) continue;`);
     }
     for (const { entry, expression } of patternsToRun) {
       this.open(code`if (${expression}.test(${key}))`);
-      // Program state is no property to judge, and it is not evaluated.
-      this.line(code`if (${lazyStateTest(fields, value, key, localName('instanceFields'))}) continue;`);
       this.mark(record => code`${record}.keys.add(${key});`);
       if (entry.schema.kind !== 'always') {
         const schema = entry.schema;
@@ -662,12 +662,14 @@ export class FunctionWriter {
   }
 
   /** `propertyNames`: each key, checked as a value of its own. */
-  private propertyNames({ value, test: { keys, undefinedToo } }: ObjectPass, names: number): void {
+  private propertyNames({ value, test: { keys, stateFields } }: ObjectPass, names: number): void {
     const key = this.fresh('key');
     this.open(code`for (const ${key} of ${keyList(keys)})`);
-    if (undefinedToo) this.line(code`if (${value}[${key}] === undefined) continue;`);
-    // A name that the instance's own model does not declare is program state, not a property name to judge.
-    this.leaf({ fails: code`!${this.call(names, { value: key, issues: code`[]`, all: code`false` })} && !${localName('isInstanceState')}(${value}, ${key})`, issue: code`code: 'invalidKey', key: ${key}` });
+    if (stateFields !== undefined) {
+      this.skipState(stateFields, key);
+      this.line(code`if (${value}[${key}] === undefined) continue;`);
+    }
+    this.leaf({ fails: code`!${this.call(names, { value: key, issues: code`[]`, all: code`false` })}`, issue: code`code: 'invalidKey', key: ${key}` });
     this.close();
   }
 
@@ -678,10 +680,9 @@ export class FunctionWriter {
     if (schema.kind !== 'always') {
       const key = this.fresh('key');
       this.open(code`if (!${record}.allKeys)`);
+      // `definedKeys` leaves out program state of a model instance: it is no unevaluated key, whether the schema forbids it or judges its value.
       this.open(code`for (const ${key} of ${localName('definedKeys')}(${value}))`);
       this.line(code`if (${record}.keys.has(${key})) continue;`);
-      // Program state of a model instance is no unevaluated key, whether the schema forbids it or judges its value.
-      this.line(code`if (${localName('isInstanceState')}(${value}, ${key})) continue;`);
       if (schema.kind === 'never') {
         this.issue(code`code: 'unknownKey', key: ${key}`, code`[...${PATH}, ${key}]`);
       } else {
@@ -957,8 +958,10 @@ export class FunctionWriter {
       for (const [name, mark] of seen) {
         if (!all && !declared.includes(name)) continue;
         const local = this.fresh('present');
-        this.line(code`const ${local} = ${mark} ? ${value}[${literalCode(name)}] : undefined;`);
-        if (named[position].has(name) || declared.includes(name)) captured.push([name, local]);
+        // A key that this branch names is read as the full validator reads it; a key that only another branch names is read when it is no program state.
+        const judged = named[position].has(name) || declared.includes(name);
+        this.line(code`const ${local} = ${judged ? mark : code`${mark} && !${localName('isInstanceState')}(${value}, ${literalCode(name)})`} ? ${value}[${literalCode(name)}] : undefined;`);
+        if (judged) captured.push([name, local]);
         else absent.push([name, local]);
       }
       const unknown = closed[position] && extra !== undefined ? this.fresh('unknown') : undefined;
@@ -969,15 +972,15 @@ export class FunctionWriter {
         this.open(code`for (const ${other} of Object.keys(${value}))`);
         this.open(code`switch (${other})`);
         this.line(code`${join(keys.map(name => code`case ${literalCode(name)}:`), code` `)} break;`);
-        this.line(code`default: if (${value}[${other}] !== undefined && !${localName('isInstanceState')}(${value}, ${other})) ${unknown} = true;`);
+        this.line(code`default: if (!${localName('isInstanceState')}(${value}, ${other}) && ${value}[${other}] !== undefined) ${unknown} = true;`);
         this.close();
         this.close();
         this.close();
       }
       if (closed[position]) {
         if (!named[position].has(discriminator.property)) this.failWhen(code`${tag} !== undefined`);
-        // A key that the instance's own model declares is judged; any other own key is program state.
-        for (const [name, local] of absent) this.failWhen(code`${local} !== undefined && !${localName('isInstanceState')}(${value}, ${literalCode(name)})`);
+        // A key that the instance's own model declares is judged; any other own key is program state, and `absent` never read it.
+        for (const [, local] of absent) this.failWhen(code`${local} !== undefined`);
         if (unknown !== undefined) this.failWhen(unknown);
       }
       this.objectKeywords(object, value, { presence: objectPresence(value, captured) });

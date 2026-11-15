@@ -1285,7 +1285,8 @@ export class ProgramSession implements Disposable {
    * The compiler builds a project only from a configuration, so a requested root outside the configuration's own files (an
    * external model root, or a file that exists only as an overlay) needs a derived configuration. It extends the project's
    * own and lists exactly what the TypeScript 6 backend gives the compiler: the files the project's configuration parses to,
-   * plus the requested roots. `include` is emptied so the list is the whole project. A program with no requested root still parses
+   * plus the requested roots. `include` is emptied so the list is the whole project. A program whose roots are all files of the
+   * user's own configuration opens the configuration itself, so its option errors keep the file and place that `tsc` gives. Every program parses
    * the configuration here, so a configuration with errors fails the same way on both backends.
    */
   private withRequestedRoots(api: API, base: ProgramRequest, onInput: ((filename: string) => void) | undefined): ProgramRequest {
@@ -1311,9 +1312,12 @@ export class ProgramSession implements Disposable {
       const unbuilt = new Set<string>();
       return { ...base, synthetic: { rootFiles: [...new Set([...parsed.fileNames.map(canonical), ...base.files])], compilerOptions: options, resolver: this.referenceResolverFor(api, options, referenced, unbuilt), unbuilt } };
     }
-    if (base.files.length === 0) return base;
+    const own = new Set(parsed.fileNames.map(canonical));
+    // Every root is a file of the configuration, and the configuration is the user's own: the compiler reads it itself, so its option errors name its own text and place.
+    // A hidden configuration is golem's overlay (the option overrides): it has no text of the user's to name, and the compiler's own glob would order its roots differently from `tsc`.
+    if (!base.hidden.has(base.configPath) && base.files.every((file) => own.has(file))) return base;
     const configPath = join(dirname(base.configPath), `${basename(base.configPath, '.json')}.roots.json`);
-    const files = [...new Set([...parsed.fileNames.map(canonical), ...base.files])];
+    const files = [...new Set([...own, ...base.files])];
     const overlays = new Map(base.overlays);
     overlays.set(configPath, JSON.stringify({ extends: `./${basename(base.configPath)}`, files, include: [] }));
     return { configPath, files: base.files, overlays, hidden: new Set([...base.hidden, configPath]) };
