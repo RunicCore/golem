@@ -483,8 +483,6 @@ export interface SourceModelGraph {
   readonly output: string;
   readonly identityRoot: string;
   readonly definitions: Readonly<Record<string, ModelConversionDescriptor>>;
-  readonly modelDefinitions: Readonly<Record<string, ModelConversionDescriptor>>;
-  readonly wireDefinitions: Readonly<Record<string, ModelConversionDescriptor>>;
   readonly registry: BindingRegistry;
   readonly schemas: readonly TagSchema[];
   /** Every model this companion names: its own, inlined ones, and sibling models. */
@@ -512,7 +510,7 @@ interface JobAnalysis {
   /** The files each file imports or re-exports, by canonical filename; filled as the import graphs are read. */
   readonly directImports: Map<string, readonly string[]>;
   /** The job's model-file suffixes: a model file of a shared package is read through an import. */
-  readonly suffixes: readonly string[] | undefined;
+  readonly suffixes: readonly string[];
   /** The parsed file of a canonical filename, when the program holds it. */
   readonly sourceFileOf: (filename: string) => ts.SourceFile | undefined;
   /**
@@ -590,7 +588,7 @@ export function createJobAnalysis(
     sources: modelSources,
     executableMemo: createExecutableValidationMemo(),
     directImports: new Map(),
-    suffixes: boundary?.suffixes,
+    suffixes: boundary?.suffixes ?? DEFAULT_MODEL_SUFFIXES,
     sourceFileOf: sourceFileOf ?? ((filename) => specifications
       .find((specification) => canonicalFilename(specification.sourceFile.fileName) === filename)?.sourceFile),
   };
@@ -601,7 +599,7 @@ function directImports(job: JobAnalysis, file: ts.SourceFile): readonly string[]
   const key = canonicalFilename(file.fileName);
   const known = job.directImports.get(key);
   if (known) return known;
-  const imports = projectFilesImportedBy(file, job.checker, job.suffixes ?? DEFAULT_MODEL_SUFFIXES);
+  const imports = projectFilesImportedBy(file, job.checker, job.suffixes);
   job.directImports.set(key, imports);
   return imports;
 }
@@ -701,9 +699,6 @@ export function analyzeSourceGraph(
     definitions,
   );
   executableMemos.set(lookup, job.executableMemo);
-  const modelDefinitions = Object.fromEntries(
-    Object.entries(definitions).map(([name, descriptor]) => [name, projectDescriptor(descriptor, profile.validation !== false, false, true, lookup)]),
-  );
   const wireDefinitions = Object.fromEntries(
     Object.entries(definitions).map(([name, descriptor]) => [name, projectDescriptor(descriptor, profile.validation !== false, true, false, lookup)]),
   );
@@ -723,8 +718,6 @@ export function analyzeSourceGraph(
     output,
     identityRoot: stableIdentityRoot,
     definitions,
-    modelDefinitions,
-    wireDefinitions,
     registry,
     schemas,
     emitted: [...emitted],
@@ -883,25 +876,25 @@ interface SdkNodeCodecs {
 
 function sdkNodeCodecs(sdks: AppOutputs['sdkCodecs'], output: string, validation: GolemProfile['validation']): SdkNodeCodecs {
   // One source for each codecs file; the import statement holds only the names the file's code uses.
-  const sources = new Map((sdks ?? []).map((sdk) => [sdk.file, new ImportSource(sourceImportPath(sdk.file, output))] as const));
-  // One type source for each module of the SDK that declares types.
-  const typeSources = new Map((sdks ?? []).flatMap((sdk) => [...sdk.types.values()].map(({ file }) => file)).map((file) => [file, new ImportSource(sourceImportPath(file, output), true)] as const));
+  const codecsSources = (sdks ?? []).map((sdk) => ({ sdk, source: new ImportSource(sourceImportPath(sdk.file, output)) }));
+  // One type source for each module of the SDK that declares types, and the SDK's own type of each node by codec id (the first SDK that has one).
+  const typeSources = new Map<string, ImportSource>();
+  const ownTypes = new Map<string, { readonly source: ImportSource; readonly name: string }>();
+  for (const { sdk } of codecsSources) {
+    for (const [codecId, { file, name }] of sdk.types) {
+      let source = typeSources.get(file);
+      if (source === undefined) typeSources.set(file, source = new ImportSource(sourceImportPath(file, output), true));
+      if (!ownTypes.has(codecId)) ownTypes.set(codecId, { source, name });
+    }
+  }
   // Each form asked for, by a key that tells two asks of one form alike, with its codec id and suffix.
   const asked = new Map<string, { readonly codecId: string; readonly suffix: Parameters<SdkNodeCodecs['type']>[1] }>();
   const written = new Set<string>();
-  const ownType = (codecId: string): { readonly file: string; readonly name: string } | undefined => {
-    for (const sdk of sdks ?? []) {
-      const found = sdk.types.get(codecId);
-      if (found !== undefined) return found;
-    }
-    return undefined;
-  };
   return {
     find(codecId) {
-      for (const sdk of sdks ?? []) {
+      for (const { sdk, source } of codecsSources) {
         const node = sdk.graph.nodeByCodecId(codecId);
         if (node === undefined) continue;
-        const source = sources.get(sdk.file)!;
         return {
           stringify: source.name(stringifyFunctionName(node.id)),
           fromWire: source.name(fromWireFunctionName(node.id)),
@@ -914,15 +907,15 @@ function sdkNodeCodecs(sdks: AppOutputs['sdkCodecs'], output: string, validation
       return undefined;
     },
     stripPlan(codecId) {
-      for (const sdk of sdks ?? []) {
-        if (sdk.graph.nodeByCodecId(codecId) !== undefined) return sources.get(sdk.file)!.name(stripPlanName(codecId));
+      for (const { sdk, source } of codecsSources) {
+        if (sdk.graph.nodeByCodecId(codecId) !== undefined) return source.name(stripPlanName(codecId));
       }
       return undefined;
     },
-    sources: [...sources.values(), ...typeSources.values()],
+    sources: [...codecsSources.map(({ source }) => source), ...typeSources.values()],
     type(codecId, suffix) {
-      const own = ownType(codecId);
-      if (own !== undefined && (suffix !== 'JSON' || !wireDiffers(sdkNodeOf(sdks, codecId).node))) return typeSources.get(own.file)!.name(own.name, { alias: codecId });
+      const own = ownTypes.get(codecId);
+      if (own !== undefined && (suffix !== 'JSON' || !wireDiffers(sdkNodeOf(sdks, codecId).node))) return own.source.name(own.name, { alias: codecId });
       asked.set(`${codecId}${NODE_FORM}${suffix}`, { codecId, suffix });
       return identifier(`${codecId}${suffix}`);
     },
