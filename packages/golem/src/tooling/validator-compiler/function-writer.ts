@@ -547,7 +547,7 @@ export class FunctionWriter {
   /** `prepared` is the key test a caller already wrote for this object; without it the mode's key test is written here. */
   private objectKeywords(check: IrObject, value: Code, prepared?: KeyTest): void {
     const marks = this.record !== undefined;
-    const reads = readSet(check, marks);
+    const reads = readSet(check, { marks });
     const captured = reads.declared.map(key => [key, this.fresh('present')] as const);
     // A key that matches a pattern is not "additional" even when the pattern's schema accepts everything.
     const patterns = check.patternProperties.map(entry => ({ entry, expression: patternExpression(this.state, entry.pattern) }));
@@ -935,7 +935,7 @@ export class FunctionWriter {
    */
   private mergedUnion(branches: readonly IrObject[], discriminator: IrDiscriminator, value: Code): void {
     this.failWhen(code`!${objectTest(value)}`);
-    const reads = branches.map(object => readSet(object, false));
+    const reads = branches.map(object => readSet(object, { marks: false }));
     const named = branches.map(object => new Set(object.properties.map(property => property.key)));
     // A merged branch reads every value only when `additionalProperties: false` closes it (see `mergedBranches`).
     const closed = reads.map(set => set.all);
