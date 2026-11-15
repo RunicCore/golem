@@ -110,6 +110,32 @@ test('shared codec selects constructed reference variants by class, like model c
   assert.throws(() => owner.stringify({ pet: foreign }), failsWith(LibErrorKind.Serialization, /"dog"/));
 });
 
+test('strip on an encode takes the plan of the class an instance is made by, not the plan of a class it extends', () => {
+  // protects: T-896 an instance of a subclass is the variant of its own class (as the encoder selects it), so strip must not give it the plan of its base
+  const graph = createSchemaGraph();
+  const nested = (name: string) => variant({ [name]: { kind: 'string' } });
+  graph.intern(variant({ cat: nested('purr') }), 'StripCat', true);
+  graph.intern(variant({ dog: nested('bark') }), 'StripDog', true);
+  graph.intern(variant({
+    pet: {
+      kind: 'union',
+      variants: ['StripCat', 'StripDog'].map((name): ModelTypeDescriptor => ({ kind: 'reference', name, construct: true })),
+      discriminator: { propertyName: 'kind', variants: [{ values: ['cat'] }, { values: ['dog'] }] },
+    },
+  }), 'StripOwner');
+  graph.seal();
+  class StripCatModel {}
+  class StripDogModel extends StripCatModel {}
+  const source = emitCodecRuntimeText(graph, {
+    validationLevel: false,
+    nestedConstruct: (codecId: string) => identifier(codecId.startsWith('StripCat') ? 'StripCatModel' : 'StripDogModel'),
+  });
+  const owner = instantiateRuntime(source, { StripCatModel, StripDogModel });
+  const toWire = (pet: object) => owner.toWireFormatStripOwner({ pet }, { strip: true });
+  assert.deepEqual(toWire(Object.assign(new StripDogModel(), { dog: { bark: 'x', extra: 1 } })), { pet: { kind: 'dog', dog: { bark: 'x' } } }, 'the subclass instance takes the plan of Dog');
+  assert.deepEqual(toWire(Object.assign(new StripCatModel(), { cat: { purr: 'y', extra: 1 } })), { pet: { kind: 'cat', cat: { purr: 'y' } } }, 'the base instance takes the plan of Cat');
+});
+
 test('number and boolean table tags select variants through the shared codec', () => {
   const owner = ownerRuntime('Scalar', [[1], [true]], { taggedVariants: false });
   assert.deepEqual(owner.parse('{"pet":{"kind":true,"bark":false}}').pet, { bark: false });

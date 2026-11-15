@@ -5,11 +5,11 @@
  * function, so a model that holds itself has a plan, and another module's model by the plan that module exports. A union of objects with no tag has no plan, so it keeps exact matching.
  */
 
-import type { ModelTypeDescriptor } from '../model-registry.js';
+import type { DiscriminatorValue, ModelTypeDescriptor } from '../model-registry.js';
 import { aliased, code, identifier, join, literal, type Code } from './code.js';
 import { rtType } from './rt.js';
 import { serdeWireDescriptor, type SchemaGraph, type SchemaNode } from './schema-graph.js';
-import type { ObjectTypeDescriptor } from './union-conversion.js';
+import { restHoldsInstance, variantPick, type ObjectTypeDescriptor } from './union-conversion.js';
 
 /** The type of a plan, which a generated module imports under this name. */
 export const STRIP_PLAN = aliased(rtType.serde.StripPlan, '__GolemStripPlan');
@@ -25,7 +25,7 @@ export interface StripPlanEnv {
   readonly extraValues: (descriptor: ObjectTypeDescriptor) => ModelTypeDescriptor | undefined;
   /** Whether the codec of the node is another module's. */
   readonly external: (node: SchemaNode) => boolean;
-  /** The class an encode of the variant selects an instance by: the class of the model, as the generated encoder tests it; undefined when the variant has none. */
+  /** The class an encode of the variant selects an instance by: the class of the model, as the generated encoder tests it; undefined when the variant has none. The model of a decode is picked by the same class, so a direction has no class of its own. */
   readonly classOf: (descriptor: ModelTypeDescriptor) => Code | undefined;
   /** The name this module imports the plan of another module's node under; undefined when that module offers none, so the node is left as it is. */
   readonly importedPlan: (node: SchemaNode) => Code | undefined;
@@ -62,7 +62,7 @@ export class StripPlans {
     if (wire !== undefined && wire !== descriptor) {
       // A TSerde value has the shape of its wire in a decode and its own shape in an encode, so the plan serves the decode only.
       const inner = this.ofDescriptor(wire);
-      return inner === undefined ? undefined : code`{ serde: ${inner} }`;
+      return inner === undefined ? undefined : code`{ kind: 'serde', wire: ${inner} }`;
     }
     switch (descriptor.kind) {
       case 'object': return this.ofObject(descriptor);
@@ -72,7 +72,7 @@ export class StripPlans {
       }
       case 'array': {
         const items = this.ofDescriptor(descriptor.item);
-        return items === undefined ? undefined : code`{ items: ${items} }`;
+        return items === undefined ? undefined : code`{ kind: 'sequence', prefix: [], items: ${items}, suffix: [] }`;
       }
       case 'tuple': return this.ofTuple(descriptor);
       case 'union': return this.ofUnion(descriptor);
@@ -81,7 +81,18 @@ export class StripPlans {
         const node = this.env.nodeOf(descriptor);
         return node === undefined ? undefined : this.nodeRef(node);
       }
-      default: return undefined;
+      case 'any':
+      case 'unknown':
+      case 'never':
+      case 'string':
+      case 'number':
+      case 'boolean':
+      case 'bigint':
+      case 'null':
+      case 'undefined':
+      case 'class-value':
+      case 'literal': return undefined;
+      default: return assertNever(descriptor);
     }
   }
 
@@ -100,13 +111,8 @@ export class StripPlans {
     });
     const values = closed || extra === undefined ? undefined : this.ofDescriptor(extra);
     if (!closed && fields.length === 0 && values === undefined && patterns.every((entry) => entry.plan === undefined)) return undefined;
-    const members: Code[] = [];
-    if (declared.length > 0) members.push(code`keys: new Set(${literal(declared)})`);
-    if (closed) members.push(code`closed: true`);
-    if (patterns.length > 0) members.push(code`patterns: [${join(patterns.map((entry) => entry.plan === undefined ? code`{ pattern: ${literal(entry.pattern)} }` : code`{ pattern: ${literal(entry.pattern)}, plan: ${entry.plan} }`), code`, `)}]`);
-    if (fields.length > 0) members.push(code`fields: { ${join(fields, code`, `)} }`);
-    if (values !== undefined) members.push(code`values: ${values}`);
-    return code`{ ${join(members, code`, `)} }`;
+    const patternList = join(patterns.map((entry) => code`{ pattern: ${literal(entry.pattern)}, plan: ${entry.plan ?? code`undefined`} }`), code`, `);
+    return code`{ kind: 'object', keys: new Set(${literal(declared)}), closed: ${literal(closed)}, patterns: [${patternList}], fields: { ${join(fields, code`, `)} }, values: ${values ?? code`undefined`} }`;
   }
 
   private ofTuple(tuple: Extract<ModelTypeDescriptor, { readonly kind: 'tuple' }>): Code | undefined {
@@ -118,11 +124,7 @@ export class StripPlans {
     if (rest === undefined && !prefix.some((plan) => plan !== undefined) && !suffix.some((plan) => plan !== undefined)) return undefined;
     // The walk finds a position by the length of each list, so a list is complete, with `undefined` for an item that holds nothing to strip.
     const list = (plans: readonly (Code | undefined)[]) => code`[${join(plans.map((plan) => plan ?? code`undefined`), code`, `)}]`;
-    const members: Code[] = [];
-    if (prefix.length > 0) members.push(code`prefix: ${list(prefix)}`);
-    if (suffix.length > 0) members.push(code`suffix: ${list(suffix)}`);
-    if (rest !== undefined) members.push(code`items: ${rest}`);
-    return code`{ ${join(members, code`, `)} }`;
+    return code`{ kind: 'sequence', prefix: ${list(prefix)}, items: ${rest ?? code`undefined`}, suffix: ${list(suffix)} }`;
   }
 
   private ofUnion(union: Extract<ModelTypeDescriptor, { readonly kind: 'union' }>): Code | undefined {
@@ -130,38 +132,42 @@ export class StripPlans {
     const table = union.discriminator;
     if (table !== undefined) {
       // A tagged union picks its variant by the tag and strips that variant; a value whose tag selects none goes to the default, as decoding does.
-      const entries: Code[] = [];
-      let fallback: Code | undefined;
-      let planned = false;
-      // An encode selects an instance of a model class by its class first, and by its tag after: the plan holds the class of each variant with tag values, and of the default.
-      const classes: Code[] = [];
-      let defaultClass: Code | undefined;
+      const branches: { readonly variant: ModelTypeDescriptor; readonly values: readonly DiscriminatorValue[]; readonly plan: Code | undefined }[] = [];
+      let fallback: { readonly variant: ModelTypeDescriptor; readonly plan: Code | undefined } | undefined;
       // A variant with no tag value and no default role takes its values by JSON type, as decoding does: one array there is the array of the union.
+      const rest: ModelTypeDescriptor[] = [];
       const byType: { readonly descriptor: ModelTypeDescriptor; readonly shape: 'object' | 'array' | 'other' | 'serde' }[] = [];
       for (const { variant, index } of present) {
         const values = table.variants[index]?.values ?? [];
         if (values.length === 0 && index !== table.defaultVariant) {
+          rest.push(variant);
           byType.push(...this.leaves(variant, new Set()));
           continue;
         }
         const plan = this.ofDescriptor(variant);
-        planned ||= plan !== undefined;
-        const ctor = this.env.classOf(variant);
-        if (index === table.defaultVariant) {
-          fallback = plan;
-          defaultClass = ctor;
-        } else {
-          // A variant with no plan still names its tags: a value of that tag is left as it is, and not given to the default variant.
-          for (const value of values) entries.push(code`[${literal(value)}, ${plan ?? code`undefined`}]`);
-          if (ctor !== undefined) classes.push(code`{ ctor: ${ctor}, values: [${join(values.map((value) => literal(value)), code`, `)}], plan: ${plan ?? code`undefined`} }`);
-        }
+        if (index === table.defaultVariant) fallback = { variant, plan };
+        // A variant with no plan still names its tags: a value of that tag is left as it is, and not given to the default variant.
+        else branches.push({ variant, values, plan });
       }
+      const planned = fallback?.plan !== undefined || branches.some((branch) => branch.plan !== undefined);
       const arrays = byType.filter((leaf) => leaf.shape === 'array');
       // A TSerde variant has one shape in the wire and another in the model, so the JSON type of a value does not tell which variant takes it.
       const array = arrays.length === 1 && !byType.some((leaf) => leaf.shape === 'serde') ? this.ofDescriptor(arrays[0]!.descriptor) : undefined;
-      const objects = !planned ? undefined : code`{ tag: ${literal(table.propertyName)}${entries.length > 0 ? code`, variants: new Map<string | number | boolean, ${STRIP_PLAN}['default']>([${join(entries, code`, `)}])` : code``}${fallback ? code`, default: ${fallback}` : code``}${classes.length > 0 ? code`, classes: [${join(classes, code`, `)}]${defaultClass ? code`, defaultClass: ${defaultClass}` : code``}` : code``} }`;
+      // The pick of each direction is the function that the writers of the union call, so the plan and the writers choose the variant by one rule.
+      // Both directions pick an instance by the class of the model, as the model's own decode and encode do.
+      const pick = (direction: 'decode' | 'encode'): Code => variantPick({
+        property: table.propertyName,
+        direction,
+        branches: branches.map(({ variant, values }) => ({ values, className: this.env.classOf(variant) })),
+        hasRest: rest.length > 0,
+        restIsInstance: restHoldsInstance(rest),
+        fallback: fallback === undefined ? undefined : { className: this.env.classOf(fallback.variant) },
+      });
+      // The plan of each branch in the order of the pick, and the plan of the default after them.
+      const variants = [...branches, ...(fallback === undefined ? [] : [fallback])].map(({ plan }) => plan ?? code`undefined`);
+      const objects = !planned ? undefined : code`{ kind: 'tagged', encode: ${pick('encode')}, decode: ${pick('decode')}, variants: [${join(variants, code`, `)}] }`;
       if (array === undefined) return objects;
-      return objects === undefined ? code`{ array: ${array} }` : code`{ object: ${objects}, array: ${array} }`;
+      return code`{ kind: 'json-type', object: ${objects ?? code`undefined`}, array: ${array} }`;
     }
     // No tag: one object variant takes every object, so its plan is the union's. Two or more keep exact matching.
     const leaves = present.flatMap(({ variant }) => this.leaves(variant, new Set()));
@@ -171,9 +177,9 @@ export class StripPlans {
     const arrays = leaves.filter((leaf) => leaf.shape === 'array');
     const object = objects.length === 1 ? this.ofDescriptor(objects[0]!.descriptor) : undefined;
     const array = arrays.length === 1 ? this.ofDescriptor(arrays[0]!.descriptor) : undefined;
-    if (object !== undefined && array !== undefined) return code`{ object: ${object}, array: ${array} }`;
+    if (object !== undefined && array !== undefined) return code`{ kind: 'json-type', object: ${object}, array: ${array} }`;
     // Two arrays make exact matching, so an array is left as it is: the object plan may be a tagged union's, which holds an array plan of its own.
-    if (object !== undefined && arrays.length > 1) return code`{ object: ${object} }`;
+    if (object !== undefined && arrays.length > 1) return code`{ kind: 'json-type', object: ${object}, array: undefined }`;
     return object ?? array;
   }
 
@@ -214,7 +220,22 @@ export class StripPlans {
         if (target.kind === 'object' || target.kind === 'intersection') return [{ descriptor, shape: 'object' }];
         return target.kind === 'union' ? this.leaves(target, seen) : [{ descriptor, shape: 'other' }];
       }
-      default: return [{ descriptor, shape: 'other' }];
+      case 'any':
+      case 'unknown':
+      case 'never':
+      case 'string':
+      case 'number':
+      case 'boolean':
+      case 'bigint':
+      case 'null':
+      case 'undefined':
+      case 'class-value':
+      case 'literal': return [{ descriptor, shape: 'other' }];
+      default: return assertNever(descriptor);
     }
   }
+}
+
+function assertNever(value: never): never {
+  throw new Error(`Internal error: unhandled descriptor ${JSON.stringify(value)}`);
 }

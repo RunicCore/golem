@@ -2203,7 +2203,7 @@ function emitDecodeSection(runtime: NodeRuntime): { readonly fill: Code; readonl
   ];
   // Strip runs first, so the checks and the decoder below see a wire that holds the declared keys only.
   // A recursive model's codec leaves the bound of a call with `strip` to this line, which bounds the wire that strip keeps.
-  if (runtime.stripPlan) convertLines.push(code`  if (options?.strip) wire = ${rt.conversion.stripUndeclared}(wire, ${identifier(stripPlanName(node.codecId))}, options.maxDepth${runtime.reachesCycle ? code`, undefined, true` : code``});`);
+  if (runtime.stripPlan) convertLines.push(code`  if (options?.strip) wire = ${rt.conversion.stripForDecode}(wire, ${identifier(stripPlanName(node.codecId))}, { maxDepth: options.maxDepth, bound: ${literal(runtime.reachesCycle)} });`);
   if (validationEnabled) {
     // The wire and model schemas are one validator, which a validation context is asked for as the wire plane.
     const wireAssertCall = node.sameSchema
@@ -2394,7 +2394,7 @@ function emitPlaneAssertSection(runtime: NodeRuntime): Code {
 function stripModelLines(runtime: NodeRuntime, valueType: Code): Code[] {
   if (!runtime.stripPlan) return [];
   // A recursive model has no bound on an encode, so a call with `strip` bounds the value that it keeps.
-  return [code`  if (options?.strip) value = ${rt.conversion.stripUndeclared}(value, ${identifier(stripPlanName(runtime.node.codecId))}, options.maxDepth, true${runtime.reachesCycle ? code`, true` : code``}) as ${valueType};`];
+  return [code`  if (options?.strip) value = ${rt.conversion.stripForEncode}(value, ${identifier(stripPlanName(runtime.node.codecId))}, { maxDepth: options.maxDepth, bound: ${literal(runtime.reachesCycle)} }) as ${valueType};`];
 }
 
 /** The registration of the node's functions as an object codec, with the data that extensions add to it. */

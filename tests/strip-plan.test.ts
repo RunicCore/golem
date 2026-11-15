@@ -1,17 +1,17 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { stripUndeclared } from '@exprtlabs/golem/internal/model-runtime';
+import { stripForDecode, stripForEncode } from '@exprtlabs/golem/internal/model-runtime';
 import { identifier, render } from '#golem/code';
 import type { SchemaNode } from '#golem/schema-graph';
 import { StripPlans, type StripPlanEnv } from '#golem/strip-plan';
 
 /** The plan of a descriptor as a generated module writes it, read back as data. Only a descriptor with no reference needs no more of the environment. */
-function planOf(descriptor: SchemaNode['descriptor']): Parameters<typeof stripUndeclared>[1] {
+function planOf(descriptor: SchemaNode['descriptor']): Parameters<typeof stripForDecode>[1] {
   const env: Pick<StripPlanEnv, 'extraValues' | 'classOf'> = { extraValues: () => undefined, classOf: () => undefined };
   const plan = new StripPlans(env as StripPlanEnv).ofNode({ id: 'node', descriptor } as SchemaNode);
   assert.ok(plan, 'the descriptor holds a closed object');
-  return new Function(`return ${render(plan)};`)() as Parameters<typeof stripUndeclared>[1];
+  return new Function(`return ${render(plan)};`)() as Parameters<typeof stripForDecode>[1];
 }
 
 test('the plan of a closed object that declares a field called __proto__ strips the object that field holds', () => {
@@ -23,9 +23,9 @@ test('the plan of a closed object that declares a field called __proto__ strips 
   assert.deepEqual(Object.keys(properties), ['__proto__']);
   const plan = planOf({ kind: 'object', properties, required: [], additionalProperties: false } as unknown as SchemaNode['descriptor']);
   const wire = JSON.parse('{"__proto__": {"title": "a", "extra": 1}, "junk": 1}') as object;
-  const stripped = stripUndeclared(wire, plan);
+  const stripped = stripForDecode(wire, plan, { maxDepth: undefined, bound: false });
   assert.equal(JSON.stringify(stripped), '{"__proto__":{"title":"a"}}');
-  assert.equal(JSON.stringify(stripUndeclared(wire, plan, undefined, true)), '{"__proto__":{"title":"a"}}', 'an encode strips it the same way');
+  assert.equal(JSON.stringify(stripForEncode(wire, plan, { maxDepth: undefined, bound: false })), '{"__proto__":{"title":"a"}}', 'an encode strips it the same way');
 });
 
 test('a union whose tagged variant takes arrays does not give its arrays to the plan of another array variant', () => {
@@ -37,8 +37,8 @@ test('a union whose tagged variant takes arrays does not give its arrays to the 
   const tagged = { kind: 'union', variants: [cat, arrayOf('a')], discriminator: { propertyName: 'kind', variants: [{ values: ['cat'] }, { values: [] }] } };
   const plan = planOf({ kind: 'union', variants: [tagged, arrayOf('b')] } as unknown as SchemaNode['descriptor']);
   const items = [{ a: 'x', extra: 1 }];
-  assert.deepEqual(stripUndeclared(items, plan), items);
-  assert.deepEqual(stripUndeclared(items, plan, undefined, true), items);
+  assert.deepEqual(stripForDecode(items, plan, { maxDepth: undefined, bound: false }), items);
+  assert.deepEqual(stripForEncode(items, plan, { maxDepth: undefined, bound: false }), items);
 });
 
 test('a union of an array node of another module and a closed object gets the plan of the array and the plan of the object', () => {
@@ -56,7 +56,7 @@ test('a union of an array node of another module and a closed object gets the pl
   const union = { kind: 'union', variants: [{ kind: 'reference', name: 'Tree' }, closed({ code: { kind: 'string' } }, ['code'])] };
   const plan = new StripPlans(env).ofNode({ id: 'holder', descriptor: union } as unknown as SchemaNode);
   assert.ok(plan, 'the union holds an array and a closed object');
-  const holder = new Function('treePlan', `return ${render(plan)};`)(planOf(treeDescriptor)) as Parameters<typeof stripUndeclared>[1];
-  assert.deepEqual(stripUndeclared([{ label: 'a', extra: 1 }], holder), [{ label: 'a' }]);
-  assert.deepEqual(stripUndeclared({ code: 'c', extra: 1 }, holder), { code: 'c' });
+  const holder = new Function('treePlan', `return ${render(plan)};`)(planOf(treeDescriptor)) as Parameters<typeof stripForDecode>[1];
+  assert.deepEqual(stripForDecode([{ label: 'a', extra: 1 }], holder, { maxDepth: undefined, bound: false }), [{ label: 'a' }]);
+  assert.deepEqual(stripForDecode({ code: 'c', extra: 1 }, holder, { maxDepth: undefined, bound: false }), { code: 'c' });
 });
