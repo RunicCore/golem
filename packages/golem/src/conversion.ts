@@ -185,6 +185,12 @@ export interface StripPlan {
   readonly tag?: string;
   readonly variants?: ReadonlyMap<string | number | boolean, StripPlanRef>;
   readonly default?: StripPlanRef;
+  /**
+   * The model class of each variant that has tag values, and of the default: an encode selects an instance of a class by its class first
+   * (a tag that the instance does not hold takes the variant of its class), as the generated encoder does. A decode reads the tag only.
+   */
+  readonly classes?: readonly StripClass[];
+  readonly defaultClass?: StripConstructor;
   /** The plan of each item of an array, or of each item of a tuple between `prefix` and `suffix`. */
   readonly items?: StripPlanRef;
   /** The plan of each item of a tuple before its rest, from the start of the array; a list is complete, so its length is the count of those items. */
@@ -196,6 +202,15 @@ export interface StripPlan {
   readonly array?: StripPlanRef;
   /** The plan of the wire form of a TSerde value. A decode follows it; an encode leaves the model value as it is, because its shape is the serde's own. */
   readonly serde?: StripPlanRef;
+}
+
+type StripConstructor = abstract new (...args: never[]) => object;
+
+/** A variant of a tagged union that a model class holds: its class, its tag values and its plan. */
+export interface StripClass {
+  readonly ctor: StripConstructor;
+  readonly values: readonly (string | number | boolean)[];
+  readonly plan: StripPlanRef;
 }
 
 /**
@@ -311,6 +326,8 @@ function stripObject(value: Record<string, unknown>, plan: StripPlan, depth: num
     // A decode reads the tag as the decoder does, by the JSON view: an inherited or non-enumerable tag selects no variant, so the value takes the default. An encode reads the property, as the encoder does.
     // A tag of another type is in no entry of the map, so it takes the default.
     const tag = (walk.model ? value[plan.tag] : presentValue(value, plan.tag)) as string | number | boolean;
+    const own = walk.model && plan.classes !== undefined ? classVariant(value, plan, tag) : undefined;
+    if (own !== undefined) return stripLevel(value, own.plan, depth, walk);
     const chosen = plan.variants?.has(tag) === true ? plan.variants.get(tag) : plan.default;
     return stripLevel(value, chosen, depth, walk);
   }
@@ -318,6 +335,21 @@ function stripObject(value: Record<string, unknown>, plan: StripPlan, depth: num
   const result = stripKeys(value, plan, depth, walk);
   walk.onPath?.delete(value);
   return result;
+}
+
+/**
+ * The variant that the generated encoder selects for an instance of a model class: the first class that the value is an instance of and that no other class
+ * of the union extends for it, when the value holds no tag or the tag of that variant. A tag of another variant is the encoder's error, so the tag chooses.
+ */
+function classVariant(value: object, plan: StripPlan, tag: unknown): StripClass | undefined {
+  const classes = plan.classes!;
+  for (const entry of classes) {
+    if (!(value instanceof entry.ctor)) continue;
+    const extended = (other: StripConstructor): boolean => other !== entry.ctor && value instanceof other && other.prototype instanceof entry.ctor;
+    if (classes.some((candidate) => extended(candidate.ctor)) || (plan.defaultClass !== undefined && extended(plan.defaultClass))) continue;
+    return tag === undefined || entry.values.includes(tag as string | number | boolean) ? entry : undefined;
+  }
+  return undefined;
 }
 
 function stripKeys(value: Record<string, unknown>, plan: StripPlan, depth: number, walk: StripWalk): unknown {
@@ -374,7 +406,7 @@ function stripInstance(value: object, plan: StripPlan, depth: number, walk: Stri
  * for an encode (`model`). It copies only an object or an array that changes and never writes to the input, so a value that holds
  * nothing to remove is returned as it is. A model value takes no key from an instance of a class, whose undeclared keys are program state unless its model keeps other keys as data, but strips the objects
  * that its declared fields and its data keys hold; it leaves the model value of a TSerde field as it is. A value that nests deeper than `maxDepth` is a cycle or too deep: a cycle among the keys that strip reads is reported as a cycle, else the depth error is thrown.
- * `bound` is for the decode of a recursive model, whose input a codec bounds by `maxDepth` before it recurses over it: the value that strip leaves is then bounded as a whole, the objects that the plan does not walk included, and what strip removes is never counted.
+ * `bound` is for a recursive model. A decode's input is bounded by `maxDepth` before the codec recurses over it, and a call with `strip` leaves that bound to this function; an encode has no bound of its own. The value that strip leaves is bounded as a whole, the objects that the plan does not walk included (a class value is a leaf, as in the codec's own bound), and what strip removes is never counted.
  */
 export function stripUndeclared(value: unknown, plan: StripPlanRef, maxDepth?: number, model?: true, bound?: true): unknown {
   const limit = resolveMaxDepth(maxDepth);
@@ -383,6 +415,9 @@ export function stripUndeclared(value: unknown, plan: StripPlanRef, maxDepth?: n
   const mayHoldCycle = encode || detachedInputDepth === 0;
   // A limit up to the depth of the plain walk ends a cycle before the call stack ends. Above it, and with the bound off, the walk keeps the objects on its path and reports a revisit as the cycle error of the direction. It reads only the keys that it walks, so a getter of a key that a closed object removes never runs.
   const walk: StripWalk = { limit, model: encode, onPath: mayHoldCycle && limit > PLAIN_WALK_MAX_DEPTH ? new Set<object>() : undefined };
+  const tooDeep = (): LibError => encode
+    ? conversionError(LibErrorKind.Serialization, `The value nests objects and arrays deeper than ${limit} levels. Raise the maxDepth option to encode a deeper value.`)
+    : nestingDepthError(limit);
   let stripped: unknown;
   try {
     stripped = stripLevel(value, plan, 0, walk);
@@ -396,10 +431,9 @@ export function stripUndeclared(value: unknown, plan: StripPlanRef, maxDepth?: n
         if (again !== STRIP_TOO_DEEP) throw again;
       }
     }
-    if (encode) throw conversionError(LibErrorKind.Serialization, `The value nests objects and arrays deeper than ${limit} levels. Raise the maxDepth option to encode a deeper value.`);
-    throw nestingDepthError(limit);
+    throw tooDeep();
   }
-  if (bound === true && valueNestsDeeperThan(stripped, limit)) throw nestingDepthError(limit);
+  if (bound === true && valueNestsDeeperThan(stripped, limit)) throw tooDeep();
   return stripped;
 }
 

@@ -25,6 +25,8 @@ export interface StripPlanEnv {
   readonly extraValues: (descriptor: ObjectTypeDescriptor) => ModelTypeDescriptor | undefined;
   /** Whether the codec of the node is another module's. */
   readonly external: (node: SchemaNode) => boolean;
+  /** The class an encode of the variant selects an instance by: the class of the model, as the generated encoder tests it; undefined when the variant has none. */
+  readonly classOf: (descriptor: ModelTypeDescriptor) => Code | undefined;
   /** The name this module imports the plan of another module's node under; undefined when that module offers none, so the node is left as it is. */
   readonly importedPlan: (node: SchemaNode) => Code | undefined;
   /** The name of the constant that holds the plan of a node this module emits. */
@@ -131,6 +133,9 @@ export class StripPlans {
       const entries: Code[] = [];
       let fallback: Code | undefined;
       let planned = false;
+      // An encode selects an instance of a model class by its class first, and by its tag after: the plan holds the class of each variant with tag values, and of the default.
+      const classes: Code[] = [];
+      let defaultClass: Code | undefined;
       // A variant with no tag value and no default role takes its values by JSON type, as decoding does: one array there is the array of the union.
       const byType: { readonly descriptor: ModelTypeDescriptor; readonly shape: 'object' | 'array' | 'other' | 'serde' }[] = [];
       for (const { variant, index } of present) {
@@ -141,14 +146,20 @@ export class StripPlans {
         }
         const plan = this.ofDescriptor(variant);
         planned ||= plan !== undefined;
-        if (index === table.defaultVariant) fallback = plan;
-        // A variant with no plan still names its tags: a value of that tag is left as it is, and not given to the default variant.
-        else for (const value of values) entries.push(code`[${literal(value)}, ${plan ?? code`undefined`}]`);
+        const ctor = this.env.classOf(variant);
+        if (index === table.defaultVariant) {
+          fallback = plan;
+          defaultClass = ctor;
+        } else {
+          // A variant with no plan still names its tags: a value of that tag is left as it is, and not given to the default variant.
+          for (const value of values) entries.push(code`[${literal(value)}, ${plan ?? code`undefined`}]`);
+          if (ctor !== undefined) classes.push(code`{ ctor: ${ctor}, values: [${join(values.map((value) => literal(value)), code`, `)}], plan: ${plan ?? code`undefined`} }`);
+        }
       }
       const arrays = byType.filter((leaf) => leaf.shape === 'array');
       // A TSerde variant has one shape in the wire and another in the model, so the JSON type of a value does not tell which variant takes it.
       const array = arrays.length === 1 && !byType.some((leaf) => leaf.shape === 'serde') ? this.ofDescriptor(arrays[0]!.descriptor) : undefined;
-      const objects = !planned ? undefined : code`{ tag: ${literal(table.propertyName)}${entries.length > 0 ? code`, variants: new Map<string | number | boolean, ${STRIP_PLAN}['default']>([${join(entries, code`, `)}])` : code``}${fallback ? code`, default: ${fallback}` : code``} }`;
+      const objects = !planned ? undefined : code`{ tag: ${literal(table.propertyName)}${entries.length > 0 ? code`, variants: new Map<string | number | boolean, ${STRIP_PLAN}['default']>([${join(entries, code`, `)}])` : code``}${fallback ? code`, default: ${fallback}` : code``}${classes.length > 0 ? code`, classes: [${join(classes, code`, `)}]${defaultClass ? code`, defaultClass: ${defaultClass}` : code``}` : code``} }`;
       if (array === undefined) return objects;
       return objects === undefined ? code`{ array: ${array} }` : code`{ object: ${objects}, array: ${array} }`;
     }

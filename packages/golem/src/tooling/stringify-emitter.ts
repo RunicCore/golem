@@ -2393,7 +2393,8 @@ function emitPlaneAssertSection(runtime: NodeRuntime): Code {
 /** The first line of an encode entry: `strip` removes the keys that the model does not declare before the value is checked. */
 function stripModelLines(runtime: NodeRuntime, valueType: Code): Code[] {
   if (!runtime.stripPlan) return [];
-  return [code`  if (options?.strip) value = ${rt.conversion.stripUndeclared}(value, ${identifier(stripPlanName(runtime.node.codecId))}, options.maxDepth, true) as ${valueType};`];
+  // A recursive model has no bound on an encode, so a call with `strip` bounds the value that it keeps.
+  return [code`  if (options?.strip) value = ${rt.conversion.stripUndeclared}(value, ${identifier(stripPlanName(runtime.node.codecId))}, options.maxDepth, true${runtime.reachesCycle ? code`, true` : code``}) as ${valueType};`];
 }
 
 /** The registration of the node's functions as an object codec, with the data that extensions add to it. */
@@ -2456,6 +2457,8 @@ function stripPlanEnv(ctx: EmitCtx): StripPlanEnv {
     resolveObject: (descriptor) => resolveObjectDescriptor(descriptor, ctx),
     nodeOf: (descriptor) => ctx.graph.nodeFor(descriptor) ?? (descriptor.kind === 'reference' ? ctx.graph.nodeFor(descriptor, codecShortName(descriptor.name)) : undefined),
     extraValues: mapValueDescriptor,
+    // The class that the generated encoder tests an instance against, when it writes a model value.
+    classOf: (descriptor) => variantClassName(descriptor, ctx, !ctx.wireIdentity),
     external: (node) => isExternalCodecNode(node) || ctx.nestedImportedSerde?.(node.codecId) !== undefined || ctx.nestedImportedSerde?.(node.id) !== undefined,
     importedPlan: (node) => ctx.importedStripPlan?.(node.codecId),
     planName: (node) => stripPlanName(node.codecId),

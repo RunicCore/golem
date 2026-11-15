@@ -8,7 +8,7 @@ import { StripPlans, type StripPlanEnv } from '#golem/strip-plan';
 
 /** The plan of a descriptor as a generated module writes it, read back as data. Only a descriptor with no reference needs no more of the environment. */
 function planOf(descriptor: SchemaNode['descriptor']): Parameters<typeof stripUndeclared>[1] {
-  const env: Pick<StripPlanEnv, 'extraValues'> = { extraValues: () => undefined };
+  const env: Pick<StripPlanEnv, 'extraValues' | 'classOf'> = { extraValues: () => undefined, classOf: () => undefined };
   const plan = new StripPlans(env as StripPlanEnv).ofNode({ id: 'node', descriptor } as SchemaNode);
   assert.ok(plan, 'the descriptor holds a closed object');
   return new Function(`return ${render(plan)};`)() as Parameters<typeof stripUndeclared>[1];
@@ -48,6 +48,7 @@ test('a union of an array node of another module and a closed object gets the pl
   const tree = { id: 'Tree', descriptor: treeDescriptor } as SchemaNode;
   const env = {
     extraValues: () => undefined,
+    classOf: () => undefined,
     nodeOf: () => tree,
     external: () => true,
     importedPlan: () => identifier('treePlan'),

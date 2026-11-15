@@ -2,8 +2,8 @@ import type { IModel, IObject } from '@exprtlabs/golem/model';
 import type { AdditionalProperties, Discriminator, PatternProperties, TSerde } from '@exprtlabs/golem/tags';
 import { decodePrice, decodeUnits, encodePrice, encodeUnits, type Price } from './units.js';
 import {
-  TCardBaseModel, TLedgerBaseModel, TPetHolderBaseModel, TPatternLedgerBaseModel, TRegistryBaseModel, TShelfBaseModel, TTaggedBaseModel, TTaggedOpenBaseModel, TTallyBaseModel, TTreeBaseModel,
-  type TCardFields, type TLedgerFields, type TPetHolderFields, type TPatternLedgerFields, type TRegistryFields, type TShelfFields, type TTaggedFields, type TTaggedOpenFields, type TTallyFields, type TTreeFields,
+  TCardBaseModel, TCatModelBaseModel, TLedgerBaseModel, TPetHolderBaseModel, TPatternLedgerBaseModel, TRegistryBaseModel, TShelfBaseModel, TStrayModelBaseModel, TTaggedBaseModel, TTaggedOpenBaseModel, TTallyBaseModel, TTreeBaseModel,
+  type TCardFields, type TCatModelFields, type TLedgerFields, type TPetHolderFields, type TPatternLedgerFields, type TRegistryFields, type TShelfFields, type TStrayModelFields, type TTaggedFields, type TTaggedOpenFields, type TTallyFields, type TTreeFields,
 } from './strip.model.generated.js';
 
 type Cat = { kind: 'cat'; lives: number };
@@ -32,6 +32,12 @@ export type TLeadingRest = IObject<{ rows: [...TPlain[], TItem] }, { validation:
 export type THeadRest = IObject<{ rows: [TLoose, ...TPlain[]] }>;
 /** A closed recursive model whose `meta` field holds data that strip does not walk: `TLoose` keeps its other keys and has no plan. */
 export type TMetaTree = IObject<{ name: string; kids?: TMetaTree[]; meta?: TLoose }>;
+/** A tagged union of two model classes. The variant with no tag value is the default and has its own closed `child`, so the class of an instance and its tag can name different variants. */
+export type TLeafA = IObject<{ paws: number }>;
+export type TLeafB = IObject<{ name: string }>;
+export type TCatModel = IModel<{ kind: 'cat'; child: TLeafA }>;
+export type TStrayModel = IModel<{ child: TLeafB }>;
+export type TClassTagged = IObject<{ item: (TCatModel | TStrayModel) & Discriminator<'kind', TStrayModel> }>;
 export type TCard = IModel<{ title: string; count?: number }>;
 export type TShelf = IModel<{ cards: TCard[]; main: TCard }>;
 export type TPetHolder = IModel<{ pet: (Cat | Dog) & Discriminator<'kind'> }>;
@@ -82,4 +88,10 @@ export class Tagged extends TTaggedBaseModel {
 }
 export class TaggedOpen extends TTaggedOpenBaseModel {
   constructor(values: Partial<TTaggedOpenFields> = {}) { super(values); }
+}
+export class CatModel extends TCatModelBaseModel {
+  constructor(values: Partial<TCatModelFields> = {}) { super(values); }
+}
+export class StrayModel extends TStrayModelBaseModel {
+  constructor(values: Partial<TStrayModelFields> = {}) { super(values); }
 }

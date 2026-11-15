@@ -31,8 +31,8 @@ async function buildModels(t: TestContext) {
   const codec = (name: string) => requireObjectCodec(generatedCodecIdFromRoot(root, name));
   return {
     Price: units.Price,
-    Card: models.Card as Model, Ledger: models.Ledger as Model, PatternLedger: models.PatternLedger as Model, Registry: models.Registry as Model, Shelf: models.Shelf as Model, PetHolder: models.PetHolder as Model, Tree: models.Tree as Model, Tally: models.Tally as Model, Tagged: models.Tagged as Model, TaggedOpen: models.TaggedOpen as Model,
-    plain: codec('TPlain'), nested: codec('TNested'), open: codec('TOpen'), mapHolder: codec('TMapHolder'), patterned: codec('TPatterned'), nullable: codec('TNullable'), tagged: codec('TTagged'), patternItems: codec('TPatternItems'), tagTypes: codec('TTagTypes'), tagProto: codec('TTagProto'), suffixTuple: codec('TSuffixTuple'), leadingRest: codec('TLeadingRest'), headRest: codec('THeadRest'), taggedOpen: codec('TTaggedOpen'), priced: codec('TPriced'), classPriced: codec('TClassPriced'), metaTree: codec('TMetaTree'), petList: codec('TPetList'),
+    Card: models.Card as Model, Ledger: models.Ledger as Model, PatternLedger: models.PatternLedger as Model, Registry: models.Registry as Model, Shelf: models.Shelf as Model, PetHolder: models.PetHolder as Model, CatModel: models.CatModel as Model, StrayModel: models.StrayModel as Model, Tree: models.Tree as Model, Tally: models.Tally as Model, Tagged: models.Tagged as Model, TaggedOpen: models.TaggedOpen as Model,
+    plain: codec('TPlain'), nested: codec('TNested'), open: codec('TOpen'), mapHolder: codec('TMapHolder'), patterned: codec('TPatterned'), nullable: codec('TNullable'), tagged: codec('TTagged'), patternItems: codec('TPatternItems'), tagTypes: codec('TTagTypes'), tagProto: codec('TTagProto'), suffixTuple: codec('TSuffixTuple'), leadingRest: codec('TLeadingRest'), headRest: codec('THeadRest'), taggedOpen: codec('TTaggedOpen'), priced: codec('TPriced'), classPriced: codec('TClassPriced'), metaTree: codec('TMetaTree'), classTagged: codec('TClassTagged'), petList: codec('TPetList'),
     card: codec('TCard'), ledger: codec('TLedger'), patternLedger: codec('TPatternLedger'), registry: codec('TRegistry'), shelf: codec('TShelf'), petHolder: codec('TPetHolder'), tree: codec('TTree'), tally: codec('TTally'),
   };
 }
@@ -255,6 +255,35 @@ test('strip on encode', async (t) => {
       assert.deepEqual(m.tagged.toWireFormat(new m.Tagged({ item: { kind: 'other', value: 1, junk: 1 } }), options(level)), { item: { kind: 'other', value: 1 } });
       assert.deepEqual(m.tagged.toWireFormat(new m.Tagged({ item: { amount: 1, junk: 1 } }), options(level)), { item: { amount: 1 } });
       assert.deepEqual(m.shelf.toWireFormat(new m.Shelf({ cards: [], main: new m.Card({ title: 'a' }) }), options(level)), { cards: [], main: { title: 'a' } });
+    });
+
+    await t.test(`data that strip keeps and that is too deep is the serialization error on an encode, also under a field that has no plan, validate ${level}`, () => {
+      // protects: T-896 an encode of a recursive model has no bound of its own, so strip bounds the value that it keeps, the objects that the plan does not walk included
+      let deep: unknown = { x: 1 };
+      for (let index = 0; index < 8; index++) deep = { x: [deep] };
+      const tooDeep = (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.Serialization && !error.causedByInput && error.message.includes('deeper than 5 levels');
+      const holder = { name: 'h', meta: { title: 't', deep }, junk: 1 };
+      assert.throws(() => m.metaTree.toWireFormat(holder, { ...options(level), maxDepth: 5 }), tooDeep, 'toWireFormat');
+      assert.throws(() => m.metaTree.stringify(holder, { ...options(level), maxDepth: 5 }), tooDeep, 'stringify');
+      // A class value is a leaf, a removed key is not counted, and a value within the bound is written.
+      const shallow = { name: 'h', meta: { title: 't', deep: { x: [{ x: 1 }] } }, junk: deep };
+      assert.deepEqual(JSON.parse(m.metaTree.stringify(shallow, { ...options(level), maxDepth: 5 })), JSON.parse(m.metaTree.stringify({ name: 'h', meta: { title: 't', deep: { x: [{ x: 1 }] } } }, { validate: level })));
+      assert.doesNotThrow(() => m.metaTree.toWireFormat({ name: 'h', meta: { title: 't', deep } }, { validate: level, maxDepth: 5 }), 'without strip the encode has no bound');
+    });
+
+    await t.test(`an instance of a variant class that holds no tag is stripped as its class is, as the encoder reads it, validate ${level}`, () => {
+      // protects: T-896 the generated encoder selects an instance of a model class by its class first, so strip takes the variant of the class and not the default that the missing tag names
+      const own = { paws: 4, extra: 1 };
+      const tagless = new m.CatModel({ child: own as never });
+      const stray = new m.StrayModel({ child: { name: 'n', extra: 1 } as never });
+      const write = (item: unknown) => m.classTagged.toWireFormat({ item }, options(level));
+      // Validation needs the tag of the variant, so a call that validates refuses the instance whether strip runs or not.
+      if (level === false) assert.deepEqual(write(tagless), { item: { kind: 'cat', child: { paws: 4 } } }, 'the class variant');
+      else assert.throws(() => write(tagless), isValidationError);
+      assert.deepEqual(write(stray), { item: { child: { name: 'n' } } }, 'the default variant, by its class');
+      assert.deepEqual(write(new m.CatModel({ kind: 'cat', child: own as never })), { item: { kind: 'cat', child: { paws: 4 } } }, 'the class variant with its tag');
+      assert.deepEqual(write({ kind: 'cat', child: { paws: 4, extra: 1 } }), { item: { kind: 'cat', child: { paws: 4 } } }, 'a plain value by its tag');
+      assert.deepEqual(write({ child: { name: 'n', extra: 1 } }), { item: { child: { name: 'n' } } }, 'a plain value with no tag takes the default');
     });
 
     await t.test(`an instance of an open model strips the closed objects that its other keys hold, validate ${level}`, () => {
