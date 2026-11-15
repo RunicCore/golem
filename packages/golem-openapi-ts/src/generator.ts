@@ -5,7 +5,8 @@ import {
   type HookParticipants,
 } from '@exprtlabs/golem/generator-api';
 import { nonempty } from '@exprtlabs/golem/internal/plan-support';
-import { OPENAPI_DATES, optionChoice, resolveOpenApiMode, type OpenApiContext, type OpenApiMode, type OpenApiModeSetting } from './plan.js';
+import { OPENAPI_DATES, optionChoice } from './plan-options.js';
+import { resolveOpenApiMode, type OpenApiContext, type OpenApiMode, type OpenApiModeSetting } from './plan.js';
 import { normalizeSchemaUnions } from './document.js';
 import { writeSdk as emitSdk } from './emit.js';
 import { API_VERSION } from './package-info.js';

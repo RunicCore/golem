@@ -56,28 +56,23 @@ export function parseValueKey(key: string): { readonly operation: string; readon
 }
 
 /** The key of a request body in `OpenApiModelAnalysis.convertedNodeIds`: the operation and the request content type. */
-export function requestBodyKey(operation: string, contentType: string): string {
+function requestBodyKey(operation: string, contentType: string): string {
   return valueKey(operation, valuePlace.requestBody(contentType));
 }
 
 /** The key of a response body, or of its stream items, in `OpenApiModelAnalysis.convertedNodeIds`: the operation and the response status and content type. */
-export function responseBodyKey(operation: string, status: string, contentType: string): string {
+function responseBodyKey(operation: string, status: string, contentType: string): string {
   return valueKey(operation, valuePlace.responseBody(status, contentType));
 }
 
 /** The key of a request parameter in `OpenApiModelAnalysis.convertedNodeIds`: the operation, where the parameter is (`path`, `query`, `header`, `cookie` or `querystring`) and its name. */
-export function parameterKey(operation: string, location: string, name: string): string {
+function parameterKey(operation: string, location: string, name: string): string {
   return valueKey(operation, valuePlace.parameter(location, name));
 }
 
 /** The key of a response header in `OpenApiModelAnalysis.convertedNodeIds`: the operation, the response status and the header name. */
-export function responseHeaderKey(operation: string, status: string, name: string): string {
+function responseHeaderKey(operation: string, status: string, name: string): string {
   return valueKey(operation, valuePlace.responseHeader(status, name));
-}
-
-/** The key of a response check in the operation's validators: the status, and the content type of a body or the name of a header. */
-export function responseCheckKey(status: string, contentTypeOrName: string): string {
-  return `${status}:${contentTypeOrName}`;
 }
 
 /** Whether a body of the request converts a value (a Date or Temporal inside it). */
@@ -95,11 +90,6 @@ export function operationDecodes(operation: NormalizedOperation, convertedNodeId
   return operation.responses.some((response) =>
     response.content.some((media) => convertedNodeIds.has(responseBodyKey(operation.name, response.status, media.contentType)))
     || Object.keys(response.headers).some((name) => convertedNodeIds.has(responseHeaderKey(operation.name, response.status, name))));
-}
-
-/** Whether any body, parameter or response header of the operation converts a value (a Date or Temporal inside it). */
-export function operationConverts(operation: NormalizedOperation, convertedNodeIds: ReadonlyMap<string, string>): boolean {
-  return operationEncodesBody(operation, convertedNodeIds) || operationEncodesParameters(operation, convertedNodeIds) || operationDecodes(operation, convertedNodeIds);
 }
 
 /** A request body that converts and whose descriptors carry every keyword of its schema is checked by its own conversion; the input root of its client operation leaves it open. */

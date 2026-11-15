@@ -4,7 +4,7 @@ import path from 'node:path';
 import type { Code } from '@exprtlabs/golem/internal/emitter';
 import type { GolemDiagnostic, GolemPlanEntry, InputObserver, JobFacts, GolemProfile, PlanContext, PlannedJob } from '@exprtlabs/golem/generator-api';
 import { canonicalPath, CODECS_HOST, isRecord, nonempty, sdkCodecsFile } from '@exprtlabs/golem/internal/plan-support';
-import { REFERENCE_LIMIT_DEFAULTS } from './reference-limits.js';
+import { OPENAPI_DATES, optionChoice, REFERENCE_LIMIT_DEFAULTS } from './plan-options.js';
 
 export interface OpenApiContext {
   readonly input: string;
@@ -37,16 +37,7 @@ export interface OpenApiModeSetting {
   readonly codecsFile?: string | undefined;
 }
 
-export const OPENAPI_DATES = ['date', 'temporal'] as const;
 const OPENAPI_MODES = ['standalone', 'golem'] as const;
-
-/** The one place that checks an option that holds one of a closed set of words, for a job of `golem.yaml` and for a caller of the generator: the value of the set, `undefined` when it is not set, and a `TypeError` that names `where` for any other value. */
-export function optionChoice<Choice extends string>(value: unknown, allowed: readonly Choice[], where: string): Choice | undefined {
-  if (value === undefined) return undefined;
-  const choice = allowed.find((item) => item === value);
-  if (choice === undefined) throw new TypeError(`${where} must be ${allowed.map((item) => JSON.stringify(item)).join(' or ')} when provided`);
-  return choice;
-}
 
 /** The one place that checks the mode and its codecs file. A value a JavaScript caller passes is checked here, so the generator behind it reads a mode that holds what it needs. */
 export function resolveOpenApiMode({ mode, codecsFile }: OpenApiModeSetting): OpenApiMode {

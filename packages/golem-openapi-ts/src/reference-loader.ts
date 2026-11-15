@@ -5,7 +5,7 @@ import { isInsideDirectory, parseYamlFile, type InputObserver } from '@exprtlabs
 import { displayPath } from '@exprtlabs/golem/internal/generator-support';
 import { decodeUriFragment } from '@exprtlabs/golem/internal/schema';
 import { displayLocation } from './origin.js';
-import { REFERENCE_LIMIT_DEFAULTS } from './reference-limits.js';
+import { REFERENCE_LIMIT_DEFAULTS } from './plan-options.js';
 import { asRecord, escapeJsonPointerToken, isJsonObject, jsonPointerJoin, objectEntries, resolveJsonPointer } from './json.js';
 import {
   collectCanonicalResources,

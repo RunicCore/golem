@@ -43,7 +43,7 @@ import type { RuntimeSpecifiers } from '../runtime-copy.js';
 import type { OperationWrapper } from '../plan.js';
 import type { OpenApiGenerationProfile } from '../profile.js';
 import { requireProfile } from '../profile.js';
-import { operationDecodes, operationEncodesBody, operationEncodesParameters, responseCheckKey } from '../model-schema-graph.js';
+import { operationDecodes, operationEncodesBody, operationEncodesParameters } from '../model-schema-graph.js';
 import type { OperationCodecsFor } from '../operation-codecs.js';
 import type { OperationValidatorNames } from '../model-emission.js';
 import { buildOperationValidationSchemaBundle, buildOperationValidationSchemaBundles, buildSchemaData, operationSourceSchemas } from '../schemas.js';
@@ -773,8 +773,8 @@ export function operationValidatorNames(
   return new Map([...schemas.bundles].map(([name, bundle]) => [name, {
     input: requireValidatorExport(name, bundle.inputReference, validatorExports),
     ...(bundle.headersReference === undefined ? {} : { headers: requireValidatorExport(name, bundle.headersReference, validatorExports) }),
-    responses: bundle.responseReferences.map((item) => ({ key: responseCheckKey(item.status, item.contentType), name: requireValidatorExport(name, item.reference, validatorExports) })),
-    responseHeaders: bundle.responseHeaderReferences.map((item) => ({ key: responseCheckKey(item.status, item.name), name: requireValidatorExport(name, item.reference, validatorExports) })),
+    responses: bundle.responseReferences.map((item) => ({ key: `${item.status}:${item.contentType}`, name: requireValidatorExport(name, item.reference, validatorExports) })),
+    responseHeaders: bundle.responseHeaderReferences.map((item) => ({ key: `${item.status}:${item.name}`, name: requireValidatorExport(name, item.reference, validatorExports) })),
   }] as const));
 }
 

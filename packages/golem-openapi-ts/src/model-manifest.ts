@@ -21,7 +21,7 @@ import {
   modelEnv,
   modelStableId,
 } from './model-resolution.js';
-import { parseValueKey, responseCheckKey, uncarriedOf } from './model-schema-graph.js';
+import { parseValueKey, uncarriedOf } from './model-schema-graph.js';
 import { resolveLocal } from './normalize.js';
 
 /**
@@ -46,8 +46,8 @@ function golemModeGraph(document: unknown, analysis: OpenApiModelAnalysis, sdk: 
     const validation: SdkOperationValidation | undefined = bundle && {
       input: bundle.inputReference,
       ...(bundle.headersReference === undefined ? {} : { headers: bundle.headersReference }),
-      responses: bundle.responseReferences.map((item) => ({ key: responseCheckKey(item.status, item.contentType), root: item.reference })),
-      responseHeaders: bundle.responseHeaderReferences.map((item) => ({ key: responseCheckKey(item.status, item.name), root: item.reference })),
+      responses: bundle.responseReferences.map((item) => ({ key: `${item.status}:${item.contentType}`, root: item.reference })),
+      responseHeaders: bundle.responseHeaderReferences.map((item) => ({ key: `${item.status}:${item.name}`, root: item.reference })),
       roots: bundle.roots,
     };
     if (values.length === 0 && validation === undefined) continue;
