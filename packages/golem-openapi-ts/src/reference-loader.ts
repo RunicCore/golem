@@ -125,7 +125,13 @@ export interface ReferenceTarget {
  * What holds a reference value: a `$ref` or `$dynamicRef` keyword, a
  * discriminator `mapping` value, or a discriminator `defaultMapping`.
  */
-type ReferenceKeyword = '$ref' | '$dynamicRef' | 'mapping' | 'defaultMapping';
+export type ReferenceKeyword = '$ref' | '$dynamicRef' | 'mapping' | 'defaultMapping';
+
+/** The text that names a reference that resolves to nothing; the loader and the `no-unresolved-refs` rule both report it. */
+export function unresolvedReferenceMessage(keyword: ReferenceKeyword, reference: string): string {
+  const label = keyword === 'mapping' || keyword === 'defaultMapping' ? 'discriminator mapping' : keyword;
+  return `Can't resolve ${label} ${reference}`;
+}
 
 export interface ReferenceSite {
   readonly documentUri: string;
@@ -396,7 +402,7 @@ async function loadGraph(
         const pointer = decodeUriFragment(fragment);
         // A kept `#/` text in a hoisted document would resolve against the root, so a root component of that name would hide the miss.
         if (!inRoot && resolveJsonPointer(documents.get(documentUri)?.document, pointer) === undefined) {
-          throw new Error(`Can't resolve ${keyword} ${reference} (${displayLocation(documentUri, walkerPointer.slice(1), rootDirectory)})`);
+          throw new Error(`${unresolvedReferenceMessage(keyword, reference)} (${displayLocation(documentUri, walkerPointer.slice(1), rootDirectory)})`);
         }
         return { target: { uri: documentUri, pointer }, preserve: false };
       }
