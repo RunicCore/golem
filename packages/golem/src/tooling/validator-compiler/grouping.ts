@@ -32,18 +32,19 @@ interface BodyKey {
   /** The key before the first callee, or of the whole body when it names no callee. */
   readonly head: string;
   /** The callees in order of appearance, each with the key that follows it, up to the next callee or the end. */
-  readonly calls: readonly { readonly callee: Callee; after: string }[];
+  readonly calls: readonly { readonly callee: Callee; readonly after: string }[];
 }
 
 function bodyKeyOf(body: Code, slots: FunctionSlots): BodyKey {
   let head = '';
-  const calls: { readonly callee: Callee; after: string }[] = [];
+  const calls: { readonly callee: Callee; readonly after: string }[] = [];
+  /** The last callee met: the key being written follows it. */
+  let last: Callee | undefined;
   let key = '';
   /** Ends the key between two callees: it follows the last callee, or is the head when there is none. */
   const endPiece = (): void => {
-    const last = calls.at(-1);
     if (last === undefined) head = key;
-    else last.after = key;
+    else calls.push({ callee: last, after: key });
     key = '';
   };
   let text = '';
@@ -59,7 +60,7 @@ function bodyKeyOf(body: Code, slots: FunctionSlots): BodyKey {
         const callee = slots.owner(part.slot);
         if (callee === undefined) throw new Error(`The validator compiler body names "${part.slot.label}", which is no function.`);
         endPiece();
-        calls.push({ callee, after: '' });
+        last = callee;
         break;
       }
       case 'runtime': key += `r${JSON.stringify([part.module, part.name, part.typeOnly === true, part.alias ?? null])},`; break;

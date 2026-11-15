@@ -224,8 +224,14 @@ class ScanningProject {
     const { canonicalFilename } = this.compiler;
     const sources = [...new Set([...parsed.fileNames.map(canonicalFilename), ...this.extras])];
     const program = this.session.openProgram({ root: this.root, sources, configFile: this.config.tsconfig, overlays: new Map(this.overlays) });
+    let scanner: RewriteScanner;
+    try {
+      scanner = new this.compiler.RewriteScanner({ root: this.root, boundary: this.config.contracts.ModelBoundary, program, codecKeysFile: codecKeysPath(this.config.directory), checker: program.getTypeChecker(), participants: this.compiler.participants });
+    } catch (error) {
+      program.close();
+      throw error;
+    }
     this.opened?.program.close();
-    const scanner = new this.compiler.RewriteScanner({ root: this.root, boundary: this.config.contracts.ModelBoundary, program, codecKeysFile: codecKeysPath(this.config.directory), checker: program.getTypeChecker(), participants: this.compiler.participants });
     this.opened = { program, scanner };
     this.stale = false;
     this.recordSignature = signature;
