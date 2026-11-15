@@ -251,7 +251,7 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions, moved:
   if (standalone && modelAnalysis.grouping.groups.length > 0) {
     const models = generateOpenApiModelArtifacts(document, profile, modelAnalysis, {
       locate: options.locate,
-      ...(specifiers ? { specifiers } : {}),
+      specifiers: runtimeSpecifiersOf(options.mode),
       ...(profile.validation ? { compileValidators: ({ plan, reachedRoots, locateModel }: { plan: CodecValidationPlan; groupPlans: ReadonlyMap<string, CodecValidationPlan>; reachedRoots: ReadonlySet<string>; locateModel: (name: string) => SchemaPlace }) => compileValidators(plan, locateModel, reachedRoots) } : {}),
     });
     for (const [name, source] of models.files) files.set(name, source);

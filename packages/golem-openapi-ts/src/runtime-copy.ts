@@ -24,6 +24,8 @@ const standaloneRuntimeSpecifiers: RuntimeSpecifiers = (file) => {
 };
 
 /** Where the files of an SDK of this mode import the runtime from: the copy a standalone SDK carries, or none for a golem SDK, which imports the installed `@exprtlabs/golem`. */
+export function runtimeSpecifiersOf(mode: Extract<OpenApiMode, { kind: 'standalone' }>): RuntimeSpecifiers;
+export function runtimeSpecifiersOf(mode: OpenApiMode): RuntimeSpecifiers | undefined;
 export function runtimeSpecifiersOf(mode: OpenApiMode): RuntimeSpecifiers | undefined {
   switch (mode.kind) {
     case 'standalone': return standaloneRuntimeSpecifiers;

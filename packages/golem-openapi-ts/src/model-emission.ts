@@ -19,7 +19,6 @@ import {
   type Code,
   type ImportOptions,
   fillFunctionName,
-  sideEffectImport,
   stripPlanName,
   wireStringifyExportName,
   writesWireStringify,
@@ -127,8 +126,8 @@ export function generateOpenApiModelArtifacts(
   analysis: OpenApiModelAnalysis,
   helpers: {
     readonly locate?: OriginLocator | undefined;
-    /** Where each model group imports its runtime from; the package's own entries when absent (see `runtimeSpecifiersOf`). */
-    readonly specifiers?: RuntimeSpecifiers;
+    /** Where each model group imports its runtime from (see `runtimeSpecifiersOf`). */
+    readonly specifiers: RuntimeSpecifiers;
     /**
      * Compiles the SDK's validators module from the validation plan of every model and returns the name it exports
      * each root and each root's fast check under (`PlanValidators.exports`, `fastExports` and `passExports`).
@@ -137,7 +136,7 @@ export function generateOpenApiModelArtifacts(
      * Called once, and required when the profile validates.
      */
     readonly compileValidators?: (input: { readonly plan: CodecValidationPlan; readonly groupPlans: ReadonlyMap<string, CodecValidationPlan>; readonly reachedRoots: ReadonlySet<string>; readonly locateModel: (name: string) => SchemaPlace }) => Pick<PlanValidators, 'exports' | 'fastExports' | 'passExports'>;
-  } = {},
+  },
 ): { readonly files: ReadonlyMap<string, string> } {
   const { schemaGraph, ordered, grouping } = analysis;
   const { groups, owner, runtimeEdges } = grouping;
@@ -244,24 +243,16 @@ export function generateOpenApiModelArtifacts(
       const groupId = node ? owner.get(node.id) : undefined;
       return groupId !== undefined && groupId !== group.id ? moduleSource(`./_${groupId}.js`).name(wireStringifyExportName(codecId)) : identifier(wireStringifyExportName(codecId));
     };
-    const dependencyGroups = new Set([...dependencyIds].flatMap((nodeId) => {
-      const dependencyGroupId = owner.get(nodeId);
-      return dependencyGroupId && dependencyGroupId !== group.id ? [dependencyGroupId] : [];
-    }));
-    // Importing a dependency group for side effects registers its codecs before this group's own run; the named imports are the names the code uses.
-    // A standalone SDK (it names its runtime in `specifiers`) registers nothing, so it needs no such import.
     const { specifiers, ...rest } = helpers;
-    const sideEffectImports = specifiers ? [] : [...dependencyGroups].sort().map((dependencyGroupId) => `./_${dependencyGroupId}.js`);
     const modelModule = generateModels(document, profile, {
       ...rest,
-      ...(specifiers ? { specifiers: specifiers(group.filename) } : {}),
+      specifiers: specifiers(group.filename),
       analysis,
       graphNodeIds: localIds,
       dependencyNodeIds: dependencyIds,
       moduleFile: group.filename,
       wireStringify,
       moduleSources: () => [...moduleSources.values()].sort((left, right) => compareText(left.specifier, right.specifier)),
-      sideEffectImports,
       ...(groupPlan && validatorExports ? { validatorsSource } : {}),
       ...(validatorExports ? { validatorExports: written.has(group.id) ? validatorExports : discardedExports } : {}),
       ...(fastCheckExports ? { fastCheckExports } : {}),
@@ -338,10 +329,8 @@ function generateModels(
     readonly codecFunctionImport?: (nodeId: string, functionName: 'stringify' | 'fill' | 'fromWire' | 'toWire' | 'stripPlan') => Code | undefined;
     /** The sources of the modules this module may import names from, in the order of their statements. */
     readonly moduleSources?: () => readonly ImportSource[];
-    /** Where the module imports its runtime values and types from; the package's own entries when absent. */
-    readonly specifiers?: ImportOptions['specifiers'];
-    /** The modules this module imports for their side effects, after the named imports. */
-    readonly sideEffectImports?: readonly string[];
+    /** Where the module imports its runtime values and types from. */
+    readonly specifiers: NonNullable<ImportOptions['specifiers']>;
     /** The generated validators module, when `validatorExports` names validators to import. */
     readonly validatorsSource?: ImportSource;
     /** The name the module's generated validators are exported under, by codec id and plane; set when `validatorsSource` imports them. */
@@ -351,7 +340,7 @@ function generateModels(
     /** The names of each root's structure check and predicates-only pass, by the same keys, for the roots that have them. */
     readonly passCheckExports?: ReadonlyMap<string, { readonly structure: string; readonly predicates: string }>;
     readonly exportedFillFunctionIds?: ReadonlySet<string>;
-  } = {},
+  },
 ): string {
   requireProfile(profile);
   const analysis = helpers.analysis ?? analyzeOpenApiModels(document, profile.validation);
@@ -382,8 +371,8 @@ function generateModels(
     } } : {}),
     issueSource: 'OpenAPI',
     projectsInstanceState: true,
-    // Only golem's own registry reads a registered codec; a standalone SDK (it names its runtime in `specifiers`) registers none.
-    registerCodecs: helpers.specifiers === undefined,
+    // Only golem's own registry reads a registered codec; a standalone SDK registers none.
+    registerCodecs: false,
     // A component's codecs take and return its converted `Types` type; a node that is no component, and so has no type there, stays `unknown`.
     fieldsType: (node) => {
       const definition = analysis.definitionNameByNodeId.has(node.id) ? definitions.get(analysis.definitionNameByNodeId.get(node.id) ?? '') : undefined;
@@ -417,7 +406,7 @@ function generateModels(
   const body: Piece[] = [emitSchemaCodecRuntime(emittedSchemaGraph, codecRuntimeOptions, definitions)];
   // What the code calls decides the runtime imports and which helpers the module defines.
   const calls = join(body.filter(isCode), code`\n`);
-  const runtimeLines = runtimeLinesOf(calls, helpers.specifiers ? { ...IMPORT_OPTIONS, specifiers: helpers.specifiers } : IMPORT_OPTIONS);
+  const runtimeLines = runtimeLinesOf(calls, { ...IMPORT_OPTIONS, specifiers: helpers.specifiers });
   const bodyLines = placeHelpers(calls, body, MODULE_CONSTANT_HELPERS);
   const bodyCode = join(bodyLines, code`\n`);
   const moduleSources = helpers.moduleSources?.() ?? [];
@@ -427,7 +416,6 @@ function generateModels(
     ...runtimeLines('conversion', 'temporal', 'serde'),
     ...fileImports(bodyCode, [typesModule], { elsewhere: [...moduleSources, ...validatorSources] }),
     ...fileImports(bodyCode, moduleSources, { quote: '"', elsewhere: [typesModule, ...validatorSources] }),
-    ...(helpers.sideEffectImports ?? []).map((specifier) => sideEffectImport(specifier, '"')),
     ...fileImports(bodyCode, validatorSources, { elsewhere: [typesModule, ...moduleSources] }),
     code``,
     ...bodyLines,
