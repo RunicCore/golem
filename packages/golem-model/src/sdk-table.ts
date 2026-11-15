@@ -21,6 +21,7 @@ import {
   sdkCodecsTable,
   RUNTIME_SERDE,
   toWireFunctionName,
+  writesWireStringify,
   type Code,
   type ImportOptions,
   type Piece,
@@ -28,17 +29,22 @@ import {
 import { canonicalPath } from '@exprtlabs/golem/internal/generator-support';
 import type { SchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
 import { golemModeComponents, type GolemModeManifest } from '@exprtlabs/golem/manifest';
-import { codedError, type ManifestIndex } from '@exprtlabs/golem/internal/type-analysis';
+import { codedError, sdkSchemaGraph, type ManifestIndex } from '@exprtlabs/golem/internal/type-analysis';
 import type { PlanValidators, SdkValidatorsInput } from '@exprtlabs/golem/internal/validation-plan';
 import { PACKAGE_VERSION } from './package-info.js';
 
-/** An SDK of mode golem that this models job compiles and writes the codecs file for. */
+/** An SDK of mode golem that this models job compiles and writes the codecs file for, with its schema graph. */
 export interface GolemSdk {
   readonly manifest: GolemModeManifest;
+  /** The SDK's `model-manifest.json`, which the manifest was read from. */
+  readonly file: string;
   /** The SDK folder relative to the golem.yaml folder, written with `/`: the scope of the SDK's root and export names. */
   readonly scope: string;
   /** The file the SDK's operation modules import (`sdkCodecsFile`). */
   readonly codecsFile: string;
+  /** The sealed schema graph of the manifest's nodes, and the node of each operation value that converts something (`sdkSchemaGraph`). */
+  readonly graph: SchemaGraph;
+  readonly valueNodes: ReadonlyMap<string, string>;
 }
 
 /**
@@ -47,7 +53,7 @@ export interface GolemSdk {
  */
 export function golemSdks(
   index: ManifestIndex,
-  where: { readonly directory: string; readonly output: string; readonly sdkOutputs: readonly string[] },
+  where: { readonly directory: string; readonly output: string; readonly sdkOutputs: readonly string[]; readonly profile: ResolvedGolemProfile },
 ): readonly GolemSdk[] {
   const outputs = new Map(where.sdkOutputs.map((output) => [canonicalPath(joinPath(output, 'model-manifest.json')), output] as const));
   return index.golemModeManifests.map(({ file, manifest }) => {
@@ -55,7 +61,13 @@ export function golemSdks(
     if (sdkOutput === undefined) {
       throw codedError('GOLEM_SDK_JOB_MISSING', `The SDK manifest ${file} is in mode golem, but no openapi job of mode golem in this golem.yaml writes its folder, so the model block cannot name the codecs file for it. Set the SDK to mode standalone, or add its openapi job with mode golem to this golem.yaml.`);
     }
-    return { manifest, scope: relative(where.directory, sdkOutput).split(sep).join('/'), codecsFile: sdkCodecsFile({ modelsOutput: where.output, configDirectory: where.directory, sdkOutput }) };
+    return {
+      manifest,
+      file,
+      scope: relative(where.directory, sdkOutput).split(sep).join('/'),
+      codecsFile: sdkCodecsFile({ modelsOutput: where.output, configDirectory: where.directory, sdkOutput }),
+      ...sdkSchemaGraph(manifest, where.profile.validation),
+    };
   }).sort((left, right) => compareText(left.scope, right.scope));
 }
 
@@ -89,30 +101,28 @@ interface SdkValidators {
  */
 export function sdkCodecsSource(
   sdk: GolemSdk,
-  built: { readonly graph: SchemaGraph; readonly valueNodes: ReadonlyMap<string, string> },
   validators: SdkValidators | undefined,
   profile: ResolvedGolemProfile,
 ): string {
-  const validatorsSource = validators && new ImportSource(moduleSpecifier(sdk.codecsFile, validators.file));
+  const validated = validators && { source: new ImportSource(moduleSpecifier(sdk.codecsFile, validators.file)), compiled: validators.compiled };
   const exported = (map: ReadonlyMap<string, string>, id: string): string => {
     const name = map.get(id);
     if (name === undefined) throw new Error(`The generated validators module has no validator for ${JSON.stringify(id)}.`);
     return name;
   };
-  const names = (map: ReadonlyMap<string, string>, id: string): Code | undefined => {
-    const name = map.get(id);
-    return name === undefined || validatorsSource === undefined ? undefined : validatorsSource.name(name);
-  };
   const components = golemModeComponents(sdk.manifest);
-  const codecRuntime = emitCodecRuntimeCode(built.graph, {
+  const codecRuntime = emitCodecRuntimeCode(sdk.graph, {
     validationLevel: profile.validation,
     serde: RUNTIME_SERDE,
-    ...(validators && validatorsSource ? {
-      validatorName: (id: string) => validatorsSource.name(exported(validators.compiled.exports, id)),
-      fastCheckName: (id: string) => names(validators.compiled.fastExports, id),
+    ...(validated ? {
+      validatorName: (id: string) => validated.source.name(exported(validated.compiled.exports, id)),
+      fastCheckName: (id: string) => {
+        const name = validated.compiled.fastExports.get(id);
+        return name === undefined ? undefined : validated.source.name(name);
+      },
       passCheckNames: (id: string) => {
-        const pass = validators.compiled.passExports.get(id);
-        return pass === undefined ? undefined : { structure: validatorsSource.name(pass.structure), predicates: validatorsSource.name(pass.predicates) };
+        const pass = validated.compiled.passExports.get(id);
+        return pass === undefined ? undefined : { structure: validated.source.name(pass.structure), predicates: validated.source.name(pass.predicates) };
       },
     } : {}),
     issueSource: 'OpenAPI',
@@ -121,27 +131,27 @@ export function sdkCodecsSource(
     registerCodecs: false,
     exportAnonymousCodecs: true,
     // An app model that holds a node writes the wire value of the node with this function (`NestedImportedSerde.wireStringify`).
-    exportWireStringify: true,
+    exportWireStringify: (node) => writesWireStringify(node, profile.validation),
     exportStripPlans: true,
     modelBases: { basesOf: (id) => components.get(id)?.bases ?? [] },
   });
+  const root = (from: NonNullable<typeof validated>, name: string): Code => from.source.name(exported(from.compiled.exports, scopedRoot(sdk, name)));
   const operations = sdk.manifest.operations.map((operation) => {
     const checks = operation.validation;
-    const root = (name: string): Code => validatorsSource!.name(exported(validators!.compiled.exports, scopedRoot(sdk, name)));
     return {
       name: operation.name,
       codecOf: (at: readonly string[], conversion: 'fromWire' | 'toWire'): Code | undefined => {
-        const node = built.valueNodes.get(JSON.stringify([operation.name, ...at]));
+        const node = sdk.valueNodes.get(JSON.stringify([operation.name, ...at]));
         return node === undefined ? undefined : identifier((conversion === 'fromWire' ? fromWireFunctionName : toWireFunctionName)(node));
       },
       shape: {
         values: operation.values.map(({ at }) => at),
-        ...(checks && validatorsSource && validators ? {
+        ...(checks && validated ? {
           checks: {
-            input: root(checks.input),
-            ...(checks.headers === undefined ? {} : { requestHeaders: root(checks.headers) }),
-            responses: checks.responses.map((item) => ({ key: item.key, code: root(item.root) })),
-            responseHeaders: checks.responseHeaders.map((item) => ({ key: item.key, code: root(item.root) })),
+            input: root(validated, checks.input),
+            ...(checks.headers === undefined ? {} : { requestHeaders: root(validated, checks.headers) }),
+            responses: checks.responses.map((item) => ({ key: item.key, code: root(validated, item.root) })),
+            responseHeaders: checks.responseHeaders.map((item) => ({ key: item.key, code: root(validated, item.root) })),
           },
         } : {}),
       },
@@ -152,7 +162,7 @@ export function sdkCodecsSource(
   const calls = join(body.filter(isCode), code`\n`);
   const runtimeLines = runtimeLinesOf(calls, IMPORT_OPTIONS);
   const bodyLines = placeHelpers(calls, body, MODULE_CONSTANT_HELPERS);
-  const sources = validatorsSource ? [validatorsSource] : [];
+  const sources = validated ? [validated.source] : [];
   const lines: readonly Code[] = [
     blockComment(`Generated by @exprtlabs/golem-model ${PACKAGE_VERSION}. Do not edit.`),
     ...runtimeLines('conversion', 'temporal', 'serde'),

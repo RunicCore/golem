@@ -1,4 +1,5 @@
 /** Structural shell of generated tag validators. */
+import { assertNever } from '../assert-never.js';
 import type { ModelConstraint, ModelTypeDescriptor } from '../model-registry.js';
 
 interface ValidationTagSchemaOptions {
@@ -50,8 +51,10 @@ function tagSchemaShell(
       if (members.some((member) => member.kind === 'array')) return { kind: 'array', item: { kind: 'any' } };
       return { kind: 'any' };
     }
-    default:
+    case 'any': case 'bigint': case 'boolean': case 'class-value': case 'generated-model': case 'literal': case 'never': case 'null': case 'number':
+    case 'string': case 'undefined': case 'unknown':
       return { kind: 'any' };
+    default: return assertNever(descriptor);
   }
 }
 

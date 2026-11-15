@@ -1,4 +1,4 @@
-import type { ModelTypeDescriptor, SerdeFunctions } from '../model-registry.js';
+import type { ModelTypeDescriptor } from '../model-registry.js';
 import type { StringifySerdeResolver } from './stringify-emitter.js';
 export {
   emitCodecRuntimeCode,
@@ -11,6 +11,9 @@ export {
   reachesRecursiveNode,
   stringifyFunctionName,
   stripPlanName,
+  descriptorSerde,
+  extraKeyValues,
+  wireDiffers,
   wireStringifyExportName,
   writesWireStringify,
   toWireFunctionName,
@@ -64,7 +67,7 @@ import {
   unionDispatch,
   type ObjectTypeDescriptor,
 } from './union-conversion.js';
-import { isRecordExpression } from './stringify-emitter.js';
+import { descriptorSerde, extraKeyValues, isRecordExpression } from './stringify-emitter.js';
 
 /** Generators read tag values through the same rule as the shared union conversion. */
 export { AmbiguousUnionConversionError, descriptorNeedsConversion, ObjectUnionDiscriminatorError } from './union-conversion.js';
@@ -105,14 +108,6 @@ export interface FromJsonModelResolver {
  * the wrapper is applied in a nested conversion tree.
  */
 export type SerdeResolver = StringifySerdeResolver;
-
-type DescriptorMetadata = {
-  readonly serde?: SerdeFunctions;
-};
-
-function metadata(descriptor: ModelConversionDescriptor): DescriptorMetadata {
-  return descriptor as ModelConversionDescriptor & DescriptorMetadata;
-}
 
 type GeneratedModelDescriptor = Extract<
   ModelConversionDescriptor,
@@ -326,14 +321,14 @@ function emitNestedUncached(
   memo: EmitMemo,
 ): Code {
   const value = expression;
-  const tags = metadata(descriptor);
-  if (tags.serde && resolveSerde) {
+  const serde = descriptorSerde(descriptor);
+  if (serde && resolveSerde) {
     if (direction !== 'fromJSON') return value;
-    return resolveSerde.deserialize(tags.serde, value);
+    return resolveSerde.deserialize(serde, value);
   }
   if (descriptor.kind === 'intersection') {
     const bases: ModelBases = { basesOf: (id) => resolveModel(id).bases ?? [] };
-    const merged = descriptor.variants.every(variant => !metadata(variant).serde) ? requireComposedObject(descriptor.variants, bases) : undefined;
+    const merged = descriptor.variants.every(variant => !variant.serde) ? requireComposedObject(descriptor.variants, bases) : undefined;
     if (merged) return emitNested(merged, expression, direction, resolveModel, resolveSerde, memo);
     // A scalar intersection converts by its one converting part.
     const conversions: Code[] = [];
@@ -393,7 +388,7 @@ function emitNestedUncached(
     if (descriptor.projection || knownChanged || additionalChanged) {
       // An additionalProperties tag declares the other keys of a projection as data: they are copied as they are or by
       // the tag's type. Another object keeps its other keys the same way.
-      const hasExtras = !descriptor.projection || typeof descriptor.additionalProperties === 'object' || descriptor.additionalPropertiesDeclared;
+      const hasExtras = !descriptor.projection || extraKeyValues(descriptor) !== undefined;
       // A record with no declared field walks its entries in the runtime, which takes the conversion of one value.
       if (knownNames.length === 0 && hasExtras) {
         const converted = typeof additionalItem === 'object'

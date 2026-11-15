@@ -1,10 +1,10 @@
 import { isDeepStrictEqual } from 'node:util';
 import { builtinClassDescriptor, descriptorNeedsConversion } from '@exprtlabs/golem/internal/emitter';
-import { serdeWireDescriptor, type SchemaGraph, type SchemaNode } from '@exprtlabs/golem/internal/schema-graph';
-import { identifier } from '@exprtlabs/golem/internal/generator-support';
+import type { SchemaGraph, SchemaNode } from '@exprtlabs/golem/internal/schema-graph';
+import { assertNever, identifier } from '@exprtlabs/golem/internal/generator-support';
 import { asRecord, escapeJsonPointerToken, isJsonObject, objectEntries, type JsonObject } from './json.js';
 import type { GolemDiagnostic } from '@exprtlabs/golem/generator-api';
-import { JSON_KINDS, aliasReference, followReference, isDiscriminatorValue, jsonKindOf, schemaReferenceOrDynamic, type ConstraintSchemaValue, type DiscriminatorValue, type JsonKind, type ModelConstraint, type ModelTypeDescriptor, type UnionDiscriminator } from '@exprtlabs/golem/internal/schema';
+import { JSON_KINDS, aliasReference, followReference, isDiscriminatorValue, jsonKindOf, schemaReferenceOrDynamic, serdeWireDescriptor, type ConstraintSchemaValue, type DiscriminatorValue, type JsonKind, type ModelConstraint, type ModelTypeDescriptor, type UnionDiscriminator } from '@exprtlabs/golem/internal/schema';
 import { componentOrigin, LocatedError } from './origin.js';
 import {
   COMPOSITION_PROPERTY_NEVER,
@@ -379,7 +379,7 @@ function valueClasses(descriptor: ModelTypeDescriptor): readonly JsonKind[] {
   switch (descriptor.kind) {
     case 'string': return ['string'];
     // A class value has the JSON types of its serde's wire form.
-    case 'class-value': return valueClasses(serdeWireDescriptor(descriptor) ?? { kind: 'unknown' });
+    case 'class-value': return valueClasses(serdeWireDescriptor(descriptor.serde) ?? { kind: 'unknown' });
     case 'number': return ['number'];
     case 'boolean': return ['boolean'];
     case 'null': return ['null'];
@@ -389,7 +389,8 @@ function valueClasses(descriptor: ModelTypeDescriptor): readonly JsonKind[] {
     case 'tuple': return ['array'];
     case 'union': return [...new Set(descriptor.variants.flatMap(valueClasses))];
     case 'never': return [];
-    default: return JSON_KINDS;
+    case 'any': case 'bigint': case 'generated-model': case 'intersection': case 'reference': case 'undefined': case 'unknown': return JSON_KINDS;
+    default: return assertNever(descriptor);
   }
 }
 

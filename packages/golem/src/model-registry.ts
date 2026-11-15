@@ -65,16 +65,17 @@ export interface SerdeFunctions {
   readonly id: string;
   readonly serialize: ImportedFunction;
   readonly deserialize: ImportedFunction;
+  /** The wire form of the value: `wireDescriptor` in a descriptor a generator reads from source, `wire` in a generated one. Read it with `serdeWireDescriptor`. */
+  readonly wire?: ModelTypeDescriptor;
+  readonly wireDescriptor?: ModelTypeDescriptor;
 }
 
 export interface ModelTypeMetadata {
-  readonly validations?: readonly string[];
+  /** The ids of the validation functions in a generated descriptor; a descriptor that a generator reads from source holds the bindings, whose `id` is the same id. Read an id with `validationBindingId`. */
+  readonly validations?: readonly (string | ImportedFunction)[];
   readonly constraints?: readonly ModelConstraint[];
   /** The `serialize` and `deserialize` functions are in every descriptor that a generator makes; a hand-written descriptor in a test may leave them out. */
   readonly serde?: Pick<SerdeFunctions, 'id'> & Partial<SerdeFunctions> & {
-    /** The wire form: `wire` in a generated descriptor, `wireDescriptor` in one a generator reads from source (a reader takes either). */
-    readonly wire?: ModelTypeDescriptor;
-    readonly wireDescriptor?: ModelTypeDescriptor;
     /** A function that tells whether an instance of the class holds a value, which the class check calls after `instanceof` (`new Date(NaN)` is a `Date` and holds none). */
     readonly valid?: ImportedFunction;
   };

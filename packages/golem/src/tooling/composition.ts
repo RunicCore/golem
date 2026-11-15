@@ -16,8 +16,9 @@
  * 5. The names that no part lists take every part's value schema; one closed part closes them.
  */
 
+import { assertNever } from '../assert-never.js';
 import type { ModelConstraint, ModelTypeDescriptor } from '../model-registry.js';
-import { serdeWireDescriptor } from './schema-graph.js';
+import { serdeWireDescriptor } from './schema.js';
 import { descriptorNeedsConversion, type ObjectTypeDescriptor } from './union-conversion.js';
 
 /** A composition that no value can satisfy, or whose parts convert one name differently. */
@@ -357,7 +358,7 @@ function distinctDescriptors(children: readonly ModelTypeDescriptor[]): ModelTyp
 function scalarWireKind(descriptor: ModelTypeDescriptor): string | undefined {
   // OpenAPI temporal values carry their wire form under another key; they are strings on the wire.
   if (descriptor.serde) {
-    const wire = serdeWireDescriptor(descriptor);
+    const wire = serdeWireDescriptor(descriptor.serde);
     return wire === undefined ? 'string' : scalarWireKind(wire);
   }
   switch (descriptor.kind) {
@@ -369,8 +370,10 @@ function scalarWireKind(descriptor: ModelTypeDescriptor): string | undefined {
       return descriptor.kind;
     case 'literal':
       return typeof descriptor.value;
-    default:
+    case 'any': case 'array': case 'bigint': case 'class-value': case 'generated-model': case 'intersection': case 'never': case 'object':
+    case 'reference': case 'tuple': case 'undefined': case 'union': case 'unknown':
       return undefined;
+    default: return assertNever(descriptor);
   }
 }
 
@@ -391,8 +394,10 @@ function jsonType(descriptor: ModelTypeDescriptor): string | undefined {
       const [only] = types;
       return types.size === 1 ? only : undefined;
     }
-    default:
+    case 'any': case 'bigint': case 'boolean': case 'class-value': case 'intersection': case 'literal': case 'never': case 'null': case 'number':
+    case 'string': case 'undefined': case 'unknown':
       return undefined;
+    default: return assertNever(descriptor);
   }
 }
 

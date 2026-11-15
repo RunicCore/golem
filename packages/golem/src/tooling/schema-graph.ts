@@ -3,6 +3,7 @@
  * validation compile once per node and compose by call / $ref.
  */
 
+import { assertNever } from '../assert-never.js';
 import type { ModelTypeDescriptor } from '../model-registry.js';
 import {
   canonicalDescriptorKey,
@@ -10,6 +11,8 @@ import {
   GENERATED_MODEL_SCHEMA_REF_PREFIX,
   mapConstraintSchemaValues,
   schemaForDescriptor,
+  serdeWireDescriptor,
+  serdeWithWire,
   type ConstraintSchemaValue,
   type JsonSchema,
   type ModelConstraint,
@@ -52,20 +55,6 @@ export interface SchemaNode {
   readonly siblingCodec?: true;
   /** An unnamed object type; model companions keep its codec functions module-private. */
   readonly anonymous?: true;
-}
-
-/** Deserialize-param descriptor attached by TSerde. */
-export function serdeWireDescriptor(descriptor: ModelTypeDescriptor): ModelTypeDescriptor | undefined {
-  const serde = descriptor.serde as
-    | { readonly wire?: ModelTypeDescriptor; readonly wireDescriptor?: ModelTypeDescriptor }
-    | undefined;
-  if (!serde) return undefined;
-  return serde.wireDescriptor ?? serde.wire;
-}
-
-/** The serde with its wire form replaced, in the field that holds it: `wireDescriptor` in a descriptor read from source, `wire` in a generated one. */
-function serdeWithWire<S extends object>(serde: S, wire: ModelTypeDescriptor): S {
-  return { ...serde, ...('wireDescriptor' in serde ? { wireDescriptor: wire } : { wire }) };
 }
 
 /** Whether a node holds an array or tuple (a recursive array alias is a named node, not written inline). A node that holds anything else, or no node at all, does not. */
@@ -160,7 +149,7 @@ function forEachHeldType(descriptor: ModelTypeDescriptor, visit: (held: ModelTyp
   const walk = (child: ModelTypeDescriptor): void => {
     if (namedIdentity(child) || structural(child)) visit(child);
     else for (const nested of childDescriptors(child)) walk(nested);
-    const wire = serdeWireDescriptor(child);
+    const wire = serdeWireDescriptor(child.serde);
     if (wire && wire !== child) walk(wire);
   };
   for (const child of childDescriptors(descriptor)) walk(child);
@@ -180,7 +169,9 @@ function nodeKind(descriptor: ModelTypeDescriptor): SchemaNodeKind {
     case 'intersection': return 'intersection';
     case 'reference':
     case 'generated-model': return 'reference';
-    default: return 'scalar';
+    case 'any': case 'bigint': case 'boolean': case 'class-value': case 'literal': case 'never': case 'null': case 'number': case 'string':
+    case 'undefined': case 'unknown': return 'scalar';
+    default: return assertNever(descriptor);
   }
 }
 
@@ -206,7 +197,9 @@ export function childDescriptors(descriptor: ModelTypeDescriptor): readonly Mode
     ];
     case 'union':
     case 'intersection': return descriptor.variants;
-    default: return [];
+    case 'any': case 'bigint': case 'boolean': case 'class-value': case 'generated-model': case 'literal': case 'never': case 'null': case 'number':
+    case 'reference': case 'string': case 'undefined': case 'unknown': return [];
+    default: return assertNever(descriptor);
   }
 }
 
@@ -338,7 +331,7 @@ function namedCodecRefs(descriptor: ModelTypeDescriptor): readonly string[] {
       return;
     }
     for (const child of childDescriptors(value)) walk(child);
-    const wire = serdeWireDescriptor(value);
+    const wire = serdeWireDescriptor(value.serde);
     if (wire && wire !== value) walk(wire);
   };
   walk(descriptor);
@@ -490,11 +483,14 @@ export function mapNamedTypes(descriptor: ModelTypeDescriptor, replace: (named: 
     case 'intersection':
       mapped = { ...descriptor, variants: descriptor.variants.map(again) };
       break;
-    default:
+    case 'any': case 'bigint': case 'boolean': case 'class-value': case 'literal': case 'never': case 'null': case 'number': case 'string':
+    case 'undefined': case 'unknown':
       mapped = descriptor;
+      break;
+    default: return assertNever(descriptor);
   }
   const constraints = mapped.constraints?.map((constraint) => mapConstraintSchemaValues(constraint, (value) => (isTypeDescriptor(value) ? again(value) as ConstraintSchemaValue : value)));
-  const wire = serdeWireDescriptor(mapped);
+  const wire = serdeWireDescriptor(mapped.serde);
   const serde = mapped.serde && wire ? serdeWithWire(mapped.serde, again(wire)) : mapped.serde;
   return { ...mapped, ...(constraints ? { constraints } : {}), ...(serde ? { serde } : {}) };
 }
@@ -513,7 +509,7 @@ function rewriteMetadata(
   lookup: (descriptor: ModelTypeDescriptor) => SchemaNode | undefined,
 ): ModelTypeDescriptor {
   const constraints = descriptor.constraints?.map((constraint) => rewriteConstraint(constraint, lookup));
-  const wire = serdeWireDescriptor(descriptor);
+  const wire = serdeWireDescriptor(descriptor.serde);
   const serde = descriptor.serde && wire && wire !== descriptor
     ? serdeWithWire(descriptor.serde, rewriteToRefs(wire, lookup))
     : descriptor.serde;
@@ -580,9 +576,11 @@ function rewriteToRefs(
           )),
         };
         break;
-      default:
+      case 'any': case 'bigint': case 'boolean': case 'class-value': case 'generated-model': case 'literal': case 'never': case 'null':
+      case 'number': case 'reference': case 'string': case 'undefined': case 'unknown':
         rewritten = descriptor;
         break;
+      default: return assertNever(descriptor);
     }
   }
   return rewriteMetadata(rewritten, lookup);

@@ -32,22 +32,11 @@ function runtimeLoadProblem(relative: string, specifier: string): string | undef
   return undefined;
 }
 
-/** What a finding does to the run: an error fails it, a warning is listed. */
-type Severity = 'warning' | 'error';
-
-interface Finding {
-  readonly severity: Severity;
-  readonly text: string;
-}
-
-/**
- * The two source checks start as warnings, since the sites that exist now are fixed by later changes. A check that has no site left
- * becomes an error here.
- */
+/** The two source checks: a finding of either fails the run. */
 const SOURCE_CHECKS = {
-  nonNull: { severity: 'warning', because: 'narrow with a guard, or change the type so the value cannot be missing' },
-  switchKinds: { severity: 'warning', because: 'list each kind and end with `default: return assertNever(value)`' },
-} as const satisfies Record<string, { readonly severity: Severity; readonly because: string }>;
+  nonNull: { because: 'narrow with a guard, or change the type so the value cannot be missing' },
+  switchKinds: { because: 'list each kind and end with `default: return assertNever(value)`' },
+} as const;
 
 const LITERAL_TYPES = ts.TypeFlags.StringLiteral | ts.TypeFlags.NumberLiteral | ts.TypeFlags.BooleanLiteral | ts.TypeFlags.Undefined | ts.TypeFlags.Null;
 
@@ -99,26 +88,26 @@ function loads(node: ts.Node): string | undefined {
   return undefined;
 }
 
-function findings(file: ts.SourceFile, relative: string, checker: ts.TypeChecker): Finding[] {
-  const found: Finding[] = [];
+function findings(file: ts.SourceFile, relative: string, checker: ts.TypeChecker): string[] {
+  const found: string[] = [];
   const where = (node: ts.Node): string => `${relative}:${file.getLineAndCharacterOfPosition(node.getStart(file)).line + 1}`;
   const visit = (node: ts.Node): undefined => {
     const specifier = loads(node);
     if (specifier !== undefined) {
       const { line } = file.getLineAndCharacterOfPosition(node.getStart(file));
       const runtimeProblem = RUNTIME_FILE.test(relative) ? runtimeLoadProblem(relative, specifier) : undefined;
-      if (runtimeProblem !== undefined) found.push({ severity: 'error', text: `${relative}:${line + 1} imports '${specifier}': ${runtimeProblem}` });
+      if (runtimeProblem !== undefined) found.push(`${relative}:${line + 1} imports '${specifier}': ${runtimeProblem}`);
       for (const rule of RULES) {
         if (rule.forbids(specifier) && relative !== rule.allowedIn) {
-          found.push({ severity: 'error', text: `${relative}:${line + 1} imports '${specifier}'${rule.allowedIn ? `; only ${rule.allowedIn} may` : ''}: ${rule.because}` });
+          found.push(`${relative}:${line + 1} imports '${specifier}'${rule.allowedIn ? `; only ${rule.allowedIn} may` : ''}: ${rule.because}`);
         }
       }
     }
     if (ts.isNonNullExpression(node)) {
-      found.push({ severity: SOURCE_CHECKS.nonNull.severity, text: `${where(node)} non-null assertion \`${node.getText(file)}\`: ${SOURCE_CHECKS.nonNull.because}` });
+      found.push(`${where(node)} non-null assertion \`${node.getText(file)}\`: ${SOURCE_CHECKS.nonNull.because}`);
     } else if (ts.isSwitchStatement(node)) {
       const unlisted = unlistedKinds(node, checker);
-      if (unlisted.length > 0) found.push({ severity: SOURCE_CHECKS.switchKinds.severity, text: `${where(node)} switch leaves out ${unlisted.join(', ')}: ${SOURCE_CHECKS.switchKinds.because}` });
+      if (unlisted.length > 0) found.push(`${where(node)} switch leaves out ${unlisted.join(', ')}: ${SOURCE_CHECKS.switchKinds.because}`);
     }
     ts.forEachChild(node, visit);
     return undefined;
@@ -129,23 +118,19 @@ function findings(file: ts.SourceFile, relative: string, checker: ts.TypeChecker
 
 const files = sourceFiles(path.join(root, 'packages')).sort();
 const program = ts.createProgramFromSources({ root, sources: files });
-const allFindings: Finding[] = [];
+const errors: string[] = [];
 try {
   const checker = program.getTypeChecker();
   for (const filename of files) {
     const file = program.getSourceFile(filename);
     if (!file) throw new Error(`The compiler did not read ${portable(path.relative(root, filename))}.`);
-    allFindings.push(...findings(file, portable(path.relative(root, filename)), checker));
+    errors.push(...findings(file, portable(path.relative(root, filename)), checker));
   }
 } finally {
   program.close();
 }
-const listed = (severity: Severity): string[] => allFindings.filter(finding => finding.severity === severity).map(finding => finding.text);
-const errors = listed('error');
-const warnings = listed('warning');
-if (warnings.length > 0) process.stderr.write(`${warnings.length} warnings:\n${warnings.map(line => `  ${line}`).join('\n')}\n`);
 if (errors.length > 0) {
   process.stderr.write(`${errors.length} errors:\n${errors.map(line => `  ${line}`).join('\n')}\n`);
   process.exit(1);
 }
-process.stdout.write(`Source check passed for ${files.length} package source files with ${warnings.length} warnings.\n`);
+process.stdout.write(`Source check passed for ${files.length} package source files.\n`);

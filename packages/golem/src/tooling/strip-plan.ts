@@ -9,7 +9,8 @@ import { assertNever } from '../assert-never.js';
 import type { DiscriminatorValue, ModelTypeDescriptor, UnionDiscriminator } from '../model-registry.js';
 import { aliased, code, identifier, join, literal, type Code } from './code.js';
 import { rtType } from './rt.js';
-import { patternSchemas, serdeWireDescriptor, type SchemaGraph, type SchemaNode } from './schema-graph.js';
+import { patternSchemas, type SchemaGraph, type SchemaNode } from './schema-graph.js';
+import { serdeWireDescriptor } from './schema.js';
 import { restHoldsInstance, variantPick, type NamedVariants, type ObjectTypeDescriptor, type VariantPick } from './union-conversion.js';
 
 /** The type of a plan, which a generated module imports under this name. */
@@ -61,7 +62,7 @@ export class StripPlans {
   }
 
   private ofDescriptor(descriptor: ModelTypeDescriptor): Code | undefined {
-    const wire = serdeWireDescriptor(descriptor);
+    const wire = serdeWireDescriptor(descriptor.serde);
     if (wire !== undefined && wire !== descriptor) {
       // A TSerde value has the shape of its wire in a decode and its own shape in an encode, so the plan serves the decode only.
       const inner = this.ofDescriptor(wire);
@@ -199,7 +200,7 @@ export class StripPlans {
 
   /** The variants a value of a union may take, with the unions inside it and the named unions it refers to opened, and the JSON type of each. */
   private leaves(descriptor: ModelTypeDescriptor, seen: Set<string>): { readonly descriptor: ModelTypeDescriptor; readonly shape: 'object' | 'array' | 'other' | 'serde' }[] {
-    const wire = serdeWireDescriptor(descriptor);
+    const wire = serdeWireDescriptor(descriptor.serde);
     if (wire !== undefined && wire !== descriptor) return [{ descriptor, shape: 'serde' }];
     switch (descriptor.kind) {
       case 'object': return [{ descriptor, shape: 'object' }];
