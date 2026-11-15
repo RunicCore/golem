@@ -9,7 +9,7 @@ import type { DiscriminatorValue, ModelTypeDescriptor } from '../model-registry.
 import { aliased, code, identifier, join, literal, type Code } from './code.js';
 import { rtType } from './rt.js';
 import { serdeWireDescriptor, type SchemaGraph, type SchemaNode } from './schema-graph.js';
-import { restHoldsInstance, variantPick, type ObjectTypeDescriptor } from './union-conversion.js';
+import { restHoldsInstance, variantPick, type ObjectTypeDescriptor, type VariantPick } from './union-conversion.js';
 
 /** The type of a plan, which a generated module imports under this name. */
 export const STRIP_PLAN = aliased(rtType.serde.StripPlan, '__GolemStripPlan');
@@ -25,8 +25,8 @@ export interface StripPlanEnv {
   readonly extraValues: (descriptor: ObjectTypeDescriptor) => ModelTypeDescriptor | undefined;
   /** Whether the codec of the node is another module's. */
   readonly external: (node: SchemaNode) => boolean;
-  /** The class an encode of the variant selects an instance by: the class of the model, as the generated encoder tests it; undefined when the variant has none. The model of a decode is picked by the same class, so a direction has no class of its own. */
-  readonly classOf: (descriptor: ModelTypeDescriptor) => Code | undefined;
+  /** The class the variant is picked by in the direction, when the generated writer of that direction picks by one; undefined when it has none. */
+  readonly classOf: (descriptor: ModelTypeDescriptor, direction: VariantPick['direction']) => Code | undefined;
   /** The name this module imports the plan of another module's node under; undefined when that module offers none, so the node is left as it is. */
   readonly importedPlan: (node: SchemaNode) => Code | undefined;
   /** The name of the constant that holds the plan of a node this module emits. */
@@ -153,15 +153,14 @@ export class StripPlans {
       const arrays = byType.filter((leaf) => leaf.shape === 'array');
       // A TSerde variant has one shape in the wire and another in the model, so the JSON type of a value does not tell which variant takes it.
       const array = arrays.length === 1 && !byType.some((leaf) => leaf.shape === 'serde') ? this.ofDescriptor(arrays[0]!.descriptor) : undefined;
-      // The pick of each direction is the function that the writers of the union call, so the plan and the writers choose the variant by one rule.
-      // Both directions pick an instance by the class of the model, as the model's own decode and encode do.
-      const pick = (direction: 'decode' | 'encode'): Code => variantPick({
+      // The pick of each direction is built by the function that the writers of the union use, with the class that the codec of that direction tests, so strip and the codec choose the variant by one rule.
+      const pick = (direction: VariantPick['direction']): Code => variantPick({
         property: table.propertyName,
         direction,
-        branches: branches.map(({ variant, values }) => ({ values, className: this.env.classOf(variant) })),
+        branches: branches.map(({ variant, values }) => ({ values, className: this.env.classOf(variant, direction) })),
         hasRest: rest.length > 0,
         restIsInstance: restHoldsInstance(rest),
-        fallback: fallback === undefined ? undefined : { className: this.env.classOf(fallback.variant) },
+        fallback: fallback === undefined ? undefined : { className: this.env.classOf(fallback.variant, direction) },
       });
       // The plan of each branch in the order of the pick, and the plan of the default after them.
       const variants = [...branches, ...(fallback === undefined ? [] : [fallback])].map(({ plan }) => plan ?? code`undefined`);

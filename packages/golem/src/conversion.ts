@@ -401,7 +401,7 @@ function stripInstance(value: object, plan: ObjectStripPlan, depth: number, walk
 }
 
 /** What a call of `stripForEncode` and `stripForDecode` is given besides the value and the plan. */
-export interface StripOptions {
+export interface StripWalkOptions {
   /** The `maxDepth` of the call: `undefined` is the default, `Infinity` turns the bound off. */
   readonly maxDepth: number | undefined;
   /**
@@ -413,12 +413,12 @@ export interface StripOptions {
 }
 
 /** The model value without the keys that a closed object of `plan` does not declare, at every level; see `strip`. */
-export function stripForEncode(value: unknown, plan: StripPlanRef, options: StripOptions): unknown {
+export function stripForEncode(value: unknown, plan: StripPlanRef, options: StripWalkOptions): unknown {
   return strip(value, plan, 'encode', options);
 }
 
 /** The wire value without the keys that a closed object of `plan` does not declare, at every level; see `strip`. */
-export function stripForDecode(value: unknown, plan: StripPlanRef, options: StripOptions): unknown {
+export function stripForDecode(value: unknown, plan: StripPlanRef, options: StripWalkOptions): unknown {
   return strip(value, plan, 'decode', options);
 }
 
@@ -428,7 +428,7 @@ export function stripForDecode(value: unknown, plan: StripPlanRef, options: Stri
  * state unless its model keeps other keys as data, but strips the objects that its declared fields and its data keys hold; it leaves the model value of a TSerde field as it is.
  * A value that nests deeper than `maxDepth` is a cycle or too deep: a cycle among the keys that strip reads is reported as a cycle, else the depth error is thrown.
  */
-function strip(value: unknown, plan: StripPlanRef, direction: StripDirection, { maxDepth, bound }: StripOptions): unknown {
+function strip(value: unknown, plan: StripPlanRef, direction: StripDirection, { maxDepth, bound }: StripWalkOptions): unknown {
   const limit = resolveMaxDepth(maxDepth);
   // A value parsed from JSON text has no cycle.
   const mayHoldCycle = direction === 'encode' || detachedInputDepth === 0;

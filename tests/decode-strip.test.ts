@@ -1,4 +1,4 @@
-// lane: typescript6 The generated strip plans, which hold a typed Map of tag variants, compile with the TypeScript 6 shim
+// lane: typescript6 The generated strip plans and the code that calls them compile with the TypeScript 6 shim
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -113,6 +113,12 @@ test('strip on decode', async (t) => {
     // protects: T-896 a tag value that an object literal cannot hold as a key still has its plan
     assert.deepEqual(m.tagProto.fromWireFormat({ item: { kind: '__proto__', a: 1, junk: 1 } }, strip), { item: { kind: '__proto__', a: 1 } });
     assert.deepEqual(m.tagProto.fromWireFormat({ item: { kind: 'plain', b: 1, junk: 1 } }, strip), { item: { kind: 'plain', b: 1 } });
+  });
+
+  await t.test('a model instance with no tag is decoded and stripped as the default variant, as its tag names it', () => {
+    // protects: T-896 decode picks a variant by its tag only, so strip keeps the fields of the default variant that the codec decodes the value as
+    const cat = new m.CatModel({ child: { name: 'n', extra: 1 } as never });
+    assert.deepEqual(m.classTagged.fromWireFormat({ item: cat }, options(false)), { item: { child: { name: 'n' } } });
   });
 
   await t.test('a tuple with items after its rest strips the rest and the items counted from the end', () => {

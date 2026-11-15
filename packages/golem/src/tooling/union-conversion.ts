@@ -286,7 +286,7 @@ export function withUnionInput(expression: Code, emit: (value: Code) => Code): C
   return onlyInputSlot(emitted) === slot ? expression : bindInput(emitted, slot, expression);
 }
 
-/** A class Code the selector can repeat in its own definition: a name that no slot decides. */
+/** A class Code the pick can repeat in its own definition: a name that no slot decides. */
 function isPlainName(name: Code): boolean {
   return name.parts.every((part) => part.kind === 'text' || part.kind === 'runtime' || part.kind === 'imported');
 }

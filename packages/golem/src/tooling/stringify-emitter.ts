@@ -34,6 +34,7 @@ import {
   type TaggedUnion,
   type UnionConversion,
   type UnionTypeDescriptor,
+  type VariantPick,
 } from './union-conversion.js';
 
 /**
@@ -1220,7 +1221,7 @@ function emitTaggedVariantUnion(
   // A decoder in a function that declares its locals reads the tag once and reuses it in the variant's copy: the variants
   // are decoded with that read known, so they use the local where they would read the tag.
   const tagLocal = dispatch && direction === 'decode' && ctx.decodeLocals && readShape(value) === 'name'
-    && variants.every((variant) => variantClassName(variant, ctx) === undefined)
+    && variants.every((variant) => variantClassName(variant, ctx, 'decode') === undefined)
     ? localCode('tag', ctx.decodeLocals.length)
     : undefined;
   if (tagLocal) ctx.decodeLocals?.push(tagLocal);
@@ -1237,7 +1238,8 @@ function emitTaggedVariantUnion(
     if (options?.unresolved === 'skip') return undefined;
     throw new ObjectUnionDiscriminatorError(variants);
   }
-  const fallbackClass = fallbackVariant && variantClassName(fallbackVariant, ctx, direction !== 'decode' && !ctx.wireIdentity);
+  const pickDirection = direction === 'decode' ? 'decode' : 'encode';
+  const fallbackClass = fallbackVariant && variantClassName(fallbackVariant, ctx, pickDirection);
   return emitDispatch({
     expression: value,
     property: dispatch.property,
@@ -1251,7 +1253,7 @@ function emitTaggedVariantUnion(
     ...(fallbackClass === undefined ? {} : { fallbackClass }),
     branches: variants.map((variant, position) => ({
       values: dispatch.values[position],
-      className: variantClassName(variant, ctx, direction !== 'decode' && !ctx.wireIdentity),
+      className: variantClassName(variant, ctx, pickDirection),
       convert: conversions[position],
       writesTag: (() => {
         const object = objectFor(variant);
@@ -1277,11 +1279,11 @@ function writerLocals(ctx: EmitCtx): number {
  * reference the codec constructs. Only a class the
  * emitting module binds is used, so a guard never looks up a registry.
  */
-function variantClassName(variant: ModelTypeDescriptor, ctx: EmitCtx, byBase = false): Code | undefined {
+function variantClassName(variant: ModelTypeDescriptor, ctx: EmitCtx, direction: VariantPick['direction']): Code | undefined {
   if (variant.kind !== 'reference') return undefined;
   if (shouldConstructNested(variant, ctx)) return ctx.nestedConstruct?.(ctx.graph.nodeFor(variant)?.codecId ?? variant.name, variant.className);
   // A model of this module that a writer receives as an instance is told by its generated base class; a decoder and a wire write see plain data and have none.
-  return byBase && !variant.projection ? ctx.nestedBase?.(ctx.graph.nodeFor(variant)?.name ?? variant.name) : undefined;
+  return direction === 'encode' && !ctx.wireIdentity && !variant.projection ? ctx.nestedBase?.(ctx.graph.nodeFor(variant)?.name ?? variant.name) : undefined;
 }
 
 /**
@@ -2457,8 +2459,8 @@ function stripPlanEnv(ctx: EmitCtx): StripPlanEnv {
     resolveObject: (descriptor) => resolveObjectDescriptor(descriptor, ctx),
     nodeOf: (descriptor) => ctx.graph.nodeFor(descriptor) ?? (descriptor.kind === 'reference' ? ctx.graph.nodeFor(descriptor, codecShortName(descriptor.name)) : undefined),
     extraValues: mapValueDescriptor,
-    // The class that the generated encoder tests an instance against, when it writes a model value.
-    classOf: (descriptor) => variantClassName(descriptor, ctx, !ctx.wireIdentity),
+    // The class that the generated writer of the direction tests a value against, when it picks a model.
+    classOf: (descriptor, direction) => variantClassName(descriptor, ctx, direction),
     external: (node) => isExternalCodecNode(node) || ctx.nestedImportedSerde?.(node.codecId) !== undefined || ctx.nestedImportedSerde?.(node.id) !== undefined,
     importedPlan: (node) => ctx.importedStripPlan?.(node.codecId),
     planName: (node) => stripPlanName(node.codecId),
