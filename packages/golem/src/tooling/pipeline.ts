@@ -17,7 +17,7 @@ import { validateModelManifest } from './model-manifest-core.js';
 import { routeHooks } from './extension-hooks.js';
 import type { JobHooks } from './extension-hooks.js';
 import { ExtensionFaultError, loadRewriteParticipants } from './rewrite-participant.js';
-import type { GolemArtifact, GolemDiagnostic, GolemResult, GeneratorSession } from './generator-core.js';
+import type { GolemArtifact, GolemDiagnostic, GolemResult, GeneratorSession, SessionKey } from './generator-core.js';
 import { selectedTypeScript } from './typescript-selection.js';
 import { TypeScriptNotInstalledError } from './typescript-version.js';
 
@@ -60,6 +60,15 @@ export interface PipelineOptions {
 /** A retained resource may observe host-detected input changes. */
 type SessionResource = Disposable & { inputsChanged?(filenames: readonly string[]): void };
 
+/** The resource under `key`, made by `create` on the first request. The key types it, so the one kind of resource that a key holds is the kind it returns. */
+function resourceUnder<Resource extends Disposable>(resources: Map<string, SessionResource>, key: SessionKey<Resource>, create: () => Resource): Resource {
+  const held = resources.get(key);
+  if (held) return held as Resource;
+  const created = create();
+  resources.set(key, created);
+  return created;
+}
+
 function disposeAll(resources: Iterable<Disposable>): void {
   const errors: unknown[] = [];
   for (const resource of resources) {
@@ -82,7 +91,7 @@ export class GeneratorSessionResources implements Disposable, Pick<GeneratorSess
   private readonly hostRequested = new Set<string>();
 
   /** The resource under `key`, created by its first request and kept while a requester of it remains; `jobId` names the job that asks. */
-  share<Resource extends Disposable>(key: string, create: () => Resource, jobId?: string): Resource {
+  share<Resource extends Disposable>(key: SessionKey<Resource>, create: () => Resource, jobId?: string): Resource {
     if (jobId === undefined) {
       this.hostRequested.add(key);
     } else {
@@ -90,21 +99,17 @@ export class GeneratorSessionResources implements Disposable, Pick<GeneratorSess
       if (!jobs) this.sharedBy.set(key, jobs = new Set());
       jobs.add(jobId);
     }
-    let resource = this.shared.get(key);
-    if (!resource) this.shared.set(key, resource = create());
-    return resource as Resource;
+    return resourceUnder(this.shared, key, create);
   }
 
   /** The session a job's provider sees; `used` collects the keys it retains in this run. */
   forJob(jobId: string, used: Set<string>): GeneratorSession {
     return {
-      retain: <Resource extends Disposable>(key: string, create: () => Resource): Resource => {
+      retain: <Resource extends Disposable>(key: SessionKey<Resource>, create: () => Resource): Resource => {
         let resources = this.jobs.get(jobId);
         if (!resources) this.jobs.set(jobId, resources = new Map());
-        let resource = resources.get(key);
-        if (!resource) resources.set(key, resource = create());
         used.add(key);
-        return resource as Resource;
+        return resourceUnder(resources, key, create);
       },
       share: (key, create) => this.share(key, create, jobId),
     };

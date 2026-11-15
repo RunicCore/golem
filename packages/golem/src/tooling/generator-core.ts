@@ -181,6 +181,16 @@ export interface GolemResult {
 /** Report a local input before attempting to read or resolve it. */
 export type InputObserver = (absolutePath: string) => void;
 
+declare const sessionResourceType: unique symbol;
+
+/** The name of a session resource, typed by the resource it holds: a request under the key reads back the kind of resource that the first request created. Make one with `sessionKey`. */
+export type SessionKey<Resource extends Disposable> = string & { readonly [sessionResourceType]: Resource };
+
+/** The key that names a resource of type `Resource` in a `GeneratorSession`. Make it once, in a constant, and request every resource of that name with it. */
+export function sessionKey<Resource extends Disposable>(name: string): SessionKey<Resource> {
+  return name as SessionKey<Resource>;
+}
+
 /**
  * Resources a provider keeps across the generation runs of one CLI pipeline
  * or watch session, such as a TypeScript compiler process. The session owner
@@ -189,12 +199,12 @@ export type InputObserver = (absolutePath: string) => void;
  * host saw change before each run.
  */
 export interface GeneratorSession {
-  retain<Resource extends Disposable>(key: string, create: () => Resource): Resource;
+  retain<Resource extends Disposable>(key: SessionKey<Resource>, create: () => Resource): Resource;
   /**
    * A resource that every job and core's rewrite share for the run or watch session, such as the one TypeScript program session.
    * The first request under `key` creates it; it is not tied to a job, so no job's removal closes it.
    */
-  share<Resource extends Disposable>(key: string, create: () => Resource): Resource;
+  share<Resource extends Disposable>(key: SessionKey<Resource>, create: () => Resource): Resource;
 }
 
 /** What a job receives from the host on top of its own options: a way to report each local input it reads, and the resources it keeps across runs. */

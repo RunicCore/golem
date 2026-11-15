@@ -242,10 +242,13 @@ interface GolemDiagnostic {
 
 type InputObserver = (absolutePath: string) => void;
 
+/** The name of a session resource; its type is the resource that a request under it returns. Make one with `sessionKey<Resource>(name)`. */
+type SessionKey<Resource extends Disposable> = string & { readonly [brand]: Resource };
+
 interface GeneratorSession {
-  retain<Resource extends Disposable>(key: string, create: () => Resource): Resource;
+  retain<Resource extends Disposable>(key: SessionKey<Resource>, create: () => Resource): Resource;
   /** A resource that every job and the rewrite share for the run, such as one compiler session. The first request under `key` creates it. */
-  share<Resource extends Disposable>(key: string, create: () => Resource): Resource;
+  share<Resource extends Disposable>(key: SessionKey<Resource>, create: () => Resource): Resource;
 }
 
 interface GolemProvider<Context> {
@@ -286,6 +289,7 @@ The subpath is the extension API. It exports the contracts above and the types `
 | Export | Signature | Behavior |
 | --- | --- | --- |
 | `stableJson` | `(value): string` | Indented JSON text with the keys sorted at every depth. |
+| `sessionKey` | `<Resource extends Disposable>(name: string): SessionKey<Resource>` | The key that names a session resource of type `Resource`. Make it once, in a constant, and pass it to `retain` and `share`. |
 | `stableValue` | `(value): unknown` | A copy of the value with sorted keys. |
 | `compareText` | `(left, right): number` | Orders text by UTF-16 code unit, so output does not depend on the locale. |
 | `isInsideDirectory` | `(directory, filename): boolean` | `true` when `filename` is `directory` or lies inside it. |

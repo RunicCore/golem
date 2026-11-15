@@ -40,13 +40,10 @@ interface Finding {
   readonly text: string;
 }
 
-/**
- * The two source checks start as warnings, since the sites that exist now are fixed by later changes. A check that has no site left
- * becomes an error here.
- */
+/** The two source checks fail the run. */
 const SOURCE_CHECKS = {
-  nonNull: { severity: 'warning', because: 'narrow with a guard, or change the type so the value cannot be missing' },
-  switchKinds: { severity: 'warning', because: 'list each kind and end with `default: return assertNever(value)`' },
+  nonNull: { severity: 'error', because: 'narrow with a guard, or change the type so the value cannot be missing' },
+  switchKinds: { severity: 'error', because: 'list each kind and end with `default: return assertNever(value)`' },
 } as const satisfies Record<string, { readonly severity: Severity; readonly because: string }>;
 
 const LITERAL_TYPES = ts.TypeFlags.StringLiteral | ts.TypeFlags.NumberLiteral | ts.TypeFlags.BooleanLiteral | ts.TypeFlags.Undefined | ts.TypeFlags.Null;

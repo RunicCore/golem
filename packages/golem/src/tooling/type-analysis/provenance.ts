@@ -132,7 +132,7 @@ function validateManifestProfile(
 ): void {
   const advertised = manifest.profile;
   const expected = { validation: profile.validation, allowAny: profile.allowAny ?? false, unknownFormats: profile.unknownFormats };
-  const differing = (Object.keys(expected) as (keyof typeof expected)[])
+  const differing = (['validation', 'allowAny', 'unknownFormats'] as const)
     .filter((key) => advertised[key] !== expected[key])
     .map((key) => `${key}: manifest ${advertised[key] ?? 'not recorded'}, project ${expected[key]}`);
   // A package without a record is not used; its settings are equal when their stable JSON is.

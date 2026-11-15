@@ -10,10 +10,12 @@ export {
   parseYamlFile,
   resolveProfile,
   stableJson,
+  sessionKey,
   stableValue,
   YamlFileError,
 } from './generator-core.js';
 export type {
+  SessionKey,
   CodecsHostValue,
   GeneratorHostContext,
   GeneratorSession,

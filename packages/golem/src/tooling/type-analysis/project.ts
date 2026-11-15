@@ -4,7 +4,7 @@ import { basename, dirname, isAbsolute, join, parse, relative, resolve, sep } fr
 import * as ts from '../typescript-ns.js';
 import { assertNotSolutionTsconfig } from '../typescript-config.js';
 import { readManifest } from './package-specifier.js';
-import { displayPath, GolemDiagnosticSeverity, canonicalPath, compareText, discoverSources, hasErrorCode, isInsideDirectory, parseYamlFile, suffixPattern, YamlFileError, type GeneratorSession, type GolemDiagnostic, type InputObserver } from '../generator-core.js';
+import { displayPath, GolemDiagnosticSeverity, canonicalPath, compareText, discoverSources, hasErrorCode, isInsideDirectory, parseYamlFile, sessionKey, suffixPattern, YamlFileError, type GeneratorSession, type GolemDiagnostic, type InputObserver } from '../generator-core.js';
 import { canonicalFilename, inNodeModules, portableRelativeFilename } from './path-identity.js';
 import { ROOT_KEYS } from '../editor-schema.js';
 
@@ -445,6 +445,8 @@ function openProject(
   return { session, parsed: parsedProject(root, sources, session, onInput, configFile) };
 }
 
+const PROGRAM_SESSION = sessionKey<ts.ProgramSession>('program');
+
 /**
  * The program session of the run: core owns one, and every job and the rewrite request the same one, so a program opened after
  * a job wrote its files holds them. The session works from the folder of the project it is first requested for.
@@ -452,7 +454,7 @@ function openProject(
 export function retainedProgramSession(session: Pick<GeneratorSession, 'share'>, root: string): ts.ProgramSession;
 export function retainedProgramSession(session: Pick<GeneratorSession, 'share'> | undefined, root: string): ts.ProgramSession | undefined;
 export function retainedProgramSession(session: Pick<GeneratorSession, 'share'> | undefined, root: string): ts.ProgramSession | undefined {
-  return session?.share('program', () => new ts.ProgramSession({ cwd: root }));
+  return session?.share(PROGRAM_SESSION, () => new ts.ProgramSession({ cwd: root }));
 }
 
 /** The tsconfig a job's programs open with: the referenced project that holds the sources of a solution tsconfig, else the tsconfig itself. */

@@ -9,6 +9,7 @@
 
 export type JsonSchema = boolean | Readonly<Record<string, unknown>>;
 
+import { assertNever } from '../assert-never.js';
 import type { ConstraintSchemaValue, ModelConstraint, ModelTypeDescriptor } from '../model-registry.js';
 import {
   GENERATED_MODEL_SCHEMA_REF_PREFIX,
@@ -118,8 +119,27 @@ export function constraintSchemaValues(constraint: ModelConstraint): readonly un
       return constraint.schemas;
     case 'ifThenElse':
       return [constraint.if, ...(constraint.then === undefined ? [] : [constraint.then]), ...(constraint.else === undefined ? [] : [constraint.else])];
-    default:
+    case 'dependentRequired':
+    case 'enum':
+    case 'exclusiveMaximum':
+    case 'exclusiveMinimum':
+    case 'format':
+    case 'integer':
+    case 'maxContains':
+    case 'maxItems':
+    case 'maxLength':
+    case 'maxProperties':
+    case 'maximum':
+    case 'minContains':
+    case 'minItems':
+    case 'minLength':
+    case 'minProperties':
+    case 'minimum':
+    case 'multipleOf':
+    case 'pattern':
+    case 'uniqueItems':
       return [];
+    default: return assertNever(constraint);
   }
 }
 
@@ -150,8 +170,27 @@ export function mapConstraintSchemaValues(
         ...(constraint.then === undefined ? {} : { then: map(constraint.then) }),
         ...(constraint.else === undefined ? {} : { else: map(constraint.else) }),
       };
-    default:
+    case 'dependentRequired':
+    case 'enum':
+    case 'exclusiveMaximum':
+    case 'exclusiveMinimum':
+    case 'format':
+    case 'integer':
+    case 'maxContains':
+    case 'maxItems':
+    case 'maxLength':
+    case 'maxProperties':
+    case 'maximum':
+    case 'minContains':
+    case 'minItems':
+    case 'minLength':
+    case 'minProperties':
+    case 'minimum':
+    case 'multipleOf':
+    case 'pattern':
+    case 'uniqueItems':
       return constraint;
+    default: return assertNever(constraint);
   }
 }
 

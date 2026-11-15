@@ -804,10 +804,7 @@ export function descriptorNeedsConversion(
   lookup?: ProjectionBodyLookup,
   visited: Set<string> = new Set(),
 ): boolean {
-  const tags = descriptor as ModelTypeDescriptor & {
-    readonly serde?: { readonly id: string };
-  };
-  if (tags.serde || descriptor.kind === 'generated-model') {
+  if (descriptor.serde || descriptor.kind === 'generated-model') {
     return true;
   }
   const needs = (held: ModelTypeDescriptor): boolean => descriptorNeedsConversion(held, lookup, visited);
