@@ -5,7 +5,7 @@ import path from 'node:path';
 /** The names of the two contracts that core owns, so a plan entry declares them without importing the rest of golem. */
 export { CODECS_HOST, MODEL_BOUNDARY } from './job-facts.js';
 
-export { isRecord, recordOrUndefined } from '../record.js';
+export { isRecord } from '../record.js';
 
 /** `value` as a string with text in it; any other value throws a `TypeError` that names `label`. */
 export function nonempty(value: unknown, label: string): string {

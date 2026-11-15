@@ -43,7 +43,7 @@ interface GraphDefinitionTarget {
 
 /** A copy of an object schema without its own `key`; any other value as it is. */
 function withoutKey(schema: unknown, key: string): unknown {
-  if (schema === null || typeof schema !== 'object' || Array.isArray(schema)) return schema;
+  if (!isRecord(schema)) return schema;
   return Object.fromEntries(Object.entries(schema).filter(([name]) => name !== key));
 }
 
@@ -52,9 +52,9 @@ function ownedGraphDefinitions(
   preferredDefinitions: ReadonlyMap<string, GraphDefinitionTarget> | undefined,
 ): Map<string, GraphDefinitionTarget> {
   const owned = new Map<string, GraphDefinitionTarget>();
-  if (!preferredDefinitions || value === null || typeof value !== 'object' || Array.isArray(value)) return owned;
+  if (!preferredDefinitions || !isRecord(value)) return owned;
   const definitions = Reflect.get(value, '$defs');
-  if (definitions === null || typeof definitions !== 'object' || Array.isArray(definitions)) return owned;
+  if (!isRecord(definitions)) return owned;
   for (const [name, definition] of Object.entries(definitions)) {
     const target = preferredDefinitions.get(name);
     if (target
@@ -72,9 +72,9 @@ function schemaIdentityView(
   preferredDefinitions: ReadonlyMap<string, GraphDefinitionTarget> | undefined,
 ): object | boolean {
   const owned = ownedGraphDefinitions(value, preferredDefinitions);
-  if (owned.size === 0 || value === null || typeof value !== 'object' || Array.isArray(value)) return value;
+  if (owned.size === 0 || !isRecord(value)) return value;
   const definitions = Reflect.get(value, '$defs');
-  if (definitions === null || typeof definitions !== 'object' || Array.isArray(definitions)) return value;
+  if (!isRecord(definitions)) return value;
   const normalizedDefinitions = Object.create(null) as Record<string, unknown>;
   for (const [name, definition] of Object.entries(definitions)) {
     const target = owned.get(name);
@@ -97,7 +97,7 @@ export function localDefinitionName(reference: string): string | undefined {
 
 function stableSchema(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(stableSchema).join(',')}]`;
-  if (value === null || typeof value !== 'object') return JSON.stringify(value) ?? 'undefined';
+  if (!isRecord(value)) return JSON.stringify(value) ?? 'undefined';
   return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${stableSchema(Reflect.get(value, key))}`).join(',')}}`;
 }
 
@@ -304,8 +304,8 @@ export function buildCodecValidationPlan(
 
   /** A `golemModelInstance` value with each model name replaced by its codec id, which a class registers under: the generated check compares ids exactly. A name no model answers to stays. */
   const withInstanceCodecIds = (instance: unknown, preferredAliases: Map<string, Set<string>> | undefined): unknown => {
-    if (instance === null || typeof instance !== 'object' || Array.isArray(instance)) return instance;
-    const { of, among } = instance as { of?: unknown; among?: unknown };
+    if (!isRecord(instance)) return instance;
+    const { of, among } = instance;
     const idOf = (name: unknown): unknown => (typeof name === 'string' ? codecIdOf(name, preferredAliases, `the ${MODEL_INSTANCE_KEYWORD} model name`) ?? name : name);
     return { ...instance, ...(of === undefined ? {} : { of: idOf(of) }), ...(Array.isArray(among) ? { among: among.map(idOf) } : {}) };
   };
@@ -321,7 +321,7 @@ export function buildCodecValidationPlan(
     const active = new WeakSet<object>();
     const visit = (current: unknown, root = false, localReferences = true): unknown => {
       if (Array.isArray(current)) return current.map(item => visit(item, false, localReferences));
-      if (current === null || typeof current !== 'object') return current;
+      if (!isRecord(current)) return current;
       if (active.has(current)) throw new TypeError('Cyclic schema data cannot be compiled into validators.');
       active.add(current);
       try {
@@ -397,7 +397,7 @@ export function buildCodecValidationPlan(
 }
 
 function withoutOwnId(schema: unknown, id: string): unknown {
-  return typeof schema === 'object' && schema !== null && Reflect.get(schema, '$id') === id ? withoutKey(schema, '$id') : schema;
+  return isRecord(schema) && schema.$id === id ? withoutKey(schema, '$id') : schema;
 }
 
 export interface PlanValidatorsOptions {
