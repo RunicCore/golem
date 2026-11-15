@@ -8,7 +8,6 @@ import { MODEL_FIELDS_KEY } from '../schema-keywords.js';
 import { createHash } from 'node:crypto';
 import { bindInput, code, helperName, identifier, inputOf, inputSlot, join, literal, localCode, readShape, render, sameCode, selfPlacedHelper, type Code, type Helper, type InputSlot } from './code.js';
 import { rt } from './rt.js';
-import type { RichDescriptor } from './type-analysis/graph.js';
 import { serdeWireDescriptor } from './schema-graph.js';
 import {
   emitArrayItems,
@@ -499,7 +498,7 @@ function isObjectVariant(variant: ModelTypeDescriptor, named: NamedVariants): bo
 
 /** A class value (a TSerde class or bigint) whose JSON form is a scalar, so the wire value tells it from an object or an array. */
 function isClassValueOfScalar(descriptor: ModelTypeDescriptor): boolean {
-  const wire = (descriptor as RichDescriptor).serde?.wireDescriptor;
+  const wire = serdeWireDescriptor(descriptor);
   return descriptor.kind === 'class-value' && wire !== undefined && isScalarishDescriptor(wire);
 }
 
