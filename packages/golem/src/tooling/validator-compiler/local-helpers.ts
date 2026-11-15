@@ -24,14 +24,14 @@ const HELPERS: Readonly<Record<LocalHelper, Helper>> = {
   // The JSON view of the keys: a key is present when it is own, enumerable and not `undefined`, as `JSON.stringify` writes
   // it. A model's optional field may be set to `undefined` and JSON has no such value. Program state of a model instance
   // (see `instanceFieldsCode`) is no key of the model, and its value is never read.
-  definedKeys: localHelper('definedKeys', 5, self => code`const ${self} = value => { const fields = ${localName('instanceFields')}(value); return Object.keys(value).filter(key => (fields === undefined || fields.includes(key)) && value[key] !== undefined); };`),
+  definedKeys: localHelper('definedKeys', 5, self => code`const ${self} = value => { const fields = ${localName('instanceFields')}(value); return Object.keys(value).filter(key => !(${stateTest(FIELDS, FIELDS, KEY)}) && value[key] !== undefined); };`),
   // The failure of a fast check whose key test left the values unread reads them as the full validator does, then fails.
-  readAll: localHelper('readAll', 5, self => code`function ${self}(value, keys) { const fields = ${localName('instanceFields')}(value); for (const key of keys) if (fields === undefined || fields.includes(key)) value[key]; }`),
+  readAll: localHelper('readAll', 5, self => code`function ${self}(value, keys) { const fields = ${localName('instanceFields')}(value); for (const key of keys) if (!(${stateTest(FIELDS, FIELDS, KEY)})) value[key]; }`),
   isPresent: localHelper('isPresent', 2, self => code`const ${self} = (value, key) => ${ownEnumerableCode(code`value`, code`key`)} && value[key] !== undefined;`),
   isObject: localHelper('isObject', 3, self => code`const ${self} = value => typeof value === 'object' && value !== null && !Array.isArray(value);`),
   // An own key that the value's own model does not declare is program state, never an unknown key (see `instanceFieldsCode`).
   instanceFields: localHelper('instanceFields', 4, () => instanceFieldsCode()),
-  isInstanceState: localHelper('isInstanceState', 5, self => code`function ${self}(value, key) { const fields = ${localName('instanceFields')}(value); return fields !== undefined && !fields.includes(key); }`),
+  isInstanceState: localHelper('isInstanceState', 5, self => code`function ${self}(value, key) { const fields = ${localName('instanceFields')}(value); return ${stateTest(FIELDS, FIELDS, KEY)}; }`),
   // The fast form of `isMultipleOf` for a decimal divisor the compiler wrote as `units / scale` (see `scaledDivisor`). A value
   // is a multiple when it is `whole / scale` for a whole number below 2 ** 52 (4503599627370496) that `units` divides.
   // `whole / scale` is the double nearest to the decimal `whole * 10 ** -d`, and at that size no other decimal with d digits
@@ -103,6 +103,19 @@ export function scaledDivisor(divisor: number): { readonly units: number; readon
   return { units, scale: Number(`1e${decimals}`) };
 }
 
+/** The locals that the helpers above name in their definitions. */
+const FIELDS = code`fields`;
+const KEY = code`key`;
+
+/**
+ * The one rule of program state: `key` is program state when `read`, the names of the value's own model (`false` or
+ * `undefined` for a value with none), is set and `fields`, the same names, does not hold it. Every generated check of a
+ * key calls it; `presence.ts` `isStateKey` is the same rule for the runtime.
+ */
+function stateTest(read: Code, fields: Code, key: Code): Code {
+  return code`${read} && !${fields}.includes(${key})`;
+}
+
 /**
  * True when `key` is program state, with `fields` read on first use: a local declared with `let`, `undefined` until a
  * key needs it, then the names or `false` for a value without program state. The lookup runs once for the object, also
@@ -110,5 +123,5 @@ export function scaledDivisor(divisor: number): { readonly units: number; readon
  * does not walk its prototypes.
  */
 export function lazyStateTest(fields: Code, value: Code, key: Code, instanceFields: Code): Code {
-  return code`(${fields} === undefined ? (${fields} = ${instanceFields}(${value}) ?? false) : ${fields}) !== false && !${fields}.includes(${key})`;
+  return stateTest(code`(${fields} === undefined ? (${fields} = ${instanceFields}(${value}) ?? false) : ${fields})`, fields, key);
 }

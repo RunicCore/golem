@@ -1,6 +1,6 @@
 import { isDate, isDateTime, isTime } from './rfc3339.js';
 import type { SchemaIssue } from './issue-messages.js';
-import { presentValue } from './presence.js';
+import { instanceFields, isStateKey, presentValue } from './presence.js';
 export type { SchemaIssue, SchemaIssueDetail } from './issue-messages.js';
 
 /**
@@ -64,17 +64,20 @@ export function jsonEqual(left: unknown, right: unknown): boolean {
     }
     return true;
   }
-  // Counts the keys of each side inline, so a comparison allocates no key list.
+  // Counts the keys of each side inline, so a comparison allocates no key list. Program state of a model instance is no key.
+  const leftFields = instanceFields(left);
+  const rightFields = instanceFields(right);
   let count = 0;
   for (const key in left) {
+    if (isStateKey(leftFields, key)) continue;
     const value = presentValue(left, key);
     if (value === undefined) continue;
-    const other = presentValue(right, key);
+    const other = isStateKey(rightFields, key) ? undefined : presentValue(right, key);
     if (other === undefined || !jsonEqual(value, other)) return false;
     count++;
   }
   for (const key in right) {
-    if (presentValue(right, key) !== undefined) count--;
+    if (!isStateKey(rightFields, key) && presentValue(right, key) !== undefined) count--;
   }
   return count === 0;
 }
@@ -183,10 +186,10 @@ class KeyFrame {
   readonly names: readonly string[];
   readonly size: number;
 
-  /** `names` are the sorted own enumerable names of an object that is no array. */
+  /** `names` are the sorted own enumerable names of an object that is no array, without its program state. */
   constructor(readonly value: object) {
     this.list = Array.isArray(value) ? value : undefined;
-    this.names = this.list === undefined ? Object.keys(value).sort() : NO_NAMES;
+    this.names = this.list === undefined ? dataNames(value).sort() : NO_NAMES;
     this.text = this.list === undefined ? '{' : '[';
     this.size = this.list === undefined ? this.names.length : this.list.length;
   }
@@ -204,6 +207,13 @@ class KeyFrame {
     this.text += `${this.label}${reference},`;
     if (reference.charCodeAt(0) === TRUNCATED) this.truncated = true;
   }
+}
+
+/** The own enumerable names of `value`, without the program state of a model instance. */
+function dataNames(value: object): string[] {
+  const names = Object.keys(value);
+  const fields = instanceFields(value);
+  return fields === undefined ? names : names.filter(name => !isStateKey(fields, name));
 }
 
 /**

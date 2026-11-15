@@ -29,6 +29,11 @@ export function instanceFields(value: object): readonly string[] | undefined {
   return Array.isArray(declared) ? declared as readonly string[] : undefined;
 }
 
+/** True when `key` is program state of a value whose own model names are `fields` (`undefined`: the value holds none). The code twin is `stateTest` (tooling/validator-compiler/local-helpers.ts). */
+export function isStateKey(fields: readonly string[] | undefined, key: string): boolean {
+  return fields !== undefined && !fields.includes(key);
+}
+
 /**
  * `value` as data to write: the value itself, or a copy in which every golem model instance, at any depth in arrays and
  * objects, keeps only the own keys that its model declares. An own key outside them is program state, which no codec
@@ -59,7 +64,7 @@ function withoutInstanceStateAt(value: object, ancestors: Set<object>): object {
   ancestors.add(value);
   let copy: Record<string, unknown> | undefined = declared === undefined
     ? undefined
-    : Object.fromEntries(Object.entries(value).filter(([key]) => declared.includes(key)));
+    : Object.fromEntries(Object.entries(value).filter(([key]) => !isStateKey(declared, key)));
   for (const [key, child] of Object.entries(copy ?? value)) {
     if (child === null || typeof child !== 'object') continue;
     const written = withoutInstanceStateAt(child, ancestors);

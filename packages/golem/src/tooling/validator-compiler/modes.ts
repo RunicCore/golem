@@ -212,10 +212,10 @@ function fastKeyTest(writer: FunctionWriter, { check, value, captured, reads }: 
   const state = (name: Code): Code => lazyStateTest(fields, value, name, localName('instanceFields'));
   const named = new Set(check.properties.map(property => property.key));
   const capturedKeys = new Set(captured.map(([name]) => name));
-  // A key counts when its value is not `undefined` and it is no program state; a key nothing else reads is read on its own.
-  const counted = (read: Code, name: Code): Code => (count === undefined ? code` ${read};` : code` if (${read} !== undefined && !(${state(name)})) ${count}++;`);
+  // A key counts when its value is not `undefined`; a key nothing else reads is read on its own.
+  const counted = (read: Code): Code => (count === undefined ? code` ${read};` : code` if (${read} !== undefined) ${count}++;`);
   // A key that the schema names is read as the full validator reads it, also when it is program state; any other program state is never read.
-  const cases = captured.filter(([name]) => additional === undefined || named.has(name)).map(([name, local]) => code`case ${literalCode(name)}: ${local} = ${value}[${literalCode(name)}];${count === undefined ? code`` : counted(local, literalCode(name))} break;`);
+  const cases = captured.filter(([name]) => additional === undefined || named.has(name)).map(([name, local]) => code`case ${literalCode(name)}: ${local} = ${value}[${literalCode(name)}];${count === undefined ? code`` : code` if (${local} !== undefined && !(${state(literalCode(name))})) ${count}++;`} break;`);
   const bare = [...named].filter(name => !capturedKeys.has(name));
   // A required or dependent key that `properties` does not name is still additional: `default` captures it.
   const unnamed = additional === undefined ? [] : captured.filter(([name]) => !named.has(name));
@@ -228,7 +228,7 @@ function fastKeyTest(writer: FunctionWriter, { check, value, captured, reads }: 
   writer.open(code`for (const ${key} of ${list ?? code`Object.keys(${value})`})`);
   writer.open(code`switch (${key})`);
   for (const entry of cases) writer.line(entry);
-  if (bare.length > 0) writer.line(code`${join(bare.map(name => code`case ${literalCode(name)}:`), code` `)} if (${state(key)}) break;${counted(code`${value}[${key}]`, key)} break;`);
+  if (bare.length > 0) writer.line(code`${join(bare.map(name => code`case ${literalCode(name)}:`), code` `)} if (${state(key)}) break;${counted(code`${value}[${key}]`)} break;`);
   writer.open(code`default:`);
   writer.line(code`if (${join([state(key), ...unnamed.map(([name]) => code`${key} !== ${literalCode(name)}`)], code` && `)}) continue;`);
   writer.line(code`const ${item} = ${value}[${key}];`);

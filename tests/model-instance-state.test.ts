@@ -55,8 +55,14 @@ const COUNTED_MAX_NAMED = { type: 'object', properties: { title: { type: 'string
 const COUNTED_MIN = { type: 'object', properties: { title: { type: 'string' }, note: { type: 'string' } }, minProperties: 2 };
 const PATTERNED = { type: 'object', properties: { title: { type: 'string' } }, patternProperties: { '^x': { type: 'number' } } };
 const VALUED = { type: 'object', properties: { title: { type: 'string' } }, additionalProperties: { type: 'number' } };
+// A named key that no check reads (`BARE`), a pattern with no declared key (`PATTERN_ONLY`), and a model instance inside a const, an enum or a list that must be unique.
+const BARE = { type: 'object', properties: { note: {} }, maxProperties: 1 };
+const PATTERN_ONLY = { type: 'object', patternProperties: { '^x': { type: 'number' } } };
+const CONST_MODEL = { const: { title: 't' } };
+const ENUM_MODEL = { enum: [{ title: 'u' }, { title: 't' }] };
+const UNIQUE_MODELS = { type: 'array', uniqueItems: true };
 const compiled = compileValidatorModule({
-  roots: { closed: CLOSED, evaluated: EVALUATED, evaluatedValued: EVALUATED_VALUED, tagged: TAGGED, named: NAMED, countedMax: COUNTED_MAX, countedMaxNamed: COUNTED_MAX_NAMED, countedMin: COUNTED_MIN, patterned: PATTERNED, valued: VALUED },
+  roots: { bare: BARE, patternOnly: PATTERN_ONLY, constModel: CONST_MODEL, enumModel: ENUM_MODEL, uniqueModels: UNIQUE_MODELS, closed: CLOSED, evaluated: EVALUATED, evaluatedValued: EVALUATED_VALUED, tagged: TAGGED, named: NAMED, countedMax: COUNTED_MAX, countedMaxNamed: COUNTED_MAX_NAMED, countedMin: COUNTED_MIN, patterned: PATTERNED, valued: VALUED },
   fastPath: true,
 });
 
@@ -132,18 +138,34 @@ for (const { root, fast, rows } of PLACES) {
   }
 }
 
-/** An instance of `Model` with the own key `cache`, a getter that counts its runs and throws. */
-function withThrowingState(Model: new () => object, runs: { count: number }): object {
-  return Object.defineProperty(new Model(), 'cache', { enumerable: true, get() { runs.count++; throw new RangeError('program state was read'); } });
+/** An instance of `Model` with the own key `key`, a getter that counts its runs and throws. */
+function withThrowingState(Model: new () => object, key: string, runs: { count: number }): object {
+  return Object.defineProperty(new Model(), key, { enumerable: true, get() { runs.count++; throw new RangeError('program state was read'); } });
 }
 
-for (const [root, Model] of [['closed', Task], ['evaluated', Task], ['evaluatedValued', Task], ['named', Task], ['countedMax', Task], ['patterned', Task], ['valued', Task], ['tagged', Circle]] as const) {
+const THROWING: readonly { readonly root: string; readonly fast: boolean; readonly build: (runs: { count: number }) => unknown }[] = [
+  { root: 'closed', fast: true, build: runs => withThrowingState(Task, 'cache', runs) },
+  { root: 'evaluated', fast: false, build: runs => withThrowingState(Task, 'cache', runs) },
+  { root: 'evaluatedValued', fast: false, build: runs => withThrowingState(Task, 'cache', runs) },
+  { root: 'named', fast: true, build: runs => withThrowingState(Task, 'cache', runs) },
+  { root: 'countedMax', fast: true, build: runs => withThrowingState(Task, 'cache', runs) },
+  { root: 'patterned', fast: true, build: runs => withThrowingState(Task, 'cache', runs) },
+  { root: 'valued', fast: true, build: runs => withThrowingState(Task, 'cache', runs) },
+  { root: 'tagged', fast: true, build: runs => withThrowingState(Circle, 'cache', runs) },
+  { root: 'bare', fast: true, build: runs => withThrowingState(Task, 'note', runs) },
+  { root: 'patternOnly', fast: true, build: runs => withThrowingState(Task, 'cache', runs) },
+  { root: 'constModel', fast: true, build: runs => withThrowingState(Task, 'cache', runs) },
+  { root: 'enumModel', fast: true, build: runs => withThrowingState(Task, 'cache', runs) },
+  { root: 'uniqueModels', fast: true, build: runs => [withThrowingState(Task, 'cache', runs), Object.assign(withThrowingState(Task, 'cache', runs), { title: 'u' })] },
+];
+
+for (const { root, fast, build } of THROWING) {
   test(`the ${root} check never runs a getter that declares program state`, async () => {
     // protects: T-912 a throwing getter of program state never runs while a model validates
     const module = await compiled;
     const runs = { count: 0 };
-    assert.deepEqual(module.byRoot[root](withThrowingState(Model, runs), false), [], 'the full validator');
-    assert.equal(module.fastByRoot[root]?.(withThrowingState(Model, runs)) ?? true, true, 'the fast check');
+    assert.deepEqual(module.byRoot[root](build(runs), false), [], 'the full validator');
+    assert.equal(module.fastByRoot[root]?.(build(runs)), fast ? true : undefined, 'the fast check');
     assert.equal(runs.count, 0);
   });
 }
