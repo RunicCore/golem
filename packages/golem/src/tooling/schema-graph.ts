@@ -63,6 +63,12 @@ export function serdeWireDescriptor(descriptor: ModelTypeDescriptor): ModelTypeD
   return serde.wireDescriptor ?? serde.wire;
 }
 
+/** Whether a node holds an array or tuple (a recursive array alias is a named node, not written inline). A node that holds anything else, or no node at all, does not. */
+export function nodeHoldsSequence(node: SchemaNode | undefined): boolean {
+  const body = node?.descriptor;
+  return body?.kind === 'array' || body?.kind === 'tuple';
+}
+
 /**
  * The `patternProperties` of an object: each pattern with the descriptor of its schema. The schema of a pattern is a descriptor, or a
  * boolean or a keyword object that holds no model, which has none here.

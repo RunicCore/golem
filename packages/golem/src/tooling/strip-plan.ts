@@ -9,7 +9,7 @@ import type { DiscriminatorValue, ModelTypeDescriptor } from '../model-registry.
 import { aliased, code, identifier, join, literal, type Code } from './code.js';
 import { rtType } from './rt.js';
 import { patternSchemas, serdeWireDescriptor, type SchemaGraph, type SchemaNode } from './schema-graph.js';
-import { restHoldsInstance, variantPick, type ObjectTypeDescriptor, type VariantPick } from './union-conversion.js';
+import { restHoldsInstance, variantPick, type NamedVariants, type ObjectTypeDescriptor, type VariantPick } from './union-conversion.js';
 
 /** The type of a plan, which a generated module imports under this name. */
 export const STRIP_PLAN = aliased(rtType.serde.StripPlan, '__GolemStripPlan');
@@ -25,6 +25,8 @@ export interface StripPlanEnv {
   readonly extraValues: (descriptor: ObjectTypeDescriptor) => ModelTypeDescriptor | undefined;
   /** Whether the codec of the node is another module's. */
   readonly external: (node: SchemaNode) => boolean;
+  /** Whether the node of a named variant holds an array or tuple, in this graph or in the module that owns its codec: the rule the union writers use (`UnionConversion.holdsSequence`). */
+  readonly holdsSequence: NamedVariants;
   /** The class the variant is picked by in the direction, when the generated writer of that direction picks by one; undefined when it has none. */
   readonly classOf: (descriptor: ModelTypeDescriptor, direction: VariantPick['direction']) => Code | undefined;
   /** The name this module imports the plan of another module's node under; undefined when that module offers none, so the node is left as it is. */
@@ -156,7 +158,7 @@ export class StripPlans {
         direction,
         branches: branches.map(({ variant, values }) => ({ values, className: this.env.classOf(variant, direction) })),
         hasRest: rest.length > 0,
-        restIsInstance: restHoldsInstance(rest),
+        restIsInstance: restHoldsInstance(rest, this.env.holdsSequence),
         fallback: fallback === undefined ? undefined : { className: this.env.classOf(fallback.variant, direction) },
       });
       // The plan of each branch in the order of the pick, and the plan of the default after them.
@@ -205,8 +207,8 @@ export class StripPlans {
       case 'generated-model': {
         const node = this.env.nodeOf(descriptor);
         if (node === undefined) return [{ descriptor, shape: 'other' }];
-        // Another module's node is read by its own descriptor when this module holds it (a recursive array alias of another group is an array, a union with no tag is its variants, a scalar is no object); only a placeholder of a model holds just its name, and a model is an object.
-        if (this.env.external(node) && (node.descriptor.kind === 'reference' || node.descriptor.kind === 'generated-model')) return [{ descriptor, shape: 'object' }];
+        // Another module's node is read by its own descriptor when this module holds it (a recursive array alias of another group is an array, a union with no tag is its variants, a scalar is no object); only a placeholder holds just its name, and it is an array when its module says the node holds one, else a model, which is an object.
+        if (this.env.external(node) && (node.descriptor.kind === 'reference' || node.descriptor.kind === 'generated-model')) return [{ descriptor, shape: this.env.holdsSequence(descriptor) ? 'array' : 'object' }];
         if (seen.has(node.id)) return [];
         seen.add(node.id);
         const target = node.descriptor;

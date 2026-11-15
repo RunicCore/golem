@@ -7,7 +7,7 @@
 import type { ModelTypeDescriptor, SerdeFunctions } from '../model-registry.js';
 import type { ValidationLevel, ValidationPlane } from '../object-codec.js';
 import type { SchemaGraph, SchemaNode } from './schema-graph.js';
-import { codecShortName, patternSchemas, serdeWireDescriptor } from './schema-graph.js';
+import { codecShortName, nodeHoldsSequence, patternSchemas, serdeWireDescriptor } from './schema-graph.js';
 import { requireComposedObject, type ModelBases } from './composition.js';
 import { STRIP_PLAN, StripPlans, type StripPlanEnv } from './strip-plan.js';
 import {
@@ -90,6 +90,10 @@ export interface NestedImportedSerde {
   readonly stringify: Code;
   readonly fromWire: Code;
   readonly toWire: Code;
+  /** The node is a recursive array alias (it holds an array or tuple): the graph of the importing module holds only a placeholder for it, so this module's answer comes from the graph that owns the node. */
+  readonly sequence: boolean;
+  /** The wire stringify of the node, which writes a wire value as it is; none when the node's module writes none (`writesWireStringify`), and the model stringify then writes it. */
+  readonly wireStringify: Code | undefined;
   /** Direct generated helper for converted anonymous object dependencies. */
   readonly fill?: Code;
 }
@@ -468,10 +472,14 @@ function emitValue(
   const value = expression;
   if (descriptor.kind === 'generated-model') {
     const named = ctx.graph.nodeFor(descriptor);
-    if (named) {
+    // A node of another module writes a wire value with the wire stringify its module exports: its model stringify would encode the value again.
+    const importedWire = named && ctx.wireIdentity ? importedSerdeOf(named, ctx)?.wireStringify : undefined;
+    if (importedWire) return code`${importedWire}(${value} as never)`;
+    // A wire value of a generated model that holds an array is written by the wire writer of its node, below, as a recursive alias is.
+    if (named && !(ctx.wireIdentity && !serdeTags(descriptor).serde && nodeHoldsSequence(named))) {
       return nestedStringifyCall(named.id, value, ctx);
     }
-    throw new Error(`Internal error: the schema graph has no node for the generated model ${JSON.stringify(descriptor.id)}.`);
+    if (!named) throw new Error(`Internal error: the schema graph has no node for the generated model ${JSON.stringify(descriptor.id)}.`);
   }
   const tags = serdeTags(descriptor);
   if (tags.serde) {
@@ -492,7 +500,8 @@ function emitValue(
   if (named && isObjectish(descriptor)) {
     if (
       ctx.wireIdentity
-      && (named.descriptor.kind === 'object' || (descriptor.kind === 'reference' && descriptor.projection === true))
+      // The local node only, as above: a node of another module writes its wire value by `wireStringify`.
+      && (named.descriptor.kind === 'object' || nodeHoldsSequence(named) || (descriptor.kind === 'reference' && descriptor.projection === true))
       && (descriptorNeedsConversion(named.descriptor) || !named.sameSchema)
     ) {
       // Call the node's own wire stringify: inlining would repeat the child for
@@ -1116,7 +1125,7 @@ function emitInternedObjectDecode(
 ): Code {
   const value = expression;
   if (shouldConstructNested(descriptor, ctx)) {
-    const imported = ctx.nestedImportedSerde?.(node.codecId) ?? ctx.nestedImportedSerde?.(node.id);
+    const imported = importedSerdeOf(node, ctx);
     const local = !isExternalCodecNode(node) && !imported;
     const options = nestedFromWireOptions(descriptor, ctx);
     return fallibleConversion(ctx, local
@@ -1145,14 +1154,14 @@ function emitInternedObjectDecode(
     if (closed) return guarded(closed, false);
   }
   if (node.kind === 'object') {
-    const imported = ctx.nestedImportedSerde?.(node.codecId) ?? ctx.nestedImportedSerde?.(node.id);
+    const imported = importedSerdeOf(node, ctx);
     const fill = imported?.fill === undefined ? identifier(fillFunctionName(node.id)) : imported.fill;
     const call = code`${fill}({} as Record<string, unknown>, ${asRecordCode(value)})`;
     // A local fill that cannot throw runs without its field's path.
     const throws = imported !== undefined || fillCanThrow(node, ctx);
     return guarded(throws ? fallibleConversion(ctx, call) : call, throws);
   }
-  const importedWire = ctx.nestedImportedSerde?.(node.codecId) ?? ctx.nestedImportedSerde?.(node.id);
+  const importedWire = importedSerdeOf(node, ctx);
   return fallibleConversion(ctx, code`${importedWire ? importedWire.fromWire : identifier(fromWireFunctionName(node.id))}(${value}, ${trustedOptions(ctx)})`);
 }
 
@@ -1313,6 +1322,17 @@ interface UnionWalker extends Pick<UnionConversion, 'items' | 'joinSequence' | '
   readonly walkTagged?: (variant: ModelTypeDescriptor, scope: EmitCtx) => Code;
 }
 
+/** The codec functions of the node when another module generated them. */
+function importedSerdeOf(node: SchemaNode, ctx: EmitCtx): NestedImportedSerde | undefined {
+  return ctx.nestedImportedSerde?.(node.codecId) ?? ctx.nestedImportedSerde?.(node.id);
+}
+
+/** Whether the node of a named variant holds an array or tuple (a recursive array alias), in this graph or in the graph of the module that owns its codec. */
+function holdsSequence(variant: ModelTypeDescriptor, ctx: EmitCtx): boolean {
+  const node = ctx.graph.nodeFor(variant);
+  return nodeHoldsSequence(node) || (node !== undefined && importedSerdeOf(node, ctx)?.sequence === true);
+}
+
 /** The dispatch direction of each union direction. A decoder reads the wire; the others write a value or JSON text. */
 const UNION_DISPATCH = { stringify: 'encode-json', decode: 'decode', encode: 'encode-value' } as const;
 
@@ -1343,6 +1363,7 @@ function emitUnion(
       { ...(decoding ? {} : { unresolved: 'skip' as const }), localsBefore },
     ),
     declaredDefault: (variant) => walk(variant, ctx),
+    holdsSequence: (variant) => holdsSequence(variant, ctx),
     generated: {
       text: (generated) => walk(generated, ctx),
       takesEveryObject: decoding,
@@ -1917,6 +1938,11 @@ function nodeLevels(node: SchemaNode, project: ValidationLevel): NodeLevels {
   return { defaultLevel: node.validation === 'sanity' ? 'sanity' : project, cap: project };
 }
 
+/** Whether the module of a project at level `project` writes the wire stringify of `node`: its calls validate and its wire and model schemas differ. */
+export function writesWireStringify(node: SchemaNode, project: ValidationLevel): boolean {
+  return validatesByDefault(nodeLevels(node, project)) && !node.sameSchema;
+}
+
 /** The level arguments of `serdeValidates`: the default, and the cap when it is another level. */
 function levelArguments({ defaultLevel, cap }: NodeLevels): Code {
   return cap === defaultLevel ? code`, ${literal(defaultLevel)}` : code`, ${literal(defaultLevel)}, ${literal(cap)}`;
@@ -2047,7 +2073,7 @@ interface NodeRuntime {
 /** The runtime of a node whose codec another module owns: a stringify function and calls to the registered object codec. */
 function emitExternalNodeRuntime(node: SchemaNode, moduleCtx: EmitCtx): Code {
   const imported = node.descriptor.kind === 'generated-model'
-    ? moduleCtx.nestedImportedSerde?.(node.codecId) ?? moduleCtx.nestedImportedSerde?.(node.id)
+    ? importedSerdeOf(node, moduleCtx)
     : undefined;
   if (imported) return code``;
   const id = literal(node.codecId);
@@ -2142,7 +2168,7 @@ function emitStringifySection(runtime: NodeRuntime): Code {
     ? undefined
     : emitStringifyFunction(node, ctx.graph, ctx.serde, { ...ctx, withoutOptions: true, lenientRoot: true, functionName: `${stringifyName}Lenient` });
   const { modelType } = runtime.fields();
-  const emitsValidatedWire = validationEnabled && !node.sameSchema;
+  const emitsValidatedWire = writesWireStringify(node, levels.cap);
   const encoded = encodedContext(runtime);
   const stringifyValue = inputSlot('value', 'name', true);
   // The validated wire write is the only reader of the encoding, and it fills the inline locals that `encoded` declares.
@@ -2462,7 +2488,8 @@ function stripPlanEnv(ctx: EmitCtx): StripPlanEnv {
     extraValues: mapValueDescriptor,
     // The class that the generated writer of the direction tests a value against, when it picks a model.
     classOf: (descriptor, direction) => variantClassName(descriptor, ctx, direction),
-    external: (node) => isExternalCodecNode(node) || ctx.nestedImportedSerde?.(node.codecId) !== undefined || ctx.nestedImportedSerde?.(node.id) !== undefined,
+    external: (node) => isExternalCodecNode(node) || importedSerdeOf(node, ctx) !== undefined,
+    holdsSequence: (variant) => holdsSequence(variant, ctx),
     importedPlan: (node) => ctx.importedStripPlan?.(node.codecId),
     planName: (node) => stripPlanName(node.codecId),
   };

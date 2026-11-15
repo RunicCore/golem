@@ -42,6 +42,7 @@ import {
   emitModelFromInit,
   stripPlanName,
   wireStringifyExportName,
+  writesWireStringify,
   descriptorNeedsConversion,
   type FromJsonModelResolver,
   type ModelConversionDescriptor,
@@ -50,7 +51,7 @@ import {
   presentKeysCode,
   wireCheckedDeserializer,
 } from '@exprtlabs/golem/internal/emitter';
-import { anonymousShapeKeys, childDescriptors, createSchemaGraph, codecPublicId, internDescriptors, mapNamedTypes, type SchemaGraph, type SchemaNode } from '@exprtlabs/golem/internal/schema-graph';
+import { anonymousShapeKeys, childDescriptors, createSchemaGraph, codecPublicId, internDescriptors, mapNamedTypes, nodeHoldsSequence, type SchemaGraph, type SchemaNode } from '@exprtlabs/golem/internal/schema-graph';
 import { compareText, type GolemProfile } from '@exprtlabs/golem/generator-api';
 import { displayPath, RESERVED_MODEL_MEMBERS } from '@exprtlabs/golem/internal/generator-support';
 import type { ManifestIndex } from '@exprtlabs/golem/internal/type-analysis';
@@ -881,7 +882,7 @@ interface SdkNodeCodecs {
   readonly typeAliases: (describe: (descriptor: ModelConversionDescriptor, mode: 'model' | 'wire' | 'init') => Code) => readonly Code[];
 }
 
-function sdkNodeCodecs(sdks: AppOutputs['sdkCodecs'], output: string): SdkNodeCodecs {
+function sdkNodeCodecs(sdks: AppOutputs['sdkCodecs'], output: string, validation: GolemProfile['validation']): SdkNodeCodecs {
   // One source for each codecs file; the import statement holds only the names the file's code uses.
   const sources = new Map((sdks ?? []).map((sdk) => [sdk.file, new ImportSource(sourceImportPath(sdk.file, output))] as const));
   // One type source for each module of the SDK that declares types.
@@ -906,6 +907,9 @@ function sdkNodeCodecs(sdks: AppOutputs['sdkCodecs'], output: string): SdkNodeCo
           stringify: source.name(stringifyFunctionName(node.id)),
           fromWire: source.name(fromWireFunctionName(node.id)),
           toWire: source.name(toWireFunctionName(node.id)),
+          sequence: nodeHoldsSequence(node),
+          // The codecs file of the SDK is written by this job, at this level, so it exports the wire stringify exactly when `writesWireStringify` says.
+          wireStringify: writesWireStringify(node, validation) ? source.name(wireStringifyExportName(node.codecId)) : undefined,
         };
       }
       return undefined;
@@ -1254,7 +1258,7 @@ function buildEmitContext(
     cyclicSiblings, serdeBindings, serdeNames, classEntries, classNames,
   );
   return {
-    source, output, checker, profile, siblingCodecs, appOutputs, codecData, ...(validatorEnhancer === undefined ? {} : { validatorEnhancer }), sdkNodes: sdkNodeCodecs(appOutputs.sdkCodecs, output), graph, schemaGraph,
+    source, output, checker, profile, siblingCodecs, appOutputs, codecData, ...(validatorEnhancer === undefined ? {} : { validatorEnhancer }), sdkNodes: sdkNodeCodecs(appOutputs.sdkCodecs, output, profile.validation), graph, schemaGraph,
     local, localNames, fileLocalNames, classModelNames, objectOnlyNames, siblingObjects, siblingObjectNames, localImports,
     concreteNames, linkedByName, referenceNames, projectionNames, identityProjections, imports,
     serdeBindings, serdeNames,
@@ -1391,10 +1395,11 @@ function modelResolvers(context: EmitContext, helpers: ReadonlyMap<string, Proje
   const resolveSdkNode = (codecs: NestedImportedSerde): FromJsonModelResolver => ({
     className: identifier('Object'),
     plain: true,
+    ...(codecs.sequence ? { sequence: true as const } : {}),
     decode: (value) => code`${codecs.fromWire}(${value}, { validate: false })`,
     fromInit: (value) => value,
   });
-  const fromAny = (id: string): FromJsonModelResolver => {
+  const resolveAny = (id: string): FromJsonModelResolver => {
     const sdkNode = context.sdkNodes.find(id);
     if (sdkNode !== undefined) return resolveSdkNode(sdkNode);
     if (context.projectionNames.has(id)) return resolveProjection(id);
@@ -1405,6 +1410,11 @@ function modelResolvers(context: EmitContext, helpers: ReadonlyMap<string, Proje
     }
     if (context.localImports.some((item) => item.name === id) && context.classModelNames.has(id)) return resolveImportedModel(id);
     return unknownModel(id);
+  };
+  // The graph node of a model says whether it is a recursive array alias, which a union tells from an object by its shape.
+  const fromAny = (id: string): FromJsonModelResolver => {
+    const model = resolveAny(id);
+    return nodeHoldsSequence(context.schemaGraph.nodeFor({ kind: 'reference', name: id }, id)) ? { ...model, sequence: true } : model;
   };
   return { fromAny };
 }

@@ -1,5 +1,6 @@
 import 'temporal-polyfill/global';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
+import { decodeGeneratedModelTrusted } from '@exprtlabs/golem/internal/model-runtime';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -492,4 +493,52 @@ test('the JSON type of an app model over an SDK type with a date is the wire for
   const use = "import type { TRecordJSON } from './record.model.generated.js';\nexport const wire: TRecordJSON = { id: 'c1', amount: 2, at: '2025-01-02T03:04:05Z' };\n// @ts-expect-error the wire form of a date is its text, not a Date\nexport const plain: TRecordJSON = { id: 'c1', amount: 2, at: new Date() };\n";
   // The build is the check: it fails when the JSON type is the SDK type, which takes a Date.
   await buildGolemModeProject('sdk-app-model-json-', CHARGES, { 'src/record.model.ts': model, 'src/use.ts': use });
+});
+
+test('a golem-mode model over an SDK type that holds a recursive array beside a string converts the array in a class-backed IModel and in an IObject', async () => {
+  // protects: T-905 the SDK array alias was only a placeholder in the app graph, so a union classed it as an object: the array kept the date strings of its items
+  const trees: GolemModeSdkSetup = {
+    folder: 'sdk/trees',
+    name: 'Trees',
+    document: chargesDocument({
+      Charge: { type: 'object', required: ['id', 'items'], properties: { id: { type: 'string' }, items: { oneOf: [ref('Tree'), { type: 'string' }] } } },
+      Tree: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['label'], properties: { label: { type: 'string' }, at: { type: 'string', format: 'date-time' }, children: ref('Tree') } } },
+    }),
+  };
+  const model = `import type { IModel, IObject } from '@exprtlabs/golem/model';
+import type { Charge } from '../sdk/trees/index.js';
+import { TBoxBaseModel } from './box.model.generated.js';
+export type TBox = IModel<Charge>;
+export class Box extends TBoxBaseModel {}
+export type TShelf = IObject<Charge>;
+`;
+  const use = `import { fromWireFormat } from '@exprtlabs/golem/serde';
+import { Box, type TShelf } from './box.model.js';
+export const readBox = (wire: unknown) => fromWireFormat<Box>(wire);
+export const readShelf = (wire: unknown) => fromWireFormat<TShelf>(wire);
+`;
+  const project = await buildGolemModeProject('sdk-app-model-union-array-', trees, { 'src/box.model.ts': model, 'src/use.ts': use });
+  const { Box } = await importBuilt(project.root, 'src/box.model.js');
+  const { readBox, readShelf } = await importBuilt(project.root, 'src/use.js');
+  const instant = '2025-01-02T03:04:05.000Z';
+  const wire = [{ label: 'a', at: instant, children: [{ label: 'b', at: instant, children: [] }] }];
+  const decoded = { label: 'a', at: new Date(instant), children: [{ label: 'b', at: new Date(instant), children: [] }] };
+  const box = readBox({ id: 'c1', items: wire });
+  assert.deepEqual([box instanceof Box, box.items], [true, [decoded]], 'the class-backed model converts the array');
+  assert.equal(readBox({ id: 'c1', items: 'text' }).items, 'text');
+  // The decode of the class itself, which a model that holds this one calls, reads the union with the model walker.
+  assert.deepEqual((decodeGeneratedModelTrusted(Box, { id: 'c1', items: wire }) as { items: unknown }).items, [decoded], 'the model decode converts the array');
+  assert.equal((decodeGeneratedModelTrusted(Box, { id: 'c1', items: 'text' }) as { items: unknown }).items, 'text');
+  assert.deepEqual(readShelf({ id: 'c1', items: wire }).items, [decoded], 'the plain object converts the array');
+  assert.equal(readShelf({ id: 'c1', items: 'text' }).items, 'text');
+
+  // The write goes the other way: the dates of the array go out as text, validated or not.
+  const generated = await importBuilt(project.root, 'src/box.model.generated.js');
+  const value = { id: 'c1', items: [{ label: 'a', at: new Date(instant), children: [] }] };
+  const text = `{"id":"c1","items":[{"label":"a","at":"${instant}","children":[]}]}`;
+  for (const options of [undefined, { validate: false }]) {
+    assert.equal(generated.stringifyTBox(value, options), text, `the class-backed model writes the array (${JSON.stringify(options)})`);
+    assert.equal(generated.stringifyTShelf(value, options), text, `the plain object writes the array (${JSON.stringify(options)})`);
+  }
+  assert.equal(generated.stringifyTBox({ id: 'c1', items: 'text' }), '{"id":"c1","items":"text"}');
 });

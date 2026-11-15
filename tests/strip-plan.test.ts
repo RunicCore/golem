@@ -78,3 +78,24 @@ test('a union of a scalar node of another module and a closed object gets the pl
   const holder = new Function(`return ${render(plan)};`)() as Parameters<typeof stripForDecode>[1];
   assert.deepEqual(stripForDecode({ code: 'c', extra: 1 }, holder, { maxDepth: undefined, bound: false }), { code: 'c' });
 });
+
+test('a union of an SDK array node and a closed object gets the plan of the array and the plan of the object', () => {
+  // protects: T-905 an SDK node is a placeholder in the app graph: read as a model it makes two objects and no array, the union gets no plan, and nothing is stripped
+  const closed = (properties: Record<string, unknown>, required: string[]) => ({ kind: 'object', properties, required, additionalProperties: false });
+  const itemsDescriptor = { kind: 'array', item: closed({ label: { kind: 'string' } }, ['label']) } as unknown as SchemaNode['descriptor'];
+  const placeholder = { id: 'Items', descriptor: { kind: 'generated-model', id: 'Items' } } as unknown as SchemaNode;
+  const env = {
+    extraValues: () => undefined,
+    classOf: () => undefined,
+    nodeOf: () => placeholder,
+    external: () => true,
+    holdsSequence: () => true,
+    importedPlan: () => identifier('itemsPlan'),
+  } as unknown as StripPlanEnv;
+  const union = { kind: 'union', variants: [{ kind: 'generated-model', id: 'Items' }, closed({ code: { kind: 'string' } }, ['code'])] };
+  const plan = new StripPlans(env).ofNode({ id: 'holder', descriptor: union } as unknown as SchemaNode);
+  assert.ok(plan, 'the union holds an array and a closed object');
+  const holder = new Function('itemsPlan', `return ${render(plan)};`)(planOf(itemsDescriptor)) as Parameters<typeof stripForDecode>[1];
+  assert.deepEqual(stripForDecode([{ label: 'a', extra: 1 }], holder, { maxDepth: undefined, bound: false }), [{ label: 'a' }]);
+  assert.deepEqual(stripForDecode({ code: 'c', extra: 1 }, holder, { maxDepth: undefined, bound: false }), { code: 'c' });
+});

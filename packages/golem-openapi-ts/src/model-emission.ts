@@ -29,7 +29,7 @@ import {
   type CodecRuntimeOptions,
   type FromJsonModelResolver,
 } from '@exprtlabs/golem/internal/emitter';
-import { type SchemaGraph, type SchemaNode } from '@exprtlabs/golem/internal/schema-graph';
+import { nodeHoldsSequence, type SchemaGraph, type SchemaNode } from '@exprtlabs/golem/internal/schema-graph';
 import type { CodecValidationPlan, PlanValidators, SchemaPlace } from '@exprtlabs/golem/internal/validation-plan';
 import { identifier as typeIdentifier, sourceDigest } from '@exprtlabs/golem/internal/generator-support';
 import { buildCodecValidationPlan } from '@exprtlabs/golem/internal/validation-plan';
@@ -416,7 +416,7 @@ function generateModels(
       const fromWire = helpers.codecFunctionImport(node.id, 'fromWire');
       const toWire = helpers.codecFunctionImport(node.id, 'toWire');
       return stringify && fromWire && toWire
-        ? { stringify, fromWire, toWire, ...(fill ? { fill } : {}) }
+        ? { stringify, fromWire, toWire, sequence: nodeHoldsSequence(node), wireStringify: undefined /* another group's wire value goes by `siblingWireCodecIds` */, ...(fill ? { fill } : {}) }
         : undefined;
     },
   };
