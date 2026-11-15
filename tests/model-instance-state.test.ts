@@ -12,10 +12,7 @@ import { buildModelProject, createModelProject, writeModelGolemYaml } from './mo
 import { compileValidatorModule } from './support/compiled-validators.js';
 import { instanceFields } from '../packages/golem/src/presence.js';
 import { MODEL_FIELDS_KEY } from '../packages/golem/src/schema-keywords.js';
-import { render } from '#golem/code';
-import { instanceFieldsCode } from '#golem/union-conversion';
 import { generatedCodecIdFromRoot } from './support/consumer.js';
-import { runModule } from './support/run-module.js';
 import { modelCodec } from './support/model-codec.js';
 // An own key of a golem model instance that its own model does not declare is program state, never an unknown key
 // (T-148). A key that the instance's own model declares is judged as before, and so is a value without a model.
@@ -55,8 +52,14 @@ const COUNTED_MAX_NAMED = { type: 'object', properties: { title: { type: 'string
 const COUNTED_MIN = { type: 'object', properties: { title: { type: 'string' }, note: { type: 'string' } }, minProperties: 2 };
 const PATTERNED = { type: 'object', properties: { title: { type: 'string' } }, patternProperties: { '^x': { type: 'number' } } };
 const VALUED = { type: 'object', properties: { title: { type: 'string' } }, additionalProperties: { type: 'number' } };
+// A named key that no check reads (`BARE`), a pattern with no declared key (`PATTERN_ONLY`), and a model instance inside a const, an enum or a list that must be unique.
+const BARE = { type: 'object', properties: { note: {} }, maxProperties: 1 };
+const PATTERN_ONLY = { type: 'object', patternProperties: { '^x': { type: 'number' } } };
+const CONST_MODEL = { const: { title: 't' } };
+const ENUM_MODEL = { enum: [{ title: 'u' }, { title: 't' }] };
+const UNIQUE_MODELS = { type: 'array', uniqueItems: true };
 const compiled = compileValidatorModule({
-  roots: { closed: CLOSED, evaluated: EVALUATED, evaluatedValued: EVALUATED_VALUED, tagged: TAGGED, named: NAMED, countedMax: COUNTED_MAX, countedMaxNamed: COUNTED_MAX_NAMED, countedMin: COUNTED_MIN, patterned: PATTERNED, valued: VALUED },
+  roots: { bare: BARE, patternOnly: PATTERN_ONLY, constModel: CONST_MODEL, enumModel: ENUM_MODEL, uniqueModels: UNIQUE_MODELS, closed: CLOSED, evaluated: EVALUATED, evaluatedValued: EVALUATED_VALUED, tagged: TAGGED, named: NAMED, countedMax: COUNTED_MAX, countedMaxNamed: COUNTED_MAX_NAMED, countedMin: COUNTED_MIN, patterned: PATTERNED, valued: VALUED },
   fastPath: true,
 });
 
@@ -132,6 +135,38 @@ for (const { root, fast, rows } of PLACES) {
   }
 }
 
+/** An instance of `Model` with the own key `key`, a getter that counts its runs and throws. */
+function withThrowingState(Model: new () => object, key: string, runs: { count: number }): object {
+  return Object.defineProperty(new Model(), key, { enumerable: true, get() { runs.count++; throw new RangeError('program state was read'); } });
+}
+
+const THROWING: readonly { readonly root: string; readonly fast: boolean; readonly build: (runs: { count: number }) => unknown }[] = [
+  { root: 'closed', fast: true, build: runs => withThrowingState(Task, 'cache', runs) },
+  { root: 'evaluated', fast: false, build: runs => withThrowingState(Task, 'cache', runs) },
+  { root: 'evaluatedValued', fast: false, build: runs => withThrowingState(Task, 'cache', runs) },
+  { root: 'named', fast: true, build: runs => withThrowingState(Task, 'cache', runs) },
+  { root: 'countedMax', fast: true, build: runs => withThrowingState(Task, 'cache', runs) },
+  { root: 'patterned', fast: true, build: runs => withThrowingState(Task, 'cache', runs) },
+  { root: 'valued', fast: true, build: runs => withThrowingState(Task, 'cache', runs) },
+  { root: 'tagged', fast: true, build: runs => withThrowingState(Circle, 'cache', runs) },
+  { root: 'bare', fast: true, build: runs => withThrowingState(Task, 'note', runs) },
+  { root: 'patternOnly', fast: true, build: runs => withThrowingState(Task, 'cache', runs) },
+  { root: 'constModel', fast: true, build: runs => withThrowingState(Task, 'cache', runs) },
+  { root: 'enumModel', fast: true, build: runs => withThrowingState(Task, 'cache', runs) },
+  { root: 'uniqueModels', fast: true, build: runs => [withThrowingState(Task, 'cache', runs), Object.assign(withThrowingState(Task, 'cache', runs), { title: 'u' })] },
+];
+
+for (const { root, fast, build } of THROWING) {
+  test(`the ${root} check never runs a getter that declares program state`, async () => {
+    // protects: T-912 a throwing getter of program state never runs while a model validates
+    const module = await compiled;
+    const runs = { count: 0 };
+    assert.deepEqual(module.byRoot[root](build(runs), false), [], 'the full validator');
+    assert.equal(module.fastByRoot[root]?.(build(runs)), fast ? true : undefined, 'the fast check');
+    assert.equal(runs.count, 0);
+  });
+}
+
 for (const root of ['valued', 'patterned'] as const) {
   test(`the ${root} check looks up the field entry once for a plain value with many keys`, async () => {
     // protects: T-151 review the lazy field entry is cached also when it is null, so a plain value runs the lookup once
@@ -146,15 +181,13 @@ for (const root of ['valued', 'patterned'] as const) {
   });
 }
 
-test('the runtime walk of the field entry and the walk the validators generate return the same names', () => {
-  // protects: T-150 review the allowGetter copy and the generated validators decide program state by one rule; T-848 a Proxy prototype is no model
-  const generated = runModule(render(instanceFieldsCode()), {}, { exports: ['instanceFields'] }).instanceFields as (value: object) => readonly string[] | undefined;
+test('the field entry names the declared keys of a model instance and of nothing else', () => {
+  // protects: T-848 a Proxy prototype is no model
   const values = [
     instance(Task, { cache: 1 }), instance(Kid, {}), instance(Bag, {}), Object.create(Task.prototype), new (class extends Task {})(),
     { title: 'a' }, Object.create(null), Object.create({ inherited: 1 }), [],
     Object.create(new Proxy({}, { get: () => () => 1 })), Object.create({ [Symbol.for(MODEL_FIELDS_KEY)]: 'title' }),
   ];
-  assert.deepEqual(values.map(value => instanceFields(value)), values.map(value => generated(value)));
   assert.deepEqual(values.map(value => instanceFields(value)), [['title', 'done'], ['title', 'done', 'mode'], undefined, ['title', 'done'], ['title', 'done'], undefined, undefined, undefined, undefined, undefined, undefined]);
 });
 
@@ -213,7 +246,7 @@ test('an object with no declared field writes the same in stringify and toWireFo
 
 for (const validation of [true, false]) {
   test(`a model instance at any depth in an unknown field writes no program state (validation ${validation ? 'on' : 'off'})`, async () => {
-    // protects: bug T-164 only the top value of an unknown field lost its program state; an instance inside an array or object kept it
+    // protects: bug T-164 only the top value of an unknown field lost its program state; an instance inside an array or object kept it; T-912 its getter never runs
     const { Task: TaskModel, Note, note } = await buildState(false);
     const task = () => Object.assign(new TaskModel({ title: 't' }), { cache: new Map<string, string>(), hits: 3 });
     const options = { validate: validation };
@@ -221,6 +254,7 @@ for (const validation of [true, false]) {
       ['an array', [task()], [{ title: 't' }]],
       ['a nested plain object', { inner: { list: [1, task()] } }, { inner: { list: [1, { title: 't' }] } }],
       ['an instance', task(), { title: 't' }],
+      ['an instance with a throwing own accessor', Object.defineProperty(new TaskModel({ title: 't' }), 'cache', { enumerable: true, get(): never { throw new RangeError('program state was read'); } }), { title: 't' }],
       ['a value with no model instance', { a: [1, { b: null }], c: 'x', d: [] }, { a: [1, { b: null }], c: 'x', d: [] }],
       ['a scalar', 'text', 'text'],
     ];

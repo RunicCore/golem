@@ -7,6 +7,8 @@ export class ModuleState {
   /** The name of each declared constant, by what it holds: one constant serves every use of the same value. */
   private readonly constants = new Map<string, Code>();
   private imports: readonly IrValidationImport[] = [];
+  /** The imports whose name the emitted code uses: a module imports no more than that. */
+  private readonly usedImports = new Set<number>();
 
   public importValidations(imports: readonly IrValidationImport[]): void {
     this.imports = imports;
@@ -14,6 +16,7 @@ export class ModuleState {
 
   /** The local name of the validation function at `index` of the module's imports. */
   public validationFunction(index: number): Code {
+    this.usedImports.add(index);
     return identifierCode(`v${index}`);
   }
 
@@ -34,11 +37,12 @@ export class ModuleState {
     return name;
   }
 
-  /** The import line of each validation function the module calls. */
+  /** The import line of each import the module uses: a validation function it calls, or a class it tests by `instanceof`. */
   public validationImports(): readonly Code[] {
-    return this.imports.map((entry, index) => {
+    return this.imports.flatMap((entry, index) => {
+      if (!this.usedImports.has(index)) return [];
       const exported = /^[A-Za-z_$][\w$]*$/.test(entry.exportName) ? identifierCode(entry.exportName) : literalCode(entry.exportName);
-      return code`import { ${exported} as ${this.validationFunction(index)} } from ${literalCode(entry.importPath)};`;
+      return [code`import { ${exported} as ${this.validationFunction(index)} } from ${literalCode(entry.importPath)};`];
     });
   }
 

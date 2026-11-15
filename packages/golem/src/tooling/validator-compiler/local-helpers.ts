@@ -1,12 +1,12 @@
 import { code, helper, helperName, join, literal as literalCode, type Code, type Helper } from '../code.js';
 import { MODEL_CODEC_IDS_KEY } from '../../schema-keywords.js';
-import { instanceFieldsCode, ownEnumerableCode } from '../union-conversion.js';
+import { ownEnumerableCode } from '../union-conversion.js';
 import { rt } from '../rt.js';
 import { NEWLINE } from './function-names.js';
 
 const runtime = rt['validation-runtime'];
 
-type LocalHelper = 'isPresent' | 'definedKeys' | 'readAll' | 'isObject' | 'instanceFields' | 'isInstanceState' | 'isMultipleOfScaled' | 'selectedModel' | 'newEvaluation' | 'mergeEvaluation' | 'leafPasses';
+type LocalHelper = 'isPresent' | 'definedKeys' | 'readAll' | 'isObject' | 'isInstanceState' | 'isMultipleOfScaled' | 'selectedModel' | 'newEvaluation' | 'mergeEvaluation' | 'leafPasses';
 
 /** A helper function of a generated module: the file holds its definition once, where the code that names it asks for it. */
 function localHelper(id: LocalHelper, rank: number, define: (self: Code) => Code): Helper {
@@ -21,16 +21,16 @@ export function localName(name: LocalHelper): Code {
 
 // The rank of a helper is its place in the module: helpers come in this order, after the helpers their definitions name.
 const HELPERS: Readonly<Record<LocalHelper, Helper>> = {
-  // The JSON view: a key is present when it is own, enumerable and not `undefined`, as `JSON.stringify` writes it. A
-  // model's optional field may be set to `undefined` and JSON has no such value.
-  definedKeys: localHelper('definedKeys', 0, self => code`const ${self} = value => Object.keys(value).filter(key => value[key] !== undefined);`),
+  // The JSON view of the keys: a key is present when it is own, enumerable and not `undefined`, as `JSON.stringify` writes
+  // it. A model's optional field may be set to `undefined` and JSON has no such value. Program state of a model instance
+  // (see `instanceFields`) is no key of the model, and its value is never read.
+  definedKeys: localHelper('definedKeys', 5, self => code`const ${self} = value => { const fields = ${runtime.instanceFields}(value); return Object.keys(value).filter(key => !${runtime.isStateKey}(fields, key) && value[key] !== undefined); };`),
   // The failure of a fast check whose key test left the values unread reads them as the full validator does, then fails.
-  readAll: localHelper('readAll', 1, self => code`function ${self}(value, keys) { for (const key of keys) value[key]; }`),
+  readAll: localHelper('readAll', 5, self => code`function ${self}(value, keys) { const fields = ${runtime.instanceFields}(value); for (const key of keys) if (!${runtime.isStateKey}(fields, key)) value[key]; }`),
   isPresent: localHelper('isPresent', 2, self => code`const ${self} = (value, key) => ${ownEnumerableCode(code`value`, code`key`)} && value[key] !== undefined;`),
   isObject: localHelper('isObject', 3, self => code`const ${self} = value => typeof value === 'object' && value !== null && !Array.isArray(value);`),
-  // An own key that the value's own model does not declare is program state, never an unknown key (see `instanceFieldsCode`).
-  instanceFields: localHelper('instanceFields', 4, () => instanceFieldsCode()),
-  isInstanceState: localHelper('isInstanceState', 5, self => code`function ${self}(value, key) { const fields = ${localName('instanceFields')}(value); return fields !== undefined && !fields.includes(key); }`),
+  // An own key that the value's own model does not declare is program state, never an unknown key (see `instanceFields`).
+  isInstanceState: localHelper('isInstanceState', 5, self => code`function ${self}(value, key) { return ${runtime.isStateKey}(${runtime.instanceFields}(value), key); }`),
   // The fast form of `isMultipleOf` for a decimal divisor the compiler wrote as `units / scale` (see `scaledDivisor`). A value
   // is a multiple when it is `whole / scale` for a whole number below 2 ** 52 (4503599627370496) that `units` divides.
   // `whole / scale` is the double nearest to the decimal `whole * 10 ** -d`, and at that size no other decimal with d digits
@@ -102,17 +102,7 @@ export function scaledDivisor(divisor: number): { readonly units: number; readon
   return { units, scale: Number(`1e${decimals}`) };
 }
 
-/** True when `key` is program state of the instance whose `instanceFields` is the local `fields`. */
+/** True when `key` is program state of the value whose own-model names `instanceFields` read into the local `fields`. */
 export function stateTest(fields: Code, key: Code): Code {
-  return code`${fields} !== undefined && !${fields}.includes(${key})`;
-}
-
-/**
- * True when `key` is program state, with `fields` read on first use: a local declared with `let`, `undefined` until a
- * key needs it, then the names or `false` for a value without program state. The lookup runs once for the object, also
- * for a plain value. A value whose keys the schema all names never reads them, so a failing check of a model instance
- * does not walk its prototypes.
- */
-export function lazyStateTest(fields: Code, value: Code, key: Code, instanceFields: Code): Code {
-  return code`(${fields} === undefined ? (${fields} = ${instanceFields}(${value}) ?? false) : ${fields}) !== false && !${fields}.includes(${key})`;
+  return code`${runtime.isStateKey}(${fields}, ${key})`;
 }

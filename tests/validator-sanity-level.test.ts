@@ -186,6 +186,27 @@ describe('a validation function', () => {
   });
 });
 
+describe('a model class with an id', () => {
+  // The module publishes its class, so the test builds an instance of the class that the validator imports.
+  const MODELS = 'export class Pet {}\nglobalThis.importedPet = Pet;\nexport const models = { Pet };\n';
+  const input = {
+    roots: { root: { golemModelClass: { name: 'Pet', path: ['Pet'], id: 'models.pet' } } },
+    validations: { 'models.pet': { importPath: './models.mjs', exportName: 'models' } },
+    modules: { 'models.mjs': MODELS },
+  };
+
+  test('is checked by instanceof at the full and the sanity level', async () => {
+    // protects: T-911 a sanity module imports the class its check names, so it loads and runs
+    for (const level of ['full', 'sanity'] as const) {
+      const { root } = await compileValidators({ ...input, level });
+      const Pet: unknown = Reflect.get(globalThis, 'importedPet');
+      assert.ok(typeof Pet === 'function', level);
+      assert.deepEqual(root(Reflect.construct(Pet, []), true), [], level);
+      assert.deepEqual(root({}, true), [{ path: [], code: 'instance', model: 'Pet' }], level);
+    }
+  });
+});
+
 describe('a sanity module', () => {
   const LIMITED = { type: 'object', required: ['a'], properties: { a: { type: 'string', minLength: 2, pattern: '^a', format: 'email' }, b: { type: 'number', maximum: 3, multipleOf: 0.1 }, c: { type: 'array', uniqueItems: true, maxItems: 2 } } };
 
