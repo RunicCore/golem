@@ -38,8 +38,7 @@ import {
 import { createContractAnalysis, type ContractAnalysis } from './contracts.js';
 import { buildDocument, serializeForOutput } from './document.js';
 import { swaggerDtoRule } from './nest/dto-rule.js';
-import { DEFAULT_CONTROLLER_SUFFIXES } from './nest/types.js';
-import type { ControllerContext } from './plan.js';
+import { DEFAULT_CONTROLLER_SUFFIXES, type ControllerContext } from './plan.js';
 
 export type { ControllerContext, ControllerModels, ControllerTag, ControllerUriVersioning, ControllerUriVersioningType } from './plan.js';
 import { validateRouteEvaluationOptions } from './evaluation/dependencies.js';

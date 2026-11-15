@@ -1,5 +1,5 @@
 // The source guard of `npm run lint`: which package source file may load which TypeScript module, which modules the runtime project
-// loads, where a package uses a non-null assertion, and which switch over a union of kinds leaves a kind out. Tests are outside it.
+// loads, which modules the plan entry of ts-openapi loads by value, where a package uses a non-null assertion, and which switch over a union of kinds leaves a kind out. Tests are outside it.
 // It reads the syntax tree that golem's own compiler seam parses, so a quote in a comment or a string is no import. The switch check
 // asks the seam's type checker, since typescript-eslint needs the TypeScript JavaScript API that TypeScript 7 does not export.
 import fs from 'node:fs';
@@ -31,6 +31,12 @@ function runtimeLoadProblem(relative: string, specifier: string): string | undef
   if (path.posix.join(path.posix.dirname(relative), specifier).startsWith('packages/golem/src/tooling/')) return `a runtime file does not load the build tooling, which needs Node.js`;
   return undefined;
 }
+
+/** The plan entry of ts-openapi. Core loads it when it reads golem.yaml, before any TypeScript is chosen. */
+const PLAN_ENTRY = 'packages/golem-ts-openapi/src/plan.ts';
+
+/** The one package module that the plan entry may load by value. It is walked like a relative one. */
+const PLAN_SUPPORT = { specifier: '@exprtlabs/golem/internal/plan-support', file: 'packages/golem/src/tooling/plan-support.ts' } as const;
 
 /** What a finding does to the run: an error fails it, a warning is listed. */
 type Severity = 'warning' | 'error';
@@ -99,6 +105,46 @@ function loads(node: ts.Node): string | undefined {
   return undefined;
 }
 
+/** Whether an import clause is `import type …`: TypeScript 6 sets `isTypeOnly`, TypeScript 7 sets `phaseModifier`. */
+function isTypeOnlyClause(clause: ts.ImportClause | undefined): boolean {
+  return clause !== undefined && (clause.isTypeOnly === true || clause.phaseModifier === ts.SyntaxKind.TypeKeyword);
+}
+
+/**
+ * The value imports of the plan entry, followed through each module it loads: only `node:` modules, the plan support of core and
+ * relative modules that are themselves walked. A type-only import is erased, so it is no load; an `export … from` counts as a load, since
+ * the two TypeScript backends do not both say whether it is type-only. A module that reaches TypeScript, yaml
+ * or generator code by any path stops at the first load that is none of these.
+ */
+function planLoadingFindings(program: ts.Program): Finding[] {
+  const found: Finding[] = [];
+  const walked = new Set<string>();
+  const walk = (relative: string, chain: string): void => {
+    if (walked.has(relative)) return;
+    walked.add(relative);
+    const file = program.getSourceFile(path.join(root, relative));
+    if (!file) {
+      found.push({ severity: 'error', text: `${chain}: ${relative} is not a package source file, so the plan loading check cannot read it` });
+      return;
+    }
+    const visit = (node: ts.Node): undefined => {
+      if (ts.isImportTypeNode(node) || (ts.isImportDeclaration(node) && isTypeOnlyClause(node.importClause))) return undefined;
+      const specifier = loads(node);
+      if (specifier !== undefined) {
+        const where = `${relative}:${file.getLineAndCharacterOfPosition(node.getStart(file)).line + 1}`;
+        if (specifier === PLAN_SUPPORT.specifier) walk(PLAN_SUPPORT.file, `${chain} > ${where}`);
+        else if (specifier.startsWith('.')) walk(path.posix.join(path.posix.dirname(relative), specifier.replace(/\.js$/, '.ts')), `${chain} > ${where}`);
+        else if (!specifier.startsWith('node:')) found.push({ severity: 'error', text: `${where} loads '${specifier}' by value (${chain}): core loads the plan entry before it has TypeScript, yaml or generator code, so it loads only node: modules, the plan support and relative modules; a type-only import is no load` });
+      }
+      ts.forEachChild(node, visit);
+      return undefined;
+    };
+    for (const statement of file.statements) visit(statement);
+  };
+  walk(PLAN_ENTRY, PLAN_ENTRY);
+  return found;
+}
+
 function findings(file: ts.SourceFile, relative: string, checker: ts.TypeChecker): Finding[] {
   const found: Finding[] = [];
   const where = (node: ts.Node): string => `${relative}:${file.getLineAndCharacterOfPosition(node.getStart(file)).line + 1}`;
@@ -132,6 +178,7 @@ const program = ts.createProgramFromSources({ root, sources: files });
 const allFindings: Finding[] = [];
 try {
   const checker = program.getTypeChecker();
+  allFindings.push(...planLoadingFindings(program));
   for (const filename of files) {
     const file = program.getSourceFile(filename);
     if (!file) throw new Error(`The compiler did not read ${portable(path.relative(root, filename))}.`);

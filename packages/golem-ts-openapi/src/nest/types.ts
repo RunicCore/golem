@@ -90,9 +90,6 @@ export interface ControllerRoute {
   readonly deprecated?: boolean;
 }
 
-/** File-name endings that make a file below `src` of the golem.yaml folder a controller source when a docs job sets none. */
-export const DEFAULT_CONTROLLER_SUFFIXES: readonly string[] = ['.controller.ts'];
-
 /** The media type of a request or response body when nothing declares one. */
 export const DEFAULT_MEDIA_TYPE = 'application/json';
 
