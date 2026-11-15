@@ -540,10 +540,10 @@ function schemaList(
   const values = type.isUnion()
     ? type.types
     : context.checker.isTupleType(type)
-      ? context.checker.getTypeArguments(type as ts.TypeReference)
+      ? context.checker.getTypeArguments(type)
       : (() => {
         const argument = context.checker.isArrayType(type)
-          ? context.checker.getTypeArguments(type as ts.TypeReference)[0]
+          ? context.checker.getTypeArguments(type)[0]
           : undefined;
         return argument?.isUnion() ? argument.types : argument ? [argument] : [type];
       })();
@@ -561,11 +561,11 @@ function stringList(
 ): readonly string[] {
   if (!type) throw context.diagnostic(owner, '1043', `${label} requires a string tuple or string-literal union.`);
   const values = context.checker.isTupleType(type)
-    ? context.checker.getTypeArguments(type as ts.TypeReference)
+    ? context.checker.getTypeArguments(type)
     : type.isUnion()
       ? type.types
       : context.checker.isArrayType(type)
-        ? [context.checker.getTypeArguments(type as ts.TypeReference)[0]]
+        ? [context.checker.getTypeArguments(type)[0]]
         : [];
   const nodes = node && ts.isTupleTypeNode(node) ? node.elements : [];
   if (values.length === 0) throw context.diagnostic(owner, '1043', `${label} requires a string tuple or string-literal union.`);
@@ -776,13 +776,18 @@ const TAG_READERS: ReadonlyMap<string, TagReader> = new Map<string, TagReader>([
 ]);
 
 /**
- * The tag a symbol names, or undefined when it is no golem tag. The meaning comes from the tag the symbol resolves to; the name
+ * The tag a symbol names with its reader, or undefined when it is no golem tag. The meaning comes from the tag the symbol resolves to; the name
  * written at a use site is the importer's choice.
  */
-function golemTagName(checker: ts.TypeChecker, symbol: ts.Symbol | undefined): string | undefined {
+function golemTag(checker: ts.TypeChecker, symbol: ts.Symbol | undefined): { readonly name: string; readonly read: TagReader } | undefined {
   if (!isGolemTagSymbol(checker, symbol)) return undefined;
   const name = targetSymbol(checker, symbol)?.getName();
-  return name !== undefined && TAG_READERS.has(name) ? name : undefined;
+  const read = name === undefined ? undefined : TAG_READERS.get(name);
+  return name === undefined || read === undefined ? undefined : { name, read };
+}
+
+function golemTagName(checker: ts.TypeChecker, symbol: ts.Symbol | undefined): string | undefined {
+  return golemTag(checker, symbol)?.name;
 }
 
 function dependsOnAliasParameter(context: TagAnalysisContext, node: ts.Node): boolean {
@@ -801,8 +806,7 @@ function dependsOnAliasParameter(context: TagAnalysisContext, node: ts.Node): bo
   return found;
 }
 
-function instantiatedTag(context: TagAnalysisContext, name: string): TagMetadata {
-  const useSite = context.aliasUseSite!;
+function instantiatedTag(context: TagAnalysisContext, useSite: AliasUseSite, name: string): TagMetadata {
   const atUseSite: TagAnalysisContext = { ...context, diagnostic: (_node, code, message) => context.diagnostic(useSite.node, code, message) };
   const members = (useSite.type.isIntersection() ? useSite.type.types : [useSite.type])
     .filter((member) => member.aliasSymbol?.getName() === name && isGolemTagSymbol(context.checker, member.aliasSymbol));
@@ -813,33 +817,36 @@ function instantiatedTag(context: TagAnalysisContext, name: string): TagMetadata
   if (members.length > 1) {
     throw atUseSite.diagnostic(useSite.node, '1062', `${useSite.node.getText()} holds more than one ${name} tag, and one depends on a type parameter. Keep one ${name} per alias.`);
   }
-  return parseCheckerTag(atUseSite, members[0]!)!;
+  const [member] = members;
+  const tag = parseCheckerTag(atUseSite, member);
+  if (tag === undefined) throw new Error(`The ${name} tag that the type of ${useSite.node.getText()} shows is no golem tag.`);
+  return tag;
 }
 
 function parseTag(
   context: TagAnalysisContext,
   node: ts.TypeReferenceNode,
 ): TagMetadata | undefined {
-  const name = golemTagName(context.checker, context.checker.getSymbolAtLocation(node.typeName));
-  if (!name) return undefined;
+  const tag = golemTag(context.checker, context.checker.getSymbolAtLocation(node.typeName));
+  if (!tag) return undefined;
   const arguments_ = node.typeArguments ?? [];
-  if (arguments_.some((argument) => dependsOnAliasParameter(context, argument))) {
-    if (name === 'TValidation' || name === 'TSerde') {
-      const useSite = context.aliasUseSite!;
-      throw context.diagnostic(useSite.node, '1061', `${name} in ${useSite.node.getText()} must name exported functions with typeof, not a type parameter.`);
+  const useSite = context.aliasUseSite;
+  if (useSite !== undefined && arguments_.some((argument) => dependsOnAliasParameter(context, argument))) {
+    if (tag.name === 'TValidation' || tag.name === 'TSerde') {
+      throw context.diagnostic(useSite.node, '1061', `${tag.name} in ${useSite.node.getText()} must name exported functions with typeof, not a type parameter.`);
     }
-    return instantiatedTag(context, name);
+    return instantiatedTag(context, useSite, tag.name);
   }
-  return TAG_READERS.get(name)!(context, name, arguments_.map((argument) => ({ node: argument })), node);
+  return tag.read(context, tag.name, arguments_.map((argument) => ({ node: argument })), node);
 }
 
 function parseCheckerTag(
   context: TagAnalysisContext,
   type: ts.Type,
 ): TagMetadata | undefined {
-  const name = golemTagName(context.checker, type.aliasSymbol);
-  if (!name) return undefined;
-  return TAG_READERS.get(name)!(context, name, (type.aliasTypeArguments ?? []).map((argument) => ({ type: argument })), context.sourceFile);
+  const tag = golemTag(context.checker, type.aliasSymbol);
+  if (!tag) return undefined;
+  return tag.read(context, tag.name, (type.aliasTypeArguments ?? []).map((argument) => ({ type: argument })), context.sourceFile);
 }
 
 function metadataFromType(

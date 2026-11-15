@@ -1,6 +1,6 @@
 import { assertNever } from '../../assert-never.js';
 import { code, identifier as identifierCode, join, joinIndented, literal as literalCode, type Code, type IndentedLine } from '../code.js';
-import type { IrArray, IrCheck, IrClass, IrDiscriminator, IrFunction, IrInstance, IrNumber, IrObject, IrPatternProperty, IrSchema, IrString, IrType, IrTypeName, IrUnion, IrValidation, IrValidationImport } from './ir.js';
+import type { IrArray, IrCheck, IrClass, IrDiscriminator, IrFunction, IrInstance, IrNumber, IrObject, IrPatternProperty, IrSchema, IrString, IrType, IrTypeName, IrUnion, IrValidation } from './ir.js';
 import { rt, runtimeFunctionCode } from '../rt.js';
 import { presentValueCode } from '../union-conversion.js';
 import { VALUE, PATH, NEWLINE, COMMA, ISSUES, ALL, SANITY, INHERITED, EVALUATION, type CalleeSlot, type CallArguments } from './function-names.js';
@@ -81,7 +81,6 @@ export class FunctionWriter {
   public constructor(
     public readonly state: ModuleState,
     public readonly functions: readonly IrFunction[],
-    private readonly validations: readonly IrValidationImport[],
     public readonly target: (id: number) => number,
     private readonly fn: IrFunction,
     private mode: WriterMode,
@@ -348,7 +347,7 @@ export class FunctionWriter {
         const result = this.fresh('result');
         this.line(code`const ${result} = ${this.state.validationFunction(index)}(${value});`);
         this.open(code`if (typeof ${result} !== 'boolean' && typeof ${result} !== 'string')`);
-        this.line(code`throw new TypeError(${literalCode(`Validation function ${this.validations[index]!.exportName} must return boolean or string.`)});`);
+        this.line(code`throw new TypeError(${literalCode(`Validation function ${this.state.validationExport(index)} must return boolean or string.`)});`);
         this.close();
         this.leaf({ fails: code`${result} !== true`, issue: code`code: 'custom', ...(typeof ${result} === 'string' && ${result}.length > 0 ? { reason: ${result} } : {})` });
       }

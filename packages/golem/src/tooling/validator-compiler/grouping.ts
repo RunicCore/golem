@@ -29,16 +29,24 @@ type Callee = { readonly id: number; readonly fast: boolean };
  * that name no callee is made once (`BodyKey`); each round of `groupFunctions` joins it to the groups of the callees.
  */
 interface BodyKey {
-  /** The key between two callees, and after the last. */
-  readonly pieces: readonly string[];
-  /** The callees in order of appearance: `pieces` has one more entry than `callees`. */
-  readonly callees: readonly Callee[];
+  /** The key before the first callee, or of the whole body when it names no callee. */
+  readonly head: string;
+  /** The callees in order of appearance, each with the key that follows it, up to the next callee or the end. */
+  readonly calls: readonly { readonly callee: Callee; readonly after: string }[];
 }
 
 function bodyKeyOf(body: Code, slots: FunctionSlots): BodyKey {
-  const pieces: string[] = [];
-  const callees: Callee[] = [];
+  let head = '';
+  const calls: { readonly callee: Callee; readonly after: string }[] = [];
+  /** The last callee met: the key being written follows it. */
+  let last: Callee | undefined;
   let key = '';
+  /** Ends the key between two callees: it follows the last callee, or is the head when there is none. */
+  const endPiece = (): void => {
+    if (last === undefined) head = key;
+    else calls.push({ callee: last, after: key });
+    key = '';
+  };
   let text = '';
   for (const part of body.parts) {
     if (part.kind === 'text') {
@@ -51,9 +59,8 @@ function bodyKeyOf(body: Code, slots: FunctionSlots): BodyKey {
       case 'name': {
         const callee = slots.owner(part.slot);
         if (callee === undefined) throw new Error(`The validator compiler body names "${part.slot.label}", which is no function.`);
-        pieces.push(key);
-        key = '';
-        callees.push(callee);
+        endPiece();
+        last = callee;
         break;
       }
       case 'runtime': key += `r${JSON.stringify([part.module, part.name, part.typeOnly === true, part.alias ?? null])},`; break;
@@ -66,17 +73,17 @@ function bodyKeyOf(body: Code, slots: FunctionSlots): BodyKey {
       default: return assertNever(part);
     }
   }
-  pieces.push(text === '' ? key : key + JSON.stringify(text));
-  return { pieces, callees };
+  if (text !== '') key += JSON.stringify(text);
+  endPiece();
+  return { head, calls };
 }
 
-function bodyKey({ pieces, callees }: BodyKey, groups: ReadonlyMap<number, number>): string {
-  let key = pieces[0]!;
-  for (let index = 0; index < callees.length; index += 1) {
-    const callee = callees[index]!;
+function bodyKey({ head, calls }: BodyKey, groups: ReadonlyMap<number, number>): string {
+  let key = head;
+  for (const { callee, after } of calls) {
     const group = groups.get(callee.id);
     if (group === undefined) throw new Error(`The validator compiler has no emitted function for the schema function ${callee.id}.`);
-    key += `n${callee.fast},${group},${pieces[index + 1]!}`;
+    key += `n${callee.fast},${group},${after}`;
   }
   return key;
 }
@@ -102,17 +109,17 @@ function inputNumber(slot: InputSlot): number {
  */
 export function groupFunctions(written: readonly WrittenFunction[], fastReached: ReadonlySet<number>, slots: FunctionSlots): ReadonlyMap<number, number> {
   // The key of a body and the text of its parameters do not change between rounds; only the groups of the callees do.
-  const keyed = new Map(written.map(entry => [entry.id, bodyKeyOf(entry.body, slots)]));
-  const parameters = new Map(written.map(entry => [entry.id, codeKey(entry.parameters)]));
+  const keyed = written.map(entry => ({ id: entry.id, parameters: codeKey(entry.parameters), body: bodyKeyOf(entry.body, slots) }));
   let groups = new Map<number, number>(written.map(entry => [entry.id, 0]));
   let size = 1;
   for (;;) {
     const keys = new Map<string, number>();
     const next = new Map<number, number>();
-    for (const entry of written) {
-      const key = `${groups.get(entry.id)}\n${parameters.get(entry.id)}\n${bodyKey(keyed.get(entry.id)!, groups)}`;
-      if (!keys.has(key)) keys.set(key, keys.size);
-      next.set(entry.id, keys.get(key) ?? 0);
+    for (const { id, parameters, body } of keyed) {
+      const key = `${groups.get(id)}\n${parameters}\n${bodyKey(body, groups)}`;
+      let group = keys.get(key);
+      if (group === undefined) keys.set(key, group = keys.size);
+      next.set(id, group);
     }
     if (keys.size === size) break;
     groups = next;
