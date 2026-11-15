@@ -44,6 +44,7 @@ export type { ControllerContext, ControllerModels, ControllerTag, ControllerUriV
 import { validateRouteEvaluationOptions } from './evaluation/dependencies.js';
 import { apiSchemaName } from './nest/metadata.js';
 import { analyzeControllers, discoverControllerSources } from './nest/routes.js';
+import { openApiVersionOf, type OpenApiVersion } from './openapi-version.js';
 import type { DtoSchema } from './nest/json-schema-merge.js';
 import { applySwaggerPropertyMetadata } from './nest/swagger-overlay.js';
 import type { TypeReference } from './nest/types.js';
@@ -63,7 +64,7 @@ function validateContext(context: TsToOpenApiContext): {
   readonly sources?: readonly string[];
   readonly suffixes: readonly string[];
   readonly tsconfig?: string;
-  readonly openapiVersion: '3.2.0' | '3.1.2';
+  readonly openapiVersion: OpenApiVersion;
   readonly maxResultBytes: number;
   readonly profile: ResolvedGolemProfile;
   readonly exact?: boolean;
@@ -79,10 +80,7 @@ function validateContext(context: TsToOpenApiContext): {
   if (existsSync(output) && !statSync(output).isFile()) {
     throw new TypeError('context.output must be a file.');
   }
-  const openapiVersion = context.openapiVersion ?? '3.2.0';
-  if (openapiVersion !== '3.2.0' && openapiVersion !== '3.1.2') {
-    throw new TypeError('context.openapiVersion must be 3.2.0 or 3.1.2.');
-  }
+  const openapiVersion = openApiVersionOf(context.openapiVersion, 'context.openapiVersion');
   const profile = resolveProfile(context.profile);
   const { maxResultBytes } = validateRouteEvaluationOptions(context);
   const sources = context.sources === undefined

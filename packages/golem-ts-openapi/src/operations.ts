@@ -4,6 +4,7 @@ import { TsToOpenApiDiagnosticCode, TsToOpenApiError, diagnostic } from './diagn
 import { mapArrayItems, mergeSchemaMetadata } from './nest/json-schema-merge.js';
 import type { ControllerParameter, ControllerRoute, ResponseDescription, TypeReference } from './nest/types.js';
 import { parameterOverrideKey } from './nest/parameters.js';
+import type { OpenApiVersion } from './openapi-version.js';
 
 type OpenApiSchema = Record<string, unknown> | boolean;
 
@@ -22,7 +23,7 @@ export type SchemaResolver = (
 export interface OperationBuildContext {
   readonly checker: ts.TypeChecker;
   readonly program: ts.Program;
-  readonly openapiVersion?: '3.2.0' | '3.1.2';
+  readonly openapiVersion: OpenApiVersion;
   readonly schemaResolver?: SchemaResolver;
   /** Resolve shared component descriptors while checking explicit Swagger overlays. */
   readonly resolveSchemaReference?: (reference: string) => OpenApiSchema | undefined;
@@ -274,7 +275,7 @@ async function openApiParameter(
     ));
   }
   if (location === 'querystring') {
-    if ((context.openapiVersion ?? '3.2.0') !== '3.2.0') {
+    if (context.openapiVersion !== '3.2.0') {
       throw new TsToOpenApiError(diagnostic(route.sourceFile, parameter.node, TsToOpenApiDiagnosticCode.NonPortableParameter, 'The OpenAPI querystring parameter is available only in OpenAPI 3.2.0. Use named scalar query parameters for OpenAPI 3.1.2.'));
     }
     const schema = querystringPropertyOverrides(

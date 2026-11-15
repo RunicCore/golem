@@ -31,7 +31,6 @@ export enum TsToOpenApiDiagnosticCode {
   InvalidResponseStatus = 'NEST1309',
   PrimitiveResponseMetadata = 'NEST1310',
   InvalidInfo = 'NEST1401',
-  UnsupportedOpenApiVersion = 'NEST1402',
   InvalidServer = 'NEST1403',
   InvalidSecurityScheme = 'NEST1404',
   InvalidSecurityRequirement = 'NEST1405',

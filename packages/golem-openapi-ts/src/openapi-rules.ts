@@ -7,6 +7,7 @@ import {
   openApiLine,
   resolveJsonPointer,
   type JsonObject,
+  type OpenApiLine,
 } from './json.js';
 import { parameterIdentity } from '@exprtlabs/golem/internal/generator-support';
 import { decodeUriFragment } from '@exprtlabs/golem/internal/schema';
@@ -178,7 +179,7 @@ function checkPathTemplates(document: unknown, operations: readonly OperationSit
   return problems;
 }
 
-function checkTags(document: unknown, line: '3.1' | '3.2'): OpenApiProblem[] {
+function checkTags(document: unknown, line: OpenApiLine): OpenApiProblem[] {
   const tags = asRecord(document).tags;
   if (!Array.isArray(tags)) return [];
   const problems: OpenApiProblem[] = [];
@@ -211,7 +212,7 @@ function checkTags(document: unknown, line: '3.1' | '3.2'): OpenApiProblem[] {
   return problems;
 }
 
-function checkServers(document: unknown, operations: readonly OperationSite[], line: '3.1' | '3.2'): OpenApiProblem[] {
+function checkServers(document: unknown, operations: readonly OperationSite[], line: OpenApiLine): OpenApiProblem[] {
   const problems: OpenApiProblem[] = [];
   const checked = new Set<string>();
   const check = (servers: unknown, pointer: string): void => {
