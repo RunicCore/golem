@@ -1272,7 +1272,7 @@ function objectMembers(scope: DescribeScope, call: DescribeCall, facts: ShapeFac
 
 /** The descriptors of the fields of an object, and which are required. */
 function describeProperties(scope: DescribeScope, call: DescribeCall, nextSeen: ReadonlySet<ts.Type>, facts: ShapeFacts, members: readonly ObjectMember[]): { readonly properties: Record<string, ModelConversionDescriptor>; readonly required: string[] } {
-  const { checker, validationLevel, allowAny, describe } = scope;
+  const { checker, allowAny, describe } = scope;
   const { context, representation, provenanceNode, nameHint, node, childNode, childSubstitutions, type } = call;
   const { projectionName } = facts;
   // Keep discovered field names as data until the generation diagnostic
@@ -1346,7 +1346,7 @@ function describeProperties(scope: DescribeScope, call: DescribeCall, nextSeen: 
 
 /** The descriptor of an object type: its fields, its index signature and its key pattern. */
 function describeObject(scope: DescribeScope, call: DescribeCall, seen: ReadonlySet<ts.Type>, facts: ShapeFacts): ModelConversionDescriptor {
-  const { checker, validationLevel, modelValidates, describe } = scope;
+  const { checker, modelValidates, describe } = scope;
   const { context, representation, nameHint, node, childNode, childSubstitutions, metadata, type } = call;
   const { projection, projectionName } = facts;
   const primitiveConstructor = primitiveConstructorDescriptor(type);
