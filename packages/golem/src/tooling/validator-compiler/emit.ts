@@ -43,29 +43,35 @@ function identifier(text: string): string {
   return text.replace(/[^A-Za-z0-9_$]/g, '_');
 }
 
-/**
- * The name each root's validator is exported under: `validate_` and the root's name, with each character that cannot
- * appear in a name turned into `_`. The name comes from the root alone, so adding a root renames no other export,
- * unless its name becomes an identifier another root already has: roots whose names become the same identifier are
- * told apart by a number from 2, handed out in the order of the roots' own names, so the numbers of that set can shift.
- */
-export function exportNames(rootNames: Iterable<string>): ReadonlyMap<string, string> {
-  const names = [...new Set(rootNames)].sort(compareText);
-  const taken = new Set<string>();
-  const result = new Map<string, string>();
-  for (const name of names) {
-    const base = `validate_${identifier(name)}`;
-    let candidate = base;
-    for (let suffix = 2; taken.has(candidate); suffix++) candidate = `${base}_${suffix}`;
-    taken.add(candidate);
-    result.set(name, candidate);
-  }
-  return result;
+/** Every name a root is exported under. */
+interface RootExportNames {
+  /** The validator. */
+  readonly validate: string;
+  /** The fast check. */
+  readonly fast: string;
+  /** The structure check and the predicates-only pass. */
+  readonly passes: PassExports;
 }
 
-/** The name a sibling of a root's validator is exported under: its `validate_` name with `prefix` instead (`validate_User` becomes `is_User`). */
-function siblingExportName(prefix: string, validateName: string): string {
-  return `${prefix}_${validateName.slice('validate_'.length)}`;
+/**
+ * The names each root is exported under: `validate_` and the root's name, with each character that cannot appear in a name
+ * turned into `_`, and the names of its fast check and passes (`is_`, `structure_`, `predicates_`) from the same stem. The
+ * names come from the root alone, so adding a root renames no other export, unless its name becomes an identifier another
+ * root already has: roots whose names become the same identifier are told apart by a number from 2, handed out in the order
+ * of the roots' own names, so the numbers of that set can shift.
+ */
+export function exportNames(rootNames: Iterable<string>): ReadonlyMap<string, RootExportNames> {
+  const names = [...new Set(rootNames)].sort(compareText);
+  const taken = new Set<string>();
+  const result = new Map<string, RootExportNames>();
+  for (const name of names) {
+    const base = identifier(name);
+    let stem = base;
+    for (let suffix = 2; taken.has(stem); suffix++) stem = `${base}_${suffix}`;
+    taken.add(stem);
+    result.set(name, { validate: `validate_${stem}`, fast: `is_${stem}`, passes: { structure: `structure_${stem}`, predicates: `predicates_${stem}` } });
+  }
+  return result;
 }
 
 /**
@@ -220,7 +226,7 @@ interface Exported {
 /** The exported wrapper of each root, of each fast check, and of each root's two passes. */
 function writeExports({ module, target, fastRootExports, passRoots }: Emission, stayingSlot: CalleeSlot, options: EmitOptions): Exported {
   const exported = exportNames(module.exports.map(({ name }) => name));
-  const exportName = (name: string): string => {
+  const exportsOf = (name: string): RootExportNames => {
     const known = exported.get(name);
     if (known === undefined) throw new Error(`The validator compiler has no export name for the root ${JSON.stringify(name)}.`);
     return known;
@@ -237,15 +243,15 @@ function writeExports({ module, target, fastRootExports, passRoots }: Emission, 
   return issues;
 }`;
   };
-  const wrappers = module.exports.map(({ name, fn }) => issuesOf(exportName(name), fn));
-  const fastExports = new Map(fastRootExports.map(({ name }) => [name, siblingExportName('is', exportName(name))] as const));
+  const wrappers = module.exports.map(({ name, fn }) => issuesOf(exportsOf(name).validate, fn));
+  const fastExports = new Map(fastRootExports.map(({ name }) => [name, exportsOf(name).fast] as const));
   // The fast check itself is the export: a valid value takes no extra call.
   const fastType = options.typed ? code`: (value: unknown) => boolean` : code``;
-  const fastWrappers = fastRootExports.map(({ name, fn }) => code`export const ${identifierCode(siblingExportName('is', exportName(name)))}${fastType} = ${nameOf(stayingSlot(target(fn), true))};`);
-  const passExports = new Map(passRoots.map(({ name }) => [name, { structure: siblingExportName('structure', exportName(name)), predicates: siblingExportName('predicates', exportName(name)) }] as const));
+  const fastWrappers = fastRootExports.map(({ name, fn }) => code`export const ${identifierCode(exportsOf(name).fast)}${fastType} = ${nameOf(stayingSlot(target(fn), true))};`);
+  const passExports = new Map(passRoots.map(({ name }) => [name, exportsOf(name).passes] as const));
   const passWrappers = passRoots.flatMap(({ name, structure, predicates }) => [
-    code`export const ${identifierCode(passExports.get(name)!.structure)}${fastType} = ${nameOf(stayingSlot(target(structure), true))};`,
-    issuesOf(passExports.get(name)!.predicates, predicates),
+    code`export const ${identifierCode(exportsOf(name).passes.structure)}${fastType} = ${nameOf(stayingSlot(target(structure), true))};`,
+    issuesOf(exportsOf(name).passes.predicates, predicates),
   ]);
   return { wrappers, fastWrappers, passWrappers, fastExports, passExports };
 }

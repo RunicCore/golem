@@ -2,13 +2,10 @@ import { code, join, literal as literalCode, nameOf, type Code } from '../code.j
 import type { IrObject, IrPatternProperty } from './ir.js';
 import { presentKeysCode } from '../union-conversion.js';
 import { PATH, COMMA, ISSUES, ALL, callFunction, type CallArguments } from './function-names.js';
-import { localName, stateTest } from './local-helpers.js';
-import { rt } from '../rt.js';
+import { instanceFieldsOf, localName, stateTest } from './local-helpers.js';
 import { patternExpression } from './module-state.js';
 import type { FunctionWriter } from './function-writer.js';
 import type { FastPlan } from './fast-plan.js';
-
-const runtime = rt['validation-runtime'];
 
 /** What a written function does when a check fails. */
 interface FailMode {
@@ -209,7 +206,7 @@ function fastKeyTest(writer: FunctionWriter, { check, value, captured, reads }: 
   const fields = writer.fresh('fields');
   const locals = [...captured.map(([, local]) => local), ...(count === undefined ? [] : [code`${count} = 0`]), ...(unknown === undefined ? [] : [code`${unknown} = false`])];
   if (locals.length > 0) writer.line(code`let ${join(locals, COMMA)};`);
-  writer.line(code`const ${fields} = ${runtime.instanceFields}(${value});`);
+  writer.line(code`const ${fields} = ${instanceFieldsOf(value)};`);
   const list = additional?.kind === 'schema' || reads.patterns.length > 0 || check.propertyNames !== undefined ? writer.fresh('keys') : undefined;
   if (list !== undefined) writer.line(code`const ${list} = Object.keys(${value});`);
   const key = writer.fresh('key');

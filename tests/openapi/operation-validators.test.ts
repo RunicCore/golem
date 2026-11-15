@@ -374,7 +374,7 @@ test('writeSdk reports each standard keyword with a wrong shape that a document 
   const result = writeSdk(document, { output: path.join(tmpdir(), 'golem-wrong-shapes'), profile: { validation: true } });
   assert.deepEqual(result.artifacts, []);
   assert.deepEqual((result.diagnostics ?? []).map(entry => [entry.code, entry.severity, entry.message]), [
-    ['VALIDATE_UNSUPPORTED_KEYWORD', GolemDiagnosticSeverity.Error, 'operation "send" at /input/properties/body/properties/kind/type: the value of type is not valid: expected a type name or a non-empty list of type names (string, number, integer, boolean, null, object, array)'],
+    ['VALIDATE_UNSUPPORTED_KEYWORD', GolemDiagnosticSeverity.Error, 'operation "send" at /input/properties/body/properties/kind/type: the value of type is not valid: expected a type name or a non-empty list of type names (null, boolean, number, integer, string, array, object)'],
     ['VALIDATE_UNSUPPORTED_KEYWORD', GolemDiagnosticSeverity.Error, 'operation "send" at /input/properties/body/properties/tag/enum: the value of enum is not valid: expected a list'],
     ['VALIDATE_UNSUPPORTED_KEYWORD', GolemDiagnosticSeverity.Error, 'operation "send" at /input/properties/body/properties/name/minLength: the value of minLength is not valid: expected a non-negative integer'],
     ['VALIDATE_UNSUPPORTED_KEYWORD', GolemDiagnosticSeverity.Error, 'operation "send" at /input/properties/body/properties/code/pattern: the value of pattern is not valid: expected a string'],
