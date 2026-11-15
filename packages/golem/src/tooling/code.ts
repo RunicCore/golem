@@ -283,7 +283,6 @@ class LinesCode extends CodeValue {
   public slot(index: number): string | Code | undefined {
     const line = Math.floor(index / 3);
     const entry = this.lines[line];
-    if (entry === undefined) return undefined;
     switch (index % 3) {
       case 0: return line > 0 ? this.separator : undefined;
       case 1: return ' '.repeat(entry.spaces);
