@@ -1,3 +1,4 @@
+import { assertNever } from '../../assert-never.js';
 import type { IrArray, IrCheck, IrFunction, IrModule, IrObject, IrSchema } from './ir.js';
 
 /**
@@ -149,7 +150,7 @@ function withoutLimits(check: IrCheck): IrCheck | undefined {
     case 'type': case 'literal': case 'class': case 'instance': case 'call': case 'allOf': case 'union': case 'not':
     case 'conditional': case 'dependentSchemas': case 'unevaluatedProperties': case 'unevaluatedItems':
       return check;
-    default: return unprojected(check);
+    default: return assertNever(check);
   }
 }
 
@@ -214,11 +215,6 @@ interface PassFunctions {
 
 const ALWAYS: IrSchema = { kind: 'always' };
 
-/** A new kind of check fails the build here, and generation, instead of being dropped from a pass. */
-function unprojected(check: never): never {
-  throw new Error(`The validator compiler projects no check of the kind ${JSON.stringify(check)}.`);
-}
-
 /**
  * Adds the structure check and the predicates-only pass of each function in `roots` that validates conjunctively (see
  * `conjunctiveValidation`), and of the functions it reaches. Both are ordinary IR functions: the structure check holds no
@@ -254,7 +250,7 @@ export function projectPasses(functions: readonly IrFunction[], roots: Iterable<
       case 'type': case 'literal': case 'format': case 'string': case 'number': case 'class': case 'instance': case 'union':
       case 'not': case 'conditional': case 'dependentSchemas': case 'unevaluatedProperties': case 'unevaluatedItems':
         return [check];
-      default: return unprojected(check);
+      default: return assertNever(check);
     }
   };
 
@@ -295,7 +291,7 @@ export function projectPasses(functions: readonly IrFunction[], roots: Iterable<
       case 'type': case 'literal': case 'format': case 'string': case 'number': case 'class': case 'instance': case 'union':
       case 'not': case 'conditional': case 'dependentSchemas': case 'unevaluatedProperties': case 'unevaluatedItems':
         return [];
-      default: return unprojected(check);
+      default: return assertNever(check);
     }
   };
 
@@ -370,7 +366,10 @@ export function sanitize(module: IrModule): IrModule {
           && object.propertyNames === undefined && !(record && (object.properties.length > 0 || object.patternProperties.length > 0 || object.additional !== undefined));
         return bare ? [] : [object];
       }
-      default: return [check];
+      // These checks hold no nested schema and are not limited by the sanity level, so they stay as they are. `string` and `number` never get here: `withoutLimits` drops them.
+      case 'type': case 'literal': case 'format': case 'string': case 'number': case 'call': case 'dependentSchemas': case 'class': case 'instance': case 'validation':
+        return [check];
+      default: return assertNever(check);
     }
   };
   const convert = (functions: readonly IrFunction[]): IrFunction[] => functions.map(fn => ({ ...fn, body: schemaOf(fn.body, fn.collects || fn.receives) }));

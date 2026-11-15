@@ -295,6 +295,16 @@ test('a folder that cannot be watched is reported once with its fix, and the wat
   assert.equal(ticks.length, 0);
 });
 
+test('a folder that cannot be watched for a reason golem has no fix for is reported without a fix', (t) => {
+  // protects: E-60 an unknown error code must not get the advice of another one
+  const { root, shared } = projectFolders(t);
+  const files: Pick<InputFiles, 'watch'> = {
+    watch: () => { throw Object.assign(new Error('EACCES: permission denied'), { code: 'EACCES' }); },
+  };
+  const { errors } = ticking(t, root, [shared], files);
+  assert.equal(errors[0].message, `golem cannot watch ${shared} (EACCES): EACCES: permission denied\nChanges there are not seen until it can.`);
+});
+
 test('closing the watcher closes every folder watch', (t) => {
   // protects: R-31 every watcher closes when the loop stops
   const { root } = projectFolders(t);

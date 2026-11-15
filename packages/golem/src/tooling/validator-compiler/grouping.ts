@@ -1,3 +1,4 @@
+import { assertNever } from '../../assert-never.js';
 import { codeKey, type Code, type InputSlot } from '../code.js';
 import { FunctionSlots } from './function-names.js';
 
@@ -62,7 +63,7 @@ function bodyKeyOf(body: Code, slots: FunctionSlots): BodyKey {
       case 'input': key += `p${inputNumber(part.slot)},`; break;
       case 'line': key += 'l,'; break;
       case 'indent': key += `d${part.by},`; break;
-      default: return unreachablePart(part);
+      default: return assertNever(part);
     }
   }
   pieces.push(text === '' ? key : key + JSON.stringify(text));
@@ -78,10 +79,6 @@ function bodyKey({ pieces, callees }: BodyKey, groups: ReadonlyMap<number, numbe
     key += `n${callee.fast},${group},${pieces[index + 1]!}`;
   }
   return key;
-}
-
-function unreachablePart(part: never): never {
-  throw new Error(`Internal error: the validator compiler body holds an unknown part ${JSON.stringify(part)}`);
 }
 
 const inputNumbers = new WeakMap<InputSlot, number>();

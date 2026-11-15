@@ -5,6 +5,7 @@
  * function, so a model that holds itself has a plan, and another module's model by the plan that module exports. A union of objects with no tag has no plan, so it keeps exact matching.
  */
 
+import { assertNever } from '../assert-never.js';
 import type { DiscriminatorValue, ModelTypeDescriptor } from '../model-registry.js';
 import { aliased, code, identifier, join, literal, type Code } from './code.js';
 import { rtType } from './rt.js';
@@ -231,8 +232,4 @@ export class StripPlans {
       default: return assertNever(descriptor);
     }
   }
-}
-
-function assertNever(value: never): never {
-  throw new Error(`Internal error: unhandled descriptor ${JSON.stringify(value)}`);
 }
