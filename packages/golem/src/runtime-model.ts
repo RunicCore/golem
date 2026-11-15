@@ -16,4 +16,5 @@ export {
   stringifyJsonArray, stringifyJsonBoolean, stringifyJsonNumber, stringifyJsonScalar, stringifyJsonString, validationUnavailableStub,
 } from './object-codec.js';
 export { IssueRepresentation, IssueSource } from './errors.js';
+export { recordOrUndefined } from './record.js';
 export { presentValue, withoutInstanceState } from './presence.js';

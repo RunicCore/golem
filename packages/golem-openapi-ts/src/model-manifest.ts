@@ -2,7 +2,7 @@ import { reachesRecursiveNode } from '@exprtlabs/golem/internal/emitter';
 import type { SchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
 import type { CodecSchemaClosureEntry } from '@exprtlabs/golem/internal/validation-plan';
 import type { JsonSchema } from '@exprtlabs/golem/internal/schema';
-import { sourceDigest } from '@exprtlabs/golem/internal/generator-support';
+import { isRecord, sourceDigest } from '@exprtlabs/golem/internal/generator-support';
 import { asRecord, isJsonObject, objectEntries } from './json.js';
 import { compareText } from '@exprtlabs/golem/generator-api';
 import { identifier } from '@exprtlabs/golem/internal/generator-support';
@@ -163,7 +163,7 @@ export function openApiValidationSchemaClosure(
     if (value === null || typeof value !== 'object') return value;
     const result = Object.create(null) as Record<string, unknown>;
     for (const [key, child] of Object.entries(value)) {
-      if (key === '$defs' && child !== null && typeof child === 'object' && !Array.isArray(child)) {
+      if (key === '$defs' && isRecord(child)) {
         const definitions = Object.create(null) as Record<string, unknown>;
         for (const [name, schema] of Object.entries(child)) {
           const node = schemaGraph.nodeByCodecId(name);

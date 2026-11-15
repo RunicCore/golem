@@ -27,7 +27,7 @@ import type {
   ResolvedGolemProfile,
 } from '@exprtlabs/golem/generator-api';
 import { resolveProfile } from '@exprtlabs/golem/generator-api';
-import { canonicalPath, displayPath } from '@exprtlabs/golem/internal/generator-support';
+import { canonicalPath, displayPath, recordOrUndefined } from '@exprtlabs/golem/internal/generator-support';
 import {
   GolemDiagnosticSeverity,
   diagnostic,
@@ -115,12 +115,6 @@ function asGolemDiagnostic(value: TsToOpenApiDiagnostic): GolemDiagnostic {
   };
 }
 
-function objectRecord(value: unknown): Record<string, unknown> | undefined {
-  return value !== null && typeof value === 'object' && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : undefined;
-}
-
 function componentReferenceName(value: string): string | undefined {
   const prefix = '#/components/schemas/';
   if (!value.startsWith(prefix)) return undefined;
@@ -152,7 +146,7 @@ function visitReferences(root: unknown, onReference: (reference: string) => void
       for (const item of value) visit(item);
       return;
     }
-    const mapping = key === 'discriminator' ? objectRecord((value as Record<string, unknown>).mapping) : undefined;
+    const mapping = key === 'discriminator' ? recordOrUndefined((value as Record<string, unknown>).mapping) : undefined;
     for (const target of Object.values(mapping ?? {})) if (typeof target === 'string') onReference(target);
     const namesOnly = key !== undefined && NAME_MAP_KEYWORDS.has(key);
     for (const [childKey, item] of Object.entries(value)) {
@@ -166,8 +160,8 @@ function visitReferences(root: unknown, onReference: (reference: string) => void
 function assertResolvedLocalReferences(
   document: Readonly<Record<string, unknown>>,
 ): void {
-  const components = objectRecord(document.components);
-  const schemas = objectRecord(components?.schemas) ?? {};
+  const components = recordOrUndefined(document.components);
+  const schemas = recordOrUndefined(components?.schemas) ?? {};
   visitReferences(document, reference => {
     const name = componentReferenceName(reference);
     if (name && schemas[name] === undefined) {
@@ -377,8 +371,8 @@ class ComponentSchemas {
 
   /** The schemas of the model definitions that `document` reaches by `$ref` and does not already hold. */
   reachableSchemas(document: Readonly<Record<string, unknown>>): Readonly<Record<string, unknown>> {
-    const components = objectRecord(document.components);
-    const existingSchemas = objectRecord(components?.schemas) ?? {};
+    const components = recordOrUndefined(document.components);
+    const existingSchemas = recordOrUndefined(components?.schemas) ?? {};
     const pending = new Set<string>();
     collectComponentReferences(document, pending);
     const generated: Record<string, unknown> = {};
@@ -410,7 +404,7 @@ function withSchemas(
 ): Readonly<Record<string, unknown>> {
   return Object.keys(schemas).length === 0
     ? document
-    : { ...document, components: { ...(objectRecord(document.components) ?? {}), schemas } };
+    : { ...document, components: { ...(recordOrUndefined(document.components) ?? {}), schemas } };
 }
 
 /** The document with the registered schemas and the model schemas it reaches. */

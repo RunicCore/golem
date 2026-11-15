@@ -18,7 +18,7 @@ import { decoratorOptions, inApplicationOrder, readNumber, readString, type Deco
 import { evaluateStaticValue } from '@exprtlabs/golem/internal/static-value';
 import { NEST_COMMON, NEST_SWAGGER } from './packages.js';
 import { callArguments, decoratorsOf } from './symbols.js';
-import type { DecoratorInfo, NestAnalysisContext, NestHttpMethod, RequestBodyDescription, ResponseDescription, TypeReference } from './types.js';
+import { DEFAULT_MEDIA_TYPE, type DecoratorInfo, type NestAnalysisContext, type NestHttpMethod, type RequestBodyDescription, type ResponseDescription, type TypeReference } from './types.js';
 const DEFAULT_RESPONSE_STATUS: Record<NestHttpMethod, string> = {
   get: '200',
   post: '201',
@@ -206,7 +206,7 @@ function overrideExistingFlag(
 function explicitContent(options: DecoratorOptions): Record<string, unknown> | undefined {
   const content = options.record('content');
   const schema = options.record('schema');
-  return content ?? (schema ? { 'application/json': { schema } } : undefined);
+  return content ?? (schema ? { [DEFAULT_MEDIA_TYPE]: { schema } } : undefined);
 }
 
 function parseSwaggerResponse(

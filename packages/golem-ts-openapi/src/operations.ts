@@ -1,9 +1,10 @@
 import { compareText } from '@exprtlabs/golem/generator-api';
+import { recordOrUndefined } from '@exprtlabs/golem/internal/generator-support';
 import { followReference, schemaReference } from '@exprtlabs/golem/internal/schema';
 import * as ts from '@exprtlabs/golem/internal/ts';
 import { TsToOpenApiDiagnosticCode, TsToOpenApiError, diagnostic } from './diagnostics.js';
 import { mapArrayItems, mergeSchemaMetadata } from './nest/json-schema-merge.js';
-import type { ControllerParameter, ControllerRoute, ResponseDescription, TypeReference } from './nest/types.js';
+import { DEFAULT_MEDIA_TYPE, mediaTypesOrDefault, NEST_HTTP_METHODS, type ControllerParameter, type ControllerRoute, type ResponseDescription, type TypeReference } from './nest/types.js';
 import { parameterOverrideKey } from './nest/parameters.js';
 import type { OpenApiVersion } from './openapi-version.js';
 
@@ -32,14 +33,6 @@ export interface OperationBuildContext {
 
 interface OperationBuildResult {
   readonly paths: Readonly<Record<string, Readonly<Record<string, unknown>>>>;
-}
-
-const HTTP_METHODS = new Set(['get', 'post', 'put', 'delete', 'patch', 'options', 'head']);
-
-function record(value: unknown): Record<string, unknown> | undefined {
-  return value !== null && typeof value === 'object' && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : undefined;
 }
 
 async function schemaFor(
@@ -88,7 +81,7 @@ function contractHint(direction: 'request' | 'response' | 'parameter'): string {
  * so it replaces the inline schema; IModel contracts stay authoritative.
  */
 function explicitCompositionSchema(reference: TypeReference, schema: unknown): OpenApiSchema | undefined {
-  const value = record(schema);
+  const value = recordOrUndefined(schema);
   if (!value || reference.modelContractName !== undefined) return undefined;
   return ['$ref', 'oneOf', 'anyOf', 'allOf'].some(key => key in value) ? value : undefined;
 }
@@ -215,15 +208,15 @@ function querystringPropertyOverrides(
   parameter: ControllerParameter,
   schema: OpenApiSchema,
 ): OpenApiSchema {
-  const target = record(schema);
-  const properties = record(target?.properties);
+  const target = recordOrUndefined(schema);
+  const properties = recordOrUndefined(target?.properties);
   if (!target || !properties) return schema;
   const authoritative = parameter.type.modelContractName !== undefined;
   let result: Record<string, unknown> = target;
   for (const name of Object.keys(properties)) {
     const override = name === parameter.name ? undefined : route.parameterOverrides?.[parameterOverrideKey('query', name)];
     if (!override) continue;
-    const propertySchema: Record<string, unknown> = { ...record(override.schema), ...parameterKeywords(override) };
+    const propertySchema: Record<string, unknown> = { ...recordOrUndefined(override.schema), ...parameterKeywords(override) };
     for (const key of ['description', 'deprecated'] as const) {
       if (override[key] !== undefined) propertySchema[key] = override[key];
     }
@@ -234,11 +227,11 @@ function querystringPropertyOverrides(
       node: parameter.node,
       location: `querystring.${name}`,
     };
-    const merged = record(mergeSchemaMetadata(result, { properties: { [name]: propertySchema } }, mergeOptions));
+    const merged = recordOrUndefined(mergeSchemaMetadata(result, { properties: { [name]: propertySchema } }, mergeOptions));
     result = merged ?? result;
-    const mergedProperty = record(record(result.properties)?.[name]);
+    const mergedProperty = recordOrUndefined(recordOrUndefined(result.properties)?.[name]);
     if (mergedProperty && override.enumOnItems === true) {
-      result = { ...result, properties: { ...record(result.properties), [name]: withItemsEnum(mergedProperty, override, mergeOptions) } };
+      result = { ...result, properties: { ...recordOrUndefined(result.properties), [name]: withItemsEnum(mergedProperty, override, mergeOptions) } };
     }
     if (typeof override.required !== 'boolean' || (override.requiredDefaulted === true && authoritative)) continue;
     const required = new Set(Array.isArray(result.required) ? result.required.map(String) : []);
@@ -265,7 +258,7 @@ async function openApiParameter(
 ): Promise<Record<string, unknown>> {
   const location = parameter.location;
   const override = parameterOverride(route, parameter);
-  const overrideSchema = record(override?.schema) as OpenApiSchema | undefined;
+  const overrideSchema = recordOrUndefined(override?.schema) as OpenApiSchema | undefined;
   const hasAuthoritativeRequiredContract = parameter.required && parameter.type.modelContractName !== undefined;
   if (override?.required === false && (location === 'path' || hasAuthoritativeRequiredContract)) {
     throw new TsToOpenApiError(diagnostic(
@@ -304,7 +297,7 @@ async function openApiParameter(
   const overrideReference = overrideType && typeof overrideType === 'object' && 'type' in (overrideType as object)
     ? overrideType as TypeReference
     : parameter.type;
-  const overrideRecord = record(overrideSchema);
+  const overrideRecord = recordOrUndefined(overrideSchema);
   const schemaOverride: Record<string, unknown> = { ...(overrideRecord ?? {}), ...(override ? parameterKeywords(override) : {}) };
   let schema: OpenApiSchema;
   if (overrideType && overrideReference !== parameter.type) {
@@ -336,7 +329,7 @@ async function openApiParameter(
     node: parameter.node,
     location: `${location}.${parameter.name}`,
   });
-  const schemaValue = record(schema);
+  const schemaValue = recordOrUndefined(schema);
   const schemaRecord = schemaValue ? { ...schemaValue } : undefined;
   if (schemaRecord) schema = schemaRecord;
   const style = typeof override?.style === 'string'
@@ -359,10 +352,6 @@ async function openApiParameter(
     ...(typeof override?.description === 'string' ? { description: override.description } : {}),
     ...(override?.deprecated === true ? { deprecated: true } : {}),
   };
-}
-
-function explicitContent(value: unknown): Record<string, unknown> | undefined {
-  return record(value);
 }
 
 /** A type as the source writes it, for a message. */
@@ -414,7 +403,7 @@ async function bodyExtraSchemas(
 function resolvedSchema(resolve: OperationBuildContext['resolveSchemaReference'], schema: OpenApiSchema): Record<string, unknown> | undefined {
   const followed = followReference<OpenApiSchema>(schema, schemaReference, (reference) => resolve?.(reference));
   switch (followed.kind) {
-    case 'found': return record(followed.target);
+    case 'found': return recordOrUndefined(followed.target);
     case 'miss':
     case 'cycle': return undefined;
   }
@@ -426,7 +415,7 @@ export function propertyNames(resolve: OperationBuildContext['resolveSchemaRefer
   if (value === undefined) return undefined;
   const onPath = schemaReference(schema) ?? value;
   if (visiting.has(onPath)) return new Set();
-  const names = new Set(key === 'properties' ? Object.keys(record(value.properties) ?? {}) : (Array.isArray(value.required) ? value.required as string[] : []));
+  const names = new Set(key === 'properties' ? Object.keys(recordOrUndefined(value.properties) ?? {}) : (Array.isArray(value.required) ? value.required as string[] : []));
   for (const member of Array.isArray(value.allOf) ? value.allOf as OpenApiSchema[] : []) {
     visiting.add(onPath);
     const inner = propertyNames(resolve, member, key, visiting);
@@ -486,20 +475,20 @@ async function requestBody(
     });
   }
   const mediaTypes = override?.content
-    ? explicitContent(override.content)
-    : Object.fromEntries((route.consumes?.length ? route.consumes : ['application/json']).map(media => [media, {}]));
+    ? recordOrUndefined(override.content)
+    : Object.fromEntries(mediaTypesOrDefault(route.consumes).map(media => [media, {}]));
   const content = override?.content
     ? override.content
     : (() => {
       if (!bodyType) return mediaTypes;
-      return Object.fromEntries(Object.keys(mediaTypes ?? { 'application/json': {} }).map(media => [media, {
+      return Object.fromEntries(Object.keys(mediaTypes ?? { [DEFAULT_MEDIA_TYPE]: {} }).map(media => [media, {
         schema: undefined,
       }]));
     })();
   const generatedContent: Record<string, unknown> = {};
   if (content) {
     for (const [media, mediaValue] of Object.entries(content)) {
-      const mediaRecord = record(mediaValue) ?? {};
+      const mediaRecord = recordOrUndefined(mediaValue) ?? {};
       if (mediaRecord.schema !== undefined) {
         if (!bodyType) {
           generatedContent[media] = mediaRecord;
@@ -560,7 +549,7 @@ async function responseObject(
     if (contractType) {
       const content: Record<string, unknown> = {};
       for (const [media, mediaValue] of Object.entries(response.content)) {
-        const mediaRecord = record(mediaValue) ?? {};
+        const mediaRecord = recordOrUndefined(mediaValue) ?? {};
         if (mediaRecord.schema === undefined) {
           const schema = await schemaFor(
             context,
@@ -609,14 +598,14 @@ async function responseObject(
         `Primitive response ${context.checker.typeToString(response.type.type)} requires an explicit supported Swagger schema.`,
       ));
     }
-    const mediaTypes = response.mediaTypes ?? (route.produces?.length ? route.produces : ['application/json']);
+    const mediaTypes = response.mediaTypes ?? mediaTypesOrDefault(route.produces);
     result.content = Object.fromEntries(mediaTypes.map(media => [media, { schema: response.isArray ? arraySchema(schema) : schema }]));
     return result;
   }
   const schema = await schemaFor(context, response.declaredType ?? response.type, 'response', `response.${response.status}`);
   // A declared return type already describes the complete array shape.
   const responseSchema = response.isArray && !response.declaredType ? arraySchema(schema) : schema;
-  const mediaTypes = response.mediaTypes ?? (route.produces?.length ? route.produces : ['application/json']);
+  const mediaTypes = response.mediaTypes ?? mediaTypesOrDefault(route.produces);
   result.content = Object.fromEntries(mediaTypes.map(media => [media, { schema: responseSchema }]));
   return result;
 }
@@ -672,7 +661,7 @@ export async function collectOperations(
   const paths: Record<string, Record<string, unknown>> = {};
   const operationIds = new Map<string, ControllerRoute>();
   for (const route of routes) {
-    if (!HTTP_METHODS.has(route.httpMethod)) {
+    if (!NEST_HTTP_METHODS.includes(route.httpMethod)) {
       throw new TsToOpenApiError(diagnostic(route.sourceFile, route.method, TsToOpenApiDiagnosticCode.UnsupportedHttpMethod, `Unsupported HTTP method ${route.httpMethod}.`));
     }
     const previous = operationIds.get(route.operationId);

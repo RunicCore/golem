@@ -8,12 +8,9 @@
 
 import { aliasReference, followReference } from './json-reference.js';
 import { escapePointerToken, fragmentPointerTokens, resolveFragmentPointer } from './json-pointer.js';
+import { isRecord } from './record.js';
 
 type SchemaRecord = Readonly<Record<string, unknown>>;
-
-function isRecord(value: unknown): value is SchemaRecord {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
 
 function resolveUri(reference: string, base: string | undefined): string {
   if (base !== undefined) {

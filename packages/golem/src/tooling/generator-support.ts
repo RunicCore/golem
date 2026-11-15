@@ -4,7 +4,7 @@
  * The extension API stays on `@exprtlabs/golem/generator-api`.
  */
 export {
-  canonicalPath, displayPath, isRecord, stripSourceSuffix,
+  canonicalPath, displayPath, isRecord, readOwnPackageVersion, recordOrUndefined, stripSourceSuffix,
   suffixPattern,
 } from './generator-core.js';
 export {

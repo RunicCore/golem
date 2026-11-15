@@ -23,7 +23,7 @@ import {
 } from '@nestjs/common';
 import { mergeMap, type Observable } from 'rxjs';
 import { LibError, LibErrorKind, type IssuePath } from '@exprtlabs/golem/errors';
-import { IssueRepresentation, IssueSource, resolveMaxDepth } from '@exprtlabs/golem/internal/model-runtime';
+import { IssueRepresentation, IssueSource, recordOrUndefined, resolveMaxDepth } from '@exprtlabs/golem/internal/model-runtime';
 import { getIModelClass, getObjectCodec, type ObjectCodec } from '@exprtlabs/golem/serde';
 import {
   asToken,
@@ -36,7 +36,6 @@ import {
   NEST_MODEL_UNION_IDS,
   queryWireDecoder,
   reflectMeta,
-  schemaRecord,
   type ModelInput,
   type NestModelConstruct,
   type NestReturnMeta,
@@ -73,11 +72,6 @@ type HttpResponse = {
  */
 type JsonResponseWriter = (response: HttpResponse, text: string) => Promise<string>;
 type JsonModelProjection = (value: unknown) => Observable<unknown> | Promise<unknown>;
-type JsonModelProjectionFactory = (
-  response: HttpResponse,
-  codec: ObjectCodec,
-  array: boolean,
-) => JsonModelProjection;
 
 function routeArgs(klass: Function, name: string): Record<string, RouteArgMeta> | undefined {
   let current: unknown = klass;
@@ -143,10 +137,9 @@ export function nestModelConstruct(metatype: unknown): (abstract new (values?: n
 }
 
 function returnMeta(value: unknown): NestReturnMeta | undefined {
-  if (typeof value !== 'object' || value === null) return undefined;
-  const id = (value as { id?: unknown }).id;
-  if (typeof id !== 'string' || id === '') return undefined;
-  return { id, array: (value as { array?: unknown }).array === true };
+  const meta = recordOrUndefined(value);
+  if (!meta || typeof meta.id !== 'string' || meta.id === '') return undefined;
+  return { id: meta.id, array: meta.array === true };
 }
 
 function declaredReturn(klass: Function, name: string): NestReturnMeta | undefined {
@@ -192,11 +185,13 @@ function stringifyModel(codec: ObjectCodec, value: unknown, array: boolean): str
   return codec.stringify(value);
 }
 
+const JSON_CONTENT_TYPE = 'application/json; charset=utf-8';
+
 function sendExpressJson(response: HttpResponse, text: string): Promise<string> {
   const expressResponse = response as HttpResponse & {
     setHeader(name: string, value: string): unknown;
   };
-  expressResponse.setHeader('Content-Type', 'application/json; charset=utf-8');
+  expressResponse.setHeader('Content-Type', JSON_CONTENT_TYPE);
   return Promise.resolve(text);
 }
 
@@ -204,44 +199,37 @@ function sendFastifyJson(response: HttpResponse, text: string): Promise<string> 
   const fastifyReply = response as HttpResponse & {
     header(name: string, value: string): unknown;
   };
-  fastifyReply.header('Content-Type', 'application/json; charset=utf-8');
+  fastifyReply.header('Content-Type', JSON_CONTENT_TYPE);
   return Promise.resolve(text);
 }
 
+/** The writer of the adapter that `response` belongs to: Express sets a header with `setHeader`, Fastify with `header`. */
 function jsonResponseWriter(response: HttpResponse): JsonResponseWriter {
   if (typeof response.setHeader === 'function') return sendExpressJson;
   if (typeof response.header === 'function') return sendFastifyJson;
   throw new TypeError('NestModelInterceptor requires an HTTP response with setHeader() or header().');
 }
 
-function expressModelProjection(
+/** A writer that resolves the adapter at its first write and keeps it, so a stream that only forwards `null` or `undefined` needs no adapter method. */
+function lazyJsonWriter(): JsonResponseWriter {
+  let write: JsonResponseWriter = (response, text) => {
+    write = jsonResponseWriter(response);
+    return write(response, text);
+  };
+  return (response, text) => write(response, text);
+}
+
+function modelProjection(
+  write: JsonResponseWriter,
   response: HttpResponse,
   codec: ObjectCodec,
   array: boolean,
 ): JsonModelProjection {
-  return function projectExpressModel(value): Observable<unknown> | Promise<unknown> {
+  return function projectModel(value): Observable<unknown> | Promise<unknown> {
     if (value === undefined) return FORWARDED_UNDEFINED;
     if (value === null) return FORWARDED_NULL;
-    return sendExpressJson(response, stringifyModel(codec, value, array));
+    return write(response, stringifyModel(codec, value, array));
   };
-}
-
-function fastifyModelProjection(
-  response: HttpResponse,
-  codec: ObjectCodec,
-  array: boolean,
-): JsonModelProjection {
-  return function projectFastifyModel(value): Observable<unknown> | Promise<unknown> {
-    if (value === undefined) return FORWARDED_UNDEFINED;
-    if (value === null) return FORWARDED_NULL;
-    return sendFastifyJson(response, stringifyModel(codec, value, array));
-  };
-}
-
-function jsonModelProjectionFactory(response: HttpResponse): JsonModelProjectionFactory {
-  if (typeof response.setHeader === 'function') return expressModelProjection;
-  if (typeof response.header === 'function') return fastifyModelProjection;
-  throw new TypeError('NestModelInterceptor requires an HTTP response with setHeader() or header().');
 }
 
 function replaceQuery(request: HttpRequest, value: unknown): void {
@@ -345,21 +333,7 @@ export class NestModelInterceptor implements NestInterceptor {
     this.validate = options.validate;
   }
 
-  // Resolve the adapter only when a model value is first written. This initial
-  // projection belongs to this interceptor and keeps null-only streams valid.
-  private modelProjectionFactory: JsonModelProjectionFactory = (response, codec, array) => {
-    let projection: JsonModelProjection | undefined;
-    return (value) => {
-      if (value === undefined) return FORWARDED_UNDEFINED;
-      if (value === null) return FORWARDED_NULL;
-      if (!projection) {
-        const factory = jsonModelProjectionFactory(response);
-        this.modelProjectionFactory = factory;
-        projection = factory(response, codec, array);
-      }
-      return projection(value);
-    };
-  };
+  private readonly writeJson = lazyJsonWriter();
 
   intercept(context: ExecutionContext, next: CallHandler<unknown>): Observable<unknown> {
     // Body and query parameters are HTTP request input. An RPC or WebSocket handler has other parameters under the same numbers.
@@ -427,7 +401,7 @@ export class NestModelInterceptor implements NestInterceptor {
             else replaceQuery(req, value);
             wholeSources |= source;
           } else {
-            const record = schemaRecord(paramtype === NEST_BODY ? req.body : req.query);
+            const record = recordOrUndefined(paramtype === NEST_BODY ? req.body : req.query);
             const value = convertInput(codec, construct, array, record && Object.hasOwn(record, field) ? record[field] : undefined, decode, field, this.maxDepth, this.validate);
             // Copy so the incoming object is not mutated; define so a field named __proto__ stays data.
             const copy = { ...record };
@@ -447,27 +421,22 @@ export class NestModelInterceptor implements NestInterceptor {
     if (!declared) return next.handle();
     const response = context.switchToHttp().getResponse<HttpResponse>();
     const source = next.handle();
-    const project = this.modelProjectionFactory(response, declared.codec, declared.array);
+    const project = modelProjection(this.writeJson, response, declared.codec, declared.array);
     return mergeMap(project)(source);
   }
 }
 // #endregion nest-model-interceptor
 
 export function nestModelStringifyInterceptor(codec: ObjectCodec): NestInterceptor {
-  let writeJson: JsonResponseWriter = (response, text) => {
-    const writer = jsonResponseWriter(response);
-    writeJson = writer;
-    return writer(response, text);
-  };
+  const writeJson = lazyJsonWriter();
   return {
     intercept(context: ExecutionContext, next: CallHandler<unknown>): Observable<unknown> {
       const response = context.switchToHttp().getResponse<HttpResponse>();
-      const writeJsonForResponse = writeJson;
       const source = next.handle();
       return mergeMap((value: unknown): Observable<unknown> | Promise<unknown> => {
         if (value === undefined) return FORWARDED_UNDEFINED;
         if (value === null) return FORWARDED_NULL;
-        return writeJsonForResponse(response, stringifyModel(codec, value, Array.isArray(value)));
+        return writeJson(response, stringifyModel(codec, value, Array.isArray(value)));
       })(source);
     },
   };

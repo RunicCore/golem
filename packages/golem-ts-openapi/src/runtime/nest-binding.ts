@@ -3,7 +3,7 @@
  * those tokens (`@exprtlabs/golem-ts-openapi/internal/nest-runtime`). `nest.ts` reads the tokens in `NestModelInterceptor` and
  * `objectCodecFromMetatype`; the decorators are internal because only generated code calls them.
  */
-import { presentValue, requireModelObject, unknownDiscriminatorValue, type DiscriminatorValue, type InternalObjectCodec } from '@exprtlabs/golem/internal/model-runtime';
+import { presentValue, recordOrUndefined, requireModelObject, unknownDiscriminatorValue, type DiscriminatorValue, type InternalObjectCodec } from '@exprtlabs/golem/internal/model-runtime';
 import { getIModelClass, getObjectCodec, type ObjectCodec, type SerdeOptions } from '@exprtlabs/golem/serde';
 import { decodeQueryField, type QueryFieldTable } from './query-decode.js';
 
@@ -166,7 +166,7 @@ function nestUnionInput(property: string, variants: readonly NestUnionVariant[])
       return member.codec.fromWireFormat(wire, { ...options, construct: member.construct });
     },
     decodeQuery(query) {
-      const record = schemaRecord(query);
+      const record = recordOrUndefined(query);
       const tag = record && presentValue(record, property);
       // A query tag is text: the picked variant decodes it to a number or a boolean when its tag has that type.
       const member = typeof tag === 'string' ? registered.find((each) => each.values.some((value) => String(value) === tag)) : undefined;
@@ -178,12 +178,6 @@ function nestUnionInput(property: string, variants: readonly NestUnionVariant[])
 type QueryWireDecoder = (query: unknown) => unknown;
 
 const queryWireDecoders = new WeakMap<InternalObjectCodec, QueryWireDecoder>();
-
-export function schemaRecord(value: unknown): Readonly<Record<string, unknown>> | undefined {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-    ? value as Readonly<Record<string, unknown>>
-    : undefined;
-}
 
 /**
  * Query values arrive as strings or repeated-key string arrays. Decode each
@@ -199,7 +193,7 @@ export function queryWireDecoder(input: ModelInput): QueryWireDecoder {
   if (cached) return cached;
   const decoded = Object.entries(codec.data?.nest ?? {});
   const decoder: QueryWireDecoder = decoded.length === 0 ? (query) => query : (query) => {
-    const record = schemaRecord(query);
+    const record = recordOrUndefined(query);
     if (!record) return query;
     let copy: Record<string, unknown> | undefined;
     for (const [name, shape] of decoded) {
