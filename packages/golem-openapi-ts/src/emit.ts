@@ -1,13 +1,13 @@
 import path from 'node:path';
 import { GolemDiagnosticSeverity, type GolemDiagnostic, type GolemResult, type HookParticipants } from '@exprtlabs/golem/generator-api';
-import { OPERATION_WRAPPER_HOOK, type OperationWrapper, type OperationWrapperParticipant } from './plan.js';
+import { OPERATION_WRAPPER_HOOK, type OperationWrapper, type OperationWrapperResult } from './plan.js';
 import { stableJson } from '@exprtlabs/golem/generator-api';
 import { assertPortableFilenames, identifier, isRecord } from '@exprtlabs/golem/internal/generator-support';
 import { buildOperationValidationSchemas, generateClientModules, operationValidatorNames } from './client/emit.js';
 import { browserCookieDiagnostics, normalizeAndValidate, unsupportedHttpAuthSchemes, type MovedUnions } from './document.js';
 import { buildEmissionPlan, serverOverrideDiagnostics, type ArtifactFile, type EmissionPlan } from './emission-plan.js';
 import { asRecord, readString } from './json.js';
-import { assertUniqueExportNames, code, documentLiteral, exportedName, renderModule, type PublicModule, type RenderedModule } from '@exprtlabs/golem/internal/emitter';
+import { assertUniqueExportNames, code, documentLiteral, exportedName, renderModule, type Code, type PublicModule, type RenderedModule } from '@exprtlabs/golem/internal/emitter';
 import { operationName, operationNameType } from './names.js';
 import type { NormalizedOperation } from './normalize.js';
 import { generatedBannerComment } from './package-info.js';
@@ -161,13 +161,24 @@ interface GeneratedFiles {
   diagnostics: readonly GolemDiagnostic[];
 }
 
+const isCode = (value: unknown): value is Code => isRecord(value) && Array.isArray(value.parts);
+
+/** What the emitters read of an answer: the two `Code` values of a wrapper, or the `code` and the `message` of a diagnostic (core checks the rest of a diagnostic on the job result). */
+function isOperationWrapperResult(value: unknown): value is OperationWrapperResult {
+  if (!isRecord(value)) return false;
+  if ('wrapper' in value) return isRecord(value.wrapper) && isCode(value.wrapper.operationType) && isCode(value.wrapper.createOperation);
+  return isRecord(value.diagnostic) && typeof value.diagnostic.code === 'string' && typeof value.diagnostic.message === 'string';
+}
+
 /** The operation wrapper that the extension on `client.operationWrapper` makes for the mode of the job, and the diagnostic when it refuses the mode. */
 function operationWrapperOf(hooks: HookParticipants | undefined, mode: 'standalone' | 'golem'): { readonly wrapper?: OperationWrapper; readonly diagnostics: readonly GolemDiagnostic[] } {
   const fills = hooks?.[OPERATION_WRAPPER_HOOK] ?? [];
   if (fills.length > 1) throw new Error(`Two extensions fill the hook "${OPERATION_WRAPPER_HOOK}": ${fills.map((fill) => fill.package).join(', ')}. Turn one off.`);
   const answer = fills[0]?.use((participant) => {
     if (typeof participant !== 'function') throw new TypeError(`it fills the hook "${OPERATION_WRAPPER_HOOK}" with ${typeof participant}, not a function`);
-    return (participant as OperationWrapperParticipant)(mode);
+    const result: unknown = participant(mode);
+    if (!isOperationWrapperResult(result)) throw new TypeError('it answers with neither a wrapper of two Code values nor a diagnostic');
+    return result;
   });
   if (answer === undefined) return { diagnostics: [] };
   return 'wrapper' in answer ? { wrapper: answer.wrapper, diagnostics: [] } : { diagnostics: [answer.diagnostic] };

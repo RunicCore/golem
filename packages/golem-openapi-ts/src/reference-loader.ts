@@ -248,7 +248,7 @@ async function fetchRemoteDocument(uri: string, maxBytes: number, timeoutMs: num
     // A timeout or an abort keeps its own error. Any other failure names the URL: `fetch failed` alone does not say which reference.
     if (signal.aborted) throw error;
     const cause = error instanceof Error && error.cause !== undefined ? error.cause : error;
-    const reason = cause instanceof Error ? cause.message || String((cause as NodeJS.ErrnoException).code ?? cause.name) : String(cause);
+    const reason = cause instanceof Error ? cause.message || String(('code' in cause ? cause.code : undefined) ?? cause.name) : String(cause);
     throw new Error(`remote reference could not be loaded: ${uri}: ${reason === 'unexpected redirect' ? 'the server answered with a redirect, which golem does not follow' : reason}`, { cause: error });
   }
   if (!response.ok) {

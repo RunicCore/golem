@@ -2,7 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { Code } from '@exprtlabs/golem/internal/emitter';
-import type { CodecsHostValue, GolemDiagnostic, GolemPlanEntry, InputObserver, JobFacts, GolemProfile, PlanContext, PlannedJob } from '@exprtlabs/golem/generator-api';
+import type { GolemDiagnostic, GolemPlanEntry, InputObserver, JobFacts, GolemProfile, PlanContext, PlannedJob } from '@exprtlabs/golem/generator-api';
 import { canonicalPath, CODECS_HOST, isRecord, sdkCodecsFile } from '@exprtlabs/golem/internal/plan-support';
 
 export interface OpenApiContext {
@@ -131,7 +131,7 @@ export const plan: GolemPlanEntry<OpenApiOptions> = {
 
   /** A golem SDK imports the file that the codecs host writes for it; the job writes only the import. */
   link(job, { needed }) {
-    const host = needed[CODECS_HOST] as CodecsHostValue | undefined;
+    const host = needed[CODECS_HOST];
     if (host === undefined) return job;
     return { facts: job.facts, options: { ...job.options, codecsFile: sdkCodecsFile({ ...host, sdkOutput: job.options.output }) } };
   },

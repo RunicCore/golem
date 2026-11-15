@@ -4,7 +4,7 @@ import type { ModelTypeDescriptor } from '@exprtlabs/golem/internal/schema';
 import { compareText } from '@exprtlabs/golem/generator-api';
 import type { OpenApiGenerationProfile } from './profile.js';
 import { mediaSchema, parameterSchema, resolveLocal, type NormalizedOperation } from './normalize.js';
-import { objectEntries } from './json.js';
+import { isJsonObject, objectEntries } from './json.js';
 import { componentOrigin, LocatedError } from './origin.js';
 import { schemaContext } from './types.js';
 import { collectCanonicalResources, type ResourceIndex } from './schema-projection.js';
@@ -61,8 +61,7 @@ export function operationConverts(operation: NormalizedOperation, convertedNodeI
 
 /** Whether a value of `descriptor` changes between its wire and its plain form: a Date or Temporal value anywhere inside, through the components it references. */
 function descriptorConverts(descriptor: ModelTypeDescriptor, graph: SchemaGraph, seen: Set<string>): boolean {
-  const tags = descriptor as ModelTypeDescriptor & { readonly serde?: unknown };
-  if (tags.serde !== undefined) return true;
+  if (descriptor.serde !== undefined) return true;
   const converts = (held: ModelTypeDescriptor): boolean => descriptorConverts(held, graph, seen);
   switch (descriptor.kind) {
     case 'generated-model':
@@ -84,10 +83,9 @@ function descriptorConverts(descriptor: ModelTypeDescriptor, graph: SchemaGraph,
 /** The models and recursive aliases that a descriptor names, anywhere inside it. */
 function referencedModels(descriptor: unknown): string[] {
   if (Array.isArray(descriptor)) return descriptor.flatMap(referencedModels);
-  if (descriptor === null || typeof descriptor !== 'object') return [];
-  const record = descriptor as Record<string, unknown>;
-  const named = record.kind === 'generated-model' ? record.id : record.kind === 'reference' ? record.name : undefined;
-  return [...(typeof named === 'string' ? [named] : []), ...Object.values(record).flatMap(referencedModels)];
+  if (!isJsonObject(descriptor)) return [];
+  const named = descriptor.kind === 'generated-model' ? descriptor.id : descriptor.kind === 'reference' ? descriptor.name : undefined;
+  return [...(typeof named === 'string' ? [named] : []), ...Object.values(descriptor).flatMap(referencedModels)];
 }
 
 /** The keywords that no descriptor carries, own and of every model the descriptor refers to; none when the descriptor is complete. */
