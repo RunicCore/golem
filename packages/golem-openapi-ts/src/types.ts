@@ -102,7 +102,7 @@ function classifyTextSchemaLocal(schema: JsonObject): TextSchemaClassification {
     const hasNull = listed.some((value) => value === null);
     const concrete = listed.filter((value) => value !== null);
     if (concrete.length === 0) return { kind: 'non-string', schemaType: 'null' };
-    const kinds = new Set(concrete.map((value) => typeof value));
+    const kinds = new Set(concrete.map(jsonKindOf));
     if (kinds.size === 1 && kinds.has('string')) {
       return withNullAlternative({ kind: 'string', schemaType: 'string' }, hasNull);
     }
