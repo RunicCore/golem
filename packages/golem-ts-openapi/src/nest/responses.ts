@@ -14,7 +14,7 @@ import {
   typeExpressionFromApiOption,
   unwrapAsyncType,
 } from './analysis-utils.js';
-import { decoratorOptions, readNumber, readString, type DecoratorOptions, type MetadataReader } from './metadata.js';
+import { decoratorOptions, inApplicationOrder, readNumber, readString, type DecoratorOptions, type MetadataReader } from './metadata.js';
 import { evaluateStaticValue } from '@exprtlabs/golem/internal/static-value';
 import { NEST_COMMON, NEST_SWAGGER } from './packages.js';
 import { callArguments, decoratorsOf } from './symbols.js';
@@ -380,7 +380,7 @@ function nestResponseHeaders(
 ): { readonly headers: Record<string, unknown>; readonly mediaType?: string } {
   const headers: Record<string, unknown>[] = [];
   let mediaType: string | undefined;
-  for (const decorator of hasAnyDecorator(decorators, ['Header'], NEST_COMMON)) {
+  for (const decorator of hasAnyDecorator(inApplicationOrder(decorators), ['Header'], NEST_COMMON)) {
     const [nameArgument, valueArgument] = callArguments(decorator);
     const name = readString(reader, nameArgument, '@Header() name', TsToOpenApiDiagnosticCode.UnsupportedRouteDecorator);
     if (name === undefined) continue;
