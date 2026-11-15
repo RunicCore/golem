@@ -44,6 +44,7 @@ import {
   wireStringifyExportName,
   writesWireStringify,
   descriptorNeedsConversion,
+  descriptorSerde,
   extraKeyValues,
   wireDiffers,
   type FromJsonModelResolver,
@@ -55,7 +56,7 @@ import {
 } from '@exprtlabs/golem/internal/emitter';
 import { anonymousShapeKeys, childDescriptors, createSchemaGraph, codecPublicId, internDescriptors, mapNamedTypes, nodeHoldsSequence, type SchemaGraph, type SchemaNode } from '@exprtlabs/golem/internal/schema-graph';
 import { compareText, type GolemProfile } from '@exprtlabs/golem/generator-api';
-import { displayPath, RESERVED_MODEL_MEMBERS } from '@exprtlabs/golem/internal/generator-support';
+import { assertNever, displayPath, RESERVED_MODEL_MEMBERS } from '@exprtlabs/golem/internal/generator-support';
 import type { ManifestIndex } from '@exprtlabs/golem/internal/type-analysis';
 import type { ModelBoundary, ModelSpecification } from '@exprtlabs/golem/internal/type-analysis';
 import { descriptorBuilder, describeRootKind, nonObjectRootDiagnostic, propertyType } from '@exprtlabs/golem/internal/type-analysis';
@@ -70,7 +71,6 @@ import {
 import type {
   ModelConstraint,
   SerdeFunctions,
-  ValidationBinding,
 } from '@exprtlabs/golem/internal/type-analysis';
 import {
   canonicalSchemaKey,
@@ -80,21 +80,14 @@ import {
   isBrandDescriptor,
   mapConstraintSchemaValues,
   projectPortableConstraints,
+  serdeWireDescriptor,
+  validationBindingId,
+  type ImportedFunction,
   type ExecutableValidationMemo,
   schemaForDescriptor,
   validationTagSchemaDescriptor,
   VALIDATION_KEYWORD,
 } from '@exprtlabs/golem/internal/schema';
-
-type RichDescriptor = ModelConversionDescriptor & {
-  readonly validations?: readonly ValidationBinding[];
-  readonly serde?: SerdeFunctions & { readonly wireDescriptor?: ModelConversionDescriptor };
-  readonly constraints?: readonly ModelConstraint[];
-};
-
-function richDescriptor(descriptor: ModelConversionDescriptor): RichDescriptor {
-  return descriptor as RichDescriptor;
-}
 
 function bindingImportPath(binding: { readonly module: string; readonly specifier?: string }, output: string): string {
   return binding.specifier ?? sourceImportPath(binding.module, output);
@@ -133,12 +126,12 @@ interface DescriptorVisitor {
 
 /** The one read-only walk over a descriptor tree: below each descriptor it reaches the wire descriptor, then the constraint schemas, then the structure. */
 function walkDescriptor(descriptor: ModelConversionDescriptor, visitor: DescriptorVisitor, reach: DescriptorReach = 'all'): void {
-  const rich = richDescriptor(descriptor);
   const walk = (child: ModelConversionDescriptor): void => walkDescriptor(child, visitor, reach);
   visitor.enter?.(descriptor);
-  if (reach !== 'structure' && rich.serde?.wireDescriptor) walk(rich.serde.wireDescriptor);
+  const wireDescriptor = serdeWireDescriptor(descriptor.serde);
+  if (reach !== 'structure' && wireDescriptor) walk(wireDescriptor);
   if (reach === 'all') {
-    for (const constraint of rich.constraints ?? []) constraintSchemaValues(constraint).filter(isModelDescriptor).forEach(walk);
+    for (const constraint of descriptor.constraints ?? []) constraintSchemaValues(constraint).filter(isModelDescriptor).forEach(walk);
   }
   childDescriptors(descriptor).forEach(walk);
   visitor.leave?.(descriptor);
@@ -148,13 +141,13 @@ function walkDescriptor(descriptor: ModelConversionDescriptor, visitor: Descript
 type ClassBinding = NonNullable<Extract<ModelConversionDescriptor, { readonly kind: 'class-value' }>['typeImport']>;
 
 interface BindingRegistry {
-  readonly validations: Map<string, ValidationBinding>;
+  readonly validations: Map<string, ImportedFunction>;
   readonly serde: Map<string, SerdeFunctions>;
   readonly classes: Map<string, ClassBinding>;
 }
 
 /** An id names one function: a path from the project root, or a package import. A second binding with the id is the same function reached again, so the first stays. */
-function registerValidation(bindings: Map<string, { readonly module: string; readonly specifier?: string; readonly exportName: string }>, binding: ValidationBinding): void {
+function registerValidation(bindings: Map<string, { readonly module: string; readonly specifier?: string; readonly exportName: string }>, binding: ImportedFunction): void {
   if (!bindings.has(binding.id)) bindings.set(binding.id, binding);
 }
 
@@ -168,9 +161,10 @@ function visitDescriptor(
 ): void {
   walkDescriptor(descriptor, {
     enter: (item) => {
-      const rich = richDescriptor(item);
-      for (const binding of rich.validations ?? []) registerValidation(registry.validations, binding);
-      if (rich.serde) registerSerde(registry.serde, rich.serde);
+      // A validation named by its id alone has no function to import.
+      for (const binding of item.validations ?? []) if (typeof binding !== 'string') registerValidation(registry.validations, binding);
+      const serde = descriptorSerde(item);
+      if (serde) registerSerde(registry.serde, serde);
       if (item.kind === 'class-value' && item.classRef?.id !== undefined && item.typeImport !== undefined && !registry.classes.has(item.classRef.id)) {
         registry.classes.set(item.classRef.id, item.typeImport);
       }
@@ -219,11 +213,9 @@ function tagSchemas(
   };
   const schemaOptions = { definitions };
   const registerTags = (descriptor: ModelConversionDescriptor): void => {
-    const rich = richDescriptor(descriptor);
-    const constraints = [...(rich.constraints ?? [])].sort((left, right) =>
+    const constraints = [...(descriptor.constraints ?? [])].sort((left, right) =>
       compareText(canonicalConstraintKey(left), canonicalConstraintKey(right)));
-    const validations = [...(rich.validations ?? [])]
-      .map((binding) => typeof binding === 'string' ? binding : (binding as ValidationBinding).id).sort();
+    const validations = [...(descriptor.validations ?? [])].map(validationBindingId).sort();
     if (constraints.length > 0) {
       // Keep structural siblings in the same schema context as object and
       // array keywords. In particular, `additionalProperties` must see the
@@ -261,12 +253,11 @@ function projectDescriptor(
   retainPredicates = !wire,
   definitions: Readonly<Record<string, ModelConversionDescriptor>> = {},
 ): ModelConversionDescriptor {
-  const rich = richDescriptor(descriptor);
   const constraints = wire && !retainPredicates
-    ? projectPortableConstraints(rich.constraints ?? [], { definitions, executableMemo: executableMemos.get(definitions) }, descriptor)
-    : rich.constraints ?? [];
-  if (wire && rich.serde) {
-    const wireDescriptor = rich.serde.wireDescriptor;
+    ? projectPortableConstraints(descriptor.constraints ?? [], { definitions, executableMemo: executableMemos.get(definitions) }, descriptor)
+    : descriptor.constraints ?? [];
+  if (wire && descriptor.serde) {
+    const wireDescriptor = serdeWireDescriptor(descriptor.serde);
     return wireDescriptor
       ? projectDescriptor(wireDescriptor, validationEnabled, true, true, definitions)
       : { kind: 'unknown' };
@@ -314,20 +305,26 @@ function projectDescriptor(
       };
       break;
     // `typeImport` is an absolute path used only while emitting imports; generated data keeps the name and the class reference.
-    case 'class-value': projected = { kind: 'class-value', typeName: descriptor.typeName, ...(descriptor.classRef ? { classRef: descriptor.classRef } : {}) } as ModelConversionDescriptor; break;
-    default: projected = { kind: descriptor.kind, ...('value' in descriptor ? { value: descriptor.value } : {}), ...('name' in descriptor ? { name: descriptor.name } : {}), ...('id' in descriptor ? { id: descriptor.id } : {}), ...('projection' in descriptor && descriptor.projection ? { projection: true } : {}), ...('construct' in descriptor && descriptor.construct ? { construct: true as const } : {}) } as ModelConversionDescriptor;
+    case 'class-value': projected = { kind: 'class-value', typeName: descriptor.typeName, ...(descriptor.classRef ? { classRef: descriptor.classRef } : {}) }; break;
+    case 'any': case 'unknown': case 'never': case 'string': case 'number': case 'boolean': case 'bigint': case 'null': case 'undefined':
+      projected = { kind: descriptor.kind };
+      break;
+    case 'literal': projected = { kind: 'literal', value: descriptor.value }; break;
+    case 'reference':
+      projected = { kind: 'reference', name: descriptor.name, ...(descriptor.projection ? { projection: true as const } : {}), ...(descriptor.construct ? { construct: true as const } : {}) };
+      break;
+    case 'generated-model': projected = { kind: 'generated-model', id: descriptor.id }; break;
+    default: return assertNever(descriptor);
   }
   const normalizedConstraints = validationEnabled
     ? constraints.map(constraint => mapConstraint(constraint, validationEnabled, wire, retainPredicates, definitions))
       .sort((left, right) => compareText(JSON.stringify(left), JSON.stringify(right)))
     : [];
-  const normalizedValidations = [...(rich.validations ?? [])]
-    .map((binding) => typeof binding === 'string' ? binding : (binding as ValidationBinding).id)
-    .sort();
+  const normalizedValidations = [...(descriptor.validations ?? [])].map(validationBindingId).sort();
   const metadata = !validationEnabled
     ? {}
     : {
-      ...(rich.validations?.length && retainPredicates
+      ...(descriptor.validations?.length && retainPredicates
         ? { validations: normalizedValidations }
         : {}),
       ...(normalizedConstraints.length ? { constraints: normalizedConstraints } : {}),
@@ -355,17 +352,9 @@ function descriptorType(
   mode: 'model' | 'wire' | 'init',
   names: TypeNames,
 ): Code {
-  const rich = richDescriptor(descriptor);
-  if (mode === 'wire' && rich.serde) {
-    return rich.serde.wireDescriptor
-      ? descriptorType(rich.serde.wireDescriptor, 'wire', names)
-      : code`unknown`;
-  }
-  if ((mode === 'model' || mode === 'init') && descriptor.kind === 'class-value') {
-    // `Temporal.Instant` imported from a module is `<alias>.Instant`: the import brings in the outermost name.
-    const alias = descriptor.typeImport && names.classValue(classImportKey(descriptor.typeImport));
-    const path = descriptor.typeName.split('.');
-    return join(alias ? [alias, ...path.slice(1).map(identifier)] : path.map(identifier), code`.`);
+  if (mode === 'wire' && descriptor.serde) {
+    const wireDescriptor = serdeWireDescriptor(descriptor.serde);
+    return wireDescriptor ? descriptorType(wireDescriptor, 'wire', names) : code`unknown`;
   }
   switch (descriptor.kind) {
     case 'any': return code`any`;
@@ -377,6 +366,14 @@ function descriptorType(
     case 'bigint': return code`bigint`;
     case 'null': return code`null`;
     case 'undefined': return code`undefined`;
+    case 'class-value': {
+      // A class value has no wire type of its own: only its TSerde codec converts it.
+      if (mode === 'wire') return code`unknown`;
+      // `Temporal.Instant` imported from a module is `<alias>.Instant`: the import brings in the outermost name.
+      const alias = descriptor.typeImport && names.classValue(classImportKey(descriptor.typeImport));
+      const path = descriptor.typeName.split('.');
+      return join(alias ? [alias, ...path.slice(1).map(identifier)] : path.map(identifier), code`.`);
+    }
     case 'literal': return literal(descriptor.value as JsonValue);
     case 'reference':
       if (descriptor.projection) return names.modelType(descriptor.name, mode === 'wire' ? 'JSON' : mode === 'init' ? 'Init' : 'Fields');
@@ -409,8 +406,8 @@ function descriptorType(
       if (typeof descriptor.additionalProperties === 'object' && !descriptor.additionalPropertiesDeclared) properties.push(code`[key: string]: ${descriptorType(descriptor.additionalProperties, mode, names)}`);
       return code`{ ${join(properties, code`; `)} }`;
     }
+    default: return assertNever(descriptor);
   }
-  return code`unknown`;
 }
 
 function fieldDescriptors(

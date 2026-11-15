@@ -381,12 +381,12 @@ function memberPrefix(name: string, leadingComma: boolean): Code {
   return literal(`${leadingComma ? ',' : ''}${JSON.stringify(name)}:`);
 }
 
-function serdeTags(descriptor: ModelTypeDescriptor): {
-  readonly serde?: SerdeFunctions;
-} {
-  return descriptor as ModelTypeDescriptor & {
-    readonly serde?: SerdeFunctions;
-  };
+/**
+ * The serde of a descriptor as the functions it names. Every descriptor that a generator makes names both; a descriptor that a test
+ * writes by hand may leave them out, and the serde resolver of that test never reads them.
+ */
+export function descriptorSerde(descriptor: ModelTypeDescriptor): SerdeFunctions | undefined {
+  return descriptor.serde as SerdeFunctions | undefined;
 }
 
 function isObjectish(descriptor: ModelTypeDescriptor): boolean {
@@ -452,8 +452,7 @@ function emitRecursiveWireCall(named: SchemaNode, expression: Code, ctx: EmitCtx
 
 /** Whether a value under `descriptor` holds one a codec encodes (a serde type, a model of another module or one with its own wire form). */
 function reachesEncodedValue(descriptor: ModelTypeDescriptor, ctx: Pick<EmitCtx, 'graph'>, seen: Set<string> = new Set()): boolean {
-  const tags = serdeTags(descriptor);
-  if (tags.serde || descriptor.kind === 'generated-model') return true;
+  if (descriptor.serde || descriptor.kind === 'generated-model') return true;
   if (descriptor.kind === 'reference') {
     const node = ctx.graph.nodeFor(descriptor);
     if (!node || !node.sameSchema || node.descriptor.kind === 'reference') return true;
@@ -473,20 +472,20 @@ function emitValue(
   if (descriptor.kind === 'generated-model') {
     const named = ctx.graph.nodeFor(descriptor);
     // A wire value goes to the wire stringify of its node, the one its module exports or this module's own: the model stringify would encode the value again.
-    const wire = named && ctx.wireIdentity ? importedSerdeOf(named, ctx)?.wireStringify ?? (serdeTags(descriptor).serde ? undefined : localWireStringify(named, ctx)) : undefined;
+    const wire = named && ctx.wireIdentity ? importedSerdeOf(named, ctx)?.wireStringify ?? (descriptor.serde ? undefined : localWireStringify(named, ctx)) : undefined;
     if (wire) return code`${wire}(${value} as never)`;
     // A wire value of a generated model that holds an array is written by the wire writer of its node, below, as a recursive alias is.
-    if (named && !(ctx.wireIdentity && !serdeTags(descriptor).serde && nodeHoldsSequence(named))) {
+    if (named && !(ctx.wireIdentity && !descriptor.serde && nodeHoldsSequence(named))) {
       return nestedStringifyCall(named.id, value, ctx);
     }
     if (!named) throw new Error(`Internal error: the schema graph has no node for the generated model ${JSON.stringify(descriptor.id)}.`);
   }
-  const tags = serdeTags(descriptor);
-  if (tags.serde) {
-    const wire = serdeWireDescriptor(descriptor.serde) ?? { kind: 'unknown' as const };
+  const serde = descriptorSerde(descriptor);
+  if (serde) {
+    const wire = serdeWireDescriptor(serde) ?? { kind: 'unknown' as const };
     if (ctx.wireIdentity) return emitValue(wire, value, ctx);
     const serialized = ctx.serde
-      ? ctx.serde.serialize(tags.serde, value)
+      ? ctx.serde.serialize(serde, value)
       : value;
     return emitValue(wire, serialized, ctx);
   }
@@ -998,8 +997,7 @@ function fillCanThrow(node: SchemaNode, ctx: EmitCtx): boolean {
 function sharesInput(descriptor: ModelTypeDescriptor, ctx: EmitCtx, seen: Set<ModelTypeDescriptor> = new Set()): boolean {
   if (seen.has(descriptor)) return false;
   seen.add(descriptor);
-  const tags = serdeTags(descriptor);
-  if (tags.serde) {
+  if (descriptor.serde) {
     const wire = serdeWireDescriptor(descriptor.serde);
     return wire !== undefined && sharesInput(wire, ctx, seen);
   }
@@ -1464,9 +1462,9 @@ function emitUnionEncode(
 
 function emitDecodeValue(descriptor: ModelTypeDescriptor, expression: Code, ctx: EmitCtx): Code {
   const value = expression;
-  const tags = serdeTags(descriptor);
-  if (tags.serde) {
-    const deserialized = ctx.serde ? fallibleConversion(ctx, ctx.serde.deserialize(tags.serde, value)) : value;
+  const serde = descriptorSerde(descriptor);
+  if (serde) {
+    const deserialized = ctx.serde ? fallibleConversion(ctx, ctx.serde.deserialize(serde, value)) : value;
     const wire = serdeWireDescriptor(descriptor.serde);
     if (wire && (wire.kind === 'object' || wire.kind === 'reference' || wire.kind === 'generated-model')) {
       return code`(${objectValueExpression(value)} ? ${deserialized} : ${value})`;
@@ -1808,9 +1806,9 @@ function emitEncodeValue(descriptor: ModelTypeDescriptor, expression: Code, ctx:
     }
     throw new Error(`Internal error: the schema graph has no node for the generated model ${JSON.stringify(descriptor.id)}.`);
   }
-  const tags = serdeTags(descriptor);
-  if (tags.serde) {
-    return ctx.serde ? ctx.serde.serialize(tags.serde, value) : value;
+  const serde = descriptorSerde(descriptor);
+  if (serde) {
+    return ctx.serde ? ctx.serde.serialize(serde, value) : value;
   }
   const named = ctx.graph.nodeFor(descriptor);
   if (named && isObjectish(descriptor)) {

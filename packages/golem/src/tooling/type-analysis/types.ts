@@ -40,13 +40,6 @@ import {
 
 export type { ModelConversionDescriptor, TupleConversionDescriptor } from '../model-source-emitter.js';
 
-/** Additive compiler metadata consumed by the shared model runtime. */
-export interface ModelDescriptorMetadata {
-  readonly validations?: readonly ValidationBinding[];
-  readonly serde?: SerdeBinding;
-  readonly constraints?: readonly ModelConstraint[];
-}
-
 type InternalSerdeBinding = SerdeBinding & {
   /** Filled after recursively describing the inferred wire parameter. */
   readonly wireDescriptor?: ModelConversionDescriptor;
@@ -55,8 +48,6 @@ type InternalSerdeBinding = SerdeBinding & {
 type InternalTagMetadata = Omit<TagMetadata, 'serde'> & {
   readonly serde?: InternalSerdeBinding;
 };
-
-export type RichModelConversionDescriptor = ModelConversionDescriptor & ModelDescriptorMetadata;
 
 function primitiveConstructorDescriptor(type: ts.Type): ModelConversionDescriptor | undefined {
   const symbol = type.getSymbol() ?? type.aliasSymbol;
@@ -595,16 +586,14 @@ function isDescriptor(schema: ConstraintSchemaValue): schema is ModelConversionD
 function withMetadata(
   descriptor: ModelConversionDescriptor,
   metadata: TagMetadata,
-): RichModelConversionDescriptor {
-  if (!hasDescriptorTags(metadata)) {
-    return descriptor as RichModelConversionDescriptor;
-  }
+): ModelConversionDescriptor {
+  if (!hasDescriptorTags(metadata)) return descriptor;
   return {
     ...descriptor,
     ...(metadata.validations.length ? { validations: metadata.validations } : {}),
     ...(metadata.serde ? { serde: metadata.serde } : {}),
     ...(metadata.constraints.length ? { constraints: metadata.constraints } : {}),
-  } as RichModelConversionDescriptor;
+  };
 }
 
 /** The one tag key a union declares: on the union itself, or on its variants when `| null` keeps the tag inside a member. */
@@ -719,7 +708,7 @@ function rejectUntaggedObjectUnion(
     return declarations.length > 0 && declarations.every((declaration) => isDefaultLibraryFile(declaration.getSourceFile()));
   };
   if (context.dto || entries.every(({ type }) => declaredByLibrary(type))) return;
-  const objects = entries.filter(({ descriptor }) => isObjectLikeVariant(descriptor) && (descriptor as { readonly serde?: unknown }).serde === undefined);
+  const objects = entries.filter(({ descriptor }) => isObjectLikeVariant(descriptor) && descriptor.serde === undefined);
   if (objects.length < 2) return;
   const names = objects.map(({ type, descriptor }) => descriptor.kind === 'reference' ? descriptor.name
     : descriptor.kind === 'generated-model' ? descriptor.id : checker.typeToString(type));

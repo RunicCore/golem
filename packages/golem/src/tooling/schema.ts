@@ -26,7 +26,7 @@ export { decodeUriFragment, escapeJsonPointerToken, escapePointerToken, fragment
 export { aliasReference, followReference, schemaReference, schemaReferenceOrDynamic, type ScopedSchema } from '../json-reference.js';
 export { canonicalSchemaKey };
 /** The schema descriptor types that generators read (`@exprtlabs/golem/internal/schema`). */
-export type { ConstraintSchemaValue, DiscriminatorValue, ModelConstraint, ModelTypeDescriptor, ModelTypeMetadata, UnionDiscriminator } from '../model-registry.js';
+export type { ConstraintSchemaValue, DiscriminatorValue, ImportedFunction, ModelConstraint, ModelTypeDescriptor, ModelTypeMetadata, UnionDiscriminator } from '../model-registry.js';
 export { GENERATED_MODEL_SCHEMA_REF_PREFIX, MODEL_CLASS_KEYWORD, MODEL_CODEC_IDS_KEY, MODEL_INSTANCE_KEYWORD, VALIDATION_KEYWORD };
 export { JSON_KINDS, SCHEMA_ARRAY_KEYWORDS, SCHEMA_MAP_KEYWORDS, SCHEMA_SINGLE_KEYWORDS, isDiscriminatorValue, jsonKindOf, type JsonKind } from '../json-vocabulary.js';
 export { validationTagSchemaDescriptor } from './validation-tags.js';
@@ -34,6 +34,11 @@ export { validationTagSchemaDescriptor } from './validation-tags.js';
 /** The wire form of a descriptor's serde, the deserialize parameter that TSerde attached: `wireDescriptor` in a descriptor read from source, `wire` in a generated one. */
 export function serdeWireDescriptor<Wire>(serde: { readonly wire?: Wire; readonly wireDescriptor?: Wire } | undefined): Wire | undefined {
   return serde?.wireDescriptor ?? serde?.wire;
+}
+
+/** The id of a validation of a descriptor: the string of a generated descriptor, or the `id` of the binding that a generator reads from source. */
+export function validationBindingId(validation: string | { readonly id: string }): string {
+  return typeof validation === 'string' ? validation : validation.id;
 }
 
 /** The serde with its wire form replaced, in the field that holds it. */

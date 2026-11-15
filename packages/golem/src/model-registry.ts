@@ -71,7 +71,8 @@ export interface SerdeFunctions {
 }
 
 export interface ModelTypeMetadata {
-  readonly validations?: readonly string[];
+  /** The ids of the validation functions in a generated descriptor; a descriptor that a generator reads from source holds the bindings, whose `id` is the same id. Read an id with `validationBindingId`. */
+  readonly validations?: readonly (string | ImportedFunction)[];
   readonly constraints?: readonly ModelConstraint[];
   /** The `serialize` and `deserialize` functions are in every descriptor that a generator makes; a hand-written descriptor in a test may leave them out. */
   readonly serde?: Pick<SerdeFunctions, 'id'> & Partial<SerdeFunctions> & {
