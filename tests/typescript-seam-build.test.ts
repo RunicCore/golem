@@ -55,6 +55,7 @@ const PRINTED: readonly (readonly [string, Readonly<Record<string, string>>, obj
   ['an options error stays in the configuration file when a root lies outside it', { 'src/a.ts': 'export const a = 1;\n', 'extra.ts': 'export const extra = 1;\n' }, { declaration: false, declarationMap: true }, ['extra.ts']],
   ['an options error stays in the configuration file under flags', { 'src/a.ts': 'export const a = 1;\n' }, { declaration: false, declarationMap: true }, [], ['--noEmit']],
   ['an options error stays in the configuration file under flags when a root lies outside it', { 'src/a.ts': 'export const a = 1;\n', 'extra.ts': 'export const extra = 1;\n' }, { declaration: false, declarationMap: true }, ['extra.ts'], ['--noEmit']],
+  ['a file out of rootDir names the include pattern that matched it in the configuration file under flags', { 'src/a.ts': 'export const a = 1;\n', 'src/inner/b.ts': 'export const b = 1;\n' }, { rootDir: 'src/inner' }, [], ['--noEmit']],
   ['an options error stays in the configuration file under option overrides', { 'src/a.ts': 'export const a = 1;\n' }, { declaration: false, declarationMap: true }, [], [], { noEmit: true }],
   ['two errors in one file', { 'src/a.ts': 'export const a: string = 1;\nexport const b: string = 2;\n' }],
   ['errors in two files', { 'src/a.ts': 'export const a: string = 1;\nexport const b: string = 2;\n', 'src/b.ts': 'export const c: string = 3;\n' }],
