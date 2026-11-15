@@ -50,6 +50,9 @@ const CLOSED = { type: 'object', required: ['title'], properties: { title: { typ
 const EVALUATED = { allOf: [{ type: 'object', properties: { title: { type: 'string' } } }], unevaluatedProperties: false };
 const EVALUATED_VALUED = { allOf: [{ type: 'object', properties: { title: { type: 'string' } } }], unevaluatedProperties: { type: 'number' } };
 const branch = (tag: string, key: string): object => ({ type: 'object', required: ['kind', key], properties: { kind: { const: tag }, [key]: { type: 'number' } }, additionalProperties: false });
+// Branches with `minProperties` are not merged into one key pass, so the union reads its tag on its own.
+const counted = (tag: string): object => ({ type: 'object', required: ['kind'], properties: { kind: { const: tag } }, minProperties: 1 });
+const TAGGED_ALONE = { oneOf: [counted('a'), counted('b')], discriminator: { propertyName: 'kind' } };
 const TAGGED = { oneOf: [branch('a', 'x'), branch('b', 'y')], discriminator: { propertyName: 'kind' } };
 // An open model that lists its names, as golem-openapi-ts writes `unevaluatedProperties: false` over an open base.
 const NAMED = { type: 'object', properties: { title: { type: 'string' } }, propertyNames: { enum: ['title'] } };
@@ -66,7 +69,7 @@ const CONST_MODEL = { const: { title: 't' } };
 const ENUM_MODEL = { enum: [{ title: 'u' }, { title: 't' }] };
 const UNIQUE_MODELS = { type: 'array', uniqueItems: true };
 const compiled = compileValidatorModule({
-  roots: { dependent: DEPENDENT, bare: BARE, patternOnly: PATTERN_ONLY, constModel: CONST_MODEL, enumModel: ENUM_MODEL, uniqueModels: UNIQUE_MODELS, closed: CLOSED, evaluated: EVALUATED, evaluatedValued: EVALUATED_VALUED, tagged: TAGGED, named: NAMED, countedMax: COUNTED_MAX, countedMaxNamed: COUNTED_MAX_NAMED, countedMin: COUNTED_MIN, patterned: PATTERNED, valued: VALUED },
+  roots: { taggedAlone: TAGGED_ALONE, dependent: DEPENDENT, bare: BARE, patternOnly: PATTERN_ONLY, constModel: CONST_MODEL, enumModel: ENUM_MODEL, uniqueModels: UNIQUE_MODELS, closed: CLOSED, evaluated: EVALUATED, evaluatedValued: EVALUATED_VALUED, tagged: TAGGED, named: NAMED, countedMax: COUNTED_MAX, countedMaxNamed: COUNTED_MAX_NAMED, countedMin: COUNTED_MIN, patterned: PATTERNED, valued: VALUED },
   fastPath: true,
 });
 
@@ -180,6 +183,7 @@ const NAMED_LIKE_STATE: readonly { readonly root: string; readonly fast: boolean
   { root: 'valued', fast: true, valid: true, build: runs => withThrowingState(Counter, 'title', runs) },
   { root: 'patterned', fast: true, valid: true, build: runs => withThrowingState(Counter, 'title', runs) },
   { root: 'dependent', fast: true, valid: true, build: runs => withThrowingState(Task, 'note', runs) },
+  { root: 'taggedAlone', fast: true, valid: false, build: runs => withThrowingState(Counter, 'kind', runs) },
   { root: 'tagged', fast: true, valid: false, build: runs => withThrowingState(Tagged, 'x', runs) },
 ];
 

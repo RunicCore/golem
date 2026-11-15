@@ -2,7 +2,6 @@ import { assertNever } from '../../assert-never.js';
 import { code, identifier as identifierCode, join, joinIndented, literal as literalCode, type Code, type IndentedLine } from '../code.js';
 import type { IrArray, IrCheck, IrClass, IrDiscriminator, IrFunction, IrInstance, IrNumber, IrObject, IrPatternProperty, IrSchema, IrString, IrType, IrTypeName, IrUnion, IrValidation } from './ir.js';
 import { rt, runtimeFunctionCode } from '../rt.js';
-import { presentValueCode } from '../union-conversion.js';
 import { VALUE, PATH, NEWLINE, COMMA, ISSUES, ALL, SANITY, INHERITED, EVALUATION, type CalleeSlot, type CallArguments } from './function-names.js';
 import { isTuple, keepsFormat } from './call-graph.js';
 import { JSON_TYPES, JSON_TYPE_NAMES, dispatchTest } from './json-types.js';
@@ -851,11 +850,7 @@ export class FunctionWriter {
     const property = literalCode(discriminator.property);
     const tag = this.fresh('tag');
     const selected = this.fresh('branch');
-    const read = this.mode.form<Lazy>(
-      () => code`${localName('isObject')}(${value}) && ${presence.present(discriminator.property)} ? ${presence.read(discriminator.property)} : undefined`,
-      code`${localName('isObject')}(${value}) ? (${presentValueCode(value, property, code`${value}[${property}]`)}) : undefined`,
-    );
-    this.line(code`const ${tag} = ${resolve(read)};`);
+    this.line(code`const ${tag} = ${localName('isObject')}(${value}) && ${presence.present(discriminator.property)} ? ${presence.read(discriminator.property)} : undefined;`);
     const selection = this.mode.form<Lazy>(
       () => code`${this.tagLists(discriminator)}.findIndex(list => list.some(item => ${runtime.jsonEqual}(${tag}, item)))`,
       () => this.tagSelection(discriminator, tag),
