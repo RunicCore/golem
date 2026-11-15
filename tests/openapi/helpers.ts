@@ -15,7 +15,7 @@ import { generatorSettings, type WithMobx } from '../support/mobx-extension.js';
 import { buildOperationValidationSchemas } from '#openapi/client/emit';
 import { normalizeAndValidate } from '#openapi/document';
 import { generateModelManifest } from '#openapi/model-manifest';
-import { analyzeOpenApiModels, requestBodyKey } from '#openapi/model-schema-graph';
+import { analyzeOpenApiModels, requestBodyCheckedByConversion } from '#openapi/model-schema-graph';
 import { buildSchemaData } from '#openapi/schemas';
 
 /** The profile of an SDK test; `mobx: true` turns on the mobx extension, as `extensions: mobx: {}` does in golem.yaml. */
@@ -441,7 +441,7 @@ export function golemModeManifest(document: unknown, profile: OpenApiGenerationP
   const operations = ir.operations;
   const analysis = analyzeOpenApiModels(document, profile.validation, dates, [...operations, ...ir.inboundOperations]);
   const schemaData = profile.validation
-    ? buildSchemaData(document, dates, ir, (operation, contentType) => analysis.convertedNodeIds.has(requestBodyKey(operation.name, contentType)) && !analysis.uncarriedValues.has(requestBodyKey(operation.name, contentType)))
+    ? buildSchemaData(document, dates, ir, (operation, contentType) => requestBodyCheckedByConversion(analysis, operation, contentType))
     : undefined;
   return generateModelManifest(document, profile, analysis, 'golem', { operations, validation: buildOperationValidationSchemas(operations, document, profile, schemaData) }) as Record<string, unknown>;
 }

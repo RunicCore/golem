@@ -23,7 +23,7 @@ import {
   type OpenApiDates,
 } from './models.js';
 import { neverPropertiesReader } from './model-resolution.js';
-import { requestBodyKey } from './model-schema-graph.js';
+import { requestBodyCheckedByConversion } from './model-schema-graph.js';
 import { operationCodecsFor } from './operation-codecs.js';
 import { withOrigins, type OriginLocator } from './origin.js';
 import { buildSchemaData } from './schemas.js';
@@ -201,7 +201,7 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions, moved:
   const inlineDiagnostics = checkOperationCompositions([...operations, ...inboundOperations], modelAnalysis, document);
   const schemaData = profile.validation && plan.hasOutboundOperations
     // A request body that converts and whose descriptors carry every keyword of its schema is checked by its own conversion, so the input root of its client operation leaves it open; any other request body keeps the wire check of the root.
-    ? buildSchemaData(document, dates, ir, (operation, contentType) => modelAnalysis.convertedNodeIds.has(requestBodyKey(operation.name, contentType)) && !modelAnalysis.uncarriedValues.has(requestBodyKey(operation.name, contentType)))
+    ? buildSchemaData(document, dates, ir, (operation, contentType) => requestBodyCheckedByConversion(modelAnalysis, operation, contentType))
     : undefined;
   const files = new Map<string, string>();
   const specifiers = runtimeSpecifiersOf(options.mode);

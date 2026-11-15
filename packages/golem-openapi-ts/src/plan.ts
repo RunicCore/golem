@@ -4,6 +4,7 @@ import path from 'node:path';
 import type { Code } from '@exprtlabs/golem/internal/emitter';
 import type { GolemDiagnostic, GolemPlanEntry, InputObserver, JobFacts, GolemProfile, PlanContext, PlannedJob } from '@exprtlabs/golem/generator-api';
 import { canonicalPath, CODECS_HOST, isRecord, nonempty, sdkCodecsFile } from '@exprtlabs/golem/internal/plan-support';
+import { REFERENCE_LIMIT_DEFAULTS } from './reference-limits.js';
 
 export interface OpenApiContext {
   readonly input: string;
@@ -36,17 +37,26 @@ export interface OpenApiModeSetting {
   readonly codecsFile?: string | undefined;
 }
 
+export const OPENAPI_DATES = ['date', 'temporal'] as const;
+const OPENAPI_MODES = ['standalone', 'golem'] as const;
+
+/** The one place that checks an option that holds one of a closed set of words, for a job of `golem.yaml` and for a caller of the generator: the value of the set, `undefined` when it is not set, and a `TypeError` that names `where` for any other value. */
+export function optionChoice<Choice extends string>(value: unknown, allowed: readonly Choice[], where: string): Choice | undefined {
+  if (value === undefined) return undefined;
+  const choice = allowed.find((item) => item === value);
+  if (choice === undefined) throw new TypeError(`${where} must be ${allowed.map((item) => JSON.stringify(item)).join(' or ')} when provided`);
+  return choice;
+}
+
 /** The one place that checks the mode and its codecs file. A value a JavaScript caller passes is checked here, so the generator behind it reads a mode that holds what it needs. */
 export function resolveOpenApiMode({ mode, codecsFile }: OpenApiModeSetting): OpenApiMode {
-  switch (mode) {
+  switch (optionChoice(mode, OPENAPI_MODES, 'context.mode')) {
     case undefined:
     case 'standalone':
       return { kind: 'standalone' };
     case 'golem':
       if (typeof codecsFile !== 'string' || !path.isAbsolute(codecsFile)) throw new TypeError('context.codecsFile must be an absolute path when mode is "golem"');
       return { kind: 'golem', codecsFile };
-    default:
-      throw new TypeError('context.mode must be "standalone" or "golem" when provided');
   }
 }
 
@@ -120,16 +130,15 @@ export const plan: GolemPlanEntry<OpenApiOptions> = {
       if (fs.existsSync(output) && !fs.statSync(output).isDirectory()) throw new Error(`${label}.output must be a directory.`);
       if (entry.remoteHosts !== undefined && !Array.isArray(entry.remoteHosts)) throw new Error(`${label}.remoteHosts must be an array of nonempty hostnames.`);
       const remoteHosts = (entry.remoteHosts ?? []).map((host: unknown) => remoteHost(nonempty(host, `${label}.remoteHosts`), `${label}.remoteHosts`));
-      if (entry.dates !== undefined && entry.dates !== 'date' && entry.dates !== 'temporal') throw new Error(`${label}.dates must be "date" or "temporal".`);
-      if (entry.mode !== undefined && entry.mode !== 'standalone' && entry.mode !== 'golem') throw new Error(`${label}.mode must be "standalone" or "golem".`);
-      const mode = entry.mode ?? 'standalone';
+      const dates = optionChoice(entry.dates, OPENAPI_DATES, `${label}.dates`);
+      const mode = optionChoice(entry.mode, OPENAPI_MODES, `${label}.mode`) ?? 'standalone';
       const options: OpenApiOptions = {
         input, output, profile, remoteHosts, mode,
         ...(entry.name === undefined ? {} : { name: nonempty(entry.name, `${label}.name`) }),
-        ...(entry.dates === undefined ? {} : { dates: entry.dates }),
-        maxRefBytes: positive(entry.maxRefBytes, 5 * 1024 * 1024, `${label}.maxRefBytes`),
-        maxRefDocuments: positive(entry.maxRefDocuments, 256, `${label}.maxRefDocuments`),
-        refTimeoutMs: positive(entry.refTimeoutMs, 10000, `${label}.refTimeoutMs`),
+        ...(dates === undefined ? {} : { dates }),
+        maxRefBytes: positive(entry.maxRefBytes, REFERENCE_LIMIT_DEFAULTS.maxRefBytes, `${label}.maxRefBytes`),
+        maxRefDocuments: positive(entry.maxRefDocuments, REFERENCE_LIMIT_DEFAULTS.maxRefDocuments, `${label}.maxRefDocuments`),
+        refTimeoutMs: positive(entry.refTimeoutMs, REFERENCE_LIMIT_DEFAULTS.refTimeoutMs, `${label}.refTimeoutMs`),
       };
       const facts: JobFacts = {
         id: `openapi:${path.relative(directory, output) || '.'}`,

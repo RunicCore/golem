@@ -5,6 +5,7 @@ import { isInsideDirectory, parseYamlFile, type InputObserver } from '@exprtlabs
 import { displayPath } from '@exprtlabs/golem/internal/generator-support';
 import { decodeUriFragment } from '@exprtlabs/golem/internal/schema';
 import { displayLocation } from './origin.js';
+import { REFERENCE_LIMIT_DEFAULTS } from './reference-limits.js';
 import { asRecord, escapeJsonPointerToken, isJsonObject, jsonPointerJoin, objectEntries, resolveJsonPointer } from './json.js';
 import {
   collectCanonicalResources,
@@ -301,9 +302,9 @@ async function loadGraph(
   const rootFile = path.resolve(filename);
   const rootUri = pathToFileURL(rootFile).href;
   const rootDirectory = path.dirname(rootFile);
-  const maxBytes = options.maxRefBytes || 5 * 1024 * 1024;
-  const maxDocuments = options.maxRefDocuments || 256;
-  const timeoutMs = options.refTimeoutMs || 10_000;
+  const maxBytes = options.maxRefBytes || REFERENCE_LIMIT_DEFAULTS.maxRefBytes;
+  const maxDocuments = options.maxRefDocuments || REFERENCE_LIMIT_DEFAULTS.maxRefDocuments;
+  const timeoutMs = options.refTimeoutMs || REFERENCE_LIMIT_DEFAULTS.refTimeoutMs;
   // A list entry without a port names the default port of https; an entry with a port names that port only. `URL.host` keeps a port that is not the default.
   const allowedHosts = new Set((options.remoteHosts ?? []).map((host) => new URL(`https://${host}`).host));
   const onInput: InputObserver | undefined = options.onInput;

@@ -30,33 +30,82 @@ import { collectOpenApiModelDefinitions } from './model-definitions.js';
 /** The node name of an inline body, parameter or header that is no object: the graph keeps unnamed objects only, and equal shapes under this name share one codec. */
 const OPERATION_VALUE_NODE_NAME = '__operationValue';
 
+/**
+ * Where a value sits in an operation, after the operation name (`SdkOperationShape.values` of the SDK codecs table reads the same arrays):
+ * a request body by content type, a response body or stream item by status and content type, a parameter by location and name,
+ * a response header by status and name. The location of a parameter is `path`, `query`, `header`, `cookie` or `querystring`.
+ */
+export const valuePlace = {
+  requestBody: (contentType: string): readonly string[] => ['request', contentType],
+  responseBody: (status: string, contentType: string): readonly string[] => ['response', status, contentType],
+  parameter: (location: string, name: string): readonly string[] => ['parameter', location, name],
+  responseHeader: (status: string, name: string): readonly string[] => ['response-header', status, name],
+};
+
+/** The key of a value in `OpenApiModelAnalysis.convertedNodeIds`: a JSON array of strings, the operation name and then the place of the value. `parseValueKey` reads it back. */
+export function valueKey(operation: string, at: readonly string[]): string {
+  return JSON.stringify([operation, ...at]);
+}
+
+/** The operation name and the place of a key that `valueKey` wrote; `undefined` for any other text. */
+export function parseValueKey(key: string): { readonly operation: string; readonly at: readonly string[] } | undefined {
+  const parts: unknown = JSON.parse(key);
+  if (!Array.isArray(parts) || !parts.every((part): part is string => typeof part === 'string')) return undefined;
+  const [operation, ...at] = parts;
+  return operation === undefined ? undefined : { operation, at };
+}
+
 /** The key of a request body in `OpenApiModelAnalysis.convertedNodeIds`: the operation and the request content type. */
 export function requestBodyKey(operation: string, contentType: string): string {
-  return JSON.stringify([operation, 'request', contentType]);
+  return valueKey(operation, valuePlace.requestBody(contentType));
 }
 
 /** The key of a response body, or of its stream items, in `OpenApiModelAnalysis.convertedNodeIds`: the operation and the response status and content type. */
 export function responseBodyKey(operation: string, status: string, contentType: string): string {
-  return JSON.stringify([operation, 'response', status, contentType]);
+  return valueKey(operation, valuePlace.responseBody(status, contentType));
 }
 
 /** The key of a request parameter in `OpenApiModelAnalysis.convertedNodeIds`: the operation, where the parameter is (`path`, `query`, `header`, `cookie` or `querystring`) and its name. */
 export function parameterKey(operation: string, location: string, name: string): string {
-  return JSON.stringify([operation, 'parameter', location, name]);
+  return valueKey(operation, valuePlace.parameter(location, name));
 }
 
 /** The key of a response header in `OpenApiModelAnalysis.convertedNodeIds`: the operation, the response status and the header name. */
 export function responseHeaderKey(operation: string, status: string, name: string): string {
-  return JSON.stringify([operation, 'response-header', status, name]);
+  return valueKey(operation, valuePlace.responseHeader(status, name));
+}
+
+/** The key of a response check in the operation's validators: the status, and the content type of a body or the name of a header. */
+export function responseCheckKey(status: string, contentTypeOrName: string): string {
+  return `${status}:${contentTypeOrName}`;
+}
+
+/** Whether a body of the request converts a value (a Date or Temporal inside it). */
+export function operationEncodesBody(operation: NormalizedOperation, convertedNodeIds: ReadonlyMap<string, string>): boolean {
+  return operation.requestContent.some((media) => convertedNodeIds.has(requestBodyKey(operation.name, media.contentType)));
+}
+
+/** Whether a parameter of the request converts a value. */
+export function operationEncodesParameters(operation: NormalizedOperation, convertedNodeIds: ReadonlyMap<string, string>): boolean {
+  return operation.parameters.some((parameter) => convertedNodeIds.has(parameterKey(operation.name, parameter.in, parameter.name)));
+}
+
+/** Whether a response body, stream item or response header converts a value. */
+export function operationDecodes(operation: NormalizedOperation, convertedNodeIds: ReadonlyMap<string, string>): boolean {
+  return operation.responses.some((response) =>
+    response.content.some((media) => convertedNodeIds.has(responseBodyKey(operation.name, response.status, media.contentType)))
+    || Object.keys(response.headers).some((name) => convertedNodeIds.has(responseHeaderKey(operation.name, response.status, name))));
 }
 
 /** Whether any body, parameter or response header of the operation converts a value (a Date or Temporal inside it). */
 export function operationConverts(operation: NormalizedOperation, convertedNodeIds: ReadonlyMap<string, string>): boolean {
-  return operation.requestContent.some((media) => convertedNodeIds.has(requestBodyKey(operation.name, media.contentType)))
-    || operation.parameters.some((parameter) => convertedNodeIds.has(parameterKey(operation.name, parameter.in, parameter.name)))
-    || operation.responses.some((response) =>
-      response.content.some((media) => convertedNodeIds.has(responseBodyKey(operation.name, response.status, media.contentType)))
-      || Object.keys(response.headers).some((name) => convertedNodeIds.has(responseHeaderKey(operation.name, response.status, name))));
+  return operationEncodesBody(operation, convertedNodeIds) || operationEncodesParameters(operation, convertedNodeIds) || operationDecodes(operation, convertedNodeIds);
+}
+
+/** A request body that converts and whose descriptors carry every keyword of its schema is checked by its own conversion; the input root of its client operation leaves it open. */
+export function requestBodyCheckedByConversion(analysis: OpenApiModelAnalysis, operation: NormalizedOperation, contentType: string): boolean {
+  const key = requestBodyKey(operation.name, contentType);
+  return analysis.convertedNodeIds.has(key) && !analysis.uncarriedValues.has(key);
 }
 
 /** Whether a value of `descriptor` changes between its wire and its plain form: a Date or Temporal value anywhere inside, through the components it references. */
