@@ -455,22 +455,31 @@ test('host-reported and module-resolution changes invalidate the warm compiler, 
   assert.equal(open().has(imported), false);
 });
 
-/** A program session over the path-mapped `project`, disposed with the test, and a function that opens its program; `onInput` goes to each open. */
-function openSession(t: TestContext, project: { readonly root: string; readonly app: string }, onInput?: () => void): { session: ts.ProgramSession; open: () => ts.Program } {
+/** A program session over the path-mapped `project`, disposed with the test, and a function that opens its program on the app and `extraRoots`; `onInput` goes to each open. */
+function openSession(t: TestContext, project: { readonly root: string; readonly app: string }, onInput?: () => void, extraRoots: readonly string[] = []): { session: ts.ProgramSession; open: () => ts.Program } {
   const session = new ts.ProgramSession({ cwd: project.root });
   t.after(() => session[Symbol.dispose]());
-  const open = (): ts.Program => session.openProgram({ root: project.root, sources: [project.app], ...(onInput === undefined ? {} : { onInput }) });
+  const open = (): ts.Program => session.openProgram({ root: project.root, sources: [project.app, ...extraRoots], ...(onInput === undefined ? {} : { onInput }) });
   return { session, open };
 }
 
 // A tsconfig edit must reach the compiler's project however the edit and the compiler's reads interleave. On TypeScript 7.1
-// the reachable interleaving is an edit that lands inside a full snapshot: a snapshot that opens no new project reads no
-// tsconfig, and golem opens no file on its own; see ProgramSession in typescript-ts7.ts.
-for (const hinted of [false, true]) {
+// the reachable interleaving is an edit that lands inside a full snapshot, and it reads out in two ways; see ProgramSession in
+// typescript-ts7.ts. A root outside the tsconfig makes the program open a derived configuration that lists its files from golem's
+// earlier parse, so the compiler keeps its parsed configuration through the invalidation and the program holds the old mapping.
+// With every root inside the tsconfig the program opens the tsconfig itself, which the compiler reads again in the snapshot, after
+// the edit, so the program already holds the new mapping. Either way the record of the tsconfig must stay older than the edit.
+const FULL_SNAPSHOT_EDITS = [
+  { roots: 'outside the tsconfig', outside: true, held: 'first' },
+  { roots: 'inside the tsconfig', outside: false, held: 'second' },
+] as const;
+for (const { roots, outside, held } of FULL_SNAPSHOT_EDITS) for (const hinted of [false, true]) {
   const how = hinted ? 'reported by the host' : 'found by the signatures';
 
-  test(`a tsconfig edit that lands inside a full snapshot is applied by the next program, ${how}`, t => {
+  test(`a tsconfig edit that lands inside a full snapshot is applied by the next program, roots ${roots}, ${how}`, t => {
     const project = pathMappedProject(t, 'compiler-lifecycle-edit-inside-full-snapshot');
+    const extra = path.join(project.root, 'outside.ts');
+    fs.writeFileSync(extra, 'export const outside = 1;\n');
     const running = snapshotRunning(t);
     let edits = 0;
     let armed = false;
@@ -479,21 +488,24 @@ for (const hinted of [false, true]) {
       armed = false;
       edits++;
       project.writeMapping('second');
-    });
+    }, outside ? [extra] : []);
 
     open().close();
-    // A manifest change forces a full snapshot, and the edit lands at the first input that snapshot reports. The compiler
-    // keeps its parsed configuration through the invalidation, so the record of the tsconfig must stay older than the edit.
+    // A manifest change forces a full snapshot, and the edit lands at the first input that snapshot reports.
     project.changeManifest();
     armed = true;
     using full = open();
     assert.equal(edits, 1, 'the edit landed inside the full snapshot');
-    assert.equal(project.mappingOf(full), 'first', 'the program holds the configuration the compiler parsed');
+    assert.equal(project.mappingOf(full), held, 'the program holds the configuration the compiler parsed');
 
     if (hinted) session.inputsChanged([project.tsconfig]);
     using current = open();
     assert.equal(project.mappingOf(current), 'second', 'the next program applies the edit');
   });
+}
+
+for (const hinted of [false, true]) {
+  const how = hinted ? 'reported by the host' : 'found by the signatures';
 
   test(`a tsconfig edit made with a manifest edit is applied by the full snapshot the manifest needs, ${how}`, t => {
     const project = pathMappedProject(t, 'compiler-lifecycle-full-snapshot-edit');
