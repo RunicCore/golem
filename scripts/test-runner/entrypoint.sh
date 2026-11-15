@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Runs one golem test tier inside the test-runner container.
 set -euo pipefail
-tier="${1:?usage: golem-test <prepare|focused|full|acceptance|docs> [args]}"
+tier="${1:?usage: golem-test <prepare|focused|full|acceptance|docs|examples> [args]}"
 
 # Full and Acceptance take three options of the runner. --again runs the tier even when this tree passed it, and starts from zero
 # instead of finishing a cut run. --load-limit and --load-wait set the host load check below.
@@ -129,6 +129,21 @@ if [ "$(cat node_modules/.golem-lock-hash 2>/dev/null || true)" != "$lock_hash" 
     echo "npm ci failed. If npm reported ENOTCACHED, run: npm run test:prepare" >&2; exit 2; }
   echo "$lock_hash" > node_modules/.golem-lock-hash
 fi
+ceiling_message() { echo "The $tier tier exceeded its ${ceiling}s ceiling and was stopped." >&2; }
+# The examples tier runs no tests: it writes the generated files of the examples, which no commit holds, and hands them to the host
+# in /results/examples (scripts/compare-examples.sh). It skips the test build and the TypeScript 6 install below, because
+# `npm run generate:examples` builds what it needs. The examples call the workspace bin `golem`, which npm ci links only once the
+# package is built, so build and link first. The copy leaves out what the work tree leaves out. `--foreground` keeps the command
+# in this process group, so the Ctrl-C that run.sh forwards reaches it. Exit 3 means the generation failed; 2 stays for setup errors.
+if [ "$tier" = examples ]; then
+  ceiling=300; status=0
+  { npm run build && npm rebuild --ignore-scripts --no-audit --no-fund \
+    && timeout --foreground -k 30s "$ceiling" npm run generate:examples \
+    && rsync -a --delete "${rsync_excludes[@]}" examples/ /results/examples/; } || status=$?
+  [ "$status" -ne 124 ] && [ "$status" -ne 137 ] || ceiling_message
+  [ "$status" -eq 0 ] || exit 3
+  exit 0
+fi
 npm run build:tests
 # TypeScript 6 lane: its tests point GOLEM_TYPESCRIPT_ROOT at a project whose `typescript` is 6.x.
 # It is installed once per spec into the cache volume. `prepare` fills the npm cache; other tiers install offline from it.
@@ -171,7 +186,7 @@ while :; do
   kill -0 "$tier_pid" 2>/dev/null || break
 done
 if [ "$status" -eq 124 ] || [ "$status" -eq 137 ]; then
-  echo "The $tier tier exceeded its ${ceiling}s ceiling and was stopped." >&2
+  ceiling_message
   node -e "import('./.build/scripts/test-file-timings.js').then(({ ceilingReport }) => console.error(ceilingReport(process.argv[1], process.argv[2])))" /results "$tier" \
     || echo "Could not name the unfinished files from /results." >&2
   if [ -n "$tree_hash" ]; then
