@@ -611,12 +611,16 @@ class CompatChecker implements TypeChecker {
 class CompatProgram implements Program {
   readonly checker: CompatChecker;
   private closed = false;
+  /** What `configDiagnostics` gave, once: it opens a snapshot. */
+  private alone: readonly SyncDiagnostic[] | undefined;
 
   public constructor(
     readonly session: ProgramSession,
     readonly snapshot: Snapshot,
     readonly project: Project,
     private readonly unbuilt: ReadonlySet<string> = new Set(),
+    /** The options diagnostics of the configuration that the program's own extends, opened alone; set for a program on a derived configuration. */
+    private readonly configDiagnostics: (() => readonly SyncDiagnostic[]) | undefined = undefined,
   ) {
     this.checker = new CompatChecker(project.checker, project, this);
   }
@@ -696,11 +700,17 @@ class CompatProgram implements Program {
   }
 
   getProgramDiagnostics(): readonly SyncDiagnostic[] {
-    return this.project.program.getProgramDiagnostics();
+    return this.withConfigPositions(this.project.program.getProgramDiagnostics());
   }
 
+  /** The compiler lists an option error that names no file here too, so it takes its place in the configuration as well and the report holds it once. */
   getGlobalDiagnostics(): readonly SyncDiagnostic[] {
-    return this.project.program.getGlobalDiagnostics();
+    return this.withConfigPositions(this.project.program.getGlobalDiagnostics());
+  }
+
+  private withConfigPositions(found: readonly SyncDiagnostic[]): readonly SyncDiagnostic[] {
+    const { configDiagnostics } = this;
+    return configDiagnostics === undefined ? found : withConfigPositions(found, () => this.alone ??= configDiagnostics());
   }
 
   getConfigFileParsingDiagnostics(): readonly SyncDiagnostic[] {
@@ -821,11 +831,28 @@ export function getPreEmitDiagnostics(program: Program): readonly SyncDiagnostic
   ];
 }
 
+/** The message of a diagnostic, its chain included. */
+const diagnosticText = (diagnostic: SyncDiagnostic): string => [diagnostic.text, ...(diagnostic.messageChain ?? []).map((chained) => chained.text)].join('\n');
+
 /** The order `tsc` sorts diagnostics in: file, start, end, code, message. A diagnostic without a file comes first. */
 function compareDiagnostics(left: SyncDiagnostic, right: SyncDiagnostic): number {
-  const text = (diagnostic: SyncDiagnostic): string => [diagnostic.text, ...(diagnostic.messageChain ?? []).map((chained) => chained.text)].join('\n');
   const order = (a: string | number | undefined, b: string | number | undefined): number => (a === b ? 0 : a === undefined ? -1 : b === undefined ? 1 : a < b ? -1 : 1);
-  return order(left.fileName, right.fileName) || order(left.pos, right.pos) || order(left.end, right.end) || order(left.code, right.code) || order(text(left), text(right));
+  return order(left.fileName, right.fileName) || order(left.pos, right.pos) || order(left.end, right.end) || order(left.code, right.code) || order(diagnosticText(left), diagnosticText(right));
+}
+
+/**
+ * The options diagnostics of a program on a derived configuration, with each one that has no file put where `tsc` puts it. The compiler
+ * locates an option only in the text of the configuration it opens, and the derived one only extends the user's, so `twin` gives the
+ * diagnostics of the user's configuration opened alone, and it runs only when a diagnostic has no file. A diagnostic with no file takes the twin's
+ * diagnostic of the same code and message; when several share them, the first takes the first, the second the second. A diagnostic with no
+ * match stays as it is, and a twin diagnostic that no one takes is dropped: the twin has other roots, so it can report what the program does not.
+ */
+function withConfigPositions(found: readonly SyncDiagnostic[], twin: () => readonly SyncDiagnostic[]): readonly SyncDiagnostic[] {
+  if (found.every((diagnostic) => diagnostic.fileName !== undefined)) return found;
+  const key = (diagnostic: SyncDiagnostic): string => `${diagnostic.code}\n${diagnosticText(diagnostic)}`;
+  const unused = new Map<string, SyncDiagnostic[]>();
+  for (const diagnostic of twin()) unused.set(key(diagnostic), [...unused.get(key(diagnostic)) ?? [], diagnostic]);
+  return found.map((diagnostic) => (diagnostic.fileName === undefined ? unused.get(key(diagnostic))?.shift() ?? diagnostic : diagnostic));
 }
 
 /**
@@ -878,6 +905,8 @@ interface ProgramRequest extends ProgramConfig {
   readonly files: readonly string[];
   /** Set for a project that has references: the compiler is given a synthetic program, not the project. */
   readonly synthetic?: SyntheticProgram;
+  /** Set when the configuration is derived: the configuration it extends, whose text the compiler's option errors name. */
+  readonly derivedFrom?: string;
 }
 
 /**
@@ -1244,7 +1273,8 @@ export class ProgramSession implements Disposable {
         const project = created === undefined ? snapshot.getConfiguredProject(request.configPath) : snapshot.getProject(created);
         if (!project) throw new Error(`The compiler did not open the TypeScript project ${displayPath(request.configPath)} for ${displayPath(options.root)}.`);
         this.syntheticProgram = created ?? this.syntheticProgram;
-        const program = new CompatProgram(this, snapshot, project, synthetic?.unbuilt);
+        const { derivedFrom } = request;
+        const program = new CompatProgram(this, snapshot, project, synthetic?.unbuilt, derivedFrom === undefined ? undefined : () => this.diagnosticsOfConfig(derivedFrom, overlays));
         this.held.set(program, request);
         return program;
       } catch (error) {
@@ -1320,7 +1350,24 @@ export class ProgramSession implements Disposable {
     const files = [...new Set([...own, ...base.files])];
     const overlays = new Map(base.overlays);
     overlays.set(configPath, JSON.stringify({ extends: `./${basename(base.configPath)}`, files, include: [] }));
-    return { configPath, files: base.files, overlays, hidden: new Set([...base.hidden, configPath]) };
+    return { configPath, files: base.files, overlays, hidden: new Set([...base.hidden, configPath]), derivedFrom: base.configPath };
+  }
+
+  /**
+   * The options diagnostics of one configuration opened alone, over the overlays of a program. It lives in a snapshot of its own that ends
+   * with the call: the session's snapshot, its open project and its held programs stay as they are.
+   */
+  private diagnosticsOfConfig(configPath: string, overlays: ReadonlyMap<string, string>): readonly SyncDiagnostic[] {
+    return this.withCompiler('parse', (api) => {
+      const previous = this.overlays;
+      this.setOverlays(overlays);
+      try {
+        using alone = api.createSnapshot({ openProjects: [configPath], ensurePrograms: true });
+        return [...alone.getConfiguredProject(configPath)?.program.getProgramDiagnostics() ?? []];
+      } finally {
+        this.setOverlays(previous);
+      }
+    });
   }
 
   /** Whether a held program reads this snapshot: an update that changes nothing may return its base, shared by two programs. */
