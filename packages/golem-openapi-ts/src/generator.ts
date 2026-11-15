@@ -4,7 +4,7 @@ import {
   type GolemResult,
   type HookParticipants,
 } from '@exprtlabs/golem/generator-api';
-import type { OpenApiContext } from './plan.js';
+import { resolveOpenApiMode, type OpenApiContext, type OpenApiMode, type OpenApiModeSetting } from './plan.js';
 import { normalizeSchemaUnions } from './document.js';
 import { writeSdk as emitSdk } from './emit.js';
 import { API_VERSION } from './package-info.js';
@@ -29,7 +29,7 @@ export interface OpenApiGenerationResult extends GolemResult {
 
 export const apiVersion = API_VERSION;
 
-function validateGenerateContext(context: OpenApiGenerationContext): OpenApiGenerationProfile {
+function validateGenerateContext(context: OpenApiGenerationContext): { readonly profile: OpenApiGenerationProfile; readonly mode: OpenApiMode } {
   if (!context || typeof context !== 'object' || Array.isArray(context)) {
     throw new TypeError('generate context must be an object');
   }
@@ -44,13 +44,8 @@ function validateGenerateContext(context: OpenApiGenerationContext): OpenApiGene
   if (context.dates !== undefined && context.dates !== 'date' && context.dates !== 'temporal') {
     throw new TypeError('context.dates must be "date" or "temporal" when provided');
   }
-  if (context.mode !== undefined && context.mode !== 'standalone' && context.mode !== 'golem') {
-    throw new TypeError('context.mode must be "standalone" or "golem" when provided');
-  }
-  if (context.mode === 'golem' && (typeof context.codecsFile !== 'string' || !path.isAbsolute(context.codecsFile))) {
-    throw new TypeError('context.codecsFile must be an absolute path when mode is "golem"');
-  }
-  return requireProfile(context.profile);
+  const mode = resolveOpenApiMode(context);
+  return { profile: requireProfile(context.profile), mode };
 }
 
 /**
@@ -58,11 +53,11 @@ function validateGenerateContext(context: OpenApiGenerationContext): OpenApiGene
  * outside the input/reference reads required by validation.
  */
 export async function generate(context: OpenApiGenerationContext): Promise<OpenApiGenerationResult> {
-  const profile = validateGenerateContext(context);
+  const { profile, mode } = validateGenerateContext(context);
   const input = path.resolve(context.input);
   const output = path.resolve(context.output);
   const loaded = await loadOpenApiInput(input, context);
-  const result = writeSdk(loaded.document, { output, name: context.name, profile, locate: loaded.locate, ...(context.dates === undefined ? {} : { dates: context.dates }), ...(context.mode === undefined ? {} : { mode: context.mode }), ...(context.codecsFile === undefined ? {} : { codecsFile: context.codecsFile }), ...(context.hooks === undefined ? {} : { hooks: context.hooks }) });
+  const result = writeResolvedSdk(loaded.document, { output, name: context.name, profile, mode, locate: loaded.locate, ...(context.dates === undefined ? {} : { dates: context.dates }), ...(context.hooks === undefined ? {} : { hooks: context.hooks }) });
   const failed = result.diagnostics?.some((diagnostic) => diagnostic.severity === GolemDiagnosticSeverity.Error) ?? false;
   return {
     apiVersion: API_VERSION,
@@ -79,9 +74,14 @@ export type { ReferenceResolutionOptions };
 // A schema that holds both `oneOf` and `anyOf` is rewritten into an allOf of the two, once, at the public entry that reads a
 // document. Everything behind it sees one union keyword at a time.
 
-export function writeSdk(document: unknown, options: Parameters<typeof emitSdk>[1]): ReturnType<typeof emitSdk> {
+function writeResolvedSdk(document: unknown, options: Parameters<typeof emitSdk>[1]): ReturnType<typeof emitSdk> {
   const split = normalizeSchemaUnions(document, options.locate);
   return emitSdk(split.document, split.locate ? { ...options, locate: split.locate } : options, split.moved);
+}
+
+/** The entry for a caller that holds a validated document and sets the mode as `mode` and `codecsFile`; the mode is resolved here, once. */
+export function writeSdk(document: unknown, { mode, codecsFile, ...options }: Omit<Parameters<typeof emitSdk>[1], 'mode'> & OpenApiModeSetting): ReturnType<typeof emitSdk> {
+  return writeResolvedSdk(document, { ...options, mode: resolveOpenApiMode({ mode, codecsFile }) });
 }
 
 export { loadValidatedDocument };

@@ -435,6 +435,7 @@ function loadValidatedDocument(filename: string, options?: ReferenceResolutionOp
 
 - `loadValidatedDocument` reads and checks the document and bundles its references. `options` takes the reference fields of `OpenApiContext` and `onInput`.
 - `writeSdk` reads no files and returns empty `watchInputs`.
+- `mode: 'golem'` needs `codecsFile` as an absolute path; `writeSdk` throws a `TypeError` without it.
 
 Example:
 

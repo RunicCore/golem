@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { GolemDiagnosticSeverity, type GolemDiagnostic, type GolemResult, type HookParticipants } from '@exprtlabs/golem/generator-api';
-import { OPERATION_WRAPPER_HOOK, type OperationWrapper, type OperationWrapperResult } from './plan.js';
+import { OPERATION_WRAPPER_HOOK, type OpenApiMode, type OpenApiModeKind, type OperationWrapper, type OperationWrapperResult } from './plan.js';
 import { stableJson } from '@exprtlabs/golem/generator-api';
 import { assertPortableFilenames, identifier, isRecord } from '@exprtlabs/golem/internal/generator-support';
 import { buildOperationValidationSchemas, generateClientModules, operationValidatorNames } from './client/emit.js';
@@ -11,7 +11,7 @@ import { assertUniqueExportNames, code, documentLiteral, exportedName, renderMod
 import { operationName, operationNameType } from './names.js';
 import type { NormalizedOperation } from './normalize.js';
 import { generatedBannerComment } from './package-info.js';
-import { runtimeCopy, standaloneRuntimeSpecifiers, type RuntimeSpecifiers } from './runtime-copy.js';
+import { runtimeCopy, runtimeSpecifiersOf } from './runtime-copy.js';
 import type { OpenApiGenerationProfile } from './profile.js';
 import { requireProfile } from './profile.js';
 import {
@@ -24,7 +24,7 @@ import {
 } from './models.js';
 import { neverPropertiesReader } from './model-resolution.js';
 import { requestBodyKey } from './model-schema-graph.js';
-import { golemCodecs, standaloneCodecs, type OperationCodecsFor } from './operation-codecs.js';
+import { operationCodecsFor } from './operation-codecs.js';
 import { withOrigins, type OriginLocator } from './origin.js';
 import { buildSchemaData } from './schemas.js';
 import { compileLevel, compileSdkValidators, uniqueDiagnostics, type CodecValidationPlan, type PlanValidators, type SchemaPlace } from '@exprtlabs/golem/internal/validation-plan';
@@ -38,10 +38,8 @@ interface WriteSdkOptions {
   readonly profile: OpenApiGenerationProfile;
   /** `temporal` maps date formats to Temporal types; the default keeps `Date`. */
   readonly dates?: OpenApiDates;
-  /** `golem` writes the schema graph into the manifest for the models job; the default, `standalone`, keeps the SDK self-contained. */
-  readonly mode?: 'standalone' | 'golem';
-  /** Mode `golem` only, and required there: the file the models job writes for this SDK, which the operation modules import. */
-  readonly codecsFile?: string;
+  /** `golem` writes the schema graph into the manifest for the models job and imports the codecs file the models job writes; `standalone` keeps the SDK self-contained. */
+  readonly mode: OpenApiMode;
   /** Names where a bundled component came from; generator errors that name one append it. */
   readonly locate?: OriginLocator;
   /** The participants of the extensions that fill the hooks of the SDK job. */
@@ -171,7 +169,7 @@ function isOperationWrapperResult(value: unknown): value is OperationWrapperResu
 }
 
 /** The operation wrapper that the extension on `client.operationWrapper` makes for the mode of the job, and the diagnostic when it refuses the mode. */
-function operationWrapperOf(hooks: HookParticipants | undefined, mode: 'standalone' | 'golem'): { readonly wrapper?: OperationWrapper; readonly diagnostics: readonly GolemDiagnostic[] } {
+function operationWrapperOf(hooks: HookParticipants | undefined, mode: OpenApiModeKind): { readonly wrapper?: OperationWrapper; readonly diagnostics: readonly GolemDiagnostic[] } {
   const fills = hooks?.[OPERATION_WRAPPER_HOOK] ?? [];
   if (fills.length > 1) throw new Error(`Two extensions fill the hook "${OPERATION_WRAPPER_HOOK}": ${fills.map((fill) => fill.package).join(', ')}. Turn one off.`);
   const answer = fills[0]?.use((participant) => {
@@ -186,7 +184,7 @@ function operationWrapperOf(hooks: HookParticipants | undefined, mode: 'standalo
 
 function buildGeneratedFiles(document: unknown, options: WriteSdkOptions, moved: MovedUnions): GeneratedFiles {
   const profile = requireProfile(options.profile);
-  const wrapped = operationWrapperOf(options.hooks, options.mode ?? 'standalone');
+  const wrapped = operationWrapperOf(options.hooks, options.mode.kind);
   const ir = normalizeAndValidate(document, options.locate);
   unsupportedHttpAuthSchemes(document);
   const operations = ir.operations;
@@ -196,9 +194,8 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions, moved:
   const plan = buildEmissionPlan(document, ir, profile);
   // A standalone SDK imports the runtime it carries and its own codecs. An SDK of golem mode imports `@exprtlabs/golem` and the table that the models job
   // of the same golem.yaml writes later in the run: it holds the types, the client and the manifest, and no validator, group module or codec.
-  const golem = options.mode === 'golem';
+  const standalone = options.mode.kind === 'standalone';
   const dates = options.dates ?? 'date';
-  if (golem && options.codecsFile === undefined) throw new Error('An SDK of mode golem needs codecsFile, the file that the models job writes for it.');
   // The payloads of webhooks and callbacks are SDK types like any other: their operations take part in the types and the model analysis, and have no codecs, validators or handler.
   const modelAnalysis = analyzeOpenApiModels(document, profile.validation, dates, [...operations, ...inboundOperations]);
   const inlineDiagnostics = checkOperationCompositions([...operations, ...inboundOperations], modelAnalysis, document);
@@ -207,8 +204,8 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions, moved:
     ? buildSchemaData(document, dates, ir, (operation, contentType) => modelAnalysis.convertedNodeIds.has(requestBodyKey(operation.name, contentType)) && !modelAnalysis.uncarriedValues.has(requestBodyKey(operation.name, contentType)))
     : undefined;
   const files = new Map<string, string>();
-  const specifiers: RuntimeSpecifiers | undefined = golem ? undefined : standaloneRuntimeSpecifiers;
-  const codecsFor: OperationCodecsFor = options.codecsFile === undefined ? standaloneCodecs : golemCodecs(output, options.codecsFile);
+  const specifiers = runtimeSpecifiersOf(options.mode);
+  const codecsFor = operationCodecsFor(options.mode, output);
   // The names that each module of the index exports come from its Code, and the index re-exports the whole modules it stars.
   const modules = new Map<string, PublicModule>();
   const neverProperties = neverPropertiesReader(modelAnalysis, document);
@@ -251,22 +248,22 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions, moved:
     return validators.compiled;
   };
   const modelDiagnostics: GolemDiagnostic[] = [];
-  if (!golem && modelAnalysis.grouping.groups.length > 0) {
+  if (standalone && modelAnalysis.grouping.groups.length > 0) {
     const models = generateOpenApiModelArtifacts(document, profile, modelAnalysis, {
       locate: options.locate,
-      ...(specifiers ? { specifiers } : {}),
+      specifiers: runtimeSpecifiersOf(options.mode),
       ...(profile.validation ? { compileValidators: ({ plan, reachedRoots, locateModel }: { plan: CodecValidationPlan; groupPlans: ReadonlyMap<string, CodecValidationPlan>; reachedRoots: ReadonlySet<string>; locateModel: (name: string) => SchemaPlace }) => compileValidators(plan, locateModel, reachedRoots) } : {}),
     });
     for (const [name, source] of models.files) files.set(name, source);
   }
   // An SDK of golem mode compiles nothing: its manifest carries the roots and the models job compiles them (R-82).
-  if (!golem && operationValidation && !validators.compiled) compileValidators(undefined);
+  if (standalone && operationValidation && !validators.compiled) compileValidators(undefined);
   if (validators.compiled) {
     modelDiagnostics.push(...validators.compiled.diagnostics);
     // A source is empty when the compile reported an error; no file is written then. Only operations import the module.
     if (operationValidation && validators.compiled.source !== '' && validators.compiled.exports.size > 0) files.set('validators.generated.ts', validators.compiled.source);
   }
-  files.set('model-manifest.json', stableJson(generateModelManifest(document, profile, modelAnalysis, options.mode, { operations, validation: operationValidation })));
+  files.set('model-manifest.json', stableJson(generateModelManifest(document, profile, modelAnalysis, options.mode.kind, { operations, validation: operationValidation })));
   if (plan.artifacts.has('client.ts')) {
     const clientModules = generateClientModules(
       clientName,
@@ -283,7 +280,7 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions, moved:
     modules.set('client.ts', { exports: clientModules.client.exports, stars: [] });
     for (const [name, source] of clientModules.operations) files.set(name, source);
   }
-  if (hasOperationModules && !golem) {
+  if (hasOperationModules && standalone) {
     for (const [name, source] of generateOperationCodecs(
       operations,
       profile,
@@ -306,7 +303,7 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions, moved:
   modules.set('index.ts', { exports: index.exports, stars: index.stars });
   assertUniqueExportNames(modules);
   // The runtime copy is written whole beside the files that import it, and only an SDK with operations imports it.
-  if (specifiers && plan.artifacts.has('client.ts')) for (const [name, source] of runtimeCopy()) files.set(name, source);
+  if (standalone && plan.artifacts.has('client.ts')) for (const [name, source] of runtimeCopy()) files.set(name, source);
   assertPortableFilenames(files.keys());
   return { files, output, clientName, operations, diagnostics: uniqueDiagnostics([...wrapped.diagnostics, ...ir.diagnostics, ...browserCookieDiagnostics(document, operations), ...serverOverrideDiagnostics(document, operations), ...modelAnalysis.diagnostics, ...inlineDiagnostics, ...modelDiagnostics]) };
 }

@@ -16,7 +16,7 @@ export interface OpenApiContext {
   /** `temporal` maps `format: date-time`, `date` and `duration` to Temporal types; the default is `date`. */
   readonly dates?: 'date' | 'temporal';
   /** `standalone` (the default) is an SDK that needs no models job; `golem` leaves validators and conversion to the models job of the same golem.yaml. */
-  readonly mode?: 'standalone' | 'golem';
+  readonly mode?: OpenApiModeKind;
   /** Mode `golem` only: the absolute path of the file the models job writes for this SDK and the operation modules import (`sdkCodecsFile`). The config sets it. */
   readonly codecsFile?: string;
   readonly profile: GolemProfile;
@@ -25,6 +25,30 @@ export interface OpenApiContext {
 
 /** What the generator receives: the context of an SDK job without what the host adds. */
 export type OpenApiOptions = Omit<OpenApiContext, 'onInput'>;
+
+/** The mode of an SDK job after `resolveOpenApiMode`: a golem SDK always holds the file it imports its codecs from, and a standalone SDK holds none. */
+export type OpenApiMode = { readonly kind: 'standalone' } | { readonly kind: 'golem'; readonly codecsFile: string };
+export type OpenApiModeKind = OpenApiMode['kind'];
+
+/** The `mode` and `codecsFile` that a job context or a caller of `writeSdk` sets; the generator resolves them once, at its entry. */
+export interface OpenApiModeSetting {
+  readonly mode?: OpenApiModeKind | undefined;
+  readonly codecsFile?: string | undefined;
+}
+
+/** The one place that checks the mode and its codecs file. A value a JavaScript caller passes is checked here, so the generator behind it reads a mode that holds what it needs. */
+export function resolveOpenApiMode({ mode, codecsFile }: OpenApiModeSetting): OpenApiMode {
+  switch (mode) {
+    case undefined:
+    case 'standalone':
+      return { kind: 'standalone' };
+    case 'golem':
+      if (typeof codecsFile !== 'string' || !path.isAbsolute(codecsFile)) throw new TypeError('context.codecsFile must be an absolute path when mode is "golem"');
+      return { kind: 'golem', codecsFile };
+    default:
+      throw new TypeError('context.mode must be "standalone" or "golem" when provided');
+  }
+}
 
 /** The hook where an extension wraps the operations that an SDK job emits. Its participant type belongs to this package. */
 export const OPERATION_WRAPPER_HOOK = 'client.operationWrapper';
@@ -39,7 +63,7 @@ export interface OperationWrapper {
 export type OperationWrapperResult = { readonly wrapper: OperationWrapper } | { readonly diagnostic: GolemDiagnostic };
 
 /** The participant of `OPERATION_WRAPPER_HOOK`. It takes the mode of the SDK job. At most one extension fills the hook. */
-export type OperationWrapperParticipant = (mode: 'standalone' | 'golem') => OperationWrapperResult;
+export type OperationWrapperParticipant = (mode: OpenApiModeKind) => OperationWrapperResult;
 
 const BLOCK_KEYS: readonly string[] = ['sdks', 'extensions'];
 const SDK_KEYS: readonly string[] = ['input', 'output', 'name', 'remoteHosts', 'maxRefBytes', 'maxRefDocuments', 'refTimeoutMs', 'dates', 'mode'];

@@ -10,6 +10,7 @@ import type { GolemModeManifest, SdkOperationValidation, SdkOperationValue } fro
 import type { OperationValidationSchemas } from './client/emit.js';
 import type { NormalizedOperation } from './normalize.js';
 import { GENERATOR_NAME, PACKAGE_VERSION } from './package-info.js';
+import type { OpenApiModeKind } from './plan.js';
 import type { OpenApiGenerationProfile } from './profile.js';
 import { requireProfile } from './profile.js';
 import {
@@ -107,7 +108,7 @@ export function generateModelManifest(
   document: unknown,
   profile: OpenApiGenerationProfile,
   modelAnalysis: OpenApiModelAnalysis,
-  mode: 'standalone' | 'golem' = 'standalone',
+  mode: OpenApiModeKind = 'standalone',
   golem: GolemModeOperations = { operations: [], validation: undefined },
 ): unknown {
   profile = requireProfile(profile);

@@ -952,11 +952,6 @@ export function fileImports(
   });
 }
 
-/** An import statement that names no binding, only the module. */
-export function sideEffectImport(specifier: string, quote: "'" | '"' = "'"): Code {
-  return plainText(`import ${quote === '"' ? jsonText(specifier) : `'${checkedSingleQuoted(specifier)}'`};`);
-}
-
 /** The names of `source` that the code uses, as the module exports them, in the order of the declaration. */
 export function importedNames(root: Code, source: ImportSource): readonly string[] {
   const used = collect(root).imported.get(source);
