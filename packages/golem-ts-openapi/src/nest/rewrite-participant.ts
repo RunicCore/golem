@@ -179,7 +179,7 @@ function nestUnionBinding(
   unbound: NestBinding,
   model: ts.TypeNode,
   members: readonly ts.TypeNode[],
-  unions: { readonly text: boolean },
+  site: { readonly text: boolean },
 ): NestBinding {
   const { checker, core } = scope;
   const variants = members.map((member) => {
@@ -192,7 +192,7 @@ function nestUnionBinding(
   });
   const golemModel = variants.every((variant) => variant.golemModel);
   if (!golemModel || variants.some((variant) => variant.id === '')) return { ...unbound, golemModel };
-  const tag = unionTag(scope, model, members, unions.text);
+  const tag = unionTag(scope, model, members, site.text);
   if ('fault' in tag) return { ...unbound, golemModel: true, id: '', unionFault: tag.fault };
   return {
     ...unbound,
@@ -225,18 +225,23 @@ function tagThroughAliasFault({ ts, checker }: Scope, model: ts.TypeNode): reado
   return undefined;
 }
 
-/** What a parameter or return type binds to. `unions` is set for an input parameter, the only place a union of models can stand; `text` is true for a query, whose tag is text. */
-function nestBinding(scope: Scope, typeNode: ts.TypeNode, unions?: { readonly text: boolean }): NestBinding {
+/** Where a type stands. Only an input parameter can be a union of models; `text` is true for a query, whose tag is text. */
+type NestTypeSite = { readonly kind: 'input'; readonly text: boolean } | { readonly kind: 'return' };
+
+/** What a parameter or return type binds to. */
+function nestBinding(scope: Scope, typeNode: ts.TypeNode, site: NestTypeSite): NestBinding {
   const { ts, checker, core, file } = scope;
   const walked = nestModelType(ts, typeNode, false);
   const model = walked?.model;
   const unbound = { id: '', primitive: false, golemModel: false, label: (model ?? typeNode).getText(file), array: walked?.array ?? false };
   if (!model) return unbound;
   // Only an input parameter can be a union: a union return is left as Nest JSON.
-  const members = unions !== undefined ? authoredUnionMembers(checker, model) : undefined;
-  if (members) return nestUnionBinding(scope, unbound, model, members, unions!);
-  const throughAlias = unions !== undefined ? tagThroughAliasFault(scope, model) : undefined;
-  if (throughAlias) return { ...unbound, golemModel: true, unionFault: throughAlias };
+  if (site.kind === 'input') {
+    const members = authoredUnionMembers(checker, model);
+    if (members) return nestUnionBinding(scope, unbound, model, members, site);
+    const throughAlias = tagThroughAliasFault(scope, model);
+    if (throughAlias) return { ...unbound, golemModel: true, unionFault: throughAlias };
+  }
   const { label } = unbound;
   const name = serdeTypeName(model);
   const symbol = name && resolvedSymbolAt(checker, name);
@@ -315,7 +320,7 @@ function rewriteFile(input: RewriteParticipantInput): RewriteParticipantResult {
   const nonModelAdvice = warn
     ? 'Generation continues, because golem.yaml sets nonModelInputs: warn.'
     : 'An app with its own interceptor can set nonModelInputs: warn on the nest extension in golem.yaml.';
-  const bindParameter = (typeNode: ts.TypeNode, decorator: string): NestBinding => nestBinding(scope, typeNode, { text: decorator === 'Query' });
+  const bindParameter = (typeNode: ts.TypeNode, decorator: string): NestBinding => nestBinding(scope, typeNode, { kind: 'input', text: decorator === 'Query' });
 
   /** The inputs of one handler that the interceptor converts together: `handlerInputFaults` reports the limits they set on each other. */
   const visitHandler = (method: ts.MethodDeclaration): void => {
@@ -379,7 +384,7 @@ function rewriteFile(input: RewriteParticipantInput): RewriteParticipantResult {
     if (!method.type || !method.body || !ts.isClassLike(method.parent) || (ts.getDecorators(method) ?? []).length === 0) return;
     const returned = nestModelType(ts, method.type, true);
     if (!returned || hasDecorator(scope, method, NEST_RETURN_DECORATOR)) return;
-    const { id, primitive, name } = nestBinding(scope, returned.model);
+    const { id, primitive, name } = nestBinding(scope, returned.model, { kind: 'return' });
     if (primitive || id === '') return;
     edits.push(insertion(method.getStart(file), `@${REWRITE_IMPORT_PREFIX}${NEST_RETURN_DECORATOR}(${JSON.stringify(id)}${returned.array ? ', true' : ''}) `));
     core.importName(method, NEST_RETURN_DECORATOR, NEST_MODULE);

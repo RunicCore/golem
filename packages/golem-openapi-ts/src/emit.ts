@@ -186,13 +186,14 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions, moved:
   // A standalone SDK imports the runtime it carries and its own codecs. An SDK of golem mode imports `@exprtlabs/golem` and the table that the models job
   // of the same golem.yaml writes later in the run: it holds the types, the client and the manifest, and no validator, group module or codec.
   const golem = options.mode === 'golem';
+  const dates = options.dates ?? 'date';
   if (golem && options.codecsFile === undefined) throw new Error('An SDK of mode golem needs codecsFile, the file that the models job writes for it.');
   // The payloads of webhooks and callbacks are SDK types like any other: their operations take part in the types and the model analysis, and have no codecs, validators or handler.
-  const modelAnalysis = analyzeOpenApiModels(document, profile.validation, options.dates ?? 'date', [...operations, ...inboundOperations]);
+  const modelAnalysis = analyzeOpenApiModels(document, profile.validation, dates, [...operations, ...inboundOperations]);
   const inlineDiagnostics = checkOperationCompositions([...operations, ...inboundOperations], modelAnalysis, document);
   const schemaData = profile.validation && plan.hasOutboundOperations
     // A request body that converts and whose descriptors carry every keyword of its schema is checked by its own conversion, so the input root of its client operation leaves it open; any other request body keeps the wire check of the root.
-    ? buildSchemaData(document, options.dates ?? 'date', ir, (operation, contentType) => modelAnalysis.convertedNodeIds.has(requestBodyKey(operation.name, contentType)) && !modelAnalysis.uncarriedValues.has(requestBodyKey(operation.name, contentType)))
+    ? buildSchemaData(document, dates, ir, (operation, contentType) => modelAnalysis.convertedNodeIds.has(requestBodyKey(operation.name, contentType)) && !modelAnalysis.uncarriedValues.has(requestBodyKey(operation.name, contentType)))
     : undefined;
   const files = new Map<string, string>();
   const specifiers: RuntimeSpecifiers | undefined = golem ? undefined : standaloneRuntimeSpecifiers;
@@ -200,14 +201,14 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions, moved:
   // The names that each module of the index exports come from its Code, and the index re-exports the whole modules it stars.
   const modules = new Map<string, PublicModule>();
   const neverProperties = neverPropertiesReader(modelAnalysis, document);
-  const types = generateTypes(document, [...operations, ...inboundOperations], plan, options.dates, neverProperties);
+  const types = generateTypes(document, [...operations, ...inboundOperations], plan, dates, neverProperties);
   files.set('types.ts', types.source);
   modules.set('types.ts', { exports: types.exports, stars: [] });
   if (plan.artifacts.has('input-schemas.ts')) {
-    files.set('input-schemas.ts', generateDirectionalSchemas(document, 'input', options.dates, neverProperties));
+    files.set('input-schemas.ts', generateDirectionalSchemas(document, 'input', dates, neverProperties));
   }
   if (plan.artifacts.has('output-schemas.ts')) {
-    files.set('output-schemas.ts', generateDirectionalSchemas(document, 'output', options.dates, neverProperties));
+    files.set('output-schemas.ts', generateDirectionalSchemas(document, 'output', dates, neverProperties));
   }
   // One validators module serves the models and the operations: it compiles the roots of every model group and
   // every operation together, so a check the two share is written once.

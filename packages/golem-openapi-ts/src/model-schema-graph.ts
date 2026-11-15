@@ -22,6 +22,7 @@ import {
   CompositionError,
   locatedCompositionError,
   modelConversionDescriptor,
+  modelDefinitionDescriptor,
   type SchemaGraphGrouping,
 } from './model-resolution.js';
 import { collectOpenApiModelDefinitions } from './model-definitions.js';
@@ -175,7 +176,7 @@ function modelClassDescriptor(
   if (descriptor.kind !== 'generated-model') return descriptor;
   // The alias has exactly its base's shape, including its policy for undeclared members.
   const base = definitions.get(descriptor.id);
-  const baseDescriptor = base ? modelConversionDescriptor(base.rawSchema, definitions, env, 'to', new Set(), true, 'definition') : undefined;
+  const baseDescriptor = base ? modelDefinitionDescriptor(base.rawSchema, definitions, env) : undefined;
   // The alias keeps its own constraints (`unevaluatedProperties: false` of `allOf [$ref Base]`).
   if (baseDescriptor?.kind === 'object') {
     return descriptor.constraints
@@ -235,7 +236,7 @@ function internOpenApiSchemaGraph(
       name: definition.name,
       descriptor: locatingComposition(definition.schemaName, () => definition.isUnion
         ? modelConversionDescriptor(definition.rawSchema, definitions, env, 'to')
-        : modelClassDescriptor(modelConversionDescriptor(definition.rawSchema, definitions, env, 'to', new Set(), true, 'definition'), definitions, env)),
+        : modelClassDescriptor(modelDefinitionDescriptor(definition.rawSchema, definitions, env), definitions, env)),
       emitClass: false,
       validation,
       own,
