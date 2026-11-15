@@ -1,4 +1,4 @@
-import { asRecord, entriesWithoutExtensions, isJsonObject, jsonPointerJoin, objectEntries, readBoolean, readString, resolveJsonPointer, type JsonObject } from './json.js';
+import { asRecord, entriesWithoutExtensions, isJsonObject, jsonPointerJoin, objectEntries, openApiLine, readBoolean, readString, resolveJsonPointer, type JsonObject, type OpenApiLine } from './json.js';
 import { GolemDiagnosticSeverity, type GolemDiagnostic } from '@exprtlabs/golem/generator-api';
 import { identifier, parameterIdentity, parameterStyleRule, type ParameterLocation } from '@exprtlabs/golem/internal/generator-support';
 import { fragmentPointerTokens } from '@exprtlabs/golem/internal/schema';
@@ -22,7 +22,6 @@ const VERSION_ADAPTERS = {
   },
 } as const;
 
-type OpenApiFeatureLine = keyof typeof VERSION_ADAPTERS;
 export type OpenApiSchema = boolean | JsonObject;
 
 export interface OpenApiMediaType {
@@ -76,7 +75,7 @@ export interface NormalizedOperation {
 
 export interface NormalizedDocument {
   readonly openapi: string;
-  readonly featureLine: OpenApiFeatureLine;
+  readonly featureLine: OpenApiLine;
   readonly schemaDialect: string;
   readonly operations: readonly NormalizedOperation[];
   readonly inboundOperations: readonly NormalizedOperation[];
@@ -118,7 +117,7 @@ export function resolveLocal(document: unknown, value: unknown): unknown {
   return followLocalRefs(document, value).value;
 }
 
-function contentEntries(content: unknown, featureLine?: OpenApiFeatureLine): OpenApiMediaType[] {
+function contentEntries(content: unknown, featureLine?: OpenApiLine): OpenApiMediaType[] {
   return objectEntries(content).map(([contentType, media]) => {
     const mediaObject = asRecord(media);
     const itemSchemaPresent = Object.prototype.hasOwnProperty.call(mediaObject, 'itemSchema')
@@ -251,7 +250,7 @@ function normalizeResponses(document: unknown, responses: unknown): NormalizedRe
       description: readString(response.description) ?? '',
       headers: asRecord(response.headers),
       links,
-      content: contentEntries(response.content, featureLineOf(asRecord(document).openapi)),
+      content: contentEntries(response.content, openApiLine(document)),
       schema: preferredSchema(response.content),
       success: /^2\d\d$/.test(status) || /^2XX$/i.test(status),
     };
@@ -274,7 +273,7 @@ function normalizeOperation(
   sourceName = route,
   wireMethod = method.toUpperCase(),
 ): NormalizedOperation {
-  const featureLine = featureLineOf(asRecord(document).openapi);
+  const featureLine = openApiLine(document);
   const parameters = mergeParameters(
     document,
     Array.isArray(pathItem.parameters) ? pathItem.parameters : [],
@@ -343,12 +342,6 @@ export function effectiveSchemaTypes(schema: { readonly type?: unknown }): strin
   return Array.isArray(schema.type) ? schema.type.map(String) : schema.type ? [String(schema.type)] : [];
 }
 
-function featureLineOf(openapi: unknown): OpenApiFeatureLine {
-  const featureLine = String(openapi).split('.').slice(0, 2).join('.');
-  if (featureLine === '3.1' || featureLine === '3.2') return featureLine;
-  throw new Error(`no version adapter for OpenAPI ${String(openapi)}`);
-}
-
 export function collectOperations(document: unknown): readonly NormalizedOperation[] {
   return normalizeDocument(document).operations;
 }
@@ -356,7 +349,7 @@ export function collectOperations(document: unknown): readonly NormalizedOperati
 function assertParameterStyles(
   document: unknown,
   operations: readonly NormalizedOperation[],
-  featureLine: OpenApiFeatureLine,
+  featureLine: OpenApiLine,
 ): void {
   for (const operation of operations) {
     for (const parameter of operation.parameters) {
@@ -390,7 +383,7 @@ interface PathItemOperation {
  * The operations that a path item holds: the standard methods of `line`, then the OpenAPI 3.2 `additionalOperations`.
  * `suffix` is the JSON Pointer of the operation inside the path item. The caller checks that `operation` is an object.
  */
-export function pathItemOperations(pathItem: JsonObject, line: OpenApiFeatureLine): PathItemOperation[] {
+export function pathItemOperations(pathItem: JsonObject, line: OpenApiLine): PathItemOperation[] {
   const adapter = VERSION_ADAPTERS[line];
   const operations: PathItemOperation[] = [];
   for (const method of adapter.methods) {
@@ -432,7 +425,7 @@ type OperationOwner =
  * A callback operation is listed once for each name that normalize gives it: once with an `operationId`, once for each
  * parent and callback name without one. The callbacks of an operation are listed once for each pointer, so a cycle of callbacks ends.
  */
-export function visitOperationSites(document: unknown, line: OpenApiFeatureLine, visit: (site: OperationSite) => string): void {
+export function visitOperationSites(document: unknown, line: OpenApiLine, visit: (site: OperationSite) => string): void {
   const root = asRecord(document);
   const sites: OperationSite[] = [];
   const listedCallbacks = new Set<string>();
@@ -473,7 +466,7 @@ export function visitOperationSites(document: unknown, line: OpenApiFeatureLine,
 
 export function normalizeDocument(document: unknown): NormalizedDocument {
   const root = asRecord(document);
-  const featureLine = featureLineOf(root.openapi);
+  const featureLine = openApiLine(document);
   const adapter = VERSION_ADAPTERS[featureLine];
   const names: OperationNames = new Map();
   const diagnostics: GolemDiagnostic[] = [];

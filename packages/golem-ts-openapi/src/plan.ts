@@ -1,5 +1,6 @@
 // The plan entry of the ts-openapi block (`golem.plan`). Core loads it when it reads golem.yaml, so it imports no TypeScript, no yaml and no generator code.
 import path from 'node:path';
+import { openApiVersionOf, type OpenApiVersion } from './openapi-version.js';
 import { canonicalPath, checkedSuffixes, isRecord, MODEL_BOUNDARY } from '@exprtlabs/golem/internal/plan-support';
 import type {
   GeneratorHostContext,
@@ -37,7 +38,7 @@ export interface ControllerContext {
   /** File-name endings that make a file below `src` of the golem.yaml folder a controller source; defaults to `.controller.ts`. */
   readonly suffixes?: readonly string[];
   /** Defaults to OpenAPI 3.2.0; 3.1.2 is the supported explicit target. */
-  readonly openapiVersion?: '3.2.0' | '3.1.2';
+  readonly openapiVersion?: OpenApiVersion;
   readonly info: Readonly<Record<string, unknown>>;
   readonly servers?: readonly Readonly<Record<string, unknown>>[];
   readonly securitySchemes?: Readonly<Record<string, Readonly<Record<string, unknown>>>>;
@@ -171,8 +172,7 @@ function docsJob(context: PlanContext, entry: unknown, label: string): PlannedJo
     if (new Set(sources).size !== sources.length) throw new Error(`Duplicate ${label}.sources paths.`);
   }
   const sourceSuffixes = checkedSuffixes(entry.suffixes, `${label}.suffixes`);
-  const openapiVersion = entry.openapiVersion === undefined ? '3.2.0' : entry.openapiVersion;
-  if (openapiVersion !== '3.2.0' && openapiVersion !== '3.1.2') throw new Error(`${label}.openapiVersion must be 3.2.0 or 3.1.2.`);
+  const openapiVersion = openApiVersionOf(entry.openapiVersion, `${label}.openapiVersion`);
   const info = record(entry.info, `${label}.info`);
   const servers = recordArray(entry.servers, `${label}.servers`);
   const securitySchemes = recordMap(entry.securitySchemes, `${label}.securitySchemes`);

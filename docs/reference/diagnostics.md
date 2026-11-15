@@ -155,10 +155,6 @@ An error prints its code, location when known, and message, then stops generatio
 
 **Invalid info.** `info` of the docs job, or its `title` or `version` field, is missing, not an object, or not a non-empty string. **Fix:** Set `info` with a `title` and a `version` that are non-empty strings.
 
-### NEST1402
-
-**Unsupported OpenAPI version.** `openapiVersion` of the docs job names something other than `'3.2.0'` or `'3.1.2'`. **Fix:** Set `openapiVersion` to `'3.2.0'` or `'3.1.2'`, or omit it to use the default.
-
 ### NEST1403
 
 **Invalid server.** A `servers` entry of the docs job doesn't match the OpenAPI Server Object shape. Cases:

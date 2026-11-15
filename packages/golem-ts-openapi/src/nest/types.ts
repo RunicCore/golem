@@ -1,6 +1,7 @@
 import type * as ts from '@exprtlabs/golem/internal/ts';
 import type { TsToOpenApiDiagnostic } from '../diagnostics.js';
 import type { ContractAnalysis } from '../contracts.js';
+import type { OpenApiVersion } from '../openapi-version.js';
 
 export const NEST_HTTP_METHODS = [
   'get',
@@ -96,7 +97,7 @@ export interface NestAnalysisContext {
   readonly suffixes?: readonly string[];
   readonly program: ts.Program;
   readonly checker: ts.TypeChecker;
-  readonly openapiVersion?: '3.2.0' | '3.1.2';
+  readonly openapiVersion: OpenApiVersion;
   /** The most bytes of JSON that a route path or version can fold to; omitted means 1 MiB. */
   readonly maxResultBytes?: number;
   readonly onInput?: (filename: string) => void;

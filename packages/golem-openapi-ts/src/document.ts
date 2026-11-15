@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { asRecord, isJsonObject, jsonPointerJoin, jsonPointerTokens, objectEntries } from './json.js';
+import { asRecord, isJsonObject, jsonPointerJoin, jsonPointerTokens, objectEntries, openApiLine } from './json.js';
 import { assertSupportedModelFieldName } from '@exprtlabs/golem/internal/schema';
 import { componentOrigin, LocatedError, type OriginLocator } from './origin.js';
 import { normalizeDocument, resolveLocalPointer, type NormalizedDocument, type NormalizedOperation } from './normalize.js';
@@ -20,13 +20,7 @@ interface RemoteRef {
 
 function validateDocumentHeader(document: unknown): asserts document is Record<string, unknown> {
   if (!isJsonObject(document)) throw new Error('document root must be an object');
-  const version = String(document.openapi ?? '');
-  if (/^3\.0(?:\.\d+)?$/.test(version)) {
-    throw new Error('OpenAPI 3.0 is not supported; convert the document to OpenAPI 3.1 or 3.2');
-  }
-  if (!/^3\.(1|2)(?:\.\d+)?$/.test(version)) {
-    throw new Error(`unsupported OpenAPI version "${version}"; expected 3.1 or 3.2`);
-  }
+  openApiLine(document);
   if (document.paths === undefined && document.components === undefined && document.webhooks === undefined) {
     throw new Error('document must contain at least one of paths, components, or webhooks');
   }
@@ -154,7 +148,7 @@ export function parseSourceDocument(filename: string): unknown {
 
 export function expandOas32MediaTypes(document: unknown): unknown {
   const root = asRecord(document);
-  if (!String(root.openapi ?? '').startsWith('3.2')) return document;
+  if (openApiLine(document) !== '3.2') return document;
   const components = asRecord(root.components);
   if (components.mediaTypes === undefined) return document;
 

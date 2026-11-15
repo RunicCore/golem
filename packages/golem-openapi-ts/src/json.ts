@@ -43,16 +43,19 @@ export function jsonPointerJoin(parent: string, token: string): string {
   return `${parent}/${escapeJsonPointerToken(token)}`;
 }
 
-/**
- * Detect the OpenAPI line ('3.1' or '3.2') from `document.openapi`. Any
- * other or missing value is treated as 3.1, matching `checkOpenApiStructure`
- * choosing the 3.1 document schema for it.
- */
+/** The OpenAPI lines that golem reads; a document names one in its `openapi` field. */
 export type OpenApiLine = '3.1' | '3.2';
 
+/**
+ * The line of `document.openapi` (`3.1` or `3.2`, with an optional patch number). Every other value, a missing one
+ * and a 3.0 document included, is refused with the one error that every reader of the field gives.
+ */
 export function openApiLine(document: unknown): OpenApiLine {
-  const version = isJsonObject(document) ? String(document.openapi ?? '') : '';
-  return version.startsWith('3.2') ? '3.2' : '3.1';
+  const version = String(asRecord(document).openapi ?? '');
+  const line = /^(3\.[12])(?:\.\d+)?$/.exec(version)?.[1];
+  if (line === '3.1' || line === '3.2') return line;
+  if (/^3\.0(?:\.\d+)?$/.test(version)) throw new Error('OpenAPI 3.0 is not supported; convert the document to OpenAPI 3.1 or 3.2');
+  throw new Error(`unsupported OpenAPI version "${version}"; expected 3.1 or 3.2`);
 }
 
 /** Resolve a JSON Pointer ('' or '/a/0/b', escaped tokens) through objects and arrays. */
