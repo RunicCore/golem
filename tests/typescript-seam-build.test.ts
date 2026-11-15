@@ -56,6 +56,7 @@ const PRINTED: readonly (readonly [string, Readonly<Record<string, string>>, obj
   ['an options error stays in the configuration file under flags', { 'src/a.ts': 'export const a = 1;\n' }, { declaration: false, declarationMap: true }, [], ['--noEmit']],
   ['an options error stays in the configuration file under flags when a root lies outside it', { 'src/a.ts': 'export const a = 1;\n', 'extra.ts': 'export const extra = 1;\n' }, { declaration: false, declarationMap: true }, ['extra.ts'], ['--noEmit']],
   ['a file out of rootDir names the include pattern that matched it in the configuration file under flags', { 'src/a.ts': 'export const a = 1;\n', 'src/inner/b.ts': 'export const b = 1;\n' }, { rootDir: 'src/inner' }, [], ['--noEmit']],
+  ['an options error that only a flag causes is placed at compilerOptions in the configuration file', { 'src/a.ts': 'export const a = 1;\n' }, {}, [], ['--declarationMap']],
   ['an options error stays in the configuration file under option overrides', { 'src/a.ts': 'export const a = 1;\n' }, { declaration: false, declarationMap: true }, [], [], { noEmit: true }],
   ['two errors in one file', { 'src/a.ts': 'export const a: string = 1;\nexport const b: string = 2;\n' }],
   ['errors in two files', { 'src/a.ts': 'export const a: string = 1;\nexport const b: string = 2;\n', 'src/b.ts': 'export const c: string = 3;\n' }],
@@ -67,10 +68,10 @@ for (const [name, files, options, outside = [], flags = [], overrides] of PRINTE
     using session = new ts.ProgramSession({ cwd: root });
     using program = session.openProgram({ root, sources: [...session.parseConfigFile(config).fileNames, ...outside.map((file) => path.join(root, file))], configFile: config, flags, ...overrides && { compilerOptionOverrides: overrides } });
     const diagnostics = ts.getTscDiagnostics(program);
-    assert.equal(ts.formatDiagnostics(diagnostics, host(root)), tsc(root, ['--pretty', 'false']));
+    assert.equal(ts.formatDiagnostics(diagnostics, host(root)), tsc(root, [...flags, '--pretty', 'false']));
     const printed = diagnostics.map((diagnostic) => `${ts.formatDiagnosticsWithColorAndContext([diagnostic], host(root))}\n`).join('');
     const pretty = `${printed}${ts.formatErrorSummary(diagnostics, host(root))}`;
-    assert.equal(pretty, tsc(root, ['--pretty', 'true']));
+    assert.equal(pretty, tsc(root, [...flags, '--pretty', 'true']));
   });
 }
 
@@ -84,6 +85,18 @@ test('an options error stays in the configuration file when the project has refe
   const printed = ts.formatDiagnostics(ts.getTscDiagnostics(program), host(root));
   assert.match(printed, /^tsconfig\.json\(1,\d+\): error TS5069: /);
   assert.equal(printed, tsc(root, ['--pretty', 'false']));
+});
+
+test('an options error that tsc makes with no place stays without one when a flag causes it', t => {
+  // protects: T-977 only an option error that tsc locates at compilerOptions moves there; one it builds with no option to name keeps no place
+  const { root, config } = project(t, { 'src/x.ts': 'export const a = 1;\n', 'src/x.js': 'export const b = 1;\n' });
+  fs.writeFileSync(config, JSON.stringify({ compilerOptions: { ...COMPILER, outDir: 'out', rootDir: '.' }, files: ['src/x.ts', 'src/x.js'] }));
+  const flags = ['--allowJs'];
+  using session = new ts.ProgramSession({ cwd: root });
+  using program = session.openProgram({ root, sources: session.parseConfigFileWithFlags(config, flags).fileNames, configFile: config, flags });
+  const printed = ts.formatDiagnostics(ts.getTscDiagnostics(program), host(root));
+  assert.match(printed, /^error TS5056: /);
+  assert.equal(printed, tsc(root, [...flags, '--pretty', 'false']));
 });
 
 test('a program emits JavaScript and declarations to memory, equal to what tsc writes, and writes no file', t => {
