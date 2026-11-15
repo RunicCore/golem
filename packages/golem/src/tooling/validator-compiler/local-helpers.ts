@@ -6,7 +6,7 @@ import { NEWLINE } from './function-names.js';
 
 const runtime = rt['validation-runtime'];
 
-type LocalHelper = 'isPresent' | 'definedKeys' | 'readAll' | 'isObject' | 'isInstanceState' | 'isMultipleOfScaled' | 'selectedModel' | 'newEvaluation' | 'mergeEvaluation' | 'leafPasses';
+type LocalHelper = 'isPresent' | 'definedKeys' | 'readAll' | 'isObject' | 'isMultipleOfScaled' | 'selectedModel' | 'newEvaluation' | 'mergeEvaluation' | 'leafPasses';
 
 /** A helper function of a generated module: the file holds its definition once, where the code that names it asks for it. */
 function localHelper(id: LocalHelper, rank: number, define: (self: Code) => Code): Helper {
@@ -23,14 +23,13 @@ export function localName(name: LocalHelper): Code {
 const HELPERS: Readonly<Record<LocalHelper, Helper>> = {
   // The JSON view of the keys: a key is present when it is own, enumerable and not `undefined`, as `JSON.stringify` writes
   // it. A model's optional field may be set to `undefined` and JSON has no such value. Program state of a model instance
-  // (see `instanceFields`) is no key of the model, and its value is never read.
-  definedKeys: localHelper('definedKeys', 5, self => code`const ${self} = value => { const fields = ${instanceFieldsOf(code`value`)}; return Object.keys(value).filter(key => !${stateTest(code`fields`, code`key`)} && value[key] !== undefined); };`),
+  // (see `instanceFields`) is no key of the model, also when the schema declares a key of that name, and its value is never read.
+  // `fields` are the own-model names of `value` (`instanceFieldsOf`), which the caller already holds.
+  definedKeys: localHelper('definedKeys', 5, self => code`const ${self} = (value, fields) => Object.keys(value).filter(key => !${stateTest(code`fields`, code`key`)} && value[key] !== undefined);`),
   // The failure of a fast check whose key test left the values unread reads them as the full validator does, then fails.
   readAll: localHelper('readAll', 5, self => code`function ${self}(value, keys) { const fields = ${instanceFieldsOf(code`value`)}; for (const key of keys) if (!${stateTest(code`fields`, code`key`)}) value[key]; }`),
-  isPresent: localHelper('isPresent', 2, self => code`const ${self} = (value, key) => ${ownEnumerableCode(code`value`, code`key`)} && value[key] !== undefined;`),
+  isPresent: localHelper('isPresent', 2, self => code`const ${self} = (value, key) => ${ownEnumerableCode(code`value`, code`key`)} && !${stateTest(instanceFieldsOf(code`value`), code`key`)} && value[key] !== undefined;`),
   isObject: localHelper('isObject', 3, self => code`const ${self} = value => typeof value === 'object' && value !== null && !Array.isArray(value);`),
-  // An own key that the value's own model does not declare is program state, never an unknown key (see `instanceFields`).
-  isInstanceState: localHelper('isInstanceState', 5, self => code`function ${self}(value, key) { return ${stateTest(instanceFieldsOf(code`value`), code`key`)}; }`),
   // The fast form of `isMultipleOf` for a decimal divisor the compiler wrote as `units / scale` (see `scaledDivisor`). A value
   // is a multiple when it is `whole / scale` for a whole number below 2 ** 52 (4503599627370496) that `units` divides.
   // `whole / scale` is the double nearest to the decimal `whole * 10 ** -d`, and at that size no other decimal with d digits

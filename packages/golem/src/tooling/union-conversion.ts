@@ -63,17 +63,19 @@ export const PRESENT_KEY = localCode('key');
  * One `Object.keys` pass that gives each `[key, local]` pair its value in a `let` local, or `undefined` when the key is
  * absent, so each field is read once (the presence rows of scripts/benchmark/validator-toggles.ts). `declare` writes the
  * declaration of a local, for example with a type annotation. `otherwise` is the statement for a key that is not in
- * `captures`; it reads that key as `PRESENT_KEY`, so the same pass sees the other keys.
+ * `captures`; it reads that key as `PRESENT_KEY`, so the same pass sees the other keys. `skip` is the test that `PRESENT_KEY` is
+ * program state: the pass leaves such a key out whatever its name, so its local stays `undefined`.
  */
 export function presentKeysCode(
   object: Code,
   captures: readonly (readonly [key: string, local: Code])[],
-  options: { readonly declare?: (local: Code) => Code; readonly otherwise?: Code } = {},
+  options: { readonly declare?: (local: Code) => Code; readonly otherwise?: Code; readonly skip?: Code } = {},
 ): Code {
-  const { declare = (local: Code) => local, otherwise } = options;
+  const { declare = (local: Code) => local, otherwise, skip } = options;
   const cases = join(captures.map(([key, local]) => code`case ${literal(key)}: ${local} = ${object}[${literal(key)}]; break;`), code` `);
   const other = otherwise === undefined ? code`` : code` default: ${otherwise}`;
-  return code`let ${join(captures.map(([, local]) => declare(local)), code`, `)}; for (const ${PRESENT_KEY} of Object.keys(${object})) switch (${PRESENT_KEY}) { ${cases}${other} }`;
+  const pass = code`switch (${PRESENT_KEY}) { ${cases}${other} }`;
+  return code`let ${join(captures.map(([, local]) => declare(local)), code`, `)}; for (const ${PRESENT_KEY} of Object.keys(${object})) ${skip === undefined ? pass : code`{ if (${skip}) continue; ${pass} }`}`;
 }
 
 /**

@@ -2,11 +2,10 @@ import { assertNever } from '../../assert-never.js';
 import { code, identifier as identifierCode, join, joinIndented, literal as literalCode, type Code, type IndentedLine } from '../code.js';
 import type { IrArray, IrCheck, IrClass, IrDiscriminator, IrFunction, IrInstance, IrNumber, IrObject, IrPatternProperty, IrSchema, IrString, IrType, IrTypeName, IrUnion, IrValidation } from './ir.js';
 import { rt, runtimeFunctionCode } from '../rt.js';
-import { presentValueCode } from '../union-conversion.js';
 import { VALUE, PATH, NEWLINE, COMMA, ISSUES, ALL, SANITY, INHERITED, EVALUATION, type CalleeSlot, type CallArguments } from './function-names.js';
 import { isTuple, keepsFormat } from './call-graph.js';
 import { JSON_TYPES, JSON_TYPE_NAMES, dispatchTest } from './json-types.js';
-import { localName, scaledDivisor, stateTest } from './local-helpers.js';
+import { instanceFieldsOf, localName, scaledDivisor, stateTest } from './local-helpers.js';
 import { patternExpression, type ModuleState } from './module-state.js';
 import { resolve, readSet, objectPresence, type Capture, type Lazy, type KeyList, type KeyTest, type RawKeys, type UnreadKeys, type WriterMode } from './modes.js';
 
@@ -687,7 +686,7 @@ export class FunctionWriter {
       const key = this.fresh('key');
       this.open(code`if (!${record}.allKeys)`);
       // `definedKeys` leaves out program state of a model instance: it is no unevaluated key, whether the schema forbids it or judges its value.
-      this.open(code`for (const ${key} of ${localName('definedKeys')}(${value}))`);
+      this.open(code`for (const ${key} of ${localName('definedKeys')}(${value}, ${instanceFieldsOf(value)}))`);
       this.line(code`if (${record}.keys.has(${key})) continue;`);
       if (schema.kind === 'never') {
         this.issue(code`code: 'unknownKey', key: ${key}`, code`[...${PATH}, ${key}]`);
@@ -851,11 +850,7 @@ export class FunctionWriter {
     const property = literalCode(discriminator.property);
     const tag = this.fresh('tag');
     const selected = this.fresh('branch');
-    const read = this.mode.form<Lazy>(
-      () => code`${localName('isObject')}(${value}) && ${presence.present(discriminator.property)} ? ${presence.read(discriminator.property)} : undefined`,
-      code`${localName('isObject')}(${value}) ? (${presentValueCode(value, property, code`${value}[${property}]`)}) : undefined`,
-    );
-    this.line(code`const ${tag} = ${resolve(read)};`);
+    this.line(code`const ${tag} = ${localName('isObject')}(${value}) && ${presence.present(discriminator.property)} ? ${presence.read(discriminator.property)} : undefined;`);
     const selection = this.mode.form<Lazy>(
       () => code`${this.tagLists(discriminator)}.findIndex(list => list.some(item => ${runtime.jsonEqual}(${tag}, item)))`,
       () => this.tagSelection(discriminator, tag),
@@ -946,7 +941,11 @@ export class FunctionWriter {
     const extra = closed.some(Boolean) ? this.fresh('extra') : undefined;
     this.line(code`let ${join([tag, ...seen.map(([, mark]) => mark), ...(extra === undefined ? [] : [code`${extra} = false`])], COMMA)};`);
     const key = this.fresh('key');
+    // Program state of the instance is no tag, no declared key and no unknown key: no pass below reads it.
+    const fields = this.fresh('fields');
+    this.line(code`const ${fields} = ${instanceFieldsOf(value)};`);
     this.open(code`for (const ${key} of Object.keys(${value}))`);
+    this.line(code`if (${stateTest(fields, key)}) continue;`);
     this.open(code`switch (${key})`);
     this.line(code`case ${literalCode(discriminator.property)}: ${tag} = ${value}[${literalCode(discriminator.property)}]; break;`);
     for (const [name, mark] of seen) this.line(code`case ${literalCode(name)}: ${mark} = true; break;`);
@@ -964,9 +963,9 @@ export class FunctionWriter {
       for (const [name, mark] of seen) {
         if (!all && !declared.includes(name)) continue;
         const local = this.fresh('present');
-        // A key that this branch names is read as the full validator reads it; a key that only another branch names is read when it is no program state.
+        // A key that this branch names is judged; a key that only another branch names is read all the same, and must be absent when the branch is closed.
         const judged = named[position].has(name) || declared.includes(name);
-        this.line(code`const ${local} = ${judged ? mark : code`${mark} && !${localName('isInstanceState')}(${value}, ${literalCode(name)})`} ? ${value}[${literalCode(name)}] : undefined;`);
+        this.line(code`const ${local} = ${mark} ? ${value}[${literalCode(name)}] : undefined;`);
         if (judged) captured.push([name, local]);
         else absent.push([name, local]);
       }
@@ -976,16 +975,17 @@ export class FunctionWriter {
         this.line(code`let ${unknown} = false;`);
         this.open(code`if (${extra})`);
         this.open(code`for (const ${other} of Object.keys(${value}))`);
+        this.line(code`if (${stateTest(fields, other)}) continue;`);
         this.open(code`switch (${other})`);
         this.line(code`${join(keys.map(name => code`case ${literalCode(name)}:`), code` `)} break;`);
-        this.line(code`default: if (!${localName('isInstanceState')}(${value}, ${other}) && ${value}[${other}] !== undefined) ${unknown} = true;`);
+        this.line(code`default: if (${value}[${other}] !== undefined) ${unknown} = true;`);
         this.close();
         this.close();
         this.close();
       }
       if (closed[position]) {
         if (!named[position].has(discriminator.property)) this.failWhen(code`${tag} !== undefined`);
-        // A key that the instance's own model declares is judged; any other own key is program state, and `absent` never read it.
+        // A key that the instance's own model declares is judged; any other own key is program state, and no pass read it.
         for (const [, local] of absent) this.failWhen(code`${local} !== undefined`);
         if (unknown !== undefined) this.failWhen(unknown);
       }

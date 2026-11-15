@@ -268,7 +268,7 @@ export function registerGeneratedModel<Model extends object, Wire = unknown>(
       enumerable: false,
       writable: false,
     });
-    // The declared names, so a key outside them is program state of an instance (`isInstanceState`); a model that
+    // The declared names, so a key outside them is program state of an instance (`isStateKey`); a model that
     // allows additional keys has none.
     Object.defineProperty(prototype, fieldsKey, {
       value: definition.additionalProperties ? null : Object.freeze([...registered.fields]),
