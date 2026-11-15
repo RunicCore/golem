@@ -322,8 +322,10 @@ function internJobSchemaGraphs(
       codecIds.set(specification, node.codecId);
       recursion.set(node.codecId, reachesRecursiveNode(schemaGraph, node, recursion));
       const write = siblingWireWrite(node, defaultValidation);
-      if (write !== undefined) siblingWire.set(node.codecId, write);
-      if (!node.sameSchema) wirePlanes.add(node.codecId);
+      if (write !== undefined) {
+        siblingWire.set(node.codecId, write);
+        wirePlanes.add(node.codecId);
+      }
       for (const name of [node.codecId, specification.name]) {
         if (node.modelOnlyJsonSchema !== undefined) residualIds.modelOnly.add(name);
         if (node.wireOnlyJsonSchema !== undefined) residualIds.wireOnly.add(name);

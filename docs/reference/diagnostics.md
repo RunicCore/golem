@@ -667,6 +667,7 @@ These checks run only when the `ts-openapi` block of `golem.yaml` holds the [`ne
 - Two scalar variants where one converts.
 - A model reference that is no object.
 - A `TSerde` value beside tagged objects whose JSON form is an object or an array, such as a `URL` written as `{ href: string }`.
+- A variant of a tagged union (`Discriminator`) that has a `TSerde` whose JSON form is a scalar or an array. The wire value holds no tag, so golem cannot dispatch it. The message names the variant.
 
 Golem does not try the variants in turn, so generation stops. The message names the model file and lists the variants. An object union with no declared tag has its own code, [RUNM1080](#runm1080).
 

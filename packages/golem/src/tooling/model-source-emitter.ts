@@ -11,7 +11,6 @@ export {
   reachesRecursiveNode,
   stringifyFunctionName,
   stripPlanName,
-  descriptorSerde,
   extraKeyValues,
   wireDiffers,
   wireStringifyExportName,
@@ -67,12 +66,14 @@ import {
   PRESENT_KEY,
   presentKeysCode,
   unionDispatch,
+  descriptorSerde,
+  valueConversion,
   type ObjectTypeDescriptor,
 } from './union-conversion.js';
-import { descriptorSerde, extraKeyValues, isRecordExpression } from './stringify-emitter.js';
+import { extraKeyValues, isRecordExpression } from './stringify-emitter.js';
 
 /** Generators read tag values through the same rule as the shared union conversion. */
-export { AmbiguousUnionConversionError, descriptorNeedsConversion, ObjectUnionDiscriminatorError } from './union-conversion.js';
+export { AmbiguousUnionConversionError, descriptorNeedsConversion, descriptorSerde, ObjectUnionDiscriminatorError } from './union-conversion.js';
 
 export type ModelConversionDescriptor = ModelTypeDescriptor;
 
@@ -120,13 +121,15 @@ type ObjectDescriptor = ObjectTypeDescriptor;
 function generatedModel(
   descriptor: ModelConversionDescriptor,
 ): GeneratedModelDescriptor | undefined {
-  if (descriptor.kind === 'generated-model') return descriptor;
+  const conversion = valueConversion(descriptor);
+  if (conversion.kind === 'generated-model') return conversion.descriptor;
   if (descriptor.kind !== 'union') return undefined;
 
   const generated = descriptor.variants.filter(
     (variant): variant is GeneratedModelDescriptor => variant.kind === 'generated-model',
   );
-  if (generated.length !== 1) return undefined;
+  // A generated model with a serde converts by the serde, not as the model: it is no model beside the plain variants.
+  if (generated.length !== 1 || valueConversion(generated[0]).kind !== 'generated-model') return undefined;
 
   const alternatives = descriptor.variants.filter(
     (variant) => variant.kind !== 'generated-model',
@@ -242,9 +245,11 @@ function emitNestedUnion(
         const model = resolveModel(id);
         return model.plain ? undefined : model.className;
       };
-      const classOf = (variant: ModelConversionDescriptor): Code | undefined => variant.kind === 'generated-model' ? classOfModel(variant.id)
-        : variant.kind === 'reference' && !variant.projection ? classOfModel(variant.name)
-          : undefined;
+      const classOf = (variant: ModelConversionDescriptor): Code | undefined => {
+        const conversion = valueConversion(variant);
+        if (conversion.kind === 'generated-model') return classOfModel(conversion.descriptor.id);
+        return variant.kind === 'reference' && !variant.projection ? classOfModel(variant.name) : undefined;
+      };
       const branches = variants.map((variant, position) => ({
         values: dispatch.values[position],
         className: classOf(variant),
@@ -267,8 +272,9 @@ function emitNestedUnion(
       });
     },
     declaredDefault: (variant) => {
-      if (variant.kind !== 'generated-model') return undefined;
-      return modelFromConversion(resolveModel(variant.id), expression, direction === 'fromInit' ? fromInitCall : (model, input) => model.decode(input));
+      const conversion = valueConversion(variant);
+      if (conversion.kind !== 'generated-model') return undefined;
+      return modelFromConversion(resolveModel(conversion.descriptor.id), expression, direction === 'fromInit' ? fromInitCall : (model, input) => model.decode(input));
     },
     afterGenerated: (present) => {
       const result = unionGeneratedFrom(descriptor, expression, resolveModel, direction === 'fromInit' ? fromInitCall : (model, input) => model.decode(input));

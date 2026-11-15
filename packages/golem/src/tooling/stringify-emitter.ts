@@ -396,8 +396,6 @@ function memberPrefix(name: string, leadingComma: boolean): Code {
   return literal(`${leadingComma ? ',' : ''}${JSON.stringify(name)}:`);
 }
 
-export { descriptorSerde };
-
 function isObjectish(descriptor: ModelTypeDescriptor): boolean {
   return descriptor.kind === 'object' || descriptor.kind === 'reference' || descriptor.kind === 'generated-model';
 }
@@ -1414,7 +1412,7 @@ function emitUnionValue(
     beforeGenerated: (present) => {
       const objects = present.filter((variant): variant is ObjectTypeDescriptor => variant.kind === 'object');
       // Several structured objects need a declared tag table to be told apart; without one they are rejected.
-      if (objects.length > 1 && !present.some((variant) => variant.kind === 'generated-model')) {
+      if (objects.length > 1 && !present.some((variant) => valueConversion(variant).kind === 'generated-model')) {
         const structured = objects.some((object) => {
           const node = ctx.graph.nodeFor(object);
           return Boolean(node) || Object.keys(object.properties).length > 0 || object.additionalProperties === false;
