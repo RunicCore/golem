@@ -1,9 +1,9 @@
 import { compareText } from '@exprtlabs/golem/generator-api';
-import { isRecord, recordOrUndefined } from '@exprtlabs/golem/internal/generator-support';
+import { recordOrUndefined } from '@exprtlabs/golem/internal/generator-support';
 import { followReference, schemaReference } from '@exprtlabs/golem/internal/schema';
 import * as ts from '@exprtlabs/golem/internal/ts';
 import { TsToOpenApiDiagnosticCode, TsToOpenApiError, diagnostic } from './diagnostics.js';
-import { mapArrayItems, mergeSchemaMetadata } from './nest/json-schema-merge.js';
+import { isDtoSchema, mapArrayItems, mergeSchemaMetadata } from './nest/json-schema-merge.js';
 import { DEFAULT_MEDIA_TYPE, mediaTypesOrDefault, type ControllerParameter, type ControllerRoute, type ParameterOverride, type ResponseDescription, type TypeReference } from './nest/types.js';
 import { parameterOverrideKey } from './nest/parameters.js';
 import type { OpenApiVersion } from './openapi-version.js';
@@ -412,7 +412,7 @@ export function propertyNames(resolve: OperationBuildContext['resolveSchemaRefer
   const onPath = schemaReference(schema) ?? value;
   if (visiting.has(onPath)) return new Set();
   const names = new Set(key === 'properties' ? Object.keys(recordOrUndefined(value.properties) ?? {}) : (Array.isArray(value.required) ? value.required.filter((name): name is string => typeof name === 'string') : []));
-  for (const member of Array.isArray(value.allOf) ? value.allOf.filter((item): item is OpenApiSchema => isRecord(item) || typeof item === 'boolean') : []) {
+  for (const member of Array.isArray(value.allOf) ? value.allOf.filter(isDtoSchema) : []) {
     visiting.add(onPath);
     const inner = propertyNames(resolve, member, key, visiting);
     visiting.delete(onPath);
@@ -491,7 +491,7 @@ async function requestBody(
           continue;
         }
         const schema = explicitCompositionSchema(declaredType ?? bodyType, mediaRecord.schema)
-          ?? await schemaFor(context, declaredType ?? bodyType, 'request', `body.${media}`, recordOrUndefined(mediaRecord.schema));
+          ?? await schemaFor(context, declaredType ?? bodyType, 'request', `body.${media}`, isDtoSchema(mediaRecord.schema) ? mediaRecord.schema : undefined);
         generatedContent[media] = { ...mediaRecord, schema: combineBodyParts(context, [{ schema: override?.isArray ? arraySchema(schema) : schema, ...primaryPart }, ...extraSchemas]) };
         continue;
       }
@@ -560,7 +560,7 @@ async function responseObject(
           continue;
         }
         const schema = explicitCompositionSchema(contractType, mediaRecord.schema)
-          ?? await schemaFor(context, contractType, 'response', `response.${response.status}.${media}`, recordOrUndefined(mediaRecord.schema));
+          ?? await schemaFor(context, contractType, 'response', `response.${response.status}.${media}`, isDtoSchema(mediaRecord.schema) ? mediaRecord.schema : undefined);
         content[media] = { ...mediaRecord, schema: response.isArray && !response.declaredType ? arraySchema(schema) : schema };
       }
       result.content = content;

@@ -6,6 +6,7 @@ import {
   discoverModelManifests,
   golemModeComponents,
   isGolemModeManifest,
+  noCodecIdError,
   readModelManifest,
 } from '../model-manifest-core.js';
 import type {
@@ -278,15 +279,12 @@ export function loadModelManifests(
           `Duplicate model manifest id "${model.id}" in ${existingFile} and ${filename}.`,
         );
       }
-      if (typeof model.allowAny !== 'boolean') {
-        throw new Error(
-          `Invalid model manifest ${filename}: model ${model.id} must advertise an effective allowAny boolean.`,
-        );
-      }
       manifestOfId.set(model.id, filename);
+      // A golem-mode model has its codec id on the component named as its declared type; `validateModelManifest` checked that one of them is there.
       const component = golem && golemModeComponents(golem).get(model.type.export);
-      const { codecId } = model;
-      const resolved: ResolvedModelManifestEntry = { ...model, allowAny: model.allowAny, manifestFile: filename };
+      const codecId = component?.codecId ?? model.codecId;
+      if (codecId === undefined) throw noCodecIdError(filename, model.type.export);
+      const resolved: ResolvedModelManifestEntry = { ...model, codecId, manifestFile: filename };
       const provenances = [model.type, ...(model.type.aliases ?? [])];
       for (const provenance of provenances) {
         const key = manifestProvenance(filename, provenance.module, provenance.export);

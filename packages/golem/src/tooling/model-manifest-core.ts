@@ -14,8 +14,8 @@ interface ModelManifestProvenance {
 
 export interface ModelManifestEntry {
   readonly id: string;
-  /** The runtime codec id a rewrite stamps for this model. A golem-mode manifest has it on the model's component instead, and `validateModelManifest` joins it. */
-  readonly codecId: string;
+  /** The runtime codec id a rewrite stamps for this model. A golem-mode manifest has it on the model's component instead, and the reader joins it. */
+  readonly codecId?: string;
   readonly allowAny: boolean;
   readonly type: ModelManifestProvenance;
   readonly [key: string]: unknown;
@@ -239,6 +239,11 @@ function validateGolemModeGraph(manifest: Record<string, unknown>, filename: str
   }
 }
 
+/** The error for a model entry with no codec id of its own and none on a component of its golem-mode manifest. */
+export function noCodecIdError(filename: string, exportName: string): Error {
+  return new Error(`Invalid model manifest ${displayPath(filename)}: model entry ${exportName} has no codecId. Regenerate the SDK with this golem version.`);
+}
+
 export function validateModelManifest(manifest: unknown, filename = MODEL_MANIFEST_FILENAME): ModelManifest {
   if (!isRecord(manifest)) {
     throw new Error(`Invalid model manifest ${displayPath(filename)}: expected an object.`);
@@ -257,8 +262,7 @@ export function validateModelManifest(manifest: unknown, filename = MODEL_MANIFE
     throw new Error(`Invalid model manifest ${displayPath(filename)}: models must be an array.`);
   }
   // A golem-mode model has its codec id on the component that has the name of its declared type.
-  const nodeCodecIds = manifest.mode === 'golem' ? new Map((manifest.components as readonly GolemModeComponent[]).flatMap((component) => component.codecId === undefined ? [] : [[component.name, component.codecId] as const])) : undefined;
-  const models: ModelManifestEntry[] = [];
+  const nodeNames = manifest.mode === 'golem' ? new Set((manifest.components as readonly GolemModeComponent[]).flatMap((component) => component.codecId === undefined ? [] : [component.name])) : undefined;
   for (const model of manifest.models) {
     if (
       !isRecord(model) || !isProvenance(model.type)
@@ -267,13 +271,11 @@ export function validateModelManifest(manifest: unknown, filename = MODEL_MANIFE
     ) {
       throw new Error(`Invalid model entry in ${displayPath(filename)}.`);
     }
-    const codecId = nodeCodecIds === undefined ? model.codecId : nodeCodecIds.get(model.type.export);
-    if (codecId === undefined) {
-      throw new Error(`Invalid model manifest ${displayPath(filename)}: model entry ${model.type.export} has no codecId. Regenerate the SDK with this golem version.`);
+    if (nodeNames === undefined ? model.codecId === undefined : !nodeNames.has(model.type.export)) {
+      throw noCodecIdError(filename, model.type.export);
     }
-    models.push({ ...model, id: model.id, allowAny: model.allowAny, type: model.type, codecId });
   }
-  return { ...(manifest as ModelManifest), models };
+  return manifest as ModelManifest;
 }
 
 export function readModelManifest(filename: string, onInput?: InputObserver): ModelManifest {
