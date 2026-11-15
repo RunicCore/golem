@@ -58,14 +58,14 @@ interface KeyTestRequest {
  * The list of an object's own keys that a key test leaves for the passes that loop over the keys. `defined`: the list
  * of `definedKeys`, which holds no program state and no key whose value is `undefined`. `raw`: each own key as it is,
  * so a pass leaves out program state of a model instance (`stateFields`, the local that holds the names of the
- * instance's own model, for `isStateKey`) and keys whose value is `undefined` before it reads a value. `failure`, when
- * the key test left the own values unread: the statement that a failing check runs before it fails as it would without
- * this object. It reads every value first, as the full validator does, and the passes over the key list read each value
- * before they skip a key.
+ * instance's own model, for `isStateKey`) and keys whose value is `undefined` before it reads a value. `unread`: a
+ * raw list for which the key test left the own values unread; `failure` is the statement that a failing check runs
+ * before it fails as it would without this object. It reads every value first, as the full validator does, and the
+ * passes over the key list read each value before they skip a key.
  */
-export type KeyList = DefinedKeys | RawKeys;
+export type KeyList = DefinedKeys | RawKeys | UnreadKeys;
 
-export interface DefinedKeys {
+interface DefinedKeys {
   readonly kind: 'defined';
   readonly keys: Code;
 }
@@ -74,7 +74,13 @@ export interface RawKeys {
   readonly kind: 'raw';
   readonly keys: Code;
   readonly stateFields: Code;
-  readonly failure?: Code;
+}
+
+export interface UnreadKeys {
+  readonly kind: 'unread';
+  readonly keys: Code;
+  readonly stateFields: Code;
+  readonly failure: Code;
 }
 
 /** What the key test of one object leaves for the checks after it. */
@@ -235,7 +241,7 @@ function fastKeyTest(writer: FunctionWriter, { check, value, captured, reads }: 
   // A pass with no case, no count, no unknown key and no captured key only reads the values. The passes over the key
   // list read them all too, and a failure of theirs reads the rest first (`failure`), so the pass is left out.
   if (list !== undefined && cases.length === 0 && bare.length === 0 && count === undefined && unknown === undefined && unnamed.length === 0) {
-    return { presence, list: { kind: 'raw', keys: list, stateFields: fields, failure: code`${localName('readAll')}(${value}, ${list});` } };
+    return { presence, list: { kind: 'unread', keys: list, stateFields: fields, failure: code`${localName('readAll')}(${value}, ${list});` } };
   }
   const item = writer.fresh('item');
   writer.open(code`for (const ${key} of ${list ?? code`Object.keys(${value})`})`);

@@ -202,7 +202,7 @@ export interface IrClass {
  */
 export type IrInstance = IrInstanceOf | IrInstanceNone;
 
-export interface IrInstanceOf {
+interface IrInstanceOf {
   readonly kind: 'instance';
   readonly selects: 'of';
   readonly of: string;
@@ -210,7 +210,7 @@ export interface IrInstanceOf {
   readonly required: boolean;
 }
 
-export interface IrInstanceNone {
+interface IrInstanceNone {
   readonly kind: 'instance';
   readonly selects: 'none';
   readonly among: readonly string[];
