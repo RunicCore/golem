@@ -33,7 +33,7 @@ async function buildModels(t: TestContext) {
     Price: units.Price,
     Card: models.Card as Model, Ledger: models.Ledger as Model, PatternLedger: models.PatternLedger as Model, Registry: models.Registry as Model, Shelf: models.Shelf as Model, PetHolder: models.PetHolder as Model, CatModel: models.CatModel as Model, StrayModel: models.StrayModel as Model, Tree: models.Tree as Model, Tally: models.Tally as Model, Tagged: models.Tagged as Model, TaggedOpen: models.TaggedOpen as Model,
     plain: codec('TPlain'), nested: codec('TNested'), open: codec('TOpen'), mapHolder: codec('TMapHolder'), patterned: codec('TPatterned'), nullable: codec('TNullable'), tagged: codec('TTagged'), patternItems: codec('TPatternItems'), tagTypes: codec('TTagTypes'), tagProto: codec('TTagProto'), suffixTuple: codec('TSuffixTuple'), leadingRest: codec('TLeadingRest'), headRest: codec('THeadRest'), taggedOpen: codec('TTaggedOpen'), priced: codec('TPriced'), classPriced: codec('TClassPriced'), metaTree: codec('TMetaTree'), classTagged: codec('TClassTagged'), petList: codec('TPetList'),
-    card: codec('TCard'), ledger: codec('TLedger'), patternLedger: codec('TPatternLedger'), registry: codec('TRegistry'), shelf: codec('TShelf'), petHolder: codec('TPetHolder'), tree: codec('TTree'), tally: codec('TTally'),
+    card: codec('TCard'), ledger: codec('TLedger'), patternLedger: codec('TPatternLedger'), registry: codec('TRegistry'), shelf: codec('TShelf'), petHolder: codec('TPetHolder'), tree: codec('TTree'), patternTree: codec('TPatternTree'), tally: codec('TTally'),
   };
 }
 
@@ -477,6 +477,28 @@ test('strip walks the values as the encoder and the decoder walk them', async (t
       assert.throws(() => m.tree.toWireFormat(root, { ...off, ...strip }), (error) => cyclic(error, LibErrorKind.Serialization));
       assert.throws(() => m.tree.fromWireFormat(root, off), (error) => cyclic(error, LibErrorKind.Deserialization));
       assert.throws(() => m.tree.fromWireFormat(root, { ...off, ...strip }), (error) => cyclic(error, LibErrorKind.Deserialization));
+    });
+
+    await t.test(`a recursive model under a pattern key is bounded as a recursive model is, validate ${level}`, () => {
+      // protects: T-896 a recursive model that only a pattern key holds still has the bound and the cycle check, so strip never ends the call stack
+      const nest = (size: number): object => {
+        const root: { name: string; kids?: unknown[] } = { name: 'a' };
+        let tip = root;
+        for (let index = 0; index < size; index++) {
+          const next: { name: string; kids?: unknown[] } = { name: 'b' };
+          tip.kids = [next];
+          tip = next;
+        }
+        return root;
+      };
+      const loop: { name: string; kids: unknown[] } = { name: 'a', kids: [] };
+      loop.kids.push(loop);
+      const depth = (kind: LibErrorKind) => (error: unknown) => error instanceof LibError && error.kind === kind && error.message.includes('deeper than 512 levels');
+      const far = { validate: level, maxDepth: 100_000, ...strip };
+      assert.throws(() => m.patternTree.toWireFormat({ x_1: nest(50_000) }, { ...strip, validate: level }), depth(LibErrorKind.Serialization), 'pattern encode');
+      assert.throws(() => m.patternTree.fromWireFormat({ x_1: nest(50_000) }, { ...strip, validate: level }), depth(LibErrorKind.Deserialization), 'pattern decode');
+      assert.throws(() => m.patternTree.toWireFormat({ x_1: loop }, far), (error) => cyclic(error, LibErrorKind.Serialization), 'pattern encode cycle');
+      assert.throws(() => m.patternTree.fromWireFormat({ x_1: loop }, far), (error) => cyclic(error, LibErrorKind.Deserialization), 'pattern decode cycle');
     });
 
     await t.test(`a retained chain of 50000 levels under the default bound is the depth error and never ends the call stack, validate ${level}`, () => {

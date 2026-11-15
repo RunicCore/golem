@@ -106,7 +106,7 @@ export function readRootFields(value: unknown, fields: readonly string[], strip:
     else defineModelProperty(copy, name, read);
   }
   const declared = instanceFields(value);
-  const plan = typeof strip === 'function' ? strip() : strip;
+  const plan = resolvePlan(strip);
   const stripped = plan?.kind === 'object' ? plan : undefined;
   for (const key of Object.keys(root)) {
     if (Object.hasOwn(copy, key) || (declared !== undefined && !declared.includes(key)) || (stripped !== undefined && removesKey(key, stripped))) continue;
@@ -278,9 +278,14 @@ function enterStripPath(value: object, walk: StripWalk): void {
   onPath.add(value);
 }
 
+/** The plan that a reference gives: a plan, or the one that its function builds; `undefined` when the node holds nothing to strip. */
+function resolvePlan(ref: StripPlanRef): StripPlan | undefined {
+  return typeof ref === 'function' ? ref() : ref;
+}
+
 function stripLevel(value: unknown, ref: StripPlanRef, depth: number, walk: StripWalk): unknown {
   if (ref === undefined || value === null || typeof value !== 'object') return value;
-  const plan = typeof ref === 'function' ? ref() : ref;
+  const plan = resolvePlan(ref);
   if (plan === undefined) return value;
   // An encode leaves the model value of a TSerde field as it is, so it is not a level that strip walks: the depth check of the codec counts it as it counts any value.
   if (plan.kind === 'serde' && walk.direction === 'encode') return value;
@@ -408,9 +413,11 @@ export interface StripWalkOptions {
   /** The `maxDepth` of the call: `undefined` is the default, `Infinity` turns the bound off. */
   readonly maxDepth: number | undefined;
   /**
-   * Whether the model reaches a recursive model. Only then does `maxDepth` apply: a model that reaches none has no bound, as the codec says. A decode's input is bounded by `maxDepth` before the codec recurses over it, and a call with `strip` leaves that bound to strip;
-   * an encode has no bound of its own. The value that strip leaves is bounded as a whole, the objects that the plan does not walk included (a class value is a leaf,
-   * as in the codec's own bound), and what strip removes is never counted.
+   * Whether the model reaches a recursive model. Only then does `maxDepth` apply: a model that reaches none has no bound, as the codec says.
+   * A decode's input is bounded by `maxDepth` before the codec recurses over it, and a call with `strip` leaves that bound to strip.
+   * An encode has no bound of its own.
+   * Strip bounds the value that it keeps as a whole, the objects that the plan does not walk included. A class value is a leaf, as in the codec's own bound.
+   * What strip removes is never counted.
    */
   readonly bound: boolean;
 }

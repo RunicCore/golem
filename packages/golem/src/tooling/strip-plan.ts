@@ -8,7 +8,7 @@
 import type { DiscriminatorValue, ModelTypeDescriptor } from '../model-registry.js';
 import { aliased, code, identifier, join, literal, type Code } from './code.js';
 import { rtType } from './rt.js';
-import { serdeWireDescriptor, type SchemaGraph, type SchemaNode } from './schema-graph.js';
+import { patternSchemas, serdeWireDescriptor, type SchemaGraph, type SchemaNode } from './schema-graph.js';
 import { restHoldsInstance, variantPick, type ObjectTypeDescriptor, type VariantPick } from './union-conversion.js';
 
 /** The type of a plan, which a generated module imports under this name. */
@@ -99,10 +99,7 @@ export class StripPlans {
   private ofObject(object: ObjectTypeDescriptor): Code | undefined {
     const extra = this.env.extraValues(object);
     const closed = object.additionalProperties === false && extra === undefined;
-    // The schema of a pattern is a descriptor, or a boolean or a keyword object that holds no model to strip.
-    const patterns = (object.constraints ?? []).flatMap((constraint) => constraint.kind === 'patternProperties'
-      ? [{ pattern: constraint.pattern, plan: typeof constraint.schema === 'object' && 'kind' in constraint.schema ? this.ofDescriptor(constraint.schema as ModelTypeDescriptor) : undefined }]
-      : []);
+    const patterns = patternSchemas(object).map(({ pattern, schema }) => ({ pattern, plan: schema === undefined ? undefined : this.ofDescriptor(schema) }));
     const declared = Object.keys(object.properties);
     // A field called `__proto__` is a computed key: written as a plain key of an object literal it would set the prototype of the object, and the walk reads an own property only.
     const fields = declared.flatMap((name) => {

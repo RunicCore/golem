@@ -7,7 +7,7 @@
 import type { ModelTypeDescriptor, SerdeFunctions } from '../model-registry.js';
 import type { ValidationLevel, ValidationPlane } from '../object-codec.js';
 import type { SchemaGraph, SchemaNode } from './schema-graph.js';
-import { codecShortName, serdeWireDescriptor } from './schema-graph.js';
+import { codecShortName, patternSchemas, serdeWireDescriptor } from './schema-graph.js';
 import { requireComposedObject, type ModelBases } from './composition.js';
 import { STRIP_PLAN, StripPlans, type StripPlanEnv } from './strip-plan.js';
 import {
@@ -1028,8 +1028,13 @@ function sharesInput(descriptor: ModelTypeDescriptor, ctx: EmitCtx, seen: Set<Mo
   }
 }
 
-/** The descriptors a value of `descriptor` holds directly; a model or reference is followed through its node. */
+/** The descriptors a value of `descriptor` holds directly, the wire of a TSerde value included, which a decode and a strip read; a model or reference is followed through its node. */
 function heldDescriptors(descriptor: ModelTypeDescriptor): readonly ModelTypeDescriptor[] {
+  const wire = serdeWireDescriptor(descriptor);
+  return wire !== undefined && wire !== descriptor ? [...ownDescriptors(descriptor), wire] : ownDescriptors(descriptor);
+}
+
+function ownDescriptors(descriptor: ModelTypeDescriptor): readonly ModelTypeDescriptor[] {
   switch (descriptor.kind) {
     case 'array':
       return [descriptor.item];
@@ -1038,8 +1043,10 @@ function heldDescriptors(descriptor: ModelTypeDescriptor): readonly ModelTypeDes
     case 'union':
     case 'intersection':
       return descriptor.variants;
-    case 'object':
-      return [...Object.values(descriptor.properties), ...(typeof descriptor.additionalProperties === 'object' ? [descriptor.additionalProperties] : [])];
+    case 'object': {
+      const values = mapValueDescriptor(descriptor);
+      return [...Object.values(descriptor.properties), ...(values === undefined ? [] : [values]), ...patternSchemas(descriptor).flatMap(({ schema }) => schema === undefined ? [] : [schema])];
+    }
     default:
       return [];
   }
@@ -1643,10 +1650,8 @@ function emitFillFunction(
   const additionalSchema = additionalSchemaOf(descriptor);
   // An open object keeps its undeclared properties, as values of unknown type.
   const carriesExtras = additionalSchema === undefined && descriptor.additionalProperties !== false;
-  const patternConstraints = (descriptor.constraints ?? []).filter(
-    (constraint) => constraint.kind === 'patternProperties',
-  );
-  if (properties.length === 0 && !additionalSchema && patternConstraints.length === 0) {
+  const patterns = patternSchemas(descriptor);
+  if (properties.length === 0 && !additionalSchema && patterns.length === 0) {
     // Every property is carried over as it is and checked; an own `__proto__` stays a data property.
     return {
       source: functionCode(code`${exported}function ${fn}(out: Record<string, unknown>, wire: Record<string, unknown>): Record<string, unknown> {`, [
@@ -1734,7 +1739,7 @@ function emitFillFunction(
       : []),
     ...propertyWrites,
   ];
-  if (additionalSchema || carriesExtras || patternConstraints.length > 0) {
+  if (additionalSchema || carriesExtras || patterns.length > 0) {
     rows.push(
       code`  for (const key of Object.keys(wire)) {`,
       ...(properties.length > 0 ? [code`    if (${keyIsListed(identifier('key'), properties.map(([name]) => name))}) continue;`] : []),
@@ -1754,13 +1759,9 @@ function emitFillFunction(
         indented(code`${rt.conversion.defineModelProperty}(out, key, ${value.value});`, indent),
       ];
     };
-    for (const pattern of patternConstraints) {
-      if (pattern.kind !== 'patternProperties') continue;
-      const schema = typeof pattern.schema === 'object' && pattern.schema !== null && 'kind' in pattern.schema
-        ? pattern.schema as ModelTypeDescriptor
-        : undefined;
+    for (const { pattern, schema } of patterns) {
       rows.push(
-        code`    if (${patternConstant(ctx, pattern.pattern)}.test(key)) {`,
+        code`    if (${patternConstant(ctx, pattern)}.test(key)) {`,
         ...emitExtra(schema, 6),
         code`      continue;`,
         code`    }`,
@@ -2412,7 +2413,6 @@ function emitCodecRegistrationSection(runtime: NodeRuntime): Code {
     code`  toWireFormat: ${names.toWire},`,
     ...(objectDescriptor ? [code`  fields: ${literal(Object.keys(objectDescriptor.properties))},`] : []),
     ...(runtime.reachesCycle ? [code`  recursive: true,`] : []),
-    ...(runtime.reachesCycle && runtime.stripPlan ? [code`  stripBounds: true,`] : []),
     ...(runtime.stripPlan ? [code`  stripPlan: ${identifier(stripPlanName(node.codecId))},`] : []),
     code`  fromWireFormat: ${names.fromWire},`,
     ...(data && Object.keys(data).length > 0 ? [code`  data: ${documentLiteral(data)},`] : []),

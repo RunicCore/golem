@@ -52,6 +52,8 @@ export type TClassPriced = IObject<{ price: Price & TSerde<typeof encodePrice, t
 export type TPetList = IObject<{ pet: (Cat | Dog | TPlain[]) & Discriminator<'kind'> }>;
 export type TPriced = IObject<{ price: Units; note?: string }>;
 export type TTree = IModel<{ name: string; kids?: TTree[] }>;
+/** A recursive model that only a pattern key holds. */
+export type TPatternTree = IObject<{ known?: string } & PatternProperties<{ '^x_': TTree }> & AdditionalProperties<never>>;
 export type TTally = IModel<{ id: string; [key: string]: string }>;
 /** A model whose other keys are map entries of a closed object, by `AdditionalProperties` and by an index signature. */
 export type TLedger = IModel<{ id: string } & AdditionalProperties<TItem>>;
