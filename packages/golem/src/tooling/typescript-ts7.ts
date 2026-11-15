@@ -624,7 +624,7 @@ class CompatProgram implements Program {
     readonly snapshot: Snapshot,
     readonly project: Project,
     private readonly unbuilt: ReadonlySet<string> = new Set(),
-    /** Set for a program on a derived configuration. */
+    /** Set for a program not opened on the user's configuration. */
     private readonly twin: ConfigTwin | undefined,
   ) {
     this.checker = new CompatChecker(project.checker, project, this);
@@ -856,7 +856,7 @@ export function compareDiagnostics(left: SyncDiagnostic, right: SyncDiagnostic, 
 }
 
 /**
- * The user's configuration opened alone, for a program on a derived configuration. The compiler locates an option only in the text of the
+ * The user's configuration opened alone, for a program not opened on it. The compiler locates an option only in the text of the
  * configuration it opens, and the derived one only extends the user's, so an option error comes without a file. `lookup` gives the
  * options diagnostics of the user's own configuration; it runs once, and only when a diagnostic has no file.
  */
