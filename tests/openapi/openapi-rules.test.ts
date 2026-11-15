@@ -64,8 +64,8 @@ test('operation-operationId-unique covers paths, webhooks and callbacks once per
   });
   assert.deepEqual(found(document, 'operation-operationId-unique'), [
     '/paths/~1b/post/operationId',
-    '/paths/~1b/post/callbacks/cb/{$request.body#~1url}/post/operationId',
     '/webhooks/hook/post/operationId',
+    '/paths/~1b/post/callbacks/cb/{$request.body#~1url}/post/operationId',
   ]);
   assert.deepEqual(
     checkOpenApiRules(document)
@@ -301,13 +301,13 @@ test('no-unresolved-refs checks webhooks named example and examples', () => {
   ]);
 });
 
-test('rules skip x- extension keys under paths and webhooks as path items', () => {
+test('rules skip an x- extension key under paths, and check a webhook named x-…', () => {
   const operation = { operationId: 'same', responses: ok };
   const document = documentBase('3.1.0', {
     paths: { '/a': { get: operation }, 'x-notes': { get: operation } },
     webhooks: { event: { post: { operationId: 'other', responses: ok } }, 'x-notes': { post: { operationId: 'other', responses: ok } } },
   });
-  assert.deepEqual(found(document, 'operation-operationId-unique'), []);
+  assert.deepEqual(found(document, 'operation-operationId-unique'), ['/webhooks/x-notes/post/operationId']);
 });
 
 test('no-unresolved-refs resolves "#/…" against the document root, also inside a schema with its own $id', () => {

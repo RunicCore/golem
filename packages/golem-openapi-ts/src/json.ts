@@ -29,6 +29,11 @@ export function objectEntries(value: unknown): ReadonlyArray<readonly [string, u
   return isJsonObject(value) ? Object.entries(value) : [];
 }
 
+/** The entries of a map whose `x-` keys are specification extensions, not members: the `paths` of a document and a callback. */
+export function entriesWithoutExtensions(value: unknown): ReadonlyArray<readonly [string, unknown]> {
+  return objectEntries(value).filter(([key]) => !key.startsWith('x-'));
+}
+
 // Plain RFC 6901 token escaping (no percent-encoding) is `@exprtlabs/golem/internal/schema`'s definition; the
 // URI-fragment form of `$ref` values (`#/components/schemas/A%20B`) is its percent-encoding sibling.
 export { escapeJsonPointerToken, jsonPointerTokens, unescapeJsonPointerToken };

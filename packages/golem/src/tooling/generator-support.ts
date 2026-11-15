@@ -11,7 +11,7 @@ export {
   NameScope, RESERVED_BINDING_NAMES, RESERVED_MODEL_MEMBERS, assertPortableFilenames, bindingName, camelIdentifier, identifier,
 } from './names.js';
 export { sourceDigest } from './model-manifest-core.js';
-export { parameterStyleRule } from '../client-runtime/parameter-styles.js';
+export { parameterIdentity, parameterStyleRule } from '../client-runtime/parameter-styles.js';
 export { mediaEssence } from '../client-runtime/media-type.js';
 export { responseStatusKind } from '../client-runtime/response-status.js';
 export type { ParameterLocation, ParameterStyleRule } from '../client-runtime/parameter-styles.js';

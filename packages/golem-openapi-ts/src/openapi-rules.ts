@@ -1,5 +1,6 @@
 import {
   asRecord,
+  entriesWithoutExtensions,
   isJsonObject,
   jsonPointerJoin as pointerJoin,
   objectEntries,
@@ -7,8 +8,9 @@ import {
   resolveJsonPointer,
   type JsonObject,
 } from './json.js';
+import { parameterIdentity } from '@exprtlabs/golem/internal/generator-support';
 import { decodeUriFragment } from '@exprtlabs/golem/internal/schema';
-import { followLocalRefs, HTTP_METHODS_32 } from './normalize.js';
+import { followLocalRefs, overrideParameters, visitOperationSites, type OperationSite } from './normalize.js';
 import type { OpenApiProblem } from './openapi-validator.js';
 import { isMappingComponentName } from './reference-loader.js';
 import { collectCanonicalResources, findDuplicateSchemaIds, lookupCanonicalResource, visitOpenApiSchemaTree } from './schema-projection.js';
@@ -18,66 +20,9 @@ const TEMPLATE = /\{([^{}]*)\}/g;
 // A `$ref` fragment (the part after `#`) is a URI fragment and may be percent-encoded (e.g. `#/components/schemas/A%20B`);
 // `resolveJsonPointer` only understands plain RFC 6901 tokens, so every fragment goes through decodeUriFragment once before it.
 
-interface OperationEntry {
-  readonly pointer: string;
-  readonly method: string;
-  readonly operation: JsonObject;
-  readonly pathItem: JsonObject;
-  readonly pathItemPointer: string;
-  /** The `paths` key for path operations; null for webhooks and callbacks. */
-  readonly route: string | null;
-}
-
-function collectPathItemOperations(
-  document: unknown,
-  rawPathItem: unknown,
-  writtenPointer: string,
-  route: string | null,
-  out: OperationEntry[],
-  visited: Set<string>,
-): void {
-  const { value: pathItem, pointer: pathItemPointer } = followLocalRefs(document, rawPathItem, writtenPointer);
-  if (!isJsonObject(pathItem)) return;
-  const visitKey = `${pathItemPointer}\u0000${route ?? ''}`;
-  if (visited.has(visitKey)) return;
-  visited.add(visitKey);
-  const add = (method: string, rawOperation: unknown, pointer: string): void => {
-    if (!isJsonObject(rawOperation)) return;
-    out.push({ pointer, method, operation: rawOperation, pathItem, pathItemPointer, route });
-    for (const [name, rawCallback] of objectEntries(rawOperation.callbacks)) {
-      const callbackPointer = pointerJoin(pointerJoin(pointer, 'callbacks'), name);
-      const callback = followLocalRefs(document, rawCallback, callbackPointer);
-      for (const [expression, item] of objectEntries(callback.value)) {
-        collectPathItemOperations(document, item, pointerJoin(callback.pointer, expression), null, out, visited);
-      }
-    }
-  };
-  for (const method of HTTP_METHODS_32) {
-    if (pathItem[method] !== undefined) add(method, pathItem[method], pointerJoin(pathItemPointer, method));
-  }
-  for (const [method, operation] of objectEntries(pathItem.additionalOperations)) {
-    add(method, operation, pointerJoin(pointerJoin(pathItemPointer, 'additionalOperations'), method));
-  }
-}
-
-function collectRuleOperations(document: unknown): OperationEntry[] {
-  const out: OperationEntry[] = [];
-  const visited = new Set<string>();
-  const root = asRecord(document);
-  for (const [route, item] of objectEntries(root.paths)) {
-    if (route.startsWith('x-')) continue;
-    collectPathItemOperations(document, item, pointerJoin('/paths', route), route, out, visited);
-  }
-  for (const [name, item] of objectEntries(root.webhooks)) {
-    if (name.startsWith('x-')) continue;
-    collectPathItemOperations(document, item, pointerJoin('/webhooks', name), null, out, visited);
-  }
-  return out;
-}
-
 interface ResolvedParameter {
   readonly name: string;
-  readonly location: string;
+  readonly in: string;
   readonly pointer: string;
 }
 
@@ -87,7 +32,7 @@ function resolvedParameters(document: unknown, list: unknown, listPointer: strin
   list.forEach((raw, index) => {
     const parameter = followLocalRefs(document, raw, `${listPointer}/${index}`).value;
     if (isJsonObject(parameter) && typeof parameter.name === 'string' && typeof parameter.in === 'string') {
-      parameters.push({ name: parameter.name, location: parameter.in, pointer: `${listPointer}/${index}` });
+      parameters.push({ name: parameter.name, in: parameter.in, pointer: `${listPointer}/${index}` });
     }
   });
   return parameters;
@@ -120,7 +65,7 @@ function checkUnresolvedRefs(document: unknown): OpenApiProblem[] {
   return problems;
 }
 
-function checkOperationIds(operations: readonly OperationEntry[]): OpenApiProblem[] {
+function checkOperationIds(operations: readonly OperationSite[]): OpenApiProblem[] {
   const firstUse = new Map<string, string>();
   const counted = new Set<string>();
   const problems: OpenApiProblem[] = [];
@@ -144,12 +89,7 @@ function checkOperationIds(operations: readonly OperationEntry[]): OpenApiProble
   return problems;
 }
 
-/** The identity of a parameter: its name and location. A header name is case-insensitive (RFC 9110). */
-function parameterKey(parameter: ResolvedParameter): string {
-  return `${parameter.location}\u0000${parameter.location === 'header' ? parameter.name.toLowerCase() : parameter.name}`;
-}
-
-function checkParameterLists(document: unknown, operations: readonly OperationEntry[]): OpenApiProblem[] {
+function checkParameterLists(document: unknown, operations: readonly OperationSite[]): OpenApiProblem[] {
   const problems: OpenApiProblem[] = [];
   const checked = new Set<string>();
   const checkList = (list: unknown, listPointer: string): void => {
@@ -157,11 +97,11 @@ function checkParameterLists(document: unknown, operations: readonly OperationEn
     checked.add(listPointer);
     const seen = new Set<string>();
     for (const parameter of resolvedParameters(document, list, listPointer)) {
-      const key = parameterKey(parameter);
+      const key = parameterIdentity(parameter.in, parameter.name);
       if (seen.has(key)) {
         problems.push({
           ruleId: 'operation-parameters-unique',
-          message: `parameter ${JSON.stringify(parameter.name)} in ${parameter.location} is listed more than once`,
+          message: `parameter ${JSON.stringify(parameter.name)} in ${parameter.in} is listed more than once`,
           pointer: parameter.pointer,
         });
       }
@@ -186,20 +126,17 @@ function templateNames(route: string): string[] {
  * Shared by `checkPathTemplates` (path-parameter coverage) and
  * `checkQuerystring` (the 3.2 `querystring`/`query` exclusivity rules).
  */
-function effectiveParameters(document: unknown, entry: OperationEntry): ResolvedParameter[] {
-  const own = resolvedParameters(document, entry.operation.parameters, `${entry.pointer}/parameters`);
-  const overridden = new Set(own.map(parameterKey));
-  return [
-    ...resolvedParameters(document, entry.pathItem.parameters, `${entry.pathItemPointer}/parameters`)
-      .filter((parameter) => !overridden.has(parameterKey(parameter))),
-    ...own,
-  ];
+function effectiveParameters(document: unknown, entry: OperationSite): ResolvedParameter[] {
+  return overrideParameters(
+    resolvedParameters(document, entry.pathItem.parameters, `${entry.pathItemPointer}/parameters`),
+    resolvedParameters(document, entry.operation.parameters, `${entry.pointer}/parameters`),
+  );
 }
 
-function checkPathTemplates(document: unknown, operations: readonly OperationEntry[]): OpenApiProblem[] {
+function checkPathTemplates(document: unknown, operations: readonly OperationSite[]): OpenApiProblem[] {
   const problems: OpenApiProblem[] = [];
   const shapes = new Map<string, string>();
-  for (const [route] of objectEntries(asRecord(document).paths)) {
+  for (const [route] of entriesWithoutExtensions(asRecord(document).paths)) {
     const pointer = pointerJoin('/paths', route);
     if (templateNames(route).includes('')) {
       problems.push({ ruleId: 'path-declaration-must-exist', message: `path ${route} declares an empty parameter {}`, pointer });
@@ -213,17 +150,17 @@ function checkPathTemplates(document: unknown, operations: readonly OperationEnt
     }
   }
   for (const entry of operations) {
-    if (entry.route === null) continue;
-    const templates = new Set(templateNames(entry.route).filter(Boolean));
+    if (entry.kind !== 'path') continue;
+    const templates = new Set(templateNames(entry.key).filter(Boolean));
     const declared = new Map<string, string>();
     for (const parameter of effectiveParameters(document, entry)) {
-      if (parameter.location === 'path') declared.set(parameter.name, parameter.pointer);
+      if (parameter.in === 'path') declared.set(parameter.name, parameter.pointer);
     }
     for (const name of templates) {
       if (!declared.has(name)) {
         problems.push({
           ruleId: 'path-parameters-defined',
-          message: `path parameter ${JSON.stringify(name)} of ${entry.route} is not defined for ${entry.method.toUpperCase()}`,
+          message: `path parameter ${JSON.stringify(name)} of ${entry.key} is not defined for ${entry.method.toUpperCase()}`,
           pointer: entry.pointer,
         });
       }
@@ -232,7 +169,7 @@ function checkPathTemplates(document: unknown, operations: readonly OperationEnt
       if (!templates.has(name)) {
         problems.push({
           ruleId: 'path-parameters-defined',
-          message: `path parameter ${JSON.stringify(name)} is not used in ${entry.route}`,
+          message: `path parameter ${JSON.stringify(name)} is not used in ${entry.key}`,
           pointer,
         });
       }
@@ -274,7 +211,7 @@ function checkTags(document: unknown, line: '3.1' | '3.2'): OpenApiProblem[] {
   return problems;
 }
 
-function checkServers(document: unknown, operations: readonly OperationEntry[], line: '3.1' | '3.2'): OpenApiProblem[] {
+function checkServers(document: unknown, operations: readonly OperationSite[], line: '3.1' | '3.2'): OpenApiProblem[] {
   const problems: OpenApiProblem[] = [];
   const checked = new Set<string>();
   const check = (servers: unknown, pointer: string): void => {
@@ -317,7 +254,7 @@ function checkServers(document: unknown, operations: readonly OperationEntry[], 
  * an undeclared name would leave the generated client without the credentials the operation asks for. A name written as
  * a URI reference (OpenAPI 3.1.1) cannot be looked up in components, so it is not checked.
  */
-function checkSecurityRequirements(document: unknown, operations: readonly OperationEntry[]): OpenApiProblem[] {
+function checkSecurityRequirements(document: unknown, operations: readonly OperationSite[]): OpenApiProblem[] {
   const problems: OpenApiProblem[] = [];
   const schemes = asRecord(asRecord(asRecord(document).components).securitySchemes);
   const checked = new Set<string>();
@@ -340,12 +277,12 @@ function checkSecurityRequirements(document: unknown, operations: readonly Opera
   return problems;
 }
 
-function checkQuerystring(document: unknown, operations: readonly OperationEntry[]): OpenApiProblem[] {
+function checkQuerystring(document: unknown, operations: readonly OperationSite[]): OpenApiProblem[] {
   const problems: OpenApiProblem[] = [];
   for (const entry of operations) {
     const effective = effectiveParameters(document, entry);
-    const querystring = effective.filter((parameter) => parameter.location === 'querystring');
-    const query = effective.filter((parameter) => parameter.location === 'query');
+    const querystring = effective.filter((parameter) => parameter.in === 'querystring');
+    const query = effective.filter((parameter) => parameter.in === 'query');
     const second = querystring[1];
     if (second) {
       problems.push({ ruleId: 'spec-querystring-parameters', message: 'an operation can have at most one querystring parameter', pointer: second.pointer });
@@ -491,7 +428,16 @@ export function checkOpenApiRules(document: unknown): OpenApiProblem[] {
     }));
   }
   const line = openApiLine(document);
-  const operations = collectRuleOperations(document);
+  const operations: OperationSite[] = [];
+  const checked = new Set<string>(); // one pointer is one operation, however many parents list it; a path item shared by two routes is two
+  visitOperationSites(document, line, (site) => {
+    const identity = `${site.pointer}\u0000${site.kind === 'path' ? site.key : ''}`;
+    if (!checked.has(identity)) {
+      checked.add(identity);
+      operations.push(site);
+    }
+    return site.pointer;
+  });
   return [
     ...checkUnresolvedRefs(document),
     ...checkOperationIds(operations),

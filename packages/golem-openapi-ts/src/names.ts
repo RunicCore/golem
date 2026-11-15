@@ -32,6 +32,11 @@ export function operationNameType(typeName: string, operations: readonly { reado
   return code`type ${identifierPart(typeName)} = ${join(operations.map((operation) => literal(operation.name)), code` | `)};`;
 }
 
+/** An inbound operation with an `operationId` is named by it alone; without one, its name holds the operation that it comes from. */
+export function inboundNameHoldsSource(operation: { readonly operationId?: unknown }): boolean {
+  return !operation.operationId;
+}
+
 export function inboundOperationName(
   sourceKind: string,
   sourceName: string,
@@ -41,7 +46,7 @@ export function inboundOperationName(
 ): string {
   const base = identifier(operation.operationId || `${method} ${route}`, 'Operation');
   return camelIdentifier(
-    operation.operationId ? `${sourceKind} ${base}` : `${sourceKind} ${sourceName} ${base}`,
+    inboundNameHoldsSource(operation) ? `${sourceKind} ${sourceName} ${base}` : `${sourceKind} ${base}`,
     'InboundOperation',
   );
 }
