@@ -380,6 +380,12 @@ function componentAnchorTypes(document: unknown): Map<string, string> {
   return anchors;
 }
 
+/** The component that the anchor named by the reference of `schema` stands for: its `$ref`, else its `$dynamicRef`, as every reader follows a schema that holds both. */
+export function anchoredComponentName(schema: unknown, anchors: ReadonlyMap<string, string> | undefined): string | undefined {
+  const reference = schemaReferenceOrDynamic(schema);
+  return reference === undefined ? undefined : anchors?.get(reference);
+}
+
 export function schemaContext(
   document: unknown,
   context: SchemaTypeContext = {},
@@ -694,17 +700,10 @@ function schemaTypeNode(rawSchema: unknown, context: SchemaTypeContext = {}): Ty
   );
   const { componentRoot, ...belowRoot } = context;
   const inner: SchemaTypeContext = { ...belowRoot, resources, currentBase };
-  if (typeof schema.$dynamicRef === 'string' || typeof schema.$ref === 'string') {
-    const reference = String(schema.$dynamicRef || schema.$ref);
-    const anchored = inner.anchors && inner.anchors.get(reference);
-    if (anchored) return qualifiedType(inner, anchored);
-  }
-  if (typeof schema.$ref === 'string') {
-    return referencedSchemaType(schema.$ref, inner);
-  }
-  if (typeof schema.$dynamicRef === 'string') {
-    return referencedSchemaType(schema.$dynamicRef, inner);
-  }
+  const anchored = anchoredComponentName(schema, inner.anchors);
+  if (anchored) return qualifiedType(inner, anchored);
+  const reference = schemaReferenceOrDynamic(schema);
+  if (reference !== undefined) return referencedSchemaType(reference, inner);
   if (schema.not === true) return NEVER_TYPE;
   const listed = typedListedValues(schema);
   if (listed) {
