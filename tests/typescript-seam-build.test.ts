@@ -76,6 +76,18 @@ for (const [name, files, options, outside = [], flags = []] of PRINTED) {
   });
 }
 
+test('an options error stays in the configuration file when the project has references', t => {
+  // protects: T-965 a project with references opens a synthetic program with no configuration text, yet its option error keeps the file and place tsc gives
+  const { root, config } = project(t, { 'src/a.ts': 'export const a = 1;\n', 'shared/src/x.ts': 'export const x = 1;\n' });
+  fs.writeFileSync(path.join(root, 'shared/tsconfig.json'), JSON.stringify({ compilerOptions: { ...COMPILER, composite: true, outDir: 'dist', rootDir: 'src' }, include: ['src'] }));
+  fs.writeFileSync(config, JSON.stringify({ compilerOptions: { ...COMPILER, noEmit: true, declaration: false, declarationMap: true }, include: ['src'], references: [{ path: './shared' }] }));
+  using session = new ts.ProgramSession({ cwd: root });
+  using program = session.openProgram({ root, sources: session.parseConfigFile(config).fileNames, configFile: config });
+  const printed = ts.formatDiagnostics(ts.getTscDiagnostics(program), host(root));
+  assert.match(printed, /^tsconfig\.json\(1,\d+\): error TS5069: /);
+  assert.equal(printed, tsc(root, ['--pretty', 'false']));
+});
+
 test('a program emits JavaScript and declarations to memory, equal to what tsc writes, and writes no file', t => {
   // protects: T-460 the seam emits JavaScript with maps, or declarations, to memory on both lanes
   const { root, config } = project(t, {
