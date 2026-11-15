@@ -20,7 +20,7 @@ import {
   modelEnv,
   modelStableId,
 } from './model-resolution.js';
-import { uncarriedOf } from './model-schema-graph.js';
+import { operationValueKeyParts, uncarriedOf } from './model-schema-graph.js';
 import { resolveLocal } from './normalize.js';
 
 /**
@@ -34,7 +34,7 @@ function golemModeGraph(document: unknown, analysis: OpenApiModelAnalysis, sdk: 
   for (const operation of sdk.operations) {
     const values: SdkOperationValue[] = [];
     for (const [key, node] of analysis.convertedNodeIds) {
-      const [name, ...at] = JSON.parse(key) as [string, ...string[]];
+      const { name, at } = operationValueKeyParts(key);
       if (name !== operation.name) continue;
       const input = analysis.graphInputs.values.get(key);
       const inline = input && { ...(input.name === undefined ? {} : { name: input.name }), descriptor: JSON.stringify(input.descriptor) };
@@ -158,10 +158,10 @@ export function openApiValidationSchemaClosure(
   const compact = (value: unknown, wire: boolean): unknown => {
     if (Array.isArray(value)) return value.map((item) => compact(item, wire));
     if (value === null || typeof value !== 'object') return value;
-    const result = Object.create(null) as Record<string, unknown>;
+    const result: Record<string, unknown> = Object.create(null);
     for (const [key, child] of Object.entries(value)) {
       if (key === '$defs' && child !== null && typeof child === 'object' && !Array.isArray(child)) {
-        const definitions = Object.create(null) as Record<string, unknown>;
+        const definitions: Record<string, unknown> = Object.create(null);
         for (const [name, schema] of Object.entries(child)) {
           const node = schemaGraph.nodeByCodecId(name);
           definitions[name] = node

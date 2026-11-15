@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { GolemDiagnosticSeverity, type GolemDiagnostic, type GolemResult, type HookParticipants } from '@exprtlabs/golem/generator-api';
-import { OPERATION_WRAPPER_HOOK, type OperationWrapper, type OperationWrapperParticipant } from './plan.js';
+import { OPERATION_WRAPPER_HOOK, type OperationWrapper, type OperationWrapperResult } from './plan.js';
 import { stableJson } from '@exprtlabs/golem/generator-api';
 import { assertPortableFilenames, identifier, isRecord } from '@exprtlabs/golem/internal/generator-support';
 import { buildOperationValidationSchemas, generateClientModules, operationValidatorNames } from './client/emit.js';
@@ -161,13 +161,19 @@ interface GeneratedFiles {
   diagnostics: readonly GolemDiagnostic[];
 }
 
+function isOperationWrapperResult(value: unknown): value is OperationWrapperResult {
+  return isRecord(value) && isRecord('wrapper' in value ? value.wrapper : value.diagnostic);
+}
+
 /** The operation wrapper that the extension on `client.operationWrapper` makes for the mode of the job, and the diagnostic when it refuses the mode. */
 function operationWrapperOf(hooks: HookParticipants | undefined, mode: 'standalone' | 'golem'): { readonly wrapper?: OperationWrapper; readonly diagnostics: readonly GolemDiagnostic[] } {
   const fills = hooks?.[OPERATION_WRAPPER_HOOK] ?? [];
   if (fills.length > 1) throw new Error(`Two extensions fill the hook "${OPERATION_WRAPPER_HOOK}": ${fills.map((fill) => fill.package).join(', ')}. Turn one off.`);
   const answer = fills[0]?.use((participant) => {
     if (typeof participant !== 'function') throw new TypeError(`it fills the hook "${OPERATION_WRAPPER_HOOK}" with ${typeof participant}, not a function`);
-    return (participant as OperationWrapperParticipant)(mode);
+    const result: unknown = participant(mode);
+    if (!isOperationWrapperResult(result)) throw new TypeError(`it answers the hook "${OPERATION_WRAPPER_HOOK}" with a value that holds neither a wrapper nor a diagnostic`);
+    return result;
   });
   if (answer === undefined) return { diagnostics: [] };
   return 'wrapper' in answer ? { wrapper: answer.wrapper, diagnostics: [] } : { diagnostics: [answer.diagnostic] };

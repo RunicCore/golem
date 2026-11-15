@@ -44,7 +44,7 @@ async function compileOpenApiValidators(): Promise<OpenApiValidators> {
   );
   const errors = diagnostics.filter((entry) => entry.severity === GolemDiagnosticSeverity.Error);
   if (errors.length) throw new Error(`the OpenAPI meta-schemas do not compile: ${errors.map((entry) => entry.message).join('; ')}`);
-  const loaded = await import(`data:text/javascript,${encodeURIComponent(source)}`) as Readonly<Record<string, Validator>>;
+  const loaded: Readonly<Record<string, Validator | undefined>> = await import(`data:text/javascript,${encodeURIComponent(source)}`);
   const validator = (root: string): Validator => {
     const exported = exports.get(root);
     const found = exported === undefined ? undefined : loaded[exported];

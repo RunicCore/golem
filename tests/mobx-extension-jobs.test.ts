@@ -79,6 +79,16 @@ test('an operation wrapper with an import key that no emitter lists still genera
   assert.match(operations, /import type \{ AcmeOperation \} from '@acme\/pkg';/);
 });
 
+test('an operation wrapper that answers with no wrapper and no diagnostic stops generation', (t: TestContext) => {
+  // protects: T-935 a participant that returns nothing is a fault of the extension, not a client with plain operations
+  const document = documentBase('3.1.0', { paths: { '/items': { get: { operationId: 'listItems', responses: { 200: { description: 'ok' } } } } } });
+  const output = path.join(createFixtureProject(t, 'golem-acme-sdk-'), 'sdk');
+  assert.throws(
+    () => writeSdk(document, { output, name: 'Items', profile: { validation: false }, hooks: { 'client.operationWrapper': [acmeFill(() => undefined)] } }),
+    /answers the hook "client\.operationWrapper" with a value that holds neither a wrapper nor a diagnostic/,
+  );
+});
+
 /** A wrapper whose factory and type bind the names `createAcmeOperation` and `acmeOperation`, with no alias. */
 const ACME_WRAPPER = acmeFill(() => ({ wrapper: {
   operationType: packageExport({ key: 'acme', specifier: '@acme/pkg/internal/run', typeSpecifier: '@acme/pkg', name: 'acmeOperation', typeOnly: true }),
