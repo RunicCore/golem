@@ -221,15 +221,17 @@ test('rejects redirects and non-OpenAPI methods in any decorator order and docum
 });
 
 test('documents one response header when @Header and @ApiResponse name it in different letter case', async t => {
-  // protects: T-920 a response header name is case-insensitive (RFC 9110); the Swagger header must replace the @Header one, and a later @Header the earlier
+  // protects: T-920 a response header name is case-insensitive (RFC 9110); the Swagger header must replace the @Header one, and a later header the earlier one of its list
   const document = await documentOf(t, [
     "@Controller('headers') export class HeadersController {",
     "  @Get('swagger') @Header('X-Rate', '1') @ApiResponse({ status: 200, headers: { 'x-rate': { description: 'Rate', schema: { type: 'integer' } } } }) swagger(): void {}",
     "  @Get('twice') @Header('X-Rate', '1') @Header('x-rate', '2') twice(): void {}",
+    "  @Get('record') @ApiResponse({ status: 200, headers: { 'X-Rate': { description: 'first' }, 'x-rate': { description: 'second' } } }) record(): void {}",
     '}',
   ].join('\n'));
   assert.deepEqual(document.paths['/headers/swagger']?.get?.responses['200']?.headers, { 'x-rate': { description: 'Rate', schema: { type: 'integer' } } });
   assert.deepEqual(document.paths['/headers/twice']?.get?.responses['200']?.headers, { 'x-rate': { example: '2', schema: { type: 'string' } } });
+  assert.deepEqual(document.paths['/headers/record']?.get?.responses['200']?.headers, { 'x-rate': { description: 'second' } });
 });
 
 test('merges class tags and security along the controller chain with method security, as @nestjs/swagger does', async t => {

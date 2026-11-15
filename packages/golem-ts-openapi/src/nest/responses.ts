@@ -231,7 +231,7 @@ function parseSwaggerResponse(
     type,
     isArray: typed.isArray,
     ...(content ? { content } : schema ? { content: { 'application/json': { schema } } } : {}),
-    ...(headers ? { headers } : {}),
+    ...(headers ? { headers: headersByName(headers) } : {}),
     explicit: true,
   };
 }
@@ -356,16 +356,16 @@ export function parseResponses(
   return [...inferred, ...annotated].map(response => response.status === runtimeStatus
     ? {
       ...response,
-      ...(Object.keys(headers).length > 0 ? { headers: headersByName([...Object.entries(headers), ...Object.entries(response.headers ?? {})]) } : {}),
+      ...(Object.keys(headers).length > 0 ? { headers: headersByName(headers, response.headers ?? {}) } : {}),
       ...(mediaType ? { mediaTypes: [mediaType] } : {}),
     }
     : response);
 }
 
-/** The headers by name, a later entry replacing an earlier one of the same name: a header name is case-insensitive, so `X-A` and `x-a` are one header. */
-function headersByName(entries: readonly (readonly [string, unknown])[]): Record<string, unknown> {
+/** The headers of the lists by name, a later entry replacing an earlier one of the same name: a header name is case-insensitive, so `X-A` and `x-a` are one header. */
+function headersByName(...lists: readonly Readonly<Record<string, unknown>>[]): Record<string, unknown> {
   const byIdentity = new Map<string, readonly [string, unknown]>();
-  for (const entry of entries) byIdentity.set(parameterIdentity('header', entry[0]), entry);
+  for (const entry of lists.flatMap(list => Object.entries(list))) byIdentity.set(parameterIdentity('header', entry[0]), entry);
   return Object.fromEntries(byIdentity.values());
 }
 
@@ -378,7 +378,7 @@ function nestResponseHeaders(
   reader: MetadataReader,
   decorators: readonly DecoratorInfo[],
 ): { readonly headers: Record<string, unknown>; readonly mediaType?: string } {
-  const headers: [string, unknown][] = [];
+  const headers: Record<string, unknown>[] = [];
   let mediaType: string | undefined;
   for (const decorator of hasAnyDecorator(decorators, ['Header'], NEST_COMMON)) {
     const [nameArgument, valueArgument] = callArguments(decorator);
@@ -390,9 +390,9 @@ function nestResponseHeaders(
       mediaType = readString(reader, valueArgument, '@Header(\'Content-Type\') value', TsToOpenApiDiagnosticCode.UnsupportedRouteDecorator);
       continue;
     }
-    headers.push([name, { schema: { type: 'string' }, ...(text === undefined ? {} : { example: text }) }]);
+    headers.push({ [name]: { schema: { type: 'string' }, ...(text === undefined ? {} : { example: text }) } });
   }
-  return { headers: headersByName(headers), ...(mediaType ? { mediaType } : {}) };
+  return { headers: headersByName(...headers), ...(mediaType ? { mediaType } : {}) };
 }
 
 export function parseRequestBody(
