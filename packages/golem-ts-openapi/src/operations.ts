@@ -1,4 +1,5 @@
 import { compareText } from '@exprtlabs/golem/generator-api';
+import { followReference, schemaReference } from '@exprtlabs/golem/internal/schema';
 import * as ts from '@exprtlabs/golem/internal/ts';
 import { TsToOpenApiDiagnosticCode, TsToOpenApiError, diagnostic } from './diagnostics.js';
 import { mapArrayItems, mergeSchemaMetadata } from './nest/json-schema-merge.js';
@@ -410,12 +411,9 @@ async function bodyExtraSchemas(
 }
 
 /** The schema a `$ref` names, through references. Undefined when it cannot be read. */
-function resolvedSchema(context: OperationBuildContext, schema: OpenApiSchema, seen: ReadonlySet<string> = new Set()): Record<string, unknown> | undefined {
-  const value = record(schema);
-  if (value === undefined || typeof value.$ref !== 'string') return value;
-  if (seen.has(value.$ref)) return undefined;
-  const target = context.resolveSchemaReference?.(value.$ref);
-  return target === undefined ? undefined : resolvedSchema(context, target, new Set(seen).add(value.$ref));
+function resolvedSchema(context: OperationBuildContext, schema: OpenApiSchema): Record<string, unknown> | undefined {
+  const followed = followReference<OpenApiSchema>(schema, schemaReference, (reference) => context.resolveSchemaReference?.(reference));
+  return record(followed?.target);
 }
 
 /** The property names a schema declares (`key: 'properties'`) or requires (`key: 'required'`), through references and `allOf`. Undefined when a part cannot be read. */

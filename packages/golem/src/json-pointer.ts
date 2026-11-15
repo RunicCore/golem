@@ -58,3 +58,28 @@ export function splitFirstFragmentToken(pointer: string): { readonly name: strin
     ? { name: unescapePointerToken(pointer), rest: '' }
     : { name: unescapePointerToken(pointer.slice(0, slash)), rest: pointer.slice(slash) };
 }
+
+/** The value that `tokens` name inside `document`, through objects and arrays; undefined when a token names nothing. */
+function walkTokens(document: unknown, tokens: readonly string[]): unknown {
+  let current: unknown = document;
+  for (const token of tokens) {
+    if (Array.isArray(current)) {
+      current = /^(0|[1-9]\d*)$/.test(token) ? current[Number(token)] : undefined;
+    } else if (typeof current === 'object' && current !== null) {
+      current = Object.hasOwn(current, token) ? Reflect.get(current, token) : undefined;
+    } else {
+      return undefined;
+    }
+  }
+  return current;
+}
+
+/** The value that a plain pointer (`''` or `'/a/0/b'`, escaped tokens, no percent-decoding) names inside `document`. */
+export function resolveJsonPointer(document: unknown, pointer: string): unknown {
+  return pointer === '' || pointer.startsWith('/') ? walkTokens(document, jsonPointerTokens(pointer)) : undefined;
+}
+
+/** The value that a URI-fragment pointer (the text after `#`: `''` or `'/a/b%20c'`) names inside `document`. */
+export function resolveFragmentPointer(document: unknown, fragment: string): unknown {
+  return fragment === '' || fragment.startsWith('/') ? walkTokens(document, fragmentPointerTokens(fragment)) : undefined;
+}

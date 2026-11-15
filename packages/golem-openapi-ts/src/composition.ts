@@ -36,7 +36,7 @@ export const COMPOSITION_UNSATISFIABLE = 'OPENAPI_COMPOSITION_UNSATISFIABLE';
 export const COMPOSITION_PROPERTY_NEVER = 'OPENAPI_COMPOSITION_PROPERTY_NEVER';
 
 /** A schema in the scope it is read in. */
-interface ScopedSchema<S> {
+export interface ScopedSchema<S> {
   readonly schema: unknown;
   readonly scope: S;
 }

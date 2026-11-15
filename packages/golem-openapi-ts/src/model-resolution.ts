@@ -4,7 +4,7 @@ import { serdeWireDescriptor, type SchemaGraph, type SchemaNode } from '@exprtla
 import { identifier } from '@exprtlabs/golem/internal/generator-support';
 import { asRecord, escapeJsonPointerToken, isJsonObject, objectEntries, type JsonObject } from './json.js';
 import type { GolemDiagnostic } from '@exprtlabs/golem/generator-api';
-import type { ConstraintSchemaValue, ModelConstraint, ModelTypeDescriptor, UnionDiscriminator } from '@exprtlabs/golem/internal/schema';
+import { followReference, schemaReference, schemaReferenceOrDynamic, type ConstraintSchemaValue, type ModelConstraint, type ModelTypeDescriptor, type UnionDiscriminator } from '@exprtlabs/golem/internal/schema';
 import { componentOrigin, LocatedError } from './origin.js';
 import {
   COMPOSITION_PROPERTY_NEVER,
@@ -185,7 +185,7 @@ export function componentSchemaTarget(schema: unknown, env: ModelResolveEnv): un
 /** The schema that a `$ref` to part of a component names (a property, a nested `$anchor`, a nested `$id`), and the environment that its own references resolve in; the type path reads the same target. */
 export function partSchemaTarget(schema: unknown, env: ModelResolveEnv): { readonly schema: unknown; readonly env: ModelResolveEnv } | undefined {
   if (!isJsonObject(schema)) return undefined;
-  const reference = typeof schema.$ref === 'string' ? schema.$ref : typeof schema.$dynamicRef === 'string' ? schema.$dynamicRef : undefined;
+  const reference = schemaReferenceOrDynamic(schema);
   const target = reference === undefined ? undefined : resolveSchemaTarget(reference, env.currentBase, env.resources, env.document);
   return target && target.exactComponent === null ? { schema: target.schema, env: { ...env, currentBase: target.currentBase } } : undefined;
 }
@@ -583,12 +583,14 @@ function impliedByTarget(keyword: string, value: unknown, target: Readonly<Recor
   return false;
 }
 
+/** The `$ref` of an alias: a schema that is only a reference. A reference with keywords beside it is a schema of its own. */
+function aliasReference(value: unknown): string | undefined {
+  return isJsonObject(value) && Object.keys(value).length === 1 ? schemaReference(value) : undefined;
+}
+
 /** The schema that a chain of component `$ref`s names, or none when it names no component of the document. */
 function referenceTarget(schema: unknown, env: ModelResolveEnv): Readonly<Record<string, unknown>> | undefined {
-  let target = componentSchemaTarget(schema, env);
-  for (let hops = 0; hops < 16 && isJsonObject(target) && typeof target.$ref === 'string' && Object.keys(target).length === 1; hops += 1) {
-    target = componentSchemaTarget(target, env);
-  }
+  const target = followReference(componentSchemaTarget(schema, env), aliasReference, (reference) => componentSchemaTarget({ $ref: reference }, env))?.target;
   return isJsonObject(target) ? target : undefined;
 }
 
@@ -1038,7 +1040,7 @@ function isNullBranch(schema: unknown): boolean {
 function exactComponentTarget(schema: unknown, env: ModelResolveEnv): ExactComponentTarget | null {
   if (!isJsonObject(schema)) return null;
   const base = nextSchemaBase(schema, env.currentBase, env.resources);
-  const reference = typeof schema.$ref === 'string' ? schema.$ref : typeof schema.$dynamicRef === 'string' ? schema.$dynamicRef : null;
+  const reference = schemaReferenceOrDynamic(schema);
   return reference ? resolveExactComponent(reference, base, env.resources, env.document) : null;
 }
 

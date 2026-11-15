@@ -1,7 +1,7 @@
-import { asRecord, entriesWithoutExtensions, isJsonObject, jsonPointerJoin, objectEntries, openApiLine, readBoolean, readString, resolveJsonPointer, type JsonObject, type OpenApiLine } from './json.js';
+import { asRecord, entriesWithoutExtensions, isJsonObject, jsonPointerJoin, objectEntries, openApiLine, readBoolean, readString, type JsonObject, type OpenApiLine } from './json.js';
 import { GolemDiagnosticSeverity, type GolemDiagnostic } from '@exprtlabs/golem/generator-api';
 import { identifier, parameterIdentity, parameterStyleRule, type ParameterLocation } from '@exprtlabs/golem/internal/generator-support';
-import { fragmentPointerTokens } from '@exprtlabs/golem/internal/schema';
+import { followReference, fragmentPointerTokens, resolveFragmentPointer, schemaReference } from '@exprtlabs/golem/internal/schema';
 import { inboundNameHoldsSource, inboundOperationName, operationName } from './names.js';
 
 const HTTP_METHODS_31 = ['get', 'put', 'post', 'delete', 'options', 'head', 'patch', 'trace'] as const;
@@ -95,31 +95,29 @@ export interface NormalizedDocument {
   readonly diagnostics: readonly GolemDiagnostic[];
 }
 
-/** The longest `$ref` chain that is followed; a chain that does not end by then (a cycle) stays an unresolved Reference Object. */
-const MAX_REF_HOPS = 32;
-
 /** The plain JSON Pointer of a local `$ref`; a `$ref` is a URI fragment: each token is percent-decoded, then `~1`/`~0`-unescaped. */
 function localRefPointer(ref: string): string {
   return fragmentPointerTokens(ref.slice(1)).reduce(jsonPointerJoin, '');
 }
 
 export function resolveLocalPointer(document: unknown, ref: string): unknown {
-  return ref.startsWith('#/') ? resolveJsonPointer(document, localRefPointer(ref)) : undefined;
+  return ref.startsWith('#/') ? resolveFragmentPointer(document, ref.slice(1)) : undefined;
 }
 
-/** Follow in-document Reference Objects to their final target; `pointer` is where that target lives. */
+/** The `$ref` of a Reference Object that names a place in this document; any other value is a target. */
+function localReference(value: unknown): string | undefined {
+  const reference = schemaReference(value);
+  return reference?.startsWith('#/') ? reference : undefined;
+}
+
+/**
+ * Follow in-document Reference Objects to their final target; `pointer` is where that target lives. A chain that names
+ * nothing or never ends (a cycle) stays the Reference Object it started with.
+ */
 export function followLocalRefs(document: unknown, value: unknown, pointer = ''): { readonly value: unknown; readonly pointer: string } {
-  let current = value;
-  let currentPointer = pointer;
-  for (let hop = 0; hop < MAX_REF_HOPS; hop += 1) {
-    if (!isJsonObject(current) || typeof current.$ref !== 'string' || !current.$ref.startsWith('#/')) break;
-    const targetPointer = localRefPointer(current.$ref);
-    const next = resolveJsonPointer(document, targetPointer);
-    if (next === undefined) break;
-    current = next;
-    currentPointer = targetPointer;
-  }
-  return { value: current, pointer: currentPointer };
+  const followed = followReference(value, localReference, (reference) => resolveLocalPointer(document, reference));
+  if (followed === undefined) return { value, pointer };
+  return { value: followed.target, pointer: followed.reference === undefined ? pointer : localRefPointer(followed.reference) };
 }
 
 export function resolveLocal(document: unknown, value: unknown): unknown {

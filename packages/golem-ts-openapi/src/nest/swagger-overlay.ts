@@ -1,4 +1,5 @@
 import { isRecord } from '@exprtlabs/golem/internal/generator-support';
+import { schemaReference } from '@exprtlabs/golem/internal/schema';
 import * as ts from '@exprtlabs/golem/internal/ts';
 import {
   GolemDiagnosticSeverity,
@@ -19,7 +20,6 @@ import {
   sameValue,
   schemaAllowsNull,
   schemaAnnotations,
-  schemaReference,
   schemaValues,
   throwSchemaDiagnostic,
   type DtoSchema,

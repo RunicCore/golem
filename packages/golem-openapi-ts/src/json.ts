@@ -1,4 +1,4 @@
-import { escapeJsonPointerToken, jsonPointerTokens, unescapeJsonPointerToken } from '@exprtlabs/golem/internal/schema';
+import { escapeJsonPointerToken, jsonPointerTokens, resolveJsonPointer, unescapeJsonPointerToken } from '@exprtlabs/golem/internal/schema';
 
 export type JsonObject = { readonly [key: string]: JsonValue | undefined };
 type JsonValue =
@@ -36,7 +36,7 @@ export function entriesWithoutExtensions(value: unknown): ReadonlyArray<readonly
 
 // Plain RFC 6901 token escaping (no percent-encoding) is `@exprtlabs/golem/internal/schema`'s definition; the
 // URI-fragment form of `$ref` values (`#/components/schemas/A%20B`) is its percent-encoding sibling.
-export { escapeJsonPointerToken, jsonPointerTokens, unescapeJsonPointerToken };
+export { escapeJsonPointerToken, jsonPointerTokens, resolveJsonPointer, unescapeJsonPointerToken };
 
 /** Append one raw token to a plain JSON Pointer, escaping it per RFC 6901. */
 export function jsonPointerJoin(parent: string, token: string): string {
@@ -56,21 +56,4 @@ export function openApiLine(document: unknown): OpenApiLine {
   if (line === '3.1' || line === '3.2') return line;
   if (/^3\.0(?:\.\d+)?$/.test(version)) throw new Error('OpenAPI 3.0 is not supported; convert the document to OpenAPI 3.1 or 3.2');
   throw new Error(`unsupported OpenAPI version "${version}"; expected 3.1 or 3.2`);
-}
-
-/** Resolve a JSON Pointer ('' or '/a/0/b', escaped tokens) through objects and arrays. */
-export function resolveJsonPointer(document: unknown, pointer: string): unknown {
-  if (pointer === '') return document;
-  if (!pointer.startsWith('/')) return undefined;
-  let current: unknown = document;
-  for (const token of jsonPointerTokens(pointer)) {
-    if (Array.isArray(current)) {
-      current = /^(0|[1-9]\d*)$/.test(token) ? current[Number(token)] : undefined;
-    } else if (isJsonObject(current)) {
-      current = current[token];
-    } else {
-      return undefined;
-    }
-  }
-  return current;
 }
