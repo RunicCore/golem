@@ -394,8 +394,9 @@ function functionArgument(
  * type. A signature that an alias declares belongs to every const of that alias.
  */
 function functionNameNode(declaration: ts.NamedDeclaration | undefined): ts.Node | undefined {
-  const variable = declaration && ts.isVariableDeclaration(declaration.parent) ? declaration.parent : undefined;
-  return variable?.name ?? declaration?.name;
+  let holder: ts.Node | undefined = declaration?.parent;
+  while (holder !== undefined && ts.isParenthesizedTypeNode(holder)) holder = holder.parent;
+  return holder !== undefined && ts.isVariableDeclaration(holder) ? holder.name : declaration?.name;
 }
 
 function functionBinding(

@@ -437,10 +437,15 @@ test('two validators that share one type alias in one field are refused, not bou
 
 const throughNonNullable = tsSource`type Box = { a: (string & TValidation<typeof check>) | null };\ntype Field = { [K in keyof Box]: NonNullable<Box[K]> };`;
 
-test('a validator const with its own function type annotation is bound through a NonNullable mapped type', t => {
+const ownAnnotations = {
+  plain: typedRules['an annotated arrow'],
+  parenthesized: tsSource`export const check: ((v: string) => boolean) = (v) => v !== '';`,
+} as const;
+
+for (const [form, rules] of Object.entries(ownAnnotations)) test(`a validator const with its own ${form} function type annotation is bound through a NonNullable mapped type`, t => {
   // protects: T-957 the tag read from the mapped type named no function and threw RUNM1040 (F-31 TypeScript is the schema)
   const { root, sourceRoot } = fixture(t);
-  fs.writeFileSync(path.join(sourceRoot, 'rules.ts'), typedRules['an annotated arrow'].text);
+  fs.writeFileSync(path.join(sourceRoot, 'rules.ts'), rules.text);
   fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({
     name: 'A',
     imports: tsSource`import type { TValidation } from '@exprtlabs/golem/tags';\nimport { check } from './rules.js';\n${throughNonNullable}`,
