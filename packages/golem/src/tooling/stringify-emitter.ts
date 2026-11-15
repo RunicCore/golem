@@ -20,7 +20,6 @@ import { rt, rtType, runtimeFunctionCode } from './rt.js';
 import { calleeOf, emitArrayConversion, emitTupleConversion, JSON_SCALAR } from './sequence-conversion.js';
 import {
   descriptorNeedsConversion,
-  descriptorSerde,
   valueConversion,
   isScalarishDescriptor,
   emitDispatch,
