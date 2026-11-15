@@ -35,6 +35,17 @@ function resolvedParameters(document: unknown, list: unknown, listPointer: strin
   return parameters;
 }
 
+/** The items whose identity an earlier item already has, in order. */
+function repeatedByIdentity<T>(items: readonly T[], identity: (item: T) => string): T[] {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    const key = identity(item);
+    const repeated = seen.has(key);
+    seen.add(key);
+    return repeated;
+  });
+}
+
 function checkUnresolvedRefs(document: unknown): OpenApiProblem[] {
   const resources = collectCanonicalResources(document);
   const problems: OpenApiProblem[] = [];
@@ -91,17 +102,12 @@ function checkParameterLists(document: unknown, operations: readonly OperationSi
   const checkList = (list: unknown, listPointer: string): void => {
     if (checked.has(listPointer)) return;
     checked.add(listPointer);
-    const seen = new Set<string>();
-    for (const parameter of resolvedParameters(document, list, listPointer)) {
-      const key = parameterIdentity(parameter.in, parameter.name);
-      if (seen.has(key)) {
-        problems.push({
-          ruleId: 'operation-parameters-unique',
-          message: `parameter ${JSON.stringify(parameter.name)} in ${parameter.in} is listed more than once`,
-          pointer: parameter.pointer,
-        });
-      }
-      seen.add(key);
+    for (const parameter of repeatedByIdentity(resolvedParameters(document, list, listPointer), (item) => parameterIdentity(item.in, item.name))) {
+      problems.push({
+        ruleId: 'operation-parameters-unique',
+        message: `parameter ${JSON.stringify(parameter.name)} in ${parameter.in} is listed more than once`,
+        pointer: parameter.pointer,
+      });
     }
   };
   for (const entry of operations) {
@@ -121,17 +127,12 @@ function checkResponseHeaders(document: unknown, operations: readonly OperationS
       const headersPointer = pointerJoin(response.pointer, 'headers');
       if (checked.has(headersPointer)) continue;
       checked.add(headersPointer);
-      const seen = new Set<string>();
-      for (const [name] of objectEntries(asRecord(response.value).headers)) {
-        const key = parameterIdentity('header', name);
-        if (seen.has(key)) {
-          problems.push({
-            ruleId: 'operation-response-headers-unique',
-            message: `response header ${JSON.stringify(name)} is declared more than once; header names are case-insensitive`,
-            pointer: pointerJoin(headersPointer, name),
-          });
-        }
-        seen.add(key);
+      for (const name of repeatedByIdentity(Object.keys(asRecord(asRecord(response.value).headers)), (item) => parameterIdentity('header', item))) {
+        problems.push({
+          ruleId: 'operation-response-headers-unique',
+          message: `response header ${JSON.stringify(name)} is declared more than once; header names are case-insensitive`,
+          pointer: pointerJoin(headersPointer, name),
+        });
       }
     }
   }
