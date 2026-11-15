@@ -43,9 +43,13 @@ export function jsonPointerTokens(pointer: string): string[] {
   return splitPointer(pointer).map(unescapeJsonPointerToken);
 }
 
-/** The names that the tokens of a URI-fragment pointer (the text after `#`: `''` or `'/a/b%20c'`) denote. */
+/**
+ * The names that the tokens of a URI-fragment pointer (the text after `#`: `''` or `'/a/b%20c'`) denote. The fragment is
+ * percent-decoded as a whole, then split and unescaped (RFC 6901 section 6), so `%2F` separates tokens and `~1` is the
+ * escape for a `/` inside a name.
+ */
 export function fragmentPointerTokens(pointer: string): string[] {
-  return splitPointer(pointer).map(unescapePointerToken);
+  return jsonPointerTokens(decodeUriFragment(pointer));
 }
 
 /**
@@ -59,12 +63,18 @@ export function splitFirstFragmentToken(pointer: string): { readonly name: strin
     : { name: unescapePointerToken(pointer.slice(0, slash)), rest: pointer.slice(slash) };
 }
 
+/** The position that a pointer token names in an array: a canonical decimal (`0`, `12`; not `01`, `1e0` or `length`). */
+export function pointerArrayIndex(token: string): number | undefined {
+  return /^(0|[1-9]\d*)$/.test(token) ? Number(token) : undefined;
+}
+
 /** The value that `tokens` name inside `document`, through objects and arrays; undefined when a token names nothing. */
 function walkTokens(document: unknown, tokens: readonly string[]): unknown {
   let current: unknown = document;
   for (const token of tokens) {
     if (Array.isArray(current)) {
-      current = /^(0|[1-9]\d*)$/.test(token) ? current[Number(token)] : undefined;
+      const index = pointerArrayIndex(token);
+      current = index === undefined ? undefined : current[index];
     } else if (typeof current === 'object' && current !== null) {
       current = Object.hasOwn(current, token) ? Reflect.get(current, token) : undefined;
     } else {
@@ -81,5 +91,5 @@ export function resolveJsonPointer(document: unknown, pointer: string): unknown 
 
 /** The value that a URI-fragment pointer (the text after `#`: `''` or `'/a/b%20c'`) names inside `document`. */
 export function resolveFragmentPointer(document: unknown, fragment: string): unknown {
-  return fragment === '' || fragment.startsWith('/') ? walkTokens(document, fragmentPointerTokens(fragment)) : undefined;
+  return resolveJsonPointer(document, decodeUriFragment(fragment));
 }

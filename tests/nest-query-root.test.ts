@@ -94,6 +94,20 @@ const refFields = [
     expected: { level: { types: [], literals: [1, 2] } },
   },
   {
+    name: 'a local definition that sits at a canonical array index',
+    schema: { type: 'object', properties: { level: { $ref: '#/$defs/Levels/1' } }, $defs: { Levels: [{ enum: [1] }, { enum: [2, 3] }] } },
+    expected: { level: { types: [], literals: [2, 3] } },
+  },
+  {
+    name: 'an array property or a zero-padded index, which name nothing',
+    schema: {
+      type: 'object',
+      properties: { size: { $ref: '#/$defs/Levels/length' }, padded: { $ref: '#/$defs/Levels/01' }, limit: { type: 'number' } },
+      $defs: { Levels: [{ enum: [1] }, { enum: [2, 3] }] },
+    },
+    expected: { limit: { types: ['number'] } },
+  },
+  {
     name: 'an alias of booleans, in an array field',
     schema: { type: 'object', properties: { flags: { type: 'array', items: { $ref: `${REF}QueryFieldFlag` } } } },
     expected: { flags: { types: [], item: { types: [], literals: [true, false] } } },

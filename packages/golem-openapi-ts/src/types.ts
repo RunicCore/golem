@@ -1,6 +1,7 @@
 import { isDeepStrictEqual } from 'node:util';
 import { isBinaryMediaType, isBuiltinTextMediaType } from './client/codecs.js';
 import { asRecord, isJsonObject, objectEntries, type JsonObject } from './json.js';
+import { schemaReferenceOrDynamic } from '@exprtlabs/golem/internal/schema';
 import { codePointLength, isMultipleOf } from '@exprtlabs/golem/internal/validation-runtime';
 import { identifier, NameScope, responseStatusKind } from '@exprtlabs/golem/internal/generator-support';
 import { BUILTIN_CLASS_ROOTS, code, codeKey, manifestMarkerComment, docComment, exportedName, fileImports, identifier as identifierPart, ImportSource, isEmpty, join, lineBreak, literal, nest, propertyKey, render, renderModule, sameCode, type RenderedModule, type Code, type JsonValue } from '@exprtlabs/golem/internal/emitter';
@@ -157,11 +158,7 @@ function classifyTextSchemaNode(
   try {
     const currentBase = nextSchemaBase(schema, env.currentBase, env.resources);
     const nested: TextSchemaEnv = { ...env, currentBase };
-    const reference = typeof schema.$ref === 'string'
-      ? schema.$ref
-      : typeof schema.$dynamicRef === 'string'
-        ? schema.$dynamicRef
-        : undefined;
+    const reference = schemaReferenceOrDynamic(schema);
     let fromRef: TextSchemaClassification | undefined;
     if (reference !== undefined) {
       const target = resolveSchemaTarget(reference, currentBase, env.resources, env.document);
@@ -482,12 +479,8 @@ function cyclicSchemaRef(
   document?: unknown,
 ): boolean {
   if (!isJsonObject(schema) || !resources) return false;
-  const reference = typeof schema.$ref === 'string'
-    ? schema.$ref
-    : typeof schema.$dynamicRef === 'string'
-      ? schema.$dynamicRef
-      : null;
-  if (typeof reference !== 'string') return false;
+  const reference = schemaReferenceOrDynamic(schema);
+  if (reference === undefined) return false;
   const target = resolveSchemaTarget(reference, nextSchemaBase(schema, currentBase, resources), resources, document);
   return Boolean(target && inlining.has(schemaTargetIdentity(target)));
 }
@@ -556,7 +549,7 @@ function referencedSchemaType(reference: string, context: SchemaTypeContext): Ty
 }
 
 function isSchemaReference(schema: JsonObjectLike): boolean {
-  return typeof schema.$ref === 'string' || typeof schema.$dynamicRef === 'string';
+  return schemaReferenceOrDynamic(schema) !== undefined;
 }
 
 type AllOfRequirements = {

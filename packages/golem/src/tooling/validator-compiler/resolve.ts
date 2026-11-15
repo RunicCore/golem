@@ -1,4 +1,4 @@
-import { escapeJsonPointerToken, fragmentPointerTokens } from '../../json-pointer.js';
+import { escapeJsonPointerToken, fragmentPointerTokens, pointerArrayIndex } from '../../json-pointer.js';
 import { isRecord } from '../generator-core.js';
 
 /** A schema node with the context its keywords and references are read in. */
@@ -133,8 +133,9 @@ export class SchemaResolver {
     let pointer = document.pointer;
     for (const token of fragmentPointerTokens(fragment)) {
       base = baseInside(node, base);
-      if (Array.isArray(node) && /^(?:0|[1-9][0-9]*)$/.test(token) && Number(token) < node.length) {
-        node = node[Number(token)];
+      const position = pointerArrayIndex(token);
+      if (Array.isArray(node) && position !== undefined && position < node.length) {
+        node = node[position];
       } else if (isRecord(node) && Object.hasOwn(node, token)) {
         node = node[token];
       } else {

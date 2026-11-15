@@ -9,12 +9,11 @@ import {
   type OpenApiLine,
 } from './json.js';
 import { parameterIdentity } from '@exprtlabs/golem/internal/generator-support';
-import { followReference, resolveFragmentPointer, schemaReference } from '@exprtlabs/golem/internal/schema';
+import { followReference, resolveFragmentPointer, schemaReference, type ScopedSchema } from '@exprtlabs/golem/internal/schema';
 import { followLocalRefs, overrideParameters, visitOperationSites, type OperationSite } from './normalize.js';
 import type { OpenApiProblem } from './openapi-validator.js';
 import { isMappingComponentName } from './reference-loader.js';
 import { collectCanonicalResources, findDuplicateSchemaIds, lookupCanonicalResource, resolveSchemaTarget, visitOpenApiSchemaTree } from './schema-projection.js';
-import type { ScopedSchema } from './composition.js';
 
 const TEMPLATE = /\{([^{}]*)\}/g;
 
@@ -301,14 +300,21 @@ function checkDiscriminatorDefaults(document: unknown): OpenApiProblem[] {
    * `Alias: { $ref: '#/components/schemas/Cat' }` used from a `oneOf` must resolve through `Alias` to `Cat` itself
    * before `requires` inspects `required`/`allOf`/`oneOf`/`anyOf`. Undefined when a hop names nothing or the chain is a cycle.
    */
-  const resolveSchema = (schema: unknown, base: string): ScopedSchema<string> | undefined => followReference<ScopedSchema<string>>(
-    { schema, scope: base },
-    (scoped) => schemaReference(scoped.schema),
-    (reference, from) => {
-      const target = resolveSchemaTarget(reference, from.scope, resources, document);
-      return target === undefined ? undefined : { schema: target.schema, scope: target.currentBase };
-    },
-  )?.target;
+  const resolveSchema = (schema: unknown, base: string): ScopedSchema<string> | undefined => {
+    const followed = followReference<ScopedSchema<string>>(
+      { schema, scope: base },
+      (scoped) => schemaReference(scoped.schema),
+      (reference, from) => {
+        const target = resolveSchemaTarget(reference, from.scope, resources, document);
+        return target === undefined ? undefined : { schema: target.schema, scope: target.currentBase };
+      },
+    );
+    switch (followed.kind) {
+      case 'found': return followed.target;
+      case 'miss':
+      case 'cycle': return undefined;
+    }
+  };
   /**
    * `visiting` holds the schemas on the current path only, so a schema shared by two branches is judged in each.
    * `judgedFalse` keeps the schemas already found not to require the property: that result does not depend on

@@ -22,8 +22,8 @@ import { compareText, isRecord } from './generator-core.js';
 
 export { assertSupportedModelFieldName } from '../model-field-names.js';
 import { escapeJsonPointerToken } from '../json-pointer.js';
-export { decodeUriFragment, escapeJsonPointerToken, escapePointerToken, fragmentPointerTokens, jsonPointerTokens, resolveFragmentPointer, resolveJsonPointer, splitFirstFragmentToken, unescapeJsonPointerToken, unescapePointerToken } from '../json-pointer.js';
-export { followReference, MAX_REFERENCE_HOPS, schemaReference, schemaReferenceOrDynamic, type FollowedReference } from './json-reference.js';
+export { decodeUriFragment, escapeJsonPointerToken, escapePointerToken, fragmentPointerTokens, jsonPointerTokens, pointerArrayIndex, resolveFragmentPointer, resolveJsonPointer, splitFirstFragmentToken, unescapeJsonPointerToken, unescapePointerToken } from '../json-pointer.js';
+export { aliasReference, followReference, MAX_REFERENCE_HOPS, schemaReference, schemaReferenceOrDynamic, type ScopedSchema } from '../json-reference.js';
 export { canonicalSchemaKey };
 /** The schema descriptor types that generators read (`@exprtlabs/golem/internal/schema`). */
 export type { ConstraintSchemaValue, DiscriminatorValue, ModelConstraint, ModelTypeDescriptor, ModelTypeMetadata, UnionDiscriminator } from '../model-registry.js';

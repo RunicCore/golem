@@ -191,6 +191,48 @@ test('a $ref into a component by percent-encoded tokens resolves to the schema i
   assert.deepEqual(resolve('#/components/schemas/Account/properties/a~1b'), { type: 'integer' });
 });
 
+/** Projects the component `name` of `schemas` for a request, the direction that drops readOnly properties. */
+function projectInput(schemas: Record<string, unknown>, name: string): unknown {
+  const document = { components: { schemas } };
+  return projectSchema(requireRecord(schemas[name], name), { document, direction: 'input', dates: null });
+}
+
+test('a readOnly property reached through a nested $anchor is dropped with its required entry', () => {
+  // protects: T-937 only a top-level component anchor was searched, so `#idf` named nothing and `userId` stayed
+  const projected = projectInput({
+    Base: { type: 'object', properties: { id: { $anchor: 'idf', type: 'string', readOnly: true } } },
+    Dto: { type: 'object', required: ['userId'], properties: { userId: { $ref: '#idf' } } },
+  }, 'Dto');
+  assert.deepEqual(projected, { type: 'object' });
+});
+
+test('a readOnly property reached through a pointer into another resource is dropped', () => {
+  // protects: T-937 a `$ref` with a fragment into a resource resolved to the whole resource, which is not readOnly
+  const projected = projectInput({
+    Base: { $id: 'https://ex.com/base', type: 'object', properties: { id: { type: 'string', readOnly: true } } },
+    Dto: {
+      type: 'object',
+      required: ['userId', 'name'],
+      properties: { userId: { $ref: 'https://ex.com/base#/properties/id' }, name: { type: 'string' } },
+    },
+  }, 'Dto');
+  assert.deepEqual(projected, { type: 'object', required: ['name'], properties: { name: { type: 'string' } } });
+});
+
+test('a property that refers to its own resource root with $ref "#" is judged by that root', () => {
+  // protects: T-937 `#` names the enclosing resource; a reader that reads it as a miss keeps `parent`
+  const projected = projectInput({
+    Node: {
+      $id: 'https://ex.com/node',
+      type: 'object',
+      readOnly: true,
+      required: ['parent'],
+      properties: { parent: { $ref: '#' } },
+    },
+  }, 'Node');
+  assert.deepEqual(projected, { $id: 'https://ex.com/node', type: 'object', readOnly: true });
+});
+
 test('repeated readOnly aliases drop every matching property and required entry', () => {
   const document = {
     components: {

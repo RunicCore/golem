@@ -6,6 +6,12 @@
 /** The most hops one chain may take; a chain that has not reached a target by then refers back to itself. */
 export const MAX_REFERENCE_HOPS = 32;
 
+/** A schema in the scope it is read in (a base URI, a component table). */
+export interface ScopedSchema<S> {
+  readonly schema: unknown;
+  readonly scope: S;
+}
+
 /** The `$ref` of a schema object, or undefined when the value is not an object with a string `$ref`. */
 export function schemaReference(value: unknown): string | undefined {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined;
@@ -22,31 +28,39 @@ export function schemaReferenceOrDynamic(value: unknown): string | undefined {
   return typeof dynamic === 'string' ? dynamic : undefined;
 }
 
-/** Where a chain ended: the first value that is not a reference, and the last `$ref` that led to it (undefined when `start` is the target). */
-export interface FollowedReference<T> {
-  readonly target: T;
-  readonly reference: string | undefined;
+/** The `$ref` of an alias: a schema that is only a reference. A reference with keywords beside it is a schema of its own. */
+export function aliasReference(value: unknown): string | undefined {
+  return typeof value === 'object' && value !== null && Object.keys(value).length === 1 ? schemaReference(value) : undefined;
 }
 
 /**
+ * How a chain ended. `found`: the first value that is no reference, and the last `$ref` that led to it (undefined when the
+ * start is the target). `miss`: the value whose reference names nothing. `cycle`: the chain is longer than {@link MAX_REFERENCE_HOPS}.
+ */
+export type FollowedReference<T> =
+  | { readonly kind: 'found'; readonly target: T; readonly reference: string | undefined }
+  | { readonly kind: 'miss'; readonly last: T }
+  | { readonly kind: 'cycle' };
+
+/**
  * Follows `start` through its references to the first value that `referenceOf` reads no reference from. `resolve` takes
- * one hop and gets the value that led to it (a hop may depend on the scope that value carries).
- * Undefined when a hop names nothing or the chain is longer than {@link MAX_REFERENCE_HOPS}: the caller handles the miss.
+ * one hop and gets the value that led to it (a hop may depend on the scope that value carries); it returns undefined
+ * for a reference that names nothing.
  */
 export function followReference<T>(
   start: T,
   referenceOf: (value: T) => string | undefined,
   resolve: (reference: string, from: T) => T | undefined,
-): FollowedReference<T> | undefined {
+): FollowedReference<T> {
   let target = start;
   let reference: string | undefined;
   for (let hops = 0; hops < MAX_REFERENCE_HOPS; hops += 1) {
     const next = referenceOf(target);
-    if (next === undefined) return { target, reference };
+    if (next === undefined) return { kind: 'found', target, reference };
     const resolved = resolve(next, target);
-    if (resolved === undefined) return undefined;
+    if (resolved === undefined) return { kind: 'miss', last: target };
     target = resolved;
     reference = next;
   }
-  return referenceOf(target) === undefined ? { target, reference } : undefined;
+  return referenceOf(target) === undefined ? { kind: 'found', target, reference } : { kind: 'cycle' };
 }

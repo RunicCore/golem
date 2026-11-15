@@ -4,7 +4,7 @@ import { serdeWireDescriptor, type SchemaGraph, type SchemaNode } from '@exprtla
 import { identifier } from '@exprtlabs/golem/internal/generator-support';
 import { asRecord, escapeJsonPointerToken, isJsonObject, objectEntries, type JsonObject } from './json.js';
 import type { GolemDiagnostic } from '@exprtlabs/golem/generator-api';
-import { followReference, schemaReference, schemaReferenceOrDynamic, type ConstraintSchemaValue, type ModelConstraint, type ModelTypeDescriptor, type UnionDiscriminator } from '@exprtlabs/golem/internal/schema';
+import { aliasReference, followReference, schemaReferenceOrDynamic, type ConstraintSchemaValue, type ModelConstraint, type ModelTypeDescriptor, type UnionDiscriminator } from '@exprtlabs/golem/internal/schema';
 import { componentOrigin, LocatedError } from './origin.js';
 import {
   COMPOSITION_PROPERTY_NEVER,
@@ -583,15 +583,14 @@ function impliedByTarget(keyword: string, value: unknown, target: Readonly<Recor
   return false;
 }
 
-/** The `$ref` of an alias: a schema that is only a reference. A reference with keywords beside it is a schema of its own. */
-function aliasReference(value: unknown): string | undefined {
-  return isJsonObject(value) && Object.keys(value).length === 1 ? schemaReference(value) : undefined;
-}
-
 /** The schema that a chain of component `$ref`s names, or none when it names no component of the document. */
 function referenceTarget(schema: unknown, env: ModelResolveEnv): Readonly<Record<string, unknown>> | undefined {
-  const target = followReference(componentSchemaTarget(schema, env), aliasReference, (reference) => componentSchemaTarget({ $ref: reference }, env))?.target;
-  return isJsonObject(target) ? target : undefined;
+  const followed = followReference(componentSchemaTarget(schema, env), aliasReference, (reference) => componentSchemaTarget({ $ref: reference }, env));
+  switch (followed.kind) {
+    case 'found': return isJsonObject(followed.target) ? followed.target : undefined;
+    case 'miss':
+    case 'cycle': return undefined;
+  }
 }
 
 /** The keywords of a schema that its descriptor does not carry. The first three rules name keywords that no descriptor kind holds. */
@@ -603,7 +602,7 @@ function uncarriedKeywords(schema: unknown, dates: OpenApiDates, target?: Readon
   // With an allOf the composition holds `unevaluatedProperties`; with none, a union or a condition evaluates names that the descriptor does not list.
   const unevaluating = !dated && !hasAllOfMembers(schema) && present(EVALUATING_KEYWORDS).length > 0 ? present(['unevaluatedProperties', 'unevaluatedItems']) : [];
   // A keyword beside a `$ref` that the named schema already states, or states more tightly, adds nothing to what the reference converts.
-  const reference = typeof schema.$ref === 'string' || typeof schema.$dynamicRef === 'string'
+  const reference = schemaReferenceOrDynamic(schema) !== undefined
     ? present(REFERENCE_SIBLINGS).filter((keyword) => target === undefined || !impliedByTarget(keyword, schema[keyword], target))
     : [];
   return [...(dated ? present(DATE_TEXT_KEYWORDS) : []), ...unevaluating, ...present(['additionalItems']), ...reference];

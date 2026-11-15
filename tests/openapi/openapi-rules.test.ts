@@ -290,6 +290,38 @@ test('spec-discriminator-defaultMapping follows a $ref chain before checking req
   assert.deepEqual(found(document, 'spec-discriminator-defaultMapping'), []);
 });
 
+test('spec-discriminator-defaultMapping follows an $anchor reference to the schema it names', () => {
+  // protects: T-937 the rule followed only pointer and $id references, so a branch named by `#cat` was never judged
+  const document = documentBase('3.2.0', {
+    paths: {},
+    components: {
+      schemas: {
+        Cat: { $anchor: 'cat', type: 'object', properties: { kind: { type: 'string' } } },
+        Pet: { oneOf: [{ $ref: '#cat' }], discriminator: { propertyName: 'kind' } },
+      },
+    },
+  });
+  assert.deepEqual(found(document, 'spec-discriminator-defaultMapping'), ['/components/schemas/Pet/discriminator']);
+});
+
+test('spec-discriminator-defaultMapping reads the references of an embedded resource against that resource', () => {
+  // protects: T-937 a `#/$defs/Base` inside an `$id` resource was read from the document root, found nothing and counted as required
+  const document = documentBase('3.2.0', {
+    paths: {},
+    components: {
+      schemas: {
+        Cat: {
+          $id: 'https://rules.example/cat',
+          $defs: { Base: { type: 'object', properties: { kind: { type: 'string' } } } },
+          allOf: [{ $ref: '#/$defs/Base' }],
+        },
+        Pet: { oneOf: [{ $ref: 'https://rules.example/cat' }], discriminator: { propertyName: 'kind' } },
+      },
+    },
+  });
+  assert.deepEqual(found(document, 'spec-discriminator-defaultMapping'), ['/components/schemas/Pet/discriminator']);
+});
+
 test('spec-discriminator-defaultMapping judges a schema shared by two oneOf branches in each branch', () => {
   // protects: T-491 a shared allOf member must not hide an optional discriminator property
   const document = documentBase('3.2.0', {

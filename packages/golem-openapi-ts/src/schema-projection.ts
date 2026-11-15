@@ -1,7 +1,7 @@
 import { asRecord, entriesWithoutExtensions, isJsonObject, jsonPointerJoin, objectEntries, type JsonObject } from './json.js';
 import { compareText } from '@exprtlabs/golem/generator-api';
 import { identifier } from '@exprtlabs/golem/internal/generator-support';
-import { canonicalSchemaKey, escapePointerToken, fragmentPointerTokens, schemaReferenceOrDynamic, unescapePointerToken } from '@exprtlabs/golem/internal/schema';
+import { canonicalSchemaKey, escapePointerToken, fragmentPointerTokens, pointerArrayIndex, schemaReferenceOrDynamic, unescapePointerToken, type ScopedSchema } from '@exprtlabs/golem/internal/schema';
 import {
   pathItemOperations,
   resolveLocalPointer,
@@ -10,7 +10,6 @@ import {
 import { SCHEMA_ARRAY_KEYWORDS, SCHEMA_MAP_KEYWORDS, SCHEMA_SINGLE_KEYWORDS } from './schema-keywords.js';
 import type { OpenApiDates } from './model-resolution.js';
 import { dateClassOf } from './date-class.js';
-import type { ScopedSchema } from './composition.js';
 
 export type SchemaDirection = 'input' | 'output';
 
@@ -94,9 +93,8 @@ function exclusionFlag(direction: SchemaDirection): 'readOnly' | 'writeOnly' {
 function schemaIdentity(schema: unknown): string | null {
   if (typeof schema === 'boolean') return `bool:${schema}`;
   if (!isJsonObject(schema)) return null;
-  if (typeof schema.$ref === 'string') return `ref:${schema.$ref}`;
-  if (typeof schema.$dynamicRef === 'string') return `dynamic:${schema.$dynamicRef}`;
-  return null;
+  const reference = schemaReferenceOrDynamic(schema);
+  return reference === undefined ? null : `ref:${reference}`;
 }
 
 function instanceHasExclusion(schema: unknown, direction: SchemaDirection): boolean {
@@ -294,8 +292,8 @@ function applySchemaPointer(
       continue;
     }
     if (Array.isArray(current)) {
-      const index = Number(token);
-      if (!Number.isInteger(index) || index < 0 || index >= current.length) return undefined;
+      const index = pointerArrayIndex(token);
+      if (index === undefined || index >= current.length) return undefined;
       current = current[index];
       continue;
     }
@@ -390,7 +388,9 @@ export function resolveSchemaTarget(
   document?: unknown,
 ): ResolvedSchemaTarget | undefined {
   if (reference.startsWith('#') && !reference.startsWith('#/')) {
-    return reference.length > 1 ? resolveAnchorTarget(reference.slice(1), currentBase, resources, document) : undefined;
+    if (reference.length > 1) return resolveAnchorTarget(reference.slice(1), currentBase, resources, document);
+    const current = resources.byCanonical.get(stripFragment(currentBase));
+    return current && wholeResourceTarget(current, currentBase);
   }
   if (reference.startsWith('#/')) {
     const resource = lookupCanonicalResource(reference, currentBase, resources);
@@ -398,6 +398,10 @@ export function resolveSchemaTarget(
     if (resource) {
       return rest ? pointerSubresource(resource, rest, currentBase, resources) : wholeResourceTarget(resource, currentBase);
     }
+    // A pointer inside a schema resource with its own `$id` names a place in that resource.
+    const enclosing = resources.byCanonical.get(stripFragment(currentBase));
+    const inResource = enclosing?.hasId ? pointerSubresource(enclosing, reference, currentBase, resources) : undefined;
+    if (inResource) return inResource;
     if (document === undefined) return undefined;
     const schema = resolveLocalPointer(document, reference);
     if (schema === undefined) return undefined;

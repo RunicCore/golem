@@ -3,7 +3,7 @@ import { asRecord, isJsonObject, objectEntries } from './json.js';
 import { unionVariants } from './composition.js';
 import { SCHEMA_ARRAY_KEYWORDS, SCHEMA_MAP_KEYWORDS, SCHEMA_SINGLE_KEYWORDS } from './schema-keywords.js';
 import { identifier, sourceDigest } from '@exprtlabs/golem/internal/generator-support';
-import { decodeUriFragment, escapePointerToken, splitFirstFragmentToken } from '@exprtlabs/golem/internal/schema';
+import { aliasReference, decodeUriFragment, escapePointerToken, splitFirstFragmentToken } from '@exprtlabs/golem/internal/schema';
 import {
   mediaSchema,
   normalizeDocument,
@@ -604,8 +604,7 @@ function rewriteOperationSchemaRefs(
       // A component with its own `$id` is projected as a `$ref` to that resource.
       const declaredId = (name: string): string | undefined => {
         const raw = asRecord(components[name]);
-        const id = typeof raw.$id === 'string' ? raw.$id
-          : typeof raw.$ref === 'string' && Object.keys(raw).length === 1 ? raw.$ref : undefined;
+        const id = typeof raw.$id === 'string' ? raw.$id : aliasReference(raw);
         return id === undefined ? undefined : componentReference(id, localComponentScope) ?? rewriteResourceReference(index, id, direction, '$ref');
       };
       const mapping = Object.create(null) as Record<string, unknown>;

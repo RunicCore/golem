@@ -1,7 +1,7 @@
 import { asRecord, entriesWithoutExtensions, isJsonObject, jsonPointerJoin, objectEntries, openApiLine, readBoolean, readString, type JsonObject, type OpenApiLine } from './json.js';
 import { GolemDiagnosticSeverity, type GolemDiagnostic } from '@exprtlabs/golem/generator-api';
 import { identifier, parameterIdentity, parameterStyleRule, type ParameterLocation } from '@exprtlabs/golem/internal/generator-support';
-import { followReference, fragmentPointerTokens, resolveFragmentPointer, schemaReference } from '@exprtlabs/golem/internal/schema';
+import { decodeUriFragment, followReference, resolveFragmentPointer, schemaReference } from '@exprtlabs/golem/internal/schema';
 import { inboundNameHoldsSource, inboundOperationName, operationName } from './names.js';
 
 const HTTP_METHODS_31 = ['get', 'put', 'post', 'delete', 'options', 'head', 'patch', 'trace'] as const;
@@ -95,9 +95,9 @@ export interface NormalizedDocument {
   readonly diagnostics: readonly GolemDiagnostic[];
 }
 
-/** The plain JSON Pointer of a local `$ref`; a `$ref` is a URI fragment: each token is percent-decoded, then `~1`/`~0`-unescaped. */
+/** The plain JSON Pointer of a local `$ref`; a `$ref` is a URI fragment, so its pointer is the percent-decoded text after `#`. */
 function localRefPointer(ref: string): string {
-  return fragmentPointerTokens(ref.slice(1)).reduce(jsonPointerJoin, '');
+  return decodeUriFragment(ref.slice(1));
 }
 
 export function resolveLocalPointer(document: unknown, ref: string): unknown {
@@ -116,8 +116,11 @@ function localReference(value: unknown): string | undefined {
  */
 export function followLocalRefs(document: unknown, value: unknown, pointer = ''): { readonly value: unknown; readonly pointer: string } {
   const followed = followReference(value, localReference, (reference) => resolveLocalPointer(document, reference));
-  if (followed === undefined) return { value, pointer };
-  return { value: followed.target, pointer: followed.reference === undefined ? pointer : localRefPointer(followed.reference) };
+  switch (followed.kind) {
+    case 'found': return { value: followed.target, pointer: followed.reference === undefined ? pointer : localRefPointer(followed.reference) };
+    case 'miss':
+    case 'cycle': return { value, pointer };
+  }
 }
 
 export function resolveLocal(document: unknown, value: unknown): unknown {
