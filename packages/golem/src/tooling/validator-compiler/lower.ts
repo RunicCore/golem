@@ -4,7 +4,7 @@ import { isKnownFormat, jsonEqual } from '../../validation-runtime.js';
 import { isRuntimeFunction } from '../rt.js';
 import { GolemDiagnosticSeverity, isRecord, type GolemDiagnostic } from '../generator-core.js';
 import type { CompileInput, CompileOptions } from './index.js';
-import { ALWAYS, NEVER, type IrAdditional, type IrCheck, type IrContains, type IrDiscriminator, type IrClass, type IrFunction, type IrInstance, type IrModule, type IrSchema, type IrValidationImport } from './ir.js';
+import { ALWAYS, type IrAdditional, type IrCheck, type IrContains, type IrDiscriminator, type IrClass, type IrFunction, type IrInstance, type IrModule, type IrSchema, type IrValidationImport } from './ir.js';
 import { JSON_TYPES, TYPE_NAMES, isTypeName } from './json-types.js';
 import { baseInside, pointerSegment, SchemaResolver, type SchemaLocation } from './resolve.js';
 
@@ -22,6 +22,8 @@ const VALIDATE_UNKNOWN_VALIDATION = 'VALIDATE_UNKNOWN_VALIDATION';
  */
 const UNSUPPORTED_KEYWORDS: ReadonlySet<string> = new Set(['$dynamicRef', '$dynamicAnchor']);
 
+const NEVER: IrSchema = { kind: 'never' };
+
 const EVALUATION_KEYWORDS: readonly string[] = ['unevaluatedProperties', 'unevaluatedItems'];
 
 /** The items of `value` when it is an array. */
@@ -29,11 +31,16 @@ function listOf(value: unknown): readonly unknown[] | undefined {
   return Array.isArray(value) ? value : undefined;
 }
 
+/** What a `type` keyword value names: its one string, or the items of its list; nothing for any other value. */
+function typeCandidates(value: unknown): readonly unknown[] {
+  return typeof value === 'string' ? [value] : listOf(value) ?? [];
+}
+
 const isStringList = (value: unknown): boolean => Array.isArray(value) && value.every(item => typeof item === 'string');
 
 /** The shapes of standard keyword values that would loosen or crash validation if lowering dropped them. A wrong shape is an error. This is not the whole 2020-12 meta-schema: it does not check uniqueness, or a list's minimum length. */
 const KEYWORD_SHAPES: readonly { readonly keywords: readonly string[]; readonly accepts: (value: unknown) => boolean; readonly expected: string }[] = [
-  { keywords: ['type'], accepts: value => isTypeName(value) || (Array.isArray(value) && value.length > 0 && value.every(isTypeName)), expected: `a type name or a non-empty list of type names (${TYPE_NAMES.join(', ')})` },
+  { keywords: ['type'], accepts: value => { const names = typeCandidates(value); return names.length > 0 && names.every(isTypeName); }, expected: `a type name or a non-empty list of type names (${TYPE_NAMES.join(', ')})` },
   { keywords: ['enum'], accepts: Array.isArray, expected: 'a list' },
   { keywords: ['minLength', 'maxLength', 'minItems', 'maxItems', 'minProperties', 'maxProperties', 'minContains', 'maxContains'], accepts: value => typeof value === 'number' && Number.isInteger(value) && value >= 0, expected: 'a non-negative integer' },
   { keywords: ['minimum', 'maximum', 'exclusiveMinimum', 'exclusiveMaximum'], accepts: value => finiteNumber(value) !== undefined, expected: 'a finite number' },
@@ -115,12 +122,11 @@ function literalBranchValues(branch: unknown): readonly unknown[] | undefined {
   const enumValues = listOf(branch.enum);
   if (Object.hasOwn(branch, 'const') === (enumValues !== undefined)) return undefined;
   if (!Object.keys(branch).every(key => key === 'const' || key === 'enum' || key === 'type' || ANNOTATION_KEYWORDS.has(key) || key.startsWith('x-'))) return undefined;
-  const values = Object.hasOwn(branch, 'const') ? [branch.const] : enumValues;
-  if (values === undefined) return undefined;
+  const values = enumValues ?? [branch.const];
   // A value with no JSON form is left to the branch's own lowering, which reports it.
   if (holdsNonFiniteNumber(values)) return undefined;
   if (!Object.hasOwn(branch, 'type')) return values;
-  const names = typeof branch.type === 'string' ? [branch.type] : listOf(branch.type) ?? [];
+  const names = typeCandidates(branch.type);
   if (names.length === 0 || !names.every(isTypeName)) return undefined;
   return values.every(value => names.some(name => JSON_TYPES[name].test(value))) ? values : undefined;
 }
@@ -510,8 +516,7 @@ class Lowering {
   }
 
   private lowerTypeAndValues({ node, here, checks, malformed }: RecordContext): void {
-    const typeList = typeof node.type === 'string' ? [node.type] : listOf(node.type) ?? [];
-    const names = typeList.filter(isTypeName);
+    const names = typeCandidates(node.type).filter(isTypeName);
     if (names.length > 0) checks.push({ kind: 'type', names });
 
     if (Object.hasOwn(node, MODEL_CLASS_KEYWORD)) {

@@ -244,14 +244,16 @@ function writeExports({ module, target, fastRootExports, passRoots }: Emission, 
 }`;
   };
   const wrappers = module.exports.map(({ name, fn }) => issuesOf(exportsOf(name).validate, fn));
-  const fastExports = new Map(fastRootExports.map(({ name }) => [name, exportsOf(name).fast] as const));
+  const fastNamed = fastRootExports.map(({ name, fn }) => ({ name, fn, exportName: exportsOf(name).fast }));
+  const fastExports = new Map(fastNamed.map(({ name, exportName }) => [name, exportName] as const));
   // The fast check itself is the export: a valid value takes no extra call.
   const fastType = options.typed ? code`: (value: unknown) => boolean` : code``;
-  const fastWrappers = fastRootExports.map(({ name, fn }) => code`export const ${identifierCode(exportsOf(name).fast)}${fastType} = ${nameOf(stayingSlot(target(fn), true))};`);
-  const passExports = new Map(passRoots.map(({ name }) => [name, exportsOf(name).passes] as const));
-  const passWrappers = passRoots.flatMap(({ name, structure, predicates }) => [
-    code`export const ${identifierCode(exportsOf(name).passes.structure)}${fastType} = ${nameOf(stayingSlot(target(structure), true))};`,
-    issuesOf(exportsOf(name).passes.predicates, predicates),
+  const fastWrappers = fastNamed.map(({ fn, exportName }) => code`export const ${identifierCode(exportName)}${fastType} = ${nameOf(stayingSlot(target(fn), true))};`);
+  const passNamed = passRoots.map(({ name, structure, predicates }) => ({ name, structure, predicates, passNames: exportsOf(name).passes }));
+  const passExports = new Map(passNamed.map(({ name, passNames }) => [name, passNames] as const));
+  const passWrappers = passNamed.flatMap(({ structure, predicates, passNames }) => [
+    code`export const ${identifierCode(passNames.structure)}${fastType} = ${nameOf(stayingSlot(target(structure), true))};`,
+    issuesOf(passNames.predicates, predicates),
   ]);
   return { wrappers, fastWrappers, passWrappers, fastExports, passExports };
 }
