@@ -50,14 +50,6 @@ export function responseHeaderKey(operation: string, status: string, name: strin
   return JSON.stringify([operation, 'response-header', status, name]);
 }
 
-/** The operation name and the parts that follow it in a key of `OpenApiModelAnalysis.convertedNodeIds`, which the key functions above write. */
-export function operationValueKeyParts(key: string): { readonly name: string; readonly at: readonly string[] } {
-  const parts: unknown = JSON.parse(key);
-  const [name, ...at] = Array.isArray(parts) && parts.every((part): part is string => typeof part === 'string') ? parts : [];
-  if (name === undefined) throw new TypeError(`The key ${key} of a converted value is not the key of a body, a parameter or a response header.`);
-  return { name, at };
-}
-
 /** Whether any body, parameter or response header of the operation converts a value (a Date or Temporal inside it). */
 export function operationConverts(operation: NormalizedOperation, convertedNodeIds: ReadonlyMap<string, string>): boolean {
   return operation.requestContent.some((media) => convertedNodeIds.has(requestBodyKey(operation.name, media.contentType)))

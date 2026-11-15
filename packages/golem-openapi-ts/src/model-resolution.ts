@@ -390,7 +390,7 @@ function valueClasses(descriptor: ModelTypeDescriptor): readonly JsonClass[] {
     case 'number': return ['number'];
     case 'boolean': return ['boolean'];
     case 'null': return ['null'];
-    case 'literal': return JSON_CLASSES.filter((jsonClass) => jsonClass === typeof descriptor.value);
+    case 'literal': return [typeof descriptor.value as JsonClass];
     case 'object': return ['object'];
     case 'array':
     case 'tuple': return ['array'];

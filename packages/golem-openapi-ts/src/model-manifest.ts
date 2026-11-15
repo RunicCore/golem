@@ -20,7 +20,7 @@ import {
   modelEnv,
   modelStableId,
 } from './model-resolution.js';
-import { operationValueKeyParts, uncarriedOf } from './model-schema-graph.js';
+import { uncarriedOf } from './model-schema-graph.js';
 import { resolveLocal } from './normalize.js';
 
 /**
@@ -34,7 +34,10 @@ function golemModeGraph(document: unknown, analysis: OpenApiModelAnalysis, sdk: 
   for (const operation of sdk.operations) {
     const values: SdkOperationValue[] = [];
     for (const [key, node] of analysis.convertedNodeIds) {
-      const { name, at } = operationValueKeyParts(key);
+      // The key is one of the key functions of `model-schema-graph.ts`: a JSON array of strings that starts with the operation name.
+      const parts: unknown = JSON.parse(key);
+      const [name, ...at] = Array.isArray(parts) && parts.every((part): part is string => typeof part === 'string') ? parts : [];
+      if (name === undefined) throw new TypeError(`The key ${key} of a converted value is not the key of a body, a parameter or a response header.`);
       if (name !== operation.name) continue;
       const input = analysis.graphInputs.values.get(key);
       const inline = input && { ...(input.name === undefined ? {} : { name: input.name }), descriptor: JSON.stringify(input.descriptor) };
@@ -158,10 +161,10 @@ export function openApiValidationSchemaClosure(
   const compact = (value: unknown, wire: boolean): unknown => {
     if (Array.isArray(value)) return value.map((item) => compact(item, wire));
     if (value === null || typeof value !== 'object') return value;
-    const result: Record<string, unknown> = Object.create(null);
+    const result = Object.create(null) as Record<string, unknown>;
     for (const [key, child] of Object.entries(value)) {
       if (key === '$defs' && child !== null && typeof child === 'object' && !Array.isArray(child)) {
-        const definitions: Record<string, unknown> = Object.create(null);
+        const definitions = Object.create(null) as Record<string, unknown>;
         for (const [name, schema] of Object.entries(child)) {
           const node = schemaGraph.nodeByCodecId(name);
           definitions[name] = node

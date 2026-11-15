@@ -79,15 +79,17 @@ test('an operation wrapper with an import key that no emitter lists still genera
   assert.match(operations, /import type \{ AcmeOperation \} from '@acme\/pkg';/);
 });
 
-test('an operation wrapper that answers with no wrapper and no diagnostic stops generation', (t: TestContext) => {
-  // protects: T-935 a participant that returns nothing is a fault of the extension, not a client with plain operations
-  const document = documentBase('3.1.0', { paths: { '/items': { get: { operationId: 'listItems', responses: { 200: { description: 'ok' } } } } } });
-  const output = path.join(createFixtureProject(t, 'golem-acme-sdk-'), 'sdk');
-  assert.throws(
-    () => writeSdk(document, { output, name: 'Items', profile: { validation: false }, hooks: { 'client.operationWrapper': [acmeFill(() => undefined)] } }),
-    /answers the hook "client\.operationWrapper" with a value that holds neither a wrapper nor a diagnostic/,
-  );
-});
+for (const [answered, answer] of [['nothing', undefined], ['a wrapper with no Code', { wrapper: {} }]] as const) {
+  test(`an operation wrapper that answers ${answered} stops generation`, (t: TestContext) => {
+    // protects: T-935 an answer that is no wrapper and no diagnostic is a fault of the extension, not a client with plain operations
+    const document = documentBase('3.1.0', { paths: { '/items': { get: { operationId: 'listItems', responses: { 200: { description: 'ok' } } } } } });
+    const output = path.join(createFixtureProject(t, 'golem-acme-sdk-'), 'sdk');
+    assert.throws(
+      () => writeSdk(document, { output, name: 'Items', profile: { validation: false }, hooks: { 'client.operationWrapper': [acmeFill(() => answer)] } }),
+      /it answers with neither a wrapper of two Code values nor a diagnostic/,
+    );
+  });
+}
 
 /** A wrapper whose factory and type bind the names `createAcmeOperation` and `acmeOperation`, with no alias. */
 const ACME_WRAPPER = acmeFill(() => ({ wrapper: {

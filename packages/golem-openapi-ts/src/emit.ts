@@ -7,7 +7,7 @@ import { buildOperationValidationSchemas, generateClientModules, operationValida
 import { browserCookieDiagnostics, normalizeAndValidate, unsupportedHttpAuthSchemes, type MovedUnions } from './document.js';
 import { buildEmissionPlan, serverOverrideDiagnostics, type ArtifactFile, type EmissionPlan } from './emission-plan.js';
 import { asRecord, readString } from './json.js';
-import { assertUniqueExportNames, code, documentLiteral, exportedName, renderModule, type PublicModule, type RenderedModule } from '@exprtlabs/golem/internal/emitter';
+import { assertUniqueExportNames, code, documentLiteral, exportedName, renderModule, type Code, type PublicModule, type RenderedModule } from '@exprtlabs/golem/internal/emitter';
 import { operationName, operationNameType } from './names.js';
 import type { NormalizedOperation } from './normalize.js';
 import { generatedBannerComment } from './package-info.js';
@@ -161,8 +161,13 @@ interface GeneratedFiles {
   diagnostics: readonly GolemDiagnostic[];
 }
 
+const isCode = (value: unknown): value is Code => isRecord(value) && Array.isArray(value.parts);
+
+/** What the emitters read of an answer: the two `Code` values of a wrapper, or the `code` and the `message` of a diagnostic (core checks the rest of a diagnostic on the job result). */
 function isOperationWrapperResult(value: unknown): value is OperationWrapperResult {
-  return isRecord(value) && isRecord('wrapper' in value ? value.wrapper : value.diagnostic);
+  if (!isRecord(value)) return false;
+  if ('wrapper' in value) return isRecord(value.wrapper) && isCode(value.wrapper.operationType) && isCode(value.wrapper.createOperation);
+  return isRecord(value.diagnostic) && typeof value.diagnostic.code === 'string' && typeof value.diagnostic.message === 'string';
 }
 
 /** The operation wrapper that the extension on `client.operationWrapper` makes for the mode of the job, and the diagnostic when it refuses the mode. */
@@ -172,7 +177,7 @@ function operationWrapperOf(hooks: HookParticipants | undefined, mode: 'standalo
   const answer = fills[0]?.use((participant) => {
     if (typeof participant !== 'function') throw new TypeError(`it fills the hook "${OPERATION_WRAPPER_HOOK}" with ${typeof participant}, not a function`);
     const result: unknown = participant(mode);
-    if (!isOperationWrapperResult(result)) throw new TypeError(`it answers the hook "${OPERATION_WRAPPER_HOOK}" with a value that holds neither a wrapper nor a diagnostic`);
+    if (!isOperationWrapperResult(result)) throw new TypeError('it answers with neither a wrapper of two Code values nor a diagnostic');
     return result;
   });
   if (answer === undefined) return { diagnostics: [] };
