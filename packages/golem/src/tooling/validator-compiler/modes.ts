@@ -2,10 +2,13 @@ import { code, join, literal as literalCode, nameOf, type Code } from '../code.j
 import type { IrObject, IrPatternProperty } from './ir.js';
 import { presentKeysCode } from '../union-conversion.js';
 import { PATH, COMMA, ISSUES, ALL, callFunction, type CallArguments } from './function-names.js';
-import { localName, lazyStateTest } from './local-helpers.js';
+import { localName, stateTest } from './local-helpers.js';
+import { rt } from '../rt.js';
 import { patternExpression } from './module-state.js';
 import type { FunctionWriter } from './function-writer.js';
 import type { FastPlan } from './fast-plan.js';
+
+const runtime = rt['validation-runtime'];
 
 /** What a written function does when a check fails. */
 interface FailMode {
@@ -65,7 +68,7 @@ export interface KeyTest {
    * a loop leaves both out before it reads a value.
    */
   readonly keys?: Code;
-  /** The local that `lazyStateTest` fills with the names of the instance's own model; set exactly when `keys` is a raw list. */
+  /** The local that holds the names of the instance's own model (`instanceFields`), for `isStateKey`; set exactly when `keys` is a raw list. */
   readonly stateFields?: Code;
   /** A local that is true when the key test met a key that `additionalProperties: false` forbids; the test runs after `required`. */
   readonly unknown?: Code;
@@ -204,18 +207,19 @@ function fastKeyTest(writer: FunctionWriter, { check, value, captured, reads }: 
   const additional = reads.visitsAdditional ? check.additional : undefined;
   const unknown = additional?.kind === 'forbid' ? writer.fresh('unknown') : undefined;
   const fields = writer.fresh('fields');
-  const locals = [...captured.map(([, local]) => local), fields, ...(count === undefined ? [] : [code`${count} = 0`]), ...(unknown === undefined ? [] : [code`${unknown} = false`])];
-  writer.line(code`let ${join(locals, COMMA)};`);
+  const locals = [...captured.map(([, local]) => local), ...(count === undefined ? [] : [code`${count} = 0`]), ...(unknown === undefined ? [] : [code`${unknown} = false`])];
+  if (locals.length > 0) writer.line(code`let ${join(locals, COMMA)};`);
+  writer.line(code`const ${fields} = ${runtime.instanceFields}(${value});`);
   const list = additional?.kind === 'schema' || reads.patterns.length > 0 || check.propertyNames !== undefined ? writer.fresh('keys') : undefined;
   if (list !== undefined) writer.line(code`const ${list} = Object.keys(${value});`);
   const key = writer.fresh('key');
-  const state = (name: Code): Code => lazyStateTest(fields, value, name, localName('instanceFields'));
+  const state = (name: Code): Code => stateTest(fields, name);
   const named = new Set(check.properties.map(property => property.key));
   const capturedKeys = new Set(captured.map(([name]) => name));
   // A key counts when its value is not `undefined`; a key nothing else reads is read on its own.
   const counted = (read: Code): Code => (count === undefined ? code` ${read};` : code` if (${read} !== undefined) ${count}++;`);
   // A key that the schema names is read as the full validator reads it, also when it is program state; any other program state is never read.
-  const cases = captured.filter(([name]) => additional === undefined || named.has(name)).map(([name, local]) => code`case ${literalCode(name)}: ${local} = ${value}[${literalCode(name)}];${count === undefined ? code`` : code` if (${local} !== undefined && !(${state(literalCode(name))})) ${count}++;`} break;`);
+  const cases = captured.filter(([name]) => additional === undefined || named.has(name)).map(([name, local]) => code`case ${literalCode(name)}: ${local} = ${value}[${literalCode(name)}];${count === undefined ? code`` : code` if (${local} !== undefined && !${state(literalCode(name))}) ${count}++;`} break;`);
   const bare = [...named].filter(name => !capturedKeys.has(name));
   // A required or dependent key that `properties` does not name is still additional: `default` captures it.
   const unnamed = additional === undefined ? [] : captured.filter(([name]) => !named.has(name));
@@ -234,7 +238,7 @@ function fastKeyTest(writer: FunctionWriter, { check, value, captured, reads }: 
   writer.line(code`const ${item} = ${value}[${key}];`);
   writer.line(code`if (${item} === undefined) continue;`);
   // A key that nothing names was left out above when it is program state; one that `unnamed` names is judged, and neither counts nor is unknown.
-  const data = unnamed.length === 0 ? [] : [code`!(${state(key)})`];
+  const data = unnamed.length === 0 ? [] : [code`!${state(key)}`];
   if (count !== undefined) writer.line(data.length === 0 ? code`${count}++;` : code`if (${join(data, code` && `)}) ${count}++;`);
   unnamed.forEach(([name, local], position) => writer.line(code`${position === 0 ? code`` : code`else `}if (${key} === ${literalCode(name)}) ${local} = ${item};`));
   if (unknown !== undefined) {

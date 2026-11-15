@@ -2,6 +2,7 @@ import { isDate, isDateTime, isTime } from './rfc3339.js';
 import type { SchemaIssue } from './issue-messages.js';
 import { instanceFields, isStateKey, presentValue } from './presence.js';
 export type { SchemaIssue, SchemaIssueDetail } from './issue-messages.js';
+export { instanceFields, isStateKey };
 
 /**
  * A generated validator; with `all` false it returns at the first issue. With `sanity` true it checks the shape only: it

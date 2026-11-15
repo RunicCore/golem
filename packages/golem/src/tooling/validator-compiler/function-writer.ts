@@ -5,7 +5,7 @@ import { presentValueCode } from '../union-conversion.js';
 import { VALUE, PATH, NEWLINE, COMMA, ISSUES, ALL, SANITY, INHERITED, EVALUATION, type CalleeSlot, type CallArguments } from './function-names.js';
 import { isTuple, keepsFormat } from './call-graph.js';
 import { JSON_TYPES, dispatchTest } from './json-types.js';
-import { localName, lazyStateTest, scaledDivisor } from './local-helpers.js';
+import { localName, scaledDivisor, stateTest } from './local-helpers.js';
 import { patternExpression, type ModuleState } from './module-state.js';
 import { resolve, readSet, objectPresence, type Capture, type Lazy, type KeyTest, type WriterMode } from './modes.js';
 
@@ -593,12 +593,12 @@ export class FunctionWriter {
     this.open(code`for (const ${key} of ${keys})`);
     // A key test that left the values unread has this pass read each one, also of a key it then skips; program state is never read.
     if (failure !== undefined) {
-      this.skipState(stateFields, value, key);
+      this.skipState(stateFields, key);
       this.line(code`const ${member} = ${value}[${key}];`);
       this.line(code`if (${member} === undefined) continue;`);
     }
     if (skipped.length > 0) this.line(code`if (${join(skipped, code` || `)}) continue;`);
-    if (failure === undefined) this.skipState(stateFields, value, key);
+    if (failure === undefined) this.skipState(stateFields, key);
     if (additional.kind === 'forbid') {
       this.issue(code`code: 'unknownKey', key: ${key}`, code`[...${PATH}, ${key}]`);
     } else {
@@ -613,8 +613,8 @@ export class FunctionWriter {
   }
 
   /** In a raw key list, a key that is program state of the instance is left out before any value is read. */
-  private skipState(stateFields: Code | undefined, value: Code, key: Code): void {
-    if (stateFields !== undefined) this.line(code`if (${lazyStateTest(stateFields, value, key, localName('instanceFields'))}) continue;`);
+  private skipState(stateFields: Code | undefined, key: Code): void {
+    if (stateFields !== undefined) this.line(code`if (${stateTest(stateFields, key)}) continue;`);
   }
 
   /** `properties`: each declared key that is present, checked against its schema. */
@@ -643,7 +643,7 @@ export class FunctionWriter {
     // A raw key list is read once, its program state and its keys whose value is `undefined` are left out.
     const held = stateFields === undefined ? undefined : this.fresh('member');
     if (held !== undefined) {
-      this.skipState(stateFields, value, key);
+      this.skipState(stateFields, key);
       this.line(code`const ${held} = ${value}[${key}];`);
       this.line(code`if (${held} === undefined) continue;`);
     }
@@ -666,7 +666,7 @@ export class FunctionWriter {
     const key = this.fresh('key');
     this.open(code`for (const ${key} of ${keyList(keys)})`);
     if (stateFields !== undefined) {
-      this.skipState(stateFields, value, key);
+      this.skipState(stateFields, key);
       this.line(code`if (${value}[${key}] === undefined) continue;`);
     }
     this.leaf({ fails: code`!${this.call(names, { value: key, issues: code`[]`, all: code`false` })}`, issue: code`code: 'invalidKey', key: ${key}` });

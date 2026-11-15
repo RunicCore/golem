@@ -12,10 +12,7 @@ import { buildModelProject, createModelProject, writeModelGolemYaml } from './mo
 import { compileValidatorModule } from './support/compiled-validators.js';
 import { instanceFields } from '../packages/golem/src/presence.js';
 import { MODEL_FIELDS_KEY } from '../packages/golem/src/schema-keywords.js';
-import { render } from '#golem/code';
-import { instanceFieldsCode } from '#golem/union-conversion';
 import { generatedCodecIdFromRoot } from './support/consumer.js';
-import { runModule } from './support/run-module.js';
 import { modelCodec } from './support/model-codec.js';
 // An own key of a golem model instance that its own model does not declare is program state, never an unknown key
 // (T-148). A key that the instance's own model declares is judged as before, and so is a value without a model.
@@ -184,15 +181,13 @@ for (const root of ['valued', 'patterned'] as const) {
   });
 }
 
-test('the runtime walk of the field entry and the walk the validators generate return the same names', () => {
-  // protects: T-150 review the allowGetter copy and the generated validators decide program state by one rule; T-848 a Proxy prototype is no model
-  const generated = runModule(render(instanceFieldsCode()), {}, { exports: ['instanceFields'] }).instanceFields as (value: object) => readonly string[] | undefined;
+test('the field entry names the declared keys of a model instance and of nothing else', () => {
+  // protects: T-848 a Proxy prototype is no model
   const values = [
     instance(Task, { cache: 1 }), instance(Kid, {}), instance(Bag, {}), Object.create(Task.prototype), new (class extends Task {})(),
     { title: 'a' }, Object.create(null), Object.create({ inherited: 1 }), [],
     Object.create(new Proxy({}, { get: () => () => 1 })), Object.create({ [Symbol.for(MODEL_FIELDS_KEY)]: 'title' }),
   ];
-  assert.deepEqual(values.map(value => instanceFields(value)), values.map(value => generated(value)));
   assert.deepEqual(values.map(value => instanceFields(value)), [['title', 'done'], ['title', 'done', 'mode'], undefined, ['title', 'done'], ['title', 'done'], undefined, undefined, undefined, undefined, undefined, undefined]);
 });
 
@@ -251,7 +246,7 @@ test('an object with no declared field writes the same in stringify and toWireFo
 
 for (const validation of [true, false]) {
   test(`a model instance at any depth in an unknown field writes no program state (validation ${validation ? 'on' : 'off'})`, async () => {
-    // protects: bug T-164 only the top value of an unknown field lost its program state; an instance inside an array or object kept it
+    // protects: bug T-164 only the top value of an unknown field lost its program state; an instance inside an array or object kept it; T-912 its getter never runs
     const { Task: TaskModel, Note, note } = await buildState(false);
     const task = () => Object.assign(new TaskModel({ title: 't' }), { cache: new Map<string, string>(), hits: 3 });
     const options = { validate: validation };
@@ -259,6 +254,7 @@ for (const validation of [true, false]) {
       ['an array', [task()], [{ title: 't' }]],
       ['a nested plain object', { inner: { list: [1, task()] } }, { inner: { list: [1, { title: 't' }] } }],
       ['an instance', task(), { title: 't' }],
+      ['an instance with a throwing own accessor', Object.defineProperty(new TaskModel({ title: 't' }), 'cache', { enumerable: true, get(): never { throw new RangeError('program state was read'); } }), { title: 't' }],
       ['a value with no model instance', { a: [1, { b: null }], c: 'x', d: [] }, { a: [1, { b: null }], c: 'x', d: [] }],
       ['a scalar', 'text', 'text'],
     ];

@@ -19,8 +19,7 @@ const fieldsKey = Symbol.for(MODEL_FIELDS_KEY);
 /**
  * The names that the own model of a golem model instance declares, or `undefined` when the value holds no program
  * state. The nearest prototype that owns the field entry decides, and only an array of names counts as an answer, so a
- * prototype that answers any key (a Proxy) holds no program state. `instanceFieldsCode` (tooling/union-conversion.ts)
- * is the same rule as code for the generated validators.
+ * prototype that answers any key (a Proxy) holds no program state. The generated validators import it.
  */
 export function instanceFields(value: object): readonly string[] | undefined {
   const prototype = Object.getPrototypeOf(value);
@@ -29,7 +28,7 @@ export function instanceFields(value: object): readonly string[] | undefined {
   return Array.isArray(declared) ? declared as readonly string[] : undefined;
 }
 
-/** True when `key` is program state of a value whose own model names are `fields` (`undefined`: the value holds none). The code twin is `stateTest` (tooling/validator-compiler/local-helpers.ts). */
+/** True when `key` is program state of a value whose own model names are `fields` (`undefined`: the value holds none). The one rule: the generated validators import it. */
 export function isStateKey(fields: readonly string[] | undefined, key: string): boolean {
   return fields !== undefined && !fields.includes(key);
 }
@@ -64,7 +63,7 @@ function withoutInstanceStateAt(value: object, ancestors: Set<object>): object {
   ancestors.add(value);
   let copy: Record<string, unknown> | undefined = declared === undefined
     ? undefined
-    : Object.fromEntries(Object.entries(value).filter(([key]) => !isStateKey(declared, key)));
+    : Object.fromEntries(Object.keys(value).filter(key => !isStateKey(declared, key)).map(key => [key, Reflect.get(value, key)]));
   for (const [key, child] of Object.entries(copy ?? value)) {
     if (child === null || typeof child !== 'object') continue;
     const written = withoutInstanceStateAt(child, ancestors);
