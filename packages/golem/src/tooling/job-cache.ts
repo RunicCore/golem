@@ -379,8 +379,8 @@ export class JobInputs {
 
   /**
    * The record's inputs. A reported watch input the job never announced was not digested at a read: it is digested now, when the
-   * job has returned. A directory, or a file whose modification time is not before the start of the job (it may have changed after
-   * the job read it), gets `untracked`, so the next run runs the job again. `own` are the job's own outputs, which are not inputs.
+   * job has returned. A directory, or a file whose status-change time is not before the start of the job (it may have changed after
+   * the job read it: a write, or a restored modification time, sets that time to now), gets `untracked`, so the next run runs the job again. `own` are the job's own outputs, which are not inputs.
    */
   finish(config: GolemConfig, watchInputs: readonly string[], own: ReadonlySet<string>): Record<string, string> {
     for (const input of watchInputs) {
@@ -394,10 +394,11 @@ export class JobInputs {
       .map(([input, digest]) => [recordPath(config, input), digest]));
   }
 
+  /** Whether the file changed at or after the job started, by the status-change time: no tool can set it back, as it can a modification time. The file clock ticks about once a millisecond, so a change within that tick of the start reads as before it. */
   private isUntracked(filename: string): boolean {
     try {
       const stat = fs.statSync(filename, { throwIfNoEntry: false });
-      return stat !== undefined && (stat.isDirectory() || stat.mtimeMs >= this.started);
+      return stat !== undefined && (stat.isDirectory() || stat.ctimeMs >= this.started);
     } catch (error) {
       if (hasErrorCode(error, 'ENOTDIR')) return false;
       throw error;
