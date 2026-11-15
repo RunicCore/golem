@@ -1,9 +1,8 @@
-// The source guard of `npm run lint`: which package source file may load which TypeScript module, which modules the runtime entry points
-// load, where a package uses a non-null assertion, and which switch over a union of kinds leaves a kind out. Tests are outside it.
+// The source guard of `npm run lint`: which package source file may load which TypeScript module, which modules the runtime project
+// loads, where a package uses a non-null assertion, and which switch over a union of kinds leaves a kind out. Tests are outside it.
 // It reads the syntax tree that golem's own compiler seam parses, so a quote in a comment or a string is no import. The switch check
 // asks the seam's type checker, since typescript-eslint needs the TypeScript JavaScript API that TypeScript 7 does not export.
 import fs from 'node:fs';
-import { isBuiltin } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as ts from '../packages/golem/src/tooling/typescript-ns.js';
@@ -22,6 +21,16 @@ const RULES: readonly Rule[] = [
   { forbids: specifier => /^require\(.*\bpackageDir\b/.test(specifier), allowedIn: 'packages/golem/src/tooling/typescript-ts6.ts', because: 'only the TypeScript 6 backend loads the project\'s TypeScript by directory' },
   { forbids: specifier => specifier === 'typescript', allowedIn: undefined, because: 'the TypeScript 6 backend loads the project\'s TypeScript by the directory resolveTypeScript found; a bare import would load golem\'s own' },
 ];
+
+/** The files of the runtime project (packages/golem/tsconfig.runtime.json). They ship to apps that have no mobx and no Node.js. */
+const RUNTIME_FILE = /^packages\/golem\/src\/(?:client-runtime\/)?[^/]+\.ts$/;
+
+/** Why a runtime file may not load the module, or undefined when it may: only a relative specifier outside `tooling/` is allowed. Type-only imports count. */
+function runtimeLoadProblem(relative: string, specifier: string): string | undefined {
+  if (!specifier.startsWith('.')) return `a runtime file loads only relative modules, so the apps that ship it need no mobx and no Node.js`;
+  if (path.posix.join(path.posix.dirname(relative), specifier).startsWith('packages/golem/src/tooling/')) return `a runtime file does not load the build tooling, which needs Node.js`;
+  return undefined;
+}
 
 /** What a finding does to the run: an error fails it, a warning is listed. */
 type Severity = 'warning' | 'error';
@@ -90,56 +99,6 @@ function loads(node: ts.Node): string | undefined {
   return undefined;
 }
 
-/** The entry points of the runtime that a browser loads: they stay free of mobx and of Node.js modules, and so does each file that they load. */
-const RUNTIME_ENTRIES = ['packages/golem/src/model.ts', 'packages/golem/src/validation.ts', 'packages/golem/src/schema-registry-validation.ts'] as const;
-
-/** Whether a runtime entry point may not load the module: mobx, or a Node.js built-in with or without the `node:` prefix. */
-function isRuntimeForbidden(specifier: string): boolean {
-  return /mobx/i.test(specifier) || isBuiltin(specifier);
-}
-
-/** What a file loads: an import, `export … from`, dynamic `import()`, `require()` or import type. A type-only import counts, since its declaration file then names the module. */
-function loadsOf(file: ts.SourceFile): string[] {
-  const found: string[] = [];
-  const visit = (node: ts.Node): undefined => {
-    const specifier = loads(node);
-    if (specifier !== undefined) found.push(specifier);
-    ts.forEachChild(node, visit);
-    return undefined;
-  };
-  visit(file);
-  return found;
-}
-
-/** An error for each forbidden module that a runtime entry point loads, also through the relative imports of the files that it loads. */
-function runtimeEntryFindings(program: ts.Program): Finding[] {
-  const found: Finding[] = [];
-  for (const entry of RUNTIME_ENTRIES) {
-    const entryFilename = path.join(root, entry);
-    // The file that first loaded each file, so that a finding names the chain.
-    const loadedBy = new Map<string, string | undefined>([[entryFilename, undefined]]);
-    const queue = [entryFilename];
-    for (const filename of queue) {
-      const file = program.getSourceFile(filename);
-      if (!file) throw new Error(`The compiler did not read ${portable(path.relative(root, filename))}.`);
-      for (const specifier of loadsOf(file)) {
-        if (isRuntimeForbidden(specifier)) {
-          const chain: string[] = [];
-          for (let step: string | undefined = filename; step !== undefined; step = loadedBy.get(step)) chain.unshift(portable(path.relative(root, step)));
-          found.push({ severity: 'error', text: `${chain.join(' -> ')} loads '${specifier}': the runtime entry points stay free of mobx and Node.js modules` });
-        } else if (specifier.startsWith('.')) {
-          const loaded = path.resolve(path.dirname(filename), specifier).replace(/\.js$/, '.ts');
-          if (!loadedBy.has(loaded)) {
-            loadedBy.set(loaded, filename);
-            queue.push(loaded);
-          }
-        }
-      }
-    }
-  }
-  return found;
-}
-
 function findings(file: ts.SourceFile, relative: string, checker: ts.TypeChecker): Finding[] {
   const found: Finding[] = [];
   const where = (node: ts.Node): string => `${relative}:${file.getLineAndCharacterOfPosition(node.getStart(file)).line + 1}`;
@@ -147,6 +106,8 @@ function findings(file: ts.SourceFile, relative: string, checker: ts.TypeChecker
     const specifier = loads(node);
     if (specifier !== undefined) {
       const { line } = file.getLineAndCharacterOfPosition(node.getStart(file));
+      const runtimeProblem = RUNTIME_FILE.test(relative) ? runtimeLoadProblem(relative, specifier) : undefined;
+      if (runtimeProblem !== undefined) found.push({ severity: 'error', text: `${relative}:${line + 1} imports '${specifier}': ${runtimeProblem}` });
       for (const rule of RULES) {
         if (rule.forbids(specifier) && relative !== rule.allowedIn) {
           found.push({ severity: 'error', text: `${relative}:${line + 1} imports '${specifier}'${rule.allowedIn ? `; only ${rule.allowedIn} may` : ''}: ${rule.because}` });
@@ -176,7 +137,6 @@ try {
     if (!file) throw new Error(`The compiler did not read ${portable(path.relative(root, filename))}.`);
     allFindings.push(...findings(file, portable(path.relative(root, filename)), checker));
   }
-  allFindings.push(...runtimeEntryFindings(program));
 } finally {
   program.close();
 }
