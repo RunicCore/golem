@@ -20,6 +20,7 @@ export {
   validateFunctionName,
   type CodecRuntimeOptions,
   type NestedImportedSerde,
+  type SiblingWireWrite,
   type StringifySerdeResolver,
   wireCheckedDeserializer,
 } from './stringify-emitter.js';

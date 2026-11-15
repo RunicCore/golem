@@ -542,3 +542,22 @@ export const readShelf = (wire: unknown) => fromWireFormat<TShelf>(wire);
   }
   assert.equal(generated.stringifyTBox({ id: 'c1', items: 'text' }), '{"id":"c1","items":"text"}');
 });
+
+test('a golem-mode model over an SDK type tagged with a TSerde writes the serde wire value of the field, not the SDK node', async () => {
+  const project = await loadGolemModeProject(scope, 'sdk-app-model-serde-', [CHARGES], true, {
+    'src/codecs.ts': `import type { Charge } from '../sdk/charges/index.js';
+export function encodeCharge(value: Charge): string { return value.id + ':' + String(value.amount); }
+export function decodeCharge(wire: string): Charge { const [id, amount] = wire.split(':'); return { id: id!, amount: Number(amount) } as Charge; }
+`,
+    'src/ledger.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
+import type { TSerde } from '@exprtlabs/golem/tags';
+import type { Charge } from '../sdk/charges/index.js';
+import { encodeCharge, decodeCharge } from './codecs.js';
+export type TLedger = IModel<{ charge: Charge & TSerde<typeof encodeCharge, typeof decodeCharge> }>;
+`,
+  });
+  const generated = await importBuilt(project.root, 'src/ledger.model.generated.js');
+  const value = { charge: { id: 'c1', amount: 2 } };
+  assert.deepEqual(generated.toWireFormatTLedger(value), { charge: 'c1:2' });
+  assert.equal(generated.stringifyTLedger(value), '{"charge":"c1:2"}');
+});

@@ -380,9 +380,9 @@ function generateModels(
       return definition !== undefined && declared && typeIdentifier(definition.schemaName) === definition.name ? code`${typesModule.namespace()}.${identifier(definition.name)}` : undefined;
     },
     exportWireStringify: (node) => writesWireStringify(node, profile.validation),
-    siblingWireCodecIds: new Set([...(helpers.dependencyNodeIds ?? [])].flatMap((id) => {
+    siblingWire: new Map([...(helpers.dependencyNodeIds ?? [])].flatMap((id) => {
       const node = analysis.nodesById.get(id);
-      return node && writesWireStringify(node, profile.validation) ? [node.codecId] : [];
+      return node && writesWireStringify(node, profile.validation) ? [[node.codecId, 'exported' as const]] : [];
     })),
     ...(helpers.wireStringify ? { siblingWireName: helpers.wireStringify } : {}),
     ...(helpers.exportedFillFunctionIds ? { exportedFillFunctionIds: helpers.exportedFillFunctionIds } : {}),
