@@ -1,3 +1,4 @@
+import { assertNever } from '../../assert-never.js';
 import { code, identifier as identifierCode, join, joinIndented, literal as literalCode, type Code, type IndentedLine } from '../code.js';
 import type { IrArray, IrCheck, IrClass, IrDiscriminator, IrFunction, IrInstance, IrNumber, IrObject, IrPatternProperty, IrSchema, IrString, IrType, IrTypeName, IrUnion, IrValidation, IrValidationImport } from './ir.js';
 import { rt, runtimeFunctionCode } from '../rt.js';
@@ -54,10 +55,6 @@ interface ObjectPass {
   readonly patterns: readonly { readonly entry: IrPatternProperty; readonly expression: Code }[];
   /** The patterns whose checks run. */
   readonly patternsToRun: readonly { readonly entry: IrPatternProperty; readonly expression: Code }[];
-}
-
-function unwrittenKeyList(list: never): never {
-  throw new Error(`The validator compiler writes no pass over a key list of the kind ${JSON.stringify(list)}.`);
 }
 
 /** The key list or count that the key test made for a check that reads it. */
@@ -597,23 +594,20 @@ export class FunctionWriter {
     const member = this.fresh('member');
     this.open(code`for (const ${key} of ${list.keys})`);
     // A key test that left the values unread has this pass read each one, also of a key it then skips; program state is never read.
-    if (list.kind === 'unread') this.readHeld(list, value, key, member);
+    switch (list.kind) {
+      case 'unread': this.readHeld(list, value, key, member); break;
+      case 'raw': case 'defined': break;
+      default: return assertNever(list);
+    }
     if (skipped.length > 0) this.line(code`if (${join(skipped, code` || `)}) continue;`);
     if (list.kind === 'raw') this.skipState(list.stateFields, key);
     if (additional.kind === 'forbid') {
       this.issue(code`code: 'unknownKey', key: ${key}`, code`[...${PATH}, ${key}]`);
     } else {
       const schema = additional.schema;
-      switch (list.kind) {
-        case 'unread': break;
-        case 'raw':
-          this.line(code`const ${member} = ${value}[${key}];`);
-          this.line(code`if (${member} === undefined) continue;`);
-          break;
-        case 'defined':
-          this.line(code`const ${member} = ${value}[${key}];`);
-          break;
-        default: return unwrittenKeyList(list);
+      if (list.kind !== 'unread') {
+        this.line(code`const ${member} = ${value}[${key}];`);
+        if (list.kind === 'raw') this.line(code`if (${member} === undefined) continue;`);
       }
       this.atChild(key, () => this.schema(schema, member));
     }
@@ -658,7 +652,7 @@ export class FunctionWriter {
     const list = leftByKeyTest(test.list);
     this.open(code`for (const ${key} of ${list.keys})`);
     // A raw key list is read once, its program state and its keys whose value is `undefined` are left out.
-    const held = this.heldMember(list, value, key);
+    const held = list.kind === 'defined' ? undefined : this.readHeld(list, value, key, this.fresh('member'));
     for (const { entry, expression } of patternsToRun) {
       this.open(code`if (${expression}.test(${key}))`);
       this.mark(record => code`${record}.keys.add(${key});`);
@@ -673,27 +667,14 @@ export class FunctionWriter {
     this.close();
   }
 
-  /** The local that holds the member of a raw key list, read once; a defined list holds none. */
-  private heldMember(list: KeyList, value: Code, key: Code): Code | undefined {
-    switch (list.kind) {
-      case 'defined': return undefined;
-      case 'raw': case 'unread': return this.readHeld(list, value, key, this.fresh('member'));
-      default: return unwrittenKeyList(list);
-    }
-  }
-
   /** `propertyNames`: each key, checked as a value of its own. */
   private propertyNames({ value, test }: ObjectPass, names: number): void {
     const key = this.fresh('key');
     const list = leftByKeyTest(test.list);
     this.open(code`for (const ${key} of ${list.keys})`);
-    switch (list.kind) {
-      case 'defined': break;
-      case 'raw': case 'unread':
-        this.skipState(list.stateFields, key);
-        this.line(code`if (${value}[${key}] === undefined) continue;`);
-        break;
-      default: return unwrittenKeyList(list);
+    if (list.kind !== 'defined') {
+      this.skipState(list.stateFields, key);
+      this.line(code`if (${value}[${key}] === undefined) continue;`);
     }
     this.leaf({ fails: code`!${this.call(names, { value: key, issues: code`[]`, all: code`false` })}`, issue: code`code: 'invalidKey', key: ${key}` });
     this.close();
