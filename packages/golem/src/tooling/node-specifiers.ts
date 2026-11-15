@@ -208,8 +208,9 @@ function specifierLiteral(node: ts.Node): ts.StringLiteral | undefined {
   if ((ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) && node.moduleSpecifier && ts.isStringLiteral(node.moduleSpecifier)) {
     return node.moduleSpecifier;
   }
-  if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword && node.arguments.length >= 1 && ts.isStringLiteral(node.arguments[0]!)) {
-    return node.arguments[0];
+  if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword) {
+    const [argument] = node.arguments;
+    if (argument !== undefined && ts.isStringLiteral(argument)) return argument;
   }
   if (ts.isImportTypeNode(node) && ts.isLiteralTypeNode(node.argument) && ts.isStringLiteral(node.argument.literal)) return node.argument.literal;
   return undefined;

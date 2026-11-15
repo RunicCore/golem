@@ -97,9 +97,10 @@ export class ImportSource {
       if (options.alias === undefined) checkedIdentifier(name, 'imported name');
       else syntaxChecked(name, 'imported name');
       if (options.alias !== undefined) checkedIdentifier(options.alias, 'alias');
-      declared = fromParts([{ kind: 'imported', source: this, name, ...(options.typeOnly ? { typeOnly: true as const } : {}), ...(options.alias === undefined ? {} : { alias: options.alias }) }]);
+      const part: Part = { kind: 'imported', source: this, name, ...(options.typeOnly ? { typeOnly: true as const } : {}), ...(options.alias === undefined ? {} : { alias: options.alias }) };
+      declared = fromParts([part]);
       this.#declared.set(key, declared);
-      this.#codeOf.set(declared.parts[0]!, declared);
+      this.#codeOf.set(part, declared);
     }
     return declared;
   }
@@ -193,26 +194,20 @@ function writesSomething(part: Part): boolean {
  * a text, a Code with its parts written, or a Code that holds its parts. The walk keeps a stack of the slots still to read.
  */
 function walk(root: CodeValue, onText: (text: string) => boolean, onParts: (parts: readonly Part[]) => boolean): void {
-  const nodes: CodeValue[] = [root];
-  const next: number[] = [0];
-  while (nodes.length > 0) {
-    const top = nodes.length - 1;
-    const node = nodes[top]!;
-    const index = next[top]!;
-    if (index >= node.slotCount()) {
-      nodes.pop();
-      next.pop();
+  const stack: { readonly node: CodeValue; next: number }[] = [{ node: root, next: 0 }];
+  for (let top = stack.at(-1); top !== undefined; top = stack.at(-1)) {
+    if (top.next >= top.node.slotCount()) {
+      stack.pop();
       continue;
     }
-    next[top] = index + 1;
-    const item = node.slot(index);
+    const item = top.node.slot(top.next);
+    top.next += 1;
     if (typeof item === 'string') {
       if (item !== '' && onText(item)) return;
     } else if (item instanceof CodeValue) {
       const ready = item.ready();
       if (ready === undefined) {
-        nodes.push(item);
-        next.push(0);
+        stack.push({ node: item, next: 0 });
       } else if (onParts(ready)) return;
     } else if (item && onParts(item.parts)) return;
   }
@@ -287,10 +282,11 @@ class LinesCode extends CodeValue {
 
   public slot(index: number): string | Code | undefined {
     const line = Math.floor(index / 3);
+    const entry = this.lines[line];
     switch (index % 3) {
       case 0: return line > 0 ? this.separator : undefined;
-      case 1: return ' '.repeat(this.lines[line]!.spaces);
-      default: return this.lines[line]!.body;
+      case 1: return ' '.repeat(entry.spaces);
+      default: return entry.body;
     }
   }
 }
@@ -386,8 +382,7 @@ function checkedIdentifier(name: string, what: string): string {
  * part. It returns the text still pending; `finish` writes it.
  */
 function append(out: Part[], pending: string, source: readonly Part[]): string {
-  for (let index = 0; index < source.length; index += 1) {
-    const part = source[index]!;
+  for (const part of source) {
     if (part.kind === 'text' && !part.identifier) pending += part.text;
     else {
       if (pending !== '') { out.push({ kind: 'text', text: pending }); pending = ''; }
@@ -409,10 +404,8 @@ function finish(out: Part[], pending: string): Code {
 /** Build a Code from parts. Adjacent text parts become one, so equal code has one shape. */
 function fromParts(parts: readonly Part[]): Code {
   // One part needs no merge, unless it is empty text, which is no part.
-  if (parts.length === 1) {
-    const only = parts[0]!;
-    if (only.kind !== 'text' || only.text !== '') return new PartsCode(parts);
-  }
+  const only = parts[0];
+  if (parts.length === 1 && only !== undefined && (only.kind !== 'text' || only.text !== '')) return new PartsCode(parts);
   const out: Part[] = [];
   return finish(out, append(out, '', parts));
 }
@@ -426,7 +419,7 @@ export function code(strings: TemplateStringsArray, ...values: readonly Code[]):
     // The text of a tag with no value is fixed at its place in the source, and a Code is never changed: it is made once.
     let constant = constants.get(strings);
     if (!constant) {
-      constant = fromParts([{ kind: 'text', text: strings[0]! }]);
+      constant = fromParts([{ kind: 'text', text: strings[0] }]);
       constants.set(strings, constant);
     }
     return constant;

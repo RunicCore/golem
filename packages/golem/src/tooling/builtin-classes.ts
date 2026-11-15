@@ -23,7 +23,7 @@ export interface BuiltinClass {
   /** The binding. `valid` tells an instance that holds no value (`new Date(NaN)`), which the class check calls after `instanceof`. */
   readonly serde: SerdeFunctions & { readonly valid?: ImportedFunction };
   /** The class below `globalThis`, which the instance check of a field looks up. */
-  readonly classPath: readonly string[];
+  readonly classPath: readonly [string, ...string[]];
   /** The `format` of a string schema that an OpenAPI document converts to this class, by the `dates` value that picks the class. */
   readonly openApiFormat?: Readonly<Partial<Record<OpenApiDatesMode, string>>>;
 }
@@ -69,7 +69,7 @@ const BUILTIN_CLASS_LIST: readonly BuiltinClass[] = [
 export const BUILTIN_CLASSES: ReadonlyMap<string, BuiltinClass> = new Map(BUILTIN_CLASS_LIST.map((entry) => [entry.qualifiedName, entry]));
 
 /** The globals that the built-in classes live under (`Date`, `Temporal`), which a component schema of the same name would shadow in a generated module. */
-export const BUILTIN_CLASS_ROOTS: ReadonlySet<string> = new Set(BUILTIN_CLASS_LIST.map((entry) => entry.classPath[0]!));
+export const BUILTIN_CLASS_ROOTS: ReadonlySet<string> = new Set(BUILTIN_CLASS_LIST.map((entry) => entry.classPath[0]));
 
 const MODES: readonly OpenApiDatesMode[] = ['date', 'temporal'];
 /** One table for both `dates` values: the class that a string `format` converts to, by the value. */

@@ -710,7 +710,8 @@ class CompatProgram implements Golem.Program {
     const result = this.program.emit(undefined, (filename, text, _writeByteOrderMark, _onError, sourceFiles) => {
       if (isDeclarationFile(filename) !== declarations) return;
       files.set(canonical(filename), text);
-      if (sourceFiles?.length === 1) sources.set(canonical(filename), canonical(sourceFiles[0]!.fileName));
+      const only = sourceFiles?.length === 1 ? sourceFiles[0] : undefined;
+      if (only !== undefined) sources.set(canonical(filename), canonical(only.fileName));
     }, undefined, declarations);
     return { emitSkipped: result.emitSkipped, files, sources, diagnostics: result.diagnostics.map(withText) };
   }

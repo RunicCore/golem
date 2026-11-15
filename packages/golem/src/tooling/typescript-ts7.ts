@@ -894,7 +894,10 @@ export function getTscDiagnostics(program: Program, emitDiagnostics: readonly Sy
   }, program.getCompilerOptions());
   const compare = (left: SyncDiagnostic, right: SyncDiagnostic): number => compareDiagnostics(left, right, hostCaseSensitivity);
   const sorted = [...found, ...emitDiagnostics].sort(compare);
-  return sorted.filter((diagnostic, index) => index === 0 || compare(sorted[index - 1]!, diagnostic) !== 0);
+  return sorted.filter((diagnostic, index) => {
+    const previous = sorted[index - 1];
+    return previous === undefined || compare(previous, diagnostic) !== 0;
+  });
 }
 
 export function canHaveDecorators(node: Node): boolean {
@@ -1517,7 +1520,8 @@ export class ProgramSession implements Disposable {
       readFile: (fileName) => {
         const filename = canonical(fileName);
         this.report(filename);
-        if (this.overlays.has(filename)) return this.overlays.get(filename)!;
+        const overlay = this.overlays.get(filename);
+        if (overlay !== undefined) return overlay;
         this.recordSignature(filename);
         return serverFS.useOS;
       },
