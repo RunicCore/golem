@@ -178,22 +178,22 @@ for (const { root, fast, build } of THROWING) {
 }
 
 // A program-state key that has the name of a key the schema declares: the schema judges the keys of the instance's own model, so this key is never read.
-const NAMED_LIKE_STATE: readonly { readonly root: string; readonly fast: boolean; readonly valid: boolean; readonly build: (runs: { count: number }) => unknown }[] = [
-  { root: 'countedMaxNamed', fast: true, valid: true, build: runs => withThrowingState(Task, 'note', runs) },
-  { root: 'valued', fast: true, valid: true, build: runs => withThrowingState(Counter, 'title', runs) },
-  { root: 'patterned', fast: true, valid: true, build: runs => withThrowingState(Counter, 'title', runs) },
-  { root: 'dependent', fast: true, valid: true, build: runs => withThrowingState(Task, 'note', runs) },
-  { root: 'taggedAlone', fast: true, valid: false, build: runs => withThrowingState(Counter, 'kind', runs) },
-  { root: 'tagged', fast: true, valid: false, build: runs => withThrowingState(Tagged, 'x', runs) },
+const NAMED_LIKE_STATE: readonly { readonly root: string; readonly valid: boolean; readonly build: (runs: { count: number }) => unknown }[] = [
+  { root: 'countedMaxNamed', valid: true, build: runs => withThrowingState(Task, 'note', runs) },
+  { root: 'valued', valid: true, build: runs => withThrowingState(Counter, 'title', runs) },
+  { root: 'patterned', valid: true, build: runs => withThrowingState(Counter, 'title', runs) },
+  { root: 'dependent', valid: true, build: runs => withThrowingState(Task, 'note', runs) },
+  { root: 'taggedAlone', valid: false, build: runs => withThrowingState(Counter, 'kind', runs) },
+  { root: 'tagged', valid: false, build: runs => withThrowingState(Tagged, 'x', runs) },
 ];
 
-for (const { root, fast, valid, build } of NAMED_LIKE_STATE) {
+for (const { root, valid, build } of NAMED_LIKE_STATE) {
   test(`the ${root} check never runs a getter of program state that has a declared name`, async () => {
     // protects: T-958 a state key named like a schema key was read by the key test, as T-912 left it
     const module = await compiled;
     const runs = { count: 0 };
     assert.equal(module.byRoot[root](build(runs), false).length === 0, valid, 'the full validator');
-    assert.equal(module.fastByRoot[root]?.(build(runs)), fast ? valid : undefined, 'the fast check');
+    assert.equal(module.fastByRoot[root]?.(build(runs)), valid, 'the fast check');
     assert.equal(runs.count, 0);
   });
 }
