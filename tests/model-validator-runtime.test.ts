@@ -23,6 +23,9 @@ async function runtime(name: 'mobx'): Promise<typeof MobxModule>;
 async function runtime(name: 'mobx-validation'): Promise<typeof MobxValidationModule>;
 async function runtime(name: string): Promise<unknown>;
 async function runtime(name: string): Promise<unknown> {
+  // The MobX adapter has its source in golem-openapi-ts; the dist folder of golem holds no build of it, only an old artifact on a host that built an older tree.
+  if (name === 'mobx-validation') return import('@exprtlabs/golem-openapi-ts/mobx-validation');
+  if (name === 'runtime-mobx-validation') return import('@exprtlabs/golem-openapi-ts/internal/mobx-validation-runtime');
   const modulePath = pathToFileURL(join(distRoot, `${name}.js`)).href;
   return import(modulePath);
 }
