@@ -2,7 +2,7 @@ import { LibError, LibErrorKind, type IssuePath } from './errors.js';
 import { activeConversionPath, conversionError } from './conversion-error.js';
 import { type GeneratedModelConstructor, type GeneratedModelResult } from './model.js';
 import { findGeneratedModelDefinition, findGeneratedModelDefinitionForConstructor, isGeneratedModel } from './model-registry.js';
-import { instanceFields, presentValue } from './presence.js';
+import { instanceFields, isStateKey, presentValue } from './presence.js';
 import { isDateTime } from './rfc3339.js';
 
 /** The tag as JSON text. A tag comes from a request, so any value can arrive: `String` throws for an object whose `toString` is not a function. */
@@ -109,7 +109,7 @@ export function readRootFields(value: unknown, fields: readonly string[], strip:
   const plan = resolvePlan(strip);
   const stripped = plan?.kind === 'object' ? plan : undefined;
   for (const key of Object.keys(root)) {
-    if (Object.hasOwn(copy, key) || (declared !== undefined && !declared.includes(key)) || (stripped !== undefined && removesKey(key, stripped))) continue;
+    if (Object.hasOwn(copy, key) || isStateKey(declared, key) || (stripped !== undefined && removesKey(key, stripped))) continue;
     const read = root[key];
     if (read !== undefined) defineModelProperty(copy, key, read);
   }
