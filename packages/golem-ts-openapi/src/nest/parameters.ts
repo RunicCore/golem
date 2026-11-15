@@ -37,6 +37,24 @@ const SWAGGER_PARAMETER_LOCATIONS: readonly (readonly [readonly string[], 'query
   [['ApiHeader', 'ApiHeaders'], 'header'],
 ];
 
+/** What `@nestjs/swagger` does with a parameter decorator that injects runtime request state. */
+type InjectedParameterHandling = 'manual-response' | 'skip' | 'reject';
+
+/** The Nest parameter decorators that map to no OpenAPI parameter, each with how the route reads it. */
+const INJECTED_PARAMETER_DECORATORS: ReadonlyMap<string, InjectedParameterHandling> = new Map([
+  ['Req', 'skip'], ['Request', 'skip'], ['Next', 'skip'], ['Session', 'skip'], ['Ip', 'skip'],
+  ['Res', 'manual-response'], ['Response', 'manual-response'],
+  ['UploadedFile', 'reject'], ['UploadedFiles', 'reject'], ['RawBody', 'reject'], ['HostParam', 'reject'],
+]);
+
+/**
+ * `@nestjs/swagger` merges `required: true` into `@ApiQuery` and `@ApiParam`, and passes `required` of `@ApiHeader` through.
+ * The `required` that the decorator declares, or the default of its location; undefined for a header that declares none.
+ */
+function requiredOfLocation(location: 'query' | 'path' | 'header', declared: boolean | undefined): boolean | undefined {
+  return declared ?? (location === 'header' ? undefined : true);
+}
+
 interface ParameterOptions {
   readonly decorator: DecoratorInfo;
   readonly options: DecoratorOptions;
@@ -121,12 +139,12 @@ export function parseParameterOverride(
         `@${decorator.name}({ enum }) must be an array or an enum.`,
       ));
     }
-    const required = options.boolean('required');
+    const declaredRequired = options.boolean('required');
+    const required = requiredOfLocation(location, declaredRequired);
     const entries: Record<string, unknown> = {
       description: options.documentationString('description') || undefined,
-      // @nestjs/swagger merges `required: true` defaults into @ApiQuery and @ApiParam, not @ApiHeader.
-      required: required ?? (location === 'header' ? undefined : true),
-      requiredDefaulted: required === undefined && location !== 'header' ? true : undefined,
+      required,
+      requiredDefaulted: declaredRequired === undefined && required !== undefined ? true : undefined,
       deprecated: options.boolean('deprecated'),
       explode: options.boolean('explode'),
       style: options.string('style') || undefined,
@@ -161,7 +179,7 @@ function parameterKey(reader: MetadataReader, decorator: DecoratorInfo): string 
 function parameterLocation(
   reader: MetadataReader,
   decorators: readonly DecoratorInfo[],
-): { readonly location?: ControllerParameter['location']; readonly name?: string; readonly unsupported?: string } {
+): { readonly location?: ControllerParameter['location']; readonly name?: string; readonly injected?: { readonly name: string; readonly handling: InjectedParameterHandling } } {
   const locations: readonly [string, ControllerParameter['location']][] = [
     ['Body', 'body'],
     ['Query', 'query'],
@@ -172,11 +190,12 @@ function parameterLocation(
     const decorator = hasDecorator(decorators, name, NEST_COMMON);
     if (decorator) return { location, name: parameterKey(reader, decorator) };
   }
-  const unsupported = decorators.find(item => item.packageName === NEST_COMMON && [
-    'Req', 'Request', 'Res', 'Response', 'Next', 'Session', 'Ip',
-    'UploadedFile', 'UploadedFiles', 'RawBody', 'HostParam',
-  ].includes(item.name ?? ''));
-  return unsupported ? { unsupported: unsupported.name } : {};
+  for (const { name, packageName } of decorators) {
+    if (packageName !== NEST_COMMON || name === undefined) continue;
+    const handling = INJECTED_PARAMETER_DECORATORS.get(name);
+    if (handling !== undefined) return { injected: { name, handling } };
+  }
+  return {};
 }
 
 /**
@@ -324,7 +343,7 @@ function bareReference(context: NestAnalysisContext, parameter: ts.ParameterDecl
   const node = presentTypeNode(context.checker, parameter.type);
   const declared = node ? typeReference(context.checker, parameter, node) : parameterType;
   const members = declared.type.isUnion() ? declared.type.types.filter(item => (item.flags & ts.TypeFlags.Undefined) === 0) : [];
-  return authoritativeTypeReference(context, members.length === 1 ? typeReference(context.checker, parameter, undefined, members[0]) : declared)!;
+  return authoritativeTypeReference(context, members.length === 1 ? typeReference(context.checker, parameter, undefined, members[0]) : declared);
 }
 
 /** The parameter's type as the document describes it: an optional parameter is described by the type it holds when present. The bare reference is read only for a type that has `undefined`: an inherited generic parameter would read its `T` too early. */
@@ -337,14 +356,11 @@ function oneFieldKind(context: NestAnalysisContext, parameter: ts.ParameterDecla
   const bare = bareReference(context, parameter, parameterType);
   // The model of an item comes from the item's type node: the checker's type argument has lost the alias that names the model.
   const item = bare.modelContractName === undefined ? arrayItemNode(parameter.type) : undefined;
-  const itemModel = item === undefined ? undefined : authoritativeTypeReference(context, typeReference(context.checker, parameter, item))!.modelContractName;
+  const itemModel = item === undefined ? undefined : authoritativeTypeReference(context, typeReference(context.checker, parameter, item)).modelContractName;
   const present = presentReference(context, parameter, parameterType);
-  if (bare.modelContractName === undefined && itemModel === undefined) return { model: false, array: false, type: present };
-  return {
-    model: true,
-    array: itemModel !== undefined,
-    type: { ...present, modelContractName: itemModel ?? bare.modelContractName! },
-  };
+  const modelContractName = itemModel ?? bare.modelContractName;
+  if (modelContractName === undefined) return { model: false, array: false, type: present };
+  return { model: true, array: itemModel !== undefined, type: { ...present, modelContractName } };
 }
 
 /** The path of the first array or tuple field at any depth of an object type, such as `tags` or `inner.tags`. */
@@ -383,15 +399,23 @@ export function parseParameters(
   method.parameters.forEach((parameter, index) => {
     const decorators = decoratorsOf(context.checker, parameter);
     const location = parameterLocation(context, decorators);
-    if (location.unsupported) {
-      if (location.unsupported === 'Res' || location.unsupported === 'Response') {
-        const decorator = hasDecorator(decorators, location.unsupported, NEST_COMMON);
-        if (decorator && resPassthrough(context, decorator)) return;
-        manualResponse = parameter;
-        return;
+    if (location.injected) {
+      const { name: injected, handling } = location.injected;
+      switch (handling) {
+        case 'manual-response': {
+          const decorator = hasDecorator(decorators, injected, NEST_COMMON);
+          if (decorator && resPassthrough(context, decorator)) return;
+          manualResponse = parameter;
+          return;
+        }
+        case 'skip': return;
+        case 'reject':
+          throw new TsToOpenApiError(diagnostic(parameter.getSourceFile(), parameter, TsToOpenApiDiagnosticCode.UnsupportedNestParameter, `Nest parameter decorator @${injected} injects runtime request state and has no OpenAPI parameter mapping.`));
+        default: {
+          const unhandled: never = handling;
+          return unhandled;
+        }
       }
-      if (['Req', 'Request', 'Next', 'Session', 'Ip'].includes(location.unsupported)) return;
-      throw new TsToOpenApiError(diagnostic(parameter.getSourceFile(), parameter, TsToOpenApiDiagnosticCode.UnsupportedNestParameter, `Nest parameter decorator @${location.unsupported} injects runtime request state and has no OpenAPI parameter mapping.`));
     }
     if (!location.location) {
       if (decorators.some(item => item.packageName === NEST_COMMON)) {
@@ -402,7 +426,7 @@ export function parseParameters(
     const parameterType = authoritativeTypeReference(
       context,
       methodParameterReference(context.checker, signature, parameter, index, controllerClass),
-    )!;
+    );
     const required = !isOptionalParameter(parameter, parameterType.type);
     const name = location.name;
     if (location.location === 'body') {
@@ -463,8 +487,7 @@ export function parseParameters(
         type,
         location,
         name,
-        // @nestjs/swagger defaults @ApiQuery and @ApiParam to required; @ApiHeader passes `required` through.
-        required: location === 'header' ? options.boolean('required') === true : options.boolean('required') !== false,
+        required: requiredOfLocation(location, options.boolean('required')) === true,
       });
     }
   }
