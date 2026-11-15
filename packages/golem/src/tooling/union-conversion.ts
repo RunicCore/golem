@@ -3,7 +3,7 @@
  * Ambiguous unions fail generation; conversion must not probe alternatives.
  */
 
-import type { DiscriminatorValue, ModelTypeDescriptor } from '../model-registry.js';
+import type { DiscriminatorValue, ModelTypeDescriptor, SerdeFunctions } from '../model-registry.js';
 import { createHash } from 'node:crypto';
 import { bindInput, code, helperName, identifier, inputOf, inputSlot, join, literal, localCode, readShape, render, sameCode, selfPlacedHelper, type Code, type Helper, type InputSlot } from './code.js';
 import { rt } from './rt.js';
@@ -436,6 +436,32 @@ function inlineDispatch(options: DispatchOptions): Code {
   return code`(${converted})`;
 }
 
+/**
+ * The serde of a descriptor as the functions it names. Every descriptor that a generator makes names both; a descriptor that a test
+ * writes by hand may leave them out, and the serde resolver of that test never reads them.
+ */
+export function descriptorSerde(descriptor: ModelTypeDescriptor): SerdeFunctions | undefined {
+  return descriptor.serde as SerdeFunctions | undefined;
+}
+
+type GeneratedModelDescriptor = Extract<ModelTypeDescriptor, { readonly kind: 'generated-model' }>;
+
+/**
+ * What converts a value of a descriptor, in the one order every walker reads: a serde first, then a generated model, then the rest. The
+ * node of a generated model with a serde describes the model, not the wire form of the serde, so the serde decides. A walker that
+ * tests `kind === 'generated-model'` before this skips the serde.
+ */
+export type ValueConversion =
+  | { readonly kind: 'serde'; readonly serde: SerdeFunctions }
+  | { readonly kind: 'generated-model'; readonly descriptor: GeneratedModelDescriptor }
+  | { readonly kind: 'other' };
+
+export function valueConversion(descriptor: ModelTypeDescriptor): ValueConversion {
+  const serde = descriptorSerde(descriptor);
+  if (serde) return { kind: 'serde', serde };
+  return descriptor.kind === 'generated-model' ? { kind: 'generated-model', descriptor } : { kind: 'other' };
+}
+
 /** A named variant: a model, or a named alias that a node of the walker's graph holds. */
 export type NamedTypeDescriptor = Extract<ModelTypeDescriptor, { readonly kind: 'reference' | 'generated-model' }>;
 
@@ -781,7 +807,7 @@ function generatedWithObjects(
   named: NamedVariants,
 ): Code | undefined {
   // A generated model that holds an array is no object: an array value is not the one the model takes with every object.
-  const generated = present.filter((variant): variant is GeneratedModelTypeDescriptor => variant.kind === 'generated-model' && !isSequenceVariant(variant, named));
+  const generated = present.filter((variant): variant is GeneratedModelTypeDescriptor => valueConversion(variant).kind === 'generated-model' && !isSequenceVariant(variant, named));
   if (generated.length !== 1) return undefined;
   const generatedCode = options.text(generated[0]);
   if (generatedCode === undefined) return undefined;

@@ -20,6 +20,8 @@ import { rt, rtType, runtimeFunctionCode } from './rt.js';
 import { calleeOf, emitArrayConversion, emitTupleConversion, JSON_SCALAR } from './sequence-conversion.js';
 import {
   descriptorNeedsConversion,
+  descriptorSerde,
+  valueConversion,
   isScalarishDescriptor,
   emitDispatch,
   emitUnionConversion,
@@ -394,13 +396,7 @@ function memberPrefix(name: string, leadingComma: boolean): Code {
   return literal(`${leadingComma ? ',' : ''}${JSON.stringify(name)}:`);
 }
 
-/**
- * The serde of a descriptor as the functions it names. Every descriptor that a generator makes names both; a descriptor that a test
- * writes by hand may leave them out, and the serde resolver of that test never reads them.
- */
-export function descriptorSerde(descriptor: ModelTypeDescriptor): SerdeFunctions | undefined {
-  return descriptor.serde as SerdeFunctions | undefined;
-}
+export { descriptorSerde };
 
 function isObjectish(descriptor: ModelTypeDescriptor): boolean {
   return descriptor.kind === 'object' || descriptor.kind === 'reference' || descriptor.kind === 'generated-model';
@@ -483,9 +479,9 @@ function emitValue(
   ctx: EmitCtx,
 ): Code {
   const value = expression;
-  // A serde decides first, as in a decode: its serialize writes the model value as the wire form of the serde, and a wire value is that form already. The node of a generated model with a serde describes the model, not that wire form.
-  const serde = descriptorSerde(descriptor);
-  if (serde) {
+  const conversion = valueConversion(descriptor);
+  if (conversion.kind === 'serde') {
+    const { serde } = conversion;
     const wire = serdeWireDescriptor(serde) ?? { kind: 'unknown' as const };
     if (ctx.wireIdentity) return emitValue(wire, value, ctx);
     const serialized = ctx.serde
@@ -493,8 +489,8 @@ function emitValue(
       : value;
     return emitValue(wire, serialized, ctx);
   }
-  if (descriptor.kind === 'generated-model') {
-    const named = ctx.graph.nodeFor(descriptor);
+  if (conversion.kind === 'generated-model') {
+    const named = ctx.graph.nodeFor(conversion.descriptor);
     // A wire value goes to the wire stringify of its node, the one its module exports or this module's own: the model stringify would encode the value again.
     const wire = named && ctx.wireIdentity ? importedSerdeOf(named, ctx)?.wireStringify ?? localWireStringify(named, ctx) : undefined;
     if (wire) return code`${wire}(${value} as never)`;
@@ -502,7 +498,7 @@ function emitValue(
     if (named && !(ctx.wireIdentity && nodeHoldsSequence(named))) {
       return nestedStringifyCall(named.id, value, ctx);
     }
-    if (!named) throw new Error(`Internal error: the schema graph has no node for the generated model ${JSON.stringify(descriptor.id)}.`);
+    if (!named) throw new Error(`Internal error: the schema graph has no node for the generated model ${JSON.stringify(conversion.descriptor.id)}.`);
   }
   const named = ctx.graph.nodeFor(descriptor);
   if (named?.siblingCodec && ctx.wireIdentity) {
@@ -1396,7 +1392,7 @@ function emitUnionValue(
   return emitUnion('stringify', descriptor, value, ctx, {
     walk: (variant) => emitValue(variant, value, ctx),
     walkTagged: (variant) => {
-      if (!ctx.wireIdentity) {
+      if (!ctx.wireIdentity && valueConversion(variant).kind !== 'serde') {
         const node = ctx.graph.nodeFor(variant);
         if (node && isObjectish(variant)) {
           return nestedStringifyCall(node.id, value, ctx);
@@ -1479,10 +1475,11 @@ function emitUnionEncode(
 
 function emitDecodeValue(descriptor: ModelTypeDescriptor, expression: Code, ctx: EmitCtx): Code {
   const value = expression;
-  const serde = descriptorSerde(descriptor);
-  if (serde) {
+  const conversion = valueConversion(descriptor);
+  if (conversion.kind === 'serde') {
+    const { serde } = conversion;
     const deserialized = ctx.serde ? fallibleConversion(ctx, ctx.serde.deserialize(serde, value)) : value;
-    const wire = serdeWireDescriptor(descriptor.serde);
+    const wire = serdeWireDescriptor(serde);
     if (wire && (wire.kind === 'object' || wire.kind === 'reference' || wire.kind === 'generated-model')) {
       return code`(${objectValueExpression(value)} ? ${deserialized} : ${value})`;
     }
@@ -1816,17 +1813,16 @@ function emitFillFunction(
 
 function emitEncodeValue(descriptor: ModelTypeDescriptor, expression: Code, ctx: EmitCtx): Code {
   const value = expression;
-  // A serde decides first, as in `emitValue`: the node of a generated model with a serde describes the model, not the wire form of the serde.
-  const serde = descriptorSerde(descriptor);
-  if (serde) {
-    return ctx.serde ? ctx.serde.serialize(serde, value) : value;
+  const conversion = valueConversion(descriptor);
+  if (conversion.kind === 'serde') {
+    return ctx.serde ? ctx.serde.serialize(conversion.serde, value) : value;
   }
-  if (descriptor.kind === 'generated-model') {
-    const named = ctx.graph.nodeFor(descriptor);
+  if (conversion.kind === 'generated-model') {
+    const named = ctx.graph.nodeFor(conversion.descriptor);
     if (named) {
       return nestedToWireCall(named.id, value, ctx);
     }
-    throw new Error(`Internal error: the schema graph has no node for the generated model ${JSON.stringify(descriptor.id)}.`);
+    throw new Error(`Internal error: the schema graph has no node for the generated model ${JSON.stringify(conversion.descriptor.id)}.`);
   }
   const named = ctx.graph.nodeFor(descriptor);
   if (named && isObjectish(descriptor)) {
@@ -1955,6 +1951,12 @@ function nodeLevels(node: SchemaNode, project: ValidationLevel): NodeLevels {
 /** Whether the module of a project at level `project` writes the wire stringify of `node`: it holds the node, its calls validate and its wire and model schemas differ. */
 export function writesWireStringify(node: SchemaNode, project: ValidationLevel): boolean {
   return !isExternalCodecNode(node) && validatesByDefault(nodeLevels(node, project)) && !node.sameSchema;
+}
+
+/** How the modules that import `node` write its wire value, or undefined when its wire and model forms are one and the model stringify writes it. */
+export function siblingWireWrite(node: SchemaNode, project: ValidationLevel): SiblingWireWrite | undefined {
+  if (node.sameSchema) return undefined;
+  return writesWireStringify(node, project) ? 'exported' : 'json';
 }
 
 /**

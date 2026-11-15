@@ -15,6 +15,7 @@ export {
   extraKeyValues,
   wireDiffers,
   wireStringifyExportName,
+  siblingWireWrite,
   writesWireStringify,
   toWireFunctionName,
   validateFunctionName,

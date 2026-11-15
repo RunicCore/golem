@@ -14,7 +14,7 @@ import { GolemDiagnosticSeverity, compareText, isInsideDirectory, resolveProfile
 import { canonicalPath, displayPath } from '@exprtlabs/golem/internal/generator-support';
 import { CODEC_DATA_HOOK, DEFAULT_MODEL_SUFFIXES, defaultModelOutput, MODEL_BLOCK, outsideModelsRootMessage, VALIDATOR_ENHANCER_HOOK, type CodecDataParticipant, type ModelContext, type ValidatorEnhancerParticipant } from './plan.js';
 import { codecKeysPath } from '@exprtlabs/golem/internal/generated-paths';
-import { AmbiguousUnionConversionError, ObjectUnionDiscriminatorError, reachesRecursiveNode, writesWireStringify, type Code, type SiblingWireWrite } from '@exprtlabs/golem/internal/emitter';
+import { AmbiguousUnionConversionError, ObjectUnionDiscriminatorError, reachesRecursiveNode, siblingWireWrite, type Code, type SiblingWireWrite } from '@exprtlabs/golem/internal/emitter';
 import { emitCodecDeclarationTable, sharedShortNameIds } from '@exprtlabs/golem/internal/schema-graph';
 import {
   analyzeSourceGraph,
@@ -321,10 +321,9 @@ function internJobSchemaGraphs(
       if (!node) continue;
       codecIds.set(specification, node.codecId);
       recursion.set(node.codecId, reachesRecursiveNode(schemaGraph, node, recursion));
-      if (!node.sameSchema) {
-        siblingWire.set(node.codecId, writesWireStringify(node, defaultValidation) ? 'exported' : 'json');
-        wirePlanes.add(node.codecId);
-      }
+      const write = siblingWireWrite(node, defaultValidation);
+      if (write !== undefined) siblingWire.set(node.codecId, write);
+      if (!node.sameSchema) wirePlanes.add(node.codecId);
       for (const name of [node.codecId, specification.name]) {
         if (node.modelOnlyJsonSchema !== undefined) residualIds.modelOnly.add(name);
         if (node.wireOnlyJsonSchema !== undefined) residualIds.wireOnly.add(name);

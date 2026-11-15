@@ -21,6 +21,7 @@ import {
   fillFunctionName,
   stripPlanName,
   wireStringifyExportName,
+  siblingWireWrite,
   writesWireStringify,
   RUNTIME_SERDE,
   writeOperationCodecs,
@@ -382,7 +383,8 @@ function generateModels(
     exportWireStringify: (node) => writesWireStringify(node, profile.validation),
     siblingWire: new Map([...(helpers.dependencyNodeIds ?? [])].flatMap((id) => {
       const node = analysis.nodesById.get(id);
-      return node && writesWireStringify(node, profile.validation) ? [[node.codecId, 'exported' as const]] : [];
+      const write = node && siblingWireWrite(node, profile.validation);
+      return node && write ? [[node.codecId, write] as const] : [];
     })),
     ...(helpers.wireStringify ? { siblingWireName: helpers.wireStringify } : {}),
     ...(helpers.exportedFillFunctionIds ? { exportedFillFunctionIds: helpers.exportedFillFunctionIds } : {}),

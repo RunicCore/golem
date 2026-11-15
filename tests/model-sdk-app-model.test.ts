@@ -561,3 +561,42 @@ export type TLedger = IModel<{ charge: Charge & TSerde<typeof encodeCharge, type
   assert.deepEqual(generated.toWireFormatTLedger(value), { charge: 'c1:2' });
   assert.equal(generated.stringifyTLedger(value), '{"charge":"c1:2"}');
 });
+
+for (const validation of [true, false]) {
+  test(`a golem-mode tagged union of an SDK type tagged with a TSerde and an object writes and reads the serde form, validation ${validation}`, async () => {
+    // protects: T-955 a serde on a generated model is read before the node in every walker, a tagged union and a union with a scalar wire form included
+    const pets: GolemModeSdkSetup = {
+      folder: 'sdk/pets',
+      name: 'Pets',
+      document: {
+        openapi: '3.1.0',
+        info: { title: 'Pets', version: '1' },
+        paths: { '/owners': { post: { operationId: 'createOwner', requestBody: { required: true, content: json(ref('Owner')) }, responses: { 200: { description: 'ok', content: json(ref('Owner')) } } } } },
+        components: { schemas: {
+          Cat: { type: 'object', required: ['petType', 'lives'], properties: { petType: { type: 'string', const: 'cat' }, lives: { type: 'integer', maximum: 9 } } },
+          Dog: { type: 'object', required: ['petType'], properties: { petType: { type: 'string', const: 'dog' }, bornAt: { type: 'string', format: 'date-time' } } },
+          Owner: { type: 'object', required: ['pet'], properties: { pet: { oneOf: [ref('Cat'), ref('Dog')], discriminator: { propertyName: 'petType', mapping: { cat: '#/components/schemas/Cat', dog: '#/components/schemas/Dog' } } } } },
+        } },
+      },
+    };
+    const project = await loadGolemModeProject(scope, 'sdk-app-model-serde-union-', [pets], validation, {
+      'src/codecs.ts': `import type { Cat } from '../sdk/pets/index.js';
+export type CatWire = { petType: 'cat'; livesLeft: number };
+export function encodeCat(value: Cat): CatWire { return { petType: 'cat', livesLeft: value.lives }; }
+export function decodeCat(wire: CatWire): Cat { return { petType: 'cat', lives: wire.livesLeft }; }
+`,
+      'src/kennel.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
+import type { Discriminator, TSerde } from '@exprtlabs/golem/tags';
+import type { Cat } from '../sdk/pets/index.js';
+import { encodeCat, decodeCat } from './codecs.js';
+export type TKennel = IModel<{ pet: ((Cat & TSerde<typeof encodeCat, typeof decodeCat>) | { petType: 'fish'; fins: number }) & Discriminator<'petType'> }>;
+`,
+    });
+    const generated = await importBuilt(project.root, 'src/kennel.model.generated.js');
+    const value = { pet: { petType: 'cat', lives: 3 } };
+    assert.equal(generated.stringifyTKennel(value), '{"pet":{"petType":"cat","livesLeft":3}}');
+    assert.deepEqual(generated.toWireFormatTKennel(value), { pet: { petType: 'cat', livesLeft: 3 } });
+    assert.deepEqual(generated.fromWireFormatTKennel({ pet: { petType: 'cat', livesLeft: 3 } }), value);
+    assert.equal(generated.stringifyTKennel({ pet: { petType: 'fish', fins: 2 } }), '{"pet":{"petType":"fish","fins":2}}');
+  });
+}
