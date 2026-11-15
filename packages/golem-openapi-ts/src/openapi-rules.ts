@@ -1,5 +1,6 @@
 import {
   asRecord,
+  entriesWithoutExtensions,
   isJsonObject,
   jsonPointerJoin as pointerJoin,
   objectEntries,
@@ -8,7 +9,7 @@ import {
   type JsonObject,
 } from './json.js';
 import { decodeUriFragment } from '@exprtlabs/golem/internal/schema';
-import { followLocalRefs, operationSites, type OperationSite } from './normalize.js';
+import { followLocalRefs, visitOperationSites, type OperationSite } from './normalize.js';
 import type { OpenApiProblem } from './openapi-validator.js';
 import { isMappingComponentName } from './reference-loader.js';
 import { collectCanonicalResources, findDuplicateSchemaIds, lookupCanonicalResource, visitOpenApiSchemaTree } from './schema-projection.js';
@@ -142,7 +143,7 @@ function effectiveParameters(document: unknown, entry: OperationSite): ResolvedP
 function checkPathTemplates(document: unknown, operations: readonly OperationSite[]): OpenApiProblem[] {
   const problems: OpenApiProblem[] = [];
   const shapes = new Map<string, string>();
-  for (const [route] of objectEntries(asRecord(document).paths)) {
+  for (const [route] of entriesWithoutExtensions(asRecord(document).paths)) {
     const pointer = pointerJoin('/paths', route);
     if (templateNames(route).includes('')) {
       problems.push({ ruleId: 'path-declaration-must-exist', message: `path ${route} declares an empty parameter {}`, pointer });
@@ -434,7 +435,11 @@ export function checkOpenApiRules(document: unknown): OpenApiProblem[] {
     }));
   }
   const line = openApiLine(document);
-  const operations = operationSites(document, line);
+  const operations: OperationSite[] = [];
+  visitOperationSites(document, line, (site) => {
+    operations.push(site);
+    return site.pointer;
+  });
   return [
     ...checkUnresolvedRefs(document),
     ...checkOperationIds(operations),

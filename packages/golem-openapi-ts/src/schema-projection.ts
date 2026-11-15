@@ -1,9 +1,9 @@
-import { asRecord, isJsonObject, jsonPointerJoin, objectEntries, type JsonObject } from './json.js';
+import { asRecord, entriesWithoutExtensions, isJsonObject, jsonPointerJoin, objectEntries, type JsonObject } from './json.js';
 import { compareText } from '@exprtlabs/golem/generator-api';
 import { identifier } from '@exprtlabs/golem/internal/generator-support';
 import { canonicalSchemaKey, escapePointerToken, fragmentPointerTokens, unescapePointerToken } from '@exprtlabs/golem/internal/schema';
 import {
-  HTTP_METHODS_32,
+  pathItemOperations,
   resolveLocalPointer,
   type NormalizedDocument,
 } from './normalize.js';
@@ -747,15 +747,9 @@ function visitPathItem(
       );
     });
   }
-  for (const method of HTTP_METHODS_32) {
-    if (item[method] !== undefined) {
-      visitOperation(item[method], currentBase, jsonPointerJoin(pointer, method), seen, handlers);
-    }
-  }
-  if (isJsonObject(item.additionalOperations)) {
-    for (const [method, operation] of objectEntries(item.additionalOperations)) {
-      visitOperation(operation, currentBase, jsonPointerJoin(jsonPointerJoin(pointer, 'additionalOperations'), method), seen, handlers);
-    }
+  // The structure check has refused a 3.2-only key in a 3.1 document before any walk, so every walk reads the 3.2 operations.
+  for (const { operation, suffix } of pathItemOperations(item, '3.2')) {
+    visitOperation(operation, currentBase, `${pointer}${suffix}`, seen, handlers);
   }
 }
 
@@ -766,9 +760,7 @@ function visitPathMap(
   seen: WeakSet<object>,
   handlers: OpenApiSchemaTreeHandlers,
 ): void {
-  if (!isJsonObject(map)) return;
-  for (const [name, item] of objectEntries(map)) {
-    if (name.startsWith('x-')) continue;
+  for (const [name, item] of entriesWithoutExtensions(map)) {
     visitPathItem(item, currentBase, jsonPointerJoin(pointer, name), seen, handlers);
   }
 }
@@ -835,7 +827,9 @@ export function visitOpenApiSchemaTree(document: unknown, handlers: OpenApiSchem
     }
   }
   visitPathMap(asRecord(document).paths, base, '#/paths', seen, handlers);
-  visitPathMap(asRecord(document).webhooks, base, '#/webhooks', seen, handlers);
+  for (const [name, item] of objectEntries(asRecord(document).webhooks)) {
+    visitPathItem(item, base, jsonPointerJoin('#/webhooks', name), seen, handlers);
+  }
 }
 
 function directionalUri(resource: CanonicalResource, direction: SchemaDirection, packId: string): string {

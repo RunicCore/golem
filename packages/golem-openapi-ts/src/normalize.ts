@@ -1,12 +1,11 @@
-import { asRecord, isJsonObject, jsonPointerJoin, objectEntries, readBoolean, readString, resolveJsonPointer, type JsonObject } from './json.js';
+import { asRecord, entriesWithoutExtensions, isJsonObject, jsonPointerJoin, objectEntries, readBoolean, readString, resolveJsonPointer, type JsonObject } from './json.js';
 import { GolemDiagnosticSeverity, type GolemDiagnostic } from '@exprtlabs/golem/generator-api';
 import { identifier, parameterStyleRule, type ParameterLocation } from '@exprtlabs/golem/internal/generator-support';
 import { fragmentPointerTokens } from '@exprtlabs/golem/internal/schema';
 import { inboundOperationName, operationName } from './names.js';
 
 const HTTP_METHODS_31 = ['get', 'put', 'post', 'delete', 'options', 'head', 'patch', 'trace'] as const;
-/** The 3.2 list is also the one of the walkers that run after the structure check, which already refused `query` in a 3.1 document. */
-export const HTTP_METHODS_32 = [...HTTP_METHODS_31, 'query'] as const;
+const HTTP_METHODS_32 = [...HTTP_METHODS_31, 'query'] as const;
 
 const VERSION_ADAPTERS = {
   '3.1': {
@@ -381,6 +380,33 @@ function assertParameterStyles(
   }
 }
 
+interface PathItemOperation {
+  readonly method: string;
+  readonly wireMethod: string;
+  readonly operation: unknown;
+  readonly suffix: string;
+}
+
+/**
+ * The operations that a path item holds: the standard methods of `line`, then the OpenAPI 3.2 `additionalOperations`.
+ * `suffix` is the JSON Pointer of the operation inside the path item. The caller checks that `operation` is an object.
+ */
+export function pathItemOperations(pathItem: JsonObject, line: OpenApiFeatureLine): PathItemOperation[] {
+  const adapter = VERSION_ADAPTERS[line];
+  const operations: PathItemOperation[] = [];
+  for (const method of adapter.methods) {
+    if (pathItem[method] !== undefined) {
+      operations.push({ method, wireMethod: method.toUpperCase(), operation: pathItem[method], suffix: jsonPointerJoin('', method) });
+    }
+  }
+  if (adapter.additionalOperations) {
+    for (const [method, operation] of objectEntries(pathItem.additionalOperations)) {
+      operations.push({ method, wireMethod: method, operation, suffix: jsonPointerJoin(jsonPointerJoin('', 'additionalOperations'), method) });
+    }
+  }
+  return operations;
+}
+
 interface OperationSiteBase {
   /** The lowercase method of a standard operation, or the key under `additionalOperations`. */
   readonly method: string;
@@ -397,57 +423,44 @@ interface OperationSiteBase {
 export type OperationSite = OperationSiteBase & OperationOwner;
 type OperationOwner =
   | { readonly kind: 'path' | 'webhook' }
-  | { readonly kind: 'callback'; readonly parent: OperationSite; readonly callbackName: string };
+  | { readonly kind: 'callback'; readonly parentName: string; readonly callbackName: string };
 
 /**
- * Every operation of the document, as normalize names them: the path operations, the webhook operations, then the
- * callbacks of each of those, each callback level after the level that holds it. An `x-` key under `paths`, `webhooks` or
- * a callback is an extension, not a path item. A callback operation that more than one parent reaches is listed under
- * each parent, but its own callbacks only once, so a cycle of callbacks ends.
+ * Calls `visit` for every operation of the document, in the order normalize names them: the path operations, the
+ * webhook operations, then the callbacks of each of those, each callback level after the level that holds it. `visit`
+ * returns the name under which the callbacks of that operation are listed (`parentName` of their sites).
+ * An `x-` key under `paths` or a callback is an extension, not a path item; a webhook may be named `x-…`.
+ * A callback operation is listed once, under the first operation that reaches it, so a cycle of callbacks ends.
  */
-export function operationSites(document: unknown, line: OpenApiFeatureLine): OperationSite[] {
-  const adapter = VERSION_ADAPTERS[line];
+export function visitOperationSites(document: unknown, line: OpenApiFeatureLine, visit: (site: OperationSite) => string): void {
   const root = asRecord(document);
   const sites: OperationSite[] = [];
-  const addPathItem = (
-    rawPathItem: unknown,
-    writtenPointer: string,
-    key: string,
-    owner: OperationOwner,
-  ): void => {
+  const listedCallbacks = new Set<string>();
+  const addPathItem = (rawPathItem: unknown, writtenPointer: string, key: string, owner: OperationOwner): void => {
     const { value: pathItem, pointer: pathItemPointer } = followLocalRefs(document, rawPathItem, writtenPointer);
     if (!isJsonObject(pathItem)) return;
-    const add = (method: string, wireMethod: string, operation: unknown, pointer: string): void => {
-      if (isJsonObject(operation)) sites.push({ ...owner, method, wireMethod, operation, pointer, pathItem, pathItemPointer, key });
-    };
-    for (const method of adapter.methods) add(method, method.toUpperCase(), pathItem[method], jsonPointerJoin(pathItemPointer, method));
-    if (adapter.additionalOperations) {
-      for (const [method, operation] of objectEntries(pathItem.additionalOperations)) {
-        add(method, method, operation, jsonPointerJoin(jsonPointerJoin(pathItemPointer, 'additionalOperations'), method));
-      }
+    for (const { method, wireMethod, operation, suffix } of pathItemOperations(pathItem, line)) {
+      const pointer = `${pathItemPointer}${suffix}`;
+      if (!isJsonObject(operation) || (owner.kind === 'callback' && listedCallbacks.has(pointer))) continue;
+      if (owner.kind === 'callback') listedCallbacks.add(pointer);
+      sites.push({ ...owner, method, wireMethod, operation, pointer, pathItem, pathItemPointer, key });
     }
   };
-  for (const [route, rawPathItem] of objectEntries(root.paths)) {
-    if (!route.startsWith('x-')) addPathItem(rawPathItem, jsonPointerJoin('/paths', route), route, { kind: 'path' });
+  for (const [route, rawPathItem] of entriesWithoutExtensions(root.paths)) {
+    addPathItem(rawPathItem, jsonPointerJoin('/paths', route), route, { kind: 'path' });
   }
   for (const [name, rawPathItem] of objectEntries(root.webhooks)) {
-    if (!name.startsWith('x-')) addPathItem(rawPathItem, jsonPointerJoin('/webhooks', name), name, { kind: 'webhook' });
+    addPathItem(rawPathItem, jsonPointerJoin('/webhooks', name), name, { kind: 'webhook' });
   }
-  const expanded = new Set<string>();
   for (const site of sites) { // `sites` grows while this runs: the callbacks found here are visited after the level that holds them.
-    const expansion = `${site.pointer}\u0000${site.kind === 'callback' ? '' : site.key}`;
-    if (expanded.has(expansion)) continue;
-    expanded.add(expansion);
+    const parentName = visit(site);
     for (const [callbackName, rawCallback] of objectEntries(site.operation.callbacks)) {
       const callback = followLocalRefs(document, rawCallback, jsonPointerJoin(jsonPointerJoin(site.pointer, 'callbacks'), callbackName));
-      for (const [expression, rawPathItem] of objectEntries(callback.value)) {
-        if (!expression.startsWith('x-')) {
-          addPathItem(rawPathItem, jsonPointerJoin(callback.pointer, expression), expression, { kind: 'callback', parent: site, callbackName });
-        }
+      for (const [expression, rawPathItem] of entriesWithoutExtensions(callback.value)) {
+        addPathItem(rawPathItem, jsonPointerJoin(callback.pointer, expression), expression, { kind: 'callback', parentName, callbackName });
       }
     }
   }
-  return sites;
 }
 
 export function normalizeDocument(document: unknown): NormalizedDocument {
@@ -458,39 +471,31 @@ export function normalizeDocument(document: unknown): NormalizedDocument {
   const diagnostics: GolemDiagnostic[] = [];
   const operations: NormalizedOperation[] = [];
   const inboundOperations: NormalizedOperation[] = [];
-  const built = new Map<OperationSite, NormalizedOperation>();
-  for (const site of operationSites(document, featureLine)) {
-    const { method, wireMethod, operation, key } = site;
-    let normalized: NormalizedOperation;
+  visitOperationSites(document, featureLine, (site) => {
+    const { method, wireMethod, operation, key, pathItem } = site;
     switch (site.kind) {
       case 'path': {
         const name = reserveOperationName(names, operationName(operation, method, key), diagnostics, `${wireMethod} ${key}`);
-        normalized = normalizeOperation(document, site.pathItem, operation, method, key, name, 'path', key, wireMethod);
-        operations.push(normalized);
-        break;
+        operations.push(normalizeOperation(document, pathItem, operation, method, key, name, 'path', key, wireMethod));
+        return name;
       }
       case 'webhook': {
         const name = reserveName(names, inboundOperationName('webhook', key, operation, method, key), `webhook ${key} ${wireMethod}`);
-        normalized = normalizeOperation(document, site.pathItem, operation, method, key, name, 'webhook', key, wireMethod);
-        inboundOperations.push(normalized);
-        break;
+        inboundOperations.push(normalizeOperation(document, pathItem, operation, method, key, name, 'webhook', key, wireMethod));
+        return name;
       }
       case 'callback': {
-        const parent = built.get(site.parent);
-        if (parent === undefined) throw new Error(`callback operation ${key} is listed before the operation that holds it`);
-        const sourceName = `${parent.name} ${site.callbackName}`;
+        const sourceName = `${site.parentName} ${site.callbackName}`;
         const name = reserveName(
           names,
           inboundOperationName('callback', sourceName, operation, method, key),
           `callback ${sourceName} ${wireMethod} ${key}`,
         );
-        normalized = normalizeOperation(document, site.pathItem, operation, method, key, name, 'callback', sourceName, wireMethod);
-        inboundOperations.push(normalized);
-        break;
+        inboundOperations.push(normalizeOperation(document, pathItem, operation, method, key, name, 'callback', sourceName, wireMethod));
+        return name;
       }
     }
-    built.set(site, normalized);
-  }
+  });
 
   const components = asRecord(root.components);
   const normalized = Object.freeze({

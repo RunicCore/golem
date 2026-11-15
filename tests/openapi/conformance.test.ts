@@ -403,6 +403,29 @@ test('normalizes the callbacks of webhooks and of callbacks, and skips x- extens
   );
 });
 
+// protects: T-919 a callback shared by two operations or reaching itself yields one operation; a webhook may be named x-…
+test('lists a shared or cyclic callback operation once, and a webhook named x-…', () => {
+  const ok = { 200: { description: 'ok' } };
+  const document = {
+    openapi: '3.1.0',
+    info: { title: 'Shared', version: '1' },
+    paths: { '/a': { post: { operationId: 'createA', responses: ok, callbacks: { cb: { $ref: '#/components/callbacks/Cb' } } } } },
+    webhooks: { 'x-event': { post: { operationId: 'receiveX', responses: ok, callbacks: { cb: { $ref: '#/components/callbacks/Cb' } } } } },
+    components: {
+      callbacks: {
+        Cb: { '{$url}': { post: { operationId: 'onEvent', responses: ok, callbacks: { again: { $ref: '#/components/callbacks/Cb' } } } } },
+      },
+    },
+  };
+  assert.deepEqual(
+    normalizeDocument(document).inboundOperations.map(({ name, sourceKind, sourceName }) => [name, sourceKind, sourceName]),
+    [
+      ['webhookReceiveX', 'webhook', 'x-event'],
+      ['callbackOnEvent', 'callback', 'createA cb'],
+    ],
+  );
+});
+
 test('generation is deterministic', async (t) => {
   const document = await loadValidatedDocument(example, {});
   const output = createFixtureProject(t, 'golem-openapi-test-');
