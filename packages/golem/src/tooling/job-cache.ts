@@ -7,7 +7,7 @@ import { GolemDiagnosticSeverity, compareText, hasErrorCode, isInsideDirectory, 
 import type { GolemDiagnostic } from './generator-core.js';
 import { loadedClosure, loadedFileDigests } from './load-record.js';
 import type { EnabledExtension } from './rewrite-participant.js';
-import { digest, loadInventory, writeChanged } from './outputs.js';
+import { digest, loadInventory, realOutputFiles, writeChanged } from './outputs.js';
 import type { Inventory, InventoryEntry, OutputFiles } from './outputs.js';
 
 /**
@@ -107,7 +107,7 @@ export function loadJobRecords(config: GolemConfig): Map<string, JobRecord> {
   return records;
 }
 
-export function saveJobRecords(config: GolemConfig, records: ReadonlyMap<string, JobRecord>, files?: OutputFiles): void {
+export function saveJobRecords(config: GolemConfig, records: ReadonlyMap<string, JobRecord>, files: OutputFiles = realOutputFiles): void {
   const jobs = Object.fromEntries([...records]
     .sort(([left], [right]) => compareText(left, right))
     .map(([id, record]) => [id, {
@@ -123,7 +123,7 @@ export function saveJobRecords(config: GolemConfig, records: ReadonlyMap<string,
       manifests: record.manifests,
       warnings: record.warnings,
     }]));
-  writeChanged(jobsFile(config), `${JSON.stringify({ version: RECORDS_VERSION, jobs }, null, 2)}\n`, 'replace', files);
+  writeChanged(jobsFile(config), `${JSON.stringify({ version: RECORDS_VERSION, jobs }, null, 2)}\n`, files);
 }
 
 /** The files the inventory records as generated, as absolute paths. */

@@ -288,8 +288,8 @@ function affectedJobs(config: GolemConfig, options: PipelineOptions): ReadonlySe
   const previous = options.previous;
   if (!previous || !options.changedInputs || options.check) return undefined;
   // The same jobs, each with its cache key and its facts: a changed fact widens to every job, and the job cache still decides which run.
-  const sameJob = (job: GolemJob, earlier: GolemJob): boolean => job.id === earlier.id && jobKey(job) === jobKey(earlier) && JSON.stringify(job.facts) === JSON.stringify(earlier.facts);
-  if (config.jobs.length !== previous.config.jobs.length || !config.jobs.every(job => previous.config.jobs.some(earlier => sameJob(job, earlier)))) return undefined;
+  const jobsText = (jobs: readonly GolemJob[]): string => JSON.stringify(jobs.map(job => [job.id, jobKey(job), job.facts]));
+  if (jobsText(config.jobs) !== jobsText(previous.config.jobs)) return undefined;
   const changed = new Set(options.changedInputs.map(input => path.resolve(input)));
   if (changed.has(config.configFile) || loadPackageRegistry(config.configFile).files.some(file => changed.has(file))) return undefined;
   const facts = config.jobs.map(job => job.facts);

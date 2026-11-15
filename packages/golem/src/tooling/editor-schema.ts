@@ -87,6 +87,6 @@ function partOf(registration: PackageRegistration, warnings: string[]): JsonObje
 /** Write the editor schema beside the other records of `.golem/`. Returns the warnings for the caller to show. */
 export function writeEditorSchema(configDirectory: string, registry: PackageRegistry, files: OutputFiles = realOutputFiles): readonly string[] {
   const { text, warnings } = buildEditorSchema(registry);
-  writeChanged(editorSchemaPath(configDirectory), text, 'replace', files);
+  writeChanged(editorSchemaPath(configDirectory), text, files);
   return warnings;
 }
