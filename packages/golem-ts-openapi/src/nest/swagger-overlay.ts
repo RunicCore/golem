@@ -13,6 +13,7 @@ import { evaluateStaticValue, isStaticArray, resolveValueSymbol, singleReturnExp
 import { hasDecorator, isTypeScriptBuiltinConstructor, unwrapAsyncType } from './analysis-utils.js';
 import {
   isAssertionFormat,
+  isDtoSchema,
   mapArrayItems,
   mergeSchemaMetadata,
   normalizeNullable,
@@ -42,6 +43,10 @@ interface DtoSchemaOptions extends SchemaMergeOptions {
 type SwaggerPrimitive = 'string' | 'number' | 'integer' | 'boolean' | 'object' | 'array';
 
 const SWAGGER_PRIMITIVES: ReadonlySet<string> = new Set<SwaggerPrimitive>(['string', 'number', 'integer', 'boolean', 'object', 'array']);
+
+function isSwaggerPrimitive(name: string): name is SwaggerPrimitive {
+  return SWAGGER_PRIMITIVES.has(name);
+}
 
 const PRIMITIVE_CONSTRUCTORS: Readonly<Record<string, SwaggerPrimitive>> = {
   String: 'string', Number: 'number', Boolean: 'boolean', Object: 'object', Array: 'array',
@@ -94,7 +99,7 @@ function swaggerTypeSpec(
 
 /** A Swagger `type` given as a name string, such as `'integer'` or `'file'`. */
 function namedTypeSpec(name: string): SwaggerTypeSpec {
-  if (SWAGGER_PRIMITIVES.has(name)) return { kind: 'primitive', primitive: name as SwaggerPrimitive, isArray: false };
+  if (isSwaggerPrimitive(name)) return { kind: 'primitive', primitive: name, isArray: false };
   if (name === 'any') return { kind: 'any', isArray: false };
   return { kind: 'unrecognized', text: name, isArray: false };
 }
@@ -104,14 +109,16 @@ function optionTypeSpec(checker: ts.TypeChecker, options: DecoratorOptions): Swa
   const entry = options.entry('type');
   if (!entry) return undefined;
   if (entry.kind === 'value' && typeof entry.value === 'string') return namedTypeSpec(entry.value);
-  return swaggerTypeSpec(checker, options.expression('type')!);
+  // A spread or a constant that is no name string throws here, so only an inline expression is left.
+  const expression = options.expression('type');
+  return expression && swaggerTypeSpec(checker, expression);
 }
 
 /** Remove `null`/`undefined` members from a union when exactly one value member remains. */
 function nonNullable(type: ts.Type): ts.Type {
   if (!type.isUnion()) return type;
   const members = type.types.filter(item => (item.flags & (ts.TypeFlags.Undefined | ts.TypeFlags.Null)) === 0);
-  return members.length === 1 ? members[0]! : type;
+  return members.length === 1 ? members[0] : type;
 }
 
 function isArrayLike(checker: ts.TypeChecker, type: ts.Type): boolean {
@@ -159,7 +166,7 @@ function typeMatchesSpec(
   const isArray = isArrayLike(checker, value);
   if (spec.kind === 'primitive' && spec.primitive === 'array' && !spec.isArray) return isArray;
   if (spec.isArray !== isArray) return false;
-  const element = isArray ? checker.getTypeArguments(value as ts.TypeReference)[0] : value;
+  const element = isArray ? checker.getTypeArguments(value)[0] : value;
   if (!element) return false;
   const item = nonNullable(element);
   if (isUnconstrained(item)) return true;
@@ -253,7 +260,7 @@ function applyPropertyMetadata(
   }
   const name = entry.property.name;
   const existing = schema.properties[name];
-  if (existing === undefined) conflict(`Swagger property ${name} is absent from the TypeScript schema.`);
+  if (!isDtoSchema(existing)) return conflict(existing === undefined ? `Swagger property ${name} is absent from the TypeScript schema.` : `Swagger property ${name} has a TypeScript schema that is no object or boolean.`);
   if (entry.hidden) {
     if (options.authoritative) conflict(`@ApiHideProperty() would remove authoritative IModel field ${name}.`);
     const properties = { ...schema.properties };
@@ -283,7 +290,7 @@ function applyPropertyMetadata(
     conflict(`Swagger property ${name} type conflicts with the TypeScript property type ${checker.typeToString(propertyType)}.`);
   }
   const generated = typeSpec && schemaForSwaggerType(typeSpec);
-  if (options.authoritative && generated && !sameValue(schemaShape(existing as DtoSchema), generated)) {
+  if (options.authoritative && generated && !sameValue(schemaShape(existing), generated)) {
     conflict(`Swagger property ${name} type would overwrite the authoritative IModel wire schema.`);
   }
   // A bare `type: 'object'` says no more than the TypeScript type already checked above, so it keeps the schema
@@ -291,7 +298,7 @@ function applyPropertyMetadata(
   const documentedShape = generated?.type === 'object' ? undefined : generated;
 
   // An unconstrained ordinary field (`unknown`) is the `true` schema; give its metadata an object to live on.
-  let propertySchema: DtoSchema = existing === true && !options.authoritative ? {} : existing as DtoSchema;
+  let propertySchema: DtoSchema = existing === true && !options.authoritative ? {} : existing;
   // The `schema` option and `additionalProperties` are explicit schema metadata: each must agree with the
   // TypeScript schema, and a match merges into the written property.
   const mergeExplicit = (override: DtoSchema): void => {
@@ -303,10 +310,8 @@ function applyPropertyMetadata(
   };
   const staticSchema = (option: string): DtoSchema | undefined => {
     const value = read?.value(option);
-    if (value !== undefined && !isRecord(value) && typeof value !== 'boolean') {
-      fail(TsToOpenApiDiagnosticCode.UnsupportedSchemaMetadata, `Swagger property ${name} ${option} must be a static object or boolean.`);
-    }
-    return value as DtoSchema | undefined;
+    if (value === undefined || isRecord(value) || typeof value === 'boolean') return value;
+    return fail(TsToOpenApiDiagnosticCode.UnsupportedSchemaMetadata, `Swagger property ${name} ${option} must be a static object or boolean.`);
   };
   const explicitSchema = staticSchema('schema');
   if (explicitSchema !== undefined) mergeExplicit(explicitSchema);
@@ -495,7 +500,7 @@ function overlay(
   if (typeof schema === 'boolean') return schema;
   const type = nonNullable(unwrapAsyncType(checker, declaredType).type);
   if (isArrayLike(checker, type)) {
-    const element = checker.getTypeArguments(type as ts.TypeReference)[0];
+    const element = checker.getTypeArguments(type)[0];
     const items = schema.items;
     if (!element || (typeof items !== 'boolean' && !isRecord(items))) return schema;
     return { ...schema, items: overlay(checker, element, items, sourceNode, options, active) };

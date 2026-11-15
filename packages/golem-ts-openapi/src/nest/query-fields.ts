@@ -5,6 +5,7 @@
  */
 
 import { compareText } from '@exprtlabs/golem/generator-api';
+import { isRecord } from '@exprtlabs/golem/internal/generator-support';
 import { GENERATED_MODEL_SCHEMA_REF_PREFIX, resolveFragmentPointer, VALIDATION_KEYWORD, type JsonSchema } from '@exprtlabs/golem/internal/schema';
 import { codecShortName, type SchemaGraph, type SchemaNode } from '@exprtlabs/golem/internal/schema-graph';
 import type { QueryFieldShape, QueryFieldTable } from '../runtime/query-decode.js';
@@ -37,7 +38,7 @@ interface FieldShape {
 const SCALARS: readonly QueryScalar[] = ['string', 'number', 'integer', 'boolean'];
 
 function schemaRecord(value: unknown): SchemaRecord | undefined {
-  return typeof value === 'object' && value !== null && !Array.isArray(value) ? value as SchemaRecord : undefined;
+  return isRecord(value) ? value : undefined;
 }
 
 function newShape(): FieldShape {

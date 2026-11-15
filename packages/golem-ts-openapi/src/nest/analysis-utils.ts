@@ -1,4 +1,5 @@
 import * as ts from '@exprtlabs/golem/internal/ts';
+import { isRecord } from '@exprtlabs/golem/internal/generator-support';
 import { authoredUnionMembers, isGeneratedBrandKey, isGolemTagKey, resolveSymbol } from '@exprtlabs/golem/internal/type-analysis';
 import {
   isTypeScriptLibFile,
@@ -132,28 +133,31 @@ function typeReferenceFromExpression(
 
 /** Mark references resolved to an authored IModel so Swagger metadata cannot
  * replace its authoritative wire contract later in operation assembly. */
+export function authoritativeTypeReference(context: NestAnalysisContext, reference: TypeReference): TypeReference;
+export function authoritativeTypeReference(context: NestAnalysisContext, reference: TypeReference | undefined): TypeReference | undefined;
 export function authoritativeTypeReference(
   context: NestAnalysisContext,
   reference: TypeReference | undefined,
 ): TypeReference | undefined {
-  if (!reference || !context.contractAnalysis) return reference;
+  const analysis = context.contractAnalysis;
+  if (!reference || !analysis) return reference;
   const node = reference.sourceNode ?? reference.declaration ?? reference.sourceFile;
-  const descriptor = context.contractAnalysis.describe(reference.type, node, reference.node);
+  const descriptor = analysis.describe(reference.type, node, reference.node);
   const fromReference = (): string | undefined => {
-    const own = context.contractAnalysis!.modelCodecId(reference.type, node, reference.node);
+    const own = analysis.modelCodecId(reference.type, node, reference.node);
     if (own) return own;
     if (descriptor.kind !== 'reference') return undefined;
-    const spec = context.contractAnalysis!.specFor(descriptor.name);
+    const spec = analysis.specFor(descriptor.name);
     if (!spec) return undefined;
-    return context.contractAnalysis!.codecId(descriptor.name)
-      ?? context.contractAnalysis!.codecId(spec.name);
+    return analysis.codecId(descriptor.name)
+      ?? analysis.codecId(spec.name);
   };
   const fromAlias = (): string | undefined => {
     const alias = reference.type.aliasSymbol?.getName() ?? reference.type.getSymbol?.()?.getName();
     if (!alias) return undefined;
-    const spec = context.contractAnalysis!.specFor(alias);
-    if (!spec) return context.contractAnalysis!.codecId(alias);
-    return context.contractAnalysis!.codecId(spec.name) ?? context.contractAnalysis!.codecId(alias);
+    const spec = analysis.specFor(alias);
+    if (!spec) return analysis.codecId(alias);
+    return analysis.codecId(spec.name) ?? analysis.codecId(alias);
   };
   const codecId = fromReference() ?? fromAlias();
   if (!codecId) return reference;
@@ -244,7 +248,7 @@ export function unwrapAsyncType(
   let current = type;
   let currentNode = node;
   while (isAsyncWrapper(current)) {
-    const argument = checker.getTypeArguments(current as ts.TypeReference)[0];
+    const argument = checker.getTypeArguments(current)[0];
     if (!argument) break;
     currentNode = wrapperArgumentNode(checker, current, currentNode);
     current = argument;
@@ -278,7 +282,7 @@ export function classHierarchyBaseToDerived(
     if (path.has(declaration) || ordered.includes(declaration)) return;
     const nextPath = new Set(path).add(declaration);
     const classType = checker.getTypeAtLocation(declaration);
-    for (const baseType of checker.getBaseTypes(classType as ts.InterfaceType) ?? []) {
+    for (const baseType of checker.getBaseTypes(classType)) {
       for (const base of baseClassDeclarations(baseType)) visit(base, nextPath);
     }
     ordered.push(declaration);
@@ -300,7 +304,7 @@ function isPrimitive(type: ts.Type): boolean {
 }
 
 function arrayElementType(checker: ts.TypeChecker, type: ts.Type): ts.Type | undefined {
-  if (checker.isArrayType(type) || checker.isTupleType(type)) return checker.getTypeArguments(type as ts.TypeReference)[0];
+  if (checker.isArrayType(type) || checker.isTupleType(type)) return checker.getTypeArguments(type)[0];
   return undefined;
 }
 
@@ -367,12 +371,6 @@ export function isIndexSignatureType(checker: ts.TypeChecker, type: ts.Type): bo
   return checker.getIndexInfosOfType(type).length > 0;
 }
 
-function descriptorRecord(value: unknown): Record<string, unknown> | undefined {
-  return value !== null && typeof value === 'object' && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : undefined;
-}
-
 function queryObjectDescriptor(
   context: NestAnalysisContext,
   parameter: ts.ParameterDeclaration,
@@ -381,8 +379,8 @@ function queryObjectDescriptor(
   const contracts = context.contractAnalysis;
   if (!contracts) return undefined;
   const descriptor = contracts.describe(type, parameter, parameter.type);
-  if (descriptor.kind === 'reference') return descriptorRecord(contracts.definitions[descriptor.name]);
-  return descriptorRecord(descriptor);
+  const described: unknown = descriptor.kind === 'reference' ? contracts.definitions[descriptor.name] : descriptor;
+  return isRecord(described) ? described : undefined;
 }
 
 export function hasWholeObjectContract(
