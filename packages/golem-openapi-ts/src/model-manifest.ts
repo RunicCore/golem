@@ -107,7 +107,7 @@ export function generateModelManifest(
   profile: OpenApiGenerationProfile,
   modelAnalysis: OpenApiModelAnalysis,
   mode: OpenApiModeKind,
-  golem: GolemModeOperations = { operations: [], validation: undefined },
+  golem: GolemModeOperations,
 ): unknown {
   profile = requireProfile(profile);
   const { selfContained } = openApiModeTraits(mode);

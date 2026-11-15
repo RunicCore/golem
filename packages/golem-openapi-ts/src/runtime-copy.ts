@@ -16,15 +16,13 @@ const shippedFolder = path.join(path.dirname(fileURLToPath(import.meta.url)), '.
 export type RuntimeSpecifiers = (file: string) => ReturnType<typeof copiedRuntimeSpecifiers>;
 
 /** The specifiers of a standalone SDK file: the facade for values and the barrel for types, both relative to the file. */
-const standaloneRuntimeSpecifiers: RuntimeSpecifiers = (file) => {
+export const standaloneRuntimeSpecifiers: RuntimeSpecifiers = (file) => {
   const toRuntime = path.posix.relative(path.posix.dirname(`/${file}`), `/${RUNTIME_FOLDER}`);
   const from = (name: string): string => `${toRuntime.startsWith('.') ? toRuntime : `./${toRuntime}`}/${name}`;
   return copiedRuntimeSpecifiers(from(VALUE_FILE), from(TYPES_FILE));
 };
 
 /** Where the files of an SDK of this mode import the runtime from: the copy a standalone SDK carries, or none for a golem SDK, which imports the installed `@exprtlabs/golem`. */
-export function runtimeSpecifiersOf(mode: Extract<OpenApiMode, { kind: 'standalone' }>): RuntimeSpecifiers;
-export function runtimeSpecifiersOf(mode: OpenApiMode): RuntimeSpecifiers | undefined;
 export function runtimeSpecifiersOf(mode: OpenApiMode): RuntimeSpecifiers | undefined {
   return openApiModeTraits(mode.kind).selfContained ? standaloneRuntimeSpecifiers : undefined;
 }
