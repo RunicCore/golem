@@ -228,20 +228,20 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### RUNM1003
 
-**Unsupported TypeScript type.** A model or field type isn't one of the shapes this generator can convert — none of the recognized primitive, literal, array, tuple, object, or union forms. The message names the type and the field. **Fix:** Replace it with a supported shape, such as a plain object, array, primitive, or named model reference.
+**Unsupported TypeScript type.** A model or field type isn't one of the shapes this generator can convert — none of the recognized primitive, literal, array, tuple, object, or union forms. The message names the type and the field. A model with validation off generates for such a type. Validation is off when the model sets `{ validation: false }`, or when the model sets nothing and `golem.yaml` turns it off. **Fix:** Replace it with a supported shape, such as a plain object, array, primitive, or named model reference, or set `{ validation: false }` on the model.
 
 ### RUNM1004
 
 **Type that golem cannot represent.** One of these:
 
-- A model, or one of its fields, resolves to a type with call or construct signatures: a function or a class-instance shape rather than plain data.
+- A model, or one of its fields, resolves to a type with call or construct signatures: a function or a class-instance shape rather than plain data. With validation on, generation stops. A model with validation off generates, and the model's own `{ validation }` setting decides before the setting of `golem.yaml`.
 - A model field is typed `Map`, `Set`, `ReadonlyMap` or `ReadonlySet`. The message names the type. This holds with validation off too.
 - With validation on, an object is keyed by a template literal type whose keys golem cannot state as one pattern, such as `` `${number}` ``, `` `${string}_${number}` `` or `Uppercase<string>`. Only holes of type `string`, such as `` `id_${string}` ``, are stated.
 - An object has two or more index signatures keyed by template literal types, such as `` `a_${string}` `` and `` `n_${string}` ``, whose value types differ, or one such signature beside a plain `string` index signature of another value type. One value type describes every extra key. This holds with validation off too.
 
 **Fix:**
 
-- Replace a function or class shape with a plain object, array, or primitive.
+- Replace a function or class shape with a plain object, array, or primitive, or set `{ validation: false }` on the model.
 - Replace a `Map` with a `Record<string, V>` and a `Set` with an array.
 - Key the object by `string` holes only, such as `` Record<`id_${string}`, V> ``, or by `string`.
 - Give the index signatures one value type.
