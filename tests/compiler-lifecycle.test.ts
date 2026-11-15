@@ -470,11 +470,12 @@ function openSession(t: TestContext, project: { readonly root: string; readonly 
 // With every root inside the tsconfig the program opens the tsconfig itself, which the compiler reads again in the snapshot, after
 // the edit, so the program already holds the new mapping. Either way the record of the tsconfig must stay older than the edit.
 const FULL_SNAPSHOT_EDITS = [
-  { roots: 'outside the tsconfig', outside: true, held: 'first' },
-  { roots: 'inside the tsconfig', outside: false, held: 'second' },
+  { outside: true, held: 'first' },
+  { outside: false, held: 'second' },
 ] as const;
-for (const { roots, outside, held } of FULL_SNAPSHOT_EDITS) for (const hinted of [false, true]) {
+for (const { outside, held } of FULL_SNAPSHOT_EDITS) for (const hinted of [false, true]) {
   const how = hinted ? 'reported by the host' : 'found by the signatures';
+  const roots = outside ? 'outside the tsconfig' : 'inside the tsconfig';
 
   test(`a tsconfig edit that lands inside a full snapshot is applied by the next program, roots ${roots}, ${how}`, t => {
     const project = pathMappedProject(t, 'compiler-lifecycle-edit-inside-full-snapshot');
