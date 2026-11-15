@@ -13,7 +13,7 @@ import { GOLEM_CHANNELS } from './diagnostics-channels.js';
 import { displayPath } from './generator-core.js';
 import { fileSignature, MISSING } from './input-watcher.js';
 import { affectsResolution, assertConfigParsed, assertNoSourceFiles, canonical, collectTscDiagnostics, configReferences, emitWanted, flagPathOptions, flagsAsConfigOptions, isDeclarationFile, programRequest, referencedConfigFile } from './typescript-config.js';
-import type { ConfigReference, ResolveAtCurrentFolder } from './typescript-config.js';
+import type { ConfigReference, ProgramConfig, ResolveAtCurrentFolder } from './typescript-config.js';
 import { selectedTypeScript } from './typescript-selection.js';
 import { assertPackageManifestsParse } from './type-analysis/package-specifier.js';
 import type * as Golem from './typescript-types.js';
@@ -131,6 +131,11 @@ type LanguageVersionOrOptions = number | {
   readonly jsDocParsingMode?: number;
 };
 
+/** The syntax tree of a parsed tsconfig. The compiler names a file that a pattern matched from `configFileSpecs`. */
+interface ClassicConfigFile {
+  readonly configFileSpecs?: object;
+}
+
 /** A project reference of the classic compiler: `path` is absolute and names a folder or a tsconfig file. */
 interface ClassicProjectReference {
   readonly path: string;
@@ -191,8 +196,10 @@ interface ClassicTypeScript extends Omit<Golem.TypeScriptBackend, Implemented | 
     configFilename: string,
     optionsToExtend: Golem.CompilerOptions | undefined,
     host: ParsedConfigHost,
-  ): { readonly options: Golem.CompilerOptions; readonly fileNames: string[]; readonly projectReferences?: readonly ClassicProjectReference[]; readonly errors: readonly ClassicDiagnostic[] } | undefined;
+  ): { readonly options: Golem.CompilerOptions & { readonly configFile?: ClassicConfigFile }; readonly fileNames: string[]; readonly projectReferences?: readonly ClassicProjectReference[]; readonly errors: readonly ClassicDiagnostic[] } | undefined;
   readConfigFile(configFilename: string, readFile: (filename: string) => string | undefined): { readonly config?: unknown };
+  /** The syntax tree of a tsconfig text: the file in which the compiler places an option error. */
+  readJsonConfigFile(configFilename: string, readFile: (filename: string) => string | undefined): object;
   getPreEmitDiagnostics(program: ClassicProgram): readonly ClassicDiagnostic[];
   parseJsonConfigFileContent(json: object, host: Pick<ParsedConfigHost, 'useCaseSensitiveFileNames' | 'readDirectory' | 'fileExists' | 'readFile'>, basePath: string): { readonly options: Golem.CompilerOptions };
   parseCommandLine(flags: readonly string[]): { readonly options: Golem.CompilerOptions; readonly fileNames: readonly string[]; readonly errors: readonly ClassicDiagnostic[] };
@@ -714,6 +721,17 @@ function parseFlags(flags: readonly string[]) {
   return { options: parsed, fileNames, errors: errors.map((diagnostic) => ({ code: diagnostic.code, text: classic.flattenDiagnosticMessageText(diagnostic.messageText, '\n') })) };
 }
 
+/**
+ * The options with the file in which the compiler places an option error. It places one in the configuration it parsed, and a derived
+ * configuration (the flags, the option overrides) holds none of the user's options, so the user's own tsconfig takes its place and the
+ * error names its file and position, as `tsc` does. The derived configuration takes its file lists from the user's, so they go with it: the
+ * compiler names a file by the pattern that matched it. It reads the file from `configFile`, which the parse makes read-only.
+ */
+function locatedInUserConfig({ options, configFileSpecs }: ParsedConfig, { configPath, userConfigPath }: ProgramConfig): Golem.CompilerOptions {
+  if (userConfigPath === undefined || userConfigPath === configPath) return options;
+  return Object.defineProperty({ ...options }, 'configFile', { value: Object.assign(classic.readJsonConfigFile(userConfigPath, sys.readFile), { configFileSpecs }) });
+}
+
 /** The options read as a tsconfig of the current folder: the classic parse makes the path options absolute from it. No file is listed or read. */
 const resolveAtCurrentFolder: ResolveAtCurrentFolder = (options) => classic.parseJsonConfigFileContent(
   { compilerOptions: options, files: [] },
@@ -773,6 +791,8 @@ function languageVersionKey(languageVersionOrOptions: LanguageVersionOrOptions):
 
 interface ParsedConfig {
   readonly options: Golem.CompilerOptions;
+  /** The file lists of the parsed configuration, which a derived one takes from the user's. */
+  readonly configFileSpecs: object | undefined;
   readonly fileNames: string[];
   readonly projectReferences: readonly ClassicProjectReference[];
 }
@@ -857,12 +877,13 @@ export class ProgramSession implements Disposable {
     const resolutionsChanged = this.resolutionsChanged();
     for (const filename of [...this.observed]) this.report(filename);
     const parsed = this.parseConfig(request.configPath, request.overlays);
+    const compilerOptions = locatedInUserConfig(parsed, request);
     const overlayPaths = [...request.overlays.keys()].sort().join('\0');
     const reusable = this.latest !== undefined && this.latest.overlayPaths === overlayPaths && !resolutionsChanged;
     const program = classic.createProgram({
       rootNames: [...new Set([...parsed.fileNames.map(canonical), ...request.rootNames])],
-      options: parsed.options,
-      host: this.host(parsed.options, request.overlays),
+      options: compilerOptions,
+      host: this.host(compilerOptions, request.overlays),
       ...(parsed.projectReferences.length === 0 ? {} : { projectReferences: parsed.projectReferences }),
       ...(reusable && this.latest ? { oldProgram: this.latest.program } : {}),
     });
@@ -984,7 +1005,7 @@ export class ProgramSession implements Disposable {
     });
     if (!parsed) throw new Error(`The TypeScript configuration ${displayPath(configPath)} could not be parsed.`);
     assertConfigParsed(configPath, [...commandLine?.errors ?? [], ...parsed.errors].map((diagnostic) => ({ code: diagnostic.code, text: classic.flattenDiagnosticMessageText(diagnostic.messageText, '\n') })));
-    return { options: parsed.options, fileNames: parsed.fileNames, projectReferences: parsed.projectReferences ?? [] };
+    return { options: parsed.options, configFileSpecs: parsed.options.configFile?.configFileSpecs, fileNames: parsed.fileNames, projectReferences: parsed.projectReferences ?? [] };
   }
 
   /** The compiler host of one program: overlays over disk, input observation, and the session's parsed files. */
