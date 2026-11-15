@@ -469,14 +469,14 @@ export type TItem = IModel<{ row: [string, ...number[], boolean] }, { validation
 });
 
 // protects: T-970 a callable field, a constructible field and an unsupported type stopped a model with { validation: false } in a job with validation on
-for (const field of ['run: () => void', 'make: new () => Date', 'tag: symbol']) {
+for (const [field, code] of [['run: () => void', '1004'], ['make: new () => Date', '1004'], ['tag: symbol', '1003']]) {
   test(`a field \`${field}\` stops generation when the model validates and generates when the model sets validation off`, t => {
     const { root, sourceRoot } = fixture(t);
     const source = (options: string) => `import type { IModel } from '@exprtlabs/golem/model';
 export type TItem = IModel<{ ${field} }${options}>;
 `;
     fs.writeFileSync(path.join(sourceRoot, 'item.model.ts'), source(''));
-    assert.throws(() => generate({ root, profile: { validation: true } }), /item\.model\.ts:\d+:\d+ RUNM100[34]: /);
+    assert.throws(() => generate({ root, profile: { validation: true } }), new RegExp(`item\\.model\\.ts:\\d+:\\d+ RUNM${code}: `));
     assert.doesNotThrow(() => generate({ root, profile: { validation: false } }));
     fs.writeFileSync(path.join(sourceRoot, 'item.model.ts'), source(', { validation: false }'));
     assert.doesNotThrow(() => generate({ root, profile: { validation: true } }));
