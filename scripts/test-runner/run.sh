@@ -3,7 +3,9 @@
 set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 here="$root/scripts/test-runner"
-tier="${1:?usage: run.sh <prepare|focused|full|acceptance|docs> [args]}"; shift
+tier="${1:?usage: run.sh <prepare|focused|full|acceptance|docs|examples> [args]}"; shift
+# The tree the container tests. It is the checkout of this script unless the caller names another (scripts/compare-examples.sh runs the examples tier on a base ref).
+source_tree="${GOLEM_SOURCE_TREE:-$root}"
 tag="golem-test-runner:$(cat "$here/Dockerfile" "$here/entrypoint.sh" | shasum -a 256 | cut -c1-16)"
 volume=golem-test-cache
 network=(--network none)
@@ -33,7 +35,7 @@ echo "load (host) $(uptime | sed -e 's/.*load averages*: *//' -e 's/,//g')"
 exec docker run --rm --init ${tty[@]+"${tty[@]}"} ${network[@]+"${network[@]}"} \
   --label org.exprtlabs.golem-test=1 \
   -e TINI_KILL_PROCESS_GROUP=1 \
-  -v "$root:/src:ro" -v "$volume:/cache" -v "$root/.cache/test-results:/results" \
+  -v "$source_tree:/src:ro" -v "$volume:/cache" -v "$root/.cache/test-results:/results" \
   -e PUBLIC_CONTENT_DENIED_TEXT \
   -e GOLEM_TYPESCRIPT_ROOT -e GOLEM_IMAGE_TAG="$tag" \
   "$tag" "$tier" "$@"
