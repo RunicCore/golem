@@ -424,6 +424,16 @@ test('lists a shared or cyclic callback operation once, and a webhook named x-â€
       ['callbackOnEvent', 'callback', 'createA cb'],
     ],
   );
+  // Without an operationId the name holds the parent, so each parent keeps its own operation of the shared callback.
+  const callback = { cb: { $ref: '#/components/callbacks/Cb' } };
+  const unnamed = normalizeDocument({
+    openapi: '3.1.0',
+    info: { title: 'Shared', version: '1' },
+    paths: { '/a': { post: { operationId: 'createA', responses: ok, callbacks: callback } }, '/b': { post: { operationId: 'createB', responses: ok, callbacks: callback } } },
+    components: { callbacks: { Cb: { '{$url}': { post: { responses: ok, callbacks: { again: { $ref: '#/components/callbacks/Cb' } } } } } } },
+  });
+  assert.deepEqual(unnamed.inboundOperations.map(({ sourceName }) => sourceName).slice(0, 2), ['createA cb', 'createB cb']);
+  assert.equal(new Set(unnamed.inboundOperations.map(({ name }) => name)).size, unnamed.inboundOperations.length);
 });
 
 test('generation is deterministic', async (t) => {

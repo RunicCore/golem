@@ -436,8 +436,13 @@ export function checkOpenApiRules(document: unknown): OpenApiProblem[] {
   }
   const line = openApiLine(document);
   const operations: OperationSite[] = [];
+  const checked = new Set<string>(); // one pointer is one operation, however many parents list it; a path item shared by two routes is two
   visitOperationSites(document, line, (site) => {
-    operations.push(site);
+    const identity = `${site.pointer}\u0000${site.kind === 'path' ? site.key : ''}`;
+    if (!checked.has(identity)) {
+      checked.add(identity);
+      operations.push(site);
+    }
     return site.pointer;
   });
   return [

@@ -2,7 +2,7 @@ import { asRecord, entriesWithoutExtensions, isJsonObject, jsonPointerJoin, obje
 import { GolemDiagnosticSeverity, type GolemDiagnostic } from '@exprtlabs/golem/generator-api';
 import { identifier, parameterStyleRule, type ParameterLocation } from '@exprtlabs/golem/internal/generator-support';
 import { fragmentPointerTokens } from '@exprtlabs/golem/internal/schema';
-import { inboundOperationName, operationName } from './names.js';
+import { inboundNameHoldsSource, inboundOperationName, operationName } from './names.js';
 
 const HTTP_METHODS_31 = ['get', 'put', 'post', 'delete', 'options', 'head', 'patch', 'trace'] as const;
 const HTTP_METHODS_32 = [...HTTP_METHODS_31, 'query'] as const;
@@ -430,19 +430,25 @@ type OperationOwner =
  * webhook operations, then the callbacks of each of those, each callback level after the level that holds it. `visit`
  * returns the name under which the callbacks of that operation are listed (`parentName` of their sites).
  * An `x-` key under `paths` or a callback is an extension, not a path item; a webhook may be named `x-…`.
- * A callback operation is listed once, under the first operation that reaches it, so a cycle of callbacks ends.
+ * A callback operation is listed once for each name that normalize gives it: once with an `operationId`, once for each
+ * parent and callback name without one. The callbacks of an operation are listed once for each pointer, so a cycle of callbacks ends.
  */
 export function visitOperationSites(document: unknown, line: OpenApiFeatureLine, visit: (site: OperationSite) => string): void {
   const root = asRecord(document);
   const sites: OperationSite[] = [];
   const listedCallbacks = new Set<string>();
+  const expanded = new Set<string>();
   const addPathItem = (rawPathItem: unknown, writtenPointer: string, key: string, owner: OperationOwner): void => {
     const { value: pathItem, pointer: pathItemPointer } = followLocalRefs(document, rawPathItem, writtenPointer);
     if (!isJsonObject(pathItem)) return;
     for (const { method, wireMethod, operation, suffix } of pathItemOperations(pathItem, line)) {
       const pointer = `${pathItemPointer}${suffix}`;
-      if (!isJsonObject(operation) || (owner.kind === 'callback' && listedCallbacks.has(pointer))) continue;
-      if (owner.kind === 'callback') listedCallbacks.add(pointer);
+      if (!isJsonObject(operation)) continue;
+      if (owner.kind === 'callback') {
+        const identity = inboundNameHoldsSource(operation) ? `${pointer}\u0000${owner.parentName}\u0000${owner.callbackName}` : pointer;
+        if (listedCallbacks.has(identity)) continue;
+        listedCallbacks.add(identity);
+      }
       sites.push({ ...owner, method, wireMethod, operation, pointer, pathItem, pathItemPointer, key });
     }
   };
@@ -454,6 +460,9 @@ export function visitOperationSites(document: unknown, line: OpenApiFeatureLine,
   }
   for (const site of sites) { // `sites` grows while this runs: the callbacks found here are visited after the level that holds them.
     const parentName = visit(site);
+    const expansion = `${site.pointer}\u0000${site.kind === 'callback' ? '' : site.key}`;
+    if (expanded.has(expansion)) continue;
+    expanded.add(expansion);
     for (const [callbackName, rawCallback] of objectEntries(site.operation.callbacks)) {
       const callback = followLocalRefs(document, rawCallback, jsonPointerJoin(jsonPointerJoin(site.pointer, 'callbacks'), callbackName));
       for (const [expression, rawPathItem] of entriesWithoutExtensions(callback.value)) {
