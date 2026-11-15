@@ -149,6 +149,19 @@ import { first, second } from './predicates.js';`,
   write('recursive-alias', {
     'node.model.ts': taggedModelSource({ name: 'Node', fields: tsSource`name: string; children?: TNode[]` }).text,
   });
+  write('mapped-templates', {
+    'a.model.ts': taggedModelSource({
+      name: 'A',
+      imports: tsSource`import type { MaxLength, MinLength, PatternProperties } from '@exprtlabs/golem/tags';
+type X = { '^x_': string & MaxLength<3> };
+type Y = { '^y_': string & MinLength<2> };
+type OneA = { a: string & MaxLength<3> };
+type OtherA = { a: string & MinLength<2> };
+type Plain = { [K in keyof OneA]: string };
+type Dictionary = { [key: string]: string };`,
+      fields: tsSource`dropped: Dictionary & PatternProperties<{ [K in keyof X]: string }>; droppedOverIntersection: Dictionary & PatternProperties<{ [K in keyof (X & Y)]: string }>; keptThroughMappedTemplate: Dictionary & PatternProperties<{ [K in keyof X]: X[K] }>; plain: Plain; both: Pick<OneA & OtherA, 'a'>`,
+    }).text,
+  });
   write('compound-bases', {
     'a.model.ts': taggedModelSource({
       name: 'A',
@@ -240,6 +253,23 @@ import { first, second } from './predicates.js';`,
       await invalid({ legacy: 'ab' }),
       await invalid({ state: 'maybe' }),
     ], [true, false, false, false, false, false, false, false, false, false]);
+  });
+
+  // protects: T-953 a mapped type that drops a tag in its template kept the tag of the property it copies its declaration from
+  await t.test('a mapped type takes its tags from its template, not from the property it maps over', async () => {
+    const { A } = await load('mapped-templates', 'a.model.js');
+    const valid = { dropped: {}, droppedOverIntersection: {}, keptThroughMappedTemplate: {}, plain: { a: 'ab' }, both: { a: 'ab' } };
+    const accepted = async (override: object): Promise<boolean> => await getValidator(new A({ ...valid, ...override })).validate();
+    assert.deepEqual([
+      await accepted({}),
+      await accepted({ dropped: { x_a: 'abcd' } }),
+      await accepted({ droppedOverIntersection: { x_a: 'abcd', y_a: 'abcd' } }),
+      await accepted({ keptThroughMappedTemplate: { x_a: 'abc' } }),
+      await accepted({ keptThroughMappedTemplate: { x_a: 'abcd' } }),
+      await accepted({ plain: { a: 'abcd' } }),
+      await accepted({ both: { a: 'a' } }),
+      await accepted({ both: { a: 'abcd' } }),
+    ], [true, true, true, true, false, true, false, false]);
   });
 
   await t.test('recursive local IModel aliases remain concrete nested references', async () => {

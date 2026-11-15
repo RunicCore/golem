@@ -483,13 +483,37 @@ function schemaTypeArgument(
   return context.describeSchema(type, node);
 }
 
-function propertyTypeNode(
-  property: ts.Symbol,
-): ts.TypeNode | undefined {
-  const declaration = property.valueDeclaration ?? property.declarations?.[0];
-  return declaration && (ts.isPropertySignature(declaration) || ts.isPropertyDeclaration(declaration))
-    ? declaration.type
-    : undefined;
+/** The parts of a property's type that decide what it is: an optional property adds `undefined`, which its declaration does not write, and the members of an intersection are the types that it joins. */
+function typeParts(type: ts.Type): readonly ts.Type[] {
+  const members = (type.isUnion() ? type.types : [type]).filter(member => (member.flags & ts.TypeFlags.Undefined) === 0);
+  const [only] = members;
+  return members.length === 1 && only?.isIntersection() ? only.types : members;
+}
+
+/**
+ * The type node that declares the type of a property, or undefined when none does.
+ * A property that a mapped type or an intersection builds has no declaration of its own: it copies the declarations
+ * of the properties it comes from, and a copy names the type of the original, which a mapped template can change
+ * (`{ [K in keyof T]: string }` over a tagged `T`). Such a copy counts only when the types it names make up the property's type.
+ * Of two members of an intersection that both declare it, the first whose type fits the merged type names it, as
+ * `pets: TCat[]` in `TOwner & { pets: TCat[] }` where TOwner declares `pets: TPet[]`.
+ */
+export function propertyTypeNode(checker: ts.TypeChecker, property: ts.Symbol, valueType: ts.Type): ts.TypeNode | undefined {
+  const nodeOf = (declaration: ts.Declaration | undefined): ts.TypeNode | undefined =>
+    declaration && (ts.isPropertySignature(declaration) || ts.isPropertyDeclaration(declaration)) ? declaration.type : undefined;
+  if (property.valueDeclaration) return nodeOf(property.valueDeclaration);
+  const declarations = property.declarations ?? checker.getRootSymbols(property).flatMap(root => root.declarations ?? []);
+  const nodes = declarations.flatMap(declaration => nodeOf(declaration) ?? []);
+  const declared = new Set(nodes.flatMap(node => typeParts(checker.getTypeFromTypeNode(node))));
+  const parts = typeParts(valueType);
+  if (parts.length !== declared.size || !parts.every(part => declared.has(part))) return undefined;
+  return nodes.find(node => checker.isTypeAssignableTo(checker.getTypeFromTypeNode(node), valueType)) ?? nodes[0];
+}
+
+/** The type of one property of a tag argument's mapping, and the node that declares it. */
+function propertyValue(checker: ts.TypeChecker, property: ts.Symbol, owner: ts.Node): { readonly type: ts.Type; readonly node: ts.TypeNode | undefined } {
+  const type = checker.getTypeOfSymbolAtLocation(property, property.valueDeclaration ?? property.declarations?.[0] ?? owner);
+  return { type, node: propertyTypeNode(checker, property, type) };
 }
 
 function literalString(
@@ -551,7 +575,6 @@ function stringList(
 function schemaMap(
   context: TagAnalysisContext,
   type: ts.Type | undefined,
-  node: ts.TypeNode | undefined,
   owner: ts.Node,
   label: string,
 ): Readonly<Record<string, ConstraintSchemaValue>> {
@@ -560,25 +583,22 @@ function schemaMap(
   }
   const result: Record<string, ConstraintSchemaValue> = Object.create(null);
   for (const property of context.checker.getPropertiesOfType(type)) {
-    const declaration = property.valueDeclaration ?? property.declarations?.[0] ?? owner;
-    const valueType = context.checker.getTypeOfSymbolAtLocation(property, declaration);
-    result[property.getName()] = schemaTypeArgument(context, valueType, owner, label, propertyTypeNode(property));
+    const value = propertyValue(context.checker, property, owner);
+    result[property.getName()] = schemaTypeArgument(context, value.type, owner, label, value.node);
   }
   if (Object.keys(result).length === 0) {
     throw context.diagnostic(owner, '1043', `${label} requires an object mapping with at least one property.`);
   }
-  void node;
   return result;
 }
 
 function patternSchemaMap(
   context: TagAnalysisContext,
   type: ts.Type | undefined,
-  node: ts.TypeNode | undefined,
   owner: ts.Node,
   label: string,
 ): Readonly<Record<string, ConstraintSchemaValue>> {
-  const result = schemaMap(context, type, node, owner, label);
+  const result = schemaMap(context, type, owner, label);
   for (const pattern of Object.keys(result)) {
     if (!isUnicodePattern(pattern)) throw context.diagnostic(owner, '1044', `${label} requires valid Unicode regular expression keys.`);
   }
@@ -588,7 +608,6 @@ function patternSchemaMap(
 function dependentRequiredMap(
   context: TagAnalysisContext,
   type: ts.Type | undefined,
-  node: ts.TypeNode | undefined,
   owner: ts.Node,
 ): Readonly<Record<string, readonly string[]>> {
   if (!type || (type.flags & ts.TypeFlags.Object) === 0) {
@@ -596,14 +615,12 @@ function dependentRequiredMap(
   }
   const result: Record<string, readonly string[]> = Object.create(null);
   for (const property of context.checker.getPropertiesOfType(type)) {
-    const declaration = property.valueDeclaration ?? property.declarations?.[0] ?? owner;
-    const valueType = context.checker.getTypeOfSymbolAtLocation(property, declaration);
-    result[property.getName()] = stringList(context, valueType, propertyTypeNode(property), owner, 'DependentRequired values');
+    const value = propertyValue(context.checker, property, owner);
+    result[property.getName()] = stringList(context, value.type, value.node, owner, 'DependentRequired values');
   }
   if (Object.keys(result).length === 0) {
     throw context.diagnostic(owner, '1043', 'DependentRequired requires an object mapping with at least one property.');
   }
-  void node;
   return result;
 }
 
@@ -687,7 +704,7 @@ function schemaTag(kind: 'contains' | 'propertyNames' | 'additionalProperties' |
 }
 
 function readPatternProperties(context: TagAnalysisContext, name: string, args: readonly TagArgument[], at: ts.Node): TagMetadata {
-  const patterns = patternSchemaMap(context, argumentType(context.checker, args[0]), args[0]?.node, at, name);
+  const patterns = patternSchemaMap(context, argumentType(context.checker, args[0]), at, name);
   return {
     validations: [],
     constraints: Object.entries(patterns).map(([pattern, schema]) => ({ kind: 'patternProperties', pattern, schema })),
@@ -744,11 +761,11 @@ const TAG_READERS: ReadonlyMap<string, TagReader> = new Map<string, TagReader>([
   ['PatternProperties', readPatternProperties],
   ['DependentRequired', (context, name, args, at) => constraintOnly({
     kind: 'dependentRequired',
-    value: dependentRequiredMap(context, argumentType(context.checker, args[0]), args[0]?.node, at),
+    value: dependentRequiredMap(context, argumentType(context.checker, args[0]), at),
   })],
   ['DependentSchemas', (context, name, args, at) => constraintOnly({
     kind: 'dependentSchemas',
-    value: schemaMap(context, argumentType(context.checker, args[0]), args[0]?.node, at, name),
+    value: schemaMap(context, argumentType(context.checker, args[0]), at, name),
   })],
   ['OneOf', (context, name, args, at) => constraintOnly({
     kind: 'oneOf',
