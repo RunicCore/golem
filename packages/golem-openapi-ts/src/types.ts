@@ -1,7 +1,7 @@
 import { isDeepStrictEqual } from 'node:util';
 import { isBinaryMediaType, isBuiltinTextMediaType } from './client/codecs.js';
 import { asRecord, isJsonObject, objectEntries, type JsonObject } from './json.js';
-import { schemaReferenceOrDynamic } from '@exprtlabs/golem/internal/schema';
+import { SCHEMA_ARRAY_KEYWORDS, jsonKindOf, schemaReferenceOrDynamic } from '@exprtlabs/golem/internal/schema';
 import { codePointLength, isMultipleOf } from '@exprtlabs/golem/internal/validation-runtime';
 import { identifier, NameScope, responseStatusKind } from '@exprtlabs/golem/internal/generator-support';
 import { BUILTIN_CLASS_ROOTS, code, codeKey, manifestMarkerComment, docComment, exportedName, fileImports, identifier as identifierPart, ImportSource, isEmpty, join, lineBreak, literal, nest, propertyKey, render, renderModule, sameCode, type RenderedModule, type Code, type JsonValue } from '@exprtlabs/golem/internal/emitter';
@@ -76,12 +76,9 @@ function anyOfTextSchemas(parts: readonly TextSchemaClassification[]): TextSchem
 }
 
 function classifyConstValue(value: unknown): TextSchemaClassification {
-  if (typeof value === 'string') return { kind: 'string', schemaType: 'string' };
-  if (value === null) return { kind: 'non-string', schemaType: 'null' };
-  if (typeof value === 'number') return { kind: 'non-string', schemaType: 'number' };
-  if (typeof value === 'boolean') return { kind: 'non-string', schemaType: 'boolean' };
-  if (Array.isArray(value)) return { kind: 'non-string', schemaType: 'array' };
-  return { kind: 'non-string', schemaType: 'object' };
+  const schemaType = jsonKindOf(value);
+  if (schemaType === undefined) return unknownTextSchema();
+  return { kind: schemaType === 'string' ? 'string' : 'non-string', schemaType };
 }
 
 function withNullAlternative(
@@ -499,7 +496,7 @@ function schemaWithoutCyclicRefs(
   if (isJsonObject(cyclic.properties)) {
     cyclic.properties = Object.fromEntries(objectEntries(cyclic.properties).filter(([, value]) => dropCyclic(value)));
   }
-  for (const keyword of ['allOf', 'anyOf', 'oneOf', 'prefixItems'] as const) {
+  for (const keyword of SCHEMA_ARRAY_KEYWORDS) {
     const children = cyclic[keyword];
     if (Array.isArray(children)) cyclic[keyword] = children.filter(dropCyclic);
   }
@@ -642,11 +639,14 @@ export function typedListedValues(schema: Readonly<Record<string, unknown>>): re
     : Array.isArray(schema.enum) && !schema.enum.some((value) => isDeepStrictEqual(value, schema.const)) ? [] : [schema.const];
   if (!values) return undefined;
   const types = effectiveSchemaTypes(schema);
-  const kindOf = (value: unknown): string => value === null ? 'null' : Array.isArray(value) ? 'array' : typeof value === 'number' && Number.isInteger(value) ? 'integer' : typeof value;
   const excluded = isJsonObject(schema.not)
     ? schema.not.const !== undefined ? [schema.not.const] : Array.isArray(schema.not.enum) ? schema.not.enum : []
     : [];
-  return values.filter((value) => (types.length === 0 || types.includes(kindOf(value)) || (typeof value === 'number' && types.includes('number'))) && withinKeywords(value, schema)
+  const typeAdmits = (value: unknown): boolean => {
+    const kind = jsonKindOf(value);
+    return types.length === 0 || (kind !== undefined && types.includes(kind)) || (kind === 'number' && Number.isInteger(value) && types.includes('integer'));
+  };
+  return values.filter((value) => typeAdmits(value) && withinKeywords(value, schema)
     && !excluded.some((other) => isDeepStrictEqual(value, other)));
 }
 

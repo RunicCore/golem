@@ -1,5 +1,5 @@
 import { isRecord } from '@exprtlabs/golem/internal/generator-support';
-import { schemaReference } from '@exprtlabs/golem/internal/schema';
+import { jsonKindOf, schemaReference } from '@exprtlabs/golem/internal/schema';
 import * as ts from '@exprtlabs/golem/internal/ts';
 import {
   GolemDiagnosticSeverity,
@@ -447,7 +447,7 @@ function namedEnumReference(
     return schema;
   }
   if (!options.registerEnumComponent) return fail(`Swagger property ${name} enumName ${enumName} needs a components registry.`);
-  const types = [...new Set(values.map(value => (value === null ? 'null' : typeof value)))];
+  const types = [...new Set(values.map(jsonKindOf))];
   const type = types.length === 1 && (types[0] === 'string' || types[0] === 'number') ? types[0] : undefined;
   options.registerEnumComponent(enumName, { ...(type ? { type } : {}), enum: [...values] }, entry.node);
   const reference = { $ref: `#/components/schemas/${enumName}` };

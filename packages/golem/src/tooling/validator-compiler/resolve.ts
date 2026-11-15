@@ -1,4 +1,5 @@
 import { escapeJsonPointerToken, fragmentPointerTokens, pointerArrayIndex } from '../../json-pointer.js';
+import { SCHEMA_ARRAY_KEYWORDS, SCHEMA_MAP_KEYWORDS, SCHEMA_SINGLE_KEYWORDS } from '../../json-vocabulary.js';
 import { isRecord } from '../generator-core.js';
 
 /** A schema node with the context its keywords and references are read in. */
@@ -11,11 +12,6 @@ export interface SchemaLocation {
   /** RFC 6901 pointer from that root or resource to the node. */
   readonly pointer: string;
 }
-
-// Where a schema keyword holds subschemas, as far as `$id` and `$anchor` discovery is concerned.
-const SCHEMA_KEYWORDS = ['additionalProperties', 'items', 'contains', 'if', 'then', 'else', 'not', 'propertyNames', 'unevaluatedItems', 'unevaluatedProperties'] as const;
-const SCHEMA_LIST_KEYWORDS = ['allOf', 'anyOf', 'oneOf', 'prefixItems'] as const;
-const SCHEMA_MAP_KEYWORDS = ['$defs', 'properties', 'patternProperties', 'dependentSchemas'] as const;
 
 const HIERARCHICAL_URI = /^[A-Za-z][A-Za-z0-9+.-]*:\/\//;
 
@@ -115,8 +111,8 @@ export class SchemaResolver {
     const descend = (child: unknown, ...tokens: readonly (string | number)[]): void => {
       this.index({ node: child, base: here, resource, pointer: tokens.reduce<string>((path, token) => path + pointerSegment(token), pointer) }, active);
     };
-    for (const keyword of SCHEMA_KEYWORDS) if (keyword in node) descend(node[keyword], keyword);
-    for (const keyword of SCHEMA_LIST_KEYWORDS) {
+    for (const keyword of SCHEMA_SINGLE_KEYWORDS) if (keyword in node) descend(node[keyword], keyword);
+    for (const keyword of SCHEMA_ARRAY_KEYWORDS) {
       const list = node[keyword];
       if (Array.isArray(list)) list.forEach((child: unknown, position) => descend(child, keyword, position));
     }

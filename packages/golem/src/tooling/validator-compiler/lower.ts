@@ -1,4 +1,5 @@
 import { MODEL_CLASS_KEYWORD, MODEL_INSTANCE_KEYWORD, VALIDATION_KEYWORD } from '../../schema-keywords.js';
+import { SCHEMA_ARRAY_KEYWORDS, SCHEMA_MAP_KEYWORDS } from '../../json-vocabulary.js';
 import { jsonPointerTokens } from '../../json-pointer.js';
 import { isKnownFormat, jsonEqual } from '../../validation-runtime.js';
 import { isRuntimeFunction } from '../rt.js';
@@ -50,7 +51,7 @@ const KEYWORD_SHAPES: readonly { readonly keywords: readonly string[]; readonly 
   { keywords: ['uniqueItems'], accepts: value => typeof value === 'boolean', expected: 'true or false' },
   { keywords: ['properties', 'patternProperties', 'dependentSchemas'], accepts: isRecord, expected: 'an object' },
   { keywords: ['dependentRequired'], accepts: value => isRecord(value) && Object.values(value).every(isStringList), expected: 'an object whose values are lists of strings' },
-  { keywords: ['allOf', 'anyOf', 'oneOf', 'prefixItems'], accepts: Array.isArray, expected: 'a list' },
+  { keywords: SCHEMA_ARRAY_KEYWORDS, accepts: Array.isArray, expected: 'a list' },
 ];
 
 /** A step that hands the same value to another function, so no part of the value is consumed. */
@@ -88,7 +89,7 @@ function callTo(fn: number): IrSchema {
 // Keywords whose value is data, not schema.
 const DATA_KEYWORDS: ReadonlySet<string> = new Set(['enum', 'const', 'default', 'examples']);
 // Keywords whose value maps names to schemas: the names are not keywords, so `default` there is a property.
-const NAME_MAP_KEYWORDS: ReadonlySet<string> = new Set(['properties', 'patternProperties', 'dependentSchemas', 'dependentRequired', '$defs', 'definitions']);
+const NAME_MAP_KEYWORDS: ReadonlySet<string> = new Set([...SCHEMA_MAP_KEYWORDS, 'dependentRequired']);
 
 /**
  * True when the schema `value`, or a schema inside it, has one of `keys` as a keyword. Each object is read once,

@@ -1,13 +1,12 @@
 import { asRecord, entriesWithoutExtensions, isJsonObject, jsonPointerJoin, objectEntries, type JsonObject } from './json.js';
 import { compareText } from '@exprtlabs/golem/generator-api';
 import { identifier } from '@exprtlabs/golem/internal/generator-support';
-import { canonicalSchemaKey, escapePointerToken, fragmentPointerTokens, pointerArrayIndex, schemaReferenceOrDynamic, splitFirstFragmentToken, type ScopedSchema } from '@exprtlabs/golem/internal/schema';
+import { SCHEMA_ARRAY_KEYWORDS, SCHEMA_MAP_KEYWORDS, SCHEMA_SINGLE_KEYWORDS, canonicalSchemaKey, escapePointerToken, fragmentPointerTokens, pointerArrayIndex, schemaReferenceOrDynamic, splitFirstFragmentToken, type ScopedSchema } from '@exprtlabs/golem/internal/schema';
 import {
   pathItemOperations,
   resolveLocalPointer,
   type NormalizedDocument,
 } from './normalize.js';
-import { SCHEMA_ARRAY_KEYWORDS, SCHEMA_MAP_KEYWORDS, SCHEMA_SINGLE_KEYWORDS } from './schema-keywords.js';
 import type { OpenApiDates } from './model-resolution.js';
 import { dateClassOf } from './date-class.js';
 
