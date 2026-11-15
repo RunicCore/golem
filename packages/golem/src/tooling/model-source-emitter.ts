@@ -26,7 +26,7 @@ export { presentKeysCode } from './union-conversion.js';
 export { BUILTIN_CLASS_ROOTS, builtinClassByOpenApiFormat, builtinClassDescriptor, type BuiltinClass } from './builtin-classes.js';
 /** The Code values and the functions that build, join and render them: generators write their files from these. */
 export {
-  aliased, bindInput, blockComment, code, codeKey, docComment, documentLiteral, exportedName, exportedNames, fileImports, helper, helperName, helperSet, identifier, importedNames, indentation, inputCount, importGroups, importLines, ImportSource, inputOf, inputSlot, isEmpty, join, lineBreak, literal, localCode, nameOf, NameTable, nameSlot, nest, packageExport, packageKeysOf, placeHelpers, propertyKey, render, renderModule, sameCode, sideEffectImport,
+  aliased, bindInput, blockComment, code, codeKey, docComment, documentLiteral, exportedName, exportedNames, fileImports, helper, helperName, helperSet, identifier, importedNames, indentation, inputCount, importGroups, importLines, ImportSource, inputOf, inputSlot, isEmpty, join, lineBreak, literal, localCode, nameOf, NameTable, nameSlot, nest, packageExport, packageKeysOf, placeHelpers, propertyKey, render, renderModule, sameCode,
   type Code, type Helper, type ImportGroup, type ImportOptions, type InputSlot, type JsonValue, type NameSlot, type RenderedModule,
 } from './code.js';
 export { copiedRuntimeSpecifiers, rt, rtType, type RuntimeModule } from './rt.js';
