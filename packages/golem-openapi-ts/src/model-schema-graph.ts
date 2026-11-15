@@ -3,7 +3,7 @@ import { createSchemaGraph, internDescriptors, type SchemaGraph, type SchemaNode
 import type { ModelTypeDescriptor } from '@exprtlabs/golem/internal/schema';
 import { compareText } from '@exprtlabs/golem/generator-api';
 import type { OpenApiGenerationProfile } from './profile.js';
-import { parameterSchema, resolveLocal, type NormalizedOperation } from './normalize.js';
+import { mediaSchema, parameterSchema, resolveLocal, type NormalizedOperation } from './normalize.js';
 import { objectEntries } from './json.js';
 import { componentOrigin, LocatedError } from './origin.js';
 import { schemaContext } from './types.js';
@@ -154,7 +154,7 @@ function internOperationValues(
     for (const response of operation.responses) {
       for (const [name, header] of objectEntries(response.headers)) intern(responseHeaderKey(operation.name, response.status, name), parameterSchema(resolveLocal(document, header)));
       for (const media of response.content) {
-        intern(responseBodyKey(operation.name, response.status, media.contentType), media.itemSchemaPresent ? media.itemSchema : media.schema);
+        intern(responseBodyKey(operation.name, response.status, media.contentType), mediaSchema(media));
       }
     }
   }

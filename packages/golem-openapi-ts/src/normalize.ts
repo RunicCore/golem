@@ -25,14 +25,23 @@ const VERSION_ADAPTERS = {
 type OpenApiFeatureLine = keyof typeof VERSION_ADAPTERS;
 export type OpenApiSchema = boolean | JsonObject;
 
-export interface OpenApiMediaType {
+interface MediaTypeBase {
   readonly contentType: string;
   readonly schema: OpenApiSchema | null;
-  readonly itemSchema: OpenApiSchema | null;
-  readonly itemSchemaPresent: boolean;
   readonly encoding: JsonObject;
   readonly prefixEncoding: readonly unknown[];
   readonly itemEncoding: unknown;
+}
+
+/** A media type has an `itemSchema` (a stream of items) or it has none; the flag and the schema never disagree. */
+export type OpenApiMediaType = MediaTypeBase & (
+  | { readonly itemSchemaPresent: true; readonly itemSchema: OpenApiSchema }
+  | { readonly itemSchemaPresent: false; readonly itemSchema: null }
+);
+
+/** The schema of one media type: its `itemSchema` when it has one, else its `schema`. `null` when it has neither. */
+export function mediaSchema(media: OpenApiMediaType): OpenApiSchema | null {
+  return media.itemSchemaPresent ? media.itemSchema : media.schema;
 }
 
 export interface NormalizedParameter {
@@ -121,20 +130,18 @@ export function resolveLocal(document: unknown, value: unknown): unknown {
 function contentEntries(content: unknown, featureLine?: OpenApiFeatureLine): OpenApiMediaType[] {
   return objectEntries(content).map(([contentType, media]) => {
     const mediaObject = asRecord(media);
-    const itemSchemaPresent = Object.prototype.hasOwnProperty.call(mediaObject, 'itemSchema')
-      && (typeof mediaObject.itemSchema === 'boolean' || isJsonObject(mediaObject.itemSchema));
-    if (itemSchemaPresent && featureLine !== undefined && featureLine !== '3.2') {
+    const itemSchema = schemaValue(mediaObject.itemSchema);
+    if (itemSchema !== null && featureLine !== undefined && featureLine !== '3.2') {
       throw new Error(`itemSchema is only supported in OpenAPI 3.2 (found ${featureLine} in ${contentType})`);
     }
-    return {
+    const base = {
       contentType,
       schema: 'schema' in mediaObject ? schemaValue(mediaObject.schema) : null,
-      itemSchema: itemSchemaPresent ? schemaValue(mediaObject.itemSchema) : null,
-      itemSchemaPresent,
       encoding: asRecord(mediaObject.encoding),
       prefixEncoding: Array.isArray(mediaObject.prefixEncoding) ? mediaObject.prefixEncoding : [],
       itemEncoding: mediaObject.itemEncoding ?? null,
     };
+    return itemSchema === null ? { ...base, itemSchema, itemSchemaPresent: false } : { ...base, itemSchema, itemSchemaPresent: true };
   });
 }
 
