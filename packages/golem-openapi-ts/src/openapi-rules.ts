@@ -111,6 +111,33 @@ function checkParameterLists(document: unknown, operations: readonly OperationSi
   return problems;
 }
 
+/** Header names are case-insensitive, so one response declares each header once, in whatever case (`parameterIdentity`). */
+function checkResponseHeaders(document: unknown, operations: readonly OperationSite[]): OpenApiProblem[] {
+  const problems: OpenApiProblem[] = [];
+  const checked = new Set<string>(); // a response that several operations share is one headers object
+  for (const entry of operations) {
+    for (const [status, raw] of objectEntries(entry.operation.responses)) {
+      const response = followLocalRefs(document, raw, pointerJoin(`${entry.pointer}/responses`, status));
+      const headersPointer = pointerJoin(response.pointer, 'headers');
+      if (checked.has(headersPointer)) continue;
+      checked.add(headersPointer);
+      const seen = new Set<string>();
+      for (const [name] of objectEntries(asRecord(response.value).headers)) {
+        const key = parameterIdentity('header', name);
+        if (seen.has(key)) {
+          problems.push({
+            ruleId: 'operation-response-headers-unique',
+            message: `response header ${JSON.stringify(name)} is declared more than once; header names are case-insensitive`,
+            pointer: pointerJoin(headersPointer, name),
+          });
+        }
+        seen.add(key);
+      }
+    }
+  }
+  return problems;
+}
+
 function templateNames(route: string): string[] {
   return [...route.matchAll(TEMPLATE)].map((match) => match[1] ?? '');
 }
@@ -451,6 +478,7 @@ export function checkOpenApiRules(document: unknown): OpenApiProblem[] {
     ...checkUnresolvedRefs(document),
     ...checkOperationIds(operations),
     ...checkParameterLists(document, operations),
+    ...checkResponseHeaders(document, operations),
     ...checkPathTemplates(document, operations),
     ...checkTags(document, line),
     ...checkServers(document, operations, line),

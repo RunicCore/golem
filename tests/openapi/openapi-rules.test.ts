@@ -104,6 +104,30 @@ test('operation-parameters-unique treats header names that differ only by case a
   assert.deepEqual(found(document, 'operation-parameters-unique'), ['/paths/~1a/get/parameters/1']);
 });
 
+test('operation-response-headers-unique reports response header names that differ only by case', () => {
+  // protects: T-963 response header names are case-insensitive, as header parameter names are (T-491, T-920)
+  const header = { schema: { type: 'string' } };
+  const document = documentBase('3.1.0', {
+    paths: {
+      '/a': {
+        get: {
+          responses: {
+            200: { description: 'ok', headers: { 'X-A': header, 'x-a': header, 'X-B': header } },
+            201: { description: 'one name', headers: { 'X-A': header } },
+            202: { $ref: '#/components/responses/Shared' },
+          },
+        },
+        post: { responses: { 202: { $ref: '#/components/responses/Shared' } } },
+      },
+    },
+    components: { responses: { Shared: { description: 'shared', headers: { Etag: header, ETAG: header } } } },
+  });
+  assert.deepEqual(found(document, 'operation-response-headers-unique'), [
+    '/paths/~1a/get/responses/200/headers/x-a',
+    '/components/responses/Shared/headers/ETAG',
+  ]);
+});
+
 test('no-duplicated-server-names reports a repeated 3.2 server name within one list', () => {
   // protects: T-491 3.2 server names are unique
   const document = documentBase('3.2.0', {
