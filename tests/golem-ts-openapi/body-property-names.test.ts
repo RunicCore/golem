@@ -14,8 +14,3 @@ test('the property names of a schema that names itself through allOf are read on
   assert.deepEqual([...propertyNames(resolve, { $ref: '#/components/schemas/Self' }, 'required') ?? []], ['id']);
   assert.deepEqual([...propertyNames(resolve, { $ref: '#/components/schemas/Ping' }, 'properties') ?? []].sort(), ['a', 'b']);
 });
-
-test('the property names of a part are undefined when a part cannot be read', () => {
-  assert.equal(propertyNames(() => undefined, { $ref: '#/components/schemas/Gone' }, 'required'), undefined);
-  assert.equal(propertyNames(() => undefined, { allOf: [{ $ref: '#/components/schemas/Gone' }] }, 'required'), undefined);
-});

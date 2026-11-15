@@ -7,7 +7,7 @@
  */
 
 import { aliasReference, followReference } from './json-reference.js';
-import { escapePointerToken, resolveFragmentPointer, unescapePointerToken } from './json-pointer.js';
+import { escapePointerToken, fragmentPointerTokens, resolveFragmentPointer } from './json-pointer.js';
 
 type SchemaRecord = Readonly<Record<string, unknown>>;
 
@@ -88,8 +88,7 @@ function resolveReference(index: SchemaIndex, reference: string, base: string | 
  */
 function componentName(reference: string): string | undefined {
   if (reference.includes('#/')) {
-    const token = reference.slice(reference.lastIndexOf('/') + 1);
-    return token ? unescapePointerToken(token) : undefined;
+    return fragmentPointerTokens(reference.slice(reference.indexOf('#/') + 1)).at(-1) || undefined;
   }
   return /^[^/:#]+$/.test(reference) ? reference : undefined;
 }

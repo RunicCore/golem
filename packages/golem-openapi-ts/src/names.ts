@@ -1,4 +1,4 @@
-import { unescapePointerToken } from '@exprtlabs/golem/internal/schema';
+import { decodeUriFragment, unescapeJsonPointerToken } from '@exprtlabs/golem/internal/schema';
 import { bindingName, camelIdentifier, identifier, RESERVED_BINDING_NAMES } from '@exprtlabs/golem/internal/generator-support';
 import { code, identifier as identifierPart, join, literal, type Code } from '@exprtlabs/golem/internal/emitter';
 
@@ -53,5 +53,5 @@ export function inboundOperationName(
 
 export function refName(ref: string): string | null {
   const prefix = '#/components/schemas/';
-  return ref.startsWith(prefix) ? identifier(unescapePointerToken(ref.slice(prefix.length))) : null;
+  return ref.startsWith(prefix) ? identifier(unescapeJsonPointerToken(decodeUriFragment(ref.slice(prefix.length)))) : null;
 }

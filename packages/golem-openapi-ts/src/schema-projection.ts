@@ -1,7 +1,7 @@
 import { asRecord, entriesWithoutExtensions, isJsonObject, jsonPointerJoin, objectEntries, type JsonObject } from './json.js';
 import { compareText } from '@exprtlabs/golem/generator-api';
 import { identifier } from '@exprtlabs/golem/internal/generator-support';
-import { canonicalSchemaKey, escapePointerToken, fragmentPointerTokens, pointerArrayIndex, schemaReferenceOrDynamic, unescapePointerToken, type ScopedSchema } from '@exprtlabs/golem/internal/schema';
+import { canonicalSchemaKey, escapePointerToken, fragmentPointerTokens, pointerArrayIndex, schemaReferenceOrDynamic, splitFirstFragmentToken, type ScopedSchema } from '@exprtlabs/golem/internal/schema';
 import {
   pathItemOperations,
   resolveLocalPointer,
@@ -126,10 +126,7 @@ function componentPointer(name: string): string {
 function pointerSchemaName(ref: string): string | null {
   const prefix = '#/components/schemas/';
   if (!ref.startsWith(prefix)) return null;
-  const rest = ref.slice(prefix.length);
-  const slash = rest.search(/[/]/);
-  const token = slash < 0 ? rest : rest.slice(0, slash);
-  return unescapePointerToken(token);
+  return splitFirstFragmentToken(ref.slice(prefix.length)).name;
 }
 
 /** Every repeat of a schema `$id`, once per repeating `$id` keyword. */

@@ -4,7 +4,7 @@
  */
 
 /** The most hops one chain may take; a chain that has not reached a target by then refers back to itself. */
-export const MAX_REFERENCE_HOPS = 32;
+const MAX_REFERENCE_HOPS = 32;
 
 /** A schema in the scope it is read in (a base URI, a component table). */
 export interface ScopedSchema<S> {

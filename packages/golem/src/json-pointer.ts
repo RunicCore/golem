@@ -28,11 +28,6 @@ export function decodeUriFragment(fragment: string): string {
   }
 }
 
-/** The name a URI-fragment pointer token denotes; a malformed percent escape is kept literally. */
-export function unescapePointerToken(token: string): string {
-  return unescapeJsonPointerToken(decodeUriFragment(token));
-}
-
 /** The raw tokens of a pointer: `''` has none, `'/a/b'` has `a` and `b`. */
 function splitPointer(pointer: string): string[] {
   return pointer === '' ? [] : pointer.slice(1).split('/');
@@ -53,14 +48,17 @@ export function fragmentPointerTokens(pointer: string): string[] {
 }
 
 /**
- * Splits `Name/rest` at its first token: the name that the token denotes, and the remaining pointer as written
+ * Splits the URI-fragment pointer `Name/rest` at its first token, as {@link fragmentPointerTokens} reads it: the first
+ * token ends at a `/` or at a `%2F`. Returns the name that the token denotes, and the remaining pointer as written
  * (`''`, or starting with `/`). It reads a component reference after `#/components/schemas/`.
  */
 export function splitFirstFragmentToken(pointer: string): { readonly name: string; readonly rest: string } {
-  const slash = pointer.indexOf('/');
-  return slash < 0
-    ? { name: unescapePointerToken(pointer), rest: '' }
-    : { name: unescapePointerToken(pointer.slice(0, slash)), rest: pointer.slice(slash) };
+  const end = pointer.search(/\/|%2f/i);
+  const first = end < 0 ? pointer : pointer.slice(0, end);
+  return {
+    name: fragmentPointerTokens(`/${first}`)[0] ?? '',
+    rest: end < 0 ? '' : pointer.slice(end).replace(/^%2f/i, '/'),
+  };
 }
 
 /** The position that a pointer token names in an array: a canonical decimal (`0`, `12`; not `01`, `1e0` or `length`). */
