@@ -6,7 +6,8 @@
 # Both trees come from `git archive`, so both hold the tracked and the untracked files that .gitignore does not hide, and nothing else.
 set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-base="${1:?usage: compare-examples.sh <base-ref>}"
+[ -n "${1:-}" ] || { echo "usage: compare-examples.sh <base-ref>" >&2; exit 2; }
+base="$1"
 
 # The folder sits in .cache (git-ignored, shared with Docker like the checkout), and the trap removes it.
 mkdir -p "$root/.cache"
