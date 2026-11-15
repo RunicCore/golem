@@ -21,11 +21,12 @@ export function localName(name: LocalHelper): Code {
 
 // The rank of a helper is its place in the module: helpers come in this order, after the helpers their definitions name.
 const HELPERS: Readonly<Record<LocalHelper, Helper>> = {
-  // The JSON view: a key is present when it is own, enumerable and not `undefined`, as `JSON.stringify` writes it. A
-  // model's optional field may be set to `undefined` and JSON has no such value.
-  definedKeys: localHelper('definedKeys', 0, self => code`const ${self} = value => Object.keys(value).filter(key => value[key] !== undefined);`),
+  // The JSON view of the keys: a key is present when it is own, enumerable and not `undefined`, as `JSON.stringify` writes
+  // it. A model's optional field may be set to `undefined` and JSON has no such value. Program state of a model instance
+  // (see `instanceFieldsCode`) is no key of the model, and its value is never read.
+  definedKeys: localHelper('definedKeys', 5, self => code`const ${self} = value => { const fields = ${localName('instanceFields')}(value); return Object.keys(value).filter(key => (fields === undefined || fields.includes(key)) && value[key] !== undefined); };`),
   // The failure of a fast check whose key test left the values unread reads them as the full validator does, then fails.
-  readAll: localHelper('readAll', 1, self => code`function ${self}(value, keys) { for (const key of keys) value[key]; }`),
+  readAll: localHelper('readAll', 5, self => code`function ${self}(value, keys) { const fields = ${localName('instanceFields')}(value); for (const key of keys) if (fields === undefined || fields.includes(key)) value[key]; }`),
   isPresent: localHelper('isPresent', 2, self => code`const ${self} = (value, key) => ${ownEnumerableCode(code`value`, code`key`)} && value[key] !== undefined;`),
   isObject: localHelper('isObject', 3, self => code`const ${self} = value => typeof value === 'object' && value !== null && !Array.isArray(value);`),
   // An own key that the value's own model does not declare is program state, never an unknown key (see `instanceFieldsCode`).
@@ -100,11 +101,6 @@ export function scaledDivisor(divisor: number): { readonly units: number; readon
   const decimals = fraction.length - Number(match[3] ?? 0);
   if (!Number.isSafeInteger(units) || decimals < 1 || decimals > 22) return undefined;
   return { units, scale: Number(`1e${decimals}`) };
-}
-
-/** True when `key` is program state of the instance whose `instanceFields` is the local `fields`. */
-export function stateTest(fields: Code, key: Code): Code {
-  return code`${fields} !== undefined && !${fields}.includes(${key})`;
 }
 
 /**

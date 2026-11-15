@@ -132,6 +132,22 @@ for (const { root, fast, rows } of PLACES) {
   }
 }
 
+/** An instance of `Model` with the own key `cache`, a getter that counts its runs and throws. */
+function withThrowingState(Model: new () => object, runs: { count: number }): object {
+  return Object.defineProperty(new Model(), 'cache', { enumerable: true, get() { runs.count++; throw new RangeError('program state was read'); } });
+}
+
+for (const [root, Model] of [['closed', Task], ['evaluated', Task], ['evaluatedValued', Task], ['named', Task], ['countedMax', Task], ['patterned', Task], ['valued', Task], ['tagged', Circle]] as const) {
+  test(`the ${root} check never runs a getter that declares program state`, async () => {
+    // protects: T-912 a throwing getter of program state never runs while a model validates
+    const module = await compiled;
+    const runs = { count: 0 };
+    assert.deepEqual(module.byRoot[root](withThrowingState(Model, runs), false), [], 'the full validator');
+    assert.equal(module.fastByRoot[root]?.(withThrowingState(Model, runs)) ?? true, true, 'the fast check');
+    assert.equal(runs.count, 0);
+  });
+}
+
 for (const root of ['valued', 'patterned'] as const) {
   test(`the ${root} check looks up the field entry once for a plain value with many keys`, async () => {
     // protects: T-151 review the lazy field entry is cached also when it is null, so a plain value runs the lookup once
