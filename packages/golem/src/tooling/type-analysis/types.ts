@@ -750,7 +750,6 @@ interface DescribeScope {
   readonly checker: ts.TypeChecker;
   readonly specifications: readonly ModelSpecification[];
   readonly manifestIndex: ManifestIndex;
-  readonly validationLevel: GolemProfile['validation'];
   readonly allowAny: boolean;
   readonly allowUnresolved: boolean;
   readonly boundary: ModelBoundary | undefined;
@@ -1302,7 +1301,7 @@ function describeProperties(scope: DescribeScope, call: DescribeCall, nextSeen: 
       );
     }
     if (valueType.getCallSignatures().length > 0) {
-      properties[name] = unknownUnlessValidating(scope, () => diagnostic(
+      properties[name] = unknownUnlessValidating(scope, context, () => diagnostic(
         context.sourceFile,
         property.valueDeclaration ?? context.declaration,
         '1004',
@@ -1361,7 +1360,7 @@ function describeObject(scope: DescribeScope, call: DescribeCall, seen: Readonly
       `${where} is a ${collection}, which golem cannot represent. Use a Record or an array.`);
   }
   if (type.getCallSignatures().length > 0 || type.getConstructSignatures().length > 0) {
-    return withMetadata(unknownUnlessValidating(scope, () => diagnostic(context.sourceFile, context.declaration, '1004', `Callable or constructible types cannot be represented by ${context.name}.`)), metadata);
+    return withMetadata(unknownUnlessValidating(scope, context, () => diagnostic(context.sourceFile, context.declaration, '1004', `Callable or constructible types cannot be represented by ${context.name}.`)), metadata);
   }
   // An object breaks any sequence cycle through it: its own revisit is a projection reference or the 1056 diagnostic.
   const nextSeen = new Set([...seen].filter((entry) => !checker.isArrayType(entry) && !checker.isTupleType(entry)));
@@ -1413,9 +1412,9 @@ function describeObject(scope: DescribeScope, call: DescribeCall, seen: Readonly
   return descriptor;
 }
 
-/** A type golem cannot state: `unknown` when the job's validation is off, else generation stops with the error that `failure` makes. */
-function unknownUnlessValidating(scope: DescribeScope, failure: () => Error): { readonly kind: 'unknown' } {
-  if (!scope.validationLevel) return { kind: 'unknown' };
+/** A type golem cannot state: `unknown` when the model being described has validation off, else generation stops with the error that `failure` makes. */
+function unknownUnlessValidating(scope: DescribeScope, context: TypeAnalysisContext, failure: () => Error): { readonly kind: 'unknown' } {
+  if (!scope.modelValidates(context)) return { kind: 'unknown' };
   throw failure();
 }
 
@@ -1423,7 +1422,7 @@ function unknownUnlessValidating(scope: DescribeScope, failure: () => Error): { 
 function describeUnsupported(scope: DescribeScope, call: DescribeCall): ModelConversionDescriptor {
   const { checker } = scope;
   const { context, metadata, type } = call;
-  return withMetadata(unknownUnlessValidating(scope, () => diagnostic(
+  return withMetadata(unknownUnlessValidating(scope, context, () => diagnostic(
     context.sourceFile,
     context.declaration,
     '1003',
@@ -1751,7 +1750,7 @@ export function descriptorBuilder(
     (specifications.find(specification => specification.declaration === context.declaration)?.validation ?? validationLevel) !== false;
 
   const scope: DescribeScope = {
-    checker, specifications, manifestIndex, validationLevel, allowAny, allowUnresolved, boundary, typeErrorAt, isDefaultLibraryFile,
+    checker, specifications, manifestIndex, allowAny, allowUnresolved, boundary, typeErrorAt, isDefaultLibraryFile,
     modelSources, stableIdentityRoot, modelNames, modelLocations, projections, projectionCache, projectionOwners, projectionSources,
     cycleStems, declaredVariants, companionOf, modelNameOf, sourceLocation, claimHeadName, isCycleHead, rejectUnlessAllowAny, modelOf,
     modelValidates,
