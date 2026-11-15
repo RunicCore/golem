@@ -90,11 +90,14 @@ export interface ControllerRoute {
   readonly deprecated?: boolean;
 }
 
+/** File-name endings that make a file below `src` of the golem.yaml folder a controller source when a docs job sets none. */
+export const DEFAULT_CONTROLLER_SUFFIXES: readonly string[] = ['.controller.ts'];
+
 export interface NestAnalysisContext {
   readonly root: string;
   readonly sources: readonly string[];
   /** File-name endings of controller sources; a controller class without a name is named by its file without one. */
-  readonly suffixes?: readonly string[];
+  readonly suffixes: readonly string[];
   readonly program: ts.Program;
   readonly checker: ts.TypeChecker;
   readonly openapiVersion: OpenApiVersion;
