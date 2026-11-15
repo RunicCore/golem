@@ -34,6 +34,12 @@ class Circle { kind = 'a'; x = 1; }
 registerGeneratedModel(Circle, { fields: ['kind', 'x'] });
 class Reach { kind = 'a'; x = 1; y?: number; }
 registerGeneratedModel(Reach, { fields: ['kind', 'x', 'y'] });
+// Declares one number, and no key that a schema below names.
+class Counter { count = 1; }
+registerGeneratedModel(Counter, { fields: ['count'] });
+// Declares the tag of the tagged branch `a` and not its key `x`.
+class Tagged { kind = 'a'; }
+registerGeneratedModel(Tagged, { fields: ['kind'] });
 
 /** An instance of `Model` with `keys` set as own properties. */
 function instance<Model extends object>(Model: new () => Model, keys: Record<string, unknown>): Model {
@@ -54,12 +60,13 @@ const PATTERNED = { type: 'object', properties: { title: { type: 'string' } }, p
 const VALUED = { type: 'object', properties: { title: { type: 'string' } }, additionalProperties: { type: 'number' } };
 // A named key that no check reads (`BARE`), a pattern with no declared key (`PATTERN_ONLY`), and a model instance inside a const, an enum or a list that must be unique.
 const BARE = { type: 'object', properties: { note: {} }, maxProperties: 1 };
+const DEPENDENT = { type: 'object', properties: { title: { type: 'string' } }, dependentSchemas: { note: { required: ['title'] } } };
 const PATTERN_ONLY = { type: 'object', patternProperties: { '^x': { type: 'number' } } };
 const CONST_MODEL = { const: { title: 't' } };
 const ENUM_MODEL = { enum: [{ title: 'u' }, { title: 't' }] };
 const UNIQUE_MODELS = { type: 'array', uniqueItems: true };
 const compiled = compileValidatorModule({
-  roots: { bare: BARE, patternOnly: PATTERN_ONLY, constModel: CONST_MODEL, enumModel: ENUM_MODEL, uniqueModels: UNIQUE_MODELS, closed: CLOSED, evaluated: EVALUATED, evaluatedValued: EVALUATED_VALUED, tagged: TAGGED, named: NAMED, countedMax: COUNTED_MAX, countedMaxNamed: COUNTED_MAX_NAMED, countedMin: COUNTED_MIN, patterned: PATTERNED, valued: VALUED },
+  roots: { dependent: DEPENDENT, bare: BARE, patternOnly: PATTERN_ONLY, constModel: CONST_MODEL, enumModel: ENUM_MODEL, uniqueModels: UNIQUE_MODELS, closed: CLOSED, evaluated: EVALUATED, evaluatedValued: EVALUATED_VALUED, tagged: TAGGED, named: NAMED, countedMax: COUNTED_MAX, countedMaxNamed: COUNTED_MAX_NAMED, countedMin: COUNTED_MIN, patterned: PATTERNED, valued: VALUED },
   fastPath: true,
 });
 
@@ -163,6 +170,26 @@ for (const { root, fast, build } of THROWING) {
     const runs = { count: 0 };
     assert.deepEqual(module.byRoot[root](build(runs), false), [], 'the full validator');
     assert.equal(module.fastByRoot[root]?.(build(runs)), fast ? true : undefined, 'the fast check');
+    assert.equal(runs.count, 0);
+  });
+}
+
+// A program-state key that has the name of a key the schema declares: the schema judges the keys of the instance's own model, so this key is never read.
+const NAMED_LIKE_STATE: readonly { readonly root: string; readonly fast: boolean; readonly valid: boolean; readonly build: (runs: { count: number }) => unknown }[] = [
+  { root: 'countedMaxNamed', fast: true, valid: true, build: runs => withThrowingState(Task, 'note', runs) },
+  { root: 'valued', fast: true, valid: true, build: runs => withThrowingState(Counter, 'title', runs) },
+  { root: 'patterned', fast: true, valid: true, build: runs => withThrowingState(Counter, 'title', runs) },
+  { root: 'dependent', fast: true, valid: true, build: runs => withThrowingState(Task, 'note', runs) },
+  { root: 'tagged', fast: true, valid: false, build: runs => withThrowingState(Tagged, 'x', runs) },
+];
+
+for (const { root, fast, valid, build } of NAMED_LIKE_STATE) {
+  test(`the ${root} check never runs a getter of program state that has a declared name`, async () => {
+    // protects: T-958 a state key named like a schema key was read by the key test, as T-912 left it
+    const module = await compiled;
+    const runs = { count: 0 };
+    assert.equal(module.byRoot[root](build(runs), false).length === 0, valid, 'the full validator');
+    assert.equal(module.fastByRoot[root]?.(build(runs)), fast ? valid : undefined, 'the fast check');
     assert.equal(runs.count, 0);
   });
 }
