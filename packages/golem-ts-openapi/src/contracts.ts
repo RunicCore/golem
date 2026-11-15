@@ -81,7 +81,17 @@ export function createContractAnalysis(
   }
   // OpenAPI describes the full contract even when runtime validation is omitted.
   // The document describes an SDK model by its type; only the codec ids see it as the manifest reference the models job hashes.
-  const buildDescribe = (nameFor?: (specification: ModelSpecification) => string, manifests: ManifestIndex = emptyManifests) => descriptorBuilder(checker, specifications, manifests, true, options.allowAny ?? false, options.root, false, nameFor, undefined, options.boundary, (node) => typeScriptErrorAt(program, node), file => program.isSourceFileDefaultLibrary(file));
+  const buildDescribe = (nameFor?: (specification: ModelSpecification) => string, manifests: ManifestIndex = emptyManifests) => descriptorBuilder(checker, specifications, manifests, {
+    validationLevel: true,
+    allowAny: options.allowAny ?? false,
+    identityRoot: options.root,
+    allowUnresolved: false,
+    nameFor,
+    modelSources: undefined,
+    boundary: options.boundary,
+    typeErrorAt: (node) => typeScriptErrorAt(program, node),
+    isDefaultLibraryFile: file => program.isSourceFileDefaultLibrary(file),
+  });
   const describeAll = (builder: ReturnType<typeof buildDescribe>): Map<ModelSpecification, ModelConversionDescriptor> => new Map(
     specifications.map((specification) => [specification, builder(specification.fieldsType, specification, undefined, specification.fieldsNode)] as const),
   );

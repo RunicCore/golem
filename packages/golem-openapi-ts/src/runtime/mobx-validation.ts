@@ -51,7 +51,7 @@ export function enhanceValidatorWithMobX<
 export class ModelValidator<Fields extends object, Owner extends object = Fields>
   extends PlainModelValidator<Fields, Owner> {
   public constructor(model: Owner) {
-    super(model);
+    super(model, { cache: 'attach' });
     enhanceValidatorWithMobX(this);
   }
 }
