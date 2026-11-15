@@ -377,6 +377,23 @@ function checkDiscriminatorDefaults(document: unknown): OpenApiProblem[] {
   return problems;
 }
 
+/**
+ * A request body media type declares `schema`. `itemSchema` describes the items of a sequential response body: the
+ * client sends one value, not a stream, and no body encoder or type reads a request `itemSchema`.
+ */
+function checkRequestItemSchemas(document: unknown, operations: readonly OperationSite[]): OpenApiProblem[] {
+  return operations.flatMap((entry) => {
+    const { value: body, pointer } = followLocalRefs(document, entry.operation.requestBody, `${entry.pointer}/requestBody`);
+    return objectEntries(asRecord(body).content).flatMap(([contentType, media]) => isJsonObject(media) && media.itemSchema !== undefined
+      ? [{
+        ruleId: 'no-request-item-schema',
+        message: 'itemSchema describes the items of a response stream; declare a request body with schema',
+        pointer: pointerJoin(pointerJoin(pointerJoin(pointer, 'content'), contentType), 'itemSchema'),
+      }]
+      : []);
+  });
+}
+
 /** `defaultMapping` is a 3.2 keyword of the Discriminator Object; a 3.1 document may not use it. */
 function checkDiscriminatorDefaultMappingLine(document: unknown): OpenApiProblem[] {
   const problems: OpenApiProblem[] = [];
@@ -447,6 +464,7 @@ export function checkOpenApiRules(document: unknown): OpenApiProblem[] {
     ...checkTags(document, line),
     ...checkServers(document, operations, line),
     ...checkSecurityRequirements(document, operations),
+    ...checkRequestItemSchemas(document, operations),
     ...(line === '3.2'
       ? [...checkQuerystring(document, operations), ...checkDiscriminatorDefaults(document)]
       : checkDiscriminatorDefaultMappingLine(document)),

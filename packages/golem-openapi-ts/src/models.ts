@@ -39,7 +39,6 @@ export function checkOperationCompositions(
     }
     for (const media of operation.requestContent) {
       check(media.schema, `schema of request body ${media.contentType} ${owner}`);
-      check(media.itemSchema, `item schema of request body ${media.contentType} ${owner}`);
     }
     for (const response of operation.responses) {
       for (const media of response.content) {

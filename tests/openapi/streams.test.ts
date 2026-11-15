@@ -7,10 +7,12 @@ import path from 'node:path';
 import test, { after } from 'node:test';
 import { normalizeDocument } from '#openapi/normalize';
 import {
+  assertGenerationRejected,
   compileGeneratedSdk,
   generateMaterializedSdk,
   isAsyncIterable,
   loadGeneratedClient,
+  writeOpenApiDocument,
   type GeneratedClientClass,
 } from './helpers.js';
 
@@ -182,4 +184,25 @@ test('a request media type without a configured encoder rejects before any reque
     /No request body encoder configured/,
   );
   assert.equal(uploadCalled, false);
+});
+
+// protects: T-964 a request body with itemSchema is refused by name, not typed unknown and sent as JSON
+test('a request body media type with itemSchema stops generation with the rule and the pointer', async (t) => {
+  const feed = { 'application/x-ndjson': { itemSchema: objectItem } };
+  const input = writeOpenApiDocument(createFixtureProject(t, 'golem-openapi-request-stream-'), {
+    openapi: '3.2.0',
+    info: { title: 'Upload', version: '1' },
+    paths: {
+      '/upload': { post: { operationId: 'upload', requestBody: { content: feed }, responses: { 204: { description: 'done' } } } },
+      '/feed': { post: { operationId: 'sendFeed', requestBody: { $ref: '#/components/requestBodies/Feed' }, responses: { 204: { description: 'done' } } } },
+    },
+    components: { requestBodies: { Feed: { content: feed } } },
+  }, 'api.json');
+  await assertGenerationRejected(
+    input,
+    'OpenAPI validation failed with 2 error(s):\n'
+      + 'no-request-item-schema: itemSchema describes the items of a response stream; declare a request body with schema (api.json#/paths/~1upload/post/requestBody/content/application~1x-ndjson/itemSchema)\n'
+      + 'no-request-item-schema: itemSchema describes the items of a response stream; declare a request body with schema (api.json#/components/requestBodies/Feed/content/application~1x-ndjson/itemSchema)',
+    { errorClass: Error },
+  );
 });
