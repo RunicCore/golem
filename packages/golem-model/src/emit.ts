@@ -329,7 +329,7 @@ function projectDescriptor(
         : {}),
       ...(normalizedConstraints.length ? { constraints: normalizedConstraints } : {}),
     };
-  return { ...projected, ...metadata } as ModelConversionDescriptor;
+  return { ...projected, ...metadata };
 }
 
 /** Identifies an imported class across descriptors: its module (or package specifier) and export name. */
@@ -547,7 +547,7 @@ export function describeJob(job: JobAnalysis, specifications: readonly ModelSpec
     const descriptor = describeRoot(job, specification);
     byName.set(specification.name, byName.has(specification.name) ? null : descriptor);
   }
-  const lookup: Record<string, ModelConversionDescriptor> = Object.create(null) as Record<string, ModelConversionDescriptor>;
+  const lookup: Record<string, ModelConversionDescriptor> = Object.create(null);
   for (const [name, descriptor] of job.describe.projections) lookup[name] = descriptor;
   for (const [name, descriptor] of byName) if (descriptor) lookup[name] = descriptor;
   job.lookup = lookup;
@@ -692,7 +692,7 @@ export function analyzeSourceGraph(
   if (!anyDeclValidation) { registry.validations.clear(); registry.classes.clear(); }
   // Sibling models keep their own references; lookups fall back to the job's descriptors.
   const lookup: Record<string, ModelConversionDescriptor> = Object.assign(
-    Object.create(job.lookup ?? null) as Record<string, ModelConversionDescriptor>,
+    Object.create(job.lookup ?? null),
     definitions,
   );
   executableMemos.set(lookup, job.executableMemo);
@@ -700,7 +700,7 @@ export function analyzeSourceGraph(
     Object.entries(definitions).map(([name, descriptor]) => [name, projectDescriptor(descriptor, profile.validation !== false, true, false, lookup)]),
   );
   const wireLookup: Record<string, ModelConversionDescriptor> = Object.assign(
-    Object.create(job.lookup ?? null) as Record<string, ModelConversionDescriptor>,
+    Object.create(job.lookup ?? null),
     wireDefinitions,
   );
   executableMemos.set(wireLookup, job.executableMemo);

@@ -141,8 +141,8 @@ export interface CodecRuntimeOptions {
   readonly siblingWireCodecIds?: ReadonlySet<string>;
   /** Whether a sibling codec's model is recursive, by codec id. A sibling the job does not know is treated as recursive. */
   readonly siblingRecursion?: ReadonlyMap<string, boolean>;
-  /** Export the wire stringify of every public codec, or of those the function accepts (`wireStringifyExportName`), for other generated modules to import. */
-  readonly exportWireStringify?: boolean | ((node: SchemaNode) => boolean);
+  /** Export the wire stringify of the public codecs that the function accepts (`writesWireStringify`, `wireStringifyExportName`), for other generated modules to import. */
+  readonly exportWireStringify?: (node: SchemaNode) => boolean;
   /** Export anonymous codecs' functions: OpenAPI group modules import them from each other. Model companions keep them private. */
   readonly exportAnonymousCodecs?: boolean;
   /** A closed object root's `toWireFormat` keeps only the declared fields of a class instance: its other own keys are program state, not unknown keys. */
@@ -2195,7 +2195,7 @@ function emitStringifySection(runtime: NodeRuntime): Code {
       ? bindInput(emitEncodedRecord(objectDescriptor, inputOf(stringifyValue), encoded), stringifyValue, code`value`)
       : onCastValue((cast) => emitEncodeValue(node.descriptor, cast, encoded))
     : undefined;
-  const exportsWire = codecIsExported(node, ctx) && (typeof ctx.exportWireStringify === 'function' ? ctx.exportWireStringify(node) : ctx.exportWireStringify === true);
+  const exportsWire = codecIsExported(node, ctx) && ctx.exportWireStringify?.(node) === true;
   const wireStringifySrc = emitsValidatedWire
     ? code`${emitStringifyFunction(node, ctx.graph, ctx.serde, { ...ctx, wireIdentity: true, withoutOptions: true, functionName: `${stringifyName}Wire` })}${exportsWire
       ? code`export { ${wireId} as ${identifier(wireStringifyExportName(node.codecId))} };\n`
