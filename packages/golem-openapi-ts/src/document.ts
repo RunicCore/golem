@@ -265,17 +265,18 @@ export function authoredPointer(schema: unknown, pointer: string, moved: MovedUn
   const tokens = jsonPointerTokens(pointer);
   const kept: string[] = [];
   let current = schema;
+  const child = (value: unknown, key: string): unknown => Array.isArray(value) ? value[Number(key)] : isJsonObject(value) ? value[key] : undefined;
   for (let index = 0; index < tokens.length; index += 1) {
-    const token = tokens[index]!;
+    const token = tokens[index];
     const members = isJsonObject(current) ? moved.get(current) : undefined;
     const position = Number(tokens[index + 1]);
     if (members !== undefined && token === 'allOf' && (position === members || position === members + 1)) {
-      current = (asRecord(current).allOf as readonly unknown[])[position];
+      current = child(child(current, token), tokens[index + 1]);
       index += 1;
       continue;
     }
     kept.push(token);
-    current = Array.isArray(current) ? current[Number(token)] : isJsonObject(current) ? current[token] : undefined;
+    current = child(current, token);
   }
   return kept.reduce(jsonPointerJoin, '');
 }

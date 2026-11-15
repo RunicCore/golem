@@ -28,7 +28,7 @@ import { arrayItemNode, staticDecoratorKey } from '@exprtlabs/golem/internal/typ
 import { NEST_COMMON, NEST_SWAGGER } from './packages.js';
 import { decoratorOptions, headerOptionsList, inApplicationOrder, readString, type DecoratorOptions, type MetadataReader } from './metadata.js';
 import { callArguments, decoratorsOf, staticObject } from './symbols.js';
-import type { ControllerParameter, DecoratorInfo, NestAnalysisContext, TypeReference } from './types.js';
+import type { ControllerParameter, DecoratorInfo, NestAnalysisContext, ParameterOverride, TypeReference } from './types.js';
 
 /** `@nestjs/swagger` parameter decorators and the location each documents. */
 const SWAGGER_PARAMETER_LOCATIONS: readonly (readonly [readonly string[], 'query' | 'path' | 'header'])[] = [
@@ -109,8 +109,8 @@ export function classParameterDecorators(
 export function parseParameterOverride(
   reader: MetadataReader,
   decorators: readonly DecoratorInfo[],
-): Readonly<Record<string, Readonly<Record<string, unknown>>>> {
-  const result: Record<string, Readonly<Record<string, unknown>>> = {};
+): Readonly<Record<string, ParameterOverride>> {
+  const result: Record<string, ParameterOverride> = {};
   const declared = SWAGGER_PARAMETER_LOCATIONS.flatMap(([names, location]) => (
     parameterOptionsOf(reader, decorators, names).map(entry => [entry, location] as const)
   ));

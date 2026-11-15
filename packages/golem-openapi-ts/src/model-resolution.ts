@@ -447,11 +447,14 @@ function acceptsNoValue(schema: unknown): boolean {
 function openApiEnumDescriptor(schema: Readonly<Record<string, unknown>>): ModelTypeDescriptor | undefined {
   const values = typedListedValues(schema);
   if (!values) return undefined;
-  const listed = schema.const !== undefined ? [schema.const] : (schema.enum as readonly unknown[]);
-  if (listed.some((value) => value !== null && typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean')) return undefined;
-  const variants = values.map((value): ModelTypeDescriptor => value === null ? { kind: 'null' } : { kind: 'literal', value: value as string | number | boolean });
+  const variants: ModelTypeDescriptor[] = [];
+  for (const value of values) {
+    if (value === null) variants.push({ kind: 'null' });
+    else if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') variants.push({ kind: 'literal', value });
+    else return undefined;
+  }
   if (variants.length === 0) return { kind: 'never' };
-  return variants.length === 1 ? variants[0]! : { kind: 'union', variants };
+  return variants.length === 1 ? variants[0] : { kind: 'union', variants };
 }
 
 function openApiPrimitiveDescriptor(schema: { readonly type?: unknown }): ModelTypeDescriptor | undefined {
@@ -1226,7 +1229,7 @@ function untaggedUnionTable(variants: readonly ModelTypeDescriptor[], definition
   const models = present.filter(({ variant }) => variant.kind === 'generated-model');
   if (models.length !== 1 || objects.length === 0 || objects.length + models.length !== present.length) return undefined;
   const objectTable = tableOf(objects);
-  return objectTable && { ...objectTable, defaultVariant: models[0]!.index };
+  return objectTable && { ...objectTable, defaultVariant: models[0].index };
 }
 
 interface SchemaGraphGroup {
