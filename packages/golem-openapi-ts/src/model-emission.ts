@@ -20,9 +20,9 @@ import {
   type ImportOptions,
   fillFunctionName,
   sideEffectImport,
-  reachesItself,
   stripPlanName,
   wireStringifyExportName,
+  writesWireStringify,
   RUNTIME_SERDE,
   writeOperationCodecs,
   type SdkOperationShape,
@@ -113,12 +113,6 @@ export function checkModelFromJSON(
     (reference) => checkResolver(reference, definitions),
     RUNTIME_SERDE,
   ));
-}
-
-/** Whether a model's group module exports its wire stringify: another group writes a recursive model under it in place and meets it again. */
-function exportsWireStringify(graph: SchemaGraph, node: SchemaNode, profile: OpenApiGenerationProfile): boolean {
-  return profile.validation && node.kind !== 'reference' && !node.sameSchema && node.validation !== false
-    && reachesItself(graph, node);
 }
 
 function generatedFunctionName(nodeId: string, functionName: 'stringify' | 'fill' | 'fromWire' | 'toWire'): string {
@@ -396,10 +390,10 @@ function generateModels(
       const declared = definition !== undefined && Object.hasOwn(asRecord(asRecord(asRecord(document).components).schemas), definition.schemaName);
       return definition !== undefined && declared && typeIdentifier(definition.schemaName) === definition.name ? code`${typesModule.namespace()}.${identifier(definition.name)}` : undefined;
     },
-    exportWireStringify: (node) => exportsWireStringify(analysis.schemaGraph, node, profile),
+    exportWireStringify: (node) => writesWireStringify(node, profile.validation),
     siblingWireCodecIds: new Set([...(helpers.dependencyNodeIds ?? [])].flatMap((id) => {
       const node = analysis.nodesById.get(id);
-      return node && exportsWireStringify(analysis.schemaGraph, node, profile) ? [node.codecId] : [];
+      return node && writesWireStringify(node, profile.validation) ? [node.codecId] : [];
     })),
     ...(helpers.wireStringify ? { siblingWireName: helpers.wireStringify } : {}),
     ...(helpers.exportedFillFunctionIds ? { exportedFillFunctionIds: helpers.exportedFillFunctionIds } : {}),
@@ -416,7 +410,7 @@ function generateModels(
       const fromWire = helpers.codecFunctionImport(node.id, 'fromWire');
       const toWire = helpers.codecFunctionImport(node.id, 'toWire');
       return stringify && fromWire && toWire
-        ? { stringify, fromWire, toWire, sequence: nodeHoldsSequence(node), wireStringify: undefined /* another group's wire value goes by `siblingWireCodecIds` */, ...(fill ? { fill } : {}) }
+        ? { stringify, fromWire, toWire, sequence: nodeHoldsSequence(node), wireStringify: writesWireStringify(node, profile.validation) && helpers.wireStringify ? helpers.wireStringify(node.codecId) : undefined, ...(fill ? { fill } : {}) }
         : undefined;
     },
   };

@@ -17,6 +17,7 @@
  */
 
 import type { ModelConstraint, ModelTypeDescriptor } from '../model-registry.js';
+import { serdeWireDescriptor } from './schema-graph.js';
 import { descriptorNeedsConversion, type ObjectTypeDescriptor } from './union-conversion.js';
 
 /** A composition that no value can satisfy, or whose parts convert one name differently. */
@@ -355,7 +356,10 @@ function distinctDescriptors(children: readonly ModelTypeDescriptor[]): ModelTyp
 /** The JSON type of a scalar descriptor's wire value; undefined for other descriptors. */
 function scalarWireKind(descriptor: ModelTypeDescriptor): string | undefined {
   // OpenAPI temporal values carry their wire form under another key; they are strings on the wire.
-  if (descriptor.serde) return descriptor.serde.wire === undefined ? 'string' : scalarWireKind(descriptor.serde.wire);
+  if (descriptor.serde) {
+    const wire = serdeWireDescriptor(descriptor);
+    return wire === undefined ? 'string' : scalarWireKind(wire);
+  }
   switch (descriptor.kind) {
     case 'string':
       return 'string';

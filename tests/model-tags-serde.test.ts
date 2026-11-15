@@ -238,6 +238,32 @@ export type TB = IObject<{ back?: TA; copy: Pick<TA, 'token'> }>;
   assert.deepEqual(JSON.parse(b.stringifyTB({ back: { token: 6 }, copy: { token: 7 } })), { back: { token: '6' }, copy: { token: '7' } });
 });
 
+for (const validation of [true, false]) {
+  test(`a TSerde whose wire form is a recursive model builds and round-trips with validation ${validation ? 'on' : 'off'}`, async t => {
+    // protects: T-914 a TSerde wire type that reaches a recursive model stopped the build with "Unresolved schema reference"
+    const { root, sourceRoot } = fixture(t);
+    fs.writeFileSync(path.join(sourceRoot, 'codecs.ts'), `import type { TLinkWire } from './a.model.js';
+export function encode(value: string): TLinkWire {
+  const [label, ...rest] = value.split('>');
+  return rest.length === 0 ? { label } : { label, next: encode(rest.join('>')) };
+}
+export function decode(wire: TLinkWire): string {
+  return wire.next === undefined ? wire.label : wire.label + '>' + decode(wire.next);
+}
+`);
+    fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), `import type { IObject } from '@exprtlabs/golem/model';
+import type { TSerde } from '@exprtlabs/golem/tags';
+import { encode, decode } from './codecs.js';
+export type TLinkWire = IObject<{ label: string; next?: TLinkWire }>;
+export type TChain = IObject<{ path: string & TSerde<typeof encode, typeof decode> }>;
+`);
+    await buildModelProjectWith(root, { validation });
+    const a = await import(path.toNamespacedPath(path.join(root, 'build/a.model.generated.js')));
+    assert.deepEqual(a.parseTChain('{"path":{"label":"a","next":{"label":"b"}}}'), { path: 'a>b' });
+    assert.deepEqual(JSON.parse(a.stringifyTChain({ path: 'a>b' })), { path: { label: 'a', next: { label: 'b' } } });
+  });
+}
+
 // protects: a TSerde whose wire is a number or a boolean returned the wire value on decode and never ran its deserializer
 for (const validation of [true, false]) {
   test(`a TSerde with a number or boolean wire runs its deserializer on decode with validation ${validation ? 'on' : 'off'}`, async t => {

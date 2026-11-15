@@ -8,7 +8,6 @@ export {
   fromWireFunctionName,
   MODULE_CONSTANT_HELPERS,
   parseFunctionName,
-  reachesItself,
   reachesRecursiveNode,
   stringifyFunctionName,
   stripPlanName,

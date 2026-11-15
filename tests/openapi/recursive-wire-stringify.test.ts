@@ -1,7 +1,8 @@
 import { createFixtureProject } from '../fixture-project.js';
-import { compileGeneratedSdk, generateMaterializedSdk, sdkBodyCodec, withRootOperations } from './helpers.js';
+import { compileGeneratedSdk, generateMaterializedSdk, importGeneratedModule, sdkBodyCodec, withRootOperations } from './helpers.js';
 import { dateTime, object, operation, ref } from './schema-builders.js';
 import assert from 'node:assert/strict';
+import { readdirSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 
@@ -50,4 +51,36 @@ test('a body with a date writes a recursive object or oneOf, with and without a 
   const invalidNode = structuredClone(decoded) as { node: { children: { value: unknown }[] } };
   invalidNode.node.children[0]!.value = 7;
   await assert.rejects(() => report.encode(invalidNode), isLibError);
+});
+
+// Entry composes Base with allOf and holds itself: it stays a model of its own group, so Ledger's wire write cannot write it in place.
+const composedDocument = {
+  openapi: '3.1.0',
+  info: { title: 'ComposedWire', version: '1' },
+  paths: { '/ledgers': operation('createLedger', 'Ledger') },
+  components: {
+    schemas: {
+      Ledger: object({ at: dateTime, entry: ref('Entry') }, ['at', 'entry']),
+      Base: object({ at: dateTime }, ['at']),
+      Entry: { allOf: [ref('Base'), object({ closed: dateTime, children: { type: 'array', items: ref('Entry') } }, ['closed'])] },
+    },
+  },
+};
+
+test('a model with a date writes the date of a composed recursive model of another group as its wire value', async t => {
+  // protects: T-915 the wire write of an imported composed model called its model stringify on an encoded date
+  const output = path.join(createFixtureProject(t, 'golem-openapi-composed-wire-'), 'sdk');
+  await generateMaterializedSdk(withRootOperations(composedDocument, 'Ledger'), { output, name: 'ComposedWire', profile: { validation: true } });
+  compileGeneratedSdk(output, [], { strict: true, skipLibCheck: true, noUnusedLocals: true });
+  const ledger = await sdkBodyCodec(output, 'ComposedWire', 'Ledger');
+
+  const wire = {
+    at: '2025-01-02T03:04:05.000Z',
+    entry: { at: '2025-02-03T04:05:06.000Z', closed: '2025-03-04T05:06:07.000Z', children: [{ at: '2025-04-05T06:07:08.000Z', closed: '2025-05-06T07:08:09.000Z' }] },
+  };
+  const models = path.join(output, 'dist/models');
+  const stringifyLedgers = await Promise.all(readdirSync(models).filter(file => file.startsWith('_group') && file.endsWith('.js'))
+    .map(async file => (await importGeneratedModule(output, file, `dist/models/${file}`))['stringifyLedger']));
+  const stringifyLedger = stringifyLedgers.find(candidate => typeof candidate === 'function') as (value: unknown) => string;
+  assert.deepEqual(JSON.parse(stringifyLedger(await ledger.decode(wire))), wire);
 });
