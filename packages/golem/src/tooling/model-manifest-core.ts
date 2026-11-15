@@ -239,6 +239,11 @@ function validateGolemModeGraph(manifest: Record<string, unknown>, filename: str
   }
 }
 
+/** The error for a model entry with no codec id of its own and none on a component of its golem-mode manifest. */
+export function noCodecIdError(filename: string, exportName: string): Error {
+  return new Error(`Invalid model manifest ${displayPath(filename)}: model entry ${exportName} has no codecId. Regenerate the SDK with this golem version.`);
+}
+
 export function validateModelManifest(manifest: unknown, filename = MODEL_MANIFEST_FILENAME): ModelManifest {
   if (!isRecord(manifest)) {
     throw new Error(`Invalid model manifest ${displayPath(filename)}: expected an object.`);
@@ -267,7 +272,7 @@ export function validateModelManifest(manifest: unknown, filename = MODEL_MANIFE
       throw new Error(`Invalid model entry in ${displayPath(filename)}.`);
     }
     if (nodeNames === undefined ? model.codecId === undefined : !nodeNames.has(model.type.export)) {
-      throw new Error(`Invalid model manifest ${displayPath(filename)}: model entry ${model.type.export} has no codecId. Regenerate the SDK with this golem version.`);
+      throw noCodecIdError(filename, model.type.export);
     }
   }
   return manifest as ModelManifest;

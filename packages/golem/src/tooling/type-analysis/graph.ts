@@ -91,7 +91,7 @@ export function deduplicateProjections(
   const representatives = new Map<string, string>();
   const redirect = new Map<string, string>();
   for (const name of names) {
-    const key = projectionIdentity(lookup, name, definitions[name]!);
+    const key = projectionIdentity(lookup, name, definitions[name]);
     const representative = representatives.get(key) ?? name;
     representatives.set(key, representative);
     redirect.set(name, representative);
@@ -104,12 +104,12 @@ export function deduplicateProjections(
     else if (descriptor.kind === 'array') result = { ...descriptor, item: rewrite(descriptor.item) };
     else if (descriptor.kind === 'tuple') result = { ...descriptor, items: descriptor.items.map(rewrite), ...(descriptor.rest ? { rest: { ...descriptor.rest, item: rewrite(descriptor.rest.item) } } : {}) };
     else if (descriptor.kind === 'union' || descriptor.kind === 'intersection') result = { ...descriptor, variants: descriptor.variants.map(rewrite) };
-    if (rich.serde?.wireDescriptor) result = { ...result, serde: { ...rich.serde, wireDescriptor: rewrite(rich.serde.wireDescriptor) } } as unknown as ModelConversionDescriptor;
+    if (rich.serde?.wireDescriptor) result = { ...result, serde: { ...rich.serde, wireDescriptor: rewrite(rich.serde.wireDescriptor) } };
     if (rich.constraints?.length) {
       result = {
         ...result,
         constraints: rich.constraints.map((constraint) => rewriteConstraint(constraint, rewrite)),
-      } as ModelConversionDescriptor;
+      };
     }
     return result;
   };

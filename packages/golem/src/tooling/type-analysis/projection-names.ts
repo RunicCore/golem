@@ -23,7 +23,7 @@ export function pascalIdentifier(key: string): string | undefined {
   if (/[^\x00-\x7F]/.test(key)) return undefined;
   const parts = key.split(/[^A-Za-z0-9]+/).filter(Boolean);
   if (parts.length === 0) return undefined;
-  return parts.map(part => part[0]!.toUpperCase() + part.slice(1)).join('');
+  return parts.map(part => part.charAt(0).toUpperCase() + part.slice(1)).join('');
 }
 
 function unwrap(node: ts.TypeNode): ts.TypeNode {
@@ -35,7 +35,7 @@ function untagged(checker: ts.TypeChecker, node: ts.TypeNode): ts.TypeNode {
   const current = unwrap(node);
   if (!ts.isIntersectionTypeNode(current)) return current;
   const rest = current.types.filter(member => !isDiscriminatorTag(checker, member));
-  return rest.length === 1 && rest.length < current.types.length ? untagged(checker, rest[0]!) : current;
+  return rest.length === 1 && rest.length < current.types.length ? untagged(checker, rest[0]) : current;
 }
 
 function aliasDeclaration(checker: ts.TypeChecker, node: ts.TypeReferenceNode): ts.TypeAliasDeclaration | undefined {
@@ -80,7 +80,7 @@ function readable(
   const utility = ts.isIdentifier(current.typeName) ? current.typeName.text : undefined;
   if (!utility || !UTILITIES.has(utility) || !current.typeArguments?.length) return undefined;
   if (depth >= MAX_PROJECTION_DEPTH) return undefined;
-  const inner = readable(checker, current.typeArguments[0]!, modelNameOf, depth + 1);
+  const inner = readable(checker, current.typeArguments[0], modelNameOf, depth + 1);
   if (!inner) return undefined;
   if (!KEYED.has(utility)) return `${inner}${utility}`;
   const keys = current.typeArguments[1] ? literalKeys(current.typeArguments[1]) : undefined;
@@ -142,9 +142,9 @@ export function orderIndependentTypeText(checker: ts.TypeChecker, type: ts.Type)
     let lead = '';
     const commit = (): void => {
       if (current !== undefined) operands.push(current);
-      const slots = operands.map((operand, index) => index).filter(index => !FIXED_ORDER_MEMBERS.has(operands[index]!));
-      const sorted = slots.map(index => operands[index]!).sort(compareText);
-      slots.forEach((slot, position) => { operands[slot] = sorted[position]!; });
+      const slots = operands.map((operand, index) => index).filter(index => !FIXED_ORDER_MEMBERS.has(operands[index]));
+      const sorted = slots.map(index => operands[index]).sort(compareText);
+      slots.forEach((slot, position) => { operands[slot] = sorted[position]; });
       out += lead + operands.join(' | ');
       operands = [];
       current = undefined;
@@ -158,7 +158,7 @@ export function orderIndependentTypeText(checker: ts.TypeChecker, type: ts.Type)
       current += chunk;
     };
     while (next < tokens.length) {
-      const { start, end } = tokens[next++]!;
+      const { start, end } = tokens[next++];
       const gap = text.slice(taken, start);
       const token = text.slice(start, end);
       taken = end;
@@ -184,12 +184,12 @@ export function orderIndependentTypeText(checker: ts.TypeChecker, type: ts.Type)
 /** A type argument as part of a name: `string[]` is `StringArray`, so `Page<string[]>` and `Page<string[][]>` differ. Undefined when nothing identifier-like remains. */
 function typeArgumentName(checker: ts.TypeChecker, argument: ts.Type): string | undefined {
   if (checker.isArrayType(argument)) {
-    const item = checker.getTypeArguments(argument as ts.TypeReference)[0];
+    const item = checker.getTypeArguments(argument)[0];
     const name = item && typeArgumentName(checker, item);
     return name && `${name}Array`;
   }
   if (checker.isTupleType(argument)) {
-    const names = checker.getTypeArguments(argument as ts.TypeReference).map(item => typeArgumentName(checker, item));
+    const names = checker.getTypeArguments(argument).map(item => typeArgumentName(checker, item));
     return names.every((name): name is string => name !== undefined) ? `Tuple${names.join('')}` : undefined;
   }
   return pascalIdentifier(orderIndependentTypeText(checker, argument));
@@ -232,9 +232,9 @@ export function keysReadAlike(checker: ts.TypeChecker, left: ts.Type, right: ts.
   const first = keyed(left);
   const second = keyed(right);
   if (first.length !== second.length || first.length === 0) return false;
-  if (first.every((item, index) => item.name === second[index]!.name)) return false;
-  return first.every((item, index) => item.key !== undefined && item.key === second[index]!.key
-    && checker.isTypeAssignableTo(item.type, second[index]!.type) && checker.isTypeAssignableTo(second[index]!.type, item.type));
+  if (first.every((item, index) => item.name === second[index].name)) return false;
+  return first.every((item, index) => item.key !== undefined && item.key === second[index].key
+    && checker.isTypeAssignableTo(item.type, second[index].type) && checker.isTypeAssignableTo(second[index].type, item.type));
 }
 
 const PROJECTION_NAME = /^[A-Za-z][A-Za-z0-9]*$/;
@@ -277,10 +277,11 @@ function tagWrapperArgument(checker: ts.TypeChecker, node: ts.TypeNode): ts.Type
   if (!ts.isTypeReferenceNode(node) || node.typeArguments?.length !== 1) return undefined;
   const declaration = aliasDeclaration(checker, node);
   const parameter = declaration?.typeParameters?.length === 1 ? declaration.typeParameters[0] : undefined;
-  if (!declaration || !parameter || !ts.isIntersectionTypeNode(unwrap(declaration.type))) return undefined;
-  const parts = (unwrap(declaration.type) as ts.IntersectionTypeNode).types;
+  const body = declaration && unwrap(declaration.type);
+  if (!parameter || !body || !ts.isIntersectionTypeNode(body)) return undefined;
+  const parts = body.types;
   const bare = parts.filter(part => !isDiscriminatorTag(checker, part));
-  const isParameter = bare.length === 1 && ts.isTypeReferenceNode(bare[0]!) && !bare[0].typeArguments && checker.getSymbolAtLocation(bare[0].typeName) === checker.getSymbolAtLocation(parameter.name);
+  const isParameter = bare.length === 1 && ts.isTypeReferenceNode(bare[0]) && !bare[0].typeArguments && checker.getSymbolAtLocation(bare[0].typeName) === checker.getSymbolAtLocation(parameter.name);
   return isParameter && bare.length < parts.length ? node.typeArguments[0] : undefined;
 }
 
@@ -330,7 +331,7 @@ export function unionVariantNaming(
   const indexOf = (variant: ts.Type): number => memberTypes?.findIndex(member => member === variant || sameUntagged(variant, member)) ?? -1;
   const nodeOf = (variant: ts.Type): ts.TypeNode | undefined => {
     const index = indexOf(variant);
-    if (index >= 0) return members![index];
+    if (index >= 0) return members?.[index];
     return !members && node && named.length === 1 ? unwrap(node) : undefined;
   };
   if (named.length < 2) {
@@ -341,7 +342,7 @@ export function unionVariantNaming(
     const symbol = checker.getPropertyOfType(variant, property);
     if (!symbol) return undefined;
     const type = checker.getTypeOfSymbolAtLocation(symbol, location);
-    return type.flags & ts.TypeFlags.StringLiteral ? (type as ts.StringLiteralType).value : undefined;
+    return ts.isStringLiteralType(type) ? type.value : undefined;
   };
   if (tagKey !== undefined) {
     const pascal = named.map(variant => {
@@ -349,7 +350,7 @@ export function unionVariantNaming(
       return value === undefined ? undefined : pascalIdentifier(value);
     });
     if (pascal.every((value): value is string => value !== undefined) && new Set(pascal).size === named.length) {
-      named.forEach((variant, index) => result.set(variant, { part: pascal[index]!, node: nodeOf(variant) }));
+      named.forEach((variant, index) => result.set(variant, { part: pascal[index], node: nodeOf(variant) }));
       return result;
     }
   }

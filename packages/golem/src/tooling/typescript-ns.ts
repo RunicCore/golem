@@ -140,6 +140,16 @@ export const {
   typeReferenceTarget,
 } = backend;
 
+/** Whether `type` is a string literal type, which then has its `value`. */
+export function isStringLiteralType(type: Golem.Type): type is Golem.StringLiteralType {
+  return (type.flags & TypeFlags.StringLiteral) !== 0;
+}
+
+/** Whether `type` is a number literal type, which then has its `value`. */
+export function isNumberLiteralType(type: Golem.Type): type is Golem.NumberLiteralType {
+  return (type.flags & TypeFlags.NumberLiteral) !== 0;
+}
+
 const ERROR_CATEGORY = 1;
 const GREY = '\x1b[90m';
 const RESET = '\x1b[0m';

@@ -145,7 +145,7 @@ function visitReferences(root: unknown, onReference: (reference: string) => void
       for (const item of value) visit(item);
       return;
     }
-    const mapping = key === 'discriminator' ? recordOrUndefined((value as Record<string, unknown>).mapping) : undefined;
+    const mapping = key === 'discriminator' ? recordOrUndefined(Reflect.get(value, 'mapping')) : undefined;
     for (const target of Object.values(mapping ?? {})) if (typeof target === 'string') onReference(target);
     const namesOnly = key !== undefined && NAME_MAP_KEYWORDS.has(key);
     for (const [childKey, item] of Object.entries(value)) {
@@ -241,7 +241,7 @@ class ComponentSchemas {
     // describing the item first keeps that named identity intact and avoids
     // re-entering the subclass's runtime fields as an anonymous object.
     if (this.checker.isArrayType(type)) {
-      const itemType = this.checker.getTypeArguments(type as ts.TypeReference)[0] ?? this.checker.getAnyType();
+      const itemType = this.checker.getTypeArguments(type)[0] ?? this.checker.getAnyType();
       // `readonly T[]` and `(T[])` write the same array as `T[]`; its item node keeps the model's name.
       let written = typeNode;
       while (written && (ts.isParenthesizedTypeNode(written) || (ts.isTypeOperatorNode(written) && written.operator === ts.SyntaxKind.ReadonlyKeyword))) written = written.type;
@@ -376,8 +376,8 @@ class ComponentSchemas {
     collectComponentReferences(document, pending);
     const generated: Record<string, unknown> = {};
     const visited = new Set<string>();
-    while (pending.size > 0) {
-      const name = pending.values().next().value as string;
+    // A Set iteration also visits what the body adds, in insertion order.
+    for (const name of pending) {
       pending.delete(name);
       if (visited.has(name)) continue;
       visited.add(name);

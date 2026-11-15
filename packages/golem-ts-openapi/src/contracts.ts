@@ -352,7 +352,7 @@ function qualifiedComponentNames(
     const tail = (item: { readonly directory: readonly string[] }): string => item.directory.slice(-run).join('/');
     while (run < longest && new Set(places.map(tail)).size < directories.size) run += 1;
     reps.forEach((rep, index) => {
-      const item = places[index]!;
+      const item = places[index];
       const neighbours = places.filter((other, otherIndex) => otherIndex !== index && other.directory.join('/') === item.directory.join('/'));
       // `a.ts` and `a.model.ts` share the stem `a`: the whole file name then tells them apart.
       const stem = neighbours.some((other) => other.stem === item.stem) ? item.file : item.stem;

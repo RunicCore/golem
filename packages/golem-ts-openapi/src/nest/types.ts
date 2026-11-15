@@ -26,6 +26,9 @@ export interface TypeReference {
   readonly sourceFile: ts.SourceFile;
 }
 
+/** What an `@ApiQuery`, `@ApiParam` or `@ApiHeader` sets on a parameter: schema keywords by name, and the `type` of the override when it names one. */
+export type ParameterOverride = Readonly<Record<string, unknown>> & { readonly type?: TypeReference; readonly isArray?: boolean };
+
 export interface DecoratorInfo {
   readonly decorator: ts.Decorator;
   readonly expression: ts.Expression;
@@ -83,7 +86,7 @@ export interface ControllerRoute {
   readonly bodyParts: readonly ControllerParameter[];
   readonly responses: readonly ResponseDescription[];
   readonly requestBody?: RequestBodyDescription;
-  readonly parameterOverrides?: Readonly<Record<string, Readonly<Record<string, unknown>>>>;
+  readonly parameterOverrides?: Readonly<Record<string, ParameterOverride>>;
   readonly consumes?: readonly string[];
   readonly produces?: readonly string[];
   readonly security?: readonly Record<string, string[]>[];

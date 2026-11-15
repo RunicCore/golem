@@ -634,10 +634,10 @@ function descriptorSchema(
         // A discriminator requires a required tag with non-empty string const or enum values for each branch it selects. Other tags keep anyOf.
         const tagged = table !== undefined && !mixed && defaultWritable && present.every(({ index }, position) => position === defaultAt
           || (documented
-            ? table.values[index]!.length > 0 && table.values[index]!.every((item) => typeof item === 'string' && item !== '')
+            ? table.values[index].length > 0 && table.values[index].every((item) => typeof item === 'string' && item !== '')
             : hasDiscriminatorTag(branches[position], table.propertyName)));
         const mapping = tagged && documented && refs.every((ref) => ref !== undefined)
-          ? Object.fromEntries(present.flatMap(({ index }, position) => position === defaultAt ? [] : table.values[index]!.map((item) => [item, refs[position]])))
+          ? Object.fromEntries(present.flatMap(({ index }, position) => position === defaultAt ? [] : table.values[index].map((item) => [item, refs[position]])))
           : undefined;
         const defaultMapping = tagged && defaultAt >= 0 ? refs[defaultAt] : undefined;
         schema = tagged

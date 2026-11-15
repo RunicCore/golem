@@ -775,7 +775,7 @@ function objectType(schema: JsonObjectLike, context: SchemaTypeContext): TypeCod
   const properties = objectEntries(schema.properties);
   const propertyTypes = properties.map(([, value]) => schemaTypeNode(value, context));
   const members = properties.map(([name, value], index) => {
-    const member = code`${propertyKey(name)}${required.has(name) ? code`` : code`?`}: ${propertyTypes[index]!.code};`;
+    const member = code`${propertyKey(name)}${required.has(name) ? code`` : code`?`}: ${propertyTypes[index].code};`;
     return isJsonObject(value) && value.description ? code`${descriptionComment(value.description)}${lineBreak}${member}` : member;
   });
   if (schema.additionalProperties) {
@@ -882,7 +882,7 @@ function responseVariantTypes(document: unknown, response: NormalizedResponse, c
 
 /** The file ends with its last line, not with blank lines. */
 function dropTrailingBlankLines(lines: Code[]): void {
-  while (lines.length > 0 && isEmpty(lines.at(-1)!)) lines.pop();
+  while (lines.length > 0 && isEmpty(lines[lines.length - 1])) lines.pop();
 }
 
 /** The component schemas of a document, resolved, each with its type name claimed in `scope` as it is read. */

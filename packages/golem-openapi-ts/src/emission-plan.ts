@@ -142,7 +142,7 @@ function operationFirstServers(operations: readonly NormalizedOperation[], root:
     if (!list.length || JSON.stringify(list) === rootKey) continue;
     const first = JSON.stringify(list[0]);
     let position = firstServers.findIndex((server) => JSON.stringify(server) === first);
-    if (position < 0) position = firstServers.push(list[0]!) - 1;
+    if (position < 0) position = firstServers.push(list[0]) - 1;
     index.set(operation.name, position);
   }
   return { operationServers: firstServers, operationServerIndex: index };

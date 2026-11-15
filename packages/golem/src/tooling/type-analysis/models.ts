@@ -118,7 +118,7 @@ function readValidationOption(
   const type = checker.getTypeOfSymbolAtLocation(property, optionsNode);
   if ((type.flags & ts.TypeFlags.Undefined) !== 0) return undefined;
   if ((type.flags & ts.TypeFlags.BooleanLiteral) !== 0) return checker.typeToString(type) === 'true';
-  if ((type.flags & ts.TypeFlags.StringLiteral) !== 0 && (type as ts.StringLiteralType).value === 'sanity') return 'sanity';
+  if (ts.isStringLiteralType(type) && type.value === 'sanity') return 'sanity';
   throw diagnostic(sourceFile, declaration, '1089', `${invalidValidationLevelMessage(`The validation option of ${declaration.name.text}`)} It is ${checker.typeToString(type)}.`);
 }
 

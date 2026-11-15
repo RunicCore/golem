@@ -56,7 +56,8 @@ export interface Scanner {
 }
 export interface TypeNode extends Node {}
 export type Declaration = Node;
-export type NamedDeclaration = Node & { readonly name?: Identifier };
+/** A declaration that may carry a name: the name of a property is any property name, such as the `[sym]` of a computed key. */
+export type NamedDeclaration = Node & { readonly name?: PropertyName };
 export type PropertyName = Identifier | StringLiteral | NumericLiteral | ComputedPropertyName;
 export type BindingName = Identifier | ObjectBindingPattern;
 export type EntityName = Identifier | QualifiedName;
@@ -515,13 +516,13 @@ export interface Symbol {
   readonly checkFlags: number;
   readonly name: string;
   getName(): string;
-  readonly valueDeclaration?: Node;
-  readonly declarations: readonly Node[];
+  readonly valueDeclaration?: NamedDeclaration;
+  readonly declarations: readonly NamedDeclaration[];
 }
 
 export interface Signature {
   readonly parameters: readonly Symbol[];
-  readonly declaration?: Node;
+  readonly declaration?: NamedDeclaration;
   getReturnType(): Type;
 }
 

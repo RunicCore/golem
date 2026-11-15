@@ -177,12 +177,8 @@ function literalValue(
   }
   const type = argumentType(checker, argument);
   if (!type) return undefined;
-  if (expected === 'number' && (type.flags & ts.TypeFlags.NumberLiteral) !== 0) {
-    return (type as ts.NumberLiteralType).value;
-  }
-  if (expected === 'string' && (type.flags & ts.TypeFlags.StringLiteral) !== 0) {
-    return (type as ts.StringLiteralType).value;
-  }
+  if (expected === 'number' && ts.isNumberLiteralType(type)) return type.value;
+  if (expected === 'string' && ts.isStringLiteralType(type)) return type.value;
   if (expected === 'number') {
     const text = checker.typeToString(type);
     const value = Number(text);
@@ -277,10 +273,14 @@ function isGolemTagSymbol(checker: ts.TypeChecker, symbol: ts.Symbol | undefined
   return Boolean(target?.declarations?.some((declaration) => isGolemSourceFile(declaration.getSourceFile().fileName, 'tags', owners)));
 }
 
+/** The name node of the declaration of `property`: a computed key such as `[sym]` for a property keyed by a symbol. */
+export function propertyKey(property: ts.Symbol): ts.PropertyName | undefined {
+  return (property.valueDeclaration ?? property.declarations?.[0])?.name;
+}
+
 /** Whether `property` is the key of a golem tag: a property named by one of the unique symbols that tags.ts declares. */
 export function isGolemTagKey(checker: ts.TypeChecker, property: ts.Symbol): boolean {
-  const declaration = property.valueDeclaration ?? property.declarations?.[0];
-  const key = declaration && (declaration as ts.NamedDeclaration).name;
+  const key = propertyKey(property);
   return key !== undefined && ts.isComputedPropertyName(key) && isGolemTagSymbol(checker, checker.getSymbolAtLocation(key.expression));
 }
 
@@ -406,7 +406,7 @@ function functionBinding(
     ? declaration.parent
     : undefined;
   const named = variable?.name
-    ?? (declaration && (declaration as ts.NamedDeclaration).name);
+    ?? declaration?.name;
   const written = context.writtenFunctions?.[kind].get(fn.type);
   if (written === null && !named) {
     throw context.diagnostic(fn.owner, '1040', `${kind} function shares its type with another function in this field, so golem cannot tell which one the tag names. Declare it with \`function\` or give it its own type.`);
@@ -542,7 +542,7 @@ function literalString(
 ): string {
   const value = literalValue(context.checker, { node }, 'string');
   if (typeof value === 'string') return value;
-  if ((type.flags & ts.TypeFlags.StringLiteral) !== 0) return (type as ts.StringLiteralType).value;
+  if (ts.isStringLiteralType(type)) return type.value;
   throw context.diagnostic(owner, '1044', `${label} requires a string literal argument.`);
 }
 
