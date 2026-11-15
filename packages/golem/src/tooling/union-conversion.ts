@@ -9,6 +9,7 @@ import { createHash } from 'node:crypto';
 import { bindInput, code, helperName, identifier, inputOf, inputSlot, join, literal, localCode, readShape, render, sameCode, selfPlacedHelper, type Code, type Helper, type InputSlot } from './code.js';
 import { rt } from './rt.js';
 import type { RichDescriptor } from './type-analysis/graph.js';
+import { serdeWireDescriptor } from './schema-graph.js';
 import {
   emitArrayItems,
   emitTupleItems,
@@ -428,7 +429,7 @@ function inlineDispatch(options: DispatchOptions): Code {
 }
 
 /** A named variant: a model, or a named alias that a node of the walker's graph holds. */
-type NamedTypeDescriptor = Extract<ModelTypeDescriptor, { readonly kind: 'reference' | 'generated-model' }>;
+export type NamedTypeDescriptor = Extract<ModelTypeDescriptor, { readonly kind: 'reference' | 'generated-model' }>;
 
 function isNamed(descriptor: ModelTypeDescriptor): descriptor is NamedTypeDescriptor {
   return descriptor.kind === 'reference' || descriptor.kind === 'generated-model';
@@ -438,7 +439,7 @@ function isNamed(descriptor: ModelTypeDescriptor): descriptor is NamedTypeDescri
  * Whether a named variant is a sequence: its node holds an array or tuple, as a walker reads it from its graph (a recursive array alias
  * is a named node, not written inline). The union tells its value from an object by `Array.isArray`. Any other named variant is an object.
  */
-type NamedVariants = (variant: ModelTypeDescriptor) => boolean;
+type NamedVariants = (variant: NamedTypeDescriptor) => boolean;
 
 /** The variants of a `scalar | scalar[]` or `scalar | [T, ...]` union: its one sequence, and the scalar variants beside it. A named alias of an array is a sequence too. */
 interface ScalarOrArray {
@@ -449,6 +450,12 @@ interface ScalarOrArray {
 /** Whether the variant is an array or tuple, or a named node of one: its value is a JSON array. */
 function isSequenceVariant(variant: ModelTypeDescriptor, named: NamedVariants): variant is ScalarOrArray['sequence'] {
   return variant.kind === 'array' || variant.kind === 'tuple' || (isNamed(variant) && named(variant));
+}
+
+/** A variant with a serde of its own whose wire form is an array or tuple, or a named node of one, whatever type the serde reads it into. */
+function isSerdeSequence(variant: ModelTypeDescriptor, holdsSequence: NamedVariants): boolean {
+  const wire = serdeWireDescriptor(variant);
+  return wire !== undefined && (wire.kind === 'array' || wire.kind === 'tuple' || (isNamed(wire) && holdsSequence(wire)));
 }
 
 /** A model, or a named node that holds an object or anything but an array: its value is a JSON object or the like. */
@@ -602,13 +609,13 @@ export interface UnionConversion {
   readonly generated?: GeneratedWithObjects;
   /** A step after the generated-model one, which returns the whole conversion or undefined. */
   readonly afterGenerated?: (present: readonly ModelTypeDescriptor[]) => Code | undefined;
-  /** The named variants that hold an array or tuple, from the walker's graph (see `NamedVariants`). */
-  readonly named?: NamedVariants;
   /**
-   * The variants with a serde of their own whose wire form is an array or tuple (a class or a model that reads an array). Their wire value
-   * is an array that the union cannot tell from another sequence, so a union of one of them and another sequence variant stops generation.
+   * Whether the node of a named variant holds an array or tuple (a recursive array alias), from the walker's graph. The union reads from it
+   * which variants are sequences: a named variant with no serde of its own that holds one, and a variant with a serde whose wire form is an
+   * array, a tuple or a named node that holds one (a class or a model that reads an array). A serde's wire value is an array that the union
+   * cannot tell from another sequence, so a union of one of them and another sequence variant stops generation.
    */
-  readonly serdeSequence?: NamedVariants;
+  readonly holdsSequence: NamedVariants;
 }
 
 /** The variant kinds that sit beside one object or model in a value conversion and need no conversion. */
@@ -628,8 +635,9 @@ export function emitUnionConversion(
 ): Code {
   const json = direction === 'stringify';
   const value = expression;
-  const { convert } = conversion;
-  const named: NamedVariants = (variant) => conversion.named?.(variant) === true;
+  const { convert, holdsSequence } = conversion;
+  // A variant with a serde reads its own wire form, so it is no sequence here.
+  const named: NamedVariants = (variant) => variant.serde === undefined && holdsSequence(variant);
   const sequenceBranch = (sequence: ScalarOrArray['sequence']): Code => emitSequenceBranch(sequence, expression, conversion.items, convert);
   // A walker's own join knows the items of an inline sequence; a named sequence converts by its node, so the plain join stands.
   // A JSON join sits inside a concatenation, so it keeps its parentheses.
@@ -648,7 +656,7 @@ export function emitUnionConversion(
     if (json) return code`(${value} == null ? 'null' : (${converted}))`;
     return sameCode(converted, value) ? value : code`${value} == null ? ${value} : (${converted})`;
   }
-  const serdeSequence = (variant: ModelTypeDescriptor): boolean => conversion.serdeSequence?.(variant) === true;
+  const serdeSequence = (variant: ModelTypeDescriptor): boolean => isSerdeSequence(variant, holdsSequence);
   if (present.some(serdeSequence) && present.filter((variant) => serdeSequence(variant) || isSequenceVariant(variant, named)).length > 1) {
     throw new AmbiguousUnionConversionError(present);
   }

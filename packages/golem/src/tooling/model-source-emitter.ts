@@ -233,10 +233,7 @@ function emitNestedUnion(
     emitNested(variant, expression, direction, resolveModel, resolveSerde, memo);
   return emitUnionConversion(descriptor, expression, 'nested', {
     convert,
-    // A variant with a serde reads its own wire form, so it is no sequence here (as in the stringify walker).
-    named: (variant) => (variant.kind === 'reference' || variant.kind === 'generated-model')
-      && !metadata(variant).serde
-      && resolveModel(variant.kind === 'reference' ? variant.name : variant.id).sequence === true,
+    holdsSequence: (variant) => resolveModel(variant.kind === 'reference' ? variant.name : variant.id).sequence === true,
     items: sequenceItems(direction, resolveModel, resolveSerde, memo),
     tagged: ({ indices, rest, restIsInstance, fallback, fallbackVariant }) => {
       const variants = indices.map((index) => descriptor.variants[index]);

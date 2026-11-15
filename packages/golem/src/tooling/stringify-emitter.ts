@@ -1294,17 +1294,6 @@ function holdsSequence(variant: ModelTypeDescriptor, ctx: EmitCtx): boolean {
   return nodeHoldsSequence(ctx.graph.nodeFor(variant));
 }
 
-/** A named variant that holds a sequence and has no serde of its own: the union tells it from an object by `Array.isArray`. A variant with a serde reads its own wire form, so it is no sequence here. */
-function namedSequence(variant: ModelTypeDescriptor, ctx: EmitCtx): boolean {
-  return !serdeTags(variant).serde && holdsSequence(variant, ctx);
-}
-
-/** A variant with a serde of its own whose wire form is an array or tuple, or a named node of one: its wire value is an array that the union cannot tell from another sequence, whatever type the serde reads it into (a class, a model). */
-function serdeSequence(variant: ModelTypeDescriptor, ctx: EmitCtx): boolean {
-  const wire = serdeWireDescriptor(variant);
-  return wire !== undefined && (wire.kind === 'array' || wire.kind === 'tuple' || holdsSequence(wire, ctx));
-}
-
 /** The dispatch direction of each union direction. A decoder reads the wire; the others write a value or JSON text. */
 const UNION_DISPATCH = { stringify: 'encode-json', decode: 'decode', encode: 'encode-value' } as const;
 
@@ -1335,8 +1324,7 @@ function emitUnion(
       { ...(decoding ? {} : { unresolved: 'skip' as const }), localsBefore },
     ),
     declaredDefault: (variant) => walk(variant, ctx),
-    named: (variant) => namedSequence(variant, ctx),
-    serdeSequence: (variant) => serdeSequence(variant, ctx),
+    holdsSequence: (variant) => holdsSequence(variant, ctx),
     generated: {
       text: (generated) => walk(generated, ctx),
       takesEveryObject: decoding,
