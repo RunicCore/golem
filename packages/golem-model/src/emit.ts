@@ -903,6 +903,7 @@ function sdkNodeCodecs(sdks: AppOutputs['sdkCodecs'], output: string): SdkNodeCo
           stringify: source.name(stringifyFunctionName(node.id)),
           fromWire: source.name(fromWireFunctionName(node.id)),
           toWire: source.name(toWireFunctionName(node.id)),
+          sequence: nodeHoldsSequence(node),
         };
       }
       return undefined;
@@ -1382,6 +1383,7 @@ function modelResolvers(context: EmitContext, helpers: ReadonlyMap<string, Proje
   const resolveSdkNode = (codecs: NestedImportedSerde): FromJsonModelResolver => ({
     className: identifier('Object'),
     plain: true,
+    ...(codecs.sequence ? { sequence: true as const } : {}),
     decode: (value) => code`${codecs.fromWire}(${value}, { validate: false })`,
     fromInit: (value) => value,
   });

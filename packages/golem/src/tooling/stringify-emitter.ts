@@ -88,6 +88,8 @@ export interface NestedImportedSerde {
   readonly stringify: Code;
   readonly fromWire: Code;
   readonly toWire: Code;
+  /** The node is a recursive array alias (it holds an array or tuple): the graph of the importing module holds only a placeholder for it, so this module's answer comes from the graph that owns the node. */
+  readonly sequence: boolean;
   /** Direct generated helper for converted anonymous object dependencies. */
   readonly fill?: Code;
 }
@@ -451,8 +453,8 @@ function emitValue(
   const value = expression;
   if (descriptor.kind === 'generated-model') {
     const named = ctx.graph.nodeFor(descriptor);
-    // A wire value of a generated model that holds an array is written by the wire writer of its node, below, as a recursive alias is.
-    if (named && !(ctx.wireIdentity && !serdeTags(descriptor).serde && holdsSequence(descriptor, ctx))) {
+    // A wire value of a generated model that holds an array is written by the wire writer of its node, below, as a recursive alias is. A node of another module has no such writer here: its own stringify writes it.
+    if (named && !(ctx.wireIdentity && !serdeTags(descriptor).serde && nodeHoldsSequence(named))) {
       return nestedStringifyCall(named.id, value, ctx);
     }
     if (!named) throw new Error(`Internal error: the schema graph has no node for the generated model ${JSON.stringify(descriptor.id)}.`);
@@ -476,7 +478,7 @@ function emitValue(
   if (named && isObjectish(descriptor)) {
     if (
       ctx.wireIdentity
-      && (named.descriptor.kind === 'object' || holdsSequence(descriptor, ctx) || (descriptor.kind === 'reference' && descriptor.projection === true))
+      && (named.descriptor.kind === 'object' || nodeHoldsSequence(named) || (descriptor.kind === 'reference' && descriptor.projection === true))
       && (descriptorNeedsConversion(named.descriptor) || !named.sameSchema)
     ) {
       // Call the node's own wire stringify: inlining would repeat the child for
@@ -1093,7 +1095,7 @@ function emitInternedObjectDecode(
 ): Code {
   const value = expression;
   if (shouldConstructNested(descriptor, ctx)) {
-    const imported = ctx.nestedImportedSerde?.(node.codecId) ?? ctx.nestedImportedSerde?.(node.id);
+    const imported = importedSerdeOf(node, ctx);
     const local = !isExternalCodecNode(node) && !imported;
     const options = nestedFromWireOptions(descriptor, ctx);
     return fallibleConversion(ctx, local
@@ -1122,14 +1124,14 @@ function emitInternedObjectDecode(
     if (closed) return guarded(closed, false);
   }
   if (node.kind === 'object') {
-    const imported = ctx.nestedImportedSerde?.(node.codecId) ?? ctx.nestedImportedSerde?.(node.id);
+    const imported = importedSerdeOf(node, ctx);
     const fill = imported?.fill === undefined ? identifier(fillFunctionName(node.id)) : imported.fill;
     const call = code`${fill}({} as Record<string, unknown>, ${asRecordCode(value)})`;
     // A local fill that cannot throw runs without its field's path.
     const throws = imported !== undefined || fillCanThrow(node, ctx);
     return guarded(throws ? fallibleConversion(ctx, call) : call, throws);
   }
-  const importedWire = ctx.nestedImportedSerde?.(node.codecId) ?? ctx.nestedImportedSerde?.(node.id);
+  const importedWire = importedSerdeOf(node, ctx);
   return fallibleConversion(ctx, code`${importedWire ? importedWire.fromWire : identifier(fromWireFunctionName(node.id))}(${value}, ${trustedOptions(ctx)})`);
 }
 
@@ -1289,9 +1291,15 @@ interface UnionWalker extends Pick<UnionConversion, 'items' | 'joinSequence' | '
   readonly walkTagged?: (variant: ModelTypeDescriptor, scope: EmitCtx) => Code;
 }
 
-/** Whether the node of a named variant holds an array or tuple (a recursive array alias). A node that holds anything else, or only its own name (a model of another module), does not. */
+/** The codec functions of the node when another module generated them. */
+function importedSerdeOf(node: SchemaNode, ctx: EmitCtx): NestedImportedSerde | undefined {
+  return ctx.nestedImportedSerde?.(node.codecId) ?? ctx.nestedImportedSerde?.(node.id);
+}
+
+/** Whether the node of a named variant holds an array or tuple (a recursive array alias), in this graph or in the graph of the module that owns its codec. */
 function holdsSequence(variant: ModelTypeDescriptor, ctx: EmitCtx): boolean {
-  return nodeHoldsSequence(ctx.graph.nodeFor(variant));
+  const node = ctx.graph.nodeFor(variant);
+  return nodeHoldsSequence(node) || (node !== undefined && importedSerdeOf(node, ctx)?.sequence === true);
 }
 
 /** The dispatch direction of each union direction. A decoder reads the wire; the others write a value or JSON text. */
@@ -2033,7 +2041,7 @@ interface NodeRuntime {
 /** The runtime of a node whose codec another module owns: a stringify function and calls to the registered object codec. */
 function emitExternalNodeRuntime(node: SchemaNode, moduleCtx: EmitCtx): Code {
   const imported = node.descriptor.kind === 'generated-model'
-    ? moduleCtx.nestedImportedSerde?.(node.codecId) ?? moduleCtx.nestedImportedSerde?.(node.id)
+    ? importedSerdeOf(node, moduleCtx)
     : undefined;
   if (imported) return code``;
   const id = literal(node.codecId);
