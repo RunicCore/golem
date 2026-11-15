@@ -202,7 +202,10 @@ function validateResult(result: unknown, job: GolemJob, profile: GolemConfig['pr
   for (const filename of manifestPaths) {
     const artifact = artifacts.find(artifact => artifact.path === filename);
     if (!artifact) throw new Error(`${job.package} returned a manifest without an artifact: ${displayPath(filename)}`);
-    const manifest = validateModelManifest(JSON.parse(artifact.content) as unknown, filename);
+    let parsed: unknown;
+    try { parsed = JSON.parse(artifact.content); }
+    catch (error) { throw new Error(`${job.package} returned a manifest that is not valid JSON: ${displayPath(filename)}: ${errorMessage(error)}`, { cause: error }); }
+    const manifest = validateModelManifest(parsed, filename);
     if (Object.entries(profile).some(([key, value]) => stableJson(Reflect.get(manifest.profile, key)) !== stableJson(value))) {
       throw new Error(`${job.package} returned a manifest with a different generation profile. Regenerate with a compatible provider.`);
     }

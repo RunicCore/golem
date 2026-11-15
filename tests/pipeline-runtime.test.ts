@@ -443,6 +443,11 @@ test('public OpenAPI generation permits SchemaName, ValidationResult and repeate
 test('pipeline rejects malformed or profile-mismatched returned manifests before any output write', async t => {
   const cases = [
     {
+      name: 'not-json',
+      manifest: '{"profile":',
+      error: /@exprtlabs\/golem-openapi-ts returned a manifest that is not valid JSON: .*model-manifest\.json: /,
+    },
+    {
       name: 'malformed',
       manifest: {
         profile: { validation: true, allowAny: false },

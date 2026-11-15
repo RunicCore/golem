@@ -23,7 +23,6 @@ export enum TsToOpenApiDiagnosticCode {
   UnsupportedParameterLocation = 'NEST1301',
   MissingParameterName = 'NEST1302',
   MissingPathParameter = 'NEST1303',
-  UnsupportedHttpMethod = 'NEST1304',
   DuplicateOperationId = 'NEST1305',
   DuplicateRoute = 'NEST1306',
   ExtraPathParameter = 'NEST1307',

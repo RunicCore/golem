@@ -66,8 +66,6 @@ export interface RecursiveAlias {
   readonly name: string;
   readonly schemaName: string;
   readonly rawSchema: unknown;
-  /** The graph node that converts it; set when the graph is interned. */
-  nodeId?: string;
   /** The conversion descriptor of the component, with each use of a recursive component as a projection reference. */
   descriptor?: ModelTypeDescriptor;
 }

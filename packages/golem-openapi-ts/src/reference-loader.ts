@@ -36,14 +36,8 @@ export async function readLimitedBody(
 ): Promise<string> {
   if (signal?.aborted) throw abortError(absoluteRef, signal);
   const stream = response.body;
-  if (!stream) {
-    const body = await response.text();
-    if (signal?.aborted) throw abortError(absoluteRef, signal);
-    if (Buffer.byteLength(body, 'utf8') > maxBytes) {
-      throw new Error(`remote reference exceeds ${maxBytes} bytes: ${absoluteRef}`);
-    }
-    return body;
-  }
+  // A response with no body stream (a 204, say) has an empty body: there is nothing to read and the cap holds.
+  if (!stream) return '';
   const reader = stream.getReader();
   const decoder = new TextDecoder(undefined, { fatal: true });
   let body = '';
@@ -166,6 +160,8 @@ export interface ReferenceGraph {
 }
 
 const ABSOLUTE_URI = /^[a-z][a-z0-9+.-]*:/i;
+/** The statuses that send a client to another URL. A remote reference is never followed there: the allowed hosts and the local-file rules apply to the URL as written. */
+const REDIRECT_STATUSES: ReadonlySet<number> = new Set([301, 302, 303, 307, 308]);
 const REMOTE_ACCEPT = 'application/yaml, application/json, application/openapi+json, */*;q=0.1';
 
 function stripFragment(uri: string): string {
@@ -243,13 +239,17 @@ async function fetchRemoteDocument(uri: string, maxBytes: number, timeoutMs: num
   const signal = AbortSignal.timeout(timeoutMs);
   let response: Response;
   try {
-    response = await fetch(uri, { redirect: 'error', signal, headers: { Accept: REMOTE_ACCEPT } });
+    response = await fetch(uri, { redirect: 'manual', signal, headers: { Accept: REMOTE_ACCEPT } });
   } catch (error) {
     // A timeout or an abort keeps its own error. Any other failure names the URL: `fetch failed` alone does not say which reference.
     if (signal.aborted) throw error;
     const cause = error instanceof Error && error.cause !== undefined ? error.cause : error;
     const reason = cause instanceof Error ? cause.message || String(('code' in cause ? cause.code : undefined) ?? cause.name) : String(cause);
-    throw new Error(`remote reference could not be loaded: ${uri}: ${reason === 'unexpected redirect' ? 'the server answered with a redirect, which golem does not follow' : reason}`, { cause: error });
+    throw new Error(`remote reference could not be loaded: ${uri}: ${reason}`, { cause: error });
+  }
+  if (REDIRECT_STATUSES.has(response.status)) {
+    await cancelResponseBody(response);
+    throw new Error(`remote reference could not be loaded: ${uri}: the server answered with a redirect, which golem does not follow`);
   }
   if (!response.ok) {
     await cancelResponseBody(response);

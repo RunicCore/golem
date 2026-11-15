@@ -340,7 +340,7 @@ export class NestModelInterceptor implements NestInterceptor {
     if (context.getType() !== 'http') return next.handle();
     const handler = context.getHandler();
     const klass = context.getClass();
-    // Inbound conversion only. Validation and invalid JSON become HTTP 400. Any other error stays HTTP 500.
+    // Inbound conversion only. Input that the model rejects becomes HTTP 400 (`httpError`). Any other error stays HTTP 500.
     try {
       const args = routeArgs(klass, handler.name);
       if (args) {
