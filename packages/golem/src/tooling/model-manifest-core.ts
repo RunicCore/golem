@@ -14,8 +14,8 @@ interface ModelManifestProvenance {
 
 export interface ModelManifestEntry {
   readonly id: string;
-  /** The runtime codec id a rewrite stamps for this model. A golem-mode manifest has it on the model's component instead, and the reader joins it. */
-  readonly codecId?: string;
+  /** The runtime codec id a rewrite stamps for this model. A golem-mode manifest has it on the model's component instead, and `validateModelManifest` joins it. */
+  readonly codecId: string;
   readonly allowAny: boolean;
   readonly type: ModelManifestProvenance;
   readonly [key: string]: unknown;
@@ -257,7 +257,8 @@ export function validateModelManifest(manifest: unknown, filename = MODEL_MANIFE
     throw new Error(`Invalid model manifest ${displayPath(filename)}: models must be an array.`);
   }
   // A golem-mode model has its codec id on the component that has the name of its declared type.
-  const nodeNames = manifest.mode === 'golem' ? new Set((manifest.components as readonly GolemModeComponent[]).flatMap((component) => component.codecId === undefined ? [] : [component.name])) : undefined;
+  const nodeCodecIds = manifest.mode === 'golem' ? new Map((manifest.components as readonly GolemModeComponent[]).flatMap((component) => component.codecId === undefined ? [] : [[component.name, component.codecId] as const])) : undefined;
+  const models: unknown[] = [];
   for (const model of manifest.models) {
     if (
       !isRecord(model) || !isProvenance(model.type)
@@ -266,11 +267,13 @@ export function validateModelManifest(manifest: unknown, filename = MODEL_MANIFE
     ) {
       throw new Error(`Invalid model entry in ${displayPath(filename)}.`);
     }
-    if (nodeNames === undefined ? model.codecId === undefined : !nodeNames.has(model.type.export)) {
+    const codecId = nodeCodecIds === undefined ? model.codecId : nodeCodecIds.get(model.type.export);
+    if (codecId === undefined) {
       throw new Error(`Invalid model manifest ${displayPath(filename)}: model entry ${model.type.export} has no codecId. Regenerate the SDK with this golem version.`);
     }
+    models.push({ ...model, codecId });
   }
-  return manifest as ModelManifest;
+  return { ...manifest, models } as ModelManifest;
 }
 
 export function readModelManifest(filename: string, onInput?: InputObserver): ModelManifest {

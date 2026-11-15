@@ -91,7 +91,7 @@ export function deduplicateProjections(
   const representatives = new Map<string, string>();
   const redirect = new Map<string, string>();
   for (const name of names) {
-    const key = projectionIdentity(lookup, name, definitions[name]!);
+    const key = projectionIdentity(lookup, name, definitions[name]);
     const representative = representatives.get(key) ?? name;
     representatives.set(key, representative);
     redirect.set(name, representative);

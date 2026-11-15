@@ -119,7 +119,7 @@ function classValueReference(
   const symbol = type.getSymbol();
   const declaration = symbol?.declarations?.[0];
   if (!symbol || !declaration) throw diagnostic(context.sourceFile, context.declaration, '1004', `A TSerde class type in ${context.name} has no declaration.`);
-  const declaredName = (declaration as ts.NamedDeclaration).name;
+  const declaredName = declaration.name;
   // A class expression or type literal carries an internal `__class` / `__type` name; `export default class {}` is named `default`.
   if (!declaredName && symbol.getName().startsWith('__')) {
     throw diagnostic(context.sourceFile, node, '1063', `The class of a TSerde field in ${context.name} has no name, so generated code cannot import it. Name the class and export it.`);
@@ -631,8 +631,7 @@ function isObjectLikeVariant(descriptor: ModelConversionDescriptor): boolean {
 
 /** The value of a string, number or boolean literal type, or undefined for another type. */
 function literalTypeValue(checker: ts.TypeChecker, type: ts.Type): DiscriminatorValue | undefined {
-  if (type.flags & ts.TypeFlags.StringLiteral) return (type as ts.StringLiteralType).value;
-  if (type.flags & ts.TypeFlags.NumberLiteral) return (type as ts.NumberLiteralType).value;
+  if (ts.isStringLiteralType(type) || ts.isNumberLiteralType(type)) return type.value;
   if (type.flags & ts.TypeFlags.BooleanLiteral) return checker.typeToString(type) === 'true';
   return undefined;
 }
