@@ -310,7 +310,7 @@ function applyPropertyMetadata(
   };
   const staticSchema = (option: string): DtoSchema | undefined => {
     const value = read?.value(option);
-    if (value === undefined || isRecord(value) || typeof value === 'boolean') return value;
+    if (value === undefined || isDtoSchema(value)) return value;
     return fail(TsToOpenApiDiagnosticCode.UnsupportedSchemaMetadata, `Swagger property ${name} ${option} must be a static object or boolean.`);
   };
   const explicitSchema = staticSchema('schema');
@@ -502,7 +502,7 @@ function overlay(
   if (isArrayLike(checker, type)) {
     const element = checker.getTypeArguments(type)[0];
     const items = schema.items;
-    if (!element || (typeof items !== 'boolean' && !isRecord(items))) return schema;
+    if (!element || !isDtoSchema(items)) return schema;
     return { ...schema, items: overlay(checker, element, items, sourceNode, options, active) };
   }
   if ((type.flags & ts.TypeFlags.Object) === 0 || active.has(type)) return schema;
@@ -537,7 +537,7 @@ function overlay(
     const nested: Record<string, unknown> = { ...result.properties };
     for (const property of properties) {
       const propertySchema = nested[property.name];
-      if (propertySchema === undefined || (typeof propertySchema !== 'boolean' && !isRecord(propertySchema))) continue;
+      if (!isDtoSchema(propertySchema)) continue;
       const node = nodeForProperty(property, sourceNode);
       const propertyType = schemaPropertyType(checker, property, sourceNode);
       nested[property.name] = overlay(checker, propertyType, propertySchema, node, {
