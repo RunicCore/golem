@@ -430,7 +430,13 @@ export function propertyNames(resolve: OperationBuildContext['resolveSchemaRefer
  * declares an optional property leaves a valid body.
  */
 function combineBodyParts(context: OperationBuildContext, parts: readonly BodyPartSchema[]): OpenApiSchema {
-  const unique = parts.filter((part, index) => parts.findIndex(other => canonicalSchemaKey(other.schema) === canonicalSchemaKey(part.schema)) === index);
+  const seen = new Set<string>();
+  const unique = parts.filter(part => {
+    const key = canonicalSchemaKey(part.schema);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
   if (unique.length === 1) return unique[0].schema;
   for (const closed of unique) {
     if (resolvedSchema(context.resolveSchemaReference, closed.schema)?.additionalProperties !== false) continue;
