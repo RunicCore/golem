@@ -50,6 +50,7 @@ const PRINTED: readonly (readonly [string, Readonly<Record<string, string>>, obj
   ['errors in files created out of order', { 'src/z.ts': 'export const z: string = 1;\n', 'src/a.ts': 'export const a: string = 1;\n', 'src/m.ts': 'export const m: string = 1;\n' }],
   ['no library: global errors', { 'src/a.ts': 'export const a = 1;\n' }, { noLib: true }],
   ['one error', { 'src/a.ts': 'export const a: string = 1;\n' }],
+  ['an options error stays in the configuration file', { 'src/a.ts': 'export const a: string = 1;\n' }, { declaration: false, declarationMap: true }],
   ['two errors in one file', { 'src/a.ts': 'export const a: string = 1;\nexport const b: string = 2;\n' }],
   ['errors in two files', { 'src/a.ts': 'export const a: string = 1;\nexport const b: string = 2;\n', 'src/b.ts': 'export const c: string = 3;\n' }],
 ];
