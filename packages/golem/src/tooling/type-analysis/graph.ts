@@ -1,3 +1,4 @@
+import { assertNever } from '../../assert-never.js';
 import type { ModelConversionDescriptor } from '../model-source-emitter.js';
 import type { SerdeBinding, ValidationBinding } from './tags.js';
 import { compareText } from '../generator-core.js';
@@ -39,7 +40,7 @@ function canonicalIdentity(
       const target = lookup(descriptor.name);
       return target ? canonical(target, [...stack, descriptor.name]) : descriptor;
     }
-    let structure: unknown = descriptor;
+    let structure: unknown;
     switch (descriptor.kind) {
       case 'object': structure = {
         kind: descriptor.kind, projection: descriptor.projection,
@@ -51,9 +52,11 @@ function canonicalIdentity(
       case 'tuple': structure = { kind: descriptor.kind, isReadonly: descriptor.isReadonly, items: descriptor.items.map(item => canonical(item, stack)), optionalFrom: descriptor.optionalFrom, rest: descriptor.rest ? { index: descriptor.rest.index, item: canonical(descriptor.rest.item, stack) } : undefined }; break;
       case 'union':
       case 'intersection': structure = { kind: descriptor.kind, variants: descriptor.variants.map(item => canonical(item, stack)) }; break;
-      default: {
+      case 'any': case 'unknown': case 'never': case 'string': case 'number': case 'boolean': case 'bigint': case 'null': case 'undefined':
+      case 'class-value': case 'literal': case 'reference': case 'generated-model':
         structure = Object.fromEntries(Object.entries(descriptor).filter(([key]) => !['validations', 'serde', 'constraints'].includes(key)));
-      }
+        break;
+      default: return assertNever(descriptor);
     }
     return {
       structure,

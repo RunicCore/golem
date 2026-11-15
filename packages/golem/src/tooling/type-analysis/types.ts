@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { assertNever } from '../../assert-never.js';
 import { fieldProvenance, isPropertyMapping, isReadonlySequenceType, readonlyPropertyNames, instantiatedTypeSource, substituteTypeNode, authoredPropertyTypeNode, type TypeSubstitutions } from './projections.js';
 import * as ts from '../typescript-ns.js';
 import { assertNoSymbolKey, declaredModelAlias, isDefaultLibraryProperty, isSymbolKeyedProperty, diagnostic, namedDiagnostic, foreignModelReason, isGeneratedBrandKey, modelSpecificationForClass, propertyType, resolveSymbol } from './symbols.js';
@@ -415,6 +416,8 @@ function constraintFamily(constraint: ModelConstraint): ConstraintFamily | undef
       return 'string';
     case 'minItems':
     case 'maxItems':
+    case 'items':
+    case 'unevaluatedItems':
     case 'contains':
     case 'minContains':
     case 'maxContains':
@@ -429,6 +432,14 @@ function constraintFamily(constraint: ModelConstraint): ConstraintFamily | undef
     case 'dependentRequired':
     case 'dependentSchemas':
       return 'object';
+    // A value or composition keyword holds for a value of any type, so it names no family.
+    case 'enum':
+    case 'not':
+    case 'oneOf':
+    case 'allOf':
+    case 'ifThenElse':
+      return undefined;
+    default: return assertNever(constraint);
   }
 }
 

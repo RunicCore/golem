@@ -328,6 +328,18 @@ export interface ReturnStatement extends Node {
   readonly kind: KindOf<'ReturnStatement'>;
   readonly expression?: Expression;
 }
+export interface CaseClause extends Node {
+  readonly kind: KindOf<'CaseClause'>;
+  readonly expression: Expression;
+}
+export interface DefaultClause extends Node {
+  readonly kind: KindOf<'DefaultClause'>;
+}
+export interface SwitchStatement extends Node {
+  readonly kind: KindOf<'SwitchStatement'>;
+  readonly expression: Expression;
+  readonly caseBlock: { readonly clauses: readonly (CaseClause | DefaultClause)[] };
+}
 
 // Imports and exports
 export interface ImportDeclaration extends Node {
@@ -803,11 +815,13 @@ export interface TypeScriptBackend {
   isBinaryExpression(node: Node): node is BinaryExpression;
   isBlock(node: Node): node is Block;
   isCallExpression(node: Node): node is CallExpression;
+  isCaseClause(node: Node): node is CaseClause;
   isClassDeclaration(node: Node): node is ClassDeclaration;
   isClassLike(node: Node): node is ClassLikeDeclaration;
   isComputedPropertyName(node: Node): node is ComputedPropertyName;
   isConditionalTypeNode(node: Node): node is ConditionalTypeNode;
   isDecorator(node: Node): node is Decorator;
+  isDefaultClause(node: Node): node is DefaultClause;
   isElementAccessExpression(node: Node): node is ElementAccessExpression;
   isEmptyStatement(node: Node): node is EmptyStatement;
   isEnumDeclaration(node: Node): node is EnumDeclaration;
@@ -867,6 +881,7 @@ export interface TypeScriptBackend {
   isSpreadElement(node: Node): node is SpreadElement;
   isStringLiteral(node: Node): node is StringLiteral;
   isStringLiteralLike(node: Node): node is StringLiteralLike;
+  isSwitchStatement(node: Node): node is SwitchStatement;
   isTemplateExpression(node: Node): node is TemplateExpression;
   isTemplateLiteralTypeNode(node: Node): node is TemplateLiteralTypeNode;
   isTupleTypeNode(node: Node): node is TupleTypeNode;

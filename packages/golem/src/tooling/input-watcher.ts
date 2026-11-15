@@ -26,6 +26,14 @@ const NODE_MODULES = 'node_modules';
 /** The folder golem keeps its own state in, which is never an input folder. */
 const GOLEM_DIRECTORY = '.golem';
 
+/** What to do about each error code of a watch that cannot open. A code that is not here gets no advice, since a wrong fix costs the user more than none. */
+const WATCH_FIXES: ReadonlyMap<string, string> = new Map([
+  ['ENOSPC', 'raise fs.inotify.max_user_watches (Linux) or watch fewer folders'],
+  ['EMFILE', 'raise the open-file limit (ulimit -n)'],
+  ['ENODEV', 'run golem on a file system that reports file events'],
+  ['ERR_FEATURE_UNAVAILABLE_ON_PLATFORM', 'run golem on a file system that reports file events'],
+]);
+
 /** Content signature of a watched path: `missing`, `directory` (a directory's mtime also moves on output writes), or mtime, ctime and size. */
 export function fileSignature(filename: string, files: InputFiles = realInputFiles): string {
   try {
@@ -425,10 +433,8 @@ export class InputWatcher {
     this.failures += 1;
     if (this.reported.has(code)) return;
     this.reported.add(code);
-    const fix = code === 'ENOSPC'
-      ? 'raise fs.inotify.max_user_watches (Linux) or watch fewer folders'
-      : code === 'EMFILE' ? 'raise the open-file limit (ulimit -n)' : 'run golem on a file system that reports file events';
-    this.options.onError(new Error(`golem cannot watch ${folder} (${code}): ${errorMessage(error)}\nChanges there are not seen until it can; to fix: ${fix}.`, { cause: error }));
+    const fix = WATCH_FIXES.get(code);
+    this.options.onError(new Error(`golem cannot watch ${folder} (${code}): ${errorMessage(error)}\nChanges there are not seen until it can${fix === undefined ? '.' : `; to fix: ${fix}.`}`, { cause: error }));
   }
 
   /** Not one source folder is watched although some failed to open: the loop would sleep forever, so it is told to end. A watch on a `node_modules` marker folder wakes the loop only for an install, so it does not count. */

@@ -4,6 +4,7 @@
  * and the helpers of a file come from the parts and no step reads emitted text back to decide something.
  * Internal to the tooling: no package export names this module.
  */
+import { assertNever } from '../assert-never.js';
 import { compareText } from './generator-core.js';
 import { hasLocalForm } from './names.js';
 import { RUNTIME_SPECIFIER, runtimeTypeSpecifier, type RuntimeModule } from './rt.js';
@@ -1016,14 +1017,10 @@ export function codeKey(root: Code): string {
       case 'input': key += `p${identityOf(part.slot)},`; break;
       case 'line': key += 'l,'; break;
       case 'indent': key += `d${part.by},`; break;
-      default: return unreachable(part);
+      default: return assertNever(part);
     }
   }
   return text === '' ? key : key + JSON.stringify(text);
-}
-
-function unreachable(part: never): never {
-  throw new Error(`Internal error: unknown part ${JSON.stringify(part)}`);
 }
 
 /** Whether two Codes write the same code (see `codeKey`). */
@@ -1058,7 +1055,7 @@ export function render(root: Code, names: NameTable = new NameTable()): string {
       case 'input': throw new Error(`the input "${part.slot.label}" is not bound`);
       case 'line': write('\n'); lineStart = true; break;
       case 'indent': depth += part.by; break;
-      default: return unreachable(part);
+      default: return assertNever(part);
     }
   }
   return text;
