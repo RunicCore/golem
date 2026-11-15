@@ -3,7 +3,6 @@
  * The path is internal: golem build requires each built-in generator at the runtime's exact version, so the names may change in any release.
  * The extension API stays on `@exprtlabs/golem/generator-api`.
  */
-export { assertNever } from '../assert-never.js';
 export {
   canonicalPath, displayPath, isRecord, stripSourceSuffix,
   suffixPattern,
