@@ -344,6 +344,17 @@ export function effectiveSchemaTypes(schema: { readonly type?: unknown }): strin
   return Array.isArray(schema.type) ? schema.type.map(String) : schema.type ? [String(schema.type)] : [];
 }
 
+/**
+ * The one null rule: a value of the schema can be null. A `type` list must name null when it is given, and each of `const` and `enum` that is given must list null.
+ * A schema with no `type`, `const` or `enum` decides nothing about null.
+ */
+export function admitsNull(schema: { readonly type?: unknown; readonly const?: unknown; readonly enum?: unknown }): boolean {
+  const types = effectiveSchemaTypes(schema);
+  if (types.length > 0 && !types.includes('null')) return false;
+  const lists = [schema.const === undefined ? undefined : [schema.const], Array.isArray(schema.enum) ? schema.enum : undefined].filter((list) => list !== undefined);
+  return lists.length > 0 ? lists.every((list) => list.includes(null)) : types.length > 0;
+}
+
 function featureLineOf(openapi: unknown): OpenApiFeatureLine {
   const featureLine = String(openapi).split('.').slice(0, 2).join('.');
   if (featureLine === '3.1' || featureLine === '3.2') return featureLine;
