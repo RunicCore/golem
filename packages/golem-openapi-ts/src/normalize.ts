@@ -5,6 +5,7 @@ import { fragmentPointerTokens } from '@exprtlabs/golem/internal/schema';
 import { inboundOperationName, operationName } from './names.js';
 
 const HTTP_METHODS_31 = ['get', 'put', 'post', 'delete', 'options', 'head', 'patch', 'trace'] as const;
+/** The 3.2 list is also the one of the walkers that run after the structure check, which already refused `query` in a 3.1 document. */
 export const HTTP_METHODS_32 = [...HTTP_METHODS_31, 'query'] as const;
 
 const VERSION_ADAPTERS = {
@@ -380,21 +381,73 @@ function assertParameterStyles(
   }
 }
 
-/** The operations of a path item, named by their lowercase method; the standard methods first, then the OpenAPI 3.2 additional ones. */
-function* pathItemOperations(
-  document: unknown,
-  pathItem: JsonObject,
-  adapter: (typeof VERSION_ADAPTERS)[OpenApiFeatureLine],
-): Generator<{ method: string; wireMethod: string; operation: JsonObject }> {
-  for (const method of adapter.methods) {
-    if (pathItem[method] === undefined) continue;
-    yield { method, wireMethod: method.toUpperCase(), operation: asRecord(resolveLocal(document, pathItem[method])) };
+interface OperationSiteBase {
+  /** The lowercase method of a standard operation, or the key under `additionalOperations`. */
+  readonly method: string;
+  readonly wireMethod: string;
+  readonly operation: JsonObject;
+  readonly pointer: string;
+  readonly pathItem: JsonObject;
+  readonly pathItemPointer: string;
+  /** The `paths` key, the webhook name, or the callback expression. */
+  readonly key: string;
+}
+
+/** Where an operation of the document sits: under `paths`, under `webhooks`, or in a callback of another operation. */
+export type OperationSite = OperationSiteBase & OperationOwner;
+type OperationOwner =
+  | { readonly kind: 'path' | 'webhook' }
+  | { readonly kind: 'callback'; readonly parent: OperationSite; readonly callbackName: string };
+
+/**
+ * Every operation of the document, as normalize names them: the path operations, the webhook operations, then the
+ * callbacks of each of those, each callback level after the level that holds it. An `x-` key under `paths`, `webhooks` or
+ * a callback is an extension, not a path item. A callback operation that more than one parent reaches is listed under
+ * each parent, but its own callbacks only once, so a cycle of callbacks ends.
+ */
+export function operationSites(document: unknown, line: OpenApiFeatureLine): OperationSite[] {
+  const adapter = VERSION_ADAPTERS[line];
+  const root = asRecord(document);
+  const sites: OperationSite[] = [];
+  const addPathItem = (
+    rawPathItem: unknown,
+    writtenPointer: string,
+    key: string,
+    owner: OperationOwner,
+  ): void => {
+    const { value: pathItem, pointer: pathItemPointer } = followLocalRefs(document, rawPathItem, writtenPointer);
+    if (!isJsonObject(pathItem)) return;
+    const add = (method: string, wireMethod: string, operation: unknown, pointer: string): void => {
+      if (isJsonObject(operation)) sites.push({ ...owner, method, wireMethod, operation, pointer, pathItem, pathItemPointer, key });
+    };
+    for (const method of adapter.methods) add(method, method.toUpperCase(), pathItem[method], jsonPointerJoin(pathItemPointer, method));
+    if (adapter.additionalOperations) {
+      for (const [method, operation] of objectEntries(pathItem.additionalOperations)) {
+        add(method, method, operation, jsonPointerJoin(jsonPointerJoin(pathItemPointer, 'additionalOperations'), method));
+      }
+    }
+  };
+  for (const [route, rawPathItem] of objectEntries(root.paths)) {
+    if (!route.startsWith('x-')) addPathItem(rawPathItem, jsonPointerJoin('/paths', route), route, { kind: 'path' });
   }
-  if (adapter.additionalOperations) {
-    for (const [wireMethod, rawOperation] of objectEntries(pathItem.additionalOperations)) {
-      yield { method: wireMethod, wireMethod, operation: asRecord(resolveLocal(document, rawOperation)) };
+  for (const [name, rawPathItem] of objectEntries(root.webhooks)) {
+    if (!name.startsWith('x-')) addPathItem(rawPathItem, jsonPointerJoin('/webhooks', name), name, { kind: 'webhook' });
+  }
+  const expanded = new Set<string>();
+  for (const site of sites) { // `sites` grows while this runs: the callbacks found here are visited after the level that holds them.
+    const expansion = `${site.pointer}\u0000${site.kind === 'callback' ? '' : site.key}`;
+    if (expanded.has(expansion)) continue;
+    expanded.add(expansion);
+    for (const [callbackName, rawCallback] of objectEntries(site.operation.callbacks)) {
+      const callback = followLocalRefs(document, rawCallback, jsonPointerJoin(jsonPointerJoin(site.pointer, 'callbacks'), callbackName));
+      for (const [expression, rawPathItem] of objectEntries(callback.value)) {
+        if (!expression.startsWith('x-')) {
+          addPathItem(rawPathItem, jsonPointerJoin(callback.pointer, expression), expression, { kind: 'callback', parent: site, callbackName });
+        }
+      }
     }
   }
+  return sites;
 }
 
 export function normalizeDocument(document: unknown): NormalizedDocument {
@@ -404,47 +457,39 @@ export function normalizeDocument(document: unknown): NormalizedDocument {
   const names: OperationNames = new Map();
   const diagnostics: GolemDiagnostic[] = [];
   const operations: NormalizedOperation[] = [];
-  for (const [route, rawPathItem] of objectEntries(root.paths)) {
-    const pathItem = asRecord(resolveLocal(document, rawPathItem));
-    for (const { method, wireMethod, operation } of pathItemOperations(document, pathItem, adapter)) {
-      const name = reserveOperationName(names, operationName(operation, method, route), diagnostics, `${wireMethod} ${route}`);
-      operations.push(normalizeOperation(document, pathItem, operation, method, route, name, 'path', route, wireMethod));
-    }
-  }
-
   const inboundOperations: NormalizedOperation[] = [];
-  for (const [webhookName, rawPathItem] of objectEntries(root.webhooks)) {
-    const pathItem = asRecord(resolveLocal(document, rawPathItem));
-    for (const { method, wireMethod, operation } of pathItemOperations(document, pathItem, adapter)) {
-      const name = reserveName(
-        names,
-        inboundOperationName('webhook', webhookName, operation, method, webhookName),
-        `webhook ${webhookName} ${wireMethod}`,
-      );
-      inboundOperations.push(
-        normalizeOperation(document, pathItem, operation, method, webhookName, name, 'webhook', webhookName, wireMethod),
-      );
-    }
-  }
-
-  for (const parentOperation of operations) {
-    for (const [callbackName, rawCallback] of objectEntries(parentOperation.callbacks)) {
-      const callback = asRecord(resolveLocal(document, rawCallback));
-      for (const [expression, rawPathItem] of objectEntries(callback)) {
-        const pathItem = asRecord(resolveLocal(document, rawPathItem));
-        for (const { method, wireMethod, operation } of pathItemOperations(document, pathItem, adapter)) {
-          const sourceName = `${parentOperation.name} ${callbackName}`;
-          const name = reserveName(
-            names,
-            inboundOperationName('callback', sourceName, operation, method, expression),
-            `callback ${sourceName} ${wireMethod} ${expression}`,
-          );
-          inboundOperations.push(
-            normalizeOperation(document, pathItem, operation, method, expression, name, 'callback', sourceName, wireMethod),
-          );
-        }
+  const built = new Map<OperationSite, NormalizedOperation>();
+  for (const site of operationSites(document, featureLine)) {
+    const { method, wireMethod, operation, key } = site;
+    let normalized: NormalizedOperation;
+    switch (site.kind) {
+      case 'path': {
+        const name = reserveOperationName(names, operationName(operation, method, key), diagnostics, `${wireMethod} ${key}`);
+        normalized = normalizeOperation(document, site.pathItem, operation, method, key, name, 'path', key, wireMethod);
+        operations.push(normalized);
+        break;
+      }
+      case 'webhook': {
+        const name = reserveName(names, inboundOperationName('webhook', key, operation, method, key), `webhook ${key} ${wireMethod}`);
+        normalized = normalizeOperation(document, site.pathItem, operation, method, key, name, 'webhook', key, wireMethod);
+        inboundOperations.push(normalized);
+        break;
+      }
+      case 'callback': {
+        const parent = built.get(site.parent);
+        if (parent === undefined) throw new Error(`callback operation ${key} is listed before the operation that holds it`);
+        const sourceName = `${parent.name} ${site.callbackName}`;
+        const name = reserveName(
+          names,
+          inboundOperationName('callback', sourceName, operation, method, key),
+          `callback ${sourceName} ${wireMethod} ${key}`,
+        );
+        normalized = normalizeOperation(document, site.pathItem, operation, method, key, name, 'callback', sourceName, wireMethod);
+        inboundOperations.push(normalized);
+        break;
       }
     }
+    built.set(site, normalized);
   }
 
   const components = asRecord(root.components);

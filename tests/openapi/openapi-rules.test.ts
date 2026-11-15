@@ -64,8 +64,8 @@ test('operation-operationId-unique covers paths, webhooks and callbacks once per
   });
   assert.deepEqual(found(document, 'operation-operationId-unique'), [
     '/paths/~1b/post/operationId',
-    '/paths/~1b/post/callbacks/cb/{$request.body#~1url}/post/operationId',
     '/webhooks/hook/post/operationId',
+    '/paths/~1b/post/callbacks/cb/{$request.body#~1url}/post/operationId',
   ]);
   assert.deepEqual(
     checkOpenApiRules(document)

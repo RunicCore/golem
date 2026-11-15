@@ -8,7 +8,7 @@ import {
   type JsonObject,
 } from './json.js';
 import { decodeUriFragment } from '@exprtlabs/golem/internal/schema';
-import { followLocalRefs, HTTP_METHODS_32 } from './normalize.js';
+import { followLocalRefs, operationSites, type OperationSite } from './normalize.js';
 import type { OpenApiProblem } from './openapi-validator.js';
 import { isMappingComponentName } from './reference-loader.js';
 import { collectCanonicalResources, findDuplicateSchemaIds, lookupCanonicalResource, visitOpenApiSchemaTree } from './schema-projection.js';
@@ -17,63 +17,6 @@ const TEMPLATE = /\{([^{}]*)\}/g;
 
 // A `$ref` fragment (the part after `#`) is a URI fragment and may be percent-encoded (e.g. `#/components/schemas/A%20B`);
 // `resolveJsonPointer` only understands plain RFC 6901 tokens, so every fragment goes through decodeUriFragment once before it.
-
-interface OperationEntry {
-  readonly pointer: string;
-  readonly method: string;
-  readonly operation: JsonObject;
-  readonly pathItem: JsonObject;
-  readonly pathItemPointer: string;
-  /** The `paths` key for path operations; null for webhooks and callbacks. */
-  readonly route: string | null;
-}
-
-function collectPathItemOperations(
-  document: unknown,
-  rawPathItem: unknown,
-  writtenPointer: string,
-  route: string | null,
-  out: OperationEntry[],
-  visited: Set<string>,
-): void {
-  const { value: pathItem, pointer: pathItemPointer } = followLocalRefs(document, rawPathItem, writtenPointer);
-  if (!isJsonObject(pathItem)) return;
-  const visitKey = `${pathItemPointer}\u0000${route ?? ''}`;
-  if (visited.has(visitKey)) return;
-  visited.add(visitKey);
-  const add = (method: string, rawOperation: unknown, pointer: string): void => {
-    if (!isJsonObject(rawOperation)) return;
-    out.push({ pointer, method, operation: rawOperation, pathItem, pathItemPointer, route });
-    for (const [name, rawCallback] of objectEntries(rawOperation.callbacks)) {
-      const callbackPointer = pointerJoin(pointerJoin(pointer, 'callbacks'), name);
-      const callback = followLocalRefs(document, rawCallback, callbackPointer);
-      for (const [expression, item] of objectEntries(callback.value)) {
-        collectPathItemOperations(document, item, pointerJoin(callback.pointer, expression), null, out, visited);
-      }
-    }
-  };
-  for (const method of HTTP_METHODS_32) {
-    if (pathItem[method] !== undefined) add(method, pathItem[method], pointerJoin(pathItemPointer, method));
-  }
-  for (const [method, operation] of objectEntries(pathItem.additionalOperations)) {
-    add(method, operation, pointerJoin(pointerJoin(pathItemPointer, 'additionalOperations'), method));
-  }
-}
-
-function collectRuleOperations(document: unknown): OperationEntry[] {
-  const out: OperationEntry[] = [];
-  const visited = new Set<string>();
-  const root = asRecord(document);
-  for (const [route, item] of objectEntries(root.paths)) {
-    if (route.startsWith('x-')) continue;
-    collectPathItemOperations(document, item, pointerJoin('/paths', route), route, out, visited);
-  }
-  for (const [name, item] of objectEntries(root.webhooks)) {
-    if (name.startsWith('x-')) continue;
-    collectPathItemOperations(document, item, pointerJoin('/webhooks', name), null, out, visited);
-  }
-  return out;
-}
 
 interface ResolvedParameter {
   readonly name: string;
@@ -120,7 +63,7 @@ function checkUnresolvedRefs(document: unknown): OpenApiProblem[] {
   return problems;
 }
 
-function checkOperationIds(operations: readonly OperationEntry[]): OpenApiProblem[] {
+function checkOperationIds(operations: readonly OperationSite[]): OpenApiProblem[] {
   const firstUse = new Map<string, string>();
   const counted = new Set<string>();
   const problems: OpenApiProblem[] = [];
@@ -149,7 +92,7 @@ function parameterKey(parameter: ResolvedParameter): string {
   return `${parameter.location}\u0000${parameter.location === 'header' ? parameter.name.toLowerCase() : parameter.name}`;
 }
 
-function checkParameterLists(document: unknown, operations: readonly OperationEntry[]): OpenApiProblem[] {
+function checkParameterLists(document: unknown, operations: readonly OperationSite[]): OpenApiProblem[] {
   const problems: OpenApiProblem[] = [];
   const checked = new Set<string>();
   const checkList = (list: unknown, listPointer: string): void => {
@@ -186,7 +129,7 @@ function templateNames(route: string): string[] {
  * Shared by `checkPathTemplates` (path-parameter coverage) and
  * `checkQuerystring` (the 3.2 `querystring`/`query` exclusivity rules).
  */
-function effectiveParameters(document: unknown, entry: OperationEntry): ResolvedParameter[] {
+function effectiveParameters(document: unknown, entry: OperationSite): ResolvedParameter[] {
   const own = resolvedParameters(document, entry.operation.parameters, `${entry.pointer}/parameters`);
   const overridden = new Set(own.map(parameterKey));
   return [
@@ -196,7 +139,7 @@ function effectiveParameters(document: unknown, entry: OperationEntry): Resolved
   ];
 }
 
-function checkPathTemplates(document: unknown, operations: readonly OperationEntry[]): OpenApiProblem[] {
+function checkPathTemplates(document: unknown, operations: readonly OperationSite[]): OpenApiProblem[] {
   const problems: OpenApiProblem[] = [];
   const shapes = new Map<string, string>();
   for (const [route] of objectEntries(asRecord(document).paths)) {
@@ -213,8 +156,8 @@ function checkPathTemplates(document: unknown, operations: readonly OperationEnt
     }
   }
   for (const entry of operations) {
-    if (entry.route === null) continue;
-    const templates = new Set(templateNames(entry.route).filter(Boolean));
+    if (entry.kind !== 'path') continue;
+    const templates = new Set(templateNames(entry.key).filter(Boolean));
     const declared = new Map<string, string>();
     for (const parameter of effectiveParameters(document, entry)) {
       if (parameter.location === 'path') declared.set(parameter.name, parameter.pointer);
@@ -223,7 +166,7 @@ function checkPathTemplates(document: unknown, operations: readonly OperationEnt
       if (!declared.has(name)) {
         problems.push({
           ruleId: 'path-parameters-defined',
-          message: `path parameter ${JSON.stringify(name)} of ${entry.route} is not defined for ${entry.method.toUpperCase()}`,
+          message: `path parameter ${JSON.stringify(name)} of ${entry.key} is not defined for ${entry.method.toUpperCase()}`,
           pointer: entry.pointer,
         });
       }
@@ -232,7 +175,7 @@ function checkPathTemplates(document: unknown, operations: readonly OperationEnt
       if (!templates.has(name)) {
         problems.push({
           ruleId: 'path-parameters-defined',
-          message: `path parameter ${JSON.stringify(name)} is not used in ${entry.route}`,
+          message: `path parameter ${JSON.stringify(name)} is not used in ${entry.key}`,
           pointer,
         });
       }
@@ -274,7 +217,7 @@ function checkTags(document: unknown, line: '3.1' | '3.2'): OpenApiProblem[] {
   return problems;
 }
 
-function checkServers(document: unknown, operations: readonly OperationEntry[], line: '3.1' | '3.2'): OpenApiProblem[] {
+function checkServers(document: unknown, operations: readonly OperationSite[], line: '3.1' | '3.2'): OpenApiProblem[] {
   const problems: OpenApiProblem[] = [];
   const checked = new Set<string>();
   const check = (servers: unknown, pointer: string): void => {
@@ -317,7 +260,7 @@ function checkServers(document: unknown, operations: readonly OperationEntry[], 
  * an undeclared name would leave the generated client without the credentials the operation asks for. A name written as
  * a URI reference (OpenAPI 3.1.1) cannot be looked up in components, so it is not checked.
  */
-function checkSecurityRequirements(document: unknown, operations: readonly OperationEntry[]): OpenApiProblem[] {
+function checkSecurityRequirements(document: unknown, operations: readonly OperationSite[]): OpenApiProblem[] {
   const problems: OpenApiProblem[] = [];
   const schemes = asRecord(asRecord(asRecord(document).components).securitySchemes);
   const checked = new Set<string>();
@@ -340,7 +283,7 @@ function checkSecurityRequirements(document: unknown, operations: readonly Opera
   return problems;
 }
 
-function checkQuerystring(document: unknown, operations: readonly OperationEntry[]): OpenApiProblem[] {
+function checkQuerystring(document: unknown, operations: readonly OperationSite[]): OpenApiProblem[] {
   const problems: OpenApiProblem[] = [];
   for (const entry of operations) {
     const effective = effectiveParameters(document, entry);
@@ -491,7 +434,7 @@ export function checkOpenApiRules(document: unknown): OpenApiProblem[] {
     }));
   }
   const line = openApiLine(document);
-  const operations = collectRuleOperations(document);
+  const operations = operationSites(document, line);
   return [
     ...checkUnresolvedRefs(document),
     ...checkOperationIds(operations),

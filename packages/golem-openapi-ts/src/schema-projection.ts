@@ -3,6 +3,7 @@ import { compareText } from '@exprtlabs/golem/generator-api';
 import { identifier } from '@exprtlabs/golem/internal/generator-support';
 import { canonicalSchemaKey, escapePointerToken, fragmentPointerTokens, unescapePointerToken } from '@exprtlabs/golem/internal/schema';
 import {
+  HTTP_METHODS_32,
   resolveLocalPointer,
   type NormalizedDocument,
 } from './normalize.js';
@@ -447,10 +448,6 @@ function remainingPointerFragment(reference: string): string {
   return rest ? `#${rest}` : '';
 }
 
-const OPENAPI_OPERATIONS = [
-  'get', 'put', 'post', 'delete', 'options', 'head', 'patch', 'trace', 'query',
-] as const;
-
 export type OpenApiComponentKind =
   | 'schemas'
   | 'parameters'
@@ -750,7 +747,7 @@ function visitPathItem(
       );
     });
   }
-  for (const method of OPENAPI_OPERATIONS) {
+  for (const method of HTTP_METHODS_32) {
     if (item[method] !== undefined) {
       visitOperation(item[method], currentBase, jsonPointerJoin(pointer, method), seen, handlers);
     }

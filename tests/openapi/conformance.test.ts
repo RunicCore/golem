@@ -374,6 +374,35 @@ test('normalizes callbacks and webhooks into payload types of the SDK', (t) => {
   assert.equal(compiled.status, 0, compiled.stderr || compiled.stdout);
 });
 
+// protects: T-919 normalize builds the operations that the document rules check, and no extension key
+test('normalizes the callbacks of webhooks and of callbacks, and skips x- extension keys', () => {
+  const ok = { 200: { description: 'ok' } };
+  const hook = (operationId: string, callbacks?: Record<string, unknown>) => ({ post: { operationId, responses: ok, ...(callbacks ? { callbacks } : {}) } });
+  const document = {
+    openapi: '3.1.0',
+    info: { title: 'Inbound', version: '1' },
+    paths: { '/a': { get: { operationId: 'readA', responses: ok } }, 'x-notes': { get: { operationId: 'readNotes', responses: ok } } },
+    webhooks: {
+      event: hook('receiveEvent', {
+        onReply: {
+          '{$request.body#/url}': hook('receiveReply', { onAudit: { '{$request.body#/audit}': hook('receiveAudit') } }),
+          'x-notes': hook('receiveNotes'),
+        },
+      }),
+    },
+  };
+  const ir = normalizeDocument(document);
+  assert.deepEqual(ir.operations.map(({ name }) => name), ['readA']);
+  assert.deepEqual(
+    ir.inboundOperations.map(({ name, sourceKind, sourceName }) => [name, sourceKind, sourceName]),
+    [
+      ['webhookReceiveEvent', 'webhook', 'event'],
+      ['callbackReceiveReply', 'callback', 'webhookReceiveEvent onReply'],
+      ['callbackReceiveAudit', 'callback', 'callbackReceiveReply onAudit'],
+    ],
+  );
+});
+
 test('generation is deterministic', async (t) => {
   const document = await loadValidatedDocument(example, {});
   const output = createFixtureProject(t, 'golem-openapi-test-');
