@@ -40,6 +40,7 @@ import {
   type ImportOptions,
   type JsonValue,
   emitModelFromInit,
+  stripPlanName,
   wireStringifyExportName,
   descriptorNeedsConversion,
   type FromJsonModelResolver,
@@ -868,6 +869,8 @@ export function validatorImports(
  */
 interface SdkNodeCodecs {
   readonly find: (codecId: string) => NestedImportedSerde | undefined;
+  /** The strip plan of an SDK node, imported from the SDK's codecs file. */
+  readonly stripPlan: (codecId: string) => Code | undefined;
   readonly sources: readonly ImportSource[];
   /**
    * The type of an SDK node in one form: the SDK's own type when the SDK exports one (its plain, converted form is the model and init
@@ -904,6 +907,12 @@ function sdkNodeCodecs(sdks: AppOutputs['sdkCodecs'], output: string): SdkNodeCo
           fromWire: source.name(fromWireFunctionName(node.id)),
           toWire: source.name(toWireFunctionName(node.id)),
         };
+      }
+      return undefined;
+    },
+    stripPlan(codecId) {
+      for (const sdk of sdks ?? []) {
+        if (sdk.graph.nodeByCodecId(codecId) !== undefined) return sources.get(sdk.file)!.name(stripPlanName(codecId));
       }
       return undefined;
     },
@@ -1770,12 +1779,15 @@ function emitCodecSection(context: EmitContext): CodecSection {
     : new Map<string, Code>();
   // Wire stringify functions of sibling codecs this module writes, imported from the companion of each.
   const siblingWires = new Map<string, Code>();
+  // The strip plans of sibling codecs, imported from the companion of each by the same rule.
+  const siblingStrips = new Map<string, Code>();
   const siblingWireSources: ImportSource[] = [];
   for (const sibling of graph.siblings) {
     const node = siblingNodeOf(schemaGraph, sibling.name);
     if (!node) continue;
     const wireSource = new ImportSource(sourceImportPath(companionOfSpecification(sibling), output));
     siblingWires.set(node.codecId, wireSource.name(wireStringifyExportName(node.codecId)));
+    siblingStrips.set(node.codecId, wireSource.name(stripPlanName(node.codecId)));
     siblingWireSources.push(wireSource);
   }
   const codecRuntime = emitCodecRuntimeCode(
@@ -1783,6 +1795,8 @@ function emitCodecSection(context: EmitContext): CodecSection {
     {
       validationLevel: profile.validation,
       nestedImportedSerde: context.sdkNodes.find,
+      importedStripPlan: (codecId) => siblingStrips.get(codecId) ?? context.sdkNodes.stripPlan(codecId),
+      exportStripPlans: true,
       ...(validators ? {
         validatorName: (id: string) => {
           const name = validators.exports.get(id);

@@ -57,6 +57,8 @@ The interceptor converts HTTP handlers. A handler of another context, such as RP
 2. Input that fails validation or cannot be decoded returns HTTP 400 with `issues` (`LibError.causedByInput`). Examples are a broken constraint, an unknown discriminator tag, an unparsable date and a `Deserialize` function that throws.
 3. Valid input reaches the handler as a model. A type alias stays a plain object, and your class is constructed.
 4. An `IModel` or `IObject` return is stringified with that type. This includes a `Promise` or an array of that type. A return that the rewrite did not mark stays Nest JSON. Examples are a handler with no written return type and a handler that returns a union.
+
+   A mark needs an explicit return type on the handler. The type must be a model, `Promise<Model>` or `Model[]`. A union, such as `Model | undefined`, gets no mark.
 5. A `Serialize` function that throws, and missing generated metadata, return HTTP 500. A marked return whose generated model did not load fails the request with HTTP 500 before the handler runs.
 
 `@Param()` and `@Headers()` stay as Nest received them.
@@ -159,7 +161,9 @@ The interceptor stringifies a return only when its declared type is a model:
 
 Declare a wrapper object as a model when its fields need conversion, because the interceptor does not look inside a plain wrapper.
 
-To write the response with a codec other than the one of the declared return type, use `nestModelStringifyInterceptor`. Get that codec with `objectCodecFromMetatype` from a `@Body()` or `@Query()` parameter that is already typed with the target class. The imports are in the [runtime API](/reference/runtime-api#nest).
+To write the response in your own interceptor, call [`nestReturnCodec`](/reference/runtime-api#nest) with `context.getClass()` and `context.getHandler()`. It returns `{ codec, array }` for the declared return, or `undefined` when the handler has no mark.
+
+When `array` is true, stringify each item of the returned array with `codec.stringify`. `nestReturnCodec` throws a `TypeError` that starts with `golem fault` when the build marked the handler and the codec of the model is not registered. To write the response with a codec other than the one of the declared return type, use `nestModelStringifyInterceptor` with a codec that you hold. The imports are in the [runtime API](/reference/runtime-api#nest).
 
 ## Run with the Node loader
 

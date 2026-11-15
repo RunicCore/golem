@@ -120,6 +120,7 @@ export function sdkCodecsSource(
     // The SDK reads no registry: a client calls the table, and an app model calls the node codecs by name.
     registerCodecs: false,
     exportAnonymousCodecs: true,
+    exportStripPlans: true,
     modelBases: { basesOf: (id) => components.get(id)?.bases ?? [] },
   });
   const operations = sdk.manifest.operations.map((operation) => {

@@ -63,6 +63,16 @@ export function serdeWireDescriptor(descriptor: ModelTypeDescriptor): ModelTypeD
   return serde.wireDescriptor ?? serde.wire;
 }
 
+/**
+ * The `patternProperties` of an object: each pattern with the descriptor of its schema. The schema of a pattern is a descriptor, or a
+ * boolean or a keyword object that holds no model, which has none here.
+ */
+export function patternSchemas(object: Extract<ModelTypeDescriptor, { readonly kind: 'object' }>): readonly { readonly pattern: string; readonly schema: ModelTypeDescriptor | undefined }[] {
+  return (object.constraints ?? []).flatMap((constraint) => constraint.kind === 'patternProperties'
+    ? [{ pattern: constraint.pattern, schema: typeof constraint.schema === 'object' && constraint.schema !== null && 'kind' in constraint.schema ? constraint.schema as ModelTypeDescriptor : undefined }]
+    : []);
+}
+
 export interface SchemaGraph {
   readonly nodes: ReadonlyMap<string, SchemaNode>;
   intern(
