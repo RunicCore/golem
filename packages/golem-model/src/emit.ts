@@ -1473,15 +1473,17 @@ function buildProjections(context: EmitContext): Projections {
     new Map([...representatives].map(([name, representative]) => [name, functionsOf(representative)] as const));
   const own = helpersFor(new Map([...projectionNames].map((name) => [name, name] as const)));
   const ownResolvers = modelResolvers(context, own);
-  interface Shape { readonly name: string; readonly types: readonly Code[]; readonly expressions: ProjectionExpressions }
+  interface Shape { readonly name: string; readonly identity: boolean; readonly types: readonly Code[]; readonly expressions: ProjectionExpressions }
   const shapes: Shape[] = [];
   const representatives = new Map<string, string>();
   for (const name of projectionNames) {
     const expressions = projectionExpressionsOf(context, ownResolvers, name);
     const types = [typeOf(context, definitions[name], 'model'), typeOf(context, definitions[name], 'wire'), typeOf(context, definitions[name], 'init')];
-    const same = shapes.find((shape) => types.every((type, index) => sameCode(type, shape.types[index]))
+    // An identity projection writes no functions, so it cannot stand for a projection that does (an object-only model of the same shape).
+    const identity = context.identityProjections.has(name);
+    const same = shapes.find((shape) => shape.identity === identity && types.every((type, index) => sameCode(type, shape.types[index]))
       && sameCode(expressions.decode, shape.expressions.decode) && sameCode(expressions.init, shape.expressions.init));
-    if (!same) shapes.push({ name, types, expressions });
+    if (!same) shapes.push({ name, identity, types, expressions });
     representatives.set(name, same?.name ?? name);
   }
   const helpers = helpersFor(representatives);
