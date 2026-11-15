@@ -1,5 +1,7 @@
-// The dependency guard of `npm run lint`: which package source file may load which TypeScript module.
-// It reads the specifiers from the syntax tree that golem's own compiler seam parses, so a quote in a comment or a string is no import.
+// The source guard of `npm run lint`: which package source file may load which TypeScript module, where a package uses a non-null
+// assertion, and which switch over a union of kinds leaves a kind out. Tests are outside it.
+// It reads the syntax tree that golem's own compiler seam parses, so a quote in a comment or a string is no import. The switch check
+// asks the seam's type checker, since typescript-eslint needs the TypeScript JavaScript API that TypeScript 7 does not export.
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -19,6 +21,38 @@ const RULES: readonly Rule[] = [
   { forbids: specifier => /^require\(.*\bpackageDir\b/.test(specifier), allowedIn: 'packages/golem/src/tooling/typescript-ts6.ts', because: 'only the TypeScript 6 backend loads the project\'s TypeScript by directory' },
   { forbids: specifier => specifier === 'typescript', allowedIn: undefined, because: 'the TypeScript 6 backend loads the project\'s TypeScript by the directory resolveTypeScript found; a bare import would load golem\'s own' },
 ];
+
+/** What a finding does to the run: an error fails it, a warning is listed. */
+type Severity = 'warning' | 'error';
+
+interface Finding {
+  readonly severity: Severity;
+  readonly text: string;
+}
+
+/**
+ * The two source checks start as warnings, since the sites that exist now are fixed by later changes. A check that has no site left
+ * becomes an error here.
+ */
+const SOURCE_CHECKS = {
+  nonNull: { severity: 'warning', because: 'narrow with a guard, or change the type so the value cannot be missing' },
+  switchKinds: { severity: 'warning', because: 'list each kind and end with `default: return assertNever(value)`' },
+} as const satisfies Record<string, { readonly severity: Severity; readonly because: string }>;
+
+const LITERAL_TYPES = ts.TypeFlags.StringLiteral | ts.TypeFlags.NumberLiteral | ts.TypeFlags.BooleanLiteral;
+
+/** The names of the kinds that a switch over a union of literal types does not list, or none when it is no such switch. */
+function unlistedKinds(statement: ts.SwitchStatement, checker: ts.TypeChecker): string[] {
+  const type = checker.getTypeAtLocation(statement.expression);
+  if (!type.isUnion() || !type.types.every(member => (member.flags & LITERAL_TYPES) !== 0)) return [];
+  const listed = new Set<string>();
+  for (const clause of statement.caseBlock.clauses) {
+    if (!ts.isCaseClause(clause)) continue;
+    const caseType = checker.getTypeAtLocation(clause.expression);
+    for (const member of caseType.isUnion() ? caseType.types : [caseType]) listed.add(checker.typeToString(member));
+  }
+  return type.types.map(member => checker.typeToString(member)).filter(name => !listed.has(name));
+}
 
 function portable(filename: string): string {
   return filename.split(path.sep).join('/');
@@ -49,17 +83,24 @@ function loads(node: ts.Node): string | undefined {
   return undefined;
 }
 
-function problems(file: ts.SourceFile, relative: string): string[] {
-  const found: string[] = [];
+function findings(file: ts.SourceFile, relative: string, checker: ts.TypeChecker): Finding[] {
+  const found: Finding[] = [];
+  const where = (node: ts.Node): string => `${relative}:${file.getLineAndCharacterOfPosition(node.getStart(file)).line + 1}`;
   const visit = (node: ts.Node): undefined => {
     const specifier = loads(node);
     if (specifier !== undefined) {
       const { line } = file.getLineAndCharacterOfPosition(node.getStart(file));
       for (const rule of RULES) {
         if (rule.forbids(specifier) && relative !== rule.allowedIn) {
-          found.push(`${relative}:${line + 1} imports '${specifier}'${rule.allowedIn ? `; only ${rule.allowedIn} may` : ''}: ${rule.because}`);
+          found.push({ severity: 'error', text: `${relative}:${line + 1} imports '${specifier}'${rule.allowedIn ? `; only ${rule.allowedIn} may` : ''}: ${rule.because}` });
         }
       }
+    }
+    if (ts.isNonNullExpression(node)) {
+      found.push({ severity: SOURCE_CHECKS.nonNull.severity, text: `${where(node)} non-null assertion \`${node.getText(file)}\`: ${SOURCE_CHECKS.nonNull.because}` });
+    } else if (ts.isSwitchStatement(node)) {
+      const unlisted = unlistedKinds(node, checker);
+      if (unlisted.length > 0) found.push({ severity: SOURCE_CHECKS.switchKinds.severity, text: `${where(node)} switch leaves out ${unlisted.join(', ')}: ${SOURCE_CHECKS.switchKinds.because}` });
     }
     ts.forEachChild(node, visit);
     return undefined;
@@ -70,18 +111,23 @@ function problems(file: ts.SourceFile, relative: string): string[] {
 
 const files = sourceFiles(path.join(root, 'packages')).sort();
 const program = ts.createProgramFromSources({ root, sources: files });
-const failures: string[] = [];
+const allFindings: Finding[] = [];
 try {
+  const checker = program.getTypeChecker();
   for (const filename of files) {
     const file = program.getSourceFile(filename);
     if (!file) throw new Error(`The compiler did not read ${portable(path.relative(root, filename))}.`);
-    failures.push(...problems(file, portable(path.relative(root, filename))));
+    allFindings.push(...findings(file, portable(path.relative(root, filename)), checker));
   }
 } finally {
   program.close();
 }
-if (failures.length > 0) {
-  process.stderr.write(`Forbidden imports:\n${failures.map(line => `  ${line}`).join('\n')}\n`);
+const listed = (severity: Severity): string[] => allFindings.filter(finding => finding.severity === severity).map(finding => finding.text);
+const errors = listed('error');
+const warnings = listed('warning');
+if (warnings.length > 0) process.stderr.write(`${warnings.length} warnings:\n${warnings.map(line => `  ${line}`).join('\n')}\n`);
+if (errors.length > 0) {
+  process.stderr.write(`${errors.length} errors:\n${errors.map(line => `  ${line}`).join('\n')}\n`);
   process.exit(1);
 }
-process.stdout.write(`Import check passed for ${files.length} package source files.\n`);
+process.stdout.write(`Source check passed for ${files.length} package source files with ${warnings.length} warnings.\n`);

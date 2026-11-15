@@ -258,6 +258,14 @@ function splitTypescriptLane(args: readonly string[]): { readonly lane6: boolean
 const npmRun = (label: string, script: string): Step => ({ label, run: () => run('npm', ['run', script]) });
 // The packed set lives in /cache/packed, which keeps only the newest set: another checkout can replace it, so a resume packs again (a present set is reused at once).
 const pack: Step = { label: 'pack', always: true, run: () => run(process.execPath, ['.build/scripts/test-pack.js']) };
+/** The source checks of `npm run lint`, without its build: the full tier has built the packages and the scripts by now. */
+const lint: Step = {
+  label: 'lint',
+  run: async () => {
+    const status = await run(process.execPath, ['.build/scripts/check-imports.js']);
+    return status !== 0 ? status : run(process.execPath, ['scripts/build-sdk-runtime.mjs', '--check']);
+  },
+};
 // Prepare only fills caches; it never runs a test.
 const prepareSteps: Group[] = inOrder(
   pack,
@@ -327,7 +335,7 @@ function steps(tier: Tier, args: readonly string[], native: boolean): Group[] {
     if (native) return inOrder(unit);
     // Pack and the smoke test read the workspace and /cache/packed, never a file that the lane writes. The lane's last files
     // leave cores idle, so they run beside it and add no time of their own.
-    return [...inOrder(unit), [[typescript6(CONCURRENCY.unit)], [pack, smoke]]];
+    return [...inOrder(unit), [[typescript6(CONCURRENCY.unit)], [pack, smoke, lint]]];
   }
   // Acceptance: after unit, the side chain adds the steps that need nothing from the TypeScript 6 lane. Packed and browser read
   // /cache/packed after pack (this chain's own step); the lane reads /cache/typescript6 and the workspace. Each test file makes
