@@ -7,7 +7,7 @@
 import type { ModelTypeDescriptor, SerdeFunctions } from '../model-registry.js';
 import type { ValidationLevel, ValidationPlane } from '../object-codec.js';
 import type { SchemaGraph, SchemaNode } from './schema-graph.js';
-import { codecShortName, serdeWireDescriptor } from './schema-graph.js';
+import { codecShortName, nodeHoldsSequence, serdeWireDescriptor } from './schema-graph.js';
 import { requireComposedObject, type ModelBases } from './composition.js';
 import {
   aliased, asObjectLiteral, bindInput, bindRead, code, documentLiteral, helper, helperName, helperSet, selfPlacedHelper, identifier, indentation, inputCount, inputOf, inputSlot, isEmpty, join, literal, localCode, readShape, sameCode,
@@ -1291,8 +1291,7 @@ interface UnionWalker extends Pick<UnionConversion, 'items' | 'joinSequence' | '
 
 /** Whether the node of a named variant holds an array or tuple (a recursive array alias). A node that holds anything else, or only its own name (a model of another module), does not. */
 function holdsSequence(variant: ModelTypeDescriptor, ctx: EmitCtx): boolean {
-  const body = ctx.graph.nodeFor(variant)?.descriptor;
-  return body?.kind === 'array' || body?.kind === 'tuple';
+  return nodeHoldsSequence(ctx.graph.nodeFor(variant));
 }
 
 /** A named variant that holds a sequence and has no serde of its own: the union tells it from an object by `Array.isArray`. A variant with a serde reads its own wire form, so it is no sequence here. */

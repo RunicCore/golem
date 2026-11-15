@@ -49,7 +49,7 @@ import {
   presentKeysCode,
   wireCheckedDeserializer,
 } from '@exprtlabs/golem/internal/emitter';
-import { anonymousShapeKeys, childDescriptors, createSchemaGraph, codecPublicId, internDescriptors, mapNamedTypes, type SchemaGraph, type SchemaNode } from '@exprtlabs/golem/internal/schema-graph';
+import { anonymousShapeKeys, childDescriptors, createSchemaGraph, codecPublicId, internDescriptors, mapNamedTypes, nodeHoldsSequence, type SchemaGraph, type SchemaNode } from '@exprtlabs/golem/internal/schema-graph';
 import { compareText, type GolemProfile } from '@exprtlabs/golem/generator-api';
 import { displayPath, RESERVED_MODEL_MEMBERS } from '@exprtlabs/golem/internal/generator-support';
 import type { ManifestIndex } from '@exprtlabs/golem/internal/type-analysis';
@@ -1385,7 +1385,7 @@ function modelResolvers(context: EmitContext, helpers: ReadonlyMap<string, Proje
     decode: (value) => code`${codecs.fromWire}(${value}, { validate: false })`,
     fromInit: (value) => value,
   });
-  const fromAny = (id: string): FromJsonModelResolver => {
+  const resolveAny = (id: string): FromJsonModelResolver => {
     const sdkNode = context.sdkNodes.find(id);
     if (sdkNode !== undefined) return resolveSdkNode(sdkNode);
     if (context.projectionNames.has(id)) return resolveProjection(id);
@@ -1396,6 +1396,11 @@ function modelResolvers(context: EmitContext, helpers: ReadonlyMap<string, Proje
     }
     if (context.localImports.some((item) => item.name === id) && context.classModelNames.has(id)) return resolveImportedModel(id);
     return unknownModel(id);
+  };
+  // The graph node of a model says whether it is a recursive array alias, which a union tells from an object by its shape.
+  const fromAny = (id: string): FromJsonModelResolver => {
+    const model = resolveAny(id);
+    return nodeHoldsSequence(context.schemaGraph.nodeFor({ kind: 'reference', name: id }, id)) ? { ...model, sequence: true } : model;
   };
   return { fromAny };
 }
