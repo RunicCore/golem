@@ -9,6 +9,7 @@ import { dateClassOf } from './date-class.js';
 import { refName } from './names.js';
 import {
   effectiveSchemaTypes,
+  mediaSchema,
   parameterSchema,
   resolveLocal,
   type NormalizedOperation,
@@ -845,11 +846,10 @@ function responseBodyType(response: NormalizedResponse, context: SchemaTypeConte
 }
 
 function mediaBodyType(media: OpenApiMediaType, context: SchemaTypeContext = {}): TypeCode {
-  if (media.itemSchemaPresent) {
-    return typeCode(code`AsyncIterable<${schemaTypeCode(media.itemSchema, context).code}>`);
-  }
-  if (media.schema === null && isBinaryMediaType(media.contentType)) return blobType(context);
-  return schemaTypeCode(media.schema, context);
+  const schema = mediaSchema(media);
+  if (media.itemSchemaPresent) return typeCode(code`AsyncIterable<${schemaTypeCode(schema, context).code}>`);
+  if (schema === null && isBinaryMediaType(media.contentType)) return blobType(context);
+  return schemaTypeCode(schema, context);
 }
 
 function operationBodyType(operation: NormalizedOperation, success: boolean, context: SchemaTypeContext = {}): TypeCode {
