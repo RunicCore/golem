@@ -286,7 +286,7 @@ An error prints its code, location when known, and message, then stops generatio
 
 - The checker can't resolve the declaration.
 - The resolved function isn't exported.
-- Two functions in one field share one function type, such as two consts typed by the same alias, so golem cannot tell which one the tag names.
+- Two functions in one field share one function type, such as two consts typed by the same alias, so golem cannot tell which one the tag names. The same holds when a mapped or utility type (`NonNullable`, `Partial`) carries the tag and its const is typed by a shared alias.
 
 **Fix:**
 

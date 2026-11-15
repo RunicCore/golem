@@ -388,6 +388,16 @@ function functionArgument(
   throw context.diagnostic(at, code, message);
 }
 
+/**
+ * The name node of the function that a call signature belongs to, or undefined when its type is shared: a function
+ * declaration, a const with an arrow or function expression, or a const whose own inline annotation is the function
+ * type. A signature that an alias declares belongs to every const of that alias.
+ */
+function functionNameNode(declaration: ts.NamedDeclaration | undefined): ts.Node | undefined {
+  const variable = declaration && ts.isVariableDeclaration(declaration.parent) ? declaration.parent : undefined;
+  return variable?.name ?? declaration?.name;
+}
+
 function functionBinding(
   context: TagAnalysisContext,
   fn: TagFunction,
@@ -399,17 +409,10 @@ function functionBinding(
     if (written && known !== null) context.writtenFunctions?.[kind].set(fn.type, known === undefined || known === written ? written : null);
     return valueBindingForSymbol(context, written, kind, fn.owner);
   }
-  const declaration = fn.type.getCallSignatures()[0]?.declaration;
-  const variable = declaration && ts.isFunctionLike(declaration)
-    && (ts.isArrowFunction(declaration) || ts.isFunctionExpression(declaration))
-    && ts.isVariableDeclaration(declaration.parent)
-    ? declaration.parent
-    : undefined;
-  const named = variable?.name
-    ?? declaration?.name;
+  const named = functionNameNode(fn.type.getCallSignatures()[0]?.declaration);
   const written = context.writtenFunctions?.[kind].get(fn.type);
-  if (written === null && !named) {
-    throw context.diagnostic(fn.owner, '1040', `${kind} function shares its type with another function in this field, so golem cannot tell which one the tag names. Declare it with \`function\` or give it its own type.`);
+  if (!named && !written) {
+    throw context.diagnostic(fn.owner, '1040', `${kind} function shares its type with another function in this field, or reaches this tag through a mapped type that dropped its source, so golem cannot tell which one the tag names. Declare it with \`function\`, or give its const its own type annotation.`);
   }
   const symbol = (named ? context.checker.getSymbolAtLocation(named) : undefined) ?? written ?? undefined;
   return valueBindingForSymbol(context, symbol, kind, fn.owner);

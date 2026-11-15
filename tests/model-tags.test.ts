@@ -435,6 +435,33 @@ test('two validators that share one type alias in one field are refused, not bou
   assert.throws(() => generate({ root, profile: { validation: true } }), /RUNM1040.*shares its type with another function in this field/);
 });
 
+const throughNonNullable = tsSource`type Box = { a: (string & TValidation<typeof check>) | null };\ntype Field = { [K in keyof Box]: NonNullable<Box[K]> };`;
+
+test('a validator const with its own function type annotation is bound through a NonNullable mapped type', t => {
+  // protects: T-957 the tag read from the mapped type named no function and threw RUNM1040 (F-31 TypeScript is the schema)
+  const { root, sourceRoot } = fixture(t);
+  fs.writeFileSync(path.join(sourceRoot, 'rules.ts'), typedRules['an annotated arrow'].text);
+  fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({
+    name: 'A',
+    imports: tsSource`import type { TValidation } from '@exprtlabs/golem/tags';\nimport { check } from './rules.js';\n${throughNonNullable}`,
+    fields: tsSource`field: Field`,
+  }).text);
+  const generated = generate({ root, profile: { validation: true } }).artifacts.map((artifact) => artifact.content).join('\n');
+  assert.ok(importsOf(generated, 'check') > 0, 'check is bound');
+});
+
+test('a validator const typed by a shared alias is refused through a NonNullable mapped type, not bound by guess', t => {
+  // protects: T-957 the refusal says why, in place of "Could not resolve validation function declaration"
+  const { root, sourceRoot } = fixture(t);
+  fs.writeFileSync(path.join(sourceRoot, 'rules.ts'), typedRules['a const typed by a type alias'].text);
+  fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({
+    name: 'A',
+    imports: tsSource`import type { TValidation } from '@exprtlabs/golem/tags';\nimport { check } from './rules.js';\n${throughNonNullable}`,
+    fields: tsSource`field: Field`,
+  }).text);
+  assert.throws(() => generate({ root, profile: { validation: true } }), /RUNM1040.*reaches this tag through a mapped type/);
+});
+
 test('a nullable member written through a tag alias is refused, not given a phantom-key validator', t => {
   // protects: fixed bug (T-430): at 75548ea this generated a validator that rejected every plain string
   const { root, sourceRoot } = fixture(t);
