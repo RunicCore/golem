@@ -26,7 +26,7 @@ interface ClassicType {
   readonly symbol?: ClassicSymbol;
   readonly aliasSymbol?: ClassicSymbol;
   readonly aliasTypeArguments?: readonly ClassicType[];
-  /** Only a union or intersection type has members. */
+  /** The members of a union or intersection type, or the hole types of a template literal type. */
   readonly types?: readonly ClassicType[];
   /** A type reference's generic target; a tuple target also holds `elementFlags` and `readonly`. */
   readonly target?: ClassicType;
@@ -400,7 +400,7 @@ function wrapType(type: ClassicType | undefined, checker: CompatChecker): Golem.
   const proxy = new Proxy(type, {
     get(target, property) {
       switch (property) {
-        case 'types': return (target.isUnion() || target.isIntersection() ? target.types ?? [] : []).map((member) => wrapType(member, checker));
+        case 'types': return (target.types ?? []).map((member) => wrapType(member, checker));
         case 'aliasSymbol': return target.aliasSymbol && wrapSymbol(target.aliasSymbol);
         case 'symbol': return target.symbol && wrapSymbol(target.symbol);
         case 'aliasTypeArguments': return (target.aliasTypeArguments ?? []).map((argument) => wrapType(argument, checker));
