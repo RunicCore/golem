@@ -4,8 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { compareText } from '@exprtlabs/golem/generator-api';
 import { copiedRuntimeSpecifiers, renderModule } from '@exprtlabs/golem/internal/emitter';
 import { generatedBannerComment } from './package-info.js';
-import type { OpenApiMode } from './plan.js';
-import { assertNever } from '@exprtlabs/golem/internal/generator-support';
+import { openApiModeTraits, type OpenApiMode } from './plan.js';
 
 /** The folder of a standalone SDK that holds the copy of the golem runtime. */
 const RUNTIME_FOLDER = 'runtime';
@@ -27,11 +26,7 @@ const standaloneRuntimeSpecifiers: RuntimeSpecifiers = (file) => {
 export function runtimeSpecifiersOf(mode: Extract<OpenApiMode, { kind: 'standalone' }>): RuntimeSpecifiers;
 export function runtimeSpecifiersOf(mode: OpenApiMode): RuntimeSpecifiers | undefined;
 export function runtimeSpecifiersOf(mode: OpenApiMode): RuntimeSpecifiers | undefined {
-  switch (mode.kind) {
-    case 'standalone': return standaloneRuntimeSpecifiers;
-    case 'golem': return undefined;
-    default: return assertNever(mode);
-  }
+  return openApiModeTraits(mode.kind).selfContained ? standaloneRuntimeSpecifiers : undefined;
 }
 
 function* filesBelow(directory: string, relative = ''): Generator<string> {
