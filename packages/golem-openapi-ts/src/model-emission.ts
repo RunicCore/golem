@@ -115,11 +115,6 @@ export function checkModelFromJSON(
   ));
 }
 
-/** Whether a model's group module exports its wire stringify: another group writes the model with it, as it writes a value that is already encoded. */
-function exportsWireStringify(node: SchemaNode, profile: OpenApiGenerationProfile): boolean {
-  return node.kind !== 'reference' && writesWireStringify(node, profile.validation);
-}
-
 function generatedFunctionName(nodeId: string, functionName: 'stringify' | 'fill' | 'fromWire' | 'toWire'): string {
   if (functionName === 'stringify') return `stringify${nodeId}`;
   if (functionName === 'fill') return fillFunctionName(nodeId);
@@ -395,10 +390,10 @@ function generateModels(
       const declared = definition !== undefined && Object.hasOwn(asRecord(asRecord(asRecord(document).components).schemas), definition.schemaName);
       return definition !== undefined && declared && typeIdentifier(definition.schemaName) === definition.name ? code`${typesModule.namespace()}.${identifier(definition.name)}` : undefined;
     },
-    exportWireStringify: (node) => exportsWireStringify(node, profile),
+    exportWireStringify: (node) => writesWireStringify(node, profile.validation),
     siblingWireCodecIds: new Set([...(helpers.dependencyNodeIds ?? [])].flatMap((id) => {
       const node = analysis.nodesById.get(id);
-      return node && exportsWireStringify(node, profile) ? [node.codecId] : [];
+      return node && writesWireStringify(node, profile.validation) ? [node.codecId] : [];
     })),
     ...(helpers.wireStringify ? { siblingWireName: helpers.wireStringify } : {}),
     ...(helpers.exportedFillFunctionIds ? { exportedFillFunctionIds: helpers.exportedFillFunctionIds } : {}),
@@ -415,7 +410,7 @@ function generateModels(
       const fromWire = helpers.codecFunctionImport(node.id, 'fromWire');
       const toWire = helpers.codecFunctionImport(node.id, 'toWire');
       return stringify && fromWire && toWire
-        ? { stringify, fromWire, toWire, sequence: nodeHoldsSequence(node), wireStringify: exportsWireStringify(node, profile) && helpers.wireStringify ? helpers.wireStringify(node.codecId) : undefined, ...(fill ? { fill } : {}) }
+        ? { stringify, fromWire, toWire, sequence: nodeHoldsSequence(node), wireStringify: writesWireStringify(node, profile.validation) && helpers.wireStringify ? helpers.wireStringify(node.codecId) : undefined, ...(fill ? { fill } : {}) }
         : undefined;
     },
   };

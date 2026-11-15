@@ -473,7 +473,7 @@ function emitValue(
   if (descriptor.kind === 'generated-model') {
     const named = ctx.graph.nodeFor(descriptor);
     // A wire value goes to the wire stringify of its node, the one its module exports or this module's own: the model stringify would encode the value again.
-    const wire = named && ctx.wireIdentity ? importedSerdeOf(named, ctx)?.wireStringify ?? localWireStringify(named, ctx) : undefined;
+    const wire = named && ctx.wireIdentity ? importedSerdeOf(named, ctx)?.wireStringify ?? (serdeTags(descriptor).serde ? undefined : localWireStringify(named, ctx)) : undefined;
     if (wire) return code`${wire}(${value} as never)`;
     // A wire value of a generated model that holds an array is written by the wire writer of its node, below, as a recursive alias is.
     if (named && !(ctx.wireIdentity && !serdeTags(descriptor).serde && nodeHoldsSequence(named))) {
@@ -1101,12 +1101,6 @@ function reachesRecursion(descriptor: ModelTypeDescriptor, ctx: Pick<EmitCtx, 'g
 export function reachesRecursiveNode(graph: SchemaGraph, node: SchemaNode, siblingRecursion?: ReadonlyMap<string, boolean>): boolean {
   return node.descriptor.kind !== 'reference' && node.descriptor.kind !== 'generated-model'
     && reachesRecursion(node.descriptor, { graph, siblingRecursion });
-}
-
-/** Whether the model `node` reaches itself, so another module that writes it in place meets it again. */
-export function reachesItself(graph: SchemaGraph, node: SchemaNode): boolean {
-  return node.descriptor.kind !== 'reference' && node.descriptor.kind !== 'generated-model'
-    && reachesNode(node.descriptor, node.id, { graph });
 }
 
 /**
@@ -1944,9 +1938,9 @@ function nodeLevels(node: SchemaNode, project: ValidationLevel): NodeLevels {
   return { defaultLevel: node.validation === 'sanity' ? 'sanity' : project, cap: project };
 }
 
-/** Whether the module of a project at level `project` writes the wire stringify of `node`: its calls validate and its wire and model schemas differ. */
+/** Whether the module of a project at level `project` writes the wire stringify of `node`: it holds the node, its calls validate and its wire and model schemas differ. */
 export function writesWireStringify(node: SchemaNode, project: ValidationLevel): boolean {
-  return validatesByDefault(nodeLevels(node, project)) && !node.sameSchema;
+  return !isExternalCodecNode(node) && validatesByDefault(nodeLevels(node, project)) && !node.sameSchema;
 }
 
 /** The level arguments of `serdeValidates`: the default, and the cap when it is another level. */
@@ -2513,7 +2507,7 @@ export function emitCodecRuntimeCode(
   let ctx: EmitCtx = {
     graph,
     // emitNodeRuntime emits stringify<Id>Wire exactly for these nodes.
-    wireStringifyIds: new Set(nodes.filter((node) => !isExternalCodecNode(node) && validates(node) && !node.sameSchema).map((node) => node.id)),
+    wireStringifyIds: new Set(nodes.filter((node) => writesWireStringify(node, project)).map((node) => node.id)),
     // emitNodeRuntime emits stringify<Id>Core and toWireFormat<Id>Core for every node that is not external.
     localCoreIds: new Set(nodes.filter((node) => !isExternalCodecNode(node)).map((node) => node.id)),
     strictCoreIds: new Set(nodes.filter((node) => !isExternalCodecNode(node) && validates(node) && node.sameSchema).map((node) => node.id)),
