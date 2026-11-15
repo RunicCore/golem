@@ -4,7 +4,7 @@ import { serdeWireDescriptor, type SchemaGraph, type SchemaNode } from '@exprtla
 import { identifier } from '@exprtlabs/golem/internal/generator-support';
 import { asRecord, escapeJsonPointerToken, isJsonObject, objectEntries, type JsonObject } from './json.js';
 import type { GolemDiagnostic } from '@exprtlabs/golem/generator-api';
-import type { ConstraintSchemaValue, ModelConstraint, ModelTypeDescriptor, UnionDiscriminator } from '@exprtlabs/golem/internal/schema';
+import { aliasReference, followReference, schemaReferenceOrDynamic, type ConstraintSchemaValue, type ModelConstraint, type ModelTypeDescriptor, type UnionDiscriminator } from '@exprtlabs/golem/internal/schema';
 import { componentOrigin, LocatedError } from './origin.js';
 import {
   COMPOSITION_PROPERTY_NEVER,
@@ -185,7 +185,7 @@ export function componentSchemaTarget(schema: unknown, env: ModelResolveEnv): un
 /** The schema that a `$ref` to part of a component names (a property, a nested `$anchor`, a nested `$id`), and the environment that its own references resolve in; the type path reads the same target. */
 export function partSchemaTarget(schema: unknown, env: ModelResolveEnv): { readonly schema: unknown; readonly env: ModelResolveEnv } | undefined {
   if (!isJsonObject(schema)) return undefined;
-  const reference = typeof schema.$ref === 'string' ? schema.$ref : typeof schema.$dynamicRef === 'string' ? schema.$dynamicRef : undefined;
+  const reference = schemaReferenceOrDynamic(schema);
   const target = reference === undefined ? undefined : resolveSchemaTarget(reference, env.currentBase, env.resources, env.document);
   return target && target.exactComponent === null ? { schema: target.schema, env: { ...env, currentBase: target.currentBase } } : undefined;
 }
@@ -585,11 +585,12 @@ function impliedByTarget(keyword: string, value: unknown, target: Readonly<Recor
 
 /** The schema that a chain of component `$ref`s names, or none when it names no component of the document. */
 function referenceTarget(schema: unknown, env: ModelResolveEnv): Readonly<Record<string, unknown>> | undefined {
-  let target = componentSchemaTarget(schema, env);
-  for (let hops = 0; hops < 16 && isJsonObject(target) && typeof target.$ref === 'string' && Object.keys(target).length === 1; hops += 1) {
-    target = componentSchemaTarget(target, env);
+  const followed = followReference(componentSchemaTarget(schema, env), aliasReference, (reference) => componentSchemaTarget({ $ref: reference }, env));
+  switch (followed.kind) {
+    case 'found': return isJsonObject(followed.target) ? followed.target : undefined;
+    case 'miss':
+    case 'cycle': return undefined;
   }
-  return isJsonObject(target) ? target : undefined;
 }
 
 /** The keywords of a schema that its descriptor does not carry. The first three rules name keywords that no descriptor kind holds. */
@@ -601,7 +602,7 @@ function uncarriedKeywords(schema: unknown, dates: OpenApiDates, target?: Readon
   // With an allOf the composition holds `unevaluatedProperties`; with none, a union or a condition evaluates names that the descriptor does not list.
   const unevaluating = !dated && !hasAllOfMembers(schema) && present(EVALUATING_KEYWORDS).length > 0 ? present(['unevaluatedProperties', 'unevaluatedItems']) : [];
   // A keyword beside a `$ref` that the named schema already states, or states more tightly, adds nothing to what the reference converts.
-  const reference = typeof schema.$ref === 'string' || typeof schema.$dynamicRef === 'string'
+  const reference = schemaReferenceOrDynamic(schema) !== undefined
     ? present(REFERENCE_SIBLINGS).filter((keyword) => target === undefined || !impliedByTarget(keyword, schema[keyword], target))
     : [];
   return [...(dated ? present(DATE_TEXT_KEYWORDS) : []), ...unevaluating, ...present(['additionalItems']), ...reference];
@@ -1038,7 +1039,7 @@ function isNullBranch(schema: unknown): boolean {
 function exactComponentTarget(schema: unknown, env: ModelResolveEnv): ExactComponentTarget | null {
   if (!isJsonObject(schema)) return null;
   const base = nextSchemaBase(schema, env.currentBase, env.resources);
-  const reference = typeof schema.$ref === 'string' ? schema.$ref : typeof schema.$dynamicRef === 'string' ? schema.$dynamicRef : null;
+  const reference = schemaReferenceOrDynamic(schema);
   return reference ? resolveExactComponent(reference, base, env.resources, env.document) : null;
 }
 

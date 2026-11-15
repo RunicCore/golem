@@ -1,5 +1,5 @@
 import { MODEL_CLASS_KEYWORD, MODEL_INSTANCE_KEYWORD, VALIDATION_KEYWORD } from '../../schema-keywords.js';
-import { unescapePointerToken } from '../../json-pointer.js';
+import { jsonPointerTokens } from '../../json-pointer.js';
 import { isKnownFormat, jsonEqual } from '../../validation-runtime.js';
 import { isRuntimeFunction } from '../rt.js';
 import { GolemDiagnosticSeverity, isRecord, type GolemDiagnostic } from '../generator-core.js';
@@ -149,7 +149,7 @@ function allDistinct(values: readonly unknown[]): boolean {
 
 /** What a `$ref` target is called: the last segment of its pointer; a whole resource has no segment, and its name may be a digest. */
 function referenceName(target: SchemaLocation): string | undefined {
-  return target.pointer === '' ? undefined : unescapePointerToken(target.pointer.slice(target.pointer.lastIndexOf('/') + 1));
+  return jsonPointerTokens(target.pointer).at(-1);
 }
 
 /** True when the value is, or holds at any depth, a number that is not finite. */

@@ -1,5 +1,6 @@
 import { stableJson } from '@exprtlabs/golem/generator-api';
 import { isRecord } from '@exprtlabs/golem/internal/generator-support';
+import { schemaReference } from '@exprtlabs/golem/internal/schema';
 import * as ts from '@exprtlabs/golem/internal/ts';
 import {
   GolemDiagnosticSeverity,
@@ -97,10 +98,6 @@ function requiredSet(list: readonly unknown[]): unknown[] {
 
 export function sameValue(left: unknown, right: unknown): boolean {
   return stableJson(left) === stableJson(right);
-}
-
-export function schemaReference(value: unknown): string | undefined {
-  return isRecord(value) && typeof value.$ref === 'string' ? value.$ref : undefined;
 }
 
 export function resolvedSchema(

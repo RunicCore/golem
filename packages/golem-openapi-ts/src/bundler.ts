@@ -1,6 +1,6 @@
 import { compareText } from '@exprtlabs/golem/generator-api';
 import { identifier } from '@exprtlabs/golem/internal/generator-support';
-import { escapePointerToken } from '@exprtlabs/golem/internal/schema';
+import { aliasReference, escapePointerToken } from '@exprtlabs/golem/internal/schema';
 import { escapeJsonPointerToken, isJsonObject, jsonPointerTokens, resolveJsonPointer, unescapeJsonPointerToken } from './json.js';
 import { displayLocation, displayUri } from './origin.js';
 import type { ReferenceGraph, ReferenceSite, ReferenceTarget } from './reference-loader.js';
@@ -67,10 +67,6 @@ export function componentNameFor(target: ReferenceTarget, rootDirectory: string)
   return name || 'external';
 }
 
-function isBareRefObject(node: unknown): node is { readonly $ref: string } {
-  return isJsonObject(node) && typeof node.$ref === 'string' && Object.keys(node).length === 1;
-}
-
 interface RootAliasCandidate {
   readonly key: string;
   readonly name: string;
@@ -93,7 +89,7 @@ function collectRootAliasCandidates(graph: ReferenceGraph, rootDocument: unknown
     const match = /^\/components\/([^/]+)\/([^/]+)$/.exec(site.ownerPointer);
     if (!match) continue;
     if (unescapeJsonPointerToken(match[1]) !== site.kind) continue;
-    if (!isBareRefObject(resolveJsonPointer(rootDocument, site.ownerPointer))) continue;
+    if (aliasReference(resolveJsonPointer(rootDocument, site.ownerPointer)) === undefined) continue;
     candidates.push({ key: `${site.target.uri}#${site.target.pointer}`, name: unescapeJsonPointerToken(match[2]) });
   }
   return candidates;

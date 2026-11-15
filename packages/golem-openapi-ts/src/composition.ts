@@ -26,7 +26,7 @@ import {
   type ObjectResult,
   type SlotRule,
 } from '@exprtlabs/golem/internal/emitter';
-import type { ModelConstraint, ModelTypeDescriptor } from '@exprtlabs/golem/internal/schema';
+import type { ModelConstraint, ModelTypeDescriptor, ScopedSchema } from '@exprtlabs/golem/internal/schema';
 
 import { asRecord, isJsonObject, objectEntries } from './json.js';
 import { admitsNull, effectiveSchemaTypes } from './normalize.js';
@@ -34,12 +34,6 @@ import { admitsNull, effectiveSchemaTypes } from './normalize.js';
 export const COMPOSITION_CONVERSION_CONFLICT = 'OPENAPI_COMPOSITION_CONVERSION_CONFLICT';
 export const COMPOSITION_UNSATISFIABLE = 'OPENAPI_COMPOSITION_UNSATISFIABLE';
 export const COMPOSITION_PROPERTY_NEVER = 'OPENAPI_COMPOSITION_PROPERTY_NEVER';
-
-/** A schema in the scope it is read in. */
-interface ScopedSchema<S> {
-  readonly schema: unknown;
-  readonly scope: S;
-}
 
 /** How the resolver reads schemas: the caller owns `$ref` resolution, scopes and descriptors. */
 export interface CompositionReader<S> {
