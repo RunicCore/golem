@@ -181,7 +181,7 @@ test('conflicting serde pairs are rejected during model analysis', t => {
   }).text);
   assert.throws(
     () => generate({ root, profile: { validation: false } }),
-    /Conflicting serde tags/,
+    /a\.model\.ts:\d+:\d+ RUNM1042: .*Conflicting serde tags/,
   );
 });
 
