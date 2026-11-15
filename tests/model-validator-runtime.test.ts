@@ -8,7 +8,6 @@ import { autorun } from 'mobx';
 import type * as ModelRuntimeModule from '@exprtlabs/golem/internal/model-runtime';
 import type * as MobxValidationRuntimeModule from '@exprtlabs/golem-openapi-ts/internal/mobx-validation-runtime';
 import type * as ValidationModule from '@exprtlabs/golem/validation';
-import type * as MobxModule from '@exprtlabs/golem-openapi-ts/mobx';
 import type * as MobxValidationModule from '@exprtlabs/golem-openapi-ts/mobx-validation';
 import { installCodecModel } from './register-codec-model.js';
 import type { GeneratedModelValidatorEnhancer } from '@exprtlabs/golem/internal/model-runtime';
@@ -19,7 +18,6 @@ const distRoot = dirname(fileURLToPath(import.meta.resolve('@exprtlabs/golem/mod
 async function runtime(name: 'runtime-model'): Promise<typeof ModelRuntimeModule>;
 async function runtime(name: 'runtime-mobx-validation'): Promise<typeof MobxValidationRuntimeModule>;
 async function runtime(name: 'validation'): Promise<typeof ValidationModule>;
-async function runtime(name: 'mobx'): Promise<typeof MobxModule>;
 async function runtime(name: 'mobx-validation'): Promise<typeof MobxValidationModule>;
 async function runtime(name: string): Promise<unknown>;
 async function runtime(name: string): Promise<unknown> {

@@ -15,8 +15,8 @@ interface EmitOptions {
   readonly specifiers?: ImportOptions['specifiers'];
   /** Types each exported validator as a `Validator`, for a TypeScript file. */
   readonly typed?: boolean;
-  /** Also writes the boolean fast check `is_X` beside `validate_X`, for each root, or each root named, that has one (see `FastPlan`). */
-  readonly fastPath?: boolean | ReadonlySet<string>;
+  /** Also writes the boolean fast check `is_X` beside `validate_X`, for each root (`'all'`) or each root named, that has one (see `FastPlan`). Absent: none. */
+  readonly fastPath?: 'all' | ReadonlySet<string>;
   /** `sanity` writes the module that checks the shape only (see `sanitize`); `full`, the default, one module whose validators skip the value limits when the caller passes the flag `s`. */
   readonly level?: 'full' | 'sanity';
 }
@@ -130,8 +130,8 @@ interface Reached {
 function startEmission(whole: IrModule, fastPath: EmitOptions['fastPath'], level: EmitOptions['level']): Emission {
   const source = level === 'sanity' ? sanitize(whole) : whole;
   // A set of root names is any `ReadonlySet`, not only a `Set`.
-  const wantsFastCheck = (name: string): boolean => fastPath === true || (typeof fastPath === 'object' && fastPath.has(name));
-  const wanted = fastPath === true || (typeof fastPath === 'object' && fastPath.size > 0);
+  const wantsFastCheck = (name: string): boolean => fastPath === 'all' || (fastPath !== undefined && fastPath.has(name));
+  const wanted = fastPath === 'all' || (fastPath !== undefined && fastPath.size > 0);
   const sourceTarget = forwardingTarget(source.functions);
   // The passes are IR functions of their own, so the plan and the writers treat them as any other function.
   const passes = wanted ? projectPasses(source.functions, source.exports.filter(({ name }) => wantsFastCheck(name)).map(({ fn }) => sourceTarget(fn))) : undefined;

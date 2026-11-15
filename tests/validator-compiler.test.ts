@@ -462,7 +462,7 @@ test('an anyOf of branches that differ by JSON type checks a valid value with th
   // protects: T-255 one type switch for a disjoint union (F-250); `Number.isInteger` runs only in the integer branch, which comes first.
   const { source, exports, fastExports } = compile(
     { roots: new Map([['root', { anyOf: [{ type: 'integer' }, { type: 'string' }, { type: 'null' }, { type: 'array', items: { type: 'string' } }, { type: 'object' }] }]]) },
-    { unknownFormats: 'warn', specifiers: { values: { 'validation-runtime': 'golem-validation-runtime' } }, fastPath: true },
+    { unknownFormats: 'warn', specifiers: { values: { 'validation-runtime': 'golem-validation-runtime' } }, fastPath: 'all' },
   );
   const counts = { isInteger: 0 };
   const { values } = await loadBundle(t, source, [fastExports.get('root')!, exports.get('root')!], { counts }, 'const real = Number.isInteger; Number.isInteger = value => (counts.isInteger++, real(value));');
