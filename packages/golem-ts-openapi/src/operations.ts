@@ -1,6 +1,6 @@
 import { compareText } from '@exprtlabs/golem/generator-api';
 import { recordOrUndefined } from '@exprtlabs/golem/internal/generator-support';
-import { followReference, schemaReference } from '@exprtlabs/golem/internal/schema';
+import { canonicalSchemaKey, followReference, schemaReference } from '@exprtlabs/golem/internal/schema';
 import * as ts from '@exprtlabs/golem/internal/ts';
 import { TsToOpenApiDiagnosticCode, TsToOpenApiError, diagnostic } from './diagnostics.js';
 import { isDtoSchema, mapArrayItems, mergeSchemaMetadata } from './nest/json-schema-merge.js';
@@ -384,7 +384,7 @@ async function bodyExtraSchemas(
   for (const field of fields) {
     const name = field.name;
     const schema = await schemaFor(context, field.type, 'request', `body.${name}`);
-    if (properties[name] !== undefined && JSON.stringify(properties[name]) !== JSON.stringify(schema)) {
+    if (properties[name] !== undefined && canonicalSchemaKey(properties[name]) !== canonicalSchemaKey(schema)) {
       throw new TsToOpenApiError(diagnostic(field.node.getSourceFile(), field.node, TsToOpenApiDiagnosticCode.NonPortableParameter, `@Body("${name}") is declared twice with different types, and a request body property has one schema. Give both parameters one type, or read the body in one whole @Body().`));
     }
     properties[name] = schema;
@@ -430,7 +430,7 @@ export function propertyNames(resolve: OperationBuildContext['resolveSchemaRefer
  * declares an optional property leaves a valid body.
  */
 function combineBodyParts(context: OperationBuildContext, parts: readonly BodyPartSchema[]): OpenApiSchema {
-  const unique = parts.filter((part, index) => parts.findIndex(other => JSON.stringify(other.schema) === JSON.stringify(part.schema)) === index);
+  const unique = parts.filter((part, index) => parts.findIndex(other => canonicalSchemaKey(other.schema) === canonicalSchemaKey(part.schema)) === index);
   if (unique.length === 1) return unique[0].schema;
   for (const closed of unique) {
     if (resolvedSchema(context.resolveSchemaReference, closed.schema)?.additionalProperties !== false) continue;

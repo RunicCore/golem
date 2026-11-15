@@ -16,6 +16,7 @@ import { CODEC_DATA_HOOK, DEFAULT_MODEL_SUFFIXES, defaultModelOutput, MODEL_BLOC
 import { codecKeysPath } from '@exprtlabs/golem/internal/generated-paths';
 import { AmbiguousUnionConversionError, ObjectUnionDiscriminatorError, reachesRecursiveNode, type Code } from '@exprtlabs/golem/internal/emitter';
 import { emitCodecDeclarationTable, sharedShortNameIds } from '@exprtlabs/golem/internal/schema-graph';
+import { canonicalSchemaKey } from '@exprtlabs/golem/internal/schema';
 import {
   analyzeSourceGraph,
   createJobAnalysis,
@@ -598,7 +599,7 @@ export function generate(context: GolemModelContext): GolemModelResult {
   const schemaEntries = deduplicateTagSchemas(
     graphs.flatMap((graph) => graph.schemas)
       .sort((left, right) => compareText(left.key, right.key)
-        || compareText(JSON.stringify(left.schema), JSON.stringify(right.schema))),
+        || compareText(canonicalSchemaKey(left.schema), canonicalSchemaKey(right.schema))),
   );
   // A model never validates above its project, so a project that does not validate has no validators.
   const validationPlan = normalized.profile.validation !== false

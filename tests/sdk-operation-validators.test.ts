@@ -341,3 +341,13 @@ test('an operation root that has the name of a model root fails the SDK compile,
     /two operations give the resource "urn:shared" different schemas/,
   );
 });
+
+test('two operations that give a resource the same schema in another key order share it', () => {
+  const options = { owner: 'test', unknownFormats: 'warn', documentName: 'the document' } as const;
+  const shared = (properties: Record<string, unknown>) => ({ $id: 'urn:shared', type: 'object', properties });
+  const compiled = compileSdkValidators({ operations: [
+    { roots: { a: { $ref: 'urn:shared' } }, resources: { 'urn:shared': shared({ x: { type: 'string', minLength: 1 }, y: { minimum: 0, type: 'integer' } }) } },
+    { roots: { b: { $ref: 'urn:shared' } }, resources: { 'urn:shared': shared({ y: { type: 'integer', minimum: 0 }, x: { minLength: 1, type: 'string' } }) } },
+  ] }, options);
+  assert.deepEqual([...compiled.exports.values()].sort(), ['validate_a', 'validate_b']);
+});

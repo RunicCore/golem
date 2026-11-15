@@ -1,6 +1,7 @@
 import { lowerDiscriminatorMappings } from '../discriminator-mapping.js';
 import { unescapeJsonPointerToken } from '../json-pointer.js';
 import { GENERATED_MODEL_SCHEMA_REF_PREFIX, MODEL_INSTANCE_KEYWORD } from '../schema-keywords.js';
+import { canonicalSchemaKey } from './canonical-schema-key.js';
 import { compareText, isRecord, type GolemDiagnostic, type GolemProfile } from './generator-core.js';
 import { codecShortName, type SchemaGraph, type SchemaNode } from './schema-graph.js';
 import type { JsonSchema } from './schema.js';
@@ -58,8 +59,8 @@ function ownedGraphDefinitions(
   for (const [name, definition] of Object.entries(definitions)) {
     const target = preferredDefinitions.get(name);
     if (target
-      && stableSchema(withoutKey(target.schema, '$defs'))
-        === stableSchema(withoutKey(definition, '$defs'))) {
+      && canonicalSchemaKey(withoutKey(target.schema, '$defs'))
+        === canonicalSchemaKey(withoutKey(definition, '$defs'))) {
       owned.set(name, target);
     }
   }
@@ -93,12 +94,6 @@ export function localDefinitionName(reference: string): string | undefined {
   const segment = reference.slice(prefix.length);
   if (segment.length === 0 || segment.includes('/')) return undefined;
   return unescapeJsonPointerToken(segment);
-}
-
-function stableSchema(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(stableSchema).join(',')}]`;
-  if (!isRecord(value)) return JSON.stringify(value) ?? 'undefined';
-  return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${stableSchema(Reflect.get(value, key))}`).join(',')}}`;
 }
 
 function schemaWithId(schema: JsonSchema, id: string): object | boolean {
@@ -228,8 +223,8 @@ export function buildCodecValidationPlan(
     const withId = schemaWithId(schema, id);
     const previous = schemas[id];
     if (previous !== undefined) {
-      if (stableSchema(schemaIdentityView(previous, schemaDefinitions.get(id)))
-        !== stableSchema(schemaIdentityView(withId, preferredDefinitions))) {
+      if (canonicalSchemaKey(schemaIdentityView(previous, schemaDefinitions.get(id)))
+        !== canonicalSchemaKey(schemaIdentityView(withId, preferredDefinitions))) {
         throw new TypeError(`Conflicting schema identity ${JSON.stringify(id)}.`);
       }
       // Keep the first schema paired with the definition context recorded for
@@ -275,7 +270,7 @@ export function buildCodecValidationPlan(
   for (const codec of externalCodecs) {
     addSchema(codec.codecId, codec.modelSchema);
     if (codec.wireSchema !== undefined
-      && stableSchema(codec.modelSchema) !== stableSchema(codec.wireSchema)) {
+      && canonicalSchemaKey(codec.modelSchema) !== canonicalSchemaKey(codec.wireSchema)) {
       addSchema(`${codec.codecId}#wire`, codec.wireSchema);
     }
     if (codec.modelOnlySchema !== undefined) addSchema(`${codec.codecId}#model-only`, codec.modelOnlySchema);
@@ -515,7 +510,7 @@ export interface SdkValidatorsInput {
 }
 
 function sameSchema(first: unknown, second: unknown): boolean {
-  return first === second || JSON.stringify(first) === JSON.stringify(second);
+  return first === second || canonicalSchemaKey(first) === canonicalSchemaKey(second);
 }
 
 /**
