@@ -35,10 +35,9 @@ export function isMultipleOf(value: number, divisor: number): boolean {
   if (Number.isInteger(divisor)) return Number.isInteger(value) && value % divisor === 0;
   if (!Number.isFinite(value)) return false;
   const split = (number: number): [digits: bigint, exponent: number] => {
-    const match = /^-?([0-9]+)(?:[.]([0-9]+))?(?:e([+-][0-9]+))?$/.exec(String(number));
-    if (match === null) throw new RangeError(`${number} has no decimal text`);
-    const fraction = match[2] ?? '';
-    return [BigInt(match[1]! + fraction), Number(match[3] ?? 0) - fraction.length];
+    const [, whole, fraction = '', exponent = '0'] = /^-?([0-9]+)(?:[.]([0-9]+))?(?:e([+-][0-9]+))?$/.exec(String(number)) ?? [];
+    if (whole === undefined) throw new RangeError(`${number} has no decimal text`);
+    return [BigInt(whole + fraction), Number(exponent) - fraction.length];
   };
   const [valueDigits, valueExponent] = split(value);
   const [divisorDigits, divisorExponent] = split(divisor);
@@ -114,7 +113,7 @@ export function duplicateItems(list: readonly unknown[]): readonly [first: numbe
   const found: [number, number] = [list.length, list.length];
   let firstOf: Map<unknown, number> | undefined;
   const seen = new Map<object, number>();
-  const shallow = new Map<string, number | number[]>();
+  const shallow = new Map<string, Group>();
   for (let index = 0; index < list.length; index++) {
     // The JSON view of an `undefined` item is `null`.
     const item = list[index] ?? null;
@@ -123,11 +122,14 @@ export function duplicateItems(list: readonly unknown[]): readonly [first: numbe
       const earlier = (firstOf ??= new Map()).get(item);
       if (earlier === undefined) firstOf.set(item, index);
       else lowerPair(found, earlier, index);
-    } else if (seen.has(item)) {
-      lowerPair(found, seen.get(item)!, index);
     } else {
-      seen.set(item, index);
-      groupOf(shallow, shallowKey(item), index);
+      const earlier = seen.get(item);
+      if (earlier !== undefined) {
+        lowerPair(found, earlier, index);
+      } else {
+        seen.set(item, index);
+        groupOf(shallow, shallowKey(item), index);
+      }
     }
   }
   let pending: number[] = [];
@@ -136,16 +138,23 @@ export function duplicateItems(list: readonly unknown[]): readonly [first: numbe
   }
   for (let depth = 2; pending.length > 0; depth *= 2) {
     const walk = new KeyWalk(depth);
-    const byReference = new Map<string, number | number[]>();
-    for (const index of pending) groupOf(byReference, walk.reference(list[index] as object), index);
+    const byReference = new Map<string, Group>();
+    for (const index of pending) groupOf(byReference, walk.reference(objectAt(list, index)), index);
     pending = [];
     for (const [reference, group] of byReference) {
       if (typeof group === 'number') continue;
-      if (reference.charCodeAt(0) !== TRUNCATED) lowerPair(found, group[0]!, group[1]!);
+      if (reference.charCodeAt(0) !== TRUNCATED) lowerPair(found, group[0], group[1]);
       else for (const index of group) pending.push(index);
     }
   }
   return found[0] === list.length ? undefined : found;
+}
+
+/** The object at `index`, which `duplicateItems` met as an object in its first pass. */
+function objectAt(list: readonly unknown[], index: number): object {
+  const item = list[index];
+  if (typeof item !== 'object' || item === null) throw new TypeError(`Item ${index} is no object, but the first pass of duplicateItems met an object there.`);
+  return item;
 }
 
 function holdsObject(list: readonly unknown[]): boolean {
@@ -164,8 +173,11 @@ function lowerPair(found: [number, number], earlier: number, later: number): voi
   }
 }
 
+/** The indexes that share a key: the index itself while it is alone, then a list of at least two. */
+type Group = number | [first: number, second: number, ...later: number[]];
+
 /** Puts `index` under `key`: the index itself while it is alone, then the list of its indexes. */
-function groupOf(groups: Map<string, number | number[]>, key: string, index: number): void {
+function groupOf(groups: Map<string, Group>, key: string, index: number): void {
   const group = groups.get(key);
   if (group === undefined) groups.set(key, index);
   else if (typeof group === 'number') groups.set(key, [group, index]);
@@ -198,7 +210,8 @@ class KeyFrame {
   /** The member at `position` in the JSON view, or `undefined` when an object has no such present member. */
   read(position: number): unknown {
     if (this.list !== undefined) return this.list[position] ?? null;
-    const name = this.names[position]!;
+    const name = this.names[position];
+    if (name === undefined) throw new RangeError(`Position ${position} is past the ${this.names.length} names of the object.`);
     const member = presentValue(this.value, name);
     if (member !== undefined) this.label = `${name.length}:${name}=`;
     return member;
@@ -227,8 +240,7 @@ function shallowKey(item: object): string {
   for (let position = 0; position < frame.size; position++) {
     const member = frame.read(position);
     if (member === undefined) continue;
-    const text = primitiveText(member);
-    frame.text += `${frame.label}${text ?? (Array.isArray(member) ? `?${member.length}` : '?')},`;
+    frame.add(primitiveText(member) ?? (Array.isArray(member) ? `?${member.length}` : '?'));
   }
   return frame.text;
 }
@@ -274,9 +286,9 @@ class KeyWalk {
   /** The reference of `root`, an array, an object or a date. */
   reference(root: object): string {
     if (root instanceof Date) return dateText(root) ?? this.identity(root);
-    const stack = [this.open(root)];
+    const parents: KeyFrame[] = [];
+    let frame = this.open(root);
     for (;;) {
-      const frame = stack[stack.length - 1]!;
       let inner: object | undefined;
       while (inner === undefined && !frame.failed && frame.index < frame.size) {
         const member = frame.read(frame.index++);
@@ -293,27 +305,30 @@ class KeyWalk {
         } else if (this.onPath.has(member)) {
           this.cyclic.add(member);
           frame.add(this.identity(member));
-        } else if (stack.length === this.limit) {
+        } else if (parents.length + 1 === this.limit) {
           frame.add('~');
         } else {
-          const known = this.finished[stack.length]?.get(member);
+          const known = this.finished[parents.length + 1]?.get(member);
           if (known !== undefined) {
             frame.add(known);
           } else {
             inner = member;
-            stack.push(this.open(member));
           }
         }
       }
-      if (inner !== undefined) continue;
-      stack.pop();
+      if (inner !== undefined) {
+        parents.push(frame);
+        frame = this.open(inner);
+        continue;
+      }
       this.onPath.delete(frame.value);
       const text = frame.failed ? undefined : this.number(frame);
       const reference = text === undefined || this.cyclic.has(frame.value) ? this.identity(frame.value) : text;
-      const parent = stack[stack.length - 1];
+      const parent = parents.pop();
       if (parent === undefined) return text ?? reference;
-      (this.finished[stack.length] ??= new Map()).set(frame.value, reference);
+      (this.finished[parents.length + 1] ??= new Map()).set(frame.value, reference);
       parent.add(reference);
+      frame = parent;
     }
   }
 
@@ -511,7 +526,7 @@ export function checkFormat(format: string, value: unknown): boolean {
 
 /** The validity of a `Date` binding: an instance can be a `Date` and hold no time (`new Date(NaN)`). */
 export function hasFiniteTime(instance: unknown): boolean {
-  return Number.isFinite((instance as Date).getTime());
+  return instance instanceof Date && Number.isFinite(instance.getTime());
 }
 
 /**
