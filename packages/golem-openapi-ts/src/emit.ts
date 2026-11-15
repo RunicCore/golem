@@ -1,13 +1,13 @@
 import path from 'node:path';
 import { GolemDiagnosticSeverity, type GolemDiagnostic, type GolemResult, type HookParticipants } from '@exprtlabs/golem/generator-api';
-import { OPERATION_WRAPPER_HOOK, type OperationWrapper, type OperationWrapperParticipant } from './plan.js';
+import { OPERATION_WRAPPER_HOOK, type OperationWrapper, type OperationWrapperResult } from './plan.js';
 import { stableJson } from '@exprtlabs/golem/generator-api';
 import { assertPortableFilenames, identifier, isRecord } from '@exprtlabs/golem/internal/generator-support';
 import { buildOperationValidationSchemas, generateClientModules, operationValidatorNames } from './client/emit.js';
 import { browserCookieDiagnostics, normalizeAndValidate, unsupportedHttpAuthSchemes, type MovedUnions } from './document.js';
 import { buildEmissionPlan, serverOverrideDiagnostics, type ArtifactFile, type EmissionPlan } from './emission-plan.js';
 import { asRecord, readString } from './json.js';
-import { assertUniqueExportNames, code, documentLiteral, exportedName, renderModule, type PublicModule, type RenderedModule } from '@exprtlabs/golem/internal/emitter';
+import { assertUniqueExportNames, code, documentLiteral, exportedName, renderModule, type Code, type PublicModule, type RenderedModule } from '@exprtlabs/golem/internal/emitter';
 import { operationName, operationNameType } from './names.js';
 import type { NormalizedOperation } from './normalize.js';
 import { generatedBannerComment } from './package-info.js';
@@ -161,13 +161,24 @@ interface GeneratedFiles {
   diagnostics: readonly GolemDiagnostic[];
 }
 
+const isCode = (value: unknown): value is Code => isRecord(value) && Array.isArray(value.parts);
+
+/** What the emitters read of an answer: the two `Code` values of a wrapper, or the `code` and the `message` of a diagnostic (core checks the rest of a diagnostic on the job result). */
+function isOperationWrapperResult(value: unknown): value is OperationWrapperResult {
+  if (!isRecord(value)) return false;
+  if ('wrapper' in value) return isRecord(value.wrapper) && isCode(value.wrapper.operationType) && isCode(value.wrapper.createOperation);
+  return isRecord(value.diagnostic) && typeof value.diagnostic.code === 'string' && typeof value.diagnostic.message === 'string';
+}
+
 /** The operation wrapper that the extension on `client.operationWrapper` makes for the mode of the job, and the diagnostic when it refuses the mode. */
 function operationWrapperOf(hooks: HookParticipants | undefined, mode: 'standalone' | 'golem'): { readonly wrapper?: OperationWrapper; readonly diagnostics: readonly GolemDiagnostic[] } {
   const fills = hooks?.[OPERATION_WRAPPER_HOOK] ?? [];
   if (fills.length > 1) throw new Error(`Two extensions fill the hook "${OPERATION_WRAPPER_HOOK}": ${fills.map((fill) => fill.package).join(', ')}. Turn one off.`);
   const answer = fills[0]?.use((participant) => {
     if (typeof participant !== 'function') throw new TypeError(`it fills the hook "${OPERATION_WRAPPER_HOOK}" with ${typeof participant}, not a function`);
-    return (participant as OperationWrapperParticipant)(mode);
+    const result: unknown = participant(mode);
+    if (!isOperationWrapperResult(result)) throw new TypeError('it answers with neither a wrapper of two Code values nor a diagnostic');
+    return result;
   });
   if (answer === undefined) return { diagnostics: [] };
   return 'wrapper' in answer ? { wrapper: answer.wrapper, diagnostics: [] } : { diagnostics: [answer.diagnostic] };
@@ -186,13 +197,14 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions, moved:
   // A standalone SDK imports the runtime it carries and its own codecs. An SDK of golem mode imports `@exprtlabs/golem` and the table that the models job
   // of the same golem.yaml writes later in the run: it holds the types, the client and the manifest, and no validator, group module or codec.
   const golem = options.mode === 'golem';
+  const dates = options.dates ?? 'date';
   if (golem && options.codecsFile === undefined) throw new Error('An SDK of mode golem needs codecsFile, the file that the models job writes for it.');
   // The payloads of webhooks and callbacks are SDK types like any other: their operations take part in the types and the model analysis, and have no codecs, validators or handler.
-  const modelAnalysis = analyzeOpenApiModels(document, profile.validation, options.dates ?? 'date', [...operations, ...inboundOperations]);
+  const modelAnalysis = analyzeOpenApiModels(document, profile.validation, dates, [...operations, ...inboundOperations]);
   const inlineDiagnostics = checkOperationCompositions([...operations, ...inboundOperations], modelAnalysis, document);
   const schemaData = profile.validation && plan.hasOutboundOperations
     // A request body that converts and whose descriptors carry every keyword of its schema is checked by its own conversion, so the input root of its client operation leaves it open; any other request body keeps the wire check of the root.
-    ? buildSchemaData(document, options.dates ?? 'date', ir, (operation, contentType) => modelAnalysis.convertedNodeIds.has(requestBodyKey(operation.name, contentType)) && !modelAnalysis.uncarriedValues.has(requestBodyKey(operation.name, contentType)))
+    ? buildSchemaData(document, dates, ir, (operation, contentType) => modelAnalysis.convertedNodeIds.has(requestBodyKey(operation.name, contentType)) && !modelAnalysis.uncarriedValues.has(requestBodyKey(operation.name, contentType)))
     : undefined;
   const files = new Map<string, string>();
   const specifiers: RuntimeSpecifiers | undefined = golem ? undefined : standaloneRuntimeSpecifiers;
@@ -200,14 +212,14 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions, moved:
   // The names that each module of the index exports come from its Code, and the index re-exports the whole modules it stars.
   const modules = new Map<string, PublicModule>();
   const neverProperties = neverPropertiesReader(modelAnalysis, document);
-  const types = generateTypes(document, [...operations, ...inboundOperations], plan, options.dates, neverProperties);
+  const types = generateTypes(document, [...operations, ...inboundOperations], plan, dates, neverProperties);
   files.set('types.ts', types.source);
   modules.set('types.ts', { exports: types.exports, stars: [] });
   if (plan.artifacts.has('input-schemas.ts')) {
-    files.set('input-schemas.ts', generateDirectionalSchemas(document, 'input', options.dates, neverProperties));
+    files.set('input-schemas.ts', generateDirectionalSchemas(document, 'input', dates, neverProperties));
   }
   if (plan.artifacts.has('output-schemas.ts')) {
-    files.set('output-schemas.ts', generateDirectionalSchemas(document, 'output', options.dates, neverProperties));
+    files.set('output-schemas.ts', generateDirectionalSchemas(document, 'output', dates, neverProperties));
   }
   // One validators module serves the models and the operations: it compiles the roots of every model group and
   // every operation together, so a check the two share is written once.

@@ -6,12 +6,12 @@ import type * as ts from '@exprtlabs/golem/internal/ts';
 import { GolemDiagnosticSeverity } from '@exprtlabs/golem/generator-api';
 import type { GolemDiagnostic, GolemExtension, RewriteCore, RewriteParticipantInput, RewriteParticipantResult } from '@exprtlabs/golem/generator-api';
 import { REWRITE_IMPORT_PREFIX, type RewriteEdit } from '@exprtlabs/golem/rewrite';
+import type { DiscriminatorValue } from '@exprtlabs/golem/internal/schema';
 import { arrayItemNode, authoredUnionMembers, decoratorIdentity, isDiscriminatorTag, modelDeclarationKind, propertyType, readTags, resolvedSymbolAt, serdeTypeName, staticDecoratorKey } from '@exprtlabs/golem/internal/type-analysis';
 import { NEST_COMMON, OWN_PACKAGE } from './packages.js';
 import { nodeQueryFields } from './query-fields.js';
 
 type TypeScript = typeof ts;
-type DiscriminatorValue = string | number | boolean;
 
 /** The module that exports the decorators the stamps name. */
 const NEST_MODULE = '@exprtlabs/golem-ts-openapi/internal/nest-runtime';
@@ -113,11 +113,13 @@ interface NestUnion {
 
 /** The values of a literal type or a union of literals; undefined for any other type. */
 function literalTagValues({ ts, checker }: Scope, type: ts.Type): DiscriminatorValue[] | undefined {
+  const isString = (item: ts.Type): item is ts.StringLiteralType => (item.flags & ts.TypeFlags.StringLiteral) !== 0;
+  const isNumber = (item: ts.Type): item is ts.NumberLiteralType => (item.flags & ts.TypeFlags.NumberLiteral) !== 0;
   const members = type.isUnion() ? type.types : [type];
   const values: DiscriminatorValue[] = [];
   for (const member of members) {
-    if ((member.flags & ts.TypeFlags.StringLiteral) !== 0) values.push((member as ts.StringLiteralType).value);
-    else if ((member.flags & ts.TypeFlags.NumberLiteral) !== 0) values.push((member as ts.NumberLiteralType).value);
+    if (isString(member)) values.push(member.value);
+    else if (isNumber(member)) values.push(member.value);
     else if ((member.flags & ts.TypeFlags.BooleanLiteral) !== 0) values.push(checker.typeToString(member) === 'true');
     else return undefined;
   }
@@ -127,17 +129,24 @@ function literalTagValues({ ts, checker }: Scope, type: ts.Type): DiscriminatorV
 /** A `Discriminator` tag golem cannot read, such as a key that is no string literal. */
 class TagReadFault extends Error {}
 
+/** A member of a union of golem models that has a codec id. */
+interface UnionMember {
+  readonly member: ts.TypeNode;
+  readonly id: string;
+  readonly name: ts.EntityName;
+}
+
 /**
  * The tag that tells the members of a union apart: the key of the `Discriminator` tag written on the union type (written out or through an alias),
- * and the literal values that each member requires for that key. Golem never looks for a key in the members. A query tag is text, so `text` makes
- * `1` and `'1'` one value.
+ * and the literal values that each member requires for that key, in the order of the members. Golem never looks for a key in the members. A query
+ * tag is text, so `text` makes `1` and `'1'` one value.
  */
 function unionTag(
   scope: Scope,
   model: ts.TypeNode,
-  members: readonly ts.TypeNode[],
+  members: readonly UnionMember[],
   text: boolean,
-): { readonly property: string; readonly values: readonly (readonly DiscriminatorValue[])[] } | { readonly fault: readonly [reason: string, advice: string] } {
+): NestUnion | { readonly fault: readonly [reason: string, advice: string] } {
   const { ts, root, checker, file } = scope;
   let declared;
   try {
@@ -154,8 +163,8 @@ function unionTag(
     return { fault: [`declares a default variant with Discriminator<'${property}', ...>, which NestModelInterceptor does not pick`, `Remove the default type from the tag, or bind one model.`] };
   }
   const owners = new Map<DiscriminatorValue | string, string>();
-  const values: DiscriminatorValue[][] = [];
-  for (const member of members) {
+  const variants: NestUnion['variants'][number][] = [];
+  for (const { member, id, name: entity } of members) {
     const name = member.getText(file);
     const symbol = checker.getPropertyOfType(checker.getTypeFromTypeNode(member), property);
     const own = symbol && (symbol.flags & ts.SymbolFlags.Optional) === 0 ? literalTagValues(scope, propertyType(checker, symbol, member)) : undefined;
@@ -168,9 +177,9 @@ function unionTag(
       if (owner !== undefined) return { fault: [`has the members ${owner} and ${name} that share the "${property}" value ${JSON.stringify(value)}`, `Give each model its own "${property}" value.`] };
       owners.set(key, name);
     }
-    values.push(own);
+    variants.push({ values: own, id, name: entity });
   }
-  return { property, values };
+  return { property, variants };
 }
 
 /** A parameter type that is a union of golem models (written out, or through an alias of a union): the models, and the tag that picks one when there is one. */
@@ -179,7 +188,7 @@ function nestUnionBinding(
   unbound: NestBinding,
   model: ts.TypeNode,
   members: readonly ts.TypeNode[],
-  unions: { readonly text: boolean },
+  site: { readonly text: boolean },
 ): NestBinding {
   const { checker, core } = scope;
   const variants = members.map((member) => {
@@ -191,15 +200,11 @@ function nestUnionBinding(
     return { member, name, id: symbol ? core.codecIdOf(symbol) : '', golemModel: symbol ? core.isGolemModel(symbol) : modelDeclarationKind(checker, member) !== undefined };
   });
   const golemModel = variants.every((variant) => variant.golemModel);
-  if (!golemModel || variants.some((variant) => variant.id === '')) return { ...unbound, golemModel };
-  const tag = unionTag(scope, model, members, unions.text);
-  if ('fault' in tag) return { ...unbound, golemModel: true, id: '', unionFault: tag.fault };
-  return {
-    ...unbound,
-    golemModel: true,
-    id: '',
-    union: { property: tag.property, variants: variants.map((variant, index) => ({ values: tag.values[index]!, id: variant.id, name: variant.name! })) },
-  };
+  const withIds = variants.flatMap(({ member, name, id }) => (name !== undefined && id !== '' ? [{ member, name, id }] : []));
+  if (!golemModel || withIds.length < variants.length) return { ...unbound, golemModel };
+  const union = unionTag(scope, model, withIds, site.text);
+  if ('fault' in union) return { ...unbound, golemModel: true, id: '', unionFault: union.fault };
+  return { ...unbound, golemModel: true, id: '', union };
 }
 
 /**
@@ -214,7 +219,10 @@ function tagThroughAliasFault({ ts, checker }: Scope, model: ts.TypeNode): reado
     : undefined;
   const fix = "Write the tag on the union itself, (A | B) & Discriminator<'kind'>, or give the whole tagged union a type alias: type TShape = (A | B) & Discriminator<'kind'>.";
   if (ts.isIntersectionTypeNode(node) && node.types.some((part) => authoredUnionMembers(checker, part))) {
-    const through = node.types.find((part) => !isDiscriminatorTag(checker, part) && aliasOf(part)?.type !== undefined && isDiscriminatorTag(checker, aliasOf(part)!.type));
+    const through = node.types.find((part) => {
+      const target = aliasOf(part)?.type;
+      return !isDiscriminatorTag(checker, part) && target !== undefined && isDiscriminatorTag(checker, target);
+    });
     if (through) return [`is a union whose Discriminator tag is written through the alias ${through.getText()}, which golem does not read`, fix];
   }
   // A generic wrapper binds only when it is its type parameter plus the tag; any other part makes it a type golem does not read.
@@ -225,18 +233,23 @@ function tagThroughAliasFault({ ts, checker }: Scope, model: ts.TypeNode): reado
   return undefined;
 }
 
-/** What a parameter or return type binds to. `unions` is set for an input parameter, the only place a union of models can stand; `text` is true for a query, whose tag is text. */
-function nestBinding(scope: Scope, typeNode: ts.TypeNode, unions?: { readonly text: boolean }): NestBinding {
+/** Where a type stands. Only an input parameter can be a union of models; `text` is true for a query, whose tag is text. */
+type NestTypeSite = { readonly kind: 'input'; readonly text: boolean } | { readonly kind: 'return' };
+
+/** What a parameter or return type binds to. */
+function nestBinding(scope: Scope, typeNode: ts.TypeNode, site: NestTypeSite): NestBinding {
   const { ts, checker, core, file } = scope;
   const walked = nestModelType(ts, typeNode, false);
   const model = walked?.model;
   const unbound = { id: '', primitive: false, golemModel: false, label: (model ?? typeNode).getText(file), array: walked?.array ?? false };
   if (!model) return unbound;
   // Only an input parameter can be a union: a union return is left as Nest JSON.
-  const members = unions !== undefined ? authoredUnionMembers(checker, model) : undefined;
-  if (members) return nestUnionBinding(scope, unbound, model, members, unions!);
-  const throughAlias = unions !== undefined ? tagThroughAliasFault(scope, model) : undefined;
-  if (throughAlias) return { ...unbound, golemModel: true, unionFault: throughAlias };
+  if (site.kind === 'input') {
+    const members = authoredUnionMembers(checker, model);
+    if (members) return nestUnionBinding(scope, unbound, model, members, site);
+    const throughAlias = tagThroughAliasFault(scope, model);
+    if (throughAlias) return { ...unbound, golemModel: true, unionFault: throughAlias };
+  }
   const { label } = unbound;
   const name = serdeTypeName(model);
   const symbol = name && resolvedSymbolAt(checker, name);
@@ -259,6 +272,15 @@ interface HandlerInput {
   readonly array: boolean;
   /** The model and array form the interceptor compares between two parameters that read the same value. */
   readonly model: string;
+}
+
+/**
+ * How `NestModelInterceptor` takes a bound input. It converts a model, and a union of models that is a whole input. A union in an array or in one
+ * field has no conversion, and a type with no codec id is no model.
+ */
+function inputConversion(binding: NestBinding, field: string | undefined): 'converted' | 'unsupported-union' | 'no-model' {
+  if (binding.union !== undefined) return binding.array || field !== undefined ? 'unsupported-union' : 'converted';
+  return binding.id === '' ? 'no-model' : 'converted';
 }
 
 function handlerInputModel(binding: NestBinding): string {
@@ -315,7 +337,7 @@ function rewriteFile(input: RewriteParticipantInput): RewriteParticipantResult {
   const nonModelAdvice = warn
     ? 'Generation continues, because golem.yaml sets nonModelInputs: warn.'
     : 'An app with its own interceptor can set nonModelInputs: warn on the nest extension in golem.yaml.';
-  const bindParameter = (typeNode: ts.TypeNode, decorator: string): NestBinding => nestBinding(scope, typeNode, { text: decorator === 'Query' });
+  const bindParameter = (typeNode: ts.TypeNode, decorator: string): NestBinding => nestBinding(scope, typeNode, { kind: 'input', text: decorator === 'Query' });
 
   /** The inputs of one handler that the interceptor converts together: `handlerInputFaults` reports the limits they set on each other. */
   const visitHandler = (method: ts.MethodDeclaration): void => {
@@ -327,7 +349,7 @@ function rewriteFile(input: RewriteParticipantInput): RewriteParticipantResult {
       const binding = bindParameter(parameter.type, decorator);
       const field = staticDecoratorKey(checker, node);
       // A type that is no model, or a union in one field, has its own report; the interceptor throws on it before it compares anything.
-      if ((binding.id === '' && binding.union === undefined) || (binding.union !== undefined && (binding.array || field !== undefined))) continue;
+      if (inputConversion(binding, field) !== 'converted') continue;
       inputs.push({ parameter, decorator, node, field, array: binding.array, model: handlerInputModel(binding) });
     }
     for (const { parameter, message } of handlerInputFaults(file, inputs)) {
@@ -341,16 +363,17 @@ function rewriteFile(input: RewriteParticipantInput): RewriteParticipantResult {
     if (!parameter.type || found === undefined || hasDecorator(scope, parameter, NEST_CODEC_DECORATOR) || hasDecorator(scope, parameter, NEST_UNION_DECORATOR)) return;
     const { node: decoratorNode, name: decorator } = found;
     const typeNode = parameter.type;
-    const { id, golemModel, label, array, name, defaultExport, union, unionFault } = bindParameter(typeNode, decorator);
+    const binding = bindParameter(typeNode, decorator);
+    const { id, golemModel, label, array, name, defaultExport, union, unionFault } = binding;
     // A union converts as a whole input only; golem describes no array of a union and no one-field union.
-    const unionUnsupported = union !== undefined && (array || staticDecoratorKey(checker, decoratorNode) !== undefined);
-    if ((id === '' && union === undefined) || unionUnsupported) {
+    const conversion = inputConversion(binding, staticDecoratorKey(checker, decoratorNode));
+    if (conversion !== 'converted') {
       const [reason, advice] = unionFault
         ? unionFault
-        : unionUnsupported
+        : conversion === 'unsupported-union'
           ? ['is a union of golem models, which NestModelInterceptor converts only as a whole input', `Declare the parameter as the union itself in a whole @${decorator}(), or as one model.`]
           : ['is not a golem model', 'Declare the input as a golem model (IModel or IObject), or bind one field of a model type.'];
-      if (golemModel && !unionFault && !unionUnsupported) diagnostics.push(core.locate(typeNode, CODE_NEST_NO_CODEC, defaultExport
+      if (golemModel && !unionFault && conversion === 'no-model') diagnostics.push(core.locate(typeNode, CODE_NEST_NO_CODEC, defaultExport
         ? `@${decorator}() type ${label} is the default export of its file, which has no codec id; golem generate cannot add one. Export the class by name (export class ${label}) and import it by name.`
         : `@${decorator}() type ${label} has no unique codec id; run golem generate`));
       else diagnostics.push(core.locate(typeNode, CODE_NEST_NOT_A_MODEL,
@@ -379,7 +402,7 @@ function rewriteFile(input: RewriteParticipantInput): RewriteParticipantResult {
     if (!method.type || !method.body || !ts.isClassLike(method.parent) || (ts.getDecorators(method) ?? []).length === 0) return;
     const returned = nestModelType(ts, method.type, true);
     if (!returned || hasDecorator(scope, method, NEST_RETURN_DECORATOR)) return;
-    const { id, primitive, name } = nestBinding(scope, returned.model);
+    const { id, primitive, name } = nestBinding(scope, returned.model, { kind: 'return' });
     if (primitive || id === '') return;
     edits.push(insertion(method.getStart(file), `@${REWRITE_IMPORT_PREFIX}${NEST_RETURN_DECORATOR}(${JSON.stringify(id)}${returned.array ? ', true' : ''}) `));
     core.importName(method, NEST_RETURN_DECORATOR, NEST_MODULE);

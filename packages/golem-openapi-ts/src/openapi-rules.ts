@@ -5,21 +5,17 @@ import {
   jsonPointerJoin as pointerJoin,
   objectEntries,
   openApiLine,
-  resolveJsonPointer,
   type JsonObject,
   type OpenApiLine,
 } from './json.js';
 import { parameterIdentity } from '@exprtlabs/golem/internal/generator-support';
-import { decodeUriFragment } from '@exprtlabs/golem/internal/schema';
+import { followReference, resolveFragmentPointer, schemaReference, type ScopedSchema } from '@exprtlabs/golem/internal/schema';
 import { followLocalRefs, overrideParameters, visitOperationSites, type OperationSite } from './normalize.js';
 import type { OpenApiProblem } from './openapi-validator.js';
 import { isMappingComponentName } from './reference-loader.js';
-import { collectCanonicalResources, findDuplicateSchemaIds, lookupCanonicalResource, visitOpenApiSchemaTree } from './schema-projection.js';
+import { collectCanonicalResources, findDuplicateSchemaIds, lookupCanonicalResource, resolveSchemaTarget, visitOpenApiSchemaTree } from './schema-projection.js';
 
 const TEMPLATE = /\{([^{}]*)\}/g;
-
-// A `$ref` fragment (the part after `#`) is a URI fragment and may be percent-encoded (e.g. `#/components/schemas/A%20B`);
-// `resolveJsonPointer` only understands plain RFC 6901 tokens, so every fragment goes through decodeUriFragment once before it.
 
 interface ResolvedParameter {
   readonly name: string;
@@ -39,15 +35,25 @@ function resolvedParameters(document: unknown, list: unknown, listPointer: strin
   return parameters;
 }
 
+/** The items whose identity an earlier item already has, in order. */
+function repeatedByIdentity<T>(items: readonly T[], identity: (item: T) => string): T[] {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    const key = identity(item);
+    const repeated = seen.has(key);
+    seen.add(key);
+    return repeated;
+  });
+}
+
 function checkUnresolvedRefs(document: unknown): OpenApiProblem[] {
   const resources = collectCanonicalResources(document);
   const problems: OpenApiProblem[] = [];
-  const resolvesPointer = (pointer: string): boolean => resolveJsonPointer(document, decodeUriFragment(pointer)) !== undefined;
   const rootSchemaNames = new Set(Object.keys(asRecord(asRecord(asRecord(document).components).schemas)));
   const check = (reference: string, currentBase: string | null, walkerPointer: string, label = '$ref'): void => {
     if (reference === '#') return;
     if (reference.startsWith('#/')) {
-      if (resolvesPointer(reference.slice(1))) return;
+      if (resolveFragmentPointer(document, reference.slice(1)) !== undefined) return;
     } else if (reference.startsWith('#')) {
       return; // Plain-name anchors are resolved by the JSON Schema engine.
     } else if (currentBase !== null && lookupCanonicalResource(reference, currentBase, resources)?.hasId) {
@@ -96,22 +102,39 @@ function checkParameterLists(document: unknown, operations: readonly OperationSi
   const checkList = (list: unknown, listPointer: string): void => {
     if (checked.has(listPointer)) return;
     checked.add(listPointer);
-    const seen = new Set<string>();
-    for (const parameter of resolvedParameters(document, list, listPointer)) {
-      const key = parameterIdentity(parameter.in, parameter.name);
-      if (seen.has(key)) {
-        problems.push({
-          ruleId: 'operation-parameters-unique',
-          message: `parameter ${JSON.stringify(parameter.name)} in ${parameter.in} is listed more than once`,
-          pointer: parameter.pointer,
-        });
-      }
-      seen.add(key);
+    for (const parameter of repeatedByIdentity(resolvedParameters(document, list, listPointer), (item) => parameterIdentity(item.in, item.name))) {
+      problems.push({
+        ruleId: 'operation-parameters-unique',
+        message: `parameter ${JSON.stringify(parameter.name)} in ${parameter.in} is listed more than once`,
+        pointer: parameter.pointer,
+      });
     }
   };
   for (const entry of operations) {
     checkList(entry.pathItem.parameters, `${entry.pathItemPointer}/parameters`);
     checkList(entry.operation.parameters, `${entry.pointer}/parameters`);
+  }
+  return problems;
+}
+
+/** Header names are case-insensitive, so one response declares each header once, in whatever case (`parameterIdentity`). */
+function checkResponseHeaders(document: unknown, operations: readonly OperationSite[]): OpenApiProblem[] {
+  const problems: OpenApiProblem[] = [];
+  const checked = new Set<string>(); // a response that several operations share is one headers object
+  for (const entry of operations) {
+    for (const [status, raw] of objectEntries(entry.operation.responses)) {
+      const response = followLocalRefs(document, raw, pointerJoin(`${entry.pointer}/responses`, status));
+      const headersPointer = pointerJoin(response.pointer, 'headers');
+      if (checked.has(headersPointer)) continue;
+      checked.add(headersPointer);
+      for (const name of repeatedByIdentity(Object.keys(asRecord(asRecord(response.value).headers)), (item) => parameterIdentity('header', item))) {
+        problems.push({
+          ruleId: 'operation-response-headers-unique',
+          message: `response header ${JSON.stringify(name)} is declared more than once; header names are case-insensitive`,
+          pointer: pointerJoin(headersPointer, name),
+        });
+      }
+    }
   }
   return problems;
 }
@@ -300,30 +323,25 @@ function checkDiscriminatorDefaults(document: unknown): OpenApiProblem[] {
   const resources = collectCanonicalResources(document);
   const schemas = asRecord(asRecord(asRecord(document).components).schemas);
   const problems: OpenApiProblem[] = [];
-  /** Resolve one `$ref` hop, or return `schema` unchanged when it isn't a Reference Object. */
-  const resolveOnce = (schema: unknown, base: string): unknown => {
-    if (!isJsonObject(schema) || typeof schema.$ref !== 'string') return schema;
-    if (schema.$ref.startsWith('#/')) return resolveJsonPointer(document, decodeUriFragment(schema.$ref.slice(1)));
-    return lookupCanonicalResource(schema.$ref, base, resources)?.schema;
-  };
   /**
-   * Follow a `$ref` chain to its non-`$ref` target (bounded, cycle-safe): a
-   * schema like `Alias: { $ref: '#/components/schemas/Cat' }` used from a
-   * `oneOf` must resolve through `Alias` to `Cat` itself before `requires`
-   * inspects `required`/`allOf`/`oneOf`/`anyOf`, not stop at the first hop.
+   * Follow a `$ref` chain to its non-`$ref` target, with the base that the target's own references resolve against:
+   * `Alias: { $ref: '#/components/schemas/Cat' }` used from a `oneOf` must resolve through `Alias` to `Cat` itself
+   * before `requires` inspects `required`/`allOf`/`oneOf`/`anyOf`. Undefined when a hop names nothing or the chain is a cycle.
    */
-  const resolveSchema = (schema: unknown, base: string): unknown => {
-    let current = schema;
-    const seen = new Set<unknown>();
-    for (let depth = 0; depth < 32; depth += 1) {
-      if (!isJsonObject(current) || typeof current.$ref !== 'string') return current;
-      if (seen.has(current)) return undefined; // circular $ref chain
-      seen.add(current);
-      const next = resolveOnce(current, base);
-      if (next === undefined) return undefined; // unresolved $ref
-      current = next;
+  const resolveSchema = (schema: unknown, base: string): ScopedSchema<string> | undefined => {
+    const followed = followReference<ScopedSchema<string>>(
+      { schema, scope: base },
+      (scoped) => schemaReference(scoped.schema),
+      (reference, from) => {
+        const target = resolveSchemaTarget(reference, from.scope, resources, document);
+        return target === undefined ? undefined : { schema: target.schema, scope: target.currentBase };
+      },
+    );
+    switch (followed.kind) {
+      case 'found': return followed.target;
+      case 'miss':
+      case 'cycle': return undefined;
     }
-    return undefined; // chain too deep to be a real document
   };
   /**
    * `visiting` holds the schemas on the current path only, so a schema shared by two branches is judged in each.
@@ -331,16 +349,17 @@ function checkDiscriminatorDefaults(document: unknown): OpenApiProblem[] {
    * the path, so a diamond of shared members is judged once.
    */
   const requires = (schema: unknown, property: string, base: string, visiting: Set<unknown>, judgedFalse: Set<unknown>): boolean => {
-    const resolved = resolveSchema(schema, base);
-    if (!isJsonObject(resolved) || visiting.has(resolved)) return true;
+    const followed = resolveSchema(schema, base);
+    const resolved = followed?.schema;
+    if (followed === undefined || !isJsonObject(resolved) || visiting.has(resolved)) return true;
     if (judgedFalse.has(resolved)) return false;
     if (Array.isArray(resolved.required) && resolved.required.includes(property)) return true;
     visiting.add(resolved);
     try {
-      if (Array.isArray(resolved.allOf) && resolved.allOf.some((item) => requires(item, property, base, visiting, judgedFalse))) return true;
+      if (Array.isArray(resolved.allOf) && resolved.allOf.some((item) => requires(item, property, followed.scope, visiting, judgedFalse))) return true;
       for (const keyword of ['oneOf', 'anyOf'] as const) {
         const list = resolved[keyword];
-        if (Array.isArray(list) && list.length > 0 && list.every((item) => requires(item, property, base, visiting, judgedFalse))) return true;
+        if (Array.isArray(list) && list.length > 0 && list.every((item) => requires(item, property, followed.scope, visiting, judgedFalse))) return true;
       }
       judgedFalse.add(resolved);
       return false;
@@ -375,6 +394,23 @@ function checkDiscriminatorDefaults(document: unknown): OpenApiProblem[] {
     },
   });
   return problems;
+}
+
+/**
+ * A request body media type declares `schema`. `itemSchema` describes the items of a sequential response body: the
+ * client sends one value, not a stream, and no body encoder or type reads a request `itemSchema`.
+ */
+function checkRequestItemSchemas(document: unknown, operations: readonly OperationSite[]): OpenApiProblem[] {
+  return operations.flatMap((entry) => {
+    const { value: body, pointer } = followLocalRefs(document, entry.operation.requestBody, `${entry.pointer}/requestBody`);
+    return objectEntries(asRecord(body).content).flatMap(([contentType, media]) => isJsonObject(media) && media.itemSchema !== undefined
+      ? [{
+        ruleId: 'no-request-item-schema',
+        message: 'itemSchema describes the items of a response stream; declare a request body with schema',
+        pointer: pointerJoin(pointerJoin(pointerJoin(pointer, 'content'), contentType), 'itemSchema'),
+      }]
+      : []);
+  });
 }
 
 /** `defaultMapping` is a 3.2 keyword of the Discriminator Object; a 3.1 document may not use it. */
@@ -443,10 +479,12 @@ export function checkOpenApiRules(document: unknown): OpenApiProblem[] {
     ...checkUnresolvedRefs(document),
     ...checkOperationIds(operations),
     ...checkParameterLists(document, operations),
+    ...checkResponseHeaders(document, operations),
     ...checkPathTemplates(document, operations),
     ...checkTags(document, line),
     ...checkServers(document, operations, line),
     ...checkSecurityRequirements(document, operations),
+    ...checkRequestItemSchemas(document, operations),
     ...(line === '3.2'
       ? [...checkQuerystring(document, operations), ...checkDiscriminatorDefaults(document)]
       : checkDiscriminatorDefaultMappingLine(document)),

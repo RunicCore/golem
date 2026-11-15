@@ -498,6 +498,11 @@ export async function validateInstance<Model extends object>(
   }
 }
 
+/** Whether a new `ModelValidator` becomes the model's validator at once (`attach`) or leaves that to its creator (`defer`). */
+export interface ModelValidatorOptions {
+  readonly cache: 'attach' | 'defer';
+}
+
 export class ModelValidator<Fields extends object, Owner extends object = Fields> {
   protected readonly model: Owner;
   protected readonly rules: Map<string, InternalValidationRule[]>;
@@ -507,17 +512,16 @@ export class ModelValidator<Fields extends object, Owner extends object = Fields
   private validationId = 0;
 
   /**
-   * `cache` is false while a generated integration is being enhanced.  The
-   * factory publishes the finished value only after the enhancer succeeds;
-   * direct low-level construction keeps the historical default and attaches
-   * itself immediately for nested rule/message formatting.
+   * `options.cache` is `'defer'` while a generated integration is being enhanced: the factory publishes the finished
+   * value only after the enhancer succeeds. `'attach'` makes the validator the model's validator at once, for nested
+   * rule/message formatting.
    */
-  public constructor(model: Owner, cache = true) {
+  public constructor(model: Owner, options: ModelValidatorOptions) {
     this.model = model;
     const state = ensureInstanceValidationState(model);
     this.rules = state.rules;
     this.messageOverrides = state.messageOverrides;
-    if (cache) state.validator = this;
+    if (options.cache === 'attach') state.validator = this;
   }
 
   public get issues(): readonly Issue[] { return this.issuesValue; }
@@ -630,7 +634,7 @@ export function getValidator<Fields extends object, Owner extends object = Field
   const definition = publicValidationDefinition(model);
   const existing = findCachedModelValidator<Fields, Owner>(model);
   if (existing) return existing;
-  const created = new ModelValidator<Fields, Owner>(model, false);
+  const created = new ModelValidator<Fields, Owner>(model, { cache: 'defer' });
   const enhancer = definition.enhanceValidator;
   const enhanced = enhancer ? enhancer(created) : created;
   ensureInstanceValidationState(model).validator = enhanced;

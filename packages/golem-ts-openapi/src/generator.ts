@@ -18,7 +18,7 @@ import {
   type ModelBoundary,
   type ProgramInfo,
 } from '@exprtlabs/golem/internal/type-analysis';
-import { schemaForDescriptor, splitFirstFragmentToken } from '@exprtlabs/golem/internal/schema';
+import { SCHEMA_MAP_KEYWORDS, schemaForDescriptor, splitFirstFragmentToken } from '@exprtlabs/golem/internal/schema';
 import type {
   GolemArtifact,
   GolemDiagnostic,
@@ -38,7 +38,8 @@ import {
 import { createContractAnalysis, type ContractAnalysis } from './contracts.js';
 import { buildDocument, serializeForOutput } from './document.js';
 import { swaggerDtoRule } from './nest/dto-rule.js';
-import { DEFAULT_CONTROLLER_SUFFIXES, type ControllerContext } from './plan.js';
+import { DEFAULT_CONTROLLER_SUFFIXES } from './nest/types.js';
+import type { ControllerContext } from './plan.js';
 
 export type { ControllerContext, ControllerModels, ControllerTag, ControllerUriVersioning, ControllerUriVersioningType } from './plan.js';
 import { validateRouteEvaluationOptions } from './evaluation/dependencies.js';
@@ -129,7 +130,7 @@ function componentReferenceName(value: string): string | undefined {
 
 /** Maps whose keys are names the document author picks, so a key such as `example` or `$ref` there is a name, not a keyword. */
 const NAME_MAP_KEYWORDS: ReadonlySet<string> = new Set([
-  'properties', 'patternProperties', 'dependentSchemas', '$defs', 'definitions', 'encoding',
+  ...SCHEMA_MAP_KEYWORDS, 'encoding',
   'schemas', 'responses', 'parameters', 'requestBodies', 'headers', 'callbacks', 'pathItems', 'links', 'securitySchemes', 'webhooks', 'mediaTypes',
 ]);
 /** Keywords whose value is data, not a schema: a `$ref` key inside it is not a reference. */

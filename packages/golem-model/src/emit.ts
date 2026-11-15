@@ -573,20 +573,17 @@ export function createJobAnalysis(
   const modelSources = new Set(sources.map(canonicalFilename));
   return {
     checker,
-    describe: descriptorBuilder(
-      checker,
-      specifications,
-      manifestIndex,
-      profile.validation,
-      profile.allowAny ?? false,
-      stableIdentityRoot,
-      true,
-      undefined,
+    describe: descriptorBuilder(checker, specifications, manifestIndex, {
+      validationLevel: profile.validation,
+      allowAny: profile.allowAny ?? false,
+      identityRoot: stableIdentityRoot,
+      allowUnresolved: true,
+      nameFor: undefined,
       modelSources,
       boundary,
-      undefined,
+      typeErrorAt: undefined,
       isDefaultLibraryFile,
-    ),
+    }),
     described: new Map(),
     sources: modelSources,
     executableMemo: createExecutableValidationMemo(),

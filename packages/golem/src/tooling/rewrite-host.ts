@@ -176,16 +176,21 @@ interface Compiler {
   readonly participants: readonly LoadedParticipant[];
 }
 
+/** The program of a project's latest state with the scanner that reads it. */
+interface OpenProgram {
+  readonly program: ts.Program;
+  readonly scanner: RewriteScanner;
+}
+
 /** A project's compiler session and the program of its latest state; a changed or new file reopens the program. */
 class ScanningProject {
   readonly root: string;
   readonly configFile: string;
   readonly generatedWatchFiles: readonly string[];
   private readonly session: ts.ProgramSession;
-  private program: ts.Program | undefined;
+  private opened: OpenProgram | undefined;
   /** The tsconfig's compiler options as the latest program was opened with them. */
   private options: ts.CompilerOptions = {};
-  private scanner: RewriteScanner | undefined;
   private stale = false;
   /** The signature of the generation record before the latest program was opened. */
   private recordSignature: string | undefined;
@@ -209,7 +214,7 @@ class ScanningProject {
     return Object.keys(loadInventory(this.config).files).map((key) => path.resolve(this.config.directory, key));
   }
 
-  private open(): void {
+  private open(): OpenProgram {
     // The record is read before the program: a `golem generate` that ends in between is seen as a move at the next read.
     const signature = fileSignature(this.config.inventoryFile);
     const recorded = this.readsRecord ? this.recordedFiles() : [];
@@ -219,34 +224,41 @@ class ScanningProject {
     const { canonicalFilename } = this.compiler;
     const sources = [...new Set([...parsed.fileNames.map(canonicalFilename), ...this.extras])];
     const program = this.session.openProgram({ root: this.root, sources, configFile: this.config.tsconfig, overlays: new Map(this.overlays) });
-    this.program?.close();
-    this.program = program;
-    this.scanner = new this.compiler.RewriteScanner({ root: this.root, boundary: this.config.contracts.ModelBoundary, program, codecKeysFile: codecKeysPath(this.config.directory), checker: program.getTypeChecker(), participants: this.compiler.participants });
+    let scanner: RewriteScanner;
+    try {
+      scanner = new this.compiler.RewriteScanner({ root: this.root, boundary: this.config.contracts.ModelBoundary, program, codecKeysFile: codecKeysPath(this.config.directory), checker: program.getTypeChecker(), participants: this.compiler.participants });
+    } catch (error) {
+      program.close();
+      throw error;
+    }
+    this.opened?.program.close();
+    this.opened = { program, scanner };
     this.stale = false;
     this.recordSignature = signature;
     this.recorded = recorded;
+    return this.opened;
   }
 
   /** The program holds `file` with the host's `text`, reopened when it does not. */
-  private holds(file: string, text: string): ts.Program {
-    if (this.program === undefined || this.stale) this.open();
-    if (this.program!.getSourceFile(file) === undefined) {
+  private holds(file: string, text: string): OpenProgram {
+    let current = this.opened === undefined || this.stale ? this.open() : this.opened;
+    if (current.program.getSourceFile(file) === undefined) {
       this.extras.add(file);
-      this.open();
+      current = this.open();
     }
-    const held = this.program!.getSourceFile(file);
+    const held = current.program.getSourceFile(file);
     if (held !== undefined && held.text !== text) {
       this.overlays.set(file, text);
-      this.open();
+      current = this.open();
     }
-    return this.program!;
+    return current;
   }
 
   /** The scan of a file with the host's `text`, and its errors; undefined when the file is no rewrite candidate. */
   private scan(filename: string, text: string): { readonly file: string; readonly scanned: FileScanResult; readonly errors: readonly GolemDiagnostic[] } | undefined {
     const file = this.compiler.canonicalFilename(filename);
-    this.holds(file, withoutByteOrderMark(text));
-    const scanned = this.scanner!.scanFile(file);
+    const { scanner } = this.holds(file, withoutByteOrderMark(text));
+    const scanned = scanner.scanFile(file);
     return scanned && { file, scanned, errors: scanned.diagnostics.filter((diagnostic) => diagnostic.severity === GolemDiagnosticSeverity.Error) };
   }
 
@@ -259,7 +271,7 @@ class ScanningProject {
   comments(filename: string, text: string): readonly SourceComment[] {
     this.readsRecord = true;
     const file = this.compiler.canonicalFilename(filename);
-    const held = this.holds(file, withoutByteOrderMark(text)).getSourceFile(file);
+    const held = this.holds(file, withoutByteOrderMark(text)).program.getSourceFile(file);
     return held === undefined ? [] : sourceComments(this.compiler.ts, held);
   }
 
@@ -273,7 +285,7 @@ class ScanningProject {
       this.overlays.delete(other);
       this.stale = true;
     }
-    if (this.program !== undefined && fileSignature(this.config.inventoryFile) !== this.recordSignature) {
+    if (this.opened !== undefined && fileSignature(this.config.inventoryFile) !== this.recordSignature) {
       // The files of the old record too: one that `golem generate` removed is changed as well.
       this.changed([...this.recorded, ...this.recordedFiles(), ...this.generatedWatchFiles]);
     }
@@ -299,7 +311,7 @@ class ScanningProject {
 
   transpile(filename: string, text: string, rewritten: { code: string; map: SourceMapV3 } | undefined, esModule: boolean): { code: string; map: SourceMapV3 } | undefined {
     const file = this.compiler.canonicalFilename(filename);
-    const held = this.holds(file, withoutByteOrderMark(text)).getSourceFile(file);
+    const held = this.holds(file, withoutByteOrderMark(text)).program.getSourceFile(file);
     const tsx = TSX_FILE.test(file);
     // The walk is for the files whose text can hold such a construct.
     const forms: Forms = { compiled: false };
@@ -350,9 +362,8 @@ class ScanningProject {
   }
 
   dispose(): void {
-    this.program?.close();
-    this.program = undefined;
-    this.scanner = undefined;
+    this.opened?.program.close();
+    this.opened = undefined;
     this.session[Symbol.dispose]();
   }
 }

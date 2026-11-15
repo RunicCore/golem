@@ -1,11 +1,12 @@
 import { MODEL_CLASS_KEYWORD, MODEL_INSTANCE_KEYWORD, VALIDATION_KEYWORD } from '../../schema-keywords.js';
-import { unescapePointerToken } from '../../json-pointer.js';
+import { SCHEMA_ARRAY_KEYWORDS, SCHEMA_MAP_KEYWORDS } from '../../json-vocabulary.js';
+import { jsonPointerTokens } from '../../json-pointer.js';
 import { isKnownFormat, jsonEqual } from '../../validation-runtime.js';
 import { isRuntimeFunction } from '../rt.js';
 import { GolemDiagnosticSeverity, isRecord, type GolemDiagnostic } from '../generator-core.js';
 import type { CompileInput, CompileOptions } from './index.js';
-import type { IrAdditional, IrCheck, IrContains, IrDiscriminator, IrClass, IrFunction, IrInstance, IrModule, IrSchema, IrTypeName, IrValidationImport } from './ir.js';
-import { JSON_TYPES } from './json-types.js';
+import { ALWAYS, type IrAdditional, type IrCheck, type IrContains, type IrDiscriminator, type IrClass, type IrFunction, type IrInstance, type IrModule, type IrSchema, type IrValidationImport } from './ir.js';
+import { JSON_TYPES, TYPE_NAMES, isTypeName } from './json-types.js';
 import { baseInside, pointerSegment, SchemaResolver, type SchemaLocation } from './resolve.js';
 
 const VALIDATE_UNSUPPORTED_KEYWORD = 'VALIDATE_UNSUPPORTED_KEYWORD';
@@ -22,15 +23,25 @@ const VALIDATE_UNKNOWN_VALIDATION = 'VALIDATE_UNKNOWN_VALIDATION';
  */
 const UNSUPPORTED_KEYWORDS: ReadonlySet<string> = new Set(['$dynamicRef', '$dynamicAnchor']);
 
+const NEVER: IrSchema = { kind: 'never' };
+
 const EVALUATION_KEYWORDS: readonly string[] = ['unevaluatedProperties', 'unevaluatedItems'];
 
-const TYPE_NAMES: readonly IrTypeName[] = ['string', 'number', 'integer', 'boolean', 'null', 'object', 'array'];
+/** The items of `value` when it is an array. */
+function listOf(value: unknown): readonly unknown[] | undefined {
+  return Array.isArray(value) ? value : undefined;
+}
+
+/** What a `type` keyword value names: its one string, or the items of its list; nothing for any other value. */
+function typeCandidates(value: unknown): readonly unknown[] {
+  return typeof value === 'string' ? [value] : listOf(value) ?? [];
+}
 
 const isStringList = (value: unknown): boolean => Array.isArray(value) && value.every(item => typeof item === 'string');
 
 /** The shapes of standard keyword values that would loosen or crash validation if lowering dropped them. A wrong shape is an error. This is not the whole 2020-12 meta-schema: it does not check uniqueness, or a list's minimum length. */
 const KEYWORD_SHAPES: readonly { readonly keywords: readonly string[]; readonly accepts: (value: unknown) => boolean; readonly expected: string }[] = [
-  { keywords: ['type'], accepts: value => isTypeName(value) || (Array.isArray(value) && value.length > 0 && value.every(isTypeName)), expected: `a type name or a non-empty list of type names (${TYPE_NAMES.join(', ')})` },
+  { keywords: ['type'], accepts: value => { const names = typeCandidates(value); return names.length > 0 && names.every(isTypeName); }, expected: `a type name or a non-empty list of type names (${TYPE_NAMES.join(', ')})` },
   { keywords: ['enum'], accepts: Array.isArray, expected: 'a list' },
   { keywords: ['minLength', 'maxLength', 'minItems', 'maxItems', 'minProperties', 'maxProperties', 'minContains', 'maxContains'], accepts: value => typeof value === 'number' && Number.isInteger(value) && value >= 0, expected: 'a non-negative integer' },
   { keywords: ['minimum', 'maximum', 'exclusiveMinimum', 'exclusiveMaximum'], accepts: value => finiteNumber(value) !== undefined, expected: 'a finite number' },
@@ -40,7 +51,7 @@ const KEYWORD_SHAPES: readonly { readonly keywords: readonly string[]; readonly 
   { keywords: ['uniqueItems'], accepts: value => typeof value === 'boolean', expected: 'true or false' },
   { keywords: ['properties', 'patternProperties', 'dependentSchemas'], accepts: isRecord, expected: 'an object' },
   { keywords: ['dependentRequired'], accepts: value => isRecord(value) && Object.values(value).every(isStringList), expected: 'an object whose values are lists of strings' },
-  { keywords: ['allOf', 'anyOf', 'oneOf', 'prefixItems'], accepts: Array.isArray, expected: 'a list' },
+  { keywords: SCHEMA_ARRAY_KEYWORDS, accepts: Array.isArray, expected: 'a list' },
 ];
 
 /** A step that hands the same value to another function, so no part of the value is consumed. */
@@ -69,9 +80,6 @@ function carriesEvaluation(edge: SameValueEdge): boolean {
   return edge.keyword !== 'not';
 }
 
-const ALWAYS: IrSchema = { kind: 'always' };
-const NEVER: IrSchema = { kind: 'never' };
-
 type MutableFunction = { -readonly [Key in keyof IrFunction]: IrFunction[Key] };
 
 function callTo(fn: number): IrSchema {
@@ -81,7 +89,7 @@ function callTo(fn: number): IrSchema {
 // Keywords whose value is data, not schema.
 const DATA_KEYWORDS: ReadonlySet<string> = new Set(['enum', 'const', 'default', 'examples']);
 // Keywords whose value maps names to schemas: the names are not keywords, so `default` there is a property.
-const NAME_MAP_KEYWORDS: ReadonlySet<string> = new Set(['properties', 'patternProperties', 'dependentSchemas', 'dependentRequired', '$defs', 'definitions']);
+const NAME_MAP_KEYWORDS: ReadonlySet<string> = new Set([...SCHEMA_MAP_KEYWORDS, 'dependentRequired']);
 
 /**
  * True when the schema `value`, or a schema inside it, has one of `keys` as a keyword. Each object is read once,
@@ -111,13 +119,15 @@ const ANNOTATION_KEYWORDS: ReadonlySet<string> = new Set(['title', 'description'
  * satisfies; undefined for any other branch.
  */
 function literalBranchValues(branch: unknown): readonly unknown[] | undefined {
-  if (!isRecord(branch) || Object.hasOwn(branch, 'const') === Array.isArray(branch.enum)) return undefined;
+  if (!isRecord(branch)) return undefined;
+  const enumValues = listOf(branch.enum);
+  if (Object.hasOwn(branch, 'const') === (enumValues !== undefined)) return undefined;
   if (!Object.keys(branch).every(key => key === 'const' || key === 'enum' || key === 'type' || ANNOTATION_KEYWORDS.has(key) || key.startsWith('x-'))) return undefined;
-  const values = Object.hasOwn(branch, 'const') ? [branch.const] : branch.enum as readonly unknown[];
+  const values = enumValues ?? [branch.const];
   // A value with no JSON form is left to the branch's own lowering, which reports it.
   if (holdsNonFiniteNumber(values)) return undefined;
   if (!Object.hasOwn(branch, 'type')) return values;
-  const names = typeof branch.type === 'string' ? [branch.type] : Array.isArray(branch.type) ? branch.type as readonly unknown[] : [];
+  const names = typeCandidates(branch.type);
   if (names.length === 0 || !names.every(isTypeName)) return undefined;
   return values.every(value => names.some(name => JSON_TYPES[name].test(value))) ? values : undefined;
 }
@@ -140,11 +150,7 @@ function allDistinct(values: readonly unknown[]): boolean {
 
 /** What a `$ref` target is called: the last segment of its pointer; a whole resource has no segment, and its name may be a digest. */
 function referenceName(target: SchemaLocation): string | undefined {
-  return target.pointer === '' ? undefined : unescapePointerToken(target.pointer.slice(target.pointer.lastIndexOf('/') + 1));
-}
-
-function isTypeName(value: unknown): value is IrTypeName {
-  return TYPE_NAMES.some(name => name === value);
+  return jsonPointerTokens(target.pointer).at(-1);
 }
 
 /** True when the value is, or holds at any depth, a number that is not finite. */
@@ -164,7 +170,7 @@ function modelInstance(value: unknown): IrInstance | undefined {
   const { of, among, required } = value;
   if ((of !== undefined && typeof of !== 'string') || !Array.isArray(among) || typeof required !== 'boolean') return undefined;
   if (!among.every((id): id is string => typeof id === 'string')) return undefined;
-  return { kind: 'instance', ...(of === undefined ? {} : { of }), among, required };
+  return of === undefined ? { kind: 'instance', selects: 'none', among } : { kind: 'instance', selects: 'of', of, among, required };
 }
 
 /** The message of the error `new RegExp(source, 'u')` throws, or undefined when it compiles. */
@@ -273,55 +279,51 @@ class Lowering {
   }
 
   /**
-   * The tag values the schema at `location` states for `property`: its `const`, or the values of its `enum`.
-   * Reads the schema's own `properties`, follows a `$ref`, and looks into each `allOf` entry, so a branch may be
-   * inline, a reference, or `allOf` of references and an inline tag. Undefined when none states them.
+   * What the schema at `location` states, by the routes through which a value of the schema is judged: its own keywords
+   * (`own` reads them), then a `$ref` target, a validation wrapper's schema, and each `allOf` entry (an `allOf` holds all of its
+   * entries). The first route for which `own` returns a result gives it. A schema is entered once, so a schema that holds
+   * itself ends the walk.
    */
-  private tagValues(location: SchemaLocation, property: string, active: Set<object> = new Set()): readonly unknown[] | undefined {
+  private onRoutes<Found>(location: SchemaLocation, own: (node: Readonly<Record<string, unknown>>) => Found | undefined, active: Set<object> = new Set()): Found | undefined {
     const { node } = location;
     if (!isRecord(node) || active.has(node)) return undefined;
     active.add(node);
+    const found = own(node);
+    if (found !== undefined) return found;
     const base = baseInside(node, location.base);
-    const tag = isRecord(node.properties) && Object.hasOwn(node.properties, property) ? node.properties[property] : undefined;
-    if (isRecord(tag)) {
-      if (Object.hasOwn(tag, 'const')) return [tag.const];
-      if (Array.isArray(tag.enum) && tag.enum.length > 0) return tag.enum as readonly unknown[];
-    }
     const target = typeof node.$ref === 'string' ? this.resolver.resolve(node.$ref, base) : undefined;
-    const viaRef = target ? this.tagValues(target, property, active) : undefined;
+    const viaRef = target ? this.onRoutes(target, own, active) : undefined;
     if (viaRef !== undefined) return viaRef;
-    // A branch that a validation function wraps states its tag in the wrapper's own schema.
     const wrapper = node[VALIDATION_KEYWORD];
     if (isRecord(wrapper) && wrapper.schema !== undefined) {
-      const inner = this.tagValues({ node: wrapper.schema, base, resource: location.resource, pointer: `${location.pointer}${pointerSegment(VALIDATION_KEYWORD)}${pointerSegment('schema')}` }, property, active);
+      const inner = this.onRoutes({ node: wrapper.schema, base, resource: location.resource, pointer: `${location.pointer}${pointerSegment(VALIDATION_KEYWORD)}${pointerSegment('schema')}` }, own, active);
       if (inner !== undefined) return inner;
     }
-    if (!Array.isArray(node.allOf)) return undefined;
-    for (const [position, entry] of (node.allOf as readonly unknown[]).entries()) {
-      const found = this.tagValues({ node: entry, base, resource: location.resource, pointer: `${location.pointer}${pointerSegment('allOf')}${pointerSegment(position)}` }, property, active);
+    for (const [position, entry] of (listOf(node.allOf) ?? []).entries()) {
+      const found = this.onRoutes({ node: entry, base, resource: location.resource, pointer: `${location.pointer}${pointerSegment('allOf')}${pointerSegment(position)}` }, own, active);
       if (found !== undefined) return found;
     }
     return undefined;
   }
 
   /**
-   * True when the schema at `location` requires `property`: its own `required`, a `$ref` target, a validation wrapper's
-   * schema, or any `allOf` entry (an `allOf` holds all of its entries). Follows the same routes as `tagValues`.
+   * The tag values the schema at `location` states for `property`: its `const`, or the values of its `enum`, on any route of
+   * `onRoutes`, so a branch may be inline, a reference, or `allOf` of references and an inline tag. A branch that a validation
+   * function wraps states its tag in the wrapper's own schema. Undefined when none states them.
    */
-  private requiresProperty(location: SchemaLocation, property: string, active: Set<object> = new Set()): boolean {
-    const { node } = location;
-    if (!isRecord(node) || active.has(node)) return false;
-    active.add(node);
-    if (Array.isArray(node.required) && node.required.includes(property)) return true;
-    const base = baseInside(node, location.base);
-    const target = typeof node.$ref === 'string' ? this.resolver.resolve(node.$ref, base) : undefined;
-    if (target && this.requiresProperty(target, property, active)) return true;
-    const wrapper = node[VALIDATION_KEYWORD];
-    if (isRecord(wrapper) && wrapper.schema !== undefined
-      && this.requiresProperty({ node: wrapper.schema, base, resource: location.resource, pointer: `${location.pointer}${pointerSegment(VALIDATION_KEYWORD)}${pointerSegment('schema')}` }, property, active)) return true;
-    if (!Array.isArray(node.allOf)) return false;
-    return (node.allOf as readonly unknown[]).some((entry, position) =>
-      this.requiresProperty({ node: entry, base, resource: location.resource, pointer: `${location.pointer}${pointerSegment('allOf')}${pointerSegment(position)}` }, property, active));
+  private tagValues(location: SchemaLocation, property: string): readonly unknown[] | undefined {
+    return this.onRoutes(location, (node): readonly unknown[] | undefined => {
+      const tag = isRecord(node.properties) && Object.hasOwn(node.properties, property) ? node.properties[property] : undefined;
+      if (!isRecord(tag)) return undefined;
+      if (Object.hasOwn(tag, 'const')) return [tag.const];
+      const values = listOf(tag.enum);
+      return values !== undefined && values.length > 0 ? values : undefined;
+    });
+  }
+
+  /** True when the schema at `location` requires `property`: its own `required`, or the `required` of another schema on a route of `onRoutes`. */
+  private requiresProperty(location: SchemaLocation, property: string): boolean {
+    return this.onRoutes(location, node => (listOf(node.required)?.includes(property) ? true : undefined)) === true;
   }
 
   /**
@@ -515,8 +517,7 @@ class Lowering {
   }
 
   private lowerTypeAndValues({ node, here, checks, malformed }: RecordContext): void {
-    const typeList = typeof node.type === 'string' ? [node.type] : Array.isArray(node.type) ? node.type as readonly unknown[] : [];
-    const names = typeList.filter(isTypeName);
+    const names = typeCandidates(node.type).filter(isTypeName);
     if (names.length > 0) checks.push({ kind: 'type', names });
 
     if (Object.hasOwn(node, MODEL_CLASS_KEYWORD)) {
@@ -535,9 +536,10 @@ class Lowering {
       if (holdsNonFiniteNumber(node.const)) malformed('const', 'expected a JSON value; a number that is not finite has no JSON form');
       else checks.push({ kind: 'literal', values: [node.const] });
     }
-    if (Array.isArray(node.enum)) {
-      if (holdsNonFiniteNumber(node.enum)) malformed('enum', 'expected JSON values; a number that is not finite has no JSON form');
-      else checks.push({ kind: 'literal', values: node.enum as readonly unknown[] });
+    const enumValues = listOf(node.enum);
+    if (enumValues !== undefined) {
+      if (holdsNonFiniteNumber(enumValues)) malformed('enum', 'expected JSON values; a number that is not finite has no JSON form');
+      else checks.push({ kind: 'literal', values: enumValues });
     }
   }
 
@@ -589,7 +591,7 @@ class Lowering {
   }
 
   private lowerArray({ node, checks, lowerChild, otherValueFunction }: RecordContext): void {
-    const prefixItems = Array.isArray(node.prefixItems) ? (node.prefixItems as readonly unknown[]).map((item, position) => lowerChild('prefixItems', item, position)) : [];
+    const prefixItems = (listOf(node.prefixItems) ?? []).map((item, position) => lowerChild('prefixItems', item, position));
     const closed = node.items === false;
     const items = node.items === undefined || closed ? undefined : lowerChild('items', node.items);
     const minItems = finiteNumber(node.minItems);
@@ -608,7 +610,7 @@ class Lowering {
   }
 
   private lowerObject({ node, here, checks, lowerChild, otherValueFunction }: RecordContext): void {
-    const required = Array.isArray(node.required) ? (node.required as readonly unknown[]).filter((key): key is string => typeof key === 'string') : [];
+    const required = (listOf(node.required) ?? []).filter((key): key is string => typeof key === 'string');
     const properties = isRecord(node.properties)
       ? Object.entries(node.properties).map(([key, schema]) => ({ key, schema: lowerChild('properties', schema, key) }))
       : [];
@@ -621,7 +623,10 @@ class Lowering {
       }
     }
     const dependentRequired = isRecord(node.dependentRequired)
-      ? Object.entries(node.dependentRequired).flatMap(([trigger, keys]) => Array.isArray(keys) ? [{ trigger, keys: (keys as readonly unknown[]).filter((key): key is string => typeof key === 'string') }] : [])
+      ? Object.entries(node.dependentRequired).flatMap(([trigger, keys]) => {
+        const list = listOf(keys);
+        return list === undefined ? [] : [{ trigger, keys: list.filter((key): key is string => typeof key === 'string') }];
+      })
       : [];
     let additional: IrAdditional | undefined;
     if (node.additionalProperties === false) {
@@ -642,27 +647,28 @@ class Lowering {
 
   /** `allOf`, `anyOf`, `oneOf` and `not`: the branches that apply to this same value. */
   private lowerComposition({ node, checks, child, sameValueFunction, inPlaceBranch }: RecordContext): void {
-    if (Array.isArray(node.allOf)) {
-      const branches = (node.allOf as readonly unknown[]).map((branch, position) => inPlaceBranch('allOf', branch, position)).filter(branch => branch.kind !== 'always');
+    const allOf = listOf(node.allOf);
+    if (allOf !== undefined) {
+      const branches = allOf.map((branch, position) => inPlaceBranch('allOf', branch, position)).filter(branch => branch.kind !== 'always');
       if (branches.length > 0) checks.push({ kind: 'allOf', branches });
     }
     for (const keyword of ['anyOf', 'oneOf'] as const) {
-      const list = node[keyword];
-      if (Array.isArray(list) && list.length > 0) {
+      const list = listOf(node[keyword]);
+      if (list !== undefined && list.length > 0) {
         // Constants alone make a union of values: one `literal` issue says which are allowed, and no branch needs a function.
         const values = literalUnionValues(list);
         if (values !== undefined) {
           checks.push({ kind: 'literal', values });
           continue;
         }
-        const discriminator = keyword === 'oneOf' ? this.discriminatorOf(node, (list as readonly unknown[]).map((branch, position) => child(keyword, branch, position))) : undefined;
+        const discriminator = keyword === 'oneOf' ? this.discriminatorOf(node, list.map((branch, position) => child(keyword, branch, position))) : undefined;
         // One branch is `allOf` of one: the value must pass it, and its own issues are the ones reported.
         if (list.length === 1 && discriminator === undefined) {
           const branch = inPlaceBranch(keyword, list[0], 0);
           if (branch.kind !== 'always') checks.push({ kind: 'allOf', branches: [branch] });
           continue;
         }
-        const branches = (list as readonly unknown[]).map((branch, position) => sameValueFunction(keyword, branch, position));
+        const branches = list.map((branch, position) => sameValueFunction(keyword, branch, position));
         checks.push({ kind: 'union', exactlyOne: keyword === 'oneOf', branches, discriminator });
       }
     }

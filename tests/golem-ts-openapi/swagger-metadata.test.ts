@@ -350,6 +350,26 @@ export class PairController {
   assert.deepEqual([...(pair.required ?? [])].sort(), ['a', 'b']);
 });
 
+test('rejects a Swagger schema override whose property value is no schema', async t => {
+  // protects: T-936 a number was ignored, a string gave garbage keys and null threw a raw TypeError; each is now NEST1503
+  for (const value of ['5', 'null']) {
+    const root = inlineFixture(t, `import { Controller, Get } from '@nestjs/common';
+import { ApiProperty } from '@nestjs/swagger';
+
+class PairDto {
+  @ApiProperty({ schema: { type: 'object', properties: { a: ${value} } } }) pair!: { a: string };
+}
+
+@Controller('pair')
+export class PairController {
+  @Get()
+  get(): PairDto { return { pair: { a: 'x' } }; }
+}
+`);
+    await rejectsWith(root, 'NEST1503', /properties\.a is no JSON Schema/);
+  }
+});
+
 test('emits routes inherited from plain and mixin base controllers', async t => {
   const document = documentOf<OpenApiDocument>(await generated(t, 'inherited-and-mixin-controllers'));
   const reply = (route: string): unknown => property(document, objectSchema(document, jsonSchema(document.paths[route]?.get, '200')), 'reply').description;

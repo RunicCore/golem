@@ -3,7 +3,7 @@
  * those tokens (`@exprtlabs/golem-ts-openapi/internal/nest-runtime`). `nest.ts` reads the tokens in `NestModelInterceptor` and
  * `objectCodecFromMetatype`; the decorators are internal because only generated code calls them.
  */
-import { presentValue, requireModelObject, unknownDiscriminatorValue, type InternalObjectCodec } from '@exprtlabs/golem/internal/model-runtime';
+import { presentValue, requireModelObject, unknownDiscriminatorValue, type DiscriminatorValue, type InternalObjectCodec } from '@exprtlabs/golem/internal/model-runtime';
 import { getIModelClass, getObjectCodec, type ObjectCodec, type SerdeOptions } from '@exprtlabs/golem/serde';
 import { decodeQueryField, type QueryFieldTable } from './query-decode.js';
 
@@ -13,8 +13,6 @@ declare module '@exprtlabs/golem/internal/model-runtime' {
     readonly nest?: QueryFieldTable;
   }
 }
-
-type DiscriminatorValue = string | number | boolean;
 
 const NEST_MODEL_CODEC_ID = Symbol.for('@exprtlabs/golem:nestModelCodec');
 const NEST_MODEL_CODEC = Symbol.for('@exprtlabs/golem:nestModelCodec.codec');

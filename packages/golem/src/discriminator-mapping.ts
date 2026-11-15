@@ -6,7 +6,8 @@
  * so validation keeps the mapping's meaning.
  */
 
-import { escapePointerToken, fragmentPointerTokens, unescapePointerToken } from './json-pointer.js';
+import { aliasReference, followReference } from './json-reference.js';
+import { escapePointerToken, fragmentPointerTokens, resolveFragmentPointer } from './json-pointer.js';
 
 type SchemaRecord = Readonly<Record<string, unknown>>;
 
@@ -61,12 +62,8 @@ function referencedSchema(index: SchemaIndex, reference: string, base: string | 
     ? (base === undefined ? index.root : index.resources.get(base) ?? index.root)
     : index.resources.get(resolveUri(uri, base));
   if (!resource || (fragment !== '' && !fragment.startsWith('/'))) return undefined;
-  let current: unknown = resource;
-  for (const token of fragmentPointerTokens(fragment)) {
-    if (!isRecord(current) && !Array.isArray(current)) return undefined;
-    current = (current as Record<string, unknown>)[token];
-  }
-  return isRecord(current) ? current : undefined;
+  const found = resolveFragmentPointer(resource, fragment);
+  return isRecord(found) ? found : undefined;
 }
 
 /**
@@ -74,16 +71,14 @@ function referencedSchema(index: SchemaIndex, reference: string, base: string | 
  * of its target, so aliases are followed; an alias cycle has no schema.
  */
 function resolveReference(index: SchemaIndex, reference: string, base: string | undefined): SchemaRecord | undefined {
-  let current = referencedSchema(index, reference, base);
-  const seen = new Set<SchemaRecord>();
-  while (current && typeof current.$ref === 'string' && Object.keys(current).length === 1) {
-    if (seen.has(current)) throw new TypeError(`Schema reference ${JSON.stringify(reference)} is a cycle of $ref aliases.`);
-    seen.add(current);
-    const next = referencedSchema(index, current.$ref, index.bases.get(current));
-    if (!next) break;
-    current = next;
+  const first = referencedSchema(index, reference, base);
+  if (first === undefined) return undefined;
+  const followed = followReference<SchemaRecord>(first, aliasReference, (next, from) => referencedSchema(index, next, index.bases.get(from)));
+  switch (followed.kind) {
+    case 'found': return followed.target;
+    case 'miss': return followed.last;
+    case 'cycle': throw new TypeError(`Schema reference ${JSON.stringify(reference)} is a cycle of $ref aliases.`);
   }
-  return current;
 }
 
 /**
@@ -93,8 +88,7 @@ function resolveReference(index: SchemaIndex, reference: string, base: string | 
  */
 function componentName(reference: string): string | undefined {
   if (reference.includes('#/')) {
-    const token = reference.slice(reference.lastIndexOf('/') + 1);
-    return token ? unescapePointerToken(token) : undefined;
+    return fragmentPointerTokens(reference.slice(reference.indexOf('#/') + 1)).at(-1) || undefined;
   }
   return /^[^/:#]+$/.test(reference) ? reference : undefined;
 }

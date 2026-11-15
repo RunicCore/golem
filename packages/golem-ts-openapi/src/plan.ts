@@ -1,5 +1,6 @@
 // The plan entry of the ts-openapi block (`golem.plan`). Core loads it when it reads golem.yaml, so it imports no TypeScript, no yaml and no generator code.
 import path from 'node:path';
+import { DEFAULT_CONTROLLER_SUFFIXES } from './nest/types.js';
 import { openApiVersionOf, type OpenApiVersion } from './openapi-version.js';
 import { canonicalPath, checkedSuffixes, isRecord, MODEL_BOUNDARY } from '@exprtlabs/golem/internal/plan-support';
 import type {
@@ -70,8 +71,7 @@ export interface ControllerContext {
 /** What the controllers analysis needs to know of the models job: the inputs of its model boundary. */
 export type ControllerModels = ModelBoundaryValue;
 
-/** File-name endings that make a file below `src` of the golem.yaml folder a controller source when a docs job sets none. */
-export const DEFAULT_CONTROLLER_SUFFIXES: readonly string[] = ['.controller.ts'];
+export { DEFAULT_CONTROLLER_SUFFIXES };
 
 const BLOCK = 'ts-openapi';
 const DOCS_KEYS: readonly string[] = [

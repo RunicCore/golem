@@ -5,7 +5,8 @@
  */
 
 import { compareText } from '@exprtlabs/golem/generator-api';
-import { fragmentPointerTokens, GENERATED_MODEL_SCHEMA_REF_PREFIX, VALIDATION_KEYWORD, type JsonSchema } from '@exprtlabs/golem/internal/schema';
+import { isRecord } from '@exprtlabs/golem/internal/generator-support';
+import { GENERATED_MODEL_SCHEMA_REF_PREFIX, resolveFragmentPointer, VALIDATION_KEYWORD, type JsonSchema } from '@exprtlabs/golem/internal/schema';
 import { codecShortName, type SchemaGraph, type SchemaNode } from '@exprtlabs/golem/internal/schema-graph';
 import type { QueryFieldShape, QueryFieldTable } from '../runtime/query-decode.js';
 
@@ -37,7 +38,7 @@ interface FieldShape {
 const SCALARS: readonly QueryScalar[] = ['string', 'number', 'integer', 'boolean'];
 
 function schemaRecord(value: unknown): SchemaRecord | undefined {
-  return typeof value === 'object' && value !== null && !Array.isArray(value) ? value as SchemaRecord : undefined;
+  return isRecord(value) ? value : undefined;
 }
 
 function newShape(): FieldShape {
@@ -51,14 +52,7 @@ function newShape(): FieldShape {
  */
 function resolveReference(reference: string, scope: Scope): { readonly schema: unknown; readonly scope: Scope } | undefined {
   if (reference === '#' || reference.startsWith('#/')) {
-    let schema = scope.root;
-    if (reference !== '#') {
-      for (const key of fragmentPointerTokens(reference.slice(1))) {
-        schema = typeof schema === 'object' && schema !== null && Object.hasOwn(schema, key)
-          ? (schema as Record<string, unknown>)[key]
-          : undefined;
-      }
-    }
+    const schema = resolveFragmentPointer(scope.root, reference.slice(1));
     return schema === undefined ? undefined : { schema, scope };
   }
   const bare = reference.startsWith(GENERATED_MODEL_SCHEMA_REF_PREFIX) ? reference.slice(GENERATED_MODEL_SCHEMA_REF_PREFIX.length) : reference;

@@ -88,7 +88,7 @@ function initializeModel<Model extends object>(
       initializeNested(Reflect.get(model, field), visited);
     }
   }
-  makeObservable(model, merged as AnnotationsMap<Model, never>);
+  makeObservable<object, PropertyKey>(model, merged);
   observableModels.add(model);
 }
 

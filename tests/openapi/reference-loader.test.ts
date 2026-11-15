@@ -4,7 +4,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { pathToFileURL } from 'node:url';
 import YAML from 'yaml';
-import { loadReferenceGraph, type ReferenceGraph } from '#openapi/reference-loader';
+import { loadLocalReferenceGraph, loadReferenceGraph, type ReferenceGraph } from '#openapi/reference-loader';
 import { loadValidatedDocument } from '#openapi/resolver';
 import { createFixtureProject } from '../fixture-project.js';
 import { writeOpenApiDocument } from './helpers.js';
@@ -169,7 +169,7 @@ test('a remote ref inside a local file is blocked when remoteHosts lists no host
   const restore = failingFetch();
   try {
     await assert.rejects(() => loadReferenceGraph(filename, document), /remote reference blocked at #\/\$ref: https:\/\/schemas\.example\/y\.json/);
-    const skipped = await loadReferenceGraph(filename, document, { skipRemote: true });
+    const skipped = await loadLocalReferenceGraph(filename, document);
     assert.deepEqual(skipped.localFiles, [filename, path.join(directory, 'x.json')].sort());
   } finally {
     restore();

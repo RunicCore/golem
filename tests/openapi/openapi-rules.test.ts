@@ -104,6 +104,30 @@ test('operation-parameters-unique treats header names that differ only by case a
   assert.deepEqual(found(document, 'operation-parameters-unique'), ['/paths/~1a/get/parameters/1']);
 });
 
+test('operation-response-headers-unique reports response header names that differ only by case', () => {
+  // protects: T-963 response header names are case-insensitive, as header parameter names are (T-491, T-920)
+  const header = { schema: { type: 'string' } };
+  const document = documentBase('3.1.0', {
+    paths: {
+      '/a': {
+        get: {
+          responses: {
+            200: { description: 'ok', headers: { 'X-A': header, 'x-a': header, 'X-B': header } },
+            201: { description: 'one name', headers: { 'X-A': header } },
+            202: { $ref: '#/components/responses/Shared' },
+          },
+        },
+        post: { responses: { 202: { $ref: '#/components/responses/Shared' } } },
+      },
+    },
+    components: { responses: { Shared: { description: 'shared', headers: { Etag: header, ETAG: header } } } },
+  });
+  assert.deepEqual(found(document, 'operation-response-headers-unique'), [
+    '/paths/~1a/get/responses/200/headers/x-a',
+    '/components/responses/Shared/headers/ETAG',
+  ]);
+});
+
 test('no-duplicated-server-names reports a repeated 3.2 server name within one list', () => {
   // protects: T-491 3.2 server names are unique
   const document = documentBase('3.2.0', {
@@ -205,6 +229,25 @@ test('operation-security-defined reports security requirement names that no secu
   );
 });
 
+test('no-request-item-schema reports a request body itemSchema inline, through a $ref and in a webhook', () => {
+  // protects: T-964 a request itemSchema was typed unknown and sent as JSON
+  const feed = { 'application/x-ndjson': { itemSchema: { type: 'object' } } };
+  const document = documentBase('3.2.0', {
+    paths: {
+      '/upload': { post: { requestBody: { content: feed }, responses: ok } },
+      '/feed': { post: { requestBody: { $ref: '#/components/requestBodies/Feed' }, responses: ok } },
+      '/read': { get: { responses: { 200: { description: 'ok', content: feed } } } },
+    },
+    webhooks: { pushed: { post: { requestBody: { content: feed }, responses: ok } } },
+    components: { requestBodies: { Feed: { content: feed } } },
+  });
+  assert.deepEqual(found(document, 'no-request-item-schema'), [
+    '/paths/~1upload/post/requestBody/content/application~1x-ndjson/itemSchema',
+    '/components/requestBodies/Feed/content/application~1x-ndjson/itemSchema',
+    '/webhooks/pushed/post/requestBody/content/application~1x-ndjson/itemSchema',
+  ]);
+});
+
 test('spec-querystring-parameters checks the effective path and operation set in 3.2', () => {
   const form = { 'application/x-www-form-urlencoded': { schema: { type: 'object' } } };
   const paths = {
@@ -269,6 +312,38 @@ test('spec-discriminator-defaultMapping follows a $ref chain before checking req
     },
   });
   assert.deepEqual(found(document, 'spec-discriminator-defaultMapping'), []);
+});
+
+test('spec-discriminator-defaultMapping follows an $anchor reference to the schema it names', () => {
+  // protects: T-937 the rule followed only pointer and $id references, so a branch named by `#cat` was never judged
+  const document = documentBase('3.2.0', {
+    paths: {},
+    components: {
+      schemas: {
+        Cat: { $anchor: 'cat', type: 'object', properties: { kind: { type: 'string' } } },
+        Pet: { oneOf: [{ $ref: '#cat' }], discriminator: { propertyName: 'kind' } },
+      },
+    },
+  });
+  assert.deepEqual(found(document, 'spec-discriminator-defaultMapping'), ['/components/schemas/Pet/discriminator']);
+});
+
+test('spec-discriminator-defaultMapping reads the references of an embedded resource against that resource', () => {
+  // protects: T-937 a `#/$defs/Base` inside an `$id` resource was read from the document root, found nothing and counted as required
+  const document = documentBase('3.2.0', {
+    paths: {},
+    components: {
+      schemas: {
+        Cat: {
+          $id: 'https://rules.example/cat',
+          $defs: { Base: { type: 'object', properties: { kind: { type: 'string' } } } },
+          allOf: [{ $ref: '#/$defs/Base' }],
+        },
+        Pet: { oneOf: [{ $ref: 'https://rules.example/cat' }], discriminator: { propertyName: 'kind' } },
+      },
+    },
+  });
+  assert.deepEqual(found(document, 'spec-discriminator-defaultMapping'), ['/components/schemas/Pet/discriminator']);
 });
 
 test('spec-discriminator-defaultMapping judges a schema shared by two oneOf branches in each branch', () => {

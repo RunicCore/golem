@@ -48,7 +48,7 @@ export function propertyInitializer(
   return ts.isPropertyAssignment(property)
     ? property.initializer
     : ts.isShorthandPropertyAssignment(property)
-      ? property.name as ts.Expression
+      ? property.name
       : undefined;
 }
 

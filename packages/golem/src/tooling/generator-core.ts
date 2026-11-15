@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { inspect } from 'node:util';
 import YAML from 'yaml';
+import { assertNever } from '../assert-never.js';
 import { canonicalPath, displayPath, isInsideDirectory, isRecord } from './plan-support.js';
 import type { HookParticipants } from './extension-hooks.js';
 import type { JobFacts, ProgramView } from './job-facts.js';
@@ -49,11 +50,8 @@ export interface ResolvedGolemProfile extends GolemProfile {
   readonly unknownFormats: 'warn' | 'error';
 }
 
-/** The validation levels from the lowest to the highest; a model or call may lower the level of its project, never raise it. */
-const VALIDATION_LEVELS: readonly GolemProfile['validation'][] = [false, 'sanity', true];
-
 export function isValidationLevel(value: unknown): value is GolemProfile['validation'] {
-  return VALIDATION_LEVELS.includes(value as GolemProfile['validation']);
+  return typeof value === 'boolean' || value === 'sanity';
 }
 
 /** The error for a validation level that is none of `true`, `false` and `'sanity'`; `label` names the key that held it. */
@@ -61,9 +59,14 @@ export function invalidValidationLevelMessage(label: string): string {
   return `${label} must be true, false or "sanity".`;
 }
 
-/** 0 for `false`, 1 for `'sanity'`, 2 for `true`: a level above another has the greater rank. */
-export function validationRank(level: GolemProfile['validation']): number {
-  return VALIDATION_LEVELS.indexOf(level);
+/** 0 for `false`, 1 for `'sanity'`, 2 for `true`: a level above another has the greater rank. A model or call may lower the level of its project, never raise it. */
+export function validationRank(level: GolemProfile['validation']): 0 | 1 | 2 {
+  switch (level) {
+    case false: return 0;
+    case 'sanity': return 1;
+    case true: return 2;
+    default: return assertNever(level);
+  }
 }
 
 /** Programmatic callers receive the same defaults and checks as YAML users. */

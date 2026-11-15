@@ -41,13 +41,10 @@ interface GraphDefinitionTarget {
   readonly schema: JsonSchema;
 }
 
-function withoutRootDefinitions(schema: unknown): unknown {
+/** A copy of an object schema without its own `key`; any other value as it is. */
+function withoutKey(schema: unknown, key: string): unknown {
   if (schema === null || typeof schema !== 'object' || Array.isArray(schema)) return schema;
-  const copy = Object.create(null) as Record<string, unknown>;
-  for (const [key, value] of Object.entries(schema)) {
-    if (key !== '$defs') copy[key] = value;
-  }
-  return copy;
+  return Object.fromEntries(Object.entries(schema).filter(([name]) => name !== key));
 }
 
 function ownedGraphDefinitions(
@@ -61,8 +58,8 @@ function ownedGraphDefinitions(
   for (const [name, definition] of Object.entries(definitions)) {
     const target = preferredDefinitions.get(name);
     if (target
-      && stableSchema(withoutRootDefinitions(target.schema))
-        === stableSchema(withoutRootDefinitions(definition))) {
+      && stableSchema(withoutKey(target.schema, '$defs'))
+        === stableSchema(withoutKey(definition, '$defs'))) {
       owned.set(name, target);
     }
   }
@@ -400,10 +397,7 @@ export function buildCodecValidationPlan(
 }
 
 function withoutOwnId(schema: unknown, id: string): unknown {
-  if (schema === null || typeof schema !== 'object' || Array.isArray(schema) || Reflect.get(schema, '$id') !== id) return schema;
-  const copy = { ...(schema as Record<string, unknown>) };
-  delete copy.$id;
-  return copy;
+  return typeof schema === 'object' && schema !== null && Reflect.get(schema, '$id') === id ? withoutKey(schema, '$id') : schema;
 }
 
 export interface PlanValidatorsOptions {

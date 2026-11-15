@@ -34,7 +34,10 @@ function golemModeGraph(document: unknown, analysis: OpenApiModelAnalysis, sdk: 
   for (const operation of sdk.operations) {
     const values: SdkOperationValue[] = [];
     for (const [key, node] of analysis.convertedNodeIds) {
-      const [name, ...at] = JSON.parse(key) as [string, ...string[]];
+      // The key is one of the key functions of `model-schema-graph.ts`: a JSON array of strings that starts with the operation name.
+      const parts: unknown = JSON.parse(key);
+      const [name, ...at] = Array.isArray(parts) && parts.every((part): part is string => typeof part === 'string') ? parts : [];
+      if (name === undefined) throw new TypeError(`The key ${key} of a converted value is not the key of a body, a parameter or a response header.`);
       if (name !== operation.name) continue;
       const input = analysis.graphInputs.values.get(key);
       const inline = input && { ...(input.name === undefined ? {} : { name: input.name }), descriptor: JSON.stringify(input.descriptor) };

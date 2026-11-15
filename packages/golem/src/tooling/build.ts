@@ -242,12 +242,13 @@ const DECLARATION_MAP = /\.d\.[cm]?ts\.map$/;
 function rewriteDeclarations(session: ts.ProgramSession, project: Project, sources: readonly ts.SourceFile[], rootNames: readonly string[], flags: readonly string[], emitted: ts.MemoryEmit): ReadonlyMap<string, string> {
   // The seam names a source by its resolved path; the overlay takes the program's own file name for it, as the program reads it.
   const projectFiles = new Map(sources.filter((candidate) => !candidate.isDeclarationFile).map((candidate) => [path.resolve(candidate.fileName), candidate.fileName]));
-  const declarations = new Map<string, { readonly file: string; readonly text: string }>();
+  const declarations = new Map<string, { readonly file: string; readonly text: string; readonly origin: string }>();
   for (const [file, text] of emitted.files) {
     const kind = DECLARATION_MODULE.exec(file)?.[1];
-    const source = projectFiles.get(emitted.sources.get(file) ?? '');
-    if (kind === undefined || source === undefined) continue;
-    declarations.set(`${source.slice(0, source.length - path.extname(source).length)}.golem-declaration${kind}`, { file, text });
+    const origin = emitted.sources.get(file);
+    const source = origin === undefined ? undefined : projectFiles.get(origin);
+    if (kind === undefined || origin === undefined || source === undefined) continue;
+    declarations.set(`${source.slice(0, source.length - path.extname(source).length)}.golem-declaration${kind}`, { file, text, origin });
   }
   if (declarations.size === 0) return emitted.files;
   const overlays = new Map([...declarations].map(([module, { text }]) => [module, text]));
@@ -256,14 +257,14 @@ function rewriteDeclarations(session: ts.ProgramSession, project: Project, sourc
   const options = { compilerOptions: program.getCompilerOptions(), projectSources: new Set(sources.map((source) => source.fileName)) };
   const rewritten = new Map(emitted.files);
   const editMaps = new Map<string, SourceMapV3>();
-  for (const [module, { file, text }] of declarations) {
+  for (const [module, { file, text, origin }] of declarations) {
     const declaration = program.getSourceFile(module);
     if (declaration === undefined) throw new Error(`golem build could not read the declaration ${displayPath(file)} to change its import paths.`);
     const { edits } = nodeSpecifierEdits(declaration, checker, options);
     if (edits.length === 0) continue;
     const edited = applyRewrites(text, { edits, imports: [], importsAt: 0 }, file);
     rewritten.set(file, edited.code);
-    editMaps.set(emitted.sources.get(file)!, edited.map);
+    editMaps.set(origin, edited.map);
   }
   for (const [file, text] of emitted.files) {
     const edit = editMaps.get(emitted.sources.get(file) ?? '');

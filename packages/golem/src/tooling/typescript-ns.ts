@@ -52,11 +52,13 @@ export const {
   isBinaryExpression,
   isBlock,
   isCallExpression,
+  isCaseClause,
   isClassDeclaration,
   isClassLike,
   isComputedPropertyName,
   isConditionalTypeNode,
   isDecorator,
+  isDefaultClause,
   isElementAccessExpression,
   isEmptyStatement,
   isEnumDeclaration,
@@ -116,6 +118,7 @@ export const {
   isSpreadElement,
   isStringLiteral,
   isStringLiteralLike,
+  isSwitchStatement,
   isTemplateExpression,
   isTemplateLiteralTypeNode,
   isTupleTypeNode,
@@ -123,6 +126,7 @@ export const {
   isTypeAssertionExpression,
   isTypeLiteralNode,
   isTypeNode,
+  isTypeOfExpression,
   isTypeOperatorNode,
   isTypeParameterDeclaration,
   isTypeQueryNode,
@@ -140,6 +144,12 @@ const ERROR_CATEGORY = 1;
 const GREY = '\x1b[90m';
 const RESET = '\x1b[0m';
 
+/** An error with the file and the line (counted from 0) it starts on. */
+interface Located {
+  readonly fileName: string;
+  readonly line: number;
+}
+
 /**
  * The line `tsc --pretty` prints after the diagnostics, and nothing when no diagnostic is an error: `Found 3 errors in 2 files.` and
  * a table of the errors in each file. `tsc` prints no summary in its plain form. The text is the one both compilers print (English).
@@ -150,20 +160,23 @@ export function formatErrorSummary(diagnostics: readonly Golem.Diagnostic[], hos
   const errors = diagnostics.filter((diagnostic) => diagnostic.category === ERROR_CATEGORY);
   if (errors.length === 0) return '';
   const newLine = host.getNewLine();
-  const reference = (error: Golem.Diagnostic): string => `${relative(host.getCurrentDirectory(), error.fileName!).split('\\').join('/')}${GREY}:${error.startPosition!.line + 1}${RESET}`;
-  const inFiles = errors.filter((error) => error.fileName !== undefined && error.startPosition !== undefined);
-  const files = [...new Set(inFiles.map((error) => error.fileName))];
-  const first = inFiles[0];
+  const reference = ({ fileName, line }: Located): string => `${relative(host.getCurrentDirectory(), fileName).split('\\').join('/')}${GREY}:${line + 1}${RESET}`;
+  const byFile = new Map<string, [Located, ...Located[]]>();
+  for (const { fileName, startPosition } of errors) {
+    if (fileName === undefined || startPosition === undefined) continue;
+    const error = { fileName, line: startPosition.line };
+    const inFile = byFile.get(fileName);
+    if (inFile === undefined) byFile.set(fileName, [error]);
+    else inFile.push(error);
+  }
+  const first = byFile.values().next().value?.[0];
   let headline: string;
   if (errors.length === 1) headline = first === undefined ? 'Found 1 error.' : `Found 1 error in ${reference(first)}`;
-  else if (files.length === 0) headline = `Found ${errors.length} errors.`;
-  else if (files.length === 1) headline = `Found ${errors.length} errors in the same file, starting at: ${reference(first!)}`;
-  else headline = `Found ${errors.length} errors in ${files.length} files.`;
-  const table = files.length > 1
-    ? ['Errors  Files', ...files.map((file) => {
-      const count = inFiles.filter((error) => error.fileName === file).length;
-      return `${String(count).padStart(6)}  ${reference(inFiles.find((error) => error.fileName === file)!)}`;
-    })].join('\n') + `\n${selected.major === 7 ? newLine : ''}`
+  else if (first === undefined) headline = `Found ${errors.length} errors.`;
+  else if (byFile.size === 1) headline = `Found ${errors.length} errors in the same file, starting at: ${reference(first)}`;
+  else headline = `Found ${errors.length} errors in ${byFile.size} files.`;
+  const table = byFile.size > 1
+    ? ['Errors  Files', ...[...byFile.values()].map(([head, ...rest]) => `${String(rest.length + 1).padStart(6)}  ${reference(head)}`)].join('\n') + `\n${selected.major === 7 ? newLine : ''}`
     : '';
   return `${newLine}${headline}${newLine}${newLine}${table}`;
 }

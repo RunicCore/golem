@@ -1,5 +1,6 @@
 import { stableJson } from '@exprtlabs/golem/generator-api';
 import { isRecord } from '@exprtlabs/golem/internal/generator-support';
+import { schemaReference } from '@exprtlabs/golem/internal/schema';
 import * as ts from '@exprtlabs/golem/internal/ts';
 import {
   GolemDiagnosticSeverity,
@@ -9,6 +10,11 @@ import {
 } from '../diagnostics.js';
 
 export type DtoSchema = Record<string, unknown> | boolean;
+
+/** A JSON Schema is an object or a boolean. */
+export function isDtoSchema(value: unknown): value is DtoSchema {
+  return typeof value === 'boolean' || isRecord(value);
+}
 
 export interface SchemaMergeOptions {
   readonly authoritative?: boolean;
@@ -99,10 +105,6 @@ export function sameValue(left: unknown, right: unknown): boolean {
   return stableJson(left) === stableJson(right);
 }
 
-export function schemaReference(value: unknown): string | undefined {
-  return isRecord(value) && typeof value.$ref === 'string' ? value.$ref : undefined;
-}
-
 export function resolvedSchema(
   value: DtoSchema,
   options: SchemaMergeOptions,
@@ -160,19 +162,15 @@ export function schemaAllowsNull(
     for (const key of ['anyOf', 'oneOf'] as const) {
       const variants = value[key];
       if (Array.isArray(variants)) {
-        result = result && variants.some(item => (
-          typeof item === 'boolean' || isRecord(item)
-        ) && schemaAllowsNull(item as DtoSchema, options, seen));
+        result = result && variants.some(item => isDtoSchema(item) && schemaAllowsNull(item, options, seen));
       }
     }
     const allOf = value.allOf;
     if (Array.isArray(allOf)) {
-      result = result && allOf.every(item => (
-        typeof item === 'boolean' || isRecord(item)
-      ) && schemaAllowsNull(item as DtoSchema, options, seen));
+      result = result && allOf.every(item => isDtoSchema(item) && schemaAllowsNull(item, options, seen));
     }
-    if (value.not !== undefined && (typeof value.not === 'boolean' || isRecord(value.not))) {
-      result = result && !schemaAllowsNull(value.not as DtoSchema, options, seen);
+    if (isDtoSchema(value.not)) {
+      result = result && !schemaAllowsNull(value.not, options, seen);
     }
     return result;
   } finally {
@@ -214,8 +212,7 @@ function nullableWrapper(value: DtoSchema, nullable: boolean): DtoSchema {
 function withoutNullVariants(value: unknown, options: SchemaMergeOptions): unknown[] | undefined {
   if (!Array.isArray(value)) return undefined;
   return value.filter(item => {
-    const schema = typeof item === 'boolean' || isRecord(item) ? item as DtoSchema : undefined;
-    return schema === undefined || !schemaAllowsNull(schema, options);
+    return !isDtoSchema(item) || !schemaAllowsNull(item, options);
   });
 }
 
@@ -368,8 +365,10 @@ function compareSchema(
         conflict(options, `Swagger schema at ${location}.properties conflicts with the authoritative TypeScript fields.`);
       }
       for (const [name, propertySchema] of Object.entries(value)) {
-        if (expected[name] === undefined) conflict(options, `Swagger schema at ${location}.properties.${name} is not declared by the TypeScript contract.`);
-        compareSchema(expected[name] as DtoSchema, propertySchema as DtoSchema, options, `${location}.properties.${name}`);
+        const canonicalProperty = expected[name];
+        if (canonicalProperty === undefined) conflict(options, `Swagger schema at ${location}.properties.${name} is not declared by the TypeScript contract.`);
+        if (!isDtoSchema(canonicalProperty) || !isDtoSchema(propertySchema)) conflict(options, `Swagger schema at ${location}.properties.${name} is no JSON Schema.`);
+        compareSchema(canonicalProperty, propertySchema, options, `${location}.properties.${name}`);
       }
       continue;
     }
@@ -419,12 +418,14 @@ function mergeSchema(
   for (const [key, value] of Object.entries(override)) {
     const canonicalProperties = isRecord(canonical.properties) ? canonical.properties : undefined;
     if (key === 'properties' && isRecord(value) && canonicalProperties) {
-      result.properties = Object.fromEntries(Object.keys(canonicalProperties).map(name => [
-        name,
-        value[name] === undefined
-          ? canonicalProperties[name]
-          : mergeSchema(canonicalProperties[name] as DtoSchema, value[name] as DtoSchema, { ...options, location: `${options.location ?? 'schema'}.properties.${name}` }),
-      ]));
+      result.properties = Object.fromEntries(Object.keys(canonicalProperties).map(name => {
+        const canonicalProperty = canonicalProperties[name];
+        const written = value[name];
+        if (written === undefined) return [name, canonicalProperty];
+        const propertyLocation = `${options.location ?? 'schema'}.properties.${name}`;
+        if (!isDtoSchema(canonicalProperty) || !isDtoSchema(written)) conflict(options, `Swagger schema at ${propertyLocation} is no JSON Schema.`);
+        return [name, mergeSchema(canonicalProperty, written, { ...options, location: propertyLocation })];
+      }));
       continue;
     }
     if (key === 'nullable') {
@@ -454,14 +455,14 @@ function mergeSchema(
  * Returns undefined when the schema holds no array with an object `items`.
  */
 export function mapArrayItems(
-  schema: DtoSchema,
+  schema: unknown,
   change: (items: Record<string, unknown>) => DtoSchema,
 ): Record<string, unknown> | undefined {
   if (!isRecord(schema)) return undefined;
   if (isRecord(schema.items)) return { ...schema, items: change(schema.items) };
   const branches: readonly unknown[] = Array.isArray(schema.anyOf) ? schema.anyOf : [];
   for (const [at, branch] of branches.entries()) {
-    const mapped = mapArrayItems(branch as DtoSchema, change);
+    const mapped = mapArrayItems(branch, change);
     if (mapped) return { ...schema, anyOf: branches.map((item, index) => (index === at ? mapped : item)) };
   }
   return undefined;

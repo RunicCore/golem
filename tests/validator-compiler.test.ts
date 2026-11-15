@@ -462,7 +462,7 @@ test('an anyOf of branches that differ by JSON type checks a valid value with th
   // protects: T-255 one type switch for a disjoint union (F-250); `Number.isInteger` runs only in the integer branch, which comes first.
   const { source, exports, fastExports } = compile(
     { roots: new Map([['root', { anyOf: [{ type: 'integer' }, { type: 'string' }, { type: 'null' }, { type: 'array', items: { type: 'string' } }, { type: 'object' }] }]]) },
-    { unknownFormats: 'warn', specifiers: { values: { 'validation-runtime': 'golem-validation-runtime' } }, fastPath: true },
+    { unknownFormats: 'warn', specifiers: { values: { 'validation-runtime': 'golem-validation-runtime' } }, fastPath: 'all' },
   );
   const counts = { isInteger: 0 };
   const { values } = await loadBundle(t, source, [fastExports.get('root')!, exports.get('root')!], { counts }, 'const real = Number.isInteger; Number.isInteger = value => (counts.isInteger++, real(value));');
@@ -632,6 +632,19 @@ test('$ref reaches a resource by its $id, its name and a $anchor', async () => {
     { path: ['byAnchor'], code: 'tooSmall', measure: 'value', limit: 1, inclusive: true },
   ]);
 });
+
+const positive = { $anchor: 'positive', minimum: 1 };
+for (const [keyword, schema] of [
+  ['definitions', { definitions: { positive }, properties: { n: { $ref: '#positive' } } }],
+  ['additionalItems', { additionalItems: positive, properties: { n: { $ref: '#positive' } } }],
+  ['contentSchema', { contentSchema: positive, properties: { n: { $ref: '#positive' } } }],
+] as const) {
+  test(`$ref reaches a $anchor below ${keyword}`, async () => {
+    // protects: T-938 the resolver indexed the anchors below $defs only, so a reference to one below these keywords stayed unresolved
+    const validate = await compileSchema(schema);
+    assert.deepEqual(validate({ n: 0 }, true), [{ path: ['n'], code: 'tooSmall', measure: 'value', limit: 1, inclusive: true }]);
+  });
+}
 
 test('$ref by JSON pointer decodes ~0, ~1 and percent escapes', async () => {
   const schema = {

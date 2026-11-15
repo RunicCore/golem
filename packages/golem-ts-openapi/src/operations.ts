@@ -1,4 +1,5 @@
 import { compareText } from '@exprtlabs/golem/generator-api';
+import { followReference, schemaReference } from '@exprtlabs/golem/internal/schema';
 import * as ts from '@exprtlabs/golem/internal/ts';
 import { TsToOpenApiDiagnosticCode, TsToOpenApiError, diagnostic } from './diagnostics.js';
 import { mapArrayItems, mergeSchemaMetadata } from './nest/json-schema-merge.js';
@@ -410,21 +411,26 @@ async function bodyExtraSchemas(
 }
 
 /** The schema a `$ref` names, through references. Undefined when it cannot be read. */
-function resolvedSchema(context: OperationBuildContext, schema: OpenApiSchema, seen: ReadonlySet<string> = new Set()): Record<string, unknown> | undefined {
-  const value = record(schema);
-  if (value === undefined || typeof value.$ref !== 'string') return value;
-  if (seen.has(value.$ref)) return undefined;
-  const target = context.resolveSchemaReference?.(value.$ref);
-  return target === undefined ? undefined : resolvedSchema(context, target, new Set(seen).add(value.$ref));
+function resolvedSchema(resolve: OperationBuildContext['resolveSchemaReference'], schema: OpenApiSchema): Record<string, unknown> | undefined {
+  const followed = followReference<OpenApiSchema>(schema, schemaReference, (reference) => resolve?.(reference));
+  switch (followed.kind) {
+    case 'found': return record(followed.target);
+    case 'miss':
+    case 'cycle': return undefined;
+  }
 }
 
-/** The property names a schema declares (`key: 'properties'`) or requires (`key: 'required'`), through references and `allOf`. Undefined when a part cannot be read. */
-function propertyNames(context: OperationBuildContext, schema: OpenApiSchema, key: 'properties' | 'required'): ReadonlySet<string> | undefined {
-  const value = resolvedSchema(context, schema);
+/** The property names a schema declares (`key: 'properties'`) or requires (`key: 'required'`), through references and `allOf`. Undefined when a part cannot be read. `visiting` holds the references and schemas on the current path: one that names itself through `allOf` adds nothing the second time. */
+export function propertyNames(resolve: OperationBuildContext['resolveSchemaReference'], schema: OpenApiSchema, key: 'properties' | 'required', visiting: Set<unknown> = new Set()): ReadonlySet<string> | undefined {
+  const value = resolvedSchema(resolve, schema);
   if (value === undefined) return undefined;
+  const onPath = schemaReference(schema) ?? value;
+  if (visiting.has(onPath)) return new Set();
   const names = new Set(key === 'properties' ? Object.keys(record(value.properties) ?? {}) : (Array.isArray(value.required) ? value.required as string[] : []));
   for (const member of Array.isArray(value.allOf) ? value.allOf as OpenApiSchema[] : []) {
-    const inner = propertyNames(context, member, key);
+    visiting.add(onPath);
+    const inner = propertyNames(resolve, member, key, visiting);
+    visiting.delete(onPath);
     if (inner === undefined) return undefined;
     for (const name of inner) names.add(name);
   }
@@ -442,10 +448,10 @@ function combineBodyParts(context: OperationBuildContext, parts: readonly BodyPa
   const unique = parts.filter((part, index) => parts.findIndex(other => JSON.stringify(other.schema) === JSON.stringify(part.schema)) === index);
   if (unique.length === 1) return unique[0]!.schema;
   for (const closed of unique) {
-    if (resolvedSchema(context, closed.schema)?.additionalProperties !== false) continue;
-    const declared = propertyNames(context, closed.schema, 'properties');
+    if (resolvedSchema(context.resolveSchemaReference, closed.schema)?.additionalProperties !== false) continue;
+    const declared = propertyNames(context.resolveSchemaReference, closed.schema, 'properties');
     for (const other of unique.filter(item => item !== closed)) {
-      const extra = [...propertyNames(context, other.schema, 'required') ?? []].find(name => !declared?.has(name));
+      const extra = [...propertyNames(context.resolveSchemaReference, other.schema, 'required') ?? []].find(name => !declared?.has(name));
       if (extra === undefined) continue;
       throw new TsToOpenApiError(diagnostic(other.node.getSourceFile(), other.node, TsToOpenApiDiagnosticCode.NonPortableParameter, `${closed.label} is a closed model (additionalProperties: false) and ${other.label} requires the property "${extra}" that it does not declare, so no request body can satisfy both and OpenAPI cannot describe the empty type. Declare the property in the model, make the model open with { exact: false }, or read the body in one whole @Body().`));
     }

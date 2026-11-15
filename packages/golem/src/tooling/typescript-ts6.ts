@@ -8,14 +8,13 @@
  */
 import { channel } from 'node:diagnostics_channel';
 import { createRequire } from 'node:module';
-import { basename, dirname } from 'node:path';
+import { dirname } from 'node:path';
 import { GOLEM_CHANNELS } from './diagnostics-channels.js';
 import { displayPath } from './generator-core.js';
 import { fileSignature, MISSING } from './input-watcher.js';
-import { assertConfigParsed, assertNoSourceFiles, canonical, collectTscDiagnostics, configReferences, emitWanted, flagPathOptions, flagsAsConfigOptions, programConfig, referencedConfigFile } from './typescript-config.js';
-import type { ConfigReference, ProgramConfig, ResolveAtCurrentFolder } from './typescript-config.js';
+import { affectsResolution, assertConfigParsed, assertNoSourceFiles, canonical, collectTscDiagnostics, configReferences, emitWanted, flagPathOptions, flagsAsConfigOptions, isDeclarationFile, programRequest, referencedConfigFile } from './typescript-config.js';
+import type { ConfigReference, ResolveAtCurrentFolder } from './typescript-config.js';
 import { selectedTypeScript } from './typescript-selection.js';
-import { inNodeModules } from './type-analysis/path-identity.js';
 import { assertPackageManifestsParse } from './type-analysis/package-specifier.js';
 import type * as Golem from './typescript-types.js';
 
@@ -81,6 +80,7 @@ interface ClassicChecker {
   tryGetMemberInModuleExports(name: string, moduleSymbol: ClassicSymbol): ClassicSymbol | undefined;
   getIndexInfosOfType(type: ClassicType): readonly ClassicIndexInfo[];
   getBaseTypes(type: ClassicType): readonly ClassicType[];
+  getBaseConstraintOfType(type: ClassicType): ClassicType | undefined;
   getDeclaredTypeOfSymbol(symbol: ClassicSymbol): ClassicType;
   getConstantValue(node: Golem.Node): string | number | undefined;
   getSignatureFromDeclaration(node: Golem.Node): ClassicSignature | undefined;
@@ -246,11 +246,13 @@ export const {
   isBinaryExpression,
   isBlock,
   isCallExpression,
+  isCaseClause,
   isClassDeclaration,
   isClassLike,
   isComputedPropertyName,
   isConditionalTypeNode,
   isDecorator,
+  isDefaultClause,
   isElementAccessExpression,
   isEmptyStatement,
   isEnumDeclaration,
@@ -310,6 +312,7 @@ export const {
   isSpreadElement,
   isStringLiteral,
   isStringLiteralLike,
+  isSwitchStatement,
   isTemplateExpression,
   isTemplateLiteralTypeNode,
   isTupleTypeNode,
@@ -317,6 +320,7 @@ export const {
   isTypeAssertionExpression,
   isTypeLiteralNode,
   isTypeNode,
+  isTypeOfExpression,
   isTypeOperatorNode,
   isTypeParameterDeclaration,
   isTypeQueryNode,
@@ -569,6 +573,11 @@ class CompatChecker implements Golem.TypeChecker {
     return this.inner.getBaseTypes(inner).map((base) => wrapType(base, this));
   }
 
+  getBaseConstraintOfType(type: Golem.Type): Golem.Type | undefined {
+    const constraint = this.inner.getBaseConstraintOfType(unwrapType(type));
+    return constraint && wrapType(constraint, this);
+  }
+
   getDeclaredTypeOfSymbol(symbol: Golem.Symbol): Golem.Type {
     return wrapType(this.inner.getDeclaredTypeOfSymbol(unwrapSymbol(symbol)), this);
   }
@@ -692,16 +701,13 @@ class CompatProgram implements Golem.Program {
     const sources = new Map<string, string>();
     if (!emitWanted(options, declarations)) return { emitSkipped: true, files, sources, diagnostics: [] };
     const result = this.program.emit(undefined, (filename, text, _writeByteOrderMark, _onError, sourceFiles) => {
-      if (DECLARATION_OUTPUT.test(filename) !== declarations) return;
+      if (isDeclarationFile(filename) !== declarations) return;
       files.set(canonical(filename), text);
       if (sourceFiles?.length === 1) sources.set(canonical(filename), canonical(sourceFiles[0]!.fileName));
     }, undefined, declarations);
     return { emitSkipped: result.emitSkipped, files, sources, diagnostics: result.diagnostics.map(withText) };
   }
 }
-
-/** A declaration file or its map, such as `a.d.ts`, `a.d.mts.map` or `a.d.css.ts`. */
-const DECLARATION_OUTPUT = /\.d\.(?:[^./\\]+\.)?[cm]?ts(?:\.map)?$/;
 
 function parseFlags(flags: readonly string[]) {
   const { options: parsed, fileNames, errors } = classic.parseCommandLine(flags);
@@ -759,11 +765,6 @@ function withText(diagnostic: ClassicDiagnostic): Golem.Diagnostic & ClassicDiag
   }) as Golem.Diagnostic & ClassicDiagnostic;
 }
 
-/** A change to a package manifest or an installed package invalidates cached module resolution. */
-function affectsResolution(filename: string): boolean {
-  return basename(filename) === 'package.json' || inNodeModules(filename);
-}
-
 function languageVersionKey(languageVersionOrOptions: LanguageVersionOrOptions): string {
   if (typeof languageVersionOrOptions === 'number') return String(languageVersionOrOptions);
   const { languageVersion, impliedNodeFormat, jsDocParsingMode } = languageVersionOrOptions;
@@ -779,14 +780,6 @@ interface ParsedConfig {
 /** The seam's view of a parse: each referenced project by its tsconfig file. */
 function projectOf(parsed: ParsedConfig): Golem.ParsedProject {
   return { options: parsed.options, fileNames: parsed.fileNames, projectReferences: parsed.projectReferences.map((reference) => ({ path: referencedConfigFile(reference.path) })) };
-}
-
-interface ProgramRequest extends ProgramConfig {
-  readonly rootNames: readonly string[];
-}
-
-function programRequest(options: Golem.OpenProgramOptions, referencesOf: (configPath: string, overlays: ReadonlyMap<string, string>) => readonly ConfigReference[]): ProgramRequest {
-  return { ...programConfig(options, (filename) => sys.fileExists(filename), referencesOf), rootNames: [...new Set(options.sources.map(canonical))] };
 }
 
 interface CachedSourceFile {
@@ -859,7 +852,7 @@ export class ProgramSession implements Disposable {
   openProgram(options: Golem.OpenProgramOptions): Golem.Program {
     if (programOpenedChannel.hasSubscribers) programOpenedChannel.publish({ session: this, configFile: options.configFile });
     this.assertOpen();
-    const request = programRequest(this.withFlags(options), (configPath, overlays) => this.configReferencesOf(configPath, overlays));
+    const request = programRequest(this.withFlags(options), sys, (configPath, overlays) => this.configReferencesOf(configPath, overlays));
     this.observe(options.onInput, request.hidden);
     const resolutionsChanged = this.resolutionsChanged();
     for (const filename of [...this.observed]) this.report(filename);

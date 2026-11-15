@@ -404,7 +404,7 @@ export class ClientRuntime {
       case 'status': return status === Number(expected);
       case 'range': return String(status)[0] === expected[0];
       case 'default': return true;
-      default: return false;
+      case undefined: return false;
     }
   }
 
