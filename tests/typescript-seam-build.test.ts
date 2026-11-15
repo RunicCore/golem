@@ -6,8 +6,10 @@ import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 import * as ts from '@exprtlabs/golem/internal/ts';
 import { declarationOutputOf, flagsAsConfigOptions } from '#golem/typescript-config';
+import { resolveTypeScript } from '#golem/typescript-version';
 import { createFixtureProject } from './fixture-project.js';
 import { TSC } from './support/build-project.js';
+import { workspace } from './support/process.js';
 
 const COMPILER = { strict: true, target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', skipLibCheck: true, types: [] };
 
@@ -44,8 +46,8 @@ test('a configuration parsed under flags takes the flags over its options and li
   assert.throws(() => session.parseConfigFileWithFlags(config, ['--noSuchFlag']), /TS5023/);
 });
 
-/** A row: its name, its files, its compiler options, and the roots the program is given beyond the ones its tsconfig matches. */
-const PRINTED: readonly (readonly [string, Readonly<Record<string, string>>, object?, (readonly string[])?])[] = [
+/** A row: its name, its files, its compiler options, the roots the program is given beyond the ones its tsconfig matches, and its command-line flags. */
+const PRINTED: readonly (readonly [string, Readonly<Record<string, string>>, object?, (readonly string[])?, (readonly string[])?])[] = [
   ['no error', { 'src/a.ts': 'export const a: string = "x";\n' }],
   ['a syntax error hides the type errors', { 'src/a.ts': 'export const a: string = 1;\n', 'src/b.ts': 'export const = ;\n' }],
   ['errors in files created out of order', { 'src/z.ts': 'export const z: string = 1;\n', 'src/a.ts': 'export const a: string = 1;\n', 'src/m.ts': 'export const m: string = 1;\n' }],
@@ -53,15 +55,19 @@ const PRINTED: readonly (readonly [string, Readonly<Record<string, string>>, obj
   ['one error', { 'src/a.ts': 'export const a: string = 1;\n' }],
   ['an options error stays in the configuration file', { 'src/a.ts': 'export const a: string = 1;\n' }, { declaration: false, declarationMap: true }],
   ['an options error stays in the configuration file when a root lies outside it', { 'src/a.ts': 'export const a = 1;\n', 'extra.ts': 'export const extra = 1;\n' }, { declaration: false, declarationMap: true }, ['extra.ts']],
+  ['an options error stays in the configuration file under flags', { 'src/a.ts': 'export const a = 1;\n' }, { declaration: false, declarationMap: true }, [], ['--noEmit']],
+  ['an options error stays in the configuration file under flags when a root lies outside it', { 'src/a.ts': 'export const a = 1;\n', 'extra.ts': 'export const extra = 1;\n' }, { declaration: false, declarationMap: true }, ['extra.ts'], ['--noEmit']],
   ['two errors in one file', { 'src/a.ts': 'export const a: string = 1;\nexport const b: string = 2;\n' }],
   ['errors in two files', { 'src/a.ts': 'export const a: string = 1;\nexport const b: string = 2;\n', 'src/b.ts': 'export const c: string = 3;\n' }],
 ];
-for (const [name, files, options, outside = []] of PRINTED) {
-  test(`diagnostics print as tsc prints them: ${name}`, t => {
+// Under flags the TypeScript 6 lane opens the virtual configuration that carries them and names it in an options error; the TypeScript 7 lane names the user's.
+const skipFlagsOnTypeScript6 = resolveTypeScript(process.env.GOLEM_TYPESCRIPT_ROOT ?? workspace).major === 6 && 'TypeScript 6 names the virtual configuration of the flags in an options error';
+for (const [name, files, options, outside = [], flags = []] of PRINTED) {
+  test(`diagnostics print as tsc prints them: ${name}`, { skip: flags.length > 0 && skipFlagsOnTypeScript6 }, t => {
     // protects: T-460 T-461 the seam's tsc-form diagnostics (set and order), formatters and Found N errors summary equal tsc's plain and pretty output
     const { root, config } = project(t, files, { noEmit: true, ...options });
     using session = new ts.ProgramSession({ cwd: root });
-    using program = session.openProgram({ root, sources: [...session.parseConfigFile(config).fileNames, ...outside.map((file) => path.join(root, file))], configFile: config });
+    using program = session.openProgram({ root, sources: [...session.parseConfigFile(config).fileNames, ...outside.map((file) => path.join(root, file))], configFile: config, flags });
     const diagnostics = ts.getTscDiagnostics(program);
     assert.equal(ts.formatDiagnostics(diagnostics, host(root)), tsc(root, ['--pretty', 'false']));
     const printed = diagnostics.map((diagnostic) => `${ts.formatDiagnosticsWithColorAndContext([diagnostic], host(root))}\n`).join('');

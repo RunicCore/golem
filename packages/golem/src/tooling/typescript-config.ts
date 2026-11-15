@@ -211,6 +211,8 @@ export interface ProgramConfig {
   readonly overlays: ReadonlyMap<string, string>;
   /** Configuration paths the observer is not told about: virtual configurations are derived input. */
   readonly hidden: ReadonlySet<string>;
+  /** The tsconfig of the user that `configPath` is or extends: a file on disk that no overlay replaces, so its text is the user's to name in an error. */
+  readonly userConfigPath: string | undefined;
 }
 
 /** The configuration a program opens, from the request: a default tsconfig for a folder without one, and a virtual configuration for option overrides. */
@@ -221,7 +223,8 @@ export function programConfig(options: OpenProgramOptions, fileExists: (filename
     : isAbsolute(options.configFile) ? options.configFile : join(options.root, options.configFile));
   const hidden = new Set<string>();
   if (options.configFile !== undefined && overlays.has(baseConfigPath)) hidden.add(baseConfigPath);
-  if (!overlays.has(baseConfigPath) && !fileExists(baseConfigPath)) {
+  const onDisk = !overlays.has(baseConfigPath) && fileExists(baseConfigPath);
+  if (!overlays.has(baseConfigPath) && !onDisk) {
     overlays.set(baseConfigPath, JSON.stringify({
       compilerOptions: {
         strict: true,
@@ -244,5 +247,5 @@ export function programConfig(options: OpenProgramOptions, fileExists: (filename
     overlays.set(configPath, JSON.stringify({ extends: `./${basename(baseConfigPath)}`, compilerOptions: options.compilerOptionOverrides, ...(references.length === 0 ? {} : { references }) }));
     hidden.add(configPath);
   }
-  return { configPath, overlays, hidden };
+  return { configPath, overlays, hidden, userConfigPath: onDisk ? baseConfigPath : undefined };
 }
