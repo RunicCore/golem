@@ -21,6 +21,7 @@ import {
   sdkCodecsTable,
   RUNTIME_SERDE,
   toWireFunctionName,
+  writesWireStringify,
   type Code,
   type ImportOptions,
   type Piece,
@@ -121,7 +122,7 @@ export function sdkCodecsSource(
     registerCodecs: false,
     exportAnonymousCodecs: true,
     // An app model that holds a node writes the wire value of the node with this function (`NestedImportedSerde.wireStringify`).
-    exportWireStringify: true,
+    exportWireStringify: (node) => writesWireStringify(node, profile.validation),
     exportStripPlans: true,
     modelBases: { basesOf: (id) => components.get(id)?.bases ?? [] },
   });

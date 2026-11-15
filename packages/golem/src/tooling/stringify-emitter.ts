@@ -7,7 +7,8 @@
 import type { ModelTypeDescriptor, SerdeFunctions } from '../model-registry.js';
 import type { ValidationLevel, ValidationPlane } from '../object-codec.js';
 import type { SchemaGraph, SchemaNode } from './schema-graph.js';
-import { codecShortName, nodeHoldsSequence, patternSchemas, serdeWireDescriptor } from './schema-graph.js';
+import { codecShortName, nodeHoldsSequence, patternSchemas } from './schema-graph.js';
+import { serdeWireDescriptor } from './schema.js';
 import { requireComposedObject, type ModelBases } from './composition.js';
 import { STRIP_PLAN, StripPlans, type StripPlanEnv } from './strip-plan.js';
 import {
@@ -51,8 +52,7 @@ export interface StringifySerdeResolver {
  * its deserializer is wrapped once, by `wireChecked`, where the file binds it.
  */
 function serdeWireKind(serde: SerdeFunctions): 'string' | 'number' | 'boolean' | undefined {
-  const { wire, wireDescriptor } = serde as SerdeFunctions & { readonly wire?: ModelTypeDescriptor; readonly wireDescriptor?: ModelTypeDescriptor };
-  const kind = (wireDescriptor ?? wire)?.kind;
+  const kind = serdeWireDescriptor(serde)?.kind;
   return kind === 'string' || kind === 'number' || kind === 'boolean' ? kind : undefined;
 }
 
@@ -483,7 +483,7 @@ function emitValue(
   }
   const tags = serdeTags(descriptor);
   if (tags.serde) {
-    const wire = serdeWireDescriptor(descriptor) ?? { kind: 'unknown' as const };
+    const wire = serdeWireDescriptor(descriptor.serde) ?? { kind: 'unknown' as const };
     if (ctx.wireIdentity) return emitValue(wire, value, ctx);
     const serialized = ctx.serde
       ? ctx.serde.serialize(tags.serde, value)
@@ -502,7 +502,7 @@ function emitValue(
       ctx.wireIdentity
       // The local node only, as above: a node of another module writes its wire value by `wireStringify`.
       && (named.descriptor.kind === 'object' || nodeHoldsSequence(named) || (descriptor.kind === 'reference' && descriptor.projection === true))
-      && (descriptorNeedsConversion(named.descriptor) || !named.sameSchema)
+      && wireDiffers(named)
     ) {
       // Call the node's own wire stringify: inlining would repeat the child for
       // every path to it and never terminate for a recursive model.
@@ -558,7 +558,7 @@ function emitObjectInline(
   const value = expression;
   const required = new Set(descriptor.required);
   const properties = Object.entries(descriptor.properties);
-  const hasExtras = typeof descriptor.additionalProperties === 'object' || descriptor.additionalPropertiesDeclared;
+  const hasExtras = extraKeyValues(descriptor) !== undefined;
   // An object with no declared field writes `{}`, unless it declares its other names as data.
   if (properties.length === 0 && !hasExtras) return code`'{}'`;
   if (isPlainDataMap(descriptor)) return code`${rt.serde.stringifyJsonScalar}(${value} as never)`;
@@ -719,9 +719,7 @@ function emitObjectStringify(
   // With validation off a required field can be missing, so a lenient object writes each field that is present.
   const required = new Set(ctx.lenientRoot ? [] : descriptor.required);
   const properties = Object.entries(descriptor.properties);
-  const additional = typeof descriptor.additionalProperties === 'object'
-    ? descriptor.additionalProperties
-    : descriptor.additionalPropertiesDeclared ? { kind: 'unknown' as const } : undefined;
+  const additional = extraKeyValues(descriptor);
   const name = identifier(fn);
   if (properties.length === 0 && !additional) {
     return stringifyFunction(stringifyHeader(name, code`Record<string, unknown>`, ctx), [code`  return '{}';`], guard, valueSlot);
@@ -1002,7 +1000,7 @@ function sharesInput(descriptor: ModelTypeDescriptor, ctx: EmitCtx, seen: Set<Mo
   seen.add(descriptor);
   const tags = serdeTags(descriptor);
   if (tags.serde) {
-    const wire = serdeWireDescriptor(descriptor);
+    const wire = serdeWireDescriptor(descriptor.serde);
     return wire !== undefined && sharesInput(wire, ctx, seen);
   }
   switch (descriptor.kind) {
@@ -1040,7 +1038,7 @@ function sharesInput(descriptor: ModelTypeDescriptor, ctx: EmitCtx, seen: Set<Mo
 
 /** The descriptors a value of `descriptor` holds directly, the wire of a TSerde value included, which a decode and a strip read; a model or reference is followed through its node. */
 function heldDescriptors(descriptor: ModelTypeDescriptor): readonly ModelTypeDescriptor[] {
-  const wire = serdeWireDescriptor(descriptor);
+  const wire = serdeWireDescriptor(descriptor.serde);
   return wire !== undefined && wire !== descriptor ? [...ownDescriptors(descriptor), wire] : ownDescriptors(descriptor);
 }
 
@@ -1273,7 +1271,7 @@ function emitTaggedVariantUnion(
         const node = ctx.graph.nodeFor(variant);
         const constant = direction === 'encode-json' && node !== undefined && ctx.strictCoreIds?.has(node.id) === true && !ctx.lenientRoot
           && object.required.includes(dispatch.property) && object.properties[dispatch.property]?.kind === 'literal'
-          && typeof object.additionalProperties !== 'object' && !object.additionalPropertiesDeclared;
+          && extraKeyValues(object) === undefined;
         return constant ? 'always' : object.properties[dispatch.property] !== undefined;
       })(),
     })),
@@ -1469,7 +1467,7 @@ function emitDecodeValue(descriptor: ModelTypeDescriptor, expression: Code, ctx:
   const tags = serdeTags(descriptor);
   if (tags.serde) {
     const deserialized = ctx.serde ? fallibleConversion(ctx, ctx.serde.deserialize(tags.serde, value)) : value;
-    const wire = serdeWireDescriptor(descriptor);
+    const wire = serdeWireDescriptor(descriptor.serde);
     if (wire && (wire.kind === 'object' || wire.kind === 'reference' || wire.kind === 'generated-model')) {
       return code`(${objectValueExpression(value)} ? ${deserialized} : ${value})`;
     }
@@ -1883,12 +1881,12 @@ function emitEncodedRecord(
   });
   // A schema for the other names: they are kept and encoded by it. Without one, a declared `additionalProperties: true`
   // keeps them as they are. Any other object writes its listed names only.
-  const additional = typeof descriptor.additionalProperties === 'object' ? descriptor.additionalProperties : undefined;
+  const additional = extraKeyValues(descriptor);
   const extra = inputSlot('extra', 'name');
   const keyParameter = fields.length === 0 ? code`` : code`key`;
   const unlisted = fields.length === 0 ? code`` : code` && ${keyIsNotListed(identifier('key'), fields.map(([name]) => name))}`;
-  const extras = additional || descriptor.additionalPropertiesDeclared
-    ? [code`...Object.fromEntries(Object.entries(${asRecordCode(inputOf(self))}).filter(([${keyParameter}, extra]) => extra !== undefined${unlisted}).map(([key, extra]) => [key, ${bindInput(emitEncodeValue(additional ?? { kind: 'unknown' }, inputOf(extra), ctx), extra, code`extra`)}]))`]
+  const extras = additional
+    ? [code`...Object.fromEntries(Object.entries(${asRecordCode(inputOf(self))}).filter(([${keyParameter}, extra]) => extra !== undefined${unlisted}).map(([key, extra]) => [key, ${bindInput(emitEncodeValue(additional, inputOf(extra), ctx), extra, code`extra`)}]))`]
     : [];
   const entries = [...extras, ...values.map((field) => field.spread ? field.code : code`[${literal(field.name)}]: ${field.code}`)];
   const record = entries.length === 0 ? code`{}` : code`{ ${join(entries, code`, `)} }`;
@@ -1941,6 +1939,23 @@ function nodeLevels(node: SchemaNode, project: ValidationLevel): NodeLevels {
 /** Whether the module of a project at level `project` writes the wire stringify of `node`: it holds the node, its calls validate and its wire and model schemas differ. */
 export function writesWireStringify(node: SchemaNode, project: ValidationLevel): boolean {
   return !isExternalCodecNode(node) && validatesByDefault(nodeLevels(node, project)) && !node.sameSchema;
+}
+
+/**
+ * Whether the wire form of a node differs from its plain form: the node converts something (`descriptorNeedsConversion`), or its wire and
+ * model schemas differ (`sameSchema`, which holds for a node only when every node it reaches is the same too).
+ */
+export function wireDiffers(node: SchemaNode): boolean {
+  return descriptorNeedsConversion(node.descriptor) || !node.sameSchema;
+}
+
+/**
+ * The schema of the values under the other keys of an object, when its JSON writers keep those keys: a schema for them, or a declared
+ * `additionalProperties: true` (any value). Another object writes its listed names only, and has none.
+ */
+export function extraKeyValues(descriptor: ObjectTypeDescriptor): ModelTypeDescriptor | undefined {
+  if (typeof descriptor.additionalProperties === 'object') return descriptor.additionalProperties;
+  return descriptor.additionalPropertiesDeclared ? { kind: 'unknown' } : undefined;
 }
 
 /** The level arguments of `serdeValidates`: the default, and the cap when it is another level. */

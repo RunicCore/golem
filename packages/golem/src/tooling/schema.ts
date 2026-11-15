@@ -9,7 +9,7 @@
 
 export type JsonSchema = boolean | Readonly<Record<string, unknown>>;
 
-import type { ConstraintSchemaValue, ModelConstraint } from '../model-registry.js';
+import type { ConstraintSchemaValue, ModelConstraint, ModelTypeDescriptor } from '../model-registry.js';
 import {
   GENERATED_MODEL_SCHEMA_REF_PREFIX,
   MODEL_CLASS_KEYWORD,
@@ -30,6 +30,16 @@ export type { ConstraintSchemaValue, DiscriminatorValue, ModelConstraint, ModelT
 export { GENERATED_MODEL_SCHEMA_REF_PREFIX, MODEL_CLASS_KEYWORD, MODEL_CODEC_IDS_KEY, MODEL_INSTANCE_KEYWORD, VALIDATION_KEYWORD };
 export { JSON_KINDS, SCHEMA_ARRAY_KEYWORDS, SCHEMA_MAP_KEYWORDS, SCHEMA_SINGLE_KEYWORDS, isDiscriminatorValue, jsonKindOf, type JsonKind } from '../json-vocabulary.js';
 export { validationTagSchemaDescriptor } from './validation-tags.js';
+
+/** The wire form of a descriptor's serde, the deserialize parameter that TSerde attached: `wireDescriptor` in a descriptor read from source, `wire` in a generated one. */
+export function serdeWireDescriptor<Wire>(serde: { readonly wire?: Wire; readonly wireDescriptor?: Wire } | undefined): Wire | undefined {
+  return serde?.wireDescriptor ?? serde?.wire;
+}
+
+/** The serde with its wire form replaced, in the field that holds it. */
+export function serdeWithWire<S extends object>(serde: S, wire: ModelTypeDescriptor): S {
+  return { ...serde, ...('wireDescriptor' in serde ? { wireDescriptor: wire } : { wire }) };
+}
 
 /** Structural inputs used when a nested schema contains a named reference. */
 export interface SchemaDescriptorOptions {
@@ -153,7 +163,7 @@ export function hasExecutableValidation(
   visited.add(value);
   const visit = (nested: unknown): boolean => hasExecutableValidation(nested, options, visited);
   if (Array.isArray(value.validations) && value.validations.length > 0) return true;
-  if (isRecord(value.serde) && visit(value.serde.wireDescriptor ?? value.serde.wire)) return true;
+  if (isRecord(value.serde) && visit(serdeWireDescriptor(value.serde))) return true;
   if (Array.isArray(value.constraints) && value.constraints.some(item =>
     isRecord(item) && typeof item.kind === 'string'
     && constraintSchemaValues(item as ModelConstraint).some(visit))) return true;
@@ -386,7 +396,7 @@ function residualSchema(given: unknown, plane: ResidualPlane, state: SchemaAssem
   if (serde) {
     // The model plane ignores the serde's wire form, but a class binding's validity predicate (`valid`) is part of its model check.
     if (plane === 'model-only') return descriptorSchema(value, state, { ...options, representation: 'model', keepPredicates: true });
-    return descriptorSchema(serde.wireDescriptor ?? serde.wire, state, { ...options, representation: 'wire', keepPredicates: true });
+    return descriptorSchema(serdeWireDescriptor(serde), state, { ...options, representation: 'wire', keepPredicates: true });
   }
   // The wire schema strips executable rules from constraints (the TValidation inside
   // Contains, Not, OneOf, IfThenElse, ...) and drops the unevaluated* keywords beside them,
@@ -479,7 +489,7 @@ function descriptorSchema(
     // A custom serde's wire descriptor is the representation validated by an
     // emitted JSON schema.  Validation bindings are intentionally ignored.
     const serde = isRecord(value.serde) ? value.serde : undefined;
-    const wire = serde && options.representation === 'wire' ? serde.wireDescriptor ?? serde.wire : undefined;
+    const wire = serde && options.representation === 'wire' ? serdeWireDescriptor(serde) : undefined;
     if (options.portable && Array.isArray(value.validations) && value.validations.length) options.onNonportable?.('Custom executable validation remains in the application and is not included in OpenAPI.');
     if (wire !== undefined) {
       return descriptorSchema(wire, state, { ...options, representation: 'wire', keepPredicates: true });

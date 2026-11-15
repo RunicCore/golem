@@ -11,6 +11,8 @@ export {
   reachesRecursiveNode,
   stringifyFunctionName,
   stripPlanName,
+  extraKeyValues,
+  wireDiffers,
   wireStringifyExportName,
   writesWireStringify,
   toWireFunctionName,
@@ -64,7 +66,7 @@ import {
   unionDispatch,
   type ObjectTypeDescriptor,
 } from './union-conversion.js';
-import { isRecordExpression } from './stringify-emitter.js';
+import { extraKeyValues, isRecordExpression } from './stringify-emitter.js';
 
 /** Generators read tag values through the same rule as the shared union conversion. */
 export { AmbiguousUnionConversionError, descriptorNeedsConversion, ObjectUnionDiscriminatorError } from './union-conversion.js';
@@ -393,7 +395,7 @@ function emitNestedUncached(
     if (descriptor.projection || knownChanged || additionalChanged) {
       // An additionalProperties tag declares the other keys of a projection as data: they are copied as they are or by
       // the tag's type. Another object keeps its other keys the same way.
-      const hasExtras = !descriptor.projection || typeof descriptor.additionalProperties === 'object' || descriptor.additionalPropertiesDeclared;
+      const hasExtras = !descriptor.projection || extraKeyValues(descriptor) !== undefined;
       // A record with no declared field walks its entries in the runtime, which takes the conversion of one value.
       if (knownNames.length === 0 && hasExtras) {
         const converted = typeof additionalItem === 'object'

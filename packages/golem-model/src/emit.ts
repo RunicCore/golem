@@ -44,6 +44,8 @@ import {
   wireStringifyExportName,
   writesWireStringify,
   descriptorNeedsConversion,
+  extraKeyValues,
+  wireDiffers,
   type FromJsonModelResolver,
   type ModelConversionDescriptor,
   type NestedImportedSerde,
@@ -920,7 +922,7 @@ function sdkNodeCodecs(sdks: AppOutputs['sdkCodecs'], output: string, validation
     sources: [...sources.values(), ...typeSources.values()],
     type(codecId, suffix) {
       const own = ownType(codecId);
-      if (own !== undefined && (suffix !== 'JSON' || !wireDiffers(sdks, codecId))) return typeSources.get(own.file)!.name(own.name, { alias: codecId });
+      if (own !== undefined && (suffix !== 'JSON' || !wireDiffers(sdkNodeOf(sdks, codecId).node))) return typeSources.get(own.file)!.name(own.name, { alias: codecId });
       asked.set(`${codecId}${NODE_FORM}${suffix}`, { codecId, suffix });
       return identifier(`${codecId}${suffix}`);
     },
@@ -950,15 +952,6 @@ function sdkNodeOf(sdks: AppOutputs['sdkCodecs'], codecId: string): { readonly g
     if (node !== undefined) return { graph: sdk.graph, node };
   }
   throw new Error(`Internal error: no SDK node with the codec id "${codecId}" for the generated file.`);
-}
-
-/**
- * Whether the wire form of the SDK node `codecId` differs from its plain form. The rule of the stringify emitter: the node converts something
- * (`descriptorNeedsConversion`), or its wire and model schemas differ (`sameSchema`, which holds for a node only when every node it reaches is the same too).
- */
-function wireDiffers(sdks: AppOutputs['sdkCodecs'], codecId: string): boolean {
-  const { node } = sdkNodeOf(sdks, codecId);
-  return descriptorNeedsConversion(node.descriptor) || !node.sameSchema;
 }
 
 /**
@@ -1722,7 +1715,7 @@ function emitClassModel(context: EmitContext, emission: ModelFieldEmission): Pie
     ...validatorEnhancerLines(context, specification),
     // A model with a dynamic map, or an explicit additionalProperties true, has no program state: the keys outside its
     // fields are data. A default-open model declares none, so its other own keys are program state.
-    ...(definition.kind === 'object' && (typeof definition.additionalProperties === 'object' || definition.additionalPropertiesDeclared) ? [code`  additionalProperties: true,`] : []),
+    ...(definition.kind === 'object' && extraKeyValues(definition) !== undefined ? [code`  additionalProperties: true,`] : []),
     code`});`,
     BLANK,
     code`${rt.serde.registerIModelClass}(${codecId}, ${baseName});`,
@@ -1835,7 +1828,7 @@ function emitCodecSection(context: EmitContext): CodecSection {
       privateCodec: (node) => Object.hasOwn(definitions, sourceName(node)) && !localNames.has(sourceName(node)),
       ...(siblingWireCodecIds ? { siblingWireCodecIds } : {}),
       ...(siblingRecursion ? { siblingRecursion } : {}),
-      exportWireStringify: true,
+      exportWireStringify: (node) => writesWireStringify(node, profile.validation),
     },
   );
   return {
