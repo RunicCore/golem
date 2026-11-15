@@ -120,6 +120,8 @@ export function sdkCodecsSource(
     // The SDK reads no registry: a client calls the table, and an app model calls the node codecs by name.
     registerCodecs: false,
     exportAnonymousCodecs: true,
+    // An app model that holds a node writes the wire value of the node with this function (`NestedImportedSerde.wireStringify`).
+    exportWireStringify: true,
     modelBases: { basesOf: (id) => components.get(id)?.bases ?? [] },
   });
   const operations = sdk.manifest.operations.map((operation) => {

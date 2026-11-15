@@ -411,7 +411,7 @@ function generateModels(
       const fromWire = helpers.codecFunctionImport(node.id, 'fromWire');
       const toWire = helpers.codecFunctionImport(node.id, 'toWire');
       return stringify && fromWire && toWire
-        ? { stringify, fromWire, toWire, sequence: nodeHoldsSequence(node), ...(fill ? { fill } : {}) }
+        ? { stringify, fromWire, toWire, sequence: nodeHoldsSequence(node), wireStringify: undefined /* another group's wire value goes by `siblingWireCodecIds` */, ...(fill ? { fill } : {}) }
         : undefined;
     },
   };

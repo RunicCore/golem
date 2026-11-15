@@ -41,6 +41,7 @@ import {
   type JsonValue,
   emitModelFromInit,
   wireStringifyExportName,
+  writesWireStringify,
   descriptorNeedsConversion,
   type FromJsonModelResolver,
   type ModelConversionDescriptor,
@@ -878,7 +879,7 @@ interface SdkNodeCodecs {
   readonly typeAliases: (describe: (descriptor: ModelConversionDescriptor, mode: 'model' | 'wire' | 'init') => Code) => readonly Code[];
 }
 
-function sdkNodeCodecs(sdks: AppOutputs['sdkCodecs'], output: string): SdkNodeCodecs {
+function sdkNodeCodecs(sdks: AppOutputs['sdkCodecs'], output: string, validation: GolemProfile['validation']): SdkNodeCodecs {
   // One source for each codecs file; the import statement holds only the names the file's code uses.
   const sources = new Map((sdks ?? []).map((sdk) => [sdk.file, new ImportSource(sourceImportPath(sdk.file, output))] as const));
   // One type source for each module of the SDK that declares types.
@@ -904,6 +905,8 @@ function sdkNodeCodecs(sdks: AppOutputs['sdkCodecs'], output: string): SdkNodeCo
           fromWire: source.name(fromWireFunctionName(node.id)),
           toWire: source.name(toWireFunctionName(node.id)),
           sequence: nodeHoldsSequence(node),
+          // The codecs file of the SDK is written by this job, at this level, so it exports the wire stringify exactly when `writesWireStringify` says.
+          wireStringify: writesWireStringify(node, validation) ? source.name(wireStringifyExportName(node.codecId)) : undefined,
         };
       }
       return undefined;
@@ -1246,7 +1249,7 @@ function buildEmitContext(
     cyclicSiblings, serdeBindings, serdeNames, classEntries, classNames,
   );
   return {
-    source, output, checker, profile, siblingCodecs, appOutputs, codecData, ...(validatorEnhancer === undefined ? {} : { validatorEnhancer }), sdkNodes: sdkNodeCodecs(appOutputs.sdkCodecs, output), graph, schemaGraph,
+    source, output, checker, profile, siblingCodecs, appOutputs, codecData, ...(validatorEnhancer === undefined ? {} : { validatorEnhancer }), sdkNodes: sdkNodeCodecs(appOutputs.sdkCodecs, output, profile.validation), graph, schemaGraph,
     local, localNames, fileLocalNames, classModelNames, objectOnlyNames, siblingObjects, siblingObjectNames, localImports,
     concreteNames, linkedByName, referenceNames, projectionNames, identityProjections, imports,
     serdeBindings, serdeNames,

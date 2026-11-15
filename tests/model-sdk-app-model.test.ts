@@ -531,4 +531,14 @@ export const readShelf = (wire: unknown) => fromWireFormat<TShelf>(wire);
   assert.equal((decodeGeneratedModelTrusted(Box, { id: 'c1', items: 'text' }) as { items: unknown }).items, 'text');
   assert.deepEqual(readShelf({ id: 'c1', items: wire }).items, [decoded], 'the plain object converts the array');
   assert.equal(readShelf({ id: 'c1', items: 'text' }).items, 'text');
+
+  // The write goes the other way: the dates of the array go out as text, validated or not.
+  const generated = await importBuilt(project.root, 'src/box.model.generated.js');
+  const value = { id: 'c1', items: [{ label: 'a', at: new Date(instant), children: [] }] };
+  const text = `{"id":"c1","items":[{"label":"a","at":"${instant}","children":[]}]}`;
+  for (const options of [undefined, { validate: false }]) {
+    assert.equal(generated.stringifyTBox(value, options), text, `the class-backed model writes the array (${JSON.stringify(options)})`);
+    assert.equal(generated.stringifyTShelf(value, options), text, `the plain object writes the array (${JSON.stringify(options)})`);
+  }
+  assert.equal(generated.stringifyTBox({ id: 'c1', items: 'text' }), '{"id":"c1","items":"text"}');
 });

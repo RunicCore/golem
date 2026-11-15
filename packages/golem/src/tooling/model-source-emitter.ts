@@ -12,6 +12,7 @@ export {
   reachesRecursiveNode,
   stringifyFunctionName,
   wireStringifyExportName,
+  writesWireStringify,
   toWireFunctionName,
   validateFunctionName,
   type CodecRuntimeOptions,

@@ -90,6 +90,8 @@ export interface NestedImportedSerde {
   readonly toWire: Code;
   /** The node is a recursive array alias (it holds an array or tuple): the graph of the importing module holds only a placeholder for it, so this module's answer comes from the graph that owns the node. */
   readonly sequence: boolean;
+  /** The wire stringify of the node, which writes a wire value as it is; none when the node's module writes none (`writesWireStringify`), and the model stringify then writes it. */
+  readonly wireStringify: Code | undefined;
   /** Direct generated helper for converted anonymous object dependencies. */
   readonly fill?: Code;
 }
@@ -453,7 +455,10 @@ function emitValue(
   const value = expression;
   if (descriptor.kind === 'generated-model') {
     const named = ctx.graph.nodeFor(descriptor);
-    // A wire value of a generated model that holds an array is written by the wire writer of its node, below, as a recursive alias is. A node of another module has no such writer here: its own stringify writes it.
+    // A node of another module writes a wire value with the wire stringify its module exports: its model stringify would encode the value again.
+    const importedWire = named && ctx.wireIdentity ? importedSerdeOf(named, ctx)?.wireStringify : undefined;
+    if (importedWire) return code`${importedWire}(${value} as never)`;
+    // A wire value of a generated model that holds an array is written by the wire writer of its node, below, as a recursive alias is.
     if (named && !(ctx.wireIdentity && !serdeTags(descriptor).serde && nodeHoldsSequence(named))) {
       return nestedStringifyCall(named.id, value, ctx);
     }
@@ -478,6 +483,7 @@ function emitValue(
   if (named && isObjectish(descriptor)) {
     if (
       ctx.wireIdentity
+      // The local node only, as above: a node of another module writes its wire value by `wireStringify`.
       && (named.descriptor.kind === 'object' || nodeHoldsSequence(named) || (descriptor.kind === 'reference' && descriptor.projection === true))
       && (descriptorNeedsConversion(named.descriptor) || !named.sameSchema)
     ) {
@@ -1913,6 +1919,11 @@ function nodeLevels(node: SchemaNode, project: ValidationLevel): NodeLevels {
   return { defaultLevel: node.validation === 'sanity' ? 'sanity' : project, cap: project };
 }
 
+/** Whether the module of a project at level `project` writes the wire stringify of `node`: its calls validate and its wire and model schemas differ. */
+export function writesWireStringify(node: SchemaNode, project: ValidationLevel): boolean {
+  return validatesByDefault(nodeLevels(node, project)) && !node.sameSchema;
+}
+
 /** The level arguments of `serdeValidates`: the default, and the cap when it is another level. */
 function levelArguments({ defaultLevel, cap }: NodeLevels): Code {
   return cap === defaultLevel ? code`, ${literal(defaultLevel)}` : code`, ${literal(defaultLevel)}, ${literal(cap)}`;
@@ -2135,7 +2146,7 @@ function emitStringifySection(runtime: NodeRuntime): Code {
     ? undefined
     : emitStringifyFunction(node, ctx.graph, ctx.serde, { ...ctx, withoutOptions: true, lenientRoot: true, functionName: `${stringifyName}Lenient` });
   const { modelType } = runtime.fields();
-  const emitsValidatedWire = validationEnabled && !node.sameSchema;
+  const emitsValidatedWire = writesWireStringify(node, levels.cap);
   const encoded = encodedContext(runtime);
   const stringifyValue = inputSlot('value', 'name', true);
   // The validated wire write is the only reader of the encoding, and it fills the inline locals that `encoded` declares.
