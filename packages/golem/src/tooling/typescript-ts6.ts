@@ -81,6 +81,7 @@ interface ClassicChecker {
   tryGetMemberInModuleExports(name: string, moduleSymbol: ClassicSymbol): ClassicSymbol | undefined;
   getIndexInfosOfType(type: ClassicType): readonly ClassicIndexInfo[];
   getBaseTypes(type: ClassicType): readonly ClassicType[];
+  getBaseConstraintOfType(type: ClassicType): ClassicType | undefined;
   getDeclaredTypeOfSymbol(symbol: ClassicSymbol): ClassicType;
   getConstantValue(node: Golem.Node): string | number | undefined;
   getSignatureFromDeclaration(node: Golem.Node): ClassicSignature | undefined;
@@ -320,6 +321,7 @@ export const {
   isTypeAssertionExpression,
   isTypeLiteralNode,
   isTypeNode,
+  isTypeOfExpression,
   isTypeOperatorNode,
   isTypeParameterDeclaration,
   isTypeQueryNode,
@@ -570,6 +572,11 @@ class CompatChecker implements Golem.TypeChecker {
     const inner = unwrapType(type);
     if (!inner.isClassOrInterface()) return [];
     return this.inner.getBaseTypes(inner).map((base) => wrapType(base, this));
+  }
+
+  getBaseConstraintOfType(type: Golem.Type): Golem.Type | undefined {
+    const constraint = this.inner.getBaseConstraintOfType(unwrapType(type));
+    return constraint && wrapType(constraint, this);
   }
 
   getDeclaredTypeOfSymbol(symbol: Golem.Symbol): Golem.Type {

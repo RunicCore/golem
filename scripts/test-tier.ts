@@ -350,6 +350,7 @@ function steps(tier: Tier, args: readonly string[], native: boolean): Group[] {
     [[typescript6(CONCURRENCY.beside)], [
       pack,
       smoke,
+      lint,
       nodeTest(tier, 'packed', PACKED_FILES, CONCURRENCY.packed),
       nodeTest(tier, 'browser', BROWSER_FILES, CONCURRENCY.packed),
       { label: 'examples', run: checkExamples },

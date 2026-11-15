@@ -187,6 +187,10 @@ export interface NonNullExpression extends Expression {
   readonly kind: KindOf<'NonNullExpression'>;
   readonly expression: Expression;
 }
+export interface TypeOfExpression extends Expression {
+  readonly kind: KindOf<'TypeOfExpression'>;
+  readonly expression: Expression;
+}
 export interface TypeAssertion extends Expression {
   readonly kind: KindOf<'TypeAssertion'>;
   readonly expression: Expression;
@@ -554,6 +558,8 @@ export interface TypeChecker {
   getIndexTypeOfType(type: Type, kind: IndexKind): Type | undefined;
   getIndexInfosOfType(type: Type): readonly { readonly keyType: Type; readonly valueType: Type }[];
   getBaseTypes(type: Type): readonly Type[];
+  /** The constraint of a type parameter, followed to a type that is no parameter, or undefined when it has none. */
+  getBaseConstraintOfType(type: Type): Type | undefined;
   getDeclaredTypeOfSymbol(symbol: Symbol): Type;
   getConstantValue(node: Node): string | number | undefined;
   getSignatureFromDeclaration(node: Node): Signature | undefined;
@@ -889,6 +895,7 @@ export interface TypeScriptBackend {
   isTypeAssertionExpression(node: Node): node is TypeAssertion;
   isTypeLiteralNode(node: Node): node is TypeLiteralNode;
   isTypeNode(node: Node): node is TypeNode;
+  isTypeOfExpression(node: Node): node is TypeOfExpression;
   isTypeOperatorNode(node: Node): node is TypeOperatorNode;
   isTypeParameterDeclaration(node: Node): node is TypeParameterDeclaration;
   isTypeQueryNode(node: Node): node is TypeQueryNode;

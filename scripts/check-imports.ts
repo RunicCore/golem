@@ -39,11 +39,16 @@ const SOURCE_CHECKS = {
   switchKinds: { severity: 'warning', because: 'list each kind and end with `default: return assertNever(value)`' },
 } as const satisfies Record<string, { readonly severity: Severity; readonly because: string }>;
 
-const LITERAL_TYPES = ts.TypeFlags.StringLiteral | ts.TypeFlags.NumberLiteral | ts.TypeFlags.BooleanLiteral;
+const LITERAL_TYPES = ts.TypeFlags.StringLiteral | ts.TypeFlags.NumberLiteral | ts.TypeFlags.BooleanLiteral | ts.TypeFlags.Undefined | ts.TypeFlags.Null;
 
-/** The names of the kinds that a switch over a union of literal types does not list, or none when it is no such switch. */
+/**
+ * The names of the kinds that a switch over a union of literal types (`undefined` and `null` count) does not list, sorted, or none when
+ * it is no such switch. A type parameter stands for its constraint. The result of `typeof` is no kind.
+ */
 function unlistedKinds(statement: ts.SwitchStatement, checker: ts.TypeChecker): string[] {
-  const type = checker.getTypeAtLocation(statement.expression);
+  if (ts.isTypeOfExpression(statement.expression)) return [];
+  const declared = checker.getTypeAtLocation(statement.expression);
+  const type = (declared.flags & ts.TypeFlags.TypeParameter) !== 0 ? checker.getBaseConstraintOfType(declared) ?? declared : declared;
   if (!type.isUnion() || !type.types.every(member => (member.flags & LITERAL_TYPES) !== 0)) return [];
   const listed = new Set<string>();
   for (const clause of statement.caseBlock.clauses) {
@@ -51,7 +56,7 @@ function unlistedKinds(statement: ts.SwitchStatement, checker: ts.TypeChecker): 
     const caseType = checker.getTypeAtLocation(clause.expression);
     for (const member of caseType.isUnion() ? caseType.types : [caseType]) listed.add(checker.typeToString(member));
   }
-  return type.types.map(member => checker.typeToString(member)).filter(name => !listed.has(name));
+  return type.types.map(member => checker.typeToString(member)).filter(name => !listed.has(name)).sort();
 }
 
 function portable(filename: string): string {
@@ -61,7 +66,8 @@ function portable(filename: string): string {
 function sourceFiles(directory: string): string[] {
   const found: string[] = [];
   for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
-    if (entry.name === 'node_modules' || entry.name === 'dist' || entry.name === '.build') continue;
+    // `sdk-runtime` is the bundle that the golem-openapi-ts build writes, not source.
+    if (entry.name === 'node_modules' || entry.name === 'dist' || entry.name === '.build' || entry.name === 'sdk-runtime') continue;
     const filename = path.join(directory, entry.name);
     if (entry.isDirectory()) found.push(...sourceFiles(filename));
     else if (entry.name.endsWith('.ts') || entry.name.endsWith('.tsx')) found.push(filename);

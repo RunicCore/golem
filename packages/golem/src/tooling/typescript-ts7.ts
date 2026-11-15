@@ -225,6 +225,7 @@ export interface TypeChecker {
   getIndexTypeOfType(type: CompatType, kind: IndexKind): CompatType | undefined;
   getIndexInfosOfType(type: CompatType): readonly { readonly keyType: CompatType; readonly valueType: CompatType }[];
   getBaseTypes(type: CompatType): readonly CompatType[];
+  getBaseConstraintOfType(type: CompatType): CompatType | undefined;
   getDeclaredTypeOfSymbol(symbol: CompatSymbol): CompatType;
   getConstantValue(node: Node): string | number | undefined;
   getSignatureFromDeclaration(node: Node): CompatSignature | undefined;
@@ -592,6 +593,11 @@ class CompatChecker implements TypeChecker {
     const inner = unwrapType(type);
     if (!inner.isClassOrInterface()) return [];
     return this.inner.getBaseTypes(inner).map((base) => wrapType(base, this));
+  }
+
+  getBaseConstraintOfType(type: CompatType): CompatType | undefined {
+    const constraint = this.inner.getBaseConstraintOfType(unwrapType(type));
+    return constraint && wrapType(constraint, this);
   }
 
   getDeclaredTypeOfSymbol(symbol: CompatSymbol): CompatType {

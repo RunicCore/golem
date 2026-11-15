@@ -126,6 +126,7 @@ export const {
   isTypeAssertionExpression,
   isTypeLiteralNode,
   isTypeNode,
+  isTypeOfExpression,
   isTypeOperatorNode,
   isTypeParameterDeclaration,
   isTypeQueryNode,

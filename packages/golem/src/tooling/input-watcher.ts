@@ -30,8 +30,6 @@ const GOLEM_DIRECTORY = '.golem';
 const WATCH_FIXES: ReadonlyMap<string, string> = new Map([
   ['ENOSPC', 'raise fs.inotify.max_user_watches (Linux) or watch fewer folders'],
   ['EMFILE', 'raise the open-file limit (ulimit -n)'],
-  ['ENODEV', 'run golem on a file system that reports file events'],
-  ['ERR_FEATURE_UNAVAILABLE_ON_PLATFORM', 'run golem on a file system that reports file events'],
 ]);
 
 /** Content signature of a watched path: `missing`, `directory` (a directory's mtime also moves on output writes), or mtime, ctime and size. */
