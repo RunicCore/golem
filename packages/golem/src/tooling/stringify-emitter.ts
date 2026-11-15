@@ -472,9 +472,9 @@ function emitValue(
   const value = expression;
   if (descriptor.kind === 'generated-model') {
     const named = ctx.graph.nodeFor(descriptor);
-    // A node of another module writes a wire value with the wire stringify its module exports: its model stringify would encode the value again.
-    const importedWire = named && ctx.wireIdentity ? importedSerdeOf(named, ctx)?.wireStringify : undefined;
-    if (importedWire) return code`${importedWire}(${value} as never)`;
+    // A wire value goes to the wire stringify of its node, the one its module exports or this module's own: the model stringify would encode the value again.
+    const wire = named && ctx.wireIdentity ? importedSerdeOf(named, ctx)?.wireStringify ?? localWireStringify(named, ctx) : undefined;
+    if (wire) return code`${wire}(${value} as never)`;
     // A wire value of a generated model that holds an array is written by the wire writer of its node, below, as a recursive alias is.
     if (named && !(ctx.wireIdentity && !serdeTags(descriptor).serde && nodeHoldsSequence(named))) {
       return nestedStringifyCall(named.id, value, ctx);
@@ -506,7 +506,8 @@ function emitValue(
     ) {
       // Call the node's own wire stringify: inlining would repeat the child for
       // every path to it and never terminate for a recursive model.
-      if (ctx.wireStringifyIds?.has(named.id)) return code`${identifier(`${stringifyFunctionName(named.id)}Wire`)}(${value} as never)`;
+      const wire = localWireStringify(named, ctx);
+      if (wire) return code`${wire}(${value} as never)`;
       if (ctx.wireInlining?.has(named.id)) return emitRecursiveWireCall(named, value, ctx);
       const inlining = { ...ctx, wireInlining: new Set([...(ctx.wireInlining ?? []), named.id]) };
       return named.descriptor.kind === 'object'
@@ -1320,6 +1321,11 @@ interface UnionWalker extends Pick<UnionConversion, 'items' | 'joinSequence' | '
   readonly walk: (variant: ModelTypeDescriptor, scope: EmitCtx) => Code;
   /** The conversion of a variant under tagged dispatch, when it differs from `walk`. */
   readonly walkTagged?: (variant: ModelTypeDescriptor, scope: EmitCtx) => Code;
+}
+
+/** The wire stringify of a node of this module, which writes a wire value as it is; none when this module writes none for it. */
+function localWireStringify(node: SchemaNode, ctx: EmitCtx): Code | undefined {
+  return ctx.wireStringifyIds?.has(node.id) ? identifier(`${stringifyFunctionName(node.id)}Wire`) : undefined;
 }
 
 /** The codec functions of the node when another module generated them. */
