@@ -115,10 +115,6 @@ An error prints its code, location when known, and message, then stops generatio
 
 **Missing path parameter.** The route path has a `{placeholder}` with no matching `@Param()` declaration. **Fix:** Add the missing `@Param()` parameter, or remove the placeholder from the path.
 
-### NEST1304
-
-**Unsupported HTTP method.** The route resolves to an HTTP method OpenAPI's path item doesn't support. **Fix:** Use one of Nest's standard method decorators: `@Get`, `@Post`, `@Put`, `@Delete`, `@Patch`, `@Options`, or `@Head`.
-
 ### NEST1305
 
 **Duplicate operation ID.** Two routes produce the same `operationId`, whether inferred from the method name or set explicitly. **Fix:** Set distinct `@ApiOperation({ operationId })` values, or change the route so the inferred name differs.

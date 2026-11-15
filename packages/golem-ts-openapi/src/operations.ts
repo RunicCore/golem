@@ -4,7 +4,7 @@ import { followReference, schemaReference } from '@exprtlabs/golem/internal/sche
 import * as ts from '@exprtlabs/golem/internal/ts';
 import { TsToOpenApiDiagnosticCode, TsToOpenApiError, diagnostic } from './diagnostics.js';
 import { mapArrayItems, mergeSchemaMetadata } from './nest/json-schema-merge.js';
-import { DEFAULT_MEDIA_TYPE, mediaTypesOrDefault, NEST_HTTP_METHODS, type ControllerParameter, type ControllerRoute, type ResponseDescription, type TypeReference } from './nest/types.js';
+import { DEFAULT_MEDIA_TYPE, mediaTypesOrDefault, type ControllerParameter, type ControllerRoute, type ResponseDescription, type TypeReference } from './nest/types.js';
 import { parameterOverrideKey } from './nest/parameters.js';
 import type { OpenApiVersion } from './openapi-version.js';
 
@@ -661,9 +661,6 @@ export async function collectOperations(
   const paths: Record<string, Record<string, unknown>> = {};
   const operationIds = new Map<string, ControllerRoute>();
   for (const route of routes) {
-    if (!NEST_HTTP_METHODS.includes(route.httpMethod)) {
-      throw new TsToOpenApiError(diagnostic(route.sourceFile, route.method, TsToOpenApiDiagnosticCode.UnsupportedHttpMethod, `Unsupported HTTP method ${route.httpMethod}.`));
-    }
     const previous = operationIds.get(route.operationId);
     if (previous) {
       throw new TsToOpenApiError(diagnostic(route.sourceFile, route.method, TsToOpenApiDiagnosticCode.DuplicateOperationId, `OperationId "${route.operationId}" is emitted by both ${previous.controller}.${previous.methodName} and ${route.controller}.${route.methodName}. Set distinct @ApiOperation({ operationId }) values or change the route expansion.`));
