@@ -85,7 +85,7 @@ export function compile(input: CompileInput, options: CompileOptions): CompileRe
   const { module: lowered, diagnostics } = lower(input, options);
   const { emitRoots } = options;
   const module = emitRoots === undefined ? lowered : { ...lowered, exports: lowered.exports.filter(({ name }) => emitRoots.has(name)) };
-  const exports = exportNames(module.exports.map(({ name }) => name));
+  const exports = new Map([...exportNames(module.exports.map(({ name }) => name))].map(([root, names]) => [root, names.validate] as const));
   if (diagnostics.some(entry => entry.severity === GolemDiagnosticSeverity.Error)) return { source: '', exports, fastExports: new Map(), passExports: new Map(), diagnostics };
   const { source, fastExports, passExports } = emit(module, {
     ...(options.specifiers === undefined ? {} : { specifiers: options.specifiers }),

@@ -4,7 +4,7 @@ import { rt, runtimeFunctionCode } from '../rt.js';
 import { presentValueCode } from '../union-conversion.js';
 import { VALUE, PATH, NEWLINE, COMMA, ISSUES, ALL, SANITY, INHERITED, EVALUATION, type CalleeSlot, type CallArguments } from './function-names.js';
 import { isTuple, keepsFormat } from './call-graph.js';
-import { JSON_TYPES, dispatchTest } from './json-types.js';
+import { JSON_TYPES, JSON_TYPE_NAMES, dispatchTest } from './json-types.js';
 import { localName, scaledDivisor, stateTest } from './local-helpers.js';
 import { patternExpression, type ModuleState } from './module-state.js';
 import { resolve, readSet, objectPresence, type Capture, type Lazy, type KeyTest, type WriterMode } from './modes.js';
@@ -33,9 +33,6 @@ interface LeafCheck {
    */
   readonly skip?: 'cheap' | 'costly';
 }
-
-/** The type names of every JSON value, which a hole in an array is none of. */
-const JSON_TYPE_NAMES: readonly IrTypeName[] = ['null', 'boolean', 'number', 'string', 'array', 'object'];
 
 /** The issue fields of a limit; `limit` is a number, or an expression of the generated code. */
 function limitFields(kind: 'tooSmall' | 'tooBig', measure: string, limit: number | Code, inclusive: boolean): Code {

@@ -234,6 +234,9 @@ export type IrSchema =
   | { readonly kind: 'never' }
   | { readonly kind: 'checks'; readonly checks: readonly IrCheck[] };
 
+/** The schema that every value passes. */
+export const ALWAYS: IrSchema = { kind: 'always' };
+
 /**
  * A schema that something refers to: a root, a `$ref` target, a branch, or a schema that needs a record of its own.
  *
