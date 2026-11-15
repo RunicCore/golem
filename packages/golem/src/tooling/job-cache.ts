@@ -309,8 +309,8 @@ function codeIsCurrent(record: JobRecord, code: ReadonlyMap<string, CodePackage>
 }
 
 /**
- * What makes a job the same job as one before: its resolved options, as JSON. A record keeps it (`JobRecord.options`) and the watch loop compares it between two
- * configs. A job's facts follow from its options, since a plan entry derives both, so they are not part of it.
+ * The key of a job in the job cache: its resolved options, as JSON. A record keeps it (`JobRecord.options`), and the cache and the watch loop test a job against it.
+ * The facts are not part of it: they come from the same plan entry as the options and the cache keys on the code of that entry. The watch loop compares them too.
  */
 export function jobKey(job: GolemJob): string {
   return JSON.stringify(job.options);

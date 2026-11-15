@@ -261,17 +261,17 @@ async function loadRewriteScan(hasCompilerJob: boolean): Promise<typeof import('
 
 /** The inputs a job declares as facts, before it runs: the files and folders it reads, and the folders it owns or scans. */
 export function declaredInputs(job: GolemJob): readonly string[] {
-  return [...job.facts.inputFiles, ...job.facts.inputFolders, ...job.facts.ownedRoots, ...job.facts.scanRoots ?? []];
+  return [...readInputs(job), ...job.facts.ownedRoots, ...job.facts.scanRoots ?? []];
+}
+
+/** The files and folders a job reads, which order it after the job whose output lies in one. */
+function readInputs(job: GolemJob): readonly string[] {
+  return [...job.facts.inputFiles, ...job.facts.inputFolders];
 }
 
 /** Whether `output`, written by a job that reruns, is read by `consumer` as one of its declared files or inside one of its declared folders. */
 function readsOutput(consumer: GolemJob, output: string): boolean {
-  return consumer.facts.inputFiles.includes(output) || consumer.facts.inputFolders.some(folder => isInsideDirectory(folder, output));
-}
-
-/** Whether every job of `current` is a job of `previous` with the same key, and no job was added or removed. */
-function sameJobs(current: readonly GolemJob[], previous: readonly GolemJob[]): boolean {
-  return current.length === previous.length && current.every(job => previous.some(earlier => earlier.id === job.id && jobKey(earlier) === jobKey(job)));
+  return readInputs(consumer).some(input => isInsideDirectory(input, output));
 }
 
 /** Whether a record's inputs include any of `outputs`: a job downstream of one that ran. */
@@ -287,7 +287,9 @@ function readsAny(config: GolemConfig, record: JobRecord, outputs: ReadonlySet<s
 function affectedJobs(config: GolemConfig, options: PipelineOptions): ReadonlySet<string> | undefined {
   const previous = options.previous;
   if (!previous || !options.changedInputs || options.check) return undefined;
-  if (!sameJobs(config.jobs, previous.config.jobs)) return undefined;
+  // The same jobs, each with its cache key and its facts: a changed fact widens to every job, and the job cache still decides which run.
+  const sameJob = (job: GolemJob, earlier: GolemJob): boolean => job.id === earlier.id && jobKey(job) === jobKey(earlier) && JSON.stringify(job.facts) === JSON.stringify(earlier.facts);
+  if (config.jobs.length !== previous.config.jobs.length || !config.jobs.every(job => previous.config.jobs.some(earlier => sameJob(job, earlier)))) return undefined;
   const changed = new Set(options.changedInputs.map(input => path.resolve(input)));
   if (changed.has(config.configFile) || loadPackageRegistry(config.configFile).files.some(file => changed.has(file))) return undefined;
   const facts = config.jobs.map(job => job.facts);

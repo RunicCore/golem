@@ -252,6 +252,20 @@ test('a recorded file that a person replaced is kept when its job is retired, an
   assert.deepEqual(Object.keys(loadInventory(config).files), ['src/item.model.generated.ts', 'src/second.model.generated.ts']);
 });
 
+test('a recorded output path that became a folder refuses the job before any of its files is written', (t: TestContext) => {
+  // protects: T-941 a refused output path leaves every file of the job as it was
+  const { config, job, filename } = fixture(t);
+  const other = path.join(config.directory, 'src/second.model.generated.ts');
+  applyJob(config, loadInventory(config), job, [{ path: other, content: content(1) }, { path: filename, content: content(1) }], false);
+  fs.rmSync(filename);
+  fs.mkdirSync(filename);
+  assert.throws(
+    () => applyJob(config, loadInventory(config), job, [{ path: other, content: content(2) }, { path: filename, content: content(2) }], false),
+    /Refusing non-regular generated output/,
+  );
+  assert.equal(fs.readFileSync(other, 'utf8'), content(1));
+});
+
 test('a recorded file that a person replaced is kept when its job stops writing it, and nothing is written', (t: TestContext) => {
   // protects: T-44 a hand-written file that replaced a recorded generated file is never deleted
   const { config, job, filename } = fixture(t);
