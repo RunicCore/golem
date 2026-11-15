@@ -929,7 +929,7 @@ export function forEachChild<T>(node: Node, callback: (node: Node) => T | undefi
 interface SnapshotRequest extends ProgramRequest {
   /** Set for a project that has references: the compiler is given a synthetic program, not the project. */
   readonly synthetic?: SyntheticProgram;
-  /** The configuration of the user that a derived configuration extends, whose text the compiler's option errors name; none for another request. */
+  /** The configuration of the user whose text the compiler's option errors name, when the program is not opened on it: a derived configuration extends it, a synthetic program has none. */
   readonly twinOf: string | undefined;
 }
 
@@ -1355,7 +1355,7 @@ export class ProgramSession implements Disposable {
     if (referenced.length > 0) {
       const options = parsed.options as CompilerOptions;
       const unbuilt = new Set<string>();
-      return { ...base, synthetic: { rootFiles: [...new Set([...parsed.fileNames.map(canonical), ...base.rootNames])], compilerOptions: options, resolver: this.referenceResolverFor(api, options, referenced, unbuilt), unbuilt } };
+      return { ...base, synthetic: { rootFiles: [...new Set([...parsed.fileNames.map(canonical), ...base.rootNames])], compilerOptions: options, resolver: this.referenceResolverFor(api, options, referenced, unbuilt), unbuilt }, twinOf: base.userConfigPath };
     }
     const own = new Set(parsed.fileNames.map(canonical));
     // Every root is a file of the configuration, and the configuration is the user's own: the compiler reads it itself, so its option errors name its own text and place.
@@ -1370,7 +1370,8 @@ export class ProgramSession implements Disposable {
 
   /**
    * The options diagnostics of one configuration opened alone, over the overlays of a program. It lives in a snapshot of its own that ends
-   * with the call: the session's snapshot, its open project and its held programs stay as they are.
+   * with the call: the session's snapshot, its open project and its held programs stay as they are. A configuration with references opens them
+   * here, and only here: the program that the session serves stays synthetic, and only the options diagnostics of this one are read.
    */
   private diagnosticsOfConfig(configPath: string, overlays: ReadonlyMap<string, string>): readonly SyncDiagnostic[] {
     return this.withCompiler('parse', (api) => {
