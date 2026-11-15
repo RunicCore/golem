@@ -28,6 +28,7 @@ export { canonicalSchemaKey };
 /** The schema descriptor types that generators read (`@exprtlabs/golem/internal/schema`). */
 export type { ConstraintSchemaValue, DiscriminatorValue, ModelConstraint, ModelTypeDescriptor, ModelTypeMetadata, UnionDiscriminator } from '../model-registry.js';
 export { GENERATED_MODEL_SCHEMA_REF_PREFIX, MODEL_CLASS_KEYWORD, MODEL_CODEC_IDS_KEY, MODEL_INSTANCE_KEYWORD, VALIDATION_KEYWORD };
+export { JSON_KINDS, SCHEMA_ARRAY_KEYWORDS, SCHEMA_MAP_KEYWORDS, SCHEMA_SINGLE_KEYWORDS, isDiscriminatorValue, jsonKindOf, type JsonKind } from '../json-vocabulary.js';
 export { validationTagSchemaDescriptor } from './validation-tags.js';
 
 /** Structural inputs used when a nested schema contains a named reference. */

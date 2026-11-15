@@ -4,7 +4,7 @@ import { serdeWireDescriptor, type SchemaGraph, type SchemaNode } from '@exprtla
 import { identifier } from '@exprtlabs/golem/internal/generator-support';
 import { asRecord, escapeJsonPointerToken, isJsonObject, objectEntries, type JsonObject } from './json.js';
 import type { GolemDiagnostic } from '@exprtlabs/golem/generator-api';
-import { aliasReference, followReference, schemaReferenceOrDynamic, type ConstraintSchemaValue, type ModelConstraint, type ModelTypeDescriptor, type UnionDiscriminator } from '@exprtlabs/golem/internal/schema';
+import { JSON_KINDS, aliasReference, followReference, isDiscriminatorValue, jsonKindOf, schemaReferenceOrDynamic, type ConstraintSchemaValue, type DiscriminatorValue, type JsonKind, type ModelConstraint, type ModelTypeDescriptor, type UnionDiscriminator } from '@exprtlabs/golem/internal/schema';
 import { componentOrigin, LocatedError } from './origin.js';
 import {
   COMPOSITION_PROPERTY_NEVER,
@@ -378,11 +378,8 @@ function carryKeywords(descriptor: ModelTypeDescriptor, schema: Readonly<Record<
   return withOpenApiEnum(withOpenApiConstraints(descriptor, schema, sub), schema);
 }
 
-type JsonClass = 'string' | 'number' | 'boolean' | 'null' | 'object' | 'array';
-const JSON_CLASSES: readonly JsonClass[] = ['string', 'number', 'boolean', 'null', 'object', 'array'];
-
 /** The JSON types that a value of the descriptor can have. A descriptor of a shape not listed here can have any. */
-function valueClasses(descriptor: ModelTypeDescriptor): readonly JsonClass[] {
+function valueClasses(descriptor: ModelTypeDescriptor): readonly JsonKind[] {
   switch (descriptor.kind) {
     case 'string': return ['string'];
     // A class value has the JSON types of its serde's wire form.
@@ -390,13 +387,13 @@ function valueClasses(descriptor: ModelTypeDescriptor): readonly JsonClass[] {
     case 'number': return ['number'];
     case 'boolean': return ['boolean'];
     case 'null': return ['null'];
-    case 'literal': return [typeof descriptor.value as JsonClass];
+    case 'literal': return [jsonKindOf(descriptor.value)];
     case 'object': return ['object'];
     case 'array':
     case 'tuple': return ['array'];
     case 'union': return [...new Set(descriptor.variants.flatMap(valueClasses))];
     case 'never': return [];
-    default: return JSON_CLASSES;
+    default: return JSON_KINDS;
   }
 }
 
@@ -1055,7 +1052,8 @@ export interface CompositionSite {
  * The subschemas that the conversion of a schema walks, each with its pointer tokens from the schema: the shape keywords
  * (`properties`, `items`, `prefixItems`, `additionalProperties`, the `allOf`, `oneOf` and `anyOf` members) and the keywords
  * that become constraints (`not`, `contains`, `if`, `patternProperties`, ...). `checkComposition` and the search for
- * recursive aliases read this one list.
+ * recursive aliases read this one list. It is shorter than the keyword lists of `@exprtlabs/golem/internal/schema` by design: `$defs`,
+ * `definitions`, `additionalItems` and `contentSchema` are not converted, so nothing that conversion reads lies below them.
  */
 export function* convertedSubschemas(schema: Readonly<Record<string, unknown>>): Generator<{ readonly child: unknown; readonly tokens: readonly string[] }> {
   for (const [name, child] of objectEntries(schema.properties)) yield { child, tokens: ['properties', name] };
@@ -1160,13 +1158,13 @@ function unionDiscriminatorTable(
   return { propertyName: selection.propertyName, variants, ...(defaultAt < 0 ? {} : { defaultVariant: defaultAt }) };
 }
 
-type TagValues = ReadonlyMap<string, readonly (string | number | boolean)[]>;
+type TagValues = ReadonlyMap<string, readonly DiscriminatorValue[]>;
 
 /** The values of a `const`, or of a union of `const`s. */
-function literalTagValues(descriptor: ModelTypeDescriptor | undefined): readonly (string | number | boolean)[] | undefined {
+function literalTagValues(descriptor: ModelTypeDescriptor | undefined): readonly DiscriminatorValue[] | undefined {
   if (descriptor?.kind === 'literal') return [descriptor.value];
   if (descriptor?.kind !== 'union' || descriptor.variants.length === 0) return undefined;
-  const values: (string | number | boolean)[] = [];
+  const values: DiscriminatorValue[] = [];
   for (const variant of descriptor.variants) {
     if (variant.kind !== 'literal') return undefined;
     values.push(variant.value);
@@ -1176,7 +1174,7 @@ function literalTagValues(descriptor: ModelTypeDescriptor | undefined): readonly
 
 /** The required properties of an inline object variant that hold only literals, in the order the object requires them. */
 function objectTagValues(object: Extract<ModelTypeDescriptor, { readonly kind: 'object' }>): TagValues {
-  const tags = new Map<string, readonly (string | number | boolean)[]>();
+  const tags = new Map<string, readonly DiscriminatorValue[]>();
   for (const name of object.required) {
     const values = literalTagValues(object.properties[name]);
     if (values) tags.set(name, values);
@@ -1190,14 +1188,12 @@ function objectTagValues(object: Extract<ModelTypeDescriptor, { readonly kind: '
  */
 function modelTagValues(definition: ModelDefinition | undefined): TagValues | undefined {
   if (!definition || definition.isUnion) return undefined;
-  const tags = new Map<string, readonly (string | number | boolean)[]>();
+  const tags = new Map<string, readonly DiscriminatorValue[]>();
   for (const name of definition.required) {
     const property = definition.properties.get(name);
     const members = isJsonObject(property) && !('const' in property) ? unionVariants(property) : undefined;
     const values = (members ?? [property]).map((member) => isJsonObject(member) ? member.const : undefined);
-    if (values.length > 0 && values.every((value) => typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean')) {
-      tags.set(name, values as readonly (string | number | boolean)[]);
-    }
+    if (values.length > 0 && values.every(isDiscriminatorValue)) tags.set(name, values);
   }
   return tags;
 }

@@ -6,12 +6,12 @@ import type * as ts from '@exprtlabs/golem/internal/ts';
 import { GolemDiagnosticSeverity } from '@exprtlabs/golem/generator-api';
 import type { GolemDiagnostic, GolemExtension, RewriteCore, RewriteParticipantInput, RewriteParticipantResult } from '@exprtlabs/golem/generator-api';
 import { REWRITE_IMPORT_PREFIX, type RewriteEdit } from '@exprtlabs/golem/rewrite';
+import type { DiscriminatorValue } from '@exprtlabs/golem/internal/schema';
 import { arrayItemNode, authoredUnionMembers, decoratorIdentity, isDiscriminatorTag, modelDeclarationKind, propertyType, readTags, resolvedSymbolAt, serdeTypeName, staticDecoratorKey } from '@exprtlabs/golem/internal/type-analysis';
 import { NEST_COMMON, OWN_PACKAGE } from './packages.js';
 import { nodeQueryFields } from './query-fields.js';
 
 type TypeScript = typeof ts;
-type DiscriminatorValue = string | number | boolean;
 
 /** The module that exports the decorators the stamps name. */
 const NEST_MODULE = '@exprtlabs/golem-ts-openapi/internal/nest-runtime';

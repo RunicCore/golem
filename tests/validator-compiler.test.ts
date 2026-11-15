@@ -633,6 +633,19 @@ test('$ref reaches a resource by its $id, its name and a $anchor', async () => {
   ]);
 });
 
+const positive = { $anchor: 'positive', minimum: 1 };
+for (const [keyword, schema] of [
+  ['definitions', { definitions: { positive }, properties: { n: { $ref: '#positive' } } }],
+  ['additionalItems', { additionalItems: positive, properties: { n: { $ref: '#positive' } } }],
+  ['contentSchema', { contentSchema: positive, properties: { n: { $ref: '#positive' } } }],
+] as const) {
+  test(`$ref reaches a $anchor below ${keyword}`, async () => {
+    // protects: T-938 the resolver indexed the anchors below $defs only, so a reference to one below these keywords stayed unresolved
+    const validate = await compileSchema(schema);
+    assert.deepEqual(validate({ n: 0 }, true), [{ path: ['n'], code: 'tooSmall', measure: 'value', limit: 1, inclusive: true }]);
+  });
+}
+
 test('$ref by JSON pointer decodes ~0, ~1 and percent escapes', async () => {
   const schema = {
     $defs: { 'a/b': { type: 'string' }, 'm~n': { type: 'integer' }, 'p q': { type: 'boolean' } },

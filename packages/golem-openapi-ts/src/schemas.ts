@@ -1,9 +1,8 @@
 import type { OpenApiDates } from './model-resolution.js';
 import { asRecord, isJsonObject, objectEntries } from './json.js';
 import { unionVariants } from './composition.js';
-import { SCHEMA_ARRAY_KEYWORDS, SCHEMA_MAP_KEYWORDS, SCHEMA_SINGLE_KEYWORDS } from './schema-keywords.js';
 import { identifier, sourceDigest } from '@exprtlabs/golem/internal/generator-support';
-import { aliasReference, decodeUriFragment, escapePointerToken, splitFirstFragmentToken } from '@exprtlabs/golem/internal/schema';
+import { SCHEMA_ARRAY_KEYWORDS, SCHEMA_MAP_KEYWORDS, SCHEMA_SINGLE_KEYWORDS, aliasReference, decodeUriFragment, escapePointerToken, splitFirstFragmentToken } from '@exprtlabs/golem/internal/schema';
 import {
   mediaSchema,
   normalizeDocument,
