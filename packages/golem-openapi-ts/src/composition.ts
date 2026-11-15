@@ -111,11 +111,14 @@ export function isConstraintOnlyPart(part: ModelTypeDescriptor): boolean {
   return part.kind === 'unknown' && part.validations === undefined && part.serde === undefined;
 }
 
+/** Where the composed schema stands: a property, item or operation value (`field`), or the root of a component (`definition`). */
+export type CompositionPosition = 'field' | 'definition';
+
 export function resolveComposition<S>(
   schema: unknown,
   scope: S,
   reader: CompositionReader<S>,
-  position: 'field' | 'definition',
+  { position }: { readonly position: CompositionPosition },
 ): Composition<S> {
   try {
     const disjoint = disjointMemberTypes(schema, scope, reader);
@@ -134,7 +137,7 @@ function resolveObjects<S>(
   schema: unknown,
   scope: S,
   reader: CompositionReader<S>,
-  position: 'field' | 'definition',
+  position: CompositionPosition,
   originalMembers?: readonly number[],
 ): Composition<S> {
   if (!isJsonObject(schema) || !Array.isArray(schema.allOf) || schema.allOf.length === 0) return { kind: 'members' };

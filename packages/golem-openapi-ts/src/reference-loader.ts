@@ -117,10 +117,8 @@ function localReferenceEscapes(rootDirectory: string, candidate: string): boolea
   return !isInsideDirectory(rootReal, boundaryPath);
 }
 
-interface ReferenceLoadOptions extends ReferenceResolutionOptions {
-  /** Leave remote references unresolved instead of fetching them (input collection). */
-  readonly skipRemote?: boolean;
-}
+/** What the load does with a reference to a remote document: `fetch` it when its host is allowed, or leave it unresolved (input collection). */
+type RemoteReferences = 'fetch' | 'leave';
 
 export interface ReferenceTarget {
   readonly uri: string;
@@ -285,10 +283,20 @@ interface DeferredIdentitySite {
   readonly walkerPointer: string;
 }
 
-export async function loadReferenceGraph(
+export function loadReferenceGraph(filename: string, rootDocument: unknown, options: ReferenceResolutionOptions = {}): Promise<ReferenceGraph> {
+  return loadGraph(filename, rootDocument, options, 'fetch');
+}
+
+/** The graph of the local documents only: a remote reference stays unresolved and is not fetched. */
+export function loadLocalReferenceGraph(filename: string, rootDocument: unknown, options: ReferenceResolutionOptions = {}): Promise<ReferenceGraph> {
+  return loadGraph(filename, rootDocument, options, 'leave');
+}
+
+async function loadGraph(
   filename: string,
   rootDocument: unknown,
-  options: ReferenceLoadOptions = {},
+  options: ReferenceResolutionOptions,
+  remote: RemoteReferences,
 ): Promise<ReferenceGraph> {
   const rootFile = path.resolve(filename);
   const rootUri = pathToFileURL(rootFile).href;
@@ -440,7 +448,7 @@ export async function loadReferenceGraph(
     const fragment = decodeUriFragment(resolved.hash.replace(/^#/, ''));
     resolved.hash = '';
     const uri = resolved.href;
-    if (options.skipRemote) return { target: null, preserve: false };
+    if (remote === 'leave') return { target: null, preserve: false };
     if (allowedHosts.size === 0) {
       throw new Error(`remote reference blocked at ${item.walkerPointer}: ${item.reference}; list the hosts in remoteHosts in golem.yaml to opt in`);
     }
