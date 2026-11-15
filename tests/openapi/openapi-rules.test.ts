@@ -205,6 +205,25 @@ test('operation-security-defined reports security requirement names that no secu
   );
 });
 
+test('no-request-item-schema reports a request body itemSchema inline, through a $ref and in a webhook', () => {
+  // protects: T-964 a request itemSchema was typed unknown and sent as JSON
+  const feed = { 'application/x-ndjson': { itemSchema: { type: 'object' } } };
+  const document = documentBase('3.2.0', {
+    paths: {
+      '/upload': { post: { requestBody: { content: feed }, responses: ok } },
+      '/feed': { post: { requestBody: { $ref: '#/components/requestBodies/Feed' }, responses: ok } },
+      '/read': { get: { responses: { 200: { description: 'ok', content: feed } } } },
+    },
+    webhooks: { pushed: { post: { requestBody: { content: feed }, responses: ok } } },
+    components: { requestBodies: { Feed: { content: feed } } },
+  });
+  assert.deepEqual(found(document, 'no-request-item-schema'), [
+    '/paths/~1upload/post/requestBody/content/application~1x-ndjson/itemSchema',
+    '/components/requestBodies/Feed/content/application~1x-ndjson/itemSchema',
+    '/webhooks/pushed/post/requestBody/content/application~1x-ndjson/itemSchema',
+  ]);
+});
+
 test('spec-querystring-parameters checks the effective path and operation set in 3.2', () => {
   const form = { 'application/x-www-form-urlencoded': { schema: { type: 'object' } } };
   const paths = {

@@ -61,7 +61,7 @@ The required-codec check applies to the operation, response status and media typ
 
 The `itemSchema` streaming contract needs an OpenAPI 3.2 document. The generator reads OpenAPI 3.1 and 3.2 documents. `itemSchema: false` generates the response type `AsyncIterable<never>`, and validation rejects the first item.
 
-Only a response declares `itemSchema`. A request body media type with `itemSchema` stops generation with the rule `no-request-item-schema`: the client sends one value, so declare the request body with `schema`.
+Only a response declares `itemSchema`. A request body media type with `itemSchema` stops generation with the rule `no-request-item-schema`, also in a webhook or a callback. Declare a request body with `schema`.
 
 ## Full compliance matrix
 
