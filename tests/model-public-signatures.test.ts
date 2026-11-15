@@ -4,7 +4,7 @@ import test from 'node:test';
 import { generate } from '#model/generator';
 import { buildModelProject, createModelProject, writeModelGolemYaml, writeModelSources } from './model-project.js';
 
-const OPTIONS = String.raw`options\?: __Golem(?:Serde|Validate)Options`;
+const OPTIONS = String.raw`options\?: __Golem(?:Serde|Validate|Decode|Encode)Options`;
 
 test('model companion functions use the model types instead of unknown', t => {
   const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-public-signatures-', name: null, linkWorkspaceNodeModules: true });
@@ -65,7 +65,7 @@ test('model companion assert functions share one runtime helper and named option
   assert.doesNotMatch(companion, /validationContext === undefined\) \{\n\s+if \(!\(/);
   assert.match(companion, /^export function assertTTask\(value: unknown, options\?: __GolemValidateOptions\): TTaskFields \{\n  return __golemAssertModel_TTask\(value, options\);/m);
   assert.match(companion, /^function __golemAssertModel_TTask\(value: unknown, options\?: __GolemSerdeOptions\): TTaskFields \{\n  assertModelValue\(value, options, /m);
-  assert.match(companion, /import type \{ SerdeOptions as __GolemSerdeOptions, ValidateOptions as __GolemValidateOptions \} from '@exprtlabs\/golem\/serde';/);
+  assert.match(companion, /import type \{ DecodeOptions as __GolemDecodeOptions, EncodeOptions as __GolemEncodeOptions, SerdeOptions as __GolemSerdeOptions, StripPlan as __GolemStripPlan, ValidateOptions as __GolemValidateOptions \} from '@exprtlabs\/golem\/serde';/);
 });
 
 test('a model file that declares only IObject types compiles under noUnusedLocals', async t => {

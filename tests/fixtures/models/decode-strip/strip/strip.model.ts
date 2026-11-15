@@ -1,0 +1,99 @@
+import type { IModel, IObject } from '@exprtlabs/golem/model';
+import type { AdditionalProperties, Discriminator, PatternProperties, TSerde } from '@exprtlabs/golem/tags';
+import { decodePrice, decodeUnits, encodePrice, encodeUnits, type Price } from './units.js';
+import {
+  TCardBaseModel, TCatModelBaseModel, TLedgerBaseModel, TPetHolderBaseModel, TPatternLedgerBaseModel, TRegistryBaseModel, TShelfBaseModel, TStrayModelBaseModel, TTaggedBaseModel, TTaggedOpenBaseModel, TTallyBaseModel, TTreeBaseModel,
+  type TCardFields, type TCatModelFields, type TLedgerFields, type TPetHolderFields, type TPatternLedgerFields, type TRegistryFields, type TShelfFields, type TStrayModelFields, type TTaggedFields, type TTaggedOpenFields, type TTallyFields, type TTreeFields,
+} from './strip.model.generated.js';
+
+type Cat = { kind: 'cat'; lives: number };
+type Dog = { kind: 'dog'; barks: boolean };
+
+export type TPlain = IObject<{ title: string; count?: number }>;
+export type TNested = IObject<{ inner: TPlain; list: TPlain[] }>;
+export type TNullable = IObject<{ child: TPlain | null }>;
+export type TMoney = IObject<{ amount: number }>;
+export type TOpen = IObject<{ title: string }, { exact: false }>;
+export type TMapHolder = IObject<{ tags: Record<string, TPlain> }>;
+export type TPatterned = IObject<{ known?: string } & PatternProperties<{ '^x_': number }> & AdditionalProperties<never>>;
+export type TItem = IObject<{ name: string }>;
+export type TPatternItems = IObject<{ known?: string } & PatternProperties<{ '^x_': TItem }> & AdditionalProperties<never>>;
+/** A tag that is the number 1 in one variant and the text '1' in the other. */
+export type TTagTypes = IObject<{ item: ({ kind: 1; a: number } | { kind: '1'; b: number }) & Discriminator<'kind'> }>;
+/** A tag called `__proto__`, which an object literal cannot hold as a key. */
+export type TTagProto = IObject<{ item: ({ kind: '__proto__'; a: number } | { kind: 'plain'; b: number }) & Discriminator<'kind'> }>;
+/** An object that keeps its other keys, on decode and on encode. */
+export type TLoose = IObject<{ title: string } & AdditionalProperties<unknown>>;
+/** A tuple whose rest is in the middle: an open head, closed items, and two closed items counted from the end of the array. A JSON Schema cannot validate items after a rest, so the model turns validation off. */
+export type TSuffixTuple = IObject<{ rows: [TLoose, ...TPlain[], TItem, TMoney] }, { validation: false }>;
+/** A tuple whose rest is first. */
+export type TLeadingRest = IObject<{ rows: [...TPlain[], TItem] }, { validation: false }>;
+/** An open head before a closed rest: the plan of the rest is not the plan of the head. */
+export type THeadRest = IObject<{ rows: [TLoose, ...TPlain[]] }>;
+/** A closed recursive model whose `meta` field holds data that strip does not walk: `TLoose` keeps its other keys and has no plan. */
+export type TMetaTree = IObject<{ name: string; kids?: TMetaTree[]; meta?: TLoose }>;
+/** A tagged union of two model classes. The variant with no tag value is the default and has its own closed `child`, so the class of an instance and its tag can name different variants. */
+export type TLeafA = IObject<{ paws: number }>;
+export type TLeafB = IObject<{ name: string }>;
+export type TCatModel = IModel<{ kind: 'cat'; child: TLeafA }>;
+export type TStrayModel = IModel<{ child: TLeafB }>;
+export type TClassTagged = IObject<{ item: (TCatModel | TStrayModel) & Discriminator<'kind', TStrayModel> }>;
+export type TCard = IModel<{ title: string; count?: number }>;
+export type TShelf = IModel<{ cards: TCard[]; main: TCard }>;
+export type TPetHolder = IModel<{ pet: (Cat | Dog) & Discriminator<'kind'> }>;
+export type TTagged = IModel<{ item: (TMoney | { kind: 'other'; value: number }) & Discriminator<'kind', TMoney> }>;
+export type TOpenOther = IObject<{ kind: 'open'; value: number }, { exact: false }>;
+export type TTaggedOpen = IModel<{ item: (TMoney | TOpenOther) & Discriminator<'kind', TMoney> }>;
+/** A value that is `{ units }` in the model and `{ amount }` on the wire. */
+type Units = { units: number } & TSerde<typeof encodeUnits, typeof decodeUnits>;
+/** A value of a class that the model holds as an instance. */
+export type TClassPriced = IObject<{ price: Price & TSerde<typeof encodePrice, typeof decodePrice>; kids?: TClassPriced[] }>;
+/** A tagged union with an array variant, which takes its values by JSON type. */
+export type TPetList = IObject<{ pet: (Cat | Dog | TPlain[]) & Discriminator<'kind'> }>;
+export type TPriced = IObject<{ price: Units; note?: string }>;
+export type TTree = IModel<{ name: string; kids?: TTree[] }>;
+/** A recursive model that only a pattern key holds. */
+export type TPatternTree = IObject<{ known?: string } & PatternProperties<{ '^x_': TTree }> & AdditionalProperties<never>>;
+export type TTally = IModel<{ id: string; [key: string]: string }>;
+/** A model whose other keys are map entries of a closed object, by `AdditionalProperties` and by an index signature. */
+export type TLedger = IModel<{ id: string } & AdditionalProperties<TItem>>;
+export type TRegistry = IModel<{ [key: string]: TItem }>;
+/** A model that is open and also declares a pattern whose value is a closed object. */
+export type TPatternLedger = IModel<{ id: string } & PatternProperties<{ '^x_': TItem }> & AdditionalProperties<unknown>>;
+
+export class Card extends TCardBaseModel {
+  constructor(values: Partial<TCardFields> = {}) { super(values); }
+}
+export class Shelf extends TShelfBaseModel {
+  constructor(values: Partial<TShelfFields> = {}) { super(values); }
+}
+export class PetHolder extends TPetHolderBaseModel {
+  constructor(values: Partial<TPetHolderFields> = {}) { super(values); }
+}
+export class Tree extends TTreeBaseModel {
+  constructor(values: Partial<TTreeFields> = {}) { super(values); }
+}
+export class Tally extends TTallyBaseModel {
+  constructor(values: Partial<TTallyFields> = {}) { super(values); }
+}
+export class Ledger extends TLedgerBaseModel {
+  constructor(values: Partial<TLedgerFields> = {}) { super(values); }
+}
+export class Registry extends TRegistryBaseModel {
+  constructor(values: Partial<TRegistryFields> = {}) { super(values); }
+}
+export class PatternLedger extends TPatternLedgerBaseModel {
+  constructor(values: Partial<TPatternLedgerFields> = {}) { super(values); }
+}
+export class Tagged extends TTaggedBaseModel {
+  constructor(values: Partial<TTaggedFields> = {}) { super(values); }
+}
+export class TaggedOpen extends TTaggedOpenBaseModel {
+  constructor(values: Partial<TTaggedOpenFields> = {}) { super(values); }
+}
+export class CatModel extends TCatModelBaseModel {
+  constructor(values: Partial<TCatModelFields> = {}) { super(values); }
+}
+export class StrayModel extends TStrayModelBaseModel {
+  constructor(values: Partial<TStrayModelFields> = {}) { super(values); }
+}

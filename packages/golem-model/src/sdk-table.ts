@@ -122,6 +122,7 @@ export function sdkCodecsSource(
     exportAnonymousCodecs: true,
     // An app model that holds a node writes the wire value of the node with this function (`NestedImportedSerde.wireStringify`).
     exportWireStringify: true,
+    exportStripPlans: true,
     modelBases: { basesOf: (id) => components.get(id)?.bases ?? [] },
   });
   const operations = sdk.manifest.operations.map((operation) => {

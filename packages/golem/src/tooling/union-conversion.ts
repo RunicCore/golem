@@ -190,6 +190,17 @@ function discriminatorMatch(read: Code, values: readonly DiscriminatorValue[]): 
   return code`(${join(values.map((value) => code`${read} === ${literal(value)}`), code` || `)})`;
 }
 
+/** The tag of an object: an encode reads the property, a decode reads it by the JSON view, so an inherited or non-enumerable tag selects no branch. */
+function tagReadCode(value: Code, property: string, encode: boolean): Code {
+  const read = code`(${value} as unknown as Record<string, unknown>)[${literal(property)}]`;
+  return encode ? read : code`(${presentValueCode(value, literal(property), read)})`;
+}
+
+/** The error of an object whose tag selects no branch and no default, or contradicts the class of an instance. */
+function unknownTagError(property: string, shown: Code, encode: boolean): Code {
+  return code`${rt.conversion.unknownDiscriminatorValue}(${literal(property)}, ${shown}, ${encode ? code`'serialize'` : code`'deserialize'`})`;
+}
+
 /** One dispatched variant: its tag values, optional model class and conversion. */
 interface DispatchBranch {
   readonly values: readonly DiscriminatorValue[];
@@ -276,50 +287,62 @@ export function withUnionInput(expression: Code, emit: (value: Code) => Code): C
   return onlyInputSlot(emitted) === slot ? expression : bindInput(emitted, slot, expression);
 }
 
-/** A class Code the selector can repeat in its own definition: a name that no slot decides. */
+/** A class Code the pick can repeat in its own definition: a name that no slot decides. */
 function isPlainName(name: Code): boolean {
   return name.parts.every((part) => part.kind === 'text' || part.kind === 'runtime' || part.kind === 'imported');
 }
 
+/** The result of a pick for a value that is no object, and for an object that the union rejects. A pick that names a branch is that branch's index, and the index after the last branch is the declared default. */
+const PICK_NOT_OBJECT = -1;
+const PICK_REJECTED = -2;
+
+/** What a pick of a tagged union reads: the tag property, each branch with its tag values and its class, and what the union does with the other values. */
+export interface VariantPick {
+  readonly property: string;
+  readonly direction: 'decode' | 'encode';
+  readonly branches: readonly Pick<DispatchBranch, 'values' | 'className'>[];
+  /** The union has variants outside the tag table, which take a value that is no object (`DispatchOptions.rest`). */
+  readonly hasRest: boolean;
+  readonly restIsInstance: boolean;
+  /** The declared default and the class of its instances (`DispatchOptions.fallback`); undefined when an object of an unknown tag is rejected. */
+  readonly fallback: { readonly className: Code | undefined } | undefined;
+}
+
 /**
- * The selector of a dispatch: a function of the file that returns the index of the branch a value takes, `-1` for a value
- * that is no object, and the index after the last branch for the declared default. It throws for a tag that selects no
- * branch (or no default) or contradicts the class of an instance. One selector stands for every writer of the union, so the
- * class guards and the tag tests exist once. Its id comes from its text, so the files of two TypeScript versions agree.
+ * The pick of a dispatch: a function of the file that returns the index of the branch a value takes, `PICK_NOT_OBJECT` for a
+ * value that is no object, the index after the last branch for the declared default, and `PICK_REJECTED` for a tag that selects
+ * no branch (and no default) or contradicts the class of an instance. It throws nothing: a writer throws on the rejection, and
+ * strip leaves the value to the codec. One pick stands for every writer of the union and for strip, so the class guards and the
+ * tag tests exist once. Its id comes from its text, so the files of two TypeScript versions agree.
  */
-function variantSelector(options: DispatchOptions): Helper {
-  const { property, branches, rest, fallback, fallbackClass, restIsInstance } = options;
-  const encode = options.direction !== 'decode';
+export function variantPick({ property, direction, branches, hasRest, restIsInstance, fallback }: VariantPick): Code {
+  const encode = direction === 'encode';
   const input = localCode('value');
   const tag = localCode('tag');
-  const key = literal(property);
-  const propertyRead = code`(${input} as unknown as Record<string, unknown>)[${key}]`;
-  const rejecting = (shown: Code): Code => code`${rt.conversion.unknownDiscriminatorValue}(${key}, ${shown}, ${encode ? code`'serialize'` : code`'deserialize'`})`;
-  const classes = [...branches.flatMap((branch) => branch.className ? [branch.className] : []), ...(fallback && fallbackClass ? [fallbackClass] : [])];
+  const classes = [...branches.flatMap((branch) => branch.className ? [branch.className] : []), ...(fallback?.className ? [fallback.className] : [])];
   const statements: Code[] = [
-    encode && rest === undefined
-      ? code`if (!(${objectValueExpression(input)})) return ${input} == null ? -1 : ${rejecting(propertyRead)};`
-      : code`if (!(${objectValueExpression(input, restIsInstance)})) return -1;`,
-    // Decoding reads the tag by the JSON view, so an inherited or non-enumerable tag selects no branch.
-    code`const ${tag} = ${encode ? propertyRead : presentValueCode(input, key, propertyRead)};`,
+    encode && !hasRest
+      ? code`if (!(${objectValueExpression(input)})) return ${input} == null ? ${literal(PICK_NOT_OBJECT)} : ${literal(PICK_REJECTED)};`
+      : code`if (!(${objectValueExpression(input, restIsInstance)})) return ${literal(PICK_NOT_OBJECT)};`,
+    code`const ${tag} = ${tagReadCode(input, property, encode)};`,
   ];
   branches.forEach((branch, index) => {
     const self = branch.className;
     if (!self) return;
     const subclasses = classes.filter((other) => !sameCode(other, self))
       .map((other) => code` && !((${input} as object) instanceof ${other} && ${other}.prototype instanceof ${self})`);
-    statements.push(code`if ((${input} as object) instanceof ${self}${join(subclasses)}) return ${tag} === undefined || ${discriminatorMatch(tag, branch.values)} ? ${literal(index)} : ${rejecting(tag)};`);
+    statements.push(code`if ((${input} as object) instanceof ${self}${join(subclasses)}) return ${tag} === undefined || ${discriminatorMatch(tag, branch.values)} ? ${literal(index)} : ${literal(PICK_REJECTED)};`);
   });
   branches.forEach((branch, index) => statements.push(code`if (${discriminatorMatch(tag, branch.values)}) return ${literal(index)};`));
-  statements.push(fallback === undefined ? code`return ${rejecting(tag)};` : code`return ${literal(branches.length)};`);
+  statements.push(code`return ${literal(fallback === undefined ? PICK_REJECTED : branches.length)};`);
   const body = join(statements, code` `);
   const id = `__golemVariant_${createHash('sha256').update(render(body)).digest('hex').slice(0, 10)}`;
-  return selfPlacedHelper(id, () => code`function ${identifier(id)}(${input}: unknown): number { ${body} }`);
+  return helperName(selfPlacedHelper(id, () => code`function ${identifier(id)}(${input}: unknown): number { ${body} }`));
 }
 
 /**
- * `emitDispatch` through a selector, when a branch is a model class: the guard of each class would otherwise stand in every
- * writer. The selector picks the index of the branch; the branch it names converts the value.
+ * `emitDispatch` through a pick, when a branch is a model class: the guard of each class would otherwise stand in every
+ * writer. The pick gives the index of the branch, and the branch it names converts the value; the writer throws on a rejection.
  *
  * The caller can promise that the branches read nothing of the writer's function but `expression` (`standalone`). The picking
  * and converting is then one function of the file, and each writer calls it with the value; its id comes from its text, so
@@ -332,10 +355,10 @@ function selectedDispatch(options: DispatchOptions): Code | undefined {
   if (!branches.some((branch) => branch.className) || !classes.every(isPlainName)) return undefined;
   const encode = options.direction !== 'decode';
   const key = literal(options.property);
-  const tag = code`(${value} as unknown as Record<string, unknown>)[${key}]`;
+  const tag = tagReadCode(value, options.property, true);
   const json = (convert: Code, tagValue: Code): Code => code`${rt.conversion.jsonWithDiscriminator}(${convert}, ${literal(JSON.stringify(options.property))}, ${tagValue})`;
   // Encoding always writes the selected tag, so the wire value decodes to the same variant. An instance may hold no tag, and
-  // then it takes the first value of its branch; a plain object the selector took by its tag holds one.
+  // then it takes the first value of its branch; a plain object the pick took by its tag holds one.
   const arm = (branch: DispatchBranch): Code => {
     const { convert } = branch;
     if (!encode) return convert;
@@ -346,18 +369,28 @@ function selectedDispatch(options: DispatchOptions): Code | undefined {
     return branch.className ? code`(${tag} === undefined ? ${json(convert, literal(branch.values[0]))} : ${convert})` : convert;
   };
   const outside = options.rest ?? (encode ? (options.nullish === undefined ? value : options.nullish) : value);
-  // The last arm needs no test: the selector returns no other index.
+  const reject = unknownTagError(options.property, tagReadCode(value, options.property, encode), encode);
+  // A value that is no object takes `outside`, and any other negative pick is a rejection.
+  const unpicked = (index: Code): Code => code`${index} === ${literal(PICK_NOT_OBJECT)} ? (${outside}) : ${reject}`;
+  // The last arm needs no test: the pick gives no other index.
   const last = branches.length - (fallback === undefined ? 1 : 0);
   const chainOf = (index: Code): Code => {
     let chain = fallback ?? arm(branches[last]);
     for (let at = last - 1; at >= 0; at--) chain = code`${index} === ${literal(at)} ? (${arm(branches[at])}) : (${chain})`;
     return chain;
   };
-  const selector = helperName(variantSelector(options));
+  const pick = variantPick({
+    property: options.property,
+    direction: encode ? 'encode' : 'decode',
+    branches,
+    hasRest: options.rest !== undefined,
+    restIsInstance: options.restIsInstance === true,
+    fallback: fallback === undefined ? undefined : { className: fallbackClass },
+  });
   const slot = options.standalone ? onlyInputSlot(value) : undefined;
   if (slot) {
     const body = bindInput(
-      code`const ${BRANCH_INDEX} = ${selector}(${value}); return ${BRANCH_INDEX} < 0 ? (${outside}) : (${chainOf(BRANCH_INDEX)});`,
+      code`const ${BRANCH_INDEX} = ${pick}(${value}); return ${BRANCH_INDEX} < 0 ? (${unpicked(BRANCH_INDEX)}) : (${chainOf(BRANCH_INDEX)});`,
       slot,
       UNION_PARAMETER,
     );
@@ -372,20 +405,16 @@ function selectedDispatch(options: DispatchOptions): Code | undefined {
     }
   }
   const index = helperName(SELECTED_INDEX);
-  return code`((${index} = ${selector}(${value})) < 0 ? (${outside}) : (${chainOf(index)}))`;
+  return code`((${index} = ${pick}(${value})) < 0 ? (${unpicked(index)}) : (${chainOf(index)}))`;
 }
 
 function inlineDispatch(options: DispatchOptions): Code {
   const { expression, property, branches, direction, tagLocal } = options;
   const value = expression;
   const encode = direction !== 'decode';
-  const propertyRead = code`(${value} as unknown as Record<string, unknown>)[${literal(property)}]`;
-  // Decoding reads the tag by the JSON view, so an inherited or non-enumerable tag selects no branch.
-  const tagRead = encode
-    ? propertyRead
-    : code`(${presentValueCode(value, literal(property), propertyRead)})`;
+  const tagRead = tagReadCode(value, property, encode);
   const tag = tagLocal ?? tagRead;
-  const reject = code`${rt.conversion.unknownDiscriminatorValue}(${literal(property)}, ${tag}, ${encode ? code`'serialize'` : code`'deserialize'`})`;
+  const reject = unknownTagError(property, tag, encode);
   const key = literal(property);
   const injectJson = (convert: Code, tagValue: Code): Code =>
     code`${rt.conversion.jsonWithDiscriminator}(${convert}, ${literal(JSON.stringify(property))}, ${tagValue})`;
@@ -439,7 +468,12 @@ function isNamed(descriptor: ModelTypeDescriptor): descriptor is NamedTypeDescri
  * Whether a named variant is a sequence: its node holds an array or tuple, as a walker reads it from its graph (a recursive array alias
  * is a named node, not written inline). The union tells its value from an object by `Array.isArray`. Any other named variant is an object.
  */
-type NamedVariants = (variant: NamedTypeDescriptor) => boolean;
+export type NamedVariants = (variant: NamedTypeDescriptor) => boolean;
+
+/** The named variants that are sequences in a union: a variant with a serde reads its own wire form, so it is no sequence here. */
+function sequenceVariants(holdsSequence: NamedVariants): NamedVariants {
+  return (variant) => variant.serde === undefined && holdsSequence(variant);
+}
 
 /** The variants of a `scalar | scalar[]` or `scalar | [T, ...]` union: its one sequence, and the scalar variants beside it. A named alias of an array is a sequence too. */
 interface ScalarOrArray {
@@ -487,6 +521,11 @@ function jsonTypeVariants(
   const scalars = variants.filter((variant) => variant !== sequences[0]);
   if (!scalars.every(isScalarishDescriptor) && !(scalars.length === 1 && isClassValueOfScalar(scalars[0]))) return undefined;
   return { sequence: sequences[0], scalars };
+}
+
+/** `TaggedUnion.restIsInstance` of the variants outside a tag table: the pick of the union reads it, so whoever picks asks here. */
+export function restHoldsInstance(rest: readonly ModelTypeDescriptor[], holdsSequence: NamedVariants): boolean {
+  return restInstance(jsonTypeVariants(rest, sequenceVariants(holdsSequence))?.scalars ?? []);
 }
 
 /** A union of one array or tuple and scalar variants, the query-style shape: the wire value tells a string from an array. */
@@ -636,8 +675,7 @@ export function emitUnionConversion(
   const json = direction === 'stringify';
   const value = expression;
   const { convert, holdsSequence } = conversion;
-  // A variant with a serde reads its own wire form, so it is no sequence here.
-  const named: NamedVariants = (variant) => variant.serde === undefined && holdsSequence(variant);
+  const named = sequenceVariants(holdsSequence);
   const sequenceBranch = (sequence: ScalarOrArray['sequence']): Code => emitSequenceBranch(sequence, expression, conversion.items, convert);
   // A walker's own join knows the items of an inline sequence; a named sequence converts by its node, so the plain join stands.
   // A JSON join sits inside a concatenation, so it keeps its parentheses.
