@@ -190,8 +190,9 @@ export function collectOpenApiModelDefinitions(document: unknown, resources?: Re
     const variants = alternatives
       .map((item) => directComponentSchemaRef(item, env))
       .filter((variant): variant is string => Boolean(variant && definitions.has(variant)));
-    if (variants.length !== alternatives.length || variants.length === 0) continue;
-    const commonBase = definitions.get(variants[0] ?? '')?.baseName ?? null;
+    const [firstVariant] = variants;
+    if (variants.length !== alternatives.length || firstVariant === undefined) continue;
+    const commonBase = definitions.get(firstVariant)?.baseName ?? null;
     if (!commonBase || !variants.every((variant) => definitions.get(variant)?.baseName === commonBase)) continue;
     unions.push({
       name,
