@@ -23,7 +23,7 @@ import {
 } from './composition.js';
 import { dateClassOf } from './date-class.js';
 import { admitsNull, effectiveSchemaTypes } from './normalize.js';
-import { schemaContext, typedListedValues, type NeverPropertiesOf } from './types.js';
+import { anchoredComponentName, schemaContext, typedListedValues, type NeverPropertiesOf } from './types.js';
 import {
   collectCanonicalResources,
   nextSchemaBase,
@@ -167,10 +167,8 @@ export function withSchemaBase(env: ModelResolveEnv, schema: unknown): ModelReso
 }
 
 export function directComponentSchemaRef(schema: unknown, env: ModelResolveEnv): string | null {
-  if (isJsonObject(schema) && typeof schema.$ref !== 'string' && typeof schema.$dynamicRef === 'string') {
-    const anchored = env.anchors?.get(schema.$dynamicRef);
-    if (anchored) return anchored;
-  }
+  const anchored = anchoredComponentName(schema, env.anchors);
+  if (anchored) return anchored;
   return exactComponentTarget(schema, env)?.typeName ?? null;
 }
 

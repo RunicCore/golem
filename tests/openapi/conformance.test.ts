@@ -12,7 +12,8 @@ import { LibError, LibErrorKind, IssueSource } from '@exprtlabs/golem/errors';
 import { findRemoteRefs, validate } from '#openapi/document';
 import { loadValidatedDocument, writeSdk as writeSdkFiles } from '#openapi/generator';
 import { normalizeDocument } from '#openapi/normalize';
-import { schemaType } from '#openapi/types';
+import { directComponentSchemaRef, modelEnv } from '#openapi/model-resolution';
+import { schemaContext, schemaType } from '#openapi/types';
 import {
   captureRequest,
   isAsyncIterable,
@@ -282,6 +283,24 @@ export const numberChildren: NumberTree[] | undefined = numberTree.children;
 export const mixedChildren: NumberTree[] | undefined = stringTree.children;
 `);
   compileGeneratedSdk(output, [assertFile], { strict: true });
+});
+
+test('a schema with $ref and $dynamicRef gets the $ref target in the type reader and the model reader', () => {
+  const document = {
+    openapi: '3.1.2',
+    info: { title: 'Both references', version: '1' },
+    paths: {},
+    components: {
+      schemas: {
+        Anchored: { $dynamicAnchor: 'node', type: 'object', properties: { a: { type: 'string' } } },
+        Named: { type: 'object', properties: { b: { type: 'number' } } },
+      },
+    },
+  };
+  const both = { $ref: '#/components/schemas/Named', $dynamicRef: '#node' };
+  const { anchors } = schemaContext(document);
+  assert.equal(schemaType(both, { document, anchors }), 'Named');
+  assert.equal(directComponentSchemaRef(both, modelEnv(document, undefined, anchors)), 'Named');
 });
 
 test('normalizes callbacks and webhooks into payload types of the SDK', (t) => {
