@@ -1,5 +1,5 @@
-// The source guard of `npm run lint`: which package source file may load which TypeScript module, where a package uses a non-null
-// assertion, and which switch over a union of kinds leaves a kind out. Tests are outside it.
+// The source guard of `npm run lint`: which package source file may load which TypeScript module, which modules the runtime project
+// loads, where a package uses a non-null assertion, and which switch over a union of kinds leaves a kind out. Tests are outside it.
 // It reads the syntax tree that golem's own compiler seam parses, so a quote in a comment or a string is no import. The switch check
 // asks the seam's type checker, since typescript-eslint needs the TypeScript JavaScript API that TypeScript 7 does not export.
 import fs from 'node:fs';
@@ -21,6 +21,16 @@ const RULES: readonly Rule[] = [
   { forbids: specifier => /^require\(.*\bpackageDir\b/.test(specifier), allowedIn: 'packages/golem/src/tooling/typescript-ts6.ts', because: 'only the TypeScript 6 backend loads the project\'s TypeScript by directory' },
   { forbids: specifier => specifier === 'typescript', allowedIn: undefined, because: 'the TypeScript 6 backend loads the project\'s TypeScript by the directory resolveTypeScript found; a bare import would load golem\'s own' },
 ];
+
+/** The files of the runtime project (packages/golem/tsconfig.runtime.json). They ship to apps that have no mobx and no Node.js. */
+const RUNTIME_FILE = /^packages\/golem\/src\/(?:client-runtime\/)?[^/]+\.ts$/;
+
+/** Why a runtime file may not load the module, or undefined when it may: only a relative specifier outside `tooling/` is allowed. Type-only imports count. */
+function runtimeLoadProblem(relative: string, specifier: string): string | undefined {
+  if (!specifier.startsWith('.')) return `a runtime file loads only relative modules, so the apps that ship it need no mobx and no Node.js`;
+  if (path.posix.join(path.posix.dirname(relative), specifier).startsWith('packages/golem/src/tooling/')) return `a runtime file does not load the build tooling, which needs Node.js`;
+  return undefined;
+}
 
 /** What a finding does to the run: an error fails it, a warning is listed. */
 type Severity = 'warning' | 'error';
@@ -96,6 +106,8 @@ function findings(file: ts.SourceFile, relative: string, checker: ts.TypeChecker
     const specifier = loads(node);
     if (specifier !== undefined) {
       const { line } = file.getLineAndCharacterOfPosition(node.getStart(file));
+      const runtimeProblem = RUNTIME_FILE.test(relative) ? runtimeLoadProblem(relative, specifier) : undefined;
+      if (runtimeProblem !== undefined) found.push({ severity: 'error', text: `${relative}:${line + 1} imports '${specifier}': ${runtimeProblem}` });
       for (const rule of RULES) {
         if (rule.forbids(specifier) && relative !== rule.allowedIn) {
           found.push({ severity: 'error', text: `${relative}:${line + 1} imports '${specifier}'${rule.allowedIn ? `; only ${rule.allowedIn} may` : ''}: ${rule.because}` });
