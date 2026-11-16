@@ -43,12 +43,15 @@ export interface OpenApiResponse {
 }
 
 export interface OpenApiRequestBody {
+  readonly required?: boolean;
   readonly content?: Readonly<Record<string, OpenApiMediaType>>;
 }
 
 export interface OpenApiOperation {
   readonly summary?: string;
   readonly operationId?: string;
+  readonly tags?: readonly string[];
+  readonly security?: readonly Readonly<Record<string, unknown>>[];
   readonly parameters?: readonly OpenApiParameter[];
   readonly requestBody?: OpenApiRequestBody;
   readonly responses: Readonly<Record<string, OpenApiResponse>>;
@@ -66,6 +69,7 @@ export interface OpenApiPathItem {
 
 export interface OpenApiDocument {
   readonly openapi?: string;
+  readonly servers?: readonly Readonly<Record<string, unknown>>[];
   readonly components?: {
     readonly schemas?: Readonly<Record<string, OpenApiSchemaValue>>;
   };
@@ -108,6 +112,14 @@ export function operationOf(
   return expectValue(expectValue(document.paths[route], `OpenAPI path ${route}`)[method], `${String(method).toUpperCase()} ${route}`);
 }
 
+export function requestBodyOf(
+  document: OpenApiDocument,
+  route: string,
+  method: keyof OpenApiPathItem,
+): OpenApiRequestBody {
+  return expectValue(operationOf(document, route, method).requestBody, `request body of ${String(method).toUpperCase()} ${route}`);
+}
+
 export function responseOf(
   document: OpenApiDocument,
   route: string,
@@ -145,11 +157,20 @@ export function responseSchema(
   return contentSchema(responseOf(document, route, method, status), mediaType, `response ${status} for ${String(method).toUpperCase()} ${route}`);
 }
 
-/** The first generated artifact as an OpenAPI document. A test with its own document type names it as `Document`. */
-export function documentOf<Document extends { readonly paths: object } = OpenApiDocument>(result: Awaited<ReturnType<typeof generate>>): Document {
+/** The text of the first generated artifact. */
+export function firstArtifact(result: Awaited<ReturnType<typeof generate>>): string {
   const artifact = result.artifacts[0];
   assert.ok(artifact);
-  const parsed: unknown = JSON.parse(artifact.content);
+  return artifact.content;
+}
+
+/** The first generated artifact as an OpenAPI document. A test with its own document type names it as `Document`. */
+export function documentOf<Document extends { readonly paths: object } = OpenApiDocument>(result: Awaited<ReturnType<typeof generate>>): Document {
+  return documentFrom<Document>(JSON.parse(firstArtifact(result)));
+}
+
+/** A parsed OpenAPI document (JSON or YAML), checked to be an object with object paths. */
+export function documentFrom<Document extends { readonly paths: object } = OpenApiDocument>(parsed: unknown): Document {
   if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
     throw new Error('Generated OpenAPI document is not an object.');
   }
@@ -160,11 +181,18 @@ export function documentOf<Document extends { readonly paths: object } = OpenApi
   return parsed as Document;
 }
 
+/** The diagnostics of a generator error, or of the error that a pipeline run wraps (its `cause`). */
 export function diagnosticsOf(error: unknown): readonly DiagnosticLike[] {
-  if (error === null || typeof error !== 'object' || !('diagnostics' in error)) return [];
+  if (error === null || typeof error !== 'object') return [];
+  if (!('diagnostics' in error)) return 'cause' in error ? diagnosticsOf(error.cause) : [];
   const diagnostics = (error as { readonly diagnostics?: unknown }).diagnostics;
   if (!Array.isArray(diagnostics)) return [];
   return diagnostics.filter((item): item is DiagnosticLike => (
     item !== null && typeof item === 'object'
   ));
+}
+
+/** The check of `assert.rejects`: the error holds a diagnostic of this code, whose message matches when one is given. */
+export function refusedWith(code: string, message?: RegExp): (error: unknown) => boolean {
+  return (error) => diagnosticsOf(error).some(item => item.code === code && (message === undefined || message.test(String(item.message))));
 }
