@@ -210,7 +210,7 @@ test('recognizes Nest decorators through local reexports of public package expor
     info: { title: 'Reexported', version: '1' },
     profile: { validation: false },
   }));
-  assert.ok(operationOf(document, '/reexported', 'get'));
+  operationOf(document, '/reexported', 'get');
 });
 
 test('resolves HttpStatus enum members and preserves Nest URI version concatenation', async (t: TestContext) => {

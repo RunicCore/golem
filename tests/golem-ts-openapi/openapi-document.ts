@@ -79,6 +79,8 @@ export interface OpenApiDocument {
 export interface DiagnosticLike {
   readonly code?: unknown;
   readonly message?: unknown;
+  readonly line?: unknown;
+  readonly column?: unknown;
 }
 
 export function expectValue<T>(value: T | undefined, label: string): T {
@@ -185,7 +187,7 @@ export function documentFrom<Document extends { readonly paths: object } = OpenA
 export function diagnosticsOf(error: unknown): readonly DiagnosticLike[] {
   if (error === null || typeof error !== 'object') return [];
   if (!('diagnostics' in error)) return 'cause' in error ? diagnosticsOf(error.cause) : [];
-  const diagnostics = (error as { readonly diagnostics?: unknown }).diagnostics;
+  const { diagnostics } = error;
   if (!Array.isArray(diagnostics)) return [];
   return diagnostics.filter((item): item is DiagnosticLike => (
     item !== null && typeof item === 'object'

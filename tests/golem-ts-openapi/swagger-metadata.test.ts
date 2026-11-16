@@ -4,7 +4,7 @@ import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { generate } from '#ts-openapi/generator';
 import { createControllerFixture } from '../fixture-templates/controllers/project.js';
-import { documentOf } from './openapi-document.js';
+import { diagnosticsOf, documentOf } from './openapi-document.js';
 
 type OpenApiSchemaValue = boolean | OpenApiSchema;
 
@@ -114,21 +114,6 @@ function property(document: OpenApiDocument, schema: OpenApiSchema, name: string
 
 function jsonSchema(operation: OpenApiOperation | undefined, status: string): OpenApiSchemaValue | undefined {
   return operation?.responses[status]?.content?.['application/json']?.schema;
-}
-
-interface DiagnosticShape {
-  readonly code?: unknown;
-  readonly message?: unknown;
-  readonly line?: unknown;
-  readonly column?: unknown;
-}
-
-function diagnosticsOf(error: unknown): readonly DiagnosticShape[] {
-  if (error === null || typeof error !== 'object' || !('diagnostics' in error)) return [];
-  const diagnostics = (error as { readonly diagnostics?: unknown }).diagnostics;
-  return Array.isArray(diagnostics)
-    ? diagnostics.filter((item): item is DiagnosticShape => item !== null && typeof item === 'object')
-    : [];
 }
 
 async function rejectsWith(root: string, code: string, message: RegExp): Promise<void> {
