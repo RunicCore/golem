@@ -7,6 +7,11 @@ import { evaluateStaticValue, isTypeScriptLibFile, literalPropertyName, singleRe
 
 type StringBinding = { readonly kind: 'string'; readonly value: string };
 type ObjectBinding = { readonly kind: 'object'; readonly fields: Readonly<Record<string, string>> };
+
+/** The field an object argument holds under `key`, never a member of the object prototype. */
+function ownField(binding: ObjectBinding, key: string): string | undefined {
+  return Object.hasOwn(binding.fields, key) ? binding.fields[key] : undefined;
+}
 type Binding = StringBinding | ObjectBinding;
 
 interface Scope {
@@ -92,7 +97,7 @@ function bindPattern(name: ts.BindingName, value: Binding, bindings: Map<string,
     if (element.dotDotDotToken || !element.name || !ts.isIdentifier(element.name)) reject();
     const key = element.propertyName ? literalPropertyName(element.propertyName) : element.name.text;
     if (key === undefined) reject();
-    const field = value.fields[key];
+    const field = ownField(value, key);
     if (field === undefined) reject();
     bindings.set(element.name.text, { kind: 'string', value: field });
   }
@@ -260,9 +265,10 @@ function fold(expression: ts.Expression, scope: Scope, ctx: FoldContext): string
       ? scope.bindings.get(unwrapped.expression.text)
       : undefined;
     if (!parameter) return constString(unwrapped, ctx);
-    if (parameter.kind !== 'object' || !ts.isPropertyAccessExpression(unwrapped) || !ts.isIdentifier(unwrapped.name)
-      || !(unwrapped.name.text in parameter.fields)) reject();
-    return parameter.fields[unwrapped.name.text];
+    if (parameter.kind !== 'object' || !ts.isPropertyAccessExpression(unwrapped) || !ts.isIdentifier(unwrapped.name)) reject();
+    const field = ownField(parameter, unwrapped.name.text);
+    if (field === undefined) reject();
+    return field;
   }
   if (!ts.isCallExpression(unwrapped) || unwrapped.questionDotToken) reject();
   const resolved = resolveCallee(unwrapped.expression, scope, ctx);

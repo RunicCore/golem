@@ -90,7 +90,7 @@ export function resolveValueSymbol(checker: ts.TypeChecker, expression: ts.Expre
 
 /** The name a property is written with: an identifier, a quoted name or a number. A computed or private name has none. */
 export function literalPropertyName(name: ts.PropertyName): string | undefined {
-  return ts.isIdentifier(name) || ts.isStringLiteral(name) || ts.isNumericLiteral(name) || ts.isNoSubstitutionTemplateLiteral(name)
+  return ts.isIdentifier(name) || ts.isStringLiteral(name) || ts.isNumericLiteral(name)
     ? name.text
     : undefined;
 }
