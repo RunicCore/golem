@@ -281,7 +281,7 @@ test('refuses a URI versioning spelling that is not URI, uri or 0, in the string
   }
 });
 
-test('a whole query typed with a model-level tag documents its fields, not the tag key', async (t: TestContext) => {
+test('a whole query typed with a model-level tag is not refused and gives a querystring parameter', async (t: TestContext) => {
   // protects: T-1007 the tag key of a plain DTO is bookkeeping; its object-typed value must not make the whole query "not portable"
   const root = createControllerFixture(t, {
     prefix: 'golem-ts-openapi-tagged-query-',
