@@ -920,6 +920,8 @@ interface ConfigFindings {
  */
 class ConfigTwin {
   private found: ConfigFindings | undefined;
+  /** The configuration diagnostics of a synthetic program, read once: its text is the one of its request. */
+  private config: readonly SyncDiagnostic[] | undefined;
 
   /**
    * `synthetic`: set for a program of a project with references. It has no configuration, so `tsc`'s report of a project reference of the user's
@@ -933,7 +935,7 @@ class ConfigTwin {
 
   /** The configuration diagnostics of the program: a synthetic program has none of its own, so they are those of the user's configuration; any other program has the compiler's. */
   configParsing(own: readonly SyncDiagnostic[]): readonly SyncDiagnostic[] {
-    return this.synthetic?.hasSyntaxError() ? (this.found ??= this.lookup()).config : own;
+    return this.synthetic === undefined ? own : this.config ??= this.synthetic.hasSyntaxError() ? (this.found ??= this.lookup()).config : [];
   }
 
   /** The diagnostics with the user's tsconfig name in their text, wherever the compiler named the derived one. */
@@ -1462,7 +1464,8 @@ export class ProgramSession implements Disposable {
    * own and lists exactly what the TypeScript 6 backend gives the compiler: the files the project's configuration parses to,
    * plus the requested roots. `include` is emptied so the list is the whole project. A program whose roots are all files of the
    * user's own configuration opens the configuration itself, so its option errors keep the file and place that `tsc` gives. Every program parses
-   * the configuration here, so a configuration with errors fails the same way on both backends.
+   * the configuration here, so a configuration with an option error fails as on the TypeScript 6 backend. A syntax error does not fail
+   * here: the compiler reports it as a configuration diagnostic of the program, and the TypeScript 6 backend throws.
    */
   private withRequestedRoots(api: API, base: SnapshotRequest, onInput: ((filename: string) => void) | undefined): SnapshotRequest {
     const previous = this.overlays;
