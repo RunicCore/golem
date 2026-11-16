@@ -266,6 +266,37 @@ test('rejects @HostParam routes', async (t: TestContext) => {
   );
 });
 
+test('refuses a URI versioning spelling that is not URI, uri or 0, in the string and the object form alike', async (t: TestContext) => {
+  // protects: T-998 the string form took any case while the object form took only URI or uri; both take one set of spellings and refuse the rest by name
+  const root = fixture(t, `import { Controller, Get } from '@nestjs/common';
+@Controller('cats') export class CatsController { @Get() list(): void {} }`);
+  // generate() is called from JavaScript too, so the options reach it unchecked.
+  const cases: readonly (readonly [unknown, string])[] = [['Uri', 'NEST1203'], [{ type: 'Uri' }, 'NEST1205']];
+  for (const [uriVersioning, code] of cases) {
+    await assert.rejects(
+      generate({ root, output: path.join(root, 'openapi.json'), info: { title: 'Cats', version: '1' }, uriVersioning: uriVersioning as never, profile: { validation: false } }),
+      (error: unknown) => diagnosticsOf(error).some(item => item.code === code),
+      JSON.stringify(uriVersioning),
+    );
+  }
+});
+
+test('a whole query typed with a model-level tag is not refused and gives a querystring parameter', async (t: TestContext) => {
+  // protects: T-1007 the tag key of a plain DTO is bookkeeping; its object-typed value must not make the whole query "not portable"
+  const root = createControllerFixture(t, {
+    prefix: 'golem-ts-openapi-tagged-query-',
+    links: 'workspace',
+    packageName: 'golem-ts-openapi-tagged-query-fixture',
+    sourceFile: 'src/catalog.controller.ts',
+    source: `import { Controller, Get, Query } from '@nestjs/common';
+import type { PatternProperties } from '@exprtlabs/golem/tags';
+type Filter = { status: string } & PatternProperties<{ '^x-': string }>;
+@Controller('cats') export class CatsController { @Get() list(@Query() filter: Filter): void {} }`,
+  });
+  const document = documentOf(await generate({ root, output: path.join(root, 'openapi.json'), info: { title: 'Cats', version: '1' }, profile: { validation: false } }));
+  assert.deepEqual((operationOf(document, '/cats', 'get').parameters ?? []).map(item => (item as { in: string }).in), ['querystring']);
+});
+
 test('keeps Nest runtime status authoritative over a contradicting Swagger success response', async (t: TestContext) => {
   const cases = [
     { title: 'Status conflict', fixtureDirectory: 'rejects-a-swagger-success-status-that-contradicts-nest-post-runtime-status' },

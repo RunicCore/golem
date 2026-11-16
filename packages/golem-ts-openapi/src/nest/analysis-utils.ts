@@ -346,6 +346,7 @@ export function parameterProperties(
   // flattening rules below; consult the source contract only when the bookkeeping is present or the companion is absent and
   // no direct properties exist.
   const isBookkeeping = (property: ts.Symbol): boolean => isGeneratedBrandKey(checker, property) || isGolemTagKey(checker, property);
+  const fieldsOf = (properties: readonly ts.Symbol[]): readonly ts.Symbol[] => properties.filter(property => !isBookkeeping(property));
   if (direct.length > 0 && !direct.some(isBookkeeping)) return direct;
   const contracts = context.contractAnalysis;
   if (contracts) {
@@ -353,11 +354,11 @@ export function parameterProperties(
     if (descriptor.kind === 'reference') {
       const specification = contracts.specFor(descriptor.name);
       if (specification) {
-        return checker.getPropertiesOfType(specification.fieldsType).filter(property => !isBookkeeping(property));
+        return fieldsOf(checker.getPropertiesOfType(specification.fieldsType));
       }
     }
   }
-  return direct;
+  return fieldsOf(direct);
 }
 
 export function isIndexSignatureType(checker: ts.TypeChecker, type: ts.Type): boolean {
