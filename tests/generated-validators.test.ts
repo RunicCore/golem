@@ -188,6 +188,18 @@ test('the validation plan of nested models refers to each child by its id and do
   }
 });
 
+test('a cyclic array in schema data gives the cycle TypeError, not a stack overflow', () => {
+  // protects: T-997 an array that holds itself was mapped before the cycle check and overflowed the stack
+  const cycle: unknown[] = [];
+  cycle.push(cycle);
+  const graph = createSchemaGraph();
+  graph.seal();
+  assert.throws(
+    () => buildCodecValidationPlan(graph, [], { 'Tag#cyclic': { enum: cycle } }, true),
+    error => error instanceof TypeError && error.message === 'Cyclic schema data cannot be compiled into validators.',
+  );
+});
+
 test('a plan root that is no model of the plan gets a validator and no fast check', () => {
   const descriptor: ModelTypeDescriptor = {
     kind: 'object', properties: { code: { kind: 'string' } }, required: ['code'], additionalProperties: false,

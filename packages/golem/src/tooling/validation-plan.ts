@@ -315,11 +315,11 @@ export function buildCodecValidationPlan(
 
     const active = new WeakSet<object>();
     const visit = (current: unknown, root = false, localReferences = true): unknown => {
-      if (Array.isArray(current)) return current.map(item => visit(item, false, localReferences));
-      if (!isRecord(current)) return current;
+      if (!Array.isArray(current) && !isRecord(current)) return current;
       if (active.has(current)) throw new TypeError('Cyclic schema data cannot be compiled into validators.');
       active.add(current);
       try {
+        if (Array.isArray(current)) return current.map(item => visit(item, false, localReferences));
         const nestedResource = !root && Object.hasOwn(current, '$id');
         const resolveLocalReferences = localReferences && !nestedResource;
         const result: Record<string, unknown> = Object.create(null) as Record<string, unknown>;
