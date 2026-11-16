@@ -14,7 +14,7 @@ import { getValidator } from '@exprtlabs/golem/validation';
 
 import { copyFixture, copyFixtureFile, createFixtureProject, linkProjectPackages, writeGeneratedArtifacts } from './fixture-project.js';
 import { accountModelWithField, accountModelWithMissingImport } from './fixture-templates/models/model-generator.js';
-import { buildModelProject, buildModelProjectWith, createModelProject, writeModelGolemYaml, writeModelSources } from './model-project.js';
+import { buildModelProject, buildModelProjectWith, createModelProject, generatedModelFiles, writeModelGolemYaml, writeModelSources } from './model-project.js';
 import { taggedModelSource } from './fixture-templates/models/model-tags.js';
 import { COUNT_DIST_FILES, writeCodecPackage } from './fixture-templates/models/codec-package.js';
 import { tsSource } from './source-template.js';
@@ -121,6 +121,28 @@ export const wrong: Payment[typeof generatedModelFieldsBrand] = { id: 1, amount:
     }
   });
 }
+
+test('a golem.yaml with no validation key validates: its build writes the validators and parse rejects a short value', async (t: TestContext) => {
+  // protects: F-38 validation is on by default; the root key left out reaches the models job as validation true
+  const { root, sourceRoot } = project(t);
+  writeModelSources(sourceRoot, {
+    'money.model.ts': tsSource`import type { IModel } from '@exprtlabs/golem/model';
+import type { MinLength } from '@exprtlabs/golem/tags';
+export type TMoney = IModel<{ currency: string & MinLength<3> }>;
+`,
+    'money.ts': tsSource`import { TMoneyBaseModel } from './money.model.generated.js';
+export class Money extends TMoneyBaseModel {}
+`,
+  });
+  writeModelGolemYaml(root, {});
+  assert.equal(fs.readFileSync(path.join(root, 'golem.yaml'), 'utf8').includes('validation'), false);
+  await buildModelProject(root);
+  assert.equal(generatedModelFiles(root).some(file => file.path.endsWith('models.validators.generated.ts')), true);
+  await import(`${pathToFileURL(path.join(root, 'build/money.js')).href}`);
+  const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TMoney'));
+  assert.deepEqual(codec.parse('{"currency":"USD"}'), { currency: 'USD' });
+  assert.throws(() => codec.parse('{"currency":"US"}'), (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.Validation);
+});
 
 test('getValidator infers generated fields and rejects handwritten subclass fields', async (t: TestContext) => {
   const { root } = project(t);
