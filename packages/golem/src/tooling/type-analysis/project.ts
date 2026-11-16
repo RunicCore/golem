@@ -721,10 +721,11 @@ export function filesReadingOutputs(program: ts.Program, outputs: readonly strin
         if (resolved === undefined) {
           // Before the job has written the file the import resolves to none: a lookup that counts the TypeScript files it would write finds it.
           if (checker.resolveImport(specifier, { files: new Set(), folders: outputs }) !== undefined) excluded.add(file.fileName);
+        } else if (names.has(resolved.replace(/\\/g, '/'))) {
+          // A file of the program under an output is excluded above, and the importer follows by the closure below.
+          imported.push(resolved);
         } else if (!inNodeModules(resolved) && isUnderOutputs(outputs, resolved)) {
           excluded.add(file.fileName);
-        } else if (names.has(resolved.replace(/\\/g, '/'))) {
-          imported.push(resolved);
         }
         continue;
       }

@@ -239,6 +239,11 @@ export interface VirtualLookup {
   directory(directory: string): boolean;
 }
 
+/** Whether a lookup can find anything among `virtual`; a second lookup over none cannot succeed where the first failed. */
+export function hasVirtualFiles(virtual: VirtualFiles | undefined): virtual is VirtualFiles {
+  return virtual !== undefined && (virtual.files.size > 0 || virtual.folders.length > 0);
+}
+
 /** The lookup of `virtual`; the paths it is asked about are canonical. */
 export function virtualLookup(virtual: VirtualFiles): VirtualLookup {
   const files = new Set([...virtual.files].map(canonical));

@@ -29,7 +29,7 @@ import * as ast from 'typescript/ast';
 import { GOLEM_CHANNELS } from './diagnostics-channels.js';
 import { displayPath } from './generator-core.js';
 import { fileSignature, MISSING } from './input-watcher.js';
-import { affectsResolution, assertConfigParsed, assertNoSourceFiles, canonical, collectTscDiagnostics, configReferences, declarationOutputOf, emitWanted, flagPathOptions, flagsAsConfigOptions, hasDeclarationOutput, isBrokenReference, programRequest, REFERENCE_ERROR_CODES, referenceClosure, referencedConfigFile, virtualLookup } from './typescript-config.js';
+import { affectsResolution, assertConfigParsed, assertNoSourceFiles, canonical, collectTscDiagnostics, configReferences, declarationOutputOf, emitWanted, flagPathOptions, flagsAsConfigOptions, hasDeclarationOutput, isBrokenReference, programRequest, REFERENCE_ERROR_CODES, referenceClosure, referencedConfigFile, hasVirtualFiles, virtualLookup } from './typescript-config.js';
 import type { ConfigReference, ProgramRequest, ResolveAtCurrentFolder, VirtualLookup } from './typescript-config.js';
 import { assertPackageManifestsParse } from './type-analysis/package-specifier.js';
 import {
@@ -646,7 +646,7 @@ class CompatProgram implements Program {
     const file = specifier.getSourceFile().fileName;
     assertPackageManifestsParse(specifier.text, file);
     const resolved = this.project.program.getResolvedModuleFromModuleSpecifier(specifier, file);
-    if (resolved || !virtualFiles) return resolved;
+    if (resolved || !hasVirtualFiles(virtualFiles)) return resolved;
     const mode = this.project.program.getModeForUsageLocation(file, specifier);
     return this.session.resolveModuleName(specifier.text, file, this.getCompilerOptions(), mode, virtualFiles).resolvedModule;
   }
