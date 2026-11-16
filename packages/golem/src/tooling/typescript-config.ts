@@ -182,7 +182,7 @@ export function assertNoSourceFiles(fileNames: readonly string[]): void {
 interface ParsedArguments {
   readonly options: object;
   readonly fileNames: readonly string[];
-  readonly errors: readonly { readonly code: number; readonly text: string }[];
+  readonly errors: readonly Diagnostic[];
 }
 
 /** A command-line option as a tsconfig value. The parse holds enums as numbers and `lib` as file names, which a configuration does not take back, so the argument's own text decides. */
@@ -236,7 +236,7 @@ function parsedFlagOptions(flags: readonly string[], parse: (flags: readonly str
     })();
     const parsed = parse(together ? [flag, next] : [flag]);
     assertNoSourceFiles(parsed.fileNames);
-    if (parsed.errors.length > 0) throw new Error([`The compiler arguments ${flags.join(' ')} have errors:`, ...parsed.errors.map((diagnostic) => `  TS${diagnostic.code}: ${diagnostic.text}`)].join('\n'));
+    assertCommandLineParsed(parsed);
     for (const [name, value] of Object.entries(parsed.options as Record<string, unknown>)) options[name] = configValue(value, together ? next : undefined);
     if (together) index += 1;
   }

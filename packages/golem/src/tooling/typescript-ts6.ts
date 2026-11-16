@@ -721,7 +721,7 @@ class CompatProgram implements Golem.Program {
 
 function parseFlags(flags: readonly string[]) {
   const { options: parsed, fileNames, errors } = classic.parseCommandLine(flags);
-  return { options: parsed, fileNames, errors: errors.map((diagnostic) => ({ code: diagnostic.code, text: classic.flattenDiagnosticMessageText(diagnostic.messageText, '\n') })) };
+  return { options: parsed, fileNames, errors: errors.map(withText) };
 }
 
 /**
@@ -1011,9 +1011,9 @@ export class ProgramSession implements Disposable {
     return configReferences(config);
   }
 
-  private parseConfig(configPath: string, overlays: ReadonlyMap<string, string>, commandLine?: { readonly options: Golem.CompilerOptions; readonly errors: readonly ClassicDiagnostic[] }): ParsedConfig {
+  private parseConfig(configPath: string, overlays: ReadonlyMap<string, string>, commandLine?: { readonly options: Golem.CompilerOptions }): ParsedConfig {
     const { parsed, errors } = this.readConfig(configPath, overlays, commandLine);
-    assertConfigParsed(configPath, [...commandLine?.errors ?? [], ...errors].map((diagnostic) => ({ code: diagnostic.code, text: classic.flattenDiagnosticMessageText(diagnostic.messageText, '\n') })));
+    assertConfigParsed(configPath, errors.map((diagnostic) => ({ code: diagnostic.code, text: classic.flattenDiagnosticMessageText(diagnostic.messageText, '\n') })));
     return parsed;
   }
 
