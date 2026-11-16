@@ -2,7 +2,7 @@ import * as path from 'node:path';
 import * as ts from '@exprtlabs/golem/internal/ts';
 import {
   byRealPath, collectSpecifications, companionFilename, deduplicateProjections, descriptorBuilder, diagnostic, fieldProvenance, filesReadingOutputs, includedModelSources,
-  inNodeModules, isGeneratedCompanion, isUnderOutputs, linkedClasses, manifestModelOfSymbol, modelSpecificationForClass, pascalIdentifier, resolveSymbol, typeScriptErrorAt,
+  inNodeModules, isGeneratedCompanion, isRelativeSpecifier, isUnderOutputs, linkedClasses, manifestModelOfSymbol, modelSpecificationForClass, pascalIdentifier, resolveSymbol, typeScriptErrorAt,
   type DtoRule, type ManifestIndex, type ModelBoundary, type ModelConversionDescriptor, type ModelSpecification, type TypeAnalysisContext,
 } from '@exprtlabs/golem/internal/type-analysis';
 import { canonicalPath, displayPath, stripSourceSuffix } from '@exprtlabs/golem/internal/generator-support';
@@ -183,7 +183,7 @@ export function createContractAnalysis(
           let owner: ts.Node | undefined = declaration;
           while (owner && !ts.isImportDeclaration(owner)) owner = owner.parent;
           const specifier = owner && ts.isImportDeclaration(owner) && ts.isStringLiteral(owner.moduleSpecifier) ? owner.moduleSpecifier.text : undefined;
-          const target = specifier?.startsWith('.') ? path.resolve(path.dirname(declaration.getSourceFile().fileName), specifier) : undefined;
+          const target = specifier !== undefined && isRelativeSpecifier(specifier) ? path.resolve(path.dirname(declaration.getSourceFile().fileName), specifier) : undefined;
           if (target !== undefined && isUnderOutputs(laterOutputs, target)) found = target;
         }
         const resolved = resolveSymbol(checker, symbol);

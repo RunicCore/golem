@@ -5,7 +5,7 @@ import * as ts from '../typescript-ns.js';
 import { assertNotSolutionTsconfig } from '../typescript-config.js';
 import { readManifest } from './package-specifier.js';
 import { displayPath, GolemDiagnosticSeverity, canonicalPath, compareText, discoverSources, hasErrorCode, isInsideDirectory, parseYamlFile, sessionKey, suffixPattern, YamlFileError, type GeneratorSession, type GolemDiagnostic, type InputObserver } from '../generator-core.js';
-import { canonicalFilename, inNodeModules, portableRelativeFilename } from './path-identity.js';
+import { canonicalFilename, inNodeModules, isRelativeSpecifier, portableRelativeFilename, relativeSpecifierOf } from './path-identity.js';
 import { ROOT_KEYS } from '../editor-schema.js';
 
 export { canonicalFilename, portableRelativeFilename };
@@ -321,7 +321,7 @@ export function sourceImportPath(source: string, output: string): string {
     .replace(/\.ts$/, '.js')
     .replace(/\.mts$/, '.mjs')
     .replace(/\.cts$/, '.cjs');
-  return relativePath.startsWith('.') ? relativePath : `./${relativePath}`;
+  return relativeSpecifierOf(relativePath);
 }
 
 /** The companion of a source: `.generated` before its final extension. */
@@ -716,7 +716,7 @@ export function filesReadingOutputs(program: ts.Program, outputs: readonly strin
     imports.set(file.fileName, imported);
     if (isUnderOutputs(outputs, file.fileName)) excluded.add(file.fileName);
     for (const specifier of moduleSpecifiers(file)) {
-      if (!specifier.text.startsWith('.')) {
+      if (!isRelativeSpecifier(specifier.text)) {
         const resolved = checker.resolveImport(specifier)?.resolvedFileName;
         if (resolved !== undefined && names.has(resolved.replace(/\\/g, '/'))) imported.push(resolved);
         continue;
