@@ -59,9 +59,9 @@ test('schema graph interns nested objects once and stringify composes by call', 
   const source = render(emitGraphStringify(graph));
   const { stringifyMoney, stringifyPayment } = instantiate(source);
   const moneyValue = { currency: 'USD', value: '10.00' };
-  assert.equal(stringifyMoney(moneyValue as never), JSON.stringify(moneyValue));
+  assert.equal(stringifyMoney(moneyValue), JSON.stringify(moneyValue));
   const paymentValue = { id: 'p1', amount: moneyValue, note: 'thanks' };
-  assert.equal(stringifyPayment(paymentValue as never), JSON.stringify(paymentValue));
+  assert.equal(stringifyPayment(paymentValue), JSON.stringify(paymentValue));
 });
 
 test('intern preserves type-only nested refs as known-key copies and class refs as construct, and skips identity-only fill', () => {
@@ -177,10 +177,10 @@ test('TSerde intern emits a second schema only when wire and model intern keys d
   const { parsePermissionInput, stringifyPermissionInput, parseNameInput, stringifyNameInput } = instantiateRuntime(source);
   const permissionWire = { permissions: '5' };
   const decodedPermission = parsePermissionInput(JSON.stringify(permissionWire), { validate: false }) as Record<string, unknown>;
-  assert.equal(stringifyPermissionInput(decodedPermission as never, { validate: false }), JSON.stringify(permissionWire), 'PermissionInput round-trips through its own wire stringify function');
+  assert.equal(stringifyPermissionInput(decodedPermission, { validate: false }), JSON.stringify(permissionWire), 'PermissionInput round-trips through its own wire stringify function');
   const nameWire = { name: 'ann' };
   const decodedName = parseNameInput(JSON.stringify(nameWire), { validate: false }) as Record<string, unknown>;
-  assert.equal(stringifyNameInput(decodedName as never, { validate: false }), JSON.stringify(nameWire), 'NameInput round-trips even though model and wire share one schema');
+  assert.equal(stringifyNameInput(decodedName, { validate: false }), JSON.stringify(nameWire), 'NameInput round-trips even though model and wire share one schema');
 });
 
 test('IObject and IModel with the same TSerde fields intern as separate stringify nodes', () => {
@@ -233,11 +233,11 @@ test('IObject and IModel with the same TSerde fields intern as separate stringif
   const permissionInputWire = { permissions: '5', extra: 'drop-me' };
   const decodedInput = fromWireFormatPermissionInput(permissionInputWire, { validate: false }) as Record<string, unknown>;
   assert.deepEqual(decodedInput, { permissions: '5' }, 'fillPermissionInput assigns only the known field');
-  assert.equal(stringifyPermissionInput(decodedInput as never, { validate: false }), '{"permissions":"5"}');
+  assert.equal(stringifyPermissionInput(decodedInput, { validate: false }), '{"permissions":"5"}');
   const permissionWire = { permissions: '5' };
   const decodedModel = fromWireFormatPermission(permissionWire, { validate: false, construct: PermissionModel }) as object;
   assert.ok(decodedModel instanceof PermissionModel, 'the IModel node fill supports options.construct like other constructed references');
-  assert.equal(stringifyPermission(decodedModel as never, { validate: false }), '{"permissions":"5"}', 'the IModel node has its own stringify function, separate from PermissionInput');
+  assert.equal(stringifyPermission(decodedModel, { validate: false }), '{"permissions":"5"}', 'the IModel node has its own stringify function, separate from PermissionInput');
 });
 
 test('different Payment contracts intern as distinct hashed codec ids and identical ones as one', () => {
@@ -554,13 +554,14 @@ test('fill assigns known fields, keeps __proto__ defineProperty, and nested mode
       Object.assign(this, values);
     }
   }
-  createObjectCodec('Money', {
+  const valuesOf = (value: unknown): object => (typeof value === 'object' && value !== null ? value : {});
+  createObjectCodec<MoneyModel>('Money', {
     stringify: (value) => JSON.stringify(value),
-    parse: (text) => JSON.parse(text) as never,
-    validate: (_value: unknown): _value is never => true,
-    assert: (value) => value as never,
-    toWireFormat: (value) => ({ ...(value as object) }),
-    fromWireFormat: (wire) => new MoneyModel(wire as object) as never,
+    parse: (text) => new MoneyModel(valuesOf(JSON.parse(text))),
+    validate: () => true,
+    assert: (value) => new MoneyModel(valuesOf(value)),
+    toWireFormat: (value) => ({ ...value }),
+    fromWireFormat: (wire) => new MoneyModel(valuesOf(wire)),
   });
   // defineModelProperty is heavier than a plain assignment: only the "__proto__" key needs it.
   const defined: string[] = [];

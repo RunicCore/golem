@@ -29,11 +29,11 @@ const accept: Validator = () => [];
 
 test('context resolve receives the reference and mode only, cached per (reference, mode)', () => {
   const calls: unknown[][] = [];
-  const context = { resolve: (...args: unknown[]) => { calls.push(args); return accept; } };
-  const a = resolveModelValidationContextValidator(context as never, 'X#model-only', 'first');
-  assert.strictEqual(resolveModelValidationContextValidator(context as never, 'X#model-only', 'first'), a);
-  resolveModelValidationContextValidator(context as never, 'X#model-only', 'all');
-  resolveModelValidationContextValidator(context as never, 'X', 'first');
+  const context: ModelValidationContext = { resolve: (...args) => { calls.push(args); return accept; } };
+  const a = resolveModelValidationContextValidator(context, 'X#model-only', 'first');
+  assert.strictEqual(resolveModelValidationContextValidator(context, 'X#model-only', 'first'), a);
+  resolveModelValidationContextValidator(context, 'X#model-only', 'all');
+  resolveModelValidationContextValidator(context, 'X', 'first');
   assert.deepEqual(calls, [['X#model-only', 'first'], ['X#model-only', 'all'], ['X', 'first']]);
 });
 
@@ -64,12 +64,15 @@ test('a model whose wire schema equals its model schema is asked for as the wire
     emitCodecRuntimeText(graph, { validatorName: (id) => identifier(validators.validatorName(id)) }),
     validators.scope,
   );
+  const nameIsString: Validator = (value) => typeof value === 'object' && value !== null && 'name' in value && typeof value.name === 'string'
+    ? []
+    : [{ code: 'type', expected: ['string'], path: ['name'] }];
   const asked: string[] = [];
   // The context answers the wire key only; a context is authoritative, so any other key would throw.
   const context: ModelValidationContext = {
     resolve(reference) {
       asked.push(reference);
-      return reference === `${node.codecId}#wire` ? (value) => (typeof (value as { name?: unknown }).name === 'string' ? [] : [{ code: 'type', expected: ['string'], message: 'Expected string', path: ['name'], source: 'serde', representation: 'wire' } as never]) : undefined;
+      return reference === `${node.codecId}#wire` ? nameIsString : undefined;
     },
   };
   assert.deepEqual(runtime.fromWireFormatPlain({ name: 'a' }, { validationContext: context }), { name: 'a' });
