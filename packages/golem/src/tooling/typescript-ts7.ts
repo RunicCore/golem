@@ -14,7 +14,6 @@ import { channel } from 'node:diagnostics_channel';
 import {
   readdirSync,
   readFileSync,
-  realpathSync,
   statSync,
 } from 'node:fs';
 import {
@@ -137,7 +136,6 @@ export interface ModuleResolutionHost {
   fileExists(filename: string): boolean;
   readFile(filename: string): string | undefined;
   getCurrentDirectory?(): string;
-  realpath?(filename: string): string;
   useCaseSensitiveFileNames?: boolean | (() => boolean);
 }
 
@@ -775,13 +773,6 @@ export const sys: ModuleResolutionHost & {
       return undefined;
     }
   },
-  realpath: (filename) => {
-    try {
-      return realpathSync(filename);
-    } catch {
-      return filename;
-    }
-  },
 };
 
 /** How `tsc` keys a file by its name on this file system: lower case when the file system ignores case. */
@@ -793,7 +784,6 @@ export function createCompilerHost(options: CompilerOptions = {}, _setParentNode
     fileExists: (filename) => sys.fileExists(filename),
     readFile: (filename) => sys.readFile(filename),
     getCurrentDirectory: () => sys.getCurrentDirectory(),
-    realpath: (filename) => sys.realpath?.(filename) ?? filename,
     useCaseSensitiveFileNames: sys.useCaseSensitiveFileNames,
     getCanonicalFileName: (filename) => canonicalize(filename, hostCaseSensitivity),
     getNewLine: () => '\n',
