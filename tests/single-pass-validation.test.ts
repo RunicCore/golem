@@ -52,7 +52,7 @@ async function project(t: TestContext, profile: { validation: true }) {
 }
 
 test('each rule runs once per conversion; IObject parse enforces model-only rules', async t => {
-  const { counter, Order, RuleOnly, order, plain, ruleOnly, source } = await project(t, { validation: true });
+  const { counter, Order, RuleOnly, order, plain, ruleOnly } = await project(t, { validation: true });
   const count = (run: () => unknown): number => { counter.reset(); run(); return counter.calls; };
 
   // The IObject bug: model-only rules after decoding.
@@ -85,7 +85,11 @@ test('each rule runs once per conversion; IObject parse enforces model-only rule
   assert.equal(count(() => ruleOnly.parse(JSON.stringify(rule), { construct: RuleOnly })), 1);
   const ruleModel = ruleOnly.parse(JSON.stringify(rule), { construct: RuleOnly });
   assert.equal(count(() => ruleOnly.stringify(ruleModel)), 1);
-  assert.match(source, /__golemAssertModelOnly_TRuleOnly/);
+  // A violation of the rule is one model issue: no wire-only step judges it again.
+  counter.reset();
+  assert.throws(() => ruleOnly.parse(JSON.stringify({ ...rule, note: ' ' }), { construct: RuleOnly }),
+    (e: unknown) => validationError(e) && (e as LibError).issues.length === 1 && firstIssue(e)?.representation === IssueRepresentation.Model);
+  assert.equal(counter.calls, 1);
 });
 
 const MONEY_FIXTURE = 'models/unify-validate/sdk-money-ref-plus-extra-tvalidation-local-tvalidation-and-tserde-share-one-';

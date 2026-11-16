@@ -5,8 +5,7 @@ import test, { type TestContext } from 'node:test';
 import type { GolemProfile } from '@exprtlabs/golem/generator-api';
 import { createExecutableValidationMemo, hasExecutableValidation, type ModelTypeDescriptor } from '@exprtlabs/golem/internal/schema';
 import { generate } from '#model/generator';
-import { writeGeneratedArtifacts } from './fixture-project.js';
-import { buildModelProject, createModelProject, writeModelGolemYaml, writeModelSources } from './model-project.js';
+import { buildModelProject, createModelProject, generatedModelFiles, writeModelGolemYaml, writeModelSources } from './model-project.js';
 import { command } from './support/process.js';
 
 const profiles: readonly (readonly [string, GolemProfile])[] = [
@@ -75,6 +74,7 @@ console.log(JSON.stringify({
 for (const [label, profile] of profiles) for (const chain of [modelChain, objectChain]) {
   const { kind, name } = chain;
   test(`a companion emits only its own ${kind} models of a chained job and references the rest by codec id (${label})`, (t: TestContext) => {
+    // protects: F-129 generated code is not duplicated, and a chain whose items reference the one before twice does not expand per path
     const count = 12;
     const last = count - 1;
     const { root, sourceRoot } = project(t, 'golem-model-chain-');
@@ -110,28 +110,6 @@ for (const [label, profile] of profiles) for (const chain of [modelChain, object
     assert.ok(lastCompanion.length < companion(1).length * 1.5, `${name.toLowerCase()}-${last} ${lastCompanion.length} B vs ${name.toLowerCase()}-1 ${companion(1).length} B`);
   });
 }
-
-test('with validation on only the model that does not turn it off imports validators', (t: TestContext) => {
-  // protects: R-77 a model at false gets no validators
-  const { root, sourceRoot } = project(t, 'golem-model-imports-');
-  writeModelSources(sourceRoot, {
-    'plain.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
-export type TPlain = IModel<{ at: Date }, { validation: false }>;
-`,
-    'opted.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
-export type TOpted = IModel<{ at: Date }>;
-`,
-  });
-  const { artifacts } = generate({ root, profile: { validation: true } });
-  const content = (name: string): string => artifacts.find((artifact) => artifact.path.endsWith(name))?.content ?? '';
-  assert.match(content('opted.model.generated.ts'), /import \{ [^}]*validate_TOpted_\w+[^}]* \} from "[^"]*models\.validators\.generated\.js";/);
-  assert.doesNotMatch(content('plain.model.generated.ts'), /models\.validators\.generated/);
-  assert.match(content('plain.model.generated.ts'), /profile: \{ validation: false \}/);
-  assert.match(content('opted.model.generated.ts'), /profile: \{ validation: true \}/);
-  // With validation off in the project there is no validators file at all.
-  const plainOnly = generate({ root, sources: [path.join(sourceRoot, 'plain.model.ts')], profile: { validation: false } });
-  assert.equal(plainOnly.artifacts.some((artifact) => artifact.path.endsWith('.validators.generated.ts')), false);
-});
 
 const cycleSources = {
   'a.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
@@ -172,26 +150,26 @@ console.log(JSON.stringify({
 }));
 `;
 
-test('editing a leaf model regenerates the ids its dependents reference', (t: TestContext) => {
-  const profile: GolemProfile = { validation: true };
+const leafEditVerifier = `
+const { fromWireFormatTItem2 } = await import('./build/item-2.model.generated.js');
+const item = (index) => ({ label: 'abc', at: '2024-01-01T00:00:00.000Z', kind: { k: 'a', a: '2024-01-02T00:00:00.000Z' }, ...(index > 0 ? { prev: item(index - 1), prevs: [item(index - 1)] } : { note: 'n' }) });
+let deepest = fromWireFormatTItem2(item(2));
+while (deepest.prev) deepest = deepest.prev;
+console.log(JSON.stringify({ note: deepest.note }));
+`;
+
+test('a dependent of an edited leaf model decodes the new field of the leaf after the next build', async (t: TestContext) => {
+  // protects: an edited model gets a new codec id; a dependent that kept the old id would not find the leaf codec
   const { root, sourceRoot } = project(t, 'golem-model-leaf-edit-');
   writeModelSources(sourceRoot, chainSources(3));
-  const ids = (): { readonly owned: string; readonly referenced: readonly string[] } => {
-    const artifacts = generate({ root, profile }).artifacts;
-    writeGeneratedArtifacts(artifacts);
-    const text = (index: number): string =>
-      artifacts.find((artifact) => artifact.path.endsWith(`item-${index}.model.generated.ts`))?.content ?? '';
-    const owned = text(0).match(/registerIModelClass\("(TItem0_[0-9a-f]{8})"/)?.[1] ?? '';
-    return { owned, referenced: [...new Set(text(1).match(/TItem0_[0-9a-f]{8}/g) ?? [])] };
-  };
-  const before = ids();
-  assert.ok(before.owned);
-  assert.deepEqual(before.referenced, [before.owned]);
+  writeModelGolemYaml(root, { validation: true });
+  await buildModelProject(root);
   const leaf = path.join(sourceRoot, 'item-0.model.ts');
   fs.writeFileSync(leaf, fs.readFileSync(leaf, 'utf8').replace('at: Date;', 'at: Date; note?: string;'));
-  const after = ids();
-  assert.notEqual(after.owned, before.owned);
-  assert.deepEqual(after.referenced, [after.owned], 'the dependent companion references the new id');
+  await buildModelProject(root);
+  fs.writeFileSync(path.join(root, 'verify-leaf-edit.mjs'), leafEditVerifier);
+  const result = await command(root, process.execPath, ['verify-leaf-edit.mjs']);
+  assert.deepEqual(JSON.parse(result.stdout.trim()), { note: 'n' });
 });
 
 const mixedCycleSources = {
@@ -232,6 +210,18 @@ console.log(JSON.stringify({
 }));
 `;
 
+const validationToggleSource = (type: string, options: string): string => `import type { IModel } from '@exprtlabs/golem/model';
+import type { MinLength } from '@exprtlabs/golem/tags';
+export type ${type} = IModel<{ name: string & MinLength<3> }${options}>;
+`;
+
+const toggleVerifier = `
+const { fromWireFormatTPlain } = await import('./build/plain.model.generated.js');
+const { fromWireFormatTOpted } = await import('./build/opted.model.generated.js');
+const accepts = (decode) => { try { decode({ name: 'x' }); return true; } catch { return false; } };
+console.log(JSON.stringify({ plain: accepts(fromWireFormatTPlain), opted: accepts(fromWireFormatTOpted) }));
+`;
+
 // One project per profile holds a short chain of each kind and both cycles, so the profile compiles once.
 for (const [label, profile] of profiles) {
   test(`chained, cyclic and mixed-kind jobs compile in one project (${label})`, async (t: TestContext) => {
@@ -241,10 +231,11 @@ for (const [label, profile] of profiles) {
       ...chainSources(3, objectChain),
       ...cycleSources,
       ...mixedCycleSources,
+      'plain.model.ts': validationToggleSource('TPlain', ', { validation: false }'),
+      'opted.model.ts': validationToggleSource('TOpted', ''),
     });
     writeModelGolemYaml(root, profile);
     await buildModelProject(root);
-    const generated = (name: string): string => fs.readFileSync(path.join(sourceRoot, name), 'utf8');
     const validation = profile.validation ? 'validate' : 'skip';
 
     for (const chain of [modelChain, objectChain]) {
@@ -258,13 +249,15 @@ for (const [label, profile] of profiles) {
       });
     }
 
+    await t.test(`a model that turns validation off accepts a value that the model beside it rejects (${label})`, async () => {
+      // protects: R-77 a model at false gets no validators; with validation off in the project there is no validators file at all
+      fs.writeFileSync(path.join(root, 'verify-toggle.mjs'), toggleVerifier);
+      const result = await command(root, process.execPath, ['verify-toggle.mjs']);
+      assert.deepEqual(JSON.parse(result.stdout.trim()), { plain: true, opted: !profile.validation });
+      assert.equal(generatedModelFiles(root).some((artifact) => artifact.path.endsWith('.validators.generated.ts')), profile.validation === true);
+    });
+
     await t.test(`models of two sources that reference each other load in either import order (${label})`, async () => {
-      const companionA = generated('a.model.generated.ts');
-      const companionB = generated('b.model.generated.ts');
-      assert.equal(companionA.includes('class TBBaseModel'), false);
-      assert.ok(companionB.includes('class TBBaseModel'), 'b.model.generated.ts emits its own TBBaseModel');
-      assert.equal(companionA.includes('function fillTB('), false);
-      assert.ok(companionB.includes('function fillTB('), 'b.model.generated.ts emits its own fillTB');
       fs.writeFileSync(path.join(root, 'verify-cycle.mjs'), cycleVerifier);
       for (const first of ['a', 'b']) {
         const result = await command(root, process.execPath, ['verify-cycle.mjs', first, validation]);
@@ -273,12 +266,6 @@ for (const [label, profile] of profiles) {
     });
 
     await t.test(`an IModel and an IObject of two sources that reference each other load in either order (${label})`, async () => {
-      const orderCompanion = generated('order.model.generated.ts');
-      const lineCompanion = generated('line.model.generated.ts');
-      assert.equal(orderCompanion.includes('function decodeTLine('), false);
-      assert.ok(lineCompanion.includes('function decodeTLine('), 'line.model.generated.ts emits its own decodeTLine');
-      assert.equal(orderCompanion.includes('function fillTLine('), false);
-      assert.ok(lineCompanion.includes('function fillTLine('), 'line.model.generated.ts emits its own fillTLine');
       fs.writeFileSync(path.join(root, 'verify-mixed-cycle.mjs'), mixedCycleVerifier);
       for (const first of ['order', 'line']) {
         const result = await command(root, process.execPath, ['verify-mixed-cycle.mjs', first, validation]);

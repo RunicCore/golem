@@ -311,14 +311,11 @@ test('a model that only an operation response reads is checked by the response v
   assert.equal(exported.filter(name => /^validate_Item_[0-9a-f]{8}$/.test(name)).length, 0, 'no group reads the model, so its root is not exported');
 });
 
-test('a validation-off SDK writes no validators module and no import of one', () => {
-  const result = writeSdk(validatedDocument(), {
-    output: path.join(tmpdir(), 'validators-off'),
-    name: 'Validated',
-    profile: { validation: false, allowAny: false },
-  });
+test('a validation-off SDK writes no validators module and compiles without one', async t => {
+  const output = path.join(createFixtureProject(t, 'golem-openapi-validators-off-'), 'sdk');
+  const result = await generateMaterializedSdk(validatedDocument(), { output, name: 'Validated', profile: { validation: false, allowAny: false } });
   assert.equal(result.artifacts.some(item => item.path.endsWith('validators.generated.ts')), false);
-  assert.equal(result.artifacts.some(item => item.content.includes('validators.generated')), false, 'no module imports one');
+  compileValidatedSdk(output);
 });
 
 test('an operation root that has the name of a model root fails the SDK compile, and roots that only sanitize alike are numbered', () => {

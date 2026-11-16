@@ -666,19 +666,20 @@ test('esbuild: a new file with its first parse call, added to a watched build, i
   assert.ok(result.stdout.split('\n').includes('{"currency":"EUR","value":"2"}'), result.stdout);
 });
 
-test('esbuild: a watched build runs again when a model is regenerated, and rewrites with the new codec id', async (t) => {
+test('esbuild: a watched build runs again when a model is regenerated, and the bundle decodes with the new model', async (t) => {
   const root = await generatedProject(t, 'esbuild-regenerate');
-  const watch = await watching(t, root, 'src/main.ts');
+  write(root, 'src/note-main.ts', `import { parse } from '${SERDE}';
+import type { TMoney } from './money.model.js';
+import './money.model.js';
+console.log(JSON.stringify(parse<TMoney>('{"currency":"USD","value":"1","note":"n"}')));
+`);
+  const watch = await watching(t, root, 'src/note-main.ts');
   assert.deepEqual(await watch.built(1), []);
-  const oldId = codecId(root, 'TMoney');
-  assert.ok(fs.readFileSync(watch.bundle, 'utf8').includes(oldId));
+  const printed = async (): Promise<unknown> => JSON.parse((await command(root, process.execPath, [watch.bundle])).stdout.trim());
+  assert.deepEqual(await printed(), { currency: 'USD', value: '1' }, 'the model has no note field yet');
   await changeMoney(root);
-  const newId = codecId(root, 'TMoney');
-  assert.notEqual(newId, oldId);
   assert.deepEqual(await watch.built(2), []);
-  const bundled = fs.readFileSync(watch.bundle, 'utf8');
-  assert.ok(bundled.includes(newId), 'the rebuilt bundle has the new codec id');
-  assert.ok(!bundled.includes(oldId), 'the rebuilt bundle has no old codec id');
+  assert.deepEqual(await printed(), { currency: 'USD', value: '1', note: 'n' }, 'the rebuilt bundle decodes with the regenerated model');
 });
 
 test('esbuild: a file with no rewrite still reaches the onLoad plugins after golem', async (t) => {

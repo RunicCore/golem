@@ -51,12 +51,8 @@ test('nested projections strip omitted fields and retain intact child models wit
   await assertNestedProjections(root, 'build/address.model.js', false);
 });
 
-test('projection decoders copy fields with assignments and keep the prototype untouched', async t => {
+test('a projection decoder copies only the retained fields and keeps the prototype untouched', async t => {
   const root = await buildPlaceProject(t);
-  const companion = generatedModelFiles(root).find(artifact => artifact.path.endsWith('place.model.generated.ts'))!.content;
-  const helper = companion.split('\n').find(line => line.startsWith('function decodeTPlaceOmitId('));
-  assert.ok(helper);
-  assert.doesNotMatch(helper, /Object\.fromEntries/);
   const { Office } = await import(path.join(root, 'build/place.model.js'));
   const place = JSON.parse('{"city":"Hue","country":"VN","__proto__":{"x":1}}');
   const office = modelCodec(Office).fromWireFormat({ place }, { validate: false }) as { place: Record<string, unknown> };
@@ -309,8 +305,10 @@ test('a projection over a source object drops the brand keys of an SDK model and
   writeView('Omit<Envelope, \'payload\'>');
   const built = await buildModelProject(root, [], { allowFailure: true });
   assert.equal(built.code, 0, `${built.stdout}\n${built.stderr}`);
-  const companion = generatedModelFiles(root).find(artifact => artifact.path.endsWith('view.model.generated.ts'))!.content;
-  assert.doesNotMatch(companion, /__@/);
+  const { View } = await import(path.join(root, 'build/view.model.js'));
+  const view = modelCodec(View).fromWireFormat({ envelope: { id: 'a' } });
+  assert.deepEqual(view.envelope, { id: 'a' });
+  assert.deepEqual(modelCodec(view).toWireFormat(view), { envelope: { id: 'a' } });
 });
 
 test('a projection keeps a source field whose string key is spelled like a brand key', async t => {
