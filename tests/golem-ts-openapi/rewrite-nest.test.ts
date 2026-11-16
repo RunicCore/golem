@@ -108,6 +108,7 @@ export class RecordController {
 test('with nest on, a model @Body() or @Query() parameter and a model return gain codec decorators', async () => {
   const { root, result } = await sharedScans.error();
   assert.deepEqual(diagnosticsIn(result, CONTROLLER, 'src/payment.model.ts'), []);
+  assert.deepEqual(result.diagnostics.filter(({ file }) => file === undefined), []);
   const code = rewritten(root, result, CONTROLLER);
   assert.deepEqual(code.split('\n').slice(0, 2), [PAYMENT_MODULE, NEST_IMPORT]);
   assert.deepEqual(result.files.get(CONTROLLER)?.imports, [
@@ -194,7 +195,7 @@ const RENAMED_FILES = {
 test('a @Body() or @Query() imported under another name, through a re-export or from a vendored copy of NestJS is stamped, and a local decorator of that name is not', async () => {
   // protects: T-757 the scan finds a parameter decorator by its resolved symbol and the package that owns its file, not by the name it is written under
   const { root, result } = await sharedScans.error();
-  assert.deepEqual(diagnosticsIn(result, RENAMED), []);
+  assert.deepEqual(diagnosticsIn(result, RENAMED, 'src/decorators.ts'), []);
   const file = RENAMED;
   assert.deepEqual(result.files.get(file)?.edits, [
     stampOf(root, file, 'input: TPaymentInput', idOf(root, 'TPaymentInput')),
