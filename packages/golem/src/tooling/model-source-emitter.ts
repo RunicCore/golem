@@ -66,14 +66,13 @@ import {
   PRESENT_KEY,
   presentKeysCode,
   unionDispatch,
-  descriptorSerde,
   valueConversion,
   type ObjectTypeDescriptor,
 } from './union-conversion.js';
 import { extraKeyValues, isRecordExpression } from './stringify-emitter.js';
 
 /** Generators read tag values through the same rule as the shared union conversion. */
-export { AmbiguousUnionConversionError, descriptorNeedsConversion, descriptorSerde, ObjectUnionDiscriminatorError, serdeFunctions } from './union-conversion.js';
+export { AmbiguousUnionConversionError, descriptorNeedsConversion, ObjectUnionDiscriminatorError, serdeFunctions } from './union-conversion.js';
 
 export type ModelConversionDescriptor = ModelTypeDescriptor;
 
@@ -329,7 +328,7 @@ function emitNestedUncached(
   memo: EmitMemo,
 ): Code {
   const value = expression;
-  const serde = descriptorSerde(descriptor);
+  const serde = descriptor.serde;
   if (serde && resolveSerde) {
     if (direction !== 'fromJSON') return value;
     return resolveSerde.deserialize(serde, value);

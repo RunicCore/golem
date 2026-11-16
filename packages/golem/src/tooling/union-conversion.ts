@@ -448,11 +448,6 @@ function inlineDispatch(options: DispatchOptions): Code {
   return code`(${converted})`;
 }
 
-/** The serde of a descriptor, as the descriptor holds it: the functions it names may be missing (a codec shape holds the `id` alone). */
-export function descriptorSerde(descriptor: ModelTypeDescriptor): DescriptorSerde | undefined {
-  return descriptor.serde;
-}
-
 /** The serde with the two functions it names. A serde that names none is a broken input, not a case: it throws, so no output holds a missing function. */
 export function serdeFunctions(serde: DescriptorSerde): SerdeFunctions {
   const { serialize, deserialize } = serde;
@@ -473,7 +468,7 @@ export type ValueConversion =
   | { readonly kind: 'other' };
 
 export function valueConversion(descriptor: ModelTypeDescriptor): ValueConversion {
-  const serde = descriptorSerde(descriptor);
+  const { serde } = descriptor;
   if (serde) return { kind: 'serde', serde };
   return descriptor.kind === 'generated-model' ? { kind: 'generated-model', descriptor } : { kind: 'other' };
 }
