@@ -6,17 +6,12 @@ import type { OpenProgramOptions, VirtualFiles } from './typescript-types.js';
 /** The diagnostic code of a configuration that matches no file. */
 const NO_INPUTS_FOUND = 18003;
 
-/** The errors of a parsed configuration that golem reports. Golem names its own roots, so a configuration that lists no files is not an error here. */
-export function reportedConfigErrors<D extends { readonly code: number }>(errors: readonly D[]): D[] {
-  return errors.filter((diagnostic) => diagnostic.code !== NO_INPUTS_FOUND);
-}
-
 /** The refusal of a configuration that has errors. A build recovers from it by printing them as the compiler does; any other reader of the values fails with it. */
 export class ConfigParseError extends Error {}
 
-/** A configuration that is read for its values (not to open a program) fails with its errors. */
+/** A configuration that is read for its values (not to open a program) fails with its errors. Golem names its own roots there, so a configuration that lists no files is not an error. A program reports it, as `tsc` does. */
 export function assertConfigParsed(configPath: string, errors: readonly { readonly code: number; readonly text: string }[]): void {
-  const reported = reportedConfigErrors(errors);
+  const reported = errors.filter((diagnostic) => diagnostic.code !== NO_INPUTS_FOUND);
   if (reported.length > 0) {
     throw new ConfigParseError([`The TypeScript configuration ${displayPath(configPath)} has errors:`, ...reported.map((diagnostic) => `  TS${diagnostic.code}: ${diagnostic.text}`)].join('\n'));
   }
