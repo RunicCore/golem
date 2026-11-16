@@ -7,12 +7,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import { decodeMappings } from '#golem/source-map';
-import { resolveTypeScript } from '#golem/typescript-version';
 import { copyFixture, fileFixtureScope, linkProjectPackages, onceShared } from './fixture-project.js';
 import { MINIMAL_GOLEM_YAML, writeModelSources } from './model-project.js';
 import { build, editTsconfig, TSC } from './support/build-project.js';
 import { createNodeSpecifierProject } from './support/node-specifiers-project.js';
 import { command, workspace } from './support/process.js';
+import { skipOnTypeScript6 } from './support/typescript-lane.js';
 
 const scope = fileFixtureScope();
 
@@ -179,7 +179,7 @@ test('a build with no rootDir rewrites the declarations where the compiler wrote
 });
 
 // The TypeScript 7.1 forms. Import attributes are TypeScript 6 syntax too, so that build runs on both lanes; es2026 and `import source` are TypeScript 7.1 only.
-const skipOnTypeScript6 = resolveTypeScript(process.env.GOLEM_TYPESCRIPT_ROOT ?? workspace).major === 6 && 'TypeScript 6 has no es2026 target and no source phase import';
+const skip = skipOnTypeScript6('TypeScript 6 has no es2026 target and no source phase import');
 const DATA_SITE = `import { parse } from '@exprtlabs/golem/serde';
 import config from './config.json' with { type: 'json' };
 import { label } from './label';
@@ -216,7 +216,7 @@ test('a build keeps a json import with attributes, rewrites the parse site and t
   assert.equal(await runData(root), 'Item:built:strict:label');
 });
 
-test('a build keeps a source phase import', { skip: skipOnTypeScript6 }, async () => {
+test('a build keeps a source phase import', { skip }, async () => {
   // protects: T-350 TypeScript 7.1 source phase import survives golem build
   const root = formsProject({ lib: ['es2026', 'dom', 'esnext.modulesource'] }, {
     'forms.ts': "import source wasmSource from './mod.wasm';\nexport { wasmSource };\n",
@@ -227,7 +227,7 @@ test('a build keeps a source phase import', { skip: skipOnTypeScript6 }, async (
   assert.equal(await runData(root), 'Item:built:strict:label');
 });
 
-test('a build accepts "target": "es2026"', { skip: skipOnTypeScript6 }, async () => {
+test('a build accepts "target": "es2026"', { skip }, async () => {
   // protects: T-350 TypeScript 7.1 adds es2026 as a stable target
   const root = formsProject({ target: 'es2026' });
   assert.equal((await build(root)).exitCode, 0);

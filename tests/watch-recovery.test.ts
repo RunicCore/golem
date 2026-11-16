@@ -14,7 +14,7 @@ import type { InputFiles } from '#golem/input-watcher';
 import { listProjectDependencies } from './fixture-project.js';
 import { write } from './support/build-project.js';
 import { golem, stopChild, workspace } from './support/process.js';
-import { compilerChildren, generationWatchFixture, skipOnTypeScript6, startGenerationWatch } from './support/generation-watch.js';
+import { compilerChildren, generationWatchFixture, skipWithoutCompilerServer, startGenerationWatch } from './support/generation-watch.js';
 import { countingInputFiles, quietly, until } from './support/watch-wait.js';
 
 test('owned output index excludes exactly the outputs and the directories containing them', () => {
@@ -561,7 +561,7 @@ test('watch generates a new model file in a shared folder that holds only a help
   assert.deepEqual(errors, []);
 });
 
-test('stopping an in-process watch closes its compiler', { skip: process.platform === 'win32' || skipOnTypeScript6 }, async (t: TestContext) => {
+test('stopping an in-process watch closes its compiler', { skip: process.platform === 'win32' || skipWithoutCompilerServer }, async (t: TestContext) => {
   const { root, config } = generationWatchFixture(t);
   const { errors, stop } = startGenerationWatch(config);
   const companion = path.join(root, 'src/cart.model.generated.ts');
@@ -574,7 +574,7 @@ test('stopping an in-process watch closes its compiler', { skip: process.platfor
   assert.deepEqual(errors, []);
 });
 
-test('a pipeline session closes the compiler of a removed job', { skip: process.platform === 'win32' || skipOnTypeScript6 }, async (t: TestContext) => {
+test('a pipeline session closes the compiler of a removed job', { skip: process.platform === 'win32' || skipWithoutCompilerServer }, async (t: TestContext) => {
   const { config } = generationWatchFixture(t);
   const session = new GeneratorSessionResources();
   t.after(() => session[Symbol.dispose]());

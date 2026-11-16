@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { stopChild, workspace } from './support/process.js';
-import { compilerChildren, generationWatchFixture, skipOnTypeScript6 } from './support/generation-watch.js';
+import { compilerChildren, generationWatchFixture, skipWithoutCompilerServer } from './support/generation-watch.js';
 import { until } from './support/watch-wait.js';
 import { runLines } from './support/watch-runs.js';
 
@@ -52,7 +52,7 @@ test('watch reuses one compiler across edits and tsconfig path-mapping changes',
     await until(() => runs() >= 1, () => `initial generation ${context()}`);
     // Only TypeScript 7 runs its compiler in a child process; the edits below must regenerate on both versions.
     const [compiler] = compilerChildren(child.pid!);
-    if (!skipOnTypeScript6) assert.ok(compiler, 'the watch keeps its compiler process between runs');
+    if (!skipWithoutCompilerServer) assert.ok(compiler, 'the watch keeps its compiler process between runs');
 
     // Every edit must reach the warm compiler, not only the first one.
     for (const field of ['firstEdit', 'secondEdit', 'thirdEdit']) {
@@ -73,7 +73,7 @@ test('watch reuses one compiler across edits and tsconfig path-mapping changes',
     );
     writeTsconfig('./shared/v2.ts', [...tsconfig.include, 'types/**/*.d.ts']);
     await until(() => generated().includes('ambientShape'), () => `an include edit is applied ${context()}`);
-    if (!skipOnTypeScript6) assert.deepEqual(compilerChildren(child.pid!), [compiler], 'edits reuse the running compiler');
+    if (!skipWithoutCompilerServer) assert.deepEqual(compilerChildren(child.pid!), [compiler], 'edits reuse the running compiler');
   } finally {
     await stopChild(child);
   }
