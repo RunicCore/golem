@@ -736,7 +736,7 @@ class CompatProgram implements Program {
       emitSkipped: output.emitSkipped,
       files: new Map([...output.outputFiles].map(([filename, { text }]) => [canonical(filename), text])),
       sources: new Map([...output.outputFiles].flatMap(([filename, { sourceFileName }]) => (sourceFileName === undefined ? [] : [[canonical(filename), canonical(sourceFileName)] as const]))),
-      diagnostics: output.diagnostics,
+      diagnostics: this.twin ? this.twin.named(output.diagnostics) : output.diagnostics,
     };
   }
 }
@@ -898,6 +898,23 @@ function overriddenConfig(api: API, configPath: string, overrides: OptionOverrid
   }
 }
 
+/** A diagnostic with the name of the derived configuration that the compiler read replaced by the user's tsconfig, the file `tsc` names: the user never wrote the derived one. */
+function inUserConfigName(diagnostic: SyncDiagnostic, { derived, user }: ConfigNames): SyncDiagnostic {
+  const named = (inner: SyncDiagnostic): SyncDiagnostic => inUserConfigName(inner, { derived, user });
+  return {
+    ...diagnostic,
+    text: diagnostic.text.replaceAll(derived, user),
+    ...(diagnostic.messageChain && { messageChain: diagnostic.messageChain.map(named) }),
+    ...(diagnostic.relatedInformation && { relatedInformation: diagnostic.relatedInformation.map(named) }),
+  };
+}
+
+/** The base names of the configuration a program opened and of the user's configuration that it extends. */
+interface ConfigNames {
+  readonly derived: string;
+  readonly user: string;
+}
+
 /**
  * The user's configuration opened alone, for a program not opened on it. The compiler locates an option only in the text of the
  * configuration it opens, and the derived one only extends the user's, so an option error comes without a file. `lookup` gives the
@@ -907,17 +924,23 @@ class ConfigTwin {
   private found: readonly SyncDiagnostic[] | undefined;
 
   /** `referenceErrors`: whether `tsc` reports a project reference of the user's configuration, which the program cannot (`SyntheticProgram.brokenReferences`). */
-  public constructor(private readonly lookup: () => readonly SyncDiagnostic[], private readonly referenceErrors: boolean) {}
+  public constructor(private readonly lookup: () => readonly SyncDiagnostic[], private readonly referenceErrors: boolean, private readonly names: ConfigNames) {}
+
+  /** The diagnostics with the user's tsconfig name in their text, wherever the compiler named the derived one. */
+  named(diagnostics: readonly SyncDiagnostic[]): readonly SyncDiagnostic[] {
+    return diagnostics.map((diagnostic) => inUserConfigName(diagnostic, this.names));
+  }
 
   /** Each diagnostic with no file takes its place in the user's text (`match`); a program whose diagnostics all have a file does not ask the twin. */
   positioned(diagnostics: readonly SyncDiagnostic[]): readonly SyncDiagnostic[] {
-    return diagnostics.every((diagnostic) => diagnostic.fileName !== undefined) ? diagnostics : this.match(diagnostics).placed;
+    const named = this.named(diagnostics);
+    return named.every((diagnostic) => diagnostic.fileName !== undefined) ? named : this.match(named).placed;
   }
 
   /** The option diagnostics of the program, placed, and the reference errors of the user's configuration that the twin reports and the program cannot. */
   withReferenceErrors(diagnostics: readonly SyncDiagnostic[]): readonly SyncDiagnostic[] {
     if (!this.referenceErrors) return this.positioned(diagnostics);
-    const { placed, unused } = this.match(diagnostics);
+    const { placed, unused } = this.match(this.named(diagnostics));
     return [...placed, ...unused.filter((diagnostic) => REFERENCE_ERROR_CODES.has(diagnostic.code))];
   }
 
@@ -1381,7 +1404,7 @@ export class ProgramSession implements Disposable {
         if (!project) throw new Error(`The compiler did not open the TypeScript project ${displayPath(request.configPath)} for ${displayPath(options.root)}.`);
         this.syntheticProgram = created ?? this.syntheticProgram;
         const { twinOf, overrides } = request;
-        const program = new CompatProgram(this, snapshot, project, synthetic?.unbuilt, twinOf === undefined ? undefined : new ConfigTwin(() => this.diagnosticsOfConfig(twinOf, overlays, overrides), synthetic?.brokenReferences ?? false));
+        const program = new CompatProgram(this, snapshot, project, synthetic?.unbuilt, twinOf === undefined ? undefined : new ConfigTwin(() => this.diagnosticsOfConfig(twinOf, overlays, overrides), synthetic?.brokenReferences ?? false, { derived: basename(request.configPath), user: basename(twinOf) }));
         this.held.set(program, request);
         return program;
       } catch (error) {
