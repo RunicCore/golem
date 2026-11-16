@@ -553,6 +553,22 @@ function readsByShape(node: ts.Node): boolean {
   return ts.isConditionalTypeNode(node) || (ts.isMappedTypeNode(node) && node.nameType !== undefined);
 }
 
+/**
+ * The members that a type reading by shape can take its values from: the members of `type`, and of each type argument of its alias that it
+ * does not only project. A mapped type that keeps some members of its argument (`Pick<Sub, 'name'>`) leaves out the rest; a type that writes
+ * members of its own from the argument (`{ held: T['held'] }`, a renamed key) can take any member of it.
+ */
+function sourceMembers(checker: ts.TypeChecker, type: ts.Type, seen = new Set<ts.Type>()): readonly ts.Node[] {
+  const members = checker.getPropertiesOfType(type).flatMap(property => propertyDeclarations(checker, property));
+  for (const argument of type.aliasTypeArguments ?? []) {
+    if (seen.has(argument) || (argument.flags & ts.TypeFlags.Object) === 0) continue;
+    seen.add(argument);
+    const projected = checker.getPropertiesOfType(argument).some(property => propertyDeclarations(checker, property).some(declaration => members.includes(declaration)));
+    if (!projected) members.push(...sourceMembers(checker, argument, seen));
+  }
+  return members;
+}
+
 /** The type nodes that `node` reads by shape: the arguments of a reference to a type that does (`ValueOf<Holder>`), or the checked or mapped type of one written in place. None for any other node. */
 function shapeSources(checker: ts.TypeChecker, node: ts.Node): readonly ts.TypeNode[] {
   if (ts.isTypeReferenceNode(node)) {
@@ -628,9 +644,13 @@ function recordReachableFunctions(context: TagAnalysisContext, node: ts.Node, sc
       return;
     }
   }
-  // The nodes below a type that reads by shape are read again, whichever scan read them before.
-  const sources = scan.shaped ? [] : shapeSources(checker, node);
-  const below: Scan = sources.length === 0 ? scan : { ...scan, nodes: new Set(), shaped: new Set(sources.flatMap(source => checker.getPropertiesOfType(checker.getTypeFromTypeNode(source)).flatMap(property => propertyDeclarations(checker, property)))) };
+  // The nodes below a type that reads by shape are read again, whichever scan read them before. A reader below another one adds its members.
+  const sources = shapeSources(checker, node);
+  const below: Scan = sources.length === 0 ? scan : {
+    ...scan,
+    nodes: scan.shaped ? scan.nodes : new Set(),
+    shaped: new Set([...scan.shaped ?? [], ...sources.flatMap(source => sourceMembers(checker, checker.getTypeFromTypeNode(source)))]),
+  };
   ts.forEachChild(node, child => recordReachableFunctions(context, child, below));
 }
 
