@@ -287,7 +287,7 @@ An error prints its code, location when known, and message, then stops generatio
 - The checker can't resolve the declaration.
 - The resolved function isn't exported.
 - Two functions in one field share one function type, such as two consts typed by the same alias, or `const b: typeof a`, so golem cannot tell which one the tag names.
-- The tag reaches the field through a type that no `typeof` in the field's source leads back to. Golem reads the `typeof` from the field's type nodes, from the declarations that a mapped type copies, and from everything they reach: type aliases and their arguments, interfaces, `typeof` a variable, and the parts of conditional and indexed types. **Fix:** write the tag on the field itself.
+- The tag reaches the field through a type that golem cannot read back to the `typeof` that wrote it. **Fix:** write the tag on the field itself.
 
 **Fix:**
 

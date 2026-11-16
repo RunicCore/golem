@@ -88,9 +88,9 @@ export interface WrittenFunctions {
   readonly validation: Map<ts.Type, ts.Symbol | null>;
   readonly serialize: Map<ts.Type, ts.Symbol | null>;
   readonly deserialize: Map<ts.Type, ts.Symbol | null>;
-  /** The nodes that this field and the fields around it were read from. */
+  /** The nodes that this field and the fields around it were read from, and that no scan of an enclosing field has read yet. */
   readonly sources: readonly ts.Node[];
-  /** Whether `recordReachableFunctions` read `sources` already. It runs once, when a tag read from the checker finds no function. */
+  /** Whether `recordReachableFunctions` read `sources` already. It runs once, before the first tag read from the checker looks up a function. */
   scanned: boolean;
 }
 
@@ -104,13 +104,24 @@ function isUnicodePattern(pattern: string): boolean {
   }
 }
 
-/** A registry for one field: it starts with what the fields around it wrote, because a generic type (`Box<Tagged<string>>`) hands the tags of its argument to the property that its declaration names `T`. */
+/** Whether `node` is `outer` or lies inside it. */
+function isInside(node: ts.Node, outer: ts.Node): boolean {
+  for (let current: ts.Node | undefined = node; current !== undefined; current = current.parent) if (current === outer) return true;
+  return false;
+}
+
+/**
+ * A registry for one field: it starts with what the fields around it wrote, because a generic type (`Box<Tagged<string>>`) hands
+ * the tags of its argument to the property that its declaration names `T`. A source of the fields around it that holds this field's own
+ * node, such as the object type that declares it, is left out: its other members are fields of their own.
+ */
 function newWrittenFunctions(inherited: WrittenFunctions | undefined, sources: readonly ts.Node[]): WrittenFunctions {
+  const enclosing = inherited && !inherited.scanned ? inherited.sources.filter(outer => !sources.some(own => isInside(own, outer))) : [];
   return {
     validation: new Map(inherited?.validation),
     serialize: new Map(inherited?.serialize),
     deserialize: new Map(inherited?.deserialize),
-    sources: [...inherited?.sources ?? [], ...sources],
+    sources: [...enclosing, ...sources],
     scanned: false,
   };
 }
@@ -436,8 +447,9 @@ export function declaredPropertyNodes(checker: ts.TypeChecker, property: ts.Symb
 }
 
 /**
- * The slow read, for a tag that no tag read from source wrote: every `typeof` of a tag in everything that `node` reaches,
- * through type aliases, interfaces, classes, `typeof` a variable, and the parts of mapped, conditional and indexed types.
+ * Records every `typeof` of a tag in everything that `node` reaches, through type aliases, interfaces, classes, `typeof` a
+ * variable, and the parts of mapped, conditional and indexed types. A library or ambient declaration holds no tag of the user and stays unread.
+ * Each node is read once for each `seen`, so one scan reads each reachable node once.
  */
 function recordReachableFunctions(context: TagAnalysisContext, node: ts.Node, seen: Set<ts.Node>): void {
   if (seen.has(node)) return;
@@ -447,7 +459,10 @@ function recordReachableFunctions(context: TagAnalysisContext, node: ts.Node, se
     const symbol = checker.getSymbolAtLocation(node.typeName);
     const tag = golemTag(checker, symbol);
     if (tag) recordTagFunctions(context, node, tag.name);
-    else for (const declaration of targetSymbol(checker, symbol)?.declarations ?? []) recordReachableFunctions(context, declaration, seen);
+    else {
+      const target = targetSymbol(checker, symbol);
+      if (!isAmbientOrGlobalSymbol(target)) for (const declaration of target?.declarations ?? []) recordReachableFunctions(context, declaration, seen);
+    }
   } else if (ts.isTypeQueryNode(node)) {
     const declaration = declarationOf(targetSymbol(checker, symbolAtExpression(checker, node.exprName)));
     if (declaration) recordReachableFunctions(context, declaration, seen);
@@ -457,8 +472,10 @@ function recordReachableFunctions(context: TagAnalysisContext, node: ts.Node, se
 
 /**
  * The function that a tag names. A tag read from source names it by its `typeof` query. A tag that only the checker shows has
- * its type alone, so it names the function that the source nodes of the field wrote with that type; with none, or with two,
- * the read refuses: a type is shared by every function that copies it (`const b: typeof a`) and names no one of them.
+ * its type alone, so it names the function that the source nodes of the field wrote with that type: the registry is completed
+ * by one scan of everything the field reaches before the first such lookup, so a function that the tag reads from source
+ * did not write counts too. With none, or with two, the read refuses: a type is shared by every function that copies it
+ * (`const b: typeof a`) and names no one of them.
  */
 function functionBinding(
   context: TagAnalysisContext,
@@ -470,12 +487,12 @@ function functionBinding(
     return valueBindingForSymbol(context, symbolAtExpression(context.checker, fn.query.exprName), kind, fn.owner);
   }
   const registry = context.writtenFunctions;
-  let written = registry?.[kind].get(fn.type);
-  if (written === undefined && registry && !registry.scanned) {
+  if (registry && !registry.scanned) {
     registry.scanned = true;
-    for (const source of registry.sources) recordReachableFunctions(context, source, new Set());
-    written = registry[kind].get(fn.type);
+    const seen = new Set<ts.Node>();
+    for (const source of registry.sources) recordReachableFunctions(context, source, seen);
   }
+  const written = registry?.[kind].get(fn.type);
   if (written === undefined) {
     throw context.diagnostic(fn.owner, '1040', `${kind} function reaches this tag through a type that golem cannot read back to the \`typeof\` that wrote it, so golem cannot tell which function the tag names. Write the tag on the field itself, with \`typeof\` and the function.`);
   }

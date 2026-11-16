@@ -501,6 +501,36 @@ test('a serializer that copies the type of another binds itself through a NonNul
   assert.equal(importsOf(generated, 'write'), 0, 'write is not bound');
 });
 
+// `a` and `b` share one type, and `Box['f']` writes `typeof a` where the tag of the field writes `typeof b`: golem cannot bind both by their type.
+const hiddenCopyReads = {
+  'an indexed access beside the tag of the field': tsSource`Box['f'] & TValidation<typeof b>`,
+  'an object field beside the tag of the field': tsSource`{ inner: Box['f'] } & TValidation<typeof b>`,
+} as const;
+
+for (const [name, field] of Object.entries(hiddenCopyReads)) test(`a validator and the validator that it copies are refused when ${name} writes the other`, t => {
+  // protects: T-982 the scan found one function for the type and the other one dropped, with no error (R-55 no silent difference)
+  const { root, sourceRoot } = fixture(t);
+  fs.writeFileSync(path.join(sourceRoot, 'rules.ts'), tsSource`export const a: (v: unknown) => boolean = (v) => v !== '';\nexport const b: typeof a = (v) => v !== 0;`.text);
+  fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({
+    name: 'A',
+    imports: tsSource`import type { TValidation } from '@exprtlabs/golem/tags';\nimport { a, b } from './rules.js';\ntype Box = { f: string & TValidation<typeof a> };`,
+    fields: tsSource`field: ${field}`,
+  }).text);
+  assert.throws(() => generate({ root, profile: { validation: true } }), /RUNM1040.*shares its type with another function in this field/);
+});
+
+test('a tag function that comes from an inferred type is refused, not bound by its type', t => {
+  // protects: T-982 no `typeof` in the field leads to the function that the inferred type names
+  const { root, sourceRoot } = fixture(t);
+  fs.writeFileSync(path.join(sourceRoot, 'rules.ts'), copiedFunctionRules.inline.text);
+  fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({
+    name: 'A',
+    imports: tsSource`import type { TValidation } from '@exprtlabs/golem/tags';\nimport { b } from './rules.js';\ndeclare function tagged(): string & TValidation<typeof b>;\nconst held = tagged();`,
+    fields: tsSource`field: typeof held`,
+  }).text);
+  assert.throws(() => generate({ root, profile: { validation: true } }), /RUNM1040.*cannot read back to the `typeof` that wrote it/);
+});
+
 test('a nullable member written through a tag alias is refused, not given a phantom-key validator', t => {
   // protects: fixed bug (T-430): at 75548ea this generated a validator that rejected every plain string
   const { root, sourceRoot } = fixture(t);
