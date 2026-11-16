@@ -54,6 +54,7 @@ function checkUnresolvedRefs(document: unknown): OpenApiProblem[] {
     if (reference === '#') return;
     if (reference.startsWith('#/')) {
       if (resolveFragmentPointer(document, reference.slice(1)) !== undefined) return;
+      if (currentBase !== null && resolveSchemaTarget(reference, currentBase, resources, document) !== undefined) return; // a place in the enclosing `$id` resource
     } else if (reference.startsWith('#')) {
       return; // Plain-name anchors are resolved by the JSON Schema engine.
     } else if (currentBase !== null && lookupCanonicalResource(reference, currentBase, resources)?.hasId) {
@@ -65,7 +66,7 @@ function checkUnresolvedRefs(document: unknown): OpenApiProblem[] {
     onSchemaRef(keyword, reference, currentBase, pointer) { check(keyword, reference, currentBase, pointer); },
     onOpenApiRef(reference, pointer) { check('$ref', reference, null, pointer); },
     onDiscriminatorMapping(keyword, reference, currentBase, ownerPointer, property) {
-      if (keyword !== 'mapping' || isMappingComponentName(reference, rootSchemaNames)) return;
+      if (isMappingComponentName(reference, rootSchemaNames)) return;
       check(keyword, reference, currentBase, pointerJoin(ownerPointer, property));
     },
   });
