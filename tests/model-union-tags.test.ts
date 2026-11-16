@@ -178,7 +178,7 @@ test('a Date beside an array converts by the wire form: a string is the Date, an
       for (const decoded of [codec.fromWireFormat(wire, options), codec.parse(JSON.stringify(wire), options), modelCodec(When).fromWireFormat(wire)]) {
         assert.deepEqual({ ...requireRecord(decoded, 'decoded') }, value, `validation=${validation}`);
       }
-      const model = new When(value as never);
+      const model = new When(value);
       assert.deepEqual(codec.toWireFormat(model, options), wire, `validation=${validation}`);
       assert.deepEqual(modelCodec(model).toWireFormat(model), wire, `validation=${validation}`);
       assert.equal(codec.stringify(model, options), JSON.stringify(wire), `validation=${validation}`);
@@ -201,7 +201,7 @@ export class Amount extends TAmountBaseModel {}
     const { Amount } = await import(pathToFileURL(path.join(root, 'build/amount.model.js')).href) as { Amount: GeneratedModelClass };
     const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TAmount'));
     for (const wire of cases) {
-      const model = new Amount(wire as never);
+      const model = new Amount(wire);
       assert.equal(codec.stringify(model, { validate: validation }), JSON.stringify(wire), `validation=${validation}`);
       assert.deepEqual(modelCodec(model).toWireFormat(model), wire, `validation=${validation}`);
     }

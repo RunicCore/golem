@@ -318,8 +318,9 @@ export interface CapturedRequest {
   };
 }
 
+/** A model class loaded from build output: its constructor takes the model's field values, whose shape only the generated code knows. */
 export interface GeneratedModelClass {
-  new (...args: never[]): object;
+  new (values: Record<string, unknown>): object;
 }
 
 export function isGeneratedModelClass(value: unknown): value is GeneratedModelClass {
