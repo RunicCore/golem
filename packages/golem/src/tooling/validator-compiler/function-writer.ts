@@ -345,7 +345,7 @@ export class FunctionWriter {
     const runCalls = (): void => this.unlessSanity(() => {
       for (const index of check.calls) {
         const result = this.fresh('result');
-        this.line(code`const ${result} = ${this.state.validationFunction(index)}(${value});`);
+        this.line(code`const ${result} = ${runtime.callValidation}(${this.state.validationFunction(index)}, ${value});`);
         this.open(code`if (typeof ${result} !== 'boolean' && typeof ${result} !== 'string')`);
         this.line(code`throw new TypeError(${literalCode(`Validation function ${this.state.validationExport(index)} must return boolean or string.`)});`);
         this.close();
@@ -871,7 +871,7 @@ export class FunctionWriter {
 
   /** The module constant that holds the tag lists of `discriminator`. */
   private tagLists(discriminator: IrDiscriminator): Code {
-    return this.state.constant('tags', code``, code`Object.freeze(/*#__PURE__*/ JSON.parse(${literalCode(JSON.stringify(discriminator.tags))}))`, JSON.stringify(discriminator.tags));
+    return this.state.constant('tags', this.state.notation.tagLists, code`Object.freeze(/*#__PURE__*/ JSON.parse(${literalCode(JSON.stringify(discriminator.tags))}))`, JSON.stringify(discriminator.tags));
   }
 
   /**
