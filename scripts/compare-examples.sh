@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
-# Compares the examples that `npm run generate:examples` writes for a base ref and for this worktree, and prints `diff -r --no-dereference base worktree`.
+# Compares the examples that `npm run generate:examples` writes for a base ref and for this worktree, and prints `diff -r --no-dereference --exclude=jobs.json base worktree`.
 # Both trees generate in the golem test-runner container (the `examples` tier of scripts/test-runner/run.sh), so the host needs no
 # node_modules. Run `npm run test:prepare` once after the runner image changes. A warm run of both trees takes about 1.5 minutes.
-# Exit status: 0 the trees are the same, 1 they differ (the diff), 3 a generation failed (its log goes to stderr), 2 a lock or setup error.
+# `.golem/jobs.json` is left out: it is the cache of a run, and holds the digest of golem's own JavaScript, so an edit of the generator source
+# that writes the same files would still differ. The files that the jobs write, and the inventory `.golem/outputs.json`, are compared.
+# Exit status: 0 the trees are the same, 1 they differ (the diff, then a line that names the difference), 3 a generation failed (its log goes to stderr), 2 a lock or setup error.
 # Both trees come from `git archive`, so both hold the tracked and the untracked files that .gitignore does not hide, and nothing else.
 set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -45,4 +47,8 @@ echo "Generating the examples of this worktree ..." >&2
 generate "$work/worktree-tree" "$work/worktree"
 cd "$work"
 # The shared-folder example holds a folder link; following it makes macOS diff stop with "Directory loop detected".
-diff -r --no-dereference base worktree
+diff -r --no-dereference --exclude=jobs.json base worktree || {
+  status=$?
+  [ "$status" -ne 1 ] || echo "compare-examples: the generated examples of this worktree differ from those of $base (the diff is above)." >&2
+  exit "$status"
+}
