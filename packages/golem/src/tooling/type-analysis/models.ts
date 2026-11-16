@@ -91,18 +91,37 @@ export interface CollectedSpecifications {
 }
 
 
-function readOptionalBooleanOption(
-  checker: ts.TypeChecker,
-  optionsNode: ts.TypeNode | undefined,
-  name: string,
-): boolean | undefined {
-  if (!optionsNode) return undefined;
-  const optionsType = checker.getTypeFromTypeNode(optionsNode);
-  const property = optionsType.getProperty(name);
-  if (!property) return undefined;
+/**
+ * The declared type of a model option as its members without `undefined`, so `exact?: false` reads as `false`. Empty when the model
+ * does not set the option. Every option reader starts here, so no reader sees the `undefined` that an optional property adds.
+ */
+function readOptionMembers(checker: ts.TypeChecker, optionsNode: ts.TypeNode | undefined, name: string): readonly ts.Type[] {
+  if (!optionsNode) return [];
+  const property = checker.getTypeFromTypeNode(optionsNode).getProperty(name);
+  if (!property) return [];
   const type = checker.getTypeOfSymbolAtLocation(property, optionsNode);
-  if ((type.flags & ts.TypeFlags.BooleanLiteral) === 0) return undefined;
-  return checker.typeToString(type) === 'true';
+  return (type.isUnion() ? type.types : [type]).filter((member) => (member.flags & ts.TypeFlags.Undefined) === 0);
+}
+
+/** The value of `true` or `false` as a type; undefined for any other type. */
+function booleanLiteralValue(checker: ts.TypeChecker, type: ts.Type): boolean | undefined {
+  return (type.flags & ts.TypeFlags.BooleanLiteral) === 0 ? undefined : checker.typeToString(type) === 'true';
+}
+
+/** The `exact` or `allowAny` option of a model: `true` or `false`; undefined when the model does not set it. A wide `boolean` or any other type stops with RUNM1089. */
+function readBooleanOption(
+  checker: ts.TypeChecker,
+  sourceFile: ts.SourceFile,
+  declaration: ts.TypeAliasDeclaration,
+  optionsNode: ts.TypeNode | undefined,
+  name: 'exact' | 'allowAny',
+): boolean | undefined {
+  const members = readOptionMembers(checker, optionsNode, name);
+  const [only] = members;
+  if (only === undefined) return undefined;
+  const value = members.length === 1 ? booleanLiteralValue(checker, only) : undefined;
+  if (value !== undefined) return value;
+  throw diagnostic(sourceFile, declaration, '1089', `The ${name} option of ${declaration.name.text} must be true or false. It is ${members.map((member) => checker.typeToString(member)).join(' | ')}.`);
 }
 
 /** The `validation` option of a model: `true`, `false` or `'sanity'`; undefined when the model does not set it. Any other value stops with RUNM1089. */
@@ -112,14 +131,15 @@ function readValidationOption(
   declaration: ts.TypeAliasDeclaration,
   optionsNode: ts.TypeNode | undefined,
 ): GolemProfile['validation'] | undefined {
-  if (!optionsNode) return undefined;
-  const property = checker.getTypeFromTypeNode(optionsNode).getProperty('validation');
-  if (!property) return undefined;
-  const type = checker.getTypeOfSymbolAtLocation(property, optionsNode);
-  if ((type.flags & ts.TypeFlags.Undefined) !== 0) return undefined;
-  if ((type.flags & ts.TypeFlags.BooleanLiteral) !== 0) return checker.typeToString(type) === 'true';
-  if (ts.isStringLiteralType(type) && type.value === 'sanity') return 'sanity';
-  throw diagnostic(sourceFile, declaration, '1089', `${invalidValidationLevelMessage(`The validation option of ${declaration.name.text}`)} It is ${checker.typeToString(type)}.`);
+  const members = readOptionMembers(checker, optionsNode, 'validation');
+  const [only] = members;
+  if (only === undefined) return undefined;
+  if (members.length === 1) {
+    const value = booleanLiteralValue(checker, only);
+    if (value !== undefined) return value;
+    if (ts.isStringLiteralType(only) && only.value === 'sanity') return 'sanity';
+  }
+  throw diagnostic(sourceFile, declaration, '1089', `${invalidValidationLevelMessage(`The validation option of ${declaration.name.text}`)} It is ${members.map((member) => checker.typeToString(member)).join(' | ')}.`);
 }
 
 const levelText = (level: GolemProfile['validation']): string => level === 'sanity' ? `'sanity'` : String(level);
@@ -175,8 +195,8 @@ export function collectSpecifications(
         name: statement.name.text,
         fieldsNode,
         fieldsType,
-        exact: readOptionalBooleanOption(checker, optionsNode, 'exact') ?? exact,
-        allowAny: readOptionalBooleanOption(checker, optionsNode, 'allowAny'),
+        exact: readBooleanOption(checker, sourceFile, statement, optionsNode, 'exact') ?? exact,
+        allowAny: readBooleanOption(checker, sourceFile, statement, optionsNode, 'allowAny'),
         emitClass: declarationKind === 'IModel',
         validation: readValidationOption(checker, sourceFile, statement, optionsNode),
         ...(companionOf ? { companionFile: companionOf(filename) } : {}),
