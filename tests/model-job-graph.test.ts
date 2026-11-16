@@ -236,6 +236,7 @@ for (const [label, profile] of profiles) {
     });
     writeModelGolemYaml(root, profile);
     await buildModelProject(root);
+    const generated = (name: string): string => fs.readFileSync(path.join(sourceRoot, name), 'utf8');
     const validation = profile.validation ? 'validate' : 'skip';
 
     for (const chain of [modelChain, objectChain]) {
@@ -254,10 +255,22 @@ for (const [label, profile] of profiles) {
       fs.writeFileSync(path.join(root, 'verify-toggle.mjs'), toggleVerifier);
       const result = await command(root, process.execPath, ['verify-toggle.mjs']);
       assert.deepEqual(JSON.parse(result.stdout.trim()), { plain: true, opted: !profile.validation });
-      assert.equal(generatedModelFiles(root).some((artifact) => artifact.path.endsWith('.validators.generated.ts')), profile.validation === true);
+      const validators = generatedModelFiles(root).find((artifact) => artifact.path.endsWith('.validators.generated.ts'));
+      assert.equal(validators !== undefined, profile.validation === true);
+      if (validators !== undefined) {
+        assert.match(validators.content, /\bvalidate_TOpted_/);
+        assert.doesNotMatch(validators.content, /\bvalidate_TPlain_/);
+      }
     });
 
     await t.test(`models of two sources that reference each other load in either import order (${label})`, async () => {
+      // protects: F-129 generated code is not duplicated: each companion of a cycle emits its own model and not the one beside it
+      const companionA = generated('a.model.generated.ts');
+      const companionB = generated('b.model.generated.ts');
+      assert.equal(companionA.includes('class TBBaseModel'), false);
+      assert.ok(companionB.includes('class TBBaseModel'), 'b.model.generated.ts emits its own TBBaseModel');
+      assert.equal(companionA.includes('function fillTB('), false);
+      assert.ok(companionB.includes('function fillTB('), 'b.model.generated.ts emits its own fillTB');
       fs.writeFileSync(path.join(root, 'verify-cycle.mjs'), cycleVerifier);
       for (const first of ['a', 'b']) {
         const result = await command(root, process.execPath, ['verify-cycle.mjs', first, validation]);
@@ -266,6 +279,13 @@ for (const [label, profile] of profiles) {
     });
 
     await t.test(`an IModel and an IObject of two sources that reference each other load in either order (${label})`, async () => {
+      // protects: F-129 generated code is not duplicated: each companion of a cycle emits its own model and not the one beside it
+      const orderCompanion = generated('order.model.generated.ts');
+      const lineCompanion = generated('line.model.generated.ts');
+      assert.equal(orderCompanion.includes('function decodeTLine('), false);
+      assert.ok(lineCompanion.includes('function decodeTLine('), 'line.model.generated.ts emits its own decodeTLine');
+      assert.equal(orderCompanion.includes('function fillTLine('), false);
+      assert.ok(lineCompanion.includes('function fillTLine('), 'line.model.generated.ts emits its own fillTLine');
       fs.writeFileSync(path.join(root, 'verify-mixed-cycle.mjs'), mixedCycleVerifier);
       for (const first of ['order', 'line']) {
         const result = await command(root, process.execPath, ['verify-mixed-cycle.mjs', first, validation]);

@@ -309,6 +309,8 @@ test('a projection over a source object drops the brand keys of an SDK model and
   const view = modelCodec(View).fromWireFormat({ envelope: { id: 'a' } });
   assert.deepEqual(view.envelope, { id: 'a' });
   assert.deepEqual(modelCodec(view).toWireFormat(view), { envelope: { id: 'a' } });
+  const leaked = modelCodec(View).fromWireFormat({ envelope: { id: 'a', '__@generatedModelWireBrand@1': 'x' } }, { validate: false });
+  assert.deepEqual(leaked.envelope, { id: 'a' }, 'no brand key is a field of the projection');
 });
 
 test('a projection keeps a source field whose string key is spelled like a brand key', async t => {

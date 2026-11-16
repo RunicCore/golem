@@ -58,6 +58,15 @@ test('model companion functions take and return the model types, and assert retu
   assert.throws(() => assertTTask({ title: 'a'.repeat(20), priority: 1 }), error => error instanceof LibError && error.kind === LibErrorKind.Validation);
 });
 
+test('model companion assert functions share one runtime helper', t => {
+  // protects: F-129 generated code is lean: each assert function calls the shared helper and carries no check of its own
+  const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-assert-helper-', name: null, linkWorkspaceNodeModules: true });
+  writeModelSources(sourceRoot, priority(''));
+  const companion = generate({ root, profile: { validation: true } }).artifacts.find(artifact => artifact.path.endsWith('task.model.generated.ts'))?.content ?? '';
+  assert.match(companion, /^export function assertTTask\(value: unknown, options\?: __GolemValidateOptions\): TTaskFields \{\n  return __golemAssertModel_TTask\(value, options\);/m);
+  assert.match(companion, /^function __golemAssertModel_TTask\(value: unknown, options\?: __GolemSerdeOptions\): TTaskFields \{\n  assertModelValue\(value, options, /m);
+});
+
 test('a model file that declares only IObject types compiles under noUnusedLocals', async t => {
   const { root, sourceRoot } = createModelProject(t, {
     prefix: 'golem-object-only-', name: null, linkWorkspaceNodeModules: true,

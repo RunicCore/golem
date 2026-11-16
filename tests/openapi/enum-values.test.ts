@@ -161,6 +161,8 @@ test('an enum and a const keep the type and the keywords beside them, in the mod
   const typeFile = path.join(output, 'shelf-types.ts');
   writeFileSync(typeFile, `import type { Shelf } from './types.js';
 export const word: Shelf['word'] = 'a';
+// @ts-expect-error 'b' is not in the enum
+export const wordB: Shelf['word'] = 'b';
 // @ts-expect-error the number 1 is no string, so the type filter dropped it from the enum
 export const wordNumber: Shelf['word'] = 1;
 export const never: Shelf['never'] = undefined;
