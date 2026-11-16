@@ -1,6 +1,6 @@
 import * as ts from '../typescript-ns.js';
 import { evaluateStaticValue } from '../static-value.js';
-import { owningPackageName } from './package-specifier.js';
+import { owningPackageName } from '../package-specifier.js';
 import { resolveSymbol } from '../resolve-symbol.js';
 
 /**

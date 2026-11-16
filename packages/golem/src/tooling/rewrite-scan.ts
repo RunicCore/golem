@@ -9,7 +9,7 @@ import type { LoadedParticipant, RewriteCore } from './rewrite-participant.js';
 import type { FileRewrite, RewriteEdit, RewriteImport } from './rewrite.js';
 import { inNodeModules, isInstalledFile, relativeSpecifierOf } from './path-identity.js';
 import { createProjectProgram, canonicalFilename, companionFilename, isGeneratedCompanion, modelBoundary, retainedProgramSession, type ModelBoundary } from './type-analysis/project.js';
-import { packageSpecifier } from './type-analysis/package-specifier.js';
+import { packageSpecifier } from './package-specifier.js';
 import { fieldProvenance } from './type-analysis/projections.js';
 import { declaredModelAlias, foreignModelReason, modelDeclarationKind, resolvedSymbolAt, serdeTypeName, symbolAt } from './type-analysis/symbols.js';
 
