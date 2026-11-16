@@ -440,6 +440,7 @@ const throughNonNullable = tsSource`type Box = { a: (string & TValidation<typeof
 const ownAnnotations = {
   plain: typedRules['an annotated arrow'],
   parenthesized: tsSource`export const check: ((v: string) => boolean) = (v) => v !== '';`,
+  'a type alias': typedRules['a const typed by a type alias'],
 } as const;
 
 for (const [form, rules] of Object.entries(ownAnnotations)) test(`a validator const with its own ${form} function type annotation is bound through a NonNullable mapped type`, t => {
@@ -453,18 +454,51 @@ for (const [form, rules] of Object.entries(ownAnnotations)) test(`a validator co
   }).text);
   const generated = generate({ root, profile: { validation: true } }).artifacts.map((artifact) => artifact.content).join('\n');
   assert.ok(importsOf(generated, 'check') > 0, 'check is bound');
+  assert.equal(importsOf(generated, 'other'), 0, 'the const that shares its type is not bound');
 });
 
-test('a validator const typed by a shared alias is refused through a NonNullable mapped type, not bound by guess', t => {
-  // protects: T-957 the refusal says why, in place of "Could not resolve validation function declaration"
+// `b` copies the type of `a`, so the checker shows one type for both: only the source node names the function that was written.
+const copiedFunctionRules = {
+  inline: tsSource`export const a: (v: string) => boolean = (v) => v !== '';\nexport const b: typeof a = (v) => v.length < 9;`,
+  inferred: tsSource`export const a = (v: string): boolean => v !== '';\nexport const b: typeof a = (v) => v.length < 9;`,
+} as const;
+const throughMapped = tsSource`type Box = { f: (string & TValidation<typeof b>) | null };\ntype Field = { [K in keyof Box]: NonNullable<Box[K]> };`;
+const copiedFunctionReads = {
+  'inline a on the field': { rules: copiedFunctionRules.inline, declarations: tsSource``, field: tsSource`string & TValidation<typeof b>` },
+  'inline a through a NonNullable mapped type': { rules: copiedFunctionRules.inline, declarations: throughMapped, field: tsSource`Field` },
+  'inferred a through a NonNullable mapped type': { rules: copiedFunctionRules.inferred, declarations: throughMapped, field: tsSource`Field` },
+  'inline a as an alias type argument': { rules: copiedFunctionRules.inline, declarations: tsSource`type Same<T> = T;`, field: tsSource`Same<string & TValidation<typeof b>>` },
+  'inferred a as an alias type argument': { rules: copiedFunctionRules.inferred, declarations: tsSource`type Same<T> = T;`, field: tsSource`Same<string & TValidation<typeof b>>` },
+  'inline a through a conditional type': { rules: copiedFunctionRules.inline, declarations: tsSource`type Box = { f: string & TValidation<typeof b> };\ntype ValueOf<T> = T extends { f: infer V } ? V : never;`, field: tsSource`ValueOf<Box>` },
+  'inline a through the type of a variable': { rules: copiedFunctionRules.inline, declarations: tsSource`declare const held: string & TValidation<typeof b>;`, field: tsSource`typeof held` },
+} as const;
+
+for (const [name, read] of Object.entries(copiedFunctionReads)) test(`a validator that copies the type of another binds itself, read as ${name}`, t => {
+  // protects: T-982 the tag read from the checker type named the function that owns the type, so `b` bound `a` in silence (F-31 TypeScript is the schema)
   const { root, sourceRoot } = fixture(t);
-  fs.writeFileSync(path.join(sourceRoot, 'rules.ts'), typedRules['a const typed by a type alias'].text);
+  fs.writeFileSync(path.join(sourceRoot, 'rules.ts'), read.rules.text);
   fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({
     name: 'A',
-    imports: tsSource`import type { TValidation } from '@exprtlabs/golem/tags';\nimport { check } from './rules.js';\n${throughNonNullable}`,
+    imports: tsSource`import type { TValidation } from '@exprtlabs/golem/tags';\nimport { b } from './rules.js';\n${read.declarations}`,
+    fields: tsSource`field: ${read.field}`,
+  }).text);
+  const generated = generate({ root, profile: { validation: true } }).artifacts.map((artifact) => artifact.content).join('\n');
+  assert.equal(importsOf(generated, 'b'), 1, 'b is bound');
+  assert.equal(importsOf(generated, 'a'), 0, 'a is not bound');
+});
+
+test('a serializer that copies the type of another binds itself through a NonNullable mapped type', t => {
+  // protects: T-982 same cause as the validator: the TSerde read from the checker type named the function that owns the type
+  const { root, sourceRoot } = fixture(t);
+  fs.writeFileSync(path.join(sourceRoot, 'rules.ts'), tsSource`export const write: (v: string) => string = (v) => v;\nexport const copy: typeof write = (v) => v.trim();\nexport const read: (w: string) => string = (w) => w;`.text);
+  fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({
+    name: 'A',
+    imports: tsSource`import type { TSerde } from '@exprtlabs/golem/tags';\nimport { copy, read } from './rules.js';\ntype Box = { f: (string & TSerde<typeof copy, typeof read>) | null };\ntype Field = { [K in keyof Box]: NonNullable<Box[K]> };`,
     fields: tsSource`field: Field`,
   }).text);
-  assert.throws(() => generate({ root, profile: { validation: true } }), /RUNM1040.*reaches this tag through a mapped type/);
+  const generated = generate({ root, profile: { validation: true } }).artifacts.map((artifact) => artifact.content).join('\n');
+  assert.equal(importsOf(generated, 'copy'), 1, 'copy is bound');
+  assert.equal(importsOf(generated, 'write'), 0, 'write is not bound');
 });
 
 test('a nullable member written through a tag alias is refused, not given a phantom-key validator', t => {
