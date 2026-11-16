@@ -12,6 +12,7 @@ import { baseClassDeclarations, classHierarchyBaseToDerived, evaluateContextExpr
 import { callStringValues, decoratorOptions, parseSecurity, parseTags, readBoolean, type MetadataReader } from './metadata.js';
 import { literalPropertyName, resolveValueSymbol, unwrapExpression } from '@exprtlabs/golem/internal/static-value';
 import { NEST_COMMON, NEST_SWAGGER } from './packages.js';
+import { isUriVersioningType } from '../uri-versioning.js';
 import { callArguments, decoratorsOf, propertyInitializer, staticObject } from './symbols.js';
 import { classParameterDecorators, parseParameters, parseParameterOverride } from './parameters.js';
 import { assertManualResponseContract, parseRequestBody, parseResponses } from './responses.js';
@@ -162,12 +163,12 @@ function exportClass(classDeclaration: ts.ClassDeclaration): boolean {
 function parseUriVersioning(value: unknown): UriVersioning {
   if (value === undefined || value === null) return { enabled: false, prefix: 'v', defaultVersions: [] };
   if (typeof value === 'string') {
-    if (value.toUpperCase() !== 'URI') throw new TsToOpenApiError({ severity: GolemDiagnosticSeverity.Error, code: TsToOpenApiDiagnosticCode.UnsupportedVersioningType, message: `Only URI versioning is supported; received ${value}.` });
+    if (!isUriVersioningType(value)) throw new TsToOpenApiError({ severity: GolemDiagnosticSeverity.Error, code: TsToOpenApiDiagnosticCode.UnsupportedVersioningType, message: `Only URI versioning is supported; received ${value}.` });
     return { enabled: true, prefix: 'v', defaultVersions: [] };
   }
   if (!isRecord(value)) throw new TsToOpenApiError({ severity: GolemDiagnosticSeverity.Error, code: TsToOpenApiDiagnosticCode.InvalidVersioningOptions, message: 'uriVersioning must be an object describing URI versioning.' });
   const type = value.type;
-  if (!(type === undefined || type === 0 || type === 'URI' || type === 'uri')) {
+  if (type !== undefined && !isUriVersioningType(type)) {
     throw new TsToOpenApiError({ severity: GolemDiagnosticSeverity.Error, code: TsToOpenApiDiagnosticCode.UnsupportedVersioningMode, message: 'Only URI versioning is supported by the static Nest adapter.' });
   }
   const prefix = value.prefix === undefined

@@ -266,6 +266,21 @@ test('rejects @HostParam routes', async (t: TestContext) => {
   );
 });
 
+test('refuses a URI versioning spelling that is not URI, uri or 0, in the string and the object form alike', async (t: TestContext) => {
+  // protects: T-998 the string form took any case while the object form took only URI or uri; both take one set of spellings and refuse the rest by name
+  const root = fixture(t, `import { Controller, Get } from '@nestjs/common';
+@Controller('cats') export class CatsController { @Get() list(): void {} }`);
+  // generate() is called from JavaScript too, so the options reach it unchecked.
+  const cases: readonly (readonly [unknown, string])[] = [['Uri', 'NEST1203'], [{ type: 'Uri' }, 'NEST1205']];
+  for (const [uriVersioning, code] of cases) {
+    await assert.rejects(
+      generate({ root, output: path.join(root, 'openapi.json'), info: { title: 'Cats', version: '1' }, uriVersioning: uriVersioning as never, profile: { validation: false } }),
+      (error: unknown) => diagnosticsOf(error).some(item => item.code === code),
+      JSON.stringify(uriVersioning),
+    );
+  }
+});
+
 test('keeps Nest runtime status authoritative over a contradicting Swagger success response', async (t: TestContext) => {
   const cases = [
     { title: 'Status conflict', fixtureDirectory: 'rejects-a-swagger-success-status-that-contradicts-nest-post-runtime-status' },
