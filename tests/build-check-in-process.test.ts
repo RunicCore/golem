@@ -132,13 +132,14 @@ for (const [name, text, first] of [
 for (const [name, flags] of [
   ['an unknown flag', ['--noEmitt']],
   ['a bad value', ['--target', 'es1']],
+  ['an unknown flag with --pretty', ['--pretty', '--noEmitt']],
 ] as const) {
   test(`${name} among the arguments prints as tsc prints it, exits as tsc does and runs no step`, async (t) => {
     // protects: T-1032 the errors of the command line are the compiler's own diagnostics, printed before anything is generated or emitted
     const root = serdeProject(t, 'build-argument-errors');
     fs.rmSync(path.join(root, '.golem'), { recursive: true, force: true });
     const result = await golemBuild(root, flags);
-    assert.match(result.stdout, /^error TS\d+: /);
+    assert.match(result.stdout, /TS\d+/);
     assert.equal(result.stdout, await tsc(root, flags));
     assert.equal(result.stderr, '');
     assert.equal(result.code, 1);

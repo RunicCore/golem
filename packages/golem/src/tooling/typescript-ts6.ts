@@ -879,7 +879,8 @@ export class ProgramSession implements Disposable {
     this.assertOpen();
     this.observe(onInput, new Set());
     const commandLine = classic.parseCommandLine(flags);
-    assertCommandLineParsed({ options: commandLine.options, errors: commandLine.errors.map(withText) });
+    // The classic `tsc` makes its reporter before it reads the options, so the form of these errors follows the terminal alone, never `--pretty`.
+    assertCommandLineParsed({ options: {}, errors: commandLine.errors.map(withText) });
     assertNoSourceFiles(commandLine.fileNames);
     // A path in a flag is read from the current folder, as `tsc` reads it; the session works from the tsconfig's folder.
     const paths = flagPathOptions(flags, parseFlags, resolveAtCurrentFolder);

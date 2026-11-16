@@ -9,7 +9,7 @@ const NO_INPUTS_FOUND = 18003;
 /** The refusal of a configuration that has errors. A build recovers from it by printing them as the compiler does; any other reader of the values fails with it. */
 export class ConfigParseError extends Error {}
 
-/** The refusal of command-line arguments that the compiler's parse rejects. A build prints its `diagnostics` as `tsc` prints them, in the form that the `pretty` of `options` gives. */
+/** The refusal of command-line arguments that the compiler's parse rejects. A build prints its `diagnostics` as `tsc` prints them. `options` are the options that the lane's `tsc` uses to format these errors: its `pretty` picks the form, and a lane whose `tsc` reads none gives none. */
 export class CommandLineError extends Error {
   constructor(readonly options: CompilerOptions, readonly diagnostics: readonly Diagnostic[]) {
     super(['The compiler arguments have errors:', ...diagnostics.map((diagnostic) => `  TS${diagnostic.code}: ${diagnostic.text}`)].join('\n'));
