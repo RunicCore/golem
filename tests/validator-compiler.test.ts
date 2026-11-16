@@ -1306,7 +1306,7 @@ test('a bundle of a bare object validator takes nothing of the runtime but the o
   const { outputFiles } = await build({ entryPoints: [path.join(directory, 'entry.js')], bundle: true, format: 'cjs', write: false, treeShaking: true });
   // A call at the top of a runtime module stays in a bundle that uses any other name of that module, unless it is marked pure.
   assert.doesNotMatch(outputFiles[0].text, /RegExp|Symbol|new Set|JSON\.parse/);
-  assert.match(outputFiles[0].text, /function isObject\(/);
+  assert.match(outputFiles[0].text, /function isRecord\(/);
 });
 
 test('a diagnostic is placed where the locator says and reported once per place', () => {

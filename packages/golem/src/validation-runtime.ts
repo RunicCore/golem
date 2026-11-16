@@ -360,10 +360,8 @@ export function globalInstanceTest<Instance extends object>(path: readonly strin
   };
 }
 
-/** True for a JSON object: an object that is not `null` and not an array. */
-export function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
+/** True for a JSON object: an object that is not `null` and not an array. The one record test of golem (record.ts), under the name that generated code imports. */
+export { isRecord as isObject } from './record.js';
 
 /**
  * The JSON view of the keys: a key is present when it is own, enumerable and not `undefined`, as `JSON.stringify` writes it.
@@ -412,7 +410,8 @@ export function selectedModel(value: unknown, among: readonly string[]): string 
   if (typeof value !== 'object' || value === null) return undefined;
   for (let prototype = Object.getPrototypeOf(value); prototype !== null; prototype = Object.getPrototypeOf(prototype)) {
     if (!Object.hasOwn(prototype, modelIdsKey)) continue;
-    const registered: readonly string[] = Reflect.get(prototype, modelIdsKey);
+    const registered: unknown = Reflect.get(prototype, modelIdsKey);
+    if (!Array.isArray(registered)) continue;
     for (let x = 0; x < among.length; x++) for (let y = 0; y < registered.length; y++) if (registered[y] === among[x]) return among[x];
   }
   return undefined;
