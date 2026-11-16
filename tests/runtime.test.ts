@@ -231,6 +231,27 @@ test('structural validation delegates nested generated-model validation', async 
   assert.ok(validator.issues.some((issue) => JSON.stringify(issue.path) === JSON.stringify(['money', 'currency'])));
 });
 
+test('errorsFor and a message override find an array item by its index as a number or as a string', async () => {
+  // protects: T-1000 a path segment 1 and '1' named one item for the pointer of `errors` but two for errorsFor and messages
+  class ScoresModel {
+    public scores?: number[];
+    public constructor(values: { scores?: number[] } = {}) { Object.assign(this, values); }
+  }
+  await installCodecModel({
+    constructor: ScoresModel,
+    name: 'IndexedScores',
+    fields: ['scores'],
+    conversion: { decode: (value) => Object.assign(new ScoresModel(), value as object), encode: (instance) => ({ scores: instance.scores }) },
+    definitions: { IndexedScores: { kind: 'object', required: ['scores'], additionalProperties: false, properties: { scores: { kind: 'array', item: { kind: 'number', constraints: [{ kind: 'minimum', value: 1 }] } } } } },
+  });
+  const validator = validation.getValidator<{ scores: number[] }, ScoresModel>(new ScoresModel({ scores: [5, 0] }))
+    .messages([{ path: ['scores', '1'], code: 'tooSmall', message: 'Score must be positive' }]);
+  assert.equal(await validator.validate(), false);
+  assert.deepEqual(validator.errorsFor(['scores', 1]), ['Score must be positive']);
+  assert.deepEqual(validator.errorsFor(['scores', '1']), ['Score must be positive']);
+  assert.deepEqual(validator.errorsFor(['scores', '0']), []);
+});
+
 test('MobX runtime preserves observation and shares validator identity', async () => {
   interface PaymentFieldsMobx {
     amount: number;
