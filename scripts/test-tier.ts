@@ -21,7 +21,7 @@ const inOrder = (...steps: readonly Step[]): Group[] => steps.map(step => [[step
 // The public-source and release-version tests stay in this step: the Acceptance tier's "public source" step and the pack
 // step (test-pack, verify-package) run those scripts as release gates, and these tests hold their rejection cases.
 export const UNIT_FILES = ['.build/tests/*.test.js', '.build/tests/openapi/*.test.js', '.build/tests/golem-ts-openapi/*.test.js'] as const;
-// The model-only smoke file runs in Full; Acceptance runs the others so it runs once.
+// The model-only smoke file runs in Full TS6; Acceptance runs the others so it runs once.
 export const PACKED_FILES = ['.build/tests/packed/consumers.test.js', '.build/tests/packed/nest-workflows.test.js'] as const;
 const SMOKE_FILE = '.build/tests/packed/model-only.test.js';
 // The TypeScript 6 lane runs the test files whose first line is `// lane: typescript6 <the shim place the file proves>`, with
@@ -261,7 +261,7 @@ function splitTypescriptLane(args: readonly string[]): { readonly lane6: boolean
 const npmRun = (label: string, script: string): Step => ({ label, run: () => run('npm', ['run', script]) });
 // The packed set lives in /cache/packed, which keeps only the newest set: another checkout can replace it, so a resume packs again (a present set is reused at once).
 const pack: Step = { label: 'pack', always: true, run: () => run(process.execPath, ['.build/scripts/test-pack.js']) };
-/** The source checks of `npm run lint`, without its build: the full tier has built the packages and the scripts by now. */
+/** The source checks of `npm run lint`, without its build: the Full TS6 and Acceptance tiers have built the packages and the scripts by now. */
 const lint: Step = {
   label: 'lint',
   run: async () => {
