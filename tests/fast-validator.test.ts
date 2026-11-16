@@ -564,7 +564,7 @@ test('no fast check for a root that reaches a validation function, also through 
       ]),
       validations: RULES,
     },
-    { unknownFormats: 'warn', fastPath: 'all' },
+    { unknownFormats: 'warn', language: 'js', fastPath: 'all' },
   );
   assert.deepEqual([...result.fastExports], [['Note', 'is_Note']]);
 });
@@ -579,7 +579,7 @@ test('a rare keyword gives a fast check also inside allOf, a union branch or $re
         ['Unevaluated', { type: 'object', properties: { a: {} }, unevaluatedProperties: false }],
       ]),
     },
-    { unknownFormats: 'warn', fastPath: 'all' },
+    { unknownFormats: 'warn', language: 'js', fastPath: 'all' },
   );
   assert.deepEqual([...result.fastExports.keys()].sort(), ['AllOfOfRare', 'AnyOfOfRare', 'RefToRare']);
 });
