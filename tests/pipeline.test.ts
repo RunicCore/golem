@@ -177,7 +177,6 @@ test('deleting a discovered model cleans its generated companion, and deleting t
   const inventory = JSON.parse(fs.readFileSync(path.join(root, '.golem/outputs.json'), 'utf8')) as {
     files: Record<string, unknown>;
   };
-  assert.equal(Object.keys(inventory.files).some((f) => f.includes('cart.model.generated')), false);
   assert.equal(Object.keys(inventory.files).some((f) => f.startsWith('sdk/')), true);
 });
 

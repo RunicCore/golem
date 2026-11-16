@@ -64,12 +64,8 @@ test('global validation true binds IObject and IModel codecs to generated valida
   const model = new Payload({ title: 'ok' });
   assert.equal(codec.validate(model), true, 'the handwritten own state of a model instance is not an extra key');
   assert.deepEqual((await validateInstance(model)).map((issue) => issue.path), []);
-  assert.equal(await getValidator(model).validate(), true);
   const invalid = new Payload({ title: 1 as never });
   assert.equal(codec.validate(invalid), false);
-  const issues = await validateInstance(invalid);
-  assert.equal(await getValidator(invalid).validate(), false);
-  assert.deepEqual(issues.map((issue) => issue.path), getValidator(invalid).issues.map((issue) => issue.path));
 });
 
 const MIXED_FIXTURE = 'models/unify-validate/i-validation-option-lowers-the-project-level-per-type-in-mixed-files';

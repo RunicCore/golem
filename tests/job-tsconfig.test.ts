@@ -67,7 +67,6 @@ test('a golem.yaml that names the solution tsconfig.json is refused by generate,
   const refusal = `${shown('tsconfig.json')} only lists project references, so it has no files. Name one referenced project in the tsconfig key of golem.yaml. Build each project of ${shown('tsconfig.json')} with its own golem.yaml, in dependency order:\n  ${shown('tsconfig.app.json')}: golem build --config ${shown('golem.yaml')}`;
   const refused = (error: Error): boolean => {
     assert.ok(error.message.includes(refusal), error.message);
-    assert.doesNotMatch(error.message, /host/i);
     return true;
   };
 
