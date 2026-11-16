@@ -279,7 +279,7 @@ export function ignoredSharedFileWarnings(sharedFiles: readonly string[], appDir
       }
     }
   }
-  return [...warnings.values()].sort((left, right) => (left.file ?? '') < (right.file ?? '') ? -1 : 1);
+  return [...warnings.values()].sort((left, right) => compareText(left.file ?? '', right.file ?? ''));
 }
 
 function ignoredGolemYamlMessage(golemYaml: string, modelFile: string): string {
@@ -442,7 +442,13 @@ function openProject(
   configFile: string | undefined,
 ): { readonly session: ts.ProgramSession; readonly parsed: ReturnType<typeof parsedProject> } {
   const session = retained ?? new ts.ProgramSession({ cwd: root, closeWhenIdle: true });
-  return { session, parsed: parsedProject(root, sources, session, onInput, configFile) };
+  try {
+    return { session, parsed: parsedProject(root, sources, session, onInput, configFile) };
+  } catch (error) {
+    // A refusal after the parse (a solution tsconfig, a reference with no sources) leaves a compiler that no program holds, so no program's close ends it.
+    if (retained === undefined) session[Symbol.dispose]();
+    throw error;
+  }
 }
 
 const PROGRAM_SESSION = sessionKey<ts.ProgramSession>('program');

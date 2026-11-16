@@ -104,8 +104,9 @@ export class FunctionWriter {
     return joinIndented(this.lines, NEWLINE);
   }
 
-  public line(statement: Code): void {
-    this.lines.push({ spaces: this.depth * 2, body: statement });
+  /** Writes `statement` at `depth`, the current depth by default; a `} else {` line sits at its block's opener's depth. */
+  public line(statement: Code, depth: number = this.depth): void {
+    this.lines.push({ spaces: depth * 2, body: statement });
   }
 
   /** Opens a block; no `head` opens a bare scope. */
@@ -529,18 +530,12 @@ export class FunctionWriter {
     }
     this.open(code`if (!${objectTest(value)})`);
     this.issue(code`code: 'type', expected: ${literalCode(type.names)}`);
-    this.depth--;
-    this.line(code`} else {`);
-    this.depth++;
+    this.line(code`} else {`, this.depth - 1);
     const start = this.lines.length;
     this.objectKeywords(check, value);
-    if (this.lines.length === start) {
-      this.lines.pop();
-      this.depth--;
-      this.line(code`}`);
-    } else {
-      this.close();
-    }
+    // No keyword wrote a line: the `else` is left out.
+    if (this.lines.length === start) this.lines.pop();
+    this.close();
   }
 
   /** `prepared` is the key test a caller already wrote for this object; without it the mode's key test is written here. */

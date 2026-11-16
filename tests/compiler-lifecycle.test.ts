@@ -13,6 +13,7 @@ import { workspace } from './support/process.js';
 import { pathMappedProject } from './support/path-mapped-project.js';
 import { compilerChildren } from './support/generation-watch.js';
 import { subscribe } from './support/golem-channels.js';
+import { createProgram } from '#golem/type-analysis/project';
 
 interface Fixture {
   readonly root: string;
@@ -248,6 +249,20 @@ test('compiler setup preserves the primary error and reports cleanup failure aft
   assert.equal(closing.closed(), 1);
   assert.ok(tracker.seen() >= 1, 'setup failure did not reach the real TypeScript API child boundary');
   await tracker.assertClosed('compiler setup failure');
+});
+
+test('a project open that is refused after the config parse closes the compiler it started', async t => {
+  // protects: T-1039 a session made for one program kept its compiler alive when a refusal came between the parse and the program
+  const tracker = trackApiChildren(t);
+  const fixture = projectFixture(t, 'compiler-lifecycle-refused-open');
+  const source = path.join(fixture.sourceRoot, 'value.ts');
+  fs.writeFileSync(source, 'export const value = 1;\n');
+  const solution = path.join(fixture.root, 'tsconfig.solution.json');
+  fs.writeFileSync(solution, JSON.stringify({ files: [], references: [{ path: './tsconfig.json' }] }));
+
+  assert.throws(() => createProgram([source], fixture.root, undefined, undefined, solution), /only lists project references/);
+  assert.ok(tracker.seen() >= 1, 'the parse did not start a compiler');
+  await tracker.assertClosed('a refused project open');
 });
 
 test('owned generator scope preserves its primary error when API cleanup also fails', async t => {
