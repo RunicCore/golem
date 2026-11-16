@@ -71,8 +71,8 @@ export interface SerdeFunctions {
 }
 
 /**
- * The serde that a descriptor holds. A descriptor that a generator makes names both functions; a hand-written descriptor may hold the
- * `id` alone, so a reader that needs the functions asks `serdeFunctions`.
+ * The serde that a descriptor holds. A descriptor that a generator makes names both functions; a hand-written descriptor may name
+ * no function, so a reader that needs the functions asks `serdeFunctions`.
  */
 export type DescriptorSerde = Pick<SerdeFunctions, 'id'> & Partial<SerdeFunctions> & {
   /** A function that tells whether an instance of the class holds a value, which the class check calls after `instanceof` (`new Date(NaN)` is a `Date` and holds none). */
