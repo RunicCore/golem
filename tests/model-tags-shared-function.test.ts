@@ -70,6 +70,7 @@ const droppedRows = {
   'a tag function that a type alias of typeof gives a generic tag alias': { declarations: `type Fa = typeof a;\ntype Checked<F extends (...arguments_: never[]) => boolean> = string & TValidation<F>;\ndeclare function tagged(): Checked<Fa>;\nclass Holder { held = tagged(); }\n${valueOf}type Box<T> = { v: ValueOf<T> };\n`, field: `Box<Holder>['v']${beside}` },
   'a tag function that a generic call infers from its argument': { declarations: `declare function tag<F extends (v: string) => boolean>(f: F): string & TValidation<F>;\nclass Holder { held = tag(a); }\n${valueOf}type Box<T> = { v: ValueOf<T> };\n`, field: `Box<Holder>['v']${beside}` },
   'a tag function that an indexed access of a type argument gives the tag': { declarations: `type Wrap<T extends { f: (...arguments_: never[]) => boolean }> = string & TValidation<T['f']>;\ndeclare function tagged(): Wrap<{ f: typeof a }>;\nclass Holder { held = tagged(); }\n${valueOf}type Box<T> = { v: ValueOf<T> };\n`, field: `Box<Holder>['v']${beside}` },
+  'a tag that an import type writes with an alias argument': { declarations: `type Fa = typeof a;\ndeclare function tagged(): string & import('@exprtlabs/golem/tags').TValidation<Fa>;\nclass Holder { held = tagged(); }\n${valueOf}type Box<T> = { v: ValueOf<T> };\n`, field: `Box<Holder>['v']${beside}` },
   'a renamed tag, and a call in a file that names neither typeof nor a tag': {
     declarations: `import { held } from './helper.js';\n`,
     field: `typeof held${beside}`,
@@ -90,6 +91,29 @@ test('a generic reader over a value that holds no function tag binds the functio
   // protects: T-1058 a refusal that fires for every inferred member would stop a field that loses nothing
   const outcome = generateField(t, { rules: validators.copied, declarations: `class Holder { held = ''; }\n${valueOf}type Box<T> = { v: ValueOf<T> };\n`, field: `Box<Holder>['v']${beside}` }, ['a', 'b', 'c']);
   assert.deepEqual(outcome, { bound: 'b' });
+});
+
+test('a class value is read while two serializers share one type, and binds the pair that the field writes', t => {
+  // protects: T-1061 the walk stopped at a constructor, a set accessor, a function type, a call signature, a type predicate and an import type, so a class value that holds them refused a tag whose functions the program writes
+  const members = [
+    'constructor(readonly cents: number) {}',
+    'static { void 0; }',
+    'set label(value: string) {}',
+    'apply!: (done: (money: Money) => void) => void;',
+    'shape!: { (x: number): string };',
+    'is(value: unknown): value is Money { return true; }',
+    "other!: import('./rules.js').Other;",
+  ].join('\n  ');
+  const rules = [
+    'export interface Other { n: number }',
+    `export class Money {\n  ${members}\n}`,
+    'export const s: (v: Money) => string = (v) => String(v.cents);',
+    'export const s2: typeof s = (v) => String(v.cents + 1);',
+    'export const d: (w: string) => Money = (w) => new Money(Number(w));',
+    'export const d2: typeof d = (w) => new Money(Number(w) + 1);',
+  ].join('\n');
+  const declarations = "declare function tagged(): string & TSerde<typeof s, typeof d>;\nclass Holder { held = tagged(); }\ntype Price = Money & TSerde<typeof s2, typeof d2>;\n";
+  assert.deepEqual(generateField(t, { rules, declarations, field: 'Price' }, ['Money', 's', 's2', 'd', 'd2']), { bound: 'Money,s2,d2' });
 });
 
 // Two functions of one signature that the checker tells apart: `typeof a` and `typeof b` are different types, so each tag names its function.
