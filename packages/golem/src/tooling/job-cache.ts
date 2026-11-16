@@ -402,7 +402,7 @@ export class JobInputs {
       .map(([input, digest]) => [recordPath(config, input), digest]));
   }
 
-  /** Whether the file changed at or after the job started, by the status-change time: no tool can set it back, as it can a modification time. The file clock ticks about once a millisecond, so a change within that tick of the start reads as before it. */
+  /** Whether the file changed at or after the job started, by the status-change time: no tool can set it back, as it can a modification time. The file clock ticks about once a millisecond, so a change within that tick of the start reads as before it. A change within a millisecond before the start reads as after it (`started` is whole milliseconds, the file time is not): that file is untracked and its job runs once more, which is the safe side. */
   private isUntracked(filename: string): boolean {
     try {
       const stat = fs.statSync(filename, { throwIfNoEntry: false });
