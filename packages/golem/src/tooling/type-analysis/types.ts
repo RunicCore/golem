@@ -30,7 +30,7 @@ import {
   isGolemTagKey,
   hasDescriptorTags,
   hasTagMetadata,
-  declaredPropertyNodes,
+  propertyTagSources,
   propertyType,
   propertyTypeNode,
   publicExportName,
@@ -771,7 +771,7 @@ interface DescribeScope {
     substitutions?: TypeSubstitutions,
     nameHint?: string,
     nameNode?: ts.TypeNode,
-    tagSources?: readonly ts.TypeNode[],
+    tagSources?: readonly ts.Node[],
   ) => ModelConversionDescriptor;
 }
 
@@ -806,7 +806,7 @@ interface DescribeInput {
   readonly nameHint: string;
   readonly nameNode: ts.TypeNode | undefined;
   /** Nodes beside `node` that write the functions of the tags on the type: the declarations that a mapped type copied, the wire parameter of a serde. */
-  readonly tagSources: readonly ts.TypeNode[];
+  readonly tagSources: readonly ts.Node[];
 }
 
 /** One `describeType` call after its tags are read: the substituted nodes, the tag metadata, and `type`, the type the walk describes. */
@@ -1330,7 +1330,7 @@ function describeProperties(scope: DescribeScope, call: DescribeCall, nextSeen: 
       childSubstitutions,
       `${projectionName ?? nameHint}${pascalIdentifier(name) ?? 'Field'}`,
       undefined,
-      propertyNode ? [] : declaredPropertyNodes(checker, property),
+      propertyNode ? [] : propertyTagSources(checker, property),
     );
     properties[name] = described;
     if (!optional) required.push(name);
@@ -1761,7 +1761,7 @@ export function descriptorBuilder(
     substitutions: TypeSubstitutions = new Map(),
     nameHint: string = safeNameHint(context.ownerName ?? context.name, 'Model'),
     nameNode?: ts.TypeNode,
-    tagSources: readonly ts.TypeNode[] = [],
+    tagSources: readonly ts.Node[] = [],
   ): ModelConversionDescriptor => {
     const call = openDescribeCall(scope, { originalType, context, seen, node, representation, provenanceNode, substitutions, nameHint, nameNode, tagSources });
     assertTagsFit(scope, call);

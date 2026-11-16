@@ -284,6 +284,7 @@ export const {
   isIntersectionTypeNode,
   isLiteralTypeNode,
   isMappedTypeNode,
+  isBindingElement,
   isGetAccessorDeclaration,
   isMethodDeclaration,
   isMethodSignature,
