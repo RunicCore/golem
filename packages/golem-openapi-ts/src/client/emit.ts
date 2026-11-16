@@ -33,6 +33,7 @@ import {
 import {
   effectiveSchemaTypes,
   parameterSchema,
+  requestBodyShape,
   resolveLocal,
   type NormalizedOperation,
   type NormalizedParameter,
@@ -255,16 +256,15 @@ function operationSource(
   const queryStringParameter = operation.parameters.find((item) => item.in === 'querystring');
   const headerParameters = operation.parameters.filter((item) => item.in === 'header');
   const cookieParameters = operation.parameters.filter((item) => item.in === 'cookie');
-  const requestBody = operation.requestContent.length > 0;
+  const bodyShape = requestBodyShape(operation);
+  const requestBody = bodyShape.kind !== 'none';
   // With several content types the body is `{ contentType, value }`; with one, the value itself.
-  const chosenContentType = operation.requestContent.length > 1;
-  const singleContentType = operation.requestContent.length === 1
-    ? operation.requestContent[0]?.contentType
-    : null;
+  const chosenContentType = bodyShape.kind === 'several';
+  const singleContentType = bodyShape.kind === 'single' ? bodyShape.media.contentType : null;
   const bodyValue = chosenContentType ? code`input.body?.value` : code`input.body`;
   const bodyContentType = chosenContentType
     ? code`input.body?.contentType`
-    : documentLiteral(singleContentType ?? null);
+    : documentLiteral(singleContentType);
   const bodyEncodings = documentLiteral(Object.fromEntries(
     operation.requestContent.map((media) => {
       const requirement = textCodecRequirement(media, 'bodyEncoders', document);

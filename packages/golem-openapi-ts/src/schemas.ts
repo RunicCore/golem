@@ -7,6 +7,7 @@ import {
   mediaSchema,
   normalizeDocument,
   parameterSchema,
+  requestBodyShape,
   resolveLocal,
   type NormalizedDocument,
   type NormalizedOperation,
@@ -58,13 +59,12 @@ function operationInputSchema(operation: NormalizedOperation, bodyChecked: BodyC
     properties.querystring = parameterSchema(queryString) ?? true;
     if (queryString.required) required.push('querystring');
   }
-  if (operation.requestContent.length === 1) {
-    const [media] = operation.requestContent;
-    properties.body = media && bodyChecked(operation, media.contentType) ? true : media?.schema ?? true;
-    if (operation.requestBody && operation.requestBody.required) required.push('body');
-  } else if (operation.requestContent.length > 1) {
+  const body = requestBodyShape(operation);
+  if (body.kind === 'single') {
+    properties.body = bodyChecked(operation, body.media.contentType) ? true : body.media.schema ?? true;
+  } else if (body.kind === 'several') {
     properties.body = {
-      oneOf: operation.requestContent.map((media) => ({
+      oneOf: body.media.map((media) => ({
         type: 'object',
         properties: {
           contentType: { const: media.contentType },
@@ -74,8 +74,8 @@ function operationInputSchema(operation: NormalizedOperation, bodyChecked: BodyC
         additionalProperties: false,
       })),
     };
-    if (operation.requestBody && operation.requestBody.required) required.push('body');
   }
+  if (body.kind !== 'none' && operation.requestBody && operation.requestBody.required) required.push('body');
   return {
     type: 'object',
     properties,

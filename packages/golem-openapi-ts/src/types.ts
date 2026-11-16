@@ -12,6 +12,7 @@ import {
   effectiveSchemaTypes,
   mediaSchema,
   parameterSchema,
+  requestBodyShape,
   resolveLocal,
   type NormalizedOperation,
   type NormalizedResponse,
@@ -820,13 +821,14 @@ function inputType(operation: NormalizedOperation, context: SchemaTypeContext = 
     );
     lines.push(code`${identifierPart(location)}${requiredGroup ? code`` : code`?`}: ${bracedLines(fields, code`};`)}`);
   }
-  if (operation.requestContent.length === 1) {
-    lines.push(code`body${operation.requestBody?.required ? code`` : code`?`}: ${schemaTypeCode(operation.requestContent[0]?.schema ?? null, context).code};`);
-  } else if (operation.requestContent.length > 1) {
-    const variants = join(operation.requestContent.map((media) =>
-      code`{ contentType: ${literal(media.contentType)}; value: ${schemaTypeCode(media.schema, context).code} }`
-    ), code` | `);
-    lines.push(code`body${operation.requestBody?.required ? code`` : code`?`}: ${variants};`);
+  const body = requestBodyShape(operation);
+  if (body.kind !== 'none') {
+    const bodyType = body.kind === 'single'
+      ? schemaTypeCode(body.media.schema, context).code
+      : join(body.media.map((media) =>
+        code`{ contentType: ${literal(media.contentType)}; value: ${schemaTypeCode(media.schema, context).code} }`
+      ), code` | `);
+    lines.push(code`body${operation.requestBody?.required ? code`` : code`?`}: ${bodyType};`);
   }
   return lines.length ? typeCode(bracedLines(lines)) : recordType(NEVER_TYPE);
 }
