@@ -9,11 +9,11 @@ import type { FunctionWriter } from './function-writer.js';
 import type { FastPlan } from './fast-plan.js';
 
 /** A line that opens the body of a function, before the first check. */
-interface Opening {
-  readonly line: Code;
-  /** The local the line declares, when a body that never reads it leaves the line out; absent when the line always stays. */
-  readonly local?: Code;
-}
+type Opening =
+  /** The line stays in every body. */
+  | { readonly kind: 'always'; readonly line: Code }
+  /** The line declares `local` and stays only in a body that reads it. */
+  | { readonly kind: 'unless unread'; readonly line: Code; readonly local: Code };
 
 /** What a written function does when a check fails. */
 interface FailMode {
@@ -181,7 +181,7 @@ function readCaptured(writer: FunctionWriter, value: Code, captured: readonly Ca
 /** The full validator: a failed check pushes its issue, then returns at once unless all errors are wanted; a key is read through `isPresent`. */
 export const FULL_VALIDATOR: WriterMode = {
   fail: {
-    start: [{ line: code`const ${PATH_LENGTH} = ${PATH}.length;`, local: PATH_LENGTH }, { line: code`let ok = true;` }],
+    start: [{ kind: 'unless unread', line: code`const ${PATH_LENGTH} = ${PATH}.length;`, local: PATH_LENGTH }, { kind: 'always', line: code`let ok = true;` }],
     end: code`return ok;`,
     issue: (fields, path) => [code`${ISSUES}.push({ path: ${path}, ${fields} });`, REPORT_FAILURE],
     fail: () => REPORT_FAILURE,

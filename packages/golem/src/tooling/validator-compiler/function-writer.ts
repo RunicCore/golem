@@ -100,7 +100,7 @@ export class FunctionWriter {
     if (this.fn.collects && this.fn.receives) this.line(code`if (ok && ${INHERITED} !== undefined) ${runtime.mergeEvaluation}(${INHERITED}, ${EVALUATION});`);
     // A `false` schema has already left the function in a mode that leaves at a failure.
     if (this.fn.body.kind !== 'never' || !this.mode.fail.leaves) this.line(this.mode.fail.end);
-    const opening = this.mode.fail.start.filter(({ local }) => local === undefined || this.readsFrom(local, 0));
+    const opening = this.mode.fail.start.filter((open) => open.kind === 'always' || this.readsFrom(open.local, 0));
     const record = this.fn.collects ? code`const ${EVALUATION} = ${runtime.newEvaluation}();` : this.fn.receives ? code`const ${EVALUATION} = ${INHERITED} ?? ${runtime.newEvaluation}();` : undefined;
     const head = [...opening.map(({ line }) => line), ...(record === undefined || !this.readsFrom(EVALUATION, 0) ? [] : [record])];
     this.lines.unshift(...head.map(body => ({ spaces: 2, body })));
