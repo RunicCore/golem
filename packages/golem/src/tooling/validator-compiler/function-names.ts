@@ -38,6 +38,8 @@ export interface Notation {
   readonly read: Code;
   /** The type of a constant that holds a list of JSON values. */
   readonly literals: Code;
+  /** The type of a constant that holds the tag list of each branch of a union. */
+  readonly tagLists: Code;
 }
 
 const NONE = code``;
@@ -56,8 +58,9 @@ export const NOTATIONS: Readonly<Record<Language, Notation>> = {
     read: code`: unknown`,
     fastCheck: code`: (value: unknown) => boolean`,
     literals: code`: readonly ${rtType.validation.JsonValue}[]`,
+    tagLists: code`: readonly (readonly ${rtType.validation.JsonValue}[])[]`,
   },
-  js: { value: NONE, path: NONE, issues: NONE, all: NONE, sanity: NONE, record: NONE, verdict: NONE, wrapperResult: NONE, read: NONE, fastCheck: NONE, literals: NONE },
+  js: { value: NONE, path: NONE, issues: NONE, all: NONE, sanity: NONE, record: NONE, verdict: NONE, wrapperResult: NONE, read: NONE, fastCheck: NONE, literals: NONE, tagLists: NONE },
 };
 
 export function functionParameters(fn: IrFunction, notation: Notation): Code {
