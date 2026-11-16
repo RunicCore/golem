@@ -631,11 +631,9 @@ function recordReachableFunctions(context: TagAnalysisContext, node: ts.Node, sc
   } else if (ts.isExpressionWithTypeArguments(node)) {
     reachDeclarationsOf(checker.getSymbolAtLocation(node.expression));
     if (computesItsBase(node)) {
-      // A member of the base that shows no type node hides its tag; one that writes a type node is read where it is written. The members that declare a sibling stay out.
-      for (const member of checker.getPropertiesOfType(checker.getTypeAtLocation(node)).flatMap(property => propertyDeclarations(checker, property))) {
-        if (scan.siblings === 'skip' && declaresSibling(context, member)) continue;
-        hideInferredFunctionTags(context, member, scan);
-        recordReachableFunctions(context, member, scan);
+      // A call shows no declaration of its base: each member is read where it is written. A member that shows no type node hides its tag only when a reader takes it (`shaped`).
+      for (const property of checker.getPropertiesOfType(checker.getTypeAtLocation(node))) {
+        for (const member of propertyDeclarations(checker, property)) recordReachableFunctions(context, member, scan);
       }
     }
   } else if (ts.isTypeQueryNode(node)) {

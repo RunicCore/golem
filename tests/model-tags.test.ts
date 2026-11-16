@@ -675,7 +675,7 @@ const refusedWrapperReads = {
   'a conditional type over a conditional type over the class with the inferred member': { declarations: tsSource`${heldByCall}\ntype ValueOf<T> = T extends { held: infer V } ? V : never;\ntype Cond<T> = T extends { held: infer V } ? { held: V } : never;`, field: tsSource`ValueOf<Cond<Holder>> & TValidation<typeof b>` },
   'an as-mapped type over a conditional type over the class with the inferred member': { declarations: tsSource`${heldByCall}\ntype Renamed<T> = { [K in keyof T as Uppercase<K & string>]: T[K] };\ntype Cond<T> = T extends { held: infer V } ? { held: V } : never;`, field: tsSource`Renamed<Cond<Holder>>['HELD'] & TValidation<typeof b>` },
   'a conditional type over a class that extends a mixin call that writes the member': { declarations: tsSource`class Base { held!: string & TValidation<typeof a>; }\ndeclare function mixin<T extends new () => object>(base: T): T;\nclass Sub extends mixin(Base) {}\ntype ValueOf<T> = T extends { held: infer V } ? V : never;`, field: tsSource`ValueOf<Sub> & TValidation<typeof b>` },
-  'a mixin base whose member shows no type node': { declarations: tsSource`${heldByCall}\ndeclare function mixin<T extends new () => object>(base: T): T;\nclass Sub extends mixin(Holder) {}`, field: tsSource`Sub & TValidation<typeof b>` },
+  'a conditional type over a mixin base whose member shows no type node': { declarations: tsSource`${heldByCall}\ndeclare function mixin<T extends new () => object>(base: T): T;\nclass Sub extends mixin(Holder) {}\ntype ValueOf<T> = T extends { held: infer V } ? V : never;`, field: tsSource`ValueOf<Sub> & TValidation<typeof b>` },
 } as const;
 
 for (const [name, { declarations, field }] of Object.entries(refusedWrapperReads)) test(`a function that hides behind ${name} is refused`, t => {
@@ -695,6 +695,8 @@ const builtWrapperReads = {
   'an alias of a Pick that is read by an index': { declarations: tsSource`${inheritedUser}\ntype Named = Pick<Sub, 'name'>;`, field: tsSource`Named['name']` },
   'an indexed read of a member that a mixin base writes': { declarations: tsSource`class Base { name!: string & TValidation<typeof b>; }\ndeclare function mixin<T extends new () => object>(base: T): T;\nclass Sub extends mixin(Base) {}`, field: tsSource`Sub['name']` },
   'a class with a mixin base that writes the tag of a member': { declarations: tsSource`class Base { name!: string & TValidation<typeof b>; }\ndeclare function mixin<T extends new () => object>(base: T): T;\nclass Sub extends mixin(Base) {}`, field: tsSource`Sub` },
+  'an Omit of a mixin base that leaves out an inferred getter': { declarations: tsSource`class Base { name!: string & TValidation<typeof b>; get label() { return this.name; } }\ndeclare function mixin<T extends new () => object>(base: T): T;\nclass Sub extends mixin(Base) {}`, field: tsSource`Omit<Sub, 'label'>['name']` },
+  'a Pick of a mixin base that leaves out a member holding the other function': { declarations: tsSource`declare function tagged(): string & TValidation<typeof a>;\nclass Base { name!: string & TValidation<typeof b>; held = tagged(); }\ndeclare function mixin<T extends new () => object>(base: T): T;\nclass Sub extends mixin(Base) {}`, field: tsSource`Pick<Sub, 'name'>['name']` },
 } as const;
 
 for (const [name, { declarations, field }] of Object.entries(builtWrapperReads)) test(`the tag of the field binds its own function through ${name}`, t => {
