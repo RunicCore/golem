@@ -79,6 +79,17 @@ for (const validation of [true, false]) {
   });
 }
 
+test('with validation off, parse still refuses a nested value that is no object with default call options, and parse, stringify and toWireFormat still convert', async () => {
+  // protects: F-38 a job at validation false drops the validators, not the codec: its guards and its stringify and toWireFormat stay
+  const { models, tree } = await builds.get(false)!();
+  const options = { construct: models.Tree as never };
+  assert.equal(outcome(() => tree.parse(JSON.stringify({ ...TREE, leaf: 'text' }), options)), 'TLeafBaseModel expected an object. @[["leaf"]] input=true');
+  const parsed = tree.parse(JSON.stringify(TREE), options);
+  assert.ok(parsed instanceof models.Tree);
+  assert.equal(tree.stringify(parsed), JSON.stringify(TREE));
+  assert.deepEqual(tree.toWireFormat(parsed), TREE);
+});
+
 test('a model constructor that throws at the root is a fault of the program, not bad input', async () => {
   // protects: T-660 a constructor that threw at the root reached the caller raw, and inside a field conversion it was reported as bad input
   const { models, tree } = await builds.get(false)!();
