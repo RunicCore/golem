@@ -14,7 +14,6 @@ import { channel } from 'node:diagnostics_channel';
 import {
   readdirSync,
   readFileSync,
-  realpathSync,
   statSync,
 } from 'node:fs';
 import {
@@ -28,7 +27,7 @@ import * as ast from 'typescript/ast';
 import { GOLEM_CHANNELS } from './diagnostics-channels.js';
 import { displayPath } from './generator-core.js';
 import { fileSignature, MISSING } from './input-watcher.js';
-import { affectsResolution, assertConfigParsed, assertNoSourceFiles, canonical, collectTscDiagnostics, configReferences, declarationOutputOf, emitWanted, flagPathOptions, flagsAsConfigOptions, hasDeclarationOutput, isBrokenReference, programRequest, REFERENCE_ERROR_CODES, referenceClosure, referencedConfigFile, hasVirtualFiles, virtualLookup } from './typescript-config.js';
+import { affectsResolution, assertConfigParsed, assertNoSourceFiles, canonical, collectTscDiagnostics, configReferences, declarationOutputOf, derivedConfigNames, emitWanted, flagPathOptions, flagsAsConfigOptions, hasDeclarationOutput, isBrokenReference, programRequest, REFERENCE_ERROR_CODES, referenceClosure, referencedConfigFile, hasVirtualFiles, ROOTS_CONFIG_SUFFIX, virtualLookup } from './typescript-config.js';
 import type { ConfigReference, ProgramRequest, ResolveAtCurrentFolder, VirtualLookup } from './typescript-config.js';
 import { assertPackageManifestsParse } from './type-analysis/package-specifier.js';
 import {
@@ -117,7 +116,6 @@ export enum IndexKind {
   Number = 1,
 }
 
-export const isFunctionLike = ast.isFunctionLikeDeclaration;
 export const isTypeAssertionExpression = ast.isTypeAssertion;
 
 export interface Diagnostic {
@@ -136,7 +134,6 @@ export interface ModuleResolutionHost {
   fileExists(filename: string): boolean;
   readFile(filename: string): string | undefined;
   getCurrentDirectory?(): string;
-  realpath?(filename: string): string;
   useCaseSensitiveFileNames?: boolean | (() => boolean);
 }
 
@@ -735,7 +732,7 @@ class CompatProgram implements Program {
       emitSkipped: output.emitSkipped,
       files: new Map([...output.outputFiles].map(([filename, { text }]) => [canonical(filename), text])),
       sources: new Map([...output.outputFiles].flatMap(([filename, { sourceFileName }]) => (sourceFileName === undefined ? [] : [[canonical(filename), canonical(sourceFileName)] as const]))),
-      diagnostics: output.diagnostics,
+      diagnostics: this.twin ? this.twin.named(output.diagnostics) : output.diagnostics,
     };
   }
 }
@@ -774,13 +771,6 @@ export const sys: ModuleResolutionHost & {
       return undefined;
     }
   },
-  realpath: (filename) => {
-    try {
-      return realpathSync(filename);
-    } catch {
-      return filename;
-    }
-  },
 };
 
 /** How `tsc` keys a file by its name on this file system: lower case when the file system ignores case. */
@@ -792,7 +782,6 @@ export function createCompilerHost(options: CompilerOptions = {}, _setParentNode
     fileExists: (filename) => sys.fileExists(filename),
     readFile: (filename) => sys.readFile(filename),
     getCurrentDirectory: () => sys.getCurrentDirectory(),
-    realpath: (filename) => sys.realpath?.(filename) ?? filename,
     useCaseSensitiveFileNames: sys.useCaseSensitiveFileNames,
     getCanonicalFileName: (filename) => canonicalize(filename, hostCaseSensitivity),
     getNewLine: () => '\n',
@@ -897,6 +886,26 @@ function overriddenConfig(api: API, configPath: string, overrides: OptionOverrid
   }
 }
 
+/** A `.json` file name in a message: a whole name, between a quote, a space or a path separator, or a closing mark and a space. */
+const JSON_FILE_NAME = /(?<![^\s'"/\\])[^\s'"/\\]+\.json(?=$|[\s'"/\\]|[.,:;)](?:$|\s))/g;
+
+/** A diagnostic with the name of each derived configuration replaced by the user's tsconfig, the file `tsc` names: the user never wrote a derived one. */
+function inUserConfigName(diagnostic: SyncDiagnostic, names: ConfigNames): SyncDiagnostic {
+  const named = (inner: SyncDiagnostic): SyncDiagnostic => inUserConfigName(inner, names);
+  return {
+    ...diagnostic,
+    text: diagnostic.text.replace(JSON_FILE_NAME, (name) => (names.derived.has(name) ? names.user : name)),
+    ...(diagnostic.messageChain && { messageChain: diagnostic.messageChain.map(named) }),
+    ...(diagnostic.relatedInformation && { relatedInformation: diagnostic.relatedInformation.map(named) }),
+  };
+}
+
+/** The base names of the user's tsconfig, and of the configurations derived beside it. */
+interface ConfigNames {
+  readonly derived: ReadonlySet<string>;
+  readonly user: string;
+}
+
 /**
  * The user's configuration opened alone, for a program not opened on it. The compiler locates an option only in the text of the
  * configuration it opens, and the derived one only extends the user's, so an option error comes without a file. `lookup` gives the
@@ -906,17 +915,23 @@ class ConfigTwin {
   private found: readonly SyncDiagnostic[] | undefined;
 
   /** `referenceErrors`: whether `tsc` reports a project reference of the user's configuration, which the program cannot (`SyntheticProgram.brokenReferences`). */
-  public constructor(private readonly lookup: () => readonly SyncDiagnostic[], private readonly referenceErrors: boolean) {}
+  public constructor(private readonly lookup: () => readonly SyncDiagnostic[], private readonly referenceErrors: boolean, private readonly names: ConfigNames) {}
+
+  /** The diagnostics with the user's tsconfig name in their text, wherever the compiler named the derived one. */
+  named(diagnostics: readonly SyncDiagnostic[]): readonly SyncDiagnostic[] {
+    return diagnostics.map((diagnostic) => inUserConfigName(diagnostic, this.names));
+  }
 
   /** Each diagnostic with no file takes its place in the user's text (`match`); a program whose diagnostics all have a file does not ask the twin. */
   positioned(diagnostics: readonly SyncDiagnostic[]): readonly SyncDiagnostic[] {
-    return diagnostics.every((diagnostic) => diagnostic.fileName !== undefined) ? diagnostics : this.match(diagnostics).placed;
+    const named = this.named(diagnostics);
+    return named.every((diagnostic) => diagnostic.fileName !== undefined) ? named : this.match(named).placed;
   }
 
   /** The option diagnostics of the program, placed, and the reference errors of the user's configuration that the twin reports and the program cannot. */
   withReferenceErrors(diagnostics: readonly SyncDiagnostic[]): readonly SyncDiagnostic[] {
     if (!this.referenceErrors) return this.positioned(diagnostics);
-    const { placed, unused } = this.match(diagnostics);
+    const { placed, unused } = this.match(this.named(diagnostics));
     return [...placed, ...unused.filter((diagnostic) => REFERENCE_ERROR_CODES.has(diagnostic.code))];
   }
 
@@ -1380,7 +1395,7 @@ export class ProgramSession implements Disposable {
         if (!project) throw new Error(`The compiler did not open the TypeScript project ${displayPath(request.configPath)} for ${displayPath(options.root)}.`);
         this.syntheticProgram = created ?? this.syntheticProgram;
         const { twinOf, overrides } = request;
-        const program = new CompatProgram(this, snapshot, project, synthetic?.unbuilt, twinOf === undefined ? undefined : new ConfigTwin(() => this.diagnosticsOfConfig(twinOf, overlays, overrides), synthetic?.brokenReferences ?? false));
+        const program = new CompatProgram(this, snapshot, project, synthetic?.unbuilt, twinOf === undefined ? undefined : new ConfigTwin(() => this.diagnosticsOfConfig(twinOf, overlays, overrides), synthetic?.brokenReferences ?? false, { derived: derivedConfigNames(basename(twinOf)), user: basename(twinOf) }));
         this.held.set(program, request);
         return program;
       } catch (error) {
@@ -1449,7 +1464,7 @@ export class ProgramSession implements Disposable {
     // Every root is a file of the configuration, and the configuration is the user's own: the compiler reads it itself, so its option errors name its own text and place.
     // A hidden configuration is golem's overlay (the option overrides): it has no text of the user's to name, and the compiler's own glob would order its roots differently from `tsc`.
     if (!base.hidden.has(base.configPath) && base.rootNames.every((file) => own.has(file))) return base;
-    const configPath = join(dirname(base.configPath), `${basename(base.configPath, '.json')}.roots.json`);
+    const configPath = join(dirname(base.configPath), `${basename(base.configPath, '.json')}${ROOTS_CONFIG_SUFFIX}.json`);
     const files = [...new Set([...own, ...base.rootNames])];
     const overlays = new Map(base.overlays);
     overlays.set(configPath, JSON.stringify({ extends: `./${basename(base.configPath)}`, files, include: [] }));

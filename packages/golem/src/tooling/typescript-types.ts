@@ -856,7 +856,6 @@ export interface TypeScriptBackend {
   isExpressionWithTypeArguments(node: Node): node is ExpressionWithTypeArguments;
   isFunctionDeclaration(node: Node): node is FunctionDeclaration;
   isFunctionExpression(node: Node): node is FunctionExpression;
-  isFunctionLike(node: Node): node is FunctionLikeDeclaration;
   isIdentifier(node: Node): node is Identifier;
   isImportClause(node: Node): node is ImportClause;
   isImportDeclaration(node: Node): node is ImportDeclaration;
