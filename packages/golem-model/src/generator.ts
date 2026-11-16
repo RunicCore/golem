@@ -600,23 +600,21 @@ export function generate(context: GolemModelContext): GolemModelResult {
     graphs.flatMap((graph) => graph.schemas)
       .sort((left, right) => compareText(left.key, right.key)),
   );
-  // A model never validates above its project, so a project that does not validate has no validators.
-  const validationPlan = normalized.profile.validation !== false
-    ? buildCodecValidationPlan(
-      schemaGraphs,
-      [],
-      Object.fromEntries(schemaEntries.map((compilation) => [compilation.id, compilation.schema])),
-      normalized.profile.validation,
-    )
-    : undefined;
+  const validationPlan = buildCodecValidationPlan(
+    schemaGraphs,
+    [],
+    Object.fromEntries(schemaEntries.map((compilation) => [compilation.id, compilation.schema])),
+    normalized.profile.validation,
+  );
   const tagSchemaIds = new Set(schemaEntries.map((compilation) => compilation.id));
   const validatorsOutput = join(normalized.output, 'models.validators.generated.ts');
+  // A model never validates above its project, so a project that does not validate has no validators: its SDKs have no operation roots.
   // A project whose models all stay off has no codec that calls a validator, so it writes no file.
-  const sdkOperations = validationPlan ? sdkValidatorOperations(sdks) : [];
+  const sdkOperations = normalized.profile.validation !== false ? sdkValidatorOperations(sdks) : [];
   // The module holds the validators of the validating models and the SDK operations. Without such a root the tag schemas
   // are compiled for their diagnostics alone: no codec calls a validator, so no module is written or imported.
-  const holdsValidators = validationPlan !== undefined && (validationPlan.ownSchemas.length > 0 || sdkOperations.length > 0);
-  const compiledValidators = validationPlan && (holdsValidators || tagSchemaIds.size > 0)
+  const holdsValidators = validationPlan.ownSchemas.length > 0 || sdkOperations.length > 0;
+  const compiledValidators = holdsValidators || tagSchemaIds.size > 0
     ? compileSdkValidators({ plan: validationPlan, operations: sdkOperations }, {
       owner: '@exprtlabs/golem-model',
       unknownFormats: normalized.profile.unknownFormats,
