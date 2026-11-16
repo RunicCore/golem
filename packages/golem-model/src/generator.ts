@@ -613,7 +613,9 @@ export function generate(context: GolemModelContext): GolemModelResult {
   const validatorsOutput = join(normalized.output, 'models.validators.generated.ts');
   // A project whose models all stay off has no codec that calls a validator, so it writes no file.
   const sdkOperations = validationPlan ? sdkValidatorOperations(sdks) : [];
-  const validators = validationPlan && (validationPlan.ownSchemas.length > 0 || sdkOperations.length > 0)
+  // The module holds the validators of the validating models and the SDK operations. The tag schemas of a project with
+  // no such root are compiled for their diagnostics alone: no codec calls a validator, so no module is written or imported.
+  const compiledValidators = validationPlan && (validationPlan.references.length > 0 || sdkOperations.length > 0)
     ? compileSdkValidators({ plan: validationPlan, operations: sdkOperations }, {
       owner: '@exprtlabs/golem-model',
       unknownFormats: normalized.profile.unknownFormats,
@@ -628,7 +630,8 @@ export function generate(context: GolemModelContext): GolemModelResult {
       locate: (resource) => resource.startsWith('golem:model-tag:') ? { where: FIELD_TYPE_PLACE } : undefined,
     })
     : undefined;
-  const validatorDiagnostics = withoutRepeatedFieldTypeWarnings(validators?.diagnostics ?? []);
+  const validators = validationPlan && (validationPlan.ownSchemas.length > 0 || sdkOperations.length > 0) ? compiledValidators : undefined;
+  const validatorDiagnostics = withoutRepeatedFieldTypeWarnings(compiledValidators?.diagnostics ?? []);
   if (validatorDiagnostics.some((diagnostic) => diagnostic.severity === GolemDiagnosticSeverity.Error)) {
     // Nothing is written: the model files import the validators this job could not compile.
     return {

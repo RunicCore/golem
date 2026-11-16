@@ -200,13 +200,17 @@ export function deduplicateTagSchemas(
     .map(([, schema], index) => ({ id: `golem:model-tag:${index}`, schema }));
 }
 
+/**
+ * The schemas of the tags in `descriptors`. An `executable` schema names the validation functions of its tags; the module
+ * that compiles it imports them. A schema that is not executable holds the structural checks only, and serves the
+ * diagnostics of a source whose models all stay off, which imports no validation function.
+ */
 function tagSchemas(
   descriptors: readonly ModelConversionDescriptor[],
-  enabled: boolean,
+  executable: boolean,
   definitions: Readonly<Record<string, ModelConversionDescriptor>> = {},
   representation: 'model' | 'wire' = 'model',
 ): readonly TagSchema[] {
-  if (!enabled) return [];
   const schemas = new Map<string, Readonly<Record<string, unknown>>>();
   const register = (schema: Readonly<Record<string, unknown>>): void => {
     const key = canonicalSchemaKey(schema);
@@ -224,11 +228,11 @@ function tagSchemas(
       // siblings of contains.
       const structural = schemaForDescriptor(
         validationTagSchemaDescriptor(descriptor, constraints, { definitions }),
-        { ...schemaOptions, representation, executableBindings: true },
+        { ...schemaOptions, representation, executableBindings: executable },
       );
       register(typeof structural === 'boolean' ? { allOf: [structural] } : structural);
     }
-    if (validations.length > 0) register({ [VALIDATION_KEYWORD]: validations });
+    if (executable && validations.length > 0) register({ [VALIDATION_KEYWORD]: validations });
   };
   descriptors.forEach((descriptor) => walkDescriptor(descriptor, { enter: registerTags }, 'structure'));
   return [...schemas.entries()].map(([key, schema]) => ({ key, schema }));
@@ -705,11 +709,11 @@ export function analyzeSourceGraph(
     wireDefinitions,
   );
   executableMemos.set(wireLookup, job.executableMemo);
-  // The tag schemas serve the validators of this source's models; a source whose models are all off has none, and its
-  // validation functions are not imported (`validatorImports`), so a schema that names one could not compile.
-  const schemas = !anyDeclValidation ? [] : [
-    ...tagSchemas(Object.values(owned), true, lookup, 'model'),
-    ...tagSchemas(Object.keys(owned).map((name) => wireDefinitions[name]), true, wireLookup, 'wire'),
+  // The tag schemas serve the validators of this source's models. A source whose models are all off imports no validation
+  // function (`validatorImports`), so its schemas name none: they are compiled to report an unknown format, never to validate.
+  const schemas = profile.validation === false ? [] : [
+    ...tagSchemas(Object.values(owned), anyDeclValidation, lookup, 'model'),
+    ...tagSchemas(Object.keys(owned).map((name) => wireDefinitions[name]), anyDeclValidation, wireLookup, 'wire'),
   ];
   return {
     source,
