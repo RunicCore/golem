@@ -27,13 +27,14 @@ flock -n 9 || { echo "Another golem test run holds /cache/run.lock; wait for it 
 
 mkdir -p /cache/work /cache/npm /cache/packed /cache/linux-lock /cache/ttsc /cache/gomod
 # What is not golem source: build output, installs, git, and local tool state such as the dev center store, which changes on
-# every write. The copy leaves these out and the tree hash skips them, from this one list.
+# every write. The copy leaves these out and the tree hash skips them, from this one list. The excludes are perishable (-p),
+# so a folder that the source no longer has is deleted with the build output inside it.
 local_names=(node_modules .build dist .cache .git .DS_Store .private .superpowers .code-review-graph .devcenter .claude)
 local_paths=(.vitepress/cache .vitepress/dist)
 rsync_excludes=()
 find_prune=()
-for name in "${local_names[@]}"; do rsync_excludes+=(--exclude "$name"); find_prune+=(-name "$name" -o); done
-for local_path in "${local_paths[@]}"; do rsync_excludes+=(--exclude "$local_path"); find_prune+=(-path "*/$local_path" -o); done
+for name in "${local_names[@]}"; do rsync_excludes+=(--filter "-p $name"); find_prune+=(-name "$name" -o); done
+for local_path in "${local_paths[@]}"; do rsync_excludes+=(--filter "-p $local_path"); find_prune+=(-path "*/$local_path" -o); done
 unset 'find_prune[${#find_prune[@]}-1]'
 # Copy the read-only source into the work tree, keeping mtimes so incremental
 # builds stay warm. Build output and installs live only in the work tree.
