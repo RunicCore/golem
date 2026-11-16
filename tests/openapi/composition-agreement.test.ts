@@ -875,7 +875,7 @@ function builder(row: Row, validation: boolean, types?: string): () => Promise<B
       name: 'Composition',
       profile: { validation, allowAny: false },
     });
-    const typeFiles = types === undefined ? [] : [copyFixtureFile(output, `openapi/composition/${types}-types.ts`, 'row-types.ts')];
+    const typeFiles = types === undefined ? [] : [copyFixtureFile(output, `openapi/composition/${types}-types.ts`, `${types}-types.ts`)];
     compileGeneratedSdk(output, typeFiles, { strict: true, skipLibCheck: true });
     return {
       output,

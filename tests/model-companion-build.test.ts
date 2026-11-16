@@ -272,6 +272,7 @@ for (const row of ACCEPT_ROWS) {
     assert.deepEqual([...row.accepted, ...row.rejected].filter(candidate => accepts(candidate) === true), row.accepted);
   });
 }
+
 test('a keyof over a subclass of an app class has the members of its base on the first run', async t => {
   // protects: T-264 a subclass of an app class sees the fields of its generated base on the first run
   const { root } = orderProject(t, {
