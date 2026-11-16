@@ -200,7 +200,7 @@ test('golem.yaml validation accepts true, false and sanity, defaults to true, an
 
 test('configuration errors reject a wrong version, wrong root values and duplicate keys', async (t: TestContext) => {
   const testCases: [string, RegExp][] = [
-    ['version: 2\n', /version/],
+    ['version: 2\n', /Configuration version must be 1\./],
     ['version: 1\nmobx: true\n', /mobx/],
     ['version: 1\nversion: 1\n', /unique/],
     ['version: 1\nallowAny: maybe\n', /allowAny must be a boolean/],
