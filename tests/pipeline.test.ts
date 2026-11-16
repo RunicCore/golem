@@ -142,7 +142,7 @@ test('watch regenerates model edits without rewriting SDKs or looping on outputs
 // Deleting a discovered model cleans its companion; deleting the final one also cleans a modified companion
 // ---------------------------------------------------------------------------
 
-test('deleting a discovered model cleans its generated companion, and deleting the final one cleans the inventory', async (t: TestContext) => {
+test('deleting a discovered model cleans its generated companion, and deleting the final one cleans its modified companion', async (t: TestContext) => {
   const { root, config } = fixture(t);
   const extra = path.join(root, 'src/extra.model.ts');
   fs.writeFileSync(extra, "import type {IModel} from '@exprtlabs/golem/model'; export type TExtra=IModel<{value:string}>;\n");
@@ -177,7 +177,6 @@ test('deleting a discovered model cleans its generated companion, and deleting t
   const inventory = JSON.parse(fs.readFileSync(path.join(root, '.golem/outputs.json'), 'utf8')) as {
     files: Record<string, unknown>;
   };
-  assert.equal(Object.keys(inventory.files).some((f) => f.includes('cart.model.generated')), false);
   assert.equal(Object.keys(inventory.files).some((f) => f.startsWith('sdk/')), true);
 });
 

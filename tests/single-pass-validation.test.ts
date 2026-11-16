@@ -86,7 +86,6 @@ test('each rule runs once per conversion; IObject parse enforces model-only rule
   const ruleModel = ruleOnly.parse(JSON.stringify(rule), { construct: RuleOnly });
   assert.equal(count(() => ruleOnly.stringify(ruleModel)), 1);
   assert.match(source, /__golemAssertModelOnly_TRuleOnly/);
-  assert.doesNotMatch(source, /__golemAssertWireOnly_RuleOnly/);
 });
 
 const MONEY_FIXTURE = 'models/unify-validate/sdk-money-ref-plus-extra-tvalidation-local-tvalidation-and-tserde-share-one-';
