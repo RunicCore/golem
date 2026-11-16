@@ -108,10 +108,16 @@ export const wrong: Payment[typeof generatedModelFieldsBrand] = { id: 1, amount:
       assert.throws(() => codec.parse(shortCurrency));
       const validator = getValidator(payment);
       assert.equal(await validator.validate(), true);
-      assert.equal(await getValidator(new Payment({ id: 'p1', amount: 'five', total: wire.total })).validate(), false);
+      const bad = getValidator(new Payment({ id: 'p1', amount: 'five', total: wire.total }));
+      assert.deepEqual([bad.pending, bad.valid, bad.error(['amount'])], [false, true, undefined], 'a constructor never validates: the validator holds no issue until it is asked');
+      assert.equal(await bad.validate(), false);
+      assert.notEqual(bad.error(['amount']), undefined);
       const edited = new Payment({ id: 'p1', amount: 5, total: wire.total });
+      const editedValidator = getValidator(edited);
       edited.amount = 'six';
-      assert.equal(await getValidator(edited).validate(), false, 'a field assignment never validates; the check runs when it is asked for');
+      assert.deepEqual([editedValidator.pending, editedValidator.valid, editedValidator.error(['amount'])], [false, true, undefined], 'a field assignment never validates: the validator holds no issue until it is asked');
+      assert.equal(await editedValidator.validate(), false);
+      assert.notEqual(editedValidator.error(['amount']), undefined);
       assert.equal(isComputedProp(validator, 'valid'), expected.mobx === true, 'the validator is observable exactly when the profile uses MobX');
       assert.equal(codec.validate(payment), true);
     } else {
