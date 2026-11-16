@@ -36,7 +36,7 @@ The checked-in `package-lock.json` comes from macOS and lacks the Linux platform
 
 - `The golem test image … is missing or out of date`: run `npm run test:prepare`.
 - `The npm cache is missing a package`: a test installs a package the cache lacks. Run `npm run test:prepare`.
-- `Another golem test run holds /cache/run.lock`: one run uses the cache at a time. Wait for it.
+- `Another golem test run holds /cache/run.lock; waiting up to …s for it`: one run uses the cache at a time, so a second run waits for the first. When the wait ends the run stops with exit 2 and `…; wait for it to finish`. Set the wait with `--lock-wait <seconds>` (default 300, every tier), for example `npm run test -- --lock-wait 900 tests/serde.test.ts`.
 - `The … tier exceeded its …s ceiling and was stopped`: the whole run passed its time limit. The lines after it name each step that was running and the files of that step that started and did not finish. See [A hung test file](#a-hung-test-file).
 
 ## A hung test file
