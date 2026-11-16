@@ -13,7 +13,7 @@ import { golem as esbuildPlugin } from '#golem/esbuild';
 import { openRewriteProject } from '#golem/rewrite-host';
 import type { GolemHostOptions } from '#golem/rewrite-host';
 import { golem as vitePlugin } from '#golem/vite';
-import { copyFixtureFile, createFixtureProject, linkProjectPackages, snapshotFilesystem, writeGeneratedArtifacts } from './fixture-project.js';
+import { copyFixtureFile, createFixtureProject, fileFixtureScope, linkProjectPackages, onceShared, snapshotFilesystem, writeGeneratedArtifacts, type FixtureScope } from './fixture-project.js';
 import { createModelProject } from './model-project.js';
 import { command, workspace } from './support/process.js';
 import { workspacePackage } from './support/loader-project.js';
@@ -98,7 +98,7 @@ export const tag = parse<TTag>('{"label":"a"}');
 `;
 
 /** A generated project: the model source and its generated files. */
-async function generatedProject(t: TestContext, name: string, options: { readonly generate?: boolean; readonly validation?: boolean; readonly preserveSymlinks?: boolean } = {}): Promise<string> {
+async function generatedProject(t: FixtureScope, name: string, options: { readonly generate?: boolean; readonly validation?: boolean; readonly preserveSymlinks?: boolean } = {}): Promise<string> {
   const { root } = createModelProject(t, {
     prefix: 'golem-bundler-',
     name,
@@ -115,6 +115,13 @@ async function generatedProject(t: TestContext, name: string, options: { readonl
   if (options.generate !== false) await runPipeline(path.join(root, 'golem.yaml'));
   return root;
 }
+
+const fileScope = fileFixtureScope();
+/**
+ * One generated project for the tests that only read it. Each of them bundles, serves or rewrites it and edits nothing: `build` fails a
+ * bundle that changed a file, and the serve test checks the same. A test that writes a file, edits a model or changes the config makes its own.
+ */
+const readOnlyProject = onceShared(() => generatedProject(fileScope, 'read-only'));
 
 /** The codec ids a rewritten module asks the runtime for when it runs, in call order. */
 function requestedCodecIds(code: string | undefined): readonly string[] {
@@ -202,13 +209,13 @@ function frameLines(output: string, file: string): number[] {
 
 for (const bundler of BUNDLERS) {
   test(`${bundler.name}: the bundle runs the parse and stringify calls the host rewrites.`, async (t) => {
-    const root = await generatedProject(t, `${bundler.name}-run`);
+    const root = await readOnlyProject();
     const stdout = await runBundle(bundler, t, root, 'src/main.ts');
     assert.deepEqual(JSON.parse(stdout.split('\n')[0]!), { money: { currency: 'USD', value: '1' }, twice: 42 });
   });
 
   test(`${bundler.name}: the bundle's source map resolves a rewritten line to its original file and line`, async (t) => {
-    const root = await generatedProject(t, `${bundler.name}-source-map`);
+    const root = await readOnlyProject();
     const bundle = await build(bundler, t, root, 'src/main.ts');
     const result = await command(root, process.execPath, ['--enable-source-maps', bundle]);
     // The rewrite prepends an import line, so the line in the rewritten text is one past the original. Node reports
@@ -254,7 +261,7 @@ for (const bundler of BUNDLERS) {
 
   test(`${bundler.name}: an empty config option is no setting, so the golem.yaml of the working directory is used`, async (t) => {
     // protects: T-27 config '' resolved to the working directory and failed on a directory
-    const root = await generatedProject(t, `${bundler.name}-empty-config`);
+    const root = await readOnlyProject();
     const stdout = await runBundle(bundler, t, root, 'src/main.ts', { config: '' });
     assert.deepEqual(JSON.parse(stdout.split('\n')[0]!), { money: { currency: 'USD', value: '1' }, twice: 42 });
   });
@@ -316,7 +323,7 @@ for (const bundler of BUNDLERS) {
 }
 
 test('the rewrite project of one golem.yaml is shared, and its session lives until the last host closes it', async (t) => {
-  const root = await generatedProject(t, 'shared-project');
+  const root = await readOnlyProject();
   const file = path.join(root, 'src/main.ts');
   const text = fs.readFileSync(file, 'utf8');
   const first = await openRewriteProject({ cwd: root });
@@ -427,7 +434,7 @@ async function serve(t: TestContext, root: string): Promise<LiveServer> {
 }
 
 test('vite serve: a transformed module is rewritten and its map names the module by its own file name', async (t) => {
-  const root = await generatedProject(t, 'vite-serve');
+  const root = await readOnlyProject();
   const { server } = await serve(t, root);
   const before = snapshotFilesystem(root);
   const result = await server.transformRequest('/src/main.ts');
@@ -683,7 +690,7 @@ console.log(JSON.stringify(parse<TMoney>('{"currency":"USD","value":"1","note":"
 });
 
 test('esbuild: a file with no rewrite still reaches the onLoad plugins after golem', async (t) => {
-  const root = await generatedProject(t, 'esbuild-later');
+  const root = await readOnlyProject();
   const seen: string[] = [];
   const result = await esbuild({
     absWorkingDir: root,
