@@ -277,7 +277,7 @@ function applySchemaPointer(
   resources: ResourceIndex,
 ): { schema: unknown; currentBase: string } | undefined {
   const raw = pointer.startsWith('#') ? pointer.slice(1) : pointer;
-  if (raw === '' || raw === '/') return { schema, currentBase };
+  if (raw === '') return { schema, currentBase };
   if (!raw.startsWith('/')) return undefined;
   const tokens = fragmentPointerTokens(raw);
   let current: unknown = schema;

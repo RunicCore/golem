@@ -407,6 +407,18 @@ test('no-unresolved-refs resolves "#/…" inside a schema with its own $id again
   assert.deepEqual(found(document, 'no-unresolved-refs'), ['/components/schemas/Money/properties/viaNowhere/$ref']);
 });
 
+test('no-unresolved-refs reads "#/" as the key "" (RFC 6901), not as the whole resource', () => {
+  const document = documentBase('3.1.0', {
+    paths: {},
+    components: {
+      schemas: {
+        Tree: { $id: 'https://rules.example/tree', type: 'object', properties: { whole: { $ref: '#' }, keyless: { $ref: '#/' } } },
+      },
+    },
+  });
+  assert.deepEqual(found(document, 'no-unresolved-refs'), ['/components/schemas/Tree/properties/keyless/$ref']);
+});
+
 test('no-unresolved-refs reports a discriminator mapping pointer that resolves to nothing', () => {
   const document = documentBase('3.1.0', {
     paths: {},
