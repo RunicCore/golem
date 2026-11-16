@@ -6,3 +6,8 @@ export type UriVersioningType = typeof URI_VERSIONING_TYPES[number];
 export function isUriVersioningType(value: unknown): value is UriVersioningType {
   return URI_VERSIONING_TYPES.some(spelling => spelling === value);
 }
+
+const SPELLINGS = URI_VERSIONING_TYPES.map(spelling => typeof spelling === 'string' ? `'${spelling}'` : String(spelling));
+
+/** The set as a phrase for a message, `'URI', 'uri' or 0`, so a message lists what the predicate accepts. */
+export const URI_VERSIONING_TYPES_PHRASE = `${SPELLINGS.slice(0, -1).join(', ')} or ${SPELLINGS.slice(-1).join('')}`;
