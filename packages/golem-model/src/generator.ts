@@ -609,6 +609,7 @@ export function generate(context: GolemModelContext): GolemModelResult {
       normalized.profile.validation,
     )
     : undefined;
+  const tagSchemaIds = new Set(schemaEntries.map((compilation) => compilation.id));
   const validatorsOutput = join(normalized.output, 'models.validators.generated.ts');
   // A project whose models all stay off has no codec that calls a validator, so it writes no file.
   const sdkOperations = validationPlan ? sdkValidatorOperations(sdks) : [];
@@ -619,6 +620,11 @@ export function generate(context: GolemModelContext): GolemModelResult {
       level: compileLevel(normalized.profile.validation),
       validations: validatorImports(graphs, normalized.profile, validatorsOutput),
       documentName: 'the model schemas',
+      // A tag schema is compiled for its diagnostics only: no codec calls its validator, so the module holds none.
+      emitRoots: new Set([
+        ...Object.keys(validationPlan.schemas).filter((id) => !tagSchemaIds.has(id)),
+        ...sdkOperations.flatMap((operation) => Object.keys(operation.roots)),
+      ]),
       locate: (resource) => resource.startsWith('golem:model-tag:') ? { where: FIELD_TYPE_PLACE } : undefined,
     })
     : undefined;
