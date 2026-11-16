@@ -206,7 +206,7 @@ test('a node_modules folder that is a link into a job output excludes the import
 });
 
 test('a relative import through a link that leads to a job output excludes its importer on the first run and the next', (t: TestContext) => {
-  // protects: T-1029 the path `src/gen/money.js` lies under the output only once the link `src/gen` leads somewhere, so the two runs read different files
+  // protects: T-1027 the path `src/gen/money.js` lies under the output only once the link `src/gen` leads somewhere, so the two runs read different files
   const project = aliasedProject(t);
   project.link('src/gen', '../sdk');
   project.write('src/app.ts', "import type { Money } from './gen/money.js';\nexport type App = Money;\n");

@@ -138,6 +138,7 @@ test('external model companions canonicalize through a symlink and retire safely
 });
 
 test('a path through a link that leads nowhere yet has the real path it will have, and links that loop stop with a plain error', (t: TestContext) => {
+  // protects: T-1027 canonicalPath stopped at a link that leads nowhere yet, so a path through it changed its real path once the target was written
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'golem-canonical-path-')));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   fs.symlinkSync(path.join(root, 'first-hop'), path.join(root, 'link'), 'dir');
