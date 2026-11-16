@@ -7,6 +7,7 @@ import { runPipeline } from '#golem/cli';
 import { applyRewrites } from '#golem/rewrite';
 import { RewriteScanner, type FileScanResult } from '#golem/rewrite-scan';
 import { decodeMappings } from '#golem/source-map';
+import { resolveTypeScript } from '#golem/typescript-version';
 import { createProjectProgram } from '@exprtlabs/golem/internal/type-analysis';
 import { writeSdk } from '#openapi/generator';
 import { NEST_PARTICIPANTS } from './fixture-templates/controllers/project.js';
@@ -165,7 +166,10 @@ test('a class named through a type-only namespace import is constructed through 
   assert.ok(code.includes("import type * as models from './payment.model.js';"), 'the type-only import stays as the user wrote it');
 });
 
-test('a call next to a source phase import and import attributes is rewritten and the other imports keep their text', (t) => {
+// `import source` and the `esnext.modulesource` lib are TypeScript 7.1 only; import attributes are TypeScript 6 syntax too.
+const skipOnTypeScript6 = resolveTypeScript(process.env.GOLEM_TYPESCRIPT_ROOT ?? workspace).major === 6 && 'TypeScript 6 has no source phase import';
+
+test('a call next to a source phase import and import attributes is rewritten and the other imports keep their text', { skip: skipOnTypeScript6 }, (t) => {
   // protects: T-350 TypeScript 7.1 import forms (source phase, with attributes) survive the rewrite
   const { root } = createModelProject(t, {
     prefix: 'golem-rewrite-scan-',
