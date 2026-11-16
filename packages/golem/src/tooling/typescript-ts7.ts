@@ -29,8 +29,8 @@ import * as ast from 'typescript/ast';
 import { GOLEM_CHANNELS } from './diagnostics-channels.js';
 import { displayPath } from './generator-core.js';
 import { fileSignature, MISSING } from './input-watcher.js';
-import { affectsResolution, assertConfigParsed, assertNoSourceFiles, canonical, collectTscDiagnostics, configReferences, declarationOutputOf, emitWanted, flagPathOptions, flagsAsConfigOptions, hasDeclarationOutput, isBrokenReference, programRequest, REFERENCE_ERROR_CODES, referenceClosure, referencedConfigFile } from './typescript-config.js';
-import type { ConfigReference, ProgramRequest, ResolveAtCurrentFolder } from './typescript-config.js';
+import { affectsResolution, assertConfigParsed, assertNoSourceFiles, canonical, collectTscDiagnostics, configReferences, declarationOutputOf, emitWanted, flagPathOptions, flagsAsConfigOptions, hasDeclarationOutput, isBrokenReference, programRequest, REFERENCE_ERROR_CODES, referenceClosure, referencedConfigFile, virtualLookup } from './typescript-config.js';
+import type { ConfigReference, ProgramRequest, ResolveAtCurrentFolder, VirtualLookup } from './typescript-config.js';
 import { assertPackageManifestsParse } from './type-analysis/package-specifier.js';
 import {
   API,
@@ -62,7 +62,7 @@ import {
 import { serverFS, type FileSystemCallbacks } from 'typescript/fs';
 import { canonicalize, CaseSensitivity } from 'typescript/path';
 import type { Node, SourceFile, TypeNode } from 'typescript/ast';
-import type { EmitKind, MemoryEmit, OpenProgramOptions, ParsedProject, ProgramSessionOptions } from './typescript-types.js';
+import type { EmitKind, MemoryEmit, OpenProgramOptions, ParsedProject, ProgramSessionOptions, VirtualFiles } from './typescript-types.js';
 
 export {
   API,
@@ -442,7 +442,7 @@ class CompatChecker implements TypeChecker {
     return this;
   }
 
-  resolveImport(specifier: StringLiteralLike, virtualFiles?: ReadonlySet<string>): ResolvedModule | undefined {
+  resolveImport(specifier: StringLiteralLike, virtualFiles?: VirtualFiles): ResolvedModule | undefined {
     return this.program.resolveImport(specifier, virtualFiles);
   }
 
@@ -642,11 +642,11 @@ class CompatProgram implements Program {
    * The module an import of a file of this program resolved to, as the compiler resolved it for the program. When the compiler found
    * none, `virtualFiles` are files that do not exist yet but will, and a second lookup counts them.
    */
-  resolveImport(specifier: StringLiteralLike, virtualFiles?: ReadonlySet<string>): ResolvedModule | undefined {
+  resolveImport(specifier: StringLiteralLike, virtualFiles?: VirtualFiles): ResolvedModule | undefined {
     const file = specifier.getSourceFile().fileName;
     assertPackageManifestsParse(specifier.text, file);
     const resolved = this.project.program.getResolvedModuleFromModuleSpecifier(specifier, file);
-    if (resolved || !virtualFiles || virtualFiles.size === 0) return resolved;
+    if (resolved || !virtualFiles) return resolved;
     const mode = this.project.program.getModeForUsageLocation(file, specifier);
     return this.session.resolveModuleName(specifier.text, file, this.getCompilerOptions(), mode, virtualFiles).resolvedModule;
   }
@@ -1143,6 +1143,8 @@ export class ProgramSession implements Disposable {
   /** Overlays served by the latest snapshot. */
   private overlays: ReadonlyMap<string, string> = new Map();
   private overlayDirectories = new Set<string>();
+  /** The files a module lookup counts that do not exist yet, while that lookup runs. */
+  private virtual: VirtualLookup | undefined;
   private observer: ((filename: string) => void) | undefined;
   private hidden: ReadonlySet<string> = new Set();
   private readonly observed = new Set<string>();
@@ -1280,16 +1282,19 @@ export class ProgramSession implements Disposable {
    * program, such as one an SDK manifest names. The lookup sees the disk and `virtualFiles`, the same files as on the TypeScript 6
    * lane, and no overlay of a program.
    */
-  resolveModuleName(moduleName: string, containingFile: string, compilerOptions: CompilerOptions, resolutionMode?: ModuleKind, virtualFiles: ReadonlySet<string> = new Set()): { resolvedModule?: ResolvedModule } {
+  resolveModuleName(moduleName: string, containingFile: string, compilerOptions: CompilerOptions, resolutionMode?: ModuleKind, virtualFiles?: VirtualFiles): { resolvedModule?: ResolvedModule } {
     assertPackageManifestsParse(moduleName, containingFile);
     return this.withCompiler('parse', (api) => {
       const resolver = this.plainResolver(api, compilerOptions);
-      const previous = this.overlays;
-      this.setOverlays(new Map([...virtualFiles].map((filename) => [canonical(filename), 'export {}\n'])));
+      const previousOverlays = this.overlays;
+      const previousVirtual = this.virtual;
+      this.setOverlays(new Map());
+      this.virtual = virtualFiles && virtualLookup(virtualFiles);
       try {
         return resolver.resolveModuleName(moduleName, dirname(containingFile), resolutionMode as ResolutionMode | undefined);
       } finally {
-        this.setOverlays(previous);
+        this.setOverlays(previousOverlays);
+        this.virtual = previousVirtual;
       }
     });
   }
@@ -1629,11 +1634,14 @@ export class ProgramSession implements Disposable {
         this.recordSignature(filename);
         return serverFS.useOS;
       },
-      fileExists: (fileName) => this.servedByOverlay(canonical(fileName)) || serverFS.useOS,
+      fileExists: (fileName) => {
+        const filename = canonical(fileName);
+        return this.servedByOverlay(filename) || this.virtual?.file(filename) === true || serverFS.useOS;
+      },
       directoryExists: (directoryName) => {
         const directory = canonical(directoryName);
         this.report(directory);
-        if (this.overlayDirectories.has(directory)) return true;
+        if (this.overlayDirectories.has(directory) || this.virtual?.directory(directory) === true) return true;
         this.recordSignature(directory);
         return serverFS.useOS;
       },

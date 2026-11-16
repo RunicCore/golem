@@ -86,7 +86,7 @@ test('a package subpath that the exports map hides does not resolve, and a packa
 });
 
 /** A project and its session, with the compiler options its tsconfig parses to; `lookup` resolves a name for a file of `sdk/`, as a manifest lookup does. */
-function manifestLookup(t: TestContext, root: string): { readonly session: InstanceType<typeof ts.ProgramSession>; readonly lookup: (name: string, virtualFiles?: ReadonlySet<string>) => string | undefined } {
+function manifestLookup(t: TestContext, root: string): { readonly session: InstanceType<typeof ts.ProgramSession>; readonly lookup: (name: string, virtualFiles?: ts.VirtualFiles) => string | undefined } {
   fs.mkdirSync(path.join(root, 'sdk'), { recursive: true });
   fs.writeFileSync(path.join(root, 'tsconfig.json'), JSON.stringify({ compilerOptions: { module: 'NodeNext', moduleResolution: 'NodeNext', noEmit: true, skipLibCheck: true }, include: ['*.ts'] }));
   const session = new ts.ProgramSession({ cwd: root });
@@ -120,7 +120,8 @@ test('a manifest lookup sees the disk and the files it is given, not the overlay
   assert.equal(lookup('./on-disk.js'), path.join(root, 'sdk/on-disk.ts'));
   assert.equal(lookup('../overlay.js'), undefined);
   assert.equal(lookup('./virtual.js'), undefined);
-  assert.equal(lookup('./virtual.js', new Set([virtual])), virtual);
+  assert.equal(lookup('./virtual.js', { files: new Set([virtual]), folders: [] }), virtual);
+  assert.equal(lookup('./virtual.js', { files: new Set(), folders: [path.join(root, 'sdk')] }), virtual, 'a TypeScript file under a virtual folder exists');
   assert.equal(lookup('./virtual.js'), undefined);
   assert.ok(program.getSourceFile(overlay));
 
@@ -166,7 +167,7 @@ test('an import that resolves to no file resolves to a file the caller names as 
   const specifiers = (file: string): readonly ts.StringLiteralLike[] => program.getSourceFile(path.join(root, file))!.statements.filter(ts.isImportDeclaration).map((statement) => statement.moduleSpecifier).filter(ts.isStringLiteralLike);
   const [dualOfEsm, generated] = specifiers('esm.mts');
   const [dualOfCjs] = specifiers('cjs.cts');
-  const virtual = new Set(['gen/order.ts', 'node_modules/dual/esm.d.ts', 'node_modules/dual/cjs.d.ts'].map((file) => path.join(root, file)));
+  const virtual = { files: new Set(['gen/order.ts', 'node_modules/dual/esm.d.ts', 'node_modules/dual/cjs.d.ts'].map((file) => path.join(root, file))), folders: [] };
 
   assert.equal(checker.resolveImport(generated!), undefined);
   assert.equal(checker.resolveImport(generated!, virtual)?.resolvedFileName, path.join(root, 'gen/order.ts'));

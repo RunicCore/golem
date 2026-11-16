@@ -7,8 +7,8 @@ import * as ts from '@exprtlabs/golem/internal/ts';
 import { filesReadingOutputs } from '#golem/type-analysis/project';
 import { createFixtureProject } from './fixture-project.js';
 
-/** A project whose `@sdk/*` and `@mid/*` aliases name `sdk/` (the output of a later job, empty at first) and `mid/` (a source folder). */
-function aliasedProject(t: TestContext): { write(file: string, text: string): void; run(): string[] } {
+/** A project whose `sdkPaths` aliases name `sdk/` (the output of a later job, empty at first) and whose `@mid/*` alias names `mid/` (a source folder). */
+function aliasedProject(t: TestContext, sdkPaths: Record<string, string[]> = { '@sdk/*': ['./sdk/*'] }): { write(file: string, text: string): void; run(): string[] } {
   const root = createFixtureProject(t, 'golem-reading-outputs-');
   const write = (file: string, text: string): void => {
     fs.mkdirSync(path.dirname(path.join(root, file)), { recursive: true });
@@ -16,7 +16,7 @@ function aliasedProject(t: TestContext): { write(file: string, text: string): vo
   };
   write('package.json', '{"type":"module"}');
   write('tsconfig.json', JSON.stringify({
-    compilerOptions: { strict: true, module: 'NodeNext', moduleResolution: 'NodeNext', paths: { '@sdk/*': ['./sdk/*'], '@mid/*': ['./mid/*'] } },
+    compilerOptions: { strict: true, module: 'NodeNext', moduleResolution: 'NodeNext', paths: { ...sdkPaths, '@mid/*': ['./mid/*'] } },
     include: ['src', 'mid'],
   }));
   return {
@@ -49,6 +49,30 @@ test('an alias import of a folder output by its index excludes its importer on t
 
   const first = project.run();
   project.write('sdk/index.ts', 'export type Money = number;\n');
+  const second = project.run();
+
+  assert.deepEqual([first, second], [['src/app.ts'], ['src/app.ts']]);
+});
+
+test('an alias that names one file of a folder output excludes its importer on the first run and the next', (t: TestContext) => {
+  // protects: T-994 the target `./sdk/client.js` is no tail of the specifier `@sdk`
+  const project = aliasedProject(t, { '@sdk': ['./sdk/client.js'] });
+  project.write('src/app.ts', "import type { Money } from '@sdk';\nexport type App = Money;\n");
+
+  const first = project.run();
+  project.write('sdk/client.ts', 'export type Money = number;\n');
+  const second = project.run();
+
+  assert.deepEqual([first, second], [['src/app.ts'], ['src/app.ts']]);
+});
+
+test('an alias that maps into a sub-folder of a folder output excludes its importer on the first run and the next', (t: TestContext) => {
+  // protects: T-994 the target `./sdk/v1/*` holds a folder that the specifier `@sdk/money.js` does not name
+  const project = aliasedProject(t, { '@sdk/*': ['./sdk/v1/*'] });
+  project.write('src/app.ts', "import type { Money } from '@sdk/money.js';\nexport type App = Money;\n");
+
+  const first = project.run();
+  project.write('sdk/v1/money.ts', 'export type Money = number;\n');
   const second = project.run();
 
   assert.deepEqual([first, second], [['src/app.ts'], ['src/app.ts']]);

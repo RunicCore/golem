@@ -12,8 +12,8 @@ import { dirname } from 'node:path';
 import { GOLEM_CHANNELS } from './diagnostics-channels.js';
 import { displayPath } from './generator-core.js';
 import { fileSignature, MISSING } from './input-watcher.js';
-import { affectsResolution, assertConfigParsed, assertNoSourceFiles, canonical, collectTscDiagnostics, configReferences, emitWanted, flagPathOptions, flagsAsConfigOptions, isDeclarationFile, programRequest, referencedConfigFile } from './typescript-config.js';
-import type { ConfigReference, ProgramConfig, ResolveAtCurrentFolder } from './typescript-config.js';
+import { affectsResolution, assertConfigParsed, assertNoSourceFiles, canonical, virtualLookup, collectTscDiagnostics, configReferences, emitWanted, flagPathOptions, flagsAsConfigOptions, isDeclarationFile, programRequest, referencedConfigFile } from './typescript-config.js';
+import type { ConfigReference, ProgramConfig, ResolveAtCurrentFolder, VirtualLookup } from './typescript-config.js';
 import { selectedTypeScript } from './typescript-selection.js';
 import { assertPackageManifestsParse } from './type-analysis/package-specifier.js';
 import type * as Golem from './typescript-types.js';
@@ -458,7 +458,7 @@ function wrapSignature(signature: ClassicSignature, checker: CompatChecker): Gol
 class CompatChecker implements Golem.TypeChecker {
   public constructor(private readonly inner: ClassicChecker, private readonly program: CompatProgram) {}
 
-  resolveImport(specifier: Golem.StringLiteralLike, virtualFiles?: ReadonlySet<string>): Golem.ResolvedModule | undefined {
+  resolveImport(specifier: Golem.StringLiteralLike, virtualFiles?: Golem.VirtualFiles): Golem.ResolvedModule | undefined {
     return this.program.resolveImport(specifier, virtualFiles);
   }
 
@@ -613,12 +613,12 @@ class CompatProgram implements Golem.Program {
    * a package.json that is not JSON as `{}`; golem names the file instead. When the compiler found none, `virtualFiles` are files that
    * do not exist yet but will, and a second lookup counts them.
    */
-  resolveImport(specifier: Golem.StringLiteralLike, virtualFiles?: ReadonlySet<string>): Golem.ResolvedModule | undefined {
+  resolveImport(specifier: Golem.StringLiteralLike, virtualFiles?: Golem.VirtualFiles): Golem.ResolvedModule | undefined {
     const file = specifier.getSourceFile();
     assertPackageManifestsParse(specifier.text, file.fileName);
     this.requireStoredResolution();
     const resolved = this.program.getResolvedModuleFromModuleSpecifier(specifier, file)?.resolvedModule;
-    if (resolved || !virtualFiles || virtualFiles.size === 0) return resolved;
+    if (resolved || !virtualFiles) return resolved;
     return this.session.resolveModuleName(specifier.text, file.fileName, this.getCompilerOptions(), this.program.getModeForUsageLocation(file, specifier), virtualFiles).resolvedModule;
   }
 
@@ -926,11 +926,10 @@ export class ProgramSession implements Disposable {
    * Resolve a module name that no program imports, such as one an SDK manifest names. The lookup sees the disk and `virtualFiles`, the
    * same files as on the TypeScript 7 lane. The classic resolver takes the mode after its cache and redirect arguments.
    */
-  resolveModuleName(moduleName: string, containingFile: string, compilerOptions: Golem.CompilerOptions, resolutionMode?: Golem.ModuleKind, virtualFiles: ReadonlySet<string> = new Set()): { resolvedModule?: Golem.ResolvedModule } {
+  resolveModuleName(moduleName: string, containingFile: string, compilerOptions: Golem.CompilerOptions, resolutionMode?: Golem.ModuleKind, virtualFiles?: Golem.VirtualFiles): { resolvedModule?: Golem.ResolvedModule } {
     this.assertOpen();
     assertPackageManifestsParse(moduleName, containingFile);
-    const overlays = new Map([...virtualFiles].map((filename) => [canonical(filename), 'export {}\n']));
-    return classic.resolveModuleName(moduleName, containingFile, compilerOptions, this.host(compilerOptions, overlays), undefined, undefined, resolutionMode);
+    return classic.resolveModuleName(moduleName, containingFile, compilerOptions, this.host(compilerOptions, new Map(), virtualFiles && virtualLookup(virtualFiles)), undefined, undefined, resolutionMode);
   }
 
   /** Called by a closing program. */
@@ -1023,7 +1022,7 @@ export class ProgramSession implements Disposable {
   }
 
   /** The compiler host of one program: overlays over disk, input observation, and the session's parsed files. */
-  private host(compilerOptions: Golem.CompilerOptions, overlays: ReadonlyMap<string, string>): ClassicHost {
+  private host(compilerOptions: Golem.CompilerOptions, overlays: ReadonlyMap<string, string>, virtual?: VirtualLookup): ClassicHost {
     const base = classic.createCompilerHost(compilerOptions, true);
     const directories = new Set<string>();
     for (const filename of overlays.keys()) {
@@ -1036,9 +1035,15 @@ export class ProgramSession implements Disposable {
     return {
       ...base,
       getCurrentDirectory: () => this.options.cwd,
-      fileExists: (filename) => overlays.has(this.probe(filename, overlays)) || base.fileExists(filename),
+      fileExists: (filename) => {
+        const path = this.probe(filename, overlays);
+        return overlays.has(path) || virtual?.file(path) === true || base.fileExists(filename);
+      },
       readFile: (filename) => overlays.get(this.probe(filename, overlays)) ?? base.readFile(filename),
-      directoryExists: (directory) => directories.has(this.probe(directory, overlays)) || (base.directoryExists?.(directory) ?? false),
+      directoryExists: (directory) => {
+        const path = this.probe(directory, overlays);
+        return directories.has(path) || virtual?.directory(path) === true || (base.directoryExists?.(directory) ?? false);
+      },
       getSourceFile: (filename, languageVersionOrOptions, onError, shouldCreateNewSourceFile) => {
         const path = this.probe(filename, overlays);
         const overlay = overlays.get(path);
