@@ -631,10 +631,11 @@ const siblingReads = {
   'a NonNullable mapped type': { declarations: tsSource`${siblingBox}\ntype Field = { [K in keyof Box]: NonNullable<Box[K]> };`, field: tsSource`Field` },
   'the type itself': { declarations: siblingBox, field: tsSource`Box` },
   'the type or null': { declarations: siblingBox, field: tsSource`Box | null` },
+  'two indexed members of the type': { declarations: siblingBox, field: tsSource`{ x: Box['g']; y: Box['f'] }` },
 } as const;
 
 for (const [name, { declarations, field }] of Object.entries(siblingReads)) test(`two members that copy each other's function type each bind their own function, read as ${name}`, t => {
-  // protects: T-1020 the scan of the enclosing type read every member of `Box` for each member, so `f` and `g` shared one type with two functions and were refused (F-37 no false refusal)
+  // protects: T-1020, T-1031 the scan of the enclosing type, or of `Box` under `Box['g']`, read every member of `Box` for each member, so `f` and `g` shared one type with two functions and were refused (F-37 no false refusal)
   const { root, sourceRoot } = fixture(t);
   fs.writeFileSync(path.join(sourceRoot, 'rules.ts'), copiedFunctionRules.inline.text);
   fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({

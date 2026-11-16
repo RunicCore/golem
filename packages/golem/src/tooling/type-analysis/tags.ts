@@ -476,6 +476,11 @@ export function propertyDeclarations(checker: ts.TypeChecker, property: ts.Symbo
   return property.declarations ?? checker.getRootSymbols(property).flatMap(root => root.declarations ?? []);
 }
 
+/** The members that declare `properties`, each with the property that it declares. */
+export function declarationsOf(checker: ts.TypeChecker, properties: readonly ts.Symbol[]): ReadonlyMap<ts.Node, ts.Symbol> {
+  return new Map(properties.flatMap(property => propertyDeclarations(checker, property).map(declaration => [declaration, property] as const)));
+}
+
 /** Whether only a default library file declares `symbol`: a built-in type holds no tag of the user. */
 export function isDeclaredByDefaultLibrary(symbol: ts.Symbol | undefined, isDefaultLibraryFile: (file: ts.SourceFile) => boolean): boolean {
   const declarations = symbol?.declarations ?? [];
@@ -545,12 +550,22 @@ function indexedProperties(checker: ts.TypeChecker, node: ts.IndexedAccessTypeNo
   });
 }
 
+/** The members that declare the properties of `T` in `T['key']` other than the ones that the key names, or nothing when the key names none. */
+function membersBeside(checker: ts.TypeChecker, node: ts.IndexedAccessTypeNode, named: readonly ts.Symbol[]): FieldDeclarations | undefined {
+  const [own] = named;
+  if (own === undefined) return undefined;
+  const others = checker.getPropertiesOfType(checker.getTypeFromTypeNode(node.objectType)).filter(property => !named.includes(property));
+  // `own` is any named property: `others` leaves out every named one, so no declaration in the map belongs to `own`, whichever it is.
+  return { declarations: declarationsOf(checker, others), own };
+}
+
 /**
  * Records every `typeof` of a tag in everything that `node` reaches, through type aliases, interfaces, classes and their base
  * classes, `typeof` a variable, and the parts of mapped, conditional and indexed types. A default library file holds no tag of the
  * user and stays unread. A `typeof` target, a source, or a property that `T['key']` names marks `hidden` when it infers a type
  * with a function tag. Each node is read once for each `scan`. A scan that skips siblings leaves out the members that declare a
- * field beside the one it serves, so their functions do not enter its registry.
+ * field beside the one it serves, so their functions do not enter its registry. `T['key']` reads `T` that way too, beside the members
+ * that the key names.
  */
 function recordReachableFunctions(context: TagAnalysisContext, node: ts.Node, scan: Scan): void {
   if (scan.nodes.has(node) || (scan.siblings === 'skip' && declaresSibling(context, node))) return;
@@ -575,9 +590,17 @@ function recordReachableFunctions(context: TagAnalysisContext, node: ts.Node, sc
       recordReachableFunctions(context, declaration, scan);
     }
   } else if (ts.isIndexedAccessTypeNode(node)) {
-    for (const source of indexedProperties(checker, node).flatMap(property => propertyTagSources(checker, property))) {
+    const named = indexedProperties(checker, node);
+    for (const source of named.flatMap(property => propertyTagSources(checker, property))) {
       hideInferredFunctionTags(context, source, scan);
       recordReachableFunctions(context, source, scan);
+    }
+    // `Box['g']` names one member: the other members of `Box` are fields beside it, as when a field reads `Box` itself.
+    const beside = membersBeside(checker, node, named);
+    if (beside) {
+      recordReachableFunctions({ ...context, fieldDeclarations: [...(context.fieldDeclarations ?? []), beside] }, node.objectType, { ...scan, siblings: 'skip' });
+      recordReachableFunctions(context, node.indexType, scan);
+      return;
     }
   }
   ts.forEachChild(node, child => recordReachableFunctions(context, child, scan));
