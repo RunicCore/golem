@@ -265,6 +265,10 @@ export interface PropertyDeclaration extends Node {
   readonly name: PropertyName;
   readonly type?: TypeNode;
 }
+export interface ConstructorDeclaration extends Node {
+  readonly kind: KindOf<'Constructor'>;
+  readonly parameters: readonly ParameterDeclaration[];
+}
 export interface GetAccessorDeclaration extends Node {
   readonly kind: KindOf<'GetAccessor'>;
   readonly name: PropertyName;
@@ -478,6 +482,8 @@ export interface LiteralTypeNode extends TypeNode {
 export interface ImportTypeNode extends TypeNode {
   readonly kind: KindOf<'ImportTypeNode'>;
   readonly argument: TypeNode;
+  readonly qualifier?: EntityName;
+  readonly typeArguments?: readonly TypeNode[];
 }
 export interface TypeLiteralNode extends TypeNode {
   readonly kind: KindOf<'TypeLiteralNode'>;
@@ -898,6 +904,7 @@ export interface TypeScriptBackend {
   isLiteralTypeNode(node: Node): node is LiteralTypeNode;
   isMappedTypeNode(node: Node): node is MappedTypeNode;
   isBindingElement(node: Node): node is BindingElement;
+  isConstructorDeclaration(node: Node): node is ConstructorDeclaration;
   isGetAccessorDeclaration(node: Node): node is GetAccessorDeclaration;
   isMethodDeclaration(node: Node): node is MethodDeclaration;
   isMethodSignature(node: Node): node is MethodSignature;

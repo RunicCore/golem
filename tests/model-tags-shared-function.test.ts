@@ -92,6 +92,13 @@ test('a generic reader over a value that holds no function tag binds the functio
   assert.deepEqual(outcome, { bound: 'b' });
 });
 
+test('a class value with a constructor is read while two serializers share one type, and binds the pair that the field writes', t => {
+  // protects: T-1061 the walk stopped at a constructor declaration, so a class value with a constructor refused a tag whose functions the program writes
+  const rules = "export class Money { constructor(readonly cents: number) {} }\nexport const s: (v: Money) => string = (v) => String(v.cents);\nexport const s2: typeof s = (v) => `${v.cents}`;\nexport const d: (w: string) => Money = (w) => new Money(Number(w));\nexport const d2: typeof d = (w) => new Money(Number(w) + 1);";
+  const declarations = "declare function tagged(): string & TSerde<typeof s, typeof d>;\nclass Holder { held = tagged(); }\ntype Price = Money & TSerde<typeof s2, typeof d2>;\n";
+  assert.deepEqual(generateField(t, { rules, declarations, field: 'Price' }, ['Money', 's', 's2', 'd', 'd2']), { bound: 's2,d2' });
+});
+
 // Two functions of one signature that the checker tells apart: `typeof a` and `typeof b` are different types, so each tag names its function.
 const distinctRules = {
   'two annotation texts': "export const a: (v: string) => boolean = (v) => v !== '';\nexport const b: (v: string) => boolean = (v) => v.length < 9;",

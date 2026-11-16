@@ -490,7 +490,7 @@ export type FunctionWriters = ReadonlyMap<ts.Symbol, ts.Node>;
  * only where a tag reference is written, in a file of the program or a declaration file of a package, under its own name or any rename of it:
  * the references are found by symbol. `complete` says that every function argument of every reference is a direct `typeof` of a function. Then
  * `writers` holds every function that any tag type of the program can name, and the writers of one function type are all the functions that a
- * tag of that type can name. When one argument is another type (a type parameter, an indexed access, an alias, an import type), a function can
+ * tag of that type can name. When one argument is another type (a type parameter, an indexed access, an alias), a function can
  * reach a tag type by a call, an alias or an index, and `writers` is no more than a list of what the program writes directly.
  */
 export interface FunctionIndex {
@@ -510,10 +510,10 @@ function buildFunctionIndex(checker: ts.TypeChecker, files: readonly ts.SourceFi
   const writers = new Map<ts.Type, Map<ts.Symbol, ts.Node>>();
   let complete = true;
   const visit = (node: ts.Node): void => {
-    // `import('...').TValidation<F>` names its tag by a qualifier that the index does not resolve.
-    if (ts.isImportTypeNode(node) && 'typeArguments' in node && node.typeArguments !== undefined) complete = false;
+    // `import('...').TValidation<F>` names its tag by the qualifier of the import type.
     const reference = ts.isTypeReferenceNode(node) ? { name: node.typeName, typeArguments: node.typeArguments }
-      : ts.isExpressionWithTypeArguments(node) ? { name: node.expression, typeArguments: node.typeArguments } : undefined;
+      : ts.isExpressionWithTypeArguments(node) ? { name: node.expression, typeArguments: node.typeArguments }
+      : ts.isImportTypeNode(node) && node.qualifier ? { name: node.qualifier, typeArguments: node.typeArguments } : undefined;
     const tagName = reference?.typeArguments ? golemTagName(checker, checker.getSymbolAtLocation(reference.name)) : undefined;
     TAG_FUNCTION_ROLES.get(tagName ?? '')?.forEach((_role, position) => {
       const argument = reference?.typeArguments?.[position];
@@ -657,6 +657,9 @@ function reach(context: TagAnalysisContext, walk: Walk, node: ts.Node): void {
     nextAll(node.typeParameters);
     nextAll(node.parameters);
     next(node.type);
+  } else if (ts.isConstructorDeclaration(node)) {
+    // A constructor has no return type, and its body carries no type: its parameters (a parameter property is a field) are all it holds.
+    nextAll(node.parameters);
   } else if (ts.isGetAccessorDeclaration(node) || ts.isIndexSignatureDeclaration(node)) {
     nextAll(node.parameters);
     next(node.type);

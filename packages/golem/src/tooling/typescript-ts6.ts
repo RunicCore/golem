@@ -286,6 +286,7 @@ export const {
   isLiteralTypeNode,
   isMappedTypeNode,
   isBindingElement,
+  isConstructorDeclaration,
   isGetAccessorDeclaration,
   isMethodDeclaration,
   isMethodSignature,
