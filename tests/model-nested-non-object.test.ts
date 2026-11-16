@@ -9,7 +9,7 @@ import { requireObjectCodec } from '@exprtlabs/golem/internal/model-runtime';
 
 import { generatedCodecIdFromRoot } from './support/consumer.js';
 import { fileFixtureScope, onceShared } from './fixture-project.js';
-import { buildModelProject, createModelProject, writeModelGolemYaml } from './model-project.js';
+import { buildModelProject, createModelProject, generatedModelFiles, writeModelGolemYaml } from './model-project.js';
 
 const SOURCE = `import type { IModel } from '@exprtlabs/golem/model';
 import type { AdditionalProperties } from '@exprtlabs/golem/tags';
@@ -33,7 +33,9 @@ const buildFor = (validation: boolean) => onceShared(async () => {
   await buildModelProject(root);
   const models = await import(pathToFileURL(path.join(root, 'build/nested.model.js')).href) as Models;
   const codec = (name: string) => requireObjectCodec(generatedCodecIdFromRoot(root, name));
-  return { models, tree: codec('TTree'), keeper: codec('TKeeper') };
+  // Read here: the fixture folder goes away when the first test that asked for this build ends.
+  const writesValidators = generatedModelFiles(root).some((file) => file.path.endsWith('/models.validators.generated.ts'));
+  return { writesValidators, models, tree: codec('TTree'), keeper: codec('TKeeper') };
 });
 
 const builds = new Map([[true, buildFor(true)], [false, buildFor(false)]]);
@@ -78,6 +80,18 @@ for (const validation of [true, false]) {
     assert.match(outcome(() => tree.fromWireFormat(TREE, options)), /^decoded \{"leaf":\{"id":"a"\},"leaves":\[\{"id":"a"\},\{"id":"a"\}\],"maybe":null\}$/);
   });
 }
+
+test('with validation off, the generated codec still refuses a nested value that is no object and still converts, and no validator module is written', async () => {
+  // protects: F-38 a job at validation false drops the validators, not the codec: its guards and its stringify and toWireFormat stay
+  const { writesValidators, models, tree } = await builds.get(false)!();
+  assert.equal(writesValidators, false);
+  const options = { construct: models.Tree as never };
+  assert.equal(outcome(() => tree.parse(JSON.stringify({ ...TREE, leaf: 'text' }), options)), 'TLeafBaseModel expected an object. @[["leaf"]] input=true');
+  const parsed = tree.parse(JSON.stringify(TREE), options);
+  assert.ok(parsed instanceof models.Tree);
+  assert.equal(tree.stringify(parsed), JSON.stringify(TREE));
+  assert.deepEqual(tree.toWireFormat(parsed), TREE);
+});
 
 test('a model constructor that throws at the root is a fault of the program, not bad input', async () => {
   // protects: T-660 a constructor that threw at the root reached the caller raw, and inside a field conversion it was reported as bad input
