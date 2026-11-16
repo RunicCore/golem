@@ -29,9 +29,11 @@ import {
   isGolemTagKey,
   hasDescriptorTags,
   hasTagMetadata,
+  declaredPropertyNodes,
   propertyType,
   propertyTypeNode,
   publicExportName,
+  type WrittenFunctions,
   type ModelConstraint,
   type SerdeBinding,
   type TagMetadata,
@@ -772,6 +774,7 @@ interface DescribeScope {
     substitutions?: TypeSubstitutions,
     nameHint?: string,
     nameNode?: ts.TypeNode,
+    tagSources?: readonly ts.TypeNode[],
   ) => ModelConversionDescriptor;
 }
 
@@ -805,6 +808,8 @@ interface DescribeInput {
   readonly substitutions: TypeSubstitutions;
   readonly nameHint: string;
   readonly nameNode: ts.TypeNode | undefined;
+  /** Nodes beside `node` that write the functions of the tags on the type: the declarations that a mapped type copied, the wire parameter of a serde. */
+  readonly tagSources: readonly ts.TypeNode[];
 }
 
 /** One `describeType` call after its tags are read: the substituted nodes, the tag metadata, and `type`, the type the walk describes. */
@@ -835,8 +840,8 @@ function projectionReference(name: string): ModelConversionDescriptor {
 
 /** Read the tags of the type once: the nodes and substitutions the children use, the tag metadata, and the type to describe. */
 function openDescribeCall(scope: DescribeScope, input: DescribeInput): DescribeCall {
-  const { checker, modelSources, stableIdentityRoot, companionOf, describe } = scope;
-  const { originalType, context, seen, representation, provenanceNode, substitutions, nameHint, nameNode } = input;
+  const { checker, modelSources, stableIdentityRoot, companionOf, describe, isDefaultLibraryFile } = scope;
+  const { originalType, context, seen, representation, provenanceNode, substitutions, nameHint, nameNode, tagSources } = input;
   const node = substituteTypeNode(checker, input.node, substitutions);
   const instantiated = instantiatedTypeSource(checker, node ?? provenanceNode, substitutions);
   const childNode = instantiated.node;
@@ -845,19 +850,21 @@ function openDescribeCall(scope: DescribeScope, input: DescribeInput): DescribeC
     checker,
     sourceFile: context.sourceFile,
     identityRoot: stableIdentityRoot,
+    isDefaultLibraryFile,
     importer: companionOf(context.sourceFile.fileName),
     ...(modelSources ? { isModelSource: (filename: string) => modelSources.has(filename) } : {}),
+    ...(context.writtenFunctions ? { writtenFunctions: context.writtenFunctions } : {}),
     diagnostic: (tagNode: ts.Node, code: string, message: string) =>
       diagnostic(context.sourceFile, tagNode, code, message),
-    describeSchema: (schemaType: ts.Type, schemaNode?: ts.TypeNode) =>
-      describe(schemaType, { ...context, exact: false, schemaData: true }, seen, schemaNode, representation, undefined, undefined, nameHint),
+    describeSchema: (schemaType: ts.Type, schemaNode: ts.TypeNode | undefined, writtenFunctions: WrittenFunctions | undefined) =>
+      describe(schemaType, { ...context, exact: false, schemaData: true, ...(writtenFunctions ? { writtenFunctions } : {}) }, seen, schemaNode, representation, undefined, undefined, nameHint),
   };
   // Analyze checker types even when a child has no corresponding AST node
   // (for example the Date branch of `Date | undefined`). A union variant reads the authored member that names it.
-  const analysis = analyzeNode(tagContext, originalType, node ?? nameNode);
+  const analysis = analyzeNode(tagContext, originalType, node ?? nameNode, tagSources);
   let metadata: InternalTagMetadata = analysis.metadata;
   if (metadata.serde && !metadata.serde.wireDescriptor) {
-    const wireDescriptor = describe(metadata.serde.wireType, context, seen, undefined, 'wire', undefined, undefined, nameHint);
+    const wireDescriptor = describe(metadata.serde.wireType, context, seen, undefined, 'wire', undefined, undefined, nameHint, undefined, metadata.serde.wireNodes);
     metadata = {
       ...metadata,
       serde: { ...metadata.serde, wireDescriptor },
@@ -871,7 +878,8 @@ function openDescribeCall(scope: DescribeScope, input: DescribeInput): DescribeC
       : originalType,
     metadata,
   );
-  return { ...input, node, childNode, childSubstitutions, tagContext, analysis, metadata, type };
+  // The children describe under the functions that this field wrote, so a generic type's tags name them.
+  return { ...input, context: { ...context, writtenFunctions: analysis.writtenFunctions }, node, childNode, childSubstitutions, tagContext, analysis, metadata, type };
 }
 
 /** Stop on a tag that does not fit the type it sits on, before the type is described. */
@@ -943,7 +951,7 @@ function describeModelReference(scope: DescribeScope, call: DescribeCall, found:
   }
   if (projection) {
     for (const original of provenance.models) {
-      const whole = analyzeNode({ ...tagContext, sourceFile: original.sourceFile }, original.fieldsType, original.fieldsNode).metadata;
+      const whole = analyzeNode({ ...tagContext, sourceFile: original.sourceFile }, original.fieldsType, original.fieldsNode, []).metadata;
       if (hasDescriptorTags(whole)) {
         throw diagnostic(context.sourceFile, node ?? context.declaration, '1055', `Projection of ${original.name} would discard whole-object constraints or serialization. Declare an explicit projected contract.`);
       }
@@ -1324,6 +1332,8 @@ function describeProperties(scope: DescribeScope, call: DescribeCall, nextSeen: 
         ?? (isPropertyMapping(type) ? node ?? provenanceNode : undefined),
       childSubstitutions,
       `${projectionName ?? nameHint}${pascalIdentifier(name) ?? 'Field'}`,
+      undefined,
+      propertyNode ? [] : declaredPropertyNodes(checker, property),
     );
     properties[name] = described;
     if (!optional) required.push(name);
@@ -1754,8 +1764,9 @@ export function descriptorBuilder(
     substitutions: TypeSubstitutions = new Map(),
     nameHint: string = safeNameHint(context.ownerName ?? context.name, 'Model'),
     nameNode?: ts.TypeNode,
+    tagSources: readonly ts.TypeNode[] = [],
   ): ModelConversionDescriptor => {
-    const call = openDescribeCall(scope, { originalType, context, seen, node, representation, provenanceNode, substitutions, nameHint, nameNode });
+    const call = openDescribeCall(scope, { originalType, context, seen, node, representation, provenanceNode, substitutions, nameHint, nameNode, tagSources });
     assertTagsFit(scope, call);
     const tagged = describeTaggedValue(scope, call);
     if (tagged) return tagged;
