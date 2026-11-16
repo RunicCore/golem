@@ -260,35 +260,24 @@ function routeDecorator(
   return undefined;
 }
 
-/** Nest Swagger stores `{ disable }` and skips the endpoint when `disable` is true. */
-function apiExcludeEndpointDisable(
-  reader: MetadataReader,
-  decorators: readonly DecoratorInfo[],
-): boolean | undefined {
-  const matches = [...hasAnyDecorator(decorators, ['ApiExcludeEndpoint'], NEST_SWAGGER)].reverse();
-  if (matches.length === 0) return undefined;
-  let disable: boolean | undefined;
-  for (const decorator of matches) {
-    // An omitted argument excludes the endpoint; `false` includes it.
-    disable = readBoolean(reader, callArguments(decorator)[0], '@ApiExcludeEndpoint()', TsToOpenApiDiagnosticCode.UnsupportedRouteDecorator) ?? true;
-  }
-  return disable;
-}
-
 /**
- * Whether Swagger omits the endpoint (`@ApiExcludeEndpoint()` or
- * `@ApiOperation({ hidden: true })`). Checked before the route itself, so an
- * excluded catch-all or SSE route never needs an OpenAPI form.
+ * Whether Swagger omits the endpoint. It stores `{ disable }` for
+ * `@ApiExcludeEndpoint()` and skips the endpoint when `disable` is true. Only
+ * that decorator hides a route; `@ApiOperation` has no `hidden` option. Checked
+ * before the route itself, so an excluded catch-all or SSE route never needs an
+ * OpenAPI form.
  */
 function routeExcluded(
   reader: MetadataReader,
   decorators: readonly DecoratorInfo[],
 ): boolean {
-  // SwaggerExplorer skips excluded endpoints before ApiOperation is merged.
-  if (apiExcludeEndpointDisable(reader, decorators) === true) return true;
-  const operation = hasDecorator(decorators, 'ApiOperation', NEST_SWAGGER);
-  return operation !== undefined
-    && decoratorOptions(reader, operation).boolean('hidden', TsToOpenApiDiagnosticCode.UnsupportedRouteDecorator) === true;
+  const matches = [...hasAnyDecorator(decorators, ['ApiExcludeEndpoint'], NEST_SWAGGER)].reverse();
+  let disable = false;
+  for (const decorator of matches) {
+    // An omitted argument excludes the endpoint; `false` includes it.
+    disable = readBoolean(reader, callArguments(decorator)[0], '@ApiExcludeEndpoint()', TsToOpenApiDiagnosticCode.UnsupportedRouteDecorator) ?? true;
+  }
+  return disable;
 }
 
 function parseOperation(

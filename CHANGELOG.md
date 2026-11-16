@@ -106,6 +106,7 @@ This file is the complete list of changes. The documentation site's
 
 ### OpenAPI
 
+- **Breaking:** a Nest route with `@ApiOperation({ hidden: true })` stays in the document. `@nestjs/swagger` has no `hidden` option; only `@ApiExcludeEndpoint()` omits a route. Before, `golem-ts-openapi` left the route out.
 - **Breaking:** a `@ApiBody()` that does not set `required` writes `required: true`, as `@nestjs/swagger` does, also on `@Body() body?: Dto`.
 - **Breaking:** a request body media type with `itemSchema` stops generation with the rule `no-request-item-schema`, at the pointer of the `itemSchema`. Declare a request body with `schema`. Before, the body had the type `unknown`, had no check, and the client sent an `AsyncIterable` as the JSON text `{}`.
 - **Breaking:** a header parameter named `Accept`, `Content-Type` or `Authorization` is ignored, as OpenAPI says, with the warning [`OPENAPI_RESERVED_HEADER`](docs/reference/diagnostics.md#openapi-reserved-header). It leaves the generated input.
