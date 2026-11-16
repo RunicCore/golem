@@ -1,10 +1,10 @@
 
-import { existsSync, readFileSync, readlinkSync, realpathSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, parse, relative, resolve, sep } from 'node:path';
 import * as ts from '../typescript-ns.js';
 import { assertNotSolutionTsconfig } from '../typescript-config.js';
 import { packageName, readManifest } from './package-specifier.js';
-import { displayPath, GolemDiagnosticSeverity, canonicalPath, compareText, discoverSources, hasErrorCode, isInsideDirectory, parseYamlFile, sessionKey, suffixPattern, YamlFileError, type GeneratorSession, type GolemDiagnostic, type InputObserver } from '../generator-core.js';
+import { displayPath, GolemDiagnosticSeverity, canonicalPath, compareText, discoverSources, hasErrorCode, isInsideDirectory, parseYamlFile, realPathThroughLinks, sessionKey, suffixPattern, YamlFileError, type GeneratorSession, type GolemDiagnostic, type InputObserver } from '../generator-core.js';
 import { canonicalFilename, inNodeModules, isRelativeSpecifier, portableRelativeFilename, relativeSpecifierOf } from './path-identity.js';
 import { ROOT_KEYS } from '../editor-schema.js';
 
@@ -676,31 +676,6 @@ export function isUnderOutputs(outputs: readonly string[], filename: string): bo
   return outputs.some((output) => output === target || isInsideDirectory(output, target));
 }
 
-/** What the symbolic link `link` points at, as written; undefined when `link` is no link or does not exist. */
-function linkTarget(link: string): string | undefined {
-  try { return readlinkSync(link); }
-  catch (error) {
-    if (hasErrorCode(error, 'ENOENT') || hasErrorCode(error, 'ENOTDIR') || hasErrorCode(error, 'EINVAL')) return undefined;
-    throw error;
-  }
-}
-
-/**
- * The real path of `filename`: every link on the way is followed, also a link that leads nowhere yet, and the part that does not exist
- * stays as written. undefined when links loop.
- */
-function realPathThroughLinks(filename: string): string | undefined {
-  try { return realpathSync.native(filename); }
-  catch (error) {
-    if (hasErrorCode(error, 'ELOOP')) return undefined;
-    if (!hasErrorCode(error, 'ENOENT') && !hasErrorCode(error, 'ENOTDIR')) throw error;
-  }
-  const real = realPathThroughLinks(dirname(filename));
-  if (real === undefined) return undefined;
-  const target = linkTarget(filename);
-  return target === undefined ? join(real, basename(filename)) : realPathThroughLinks(resolve(real, target));
-}
-
 /**
  * What the `node_modules/<package>` of every folder above `file` is, for the package that the bare import `specifier` names: the path
  * of the link and where it really leads. Where it leads may not exist yet, since the job that writes it has not run.
@@ -712,7 +687,7 @@ function packageLinks(file: string, specifier: string): { link: string; real: st
   for (let directory = dirname(file); ; directory = dirname(directory)) {
     const link = join(directory, 'node_modules', name);
     const real = realPathThroughLinks(link);
-    if (real !== undefined) links.push({ link, real });
+    if (real !== undefined && real !== link) links.push({ link, real });
     if (dirname(directory) === directory) return links;
   }
 }

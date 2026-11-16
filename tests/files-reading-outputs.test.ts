@@ -26,11 +26,11 @@ function aliasedProject(t: TestContext, sdkPaths: Record<string, string[]> = { '
       fs.mkdirSync(path.dirname(path.join(root, file)), { recursive: true });
       fs.symlinkSync(target, path.join(root, file), 'dir');
     },
-    // One run: a new session holds no file of an earlier run. The output files themselves are left out of the answer.
+    // One run: a new session holds no file of an earlier run. The output files themselves are left out of the answer, also when a link spells their path.
     run: () => {
       using session = new ts.ProgramSession({ cwd: root });
       using program = session.openProgram({ root, sources: [path.join(root, 'src/app.ts')] });
-      return [...filesReadingOutputs(program, [path.join(root, output)])].map(file => path.relative(root, file)).filter(file => !file.startsWith(output)).sort();
+      return [...filesReadingOutputs(program, [path.join(root, output)])].filter(file => !path.relative(root, fs.realpathSync(file)).startsWith(output)).map(file => path.relative(root, file)).sort();
     },
   };
 }
@@ -203,4 +203,30 @@ test('a node_modules folder that is a link into a job output excludes the import
   const second = project.run();
 
   assert.deepEqual([first, second], [['src/app.ts'], ['src/app.ts']]);
+});
+
+test('a relative import through a link that leads to a job output excludes its importer on the first run and the next', (t: TestContext) => {
+  // protects: T-1029 the path `src/gen/money.js` lies under the output only once the link `src/gen` leads somewhere, so the two runs read different files
+  const project = aliasedProject(t);
+  project.link('src/gen', '../sdk');
+  project.write('src/app.ts', "import type { Money } from './gen/money.js';\nexport type App = Money;\n");
+
+  const first = project.run();
+  project.write('sdk/money.ts', 'export type Money = number;\n');
+  const second = project.run();
+
+  assert.deepEqual([first, second], [['src/app.ts'], ['src/app.ts']]);
+});
+
+test('a package link that leads back to itself is no link into an output, on the first run and the next', (t: TestContext) => {
+  // protects: T-1027 `node_modules/sdk-pkg` -> `c/../sdk-pkg` names itself, and following it for ever ended in a stack overflow
+  const project = aliasedProject(t);
+  project.link('node_modules/sdk-pkg', 'c/../sdk-pkg');
+  project.write('src/app.ts', "import type { Money } from 'sdk-pkg/money.js';\nexport type App = Money;\n");
+
+  const first = project.run();
+  project.write('sdk/money.ts', 'export type Money = number;\n');
+  const second = project.run();
+
+  assert.deepEqual([first, second], [[], []]);
 });
