@@ -83,6 +83,14 @@ export interface TagAnalysisContext {
    * to several functions (`const b: typeof a`, a shared alias). Within one role, a type written with two different symbols maps to null and names no function.
    */
   readonly writtenFunctions?: WrittenFunctions;
+  /** The fields around the field that is read, one level for each object type that encloses it, nearest last. */
+  readonly fieldDeclarations?: readonly FieldDeclarations[];
+}
+
+/** The members that declare the fields of one object type, each with the field that it declares, and the field that is read. */
+export interface FieldDeclarations {
+  readonly declarations: ReadonlyMap<ts.Node, ts.Symbol>;
+  readonly own: ts.Symbol;
 }
 
 type FunctionRole = 'validation' | 'serialize' | 'deserialize';
@@ -90,9 +98,11 @@ export interface WrittenFunctions {
   readonly validation: Map<ts.Type, ts.Symbol | null>;
   readonly serialize: Map<ts.Type, ts.Symbol | null>;
   readonly deserialize: Map<ts.Type, ts.Symbol | null>;
-  /** The nodes that this field and the fields around it were read from, and that no scan of an enclosing field has read yet. */
+  /** The nodes that this field was read from. */
   readonly sources: readonly ts.Node[];
-  /** Whether `recordReachableFunctions` read `sources` already. It runs once, before the first tag read from the checker looks up a function. */
+  /** The nodes that the fields around it were read from, and that no scan of an enclosing field has read yet. The scan leaves out the members that declare a sibling of this field. */
+  readonly enclosing: readonly ts.Node[];
+  /** Whether `recordReachableFunctions` read `sources` and `enclosing` already. It runs once, before the first tag read from the checker looks up a function. */
   scanned: boolean;
   /**
    * The function types whose tag the scan found in a value that shows no type node (`const held = tagged()`), with that declaration.
@@ -120,15 +130,18 @@ function isInside(node: ts.Node, outer: ts.Node): boolean {
 /**
  * A registry for one field: it starts with what the fields around it wrote, because a generic type (`Box<Tagged<string>>`) hands
  * the tags of its argument to the property that its declaration names `T`. A source of the fields around it that holds this field's own
- * node, such as the object type that declares it, is left out: its other members are fields of their own.
+ * node, such as the object type that declares it, is left out: its other members are fields of their own. A reference to the type that
+ * declares it (`Box`, `Field` over a mapped `keyof Box`) holds the node only through the declaration: the scan leaves out the
+ * members that declare a sibling (`FieldDeclarations`), so the siblings of this field stay out too.
  */
 function newWrittenFunctions(inherited: WrittenFunctions | undefined, sources: readonly ts.Node[]): WrittenFunctions {
-  const enclosing = inherited && !inherited.scanned ? inherited.sources.filter(outer => !sources.some(own => isInside(own, outer))) : [];
+  const enclosing = inherited && !inherited.scanned ? [...inherited.enclosing, ...inherited.sources].filter(outer => !sources.some(own => isInside(own, outer))) : [];
   return {
     validation: new Map(inherited?.validation),
     serialize: new Map(inherited?.serialize),
     deserialize: new Map(inherited?.deserialize),
-    sources: [...enclosing, ...sources],
+    sources,
+    enclosing,
     scanned: false,
     hidden: new Map(inherited?.hidden),
   };
@@ -450,14 +463,17 @@ function recordTagFunctions(context: TagAnalysisContext, tag: ts.TypeReferenceNo
 
 /** The type nodes that declare `property`, also when a mapped type or an intersection copied the declaration. */
 export function declaredPropertyNodes(checker: ts.TypeChecker, property: ts.Symbol): readonly ts.TypeNode[] {
-  const declarations = property.declarations ?? checker.getRootSymbols(property).flatMap(root => root.declarations ?? []);
-  return declarations.flatMap(declaration => (ts.isPropertySignature(declaration) || ts.isPropertyDeclaration(declaration)) && declaration.type ? [declaration.type] : []);
+  return propertyDeclarations(checker, property).flatMap(declaration => (ts.isPropertySignature(declaration) || ts.isPropertyDeclaration(declaration)) && declaration.type ? [declaration.type] : []);
 }
 
 /** The nodes that write the tags of `property`: its type nodes, and each declaration that shows none and infers its type (`get label() { return tagged(); }`). */
 export function propertyTagSources(checker: ts.TypeChecker, property: ts.Symbol): readonly ts.Node[] {
-  const declarations = property.declarations ?? checker.getRootSymbols(property).flatMap(root => root.declarations ?? []);
-  return [...declaredPropertyNodes(checker, property), ...declarations.filter(infersItsType)];
+  return [...declaredPropertyNodes(checker, property), ...propertyDeclarations(checker, property).filter(infersItsType)];
+}
+
+/** The members that declare `property`: its own, or those of the property that a mapped type copies it from. */
+export function propertyDeclarations(checker: ts.TypeChecker, property: ts.Symbol): readonly ts.Node[] {
+  return property.declarations ?? checker.getRootSymbols(property).flatMap(root => root.declarations ?? []);
 }
 
 /** Whether only a default library file declares `symbol`: a built-in type holds no tag of the user. */
@@ -466,10 +482,19 @@ export function isDeclaredByDefaultLibrary(symbol: ts.Symbol | undefined, isDefa
   return declarations.length > 0 && declarations.every(declaration => isDefaultLibraryFile(declaration.getSourceFile()));
 }
 
-/** What one scan of the sources has read: each node once, and each type once. */
+/** What one scan of the sources has read: each node once, and each type once. `siblings` tells whether the scan leaves out the members that declare a sibling of the field. */
 interface Scan {
   readonly nodes: Set<ts.Node>;
   readonly types: Set<ts.Type>;
+  readonly siblings: 'read' | 'skip';
+}
+
+/** Whether `node` declares a field beside the field that the scan serves: such a field has tags of its own. */
+function declaresSibling(context: TagAnalysisContext, node: ts.Node): boolean {
+  return (context.fieldDeclarations ?? []).some((level) => {
+    const owner = level.declarations.get(node);
+    return owner !== undefined && owner !== level.own;
+  });
 }
 
 /**
@@ -524,10 +549,11 @@ function indexedProperties(checker: ts.TypeChecker, node: ts.IndexedAccessTypeNo
  * Records every `typeof` of a tag in everything that `node` reaches, through type aliases, interfaces, classes and their base
  * classes, `typeof` a variable, and the parts of mapped, conditional and indexed types. A default library file holds no tag of the
  * user and stays unread. A `typeof` target, a source, or a property that `T['key']` names marks `hidden` when it infers a type
- * with a function tag. Each node is read once for each `scan`.
+ * with a function tag. Each node is read once for each `scan`. A scan that skips siblings leaves out the members that declare a
+ * field beside the one it serves, so their functions do not enter its registry.
  */
 function recordReachableFunctions(context: TagAnalysisContext, node: ts.Node, scan: Scan): void {
-  if (scan.nodes.has(node)) return;
+  if (scan.nodes.has(node) || (scan.siblings === 'skip' && declaresSibling(context, node))) return;
   scan.nodes.add(node);
   const { checker } = context;
   const reachDeclarationsOf = (symbol: ts.Symbol | undefined): void => {
@@ -589,8 +615,11 @@ function functionBinding(
   const registry = context.writtenFunctions;
   if (registry && !registry.scanned) {
     registry.scanned = true;
-    const scan: Scan = { nodes: new Set(), types: new Set() };
-    for (const source of registry.sources) {
+    const full: Scan = { nodes: new Set(), types: new Set(), siblings: 'read' };
+    const aroundSiblings: Scan = { ...full, siblings: 'skip' };
+    // The sources of this field go first, so a node that the scan of the fields around skips is still read in full for this field.
+    const reads = [...registry.sources.map(source => [source, full] as const), ...registry.enclosing.map(source => [source, aroundSiblings] as const)];
+    for (const [source, scan] of reads) {
       hideInferredFunctionTags(context, source, scan);
       recordReachableFunctions(context, source, scan);
     }

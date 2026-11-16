@@ -30,6 +30,7 @@ import {
   isGolemTagKey,
   hasDescriptorTags,
   hasTagMetadata,
+  propertyDeclarations,
   propertyTagSources,
   propertyType,
   propertyTypeNode,
@@ -852,6 +853,7 @@ function openDescribeCall(scope: DescribeScope, input: DescribeInput): DescribeC
     importer: companionOf(context.sourceFile.fileName),
     ...(modelSources ? { isModelSource: (filename: string) => modelSources.has(filename) } : {}),
     ...(context.writtenFunctions ? { writtenFunctions: context.writtenFunctions } : {}),
+    ...(context.fieldDeclarations ? { fieldDeclarations: context.fieldDeclarations } : {}),
     diagnostic: (tagNode: ts.Node, code: string, message: string) =>
       diagnostic(context.sourceFile, tagNode, code, message),
     describeSchema: (schemaType: ts.Type, schemaNode: ts.TypeNode | undefined, writtenFunctions: WrittenFunctions | undefined) =>
@@ -1273,6 +1275,7 @@ function describeProperties(scope: DescribeScope, call: DescribeCall, nextSeen: 
   // would invoke the legacy setter for an own `__proto__` key.
   const properties: Record<string, ModelConversionDescriptor> = Object.create(null);
   const required: string[] = [];
+  const declarations = new Map(members.flatMap(({ property }) => propertyDeclarations(checker, property).map(declaration => [declaration, property] as const)));
   for (const field of members) {
     const { name, property } = field;
     const optional = (property.flags & ts.SymbolFlags.Optional) !== 0;
@@ -1320,9 +1323,11 @@ function describeProperties(scope: DescribeScope, call: DescribeCall, nextSeen: 
         throw context.dtoRule.mapOrSetError(context.sourceFile, propertyNode ?? context.declaration, `Field "${name}"`, collection, true);
       }
     }
+    // A field with no member of its own reads from everything around it, so the members of its siblings stay in the scan.
+    const fieldDeclarations = propertyDeclarations(checker, property).length > 0 ? [...(context.fieldDeclarations ?? []), { declarations, own: property }] : context.fieldDeclarations;
     const described = describe(
       valueType,
-      { ...context, field: name },
+      { ...context, field: name, ...(fieldDeclarations ? { fieldDeclarations } : {}) },
       nextSeen,
       propertyNode,
       representation,
