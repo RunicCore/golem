@@ -5,6 +5,7 @@ import test, { type TestContext } from 'node:test';
 
 import { generate } from '#ts-openapi/generator';
 import { createControllerFixture } from '../fixture-templates/controllers/project.js';
+import { diagnosticsOf } from './openapi-document.js';
 
 function fixture(t: TestContext, source: string): string {
   return createControllerFixture(t, {
@@ -12,14 +13,6 @@ function fixture(t: TestContext, source: string): string {
     packageName: 'golem-ts-openapi-document-fixture',
     source,
   });
-}
-
-function diagnosticsOf(error: unknown): readonly { readonly code?: unknown; readonly message?: unknown }[] {
-  if (error === null || typeof error !== 'object' || !('diagnostics' in error)) return [];
-  const diagnostics = (error as { readonly diagnostics?: unknown }).diagnostics;
-  return Array.isArray(diagnostics)
-    ? diagnostics.filter((item): item is { readonly code?: unknown; readonly message?: unknown } => item !== null && typeof item === 'object')
-    : [];
 }
 
 async function expectDiagnostic(

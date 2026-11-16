@@ -6,8 +6,22 @@ import path from 'node:path';
 import test from 'node:test';
 import { decodeMappings, inlineEmittedSourceMap } from '#golem/source-map';
 import { build, editTsconfig, golemBuild, serdeProject, USE, write } from './support/build-project.js';
+import { expectJsonArray, expectJsonObject, expectJsonString } from './support/json.js';
 
-interface EmittedMap { readonly sourceRoot?: string; readonly sources: readonly string[]; readonly sourcesContent?: readonly string[]; readonly mappings: string }
+/** An emitted source map. TypeScript 7 leaves an empty `sourceRoot` out and TypeScript 6 writes it, so the map names it either way. */
+interface EmittedMap { readonly sourceRoot: string; readonly sources: readonly string[]; readonly sourcesContent: readonly string[] | undefined; readonly mappings: string }
+
+const strings = (value: unknown, label: string): readonly string[] => expectJsonArray(value, label).map((item) => expectJsonString(item, label));
+
+function parseMap(text: string): EmittedMap {
+  const map = expectJsonObject(JSON.parse(text), 'the source map');
+  return {
+    sourceRoot: map.sourceRoot === undefined ? '' : expectJsonString(map.sourceRoot, 'sourceRoot'),
+    sources: strings(map.sources, 'sources'),
+    sourcesContent: map.sourcesContent === undefined ? undefined : strings(map.sourcesContent, 'sourcesContent'),
+    mappings: expectJsonString(map.mappings, 'mappings'),
+  };
+}
 
 /** The source map of a built file, from its `.map` file or from the data URL the compiler put in the JavaScript, and the URL the file names. */
 function readMap(root: string, built: string): { readonly map: EmittedMap; readonly code: string; readonly url: string } {
@@ -16,7 +30,7 @@ function readMap(root: string, built: string): { readonly map: EmittedMap; reado
   const url = /^\/\/# sourceMappingURL=(.*)$/m.exec(code)![1]!;
   const inline = /^data:application\/json;base64,(.*)$/.exec(url);
   const text = inline ? Buffer.from(inline[1]!, 'base64').toString('utf8') : fs.readFileSync(`${file}.map`, 'utf8');
-  return { map: JSON.parse(text) as EmittedMap, code, url };
+  return { map: parseMap(text), code, url };
 }
 
 /** Where the map says the rewritten `stringify` call of `USE` comes from. */
@@ -54,9 +68,8 @@ for (const setup of SETUPS) {
     assert.deepEqual(originOfCall(used), ORIGINAL);
     // A file with no call to rewrite keeps the map the compiler wrote, so it shows what the compiler wrote for this setup.
     const plain = readMap(root, 'build/plain.js');
-    // TypeScript 7 leaves an empty sourceRoot out, TypeScript 6 writes it.
-    assert.equal(used.map.sourceRoot ?? '', setup.sourceRoot);
-    assert.equal(plain.map.sourceRoot ?? '', setup.sourceRoot);
+    assert.equal(used.map.sourceRoot, setup.sourceRoot);
+    assert.equal(plain.map.sourceRoot, setup.sourceRoot);
     assert.deepEqual(used.map.sources, plain.map.sources.map((source) => source.replace(/plain\.ts$/, 'use.ts')));
     assert.match(used.url, setup.url);
     assert.deepEqual(used.map.sourcesContent, setup.content);
@@ -115,7 +128,7 @@ for (const setup of DECLARATION_SETUPS) {
     assert.ok(segment, 'a segment starts at the name');
     assert.deepEqual({ line: segment[2], column: segment[3] }, { line: 0, column: DECLARED_USE.indexOf('c: string') });
     // The fields the compiler wrote stay as it wrote them.
-    assert.equal(map.sourceRoot ?? '', setup.sourceRoot);
+    assert.equal(map.sourceRoot, setup.sourceRoot);
     assert.deepEqual(map.sources.map((source) => source.replace(/^.*\//, '')), [setup.source]);
   });
 }

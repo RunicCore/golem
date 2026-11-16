@@ -6,7 +6,7 @@ import test, { type TestContext } from 'node:test';
 
 import { generate } from '#ts-openapi/generator';
 import { createControllerFixture } from '../fixture-templates/controllers/project.js';
-import { diagnosticsOf, documentOf } from './openapi-document.js';
+import { documentOf, refusedWith } from './openapi-document.js';
 import { compileSchema } from '../support/compiled-validators.js';
 
 interface OpenApiSchema {
@@ -86,10 +86,6 @@ function assertNoLegacyNullable(value: unknown): void {
   if (value === null || typeof value !== 'object') return;
   assert.equal(Object.hasOwn(value, 'nullable'), false, 'OpenAPI 3.1/3.2 output must use JSON Schema null branches');
   for (const item of Object.values(value)) assertNoLegacyNullable(item);
-}
-
-function expectCode(error: unknown, code: string): boolean {
-  return diagnosticsOf(error).some(item => item.code === code);
 }
 
 test('fills a response media schema from the declared contract while preserving examples', async t => {
@@ -196,7 +192,7 @@ test('rejects nullable Swagger overlays that widen a nonnullable IModel response
       info: { title: 'Nullable overlay', version: '1' },
       profile: { validation: false },
     }),
-    error => expectCode(error, 'NEST1503'),
+    refusedWith('NEST1503'),
     'nullable widening is rejected',
   );
 });
@@ -215,7 +211,7 @@ test('rejects Swagger required:false for required IModel querystring contracts a
         info: { title: 'Required overlay', version: '1' },
         profile: { validation: false },
       }),
-      error => expectCode(error, 'NEST1503'),
+      refusedWith('NEST1503'),
     );
   }
 });
@@ -225,6 +221,6 @@ test('rejects an @ApiProperty additionalProperties that conflicts with a Record 
   const root = fixture(t, readFixture('controllers/overlay/rejects-an-apiproperty-additionalproperties-that-conflicts-with-a-record/controller.ts'));
   await assert.rejects(
     generate({ root, output: path.join(root, 'openapi.json'), info: { title: 'Overlay', version: '1' }, profile: { validation: false } }),
-    error => expectCode(error, 'NEST1503'),
+    refusedWith('NEST1503'),
   );
 });
