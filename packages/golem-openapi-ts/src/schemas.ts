@@ -1,7 +1,7 @@
 import type { OpenApiDates } from './model-resolution.js';
 import { asRecord, isJsonObject, objectEntries } from './json.js';
 import { unionVariants } from './composition.js';
-import { identifier, sourceDigest } from '@exprtlabs/golem/internal/generator-support';
+import { assertNever, identifier, sourceDigest } from '@exprtlabs/golem/internal/generator-support';
 import { SCHEMA_ARRAY_KEYWORDS, SCHEMA_MAP_KEYWORDS, SCHEMA_SINGLE_KEYWORDS, aliasReference, decodeUriFragment, escapePointerToken, splitFirstFragmentToken } from '@exprtlabs/golem/internal/schema';
 import {
   mediaSchema,
@@ -60,20 +60,25 @@ function operationInputSchema(operation: NormalizedOperation, bodyChecked: BodyC
     if (queryString.required) required.push('querystring');
   }
   const body = requestBodyShape(operation);
-  if (body.kind === 'single') {
-    properties.body = bodyChecked(operation, body.media.contentType) ? true : body.media.schema ?? true;
-  } else if (body.kind === 'several') {
-    properties.body = {
-      oneOf: body.media.map((media) => ({
-        type: 'object',
-        properties: {
-          contentType: { const: media.contentType },
-          value: bodyChecked(operation, media.contentType) ? true : media.schema ?? true,
-        },
-        required: ['contentType', 'value'],
-        additionalProperties: false,
-      })),
-    };
+  switch (body.kind) {
+    case 'none': break;
+    case 'single':
+      properties.body = bodyChecked(operation, body.media.contentType) ? true : body.media.schema ?? true;
+      break;
+    case 'several':
+      properties.body = {
+        oneOf: body.media.map((media) => ({
+          type: 'object',
+          properties: {
+            contentType: { const: media.contentType },
+            value: bodyChecked(operation, media.contentType) ? true : media.schema ?? true,
+          },
+          required: ['contentType', 'value'],
+          additionalProperties: false,
+        })),
+      };
+      break;
+    default: return assertNever(body);
   }
   if (body.kind !== 'none' && operation.requestBody && operation.requestBody.required) required.push('body');
   return {
