@@ -713,7 +713,8 @@ class CompatProgram implements Program {
   }
 
   getConfigFileParsingDiagnostics(): readonly SyncDiagnostic[] {
-    return this.project.program.getConfigFileParsingDiagnostics();
+    const own = this.project.program.getConfigFileParsingDiagnostics();
+    return this.twin ? this.twin.configParsing(own) : own;
   }
 
   /**
@@ -906,16 +907,34 @@ interface ConfigNames {
   readonly user: string;
 }
 
+/** What the user's configuration, opened alone, reports: the diagnostics of its options and those of its own text (`tsc`'s configuration step). */
+interface ConfigFindings {
+  readonly options: readonly SyncDiagnostic[];
+  readonly config: readonly SyncDiagnostic[];
+}
+
 /**
  * The user's configuration opened alone, for a program not opened on it. The compiler locates an option only in the text of the
  * configuration it opens, and the derived one only extends the user's, so an option error comes without a file. `lookup` gives the
- * options diagnostics of the user's own configuration, with the program's overrides written into its text; it runs once, and only when a diagnostic has no file or a project reference is broken.
+ * diagnostics of the user's own configuration, with the program's overrides written into its text; it runs once, and only when a diagnostic has no file, a project reference is broken or the text has a syntax error.
  */
 class ConfigTwin {
-  private found: readonly SyncDiagnostic[] | undefined;
+  private found: ConfigFindings | undefined;
 
-  /** `referenceErrors`: whether `tsc` reports a project reference of the user's configuration, which the program cannot (`SyntheticProgram.brokenReferences`). */
-  public constructor(private readonly lookup: () => readonly SyncDiagnostic[], private readonly referenceErrors: boolean, private readonly names: ConfigNames) {}
+  /**
+   * `synthetic`: set for a program of a project with references. It has no configuration, so `tsc`'s report of a project reference of the user's
+   * configuration (`brokenReferences`) and of its syntax errors (`hasSyntaxError`, cheaper than `lookup`, which builds a program) is the twin's.
+   */
+  public constructor(
+    private readonly lookup: () => ConfigFindings,
+    private readonly synthetic: { readonly brokenReferences: boolean; readonly hasSyntaxError: () => boolean } | undefined,
+    private readonly names: ConfigNames,
+  ) {}
+
+  /** The configuration diagnostics of the program: a synthetic program has none of its own, so they are those of the user's configuration; any other program has the compiler's. */
+  configParsing(own: readonly SyncDiagnostic[]): readonly SyncDiagnostic[] {
+    return this.synthetic?.hasSyntaxError() ? (this.found ??= this.lookup()).config : own;
+  }
 
   /** The diagnostics with the user's tsconfig name in their text, wherever the compiler named the derived one. */
   named(diagnostics: readonly SyncDiagnostic[]): readonly SyncDiagnostic[] {
@@ -930,7 +949,7 @@ class ConfigTwin {
 
   /** The option diagnostics of the program, placed, and the reference errors of the user's configuration that the twin reports and the program cannot. */
   withReferenceErrors(diagnostics: readonly SyncDiagnostic[]): readonly SyncDiagnostic[] {
-    if (!this.referenceErrors) return this.positioned(diagnostics);
+    if (!this.synthetic?.brokenReferences) return this.positioned(diagnostics);
     const { placed, unused } = this.match(this.named(diagnostics));
     return [...placed, ...unused.filter((diagnostic) => REFERENCE_ERROR_CODES.has(diagnostic.code))];
   }
@@ -943,7 +962,7 @@ class ConfigTwin {
   private match(diagnostics: readonly SyncDiagnostic[]): { readonly placed: readonly SyncDiagnostic[]; readonly unused: readonly SyncDiagnostic[] } {
     const key = (diagnostic: SyncDiagnostic): string => `${diagnostic.code}\n${diagnosticText(diagnostic)}`;
     const unused = new Map<string, SyncDiagnostic[]>();
-    for (const diagnostic of this.found ??= this.lookup()) unused.set(key(diagnostic), [...unused.get(key(diagnostic)) ?? [], diagnostic]);
+    for (const diagnostic of (this.found ??= this.lookup()).options) unused.set(key(diagnostic), [...unused.get(key(diagnostic)) ?? [], diagnostic]);
     const placed = diagnostics.map((diagnostic) => (diagnostic.fileName === undefined ? unused.get(key(diagnostic))?.shift() ?? diagnostic : diagnostic));
     return { placed, unused: [...unused.values()].flat() };
   }
@@ -1302,17 +1321,22 @@ export class ProgramSession implements Disposable {
     return resolver;
   }
 
-  /** The `references` a tsconfig writes, read from its text alone, over the overlays of a request: no `include` is expanded. */
-  private configReferencesOf(configPath: string, overlays: ReadonlyMap<string, string>): ConfigReference[] {
+  /** A tsconfig read from its text alone, over the overlays of a request: its value, and its first syntax error. */
+  private readConfigText(configPath: string, overlays: ReadonlyMap<string, string>): ReturnType<API['readConfigFile']> {
     return this.withCompiler('parse', (api) => {
       const previous = this.overlays;
       this.setOverlays(overlays);
       try {
-        return configReferences(api.readConfigFile(configPath).config);
+        return api.readConfigFile(configPath);
       } finally {
         this.setOverlays(previous);
       }
     });
+  }
+
+  /** The `references` a tsconfig writes, read from its text alone: no `include` is expanded. */
+  private configReferencesOf(configPath: string, overlays: ReadonlyMap<string, string>): ConfigReference[] {
+    return configReferences(this.readConfigText(configPath, overlays).config);
   }
 
   /**
@@ -1341,7 +1365,7 @@ export class ProgramSession implements Disposable {
 
   /** The change that gives a snapshot the program of a project with references: the first one creates it, the later ones give it a new configuration. */
   private syntheticChange(synthetic: SyntheticProgram): CreateSnapshotParams {
-    const program = { rootFiles: [...synthetic.rootFiles], compilerOptions: synthetic.compilerOptions as RawCompilerOptions, options: { moduleResolver: synthetic.resolver, configFileParsingDiagnostics: [] } };
+    const program = { rootFiles: [...synthetic.rootFiles], compilerOptions: synthetic.compilerOptions as RawCompilerOptions, options: { moduleResolver: synthetic.resolver } };
     return this.syntheticProgram === undefined ? { createPrograms: [program] } : { reconfigurePrograms: [{ id: this.syntheticProgram, ...program }] };
   }
 
@@ -1395,7 +1419,7 @@ export class ProgramSession implements Disposable {
         if (!project) throw new Error(`The compiler did not open the TypeScript project ${displayPath(request.configPath)} for ${displayPath(options.root)}.`);
         this.syntheticProgram = created ?? this.syntheticProgram;
         const { twinOf, overrides } = request;
-        const program = new CompatProgram(this, snapshot, project, synthetic?.unbuilt, twinOf === undefined ? undefined : new ConfigTwin(() => this.diagnosticsOfConfig(twinOf, overlays, overrides), synthetic?.brokenReferences ?? false, { derived: derivedConfigNames(basename(twinOf)), user: basename(twinOf) }));
+        const program = new CompatProgram(this, snapshot, project, synthetic?.unbuilt, twinOf === undefined ? undefined : new ConfigTwin(() => this.diagnosticsOfConfig(twinOf, overlays, overrides), synthetic && { brokenReferences: synthetic.brokenReferences, hasSyntaxError: () => this.readConfigText(twinOf, overlays).error !== undefined }, { derived: derivedConfigNames(basename(twinOf)), user: basename(twinOf) }));
         this.held.set(program, request);
         return program;
       } catch (error) {
@@ -1472,21 +1496,22 @@ export class ProgramSession implements Disposable {
   }
 
   /**
-   * The options diagnostics of one configuration opened alone, over the overlays of a program. It lives in a snapshot of its own that ends
+   * The diagnostics of one configuration opened alone, over the overlays of a program. It lives in a snapshot of its own that ends
    * with the call: the session's snapshot, its open project and its held programs stay as they are. A configuration with references opens them
-   * here, and only here: the program that the session serves stays synthetic, and only the options diagnostics of this one are read.
+   * here, and only here: the program that the session serves stays synthetic, and only the diagnostics of this one are read.
    * The overrides of the program are written into the text it reads (`overriddenConfig`), so each option error is located as `tsc` locates it:
    * one that names an option of the user's text lies in that text, and one that only an override causes goes to the `compilerOptions` name.
    */
-  private diagnosticsOfConfig(configPath: string, overlays: ReadonlyMap<string, string>, overrides: OptionOverrides): readonly SyncDiagnostic[] {
+  private diagnosticsOfConfig(configPath: string, overlays: ReadonlyMap<string, string>, overrides: OptionOverrides): ConfigFindings {
     return this.withCompiler('parse', (api) => {
       const previous = this.overlays;
       const overridden = Object.keys(overrides).length === 0 ? undefined : overriddenConfig(api, configPath, overrides);
       this.setOverlays(overridden === undefined ? overlays : new Map([...overlays, [configPath, overridden.text]]));
       try {
         using alone = api.createSnapshot({ openProjects: [configPath], ensurePrograms: true });
-        const found = alone.getConfiguredProject(configPath)?.program.getProgramDiagnostics() ?? [];
-        return overridden === undefined ? [...found] : found.map(overridden.relocate);
+        const program = alone.getConfiguredProject(configPath)?.program;
+        const placed = (found: readonly SyncDiagnostic[]): readonly SyncDiagnostic[] => (overridden === undefined ? [...found] : found.map(overridden.relocate));
+        return { options: placed(program?.getProgramDiagnostics() ?? []), config: placed(program?.getConfigFileParsingDiagnostics() ?? []) };
       } finally {
         this.setOverlays(previous);
       }
