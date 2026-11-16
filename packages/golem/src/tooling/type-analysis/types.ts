@@ -31,18 +31,17 @@ import {
   isGolemTagKey,
   hasDescriptorTags,
   hasTagMetadata,
-  propertyDeclarations,
   propertyTagSources,
   propertyType,
   propertyTypeNode,
   publicExportName,
-  type WrittenFunctions,
+  buildFunctionIndex,
+  type FunctionIndex,
   type ModelConstraint,
   type SerdeBinding,
   type TagMetadata,
   type ValidationBinding,
   sourceLocation,
-  declarationsOf,
 } from './tags.js';
 
 export type { ModelConversionDescriptor, TupleConversionDescriptor } from '../model-source-emitter.js';
@@ -746,6 +745,8 @@ interface DescribeScope {
   readonly boundary: ModelBoundary | undefined;
   readonly typeErrorAt: ((node: ts.Node) => string | undefined) | undefined;
   readonly isDefaultLibraryFile: (file: ts.SourceFile) => boolean;
+  /** The functions that the tags of the program write, read on the first tag that needs them; undefined when the builder was given no program files. */
+  readonly functionIndex: (() => FunctionIndex) | undefined;
   readonly modelSources: ReadonlySet<string> | undefined;
   readonly stableIdentityRoot: string;
   readonly modelNames: ReadonlyMap<ModelSpecification['declaration'], string>;
@@ -841,7 +842,7 @@ function projectionReference(name: string): ModelConversionDescriptor {
 
 /** Read the tags of the type once: the nodes and substitutions the children use, the tag metadata, and the type to describe. */
 function openDescribeCall(scope: DescribeScope, input: DescribeInput): DescribeCall {
-  const { checker, modelSources, stableIdentityRoot, companionOf, describe, isDefaultLibraryFile } = scope;
+  const { checker, modelSources, stableIdentityRoot, companionOf, describe, isDefaultLibraryFile, functionIndex } = scope;
   const { originalType, context, seen, representation, provenanceNode, substitutions, nameHint, nameNode, tagSources } = input;
   const node = substituteTypeNode(checker, input.node, substitutions);
   const instantiated = instantiatedTypeSource(checker, node ?? provenanceNode, substitutions);
@@ -854,12 +855,11 @@ function openDescribeCall(scope: DescribeScope, input: DescribeInput): DescribeC
     isDefaultLibraryFile,
     importer: companionOf(context.sourceFile.fileName),
     ...(modelSources ? { isModelSource: (filename: string) => modelSources.has(filename) } : {}),
-    ...(context.writtenFunctions ? { writtenFunctions: context.writtenFunctions } : {}),
-    ...(context.fieldDeclarations ? { fieldDeclarations: context.fieldDeclarations } : {}),
+    ...(functionIndex ? { functionIndex } : {}),
     diagnostic: (tagNode: ts.Node, code: string, message: string) =>
       diagnostic(context.sourceFile, tagNode, code, message),
-    describeSchema: (schemaType: ts.Type, schemaNode: ts.TypeNode | undefined, writtenFunctions: WrittenFunctions | undefined) =>
-      describe(schemaType, { ...context, exact: false, schemaData: true, ...(writtenFunctions ? { writtenFunctions } : {}) }, seen, schemaNode, representation, undefined, undefined, nameHint),
+    describeSchema: (schemaType: ts.Type, schemaNode: ts.TypeNode | undefined) =>
+      describe(schemaType, { ...context, exact: false, schemaData: true }, seen, schemaNode, representation, undefined, undefined, nameHint),
   };
   // Analyze checker types even when a child has no corresponding AST node
   // (for example the Date branch of `Date | undefined`). A union variant reads the authored member that names it.
@@ -880,8 +880,7 @@ function openDescribeCall(scope: DescribeScope, input: DescribeInput): DescribeC
       : originalType,
     metadata,
   );
-  // The children describe under the functions that this field wrote, so a generic type's tags name them.
-  return { ...input, context: { ...context, writtenFunctions: analysis.writtenFunctions }, node, childNode, childSubstitutions, tagContext, analysis, metadata, type };
+  return { ...input, context, node, childNode, childSubstitutions, tagContext, analysis, metadata, type };
 }
 
 /** Stop on a tag that does not fit the type it sits on, before the type is described. */
@@ -1277,7 +1276,6 @@ function describeProperties(scope: DescribeScope, call: DescribeCall, nextSeen: 
   // would invoke the legacy setter for an own `__proto__` key.
   const properties: Record<string, ModelConversionDescriptor> = Object.create(null);
   const required: string[] = [];
-  const declarations = declarationsOf(checker, members.map(({ property }) => property));
   for (const field of members) {
     const { name, property } = field;
     const optional = (property.flags & ts.SymbolFlags.Optional) !== 0;
@@ -1325,11 +1323,9 @@ function describeProperties(scope: DescribeScope, call: DescribeCall, nextSeen: 
         throw context.dtoRule.mapOrSetError(context.sourceFile, propertyNode ?? context.declaration, `Field "${name}"`, collection, true);
       }
     }
-    // A field with no member of its own reads from everything around it, so the members of its siblings stay in the scan.
-    const fieldDeclarations = propertyDeclarations(checker, property).length > 0 ? [...(context.fieldDeclarations ?? []), { declarations, own: property }] : context.fieldDeclarations;
     const described = describe(
       valueType,
-      { ...context, field: name, ...(fieldDeclarations ? { fieldDeclarations } : {}) },
+      { ...context, field: name },
       nextSeen,
       propertyNode,
       representation,
@@ -1480,6 +1476,8 @@ export interface DescriptorBuilderOptions {
   readonly typeErrorAt: ((node: ts.Node) => string | undefined) | undefined;
   /** Whether a source file is a default library file: a symbol key it declares is the built-in type's own metadata, not a field. */
   readonly isDefaultLibraryFile: (file: ts.SourceFile) => boolean;
+  /** Every source file of the program that can hold a tag, for the index of the functions that tags write; without it, each tag read from the checker reads the sources of its field. */
+  readonly programFiles?: () => readonly ts.SourceFile[];
   /** How many instances of one generic declaration may be open at once before the walk stops with RUNM1083; `DEFAULT_MAX_EXPANSION_DEPTH` when omitted. */
   readonly maxExpansionDepth?: number;
 }
@@ -1489,7 +1487,7 @@ export function descriptorBuilder(
   specifications: readonly ModelSpecification[],
   manifestIndex: ManifestIndex,
   {
-    validationLevel, allowAny, identityRoot, allowUnresolved, nameFor, modelSources, boundary, typeErrorAt, isDefaultLibraryFile,
+    validationLevel, allowAny, identityRoot, allowUnresolved, nameFor, modelSources, boundary, typeErrorAt, isDefaultLibraryFile, programFiles,
     maxExpansionDepth = DEFAULT_MAX_EXPANSION_DEPTH,
   }: DescriptorBuilderOptions,
 ): {
@@ -1747,8 +1745,10 @@ export function descriptorBuilder(
   const modelValidates = (context: TypeAnalysisContext): boolean =>
     (specifications.find(specification => specification.declaration === context.declaration)?.validation ?? validationLevel) !== false;
 
+  let programIndex: FunctionIndex | undefined;
+  const functionIndex = programFiles ? () => programIndex ??= buildFunctionIndex(checker, programFiles()) : undefined;
   const scope: DescribeScope = {
-    checker, specifications, manifestIndex, allowAny, allowUnresolved, boundary, typeErrorAt, isDefaultLibraryFile,
+    checker, specifications, manifestIndex, allowAny, allowUnresolved, boundary, typeErrorAt, isDefaultLibraryFile, functionIndex,
     modelSources, stableIdentityRoot, modelNames, modelLocations, projections, projectionCache, projectionOwners, projectionSources,
     cycleStems, declaredVariants, companionOf, modelNameOf, sourceLocation, claimHeadName, isCycleHead, rejectUnlessAllowAny, modelOf,
     modelValidates,

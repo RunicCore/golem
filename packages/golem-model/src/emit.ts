@@ -571,6 +571,7 @@ export function createJobAnalysis(
   identityRoot?: string,
   sourceFileOf?: (filename: string) => ts.SourceFile | undefined,
   boundary?: ModelBoundary,
+  programFiles?: () => readonly ts.SourceFile[],
 ): JobAnalysis {
   const stableIdentityRoot = canonicalFilename(identityRoot ?? commonDirectory(
     specifications.map((specification) => specification.sourceFile.fileName),
@@ -588,6 +589,7 @@ export function createJobAnalysis(
       boundary,
       typeErrorAt: undefined,
       isDefaultLibraryFile,
+      ...(programFiles ? { programFiles } : {}),
     }),
     described: new Map(),
     sources: modelSources,

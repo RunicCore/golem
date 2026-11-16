@@ -91,6 +91,7 @@ export function createContractAnalysis(
     boundary: options.boundary,
     typeErrorAt: (node) => typeScriptErrorAt(program, node),
     isDefaultLibraryFile: file => program.isSourceFileDefaultLibrary(file),
+    programFiles: () => program.getSourceFiles().filter(file => !program.isSourceFileDefaultLibrary(file)),
   });
   const describeAll = (builder: ReturnType<typeof buildDescribe>): Map<ModelSpecification, ModelConversionDescriptor> => new Map(
     specifications.map((specification) => [specification, builder(specification.fieldsType, specification, undefined, specification.fieldsNode)] as const),

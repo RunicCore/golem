@@ -578,6 +578,7 @@ export function generate(context: GolemModelContext): GolemModelResult {
     normalized.root,
     (filename) => program.getSourceFile(filename),
     boundary,
+    () => program.getSourceFiles().filter((file) => !program.isSourceFileDefaultLibrary(file)),
   );
   describeJob(job, specifications);
   const graphs = sources
