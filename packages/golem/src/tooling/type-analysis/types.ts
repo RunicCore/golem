@@ -840,7 +840,7 @@ function projectionReference(name: string): ModelConversionDescriptor {
 
 /** Read the tags of the type once: the nodes and substitutions the children use, the tag metadata, and the type to describe. */
 function openDescribeCall(scope: DescribeScope, input: DescribeInput): DescribeCall {
-  const { checker, modelSources, stableIdentityRoot, companionOf, describe } = scope;
+  const { checker, modelSources, stableIdentityRoot, companionOf, describe, isDefaultLibraryFile } = scope;
   const { originalType, context, seen, representation, provenanceNode, substitutions, nameHint, nameNode, tagSources } = input;
   const node = substituteTypeNode(checker, input.node, substitutions);
   const instantiated = instantiatedTypeSource(checker, node ?? provenanceNode, substitutions);
@@ -850,6 +850,7 @@ function openDescribeCall(scope: DescribeScope, input: DescribeInput): DescribeC
     checker,
     sourceFile: context.sourceFile,
     identityRoot: stableIdentityRoot,
+    isDefaultLibraryFile,
     importer: companionOf(context.sourceFile.fileName),
     ...(modelSources ? { isModelSource: (filename: string) => modelSources.has(filename) } : {}),
     ...(context.writtenFunctions ? { writtenFunctions: context.writtenFunctions } : {}),

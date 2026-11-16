@@ -501,6 +501,21 @@ test('a serializer that copies the type of another binds itself through a NonNul
   assert.equal(importsOf(generated, 'write'), 0, 'write is not bound');
 });
 
+test('a validator that copies the type of another binds itself when a declaration file writes the tag', t => {
+  // protects: T-982 the scan skipped every declaration file, so a tag written in a .d.ts reached the field with no `typeof` and was refused (R-55 no silent difference)
+  const { root, sourceRoot } = fixture(t);
+  fs.writeFileSync(path.join(sourceRoot, 'rules.ts'), copiedFunctionRules.inline.text);
+  fs.writeFileSync(path.join(sourceRoot, 'defs.d.ts'), tsSource`import type { TValidation } from '@exprtlabs/golem/tags';\nimport type { b } from './rules.js';\nexport type Email = string & TValidation<typeof b>;\nexport type Box = { f: Email | null };`.text);
+  fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({
+    name: 'A',
+    imports: tsSource`import type { Box } from './defs.js';\ntype Field = { [K in keyof Box]: NonNullable<Box[K]> };`,
+    fields: tsSource`field: Field`,
+  }).text);
+  const generated = generate({ root, profile: { validation: true } }).artifacts.map((artifact) => artifact.content).join('\n');
+  assert.equal(importsOf(generated, 'b'), 1, 'b is bound');
+  assert.equal(importsOf(generated, 'a'), 0, 'a is not bound');
+});
+
 // `a` and `b` share one type, and `Box['f']` writes `typeof a` where the tag of the field writes `typeof b`: golem cannot bind both by their type.
 const hiddenCopyReads = {
   'an indexed access beside the tag of the field': tsSource`Box['f'] & TValidation<typeof b>`,

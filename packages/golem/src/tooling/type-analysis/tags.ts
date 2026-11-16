@@ -69,6 +69,8 @@ export interface TagAnalysisContext {
   readonly identityRoot: string;
   /** The generated file that imports what the tags name: the companion of the model's file. Defaults to the model's file. */
   readonly importer?: string;
+  /** Whether a file is a default library file of the program: it holds no tag of the user, so the scan of the written functions leaves it unread. Unset: no file is one. */
+  readonly isDefaultLibraryFile?: (file: ts.SourceFile) => boolean;
   /** Whether a file is a model source of the job, so it has a generated companion. */
   readonly isModelSource?: (filename: string) => boolean;
   readonly diagnostic: (node: ts.Node, code: string, message: string) => Error;
@@ -448,7 +450,7 @@ export function declaredPropertyNodes(checker: ts.TypeChecker, property: ts.Symb
 
 /**
  * Records every `typeof` of a tag in everything that `node` reaches, through type aliases, interfaces, classes, `typeof` a
- * variable, and the parts of mapped, conditional and indexed types. A library or ambient declaration holds no tag of the user and stays unread.
+ * variable, and the parts of mapped, conditional and indexed types. A default library file holds no tag of the user and stays unread.
  * Each node is read once for each `seen`, so one scan reads each reachable node once.
  */
 function recordReachableFunctions(context: TagAnalysisContext, node: ts.Node, seen: Set<ts.Node>): void {
@@ -460,8 +462,9 @@ function recordReachableFunctions(context: TagAnalysisContext, node: ts.Node, se
     const tag = golemTag(checker, symbol);
     if (tag) recordTagFunctions(context, node, tag.name);
     else {
-      const target = targetSymbol(checker, symbol);
-      if (!isAmbientOrGlobalSymbol(target)) for (const declaration of target?.declarations ?? []) recordReachableFunctions(context, declaration, seen);
+      for (const declaration of targetSymbol(checker, symbol)?.declarations ?? []) {
+        if (!context.isDefaultLibraryFile?.(declaration.getSourceFile())) recordReachableFunctions(context, declaration, seen);
+      }
     }
   } else if (ts.isTypeQueryNode(node)) {
     const declaration = declarationOf(targetSymbol(checker, symbolAtExpression(checker, node.exprName)));
