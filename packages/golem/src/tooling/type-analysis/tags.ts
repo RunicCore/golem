@@ -692,7 +692,9 @@ function functionBinding(
   if (index.complete && only !== undefined && others.length === 0) {
     return valueBindingForSymbol(context, only, kind, fn.owner);
   }
-  const writes = `This program writes ${describeWriters(writers)} in tags.`;
+  const writes = index.complete
+    ? `This program writes ${describeWriters(writers)} in tags.`
+    : `The tags of this program that write \`typeof\` name ${describeWriters(writers)}; a tag written another way can name more.`;
   const registry = context.writtenFunctions;
   if (registry) registry.walk ??= walkSources(context, registry.sources);
   const unreadable = registry?.walk?.unreadable;
