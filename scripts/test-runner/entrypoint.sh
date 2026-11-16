@@ -13,13 +13,15 @@ case "$tier" in full|full-ts6|acceptance) recorded=1 ;; esac
 # this tree passed it, and starts from zero instead of finishing a cut run. --load-limit and --load-wait set the host load check below.
 # The other tiers take them too and ignore them.
 again=0; load_limit=""; load_wait=""; lock_wait=300
+# An option that takes a value stops with exit 2 when the value is missing, as a bad value does.
+needs_value() { [ "$#" -ge 2 ] || { echo "$1 takes a value" >&2; exit 2; }; }
 shift; rest=()
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --again) again=1 ;;
-    --lock-wait) lock_wait="${2:?--lock-wait takes a number}"; shift ;;
-    --load-limit) load_limit="${2:?--load-limit takes a number}"; shift ;;
-    --load-wait) load_wait="${2:?--load-wait takes a number}"; shift ;;
+    --lock-wait) needs_value "$@"; lock_wait="$2"; shift ;;
+    --load-limit) needs_value "$@"; load_limit="$2"; shift ;;
+    --load-wait) needs_value "$@"; load_wait="$2"; shift ;;
     *) rest+=("$1") ;;
   esac
   shift || true
