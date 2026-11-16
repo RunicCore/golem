@@ -56,10 +56,13 @@ export function referenceClosure<P extends { readonly projectReferences?: readon
   return [...found].map(([configFile, parsed]) => ({ configFile, parsed }));
 }
 
-/**
- * The codes of the errors that `tsc` reports for a project reference (`verifyProjectReferences`): a tsconfig that does not exist, one that is
- * not composite, and one that disables emit. The TypeScript 7 program is made without references, so it reports none of them.
+/*
+ * The two below restate one rule of `tsc` (`verifyProjectReferences` of its program), which the TypeScript 7 program cannot apply because it is made without
+ * references: for each referenced project, a tsconfig that does not exist is TS6053, one that is not composite is TS6306, and one that disables emit is
+ * TS6310, the last two only for a project that has files. Change both together.
  */
+
+/** The codes of the errors that `tsc` reports for a project reference. */
 export const REFERENCE_ERROR_CODES: ReadonlySet<number> = new Set([6053, 6306, 6310]);
 
 /** Whether `tsc` reports an error for this referenced project: `parsed` is `undefined` when its tsconfig does not exist. It may answer yes where `tsc` stays silent (a project with no files), never no where `tsc` reports. */

@@ -145,17 +145,16 @@ function assertSupported(configFile: string, parsed: ts.ParsedProject, named: 'y
 /** A referenced project with its parse: `tsc -p` reads the declaration output of its sources in place of the sources. */
 interface ReferencedProject {
   readonly configFile: string;
-  readonly options: ts.CompilerOptions;
   readonly fileNames: readonly string[];
 }
 
 /**
- * Parse the referenced projects, and the projects they reference: `tsc` loads the whole closure. A tsconfig that does not exist or a project that is
- * not composite is an error of `tsc -p` (TS6053, TS6306): the program reports it, and this build reads on without the project that has no tsconfig.
+ * Parse the referenced projects, and the projects they reference: `tsc` loads the whole closure. A tsconfig that does not exist, a project that is
+ * not composite and an error in a referenced file are the compiler's to report, as `tsc -p` reports them: this build reads on without a project that has no tsconfig.
  */
 function readReferences(session: ts.ProgramSession, references: readonly ts.ProjectReference[], observe: (filename: string) => void): ReferencedProject[] {
-  return referenceClosure(references, (referenced) => (fs.existsSync(referenced) ? session.parseConfigFile(referenced, observe) : undefined))
-    .flatMap(({ configFile: referenced, parsed }) => (parsed === undefined ? [] : [{ configFile: referenced, options: parsed.options, fileNames: parsed.fileNames }]));
+  return referenceClosure(references, (referenced) => session.parseReferencedConfigFile(referenced, observe))
+    .flatMap(({ configFile: referenced, parsed }) => (parsed === undefined ? [] : [{ configFile: referenced, fileNames: parsed.fileNames }]));
 }
 
 /**

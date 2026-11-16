@@ -1192,6 +1192,24 @@ export class ProgramSession implements Disposable {
     return projectOf(parsed);
   }
 
+  /** Parse a referenced project's configuration as `tsc -p` reads it: its errors are not reported, and `undefined` is a tsconfig that does not exist. */
+  parseReferencedConfigFile(configPath: string, onInput?: (filename: string) => void): ParsedProject | undefined {
+    const parsed = this.withCompiler('parse', (api) => {
+      this.observe(onInput, new Set());
+      return this.exists(configPath) ? api.parseConfigFile(configPath) : undefined;
+    });
+    return parsed && projectOf(parsed);
+  }
+
+  /** Whether the compiler finds a file: in an overlay, else on the disk. The path is an input of the program, and so is its absence. */
+  private exists(filename: string): boolean {
+    const file = canonical(filename);
+    this.report(file);
+    if (this.overlays.has(file)) return true;
+    this.recordSignature(file);
+    return sys.fileExists(file);
+  }
+
   /**
    * Parse a project configuration under compiler command-line arguments. The API has no `tsc -p` parse, so the arguments are parsed
    * on their own and merged over the configuration's options, which is what `tsc` does. The options that decide which files match
@@ -1429,11 +1447,8 @@ export class ProgramSession implements Disposable {
       assertConfigParsed(base.configPath, result.errors);
       parsed = result;
       closure = referenceClosure(result.projectReferences ?? [], (configFile) => {
-        // A tsconfig that does not exist is no input error of golem's: the compiler reports it at the reference (TS6053).
-        if (!base.overlays.has(canonical(configFile)) && !sys.fileExists(configFile)) return undefined;
-        const project = api.parseConfigFile(configFile);
-        assertConfigParsed(configFile, project.errors);
-        return project;
+        // `tsc -p` reports no error of a referenced project's own file, and a tsconfig that does not exist at the reference (TS6053): the compiler's to report.
+        return this.exists(configFile) ? api.parseConfigFile(configFile) : undefined;
       });
     } finally {
       this.setOverlays(previous);

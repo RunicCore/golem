@@ -858,6 +858,13 @@ export class ProgramSession implements Disposable {
     return projectOf(this.parseConfig(configPath, new Map()));
   }
 
+  /** Parse a referenced project's configuration as `tsc -p` reads it: its errors are not reported, and `undefined` is a tsconfig that does not exist. */
+  parseReferencedConfigFile(configPath: string, onInput?: (filename: string) => void): Golem.ParsedProject | undefined {
+    this.assertOpen();
+    this.observe(onInput, new Set());
+    return sys.fileExists(this.probe(configPath, new Map())) ? projectOf(this.readConfig(configPath, new Map()).parsed) : undefined;
+  }
+
   /** Parse a project configuration under compiler command-line arguments, as the classic `tsc -p` does. */
   parseConfigFileWithFlags(configPath: string, flags: readonly string[], onInput?: (filename: string) => void): Golem.ParsedProject {
     this.assertOpen();
@@ -994,6 +1001,13 @@ export class ProgramSession implements Disposable {
   }
 
   private parseConfig(configPath: string, overlays: ReadonlyMap<string, string>, commandLine?: { readonly options: Golem.CompilerOptions; readonly errors: readonly ClassicDiagnostic[] }): ParsedConfig {
+    const { parsed, errors } = this.readConfig(configPath, overlays, commandLine);
+    assertConfigParsed(configPath, [...commandLine?.errors ?? [], ...errors].map((diagnostic) => ({ code: diagnostic.code, text: classic.flattenDiagnosticMessageText(diagnostic.messageText, '\n') })));
+    return parsed;
+  }
+
+  /** The parse of a configuration with the errors it found, which the caller reports or ignores. */
+  private readConfig(configPath: string, overlays: ReadonlyMap<string, string>, commandLine?: { readonly options: Golem.CompilerOptions }): { readonly parsed: ParsedConfig; readonly errors: readonly ClassicDiagnostic[] } {
     const parsed = classic.getParsedCommandLineOfConfigFile(configPath, commandLine?.options, {
       useCaseSensitiveFileNames: sys.useCaseSensitiveFileNames,
       readDirectory: (root, extensions, excludes, includes, depth) => sys.readDirectory(root, extensions, excludes, includes, depth),
@@ -1005,8 +1019,7 @@ export class ProgramSession implements Disposable {
       },
     });
     if (!parsed) throw new Error(`The TypeScript configuration ${displayPath(configPath)} could not be parsed.`);
-    assertConfigParsed(configPath, [...commandLine?.errors ?? [], ...parsed.errors].map((diagnostic) => ({ code: diagnostic.code, text: classic.flattenDiagnosticMessageText(diagnostic.messageText, '\n') })));
-    return { options: parsed.options, configFileSpecs: parsed.options.configFile?.configFileSpecs, fileNames: parsed.fileNames, projectReferences: parsed.projectReferences ?? [] };
+    return { parsed: { options: parsed.options, configFileSpecs: parsed.options.configFile?.configFileSpecs, fileNames: parsed.fileNames, projectReferences: parsed.projectReferences ?? [] }, errors: parsed.errors };
   }
 
   /** The compiler host of one program: overlays over disk, input observation, and the session's parsed files. */
