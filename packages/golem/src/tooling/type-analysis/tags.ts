@@ -418,9 +418,9 @@ function recordWrittenFunction(context: TagAnalysisContext, role: FunctionRole, 
 }
 
 /** Records the `typeof` arguments of a TValidation or TSerde reference by the role of each argument. */
-function recordTagFunctions(context: TagAnalysisContext, tag: ts.TypeReferenceNode, name: string): void {
+function recordTagFunctions(context: TagAnalysisContext, typeArguments: readonly ts.TypeNode[] | undefined, name: string): void {
   TAG_FUNCTION_ROLES.get(name)?.forEach((role, index) => {
-    const argument = tag.typeArguments?.[index];
+    const argument = typeArguments?.[index];
     if (argument && ts.isTypeQueryNode(argument)) recordWrittenFunction(context, role, argument);
   });
 }
@@ -506,14 +506,18 @@ function writtenFunction(checker: ts.TypeChecker, query: ts.TypeQueryNode): { re
   return symbol && type && type.getCallSignatures().length > 0 ? { symbol, type } : undefined;
 }
 
+/** The name and the type arguments of a node that names a type: a type reference, or an import type with a qualifier (`import('...').T<A>`). */
+function typeReferenceOf(node: ts.Node): { readonly name: ts.Node; readonly typeArguments: readonly ts.TypeNode[] | undefined } | undefined {
+  if (ts.isTypeReferenceNode(node)) return { name: node.typeName, typeArguments: node.typeArguments };
+  return ts.isImportTypeNode(node) && node.qualifier ? { name: node.qualifier, typeArguments: node.typeArguments } : undefined;
+}
+
 function buildFunctionIndex(checker: ts.TypeChecker, files: readonly ts.SourceFile[]): FunctionIndex {
   const writers = new Map<ts.Type, Map<ts.Symbol, ts.Node>>();
   let complete = true;
   const visit = (node: ts.Node): void => {
     // `import('...').TValidation<F>` names its tag by the qualifier of the import type.
-    const reference = ts.isTypeReferenceNode(node) ? { name: node.typeName, typeArguments: node.typeArguments }
-      : ts.isExpressionWithTypeArguments(node) ? { name: node.expression, typeArguments: node.typeArguments }
-      : ts.isImportTypeNode(node) && node.qualifier ? { name: node.qualifier, typeArguments: node.typeArguments } : undefined;
+    const reference = typeReferenceOf(node) ?? (ts.isExpressionWithTypeArguments(node) ? { name: node.expression, typeArguments: node.typeArguments } : undefined);
     const tagName = reference?.typeArguments ? golemTagName(checker, checker.getSymbolAtLocation(reference.name)) : undefined;
     TAG_FUNCTION_ROLES.get(tagName ?? '')?.forEach((_role, position) => {
       const argument = reference?.typeArguments?.[position];
@@ -557,7 +561,7 @@ const INFERRED = 'whose type golem infers';
 
 /** Whether `node` holds no other node that can hold a tag: a name, a literal, or a keyword type such as `string`. */
 function holdsNothing(node: ts.Node): boolean {
-  return ts.isIdentifier(node) || ts.isLiteralTypeNode(node) || ts.isTemplateLiteralTypeNode(node) || ts.isEnumDeclaration(node)
+  return ts.isIdentifier(node) || ts.isLiteralTypeNode(node) || ts.isTemplateLiteralTypeNode(node) || ts.isEnumDeclaration(node) || ts.isClassStaticBlockDeclaration(node)
     || (ts.isTypeNode(node) && ts.forEachChild(node, () => true) === undefined);
 }
 
@@ -586,7 +590,8 @@ function reach(context: TagAnalysisContext, walk: Walk, node: ts.Node): void {
   };
   if (holdsNothing(node)) return;
   if (infersItsType(node)) return stop(INFERRED);
-  if (ts.isParenthesizedTypeNode(node) || ts.isOptionalTypeNode(node) || ts.isRestTypeNode(node) || ts.isTypeOperatorNode(node) || ts.isNamedTupleMember(node)) {
+  const reference = typeReferenceOf(node);
+  if (ts.isParenthesizedTypeNode(node) || ts.isOptionalTypeNode(node) || ts.isRestTypeNode(node) || ts.isTypeOperatorNode(node) || ts.isNamedTupleMember(node) || ts.isTypePredicateNode(node)) {
     next(node.type);
   } else if (ts.isUnionTypeNode(node) || ts.isIntersectionTypeNode(node)) {
     nextAll(node.types);
@@ -607,13 +612,13 @@ function reach(context: TagAnalysisContext, walk: Walk, node: ts.Node): void {
     if (symbol) walk.bound.add(symbol);
     next(node.constraint);
     next(ts.typeParameterDefault(node));
-  } else if (ts.isTypeReferenceNode(node)) {
-    const symbol = checker.getSymbolAtLocation(node.typeName);
+  } else if (reference) {
+    const symbol = checker.getSymbolAtLocation(reference.name);
     const tag = golemTag(checker, symbol);
     if (tag) {
       const roles = TAG_FUNCTION_ROLES.get(tag.name) ?? [];
-      recordTagFunctions(context, node, tag.name);
-      node.typeArguments?.forEach((argument, position) => {
+      recordTagFunctions(context, reference.typeArguments, tag.name);
+      reference.typeArguments?.forEach((argument, position) => {
         if (position >= roles.length) next(argument);
         else if (!ts.isTypeQueryNode(argument)) stop('which writes the function of this tag without `typeof`');
       });
@@ -621,7 +626,7 @@ function reach(context: TagAnalysisContext, walk: Walk, node: ts.Node): void {
       if (!walk.bound.has(symbol)) stop('which names a type parameter that the read does not bind');
     } else {
       reachDeclarationsOf(symbol);
-      nextAll(node.typeArguments);
+      nextAll(reference.typeArguments);
     }
   } else if (ts.isTypeAliasDeclaration(node)) {
     nextAll(node.typeParameters);
@@ -653,12 +658,12 @@ function reach(context: TagAnalysisContext, walk: Walk, node: ts.Node): void {
     nextAll(sources.flat());
   } else if (ts.isPropertyDeclaration(node) || ts.isPropertySignature(node) || ts.isVariableDeclaration(node) || ts.isParameter(node)) {
     next(node.type);
-  } else if (ts.isMethodDeclaration(node) || ts.isMethodSignature(node) || ts.isFunctionDeclaration(node)) {
+  } else if (ts.isMethodDeclaration(node) || ts.isMethodSignature(node) || ts.isFunctionDeclaration(node) || ts.isCallSignatureDeclaration(node) || ts.isConstructSignatureDeclaration(node) || ts.isFunctionTypeNode(node) || ts.isConstructorTypeNode(node)) {
     nextAll(node.typeParameters);
     nextAll(node.parameters);
     next(node.type);
-  } else if (ts.isConstructorDeclaration(node)) {
-    // A constructor has no return type, and its body carries no type: its parameters (a parameter property is a field) are all it holds.
+  } else if (ts.isConstructorDeclaration(node) || ts.isSetAccessorDeclaration(node)) {
+    // A constructor and a set accessor have no return type, and their bodies carry no type: their parameters (a parameter property is a field) are all they hold.
     nextAll(node.parameters);
   } else if (ts.isGetAccessorDeclaration(node) || ts.isIndexSignatureDeclaration(node)) {
     nextAll(node.parameters);
