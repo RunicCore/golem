@@ -6,6 +6,7 @@ import { test, type TestContext } from 'node:test';
 import type { GolemJob } from '#golem/config';
 import { runPipeline } from '#golem/cli';
 import { applyJob, loadInventory } from '#golem/outputs';
+import { canonicalPath } from '#golem/plan-support';
 import { createFixtureProject, linkGolemPackages } from './fixture-project.js';
 import { configFor, jobWithFacts } from './support/output-config.js';
 import { writeFixture } from './support/consumer.js';
@@ -134,4 +135,16 @@ test('external model companions canonicalize through a symlink and retire safely
   const inventory = loadInventory(config);
   assert.equal(inventory.files[path.relative(root, firstCompanion).replaceAll(path.sep, '/')], undefined);
   assert.equal(inventory.files[path.relative(root, secondCompanion).replaceAll(path.sep, '/')].destination, path.relative(root, secondSourceDirectory).replaceAll(path.sep, '/'));
+});
+
+test('a path through a link that leads nowhere yet has the real path it will have, and links that loop stop with a plain error', (t: TestContext) => {
+  // protects: T-1027 canonicalPath stopped at a link that leads nowhere yet, so a path through it changed its real path once the target was written
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'golem-canonical-path-')));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.symlinkSync(path.join(root, 'first-hop'), path.join(root, 'link'), 'dir');
+  fs.symlinkSync(path.join(root, 'later'), path.join(root, 'first-hop'), 'dir');
+  fs.symlinkSync('c/../loop', path.join(root, 'loop'), 'dir');
+
+  assert.equal(canonicalPath(path.join(root, 'link', 'cart.ts')), path.join(root, 'later', 'cart.ts'));
+  assert.throws(() => canonicalPath(path.join(root, 'loop', 'cart.ts')), /lead back to themselves/);
 });

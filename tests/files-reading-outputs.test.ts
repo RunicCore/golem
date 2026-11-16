@@ -7,8 +7,8 @@ import * as ts from '@exprtlabs/golem/internal/ts';
 import { filesReadingOutputs } from '#golem/type-analysis/project';
 import { createFixtureProject } from './fixture-project.js';
 
-/** A project whose `sdkPaths` aliases name `sdk/` (the output of a later job, empty at first) and whose `@mid/*` alias names `mid/` (a source folder). */
-function aliasedProject(t: TestContext, sdkPaths: Record<string, string[]> = { '@sdk/*': ['./sdk/*'] }): { write(file: string, text: string): void; link(file: string, target: string): void; run(): string[] } {
+/** A project whose `sdkPaths` aliases name `sdk/` (the output of a later job, empty at first; `output` names another folder) and whose `@mid/*` alias names `mid/` (a source folder). */
+function aliasedProject(t: TestContext, sdkPaths: Record<string, string[]> = { '@sdk/*': ['./sdk/*'] }, output = 'sdk'): { write(file: string, text: string): void; link(file: string, target: string): void; run(): string[] } {
   const root = createFixtureProject(t, 'golem-reading-outputs-');
   const write = (file: string, text: string): void => {
     fs.mkdirSync(path.dirname(path.join(root, file)), { recursive: true });
@@ -26,11 +26,11 @@ function aliasedProject(t: TestContext, sdkPaths: Record<string, string[]> = { '
       fs.mkdirSync(path.dirname(path.join(root, file)), { recursive: true });
       fs.symlinkSync(target, path.join(root, file), 'dir');
     },
-    // One run: a new session holds no file of an earlier run. The output files themselves are left out of the answer.
+    // One run: a new session holds no file of an earlier run. The output files themselves are left out of the answer, also when a link spells their path.
     run: () => {
       using session = new ts.ProgramSession({ cwd: root });
       using program = session.openProgram({ root, sources: [path.join(root, 'src/app.ts')] });
-      return [...filesReadingOutputs(program, [path.join(root, 'sdk')])].map(file => path.relative(root, file)).filter(file => !file.startsWith('sdk')).sort();
+      return [...filesReadingOutputs(program, [path.join(root, output)])].filter(file => !path.relative(root, fs.realpathSync(file)).startsWith(output)).map(file => path.relative(root, file)).sort();
     },
   };
 }
@@ -133,4 +133,100 @@ test('a package that a node_modules link points into a job output excludes its i
   const second = project.run();
 
   assert.deepEqual([first, second], [['src/app.ts'], ['src/app.ts']]);
+});
+
+test('a package that a node_modules link points to a folder above a job output excludes its importer on the first run and the next', (t: TestContext) => {
+  // protects: T-1027 the link target `packages/sdk` is no place under the output `packages/sdk/src/gen`, so the first run did not exclude the importer
+  const project = aliasedProject(t, undefined, 'packages/sdk/src/gen');
+  project.link('node_modules/sdk-pkg', '../packages/sdk');
+  project.write('packages/sdk/package.json', '{"name":"sdk-pkg","type":"module"}');
+  project.write('src/app.ts', "import type { Money } from 'sdk-pkg/src/gen/money.js';\nexport type App = Money;\n");
+
+  const first = project.run();
+  project.write('packages/sdk/src/gen/money.ts', 'export type Money = number;\n');
+  const second = project.run();
+
+  assert.deepEqual([first, second], [['src/app.ts'], ['src/app.ts']]);
+});
+
+test('a package that a node_modules link points to a folder above a job output, with an exports map, excludes its importer on the first run and the next', (t: TestContext) => {
+  // protects: T-1027 the specifier `sdk-pkg/gen/money.js` reaches the output only through the exports map, not by joining its subpath to the link target
+  const project = aliasedProject(t, undefined, 'packages/sdk/src/gen');
+  project.link('node_modules/sdk-pkg', '../packages/sdk');
+  project.write('packages/sdk/package.json', '{"name":"sdk-pkg","type":"module","exports":{"./gen/*":"./src/gen/*"}}');
+  project.write('src/app.ts', "import type { Money } from 'sdk-pkg/gen/money.js';\nexport type App = Money;\n");
+
+  const first = project.run();
+  project.write('packages/sdk/src/gen/money.ts', 'export type Money = number;\n');
+  const second = project.run();
+
+  assert.deepEqual([first, second], [['src/app.ts'], ['src/app.ts']]);
+});
+
+test('a package that a node_modules link points to a folder above a job output leaves an importer of its other files in', (t: TestContext) => {
+  // The control of the two cases above: a file of the linked package outside the output reads no output.
+  const project = aliasedProject(t, undefined, 'packages/sdk/src/gen');
+  project.link('node_modules/sdk-pkg', '../packages/sdk');
+  project.write('packages/sdk/package.json', '{"name":"sdk-pkg","type":"module"}');
+  project.write('packages/sdk/src/other.ts', 'export type Other = number;\n');
+  project.write('src/app.ts', "import type { Other } from 'sdk-pkg/src/other.js';\nexport type App = Other;\n");
+
+  const first = project.run();
+  project.write('packages/sdk/src/gen/money.ts', 'export type Money = number;\n');
+  const second = project.run();
+
+  assert.deepEqual([first, second], [[], []]);
+});
+
+test('a package that two node_modules links lead into a job output excludes its importer on the first run and the next', (t: TestContext) => {
+  // protects: T-1028 the first link leads to a second link, so reading the first link alone does not reach the output
+  const project = aliasedProject(t);
+  project.link('links/sdk-link', '../sdk');
+  project.link('node_modules/sdk-pkg', '../links/sdk-link');
+  project.write('src/app.ts', "import type { Money } from 'sdk-pkg/money.js';\nexport type App = Money;\n");
+
+  const first = project.run();
+  project.write('sdk/money.ts', 'export type Money = number;\n');
+  const second = project.run();
+
+  assert.deepEqual([first, second], [['src/app.ts'], ['src/app.ts']]);
+});
+
+test('a node_modules folder that is a link into a job output excludes the importer of its package on the first run and the next', (t: TestContext) => {
+  // protects: T-1029 the package folder is no link itself, so only the link of `node_modules` leads into the output
+  const project = aliasedProject(t);
+  project.link('node_modules', 'sdk');
+  project.write('src/app.ts', "import type { Money } from 'sdk-pkg/money.js';\nexport type App = Money;\n");
+
+  const first = project.run();
+  project.write('sdk/sdk-pkg/money.ts', 'export type Money = number;\n');
+  const second = project.run();
+
+  assert.deepEqual([first, second], [['src/app.ts'], ['src/app.ts']]);
+});
+
+test('a relative import through a link that leads to a job output excludes its importer on the first run and the next', (t: TestContext) => {
+  // protects: T-1027 the path `src/gen/money.js` lies under the output only once the link `src/gen` leads somewhere, so the two runs read different files
+  const project = aliasedProject(t);
+  project.link('src/gen', '../sdk');
+  project.write('src/app.ts', "import type { Money } from './gen/money.js';\nexport type App = Money;\n");
+
+  const first = project.run();
+  project.write('sdk/money.ts', 'export type Money = number;\n');
+  const second = project.run();
+
+  assert.deepEqual([first, second], [['src/app.ts'], ['src/app.ts']]);
+});
+
+test('a package link that leads back to itself is no link into an output, on the first run and the next', (t: TestContext) => {
+  // protects: T-1027 `node_modules/sdk-pkg` -> `c/../sdk-pkg` names itself, and following it for ever ended in a stack overflow
+  const project = aliasedProject(t);
+  project.link('node_modules/sdk-pkg', 'c/../sdk-pkg');
+  project.write('src/app.ts', "import type { Money } from 'sdk-pkg/money.js';\nexport type App = Money;\n");
+
+  const first = project.run();
+  project.write('sdk/money.ts', 'export type Money = number;\n');
+  const second = project.run();
+
+  assert.deepEqual([first, second], [[], []]);
 });
