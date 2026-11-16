@@ -252,6 +252,45 @@ test('errorsFor and a message override find an array item by its index as a numb
   assert.deepEqual(validator.errorsFor(['scores', '0']), []);
 });
 
+test('an instance rule of a model inside an instance of a plain class runs and reports at the full path', async () => {
+  // protects: T-1003 the rule walk read only plain objects, so a model held by a class instance never ran its rules
+  class NoteModel {
+    public text?: string;
+    public constructor(values: { text?: string } = {}) { Object.assign(this, values); }
+  }
+  class NoteHolder {
+    public constructor(public note: NoteModel) {}
+  }
+  class BoardModel {
+    public holder?: NoteHolder;
+    public constructor(values: { holder?: NoteHolder } = {}) { Object.assign(this, values); }
+  }
+  await installCodecModel({
+    constructor: NoteModel,
+    name: 'HeldNote',
+    fields: ['text'],
+    conversion: { decode: (value) => Object.assign(new NoteModel(), value as object), encode: (instance) => ({ text: instance.text }) },
+    definitions: { HeldNote: { kind: 'object', required: ['text'], additionalProperties: false, properties: { text: { kind: 'string' } } } },
+  });
+  await installCodecModel({
+    constructor: BoardModel,
+    name: 'HeldBoard',
+    fields: ['holder'],
+    nestedCodecIds: ['HeldNote'],
+    conversion: { decode: (value) => Object.assign(new BoardModel(), value as object), encode: (instance) => ({ holder: instance.holder }) },
+    definitions: {
+      HeldBoard: { kind: 'object', required: ['holder'], additionalProperties: false, properties: { holder: { kind: 'object', required: ['note'], additionalProperties: false, properties: { note: { kind: 'generated-model', id: 'HeldNote' } } } } },
+      HeldNote: { kind: 'object', required: ['text'], additionalProperties: false, properties: { text: { kind: 'string' } } },
+    },
+  });
+  const note = new NoteModel({ text: '' });
+  validation.getValidator<{ text: string }, NoteModel>(note).extend({ text: (value: unknown) => value !== '' || 'Text is required' });
+  const board = new BoardModel({ holder: new NoteHolder(note) });
+  const validator = validation.getValidator<{ holder: NoteHolder }, BoardModel>(board);
+  assert.equal(await validator.validate(), false);
+  assert.deepEqual(validator.issues.map(({ code, path, message }) => ({ code, path, message })), [{ code: 'custom', path: ['holder', 'note', 'text'], message: 'Text is required' }]);
+});
+
 test('MobX runtime preserves observation and shares validator identity', async () => {
   interface PaymentFieldsMobx {
     amount: number;

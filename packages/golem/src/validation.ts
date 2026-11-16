@@ -358,7 +358,8 @@ function evaluateInstanceRules(root: object, mode: ValidationMode, generated: re
         if (isNativeValidationPromise(result)) return result.then(value => { release(); return value; }, error => { release(); throw error; });
         release();
         return result;
-      } else if (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null) {
+      } else if (!ArrayBuffer.isView(value)) {
+        // Any other object is read by its own enumerable keys, as the generated validators read it; a typed array holds no model.
         const keys = Object.keys(value);
         const result = visitFields(value, keys, 0);
         if (isNativeValidationPromise(result)) return result.then(value => { release(); return value; }, error => { release(); throw error; });
