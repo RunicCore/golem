@@ -103,6 +103,11 @@ function readOptionMembers(checker: ts.TypeChecker, optionsNode: ts.TypeNode | u
   return (type.isUnion() ? type.types : [type]).filter((member) => (member.flags & ts.TypeFlags.Undefined) === 0);
 }
 
+/** The members of an option type as one text, such as `false | true`, for the RUNM1089 message. */
+function describeMembers(checker: ts.TypeChecker, members: readonly ts.Type[]): string {
+  return members.map((member) => checker.typeToString(member)).join(' | ');
+}
+
 /** The value of `true` or `false` as a type; undefined for any other type. */
 function booleanLiteralValue(checker: ts.TypeChecker, type: ts.Type): boolean | undefined {
   return (type.flags & ts.TypeFlags.BooleanLiteral) === 0 ? undefined : checker.typeToString(type) === 'true';
@@ -121,7 +126,7 @@ function readBooleanOption(
   if (only === undefined) return undefined;
   const value = members.length === 1 ? booleanLiteralValue(checker, only) : undefined;
   if (value !== undefined) return value;
-  throw diagnostic(sourceFile, declaration, '1089', `The ${name} option of ${declaration.name.text} must be true or false. It is ${members.map((member) => checker.typeToString(member)).join(' | ')}.`);
+  throw diagnostic(sourceFile, declaration, '1089', `The ${name} option of ${declaration.name.text} must be true or false. It is ${describeMembers(checker, members)}.`);
 }
 
 /** The `validation` option of a model: `true`, `false` or `'sanity'`; undefined when the model does not set it. Any other value stops with RUNM1089. */
@@ -139,7 +144,7 @@ function readValidationOption(
     if (value !== undefined) return value;
     if (ts.isStringLiteralType(only) && only.value === 'sanity') return 'sanity';
   }
-  throw diagnostic(sourceFile, declaration, '1089', `${invalidValidationLevelMessage(`The validation option of ${declaration.name.text}`)} It is ${members.map((member) => checker.typeToString(member)).join(' | ')}.`);
+  throw diagnostic(sourceFile, declaration, '1089', `${invalidValidationLevelMessage(`The validation option of ${declaration.name.text}`)} It is ${describeMembers(checker, members)}.`);
 }
 
 const levelText = (level: GolemProfile['validation']): string => level === 'sanity' ? `'sanity'` : String(level);
