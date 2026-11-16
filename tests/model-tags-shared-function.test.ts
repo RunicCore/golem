@@ -11,14 +11,18 @@ import { tsSource } from './source-template.js';
 // Two functions of one signature share one type, and a tag that reaches the field through a reader that the scan cannot follow shows the
 // checker one tag for both. Each row has its own program: whether `b` alone binds depends on which functions the whole program writes in tags.
 
-const verbatim = (text: string) => tsSource(Object.assign([text], { raw: [text] }) as unknown as TemplateStringsArray);
+const verbatim = (text: string) => {
+  const strings: TemplateStringsArray = Object.assign([text], { raw: [text] });
+  return tsSource(strings);
+};
 
 type Outcome = { readonly bound: string } | { readonly refused: string };
 
 /** The names of `candidates` that the generated files import, or the first line of the diagnostic that stopped generation. */
-function generateField(t: TestContext, row: { rules: string; declarations: string; field: string; imports?: string }, candidates: readonly string[]): Outcome {
+function generateField(t: TestContext, row: { rules: string; declarations: string; field: string; files?: Readonly<Record<string, string>> }, candidates: readonly string[]): Outcome {
   const { root, sourceRoot } = fixture(t);
   fs.writeFileSync(path.join(sourceRoot, 'rules.ts'), row.rules);
+  for (const [name, text] of Object.entries(row.files ?? {})) fs.writeFileSync(path.join(sourceRoot, name), text);
   fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({
     name: 'A',
     imports: verbatim(`import type { TSerde, TValidation } from '@exprtlabs/golem/tags';\nimport { ${candidates.join(', ')} } from './rules.js';\n${row.declarations}`),
@@ -63,6 +67,18 @@ const droppedRows = {
   'a tag that a generic tag alias takes as its argument': { declarations: `type Tagged<F extends (...arguments_: never[]) => boolean> = string & TValidation<F>;\ntype Box<T> = { v: T };\n`, field: `Box<Tagged<typeof a>>['v']${beside}` },
   'an object that an inferred member wraps': { declarations: `declare function tagged(): string & TValidation<typeof a>;\nclass Holder { held = { inner: tagged() }; }\ntype ValueOf<T> = T extends { held: { inner: infer V } } ? V : never;\ntype Box<T> = { v: ValueOf<T> };\n`, field: `Box<Holder>['v']${beside}` },
   'an array that an inferred member wraps': { declarations: `declare function tagged(): string & TValidation<typeof a>;\nclass Holder { held = [tagged()]; }\ntype ValueOf<T> = T extends { held: (infer V)[] } ? V : never;\ntype Box<T> = { v: ValueOf<T> };\n`, field: `Box<Holder>['v']${beside}` },
+  'a tag function that a type alias of typeof gives a generic tag alias': { declarations: `type Fa = typeof a;\ntype Checked<F extends (...arguments_: never[]) => boolean> = string & TValidation<F>;\ndeclare function tagged(): Checked<Fa>;\nclass Holder { held = tagged(); }\n${valueOf}type Box<T> = { v: ValueOf<T> };\n`, field: `Box<Holder>['v']${beside}` },
+  'a tag function that a generic call infers from its argument': { declarations: `declare function tag<F extends (v: string) => boolean>(f: F): string & TValidation<F>;\nclass Holder { held = tag(a); }\n${valueOf}type Box<T> = { v: ValueOf<T> };\n`, field: `Box<Holder>['v']${beside}` },
+  'a tag function that an indexed access of a type argument gives the tag': { declarations: `type Wrap<T extends { f: (...arguments_: never[]) => boolean }> = string & TValidation<T['f']>;\ndeclare function tagged(): Wrap<{ f: typeof a }>;\nclass Holder { held = tagged(); }\n${valueOf}type Box<T> = { v: ValueOf<T> };\n`, field: `Box<Holder>['v']${beside}` },
+  'a renamed tag, and a call in a file that names neither typeof nor a tag': {
+    declarations: `import { held } from './helper.js';\n`,
+    field: `typeof held${beside}`,
+    files: {
+      'tags.ts': "export type { TValidation as Valid } from '@exprtlabs/golem/tags';\n",
+      'lib.ts': "import type { Valid } from './tags.js';\nexport declare function tag<F extends (v: string) => boolean>(f: F): string & Valid<F>;\n",
+      'helper.ts': "import { a } from './rules.js';\nimport { tag } from './lib.js';\nconst alias = a;\nexport const held = tag(alias);\n",
+    },
+  },
 } as const;
 
 for (const [name, row] of Object.entries(droppedRows)) test(`a tag function that a generic reader hides from the scan is never dropped, read through ${name}`, t => {
