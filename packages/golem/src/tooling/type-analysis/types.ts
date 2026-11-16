@@ -2,11 +2,12 @@ import path from 'node:path';
 import { assertNever } from '../../assert-never.js';
 import { fieldProvenance, isPropertyMapping, isReadonlySequenceType, readonlyPropertyNames, instantiatedTypeSource, substituteTypeNode, authoredPropertyTypeNode, type TypeSubstitutions } from './projections.js';
 import * as ts from '../typescript-ns.js';
-import { assertNoSymbolKey, declaredModelAlias, isSymbolKeyedProperty, diagnostic, namedDiagnostic, foreignModelReason, isGeneratedBrandKey, modelSpecificationForClass, resolveSymbol } from './symbols.js';
+import { assertNoSymbolKey, declaredModelAlias, isSymbolKeyedProperty, diagnostic, namedDiagnostic, foreignModelReason, isGeneratedBrandKey, modelSpecificationForClass } from './symbols.js';
+import { resolveSymbol } from '../resolve-symbol.js';
 import { projectionIdentity } from './graph.js';
 import { aliasProjectionName, isProjectionName, pascalIdentifier, policySuffix, headQualifiers, projectionBaseName, keysReadAlike, safeNameHint, unionVariantNaming } from './projection-names.js';
 import { commonDirectory, canonicalFilename, companionFilename, portableRelativeFilename, type ModelBoundary } from './project.js';
-import { packageSpecifier } from './package-specifier.js';
+import { packageSpecifier } from '../package-specifier.js';
 import { builtinClassDescriptor, type BuiltinClass } from '../builtin-classes.js';
 import { enclosureOf, findBuiltinClass, isGlobalDeclaration } from './builtin-class.js';
 import { compareText } from '../generator-core.js';
@@ -393,7 +394,7 @@ function assertValidationCompatibility(
 
 type ConstraintFamily = 'number' | 'string' | 'array' | 'object';
 
-/** The `Format` names that validate a number. `validation-runtime.ts` checks them; every other name checks a string. */
+/** The `Format` names that validate a number. `validation-formats.ts` checks them; every other name checks a string. */
 const NUMBER_FORMATS: ReadonlySet<string> = new Set(['int32', 'int64', 'float', 'double']);
 
 function constraintFamily(constraint: ModelConstraint): ConstraintFamily | undefined {

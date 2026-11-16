@@ -4,6 +4,7 @@ import { canonicalFilename, generatedFilename, isModelFileName, type ModelBounda
 import type { ModelSpecification } from './models.js';
 import { isGolemSourceFile, isGolemTagKey, propertyKey } from './tags.js';
 import { hasLocalForm, localFormMessage } from '../names.js';
+import { resolveSymbol } from '../resolve-symbol.js';
 
 /** An error with a code: the text is `<where> <code>: <message>`, and `code` is a property of the error. */
 export function codedError(code: string, message: string, where?: string): Error & { readonly code: string } {
@@ -28,16 +29,6 @@ export function diagnostic(
   message: string,
 ): Error & { readonly code: string } {
   return namedDiagnostic(sourceFile, node, `RUNM${code}`, message);
-}
-
-/** Resolve imported aliases without using the local spelling of a declaration. */
-export function resolveSymbol(checker: ts.TypeChecker, symbol: ts.Symbol | undefined): ts.Symbol | undefined {
-  const seen = new Set<ts.Symbol>();
-  while (symbol && (symbol.flags & ts.SymbolFlags.Alias) !== 0 && !seen.has(symbol)) {
-    seen.add(symbol);
-    symbol = checker.getAliasedSymbol(symbol);
-  }
-  return symbol;
 }
 
 /** The symbol at a node; a qualified name or a property access resolves to its last segment. */

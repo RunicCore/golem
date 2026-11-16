@@ -2,4 +2,6 @@
  * The runtime names that compiled validators import (entry `internal/validation-runtime`).
  * The path is internal: golem build requires each built-in generator at the runtime's exact version, so the names may change in any release.
  */
-export { checkFormat, codePointLength, duplicateItems, formatTest, globalInstanceTest, hasFiniteTime, instanceFields, isMultipleOf, isStateKey, jsonEqual } from './validation-runtime.js';
+export { codePointLength, duplicateItems, globalInstanceTest, hasFiniteTime, instanceFields, isMultipleOf, isStateKey } from './validation-runtime.js';
+export { checkFormat, formatTest } from './validation-formats.js';
+export { jsonEqual } from './json-equal.js';

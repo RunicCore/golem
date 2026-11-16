@@ -1,6 +1,6 @@
 import { basename, dirname, isAbsolute, join, normalize, relative, resolve as resolvePath, sep } from 'node:path';
 import { displayPath } from './generator-core.js';
-import { inNodeModules } from './type-analysis/path-identity.js';
+import { inNodeModules } from './path-identity.js';
 import type { CompilerOptions, Diagnostic, OpenProgramOptions, VirtualFiles } from './typescript-types.js';
 
 /** The diagnostic code of a configuration that matches no file. */

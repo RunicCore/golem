@@ -1,6 +1,7 @@
 import * as ts from '../typescript-ns.js';
 import type { ModelSpecification } from './models.js';
-import { resolveSymbol, isModelDeclarationReference } from './symbols.js';
+import { resolveSymbol } from '../resolve-symbol.js';
+import { isModelDeclarationReference } from './symbols.js';
 import { isDiscriminatorTag } from './tags.js';
 
 interface Provenance {

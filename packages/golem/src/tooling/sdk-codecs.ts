@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { code, exportedName, fileImports, ImportSource, join, lineBreak, nest, propertyKey, render, type Code } from './code.js';
 import { placeKey, type ValuePlace, type ValuePlaceKind } from '../client-runtime/value-places.js';
-import { portableRelativeFilename, relativeSpecifierOf } from './type-analysis/path-identity.js';
+import { portableRelativeFilename, relativeSpecifierOf } from './path-identity.js';
 
 /**
  * What both generated-SDK writers share: the codec module of an operation the client reads. One generator writes

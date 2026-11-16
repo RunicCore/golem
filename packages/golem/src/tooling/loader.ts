@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 
 import { displayPath } from './generator-core.js';
 import { openRewriteProject, TSX_FILE, TYPESCRIPT_FILE, withInlineSourceMap } from './rewrite-host.js';
-import { isInstalledFile } from './type-analysis/path-identity.js';
+import { isInstalledFile } from './path-identity.js';
 import type { RewriteProject } from './rewrite-host.js';
 
 /**

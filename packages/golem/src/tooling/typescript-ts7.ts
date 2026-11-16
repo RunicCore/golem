@@ -29,7 +29,7 @@ import { displayPath } from './generator-core.js';
 import { fileSignature, MISSING } from './input-watcher.js';
 import { affectsResolution, assertCommandLineParsed, assertConfigParsed, assertNoSourceFiles, canonical, collectTscDiagnostics, configReferences, declarationOutputOf, derivedConfigNames, emitWanted, flagPathOptions, flagsAsConfigOptions, hasDeclarationOutput, isBrokenReference, programRequest, REFERENCE_ERROR_CODES, referenceClosure, referencedConfigFile, hasVirtualFiles, ROOTS_CONFIG_SUFFIX, virtualLookup } from './typescript-config.js';
 import type { ConfigReference, ProgramRequest, ResolveAtCurrentFolder, VirtualLookup } from './typescript-config.js';
-import { assertPackageManifestsParse } from './type-analysis/package-specifier.js';
+import { assertPackageManifestsParse } from './package-specifier.js';
 import {
   API,
   CheckFlags as SyncCheckFlags,

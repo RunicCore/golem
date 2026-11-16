@@ -15,7 +15,7 @@ import { fileSignature, MISSING } from './input-watcher.js';
 import { affectsResolution, assertCommandLineParsed, assertConfigParsed, assertNoSourceFiles, canonical, hasVirtualFiles, virtualLookup, collectTscDiagnostics, configReferences, emitWanted, flagPathOptions, flagsAsConfigOptions, isDeclarationFile, programRequest, referencedConfigFile } from './typescript-config.js';
 import type { ConfigReference, ProgramConfig, ResolveAtCurrentFolder, VirtualLookup } from './typescript-config.js';
 import { selectedTypeScript } from './typescript-selection.js';
-import { assertPackageManifestsParse } from './type-analysis/package-specifier.js';
+import { assertPackageManifestsParse } from './package-specifier.js';
 import type * as Golem from './typescript-types.js';
 
 // The classic compiler's own objects. This build compiles against TypeScript 7, whose main export carries no classic

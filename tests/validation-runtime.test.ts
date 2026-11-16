@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { isKnownFormat } from '../packages/golem/src/validation-runtime.js';
+import { isKnownFormat } from '../packages/golem/src/validation-formats.js';
 import { checkFormat, codePointLength, jsonEqual } from '@exprtlabs/golem/internal/validation-runtime';
 import { schemaIssueMessage } from '@exprtlabs/golem/internal/generator-support';
 import type { SchemaIssueDetail } from '@exprtlabs/golem/validation';
