@@ -476,6 +476,11 @@ export function propertyDeclarations(checker: ts.TypeChecker, property: ts.Symbo
   return property.declarations ?? checker.getRootSymbols(property).flatMap(root => root.declarations ?? []);
 }
 
+/** The members that declare `properties`, each with the property that it declares. */
+export function declarationsOf(checker: ts.TypeChecker, properties: readonly ts.Symbol[]): ReadonlyMap<ts.Node, ts.Symbol> {
+  return new Map(properties.flatMap(property => propertyDeclarations(checker, property).map(declaration => [declaration, property] as const)));
+}
+
 /** Whether only a default library file declares `symbol`: a built-in type holds no tag of the user. */
 export function isDeclaredByDefaultLibrary(symbol: ts.Symbol | undefined, isDefaultLibraryFile: (file: ts.SourceFile) => boolean): boolean {
   const declarations = symbol?.declarations ?? [];
@@ -550,7 +555,8 @@ function membersBeside(checker: ts.TypeChecker, node: ts.IndexedAccessTypeNode, 
   const [own] = named;
   if (own === undefined) return undefined;
   const others = checker.getPropertiesOfType(checker.getTypeFromTypeNode(node.objectType)).filter(property => !named.includes(property));
-  return { declarations: new Map(others.flatMap(property => propertyDeclarations(checker, property).map(declaration => [declaration, property] as const))), own };
+  // `own` is any named property: `others` leaves out every named one, so no declaration in the map belongs to `own`, whichever it is.
+  return { declarations: declarationsOf(checker, others), own };
 }
 
 /**
