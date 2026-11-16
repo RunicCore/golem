@@ -678,3 +678,41 @@ export class OrdersController {
   });
   assert.equal(result.artifacts.length, 1);
 });
+
+test('a controller that reaches a model that imports the output of a later job by an alias stops with the cycle error in the first run and the next', async t => {
+  // protects: T-994 run 1 read the model and stopped with RUNM1058 on the missing SDK; run 2 read it from the stale SDK
+  const root = createControllerFixture(t, {
+    prefix: 'golem-ts-openapi-contract-',
+    packageName: 'golem-ts-openapi-contract-fixture',
+    tsconfig: {
+      compilerOptions: { target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', strict: true, experimentalDecorators: true, skipLibCheck: true, paths: { '@sdk/*': ['./sdk/*'] } },
+      include: ['src/**/*.ts'],
+    },
+    sourceFile: 'src/cart.controller.ts',
+    source: `import { Controller, Get } from '@nestjs/common';
+import type { TCart } from './cart.model.js';
+
+@Controller('carts')
+export class CartsController {
+  @Get()
+  list(): TCart { return undefined as never; }
+}
+`,
+    files: {
+      'src/cart.model.ts': "import type { IModel } from '@exprtlabs/golem/model';\nimport type { Money } from '@sdk/index.js';\nexport type TCart = IModel<{ money: Money }>;\n",
+    },
+  });
+  const run = (): Promise<unknown> => generate({
+    root,
+    output: path.join(root, 'openapi.json'),
+    openapiVersion: '3.2.0',
+    info: { title: 'Contract fixture', version: '1' },
+    profile: { validation: false },
+    programView: { laterOutputs: [path.join(root, 'sdk')] },
+  });
+
+  await assert.rejects(run(), /RUNM1084.*cart\.model\.ts/s);
+  fs.mkdirSync(path.join(root, 'sdk'));
+  fs.writeFileSync(path.join(root, 'sdk/index.ts'), 'export interface Money { amount: number; currency: string }\n');
+  await assert.rejects(run(), /RUNM1084.*cart\.model\.ts/s);
+});

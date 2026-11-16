@@ -699,11 +699,32 @@ function moduleSpecifiers(file: ts.SourceFile): ts.StringLiteral[] {
 }
 
 /**
- * The files of the program that lie under one of `outputs`, or that import a path under one by a relative import, directly or
- * through the files they import. A relative import is read by its text. Any other import links the files only when it resolves to a
- * project file, such as a `paths` alias of an intermediate file; an import that resolves to nothing, or into an output, says nothing,
- * because it would differ between a run before the output exists and one after. So the answer is the same in every run. The outputs
- * are canonical paths.
+ * The files that a module specifier names under `outputs`, as the compiler could probe them for a mapping such as a `paths` alias
+ * or a `baseUrl`: every tail of the specifier as a file with each TypeScript extension, or as a folder with an index file, under each output.
+ * Used as the virtual files of a lookup, so an import into an output resolves before the job has written the file.
+ */
+function outputFilesNamedBy(outputs: readonly string[], specifier: string): ReadonlySet<string> {
+  const segments = specifier.split('/');
+  const tails = segments.map((_, index) => segments.slice(index).join('/').replace(/\.[cm]?jsx?$/, ''));
+  const named = new Set<string>();
+  for (const output of outputs) {
+    named.add(output);
+    for (const tail of ['', ...tails]) {
+      const base = join(output, tail);
+      if (tail !== '') for (const extension of ['.ts', '.tsx', '.d.ts', '.mts', '.cts']) named.add(`${base}${extension}`);
+      named.add(join(base, 'index.ts'));
+      named.add(join(base, 'index.d.ts'));
+    }
+  }
+  return new Set([...named].map((file) => file.replace(/\\/g, '/')));
+}
+
+/**
+ * The files of the program that lie under one of `outputs`, or that import a path under one, directly or through the files they
+ * import. A relative import is read by its text. Any other import, such as a `paths` alias, is read by where it resolves: a file under an
+ * output counts, and so does an import that resolves to none but would resolve to a file under an output (the job has not written it
+ * yet, `outputFilesNamedBy`), so the answer is the same in every run. A bare import of a project file links the files through it. The
+ * outputs are canonical paths.
  */
 export function filesReadingOutputs(program: ts.Program, outputs: readonly string[]): ReadonlySet<string> {
   const files = program.getSourceFiles().filter((file) => !program.isSourceFileDefaultLibrary(file) && !inNodeModules(file.fileName));
@@ -718,7 +739,13 @@ export function filesReadingOutputs(program: ts.Program, outputs: readonly strin
     for (const specifier of moduleSpecifiers(file)) {
       if (!isRelativeSpecifier(specifier.text)) {
         const resolved = checker.resolveImport(specifier)?.resolvedFileName;
-        if (resolved !== undefined && names.has(resolved.replace(/\\/g, '/')) && !isUnderOutputs(outputs, resolved)) imported.push(resolved);
+        if (resolved === undefined) {
+          // Before the job has written the file the import resolves to none: a lookup that counts the files it would write finds it.
+          if (checker.resolveImport(specifier, outputFilesNamedBy(outputs, specifier.text)) !== undefined) excluded.add(file.fileName);
+        } else if (names.has(resolved.replace(/\\/g, '/'))) {
+          if (isUnderOutputs(outputs, resolved)) excluded.add(file.fileName);
+          else imported.push(resolved);
+        }
         continue;
       }
       const target = resolve(dirname(file.fileName), specifier.text);
