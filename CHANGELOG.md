@@ -218,6 +218,7 @@ This file is the complete list of changes. The documentation site's
 - A `oneOf` or `anyOf` with a `discriminator` that also holds a `{ const: null }` or `{ enum: [null] }` branch keeps its tag table, as one with `{ type: 'null' }` does. Before, the union lost its discriminator and decoded without the tag.
 - The string form of `uriVersioning` is refused with [`NEST1203`](docs/reference/diagnostics.md#nest1203) unless it is `URI` or `uri`, as the `type` of the object form is. Before, it took any case, such as `Uri`.
 - A whole `@Query()` typed with a model-level tag, such as `{ status: string } & PatternProperties<{ '^x-': string }>`, gives a `querystring` parameter on OpenAPI 3.2. Before, it stopped with [`NEST1107`](docs/reference/diagnostics.md#nest1107), because the key of the tag counted as a property that has no portable mapping.
+- `no-unresolved-refs` reports a discriminator `defaultMapping` pointer that resolves to nothing, as it does a `mapping` pointer. Before, a root document with such a `defaultMapping` passed this rule.
 
 ### Generation
 

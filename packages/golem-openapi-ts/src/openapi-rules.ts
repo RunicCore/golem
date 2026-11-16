@@ -65,7 +65,7 @@ function checkUnresolvedRefs(document: unknown): OpenApiProblem[] {
     onSchemaRef(keyword, reference, currentBase, pointer) { check(keyword, reference, currentBase, pointer); },
     onOpenApiRef(reference, pointer) { check('$ref', reference, null, pointer); },
     onDiscriminatorMapping(keyword, reference, currentBase, ownerPointer, property) {
-      if (keyword !== 'mapping' || isMappingComponentName(reference, rootSchemaNames)) return;
+      if (isMappingComponentName(reference, rootSchemaNames)) return;
       check(keyword, reference, currentBase, pointerJoin(ownerPointer, property));
     },
   });

@@ -424,3 +424,23 @@ test('no-unresolved-refs reports a discriminator mapping pointer that resolves t
     ['/components/schemas/Pet/discriminator/mapping/cat', "Can't resolve discriminator mapping #/components/schemas/Cat"],
   ]);
 });
+
+test('no-unresolved-refs reports a discriminator defaultMapping pointer that resolves to nothing', () => {
+  const document = documentBase('3.2.0', {
+    paths: {},
+    components: {
+      schemas: {
+        Dog: { type: 'object' },
+        Pet: {
+          oneOf: [{ $ref: '#/components/schemas/Dog' }],
+          discriminator: { propertyName: 'kind', defaultMapping: '#/components/schemas/Cat' },
+        },
+        Named: { oneOf: [{ $ref: '#/components/schemas/Dog' }], discriminator: { propertyName: 'kind', defaultMapping: 'Dog' } },
+      },
+    },
+  });
+  const problems = checkOpenApiRules(document).filter((problem) => problem.ruleId === 'no-unresolved-refs');
+  assert.deepEqual(problems.map((problem) => [problem.pointer, problem.message]), [
+    ['/components/schemas/Pet/discriminator/defaultMapping', "Can't resolve discriminator mapping #/components/schemas/Cat"],
+  ]);
+});
