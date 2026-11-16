@@ -7,17 +7,49 @@ import type { Language } from './options.js';
 // then, for a function that reaches a check the sanity level skips, the sanity flag, then, for a function that receives
 // an evaluation record (see `IrFunction`), the caller's record. Every call and
 // header goes through `functionParameters` and `callFunction`, so a change to the parameter list is made in one place.
-export const VALUE = identifierCode('v');
-export const PATH = identifierCode('p');
+
+/** A parameter of a generated function, and the name it takes when the body never reads it: a name that starts with `_` is left alone by the checker's unused-parameter rule. */
+interface Parameter {
+  readonly name: Code;
+  readonly unread: Code;
+}
+
+function parameter(letter: string): Parameter {
+  return { name: identifierCode(letter), unread: identifierCode(`_${letter}`) };
+}
+
+const VALUE_PARAMETER = parameter('v');
+const PATH_PARAMETER = parameter('p');
+const ISSUES_PARAMETER = parameter('i');
+const ALL_PARAMETER = parameter('a');
+const SANITY_PARAMETER = parameter('s');
+const INHERITED_PARAMETER = parameter('e');
+
+export const VALUE = VALUE_PARAMETER.name;
+export const PATH = PATH_PARAMETER.name;
 export const NEWLINE = code`\n`;
 export const COMMA = code`, `;
-export const ISSUES = identifierCode('i');
-export const ALL = identifierCode('a');
+export const ISSUES = ISSUES_PARAMETER.name;
+export const ALL = ALL_PARAMETER.name;
 /** True when only the shape is checked; a check of a value limit does not run. Absent or false: every check runs. */
-export const SANITY = identifierCode('s');
-export const INHERITED = identifierCode('e');
+export const SANITY = SANITY_PARAMETER.name;
+export const INHERITED = INHERITED_PARAMETER.name;
 // The record a function keeps or fills, and what it holds.
 export const EVALUATION = identifierCode('r');
+/** The length of the path when a function started, which a failure restores. */
+export const PATH_LENGTH = identifierCode('pl');
+
+/** What a body says about the names it holds: true when a line of it reads `name`. */
+export type Reads = (name: Code) => boolean;
+
+function named(declared: Parameter, reads: Reads): Code {
+  return reads(declared.name) ? declared.name : declared.unread;
+}
+
+/** The header name of the value of a fast check, which takes no other parameter. */
+export function valueParameter(reads: Reads): Code {
+  return named(VALUE_PARAMETER, reads);
+}
 
 /** What the generated file writes after a parameter, after a header, and after a constant besides its code: types in TypeScript, nothing in JavaScript. */
 export interface Notation {
@@ -63,14 +95,14 @@ export const NOTATIONS: Readonly<Record<Language, Notation>> = {
   js: { value: NONE, path: NONE, issues: NONE, all: NONE, sanity: NONE, record: NONE, verdict: NONE, wrapperResult: NONE, read: NONE, fastCheck: NONE, literals: NONE, tagLists: NONE },
 };
 
-export function functionParameters(fn: IrFunction, notation: Notation): Code {
+export function functionParameters(fn: IrFunction, notation: Notation, reads: Reads): Code {
   return join([
-    code`${VALUE}${notation.value}`,
-    code`${PATH}${notation.path}`,
-    code`${ISSUES}${notation.issues}`,
-    code`${ALL}${notation.all}`,
-    ...(fn.sanity ? [code`${SANITY}${notation.sanity}`] : []),
-    ...(fn.receives ? [code`${INHERITED}${notation.record}`] : []),
+    code`${named(VALUE_PARAMETER, reads)}${notation.value}`,
+    code`${named(PATH_PARAMETER, reads)}${notation.path}`,
+    code`${named(ISSUES_PARAMETER, reads)}${notation.issues}`,
+    code`${named(ALL_PARAMETER, reads)}${notation.all}`,
+    ...(fn.sanity ? [code`${named(SANITY_PARAMETER, reads)}${notation.sanity}`] : []),
+    ...(fn.receives ? [code`${named(INHERITED_PARAMETER, reads)}${notation.record}`] : []),
   ], COMMA);
 }
 

@@ -7,9 +7,10 @@ import type { GolemJob } from '#golem/config';
 import { runPipeline } from '#golem/cli';
 import { applyJob, loadInventory } from '#golem/outputs';
 import { canonicalPath } from '#golem/plan-support';
-import { createFixtureProject, linkGolemPackages } from './fixture-project.js';
+import { createFixtureProject, linkGolemPackages, linkProjectPackages } from './fixture-project.js';
 import { configFor, jobWithFacts } from './support/output-config.js';
 import { writeFixture } from './support/consumer.js';
+import { workspace } from './support/process.js';
 
 function pipelineFixture(t: TestContext): { root: string; config: string; external: string; source: string } {
   // The tsconfig folder `outer` holds the project (the folder of golem.yaml) and `external`, where the outputs go.
@@ -20,6 +21,9 @@ function pipelineFixture(t: TestContext): { root: string; config: string; extern
   fs.mkdirSync(root, { recursive: true });
   fs.writeFileSync(path.join(root, 'package.json'), '{"name":"output-paths-fixture","type":"module"}');
   linkGolemPackages(root, ['golem', 'golem-model', 'golem-openapi-ts']);
+  // The validators module in `external` imports @exprtlabs/golem. Node looks for it in the folders above the module, which
+  // are `external` and `outer`, never in `project`: the tsconfig folder `outer` needs its own node_modules, as in a real build.
+  linkProjectPackages(outer, { '@exprtlabs/golem': path.join(workspace, 'packages/golem') });
   writeFixture(root, { validation: true }, false);
 
   // The model job scans the folder of golem.yaml, so its source lies there.

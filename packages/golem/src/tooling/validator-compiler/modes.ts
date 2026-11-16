@@ -2,16 +2,23 @@ import { code, join, literal as literalCode, nameOf, type Code } from '../code.j
 import type { IrObject, IrPatternProperty } from './ir.js';
 import { rt } from '../rt.js';
 import { PRESENT_KEY, presentKeysCode } from '../union-conversion.js';
-import { PATH, COMMA, ISSUES, ALL, callFunction, type CallArguments } from './function-names.js';
+import { PATH, PATH_LENGTH, COMMA, ISSUES, ALL, callFunction, type CallArguments } from './function-names.js';
 import { instanceFieldsOf, stateTest } from './local-helpers.js';
 import { patternExpression } from './module-state.js';
 import type { FunctionWriter } from './function-writer.js';
 import type { FastPlan } from './fast-plan.js';
 
+/** A line that opens the body of a function, before the first check. */
+type Opening =
+  /** The line stays in every body. */
+  | { readonly kind: 'always'; readonly line: Code }
+  /** The line declares `local` and stays only in a body that reads it. */
+  | { readonly kind: 'unless unread'; readonly line: Code; readonly local: Code };
+
 /** What a written function does when a check fails. */
 interface FailMode {
   /** The lines that open the body, before the first check. */
-  readonly start: readonly Code[];
+  readonly start: readonly Opening[];
   /** The line that ends the body once every check passed or was reported. */
   readonly end: Code;
   /** The statements of a check that failed with the issue `fields` at `path`. */
@@ -153,7 +160,7 @@ export interface WriterMode {
 
 const runtime = rt['validation-runtime'];
 
-const REPORT_FAILURE = code`ok = false; if (!${ALL}) { ${PATH}.length = pl; return false; }`;
+const REPORT_FAILURE = code`ok = false; if (!${ALL}) { ${PATH}.length = ${PATH_LENGTH}; return false; }`;
 
 export function objectPresence(value: Code, captured: readonly Capture[] = []): PresenceReader {
   const locals = new Map(captured);
@@ -174,7 +181,7 @@ function readCaptured(writer: FunctionWriter, value: Code, captured: readonly Ca
 /** The full validator: a failed check pushes its issue, then returns at once unless all errors are wanted; a key is read through `isPresent`. */
 export const FULL_VALIDATOR: WriterMode = {
   fail: {
-    start: [code`const pl = ${PATH}.length;`, code`let ok = true;`],
+    start: [{ kind: 'unless unread', line: code`const ${PATH_LENGTH} = ${PATH}.length;`, local: PATH_LENGTH }, { kind: 'always', line: code`let ok = true;` }],
     end: code`return ok;`,
     issue: (fields, path) => [code`${ISSUES}.push({ path: ${path}, ${fields} });`, REPORT_FAILURE],
     fail: () => REPORT_FAILURE,

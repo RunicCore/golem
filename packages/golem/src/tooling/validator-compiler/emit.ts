@@ -1,7 +1,7 @@
 import { code, helperDefinitions, identifier as identifierCode, join, nameOf, NameTable, render, runtimeImports, type Code, type ImportOptions } from '../code.js';
 import type { IrFunction, IrModule } from './ir.js';
 import { compareText } from '../generator-core.js';
-import { VALUE, NEWLINE, SANITY, NOTATIONS, functionParameters, FunctionSlots, callFunction, type CalleeSlot, type CheckForm, type Notation } from './function-names.js';
+import { NEWLINE, SANITY, NOTATIONS, functionParameters, valueParameter, FunctionSlots, callFunction, type CalleeSlot, type CheckForm, type Notation } from './function-names.js';
 import type { Language } from './options.js';
 import { FULL_VALIDATOR, fastCheckMode, type WriterMode } from './modes.js';
 import { ModuleState } from './module-state.js';
@@ -86,12 +86,13 @@ function functionName(index: number, schemaName: string | undefined, form: Check
 function writeFunction(state: ModuleState, module: IrModule, target: (id: number) => number, calleeSlot: CalleeSlot, fn: IrFunction, mode: WriterMode): WrittenFunction {
   const writer = new FunctionWriter(state, module.functions, target, fn, mode, calleeSlot);
   const body = writer.write();
-  return { id: fn.id, parameters: functionParameters(fn, state.notation), body, calls: writer.calls };
+  return { id: fn.id, parameters: functionParameters(fn, state.notation, name => writer.reads(name)), body, calls: writer.calls };
 }
 
 function writeFastCheck(state: ModuleState, module: IrModule, target: (id: number) => number, calleeSlot: CalleeSlot, fn: IrFunction, mode: WriterMode): WrittenFastCheck {
   const writer = new FunctionWriter(state, module.functions, target, fn, mode, calleeSlot);
-  return { body: writer.write(), calls: writer.calls, fastCalls: writer.fastCalls };
+  const body = writer.write();
+  return { parameter: code`${valueParameter(name => writer.reads(name))}${state.notation.value}`, body, calls: writer.calls, fastCalls: writer.fastCalls };
 }
 
 /** A root that validates conjunctively (see `conjunctiveValidation`) and has a structure check: the functions of its two passes. */
@@ -211,8 +212,10 @@ function writeStaying({ module, target, fastMode, slots, notation }: Emission, {
     const { parameters, body } = writeFunction(state, module, target, stayingSlot, module.functions[id], FULL_VALIDATOR);
     return code`function ${nameOf(slots.of(id, 'full'))}(${parameters})${notation.verdict} {\n${body}`;
   });
-  const fastFunctions = fastMode === undefined ? [] : [...fastKept].sort((first, second) => first - second)
-    .map(id => code`function ${nameOf(slots.of(id, 'fast'))}(${VALUE}${notation.value})${notation.verdict} {\n${writeFastCheck(state, module, target, stayingSlot, module.functions[id], fastMode).body}`);
+  const fastFunctions = fastMode === undefined ? [] : [...fastKept].sort((first, second) => first - second).map(id => {
+    const { parameter, body } = writeFastCheck(state, module, target, stayingSlot, module.functions[id], fastMode);
+    return code`function ${nameOf(slots.of(id, 'fast'))}(${parameter})${notation.verdict} {\n${body}`;
+  });
   return { state, functions, fastFunctions };
 }
 

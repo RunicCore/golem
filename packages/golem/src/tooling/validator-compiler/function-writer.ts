@@ -1,5 +1,5 @@
 import { assertNever } from '../../assert-never.js';
-import { code, identifier as identifierCode, join, joinIndented, literal as literalCode, type Code, type IndentedLine } from '../code.js';
+import { code, identifier as identifierCode, join, joinIndented, literal as literalCode, mentions, type Code, type IndentedLine } from '../code.js';
 import type { IrArray, IrCheck, IrClass, IrDiscriminator, IrFunction, IrInstance, IrNumber, IrObject, IrPatternProperty, IrSchema, IrString, IrType, IrTypeName, IrUnion, IrValidation } from './ir.js';
 import { rt, runtimeFunctionCode } from '../rt.js';
 import { VALUE, PATH, NEWLINE, COMMA, ISSUES, ALL, SANITY, INHERITED, EVALUATION, type CalleeSlot, type CallArguments } from './function-names.js';
@@ -90,18 +90,33 @@ export class FunctionWriter {
     this.record = fn.collects || fn.receives ? EVALUATION : undefined;
   }
 
-  /** The body of the function, without its header line. */
+  /**
+   * The body of the function, without its header line. A local that no line reads is not declared, so the function holds
+   * nothing the checker's unused rules flag; `reads` then tells which parameters the body reads.
+   */
   public write(): Code {
-    for (const start of this.mode.fail.start) this.line(start);
-    if (this.fn.collects) this.line(code`const ${EVALUATION} = ${runtime.newEvaluation}();`);
-    else if (this.fn.receives) this.line(code`const ${EVALUATION} = ${INHERITED} ?? ${runtime.newEvaluation}();`);
     this.schema(this.fn.body, VALUE);
     // A function that both keeps a record and receives one hands what it evaluated to its caller once it passed.
     if (this.fn.collects && this.fn.receives) this.line(code`if (ok && ${INHERITED} !== undefined) ${runtime.mergeEvaluation}(${INHERITED}, ${EVALUATION});`);
     // A `false` schema has already left the function in a mode that leaves at a failure.
     if (this.fn.body.kind !== 'never' || !this.mode.fail.leaves) this.line(this.mode.fail.end);
+    const opening = this.mode.fail.start.filter((open) => open.kind === 'always' || this.readsFrom(open.local, 0));
+    const record = this.fn.collects ? code`const ${EVALUATION} = ${runtime.newEvaluation}();` : this.fn.receives ? code`const ${EVALUATION} = ${INHERITED} ?? ${runtime.newEvaluation}();` : undefined;
+    const head = [...opening.map(({ line }) => line), ...(record === undefined || !this.readsFrom(EVALUATION, 0) ? [] : [record])];
+    this.lines.unshift(...head.map(body => ({ spaces: 2, body })));
     this.lines.push({ spaces: 0, body: code`}` });
     return joinIndented(this.lines, NEWLINE);
+  }
+
+  /** True when a line from `from` on reads `name`: the same Code, as `mentions` says. */
+  private readsFrom(name: Code, from: number): boolean {
+    for (let index = from; index < this.lines.length; index++) if (mentions(this.lines[index].body, name)) return true;
+    return false;
+  }
+
+  /** True when a line of the body reads `name`; asked after `write`, it tells which parameters the header names. */
+  public reads(name: Code): boolean {
+    return this.readsFrom(name, 0);
   }
 
   /** Writes `statement` at `depth`, the current depth by default; a `} else {` line sits at its block's opener's depth. */
@@ -118,6 +133,17 @@ export class FunctionWriter {
   public close(): void {
     this.depth--;
     this.line(code`}`);
+  }
+
+  /**
+   * Writes the local `member`, which holds `read`, and then `body`, which checks it. A local that no line of `body` reads
+   * is left out: the schema `false` reads no value, it only fails.
+   */
+  private memberLocal(member: Code, read: Code, body: () => void): void {
+    const declaration = this.lines.length;
+    this.line(code`const ${member} = ${read};`);
+    body();
+    if (!this.readsFrom(member, declaration + 1)) this.lines.splice(declaration, 1);
   }
 
   /** A block that is left out when `body` writes nothing, as when a check only marks what it evaluates and nothing reads the mark. */
@@ -598,11 +624,12 @@ export class FunctionWriter {
       this.issue(code`code: 'unknownKey', key: ${key}`, code`[...${PATH}, ${key}]`);
     } else {
       const schema = additional.schema;
-      if (list.kind !== 'unread') {
-        this.line(code`const ${member} = ${value}[${key}];`);
+      const checkMember = (): void => this.atChild(key, () => this.schema(schema, member));
+      if (list.kind === 'unread') checkMember();
+      else this.memberLocal(member, code`${value}[${key}]`, () => {
         if (list.kind === 'raw') this.line(code`if (${member} === undefined) continue;`);
-      }
-      this.atChild(key, () => this.schema(schema, member));
+        checkMember();
+      });
     }
     this.close();
   }
@@ -632,8 +659,7 @@ export class FunctionWriter {
       this.mark(record => code`${record}.keys.add(${literalCode(property.key)});`);
       if (schema.kind !== 'always') {
         const member = this.fresh('member');
-        this.line(code`const ${member} = ${presence.read(property.key)};`);
-        this.atChild(literalCode(property.key), () => this.schema(schema, member));
+        this.memberLocal(member, presence.read(property.key), () => this.atChild(literalCode(property.key), () => this.schema(schema, member)));
       }
       if (guarded) this.close();
     }
@@ -652,8 +678,9 @@ export class FunctionWriter {
       if (entry.schema.kind !== 'always') {
         const schema = entry.schema;
         const member = held ?? this.fresh('member');
-        if (held === undefined) this.line(code`const ${member} = ${value}[${key}];`);
-        this.atChild(key, () => this.schema(schema, member));
+        const checkMember = (): void => this.atChild(key, () => this.schema(schema, member));
+        if (held === undefined) this.memberLocal(member, code`${value}[${key}]`, checkMember);
+        else checkMember();
       }
       this.close();
     }
@@ -687,8 +714,7 @@ export class FunctionWriter {
         this.issue(code`code: 'unknownKey', key: ${key}`, code`[...${PATH}, ${key}]`);
       } else {
         const member = this.fresh('member');
-        this.line(code`const ${member} = ${value}[${key}];`);
-        this.atChild(key, () => this.schema(schema, member));
+        this.memberLocal(member, code`${value}[${key}]`, () => this.atChild(key, () => this.schema(schema, member)));
       }
       this.close();
       this.close();
