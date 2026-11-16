@@ -223,6 +223,19 @@ test('a #/components/schemas pointer in a non-root document names the component 
   ]);
 });
 
+test('a pointer in a non-root document does not bind into the resource that another document declares with the same $id', async (t) => {
+  // protects: T-986 the enclosing resource must be declared by the document of the pointer
+  const directory = createFixtureProject(t, 'golem-loader-shared-id-');
+  const id = 'https://schemas.example/money';
+  writeOpenApiDocument(directory, { Money: { $id: id, $defs: { X: { type: 'number' } } } }, 'b.json');
+  writeOpenApiDocument(directory, { Other: { $id: id, properties: { p: { $ref: '#/$defs/X' } } } }, 'c.json');
+  const document = root({ components: { schemas: { A: { $ref: './b.json#/Money' }, B: { $ref: './c.json#/Other' } } } });
+  await assert.rejects(
+    () => loadReferenceGraph(writeOpenApiDocument(directory, document, 'api.json'), document),
+    /^Error: Can't resolve \$ref #\/\$defs\/X \(c\.json#\/Other\/properties\/p\/\$ref\)$/,
+  );
+});
+
 test('a remote ref inside a local file is blocked when remoteHosts lists no host', async (t) => {
   // protects: F-176 and R5 a remote reference inside a local file follows the same rule as one in the root document
   const directory = createFixtureProject(t, 'golem-loader-nested-remote-');

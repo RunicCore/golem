@@ -408,7 +408,8 @@ async function loadGraph(
         : undefined,
       resource: () => {
         const resource = resourceIds.get(stripFragment(schemaBase));
-        return resource && at(resource.uri, `${resource.pointer}${pointer}`);
+        // The first document that declares an `$id` owns it; a pointer in another document names nothing there.
+        return resource?.uri === documentUri ? at(documentUri, `${resource.pointer}${pointer}`) : undefined;
       },
       document: () => at(documentUri, pointer),
     });
