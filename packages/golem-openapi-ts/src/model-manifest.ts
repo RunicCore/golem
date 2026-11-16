@@ -2,7 +2,7 @@ import { reachesRecursiveNode } from '@exprtlabs/golem/internal/emitter';
 import type { SchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
 import type { CodecSchemaClosureEntry } from '@exprtlabs/golem/internal/validation-plan';
 import type { JsonSchema } from '@exprtlabs/golem/internal/schema';
-import { sourceDigest } from '@exprtlabs/golem/internal/generator-support';
+import { isRecord, sourceDigest } from '@exprtlabs/golem/internal/generator-support';
 import { asRecord, isJsonObject, objectEntries } from './json.js';
 import { compareText } from '@exprtlabs/golem/generator-api';
 import { identifier } from '@exprtlabs/golem/internal/generator-support';
@@ -10,6 +10,7 @@ import type { GolemModeManifest, SdkOperationValidation, SdkOperationValue } fro
 import type { OperationValidationSchemas } from './client/emit.js';
 import type { NormalizedOperation } from './normalize.js';
 import { GENERATOR_NAME, PACKAGE_VERSION } from './package-info.js';
+import type { OpenApiModeKind } from './plan.js';
 import type { OpenApiGenerationProfile } from './profile.js';
 import { requireProfile } from './profile.js';
 import {
@@ -20,7 +21,7 @@ import {
   modelEnv,
   modelStableId,
 } from './model-resolution.js';
-import { uncarriedOf } from './model-schema-graph.js';
+import { parseValueKey, uncarriedOf } from './model-schema-graph.js';
 import { resolveLocal } from './normalize.js';
 
 /**
@@ -34,11 +35,12 @@ function golemModeGraph(document: unknown, analysis: OpenApiModelAnalysis, sdk: 
   for (const operation of sdk.operations) {
     const values: SdkOperationValue[] = [];
     for (const [key, node] of analysis.convertedNodeIds) {
-      const [name, ...at] = JSON.parse(key) as [string, ...string[]];
-      if (name !== operation.name) continue;
+      const place = parseValueKey(key);
+      if (place === undefined) throw new TypeError(`The key ${key} of a converted value is not the key of a body, a parameter or a response header.`);
+      if (place.operation !== operation.name) continue;
       const input = analysis.graphInputs.values.get(key);
       const inline = input && { ...(input.name === undefined ? {} : { name: input.name }), descriptor: JSON.stringify(input.descriptor) };
-      values.push({ at, node, ...(inline ? { inline } : {}) });
+      values.push({ at: place.at, node, ...(inline ? { inline } : {}) });
     }
     const bundle = sdk.validation?.bundles.get(operation.name);
     const validation: SdkOperationValidation | undefined = bundle && {
@@ -104,7 +106,7 @@ export function generateModelManifest(
   document: unknown,
   profile: OpenApiGenerationProfile,
   modelAnalysis: OpenApiModelAnalysis,
-  mode: 'standalone' | 'golem' = 'standalone',
+  mode: OpenApiModeKind = 'standalone',
   golem: GolemModeOperations = { operations: [], validation: undefined },
 ): unknown {
   profile = requireProfile(profile);
@@ -160,7 +162,7 @@ export function openApiValidationSchemaClosure(
     if (value === null || typeof value !== 'object') return value;
     const result = Object.create(null) as Record<string, unknown>;
     for (const [key, child] of Object.entries(value)) {
-      if (key === '$defs' && child !== null && typeof child === 'object' && !Array.isArray(child)) {
+      if (key === '$defs' && isRecord(child)) {
         const definitions = Object.create(null) as Record<string, unknown>;
         for (const [name, schema] of Object.entries(child)) {
           const node = schemaGraph.nodeByCodecId(name);

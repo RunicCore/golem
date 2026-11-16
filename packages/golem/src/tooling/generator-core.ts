@@ -1,13 +1,24 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { inspect } from 'node:util';
 import YAML from 'yaml';
-import { canonicalPath, displayPath, isInsideDirectory, isRecord } from './plan-support.js';
+import { assertNever } from '../assert-never.js';
+import { canonicalPath, displayPath, isInsideDirectory, isRecord, nonempty } from './plan-support.js';
 import type { HookParticipants } from './extension-hooks.js';
 import type { JobFacts, ProgramView } from './job-facts.js';
 
 // The helpers live in plan-support, which plan entries may import; the rest of core reads them here.
-export { canonicalPath, displayPath, isInsideDirectory, isRecord };
+export { canonicalPath, displayPath, isInsideDirectory, isRecord, nonempty };
+export { recordOrUndefined } from '../record.js';
+
+/** The `version` of the package that holds the module at `moduleUrl` (`import.meta.url`): its package.json lies one folder above the module's folder. */
+export function readOwnPackageVersion(moduleUrl: string): string {
+  const packageJsonPath = fileURLToPath(new URL('../package.json', moduleUrl));
+  const manifest: unknown = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
+  if (isRecord(manifest) && typeof manifest.version === 'string') return manifest.version;
+  throw new TypeError(`${displayPath(packageJsonPath)} is missing a string version`);
+}
 
 /** Canonical text order: by UTF-16 code unit, so output does not depend on the machine's locale or ICU data. */
 export function compareText(left: string, right: string): number {
@@ -49,11 +60,8 @@ export interface ResolvedGolemProfile extends GolemProfile {
   readonly unknownFormats: 'warn' | 'error';
 }
 
-/** The validation levels from the lowest to the highest; a model or call may lower the level of its project, never raise it. */
-const VALIDATION_LEVELS: readonly GolemProfile['validation'][] = [false, 'sanity', true];
-
 export function isValidationLevel(value: unknown): value is GolemProfile['validation'] {
-  return VALIDATION_LEVELS.includes(value as GolemProfile['validation']);
+  return typeof value === 'boolean' || value === 'sanity';
 }
 
 /** The error for a validation level that is none of `true`, `false` and `'sanity'`; `label` names the key that held it. */
@@ -61,9 +69,14 @@ export function invalidValidationLevelMessage(label: string): string {
   return `${label} must be true, false or "sanity".`;
 }
 
-/** 0 for `false`, 1 for `'sanity'`, 2 for `true`: a level above another has the greater rank. */
-export function validationRank(level: GolemProfile['validation']): number {
-  return VALIDATION_LEVELS.indexOf(level);
+/** 0 for `false`, 1 for `'sanity'`, 2 for `true`: a level above another has the greater rank. A model or call may lower the level of its project, never raise it. */
+export function validationRank(level: GolemProfile['validation']): 0 | 1 | 2 {
+  switch (level) {
+    case false: return 0;
+    case 'sanity': return 1;
+    case true: return 2;
+    default: return assertNever(level);
+  }
 }
 
 /** Programmatic callers receive the same defaults and checks as YAML users. */
@@ -168,6 +181,16 @@ export interface GolemResult {
 /** Report a local input before attempting to read or resolve it. */
 export type InputObserver = (absolutePath: string) => void;
 
+declare const sessionResourceType: unique symbol;
+
+/** The name of a session resource, typed by the resource it holds: a request under the key reads back the kind of resource that the first request created. Make one with `sessionKey`. */
+export type SessionKey<Resource extends Disposable> = string & { readonly [sessionResourceType]: Resource };
+
+/** The key that names a resource of type `Resource` in a `GeneratorSession`. Make it once, in a constant, and request every resource of that name with it. */
+export function sessionKey<Resource extends Disposable>(name: string): SessionKey<Resource> {
+  return name as SessionKey<Resource>;
+}
+
 /**
  * Resources a provider keeps across the generation runs of one CLI pipeline
  * or watch session, such as a TypeScript compiler process. The session owner
@@ -176,12 +199,12 @@ export type InputObserver = (absolutePath: string) => void;
  * host saw change before each run.
  */
 export interface GeneratorSession {
-  retain<Resource extends Disposable>(key: string, create: () => Resource): Resource;
+  retain<Resource extends Disposable>(key: SessionKey<Resource>, create: () => Resource): Resource;
   /**
    * A resource that every job and core's rewrite share for the run or watch session, such as the one TypeScript program session.
    * The first request under `key` creates it; it is not tied to a job, so no job's removal closes it.
    */
-  share<Resource extends Disposable>(key: string, create: () => Resource): Resource;
+  share<Resource extends Disposable>(key: SessionKey<Resource>, create: () => Resource): Resource;
 }
 
 /** What a job receives from the host on top of its own options: a way to report each local input it reads, and the resources it keeps across runs. */

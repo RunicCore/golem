@@ -301,9 +301,9 @@ function fillServerUrl(client: string, server: ServerObject, choice: number | st
     }
   }
   return server.url.replace(/\{([^{}]+)\}/g, (placeholder, name: string) => {
-    if (!Object.hasOwn(declared, name)) return placeholder;
-    const variable = declared[name]!;
-    const value = Object.hasOwn(serverVariables, name) ? serverVariables[name]! : variable.default;
+    const variable = Object.hasOwn(declared, name) ? declared[name] : undefined;
+    if (variable === undefined) return placeholder;
+    const value = Object.hasOwn(serverVariables, name) ? serverVariables[name] : variable.default;
     if (variable.enum && !variable.enum.includes(value)) {
       throw new Error(`${client}Client server variable ${JSON.stringify(name)} must be one of ${variable.enum.join(', ')}; got ${JSON.stringify(value)}`);
     }
@@ -404,7 +404,7 @@ export class ClientRuntime {
       case 'status': return status === Number(expected);
       case 'range': return String(status)[0] === expected[0];
       case 'default': return true;
-      default: return false;
+      case undefined: return false;
     }
   }
 

@@ -1,5 +1,6 @@
 import { basename, dirname, isAbsolute, join, normalize, relative, resolve as resolvePath } from 'node:path';
 import { displayPath } from './generator-core.js';
+import { inNodeModules } from './type-analysis/path-identity.js';
 import type { OpenProgramOptions } from './typescript-types.js';
 
 /** The diagnostic code of a configuration that matches no file. */
@@ -79,9 +80,21 @@ export function assertNotSolutionTsconfig(configFile: string, parsed: { readonly
   throw referencesRefusal(configFile, parsed.projectReferences, named === 'yaml' ? `${lead} Name one referenced project in the tsconfig key of golem.yaml.` : `${lead} A golem.yaml names one project.`);
 }
 
+const DECLARATION_FILE = /\.d\.(?:[^./\\]+\.)?[cm]?ts(?:\.map)?$/;
+
+/** Whether a name is a declaration file or its map, such as `a.d.ts`, `a.d.mts.map` or `a.d.css.ts`: what an emit of declarations writes. */
+export function isDeclarationFile(filename: string): boolean {
+  return DECLARATION_FILE.test(filename);
+}
+
 /** A source `tsc` replaces with a declaration output when another project reads it through a reference: not a declaration file, not JSON. */
 export function hasDeclarationOutput(source: string): boolean {
-  return !/\.d\.[cm]?ts$/.test(source) && !/\.json$/.test(source);
+  return !isDeclarationFile(source) && !/\.json$/.test(source);
+}
+
+/** A change to a package manifest or an installed package invalidates cached module resolution. */
+export function affectsResolution(filename: string): boolean {
+  return basename(filename) === 'package.json' || inNodeModules(filename);
 }
 
 /**
@@ -185,7 +198,7 @@ export function flagsAsConfigOptions(flags: readonly string[], parse: (flags: re
 function parsedFlagOptions(flags: readonly string[], parse: (flags: readonly string[]) => ParsedArguments): Record<string, string | number | boolean | readonly string[]> {
   const options: Record<string, string | number | boolean | readonly string[]> = {};
   for (let index = 0; index < flags.length; index += 1) {
-    const flag = flags[index]!;
+    const flag = flags[index];
     const next = flags[index + 1];
     const together = next !== undefined && (!next.startsWith('-') || /^-\d+$/.test(next)) && (() => {
       const pair = parse([flag, next]);
@@ -211,17 +224,30 @@ export interface ProgramConfig {
   readonly overlays: ReadonlyMap<string, string>;
   /** Configuration paths the observer is not told about: virtual configurations are derived input. */
   readonly hidden: ReadonlySet<string>;
+  /** The tsconfig of the user that `configPath` is or extends: a file on disk that no overlay replaces, so its text is the user's to name in an error. */
+  readonly userConfigPath: string | undefined;
+}
+
+/** A program to open: its configuration and the root files that the caller asked for, as canonical paths without repeats. */
+export interface ProgramRequest extends ProgramConfig {
+  readonly rootNames: readonly string[];
+}
+
+/** The request of a program from its options: both compiler backends open it the same way. `host` tells which configuration files exist. */
+export function programRequest(options: OpenProgramOptions, host: { fileExists(filename: string): boolean }, referencesOf: (configPath: string, overlays: ReadonlyMap<string, string>) => readonly ConfigReference[]): ProgramRequest {
+  return { ...programConfig(options, (filename) => host.fileExists(filename), referencesOf), rootNames: [...new Set(options.sources.map(canonical))] };
 }
 
 /** The configuration a program opens, from the request: a default tsconfig for a folder without one, and a virtual configuration for option overrides. */
-export function programConfig(options: OpenProgramOptions, fileExists: (filename: string) => boolean, referencesOf: (configPath: string, overlays: ReadonlyMap<string, string>) => readonly ConfigReference[]): ProgramConfig {
+function programConfig(options: OpenProgramOptions, fileExists: (filename: string) => boolean, referencesOf: (configPath: string, overlays: ReadonlyMap<string, string>) => readonly ConfigReference[]): ProgramConfig {
   const overlays = new Map([...options.overlays ?? []].map(([filename, content]) => [canonical(filename), content]));
   const baseConfigPath = canonical(options.configFile === undefined
     ? join(options.root, 'tsconfig.json')
     : isAbsolute(options.configFile) ? options.configFile : join(options.root, options.configFile));
   const hidden = new Set<string>();
   if (options.configFile !== undefined && overlays.has(baseConfigPath)) hidden.add(baseConfigPath);
-  if (!overlays.has(baseConfigPath) && !fileExists(baseConfigPath)) {
+  const onDisk = !overlays.has(baseConfigPath) && fileExists(baseConfigPath);
+  if (!overlays.has(baseConfigPath) && !onDisk) {
     overlays.set(baseConfigPath, JSON.stringify({
       compilerOptions: {
         strict: true,
@@ -244,5 +270,5 @@ export function programConfig(options: OpenProgramOptions, fileExists: (filename
     overlays.set(configPath, JSON.stringify({ extends: `./${basename(baseConfigPath)}`, compilerOptions: options.compilerOptionOverrides, ...(references.length === 0 ? {} : { references }) }));
     hidden.add(configPath);
   }
-  return { configPath, overlays, hidden };
+  return { configPath, overlays, hidden, userConfigPath: onDisk ? baseConfigPath : undefined };
 }

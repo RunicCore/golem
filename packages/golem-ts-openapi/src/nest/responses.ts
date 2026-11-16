@@ -18,7 +18,7 @@ import { decoratorOptions, inApplicationOrder, readNumber, readString, type Deco
 import { evaluateStaticValue } from '@exprtlabs/golem/internal/static-value';
 import { NEST_COMMON, NEST_SWAGGER } from './packages.js';
 import { callArguments, decoratorsOf } from './symbols.js';
-import type { DecoratorInfo, NestAnalysisContext, NestHttpMethod, RequestBodyDescription, ResponseDescription, TypeReference } from './types.js';
+import { DEFAULT_MEDIA_TYPE, type DecoratorInfo, type NestAnalysisContext, type NestHttpMethod, type RequestBodyDescription, type ResponseDescription, type TypeReference } from './types.js';
 const DEFAULT_RESPONSE_STATUS: Record<NestHttpMethod, string> = {
   get: '200',
   post: '201',
@@ -159,7 +159,7 @@ function responseDefaults(
     instantiatedReturn === declaredReturn ? method.type : undefined,
   );
   const returnType = returned?.type;
-  const hasVoid = !returnType || (returnType.flags & (ts.TypeFlags.Void | ts.TypeFlags.Undefined)) !== 0;
+  const hasVoid = returned === undefined || returnType === undefined || (returnType.flags & (ts.TypeFlags.Void | ts.TypeFlags.Undefined)) !== 0;
   const type = hasVoid ? undefined : authoritativeTypeReference(context, {
     type: returnType,
     ...(returned.node ? { node: returned.node } : {}),
@@ -175,10 +175,6 @@ function responseDefaults(
     ...(type ? { type } : {}),
     explicit: false,
   }];
-}
-
-function swaggerResponseDecorators(decorators: readonly DecoratorInfo[]): readonly DecoratorInfo[] {
-  return decorators.filter(isSwaggerResponseDecorator);
 }
 
 /**
@@ -206,6 +202,13 @@ function overrideExistingFlag(
     .boolean('overrideExisting', TsToOpenApiDiagnosticCode.InvalidResponseStatus) ?? false;
 }
 
+/** The `content` an `@ApiResponse` or `@ApiBody` documents: the `content` option, else the `schema` option as JSON. Both options are read, so a wrong type in either one is reported. */
+function explicitContent(options: DecoratorOptions): Record<string, unknown> | undefined {
+  const content = options.record('content');
+  const schema = options.record('schema');
+  return content ?? (schema ? { [DEFAULT_MEDIA_TYPE]: { schema } } : undefined);
+}
+
 function parseSwaggerResponse(
   context: NestAnalysisContext,
   method: ts.MethodDeclaration,
@@ -220,8 +223,7 @@ function parseSwaggerResponse(
     ?? (scope === 'class' ? 'default' : runtimeStatus);
   const typed = swaggerTypeIsArrayTuple(context.checker, options.expression('type'), options.boolean('isArray'));
   const type = typed.type ? authoritativeTypeReference(context, typed.type) : undefined;
-  const content = options.record('content');
-  const schema = options.record('schema');
+  const content = explicitContent(options);
   const headers = options.record('headers');
   const description = options.documentationString('description') ?? '';
   return {
@@ -230,7 +232,7 @@ function parseSwaggerResponse(
     // Nest writes both keys even when absent, clearing earlier same-status types.
     type,
     isArray: typed.isArray,
-    ...(content ? { content } : schema ? { content: { 'application/json': { schema } } } : {}),
+    ...(content ? { content } : {}),
     ...(headers ? { headers: headersByName(headers) } : {}),
     explicit: true,
   };
@@ -272,7 +274,7 @@ function applySwaggerResponses(
 ): Map<string, ResponseDescription> {
   const result = new Map(inherited);
   // experimentalDecorators apply bottom-to-top, matching Nest Reflect.defineMetadata order.
-  for (const decorator of [...swaggerResponseDecorators(decorators)].reverse()) {
+  for (const decorator of inApplicationOrder(decorators.filter(isSwaggerResponseDecorator))) {
     const name = decorator.name ?? 'ApiResponse';
     if (name !== 'ApiResponse' && NAMED_RESPONSE_STATUS[name] === undefined) {
       invalidStatus(
@@ -403,8 +405,7 @@ export function parseRequestBody(
   if (!decorator) return undefined;
   const options = decoratorOptions(context, decorator);
   const typed = typeExpressionFromApiOption(context.checker, options.expression('type'));
-  const content = options.record('content');
-  const schema = options.record('schema');
+  const content = explicitContent(options);
   const description = options.documentationString('description');
   // @nestjs/swagger defaults an @ApiBody to `required: true`, whatever the parameter says.
   const required = options.boolean('required') ?? true;
@@ -413,7 +414,7 @@ export function parseRequestBody(
     required,
     ...(typed.type ? { type: authoritativeTypeReference(context, typed.type) } : {}),
     ...(typed.isArray || options.boolean('isArray') === true ? { isArray: true } : {}),
-    ...(content ? { content } : schema ? { content: { 'application/json': { schema } } } : {}),
+    ...(content ? { content } : {}),
   };
 }
 

@@ -2,8 +2,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { Code } from '@exprtlabs/golem/internal/emitter';
-import type { CodecsHostValue, GolemDiagnostic, GolemPlanEntry, InputObserver, JobFacts, GolemProfile, PlanContext, PlannedJob } from '@exprtlabs/golem/generator-api';
-import { canonicalPath, CODECS_HOST, isRecord, sdkCodecsFile } from '@exprtlabs/golem/internal/plan-support';
+import type { GolemDiagnostic, GolemPlanEntry, InputObserver, JobFacts, GolemProfile, PlanContext, PlannedJob } from '@exprtlabs/golem/generator-api';
+import { canonicalPath, CODECS_HOST, isRecord, nonempty, sdkCodecsFile } from '@exprtlabs/golem/internal/plan-support';
+import { OPENAPI_DATES, optionChoice, REFERENCE_LIMIT_DEFAULTS } from './plan-options.js';
 
 export interface OpenApiContext {
   readonly input: string;
@@ -16,7 +17,7 @@ export interface OpenApiContext {
   /** `temporal` maps `format: date-time`, `date` and `duration` to Temporal types; the default is `date`. */
   readonly dates?: 'date' | 'temporal';
   /** `standalone` (the default) is an SDK that needs no models job; `golem` leaves validators and conversion to the models job of the same golem.yaml. */
-  readonly mode?: 'standalone' | 'golem';
+  readonly mode?: OpenApiModeKind;
   /** Mode `golem` only: the absolute path of the file the models job writes for this SDK and the operation modules import (`sdkCodecsFile`). The config sets it. */
   readonly codecsFile?: string;
   readonly profile: GolemProfile;
@@ -25,6 +26,30 @@ export interface OpenApiContext {
 
 /** What the generator receives: the context of an SDK job without what the host adds. */
 export type OpenApiOptions = Omit<OpenApiContext, 'onInput'>;
+
+/** The mode of an SDK job after `resolveOpenApiMode`: a golem SDK always holds the file it imports its codecs from, and a standalone SDK holds none. */
+export type OpenApiMode = { readonly kind: 'standalone' } | { readonly kind: 'golem'; readonly codecsFile: string };
+export type OpenApiModeKind = OpenApiMode['kind'];
+
+/** The `mode` and `codecsFile` that a job context or a caller of `writeSdk` sets; the generator resolves them once, at its entry. */
+export interface OpenApiModeSetting {
+  readonly mode?: OpenApiModeKind | undefined;
+  readonly codecsFile?: string | undefined;
+}
+
+const OPENAPI_MODES = ['standalone', 'golem'] as const;
+
+/** The one place that checks the mode and its codecs file. A value a JavaScript caller passes is checked here, so the generator behind it reads a mode that holds what it needs. */
+export function resolveOpenApiMode({ mode, codecsFile }: OpenApiModeSetting): OpenApiMode {
+  switch (optionChoice(mode, OPENAPI_MODES, 'context.mode')) {
+    case undefined:
+    case 'standalone':
+      return { kind: 'standalone' };
+    case 'golem':
+      if (typeof codecsFile !== 'string' || !path.isAbsolute(codecsFile)) throw new TypeError('context.codecsFile must be an absolute path when mode is "golem"');
+      return { kind: 'golem', codecsFile };
+  }
+}
 
 /** The hook where an extension wraps the operations that an SDK job emits. Its participant type belongs to this package. */
 export const OPERATION_WRAPPER_HOOK = 'client.operationWrapper';
@@ -39,7 +64,7 @@ export interface OperationWrapper {
 export type OperationWrapperResult = { readonly wrapper: OperationWrapper } | { readonly diagnostic: GolemDiagnostic };
 
 /** The participant of `OPERATION_WRAPPER_HOOK`. It takes the mode of the SDK job. At most one extension fills the hook. */
-export type OperationWrapperParticipant = (mode: 'standalone' | 'golem') => OperationWrapperResult;
+export type OperationWrapperParticipant = (mode: OpenApiModeKind) => OperationWrapperResult;
 
 const BLOCK_KEYS: readonly string[] = ['sdks', 'extensions'];
 const SDK_KEYS: readonly string[] = ['input', 'output', 'name', 'remoteHosts', 'maxRefBytes', 'maxRefDocuments', 'refTimeoutMs', 'dates', 'mode'];
@@ -49,11 +74,6 @@ function keys(value: unknown, allowed: readonly string[], label: string): assert
   for (const key of Object.keys(value)) {
     if (!allowed.includes(key)) throw new Error(`Unknown ${label} key: ${key}.`);
   }
-}
-
-function nonempty(value: unknown, label: string): string {
-  if (typeof value !== 'string' || !value.trim()) throw new TypeError(`${label} must be a nonempty string.`);
-  return value;
 }
 
 function positive(value: unknown, fallback: number, label: string): number {
@@ -101,16 +121,15 @@ export const plan: GolemPlanEntry<OpenApiOptions> = {
       if (fs.existsSync(output) && !fs.statSync(output).isDirectory()) throw new Error(`${label}.output must be a directory.`);
       if (entry.remoteHosts !== undefined && !Array.isArray(entry.remoteHosts)) throw new Error(`${label}.remoteHosts must be an array of nonempty hostnames.`);
       const remoteHosts = (entry.remoteHosts ?? []).map((host: unknown) => remoteHost(nonempty(host, `${label}.remoteHosts`), `${label}.remoteHosts`));
-      if (entry.dates !== undefined && entry.dates !== 'date' && entry.dates !== 'temporal') throw new Error(`${label}.dates must be "date" or "temporal".`);
-      if (entry.mode !== undefined && entry.mode !== 'standalone' && entry.mode !== 'golem') throw new Error(`${label}.mode must be "standalone" or "golem".`);
-      const mode = entry.mode ?? 'standalone';
+      const dates = optionChoice(entry.dates, OPENAPI_DATES, `${label}.dates`);
+      const mode = optionChoice(entry.mode, OPENAPI_MODES, `${label}.mode`) ?? 'standalone';
       const options: OpenApiOptions = {
         input, output, profile, remoteHosts, mode,
         ...(entry.name === undefined ? {} : { name: nonempty(entry.name, `${label}.name`) }),
-        ...(entry.dates === undefined ? {} : { dates: entry.dates }),
-        maxRefBytes: positive(entry.maxRefBytes, 5 * 1024 * 1024, `${label}.maxRefBytes`),
-        maxRefDocuments: positive(entry.maxRefDocuments, 256, `${label}.maxRefDocuments`),
-        refTimeoutMs: positive(entry.refTimeoutMs, 10000, `${label}.refTimeoutMs`),
+        ...(dates === undefined ? {} : { dates }),
+        maxRefBytes: positive(entry.maxRefBytes, REFERENCE_LIMIT_DEFAULTS.maxRefBytes, `${label}.maxRefBytes`),
+        maxRefDocuments: positive(entry.maxRefDocuments, REFERENCE_LIMIT_DEFAULTS.maxRefDocuments, `${label}.maxRefDocuments`),
+        refTimeoutMs: positive(entry.refTimeoutMs, REFERENCE_LIMIT_DEFAULTS.refTimeoutMs, `${label}.refTimeoutMs`),
       };
       const facts: JobFacts = {
         id: `openapi:${path.relative(directory, output) || '.'}`,
@@ -131,7 +150,7 @@ export const plan: GolemPlanEntry<OpenApiOptions> = {
 
   /** A golem SDK imports the file that the codecs host writes for it; the job writes only the import. */
   link(job, { needed }) {
-    const host = needed[CODECS_HOST] as CodecsHostValue | undefined;
+    const host = needed[CODECS_HOST];
     if (host === undefined) return job;
     return { facts: job.facts, options: { ...job.options, codecsFile: sdkCodecsFile({ ...host, sdkOutput: job.options.output }) } };
   },

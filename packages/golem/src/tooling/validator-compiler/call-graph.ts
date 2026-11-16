@@ -1,4 +1,5 @@
-import type { IrArray, IrCheck, IrFunction, IrModule, IrObject, IrSchema } from './ir.js';
+import { assertNever } from '../../assert-never.js';
+import { ALWAYS, type IrArray, type IrCheck, type IrFunction, type IrModule, type IrObject, type IrSchema } from './ir.js';
 
 /**
  * The function that stands for `id`: a function whose body only passes the value to another one (a `$ref`, or a
@@ -149,7 +150,7 @@ function withoutLimits(check: IrCheck): IrCheck | undefined {
     case 'type': case 'literal': case 'class': case 'instance': case 'call': case 'allOf': case 'union': case 'not':
     case 'conditional': case 'dependentSchemas': case 'unevaluatedProperties': case 'unevaluatedItems':
       return check;
-    default: return unprojected(check);
+    default: return assertNever(check);
   }
 }
 
@@ -212,13 +213,6 @@ interface PassFunctions {
   readonly predicates: ReadonlyMap<number, number>;
 }
 
-const ALWAYS: IrSchema = { kind: 'always' };
-
-/** A new kind of check fails the build here, and generation, instead of being dropped from a pass. */
-function unprojected(check: never): never {
-  throw new Error(`The validator compiler projects no check of the kind ${JSON.stringify(check)}.`);
-}
-
 /**
  * Adds the structure check and the predicates-only pass of each function in `roots` that validates conjunctively (see
  * `conjunctiveValidation`), and of the functions it reaches. Both are ordinary IR functions: the structure check holds no
@@ -236,8 +230,10 @@ export function projectPasses(functions: readonly IrFunction[], roots: Iterable<
     return callees;
   };
   const covered = [...reachable([...roots].filter(id => eligible.has(id)), conjunctiveCallees)].sort((first, second) => first - second);
-  const structure = new Map(covered.map((id, index) => [id, functions.length + 2 * index] as const));
-  const predicates = new Map(covered.map((id, index) => [id, functions.length + 2 * index + 1] as const));
+  // The two functions of a root come after the module's own, in the order of `covered`.
+  const added = covered.map((id, index) => ({ id, structure: functions.length + 2 * index, predicates: functions.length + 2 * index + 1 }));
+  const structure = new Map(added.map(entry => [entry.id, entry.structure] as const));
+  const predicates = new Map(added.map(entry => [entry.id, entry.predicates] as const));
 
   const structureSchema = (schema: IrSchema): IrSchema => schema.kind !== 'checks' ? schema : { kind: 'checks', checks: schema.checks.flatMap(structureCheck) };
   const nested = (schema: IrSchema): IrSchema => {
@@ -254,7 +250,7 @@ export function projectPasses(functions: readonly IrFunction[], roots: Iterable<
       case 'type': case 'literal': case 'format': case 'string': case 'number': case 'class': case 'instance': case 'union':
       case 'not': case 'conditional': case 'dependentSchemas': case 'unevaluatedProperties': case 'unevaluatedItems':
         return [check];
-      default: return unprojected(check);
+      default: return assertNever(check);
     }
   };
 
@@ -295,34 +291,27 @@ export function projectPasses(functions: readonly IrFunction[], roots: Iterable<
       case 'type': case 'literal': case 'format': case 'string': case 'number': case 'class': case 'instance': case 'union':
       case 'not': case 'conditional': case 'dependentSchemas': case 'unevaluatedProperties': case 'unevaluatedItems':
         return [];
-      default: return unprojected(check);
+      default: return assertNever(check);
     }
   };
 
-  const added = covered.flatMap((id): IrFunction[] => {
-    const { name, body } = functions[id];
+  const passFunctions = added.flatMap((entry): IrFunction[] => {
+    const { name, body } = functions[entry.id];
     const named = name === undefined ? {} : { name };
     return [
-      { id: structure.get(id)!, ...named, body: { kind: 'checks', checks: body.kind === 'checks' ? body.checks.flatMap(structureCheck) : [] }, collects: false, receives: false },
-      { id: predicates.get(id)!, ...named, body: predicateSchema(body) ?? { kind: 'checks', checks: [] }, collects: false, receives: false },
+      { id: entry.structure, ...named, body: { kind: 'checks', checks: body.kind === 'checks' ? body.checks.flatMap(structureCheck) : [] }, collects: false, receives: false },
+      { id: entry.predicates, ...named, body: predicateSchema(body) ?? { kind: 'checks', checks: [] }, collects: false, receives: false },
     ];
   });
-  return { functions: [...functions, ...added], structure, predicates };
+  return { functions: [...functions, ...passFunctions], structure, predicates };
 }
 
 /**
- * The module as the sanity level checks it: the shape only, with no `s` flag. What `withoutLimits` names is left out. A
- * check that would reject more once its callee is relaxed is relaxed too, so sanity accepts all that full accepts:
- * `not` is left out, an untagged `oneOf` becomes an `anyOf`, `if` stops deciding when its own schema reaches a skipped
- * check (`IrConditional.relaxed`), and `contains` needs one match at most, or none. Each such check is judged on the
- * full module's reach, before anything is left out. A check that has nothing left to fail is left out too, unless
- * `unevaluatedProperties` or `unevaluatedItems` reads what it marks.
+ * One pass of `sanitize` over `functions`. `reached` holds the functions that reach a skipped check, judged on the full module.
+ * `voided` holds the functions whose schema is left with nothing to check, which `propertyNames` need not call.
  */
-export function sanitize(module: IrModule): IrModule {
-  const reached = reachingSkipped(module.functions);
+function sanityPass(functions: readonly IrFunction[], reached: ReadonlySet<number>, voided: ReadonlySet<number>): IrFunction[] {
   const relaxes = (ids: readonly (number | undefined)[]): boolean => ids.some(id => id !== undefined && reached.has(id));
-  // The functions whose schema is left with nothing to check: `propertyNames` need not call them.
-  let voided: ReadonlySet<number> = new Set();
   /** `record`: the value's function keeps or receives an evaluation record, so its checks mark what they evaluate. */
   const schemaOf = (schema: IrSchema, record: boolean): IrSchema => {
     if (schema.kind !== 'checks') return schema;
@@ -370,13 +359,28 @@ export function sanitize(module: IrModule): IrModule {
           && object.propertyNames === undefined && !(record && (object.properties.length > 0 || object.patternProperties.length > 0 || object.additional !== undefined));
         return bare ? [] : [object];
       }
-      default: return [check];
+      // These checks hold no nested schema and are not limited by the sanity level, so they stay as they are. `string` and `number` never get here: `withoutLimits` drops them.
+      case 'type': case 'literal': case 'format': case 'string': case 'number': case 'call': case 'dependentSchemas': case 'class': case 'instance': case 'validation':
+        return [check];
+      default: return assertNever(check);
     }
   };
-  const convert = (functions: readonly IrFunction[]): IrFunction[] => functions.map(fn => ({ ...fn, body: schemaOf(fn.body, fn.collects || fn.receives) }));
-  const first = convert(module.functions);
-  voided = new Set(first.filter(fn => fn.body.kind === 'always').map(fn => fn.id));
-  return { ...module, functions: voided.size === 0 ? first : convert(first) };
+  return functions.map(fn => ({ ...fn, body: schemaOf(fn.body, fn.collects || fn.receives) }));
+}
+
+/**
+ * The module as the sanity level checks it: the shape only, with no `s` flag. What `withoutLimits` names is left out. A
+ * check that would reject more once its callee is relaxed is relaxed too, so sanity accepts all that full accepts:
+ * `not` is left out, an untagged `oneOf` becomes an `anyOf`, `if` stops deciding when its own schema reaches a skipped
+ * check (`IrConditional.relaxed`), and `contains` needs one match at most, or none. Each such check is judged on the
+ * full module's reach, before anything is left out. A check that has nothing left to fail is left out too, unless
+ * `unevaluatedProperties` or `unevaluatedItems` reads what it marks.
+ */
+export function sanitize(module: IrModule): IrModule {
+  const reached = reachingSkipped(module.functions);
+  const first = sanityPass(module.functions, reached, new Set());
+  const voided = new Set(first.filter(fn => fn.body.kind === 'always').map(fn => fn.id));
+  return { ...module, functions: voided.size === 0 ? first : sanityPass(first, reached, voided) };
 }
 
 /** The ids reachable from `start` through `next`. */

@@ -18,7 +18,7 @@ import {
   type ModelBoundary,
   type ProgramInfo,
 } from '@exprtlabs/golem/internal/type-analysis';
-import { schemaForDescriptor, splitFirstFragmentToken } from '@exprtlabs/golem/internal/schema';
+import { SCHEMA_MAP_KEYWORDS, schemaForDescriptor, splitFirstFragmentToken } from '@exprtlabs/golem/internal/schema';
 import type {
   GolemArtifact,
   GolemDiagnostic,
@@ -27,7 +27,7 @@ import type {
   ResolvedGolemProfile,
 } from '@exprtlabs/golem/generator-api';
 import { resolveProfile } from '@exprtlabs/golem/generator-api';
-import { canonicalPath, displayPath } from '@exprtlabs/golem/internal/generator-support';
+import { canonicalPath, displayPath, recordOrUndefined } from '@exprtlabs/golem/internal/generator-support';
 import {
   GolemDiagnosticSeverity,
   diagnostic,
@@ -114,12 +114,6 @@ function asGolemDiagnostic(value: TsToOpenApiDiagnostic): GolemDiagnostic {
   };
 }
 
-function objectRecord(value: unknown): Record<string, unknown> | undefined {
-  return value !== null && typeof value === 'object' && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : undefined;
-}
-
 function componentReferenceName(value: string): string | undefined {
   const prefix = '#/components/schemas/';
   if (!value.startsWith(prefix)) return undefined;
@@ -129,7 +123,7 @@ function componentReferenceName(value: string): string | undefined {
 
 /** Maps whose keys are names the document author picks, so a key such as `example` or `$ref` there is a name, not a keyword. */
 const NAME_MAP_KEYWORDS: ReadonlySet<string> = new Set([
-  'properties', 'patternProperties', 'dependentSchemas', '$defs', 'definitions', 'encoding',
+  ...SCHEMA_MAP_KEYWORDS, 'encoding',
   'schemas', 'responses', 'parameters', 'requestBodies', 'headers', 'callbacks', 'pathItems', 'links', 'securitySchemes', 'webhooks', 'mediaTypes',
 ]);
 /** Keywords whose value is data, not a schema: a `$ref` key inside it is not a reference. */
@@ -151,7 +145,7 @@ function visitReferences(root: unknown, onReference: (reference: string) => void
       for (const item of value) visit(item);
       return;
     }
-    const mapping = key === 'discriminator' ? objectRecord((value as Record<string, unknown>).mapping) : undefined;
+    const mapping = key === 'discriminator' ? recordOrUndefined(Reflect.get(value, 'mapping')) : undefined;
     for (const target of Object.values(mapping ?? {})) if (typeof target === 'string') onReference(target);
     const namesOnly = key !== undefined && NAME_MAP_KEYWORDS.has(key);
     for (const [childKey, item] of Object.entries(value)) {
@@ -165,8 +159,8 @@ function visitReferences(root: unknown, onReference: (reference: string) => void
 function assertResolvedLocalReferences(
   document: Readonly<Record<string, unknown>>,
 ): void {
-  const components = objectRecord(document.components);
-  const schemas = objectRecord(components?.schemas) ?? {};
+  const components = recordOrUndefined(document.components);
+  const schemas = recordOrUndefined(components?.schemas) ?? {};
   visitReferences(document, reference => {
     const name = componentReferenceName(reference);
     if (name && schemas[name] === undefined) {
@@ -247,7 +241,7 @@ class ComponentSchemas {
     // describing the item first keeps that named identity intact and avoids
     // re-entering the subclass's runtime fields as an anonymous object.
     if (this.checker.isArrayType(type)) {
-      const itemType = this.checker.getTypeArguments(type as ts.TypeReference)[0] ?? this.checker.getAnyType();
+      const itemType = this.checker.getTypeArguments(type)[0] ?? this.checker.getAnyType();
       // `readonly T[]` and `(T[])` write the same array as `T[]`; its item node keeps the model's name.
       let written = typeNode;
       while (written && (ts.isParenthesizedTypeNode(written) || (ts.isTypeOperatorNode(written) && written.operator === ts.SyntaxKind.ReadonlyKeyword))) written = written.type;
@@ -376,14 +370,14 @@ class ComponentSchemas {
 
   /** The schemas of the model definitions that `document` reaches by `$ref` and does not already hold. */
   reachableSchemas(document: Readonly<Record<string, unknown>>): Readonly<Record<string, unknown>> {
-    const components = objectRecord(document.components);
-    const existingSchemas = objectRecord(components?.schemas) ?? {};
+    const components = recordOrUndefined(document.components);
+    const existingSchemas = recordOrUndefined(components?.schemas) ?? {};
     const pending = new Set<string>();
     collectComponentReferences(document, pending);
     const generated: Record<string, unknown> = {};
     const visited = new Set<string>();
-    while (pending.size > 0) {
-      const name = pending.values().next().value as string;
+    // A Set iteration also visits what the body adds, in insertion order.
+    for (const name of pending) {
       pending.delete(name);
       if (visited.has(name)) continue;
       visited.add(name);
@@ -409,7 +403,7 @@ function withSchemas(
 ): Readonly<Record<string, unknown>> {
   return Object.keys(schemas).length === 0
     ? document
-    : { ...document, components: { ...(objectRecord(document.components) ?? {}), schemas } };
+    : { ...document, components: { ...(recordOrUndefined(document.components) ?? {}), schemas } };
 }
 
 /** The document with the registered schemas and the model schemas it reaches. */

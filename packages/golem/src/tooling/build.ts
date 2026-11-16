@@ -8,7 +8,7 @@ import { codecKeysPath } from './generated-paths.js';
 import { displayPath, errorMessage, failureText, GolemDiagnosticSeverity, hasErrorCode, isInsideDirectory } from './generator-core.js';
 import type { GolemDiagnostic } from './generator-core.js';
 import { nodeSpecifierEdits } from './node-specifiers.js';
-import { atomicWrite } from './outputs.js';
+import { writeChanged } from './outputs.js';
 import { recordLoadedFiles } from './load-record.js';
 import { GeneratorSessionResources, runPipeline } from './pipeline.js';
 import type { PipelineState } from './pipeline.js';
@@ -242,12 +242,13 @@ const DECLARATION_MAP = /\.d\.[cm]?ts\.map$/;
 function rewriteDeclarations(session: ts.ProgramSession, project: Project, sources: readonly ts.SourceFile[], rootNames: readonly string[], flags: readonly string[], emitted: ts.MemoryEmit): ReadonlyMap<string, string> {
   // The seam names a source by its resolved path; the overlay takes the program's own file name for it, as the program reads it.
   const projectFiles = new Map(sources.filter((candidate) => !candidate.isDeclarationFile).map((candidate) => [path.resolve(candidate.fileName), candidate.fileName]));
-  const declarations = new Map<string, { readonly file: string; readonly text: string }>();
+  const declarations = new Map<string, { readonly file: string; readonly text: string; readonly origin: string }>();
   for (const [file, text] of emitted.files) {
     const kind = DECLARATION_MODULE.exec(file)?.[1];
-    const source = projectFiles.get(emitted.sources.get(file) ?? '');
-    if (kind === undefined || source === undefined) continue;
-    declarations.set(`${source.slice(0, source.length - path.extname(source).length)}.golem-declaration${kind}`, { file, text });
+    const origin = emitted.sources.get(file);
+    const source = origin === undefined ? undefined : projectFiles.get(origin);
+    if (kind === undefined || origin === undefined || source === undefined) continue;
+    declarations.set(`${source.slice(0, source.length - path.extname(source).length)}.golem-declaration${kind}`, { file, text, origin });
   }
   if (declarations.size === 0) return emitted.files;
   const overlays = new Map([...declarations].map(([module, { text }]) => [module, text]));
@@ -256,14 +257,14 @@ function rewriteDeclarations(session: ts.ProgramSession, project: Project, sourc
   const options = { compilerOptions: program.getCompilerOptions(), projectSources: new Set(sources.map((source) => source.fileName)) };
   const rewritten = new Map(emitted.files);
   const editMaps = new Map<string, SourceMapV3>();
-  for (const [module, { file, text }] of declarations) {
+  for (const [module, { file, text, origin }] of declarations) {
     const declaration = program.getSourceFile(module);
     if (declaration === undefined) throw new Error(`golem build could not read the declaration ${displayPath(file)} to change its import paths.`);
     const { edits } = nodeSpecifierEdits(declaration, checker, options);
     if (edits.length === 0) continue;
     const edited = applyRewrites(text, { edits, imports: [], importsAt: 0 }, file);
     rewritten.set(file, edited.code);
-    editMaps.set(emitted.sources.get(file)!, edited.map);
+    editMaps.set(origin, edited.map);
   }
   for (const [file, text] of emitted.files) {
     const edit = editMaps.get(emitted.sources.get(file) ?? '');
@@ -393,17 +394,10 @@ const JS_SOURCE_MAP = /\.[cm]?jsx?\.map$/;
 /** A JavaScript output. */
 const JS_OUTPUT = /\.[cm]?jsx?$/;
 
-/**
- * Write one output when it differs from the file on disk, so a file another tool changed is repaired and a file that is current keeps its time stamp.
- * A file that exists is written in place, as `tsc` does: a link stays a link and the mode of the file, such as an exec bit, stays. A new file is
- * published whole, so no reader sees half of it. A failure names the file.
- */
+/** Write one output of the build in place, as `tsc` does (`writeChanged`). A failure names the file. */
 function writeOutput(file: string, text: string): void {
   try {
-    const existing = fs.statSync(file, { throwIfNoEntry: false });
-    if (existing === undefined) atomicWrite(file, text);
-    else if (existing.isFile() && fs.readFileSync(file, 'utf8') !== text) fs.writeFileSync(file, text);
-    else if (!existing.isFile()) throw new Error('it is not a file');
+    writeChanged(file, text, 'inPlace');
   } catch (error) {
     throw new Error(`golem build could not write ${displayPath(file)}: ${errorMessage(error)}`, { cause: error });
   }

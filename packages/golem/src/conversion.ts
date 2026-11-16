@@ -1,3 +1,4 @@
+import { assertNever } from './assert-never.js';
 import { LibError, LibErrorKind, type IssuePath } from './errors.js';
 import { activeConversionPath, conversionError } from './conversion-error.js';
 import { type GeneratedModelConstructor, type GeneratedModelResult } from './model.js';
@@ -248,10 +249,6 @@ function matchesStripPattern(pattern: string, key: string): boolean {
   let expression = stripPatterns.get(pattern);
   if (expression === undefined) stripPatterns.set(pattern, expression = new RegExp(pattern, 'u'));
   return expression.test(key);
-}
-
-function assertNever(value: never): never {
-  throw new Error(`Internal error: unhandled strip plan ${JSON.stringify(value)}`);
 }
 
 /** Which value a strip walk follows: a model value (an encode) or a wire value (a decode). */

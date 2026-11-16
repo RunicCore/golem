@@ -1,9 +1,8 @@
 import type { OpenApiDates } from './model-resolution.js';
 import { asRecord, isJsonObject, objectEntries } from './json.js';
 import { unionVariants } from './composition.js';
-import { SCHEMA_ARRAY_KEYWORDS, SCHEMA_MAP_KEYWORDS, SCHEMA_SINGLE_KEYWORDS } from './schema-keywords.js';
 import { identifier, sourceDigest } from '@exprtlabs/golem/internal/generator-support';
-import { decodeUriFragment, escapePointerToken, splitFirstFragmentToken } from '@exprtlabs/golem/internal/schema';
+import { SCHEMA_ARRAY_KEYWORDS, SCHEMA_MAP_KEYWORDS, SCHEMA_SINGLE_KEYWORDS, aliasReference, decodeUriFragment, escapePointerToken, splitFirstFragmentToken } from '@exprtlabs/golem/internal/schema';
 import {
   mediaSchema,
   normalizeDocument,
@@ -358,11 +357,11 @@ function mapSchemaPositions(
   if (!isJsonObject(value)) return value;
   const previous = active.get(value);
   if (previous !== undefined) return previous;
-  const result = Object.create(null) as Record<string, unknown>;
+  const result: Record<string, unknown> = Object.create(null);
   active.set(value, result);
   for (const [keyword, item] of objectEntries(value)) {
     if (schemaMapKeywords.has(keyword) && isJsonObject(item)) {
-      const children = Object.create(null) as Record<string, unknown>;
+      const children: Record<string, unknown> = Object.create(null);
       for (const [name, child] of objectEntries(item)) {
         children[name] = Array.isArray(child) || isJsonObject(child) || typeof child === 'boolean'
           ? mapSchemaPositions(child, rewrite, active)
@@ -412,13 +411,13 @@ function visitSchemaPositions(
 
 function mapSchemaResource(value: unknown, visit: (schema: unknown) => unknown): unknown {
   if (!isJsonObject(value)) return value;
-  const result = Object.create(null) as Record<string, unknown>;
+  const result: Record<string, unknown> = Object.create(null);
   for (const [keyword, item] of objectEntries(value)) {
     if (keyword === 'components' && isJsonObject(item) && isJsonObject(item.schemas)) {
-      const components = Object.create(null) as Record<string, unknown>;
+      const components: Record<string, unknown> = Object.create(null);
       for (const [componentKey, componentValue] of objectEntries(item)) {
         if (componentKey === 'schemas' && isJsonObject(componentValue)) {
-          const schemas = Object.create(null) as Record<string, unknown>;
+          const schemas: Record<string, unknown> = Object.create(null);
           for (const [name, schema] of objectEntries(componentValue)) schemas[name] = visit(schema);
           components.schemas = schemas;
         } else {
@@ -427,7 +426,7 @@ function mapSchemaResource(value: unknown, visit: (schema: unknown) => unknown):
       }
       result[keyword] = components;
     } else if (keyword === '$defs' && isJsonObject(item)) {
-      const definitions = Object.create(null) as Record<string, unknown>;
+      const definitions: Record<string, unknown> = Object.create(null);
       for (const [name, schema] of objectEntries(item)) definitions[name] = visit(schema);
       result[keyword] = definitions;
     } else {
@@ -440,7 +439,7 @@ function mapSchemaResource(value: unknown, visit: (schema: unknown) => unknown):
 function operationRootSchema(value: unknown, id: string): object | boolean {
   if (typeof value === 'boolean') return value ? { $id: id } : { $id: id, not: true };
   if (!isJsonObject(value)) throw new TypeError('Generated operation validation schema must be an object.');
-  const root = Object.create(null) as Record<string, unknown>;
+  const root: Record<string, unknown> = Object.create(null);
   for (const [key, child] of objectEntries(value)) root[key] = child;
   root.$id = id;
   return root;
@@ -604,11 +603,10 @@ function rewriteOperationSchemaRefs(
       // A component with its own `$id` is projected as a `$ref` to that resource.
       const declaredId = (name: string): string | undefined => {
         const raw = asRecord(components[name]);
-        const id = typeof raw.$id === 'string' ? raw.$id
-          : typeof raw.$ref === 'string' && Object.keys(raw).length === 1 ? raw.$ref : undefined;
+        const id = typeof raw.$id === 'string' ? raw.$id : aliasReference(raw);
         return id === undefined ? undefined : componentReference(id, localComponentScope) ?? rewriteResourceReference(index, id, direction, '$ref');
       };
-      const mapping = Object.create(null) as Record<string, unknown>;
+      const mapping: Record<string, unknown> = Object.create(null);
       for (const [tag, target] of objectEntries(discriminator.mapping)) {
         if (typeof target !== 'string') {
           mapping[tag] = target;
@@ -653,7 +651,7 @@ function rewrittenResource(
   if (!isJsonObject(rewrittenValue) && typeof rewrittenValue !== 'boolean') return undefined;
   const rewritten = isJsonObject(rewrittenValue)
     ? (() => {
-      const schema = Object.create(null) as Record<string, unknown>;
+      const schema: Record<string, unknown> = Object.create(null);
       for (const [key, child] of objectEntries(rewrittenValue)) {
         if (key !== '$id') schema[key] = child;
       }
@@ -661,8 +659,8 @@ function rewrittenResource(
       return schema;
     })()
     : rewrittenValue;
-  index.rewrittenResources.set(id, rewritten as object | boolean);
-  return rewritten as object | boolean;
+  index.rewrittenResources.set(id, rewritten);
+  return rewritten;
 }
 
 function rewrittenComponent(
@@ -690,37 +688,36 @@ function operationBundleFromIndex(
   const { data, rootId } = index;
   const operationRootId = `${rootId}:operation:${urnSegment(operation.name)}`;
   const operationRegistryEntry = asRecord(asRecord(data.normalizedRegistry.operations)[operation.name]);
-  const operationSchemas = Object.create(null) as Record<string, unknown>;
+  const operationSchemas: Record<string, unknown> = Object.create(null);
   operationSchemas.input = rewriteOperationSchemaRefs(index, operationRegistryEntry.input, 'input');
   if (operationRegistryEntry.headers !== undefined) operationSchemas.headers = rewriteOperationSchemaRefs(index, operationRegistryEntry.headers, 'input');
-  const responseSchemas = Object.create(null) as Record<string, unknown>;
+  const responseSchemas: Record<string, unknown> = Object.create(null);
   const rawResponses = asRecord(operationRegistryEntry.responses);
   for (const [status, rawContent] of objectEntries(rawResponses)) {
-    const content = Object.create(null) as Record<string, unknown>;
+    const content: Record<string, unknown> = Object.create(null);
     for (const [mediaType, schema] of objectEntries(rawContent)) {
       content[mediaType] = rewriteOperationSchemaRefs(index, schema, 'output');
     }
     responseSchemas[status] = content;
   }
   operationSchemas.responses = responseSchemas;
-  const responseHeaderSchemas = Object.create(null) as Record<string, unknown>;
+  const responseHeaderSchemas: Record<string, unknown> = Object.create(null);
   for (const [status, headers] of objectEntries(operationRegistryEntry.responseHeaders)) {
-    const rewritten = Object.create(null) as Record<string, unknown>;
+    const rewritten: Record<string, unknown> = Object.create(null);
     for (const [name, schema] of objectEntries(headers)) rewritten[name] = rewriteOperationSchemaRefs(index, schema, 'output');
     responseHeaderSchemas[status] = rewritten;
   }
   operationSchemas.responseHeaders = responseHeaderSchemas;
-  const root: Record<string, unknown> = Object.create(null) as Record<string, unknown>;
+  const root: Record<string, unknown> = Object.create(null);
   root.$id = operationRootId;
   if (typeof data.normalizedRegistry.$schema === 'string') root.$schema = data.normalizedRegistry.$schema;
-  const operationRecords = Object.create(null) as Record<string, unknown>;
+  const operationRecords: Record<string, unknown> = Object.create(null);
   operationRecords[operation.name] = operationSchemas;
   root.operations = operationRecords;
-  const schemaRoot = root as object;
 
-  const schemas = Object.create(null) as Record<string, object | boolean>;
-  const componentNames = Object.create(null) as Record<string, string>;
-  schemas[operationRootId] = schemaRoot;
+  const schemas: Record<string, object | boolean> = Object.create(null);
+  const componentNames: Record<string, string> = Object.create(null);
+  schemas[operationRootId] = root;
   const pending: Array<{ readonly ref: string; readonly direction: SchemaDirection }> = [];
   const visitRefs = (
     value: unknown,
@@ -782,7 +779,7 @@ function operationBundleFromIndex(
   const pointerBase = `${operationRootId}#/operations/${escapePointerToken(operation.name)}`;
   // A root is named by its operation and slot: the validator's export name comes from it (`validate_getPayment_input`).
   const inputReference = `${operation.name}:input`;
-  const roots = Object.create(null) as Record<string, object>;
+  const roots: Record<string, object> = Object.create(null);
   roots[inputReference] = { $ref: `${pointerBase}/input` };
   const headersReference = operationSchemas.headers === undefined ? undefined : `${operation.name}:headers`;
   if (headersReference !== undefined) roots[headersReference] = { $ref: `${pointerBase}/headers` };

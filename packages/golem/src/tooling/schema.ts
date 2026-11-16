@@ -9,7 +9,8 @@
 
 export type JsonSchema = boolean | Readonly<Record<string, unknown>>;
 
-import type { ConstraintSchemaValue, ModelConstraint } from '../model-registry.js';
+import { assertNever } from '../assert-never.js';
+import type { ConstraintSchemaValue, ModelConstraint, ModelTypeDescriptor } from '../model-registry.js';
 import {
   GENERATED_MODEL_SCHEMA_REF_PREFIX,
   MODEL_CLASS_KEYWORD,
@@ -22,12 +23,29 @@ import { compareText, isRecord } from './generator-core.js';
 
 export { assertSupportedModelFieldName } from '../model-field-names.js';
 import { escapeJsonPointerToken } from '../json-pointer.js';
-export { decodeUriFragment, escapeJsonPointerToken, escapePointerToken, fragmentPointerTokens, jsonPointerTokens, splitFirstFragmentToken, unescapeJsonPointerToken, unescapePointerToken } from '../json-pointer.js';
+export { decodeUriFragment, escapeJsonPointerToken, escapePointerToken, fragmentPointerTokens, jsonPointerTokens, pointerArrayIndex, resolveFragmentPointer, resolveJsonPointer, splitFirstFragmentToken, unescapeJsonPointerToken } from '../json-pointer.js';
+export { aliasReference, followReference, schemaReference, schemaReferenceOrDynamic, type ScopedSchema } from '../json-reference.js';
 export { canonicalSchemaKey };
 /** The schema descriptor types that generators read (`@exprtlabs/golem/internal/schema`). */
-export type { ConstraintSchemaValue, DiscriminatorValue, ModelConstraint, ModelTypeDescriptor, ModelTypeMetadata, UnionDiscriminator } from '../model-registry.js';
+export type { ConstraintSchemaValue, DiscriminatorValue, ImportedFunction, ModelConstraint, ModelTypeDescriptor, ModelTypeMetadata, UnionDiscriminator } from '../model-registry.js';
 export { GENERATED_MODEL_SCHEMA_REF_PREFIX, MODEL_CLASS_KEYWORD, MODEL_CODEC_IDS_KEY, MODEL_INSTANCE_KEYWORD, VALIDATION_KEYWORD };
+export { JSON_KINDS, SCHEMA_ARRAY_KEYWORDS, SCHEMA_MAP_KEYWORDS, SCHEMA_SINGLE_KEYWORDS, isDiscriminatorValue, jsonKindOf, type JsonKind } from '../json-vocabulary.js';
 export { validationTagSchemaDescriptor } from './validation-tags.js';
+
+/** The wire form of a descriptor's serde, the deserialize parameter that TSerde attached: `wireDescriptor` in a descriptor read from source, `wire` in a generated one. */
+export function serdeWireDescriptor<Wire>(serde: { readonly wire?: Wire; readonly wireDescriptor?: Wire } | undefined): Wire | undefined {
+  return serde?.wireDescriptor ?? serde?.wire;
+}
+
+/** The id of a validation of a descriptor: the string of a generated descriptor, or the `id` of the binding that a generator reads from source. */
+export function validationBindingId(validation: string | { readonly id: string }): string {
+  return typeof validation === 'string' ? validation : validation.id;
+}
+
+/** The serde with its wire form replaced, in the field that holds it. */
+export function serdeWithWire<S extends object>(serde: S, wire: ModelTypeDescriptor): S {
+  return { ...serde, ...('wireDescriptor' in serde ? { wireDescriptor: wire } : { wire }) };
+}
 
 /** Structural inputs used when a nested schema contains a named reference. */
 export interface SchemaDescriptorOptions {
@@ -101,8 +119,27 @@ export function constraintSchemaValues(constraint: ModelConstraint): readonly un
       return constraint.schemas;
     case 'ifThenElse':
       return [constraint.if, ...(constraint.then === undefined ? [] : [constraint.then]), ...(constraint.else === undefined ? [] : [constraint.else])];
-    default:
+    case 'dependentRequired':
+    case 'enum':
+    case 'exclusiveMaximum':
+    case 'exclusiveMinimum':
+    case 'format':
+    case 'integer':
+    case 'maxContains':
+    case 'maxItems':
+    case 'maxLength':
+    case 'maxProperties':
+    case 'maximum':
+    case 'minContains':
+    case 'minItems':
+    case 'minLength':
+    case 'minProperties':
+    case 'minimum':
+    case 'multipleOf':
+    case 'pattern':
+    case 'uniqueItems':
       return [];
+    default: return assertNever(constraint);
   }
 }
 
@@ -133,8 +170,27 @@ export function mapConstraintSchemaValues(
         ...(constraint.then === undefined ? {} : { then: map(constraint.then) }),
         ...(constraint.else === undefined ? {} : { else: map(constraint.else) }),
       };
-    default:
+    case 'dependentRequired':
+    case 'enum':
+    case 'exclusiveMaximum':
+    case 'exclusiveMinimum':
+    case 'format':
+    case 'integer':
+    case 'maxContains':
+    case 'maxItems':
+    case 'maxLength':
+    case 'maxProperties':
+    case 'maximum':
+    case 'minContains':
+    case 'minItems':
+    case 'minLength':
+    case 'minProperties':
+    case 'minimum':
+    case 'multipleOf':
+    case 'pattern':
+    case 'uniqueItems':
       return constraint;
+    default: return assertNever(constraint);
   }
 }
 
@@ -151,7 +207,7 @@ export function hasExecutableValidation(
   visited.add(value);
   const visit = (nested: unknown): boolean => hasExecutableValidation(nested, options, visited);
   if (Array.isArray(value.validations) && value.validations.length > 0) return true;
-  if (isRecord(value.serde) && visit(value.serde.wireDescriptor ?? value.serde.wire)) return true;
+  if (isRecord(value.serde) && visit(serdeWireDescriptor(value.serde))) return true;
   if (Array.isArray(value.constraints) && value.constraints.some(item =>
     isRecord(item) && typeof item.kind === 'string'
     && constraintSchemaValues(item as ModelConstraint).some(visit))) return true;
@@ -384,7 +440,7 @@ function residualSchema(given: unknown, plane: ResidualPlane, state: SchemaAssem
   if (serde) {
     // The model plane ignores the serde's wire form, but a class binding's validity predicate (`valid`) is part of its model check.
     if (plane === 'model-only') return descriptorSchema(value, state, { ...options, representation: 'model', keepPredicates: true });
-    return descriptorSchema(serde.wireDescriptor ?? serde.wire, state, { ...options, representation: 'wire', keepPredicates: true });
+    return descriptorSchema(serdeWireDescriptor(serde), state, { ...options, representation: 'wire', keepPredicates: true });
   }
   // The wire schema strips executable rules from constraints (the TValidation inside
   // Contains, Not, OneOf, IfThenElse, ...) and drops the unevaluated* keywords beside them,
@@ -477,7 +533,7 @@ function descriptorSchema(
     // A custom serde's wire descriptor is the representation validated by an
     // emitted JSON schema.  Validation bindings are intentionally ignored.
     const serde = isRecord(value.serde) ? value.serde : undefined;
-    const wire = serde && options.representation === 'wire' ? serde.wireDescriptor ?? serde.wire : undefined;
+    const wire = serde && options.representation === 'wire' ? serdeWireDescriptor(serde) : undefined;
     if (options.portable && Array.isArray(value.validations) && value.validations.length) options.onNonportable?.('Custom executable validation remains in the application and is not included in OpenAPI.');
     if (wire !== undefined) {
       return descriptorSchema(wire, state, { ...options, representation: 'wire', keepPredicates: true });
@@ -632,10 +688,10 @@ function descriptorSchema(
         // A discriminator requires a required tag with non-empty string const or enum values for each branch it selects. Other tags keep anyOf.
         const tagged = table !== undefined && !mixed && defaultWritable && present.every(({ index }, position) => position === defaultAt
           || (documented
-            ? table.values[index]!.length > 0 && table.values[index]!.every((item) => typeof item === 'string' && item !== '')
+            ? table.values[index].length > 0 && table.values[index].every((item) => typeof item === 'string' && item !== '')
             : hasDiscriminatorTag(branches[position], table.propertyName)));
         const mapping = tagged && documented && refs.every((ref) => ref !== undefined)
-          ? Object.fromEntries(present.flatMap(({ index }, position) => position === defaultAt ? [] : table.values[index]!.map((item) => [item, refs[position]])))
+          ? Object.fromEntries(present.flatMap(({ index }, position) => position === defaultAt ? [] : table.values[index].map((item) => [item, refs[position]])))
           : undefined;
         const defaultMapping = tagged && defaultAt >= 0 ? refs[defaultAt] : undefined;
         schema = tagged

@@ -1,6 +1,7 @@
 import { isDeepStrictEqual } from 'node:util';
 import { isBinaryMediaType, isBuiltinTextMediaType } from './client/codecs.js';
 import { asRecord, isJsonObject, objectEntries, type JsonObject } from './json.js';
+import { SCHEMA_ARRAY_KEYWORDS, jsonKindOf, schemaReferenceOrDynamic } from '@exprtlabs/golem/internal/schema';
 import { codePointLength, isMultipleOf } from '@exprtlabs/golem/internal/validation-runtime';
 import { identifier, NameScope, responseStatusKind } from '@exprtlabs/golem/internal/generator-support';
 import { BUILTIN_CLASS_ROOTS, code, codeKey, manifestMarkerComment, docComment, exportedName, fileImports, identifier as identifierPart, ImportSource, isEmpty, join, lineBreak, literal, nest, propertyKey, render, renderModule, sameCode, type RenderedModule, type Code, type JsonValue } from '@exprtlabs/golem/internal/emitter';
@@ -75,12 +76,9 @@ function anyOfTextSchemas(parts: readonly TextSchemaClassification[]): TextSchem
 }
 
 function classifyConstValue(value: unknown): TextSchemaClassification {
-  if (typeof value === 'string') return { kind: 'string', schemaType: 'string' };
-  if (value === null) return { kind: 'non-string', schemaType: 'null' };
-  if (typeof value === 'number') return { kind: 'non-string', schemaType: 'number' };
-  if (typeof value === 'boolean') return { kind: 'non-string', schemaType: 'boolean' };
-  if (Array.isArray(value)) return { kind: 'non-string', schemaType: 'array' };
-  return { kind: 'non-string', schemaType: 'object' };
+  const schemaType = jsonKindOf(value);
+  if (schemaType === undefined) return unknownTextSchema();
+  return { kind: schemaType === 'string' ? 'string' : 'non-string', schemaType };
 }
 
 function withNullAlternative(
@@ -104,7 +102,7 @@ function classifyTextSchemaLocal(schema: JsonObject): TextSchemaClassification {
     const hasNull = listed.some((value) => value === null);
     const concrete = listed.filter((value) => value !== null);
     if (concrete.length === 0) return { kind: 'non-string', schemaType: 'null' };
-    const kinds = new Set(concrete.map((value) => typeof value));
+    const kinds = new Set(concrete.map(jsonKindOf));
     if (kinds.size === 1 && kinds.has('string')) {
       return withNullAlternative({ kind: 'string', schemaType: 'string' }, hasNull);
     }
@@ -157,11 +155,7 @@ function classifyTextSchemaNode(
   try {
     const currentBase = nextSchemaBase(schema, env.currentBase, env.resources);
     const nested: TextSchemaEnv = { ...env, currentBase };
-    const reference = typeof schema.$ref === 'string'
-      ? schema.$ref
-      : typeof schema.$dynamicRef === 'string'
-        ? schema.$dynamicRef
-        : undefined;
+    const reference = schemaReferenceOrDynamic(schema);
     let fromRef: TextSchemaClassification | undefined;
     if (reference !== undefined) {
       const target = resolveSchemaTarget(reference, currentBase, env.resources, env.document);
@@ -386,6 +380,12 @@ function componentAnchorTypes(document: unknown): Map<string, string> {
   return anchors;
 }
 
+/** The component that the anchor named by the reference of `schema` stands for: its `$ref`, else its `$dynamicRef`, as every reader follows a schema that holds both. */
+export function anchoredComponentName(schema: unknown, anchors: ReadonlyMap<string, string> | undefined): string | undefined {
+  const reference = schemaReferenceOrDynamic(schema);
+  return reference === undefined ? undefined : anchors?.get(reference);
+}
+
 export function schemaContext(
   document: unknown,
   context: SchemaTypeContext = {},
@@ -482,12 +482,8 @@ function cyclicSchemaRef(
   document?: unknown,
 ): boolean {
   if (!isJsonObject(schema) || !resources) return false;
-  const reference = typeof schema.$ref === 'string'
-    ? schema.$ref
-    : typeof schema.$dynamicRef === 'string'
-      ? schema.$dynamicRef
-      : null;
-  if (typeof reference !== 'string') return false;
+  const reference = schemaReferenceOrDynamic(schema);
+  if (reference === undefined) return false;
   const target = resolveSchemaTarget(reference, nextSchemaBase(schema, currentBase, resources), resources, document);
   return Boolean(target && inlining.has(schemaTargetIdentity(target)));
 }
@@ -506,7 +502,7 @@ function schemaWithoutCyclicRefs(
   if (isJsonObject(cyclic.properties)) {
     cyclic.properties = Object.fromEntries(objectEntries(cyclic.properties).filter(([, value]) => dropCyclic(value)));
   }
-  for (const keyword of ['allOf', 'anyOf', 'oneOf', 'prefixItems'] as const) {
+  for (const keyword of SCHEMA_ARRAY_KEYWORDS) {
     const children = cyclic[keyword];
     if (Array.isArray(children)) cyclic[keyword] = children.filter(dropCyclic);
   }
@@ -556,7 +552,7 @@ function referencedSchemaType(reference: string, context: SchemaTypeContext): Ty
 }
 
 function isSchemaReference(schema: JsonObjectLike): boolean {
-  return typeof schema.$ref === 'string' || typeof schema.$dynamicRef === 'string';
+  return schemaReferenceOrDynamic(schema) !== undefined;
 }
 
 type AllOfRequirements = {
@@ -649,11 +645,14 @@ export function typedListedValues(schema: Readonly<Record<string, unknown>>): re
     : Array.isArray(schema.enum) && !schema.enum.some((value) => isDeepStrictEqual(value, schema.const)) ? [] : [schema.const];
   if (!values) return undefined;
   const types = effectiveSchemaTypes(schema);
-  const kindOf = (value: unknown): string => value === null ? 'null' : Array.isArray(value) ? 'array' : typeof value === 'number' && Number.isInteger(value) ? 'integer' : typeof value;
   const excluded = isJsonObject(schema.not)
     ? schema.not.const !== undefined ? [schema.not.const] : Array.isArray(schema.not.enum) ? schema.not.enum : []
     : [];
-  return values.filter((value) => (types.length === 0 || types.includes(kindOf(value)) || (typeof value === 'number' && types.includes('number'))) && withinKeywords(value, schema)
+  const typeAdmits = (value: unknown): boolean => {
+    const kind = jsonKindOf(value);
+    return types.length === 0 || (kind !== undefined && types.includes(kind)) || (kind === 'number' && Number.isInteger(value) && types.includes('integer'));
+  };
+  return values.filter((value) => typeAdmits(value) && withinKeywords(value, schema)
     && !excluded.some((other) => isDeepStrictEqual(value, other)));
 }
 
@@ -701,17 +700,10 @@ function schemaTypeNode(rawSchema: unknown, context: SchemaTypeContext = {}): Ty
   );
   const { componentRoot, ...belowRoot } = context;
   const inner: SchemaTypeContext = { ...belowRoot, resources, currentBase };
-  if (typeof schema.$dynamicRef === 'string' || typeof schema.$ref === 'string') {
-    const reference = String(schema.$dynamicRef || schema.$ref);
-    const anchored = inner.anchors && inner.anchors.get(reference);
-    if (anchored) return qualifiedType(inner, anchored);
-  }
-  if (typeof schema.$ref === 'string') {
-    return referencedSchemaType(schema.$ref, inner);
-  }
-  if (typeof schema.$dynamicRef === 'string') {
-    return referencedSchemaType(schema.$dynamicRef, inner);
-  }
+  const anchored = anchoredComponentName(schema, inner.anchors);
+  if (anchored) return qualifiedType(inner, anchored);
+  const reference = schemaReferenceOrDynamic(schema);
+  if (reference !== undefined) return referencedSchemaType(reference, inner);
   if (schema.not === true) return NEVER_TYPE;
   const listed = typedListedValues(schema);
   if (listed) {
@@ -783,7 +775,7 @@ function objectType(schema: JsonObjectLike, context: SchemaTypeContext): TypeCod
   const properties = objectEntries(schema.properties);
   const propertyTypes = properties.map(([, value]) => schemaTypeNode(value, context));
   const members = properties.map(([name, value], index) => {
-    const member = code`${propertyKey(name)}${required.has(name) ? code`` : code`?`}: ${propertyTypes[index]!.code};`;
+    const member = code`${propertyKey(name)}${required.has(name) ? code`` : code`?`}: ${propertyTypes[index].code};`;
     return isJsonObject(value) && value.description ? code`${descriptionComment(value.description)}${lineBreak}${member}` : member;
   });
   if (schema.additionalProperties) {
@@ -890,7 +882,7 @@ function responseVariantTypes(document: unknown, response: NormalizedResponse, c
 
 /** The file ends with its last line, not with blank lines. */
 function dropTrailingBlankLines(lines: Code[]): void {
-  while (lines.length > 0 && isEmpty(lines.at(-1)!)) lines.pop();
+  while (lines.length > 0 && isEmpty(lines[lines.length - 1])) lines.pop();
 }
 
 /** The component schemas of a document, resolved, each with its type name claimed in `scope` as it is read. */
@@ -915,24 +907,24 @@ function convertedTypes(schemas: Record<string, unknown>, dates: OpenApiDates): 
 export function generateTypes(
   document: unknown,
   operations: readonly NormalizedOperation[],
-  plan?: {
+  plan: {
     readonly typesUsesInputSchemas: boolean;
     readonly typesUsesOutputSchemas: boolean;
   },
-  dates: OpenApiDates = 'date',
-  neverProperties?: NeverPropertiesOf,
+  dates: OpenApiDates,
+  neverProperties: NeverPropertiesOf,
 ): RenderedModule {
   const schemas = asRecord(asRecord(asRecord(document).components).schemas);
   const scope = new ComponentNameScope('types.ts');
-  const useInput = plan ? plan.typesUsesInputSchemas : Object.keys(schemas).length > 0 && operations.length > 0;
-  const useOutput = plan ? plan.typesUsesOutputSchemas : Object.keys(schemas).length > 0 && operations.length > 0;
+  const useInput = plan.typesUsesInputSchemas;
+  const useOutput = plan.typesUsesOutputSchemas;
   if (useInput) scope.claim('InputSchemas', 'import binding InputSchemas');
   if (useOutput) scope.claim('OutputSchemas', 'import binding OutputSchemas');
   const inputSchemas = new ImportSource('./input-schemas.js', true, { namespace: 'InputSchemas' });
   const outputSchemas = new ImportSource('./output-schemas.js', true, { namespace: 'OutputSchemas' });
   const blobTypeName = generatedBlobType(scope, objectEntries(schemas).map(([name]) => identifier(name)));
   const converted = convertedTypes(schemas, dates);
-  const baseContext = schemaContext(document, { blobType: blobTypeName, converted, ...(neverProperties ? { neverProperties } : {}) });
+  const baseContext = schemaContext(document, { blobType: blobTypeName, converted, neverProperties });
   const BLANK = code``;
   const body: Code[] = [];
   const blobTypeIndex = 0;
@@ -953,14 +945,14 @@ export function generateTypes(
       ...(useInput ? { qualifier: code`${inputSchemas.namespace()}.` } : {}),
       blobType: blobTypeName,
       converted,
-      ...(neverProperties ? { neverProperties } : {}),
+      neverProperties,
     });
     const outputContext = schemaContext(document, {
       direction: 'output',
       ...(useOutput ? { qualifier: code`${outputSchemas.namespace()}.` } : {}),
       blobType: blobTypeName,
       converted,
-      ...(neverProperties ? { neverProperties } : {}),
+      neverProperties,
     });
     scope.claim(`${operation.typeName}OperationInput`, `operation ${JSON.stringify(operation.name)} input type`);
     scope.claim(`${operation.typeName}OperationSuccessBody`, `operation ${JSON.stringify(operation.name)} success body`);
@@ -990,8 +982,8 @@ export function generateTypes(
 export function generateDirectionalSchemas(
   document: unknown,
   direction: 'input' | 'output',
-  dates: OpenApiDates = 'date',
-  neverProperties?: NeverPropertiesOf,
+  dates: OpenApiDates,
+  neverProperties: NeverPropertiesOf,
 ): string {
   const schemas = asRecord(asRecord(asRecord(document).components).schemas);
   const scope = new ComponentNameScope(`${direction}-schemas.ts`);
@@ -1000,7 +992,7 @@ export function generateDirectionalSchemas(
     direction,
     blobType: blobTypeName,
     converted: convertedTypes(schemas, dates),
-    ...(neverProperties ? { neverProperties } : {}),
+    neverProperties,
   });
   const BLANK = code``;
   const body: Code[] = [];

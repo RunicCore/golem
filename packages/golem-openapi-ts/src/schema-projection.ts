@@ -1,13 +1,12 @@
 import { asRecord, entriesWithoutExtensions, isJsonObject, jsonPointerJoin, objectEntries, type JsonObject } from './json.js';
 import { compareText } from '@exprtlabs/golem/generator-api';
 import { identifier } from '@exprtlabs/golem/internal/generator-support';
-import { canonicalSchemaKey, escapePointerToken, fragmentPointerTokens, unescapePointerToken } from '@exprtlabs/golem/internal/schema';
+import { SCHEMA_ARRAY_KEYWORDS, SCHEMA_MAP_KEYWORDS, SCHEMA_SINGLE_KEYWORDS, canonicalSchemaKey, escapePointerToken, fragmentPointerTokens, pointerArrayIndex, schemaReferenceOrDynamic, splitFirstFragmentToken, type ScopedSchema } from '@exprtlabs/golem/internal/schema';
 import {
   pathItemOperations,
   resolveLocalPointer,
   type NormalizedDocument,
 } from './normalize.js';
-import { SCHEMA_ARRAY_KEYWORDS, SCHEMA_MAP_KEYWORDS, SCHEMA_SINGLE_KEYWORDS } from './schema-keywords.js';
 import type { OpenApiDates } from './model-resolution.js';
 import { dateClassOf } from './date-class.js';
 
@@ -93,9 +92,8 @@ function exclusionFlag(direction: SchemaDirection): 'readOnly' | 'writeOnly' {
 function schemaIdentity(schema: unknown): string | null {
   if (typeof schema === 'boolean') return `bool:${schema}`;
   if (!isJsonObject(schema)) return null;
-  if (typeof schema.$ref === 'string') return `ref:${schema.$ref}`;
-  if (typeof schema.$dynamicRef === 'string') return `dynamic:${schema.$dynamicRef}`;
-  return null;
+  const reference = schemaReferenceOrDynamic(schema);
+  return reference === undefined ? null : `ref:${reference}`;
 }
 
 function instanceHasExclusion(schema: unknown, direction: SchemaDirection): boolean {
@@ -127,10 +125,7 @@ function componentPointer(name: string): string {
 function pointerSchemaName(ref: string): string | null {
   const prefix = '#/components/schemas/';
   if (!ref.startsWith(prefix)) return null;
-  const rest = ref.slice(prefix.length);
-  const slash = rest.search(/[/]/);
-  const token = slash < 0 ? rest : rest.slice(0, slash);
-  return unescapePointerToken(token);
+  return splitFirstFragmentToken(ref.slice(prefix.length)).name;
 }
 
 /** Every repeat of a schema `$id`, once per repeating `$id` keyword. */
@@ -293,8 +288,8 @@ function applySchemaPointer(
       continue;
     }
     if (Array.isArray(current)) {
-      const index = Number(token);
-      if (!Number.isInteger(index) || index < 0 || index >= current.length) return undefined;
+      const index = pointerArrayIndex(token);
+      if (index === undefined || index >= current.length) return undefined;
       current = current[index];
       continue;
     }
@@ -389,7 +384,9 @@ export function resolveSchemaTarget(
   document?: unknown,
 ): ResolvedSchemaTarget | undefined {
   if (reference.startsWith('#') && !reference.startsWith('#/')) {
-    return reference.length > 1 ? resolveAnchorTarget(reference.slice(1), currentBase, resources, document) : undefined;
+    if (reference.length > 1) return resolveAnchorTarget(reference.slice(1), currentBase, resources, document);
+    const current = resources.byCanonical.get(stripFragment(currentBase));
+    return current && wholeResourceTarget(current, currentBase);
   }
   if (reference.startsWith('#/')) {
     const resource = lookupCanonicalResource(reference, currentBase, resources);
@@ -397,6 +394,10 @@ export function resolveSchemaTarget(
     if (resource) {
       return rest ? pointerSubresource(resource, rest, currentBase, resources) : wholeResourceTarget(resource, currentBase);
     }
+    // A pointer inside a schema resource with its own `$id` names a place in that resource.
+    const enclosing = resources.byCanonical.get(stripFragment(currentBase));
+    const inResource = enclosing?.hasId ? pointerSubresource(enclosing, reference, currentBase, resources) : undefined;
+    if (inResource) return inResource;
     if (document === undefined) return undefined;
     const schema = resolveLocalPointer(document, reference);
     if (schema === undefined) return undefined;
@@ -838,38 +839,14 @@ function directionalUri(resource: CanonicalResource, direction: SchemaDirection,
   return `${packId}`;
 }
 
-/** The schema a reference points to, and the base URI that its own references resolve against. */
-interface UnconditionalTarget {
-  readonly schema: unknown;
-  readonly base: string;
-}
-
-function resolveUnconditionalTarget(
-  schema: unknown,
-  document: unknown,
-  resources: ResourceIndex | undefined,
-  currentBase: string,
-): UnconditionalTarget | undefined {
-  if (!isJsonObject(schema)) return { schema, base: currentBase };
-  const reference = typeof schema.$ref === 'string'
-    ? schema.$ref
-    : typeof schema.$dynamicRef === 'string'
-      ? schema.$dynamicRef
-      : undefined;
-  if (typeof reference !== 'string') return { schema, base: currentBase };
-  const rootBase = schemaDocumentBase(document);
-  if (reference.startsWith('#/')) return { schema: resolveLocalPointer(document, reference), base: rootBase };
-  if (reference.startsWith('#') && reference.length > 1) {
-    const anchor = reference.slice(1);
-    const schemas = asRecord(asRecord(asRecord(document).components).schemas);
-    for (const [, candidate] of objectEntries(schemas)) {
-      if (!isJsonObject(candidate)) continue;
-      if (candidate.$anchor === anchor || candidate.$dynamicAnchor === anchor) return { schema: candidate, base: rootBase };
-    }
-  }
-  if (!resources) return undefined;
-  const resource = lookupCanonicalResource(reference, currentBase, resources);
-  return resource ? { schema: resource.schema, base: resource.hasId ? resource.canonical : rootBase } : undefined;
+/** The schemas that `schema` is composed of, each with the base URI that its own references resolve against: the one its `$ref` or `$dynamicRef` names, then its `allOf` members. */
+function composedParts(schema: JsonObject, base: string, context: ProjectionContext, resources: ResourceIndex): ScopedSchema<string>[] {
+  const reference = schemaReferenceOrDynamic(schema);
+  const target = reference === undefined ? undefined : resolveSchemaTarget(reference, base, resources, context.document);
+  return [
+    ...(target === undefined || target.schema === schema ? [] : [{ schema: target.schema, scope: target.currentBase }]),
+    ...(Array.isArray(schema.allOf) ? schema.allOf : []).map((member) => ({ schema: member, scope: base })),
+  ];
 }
 
 function propertyHasExclusion(schema: unknown, context: ProjectionContext): boolean {
@@ -891,11 +868,7 @@ function propertyHasExclusion(schema: unknown, context: ProjectionContext): bool
     }
     let result = false;
     try {
-      if (typeof current.$ref === 'string' || typeof current.$dynamicRef === 'string') {
-        const target = resolveUnconditionalTarget(current, context.document, resources, base);
-        if (target !== undefined && target.schema !== current) result = walk(target.schema, target.base);
-      }
-      if (!result && Array.isArray(current.allOf)) result = current.allOf.some((item) => walk(item, base));
+      result = composedParts(current, base, context, resources).some((part) => walk(part.schema, part.scope));
     } finally {
       if (identity) evaluating.delete(identity);
     }
@@ -928,11 +901,7 @@ function collectExcludedPropertyNames(
       evaluating.add(identity);
     }
     try {
-      if (typeof current.$ref === 'string' || typeof current.$dynamicRef === 'string') {
-        const target = resolveUnconditionalTarget(current, context.document, resources, base);
-        if (target !== undefined) visit(current === target.schema ? current : target.schema, target.base);
-      }
-      for (const item of Array.isArray(current.allOf) ? current.allOf : []) visit(item, base);
+      for (const part of composedParts(current, base, context, resources)) visit(part.schema, part.scope);
       for (const [name, property] of objectEntries(current.properties)) {
         if (propertyHasExclusion(property, { ...nested, currentBase: base })) excluded.add(name);
       }

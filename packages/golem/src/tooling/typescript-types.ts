@@ -56,7 +56,8 @@ export interface Scanner {
 }
 export interface TypeNode extends Node {}
 export type Declaration = Node;
-export type NamedDeclaration = Node & { readonly name?: Identifier };
+/** A declaration that may carry a name: the name of a property is any property name, such as the `[sym]` of a computed key. */
+export type NamedDeclaration = Node & { readonly name?: PropertyName };
 export type PropertyName = Identifier | StringLiteral | NumericLiteral | ComputedPropertyName;
 export type BindingName = Identifier | ObjectBindingPattern;
 export type EntityName = Identifier | QualifiedName;
@@ -185,6 +186,10 @@ export interface SatisfiesExpression extends Expression {
 }
 export interface NonNullExpression extends Expression {
   readonly kind: KindOf<'NonNullExpression'>;
+  readonly expression: Expression;
+}
+export interface TypeOfExpression extends Expression {
+  readonly kind: KindOf<'TypeOfExpression'>;
   readonly expression: Expression;
 }
 export interface TypeAssertion extends Expression {
@@ -327,6 +332,18 @@ export interface ExpressionStatement extends Node {
 export interface ReturnStatement extends Node {
   readonly kind: KindOf<'ReturnStatement'>;
   readonly expression?: Expression;
+}
+export interface CaseClause extends Node {
+  readonly kind: KindOf<'CaseClause'>;
+  readonly expression: Expression;
+}
+export interface DefaultClause extends Node {
+  readonly kind: KindOf<'DefaultClause'>;
+}
+export interface SwitchStatement extends Node {
+  readonly kind: KindOf<'SwitchStatement'>;
+  readonly expression: Expression;
+  readonly caseBlock: { readonly clauses: readonly (CaseClause | DefaultClause)[] };
 }
 
 // Imports and exports
@@ -499,13 +516,13 @@ export interface Symbol {
   readonly checkFlags: number;
   readonly name: string;
   getName(): string;
-  readonly valueDeclaration?: Node;
-  readonly declarations: readonly Node[];
+  readonly valueDeclaration?: NamedDeclaration;
+  readonly declarations: readonly NamedDeclaration[];
 }
 
 export interface Signature {
   readonly parameters: readonly Symbol[];
-  readonly declaration?: Node;
+  readonly declaration?: NamedDeclaration;
   getReturnType(): Type;
 }
 
@@ -542,6 +559,8 @@ export interface TypeChecker {
   getIndexTypeOfType(type: Type, kind: IndexKind): Type | undefined;
   getIndexInfosOfType(type: Type): readonly { readonly keyType: Type; readonly valueType: Type }[];
   getBaseTypes(type: Type): readonly Type[];
+  /** The constraint of a type parameter, followed to a type that is no parameter, or undefined when it has none. */
+  getBaseConstraintOfType(type: Type): Type | undefined;
   getDeclaredTypeOfSymbol(symbol: Symbol): Type;
   getConstantValue(node: Node): string | number | undefined;
   getSignatureFromDeclaration(node: Node): Signature | undefined;
@@ -803,11 +822,13 @@ export interface TypeScriptBackend {
   isBinaryExpression(node: Node): node is BinaryExpression;
   isBlock(node: Node): node is Block;
   isCallExpression(node: Node): node is CallExpression;
+  isCaseClause(node: Node): node is CaseClause;
   isClassDeclaration(node: Node): node is ClassDeclaration;
   isClassLike(node: Node): node is ClassLikeDeclaration;
   isComputedPropertyName(node: Node): node is ComputedPropertyName;
   isConditionalTypeNode(node: Node): node is ConditionalTypeNode;
   isDecorator(node: Node): node is Decorator;
+  isDefaultClause(node: Node): node is DefaultClause;
   isElementAccessExpression(node: Node): node is ElementAccessExpression;
   isEmptyStatement(node: Node): node is EmptyStatement;
   isEnumDeclaration(node: Node): node is EnumDeclaration;
@@ -867,6 +888,7 @@ export interface TypeScriptBackend {
   isSpreadElement(node: Node): node is SpreadElement;
   isStringLiteral(node: Node): node is StringLiteral;
   isStringLiteralLike(node: Node): node is StringLiteralLike;
+  isSwitchStatement(node: Node): node is SwitchStatement;
   isTemplateExpression(node: Node): node is TemplateExpression;
   isTemplateLiteralTypeNode(node: Node): node is TemplateLiteralTypeNode;
   isTupleTypeNode(node: Node): node is TupleTypeNode;
@@ -874,6 +896,7 @@ export interface TypeScriptBackend {
   isTypeAssertionExpression(node: Node): node is TypeAssertion;
   isTypeLiteralNode(node: Node): node is TypeLiteralNode;
   isTypeNode(node: Node): node is TypeNode;
+  isTypeOfExpression(node: Node): node is TypeOfExpression;
   isTypeOperatorNode(node: Node): node is TypeOperatorNode;
   isTypeParameterDeclaration(node: Node): node is TypeParameterDeclaration;
   isTypeQueryNode(node: Node): node is TypeQueryNode;

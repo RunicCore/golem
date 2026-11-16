@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { canonicalPath, displayPath, invalidValidationLevelMessage, isInsideDirectory, isRecord, isValidationLevel, parseYamlFile, resolveProfile } from './generator-core.js';
+import { canonicalPath, displayPath, invalidValidationLevelMessage, isInsideDirectory, isRecord, isValidationLevel, nonempty, parseYamlFile, resolveProfile } from './generator-core.js';
 import { ROOT_KEYS } from './editor-schema.js';
 import { providersOf, resolveJobPlan } from './job-rules.js';
 import { loadPackageRegistry, PackageRegistryError, registrationForBlock } from './package-registry.js';
@@ -48,11 +48,6 @@ function boolean(value: unknown, fallback: boolean, label: string): boolean {
 function validationLevel(value: unknown): GolemProfile['validation'] {
   if (value === undefined) return true;
   if (!isValidationLevel(value)) throw new TypeError(invalidValidationLevelMessage('validation'));
-  return value;
-}
-
-function nonempty(value: unknown, label: string): string {
-  if (typeof value !== 'string' || !value.trim()) throw new TypeError(`${label} must be a nonempty string.`);
   return value;
 }
 

@@ -414,7 +414,7 @@ function importOf(
 
 /** The module text of the import that binds the leftmost name of a type, as the file spells it. */
 function importSpecifierOf(checker: ts.TypeChecker, name: ts.EntityName): string | undefined {
-  for (const declaration of checker.getSymbolAtLocation(entityNameSegments(name)[0]!)?.declarations ?? []) {
+  for (const declaration of checker.getSymbolAtLocation(entityNameSegments(name)[0])?.declarations ?? []) {
     let node: ts.Node = declaration;
     while (!ts.isImportDeclaration(node) && !ts.isSourceFile(node)) node = node.parent;
     if (ts.isImportDeclaration(node) && ts.isStringLiteralLike(node.moduleSpecifier)) return node.moduleSpecifier.text;
@@ -485,7 +485,7 @@ function constructTarget(
   const local = name.getText(input.file);
   if (/[\r\n]/.test(local)) return undefined;
   const segments = entityNameSegments(name);
-  const root = segments[0]!;
+  const [root] = segments;
   const declarations = input.checker.getSymbolAtLocation(root)?.declarations ?? [];
   const typeOnly = declarations.map(typeOnlyImportOf).find((found) => found !== undefined);
   if (typeOnly) {
@@ -496,15 +496,15 @@ function constructTarget(
   const module = declarations.map(typeOnlyNamespaceImportOf).find((found) => found !== undefined);
   if (module && segments.length > 1) {
     // `m.Payment` where `import type * as m` binds the module: the member is imported on its own, as `Payment` is above.
-    const member = segments[1]!.text;
+    const member = segments[1].text;
     importOf(scan, input.root, input.file, name, member, module);
     return [`${REWRITE_IMPORT_PREFIX}${member}`, ...segments.slice(2).map((segment) => segment.text)].join('.');
   }
   return local;
 }
 
-/** The identifiers of a name, left to right. */
-function entityNameSegments(name: ts.EntityName): ts.Identifier[] {
+/** The identifiers of a name, left to right; a name has at least one. */
+function entityNameSegments(name: ts.EntityName): [ts.Identifier, ...ts.Identifier[]] {
   return ts.isIdentifier(name) ? [name] : [...entityNameSegments(name.left), name.right];
 }
 

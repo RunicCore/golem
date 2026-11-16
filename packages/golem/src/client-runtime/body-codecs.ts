@@ -206,6 +206,7 @@ export function responseDecoder(codecs: OperationCodecs): ResponseDecode | undef
   return (response, value, header) => {
     const table = header === undefined ? decode : headers;
     const key = `${response.status}:${header ?? response.contentType}`;
-    return table && Object.hasOwn(table, key) ? table[key]!(value as never, CHECKED) : value;
+    const codec = table && Object.hasOwn(table, key) ? table[key] : undefined;
+    return codec === undefined ? value : codec(value as never, CHECKED);
   };
 }

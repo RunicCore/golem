@@ -45,6 +45,16 @@ export interface TagMetadata {
   readonly discriminatorDefault?: ts.Type;
 }
 
+/** Whether a tag read holds a validation, a serde or a constraint: what a descriptor keeps. A `Discriminator` names the tag key of a union, and the descriptor of a variant holds none of it. */
+export function hasDescriptorTags(metadata: Pick<TagMetadata, 'validations' | 'constraints'> & { readonly serde?: unknown }): boolean {
+  return metadata.validations.length > 0 || metadata.serde !== undefined || metadata.constraints.length > 0;
+}
+
+/** Whether a tag read holds any tag, a `Discriminator` included. */
+export function hasTagMetadata(metadata: Pick<TagMetadata, 'validations' | 'constraints' | 'discriminator'> & { readonly serde?: unknown }): boolean {
+  return hasDescriptorTags(metadata) || metadata.discriminator !== undefined;
+}
+
 export interface TagReadResult {
   readonly baseNode?: ts.TypeNode;
   readonly metadata: TagMetadata;
@@ -113,7 +123,9 @@ function mergeMetadata(context: TagAnalysisContext, at: ts.Node, first: TagMetad
   }
   if (first.serde && second.serde) {
     if (first.serde.id !== second.serde.id) {
-      throw new Error(
+      throw context.diagnostic(
+        at,
+        '1042',
         `Conflicting serde tags: ${first.serde.id} and ${second.serde.id}. `
         + 'A model value can have only one serialize/deserialize pair.',
       );
@@ -165,12 +177,8 @@ function literalValue(
   }
   const type = argumentType(checker, argument);
   if (!type) return undefined;
-  if (expected === 'number' && (type.flags & ts.TypeFlags.NumberLiteral) !== 0) {
-    return (type as ts.NumberLiteralType).value;
-  }
-  if (expected === 'string' && (type.flags & ts.TypeFlags.StringLiteral) !== 0) {
-    return (type as ts.StringLiteralType).value;
-  }
+  if (expected === 'number' && ts.isNumberLiteralType(type)) return type.value;
+  if (expected === 'string' && ts.isStringLiteralType(type)) return type.value;
   if (expected === 'number') {
     const text = checker.typeToString(type);
     const value = Number(text);
@@ -265,10 +273,14 @@ function isGolemTagSymbol(checker: ts.TypeChecker, symbol: ts.Symbol | undefined
   return Boolean(target?.declarations?.some((declaration) => isGolemSourceFile(declaration.getSourceFile().fileName, 'tags', owners)));
 }
 
+/** The name node of the declaration of `property`: a computed key such as `[sym]` for a property keyed by a symbol. */
+export function propertyKey(property: ts.Symbol): ts.PropertyName | undefined {
+  return (property.valueDeclaration ?? property.declarations?.[0])?.name;
+}
+
 /** Whether `property` is the key of a golem tag: a property named by one of the unique symbols that tags.ts declares. */
 export function isGolemTagKey(checker: ts.TypeChecker, property: ts.Symbol): boolean {
-  const declaration = property.valueDeclaration ?? property.declarations?.[0];
-  const key = declaration && (declaration as ts.NamedDeclaration).name;
+  const key = propertyKey(property);
   return key !== undefined && ts.isComputedPropertyName(key) && isGolemTagSymbol(checker, checker.getSymbolAtLocation(key.expression));
 }
 
@@ -394,7 +406,7 @@ function functionBinding(
     ? declaration.parent
     : undefined;
   const named = variable?.name
-    ?? (declaration && (declaration as ts.NamedDeclaration).name);
+    ?? declaration?.name;
   const written = context.writtenFunctions?.[kind].get(fn.type);
   if (written === null && !named) {
     throw context.diagnostic(fn.owner, '1040', `${kind} function shares its type with another function in this field, so golem cannot tell which one the tag names. Declare it with \`function\` or give it its own type.`);
@@ -510,9 +522,14 @@ export function propertyTypeNode(checker: ts.TypeChecker, property: ts.Symbol, v
   return nodes.find(node => checker.isTypeAssignableTo(checker.getTypeFromTypeNode(node), valueType)) ?? nodes[0];
 }
 
+/** The declared type of a property, read at its own declaration; `location` stands in for a property that has none. */
+export function propertyType(checker: ts.TypeChecker, property: ts.Symbol, location: ts.Node): ts.Type {
+  return checker.getTypeOfSymbolAtLocation(property, property.valueDeclaration ?? property.declarations?.[0] ?? location);
+}
+
 /** The type of one property of a tag argument's mapping, and the node that declares it. */
 function propertyValue(checker: ts.TypeChecker, property: ts.Symbol, owner: ts.Node): { readonly type: ts.Type; readonly node: ts.TypeNode | undefined } {
-  const type = checker.getTypeOfSymbolAtLocation(property, property.valueDeclaration ?? property.declarations?.[0] ?? owner);
+  const type = propertyType(checker, property, owner);
   return { type, node: propertyTypeNode(checker, property, type) };
 }
 
@@ -525,7 +542,7 @@ function literalString(
 ): string {
   const value = literalValue(context.checker, { node }, 'string');
   if (typeof value === 'string') return value;
-  if ((type.flags & ts.TypeFlags.StringLiteral) !== 0) return (type as ts.StringLiteralType).value;
+  if (ts.isStringLiteralType(type)) return type.value;
   throw context.diagnostic(owner, '1044', `${label} requires a string literal argument.`);
 }
 
@@ -540,10 +557,10 @@ function schemaList(
   const values = type.isUnion()
     ? type.types
     : context.checker.isTupleType(type)
-      ? context.checker.getTypeArguments(type as ts.TypeReference)
+      ? context.checker.getTypeArguments(type)
       : (() => {
         const argument = context.checker.isArrayType(type)
-          ? context.checker.getTypeArguments(type as ts.TypeReference)[0]
+          ? context.checker.getTypeArguments(type)[0]
           : undefined;
         return argument?.isUnion() ? argument.types : argument ? [argument] : [type];
       })();
@@ -561,11 +578,11 @@ function stringList(
 ): readonly string[] {
   if (!type) throw context.diagnostic(owner, '1043', `${label} requires a string tuple or string-literal union.`);
   const values = context.checker.isTupleType(type)
-    ? context.checker.getTypeArguments(type as ts.TypeReference)
+    ? context.checker.getTypeArguments(type)
     : type.isUnion()
       ? type.types
       : context.checker.isArrayType(type)
-        ? [context.checker.getTypeArguments(type as ts.TypeReference)[0]]
+        ? [context.checker.getTypeArguments(type)[0]]
         : [];
   const nodes = node && ts.isTupleTypeNode(node) ? node.elements : [];
   if (values.length === 0) throw context.diagnostic(owner, '1043', `${label} requires a string tuple or string-literal union.`);
@@ -776,13 +793,18 @@ const TAG_READERS: ReadonlyMap<string, TagReader> = new Map<string, TagReader>([
 ]);
 
 /**
- * The tag a symbol names, or undefined when it is no golem tag. The meaning comes from the tag the symbol resolves to; the name
+ * The tag a symbol names with its reader, or undefined when it is no golem tag. The meaning comes from the tag the symbol resolves to; the name
  * written at a use site is the importer's choice.
  */
-function golemTagName(checker: ts.TypeChecker, symbol: ts.Symbol | undefined): string | undefined {
+function golemTag(checker: ts.TypeChecker, symbol: ts.Symbol | undefined): { readonly name: string; readonly read: TagReader } | undefined {
   if (!isGolemTagSymbol(checker, symbol)) return undefined;
   const name = targetSymbol(checker, symbol)?.getName();
-  return name !== undefined && TAG_READERS.has(name) ? name : undefined;
+  const read = name === undefined ? undefined : TAG_READERS.get(name);
+  return name === undefined || read === undefined ? undefined : { name, read };
+}
+
+function golemTagName(checker: ts.TypeChecker, symbol: ts.Symbol | undefined): string | undefined {
+  return golemTag(checker, symbol)?.name;
 }
 
 function dependsOnAliasParameter(context: TagAnalysisContext, node: ts.Node): boolean {
@@ -801,8 +823,7 @@ function dependsOnAliasParameter(context: TagAnalysisContext, node: ts.Node): bo
   return found;
 }
 
-function instantiatedTag(context: TagAnalysisContext, name: string): TagMetadata {
-  const useSite = context.aliasUseSite!;
+function instantiatedTag(context: TagAnalysisContext, useSite: AliasUseSite, name: string): TagMetadata {
   const atUseSite: TagAnalysisContext = { ...context, diagnostic: (_node, code, message) => context.diagnostic(useSite.node, code, message) };
   const members = (useSite.type.isIntersection() ? useSite.type.types : [useSite.type])
     .filter((member) => member.aliasSymbol?.getName() === name && isGolemTagSymbol(context.checker, member.aliasSymbol));
@@ -813,33 +834,36 @@ function instantiatedTag(context: TagAnalysisContext, name: string): TagMetadata
   if (members.length > 1) {
     throw atUseSite.diagnostic(useSite.node, '1062', `${useSite.node.getText()} holds more than one ${name} tag, and one depends on a type parameter. Keep one ${name} per alias.`);
   }
-  return parseCheckerTag(atUseSite, members[0]!)!;
+  const [member] = members;
+  const tag = parseCheckerTag(atUseSite, member);
+  if (tag === undefined) throw new Error(`The ${name} tag that the type of ${useSite.node.getText()} shows is no golem tag.`);
+  return tag;
 }
 
 function parseTag(
   context: TagAnalysisContext,
   node: ts.TypeReferenceNode,
 ): TagMetadata | undefined {
-  const name = golemTagName(context.checker, context.checker.getSymbolAtLocation(node.typeName));
-  if (!name) return undefined;
+  const tag = golemTag(context.checker, context.checker.getSymbolAtLocation(node.typeName));
+  if (!tag) return undefined;
   const arguments_ = node.typeArguments ?? [];
-  if (arguments_.some((argument) => dependsOnAliasParameter(context, argument))) {
-    if (name === 'TValidation' || name === 'TSerde') {
-      const useSite = context.aliasUseSite!;
-      throw context.diagnostic(useSite.node, '1061', `${name} in ${useSite.node.getText()} must name exported functions with typeof, not a type parameter.`);
+  const useSite = context.aliasUseSite;
+  if (useSite !== undefined && arguments_.some((argument) => dependsOnAliasParameter(context, argument))) {
+    if (tag.name === 'TValidation' || tag.name === 'TSerde') {
+      throw context.diagnostic(useSite.node, '1061', `${tag.name} in ${useSite.node.getText()} must name exported functions with typeof, not a type parameter.`);
     }
-    return instantiatedTag(context, name);
+    return instantiatedTag(context, useSite, tag.name);
   }
-  return TAG_READERS.get(name)!(context, name, arguments_.map((argument) => ({ node: argument })), node);
+  return tag.read(context, tag.name, arguments_.map((argument) => ({ node: argument })), node);
 }
 
 function parseCheckerTag(
   context: TagAnalysisContext,
   type: ts.Type,
 ): TagMetadata | undefined {
-  const name = golemTagName(context.checker, type.aliasSymbol);
-  if (!name) return undefined;
-  return TAG_READERS.get(name)!(context, name, (type.aliasTypeArguments ?? []).map((argument) => ({ type: argument })), context.sourceFile);
+  const tag = golemTag(context.checker, type.aliasSymbol);
+  if (!tag) return undefined;
+  return tag.read(context, tag.name, (type.aliasTypeArguments ?? []).map((argument) => ({ type: argument })), context.sourceFile);
 }
 
 function metadataFromType(
@@ -968,9 +992,7 @@ export function readTags(
         },
       };
       const nested = readTags(nestedContext, declaration.type, next);
-      if (nested.metadata.validations.length || nested.metadata.serde || nested.metadata.constraints.length || nested.metadata.discriminator !== undefined) {
-        return nested;
-      }
+      if (hasTagMetadata(nested.metadata)) return nested;
     }
   }
   return emptyBase(node);
@@ -986,9 +1008,5 @@ export function analyzeNode(
   const metadata = mergeMetadata(nodeContext, node ?? context.sourceFile, result.metadata, metadataFromType(nodeContext, type));
   // Tags that only the checker type carries mean the node is not where this type comes from (the declaration a
   // mapped property inherits is not the type its template computes), so the node is no untagged base.
-  const nodeCarriesTags = result.metadata.validations.length > 0
-    || result.metadata.serde !== undefined
-    || result.metadata.constraints.length > 0
-    || result.metadata.discriminator !== undefined;
-  return { baseNode: nodeCarriesTags ? result.baseNode : undefined, metadata };
+  return { baseNode: hasTagMetadata(result.metadata) ? result.baseNode : undefined, metadata };
 }

@@ -6,6 +6,7 @@ import {
   discoverModelManifests,
   golemModeComponents,
   isGolemModeManifest,
+  noCodecIdError,
   readModelManifest,
 } from '../model-manifest-core.js';
 import type {
@@ -13,7 +14,7 @@ import type {
   ModelManifest,
   ModelManifestEntry,
 } from '../model-manifest-core.js';
-import { canonicalPath, compareText, displayPath, stableValue, type GolemProfile, type InputObserver } from '../generator-core.js';
+import { canonicalPath, compareText, displayPath, isRecord, stableValue, type GolemProfile, type InputObserver } from '../generator-core.js';
 import type { ModelTypeDescriptor } from '../../model-registry.js';
 import { canonicalFilename, isUnderOutputs } from './project.js';
 import type { ProgramInfo } from './project.js';
@@ -58,11 +59,16 @@ export interface ManifestIndex {
 /** The descriptor kinds of an SDK schema that has a node codec in the SDK's codecs file; a scalar alias has none and is written inline. */
 const NODE_KINDS: ReadonlySet<string> = new Set(['object', 'array', 'tuple', 'union', 'intersection']);
 
-/** The kind of the descriptor of the SDK schema `name`, through the schemas that only name another. */
-function descriptorKind(manifest: GolemModeManifest, name: string, seen: readonly string[] = []): string {
+/** The descriptor text of the SDK schema `name`. */
+function descriptorText(manifest: GolemModeManifest, name: string): string {
   const text = golemModeComponents(manifest).get(name)?.descriptor;
   if (text === undefined) throw new Error(`The SDK manifest has no descriptor for the schema ${JSON.stringify(name)}. Regenerate the SDK with this golem version.`);
-  const descriptor = JSON.parse(text) as { readonly kind: string; readonly id?: string; readonly name?: string };
+  return text;
+}
+
+/** The kind of the descriptor of the SDK schema `name`, through the schemas that only name another. */
+function descriptorKind(manifest: GolemModeManifest, name: string, seen: readonly string[] = []): string {
+  const descriptor = JSON.parse(descriptorText(manifest, name)) as { readonly kind: string; readonly id?: string; readonly name?: string };
   const next = descriptor.kind === 'generated-model' ? descriptor.id : descriptor.kind === 'reference' ? descriptor.name : undefined;
   return next === undefined || seen.includes(next) ? descriptor.kind : descriptorKind(manifest, next, [...seen, name]);
 }
@@ -72,20 +78,19 @@ function descriptorKind(manifest: GolemModeManifest, name: string, seen: readonl
  * also `sdkNode`): the model's check is the SDK's validator and its conversion calls the node codec the SDK's codecs file exports, so no
  * SDK conversion is written twice. A scalar alias, which has no node codec, is written inline.
  */
-function sdkDescriptorOf(manifest: GolemModeManifest, name: string): ModelTypeDescriptor | undefined {
-  const text = golemModeComponents(manifest).get(name)?.descriptor;
-  if (text === undefined) return undefined;
+function sdkDescriptorOf(manifest: GolemModeManifest, name: string): ModelTypeDescriptor {
+  const text = descriptorText(manifest, name);
+  const fieldsOf = (record: Record<string, unknown>): Record<string, unknown> => Object.fromEntries(Object.entries(record).map(([key, item]) => [key, nodeReferences(item)]));
   const nodeReferences = (value: unknown): unknown => {
     if (Array.isArray(value)) return value.map(nodeReferences);
-    if (value === null || typeof value !== 'object') return value;
-    const record = value as Record<string, unknown>;
-    const named = record.kind === 'generated-model' ? record.id : record.kind === 'reference' ? record.name : undefined;
-    if (typeof named !== 'string') return Object.fromEntries(Object.entries(record).map(([key, item]) => [key, nodeReferences(item)]));
-    const { kind: _kind, id: _id, name: _name, projection: _projection, ...rest } = record;
+    if (!isRecord(value)) return value;
+    const named = value.kind === 'generated-model' ? value.id : value.kind === 'reference' ? value.name : undefined;
+    if (typeof named !== 'string') return fieldsOf(value);
+    const { kind: _kind, id: _id, name: _name, projection: _projection, ...rest } = value;
     const codecId = golemModeComponents(manifest).get(named)?.codecId;
-    if (!NODE_KINDS.has(descriptorKind(manifest, named))) return { ...sdkDescriptorOf(manifest, named), ...(nodeReferences(rest) as object), sdkNode: codecId };
+    if (!NODE_KINDS.has(descriptorKind(manifest, named))) return { ...sdkDescriptorOf(manifest, named), ...fieldsOf(rest), sdkNode: codecId };
     if (codecId === undefined) throw new Error(`The SDK manifest names no codec for the schema ${JSON.stringify(named)}. Regenerate the SDK with this golem version.`);
-    return { kind: 'generated-model', id: codecId, ...(nodeReferences(rest) as object), sdkNode: codecId };
+    return { kind: 'generated-model', id: codecId, ...fieldsOf(rest), sdkNode: codecId };
   };
   return nodeReferences(JSON.parse(text)) as ModelTypeDescriptor;
 }
@@ -93,11 +98,8 @@ function sdkDescriptorOf(manifest: GolemModeManifest, name: string): ModelTypeDe
 /** The entry of an SDK type in a table keyed by the file and name of its declaration, found by the type's alias or its own symbol. */
 function sdkEntryOfType<Entry>(table: ReadonlyMap<string, Entry>, type: ts.Type): Entry | undefined {
   for (const symbol of [type.aliasSymbol, type.getSymbol?.()]) {
-    for (const declaration of symbol?.declarations ?? []) {
-      const file = canonicalFilename(declaration.getSourceFile().fileName);
-      const found = table.get(`${file}\0${symbol!.getName()}`) ?? table.get(`${file.replace(/\.d\.([cm]?ts)$/, '.$1')}\0${symbol!.getName()}`);
-      if (found !== undefined) return found;
-    }
+    const found = symbol && manifestModelOfSymbol(table, symbol);
+    if (found !== undefined) return found;
   }
   return undefined;
 }
@@ -110,7 +112,17 @@ function manifestProvenance(filename: string, moduleName: string, exportName: st
   const modulePath = isAbsolute(moduleName)
     ? moduleName
     : resolve(dirname(filename), moduleName);
-  return `${canonicalFilename(modulePath)}\0${exportName}`;
+  return provenanceKey(canonicalFilename(modulePath), exportName);
+}
+
+/** The key of a declaration in a table by provenance: its file and its name. */
+function provenanceKey(file: string, name: string): string {
+  return `${file}\0${name}`;
+}
+
+/** The `.ts` file that a `.d.ts` file declares: a published package ships `x.d.ts` for the `x.ts` its manifest names. */
+function declarationTwin(file: string): string {
+  return file.replace(/\.d\.([cm]?ts)$/, '.$1');
 }
 
 function validateManifestProfile(
@@ -120,7 +132,7 @@ function validateManifestProfile(
 ): void {
   const advertised = manifest.profile;
   const expected = { validation: profile.validation, allowAny: profile.allowAny ?? false, unknownFormats: profile.unknownFormats };
-  const differing = (Object.keys(expected) as (keyof typeof expected)[])
+  const differing = (['validation', 'allowAny', 'unknownFormats'] as const)
     .filter((key) => advertised[key] !== expected[key])
     .map((key) => `${key}: manifest ${advertised[key] ?? 'not recorded'}, project ${expected[key]}`);
   // A package without a record is not used; its settings are equal when their stable JSON is.
@@ -180,16 +192,15 @@ export function advertisedModelManifests(program: ts.Program, onInput?: InputObs
   return advertised;
 }
 
-/** The manifest entry that lists a declaration of `symbol`. A published package ships `.d.ts` for the `.ts` file its manifest names. */
-export function manifestModelOfSymbol(
-  byProvenance: ReadonlyMap<string, ResolvedModelManifestEntry>,
+/** The entry that a table by provenance (`manifestProvenance`) holds for a declaration of `symbol`: the manifest's models, or the SDK types and aliases of a golem-mode manifest. A `.d.ts` declaration finds the entry of its `.ts` twin. */
+export function manifestModelOfSymbol<Entry>(
+  byProvenance: ReadonlyMap<string, Entry>,
   symbol: ts.Symbol,
-): ResolvedModelManifestEntry | undefined {
+): Entry | undefined {
   for (const declaration of symbol.declarations ?? []) {
     const file = canonicalFilename(declaration.getSourceFile().fileName);
-    const model = byProvenance.get(`${file}\0${symbol.getName()}`)
-      ?? byProvenance.get(`${file.replace(/\.d\.([cm]?ts)$/, '.$1')}\0${symbol.getName()}`);
-    if (model) return model;
+    const entry = byProvenance.get(provenanceKey(file, symbol.getName())) ?? byProvenance.get(provenanceKey(declarationTwin(file), symbol.getName()));
+    if (entry !== undefined) return entry;
   }
   return undefined;
 }
@@ -253,9 +264,10 @@ export function loadModelManifests(
     const golem = isGolemModeManifest(manifest) ? manifest : undefined;
     if (golem !== undefined) {
       golemModeManifests.push({ file: filename, manifest: golem });
-      for (const alias of golem.components.filter((component) => component.type !== undefined)) {
-        const entry: SdkAlias = { descriptor: sdkDescriptorOf(golem, alias.name)!, ...(alias.uncarried?.length ? { uncarried: alias.uncarried } : {}) };
-        for (const provenance of [alias.type!, ...(alias.type!.aliases ?? [])]) {
+      for (const alias of golem.components) {
+        if (alias.type === undefined) continue;
+        const entry: SdkAlias = { descriptor: sdkDescriptorOf(golem, alias.name), ...(alias.uncarried?.length ? { uncarried: alias.uncarried } : {}) };
+        for (const provenance of [alias.type, ...(alias.type.aliases ?? [])]) {
           sdkAliases.set(manifestProvenance(filename, provenance.module, provenance.export), entry);
         }
       }
@@ -267,16 +279,12 @@ export function loadModelManifests(
           `Duplicate model manifest id "${model.id}" in ${existingFile} and ${filename}.`,
         );
       }
-      if (typeof model.allowAny !== 'boolean') {
-        throw new Error(
-          `Invalid model manifest ${filename}: model ${model.id} must advertise an effective allowAny boolean.`,
-        );
-      }
       manifestOfId.set(model.id, filename);
-      // A golem-mode model has its codec id on the component named as its declared type (`validateModelManifest` checked it is there).
+      // A golem-mode model has its codec id on the component named as its declared type; `validateModelManifest` checked that one of them is there.
       const component = golem && golemModeComponents(golem).get(model.type.export);
-      const codecId = component?.codecId ?? model.codecId!;
-      const resolved: ResolvedModelManifestEntry = { ...model, codecId, allowAny: model.allowAny, manifestFile: filename };
+      const codecId = component?.codecId ?? model.codecId;
+      if (codecId === undefined) throw noCodecIdError(filename, model.type.export);
+      const resolved: ResolvedModelManifestEntry = { ...model, codecId, manifestFile: filename };
       const provenances = [model.type, ...(model.type.aliases ?? [])];
       for (const provenance of provenances) {
         const key = manifestProvenance(filename, provenance.module, provenance.export);
@@ -291,12 +299,10 @@ export function loadModelManifests(
       }
       if (golem !== undefined && component !== undefined) {
         const descriptor = sdkDescriptorOf(golem, component.name);
-        if (descriptor !== undefined) {
-          const reference = NODE_KINDS.has(descriptor.kind) ? { kind: 'generated-model' as const, id: codecId, sdkNode: codecId } : { ...descriptor, sdkNode: codecId };
-          for (const provenance of provenances) {
-            sdkDescriptors.set(manifestProvenance(filename, provenance.module, provenance.export), { root: descriptor, field: reference });
-            if (component.uncarried?.length) sdkUncarried.set(manifestProvenance(filename, provenance.module, provenance.export), component.uncarried);
-          }
+        const reference = NODE_KINDS.has(descriptor.kind) ? { kind: 'generated-model' as const, id: codecId, sdkNode: codecId } : { ...descriptor, sdkNode: codecId };
+        for (const provenance of provenances) {
+          sdkDescriptors.set(manifestProvenance(filename, provenance.module, provenance.export), { root: descriptor, field: reference });
+          if (component.uncarried?.length) sdkUncarried.set(manifestProvenance(filename, provenance.module, provenance.export), component.uncarried);
         }
       }
     }
@@ -316,13 +322,7 @@ export function loadModelManifests(
       if (sdkAliases.size === 0 || !ts.isTypeReferenceNode(node)) return undefined;
       const named = checker.getSymbolAtLocation(node.typeName);
       const symbol = named !== undefined && (named.flags & ts.SymbolFlags.Alias) !== 0 ? checker.getAliasedSymbol(named) : named;
-      for (const declaration of symbol?.declarations ?? []) {
-        const file = canonicalFilename(declaration.getSourceFile().fileName);
-        const found = sdkAliases.get(`${file}\0${symbol!.getName()}`)
-          ?? sdkAliases.get(`${file.replace(/\.d\.([cm]?ts)$/, '.$1')}\0${symbol!.getName()}`);
-        if (found !== undefined) return found;
-      }
-      return undefined;
+      return symbol && manifestModelOfSymbol(sdkAliases, symbol);
     },
   };
 }

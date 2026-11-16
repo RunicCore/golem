@@ -5,6 +5,7 @@ import { isInsideDirectory, parseYamlFile, type InputObserver } from '@exprtlabs
 import { displayPath } from '@exprtlabs/golem/internal/generator-support';
 import { decodeUriFragment } from '@exprtlabs/golem/internal/schema';
 import { displayLocation } from './origin.js';
+import { REFERENCE_LIMIT_DEFAULTS } from './plan-options.js';
 import { asRecord, escapeJsonPointerToken, isJsonObject, jsonPointerJoin, objectEntries, resolveJsonPointer } from './json.js';
 import {
   collectCanonicalResources,
@@ -36,14 +37,8 @@ export async function readLimitedBody(
 ): Promise<string> {
   if (signal?.aborted) throw abortError(absoluteRef, signal);
   const stream = response.body;
-  if (!stream) {
-    const body = await response.text();
-    if (signal?.aborted) throw abortError(absoluteRef, signal);
-    if (Buffer.byteLength(body, 'utf8') > maxBytes) {
-      throw new Error(`remote reference exceeds ${maxBytes} bytes: ${absoluteRef}`);
-    }
-    return body;
-  }
+  // A response with no body stream (a 204, say) has an empty body: there is nothing to read and the cap holds.
+  if (!stream) return '';
   const reader = stream.getReader();
   const decoder = new TextDecoder(undefined, { fatal: true });
   let body = '';
@@ -117,10 +112,8 @@ function localReferenceEscapes(rootDirectory: string, candidate: string): boolea
   return !isInsideDirectory(rootReal, boundaryPath);
 }
 
-interface ReferenceLoadOptions extends ReferenceResolutionOptions {
-  /** Leave remote references unresolved instead of fetching them (input collection). */
-  readonly skipRemote?: boolean;
-}
+/** What the load does with a reference to a remote document: `fetch` it when its host is allowed, or leave it unresolved (input collection). */
+type RemoteReferences = 'fetch' | 'leave';
 
 export interface ReferenceTarget {
   readonly uri: string;
@@ -168,6 +161,8 @@ export interface ReferenceGraph {
 }
 
 const ABSOLUTE_URI = /^[a-z][a-z0-9+.-]*:/i;
+/** The statuses that send a client to another URL. A remote reference is never followed there: the allowed hosts and the local-file rules apply to the URL as written. */
+const REDIRECT_STATUSES: ReadonlySet<number> = new Set([301, 302, 303, 307, 308]);
 const REMOTE_ACCEPT = 'application/yaml, application/json, application/openapi+json, */*;q=0.1';
 
 function stripFragment(uri: string): string {
@@ -245,13 +240,17 @@ async function fetchRemoteDocument(uri: string, maxBytes: number, timeoutMs: num
   const signal = AbortSignal.timeout(timeoutMs);
   let response: Response;
   try {
-    response = await fetch(uri, { redirect: 'error', signal, headers: { Accept: REMOTE_ACCEPT } });
+    response = await fetch(uri, { redirect: 'manual', signal, headers: { Accept: REMOTE_ACCEPT } });
   } catch (error) {
     // A timeout or an abort keeps its own error. Any other failure names the URL: `fetch failed` alone does not say which reference.
     if (signal.aborted) throw error;
     const cause = error instanceof Error && error.cause !== undefined ? error.cause : error;
-    const reason = cause instanceof Error ? cause.message || String((cause as NodeJS.ErrnoException).code ?? cause.name) : String(cause);
-    throw new Error(`remote reference could not be loaded: ${uri}: ${reason === 'unexpected redirect' ? 'the server answered with a redirect, which golem does not follow' : reason}`, { cause: error });
+    const reason = cause instanceof Error ? cause.message || String(('code' in cause ? cause.code : undefined) ?? cause.name) : String(cause);
+    throw new Error(`remote reference could not be loaded: ${uri}: ${reason}`, { cause: error });
+  }
+  if (REDIRECT_STATUSES.has(response.status)) {
+    await cancelResponseBody(response);
+    throw new Error(`remote reference could not be loaded: ${uri}: the server answered with a redirect, which golem does not follow`);
   }
   if (!response.ok) {
     await cancelResponseBody(response);
@@ -285,17 +284,27 @@ interface DeferredIdentitySite {
   readonly walkerPointer: string;
 }
 
-export async function loadReferenceGraph(
+export function loadReferenceGraph(filename: string, rootDocument: unknown, options: ReferenceResolutionOptions = {}): Promise<ReferenceGraph> {
+  return loadGraph(filename, rootDocument, options, 'fetch');
+}
+
+/** The graph of the local documents only: a remote reference stays unresolved and is not fetched. */
+export function loadLocalReferenceGraph(filename: string, rootDocument: unknown, options: ReferenceResolutionOptions = {}): Promise<ReferenceGraph> {
+  return loadGraph(filename, rootDocument, options, 'leave');
+}
+
+async function loadGraph(
   filename: string,
   rootDocument: unknown,
-  options: ReferenceLoadOptions = {},
+  options: ReferenceResolutionOptions,
+  remote: RemoteReferences,
 ): Promise<ReferenceGraph> {
   const rootFile = path.resolve(filename);
   const rootUri = pathToFileURL(rootFile).href;
   const rootDirectory = path.dirname(rootFile);
-  const maxBytes = options.maxRefBytes || 5 * 1024 * 1024;
-  const maxDocuments = options.maxRefDocuments || 256;
-  const timeoutMs = options.refTimeoutMs || 10_000;
+  const maxBytes = options.maxRefBytes || REFERENCE_LIMIT_DEFAULTS.maxRefBytes;
+  const maxDocuments = options.maxRefDocuments || REFERENCE_LIMIT_DEFAULTS.maxRefDocuments;
+  const timeoutMs = options.refTimeoutMs || REFERENCE_LIMIT_DEFAULTS.refTimeoutMs;
   // A list entry without a port names the default port of https; an entry with a port names that port only. `URL.host` keeps a port that is not the default.
   const allowedHosts = new Set((options.remoteHosts ?? []).map((host) => new URL(`https://${host}`).host));
   const onInput: InputObserver | undefined = options.onInput;
@@ -440,7 +449,7 @@ export async function loadReferenceGraph(
     const fragment = decodeUriFragment(resolved.hash.replace(/^#/, ''));
     resolved.hash = '';
     const uri = resolved.href;
-    if (options.skipRemote) return { target: null, preserve: false };
+    if (remote === 'leave') return { target: null, preserve: false };
     if (allowedHosts.size === 0) {
       throw new Error(`remote reference blocked at ${item.walkerPointer}: ${item.reference}; list the hosts in remoteHosts in golem.yaml to opt in`);
     }
@@ -511,6 +520,8 @@ export async function loadReferenceGraph(
       walked.add(walkKey);
       const loaded = documents.get(next.target.uri) ?? await loadDocument(next.target.uri);
       const node = resolveJsonPointer(loaded.document, next.target.pointer);
+      // A pointer that names nothing is user input: `no-unresolved-refs` reports it after the bundle (`loadOpenApiInput`).
+      // Gap: a `#/` pointer in a hoisted non-root document is checked against the root, so a root component of that name hides the miss.
       if (node === undefined) continue;
       const base = next.target.uri === rootUri ? schemaDocumentBase(rootDocument) : next.target.uri;
       visitOpenApiComponent(next.kind, node, base, `#${next.target.pointer}`, handlersFor(next.target.uri));

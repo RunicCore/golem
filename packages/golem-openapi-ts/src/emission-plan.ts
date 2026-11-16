@@ -3,7 +3,7 @@ import type { ServerObject } from '@exprtlabs/golem/client';
 import { GolemDiagnosticSeverity, type GolemDiagnostic } from '@exprtlabs/golem/generator-api';
 import { mediaEssence } from '@exprtlabs/golem/internal/generator-support';
 import { asRecord, isJsonObject, objectEntries } from './json.js';
-import { SCHEMA_ARRAY_KEYWORDS, SCHEMA_MAP_KEYWORDS, SCHEMA_SINGLE_KEYWORDS } from './schema-keywords.js';
+import { SCHEMA_ARRAY_KEYWORDS, SCHEMA_MAP_KEYWORDS, SCHEMA_SINGLE_KEYWORDS } from '@exprtlabs/golem/internal/schema';
 import {
   resolveLocal,
   parameterSchema,
@@ -109,13 +109,6 @@ const BASE_CLIENT_HELPERS = [
   'readResponse',
 ] as const;
 
-function mediaList(operations: readonly NormalizedOperation[]): OpenApiMediaType[] {
-  return operations.flatMap((operation) => [
-    ...operation.requestContent,
-    ...operation.responses.flatMap((response) => [...response.content]),
-  ]);
-}
-
 /** The validator has checked the document, so a server whose `url` or variable `default` is not a string is a broken invariant. */
 function normalizeServers(servers: unknown): readonly ServerObject[] {
   if (!Array.isArray(servers)) return [];
@@ -149,7 +142,7 @@ function operationFirstServers(operations: readonly NormalizedOperation[], root:
     if (!list.length || JSON.stringify(list) === rootKey) continue;
     const first = JSON.stringify(list[0]);
     let position = firstServers.findIndex((server) => JSON.stringify(server) === first);
-    if (position < 0) position = firstServers.push(list[0]!) - 1;
+    if (position < 0) position = firstServers.push(list[0]) - 1;
     index.set(operation.name, position);
   }
   return { operationServers: firstServers, operationServerIndex: index };
@@ -223,7 +216,7 @@ function operationUsesComponentRef(
   env: ComponentRefEnv,
 ): boolean {
   if (side === 'input') {
-    return operation.requestContent.some(media => usesComponentRef(media.schema, env) || usesComponentRef(media.itemSchema, env))
+    return operation.requestContent.some(media => usesComponentRef(media.schema, env))
       || operation.parameters.some(parameter => usesComponentRef(parameterSchema(parameter), env));
   }
   return operation.responses.some(response =>
@@ -354,7 +347,7 @@ export function buildEmissionPlan(
   );
   const hasRequestBodies = requestContent.length > 0;
   const hasResponseContent = responseContent.length > 0;
-  const hasItemSchema = mediaList(outbound).some((media) => media.itemSchemaPresent);
+  const hasItemSchema = responseContent.some((media) => media.itemSchemaPresent);
   const parameters = outbound.flatMap((operation) => [...operation.parameters]);
   const hasParameterContent = parameters.some(parameterHasContent);
   const hasResponseHeaderContent = outbound.some((operation) =>

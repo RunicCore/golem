@@ -2,14 +2,12 @@ import * as ts from '../typescript-ns.js';
 import { canonicalPath, displayPath } from '../generator-core.js';
 import { canonicalFilename, generatedFilename, isModelFileName, type ModelBoundary } from './project.js';
 import type { ModelSpecification } from './models.js';
-import { isGolemSourceFile, isGolemTagKey } from './tags.js';
+import { isGolemSourceFile, isGolemTagKey, propertyKey } from './tags.js';
 import { hasLocalForm, localFormMessage } from '../names.js';
 
 /** An error with a code: the text is `<where> <code>: <message>`, and `code` is a property of the error. */
 export function codedError(code: string, message: string, where?: string): Error & { readonly code: string } {
-  const error = new Error(`${where === undefined ? '' : `${where} `}${code}: ${message}`) as Error & { readonly code: string };
-  Object.defineProperty(error, 'code', { value: code, enumerable: true });
-  return error;
+  return Object.assign(new Error(`${where === undefined ? '' : `${where} `}${code}: ${message}`), { code });
 }
 
 /** A located model-analysis error with its code. */
@@ -30,16 +28,6 @@ export function diagnostic(
   message: string,
 ): Error & { readonly code: string } {
   return namedDiagnostic(sourceFile, node, `RUNM${code}`, message);
-}
-
-/** The declared type of a property, read at its own declaration. */
-export function propertyType(
-  checker: ts.TypeChecker,
-  property: ts.Symbol,
-  location: ts.Node,
-): ts.Type {
-  const declaration = property.valueDeclaration ?? property.declarations?.[0] ?? location;
-  return checker.getTypeOfSymbolAtLocation(property, declaration);
 }
 
 /** Resolve imported aliases without using the local spelling of a declaration. */
@@ -99,8 +87,7 @@ const GENERATED_BRAND_SYMBOLS: ReadonlySet<string> = new Set(['generatedModelWir
  * model.ts declares. The key is found by its resolved symbol, so a string key spelled like a brand stays a field.
  */
 export function isGeneratedBrandKey(checker: ts.TypeChecker, property: ts.Symbol): boolean {
-  const declaration = property.valueDeclaration ?? property.declarations?.[0];
-  const key = declaration && (declaration as ts.NamedDeclaration).name;
+  const key = propertyKey(property);
   if (key === undefined || !ts.isComputedPropertyName(key)) return false;
   const target = resolveSymbol(checker, checker.getSymbolAtLocation(key.expression));
   return target !== undefined && GENERATED_BRAND_SYMBOLS.has(target.getName()) && (target.declarations ?? []).some(isGolemModelSource);
@@ -226,8 +213,7 @@ export function exportedConcreteClass(
 /** Whether `property` is a data property keyed by a symbol, such as `[sym]: string` or the `[Symbol.toStringTag]` of a built-in type. */
 export function isSymbolKeyedProperty(checker: ts.TypeChecker, property: ts.Symbol): boolean {
   if ((property.flags & ts.SymbolFlags.Method) !== 0) return false;
-  const declaration = property.valueDeclaration ?? property.declarations?.[0];
-  const key = declaration && (declaration as ts.NamedDeclaration).name;
+  const key = propertyKey(property);
   if (key === undefined || !ts.isComputedPropertyName(key)) return false;
   return (checker.getTypeAtLocation(key.expression).flags & ts.TypeFlags.UniqueESSymbol) !== 0;
 }
@@ -248,7 +234,7 @@ export function isDefaultLibraryProperty(property: ts.Symbol, isDefaultLibraryFi
 
 /** Stops generation when `property` has a symbol key; `owner` names the model or parameter and `node` is where the error points. */
 export function assertNoSymbolKey(checker: ts.TypeChecker, property: ts.Symbol, owner: string, sourceFile: ts.SourceFile, node: ts.Node): void {
-  if (!isUnsupportedSymbolKey(checker, property)) return;
-  const key = ((property.valueDeclaration ?? property.declarations?.[0]) as ts.NamedDeclaration).name!.getText();
+  const key = propertyKey(property)?.getText();
+  if (key === undefined || !isUnsupportedSymbolKey(checker, property)) return;
   throw diagnostic(sourceFile, node, '1070', `${owner} has the property ${key} with a symbol key. JSON cannot carry a symbol key. Use a string key, or remove the property.`);
 }

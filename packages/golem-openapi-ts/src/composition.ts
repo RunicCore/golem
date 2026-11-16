@@ -26,7 +26,7 @@ import {
   type ObjectResult,
   type SlotRule,
 } from '@exprtlabs/golem/internal/emitter';
-import type { ModelConstraint, ModelTypeDescriptor } from '@exprtlabs/golem/internal/schema';
+import type { ModelConstraint, ModelTypeDescriptor, ScopedSchema } from '@exprtlabs/golem/internal/schema';
 
 import { asRecord, isJsonObject, objectEntries } from './json.js';
 import { admitsNull, effectiveSchemaTypes } from './normalize.js';
@@ -34,12 +34,6 @@ import { admitsNull, effectiveSchemaTypes } from './normalize.js';
 export const COMPOSITION_CONVERSION_CONFLICT = 'OPENAPI_COMPOSITION_CONVERSION_CONFLICT';
 export const COMPOSITION_UNSATISFIABLE = 'OPENAPI_COMPOSITION_UNSATISFIABLE';
 export const COMPOSITION_PROPERTY_NEVER = 'OPENAPI_COMPOSITION_PROPERTY_NEVER';
-
-/** A schema in the scope it is read in. */
-interface ScopedSchema<S> {
-  readonly schema: unknown;
-  readonly scope: S;
-}
 
 /** How the resolver reads schemas: the caller owns `$ref` resolution, scopes and descriptors. */
 export interface CompositionReader<S> {
@@ -111,11 +105,14 @@ export function isConstraintOnlyPart(part: ModelTypeDescriptor): boolean {
   return part.kind === 'unknown' && part.validations === undefined && part.serde === undefined;
 }
 
+/** Where the composed schema stands: a property, item or operation value (`field`), or the root of a component (`definition`). */
+export type CompositionPosition = 'field' | 'definition';
+
 export function resolveComposition<S>(
   schema: unknown,
   scope: S,
   reader: CompositionReader<S>,
-  position: 'field' | 'definition',
+  { position }: { readonly position: CompositionPosition },
 ): Composition<S> {
   try {
     const disjoint = disjointMemberTypes(schema, scope, reader);
@@ -134,13 +131,13 @@ function resolveObjects<S>(
   schema: unknown,
   scope: S,
   reader: CompositionReader<S>,
-  position: 'field' | 'definition',
+  position: CompositionPosition,
   originalMembers?: readonly number[],
 ): Composition<S> {
   if (!isJsonObject(schema) || !Array.isArray(schema.allOf) || schema.allOf.length === 0) return { kind: 'members' };
   if (schema.oneOf !== undefined || schema.anyOf !== undefined || isSequenceSchema(schema)) return { kind: 'members' };
   const nested = reader.nested(schema, scope);
-  const members = schema.allOf.map((member) => ({ member, descriptor: describe(member, nested, reader) }));
+  const members = schema.allOf.map((member, index) => ({ member, index, descriptor: describe(member, nested, reader) }));
   const deciding = members.filter(({ descriptor }) => !isConstraintOnlyPart(descriptor));
   if (deciding.length === 0) return { kind: 'members' };
   const constraints = members.flatMap(({ descriptor }) => isConstraintOnlyPart(descriptor) ? descriptor.constraints ?? [] : []);
@@ -164,7 +161,7 @@ function resolveObjects<S>(
     }
     const composed = composeObjects(parts, rule);
     if (isRejected(composed)) return conflict(composed.rejected);
-    const never = neverSlots(composed, parts, partNames(schema, ownPart, deciding, nested, reader, originalMembers));
+    const never = neverSlots(composed, parts, partNames(ownPart, deciding, nested, reader, originalMembers));
     const required = never.filter(({ name }) => composed.required.includes(name));
     if (required.length) return unsatisfiable(required);
     const closes = schema.unevaluatedProperties === false && parts.every((part) => part.extra.mode === 'open');
@@ -190,7 +187,7 @@ function resolveObjects<S>(
   parts.push({ slots: {}, required: composedRequired(schema), extra: { mode: 'open' } });
   const composed = composeObjects(parts, rule);
   if (isRejected(composed)) return conflict(composed.rejected);
-  const never = neverSlots(composed, parts, partNames(schema, ownPart, deciding, nested, reader, originalMembers));
+  const never = neverSlots(composed, parts, partNames(ownPart, deciding, nested, reader, originalMembers));
   const unsatisfied = never.filter(({ name }) => composed.required.includes(name));
   if (unsatisfied.length) return unsatisfiable(unsatisfied);
   const extra = composed.extra.mode === 'open' ? unevaluatedExtra(schema, nested, reader) : composed.extra;
@@ -337,17 +334,15 @@ export function neverReason(never: NeverName): string {
 
 /** The schema's own parts by name, in the order of `parts`; a `$ref` member is undefined. */
 function partNames<S>(
-  schema: Readonly<Record<string, unknown>>,
   ownPart: ObjectPart<SlotChild<S>> | undefined,
-  deciding: readonly { readonly member: unknown }[],
+  deciding: readonly { readonly member: unknown; readonly index: number }[],
   scope: S,
   reader: CompositionReader<S>,
   originalMembers?: readonly number[],
 ): (string | undefined)[] {
-  const members = Array.isArray(schema.allOf) ? schema.allOf : [];
   return [
     ...(ownPart ? ['the schema itself'] : []),
-    ...deciding.map(({ member }) => reader.reference(member, scope) ? undefined : `allOf member ${originalMembers?.[members.indexOf(member)] ?? members.indexOf(member)}`),
+    ...deciding.map(({ member, index }) => reader.reference(member, scope) ? undefined : `allOf member ${originalMembers?.[index] ?? index}`),
   ];
 }
 
@@ -356,7 +351,10 @@ function neverSlots<S>(composed: ObjectResult<SlotChild<S>>, parts: readonly Obj
     .filter(([, child]) => child.descriptor.kind === 'never')
     .map(([name]) => {
       if (!composed.closed.includes(name)) return { name, closed: false };
-      const closer = names[parts.findIndex((part) => part.extra.mode === 'closed' && !Object.hasOwn(part.slots, name))];
+      // `composeObjects` closes a name only because a closed part lacks it, so that part exists.
+      const closerIndex = parts.findIndex((part) => part.extra.mode === 'closed' && !Object.hasOwn(part.slots, name));
+      if (closerIndex < 0) throw new Error(`the composition closes ${JSON.stringify(name)}, but no closed part lacks it`);
+      const closer = names[closerIndex];
       return closer === undefined ? { name, closed: true } : { name, closed: true, closer };
     });
 }

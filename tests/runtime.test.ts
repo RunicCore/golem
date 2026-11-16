@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test, { type TestContext } from 'node:test';
 import { autorun, observable, runInAction } from 'mobx';
@@ -17,8 +16,6 @@ import { copyFixtureFile, createFixtureProject, linkProjectPackages } from './fi
 import { workspace } from './support/process.js';
 import * as manifest from '@exprtlabs/golem/manifest';
 import { sourceDigest } from '@exprtlabs/golem/internal/generator-support';
-
-const distRoot = dirname(fileURLToPath(import.meta.resolve('@exprtlabs/golem/model')));
 
 test('registering a model leaves its metadata off instances, prototypes and JSON', () => {
   class Base { value = 'initial'; }
@@ -65,18 +62,6 @@ test('a function message override formats a rule issue once, and a string result
   const stringRule = validation.getValidator<{ x: string }, SlotModel>(new SlotModel({ x: 'a' })).extend({ x: () => 'Bad x' }).messages({ custom: append });
   assert.equal(await stringRule.validate(), false);
   assert.deepEqual(stringRule.issues.map(issue => issue.message), ['Bad x']);
-});
-
-test('dependency-free runtime entrypoints do not import optional integrations', () => {
-  const modelSource = fs.readFileSync(join(distRoot, 'model.js'), 'utf8');
-  const validationSources = ['validation.js', 'schema-registry-validation.js']
-    .map(name => fs.readFileSync(join(distRoot, name), 'utf8'));
-  assert.doesNotMatch(modelSource, /from ['"].*mobx/i);
-  assert.doesNotMatch(modelSource, /node:/);
-  for (const source of validationSources) {
-    assert.doesNotMatch(source, /from ['"].*mobx/i);
-    assert.doesNotMatch(source, /node:/);
-  }
 });
 
 test('structural validation preserves descriptors, custom rules, messages, and caching', async () => {

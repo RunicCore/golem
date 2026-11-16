@@ -112,6 +112,7 @@ export const plan: GolemPlanEntry<ModelOptions> = {
       for (const source of sources) if (!isInsideDirectory(root, source)) throw new Error(outsideModelsRootMessage(source, root));
     }
     const sourceSuffixes = checkedSuffixes(value.suffixes, 'model.suffixes');
+    const suffixes = sourceSuffixes ?? DEFAULT_MODEL_SUFFIXES;
     const options: ModelOptions = {
       root, directory, output, tsconfig, profile,
       ...(exact === undefined ? {} : { exact }),
@@ -132,9 +133,9 @@ export const plan: GolemPlanEntry<ModelOptions> = {
       needs: [],
       hooks: [VALIDATOR_ENHANCER_HOOK, CODEC_DATA_HOOK],
       // A job with a list of sources reads those and no others. Otherwise a file with a model ending in a folder the job owns or has read is a source, whether or not a run has read it.
-      watch: sources ? [] : [{ suffixes: sourceSuffixes ?? DEFAULT_MODEL_SUFFIXES }],
+      watch: sources ? [] : [{ suffixes }],
     };
-    const modelBoundary: ModelBoundaryValue = { root, directory, output, suffixes: sourceSuffixes ?? DEFAULT_MODEL_SUFFIXES };
+    const modelBoundary: ModelBoundaryValue = { root, directory, output, suffixes };
     const codecsHost: CodecsHostValue = { modelsOutput: output, configDirectory: directory };
     return [{ facts, options, provided: { [MODEL_BOUNDARY]: modelBoundary, [CODECS_HOST]: codecsHost } }];
   },

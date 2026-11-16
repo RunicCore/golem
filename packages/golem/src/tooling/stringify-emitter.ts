@@ -4,10 +4,12 @@
  * Date convert in the same pass as concat / JSON.parse.
  */
 
+import { assertNever } from '../assert-never.js';
 import type { ModelTypeDescriptor, SerdeFunctions } from '../model-registry.js';
 import type { ValidationLevel, ValidationPlane } from '../object-codec.js';
 import type { SchemaGraph, SchemaNode } from './schema-graph.js';
-import { codecShortName, nodeHoldsSequence, patternSchemas, serdeWireDescriptor } from './schema-graph.js';
+import { codecShortName, nodeHoldsSequence, patternSchemas } from './schema-graph.js';
+import { serdeWireDescriptor } from './schema.js';
 import { requireComposedObject, type ModelBases } from './composition.js';
 import { STRIP_PLAN, StripPlans, type StripPlanEnv } from './strip-plan.js';
 import {
@@ -51,8 +53,7 @@ export interface StringifySerdeResolver {
  * its deserializer is wrapped once, by `wireChecked`, where the file binds it.
  */
 function serdeWireKind(serde: SerdeFunctions): 'string' | 'number' | 'boolean' | undefined {
-  const { wire, wireDescriptor } = serde as SerdeFunctions & { readonly wire?: ModelTypeDescriptor; readonly wireDescriptor?: ModelTypeDescriptor };
-  const kind = (wireDescriptor ?? wire)?.kind;
+  const kind = serdeWireDescriptor(serde)?.kind;
   return kind === 'string' || kind === 'number' || kind === 'boolean' ? kind : undefined;
 }
 
@@ -140,8 +141,8 @@ export interface CodecRuntimeOptions {
   readonly siblingWireCodecIds?: ReadonlySet<string>;
   /** Whether a sibling codec's model is recursive, by codec id. A sibling the job does not know is treated as recursive. */
   readonly siblingRecursion?: ReadonlyMap<string, boolean>;
-  /** Export the wire stringify of every public codec, or of those the function accepts (`wireStringifyExportName`), for other generated modules to import. */
-  readonly exportWireStringify?: boolean | ((node: SchemaNode) => boolean);
+  /** Export the wire stringify of the public codecs that the function accepts (`writesWireStringify`, `wireStringifyExportName`), for other generated modules to import. */
+  readonly exportWireStringify?: (node: SchemaNode) => boolean;
   /** Export anonymous codecs' functions: OpenAPI group modules import them from each other. Model companions keep them private. */
   readonly exportAnonymousCodecs?: boolean;
   /** A closed object root's `toWireFormat` keeps only the declared fields of a class instance: its other own keys are program state, not unknown keys. */
@@ -381,12 +382,12 @@ function memberPrefix(name: string, leadingComma: boolean): Code {
   return literal(`${leadingComma ? ',' : ''}${JSON.stringify(name)}:`);
 }
 
-function serdeTags(descriptor: ModelTypeDescriptor): {
-  readonly serde?: SerdeFunctions;
-} {
-  return descriptor as ModelTypeDescriptor & {
-    readonly serde?: SerdeFunctions;
-  };
+/**
+ * The serde of a descriptor as the functions it names. Every descriptor that a generator makes names both; a descriptor that a test
+ * writes by hand may leave them out, and the serde resolver of that test never reads them.
+ */
+export function descriptorSerde(descriptor: ModelTypeDescriptor): SerdeFunctions | undefined {
+  return descriptor.serde as SerdeFunctions | undefined;
 }
 
 function isObjectish(descriptor: ModelTypeDescriptor): boolean {
@@ -452,8 +453,7 @@ function emitRecursiveWireCall(named: SchemaNode, expression: Code, ctx: EmitCtx
 
 /** Whether a value under `descriptor` holds one a codec encodes (a serde type, a model of another module or one with its own wire form). */
 function reachesEncodedValue(descriptor: ModelTypeDescriptor, ctx: Pick<EmitCtx, 'graph'>, seen: Set<string> = new Set()): boolean {
-  const tags = serdeTags(descriptor);
-  if (tags.serde || descriptor.kind === 'generated-model') return true;
+  if (descriptor.serde || descriptor.kind === 'generated-model') return true;
   if (descriptor.kind === 'reference') {
     const node = ctx.graph.nodeFor(descriptor);
     if (!node || !node.sameSchema || node.descriptor.kind === 'reference') return true;
@@ -473,20 +473,20 @@ function emitValue(
   if (descriptor.kind === 'generated-model') {
     const named = ctx.graph.nodeFor(descriptor);
     // A wire value goes to the wire stringify of its node, the one its module exports or this module's own: the model stringify would encode the value again.
-    const wire = named && ctx.wireIdentity ? importedSerdeOf(named, ctx)?.wireStringify ?? (serdeTags(descriptor).serde ? undefined : localWireStringify(named, ctx)) : undefined;
+    const wire = named && ctx.wireIdentity ? importedSerdeOf(named, ctx)?.wireStringify ?? (descriptor.serde ? undefined : localWireStringify(named, ctx)) : undefined;
     if (wire) return code`${wire}(${value} as never)`;
     // A wire value of a generated model that holds an array is written by the wire writer of its node, below, as a recursive alias is.
-    if (named && !(ctx.wireIdentity && !serdeTags(descriptor).serde && nodeHoldsSequence(named))) {
+    if (named && !(ctx.wireIdentity && !descriptor.serde && nodeHoldsSequence(named))) {
       return nestedStringifyCall(named.id, value, ctx);
     }
     if (!named) throw new Error(`Internal error: the schema graph has no node for the generated model ${JSON.stringify(descriptor.id)}.`);
   }
-  const tags = serdeTags(descriptor);
-  if (tags.serde) {
-    const wire = serdeWireDescriptor(descriptor) ?? { kind: 'unknown' as const };
+  const serde = descriptorSerde(descriptor);
+  if (serde) {
+    const wire = serdeWireDescriptor(serde) ?? { kind: 'unknown' as const };
     if (ctx.wireIdentity) return emitValue(wire, value, ctx);
     const serialized = ctx.serde
-      ? ctx.serde.serialize(tags.serde, value)
+      ? ctx.serde.serialize(serde, value)
       : value;
     return emitValue(wire, serialized, ctx);
   }
@@ -502,7 +502,7 @@ function emitValue(
       ctx.wireIdentity
       // The local node only, as above: a node of another module writes its wire value by `wireStringify`.
       && (named.descriptor.kind === 'object' || nodeHoldsSequence(named) || (descriptor.kind === 'reference' && descriptor.projection === true))
-      && (descriptorNeedsConversion(named.descriptor) || !named.sameSchema)
+      && wireDiffers(named)
     ) {
       // Call the node's own wire stringify: inlining would repeat the child for
       // every path to it and never terminate for a recursive model.
@@ -558,7 +558,7 @@ function emitObjectInline(
   const value = expression;
   const required = new Set(descriptor.required);
   const properties = Object.entries(descriptor.properties);
-  const hasExtras = typeof descriptor.additionalProperties === 'object' || descriptor.additionalPropertiesDeclared;
+  const hasExtras = extraKeyValues(descriptor) !== undefined;
   // An object with no declared field writes `{}`, unless it declares its other names as data.
   if (properties.length === 0 && !hasExtras) return code`'{}'`;
   if (isPlainDataMap(descriptor)) return code`${rt.serde.stringifyJsonScalar}(${value} as never)`;
@@ -719,9 +719,7 @@ function emitObjectStringify(
   // With validation off a required field can be missing, so a lenient object writes each field that is present.
   const required = new Set(ctx.lenientRoot ? [] : descriptor.required);
   const properties = Object.entries(descriptor.properties);
-  const additional = typeof descriptor.additionalProperties === 'object'
-    ? descriptor.additionalProperties
-    : descriptor.additionalPropertiesDeclared ? { kind: 'unknown' as const } : undefined;
+  const additional = extraKeyValues(descriptor);
   const name = identifier(fn);
   if (properties.length === 0 && !additional) {
     return stringifyFunction(stringifyHeader(name, code`Record<string, unknown>`, ctx), [code`  return '{}';`], guard, valueSlot);
@@ -911,8 +909,9 @@ function isScalarDescriptor(descriptor: ModelTypeDescriptor): boolean {
     case 'union':
     case 'intersection':
       return descriptor.variants.every(isScalarDescriptor);
-    default:
+    case 'any': case 'array': case 'class-value': case 'generated-model': case 'object': case 'reference': case 'tuple': case 'unknown':
       return false;
+    default: return assertNever(descriptor);
   }
 }
 
@@ -1000,9 +999,8 @@ function fillCanThrow(node: SchemaNode, ctx: EmitCtx): boolean {
 function sharesInput(descriptor: ModelTypeDescriptor, ctx: EmitCtx, seen: Set<ModelTypeDescriptor> = new Set()): boolean {
   if (seen.has(descriptor)) return false;
   seen.add(descriptor);
-  const tags = serdeTags(descriptor);
-  if (tags.serde) {
-    const wire = serdeWireDescriptor(descriptor);
+  if (descriptor.serde) {
+    const wire = serdeWireDescriptor(descriptor.serde);
     return wire !== undefined && sharesInput(wire, ctx, seen);
   }
   switch (descriptor.kind) {
@@ -1033,14 +1031,15 @@ function sharesInput(descriptor: ModelTypeDescriptor, ctx: EmitCtx, seen: Set<Mo
       // A node is decoded by its own fill or convert function, which checks what it carries by reference.
       return ctx.graph.nodeFor(descriptor) === undefined;
     }
-    default:
+    case 'bigint': case 'boolean': case 'class-value': case 'literal': case 'never': case 'null': case 'number': case 'string': case 'undefined':
       return false;
+    default: return assertNever(descriptor);
   }
 }
 
 /** The descriptors a value of `descriptor` holds directly, the wire of a TSerde value included, which a decode and a strip read; a model or reference is followed through its node. */
 function heldDescriptors(descriptor: ModelTypeDescriptor): readonly ModelTypeDescriptor[] {
-  const wire = serdeWireDescriptor(descriptor);
+  const wire = serdeWireDescriptor(descriptor.serde);
   return wire !== undefined && wire !== descriptor ? [...ownDescriptors(descriptor), wire] : ownDescriptors(descriptor);
 }
 
@@ -1057,8 +1056,10 @@ function ownDescriptors(descriptor: ModelTypeDescriptor): readonly ModelTypeDesc
       const values = mapValueDescriptor(descriptor);
       return [...Object.values(descriptor.properties), ...(values === undefined ? [] : [values]), ...patternSchemas(descriptor).flatMap(({ schema }) => schema === undefined ? [] : [schema])];
     }
-    default:
+    case 'any': case 'bigint': case 'boolean': case 'class-value': case 'generated-model': case 'literal': case 'never': case 'null': case 'number':
+    case 'reference': case 'string': case 'undefined': case 'unknown':
       return [];
+    default: return assertNever(descriptor);
   }
 }
 
@@ -1273,7 +1274,7 @@ function emitTaggedVariantUnion(
         const node = ctx.graph.nodeFor(variant);
         const constant = direction === 'encode-json' && node !== undefined && ctx.strictCoreIds?.has(node.id) === true && !ctx.lenientRoot
           && object.required.includes(dispatch.property) && object.properties[dispatch.property]?.kind === 'literal'
-          && typeof object.additionalProperties !== 'object' && !object.additionalPropertiesDeclared;
+          && extraKeyValues(object) === undefined;
         return constant ? 'always' : object.properties[dispatch.property] !== undefined;
       })(),
     })),
@@ -1466,10 +1467,10 @@ function emitUnionEncode(
 
 function emitDecodeValue(descriptor: ModelTypeDescriptor, expression: Code, ctx: EmitCtx): Code {
   const value = expression;
-  const tags = serdeTags(descriptor);
-  if (tags.serde) {
-    const deserialized = ctx.serde ? fallibleConversion(ctx, ctx.serde.deserialize(tags.serde, value)) : value;
-    const wire = serdeWireDescriptor(descriptor);
+  const serde = descriptorSerde(descriptor);
+  if (serde) {
+    const deserialized = ctx.serde ? fallibleConversion(ctx, ctx.serde.deserialize(serde, value)) : value;
+    const wire = serdeWireDescriptor(descriptor.serde);
     if (wire && (wire.kind === 'object' || wire.kind === 'reference' || wire.kind === 'generated-model')) {
       return code`(${objectValueExpression(value)} ? ${deserialized} : ${value})`;
     }
@@ -1810,9 +1811,9 @@ function emitEncodeValue(descriptor: ModelTypeDescriptor, expression: Code, ctx:
     }
     throw new Error(`Internal error: the schema graph has no node for the generated model ${JSON.stringify(descriptor.id)}.`);
   }
-  const tags = serdeTags(descriptor);
-  if (tags.serde) {
-    return ctx.serde ? ctx.serde.serialize(tags.serde, value) : value;
+  const serde = descriptorSerde(descriptor);
+  if (serde) {
+    return ctx.serde ? ctx.serde.serialize(serde, value) : value;
   }
   const named = ctx.graph.nodeFor(descriptor);
   if (named && isObjectish(descriptor)) {
@@ -1883,12 +1884,12 @@ function emitEncodedRecord(
   });
   // A schema for the other names: they are kept and encoded by it. Without one, a declared `additionalProperties: true`
   // keeps them as they are. Any other object writes its listed names only.
-  const additional = typeof descriptor.additionalProperties === 'object' ? descriptor.additionalProperties : undefined;
+  const additional = extraKeyValues(descriptor);
   const extra = inputSlot('extra', 'name');
   const keyParameter = fields.length === 0 ? code`` : code`key`;
   const unlisted = fields.length === 0 ? code`` : code` && ${keyIsNotListed(identifier('key'), fields.map(([name]) => name))}`;
-  const extras = additional || descriptor.additionalPropertiesDeclared
-    ? [code`...Object.fromEntries(Object.entries(${asRecordCode(inputOf(self))}).filter(([${keyParameter}, extra]) => extra !== undefined${unlisted}).map(([key, extra]) => [key, ${bindInput(emitEncodeValue(additional ?? { kind: 'unknown' }, inputOf(extra), ctx), extra, code`extra`)}]))`]
+  const extras = additional
+    ? [code`...Object.fromEntries(Object.entries(${asRecordCode(inputOf(self))}).filter(([${keyParameter}, extra]) => extra !== undefined${unlisted}).map(([key, extra]) => [key, ${bindInput(emitEncodeValue(additional, inputOf(extra), ctx), extra, code`extra`)}]))`]
     : [];
   const entries = [...extras, ...values.map((field) => field.spread ? field.code : code`[${literal(field.name)}]: ${field.code}`)];
   const record = entries.length === 0 ? code`{}` : code`{ ${join(entries, code`, `)} }`;
@@ -1941,6 +1942,23 @@ function nodeLevels(node: SchemaNode, project: ValidationLevel): NodeLevels {
 /** Whether the module of a project at level `project` writes the wire stringify of `node`: it holds the node, its calls validate and its wire and model schemas differ. */
 export function writesWireStringify(node: SchemaNode, project: ValidationLevel): boolean {
   return !isExternalCodecNode(node) && validatesByDefault(nodeLevels(node, project)) && !node.sameSchema;
+}
+
+/**
+ * Whether the wire form of a node differs from its plain form: the node converts something (`descriptorNeedsConversion`), or its wire and
+ * model schemas differ (`sameSchema`, which holds for a node only when every node it reaches is the same too).
+ */
+export function wireDiffers(node: SchemaNode): boolean {
+  return descriptorNeedsConversion(node.descriptor) || !node.sameSchema;
+}
+
+/**
+ * The schema of the values under the other keys of an object, when its JSON writers keep those keys: a schema for them, or a declared
+ * `additionalProperties: true` (any value). Another object writes its listed names only, and has none.
+ */
+export function extraKeyValues(descriptor: ObjectTypeDescriptor): ModelTypeDescriptor | undefined {
+  if (typeof descriptor.additionalProperties === 'object') return descriptor.additionalProperties;
+  return descriptor.additionalPropertiesDeclared ? { kind: 'unknown' } : undefined;
 }
 
 /** The level arguments of `serdeValidates`: the default, and the cap when it is another level. */
@@ -2177,7 +2195,7 @@ function emitStringifySection(runtime: NodeRuntime): Code {
       ? bindInput(emitEncodedRecord(objectDescriptor, inputOf(stringifyValue), encoded), stringifyValue, code`value`)
       : onCastValue((cast) => emitEncodeValue(node.descriptor, cast, encoded))
     : undefined;
-  const exportsWire = codecIsExported(node, ctx) && (typeof ctx.exportWireStringify === 'function' ? ctx.exportWireStringify(node) : ctx.exportWireStringify === true);
+  const exportsWire = codecIsExported(node, ctx) && ctx.exportWireStringify?.(node) === true;
   const wireStringifySrc = emitsValidatedWire
     ? code`${emitStringifyFunction(node, ctx.graph, ctx.serde, { ...ctx, wireIdentity: true, withoutOptions: true, functionName: `${stringifyName}Wire` })}${exportsWire
       ? code`export { ${wireId} as ${identifier(wireStringifyExportName(node.codecId))} };\n`

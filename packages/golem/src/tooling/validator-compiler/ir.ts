@@ -197,14 +197,23 @@ export interface IrClass {
 
 /**
  * `golemModelInstance`: of the model classes `among`, the one the value's encoder selects is the most derived one
- * the value is an instance of. It must be `of`: always when `required`, otherwise when there is one. Without `of`,
- * the value must be an instance of none of them. A failure is one `instance` issue naming `of`, or the first of `among`.
+ * the value is an instance of. `of`: it must be `of`, always when `required`, otherwise when there is one. `none`: the
+ * value must be an instance of none of them. A failure is one `instance` issue naming `of`, or the first of `among`.
  */
-export interface IrInstance {
+export type IrInstance = IrInstanceOf | IrInstanceNone;
+
+interface IrInstanceOf {
   readonly kind: 'instance';
-  readonly of?: string;
+  readonly selects: 'of';
+  readonly of: string;
   readonly among: readonly string[];
   readonly required: boolean;
+}
+
+interface IrInstanceNone {
+  readonly kind: 'instance';
+  readonly selects: 'none';
+  readonly among: readonly string[];
 }
 
 /** A user validation function or class the generated module imports. */
@@ -233,6 +242,9 @@ export type IrSchema =
   | { readonly kind: 'always' }
   | { readonly kind: 'never' }
   | { readonly kind: 'checks'; readonly checks: readonly IrCheck[] };
+
+/** The schema that every value passes. */
+export const ALWAYS: IrSchema = { kind: 'always' };
 
 /**
  * A schema that something refers to: a root, a `$ref` target, a branch, or a schema that needs a record of its own.

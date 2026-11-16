@@ -127,7 +127,6 @@ function expect<T extends StaticValue>(
 const isString = (value: StaticValue): value is string => typeof value === 'string';
 const isNumber = (value: StaticValue): value is number => typeof value === 'number';
 const isBoolean = (value: StaticValue): value is boolean => typeof value === 'boolean';
-const isRecord = (value: StaticValue): value is { readonly [key: string]: StaticValue } => isStaticRecord(value);
 const isStringList = (value: StaticValue): value is readonly string[] => isStaticArray(value) && value.every(isString);
 
 export function readString(reader: MetadataReader, expression: ts.Expression | undefined, label: string, code = TsToOpenApiDiagnosticCode.UnsupportedSchemaMetadata): string | undefined {
@@ -219,7 +218,7 @@ export class DecoratorOptions {
   }
 
   record(name: string, code = TsToOpenApiDiagnosticCode.UnsupportedSchemaMetadata): Readonly<Record<string, StaticValue>> | undefined {
-    return this.typed(name, isRecord, 'an object', code);
+    return this.typed(name, isStaticRecord, 'an object', code);
   }
 
   /**
@@ -246,9 +245,11 @@ export class DecoratorOptions {
   }
 
   documentationString(name: string): string | undefined {
+    const node = this.node(name);
+    if (node === undefined) return undefined;
     const value = this.documentation(name);
     if (value === undefined || typeof value === 'string') return value;
-    return metadataError(this.node(name)!, TsToOpenApiDiagnosticCode.UnsupportedSchemaMetadata, `${this.optionLabel(name)} must be a string.`);
+    return metadataError(node, TsToOpenApiDiagnosticCode.UnsupportedSchemaMetadata, `${this.optionLabel(name)} must be a string.`);
   }
 }
 
@@ -279,9 +280,10 @@ function objectOptions(
         setValues(readStatic(reader, property.expression, `${label}() options spread`, code), property);
         continue;
       }
-      const key = (ts.isPropertyAssignment(property) || ts.isShorthandPropertyAssignment(property)) ? inlineKey(property.name) : undefined;
-      if (key === undefined) metadataError(property, code, `${label}() options must use static property names.`);
-      const expression = ts.isPropertyAssignment(property) ? property.initializer : (property as ts.ShorthandPropertyAssignment).name as ts.Expression;
+      const named = ts.isPropertyAssignment(property) || ts.isShorthandPropertyAssignment(property) ? property : undefined;
+      const key = named && inlineKey(named.name);
+      if (named === undefined || key === undefined) metadataError(property, code, `${label}() options must use static property names.`);
+      const expression = ts.isPropertyAssignment(named) ? named.initializer : named.name;
       entries.delete(key);
       entries.set(key, { kind: 'inline', expression });
     }
@@ -305,11 +307,11 @@ export function headerOptionsList(reader: MetadataReader, info: DecoratorInfo): 
   }
   const node = argument ?? info.decorator;
   const list = argument && readStatic(reader, argument, `${label}() options`, code);
-  if (!isStaticArray(list) || !list.every(item => isStaticRecord(item))) {
+  if (!isStaticArray(list) || !list.every(isStaticRecord)) {
     return metadataError(node, code, `${label}() options must be a static array of header options.`);
   }
   return list.map(item => new DecoratorOptions(reader, label, new Map<string, OptionEntry>(
-    Object.entries(item as { readonly [key: string]: StaticValue }).map(([key, value]) => [key, { kind: 'value', value, node }]),
+    Object.entries(item).map(([key, value]) => [key, { kind: 'value', value, node }]),
   )));
 }
 

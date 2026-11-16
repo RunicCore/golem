@@ -7,7 +7,7 @@ import type { DiscriminatorValue, ModelTypeDescriptor } from '../model-registry.
 import { createHash } from 'node:crypto';
 import { bindInput, code, helperName, identifier, inputOf, inputSlot, join, literal, localCode, readShape, render, sameCode, selfPlacedHelper, type Code, type Helper, type InputSlot } from './code.js';
 import { rt } from './rt.js';
-import { serdeWireDescriptor } from './schema-graph.js';
+import { serdeWireDescriptor } from './schema.js';
 import {
   emitArrayItems,
   emitTupleItems,
@@ -467,7 +467,7 @@ function isSequenceVariant(variant: ModelTypeDescriptor, named: NamedVariants): 
 
 /** A variant with a serde of its own whose wire form is an array or tuple, or a named node of one, whatever type the serde reads it into. */
 function isSerdeSequence(variant: ModelTypeDescriptor, holdsSequence: NamedVariants): boolean {
-  const wire = serdeWireDescriptor(variant);
+  const wire = serdeWireDescriptor(variant.serde);
   return wire !== undefined && (wire.kind === 'array' || wire.kind === 'tuple' || (isNamed(wire) && holdsSequence(wire)));
 }
 
@@ -478,7 +478,7 @@ function isObjectVariant(variant: ModelTypeDescriptor, named: NamedVariants): bo
 
 /** A class value (a TSerde class or bigint) whose JSON form is a scalar, so the wire value tells it from an object or an array. */
 function isClassValueOfScalar(descriptor: ModelTypeDescriptor): boolean {
-  const wire = serdeWireDescriptor(descriptor);
+  const wire = serdeWireDescriptor(descriptor.serde);
   return descriptor.kind === 'class-value' && wire !== undefined && isScalarishDescriptor(wire);
 }
 
@@ -804,10 +804,7 @@ export function descriptorNeedsConversion(
   lookup?: ProjectionBodyLookup,
   visited: Set<string> = new Set(),
 ): boolean {
-  const tags = descriptor as ModelTypeDescriptor & {
-    readonly serde?: { readonly id: string };
-  };
-  if (tags.serde || descriptor.kind === 'generated-model') {
+  if (descriptor.serde || descriptor.kind === 'generated-model') {
     return true;
   }
   const needs = (held: ModelTypeDescriptor): boolean => descriptorNeedsConversion(held, lookup, visited);

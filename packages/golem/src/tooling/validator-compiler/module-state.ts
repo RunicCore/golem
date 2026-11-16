@@ -20,6 +20,13 @@ export class ModuleState {
     return identifierCode(`v${index}`);
   }
 
+  /** The export name of the validation function at `index` of the module's imports, in the file it is imported from. */
+  public validationExport(index: number): string {
+    const entry = this.imports[index];
+    if (entry === undefined) throw new Error(`The validator compiler has no validation function at index ${index}.`);
+    return entry.exportName;
+  }
+
   /**
    * Declares a module-level constant and returns its name. A constant that holds the same value, as `key` says, is
    * declared once. Every initializer is a call or a `new`, so it carries the annotation that lets a bundler drop the

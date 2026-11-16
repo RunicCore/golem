@@ -44,22 +44,28 @@ test('a configuration parsed under flags takes the flags over its options and li
   assert.throws(() => session.parseConfigFileWithFlags(config, ['--noSuchFlag']), /TS5023/);
 });
 
-const PRINTED: readonly (readonly [string, Readonly<Record<string, string>>, object?])[] = [
+/** A row: its name, its files, its compiler options, the roots the program is given beyond the ones its tsconfig matches, its command-line flags and its option overrides. */
+const PRINTED: readonly (readonly [string, Readonly<Record<string, string>>, object?, (readonly string[])?, (readonly string[])?, Readonly<Record<string, boolean>>?])[] = [
   ['no error', { 'src/a.ts': 'export const a: string = "x";\n' }],
   ['a syntax error hides the type errors', { 'src/a.ts': 'export const a: string = 1;\n', 'src/b.ts': 'export const = ;\n' }],
   ['errors in files created out of order', { 'src/z.ts': 'export const z: string = 1;\n', 'src/a.ts': 'export const a: string = 1;\n', 'src/m.ts': 'export const m: string = 1;\n' }],
   ['no library: global errors', { 'src/a.ts': 'export const a = 1;\n' }, { noLib: true }],
   ['one error', { 'src/a.ts': 'export const a: string = 1;\n' }],
   ['an options error stays in the configuration file', { 'src/a.ts': 'export const a: string = 1;\n' }, { declaration: false, declarationMap: true }],
+  ['an options error stays in the configuration file when a root lies outside it', { 'src/a.ts': 'export const a = 1;\n', 'extra.ts': 'export const extra = 1;\n' }, { declaration: false, declarationMap: true }, ['extra.ts']],
+  ['an options error stays in the configuration file under flags', { 'src/a.ts': 'export const a = 1;\n' }, { declaration: false, declarationMap: true }, [], ['--noEmit']],
+  ['an options error stays in the configuration file under flags when a root lies outside it', { 'src/a.ts': 'export const a = 1;\n', 'extra.ts': 'export const extra = 1;\n' }, { declaration: false, declarationMap: true }, ['extra.ts'], ['--noEmit']],
+  ['a file out of rootDir names the include pattern that matched it in the configuration file under flags', { 'src/a.ts': 'export const a = 1;\n', 'src/inner/b.ts': 'export const b = 1;\n' }, { rootDir: 'src/inner' }, [], ['--noEmit']],
+  ['an options error stays in the configuration file under option overrides', { 'src/a.ts': 'export const a = 1;\n' }, { declaration: false, declarationMap: true }, [], [], { noEmit: true }],
   ['two errors in one file', { 'src/a.ts': 'export const a: string = 1;\nexport const b: string = 2;\n' }],
   ['errors in two files', { 'src/a.ts': 'export const a: string = 1;\nexport const b: string = 2;\n', 'src/b.ts': 'export const c: string = 3;\n' }],
 ];
-for (const [name, files, options] of PRINTED) {
+for (const [name, files, options, outside = [], flags = [], overrides] of PRINTED) {
   test(`diagnostics print as tsc prints them: ${name}`, t => {
     // protects: T-460 T-461 the seam's tsc-form diagnostics (set and order), formatters and Found N errors summary equal tsc's plain and pretty output
     const { root, config } = project(t, files, { noEmit: true, ...options });
     using session = new ts.ProgramSession({ cwd: root });
-    using program = session.openProgram({ root, sources: session.parseConfigFile(config).fileNames, configFile: config });
+    using program = session.openProgram({ root, sources: [...session.parseConfigFile(config).fileNames, ...outside.map((file) => path.join(root, file))], configFile: config, flags, ...overrides && { compilerOptionOverrides: overrides } });
     const diagnostics = ts.getTscDiagnostics(program);
     assert.equal(ts.formatDiagnostics(diagnostics, host(root)), tsc(root, ['--pretty', 'false']));
     const printed = diagnostics.map((diagnostic) => `${ts.formatDiagnosticsWithColorAndContext([diagnostic], host(root))}\n`).join('');
@@ -67,6 +73,18 @@ for (const [name, files, options] of PRINTED) {
     assert.equal(pretty, tsc(root, ['--pretty', 'true']));
   });
 }
+
+test('an options error stays in the configuration file when the project has references', t => {
+  // protects: T-965 a project with references opens a synthetic program with no configuration text, yet its option error keeps the file and place tsc gives
+  const { root, config } = project(t, { 'src/a.ts': 'export const a = 1;\n', 'shared/src/x.ts': 'export const x = 1;\n' });
+  fs.writeFileSync(path.join(root, 'shared/tsconfig.json'), JSON.stringify({ compilerOptions: { ...COMPILER, composite: true, outDir: 'dist', rootDir: 'src' }, include: ['src'] }));
+  fs.writeFileSync(config, JSON.stringify({ compilerOptions: { ...COMPILER, noEmit: true, declaration: false, declarationMap: true }, include: ['src'], references: [{ path: './shared' }] }));
+  using session = new ts.ProgramSession({ cwd: root });
+  using program = session.openProgram({ root, sources: session.parseConfigFile(config).fileNames, configFile: config });
+  const printed = ts.formatDiagnostics(ts.getTscDiagnostics(program), host(root));
+  assert.match(printed, /^tsconfig\.json\(1,\d+\): error TS5069: /);
+  assert.equal(printed, tsc(root, ['--pretty', 'false']));
+});
 
 test('a program emits JavaScript and declarations to memory, equal to what tsc writes, and writes no file', t => {
   // protects: T-460 the seam emits JavaScript with maps, or declarations, to memory on both lanes

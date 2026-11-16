@@ -564,7 +564,7 @@ test('no fast check for a root that reaches a validation function, also through 
       ]),
       validations: RULES,
     },
-    { unknownFormats: 'warn', fastPath: true },
+    { unknownFormats: 'warn', fastPath: 'all' },
   );
   assert.deepEqual([...result.fastExports], [['Note', 'is_Note']]);
 });
@@ -579,7 +579,7 @@ test('a rare keyword gives a fast check also inside allOf, a union branch or $re
         ['Unevaluated', { type: 'object', properties: { a: {} }, unevaluatedProperties: false }],
       ]),
     },
-    { unknownFormats: 'warn', fastPath: true },
+    { unknownFormats: 'warn', fastPath: 'all' },
   );
   assert.deepEqual([...result.fastExports.keys()].sort(), ['AllOfOfRare', 'AnyOfOfRare', 'RefToRare']);
 });
@@ -781,11 +781,4 @@ test('fast check equals the full validator in both directions on generated schem
   assert.equal(Object.keys(module.fastByRoot).length, schemas.length, 'every generated schema has a fast check');
   const verdicts = new Set(cases.map(({ root, value }) => outcome(() => module.fastByRoot[root](value))));
   assert.ok(verdicts.has(true) && verdicts.has(false), 'the values hold both valid and invalid ones');
-});
-
-test('with fastPath off the module exports no fast check and is the same as without the option', () => {
-  const schema = { type: 'object', required: ['a'], properties: { a: { type: 'string', format: 'date' } } };
-  const plain = compile({ roots: new Map([['root', schema]]) }, { unknownFormats: 'warn' });
-  const off = compile({ roots: new Map([['root', schema]]) }, { unknownFormats: 'warn', fastPath: false });
-  assert.deepEqual({ source: off.source, fastExports: [...off.fastExports] }, { source: plain.source, fastExports: [] });
 });

@@ -1,7 +1,7 @@
 // The plan entry of the ts-openapi block (`golem.plan`). Core loads it when it reads golem.yaml, so it imports no TypeScript, no yaml and no generator code.
 import path from 'node:path';
 import { openApiVersionOf, type OpenApiVersion } from './openapi-version.js';
-import { canonicalPath, checkedSuffixes, isRecord, MODEL_BOUNDARY } from '@exprtlabs/golem/internal/plan-support';
+import { canonicalPath, checkedSuffixes, isRecord, MODEL_BOUNDARY, nonempty } from '@exprtlabs/golem/internal/plan-support';
 import type {
   GeneratorHostContext,
   GeneratorSession,
@@ -86,11 +86,6 @@ function keys(value: unknown, allowed: readonly string[], label: string): assert
   }
 }
 
-function nonempty(value: unknown, label: string): string {
-  if (typeof value !== 'string' || !value.trim()) throw new TypeError(`${label} must be a nonempty string.`);
-  return value;
-}
-
 function positive(value: unknown, label: string): number {
   if (typeof value !== 'number' || !Number.isSafeInteger(value) || value <= 0) throw new Error(`${label} must be a positive safe integer.`);
   return value;
@@ -125,7 +120,7 @@ function controllerTags(value: unknown, label: string): readonly ControllerTag[]
   return value.map((item, index) => {
     const tag = record(item, `${label}[${index}]`);
     if (typeof tag.name !== 'string' || !tag.name.trim()) throw new TypeError(`${label}[${index}].name must be a nonempty string.`);
-    return tag as ControllerTag;
+    return { ...tag, name: tag.name };
   });
 }
 
@@ -146,7 +141,7 @@ function controllerUriVersioning(value: unknown, label: string): ControllerUriVe
     ...(type === undefined ? {} : { type }),
     ...(prefix === undefined ? {} : { prefix }),
     ...(defaultVersion === undefined ? {} : { defaultVersion }),
-  } as ControllerUriVersioning;
+  };
 }
 
 /** A path the block names, made absolute from the golem.yaml folder and canonical. The observer sees it as written and as resolved, before the job reads it. */
@@ -221,7 +216,7 @@ function docsJob(context: PlanContext, entry: unknown, label: string): PlannedJo
 function checkExtensions(value: unknown): void {
   if (value === undefined) return;
   const label = `${BLOCK}.extensions`;
-  const nest = (value as { readonly nest?: unknown }).nest;
+  const nest = record(value, label).nest;
   if (nest === undefined || nest === null) return;
   keys(nest, ['nonModelInputs'], `${label}.nest`);
   if (nest.nonModelInputs !== undefined && nest.nonModelInputs !== 'warn' && nest.nonModelInputs !== 'error') throw new Error(`${label}.nest.nonModelInputs must be "warn" or "error".`);

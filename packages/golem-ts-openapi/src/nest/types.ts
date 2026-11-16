@@ -26,6 +26,9 @@ export interface TypeReference {
   readonly sourceFile: ts.SourceFile;
 }
 
+/** What an `@ApiQuery`, `@ApiParam` or `@ApiHeader` sets on a parameter: schema keywords by name, and the `type` of the override when it names one. */
+export type ParameterOverride = Readonly<Record<string, unknown>> & { readonly type?: TypeReference; readonly isArray?: boolean };
+
 export interface DecoratorInfo {
   readonly decorator: ts.Decorator;
   readonly expression: ts.Expression;
@@ -83,18 +86,26 @@ export interface ControllerRoute {
   readonly bodyParts: readonly ControllerParameter[];
   readonly responses: readonly ResponseDescription[];
   readonly requestBody?: RequestBodyDescription;
-  readonly parameterOverrides?: Readonly<Record<string, Readonly<Record<string, unknown>>>>;
+  readonly parameterOverrides?: Readonly<Record<string, ParameterOverride>>;
   readonly consumes?: readonly string[];
   readonly produces?: readonly string[];
   readonly security?: readonly Record<string, string[]>[];
   readonly deprecated?: boolean;
 }
 
+/** The media type of a request or response body when nothing declares one. */
+export const DEFAULT_MEDIA_TYPE = 'application/json';
+
+/** The media types a route declares (`@ApiConsumes`, `@ApiProduces`), or the default one when it declares none. */
+export function mediaTypesOrDefault(declared: readonly string[] | undefined): readonly string[] {
+  return declared?.length ? declared : [DEFAULT_MEDIA_TYPE];
+}
+
 export interface NestAnalysisContext {
   readonly root: string;
   readonly sources: readonly string[];
   /** File-name endings of controller sources; a controller class without a name is named by its file without one. */
-  readonly suffixes?: readonly string[];
+  readonly suffixes: readonly string[];
   readonly program: ts.Program;
   readonly checker: ts.TypeChecker;
   readonly openapiVersion: OpenApiVersion;

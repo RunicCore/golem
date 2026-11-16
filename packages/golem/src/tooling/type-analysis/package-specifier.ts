@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { canonicalPath, displayPath, isInsideDirectory } from '../generator-core.js';
+import { canonicalPath, displayPath, isInsideDirectory, isRecord, recordOrUndefined } from '../generator-core.js';
 
 type PackageSpecifierResult =
   | { readonly kind: 'same-package' }
@@ -19,8 +19,8 @@ export class ManifestError extends Error {}
 function parseManifest(filename: string): Record<string, unknown> {
   try {
     const parsed: unknown = JSON.parse(fs.readFileSync(filename, 'utf8').replace(/^\uFEFF/, ''));
-    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('the JSON is not an object');
-    return parsed as Record<string, unknown>;
+    if (!isRecord(parsed)) throw new Error('the JSON is not an object');
+    return parsed;
   }
   catch (error) { throw new ManifestError(`Cannot read ${displayPath(filename)} to resolve a package import: ${error instanceof Error ? error.message : String(error)}`, { cause: error }); }
 }
@@ -31,7 +31,7 @@ export function readManifest(filename: string): { readonly name?: string; readon
   const cached = manifests.get(filename);
   if (cached?.mtimeMs === mtimeMs) return cached;
   const json = parseManifest(filename);
-  const manifest = { mtimeMs, name: json.name as string | undefined, exports: json.exports };
+  const manifest = { mtimeMs, name: typeof json.name === 'string' ? json.name : undefined, exports: json.exports };
   manifests.set(filename, manifest);
   return manifest;
 }
@@ -39,7 +39,7 @@ export function readManifest(filename: string): { readonly name?: string; readon
 /** The package name at the start of a bare specifier: `pkg` or `@scope/pkg`. */
 export function packageName(specifier: string): string {
   const segments = specifier.split('/');
-  return specifier.startsWith('@') ? segments.slice(0, 2).join('/') : segments[0]!;
+  return specifier.startsWith('@') ? segments.slice(0, 2).join('/') : segments[0];
 }
 
 /**
@@ -144,7 +144,7 @@ function subpathMap(exportsField: unknown): Record<string, unknown> {
   return typeof exportsField === 'string' || Array.isArray(exportsField)
     || (exportsField && typeof exportsField === 'object' && !Object.keys(exportsField).some((key) => key.startsWith('.')))
     ? { '.': exportsField }
-    : (exportsField as Record<string, unknown> | undefined) ?? {};
+    : recordOrUndefined(exportsField) ?? {};
 }
 
 /** Every string target in one exports entry, whatever condition holds it, in object order. */

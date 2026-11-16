@@ -32,10 +32,9 @@ import type { SchemaGraph, SchemaNode } from '@exprtlabs/golem/internal/schema-g
 import type { ModelSpecification } from '@exprtlabs/golem/internal/type-analysis';
 import { assertModelLevelsWithinProject, collectSpecifications } from '@exprtlabs/golem/internal/type-analysis';
 import { discoverModelManifests } from '@exprtlabs/golem/manifest';
-import { loadModelManifests, sdkModelFiles, sdkSchemaGraph } from '@exprtlabs/golem/internal/type-analysis';
+import { loadModelManifests, sdkModelFiles } from '@exprtlabs/golem/internal/type-analysis';
 import type { ManifestIndex } from '@exprtlabs/golem/internal/type-analysis';
-import type { GolemModeManifest } from '@exprtlabs/golem/manifest';
-import { golemSdks, sdkCodecsSource, sdkValidatorOperations } from './sdk-table.js';
+import { golemSdks, sdkCodecsSource, sdkValidatorOperations, type GolemSdk } from './sdk-table.js';
 import {
   assertAbsolute,
   assertGeneratorRoot,
@@ -251,8 +250,7 @@ function canonicalSourceKey(filename: string): string {
  * The SDK's own type of each of its nodes that the SDK exports a type for, by codec id: a model has its declared type in the manifest,
  * and a recursive alias has the type of its component. A node with no exported type (an unnamed shape) is absent.
  */
-function sdkOwnTypes(index: ManifestIndex, manifest: GolemModeManifest): ReadonlyMap<string, { readonly file: string; readonly name: string }> {
-  const file = index.golemModeManifests.find((item) => item.manifest === manifest)!.file;
+function sdkOwnTypes({ manifest, file }: GolemSdk): ReadonlyMap<string, { readonly file: string; readonly name: string }> {
   const types = new Map<string, { readonly file: string; readonly name: string }>();
   for (const component of manifest.components) {
     const declared = component.type ?? manifest.models.find((model) => model.type.export === component.name)?.type;
@@ -593,11 +591,10 @@ export function generate(context: GolemModelContext): GolemModelResult {
     .filter((graph): graph is NonNullable<typeof graph> => graph !== undefined);
   // An SDK in golem mode writes no validators: its types are nodes of this job's graphs, compiled with the models in one set.
   const sdks = golemSdks(manifestIndex, normalized);
-  const sdkGraphs = sdks.map((sdk) => sdkSchemaGraph(sdk.manifest, normalized.profile.validation));
   const graphSchemaPairs = internJobSchemaGraphs(graphs, normalized.profile.validation, [
-    ...sdkGraphs.flatMap(({ graph }) => sdkNodeClosure(graph)),
+    ...sdks.flatMap(({ graph }) => sdkNodeClosure(graph)),
   ]);
-  const schemaGraphs = [...graphSchemaPairs.map(({ schemaGraph }) => schemaGraph), ...sdkGraphs.map(({ graph }) => graph)];
+  const schemaGraphs = [...graphSchemaPairs.map(({ schemaGraph }) => schemaGraph), ...sdks.map(({ graph }) => graph)];
   const schemaEntries = deduplicateTagSchemas(
     graphs.flatMap((graph) => graph.schemas)
       .sort((left, right) => compareText(left.key, right.key)
@@ -640,8 +637,8 @@ export function generate(context: GolemModelContext): GolemModelResult {
     artifacts.push({ path: validatorsOutput, content: validators.source });
   }
   // The file an SDK of mode golem imports for its codecs; the openapi job wrote the import and the models job owns the file.
-  for (const [index, sdk] of sdks.entries()) {
-    artifacts.push({ path: sdk.codecsFile, content: sdkCodecsSource(sdk, sdkGraphs[index]!, validators && { file: validatorsOutput, compiled: validators }, normalized.profile) });
+  for (const sdk of sdks) {
+    artifacts.push({ path: sdk.codecsFile, content: sdkCodecsSource(sdk, validators && { file: validatorsOutput, compiled: validators }, normalized.profile) });
   }
   const codecData = codecDataOf(normalized.hooks);
   const validatorEnhancer = validatorEnhancerOf(normalized.hooks);
@@ -658,7 +655,7 @@ export function generate(context: GolemModelContext): GolemModelResult {
       { siblingWireCodecIds, siblingRecursion, cyclicSiblings },
       {
         ...(validators ? { validators: { module: validatorsOutput, exports: validators.exports, fastExports: validators.fastExports, passExports: validators.passExports } } : {}),
-        sdkCodecs: sdks.map((sdk, index) => ({ file: sdk.codecsFile, graph: sdkGraphs[index]!.graph, types: sdkOwnTypes(manifestIndex, sdk.manifest) })),
+        sdkCodecs: sdks.map((sdk) => ({ file: sdk.codecsFile, graph: sdk.graph, types: sdkOwnTypes(sdk) })),
       },
       codecData,
       validatorEnhancer,

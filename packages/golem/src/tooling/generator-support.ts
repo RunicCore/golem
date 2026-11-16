@@ -4,12 +4,13 @@
  * The extension API stays on `@exprtlabs/golem/generator-api`.
  */
 export {
-  canonicalPath, displayPath, isRecord, stripSourceSuffix,
+  canonicalPath, displayPath, isRecord, readOwnPackageVersion, recordOrUndefined, stripSourceSuffix,
   suffixPattern,
 } from './generator-core.js';
 export {
   NameScope, RESERVED_BINDING_NAMES, RESERVED_MODEL_MEMBERS, assertPortableFilenames, bindingName, camelIdentifier, identifier,
 } from './names.js';
+export { assertNever } from '../assert-never.js';
 export { sourceDigest } from './model-manifest-core.js';
 export { parameterIdentity, parameterStyleRule } from '../client-runtime/parameter-styles.js';
 export { mediaEssence } from '../client-runtime/media-type.js';

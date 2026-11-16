@@ -2,6 +2,7 @@
 // observable operation of an SDK client. Hook names are plain text and golem-model is a type import only, because a project may hold only an SDK job.
 import type { ValidatorEnhancerParticipant } from '@exprtlabs/golem-model/plan';
 import { aliased, packageExport } from '@exprtlabs/golem/internal/emitter';
+import { assertNever } from '@exprtlabs/golem/internal/generator-support';
 import { GolemDiagnosticSeverity, type GolemExtension } from '@exprtlabs/golem/generator-api';
 import type { OperationWrapperParticipant } from '../plan.js';
 
@@ -13,15 +14,21 @@ const MOBX_VALIDATION_RUNTIME = { key: 'mobx-validation', specifier: '@exprtlabs
 const validatorEnhancer: ValidatorEnhancerParticipant = () => packageExport({ ...MOBX_VALIDATION_RUNTIME, name: 'enhanceValidatorWithMobX' });
 
 /** Fills `client.operationWrapper`: each operation is an observable operation. A standalone SDK carries no MobX runtime, so the mode golem is required. */
-const operationWrapper: OperationWrapperParticipant = (mode) => mode === 'golem'
-  ? { wrapper: {
-    operationType: aliased(packageExport({ ...MOBX_RUNTIME, name: 'ObservableApiOperation', typeOnly: true }), 'ApiOperation'),
-    createOperation: aliased(packageExport({ ...MOBX_RUNTIME, name: 'createObservableApiOperation' }), 'createApiOperation'),
-  } }
-  : { diagnostic: {
-    code: 'OPENAPI_MOBX_NEEDS_GOLEM_MODE',
-    severity: GolemDiagnosticSeverity.Error,
-    message: 'The mobx extension needs the MobX runtime of @exprtlabs/golem-openapi-ts, which a standalone SDK does not carry. Set mode: golem on this sdks job, or remove extensions: mobx from the openapi-ts block.',
-  } };
+const operationWrapper: OperationWrapperParticipant = (mode) => {
+  switch (mode) {
+    case 'golem':
+      return { wrapper: {
+        operationType: aliased(packageExport({ ...MOBX_RUNTIME, name: 'ObservableApiOperation', typeOnly: true }), 'ApiOperation'),
+        createOperation: aliased(packageExport({ ...MOBX_RUNTIME, name: 'createObservableApiOperation' }), 'createApiOperation'),
+      } };
+    case 'standalone':
+      return { diagnostic: {
+        code: 'OPENAPI_MOBX_NEEDS_GOLEM_MODE',
+        severity: GolemDiagnosticSeverity.Error,
+        message: 'The mobx extension needs the MobX runtime of @exprtlabs/golem-openapi-ts, which a standalone SDK does not carry. Set mode: golem on this sdks job, or remove extensions: mobx from the openapi-ts block.',
+      } };
+    default: return assertNever(mode);
+  }
+};
 
 export const extension: GolemExtension = { hooks: { 'model.validatorEnhancer': validatorEnhancer, 'client.operationWrapper': operationWrapper } };

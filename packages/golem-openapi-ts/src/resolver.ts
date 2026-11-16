@@ -3,7 +3,7 @@ import { bundleReferenceGraph } from './bundler.js';
 import { expandOas32MediaTypes, parseSourceDocument, validate, validateSourceDocument } from './document.js';
 import { displayLocation, type OriginLocator } from './origin.js';
 import { formatOpenApiProblems, validateOpenApiDocument } from './openapi-validator.js';
-import { loadReferenceGraph, type ReferenceResolutionOptions } from './reference-loader.js';
+import { loadLocalReferenceGraph, loadReferenceGraph, type ReferenceResolutionOptions } from './reference-loader.js';
 
 export { readLimitedBody, type ReferenceResolutionOptions } from './reference-loader.js';
 
@@ -54,6 +54,6 @@ export async function collectLocalReferenceInputs(
   document: unknown,
   options: ReferenceResolutionOptions = {},
 ): Promise<string[]> {
-  const graph = await loadReferenceGraph(filename, document, { ...options, skipRemote: true });
+  const graph = await loadLocalReferenceGraph(filename, document, options);
   return [...graph.localFiles];
 }

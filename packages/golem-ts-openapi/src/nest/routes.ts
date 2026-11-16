@@ -1,7 +1,6 @@
 import * as path from 'node:path';
 import { compareText, discoverSources } from '@exprtlabs/golem/generator-api';
-import { displayPath, stripSourceSuffix, suffixPattern } from '@exprtlabs/golem/internal/generator-support';
-import { DEFAULT_CONTROLLER_SUFFIXES } from '../plan.js';
+import { displayPath, isRecord, stripSourceSuffix, suffixPattern } from '@exprtlabs/golem/internal/generator-support';
 import * as ts from '@exprtlabs/golem/internal/ts';
 import {
   GolemDiagnosticSeverity,
@@ -52,8 +51,8 @@ interface UriVersioning {
 
 export function discoverControllerSources(
   root: string,
-  onInput?: (filename: string) => void,
-  suffixes: readonly string[] = DEFAULT_CONTROLLER_SUFFIXES,
+  onInput: (filename: string) => void,
+  suffixes: readonly string[],
 ): string[] {
   return discoverSources(path.join(root, 'src'), { source: suffixPattern(suffixes), onInput });
 }
@@ -100,7 +99,7 @@ function expandOptionalSegments(
       ));
     }
     for (const group of groups) {
-      for (const match of group[1]!.matchAll(/:([A-Za-z_$][\w$]*)/g)) optionalNames.add(match[1]!);
+      for (const match of group[1].matchAll(/:([A-Za-z_$][\w$]*)/g)) optionalNames.add(match[1]);
     }
     for (let mask = (1 << groups.length) - 1; mask >= 0; mask -= 1) {
       let index = 0;
@@ -136,7 +135,7 @@ function classMethods(
   const nextSeen = new Set(seen).add(classDeclaration);
   const inherited: ts.MethodDeclaration[] = [];
   const classType = checker.getTypeAtLocation(classDeclaration);
-  for (const baseType of checker.getBaseTypes(classType as ts.InterfaceType) ?? []) {
+  for (const baseType of checker.getBaseTypes(classType)) {
     for (const declaration of baseClassDeclarations(baseType)) {
       inherited.push(...classMethods(checker, declaration, nextSeen));
     }
@@ -166,22 +165,21 @@ function parseUriVersioning(value: unknown): UriVersioning {
     if (value.toUpperCase() !== 'URI') throw new TsToOpenApiError({ severity: GolemDiagnosticSeverity.Error, code: TsToOpenApiDiagnosticCode.UnsupportedVersioningType, message: `Only URI versioning is supported; received ${value}.` });
     return { enabled: true, prefix: 'v', defaultVersions: [] };
   }
-  if (typeof value !== 'object' || Array.isArray(value)) throw new TsToOpenApiError({ severity: GolemDiagnosticSeverity.Error, code: TsToOpenApiDiagnosticCode.InvalidVersioningOptions, message: 'uriVersioning must be an object describing URI versioning.' });
-  const record = value as Record<string, unknown>;
-  const type = record.type;
+  if (!isRecord(value)) throw new TsToOpenApiError({ severity: GolemDiagnosticSeverity.Error, code: TsToOpenApiDiagnosticCode.InvalidVersioningOptions, message: 'uriVersioning must be an object describing URI versioning.' });
+  const type = value.type;
   if (!(type === undefined || type === 0 || type === 'URI' || type === 'uri')) {
     throw new TsToOpenApiError({ severity: GolemDiagnosticSeverity.Error, code: TsToOpenApiDiagnosticCode.UnsupportedVersioningMode, message: 'Only URI versioning is supported by the static Nest adapter.' });
   }
-  const prefix = record.prefix === undefined
+  const prefix = value.prefix === undefined
     ? 'v'
-    : record.prefix === false
+    : value.prefix === false
       ? ''
-      : String(record.prefix);
-  const defaultVersions = record.defaultVersion === undefined
+      : String(value.prefix);
+  const defaultVersions = value.defaultVersion === undefined
     ? []
-    : Array.isArray(record.defaultVersion)
-      ? record.defaultVersion.map(item => String(item))
-      : [String(record.defaultVersion)];
+    : Array.isArray(value.defaultVersion)
+      ? value.defaultVersion.map(item => String(item))
+      : [String(value.defaultVersion)];
   return { enabled: true, prefix: normalizeSegment(prefix), defaultVersions };
 }
 
@@ -353,7 +351,7 @@ function versionValues(
   const evaluateOne = (expression: ts.Expression): Promise<readonly string[]> => {
     const unwrapped = unwrapExpression(expression);
     if (ts.isArrayLiteralExpression(unwrapped)) {
-      return versionValues([...unwrapped.elements] as ts.Expression[], context);
+      return versionValues(unwrapped.elements, context);
     }
     const neutral = isVersionNeutralExpression(context.checker, unwrapped);
     if (neutral) return Promise.resolve(['']);
@@ -384,7 +382,7 @@ async function analyzeController(
   const methods = classMethods(context.checker, classDeclaration);
   const routes: ControllerRoute[] = [];
   const controllerName = classDeclaration.name?.text
-    ?? stripSourceSuffix(path.basename(classDeclaration.getSourceFile().fileName), context.suffixes ?? DEFAULT_CONTROLLER_SUFFIXES);
+    ?? stripSourceSuffix(path.basename(classDeclaration.getSourceFile().fileName), context.suffixes);
   for (const method of methods) {
     const decorators = decoratorsOf(context.checker, method);
     if (routeExcluded(context, decorators)) continue;

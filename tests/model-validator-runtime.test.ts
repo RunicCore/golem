@@ -8,7 +8,6 @@ import { autorun } from 'mobx';
 import type * as ModelRuntimeModule from '@exprtlabs/golem/internal/model-runtime';
 import type * as MobxValidationRuntimeModule from '@exprtlabs/golem-openapi-ts/internal/mobx-validation-runtime';
 import type * as ValidationModule from '@exprtlabs/golem/validation';
-import type * as MobxModule from '@exprtlabs/golem-openapi-ts/mobx';
 import type * as MobxValidationModule from '@exprtlabs/golem-openapi-ts/mobx-validation';
 import { installCodecModel } from './register-codec-model.js';
 import type { GeneratedModelValidatorEnhancer } from '@exprtlabs/golem/internal/model-runtime';
@@ -19,10 +18,12 @@ const distRoot = dirname(fileURLToPath(import.meta.resolve('@exprtlabs/golem/mod
 async function runtime(name: 'runtime-model'): Promise<typeof ModelRuntimeModule>;
 async function runtime(name: 'runtime-mobx-validation'): Promise<typeof MobxValidationRuntimeModule>;
 async function runtime(name: 'validation'): Promise<typeof ValidationModule>;
-async function runtime(name: 'mobx'): Promise<typeof MobxModule>;
 async function runtime(name: 'mobx-validation'): Promise<typeof MobxValidationModule>;
 async function runtime(name: string): Promise<unknown>;
 async function runtime(name: string): Promise<unknown> {
+  // The MobX adapter has its source in golem-openapi-ts; the dist folder of golem holds no build of it, only an old artifact on a host that built an older tree.
+  if (name === 'mobx-validation') return import('@exprtlabs/golem-openapi-ts/mobx-validation');
+  if (name === 'runtime-mobx-validation') return import('@exprtlabs/golem-openapi-ts/internal/mobx-validation-runtime');
   const modulePath = pathToFileURL(join(distRoot, `${name}.js`)).href;
   return import(modulePath);
 }

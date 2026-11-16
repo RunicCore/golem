@@ -5,11 +5,11 @@
  */
 
 import { compareText } from '@exprtlabs/golem/generator-api';
-import { fragmentPointerTokens, GENERATED_MODEL_SCHEMA_REF_PREFIX, VALIDATION_KEYWORD, type JsonSchema } from '@exprtlabs/golem/internal/schema';
+import { recordOrUndefined } from '@exprtlabs/golem/internal/generator-support';
+import { GENERATED_MODEL_SCHEMA_REF_PREFIX, resolveFragmentPointer, VALIDATION_KEYWORD, type JsonSchema } from '@exprtlabs/golem/internal/schema';
 import { codecShortName, type SchemaGraph, type SchemaNode } from '@exprtlabs/golem/internal/schema-graph';
 import type { QueryFieldShape, QueryFieldTable } from '../runtime/query-decode.js';
 
-type SchemaRecord = Readonly<Record<string, unknown>>;
 type QueryScalar = QueryFieldShape['types'][number];
 
 /** The wire schema of a model or alias that the build holds outside the schema being read, by the name a `$ref` carries. */
@@ -36,10 +36,6 @@ interface FieldShape {
 
 const SCALARS: readonly QueryScalar[] = ['string', 'number', 'integer', 'boolean'];
 
-function schemaRecord(value: unknown): SchemaRecord | undefined {
-  return typeof value === 'object' && value !== null && !Array.isArray(value) ? value as SchemaRecord : undefined;
-}
-
 function newShape(): FieldShape {
   return { types: new Set(), literals: [] };
 }
@@ -51,14 +47,7 @@ function newShape(): FieldShape {
  */
 function resolveReference(reference: string, scope: Scope): { readonly schema: unknown; readonly scope: Scope } | undefined {
   if (reference === '#' || reference.startsWith('#/')) {
-    let schema = scope.root;
-    if (reference !== '#') {
-      for (const key of fragmentPointerTokens(reference.slice(1))) {
-        schema = typeof schema === 'object' && schema !== null && Object.hasOwn(schema, key)
-          ? (schema as Record<string, unknown>)[key]
-          : undefined;
-      }
-    }
+    const schema = resolveFragmentPointer(scope.root, reference.slice(1));
     return schema === undefined ? undefined : { schema, scope };
   }
   const bare = reference.startsWith(GENERATED_MODEL_SCHEMA_REF_PREFIX) ? reference.slice(GENERATED_MODEL_SCHEMA_REF_PREFIX.length) : reference;
@@ -92,7 +81,7 @@ function collectShape(schema: unknown, shape: FieldShape, scope: Scope): void {
     shape.types.add('string');
     return;
   }
-  const record = schemaRecord(schema);
+  const record = recordOrUndefined(schema);
   if (!record) return;
   const types = typeof record.type === 'string' ? [record.type] : Array.isArray(record.type) ? record.type : [];
   for (const type of types) if (typeof type === 'string') shape.types.add(type);
@@ -109,7 +98,7 @@ function collectShape(schema: unknown, shape: FieldShape, scope: Scope): void {
     const branches = record[keyword];
     if (Array.isArray(branches)) for (const branch of branches) collectShape(branch, shape, scope);
   }
-  collectShape(schemaRecord(record[VALIDATION_KEYWORD])?.schema, shape, scope);
+  collectShape(recordOrUndefined(record[VALIDATION_KEYWORD])?.schema, shape, scope);
   const target = typeof record.$ref === 'string' ? resolveReference(record.$ref, scope) : undefined;
   // A reference cycle adds nothing more.
   if (target !== undefined && !scope.reading.has(target.schema)) {
@@ -120,11 +109,11 @@ function collectShape(schema: unknown, shape: FieldShape, scope: Scope): void {
 }
 
 function collectFields(schema: unknown, fields: Map<string, FieldShape>, scope: Scope, seen = new Set<unknown>()): void {
-  const record = schemaRecord(schema);
+  const record = recordOrUndefined(schema);
   // A reference cycle, or a branch met twice, adds no field.
   if (!record || seen.has(record)) return;
   seen.add(record);
-  const properties = schemaRecord(record.properties);
+  const properties = recordOrUndefined(record.properties);
   if (properties) {
     for (const [name, property] of Object.entries(properties)) {
       let shape = fields.get(name);
@@ -141,7 +130,7 @@ function collectFields(schema: unknown, fields: Map<string, FieldShape>, scope: 
     const branches = record[keyword];
     if (Array.isArray(branches)) for (const branch of branches) collectFields(branch, fields, scope, seen);
   }
-  collectFields(schemaRecord(record[VALIDATION_KEYWORD])?.schema, fields, scope, seen);
+  collectFields(recordOrUndefined(record[VALIDATION_KEYWORD])?.schema, fields, scope, seen);
 }
 
 /** Whether a query string (scalar) can decode to something other than itself. */

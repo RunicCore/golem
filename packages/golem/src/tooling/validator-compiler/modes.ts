@@ -2,13 +2,10 @@ import { code, join, literal as literalCode, nameOf, type Code } from '../code.j
 import type { IrObject, IrPatternProperty } from './ir.js';
 import { presentKeysCode } from '../union-conversion.js';
 import { PATH, COMMA, ISSUES, ALL, callFunction, type CallArguments } from './function-names.js';
-import { localName, stateTest } from './local-helpers.js';
-import { rt } from '../rt.js';
+import { instanceFieldsOf, localName, stateTest } from './local-helpers.js';
 import { patternExpression } from './module-state.js';
 import type { FunctionWriter } from './function-writer.js';
 import type { FastPlan } from './fast-plan.js';
-
-const runtime = rt['validation-runtime'];
 
 /** What a written function does when a check fails. */
 interface FailMode {
@@ -57,27 +54,44 @@ interface KeyTestRequest {
   readonly reads: ReadSet;
 }
 
+/**
+ * The list of an object's own keys that a key test leaves for the passes that loop over the keys. `defined`: the list
+ * of `definedKeys`, which holds no program state and no key whose value is `undefined`. `raw`: each own key as it is,
+ * so a pass leaves out program state of a model instance (`stateFields`, the local that holds the names of the
+ * instance's own model, for `isStateKey`) and keys whose value is `undefined` before it reads a value. `unread`: a
+ * raw list for which the key test left the own values unread; `failure` is the statement that a failing check runs
+ * before it fails as it would without this object. It reads every value first, as the full validator does, and the
+ * passes over the key list read each value before they skip a key.
+ */
+export type KeyList = DefinedKeys | RawKeys | UnreadKeys;
+
+interface DefinedKeys {
+  readonly kind: 'defined';
+  readonly keys: Code;
+}
+
+export interface RawKeys {
+  readonly kind: 'raw';
+  readonly keys: Code;
+  readonly stateFields: Code;
+}
+
+export interface UnreadKeys {
+  readonly kind: 'unread';
+  readonly keys: Code;
+  readonly stateFields: Code;
+  readonly failure: Code;
+}
+
 /** What the key test of one object leaves for the checks after it. */
 export interface KeyTest {
   readonly presence: PresenceReader;
   /** An expression that holds the number of keys by the JSON view, when `minProperties` or `maxProperties` reads it. */
   readonly count?: Code;
-  /**
-   * An expression that lists the keys by the JSON view, for the checks that loop over them. Set with `stateFields`, the
-   * list holds each own key as it is: program state of a model instance and keys whose value is `undefined` too, and
-   * a loop leaves both out before it reads a value.
-   */
-  readonly keys?: Code;
-  /** The local that holds the names of the instance's own model (`instanceFields`), for `isStateKey`; set exactly when `keys` is a raw list. */
-  readonly stateFields?: Code;
+  /** The key list, for the checks that loop over the keys. */
+  readonly list?: KeyList;
   /** A local that is true when the key test met a key that `additionalProperties: false` forbids; the test runs after `required`. */
   readonly unknown?: Code;
-  /**
-   * Set when the key test left the own values unread: the statement that a failing check runs before it fails as it
-   * would without this object. It reads every value first, as the full validator does, and the passes over the key list read each value
-   * before they skip a key.
-   */
-  readonly failure?: Code;
 }
 
 /** Which own values of an object the full validator reads before its checks. */
@@ -97,7 +111,7 @@ interface ReadSet {
  * and the merged union pass. `marks`: the function keeps an evaluation record, so a check that accepts anything still
  * marks its key.
  */
-export function readSet(check: IrObject, marks: boolean): ReadSet {
+export function readSet(check: IrObject, { marks }: { readonly marks: boolean }): ReadSet {
   const declared = [...new Set([
     ...check.required,
     ...check.dependentRequired.flatMap(({ trigger, keys }) => keys.length > 0 ? [trigger, ...keys] : []),
@@ -167,13 +181,14 @@ export const FULL_VALIDATOR: WriterMode = {
     const keys = writer.fresh('keys');
     if (reads.all) writer.line(code`const ${keys} = ${localName('definedKeys')}(${value});`);
     // `definedKeys` leaves out the program state of a model instance, so it does not count.
-    if (check.minProperties === undefined && check.maxProperties === undefined) return { presence, ...(reads.all ? { keys } : {}) };
-    return { presence, count: code`${keys}.length`, keys };
+    const list: KeyList = { kind: 'defined', keys };
+    if (check.minProperties === undefined && check.maxProperties === undefined) return { presence, ...(reads.all ? { list } : {}) };
+    return { presence, count: code`${keys}.length`, list };
   },
   call: (writer, id, args) => {
     const target = writer.target(id);
     writer.calls.add(target);
-    return callFunction(writer.functions[target], nameOf(writer.calleeSlot(target, false)), args);
+    return callFunction(writer.functions[target], nameOf(writer.calleeSlot(target, 'full')), args);
   },
   child: (writer, token, body) => {
     writer.line(code`${PATH}.push(${token});`);
@@ -194,7 +209,7 @@ export const FULL_VALIDATOR: WriterMode = {
  * not additional. A keyword that loops over the keys (a schema of `additionalProperties`, `patternProperties`,
  * `propertyNames`) gets the one key list, which also holds the keys whose value is `undefined`. The pass is written only
  * when it has a case, a count, an unknown key or a captured key to handle. Otherwise it would only read the values: the
- * passes over the key list read them, and a failure of theirs reads the rest before it leaves (`KeyTest.failure`).
+ * passes over the key list read them, and a failure of theirs reads the rest before it leaves (`KeyList.failure`).
  */
 function fastKeyTest(writer: FunctionWriter, { check, value, captured, reads }: KeyTestRequest): KeyTest {
   const presence = objectPresence(value, captured);
@@ -209,7 +224,7 @@ function fastKeyTest(writer: FunctionWriter, { check, value, captured, reads }: 
   const fields = writer.fresh('fields');
   const locals = [...captured.map(([, local]) => local), ...(count === undefined ? [] : [code`${count} = 0`]), ...(unknown === undefined ? [] : [code`${unknown} = false`])];
   if (locals.length > 0) writer.line(code`let ${join(locals, COMMA)};`);
-  writer.line(code`const ${fields} = ${runtime.instanceFields}(${value});`);
+  writer.line(code`const ${fields} = ${instanceFieldsOf(value)};`);
   const list = additional?.kind === 'schema' || reads.patterns.length > 0 || check.propertyNames !== undefined ? writer.fresh('keys') : undefined;
   if (list !== undefined) writer.line(code`const ${list} = Object.keys(${value});`);
   const key = writer.fresh('key');
@@ -226,7 +241,7 @@ function fastKeyTest(writer: FunctionWriter, { check, value, captured, reads }: 
   // A pass with no case, no count, no unknown key and no captured key only reads the values. The passes over the key
   // list read them all too, and a failure of theirs reads the rest first (`failure`), so the pass is left out.
   if (list !== undefined && cases.length === 0 && bare.length === 0 && count === undefined && unknown === undefined && unnamed.length === 0) {
-    return { presence, keys: list, stateFields: fields, failure: code`${localName('readAll')}(${value}, ${list});` };
+    return { presence, list: { kind: 'unread', keys: list, stateFields: fields, failure: code`${localName('readAll')}(${value}, ${list});` } };
   }
   const item = writer.fresh('item');
   writer.open(code`for (const ${key} of ${list ?? code`Object.keys(${value})`})`);
@@ -253,7 +268,7 @@ function fastKeyTest(writer: FunctionWriter, { check, value, captured, reads }: 
     presence,
     ...(count === undefined ? {} : { count }),
     ...(unknown === undefined ? {} : { unknown }),
-    ...(list === undefined ? {} : { keys: list, stateFields: fields }),
+    ...(list === undefined ? {} : { list: { kind: 'raw', keys: list, stateFields: fields } }),
   };
 }
 
@@ -265,7 +280,7 @@ function fastKeyTest(writer: FunctionWriter, { check, value, captured, reads }: 
 export function fastCheckMode(plan: FastPlan): WriterMode {
   const leafCall = (writer: FunctionWriter, id: number, value: Code): Code => {
     writer.calls.add(id);
-    return code`${localName('leafPasses')}(${nameOf(writer.calleeSlot(id, false))}, ${value})`;
+    return code`${localName('leafPasses')}(${nameOf(writer.calleeSlot(id, 'full'))}, ${value})`;
   };
   return {
     fail: { start: [], end: code`return true;`, issue: () => [code`return false;`], fail: () => code`return false;`, leaves: true },
@@ -275,7 +290,7 @@ export function fastCheckMode(plan: FastPlan): WriterMode {
       const target = writer.target(id);
       if (!plan.has(target)) return leafCall(writer, target, args.value);
       writer.fastCalls.add(target);
-      return code`${nameOf(writer.calleeSlot(target, true))}(${args.value})`;
+      return code`${nameOf(writer.calleeSlot(target, 'fast'))}(${args.value})`;
     },
     child: (_writer, _token, body) => body(),
     records: false,

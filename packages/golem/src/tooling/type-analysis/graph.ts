@@ -1,15 +1,8 @@
+import { assertNever } from '../../assert-never.js';
 import type { ModelConversionDescriptor } from '../model-source-emitter.js';
-import type { SerdeBinding, ValidationBinding } from './tags.js';
 import { compareText } from '../generator-core.js';
-import { canonicalConstraintKey, mapConstraintSchemaValues } from '../schema.js';
+import { canonicalConstraintKey, mapConstraintSchemaValues, serdeWireDescriptor, serdeWithWire, validationBindingId } from '../schema.js';
 import type { ConstraintSchemaValue, ModelConstraint } from '../schema.js';
-
-/** A descriptor with the compiler metadata that the shared model runtime reads: its constraints, validations and serde binding. */
-export type RichDescriptor = {
-  readonly constraints?: ModelConversionDescriptor["constraints"];
-  readonly validations?: readonly (ValidationBinding | string)[];
-  readonly serde?: SerdeBinding & { readonly wireDescriptor?: ModelConversionDescriptor };
-};
 
 function isDescriptor(value: ConstraintSchemaValue): value is ModelConversionDescriptor {
   return typeof value === 'object'
@@ -32,14 +25,13 @@ function canonicalIdentity(
   stack: readonly string[],
 ): unknown {
   const canonical = (descriptor: ModelConversionDescriptor, stack: readonly string[]): unknown => {
-    const rich = descriptor as unknown as RichDescriptor;
     if (descriptor.kind === 'reference' && descriptor.projection) {
       const cycle = stack.indexOf(descriptor.name);
       if (cycle >= 0) return { cycle };
       const target = lookup(descriptor.name);
       return target ? canonical(target, [...stack, descriptor.name]) : descriptor;
     }
-    let structure: unknown = descriptor;
+    let structure: unknown;
     switch (descriptor.kind) {
       case 'object': structure = {
         kind: descriptor.kind, projection: descriptor.projection,
@@ -51,19 +43,22 @@ function canonicalIdentity(
       case 'tuple': structure = { kind: descriptor.kind, isReadonly: descriptor.isReadonly, items: descriptor.items.map(item => canonical(item, stack)), optionalFrom: descriptor.optionalFrom, rest: descriptor.rest ? { index: descriptor.rest.index, item: canonical(descriptor.rest.item, stack) } : undefined }; break;
       case 'union':
       case 'intersection': structure = { kind: descriptor.kind, variants: descriptor.variants.map(item => canonical(item, stack)) }; break;
-      default: {
+      case 'any': case 'unknown': case 'never': case 'string': case 'number': case 'boolean': case 'bigint': case 'null': case 'undefined':
+      case 'class-value': case 'literal': case 'reference': case 'generated-model':
         structure = Object.fromEntries(Object.entries(descriptor).filter(([key]) => !['validations', 'serde', 'constraints'].includes(key)));
-      }
+        break;
+      default: return assertNever(descriptor);
     }
+    const wire = serdeWireDescriptor(descriptor.serde);
     return {
       structure,
       // Constraint payloads can carry nested descriptors with executable
       // validation bindings.  Keep their user schema data intact, but use
       // the descriptor-aware key so compiler/checker objects never enter the
       // projection identity JSON.
-      constraints: rich.constraints?.map(canonicalConstraintKey).sort(),
-      validations: rich.validations?.map(binding => typeof binding === 'string' ? binding : binding.id).sort(),
-      serde: rich.serde ? { id: rich.serde.id, wire: rich.serde.wireDescriptor ? canonical(rich.serde.wireDescriptor, stack) : undefined } : undefined,
+      constraints: descriptor.constraints?.map(canonicalConstraintKey).sort(),
+      validations: descriptor.validations?.map(validationBindingId).sort(),
+      serde: descriptor.serde ? { id: descriptor.serde.id, wire: wire ? canonical(wire, stack) : undefined } : undefined,
     };
   };
   return canonical(descriptor, stack);
@@ -88,25 +83,25 @@ export function deduplicateProjections(
   const representatives = new Map<string, string>();
   const redirect = new Map<string, string>();
   for (const name of names) {
-    const key = projectionIdentity(lookup, name, definitions[name]!);
+    const key = projectionIdentity(lookup, name, definitions[name]);
     const representative = representatives.get(key) ?? name;
     representatives.set(key, representative);
     redirect.set(name, representative);
   }
   const rewrite = (descriptor: ModelConversionDescriptor): ModelConversionDescriptor => {
-    const rich = descriptor as unknown as RichDescriptor;
     let result = descriptor;
     if (descriptor.kind === 'reference' && descriptor.projection) result = { ...descriptor, name: redirect.get(descriptor.name) ?? descriptor.name };
     else if (descriptor.kind === 'object') result = { ...descriptor, properties: Object.fromEntries(Object.entries(descriptor.properties).map(([key, value]) => [key, rewrite(value)])), additionalProperties: typeof descriptor.additionalProperties === 'object' ? rewrite(descriptor.additionalProperties) : descriptor.additionalProperties };
     else if (descriptor.kind === 'array') result = { ...descriptor, item: rewrite(descriptor.item) };
     else if (descriptor.kind === 'tuple') result = { ...descriptor, items: descriptor.items.map(rewrite), ...(descriptor.rest ? { rest: { ...descriptor.rest, item: rewrite(descriptor.rest.item) } } : {}) };
     else if (descriptor.kind === 'union' || descriptor.kind === 'intersection') result = { ...descriptor, variants: descriptor.variants.map(rewrite) };
-    if (rich.serde?.wireDescriptor) result = { ...result, serde: { ...rich.serde, wireDescriptor: rewrite(rich.serde.wireDescriptor) } } as unknown as ModelConversionDescriptor;
-    if (rich.constraints?.length) {
+    const wire = serdeWireDescriptor(descriptor.serde);
+    if (descriptor.serde && wire) result = { ...result, serde: serdeWithWire(descriptor.serde, rewrite(wire)) };
+    if (descriptor.constraints?.length) {
       result = {
         ...result,
-        constraints: rich.constraints.map((constraint) => rewriteConstraint(constraint, rewrite)),
-      } as ModelConversionDescriptor;
+        constraints: descriptor.constraints.map((constraint) => rewriteConstraint(constraint, rewrite)),
+      };
     }
     return result;
   };
