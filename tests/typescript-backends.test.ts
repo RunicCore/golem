@@ -442,3 +442,33 @@ test('diagnostics of files that differ in case sort by canonical path, as tsc so
   assert.ok(compareDiagnostics(upper, lower, CaseSensitivity.Insensitive) > 0, 'a.ts comes before B.ts when case is ignored');
   assert.ok(compareDiagnostics(upper, lower, CaseSensitivity.Sensitive) < 0, 'B.ts comes before a.ts when case counts');
 });
+
+test('a function type, a constructor type, each signature and a function declaration are function-like; a property and a type literal are not', t => {
+  // protects: T-983 the TypeScript 7 seam covers the node kinds of ts.isFunctionLike on TypeScript 6
+  const root = createFixtureProject(t, 'golem-function-like-');
+  const main = path.join(root, 'main.ts');
+  fs.writeFileSync(main, [
+    'export type Fn = (a: number) => void;',
+    'export type Ctor = new () => object;',
+    'export interface Shape {',
+    '  (a: number): void',
+    '  new (): Shape',
+    '  method(): void',
+    '  [key: string]: unknown',
+    '  property: number',
+    '}',
+    'export function declared() {}',
+    'export type Literal = { x: number };',
+    '',
+  ].join('\n'));
+  fs.writeFileSync(path.join(root, 'tsconfig.json'), JSON.stringify({ compilerOptions: { noEmit: true, skipLibCheck: true }, include: ['main.ts'] }));
+  const program = ts.createProgramFromSources({ root, sources: [main] });
+  t.after(() => program.close());
+  const functionLike: string[] = [];
+  const visit = (node: ts.Node): void => {
+    if (ts.isFunctionLike(node)) functionLike.push(node.getText());
+    ts.forEachChild(node, visit);
+  };
+  visit(program.getSourceFile(main)!);
+  assert.deepEqual(functionLike, ['(a: number) => void', 'new () => object', '(a: number): void', 'new (): Shape', 'method(): void', '[key: string]: unknown', 'export function declared() {}']);
+});

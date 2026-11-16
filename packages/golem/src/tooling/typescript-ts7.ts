@@ -117,7 +117,8 @@ export enum IndexKind {
   Number = 1,
 }
 
-export const isFunctionLike = ast.isFunctionLikeDeclaration;
+/** `ts.isFunctionLike`: the signature declarations (function and constructor types, call, construct, method and index signatures, functions and methods) and the JSDoc signature. TypeScript 7 has no JSDoc function type. */
+export const isFunctionLike = (node: Node): node is ast.SignatureDeclaration | ast.JSDocSignature => ast.isSignatureDeclaration(node) || ast.isJSDocSignature(node);
 export const isTypeAssertionExpression = ast.isTypeAssertion;
 
 export interface Diagnostic {
