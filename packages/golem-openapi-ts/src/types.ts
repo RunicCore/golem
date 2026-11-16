@@ -3,7 +3,7 @@ import { isBinaryMediaType, isBuiltinTextMediaType } from './client/codecs.js';
 import { asRecord, isJsonObject, objectEntries, type JsonObject } from './json.js';
 import { SCHEMA_ARRAY_KEYWORDS, jsonKindOf, schemaReferenceOrDynamic } from '@exprtlabs/golem/internal/schema';
 import { codePointLength, isMultipleOf } from '@exprtlabs/golem/internal/validation-runtime';
-import { identifier, NameScope, responseStatusKind } from '@exprtlabs/golem/internal/generator-support';
+import { assertNever, identifier, NameScope, responseStatusKind } from '@exprtlabs/golem/internal/generator-support';
 import { BUILTIN_CLASS_ROOTS, code, codeKey, manifestMarkerComment, docComment, exportedName, fileImports, identifier as identifierPart, ImportSource, isEmpty, join, lineBreak, literal, nest, propertyKey, render, renderModule, sameCode, type RenderedModule, type Code, type JsonValue } from '@exprtlabs/golem/internal/emitter';
 import { unionVariants } from './composition.js';
 import { dateClassOf } from './date-class.js';
@@ -12,6 +12,7 @@ import {
   effectiveSchemaTypes,
   mediaSchema,
   parameterSchema,
+  requestBodyShape,
   resolveLocal,
   type NormalizedOperation,
   type NormalizedResponse,
@@ -820,13 +821,19 @@ function inputType(operation: NormalizedOperation, context: SchemaTypeContext = 
     );
     lines.push(code`${identifierPart(location)}${requiredGroup ? code`` : code`?`}: ${bracedLines(fields, code`};`)}`);
   }
-  if (operation.requestContent.length === 1) {
-    lines.push(code`body${operation.requestBody?.required ? code`` : code`?`}: ${schemaTypeCode(operation.requestContent[0]?.schema ?? null, context).code};`);
-  } else if (operation.requestContent.length > 1) {
-    const variants = join(operation.requestContent.map((media) =>
-      code`{ contentType: ${literal(media.contentType)}; value: ${schemaTypeCode(media.schema, context).code} }`
-    ), code` | `);
-    lines.push(code`body${operation.requestBody?.required ? code`` : code`?`}: ${variants};`);
+  const body = requestBodyShape(operation);
+  const bodyKey = code`body${operation.requestBody?.required ? code`` : code`?`}`;
+  switch (body.kind) {
+    case 'none': break;
+    case 'single':
+      lines.push(code`${bodyKey}: ${schemaTypeCode(body.media.schema, context).code};`);
+      break;
+    case 'several':
+      lines.push(code`${bodyKey}: ${join(body.media.map((media) =>
+        code`{ contentType: ${literal(media.contentType)}; value: ${schemaTypeCode(media.schema, context).code} }`
+      ), code` | `)};`);
+      break;
+    default: return assertNever(body);
   }
   return lines.length ? typeCode(bracedLines(lines)) : recordType(NEVER_TYPE);
 }

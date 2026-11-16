@@ -1,12 +1,13 @@
 import type { OpenApiDates } from './model-resolution.js';
 import { asRecord, isJsonObject, objectEntries } from './json.js';
 import { unionVariants } from './composition.js';
-import { identifier, sourceDigest } from '@exprtlabs/golem/internal/generator-support';
+import { assertNever, identifier, sourceDigest } from '@exprtlabs/golem/internal/generator-support';
 import { SCHEMA_ARRAY_KEYWORDS, SCHEMA_MAP_KEYWORDS, SCHEMA_SINGLE_KEYWORDS, aliasReference, decodeUriFragment, escapePointerToken, splitFirstFragmentToken } from '@exprtlabs/golem/internal/schema';
 import {
   mediaSchema,
   normalizeDocument,
   parameterSchema,
+  requestBodyShape,
   resolveLocal,
   type NormalizedDocument,
   type NormalizedOperation,
@@ -58,24 +59,28 @@ function operationInputSchema(operation: NormalizedOperation, bodyChecked: BodyC
     properties.querystring = parameterSchema(queryString) ?? true;
     if (queryString.required) required.push('querystring');
   }
-  if (operation.requestContent.length === 1) {
-    const [media] = operation.requestContent;
-    properties.body = media && bodyChecked(operation, media.contentType) ? true : media?.schema ?? true;
-    if (operation.requestBody && operation.requestBody.required) required.push('body');
-  } else if (operation.requestContent.length > 1) {
-    properties.body = {
-      oneOf: operation.requestContent.map((media) => ({
-        type: 'object',
-        properties: {
-          contentType: { const: media.contentType },
-          value: bodyChecked(operation, media.contentType) ? true : media.schema ?? true,
-        },
-        required: ['contentType', 'value'],
-        additionalProperties: false,
-      })),
-    };
-    if (operation.requestBody && operation.requestBody.required) required.push('body');
+  const body = requestBodyShape(operation);
+  switch (body.kind) {
+    case 'none': break;
+    case 'single':
+      properties.body = bodyChecked(operation, body.media.contentType) ? true : body.media.schema ?? true;
+      break;
+    case 'several':
+      properties.body = {
+        oneOf: body.media.map((media) => ({
+          type: 'object',
+          properties: {
+            contentType: { const: media.contentType },
+            value: bodyChecked(operation, media.contentType) ? true : media.schema ?? true,
+          },
+          required: ['contentType', 'value'],
+          additionalProperties: false,
+        })),
+      };
+      break;
+    default: return assertNever(body);
   }
+  if (body.kind !== 'none' && operation.requestBody && operation.requestBody.required) required.push('body');
   return {
     type: 'object',
     properties,
