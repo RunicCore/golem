@@ -1,7 +1,7 @@
 import * as ts from '../typescript-ns.js';
 import { evaluateStaticValue } from '../static-value.js';
 import { owningPackageName } from './package-specifier.js';
-import { resolveSymbol } from './symbols.js';
+import { resolveSymbol } from '../resolve-symbol.js';
 
 /**
  * What a package that reads controller decorators takes from them, and nothing it judges: which decorator a node

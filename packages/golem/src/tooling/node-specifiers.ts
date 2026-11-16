@@ -3,7 +3,7 @@ import path from 'node:path';
 import * as ts from './typescript-ns.js';
 import { isRecord } from './generator-core.js';
 import { matchStarPattern } from './star-pattern.js';
-import { isRelativeSpecifier, relativeSpecifierOf } from './type-analysis/path-identity.js';
+import { isRelativeSpecifier, relativeSpecifierOf } from './path-identity.js';
 import { packageName, readManifest } from './type-analysis/package-specifier.js';
 import type { RewriteEdit } from './rewrite.js';
 

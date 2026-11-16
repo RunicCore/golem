@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises';
 import type { Plugin } from 'esbuild';
 
 import { TYPESCRIPT_FILE, GolemHostError, openRewriteProject, withInlineSourceMap, type GolemHostOptions, type RewriteProject } from './rewrite-host.js';
-import { isInstalledFile } from './type-analysis/path-identity.js';
+import { isInstalledFile } from './path-identity.js';
 
 /**
  * esbuild plugin that scans each TypeScript source with the project's own TypeScript, against the golem.yaml named by

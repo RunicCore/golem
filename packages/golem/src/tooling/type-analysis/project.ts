@@ -5,7 +5,7 @@ import * as ts from '../typescript-ns.js';
 import { assertNotSolutionTsconfig } from '../typescript-config.js';
 import { packageName, readManifest } from './package-specifier.js';
 import { displayPath, GolemDiagnosticSeverity, canonicalPath, compareText, discoverSources, hasErrorCode, isInsideDirectory, parseYamlFile, realPathThroughLinks, sessionKey, suffixPattern, YamlFileError, type GeneratorSession, type GolemDiagnostic, type InputObserver } from '../generator-core.js';
-import { canonicalFilename, inNodeModules, isRelativeSpecifier, portableRelativeFilename, relativeSpecifierOf } from './path-identity.js';
+import { canonicalFilename, inNodeModules, isRelativeSpecifier, portableRelativeFilename, relativeSpecifierOf } from '../path-identity.js';
 import { ROOT_KEYS } from '../editor-schema.js';
 
 export { canonicalFilename, portableRelativeFilename };

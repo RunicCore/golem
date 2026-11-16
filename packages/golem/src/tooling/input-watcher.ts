@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { errorMessage, hasErrorCode, isInsideDirectory } from './generator-core.js';
-import { inNodeModules } from './type-analysis/path-identity.js';
+import { inNodeModules } from './path-identity.js';
 
 /**
  * The stat, listing and folder-watch calls a watch makes between two runs. A watch uses the real ones; a test passes its own to fault a

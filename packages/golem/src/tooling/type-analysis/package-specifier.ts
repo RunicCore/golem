@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { canonicalPath, displayPath, isInsideDirectory, isRecord, recordOrUndefined } from '../generator-core.js';
-import { isRelativeSpecifier } from './path-identity.js';
+import { isRelativeSpecifier } from '../path-identity.js';
 
 type PackageSpecifierResult =
   | { readonly kind: 'same-package' }

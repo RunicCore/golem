@@ -1,6 +1,6 @@
 import { compareText, stripSourceSuffix } from '../generator-core.js';
 import * as ts from '../typescript-ns.js';
-import { resolveSymbol } from './symbols.js';
+import { resolveSymbol } from '../resolve-symbol.js';
 import { isDiscriminatorTag, untaggedMembers } from './tags.js';
 
 export interface ProjectionPolicy {

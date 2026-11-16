@@ -1,6 +1,6 @@
 import { normalize, relative, resolve } from 'node:path';
 
-import { canonicalPath } from '../generator-core.js';
+import { canonicalPath } from './generator-core.js';
 
 export function canonicalFilename(filename: string): string {
   return normalize(resolve(filename));
