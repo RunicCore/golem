@@ -229,24 +229,31 @@ export function flagsAsConfigOptions(flags: readonly string[], parse: (flags: re
 const EXPECTS_AN_ARGUMENT = 6044;
 
 /**
- * Whether the compiler's parse of a flag and its next argument took the argument as the flag's value: the argument is no file, no option
- * of its own got set beside the flag's, and no option is left without its argument. A value option takes any argument (`--rootDir -x`,
- * `--depth -1`), a list option one that does not start with '-' (`--types --strict` is an empty list and a flag), a boolean option `true` or `false`.
+ * Whether a flag took its next argument `argument` as its value, from the compiler's parse `pair` of the two, in command-line arguments that parse
+ * without errors. An argument that does not start with '-' is never a flag, so the compiler gave it to the flag. One that starts with '-' is a flag of
+ * its own after a boolean option (`--strict --strict false`) or a list option (`--types --strict`), which the parse shows as a boolean or a list,
+ * and after an option that finds no argument in the pair, as the pair ends there; a value option takes it (`--rootDir -x`, `--depth -1`).
  */
-function tookArgument(pair: ParsedArguments): boolean {
-  return pair.fileNames.length === 0 && Object.keys(pair.options).length <= 1 && !pair.errors.some((error) => error.code === EXPECTS_AN_ARGUMENT);
+function tookArgument(pair: ParsedArguments, argument: string): boolean {
+  if (!argument.startsWith('-')) return true;
+  return !pair.errors.some((error) => error.code === EXPECTS_AN_ARGUMENT) && !Object.values(pair.options).some((value) => typeof value === 'boolean' || Array.isArray(value));
 }
 
+/**
+ * The options of the command-line `flags`, each with the argument that the compiler gave it. The compiler's parse of the whole list reports the errors, as `tsc` does;
+ * the parse of each flag with its next argument then tells which value that argument is, so that the flag's value can be read from its own text (`configValue`).
+ */
 function parsedFlagOptions(flags: readonly string[], parse: (flags: readonly string[]) => ParsedArguments): Record<string, string | number | boolean | readonly string[]> {
+  const all = parse(flags);
+  assertNoSourceFiles(all.fileNames);
+  assertCommandLineParsed(all);
   const options: Record<string, string | number | boolean | readonly string[]> = {};
   for (let index = 0; index < flags.length; index += 1) {
     const flag = flags[index];
     const next = flags[index + 1];
+    // Without the argument, the parse also holds the next flag, whose own turn sets it again.
     const parsed = parse(next === undefined ? [flag] : [flag, next]);
-    const together = next !== undefined && tookArgument(parsed);
-    assertNoSourceFiles(parsed.fileNames);
-    // Without the argument, the parse also holds the next flag, whose own turn sets it and reports its errors.
-    if (together || next === undefined) assertCommandLineParsed(parsed);
+    const together = next !== undefined && tookArgument(parsed, next);
     for (const [name, value] of Object.entries(parsed.options as Record<string, unknown>)) options[name] = configValue(value, together ? next : undefined);
     if (together) index += 1;
   }

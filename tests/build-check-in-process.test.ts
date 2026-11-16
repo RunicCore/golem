@@ -160,11 +160,16 @@ test('a value that starts with a dash is the value of a value option, as tsc tak
   assert.equal(fs.existsSync(path.join(root, 'build')), false);
 });
 
-test('a list option followed by a flag is an empty list and the flag keeps its own meaning, as tsc reads it', async (t) => {
-  // protects: T-1042 --types --noEmitOnError sets two options, not the type definition "--noEmitOnError"
-  const root = serdeProject(t, 'build-list-then-flag');
-  const flags = ['--types', '--noEmitOnError'];
-  const result = await golemBuild(root, flags);
-  assert.equal(printed(result.stdout), await tsc(root, flags));
-  assert.equal(result.stderr, '');
-});
+/** A row: its name and arguments in which an argument that starts with '-' is a flag of its own. */
+for (const [name, flags] of [
+  ['a list option followed by a flag is an empty list and the flag', ['--types', '--noEmitOnError']],
+  ['a boolean option repeated with a value is two flags', ['--strict', '--strict', 'false']],
+] as const) {
+  test(`${name} keep their own meaning, as tsc reads them`, async (t) => {
+    // protects: T-1042 --types --noEmitOnError sets two options, not the type definition "--noEmitOnError", and --strict --strict false is no source file
+    const root = serdeProject(t, 'build-flag-then-flag');
+    const result = await golemBuild(root, flags);
+    assert.equal(printed(result.stdout), await tsc(root, flags));
+    assert.equal(result.stderr, '');
+  });
+}
