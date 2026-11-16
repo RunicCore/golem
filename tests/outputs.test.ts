@@ -4,7 +4,7 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { loadInventory, applyJob, removeRetiredJobs, digest } from '#golem/outputs';
+import { loadInventory, applyJob, removeRetiredJobs, digest, realOutputFiles } from '#golem/outputs';
 import type { GolemConfig, GolemJob } from '#golem/config';
 import { codecKeysPath } from '#golem/generated-paths';
 import { MODEL_BOUNDARY } from '#golem/job-facts';
@@ -465,4 +465,24 @@ test('removeRetiredJobs removes the codec key table when no job provides the bou
   assert.throws(() => removeRetiredJobs(config, loadInventory(config), true), /removed jobs/);
   assert.deepEqual(removeRetiredJobs(config, loadInventory(config)), [keys]);
   assert.equal(fs.existsSync(keys), false);
+});
+
+// protects: T-1021 two golem processes on one project each read the file time of their own stamp, never the later stamp of the other
+test('a job start stamp is a file of its own, so a stamp made while another one is in flight cannot change its time', (t: TestContext) => {
+  const { config } = fixture(t);
+  const folder = path.dirname(config.inventoryFile);
+  const readStatus = fs.statSync;
+  // The hold point sits between the write of the first stamp and its read of the time: the moment another process can stamp.
+  const foldersAtRead: string[][] = [];
+  t.mock.method(fs, 'statSync', (...args: Parameters<typeof fs.statSync>) => {
+    foldersAtRead.push(fs.readdirSync(folder));
+    if (foldersAtRead.length === 1) realOutputFiles.stamp(folder);
+    return readStatus(...args);
+  });
+  realOutputFiles.stamp(folder);
+  const [own, during] = foldersAtRead;
+  assert.equal(own?.length, 1);
+  assert.equal(during?.length, 2);
+  assert.equal(new Set([...own ?? [], ...during ?? []]).size, 2);
+  assert.deepEqual(fs.readdirSync(folder), []);
 });
