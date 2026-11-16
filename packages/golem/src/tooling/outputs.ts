@@ -255,8 +255,13 @@ export const realOutputFiles: OutputFiles = {
   stamp: directory => {
     fs.mkdirSync(directory, { recursive: true });
     const filename = temporaryName(path.join(directory, 'clock'));
-    fs.writeFileSync(filename, '\n', { flag: 'wx' });
-    try { return fs.statSync(filename).ctimeMs; } finally { fs.unlinkSync(filename); }
+    // The removal neither hides the time nor the error of the write or the stat, and leaves no empty file after a failed write.
+    try {
+      fs.writeFileSync(filename, '\n', { flag: 'wx' });
+      return fs.statSync(filename).ctimeMs;
+    } finally {
+      fs.rmSync(filename, { force: true });
+    }
   },
 };
 
