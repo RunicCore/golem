@@ -1,5 +1,5 @@
 export { findBuiltinClass } from './builtin-class.js';
-export { inNodeModules } from './path-identity.js';
+export { inNodeModules, isRelativeSpecifier } from './path-identity.js';
 export * from './models.js';
 export * from './types.js';
 export * from './tags.js';

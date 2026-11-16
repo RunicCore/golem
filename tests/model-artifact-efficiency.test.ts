@@ -14,6 +14,7 @@ import { readFixture, writeGeneratedArtifacts } from './fixture-project.js';
 import { buildModelProject, createModelProject, generatedModelFiles, writeModelGolemYaml, writeModelSources, type ModelProject } from './model-project.js';
 import { duplicateLocalNameReferenceModelSource } from './fixture-templates/models/model-artifact-efficiency.js';
 import { parse as parseYaml } from 'yaml';
+import type { GeneratedModelClass } from './openapi/helpers.js';
 import { loadGolemModeProject } from './openapi/sdk-client-fixture.js';
 import { IssueRepresentation, IssueSource, LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { requireObjectCodec, decodeGeneratedModelTrusted, findGeneratedModelDefinitionForConstructor } from '@exprtlabs/golem/internal/model-runtime';
@@ -155,9 +156,9 @@ test('generated tag schemas retain distinct reference closures for duplicate loc
     import(pathToFileURL(path.join(fixtureValue.root, 'build/two/things.model.js')).href),
     import(pathToFileURL(path.join(fixtureValue.root, 'build/two/things.model.generated.js')).href),
   ]) as [
-    { Parent: new (values?: never) => object; Child: new (values?: never) => object },
+    { Parent: GeneratedModelClass; Child: GeneratedModelClass },
     { TParentBaseModel: abstract new (...args: never[]) => object },
-    { Parent: new (values?: never) => object; Child: new (values?: never) => object },
+    { Parent: GeneratedModelClass; Child: GeneratedModelClass },
     { TParentBaseModel: abstract new (...args: never[]) => object },
   ];
   const oneCodecId = findGeneratedModelDefinitionForConstructor(OneParentBaseModel)?.codecId;
@@ -167,14 +168,14 @@ test('generated tag schemas retain distinct reference closures for duplicate loc
   const oneCodec = requireObjectCodec(oneCodecId);
   const twoCodec = requireObjectCodec(twoCodecId);
 
-  const oneValid = new OneParent({ children: [new OneChild({ value: 'a' } as never)] } as never);
+  const oneValid = new OneParent({ children: [new OneChild({ value: 'a' })] });
   assert.equal(oneCodec.validate(oneValid), true, 'the "one" Contains schema accepts a matching string child');
-  const oneInvalid = new OneParent({ children: [{ value: 5 }] } as never);
+  const oneInvalid = new OneParent({ children: [{ value: 5 }] });
   assert.equal(oneCodec.validate(oneInvalid), false, 'the "one" Contains schema still requires string children');
 
-  const twoValid = new TwoParent({ children: [new TwoChild({ value: 5 } as never)] } as never);
+  const twoValid = new TwoParent({ children: [new TwoChild({ value: 5 })] });
   assert.equal(twoCodec.validate(twoValid), true, 'the "two" Contains schema accepts a matching number child');
-  const twoInvalid = new TwoParent({ children: [{ value: 'a' }] } as never);
+  const twoInvalid = new TwoParent({ children: [{ value: 'a' }] });
   assert.equal(
     twoCodec.validate(twoInvalid),
     false,

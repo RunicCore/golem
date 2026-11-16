@@ -3,6 +3,7 @@ import path from 'node:path';
 import * as ts from './typescript-ns.js';
 import { isRecord } from './generator-core.js';
 import { matchStarPattern } from './star-pattern.js';
+import { isRelativeSpecifier, relativeSpecifierOf } from './type-analysis/path-identity.js';
 import { packageName, readManifest } from './type-analysis/package-specifier.js';
 import type { RewriteEdit } from './rewrite.js';
 
@@ -35,10 +36,6 @@ const JSX_PRESERVE = 1;
 /** A change to the end of a specifier: drop `strip` characters, then add `add`. */
 interface Suffix { readonly strip: number; readonly add: string }
 const UNCHANGED: Suffix = { strip: 0, add: '' };
-
-function isRelative(specifier: string): boolean {
-  return specifier === '.' || specifier === '..' || specifier.startsWith('./') || specifier.startsWith('../');
-}
 
 function extensionOf(filename: string, extensions: readonly string[]): string | undefined {
   return extensions.find((extension) => filename.endsWith(extension));
@@ -103,14 +100,14 @@ function isFile(filename: string, options: NodeSpecifierOptions): boolean {
 /** The spelled path of a project source from `file`: relative, with `./` in front, and the emitted extension. */
 function relativeSpecifier(file: string, target: string, extension: string): string {
   const relative = path.posix.relative(path.posix.dirname(file), `${stemOf(target)}${extension}`);
-  return relative.startsWith('../') ? relative : `./${relative}`;
+  return relativeSpecifierOf(relative);
 }
 
 /** The new text of a specifier whose target is a project source, or undefined when the specifier stays. */
 function projectSourceSpecifier(specifier: string, file: string, target: string, options: ts.CompilerOptions): string | undefined {
   const extension = outputExtension(target, options);
   if (extension === undefined) return undefined;
-  if (isRelative(specifier)) {
+  if (isRelativeSpecifier(specifier)) {
     // './dir/' names the folder, as './dir' does.
     const base = specifier.replace(/\/+$/, '') || specifier;
     const suffix = suffixFor(path.posix.resolve(path.posix.dirname(file), base), target, extension);
@@ -163,7 +160,7 @@ function aliasPaths(specifier: string, compilerOptions: ts.CompilerOptions): str
  * The names that TypeScript tries, in its order.
  */
 function scriptTarget(specifier: string, file: string, options: NodeSpecifierOptions): string | undefined {
-  const candidates = isRelative(specifier)
+  const candidates = isRelativeSpecifier(specifier)
     ? [path.posix.resolve(path.posix.dirname(file), specifier.replace(/\/+$/, '') || specifier)]
     : aliasPaths(specifier, options.compilerOptions);
   for (const p of candidates) {
@@ -194,7 +191,7 @@ function newSpecifier(literal: ts.StringLiteral, file: ts.SourceFile, checker: t
   if (options.projectSources.has(declaration.fileName) && !declaration.isDeclarationFile) {
     return projectSourceSpecifier(specifier, file.fileName, declaration.fileName, options.compilerOptions);
   }
-  return isRelative(specifier) ? undefined : packageSpecifier(specifier, file.fileName, options);
+  return isRelativeSpecifier(specifier) ? undefined : packageSpecifier(specifier, file.fileName, options);
 }
 
 // `import` then `(`, with whitespace and comments between: `import /* c */ ('./x')`.

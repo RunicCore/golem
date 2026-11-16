@@ -1,7 +1,7 @@
-import { basename, dirname, isAbsolute, join, normalize, relative, resolve as resolvePath } from 'node:path';
+import { basename, dirname, isAbsolute, join, normalize, relative, resolve as resolvePath, sep } from 'node:path';
 import { displayPath } from './generator-core.js';
 import { inNodeModules } from './type-analysis/path-identity.js';
-import type { OpenProgramOptions } from './typescript-types.js';
+import type { OpenProgramOptions, VirtualFiles } from './typescript-types.js';
 
 /** The diagnostic code of a configuration that matches no file. */
 const NO_INPUTS_FOUND = 18003;
@@ -233,6 +233,39 @@ export function canonical(filename: string): string {
   return normalize(resolvePath(filename));
 }
 
+/** What a module lookup counts as present among `VirtualFiles`, for the files and folders the compiler probes; both backends ask it. */
+export interface VirtualLookup {
+  file(filename: string): boolean;
+  directory(directory: string): boolean;
+}
+
+/** Whether a lookup can find anything among `virtual`; a second lookup over none cannot succeed where the first failed. */
+export function hasVirtualFiles(virtual: VirtualFiles | undefined): virtual is VirtualFiles {
+  return virtual !== undefined && (virtual.files.size > 0 || virtual.folders.length > 0);
+}
+
+/** The lookup of `virtual`; the paths it is asked about are canonical. */
+export function virtualLookup(virtual: VirtualFiles): VirtualLookup {
+  const files = new Set([...virtual.files].map(canonical));
+  const folders = virtual.folders.map(canonical);
+  const inside = (outer: string, inner: string): boolean => outer === inner || inner.startsWith(outer.endsWith(sep) ? outer : `${outer}${sep}`);
+  const paths = [...files, ...folders];
+  return {
+    file: (filename) => files.has(filename) || (/\.(?:[cm]?ts|tsx)$/.test(filename) && folders.some((folder) => inside(folder, filename))),
+    directory: (directory) => paths.some((path) => inside(directory, path)) || folders.some((folder) => inside(folder, directory)),
+  };
+}
+
+/** The suffixes, before `.json`, of a configuration that golem derives beside the user's: one with the option overrides, one with the added roots, or one with both. */
+export const OPTIONS_CONFIG_SUFFIX = '.options';
+export const ROOTS_CONFIG_SUFFIX = '.roots';
+
+/** The base names of the configurations that golem derives beside the user's tsconfig `user` (a base name): with the option overrides, with the roots, or with both. */
+export function derivedConfigNames(user: string): ReadonlySet<string> {
+  const stem = basename(user, '.json');
+  return new Set([OPTIONS_CONFIG_SUFFIX, ROOTS_CONFIG_SUFFIX, `${OPTIONS_CONFIG_SUFFIX}${ROOTS_CONFIG_SUFFIX}`].map((suffix) => `${stem}${suffix}.json`));
+}
+
 /** The configuration a program opens: the file the compiler reads first and the overlays that serve the files that exist only in memory. */
 export interface ProgramConfig {
   readonly configPath: string;
@@ -280,7 +313,7 @@ function programConfig(options: OpenProgramOptions, fileExists: (filename: strin
     // A virtual configuration that extends the original replaces the options for this program only. The TypeScript 7 API takes no option override;
     // the TypeScript 6 parse could take one, but both backends read the same configuration. It sits beside the original, so the references,
     // which an extending configuration does not inherit, keep their meaning when copied.
-    configPath = join(dirname(baseConfigPath), `${basename(baseConfigPath, '.json')}.options.json`);
+    configPath = join(dirname(baseConfigPath), `${basename(baseConfigPath, '.json')}${OPTIONS_CONFIG_SUFFIX}.json`);
     const references = referencesOf(baseConfigPath, overlays);
     overlays.set(configPath, JSON.stringify({ extends: `./${basename(baseConfigPath)}`, compilerOptions: options.compilerOptionOverrides, ...(references.length === 0 ? {} : { references }) }));
     hidden.add(configPath);

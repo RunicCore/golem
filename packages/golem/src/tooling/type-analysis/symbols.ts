@@ -131,7 +131,7 @@ export function modelSpecificationForClass(
   seen.add(declaration);
   // The companions the jobs are about to write do not exist on the first run, so the compiler finds no module for an import of one; the
   // lookup that counts them covers every import form (relative, `paths`, `#imports`). Built when the first import needs it.
-  let expected: ReadonlySet<string> | undefined;
+  let expected: ts.VirtualFiles | undefined;
   const match = (filename: string, name: string | undefined): ModelSpecification | undefined => specifications.find(specification =>
     canonicalFilename(companionOfSpecification(specification)) === canonicalFilename(filename)
       && name === `${specification.name}BaseModel`);
@@ -148,7 +148,7 @@ export function modelSpecificationForClass(
         if (!ts.isImportSpecifier(alias)) continue;
         const statement = alias.parent.parent.parent;
         if (!ts.isImportDeclaration(statement) || !ts.isStringLiteralLike(statement.moduleSpecifier)) continue;
-        const resolved = checker.resolveImport(statement.moduleSpecifier, expected ??= new Set(specifications.map(specification => canonicalFilename(companionOfSpecification(specification)))))?.resolvedFileName;
+        const resolved = checker.resolveImport(statement.moduleSpecifier, expected ??= { files: new Set(specifications.map(specification => canonicalFilename(companionOfSpecification(specification)))), folders: [] })?.resolvedFileName;
         const specification = resolved && match(resolved, (alias.propertyName ?? alias.name).text);
         if (specification) return specification;
       }

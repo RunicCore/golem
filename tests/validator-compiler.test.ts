@@ -441,11 +441,21 @@ test('anyOf and oneOf without a discriminator report a union with the matched co
   await assertIssues(oneOf, 'a', [{ path: [], code: 'union', matched: 0 }]);
 });
 
+/** The fast export of an emitted validator: a yes-or-no check that lists no issues. */
+type FastCheck = (value: unknown) => boolean;
+
 /**
  * Bundles the named exports of an emitted validator module with esbuild and runs the bundle in a fresh context, a realm of its
  * own: a test that counts what the bundle calls patches that realm's globals with `setup` and never the test process's.
  */
-async function loadBundle(t: TestContext, source: string, names: readonly string[], context: object = {}, setup = ''): Promise<{ readonly values: readonly Validator[]; readonly text: string }> {
+async function loadBundle(
+  t: TestContext,
+  source: string,
+  exportNames: { readonly fast: readonly string[]; readonly full: readonly string[] },
+  context: object = {},
+  setup = '',
+): Promise<{ readonly fast: readonly FastCheck[]; readonly full: readonly Validator[]; readonly text: string }> {
+  const names = [...exportNames.fast, ...exportNames.full];
   const directory = mkdtempSync(path.join(tmpdir(), 'golem-validators-bundle-'));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
   writeFileSync(path.join(directory, 'validators.js'), source);
@@ -455,7 +465,7 @@ async function loadBundle(t: TestContext, source: string, names: readonly string
   const fresh = vm.createContext({ ...context, require: () => runtime });
   vm.runInContext(setup, fresh);
   vm.runInContext(result.outputFiles[0].text, fresh);
-  return { values: fresh.used, text: result.outputFiles[0].text };
+  return { fast: fresh.used.slice(0, exportNames.fast.length), full: fresh.used.slice(exportNames.fast.length), text: result.outputFiles[0].text };
 }
 
 test('an anyOf of branches that differ by JSON type checks a valid value with the one branch of its type', async t => {
@@ -465,9 +475,10 @@ test('an anyOf of branches that differ by JSON type checks a valid value with th
     { unknownFormats: 'warn', specifiers: { values: { 'validation-runtime': 'golem-validation-runtime' } }, fastPath: 'all' },
   );
   const counts = { isInteger: 0 };
-  const { values } = await loadBundle(t, source, [fastExports.get('root')!, exports.get('root')!], { counts }, 'const real = Number.isInteger; Number.isInteger = value => (counts.isInteger++, real(value));');
-  const [fast, full] = values;
-  const checks = [fast as unknown as (value: unknown) => boolean, (value: unknown) => full(value, false).length === 0];
+  const bundle = await loadBundle(t, source, { fast: [fastExports.get('root')!], full: [exports.get('root')!] }, { counts }, 'const real = Number.isInteger; Number.isInteger = value => (counts.isInteger++, real(value));');
+  const [fast] = bundle.fast;
+  const [full] = bundle.full;
+  const checks: readonly FastCheck[] = [fast, (value: unknown) => full(value, false).length === 0];
   for (const check of checks) {
     const callsFor = (value: unknown): readonly [boolean, number] => {
       counts.isInteger = 0;
@@ -1244,13 +1255,13 @@ test('a bundle of one validator drops an unused validator with its constants', a
   const { source, exports } = compile({ roots }, { unknownFormats: 'warn', specifiers: { values: { 'validation-runtime': 'golem-validation-runtime' } } });
   const kept = exports.get('kept') ?? '';
   const unused = exports.get('unused') ?? '';
-  const one = await loadBundle(t, source, [kept]);
-  const both = await loadBundle(t, source, [kept, unused]);
+  const one = await loadBundle(t, source, { fast: [], full: [kept] });
+  const both = await loadBundle(t, source, { fast: [], full: [kept, unused] });
   const unusedConstants = /unused-pattern|unused-literal/;
   assert.equal(unusedConstants.test(both.text), true, 'a bundle that imports the unused validator holds its constants');
   assert.equal(unusedConstants.test(one.text), false, 'a bundle of the kept validator holds none of them');
-  assert.deepEqual(JSON.parse(JSON.stringify(one.values[0]('kept-pattern-7', true))), []);
-  assert.deepEqual(JSON.parse(JSON.stringify(one.values[0]('other', true))), [{ path: [], code: 'pattern', pattern: '^kept-pattern-[0-9]+$' }]);
+  assert.deepEqual(JSON.parse(JSON.stringify(one.full[0]('kept-pattern-7', true))), []);
+  assert.deepEqual(JSON.parse(JSON.stringify(one.full[0]('other', true))), [{ path: [], code: 'pattern', pattern: '^kept-pattern-[0-9]+$' }]);
 });
 
 test('a diagnostic is placed where the locator says and reported once per place', () => {

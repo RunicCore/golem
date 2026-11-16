@@ -88,10 +88,16 @@ export function resolveValueSymbol(checker: ts.TypeChecker, expression: ts.Expre
   return resolveSymbol(checker, checker.getSymbolAtLocation(node));
 }
 
+/** The name a property is written with: an identifier, a quoted name or a number. A computed or private name has none. */
+export function literalPropertyName(name: ts.PropertyName): string | undefined {
+  return ts.isIdentifier(name) || ts.isStringLiteral(name) || ts.isNumericLiteral(name)
+    ? name.text
+    : undefined;
+}
+
 function propertyKey(name: ts.PropertyName, state: EvaluationState): string {
-  if (ts.isIdentifier(name) || ts.isStringLiteral(name) || ts.isNumericLiteral(name) || ts.isNoSubstitutionTemplateLiteral(name)) {
-    return name.text;
-  }
+  const literal = literalPropertyName(name);
+  if (literal !== undefined) return literal;
   if (ts.isComputedPropertyName(name)) {
     const key = evaluate(name.expression, state);
     if (typeof key === 'string' || typeof key === 'number') return String(key);
@@ -177,6 +183,12 @@ function symbolValue(symbol: ts.Symbol, reference: ts.Node, state: EvaluationSta
   return undefined;
 }
 
+/** The element index `key` names in an array of `length` elements, or undefined: JavaScript reads only the canonical form (`1`, never `01`, `1.0` or `-1`) as an index. */
+function canonicalIndex(key: string, length: number): number | undefined {
+  const index = Number(key);
+  return Number.isInteger(index) && index >= 0 && index < length && String(index) === key ? index : undefined;
+}
+
 function memberValue(
   expression: ts.PropertyAccessExpression | ts.ElementAccessExpression,
   state: EvaluationState,
@@ -195,7 +207,10 @@ function memberValue(
   if (enums.length > 0) return enumLookup(enums, key, expression, state);
   const target = evaluate(expression.expression, state);
   if (isStaticRecord(target) && Object.hasOwn(target, key)) return target[key];
-  if (isStaticArray(target) && /^\d+$/.test(key) && Number(key) < target.length) return target[Number(key)];
+  if (isStaticArray(target)) {
+    const index = canonicalIndex(key, target.length);
+    if (index !== undefined) return target[index];
+  }
   return fail(expression, `member ${key} is not a static value`);
 }
 

@@ -3,10 +3,15 @@ import * as ts from '@exprtlabs/golem/internal/ts';
 import { resolveSymbol } from '@exprtlabs/golem/internal/type-analysis';
 import { TsToOpenApiDiagnosticCode, TsToOpenApiError, diagnostic } from '../diagnostics.js';
 import type { RouteEvaluationOptions } from './dependencies.js';
-import { evaluateStaticValue, isTypeScriptLibFile, singleReturnExpression, unwrapExpression as unwrap } from '@exprtlabs/golem/internal/static-value';
+import { evaluateStaticValue, isTypeScriptLibFile, literalPropertyName, singleReturnExpression, unwrapExpression as unwrap } from '@exprtlabs/golem/internal/static-value';
 
 type StringBinding = { readonly kind: 'string'; readonly value: string };
 type ObjectBinding = { readonly kind: 'object'; readonly fields: Readonly<Record<string, string>> };
+
+/** The field an object argument holds under `key`, never a member of the object prototype. */
+function ownField(binding: ObjectBinding, key: string): string | undefined {
+  return Object.hasOwn(binding.fields, key) ? binding.fields[key] : undefined;
+}
 type Binding = StringBinding | ObjectBinding;
 
 interface Scope {
@@ -90,10 +95,9 @@ function bindPattern(name: ts.BindingName, value: Binding, bindings: Map<string,
   if (!ts.isObjectBindingPattern(name) || value.kind !== 'object') reject();
   for (const element of name.elements) {
     if (element.dotDotDotToken || !element.name || !ts.isIdentifier(element.name)) reject();
-    const key = element.propertyName && ts.isIdentifier(element.propertyName)
-      ? element.propertyName.text
-      : element.name.text;
-    const field = value.fields[key];
+    const key = element.propertyName ? literalPropertyName(element.propertyName) : element.name.text;
+    if (key === undefined) reject();
+    const field = ownField(value, key);
     if (field === undefined) reject();
     bindings.set(element.name.text, { kind: 'string', value: field });
   }
@@ -102,10 +106,13 @@ function bindPattern(name: ts.BindingName, value: Binding, bindings: Map<string,
 function objectFields(expression: ts.Expression, scope: Scope, ctx: FoldContext): Record<string, string> | undefined {
   const unwrapped = unwrap(expression);
   if (!ts.isObjectLiteralExpression(unwrapped)) return undefined;
-  const fields: Record<string, string> = {};
+  // No prototype: a read of `toString` or `constructor` finds no field, as for any other missing key.
+  const fields: Record<string, string> = Object.create(null);
   for (const property of unwrapped.properties) {
-    if (!ts.isPropertyAssignment(property) || !ts.isIdentifier(property.name)) reject();
-    fields[property.name.text] = evalString(property.initializer, scope, ctx);
+    if (!ts.isPropertyAssignment(property)) reject();
+    const key = literalPropertyName(property.name);
+    if (key === undefined) reject();
+    fields[key] = evalString(property.initializer, scope, ctx);
   }
   return fields;
 }
@@ -258,9 +265,10 @@ function fold(expression: ts.Expression, scope: Scope, ctx: FoldContext): string
       ? scope.bindings.get(unwrapped.expression.text)
       : undefined;
     if (!parameter) return constString(unwrapped, ctx);
-    if (parameter.kind !== 'object' || !ts.isPropertyAccessExpression(unwrapped) || !ts.isIdentifier(unwrapped.name)
-      || !(unwrapped.name.text in parameter.fields)) reject();
-    return parameter.fields[unwrapped.name.text];
+    if (parameter.kind !== 'object' || !ts.isPropertyAccessExpression(unwrapped) || !ts.isIdentifier(unwrapped.name)) reject();
+    const field = ownField(parameter, unwrapped.name.text);
+    if (field === undefined) reject();
+    return field;
   }
   if (!ts.isCallExpression(unwrapped) || unwrapped.questionDotToken) reject();
   const resolved = resolveCallee(unwrapped.expression, scope, ctx);

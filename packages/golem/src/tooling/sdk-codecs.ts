@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { code, exportedName, fileImports, ImportSource, join, lineBreak, nest, propertyKey, render, type Code } from './code.js';
-import { portableRelativeFilename } from './type-analysis/path-identity.js';
+import { portableRelativeFilename, relativeSpecifierOf } from './type-analysis/path-identity.js';
 
 /**
  * What both generated-SDK writers share: the codec module of an operation the client reads. One generator writes
@@ -20,7 +20,7 @@ export { sdkCodecsFile } from './plan-support.js';
 export function moduleSpecifier(fromFile: string, toFile: string): string {
   const target = path.parse(toFile);
   const relative = portableRelativeFilename(path.join(target.dir, `${target.name}.js`), path.dirname(fromFile));
-  return relative.startsWith('./') || relative.startsWith('../') ? relative : `./${relative}`;
+  return relativeSpecifierOf(relative);
 }
 
 /** The code of a function the module names, under the key that picks it. */

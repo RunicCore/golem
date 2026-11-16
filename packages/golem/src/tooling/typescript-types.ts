@@ -526,13 +526,23 @@ export interface Signature {
   getReturnType(): Type;
 }
 
+/**
+ * Files that do not exist yet but will, as a module lookup counts them. A lookup finds a file that is one of `files`, or a TypeScript
+ * file (`.ts`, `.tsx`, `.mts`, `.cts`, a declaration file) inside one of `folders`, and a folder on the way to either. Paths are absolute.
+ * A file read finds no content in them: a lookup reads package.json files only.
+ */
+export interface VirtualFiles {
+  readonly files: ReadonlySet<string>;
+  readonly folders: readonly string[];
+}
+
 export interface TypeChecker {
   /**
    * The module an import of a file of the checker's program resolved to, as the compiler resolved it for the program, or undefined when
    * it resolved to none. `virtualFiles` are files that do not exist yet but will (the companions a job is about to write): when the
    * compiler found none, a second lookup counts them. A package.json that is not JSON throws an error that names it.
    */
-  resolveImport(specifier: StringLiteralLike, virtualFiles?: ReadonlySet<string>): ResolvedModule | undefined;
+  resolveImport(specifier: StringLiteralLike, virtualFiles?: VirtualFiles): ResolvedModule | undefined;
   getTypeFromTypeNode(node: TypeNode): Type;
   getTypeAtLocation(node: Node): Type;
   getSymbolAtLocation(node: Node): Symbol | undefined;
@@ -704,7 +714,7 @@ export interface ProgramSession extends Disposable {
    */
   transpileModule(filename: string, text: string, compilerOptions: CompilerOptions): { readonly outputText: string; readonly sourceMapText: string; readonly diagnostics: readonly Diagnostic[] };
   /** Resolve a module name that no program imports, such as one an SDK manifest names, as the compiler resolves an import of `containingFile`: the disk and `virtualFiles` count. */
-  resolveModuleName(moduleName: string, containingFile: string, compilerOptions: CompilerOptions, resolutionMode?: ModuleKind, virtualFiles?: ReadonlySet<string>): { resolvedModule?: ResolvedModule };
+  resolveModuleName(moduleName: string, containingFile: string, compilerOptions: CompilerOptions, resolutionMode?: ModuleKind, virtualFiles?: VirtualFiles): { resolvedModule?: ResolvedModule };
 }
 
 // The runtime values of the seam, as the facade destructures them. The value `X` of an enum-like name carries the
@@ -846,7 +856,6 @@ export interface TypeScriptBackend {
   isExpressionWithTypeArguments(node: Node): node is ExpressionWithTypeArguments;
   isFunctionDeclaration(node: Node): node is FunctionDeclaration;
   isFunctionExpression(node: Node): node is FunctionExpression;
-  isFunctionLike(node: Node): node is FunctionLikeDeclaration;
   isIdentifier(node: Node): node is Identifier;
   isImportClause(node: Node): node is ImportClause;
   isImportDeclaration(node: Node): node is ImportDeclaration;

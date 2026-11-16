@@ -9,8 +9,10 @@ import { generate } from '#ts-openapi/generator';
 import { runPipeline } from '#golem/cli';
 import { formatOpenApiProblems, validateOpenApiDocument } from '#openapi/openapi-validator';
 import { createControllerFixture } from '../fixture-templates/controllers/project.js';
+import { expectJsonArray, expectJsonObject } from '../support/json.js';
 import { startNestApp } from '../support/nest-app.js';
 import { command, golem } from '../support/process.js';
+import { contentSchema, documentFrom, documentOf, operationOf, parameterOf, propertySchema, refusedWith, requestBodyOf, schemaOf, type OpenApiDocument, type OpenApiSchema } from './openapi-document.js';
 
 const MODEL = `import type { IModel, IObject } from '@exprtlabs/golem/model';
 export type TPayment = IModel<{ id: string; amount: number }>;
@@ -22,13 +24,16 @@ export type TNested = IObject<{ inner: { tags?: string[] } }>;
 export type TOrder = IModel<{ id: string; mutable: TPayment[]; readonly: readonly TPayment[]; readonlyGeneric: ReadonlyArray<TPayment> }>;
 `;
 
+/** The controller `AController` of the project, with `methods` as its body and `preamble` before it. */
+const controllerSource = (methods: string, preamble = ''): string => `import { Body, Controller, Get, Post, Query } from '@nestjs/common';\nimport type { TPayment, TPayments, TOpen, TFilter, TTagged, TNested, TOrder } from './payment.model.js';\n${preamble}@Controller('a')\nexport class AController {\n${methods}\n}\n`;
+
 function project(t: TestContext, methods: string, openapiVersion = '3.2.0', preamble = ''): string {
   return createControllerFixture(t, {
     prefix: 'golem-one-field-',
     links: 'workspace',
     files: {
       'src/payment.model.ts': MODEL,
-      'src/a.controller.ts': `import { Body, Controller, Get, Post, Query } from '@nestjs/common';\nimport type { TPayment, TPayments, TOpen, TFilter, TTagged, TNested, TOrder } from './payment.model.js';\n${preamble}@Controller('a')\nexport class AController {\n${methods}\n}\n`,
+      'src/a.controller.ts': controllerSource(methods, preamble),
       'golem.yaml': `version: 1\nvalidation: true\nts-openapi:\n  docs:\n    - sources:\n        - src/a.controller.ts\n      output: generated/api.json\n      openapiVersion: "${openapiVersion}"\n      info: { title: T, version: "1" }\nmodel: {}\n`,
     },
   });
@@ -36,31 +41,24 @@ function project(t: TestContext, methods: string, openapiVersion = '3.2.0', prea
 
 const read = (root: string, file: string): string => fs.readFileSync(path.join(root, file), 'utf8');
 
-/** Generates the project, checks it against the rewrite unless told not to, and reads the controllers document. */
-async function generatedDocument(root: string, check = true): Promise<{ paths: Record<string, Record<string, Operation>> }> {
+/** Generates the project, checks it against the rewrite, and reads the controllers document. */
+async function generatedDocument(root: string): Promise<OpenApiDocument> {
   const config = path.join(root, 'golem.yaml');
   await runPipeline(config);
-  if (check) await runPipeline(config, { check: true });
-  return JSON.parse(read(root, 'generated/api.json')) as { paths: Record<string, Record<string, Operation>> };
+  await runPipeline(config, { check: true });
+  return documentFrom(JSON.parse(read(root, 'generated/api.json')));
 }
 
-interface Operation { readonly parameters?: readonly Record<string, unknown>[]; readonly requestBody?: { readonly required?: boolean; readonly content: Record<string, { readonly schema: Record<string, unknown> }> } }
+const TPAYMENT = { $ref: '#/components/schemas/TPayment' };
+const TOPEN = { $ref: '#/components/schemas/TOpen' };
+const TFILTER = { $ref: '#/components/schemas/TFilter' };
 
-test('the controllers job names a one-field parameter by a key written as a concatenation or a constant member', async (t) => {
-  // protects: T-446 a key that the job folds to a string names the body property and the query parameter
-  const root = project(t, [
-    "  @Post() create(@Body('pay' + 'ment') payment: TPayment): void {}",
-    '  @Get() list(@Query(KEYS.filter) filter: TFilter): void {}',
-  ].join('\n'), '3.2.0', "const KEYS = { filter: 'filter' } as const;\n");
-  const document = await generatedDocument(root);
-  const bodySchema = document.paths['/a']!.post!.requestBody!.content['application/json']!.schema;
-  assert.deepEqual(Object.keys(bodySchema.properties as object), ['payment']);
-  assert.deepEqual(document.paths['/a']!.get!.parameters!.map(parameter => parameter.name), ['filter']);
-});
+/** The schema of the JSON request body of the POST at `route`. */
+const bodySchema = (document: OpenApiDocument, route: string): OpenApiSchema => contentSchema(requestBodyOf(document, route, 'post'), 'application/json', `request body of POST ${route}`);
 
 for (const openapiVersion of ['3.2.0', '3.1.2']) {
   test(`a one-field model @Body and @Query reach the OpenAPI ${openapiVersion} document`, async (t) => {
-    // protects: R-13 T-323 T-442 T-445 the one-field model parameter, or array of models (readonly too, a whole body, a model field), the interceptor converts is described by the controllers job
+    // protects: R-13 T-323 T-442 T-445 T-446 the one-field model parameter, or array of models (readonly too, a whole body, a model field), the interceptor converts is described by the controllers job; a key that the job folds to a string (a concatenation, a constant member) names the body property and the query parameter
     const root = project(t, [
       "  @Post() create(@Body('payment') payment: TPayment): void {}",
       "  @Post('batch') createBatch(@Body('items') items: TPayment[]): void {}",
@@ -73,41 +71,36 @@ for (const openapiVersion of ['3.2.0', '3.1.2']) {
       "  @Post('whole-readonly-generic') createWholeReadonlyGeneric(@Body() items: ReadonlyArray<TPayment>): void {}",
       "  @Post('order') createOrder(@Body('order') order: TOrder): void {}",
       "  @Get() list(@Query('filter') filter: TFilter): void {}",
-    ].join('\n'), openapiVersion);
+      // A key that the job folds to a string names the body property and the query parameter.
+      "  @Post('folded') folded(@Body('pay' + 'ment') payment: TPayment): void {}",
+      "  @Get('folded') foldedList(@Query(KEYS.filter) filter: TFilter): void {}",
+    ].join('\n'), openapiVersion, "const KEYS = { filter: 'filter' } as const;\n");
     const document = await generatedDocument(root);
-    const post = document.paths['/a']!.post!;
-    const bodySchema = post.requestBody!.content['application/json']!.schema;
-    assert.equal(post.requestBody!.required, true);
-    assert.deepEqual({ ...bodySchema, properties: Object.keys(bodySchema.properties as object) }, { type: 'object', properties: ['payment'], required: ['payment'] });
-    assert.match(JSON.stringify((bodySchema.properties as Record<string, unknown>).payment), /TPayment/);
-    assert.equal(post.parameters, undefined, 'a body field is no OpenAPI parameter');
+    const payment = { type: 'object', properties: { payment: TPAYMENT }, required: ['payment'] };
+    assert.deepEqual(bodySchema(document, '/a'), payment);
+    assert.equal(requestBodyOf(document, '/a', 'post').required, true);
+    assert.equal(operationOf(document, '/a', 'post').parameters, undefined, 'a body field is no OpenAPI parameter');
 
-    const batchSchema = document.paths['/a/batch']!.post!.requestBody!.content['application/json']!.schema;
-    assert.deepEqual({ ...batchSchema, properties: Object.keys(batchSchema.properties as object) }, { type: 'object', properties: ['items'], required: ['items'] });
+    const batch = { type: 'object', properties: { items: { type: 'array', items: TPAYMENT } }, required: ['items'] };
+    assert.deepEqual(bodySchema(document, '/a/batch'), batch);
     for (const route of ['generic', 'qualified', 'readonly', 'readonly-generic']) {
-      assert.deepEqual(document.paths[`/a/${route}`]!.post!.requestBody!.content['application/json']!.schema, batchSchema, route);
+      assert.deepEqual(bodySchema(document, `/a/${route}`), batch, route);
     }
-    const wholeSchema = document.paths['/a/whole']!.post!.requestBody!.content['application/json']!.schema;
-    assert.deepEqual(wholeSchema, { type: 'array', items: { $ref: '#/components/schemas/TPayment' } });
+    const whole = { type: 'array', items: TPAYMENT };
+    assert.deepEqual(bodySchema(document, '/a/whole'), whole);
     for (const route of ['whole-readonly', 'whole-readonly-generic']) {
-      assert.deepEqual(document.paths[`/a/${route}`]!.post!.requestBody!.content['application/json']!.schema, wholeSchema, route);
+      assert.deepEqual(bodySchema(document, `/a/${route}`), whole, route);
     }
-    const order = (document as unknown as { components: { schemas: { TOrder: { properties: Record<string, unknown> } } } }).components.schemas.TOrder.properties;
-    assert.deepEqual(order.mutable, { type: 'array', items: { $ref: '#/components/schemas/TPayment' } });
-    assert.deepEqual([order.readonly, order.readonlyGeneric], [order.mutable, order.mutable]);
-    const itemsSchema = (batchSchema.properties as Record<string, { type: string; items: unknown }>).items;
-    assert.equal(itemsSchema.type, 'array');
-    assert.deepEqual(itemsSchema.items, { $ref: '#/components/schemas/TPayment' });
+    const order = schemaOf(document, 'TOrder');
+    assert.deepEqual(['mutable', 'readonly', 'readonlyGeneric'].map(name => propertySchema(order, name)), [whole, whole, whole]);
 
-    const filter = document.paths['/a']!.get!.parameters!.find(parameter => parameter.name === 'filter')!;
-    assert.deepEqual({ in: filter.in, style: filter.style, explode: filter.explode, required: filter.required }, { in: 'query', style: 'deepObject', explode: true, required: true });
-    assert.match(JSON.stringify(filter.schema), /TFilter/);
+    assert.deepEqual(parameterOf(document, '/a', 'get'), { name: 'filter', in: 'query', required: true, style: 'deepObject', explode: true, schema: TFILTER });
+
+    assert.deepEqual(Object.keys(bodySchema(document, '/a/folded').properties ?? {}), ['payment']);
+    assert.deepEqual((operationOf(document, '/a/folded', 'get').parameters ?? []).map(parameter => parameter.name), ['filter']);
   });
 }
 
-const TPAYMENT = { $ref: '#/components/schemas/TPayment' };
-const TOPEN = { $ref: '#/components/schemas/TOpen' };
-const TFILTER = { $ref: '#/components/schemas/TFilter' };
 /** The note field of the bodies that mix a whole body with a one-field body. */
 const NOTE = { type: 'object', properties: { note: { type: 'string' } }, required: ['note'] };
 
@@ -144,14 +137,13 @@ for (const openapiVersion of ['3.2.0', '3.1.2'] as const) {
       prefix: 'golem-one-field-shape-',
       source: `import { Body, Controller, Get, Post, Query } from '@nestjs/common';\nimport { ApiBody, ApiProperty } from '@nestjs/swagger';\n${MODEL}class NoteDto { @ApiProperty() text!: string; }\n@Controller('a')\nexport class AController {\n${methods}\n}\n`,
     });
-    const result = await generate({ root, output: path.join(root, 'openapi.json'), openapiVersion, info: { title: 'T', version: '1' }, profile: { validation: false } });
-    const document = JSON.parse(result.artifacts[0]!.content) as { paths: Record<string, Record<string, Operation>> };
+    const document = documentOf(await generate({ root, output: path.join(root, 'openapi.json'), openapiVersion, info: { title: 'T', version: '1' }, profile: { validation: false } }));
     const problems = validateOpenApiDocument(document);
     assert.deepEqual(problems, [], formatOpenApiProblems(problems, pointer => pointer));
     for (const [route, , required, schema] of BODIES) {
-      assert.deepEqual(document.paths[`/a/${route}`]!.post!.requestBody, { required, content: { 'application/json': { schema } } }, route);
+      assert.deepEqual(requestBodyOf(document, `/a/${route}`, 'post'), { required, content: { 'application/json': { schema } } }, route);
     }
-    assert.deepEqual(document.paths['/a/filtered']!.get!.parameters, [{ name: 'filter', in: 'query', required: false, style: 'deepObject', explode: true, schema: TFILTER }]);
+    assert.deepEqual(operationOf(document, '/a/filtered', 'get').parameters, [{ name: 'filter', in: 'query', required: false, style: 'deepObject', explode: true, schema: TFILTER }]);
   });
 }
 
@@ -161,11 +153,10 @@ test('OpenAPI 3.1 documents a named model query beside a whole query as a deepOb
     prefix: 'golem-one-field-mixed-',
     source: `import { Controller, Get, Query } from '@nestjs/common';\n${MODEL}@Controller('a')\nexport class AController {\n  @Get() list(@Query() whole: TFilter, @Query('filter') filter: TFilter): void {}\n}\n`,
   });
-  const result = await generate({ root, output: path.join(root, 'openapi.json'), openapiVersion: '3.1.2', info: { title: 'T', version: '1' }, profile: { validation: false } });
-  const document = JSON.parse(result.artifacts[0]!.content) as { paths: Record<string, Record<string, Operation>> };
+  const document = documentOf(await generate({ root, output: path.join(root, 'openapi.json'), openapiVersion: '3.1.2', info: { title: 'T', version: '1' }, profile: { validation: false } }));
   const problems = validateOpenApiDocument(document);
   assert.deepEqual(problems, [], formatOpenApiProblems(problems, pointer => pointer));
-  assert.deepEqual(document.paths['/a']!.get!.parameters, [
+  assert.deepEqual(operationOf(document, '/a', 'get').parameters, [
     { name: 'status', in: 'query', required: true, style: 'form', explode: true, schema: { type: 'string' } },
     { name: 'limit', in: 'query', required: false, style: 'form', explode: true, schema: { type: 'number' } },
     { name: 'active', in: 'query', required: false, style: 'form', explode: true, schema: { type: 'boolean' } },
@@ -187,13 +178,19 @@ test('the controllers job stops only what the OpenAPI format cannot describe in 
     ["  @Get() a(@Query() whole: TFilter, @Query('filter') filter: TFilter): void {}", 'NEST1107', /sends a whole @Query\(\) object as one querystring parameter, which cannot be combined with another @Query\(\) object or with named query parameters/],
     ["  @Get() a(@Query('filter') filter: TFilter, @Query() whole: TFilter): void {}", 'NEST1107', /cannot be combined with another @Query\(\) object or with named query parameters/],
   ];
+  // One project, whose controller each case rewrites: the refusal is the controllers job's, so the job runs, not the pipeline around it.
+  const root = project(t, '');
+  const refused = (methods: string, openapiVersion: '3.2.0' | '3.1.2'): Promise<unknown> => {
+    fs.writeFileSync(path.join(root, 'src/a.controller.ts'), controllerSource(methods));
+    return generate({ root, output: path.join(root, 'openapi.json'), openapiVersion, info: { title: 'T', version: '1' }, profile: { validation: false } });
+  };
   for (const [methods, code, message] of cases) {
-    await assert.rejects(runPipeline(path.join(project(t, methods, '3.2.0'), 'golem.yaml')), (error: Error) => error.message.includes(code) && message.test(error.message), methods);
+    await assert.rejects(refused(methods, '3.2.0'), refusedWith(code, message), methods);
   }
   // A named model whose name a flat parameter of the whole query also uses cannot share the one (name, in) key of the 3.1 document.
   await assert.rejects(
-    runPipeline(path.join(project(t, "  @Get() a(@Query() whole: TFilter, @Query('limit') limit: TFilter): void {}", '3.1.2'), 'golem.yaml')),
-    (error: Error) => error.message.includes('NEST1312') && /identifies a parameter by its name and location/.test(error.message),
+    refused("  @Get() a(@Query() whole: TFilter, @Query('limit') limit: TFilter): void {}", '3.1.2'),
+    refusedWith('NEST1312', /identifies a parameter by its name and location/),
   );
 });
 
@@ -232,7 +229,8 @@ export class AController {
     assert.deepEqual((await client.aController_createBatch().execute({ body: { items: [{ id: 'p1', amount: 12 }, { id: 'p2', amount: 30 }] } })).body, { amount: 42 });
     const rejected = await fetch(`${await application.getUrl()}/a/batch`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ items: [{ id: 'p1', amount: 1 }, { id: 'p2', amount: 'x' }] }) });
     assert.equal(rejected.status, 400);
-    assert.deepEqual(((await rejected.json()) as { issues: { path: unknown[] }[] }).issues.map(issue => issue.path), [['items', 1, 'amount']]);
+    const { issues } = expectJsonObject(await rejected.json(), 'the 400 body');
+    assert.deepEqual(expectJsonArray(issues, 'the 400 issues').map(issue => expectJsonObject(issue, 'an issue').path), [['items', 1, 'amount']]);
     assert.deepEqual((await client.aController_list().execute({ query: { filter: { status: 'paid', limit: 10, active: true } } })).body, { status: 'paid', limit: 10, active: true });
   } finally {
     await application.close();

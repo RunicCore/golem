@@ -142,7 +142,7 @@ The generator reads these `@nestjs/swagger` decorators:
 
 | Decorator | Effect |
 | --- | --- |
-| `@ApiOperation` | `operationId`, `summary`, `description`, `deprecated` and `hidden` |
+| `@ApiOperation` | `operationId`, `summary`, `description` and `deprecated` |
 | `@ApiTags`, `@ApiProduces`, `@ApiConsumes` | Tags and media types |
 | `@ApiBody` | Request body `type`, `isArray`, `required`, `description`, `content` and `schema` |
 | `@ApiQuery`, `@ApiParam`, `@ApiHeader`, `@ApiHeaders` | Parameter metadata, from the method or the class |
@@ -195,6 +195,6 @@ A whole `@Query()` object follows these rules:
 ## Excluded endpoints
 
 - `@ApiExcludeEndpoint()` and `@ApiExcludeEndpoint(true)` omit a route. `@ApiExcludeEndpoint(false)` keeps it.
-- `@ApiOperation({ hidden: true })` omits a route. `@ApiOperation({ hidden: false })` cannot restore an endpoint that `@ApiExcludeEndpoint()` excluded.
+- Only `@ApiExcludeEndpoint()` omits a route.
 - `@ApiExcludeController()` omits every route of a controller. `@ApiExcludeController(false)` keeps them.
 - Exclude a route that has no OpenAPI form, such as `@All()` or `@Sse()`, so generation skips it.

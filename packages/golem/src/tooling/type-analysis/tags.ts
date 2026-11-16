@@ -30,6 +30,8 @@ export interface SerdeBinding {
   readonly modelType: ts.Type;
   /** Inferred wire type used for the JSON projection. */
   readonly wireType: ts.Type;
+  /** The nodes that declare the wire type: the tags on it name their functions. */
+  readonly wireNodes: readonly ts.TypeNode[];
   /** The output types used to verify the pair at the model boundary. */
   readonly serializeType: ts.Type;
   readonly deserializeType: ts.Type;
@@ -67,22 +69,32 @@ export interface TagAnalysisContext {
   readonly identityRoot: string;
   /** The generated file that imports what the tags name: the companion of the model's file. Defaults to the model's file. */
   readonly importer?: string;
+  /** Whether a file is a default library file of the program: it holds no tag of the user, so the scan of the written functions leaves it unread. Unset: no file is one. */
+  readonly isDefaultLibraryFile?: (file: ts.SourceFile) => boolean;
   /** Whether a file is a model source of the job, so it has a generated companion. */
   readonly isModelSource?: (filename: string) => boolean;
   readonly diagnostic: (node: ts.Node, code: string, message: string) => Error;
   /** Resolve a tag's schema type without executing application code. */
-  readonly describeSchema?: (type: ts.Type, node?: ts.TypeNode) => ConstraintSchemaValue;
+  readonly describeSchema?: (type: ts.Type, node: ts.TypeNode | undefined, writtenFunctions: WrittenFunctions | undefined) => ConstraintSchemaValue;
   readonly aliasUseSite?: AliasUseSite;
   /**
-   * The functions that the source read of one node wrote after `typeof`, by their type. The checker read of the same node
-   * names a function from its type; a const with a function type annotation has no declaration to name it by. Consts that
-   * share one type alias share one type: within one role, a type written with two different symbols maps to null and names no function.
+   * The functions that the source nodes of one field and of the fields that enclose it write after `typeof`, by their type
+   * (`recordWrittenFunction`). The checker read of the same field names a function from its type alone, and one type can belong
+   * to several functions (`const b: typeof a`, a shared alias). Within one role, a type written with two different symbols maps to null and names no function.
    */
   readonly writtenFunctions?: WrittenFunctions;
 }
 
 type FunctionRole = 'validation' | 'serialize' | 'deserialize';
-type WrittenFunctions = Readonly<Record<FunctionRole, Map<ts.Type, ts.Symbol | null>>>;
+export interface WrittenFunctions {
+  readonly validation: Map<ts.Type, ts.Symbol | null>;
+  readonly serialize: Map<ts.Type, ts.Symbol | null>;
+  readonly deserialize: Map<ts.Type, ts.Symbol | null>;
+  /** The nodes that this field and the fields around it were read from, and that no scan of an enclosing field has read yet. */
+  readonly sources: readonly ts.Node[];
+  /** Whether `recordReachableFunctions` read `sources` already. It runs once, before the first tag read from the checker looks up a function. */
+  scanned: boolean;
+}
 
 /** Generated validators compile JSON Schema patterns with the Unicode flag; analysis parses each pattern the same way, so a malformed one fails before any output is written. */
 function isUnicodePattern(pattern: string): boolean {
@@ -94,8 +106,26 @@ function isUnicodePattern(pattern: string): boolean {
   }
 }
 
-function newWrittenFunctions(): WrittenFunctions {
-  return { validation: new Map(), serialize: new Map(), deserialize: new Map() };
+/** Whether `node` is `outer` or lies inside it. */
+function isInside(node: ts.Node, outer: ts.Node): boolean {
+  for (let current: ts.Node | undefined = node; current !== undefined; current = current.parent) if (current === outer) return true;
+  return false;
+}
+
+/**
+ * A registry for one field: it starts with what the fields around it wrote, because a generic type (`Box<Tagged<string>>`) hands
+ * the tags of its argument to the property that its declaration names `T`. A source of the fields around it that holds this field's own
+ * node, such as the object type that declares it, is left out: its other members are fields of their own.
+ */
+function newWrittenFunctions(inherited: WrittenFunctions | undefined, sources: readonly ts.Node[]): WrittenFunctions {
+  const enclosing = inherited && !inherited.scanned ? inherited.sources.filter(outer => !sources.some(own => isInside(own, outer))) : [];
+  return {
+    validation: new Map(inherited?.validation),
+    serialize: new Map(inherited?.serialize),
+    deserialize: new Map(inherited?.deserialize),
+    sources: [...enclosing, ...sources],
+    scanned: false,
+  };
 }
 
 /** The concrete alias reference a generic tag alias is being read for. */
@@ -388,35 +418,91 @@ function functionArgument(
   throw context.diagnostic(at, code, message);
 }
 
-/**
- * The name node of the function that a call signature belongs to, or undefined when its type is shared: a function
- * declaration, a const with an arrow or function expression, or a const whose own inline annotation is the function
- * type. A signature that an alias declares belongs to every const of that alias.
- */
-function functionNameNode(declaration: ts.NamedDeclaration | undefined): ts.Node | undefined {
-  let holder: ts.Node | undefined = declaration?.parent;
-  while (holder !== undefined && ts.isParenthesizedTypeNode(holder)) holder = holder.parent;
-  return holder !== undefined && ts.isVariableDeclaration(holder) ? holder.name : declaration?.name;
+/** The functions that the arguments of each tag write after `typeof`, in the order of the roles. */
+const TAG_FUNCTION_ROLES: ReadonlyMap<string, readonly FunctionRole[]> = new Map([
+  ['TValidation', ['validation']],
+  ['TSerde', ['serialize', 'deserialize']],
+]);
+
+function recordWrittenFunction(context: TagAnalysisContext, role: FunctionRole, query: ts.TypeQueryNode): void {
+  const registry = context.writtenFunctions?.[role];
+  // Two names of one function (`export { validate as check }`, `const alias = validate`) are one function.
+  const written = canonicalValue(context.checker, symbolAtExpression(context.checker, query.exprName))?.symbol;
+  if (!registry || !written) return;
+  const type = context.checker.getTypeAtLocation(query.exprName);
+  const known = registry.get(type);
+  if (known !== null) registry.set(type, known === undefined || known === written ? written : null);
 }
 
+/** Records the `typeof` arguments of a TValidation or TSerde reference by the role of each argument. */
+function recordTagFunctions(context: TagAnalysisContext, tag: ts.TypeReferenceNode, name: string): void {
+  TAG_FUNCTION_ROLES.get(name)?.forEach((role, index) => {
+    const argument = tag.typeArguments?.[index];
+    if (argument && ts.isTypeQueryNode(argument)) recordWrittenFunction(context, role, argument);
+  });
+}
+
+/** The type nodes that declare `property`, also when a mapped type or an intersection copied the declaration. */
+export function declaredPropertyNodes(checker: ts.TypeChecker, property: ts.Symbol): readonly ts.TypeNode[] {
+  const declarations = property.declarations ?? checker.getRootSymbols(property).flatMap(root => root.declarations ?? []);
+  return declarations.flatMap(declaration => (ts.isPropertySignature(declaration) || ts.isPropertyDeclaration(declaration)) && declaration.type ? [declaration.type] : []);
+}
+
+/**
+ * Records every `typeof` of a tag in everything that `node` reaches, through type aliases, interfaces, classes, `typeof` a
+ * variable, and the parts of mapped, conditional and indexed types. A default library file holds no tag of the user and stays unread.
+ * Each node is read once for each `seen`, so one scan reads each reachable node once.
+ */
+function recordReachableFunctions(context: TagAnalysisContext, node: ts.Node, seen: Set<ts.Node>): void {
+  if (seen.has(node)) return;
+  seen.add(node);
+  const { checker } = context;
+  if (ts.isTypeReferenceNode(node)) {
+    const symbol = checker.getSymbolAtLocation(node.typeName);
+    const tag = golemTag(checker, symbol);
+    if (tag) recordTagFunctions(context, node, tag.name);
+    else {
+      for (const declaration of targetSymbol(checker, symbol)?.declarations ?? []) {
+        if (!context.isDefaultLibraryFile?.(declaration.getSourceFile())) recordReachableFunctions(context, declaration, seen);
+      }
+    }
+  } else if (ts.isTypeQueryNode(node)) {
+    const declaration = declarationOf(targetSymbol(checker, symbolAtExpression(checker, node.exprName)));
+    if (declaration) recordReachableFunctions(context, declaration, seen);
+  }
+  ts.forEachChild(node, child => recordReachableFunctions(context, child, seen));
+}
+
+/**
+ * The function that a tag names. A tag read from source names it by its `typeof` query. A tag that only the checker shows has
+ * its type alone, so it names the function that the source nodes of the field wrote with that type: the registry is completed
+ * by one scan of everything the field reaches before the first such lookup, so a function that the tag reads from source
+ * did not write counts too. With none, or with two, the read refuses: a type is shared by every function that copies it
+ * (`const b: typeof a`) and names no one of them.
+ */
 function functionBinding(
   context: TagAnalysisContext,
   fn: TagFunction,
-  kind: 'validation' | 'serialize' | 'deserialize',
+  kind: FunctionRole,
 ): ValueBinding {
   if (fn.query) {
-    const written = symbolAtExpression(context.checker, fn.query.exprName);
-    const known = context.writtenFunctions?.[kind].get(fn.type);
-    if (written && known !== null) context.writtenFunctions?.[kind].set(fn.type, known === undefined || known === written ? written : null);
-    return valueBindingForSymbol(context, written, kind, fn.owner);
+    recordWrittenFunction(context, kind, fn.query);
+    return valueBindingForSymbol(context, symbolAtExpression(context.checker, fn.query.exprName), kind, fn.owner);
   }
-  const named = functionNameNode(fn.type.getCallSignatures()[0]?.declaration);
-  const written = context.writtenFunctions?.[kind].get(fn.type);
-  if (!named && !written) {
-    throw context.diagnostic(fn.owner, '1040', `${kind} function shares its type with another function in this field, or reaches this tag through a mapped type that dropped its source, so golem cannot tell which one the tag names. Declare it with \`function\`, or give its const its own type annotation.`);
+  const registry = context.writtenFunctions;
+  if (registry && !registry.scanned) {
+    registry.scanned = true;
+    const seen = new Set<ts.Node>();
+    for (const source of registry.sources) recordReachableFunctions(context, source, seen);
   }
-  const symbol = (named ? context.checker.getSymbolAtLocation(named) : undefined) ?? written ?? undefined;
-  return valueBindingForSymbol(context, symbol, kind, fn.owner);
+  const written = registry?.[kind].get(fn.type);
+  if (written === undefined) {
+    throw context.diagnostic(fn.owner, '1040', `${kind} function reaches this tag through a type that golem cannot read back to the \`typeof\` that wrote it, so golem cannot tell which function the tag names. Write the tag on the field itself, with \`typeof\` and the function.`);
+  }
+  if (written === null) {
+    throw context.diagnostic(fn.owner, '1040', `${kind} function shares its type with another function in this field, so golem cannot tell which one the tag names. Declare each with \`function\`, or give each const its own type annotation.`);
+  }
+  return valueBindingForSymbol(context, written, kind, fn.owner);
 }
 
 function validateSynchronousSignature(
@@ -460,6 +546,13 @@ function parameterType(
     : checker.getUnknownType();
 }
 
+/** The type node that declares the parameter of a signature, when it writes one. */
+function parameterTypeNodes(signature: ts.Signature): readonly ts.TypeNode[] {
+  const parameter = signature.parameters[0];
+  const declaration = parameter?.valueDeclaration ?? parameter?.declarations?.[0];
+  return declaration && ts.isParameter(declaration) && declaration.type ? [declaration.type] : [];
+}
+
 function validationSignature(
   context: TagAnalysisContext,
   fn: TagFunction,
@@ -496,7 +589,7 @@ function schemaTypeArgument(
   if (!type || !context.describeSchema) {
     throw context.diagnostic(owner, '1043', `${label} requires a representable schema type argument.`);
   }
-  return context.describeSchema(type, node);
+  return context.describeSchema(type, node, context.writtenFunctions);
 }
 
 /** The parts of a property's type that decide what it is: an optional property adds `undefined`, which its declaration does not write, and the members of an intersection are the types that it joins. */
@@ -515,11 +608,11 @@ function typeParts(type: ts.Type): readonly ts.Type[] {
  * `pets: TCat[]` in `TOwner & { pets: TCat[] }` where TOwner declares `pets: TPet[]`.
  */
 export function propertyTypeNode(checker: ts.TypeChecker, property: ts.Symbol, valueType: ts.Type): ts.TypeNode | undefined {
-  const nodeOf = (declaration: ts.Declaration | undefined): ts.TypeNode | undefined =>
-    declaration && (ts.isPropertySignature(declaration) || ts.isPropertyDeclaration(declaration)) ? declaration.type : undefined;
-  if (property.valueDeclaration) return nodeOf(property.valueDeclaration);
-  const declarations = property.declarations ?? checker.getRootSymbols(property).flatMap(root => root.declarations ?? []);
-  const nodes = declarations.flatMap(declaration => nodeOf(declaration) ?? []);
+  if (property.valueDeclaration) {
+    const declaration = property.valueDeclaration;
+    return ts.isPropertySignature(declaration) || ts.isPropertyDeclaration(declaration) ? declaration.type : undefined;
+  }
+  const nodes = declaredPropertyNodes(checker, property);
   const declared = new Set(nodes.flatMap(node => typeParts(checker.getTypeFromTypeNode(node))));
   const parts = typeParts(valueType);
   if (parts.length !== declared.size || !parts.every(part => declared.has(part))) return undefined;
@@ -682,6 +775,7 @@ function readSerde(context: TagAnalysisContext, _name: string, args: readonly Ta
       deserialize,
       modelType: parameterType(context.checker, serializeSignature, at),
       wireType: parameterType(context.checker, deserializeSignature, at),
+      wireNodes: parameterTypeNodes(deserializeSignature),
       serializeType: context.checker.getReturnTypeOfSignature(serializeSignature),
       deserializeType: context.checker.getReturnTypeOfSignature(deserializeSignature),
     },
@@ -1006,11 +1100,15 @@ export function analyzeNode(
   context: TagAnalysisContext,
   type: ts.Type,
   node: ts.TypeNode | undefined,
-): TagReadResult {
-  const nodeContext: TagAnalysisContext = { ...context, writtenFunctions: newWrittenFunctions() };
+  /** Nodes beside `node` that write the functions of the field's tags: the declarations that a mapped type copied, the wire parameter of a serde. */
+  tagSources: readonly ts.TypeNode[],
+): TagReadResult & { readonly writtenFunctions: WrittenFunctions } {
+  const sources = node ? [node, ...tagSources] : tagSources;
+  const writtenFunctions = newWrittenFunctions(context.writtenFunctions, sources);
+  const nodeContext: TagAnalysisContext = { ...context, writtenFunctions };
   const result = node ? readTags(nodeContext, node) : { baseNode: undefined, metadata: EMPTY };
   const metadata = mergeMetadata(nodeContext, node ?? context.sourceFile, result.metadata, metadataFromType(nodeContext, type));
   // Tags that only the checker type carries mean the node is not where this type comes from (the declaration a
   // mapped property inherits is not the type its template computes), so the node is no untagged base.
-  return { baseNode: hasTagMetadata(result.metadata) ? result.baseNode : undefined, metadata };
+  return { baseNode: hasTagMetadata(result.metadata) ? result.baseNode : undefined, metadata, writtenFunctions };
 }

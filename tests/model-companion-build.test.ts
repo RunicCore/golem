@@ -13,7 +13,7 @@ import {
   writeModelGolemYaml,
   writeModelSources,
 } from './model-project.js';
-import { copyFixtureFile, listProjectDependencies, readFixture } from './fixture-project.js';
+import { copyFixtureFile, fileFixtureScope, listProjectDependencies, onceShared, readFixture } from './fixture-project.js';
 import { companionModelSource } from './fixture-templates/models/model-companions.js';
 
 test('model companions compile with --noUnusedLocals for empty, scalar and nested models', async t => {
@@ -173,36 +173,6 @@ test('a field typed with a projection of an app class builds on the first run, k
   assert.deepEqual(generatedModelFiles(root), firstFiles);
 });
 
-for (const row of [
-  { projection: 'Partial<Customer>', fields: '{ name?: string | undefined; age?: number | undefined }', json: '{"name":"Ada"}' },
-  { projection: "Omit<Customer, 'age'>", fields: '{ name: string }', json: '{"name":"Ada"}' },
-  { projection: 'Required<Customer>', fields: '{ name: string; age: number }', json: '{"name":"Ada","age":36}' },
-  { projection: 'Readonly<Customer>', fields: '{ readonly name: string; readonly age: number }', json: '{"name":"Ada","age":36}' },
-  { projection: "{ [K in 'name']: Customer[K] }", fields: '{ name: string }', json: '{"name":"Ada"}' },
-] as const) {
-  test(`${row.projection} of an app class builds on the first run with the model fields and no brand key, and a second build writes the same files`, async t => {
-    // protects: T-211 every projection of an app class gives the fields of its model on the first and the second run, never a generated brand key
-    const { root, sourceRoot } = companionModelProject(t, 'model-class-utility');
-    const imodel = "import type { IModel } from '@exprtlabs/golem/model';\n";
-    writeModelSources(sourceRoot, {
-      'customer.model.ts': `${imodel}export type TCustomer = IModel<{ name: string; age: number }>;\n`,
-      'customer.ts': "import { TCustomerBaseModel } from './customer.model.generated.js';\nexport class Customer extends TCustomerBaseModel {}\n",
-      'order.model.ts': `${imodel}import type { Customer } from './customer.js';\nexport type TOrder = IModel<{ id: string; summary: ${row.projection} }>;\n`,
-      'use.ts': `import { parse, stringify } from '@exprtlabs/golem/serde';\nimport type { TOrder } from './order.model.js';\nexport { Customer } from './customer.js';\nexport const order = parse<TOrder>('{"id":"o1","summary":${row.json}}');\nexport const text = stringify<TOrder>(order);\n`,
-    });
-    writeModelGolemYaml(root, { validation: true });
-    await buildModelProject(root);
-    const firstFiles = generatedModelFiles(root);
-    const companion = firstFiles.find(file => file.path.endsWith('order.model.generated.ts'))?.content ?? '';
-    assert.equal(companion.match(/type TOrderSummaryFields = (.*);$/m)?.[1], row.fields);
-    assert.doesNotMatch(companion, /Brand@/);
-    const loaded = await import(pathToFileURL(path.join(root, 'build/use.js')).href) as { text: string };
-    assert.equal(loaded.text, `{"id":"o1","summary":${row.json}}`);
-    await generateModels(root);
-    assert.deepEqual(generatedModelFiles(root), firstFiles);
-  });
-}
-
 const IMODEL = "import type { IModel } from '@exprtlabs/golem/model';\n";
 const CUSTOMER_CLASS = "import { TCustomerBaseModel } from './customer.model.generated.js';\nexport class Customer extends TCustomerBaseModel {}\n";
 
@@ -231,20 +201,75 @@ async function generateModels(root: string): Promise<void> {
   await command(root, process.execPath, [golem, 'generate', '--config', path.join(root, 'golem.yaml')]);
 }
 
-for (const row of [
-  { label: 'a utility that the user wrote', before: 'type MyPartial<T> = { [K in keyof T]?: T[K] };\n', projection: 'MyPartial<Customer>', accepted: ['{}', '{"name":"Ada"}', '{"name":"Ada","age":36}'], rejected: ['{"name":5}', '{"city":"Oslo"}'] },
-  { label: 'an inline mapped type over keyof', before: '', projection: '{ [K in keyof Customer]: Customer[K] }', accepted: ['{"name":"Ada","age":36}'], rejected: ['{"name":"Ada"}', '{"name":5,"age":36}'] },
-  { label: 'Partial of a Pick', before: '', projection: "Partial<Pick<Customer, 'age'>>", accepted: ['{}', '{"age":36}'], rejected: ['{"age":"x"}', '{"name":"Ada"}'] },
-  { label: 'a Pick joined with another type', before: '', projection: "Pick<Customer, 'name'> & { x: string }", accepted: ['{"name":"Ada","x":"y"}'], rejected: ['{"name":"Ada"}', '{"name":5,"x":"y"}'] },
-  { label: 'an indexed access of a member', before: '', projection: "Customer['name']", accepted: ['"Ada"'], rejected: ['5'] },
-  { label: 'a Record over keyof', before: '', projection: 'Record<keyof Customer, number>', accepted: ['{"name":1,"age":2}'], rejected: ['{"name":"Ada","age":2}', '{"name":1}'] },
-] as const) {
-  test(`a field typed by ${row.label} over an app class generates on the first run`, async t => {
+/** One row for each projection of `Customer` that the model `TOrder<name>` holds as its `summary`; a row of this kind also writes its model fields and parses `json`. */
+const FIELD_ROWS = [
+  { name: 'Partial', projection: 'Partial<Customer>', fields: '{ name?: string | undefined; age?: number | undefined }', json: '{"name":"Ada"}' },
+  { name: 'Omit', projection: "Omit<Customer, 'age'>", fields: '{ name: string }', json: '{"name":"Ada"}' },
+  { name: 'Required', projection: 'Required<Customer>', fields: '{ name: string; age: number }', json: '{"name":"Ada","age":36}' },
+  { name: 'Readonly', projection: 'Readonly<Customer>', fields: '{ readonly name: string; readonly age: number }', json: '{"name":"Ada","age":36}' },
+  { name: 'Mapped', projection: "{ [K in 'name']: Customer[K] }", fields: '{ name: string }', json: '{"name":"Ada"}' },
+] as const;
+
+/** One row for each projection whose built model accepts the `accepted` summaries and refuses the `rejected` ones. */
+const ACCEPT_ROWS = [
+  { name: 'UserUtility', label: 'a utility that the user wrote', before: 'type MyPartial<T> = { [K in keyof T]?: T[K] };\n', projection: 'MyPartial<Customer>', accepted: ['{}', '{"name":"Ada"}', '{"name":"Ada","age":36}'], rejected: ['{"name":5}', '{"city":"Oslo"}'] },
+  { name: 'InlineMapped', label: 'an inline mapped type over keyof', before: '', projection: '{ [K in keyof Customer]: Customer[K] }', accepted: ['{"name":"Ada","age":36}'], rejected: ['{"name":"Ada"}', '{"name":5,"age":36}'] },
+  { name: 'PartialPick', label: 'Partial of a Pick', before: '', projection: "Partial<Pick<Customer, 'age'>>", accepted: ['{}', '{"age":36}'], rejected: ['{"age":"x"}', '{"name":"Ada"}'] },
+  { name: 'PickJoined', label: 'a Pick joined with another type', before: '', projection: "Pick<Customer, 'name'> & { x: string }", accepted: ['{"name":"Ada","x":"y"}'], rejected: ['{"name":"Ada"}', '{"name":5,"x":"y"}'] },
+  { name: 'IndexedAccess', label: 'an indexed access of a member', before: '', projection: "Customer['name']", accepted: ['"Ada"'], rejected: ['5'] },
+  { name: 'RecordKeyof', label: 'a Record over keyof', before: '', projection: 'Record<keyof Customer, number>', accepted: ['{"name":1,"age":2}'], rejected: ['{"name":"Ada","age":2}', '{"name":1}'] },
+] as const;
+
+const projectionScope = fileFixtureScope();
+/**
+ * One project of `TCustomer`, its class `Customer`, and a model `TOrder<name>` for each row of both tables, built once and generated a second time: the rows
+ * differ in the projection only, so each test reads its own model from the one build. `files` are the generated files of the build, `again` those of the second generate.
+ */
+const projectionProject = onceShared(async () => {
+  const { root, sourceRoot } = companionModelProject(projectionScope, 'model-class-utility');
+  writeModelSources(sourceRoot, {
+    'customer.model.ts': `${IMODEL}export type TCustomer = IModel<{ name: string; age: number }>;\n`,
+    'customer.ts': CUSTOMER_CLASS,
+    ...Object.fromEntries([...FIELD_ROWS, ...ACCEPT_ROWS].map(row => [
+      `order${row.name}.model.ts`,
+      `${IMODEL}import type { Customer } from './customer.js';\n${'before' in row ? row.before : ''}export type TOrder${row.name} = IModel<{ id: string; summary: ${row.projection} }>;\n`,
+    ])),
+    'use.ts': [
+      "import { parse, stringify } from '@exprtlabs/golem/serde';",
+      ...[...FIELD_ROWS, ...ACCEPT_ROWS].map(row => `import type { TOrder${row.name} } from './order${row.name}.model.js';`),
+      "export { Customer } from './customer.js';",
+      ...FIELD_ROWS.map(row => `export const text${row.name} = stringify<TOrder${row.name}>(parse<TOrder${row.name}>('{"id":"o1","summary":${row.json}}'));`),
+      ...ACCEPT_ROWS.map(row => `export const accepts${row.name} = (summary: string): boolean => { try { parse<TOrder${row.name}>(\`{"id":"o1","summary":\${summary}}\`); return true; } catch { return false; } };`),
+      '',
+    ].join('\n'),
+  });
+  writeModelGolemYaml(root, { validation: true });
+  await buildModelProject(root);
+  const files = generatedModelFiles(root);
+  const loaded = await import(pathToFileURL(path.join(root, 'build/use.js')).href) as Record<string, unknown>;
+  await generateModels(root);
+  return { files, loaded, again: generatedModelFiles(root) };
+});
+
+for (const row of FIELD_ROWS) {
+  test(`${row.projection} of an app class builds on the first run with the model fields and no brand key, and a second build writes the same files`, async () => {
+    // protects: T-211 every projection of an app class gives the fields of its model on the first and the second run, never a generated brand key
+    const { files, loaded, again } = await projectionProject();
+    const companion = files.find(file => file.path.endsWith(`order${row.name}.model.generated.ts`))?.content ?? '';
+    assert.equal(companion.match(new RegExp(`type TOrder${row.name}SummaryFields = (.*);$`, 'm'))?.[1], row.fields);
+    assert.doesNotMatch(companion, /Brand@/);
+    assert.equal(loaded[`text${row.name}`], `{"id":"o1","summary":${row.json}}`);
+    assert.deepEqual(again, files);
+  });
+}
+
+for (const row of ACCEPT_ROWS) {
+  test(`a field typed by ${row.label} over an app class generates on the first run`, async () => {
     // protects: T-264 every utility type over an app class resolves its base fields on the first golem-model run
-    const { root } = orderProject(t, row);
-    await buildModelProject(root);
-    const candidates = [...row.accepted, ...row.rejected];
-    assert.deepEqual(await acceptedSummaries(root, candidates, 1), row.accepted);
+    const { loaded } = await projectionProject();
+    const accepts = loaded[`accepts${row.name}`];
+    assert.ok(typeof accepts === 'function', `use.js exports accepts${row.name}`);
+    assert.deepEqual([...row.accepted, ...row.rejected].filter(candidate => accepts(candidate) === true), row.accepted);
   });
 }
 

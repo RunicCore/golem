@@ -1,4 +1,5 @@
 import { readFixture } from './fixture-project.js';
+import type { GeneratedModelClass } from './openapi/helpers.js';
 import assert from 'node:assert/strict';
 import {
   existsSync,
@@ -188,6 +189,18 @@ test('the validation plan of nested models refers to each child by its id and do
   }
 });
 
+test('a cyclic array in schema data gives the cycle TypeError, not a stack overflow', () => {
+  // protects: T-997 an array that holds itself was mapped before the cycle check and overflowed the stack
+  const cycle: unknown[] = [];
+  cycle.push(cycle);
+  const graph = createSchemaGraph();
+  graph.seal();
+  assert.throws(
+    () => buildCodecValidationPlan(graph, [], { 'Tag#cyclic': { enum: cycle } }, true),
+    error => error instanceof TypeError && error.message === 'Cyclic schema data cannot be compiled into validators.',
+  );
+});
+
 test('a plan root that is no model of the plan gets a validator and no fast check', () => {
   const descriptor: ModelTypeDescriptor = {
     kind: 'object', properties: { code: { kind: 'string' } }, required: ['code'], additionalProperties: false,
@@ -255,7 +268,7 @@ test('generated object codecs close nested schemas and keep first/all and contex
     import(pathToFileURL(path.join(value.root, 'build/root.model.js')).href),
     import(pathToFileURL(path.join(value.root, 'build/root.model.generated.js')).href),
     import(pathToFileURL(validatorsPath).href),
-  ]) as [{ Root: new (values?: never) => object }, {
+  ]) as [{ Root: GeneratedModelClass }, {
     TLeafBaseModel: abstract new (...args: never[]) => object;
     TMiddleBaseModel: abstract new (...args: never[]) => object;
     TRootBaseModel: abstract new (...args: never[]) => object;
@@ -271,7 +284,7 @@ test('generated object codecs close nested schemas and keep first/all and contex
     first: { label: 'first', child: { code: 'y' } },
     second: { label: 'second', child: { code: 'z' } },
   };
-  const invalid = new Root(wire as never);
+  const invalid = new Root(wire);
   // A root named by its codec id is exported as `validate_` and the id.
   const validators = { [codecId]: validatorModule[`validate_${codecId}`] };
   assert.ok(findCodecIdForConstructor(TLeafBaseModel));
@@ -364,12 +377,12 @@ test('generated validators permit equal model names in independent source graphs
     import(pathToFileURL(path.join(value.root, 'build/first/item.model.js')).href),
     import(pathToFileURL(path.join(value.root, 'build/second/item.model.js')).href),
   ]) as [
-    { Item: new (values?: never) => object },
-    { Item: new (values?: never) => object },
+    { Item: GeneratedModelClass },
+    { Item: GeneratedModelClass },
   ];
   const { getValidator } = await import('@exprtlabs/golem/validation');
-  assert.equal(await getValidator(new FirstItem({ label: 'first' } as never)).validate(), true);
-  assert.equal(await getValidator(new SecondItem({ count: 2 } as never)).validate(), true);
+  assert.equal(await getValidator(new FirstItem({ label: 'first' })).validate(), true);
+  assert.equal(await getValidator(new SecondItem({ count: 2 })).validate(), true);
 });
 
 test('a model format golem does not check stops generation by default, and unknownFormats: warn warns and writes the files', async t => {

@@ -178,8 +178,18 @@ function customIssue(path: IssuePath, reason?: string): Issue {
   return toIssue({ path, code: 'custom', ...(reason === undefined ? {} : { reason }) }, IssueSource.Custom, IssueRepresentation.Model);
 }
 
+/** A path segment as the property key it names: item 1 and key '1' are one segment, as in the JSON Pointer of `errors` and the reads of `ownersForIssue`. */
+function segmentKey(segment: string | number): string {
+  return String(segment);
+}
+
+/** True when `path` starts with `prefix`, segment by segment. */
+function pathStartsWith(path: IssuePath, prefix: IssuePath): boolean {
+  return path.length >= prefix.length && prefix.every((segment, index) => segmentKey(path[index]) === segmentKey(segment));
+}
+
 function messageOverrideKey(path: IssuePath | null | undefined, code: string): string {
-  const normalized = path == null || path.length === 0 ? null : path;
+  const normalized = path == null || path.length === 0 ? null : path.map(segmentKey);
   return JSON.stringify([normalized, code]);
 }
 
@@ -224,7 +234,7 @@ const noLocalRuleIssues: readonly LocalRuleIssue[] = [];
 
 /** True when a generated issue sits at the path or below it. */
 function hasIssueAtOrBelow(issues: readonly Issue[], path: IssuePath): boolean {
-  return issues.some(issue => path.every((segment, index) => String(issue.path[index]) === String(segment)) && issue.path.length >= path.length);
+  return issues.some(issue => pathStartsWith(issue.path, path));
 }
 
 function evaluateInstanceRules(root: object, mode: ValidationMode, generated: readonly Issue[]): ValidationStep<readonly Issue[]> {
@@ -348,7 +358,8 @@ function evaluateInstanceRules(root: object, mode: ValidationMode, generated: re
         if (isNativeValidationPromise(result)) return result.then(value => { release(); return value; }, error => { release(); throw error; });
         release();
         return result;
-      } else if (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null) {
+      } else if (!ArrayBuffer.isView(value)) {
+        // Any other object is read by its own enumerable keys, as the generated validators read it; a typed array holds no model.
         const keys = Object.keys(value);
         const result = visitFields(value, keys, 0);
         if (isNativeValidationPromise(result)) return result.then(value => { release(); return value; }, error => { release(); throw error; });
@@ -595,7 +606,7 @@ export class ModelValidator<Fields extends object, Owner extends object = Fields
   public error(field: ModelField<Fields> | IssuePath): string | undefined { return this.errorsFor(field)[0]; }
   public errorsFor(field: ModelField<Fields> | IssuePath): readonly string[] {
     const path = typeof field === 'string' ? [field] : field;
-    return this.issuesValue.filter(issue => issue.path.length === path.length && issue.path.every((part, index) => part === path[index])).map(issue => issue.message);
+    return this.issuesValue.filter(issue => issue.path.length === path.length && pathStartsWith(issue.path, path)).map(issue => issue.message);
   }
 
   public setErrors(errors: Partial<Record<ModelField<Fields>, string | readonly string[]>> | readonly ExternalFieldError[]): void {
