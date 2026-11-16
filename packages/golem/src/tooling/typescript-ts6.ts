@@ -201,7 +201,6 @@ interface ClassicTypeScript extends Omit<Golem.TypeScriptBackend, Implemented | 
   readConfigFile(configFilename: string, readFile: (filename: string) => string | undefined): { readonly config?: unknown };
   /** The syntax tree of a tsconfig text: the file in which the compiler places an option error. */
   readJsonConfigFile(configFilename: string, readFile: (filename: string) => string | undefined): object;
-  getPreEmitDiagnostics(program: ClassicProgram): readonly ClassicDiagnostic[];
   parseJsonConfigFileContent(json: object, host: Pick<ParsedConfigHost, 'useCaseSensitiveFileNames' | 'readDirectory' | 'fileExists' | 'readFile'>, basePath: string): { readonly options: Golem.CompilerOptions };
   parseCommandLine(flags: readonly string[]): { readonly options: Golem.CompilerOptions; readonly fileNames: readonly string[]; readonly errors: readonly ClassicDiagnostic[] };
   sortAndDeduplicateDiagnostics(diagnostics: readonly ClassicDiagnostic[]): readonly ClassicDiagnostic[];
@@ -752,10 +751,21 @@ function headText(message: string | ClassicMessageChain): string {
   return typeof message === 'string' ? message : message.messageText;
 }
 
-/** The classic compiler's diagnostics for the program, each reading `text` as the head message. */
+/**
+ * The classic compiler's diagnostics for the program, each reading `text` as the head message. As the TypeScript 7 backend, these leave out
+ * the configuration's (`getConfigDiagnostics`, `getTscDiagnostics`): the classic `getPreEmitDiagnostics` starts with them.
+ */
 export function getPreEmitDiagnostics(program: Golem.Program): readonly Golem.Diagnostic[] {
   if (!(program instanceof CompatProgram)) throw new TypeError('getPreEmitDiagnostics needs a program opened by the TypeScript 6 backend.');
-  return classic.getPreEmitDiagnostics(program.program).map(withText);
+  const classicProgram = program.program;
+  const options = classicProgram.getCompilerOptions();
+  return classic.sortAndDeduplicateDiagnostics([
+    ...classicProgram.getOptionsDiagnostics(),
+    ...classicProgram.getSyntacticDiagnostics(),
+    ...classicProgram.getGlobalDiagnostics(),
+    ...classicProgram.getSemanticDiagnostics(),
+    ...(options.declaration === true || options.composite === true ? classicProgram.getDeclarationDiagnostics() : []),
+  ]).map(withText);
 }
 
 /**
