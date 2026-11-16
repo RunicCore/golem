@@ -106,3 +106,24 @@ test('with noEmitOnError a syntax error alone is printed, as tsc prints it, and 
   assert.equal(result.code, 1);
   assert.equal(fs.existsSync(path.join(root, 'build')), false);
 });
+
+type Tsconfig = { readonly compilerOptions: object; readonly include: readonly string[] };
+/** A row: its name, the text it makes of the tsconfig, and what the output must hold first. */
+for (const [name, text, first] of [
+  ['a syntax error', ({ compilerOptions, include }: Tsconfig) => `{ compilerOptions: ${JSON.stringify(compilerOptions)}, "include": ${JSON.stringify(include)} }\n`, /^tsconfig\.json\(1,3\): error TS1327: /],
+  ['an unknown compiler option', ({ compilerOptions, include }: Tsconfig) => JSON.stringify({ compilerOptions: { ...compilerOptions, nope: 1 }, include }), /^tsconfig\.json\(1,\d+\): error TS5023: /],
+  ['an unknown compiler option and an include that matches no file', ({ compilerOptions }: Tsconfig) => JSON.stringify({ compilerOptions: { ...compilerOptions, nope: 1 }, include: ['nothing'] }), /error TS18003: [^]*error TS5023: /],
+] as const) {
+  test(`${name} in the tsconfig prints as tsc prints it and stops the build`, async (t) => {
+    // protects: T-1026 T-1025 the build prints the errors of the configuration from a program on both lanes, never a throw and never a derived file, and runs no step that needs valid options
+    const root = serdeProject(t, 'build-tsconfig-errors');
+    const tsconfig = path.join(root, 'tsconfig.json');
+    fs.writeFileSync(tsconfig, text(JSON.parse(fs.readFileSync(tsconfig, 'utf8')) as Tsconfig));
+    const result = await golemBuild(root, []);
+    assert.match(result.stdout, first);
+    assert.equal(result.stdout, await tsc(root, []));
+    assert.equal(result.stderr, '');
+    assert.equal(result.code, 1);
+    assert.equal(fs.existsSync(path.join(root, 'build')), false);
+  });
+}
