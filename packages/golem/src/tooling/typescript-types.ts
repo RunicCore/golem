@@ -825,6 +825,7 @@ export interface TypeScriptBackend {
   formatDiagnosticsWithColorAndContext(diagnostics: readonly Diagnostic[], host: DiagnosticFormatHost): string;
   getDecorators(node: Node): readonly Decorator[] | undefined;
   getModifiers(node: Node): readonly Node[] | undefined;
+  /** The program's own diagnostics before emit: options, syntax, global, semantic, and declaration ones when it emits declarations; never the configuration file's. */
   getPreEmitDiagnostics(program: Program): readonly Diagnostic[];
   /**
    * The diagnostics `tsc` reports for a check of the program, in its order and without repeats: the configuration's, then the syntax
