@@ -198,3 +198,62 @@ test('rejected thenables become validation errors without rerunning the rule', a
   );
   assert.equal(thenCalls, 1);
 });
+
+/** Registers `Holder` with the declared fields `fields`, each of type `unknown`. */
+async function registerUnknownHolder<Model extends object>(constructor: new () => Model, fields: readonly string[]): Promise<void> {
+  await registerModel(
+    constructor,
+    'Holder',
+    {
+      Holder: {
+        kind: 'object',
+        properties: Object.fromEntries(fields.map(field => [field, { kind: 'unknown' } as ModelTypeDescriptor])),
+        required: [],
+        additionalProperties: false,
+      },
+    },
+    fields as readonly ModelField<Model>[],
+  );
+}
+
+test('the rule walk reads an object that many paths share once', async () => {
+  // protects: T-1038 a graph that doubles at each level was read once for each path, so the walk grew with the paths, not the objects
+  class Holder {
+    public data: unknown;
+  }
+  await registerUnknownHolder(Holder, ['data']);
+  // A class instance is read by the rule walk only: the cycle check of the call does not descend into it.
+  class Node {
+    public constructor(public left?: Node, public right?: Node) {}
+  }
+  let leafReads = 0;
+  const leaf = Object.defineProperty(new Node(), 'value', { enumerable: true, get: () => { leafReads += 1; return 1; } });
+  let level = leaf;
+  for (let depth = 0; depth < 12; depth++) level = new Node(level, level);
+  const holder = new Holder();
+  holder.data = level;
+  getValidator(holder).extend({ data: () => true });
+
+  assert.equal(await getValidator(holder).validate(), true);
+  assert.equal(leafReads, 1);
+});
+
+test('a model that a shared object holds is reported under each path to it', async () => {
+  // protects: T-1038 the memo of model-free objects leaves out an object that holds a model, whose issue paths depend on the path
+  class Holder {
+    public first: unknown;
+    public second: unknown;
+  }
+  await registerUnknownHolder(Holder, ['first', 'second']);
+  const { Child } = await registerNestedPair();
+  const child = new Child();
+  getValidator(child).extend({ value: () => 'child is invalid' });
+  const shared = [child];
+  const holder = new Holder();
+  holder.first = shared;
+  holder.second = shared;
+  getValidator(holder).extend({ first: () => true });
+
+  assert.equal(await getValidator(holder).validate({ failFast: false }), false);
+  assert.deepEqual(getValidator(holder).issues.map(issue => issue.path), [['first', 0, 'value'], ['second', 0, 'value']]);
+});
