@@ -189,6 +189,40 @@ test('a pointer inside an embedded $id schema of a non-root document names a pla
   ]);
 });
 
+test('a pointer inside a relative-$id schema of a non-root document names a place in that resource, not in the document', async (t) => {
+  // protects: T-986 the resource that encloses a `#/` pointer is found for a relative `$id` too
+  const directory = createFixtureProject(t, 'golem-loader-relative-resource-');
+  writeOpenApiDocument(directory, {
+    $defs: { X: { type: 'string' } },
+    Money: { $id: 'money', $defs: { X: { type: 'number' } }, properties: { p: { $ref: '#/$defs/X' } } },
+  }, 'b.json');
+  const document = root({ components: { schemas: { A: { $ref: './b.json#/Money' } } } });
+  const graph = await loadWithoutFetch(directory, document);
+  assert.deepEqual(targetsOf(graph, directory), [
+    'schemas ./b.json#/Money preserve=false',
+    'schemas ./b.json#/Money/$defs/X preserve=false',
+  ]);
+});
+
+test('a #/components/schemas pointer in a non-root document names the component of the document before a place in the resource', async (t) => {
+  // protects: T-986 the loader and the schema projection try the component, then the resource, then the document
+  const directory = createFixtureProject(t, 'golem-loader-component-first-');
+  writeOpenApiDocument(directory, {
+    components: { schemas: { Shared: { type: 'string' } } },
+    Money: {
+      $id: 'https://schemas.example/money',
+      components: { schemas: { Shared: { type: 'number' } } },
+      properties: { s: { $ref: '#/components/schemas/Shared' } },
+    },
+  }, 'b.json');
+  const document = root({ components: { schemas: { A: { $ref: './b.json#/Money' } } } });
+  const graph = await loadWithoutFetch(directory, document);
+  assert.deepEqual(targetsOf(graph, directory), [
+    'schemas ./b.json#/Money preserve=false',
+    'schemas ./b.json#/components/schemas/Shared preserve=false',
+  ]);
+});
+
 test('a remote ref inside a local file is blocked when remoteHosts lists no host', async (t) => {
   // protects: F-176 and R5 a remote reference inside a local file follows the same rule as one in the root document
   const directory = createFixtureProject(t, 'golem-loader-nested-remote-');

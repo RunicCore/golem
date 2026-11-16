@@ -113,9 +113,14 @@ function resolveHref(reference: string, base: string): string {
   }
 }
 
+/** The identity of a schema resource: `reference` resolved against `base`, without its fragment. The one way an `$id` or a reference becomes a resource key. */
+export function canonicalUri(reference: string, base: string): string {
+  return stripFragment(resolveHref(reference, base));
+}
+
 export function schemaDocumentBase(document: unknown): string {
   const id = asRecord(document).$id;
-  return typeof id === 'string' && id ? stripFragment(resolveHref(id, DOCUMENT_BASE)) : DOCUMENT_BASE;
+  return typeof id === 'string' && id ? canonicalUri(id, DOCUMENT_BASE) : DOCUMENT_BASE;
 }
 
 function componentPointer(name: string): string {
@@ -177,7 +182,7 @@ export function collectCanonicalResources(
     seen.add(schema);
     let nextBase = currentBase;
     if (typeof schema.$id === 'string') {
-      const canonical = stripFragment(resolveHref(schema.$id, currentBase));
+      const canonical = canonicalUri(schema.$id, currentBase);
       register(schema, canonical, true, null, schemaPointer);
       nextBase = canonical;
     }
@@ -189,7 +194,7 @@ export function collectCanonicalResources(
     const pointer = componentPointer(name);
     const schemaPointer = jsonPointerJoin('/components/schemas', name);
     if (isJsonObject(schema) && typeof schema.$id === 'string') {
-      const canonical = stripFragment(resolveHref(schema.$id, base));
+      const canonical = canonicalUri(schema.$id, base);
       register(schema, canonical, true, pointer, schemaPointer);
       walk(schema, canonical, schemaPointer);
     } else {
@@ -211,7 +216,7 @@ export function lookupCanonicalResource(
   }
   if (reference.startsWith('#/')) return resources.byPointer.get(reference);
   if (reference.startsWith('#') && reference.length > 1) return undefined;
-  const resolved = stripFragment(resolveHref(reference, currentBase));
+  const resolved = canonicalUri(reference, currentBase);
   return resources.byCanonical.get(resolved);
 }
 
@@ -223,7 +228,7 @@ export function nextSchemaBase(
   if (!isJsonObject(schema) || typeof schema.$id !== 'string') return currentBase;
   const atBase = resources?.byCanonical.get(stripFragment(currentBase));
   if (atBase?.schema === schema) return currentBase;
-  const resolved = stripFragment(resolveHref(schema.$id, currentBase));
+  const resolved = canonicalUri(schema.$id, currentBase);
   if (!resources) return resolved;
   if (resources.byCanonical.has(resolved)) return resolved;
   if (atBase?.hasId) return currentBase;
@@ -377,6 +382,27 @@ export function schemaTargetIdentity(target: ResolvedSchemaTarget): string {
   return `${target.resource?.canonical ?? ''}${target.fragment}`;
 }
 
+/** The three places that a `#/` pointer of a schema can name, as lookups that answer for one pointer. */
+export interface HashPointerPlaces<T> {
+  /** The schema component that a `#/components/schemas/Name…` pointer names, when the document declares `Name`: its answer is final, found or not. */
+  readonly component: (name: string) => { readonly place: T | undefined } | undefined;
+  /** A place in the nearest enclosing schema resource that has its own `$id`. */
+  readonly resource: () => T | undefined;
+  /** A place in the document that holds the pointer. */
+  readonly document: () => T | undefined;
+}
+
+/**
+ * Where a `#/` pointer in a schema points, tried in this order: the schema component it names, then the nearest enclosing `$id`
+ * resource (JSON Schema 2020-12), then the document. The schema projection and the reference loader both decide through this.
+ */
+export function resolveHashPointer<T>(reference: string, places: HashPointerPlaces<T>): T | undefined {
+  const name = pointerSchemaName(reference);
+  const component = name ? places.component(name) : undefined;
+  if (component) return component.place;
+  return places.resource() ?? places.document();
+}
+
 export function resolveSchemaTarget(
   reference: string,
   currentBase: string,
@@ -389,19 +415,23 @@ export function resolveSchemaTarget(
     return current && wholeResourceTarget(current, currentBase);
   }
   if (reference.startsWith('#/')) {
-    const resource = lookupCanonicalResource(reference, currentBase, resources);
-    const rest = remainingPointerFragment(reference);
-    if (resource) {
-      return rest ? pointerSubresource(resource, rest, currentBase, resources) : wholeResourceTarget(resource, currentBase);
-    }
-    // A pointer inside a schema resource with its own `$id` names a place in that resource.
-    const enclosing = resources.byCanonical.get(stripFragment(currentBase));
-    const inResource = enclosing?.hasId ? pointerSubresource(enclosing, reference, currentBase, resources) : undefined;
-    if (inResource) return inResource;
-    if (document === undefined) return undefined;
-    const schema = resolveLocalPointer(document, reference);
-    if (schema === undefined) return undefined;
-    return { schema, currentBase, resource: undefined, fragment: reference, exactComponent: null };
+    return resolveHashPointer(reference, {
+      component: (name) => {
+        const resource = resources.byPointer.get(componentPointer(name));
+        if (!resource) return undefined;
+        const rest = remainingPointerFragment(reference);
+        return { place: rest ? pointerSubresource(resource, rest, currentBase, resources) : wholeResourceTarget(resource, currentBase) };
+      },
+      resource: () => {
+        const enclosing = resources.byCanonical.get(stripFragment(currentBase));
+        return enclosing?.hasId ? pointerSubresource(enclosing, reference, currentBase, resources) : undefined;
+      },
+      document: () => {
+        if (document === undefined) return undefined;
+        const schema = resolveLocalPointer(document, reference);
+        return schema === undefined ? undefined : { schema, currentBase, resource: undefined, fragment: reference, exactComponent: null };
+      },
+    });
   }
   const hash = reference.indexOf('#');
   const locator = hash < 0 ? reference : reference.slice(0, hash);
@@ -522,7 +552,7 @@ function visitSchemaNode(
   seen.add(schema);
   const owner = schema as { [key: string]: unknown };
   const nextBase = typeof owner.$id === 'string'
-    ? stripFragment(resolveHref(owner.$id, currentBase))
+    ? canonicalUri(owner.$id, currentBase)
     : currentBase;
   if (typeof owner.$ref === 'string') {
     handlers.onSchemaRef?.('$ref', owner.$ref, nextBase, `${pointer}/$ref`, owner);
