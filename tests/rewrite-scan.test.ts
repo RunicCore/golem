@@ -7,7 +7,6 @@ import { runPipeline } from '#golem/cli';
 import { applyRewrites } from '#golem/rewrite';
 import { RewriteScanner, type FileScanResult } from '#golem/rewrite-scan';
 import { decodeMappings } from '#golem/source-map';
-import { resolveTypeScript } from '#golem/typescript-version';
 import { createProjectProgram } from '@exprtlabs/golem/internal/type-analysis';
 import { writeSdk } from '#openapi/generator';
 import { NEST_PARTICIPANTS } from './fixture-templates/controllers/project.js';
@@ -16,6 +15,7 @@ import { createModelProject, writeModelSources } from './model-project.js';
 import { writeFixture } from './support/consumer.js';
 import { runRewritten } from './support/rewritten-module.js';
 import { workspace } from './support/process.js';
+import { skipOnTypeScript6 } from './support/typescript-lane.js';
 import { defaultModelOutput } from '@exprtlabs/golem-model/plan';
 
 const BASE = ['payment.model.ts', 'payment.model.generated.ts'];
@@ -167,9 +167,9 @@ test('a class named through a type-only namespace import is constructed through 
 });
 
 // `import source` and the `esnext.modulesource` lib are TypeScript 7.1 only; import attributes are TypeScript 6 syntax too.
-const skipOnTypeScript6 = resolveTypeScript(process.env.GOLEM_TYPESCRIPT_ROOT ?? workspace).major === 6 && 'TypeScript 6 has no source phase import';
+const skip = skipOnTypeScript6('TypeScript 6 has no source phase import');
 
-test('a call next to a source phase import and import attributes is rewritten and the other imports keep their text', { skip: skipOnTypeScript6 }, (t) => {
+test('a call next to a source phase import and import attributes is rewritten and the other imports keep their text', { skip }, (t) => {
   // protects: T-350 TypeScript 7.1 import forms (source phase, with attributes) survive the rewrite
   const { root } = createModelProject(t, {
     prefix: 'golem-rewrite-scan-',
