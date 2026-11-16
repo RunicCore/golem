@@ -625,14 +625,22 @@ for (const [name, { member, field }] of Object.entries(sameTypeNeighbours)) test
   assert.equal(importsOf(generated, 'a'), 0, 'a is not bound');
 });
 
-test('two members of one type that copy each other\'s function type each bind their own function through a NonNullable mapped type', t => {
-  // protects: T-1020 the scan of the mapped type read every member of `Box` for each member, so `f` and `g` shared one type with two functions and were refused (F-37 no false refusal)
+// `f` writes `typeof a` and `g` writes `typeof b`, and `b` copies the type of `a`: each member binds the function that it writes.
+const siblingBox = tsSource`type Box = { f: (string & TValidation<typeof a>) | null; g: (string & TValidation<typeof b>) | null };`;
+const siblingReads = {
+  'a NonNullable mapped type': { declarations: tsSource`${siblingBox}\ntype Field = { [K in keyof Box]: NonNullable<Box[K]> };`, field: tsSource`Field` },
+  'the type itself': { declarations: siblingBox, field: tsSource`Box` },
+  'the type or null': { declarations: siblingBox, field: tsSource`Box | null` },
+} as const;
+
+for (const [name, { declarations, field }] of Object.entries(siblingReads)) test(`two members that copy each other's function type each bind their own function, read as ${name}`, t => {
+  // protects: T-1020 the scan of the enclosing type read every member of `Box` for each member, so `f` and `g` shared one type with two functions and were refused (F-37 no false refusal)
   const { root, sourceRoot } = fixture(t);
   fs.writeFileSync(path.join(sourceRoot, 'rules.ts'), copiedFunctionRules.inline.text);
   fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({
     name: 'A',
-    imports: tsSource`import type { TValidation } from '@exprtlabs/golem/tags';\nimport { a, b } from './rules.js';\ntype Box = { f: (string & TValidation<typeof a>) | null; g: (string & TValidation<typeof b>) | null };\ntype Field = { [K in keyof Box]: NonNullable<Box[K]> };`,
-    fields: tsSource`field: Field`,
+    imports: tsSource`import type { TValidation } from '@exprtlabs/golem/tags';\nimport { a, b } from './rules.js';\n${declarations}`,
+    fields: tsSource`field: ${field}`,
   }).text);
   const generated = generate({ root, profile: { validation: true } }).artifacts.map((artifact) => artifact.content).join('\n');
   assert.equal(importsOf(generated, 'a'), 1, 'a is bound');
