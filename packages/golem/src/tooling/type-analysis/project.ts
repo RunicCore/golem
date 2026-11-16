@@ -718,7 +718,7 @@ export function filesReadingOutputs(program: ts.Program, outputs: readonly strin
     for (const specifier of moduleSpecifiers(file)) {
       if (!isRelativeSpecifier(specifier.text)) {
         const resolved = checker.resolveImport(specifier)?.resolvedFileName;
-        if (resolved !== undefined && names.has(resolved.replace(/\\/g, '/'))) imported.push(resolved);
+        if (resolved !== undefined && names.has(resolved.replace(/\\/g, '/')) && !isUnderOutputs(outputs, resolved)) imported.push(resolved);
         continue;
       }
       const target = resolve(dirname(file.fileName), specifier.text);
