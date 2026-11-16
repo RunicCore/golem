@@ -272,7 +272,6 @@ export const {
   isExpressionWithTypeArguments,
   isFunctionDeclaration,
   isFunctionExpression,
-  isFunctionLike,
   isIdentifier,
   isImportClause,
   isImportDeclaration,
