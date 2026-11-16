@@ -478,6 +478,8 @@ export interface TypeLiteralNode extends TypeNode {
 export interface MappedTypeNode extends TypeNode {
   readonly kind: KindOf<'MappedTypeNode'>;
   readonly typeParameter: TypeParameterDeclaration;
+  /** The `as` clause. */
+  readonly nameType?: TypeNode;
   readonly type?: TypeNode;
 }
 export interface ConditionalTypeNode extends TypeNode {
