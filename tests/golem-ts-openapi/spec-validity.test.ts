@@ -168,7 +168,7 @@ test('skips excluded endpoints before validating their route decorator and path'
     "@Controller('ex') export class ExcludedController {",
     "  @Get('*') @ApiExcludeEndpoint() catchAll(): void {}",
     "  @All('*') @ApiExcludeEndpoint() anyMethod(): void {}",
-    "  @Sse('events') @ApiOperation({ hidden: true }) events(): void {}",
+    "  @Sse('events') @ApiExcludeEndpoint() events(): void {}",
     "  @Get('ok') ok(): void {}",
     '}',
   ].join('\n'));

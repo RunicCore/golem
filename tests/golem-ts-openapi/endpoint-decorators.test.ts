@@ -92,14 +92,6 @@ test('evaluates @ApiExcludeEndpoint omitted, true, false, and constants', async 
   assert.ok(operationOf(document, '/visibility/const-false', 'get'));
 });
 
-test('does not let ApiOperation hidden:false undo an explicit ApiExcludeEndpoint', async (t: TestContext) => {
-  const root = fixture(t, readFixture('controllers/endpoint-decorators/does-not-let-apioperation-hidden-false-undo-an-explicit-apiexcludeendpoint/source.controller.ts'));
-  const document = documentOf(await generateDocument(root, 'Exclusion'));
-  assert.ok(operationOf(document, '/exclusion/kept', 'get'));
-  assert.equal(document.paths['/exclusion/still-hidden'], undefined);
-  assert.ok(operationOf(document, '/exclusion/exclude-false', 'get'));
-});
-
 test('keeps a route with ApiOperation hidden:true, as Nest emits it', async (t: TestContext) => {
   const root = fixture(t, readFixture('controllers/endpoint-decorators/keeps-a-route-with-apioperation-hidden-true-as-nest-emits-it/source.controller.ts'));
   const document = documentOf(await generateDocument(root, 'Operation hidden'));

@@ -195,6 +195,6 @@ A whole `@Query()` object follows these rules:
 ## Excluded endpoints
 
 - `@ApiExcludeEndpoint()` and `@ApiExcludeEndpoint(true)` omit a route. `@ApiExcludeEndpoint(false)` keeps it.
-- `@ApiOperation` has no `hidden` option in `@nestjs/swagger`, so a route with `@ApiOperation({ hidden: true })` stays in the document. Only `@ApiExcludeEndpoint()` omits a route.
+- Only `@ApiExcludeEndpoint()` omits a route.
 - `@ApiExcludeController()` omits every route of a controller. `@ApiExcludeController(false)` keeps them.
 - Exclude a route that has no OpenAPI form, such as `@All()` or `@Sse()`, so generation skips it.
