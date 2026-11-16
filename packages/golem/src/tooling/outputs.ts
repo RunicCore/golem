@@ -244,12 +244,19 @@ export interface OutputFiles {
   readonly create: (filename: string, content: string) => void;
   readonly rename: (from: string, to: string) => void;
   readonly unlink: (filename: string) => void;
+  /** Writes `filename` (and its folder) and returns the status-change time the file system gave it, in milliseconds: the clock the times of other files come from, which `Date.now()` can run ahead of. */
+  readonly stamp: (filename: string) => number;
 }
 
 export const realOutputFiles: OutputFiles = {
   create: (filename, content) => { fs.writeFileSync(filename, content, { flag: 'wx' }); },
   rename: (from, to) => { fs.renameSync(from, to); },
   unlink: filename => { fs.unlinkSync(filename); },
+  stamp: filename => {
+    fs.mkdirSync(path.dirname(filename), { recursive: true });
+    fs.writeFileSync(filename, '\n');
+    return fs.statSync(filename).ctimeMs;
+  },
 };
 
 const TEMPORARY_NAME = /^(.+)\.(\d+)\.[0-9a-f]{12}\.tmp$/;
