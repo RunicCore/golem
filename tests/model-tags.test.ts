@@ -590,7 +590,6 @@ const inferredTagReads = {
   'a frozen object': { declarations: tsSource`declare function tagged(): string & TValidation<typeof a>;\nconst holder = Object.freeze({ held: tagged() });`, field: tsSource`(typeof holder)['held'] & TValidation<typeof b>` },
   'a conditional type over a class with an inferred member': { declarations: tsSource`declare function tagged(): string & TValidation<typeof a>;\nclass Holder { held = tagged(); }\ntype ValueOf<T> = T extends { held: infer V } ? V : never;`, field: tsSource`ValueOf<Holder> & TValidation<typeof b>` },
   'an as-mapped type over a class with an inferred member': { declarations: tsSource`declare function tagged(): string & TValidation<typeof a>;\nclass Holder { held = tagged(); }\ntype Renamed<T> = { [K in keyof T as Uppercase<K & string>]: T[K] };`, field: tsSource`Renamed<Holder>['HELD'] & TValidation<typeof b>` },
-  'a conditional type over a class that extends a mixin call': { declarations: tsSource`class Base { held!: string & TValidation<typeof a>; }\ndeclare function mixin<T extends new () => object>(base: T): T;\nclass Sub extends mixin(Base) {}\ntype ValueOf<T> = T extends { held: infer V } ? V : never;`, field: tsSource`ValueOf<Sub> & TValidation<typeof b>` },
   'a destructured const': { declarations: tsSource`declare function tagged(): string & TValidation<typeof a>;\nconst holder = { held: tagged() };\nconst { held } = holder;`, field: tsSource`typeof held & TValidation<typeof b>` },
 } as const;
 
@@ -667,20 +666,20 @@ for (const [name, { declarations, field }] of Object.entries(sameTypeNeighbours)
   assert.equal(importsOf(generated, 'a'), 0, 'a is not bound');
 });
 
-// `a` and `b` share one type. Each read names a function through a wrapper, a Pick that is no alias argument, or an inferred getter beside a Pick.
+// `a` and `b` share one type. Each read names a function through a wrapper, a Pick that is no alias argument, an inferred getter beside a Pick, or a mixin base.
 const heldByCall = tsSource`declare function tagged(): string & TValidation<typeof a>;\nclass Holder { held = tagged(); }`;
-const wrapperReads = {
-  'a wrapper whose tag copies the type of the function that its argument writes': { declarations: tsSource`type Box = { f: string & TValidation<typeof a> };\ntype Wrap<T extends { f: unknown }> = { x: T['f'] & TValidation<typeof b> };`, field: tsSource`Wrap<Box>`, refused: true },
-  'a wrapper that indexes its argument': { declarations: tsSource`class Plain { name!: string & TValidation<typeof b>; }\ntype Wrap<T extends { name: unknown }> = { x: T['name'] };`, field: tsSource`Wrap<Plain>['x']`, refused: false },
-  'an alias of a Pick that is read by an index': { declarations: tsSource`${inheritedUser}\ntype Named = Pick<Sub, 'name'>;`, field: tsSource`Named['name']`, refused: false },
-  'a Pick beside a member that reads an inferred getter of the other function': { declarations: tsSource`declare const other: string & TValidation<typeof a>;\nclass Base { name!: string & TValidation<typeof b>; }\nclass Sub extends Base { get label() { return other; } }`, field: tsSource`Pick<Sub, 'name'> & { extra: Sub['label'] }`, refused: true },
-  'a conditional type over a wrapper that writes its own member from the class with the inferred member': { declarations: tsSource`${heldByCall}\ntype ValueOf<T> = T extends { held: infer V } ? V : never;\ntype Wrap<T extends { held: unknown }> = { held: T['held'] };`, field: tsSource`ValueOf<Wrap<Holder>> & TValidation<typeof b>`, refused: true },
-  'a conditional type over a conditional type over the class with the inferred member': { declarations: tsSource`${heldByCall}\ntype ValueOf<T> = T extends { held: infer V } ? V : never;\ntype Cond<T> = T extends { held: infer V } ? { held: V } : never;`, field: tsSource`ValueOf<Cond<Holder>> & TValidation<typeof b>`, refused: true },
-  'an as-mapped type over a conditional type over the class with the inferred member': { declarations: tsSource`${heldByCall}\ntype Renamed<T> = { [K in keyof T as Uppercase<K & string>]: T[K] };\ntype Cond<T> = T extends { held: infer V } ? { held: V } : never;`, field: tsSource`Renamed<Cond<Holder>>['HELD'] & TValidation<typeof b>`, refused: true },
+const refusedWrapperReads = {
+  'a wrapper whose tag copies the type of the function that its argument writes': { declarations: tsSource`type Box = { f: string & TValidation<typeof a> };\ntype Wrap<T extends { f: unknown }> = { x: T['f'] & TValidation<typeof b> };`, field: tsSource`Wrap<Box>` },
+  'a Pick beside a member that reads an inferred getter of the other function': { declarations: tsSource`declare const other: string & TValidation<typeof a>;\nclass Base { name!: string & TValidation<typeof b>; }\nclass Sub extends Base { get label() { return other; } }`, field: tsSource`Pick<Sub, 'name'> & { extra: Sub['label'] }` },
+  'a conditional type over a wrapper that writes its own member from the class with the inferred member': { declarations: tsSource`${heldByCall}\ntype ValueOf<T> = T extends { held: infer V } ? V : never;\ntype Wrap<T extends { held: unknown }> = { held: T['held'] };`, field: tsSource`ValueOf<Wrap<Holder>> & TValidation<typeof b>` },
+  'a conditional type over a conditional type over the class with the inferred member': { declarations: tsSource`${heldByCall}\ntype ValueOf<T> = T extends { held: infer V } ? V : never;\ntype Cond<T> = T extends { held: infer V } ? { held: V } : never;`, field: tsSource`ValueOf<Cond<Holder>> & TValidation<typeof b>` },
+  'an as-mapped type over a conditional type over the class with the inferred member': { declarations: tsSource`${heldByCall}\ntype Renamed<T> = { [K in keyof T as Uppercase<K & string>]: T[K] };\ntype Cond<T> = T extends { held: infer V } ? { held: V } : never;`, field: tsSource`Renamed<Cond<Holder>>['HELD'] & TValidation<typeof b>` },
+  'a conditional type over a class that extends a mixin call that writes the member': { declarations: tsSource`class Base { held!: string & TValidation<typeof a>; }\ndeclare function mixin<T extends new () => object>(base: T): T;\nclass Sub extends mixin(Base) {}\ntype ValueOf<T> = T extends { held: infer V } ? V : never;`, field: tsSource`ValueOf<Sub> & TValidation<typeof b>` },
+  'a mixin base whose member shows no type node': { declarations: tsSource`${heldByCall}\ndeclare function mixin<T extends new () => object>(base: T): T;\nclass Sub extends mixin(Holder) {}`, field: tsSource`Sub & TValidation<typeof b>` },
 } as const;
 
-for (const [name, { declarations, field, refused }] of Object.entries(wrapperReads)) test(`${refused ? 'a function that hides behind' : 'the tag of the field binds its own function through'} ${name}${refused ? ' is refused' : ''}`, t => {
-  // protects: T-1043 the first fix of the sibling rule bound `b` for the wrapper in silence, and refused the others that built before it
+for (const [name, { declarations, field }] of Object.entries(refusedWrapperReads)) test(`a function that hides behind ${name} is refused`, t => {
+  // protects: T-1043 a tag function behind a reader, a wrapper or a mixin base was dropped in silence, and `b` bound for it (F-31)
   const { root, sourceRoot } = fixture(t);
   fs.writeFileSync(path.join(sourceRoot, 'rules.ts'), copiedFunctionRules.inline.text);
   fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({
@@ -688,10 +687,25 @@ for (const [name, { declarations, field, refused }] of Object.entries(wrapperRea
     imports: tsSource`import type { TValidation } from '@exprtlabs/golem/tags';\nimport { a, b } from './rules.js';\n${declarations}`,
     fields: tsSource`field: ${field}`,
   }).text);
-  if (refused) {
-    assert.throws(() => generate({ root, profile: { validation: true } }), /RUNM1040/);
-    return;
-  }
+  assert.throws(() => generate({ root, profile: { validation: true } }), /RUNM1040/);
+});
+
+const builtWrapperReads = {
+  'a wrapper that indexes its argument': { declarations: tsSource`class Plain { name!: string & TValidation<typeof b>; }\ntype Wrap<T extends { name: unknown }> = { x: T['name'] };`, field: tsSource`Wrap<Plain>['x']` },
+  'an alias of a Pick that is read by an index': { declarations: tsSource`${inheritedUser}\ntype Named = Pick<Sub, 'name'>;`, field: tsSource`Named['name']` },
+  'an indexed read of a member that a mixin base writes': { declarations: tsSource`class Base { name!: string & TValidation<typeof b>; }\ndeclare function mixin<T extends new () => object>(base: T): T;\nclass Sub extends mixin(Base) {}`, field: tsSource`Sub['name']` },
+  'a class with a mixin base that writes the tag of a member': { declarations: tsSource`class Base { name!: string & TValidation<typeof b>; }\ndeclare function mixin<T extends new () => object>(base: T): T;\nclass Sub extends mixin(Base) {}`, field: tsSource`Sub` },
+} as const;
+
+for (const [name, { declarations, field }] of Object.entries(builtWrapperReads)) test(`the tag of the field binds its own function through ${name}`, t => {
+  // protects: T-1043 the first fix of the sibling rule refused a field that builds before it
+  const { root, sourceRoot } = fixture(t);
+  fs.writeFileSync(path.join(sourceRoot, 'rules.ts'), copiedFunctionRules.inline.text);
+  fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({
+    name: 'A',
+    imports: tsSource`import type { TValidation } from '@exprtlabs/golem/tags';\nimport { a, b } from './rules.js';\n${declarations}`,
+    fields: tsSource`field: ${field}`,
+  }).text);
   const generated = generate({ root, profile: { validation: true } }).artifacts.map((artifact) => artifact.content).join('\n');
   assert.equal(importsOf(generated, 'b'), 1, 'b is bound');
   assert.equal(importsOf(generated, 'a'), 0, 'a is not bound');

@@ -136,8 +136,8 @@ function isInside(node: ts.Node, outer: ts.Node): boolean {
  * of their own. A reference to the type that declares it (`Box`, `Field` over a mapped `keyof Box`) holds the node only through the
  * declaration: the scan leaves out the members that declare a sibling (`FieldDeclarations`), so the siblings of this field stay out too.
  */
-function newWrittenFunctions(inherited: WrittenFunctions | undefined, sources: readonly ts.Node[]): WrittenFunctions {
-  const enclosing = inherited ? [...inherited.enclosing, ...inherited.sources].filter(outer => !sources.some(own => isInside(own, outer))) : [];
+function newWrittenFunctions(around: WrittenFunctions | undefined, sources: readonly ts.Node[]): WrittenFunctions {
+  const enclosing = around ? [...around.enclosing, ...around.sources].filter(outer => !sources.some(own => isInside(own, outer))) : [];
   return {
     validation: new Map(),
     serialize: new Map(),
@@ -530,13 +530,17 @@ function functionTagTypes(context: TagAnalysisContext, type: ts.Type, at: ts.Nod
   checker.getSignaturesOfType(type, ts.SignatureKind.Call).forEach(signature => inside(checker.getReturnTypeOfSignature(signature)));
 }
 
-/** Whether the checker supplies the type of `node`, so the registry cannot name its function: a value that writes no type node, or a base class that a call computes (`class Sub extends mixin(Base)`). */
+/** Whether the checker supplies the type of `node`, so the registry cannot name its function: a value that writes no type node. */
 function infersItsType(node: ts.Node): boolean {
   if (ts.isVariableDeclaration(node) || ts.isPropertyDeclaration(node) || ts.isFunctionDeclaration(node) || ts.isMethodDeclaration(node) || ts.isGetAccessorDeclaration(node)) {
     return node.type === undefined;
   }
-  if (ts.isExpressionWithTypeArguments(node)) return !ts.isIdentifier(node.expression) && !ts.isPropertyAccessExpression(node.expression);
   return ts.isPropertyAssignment(node) || ts.isBindingElement(node);
+}
+
+/** Whether `node` names a base class that a call computes (`class Sub extends mixin(Base)`): the scan reaches no declaration of it, so it reads the members of the base type instead. */
+function computesItsBase(node: ts.ExpressionWithTypeArguments): boolean {
+  return !ts.isIdentifier(node.expression) && !ts.isPropertyAccessExpression(node.expression);
 }
 
 /** Marks the function types of the tags that `node` holds in its inferred type: the registry cannot name the function of such a tag. */
@@ -602,15 +606,17 @@ function membersBeside(checker: ts.TypeChecker, node: ts.IndexedAccessTypeNode, 
 /**
  * Records every `typeof` of a tag in everything that `node` reaches, through type aliases, interfaces, classes and their base
  * classes, `typeof` a variable, and the parts of mapped, conditional and indexed types. A default library file holds no tag of the
- * user and stays unread. A `typeof` target, a source, or a property that `T['key']` names marks `hidden` when it infers a type
- * with a function tag, and so does a base class that a call computes, and a member that a type reading by shape takes from its arguments (`shaped`). Each node is read once for each `scan`. A scan that skips siblings leaves out the members that declare a
- * field beside the one it serves, so their functions do not enter its registry. `T['key']` reads `T` that way too, beside the members
- * that the key names.
+ * user and stays unread.
+ * A `typeof` target, a source, or a property that `T['key']` names marks `hidden` when it infers a type with a function tag.
+ * So does a member of a base class that a call computes, and a member that a type reading by shape takes from its arguments (`shaped`).
+ * Each node is read once for each `scan`.
+ * A scan that skips siblings leaves out the members that declare a field beside the one it serves, so their functions do not enter
+ * its registry. `T['key']` reads `T` that way too, beside the members that the key names.
  */
 function recordReachableFunctions(context: TagAnalysisContext, node: ts.Node, scan: Scan): void {
   if (scan.nodes.has(node) || (scan.siblings === 'skip' && declaresSibling(context, node))) return;
   scan.nodes.add(node);
-  if (scan.shaped?.has(node) || ts.isExpressionWithTypeArguments(node)) hideInferredFunctionTags(context, node, scan);
+  if (scan.shaped?.has(node)) hideInferredFunctionTags(context, node, scan);
   const { checker } = context;
   const reachDeclarationsOf = (symbol: ts.Symbol | undefined): void => {
     for (const declaration of targetSymbol(checker, symbol)?.declarations ?? []) {
@@ -624,6 +630,14 @@ function recordReachableFunctions(context: TagAnalysisContext, node: ts.Node, sc
     else reachDeclarationsOf(symbol);
   } else if (ts.isExpressionWithTypeArguments(node)) {
     reachDeclarationsOf(checker.getSymbolAtLocation(node.expression));
+    if (computesItsBase(node)) {
+      // A member of the base that shows no type node hides its tag; one that writes a type node is read where it is written. The members that declare a sibling stay out.
+      for (const member of checker.getPropertiesOfType(checker.getTypeAtLocation(node)).flatMap(property => propertyDeclarations(checker, property))) {
+        if (scan.siblings === 'skip' && declaresSibling(context, member)) continue;
+        hideInferredFunctionTags(context, member, scan);
+        recordReachableFunctions(context, member, scan);
+      }
+    }
   } else if (ts.isTypeQueryNode(node)) {
     const declaration = declarationOf(targetSymbol(checker, symbolAtExpression(checker, node.exprName)));
     if (declaration) {
