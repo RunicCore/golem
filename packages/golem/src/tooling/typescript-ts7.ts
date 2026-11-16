@@ -1464,8 +1464,8 @@ export class ProgramSession implements Disposable {
    * own and lists exactly what the TypeScript 6 backend gives the compiler: the files the project's configuration parses to,
    * plus the requested roots. `include` is emptied so the list is the whole project. A program whose roots are all files of the
    * user's own configuration opens the configuration itself, so its option errors keep the file and place that `tsc` gives. Every program parses
-   * the configuration here, so a configuration with an option error fails as on the TypeScript 6 backend. A syntax error does not fail
-   * here: the compiler reports it as a configuration diagnostic of the program, and the TypeScript 6 backend throws.
+   * the configuration here, and no error of it fails here: the compiler reports a syntax error, in the configuration or in one that it
+   * extends, as a configuration diagnostic of the program, and the TypeScript 6 backend reports the errors of its own parse the same way.
    */
   private withRequestedRoots(api: API, base: SnapshotRequest, onInput: ((filename: string) => void) | undefined): SnapshotRequest {
     const previous = this.overlays;
@@ -1475,7 +1475,6 @@ export class ProgramSession implements Disposable {
     let closure: { readonly configFile: string; readonly parsed: ReturnType<API['parseConfigFile']> | undefined }[];
     try {
       const result = api.parseConfigFile(base.configPath);
-      assertConfigParsed(base.configPath, result.errors);
       parsed = result;
       closure = referenceClosure(result.projectReferences ?? [], (configFile) => this.readReferenced(api, configFile));
     } finally {

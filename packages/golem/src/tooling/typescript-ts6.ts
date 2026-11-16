@@ -12,7 +12,7 @@ import { dirname } from 'node:path';
 import { GOLEM_CHANNELS } from './diagnostics-channels.js';
 import { displayPath } from './generator-core.js';
 import { fileSignature, MISSING } from './input-watcher.js';
-import { affectsResolution, assertConfigParsed, assertNoSourceFiles, canonical, hasVirtualFiles, virtualLookup, collectTscDiagnostics, configReferences, emitWanted, flagPathOptions, flagsAsConfigOptions, isDeclarationFile, programRequest, referencedConfigFile } from './typescript-config.js';
+import { affectsResolution, assertConfigParsed, assertNoSourceFiles, canonical, hasVirtualFiles, virtualLookup, collectTscDiagnostics, configReferences, emitWanted, flagPathOptions, flagsAsConfigOptions, isDeclarationFile, programRequest, referencedConfigFile, reportedConfigErrors } from './typescript-config.js';
 import type { ConfigReference, ProgramConfig, ResolveAtCurrentFolder, VirtualLookup } from './typescript-config.js';
 import { selectedTypeScript } from './typescript-selection.js';
 import { assertPackageManifestsParse } from './type-analysis/package-specifier.js';
@@ -188,6 +188,7 @@ interface ClassicTypeScript extends Omit<Golem.TypeScriptBackend, Implemented | 
     readonly options: Golem.CompilerOptions;
     readonly host: ClassicHost;
     readonly projectReferences?: readonly ClassicProjectReference[];
+    readonly configFileParsingDiagnostics?: readonly ClassicDiagnostic[];
     readonly oldProgram?: ClassicProgram;
   }): ClassicProgram;
   createSourceFile(filename: string, text: string, languageVersionOrOptions: LanguageVersionOrOptions, setParentNodes?: boolean): Golem.SourceFile;
@@ -886,7 +887,8 @@ export class ProgramSession implements Disposable {
     this.observe(options.onInput, request.hidden);
     const resolutionsChanged = this.resolutionsChanged();
     for (const filename of [...this.observed]) this.report(filename);
-    const parsed = this.parseConfig(request.configPath, request.overlays);
+    // The errors of the configuration, a syntax error or an unknown option among them, are diagnostics of the program, as `tsc` reports them.
+    const { parsed, errors } = this.readConfig(request.configPath, request.overlays);
     const compilerOptions = locatedInUserConfig(parsed, request);
     const overlayPaths = [...request.overlays.keys()].sort().join('\0');
     const reusable = this.latest !== undefined && this.latest.overlayPaths === overlayPaths && !resolutionsChanged;
@@ -894,6 +896,7 @@ export class ProgramSession implements Disposable {
       rootNames: [...new Set([...parsed.fileNames.map(canonical), ...request.rootNames])],
       options: compilerOptions,
       host: this.host(compilerOptions, request.overlays),
+      configFileParsingDiagnostics: reportedConfigErrors(errors),
       ...(parsed.projectReferences.length === 0 ? {} : { projectReferences: parsed.projectReferences }),
       ...(reusable && this.latest ? { oldProgram: this.latest.program } : {}),
     });
