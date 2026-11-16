@@ -102,7 +102,8 @@ function bindPattern(name: ts.BindingName, value: Binding, bindings: Map<string,
 function objectFields(expression: ts.Expression, scope: Scope, ctx: FoldContext): Record<string, string> | undefined {
   const unwrapped = unwrap(expression);
   if (!ts.isObjectLiteralExpression(unwrapped)) return undefined;
-  const fields: Record<string, string> = {};
+  // No prototype: a read of `toString` or `constructor` finds no field, as for any other missing key.
+  const fields: Record<string, string> = Object.create(null);
   for (const property of unwrapped.properties) {
     if (!ts.isPropertyAssignment(property) || !ts.isIdentifier(property.name)) reject();
     fields[property.name.text] = evalString(property.initializer, scope, ctx);

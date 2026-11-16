@@ -202,6 +202,34 @@ test('folds string concatenation, const prefixes, and destructured object parame
   assert.equal(await evaluateRouteExpression(byName.get('RESOURCE')!, program), 'payments/transactions');
 });
 
+test('a helper parameter read refuses a key that only the object prototype holds', async (t: TestContext) => {
+  // protects: T-996 r({ a: 'x' }).toString is "not a static value", never Object.prototype.toString
+  const { root } = project(t);
+  const toStringRead = write(root, 'src/to-string.ts', [
+    'function r(o: { a: string }): string { return o.toString; }',
+    "export const ROUTE = r({ a: 'x' });",
+    '',
+  ].join('\n'));
+  const constructorRead = write(root, 'src/constructor.ts', [
+    'function p(o: {}): string { return o.constructor; }',
+    'export const ROUTE = p({});',
+    '',
+  ].join('\n'));
+  const destructured = write(root, 'src/destructured.ts', [
+    'function d({ toString }: { toString: string }): string { return toString; }',
+    "export const ROUTE = d({ a: 'x' });",
+    '',
+  ].join('\n'));
+  const program = compile(root);
+  for (const filename of [toStringRead, constructorRead, destructured]) {
+    await assert.rejects(
+      () => evaluateRouteExpression(routeExpression(program, filename), program),
+      (error: unknown) => error instanceof TsToOpenApiError
+        && error.diagnostics.some(item => String(item.code) === 'RUNT2101'),
+    );
+  }
+});
+
 test('rejects let and var route constants with a typed diagnostic', async (t: TestContext) => {
   const { root } = project(t);
   const letFile = write(root, 'src/let.ts', "let prefix = '/tasks';\nprefix = '/other';\nexport const ROUTE = prefix;\n");
