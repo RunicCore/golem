@@ -8,27 +8,33 @@ tier="${1:?usage: golem-test <prepare|focused|full|full-ts6|acceptance|docs|exam
 recorded=0
 case "$tier" in full|full-ts6|acceptance) recorded=1 ;; esac
 
-# Full, Full TS6 and Acceptance take three options of the runner. --again runs the tier even when this tree passed it, and starts from zero
-# instead of finishing a cut run. --load-limit and --load-wait set the host load check below.
-again=0; load_limit=""; load_wait=""
-if [ "$recorded" -eq 1 ]; then
-  shift; rest=()
-  while [ "$#" -gt 0 ]; do
-    case "$1" in
-      --again) again=1 ;;
-      --load-limit) load_limit="${2:?--load-limit takes a number}"; shift ;;
-      --load-wait) load_wait="${2:?--load-wait takes a number}"; shift ;;
-      *) rest+=("$1") ;;
-    esac
-    shift || true
-  done
-  set -- "$tier" ${rest[@]+"${rest[@]}"}
-  [ -z "$load_limit" ] || [[ "$load_limit" =~ ^[0-9]+([.][0-9]+)?$ ]] || { echo "--load-limit takes a number, got '$load_limit'" >&2; exit 2; }
-  [ -z "$load_wait" ] || [[ "$load_wait" =~ ^[0-9]+$ ]] || { echo "--load-wait takes whole seconds, got '$load_wait'" >&2; exit 2; }
-fi
+# Every tier takes --lock-wait: the seconds to wait for /cache/run.lock when another run holds it (default 300: the focused ceiling of
+# 180 s and the build before it). Full, Full TS6 and Acceptance use three more options of the runner. --again runs the tier even when
+# this tree passed it, and starts from zero instead of finishing a cut run. --load-limit and --load-wait set the host load check below.
+# The other tiers take them too and ignore them.
+again=0; load_limit=""; load_wait=""; lock_wait=300
+shift; rest=()
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --again) again=1 ;;
+    --lock-wait) lock_wait="${2:?--lock-wait takes a number}"; shift ;;
+    --load-limit) load_limit="${2:?--load-limit takes a number}"; shift ;;
+    --load-wait) load_wait="${2:?--load-wait takes a number}"; shift ;;
+    *) rest+=("$1") ;;
+  esac
+  shift || true
+done
+set -- "$tier" ${rest[@]+"${rest[@]}"}
+[[ "$lock_wait" =~ ^[0-9]+$ ]] || { echo "--lock-wait takes whole seconds, got '$lock_wait'" >&2; exit 2; }
+[ -z "$load_limit" ] || [[ "$load_limit" =~ ^[0-9]+([.][0-9]+)?$ ]] || { echo "--load-limit takes a number, got '$load_limit'" >&2; exit 2; }
+[ -z "$load_wait" ] || [[ "$load_wait" =~ ^[0-9]+$ ]] || { echo "--load-wait takes whole seconds, got '$load_wait'" >&2; exit 2; }
 
+# One run uses the cache at a time. A run that finds the lock held waits up to --lock-wait seconds, then stops with exit 2.
 exec 9>/cache/run.lock
-flock -n 9 || { echo "Another golem test run holds /cache/run.lock; wait for it to finish." >&2; exit 2; }
+flock -n 9 || {
+  echo "Another golem test run holds /cache/run.lock; waiting up to ${lock_wait}s for it." >&2
+  flock -w "$lock_wait" 9 || { echo "Another golem test run holds /cache/run.lock; wait for it to finish." >&2; exit 2; }
+}
 
 mkdir -p /cache/work /cache/npm /cache/packed /cache/linux-lock /cache/ttsc /cache/gomod
 # What is not golem source: build output, installs, git, and local tool state such as the dev center store, which changes on
