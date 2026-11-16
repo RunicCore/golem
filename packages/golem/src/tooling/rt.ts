@@ -50,7 +50,12 @@ interface RuntimeTypeExports {
     readonly RuntimeResponseContract: client.RuntimeResponseContract;
     readonly RuntimeSecuritySchemes: client.RuntimeSecuritySchemes;
   };
-  readonly validation: { readonly OperationRuntimeValidators: validation.OperationRuntimeValidators; readonly SchemaIssue: validation.SchemaIssue };
+  readonly validation: {
+    readonly OperationRuntimeValidators: validation.OperationRuntimeValidators;
+    readonly SchemaIssue: validation.SchemaIssue;
+    readonly Evaluation: validation.Evaluation;
+    readonly JsonValue: validation.JsonValue;
+  };
   readonly serde: { readonly DecodeOptions: serde.DecodeOptions; readonly EncodeOptions: serde.EncodeOptions; readonly StripPlan: serde.StripPlan; readonly SerdeOptions: serde.SerdeOptions; readonly ValidateOptions: serde.ValidateOptions };
 }
 

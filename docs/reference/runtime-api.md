@@ -114,6 +114,7 @@ function runValidation(validator: Validator, value: unknown, all = true): Promis
 | `Validator` | `(value, all) => readonly SchemaIssue[]`, empty when the value is valid. |
 | `OperationRuntimeValidators` | The value type of a client's `operationValidators` option: the input validator, the optional `requestHeaders` validator, the response validators keyed `status:contentType`, and the optional `responseHeaders` validators keyed `status:name`. |
 | `SchemaIssue`, `SchemaIssueDetail` | Issue types of a `Validator`. |
+| `Evaluation`, `JsonValue` | Types that generated validators name in their code. |
 
 ## `@exprtlabs/golem-openapi-ts/mobx` {#mobx}
 

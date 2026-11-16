@@ -1,6 +1,7 @@
 import type { SchemaIssue } from './issue-messages.js';
 import { instanceFields, isStateKey, presentValue } from './presence.js';
 export type { SchemaIssue, SchemaIssueDetail } from './issue-messages.js';
+export type { JsonValue } from './errors.js';
 export { instanceFields, isStateKey };
 
 /**
@@ -8,6 +9,15 @@ export { instanceFields, isStateKey };
  * skips the value limits and the validation functions. A validator of a sanity-only module takes no flag.
  */
 export type Validator = (value: unknown, all: boolean, sanity?: boolean) => readonly SchemaIssue[];
+
+/** What the keywords of one value evaluated: keys by name, or all of them; leading items by count, others by index, or all of them. */
+export interface Evaluation {
+  keys: Set<string>;
+  allKeys: boolean;
+  prefix: number;
+  indexes: Set<number>;
+  allItems: boolean;
+}
 
 /** Length of `text` in Unicode code points; a lone surrogate counts as one. */
 export function codePointLength(text: string): number {

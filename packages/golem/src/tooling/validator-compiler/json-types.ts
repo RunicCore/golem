@@ -12,7 +12,7 @@ export const JSON_TYPES: Readonly<Record<IrTypeName, { readonly test: (value: un
   // JSON has no NaN or infinity; a model value that holds one is not a number.
   number: { test: value => typeof value === 'number' && Number.isFinite(value), code: value => code`(typeof ${value} === 'number' && Number.isFinite(${value}))` },
   // A JSON number is a double, so an integer beyond Number.MAX_SAFE_INTEGER has already been rounded when it is read.
-  integer: { test: value => Number.isSafeInteger(value), code: value => code`Number.isSafeInteger(${value})` },
+  integer: { test: value => Number.isSafeInteger(value), code: value => code`(typeof ${value} === 'number' && Number.isSafeInteger(${value}))` },
   string: { test: value => typeof value === 'string', code: value => code`typeof ${value} === 'string'` },
   array: { test: value => Array.isArray(value), code: value => code`Array.isArray(${value})` },
   object: { test: value => typeof value === 'object' && value !== null && !Array.isArray(value), code: value => code`${localName('isObject')}(${value})` },

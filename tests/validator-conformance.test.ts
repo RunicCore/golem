@@ -191,7 +191,7 @@ for (const row of EXCLUSIONS) {
     .find(candidate => row.group === undefined || candidate.description === row.group);
   if (group === undefined) throw new Error(`Exclusion row matches no suite group: ${JSON.stringify(row)}`);
   test(`excluded ${row.file}${row.group === undefined ? '' : ` / ${row.group}`}: its first schema fails with ${diagnostic.code}`, () => {
-    const result = compile({ roots: new Map([['root', group.schema]]) }, { unknownFormats: diagnostic.unknownFormats ?? 'warn' });
+    const result = compile({ roots: new Map([['root', group.schema]]) }, { unknownFormats: diagnostic.unknownFormats ?? 'warn', language: 'js' });
     assert.equal(result.source, '');
     assert.ok(
       result.diagnostics.some(entry => entry.code === diagnostic.code && entry.severity === GolemDiagnosticSeverity.Error),

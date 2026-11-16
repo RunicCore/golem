@@ -444,7 +444,7 @@ function compileValidatorRoots(
     {
       unknownFormats: options.unknownFormats,
       documentName: options.documentName,
-      typed: true,
+      language: 'ts',
       fastPath: fastRoots,
       ...(options.level === undefined ? {} : { level: options.level }),
       ...(options.emitRoots === undefined ? {} : { emitRoots: options.emitRoots }),
