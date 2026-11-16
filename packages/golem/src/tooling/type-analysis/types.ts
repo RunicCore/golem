@@ -9,7 +9,7 @@ import { commonDirectory, canonicalFilename, companionFilename, portableRelative
 import { packageSpecifier } from './package-specifier.js';
 import { builtinClassDescriptor, type BuiltinClass } from '../builtin-classes.js';
 import { enclosureOf, findBuiltinClass, isGlobalDeclaration } from './builtin-class.js';
-import { compareText, displayPath } from '../generator-core.js';
+import { compareText } from '../generator-core.js';
 import type { GolemProfile } from '../generator-core.js';
 import { assertSupportedModelFieldName, canonicalDescriptorKey, isBrandPropertyName } from '../schema.js';
 import type {
@@ -39,6 +39,7 @@ import {
   type SerdeBinding,
   type TagMetadata,
   type ValidationBinding,
+  sourceLocation,
 } from './tags.js';
 
 export type { ModelConversionDescriptor, TupleConversionDescriptor } from '../model-source-emitter.js';
@@ -1565,11 +1566,6 @@ export function descriptorBuilder(
       }
     }
     return name;
-  };
-  const sourceLocation = (at: ts.Node): string => {
-    const sourceFile = at.getSourceFile();
-    const position = sourceFile.getLineAndCharacterOfPosition(at.getStart(sourceFile));
-    return `${displayPath(sourceFile.fileName)}:${position.line + 1}:${position.character + 1}`;
   };
   const modelNames = new Map(
     specifications.map((specification) => [specification.declaration, nameFor?.(specification) ?? specification.name] as const),

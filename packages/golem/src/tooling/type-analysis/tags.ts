@@ -557,6 +557,13 @@ function recordReachableFunctions(context: TagAnalysisContext, node: ts.Node, sc
   ts.forEachChild(node, child => recordReachableFunctions(context, child, scan));
 }
 
+/** The file, line and column where `at` starts, to name it in a message. */
+export function sourceLocation(at: ts.Node): string {
+  const sourceFile = at.getSourceFile();
+  const position = sourceFile.getLineAndCharacterOfPosition(at.getStart(sourceFile));
+  return `${displayPath(sourceFile.fileName)}:${position.line + 1}:${position.character + 1}`;
+}
+
 /** The first line of a declaration, cut to 60 characters, to name it in a message. */
 function firstLine(text: string): string {
   const [line = ''] = text.split('\n');
@@ -597,7 +604,7 @@ function functionBinding(
   }
   const inferredBy = registry?.hidden.get(fn.type);
   if (inferredBy) {
-    throw context.diagnostic(fn.owner, '1040', `${kind} function reaches this tag through \`${firstLine(inferredBy.getText())}\`, whose type golem infers, so golem cannot tell which function of this type the tag names. Give it a type annotation that writes the tag, or write the tag on the field itself, with \`typeof\` and the function.`);
+    throw context.diagnostic(fn.owner, '1040', `${kind} function reaches this tag through \`${firstLine(inferredBy.getText())}\` (${sourceLocation(inferredBy)}), whose type golem infers, so golem cannot tell which function of this type the tag names. Give it a type annotation that writes the tag, or write the tag on the field itself, with \`typeof\` and the function.`);
   }
   return valueBindingForSymbol(context, written, kind, fn.owner);
 }
