@@ -7,6 +7,7 @@ import test from 'node:test';
 import { copyFixture, fileFixtureScope, onceShared, type FixtureScope } from './fixture-project.js';
 import { writeModelSources } from './model-project.js';
 import { createNodeSpecifierProject, editProjectSources, type EditedSource } from './support/node-specifiers-project.js';
+import { skipOnTypeScript6 } from './support/typescript-lane.js';
 
 const scope = fileFixtureScope();
 
@@ -159,7 +160,7 @@ test('a specifier whose new text holds the quote of its literal keeps its text',
   assert.equal(results.get('src/double.ts')?.code, 'import "./it\'s.js";\n');
 });
 
-test('a source phase import and import attributes keep their form while a relative specifier next to them changes', t => {
+test('a source phase import and import attributes keep their form while a relative specifier next to them changes', { skip: skipOnTypeScript6('TypeScript 6 has no source phase import') }, t => {
   // protects: T-350 TypeScript 7.1 import forms (source phase, with attributes) survive the specifier edits
   const root = createNodeSpecifierProject(t, { prefix: 'golem-node-specifiers-forms-', compilerOptions: { lib: ['es2026', 'esnext.modulesource'] } });
   writeModelSources(path.join(root, 'src'), {

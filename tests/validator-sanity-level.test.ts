@@ -227,7 +227,7 @@ describe('a sanity module', () => {
     // protects: R-71 an invalid pattern and an unknown format are reported at every level
     for (const level of ['full', 'sanity'] as const) {
       const roots = new Map<string, unknown>([['root', { properties: { a: { pattern: '(' }, b: { format: 'nonesuch' } } }]]);
-      const { diagnostics } = compile({ roots }, { unknownFormats: 'warn', level });
+      const { diagnostics } = compile({ roots }, { unknownFormats: 'warn', language: 'js', level });
       assert.deepEqual(diagnostics.map(entry => [entry.code, entry.severity]), [['VALIDATE_INVALID_PATTERN', GolemDiagnosticSeverity.Error], ['VALIDATE_UNKNOWN_FORMAT', GolemDiagnosticSeverity.Warning]]);
     }
   });

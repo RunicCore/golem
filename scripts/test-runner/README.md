@@ -26,7 +26,7 @@ Name a unit test that is too slow for Full `tests/<name>.acceptance.ts` or `test
 
 The benchmark's typia adapter compiles with `ttsc`, which builds typia's Go plugin from source on first use and fetches its Go modules. Prepare compiles one small typia project so the plugin and the modules are cached. The entrypoint keeps them in `/cache/ttsc` (`TTSC_CACHE_DIR`) and `/cache/gomod` (`GOMODCACHE`), outside the work tree that each run resets, and sets `GOPROXY=off` in the offline tiers. A missing module then fails the run at once with a Go error: run `npm run test:prepare`.
 
-After you change what a test installs, run `npm run test:prepare` before the next tier run. The record of cut and passed runs changed the runner image (the entrypoint holds it), so every other checkout needs one `npm run test:prepare` after it updates to this change.
+After you change what a test installs, run `npm run test:prepare` before the next tier run. The image tag follows the `Dockerfile` only, and `run.sh` mounts the entrypoint from its own checkout, so a changed `entrypoint.sh` needs no rebuild.
 
 ## Linux lockfile
 
