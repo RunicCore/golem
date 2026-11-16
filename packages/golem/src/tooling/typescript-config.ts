@@ -225,20 +225,25 @@ export function flagsAsConfigOptions(flags: readonly string[], parse: (flags: re
   return { ...parsedFlagOptions(flags, parse), ...flagPathOptions(flags, parse, resolveAtCurrentFolder) };
 }
 
+/** The diagnostic of an option that takes a value and finds none (TS6044). The compiler's parse gives it for a flag alone exactly when the flag takes the next argument. */
+const EXPECTS_AN_ARGUMENT = 6044;
+
 function parsedFlagOptions(flags: readonly string[], parse: (flags: readonly string[]) => ParsedArguments): Record<string, string | number | boolean | readonly string[]> {
   const options: Record<string, string | number | boolean | readonly string[]> = {};
   for (let index = 0; index < flags.length; index += 1) {
     const flag = flags[index];
     const next = flags[index + 1];
-    const together = next !== undefined && (!next.startsWith('-') || /^-\d+$/.test(next)) && (() => {
-      const pair = parse([flag, next]);
-      return pair.errors.length === 0 && pair.fileNames.length === 0;
-    })();
-    const parsed = parse(together ? [flag, next] : [flag]);
+    const alone = parse([flag]);
+    // The compiler's parse tells which flag takes the next argument. A value option takes it whatever it looks like (`--rootDir -x`, `--depth -1`).
+    // A boolean option takes only `true` or `false`, so a following option or file is not its value.
+    const takesValue = alone.errors.some((error) => error.code === EXPECTS_AN_ARGUMENT);
+    const pair = next !== undefined && (takesValue || !next.startsWith('-')) ? parse([flag, next]) : undefined;
+    const together = pair !== undefined && (takesValue || (pair.errors.length === 0 && pair.fileNames.length === 0)) ? pair : undefined;
+    const parsed = together ?? alone;
     assertNoSourceFiles(parsed.fileNames);
     assertCommandLineParsed(parsed);
-    for (const [name, value] of Object.entries(parsed.options as Record<string, unknown>)) options[name] = configValue(value, together ? next : undefined);
-    if (together) index += 1;
+    for (const [name, value] of Object.entries(parsed.options as Record<string, unknown>)) options[name] = configValue(value, together === undefined ? undefined : next);
+    if (together !== undefined) index += 1;
   }
   return options;
 }
