@@ -4,6 +4,8 @@ import { FunctionSlots, type CheckForm } from './function-names.js';
 
 /** The fast check of a function as text, with what it calls. */
 export interface WrittenFastCheck {
+  /** The parameter of the value, typed; a body that never reads the value names it so (see `valueParameter`). */
+  readonly parameter: Code;
   /** The body; the full validators and fast checks it calls are name parts. */
   readonly body: Code;
   readonly calls: ReadonlySet<number>;
