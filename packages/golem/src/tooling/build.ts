@@ -19,7 +19,7 @@ import { emitsJavaScript, projectSources, RewriteScanner } from './rewrite-scan.
 import { retainedProgramSession } from './type-analysis/project.js';
 import { inlineEmittedSourceMap, pointDeclarationMap, pointSourceMap } from './source-map.js';
 import type { SourceMapV3 } from './source-map.js';
-import { assertNotSolutionTsconfig, referenceClosure, referencedCommand, referencesRefusal } from './typescript-config.js';
+import { assertNotSolutionTsconfig, ConfigParseError, referenceClosure, referencedCommand, referencesRefusal } from './typescript-config.js';
 import * as ts from './typescript-ns.js';
 import { requestTypeScriptRoot } from './typescript-selection.js';
 import { changedPaths, InputScan, InputWatcher, outsideFolder, OwnedOutputIndex, realInputFiles, RunBaseline } from './input-watcher.js';
@@ -412,6 +412,14 @@ function assertContained(project: Project, configFile: string, javascript: Reado
   }
 }
 
+/** Print the errors of the tsconfig as `tsc` prints them, from a program opened on it. False when the program reports none, so that the refusal's own text is the report. */
+function printConfigErrors(session: ts.ProgramSession, root: string, configFile: string, run: BuildRun, observe: (filename: string) => void): boolean {
+  using program = session.openProgram({ root, sources: [], configFile, flags: run.tscArguments, onInput: observe });
+  const diagnostics = ts.getConfigDiagnostics(program);
+  reportCheck(root, program, diagnostics, run.onCompilerReport);
+  return diagnostics.length > 0;
+}
+
 /** One build: generate, check the original sources, emit the rewritten ones. `changed` are the inputs that changed since the build before. */
 async function buildOnce(requestSession: () => ts.ProgramSession, run: BuildRun, changed?: readonly string[]): Promise<number> {
   const { inputs, outputs } = run;
@@ -444,7 +452,14 @@ async function buildOnce(requestSession: () => ts.ProgramSession, run: BuildRun,
   const parseOptions = (): ts.ParsedProject => (run.tscArguments.length === 0
     ? session.parseConfigFile(configFile, observe)
     : session.parseConfigFileWithFlags(configFile, run.tscArguments, observe));
-  const configured = parseOptions();
+  let configured: ts.ParsedProject;
+  try {
+    configured = parseOptions();
+  } catch (error) {
+    // A tsconfig with errors ends the build before it generates: the errors print as `tsc` prints them. A refusal the program does not report stays the report.
+    if (error instanceof ConfigParseError && printConfigErrors(session, root, configFile, run, observe)) return 1;
+    throw error;
+  }
   assertSupported(configFile, configured, run.project === undefined ? 'yaml' : 'project');
   // The generated files are part of the program the next steps read, so they are written first. A job whose inputs did not change is skipped.
   const previous = run.pipeline;

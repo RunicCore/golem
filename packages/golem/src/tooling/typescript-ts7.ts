@@ -983,8 +983,17 @@ export function getTscDiagnostics(program: Program, emitDiagnostics: readonly Sy
     semantic: () => program.getSemanticDiagnostics(),
     declaration: () => program.getDeclarationDiagnostics(),
   }, program.getCompilerOptions());
+  return sortedWithoutRepeats([...found, ...emitDiagnostics]);
+}
+
+/** The diagnostics of the configuration the program was opened on, sorted without repeats. */
+export function getConfigDiagnostics(program: Program): readonly SyncDiagnostic[] {
+  return sortedWithoutRepeats(program.getConfigFileParsingDiagnostics());
+}
+
+function sortedWithoutRepeats(diagnostics: readonly SyncDiagnostic[]): readonly SyncDiagnostic[] {
   const compare = (left: SyncDiagnostic, right: SyncDiagnostic): number => compareDiagnostics(left, right, hostCaseSensitivity);
-  const sorted = [...found, ...emitDiagnostics].sort(compare);
+  const sorted = [...diagnostics].sort(compare);
   return sorted.filter((diagnostic, index) => {
     const previous = sorted[index - 1];
     return previous === undefined || compare(previous, diagnostic) !== 0;
@@ -1204,7 +1213,9 @@ export class ProgramSession implements Disposable {
     const parsed = this.withCompiler('parse', (api) => {
       this.observe(onInput, new Set());
       const result = api.parseConfigFile(configPath);
-      assertConfigParsed(configPath, result.errors);
+      // The parse leaves out a syntax error of the file itself (the program's configuration diagnostics hold it), so it is read from the text.
+      const { error } = api.readConfigFile(configPath);
+      assertConfigParsed(configPath, [...error === undefined ? [] : [error], ...result.errors]);
       return result;
     });
     return projectOf(parsed);

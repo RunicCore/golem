@@ -11,11 +11,14 @@ export function reportedConfigErrors<D extends { readonly code: number }>(errors
   return errors.filter((diagnostic) => diagnostic.code !== NO_INPUTS_FOUND);
 }
 
+/** The refusal of a configuration that has errors. A build recovers from it by printing them as the compiler does; any other reader of the values fails with it. */
+export class ConfigParseError extends Error {}
+
 /** A configuration that is read for its values (not to open a program) fails with its errors. */
 export function assertConfigParsed(configPath: string, errors: readonly { readonly code: number; readonly text: string }[]): void {
   const reported = reportedConfigErrors(errors);
   if (reported.length > 0) {
-    throw new Error([`The TypeScript configuration ${displayPath(configPath)} has errors:`, ...reported.map((diagnostic) => `  TS${diagnostic.code}: ${diagnostic.text}`)].join('\n'));
+    throw new ConfigParseError([`The TypeScript configuration ${displayPath(configPath)} has errors:`, ...reported.map((diagnostic) => `  TS${diagnostic.code}: ${diagnostic.text}`)].join('\n'));
   }
 }
 

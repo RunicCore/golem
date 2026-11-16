@@ -832,6 +832,8 @@ export interface TypeScriptBackend {
    * `emitDiagnostics` are those of an emit of the same program, which `tsc` adds before it sorts.
    */
   getTscDiagnostics(program: Program, emitDiagnostics?: readonly Diagnostic[]): readonly Diagnostic[];
+  /** The diagnostics of the configuration the program was opened on, which `tsc` prints first: its syntax errors, its option errors and those of the configurations it extends. In `tsc`'s order, without repeats. */
+  getConfigDiagnostics(program: Program): readonly Diagnostic[];
   /** The comments between `position` and the next token that start on a later line (all of them at position 0), in source order. Undefined when there are none. */
   getLeadingCommentRanges(text: string, position: number): readonly CommentRange[] | undefined;
   /** The comments that follow `position` on its own line, in source order. Undefined when there are none. */

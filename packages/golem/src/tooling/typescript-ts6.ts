@@ -171,7 +171,7 @@ interface ParsedConfigHost {
 
 // Names that this module implements itself; every other seam name is the classic API's own member.
 type Implemented = 'ProgramSession' | 'CheckFlags' | 'sys' | 'createCompilerHost' | 'createProgramFromSources' | 'createScanner'
-  | 'getPreEmitDiagnostics' | 'getTscDiagnostics' | 'typeParameterDefault' | 'typeReferenceTarget';
+  | 'getPreEmitDiagnostics' | 'getTscDiagnostics' | 'getConfigDiagnostics' | 'typeParameterDefault' | 'typeReferenceTarget';
 
 interface ClassicTypeScript extends Omit<Golem.TypeScriptBackend, Implemented | 'ObjectFlags' | 'SignatureKind'> {
   readonly SignatureKind: Golem.TypeScriptBackend['SignatureKind'] & { readonly Construct: Golem.SignatureKind };
@@ -774,6 +774,12 @@ export function getTscDiagnostics(program: Golem.Program, emitDiagnostics: reado
     declaration: () => classicProgram.getDeclarationDiagnostics(),
   }, classicProgram.getCompilerOptions());
   return classic.sortAndDeduplicateDiagnostics([...found, ...emitDiagnostics as readonly ClassicDiagnostic[]]).map(withText);
+}
+
+/** The diagnostics of the configuration the program was opened on, sorted without repeats. */
+export function getConfigDiagnostics(program: Golem.Program): readonly Golem.Diagnostic[] {
+  if (!(program instanceof CompatProgram)) throw new TypeError('getConfigDiagnostics needs a program opened by the TypeScript 6 backend.');
+  return classic.sortAndDeduplicateDiagnostics(program.program.getConfigFileParsingDiagnostics()).map(withText);
 }
 
 // Object.create returns `any`; the result is the classic diagnostic with `text` added.
