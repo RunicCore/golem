@@ -3,7 +3,7 @@ import * as ts from '@exprtlabs/golem/internal/ts';
 import { resolveSymbol } from '@exprtlabs/golem/internal/type-analysis';
 import { TsToOpenApiDiagnosticCode, TsToOpenApiError, diagnostic } from '../diagnostics.js';
 import type { RouteEvaluationOptions } from './dependencies.js';
-import { evaluateStaticValue, isTypeScriptLibFile, singleReturnExpression, unwrapExpression as unwrap } from '@exprtlabs/golem/internal/static-value';
+import { evaluateStaticValue, isTypeScriptLibFile, literalPropertyName, singleReturnExpression, unwrapExpression as unwrap } from '@exprtlabs/golem/internal/static-value';
 
 type StringBinding = { readonly kind: 'string'; readonly value: string };
 type ObjectBinding = { readonly kind: 'object'; readonly fields: Readonly<Record<string, string>> };
@@ -90,9 +90,8 @@ function bindPattern(name: ts.BindingName, value: Binding, bindings: Map<string,
   if (!ts.isObjectBindingPattern(name) || value.kind !== 'object') reject();
   for (const element of name.elements) {
     if (element.dotDotDotToken || !element.name || !ts.isIdentifier(element.name)) reject();
-    const key = element.propertyName && ts.isIdentifier(element.propertyName)
-      ? element.propertyName.text
-      : element.name.text;
+    const key = element.propertyName ? literalPropertyName(element.propertyName) : element.name.text;
+    if (key === undefined) reject();
     const field = value.fields[key];
     if (field === undefined) reject();
     bindings.set(element.name.text, { kind: 'string', value: field });
@@ -105,8 +104,10 @@ function objectFields(expression: ts.Expression, scope: Scope, ctx: FoldContext)
   // No prototype: a read of `toString` or `constructor` finds no field, as for any other missing key.
   const fields: Record<string, string> = Object.create(null);
   for (const property of unwrapped.properties) {
-    if (!ts.isPropertyAssignment(property) || !ts.isIdentifier(property.name)) reject();
-    fields[property.name.text] = evalString(property.initializer, scope, ctx);
+    if (!ts.isPropertyAssignment(property)) reject();
+    const key = literalPropertyName(property.name);
+    if (key === undefined) reject();
+    fields[key] = evalString(property.initializer, scope, ctx);
   }
   return fields;
 }

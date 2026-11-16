@@ -88,10 +88,16 @@ export function resolveValueSymbol(checker: ts.TypeChecker, expression: ts.Expre
   return resolveSymbol(checker, checker.getSymbolAtLocation(node));
 }
 
+/** The name a property is written with: an identifier, a quoted name or a number. A computed or private name has none. */
+export function literalPropertyName(name: ts.PropertyName): string | undefined {
+  return ts.isIdentifier(name) || ts.isStringLiteral(name) || ts.isNumericLiteral(name) || ts.isNoSubstitutionTemplateLiteral(name)
+    ? name.text
+    : undefined;
+}
+
 function propertyKey(name: ts.PropertyName, state: EvaluationState): string {
-  if (ts.isIdentifier(name) || ts.isStringLiteral(name) || ts.isNumericLiteral(name) || ts.isNoSubstitutionTemplateLiteral(name)) {
-    return name.text;
-  }
+  const literal = literalPropertyName(name);
+  if (literal !== undefined) return literal;
   if (ts.isComputedPropertyName(name)) {
     const key = evaluate(name.expression, state);
     if (typeof key === 'string' || typeof key === 'number') return String(key);

@@ -8,9 +8,9 @@ import {
   TsToOpenApiDiagnosticCode,
   diagnostic,
 } from '../diagnostics.js';
-import { baseClassDeclarations, classHierarchyBaseToDerived, evaluateContextExpression, evaluateStringValues, hasAnyDecorator, hasDecorator, staticMethodName } from './analysis-utils.js';
+import { baseClassDeclarations, classHierarchyBaseToDerived, evaluateContextExpression, evaluateStringValues, hasAnyDecorator, hasDecorator } from './analysis-utils.js';
 import { callStringValues, decoratorOptions, parseSecurity, parseTags, readBoolean, type MetadataReader } from './metadata.js';
-import { resolveValueSymbol, unwrapExpression } from '@exprtlabs/golem/internal/static-value';
+import { literalPropertyName, resolveValueSymbol, unwrapExpression } from '@exprtlabs/golem/internal/static-value';
 import { NEST_COMMON, NEST_SWAGGER } from './packages.js';
 import { callArguments, decoratorsOf, propertyInitializer, staticObject } from './symbols.js';
 import { classParameterDecorators, parseParameters, parseParameterOverride } from './parameters.js';
@@ -147,7 +147,7 @@ function classMethods(
   const byName = new Map<string, ts.MethodDeclaration>();
   const unnamed: ts.MethodDeclaration[] = [];
   for (const method of [...inherited, ...own]) {
-    const name = staticMethodName(method);
+    const name = literalPropertyName(method.name);
     if (name !== undefined) byName.set(name, method);
     else unnamed.push(method);
   }
@@ -377,7 +377,7 @@ async function analyzeController(
     if (routeExcluded(context, decorators)) continue;
     const selected = routeDecorator(context, decorators);
     if (!selected) continue;
-    const methodName = staticMethodName(method);
+    const methodName = literalPropertyName(method.name);
     if (methodName === undefined) {
       throw new TsToOpenApiError(diagnostic(
         method.getSourceFile(),

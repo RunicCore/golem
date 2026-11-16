@@ -3,6 +3,7 @@ import { isRecord } from '@exprtlabs/golem/internal/generator-support';
 import { authoredUnionMembers, isGeneratedBrandKey, isGolemTagKey, resolveSymbol } from '@exprtlabs/golem/internal/type-analysis';
 import {
   isTypeScriptLibFile,
+  literalPropertyName,
   resolveValueSymbol,
   singleReturnExpression,
   unwrapExpression,
@@ -175,14 +176,6 @@ export function unionModelIds(context: NestAnalysisContext, parameter: ts.Parame
   return ids.every((id): id is string => id !== undefined) ? ids : undefined;
 }
 
-/** The name a method answers to: an identifier, a quoted name or a number. A computed name has none. */
-export function staticMethodName(method: ts.MethodDeclaration): string | undefined {
-  const name = method.name;
-  return ts.isIdentifier(name) || ts.isStringLiteral(name) || ts.isNoSubstitutionTemplateLiteral(name) || ts.isNumericLiteral(name)
-    ? name.text
-    : undefined;
-}
-
 /**
  * The method's call signature as seen from the analysed controller. An
  * inherited method from a generic base (`CrudController<User>`) is
@@ -194,7 +187,7 @@ export function controllerMethodSignature(
   controllerClass: ts.ClassDeclaration,
 ): ts.Signature | undefined {
   const declared = checker.getSignatureFromDeclaration(method);
-  const name = staticMethodName(method);
+  const name = literalPropertyName(method.name);
   if (method.parent === controllerClass || name === undefined) return declared;
   const member = checker.getPropertyOfType(checker.getTypeAtLocation(controllerClass), name);
   if (!member) return declared;
