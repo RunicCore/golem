@@ -159,3 +159,12 @@ test('a value that starts with a dash is the value of a value option, as tsc tak
   assert.equal(result.code, 1);
   assert.equal(fs.existsSync(path.join(root, 'build')), false);
 });
+
+test('a list option followed by a flag is an empty list and the flag keeps its own meaning, as tsc reads it', async (t) => {
+  // protects: T-1042 --types --noEmitOnError sets two options, not the type definition "--noEmitOnError"
+  const root = serdeProject(t, 'build-list-then-flag');
+  const flags = ['--types', '--noEmitOnError'];
+  const result = await golemBuild(root, flags);
+  assert.equal(printed(result.stdout), await tsc(root, flags));
+  assert.equal(result.stderr, '');
+});

@@ -225,25 +225,30 @@ export function flagsAsConfigOptions(flags: readonly string[], parse: (flags: re
   return { ...parsedFlagOptions(flags, parse), ...flagPathOptions(flags, parse, resolveAtCurrentFolder) };
 }
 
-/** The diagnostic of an option that takes a value and finds none (TS6044). The compiler's parse gives it for a flag alone exactly when the flag takes the next argument. */
+/** The diagnostic of an option that finds no argument (TS6044). */
 const EXPECTS_AN_ARGUMENT = 6044;
+
+/**
+ * Whether the compiler's parse of a flag and its next argument took the argument as the flag's value: the argument is no file, no option
+ * of its own got set beside the flag's, and no option is left without its argument. A value option takes any argument (`--rootDir -x`,
+ * `--depth -1`), a list option one that does not start with '-' (`--types --strict` is an empty list and a flag), a boolean option `true` or `false`.
+ */
+function tookArgument(pair: ParsedArguments): boolean {
+  return pair.fileNames.length === 0 && Object.keys(pair.options).length <= 1 && !pair.errors.some((error) => error.code === EXPECTS_AN_ARGUMENT);
+}
 
 function parsedFlagOptions(flags: readonly string[], parse: (flags: readonly string[]) => ParsedArguments): Record<string, string | number | boolean | readonly string[]> {
   const options: Record<string, string | number | boolean | readonly string[]> = {};
   for (let index = 0; index < flags.length; index += 1) {
     const flag = flags[index];
     const next = flags[index + 1];
-    const alone = parse([flag]);
-    // The compiler's parse tells which flag takes the next argument. A value option takes it whatever it looks like (`--rootDir -x`, `--depth -1`).
-    // A boolean option takes only `true` or `false`, so a following option or file is not its value.
-    const takesValue = alone.errors.some((error) => error.code === EXPECTS_AN_ARGUMENT);
-    const pair = next !== undefined && (takesValue || !next.startsWith('-')) ? parse([flag, next]) : undefined;
-    const together = pair !== undefined && (takesValue || (pair.errors.length === 0 && pair.fileNames.length === 0)) ? pair : undefined;
-    const parsed = together ?? alone;
+    const parsed = parse(next === undefined ? [flag] : [flag, next]);
+    const together = next !== undefined && tookArgument(parsed);
     assertNoSourceFiles(parsed.fileNames);
-    assertCommandLineParsed(parsed);
-    for (const [name, value] of Object.entries(parsed.options as Record<string, unknown>)) options[name] = configValue(value, together === undefined ? undefined : next);
-    if (together !== undefined) index += 1;
+    // Without the argument, the parse also holds the next flag, whose own turn sets it and reports its errors.
+    if (together || next === undefined) assertCommandLineParsed(parsed);
+    for (const [name, value] of Object.entries(parsed.options as Record<string, unknown>)) options[name] = configValue(value, together ? next : undefined);
+    if (together) index += 1;
   }
   return options;
 }
