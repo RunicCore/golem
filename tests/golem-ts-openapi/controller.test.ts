@@ -281,6 +281,22 @@ test('refuses a URI versioning spelling that is not URI, uri or 0, in the string
   }
 });
 
+test('a whole query typed with a model-level tag documents its fields, not the tag key', async (t: TestContext) => {
+  // protects: T-1007 the tag key of a plain DTO is bookkeeping; its object-typed value must not make the whole query "not portable"
+  const root = createControllerFixture(t, {
+    prefix: 'golem-ts-openapi-tagged-query-',
+    links: 'workspace',
+    packageName: 'golem-ts-openapi-tagged-query-fixture',
+    sourceFile: 'src/catalog.controller.ts',
+    source: `import { Controller, Get, Query } from '@nestjs/common';
+import type { PatternProperties } from '@exprtlabs/golem/tags';
+type Filter = { status: string } & PatternProperties<{ '^x-': string }>;
+@Controller('cats') export class CatsController { @Get() list(@Query() filter: Filter): void {} }`,
+  });
+  const document = documentOf(await generate({ root, output: path.join(root, 'openapi.json'), info: { title: 'Cats', version: '1' }, profile: { validation: false } }));
+  assert.deepEqual((operationOf(document, '/cats', 'get').parameters ?? []).map(item => (item as { in: string }).in), ['querystring']);
+});
+
 test('keeps Nest runtime status authoritative over a contradicting Swagger success response', async (t: TestContext) => {
   const cases = [
     { title: 'Status conflict', fixtureDirectory: 'rejects-a-swagger-success-status-that-contradicts-nest-post-runtime-status' },
