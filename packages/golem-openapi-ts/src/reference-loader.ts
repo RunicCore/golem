@@ -375,6 +375,20 @@ async function loadGraph(
   };
 
   /**
+   * A `#/` pointer names a place in the nearest enclosing `$id` resource (JSON
+   * Schema 2020-12). That resource is found by its absolute `$id` (`schemaBase`)
+   * when this document declares it and the place exists there; otherwise the
+   * pointer names a place in the document itself, as OpenAPI documents write
+   * `#/components/schemas/X` inside a schema with an `$id`.
+   */
+  const pointerInEnclosingResource = (documentUri: string, schemaBase: string, pointer: string): ReferenceTarget | undefined => {
+    const resource = absoluteIds.get(stripFragment(schemaBase));
+    if (resource?.uri !== documentUri) return undefined;
+    const inside = `${resource.pointer}${pointer}`;
+    return resolveJsonPointer(documents.get(documentUri)?.document, inside) === undefined ? undefined : { uri: documentUri, pointer: inside };
+  };
+
+  /**
    * Classify one reference site. A reference is left `deferred` whenever its
    * final scheme, resolved against `documentUri` or against `schemaBase` (the
    * enclosing schema's own `$id`, when it has one), is not `file:`. Such a
@@ -400,6 +414,8 @@ async function loadGraph(
       const fragment = reference.slice(1);
       if (fragment === '' || fragment.startsWith('/')) {
         const pointer = decodeUriFragment(fragment);
+        const inResource = pointerInEnclosingResource(documentUri, schemaBase, pointer);
+        if (inResource) return { target: inResource, preserve: false };
         // A kept `#/` text in a hoisted document would resolve against the root, so a root component of that name would hide the miss.
         if (!inRoot && resolveJsonPointer(documents.get(documentUri)?.document, pointer) === undefined) {
           throw new Error(`${unresolvedReferenceMessage(keyword, reference)} (${displayLocation(documentUri, walkerPointer.slice(1), rootDirectory)})`);

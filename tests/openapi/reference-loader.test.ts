@@ -171,6 +171,24 @@ test('a pointer that names nothing in a non-root document is reported, not bound
   );
 });
 
+test('a pointer inside an embedded $id schema of a non-root document names a place in that resource', async (t) => {
+  // protects: T-986 JSON Schema 2020-12 resolves `#/` against the enclosing `$id` resource, not the document
+  const directory = createFixtureProject(t, 'golem-loader-nonroot-resource-');
+  writeOpenApiDocument(directory, {
+    Money: {
+      $id: 'https://schemas.example/money',
+      type: 'object',
+      properties: { amount: { type: 'number' }, copy: { $ref: '#/properties/amount' } },
+    },
+  }, 'b.json');
+  const document = root({ components: { schemas: { A: { $ref: './b.json#/Money' } } } });
+  const graph = await loadWithoutFetch(directory, document);
+  assert.deepEqual(targetsOf(graph, directory), [
+    'schemas ./b.json#/Money preserve=false',
+    'schemas ./b.json#/Money/properties/amount preserve=false',
+  ]);
+});
+
 test('a remote ref inside a local file is blocked when remoteHosts lists no host', async (t) => {
   // protects: F-176 and R5 a remote reference inside a local file follows the same rule as one in the root document
   const directory = createFixtureProject(t, 'golem-loader-nested-remote-');

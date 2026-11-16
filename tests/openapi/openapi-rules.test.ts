@@ -385,7 +385,7 @@ test('rules skip an x- extension key under paths, and check a webhook named x-�
   assert.deepEqual(found(document, 'operation-operationId-unique'), ['/webhooks/x-notes/post/operationId']);
 });
 
-test('no-unresolved-refs resolves "#/…" against the document root, also inside a schema with its own $id', () => {
+test('no-unresolved-refs resolves "#/…" inside a schema with its own $id against that resource, then the document root', () => {
   const document = documentBase('3.1.0', {
     paths: {},
     components: {
@@ -398,12 +398,13 @@ test('no-unresolved-refs resolves "#/…" against the document root, also inside
             amount: { type: 'number' },
             viaRoot: { $ref: '#/components/schemas/Shared' },
             viaResource: { $ref: '#/properties/amount' },
+            viaNowhere: { $ref: '#/properties/nowhere' },
           },
         },
       },
     },
   });
-  assert.deepEqual(found(document, 'no-unresolved-refs'), ['/components/schemas/Money/properties/viaResource/$ref']);
+  assert.deepEqual(found(document, 'no-unresolved-refs'), ['/components/schemas/Money/properties/viaNowhere/$ref']);
 });
 
 test('no-unresolved-refs reports a discriminator mapping pointer that resolves to nothing', () => {
