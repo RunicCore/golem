@@ -417,6 +417,11 @@ export function selectedModel(value: unknown, among: readonly string[]): string 
   return undefined;
 }
 
+/** Runs a validation function of the user on a value that the schema has accepted, and returns what the function returns. */
+export function callValidation<Value>(fn: (value: Value) => unknown, value: unknown): unknown {
+  return fn(value as Value); // The one cast of the generated code: the schema proves the type that `fn` declares, which the checker cannot see.
+}
+
 export function newEvaluation(): Evaluation {
   return { keys: new Set(), allKeys: false, prefix: 0, indexes: new Set(), allItems: false };
 }

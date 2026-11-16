@@ -1212,7 +1212,59 @@ const TYPED_CORPUS = {
   open: { $defs: { part: { properties: { b: { type: 'string' } } } }, properties: { a: { type: 'string' } }, allOf: [{ $ref: '#/$defs/part' }], unevaluatedProperties: false },
   bare: { type: 'object' },
   instance: { golemModelInstance: { of: 'Cat', among: ['Cat', 'Dog'], required: true } },
+  any: { anyOf: [{ type: 'string' }, { type: 'integer' }] },
+  one: { oneOf: [{ type: 'string', maxLength: 3 }, { type: 'array', items: { type: 'integer' } }] },
+  // A tagged union writes the tag lists. Its branches merge into one key pass in the fast check when each is a plain object check.
+  merged: {
+    discriminator: { propertyName: 'kind' },
+    oneOf: [
+      { type: 'object', properties: { kind: { const: 'a' }, x: { type: 'integer' } }, required: ['kind', 'x'] },
+      { type: 'object', properties: { kind: { const: 'b' }, y: { type: 'string' } }, required: ['kind'], additionalProperties: false },
+    ],
+  },
+  tagged: {
+    discriminator: { propertyName: 'kind' },
+    oneOf: [
+      { type: 'object', properties: { kind: { const: 'a' }, x: { type: 'integer' } }, required: ['kind'], minProperties: 2 },
+      { type: 'object', properties: { kind: { enum: ['b', 'c'] } }, required: ['kind'], patternProperties: { '^x-': { type: 'string' } } },
+    ],
+  },
+  loose: {
+    discriminator: { propertyName: 'kind' },
+    oneOf: [
+      { type: 'object', properties: { kind: { const: 'a' } }, required: ['x'] },
+      { type: 'object', properties: { kind: { const: 'b' } }, required: ['y'] },
+    ],
+  },
+  conditional: { if: { properties: { a: { const: 1 } }, required: ['a'] }, then: { required: ['b'] }, else: { properties: { c: { type: 'string' } } } },
+  thenOnly: { if: { type: 'string' }, then: { minLength: 1 } },
+  elseOnly: { if: { type: 'string' }, else: { type: 'integer' } },
+  denied: { not: { type: 'string' } },
+  dependent: { dependentSchemas: { a: { required: ['b'] } } },
+  tree: { type: 'object', properties: { children: { type: 'array', items: { $ref: '#' } } } },
+  // An evaluation record is kept by the keyword and filled by each applicator that reaches the value in place.
+  picked: { anyOf: [{ properties: { a: { type: 'string' } } }, { properties: { b: { type: 'integer' } } }], unevaluatedProperties: false },
+  guarded: { if: { properties: { a: { const: 1 } }, required: ['a'] }, then: { properties: { b: { type: 'string' } } }, unevaluatedProperties: false },
+  listed: { oneOf: [{ prefixItems: [{ type: 'integer' }] }, { type: 'string' }], unevaluatedItems: false },
+  checked: { exprtValidation: { schema: { type: 'integer' }, bindings: ['rules.isEven'] } },
+  labelled: { exprtValidation: { schema: { type: 'object', required: ['name'] }, bindings: ['rules.label'] } },
+  bounded: { exprtValidation: ['rules.isEven'] },
+  money: { golemModelClass: { name: 'Money', path: [], id: 'rules.Money' } },
+  moment: { golemModelClass: { name: 'Date', path: ['Date'] } },
+  plain: { golemModelInstance: { among: ['Cat', 'Dog'], required: false } },
+  maybe: { golemModelInstance: { of: 'Cat', among: ['Cat', 'Dog'], required: false } },
 };
+
+// The functions and the class that the validation corpus imports: each takes the type its schema proves, which the checker cannot see.
+const TYPED_RULES = `export const isEven = (value: number): boolean => value % 2 === 0;
+export const label = (value: { readonly name: string }): boolean | string => value.name.length > 0 || 'name must not be empty';
+export class Money { public constructor(public readonly units: number) {} }
+`;
+const TYPED_VALIDATIONS = new Map([
+  ['rules.isEven', { importPath: './rules.js', exportName: 'isEven' }],
+  ['rules.label', { importPath: './rules.js', exportName: 'label' }],
+  ['rules.Money', { importPath: './rules.js', exportName: 'Money' }],
+]);
 
 test('compile with ts emits the same validator with its types, and the corpus passes tsc under strict', async (t) => {
   // protects: value the ts validator reports the same issues as the js one, and the corpus compiles with noImplicitAny on
@@ -1222,8 +1274,9 @@ test('compile with ts emits the same validator with its types, and the corpus pa
   // A type is erased before the module runs, so the compiler proves the annotations: the validator returns `readonly SchemaIssue[]`, not `any`.
   const project = createFixtureProject(t, 'golem-typed-validator-');
   linkProjectPackages(project, { '@exprtlabs/golem': path.join(workspace, 'packages/golem') });
-  const { source } = compile({ roots: new Map(Object.entries(TYPED_CORPUS)) }, { unknownFormats: 'warn', language: 'ts', fastPath: 'all' });
+  const { source } = compile({ roots: new Map(Object.entries(TYPED_CORPUS)), validations: TYPED_VALIDATIONS }, { unknownFormats: 'warn', language: 'ts', fastPath: 'all' });
   writeFileSync(path.join(project, 'validators.ts'), source);
+  writeFileSync(path.join(project, 'rules.ts'), TYPED_RULES);
   writeFileSync(path.join(project, 'probe.ts'), [
     "import type { SchemaIssue } from '@exprtlabs/golem/validation';",
     "import { validate_root } from './validators.js';",
