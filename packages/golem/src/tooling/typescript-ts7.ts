@@ -12,7 +12,6 @@ export * from 'typescript/ast';
 import { ChildProcess } from 'node:child_process';
 import { channel } from 'node:diagnostics_channel';
 import {
-  lstatSync,
   readdirSync,
   readFileSync,
   realpathSync,
@@ -136,9 +135,7 @@ export interface Diagnostic {
 export interface ModuleResolutionHost {
   fileExists(filename: string): boolean;
   readFile(filename: string): string | undefined;
-  directoryExists?(directory: string): boolean;
   getCurrentDirectory?(): string;
-  getDirectories?(directory: string): string[];
   realpath?(filename: string): string;
   useCaseSensitiveFileNames?: boolean | (() => boolean);
 }
@@ -777,22 +774,6 @@ export const sys: ModuleResolutionHost & {
       return undefined;
     }
   },
-  directoryExists: (directory) => {
-    try {
-      return lstatSync(directory).isDirectory();
-    } catch {
-      return false;
-    }
-  },
-  getDirectories: (directory) => {
-    try {
-      return readdirSync(directory, { withFileTypes: true })
-        .filter((entry) => entry.isDirectory())
-        .map((entry) => entry.name);
-    } catch {
-      return [];
-    }
-  },
   realpath: (filename) => {
     try {
       return realpathSync(filename);
@@ -810,9 +791,7 @@ export function createCompilerHost(options: CompilerOptions = {}, _setParentNode
   return {
     fileExists: (filename) => sys.fileExists(filename),
     readFile: (filename) => sys.readFile(filename),
-    directoryExists: (directory) => sys.directoryExists?.(directory) ?? false,
     getCurrentDirectory: () => sys.getCurrentDirectory(),
-    getDirectories: (directory) => sys.getDirectories?.(directory) ?? [],
     realpath: (filename) => sys.realpath?.(filename) ?? filename,
     useCaseSensitiveFileNames: sys.useCaseSensitiveFileNames,
     getCanonicalFileName: (filename) => canonicalize(filename, hostCaseSensitivity),
