@@ -17,11 +17,11 @@ const sourceRoot = fileURLToPath(new URL('../../', import.meta.url));
 export interface PreparedPackages { readonly workspaceVersion: string; readonly digest: string; readonly packages: ReadonlyMap<string, PackedPackage> }
 
 export function preparedPackages(root: string = sourceRoot, packedRoot: string | undefined = process.env.FE_DEPS_PACKED_DIR): PreparedPackages {
-  if (!packedRoot) throw new Error('FE_DEPS_PACKED_DIR is not set. Run packed tests through npm run test:full, test:acceptance, or npm run test -- <packed file>.');
+  if (!packedRoot) throw new Error('FE_DEPS_PACKED_DIR is not set. Run packed tests through npm run test:full:ts6, test:acceptance, or npm run test -- <packed file>.');
   const digest = packedSetDigest(root);
   const directory = path.join(packedRoot, digest);
   const manifestFile = path.join(directory, 'manifest.json');
-  if (!fs.existsSync(manifestFile)) throw new Error(`No packed set for source digest ${digest}. The tier runner packs before packed tests; run npm run test:full.`);
+  if (!fs.existsSync(manifestFile)) throw new Error(`No packed set for source digest ${digest}. The tier runner packs before packed tests; run npm run test:full:ts6.`);
   const value: { workspaceVersion: string; packages: { manifest: PackageManifest; pack: PackResult }[] } = JSON.parse(fs.readFileSync(manifestFile, 'utf8'));
   return {
     workspaceVersion: value.workspaceVersion,
