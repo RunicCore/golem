@@ -24,13 +24,16 @@ export type TNested = IObject<{ inner: { tags?: string[] } }>;
 export type TOrder = IModel<{ id: string; mutable: TPayment[]; readonly: readonly TPayment[]; readonlyGeneric: ReadonlyArray<TPayment> }>;
 `;
 
+/** The controller `AController` of the project, with `methods` as its body and `preamble` before it. */
+const controllerSource = (methods: string, preamble = ''): string => `import { Body, Controller, Get, Post, Query } from '@nestjs/common';\nimport type { TPayment, TPayments, TOpen, TFilter, TTagged, TNested, TOrder } from './payment.model.js';\n${preamble}@Controller('a')\nexport class AController {\n${methods}\n}\n`;
+
 function project(t: TestContext, methods: string, openapiVersion = '3.2.0', preamble = ''): string {
   return createControllerFixture(t, {
     prefix: 'golem-one-field-',
     links: 'workspace',
     files: {
       'src/payment.model.ts': MODEL,
-      'src/a.controller.ts': `import { Body, Controller, Get, Post, Query } from '@nestjs/common';\nimport type { TPayment, TPayments, TOpen, TFilter, TTagged, TNested, TOrder } from './payment.model.js';\n${preamble}@Controller('a')\nexport class AController {\n${methods}\n}\n`,
+      'src/a.controller.ts': controllerSource(methods, preamble),
       'golem.yaml': `version: 1\nvalidation: true\nts-openapi:\n  docs:\n    - sources:\n        - src/a.controller.ts\n      output: generated/api.json\n      openapiVersion: "${openapiVersion}"\n      info: { title: T, version: "1" }\nmodel: {}\n`,
     },
   });
@@ -53,20 +56,9 @@ const TFILTER = { $ref: '#/components/schemas/TFilter' };
 /** The schema of the JSON request body of the POST at `route`. */
 const bodySchema = (document: OpenApiDocument, route: string): OpenApiSchema => contentSchema(requestBodyOf(document, route, 'post'), 'application/json', `request body of POST ${route}`);
 
-test('the controllers job names a one-field parameter by a key written as a concatenation or a constant member', async (t) => {
-  // protects: T-446 a key that the job folds to a string names the body property and the query parameter
-  const root = project(t, [
-    "  @Post() create(@Body('pay' + 'ment') payment: TPayment): void {}",
-    '  @Get() list(@Query(KEYS.filter) filter: TFilter): void {}',
-  ].join('\n'), '3.2.0', "const KEYS = { filter: 'filter' } as const;\n");
-  const document = await generatedDocument(root);
-  assert.deepEqual(Object.keys(bodySchema(document, '/a').properties ?? {}), ['payment']);
-  assert.deepEqual((operationOf(document, '/a', 'get').parameters ?? []).map(parameter => parameter.name), ['filter']);
-});
-
 for (const openapiVersion of ['3.2.0', '3.1.2']) {
   test(`a one-field model @Body and @Query reach the OpenAPI ${openapiVersion} document`, async (t) => {
-    // protects: R-13 T-323 T-442 T-445 the one-field model parameter, or array of models (readonly too, a whole body, a model field), the interceptor converts is described by the controllers job
+    // protects: R-13 T-323 T-442 T-445 T-446 the one-field model parameter, or array of models (readonly too, a whole body, a model field), the interceptor converts is described by the controllers job; a key that the job folds to a string (a concatenation, a constant member) names the body property and the query parameter
     const root = project(t, [
       "  @Post() create(@Body('payment') payment: TPayment): void {}",
       "  @Post('batch') createBatch(@Body('items') items: TPayment[]): void {}",
@@ -79,7 +71,10 @@ for (const openapiVersion of ['3.2.0', '3.1.2']) {
       "  @Post('whole-readonly-generic') createWholeReadonlyGeneric(@Body() items: ReadonlyArray<TPayment>): void {}",
       "  @Post('order') createOrder(@Body('order') order: TOrder): void {}",
       "  @Get() list(@Query('filter') filter: TFilter): void {}",
-    ].join('\n'), openapiVersion);
+      // A key that the job folds to a string names the body property and the query parameter.
+      "  @Post('folded') folded(@Body('pay' + 'ment') payment: TPayment): void {}",
+      "  @Get('folded') foldedList(@Query(KEYS.filter) filter: TFilter): void {}",
+    ].join('\n'), openapiVersion, "const KEYS = { filter: 'filter' } as const;\n");
     const document = await generatedDocument(root);
     const payment = { type: 'object', properties: { payment: TPAYMENT }, required: ['payment'] };
     assert.deepEqual(bodySchema(document, '/a'), payment);
@@ -100,6 +95,9 @@ for (const openapiVersion of ['3.2.0', '3.1.2']) {
     assert.deepEqual(['mutable', 'readonly', 'readonlyGeneric'].map(name => propertySchema(order, name)), [whole, whole, whole]);
 
     assert.deepEqual(parameterOf(document, '/a', 'get'), { name: 'filter', in: 'query', required: true, style: 'deepObject', explode: true, schema: TFILTER });
+
+    assert.deepEqual(Object.keys(bodySchema(document, '/a/folded').properties ?? {}), ['payment']);
+    assert.deepEqual((operationOf(document, '/a/folded', 'get').parameters ?? []).map(parameter => parameter.name), ['filter']);
   });
 }
 
@@ -180,12 +178,18 @@ test('the controllers job stops only what the OpenAPI format cannot describe in 
     ["  @Get() a(@Query() whole: TFilter, @Query('filter') filter: TFilter): void {}", 'NEST1107', /sends a whole @Query\(\) object as one querystring parameter, which cannot be combined with another @Query\(\) object or with named query parameters/],
     ["  @Get() a(@Query('filter') filter: TFilter, @Query() whole: TFilter): void {}", 'NEST1107', /cannot be combined with another @Query\(\) object or with named query parameters/],
   ];
+  // One project, whose controller each case rewrites: the refusal is the controllers job's, so the job runs, not the pipeline around it.
+  const root = project(t, '');
+  const refused = (methods: string, openapiVersion: '3.2.0' | '3.1.2'): Promise<unknown> => {
+    fs.writeFileSync(path.join(root, 'src/a.controller.ts'), controllerSource(methods));
+    return generate({ root, output: path.join(root, 'openapi.json'), openapiVersion, info: { title: 'T', version: '1' }, profile: { validation: false } });
+  };
   for (const [methods, code, message] of cases) {
-    await assert.rejects(runPipeline(path.join(project(t, methods, '3.2.0'), 'golem.yaml')), refusedWith(code, message), methods);
+    await assert.rejects(refused(methods, '3.2.0'), refusedWith(code, message), methods);
   }
   // A named model whose name a flat parameter of the whole query also uses cannot share the one (name, in) key of the 3.1 document.
   await assert.rejects(
-    runPipeline(path.join(project(t, "  @Get() a(@Query() whole: TFilter, @Query('limit') limit: TFilter): void {}", '3.1.2'), 'golem.yaml')),
+    refused("  @Get() a(@Query() whole: TFilter, @Query('limit') limit: TFilter): void {}", '3.1.2'),
     refusedWith('NEST1312', /identifies a parameter by its name and location/),
   );
 });
