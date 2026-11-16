@@ -6,7 +6,6 @@ import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 import * as ts from '@exprtlabs/golem/internal/ts';
 import { declarationOutputOf, flagsAsConfigOptions } from '#golem/typescript-config';
-import { resolveTypeScript } from '#golem/typescript-version';
 import { createFixtureProject } from './fixture-project.js';
 import { TSC } from './support/build-project.js';
 
@@ -111,10 +110,25 @@ for (const [name, shared, printsLike] of [
   });
 }
 
-// The TypeScript 6 backend refuses a configuration with a syntax error at `openProgram` (`assertConfigParsed`), with or without references.
-const skipOnTypeScript6 = resolveTypeScript(process.env.GOLEM_TYPESCRIPT_ROOT ?? process.cwd()).major === 6 && 'TypeScript 6 throws on a syntax error of the tsconfig, so it prints none';
+/** A row: its name and the text of the user's tsconfig, and of the configuration it extends, which holds the syntax error (an unquoted key, TS1327). */
+for (const [name, configText, baseText] of [
+  ['the tsconfig itself', `{ compilerOptions: ${JSON.stringify({ ...COMPILER, noEmit: true })}, "include": ["src"] }\n`, undefined],
+  ['a configuration it extends', JSON.stringify({ extends: './base.json', include: ['src'] }), `{ compilerOptions: ${JSON.stringify({ ...COMPILER, noEmit: true })} }\n`],
+] as const) {
+  test(`a syntax error in ${name} prints as tsc prints it`, t => {
+    // protects: T-1025 a syntax error in the tsconfig or in a configuration it extends is a diagnostic of the program on both lanes, never a throw
+    const { root, config } = project(t, { 'src/a.ts': 'export const a = 1;\n' });
+    fs.writeFileSync(config, configText);
+    if (baseText !== undefined) fs.writeFileSync(path.join(root, 'base.json'), baseText);
+    using session = new ts.ProgramSession({ cwd: root });
+    using program = session.openProgram({ root, sources: [path.join(root, 'src/a.ts')], configFile: config });
+    const printed = ts.formatDiagnostics(ts.getTscDiagnostics(program), host(root));
+    assert.match(printed, /^(?:tsconfig|base)\.json\(1,\d+\): error TS1327: /);
+    assert.equal(printed, tsc(root, ['--pretty', 'false']));
+  });
+}
 
-test('a syntax error in the tsconfig of a project with references prints as tsc prints it', { skip: skipOnTypeScript6 }, t => {
+test('a syntax error in the tsconfig of a project with references prints as tsc prints it', t => {
   // protects: T-1018 the synthetic program of a project with references reports the configuration's own syntax errors (TS1327 for an unquoted key)
   const { root, config } = project(t, { 'src/a.ts': 'export const a = 1;\n', 'shared/src/x.ts': 'export const x = 1;\n' });
   fs.writeFileSync(path.join(root, 'shared/tsconfig.json'), JSON.stringify(SHARED));

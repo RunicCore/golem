@@ -171,7 +171,7 @@ interface ParsedConfigHost {
 
 // Names that this module implements itself; every other seam name is the classic API's own member.
 type Implemented = 'ProgramSession' | 'CheckFlags' | 'sys' | 'createCompilerHost' | 'createProgramFromSources' | 'createScanner'
-  | 'getPreEmitDiagnostics' | 'getTscDiagnostics' | 'typeParameterDefault' | 'typeReferenceTarget';
+  | 'getPreEmitDiagnostics' | 'getTscDiagnostics' | 'getConfigDiagnostics' | 'typeParameterDefault' | 'typeReferenceTarget';
 
 interface ClassicTypeScript extends Omit<Golem.TypeScriptBackend, Implemented | 'ObjectFlags' | 'SignatureKind'> {
   readonly SignatureKind: Golem.TypeScriptBackend['SignatureKind'] & { readonly Construct: Golem.SignatureKind };
@@ -188,6 +188,7 @@ interface ClassicTypeScript extends Omit<Golem.TypeScriptBackend, Implemented | 
     readonly options: Golem.CompilerOptions;
     readonly host: ClassicHost;
     readonly projectReferences?: readonly ClassicProjectReference[];
+    readonly configFileParsingDiagnostics?: readonly ClassicDiagnostic[];
     readonly oldProgram?: ClassicProgram;
   }): ClassicProgram;
   createSourceFile(filename: string, text: string, languageVersionOrOptions: LanguageVersionOrOptions, setParentNodes?: boolean): Golem.SourceFile;
@@ -775,6 +776,12 @@ export function getTscDiagnostics(program: Golem.Program, emitDiagnostics: reado
   return classic.sortAndDeduplicateDiagnostics([...found, ...emitDiagnostics as readonly ClassicDiagnostic[]]).map(withText);
 }
 
+/** The diagnostics of the configuration the program was opened on, sorted without repeats. */
+export function getConfigDiagnostics(program: Golem.Program): readonly Golem.Diagnostic[] {
+  if (!(program instanceof CompatProgram)) throw new TypeError('getConfigDiagnostics needs a program opened by the TypeScript 6 backend.');
+  return classic.sortAndDeduplicateDiagnostics(program.program.getConfigFileParsingDiagnostics()).map(withText);
+}
+
 // Object.create returns `any`; the result is the classic diagnostic with `text` added.
 function withText(diagnostic: ClassicDiagnostic): Golem.Diagnostic & ClassicDiagnostic {
   const { file, start } = diagnostic;
@@ -886,7 +893,8 @@ export class ProgramSession implements Disposable {
     this.observe(options.onInput, request.hidden);
     const resolutionsChanged = this.resolutionsChanged();
     for (const filename of [...this.observed]) this.report(filename);
-    const parsed = this.parseConfig(request.configPath, request.overlays);
+    // The errors of the configuration, a syntax error or an unknown option among them, are diagnostics of the program, as `tsc` reports them.
+    const { parsed, errors } = this.readConfig(request.configPath, request.overlays);
     const compilerOptions = locatedInUserConfig(parsed, request);
     const overlayPaths = [...request.overlays.keys()].sort().join('\0');
     const reusable = this.latest !== undefined && this.latest.overlayPaths === overlayPaths && !resolutionsChanged;
@@ -894,6 +902,7 @@ export class ProgramSession implements Disposable {
       rootNames: [...new Set([...parsed.fileNames.map(canonical), ...request.rootNames])],
       options: compilerOptions,
       host: this.host(compilerOptions, request.overlays),
+      configFileParsingDiagnostics: errors,
       ...(parsed.projectReferences.length === 0 ? {} : { projectReferences: parsed.projectReferences }),
       ...(reusable && this.latest ? { oldProgram: this.latest.program } : {}),
     });

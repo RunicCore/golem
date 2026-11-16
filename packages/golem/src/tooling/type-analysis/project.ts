@@ -1,10 +1,10 @@
 
-import { existsSync, readFileSync, readlinkSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, parse, relative, resolve, sep } from 'node:path';
 import * as ts from '../typescript-ns.js';
 import { assertNotSolutionTsconfig } from '../typescript-config.js';
 import { packageName, readManifest } from './package-specifier.js';
-import { displayPath, GolemDiagnosticSeverity, canonicalPath, compareText, discoverSources, hasErrorCode, isInsideDirectory, parseYamlFile, sessionKey, suffixPattern, YamlFileError, type GeneratorSession, type GolemDiagnostic, type InputObserver } from '../generator-core.js';
+import { displayPath, GolemDiagnosticSeverity, canonicalPath, compareText, discoverSources, hasErrorCode, isInsideDirectory, parseYamlFile, realPathThroughLinks, sessionKey, suffixPattern, YamlFileError, type GeneratorSession, type GolemDiagnostic, type InputObserver } from '../generator-core.js';
 import { canonicalFilename, inNodeModules, isRelativeSpecifier, portableRelativeFilename, relativeSpecifierOf } from './path-identity.js';
 import { ROOT_KEYS } from '../editor-schema.js';
 
@@ -676,28 +676,19 @@ export function isUnderOutputs(outputs: readonly string[], filename: string): bo
   return outputs.some((output) => output === target || isInsideDirectory(output, target));
 }
 
-/** What the symbolic link `link` points at, as written; undefined when `link` is no link or does not exist. */
-function linkTarget(link: string): string | undefined {
-  try { return readlinkSync(link); }
-  catch (error) {
-    if (hasErrorCode(error, 'ENOENT') || hasErrorCode(error, 'ENOTDIR') || hasErrorCode(error, 'EINVAL')) return undefined;
-    throw error;
-  }
-}
-
 /**
- * Whether the package that the bare import `specifier` of `file` names is a link, in a `node_modules` folder above `file`, to a place
- * under one of `outputs`. The link may lead to a folder that the job has not written yet, so its target is read from the link and not
- * resolved on disk.
+ * What the `node_modules/<package>` of every folder above `file` is, for the package that the bare import `specifier` names: the path
+ * of the link and where it really leads. Where it leads may not exist yet, since the job that writes it has not run.
  */
-function packageLinkedIntoOutputs(outputs: readonly string[], file: string, specifier: string): boolean {
-  if (specifier.startsWith('#')) return false;
+function packageLinks(file: string, specifier: string): { link: string; real: string }[] {
+  if (specifier.startsWith('#')) return [];
   const name = packageName(specifier);
+  const links: { link: string; real: string }[] = [];
   for (let directory = dirname(file); ; directory = dirname(directory)) {
     const link = join(directory, 'node_modules', name);
-    const target = linkTarget(link);
-    if (target !== undefined && isUnderOutputs(outputs, resolve(canonicalPath(dirname(link)), target))) return true;
-    if (dirname(directory) === directory) return false;
+    const real = realPathThroughLinks(link);
+    if (real !== undefined && real !== link) links.push({ link, real });
+    if (dirname(directory) === directory) return links;
   }
 }
 
@@ -751,9 +742,12 @@ export function filesReadingOutputs(program: ts.Program, outputs: readonly strin
       if (!isRelativeSpecifier(specifier.text)) {
         const resolved = checker.resolveImport(specifier)?.resolvedFileName;
         if (resolved === undefined) {
-          // Before the job has written the file the import resolves to none: a lookup that counts the TypeScript files it would write finds it,
-          // and so does a package that is a link into an output.
-          if (checker.resolveImport(specifier, { files: new Set(), folders: outputs }) !== undefined || packageLinkedIntoOutputs(outputs, file.fileName, specifier.text)) excluded.add(file.fileName);
+          // Before the job has written the file the import resolves to none: a lookup that counts the TypeScript files it would write finds it.
+          // The lookup also counts each output as the link of a package spells it, when the link leads to a folder above that output, so the
+          // package's own `exports` decide whether the import reaches it. A package that is a link into an output reads the output whatever it imports.
+          const links = packageLinks(file.fileName, specifier.text);
+          const folders = [...outputs, ...links.flatMap(({ link, real }) => outputs.filter((output) => isInsideDirectory(real, output)).map((output) => join(link, relative(real, output))))];
+          if (links.some(({ real }) => outputs.some((output) => isInsideDirectory(output, real))) || checker.resolveImport(specifier, { files: new Set(), folders }) !== undefined) excluded.add(file.fileName);
         } else if (names.has(resolved.replace(/\\/g, '/'))) {
           // A file of the program under an output is excluded above, and the importer follows by the closure below.
           imported.push(resolved);

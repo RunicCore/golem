@@ -5,7 +5,9 @@ import path from 'node:path';
 /** The names of the two contracts that core owns, so a plan entry declares them without importing the rest of golem. */
 export { CODECS_HOST, MODEL_BOUNDARY } from './job-facts.js';
 
-export { isRecord } from '../record.js';
+import { isRecord } from '../record.js';
+
+export { isRecord };
 
 /** `value` as a string with text in it; any other value throws a `TypeError` that names `label`. */
 export function nonempty(value: unknown, label: string): string {
@@ -18,20 +20,50 @@ export function displayPath(filename: string): string {
   return path.isAbsolute(filename) ? path.relative(process.cwd(), filename) || '.' : filename;
 }
 
-/**
- * The real path of `filename`: each link of its existing prefix is followed, and the part that does not exist yet stays
- * as written. A file reached through a folder link has the same real path as the file itself.
- */
-export function canonicalPath(filename: string): string {
-  let ancestor = path.resolve(filename);
-  const missing: string[] = [];
-  while (!fs.existsSync(ancestor)) {
-    missing.unshift(path.basename(ancestor));
-    const parent = path.dirname(ancestor);
-    if (parent === ancestor) break;
-    ancestor = parent;
+/** Whether `error` is a system error with the code `code`. */
+export function hasErrorCode(error: unknown, code: string): boolean {
+  return isRecord(error) && error.code === code;
+}
+
+/** What the symbolic link `link` points at, as written; undefined when `link` is no link or does not exist. */
+function linkTarget(link: string): string | undefined {
+  try { return fs.readlinkSync(link); }
+  catch (error) {
+    if (hasErrorCode(error, 'ENOENT') || hasErrorCode(error, 'ENOTDIR') || hasErrorCode(error, 'EINVAL')) return undefined;
+    throw error;
   }
-  return path.join(fs.realpathSync.native(ancestor), ...missing);
+}
+
+/** `filename` resolved through every link on the way, also a link that leads nowhere yet; `followed` holds the links met so far, so a loop of links ends. */
+function followLinks(filename: string, followed: Set<string>): string | undefined {
+  try { return fs.realpathSync.native(filename); }
+  catch (error) {
+    if (hasErrorCode(error, 'ELOOP')) return undefined;
+    if (!hasErrorCode(error, 'ENOENT') && !hasErrorCode(error, 'ENOTDIR')) throw error;
+  }
+  const real = followLinks(path.dirname(filename), followed);
+  if (real === undefined) return undefined;
+  const link = path.join(real, path.basename(filename));
+  const target = linkTarget(link);
+  if (target === undefined) return link;
+  if (followed.has(link)) return undefined;
+  followed.add(link);
+  return followLinks(path.resolve(real, target), followed);
+}
+
+/**
+ * The real path of `filename`: each link on the way is followed, also a link that leads nowhere yet, and the part that does not exist
+ * stays as written. A file reached through a folder link has the same real path as the file itself. undefined when links loop.
+ */
+export function realPathThroughLinks(filename: string): string | undefined {
+  return followLinks(path.resolve(filename), new Set());
+}
+
+/** The real path of `filename` (see `realPathThroughLinks`); links that loop stop with a plain error, since no real path exists. */
+export function canonicalPath(filename: string): string {
+  const real = realPathThroughLinks(filename);
+  if (real === undefined) throw new Error(`The links on the way to ${displayPath(filename)} lead back to themselves, so it has no real path.`);
+  return real;
 }
 
 /** Whether `filename` is `directory` or lies inside it, by path alone: the path from `directory` is not `..`, does not start with `..` and the separator, and is not absolute. */

@@ -983,8 +983,17 @@ export function getTscDiagnostics(program: Program, emitDiagnostics: readonly Sy
     semantic: () => program.getSemanticDiagnostics(),
     declaration: () => program.getDeclarationDiagnostics(),
   }, program.getCompilerOptions());
+  return sortedWithoutRepeats([...found, ...emitDiagnostics]);
+}
+
+/** The diagnostics of the configuration the program was opened on, sorted without repeats. */
+export function getConfigDiagnostics(program: Program): readonly SyncDiagnostic[] {
+  return sortedWithoutRepeats(program.getConfigFileParsingDiagnostics());
+}
+
+function sortedWithoutRepeats(diagnostics: readonly SyncDiagnostic[]): readonly SyncDiagnostic[] {
   const compare = (left: SyncDiagnostic, right: SyncDiagnostic): number => compareDiagnostics(left, right, hostCaseSensitivity);
-  const sorted = [...found, ...emitDiagnostics].sort(compare);
+  const sorted = [...diagnostics].sort(compare);
   return sorted.filter((diagnostic, index) => {
     const previous = sorted[index - 1];
     return previous === undefined || compare(previous, diagnostic) !== 0;
@@ -1204,7 +1213,9 @@ export class ProgramSession implements Disposable {
     const parsed = this.withCompiler('parse', (api) => {
       this.observe(onInput, new Set());
       const result = api.parseConfigFile(configPath);
-      assertConfigParsed(configPath, result.errors);
+      // The parse leaves out a syntax error of the file itself (the program's configuration diagnostics hold it), so it is read from the text.
+      const { error } = api.readConfigFile(configPath);
+      assertConfigParsed(configPath, [...error === undefined ? [] : [error], ...result.errors]);
       return result;
     });
     return projectOf(parsed);
@@ -1464,8 +1475,8 @@ export class ProgramSession implements Disposable {
    * own and lists exactly what the TypeScript 6 backend gives the compiler: the files the project's configuration parses to,
    * plus the requested roots. `include` is emptied so the list is the whole project. A program whose roots are all files of the
    * user's own configuration opens the configuration itself, so its option errors keep the file and place that `tsc` gives. Every program parses
-   * the configuration here, so a configuration with an option error fails as on the TypeScript 6 backend. A syntax error does not fail
-   * here: the compiler reports it as a configuration diagnostic of the program, and the TypeScript 6 backend throws.
+   * the configuration here, and no error of it fails here: the compiler reports a syntax error, in the configuration or in one that it
+   * extends, as a configuration diagnostic of the program, and the TypeScript 6 backend reports the errors of its own parse the same way.
    */
   private withRequestedRoots(api: API, base: SnapshotRequest, onInput: ((filename: string) => void) | undefined): SnapshotRequest {
     const previous = this.overlays;
@@ -1475,7 +1486,6 @@ export class ProgramSession implements Disposable {
     let closure: { readonly configFile: string; readonly parsed: ReturnType<API['parseConfigFile']> | undefined }[];
     try {
       const result = api.parseConfigFile(base.configPath);
-      assertConfigParsed(base.configPath, result.errors);
       parsed = result;
       closure = referenceClosure(result.projectReferences ?? [], (configFile) => this.readReferenced(api, configFile));
     } finally {
