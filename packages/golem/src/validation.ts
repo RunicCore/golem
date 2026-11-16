@@ -239,7 +239,12 @@ function hasIssueAtOrBelow(issues: readonly Issue[], path: IssuePath): boolean {
 
 function evaluateInstanceRules(root: object, mode: ValidationMode, generated: readonly Issue[]): ValidationStep<readonly Issue[]> {
   const memo = new WeakMap<object, readonly LocalRuleIssue[]>();
-  const active = new Set<object>();
+  // The objects on the current path, each with its depth. A path that meets one of them is a cycle and stops there.
+  const active = new Map<object, number>();
+  // Objects whose walk found no model and met no cycle that leads above them: another path to one adds nothing, whatever the path or the owners.
+  const modelFree = new WeakSet<object>();
+  // The shallowest depth that the walk of the current object depends on: -1 for a model, the depth of the object that a cycle meets.
+  let dependsOn = Infinity;
   const issues: Issue[] = [];
   const evaluateLocal = (model: object, path: IssuePath): ValidationStep<readonly LocalRuleIssue[]> => {
     const existing = memo.get(model);
@@ -302,11 +307,24 @@ function evaluateInstanceRules(root: object, mode: ValidationMode, generated: re
     return evaluateRules(0, 0);
   };
   const visit = (value: unknown, path: IssuePath, ancestors: readonly { model: object; offset: number }[]): ValidationStep<void> => {
-    if (value === null || typeof value !== 'object' || active.has(value) || (mode === 'first' && issues.length)) return;
-    active.add(value);
-    const release = (): void => { active.delete(value); };
+    if (value === null || typeof value !== 'object' || modelFree.has(value) || (mode === 'first' && issues.length)) return;
+    const cycleDepth = active.get(value);
+    if (cycleDepth !== undefined) {
+      dependsOn = Math.min(dependsOn, cycleDepth);
+      return;
+    }
+    const depth = active.size;
+    const outerDependsOn = dependsOn;
+    dependsOn = Infinity;
+    active.set(value, depth);
+    const release = (): void => {
+      active.delete(value);
+      if (dependsOn >= depth) modelFree.add(value);
+      dependsOn = Math.min(outerDependsOn, dependsOn);
+    };
     try {
       const definition = findGeneratedModelDefinition(value);
+      if (definition) dependsOn = -1;
       const owners = definition ? [...ancestors, { model: value, offset: path.length }] : ancestors;
       const visitFields = (container: object, fields: readonly (string | number)[], index: number): ValidationStep<void> => {
         for (let fieldIndex = index; fieldIndex < fields.length; fieldIndex++) {
