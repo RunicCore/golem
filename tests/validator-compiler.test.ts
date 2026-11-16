@@ -1184,15 +1184,28 @@ test('const and enum accept a value with an extra undefined-valued key', async (
   await assertIssues({ enum: [{ a: 1 }, 2] }, { a: 1, b: undefined }, []);
 });
 
-test('compile with typed emits the same validator with its issue type', async (t) => {
-  // protects: value the typed validator reports the same issues as the untyped one and returns SchemaIssue[]
-  const { byRoot } = await compileValidatorModule({ roots: { root: { type: 'string' } }, typed: true });
+// The scalar roots whose emitted headers, wrappers and constants the checker reads under `strict`.
+const SCALAR_CORPUS = {
+  root: { type: 'string' },
+  limited: { type: 'string', minLength: 2, maxLength: 9, pattern: '^[a-z]+$', format: 'email' },
+  ranged: { type: 'number', minimum: 0, exclusiveMaximum: 10, multipleOf: 2 },
+  whole: { type: 'integer', maximum: 100 },
+  choice: { enum: ['a', 2, null] },
+  fixed: { const: 'fixed' },
+  flag: { type: 'boolean' },
+  nothing: { type: 'null' },
+  never: false,
+};
+
+test('compile with ts emits the same validator with its types, and scalar roots pass tsc under strict', async (t) => {
+  // protects: value the ts validator reports the same issues as the js one, and the scalar corpus compiles with noImplicitAny on
+  const { byRoot } = await compileValidatorModule({ roots: { root: { type: 'string' } }, language: 'ts' });
   assert.deepEqual(byRoot.root('a', true), []);
   assert.deepEqual(byRoot.root(5, true), [{ path: [], code: 'type', expected: ['string'] }]);
-  // A type is erased before the module runs, so the compiler proves the annotation: the validator returns `readonly SchemaIssue[]`, not `any`.
+  // A type is erased before the module runs, so the compiler proves the annotations: the validator returns `readonly SchemaIssue[]`, not `any`.
   const project = createFixtureProject(t, 'golem-typed-validator-');
   linkProjectPackages(project, { '@exprtlabs/golem': path.join(workspace, 'packages/golem') });
-  const { source } = compile({ roots: new Map([['root', { type: 'string' }]]) }, { unknownFormats: 'warn', typed: true });
+  const { source } = compile({ roots: new Map(Object.entries(SCALAR_CORPUS)) }, { unknownFormats: 'warn', language: 'ts', fastPath: 'all' });
   writeFileSync(path.join(project, 'validators.ts'), source);
   writeFileSync(path.join(project, 'probe.ts'), [
     "import type { SchemaIssue } from '@exprtlabs/golem/validation';",
@@ -1202,7 +1215,7 @@ test('compile with typed emits the same validator with its issue type', async (t
     "export const notNumber: number = validate_root('a', true)[0];",
     '',
   ].join('\n'));
-  writeFileSync(path.join(project, 'tsconfig.json'), JSON.stringify({ compilerOptions: { strict: true, noImplicitAny: false, target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', skipLibCheck: true, noEmit: true }, include: ['*.ts'] }));
+  writeFileSync(path.join(project, 'tsconfig.json'), JSON.stringify({ compilerOptions: { strict: true, target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', skipLibCheck: true, noEmit: true }, include: ['*.ts'] }));
   await command(project, process.execPath, [TSC, '-p', 'tsconfig.json']);
 });
 

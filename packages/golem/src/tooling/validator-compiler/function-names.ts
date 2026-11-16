@@ -1,5 +1,7 @@
 import { code, identifier as identifierCode, join, nameSlot, type Code, type NameSlot } from '../code.js';
+import { rtType } from '../rt.js';
 import type { IrFunction } from './ir.js';
+import type { Language } from './options.js';
 
 // Parameters of every generated function: the value, the path stack, the issue list and the all-errors flag,
 // then, for a function that reaches a check the sanity level skips, the sanity flag, then, for a function that receives
@@ -17,8 +19,53 @@ export const INHERITED = identifierCode('e');
 // The record a function keeps or fills, and what it holds.
 export const EVALUATION = identifierCode('r');
 
-export function functionParameters(fn: IrFunction): Code {
-  return join([VALUE, PATH, ISSUES, ALL, ...(fn.sanity ? [SANITY] : []), ...(fn.receives ? [INHERITED] : [])], COMMA);
+/** What the generated file writes after a parameter, after a header, and after a constant besides its code: types in TypeScript, nothing in JavaScript. */
+export interface Notation {
+  readonly value: Code;
+  readonly path: Code;
+  /** The issue list parameter, and the issue list a wrapper makes. */
+  readonly issues: Code;
+  readonly all: Code;
+  readonly sanity: Code;
+  readonly record: Code;
+  /** The result of a check that answers true or false: a function, and its fast check. */
+  readonly verdict: Code;
+  /** The result of an exported wrapper. */
+  readonly wrapperResult: Code;
+  /** The type of an exported fast check that is another function's name. */
+  readonly fastCheck: Code;
+  /** The type of a constant that holds a list of JSON values. */
+  readonly literals: Code;
+}
+
+const NONE = code``;
+
+/** The one table of the two languages: the generated text names no type outside it, so a type of the header is changed in one place. */
+export const NOTATIONS: Readonly<Record<Language, Notation>> = {
+  ts: {
+    value: code`: unknown`,
+    path: code`: (string | number)[]`,
+    issues: code`: ${rtType.validation.SchemaIssue}[]`,
+    all: code`: boolean`,
+    sanity: code`?: boolean`,
+    record: code`?: ${rtType.validation.Evaluation}`,
+    verdict: code`: boolean`,
+    wrapperResult: code`: readonly ${rtType.validation.SchemaIssue}[]`,
+    fastCheck: code`: (value: unknown) => boolean`,
+    literals: code`: readonly ${rtType.validation.JsonValue}[]`,
+  },
+  js: { value: NONE, path: NONE, issues: NONE, all: NONE, sanity: NONE, record: NONE, verdict: NONE, wrapperResult: NONE, fastCheck: NONE, literals: NONE },
+};
+
+export function functionParameters(fn: IrFunction, notation: Notation): Code {
+  return join([
+    code`${VALUE}${notation.value}`,
+    code`${PATH}${notation.path}`,
+    code`${ISSUES}${notation.issues}`,
+    code`${ALL}${notation.all}`,
+    ...(fn.sanity ? [code`${SANITY}${notation.sanity}`] : []),
+    ...(fn.receives ? [code`${INHERITED}${notation.record}`] : []),
+  ], COMMA);
 }
 
 /**

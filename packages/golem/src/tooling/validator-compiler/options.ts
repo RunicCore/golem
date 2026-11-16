@@ -19,6 +19,9 @@ export interface SchemaPlace {
   readonly path?: string;
 }
 
+/** The language of a generated module. */
+export type Language = 'ts' | 'js';
+
 export interface CompileOptions {
   /** What a format that golem does not implement does: warn and skip the check, or fail the compile. */
   readonly unknownFormats: 'warn' | 'error';
@@ -28,8 +31,8 @@ export interface CompileOptions {
   readonly documentName?: string;
   /** Maps a schema resource and a JSON Pointer inside it to the place the user knows; without one, a diagnostic names the resource. */
   readonly locate?: (resource: string, pointer: string) => SchemaPlace | undefined;
-  /** Emit TypeScript: each exported validator carries its type. */
-  readonly typed?: boolean;
+  /** `ts` emits TypeScript, with a type on each header, each exported validator and each constant that needs one; `js` (the default) emits JavaScript. */
+  readonly language?: Language;
   /**
    * Also export `is_X(value)` beside `validate_X` for each root that has a fast check, or for each root of a set that
    * names it (`'all'` or a set of root names): true exactly when `validate_X` reports no issue, with no issue or path built.

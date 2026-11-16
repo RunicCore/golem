@@ -15,7 +15,7 @@ const objectTest = JSON_TYPES.object.code;
 
 /** The model class of `value` among the codec ids `among`, which the module keeps as one frozen list. */
 function selectedModelCall(state: ModuleState, value: Code, among: readonly string[]): Code {
-  return code`${localName('selectedModel')}(${value}, ${state.constant('models', code`Object.freeze(${literalCode(among)})`, JSON.stringify(among))})`;
+  return code`${localName('selectedModel')}(${value}, ${state.constant('models', code``, code`Object.freeze(${literalCode(among)})`, JSON.stringify(among))})`;
 }
 
 /** A leaf check: the expression that is true when the value fails it, and the issue it then reports. */
@@ -256,7 +256,7 @@ export class FunctionWriter {
       case 'type':
         return this.leaf({ fails: code`!(${join(check.names.map(name => JSON_TYPES[name].code(value)), code` || `)})`, issue: code`code: 'type', expected: ${literalCode(check.names)}` });
       case 'literal': {
-        const values = (): Code => this.state.constant('lit', code`Object.freeze(/*#__PURE__*/ JSON.parse(${literalCode(JSON.stringify(check.values))}))`, JSON.stringify(check.values));
+        const values = (): Code => this.state.constant('lit', this.state.notation.literals, code`Object.freeze(/*#__PURE__*/ JSON.parse(${literalCode(JSON.stringify(check.values))}))`, JSON.stringify(check.values));
         const equal = (item: Code): Code => code`${runtime.jsonEqual}(${value}, ${item})`;
         return this.leaf({
           fails: () => (check.values.length === 1 ? code`!${equal(code`${values()}[0]`)}` : code`!${values()}.some(item => ${equal(code`item`)})`),
@@ -270,7 +270,7 @@ export class FunctionWriter {
         return this.leaf({
           fails: () => code`!${runtime.checkFormat}(${literalCode(check.format)}, ${value})`,
           // The format's test, looked up once when the module loads.
-          fast: () => code`!${this.state.constant('format', code`${runtime.formatTest}(${literalCode(check.format)})`, check.format)}(${value})`,
+          fast: () => code`!${this.state.constant('format', code``, code`${runtime.formatTest}(${literalCode(check.format)})`, check.format)}(${value})`,
           issue: code`code: 'format', format: ${literalCode(check.format)}`,
           ...(keepsFormat(check.format) ? {} : { skip: 'costly' as const }),
         });
@@ -316,7 +316,7 @@ export class FunctionWriter {
     const issue = code`code: 'instance', model: ${literalCode(check.name)}`;
     if (check.from === undefined) {
       const valid = check.valid === undefined ? code`` : code`, ${runtimeFunctionCode(check.valid)}`;
-      const test = this.state.constant('global', code`${runtime.globalInstanceTest}(${literalCode(check.path)}${valid})`, [...check.path, check.valid?.id ?? ''].join('\u0000'));
+      const test = this.state.constant('global', code``, code`${runtime.globalInstanceTest}(${literalCode(check.path)}${valid})`, [...check.path, check.valid?.id ?? ''].join('\u0000'));
       return this.leaf({ fails: code`!${test}(${value})`, issue });
     }
     const imported = join([this.state.validationFunction(check.from), ...check.path.map(identifierCode)], code`.`);
@@ -582,7 +582,7 @@ export class FunctionWriter {
   /** The keys that neither `properties` nor `patternProperties` name: `additionalProperties`. */
   private additionalKeys({ check, value, patterns }: ObjectPass, additional: NonNullable<IrObject['additional']>, list: KeyList): void {
     const key = this.fresh('key');
-    const known = check.properties.length > 0 ? this.state.constant('known', code`new Set(${literalCode(check.properties.map(property => property.key))})`, JSON.stringify([...new Set(check.properties.map(property => property.key))].sort())) : undefined;
+    const known = check.properties.length > 0 ? this.state.constant('known', code``, code`new Set(${literalCode(check.properties.map(property => property.key))})`, JSON.stringify([...new Set(check.properties.map(property => property.key))].sort())) : undefined;
     const skipped = [...(known === undefined ? [] : [code`${known}.has(${key})`]), ...patterns.map(({ expression }) => code`${expression}.test(${key})`)];
     const member = this.fresh('member');
     this.open(code`for (const ${key} of ${list.keys})`);
@@ -864,14 +864,14 @@ export class FunctionWriter {
     }
     this.leaf({
       fails: code`${selected} < 0`,
-      issue: () => code`code: 'literal', expected: ${this.state.constant('lit', code`Object.freeze(/*#__PURE__*/ JSON.parse(${literalCode(JSON.stringify(discriminator.tags.flat()))}))`, JSON.stringify(discriminator.tags.flat()))}`,
+      issue: () => code`code: 'literal', expected: ${this.state.constant('lit', this.state.notation.literals, code`Object.freeze(/*#__PURE__*/ JSON.parse(${literalCode(JSON.stringify(discriminator.tags.flat()))}))`, JSON.stringify(discriminator.tags.flat()))}`,
       path: code`[...${PATH}, ${property}]`,
     });
   }
 
   /** The module constant that holds the tag lists of `discriminator`. */
   private tagLists(discriminator: IrDiscriminator): Code {
-    return this.state.constant('tags', code`Object.freeze(/*#__PURE__*/ JSON.parse(${literalCode(JSON.stringify(discriminator.tags))}))`, JSON.stringify(discriminator.tags));
+    return this.state.constant('tags', code``, code`Object.freeze(/*#__PURE__*/ JSON.parse(${literalCode(JSON.stringify(discriminator.tags))}))`, JSON.stringify(discriminator.tags));
   }
 
   /**

@@ -30,8 +30,8 @@ export interface CompiledValidatorInput {
   readonly modules?: Readonly<Record<string, string>>;
   /** Compiles with `fastPath`, so the module also exports the fast check of each root that has one. */
   readonly fastPath?: boolean;
-  /** Compiles with `typed`, then strips the annotations, so the module runs as the untyped one does. */
-  readonly typed?: boolean;
+  /** Compiles as TypeScript (`ts`), then strips the annotations, so the module runs as the JavaScript one does. */
+  readonly language?: CompileOptions['language'];
   /** The validation level of the compile; `full` by default. */
   readonly level?: CompileOptions['level'];
 }
@@ -65,14 +65,14 @@ export async function compileValidatorModule(input: CompiledValidatorInput): Pro
       resources: new Map(Object.entries(input.resources ?? {})),
       validations: new Map(Object.entries(input.validations ?? {})),
     },
-    { unknownFormats: input.unknownFormats ?? 'warn', specifiers: { values: { 'validation-runtime': runtimeModule } }, ...(input.fastPath ? { fastPath: 'all' as const } : {}), ...(input.typed ? { typed: true } : {}), ...(input.level === undefined ? {} : { level: input.level }) },
+    { unknownFormats: input.unknownFormats ?? 'warn', specifiers: { values: { 'validation-runtime': runtimeModule } }, ...(input.fastPath ? { fastPath: 'all' as const } : {}), ...(input.language === undefined ? {} : { language: input.language }), ...(input.level === undefined ? {} : { level: input.level }) },
   );
   const errors = diagnostics.filter(entry => entry.severity === GolemDiagnosticSeverity.Error);
   if (errors.length > 0) throw new Error(`Compile failed: ${errors.map(entry => `${entry.code} ${entry.message}`).join('; ')}`);
   const directory = mkdtempSync(path.join(tmpdir(), `golem-validators-${loads++}-`));
   try {
     const file = path.join(directory, 'validators.mjs');
-    writeFileSync(file, input.typed ? stripTypes(source) : source);
+    writeFileSync(file, input.language === 'ts' ? stripTypes(source) : source);
     for (const [name, text] of Object.entries(input.modules ?? {})) writeFileSync(path.join(directory, name), text);
     const namespace = await import(pathToFileURL(file).href);
     const loaded: Readonly<Record<string, Validator>> = namespace;
