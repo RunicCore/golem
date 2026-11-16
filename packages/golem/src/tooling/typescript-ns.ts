@@ -83,6 +83,7 @@ export const {
   isIntersectionTypeNode,
   isLiteralTypeNode,
   isMappedTypeNode,
+  isGetAccessorDeclaration,
   isMethodDeclaration,
   isMethodSignature,
   isModuleBlock,

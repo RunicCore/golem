@@ -264,6 +264,11 @@ export interface PropertyDeclaration extends Node {
   readonly name: PropertyName;
   readonly type?: TypeNode;
 }
+export interface GetAccessorDeclaration extends Node {
+  readonly kind: KindOf<'GetAccessor'>;
+  readonly name: PropertyName;
+  readonly type?: TypeNode;
+}
 export interface PropertySignature extends Node {
   readonly kind: KindOf<'PropertySignature'>;
   readonly name: PropertyName;
@@ -869,6 +874,7 @@ export interface TypeScriptBackend {
   isIntersectionTypeNode(node: Node): node is IntersectionTypeNode;
   isLiteralTypeNode(node: Node): node is LiteralTypeNode;
   isMappedTypeNode(node: Node): node is MappedTypeNode;
+  isGetAccessorDeclaration(node: Node): node is GetAccessorDeclaration;
   isMethodDeclaration(node: Node): node is MethodDeclaration;
   isMethodSignature(node: Node): node is MethodSignature;
   isModuleBlock(node: Node): node is ModuleBlock;

@@ -454,28 +454,48 @@ export function declaredPropertyNodes(checker: ts.TypeChecker, property: ts.Symb
   return declarations.flatMap(declaration => (ts.isPropertySignature(declaration) || ts.isPropertyDeclaration(declaration)) && declaration.type ? [declaration.type] : []);
 }
 
-/** Whether a type holds a TValidation or TSerde tag: the tag type itself or a member of an intersection or a union. */
-function carriesFunctionTag(checker: ts.TypeChecker, type: ts.Type): boolean {
-  const name = golemTagName(checker, type.aliasSymbol);
-  return (name !== undefined && TAG_FUNCTION_ROLES.has(name)) || ((type.isUnion() || type.isIntersection()) && type.types.some((member) => carriesFunctionTag(checker, member)));
-}
-
-/** Whether `declaration` shows no type node, and the type that the checker infers for the value (or the return of the function) holds a function tag. */
-function hidesFunctionTag(checker: ts.TypeChecker, declaration: ts.Node): boolean {
-  if ((ts.isVariableDeclaration(declaration) || ts.isPropertyDeclaration(declaration)) && !declaration.type) {
-    return carriesFunctionTag(checker, checker.getTypeAtLocation(declaration.name));
-  }
-  if ((ts.isFunctionDeclaration(declaration) || ts.isMethodDeclaration(declaration)) && !declaration.type) {
-    const signature = checker.getSignatureFromDeclaration(declaration);
-    return signature !== undefined && carriesFunctionTag(checker, checker.getReturnTypeOfSignature(signature));
-  }
-  return false;
+/** Whether only a default library file declares `symbol`: a built-in type holds no tag of the user. */
+export function isDeclaredByDefaultLibrary(symbol: ts.Symbol | undefined, isDefaultLibraryFile: (file: ts.SourceFile) => boolean): boolean {
+  const declarations = symbol?.declarations ?? [];
+  return declarations.length > 0 && declarations.every(declaration => isDefaultLibraryFile(declaration.getSourceFile()));
 }
 
 /**
- * Records every `typeof` of a tag in everything that `node` reaches, through type aliases, interfaces, classes, `typeof` a
- * variable, and the parts of mapped, conditional and indexed types. A default library file holds no tag of the user and stays unread.
- * A `typeof` target or a class member with no type node and a function tag in its inferred type marks the registry `hidden`.
+ * Whether `type` holds a TValidation or TSerde tag: as itself, as a member of a union or an intersection, in a property, in the return
+ * of a call signature, or in the element of an array or a tuple. A built-in type holds none. `seen` reads each type once.
+ */
+function carriesFunctionTag(context: TagAnalysisContext, type: ts.Type, at: ts.Node, seen: Set<ts.Type>): boolean {
+  if (seen.has(type)) return false;
+  seen.add(type);
+  const { checker } = context;
+  const name = golemTagName(checker, type.aliasSymbol);
+  if (name !== undefined && TAG_FUNCTION_ROLES.has(name)) return true;
+  const holds = (inner: ts.Type): boolean => carriesFunctionTag(context, inner, at, seen);
+  if (type.isUnion() || type.isIntersection()) return type.types.some(holds);
+  if ((type.flags & ts.TypeFlags.Object) === 0) return false;
+  if (checker.isArrayType(type) || checker.isTupleType(type)) return checker.getTypeArguments(type).some(holds);
+  if (context.isDefaultLibraryFile && isDeclaredByDefaultLibrary(type.symbol, context.isDefaultLibraryFile)) return false;
+  return checker.getPropertiesOfType(type).some(property => holds(checker.getTypeOfSymbolAtLocation(property, at)))
+    || checker.getSignaturesOfType(type, ts.SignatureKind.Call).some(signature => holds(checker.getReturnTypeOfSignature(signature)));
+}
+
+/** Whether `declaration` is a value whose type the checker infers, because it writes no type node. */
+function infersItsType(declaration: ts.Node): boolean {
+  if (ts.isVariableDeclaration(declaration) || ts.isPropertyDeclaration(declaration) || ts.isFunctionDeclaration(declaration) || ts.isMethodDeclaration(declaration) || ts.isGetAccessorDeclaration(declaration)) {
+    return declaration.type === undefined;
+  }
+  return ts.isPropertyAssignment(declaration);
+}
+
+/** Whether `declaration` infers a type that holds a function tag, which the type nodes of the scan do not write. */
+function hidesFunctionTag(context: TagAnalysisContext, declaration: ts.Node): boolean {
+  return infersItsType(declaration) && carriesFunctionTag(context, context.checker.getTypeAtLocation(declaration), declaration, new Set());
+}
+
+/**
+ * Records every `typeof` of a tag in everything that `node` reaches, through type aliases, interfaces, classes and their base
+ * classes, `typeof` a variable, and the parts of mapped, conditional and indexed types. A default library file holds no tag of the
+ * user and stays unread. A `typeof` target or a class member that infers a type with a function tag marks the registry `hidden`.
  * Each node is read once for each `seen`, so one scan reads each reachable node once.
  */
 function recordReachableFunctions(context: TagAnalysisContext, node: ts.Node, seen: Set<ts.Node>): void {
@@ -483,20 +503,23 @@ function recordReachableFunctions(context: TagAnalysisContext, node: ts.Node, se
   seen.add(node);
   const { checker } = context;
   const registry = context.writtenFunctions;
-  if (registry && node.parent && ts.isClassLike(node.parent) && hidesFunctionTag(checker, node)) registry.hidden = true;
+  const reachDeclarationsOf = (symbol: ts.Symbol | undefined): void => {
+    for (const declaration of targetSymbol(checker, symbol)?.declarations ?? []) {
+      if (!context.isDefaultLibraryFile?.(declaration.getSourceFile())) recordReachableFunctions(context, declaration, seen);
+    }
+  };
+  if (registry && ts.isClassLike(node.parent) && hidesFunctionTag(context, node)) registry.hidden = true;
   if (ts.isTypeReferenceNode(node)) {
     const symbol = checker.getSymbolAtLocation(node.typeName);
     const tag = golemTag(checker, symbol);
     if (tag) recordTagFunctions(context, node, tag.name);
-    else {
-      for (const declaration of targetSymbol(checker, symbol)?.declarations ?? []) {
-        if (!context.isDefaultLibraryFile?.(declaration.getSourceFile())) recordReachableFunctions(context, declaration, seen);
-      }
-    }
+    else reachDeclarationsOf(symbol);
+  } else if (ts.isExpressionWithTypeArguments(node)) {
+    reachDeclarationsOf(checker.getSymbolAtLocation(node.expression));
   } else if (ts.isTypeQueryNode(node)) {
     const declaration = declarationOf(targetSymbol(checker, symbolAtExpression(checker, node.exprName)));
     if (declaration) {
-      if (registry && hidesFunctionTag(checker, declaration)) registry.hidden = true;
+      if (registry && hidesFunctionTag(context, declaration)) registry.hidden = true;
       recordReachableFunctions(context, declaration, seen);
     }
   }
