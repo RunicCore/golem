@@ -231,6 +231,66 @@ test('structural validation delegates nested generated-model validation', async 
   assert.ok(validator.issues.some((issue) => JSON.stringify(issue.path) === JSON.stringify(['money', 'currency'])));
 });
 
+test('errorsFor and a message override find an array item by its index as a number or as a string', async () => {
+  // protects: T-1000 a path segment 1 and '1' named one item for the pointer of `errors` but two for errorsFor and messages
+  class ScoresModel {
+    public scores?: number[];
+    public constructor(values: { scores?: number[] } = {}) { Object.assign(this, values); }
+  }
+  await installCodecModel({
+    constructor: ScoresModel,
+    name: 'IndexedScores',
+    fields: ['scores'],
+    conversion: { decode: (value) => Object.assign(new ScoresModel(), value as object), encode: (instance) => ({ scores: instance.scores }) },
+    definitions: { IndexedScores: { kind: 'object', required: ['scores'], additionalProperties: false, properties: { scores: { kind: 'array', item: { kind: 'number', constraints: [{ kind: 'minimum', value: 1 }] } } } } },
+  });
+  const validator = validation.getValidator<{ scores: number[] }, ScoresModel>(new ScoresModel({ scores: [5, 0] }))
+    .messages([{ path: ['scores', '1'], code: 'tooSmall', message: 'Score must be positive' }]);
+  assert.equal(await validator.validate(), false);
+  assert.deepEqual(validator.errorsFor(['scores', 1]), ['Score must be positive']);
+  assert.deepEqual(validator.errorsFor(['scores', '1']), ['Score must be positive']);
+  assert.deepEqual(validator.errorsFor(['scores', '0']), []);
+});
+
+test('an instance rule of a model inside an instance of a plain class runs and reports at the full path', async () => {
+  // protects: T-1003 the rule walk read only plain objects, so a model held by a class instance never ran its rules
+  class NoteModel {
+    public text?: string;
+    public constructor(values: { text?: string } = {}) { Object.assign(this, values); }
+  }
+  class NoteHolder {
+    public constructor(public note: NoteModel) {}
+  }
+  class BoardModel {
+    public holder?: NoteHolder;
+    public constructor(values: { holder?: NoteHolder } = {}) { Object.assign(this, values); }
+  }
+  await installCodecModel({
+    constructor: NoteModel,
+    name: 'HeldNote',
+    fields: ['text'],
+    conversion: { decode: (value) => Object.assign(new NoteModel(), value as object), encode: (instance) => ({ text: instance.text }) },
+    definitions: { HeldNote: { kind: 'object', required: ['text'], additionalProperties: false, properties: { text: { kind: 'string' } } } },
+  });
+  await installCodecModel({
+    constructor: BoardModel,
+    name: 'HeldBoard',
+    fields: ['holder'],
+    nestedCodecIds: ['HeldNote'],
+    conversion: { decode: (value) => Object.assign(new BoardModel(), value as object), encode: (instance) => ({ holder: instance.holder }) },
+    definitions: {
+      HeldBoard: { kind: 'object', required: ['holder'], additionalProperties: false, properties: { holder: { kind: 'object', required: ['note'], additionalProperties: false, properties: { note: { kind: 'generated-model', id: 'HeldNote' } } } } },
+      HeldNote: { kind: 'object', required: ['text'], additionalProperties: false, properties: { text: { kind: 'string' } } },
+    },
+  });
+  const note = new NoteModel({ text: '' });
+  validation.getValidator<{ text: string }, NoteModel>(note).extend({ text: (value: unknown) => value !== '' || 'Text is required' });
+  const board = new BoardModel({ holder: new NoteHolder(note) });
+  const validator = validation.getValidator<{ holder: NoteHolder }, BoardModel>(board);
+  assert.equal(await validator.validate(), false);
+  assert.deepEqual(validator.issues.map(({ code, path, message }) => ({ code, path, message })), [{ code: 'custom', path: ['holder', 'note', 'text'], message: 'Text is required' }]);
+});
+
 test('MobX runtime preserves observation and shares validator identity', async () => {
   interface PaymentFieldsMobx {
     amount: number;
