@@ -1,20 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { isMultipleOf } from '@exprtlabs/golem/internal/validation-runtime';
+import { isMultipleOf, isMultipleOfScaled } from '@exprtlabs/golem/internal/validation-runtime';
 import { compileSchema, compileValidatorModule } from './support/compiled-validators.js';
-
-type MultipleOf = (value: number, divisor: number, units?: number, scale?: number) => boolean;
-
-/** The runtime `isMultipleOf` and the generated fast form `isMultipleOfScaled`, read from a compiled module; the fast form falls back to the runtime function. */
-async function generatedHelpers(): Promise<{ exact: MultipleOf; scaled: MultipleOf }> {
-  const { source } = await compileValidatorModule({ roots: { root: { type: 'number', multipleOf: 0.1 } } });
-  const scaled = /function (\w+)\(value, divisor, units, scale\) \{\n[\s\S]*?\n\}/.exec(source);
-  assert.ok(scaled !== null);
-  const fallback = /return ([\w$]+)\(value, divisor\);/.exec(scaled[0]);
-  assert.ok(fallback !== null);
-  return { exact: isMultipleOf, scaled: new Function(fallback[1]!, `${scaled[0]}\nreturn ${scaled[1]};`)(isMultipleOf) };
-}
 
 /** Divisors the compiler writes in the scaled form: the divisor, its `units` and its `scale`. */
 const ROWS: readonly (readonly [divisor: number, units: number, scale: number])[] = [
@@ -27,15 +15,14 @@ const VALUES: readonly number[] = [
   4503599627370495, 4503599627370495.5, 4503599627370496, 2251799813685247.25, 562949953421312.25, 8595756.71190207, 8820007.45060213, 12345678.9, 0.246913578,
 ];
 
-test('the scaled multipleOf form answers as the exact function for literal values and for values from a fixed seed', async () => {
+test('the scaled multipleOf form answers as the exact function for literal values and for values from a fixed seed', () => {
   // protects: R-63 MultipleOf with a decimal divisor runs faster with identical results
-  const { exact, scaled } = await generatedHelpers();
   let state = 20261029;
   const next = () => (state = (Math.imul(state, 1664525) + 1013904223) >>> 0);
   const whole = () => (next() >>> 11) * 2 ** 32 + next();
   const generated = Array.from({ length: 8000 }, (_, index) => (index % 2 === 0 ? 1 : -1) * (index % 3 === 0 ? (whole() / 2 ** 53) * 10 ** (next() % 25 - 5) : whole() / 10 ** [0, 1, 2, 3, 7, 9, 12][index % 7]));
   const differing = ([divisor, units, scale]: (typeof ROWS)[number]) => [...VALUES, ...generated, ...generated.slice(0, 2000).map(value => Math.round(value * scale / units) * units / scale)]
-    .filter(value => scaled(value, divisor, units, scale) !== exact(value, divisor));
+    .filter(value => isMultipleOfScaled(value, divisor, units, scale) !== isMultipleOf(value, divisor));
   assert.deepEqual(ROWS.map(row => [row[0], differing(row)]), ROWS.map(row => [row[0], []]));
 });
 

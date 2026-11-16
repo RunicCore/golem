@@ -51,7 +51,7 @@ export class TaggedSerdeWireError extends AmbiguousUnionConversionError {
 
 /**
  * The test of the JSON view, as code: `key` is an own enumerable property of `object`. Every generated read of a field
- * (`presentValueCode`, the `isPresent` helper of the validators) builds on this one fragment.
+ * (`presentValueCode`) builds on this one fragment; the validators' runtime `isPresent` (validation-runtime.ts) is the same rule.
  */
 export function ownEnumerableCode(object: Code, key: Code): Code {
   return code`Object.prototype.propertyIsEnumerable.call(${object}, ${key})`;

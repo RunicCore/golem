@@ -1184,28 +1184,45 @@ test('const and enum accept a value with an extra undefined-valued key', async (
   await assertIssues({ enum: [{ a: 1 }, 2] }, { a: 1, b: undefined }, []);
 });
 
-// The scalar roots whose emitted headers, wrappers and constants the checker reads under `strict`.
-const SCALAR_CORPUS = {
+// The roots whose emitted headers, wrappers, helpers and constants the checker reads under `strict`.
+const TYPED_CORPUS = {
   root: { type: 'string' },
   limited: { type: 'string', minLength: 2, maxLength: 9, pattern: '^[a-z]+$', format: 'email' },
   ranged: { type: 'number', minimum: 0, exclusiveMaximum: 10, multipleOf: 2 },
+  decimal: { type: 'number', multipleOf: 0.01 },
   whole: { type: 'integer', maximum: 100 },
   choice: { enum: ['a', 2, null] },
   fixed: { const: 'fixed' },
   flag: { type: 'boolean' },
   nothing: { type: 'null' },
   never: false,
+  list: { type: 'array', items: { type: 'string' }, minItems: 1, maxItems: 4, uniqueItems: true },
+  tuple: { type: 'array', prefixItems: [{ type: 'integer' }, { type: 'string' }], items: false },
+  holder: { type: 'array', contains: { type: 'integer' }, minContains: 1, unevaluatedItems: false },
+  record: {
+    type: 'object',
+    properties: { id: { type: 'integer' }, name: { type: 'string' }, tags: { type: 'array', items: { type: 'string' } } },
+    required: ['id'],
+    patternProperties: { '^x-': { type: 'string' } },
+    additionalProperties: false,
+    minProperties: 1,
+    dependentRequired: { name: ['id'] },
+  },
+  named: { type: 'object', propertyNames: { pattern: '^[a-z]+$' }, additionalProperties: { type: 'number' } },
+  open: { $defs: { part: { properties: { b: { type: 'string' } } } }, properties: { a: { type: 'string' } }, allOf: [{ $ref: '#/$defs/part' }], unevaluatedProperties: false },
+  bare: { type: 'object' },
+  instance: { golemModelInstance: { of: 'Cat', among: ['Cat', 'Dog'], required: true } },
 };
 
-test('compile with ts emits the same validator with its types, and scalar roots pass tsc under strict', async (t) => {
-  // protects: value the ts validator reports the same issues as the js one, and the scalar corpus compiles with noImplicitAny on
+test('compile with ts emits the same validator with its types, and the corpus passes tsc under strict', async (t) => {
+  // protects: value the ts validator reports the same issues as the js one, and the corpus compiles with noImplicitAny on
   const { byRoot } = await compileValidatorModule({ roots: { root: { type: 'string' } }, language: 'ts' });
   assert.deepEqual(byRoot.root('a', true), []);
   assert.deepEqual(byRoot.root(5, true), [{ path: [], code: 'type', expected: ['string'] }]);
   // A type is erased before the module runs, so the compiler proves the annotations: the validator returns `readonly SchemaIssue[]`, not `any`.
   const project = createFixtureProject(t, 'golem-typed-validator-');
   linkProjectPackages(project, { '@exprtlabs/golem': path.join(workspace, 'packages/golem') });
-  const { source } = compile({ roots: new Map(Object.entries(SCALAR_CORPUS)) }, { unknownFormats: 'warn', language: 'ts', fastPath: 'all' });
+  const { source } = compile({ roots: new Map(Object.entries(TYPED_CORPUS)) }, { unknownFormats: 'warn', language: 'ts', fastPath: 'all' });
   writeFileSync(path.join(project, 'validators.ts'), source);
   writeFileSync(path.join(project, 'probe.ts'), [
     "import type { SchemaIssue } from '@exprtlabs/golem/validation';",
@@ -1275,6 +1292,21 @@ test('a bundle of one validator drops an unused validator with its constants', a
   assert.equal(unusedConstants.test(one.text), false, 'a bundle of the kept validator holds none of them');
   assert.deepEqual(JSON.parse(JSON.stringify(one.full[0]('kept-pattern-7', true))), []);
   assert.deepEqual(JSON.parse(JSON.stringify(one.full[0]('other', true))), [{ path: [], code: 'pattern', pattern: '^kept-pattern-[0-9]+$' }]);
+});
+
+test('a bundle of a bare object validator takes nothing of the runtime but the object test', async t => {
+  // protects: F-345 a root that used no runtime name still bundles to its own few lines when the runtime is inlined (no module-level work of the runtime stays)
+  const runtimeEntry = path.join(workspace, 'packages/golem/dist/runtime-validation.js');
+  const { source, exports } = compile({ roots: new Map([['bare', { type: 'object' }]]) }, { unknownFormats: 'warn', language: 'js', specifiers: { values: { 'validation-runtime': runtimeEntry } } });
+  const directory = mkdtempSync(path.join(tmpdir(), 'golem-validators-bundle-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  writeFileSync(path.join(directory, 'validators.js'), source);
+  const name = exports.get('bare') ?? '';
+  writeFileSync(path.join(directory, 'entry.js'), `import { ${name} } from './validators.js';\nglobalThis.used = ${name};\n`);
+  const { outputFiles } = await build({ entryPoints: [path.join(directory, 'entry.js')], bundle: true, format: 'cjs', write: false, treeShaking: true });
+  // A call at the top of a runtime module stays in a bundle that uses any other name of that module, unless it is marked pure.
+  assert.doesNotMatch(outputFiles[0].text, /RegExp|Symbol|new Set|JSON\.parse/);
+  assert.match(outputFiles[0].text, /function isObject\(/);
 });
 
 test('a diagnostic is placed where the locator says and reported once per place', () => {
