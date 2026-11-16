@@ -27,7 +27,7 @@ import * as ast from 'typescript/ast';
 import { GOLEM_CHANNELS } from './diagnostics-channels.js';
 import { displayPath } from './generator-core.js';
 import { fileSignature, MISSING } from './input-watcher.js';
-import { affectsResolution, assertConfigParsed, assertNoSourceFiles, canonical, collectTscDiagnostics, configReferences, declarationOutputOf, emitWanted, flagPathOptions, flagsAsConfigOptions, hasDeclarationOutput, isBrokenReference, programRequest, REFERENCE_ERROR_CODES, referenceClosure, referencedConfigFile, hasVirtualFiles, virtualLookup } from './typescript-config.js';
+import { affectsResolution, assertConfigParsed, assertNoSourceFiles, canonical, collectTscDiagnostics, configReferences, declarationOutputOf, derivedConfigNames, emitWanted, flagPathOptions, flagsAsConfigOptions, hasDeclarationOutput, isBrokenReference, programRequest, REFERENCE_ERROR_CODES, referenceClosure, referencedConfigFile, hasVirtualFiles, ROOTS_CONFIG_SUFFIX, virtualLookup } from './typescript-config.js';
 import type { ConfigReference, ProgramRequest, ResolveAtCurrentFolder, VirtualLookup } from './typescript-config.js';
 import { assertPackageManifestsParse } from './type-analysis/package-specifier.js';
 import {
@@ -886,20 +886,23 @@ function overriddenConfig(api: API, configPath: string, overrides: OptionOverrid
   }
 }
 
-/** A diagnostic with the name of the derived configuration that the compiler read replaced by the user's tsconfig, the file `tsc` names: the user never wrote the derived one. */
-function inUserConfigName(diagnostic: SyncDiagnostic, { derived, user }: ConfigNames): SyncDiagnostic {
-  const named = (inner: SyncDiagnostic): SyncDiagnostic => inUserConfigName(inner, { derived, user });
+/** A `.json` file name in a message: a whole name, between a quote, a space or a path separator, or a closing mark and a space. */
+const JSON_FILE_NAME = /(?<![^\s'"/\\])[^\s'"/\\]+\.json(?=$|[\s'"/\\]|[.,:;)](?:$|\s))/g;
+
+/** A diagnostic with the name of each derived configuration replaced by the user's tsconfig, the file `tsc` names: the user never wrote a derived one. */
+function inUserConfigName(diagnostic: SyncDiagnostic, names: ConfigNames): SyncDiagnostic {
+  const named = (inner: SyncDiagnostic): SyncDiagnostic => inUserConfigName(inner, names);
   return {
     ...diagnostic,
-    text: diagnostic.text.replaceAll(derived, user),
+    text: diagnostic.text.replace(JSON_FILE_NAME, (name) => (names.derived.has(name) ? names.user : name)),
     ...(diagnostic.messageChain && { messageChain: diagnostic.messageChain.map(named) }),
     ...(diagnostic.relatedInformation && { relatedInformation: diagnostic.relatedInformation.map(named) }),
   };
 }
 
-/** The base names of the configuration a program opened and of the user's configuration that it extends. */
+/** The base names of the user's tsconfig, and of the configurations derived beside it. */
 interface ConfigNames {
-  readonly derived: string;
+  readonly derived: ReadonlySet<string>;
   readonly user: string;
 }
 
@@ -1392,7 +1395,7 @@ export class ProgramSession implements Disposable {
         if (!project) throw new Error(`The compiler did not open the TypeScript project ${displayPath(request.configPath)} for ${displayPath(options.root)}.`);
         this.syntheticProgram = created ?? this.syntheticProgram;
         const { twinOf, overrides } = request;
-        const program = new CompatProgram(this, snapshot, project, synthetic?.unbuilt, twinOf === undefined ? undefined : new ConfigTwin(() => this.diagnosticsOfConfig(twinOf, overlays, overrides), synthetic?.brokenReferences ?? false, { derived: basename(request.configPath), user: basename(twinOf) }));
+        const program = new CompatProgram(this, snapshot, project, synthetic?.unbuilt, twinOf === undefined ? undefined : new ConfigTwin(() => this.diagnosticsOfConfig(twinOf, overlays, overrides), synthetic?.brokenReferences ?? false, { derived: derivedConfigNames(basename(twinOf)), user: basename(twinOf) }));
         this.held.set(program, request);
         return program;
       } catch (error) {
@@ -1461,7 +1464,7 @@ export class ProgramSession implements Disposable {
     // Every root is a file of the configuration, and the configuration is the user's own: the compiler reads it itself, so its option errors name its own text and place.
     // A hidden configuration is golem's overlay (the option overrides): it has no text of the user's to name, and the compiler's own glob would order its roots differently from `tsc`.
     if (!base.hidden.has(base.configPath) && base.rootNames.every((file) => own.has(file))) return base;
-    const configPath = join(dirname(base.configPath), `${basename(base.configPath, '.json')}.roots.json`);
+    const configPath = join(dirname(base.configPath), `${basename(base.configPath, '.json')}${ROOTS_CONFIG_SUFFIX}.json`);
     const files = [...new Set([...own, ...base.rootNames])];
     const overlays = new Map(base.overlays);
     overlays.set(configPath, JSON.stringify({ extends: `./${basename(base.configPath)}`, files, include: [] }));
