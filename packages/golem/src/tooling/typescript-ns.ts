@@ -58,6 +58,7 @@ export const {
   isClassLike,
   isComputedPropertyName,
   isConditionalTypeNode,
+  isInferTypeNode,
   isDecorator,
   isDefaultClause,
   isElementAccessExpression,

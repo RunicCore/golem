@@ -225,6 +225,7 @@ export interface TypeParameterDeclaration extends Node {
 export interface FunctionLikeDeclaration extends Node {
   readonly kind: KindOf<'FunctionDeclaration' | 'MethodDeclaration' | 'ArrowFunction' | 'FunctionExpression'>;
   readonly modifiers?: readonly Node[];
+  readonly typeParameters?: readonly TypeParameterDeclaration[];
   readonly parameters: readonly ParameterDeclaration[];
   readonly type?: TypeNode;
   readonly body?: Node;
@@ -267,6 +268,7 @@ export interface PropertyDeclaration extends Node {
 export interface GetAccessorDeclaration extends Node {
   readonly kind: KindOf<'GetAccessor'>;
   readonly name: PropertyName;
+  readonly parameters: readonly ParameterDeclaration[];
   readonly type?: TypeNode;
 }
 export interface BindingElement extends Node {
@@ -279,14 +281,20 @@ export interface PropertySignature extends Node {
 }
 export interface MethodSignature extends Node {
   readonly kind: KindOf<'MethodSignature'>;
+  readonly typeParameters?: readonly TypeParameterDeclaration[];
+  readonly parameters: readonly ParameterDeclaration[];
+  readonly type?: TypeNode;
 }
 export interface IndexSignatureDeclaration extends Node {
   readonly kind: KindOf<'IndexSignatureDeclaration'>;
+  readonly parameters: readonly ParameterDeclaration[];
   readonly type: TypeNode;
 }
 export interface InterfaceDeclaration extends Node {
   readonly kind: KindOf<'InterfaceDeclaration'>;
   readonly typeParameters?: readonly TypeParameterDeclaration[];
+  readonly heritageClauses?: readonly HeritageClause[];
+  readonly members: readonly Node[];
 }
 export interface TypeAliasDeclaration extends Node {
   readonly kind: KindOf<'TypeAliasDeclaration'>;
@@ -482,9 +490,14 @@ export interface MappedTypeNode extends TypeNode {
   readonly nameType?: TypeNode;
   readonly type?: TypeNode;
 }
+export interface InferTypeNode extends TypeNode {
+  readonly kind: KindOf<'InferTypeNode'>;
+  readonly typeParameter: TypeParameterDeclaration;
+}
 export interface ConditionalTypeNode extends TypeNode {
   readonly kind: KindOf<'ConditionalTypeNode'>;
   readonly checkType: TypeNode;
+  readonly extendsType: TypeNode;
   readonly trueType: TypeNode;
   readonly falseType: TypeNode;
 }
@@ -857,6 +870,7 @@ export interface TypeScriptBackend {
   isClassLike(node: Node): node is ClassLikeDeclaration;
   isComputedPropertyName(node: Node): node is ComputedPropertyName;
   isConditionalTypeNode(node: Node): node is ConditionalTypeNode;
+  isInferTypeNode(node: Node): node is InferTypeNode;
   isDecorator(node: Node): node is Decorator;
   isDefaultClause(node: Node): node is DefaultClause;
   isElementAccessExpression(node: Node): node is ElementAccessExpression;

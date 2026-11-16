@@ -4,7 +4,6 @@ import { diagnostic, modelDeclarationKind } from './symbols.js';
 import * as ts from '../typescript-ns.js';
 import { findBuiltinClass } from './builtin-class.js';
 import { descriptorBuilder, isErrorAny } from './types.js';
-import type { FieldDeclarations, WrittenFunctions } from './tags.js';
 
 export interface ModelSpecification {
   readonly sourceFile: ts.SourceFile;
@@ -50,10 +49,6 @@ export interface TypeAnalysisContext {
   readonly schemaData?: boolean;
   /** The field being described, for a diagnostic; absent at the root of a model. */
   readonly field?: string;
-  /** The functions that the tags of the fields around this one write: what the checker read of a tag in a generic type names. */
-  readonly writtenFunctions?: WrittenFunctions;
-  /** The members that declare the fields around this one: the scan of its written functions leaves out their tags. */
-  readonly fieldDeclarations?: readonly FieldDeclarations[];
 }
 
 /** A descriptor kind (or a type's kind) as the phrase the RUNM1052 message uses: "an array", "a Date", "any". */
