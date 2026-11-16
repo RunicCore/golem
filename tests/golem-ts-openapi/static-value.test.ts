@@ -51,6 +51,9 @@ const FILES: Readonly<Record<string, string>> = {
     'function helper(): string { return "x"; }',
     'export const FUNCTION_VALUE = helper;',
     'export const SELF: unknown = { self: SELF };',
+    "const LIST = ['a', 'b'];",
+    "export const INDEX_CANONICAL = LIST['1'];",
+    "export const INDEX_LEADING_ZERO = LIST['01'];",
     '',
   ].join('\n'),
 };
@@ -137,4 +140,11 @@ test('reports let/var bindings, calls, undefined, functions and self-reference a
     assert.equal(result.ok, false, name);
     if (!result.ok) assert.match(result.reason, reason, name);
   }
+});
+
+test('reads an array element only by its canonical index, as JavaScript does', () => {
+  // protects: T-992 LIST['01'] was read as element 1; JavaScript gives undefined
+  assert.equal(valueOf(evaluate('INDEX_CANONICAL')), 'b');
+  const leadingZero = evaluate('INDEX_LEADING_ZERO');
+  assert.deepEqual(leadingZero.ok ? leadingZero.value : leadingZero.reason, 'member 01 is not a static value');
 });
