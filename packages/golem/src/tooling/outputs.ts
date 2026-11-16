@@ -129,9 +129,8 @@ function jobDestinations(job: GolemJob): readonly Destination[] {
 function insideDestination(destination: Destination, filename: string): boolean {
   if (destination.kind === 'file') return samePath(filename, destination.path);
   if (isInsideDirectory(path.resolve(destination.path), filename)) return true;
-  try {
-    return isInsideDirectory(canonicalPath(destination.path), canonicalPath(filename));
-  } catch { return false; }
+  // A missing path has its real path as written; any other failure (links that loop, EACCES) is the real error, not "escapes".
+  return isInsideDirectory(canonicalPath(destination.path), canonicalPath(filename));
 }
 
 function artifactDestination(config: GolemConfig, job: GolemJob, filename: string): { destination: string; destinationKind: InventoryEntry['destinationKind'] } {
