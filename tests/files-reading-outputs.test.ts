@@ -8,7 +8,7 @@ import { filesReadingOutputs } from '#golem/type-analysis/project';
 import { createFixtureProject } from './fixture-project.js';
 
 /** A project whose `sdkPaths` aliases name `sdk/` (the output of a later job, empty at first) and whose `@mid/*` alias names `mid/` (a source folder). */
-function aliasedProject(t: TestContext, sdkPaths: Record<string, string[]> = { '@sdk/*': ['./sdk/*'] }): { write(file: string, text: string): void; run(): string[] } {
+function aliasedProject(t: TestContext, sdkPaths: Record<string, string[]> = { '@sdk/*': ['./sdk/*'] }): { write(file: string, text: string): void; link(file: string, target: string): void; run(): string[] } {
   const root = createFixtureProject(t, 'golem-reading-outputs-');
   const write = (file: string, text: string): void => {
     fs.mkdirSync(path.dirname(path.join(root, file)), { recursive: true });
@@ -21,6 +21,11 @@ function aliasedProject(t: TestContext, sdkPaths: Record<string, string[]> = { '
   }));
   return {
     write,
+    // A symbolic link at `file` to `target`, as a package manager makes for a workspace package; it may point at a folder that is not there yet.
+    link: (file, target) => {
+      fs.mkdirSync(path.dirname(path.join(root, file)), { recursive: true });
+      fs.symlinkSync(target, path.join(root, file), 'dir');
+    },
     // One run: a new session holds no file of an earlier run. The output files themselves are left out of the answer.
     run: () => {
       using session = new ts.ProgramSession({ cwd: root });
@@ -101,4 +106,31 @@ test('a bare import of a source file that imports an output by a relative path l
   const second = project.run();
 
   assert.deepEqual([first, second], [['mid/wrapped.ts', 'src/app.ts'], ['mid/wrapped.ts', 'src/app.ts']]);
+});
+
+test('a package that a node_modules link points into a job output excludes its importer on the first run and the next', (t: TestContext) => {
+  // protects: T-1015 the link `node_modules/sdk-pkg` leads to the output only once the job has written it, so the first run did not exclude the importer
+  const project = aliasedProject(t);
+  project.link('node_modules/sdk-pkg', '../sdk');
+  project.write('src/app.ts', "import type { Money } from 'sdk-pkg/money.js';\nexport type App = Money;\n");
+
+  const first = project.run();
+  project.write('sdk/money.ts', 'export type Money = number;\n');
+  const second = project.run();
+
+  assert.deepEqual([first, second], [['src/app.ts'], ['src/app.ts']]);
+});
+
+test('a package that a node_modules link points into a job output excludes its importer on the first run and the next when the compiler keeps links', (t: TestContext) => {
+  // protects: T-1015 with preserveSymlinks the import resolves under node_modules once the output exists, a path the closure did not test against the outputs
+  const project = aliasedProject(t);
+  project.write('tsconfig.json', JSON.stringify({ compilerOptions: { strict: true, module: 'NodeNext', moduleResolution: 'NodeNext', preserveSymlinks: true }, include: ['src'] }));
+  project.link('node_modules/sdk-pkg', '../sdk');
+  project.write('src/app.ts', "import type { Money } from 'sdk-pkg/money.js';\nexport type App = Money;\n");
+
+  const first = project.run();
+  project.write('sdk/money.ts', 'export type Money = number;\n');
+  const second = project.run();
+
+  assert.deepEqual([first, second], [['src/app.ts'], ['src/app.ts']]);
 });

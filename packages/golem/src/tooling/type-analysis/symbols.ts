@@ -226,12 +226,6 @@ export function isUnsupportedSymbolKey(checker: ts.TypeChecker, property: ts.Sym
   return isSymbolKeyedProperty(checker, property) && !isGeneratedBrandKey(checker, property) && !isGolemTagKey(checker, property);
 }
 
-/** Whether only a default library file declares `property`: the built-in type's own metadata, such as the `[Symbol.toStringTag]` of `Uint8Array`. */
-export function isDefaultLibraryProperty(property: ts.Symbol, isDefaultLibraryFile: (file: ts.SourceFile) => boolean): boolean {
-  const declarations = property.declarations ?? [];
-  return declarations.length > 0 && declarations.every(declaration => isDefaultLibraryFile(declaration.getSourceFile()));
-}
-
 /** Stops generation when `property` has a symbol key; `owner` names the model or parameter and `node` is where the error points. */
 export function assertNoSymbolKey(checker: ts.TypeChecker, property: ts.Symbol, owner: string, sourceFile: ts.SourceFile, node: ts.Node): void {
   const key = propertyKey(property)?.getText();

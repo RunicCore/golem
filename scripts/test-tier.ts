@@ -9,7 +9,7 @@ import { sourcePath } from './test-file-timings.js';
 import { describeResume, finishRun, isTierResult, readRecord, runStateFromEnv, stepResultFile, type PlannedStep, type RunRecord } from './test-runner/run-state.js';
 import type { OrderedRun } from './test-run-ordered.js';
 
-export type Tier = 'prepare' | 'focused' | 'full' | 'acceptance' | 'docs';
+export type Tier = 'prepare' | 'focused' | 'full' | 'full-ts6' | 'acceptance' | 'docs';
 /** `fileTimings` is the JSON-lines file that the test-file reporter fills while the step runs. */
 /** `always`: the step runs again in a resume, because its result lives outside the run record (see `pack`). */
 export interface Step { readonly label: string; readonly run: () => Promise<number>; readonly fileTimings?: string; readonly always?: true }
@@ -21,7 +21,7 @@ const inOrder = (...steps: readonly Step[]): Group[] => steps.map(step => [[step
 // The public-source and release-version tests stay in this step: the Acceptance tier's "public source" step and the pack
 // step (test-pack, verify-package) run those scripts as release gates, and these tests hold their rejection cases.
 export const UNIT_FILES = ['.build/tests/*.test.js', '.build/tests/openapi/*.test.js', '.build/tests/golem-ts-openapi/*.test.js'] as const;
-// The model-only smoke file runs in Full; Acceptance runs the others so it runs once.
+// The model-only smoke file runs in Full TS6; Acceptance runs the others so it runs once.
 export const PACKED_FILES = ['.build/tests/packed/consumers.test.js', '.build/tests/packed/nest-workflows.test.js'] as const;
 const SMOKE_FILE = '.build/tests/packed/model-only.test.js';
 // The TypeScript 6 lane runs the test files whose first line is `// lane: typescript6 <the shim place the file proves>`, with
@@ -71,7 +71,10 @@ export const CONCURRENCY = {
 const tiers: Readonly<Record<Tier, { readonly budget: string; readonly purpose: string }>> = {
   prepare: { budget: '≤5 min (plus a first-time image build), network', purpose: 'Fill the npm, packed and typia plugin caches so tiers run offline.' },
   focused: { budget: '≤1 min', purpose: 'Did my change break what I touched?' },
-  full: { budget: '≤5 min', purpose: 'Did I break anything anywhere?' },
+  // Full is two runs, each with its own ceiling (entrypoint.sh), record and resume, so neither passes the 10 minute limit of one run.
+  // A sprint-end run is both. The budgets are the recorded wall times at width 8: unit 395 s, the lane 328 s (beside pack, smoke and lint).
+  full: { budget: 'about 400 s', purpose: 'Did I break anything in the unit tests? A sprint-end run is this tier and full-ts6.' },
+  'full-ts6': { budget: 'about 330 s', purpose: 'Did I break anything on TypeScript 6? Runs the TypeScript 6 lane, pack, the packed smoke test and the source checks of lint. The other half of a sprint-end run.' },
   acceptance: { budget: '≤10 min, needs a stated reason', purpose: 'Is this releasable?' },
   docs: { budget: 'about 2 min', purpose: 'Do the docs pass their prose and inventory checks, and does the site build and pass its checks?' },
 };
@@ -258,7 +261,7 @@ function splitTypescriptLane(args: readonly string[]): { readonly lane6: boolean
 const npmRun = (label: string, script: string): Step => ({ label, run: () => run('npm', ['run', script]) });
 // The packed set lives in /cache/packed, which keeps only the newest set: another checkout can replace it, so a resume packs again (a present set is reused at once).
 const pack: Step = { label: 'pack', always: true, run: () => run(process.execPath, ['.build/scripts/test-pack.js']) };
-/** The source checks of `npm run lint`, without its build: the full tier has built the packages and the scripts by now. */
+/** The source checks of `npm run lint`, without its build: the Full TS6 and Acceptance tiers have built the packages and the scripts by now. */
 const lint: Step = {
   label: 'lint',
   run: async () => {
@@ -311,7 +314,7 @@ async function checkExamples(): Promise<number> {
   return failures.length ? 1 : 0;
 }
 
-function steps(tier: Tier, args: readonly string[], native: boolean): Group[] {
+function steps(tier: Tier, args: readonly string[]): Group[] {
   if (tier === 'prepare') return prepareSteps;
   if (tier === 'focused') {
     const { lane6, rest } = splitTypescriptLane(args);
@@ -331,12 +334,10 @@ function steps(tier: Tier, args: readonly string[], native: boolean): Group[] {
   const unit = nodeTest(tier, 'unit', UNIT_FILES, CONCURRENCY.unit);
   const typescript6 = (concurrency: number): Step => nodeTest(tier, 'typescript 6', typescript6Files(), concurrency, [], typescript6Env());
   const smoke = nodeTest(tier, 'packed smoke', [SMOKE_FILE], 1);
-  if (tier === 'full') {
-    if (native) return inOrder(unit);
-    // Pack and the smoke test read the workspace and /cache/packed, never a file that the lane writes. The lane's last files
-    // leave cores idle, so they run beside it and add no time of their own.
-    return [...inOrder(unit), [[typescript6(CONCURRENCY.unit)], [pack, smoke, lint]]];
-  }
+  if (tier === 'full') return inOrder(unit);
+  // Pack and the smoke test read the workspace and /cache/packed, never a file that the lane writes. The lane's last files
+  // leave cores idle, so they run beside it and add no time of their own; beside unit, which has no idle cores, they would.
+  if (tier === 'full-ts6') return [[[typescript6(CONCURRENCY.unit)], [pack, smoke, lint]]];
   // Acceptance: after unit, the side chain adds the steps that need nothing from the TypeScript 6 lane. Packed and browser read
   // /cache/packed after pack (this chain's own step); the lane reads /cache/typescript6 and the workspace. Each test file makes
   // its own temp folders and registry and server ports, so no step reads a file that another step writes. Acceptance unit
@@ -381,7 +382,7 @@ function assertContainer(tier: Tier, native: boolean): void {
     if (tier !== 'full') throw new Error('--native runs only the full tier (the unit tests), without Docker.');
     return;
   }
-  const command = { prepare: 'npm run test:prepare', focused: 'npm run test -- <files>', full: 'npm run test:full', acceptance: 'npm run test:acceptance', docs: 'npm run docs:check' }[tier];
+  const command = { prepare: 'npm run test:prepare', focused: 'npm run test -- <files>', full: 'npm run test:full', 'full-ts6': 'npm run test:full:ts6', acceptance: 'npm run test:acceptance', docs: 'npm run docs:check' }[tier];
   if (process.env.FE_DEPS_TEST_CONTAINER !== '1') throw new Error(`Run this tier through Docker: ${command}`);
   const manifest = readJson<{ devDependencies: Record<string, string> }>(path.join(root, 'package.json'));
   const installed = readJson<{ version: string }>(path.join(root, 'node_modules/@playwright/test/package.json'));
@@ -449,7 +450,7 @@ async function main(argv: readonly string[]): Promise<void> {
     // A run's results never mix with an earlier run of its tier; the results of other tiers stay.
     for (const name of fs.readdirSync(resultsDir)) if (isTierResult(name, tier)) fs.rmSync(path.join(resultsDir, name));
   }
-  const plan = steps(tier, args, native);
+  const plan = steps(tier, args);
   const state = runStateFromEnv();
   if (state && !state.again) {
     resumed = readRecord(state.recordFile);

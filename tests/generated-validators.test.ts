@@ -417,6 +417,39 @@ test('a field type that only a model without validation holds still fails genera
   await assert.rejects(runPipeline(config), /VALIDATE_UNKNOWN_FORMAT: a model field type: the format "phone-number" is not implemented/);
 });
 
+test('a project whose models all have validation off still fails generation when a field type format is unknown, and writes no validators module', async t => {
+  // protects: T-1014 the tag schemas were compiled only when a model validated or an SDK had operations
+  const value = validationProject(t, 'contact.model.ts', [
+    "import type { IModel } from '@exprtlabs/golem/model';",
+    "import type { Format } from '@exprtlabs/golem/tags';",
+    "export type TUnchecked = IModel<{ phone: string & Format<'phone-number'> }, { validation: false }>;",
+    '',
+  ]);
+  const config = path.join(value.root, 'golem.yaml');
+  await assert.rejects(runPipeline(config), /VALIDATE_UNKNOWN_FORMAT: a model field type: the format "phone-number" is not implemented/);
+  writeFileSync(config, `${readFileSync(config, 'utf8')}unknownFormats: warn\n`);
+  await runPipeline(config);
+  assert.equal(generatedModelFiles(value.root).some(item => item.path.endsWith('/models.validators.generated.ts')), false);
+});
+
+test('a validating model beside a model source with validation off still fails generation when a field type format of the off source is unknown', async t => {
+  // protects: T-1014 the rule does not depend on which source file holds the off model
+  const value = validationProject(t, 'checked.model.ts', [
+    "import type { IModel } from '@exprtlabs/golem/model';",
+    "export type TChecked = IModel<{ count: number }>;",
+    '',
+  ]);
+  writeFileSync(path.join(value.sourceRoot, 'rules.ts'), 'export function notBlank(value: string): boolean | string { return value.trim().length > 0 || "blank"; }\n');
+  writeFileSync(path.join(value.sourceRoot, 'unchecked.model.ts'), [
+    "import type { IModel } from '@exprtlabs/golem/model';",
+    "import type { Format, TValidation } from '@exprtlabs/golem/tags';",
+    "import { notBlank } from './rules.js';",
+    "export type TUnchecked = IModel<{ phone: string & Format<'phone-number'> & TValidation<typeof notBlank> }, { validation: false }>;",
+    '',
+  ].join('\n'));
+  await assert.rejects(runPipeline(path.join(value.root, 'golem.yaml')), /VALIDATE_UNKNOWN_FORMAT: a model field type: the format "phone-number" is not implemented/);
+});
+
 test('a model class registered at run time satisfies a generated model-instance check', async () => {
   const { registerIModelClass } = await import('@exprtlabs/golem/internal/model-runtime');
   class Cat {}
