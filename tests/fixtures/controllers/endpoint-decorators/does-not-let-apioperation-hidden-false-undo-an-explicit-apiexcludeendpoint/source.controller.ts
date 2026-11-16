@@ -13,10 +13,6 @@ export class ExclusionController {
   @Get('still-hidden')
   stillHidden(): ItemDto { return { id: '2' }; }
 
-  @ApiOperation({ hidden: true })
-  @Get('operation-hidden')
-  operationHidden(): ItemDto { return { id: '3' }; }
-
   @ApiExcludeEndpoint(false)
   @Get('exclude-false')
   excludeFalse(): ItemDto { return { id: '4' }; }
