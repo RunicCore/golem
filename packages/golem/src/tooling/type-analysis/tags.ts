@@ -83,8 +83,8 @@ export interface TagAnalysisContext {
    * Within one role, a type written with two different symbols maps to null and names no function.
    */
   readonly writtenFunctions?: WrittenFunctions;
-  /** The functions that tags of the program write, by their type. Unset: the program is unknown, and every tag read from the checker reads the walk. Built once for the program, when the first tag asks. */
-  readonly functionIndex?: () => FunctionIndex;
+  /** The functions that the tags of the program write, read on the first call. */
+  readonly functionIndex: () => FunctionIndex;
 }
 
 type FunctionRole = 'validation' | 'serialize' | 'deserialize';
@@ -482,13 +482,21 @@ function firstLine(text: string): string {
   return line.length > 60 ? `${line.slice(0, 57)}...` : line;
 }
 
-/** Stands for a tag that writes its function in no `typeof` (`TValidation<Rule>`): it can name any function of its type. */
-const WRITTEN_WITHOUT_TYPEOF = Symbol('a tag function that no typeof names');
-
 /** The functions that tags of the program write for one function type, each with the `typeof` that writes it. */
-export type FunctionWriters = ReadonlyMap<ts.Symbol | typeof WRITTEN_WITHOUT_TYPEOF, ts.Node>;
-/** Every function that a `typeof` in a type argument of the program names, by its type. A type argument can reach a tag through an alias or a generic call, so the index does not tell which of these are tags: it holds a superset. */
-export type FunctionIndex = ReadonlyMap<ts.Type, FunctionWriters>;
+export type FunctionWriters = ReadonlyMap<ts.Symbol, ts.Node>;
+
+/**
+ * The functions that the tag references of the program write, read once (`functionIndexOf`). A tag type (`TValidation<F>`, `TSerde<S, D>`) exists
+ * only where a tag reference is written, in a file of the program or a declaration file of a package, under its own name or any rename of it:
+ * the references are found by symbol. `complete` says that every function argument of every reference is a direct `typeof` of a function. Then
+ * `writers` holds every function that any tag type of the program can name, and the writers of one function type are all the functions that a
+ * tag of that type can name. When one argument is another type (a type parameter, an indexed access, an alias, an import type), a function can
+ * reach a tag type by a call, an alias or an index, and `writers` is no more than a list of what the program writes directly.
+ */
+export interface FunctionIndex {
+  readonly complete: boolean;
+  readonly writers: ReadonlyMap<ts.Type, FunctionWriters>;
+}
 
 /** The function that `query` names after `typeof`, with its type; a name that is no function, or has no declaration, is none. */
 function writtenFunction(checker: ts.TypeChecker, query: ts.TypeQueryNode): { readonly symbol: ts.Symbol; readonly type: ts.Type } | undefined {
@@ -498,42 +506,43 @@ function writtenFunction(checker: ts.TypeChecker, query: ts.TypeQueryNode): { re
   return symbol && type && type.getCallSignatures().length > 0 ? { symbol, type } : undefined;
 }
 
-/** The type arguments that `node` writes (a reference, a call, a `new`, an import type), or none for a node that writes none. */
-function writtenTypeArguments(node: ts.Node): readonly ts.TypeNode[] | undefined {
-  const typeArguments: unknown = 'typeArguments' in node ? node.typeArguments : undefined;
-  return Array.isArray(typeArguments) ? typeArguments.filter(ts.isTypeNode) : undefined;
+function buildFunctionIndex(checker: ts.TypeChecker, files: readonly ts.SourceFile[]): FunctionIndex {
+  const writers = new Map<ts.Type, Map<ts.Symbol, ts.Node>>();
+  let complete = true;
+  const visit = (node: ts.Node): void => {
+    // `import('...').TValidation<F>` names its tag by a qualifier that the index does not resolve.
+    if (ts.isImportTypeNode(node) && 'typeArguments' in node && node.typeArguments !== undefined) complete = false;
+    const reference = ts.isTypeReferenceNode(node) ? { name: node.typeName, typeArguments: node.typeArguments }
+      : ts.isExpressionWithTypeArguments(node) ? { name: node.expression, typeArguments: node.typeArguments } : undefined;
+    const tagName = reference?.typeArguments ? golemTagName(checker, checker.getSymbolAtLocation(reference.name)) : undefined;
+    TAG_FUNCTION_ROLES.get(tagName ?? '')?.forEach((_role, position) => {
+      const argument = reference?.typeArguments?.[position];
+      const written = argument && ts.isTypeQueryNode(argument) ? writtenFunction(checker, argument) : undefined;
+      if (!argument || !written) {
+        complete = false;
+        return;
+      }
+      const own = writers.get(written.type) ?? new Map<ts.Symbol, ts.Node>();
+      writers.set(written.type, own);
+      if (!own.has(written.symbol)) own.set(written.symbol, argument);
+    });
+    ts.forEachChild(node, visit);
+  };
+  for (const file of files) visit(file);
+  return { complete, writers };
 }
 
-/**
- * Reads the functions of every file of the program once: each `typeof` of a function in a type argument, and each TValidation or TSerde whose
- * function argument is no `typeof`. A function that a tag writes through an alias (`Checked<typeof a>`) is in a type argument, so no file of
- * the program is left out for its name, only for holding neither `typeof` nor a tag name.
- */
-export function buildFunctionIndex(checker: ts.TypeChecker, files: readonly ts.SourceFile[]): FunctionIndex {
-  const index = new Map<ts.Type, Map<ts.Symbol | typeof WRITTEN_WITHOUT_TYPEOF, ts.Node>>();
-  const add = (type: ts.Type, writer: ts.Symbol | typeof WRITTEN_WITHOUT_TYPEOF, at: ts.Node): void => {
-    const writers = index.get(type) ?? new Map<ts.Symbol | typeof WRITTEN_WITHOUT_TYPEOF, ts.Node>();
-    index.set(type, writers);
-    if (!writers.has(writer)) writers.set(writer, at);
-  };
-  for (const file of files) {
-    const namesTags = file.text.includes('TValidation') || file.text.includes('TSerde');
-    if (!namesTags && !file.text.includes('typeof')) continue;
-    const visit = (node: ts.Node): void => {
-      const typeArguments = writtenTypeArguments(node);
-      if (typeArguments) {
-        const tag = namesTags && ts.isTypeReferenceNode(node) && typeArguments.some(argument => !ts.isTypeQueryNode(argument)) ? golemTag(checker, checker.getSymbolAtLocation(node.typeName)) : undefined;
-        const roles = tag ? TAG_FUNCTION_ROLES.get(tag.name)?.length ?? 0 : 0;
-        typeArguments.forEach((argument, position) => {
-          const written = ts.isTypeQueryNode(argument) ? writtenFunction(checker, argument) : undefined;
-          if (written) add(written.type, written.symbol, argument);
-          else if (position < roles) add(checker.getTypeFromTypeNode(argument), WRITTEN_WITHOUT_TYPEOF, argument);
-        });
-      }
-      ts.forEachChild(node, visit);
-    };
-    visit(file);
-  }
+/** For a context that reads no function tag (a `Discriminator` read): it knows no function, so a function tag that it met would refuse. */
+export const NO_FUNCTIONS_KNOWN = (): FunctionIndex => ({ complete: false, writers: new Map() });
+
+const indexByChecker = new WeakMap<ts.TypeChecker, FunctionIndex>();
+
+/** The index of the program that `checker` belongs to. It is read on the first call and shared by every builder and job of the checker. */
+export function functionIndexOf(checker: ts.TypeChecker, programFiles: () => readonly ts.SourceFile[]): FunctionIndex {
+  const known = indexByChecker.get(checker);
+  if (known) return known;
+  const index = buildFunctionIndex(checker, programFiles());
+  indexByChecker.set(checker, index);
   return index;
 }
 
@@ -658,13 +667,13 @@ function reach(context: TagAnalysisContext, walk: Walk, node: ts.Node): void {
 
 /** A list of the functions that `writers` holds, each with where it is written. */
 function describeWriters(writers: FunctionWriters | undefined): string {
-  const entries = [...writers ?? []].map(([writer, at]) => `${writer === WRITTEN_WITHOUT_TYPEOF ? 'a function written without `typeof`' : `\`${writer.getName()}\``} (${sourceLocation(at)})`);
-  return entries.length > 0 ? `the functions ${entries.join(', ')}` : 'the functions of this type';
+  const entries = [...writers ?? []].map(([writer, at]) => `\`${writer.getName()}\` (${sourceLocation(at)})`);
+  return entries.length > 0 ? `the functions ${entries.join(', ')}` : 'no function of this type';
 }
 
 /**
  * The function that a tag names. A tag read from source names it by its `typeof` query. A tag that only the checker shows has its type alone.
- * When the program writes one function of that type in a tag, it is that function. When it writes more (`const b: typeof a`, a shared alias),
+ * When the index is complete and the program writes one function of that type in a tag, it is that function. Otherwise
  * the walk reads everything the field reaches: it names the function when it reads every tag that can reach the field and finds one function
  * of the type, and it refuses when it finds none or several, or reaches what it cannot read (`reach`): such a tag may name another function.
  */
@@ -677,23 +686,25 @@ function functionBinding(
     recordWrittenFunction(context, kind, fn.query);
     return valueBindingForSymbol(context, symbolAtExpression(context.checker, fn.query.exprName), kind, fn.owner);
   }
-  const writers = context.functionIndex?.().get(fn.type);
+  const index = context.functionIndex();
+  const writers = index.writers.get(fn.type);
   const [only, ...others] = writers?.keys() ?? [];
-  if (context.functionIndex && only !== undefined && only !== WRITTEN_WITHOUT_TYPEOF && others.length === 0) {
+  if (index.complete && only !== undefined && others.length === 0) {
     return valueBindingForSymbol(context, only, kind, fn.owner);
   }
+  const writes = `This program writes ${describeWriters(writers)} in tags.`;
   const registry = context.writtenFunctions;
   if (registry) registry.walk ??= walkSources(context, registry.sources);
   const unreadable = registry?.walk?.unreadable;
   if (unreadable) {
-    throw context.diagnostic(fn.owner, '1040', `${kind} function reaches this tag through \`${firstLine(unreadable.node.getText())}\` (${sourceLocation(unreadable.node)}), ${unreadable.reason}, so golem cannot tell which function of this type the tag names. This program writes ${describeWriters(writers)} in tags. Write the tag on the field itself, with \`typeof\` and the function${unreadable.reason === INFERRED ? ', or give that value a type annotation that writes the tag' : ''}.`);
+    throw context.diagnostic(fn.owner, '1040', `${kind} function reaches this tag through \`${firstLine(unreadable.node.getText())}\` (${sourceLocation(unreadable.node)}), ${unreadable.reason}, so golem cannot tell which function of this type the tag names. ${writes} Write the tag on the field itself, with \`typeof\` and the function${unreadable.reason === INFERRED ? ', or give that value a type annotation that writes the tag' : ''}.`);
   }
   const written = registry?.[kind].get(fn.type);
   if (written === undefined) {
-    throw context.diagnostic(fn.owner, '1040', `${kind} function reaches this tag through a type that golem cannot read back to the \`typeof\` that wrote it, so golem cannot tell which function the tag names. Write the tag on the field itself, with \`typeof\` and the function.`);
+    throw context.diagnostic(fn.owner, '1040', `${kind} function reaches this tag through a type that golem cannot read back to the \`typeof\` that wrote it, so golem cannot tell which function the tag names. ${writes} Write the tag on the field itself, with \`typeof\` and the function.`);
   }
   if (written === null) {
-    throw context.diagnostic(fn.owner, '1040', `${kind} function shares its type with another function in this field, so golem cannot tell which one the tag names. Declare each with \`function\`, or give each const its own type annotation.`);
+    throw context.diagnostic(fn.owner, '1040', `${kind} function shares its type with another function in this field, so golem cannot tell which one the tag names. ${writes} Declare each with \`function\`, or give each const its own type annotation.`);
   }
   return valueBindingForSymbol(context, written, kind, fn.owner);
 }

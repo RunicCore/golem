@@ -35,7 +35,7 @@ import {
   propertyType,
   propertyTypeNode,
   publicExportName,
-  buildFunctionIndex,
+  functionIndexOf,
   type FunctionIndex,
   type ModelConstraint,
   type SerdeBinding,
@@ -745,8 +745,8 @@ interface DescribeScope {
   readonly boundary: ModelBoundary | undefined;
   readonly typeErrorAt: ((node: ts.Node) => string | undefined) | undefined;
   readonly isDefaultLibraryFile: (file: ts.SourceFile) => boolean;
-  /** The functions that the tags of the program write, read on the first tag that needs them; undefined when the builder was given no program files. */
-  readonly functionIndex: (() => FunctionIndex) | undefined;
+  /** The functions that the tags of the program write, read on the first tag that needs them. */
+  readonly functionIndex: () => FunctionIndex;
   readonly modelSources: ReadonlySet<string> | undefined;
   readonly stableIdentityRoot: string;
   readonly modelNames: ReadonlyMap<ModelSpecification['declaration'], string>;
@@ -855,7 +855,7 @@ function openDescribeCall(scope: DescribeScope, input: DescribeInput): DescribeC
     isDefaultLibraryFile,
     importer: companionOf(context.sourceFile.fileName),
     ...(modelSources ? { isModelSource: (filename: string) => modelSources.has(filename) } : {}),
-    ...(functionIndex ? { functionIndex } : {}),
+    functionIndex,
     diagnostic: (tagNode: ts.Node, code: string, message: string) =>
       diagnostic(context.sourceFile, tagNode, code, message),
     describeSchema: (schemaType: ts.Type, schemaNode: ts.TypeNode | undefined) =>
@@ -1476,8 +1476,8 @@ export interface DescriptorBuilderOptions {
   readonly typeErrorAt: ((node: ts.Node) => string | undefined) | undefined;
   /** Whether a source file is a default library file: a symbol key it declares is the built-in type's own metadata, not a field. */
   readonly isDefaultLibraryFile: (file: ts.SourceFile) => boolean;
-  /** Every source file of the program that can hold a tag, for the index of the functions that tags write; without it, each tag read from the checker reads the sources of its field. */
-  readonly programFiles?: () => readonly ts.SourceFile[];
+  /** Every source file of the program except the default library files: the tag references in them make the index of the functions that tags write. */
+  readonly programFiles: () => readonly ts.SourceFile[];
   /** How many instances of one generic declaration may be open at once before the walk stops with RUNM1083; `DEFAULT_MAX_EXPANSION_DEPTH` when omitted. */
   readonly maxExpansionDepth?: number;
 }
@@ -1745,8 +1745,7 @@ export function descriptorBuilder(
   const modelValidates = (context: TypeAnalysisContext): boolean =>
     (specifications.find(specification => specification.declaration === context.declaration)?.validation ?? validationLevel) !== false;
 
-  let programIndex: FunctionIndex | undefined;
-  const functionIndex = programFiles ? () => programIndex ??= buildFunctionIndex(checker, programFiles()) : undefined;
+  const functionIndex = (): FunctionIndex => functionIndexOf(checker, programFiles);
   const scope: DescribeScope = {
     checker, specifications, manifestIndex, allowAny, allowUnresolved, boundary, typeErrorAt, isDefaultLibraryFile, functionIndex,
     modelSources, stableIdentityRoot, modelNames, modelLocations, projections, projectionCache, projectionOwners, projectionSources,
