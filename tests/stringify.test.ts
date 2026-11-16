@@ -102,14 +102,14 @@ test('generated stringify matches JSON.stringify for required, optional and arra
     label: 'ascii',
     ids: [1, 2, 3],
   };
-  assert.equal(stringifyBox(payload as never), JSON.stringify(payload));
+  assert.equal(stringifyBox(payload), JSON.stringify(payload));
   const withNote = { scale: payload.scale, label: payload.label, note: '"quoted"\\slash', ids: payload.ids };
-  assert.equal(stringifyBox(withNote as never), JSON.stringify(withNote));
+  assert.equal(stringifyBox(withNote), JSON.stringify(withNote));
   const holes = { scale: payload.scale, label: payload.label, ids: Object.assign([1], { 2: 3 }) };
-  assert.equal(stringifyBox(holes as never), JSON.stringify(holes));
+  assert.equal(stringifyBox(holes), JSON.stringify(holes));
   for (const label of stringCorpus) {
     const labeled = { scale: payload.scale, label, ids: payload.ids };
-    assert.equal(stringifyBox(labeled as never), JSON.stringify(labeled));
+    assert.equal(stringifyBox(labeled), JSON.stringify(labeled));
   }
 });
 
@@ -167,9 +167,9 @@ test('nullable nested objects stringify both populated and null values', () => {
   const source = render(emitGraphStringify(graph));
   const { stringifyCustomer } = instantiate(source);
   const present = { id: 101, account: { id: 601, code: 'customer-account-601' }, href: 'https://example.test/customers/101' };
-  assert.equal(stringifyCustomer(present as never), JSON.stringify(present));
+  assert.equal(stringifyCustomer(present), JSON.stringify(present));
   const missing = { id: 101, account: null, href: 'https://example.test/customers/101' };
-  assert.equal(stringifyCustomer(missing as never), JSON.stringify(missing));
+  assert.equal(stringifyCustomer(missing), JSON.stringify(missing));
 });
 
 test('tagged generated-model unions stringify the selected interned branch', () => {
@@ -223,8 +223,8 @@ test('tagged generated-model unions stringify the selected interned branch', () 
   const { stringifyContactBook } = instantiate(source);
   const withEmail = { contact: { kind: 'email', address: 'one@example.test' } };
   const withPhone = { contact: { kind: 'phone', number: '123' } };
-  assert.equal(stringifyContactBook(withEmail as never), JSON.stringify(withEmail));
-  assert.equal(stringifyContactBook(withPhone as never), JSON.stringify(withPhone));
+  assert.equal(stringifyContactBook(withEmail), JSON.stringify(withEmail));
+  assert.equal(stringifyContactBook(withPhone), JSON.stringify(withPhone));
 });
 
 test('a root union of plain objects decodes by its tag with validation off, and an unknown tag throws', () => {

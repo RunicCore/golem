@@ -5,12 +5,13 @@ import { pathToFileURL } from 'node:url';
 import { test, type TestContext } from 'node:test';
 import { decodeGeneratedModelTrusted, registerGeneratedModel } from '@exprtlabs/golem/internal/model-runtime';
 import { LibError, LibErrorKind, IssueSource, IssueRepresentation } from '@exprtlabs/golem/errors';
+import type { SerdeOptions } from '@exprtlabs/golem/serde';
 import { generate } from '#model/generator';
 import { fileFixtureScope, onceShared, readFixture } from './fixture-project.js';
 import { buildModelProject, createModelProject, writeModelGolemYaml } from './model-project.js';
 import { modelCodec } from './support/model-codec.js';
 
-type FromWire = (wire: unknown, options?: { validate?: boolean }) => unknown;
+type FromWire = (wire: unknown, options?: Pick<SerdeOptions, 'validate' | 'construct'>) => unknown;
 
 function cycleAt(path: readonly (string | number)[]): (error: unknown) => boolean {
   return error => {
@@ -113,12 +114,12 @@ test('generated decode with a constructor reads each declared property once and 
   let reads = 0;
   const wire = { id: 'p1', note: 'n', merchant: { id: 'm', name: 'M' }, billing: { name: 'B' }, money: { amount: '1.00', currency: 'USD' } };
   Object.defineProperty(wire, 'merchant', { enumerable: true, get() { reads++; return { id: 'm', name: 'M' }; } });
-  const built = fromWireFormatTPayment(wire, { validate: false, construct: Construct } as never) as Construct;
+  const built = fromWireFormatTPayment(wire, { validate: false, construct: Construct }) as Construct;
   assert.ok(built instanceof Construct);
   assert.equal(reads, 1);
   const loop: Record<string, unknown> = {};
   loop.again = loop;
-  assert.throws(() => fromWireFormatTRecord({ payload: loop }, { validate: false, construct: Construct } as never), error => {
+  assert.throws(() => fromWireFormatTRecord({ payload: loop }, { validate: false, construct: Construct }), error => {
     assert.ok(error instanceof LibError);
     return true;
   });
@@ -298,9 +299,9 @@ for (const [name, options] of [['default options', undefined], ['validate: true'
     (toRoot.next as { next?: unknown }).next = toRoot;
     const node: { label: string; children: unknown[] } = { label: 'root', children: [] };
     node.children = [node];
-    assert.throws(() => fromWireFormatTTree(self, options as never), cycleAt(['next']));
-    assert.throws(() => fromWireFormatTTree(toRoot, options as never), cycleAt(['next', 'next']));
-    assert.throws(() => fromWireFormatTNode(node, options as never), cycleAt(['children', 0]));
+    assert.throws(() => fromWireFormatTTree(self, options), cycleAt(['next']));
+    assert.throws(() => fromWireFormatTTree(toRoot, options), cycleAt(['next', 'next']));
+    assert.throws(() => fromWireFormatTNode(node, options), cycleAt(['children', 0]));
   });
 }
 
@@ -346,9 +347,9 @@ test('a rejected cycle leaves no decode state behind', async () => {
   class Construct { constructor(public fields: unknown) {} }
   const node: { label: string; children: unknown[] } = { label: 'root', children: [] };
   node.children = [node];
-  assert.throws(() => fromWireFormatTNode(node, { validate: false, construct: Construct } as never), cycleAt(['children', 0]));
+  assert.throws(() => fromWireFormatTNode(node, { validate: false, construct: Construct }), cycleAt(['children', 0]));
   node.children = [];
-  assert.ok(fromWireFormatTNode(node, { validate: false, construct: Construct } as never) instanceof Construct);
+  assert.ok(fromWireFormatTNode(node, { validate: false, construct: Construct }) instanceof Construct);
 });
 
 test('a decoder that user code runs during a parse still checks its own input for cycles', async () => {
@@ -428,8 +429,8 @@ test('an open object without declared fields keeps an own __proto__ key instead 
   const nested = (fromWireFormatTShelfOfBag({ bag: wire() }, { validate: false }) as { bag: Record<string, unknown> }).bag;
   assert.equal(Object.getPrototypeOf(nested), Object.prototype);
   assert.equal(Object.hasOwn(nested, '__proto__'), true);
-  class Construct { constructor(public fields: Record<string, unknown>) {} }
-  const built = fromWireFormatTBag(wire(), { validate: false, construct: Construct } as never) as Construct;
+  class Construct { constructor(public fields: Record<string, unknown> = {}) {} }
+  const built = fromWireFormatTBag(wire(), { validate: false, construct: Construct }) as Construct;
   assert.equal(Object.getPrototypeOf(built.fields), Object.prototype);
   assert.equal(Object.hasOwn(built.fields, '__proto__'), true);
 });
