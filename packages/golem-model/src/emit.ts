@@ -46,6 +46,7 @@ import {
   writesWireStringify,
   descriptorNeedsConversion,
   descriptorSerde,
+  serdeFunctions,
   extraKeyValues,
   wireDiffers,
   type FromJsonModelResolver,
@@ -165,7 +166,7 @@ function visitDescriptor(
       // A validation named by its id alone has no function to import.
       for (const binding of item.validations ?? []) if (typeof binding !== 'string') registerValidation(registry.validations, binding);
       const serde = descriptorSerde(item);
-      if (serde) registerSerde(registry.serde, serde);
+      if (serde) registerSerde(registry.serde, serdeFunctions(serde));
       if (item.kind === 'class-value' && item.classRef?.id !== undefined && item.typeImport !== undefined && !registry.classes.has(item.classRef.id)) {
         registry.classes.set(item.classRef.id, item.typeImport);
       }

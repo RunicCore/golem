@@ -5,7 +5,7 @@
  */
 
 import { assertNever } from '../assert-never.js';
-import type { ModelTypeDescriptor, SerdeFunctions } from '../model-registry.js';
+import type { DescriptorSerde, ModelTypeDescriptor, SerdeFunctions } from '../model-registry.js';
 import type { ValidationLevel, ValidationPlane } from '../object-codec.js';
 import type { SchemaGraph, SchemaNode } from './schema-graph.js';
 import { codecShortName, nodeHoldsSequence, patternSchemas } from './schema-graph.js';
@@ -30,6 +30,7 @@ import {
   objectValueExpression,
   presentKeysCode,
   declaredTable,
+  serdeFunctions,
   unionDispatch,
   withUnionInput,
   type DispatchOptions,
@@ -45,21 +46,24 @@ import {
  * says how it calls a function it is bound to; every binding, a TSerde tag's or a built-in class's, goes through that call.
  */
 export interface StringifySerdeResolver {
-  readonly deserialize: (serde: SerdeFunctions, value: Code) => Code;
-  readonly serialize: (serde: SerdeFunctions, value: Code) => Code;
+  readonly deserialize: (serde: DescriptorSerde, value: Code) => Code;
+  readonly serialize: (serde: DescriptorSerde, value: Code) => Code;
 }
+
+/** What `serdeWireKind` reads of a serde: its wire form alone. */
+type SerdeWire = Pick<SerdeFunctions, 'id' | 'wire' | 'wireDescriptor'>;
 
 /**
  * The JSON type of the wire of a serde when it is a string, a number or a boolean. Such a serde reads only a value of that type (F-39), so
  * its deserializer is wrapped once, by `wireChecked`, where the file binds it.
  */
-function serdeWireKind(serde: SerdeFunctions): 'string' | 'number' | 'boolean' | undefined {
+function serdeWireKind(serde: SerdeWire): 'string' | 'number' | 'boolean' | undefined {
   const kind = serdeWireDescriptor(serde)?.kind;
   return kind === 'string' || kind === 'number' || kind === 'boolean' ? kind : undefined;
 }
 
 /** The deserializer `deserialize` of a serde, as a function that rejects a wire value of another JSON type than the wire's. */
-export function wireCheckedDeserializer(serde: SerdeFunctions, deserialize: Code): Code {
+export function wireCheckedDeserializer(serde: SerdeWire, deserialize: Code): Code {
   const kind = serdeWireKind(serde);
   return kind === undefined ? deserialize : code`${rt.conversion.wireChecked}(${literal(kind)}, ${deserialize})`;
 }
@@ -78,13 +82,17 @@ function checkedDeserializer(serde: SerdeFunctions): Helper {
 
 /**
  * The resolver of a generator whose bindings are functions of the golem runtime (OpenAPI documents hold no TSerde tag). Conversion code holds
- * values as `unknown`; wire validation has already checked them, so the call casts. The file imports exactly the functions it calls.
+ * values as `unknown`; wire validation has already checked them, so the call casts. The file imports exactly the functions it calls. A serde
+ * that names no functions throws a `TypeError` (`serdeFunctions`).
  */
 export const RUNTIME_SERDE: StringifySerdeResolver = {
-  deserialize: (serde, value) => serdeWireKind(serde) === undefined
-    ? code`${runtimeFunctionCode(serde.deserialize)}((${value}) as never)`
-    : code`${helperName(checkedDeserializer(serde))}(${value})`,
-  serialize: (serde, value) => code`${runtimeFunctionCode(serde.serialize)}((${value}) as never)`,
+  deserialize: (serde, value) => {
+    const functions = serdeFunctions(serde);
+    return serdeWireKind(functions) === undefined
+      ? code`${runtimeFunctionCode(functions.deserialize)}((${value}) as never)`
+      : code`${helperName(checkedDeserializer(functions))}(${value})`;
+  },
+  serialize: (serde, value) => code`${runtimeFunctionCode(serdeFunctions(serde).serialize)}((${value}) as never)`,
 };
 
 /** The functions of a codec that another module generated, as the names this module imports them under. */

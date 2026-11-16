@@ -73,7 +73,7 @@ import {
 import { extraKeyValues, isRecordExpression } from './stringify-emitter.js';
 
 /** Generators read tag values through the same rule as the shared union conversion. */
-export { AmbiguousUnionConversionError, descriptorNeedsConversion, descriptorSerde, ObjectUnionDiscriminatorError } from './union-conversion.js';
+export { AmbiguousUnionConversionError, descriptorNeedsConversion, descriptorSerde, ObjectUnionDiscriminatorError, serdeFunctions } from './union-conversion.js';
 
 export type ModelConversionDescriptor = ModelTypeDescriptor;
 

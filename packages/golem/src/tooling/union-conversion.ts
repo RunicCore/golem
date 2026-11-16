@@ -3,7 +3,7 @@
  * Ambiguous unions fail generation; conversion must not probe alternatives.
  */
 
-import type { DiscriminatorValue, ModelTypeDescriptor, SerdeFunctions } from '../model-registry.js';
+import type { DescriptorSerde, DiscriminatorValue, ModelTypeDescriptor, SerdeFunctions } from '../model-registry.js';
 import { createHash } from 'node:crypto';
 import { bindInput, code, helperName, identifier, inputOf, inputSlot, join, literal, localCode, readShape, render, sameCode, selfPlacedHelper, type Code, type Helper, type InputSlot } from './code.js';
 import { rt } from './rt.js';
@@ -448,12 +448,18 @@ function inlineDispatch(options: DispatchOptions): Code {
   return code`(${converted})`;
 }
 
-/**
- * The serde of a descriptor as the functions it names. Every descriptor that a generator makes names both; a descriptor that a test
- * writes by hand may leave them out, and the serde resolver of that test never reads them.
- */
-export function descriptorSerde(descriptor: ModelTypeDescriptor): SerdeFunctions | undefined {
-  return descriptor.serde as SerdeFunctions | undefined;
+/** The serde of a descriptor, as the descriptor holds it: the functions it names may be missing (a codec shape holds the `id` alone). */
+export function descriptorSerde(descriptor: ModelTypeDescriptor): DescriptorSerde | undefined {
+  return descriptor.serde;
+}
+
+/** The serde with the two functions it names. A serde that names none is a broken input, not a case: it throws, so no output holds a missing function. */
+export function serdeFunctions(serde: DescriptorSerde): SerdeFunctions {
+  const { serialize, deserialize } = serde;
+  if (serialize === undefined || deserialize === undefined) {
+    throw new TypeError(`The serde ${JSON.stringify(serde.id)} names no ${serialize === undefined ? 'serialize' : 'deserialize'} function.`);
+  }
+  return { ...serde, serialize, deserialize };
 }
 
 /**
@@ -462,7 +468,7 @@ export function descriptorSerde(descriptor: ModelTypeDescriptor): SerdeFunctions
  * tests `kind === 'generated-model'` before this skips the serde.
  */
 export type ValueConversion =
-  | { readonly kind: 'serde'; readonly serde: SerdeFunctions }
+  | { readonly kind: 'serde'; readonly serde: DescriptorSerde }
   | { readonly kind: 'generated-model'; readonly descriptor: GeneratedModelTypeDescriptor }
   | { readonly kind: 'other' };
 
