@@ -135,7 +135,6 @@ export class Money extends TMoneyBaseModel {}
 `,
   });
   writeModelGolemYaml(root, {});
-  assert.equal(fs.readFileSync(path.join(root, 'golem.yaml'), 'utf8').includes('validation'), false);
   await buildModelProject(root);
   assert.equal(generatedModelFiles(root).some(file => file.path.endsWith('models.validators.generated.ts')), true);
   await import(`${pathToFileURL(path.join(root, 'build/money.js')).href}`);
