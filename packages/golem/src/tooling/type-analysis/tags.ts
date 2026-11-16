@@ -559,7 +559,7 @@ export interface Walk {
 
 const INFERRED = 'whose type golem infers';
 
-/** Whether `node` holds no other node that can hold a tag: a name, a literal, or a keyword type such as `string`. */
+/** Whether `node` holds no other node that can hold a tag: a name, a literal, a keyword type such as `string`, or a class static block, which carries no type. */
 function holdsNothing(node: ts.Node): boolean {
   return ts.isIdentifier(node) || ts.isLiteralTypeNode(node) || ts.isTemplateLiteralTypeNode(node) || ts.isEnumDeclaration(node) || ts.isClassStaticBlockDeclaration(node)
     || (ts.isTypeNode(node) && ts.forEachChild(node, () => true) === undefined);
