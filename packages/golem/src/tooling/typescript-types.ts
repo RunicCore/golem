@@ -712,7 +712,7 @@ export interface ProgramSession extends Disposable {
   /**
    * Parse a project configuration under compiler command-line arguments (`--strict false`, `--allowJs`), as `tsc -p` does: an
    * argument replaces the same option of the configuration, and the file list follows the merged options. An argument the compiler
-   * rejects throws. The TypeScript 6 lane keeps a relative path argument as written; the TypeScript 7 lane makes it absolute.
+   * rejects throws a `CommandLineError` that holds the compiler's diagnostics. The TypeScript 6 lane keeps a relative path argument as written; the TypeScript 7 lane makes it absolute.
    */
   parseConfigFileWithFlags(configPath: string, flags: readonly string[], onInput?: (filename: string) => void): ParsedProject;
   openProgram(options: OpenProgramOptions): Program;

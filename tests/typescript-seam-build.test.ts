@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 import * as ts from '@exprtlabs/golem/internal/ts';
-import { declarationOutputOf, flagsAsConfigOptions } from '#golem/typescript-config';
+import { CommandLineError, declarationOutputOf, flagsAsConfigOptions } from '#golem/typescript-config';
 import { createFixtureProject } from './fixture-project.js';
 import { TSC } from './support/build-project.js';
 
@@ -41,7 +41,7 @@ test('a configuration parsed under flags takes the flags over its options and li
   assert.equal(flagged.options.strict, false);
   assert.equal(flagged.options.allowJs, true);
   assert.equal(flagged.options.target, plain.options.target);
-  assert.throws(() => session.parseConfigFileWithFlags(config, ['--noSuchFlag']), /TS5023/);
+  assert.throws(() => session.parseConfigFileWithFlags(config, ['--noSuchFlag']), (error: unknown) => error instanceof CommandLineError && /TS5023/.test(error.message));
 });
 
 /** A row: its name, its files, its compiler options, the roots the program is given beyond the ones its tsconfig matches, its command-line flags and its option overrides. */
@@ -220,7 +220,7 @@ test('arguments reach a program as the options of a configuration parsed under t
   assert.equal(ts.getTscDiagnostics(plain).length, 1);
   assert.equal(ts.getTscDiagnostics(flagged).length, 0);
   assert.equal(ts.getTscDiagnostics(overridden).length, 1, 'an override wins over an argument');
-  assert.throws(() => session.openProgram({ root, sources, configFile: config, flags: ['--noSuchFlag'] }), /TS5023/);
+  assert.throws(() => session.openProgram({ root, sources, configFile: config, flags: ['--noSuchFlag'] }), (error: unknown) => error instanceof CommandLineError && /TS5023/.test(error.message));
 });
 
 test('a list argument with spaces reaches a program as the configuration parsed under it has it', t => {

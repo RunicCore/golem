@@ -1,13 +1,25 @@
 import { basename, dirname, isAbsolute, join, normalize, relative, resolve as resolvePath, sep } from 'node:path';
 import { displayPath } from './generator-core.js';
 import { inNodeModules } from './type-analysis/path-identity.js';
-import type { OpenProgramOptions, VirtualFiles } from './typescript-types.js';
+import type { CompilerOptions, Diagnostic, OpenProgramOptions, VirtualFiles } from './typescript-types.js';
 
 /** The diagnostic code of a configuration that matches no file. */
 const NO_INPUTS_FOUND = 18003;
 
 /** The refusal of a configuration that has errors. A build recovers from it by printing them as the compiler does; any other reader of the values fails with it. */
 export class ConfigParseError extends Error {}
+
+/** The refusal of command-line arguments that the compiler's parse rejects. A build prints its `diagnostics` as `tsc` prints them. `options` are the options that the lane's `tsc` uses to format these errors: its `pretty` picks the form, and a lane whose `tsc` reads none gives none. */
+export class CommandLineError extends Error {
+  constructor(readonly options: CompilerOptions, readonly diagnostics: readonly Diagnostic[]) {
+    super(['The compiler arguments have errors:', ...diagnostics.map((diagnostic) => `  TS${diagnostic.code}: ${diagnostic.text}`)].join('\n'));
+  }
+}
+
+/** Fail with the compiler's own diagnostics for command-line arguments it rejects. Both lanes read the arguments with their compiler's parse and give it here. */
+export function assertCommandLineParsed(commandLine: { readonly options: object; readonly errors: readonly Diagnostic[] }): void {
+  if (commandLine.errors.length > 0) throw new CommandLineError({ ...commandLine.options }, commandLine.errors);
+}
 
 /** A configuration that is read for its values (not to open a program) fails with its errors. Golem names its own roots there, so a configuration that lists no files is not an error. A program reports it, as `tsc` does. */
 export function assertConfigParsed(configPath: string, errors: readonly { readonly code: number; readonly text: string }[]): void {
@@ -170,7 +182,7 @@ export function assertNoSourceFiles(fileNames: readonly string[]): void {
 interface ParsedArguments {
   readonly options: object;
   readonly fileNames: readonly string[];
-  readonly errors: readonly { readonly code: number; readonly text: string }[];
+  readonly errors: readonly Diagnostic[];
 }
 
 /** A command-line option as a tsconfig value. The parse holds enums as numbers and `lib` as file names, which a configuration does not take back, so the argument's own text decides. */
@@ -224,7 +236,7 @@ function parsedFlagOptions(flags: readonly string[], parse: (flags: readonly str
     })();
     const parsed = parse(together ? [flag, next] : [flag]);
     assertNoSourceFiles(parsed.fileNames);
-    if (parsed.errors.length > 0) throw new Error([`The compiler arguments ${flags.join(' ')} have errors:`, ...parsed.errors.map((diagnostic) => `  TS${diagnostic.code}: ${diagnostic.text}`)].join('\n'));
+    assertCommandLineParsed(parsed);
     for (const [name, value] of Object.entries(parsed.options as Record<string, unknown>)) options[name] = configValue(value, together ? next : undefined);
     if (together) index += 1;
   }
