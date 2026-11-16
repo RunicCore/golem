@@ -726,11 +726,12 @@ function parseFlags(flags: readonly string[]) {
  * The options with the file in which the compiler places an option error. It places one in the configuration it parsed, and a derived
  * configuration (the flags, the option overrides) holds none of the user's options, so the user's own tsconfig takes its place and the
  * error names its file and position, as `tsc` does. The derived configuration takes its file lists from the user's, so they go with it: the
- * compiler names a file by the pattern that matched it. It reads the file from `configFile`, which the parse makes read-only.
+ * compiler names a file by the pattern that matched it. It reads the file from `configFile`, which the parse makes read-only, and names it
+ * from `configFilePath` (the common source directory error), which the user's tsconfig takes too.
  */
 function locatedInUserConfig({ options, configFileSpecs }: ParsedConfig, { configPath, userConfigPath }: ProgramConfig): Golem.CompilerOptions {
   if (userConfigPath === undefined || userConfigPath === configPath) return options;
-  return Object.defineProperty({ ...options }, 'configFile', { value: Object.assign(classic.readJsonConfigFile(userConfigPath, sys.readFile), { configFileSpecs }) });
+  return Object.defineProperty({ ...options, configFilePath: userConfigPath }, 'configFile', { value: Object.assign(classic.readJsonConfigFile(userConfigPath, sys.readFile), { configFileSpecs }) });
 }
 
 /** The options read as a tsconfig of the current folder: the classic parse makes the path options absolute from it. No file is listed or read. */
