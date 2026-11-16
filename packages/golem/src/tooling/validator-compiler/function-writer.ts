@@ -5,7 +5,7 @@ import { rt, runtimeFunctionCode } from '../rt.js';
 import { VALUE, PATH, NEWLINE, COMMA, ISSUES, ALL, SANITY, INHERITED, EVALUATION, type CalleeSlot, type CallArguments } from './function-names.js';
 import { isTuple, keepsFormat } from './call-graph.js';
 import { JSON_TYPES, JSON_TYPE_NAMES, dispatchTest } from './json-types.js';
-import { instanceFieldsOf, localName, scaledDivisor, stateTest } from './local-helpers.js';
+import { instanceFieldsOf, scaledDivisor, stateTest } from './local-helpers.js';
 import { patternExpression, type ModuleState } from './module-state.js';
 import { resolve, readSet, objectPresence, type Capture, type Lazy, type KeyList, type KeyTest, type RawKeys, type UnreadKeys, type WriterMode } from './modes.js';
 
@@ -15,7 +15,7 @@ const objectTest = JSON_TYPES.object.code;
 
 /** The model class of `value` among the codec ids `among`, which the module keeps as one frozen list. */
 function selectedModelCall(state: ModuleState, value: Code, among: readonly string[]): Code {
-  return code`${localName('selectedModel')}(${value}, ${state.constant('models', code``, code`Object.freeze(${literalCode(among)})`, JSON.stringify(among))})`;
+  return code`${runtime.selectedModel}(${value}, ${state.constant('models', code``, code`Object.freeze(${literalCode(among)})`, JSON.stringify(among))})`;
 }
 
 /** A leaf check: the expression that is true when the value fails it, and the issue it then reports. */
@@ -93,11 +93,11 @@ export class FunctionWriter {
   /** The body of the function, without its header line. */
   public write(): Code {
     for (const start of this.mode.fail.start) this.line(start);
-    if (this.fn.collects) this.line(code`const ${EVALUATION} = ${localName('newEvaluation')}();`);
-    else if (this.fn.receives) this.line(code`const ${EVALUATION} = ${INHERITED} ?? ${localName('newEvaluation')}();`);
+    if (this.fn.collects) this.line(code`const ${EVALUATION} = ${runtime.newEvaluation}();`);
+    else if (this.fn.receives) this.line(code`const ${EVALUATION} = ${INHERITED} ?? ${runtime.newEvaluation}();`);
     this.schema(this.fn.body, VALUE);
     // A function that both keeps a record and receives one hands what it evaluated to its caller once it passed.
-    if (this.fn.collects && this.fn.receives) this.line(code`if (ok && ${INHERITED} !== undefined) ${localName('mergeEvaluation')}(${INHERITED}, ${EVALUATION});`);
+    if (this.fn.collects && this.fn.receives) this.line(code`if (ok && ${INHERITED} !== undefined) ${runtime.mergeEvaluation}(${INHERITED}, ${EVALUATION});`);
     // A `false` schema has already left the function in a mode that leaves at a failure.
     if (this.fn.body.kind !== 'never' || !this.mode.fail.leaves) this.line(this.mode.fail.end);
     this.lines.push({ spaces: 0, body: code`}` });
@@ -292,7 +292,7 @@ export class FunctionWriter {
       case 'conditional': return this.conditionalCheck(check, value);
       case 'dependentSchemas': {
         const presence = objectPresence(value);
-        this.open(code`if (${localName('isObject')}(${value}))`);
+        this.open(code`if (${runtime.isObject}(${value}))`);
         for (const { trigger, fn } of check.entries) {
           this.open(code`if (${presence.present(trigger)})`);
           this.callInPlace(fn, value);
@@ -411,7 +411,7 @@ export class FunctionWriter {
       const scaled = scaledDivisor(check.multipleOf);
       const test = scaled === undefined
         ? code`${runtime.isMultipleOf}(${value}, ${divisor})`
-        : code`${localName('isMultipleOfScaled')}(${value}, ${divisor}, ${literalCode(scaled.units)}, ${literalCode(scaled.scale)})`;
+        : code`${runtime.isMultipleOfScaled}(${value}, ${divisor}, ${literalCode(scaled.units)}, ${literalCode(scaled.scale)})`;
       this.leaf({ fails: code`!${test}`, issue: code`code: 'multipleOf', divisor: ${divisor}`, skip: 'costly' });
     }
   }
@@ -465,7 +465,7 @@ export class FunctionWriter {
     }
     this.atChild(index, () => {
       const item = this.fresh('item');
-      this.line(code`let ${item} = ${value}[${index}];`);
+      this.line(code`let ${item}${this.state.notation.read} = ${value}[${index}];`);
       // A mode that leaves at a failure has left at the hole; the full validator goes on in all-errors mode, so it jumps past the schema.
       const skip = this.mode.fail.leaves ? undefined : this.fresh('skip');
       if (skip !== undefined) this.open(code`${skip}:`);
@@ -676,12 +676,12 @@ export class FunctionWriter {
   /** `unevaluatedProperties`: the keys that nothing evaluated. */
   private unevaluatedProperties(schema: IrSchema, value: Code): void {
     const record = this.requireRecord();
-    this.open(code`if (${localName('isObject')}(${value}))`);
+    this.open(code`if (${runtime.isObject}(${value}))`);
     if (schema.kind !== 'always') {
       const key = this.fresh('key');
       this.open(code`if (!${record}.allKeys)`);
       // `definedKeys` leaves out program state of a model instance: it is no unevaluated key, whether the schema forbids it or judges its value.
-      this.open(code`for (const ${key} of ${localName('definedKeys')}(${value}, ${instanceFieldsOf(value)}))`);
+      this.open(code`for (const ${key} of ${runtime.definedKeys}(${value}, ${instanceFieldsOf(value)}))`);
       this.line(code`if (${record}.keys.has(${key})) continue;`);
       if (schema.kind === 'never') {
         this.issue(code`code: 'unknownKey', key: ${key}`, code`[...${PATH}, ${key}]`);
@@ -712,7 +712,7 @@ export class FunctionWriter {
         this.line(code`${unevaluated}++;`);
       } else {
         const item = this.fresh('item');
-        this.line(code`const ${item} = ${value}[${index}] ?? null;`);
+        this.line(code`const ${item}${this.state.notation.read} = ${value}[${index}] ?? null;`);
         this.atChild(index, () => this.schema(schema, item));
       }
       this.close();
@@ -742,9 +742,9 @@ export class FunctionWriter {
 
   private exactConditional(check: Extract<IrCheck, { kind: 'conditional' }>, value: Code): void {
     const scratch = this.record === undefined ? undefined : this.fresh('scratch');
-    if (scratch !== undefined) this.line(code`const ${scratch} = ${localName('newEvaluation')}();`);
+    if (scratch !== undefined) this.line(code`const ${scratch} = ${runtime.newEvaluation}();`);
     this.open(code`if (${this.call(check.if, { value, issues: code`[]`, all: code`false`, ...(scratch === undefined ? {} : { record: scratch }) })})`);
-    if (scratch !== undefined && this.record !== undefined) this.line(code`${localName('mergeEvaluation')}(${this.record}, ${scratch});`);
+    if (scratch !== undefined && this.record !== undefined) this.line(code`${runtime.mergeEvaluation}(${this.record}, ${scratch});`);
     if (check.then !== undefined) this.callInPlace(check.then, value);
     this.close();
     if (check.else !== undefined) {
@@ -761,9 +761,9 @@ export class FunctionWriter {
     for (const id of [check.if, check.then, check.else]) {
       if (id === undefined) continue;
       const scratch = this.fresh('scratch');
-      this.line(code`const ${scratch} = ${localName('newEvaluation')}();`);
+      this.line(code`const ${scratch} = ${runtime.newEvaluation}();`);
       this.line(code`${this.call(id, { value, issues: code`[]`, all: code`false`, record: scratch })};`);
-      this.line(code`${localName('mergeEvaluation')}(${record}, ${scratch});`);
+      this.line(code`${runtime.mergeEvaluation}(${record}, ${scratch});`);
     }
   }
 
@@ -817,10 +817,10 @@ export class FunctionWriter {
     check.branches.forEach((fn, position) => {
       const scratch = this.fresh('scratch');
       this.open(position === 0 || !check.exactlyOne ? undefined : code`if (${stops})`);
-      this.line(code`const ${scratch} = ${localName('newEvaluation')}();`);
+      this.line(code`const ${scratch} = ${runtime.newEvaluation}();`);
       this.open(code`if (${this.call(fn, { value, issues: code`[]`, all: code`false`, record: scratch })})`);
       this.line(code`${matched}++;`);
-      this.line(code`${localName('mergeEvaluation')}(${record}, ${scratch});`);
+      this.line(code`${runtime.mergeEvaluation}(${record}, ${scratch});`);
       this.close();
       this.close();
     });
@@ -845,7 +845,7 @@ export class FunctionWriter {
     const property = literalCode(discriminator.property);
     const tag = this.fresh('tag');
     const selected = this.fresh('branch');
-    this.line(code`const ${tag} = ${localName('isObject')}(${value}) && ${presence.present(discriminator.property)} ? ${presence.read(discriminator.property)} : undefined;`);
+    this.line(code`const ${tag} = ${runtime.isObject}(${value}) && ${presence.present(discriminator.property)} ? ${presence.read(discriminator.property)} : undefined;`);
     const selection = this.mode.form<Lazy>(
       () => code`${this.tagLists(discriminator)}.findIndex(list => list.some(item => ${runtime.jsonEqual}(${tag}, item)))`,
       () => this.tagSelection(discriminator, tag),

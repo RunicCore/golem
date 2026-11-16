@@ -34,6 +34,8 @@ export interface Notation {
   readonly wrapperResult: Code;
   /** The type of an exported fast check that is another function's name. */
   readonly fastCheck: Code;
+  /** A local that holds a value read from the input, so a read from an array (`any`) is as checked as one from an object. */
+  readonly read: Code;
   /** The type of a constant that holds a list of JSON values. */
   readonly literals: Code;
 }
@@ -51,10 +53,11 @@ export const NOTATIONS: Readonly<Record<Language, Notation>> = {
     record: code`?: ${rtType.validation.Evaluation}`,
     verdict: code`: boolean`,
     wrapperResult: code`: readonly ${rtType.validation.SchemaIssue}[]`,
+    read: code`: unknown`,
     fastCheck: code`: (value: unknown) => boolean`,
     literals: code`: readonly ${rtType.validation.JsonValue}[]`,
   },
-  js: { value: NONE, path: NONE, issues: NONE, all: NONE, sanity: NONE, record: NONE, verdict: NONE, wrapperResult: NONE, fastCheck: NONE, literals: NONE },
+  js: { value: NONE, path: NONE, issues: NONE, all: NONE, sanity: NONE, record: NONE, verdict: NONE, wrapperResult: NONE, read: NONE, fastCheck: NONE, literals: NONE },
 };
 
 export function functionParameters(fn: IrFunction, notation: Notation): Code {

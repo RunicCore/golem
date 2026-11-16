@@ -1,5 +1,6 @@
 import type { SchemaIssue } from './issue-messages.js';
 import { instanceFields, isStateKey, presentValue } from './presence.js';
+import { MODEL_CODEC_IDS_KEY } from './schema-keywords.js';
 export type { SchemaIssue, SchemaIssueDetail } from './issue-messages.js';
 export type { JsonValue } from './errors.js';
 export { instanceFields, isStateKey };
@@ -357,4 +358,88 @@ export function globalInstanceTest<Instance extends object>(path: readonly strin
     }
     return value instanceof known && (valid === undefined || valid(value));
   };
+}
+
+/** True for a JSON object: an object that is not `null` and not an array. The one record test of golem (record.ts), under the name that generated code imports. */
+export { isRecord as isObject } from './record.js';
+
+/**
+ * The JSON view of the keys: a key is present when it is own, enumerable and not `undefined`, as `JSON.stringify` writes it.
+ * A model's optional field may be set to `undefined` and JSON has no such value. Program state of a model instance (see
+ * `instanceFields`) is no key of the model, also when the schema declares a key of that name, and its value is never read.
+ */
+export function isPresent(value: Record<string, unknown>, key: string): boolean {
+  return Object.prototype.propertyIsEnumerable.call(value, key) && !isStateKey(instanceFields(value), key) && value[key] !== undefined;
+}
+
+/** The present keys of `value` (see `isPresent`); `fields` are the own-model names of `value` (`instanceFields`), which the caller already holds. */
+export function definedKeys(value: Record<string, unknown>, fields: readonly string[] | undefined): string[] {
+  return Object.keys(value).filter(key => !isStateKey(fields, key) && value[key] !== undefined);
+}
+
+/** The failure of a fast check whose key test left the values unread reads them as the full validator does, then fails. */
+export function readAll(value: Record<string, unknown>, keys: readonly string[]): void {
+  const fields = instanceFields(value);
+  for (const key of keys) if (!isStateKey(fields, key)) Reflect.get(value, key);
+}
+
+/**
+ * The fast form of `isMultipleOf` for a decimal divisor the compiler wrote as `units / scale` (see `scaledDivisor`). A value
+ * is a multiple when it is `whole / scale` for a whole number below 2 ** 52 (4503599627370496) that `units` divides.
+ * `whole / scale` is the double nearest to the decimal `whole * 10 ** -d`, and at that size no other decimal with d digits
+ * after the point rounds to the same double, so `whole / scale === value` shows that the shortest text of the value is
+ * that decimal and `isMultipleOf` would judge it the same way. Any value that fails the test (NaN, infinite, too large,
+ * too many decimals) goes to `isMultipleOf`, so every result stays the one of the exact function. It allocates nothing.
+ */
+export function isMultipleOfScaled(value: number, divisor: number, units: number, scale: number): boolean {
+  const whole = Math.round(value * scale);
+  if (Math.abs(whole) < 4503599627370496 && whole / scale === value) return whole % units === 0;
+  return isMultipleOf(value, divisor);
+}
+
+// The symbol key is `MODEL_CODEC_IDS_KEY`, which object-codec.ts registers under: validators import no module that registers classes.
+// The annotation lets a bundler drop the key with the validators that do not use `selectedModel`.
+const modelIdsKey = /*#__PURE__*/ Symbol.for(MODEL_CODEC_IDS_KEY);
+
+/**
+ * The registered model class a value is an instance of, as `golemModelInstance` reads it. The most derived registered
+ * prototype on the chain wins. A codec id matches exactly: the validation plan has resolved each name to the id the class
+ * registers under. No function is made per call.
+ */
+export function selectedModel(value: unknown, among: readonly string[]): string | undefined {
+  if (typeof value !== 'object' || value === null) return undefined;
+  for (let prototype = Object.getPrototypeOf(value); prototype !== null; prototype = Object.getPrototypeOf(prototype)) {
+    if (!Object.hasOwn(prototype, modelIdsKey)) continue;
+    const registered: unknown = Reflect.get(prototype, modelIdsKey);
+    if (!Array.isArray(registered)) continue;
+    for (let x = 0; x < among.length; x++) for (let y = 0; y < registered.length; y++) if (registered[y] === among[x]) return among[x];
+  }
+  return undefined;
+}
+
+export function newEvaluation(): Evaluation {
+  return { keys: new Set(), allKeys: false, prefix: 0, indexes: new Set(), allItems: false };
+}
+
+export function mergeEvaluation(into: Evaluation, from: Evaluation): void {
+  for (const key of from.keys) into.keys.add(key);
+  for (const index of from.indexes) into.indexes.add(index);
+  into.allKeys = into.allKeys || from.allKeys;
+  into.prefix = Math.max(into.prefix, from.prefix);
+  into.allItems = into.allItems || from.allItems;
+}
+
+// The path and issue lists of `leafPasses` are shared by every validator of the process and emptied on each call. A validator
+// only pushes to them, and `leafPasses` reads only the verdict, so a call made while another runs (a getter that validates) changes no verdict.
+const scratchPath: (string | number)[] = [];
+const scratchIssues: SchemaIssue[] = [];
+
+/**
+ * The fast check runs a function that has no fast check through its full validator, fail-fast, and reads only the verdict.
+ * It allocates nothing.
+ */
+export function leafPasses(validate: (value: unknown, path: (string | number)[], issues: SchemaIssue[], all: boolean) => boolean, value: unknown): boolean {
+  scratchPath.length = 0;
+  scratchIssues.length = 0;
+  return validate(value, scratchPath, scratchIssues, false);
 }
