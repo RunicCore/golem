@@ -19,7 +19,7 @@ import { emitsJavaScript, projectSources, RewriteScanner } from './rewrite-scan.
 import { retainedProgramSession } from './type-analysis/project.js';
 import { inlineEmittedSourceMap, pointDeclarationMap, pointSourceMap } from './source-map.js';
 import type { SourceMapV3 } from './source-map.js';
-import { assertNotSolutionTsconfig, ConfigParseError, referenceClosure, referencedCommand, referencesRefusal } from './typescript-config.js';
+import { assertNotSolutionTsconfig, CommandLineError, ConfigParseError, referenceClosure, referencedCommand, referencesRefusal } from './typescript-config.js';
 import * as ts from './typescript-ns.js';
 import { requestTypeScriptRoot } from './typescript-selection.js';
 import { changedPaths, InputScan, InputWatcher, outsideFolder, OwnedOutputIndex, realInputFiles, RunBaseline } from './input-watcher.js';
@@ -336,7 +336,10 @@ function reportCheck(root: string, program: ts.Program, diagnostics: readonly ts
   const host = diagnosticHost(root);
   const options = program.getCompilerOptions();
   const listed = options.listFiles === true ? program.getSourceFiles().map((file) => `${file.fileName}${host.getNewLine()}`).join('') : '';
-  const output = `${diagnosticText(root, options, diagnostics)}${listed}${isPretty(options) ? ts.formatErrorSummary(diagnostics, host) : ''}`;
+  printReport(`${diagnosticText(root, options, diagnostics)}${listed}${isPretty(options) ? ts.formatErrorSummary(diagnostics, host) : ''}`, onReport);
+}
+
+function printReport(output: string, onReport?: (report: string) => void): void {
   if (output === '') return;
   process.stdout.write(output);
   onReport?.(output);
@@ -456,6 +459,11 @@ async function buildOnce(requestSession: () => ts.ProgramSession, run: BuildRun,
   try {
     configured = parseOptions();
   } catch (error) {
+    // Arguments the compiler rejects end the build as they end `tsc`: its diagnostics, with no summary.
+    if (error instanceof CommandLineError) {
+      printReport(diagnosticText(root, error.options, error.diagnostics), run.onCompilerReport);
+      return 1;
+    }
     // A tsconfig with errors ends the build before it generates: the errors print as `tsc` prints them. A refusal the program does not report stays the report.
     if (error instanceof ConfigParseError && printConfigErrors(session, root, configFile, run, observe)) return 1;
     throw error;

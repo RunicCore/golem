@@ -1,13 +1,25 @@
 import { basename, dirname, isAbsolute, join, normalize, relative, resolve as resolvePath, sep } from 'node:path';
 import { displayPath } from './generator-core.js';
 import { inNodeModules } from './type-analysis/path-identity.js';
-import type { OpenProgramOptions, VirtualFiles } from './typescript-types.js';
+import type { CompilerOptions, Diagnostic, OpenProgramOptions, VirtualFiles } from './typescript-types.js';
 
 /** The diagnostic code of a configuration that matches no file. */
 const NO_INPUTS_FOUND = 18003;
 
 /** The refusal of a configuration that has errors. A build recovers from it by printing them as the compiler does; any other reader of the values fails with it. */
 export class ConfigParseError extends Error {}
+
+/** The refusal of command-line arguments that the compiler's parse rejects. A build prints its `diagnostics` as `tsc` prints them, in the form that the `pretty` of `options` gives. */
+export class CommandLineError extends Error {
+  constructor(readonly options: CompilerOptions, readonly diagnostics: readonly Diagnostic[]) {
+    super(['The compiler arguments have errors:', ...diagnostics.map((diagnostic) => `  TS${diagnostic.code}: ${diagnostic.text}`)].join('\n'));
+  }
+}
+
+/** Fail with the compiler's own diagnostics for command-line arguments it rejects. Both lanes read the arguments with their compiler's parse and give it here. */
+export function assertCommandLineParsed(commandLine: { readonly options: object; readonly errors: readonly Diagnostic[] }): void {
+  if (commandLine.errors.length > 0) throw new CommandLineError({ ...commandLine.options }, commandLine.errors);
+}
 
 /** A configuration that is read for its values (not to open a program) fails with its errors. Golem names its own roots there, so a configuration that lists no files is not an error. A program reports it, as `tsc` does. */
 export function assertConfigParsed(configPath: string, errors: readonly { readonly code: number; readonly text: string }[]): void {

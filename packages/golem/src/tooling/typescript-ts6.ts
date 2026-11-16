@@ -12,7 +12,7 @@ import { dirname } from 'node:path';
 import { GOLEM_CHANNELS } from './diagnostics-channels.js';
 import { displayPath } from './generator-core.js';
 import { fileSignature, MISSING } from './input-watcher.js';
-import { affectsResolution, assertConfigParsed, assertNoSourceFiles, canonical, hasVirtualFiles, virtualLookup, collectTscDiagnostics, configReferences, emitWanted, flagPathOptions, flagsAsConfigOptions, isDeclarationFile, programRequest, referencedConfigFile } from './typescript-config.js';
+import { affectsResolution, assertCommandLineParsed, assertConfigParsed, assertNoSourceFiles, canonical, hasVirtualFiles, virtualLookup, collectTscDiagnostics, configReferences, emitWanted, flagPathOptions, flagsAsConfigOptions, isDeclarationFile, programRequest, referencedConfigFile } from './typescript-config.js';
 import type { ConfigReference, ProgramConfig, ResolveAtCurrentFolder, VirtualLookup } from './typescript-config.js';
 import { selectedTypeScript } from './typescript-selection.js';
 import { assertPackageManifestsParse } from './type-analysis/package-specifier.js';
@@ -879,6 +879,7 @@ export class ProgramSession implements Disposable {
     this.assertOpen();
     this.observe(onInput, new Set());
     const commandLine = classic.parseCommandLine(flags);
+    assertCommandLineParsed({ options: commandLine.options, errors: commandLine.errors.map(withText) });
     assertNoSourceFiles(commandLine.fileNames);
     // A path in a flag is read from the current folder, as `tsc` reads it; the session works from the tsconfig's folder.
     const paths = flagPathOptions(flags, parseFlags, resolveAtCurrentFolder);
