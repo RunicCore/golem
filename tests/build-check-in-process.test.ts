@@ -106,3 +106,16 @@ test('with noEmitOnError a syntax error alone is printed, as tsc prints it, and 
   assert.equal(result.code, 1);
   assert.equal(fs.existsSync(path.join(root, 'build')), false);
 });
+
+test('a syntax error in the tsconfig fails golem build with the tsconfig of the user named, never a file that golem derives from it', async (t) => {
+  // protects: T-1026 the build opens the emit program on a derived configuration (.options.json), which must not be the file an error names
+  const root = serdeProject(t, 'build-tsconfig-syntax');
+  const tsconfig = path.join(root, 'tsconfig.json');
+  const { compilerOptions, include } = JSON.parse(fs.readFileSync(tsconfig, 'utf8')) as { compilerOptions: object; include: string[] };
+  fs.writeFileSync(tsconfig, `{ compilerOptions: ${JSON.stringify(compilerOptions)}, "include": ${JSON.stringify(include)} }\n`);
+  const result = await golemBuild(root, []);
+  const output = `${result.stdout}${result.stderr}`;
+  assert.notEqual(result.code, 0);
+  assert.match(output, /tsconfig\.json.*TS1327/s);
+  assert.doesNotMatch(output, /\.(?:options|roots)(?:\.roots)?\.json/);
+});
