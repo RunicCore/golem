@@ -1196,18 +1196,22 @@ export class ProgramSession implements Disposable {
   parseReferencedConfigFile(configPath: string, onInput?: (filename: string) => void): ParsedProject | undefined {
     const parsed = this.withCompiler('parse', (api) => {
       this.observe(onInput, new Set());
-      return this.exists(configPath) ? api.parseConfigFile(configPath) : undefined;
+      return this.readReferenced(api, configPath);
     });
     return parsed && projectOf(parsed);
   }
 
-  /** Whether the compiler finds a file: in an overlay, else on the disk. The path is an input of the program, and so is its absence. */
-  private exists(filename: string): boolean {
-    const file = canonical(filename);
+  /** A referenced project's configuration as the compiler parses it, errors and all (`tsc -p` reports none of them), or `undefined` for a tsconfig that does not exist (the compiler reports it, TS6053). */
+  private readReferenced(api: API, configPath: string): ReturnType<API['parseConfigFile']> | undefined {
+    return this.servedByOverlay(canonical(configPath)) || sys.fileExists(configPath) ? api.parseConfigFile(configPath) : undefined;
+  }
+
+  /** Whether an overlay serves the file. The path is an input of the program, and so is its absence: a file that no overlay serves is read from the disk, so its signature is recorded. */
+  private servedByOverlay(file: string): boolean {
     this.report(file);
     if (this.overlays.has(file)) return true;
     this.recordSignature(file);
-    return sys.fileExists(file);
+    return false;
   }
 
   /**
@@ -1446,10 +1450,7 @@ export class ProgramSession implements Disposable {
       const result = api.parseConfigFile(base.configPath);
       assertConfigParsed(base.configPath, result.errors);
       parsed = result;
-      closure = referenceClosure(result.projectReferences ?? [], (configFile) => {
-        // `tsc -p` reports no error of a referenced project's own file, and a tsconfig that does not exist at the reference (TS6053): the compiler's to report.
-        return this.exists(configFile) ? api.parseConfigFile(configFile) : undefined;
-      });
+      closure = referenceClosure(result.projectReferences ?? [], (configFile) => this.readReferenced(api, configFile));
     } finally {
       this.setOverlays(previous);
     }
@@ -1628,13 +1629,7 @@ export class ProgramSession implements Disposable {
         this.recordSignature(filename);
         return serverFS.useOS;
       },
-      fileExists: (fileName) => {
-        const filename = canonical(fileName);
-        this.report(filename);
-        if (this.overlays.has(filename)) return true;
-        this.recordSignature(filename);
-        return serverFS.useOS;
-      },
+      fileExists: (fileName) => this.servedByOverlay(canonical(fileName)) || serverFS.useOS,
       directoryExists: (directoryName) => {
         const directory = canonical(directoryName);
         this.report(directory);

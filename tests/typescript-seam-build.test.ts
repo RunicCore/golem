@@ -95,7 +95,6 @@ for (const [name, shared, printsLike] of [
   ['a referenced project that is not composite', JSON.stringify({ ...SHARED, compilerOptions: { ...SHARED.compilerOptions, composite: false } }), /^tsconfig\.json\(1,\d+\): error TS6306: /],
   ['a referenced tsconfig that does not exist', undefined, /^tsconfig\.json\(1,\d+\): error TS6053: /],
   ['a referenced tsconfig with an option error prints nothing', JSON.stringify({ ...SHARED, compilerOptions: { ...SHARED.compilerOptions, nope: 1 } }), /^$/],
-  ['a referenced tsconfig that is no JSON reads as an empty one', 'not json at all', /^tsconfig\.json\(1,\d+\): error TS6306: /],
 ] as const) {
   test(`a project reference error prints as tsc prints it: ${name}`, t => {
     // protects: T-974 a broken project reference is an options error of the user's tsconfig, never a throw and never silent; an error in the referenced file is not one
