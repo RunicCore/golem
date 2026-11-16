@@ -147,3 +147,29 @@ for (const [name, flags] of [
     assert.equal(fs.existsSync(path.join(root, '.golem')), false, 'nothing is generated');
   });
 }
+
+test('a value that starts with a dash is the value of a value option, as tsc takes it', async (t) => {
+  // protects: T-1042 --rootDir -x reaches the program as tsc reads it (TS6059), not as a missing argument (TS6044)
+  const root = serdeProject(t, 'build-dash-value');
+  const result = await golemBuild(root, ['--rootDir', '-x']);
+  assert.match(result.stdout, /error TS6059: /);
+  assert.equal(result.stdout, await tsc(root, ['--rootDir', '-x']));
+  // TS6059 is a diagnostic of the program, not of the command line: the build goes on as tsc does, and its own refusal to write outside the outDir ends it with status 1.
+  assert.match(result.stderr, /^golem build would write .* outside build,/);
+  assert.equal(result.code, 1);
+  assert.equal(fs.existsSync(path.join(root, 'build')), false);
+});
+
+/** A row: its name and arguments in which an argument that starts with '-' is a flag of its own. */
+for (const [name, flags] of [
+  ['a list option followed by a flag is an empty list and the flag', ['--types', '--noEmitOnError']],
+  ['a boolean option repeated with a value is two flags', ['--strict', '--strict', 'false']],
+] as const) {
+  test(`${name} keep their own meaning, as tsc reads them`, async (t) => {
+    // protects: T-1042 --types --noEmitOnError sets two options, not the type definition "--noEmitOnError", and --strict --strict false is no source file
+    const root = serdeProject(t, 'build-flag-then-flag');
+    const result = await golemBuild(root, flags);
+    assert.equal(printed(result.stdout), await tsc(root, flags));
+    assert.equal(result.stderr, '');
+  });
+}
