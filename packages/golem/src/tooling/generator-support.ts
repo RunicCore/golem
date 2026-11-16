@@ -15,5 +15,6 @@ export { sourceDigest } from './model-manifest-core.js';
 export { parameterIdentity, parameterStyleRule } from '../client-runtime/parameter-styles.js';
 export { mediaEssence } from '../client-runtime/media-type.js';
 export { responseStatusKind } from '../client-runtime/response-status.js';
+export { parseValueKey, statusKey, valueKey, type ValuePlace } from '../client-runtime/value-places.js';
 export type { ParameterLocation, ParameterStyleRule } from '../client-runtime/parameter-styles.js';
 export { schemaIssueMessage } from '../issue-messages.js';

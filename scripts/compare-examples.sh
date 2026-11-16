@@ -27,16 +27,11 @@ worktree_tree="$(export GIT_INDEX_FILE="$work/index"; git -C "$root" read-tree H
 extract "$base" "$work/base-tree"
 extract "$worktree_tree" "$work/worktree-tree"
 
-# generate <source tree> <output folder>: the runner takes one run at a time, so a busy runner is waited for. Exit 2 is the runner's
-# lock and setup errors (run.sh, the entrypoint); the entrypoint exits 3 for a failed generation.
+# generate <source tree> <output folder>: the runner takes one run at a time, so a busy runner is waited for (up to 900 s). Exit 2 is the
+# runner's lock timeout and setup errors (run.sh, the entrypoint); the entrypoint exits 3 for a failed generation.
 generate() {
-  local status
-  for _ in $(seq 60); do
-    status=0
-    GOLEM_SOURCE_TREE="$1" bash "$root/scripts/test-runner/run.sh" examples >"$work/log" 2>&1 || status=$?
-    grep -q 'holds /cache/run.lock' "$work/log" || break
-    sleep 15
-  done
+  local status=0
+  GOLEM_SOURCE_TREE="$1" bash "$root/scripts/test-runner/run.sh" examples --lock-wait 900 >"$work/log" 2>&1 || status=$?
   [ "$status" -eq 0 ] || { cat "$work/log" >&2; [ "$status" -eq 2 ] && exit 2; exit 3; }
   mv "$root/.cache/test-results/examples" "$2" || exit 3
 }
