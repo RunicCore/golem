@@ -42,7 +42,6 @@ import {
   type ValidationBinding,
   sourceLocation,
   declarationsOf,
-  leftOutProperties,
 } from './tags.js';
 
 export type { ModelConversionDescriptor, TupleConversionDescriptor } from '../model-source-emitter.js';
@@ -1277,9 +1276,7 @@ function describeProperties(scope: DescribeScope, call: DescribeCall, nextSeen: 
   // would invoke the legacy setter for an own `__proto__` key.
   const properties: Record<string, ModelConversionDescriptor> = Object.create(null);
   const required: string[] = [];
-  // The members that the type leaves out of its source come first, so a member that the type keeps names its own property.
-  const kept = members.map(({ property }) => property);
-  const declarations = declarationsOf(checker, [...leftOutProperties(checker, type, kept), ...kept]);
+  const declarations = declarationsOf(checker, members.map(({ property }) => property));
   for (const field of members) {
     const { name, property } = field;
     const optional = (property.flags & ts.SymbolFlags.Optional) !== 0;

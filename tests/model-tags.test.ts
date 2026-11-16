@@ -667,6 +667,32 @@ for (const [name, { declarations, field }] of Object.entries(sameTypeNeighbours)
   assert.equal(importsOf(generated, 'a'), 0, 'a is not bound');
 });
 
+// `a` and `b` share one type. Each read names a function through a wrapper, a Pick that is no alias argument, or an inferred getter beside a Pick.
+const wrapperReads = {
+  'a wrapper whose tag copies the type of the function that its argument writes': { declarations: tsSource`type Box = { f: string & TValidation<typeof a> };\ntype Wrap<T extends { f: unknown }> = { x: T['f'] & TValidation<typeof b> };`, field: tsSource`Wrap<Box>`, refused: true },
+  'a wrapper that indexes its argument': { declarations: tsSource`class Plain { name!: string & TValidation<typeof b>; }\ntype Wrap<T extends { name: unknown }> = { x: T['name'] };`, field: tsSource`Wrap<Plain>['x']`, refused: false },
+  'an alias of a Pick that is read by an index': { declarations: tsSource`${inheritedUser}\ntype Named = Pick<Sub, 'name'>;`, field: tsSource`Named['name']`, refused: false },
+  'a Pick beside a member that reads an inferred getter of the other function': { declarations: tsSource`declare const other: string & TValidation<typeof a>;\nclass Base { name!: string & TValidation<typeof b>; }\nclass Sub extends Base { get label() { return other; } }`, field: tsSource`Pick<Sub, 'name'> & { extra: Sub['label'] }`, refused: true },
+} as const;
+
+for (const [name, { declarations, field, refused }] of Object.entries(wrapperReads)) test(`${refused ? 'a function that hides behind' : 'the tag of the field binds its own function through'} ${name}${refused ? ' is refused' : ''}`, t => {
+  // protects: T-1043 the first fix of the sibling rule bound `b` for the wrapper in silence, and refused the others that built before it
+  const { root, sourceRoot } = fixture(t);
+  fs.writeFileSync(path.join(sourceRoot, 'rules.ts'), copiedFunctionRules.inline.text);
+  fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({
+    name: 'A',
+    imports: tsSource`import type { TValidation } from '@exprtlabs/golem/tags';\nimport { a, b } from './rules.js';\n${declarations}`,
+    fields: tsSource`field: ${field}`,
+  }).text);
+  if (refused) {
+    assert.throws(() => generate({ root, profile: { validation: true } }), /RUNM1040/);
+    return;
+  }
+  const generated = generate({ root, profile: { validation: true } }).artifacts.map((artifact) => artifact.content).join('\n');
+  assert.equal(importsOf(generated, 'b'), 1, 'b is bound');
+  assert.equal(importsOf(generated, 'a'), 0, 'a is not bound');
+});
+
 // `f` writes `typeof a` and `g` writes `typeof b`, and `b` copies the type of `a`: each member binds the function that it writes.
 const siblingBox = tsSource`type Box = { f: (string & TValidation<typeof a>) | null; g: (string & TValidation<typeof b>) | null };`;
 const siblingReads = {
