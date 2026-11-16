@@ -699,11 +699,11 @@ function moduleSpecifiers(file: ts.SourceFile): ts.StringLiteral[] {
 }
 
 /**
- * The files of the program that lie under one of `outputs`, or that import a path under one by a relative import, directly or
- * through the files they import. A relative import is read by its text. Any other import links the files only when it resolves to a
- * project file, such as a `paths` alias of an intermediate file; an import that resolves to nothing, or into an output, says nothing,
- * because it would differ between a run before the output exists and one after. So the answer is the same in every run. The outputs
- * are canonical paths.
+ * The files of the program that lie under one of `outputs`, or that import a path under one, directly or through the files they
+ * import. A relative import is read by its text. Any other import, such as a `paths` alias, is read by where it resolves: a file under an
+ * output counts, and so does an import that resolves to none but would resolve to a file under an output (the job has not written it
+ * yet), so the answer is the same in every run. A bare import of a project file links the files through it. The
+ * outputs are canonical paths.
  */
 export function filesReadingOutputs(program: ts.Program, outputs: readonly string[]): ReadonlySet<string> {
   const files = program.getSourceFiles().filter((file) => !program.isSourceFileDefaultLibrary(file) && !inNodeModules(file.fileName));
@@ -718,7 +718,15 @@ export function filesReadingOutputs(program: ts.Program, outputs: readonly strin
     for (const specifier of moduleSpecifiers(file)) {
       if (!isRelativeSpecifier(specifier.text)) {
         const resolved = checker.resolveImport(specifier)?.resolvedFileName;
-        if (resolved !== undefined && names.has(resolved.replace(/\\/g, '/'))) imported.push(resolved);
+        if (resolved === undefined) {
+          // Before the job has written the file the import resolves to none: a lookup that counts the TypeScript files it would write finds it.
+          if (checker.resolveImport(specifier, { files: new Set(), folders: outputs }) !== undefined) excluded.add(file.fileName);
+        } else if (names.has(resolved.replace(/\\/g, '/'))) {
+          // A file of the program under an output is excluded above, and the importer follows by the closure below.
+          imported.push(resolved);
+        } else if (!inNodeModules(resolved) && isUnderOutputs(outputs, resolved)) {
+          excluded.add(file.fileName);
+        }
         continue;
       }
       const target = resolve(dirname(file.fileName), specifier.text);

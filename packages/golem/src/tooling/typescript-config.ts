@@ -1,7 +1,7 @@
-import { basename, dirname, isAbsolute, join, normalize, relative, resolve as resolvePath } from 'node:path';
+import { basename, dirname, isAbsolute, join, normalize, relative, resolve as resolvePath, sep } from 'node:path';
 import { displayPath } from './generator-core.js';
 import { inNodeModules } from './type-analysis/path-identity.js';
-import type { OpenProgramOptions } from './typescript-types.js';
+import type { OpenProgramOptions, VirtualFiles } from './typescript-types.js';
 
 /** The diagnostic code of a configuration that matches no file. */
 const NO_INPUTS_FOUND = 18003;
@@ -231,6 +231,29 @@ function parsedFlagOptions(flags: readonly string[], parse: (flags: readonly str
 /** A path in the one spelling that both backends key their overlays, caches and observed inputs by. */
 export function canonical(filename: string): string {
   return normalize(resolvePath(filename));
+}
+
+/** What a module lookup counts as present among `VirtualFiles`, for the files and folders the compiler probes; both backends ask it. */
+export interface VirtualLookup {
+  file(filename: string): boolean;
+  directory(directory: string): boolean;
+}
+
+/** Whether a lookup can find anything among `virtual`; a second lookup over none cannot succeed where the first failed. */
+export function hasVirtualFiles(virtual: VirtualFiles | undefined): virtual is VirtualFiles {
+  return virtual !== undefined && (virtual.files.size > 0 || virtual.folders.length > 0);
+}
+
+/** The lookup of `virtual`; the paths it is asked about are canonical. */
+export function virtualLookup(virtual: VirtualFiles): VirtualLookup {
+  const files = new Set([...virtual.files].map(canonical));
+  const folders = virtual.folders.map(canonical);
+  const inside = (outer: string, inner: string): boolean => outer === inner || inner.startsWith(outer.endsWith(sep) ? outer : `${outer}${sep}`);
+  const paths = [...files, ...folders];
+  return {
+    file: (filename) => files.has(filename) || (/\.(?:[cm]?ts|tsx)$/.test(filename) && folders.some((folder) => inside(folder, filename))),
+    directory: (directory) => paths.some((path) => inside(directory, path)) || folders.some((folder) => inside(folder, directory)),
+  };
 }
 
 /** The configuration a program opens: the file the compiler reads first and the overlays that serve the files that exist only in memory. */
