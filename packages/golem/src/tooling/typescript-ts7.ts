@@ -1138,7 +1138,8 @@ export class ProgramSession implements Disposable {
   private readonly resolvers = new Map<string, ModuleResolver>();
   /**
    * The synthetic program the newest snapshot holds, and the module resolver it was made with. The next program of a project with references
-   * replaces the program's configuration and the resolver; the snapshots before keep theirs. TypeScript 7.1.0-beta panics when a program is removed.
+   * replaces the program's configuration and the resolver, and the old resolver is disposed once the new snapshot exists. The compiler calls a
+   * resolver only while it builds a program, so a snapshot before keeps the program it built and needs no resolver. TypeScript 7.1.0-beta panics when a program is removed.
    */
   private syntheticProgram: SyntheticProjectId | undefined;
   private referenceResolver: ModuleResolver | undefined;
