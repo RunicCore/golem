@@ -257,3 +257,33 @@ test('a model that a shared object holds is reported under each path to it', asy
   assert.equal(await getValidator(holder).validate({ failFast: false }), false);
   assert.deepEqual(getValidator(holder).issues.map(issue => issue.path), [['first', 0, 'value'], ['second', 0, 'value']]);
 });
+
+test('an object whose walk stopped at a cycle above it is walked again under another path', async () => {
+  // protects: T-1038 the memo leaves out an object that a cycle leads above, since a walk that reaches it by another path reads what the cycle hid
+  class Holder {
+    public first: unknown;
+    public second: unknown;
+  }
+  await registerUnknownHolder(Holder, ['first', 'second']);
+  const { Child } = await registerNestedPair();
+  // A class instance is read by the rule walk only: the cycle check of the call does not descend into it.
+  class Link {
+    public a?: Link;
+    public b?: Link;
+    public c?: object;
+  }
+  const child = new Child();
+  getValidator(child).extend({ value: () => 'child is invalid' });
+  const a = new Link();
+  const b = new Link();
+  a.b = b;
+  a.c = child;
+  b.a = a;
+  const holder = new Holder();
+  holder.first = a;
+  holder.second = b;
+  getValidator(holder).extend({ first: () => true });
+
+  assert.equal(await getValidator(holder).validate({ failFast: false }), false);
+  assert.deepEqual(getValidator(holder).issues.map(issue => issue.path), [['first', 'c', 'value'], ['second', 'a', 'c', 'value']]);
+});
