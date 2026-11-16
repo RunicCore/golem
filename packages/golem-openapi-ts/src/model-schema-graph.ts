@@ -1,4 +1,4 @@
-import { assertNever } from '@exprtlabs/golem/internal/generator-support';
+import { assertNever, valueKey, type ValuePlace } from '@exprtlabs/golem/internal/generator-support';
 import { createHash } from 'node:crypto';
 import { createSchemaGraph, internDescriptors, type SchemaGraph, type SchemaNode } from '@exprtlabs/golem/internal/schema-graph';
 import type { ModelTypeDescriptor } from '@exprtlabs/golem/internal/schema';
@@ -32,29 +32,15 @@ import { collectOpenApiModelDefinitions } from './model-definitions.js';
 const OPERATION_VALUE_NODE_NAME = '__operationValue';
 
 /**
- * Where a value sits in an operation, after the operation name (`SdkOperationShape.values` of the SDK codecs table reads the same arrays):
- * a request body by content type, a response body or stream item by status and content type, a parameter by location and name,
- * a response header by status and name. The location of a parameter is `path`, `query`, `header`, `cookie` or `querystring`.
+ * The place of each kind of value in an operation (`ValuePlace`): a request body by content type, a response body or stream item by status and content type,
+ * a parameter by location and name, a response header by status and name.
  */
 export const valuePlace = {
-  requestBody: (contentType: string): readonly string[] => ['request', contentType],
-  responseBody: (status: string, contentType: string): readonly string[] => ['response', status, contentType],
-  parameter: (location: string, name: string): readonly string[] => ['parameter', location, name],
-  responseHeader: (status: string, name: string): readonly string[] => ['response-header', status, name],
+  requestBody: (contentType: string): ValuePlace => ['request', contentType],
+  responseBody: (status: string, contentType: string): ValuePlace => ['response', status, contentType],
+  parameter: (location: string, name: string): ValuePlace => ['parameter', location, name],
+  responseHeader: (status: string, name: string): ValuePlace => ['response-header', status, name],
 };
-
-/** The key of a value in `OpenApiModelAnalysis.convertedNodeIds`: a JSON array of strings, the operation name and then the place of the value. `parseValueKey` reads it back. */
-export function valueKey(operation: string, at: readonly string[]): string {
-  return JSON.stringify([operation, ...at]);
-}
-
-/** The operation name and the place of a key that `valueKey` wrote; `undefined` for any other text. */
-export function parseValueKey(key: string): { readonly operation: string; readonly at: readonly string[] } | undefined {
-  const parts: unknown = JSON.parse(key);
-  if (!Array.isArray(parts) || !parts.every((part): part is string => typeof part === 'string')) return undefined;
-  const [operation, ...at] = parts;
-  return operation === undefined ? undefined : { operation, at };
-}
 
 /** The key of a request body in `OpenApiModelAnalysis.convertedNodeIds`: the operation and the request content type. */
 function requestBodyKey(operation: string, contentType: string): string {

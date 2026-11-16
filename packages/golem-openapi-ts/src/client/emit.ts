@@ -3,7 +3,7 @@ import { mediaFraming } from '../emission-plan.js';
 import type { SchemaPlace, SdkValidatorsInput } from '@exprtlabs/golem/internal/validation-plan';
 import { asRecord, escapeJsonPointerToken, isJsonObject, objectEntries } from '../json.js';
 import { componentPlace, type OriginLocator } from '../origin.js';
-import { assertNever, identifier, NameScope } from '@exprtlabs/golem/internal/generator-support';
+import { assertNever, identifier, NameScope, statusKey } from '@exprtlabs/golem/internal/generator-support';
 import {
   aliased,
   code,
@@ -781,8 +781,8 @@ export function operationValidatorNames(
   return new Map([...schemas.bundles].map(([name, bundle]) => [name, {
     input: requireValidatorExport(name, bundle.inputReference, validatorExports),
     ...(bundle.headersReference === undefined ? {} : { headers: requireValidatorExport(name, bundle.headersReference, validatorExports) }),
-    responses: bundle.responseReferences.map((item) => ({ key: `${item.status}:${item.contentType}`, name: requireValidatorExport(name, item.reference, validatorExports) })),
-    responseHeaders: bundle.responseHeaderReferences.map((item) => ({ key: `${item.status}:${item.name}`, name: requireValidatorExport(name, item.reference, validatorExports) })),
+    responses: bundle.responseReferences.map((item) => ({ key: statusKey(item.status, item.contentType), name: requireValidatorExport(name, item.reference, validatorExports) })),
+    responseHeaders: bundle.responseHeaderReferences.map((item) => ({ key: statusKey(item.status, item.name), name: requireValidatorExport(name, item.reference, validatorExports) })),
   }] as const));
 }
 
