@@ -194,7 +194,8 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions, moved:
   const plan = buildEmissionPlan(document, ir, profile);
   // A standalone SDK imports the runtime it carries and its own codecs. An SDK of golem mode imports `@exprtlabs/golem` and the table that the models job
   // of the same golem.yaml writes later in the run: it holds the types, the client and the manifest, and no validator, group module or codec.
-  const standalone = options.mode.kind === 'standalone';
+  // `specifiers` is set exactly for the SDK that carries its runtime, so it also gates the files only that SDK writes.
+  const specifiers = runtimeSpecifiersOf(options.mode);
   const dates = options.dates ?? 'date';
   // The payloads of webhooks and callbacks are SDK types like any other: their operations take part in the types and the model analysis, and have no codecs, validators or handler.
   const modelAnalysis = analyzeOpenApiModels(document, profile.validation, dates, [...operations, ...inboundOperations]);
@@ -204,7 +205,6 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions, moved:
     ? buildSchemaData(document, dates, ir, (operation, contentType) => requestBodyCheckedByConversion(modelAnalysis, operation, contentType))
     : undefined;
   const files = new Map<string, string>();
-  const specifiers = runtimeSpecifiersOf(options.mode);
   const codecsFor = operationCodecsFor(options.mode, output);
   // The names that each module of the index exports come from its Code, and the index re-exports the whole modules it stars.
   const modules = new Map<string, PublicModule>();
@@ -248,16 +248,16 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions, moved:
     return validators.compiled;
   };
   const modelDiagnostics: GolemDiagnostic[] = [];
-  if (standalone && modelAnalysis.grouping.groups.length > 0) {
+  if (specifiers && modelAnalysis.grouping.groups.length > 0) {
     const models = generateOpenApiModelArtifacts(document, profile, modelAnalysis, {
       locate: options.locate,
-      specifiers: runtimeSpecifiersOf(options.mode),
+      specifiers,
       ...(profile.validation ? { compileValidators: ({ plan, reachedRoots, locateModel }: { plan: CodecValidationPlan; groupPlans: ReadonlyMap<string, CodecValidationPlan>; reachedRoots: ReadonlySet<string>; locateModel: (name: string) => SchemaPlace }) => compileValidators(plan, locateModel, reachedRoots) } : {}),
     });
     for (const [name, source] of models.files) files.set(name, source);
   }
   // An SDK of golem mode compiles nothing: its manifest carries the roots and the models job compiles them (R-82).
-  if (standalone && operationValidation && !validators.compiled) compileValidators(undefined);
+  if (specifiers && operationValidation && !validators.compiled) compileValidators(undefined);
   if (validators.compiled) {
     modelDiagnostics.push(...validators.compiled.diagnostics);
     // A source is empty when the compile reported an error; no file is written then. Only operations import the module.
@@ -280,7 +280,7 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions, moved:
     modules.set('client.ts', { exports: clientModules.client.exports, stars: [] });
     for (const [name, source] of clientModules.operations) files.set(name, source);
   }
-  if (hasOperationModules && standalone) {
+  if (hasOperationModules && specifiers) {
     for (const [name, source] of generateOperationCodecs(
       operations,
       profile,
@@ -303,7 +303,7 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions, moved:
   modules.set('index.ts', { exports: index.exports, stars: index.stars });
   assertUniqueExportNames(modules);
   // The runtime copy is written whole beside the files that import it, and only an SDK with operations imports it.
-  if (standalone && plan.artifacts.has('client.ts')) for (const [name, source] of runtimeCopy()) files.set(name, source);
+  if (specifiers && plan.artifacts.has('client.ts')) for (const [name, source] of runtimeCopy()) files.set(name, source);
   assertPortableFilenames(files.keys());
   return { files, output, clientName, operations, diagnostics: uniqueDiagnostics([...wrapped.diagnostics, ...ir.diagnostics, ...browserCookieDiagnostics(document, operations), ...serverOverrideDiagnostics(document, operations), ...modelAnalysis.diagnostics, ...inlineDiagnostics, ...modelDiagnostics]) };
 }

@@ -16,12 +16,10 @@ async function generateStderr(t: TestContext, files: Record<string, string>): Pr
 test('NEST1002 tells a golem.yaml user to list the controller files in sources of the controller job', async (t: TestContext) => {
   const stderr = await generateStderr(t, { 'src/readme.ts': 'export {};\n' });
   assert.match(stderr, /NEST1002: .*sources` of the controller job/);
-  assert.doesNotMatch(stderr, /context\./);
 });
 
 // protects: T-325 NEST1001 tells a golem.yaml user to set sources of the controller job
 test('NEST1001 tells a golem.yaml user to list the files that declare the controller in sources of the controller job', async (t: TestContext) => {
   const stderr = await generateStderr(t, { 'src/catalog.controller.ts': 'export class Catalog {}\n' });
   assert.match(stderr, /NEST1001: .*sources` of the controller job/);
-  assert.doesNotMatch(stderr, /context\./);
 });

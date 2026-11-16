@@ -9,7 +9,7 @@ import { applyRewrites } from '#golem/rewrite';
 import { openRewriteProject } from '#golem/rewrite-host';
 import { scanProject, type ProgramScan } from '#golem/rewrite-scan';
 import { generate } from '#model/generator';
-import { readFixture, writeGeneratedArtifacts } from '../fixture-project.js';
+import { fileFixtureScope, onceShared, readFixture, writeGeneratedArtifacts, type FixtureScope } from '../fixture-project.js';
 import { command, golem } from '../support/process.js';
 import { NEST_PARTICIPANTS, createControllerFixture } from '../fixture-templates/controllers/project.js';
 import { paymentModelSource } from '../fixture-templates/controllers/payment-model.js';
@@ -24,7 +24,7 @@ const PAYMENT_MODULE = "import './payment.model.generated.js';";
 const NEST_IMPORT = "import { nestModelCodec as __golem_nestModelCodec, nestModelReturn as __golem_nestModelReturn } from '@exprtlabs/golem-ts-openapi/internal/nest-runtime';";
 
 /** A project of the named source files (under `src/`) with the models job's generated files written. */
-function project(t: TestContext, files: Readonly<Record<string, string>>): string {
+function project(t: FixtureScope, files: Readonly<Record<string, string>>): string {
   const root = createControllerFixture(t, {
     prefix: 'golem-rewrite-nest-',
     links: 'workspace',
@@ -34,7 +34,7 @@ function project(t: TestContext, files: Readonly<Record<string, string>>): strin
   return root;
 }
 
-function paymentsProject(t: TestContext, extra: Readonly<Record<string, string>> = {}): string {
+function paymentsProject(t: FixtureScope, extra: Readonly<Record<string, string>> = {}): string {
   return project(t, {
     'src/payment.model.ts': readFixture(`${PLUGIN}/project/payment.model.ts`),
     [CONTROLLER]: readFixture(`${PLUGIN}/project/payments.controller.ts`),
@@ -60,6 +60,24 @@ function method(code: string, name: string): { readonly decorators: string; read
   assert.ok(match?.[1] !== undefined && match[2] !== undefined, `${name} is in the rewritten controller`);
   return { decorators: match[1], signature: match[2] };
 }
+
+/** The diagnostics a scan holds for `files`. */
+const diagnosticsIn = (result: ProgramScan, ...files: readonly string[]): ProgramScan['diagnostics'] => result.diagnostics.filter(({ file }) => file !== undefined && files.includes(file));
+
+/**
+ * The scan tests that only read share one payments project and one scan for each `nonModelInputs` mode. The project holds the source files
+ * of all of them under names of their own; each test reads the diagnostics and the rewrites of its own files and writes nothing, so no test
+ * sees another's edits. A test that adds a file, runs a pipeline or scans with another participant list builds its own project.
+ */
+const fileScope = fileFixtureScope();
+const sharedRoot = onceShared(async () => paymentsProject(fileScope, {
+  ...KEEPS_FILES, ...RENAMED_FILES, ...LOOK_ALIKE_FILES, ...NOT_A_MODEL_FILES, ...PLAIN_FILES, ...LIMITS_FILES, ...DECORATED_FILES, ...LOOSE_FILES, ...FORMS_FILES,
+}));
+const sharedScan = (mode: 'error' | 'warn') => onceShared(async () => {
+  const root = await sharedRoot();
+  return { root, result: scan(root, mode) };
+});
+const sharedScans = { error: sharedScan('error'), warn: sharedScan('warn') };
 
 test('a golem model named like a library type (Record, Map) binds as a model for a @Body() and a return', (t) => {
   // protects: round-2 finding 1: the written label Record was tested against the primitive type names before the symbol was resolved
@@ -87,10 +105,10 @@ export class RecordController {
   assert.match(method(code, 'async get').decorators, /@__golem_nestModelReturn\("TRecord_[0-9a-f]{8}"\) @Get\(\)/);
 });
 
-test('with nest on, a model @Body() or @Query() parameter and a model return gain codec decorators', (t) => {
-  const root = paymentsProject(t);
-  const result = scan(root);
-  assert.deepEqual(result.diagnostics, []);
+test('with nest on, a model @Body() or @Query() parameter and a model return gain codec decorators', async () => {
+  const { root, result } = await sharedScans.error();
+  assert.deepEqual(diagnosticsIn(result, CONTROLLER, 'src/payment.model.ts'), []);
+  assert.deepEqual(result.diagnostics.filter(({ file }) => file === undefined), []);
   const code = rewritten(root, result, CONTROLLER);
   assert.deepEqual(code.split('\n').slice(0, 2), [PAYMENT_MODULE, NEST_IMPORT]);
   assert.deepEqual(result.files.get(CONTROLLER)?.imports, [
@@ -136,15 +154,18 @@ test('a scan without the nest extension gets no stamps and no RUNM1081, even whe
   assert.equal(result.files.get(CONTROLLER), undefined);
 });
 
-test('a decorator that is already present, plain, through a namespace or aliased, is kept and adds no edit', (t) => {
-  const root = paymentsProject(t, {
-    'src/plain.controller.ts': readFixture(`${PLUGIN}/rewrite-keeps-existing-codec-decorators/plain.controller.ts`),
-    'src/aliased.controller.ts': readFixture(`${PLUGIN}/rewrite-keeps-existing-codec-decorators/aliased.controller.ts`),
-  });
-  const result = scan(root);
-  assert.deepEqual(result.diagnostics, []);
-  assert.equal(result.files.get('src/plain.controller.ts'), undefined);
-  assert.equal(result.files.get('src/aliased.controller.ts'), undefined);
+const KEEPS_PLAIN = 'src/keeps-plain.controller.ts';
+const KEEPS_ALIASED = 'src/keeps-aliased.controller.ts';
+const KEEPS_FILES = {
+  [KEEPS_PLAIN]: readFixture(`${PLUGIN}/rewrite-keeps-existing-codec-decorators/plain.controller.ts`),
+  [KEEPS_ALIASED]: readFixture(`${PLUGIN}/rewrite-keeps-existing-codec-decorators/aliased.controller.ts`),
+};
+
+test('a decorator that is already present, plain, through a namespace or aliased, is kept and adds no edit', async () => {
+  const { result } = await sharedScans.error();
+  assert.deepEqual(diagnosticsIn(result, KEEPS_PLAIN, KEEPS_ALIASED), []);
+  assert.equal(result.files.get(KEEPS_PLAIN), undefined);
+  assert.equal(result.files.get(KEEPS_ALIASED), undefined);
 });
 
 /** The edit that stamps the parameter written as `parameter` (its name and type) in the source of `file` with the codec `id`. */
@@ -153,27 +174,29 @@ function stampOf(root: string, file: string, parameter: string, id: string): { r
   return { start, end: start, expect: '', text: `@__golem_nestModelCodec("${id}") ` };
 }
 
-test('a @Body() or @Query() imported under another name, through a re-export or from a vendored copy of NestJS is stamped, and a local decorator of that name is not', (t) => {
+const RENAMED = 'src/renamed.controller.ts';
+const RENAMED_FILES = {
+  'src/decorators.ts': "export { Query as Filter } from '@nestjs/common';\nexport { Body as Vendored } from '../vendor/nest-common/index.js';\nexport function Body(): ParameterDecorator { return () => undefined; }\n",
+  'vendor/nest-common/package.json': '{ "name": "@nestjs/common", "version": "0.0.0" }',
+  'vendor/nest-common/index.ts': 'export declare function Body(key?: string): ParameterDecorator;\n',
+  [RENAMED]: [
+    "import { Body as Input, Controller, Post } from '@nestjs/common';",
+    "import { Filter, Body, Vendored } from './decorators.js';",
+    "import type { TPaymentFilter, TPaymentInput } from './payment.model.js';",
+    "@Controller('aliased')",
+    'export class AliasedController {',
+    '  @Post() create(@Input() input: TPaymentInput, @Filter() filter: TPaymentFilter): number { return 1; }',
+    '  @Post() vendored(@Vendored() copy: TPaymentInput): number { return 1; }',
+    '  @Post() local(@Body() text: string): number { return 1; }',
+    '}',
+  ].join('\n'),
+};
+
+test('a @Body() or @Query() imported under another name, through a re-export or from a vendored copy of NestJS is stamped, and a local decorator of that name is not', async () => {
   // protects: T-757 the scan finds a parameter decorator by its resolved symbol and the package that owns its file, not by the name it is written under
-  const root = paymentsProject(t, {
-    'src/decorators.ts': "export { Query as Filter } from '@nestjs/common';\nexport { Body as Vendored } from '../vendor/nest-common/index.js';\nexport function Body(): ParameterDecorator { return () => undefined; }\n",
-    'vendor/nest-common/package.json': '{ "name": "@nestjs/common", "version": "0.0.0" }',
-    'vendor/nest-common/index.ts': 'export declare function Body(key?: string): ParameterDecorator;\n',
-    'src/aliased.controller.ts': [
-      "import { Body as Input, Controller, Post } from '@nestjs/common';",
-      "import { Filter, Body, Vendored } from './decorators.js';",
-      "import type { TPaymentFilter, TPaymentInput } from './payment.model.js';",
-      "@Controller('aliased')",
-      'export class AliasedController {',
-      '  @Post() create(@Input() input: TPaymentInput, @Filter() filter: TPaymentFilter): number { return 1; }',
-      '  @Post() vendored(@Vendored() copy: TPaymentInput): number { return 1; }',
-      '  @Post() local(@Body() text: string): number { return 1; }',
-      '}',
-    ].join('\n'),
-  });
-  const result = scan(root);
-  assert.deepEqual(result.diagnostics, []);
-  const file = 'src/aliased.controller.ts';
+  const { root, result } = await sharedScans.error();
+  assert.deepEqual(diagnosticsIn(result, RENAMED, 'src/decorators.ts'), []);
+  const file = RENAMED;
   assert.deepEqual(result.files.get(file)?.edits, [
     stampOf(root, file, 'input: TPaymentInput', idOf(root, 'TPaymentInput')),
     stampOf(root, file, 'filter: TPaymentFilter', idOf(root, 'TPaymentFilter')),
@@ -181,41 +204,46 @@ test('a @Body() or @Query() imported under another name, through a re-export or 
   ]);
 });
 
-test('a local decorator named nestModelCodec does not count as the stamp golem adds', (t) => {
+const LOOK_ALIKE = 'src/look-alike.controller.ts';
+const LOOK_ALIKE_FILES = {
+  [LOOK_ALIKE]: [
+    "import { Body, Controller, Post } from '@nestjs/common';",
+    "import type { TPaymentInput } from './payment.model.js';",
+    'declare function nestModelCodec(id: string): ParameterDecorator;',
+    "@Controller('look-alike')",
+    'export class LookAlikeController {',
+    "  @Post() create(@nestModelCodec('mine') @Body() input: TPaymentInput): number { return 1; }",
+    '}',
+  ].join('\n'),
+};
+
+test('a local decorator named nestModelCodec does not count as the stamp golem adds', async () => {
   // protects: T-757 an existing codec decorator is golem's by its resolved symbol and package, not by its name
-  const root = paymentsProject(t, {
-    'src/look-alike.controller.ts': [
-      "import { Body, Controller, Post } from '@nestjs/common';",
-      "import type { TPaymentInput } from './payment.model.js';",
-      'declare function nestModelCodec(id: string): ParameterDecorator;',
-      "@Controller('look-alike')",
-      'export class LookAlikeController {',
-      "  @Post() create(@nestModelCodec('mine') @Body() input: TPaymentInput): number { return 1; }",
-      '}',
-    ].join('\n'),
-  });
-  const result = scan(root);
-  assert.deepEqual(result.diagnostics, []);
-  const file = 'src/look-alike.controller.ts';
+  const { root, result } = await sharedScans.error();
+  assert.deepEqual(diagnosticsIn(result, LOOK_ALIKE), []);
+  const file = LOOK_ALIKE;
   assert.deepEqual(result.files.get(file)?.edits, [stampOf(root, file, 'input: TPaymentInput', idOf(root, 'TPaymentInput'))]);
 });
 
 // The key table names a `Payment` model; the `Payment` of the second controller is a plain interface of its own file.
-for (const { name, fixture, type } of [
-  { name: 'a primitive @Body()', fixture: 'rewrite-skips-a-primitive-body', type: 'string' },
-  { name: 'a @Body() type that is not a golem model, even when a model of the same name has keys', fixture: 'rewrite-skips-a-body-type-no-model-table-names', type: 'Payment' },
-]) {
-  test(`${name} is not rewritten and gets RUNM1081`, (t) => {
+const NOT_A_MODEL_BODIES = [
+  { name: 'a primitive @Body()', fixture: 'rewrite-skips-a-primitive-body', type: 'string', file: 'src/primitive-notes.controller.ts' },
+  { name: 'a @Body() type that is not a golem model, even when a model of the same name has keys', fixture: 'rewrite-skips-a-body-type-no-model-table-names', type: 'Payment', file: 'src/payment-notes.controller.ts' },
+] as const;
+const NOT_A_MODEL_FILES = Object.fromEntries(NOT_A_MODEL_BODIES.map(({ fixture, file }) => [file, readFixture(`${PLUGIN}/${fixture}/notes.controller.ts`)]));
+
+for (const { name, type, file: controller } of NOT_A_MODEL_BODIES) {
+  test(`${name} is not rewritten and gets RUNM1081`, async () => {
     // protects: T-258 R-13 a body type the interceptor rejects is reported, and its controller is not rewritten
-    const root = paymentsProject(t, { 'src/notes.controller.ts': readFixture(`${PLUGIN}/${fixture}/notes.controller.ts`) });
-    const result = scan(root);
-    assert.deepEqual(result.diagnostics.map(({ code, severity, file, message }) => ({ code, severity, file, message })), [
-      { code: 'RUNM1081', severity: 'error', file: 'src/notes.controller.ts', message: notAModel('Body', type) },
+    const { result } = await sharedScans.error();
+    assert.deepEqual(diagnosticsIn(result, controller).map(({ code, severity, file, message }) => ({ code, severity, file, message })), [
+      { code: 'RUNM1081', severity: 'error', file: controller, message: notAModel('Body', type) },
     ]);
-    assert.equal(result.files.get('src/notes.controller.ts'), undefined);
+    assert.equal(result.files.get(controller), undefined);
   });
 }
 
+const PLAIN = 'src/non-model.controller.ts';
 const PLAIN_CONTROLLER = [
   "import { Body, Controller, Post, Query } from '@nestjs/common';",
   "import type { TPaymentInput } from './payment.model.js';",
@@ -231,18 +259,20 @@ const PLAIN_CONTROLLER = [
   '  @Post() either(@Query() filter: TPaymentInput | { page: number }): number { return 1; }',
   '}',
 ].join('\n');
+const PLAIN_FILES = { [PLAIN]: PLAIN_CONTROLLER };
 
 for (const mode of ['error', 'warn'] as const) {
-  test(`a @Body() or @Query() parameter that is not a golem model, whole or one field, gets RUNM1081 with its position, ${mode === 'warn' ? 'a warning with nonModelInputs: warn' : 'an error by default'}; a model and a model field are silent`, (t) => {
+  test(`a @Body() or @Query() parameter that is not a golem model, whole or one field, gets RUNM1081 with its position, ${mode === 'warn' ? 'a warning with nonModelInputs: warn' : 'an error by default'}; a model and a model field are silent`, async () => {
     // protects: T-258 R-13 a body or query input the interceptor rejects is reported at build, a union-typed @Query() (T-377) included
-    const root = paymentsProject(t, { 'src/plain.controller.ts': PLAIN_CONTROLLER });
+    const { result } = await sharedScans[mode]();
     const severity = mode === 'warn' ? 'warning' : 'error';
     const sites = [['Body', 'PlainInput', 6, 32], ['Query', '{ page: number }', 7, 34], ['Body', 'TPaymentInput[][]', 8, 34], ['Body', 'string', 11, 37], ['Query', 'number', 11, 66], ['Query', 'TPaymentInput | { page: number }', 12, 35]] as const;
-    assert.deepEqual(scan(root, mode).diagnostics.map(({ code, severity, file, line, column, message }) => ({ code, severity, file, line, column, message })),
-      sites.map(([decorator, type, line, column]) => ({ code: 'RUNM1081', severity, file: 'src/plain.controller.ts', line, column, message: notAModel(decorator, type, mode) })));
+    assert.deepEqual(diagnosticsIn(result, PLAIN).map(({ code, severity, file, line, column, message }) => ({ code, severity, file, line, column, message })),
+      sites.map(([decorator, type, line, column]) => ({ code: 'RUNM1081', severity, file: PLAIN, line, column, message: notAModel(decorator, type, mode) })));
   });
 }
 
+const LIMITS = 'src/limits.controller.ts';
 const HANDLER_LIMITS_CONTROLLER = [
   "import { Body, Controller, Post, Query } from '@nestjs/common';",
   "import type { TPaymentFilter, TPaymentInput } from './payment.model.js';",
@@ -263,14 +293,15 @@ const HANDLER_LIMITS_CONTROLLER = [
   "  @Post() fields(@Body('input') input: TPaymentInput, @Body('other') other: TPaymentInput): number { return 1; }",
   '}',
 ].join('\n');
+const LIMITS_FILES = { [LIMITS]: HANDLER_LIMITS_CONTROLLER };
 
 for (const mode of ['error', 'warn'] as const) {
-  test(`NestModelInterceptor limits of one handler give RUNM1081 at the parameter, ${mode === 'warn' ? 'a warning with nonModelInputs: warn' : 'an error by default'}; valid combinations are silent`, (t) => {
+  test(`NestModelInterceptor limits of one handler give RUNM1081 at the parameter, ${mode === 'warn' ? 'a warning with nonModelInputs: warn' : 'an error by default'}; valid combinations are silent`, async () => {
     // protects: T-755 R-92 each limit the interceptor sets on the inputs of one handler stops the build here, not only in the controllers job
-    const root = paymentsProject(t, { 'src/limits.controller.ts': HANDLER_LIMITS_CONTROLLER });
+    const { result } = await sharedScans[mode]();
     const severity = mode === 'warn' ? 'warning' : 'error';
     const advice = mode === 'warn' ? 'Generation continues, because golem.yaml sets nonModelInputs: warn.' : 'An app with its own interceptor can set nonModelInputs: warn on the nest extension in golem.yaml.';
-    assert.deepEqual(scan(root, mode).diagnostics.map(({ code, severity, file, line, column, message }) => ({ code, severity, file, line, column, message })), [
+    assert.deepEqual(diagnosticsIn(result, LIMITS).map(({ code, severity, file, line, column, message }) => ({ code, severity, file, line, column, message })), [
       { line: 5, column: 24, message: `@Body('input') input is an optional one-field model, and NestModelInterceptor answers HTTP 400 for a request that omits the field. Make the parameter required, or declare the field optional in a whole @Body() model. ${advice}` },
       { line: 6, column: 25, message: `@Query('filter') filter is an optional one-field model, and NestModelInterceptor answers HTTP 400 for a request that omits the field. Make the parameter required, or declare the field optional in a whole @Query() model. ${advice}` },
       { line: 7, column: 51, message: `@Body() second takes another model than @Body() first: NestModelInterceptor throws a TypeError for whole @Body() parameters of different types, and Nest answers HTTP 500. Give them one model type, or declare one whole body. ${advice}` },
@@ -281,7 +312,7 @@ for (const mode of ['error', 'warn'] as const) {
       { line: 12, column: 58, message: `@Body('input') second takes another model than @Body('input') first: NestModelInterceptor throws a TypeError for @Body('input') parameters of different types, and Nest answers HTTP 500. Give them one model type, or declare one parameter. ${advice}` },
       { line: 13, column: 55, message: `@Body('a') a cannot share a handler with @Body() whole: NestModelInterceptor throws a TypeError for a whole and a one-field @Body() together, and Nest answers HTTP 500. Declare the whole body as one model, or use one-field parameters only. ${advice}` },
       { line: 13, column: 84, message: `@Body('b') b cannot share a handler with @Body() whole: NestModelInterceptor throws a TypeError for a whole and a one-field @Body() together, and Nest answers HTTP 500. Declare the whole body as one model, or use one-field parameters only. ${advice}` },
-    ].map((expected) => ({ code: 'RUNM1081', severity, file: 'src/limits.controller.ts', ...expected })));
+    ].map((expected) => ({ code: 'RUNM1081', severity, file: LIMITS, ...expected })));
   });
 }
 
@@ -332,23 +363,24 @@ export class FreshController {
   assert.equal(result.files.get('src/fresh.controller.ts'), undefined);
 });
 
-test('only a decorated method gets the return decorator: a plain class and an undecorated helper get none, a composed route decorator gets it', (t) => {
+const DECORATED_FILES = {
+  'src/plain.ts': "import type { TPayment } from './payment.model.js';\nexport class Mapper { toPayment(): TPayment { return { id: '1', note: '' }; } }\n",
+  'src/helper.controller.ts': [
+    "import { Controller, Get, applyDecorators } from '@nestjs/common';",
+    "import type { TPayment } from './payment.model.js';",
+    "const Composed = (): MethodDecorator => applyDecorators(Get('composed'));",
+    "@Controller('helper') export class HelperController {",
+    '  @Get() list(): TPayment { return this.build(); }',
+    "  @Composed() composed(): TPayment { return { id: '1', note: '' }; }",
+    "  build(): TPayment { return { id: '1', note: '' }; }",
+    '}',
+    '',
+  ].join('\n'),
+};
+
+test('only a decorated method gets the return decorator: a plain class and an undecorated helper get none, a composed route decorator gets it', async () => {
   // protects: T-858 a plain class method got a decorator, and the Node loader crashed on a file that had none
-  const root = paymentsProject(t, {
-    'src/plain.ts': "import type { TPayment } from './payment.model.js';\nexport class Mapper { toPayment(): TPayment { return { id: '1', note: '' }; } }\n",
-    'src/helper.controller.ts': [
-      "import { Controller, Get, applyDecorators } from '@nestjs/common';",
-      "import type { TPayment } from './payment.model.js';",
-      "const Composed = (): MethodDecorator => applyDecorators(Get('composed'));",
-      "@Controller('helper') export class HelperController {",
-      '  @Get() list(): TPayment { return this.build(); }',
-      "  @Composed() composed(): TPayment { return { id: '1', note: '' }; }",
-      "  build(): TPayment { return { id: '1', note: '' }; }",
-      '}',
-      '',
-    ].join('\n'),
-  });
-  const result = scan(root);
+  const { root, result } = await sharedScans.error();
   assert.equal(result.files.get('src/plain.ts'), undefined);
   const code = rewritten(root, result, 'src/helper.controller.ts');
   assert.equal(code.match(/__golem_nestModelReturn\(/g)?.length, 2, code);
@@ -356,12 +388,13 @@ test('only a decorated method gets the return decorator: a plain class and an un
   assert.match(code, /@__golem_nestModelReturn\("TPayment_[0-9a-f]{8}"\) @Composed\(\) composed\(/);
 });
 
-test('a method that a decorator cannot decorate is not rewritten: an object literal, an abstract method, an overload signature', (t) => {
-  const root = paymentsProject(t, {
-    'src/loose.ts': readFixture(`${PLUGIN}/rewrite-skips-methods-a-decorator-cannot-reach/loose.ts`),
-  });
-  const result = scan(root);
-  assert.deepEqual(result.diagnostics, []);
+const LOOSE_FILES = {
+  'src/loose.ts': readFixture(`${PLUGIN}/rewrite-skips-methods-a-decorator-cannot-reach/loose.ts`),
+};
+
+test('a method that a decorator cannot decorate is not rewritten: an object literal, an abstract method, an overload signature', async () => {
+  const { root, result } = await sharedScans.error();
+  assert.deepEqual(diagnosticsIn(result, 'src/loose.ts'), []);
   const code = rewritten(root, result, 'src/loose.ts');
   assert.equal(code.match(/__golem_nestModelReturn\(/g)?.length, 1, code);
   assert.match(code, /@__golem_nestModelReturn\("TPayment_[0-9a-f]{8}"\) @Get\(\) find\(id: string \| number\): TPayment \{/);
@@ -382,10 +415,11 @@ function assertLines(code: string, expected: readonly string[]): void {
   for (const line of expected) assert.ok(lines.includes(line), `missing line ${line}\n${code}`);
 }
 
-test('a parameter decorator reached through a namespace import is stamped', (t) => {
-  const root = paymentsProject(t, { 'src/namespaced.controller.ts': readFixture(`${FORMS}/namespaced.controller.ts`) });
-  const result = scan(root);
-  assert.deepEqual(result.diagnostics, []);
+const FORMS_FILES = Object.fromEntries(['namespaced', 'arrays', 'mixed'].map((name) => [`src/${name}.controller.ts`, readFixture(`${FORMS}/${name}.controller.ts`)]));
+
+test('a parameter decorator reached through a namespace import is stamped', async () => {
+  const { root, result } = await sharedScans.error();
+  assert.deepEqual(diagnosticsIn(result, 'src/namespaced.controller.ts'), []);
   const input = idOf(root, 'TPaymentInput');
   const filter = idOf(root, 'TPaymentFilter');
   assertLines(rewritten(root, result, 'src/namespaced.controller.ts'), [
@@ -393,11 +427,10 @@ test('a parameter decorator reached through a namespace import is stamped', (t) 
   ]);
 });
 
-test('Array<T> and Promise<T[]> returns record an array, and an Array<T> or readonly T[] body takes the element codec', (t) => {
-  const root = paymentsProject(t, { 'src/arrays.controller.ts': readFixture(`${FORMS}/arrays.controller.ts`) });
-  const result = scan(root);
+test('Array<T> and Promise<T[]> returns record an array, and an Array<T> or readonly T[] body takes the element codec', async () => {
+  const { root, result } = await sharedScans.error();
   // An array of arrays has no one element codec, so it is left unstamped and stops as a non-model.
-  assert.deepEqual(result.diagnostics.map(({ code, message }) => ({ code, message })), [{ code: 'RUNM1081', message: notAModel('Body', 'TPaymentInput[][]') }]);
+  assert.deepEqual(diagnosticsIn(result, 'src/arrays.controller.ts').map(({ code, message }) => ({ code, message })), [{ code: 'RUNM1081', message: notAModel('Body', 'TPaymentInput[][]') }]);
   const payment = idOf(root, 'TPayment');
   const input = idOf(root, 'TPaymentInput');
   const code = rewritten(root, result, 'src/arrays.controller.ts');
@@ -411,10 +444,9 @@ test('Array<T> and Promise<T[]> returns record an array, and an Array<T> or read
   assert.equal(code.match(/__golem_nestModelReturn\(/g)?.length, 2);
 });
 
-test('a method that calls parse and carries nest decorators gets both rewrites and both imports', (t) => {
-  const root = paymentsProject(t, { 'src/mixed.controller.ts': readFixture(`${FORMS}/mixed.controller.ts`) });
-  const result = scan(root);
-  assert.deepEqual(result.diagnostics, []);
+test('a method that calls parse and carries nest decorators gets both rewrites and both imports', async () => {
+  const { root, result } = await sharedScans.error();
+  assert.deepEqual(diagnosticsIn(result, 'src/mixed.controller.ts'), []);
   const payment = idOf(root, 'TPayment');
   const input = idOf(root, 'TPaymentInput');
   const code = rewritten(root, result, 'src/mixed.controller.ts');
@@ -534,87 +566,97 @@ const shapeId = (root: string, name: string): string => {
   return id;
 };
 
-test('a union whose tag is written through an alias of the tag gets RUNM1081 with the cause and the forms that work', (t) => {
+/** The same sharing for the union tests: one project of the shapes model, with a controller file for each test, scanned once. */
+const SHAPES_ALIASED = 'src/shapes-aliased.controller.ts';
+const SHAPES_WRAPPED = 'src/shapes-wrapped.controller.ts';
+const SHAPES_TAGGED = 'src/shapes-tagged.controller.ts';
+const SHAPES_WHOLE = 'src/shapes.controller.ts';
+const sharedShapes = onceShared(async () => {
+  const root = project(fileScope, { 'src/shapes.model.ts': SHAPES_MODEL, [SHAPES_ALIASED]: SHAPES_ALIASED_CONTROLLER, [SHAPES_WRAPPED]: SHAPES_WRAPPED_CONTROLLER, [SHAPES_TAGGED]: SHAPES_TAGGED_CONTROLLER, [SHAPES_WHOLE]: SHAPES_CONTROLLER });
+  return { root, result: scan(root) };
+});
+
+const SHAPES_ALIASED_CONTROLLER = [
+  "import { Body, Controller, Post } from '@nestjs/common';",
+  "import type { Discriminator } from '@exprtlabs/golem/tags';",
+  "import type { TCircle, TRect } from './shapes.model.js';",
+  "type Kind = Discriminator<'kind'>;",
+  "@Controller('shapes')",
+  'export class ShapesController {',
+  '  @Post() aliased(@Body() shape: (TCircle | TRect) & Kind): number { return 1; }',
+  '}',
+].join('\n');
+
+test('a union whose tag is written through an alias of the tag gets RUNM1081 with the cause and the forms that work', async () => {
   // protects: fixed message, RUNM1081 for (A | B) & Kind named no cause ("is not a golem model") and gave a misleading fix
-  const controller = [
-    "import { Body, Controller, Post } from '@nestjs/common';",
-    "import type { Discriminator } from '@exprtlabs/golem/tags';",
-    "import type { TCircle, TRect } from './shapes.model.js';",
-    "type Kind = Discriminator<'kind'>;",
-    "@Controller('shapes')",
-    'export class ShapesController {',
-    '  @Post() aliased(@Body() shape: (TCircle | TRect) & Kind): number { return 1; }',
-    '}',
-  ].join('\n');
-  const root = project(t, { 'src/shapes.model.ts': SHAPES_MODEL, 'src/shapes.controller.ts': controller });
-  const result = scan(root);
+  const { result } = await sharedShapes();
   const fix = "Write the tag on the union itself, (A | B) & Discriminator<'kind'>, or give the whole tagged union a type alias: type TShape = (A | B) & Discriminator<'kind'>.";
   const refused = (type: string, reason: string): string => `${type} ${reason}, and NestModelInterceptor answers HTTP 500 for a @Body() parameter of that type. ${fix} An app with its own interceptor can set nonModelInputs: warn on the nest extension in golem.yaml.`;
-  assert.deepEqual(result.diagnostics.map(({ code, line, message }) => ({ code, line, message })), [
+  assert.deepEqual(diagnosticsIn(result, SHAPES_ALIASED).map(({ code, line, message }) => ({ code, line, message })), [
     { code: 'RUNM1081', line: 7, message: refused('(TCircle | TRect) & Kind', 'is a union whose Discriminator tag is written through the alias Kind, which golem does not read') },
   ]);
 });
 
-test('a generic wrapper that adds more than the tag to a @Body() union gets RUNM1081 with the cause, not the bare "not a golem model"', (t) => {
+const SHAPES_WRAPPED_CONTROLLER = [
+  "import { Body, Controller, Post } from '@nestjs/common';",
+  "import type { Discriminator } from '@exprtlabs/golem/tags';",
+  "import type { TCircle, TRect } from './shapes.model.js';",
+  "type Wrapped<U> = U & Discriminator<'kind'> & { x: string };",
+  "@Controller('shapes')",
+  'export class ShapesController {',
+  '  @Post() wrapped(@Body() shape: Wrapped<TCircle | TRect>): number { return 1; }',
+  '}',
+].join('\n');
+
+test('a generic wrapper that adds more than the tag to a @Body() union gets RUNM1081 with the cause, not the bare "not a golem model"', async () => {
   // protects: R-57 review finding 7 - a wrapper U & Discriminator<'kind'> & { x: string } is not a pure tag wrapper and stops with a message that names what is wrong
-  const controller = [
-    "import { Body, Controller, Post } from '@nestjs/common';",
-    "import type { Discriminator } from '@exprtlabs/golem/tags';",
-    "import type { TCircle, TRect } from './shapes.model.js';",
-    "type Wrapped<U> = U & Discriminator<'kind'> & { x: string };",
-    "@Controller('shapes')",
-    'export class ShapesController {',
-    '  @Post() wrapped(@Body() shape: Wrapped<TCircle | TRect>): number { return 1; }',
-    '}',
-  ].join('\n');
-  const root = project(t, { 'src/shapes.model.ts': SHAPES_MODEL, 'src/shapes.controller.ts': controller });
-  assert.deepEqual(scan(root).diagnostics.map(({ code, line, message }) => ({ code, line, message })), [
+  const { result } = await sharedShapes();
+  assert.deepEqual(diagnosticsIn(result, SHAPES_WRAPPED).map(({ code, line, message }) => ({ code, line, message })), [
     { code: 'RUNM1081', line: 7, message: "Wrapped<TCircle | TRect> is a generic wrapper of a union that holds more than the type parameter and its Discriminator tag, which golem does not read, and NestModelInterceptor answers HTTP 500 for a @Body() parameter of that type. Use a wrapper that is only U & Discriminator<'kind'>, or write the tag on the union itself, (A | B) & Discriminator<'kind'>. An app with its own interceptor can set nonModelInputs: warn on the nest extension in golem.yaml." },
   ]);
 });
 
-test('a generic tag wrapper Tagged<A | B> on a @Body() or @Query() union is stamped like the written form, and the existing refusals still apply through it', (t) => {
+const SHAPES_TAGGED_CONTROLLER = [
+  "import { Body, Controller, Post, Query } from '@nestjs/common';",
+  "import type { Discriminator } from '@exprtlabs/golem/tags';",
+  "import type { TCircle, TNumberTag, TPlain, TRect, TTextTag } from './shapes.model.js';",
+  "type Tagged<U> = U & Discriminator<'kind'>;",
+  "type TaggedV<U> = U & Discriminator<'v'>;",
+  "type Defaulted<U> = U & Discriminator<'kind', TPlain>;",
+  "@Controller('shapes')",
+  'export class ShapesController {',
+  '  @Post() body(@Body() shape: Tagged<TCircle | TRect>): number { return 1; }',
+  '  @Post() query(@Query() shape: Tagged<TCircle | TRect>): number { return 1; }',
+  '  @Post() missing(@Body() shape: Tagged<TCircle | TPlain>): number { return 1; }',
+  '  @Post() shared(@Query() tag: TaggedV<TNumberTag | TTextTag>): number { return 1; }',
+  '  @Post() defaulted(@Body() shape: Defaulted<TCircle | TPlain>): number { return 1; }',
+  '}',
+].join('\n');
+
+test('a generic tag wrapper Tagged<A | B> on a @Body() or @Query() union is stamped like the written form, and the existing refusals still apply through it', async () => {
   // protects: T-619 the wrapper binds like the written tag; a member without the key, shared values and a default stay RUNM1081
-  const controller = [
-    "import { Body, Controller, Post, Query } from '@nestjs/common';",
-    "import type { Discriminator } from '@exprtlabs/golem/tags';",
-    "import type { TCircle, TNumberTag, TPlain, TRect, TTextTag } from './shapes.model.js';",
-    "type Tagged<U> = U & Discriminator<'kind'>;",
-    "type TaggedV<U> = U & Discriminator<'v'>;",
-    "type Defaulted<U> = U & Discriminator<'kind', TPlain>;",
-    "@Controller('shapes')",
-    'export class ShapesController {',
-    '  @Post() body(@Body() shape: Tagged<TCircle | TRect>): number { return 1; }',
-    '  @Post() query(@Query() shape: Tagged<TCircle | TRect>): number { return 1; }',
-    '  @Post() missing(@Body() shape: Tagged<TCircle | TPlain>): number { return 1; }',
-    '  @Post() shared(@Query() tag: TaggedV<TNumberTag | TTextTag>): number { return 1; }',
-    '  @Post() defaulted(@Body() shape: Defaulted<TCircle | TPlain>): number { return 1; }',
-    '}',
-  ].join('\n');
-  const root = project(t, { 'src/shapes.model.ts': SHAPES_MODEL, 'src/shapes.controller.ts': controller });
-  const result = scan(root);
-  assert.deepEqual(result.diagnostics.map(({ code, line, message }) => ({ code, line, reason: / (has the member TPlain with no required literal property "kind"|has the members TNumberTag and TTextTag that share the "v" value "1"|declares a default variant)/.exec(message)?.[1] })), [
+  const { root, result } = await sharedShapes();
+  assert.deepEqual(diagnosticsIn(result, SHAPES_TAGGED).map(({ code, line, message }) => ({ code, line, reason: / (has the member TPlain with no required literal property "kind"|has the members TNumberTag and TTextTag that share the "v" value "1"|declares a default variant)/.exec(message)?.[1] })), [
     { code: 'RUNM1081', line: 11, reason: 'has the member TPlain with no required literal property "kind"' },
     { code: 'RUNM1081', line: 12, reason: 'has the members TNumberTag and TTextTag that share the "v" value "1"' },
     { code: 'RUNM1081', line: 13, reason: 'declares a default variant' },
   ]);
   const [circle, rect] = [shapeId(root, 'TCircle'), shapeId(root, 'TRect')];
   const variants = `[[["circle"],"${circle}"],[["rect"],"${rect}"]]`;
-  assertLines(rewritten(root, result, 'src/shapes.controller.ts'), [
+  assertLines(rewritten(root, result, SHAPES_TAGGED), [
     `  @Post() body(@Body() @__golem_nestModelUnion("kind", ${variants}) shape: Tagged<TCircle | TRect>): number { return 1; }`,
     `  @Post() query(@Query() @__golem_nestModelUnion("kind", ${variants}) shape: Tagged<TCircle | TRect>): number { return 1; }`,
   ]);
 });
 
-test('a whole @Body() or @Query() union of tagged models is stamped with its tag and variants, and an untagged, array or one-field union gets RUNM1081', (t) => {
+test('a whole @Body() or @Query() union of tagged models is stamped with its tag and variants, and an untagged, array or one-field union gets RUNM1081', async () => {
   // protects: T-390 E-50 a tagged union binds a union codec; an untagged union (T-258, T-377) and the forms golem does not describe still stop the build
-  const root = project(t, { 'src/shapes.model.ts': SHAPES_MODEL, 'src/shapes.controller.ts': SHAPES_CONTROLLER });
-  const result = scan(root);
+  const { root, result } = await sharedShapes();
   const refused = (type: string, decorator: string, reason: string, advice: string): string => `${type} ${reason}, and NestModelInterceptor answers HTTP 500 for a @${decorator}() parameter of that type. ${advice} An app with its own interceptor can set nonModelInputs: warn on the nest extension in golem.yaml.`;
   const addTag = "Declare the tag key on the union: (A | B) & Discriminator<'kind'>, and give each model a required literal field kind with a value of its own, such as kind: 'circle'. Or bind one field of a model type.";
   const whole = 'is a union of golem models, which NestModelInterceptor converts only as a whole input';
   const wholeAdvice = 'Declare the parameter as the union itself in a whole @Body(), or as one model.';
-  assert.deepEqual(result.diagnostics.map(({ code, line, message }) => ({ code, line, message })), [
+  assert.deepEqual(diagnosticsIn(result, SHAPES_WHOLE).map(({ code, line, message }) => ({ code, line, message })), [
     { code: 'RUNM1081', line: 9, message: refused('TCircle | TPlain', 'Body', 'is a union of golem models with no declared tag', addTag) },
     // Two models that share a field named kind are no tagged union until the union declares the key: golem does not find it.
     { code: 'RUNM1081', line: 10, message: refused('TCircle | TRect', 'Body', 'is a union of golem models with no declared tag', addTag) },
@@ -628,7 +670,7 @@ test('a whole @Body() or @Query() union of tagged models is stamped with its tag
   ]);
   const [circle, rect] = [shapeId(root, 'TCircle'), shapeId(root, 'TRect')];
   const variants = `[[["circle"],"${circle}"],[["rect"],"${rect}"]]`;
-  assertLines(rewritten(root, result, 'src/shapes.controller.ts'), [
+  assertLines(rewritten(root, result, SHAPES_WHOLE), [
     `  @Post() written(@Body() @__golem_nestModelUnion("kind", ${variants}) shape: (TCircle | TRect) & Discriminator<'kind'>): number { return 1; }`,
     `  @Post() aliased(@Body() @__golem_nestModelUnion("kind", ${variants}) shape: TShape): number { return 1; }`,
     `  @Post() query(@Query() @__golem_nestModelUnion("kind", ${variants}) shape: (TCircle | TRect) & Discriminator<'kind'>): number { return 1; }`,

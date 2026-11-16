@@ -8,7 +8,7 @@ import test from 'node:test';
 import type { Validator } from '@exprtlabs/golem/validation';
 import { compilePlanValidators, type CodecValidationPlan, type PlanValidators } from '@exprtlabs/golem/internal/validation-plan';
 import { analyzeOpenApiModels, generateOpenApiModelArtifacts } from '#openapi/models';
-import { runtimeSpecifiersOf } from '#openapi/runtime-copy';
+import { standaloneRuntimeSpecifiers } from '#openapi/runtime-copy';
 
 import { workspace } from '../support/process.js';
 import { stripTypes } from '../support/run-module.js';
@@ -78,7 +78,7 @@ test('the whole-graph plan validates every model as the plan of its own group do
   let whole: CodecValidationPlan | undefined;
   let groups: ReadonlyMap<string, CodecValidationPlan> | undefined;
   generateOpenApiModelArtifacts(document, { validation: true, allowAny: false }, analyzeOpenApiModels(document, true), {
-    specifiers: runtimeSpecifiersOf({ kind: 'standalone' }),
+    specifiers: standaloneRuntimeSpecifiers,
     compileValidators: ({ plan, groupPlans }) => {
       whole = plan;
       groups = groupPlans;

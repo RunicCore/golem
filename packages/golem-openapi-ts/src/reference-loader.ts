@@ -125,7 +125,13 @@ export interface ReferenceTarget {
  * What holds a reference value: a `$ref` or `$dynamicRef` keyword, a
  * discriminator `mapping` value, or a discriminator `defaultMapping`.
  */
-type ReferenceKeyword = '$ref' | '$dynamicRef' | 'mapping' | 'defaultMapping';
+export type ReferenceKeyword = '$ref' | '$dynamicRef' | 'mapping' | 'defaultMapping';
+
+/** The text that names a reference that resolves to nothing; the loader and the `no-unresolved-refs` rule both report it. */
+export function unresolvedReferenceMessage(keyword: ReferenceKeyword, reference: string): string {
+  const label = keyword === 'mapping' || keyword === 'defaultMapping' ? 'discriminator mapping' : keyword;
+  return `Can't resolve ${label} ${reference}`;
+}
 
 export interface ReferenceSite {
   readonly documentUri: string;
@@ -393,7 +399,12 @@ async function loadGraph(
     if (reference.startsWith('#')) {
       const fragment = reference.slice(1);
       if (fragment === '' || fragment.startsWith('/')) {
-        return { target: { uri: documentUri, pointer: decodeUriFragment(fragment) }, preserve: false };
+        const pointer = decodeUriFragment(fragment);
+        // A kept `#/` text in a hoisted document would resolve against the root, so a root component of that name would hide the miss.
+        if (!inRoot && resolveJsonPointer(documents.get(documentUri)?.document, pointer) === undefined) {
+          throw new Error(`${unresolvedReferenceMessage(keyword, reference)} (${displayLocation(documentUri, walkerPointer.slice(1), rootDirectory)})`);
+        }
+        return { target: { uri: documentUri, pointer }, preserve: false };
       }
       if (keyword === '$dynamicRef' || inRoot) return { target: null, preserve: true };
       throw anchorFragmentError(reference, documentUri);
@@ -520,8 +531,7 @@ async function loadGraph(
       walked.add(walkKey);
       const loaded = documents.get(next.target.uri) ?? await loadDocument(next.target.uri);
       const node = resolveJsonPointer(loaded.document, next.target.pointer);
-      // A pointer that names nothing is user input: `no-unresolved-refs` reports it after the bundle (`loadOpenApiInput`).
-      // Gap: a `#/` pointer in a hoisted non-root document is checked against the root, so a root component of that name hides the miss.
+      // A pointer that names nothing is user input: `no-unresolved-refs` reports it after the bundle (`loadOpenApiInput`); `classifySite` reports one inside a non-root document.
       if (node === undefined) continue;
       const base = next.target.uri === rootUri ? schemaDocumentBase(rootDocument) : next.target.uri;
       visitOpenApiComponent(next.kind, node, base, `#${next.target.pointer}`, handlersFor(next.target.uri));

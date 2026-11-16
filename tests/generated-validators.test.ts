@@ -155,6 +155,7 @@ test('validation plan identity compares owned definitions per model and wire pla
 });
 
 test('the validation plan of nested models refers to each child by its id and does not repeat owned definitions', () => {
+  // protects: F-129 generated code is not duplicated: a plan schema refers to a model it references by id, and does not copy the definition (ownedGraphDefinitions in validation-plan.ts)
   const leaf: ModelTypeDescriptor = {
     kind: 'object', properties: { code: { kind: 'string' } }, required: ['code'], additionalProperties: false,
   };

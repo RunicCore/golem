@@ -5,7 +5,7 @@
  */
 
 import { assertNever } from '../assert-never.js';
-import type { ModelTypeDescriptor, SerdeFunctions } from '../model-registry.js';
+import type { DescriptorSerde, ModelTypeDescriptor, SerdeFunctions } from '../model-registry.js';
 import type { ValidationLevel, ValidationPlane } from '../object-codec.js';
 import type { SchemaGraph, SchemaNode } from './schema-graph.js';
 import { codecShortName, nodeHoldsSequence, patternSchemas } from './schema-graph.js';
@@ -20,6 +20,7 @@ import { rt, rtType, runtimeFunctionCode } from './rt.js';
 import { calleeOf, emitArrayConversion, emitTupleConversion, JSON_SCALAR } from './sequence-conversion.js';
 import {
   descriptorNeedsConversion,
+  valueConversion,
   isScalarishDescriptor,
   emitDispatch,
   emitUnionConversion,
@@ -29,6 +30,7 @@ import {
   objectValueExpression,
   presentKeysCode,
   declaredTable,
+  serdeFunctions,
   unionDispatch,
   withUnionInput,
   type DispatchOptions,
@@ -44,21 +46,24 @@ import {
  * says how it calls a function it is bound to; every binding, a TSerde tag's or a built-in class's, goes through that call.
  */
 export interface StringifySerdeResolver {
-  readonly deserialize: (serde: SerdeFunctions, value: Code) => Code;
-  readonly serialize: (serde: SerdeFunctions, value: Code) => Code;
+  readonly deserialize: (serde: DescriptorSerde, value: Code) => Code;
+  readonly serialize: (serde: DescriptorSerde, value: Code) => Code;
 }
+
+/** What `serdeWireKind` reads of a serde: its wire form alone. */
+type SerdeWire = Pick<SerdeFunctions, 'id' | 'wire' | 'wireDescriptor'>;
 
 /**
  * The JSON type of the wire of a serde when it is a string, a number or a boolean. Such a serde reads only a value of that type (F-39), so
  * its deserializer is wrapped once, by `wireChecked`, where the file binds it.
  */
-function serdeWireKind(serde: SerdeFunctions): 'string' | 'number' | 'boolean' | undefined {
+function serdeWireKind(serde: SerdeWire): 'string' | 'number' | 'boolean' | undefined {
   const kind = serdeWireDescriptor(serde)?.kind;
   return kind === 'string' || kind === 'number' || kind === 'boolean' ? kind : undefined;
 }
 
 /** The deserializer `deserialize` of a serde, as a function that rejects a wire value of another JSON type than the wire's. */
-export function wireCheckedDeserializer(serde: SerdeFunctions, deserialize: Code): Code {
+export function wireCheckedDeserializer(serde: SerdeWire, deserialize: Code): Code {
   const kind = serdeWireKind(serde);
   return kind === undefined ? deserialize : code`${rt.conversion.wireChecked}(${literal(kind)}, ${deserialize})`;
 }
@@ -77,13 +82,17 @@ function checkedDeserializer(serde: SerdeFunctions): Helper {
 
 /**
  * The resolver of a generator whose bindings are functions of the golem runtime (OpenAPI documents hold no TSerde tag). Conversion code holds
- * values as `unknown`; wire validation has already checked them, so the call casts. The file imports exactly the functions it calls.
+ * values as `unknown`; wire validation has already checked them, so the call casts. The file imports exactly the functions it calls. A serde
+ * that names no functions throws a `TypeError` (`serdeFunctions`).
  */
 export const RUNTIME_SERDE: StringifySerdeResolver = {
-  deserialize: (serde, value) => serdeWireKind(serde) === undefined
-    ? code`${runtimeFunctionCode(serde.deserialize)}((${value}) as never)`
-    : code`${helperName(checkedDeserializer(serde))}(${value})`,
-  serialize: (serde, value) => code`${runtimeFunctionCode(serde.serialize)}((${value}) as never)`,
+  deserialize: (serde, value) => {
+    const functions = serdeFunctions(serde);
+    return serdeWireKind(functions) === undefined
+      ? code`${runtimeFunctionCode(functions.deserialize)}((${value}) as never)`
+      : code`${helperName(checkedDeserializer(functions))}(${value})`;
+  },
+  serialize: (serde, value) => code`${runtimeFunctionCode(serdeFunctions(serde).serialize)}((${value}) as never)`,
 };
 
 /** The functions of a codec that another module generated, as the names this module imports them under. */
@@ -137,8 +146,8 @@ export interface CodecRuntimeOptions {
   readonly wireType?: (node: SchemaNode) => Code | undefined;
   /** Type expression of a local node's decoded value: parse, fromWireFormat, validate and assert produce it; stringify and toWireFormat accept it. */
   readonly fieldsType?: (node: SchemaNode) => Code | undefined;
-  /** Codec ids of sibling models that register a separate wire schema (`${id}#wire`). */
-  readonly siblingWireCodecIds?: ReadonlySet<string>;
+  /** How this module writes the wire value of each sibling codec whose wire form differs from its model form (`SiblingWireWrite`); a codec with no entry has one form, and the model stringify writes it. */
+  readonly siblingWire?: ReadonlyMap<string, SiblingWireWrite>;
   /** Whether a sibling codec's model is recursive, by codec id. A sibling the job does not know is treated as recursive. */
   readonly siblingRecursion?: ReadonlyMap<string, boolean>;
   /** Export the wire stringify of the public codecs that the function accepts (`writesWireStringify`, `wireStringifyExportName`), for other generated modules to import. */
@@ -178,7 +187,7 @@ interface EmitCtx
     | 'exportStripPlans'
     | 'wireType'
     | 'fieldsType'
-    | 'siblingWireCodecIds'
+    | 'siblingWire'
     | 'siblingRecursion'
     | 'exportWireStringify'
     | 'exportAnonymousCodecs'
@@ -277,9 +286,21 @@ function trustedOptions(ctx: EmitCtx): Code {
   return ctx.trustedOptions ?? TRUSTED;
 }
 
-/** The wire stringify of a sibling codec: the name the file imports it under. */
-function siblingWireCall(codecId: string, ctx: EmitCtx): Code {
-  return ctx.siblingWireName ? ctx.siblingWireName(codecId) : identifier(wireStringifyExportName(codecId));
+/**
+ * How the wire value of a sibling codec is written when its wire form differs from its model form: by the wire stringify its
+ * companion exports (`writesWireStringify`), or as the JSON data it is when the companion exports none because its calls do not validate.
+ */
+export type SiblingWireWrite = 'exported' | 'json';
+
+/** The write of the wire value of a sibling codec, or undefined when the codec has one form and the model stringify writes it. */
+function emitSiblingWire(codecId: string, value: Code, ctx: EmitCtx): Code | undefined {
+  const write = ctx.siblingWire?.get(codecId);
+  switch (write) {
+    case undefined: return undefined;
+    case 'exported': return code`${ctx.siblingWireName ? ctx.siblingWireName(codecId) : identifier(wireStringifyExportName(codecId))}(${value} as never)`;
+    case 'json': return code`${rt.serde.stringifyJsonScalar}(${value})`;
+    default: return assertNever(write);
+  }
 }
 
 /** A nested stringify call that skips validation: the node's Core function when this module emits it. */
@@ -382,14 +403,6 @@ function memberPrefix(name: string, leadingComma: boolean): Code {
   return literal(`${leadingComma ? ',' : ''}${JSON.stringify(name)}:`);
 }
 
-/**
- * The serde of a descriptor as the functions it names. Every descriptor that a generator makes names both; a descriptor that a test
- * writes by hand may leave them out, and the serde resolver of that test never reads them.
- */
-export function descriptorSerde(descriptor: ModelTypeDescriptor): SerdeFunctions | undefined {
-  return descriptor.serde as SerdeFunctions | undefined;
-}
-
 function isObjectish(descriptor: ModelTypeDescriptor): boolean {
   return descriptor.kind === 'object' || descriptor.kind === 'reference' || descriptor.kind === 'generated-model';
 }
@@ -444,7 +457,8 @@ function inlineLocalLines(ctx: EmitCtx): Code[] {
  * stringify imported; one with no encoded value under it writes as the model does; any other has no function to call.
  */
 function emitRecursiveWireCall(named: SchemaNode, expression: Code, ctx: EmitCtx): Code {
-  if (ctx.siblingWireCodecIds?.has(named.codecId)) return code`${siblingWireCall(named.codecId, ctx)}(${expression} as never)`;
+  const sibling = emitSiblingWire(named.codecId, expression, ctx);
+  if (sibling) return sibling;
   if (named.sameSchema && !reachesEncodedValue(named.descriptor, ctx)) return nestedStringifyCall(named.id, expression, ctx);
   throw new Error(named.validation === false
     ? `Recursive model ${named.name} has validation turned off, so its wire form has no function to write it; turn validation on for it.`
@@ -470,19 +484,9 @@ function emitValue(
   ctx: EmitCtx,
 ): Code {
   const value = expression;
-  if (descriptor.kind === 'generated-model') {
-    const named = ctx.graph.nodeFor(descriptor);
-    // A wire value goes to the wire stringify of its node, the one its module exports or this module's own: the model stringify would encode the value again.
-    const wire = named && ctx.wireIdentity ? importedSerdeOf(named, ctx)?.wireStringify ?? (descriptor.serde ? undefined : localWireStringify(named, ctx)) : undefined;
-    if (wire) return code`${wire}(${value} as never)`;
-    // A wire value of a generated model that holds an array is written by the wire writer of its node, below, as a recursive alias is.
-    if (named && !(ctx.wireIdentity && !descriptor.serde && nodeHoldsSequence(named))) {
-      return nestedStringifyCall(named.id, value, ctx);
-    }
-    if (!named) throw new Error(`Internal error: the schema graph has no node for the generated model ${JSON.stringify(descriptor.id)}.`);
-  }
-  const serde = descriptorSerde(descriptor);
-  if (serde) {
+  const conversion = valueConversion(descriptor);
+  if (conversion.kind === 'serde') {
+    const { serde } = conversion;
     const wire = serdeWireDescriptor(serde) ?? { kind: 'unknown' as const };
     if (ctx.wireIdentity) return emitValue(wire, value, ctx);
     const serialized = ctx.serde
@@ -490,12 +494,21 @@ function emitValue(
       : value;
     return emitValue(wire, serialized, ctx);
   }
+  if (conversion.kind === 'generated-model') {
+    const named = ctx.graph.nodeFor(conversion.descriptor);
+    // A wire value goes to the wire stringify of its node, the one its module exports or this module's own: the model stringify would encode the value again.
+    const wire = named && ctx.wireIdentity ? importedSerdeOf(named, ctx)?.wireStringify ?? localWireStringify(named, ctx) : undefined;
+    if (wire) return code`${wire}(${value} as never)`;
+    // A wire value of a generated model that holds an array is written by the wire writer of its node, below, as a recursive alias is.
+    if (named && !(ctx.wireIdentity && nodeHoldsSequence(named))) {
+      return nestedStringifyCall(named.id, value, ctx);
+    }
+    if (!named) throw new Error(`Internal error: the schema graph has no node for the generated model ${JSON.stringify(conversion.descriptor.id)}.`);
+  }
   const named = ctx.graph.nodeFor(descriptor);
   if (named?.siblingCodec && ctx.wireIdentity) {
     // An encoded wire value of a sibling codec: its companion's wire stringify writes it.
-    return ctx.siblingWireCodecIds?.has(named.codecId)
-      ? code`${siblingWireCall(named.codecId, ctx)}(${value} as never)`
-      : nestedStringifyCall(named.id, value, ctx);
+    return emitSiblingWire(named.codecId, value, ctx) ?? nestedStringifyCall(named.id, value, ctx);
   }
   if (named && isObjectish(descriptor)) {
     if (
@@ -809,7 +822,7 @@ export function emitStringifyFunction(
     wireIdentity: extra.wireIdentity,
     lenientRoot: extra.lenientRoot,
     wireStringifyIds: extra.wireStringifyIds,
-    siblingWireCodecIds: extra.siblingWireCodecIds,
+    siblingWire: extra.siblingWire,
     siblingRecursion: extra.siblingRecursion,
     localCoreIds: extra.localCoreIds,
     strictCoreIds: extra.strictCoreIds,
@@ -1384,7 +1397,7 @@ function emitUnionValue(
   return emitUnion('stringify', descriptor, value, ctx, {
     walk: (variant) => emitValue(variant, value, ctx),
     walkTagged: (variant) => {
-      if (!ctx.wireIdentity) {
+      if (!ctx.wireIdentity && valueConversion(variant).kind !== 'serde') {
         const node = ctx.graph.nodeFor(variant);
         if (node && isObjectish(variant)) {
           return nestedStringifyCall(node.id, value, ctx);
@@ -1406,7 +1419,7 @@ function emitUnionValue(
     beforeGenerated: (present) => {
       const objects = present.filter((variant): variant is ObjectTypeDescriptor => variant.kind === 'object');
       // Several structured objects need a declared tag table to be told apart; without one they are rejected.
-      if (objects.length > 1 && !present.some((variant) => variant.kind === 'generated-model')) {
+      if (objects.length > 1 && !present.some((variant) => valueConversion(variant).kind === 'generated-model')) {
         const structured = objects.some((object) => {
           const node = ctx.graph.nodeFor(object);
           return Boolean(node) || Object.keys(object.properties).length > 0 || object.additionalProperties === false;
@@ -1467,10 +1480,11 @@ function emitUnionEncode(
 
 function emitDecodeValue(descriptor: ModelTypeDescriptor, expression: Code, ctx: EmitCtx): Code {
   const value = expression;
-  const serde = descriptorSerde(descriptor);
-  if (serde) {
+  const conversion = valueConversion(descriptor);
+  if (conversion.kind === 'serde') {
+    const { serde } = conversion;
     const deserialized = ctx.serde ? fallibleConversion(ctx, ctx.serde.deserialize(serde, value)) : value;
-    const wire = serdeWireDescriptor(descriptor.serde);
+    const wire = serdeWireDescriptor(serde);
     if (wire && (wire.kind === 'object' || wire.kind === 'reference' || wire.kind === 'generated-model')) {
       return code`(${objectValueExpression(value)} ? ${deserialized} : ${value})`;
     }
@@ -1804,16 +1818,16 @@ function emitFillFunction(
 
 function emitEncodeValue(descriptor: ModelTypeDescriptor, expression: Code, ctx: EmitCtx): Code {
   const value = expression;
-  if (descriptor.kind === 'generated-model') {
-    const named = ctx.graph.nodeFor(descriptor);
+  const conversion = valueConversion(descriptor);
+  if (conversion.kind === 'serde') {
+    return ctx.serde ? ctx.serde.serialize(conversion.serde, value) : value;
+  }
+  if (conversion.kind === 'generated-model') {
+    const named = ctx.graph.nodeFor(conversion.descriptor);
     if (named) {
       return nestedToWireCall(named.id, value, ctx);
     }
-    throw new Error(`Internal error: the schema graph has no node for the generated model ${JSON.stringify(descriptor.id)}.`);
-  }
-  const serde = descriptorSerde(descriptor);
-  if (serde) {
-    return ctx.serde ? ctx.serde.serialize(serde, value) : value;
+    throw new Error(`Internal error: the schema graph has no node for the generated model ${JSON.stringify(conversion.descriptor.id)}.`);
   }
   const named = ctx.graph.nodeFor(descriptor);
   if (named && isObjectish(descriptor)) {
@@ -1942,6 +1956,12 @@ function nodeLevels(node: SchemaNode, project: ValidationLevel): NodeLevels {
 /** Whether the module of a project at level `project` writes the wire stringify of `node`: it holds the node, its calls validate and its wire and model schemas differ. */
 export function writesWireStringify(node: SchemaNode, project: ValidationLevel): boolean {
   return !isExternalCodecNode(node) && validatesByDefault(nodeLevels(node, project)) && !node.sameSchema;
+}
+
+/** How the modules that import `node` write its wire value, or undefined when its wire and model forms are one and the model stringify writes it. */
+export function siblingWireWrite(node: SchemaNode, project: ValidationLevel): SiblingWireWrite | undefined {
+  if (node.sameSchema) return undefined;
+  return writesWireStringify(node, project) ? 'exported' : 'json';
 }
 
 /**
@@ -2530,7 +2550,7 @@ export function emitCodecRuntimeCode(
     localCoreIds: new Set(nodes.filter((node) => !isExternalCodecNode(node)).map((node) => node.id)),
     strictCoreIds: new Set(nodes.filter((node) => !isExternalCodecNode(node) && validates(node) && node.sameSchema).map((node) => node.id)),
     trustedOptions: helperName(TRUSTED_HELPER),
-    siblingWireCodecIds: options.siblingWireCodecIds,
+    siblingWire: options.siblingWire,
     siblingRecursion: options.siblingRecursion,
     exportWireStringify: options.exportWireStringify,
     validatorName: options.validatorName,

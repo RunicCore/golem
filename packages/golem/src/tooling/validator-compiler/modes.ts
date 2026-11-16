@@ -1,6 +1,6 @@
 import { code, join, literal as literalCode, nameOf, type Code } from '../code.js';
 import type { IrObject, IrPatternProperty } from './ir.js';
-import { presentKeysCode } from '../union-conversion.js';
+import { PRESENT_KEY, presentKeysCode } from '../union-conversion.js';
 import { PATH, COMMA, ISSUES, ALL, callFunction, type CallArguments } from './function-names.js';
 import { instanceFieldsOf, localName, stateTest } from './local-helpers.js';
 import { patternExpression } from './module-state.js';
@@ -26,8 +26,6 @@ export type Capture = readonly [key: string, local: Code];
 
 /** How the checks of one object tell that a declared key is present, and read its value once it is. */
 interface PresenceReader {
-  /** Statements that run before the first `present` or `read`. */
-  readonly setup: readonly Code[];
   /** An expression that is true when `key` is present by the JSON view. */
   present(key: string): Code;
   /** An expression that reads the value of `key`; written only where `present(key)` holds. */
@@ -155,13 +153,19 @@ export interface WriterMode {
 const REPORT_FAILURE = code`ok = false; if (!${ALL}) { ${PATH}.length = pl; return false; }`;
 
 export function objectPresence(value: Code, captured: readonly Capture[] = []): PresenceReader {
-  // One Object.keys pass reads the declared keys of an object; the faster exact form of the JSON view.
   const locals = new Map(captured);
   return {
-    setup: captured.length > 0 ? [presentKeysCode(value, captured)] : [],
     present: key => { const local = locals.get(key); return local !== undefined ? code`(${local} !== undefined)` : code`${localName('isPresent')}(${value}, ${literalCode(key)})`; },
     read: key => locals.get(key) ?? code`${value}[${literalCode(key)}]`,
   };
+}
+
+/**
+ * The one `Object.keys` pass that reads each captured key once, the faster exact form of the JSON view. `fields` is the local that
+ * holds the names of the value's own model: program state is never read, also when its name is a captured key.
+ */
+function readCaptured(writer: FunctionWriter, value: Code, captured: readonly Capture[], fields: Code): void {
+  writer.line(presentKeysCode(value, captured, { skip: stateTest(fields, PRESENT_KEY) }));
 }
 
 /** The full validator: a failed check pushes its issue, then returns at once unless all errors are wanted; a key is read through `isPresent`. */
@@ -176,14 +180,15 @@ export const FULL_VALIDATOR: WriterMode = {
   form: full => full,
   // Reads the declared keys; the checks after it loop over the key list for unknown keys and patterns.
   keyTest: (writer, { check, value, captured, reads }) => {
-    const presence = objectPresence(value, captured);
-    for (const line of presence.setup) writer.line(line);
+    const fields = writer.fresh('fields');
+    if (captured.length > 0 || reads.all) writer.line(code`const ${fields} = ${instanceFieldsOf(value)};`);
+    if (captured.length > 0) readCaptured(writer, value, captured, fields);
     const keys = writer.fresh('keys');
-    if (reads.all) writer.line(code`const ${keys} = ${localName('definedKeys')}(${value});`);
+    if (reads.all) writer.line(code`const ${keys} = ${localName('definedKeys')}(${value}, ${fields});`);
     // `definedKeys` leaves out the program state of a model instance, so it does not count.
     const list: KeyList = { kind: 'defined', keys };
-    if (check.minProperties === undefined && check.maxProperties === undefined) return { presence, ...(reads.all ? { list } : {}) };
-    return { presence, count: code`${keys}.length`, list };
+    if (check.minProperties === undefined && check.maxProperties === undefined) return { presence: objectPresence(value, captured), ...(reads.all ? { list } : {}) };
+    return { presence: objectPresence(value, captured), count: code`${keys}.length`, list };
   },
   call: (writer, id, args) => {
     const target = writer.target(id);
@@ -213,15 +218,18 @@ export const FULL_VALIDATOR: WriterMode = {
  */
 function fastKeyTest(writer: FunctionWriter, { check, value, captured, reads }: KeyTestRequest): KeyTest {
   const presence = objectPresence(value, captured);
+  const fields = writer.fresh('fields');
   if (!reads.all) {
-    for (const line of presence.setup) writer.line(line);
+    if (captured.length > 0) {
+      writer.line(code`const ${fields} = ${instanceFieldsOf(value)};`);
+      readCaptured(writer, value, captured, fields);
+    }
     return { presence };
   }
   const counts = check.minProperties !== undefined || check.maxProperties !== undefined;
   const count = counts ? writer.fresh('count') : undefined;
   const additional = reads.visitsAdditional ? check.additional : undefined;
   const unknown = additional?.kind === 'forbid' ? writer.fresh('unknown') : undefined;
-  const fields = writer.fresh('fields');
   const locals = [...captured.map(([, local]) => local), ...(count === undefined ? [] : [code`${count} = 0`]), ...(unknown === undefined ? [] : [code`${unknown} = false`])];
   if (locals.length > 0) writer.line(code`let ${join(locals, COMMA)};`);
   writer.line(code`const ${fields} = ${instanceFieldsOf(value)};`);
@@ -233,8 +241,7 @@ function fastKeyTest(writer: FunctionWriter, { check, value, captured, reads }: 
   const capturedKeys = new Set(captured.map(([name]) => name));
   // A key counts when its value is not `undefined`; a key nothing else reads is read on its own.
   const counted = (read: Code): Code => (count === undefined ? code` ${read};` : code` if (${read} !== undefined) ${count}++;`);
-  // A key that the schema names is read as the full validator reads it, also when it is program state; any other program state is never read.
-  const cases = captured.filter(([name]) => additional === undefined || named.has(name)).map(([name, local]) => code`case ${literalCode(name)}: ${local} = ${value}[${literalCode(name)}];${count === undefined ? code`` : code` if (${local} !== undefined && !${state(literalCode(name))}) ${count}++;`} break;`);
+  const cases = captured.filter(([name]) => additional === undefined || named.has(name)).map(([name, local]) => code`case ${literalCode(name)}: ${local} = ${value}[${literalCode(name)}];${count === undefined ? code`` : code` if (${local} !== undefined) ${count}++;`} break;`);
   const bare = [...named].filter(name => !capturedKeys.has(name));
   // A required or dependent key that `properties` does not name is still additional: `default` captures it.
   const unnamed = additional === undefined ? [] : captured.filter(([name]) => !named.has(name));
@@ -245,21 +252,19 @@ function fastKeyTest(writer: FunctionWriter, { check, value, captured, reads }: 
   }
   const item = writer.fresh('item');
   writer.open(code`for (const ${key} of ${list ?? code`Object.keys(${value})`})`);
+  // Program state is never read, whatever its name: it is no declared key, no counted key and no unknown key.
+  writer.line(code`if (${state(key)}) continue;`);
   writer.open(code`switch (${key})`);
   for (const entry of cases) writer.line(entry);
-  if (bare.length > 0) writer.line(code`${join(bare.map(name => code`case ${literalCode(name)}:`), code` `)} if (${state(key)}) break;${counted(code`${value}[${key}]`)} break;`);
+  if (bare.length > 0) writer.line(code`${join(bare.map(name => code`case ${literalCode(name)}:`), code` `)}${counted(code`${value}[${key}]`)} break;`);
   writer.open(code`default:`);
-  writer.line(code`if (${join([state(key), ...unnamed.map(([name]) => code`${key} !== ${literalCode(name)}`)], code` && `)}) continue;`);
   writer.line(code`const ${item} = ${value}[${key}];`);
   writer.line(code`if (${item} === undefined) continue;`);
-  // A key that nothing names was left out above when it is program state; one that `unnamed` names is judged, and neither counts nor is unknown.
-  const data = unnamed.length === 0 ? [] : [code`!${state(key)}`];
-  if (count !== undefined) writer.line(data.length === 0 ? code`${count}++;` : code`if (${join(data, code` && `)}) ${count}++;`);
+  if (count !== undefined) writer.line(code`${count}++;`);
   unnamed.forEach(([name, local], position) => writer.line(code`${position === 0 ? code`` : code`else `}if (${key} === ${literalCode(name)}) ${local} = ${item};`));
   if (unknown !== undefined) {
     const patterns = check.patternProperties.map(entry => code`${patternExpression(writer.state, entry.pattern)}.test(${key})`);
-    const tests = [...(patterns.length === 0 ? [] : [code`!(${join(patterns, code` || `)})`]), ...data];
-    writer.line(tests.length === 0 ? code`${unknown} = true;` : code`if (${join(tests, code` && `)}) ${unknown} = true;`);
+    writer.line(patterns.length === 0 ? code`${unknown} = true;` : code`if (!(${join(patterns, code` || `)})) ${unknown} = true;`);
   }
   writer.close();
   writer.close();

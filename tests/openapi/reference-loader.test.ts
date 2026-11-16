@@ -160,6 +160,17 @@ test('anchor fragments into external documents are rejected', async (t) => {
   );
 });
 
+test('a pointer that names nothing in a non-root document is reported, not bound to a root component of that name', async (t) => {
+  // protects: T-975 the kept `#/` text of a hoisted document would resolve against the root
+  const directory = createFixtureProject(t, 'golem-loader-nonroot-missing-');
+  writeOpenApiDocument(directory, { $defs: { Y: { type: 'object', properties: { x: { $ref: '#/components/schemas/X' } } } } }, 'b.json');
+  const document = root({ components: { schemas: { X: { type: 'string' }, A: { $ref: './b.json#/$defs/Y' } } } });
+  await assert.rejects(
+    () => loadReferenceGraph(writeOpenApiDocument(directory, document, 'api.json'), document),
+    /^Error: Can't resolve \$ref #\/components\/schemas\/X \(b\.json#\/\$defs\/Y\/properties\/x\/\$ref\)$/,
+  );
+});
+
 test('a remote ref inside a local file is blocked when remoteHosts lists no host', async (t) => {
   // protects: F-176 and R5 a remote reference inside a local file follows the same rule as one in the root document
   const directory = createFixtureProject(t, 'golem-loader-nested-remote-');

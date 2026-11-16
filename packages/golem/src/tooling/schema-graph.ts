@@ -281,7 +281,7 @@ function codecShapeDescriptor(
       ...(descriptor.additionalPropertiesDeclared ? { additionalPropertiesDeclared: true } : {}),
       ...(descriptor.constraints ? { constraints: descriptor.constraints } : {}),
       ...(descriptor.validations ? { validations: descriptor.validations } : {}),
-      ...(descriptor.serde ? { serde: { id: descriptor.serde.id } as typeof descriptor.serde } : {}),
+      ...(descriptor.serde ? { serde: { id: descriptor.serde.id } } : {}),
     } as ModelTypeDescriptor;
   }
   if (descriptor.kind === 'array') {

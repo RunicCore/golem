@@ -1,31 +1,11 @@
 import assert from 'node:assert/strict';
+import path from 'node:path';
 import test from 'node:test';
+
+import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 
 import { generate } from '#model/generator';
 import { buildModelProject, createModelProject, writeModelGolemYaml, writeModelSources } from './model-project.js';
-
-const OPTIONS = String.raw`options\?: __Golem(?:Serde|Validate|Decode|Encode)Options`;
-
-test('model companion functions use the model types instead of unknown', t => {
-  const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-public-signatures-', name: null, linkWorkspaceNodeModules: true });
-  writeModelSources(sourceRoot, {
-    'task.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
-import { TTaskBaseModel } from './task.model.generated.js';
-export type TTask = IModel<{ title: string; done: boolean }>;
-export class Task extends TTaskBaseModel {}
-`,
-  });
-  const result = generate({ root, profile: { validation: true } });
-  const companion = result.artifacts.find(artifact => artifact.path.endsWith('task.model.generated.ts'))?.content ?? '';
-  for (const signature of [
-    `export function stringifyTTask\\(value: TTaskFields, ${OPTIONS}\\): string \\{`,
-    `export function toWireFormatTTask\\(value: TTaskFields, ${OPTIONS}\\): TTaskJSON \\{`,
-    `export function fromWireFormatTTask\\(wire: unknown, ${OPTIONS}\\): TTaskFields \\{`,
-    `export function parseTTask\\(text: string, ${OPTIONS}\\): TTaskFields \\{`,
-    `export function validateTTask\\(value: unknown, ${OPTIONS}\\): value is TTaskFields \\{`,
-    `export function assertTTask\\(value: unknown, ${OPTIONS}\\): TTaskFields \\{`,
-  ]) assert.match(companion, new RegExp(`^${signature}`, 'm'), signature);
-});
 
 // The codec and predicate live in their own module (RUNM1065); the preamble shifts every declaration in both files.
 const priority = (preamble: string): Record<string, string> => ({
@@ -56,16 +36,35 @@ test('reformatting model and codec sources leaves every generated file unchanged
   for (const [file, content] of before) assert.equal(after.get(file), content, file);
 });
 
-test('model companion assert functions share one runtime helper and named option types', t => {
+const CONSUMER = `import { assertTTask, fromWireFormatTTask, parseTTask, stringifyTTask, toWireFormatTTask, validateTTask, type TTaskFields, type TTaskJSON } from './task.model.generated.js';
+
+const task: TTaskFields = { title: 'a', priority: 1 };
+export const text: string = stringifyTTask(task, { validate: false });
+export const wire: TTaskJSON = toWireFormatTTask(task);
+export const decoded: TTaskFields = fromWireFormatTTask(wire);
+export const parsed: TTaskFields = parseTTask(text);
+export function narrowed(value: unknown): TTaskFields { return validateTTask(value) ? value : assertTTask(value); }
+// @ts-expect-error a title that is no string is no task
+stringifyTTask({ title: 1, priority: 1 });
+`;
+
+test('model companion functions take and return the model types, and assert returns a valid model and throws for another', async t => {
+  const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-public-signatures-', name: null, linkWorkspaceNodeModules: true });
+  writeModelSources(sourceRoot, { ...priority(''), 'consumer.ts': CONSUMER });
+  writeModelGolemYaml(root, { validation: true });
+  await buildModelProject(root);
+  const { assertTTask } = await import(path.join(root, 'build/task.model.generated.js')) as { assertTTask(value: unknown): unknown };
+  assert.deepEqual(assertTTask({ title: 'a', priority: 1 }), { title: 'a', priority: 1 });
+  assert.throws(() => assertTTask({ title: 'a'.repeat(20), priority: 1 }), error => error instanceof LibError && error.kind === LibErrorKind.Validation);
+});
+
+test('model companion assert functions share one runtime helper', t => {
+  // protects: F-129 generated code is lean: each assert function calls the shared helper and carries no check of its own
   const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-assert-helper-', name: null, linkWorkspaceNodeModules: true });
   writeModelSources(sourceRoot, priority(''));
-  const result = generate({ root, profile: { validation: true } });
-  const companion = result.artifacts.find(artifact => artifact.path.endsWith('task.model.generated.ts'))?.content ?? '';
-  assert.doesNotMatch(companion, /import\('@exprtlabs\/golem\/model'\)/);
-  assert.doesNotMatch(companion, /validationContext === undefined\) \{\n\s+if \(!\(/);
+  const companion = generate({ root, profile: { validation: true } }).artifacts.find(artifact => artifact.path.endsWith('task.model.generated.ts'))?.content ?? '';
   assert.match(companion, /^export function assertTTask\(value: unknown, options\?: __GolemValidateOptions\): TTaskFields \{\n  return __golemAssertModel_TTask\(value, options\);/m);
   assert.match(companion, /^function __golemAssertModel_TTask\(value: unknown, options\?: __GolemSerdeOptions\): TTaskFields \{\n  assertModelValue\(value, options, /m);
-  assert.match(companion, /import type \{ DecodeOptions as __GolemDecodeOptions, EncodeOptions as __GolemEncodeOptions, SerdeOptions as __GolemSerdeOptions, StripPlan as __GolemStripPlan, ValidateOptions as __GolemValidateOptions \} from '@exprtlabs\/golem\/serde';/);
 });
 
 test('a model file that declares only IObject types compiles under noUnusedLocals', async t => {

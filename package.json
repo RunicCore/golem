@@ -24,6 +24,7 @@
     "test:prepare": "bash scripts/test-runner/run.sh prepare",
     "test:native": "npm run build:tests && node .build/scripts/test-tier.js full --native",
     "generate:examples": "npm run build && npm run build:scripts && node .build/scripts/examples.js generate",
+    "compare:examples": "bash scripts/compare-examples.sh",
     "generate:openapi-compliance": "npm run build:scripts && node .build/packages/golem-openapi-ts/compliance/generate-matrix.js",
     "check:openapi-compliance": "npm run build:scripts && node .build/packages/golem-openapi-ts/compliance/generate-matrix.js --check",
     "docs:dev": "vitepress dev docs",

@@ -1,8 +1,11 @@
 import assert from 'node:assert/strict';
+import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 
+import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
+
 import { generate } from '#model/generator';
-import { createModelProject, writeModelSources } from './model-project.js';
+import { buildModelProject, createModelProject, writeModelGolemYaml, writeModelSources } from './model-project.js';
 
 // `billing` is an unnamed object type with its own constraint, so it gets its own codec.
 const contracts = (property: string) => `import type { IModel } from '@exprtlabs/golem/model';
@@ -32,13 +35,15 @@ function companion(t: TestContext, sources: Record<string, string>): string {
   return file.content;
 }
 
-test('an unnamed object type gets a shape-based codec id and module-private codec functions', t => {
-  const content = companion(t, { 'contracts.model.ts': contracts('billingAddress') });
-  const ids = [...new Set(content.match(/"Anonymous_[0-9a-f]{8}"/g) ?? [])];
-  assert.equal(ids.length, 1, 'one anonymous codec id');
-  assert.doesNotMatch(content, /__anon/);
-  assert.doesNotMatch(content, /^export function \w*Anonymous_/m);
-  assert.match(content, /^function stringifyAnonymous_[0-9a-f]{8}\(/m);
+test('an unnamed object type with its own constraint is checked by a codec that its module does not export', async t => {
+  const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-anonymous-built-', name: null, linkWorkspaceNodeModules: true });
+  writeModelSources(sourceRoot, { 'contracts.model.ts': contracts('billingAddress') });
+  writeModelGolemYaml(root, { validation: true });
+  await buildModelProject(root);
+  const companionModule = await import(path.join(root, 'build/contracts.model.generated.js')) as Record<string, unknown> & { fromWireFormatTContracts(wire: unknown): unknown };
+  assert.deepEqual(Object.entries(companionModule).filter(([name, value]) => name.includes('Anonymous_') && !name.startsWith('__golemStripPlan_') && typeof value === 'function').map(([name]) => name), []);
+  assert.doesNotThrow(() => companionModule.fromWireFormatTContracts({ billing: { card: '1', billingAddress: 'a' } }));
+  assert.throws(() => companionModule.fromWireFormatTContracts({ billing: { card: '1' } }), error => error instanceof LibError && error.kind === LibErrorKind.Validation);
 });
 
 test('an unrelated unnamed type elsewhere in the job does not change a codec id', t => {

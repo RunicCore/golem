@@ -39,12 +39,13 @@ import {
   type Helper,
   type ImportOptions,
   type JsonValue,
+  type SiblingWireWrite,
   emitModelFromInit,
   stripPlanName,
   wireStringifyExportName,
   writesWireStringify,
   descriptorNeedsConversion,
-  descriptorSerde,
+  serdeFunctions,
   extraKeyValues,
   wireDiffers,
   type FromJsonModelResolver,
@@ -163,8 +164,8 @@ function visitDescriptor(
     enter: (item) => {
       // A validation named by its id alone has no function to import.
       for (const binding of item.validations ?? []) if (typeof binding !== 'string') registerValidation(registry.validations, binding);
-      const serde = descriptorSerde(item);
-      if (serde) registerSerde(registry.serde, serde);
+      const serde = item.serde;
+      if (serde) registerSerde(registry.serde, serdeFunctions(serde));
       if (item.kind === 'class-value' && item.classRef?.id !== undefined && item.typeImport !== undefined && !registry.classes.has(item.classRef.id)) {
         registry.classes.set(item.classRef.id, item.typeImport);
       }
@@ -978,7 +979,7 @@ interface AppOutputs {
 /** How this companion relates to the companions of the files its source imports. */
 interface SiblingCodecOptions {
   /** Sibling codecs whose companion exports a wire stringify. */
-  readonly siblingWireCodecIds?: ReadonlySet<string>;
+  readonly siblingWire?: ReadonlyMap<string, SiblingWireWrite>;
   /** Whether each sibling codec's model is recursive, by codec id. */
   readonly siblingRecursion?: ReadonlyMap<string, boolean>;
   /**
@@ -1739,7 +1740,7 @@ function emitCodecSection(context: EmitContext): CodecSection {
   const { output, schemaGraph, appOutputs, profile, graph, imports } = context;
   const { definitions } = graph;
   const { localNames } = context;
-  const { siblingWireCodecIds, siblingRecursion } = context.siblingCodecs;
+  const { siblingWire, siblingRecursion } = context.siblingCodecs;
   // A node carries the short name of its model (`A$` and `A_` are both `A_`); the codec id tells which model the source wrote.
   const sourceNames = new Map<string, string>();
   for (const name of Object.keys(definitions)) {
@@ -1816,7 +1817,7 @@ function emitCodecSection(context: EmitContext): CodecSection {
       fieldsType: (node) => Object.hasOwn(definitions, sourceName(node)) || localNames.has(sourceName(node)) ? modelType(context, sourceName(node), 'Fields') : undefined,
       // A derived projection (an Omit, Pick or alias of a model) is not a model the user declared; other files reach it by codec id.
       privateCodec: (node) => Object.hasOwn(definitions, sourceName(node)) && !localNames.has(sourceName(node)),
-      ...(siblingWireCodecIds ? { siblingWireCodecIds } : {}),
+      ...(siblingWire ? { siblingWire } : {}),
       ...(siblingRecursion ? { siblingRecursion } : {}),
       exportWireStringify: (node) => writesWireStringify(node, profile.validation),
     },

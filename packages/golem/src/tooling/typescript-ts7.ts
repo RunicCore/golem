@@ -29,7 +29,7 @@ import * as ast from 'typescript/ast';
 import { GOLEM_CHANNELS } from './diagnostics-channels.js';
 import { displayPath } from './generator-core.js';
 import { fileSignature, MISSING } from './input-watcher.js';
-import { affectsResolution, assertConfigParsed, assertNoSourceFiles, canonical, collectTscDiagnostics, configReferences, declarationOutputOf, emitWanted, flagPathOptions, flagsAsConfigOptions, hasDeclarationOutput, programRequest, referenceClosure, referencedConfigFile } from './typescript-config.js';
+import { affectsResolution, assertConfigParsed, assertNoSourceFiles, canonical, collectTscDiagnostics, configReferences, declarationOutputOf, emitWanted, flagPathOptions, flagsAsConfigOptions, hasDeclarationOutput, isBrokenReference, programRequest, REFERENCE_ERROR_CODES, referenceClosure, referencedConfigFile } from './typescript-config.js';
 import type { ConfigReference, ProgramRequest, ResolveAtCurrentFolder } from './typescript-config.js';
 import { assertPackageManifestsParse } from './type-analysis/package-specifier.js';
 import {
@@ -705,7 +705,8 @@ class CompatProgram implements Program {
   }
 
   getProgramDiagnostics(): readonly SyncDiagnostic[] {
-    return this.positioned(this.project.program.getProgramDiagnostics());
+    const found = this.project.program.getProgramDiagnostics();
+    return this.twin ? this.twin.withReferenceErrors(found) : found;
   }
 
   /** The compiler lists an option error that names no file here too, so it takes its place in the configuration as well and the report holds it once. */
@@ -855,27 +856,102 @@ export function compareDiagnostics(left: SyncDiagnostic, right: SyncDiagnostic, 
   return order(path(left), path(right)) || order(left.pos, right.pos) || order(left.end, right.end) || order(left.code, right.code) || order(diagnosticText(left), diagnosticText(right));
 }
 
+/** The option overrides of a program, flags included. */
+type OptionOverrides = NonNullable<OpenProgramOptions['compilerOptionOverrides']>;
+
+/** The user's configuration text with the program's option overrides written after its own options, and the way back to the user's text. */
+interface OverriddenConfig {
+  readonly text: string;
+  /** A diagnostic of the compiler on `text`, put where `tsc` puts it in the user's text: an error that names an option of the text lies there, and one that only an override causes is at the `compilerOptions` name. */
+  readonly relocate: (diagnostic: SyncDiagnostic) => SyncDiagnostic;
+}
+
+/**
+ * The text of a configuration on disk with `overrides` written as the last properties of its `compilerOptions`, so that the compiler locates an
+ * option error as `tsc` locates it: at the user's own option that the error names, and else at an override, which `relocate` moves to the
+ * `compilerOptions` name. A `compilerOptions` that is no object (`null`) is replaced by one that holds the overrides; with no `compilerOptions`
+ * property `tsc` has no place for the error either, so there is nothing to write.
+ */
+function overriddenConfig(api: API, configPath: string, overrides: OptionOverrides): OverriddenConfig | undefined {
+  const text = sys.readFile(configPath);
+  if (text === undefined) return undefined;
+  const retained = api.createSourceFile(configPath, text);
+  try {
+    const file = retained.sourceFile;
+    const [statement] = file.statements;
+    if (statement === undefined || !ast.isExpressionStatement(statement) || !ast.isObjectLiteralExpression(statement.expression)) return undefined;
+    const property = statement.expression.properties.find((candidate): candidate is ast.PropertyAssignment => ast.isPropertyAssignment(candidate) && ast.isStringLiteral(candidate.name) && candidate.name.text === 'compilerOptions');
+    if (property === undefined) return undefined;
+    const entries = Object.entries(overrides).map(([option, value]) => `${JSON.stringify(option)}:${JSON.stringify(value)}`).join(',');
+    const { initializer } = property;
+    // The text from `start` to `end` is replaced by `written`: the overrides after the last option, or an object for a value that is none.
+    const last = ast.isObjectLiteralExpression(initializer) ? initializer.properties.at(-1) : undefined;
+    const [start, end, written] = !ast.isObjectLiteralExpression(initializer)
+      ? [initializer.getStart(file), initializer.end, `{${entries}}`] as const
+      : last === undefined ? [initializer.getStart(file) + 1, initializer.getStart(file) + 1, entries] as const : [last.end, last.end, `,${entries}`] as const;
+    const name = { pos: property.name.getStart(file), end: property.name.end };
+    // The written text has no line break, so a line keeps its number; a position after it moves back by what the write added.
+    const lineStarts = ast.computeLineStarts(text);
+    const lineAt = (position: number): number => lineStarts.findLastIndex((start) => start <= position);
+    const lineText = (line: number): string => text.slice(lineStarts[line], lineStarts[line + 1]);
+    const place = (position: number): { readonly line: number; readonly character: number } => ({ line: lineAt(position), character: position - (lineStarts[lineAt(position)] ?? 0) });
+    const relocate = (diagnostic: SyncDiagnostic): SyncDiagnostic => {
+      const { relatedInformation } = diagnostic;
+      const related = relatedInformation && { relatedInformation: relatedInformation.map(relocate) };
+      if (diagnostic.fileName === undefined || canonical(diagnostic.fileName) !== configPath) return { ...diagnostic, ...related };
+      const overridden = diagnostic.pos >= start && diagnostic.pos < start + written.length;
+      const back = (position: number): number => (position < start ? position : position >= start + written.length ? position - (written.length - (end - start)) : start);
+      const { pos, end: stop } = overridden ? name : { pos: back(diagnostic.pos), end: back(diagnostic.end) };
+      return {
+        ...diagnostic,
+        ...related,
+        pos,
+        end: stop,
+        startPosition: place(pos),
+        endPosition: place(stop),
+        sourceLines: overridden ? [{ line: lineAt(pos), text: lineText(lineAt(pos)) }] : diagnostic.sourceLines?.map(({ line }) => ({ line, text: lineText(line) })),
+      };
+    };
+    return { text: `${text.slice(0, start)}${written}${text.slice(end)}`, relocate };
+  } finally {
+    retained.dispose();
+  }
+}
+
 /**
  * The user's configuration opened alone, for a program not opened on it. The compiler locates an option only in the text of the
  * configuration it opens, and the derived one only extends the user's, so an option error comes without a file. `lookup` gives the
- * options diagnostics of the user's own configuration; it runs once, and only when a diagnostic has no file.
+ * options diagnostics of the user's own configuration, with the program's overrides written into its text; it runs once, and only when a diagnostic has no file or a project reference is broken.
  */
 class ConfigTwin {
   private found: readonly SyncDiagnostic[] | undefined;
 
-  public constructor(private readonly lookup: () => readonly SyncDiagnostic[]) {}
+  /** `referenceErrors`: whether `tsc` reports a project reference of the user's configuration, which the program cannot (`SyntheticProgram.brokenReferences`). */
+  public constructor(private readonly lookup: () => readonly SyncDiagnostic[], private readonly referenceErrors: boolean) {}
+
+  /** Each diagnostic with no file takes its place in the user's text (`match`); a program whose diagnostics all have a file does not ask the twin. */
+  positioned(diagnostics: readonly SyncDiagnostic[]): readonly SyncDiagnostic[] {
+    return diagnostics.every((diagnostic) => diagnostic.fileName !== undefined) ? diagnostics : this.match(diagnostics).placed;
+  }
+
+  /** The option diagnostics of the program, placed, and the reference errors of the user's configuration that the twin reports and the program cannot. */
+  withReferenceErrors(diagnostics: readonly SyncDiagnostic[]): readonly SyncDiagnostic[] {
+    if (!this.referenceErrors) return this.positioned(diagnostics);
+    const { placed, unused } = this.match(diagnostics);
+    return [...placed, ...unused.filter((diagnostic) => REFERENCE_ERROR_CODES.has(diagnostic.code))];
+  }
 
   /**
    * Each diagnostic with no file takes the twin's diagnostic of the same code and message; when several share them, the first takes the
-   * first, the second the second. A diagnostic with no match stays as it is (an error that a flag causes is not in the user's text), and a
-   * twin diagnostic that no one takes is dropped: the twin has other roots, so it can report what the program does not.
+   * first, the second the second. A diagnostic with no match stays as it is. `unused` are the twin's diagnostics that no one took: the twin has
+   * other roots, so it can report what the program does not.
    */
-  positioned(diagnostics: readonly SyncDiagnostic[]): readonly SyncDiagnostic[] {
-    if (diagnostics.every((diagnostic) => diagnostic.fileName !== undefined)) return diagnostics;
+  private match(diagnostics: readonly SyncDiagnostic[]): { readonly placed: readonly SyncDiagnostic[]; readonly unused: readonly SyncDiagnostic[] } {
     const key = (diagnostic: SyncDiagnostic): string => `${diagnostic.code}\n${diagnosticText(diagnostic)}`;
     const unused = new Map<string, SyncDiagnostic[]>();
     for (const diagnostic of this.found ??= this.lookup()) unused.set(key(diagnostic), [...unused.get(key(diagnostic)) ?? [], diagnostic]);
-    return diagnostics.map((diagnostic) => (diagnostic.fileName === undefined ? unused.get(key(diagnostic))?.shift() ?? diagnostic : diagnostic));
+    const placed = diagnostics.map((diagnostic) => (diagnostic.fileName === undefined ? unused.get(key(diagnostic))?.shift() ?? diagnostic : diagnostic));
+    return { placed, unused: [...unused.values()].flat() };
   }
 }
 
@@ -934,6 +1010,8 @@ interface SnapshotRequest extends ProgramRequest {
   readonly synthetic?: SyntheticProgram;
   /** The configuration of the user whose text the compiler's option errors name, when the program is not opened on it: a derived configuration extends it, a synthetic program has none. */
   readonly twinOf: string | undefined;
+  /** The option overrides of the request, flags included: the derived configuration carries them, so the user's text has none of them. */
+  readonly overrides: OptionOverrides;
 }
 
 /**
@@ -946,6 +1024,8 @@ interface SyntheticProgram {
   readonly resolver: ModuleResolver;
   /** The sources of referenced projects that an import reached and that have no declaration output. The resolver fills it while the program is made. */
   readonly unbuilt: ReadonlySet<string>;
+  /** Whether `tsc` reports a referenced project (`isBrokenReference`). The program is made without references, so the user's configuration is asked for it. */
+  readonly brokenReferences: boolean;
 }
 
 /** A project a tsconfig references, parsed: the source files it owns and where `tsc` finds its declaration output. */
@@ -1112,6 +1192,28 @@ export class ProgramSession implements Disposable {
     return projectOf(parsed);
   }
 
+  /** Parse a referenced project's configuration as `tsc -p` reads it: its errors are not reported, and `undefined` is a tsconfig that does not exist. */
+  parseReferencedConfigFile(configPath: string, onInput?: (filename: string) => void): ParsedProject | undefined {
+    const parsed = this.withCompiler('parse', (api) => {
+      this.observe(onInput, new Set());
+      return this.readReferenced(api, configPath);
+    });
+    return parsed && projectOf(parsed);
+  }
+
+  /** A referenced project's configuration as the compiler parses it, errors and all (`tsc -p` reports none of them), or `undefined` for a tsconfig that does not exist (the compiler reports it, TS6053). */
+  private readReferenced(api: API, configPath: string): ReturnType<API['parseConfigFile']> | undefined {
+    return this.servedByOverlay(canonical(configPath)) || sys.fileExists(configPath) ? api.parseConfigFile(configPath) : undefined;
+  }
+
+  /** Whether an overlay serves the file. The path is an input of the program, and so is its absence: a file that no overlay serves is read from the disk, so its signature is recorded. */
+  private servedByOverlay(file: string): boolean {
+    this.report(file);
+    if (this.overlays.has(file)) return true;
+    this.recordSignature(file);
+    return false;
+  }
+
   /**
    * Parse a project configuration under compiler command-line arguments. The API has no `tsc -p` parse, so the arguments are parsed
    * on their own and merged over the configuration's options, which is what `tsc` does. The options that decide which files match
@@ -1246,7 +1348,8 @@ export class ProgramSession implements Disposable {
   /** Open a program in a new snapshot that reflects every file change since the previous one. */
   openProgram(options: OpenProgramOptions): Program {
     if (programOpenedChannel.hasSubscribers) programOpenedChannel.publish({ session: this, configFile: options.configFile });
-    const base: SnapshotRequest = { ...programRequest(this.withFlags(options), sys, (configPath, overlays) => this.configReferencesOf(configPath, overlays)), twinOf: undefined };
+    const flagged = this.withFlags(options);
+    const base: SnapshotRequest = { ...programRequest(flagged, sys, (configPath, overlays) => this.configReferencesOf(configPath, overlays)), twinOf: undefined, overrides: flagged.compilerOptionOverrides ?? {} };
     return this.withCompiler('snapshot', (api, reused) => {
       const request = this.withRequestedRoots(api, base, options.onInput);
       // A program sees only its own overlays: a held program keeps the snapshot it was opened in.
@@ -1291,8 +1394,8 @@ export class ProgramSession implements Disposable {
         const project = created === undefined ? snapshot.getConfiguredProject(request.configPath) : snapshot.getProject(created);
         if (!project) throw new Error(`The compiler did not open the TypeScript project ${displayPath(request.configPath)} for ${displayPath(options.root)}.`);
         this.syntheticProgram = created ?? this.syntheticProgram;
-        const { twinOf } = request;
-        const program = new CompatProgram(this, snapshot, project, synthetic?.unbuilt, twinOf === undefined ? undefined : new ConfigTwin(() => this.diagnosticsOfConfig(twinOf, overlays)));
+        const { twinOf, overrides } = request;
+        const program = new CompatProgram(this, snapshot, project, synthetic?.unbuilt, twinOf === undefined ? undefined : new ConfigTwin(() => this.diagnosticsOfConfig(twinOf, overlays, overrides), synthetic?.brokenReferences ?? false));
         this.held.set(program, request);
         return program;
       } catch (error) {
@@ -1342,23 +1445,20 @@ export class ProgramSession implements Disposable {
     this.setOverlays(base.overlays);
     this.observe(onInput, base.hidden);
     let parsed: { readonly fileNames: readonly string[]; readonly options: CompilerOptions };
-    let referenced: ReferencedProject[];
+    let closure: { readonly configFile: string; readonly parsed: ReturnType<API['parseConfigFile']> | undefined }[];
     try {
       const result = api.parseConfigFile(base.configPath);
       assertConfigParsed(base.configPath, result.errors);
       parsed = result;
-      referenced = referenceClosure(result.projectReferences ?? [], (configFile) => {
-        const project = api.parseConfigFile(configFile);
-        assertConfigParsed(configFile, project.errors);
-        return project;
-      }).map(({ configFile, parsed: project }) => ({ configFile, options: project.options as CompilerOptions, sources: new Set(project.fileNames.map(canonical)) }));
+      closure = referenceClosure(result.projectReferences ?? [], (configFile) => this.readReferenced(api, configFile));
     } finally {
       this.setOverlays(previous);
     }
-    if (referenced.length > 0) {
+    if (closure.length > 0) {
+      const referenced = closure.flatMap(({ configFile, parsed: project }) => (project === undefined ? [] : [{ configFile, options: project.options as CompilerOptions, sources: new Set(project.fileNames.map(canonical)) }]));
       const options = parsed.options as CompilerOptions;
       const unbuilt = new Set<string>();
-      return { ...base, synthetic: { rootFiles: [...new Set([...parsed.fileNames.map(canonical), ...base.rootNames])], compilerOptions: options, resolver: this.referenceResolverFor(api, options, referenced, unbuilt), unbuilt }, twinOf: base.userConfigPath };
+      return { ...base, synthetic: { rootFiles: [...new Set([...parsed.fileNames.map(canonical), ...base.rootNames])], compilerOptions: options, resolver: this.referenceResolverFor(api, options, referenced, unbuilt), unbuilt, brokenReferences: closure.some(({ parsed: project }) => isBrokenReference(project)) }, twinOf: base.userConfigPath };
     }
     const own = new Set(parsed.fileNames.map(canonical));
     // Every root is a file of the configuration, and the configuration is the user's own: the compiler reads it itself, so its option errors name its own text and place.
@@ -1375,14 +1475,18 @@ export class ProgramSession implements Disposable {
    * The options diagnostics of one configuration opened alone, over the overlays of a program. It lives in a snapshot of its own that ends
    * with the call: the session's snapshot, its open project and its held programs stay as they are. A configuration with references opens them
    * here, and only here: the program that the session serves stays synthetic, and only the options diagnostics of this one are read.
+   * The overrides of the program are written into the text it reads (`overriddenConfig`), so each option error is located as `tsc` locates it:
+   * one that names an option of the user's text lies in that text, and one that only an override causes goes to the `compilerOptions` name.
    */
-  private diagnosticsOfConfig(configPath: string, overlays: ReadonlyMap<string, string>): readonly SyncDiagnostic[] {
+  private diagnosticsOfConfig(configPath: string, overlays: ReadonlyMap<string, string>, overrides: OptionOverrides): readonly SyncDiagnostic[] {
     return this.withCompiler('parse', (api) => {
       const previous = this.overlays;
-      this.setOverlays(overlays);
+      const overridden = Object.keys(overrides).length === 0 ? undefined : overriddenConfig(api, configPath, overrides);
+      this.setOverlays(overridden === undefined ? overlays : new Map([...overlays, [configPath, overridden.text]]));
       try {
         using alone = api.createSnapshot({ openProjects: [configPath], ensurePrograms: true });
-        return [...alone.getConfiguredProject(configPath)?.program.getProgramDiagnostics() ?? []];
+        const found = alone.getConfiguredProject(configPath)?.program.getProgramDiagnostics() ?? [];
+        return overridden === undefined ? [...found] : found.map(overridden.relocate);
       } finally {
         this.setOverlays(previous);
       }
@@ -1525,13 +1629,7 @@ export class ProgramSession implements Disposable {
         this.recordSignature(filename);
         return serverFS.useOS;
       },
-      fileExists: (fileName) => {
-        const filename = canonical(fileName);
-        this.report(filename);
-        if (this.overlays.has(filename)) return true;
-        this.recordSignature(filename);
-        return serverFS.useOS;
-      },
+      fileExists: (fileName) => this.servedByOverlay(canonical(fileName)) || serverFS.useOS,
       directoryExists: (directoryName) => {
         const directory = canonical(directoryName);
         this.report(directory);

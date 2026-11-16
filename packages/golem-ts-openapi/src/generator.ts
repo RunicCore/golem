@@ -18,7 +18,7 @@ import {
   type ModelBoundary,
   type ProgramInfo,
 } from '@exprtlabs/golem/internal/type-analysis';
-import { SCHEMA_MAP_KEYWORDS, schemaForDescriptor, splitFirstFragmentToken } from '@exprtlabs/golem/internal/schema';
+import { SCHEMA_MAP_KEYWORDS, canonicalSchemaKey, schemaForDescriptor, splitFirstFragmentToken } from '@exprtlabs/golem/internal/schema';
 import type {
   GolemArtifact,
   GolemDiagnostic,
@@ -271,7 +271,7 @@ class ComponentSchemas {
   registerEnumComponent = (name: string, schema: Record<string, unknown>, node: ts.Node): void => {
     const existing = this.enums.get(name);
     const clash = existing !== undefined
-      ? JSON.stringify(existing) !== JSON.stringify(schema)
+      ? canonicalSchemaKey(existing) !== canonicalSchemaKey(schema)
       : this.classes.has(name) || this.contractAnalysis.definitions[name] !== undefined;
     if (clash) {
       throw new TsToOpenApiError(diagnostic(

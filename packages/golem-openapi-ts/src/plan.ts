@@ -51,6 +51,21 @@ export function resolveOpenApiMode({ mode, codecsFile }: OpenApiModeSetting): Op
   }
 }
 
+/** What a mode changes in an SDK job and its files. Each place that depends on the mode reads it here. */
+export interface OpenApiModeTraits {
+  /** The SDK carries its own runtime copy, group modules, validators and codecs, and its manifest holds the codec id of each model. A golem SDK leaves them to the models job and records the graph and the runtime version in its manifest. */
+  readonly selfContained: boolean;
+  /** The contracts the job needs (`JobFacts.needs`). */
+  readonly needs: readonly string[];
+}
+
+export function openApiModeTraits(kind: OpenApiModeKind): OpenApiModeTraits {
+  switch (kind) {
+    case 'standalone': return { selfContained: true, needs: [] };
+    case 'golem': return { selfContained: false, needs: [CODECS_HOST] };
+  }
+}
+
 /** The hook where an extension wraps the operations that an SDK job emits. Its participant type belongs to this package. */
 export const OPERATION_WRAPPER_HOOK = 'client.operationWrapper';
 
@@ -140,7 +155,7 @@ export const plan: GolemPlanEntry<OpenApiOptions> = {
         readsProgram: false,
         provides: [],
         // A golem SDK imports the codecs file that the host of the codecs writes for it.
-        needs: mode === 'golem' ? [CODECS_HOST] : [],
+        needs: openApiModeTraits(mode).needs,
         hooks: [OPERATION_WRAPPER_HOOK],
         watch: [],
       };

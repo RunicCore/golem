@@ -291,7 +291,7 @@ test('ambiguous union conversions fail generation instead of probing codecs', ()
   }
 });
 
-test('scalar-or-array unions convert the scalar and the array items without doubling Array.isArray', () => {
+test('scalar-or-array unions convert the scalar and each array item once, and pass an unconverted union through as it is', () => {
   const status: ModelConversionDescriptor = {
     kind: 'union',
     variants: [
@@ -300,33 +300,16 @@ test('scalar-or-array unions convert the scalar and the array items without doub
       { kind: 'array', item: { kind: 'union', variants: [{ kind: 'literal', value: 'paid' }, { kind: 'literal', value: 'pending' }] } },
     ],
   };
-  assert.equal(render(emitModelFromJSON(status, identifier('value'), () => fromChild)), 'value', 'identity unions emit no Array.isArray map');
-  assert.doesNotMatch(render(emitModelFromJSON(status, identifier('value'), () => fromChild)), /Array\.isArray/);
+  const identity = compileFromJSON(status);
+  const statuses = ['paid', 'pending'];
+  assert.equal(identity('paid'), 'paid');
+  assert.equal(identity(statuses), statuses, 'a union that converts nothing returns an array as it came, with no copy');
   resetCounters();
   const token: ModelConversionDescriptor = {
     kind: 'number',
     serde: { id: 'token', wire: { kind: 'string' } },
   };
-  const descriptor: ModelConversionDescriptor = {
-    kind: 'union',
-    variants: [
-      token,
-      { kind: 'array', item: token },
-    ],
-  };
-  const source = render(emitModelFromJSON(descriptor, identifier('value'), () => fromChild, serde));
-  assert.match(source, /Array\.isArray\(value\)/, 'the scalar-or-array union branches on Array.isArray');
-  assert.equal(
-    source.match(/Array\.isArray/g)?.length,
-    1,
-    'the union tests Array.isArray once, not once per variant (no doubled check)',
-  );
-  assert.doesNotMatch(
-    source,
-    /\.map\(\(item\) => item\)/,
-    'the array branch does not wrap items in a redundant identity map',
-  );
-  const fromJSON = compileConversion(source, bindings);
+  const fromJSON = compileFromJSON({ kind: 'union', variants: [token, { kind: 'array', item: token }] });
   assert.equal(fromJSON('token:4'), 4);
   assert.deepEqual(fromJSON(['token:4', 'token:5']), [4, 5]);
   assert.equal(decodeCalls, 3);

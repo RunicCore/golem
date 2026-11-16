@@ -176,7 +176,7 @@ export class Team extends TTeamBaseModel {}
       assert.ok(team instanceof Team);
       assert.ok(team.lead instanceof Member && team.lead.joined instanceof Stamp);
       assert.ok(team.members[0] instanceof Member && team.members[0].joined instanceof Stamp);
-      assert.deepEqual(modelCodec(team).toWireFormat(team as never), input);
+      assert.deepEqual(modelCodec(team).toWireFormat(team), input);
     }
     // fromWireFormat still detaches the result from the caller's objects at every depth.
     const detached = codec.fromWireFormat(input, { construct: Team }) as Record<string, any>;
@@ -203,12 +203,12 @@ export class Note extends TNoteBaseModel {}
 test('model encoding assigns present fields in declaration order without deleting keys', async (t) => {
   const value = await buildNote(t);
   const { Note } = await import(pathToFileURL(path.join(value.root, 'build/note.model.js')).href);
-  const keys = (init: object) => Object.keys(modelCodec(Note).toWireFormat(new Note(init) as never));
+  const keys = (init: object) => Object.keys(modelCodec(Note).toWireFormat(new Note(init)));
   assert.deepEqual(keys({ title: 't', pinned: true }), ['title', 'pinned']);
   assert.deepEqual(keys({ title: 't', body: undefined, pinned: true }), ['title', 'pinned'], 'an undefined optional field is omitted');
   assert.deepEqual(keys({ pinned: false, body: 'b', title: 't' }), ['title', 'body', 'pinned'], 'declaration order, not initializer order');
-  assert.deepEqual(modelCodec(Note).toWireFormat(new Note({ title: 't', body: 'b', pinned: false }) as never), { title: 't', body: 'b', pinned: false });
-  assert.equal(Object.hasOwn(modelCodec(Note).toWireFormat(new Note({ title: 't', pinned: true }) as never) as object, 'body'), false, 'an absent field is not an own key');
+  assert.deepEqual(modelCodec(Note).toWireFormat(new Note({ title: 't', body: 'b', pinned: false })), { title: 't', body: 'b', pinned: false });
+  assert.equal(Object.hasOwn(modelCodec(Note).toWireFormat(new Note({ title: 't', pinned: true })) as object, 'body'), false, 'an absent field is not an own key');
 });
 
 /** Only V8 property shape shows whether an absent field was added and then deleted. No portable check proves it, so the test runs where V8 accepts its flag. */

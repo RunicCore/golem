@@ -685,6 +685,11 @@ export interface ProgramSession extends Disposable {
   inputsChanged(filenames: Iterable<string>): void;
   parseConfigFile(configPath: string, onInput?: (filename: string) => void): ParsedProject;
   /**
+   * Parse the configuration of a referenced project as `tsc -p` reads it: the errors of that file are not reported (`tsc` takes what parsed),
+   * and `undefined` is a tsconfig that does not exist, which `tsc` reports at the reference (TS6053).
+   */
+  parseReferencedConfigFile(configPath: string, onInput?: (filename: string) => void): ParsedProject | undefined;
+  /**
    * Parse a project configuration under compiler command-line arguments (`--strict false`, `--allowJs`), as `tsc -p` does: an
    * argument replaces the same option of the configuration, and the file list follows the merged options. An argument the compiler
    * rejects throws. The TypeScript 6 lane keeps a relative path argument as written; the TypeScript 7 lane makes it absolute.

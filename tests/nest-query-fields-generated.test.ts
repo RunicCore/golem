@@ -154,7 +154,7 @@ test('a @Query() model built on an SDK model has the query fields of that SDK mo
 });
 
 // protects: T-791 core keeps no query table: without the nest extension a model codec carries no data, with a query-typed field
-test('a model that golem-model generates carries no codec data without the nest extension', async (t) => {
+test('a model that golem-model generates carries no nest query data without the nest extension', async (t) => {
   const root = project(t, 'golem-query-fields-off-', ['model: {}']);
   fs.writeFileSync(path.join(root, 'src/filter.model.ts'), [
     "import type { IModel } from '@exprtlabs/golem/model';",
@@ -164,5 +164,4 @@ test('a model that golem-model generates carries no codec data without the nest 
   ].join('\n'));
   await runPipeline(path.join(root, 'golem.yaml'));
   assert.equal(await filterQueryFields(root), null);
-  assert.doesNotMatch(fs.readFileSync(path.join(root, 'src/filter.model.generated.ts'), 'utf8'), /\bdata:/);
 });

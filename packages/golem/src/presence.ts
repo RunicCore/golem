@@ -5,7 +5,7 @@ import { MODEL_FIELDS_KEY } from './schema-keywords.js';
 /**
  * The JSON view of a field, as `JSON.stringify` writes it: a field is present when it is an own enumerable property
  * whose value is not `undefined`. Every read that judges input uses this one rule: the runtime calls `presentValue`,
- * and the emitters write the same read with `presentValueCode` (tooling/union-conversion.ts).
+ * and the emitters write the same read from `ownEnumerableCode` (tooling/union-conversion.ts).
  */
 const propertyIsEnumerable = Object.prototype.propertyIsEnumerable;
 
