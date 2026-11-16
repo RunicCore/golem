@@ -288,6 +288,7 @@ An error prints its code, location when known, and message, then stops generatio
 - The resolved function isn't exported.
 - Two functions in one field share one function type, such as two consts typed by the same alias, or `const b: typeof a`, so golem cannot tell which one the tag names.
 - The tag reaches the field through a type that golem cannot read back to the `typeof` that wrote it. **Fix:** write the tag on the field itself.
+- The field reaches a function tag through a value whose type golem infers, such as `const held = tagged()`, the return of a function, a property of an object or a class getter, and golem would have to guess which function of that type the tag names. **Fix:** give the value a type annotation that writes the tag, or write the tag on the field itself.
 
 **Fix:**
 

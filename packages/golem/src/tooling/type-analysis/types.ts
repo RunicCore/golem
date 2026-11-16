@@ -2,14 +2,14 @@ import path from 'node:path';
 import { assertNever } from '../../assert-never.js';
 import { fieldProvenance, isPropertyMapping, isReadonlySequenceType, readonlyPropertyNames, instantiatedTypeSource, substituteTypeNode, authoredPropertyTypeNode, type TypeSubstitutions } from './projections.js';
 import * as ts from '../typescript-ns.js';
-import { assertNoSymbolKey, declaredModelAlias, isDefaultLibraryProperty, isSymbolKeyedProperty, diagnostic, namedDiagnostic, foreignModelReason, isGeneratedBrandKey, modelSpecificationForClass, resolveSymbol } from './symbols.js';
+import { assertNoSymbolKey, declaredModelAlias, isSymbolKeyedProperty, diagnostic, namedDiagnostic, foreignModelReason, isGeneratedBrandKey, modelSpecificationForClass, resolveSymbol } from './symbols.js';
 import { projectionIdentity } from './graph.js';
 import { aliasProjectionName, isProjectionName, pascalIdentifier, policySuffix, headQualifiers, projectionBaseName, keysReadAlike, safeNameHint, unionVariantNaming } from './projection-names.js';
 import { commonDirectory, canonicalFilename, companionFilename, portableRelativeFilename, type ModelBoundary } from './project.js';
 import { packageSpecifier } from './package-specifier.js';
 import { builtinClassDescriptor, type BuiltinClass } from '../builtin-classes.js';
 import { enclosureOf, findBuiltinClass, isGlobalDeclaration } from './builtin-class.js';
-import { compareText, displayPath } from '../generator-core.js';
+import { compareText } from '../generator-core.js';
 import type { GolemProfile } from '../generator-core.js';
 import { assertSupportedModelFieldName, canonicalDescriptorKey, isBrandPropertyName } from '../schema.js';
 import type {
@@ -25,11 +25,12 @@ import {
   untaggedTypeText,
   withoutDiscriminator,
   carriesSerdeTag,
+  isDeclaredByDefaultLibrary,
   isAmbientOrGlobalSymbol,
   isGolemTagKey,
   hasDescriptorTags,
   hasTagMetadata,
-  declaredPropertyNodes,
+  propertyTagSources,
   propertyType,
   propertyTypeNode,
   publicExportName,
@@ -38,6 +39,7 @@ import {
   type SerdeBinding,
   type TagMetadata,
   type ValidationBinding,
+  sourceLocation,
 } from './tags.js';
 
 export type { ModelConversionDescriptor, TupleConversionDescriptor } from '../model-source-emitter.js';
@@ -705,11 +707,7 @@ function rejectUntaggedObjectUnion(
   at: ts.Node,
   isDefaultLibraryFile: (file: ts.SourceFile) => boolean,
 ): void {
-  const declaredByLibrary = (type: ts.Type): boolean => {
-    const declarations = type.getSymbol()?.declarations ?? [];
-    return declarations.length > 0 && declarations.every((declaration) => isDefaultLibraryFile(declaration.getSourceFile()));
-  };
-  if (context.dto || entries.every(({ type }) => declaredByLibrary(type))) return;
+  if (context.dto || entries.every(({ type }) => isDeclaredByDefaultLibrary(type.getSymbol(), isDefaultLibraryFile))) return;
   const objects = entries.filter(({ descriptor }) => isObjectLikeVariant(descriptor) && descriptor.serde === undefined);
   if (objects.length < 2) return;
   const names = objects.map(({ type, descriptor }) => descriptor.kind === 'reference' ? descriptor.name
@@ -774,7 +772,7 @@ interface DescribeScope {
     substitutions?: TypeSubstitutions,
     nameHint?: string,
     nameNode?: ts.TypeNode,
-    tagSources?: readonly ts.TypeNode[],
+    tagSources?: readonly ts.Node[],
   ) => ModelConversionDescriptor;
 }
 
@@ -809,7 +807,7 @@ interface DescribeInput {
   readonly nameHint: string;
   readonly nameNode: ts.TypeNode | undefined;
   /** Nodes beside `node` that write the functions of the tags on the type: the declarations that a mapped type copied, the wire parameter of a serde. */
-  readonly tagSources: readonly ts.TypeNode[];
+  readonly tagSources: readonly ts.Node[];
 }
 
 /** One `describeType` call after its tags are read: the substituted nodes, the tag metadata, and `type`, the type the walk describes. */
@@ -1250,7 +1248,7 @@ function objectMembers(scope: DescribeScope, call: DescribeCall, facts: ShapeFac
     if (sourceObject && isGeneratedBrandKey(checker, mapped)) continue;
     // A tag is type-only: a variant `A & B & Discriminator<'k'>` has the tag key beside its fields, and the key is no field.
     if (isGolemTagKey(checker, mapped)) continue;
-    if (isSymbolKeyedProperty(checker, mapped) && isDefaultLibraryProperty(mapped, isDefaultLibraryFile)) continue;
+    if (isSymbolKeyedProperty(checker, mapped) && isDeclaredByDefaultLibrary(mapped, isDefaultLibraryFile)) continue;
     members.push(sourceObject !== undefined && !sourceObject.getProperty(name) ? { kind: 'absent', name, property: mapped, source: sourceObject } : { kind: 'declared', name, property: mapped });
   }
   // A model defined by a mapped type over its own class has no members: the base of the class is a stub of this very model.
@@ -1333,7 +1331,7 @@ function describeProperties(scope: DescribeScope, call: DescribeCall, nextSeen: 
       childSubstitutions,
       `${projectionName ?? nameHint}${pascalIdentifier(name) ?? 'Field'}`,
       undefined,
-      propertyNode ? [] : declaredPropertyNodes(checker, property),
+      propertyNode ? [] : propertyTagSources(checker, property),
     );
     properties[name] = described;
     if (!optional) required.push(name);
@@ -1569,11 +1567,6 @@ export function descriptorBuilder(
     }
     return name;
   };
-  const sourceLocation = (at: ts.Node): string => {
-    const sourceFile = at.getSourceFile();
-    const position = sourceFile.getLineAndCharacterOfPosition(at.getStart(sourceFile));
-    return `${displayPath(sourceFile.fileName)}:${position.line + 1}:${position.character + 1}`;
-  };
   const modelNames = new Map(
     specifications.map((specification) => [specification.declaration, nameFor?.(specification) ?? specification.name] as const),
   );
@@ -1764,7 +1757,7 @@ export function descriptorBuilder(
     substitutions: TypeSubstitutions = new Map(),
     nameHint: string = safeNameHint(context.ownerName ?? context.name, 'Model'),
     nameNode?: ts.TypeNode,
-    tagSources: readonly ts.TypeNode[] = [],
+    tagSources: readonly ts.Node[] = [],
   ): ModelConversionDescriptor => {
     const call = openDescribeCall(scope, { originalType, context, seen, node, representation, provenanceNode, substitutions, nameHint, nameNode, tagSources });
     assertTagsFit(scope, call);

@@ -94,6 +94,11 @@ export interface WrittenFunctions {
   readonly sources: readonly ts.Node[];
   /** Whether `recordReachableFunctions` read `sources` already. It runs once, before the first tag read from the checker looks up a function. */
   scanned: boolean;
+  /**
+   * The function types whose tag the scan found in a value that shows no type node (`const held = tagged()`), with that declaration.
+   * The tag was written where the scan cannot read it, so the registry may miss a function of the same type and cannot name one.
+   */
+  readonly hidden: Map<ts.Type, ts.Node>;
 }
 
 /** Generated validators compile JSON Schema patterns with the Unicode flag; analysis parses each pattern the same way, so a malformed one fails before any output is written. */
@@ -125,6 +130,7 @@ function newWrittenFunctions(inherited: WrittenFunctions | undefined, sources: r
     deserialize: new Map(inherited?.deserialize),
     sources: [...enclosing, ...sources],
     scanned: false,
+    hidden: new Map(inherited?.hidden),
   };
 }
 
@@ -448,37 +454,128 @@ export function declaredPropertyNodes(checker: ts.TypeChecker, property: ts.Symb
   return declarations.flatMap(declaration => (ts.isPropertySignature(declaration) || ts.isPropertyDeclaration(declaration)) && declaration.type ? [declaration.type] : []);
 }
 
+/** The nodes that write the tags of `property`: its type nodes, and each declaration that shows none and infers its type (`get label() { return tagged(); }`). */
+export function propertyTagSources(checker: ts.TypeChecker, property: ts.Symbol): readonly ts.Node[] {
+  const declarations = property.declarations ?? checker.getRootSymbols(property).flatMap(root => root.declarations ?? []);
+  return [...declaredPropertyNodes(checker, property), ...declarations.filter(infersItsType)];
+}
+
+/** Whether only a default library file declares `symbol`: a built-in type holds no tag of the user. */
+export function isDeclaredByDefaultLibrary(symbol: ts.Symbol | undefined, isDefaultLibraryFile: (file: ts.SourceFile) => boolean): boolean {
+  const declarations = symbol?.declarations ?? [];
+  return declarations.length > 0 && declarations.every(declaration => isDefaultLibraryFile(declaration.getSourceFile()));
+}
+
+/** What one scan of the sources has read: each node once, and each type once. */
+interface Scan {
+  readonly nodes: Set<ts.Node>;
+  readonly types: Set<ts.Type>;
+}
+
 /**
- * Records every `typeof` of a tag in everything that `node` reaches, through type aliases, interfaces, classes, `typeof` a
- * variable, and the parts of mapped, conditional and indexed types. A default library file holds no tag of the user and stays unread.
- * Each node is read once for each `seen`, so one scan reads each reachable node once.
+ * The function types of the TValidation and TSerde tags that `type` holds: as itself, in a member of a union or an intersection, in a
+ * property, in the return of a call signature, or in a type argument. A built-in type holds tags only in its type arguments.
  */
-function recordReachableFunctions(context: TagAnalysisContext, node: ts.Node, seen: Set<ts.Node>): void {
-  if (seen.has(node)) return;
-  seen.add(node);
+function functionTagTypes(context: TagAnalysisContext, type: ts.Type, at: ts.Node, scan: Scan, found: ts.Type[]): void {
+  if (scan.types.has(type)) return;
+  scan.types.add(type);
   const { checker } = context;
+  const name = golemTagName(checker, type.aliasSymbol);
+  const roles = name === undefined ? undefined : TAG_FUNCTION_ROLES.get(name);
+  if (roles) found.push(...(type.aliasTypeArguments ?? []).slice(0, roles.length));
+  const inside = (inner: ts.Type): void => functionTagTypes(context, inner, at, scan, found);
+  if (type.isUnion() || type.isIntersection()) type.types.forEach(inside);
+  if ((type.flags & ts.TypeFlags.Object) === 0) return;
+  (type.aliasTypeArguments ?? []).forEach(inside);
+  checker.getTypeArguments(type).forEach(inside);
+  if (context.isDefaultLibraryFile && isDeclaredByDefaultLibrary(type.symbol, context.isDefaultLibraryFile)) return;
+  checker.getPropertiesOfType(type).forEach(property => inside(checker.getTypeOfSymbolAtLocation(property, at)));
+  checker.getSignaturesOfType(type, ts.SignatureKind.Call).forEach(signature => inside(checker.getReturnTypeOfSignature(signature)));
+}
+
+/** Whether `declaration` is a value whose type the checker infers, because it writes no type node. */
+function infersItsType(declaration: ts.Node): boolean {
+  if (ts.isVariableDeclaration(declaration) || ts.isPropertyDeclaration(declaration) || ts.isFunctionDeclaration(declaration) || ts.isMethodDeclaration(declaration) || ts.isGetAccessorDeclaration(declaration)) {
+    return declaration.type === undefined;
+  }
+  return ts.isPropertyAssignment(declaration) || ts.isBindingElement(declaration);
+}
+
+/** Marks the function types of the tags that `declaration` holds in its inferred type: the registry cannot name the function of such a tag. */
+function hideInferredFunctionTags(context: TagAnalysisContext, declaration: ts.Node, scan: Scan): void {
+  const { hidden } = context.writtenFunctions ?? {};
+  if (!hidden || !infersItsType(declaration)) return;
+  const found: ts.Type[] = [];
+  functionTagTypes(context, context.checker.getTypeAtLocation(declaration), declaration, scan, found);
+  for (const type of found) if (!hidden.has(type)) hidden.set(type, declaration);
+}
+
+/** The properties that `T['key']` names: each string literal of its index type, as the checker finds it in the type of `T`. */
+function indexedProperties(checker: ts.TypeChecker, node: ts.IndexedAccessTypeNode): readonly ts.Symbol[] {
+  const object = checker.getTypeFromTypeNode(node.objectType);
+  const keys = checker.getTypeFromTypeNode(node.indexType);
+  return (keys.isUnion() ? keys.types : [keys]).flatMap((key) => {
+    const property = ts.isStringLiteralType(key) ? checker.getPropertyOfType(object, key.value) : undefined;
+    return property ? [property] : [];
+  });
+}
+
+/**
+ * Records every `typeof` of a tag in everything that `node` reaches, through type aliases, interfaces, classes and their base
+ * classes, `typeof` a variable, and the parts of mapped, conditional and indexed types. A default library file holds no tag of the
+ * user and stays unread. A `typeof` target, a source, or a property that `T['key']` names marks `hidden` when it infers a type
+ * with a function tag. Each node is read once for each `scan`.
+ */
+function recordReachableFunctions(context: TagAnalysisContext, node: ts.Node, scan: Scan): void {
+  if (scan.nodes.has(node)) return;
+  scan.nodes.add(node);
+  const { checker } = context;
+  const reachDeclarationsOf = (symbol: ts.Symbol | undefined): void => {
+    for (const declaration of targetSymbol(checker, symbol)?.declarations ?? []) {
+      if (!context.isDefaultLibraryFile?.(declaration.getSourceFile())) recordReachableFunctions(context, declaration, scan);
+    }
+  };
   if (ts.isTypeReferenceNode(node)) {
     const symbol = checker.getSymbolAtLocation(node.typeName);
     const tag = golemTag(checker, symbol);
     if (tag) recordTagFunctions(context, node, tag.name);
-    else {
-      for (const declaration of targetSymbol(checker, symbol)?.declarations ?? []) {
-        if (!context.isDefaultLibraryFile?.(declaration.getSourceFile())) recordReachableFunctions(context, declaration, seen);
-      }
-    }
+    else reachDeclarationsOf(symbol);
+  } else if (ts.isExpressionWithTypeArguments(node)) {
+    reachDeclarationsOf(checker.getSymbolAtLocation(node.expression));
   } else if (ts.isTypeQueryNode(node)) {
     const declaration = declarationOf(targetSymbol(checker, symbolAtExpression(checker, node.exprName)));
-    if (declaration) recordReachableFunctions(context, declaration, seen);
+    if (declaration) {
+      hideInferredFunctionTags(context, declaration, scan);
+      recordReachableFunctions(context, declaration, scan);
+    }
+  } else if (ts.isIndexedAccessTypeNode(node)) {
+    for (const source of indexedProperties(checker, node).flatMap(property => propertyTagSources(checker, property))) {
+      hideInferredFunctionTags(context, source, scan);
+      recordReachableFunctions(context, source, scan);
+    }
   }
-  ts.forEachChild(node, child => recordReachableFunctions(context, child, seen));
+  ts.forEachChild(node, child => recordReachableFunctions(context, child, scan));
+}
+
+/** The file, line and column where `at` starts, to name it in a message. */
+export function sourceLocation(at: ts.Node): string {
+  const sourceFile = at.getSourceFile();
+  const position = sourceFile.getLineAndCharacterOfPosition(at.getStart(sourceFile));
+  return `${displayPath(sourceFile.fileName)}:${position.line + 1}:${position.character + 1}`;
+}
+
+/** The first line of a declaration, cut to 60 characters, to name it in a message. */
+function firstLine(text: string): string {
+  const [line = ''] = text.split('\n');
+  return line.length > 60 ? `${line.slice(0, 57)}...` : line;
 }
 
 /**
  * The function that a tag names. A tag read from source names it by its `typeof` query. A tag that only the checker shows has
  * its type alone, so it names the function that the source nodes of the field wrote with that type: the registry is completed
  * by one scan of everything the field reaches before the first such lookup, so a function that the tag reads from source
- * did not write counts too. With none, or with two, the read refuses: a type is shared by every function that copies it
- * (`const b: typeof a`) and names no one of them.
+ * did not write counts too. With none, with two, or when the field reaches a function tag through an inferred type that the scan
+ * cannot read, the read refuses: a type is shared by every function that copies it (`const b: typeof a`) and names no one of them.
  */
 function functionBinding(
   context: TagAnalysisContext,
@@ -492,8 +589,11 @@ function functionBinding(
   const registry = context.writtenFunctions;
   if (registry && !registry.scanned) {
     registry.scanned = true;
-    const seen = new Set<ts.Node>();
-    for (const source of registry.sources) recordReachableFunctions(context, source, seen);
+    const scan: Scan = { nodes: new Set(), types: new Set() };
+    for (const source of registry.sources) {
+      hideInferredFunctionTags(context, source, scan);
+      recordReachableFunctions(context, source, scan);
+    }
   }
   const written = registry?.[kind].get(fn.type);
   if (written === undefined) {
@@ -501,6 +601,10 @@ function functionBinding(
   }
   if (written === null) {
     throw context.diagnostic(fn.owner, '1040', `${kind} function shares its type with another function in this field, so golem cannot tell which one the tag names. Declare each with \`function\`, or give each const its own type annotation.`);
+  }
+  const inferredBy = registry?.hidden.get(fn.type);
+  if (inferredBy) {
+    throw context.diagnostic(fn.owner, '1040', `${kind} function reaches this tag through \`${firstLine(inferredBy.getText())}\` (${sourceLocation(inferredBy)}), whose type golem infers, so golem cannot tell which function of this type the tag names. Give it a type annotation that writes the tag, or write the tag on the field itself, with \`typeof\` and the function.`);
   }
   return valueBindingForSymbol(context, written, kind, fn.owner);
 }
@@ -1101,7 +1205,7 @@ export function analyzeNode(
   type: ts.Type,
   node: ts.TypeNode | undefined,
   /** Nodes beside `node` that write the functions of the field's tags: the declarations that a mapped type copied, the wire parameter of a serde. */
-  tagSources: readonly ts.TypeNode[],
+  tagSources: readonly ts.Node[],
 ): TagReadResult & { readonly writtenFunctions: WrittenFunctions } {
   const sources = node ? [node, ...tagSources] : tagSources;
   const writtenFunctions = newWrittenFunctions(context.writtenFunctions, sources);

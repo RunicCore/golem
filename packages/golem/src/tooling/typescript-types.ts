@@ -264,6 +264,14 @@ export interface PropertyDeclaration extends Node {
   readonly name: PropertyName;
   readonly type?: TypeNode;
 }
+export interface GetAccessorDeclaration extends Node {
+  readonly kind: KindOf<'GetAccessor'>;
+  readonly name: PropertyName;
+  readonly type?: TypeNode;
+}
+export interface BindingElement extends Node {
+  readonly kind: KindOf<'BindingElement'>;
+}
 export interface PropertySignature extends Node {
   readonly kind: KindOf<'PropertySignature'>;
   readonly name: PropertyName;
@@ -308,6 +316,7 @@ export interface ModuleBlock extends Node {
 export interface VariableDeclaration extends Node {
   readonly kind: KindOf<'VariableDeclaration'>;
   readonly name: BindingName;
+  readonly type?: TypeNode;
   readonly initializer?: Expression;
 }
 export interface VariableDeclarationList extends Node {
@@ -480,6 +489,7 @@ export interface ConditionalTypeNode extends TypeNode {
 export interface IndexedAccessTypeNode extends TypeNode {
   readonly kind: KindOf<'IndexedAccessTypeNode'>;
   readonly objectType: TypeNode;
+  readonly indexType: TypeNode;
 }
 export interface TemplateLiteralTypeNode extends TypeNode {
   readonly kind: KindOf<'TemplateLiteralTypeNode'>;
@@ -868,6 +878,8 @@ export interface TypeScriptBackend {
   isIntersectionTypeNode(node: Node): node is IntersectionTypeNode;
   isLiteralTypeNode(node: Node): node is LiteralTypeNode;
   isMappedTypeNode(node: Node): node is MappedTypeNode;
+  isBindingElement(node: Node): node is BindingElement;
+  isGetAccessorDeclaration(node: Node): node is GetAccessorDeclaration;
   isMethodDeclaration(node: Node): node is MethodDeclaration;
   isMethodSignature(node: Node): node is MethodSignature;
   isModuleBlock(node: Node): node is ModuleBlock;
