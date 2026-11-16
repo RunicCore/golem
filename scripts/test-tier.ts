@@ -9,7 +9,7 @@ import { sourcePath } from './test-file-timings.js';
 import { describeResume, finishRun, isTierResult, readRecord, runStateFromEnv, stepResultFile, type PlannedStep, type RunRecord } from './test-runner/run-state.js';
 import type { OrderedRun } from './test-run-ordered.js';
 
-export type Tier = 'prepare' | 'focused' | 'full' | 'full-ts6' | 'acceptance' | 'docs';
+export type Tier = 'prepare' | 'focused' | 'full' | 'full-ts6' | 'acceptance' | 'docs' | 'examples-check';
 /** `fileTimings` is the JSON-lines file that the test-file reporter fills while the step runs. */
 /** `always`: the step runs again in a resume, because its result lives outside the run record (see `pack`). */
 export interface Step { readonly label: string; readonly run: () => Promise<number>; readonly fileTimings?: string; readonly always?: true }
@@ -77,6 +77,8 @@ const tiers: Readonly<Record<Tier, { readonly budget: string; readonly purpose: 
   'full-ts6': { budget: 'about 330 s', purpose: 'Did I break anything on TypeScript 6? Runs the TypeScript 6 lane, pack, the packed smoke test and the source checks of lint. The other half of a sprint-end run.' },
   acceptance: { budget: '≤10 min, needs a stated reason', purpose: 'Is this releasable?' },
   docs: { budget: 'about 2 min', purpose: 'Do the docs pass their prose and inventory checks, and does the site build and pass its checks?' },
+  // Not the `examples` tier of entrypoint.sh, which generates the examples for compare:examples and runs no check.
+  'examples-check': { budget: '≤5 min', purpose: 'Does each maintained example pass its own check and test from a clean copy? Acceptance runs this step last; this tier runs it alone.' },
 };
 
 const RUNNER_FLAGS = ['--test-shard', '--test-timeout', '--test-concurrency', '--test-reporter'] as const;
@@ -314,6 +316,8 @@ async function checkExamples(): Promise<number> {
   return failures.length ? 1 : 0;
 }
 
+const examples: Step = { label: 'examples', run: checkExamples };
+
 function steps(tier: Tier, args: readonly string[]): Group[] {
   if (tier === 'prepare') return prepareSteps;
   if (tier === 'focused') {
@@ -331,6 +335,7 @@ function steps(tier: Tier, args: readonly string[]): Group[] {
       { label: 'docs public content', run: () => run(process.execPath, ['.build/scripts/public-source.js', 'scan', 'docs/.vitepress/dist']) },
     );
   }
+  if (tier === 'examples-check') return inOrder(examples);
   const unit = nodeTest(tier, 'unit', UNIT_FILES, CONCURRENCY.unit);
   const typescript6 = (concurrency: number): Step => nodeTest(tier, 'typescript 6', typescript6Files(), concurrency, [], typescript6Env());
   const smoke = nodeTest(tier, 'packed smoke', [SMOKE_FILE], 1);
@@ -354,7 +359,7 @@ function steps(tier: Tier, args: readonly string[]): Group[] {
       lint,
       nodeTest(tier, 'packed', PACKED_FILES, CONCURRENCY.packed),
       nodeTest(tier, 'browser', BROWSER_FILES, CONCURRENCY.packed),
-      { label: 'examples', run: checkExamples },
+      examples,
     ]],
     ...inOrder(nodeTest(tier, 'acceptance unit', ACCEPTANCE_UNIT_FILES, CONCURRENCY.unit)),
   ];
@@ -382,7 +387,7 @@ function assertContainer(tier: Tier, native: boolean): void {
     if (tier !== 'full') throw new Error('--native runs only the full tier (the unit tests), without Docker.');
     return;
   }
-  const command = { prepare: 'npm run test:prepare', focused: 'npm run test -- <files>', full: 'npm run test:full', 'full-ts6': 'npm run test:full:ts6', acceptance: 'npm run test:acceptance', docs: 'npm run docs:check' }[tier];
+  const command = { prepare: 'npm run test:prepare', focused: 'npm run test -- <files>', full: 'npm run test:full', 'full-ts6': 'npm run test:full:ts6', acceptance: 'npm run test:acceptance', docs: 'npm run docs:check', 'examples-check': 'npm run test:examples' }[tier];
   if (process.env.FE_DEPS_TEST_CONTAINER !== '1') throw new Error(`Run this tier through Docker: ${command}`);
   const manifest = readJson<{ devDependencies: Record<string, string> }>(path.join(root, 'package.json'));
   const installed = readJson<{ version: string }>(path.join(root, 'node_modules/@playwright/test/package.json'));

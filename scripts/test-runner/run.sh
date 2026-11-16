@@ -3,7 +3,7 @@
 set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 here="$root/scripts/test-runner"
-tier="${1:?usage: run.sh <prepare|focused|full|full-ts6|acceptance|docs|examples> [args]}"; shift
+tier="${1:?usage: run.sh <prepare|focused|full|full-ts6|acceptance|docs|examples|examples-check> [args]}"; shift
 # The tree the container tests. It is the checkout of this script unless the caller names another (scripts/compare-examples.sh runs the examples tier on a base ref).
 source_tree="${GOLEM_SOURCE_TREE:-$root}"
 # The image tag follows the Dockerfile only: the entrypoint is mounted below from this script's own checkout, so a changed entrypoint needs no rebuild.
