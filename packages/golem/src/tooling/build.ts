@@ -150,17 +150,12 @@ interface ReferencedProject {
 }
 
 /**
- * Parse the referenced projects, and the projects they reference: `tsc` loads the whole closure. A project that is not composite is an error of
- * `tsc -p` (TS6306), and the TypeScript 7 program would not report it.
+ * Parse the referenced projects, and the projects they reference: `tsc` loads the whole closure. A tsconfig that does not exist or a project that is
+ * not composite is an error of `tsc -p` (TS6053, TS6306): the program reports it, and this build reads on without the project that has no tsconfig.
  */
-function readReferences(session: ts.ProgramSession, configFile: string, references: readonly ts.ProjectReference[], observe: (filename: string) => void): ReferencedProject[] {
-  return referenceClosure(references, (referenced) => {
-    const parsed = session.parseConfigFile(referenced, observe);
-    if (parsed.options.composite !== true) {
-      throw new Error(`${displayPath(referenced)} is referenced by ${displayPath(configFile)}, so it must set composite: true (TS6306).`);
-    }
-    return parsed;
-  }).map(({ configFile: referenced, parsed }) => ({ configFile: referenced, options: parsed.options, fileNames: parsed.fileNames }));
+function readReferences(session: ts.ProgramSession, references: readonly ts.ProjectReference[], observe: (filename: string) => void): ReferencedProject[] {
+  return referenceClosure(references, (referenced) => (fs.existsSync(referenced) ? session.parseConfigFile(referenced, observe) : undefined))
+    .flatMap(({ configFile: referenced, parsed }) => (parsed === undefined ? [] : [{ configFile: referenced, options: parsed.options, fileNames: parsed.fileNames }]));
 }
 
 /**
@@ -465,7 +460,7 @@ async function buildOnce(requestSession: () => ts.ProgramSession, run: BuildRun,
   run.onGenerated?.(generated.ran);
   const parsed = parseOptions();
   const project = readProject(configFile, parsed);
-  const referenced = readReferences(session, configFile, parsed.projectReferences, observe);
+  const referenced = readReferences(session, parsed.projectReferences, observe);
   // The sources are inputs from here on: a failed check ends the build before any later step reads them.
   for (const filename of parsed.fileNames) observe(filename);
   outputs.clear();

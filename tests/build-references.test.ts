@@ -79,6 +79,21 @@ test('a reference that is not built gives the compiler error, names the project 
   assert.equal(fs.existsSync(path.join(root, 'build')), false, 'a build that stops writes no output');
 });
 
+for (const [name, prepare, code] of [
+  ['is not composite', (root: string) => write(root, 'shared/tsconfig.json', SHARED_TSCONFIG.replace('"composite":true,', '')), 'TS6306'],
+  ['has no tsconfig', (root: string) => fs.rmSync(path.join(root, 'shared/tsconfig.json')), 'TS6053'],
+] as const) {
+  test(`a referenced project that ${name} gives the compiler error ${code} and writes nothing`, async (t) => {
+    // protects: T-974 a broken reference is the compiler's error of the user's tsconfig, as tsc -p prints it, never a throw
+    const root = await referencing(t, `build-references-broken-${code}`, false);
+    prepare(root);
+    const result = await golemBuild(root, []);
+    assert.equal(result.code, 1, result.stderr);
+    assert.match(result.stdout, new RegExp(`^tsconfig\\.json\\(\\d+,\\d+\\): error ${code}: `, 'm'));
+    assert.equal(fs.existsSync(path.join(root, 'build')), false, 'a build that stops writes no output');
+  });
+}
+
 test('a solution tsconfig is refused with the command for each referenced project', async (t) => {
   // protects: T-477 a golem.yaml names one project, so the build names the others
   const root = await referencing(t, 'build-references-refused', true);

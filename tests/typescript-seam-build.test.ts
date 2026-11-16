@@ -89,6 +89,23 @@ test('an options error stays in the configuration file when the project has refe
   assert.equal(printed, tsc(root, ['--pretty', 'false']));
 });
 
+for (const [name, shared, code] of [
+  ['a referenced project that is not composite', { compilerOptions: { ...COMPILER, outDir: 'dist', rootDir: 'src' }, include: ['src'] }, 'TS6306'],
+  ['a referenced tsconfig that does not exist', undefined, 'TS6053'],
+] as const) {
+  test(`a project reference error prints as tsc prints it: ${name}`, t => {
+    // protects: T-974 a broken project reference is an options error of the user's tsconfig, never a throw and never silent
+    const { root, config } = project(t, { 'src/a.ts': 'export const a = 1;\n', 'shared/src/x.ts': 'export const x = 1;\n' });
+    if (shared !== undefined) fs.writeFileSync(path.join(root, 'shared/tsconfig.json'), JSON.stringify(shared));
+    fs.writeFileSync(config, JSON.stringify({ compilerOptions: { ...COMPILER, noEmit: true }, include: ['src'], references: [{ path: './shared' }] }));
+    using session = new ts.ProgramSession({ cwd: root });
+    using program = session.openProgram({ root, sources: session.parseConfigFile(config).fileNames, configFile: config });
+    const printed = ts.formatDiagnostics(ts.getTscDiagnostics(program), host(root));
+    assert.match(printed, new RegExp(`^tsconfig\\.json\\(1,\\d+\\): error ${code}: `));
+    assert.equal(printed, tsc(root, ['--pretty', 'false']));
+  });
+}
+
 test('an options error that tsc makes with no place stays without one when a flag causes it', t => {
   // protects: T-977 only an option error that tsc locates at compilerOptions moves there; one it builds with no option to name keeps no place
   const { root, config } = project(t, { 'src/x.ts': 'export const a = 1;\n', 'src/x.js': 'export const b = 1;\n' });

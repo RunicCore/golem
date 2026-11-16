@@ -29,7 +29,7 @@ import * as ast from 'typescript/ast';
 import { GOLEM_CHANNELS } from './diagnostics-channels.js';
 import { displayPath } from './generator-core.js';
 import { fileSignature, MISSING } from './input-watcher.js';
-import { affectsResolution, assertConfigParsed, assertNoSourceFiles, canonical, collectTscDiagnostics, configReferences, declarationOutputOf, emitWanted, flagPathOptions, flagsAsConfigOptions, hasDeclarationOutput, programRequest, referenceClosure, referencedConfigFile } from './typescript-config.js';
+import { affectsResolution, assertConfigParsed, assertNoSourceFiles, canonical, collectTscDiagnostics, configReferences, declarationOutputOf, emitWanted, flagPathOptions, flagsAsConfigOptions, hasDeclarationOutput, isBrokenReference, programRequest, REFERENCE_ERROR_CODES, referenceClosure, referencedConfigFile } from './typescript-config.js';
 import type { ConfigReference, ProgramRequest, ResolveAtCurrentFolder } from './typescript-config.js';
 import { assertPackageManifestsParse } from './type-analysis/package-specifier.js';
 import {
@@ -705,7 +705,8 @@ class CompatProgram implements Program {
   }
 
   getProgramDiagnostics(): readonly SyncDiagnostic[] {
-    return this.positioned(this.project.program.getProgramDiagnostics());
+    const found = this.project.program.getProgramDiagnostics();
+    return this.twin ? this.twin.withReferenceErrors(found) : found;
   }
 
   /** The compiler lists an option error that names no file here too, so it takes its place in the configuration as well and the report holds it once. */
@@ -920,24 +921,37 @@ function overriddenConfig(api: API, configPath: string, overrides: OptionOverrid
 /**
  * The user's configuration opened alone, for a program not opened on it. The compiler locates an option only in the text of the
  * configuration it opens, and the derived one only extends the user's, so an option error comes without a file. `lookup` gives the
- * options diagnostics of the user's own configuration, with the program's overrides written into its text; it runs once, and only when a diagnostic has no file.
+ * options diagnostics of the user's own configuration, with the program's overrides written into its text; it runs once, and only when a diagnostic has no file or a project reference is broken.
  */
 class ConfigTwin {
   private found: readonly SyncDiagnostic[] | undefined;
 
-  public constructor(private readonly lookup: () => readonly SyncDiagnostic[]) {}
+  /** `referenceErrors`: whether `tsc` reports a project reference of the user's configuration, which the program cannot (`SyntheticProgram.brokenReferences`). */
+  public constructor(private readonly lookup: () => readonly SyncDiagnostic[], private readonly referenceErrors: boolean) {}
+
+  /** Each diagnostic with no file takes its place in the user's text (`match`); a program whose diagnostics all have a file does not ask the twin. */
+  positioned(diagnostics: readonly SyncDiagnostic[]): readonly SyncDiagnostic[] {
+    return diagnostics.every((diagnostic) => diagnostic.fileName !== undefined) ? diagnostics : this.match(diagnostics).placed;
+  }
+
+  /** The option diagnostics of the program, placed, and the reference errors of the user's configuration that the twin reports and the program cannot. */
+  withReferenceErrors(diagnostics: readonly SyncDiagnostic[]): readonly SyncDiagnostic[] {
+    if (!this.referenceErrors) return this.positioned(diagnostics);
+    const { placed, unused } = this.match(diagnostics);
+    return [...placed, ...unused.filter((diagnostic) => REFERENCE_ERROR_CODES.has(diagnostic.code))];
+  }
 
   /**
    * Each diagnostic with no file takes the twin's diagnostic of the same code and message; when several share them, the first takes the
-   * first, the second the second. A diagnostic with no match stays as it is, and a twin diagnostic that no one takes is dropped: the twin has
+   * first, the second the second. A diagnostic with no match stays as it is. `unused` are the twin's diagnostics that no one took: the twin has
    * other roots, so it can report what the program does not.
    */
-  positioned(diagnostics: readonly SyncDiagnostic[]): readonly SyncDiagnostic[] {
-    if (diagnostics.every((diagnostic) => diagnostic.fileName !== undefined)) return diagnostics;
+  private match(diagnostics: readonly SyncDiagnostic[]): { readonly placed: readonly SyncDiagnostic[]; readonly unused: readonly SyncDiagnostic[] } {
     const key = (diagnostic: SyncDiagnostic): string => `${diagnostic.code}\n${diagnosticText(diagnostic)}`;
     const unused = new Map<string, SyncDiagnostic[]>();
     for (const diagnostic of this.found ??= this.lookup()) unused.set(key(diagnostic), [...unused.get(key(diagnostic)) ?? [], diagnostic]);
-    return diagnostics.map((diagnostic) => (diagnostic.fileName === undefined ? unused.get(key(diagnostic))?.shift() ?? diagnostic : diagnostic));
+    const placed = diagnostics.map((diagnostic) => (diagnostic.fileName === undefined ? unused.get(key(diagnostic))?.shift() ?? diagnostic : diagnostic));
+    return { placed, unused: [...unused.values()].flat() };
   }
 }
 
@@ -1010,6 +1024,8 @@ interface SyntheticProgram {
   readonly resolver: ModuleResolver;
   /** The sources of referenced projects that an import reached and that have no declaration output. The resolver fills it while the program is made. */
   readonly unbuilt: ReadonlySet<string>;
+  /** Whether `tsc` reports a referenced project (`isBrokenReference`). The program is made without references, so the user's configuration is asked for it. */
+  readonly brokenReferences: boolean;
 }
 
 /** A project a tsconfig references, parsed: the source files it owns and where `tsc` finds its declaration output. */
@@ -1357,7 +1373,7 @@ export class ProgramSession implements Disposable {
         if (!project) throw new Error(`The compiler did not open the TypeScript project ${displayPath(request.configPath)} for ${displayPath(options.root)}.`);
         this.syntheticProgram = created ?? this.syntheticProgram;
         const { twinOf, overrides } = request;
-        const program = new CompatProgram(this, snapshot, project, synthetic?.unbuilt, twinOf === undefined ? undefined : new ConfigTwin(() => this.diagnosticsOfConfig(twinOf, overlays, overrides)));
+        const program = new CompatProgram(this, snapshot, project, synthetic?.unbuilt, twinOf === undefined ? undefined : new ConfigTwin(() => this.diagnosticsOfConfig(twinOf, overlays, overrides), synthetic?.brokenReferences ?? false));
         this.held.set(program, request);
         return program;
       } catch (error) {
@@ -1407,23 +1423,26 @@ export class ProgramSession implements Disposable {
     this.setOverlays(base.overlays);
     this.observe(onInput, base.hidden);
     let parsed: { readonly fileNames: readonly string[]; readonly options: CompilerOptions };
-    let referenced: ReferencedProject[];
+    let closure: { readonly configFile: string; readonly parsed: ReturnType<API['parseConfigFile']> | undefined }[];
     try {
       const result = api.parseConfigFile(base.configPath);
       assertConfigParsed(base.configPath, result.errors);
       parsed = result;
-      referenced = referenceClosure(result.projectReferences ?? [], (configFile) => {
+      closure = referenceClosure(result.projectReferences ?? [], (configFile) => {
+        // A tsconfig that does not exist is no input error of golem's: the compiler reports it at the reference (TS6053).
+        if (!base.overlays.has(canonical(configFile)) && !sys.fileExists(configFile)) return undefined;
         const project = api.parseConfigFile(configFile);
         assertConfigParsed(configFile, project.errors);
         return project;
-      }).map(({ configFile, parsed: project }) => ({ configFile, options: project.options as CompilerOptions, sources: new Set(project.fileNames.map(canonical)) }));
+      });
     } finally {
       this.setOverlays(previous);
     }
-    if (referenced.length > 0) {
+    if (closure.length > 0) {
+      const referenced = closure.flatMap(({ configFile, parsed: project }) => (project === undefined ? [] : [{ configFile, options: project.options as CompilerOptions, sources: new Set(project.fileNames.map(canonical)) }]));
       const options = parsed.options as CompilerOptions;
       const unbuilt = new Set<string>();
-      return { ...base, synthetic: { rootFiles: [...new Set([...parsed.fileNames.map(canonical), ...base.rootNames])], compilerOptions: options, resolver: this.referenceResolverFor(api, options, referenced, unbuilt), unbuilt }, twinOf: base.userConfigPath };
+      return { ...base, synthetic: { rootFiles: [...new Set([...parsed.fileNames.map(canonical), ...base.rootNames])], compilerOptions: options, resolver: this.referenceResolverFor(api, options, referenced, unbuilt), unbuilt, brokenReferences: closure.some(({ parsed: project }) => isBrokenReference(project)) }, twinOf: base.userConfigPath };
     }
     const own = new Set(parsed.fileNames.map(canonical));
     // Every root is a file of the configuration, and the configuration is the user's own: the compiler reads it itself, so its option errors name its own text and place.

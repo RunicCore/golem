@@ -41,18 +41,30 @@ export function referencedConfigFile(reference: string): string {
 /**
  * Every project that the references reach, the references of the referenced projects too, each once. `tsc` loads the whole closure, and an
  * import may reach a source of any project in it, such as a `paths` alias that points into a project only a referenced project references.
+ * `parse` gives `undefined` for a tsconfig that does not exist: `tsc` reports it (TS6053) and goes on without it.
  */
-export function referenceClosure<P extends { readonly projectReferences?: readonly { readonly path: string }[] }>(references: readonly { readonly path: string }[], parse: (configFile: string) => P): { readonly configFile: string; readonly parsed: P }[] {
-  const found = new Map<string, P>();
+export function referenceClosure<P extends { readonly projectReferences?: readonly { readonly path: string }[] }>(references: readonly { readonly path: string }[], parse: (configFile: string) => P | undefined): { readonly configFile: string; readonly parsed: P | undefined }[] {
+  const found = new Map<string, P | undefined>();
   const visit = (reference: { readonly path: string }): void => {
     const configFile = referencedConfigFile(reference.path);
     if (found.has(configFile)) return;
     const parsed = parse(configFile);
     found.set(configFile, parsed);
-    for (const next of parsed.projectReferences ?? []) visit(next);
+    for (const next of parsed?.projectReferences ?? []) visit(next);
   };
   references.forEach(visit);
   return [...found].map(([configFile, parsed]) => ({ configFile, parsed }));
+}
+
+/**
+ * The codes of the errors that `tsc` reports for a project reference (`verifyProjectReferences`): a tsconfig that does not exist, one that is
+ * not composite, and one that disables emit. The TypeScript 7 program is made without references, so it reports none of them.
+ */
+export const REFERENCE_ERROR_CODES: ReadonlySet<number> = new Set([6053, 6306, 6310]);
+
+/** Whether `tsc` reports an error for this referenced project: `parsed` is `undefined` when its tsconfig does not exist. It may answer yes where `tsc` stays silent (a project with no files), never no where `tsc` reports. */
+export function isBrokenReference(parsed: { readonly options: { readonly composite?: unknown; readonly noEmit?: unknown } } | undefined): boolean {
+  return parsed === undefined || parsed.options.composite !== true || parsed.options.noEmit === true;
 }
 
 /** The command that builds a referenced project: its own golem.yaml names it. */
