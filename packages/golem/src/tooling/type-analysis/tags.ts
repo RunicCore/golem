@@ -496,17 +496,11 @@ interface Scan {
   readonly siblings: 'read' | 'skip';
 }
 
-/**
- * Whether `node` declares a field beside the field that the scan serves: such a field has tags of its own. A member that the
- * type of the field leaves out (`Pick<User, 'name'>` leaves out the other members of `User`) is one too, when it sits in the type
- * that declares a member of the field.
- */
+/** Whether `node` declares a field beside the field that the scan serves: such a field has tags of its own. */
 function declaresSibling(context: TagAnalysisContext, node: ts.Node): boolean {
   return (context.fieldDeclarations ?? []).some((level) => {
     const owner = level.declarations.get(node);
-    if (owner !== undefined) return owner !== level.own;
-    const own = propertyDeclarations(context.checker, level.own);
-    return !own.includes(node) && own.some(declaration => declaration.parent === node.parent);
+    return owner !== undefined && owner !== level.own;
   });
 }
 
@@ -531,23 +525,19 @@ function functionTagTypes(context: TagAnalysisContext, type: ts.Type, at: ts.Nod
   checker.getSignaturesOfType(type, ts.SignatureKind.Call).forEach(signature => inside(checker.getReturnTypeOfSignature(signature)));
 }
 
-/** Whether `declaration` is a value whose type the checker infers, because it writes no type node. */
-function infersItsType(declaration: ts.Node): boolean {
-  if (ts.isVariableDeclaration(declaration) || ts.isPropertyDeclaration(declaration) || ts.isFunctionDeclaration(declaration) || ts.isMethodDeclaration(declaration) || ts.isGetAccessorDeclaration(declaration)) {
-    return declaration.type === undefined;
+/** Whether the checker supplies the type of `node`, so the registry cannot name its function: a value that writes no type node, or a base class that a call computes (`class Sub extends mixin(Base)`). */
+function infersItsType(node: ts.Node): boolean {
+  if (ts.isVariableDeclaration(node) || ts.isPropertyDeclaration(node) || ts.isFunctionDeclaration(node) || ts.isMethodDeclaration(node) || ts.isGetAccessorDeclaration(node)) {
+    return node.type === undefined;
   }
-  return ts.isPropertyAssignment(declaration) || ts.isBindingElement(declaration);
-}
-
-/** Whether `node` is a base class that a call computes (`class Sub extends mixin(Base)`): no declaration names it, and the checker shows its members from the type alone. */
-function computesItsBase(node: ts.Node): boolean {
-  return ts.isExpressionWithTypeArguments(node) && !ts.isIdentifier(node.expression) && !ts.isPropertyAccessExpression(node.expression);
+  if (ts.isExpressionWithTypeArguments(node)) return !ts.isIdentifier(node.expression) && !ts.isPropertyAccessExpression(node.expression);
+  return ts.isPropertyAssignment(node) || ts.isBindingElement(node);
 }
 
 /** Marks the function types of the tags that `node` holds in its inferred type: the registry cannot name the function of such a tag. */
 function hideInferredFunctionTags(context: TagAnalysisContext, node: ts.Node, scan: Scan): void {
   const { hidden } = context.writtenFunctions ?? {};
-  if (!hidden || !(infersItsType(node) || computesItsBase(node))) return;
+  if (!hidden || !infersItsType(node)) return;
   const found: ts.Type[] = [];
   functionTagTypes(context, context.checker.getTypeAtLocation(node), node, scan, found);
   for (const type of found) if (!hidden.has(type)) hidden.set(type, node);
@@ -563,11 +553,36 @@ function indexedProperties(checker: ts.TypeChecker, node: ts.IndexedAccessTypeNo
   });
 }
 
+/**
+ * The properties of the object types that `type` is built from: its alias type arguments, nested ones too (`Sub` in `Pick<Sub, 'name'>`).
+ * A mapped type leaves members of them out, and each is a field beside the `kept` ones. When a kept property has no declaration (a
+ * mapped type renamed its key), nothing says which member of the source it keeps, so no member counts as left out.
+ */
+export function leftOutProperties(checker: ts.TypeChecker, type: ts.Type, kept: readonly ts.Symbol[]): readonly ts.Symbol[] {
+  if (type.aliasTypeArguments === undefined || kept.some(property => propertyDeclarations(checker, property).length === 0)) return [];
+  const properties: ts.Symbol[] = [];
+  const seen = new Set<ts.Type>();
+  const read = (outer: ts.Type): void => {
+    for (const argument of outer.aliasTypeArguments ?? []) {
+      if (seen.has(argument)) continue;
+      seen.add(argument);
+      if ((argument.flags & ts.TypeFlags.Object) !== 0) properties.push(...checker.getPropertiesOfType(argument));
+      read(argument);
+    }
+  };
+  read(type);
+  return properties;
+}
+
 /** The members that declare the properties of `T` in `T['key']` other than the ones that the key names, or nothing when the key names none. */
 function membersBeside(checker: ts.TypeChecker, node: ts.IndexedAccessTypeNode, named: readonly ts.Symbol[]): FieldDeclarations | undefined {
   const [own] = named;
   if (own === undefined) return undefined;
-  const others = checker.getPropertiesOfType(checker.getTypeFromTypeNode(node.objectType)).filter(property => !named.includes(property));
+  const object = checker.getTypeFromTypeNode(node.objectType);
+  // A property of the source type can be one that the key names: it has the same declarations.
+  const ownDeclarations = new Set(named.flatMap(property => propertyDeclarations(checker, property)));
+  const others = [...leftOutProperties(checker, object, named), ...checker.getPropertiesOfType(object)]
+    .filter(property => !propertyDeclarations(checker, property).some(declaration => ownDeclarations.has(declaration)));
   // `own` is any named property: `others` leaves out every named one, so no declaration in the map belongs to `own`, whichever it is.
   return { declarations: declarationsOf(checker, others), own };
 }

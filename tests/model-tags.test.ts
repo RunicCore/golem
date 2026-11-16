@@ -613,7 +613,7 @@ const untaggedReads = {
 } as const;
 
 for (const [name, { declarations, field }] of Object.entries(untaggedReads)) test(`the tag of the field binds its own function through ${name}`, t => {
-  // protects: T-1043 a refusal of every conditional type over an inferred member or a mixin call would stop fields that lose no tag (F-37 no false refusal)
+  // protects: T-1043 a refusal of every conditional type over an inferred member or a mixin call would stop fields that lose no tag
   const { root, sourceRoot } = fixture(t);
   fs.writeFileSync(path.join(sourceRoot, 'rules.ts'), copiedFunctionRules.inline.text);
   fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({
@@ -627,7 +627,7 @@ for (const [name, { declarations, field }] of Object.entries(untaggedReads)) tes
 
 // `Wrap<T>` hands the tag `c` to the checker alone, so the field is scanned for the function that `c` names; the scan must leave the sibling members `f` and `g` to their own fields.
 test('two members that copy each other\'s function type each bind their own function beside a tag that only the checker shows', t => {
-  // protects: T-1043 the registry of the field kept every function that its scan found, so `f` and `g` inherited a type shared by two functions and were refused (F-37 no false refusal)
+  // protects: T-1043 the registry of the field kept every function that its scan found, so `f` and `g` inherited a type shared by two functions and were refused
   const { root, sourceRoot } = fixture(t);
   fs.writeFileSync(path.join(sourceRoot, 'rules.ts'), tsSource`${copiedFunctionRules.inline}\nexport const c: (v: unknown) => boolean = (v) => v !== null;`.text);
   fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({
@@ -640,20 +640,26 @@ test('two members that copy each other\'s function type each bind their own func
 });
 
 // `a` and `b` share one type and `User` writes `typeof b` on `name`: a sibling member that holds the tag through an inferred type is not read, so it must not stop the build.
+const userWith = (member: SourceFragment): SourceFragment => tsSource`class User { name!: string & TValidation<typeof b>; ${member} }`;
+// `Sub` inherits `name` from `Base`, so the getter and the tagged member sit in two classes.
+const inheritedUser = tsSource`class Base { name!: string & TValidation<typeof b>; }\nclass Sub extends Base { get label() { return this.name; } }`;
 const sameTypeNeighbours = {
-  'an indexed access beside a getter that returns the tagged member': { member: tsSource`get label() { return this.name; }`, field: tsSource`User['name']` },
-  'Pick beside a getter that returns the tagged member': { member: tsSource`get label() { return this.name; }`, field: tsSource`Pick<User, 'name'>['name']` },
-  'Omit beside a getter that returns the tagged member': { member: tsSource`get label() { return this.name; }`, field: tsSource`Omit<User, 'label'>['name']` },
-  'Pick beside a member that holds no tag': { member: tsSource`count = 0;`, field: tsSource`Pick<User, 'name'>['name']` },
+  'an indexed access beside a getter that returns the tagged member': { declarations: userWith(tsSource`get label() { return this.name; }`), field: tsSource`User['name']` },
+  'Pick beside a getter that returns the tagged member': { declarations: userWith(tsSource`get label() { return this.name; }`), field: tsSource`Pick<User, 'name'>['name']` },
+  'Omit beside a getter that returns the tagged member': { declarations: userWith(tsSource`get label() { return this.name; }`), field: tsSource`Omit<User, 'label'>['name']` },
+  'Pick beside a member that holds no tag': { declarations: userWith(tsSource`count = 0;`), field: tsSource`Pick<User, 'name'>['name']` },
+  'Omit of a subclass getter': { declarations: inheritedUser, field: tsSource`Omit<Sub, 'label'>['name']` },
+  'Pick of a subclass getter': { declarations: inheritedUser, field: tsSource`Pick<Sub, 'name'>['name']` },
+  'Readonly Pick of a subclass getter': { declarations: inheritedUser, field: tsSource`Readonly<Pick<Sub, 'name'>>` },
 } as const;
 
-for (const [name, { member, field }] of Object.entries(sameTypeNeighbours)) test(`the tag of a member binds its own function, read through ${name}`, t => {
+for (const [name, { declarations, field }] of Object.entries(sameTypeNeighbours)) test(`the tag of a member binds its own function, read through ${name}`, t => {
   // protects: T-1019 the first fix refused a field that read `name` of a class with an inferred sibling, though the sibling is not part of the field (F-37 no false refusal)
   const { root, sourceRoot } = fixture(t);
   fs.writeFileSync(path.join(sourceRoot, 'rules.ts'), copiedFunctionRules.inline.text);
   fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({
     name: 'A',
-    imports: tsSource`import type { TValidation } from '@exprtlabs/golem/tags';\nimport { a, b } from './rules.js';\nclass User { name!: string & TValidation<typeof b>; ${member} }`,
+    imports: tsSource`import type { TValidation } from '@exprtlabs/golem/tags';\nimport { a, b } from './rules.js';\n${declarations}`,
     fields: tsSource`field: ${field}`,
   }).text);
   const generated = generate({ root, profile: { validation: true } }).artifacts.map((artifact) => artifact.content).join('\n');
