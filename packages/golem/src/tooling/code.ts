@@ -358,11 +358,10 @@ export type LocalKind = keyof typeof LOCAL_LETTERS;
 
 /** The local of `kind` with `index`; a kind that a function holds once takes no index. */
 export function localCode(kind: LocalKind, index?: number): Code {
-  const letter = Object.hasOwn(LOCAL_LETTERS, kind) ? LOCAL_LETTERS[kind] : undefined;
-  if (letter === undefined || (index !== undefined && !Number.isSafeInteger(index))) {
-    throw new TypeError(`a local needs one of the kinds ${Object.keys(LOCAL_LETTERS).join(', ')} and an integer index, got ${JSON.stringify([kind, index])}`);
+  if (index !== undefined && !Number.isSafeInteger(index)) {
+    throw new TypeError(`a local of kind ${kind} needs an integer index, got ${JSON.stringify(index)}`);
   }
-  return fromParts([{ kind: 'text', text: `$${letter}${index ?? ''}`, identifier: true }]);
+  return fromParts([{ kind: 'text', text: `$${LOCAL_LETTERS[kind]}${index ?? ''}`, identifier: true }]);
 }
 
 function syntaxChecked(name: string, what: string): string {
