@@ -546,6 +546,25 @@ test('a tag function that comes from an inferred type is refused, not bound by i
   assert.throws(() => generate({ root, profile: { validation: true } }), /RUNM1040.*cannot read back to the `typeof` that wrote it/);
 });
 
+// `held` carries `typeof a` through an inferred type, and the field writes its copy `b`: the checker shows one tag for both, and the source holds only `typeof b`.
+const inferredTagReads = {
+  'a const inferred from a call': { declarations: tsSource`declare function tagged(): string & TValidation<typeof a>;\nconst held = tagged();`, field: tsSource`typeof held & TValidation<typeof b>` },
+  'the inferred return of a function': { declarations: tsSource`declare const source: string & TValidation<typeof a>;\nfunction tagged() { return source; }`, field: tsSource`ReturnType<typeof tagged> & TValidation<typeof b>` },
+  'an inferred class member': { declarations: tsSource`declare function tagged(): string & TValidation<typeof a>;\nclass Holder { held = tagged(); }`, field: tsSource`Holder['held'] & TValidation<typeof b>` },
+} as const;
+
+for (const [name, read] of Object.entries(inferredTagReads)) test(`a copy written on the field beside a function that only an inferred type holds is refused, read as ${name}`, t => {
+  // protects: T-1019 the scan found only the copy `b` for the shared type, so the validator that `held` carries was dropped and `b` bound in silence (R-55 no silent difference)
+  const { root, sourceRoot } = fixture(t);
+  fs.writeFileSync(path.join(sourceRoot, 'rules.ts'), copiedFunctionRules.inline.text);
+  fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({
+    name: 'A',
+    imports: tsSource`import type { TValidation } from '@exprtlabs/golem/tags';\nimport { a, b } from './rules.js';\n${read.declarations}`,
+    fields: tsSource`field: ${read.field}`,
+  }).text);
+  assert.throws(() => generate({ root, profile: { validation: true } }), /RUNM1040.*through a value whose type golem infers/);
+});
+
 test('a nullable member written through a tag alias is refused, not given a phantom-key validator', t => {
   // protects: fixed bug (T-430): at 75548ea this generated a validator that rejected every plain string
   const { root, sourceRoot } = fixture(t);

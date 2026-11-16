@@ -308,6 +308,7 @@ export interface ModuleBlock extends Node {
 export interface VariableDeclaration extends Node {
   readonly kind: KindOf<'VariableDeclaration'>;
   readonly name: BindingName;
+  readonly type?: TypeNode;
   readonly initializer?: Expression;
 }
 export interface VariableDeclarationList extends Node {
