@@ -1246,6 +1246,8 @@ const TYPED_CORPUS = {
   picked: { anyOf: [{ properties: { a: { type: 'string' } } }, { properties: { b: { type: 'integer' } } }], unevaluatedProperties: false },
   guarded: { if: { properties: { a: { const: 1 } }, required: ['a'] }, then: { properties: { b: { type: 'string' } } }, unevaluatedProperties: false },
   listed: { oneOf: [{ prefixItems: [{ type: 'integer' }] }, { type: 'string' }], unevaluatedItems: false },
+  // Schemas that evaluate a key and never read its value, fail, or report an issue: no local and no parameter of the validator stays unread.
+  marked: { $defs: { extension: { patternProperties: { '^x-': true } } }, allOf: [{ $ref: '#/$defs/extension' }, { patternProperties: { '^y-': false }, properties: { z: false } }, { required: ['id'] }], unevaluatedProperties: false },
   checked: { exprtValidation: { schema: { type: 'integer' }, bindings: ['rules.isEven'] } },
   labelled: { exprtValidation: { schema: { type: 'object', required: ['name'] }, bindings: ['rules.label'] } },
   bounded: { exprtValidation: ['rules.isEven'] },
@@ -1285,7 +1287,7 @@ test('compile with ts emits the same validator with its types, and the corpus pa
     "export const notNumber: number = validate_root('a', true)[0];",
     '',
   ].join('\n'));
-  writeFileSync(path.join(project, 'tsconfig.json'), JSON.stringify({ compilerOptions: { strict: true, target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', skipLibCheck: true, noEmit: true }, include: ['*.ts'] }));
+  writeFileSync(path.join(project, 'tsconfig.json'), JSON.stringify({ compilerOptions: { strict: true, noUnusedLocals: true, noUnusedParameters: true, target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', skipLibCheck: true, noEmit: true }, include: ['*.ts'] }));
   await command(project, process.execPath, [TSC, '-p', 'tsconfig.json']);
 });
 
