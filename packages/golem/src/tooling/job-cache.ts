@@ -374,7 +374,7 @@ export function jobIsCurrent(
 
 /** The start of a job on the clock that file times come from: the status-change time of a file written now, which `Date.now()` can run ahead of. */
 export function jobStartTime(config: GolemConfig, files: OutputFiles = realOutputFiles): number {
-  return files.stamp(path.join(path.dirname(config.inventoryFile), 'clock'));
+  return files.stamp(path.dirname(config.inventoryFile));
 }
 
 /** Collects the inputs of one running job, each digested when the job reads it and never later: an edit after the read changes the file's digest, so the next run reruns the job. */
