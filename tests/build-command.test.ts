@@ -240,12 +240,15 @@ test('a signal ends a golem build that runs once at once, by the signal itself',
   const root = sourceOnlyProject(t, 'build-signal');
   countingGenerator(root);
   const started = path.join(root, 'generator-started');
-  // The generator holds the build, blocking the event loop as a long type check does, so the signal arrives while the build runs.
+  const released = path.join(root, 'generator-released');
+  // The generator holds the build, blocking the event loop as a long type check does, until the test has sent the signal and writes `released`: a handler that runs
+  // JavaScript only gets to run after that, so it cannot end the build before the signal arrives.
   fs.writeFileSync(path.join(root, 'node_modules/@fixture/counter/generator.js'), `import fs from 'node:fs';
 export const apiVersion = 1;
 export function generate() {
   fs.writeFileSync(${JSON.stringify(started)}, '');
-  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5000);
+  const pause = new Int32Array(new SharedArrayBuffer(4));
+  while (!fs.existsSync(${JSON.stringify(released)})) Atomics.wait(pause, 0, 0, 10);
   return { apiVersion: 1, artifacts: [], manifestPaths: [], watchInputs: [] };
 }
 `);
@@ -256,6 +259,7 @@ export function generate() {
   const closed = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) => child.once('close', (code, signal) => resolve({ code, signal })));
   await until(() => fs.existsSync(started), 'the build reaches the generator');
   child.kill('SIGINT');
+  fs.writeFileSync(released, '');
   assert.deepEqual(await closed, { code: null, signal: 'SIGINT' });
   assert.doesNotMatch(output, /^Built /m);
 });
