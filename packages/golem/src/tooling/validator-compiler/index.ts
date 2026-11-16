@@ -3,7 +3,7 @@ import { emit, exportNames, type PassExports } from './emit.js';
 import { lower } from './lower.js';
 import type { CompileInput, CompileOptions } from './options.js';
 
-export type { CompileInput, CompileOptions, SchemaPlace } from './options.js';
+export type { CompileOptions } from './options.js';
 
 export interface CompileResult {
   /**

@@ -394,7 +394,7 @@ function assertValidationCompatibility(
 
 type ConstraintFamily = 'number' | 'string' | 'array' | 'object';
 
-/** The `Format` names that validate a number. `validation-runtime.ts` checks them; every other name checks a string. */
+/** The `Format` names that validate a number. `validation-formats.ts` checks them; every other name checks a string. */
 const NUMBER_FORMATS: ReadonlySet<string> = new Set(['int32', 'int64', 'float', 'double']);
 
 function constraintFamily(constraint: ModelConstraint): ConstraintFamily | undefined {
