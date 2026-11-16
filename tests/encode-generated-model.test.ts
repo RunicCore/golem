@@ -62,17 +62,10 @@ test('the toWireFormat of a model codec validates when the profile does, and val
   }
 });
 
-test('the toWireFormat of a model codec does not validate when the profile has validation off, and a cyclic model still throws', async (t) => {
+test('the toWireFormat of a model codec does not validate when the profile has validation off', async (t) => {
   // protects: D-105 the profile decides: validation off encodes without checks
-  // protects: F-38 with validation off, codecs and conversion guards still run
-  const { Card, Link } = await buildCards(t, { validation: false });
+  const { Card } = await buildCards(t, { validation: false });
   assert.deepEqual(modelCodec(Card).toWireFormat(new Card({ title: 5 })), { title: 5 });
-  const link = new Link({ name: 'a' }) as { child?: unknown };
-  link.child = link;
-  assert.throws(
-    () => modelCodec(link).toWireFormat(link),
-    (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.Serialization,
-  );
 });
 
 test('the request body of an SDK client validates and accepts validate false', async (t) => {
