@@ -6,7 +6,8 @@ here="$root/scripts/test-runner"
 tier="${1:?usage: run.sh <prepare|focused|full|full-ts6|acceptance|docs|examples> [args]}"; shift
 # The tree the container tests. It is the checkout of this script unless the caller names another (scripts/compare-examples.sh runs the examples tier on a base ref).
 source_tree="${GOLEM_SOURCE_TREE:-$root}"
-tag="golem-test-runner:$(cat "$here/Dockerfile" "$here/entrypoint.sh" | shasum -a 256 | cut -c1-16)"
+# The image tag follows the Dockerfile only: the entrypoint is mounted below from this script's own checkout, so a changed entrypoint needs no rebuild.
+tag="golem-test-runner:$(shasum -a 256 < "$here/Dockerfile" | cut -c1-16)"
 volume=golem-test-cache
 network=(--network none)
 if [ "$tier" = prepare ]; then
@@ -35,7 +36,7 @@ echo "load (host) $(uptime | sed -e 's/.*load averages*: *//' -e 's/,//g')"
 exec docker run --rm --init ${tty[@]+"${tty[@]}"} ${network[@]+"${network[@]}"} \
   --label org.exprtlabs.golem-test=1 \
   -e TINI_KILL_PROCESS_GROUP=1 \
-  -v "$source_tree:/src:ro" -v "$volume:/cache" -v "$root/.cache/test-results:/results" \
+  -v "$here/entrypoint.sh:/usr/local/bin/golem-test:ro" -v "$source_tree:/src:ro" -v "$volume:/cache" -v "$root/.cache/test-results:/results" \
   -e PUBLIC_CONTENT_DENIED_TEXT \
   -e GOLEM_TYPESCRIPT_ROOT -e GOLEM_IMAGE_TAG="$tag" \
   "$tag" "$tier" "$@"
