@@ -5,14 +5,13 @@ import { pathToFileURL } from 'node:url';
 import { test, type TestContext } from 'node:test';
 import { decodeGeneratedModelTrusted, registerGeneratedModel } from '@exprtlabs/golem/internal/model-runtime';
 import { LibError, LibErrorKind, IssueSource, IssueRepresentation } from '@exprtlabs/golem/errors';
+import type { SerdeOptions } from '@exprtlabs/golem/serde';
 import { generate } from '#model/generator';
 import { fileFixtureScope, onceShared, readFixture } from './fixture-project.js';
 import { buildModelProject, createModelProject, writeModelGolemYaml } from './model-project.js';
 import { modelCodec } from './support/model-codec.js';
 
-/** The decode options a generated `fromWireFormat*` takes in these tests. */
-type FromWireOptions = { validate?: boolean; construct?: abstract new (values?: never) => object };
-type FromWire = (wire: unknown, options?: FromWireOptions) => unknown;
+type FromWire = (wire: unknown, options?: Pick<SerdeOptions, 'validate' | 'construct'>) => unknown;
 
 function cycleAt(path: readonly (string | number)[]): (error: unknown) => boolean {
   return error => {
