@@ -7,7 +7,7 @@ import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { runPipeline, type PipelineState } from '#golem/cli';
 import { loadConfig } from './support/load-config.js';
-import { applyJob, loadInventory } from '#golem/outputs';
+import { applyJob, loadInventory, realOutputFiles, type OutputFiles } from '#golem/outputs';
 import { runBuild } from '#golem/build';
 import { command, stopChild, workspace } from './support/process.js';
 import { countingGenerator, sourceOnlyProject, TSC, write as writeFile } from './support/build-project.js';
@@ -477,17 +477,16 @@ export function generate(context) {
   return { root, config: path.join(root, 'golem.yaml'), install };
 }
 
-/** The two job starts a test can choose: the job cache reads `Date.now()` once when a job starts and compares it with the status-change time of a file the job did not announce. */
+/** The two job starts a test can choose: the job cache takes the start of a job from the file clock and compares it with the status-change time of a file the job did not announce. */
 const BEFORE_EVERY_FILE_CHANGE = Date.parse('2001-01-01T00:00:00Z');
 const AFTER_EVERY_FILE_CHANGE = Date.parse('2100-01-01T00:00:00Z');
 
 /**
- * Takes over `Date` for this test and returns the setter of its time. The file times come from the kernel and the job start from this clock,
- * so a test that lets both run in real time depends on how many milliseconds lie between a file change and the start of a job.
+ * The output-file calls of a run whose jobs start at `time` on the file clock. The file times come from the kernel, so a test that lets the
+ * start come from it depends on how many milliseconds lie between a file change and the start of a job.
  */
-function setJobClock(t: TestContext, now: number): (time: number) => void {
-  t.mock.timers.enable({ apis: ['Date'], now });
-  return time => t.mock.timers.setTime(time);
+function startingAt(time: number): { files: OutputFiles } {
+  return { files: { ...realOutputFiles, stamp: () => time } };
 }
 
 /** `generatorProject` whose job does not announce `input`, with `input` dated `past`: the case that digests it when the job returns. */
@@ -509,9 +508,9 @@ test('a new version of a generator package with the same code does not rerun its
 test('a watch input the job did not announce is digested when the job returns, so the next run skips the job until the input changes', async (t: TestContext) => {
   // protects: T-383 an unannounced watch input no longer reruns its job every time
   const { root, config, input } = unannouncedInputProject(t);
-  setJobClock(t, AFTER_EVERY_FILE_CHANGE);
-  assert.equal((await runPipeline(config)).ran.size, 1);
-  assert.equal((await runPipeline(config)).ran.size, 0);
+  const after = startingAt(AFTER_EVERY_FILE_CHANGE);
+  assert.equal((await runPipeline(config, after)).ran.size, 1);
+  assert.equal((await runPipeline(config, after)).ran.size, 0);
   fs.writeFileSync(input, 'y');
   assert.equal((await runPipeline(config)).ran.size, 1);
   assert.match(fs.readFileSync(path.join(root, 'out/out.txt'), 'utf8'), /y$/);
@@ -520,20 +519,31 @@ test('a watch input the job did not announce is digested when the job returns, s
 test('a watch input the job did not announce and that changed while the job ran makes the next run run the job again', async (t: TestContext) => {
   // protects: T-383 an unannounced watch input touched during the run never leaves stale output skipped
   const { root, config, input, past } = unannouncedInputProject(t);
-  const setClock = setJobClock(t, BEFORE_EVERY_FILE_CHANGE);
   fs.writeFileSync(path.join(root, 'touch.flag'), '');
-  assert.equal((await runPipeline(config)).ran.size, 1, 'the job touches its input while it runs');
+  assert.equal((await runPipeline(config, startingAt(BEFORE_EVERY_FILE_CHANGE))).ran.size, 1, 'the job touches its input while it runs');
   fs.rmSync(path.join(root, 'touch.flag'));
   fs.utimesSync(input, past, past);
-  setClock(AFTER_EVERY_FILE_CHANGE);
-  assert.equal((await runPipeline(config)).ran.size, 1, 'the touched input left no digest to trust');
-  assert.equal((await runPipeline(config)).ran.size, 0, 'a run with no touch records the digest');
+  const after = startingAt(AFTER_EVERY_FILE_CHANGE);
+  assert.equal((await runPipeline(config, after)).ran.size, 1, 'the touched input left no digest to trust');
+  assert.equal((await runPipeline(config, after)).ran.size, 0, 'a run with no touch records the digest');
 });
 
 test('a watch input the job did not announce and that was edited while the job ran, with its old modification time put back, makes the next run run the job again', async (t: TestContext) => {
   // protects: T-954 an edit during a job never leaves stale output skipped, whatever the file's modification time says
   const { root, config } = unannouncedInputProject(t);
-  setJobClock(t, BEFORE_EVERY_FILE_CHANGE);
+  const before = startingAt(BEFORE_EVERY_FILE_CHANGE);
+  fs.writeFileSync(path.join(root, 'edit.flag'), '');
+  assert.equal((await runPipeline(config, before)).ran.size, 1);
+  fs.rmSync(path.join(root, 'edit.flag'));
+  assert.equal((await runPipeline(config, before)).ran.size, 1, 'the input changed after the job read it');
+  assert.match(fs.readFileSync(path.join(root, 'out/out.txt'), 'utf8'), /y$/);
+});
+
+test('an edit made while a job ran makes the next run run the job again when Date.now() is ahead of the file clock', async (t: TestContext) => {
+  // protects: T-988 a file clock that lags Date.now() never makes an edit after the job start read as before it
+  const { root, config } = unannouncedInputProject(t);
+  // `Date.now()` stands where a file clock that lags it would put the start; the job start must not read it.
+  t.mock.timers.enable({ apis: ['Date'], now: AFTER_EVERY_FILE_CHANGE });
   fs.writeFileSync(path.join(root, 'edit.flag'), '');
   assert.equal((await runPipeline(config)).ran.size, 1);
   fs.rmSync(path.join(root, 'edit.flag'));

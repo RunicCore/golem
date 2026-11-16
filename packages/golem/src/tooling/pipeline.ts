@@ -6,7 +6,7 @@ import type { GolemConfig, GolemJob } from './config.js';
 import { codecKeysPath } from './generated-paths.js';
 import { coreRecordsOf, digest, loadInventory, applyJob, removeLeftoverTemporaries, removeRetiredJobs } from './outputs.js';
 import type { FileChanges, Inventory, OutputFiles } from './outputs.js';
-import { absoluteRecordPath, golemCode, insideAny, inventoryPaths, JobInputs, hookCode, jobIsCurrent, jobKey, loadedCode, loadJobRecords, programViewOf, recordPath, sameSetup, saveJobRecords } from './job-cache.js';
+import { absoluteRecordPath, golemCode, insideAny, inventoryPaths, JobInputs, hookCode, jobIsCurrent, jobKey, jobStartTime, loadedCode, loadJobRecords, programViewOf, recordPath, sameSetup, saveJobRecords } from './job-cache.js';
 import type { CodePackage, JobRecord } from './job-cache.js';
 import { GolemDiagnosticSeverity, checkedDiagnostics, displayPath, errorMessage, isInsideDirectory, isRecord, stableJson } from './generator-core.js';
 import { observedFolders, watchingJobs } from './job-facts.js';
@@ -571,7 +571,7 @@ async function runJob(job: GolemJob, run: PipelineRun, plan: PipelinePlan, progr
   }
   if (!provider) throw new Error(`Missing loaded provider ${job.package}.`);
   const keys = new Set<string>();
-  const read = options.check ? undefined : new JobInputs(filename => plan.generated.has(filename) || previousOutputs.has(filename) || progress.ranOutputs.has(filename) || insideAny(ignoredDirectories, filename), config.directory);
+  const read = options.check ? undefined : new JobInputs(filename => plan.generated.has(filename) || previousOutputs.has(filename) || progress.ranOutputs.has(filename) || insideAny(ignoredDirectories, filename), config.directory, jobStartTime(config, options.files));
   for (const input of declaredInputs(job)) read?.read(input);
   if (!isRecord(job.options)) throw new TypeError(`The plan entry of ${job.package} gave job ${job.id} options that are not an object.`);
   let generatedResult: unknown;
