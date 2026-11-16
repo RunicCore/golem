@@ -1,30 +1,36 @@
 import { assertNever } from '../assert-never.js';
 
+/** The parts of the place of each kind after the kind, by name: the one table that the type of a place and the check of its length both read. */
+const PLACE_PARTS = {
+  request: ['contentType'],
+  response: ['status', 'contentType'],
+  parameter: ['location', 'name'],
+  'response-header': ['status', 'name'],
+} as const;
+
+type PlaceParts = typeof PLACE_PARTS;
+
+type Strings<Names extends readonly string[]> = { -readonly [Name in keyof Names]: string };
+
 /**
  * Where a value sits in an operation, after the operation name: a request body by content type, a response body or stream item by status and content type,
  * a parameter by location (`path`, `query`, `header`, `cookie` or `querystring`) and name, a response header by status and name.
  * The writers of the SDK codecs and the validators name a value by its place and the client reads it by the key of its place (`placeKey`), so this module
  * is the one place that knows the key format. It sits in the runtime project because the client reads the keys, and the build tooling imports it from here.
+ * A place is its kind and then one string for each part that `PLACE_PARTS` names for the kind.
  */
-export type ValuePlace =
-  | readonly ['request', contentType: string]
-  | readonly ['response', status: string, contentType: string]
-  | readonly ['parameter', location: string, name: string]
-  | readonly ['response-header', status: string, name: string];
+export type ValuePlace = { readonly [Kind in keyof PlaceParts]: readonly [Kind, ...Strings<PlaceParts[Kind]>] }[keyof PlaceParts];
 
 export type ValuePlaceKind = ValuePlace[0];
 
-/** The number of parts of each kind of place, the kind included. */
-const PLACE_LENGTH: Readonly<Record<ValuePlaceKind, number>> = { request: 2, response: 3, parameter: 3, 'response-header': 3 };
-
 function isPlaceKind(value: unknown): value is ValuePlaceKind {
-  return typeof value === 'string' && Object.hasOwn(PLACE_LENGTH, value);
+  return typeof value === 'string' && Object.hasOwn(PLACE_PARTS, value);
 }
 
 /** Whether the parts name a place: a known kind with the parts that kind has, each a string. */
 export function isValuePlace(parts: readonly unknown[]): parts is ValuePlace {
   const [kind] = parts;
-  return isPlaceKind(kind) && parts.length === PLACE_LENGTH[kind] && parts.every((part) => typeof part === 'string');
+  return isPlaceKind(kind) && parts.length === PLACE_PARTS[kind].length + 1 && parts.every((part) => typeof part === 'string');
 }
 
 /** The key of a response body, stream item or header in the tables of an operation: the status and then the content type or the header name. A response status is a number at run time. */
