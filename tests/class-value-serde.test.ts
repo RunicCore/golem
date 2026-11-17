@@ -80,11 +80,18 @@ function writeClassSupport(sourceRoot: string): void {
   fs.writeFileSync(path.join(sourceRoot, 'temporal.d.ts'), TEMPORAL_D_TS);
 }
 
-async function build(t: FixtureScope, fields: SourceFragment, validation: boolean) {
+/** The model of one build: its name picks the files and the codec id, so builds of one model at two validation levels register their own codecs. */
+interface BuiltModel { readonly name: 'A' | 'AOff'; readonly validation: boolean }
+const VALIDATED: BuiltModel = { name: 'A', validation: true };
+const VALIDATION_OFF: BuiltModel = { name: 'AOff', validation: false };
+
+/** Builds the model `model.name` over `fields`; the returned `A` is its class, whatever its name. */
+async function build(t: FixtureScope, fields: SourceFragment, { name, validation }: BuiltModel) {
+  const file = name.toLowerCase();
   const { root, sourceRoot } = fixture(t);
   writeClassSupport(sourceRoot);
   fs.writeFileSync(path.join(sourceRoot, 'temporal-runtime.js'), TEMPORAL_RUNTIME);
-  fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({ name: 'A', imports: tsSource`import type { TSerde } from '@exprtlabs/golem/tags';
+  fs.writeFileSync(path.join(sourceRoot, `${file}.model.ts`), taggedModelSource({ name, imports: tsSource`import type { TSerde } from '@exprtlabs/golem/tags';
 import type { Money } from './money.js';
 import { encodeBytes, decodeBytes, encodeMoney, decodeMoney, encodeInstant, decodeInstant, encodeLink, decodeLink, encodeBig, decodeBig, encodeCents, decodeCents, encodeFlag, decodeFlag } from './codecs.js';
 type Bytes = Uint8Array & TSerde<typeof encodeBytes, typeof decodeBytes>;
@@ -99,12 +106,12 @@ type Flag = bigint & TSerde<typeof encodeFlag, typeof decodeFlag>;`, fields }).t
   fs.copyFileSync(path.join(sourceRoot, 'temporal-runtime.js'), path.join(root, 'build/temporal-runtime.js'));
   await import(path.toNamespacedPath(path.join(root, 'build/temporal-runtime.js')));
   await buildModelProject(root);
-  const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
-  return { A, generatedSource: fs.readFileSync(path.join(sourceRoot, 'a.model.generated.ts'), 'utf8'), root };
+  const A = (await import(path.toNamespacedPath(path.join(root, `build/${file}.model.js`))))[name];
+  return { A, generatedSource: fs.readFileSync(path.join(sourceRoot, `${file}.model.generated.ts`), 'utf8'), root };
 }
 
 test('class-valued TSerde fields round-trip', async t => {
-  const { A } = await build(t, tsSource`bytes: Bytes; price: Price; when: When; list: Bytes[]; maybe: Bytes | null`, true);
+  const { A } = await build(t, tsSource`bytes: Bytes; price: Price; when: When; list: Bytes[]; maybe: Bytes | null`, VALIDATED);
   const wire = { bytes: 'AQID', price: '12.34', when: '2025-01-02T03:04:05.000Z', list: ['AQ=='], maybe: null };
   const model = modelCodec(A).fromWireFormat(wire);
   assert.ok(model.bytes instanceof Uint8Array);
@@ -114,7 +121,7 @@ test('class-valued TSerde fields round-trip', async t => {
 });
 
 test('bigint TSerde fields round-trip: plain, array, nullable and optional', async t => {
-  const { A } = await build(t, tsSource`big: Big; bigs: Big[]; maybeBig: Big | null; optBig?: Big`, true);
+  const { A } = await build(t, tsSource`big: Big; bigs: Big[]; maybeBig: Big | null; optBig?: Big`, VALIDATED);
   const wire = { big: '9007199254740993', bigs: ['1', '-2'], maybeBig: null };
   const model = modelCodec(A).fromWireFormat(wire);
   assert.equal(model.big, 9007199254740993n);
@@ -160,13 +167,13 @@ export type TA = IObject<${item.model}>;
 }
 
 test('optional class-value field', async t => {
-  const { A } = await build(t, tsSource`bytes?: Bytes`, true);
+  const { A } = await build(t, tsSource`bytes?: Bytes`, VALIDATED);
   assert.deepEqual(modelCodec(A).toWireFormat(modelCodec(A).fromWireFormat({})), {});
   assert.deepEqual(modelCodec(A).toWireFormat(modelCodec(A).fromWireFormat({ bytes: 'AQID' })), { bytes: 'AQID' });
 });
 
 test('invalid wire value is rejected before decoding', async t => {
-  const { root } = await build(t, tsSource`bytes: Bytes`, true);
+  const { root } = await build(t, tsSource`bytes: Bytes`, VALIDATED);
   // parse<Model> runs JSON validation by default; fromWireFormat with validate false does not validate.
   const codecs = await import(path.toNamespacedPath(path.join(root, 'build/a.model.generated.js'))) as { parseTA: (text: string) => unknown };
   assert.throws(() => codecs.parseTA('{"bytes":"***"}'));
@@ -176,12 +183,35 @@ test('invalid wire value is rejected before decoding', async t => {
 // A user class, a global class, a Temporal class and a bigint, whose wires are a string, a number and a boolean, share one build.
 const fileScope = fileFixtureScope();
 const CLASS_FIELDS = tsSource`price: Price; link: Link; when: When; cents: Cents; flag: Flag`;
-const classFields = onceShared(() => build(fileScope, CLASS_FIELDS, true));
+const classFields = onceShared(() => build(fileScope, CLASS_FIELDS, VALIDATED));
 // The same model built with validation off: the generated code holds no validator, so only the serde's own wire check can refuse a wrong JSON type.
-const classFieldsValidationOff = onceShared(() => build(fileScope, CLASS_FIELDS, false));
-const dateField = onceShared(() => build(fileScope, tsSource`at: Date`, true));
+const classFieldsValidationOff = onceShared(() => build(fileScope, CLASS_FIELDS, VALIDATION_OFF));
+const dateField = onceShared(() => build(fileScope, tsSource`at: Date`, VALIDATED));
 const CLASS_WIRE = { price: '12.34', link: 'https://example.com/', when: '2025-01-02T03:04:05.000Z', cents: 5, flag: true };
 const isInputError = (message: RegExp) => (error: unknown): boolean => error instanceof LibError && error.causedByInput === true && message.test(error.message);
+
+// A serde reads only the JSON type of its wire: any other wire value is bad input at every level of validation, off included.
+// Both builds run the call option validate:false; the validation-off build also has no validator in its generated code.
+for (const [level, builds, { name }] of [['on', classFields, VALIDATED], ['off', classFieldsValidationOff, VALIDATION_OFF]] as const) {
+  for (const [field, wrong, message] of [
+    ['price', 5, /Expected a string/],
+    ['cents', '5', /Expected a number/],
+    ['flag', 'yes', /Expected a boolean/],
+  ] as const) {
+    test(`${field}: a wire value of the wrong JSON type is rejected with validation ${level}`, async () => {
+      // protects: T-659 F-39 a TSerde reads only the JSON type of its wire (string, number or boolean), also when validation is off
+      const { A, root } = await builds();
+      const codecs = await import(path.toNamespacedPath(path.join(root, `build/${name.toLowerCase()}.model.generated.js`))) as Record<string, (text: string, options: { validate: false }) => unknown>;
+      const parse = (wire: object) => codecs[`parseT${name}`]!(JSON.stringify(wire), { validate: false });
+      assert.doesNotThrow(() => modelCodec(A).fromWireFormat(CLASS_WIRE, { validate: false }));
+      assert.doesNotThrow(() => parse(CLASS_WIRE));
+      assert.throws(() => modelCodec(A).fromWireFormat({ ...CLASS_WIRE, [field]: wrong }, { validate: false }), isInputError(message));
+      assert.throws(() => parse({ ...CLASS_WIRE, [field]: wrong }), isInputError(message));
+      // The decoder a nested model field calls reads the same rule.
+      assert.throws(() => decodeGeneratedModelTrusted(A, { ...CLASS_WIRE, [field]: wrong }), isInputError(message));
+    });
+  }
+}
 
 // A user class, a global class and a Temporal class share one model-plane check: the value is an instance of the class, or one `instance` issue names it.
 for (const [field, name, wrong] of [['price', 'Money', new Map()], ['link', 'URL', 5], ['when', 'Temporal.Instant', 'text']] as const) {
@@ -192,30 +222,6 @@ for (const [field, name, wrong] of [['price', 'Money', new Map()], ['link', 'URL
     const issues = await validateInstance(Object.assign(modelCodec(A).fromWireFormat(CLASS_WIRE), { [field]: wrong }), { failFast: false });
     assert.deepEqual(issues.map(issue => ({ path: issue.path, code: issue.code, model: (issue as { model?: string }).model })), [{ path: [field], code: 'instance', model: name }]);
   });
-}
-
-// A serde reads only the JSON type of its wire: any other wire value is bad input at every level of validation, off included.
-// The model's codec id is the same in both builds, and the last build loaded owns it: this group loads the validation-off build after the model-plane checks above, which use the validation-on one.
-// Both builds run the call option validate:false; the validation-off build also has no validator in its generated code.
-for (const [level, builds] of [['on', classFields], ['off', classFieldsValidationOff]] as const) {
-  for (const [field, wrong, message] of [
-    ['price', 5, /Expected a string/],
-    ['cents', '5', /Expected a number/],
-    ['flag', 'yes', /Expected a boolean/],
-  ] as const) {
-    test(`${field}: a wire value of the wrong JSON type is rejected with validation ${level}`, async () => {
-      // protects: T-659 F-39 a TSerde reads only the JSON type of its wire (string, number or boolean), also when validation is off
-      const { A, root } = await builds();
-      const { parseTA } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.generated.js'))) as { parseTA: (text: string, options: { validate: false }) => unknown };
-      const parse = (wire: object) => parseTA(JSON.stringify(wire), { validate: false });
-      assert.doesNotThrow(() => modelCodec(A).fromWireFormat(CLASS_WIRE, { validate: false }));
-      assert.doesNotThrow(() => parse(CLASS_WIRE));
-      assert.throws(() => modelCodec(A).fromWireFormat({ ...CLASS_WIRE, [field]: wrong }, { validate: false }), isInputError(message));
-      assert.throws(() => parse({ ...CLASS_WIRE, [field]: wrong }), isInputError(message));
-      // The decoder a nested model field calls reads the same rule.
-      assert.throws(() => decodeGeneratedModelTrusted(A, { ...CLASS_WIRE, [field]: wrong }), isInputError(message));
-    });
-  }
 }
 
 // A plain Date field has the same check, and a Date that holds no time (an invalid Date) is no value of the class.
@@ -292,7 +298,7 @@ for (const position of GATE_POSITIONS) {
 }
 
 test('generated model type names the class', async t => {
-  const { root } = await build(t, tsSource`price: Price; when: When; bytes: Bytes`, true);
+  const { root } = await build(t, tsSource`price: Price; when: When; bytes: Bytes`, VALIDATED);
   await assertFieldClasses(root, path.join(root, 'src'), ["import type { Money } from './money.js';"], { price: 'Money', when: 'Temporal.Instant', bytes: 'Uint8Array' });
 });
 
