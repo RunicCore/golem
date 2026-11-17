@@ -75,7 +75,7 @@ test('graph nodes get residual schemas only when something is left to check', ()
     Stamp: { kind: 'object', properties: { at: date }, required: ['at'], additionalProperties: false },
     Plain: { kind: 'object', properties: { a: { kind: 'string' } }, required: ['a'], additionalProperties: false },
     Tree: { kind: 'object', properties: { at: date, children: { kind: 'array', item: { kind: 'reference', name: 'Tree' } } }, required: ['at', 'children'], additionalProperties: false },
-  } as never);
+  });
   graph.seal();
   const node = (name: string) => [...graph.nodes.values()].find(n => n.name === name)!;
   assert.ok(node('Stamp').modelOnlyJsonSchema && node('Stamp').wireOnlyJsonSchema);

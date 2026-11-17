@@ -54,11 +54,11 @@ for (const [label, validation] of [['validation on', true], ['validation sanity'
   test(`a class-backed model decoded from a recursive array beside a string converts the array and keeps the string (${label})`, async (t) => {
     // protects: T-905 the model walker took no named-sequence classification, so its decode left the dates of an array value as strings
     const models = await buildBox(t, validation);
-    const decoded = decodeGeneratedModelTrusted(models.Box as never, { items: [{ at: instant, owner: { name: 'a' }, children: [{ at: instant, owner: { name: 'b' } }] }] }) as Box;
+    const decoded = decodeGeneratedModelTrusted(models.Box, { items: [{ at: instant, owner: { name: 'a' }, children: [{ at: instant, owner: { name: 'b' } }] }] });
     const [node] = decoded.items as readonly Node[];
     assert.deepEqual(node.at, new Date(instant), 'the date of the first level');
     assert.deepEqual(node.children![0].at, new Date(instant), 'the date of the nested level');
     assert.ok(node.owner instanceof models.Owner, 'the model of the first level');
-    assert.equal((decodeGeneratedModelTrusted(models.Box as never, { items: 'text' }) as Box).items, 'text');
+    assert.equal(decodeGeneratedModelTrusted(models.Box, { items: 'text' }).items, 'text');
   });
 }

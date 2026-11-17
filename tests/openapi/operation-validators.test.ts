@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
 import test, { after } from 'node:test';
 import { ClientRuntime } from '@exprtlabs/golem/internal/client-runtime';
 import { operationValidators } from '@exprtlabs/golem/internal/client-validation-runtime';
@@ -11,7 +10,7 @@ import type { Validator } from '@exprtlabs/golem/validation';
 import { GolemDiagnosticSeverity } from '@exprtlabs/golem/generator-api';
 import { writeSdk } from '#openapi/generator';
 import { createFixtureProject } from '../fixture-project.js';
-import { compileGeneratedSdk, isGeneratedClientClass, writeGeneratedSdk, type GeneratedClientClass } from './helpers.js';
+import { compileGeneratedSdk, loadGeneratedClient, writeGeneratedSdk, type GeneratedClientClass, type GeneratedClientInstance } from './helpers.js';
 
 /** The one POST /payload operation that takes and returns the Payload component. */
 function payloadPaths(): Record<string, unknown> {
@@ -33,8 +32,6 @@ function sdkDocument(marker: string): Record<string, unknown> {
   };
 }
 
-type PayloadClient = { sendPayload(): { execute(input: { body: { marker: string } }): Promise<{ body: unknown }> } };
-
 // One generate and compile per marker: the tests share the loaded client class and each builds its own clients.
 const payloadClasses = new Map<string, Promise<GeneratedClientClass>>();
 const payloadRoot = fs.realpathSync(fs.mkdtempSync(path.join(tmpdir(), 'golem-sdk-validators-')));
@@ -52,15 +49,12 @@ async function generatePayloadClass(marker: string): Promise<GeneratedClientClas
   const output = path.join(payloadRoot, marker);
   writeGeneratedSdk(writeSdk, sdkDocument(marker), { output, name: 'Engine', profile: { validation: true } });
   compileGeneratedSdk(output, []);
-  const module: Record<string, unknown> = await import(pathToFileURL(path.join(output, 'dist/client.js')).href);
-  const Client = module.EngineClient;
-  assert.ok(isGeneratedClientClass(Client));
-  return Client;
+  return loadGeneratedClient(output, 'Engine');
 }
 
-async function loadSdk(marker: string, fetchImpl?: typeof fetch): Promise<PayloadClient> {
+async function loadSdk(marker: string, fetchImpl?: typeof fetch): Promise<GeneratedClientInstance> {
   const Client = await loadPayloadClass(marker);
-  return new Client({ baseUrl: 'https://fixture.invalid', ...(fetchImpl ? { fetchImpl } : {}) }) as unknown as PayloadClient;
+  return new Client({ baseUrl: 'https://fixture.invalid', ...(fetchImpl ? { fetchImpl } : {}) });
 }
 
 const echo: typeof fetch = async (_url, init) =>
@@ -105,8 +99,8 @@ test('a validator override on one client leaves other clients of the same genera
   const Client = await loadPayloadClass('S');
   const rejectAll: Validator = () => [{ code: 'custom', path: [] }];
   const overrides = new Map([['sendPayload', { input: rejectAll, responses: new Map() }]]);
-  const overridden = new Client({ baseUrl: 'https://fixture.invalid', fetchImpl: echo, operationValidators: overrides }) as unknown as PayloadClient;
-  const generated = new Client({ baseUrl: 'https://fixture.invalid', fetchImpl: echo }) as unknown as PayloadClient;
+  const overridden = new Client({ baseUrl: 'https://fixture.invalid', fetchImpl: echo, operationValidators: overrides });
+  const generated = new Client({ baseUrl: 'https://fixture.invalid', fetchImpl: echo });
   await assert.rejects(overridden.sendPayload().execute({ body: { marker: 'S' } }), (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.Validation);
   assert.deepEqual((await generated.sendPayload().execute({ body: { marker: 'S' } })).body, { marker: 'S' });
   await assert.rejects(generated.sendPayload().execute({ body: { marker: 'A' } }), (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.Validation);
@@ -117,14 +111,14 @@ test('a validator override replaces the generated validators of its operation', 
   const rejectAll: Validator = () => [{ code: 'custom', path: [] }];
   const accept: Validator = () => [];
   const overrides = new Map([['sendPayload', { input: rejectAll, responses: new Map([['200:application/json', accept]]) }]]);
-  const client = new Client({ baseUrl: 'https://fixture.invalid', fetchImpl: echo, operationValidators: overrides }) as unknown as PayloadClient;
+  const client = new Client({ baseUrl: 'https://fixture.invalid', fetchImpl: echo, operationValidators: overrides });
   await assert.rejects(client.sendPayload().execute({ body: { marker: 'S' } }), (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.Validation);
 });
 
 test('an override that does not return an array of issues is refused, never read as valid', async () => {
   const Client = await loadPayloadClass('S');
   const oldStyle = new Map([['sendPayload', { input: () => true, responses: new Map() }]]);
-  const client = new Client({ baseUrl: 'https://fixture.invalid', fetchImpl: echo, operationValidators: oldStyle }) as unknown as PayloadClient;
+  const client = new Client({ baseUrl: 'https://fixture.invalid', fetchImpl: echo, operationValidators: oldStyle });
   await assert.rejects(
     client.sendPayload().execute({ body: { marker: 'S' } }),
     (error: unknown) => error instanceof LibError
@@ -146,9 +140,7 @@ test('an operation named validators generates, compiles and validates', async (t
   const output = path.join(createFixtureProject(t, 'golem-sdk-validators-name-'), 'N');
   writeGeneratedSdk(writeSdk, document, { output, name: 'Named', profile: { validation: true } });
   compileGeneratedSdk(output, []);
-  const module: Record<string, unknown> = await import(pathToFileURL(path.join(output, 'dist/client.js')).href);
-  const Client = module.NamedClient;
-  assert.ok(isGeneratedClientClass(Client));
+  const Client = await loadGeneratedClient(output, 'Named');
   const client = new Client({ baseUrl: 'https://fixture.invalid', fetchImpl: async () => new Response(null, { status: 204 }) });
   await assert.doesNotReject(() => client.validators().execute({ body: { id: 1 } }));
   await assert.rejects(() => client.validators().execute({ body: { id: 'x' } }), /validation failed/i);
@@ -166,9 +158,7 @@ test('responses declared by a status range or default, with a parametric content
   const output = path.join(createFixtureProject(t, 'golem-sdk-ranges-'), 'R');
   writeGeneratedSdk(writeSdk, document, { output, name: 'Ranges', profile: { validation: true } });
   compileGeneratedSdk(output, []);
-  const module: Record<string, unknown> = await import(pathToFileURL(path.join(output, 'dist/client.js')).href);
-  const Client = module.RangesClient;
-  assert.ok(isGeneratedClientClass(Client));
+  const Client = await loadGeneratedClient(output, 'Ranges');
   const respond = (status: number, payload: unknown) => new Client({
     baseUrl: 'https://fixture.invalid',
     fetchImpl: async () => new Response(JSON.stringify(payload), { status, headers: { 'content-type': 'application/json; charset=utf-8' } }),
@@ -210,9 +200,7 @@ test('a discriminated response is validated against the variant its tag selects'
   const output = path.join(createFixtureProject(t, 'golem-sdk-response-variants-'), 'P');
   writeGeneratedSdk(writeSdk, document, { output, name: 'Pets', profile: { validation: true } });
   compileGeneratedSdk(output, []);
-  const module: Record<string, unknown> = await import(pathToFileURL(path.join(output, 'dist/client.js')).href);
-  const Client = module.PetsClient;
-  assert.ok(isGeneratedClientClass(Client));
+  const Client = await loadGeneratedClient(output, 'Pets');
   const respond = (body: unknown) => new Client({
     baseUrl: 'https://fixture.invalid',
     fetchImpl: async () => new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' } }),
@@ -250,9 +238,8 @@ test('same-title SDKs keep their schema contracts', async t => {
     const output = path.join(root, marker);
     writeGeneratedSdk(writeSdk, sharedTitleDocument(marker), { output, name: 'Shared', profile: { validation: true } });
     compileGeneratedSdk(output, [], { strict: true, exactOptionalPropertyTypes: true, noUncheckedIndexedAccess: true });
-    const module: Record<string, unknown> = await import(pathToFileURL(path.join(output, 'dist/client.js')).href);
-    assert.ok(isGeneratedClientClass(module.SharedClient));
-    const client = new module.SharedClient({ baseUrl: 'https://fixture.invalid', fetchImpl });
+    const SharedClient = await loadGeneratedClient(output, 'Shared');
+    const client = new SharedClient({ baseUrl: 'https://fixture.invalid', fetchImpl });
     const result = await client.sendPayload().execute({ body: { marker } });
     assert.deepEqual(result.body, { marker });
     const before = requests;
@@ -415,10 +402,8 @@ test('a sanity SDK compiles its validators without value limits, records sanity 
   assert.equal(/codePointLength|\.length\s*</.test(validators), false, 'the validators module holds no length check');
   const manifest = JSON.parse(fs.readFileSync(path.join(output, 'model-manifest.json'), 'utf8')) as { profile: { validation: unknown } };
   assert.equal(manifest.profile.validation, 'sanity');
-  const module: Record<string, unknown> = await import(pathToFileURL(path.join(output, 'dist/client.js')).href);
-  const Client = module.EngineClient;
-  assert.ok(isGeneratedClientClass(Client));
-  const client = new Client({ baseUrl: 'https://fixture.invalid', fetchImpl: echo }) as unknown as { sendPayload(): { execute(input: { body: unknown }): Promise<{ body: unknown }> } };
+  const Client = await loadGeneratedClient(output, 'Engine');
+  const client = new Client({ baseUrl: 'https://fixture.invalid', fetchImpl: echo });
   assert.deepEqual((await client.sendPayload().execute({ body: { marker: 'S', name: 'ab' } })).body, { marker: 'S', name: 'ab' });
   await assert.rejects(client.sendPayload().execute({ body: { marker: 'S', name: 5 } }));
 });

@@ -1037,6 +1037,6 @@ test('a text/plain body whose enum lists a value of another type than its type r
   }, { output, name: 'Texts', profile: { validation: false, allowAny: false } });
   compileGeneratedSdk(output, []);
   const Client = await loadGeneratedClient(output, 'Texts');
-  const client = new Client({ baseUrl: 'https://api.test', fetchImpl: (async () => new Response('a', { status: 200, headers: { 'content-type': 'text/plain' } })) as typeof fetch }) as unknown as { sendText(): { execute(input: unknown): Promise<{ body: unknown }> } };
+  const client = new Client({ baseUrl: 'https://api.test', fetchImpl: (async () => new Response('a', { status: 200, headers: { 'content-type': 'text/plain' } })) as typeof fetch });
   assert.equal((await client.sendText().execute({ body: 'a' })).body, 'a');
 });

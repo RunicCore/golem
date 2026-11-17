@@ -49,9 +49,11 @@ find_prune=()
 for name in "${local_names[@]}"; do rsync_excludes+=(--filter "-p $name"); find_prune+=(-name "$name" -o); done
 for local_path in "${local_paths[@]}"; do rsync_excludes+=(--filter "-p $local_path"); find_prune+=(-path "*/$local_path" -o); done
 unset 'find_prune[${#find_prune[@]}-1]'
-# Copy the read-only source into the work tree, keeping mtimes so incremental
-# builds stay warm. Build output and installs live only in the work tree.
-rsync -a --delete "${rsync_excludes[@]}" /src/ /cache/work/
+# Copy the read-only source into the work tree, keeping mtimes so incremental builds stay warm. Build output and installs live
+# only in the work tree. --checksum compares the content of every file, because the default check (size and mtime to the second)
+# skips an edit that keeps both, such as a restore with `touch -r` or `cp -p`, and the run would test the old file. A file with
+# the same content is left alone and keeps its mtime. The cost is one read of each source file on both sides (about 1550 files, 10 MiB).
+rsync -a --checksum --delete "${rsync_excludes[@]}" /src/ /cache/work/
 cd /cache/work
 
 # The hash of the source tree that this run tests: the rsync'd files, without what rsync leaves out, so builds and installs of

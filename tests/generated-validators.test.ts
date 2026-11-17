@@ -1,5 +1,5 @@
 import { readFixture } from './fixture-project.js';
-import type { GeneratedModelClass } from './openapi/helpers.js';
+import { loadModelClasses, loadValidator } from './openapi/helpers.js';
 import assert from 'node:assert/strict';
 import {
   existsSync,
@@ -8,7 +8,6 @@ import {
   writeFileSync,
 } from 'node:fs';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
 import test, { type TestContext } from 'node:test';
 
 import { buildCodecValidationPlan, compilePlanValidators, type CodecSchemaClosureEntry } from '@exprtlabs/golem/internal/validation-plan';
@@ -264,15 +263,8 @@ test('generated object codecs close nested schemas and keep first/all and contex
   assert.match(generated, /import \{ [^}]*\bvalidate_\w+_[0-9a-f]{8}[^}]*\} from "[^"]*models\.validators\.generated\.js";/, 'a model file imports the generated validators');
 
   const validatorsPath = builtValidators(value);
-  const [{ Root }, { TLeafBaseModel, TMiddleBaseModel, TRootBaseModel }, validatorModule] = await Promise.all([
-    import(pathToFileURL(path.join(value.root, 'build/root.model.js')).href),
-    import(pathToFileURL(path.join(value.root, 'build/root.model.generated.js')).href),
-    import(pathToFileURL(validatorsPath).href),
-  ]) as [{ Root: GeneratedModelClass }, {
-    TLeafBaseModel: abstract new (...args: never[]) => object;
-    TMiddleBaseModel: abstract new (...args: never[]) => object;
-    TRootBaseModel: abstract new (...args: never[]) => object;
-  }, Readonly<Record<string, Validator>>];
+  const { Root } = await loadModelClasses(path.join(value.root, 'build/root.model.js'), ['Root']);
+  const { TLeafBaseModel, TMiddleBaseModel, TRootBaseModel } = await loadModelClasses(path.join(value.root, 'build/root.model.generated.js'), ['TLeafBaseModel', 'TMiddleBaseModel', 'TRootBaseModel']);
   const { findGeneratedModelDefinitionForConstructor, requireObjectCodec } = await import('@exprtlabs/golem/internal/model-runtime');
   const findCodecIdForConstructor = (constructor: Function): string | undefined => findGeneratedModelDefinitionForConstructor(constructor)?.codecId;
   const { getValidator, validateInstance } = await import('@exprtlabs/golem/validation');
@@ -286,12 +278,12 @@ test('generated object codecs close nested schemas and keep first/all and contex
   };
   const invalid = new Root(wire);
   // A root named by its codec id is exported as `validate_` and the id.
-  const validators = { [codecId]: validatorModule[`validate_${codecId}`] };
+  const validateRoot = await loadValidator(validatorsPath, `validate_${codecId}`);
   assert.ok(findCodecIdForConstructor(TLeafBaseModel));
   assert.ok(findCodecIdForConstructor(TMiddleBaseModel));
-  assert.equal(validators[codecId]?.(wire, false).length, 1, 'the first issue only');
+  assert.equal(validateRoot(wire, false).length, 1, 'the first issue only');
   assert.deepEqual(
-    validators[codecId]?.(wire, true).map(issue => issue.path.join('.')).sort(),
+    validateRoot(wire, true).map(issue => issue.path.join('.')).sort(),
     ['first.child.code', 'label', 'second.child.code'],
     'every issue, nested models included',
   );
@@ -373,13 +365,8 @@ test('generated validators permit equal model names in independent source graphs
   writeModelGolemYaml(value.root, { validation: true });
   await compile(value.root);
   assert.ok(generatedModelFiles(value.root).some(item => item.path.endsWith('/models.validators.generated.ts')));
-  const [{ Item: FirstItem }, { Item: SecondItem }] = await Promise.all([
-    import(pathToFileURL(path.join(value.root, 'build/first/item.model.js')).href),
-    import(pathToFileURL(path.join(value.root, 'build/second/item.model.js')).href),
-  ]) as [
-    { Item: GeneratedModelClass },
-    { Item: GeneratedModelClass },
-  ];
+  const { Item: FirstItem } = await loadModelClasses(path.join(value.root, 'build/first/item.model.js'), ['Item']);
+  const { Item: SecondItem } = await loadModelClasses(path.join(value.root, 'build/second/item.model.js'), ['Item']);
   const { getValidator } = await import('@exprtlabs/golem/validation');
   assert.equal(await getValidator(new FirstItem({ label: 'first' })).validate(), true);
   assert.equal(await getValidator(new SecondItem({ count: 2 })).validate(), true);

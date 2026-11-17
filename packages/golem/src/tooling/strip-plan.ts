@@ -9,7 +9,7 @@ import { assertNever } from '../assert-never.js';
 import type { DiscriminatorValue, ModelTypeDescriptor, UnionDiscriminator } from '../model-registry.js';
 import { aliased, code, identifier, join, literal, type Code } from './code.js';
 import { rtType } from './rt.js';
-import { patternSchemas, type SchemaGraph, type SchemaNode } from './schema-graph.js';
+import { patternSchemas, type SchemaNode } from './schema-graph.js';
 import { serdeWireDescriptor } from './schema.js';
 import { restHoldsInstance, variantPick, type NamedVariants, type ObjectTypeDescriptor, type VariantPick } from './union-conversion.js';
 
@@ -18,7 +18,6 @@ export const STRIP_PLAN = aliased(rtType.serde.StripPlan, '__GolemStripPlan');
 
 /** What the plan builder asks of the emitter that owns the descriptors. */
 export interface StripPlanEnv {
-  readonly graph: SchemaGraph;
   /** The merged object of an object, an intersection of objects or a reference to one. */
   readonly resolveObject: (descriptor: ModelTypeDescriptor) => ObjectTypeDescriptor | undefined;
   /** The node a reference descriptor names. */

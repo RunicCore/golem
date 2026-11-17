@@ -5,11 +5,11 @@ import { createObjectCodec, type ObjectCodecImpl } from '@exprtlabs/golem/intern
 export function registerPassThroughCodec(id: string, parts: Partial<ObjectCodecImpl> = {}): ObjectCodec {
   return createObjectCodec(id, {
     stringify: (value) => JSON.stringify(value),
-    parse: (text) => JSON.parse(text) as never,
+    parse: (text) => JSON.parse(text),
     validate: () => true,
-    assert: (value) => value as never,
+    assert: (value) => value,
     toWireFormat: (value) => value,
-    fromWireFormat: (wire) => wire as never,
+    fromWireFormat: (wire) => wire,
     ...parts,
   });
 }

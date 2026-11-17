@@ -559,15 +559,18 @@ export interface Walk {
 
 const INFERRED = 'whose type golem infers';
 
-/** Whether `node` holds no other node that can hold a tag: a name, a literal, a keyword type such as `string`, or a class static block, which carries no type. */
+/**
+ * Whether `node` holds no other node that can hold a tag: a name, a literal, a keyword type such as `string`, an enum member (`Color.Red`), or a class
+ * static block, which carries no type.
+ */
 function holdsNothing(node: ts.Node): boolean {
-  return ts.isIdentifier(node) || ts.isLiteralTypeNode(node) || ts.isTemplateLiteralTypeNode(node) || ts.isEnumDeclaration(node) || ts.isClassStaticBlockDeclaration(node)
+  return ts.isIdentifier(node) || ts.isLiteralTypeNode(node) || ts.isTemplateLiteralTypeNode(node) || ts.isEnumDeclaration(node) || ts.isEnumMember(node) || ts.isClassStaticBlockDeclaration(node)
     || (ts.isTypeNode(node) && ts.forEachChild(node, () => true) === undefined);
 }
 
 /**
  * Reads everything that `node` reaches, to the `typeof` of every tag in it: through type aliases, interfaces, classes and their base classes,
- * `typeof` a variable, a property that `T['key']` names, and the parts of conditional, mapped and compound types. A default library file holds
+ * `typeof` a variable, a property that `T['key']` names, the exported values of a module or namespace that `typeof` or an import type names, and the parts of conditional, mapped and compound types. A default library file holds
  * no tag of the user and stays unread. These are the kinds that it follows; any other kind stops the read at that node (`unreadable`).
  * So does a value or member that shows no type node (`held = tagged()`): its tag shows no `typeof`. So does a type parameter that no declaration
  * of the read binds, and a tag whose function is written without `typeof`. Each node is read once.
@@ -586,6 +589,15 @@ function reach(context: TagAnalysisContext, walk: Walk, node: ts.Node): void {
   const reachDeclarationsOf = (symbol: ts.Symbol | undefined): void => {
     for (const declaration of targetSymbol(checker, symbol)?.declarations ?? []) {
       if (!context.isDefaultLibraryFile?.(declaration.getSourceFile())) next(declaration);
+    }
+  };
+  // The exported values of a module or a namespace: what `typeof ns` and `typeof import('...')` name. An export that is only a type holds no value of it.
+  // An export that is a namespace or a module (`export * as sub`) is read at its own declaration, which comes back here.
+  const reachExportsOf = (symbol: ts.Symbol | undefined): void => {
+    if (!symbol || (symbol.flags & ts.SymbolFlags.Module) === 0) return;
+    for (const exported of checker.getExportsOfModule(symbol)) {
+      const target = targetSymbol(checker, exported);
+      if (target && (target.flags & ts.SymbolFlags.Value) !== 0) reachDeclarationsOf(target);
     }
   };
   if (holdsNothing(node)) return;
@@ -628,6 +640,17 @@ function reach(context: TagAnalysisContext, walk: Walk, node: ts.Node): void {
       reachDeclarationsOf(symbol);
       nextAll(reference.typeArguments);
     }
+  } else if (ts.isModuleDeclaration(node)) {
+    reachExportsOf(checker.getSymbolAtLocation(node.name));
+  } else if (ts.isSourceFile(node)) {
+    reachExportsOf(checker.getSymbolAtLocation(node));
+  } else if (ts.isImportTypeNode(node)) {
+    // An import type with no qualifier (the qualified one is `reference`): `typeof import('...')` is the module, and `import('...')` of a module that writes `export =` is the type that it exports.
+    const target = checker.getTypeFromTypeNode(node).getSymbol();
+    if (!target) stop('whose type names no declaration');
+    reachDeclarationsOf(target);
+    reachExportsOf(target);
+    nextAll(node.typeArguments);
   } else if (ts.isTypeAliasDeclaration(node)) {
     nextAll(node.typeParameters);
     next(node.type);
@@ -643,9 +666,11 @@ function reach(context: TagAnalysisContext, walk: Walk, node: ts.Node): void {
     }
     nextAll(node.typeArguments);
   } else if (ts.isTypeQueryNode(node)) {
-    const declaration = declarationOf(targetSymbol(checker, symbolAtExpression(checker, node.exprName)));
+    const target = targetSymbol(checker, symbolAtExpression(checker, node.exprName));
+    const declaration = declarationOf(target);
     if (declaration) next(declaration);
     else stop('which names no declaration');
+    reachExportsOf(target);
   } else if (ts.isIndexedAccessTypeNode(node)) {
     // `Box['g']` names one member: the other members of `Box` are fields beside it and stay unread.
     // A property of a type parameter is read from its constraint, not from the type that the use site gives it; a property with no declaration (a renamed key) shows no node to read.
