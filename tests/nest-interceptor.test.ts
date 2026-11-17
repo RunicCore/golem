@@ -14,6 +14,7 @@ import {
   type CallHandler,
   type ExecutionContext,
   type NestInterceptor,
+  type Type,
 } from '@nestjs/common';
 import { defaultIfEmpty, firstValueFrom, map, of, type Observable } from 'rxjs';
 import { NestModelInterceptor, type NestModelInterceptorOptions, nestModelStringifyInterceptor, nestQueryDecoder, nestReturnCodec, nestUnionFromMetatype, objectCodecFromMetatype } from '@exprtlabs/golem-ts-openapi/nest';
@@ -426,7 +427,7 @@ function inputController(
   field: string | undefined,
   metatype: unknown,
   respond: (input: unknown) => unknown = (input) => input,
-): Function {
+): Type {
   class InputController {
     handle(input: unknown) {
       return respond(input);
@@ -733,7 +734,7 @@ test('NestModelInterceptor answers 400 for request input the decoder rejects and
       get then(): never { throw new Error('validator failure'); },
     })) as never, 'InputFaultbrokenValidator'),
   };
-  const controllers: Function[] = [];
+  const controllers: Type[] = [];
   for (const [name, decode] of Object.entries(decoders)) {
     const id = `InputFault${name}_eeeeeeee`;
     registerPassThroughCodec(id, { fromWireFormat: (wire) => decode(wire as Record<string, unknown>) });
