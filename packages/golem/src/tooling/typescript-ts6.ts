@@ -12,10 +12,10 @@ import { dirname } from 'node:path';
 import { GOLEM_CHANNELS } from './diagnostics-channels.js';
 import { displayPath } from './generator-core.js';
 import { fileSignature, MISSING } from './input-watcher.js';
-import { affectsResolution, assertConfigParsed, assertNoSourceFiles, canonical, collectTscDiagnostics, configReferences, emitWanted, flagPathOptions, flagsAsConfigOptions, isDeclarationFile, programRequest, referencedConfigFile } from './typescript-config.js';
-import type { ConfigReference, ProgramConfig, ResolveAtCurrentFolder } from './typescript-config.js';
+import { affectsResolution, assertCommandLineParsed, assertConfigParsed, assertNoSourceFiles, canonical, hasVirtualFiles, virtualLookup, collectTscDiagnostics, configReferences, emitWanted, flagPathOptions, flagsAsConfigOptions, isDeclarationFile, programRequest, referencedConfigFile } from './typescript-config.js';
+import type { ConfigReference, ProgramConfig, ResolveAtCurrentFolder, VirtualLookup } from './typescript-config.js';
 import { selectedTypeScript } from './typescript-selection.js';
-import { assertPackageManifestsParse } from './type-analysis/package-specifier.js';
+import { assertPackageManifestsParse } from './package-specifier.js';
 import type * as Golem from './typescript-types.js';
 
 // The classic compiler's own objects. This build compiles against TypeScript 7, whose main export carries no classic
@@ -26,7 +26,7 @@ interface ClassicType {
   readonly symbol?: ClassicSymbol;
   readonly aliasSymbol?: ClassicSymbol;
   readonly aliasTypeArguments?: readonly ClassicType[];
-  /** Only a union or intersection type has members. */
+  /** The members of a union or intersection type, or the hole types of a template literal type. */
   readonly types?: readonly ClassicType[];
   /** A type reference's generic target; a tuple target also holds `elementFlags` and `readonly`. */
   readonly target?: ClassicType;
@@ -171,7 +171,7 @@ interface ParsedConfigHost {
 
 // Names that this module implements itself; every other seam name is the classic API's own member.
 type Implemented = 'ProgramSession' | 'CheckFlags' | 'sys' | 'createCompilerHost' | 'createProgramFromSources' | 'createScanner'
-  | 'getPreEmitDiagnostics' | 'getTscDiagnostics' | 'typeParameterDefault' | 'typeReferenceTarget';
+  | 'getPreEmitDiagnostics' | 'getTscDiagnostics' | 'getConfigDiagnostics' | 'typeParameterDefault' | 'typeReferenceTarget';
 
 interface ClassicTypeScript extends Omit<Golem.TypeScriptBackend, Implemented | 'ObjectFlags' | 'SignatureKind'> {
   readonly SignatureKind: Golem.TypeScriptBackend['SignatureKind'] & { readonly Construct: Golem.SignatureKind };
@@ -188,6 +188,7 @@ interface ClassicTypeScript extends Omit<Golem.TypeScriptBackend, Implemented | 
     readonly options: Golem.CompilerOptions;
     readonly host: ClassicHost;
     readonly projectReferences?: readonly ClassicProjectReference[];
+    readonly configFileParsingDiagnostics?: readonly ClassicDiagnostic[];
     readonly oldProgram?: ClassicProgram;
   }): ClassicProgram;
   createSourceFile(filename: string, text: string, languageVersionOrOptions: LanguageVersionOrOptions, setParentNodes?: boolean): Golem.SourceFile;
@@ -200,7 +201,6 @@ interface ClassicTypeScript extends Omit<Golem.TypeScriptBackend, Implemented | 
   readConfigFile(configFilename: string, readFile: (filename: string) => string | undefined): { readonly config?: unknown };
   /** The syntax tree of a tsconfig text: the file in which the compiler places an option error. */
   readJsonConfigFile(configFilename: string, readFile: (filename: string) => string | undefined): object;
-  getPreEmitDiagnostics(program: ClassicProgram): readonly ClassicDiagnostic[];
   parseJsonConfigFileContent(json: object, host: Pick<ParsedConfigHost, 'useCaseSensitiveFileNames' | 'readDirectory' | 'fileExists' | 'readFile'>, basePath: string): { readonly options: Golem.CompilerOptions };
   parseCommandLine(flags: readonly string[]): { readonly options: Golem.CompilerOptions; readonly fileNames: readonly string[]; readonly errors: readonly ClassicDiagnostic[] };
   sortAndDeduplicateDiagnostics(diagnostics: readonly ClassicDiagnostic[]): readonly ClassicDiagnostic[];
@@ -258,6 +258,7 @@ export const {
   isClassLike,
   isComputedPropertyName,
   isConditionalTypeNode,
+  isInferTypeNode,
   isDecorator,
   isDefaultClause,
   isElementAccessExpression,
@@ -272,7 +273,6 @@ export const {
   isExpressionWithTypeArguments,
   isFunctionDeclaration,
   isFunctionExpression,
-  isFunctionLike,
   isIdentifier,
   isImportClause,
   isImportDeclaration,
@@ -285,6 +285,16 @@ export const {
   isIntersectionTypeNode,
   isLiteralTypeNode,
   isMappedTypeNode,
+  isBindingElement,
+  isCallSignatureDeclaration,
+  isClassStaticBlockDeclaration,
+  isConstructSignatureDeclaration,
+  isConstructorDeclaration,
+  isConstructorTypeNode,
+  isFunctionTypeNode,
+  isSetAccessorDeclaration,
+  isTypePredicateNode,
+  isGetAccessorDeclaration,
   isMethodDeclaration,
   isMethodSignature,
   isModuleBlock,
@@ -400,7 +410,7 @@ function wrapType(type: ClassicType | undefined, checker: CompatChecker): Golem.
   const proxy = new Proxy(type, {
     get(target, property) {
       switch (property) {
-        case 'types': return (target.isUnion() || target.isIntersection() ? target.types ?? [] : []).map((member) => wrapType(member, checker));
+        case 'types': return (target.types ?? []).map((member) => wrapType(member, checker));
         case 'aliasSymbol': return target.aliasSymbol && wrapSymbol(target.aliasSymbol);
         case 'symbol': return target.symbol && wrapSymbol(target.symbol);
         case 'aliasTypeArguments': return (target.aliasTypeArguments ?? []).map((argument) => wrapType(argument, checker));
@@ -458,7 +468,7 @@ function wrapSignature(signature: ClassicSignature, checker: CompatChecker): Gol
 class CompatChecker implements Golem.TypeChecker {
   public constructor(private readonly inner: ClassicChecker, private readonly program: CompatProgram) {}
 
-  resolveImport(specifier: Golem.StringLiteralLike, virtualFiles?: ReadonlySet<string>): Golem.ResolvedModule | undefined {
+  resolveImport(specifier: Golem.StringLiteralLike, virtualFiles?: Golem.VirtualFiles): Golem.ResolvedModule | undefined {
     return this.program.resolveImport(specifier, virtualFiles);
   }
 
@@ -613,12 +623,12 @@ class CompatProgram implements Golem.Program {
    * a package.json that is not JSON as `{}`; golem names the file instead. When the compiler found none, `virtualFiles` are files that
    * do not exist yet but will, and a second lookup counts them.
    */
-  resolveImport(specifier: Golem.StringLiteralLike, virtualFiles?: ReadonlySet<string>): Golem.ResolvedModule | undefined {
+  resolveImport(specifier: Golem.StringLiteralLike, virtualFiles?: Golem.VirtualFiles): Golem.ResolvedModule | undefined {
     const file = specifier.getSourceFile();
     assertPackageManifestsParse(specifier.text, file.fileName);
     this.requireStoredResolution();
     const resolved = this.program.getResolvedModuleFromModuleSpecifier(specifier, file)?.resolvedModule;
-    if (resolved || !virtualFiles || virtualFiles.size === 0) return resolved;
+    if (resolved || !hasVirtualFiles(virtualFiles)) return resolved;
     return this.session.resolveModuleName(specifier.text, file.fileName, this.getCompilerOptions(), this.program.getModeForUsageLocation(file, specifier), virtualFiles).resolvedModule;
   }
 
@@ -719,18 +729,19 @@ class CompatProgram implements Golem.Program {
 
 function parseFlags(flags: readonly string[]) {
   const { options: parsed, fileNames, errors } = classic.parseCommandLine(flags);
-  return { options: parsed, fileNames, errors: errors.map((diagnostic) => ({ code: diagnostic.code, text: classic.flattenDiagnosticMessageText(diagnostic.messageText, '\n') })) };
+  return { options: parsed, fileNames, errors: errors.map(withText) };
 }
 
 /**
  * The options with the file in which the compiler places an option error. It places one in the configuration it parsed, and a derived
  * configuration (the flags, the option overrides) holds none of the user's options, so the user's own tsconfig takes its place and the
  * error names its file and position, as `tsc` does. The derived configuration takes its file lists from the user's, so they go with it: the
- * compiler names a file by the pattern that matched it. It reads the file from `configFile`, which the parse makes read-only.
+ * compiler names a file by the pattern that matched it. It reads the file from `configFile`, which the parse makes read-only, and names it
+ * from `configFilePath` (the common source directory error), which the user's tsconfig takes too.
  */
 function locatedInUserConfig({ options, configFileSpecs }: ParsedConfig, { configPath, userConfigPath }: ProgramConfig): Golem.CompilerOptions {
   if (userConfigPath === undefined || userConfigPath === configPath) return options;
-  return Object.defineProperty({ ...options }, 'configFile', { value: Object.assign(classic.readJsonConfigFile(userConfigPath, sys.readFile), { configFileSpecs }) });
+  return Object.defineProperty({ ...options, configFilePath: userConfigPath }, 'configFile', { value: Object.assign(classic.readJsonConfigFile(userConfigPath, sys.readFile), { configFileSpecs }) });
 }
 
 /** The options read as a tsconfig of the current folder: the classic parse makes the path options absolute from it. No file is listed or read. */
@@ -749,10 +760,21 @@ function headText(message: string | ClassicMessageChain): string {
   return typeof message === 'string' ? message : message.messageText;
 }
 
-/** The classic compiler's diagnostics for the program, each reading `text` as the head message. */
+/**
+ * The classic compiler's diagnostics for the program, each reading `text` as the head message. As the TypeScript 7 backend, these leave out
+ * the configuration's (`getConfigDiagnostics`, `getTscDiagnostics`): the classic `getPreEmitDiagnostics` starts with them.
+ */
 export function getPreEmitDiagnostics(program: Golem.Program): readonly Golem.Diagnostic[] {
   if (!(program instanceof CompatProgram)) throw new TypeError('getPreEmitDiagnostics needs a program opened by the TypeScript 6 backend.');
-  return classic.getPreEmitDiagnostics(program.program).map(withText);
+  const classicProgram = program.program;
+  const options = classicProgram.getCompilerOptions();
+  return classic.sortAndDeduplicateDiagnostics([
+    ...classicProgram.getOptionsDiagnostics(),
+    ...classicProgram.getSyntacticDiagnostics(),
+    ...classicProgram.getGlobalDiagnostics(),
+    ...classicProgram.getSemanticDiagnostics(),
+    ...(options.declaration === true || options.composite === true ? classicProgram.getDeclarationDiagnostics() : []),
+  ]).map(withText);
 }
 
 /**
@@ -771,6 +793,12 @@ export function getTscDiagnostics(program: Golem.Program, emitDiagnostics: reado
     declaration: () => classicProgram.getDeclarationDiagnostics(),
   }, classicProgram.getCompilerOptions());
   return classic.sortAndDeduplicateDiagnostics([...found, ...emitDiagnostics as readonly ClassicDiagnostic[]]).map(withText);
+}
+
+/** The diagnostics of the configuration the program was opened on, sorted without repeats. */
+export function getConfigDiagnostics(program: Golem.Program): readonly Golem.Diagnostic[] {
+  if (!(program instanceof CompatProgram)) throw new TypeError('getConfigDiagnostics needs a program opened by the TypeScript 6 backend.');
+  return classic.sortAndDeduplicateDiagnostics(program.program.getConfigFileParsingDiagnostics()).map(withText);
 }
 
 // Object.create returns `any`; the result is the classic diagnostic with `text` added.
@@ -858,11 +886,20 @@ export class ProgramSession implements Disposable {
     return projectOf(this.parseConfig(configPath, new Map()));
   }
 
+  /** Parse a referenced project's configuration as `tsc -p` reads it: its errors are not reported, and `undefined` is a tsconfig that does not exist. */
+  parseReferencedConfigFile(configPath: string, onInput?: (filename: string) => void): Golem.ParsedProject | undefined {
+    this.assertOpen();
+    this.observe(onInput, new Set());
+    return sys.fileExists(this.probe(configPath, new Map())) ? projectOf(this.readConfig(configPath, new Map()).parsed) : undefined;
+  }
+
   /** Parse a project configuration under compiler command-line arguments, as the classic `tsc -p` does. */
   parseConfigFileWithFlags(configPath: string, flags: readonly string[], onInput?: (filename: string) => void): Golem.ParsedProject {
     this.assertOpen();
     this.observe(onInput, new Set());
     const commandLine = classic.parseCommandLine(flags);
+    // The classic `tsc` makes its reporter before it reads the options, so the form of these errors follows the terminal alone, never `--pretty`.
+    assertCommandLineParsed({ options: {}, errors: commandLine.errors.map(withText) });
     assertNoSourceFiles(commandLine.fileNames);
     // A path in a flag is read from the current folder, as `tsc` reads it; the session works from the tsconfig's folder.
     const paths = flagPathOptions(flags, parseFlags, resolveAtCurrentFolder);
@@ -877,7 +914,8 @@ export class ProgramSession implements Disposable {
     this.observe(options.onInput, request.hidden);
     const resolutionsChanged = this.resolutionsChanged();
     for (const filename of [...this.observed]) this.report(filename);
-    const parsed = this.parseConfig(request.configPath, request.overlays);
+    // The errors of the configuration, a syntax error or an unknown option among them, are diagnostics of the program, as `tsc` reports them.
+    const { parsed, errors } = this.readConfig(request.configPath, request.overlays);
     const compilerOptions = locatedInUserConfig(parsed, request);
     const overlayPaths = [...request.overlays.keys()].sort().join('\0');
     const reusable = this.latest !== undefined && this.latest.overlayPaths === overlayPaths && !resolutionsChanged;
@@ -885,6 +923,7 @@ export class ProgramSession implements Disposable {
       rootNames: [...new Set([...parsed.fileNames.map(canonical), ...request.rootNames])],
       options: compilerOptions,
       host: this.host(compilerOptions, request.overlays),
+      configFileParsingDiagnostics: errors,
       ...(parsed.projectReferences.length === 0 ? {} : { projectReferences: parsed.projectReferences }),
       ...(reusable && this.latest ? { oldProgram: this.latest.program } : {}),
     });
@@ -919,11 +958,10 @@ export class ProgramSession implements Disposable {
    * Resolve a module name that no program imports, such as one an SDK manifest names. The lookup sees the disk and `virtualFiles`, the
    * same files as on the TypeScript 7 lane. The classic resolver takes the mode after its cache and redirect arguments.
    */
-  resolveModuleName(moduleName: string, containingFile: string, compilerOptions: Golem.CompilerOptions, resolutionMode?: Golem.ModuleKind, virtualFiles: ReadonlySet<string> = new Set()): { resolvedModule?: Golem.ResolvedModule } {
+  resolveModuleName(moduleName: string, containingFile: string, compilerOptions: Golem.CompilerOptions, resolutionMode?: Golem.ModuleKind, virtualFiles?: Golem.VirtualFiles): { resolvedModule?: Golem.ResolvedModule } {
     this.assertOpen();
     assertPackageManifestsParse(moduleName, containingFile);
-    const overlays = new Map([...virtualFiles].map((filename) => [canonical(filename), 'export {}\n']));
-    return classic.resolveModuleName(moduleName, containingFile, compilerOptions, this.host(compilerOptions, overlays), undefined, undefined, resolutionMode);
+    return classic.resolveModuleName(moduleName, containingFile, compilerOptions, this.host(compilerOptions, new Map(), virtualFiles && virtualLookup(virtualFiles)), undefined, undefined, resolutionMode);
   }
 
   /** Called by a closing program. */
@@ -993,7 +1031,14 @@ export class ProgramSession implements Disposable {
     return configReferences(config);
   }
 
-  private parseConfig(configPath: string, overlays: ReadonlyMap<string, string>, commandLine?: { readonly options: Golem.CompilerOptions; readonly errors: readonly ClassicDiagnostic[] }): ParsedConfig {
+  private parseConfig(configPath: string, overlays: ReadonlyMap<string, string>, commandLine?: { readonly options: Golem.CompilerOptions }): ParsedConfig {
+    const { parsed, errors } = this.readConfig(configPath, overlays, commandLine);
+    assertConfigParsed(configPath, errors.map((diagnostic) => ({ code: diagnostic.code, text: classic.flattenDiagnosticMessageText(diagnostic.messageText, '\n') })));
+    return parsed;
+  }
+
+  /** The parse of a configuration with the errors it found, which the caller reports or ignores. */
+  private readConfig(configPath: string, overlays: ReadonlyMap<string, string>, commandLine?: { readonly options: Golem.CompilerOptions }): { readonly parsed: ParsedConfig; readonly errors: readonly ClassicDiagnostic[] } {
     const parsed = classic.getParsedCommandLineOfConfigFile(configPath, commandLine?.options, {
       useCaseSensitiveFileNames: sys.useCaseSensitiveFileNames,
       readDirectory: (root, extensions, excludes, includes, depth) => sys.readDirectory(root, extensions, excludes, includes, depth),
@@ -1005,12 +1050,11 @@ export class ProgramSession implements Disposable {
       },
     });
     if (!parsed) throw new Error(`The TypeScript configuration ${displayPath(configPath)} could not be parsed.`);
-    assertConfigParsed(configPath, [...commandLine?.errors ?? [], ...parsed.errors].map((diagnostic) => ({ code: diagnostic.code, text: classic.flattenDiagnosticMessageText(diagnostic.messageText, '\n') })));
-    return { options: parsed.options, configFileSpecs: parsed.options.configFile?.configFileSpecs, fileNames: parsed.fileNames, projectReferences: parsed.projectReferences ?? [] };
+    return { parsed: { options: parsed.options, configFileSpecs: parsed.options.configFile?.configFileSpecs, fileNames: parsed.fileNames, projectReferences: parsed.projectReferences ?? [] }, errors: parsed.errors };
   }
 
   /** The compiler host of one program: overlays over disk, input observation, and the session's parsed files. */
-  private host(compilerOptions: Golem.CompilerOptions, overlays: ReadonlyMap<string, string>): ClassicHost {
+  private host(compilerOptions: Golem.CompilerOptions, overlays: ReadonlyMap<string, string>, virtual?: VirtualLookup): ClassicHost {
     const base = classic.createCompilerHost(compilerOptions, true);
     const directories = new Set<string>();
     for (const filename of overlays.keys()) {
@@ -1023,9 +1067,15 @@ export class ProgramSession implements Disposable {
     return {
       ...base,
       getCurrentDirectory: () => this.options.cwd,
-      fileExists: (filename) => overlays.has(this.probe(filename, overlays)) || base.fileExists(filename),
+      fileExists: (filename) => {
+        const path = this.probe(filename, overlays);
+        return overlays.has(path) || virtual?.file(path) === true || base.fileExists(filename);
+      },
       readFile: (filename) => overlays.get(this.probe(filename, overlays)) ?? base.readFile(filename),
-      directoryExists: (directory) => directories.has(this.probe(directory, overlays)) || (base.directoryExists?.(directory) ?? false),
+      directoryExists: (directory) => {
+        const path = this.probe(directory, overlays);
+        return directories.has(path) || virtual?.directory(path) === true || (base.directoryExists?.(directory) ?? false);
+      },
       getSourceFile: (filename, languageVersionOrOptions, onError, shouldCreateNewSourceFile) => {
         const path = this.probe(filename, overlays);
         const overlay = overlays.get(path);

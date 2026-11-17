@@ -182,12 +182,13 @@ export type TPayload = IModel<{ value: string & Not<${identifier(argument)}> }>;
   assert.throws(() => generate({ root, sources: [source], profile: profile() }), /RUNM1011.*contains any/);
 });
 
-/** Builds a project of `TOpen` (no `exact` option) and `TClosed` (`exact: true`) whose golem.yaml sets the root `exact` default, and gives each model's codec check. */
-async function buildExactModels(t: TestContext, exact: boolean | undefined): Promise<(name: 'TOpen' | 'TClosed') => unknown> {
+/** Builds a project of `TOpen` (no `exact` option), `TClosed` (`exact: true`) and `TOptionalLoose` (`exact?: false`) whose golem.yaml sets the root `exact` default, and gives each model's codec check. */
+async function buildExactModels(t: TestContext, exact: boolean | undefined): Promise<(name: 'TOpen' | 'TClosed' | 'TOptionalLoose') => unknown> {
   const { root, sourceRoot } = modelProject(t);
   fs.writeFileSync(path.join(sourceRoot, 'exact.model.ts'), `import type { IObject } from '@exprtlabs/golem/model';
 export type TOpen = IObject<{ id: string }>;
 export type TClosed = IObject<{ id: string }, { exact: true }>;
+export type TOptionalLoose = IObject<{ id: string }, { exact?: false }>;
 `);
   writeModelGolemYaml(root, { ...profile(), ...(exact === undefined ? {} : { exact }) });
   await compileModel(root);
@@ -201,6 +202,22 @@ test('exact: false in golem.yaml opens a model that sets no exact option, and a 
   assert.throws(() => assertWithExtra('TClosed'), (error: unknown) => {
     assert.ok(error instanceof LibError);
     assert.deepEqual(error.issues[0]?.path, ['extra']);
+    return true;
+  });
+});
+
+test('an optional exact option typed false opens the model, as exact: false does, also when golem.yaml does not set exact', async (t: TestContext) => {
+  // protects: T-1002 `exact?: false` has type false | undefined and read as not set, so the default exact true closed the model
+  const assertWithExtra = await buildExactModels(t, undefined);
+  assert.doesNotThrow(() => assertWithExtra('TOptionalLoose'));
+});
+
+test('a model exact option typed boolean stops with RUNM1089, as a wide validation option does', (t: TestContext) => {
+  // protects: T-1002 a wide boolean option read as not set, so the default applied with no message (F-37)
+  const { root, source } = modelProject(t);
+  fs.writeFileSync(source, "import type { IModel } from '@exprtlabs/golem/model';\nexport type TCard = IModel<{ id: string }, { exact: boolean }>;\n");
+  assert.throws(() => generate({ root, sources: [source], profile: profile() }), (error: unknown) => {
+    assert.deepEqual(fromModelFile(error), { code: 'RUNM1089', text: 'payload.model.ts:2:1 RUNM1089: The exact option of TCard must be true or false. It is false | true.' });
     return true;
   });
 });
@@ -342,6 +359,19 @@ test('a model validation option that is none of true, false and sanity stops wit
   fs.writeFileSync(source, "import type { IModel } from '@exprtlabs/golem/model';\nexport type TCard = IModel<{ id: string }, { validation: 'full' }>;\n");
   assert.throws(() => generate({ root, sources: [source], profile: profile() }), (error: unknown) => {
     assert.deepEqual(fromModelFile(error), { code: 'RUNM1089', text: 'payload.model.ts:2:1 RUNM1089: The validation option of TCard must be true, false or "sanity". It is "full".' });
+    return true;
+  });
+});
+
+test('an optional validation option typed sanity reads as sanity, so a project at false refuses it as above the project', (t: TestContext) => {
+  // protects: T-1002 `validation?: 'sanity'` has a union type and stopped with the invalid-value RUNM1089, not as a level above the project
+  const { root, source } = modelProject(t);
+  fs.writeFileSync(source, "import type { IModel } from '@exprtlabs/golem/model';\nexport type TCard = IModel<{ id: string }, { validation?: 'sanity' }>;\n");
+  assert.throws(() => generate({ root, sources: [source], profile: profile({ validation: false }) }), (error: unknown) => {
+    assert.deepEqual(fromModelFile(error), {
+      code: 'RUNM1089',
+      text: "payload.model.ts:2:1 RUNM1089: TCard sets validation 'sanity', which is above the project level false. A model may lower the level of its project, never raise it. Set the model to false or lower, or raise validation in golem.yaml.",
+    });
     return true;
   });
 });

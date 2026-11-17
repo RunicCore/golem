@@ -39,12 +39,13 @@ import {
   type Helper,
   type ImportOptions,
   type JsonValue,
+  type SiblingWireWrite,
   emitModelFromInit,
   stripPlanName,
   wireStringifyExportName,
   writesWireStringify,
   descriptorNeedsConversion,
-  descriptorSerde,
+  serdeFunctions,
   extraKeyValues,
   wireDiffers,
   type FromJsonModelResolver,
@@ -163,8 +164,8 @@ function visitDescriptor(
     enter: (item) => {
       // A validation named by its id alone has no function to import.
       for (const binding of item.validations ?? []) if (typeof binding !== 'string') registerValidation(registry.validations, binding);
-      const serde = descriptorSerde(item);
-      if (serde) registerSerde(registry.serde, serde);
+      const serde = item.serde;
+      if (serde) registerSerde(registry.serde, serdeFunctions(serde));
       if (item.kind === 'class-value' && item.classRef?.id !== undefined && item.typeImport !== undefined && !registry.classes.has(item.classRef.id)) {
         registry.classes.set(item.classRef.id, item.typeImport);
       }
@@ -199,13 +200,20 @@ export function deduplicateTagSchemas(
     .map(([, schema], index) => ({ id: `golem:model-tag:${index}`, schema }));
 }
 
+/**
+ * What a tag schema serves. A `validating` schema names the validation functions of its tags, and the module that compiles it
+ * imports them. A `diagnostics` schema holds the structural checks only, for a source whose models all stay off, which
+ * imports no validation function: it is compiled to report an unknown format, never to validate.
+ */
+type TagSchemaUse = 'validating' | 'diagnostics';
+
+/** The schemas of the tags in `descriptors`, for `use`. */
 function tagSchemas(
   descriptors: readonly ModelConversionDescriptor[],
-  enabled: boolean,
+  use: TagSchemaUse,
   definitions: Readonly<Record<string, ModelConversionDescriptor>> = {},
   representation: 'model' | 'wire' = 'model',
 ): readonly TagSchema[] {
-  if (!enabled) return [];
   const schemas = new Map<string, Readonly<Record<string, unknown>>>();
   const register = (schema: Readonly<Record<string, unknown>>): void => {
     const key = canonicalSchemaKey(schema);
@@ -223,11 +231,11 @@ function tagSchemas(
       // siblings of contains.
       const structural = schemaForDescriptor(
         validationTagSchemaDescriptor(descriptor, constraints, { definitions }),
-        { ...schemaOptions, representation, executableBindings: true },
+        { ...schemaOptions, representation, executableBindings: use === 'validating' },
       );
       register(typeof structural === 'boolean' ? { allOf: [structural] } : structural);
     }
-    if (validations.length > 0) register({ [VALIDATION_KEYWORD]: validations });
+    if (use === 'validating' && validations.length > 0) register({ [VALIDATION_KEYWORD]: validations });
   };
   descriptors.forEach((descriptor) => walkDescriptor(descriptor, { enter: registerTags }, 'structure'));
   return [...schemas.entries()].map(([key, schema]) => ({ key, schema }));
@@ -560,6 +568,7 @@ export function createJobAnalysis(
   profile: GolemProfile,
   sources: readonly string[],
   isDefaultLibraryFile: (file: ts.SourceFile) => boolean,
+  programFiles: () => readonly ts.SourceFile[],
   identityRoot?: string,
   sourceFileOf?: (filename: string) => ts.SourceFile | undefined,
   boundary?: ModelBoundary,
@@ -580,6 +589,7 @@ export function createJobAnalysis(
       boundary,
       typeErrorAt: undefined,
       isDefaultLibraryFile,
+      programFiles,
     }),
     described: new Map(),
     sources: modelSources,
@@ -704,11 +714,11 @@ export function analyzeSourceGraph(
     wireDefinitions,
   );
   executableMemos.set(wireLookup, job.executableMemo);
-  // The tag schemas serve the validators of this source's models; a source whose models are all off has none, and its
-  // validation functions are not imported (`validatorImports`), so a schema that names one could not compile.
-  const schemas = !anyDeclValidation ? [] : [
-    ...tagSchemas(Object.values(owned), true, lookup, 'model'),
-    ...tagSchemas(Object.keys(owned).map((name) => wireDefinitions[name]), true, wireLookup, 'wire'),
+  // A source whose models are all off imports no validation function (`validatorImports`), so its schemas name none.
+  const tagUse: TagSchemaUse = anyDeclValidation ? 'validating' : 'diagnostics';
+  const schemas = [
+    ...tagSchemas(Object.values(owned), tagUse, lookup, 'model'),
+    ...tagSchemas(Object.keys(owned).map((name) => wireDefinitions[name]), tagUse, wireLookup, 'wire'),
   ];
   return {
     source,
@@ -978,7 +988,7 @@ interface AppOutputs {
 /** How this companion relates to the companions of the files its source imports. */
 interface SiblingCodecOptions {
   /** Sibling codecs whose companion exports a wire stringify. */
-  readonly siblingWireCodecIds?: ReadonlySet<string>;
+  readonly siblingWire?: ReadonlyMap<string, SiblingWireWrite>;
   /** Whether each sibling codec's model is recursive, by codec id. */
   readonly siblingRecursion?: ReadonlyMap<string, boolean>;
   /**
@@ -1739,7 +1749,7 @@ function emitCodecSection(context: EmitContext): CodecSection {
   const { output, schemaGraph, appOutputs, profile, graph, imports } = context;
   const { definitions } = graph;
   const { localNames } = context;
-  const { siblingWireCodecIds, siblingRecursion } = context.siblingCodecs;
+  const { siblingWire, siblingRecursion } = context.siblingCodecs;
   // A node carries the short name of its model (`A$` and `A_` are both `A_`); the codec id tells which model the source wrote.
   const sourceNames = new Map<string, string>();
   for (const name of Object.keys(definitions)) {
@@ -1816,7 +1826,7 @@ function emitCodecSection(context: EmitContext): CodecSection {
       fieldsType: (node) => Object.hasOwn(definitions, sourceName(node)) || localNames.has(sourceName(node)) ? modelType(context, sourceName(node), 'Fields') : undefined,
       // A derived projection (an Omit, Pick or alias of a model) is not a model the user declared; other files reach it by codec id.
       privateCodec: (node) => Object.hasOwn(definitions, sourceName(node)) && !localNames.has(sourceName(node)),
-      ...(siblingWireCodecIds ? { siblingWireCodecIds } : {}),
+      ...(siblingWire ? { siblingWire } : {}),
       ...(siblingRecursion ? { siblingRecursion } : {}),
       exportWireStringify: (node) => writesWireStringify(node, profile.validation),
     },

@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import test from 'node:test';
-import { pathToFileURL } from 'node:url';
 
 import { decodeGeneratedModelTrusted } from '@exprtlabs/golem/internal/model-runtime';
 import type { GolemProfile } from '@exprtlabs/golem/generator-api';
 
 import { buildModelProject, createModelProject, writeModelGolemYaml, writeModelSources } from './model-project.js';
+import { loadModelClasses, requireRecord } from './openapi/helpers.js';
 
 // A named array (a recursive array alias) beside a string in an untagged union, held by a field of a class-backed IModel. The model
 // walker builds the class from plain data (the constructor) and decodes a wire value into it. Its union must tell the array from the
@@ -14,16 +14,14 @@ import { buildModelProject, createModelProject, writeModelGolemYaml, writeModelS
 
 const instant = '2025-01-02T03:04:05.000Z';
 
-interface Owner { readonly name: string }
-interface Node { readonly at: unknown; readonly owner: unknown; readonly children?: readonly Node[] }
-interface Box { readonly items: string | readonly Node[] }
-interface Models {
-  readonly Owner: new (init: { name: string }) => Owner;
-  readonly Box: new (init: { items: unknown }) => Box;
+/** The first element of `array`, read as a record. */
+function firstItem(array: unknown, label: string): Record<string, unknown> {
+  if (!Array.isArray(array)) throw new TypeError(`${label} must be an array`);
+  return requireRecord(array[0], label);
 }
 
 /** A built project of a class-backed `Box` whose `items` is `TTree | string`; a node of the tree holds a date and an `Owner` model. */
-async function buildBox(t: Parameters<typeof createModelProject>[0], validation: GolemProfile['validation']): Promise<Models> {
+async function buildBox(t: Parameters<typeof createModelProject>[0], validation: GolemProfile['validation']) {
   const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-union-named-sequence-model-', name: 'union-named-sequence-model', linkTypescript: true });
   writeModelGolemYaml(root, { validation });
   writeModelSources(sourceRoot, {
@@ -37,7 +35,7 @@ export class Box extends TBoxBaseModel {}
 `,
   });
   await buildModelProject(root);
-  return await import(pathToFileURL(path.join(root, 'build/box.model.js')).href) as Models;
+  return loadModelClasses(path.join(root, 'build/box.model.js'), ['Owner', 'Box']);
 }
 
 for (const [label, validation] of [['validation on', true], ['validation sanity', 'sanity'], ['validation off', false]] as const) {
@@ -45,20 +43,20 @@ for (const [label, validation] of [['validation on', true], ['validation sanity'
     // protects: T-905 the model walker took no named-sequence classification, so its union let an array value pass as it was and built no model of it
     const models = await buildBox(t, validation);
     const built = new models.Box({ items: [{ at: new Date(instant), owner: { name: 'a' }, children: [{ at: new Date(instant), owner: { name: 'b' } }] }] });
-    const [node] = built.items as readonly Node[];
+    const node = firstItem(requireRecord(built, 'box').items, 'items');
     assert.ok(node.owner instanceof models.Owner, 'the model of the first level');
-    assert.ok(node.children![0].owner instanceof models.Owner, 'the model of the nested level');
-    assert.equal(new models.Box({ items: 'text' }).items, 'text');
+    assert.ok(firstItem(node.children, 'children').owner instanceof models.Owner, 'the model of the nested level');
+    assert.equal(requireRecord(new models.Box({ items: 'text' }), 'box').items, 'text');
   });
 
   test(`a class-backed model decoded from a recursive array beside a string converts the array and keeps the string (${label})`, async (t) => {
     // protects: T-905 the model walker took no named-sequence classification, so its decode left the dates of an array value as strings
     const models = await buildBox(t, validation);
-    const decoded = decodeGeneratedModelTrusted(models.Box as never, { items: [{ at: instant, owner: { name: 'a' }, children: [{ at: instant, owner: { name: 'b' } }] }] }) as Box;
-    const [node] = decoded.items as readonly Node[];
+    const decoded = decodeGeneratedModelTrusted(models.Box, { items: [{ at: instant, owner: { name: 'a' }, children: [{ at: instant, owner: { name: 'b' } }] }] });
+    const node = firstItem(requireRecord(decoded, 'box').items, 'items');
     assert.deepEqual(node.at, new Date(instant), 'the date of the first level');
-    assert.deepEqual(node.children![0].at, new Date(instant), 'the date of the nested level');
+    assert.deepEqual(firstItem(node.children, 'children').at, new Date(instant), 'the date of the nested level');
     assert.ok(node.owner instanceof models.Owner, 'the model of the first level');
-    assert.equal((decodeGeneratedModelTrusted(models.Box as never, { items: 'text' }) as Box).items, 'text');
+    assert.equal(requireRecord(decodeGeneratedModelTrusted(models.Box, { items: 'text' }), 'box').items, 'text');
   });
 }

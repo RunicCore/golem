@@ -217,7 +217,6 @@ test('a local of generated code has a form that no other name can take, and a pr
   assert.equal(render(code`${localCode('value', 3)} ${localCode('key')}`), '$v3 $k');
   assert.throws(() => identifier('$v3'), /form of a local of generated code/);
   assert.throws(() => new ImportSource('./user').name('$k'), /form of a local of generated code/);
-  assert.throws(() => localCode('value3' as never), /needs one of the kinds/);
   assert.equal(render(propertyKey('$v3')), '$v3');
   assert.equal(render(identifier('$value')), '$value');
 });

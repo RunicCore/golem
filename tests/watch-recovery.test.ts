@@ -14,7 +14,7 @@ import type { InputFiles } from '#golem/input-watcher';
 import { listProjectDependencies } from './fixture-project.js';
 import { write } from './support/build-project.js';
 import { golem, stopChild, workspace } from './support/process.js';
-import { compilerChildren, generationWatchFixture, skipOnTypeScript6, startGenerationWatch } from './support/generation-watch.js';
+import { compilerChildren, generationWatchFixture, skipWithoutCompilerServer, startGenerationWatch } from './support/generation-watch.js';
 import { countingInputFiles, quietly, until } from './support/watch-wait.js';
 
 test('owned output index excludes exactly the outputs and the directories containing them', () => {
@@ -113,6 +113,7 @@ test('watch started on a golem.yaml that is not YAML reports its file, line and 
 test('each watch run prints the result of every job and its time; the run after a failure starts with Recovered:', async (t: TestContext) => {
   // protects: T-312 each watch run says what it did; only a job that failed before writing says its last good output stays
   const { root, config } = generationWatchFixture(t);
+  assert.equal(fs.existsSync(path.join(root, '.golem')), false, 'the fixture holds no local state of golem');
   const valid = fs.readFileSync(config, 'utf8');
   const reported = (): string => errors.map(String).join('; ');
   const results = (line: string): string[] => line.replace(/^Recovered: /, '').split(' · ').slice(0, -1);
@@ -121,6 +122,7 @@ test('each watch run prints the result of every job and its time; the run after 
   try {
     await until(() => lines.length === 1, 'the first run is summarized');
     assert.match(lines[0], / · \d+ ms$/);
+    assert.ok(fs.existsSync(path.join(root, '.golem/outputs.json')), 'the first run wrote the local state of golem');
     assert.ok(results(lines[0]).length >= 2, lines[0]);
     for (const result of results(lines[0])) assert.match(result, /^\S+: \d+ files? updated$/);
 
@@ -561,7 +563,7 @@ test('watch generates a new model file in a shared folder that holds only a help
   assert.deepEqual(errors, []);
 });
 
-test('stopping an in-process watch closes its compiler', { skip: process.platform === 'win32' || skipOnTypeScript6 }, async (t: TestContext) => {
+test('stopping an in-process watch closes its compiler', { skip: process.platform === 'win32' || skipWithoutCompilerServer }, async (t: TestContext) => {
   const { root, config } = generationWatchFixture(t);
   const { errors, stop } = startGenerationWatch(config);
   const companion = path.join(root, 'src/cart.model.generated.ts');
@@ -574,7 +576,7 @@ test('stopping an in-process watch closes its compiler', { skip: process.platfor
   assert.deepEqual(errors, []);
 });
 
-test('a pipeline session closes the compiler of a removed job', { skip: process.platform === 'win32' || skipOnTypeScript6 }, async (t: TestContext) => {
+test('a pipeline session closes the compiler of a removed job', { skip: process.platform === 'win32' || skipWithoutCompilerServer }, async (t: TestContext) => {
   const { config } = generationWatchFixture(t);
   const session = new GeneratorSessionResources();
   t.after(() => session[Symbol.dispose]());

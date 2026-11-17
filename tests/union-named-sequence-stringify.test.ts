@@ -1,13 +1,14 @@
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import test from 'node:test';
-import { pathToFileURL } from 'node:url';
 
 import { createSchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
-import { code, identifier, type StringifySerdeResolver } from '@exprtlabs/golem/internal/emitter';
-import type { ModelTypeDescriptor } from '@exprtlabs/golem/internal/schema';
+import { identifier } from '@exprtlabs/golem/internal/emitter';
 import { emitCodecRuntimeText, instantiateRuntime } from './emitted-runtime.js';
+import { loadFunctions, requireString } from './openapi/helpers.js';
 import { buildModelProject, createModelProject, writeModelGolemYaml, writeModelSources } from './model-project.js';
+import { DATE_FIELD, DATE_SERDE } from './support/date-field.js';
+import { closedObject } from './support/schema-nodes.js';
 
 // A named array (a recursive array alias) beside a string in an untagged union, written as JSON text. The text must be the JSON of the
 // wire value with each date written once, whether the call validates (the wire writer reads the encoded value) or not.
@@ -32,8 +33,8 @@ export type TBox = IObject<{ items: TTree | string; when: Date }>;
 `,
   });
   await buildModelProject(root);
-  const generated = await import(pathToFileURL(path.join(root, 'build/box.model.generated.js')).href) as { stringifyTBox: Stringify };
-  return generated.stringifyTBox;
+  const { stringifyTBox } = await loadFunctions(path.join(root, 'build/box.model.generated.js'), ['stringifyTBox']);
+  return (value, options) => requireString(stringifyTBox(value, options), 'the JSON text');
 }
 
 const withDates = tree('at: Date');
@@ -63,22 +64,15 @@ test('a recursive array whose items hold a date beside a string is written as JS
   assert.deepEqual(JSON.parse(stringify({ items: nodes, when: at })), { items: wireNodes, when: instant });
 });
 
-const closed = (properties: Record<string, ModelTypeDescriptor>): ModelTypeDescriptor => ({ kind: 'object', properties, required: Object.keys(properties), additionalProperties: false });
-const date = { kind: 'class-value', typeName: 'Date', classRef: { path: ['Date'] }, serde: { id: 'date', wireDescriptor: { kind: 'string', constraints: [{ kind: 'format', value: 'date-time' }] } } } as unknown as ModelTypeDescriptor;
-
 /** The `stringifyBox` of a box that holds a date and `items`, a union of a generated model whose node is an array of dated items, and a string. */
 function generatedModelBox(): Stringify {
   const graph = createSchemaGraph();
-  const treeNode = graph.intern({ kind: 'array', item: closed({ label: { kind: 'string' }, at: date }) }, 'Tree');
-  graph.intern(closed({ items: { kind: 'union', variants: [{ kind: 'generated-model', id: treeNode.codecId } as ModelTypeDescriptor, { kind: 'string' }] }, when: date }), 'Box');
+  const treeNode = graph.intern({ kind: 'array', item: closedObject({ label: { kind: 'string' }, at: DATE_FIELD }) }, 'Tree');
+  graph.intern(closedObject({ items: { kind: 'union', variants: [{ kind: 'generated-model', id: treeNode.codecId }, { kind: 'string' }] }, when: DATE_FIELD }), 'Box');
   graph.seal();
-  const resolver: StringifySerdeResolver = {
-    deserialize: (_serde, value) => code`decodeDate(${value} as never)`,
-    serialize: (_serde, value) => code`encodeDate(${value} as never)`,
-  };
-  const source = emitCodecRuntimeText(graph, { serde: resolver, validatorName: (id) => identifier(`validate_${id.replace(/[^\w$]/g, '_')}`) });
+  const source = emitCodecRuntimeText(graph, { serde: DATE_SERDE, validatorName: (id) => identifier(`validate_${id.replace(/[^\w$]/g, '_')}`) });
   // The validators and checks of the module are not under test: each name the module does not define answers no issue.
-  const scope: Record<string, unknown> = { encodeDate: (value: Date) => value.toISOString(), decodeDate: (wire: string) => new Date(wire) };
+  const scope: Record<string, unknown> = {};
   for (const [name] of source.matchAll(/\b(?:validate_\w+|__golem\w+)\b/g)) {
     if (!new RegExp(`(?:function|const|let|class) ${name.replaceAll('$', '\\$')}\\b`).test(source)) scope[name] = () => [];
   }

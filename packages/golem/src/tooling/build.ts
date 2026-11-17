@@ -19,7 +19,7 @@ import { emitsJavaScript, projectSources, RewriteScanner } from './rewrite-scan.
 import { retainedProgramSession } from './type-analysis/project.js';
 import { inlineEmittedSourceMap, pointDeclarationMap, pointSourceMap } from './source-map.js';
 import type { SourceMapV3 } from './source-map.js';
-import { assertNotSolutionTsconfig, referenceClosure, referencedCommand, referencesRefusal } from './typescript-config.js';
+import { assertNotSolutionTsconfig, CommandLineError, ConfigParseError, referenceClosure, referencedCommand, referencesRefusal } from './typescript-config.js';
 import * as ts from './typescript-ns.js';
 import { requestTypeScriptRoot } from './typescript-selection.js';
 import { changedPaths, InputScan, InputWatcher, outsideFolder, OwnedOutputIndex, realInputFiles, RunBaseline } from './input-watcher.js';
@@ -145,22 +145,16 @@ function assertSupported(configFile: string, parsed: ts.ParsedProject, named: 'y
 /** A referenced project with its parse: `tsc -p` reads the declaration output of its sources in place of the sources. */
 interface ReferencedProject {
   readonly configFile: string;
-  readonly options: ts.CompilerOptions;
   readonly fileNames: readonly string[];
 }
 
 /**
- * Parse the referenced projects, and the projects they reference: `tsc` loads the whole closure. A project that is not composite is an error of
- * `tsc -p` (TS6306), and the TypeScript 7 program would not report it.
+ * Parse the referenced projects, and the projects they reference: `tsc` loads the whole closure. A tsconfig that does not exist, a project that is
+ * not composite and an error in a referenced file are the compiler's to report, as `tsc -p` reports them: this build reads on without a project that has no tsconfig.
  */
-function readReferences(session: ts.ProgramSession, configFile: string, references: readonly ts.ProjectReference[], observe: (filename: string) => void): ReferencedProject[] {
-  return referenceClosure(references, (referenced) => {
-    const parsed = session.parseConfigFile(referenced, observe);
-    if (parsed.options.composite !== true) {
-      throw new Error(`${displayPath(referenced)} is referenced by ${displayPath(configFile)}, so it must set composite: true (TS6306).`);
-    }
-    return parsed;
-  }).map(({ configFile: referenced, parsed }) => ({ configFile: referenced, options: parsed.options, fileNames: parsed.fileNames }));
+function readReferences(session: ts.ProgramSession, references: readonly ts.ProjectReference[], observe: (filename: string) => void): ReferencedProject[] {
+  return referenceClosure(references, (referenced) => session.parseReferencedConfigFile(referenced, observe))
+    .flatMap(({ configFile: referenced, parsed }) => (parsed === undefined ? [] : [{ configFile: referenced, fileNames: parsed.fileNames }]));
 }
 
 /**
@@ -342,7 +336,10 @@ function reportCheck(root: string, program: ts.Program, diagnostics: readonly ts
   const host = diagnosticHost(root);
   const options = program.getCompilerOptions();
   const listed = options.listFiles === true ? program.getSourceFiles().map((file) => `${file.fileName}${host.getNewLine()}`).join('') : '';
-  const output = `${diagnosticText(root, options, diagnostics)}${listed}${isPretty(options) ? ts.formatErrorSummary(diagnostics, host) : ''}`;
+  printReport(`${diagnosticText(root, options, diagnostics)}${listed}${isPretty(options) ? ts.formatErrorSummary(diagnostics, host) : ''}`, onReport);
+}
+
+function printReport(output: string, onReport?: (report: string) => void): void {
   if (output === '') return;
   process.stdout.write(output);
   onReport?.(output);
@@ -418,6 +415,14 @@ function assertContained(project: Project, configFile: string, javascript: Reado
   }
 }
 
+/** Print the errors of the tsconfig as `tsc` prints them, from a program opened on it. False when the program reports none, so that the refusal's own text is the report. */
+function printConfigErrors(session: ts.ProgramSession, root: string, configFile: string, run: BuildRun, observe: (filename: string) => void): boolean {
+  using program = session.openProgram({ root, sources: [], configFile, flags: run.tscArguments, onInput: observe });
+  const diagnostics = ts.getConfigDiagnostics(program);
+  reportCheck(root, program, diagnostics, run.onCompilerReport);
+  return diagnostics.length > 0;
+}
+
 /** One build: generate, check the original sources, emit the rewritten ones. `changed` are the inputs that changed since the build before. */
 async function buildOnce(requestSession: () => ts.ProgramSession, run: BuildRun, changed?: readonly string[]): Promise<number> {
   const { inputs, outputs } = run;
@@ -450,7 +455,19 @@ async function buildOnce(requestSession: () => ts.ProgramSession, run: BuildRun,
   const parseOptions = (): ts.ParsedProject => (run.tscArguments.length === 0
     ? session.parseConfigFile(configFile, observe)
     : session.parseConfigFileWithFlags(configFile, run.tscArguments, observe));
-  const configured = parseOptions();
+  let configured: ts.ParsedProject;
+  try {
+    configured = parseOptions();
+  } catch (error) {
+    // Arguments the compiler rejects end the build as they end `tsc`: its diagnostics, with no summary.
+    if (error instanceof CommandLineError) {
+      printReport(diagnosticText(root, error.options, error.diagnostics), run.onCompilerReport);
+      return 1;
+    }
+    // A tsconfig with errors ends the build before it generates: the errors print as `tsc` prints them. A refusal the program does not report stays the report.
+    if (error instanceof ConfigParseError && printConfigErrors(session, root, configFile, run, observe)) return 1;
+    throw error;
+  }
   assertSupported(configFile, configured, run.project === undefined ? 'yaml' : 'project');
   // The generated files are part of the program the next steps read, so they are written first. A job whose inputs did not change is skipped.
   const previous = run.pipeline;
@@ -465,7 +482,7 @@ async function buildOnce(requestSession: () => ts.ProgramSession, run: BuildRun,
   run.onGenerated?.(generated.ran);
   const parsed = parseOptions();
   const project = readProject(configFile, parsed);
-  const referenced = readReferences(session, configFile, parsed.projectReferences, observe);
+  const referenced = readReferences(session, parsed.projectReferences, observe);
   // The sources are inputs from here on: a failed check ends the build before any later step reads them.
   for (const filename of parsed.fileNames) observe(filename);
   outputs.clear();

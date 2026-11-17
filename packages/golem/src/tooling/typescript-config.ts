@@ -1,16 +1,31 @@
-import { basename, dirname, isAbsolute, join, normalize, relative, resolve as resolvePath } from 'node:path';
+import { basename, dirname, isAbsolute, join, normalize, relative, resolve as resolvePath, sep } from 'node:path';
 import { displayPath } from './generator-core.js';
-import { inNodeModules } from './type-analysis/path-identity.js';
-import type { OpenProgramOptions } from './typescript-types.js';
+import { inNodeModules } from './path-identity.js';
+import type { CompilerOptions, Diagnostic, OpenProgramOptions, VirtualFiles } from './typescript-types.js';
 
 /** The diagnostic code of a configuration that matches no file. */
 const NO_INPUTS_FOUND = 18003;
 
-/** A configuration with errors fails with them. Golem names its own roots, so a configuration that lists no files is not an error here. */
+/** The refusal of a configuration that has errors. A build recovers from it by printing them as the compiler does; any other reader of the values fails with it. */
+export class ConfigParseError extends Error {}
+
+/** The refusal of command-line arguments that the compiler's parse rejects. A build prints its `diagnostics` as `tsc` prints them. `options` are the options that the lane's `tsc` uses to format these errors: its `pretty` picks the form, and a lane whose `tsc` reads none gives none. */
+export class CommandLineError extends Error {
+  constructor(readonly options: CompilerOptions, readonly diagnostics: readonly Diagnostic[]) {
+    super(['The compiler arguments have errors:', ...diagnostics.map((diagnostic) => `  TS${diagnostic.code}: ${diagnostic.text}`)].join('\n'));
+  }
+}
+
+/** Fail with the compiler's own diagnostics for command-line arguments it rejects. Both lanes read the arguments with their compiler's parse and give it here. */
+export function assertCommandLineParsed(commandLine: { readonly options: object; readonly errors: readonly Diagnostic[] }): void {
+  if (commandLine.errors.length > 0) throw new CommandLineError({ ...commandLine.options }, commandLine.errors);
+}
+
+/** A configuration that is read for its values (not to open a program) fails with its errors. Golem names its own roots there, so a configuration that lists no files is not an error. A program reports it, as `tsc` does. */
 export function assertConfigParsed(configPath: string, errors: readonly { readonly code: number; readonly text: string }[]): void {
   const reported = errors.filter((diagnostic) => diagnostic.code !== NO_INPUTS_FOUND);
   if (reported.length > 0) {
-    throw new Error([`The TypeScript configuration ${displayPath(configPath)} has errors:`, ...reported.map((diagnostic) => `  TS${diagnostic.code}: ${diagnostic.text}`)].join('\n'));
+    throw new ConfigParseError([`The TypeScript configuration ${displayPath(configPath)} has errors:`, ...reported.map((diagnostic) => `  TS${diagnostic.code}: ${diagnostic.text}`)].join('\n'));
   }
 }
 
@@ -41,18 +56,33 @@ export function referencedConfigFile(reference: string): string {
 /**
  * Every project that the references reach, the references of the referenced projects too, each once. `tsc` loads the whole closure, and an
  * import may reach a source of any project in it, such as a `paths` alias that points into a project only a referenced project references.
+ * `parse` gives `undefined` for a tsconfig that does not exist: `tsc` reports it (TS6053) and goes on without it.
  */
-export function referenceClosure<P extends { readonly projectReferences?: readonly { readonly path: string }[] }>(references: readonly { readonly path: string }[], parse: (configFile: string) => P): { readonly configFile: string; readonly parsed: P }[] {
-  const found = new Map<string, P>();
+export function referenceClosure<P extends { readonly projectReferences?: readonly { readonly path: string }[] }>(references: readonly { readonly path: string }[], parse: (configFile: string) => P | undefined): { readonly configFile: string; readonly parsed: P | undefined }[] {
+  const found = new Map<string, P | undefined>();
   const visit = (reference: { readonly path: string }): void => {
     const configFile = referencedConfigFile(reference.path);
     if (found.has(configFile)) return;
     const parsed = parse(configFile);
     found.set(configFile, parsed);
-    for (const next of parsed.projectReferences ?? []) visit(next);
+    for (const next of parsed?.projectReferences ?? []) visit(next);
   };
   references.forEach(visit);
   return [...found].map(([configFile, parsed]) => ({ configFile, parsed }));
+}
+
+/*
+ * The two below restate one rule of `tsc` (`verifyProjectReferences` of its program), which the TypeScript 7 program cannot apply because it is made without
+ * references: for each referenced project, a tsconfig that does not exist is TS6053, one that is not composite is TS6306, and one that disables emit is
+ * TS6310, the last two only for a project that has files. Change both together.
+ */
+
+/** The codes of the errors that `tsc` reports for a project reference. */
+export const REFERENCE_ERROR_CODES: ReadonlySet<number> = new Set([6053, 6306, 6310]);
+
+/** Whether `tsc` reports an error for this referenced project: `parsed` is `undefined` when its tsconfig does not exist. It may answer yes where `tsc` stays silent (a project with no files), never no where `tsc` reports. */
+export function isBrokenReference(parsed: { readonly options: { readonly composite?: unknown; readonly noEmit?: unknown } } | undefined): boolean {
+  return parsed === undefined || parsed.options.composite !== true || parsed.options.noEmit === true;
 }
 
 /** The command that builds a referenced project: its own golem.yaml names it. */
@@ -152,7 +182,7 @@ export function assertNoSourceFiles(fileNames: readonly string[]): void {
 interface ParsedArguments {
   readonly options: object;
   readonly fileNames: readonly string[];
-  readonly errors: readonly { readonly code: number; readonly text: string }[];
+  readonly errors: readonly Diagnostic[];
 }
 
 /** A command-line option as a tsconfig value. The parse holds enums as numbers and `lib` as file names, which a configuration does not take back, so the argument's own text decides. */
@@ -195,18 +225,35 @@ export function flagsAsConfigOptions(flags: readonly string[], parse: (flags: re
   return { ...parsedFlagOptions(flags, parse), ...flagPathOptions(flags, parse, resolveAtCurrentFolder) };
 }
 
+/** The diagnostic of an option that finds no argument (TS6044). */
+const EXPECTS_AN_ARGUMENT = 6044;
+
+/**
+ * Whether a flag took its next argument `argument` as its value, from the compiler's parse `pair` of the two, in command-line arguments that parse
+ * without errors. An argument that does not start with '-' is never a flag, so the compiler gave it to the flag. One that starts with '-' is a flag of
+ * its own after a boolean option (`--strict --strict false`) or a list option (`--types --strict`), which the parse shows as a boolean or a list,
+ * and after an option that finds no argument in the pair, as the pair ends there; a value option takes it (`--rootDir -x`, `--depth -1`).
+ */
+function tookArgument(pair: ParsedArguments, argument: string): boolean {
+  if (!argument.startsWith('-')) return true;
+  return !pair.errors.some((error) => error.code === EXPECTS_AN_ARGUMENT) && !Object.values(pair.options).some((value) => typeof value === 'boolean' || Array.isArray(value));
+}
+
+/**
+ * The options of the command-line `flags`, each with the argument that the compiler gave it. The compiler's parse of the whole list reports the errors, as `tsc` does;
+ * the parse of each flag with its next argument then tells which value that argument is, so that the flag's value can be read from its own text (`configValue`).
+ */
 function parsedFlagOptions(flags: readonly string[], parse: (flags: readonly string[]) => ParsedArguments): Record<string, string | number | boolean | readonly string[]> {
+  const all = parse(flags);
+  assertNoSourceFiles(all.fileNames);
+  assertCommandLineParsed(all);
   const options: Record<string, string | number | boolean | readonly string[]> = {};
   for (let index = 0; index < flags.length; index += 1) {
     const flag = flags[index];
     const next = flags[index + 1];
-    const together = next !== undefined && (!next.startsWith('-') || /^-\d+$/.test(next)) && (() => {
-      const pair = parse([flag, next]);
-      return pair.errors.length === 0 && pair.fileNames.length === 0;
-    })();
-    const parsed = parse(together ? [flag, next] : [flag]);
-    assertNoSourceFiles(parsed.fileNames);
-    if (parsed.errors.length > 0) throw new Error([`The compiler arguments ${flags.join(' ')} have errors:`, ...parsed.errors.map((diagnostic) => `  TS${diagnostic.code}: ${diagnostic.text}`)].join('\n'));
+    // Without the argument, the parse also holds the next flag, whose own turn sets it again.
+    const parsed = parse(next === undefined ? [flag] : [flag, next]);
+    const together = next !== undefined && tookArgument(parsed, next);
     for (const [name, value] of Object.entries(parsed.options as Record<string, unknown>)) options[name] = configValue(value, together ? next : undefined);
     if (together) index += 1;
   }
@@ -216,6 +263,39 @@ function parsedFlagOptions(flags: readonly string[], parse: (flags: readonly str
 /** A path in the one spelling that both backends key their overlays, caches and observed inputs by. */
 export function canonical(filename: string): string {
   return normalize(resolvePath(filename));
+}
+
+/** What a module lookup counts as present among `VirtualFiles`, for the files and folders the compiler probes; both backends ask it. */
+export interface VirtualLookup {
+  file(filename: string): boolean;
+  directory(directory: string): boolean;
+}
+
+/** Whether a lookup can find anything among `virtual`; a second lookup over none cannot succeed where the first failed. */
+export function hasVirtualFiles(virtual: VirtualFiles | undefined): virtual is VirtualFiles {
+  return virtual !== undefined && (virtual.files.size > 0 || virtual.folders.length > 0);
+}
+
+/** The lookup of `virtual`; the paths it is asked about are canonical. */
+export function virtualLookup(virtual: VirtualFiles): VirtualLookup {
+  const files = new Set([...virtual.files].map(canonical));
+  const folders = virtual.folders.map(canonical);
+  const inside = (outer: string, inner: string): boolean => outer === inner || inner.startsWith(outer.endsWith(sep) ? outer : `${outer}${sep}`);
+  const paths = [...files, ...folders];
+  return {
+    file: (filename) => files.has(filename) || (/\.(?:[cm]?ts|tsx)$/.test(filename) && folders.some((folder) => inside(folder, filename))),
+    directory: (directory) => paths.some((path) => inside(directory, path)) || folders.some((folder) => inside(folder, directory)),
+  };
+}
+
+/** The suffixes, before `.json`, of a configuration that golem derives beside the user's: one with the option overrides, one with the added roots, or one with both. */
+export const OPTIONS_CONFIG_SUFFIX = '.options';
+export const ROOTS_CONFIG_SUFFIX = '.roots';
+
+/** The base names of the configurations that golem derives beside the user's tsconfig `user` (a base name): with the option overrides, with the roots, or with both. */
+export function derivedConfigNames(user: string): ReadonlySet<string> {
+  const stem = basename(user, '.json');
+  return new Set([OPTIONS_CONFIG_SUFFIX, ROOTS_CONFIG_SUFFIX, `${OPTIONS_CONFIG_SUFFIX}${ROOTS_CONFIG_SUFFIX}`].map((suffix) => `${stem}${suffix}.json`));
 }
 
 /** The configuration a program opens: the file the compiler reads first and the overlays that serve the files that exist only in memory. */
@@ -265,7 +345,7 @@ function programConfig(options: OpenProgramOptions, fileExists: (filename: strin
     // A virtual configuration that extends the original replaces the options for this program only. The TypeScript 7 API takes no option override;
     // the TypeScript 6 parse could take one, but both backends read the same configuration. It sits beside the original, so the references,
     // which an extending configuration does not inherit, keep their meaning when copied.
-    configPath = join(dirname(baseConfigPath), `${basename(baseConfigPath, '.json')}.options.json`);
+    configPath = join(dirname(baseConfigPath), `${basename(baseConfigPath, '.json')}${OPTIONS_CONFIG_SUFFIX}.json`);
     const references = referencesOf(baseConfigPath, overlays);
     overlays.set(configPath, JSON.stringify({ extends: `./${basename(baseConfigPath)}`, compilerOptions: options.compilerOptionOverrides, ...(references.length === 0 ? {} : { references }) }));
     hidden.add(configPath);

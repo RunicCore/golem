@@ -3,11 +3,11 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
 import test, { type TestContext } from 'node:test';
 
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { buildModelProject, createModelProject, writeModelGolemYaml } from './model-project.js';
+import { loadCounter, loadFunctions, loadModelClasses, requireRecord, requireString } from './openapi/helpers.js';
 import { spyOnBuild, type SpiedCall } from './support/build-spy.js';
 import { generatedCodecIdFromRoot } from './support/consumer.js';
 import { command } from './support/process.js';
@@ -38,9 +38,9 @@ test('model decoder leaves unchanged fields in the initializer copy', async (t) 
   await buildModelProject(value.root);
   const spy = await spyOnBuild(value.root, { '@exprtlabs/golem/internal/model-runtime': ['defineModelProperty'] });
   try {
-    const { Item } = await import(pathToFileURL(path.join(value.root, 'build/item.model.js')).href);
+    const { Item } = await loadModelClasses(path.join(value.root, 'build/item.model.js'), ['Item']);
     const wire = { title: 'T', code: 'ABC' };
-    const item = modelCodec(Item).fromWireFormat(wire);
+    const item = requireRecord(modelCodec(Item).fromWireFormat(wire), 'item');
     // The decoder defines its fields on a plain copy of the wire values; the constructor defines them on the model.
     const redefinedInCopy = spy.calls
       .filter((call) => Object.getPrototypeOf(call.args[0]) === Object.prototype)
@@ -63,20 +63,11 @@ test('generated decoding preserves the constructor and initializer boundaries', 
   // Parent's generated companion imports Child through the ordinary module
   // URL. Keep the test imports on that same URL so constructor identity and
   // static counters are shared with the generated decoder.
-  const childModule = await import(pathToFileURL(path.join(value.root, 'build/child.model.js')).href);
-  const parentModule = await import(pathToFileURL(path.join(value.root, 'build/parent.model.js')).href);
-  const Child = childModule.Child as new (...arguments_: never[]) => object;
-  const Parent = parentModule.Parent as new (...arguments_: never[]) => object;
-  const childState = childModule.Child as { constructed: number };
-  const parentState = parentModule.Parent as {
-    constructed: number;
-    setterCalls: number;
-    sawChildInstance: boolean;
-    sawExtra: boolean;
-    sawExtraValue: unknown;
-    initializerPrototype: object | null;
-    prototype: object;
-  };
+  const { Child } = await loadModelClasses(path.join(value.root, 'build/child.model.js'), ['Child']);
+  const { Parent } = await loadModelClasses(path.join(value.root, 'build/parent.model.js'), ['Parent']);
+  // The counters are statics of the two classes; each read sees the current value.
+  const childState = (name: string): unknown => Reflect.get(Child, name);
+  const parentState = (name: string): unknown => Reflect.get(Parent, name);
   const input = Object.fromEntries([
     ['child', {}],
     ['label', 'wire-label'],
@@ -91,52 +82,48 @@ test('generated decoding preserves the constructor and initializer boundaries', 
     set(_value: unknown) { objectPrototypeSetterCalls += 1; },
   });
   try {
-    const parent = decodeGeneratedModelTrusted(Parent, input) as {
-      child: { readonly name: string };
-      readonly label: string;
-      readonly __serdeAccessorProbe: string;
-    };
-    assert.equal(childState.constructed, 1, 'nested concrete constructor runs once');
-    assert.equal(parentState.constructed, 1, 'requested concrete constructor runs once');
-    assert.equal(parentState.sawChildInstance, true, 'nested conversion completes before parent construction');
-    assert.equal(parentState.sawExtra, true, 'extra own keys remain visible to handwritten constructors');
-    assert.equal(parentState.sawExtraValue, 'visible-to-constructor');
-    assert.strictEqual(parentState.initializerPrototype, Object.prototype, 'initializer keeps an ordinary prototype');
-    assert.equal(parentState.setterCalls, 0, 'generated field definition does not invoke an inherited setter');
+    const parent = requireRecord(decodeGeneratedModelTrusted(Parent, input), 'parent');
+    assert.equal(childState('constructed'), 1, 'nested concrete constructor runs once');
+    assert.equal(parentState('constructed'), 1, 'requested concrete constructor runs once');
+    assert.equal(parentState('sawChildInstance'), true, 'nested conversion completes before parent construction');
+    assert.equal(parentState('sawExtra'), true, 'extra own keys remain visible to handwritten constructors');
+    assert.equal(parentState('sawExtraValue'), 'visible-to-constructor');
+    assert.strictEqual(parentState('initializerPrototype'), Object.prototype, 'initializer keeps an ordinary prototype');
+    assert.equal(parentState('setterCalls'), 0, 'generated field definition does not invoke an inherited setter');
     assert.equal(parent['__serdeAccessorProbe'], 'probe');
     assert.equal(Object.hasOwn(parent, probeName), true, 'generated model retains the probe as own data');
     assert.equal(Object.propertyIsEnumerable.call(parent, probeName), true, 'generated model retains enumerable field data');
-    assert.equal(parent.child.name, 'default', 'constructor defaults survive nested conversion');
+    assert.equal(requireRecord(parent.child, 'child').name, 'default', 'constructor defaults survive nested conversion');
     assert.deepEqual(Object.getOwnPropertyDescriptor(parent, 'child'), {
       value: parent.child, enumerable: true, configurable: true, writable: true,
     }, 'ordinary generated fields retain standard own data descriptors');
     assert.equal(Object.hasOwn(parent, 'note'), false, 'absent optional fields stay absent');
     assert.equal(Object.hasOwn(parent, 'label'), true, 'ordinary data fields survive');
     assert.equal(parent.label, 'wire-label');
-    assert.strictEqual(Object.getPrototypeOf(parent), parentState.prototype);
+    assert.strictEqual(Object.getPrototypeOf(parent), Parent.prototype);
 
-    const wire = modelCodec(parent).toWireFormat(parent) as Record<string, unknown>;
+    const wire = requireRecord(modelCodec(parent).toWireFormat(parent), 'wire');
     assert.equal(wire[probeName], 'probe');
     assert.equal(Object.hasOwn(wire, probeName), true, 'serialized output retains the probe as own data');
     assert.equal(Object.propertyIsEnumerable.call(wire, probeName), true, 'serialized output retains enumerable field data');
     assert.strictEqual(Object.getPrototypeOf(wire), Object.prototype, 'serialized output keeps an ordinary prototype');
     Object.defineProperty(parent, 'note', { value: undefined, enumerable: true, configurable: true });
-    const presentUndefined = modelCodec(parent).toWireFormat(parent) as Record<string, unknown>;
+    const presentUndefined = requireRecord(modelCodec(parent).toWireFormat(parent), 'wire');
     assert.equal(Object.hasOwn(presentUndefined, 'note'), false, 'an undefined optional field is omitted like JSON.stringify does');
     Reflect.deleteProperty(parent, 'note');
-    const absent = modelCodec(parent).toWireFormat(parent) as Record<string, unknown>;
+    const absent = requireRecord(modelCodec(parent).toWireFormat(parent), 'wire');
     assert.equal(Object.hasOwn(absent, 'note'), false);
-    const codec = await import(pathToFileURL(path.join(value.root, 'build/optional-codec.js')).href);
-    assert.equal(codec.encodeCalls, 0, 'absent optional codecs are never invoked');
+    const encodeCalls = await loadCounter(path.join(value.root, 'build/optional-codec.js'), 'encodeCalls');
+    assert.equal(encodeCalls(), 0, 'absent optional codecs are never invoked');
     Object.defineProperty(parent, 'code', { value: 'x', enumerable: true, configurable: true });
-    const encodedCode = modelCodec(parent).toWireFormat(parent) as Record<string, unknown>;
+    const encodedCode = requireRecord(modelCodec(parent).toWireFormat(parent), 'wire');
     assert.equal(encodedCode.code, 'X');
-    assert.equal(codec.encodeCalls, 1, 'present optional codec executes exactly once');
+    assert.equal(encodeCalls(), 1, 'present optional codec executes exactly once');
     assert.equal(objectPrototypeSetterCalls, 0, 'generated conversion never assigns through Object.prototype');
 
-    const encodedWire = modelCodec(parent).toWireFormat(parent) as Record<string, unknown>;
+    const encodedWire = requireRecord(modelCodec(parent).toWireFormat(parent), 'wire');
     JSON.stringify(encodedWire);
-    assert.equal(codec.encodeCalls, 2, 'JSON writing does not replay the field codec');
+    assert.equal(encodeCalls(), 2, 'JSON writing does not replay the field codec');
   } finally {
     if (previousProbe) Object.defineProperty(Object.prototype, probeName, previousProbe);
     else Reflect.deleteProperty(Object.prototype, probeName);
@@ -158,9 +145,9 @@ export class Team extends TTeamBaseModel {}
   await buildModelProject(value.root);
   const spy = await spyOnBuild(value.root, { '@exprtlabs/golem/internal/model-runtime': ['decodeCheckedInput', 'decodeDetachedInput'] });
   try {
-    const { Team } = await import(pathToFileURL(path.join(value.root, 'build/team.model.js')).href);
+    const { Team } = await loadModelClasses(path.join(value.root, 'build/team.model.js'), ['Team']);
     // Nested values are the generated classes; a model file's own subclasses aren't visible to its companion.
-    const { TMemberBaseModel: Member, TStampBaseModel: Stamp } = await import(pathToFileURL(path.join(value.root, 'build/team.model.generated.js')).href);
+    const { TMemberBaseModel: Member, TStampBaseModel: Stamp } = await loadModelClasses(path.join(value.root, 'build/team.model.generated.js'), ['TMemberBaseModel', 'TStampBaseModel']);
     const { requireObjectCodec } = await import('@exprtlabs/golem/internal/model-runtime');
     const input = { lead: { name: 'Ada', joined: { time: 1 } }, members: [{ name: 'Lin', joined: { time: 2 } }] };
     const codec = requireObjectCodec<InstanceType<typeof Team>>(generatedCodecIdFromRoot(value.root, 'TTeam'));
@@ -170,20 +157,24 @@ export class Team extends TTeamBaseModel {}
     ];
     for (const { check, decode } of entries) {
       spy.calls.length = 0;
-      const team = decode() as Record<string, any>;
+      const team = requireRecord(decode(), 'team');
       // Nested models call the module's own converter, not the public entry that checks its input again.
       assert.deepEqual(callsOverCeiling(spy.calls, { [check]: 1 }), {}, 'at most one input check for the root, none for the nested models');
       assert.ok(team instanceof Team);
-      assert.ok(team.lead instanceof Member && team.lead.joined instanceof Stamp);
-      assert.ok(team.members[0] instanceof Member && team.members[0].joined instanceof Stamp);
-      assert.deepEqual(modelCodec(team).toWireFormat(team as never), input);
+      const lead = requireRecord(team.lead, 'lead');
+      assert.ok(lead instanceof Member && lead.joined instanceof Stamp);
+      assert.ok(Array.isArray(team.members));
+      const member = requireRecord(team.members[0], 'member');
+      assert.ok(member instanceof Member && member.joined instanceof Stamp);
+      assert.deepEqual(modelCodec(team).toWireFormat(team), input);
     }
     // fromWireFormat still detaches the result from the caller's objects at every depth.
-    const detached = codec.fromWireFormat(input, { construct: Team }) as Record<string, any>;
+    const detached = requireRecord(codec.fromWireFormat(input, { construct: Team }), 'detached');
     input.lead.joined.time = 99;
     input.members[0].name = 'Changed';
-    assert.equal(detached.lead.joined.time, 1);
-    assert.equal(detached.members[0].name, 'Lin');
+    assert.equal(requireRecord(requireRecord(detached.lead, 'lead').joined, 'joined').time, 1);
+    assert.ok(Array.isArray(detached.members));
+    assert.equal(requireRecord(detached.members[0], 'member').name, 'Lin');
   } finally { spy.stop(); }
 });
 
@@ -202,13 +193,13 @@ export class Note extends TNoteBaseModel {}
 
 test('model encoding assigns present fields in declaration order without deleting keys', async (t) => {
   const value = await buildNote(t);
-  const { Note } = await import(pathToFileURL(path.join(value.root, 'build/note.model.js')).href);
-  const keys = (init: object) => Object.keys(modelCodec(Note).toWireFormat(new Note(init) as never));
+  const { Note } = await loadModelClasses(path.join(value.root, 'build/note.model.js'), ['Note']);
+  const keys = (init: Record<string, unknown>) => Object.keys(modelCodec(Note).toWireFormat(new Note(init)));
   assert.deepEqual(keys({ title: 't', pinned: true }), ['title', 'pinned']);
   assert.deepEqual(keys({ title: 't', body: undefined, pinned: true }), ['title', 'pinned'], 'an undefined optional field is omitted');
   assert.deepEqual(keys({ pinned: false, body: 'b', title: 't' }), ['title', 'body', 'pinned'], 'declaration order, not initializer order');
-  assert.deepEqual(modelCodec(Note).toWireFormat(new Note({ title: 't', body: 'b', pinned: false }) as never), { title: 't', body: 'b', pinned: false });
-  assert.equal(Object.hasOwn(modelCodec(Note).toWireFormat(new Note({ title: 't', pinned: true }) as never) as object, 'body'), false, 'an absent field is not an own key');
+  assert.deepEqual(modelCodec(Note).toWireFormat(new Note({ title: 't', body: 'b', pinned: false })), { title: 't', body: 'b', pinned: false });
+  assert.equal(Object.hasOwn(requireRecord(modelCodec(Note).toWireFormat(new Note({ title: 't', pinned: true })), 'wire'), 'body'), false, 'an absent field is not an own key');
 });
 
 /** Only V8 property shape shows whether an absent field was added and then deleted. No portable check proves it, so the test runs where V8 accepts its flag. */
@@ -246,15 +237,15 @@ export class Stamps extends TStampsBaseModel {}
     '@exprtlabs/golem/serde': ['stringifyJsonScalar', 'stringifyJsonString', 'stringifyJsonNumber', 'stringifyJsonBoolean', 'stringifyJsonArray'],
   });
   try {
-    const codecs = await import(pathToFileURL(path.join(value.root, 'build/maps.model.generated.js')).href) as Record<string, (value: unknown) => unknown>;
-    const { Directory } = await import(pathToFileURL(path.join(value.root, 'build/maps.model.js')).href) as { Directory: new () => object };
+    const codecs = await loadFunctions(path.join(value.root, 'build/maps.model.generated.js'), ['stringifyTDirectory', 'toWireFormatTDirectory', 'stringifyTShelf', 'stringifyTStamps', 'toWireFormatTStamps']);
+    const { Directory } = await loadModelClasses(path.join(value.root, 'build/maps.model.js'), ['Directory']);
     const names = { zeta: 'z', alpha: 'a', 2: 'two', 1: 'one', skipped: undefined, empty: '' };
     const instance = Object.assign(new Directory(), names);
     spy.calls.length = 0;
     assert.equal(codecs.stringifyTDirectory(instance), JSON.stringify(names), 'extra keys and their order are kept');
     assert.deepEqual(callsOverCeiling(spy.calls, { stringifyJsonScalar: 1 }), {}, 'the plain map takes at most one native write and no per-key writer');
     assert.equal(codecs.stringifyTDirectory(instance), '{"1":"one","2":"two","zeta":"z","alpha":"a","empty":""}');
-    assert.deepEqual(codecs.toWireFormatTDirectory(instance), JSON.parse(codecs.stringifyTDirectory(instance) as string), 'toWireFormat agrees with stringify');
+    assert.deepEqual(codecs.toWireFormatTDirectory(instance), JSON.parse(requireString(codecs.stringifyTDirectory(instance), 'the stringified map')), 'toWireFormat agrees with stringify');
     spy.calls.length = 0;
     assert.equal(codecs.stringifyTShelf({ id: 's', names }), JSON.stringify({ id: 's', names }));
     assert.deepEqual(callsOverCeiling(spy.calls, { stringifyJsonScalar: 1, stringifyJsonString: 1 }), {}, 'a plain map field takes the native writer too: one native write, and only the id string through a per-value writer');
@@ -277,7 +268,7 @@ export class Series extends TSeriesBaseModel {}
 `);
   writeModelGolemYaml(value.root, { validation: false });
   await buildModelProject(value.root);
-  const codecs = await import(pathToFileURL(path.join(value.root, 'build/counts.model.generated.js')).href) as Record<string, (value: unknown) => unknown>;
+  const codecs = await loadFunctions(path.join(value.root, 'build/counts.model.generated.js'), ['stringifyTCounts', 'stringifyTSeries']);
   const isSerializationError = (error: unknown): boolean => error instanceof LibError && error.kind === LibErrorKind.Serialization;
   assert.equal(codecs.stringifyTCounts({ a: 1, b: -0.5 }), '{"a":1,"b":-0.5}');
   assert.throws(() => codecs.stringifyTCounts({ a: NaN }), isSerializationError);
@@ -294,11 +285,11 @@ export class Counts extends TCountsBaseModel {}
 `);
   writeModelGolemYaml(value.root, { validation: false });
   await buildModelProject(value.root);
-  const codecs = await import(pathToFileURL(path.join(value.root, 'build/counts.model.generated.js')).href) as Record<string, (value: unknown) => unknown>;
+  const codecs = await loadFunctions(path.join(value.root, 'build/counts.model.generated.js'), ['stringifyTCounts']);
   class Tally {
     a = 1;
     b = 2;
-    toJSON(): unknown { return JSON.parse(codecs.stringifyTCounts(this) as string); }
+    toJSON(): unknown { return JSON.parse(requireString(codecs.stringifyTCounts(this), 'the stringified counts')); }
   }
   assert.equal(codecs.stringifyTCounts(new Tally()), '{"a":1,"b":2}');
   assert.equal(codecs.stringifyTCounts({ a: 1, b: -0.5 }), '{"a":1,"b":-0.5}');

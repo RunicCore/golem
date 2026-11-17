@@ -3,9 +3,9 @@ import { existsSync, readFileSync, statSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, parse, relative, resolve, sep } from 'node:path';
 import * as ts from '../typescript-ns.js';
 import { assertNotSolutionTsconfig } from '../typescript-config.js';
-import { readManifest } from './package-specifier.js';
-import { displayPath, GolemDiagnosticSeverity, canonicalPath, compareText, discoverSources, hasErrorCode, isInsideDirectory, parseYamlFile, sessionKey, suffixPattern, YamlFileError, type GeneratorSession, type GolemDiagnostic, type InputObserver } from '../generator-core.js';
-import { canonicalFilename, inNodeModules, portableRelativeFilename } from './path-identity.js';
+import { packageName, readManifest } from '../package-specifier.js';
+import { displayPath, GolemDiagnosticSeverity, canonicalPath, compareText, discoverSources, hasErrorCode, isInsideDirectory, parseYamlFile, realPathThroughLinks, sessionKey, suffixPattern, YamlFileError, type GeneratorSession, type GolemDiagnostic, type InputObserver } from '../generator-core.js';
+import { canonicalFilename, inNodeModules, isRelativeSpecifier, portableRelativeFilename, relativeSpecifierOf } from '../path-identity.js';
 import { ROOT_KEYS } from '../editor-schema.js';
 
 export { canonicalFilename, portableRelativeFilename };
@@ -279,7 +279,7 @@ export function ignoredSharedFileWarnings(sharedFiles: readonly string[], appDir
       }
     }
   }
-  return [...warnings.values()].sort((left, right) => (left.file ?? '') < (right.file ?? '') ? -1 : 1);
+  return [...warnings.values()].sort((left, right) => compareText(left.file ?? '', right.file ?? ''));
 }
 
 function ignoredGolemYamlMessage(golemYaml: string, modelFile: string): string {
@@ -321,7 +321,7 @@ export function sourceImportPath(source: string, output: string): string {
     .replace(/\.ts$/, '.js')
     .replace(/\.mts$/, '.mjs')
     .replace(/\.cts$/, '.cjs');
-  return relativePath.startsWith('.') ? relativePath : `./${relativePath}`;
+  return relativeSpecifierOf(relativePath);
 }
 
 /** The companion of a source: `.generated` before its final extension. */
@@ -433,16 +433,26 @@ function parsedProject(
   };
 }
 
-/** The session that a program opens on (the retained one, else a compiler that closes with its last program) and the project it parses. */
-function openProject(
+/**
+ * Runs `open` on the session that a program opens on (the retained one, else a compiler that closes with its last program) and
+ * the project it parses. A compiler that this call made is disposed when `open` or the parse throws: until a program holds it,
+ * no program's close ends it.
+ */
+function withProject<T>(
   root: string,
   sources: readonly string[],
   retained: ts.ProgramSession | undefined,
   onInput: InputObserver | undefined,
   configFile: string | undefined,
-): { readonly session: ts.ProgramSession; readonly parsed: ReturnType<typeof parsedProject> } {
+  open: (session: ts.ProgramSession, parsed: ReturnType<typeof parsedProject>) => T,
+): T {
   const session = retained ?? new ts.ProgramSession({ cwd: root, closeWhenIdle: true });
-  return { session, parsed: parsedProject(root, sources, session, onInput, configFile) };
+  try {
+    return open(session, parsedProject(root, sources, session, onInput, configFile));
+  } catch (error) {
+    if (retained === undefined) session[Symbol.dispose]();
+    throw error;
+  }
 }
 
 const PROGRAM_SESSION = sessionKey<ts.ProgramSession>('program');
@@ -495,8 +505,7 @@ export function createProgram(
   /** The tsconfig to open, from the golem.yaml; without it the one that `tsc` would find from `root` upward. */
   configFile?: string,
 ): ProgramInfo {
-  const { session, parsed } = openProject(root, sources, retained, onInput, configFile);
-  return openParsedProgram(session, root, parsed, uniqueFilenames([...sources, ...parsed.ambientFiles]), onInput);
+  return withProject(root, sources, retained, onInput, configFile, (session, parsed) => openParsedProgram(session, root, parsed, uniqueFilenames([...sources, ...parsed.ambientFiles]), onInput));
 }
 
 /**
@@ -510,8 +519,7 @@ export function createProjectProgram(
   /** The tsconfig to open, from the golem.yaml; without it the one that `tsc` would find from `root` upward. */
   configFile?: string,
 ): ProgramInfo {
-  const { session, parsed } = openProject(root, [], retained, onInput, configFile);
-  return openParsedProgram(session, root, parsed, parsed.projectFiles, onInput);
+  return withProject(root, [], retained, onInput, configFile, (session, parsed) => openParsedProgram(session, root, parsed, parsed.projectFiles, onInput));
 }
 
 /** Whether a generated companion is left over: its model source no longer exists. */
@@ -572,49 +580,50 @@ export function createModelStubProgram(
   /** The tsconfig to open, from the golem.yaml; without it the one that `tsc` would find from `root` upward. */
   configFile?: string,
 ): ProgramInfo {
-  const { session, parsed } = openProject(root, sources, retained, onInput, configFile);
-  const stubbed = new Set<string>();
-  const stubsOf = (files: readonly string[]): Map<string, string> => {
-    const stubs = new Map<string, string>();
-    for (const file of files) {
-      const real = canonicalFilename(file);
-      if (stubbed.has(real) || !existsSync(file)) continue;
-      stubbed.add(real);
-      const names = classModelNames(session.parseSourceFile(file, readFileSync(file, 'utf8')));
-      if (names.length === 0) continue;
-      const companion = canonicalFilename(companionFilename(boundary, file));
-      stubs.set(companion, `import type { ${names.join(', ')} } from ${JSON.stringify(sourceImportPath(real, companion))};\n`
-        + names.map((name) => `export declare abstract class ${name}BaseModel {}\nexport interface ${name}BaseModel extends ${name} {}\n`).join(''));
-    }
-    return stubs;
-  };
-  const open = (stubs: ReadonlyMap<string, string>): ProgramInfo => {
-    const overlays = new Map(stubs);
-    for (const filename of parsed.projectFiles) {
-      const companion = canonicalFilename(filename);
-      const underOutput = boundary.companions !== undefined && isInsideDirectory(boundary.companions.output, companion);
-      if (isGeneratedCompanion(companion) && !overlays.has(companion) && (underOutput || isOrphanCompanion(companion, boundary.suffixes))) {
-        overlays.set(companion, 'export {}\n');
+  return withProject(root, sources, retained, onInput, configFile, (session, parsed) => {
+    const stubbed = new Set<string>();
+    const stubsOf = (files: readonly string[]): Map<string, string> => {
+      const stubs = new Map<string, string>();
+      for (const file of files) {
+        const real = canonicalFilename(file);
+        if (stubbed.has(real) || !existsSync(file)) continue;
+        stubbed.add(real);
+        const names = classModelNames(session.parseSourceFile(file, readFileSync(file, 'utf8')));
+        if (names.length === 0) continue;
+        const companion = canonicalFilename(companionFilename(boundary, file));
+        stubs.set(companion, `import type { ${names.join(', ')} } from ${JSON.stringify(sourceImportPath(real, companion))};\n`
+          + names.map((name) => `export declare abstract class ${name}BaseModel {}\nexport interface ${name}BaseModel extends ${name} {}\n`).join(''));
       }
+      return stubs;
+    };
+    const open = (stubs: ReadonlyMap<string, string>): ProgramInfo => {
+      const overlays = new Map(stubs);
+      for (const filename of parsed.projectFiles) {
+        const companion = canonicalFilename(filename);
+        const underOutput = boundary.companions !== undefined && isInsideDirectory(boundary.companions.output, companion);
+        if (isGeneratedCompanion(companion) && !overlays.has(companion) && (underOutput || isOrphanCompanion(companion, boundary.suffixes))) {
+          overlays.set(companion, 'export {}\n');
+        }
+      }
+      return openParsedProgram(session, root, parsed, uniqueFilenames([...sources, ...parsed.ambientFiles]), onInput, overlays);
+    };
+    const stubs = stubsOf([...modelFiles, ...byRealPath(includedModelSources(parsed.projectFiles, boundary.suffixes))]);
+    const info = open(stubs);
+    let next: ProgramInfo;
+    try {
+      const reached = stubsOf(byRealPath(includedModelSources(info.program.getSourceFiles()
+        .filter((file) => !info.program.isSourceFileDefaultLibrary(file))
+        .map((file) => file.fileName), boundary.suffixes)));
+      if (reached.size === 0) return info;
+      next = open(new Map([...stubs, ...reached]));
+    } catch (error) {
+      // The first program holds the session; a failed second pass would leave it held.
+      info.program[Symbol.dispose]();
+      throw error;
     }
-    return openParsedProgram(session, root, parsed, uniqueFilenames([...sources, ...parsed.ambientFiles]), onInput, overlays);
-  };
-  const stubs = stubsOf([...modelFiles, ...byRealPath(includedModelSources(parsed.projectFiles, boundary.suffixes))]);
-  const info = open(stubs);
-  let next: ProgramInfo;
-  try {
-    const reached = stubsOf(byRealPath(includedModelSources(info.program.getSourceFiles()
-      .filter((file) => !info.program.isSourceFileDefaultLibrary(file))
-      .map((file) => file.fileName), boundary.suffixes)));
-    if (reached.size === 0) return info;
-    next = open(new Map([...stubs, ...reached]));
-  } catch (error) {
-    // The first program holds the session; a failed second pass would leave it held.
     info.program[Symbol.dispose]();
-    throw error;
-  }
-  info.program[Symbol.dispose]();
-  return next;
+    return next;
+  });
 }
 
 export function createOverlayProgram(
@@ -676,6 +685,22 @@ export function isUnderOutputs(outputs: readonly string[], filename: string): bo
   return outputs.some((output) => output === target || isInsideDirectory(output, target));
 }
 
+/**
+ * What the `node_modules/<package>` of every folder above `file` is, for the package that the bare import `specifier` names: the path
+ * of the link and where it really leads. Where it leads may not exist yet, since the job that writes it has not run.
+ */
+function packageLinks(file: string, specifier: string): { link: string; real: string }[] {
+  if (specifier.startsWith('#')) return [];
+  const name = packageName(specifier);
+  const links: { link: string; real: string }[] = [];
+  for (let directory = dirname(file); ; directory = dirname(directory)) {
+    const link = join(directory, 'node_modules', name);
+    const real = realPathThroughLinks(link);
+    if (real !== undefined && real !== link) links.push({ link, real });
+    if (dirname(directory) === directory) return links;
+  }
+}
+
 /** The file of `files` that a relative import resolves to, with the `.js` of a written specifier standing for its `.ts` source. Names compare as the program spells them. */
 function importedFile(files: ReadonlySet<string>, target: string): string | undefined {
   const stem = target.replace(/\.[cm]?jsx?$/, '');
@@ -699,11 +724,12 @@ function moduleSpecifiers(file: ts.SourceFile): ts.StringLiteral[] {
 }
 
 /**
- * The files of the program that lie under one of `outputs`, or that import a path under one by a relative import, directly or
- * through the files they import. A relative import is read by its text. Any other import links the files only when it resolves to a
- * project file, such as a `paths` alias of an intermediate file; an import that resolves to nothing, or into an output, says nothing,
- * because it would differ between a run before the output exists and one after. So the answer is the same in every run. The outputs
- * are canonical paths.
+ * The files of the program that lie under one of `outputs`, or that import a path under one, directly or through the files they
+ * import. A relative import is read by its text. Any other import, such as a `paths` alias, is read by where it resolves: a file under an
+ * output counts, and so does an import that resolves to none but would resolve to a file under an output (the job has not written it
+ * yet), so the answer is the same in every run. A package that is a `node_modules` link into an output counts the same, whether or not
+ * the link leads anywhere yet and whether or not the compiler keeps links. A bare import of a project file links the files through it.
+ * The outputs are canonical paths.
  */
 export function filesReadingOutputs(program: ts.Program, outputs: readonly string[]): ReadonlySet<string> {
   const files = program.getSourceFiles().filter((file) => !program.isSourceFileDefaultLibrary(file) && !inNodeModules(file.fileName));
@@ -711,14 +737,33 @@ export function filesReadingOutputs(program: ts.Program, outputs: readonly strin
   const checker = program.getTypeChecker();
   const excluded = new Set<string>();
   const imports = new Map<string, string[]>();
+  const underOutputs = new Map<string, boolean>();
+  const resolvedUnderOutputs = (resolved: string): boolean => {
+    let under = underOutputs.get(resolved);
+    if (under === undefined) underOutputs.set(resolved, under = isUnderOutputs(outputs, resolved));
+    return under;
+  };
   for (const file of files) {
     const imported: string[] = [];
     imports.set(file.fileName, imported);
     if (isUnderOutputs(outputs, file.fileName)) excluded.add(file.fileName);
     for (const specifier of moduleSpecifiers(file)) {
-      if (!specifier.text.startsWith('.')) {
+      if (!isRelativeSpecifier(specifier.text)) {
         const resolved = checker.resolveImport(specifier)?.resolvedFileName;
-        if (resolved !== undefined && names.has(resolved.replace(/\\/g, '/'))) imported.push(resolved);
+        if (resolved === undefined) {
+          // Before the job has written the file the import resolves to none: a lookup that counts the TypeScript files it would write finds it.
+          // The lookup also counts each output as the link of a package spells it, when the link leads to a folder above that output, so the
+          // package's own `exports` decide whether the import reaches it. A package that is a link into an output reads the output whatever it imports.
+          const links = packageLinks(file.fileName, specifier.text);
+          const folders = [...outputs, ...links.flatMap(({ link, real }) => outputs.filter((output) => isInsideDirectory(real, output)).map((output) => join(link, relative(real, output))))];
+          if (links.some(({ real }) => outputs.some((output) => isInsideDirectory(output, real))) || checker.resolveImport(specifier, { files: new Set(), folders }) !== undefined) excluded.add(file.fileName);
+        } else if (names.has(resolved.replace(/\\/g, '/'))) {
+          // A file of the program under an output is excluded above, and the importer follows by the closure below.
+          imported.push(resolved);
+        } else if (resolvedUnderOutputs(resolved)) {
+          // An installed file of the program (its name lies in `node_modules` when the compiler keeps links) can still be a link into an output.
+          excluded.add(file.fileName);
+        }
         continue;
       }
       const target = resolve(dirname(file.fileName), specifier.text);

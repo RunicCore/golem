@@ -21,6 +21,7 @@ import {
   fillFunctionName,
   stripPlanName,
   wireStringifyExportName,
+  siblingWireWrite,
   writesWireStringify,
   RUNTIME_SERDE,
   writeOperationCodecs,
@@ -30,7 +31,7 @@ import {
 } from '@exprtlabs/golem/internal/emitter';
 import { nodeHoldsSequence, type SchemaGraph, type SchemaNode } from '@exprtlabs/golem/internal/schema-graph';
 import type { CodecValidationPlan, PlanValidators, SchemaPlace } from '@exprtlabs/golem/internal/validation-plan';
-import { identifier as typeIdentifier, sourceDigest } from '@exprtlabs/golem/internal/generator-support';
+import { identifier as typeIdentifier, sourceDigest, valueKey, type ValuePlace } from '@exprtlabs/golem/internal/generator-support';
 import { buildCodecValidationPlan } from '@exprtlabs/golem/internal/validation-plan';
 import { compareText } from '@exprtlabs/golem/generator-api';
 import { asRecord } from './json.js';
@@ -55,7 +56,7 @@ import {
   type CompositionSite,
 } from './model-resolution.js';
 import { openApiValidationSchemaClosure } from './model-manifest.js';
-import { analyzeOpenApiModels, reachableSchemaNodes, schemaGraphView, valueKey, valuePlace } from './model-schema-graph.js';
+import { analyzeOpenApiModels, reachableSchemaNodes, schemaGraphView, valuePlace } from './model-schema-graph.js';
 
 /** The bases of the model that `reference` names, when it has any. */
 function referenceBases(reference: string, definitions: ModelDefinitions): { readonly bases?: ReturnType<typeof modelBases> } {
@@ -380,9 +381,10 @@ function generateModels(
       return definition !== undefined && declared && typeIdentifier(definition.schemaName) === definition.name ? code`${typesModule.namespace()}.${identifier(definition.name)}` : undefined;
     },
     exportWireStringify: (node) => writesWireStringify(node, profile.validation),
-    siblingWireCodecIds: new Set([...(helpers.dependencyNodeIds ?? [])].flatMap((id) => {
+    siblingWire: new Map([...(helpers.dependencyNodeIds ?? [])].flatMap((id) => {
       const node = analysis.nodesById.get(id);
-      return node && writesWireStringify(node, profile.validation) ? [node.codecId] : [];
+      const write = node && siblingWireWrite(node, profile.validation);
+      return node && write ? [[node.codecId, write] as const] : [];
     })),
     ...(helpers.wireStringify ? { siblingWireName: helpers.wireStringify } : {}),
     ...(helpers.exportedFillFunctionIds ? { exportedFillFunctionIds: helpers.exportedFillFunctionIds } : {}),
@@ -434,7 +436,7 @@ export interface OperationValidatorNames {
 }
 
 /** The node that converts the value of an operation at a place (see `SdkOperationShape`) and the group of models that holds it; none for a value that converts nothing. */
-function convertedValueAt(analysis: OpenApiModelAnalysis, operation: NormalizedOperation, at: readonly string[]): { readonly nodeId: string; readonly groupId: string } | undefined {
+function convertedValueAt(analysis: OpenApiModelAnalysis, operation: NormalizedOperation, at: ValuePlace): { readonly nodeId: string; readonly groupId: string } | undefined {
   const nodeId = analysis.convertedNodeIds.get(valueKey(operation.name, at));
   const groupId = nodeId === undefined ? undefined : analysis.grouping.owner.get(nodeId);
   return nodeId !== undefined && groupId !== undefined ? { nodeId, groupId } : undefined;
@@ -476,7 +478,7 @@ export function generateOperationCodecs(
       responses: checks.responses.map((item) => ({ key: item.key, code: validatorsSource.name(item.name) })),
       responseHeaders: checks.responseHeaders.map((item) => ({ key: item.key, code: validatorsSource.name(item.name) })),
     });
-    const codecOf = (at: readonly string[], conversion: 'fromWire' | 'toWire'): Code | undefined => {
+    const codecOf = (at: ValuePlace, conversion: 'fromWire' | 'toWire'): Code | undefined => {
       const converted = convertedValueAt(analysis, operation, at);
       return converted && groupSources.get(converted.groupId)?.name(generatedFunctionName(converted.nodeId, conversion));
     };

@@ -10,6 +10,7 @@ import { generate } from '#model/generator';
 import { fileFixtureScope, onceShared, writeGeneratedArtifacts, type FixtureScope } from './fixture-project.js';
 import { command } from './support/process.js';
 import { TSC } from './support/build-project.js';
+import { importGeneratedModule, loadClass, loadFunctions, loadModelClasses, requireRecord } from './openapi/helpers.js';
 import { modelCodec } from './support/model-codec.js';
 import { validateInstance } from '@exprtlabs/golem/validation';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
@@ -80,11 +81,18 @@ function writeClassSupport(sourceRoot: string): void {
   fs.writeFileSync(path.join(sourceRoot, 'temporal.d.ts'), TEMPORAL_D_TS);
 }
 
-async function build(t: FixtureScope, fields: SourceFragment) {
+/** The model of one build: its name picks the files and the codec id, so builds of one model at two validation levels register their own codecs. */
+const VALIDATED = { name: 'A', validation: true } as const;
+const VALIDATION_OFF = { name: 'AOff', validation: false } as const;
+type BuiltModel = typeof VALIDATED | typeof VALIDATION_OFF;
+
+/** Builds the model `model.name` over `fields`; the returned `A` is its class, whatever its name. */
+async function build(t: FixtureScope, fields: SourceFragment, { name, validation }: BuiltModel) {
+  const file = name.toLowerCase();
   const { root, sourceRoot } = fixture(t);
   writeClassSupport(sourceRoot);
   fs.writeFileSync(path.join(sourceRoot, 'temporal-runtime.js'), TEMPORAL_RUNTIME);
-  fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({ name: 'A', imports: tsSource`import type { TSerde } from '@exprtlabs/golem/tags';
+  fs.writeFileSync(path.join(sourceRoot, `${file}.model.ts`), taggedModelSource({ name, imports: tsSource`import type { TSerde } from '@exprtlabs/golem/tags';
 import type { Money } from './money.js';
 import { encodeBytes, decodeBytes, encodeMoney, decodeMoney, encodeInstant, decodeInstant, encodeLink, decodeLink, encodeBig, decodeBig, encodeCents, decodeCents, encodeFlag, decodeFlag } from './codecs.js';
 type Bytes = Uint8Array & TSerde<typeof encodeBytes, typeof decodeBytes>;
@@ -94,29 +102,29 @@ type Link = URL & TSerde<typeof encodeLink, typeof decodeLink>;
 type Big = bigint & TSerde<typeof encodeBig, typeof decodeBig>;
 type Cents = bigint & TSerde<typeof encodeCents, typeof decodeCents>;
 type Flag = bigint & TSerde<typeof encodeFlag, typeof decodeFlag>;`, fields }).text);
-  writeModelGolemYaml(root, { validation: true });
+  writeModelGolemYaml(root, { validation });
   fs.mkdirSync(path.join(root, 'build'), { recursive: true });
   fs.copyFileSync(path.join(sourceRoot, 'temporal-runtime.js'), path.join(root, 'build/temporal-runtime.js'));
-  await import(path.toNamespacedPath(path.join(root, 'build/temporal-runtime.js')));
+  await importGeneratedModule(root, 'the Temporal runtime', 'build/temporal-runtime.js');
   await buildModelProject(root);
-  const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
-  return { A, generatedSource: fs.readFileSync(path.join(sourceRoot, 'a.model.generated.ts'), 'utf8'), root };
+  const A = (await loadModelClasses(path.join(root, `build/${file}.model.js`), [name]))[name];
+  return { A, generatedSource: fs.readFileSync(path.join(sourceRoot, `${file}.model.generated.ts`), 'utf8'), root };
 }
 
 test('class-valued TSerde fields round-trip', async t => {
-  const { A } = await build(t, tsSource`bytes: Bytes; price: Price; when: When; list: Bytes[]; maybe: Bytes | null`);
+  const { A } = await build(t, tsSource`bytes: Bytes; price: Price; when: When; list: Bytes[]; maybe: Bytes | null`, VALIDATED);
   const wire = { bytes: 'AQID', price: '12.34', when: '2025-01-02T03:04:05.000Z', list: ['AQ=='], maybe: null };
-  const model = modelCodec(A).fromWireFormat(wire);
+  const model = requireRecord(modelCodec(A).fromWireFormat(wire), 'model');
   assert.ok(model.bytes instanceof Uint8Array);
-  assert.equal(model.price.cents, 1234n);
-  assert.equal(model.when.epochMilliseconds, Date.parse(wire.when));
+  assert.equal(requireRecord(model.price, 'price').cents, 1234n);
+  assert.equal(requireRecord(model.when, 'when').epochMilliseconds, Date.parse(wire.when));
   assert.deepEqual(modelCodec(model).toWireFormat(model), wire);
 });
 
 test('bigint TSerde fields round-trip: plain, array, nullable and optional', async t => {
-  const { A } = await build(t, tsSource`big: Big; bigs: Big[]; maybeBig: Big | null; optBig?: Big`);
+  const { A } = await build(t, tsSource`big: Big; bigs: Big[]; maybeBig: Big | null; optBig?: Big`, VALIDATED);
   const wire = { big: '9007199254740993', bigs: ['1', '-2'], maybeBig: null };
-  const model = modelCodec(A).fromWireFormat(wire);
+  const model = requireRecord(modelCodec(A).fromWireFormat(wire), 'model');
   assert.equal(model.big, 9007199254740993n);
   assert.deepEqual(model.bigs, [1n, -2n]);
   assert.deepEqual(modelCodec(model).toWireFormat(model), wire);
@@ -148,52 +156,59 @@ export type TA = IObject<${item.model}>;
 `);
     writeModelGolemYaml(root, { validation: true });
     await buildModelProject(root);
-    const codecs = await import(path.toNamespacedPath(path.join(root, 'build/a.model.generated.js'))) as {
-      parseTA: (text: string) => { amount: bigint };
-      stringifyTA: (value: unknown) => string;
-    };
+    const codecs = await loadFunctions(path.join(root, 'build/a.model.generated.js'), ['parseTA', 'stringifyTA']);
     const text = '{"id":"o1","amount":"9007199254740993"}';
-    const model = codecs.parseTA(text);
+    const model = requireRecord(codecs.parseTA(text), 'model');
     assert.equal(model.amount, 9007199254740993n);
     assert.equal(codecs.stringifyTA(model), text);
   });
 }
 
 test('optional class-value field', async t => {
-  const { A } = await build(t, tsSource`bytes?: Bytes`);
+  const { A } = await build(t, tsSource`bytes?: Bytes`, VALIDATED);
   assert.deepEqual(modelCodec(A).toWireFormat(modelCodec(A).fromWireFormat({})), {});
   assert.deepEqual(modelCodec(A).toWireFormat(modelCodec(A).fromWireFormat({ bytes: 'AQID' })), { bytes: 'AQID' });
 });
 
 test('invalid wire value is rejected before decoding', async t => {
-  const { root } = await build(t, tsSource`bytes: Bytes`);
+  const { root } = await build(t, tsSource`bytes: Bytes`, VALIDATED);
   // parse<Model> runs JSON validation by default; fromWireFormat with validate false does not validate.
-  const codecs = await import(path.toNamespacedPath(path.join(root, 'build/a.model.generated.js'))) as { parseTA: (text: string) => unknown };
+  const codecs = await loadFunctions(path.join(root, 'build/a.model.generated.js'), ['parseTA']);
   assert.throws(() => codecs.parseTA('{"bytes":"***"}'));
   assert.doesNotThrow(() => codecs.parseTA('{"bytes":"AQID"}'));
 });
 
 // A user class, a global class, a Temporal class and a bigint, whose wires are a string, a number and a boolean, share one build.
 const fileScope = fileFixtureScope();
-const classFields = onceShared(() => build(fileScope, tsSource`price: Price; link: Link; when: When; cents: Cents; flag: Flag`));
-const dateField = onceShared(() => build(fileScope, tsSource`at: Date`));
+const CLASS_FIELDS = tsSource`price: Price; link: Link; when: When; cents: Cents; flag: Flag`;
+const classFields = onceShared(() => build(fileScope, CLASS_FIELDS, VALIDATED));
+// The same model built with validation off: the generated code holds no validator, so only the serde's own wire check can refuse a wrong JSON type.
+const classFieldsValidationOff = onceShared(() => build(fileScope, CLASS_FIELDS, VALIDATION_OFF));
+const dateField = onceShared(() => build(fileScope, tsSource`at: Date`, VALIDATED));
 const CLASS_WIRE = { price: '12.34', link: 'https://example.com/', when: '2025-01-02T03:04:05.000Z', cents: 5, flag: true };
 const isInputError = (message: RegExp) => (error: unknown): boolean => error instanceof LibError && error.causedByInput === true && message.test(error.message);
 
 // A serde reads only the JSON type of its wire: any other wire value is bad input at every level of validation, off included.
-for (const [field, wrong, message] of [
-  ['price', 5, /Expected a string/],
-  ['cents', '5', /Expected a number/],
-  ['flag', 'yes', /Expected a boolean/],
-] as const) {
-  test(`${field}: a wire value of the wrong JSON type is rejected with validation off`, async () => {
-    // protects: T-659 F-39 a TSerde reads only the JSON type of its wire (string, number or boolean), also when validation is off
-    const { A } = await classFields();
-    assert.doesNotThrow(() => modelCodec(A).fromWireFormat(CLASS_WIRE, { validate: false }));
-    assert.throws(() => modelCodec(A).fromWireFormat({ ...CLASS_WIRE, [field]: wrong }, { validate: false }), isInputError(message));
-    // The decoder a nested model field calls reads the same rule.
-    assert.throws(() => decodeGeneratedModelTrusted(A, { ...CLASS_WIRE, [field]: wrong }), isInputError(message));
-  });
+// Both builds run the call option validate:false; the validation-off build also has no validator in its generated code.
+for (const [level, builds, { name }] of [['on', classFields, VALIDATED], ['off', classFieldsValidationOff, VALIDATION_OFF]] as const) {
+  for (const [field, wrong, message] of [
+    ['price', 5, /Expected a string/],
+    ['cents', '5', /Expected a number/],
+    ['flag', 'yes', /Expected a boolean/],
+  ] as const) {
+    test(`${field}: a wire value of the wrong JSON type is rejected with validation ${level}`, async () => {
+      // protects: T-659 F-39 a TSerde reads only the JSON type of its wire (string, number or boolean), also when validation is off
+      const { A, root } = await builds();
+      const codecs = await loadFunctions(path.join(root, `build/${name.toLowerCase()}.model.generated.js`), [`parseT${name}`]);
+      const parse = (wire: object) => codecs[`parseT${name}`](JSON.stringify(wire), { validate: false });
+      assert.doesNotThrow(() => modelCodec(A).fromWireFormat(CLASS_WIRE, { validate: false }));
+      assert.doesNotThrow(() => parse(CLASS_WIRE));
+      assert.throws(() => modelCodec(A).fromWireFormat({ ...CLASS_WIRE, [field]: wrong }, { validate: false }), isInputError(message));
+      assert.throws(() => parse({ ...CLASS_WIRE, [field]: wrong }), isInputError(message));
+      // The decoder a nested model field calls reads the same rule.
+      assert.throws(() => decodeGeneratedModelTrusted(A, { ...CLASS_WIRE, [field]: wrong }), isInputError(message));
+    });
+  }
 }
 
 // A user class, a global class and a Temporal class share one model-plane check: the value is an instance of the class, or one `instance` issue names it.
@@ -220,7 +235,7 @@ for (const [name, wrong] of [['a string', '2025-01-02T03:04:05.000Z'], ['a numbe
 }
 
 // A TSerde whose deserializer refuses the wire text 'bad' and whose serializer always refuses, in every position a decode or an encode can stand.
-type GateCodecs = Record<string, (value: unknown, options?: object) => unknown>;
+const GATE_OPERATIONS = ['fromWireFormat', 'parse', 'toWireFormat', 'stringify'] as const;
 const gateProject = onceShared(async () => {
   const { root, sourceRoot } = fixture(fileScope);
   fs.writeFileSync(path.join(sourceRoot, 'codecs.ts'), `export class Gate { constructor(readonly text: string) {} }
@@ -240,9 +255,9 @@ export type TMaybe = IObject<{ door: Door | null }>;
 `);
   writeModelGolemYaml(root, { validation: true });
   await buildModelProject(root);
-  const gate = await import(path.toNamespacedPath(path.join(root, 'build/codecs.js'))) as { Gate: new (text: string) => object };
-  const codecs = await import(path.toNamespacedPath(path.join(root, 'build/gate.model.generated.js'))) as GateCodecs;
-  return { codecs, ok: new gate.Gate('ok') };
+  const Gate = await loadClass(path.join(root, 'build/codecs.js'), 'Gate');
+  const codecs = await loadFunctions(path.join(root, 'build/gate.model.generated.js'), GATE_POSITIONS.flatMap(({ name }) => GATE_OPERATIONS.map((operation) => `${operation}${name}`)));
+  return { codecs, ok: new Gate('ok') };
 });
 
 const GATE_POSITIONS = [
@@ -261,27 +276,27 @@ for (const position of GATE_POSITIONS) {
     const wire = position.wire('bad');
     for (const validate of [true, false]) {
       for (const read of [
-        () => codecs[`fromWireFormat${position.name}`]!(wire, { validate }),
-        () => codecs[`parse${position.name}`]!(JSON.stringify(wire), { validate }),
+        () => codecs[`fromWireFormat${position.name}`](wire, { validate }),
+        () => codecs[`parse${position.name}`](JSON.stringify(wire), { validate }),
       ]) {
         assert.throws(read, (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.Deserialization && error.causedByInput === true && /decode refused/.test(error.message));
       }
     }
-    assert.ok(codecs[`fromWireFormat${position.name}`]!(position.wire('ok')));
+    assert.ok(codecs[`fromWireFormat${position.name}`](position.wire('ok')));
   });
 
   test(`${position.name}: a serializer that throws on the application's own value is not bad input through toWireFormat and stringify`, async () => {
     // protects: R-70 T-660 a TSerde serializer throw stays causedByInput false
     const { codecs, ok } = await gateProject();
     const value = position.value(ok);
-    for (const write of [() => codecs[`toWireFormat${position.name}`]!(value), () => codecs[`stringify${position.name}`]!(value)]) {
+    for (const write of [() => codecs[`toWireFormat${position.name}`](value), () => codecs[`stringify${position.name}`](value)]) {
       assert.throws(write, (error: unknown) => error instanceof Error && !(error instanceof LibError) && error.message === 'encode refused' && error.cause === undefined);
     }
   });
 }
 
 test('generated model type names the class', async t => {
-  const { root } = await build(t, tsSource`price: Price; when: When; bytes: Bytes`);
+  const { root } = await build(t, tsSource`price: Price; when: When; bytes: Bytes`, VALIDATED);
   await assertFieldClasses(root, path.join(root, 'src'), ["import type { Money } from './money.js';"], { price: 'Money', when: 'Temporal.Instant', bytes: 'Uint8Array' });
 });
 
@@ -293,8 +308,8 @@ import { encodeBytes, decodeBytes } from './codecs.js';
 type Bytes = Uint8Array & TSerde<typeof encodeBytes, typeof decodeBytes>;`, fields: tsSource`bytes: Bytes` }).text);
   writeModelGolemYaml(root, { mobx: true, validation: true });
   await buildModelProject(root);
-  const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
-  const model = modelCodec(A).fromWireFormat({ bytes: 'AQID' });
+  const { A } = await loadModelClasses(path.join(root, 'build/a.model.js'), ['A']);
+  const model = requireRecord(modelCodec(A).fromWireFormat({ bytes: 'AQID' }), 'model');
   assert.ok(model.bytes instanceof Uint8Array, 'MobX must hold the instance by reference, not wrap it');
   assert.deepEqual(modelCodec(model).toWireFormat(model), { bytes: 'AQID' });
 });
@@ -419,7 +434,7 @@ type Third = ThirdMoney & TSerde<typeof encodeThird, typeof decodeThird>;`, fiel
     "import type SecondMoney from './second/money.js';",
     "import type { Money as ThirdMoney } from './third.js';",
   ], { first: 'Cash', second: 'SecondMoney', third: 'ThirdMoney' });
-  const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
+  const { A } = await loadModelClasses(path.join(root, 'build/a.model.js'), ['A']);
   const wire = { first: 'a', second: 'b', third: 'c' };
   assert.deepEqual(modelCodec(A).toWireFormat(modelCodec(A).fromWireFormat(wire)), wire);
 });

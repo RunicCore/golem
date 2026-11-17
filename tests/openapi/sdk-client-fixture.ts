@@ -1,12 +1,10 @@
-import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
 import { runPipeline } from '#golem/cli';
 import { createFixtureProject, linkGolemPackages, type FixtureScope } from '../fixture-project.js';
 import { command } from '../support/process.js';
 import { TSC } from '../support/build-project.js';
-import { compileGeneratedSdk, generateMaterializedSdk, importGeneratedModule, isGeneratedClientClass } from './helpers.js';
+import { compileGeneratedSdk, generateMaterializedSdk, loadGeneratedClient, type GeneratedClientInstance } from './helpers.js';
 
 /** What a test of a generated client says about its SDK: the document, the client name, and how dates and checks are generated. */
 interface SdkSetup {
@@ -17,18 +15,17 @@ interface SdkSetup {
 }
 
 /** An SDK generated from a document and compiled once; `createClient` makes a client of it, with `baseUrl` set to a test address. */
-export interface LoadedSdk<Client> {
+export interface LoadedSdk {
   readonly output: string;
-  createClient(options: Record<string, unknown>): Client;
+  createClient(options: Record<string, unknown>): GeneratedClientInstance;
 }
 
-export async function loadSdk<Client>(scope: FixtureScope, prefix: string, setup: SdkSetup): Promise<LoadedSdk<Client>> {
+export async function loadSdk(scope: FixtureScope, prefix: string, setup: SdkSetup): Promise<LoadedSdk> {
   const output = path.join(createFixtureProject(scope, prefix), 'sdk');
   await generateMaterializedSdk(setup.document, { output, name: setup.name, profile: { validation: setup.validation, allowAny: false }, dates: setup.dates });
   compileGeneratedSdk(output, [], { strict: true, lib: ['ES2023', 'DOM', 'DOM.Iterable', 'esnext.temporal'] });
-  const Constructor = (await importGeneratedModule(output, 'generated SDK'))[`${setup.name}Client`];
-  assert.ok(isGeneratedClientClass(Constructor), 'generated client');
-  return { output, createClient: (options) => new Constructor({ baseUrl: 'https://api.test', ...options }) as Client };
+  const Constructor = await loadGeneratedClient(output, setup.name, 'dist/index.js');
+  return { output, createClient: (options) => new Constructor({ baseUrl: 'https://api.test', ...options }) };
 }
 
 /** A document of one operation, `createCharge`, that posts and returns the schema `Charge` of `schemas`. */
@@ -57,7 +54,7 @@ export interface GolemModeSdkSetup {
 export interface GolemModeProject {
   readonly root: string;
   readonly config: string;
-  client<Client>(sdk: GolemModeSdkSetup, options: Record<string, unknown>): Promise<Client>;
+  client(sdk: GolemModeSdkSetup, options: Record<string, unknown>): Promise<GeneratedClientInstance>;
 }
 
 export function writeGolemModeProject(scope: FixtureScope, prefix: string, sdks: readonly GolemModeSdkSetup[], validation: boolean | 'sanity'): { readonly root: string; readonly config: string } {
@@ -88,19 +85,17 @@ export async function loadGolemModeProject(scope: FixtureScope, prefix: string, 
     root,
     config,
     client: async (sdk, options) => {
-      const Constructor = (await import(pathToFileURL(path.join(root, 'build', sdk.folder, 'index.js')).href) as Record<string, unknown>)[`${sdk.name}Client`];
-      assert.ok(isGeneratedClientClass(Constructor), 'generated client');
-      return new Constructor({ baseUrl: 'https://api.test', ...options }) as never;
+      const Constructor = await loadGeneratedClient(path.join(root, 'build', sdk.folder), sdk.name, 'index.js');
+      return new Constructor({ baseUrl: 'https://api.test', ...options });
     },
   };
 }
 
 /** A golem-mode SDK made like `loadSdk` makes a standalone one, so one test can run against both modes. */
-export async function loadGolemModeSdk<Client>(scope: FixtureScope, prefix: string, setup: SdkSetup): Promise<LoadedSdk<Client>> {
+export async function loadGolemModeSdk(scope: FixtureScope, prefix: string, setup: SdkSetup): Promise<LoadedSdk> {
   const sdk: GolemModeSdkSetup = { document: setup.document, folder: 'sdk/api', name: setup.name, dates: setup.dates };
   const project = await loadGolemModeProject(scope, prefix, [sdk], setup.validation);
   const output = path.join(project.root, 'sdk/api');
-  const Constructor = (await import(pathToFileURL(path.join(project.root, 'build/sdk/api/index.js')).href) as Record<string, unknown>)[`${setup.name}Client`];
-  assert.ok(isGeneratedClientClass(Constructor), 'generated client');
-  return { output, createClient: (options) => new Constructor({ baseUrl: 'https://api.test', ...options }) as Client };
+  const Constructor = await loadGeneratedClient(path.join(project.root, 'build/sdk/api'), setup.name, 'index.js');
+  return { output, createClient: (options) => new Constructor({ baseUrl: 'https://api.test', ...options }) };
 }

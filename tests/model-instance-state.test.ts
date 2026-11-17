@@ -12,6 +12,7 @@ import { buildModelProject, createModelProject, writeModelGolemYaml } from './mo
 import { compileValidatorModule } from './support/compiled-validators.js';
 import { instanceFields } from '../packages/golem/src/presence.js';
 import { MODEL_FIELDS_KEY } from '../packages/golem/src/schema-keywords.js';
+import { loadModelClasses, requireRecord, type GeneratedModelClass } from './openapi/helpers.js';
 import { generatedCodecIdFromRoot } from './support/consumer.js';
 import { modelCodec } from './support/model-codec.js';
 // An own key of a golem model instance that its own model does not declare is program state, never an unknown key
@@ -34,6 +35,12 @@ class Circle { kind = 'a'; x = 1; }
 registerGeneratedModel(Circle, { fields: ['kind', 'x'] });
 class Reach { kind = 'a'; x = 1; y?: number; }
 registerGeneratedModel(Reach, { fields: ['kind', 'x', 'y'] });
+// Declares one number, and no key that a schema below names.
+class Counter { count = 1; }
+registerGeneratedModel(Counter, { fields: ['count'] });
+// Declares the tag of the tagged branch `a` and not its key `x`.
+class Tagged { kind = 'a'; }
+registerGeneratedModel(Tagged, { fields: ['kind'] });
 
 /** An instance of `Model` with `keys` set as own properties. */
 function instance<Model extends object>(Model: new () => Model, keys: Record<string, unknown>): Model {
@@ -44,6 +51,9 @@ const CLOSED = { type: 'object', required: ['title'], properties: { title: { typ
 const EVALUATED = { allOf: [{ type: 'object', properties: { title: { type: 'string' } } }], unevaluatedProperties: false };
 const EVALUATED_VALUED = { allOf: [{ type: 'object', properties: { title: { type: 'string' } } }], unevaluatedProperties: { type: 'number' } };
 const branch = (tag: string, key: string): object => ({ type: 'object', required: ['kind', key], properties: { kind: { const: tag }, [key]: { type: 'number' } }, additionalProperties: false });
+// Branches with `minProperties` are not merged into one key pass, so the union reads its tag on its own.
+const counted = (tag: string): object => ({ type: 'object', required: ['kind'], properties: { kind: { const: tag } }, minProperties: 1 });
+const TAGGED_ALONE = { oneOf: [counted('a'), counted('b')], discriminator: { propertyName: 'kind' } };
 const TAGGED = { oneOf: [branch('a', 'x'), branch('b', 'y')], discriminator: { propertyName: 'kind' } };
 // An open model that lists its names, as golem-openapi-ts writes `unevaluatedProperties: false` over an open base.
 const NAMED = { type: 'object', properties: { title: { type: 'string' } }, propertyNames: { enum: ['title'] } };
@@ -54,12 +64,13 @@ const PATTERNED = { type: 'object', properties: { title: { type: 'string' } }, p
 const VALUED = { type: 'object', properties: { title: { type: 'string' } }, additionalProperties: { type: 'number' } };
 // A named key that no check reads (`BARE`), a pattern with no declared key (`PATTERN_ONLY`), and a model instance inside a const, an enum or a list that must be unique.
 const BARE = { type: 'object', properties: { note: {} }, maxProperties: 1 };
+const DEPENDENT = { type: 'object', properties: { title: { type: 'string' } }, dependentSchemas: { note: { required: ['title'] } } };
 const PATTERN_ONLY = { type: 'object', patternProperties: { '^x': { type: 'number' } } };
 const CONST_MODEL = { const: { title: 't' } };
 const ENUM_MODEL = { enum: [{ title: 'u' }, { title: 't' }] };
 const UNIQUE_MODELS = { type: 'array', uniqueItems: true };
 const compiled = compileValidatorModule({
-  roots: { bare: BARE, patternOnly: PATTERN_ONLY, constModel: CONST_MODEL, enumModel: ENUM_MODEL, uniqueModels: UNIQUE_MODELS, closed: CLOSED, evaluated: EVALUATED, evaluatedValued: EVALUATED_VALUED, tagged: TAGGED, named: NAMED, countedMax: COUNTED_MAX, countedMaxNamed: COUNTED_MAX_NAMED, countedMin: COUNTED_MIN, patterned: PATTERNED, valued: VALUED },
+  roots: { taggedAlone: TAGGED_ALONE, dependent: DEPENDENT, bare: BARE, patternOnly: PATTERN_ONLY, constModel: CONST_MODEL, enumModel: ENUM_MODEL, uniqueModels: UNIQUE_MODELS, closed: CLOSED, evaluated: EVALUATED, evaluatedValued: EVALUATED_VALUED, tagged: TAGGED, named: NAMED, countedMax: COUNTED_MAX, countedMaxNamed: COUNTED_MAX_NAMED, countedMin: COUNTED_MIN, patterned: PATTERNED, valued: VALUED },
   fastPath: true,
 });
 
@@ -163,6 +174,27 @@ for (const { root, fast, build } of THROWING) {
     const runs = { count: 0 };
     assert.deepEqual(module.byRoot[root](build(runs), false), [], 'the full validator');
     assert.equal(module.fastByRoot[root]?.(build(runs)), fast ? true : undefined, 'the fast check');
+    assert.equal(runs.count, 0);
+  });
+}
+
+// A program-state key that has the name of a key the schema declares: the schema judges the keys of the instance's own model, so this key is never read.
+const NAMED_LIKE_STATE: readonly { readonly root: string; readonly valid: boolean; readonly build: (runs: { count: number }) => unknown }[] = [
+  { root: 'countedMaxNamed', valid: true, build: runs => withThrowingState(Task, 'note', runs) },
+  { root: 'valued', valid: true, build: runs => withThrowingState(Counter, 'title', runs) },
+  { root: 'patterned', valid: true, build: runs => withThrowingState(Counter, 'title', runs) },
+  { root: 'dependent', valid: true, build: runs => withThrowingState(Task, 'note', runs) },
+  { root: 'taggedAlone', valid: false, build: runs => withThrowingState(Counter, 'kind', runs) },
+  { root: 'tagged', valid: false, build: runs => withThrowingState(Tagged, 'x', runs) },
+];
+
+for (const { root, valid, build } of NAMED_LIKE_STATE) {
+  test(`the ${root} check never runs a getter of program state that has a declared name`, async () => {
+    // protects: T-958 a state key named like a schema key was read by the key test, as T-912 left it
+    const module = await compiled;
+    const runs = { count: 0 };
+    assert.equal(module.byRoot[root](build(runs), false).length === 0, valid, 'the full validator');
+    assert.equal(module.fastByRoot[root]?.(build(runs)), valid, 'the fast check');
     assert.equal(runs.count, 0);
   });
 }
@@ -277,15 +309,15 @@ test('the model codec toWireFormat of a model writes no program state of an inst
 test('parse with construct keeps the extra keys of a dynamic map, converts them, and stringify writes them back', async () => {
   // protects: bug T-163 parse with construct dropped the extra keys of a model with a dynamic map
   const { Bag, bag, Stamps, stamps } = await buildState(false);
-  const parsed = bag.parse('{"id":"a","extra":1}', { construct: Bag }) as { id: string; extra: number };
+  const parsed = requireRecord(bag.parse('{"id":"a","extra":1}', { construct: Bag }), 'parsed');
   assert.ok(parsed instanceof Bag);
   assert.deepEqual({ ...parsed }, { id: 'a', extra: 1 });
   assert.equal(bag.stringify(parsed), '{"id":"a","extra":1}');
   assert.deepEqual(modelCodec(parsed).toWireFormat(parsed), { id: 'a', extra: 1 });
-  assert.deepEqual({ ...(bag.parse('{"id":"a","extra":1}') as object) }, { id: 'a', extra: 1 }, 'without construct');
+  assert.deepEqual({ ...requireRecord(bag.parse('{"id":"a","extra":1}'), 'parsed') }, { id: 'a', extra: 1 }, 'without construct');
 
   const text = '{"first":"2020-01-01T00:00:00.000Z","later":"2021-02-03T04:05:06.000Z"}';
-  const dated = stamps.parse(text, { construct: Stamps }) as { first: Date; later: Date };
+  const dated = requireRecord(stamps.parse(text, { construct: Stamps }), 'dated');
   assert.ok(dated instanceof Stamps);
   assert.ok(dated.later instanceof Date, 'an extra value takes the conversion of the map value');
   assert.equal(dated.later.toISOString(), '2021-02-03T04:05:06.000Z');
@@ -306,12 +338,12 @@ export class Loose extends TLooseBaseModel {
 `);
   writeModelGolemYaml(root, { validation: true, exact: false });
   await buildModelProject(root);
-  const { Loose } = await import(pathToFileURL(path.join(root, 'build/loose.model.js')).href) as { Loose: new (values?: object) => object };
+  const { Loose } = await loadModelClasses(path.join(root, 'build/loose.model.js'), ['Loose']);
   const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TLoose'));
   const parsed = codec.parse('{"id":"a","extra":1}', { construct: Loose });
   assert.ok(parsed instanceof Loose);
   assert.deepEqual({ ...parsed }, { id: 'a' });
-  assert.equal(codec.stringify(new Loose({ id: 'a', extra: 1 } as object)), '{"id":"a"}');
+  assert.equal(codec.stringify(new Loose({ id: 'a', extra: 1 })), '{"id":"a"}');
 });
 
 async function buildLooseIn(scope: FixtureScope) {
@@ -319,10 +351,9 @@ async function buildLooseIn(scope: FixtureScope) {
   fs.writeFileSync(path.join(sourceRoot, 'loose.model.ts'), readFixture('models/model-instance-state/loose-state/loose.model.ts'));
   writeModelGolemYaml(root, { validation: true, exact: false });
   await buildModelProject(root);
-  const models = await import(pathToFileURL(path.join(root, 'build/loose.model.js')).href);
+  const classes = await loadModelClasses(path.join(root, 'build/loose.model.js'), ['Loose', 'LooseNote', 'Open', 'Shape', 'Stamped']);
   const codec = (name: string) => requireObjectCodec(generatedCodecIdFromRoot(root, name));
-  type Make = new (values?: object) => object;
-  return { Loose: models.Loose as Make, LooseNote: models.LooseNote as Make, Open: models.Open as Make, Shape: models.Shape as Make, Stamped: models.Stamped as Make, loose: codec('TLoose'), note: codec('TLooseNote'), open: codec('TOpen'), shape: codec('TShape'), stamped: codec('TStamped') };
+  return { ...classes, loose: codec('TLoose'), note: codec('TLooseNote'), open: codec('TOpen'), shape: codec('TShape'), stamped: codec('TStamped') };
 }
 
 // The loose-state tests share one build of their fixture.
@@ -355,7 +386,7 @@ test('an explicit additionalProperties tag on a TS model writes its extra keys, 
   assert.equal(loose.stringify(closed), '{"id":"a"}');
   assert.deepEqual(loose.toWireFormat(closed), { id: 'a' });
   assert.deepEqual(modelCodec(closed).toWireFormat(closed), { id: 'a' }, 'model codec toWireFormat');
-  const shaped = new Shape({ tagged: { known: 'k', extra: 1 }, plain: { known: 'k', extra: 1 } } as object);
+  const shaped = new Shape({ tagged: { known: 'k', extra: 1 }, plain: { known: 'k', extra: 1 } });
   assert.equal(shape.stringify(shaped), '{"tagged":{"known":"k","extra":1},"plain":{"known":"k"}}', 'a field with the tag and a field without it');
   assert.deepEqual(shape.toWireFormat(shaped), { tagged: { known: 'k', extra: 1 }, plain: { known: 'k' } });
 });
@@ -364,7 +395,7 @@ test('an AdditionalProperties tag with a value type converts the extra values li
   // protects: bug T-192 the extra values of an AdditionalProperties<Date> tag were copied as they are, so an extra ISO string stayed a string
   const { Stamped, stamped } = await buildLoose();
   const text = '{"id":"a","at":"2021-02-03T04:05:06.000Z"}';
-  const parsed = stamped.parse(text, { construct: Stamped }) as { at: Date };
+  const parsed = requireRecord(stamped.parse(text, { construct: Stamped }), 'parsed');
   assert.ok(parsed instanceof Stamped);
   assert.ok(parsed.at instanceof Date, 'an extra value takes the conversion of the tag type');
   assert.equal(parsed.at.toISOString(), '2021-02-03T04:05:06.000Z');
@@ -373,6 +404,9 @@ test('an AdditionalProperties tag with a value type converts the extra values li
   assert.deepEqual(modelCodec(parsed).toWireFormat(parsed), JSON.parse(text), 'model codec toWireFormat');
   assert.equal(stamped.stringify(Object.assign(new Stamped({ id: 'a' }), { at: new Date(0) })), '{"id":"a","at":"1970-01-01T00:00:00.000Z"}');
 });
+
+/** A copy of the `view` field of the model value `value`. */
+const viewOf = (value: unknown) => ({ ...requireRecord(requireRecord(value, 'value').view, 'view') });
 
 test('an AdditionalProperties tag on a projection field keeps its extra keys in the constructor, the class-level encode and the wire form', async (t) => {
   // protects: bug T-192 a projection (Pick<Source, 'id'> & AdditionalProperties<unknown>) dropped the extra keys of its value
@@ -388,15 +422,15 @@ export class View extends TViewBaseModel {
 `);
   writeModelGolemYaml(root, { validation: true, exact: false });
   await buildModelProject(root);
-  const { View } = await import(pathToFileURL(path.join(root, 'build/view.model.js')).href) as { View: new (values?: object) => object };
+  const { View } = await loadModelClasses(path.join(root, 'build/view.model.js'), ['View']);
   const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TView'));
   const written = { view: { id: 'a', extra: 1 } };
   const instance = new View(written);
-  assert.deepEqual({ ...(instance as { view: object }).view }, written.view, 'the constructor keeps the extra key');
+  assert.deepEqual(viewOf(instance), written.view, 'the constructor keeps the extra key');
   assert.deepEqual(modelCodec(instance).toWireFormat(instance), written, 'model codec toWireFormat');
   assert.equal(codec.stringify(instance), JSON.stringify(written));
   assert.deepEqual(codec.toWireFormat(instance), written);
-  assert.deepEqual({ ...(codec.parse(JSON.stringify(written), { construct: View }) as { view: object }).view }, written.view, 'parse with construct');
+  assert.deepEqual(viewOf(codec.parse(JSON.stringify(written), { construct: View })), written.view, 'parse with construct');
 });
 
 test('the class-level decode reads the declared fields of a nested object by the JSON view', async (t) => {
@@ -409,11 +443,11 @@ export class Nest extends TNestBaseModel { constructor(values: Partial<TNestFiel
 `);
   writeModelGolemYaml(root, { validation: true });
   await buildModelProject(root);
-  const { Nest } = await import(pathToFileURL(path.join(root, 'build/nest.model.js')).href) as { Nest: new (values?: object) => object };
+  const { Nest } = await loadModelClasses(path.join(root, 'build/nest.model.js'), ['Nest']);
   const text = '2020-01-02T03:04:05.000Z';
   const hidden = Object.defineProperty({ id: 'a' }, 'when', { value: text, enumerable: false });
   const inherited = Object.assign(Object.create({ when: text }), { id: 'a' });
-  const decode = (inner: object) => ({ ...(decodeGeneratedModelTrusted(Nest, { inner }) as { inner: object }).inner });
+  const decode = (inner: object) => ({ ...requireRecord(requireRecord(decodeGeneratedModelTrusted(Nest, { inner }), 'decoded').inner, 'inner') });
   assert.deepEqual(decode(hidden), { id: 'a' }, 'a non-enumerable field');
   assert.deepEqual(decode(inherited), { id: 'a' }, 'an inherited field');
   assert.deepEqual(decode({ id: 'a', when: undefined }), { id: 'a' }, 'an undefined field');
@@ -432,7 +466,7 @@ export class Stamp extends TStampBaseModel { constructor(values: Partial<TStampF
 `);
   writeModelGolemYaml(root, { validation: true });
   await buildModelProject(root);
-  const models = await import(pathToFileURL(path.join(root, 'build/undefined-field.model.js')).href) as { Profile: new (values?: object) => object; Stamp: new (values?: object) => object };
+  const models = await loadModelClasses(path.join(root, 'build/undefined-field.model.js'), ['Profile', 'Stamp']);
   const profile = requireObjectCodec(generatedCodecIdFromRoot(root, 'TProfile'));
   const stamp = requireObjectCodec(generatedCodecIdFromRoot(root, 'TStamp'));
   const options = { validate: false };
@@ -462,7 +496,7 @@ export class Dated extends TDatedBaseModel { constructor(values: Partial<TDatedF
 `);
   writeModelGolemYaml(root, { validation: true });
   await buildModelProject(root);
-  const models = await import(pathToFileURL(path.join(root, 'build/nested-undefined.model.js')).href) as Record<'Optional' | 'Required' | 'Dated', new (values?: object) => object>;
+  const models = await loadModelClasses(path.join(root, 'build/nested-undefined.model.js'), ['Optional', 'Required', 'Dated']);
   const optional = requireObjectCodec(generatedCodecIdFromRoot(root, 'TOptional'));
   const required = requireObjectCodec(generatedCodecIdFromRoot(root, 'TRequired'));
   const dated = requireObjectCodec(generatedCodecIdFromRoot(root, 'TDated'));
@@ -476,7 +510,7 @@ export class Dated extends TDatedBaseModel { constructor(values: Partial<TDatedF
     assert.deepEqual(dated.toWireFormat({ id: 'a', inner: { at, note: undefined } }, options), { id: 'a', inner: { at: at.toISOString() } }, `a Date beside an optional key, ${label}`);
   }
   assert.deepEqual(required.toWireFormat({ id: 'a', inner: { tag: undefined } }, { validate: false }), { id: 'a', inner: {} }, 'a required key that admits undefined');
-  const classLevel = (Model: new (values?: object) => object, inner: object): unknown => (modelCodec(Model).toWireFormat(Object.assign(new Model({ id: 'a' }), { inner }), { validate: false }) as { inner: unknown }).inner;
+  const classLevel = (Model: GeneratedModelClass, inner: object): unknown => requireRecord(modelCodec(Model).toWireFormat(Object.assign(new Model({ id: 'a' }), { inner }), { validate: false }), 'wire').inner;
   assert.deepEqual(classLevel(models.Optional, { tag: undefined, n: undefined }), {}, 'the model codec toWireFormat of an optional key');
   assert.deepEqual(classLevel(models.Required, { tag: undefined }), {}, 'the model codec toWireFormat of a required key that admits undefined');
   assert.deepEqual(classLevel(models.Dated, { at, note: undefined }), { at: at.toISOString() }, 'the model codec toWireFormat of a Date beside an optional key');

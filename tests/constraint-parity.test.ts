@@ -77,7 +77,7 @@ function canonicalModelSchema(root: string, sourceRoot: string): unknown {
     specifications,
     profile,
     root,
-    createJobAnalysis(checker, specifications, manifestIndex, profile, [source], file => programInfo.program.isSourceFileDefaultLibrary(file), root),
+    createJobAnalysis(checker, specifications, manifestIndex, profile, [source], file => programInfo.program.isSourceFileDefaultLibrary(file), () => programInfo.program.getSourceFiles().filter(file => !programInfo.program.isSourceFileDefaultLibrary(file)), root),
   );
   assert.ok(graph, 'model source graph');
   const descriptor = graph.definitions.TA;

@@ -372,13 +372,17 @@ export function jobIsCurrent(
     .every(([input, digest]) => inputDigest(absoluteRecordPath(config, input), excluded, config.directory) === digest);
 }
 
+/** The start of a job on the clock that file times come from: the status-change time of a file written now, which `Date.now()` can run ahead of. */
+export function jobStartTime(config: GolemConfig, files: OutputFiles = realOutputFiles): number {
+  return files.stamp(path.dirname(config.inventoryFile));
+}
+
 /** Collects the inputs of one running job, each digested when the job reads it and never later: an edit after the read changes the file's digest, so the next run reruns the job. */
 export class JobInputs {
   private readonly digests = new Map<string, string>();
-  private readonly started = Date.now();
 
-  /** `excluded` is read at each call, so files an earlier job just wrote stay out of a listing. `root` is the golem.yaml's directory. */
-  constructor(private readonly excluded: (filename: string) => boolean, private readonly root: string) {}
+  /** `excluded` is read at each call, so files an earlier job just wrote stay out of a listing. `root` is the golem.yaml's directory. `started` is the start of the job on the file clock (`jobStartTime`). */
+  constructor(private readonly excluded: (filename: string) => boolean, private readonly root: string, private readonly started: number) {}
 
   read(filename: string): void {
     const resolved = path.resolve(filename);
@@ -402,7 +406,7 @@ export class JobInputs {
       .map(([input, digest]) => [recordPath(config, input), digest]));
   }
 
-  /** Whether the file changed at or after the job started, by the status-change time: no tool can set it back, as it can a modification time. The file clock ticks about once a millisecond, so a change within that tick of the start reads as before it. */
+  /** Whether the file changed at or after the job started, by the status-change time: no tool can set it back, as it can a modification time. `started` is read from the same clock, so a change after the start never reads as before it. A change in the same tick of that clock as the start cannot be ordered: it reads as after it, the file is untracked and its job runs once more, which is the safe side. */
   private isUntracked(filename: string): boolean {
     try {
       const stat = fs.statSync(filename, { throwIfNoEntry: false });

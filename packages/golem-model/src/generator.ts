@@ -14,7 +14,7 @@ import { GolemDiagnosticSeverity, compareText, isInsideDirectory, resolveProfile
 import { canonicalPath, displayPath } from '@exprtlabs/golem/internal/generator-support';
 import { CODEC_DATA_HOOK, DEFAULT_MODEL_SUFFIXES, defaultModelOutput, MODEL_BLOCK, outsideModelsRootMessage, VALIDATOR_ENHANCER_HOOK, type CodecDataParticipant, type ModelContext, type ValidatorEnhancerParticipant } from './plan.js';
 import { codecKeysPath } from '@exprtlabs/golem/internal/generated-paths';
-import { AmbiguousUnionConversionError, ObjectUnionDiscriminatorError, reachesRecursiveNode, type Code } from '@exprtlabs/golem/internal/emitter';
+import { AmbiguousUnionConversionError, ObjectUnionDiscriminatorError, reachesRecursiveNode, siblingWireWrite, type Code, type SiblingWireWrite } from '@exprtlabs/golem/internal/emitter';
 import { emitCodecDeclarationTable, sharedShortNameIds } from '@exprtlabs/golem/internal/schema-graph';
 import {
   analyzeSourceGraph,
@@ -198,7 +198,7 @@ function referencedManifestFiles(manifestIndex: ManifestIndex): string[] {
 interface SourceSchemaGraph {
   readonly graph: SourceModelGraph;
   readonly schemaGraph: SchemaGraph;
-  readonly siblingWireCodecIds: ReadonlySet<string>;
+  readonly siblingWire: ReadonlyMap<string, SiblingWireWrite>;
   readonly siblingRecursion: ReadonlyMap<string, boolean>;
   /** Siblings declared by sources in the same import cycle as this one. */
   readonly cyclicSiblings: ReadonlySet<string>;
@@ -287,7 +287,7 @@ function internJobSchemaGraphs(
   closure: readonly CodecSchemaClosureEntry[] = [],
 ): SourceSchemaGraph[] {
   const codecIds = new Map<ModelSpecification, string>();
-  const wireSchemas = new Set<string>();
+  const siblingWire = new Map<string, SiblingWireWrite>();
   // Every codec emitted elsewhere that publishes a `#wire` schema: the companions above and the manifests below.
   const wirePlanes = new Set<string>();
   // Whether each model reaches a recursive model: those emitted by this job, and those of an SDK manifest that publishes
@@ -321,8 +321,9 @@ function internJobSchemaGraphs(
       if (!node) continue;
       codecIds.set(specification, node.codecId);
       recursion.set(node.codecId, reachesRecursiveNode(schemaGraph, node, recursion));
-      if (!node.sameSchema) {
-        wireSchemas.add(node.codecId);
+      const write = siblingWireWrite(node, defaultValidation);
+      if (write !== undefined) {
+        siblingWire.set(node.codecId, write);
         wirePlanes.add(node.codecId);
       }
       for (const name of [node.codecId, specification.name]) {
@@ -345,7 +346,7 @@ function internJobSchemaGraphs(
         externalWireIds: wirePlanes,
       });
       record(graph, schemaGraph);
-      byGraph.set(graph, { graph, schemaGraph, siblingWireCodecIds: wireSchemas, siblingRecursion: recursion, cyclicSiblings: new Set() });
+      byGraph.set(graph, { graph, schemaGraph, siblingWire, siblingRecursion: recursion, cyclicSiblings: new Set() });
       continue;
     }
     // Sources that reference each other share one id assignment for their models.
@@ -401,7 +402,7 @@ function internJobSchemaGraphs(
         .filter((sibling) => component.some((member) => member !== graph
           && member.emitted.includes(sibling) && !member.siblings.includes(sibling)))
         .map((sibling) => sibling.name));
-      byGraph.set(graph, { graph, schemaGraph, siblingWireCodecIds: wireSchemas, siblingRecursion: recursion, cyclicSiblings });
+      byGraph.set(graph, { graph, schemaGraph, siblingWire, siblingRecursion: recursion, cyclicSiblings });
     }
   }
   return graphs.flatMap((graph) => {
@@ -574,6 +575,7 @@ export function generate(context: GolemModelContext): GolemModelResult {
     normalized.profile,
     sources,
     (file) => program.isSourceFileDefaultLibrary(file),
+    () => program.getSourceFiles().filter((file) => !program.isSourceFileDefaultLibrary(file)),
     normalized.root,
     (filename) => program.getSourceFile(filename),
     boundary,
@@ -597,32 +599,39 @@ export function generate(context: GolemModelContext): GolemModelResult {
   const schemaGraphs = [...graphSchemaPairs.map(({ schemaGraph }) => schemaGraph), ...sdks.map(({ graph }) => graph)];
   const schemaEntries = deduplicateTagSchemas(
     graphs.flatMap((graph) => graph.schemas)
-      .sort((left, right) => compareText(left.key, right.key)
-        || compareText(JSON.stringify(left.schema), JSON.stringify(right.schema))),
+      .sort((left, right) => compareText(left.key, right.key)),
   );
-  // A model never validates above its project, so a project that does not validate has no validators.
-  const validationPlan = normalized.profile.validation !== false
-    ? buildCodecValidationPlan(
-      schemaGraphs,
-      [],
-      Object.fromEntries(schemaEntries.map((compilation) => [compilation.id, compilation.schema])),
-      normalized.profile.validation,
-    )
-    : undefined;
+  const validationPlan = buildCodecValidationPlan(
+    schemaGraphs,
+    [],
+    Object.fromEntries(schemaEntries.map((compilation) => [compilation.id, compilation.schema])),
+    normalized.profile.validation,
+  );
+  const tagSchemaIds = new Set(schemaEntries.map((compilation) => compilation.id));
   const validatorsOutput = join(normalized.output, 'models.validators.generated.ts');
+  // A model never validates above its project, so a project that does not validate has no validators: its SDKs have no operation roots.
   // A project whose models all stay off has no codec that calls a validator, so it writes no file.
-  const sdkOperations = validationPlan ? sdkValidatorOperations(sdks) : [];
-  const validators = validationPlan && (validationPlan.ownSchemas.length > 0 || sdkOperations.length > 0)
+  const sdkOperations = normalized.profile.validation !== false ? sdkValidatorOperations(sdks) : [];
+  // The module holds the validators of the validating models and the SDK operations. Without such a root the tag schemas
+  // are compiled for their diagnostics alone: no codec calls a validator, so no module is written or imported.
+  const holdsValidators = validationPlan.ownSchemas.length > 0 || sdkOperations.length > 0;
+  const compiledValidators = holdsValidators || tagSchemaIds.size > 0
     ? compileSdkValidators({ plan: validationPlan, operations: sdkOperations }, {
       owner: '@exprtlabs/golem-model',
       unknownFormats: normalized.profile.unknownFormats,
       level: compileLevel(normalized.profile.validation),
       validations: validatorImports(graphs, normalized.profile, validatorsOutput),
       documentName: 'the model schemas',
+      // A tag schema is compiled for its diagnostics only: no codec calls its validator, so the module holds none.
+      emitRoots: new Set([
+        ...Object.keys(validationPlan.schemas).filter((id) => !tagSchemaIds.has(id)),
+        ...sdkOperations.flatMap((operation) => Object.keys(operation.roots)),
+      ]),
       locate: (resource) => resource.startsWith('golem:model-tag:') ? { where: FIELD_TYPE_PLACE } : undefined,
     })
     : undefined;
-  const validatorDiagnostics = withoutRepeatedFieldTypeWarnings(validators?.diagnostics ?? []);
+  const validators = holdsValidators ? compiledValidators : undefined;
+  const validatorDiagnostics = withoutRepeatedFieldTypeWarnings(compiledValidators?.diagnostics ?? []);
   if (validatorDiagnostics.some((diagnostic) => diagnostic.severity === GolemDiagnosticSeverity.Error)) {
     // Nothing is written: the model files import the validators this job could not compile.
     return {
@@ -642,7 +651,7 @@ export function generate(context: GolemModelContext): GolemModelResult {
   }
   const codecData = codecDataOf(normalized.hooks);
   const validatorEnhancer = validatorEnhancerOf(normalized.hooks);
-  for (const { graph, schemaGraph, siblingWireCodecIds, siblingRecursion, cyclicSiblings } of graphSchemaPairs) {
+  for (const { graph, schemaGraph, siblingWire, siblingRecursion, cyclicSiblings } of graphSchemaPairs) {
     const { source, output } = graph;
     const content = withUnionDiscriminatorCode(source, () => emitSource(
       source,
@@ -652,7 +661,7 @@ export function generate(context: GolemModelContext): GolemModelResult {
       normalized.profile,
       graph,
       schemaGraph,
-      { siblingWireCodecIds, siblingRecursion, cyclicSiblings },
+      { siblingWire, siblingRecursion, cyclicSiblings },
       {
         ...(validators ? { validators: { module: validatorsOutput, exports: validators.exports, fastExports: validators.fastExports, passExports: validators.passExports } } : {}),
         sdkCodecs: sdks.map((sdk) => ({ file: sdk.codecsFile, graph: sdk.graph, types: sdkOwnTypes(sdk) })),

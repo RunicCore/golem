@@ -276,7 +276,7 @@ async function assertConverts(codec: SdkBodyCodec, row: ConversionRow): Promise<
 
 /** The body of the schema `root` of a golem-mode SDK of `project`, through its built client. */
 function golemBodyCodec(project: GolemModeProject, sdk: GolemModeSdkSetup, root: string): SdkBodyCodec {
-  return clientBodyCodec(fetchImpl => project.client<unknown>(sdk, { fetchImpl }), root);
+  return clientBodyCodec(fetchImpl => project.client(sdk, { fetchImpl }), root);
 }
 
 test('nested Date, inherited, and dictionary conversions work in a standalone SDK', async t => {
@@ -349,7 +349,7 @@ test('nested Date, inherited, and dictionary conversions work in a standalone SD
       headers: { 'content-type': 'application/json' },
     }),
   });
-  assert.deepEqual(await client.createEvent!().execute({ body: { when: new Date('2025-01-02T03:04:05Z'), child: { id: 'child' } } }), {
+  assert.deepEqual(await client.createEvent().execute({ body: { when: new Date('2025-01-02T03:04:05Z'), child: { id: 'child' } } }), {
     matched: 'status',
     status: 400,
     contentType: 'application/json',

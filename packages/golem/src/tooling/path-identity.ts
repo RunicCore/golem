@@ -1,6 +1,6 @@
 import { normalize, relative, resolve } from 'node:path';
 
-import { canonicalPath } from '../generator-core.js';
+import { canonicalPath } from './generator-core.js';
 
 export function canonicalFilename(filename: string): string {
   return normalize(resolve(filename));
@@ -14,6 +14,19 @@ export function canonicalFilename(filename: string): string {
  */
 export function portableRelativeFilename(filename: string, root: string): string {
   return relative(canonicalFilename(root), canonicalFilename(filename)).replace(/\\/g, '/');
+}
+
+/**
+ * Whether a module specifier is a relative path: `.`, `..`, or one that starts with `./` or `../`. A name that merely starts
+ * with a dot, such as `.shared/m.js`, is a bare package specifier.
+ */
+export function isRelativeSpecifier(specifier: string): boolean {
+  return specifier === '.' || specifier === '..' || specifier.startsWith('./') || specifier.startsWith('../');
+}
+
+/** The specifier for a path that `relative` made from a folder: `./` in front unless it is already relative, as a path into a `.shared` folder is not. */
+export function relativeSpecifierOf(relativePath: string): string {
+  return isRelativeSpecifier(relativePath) ? relativePath : `./${relativePath}`;
 }
 
 /** Whether a path lies in a `node_modules` folder, whichever separator it uses. */

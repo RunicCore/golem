@@ -225,6 +225,7 @@ export interface TypeParameterDeclaration extends Node {
 export interface FunctionLikeDeclaration extends Node {
   readonly kind: KindOf<'FunctionDeclaration' | 'MethodDeclaration' | 'ArrowFunction' | 'FunctionExpression'>;
   readonly modifiers?: readonly Node[];
+  readonly typeParameters?: readonly TypeParameterDeclaration[];
   readonly parameters: readonly ParameterDeclaration[];
   readonly type?: TypeNode;
   readonly body?: Node;
@@ -264,6 +265,38 @@ export interface PropertyDeclaration extends Node {
   readonly name: PropertyName;
   readonly type?: TypeNode;
 }
+export interface ConstructorDeclaration extends Node {
+  readonly kind: KindOf<'Constructor'>;
+  readonly parameters: readonly ParameterDeclaration[];
+}
+export interface SetAccessorDeclaration extends Node {
+  readonly kind: KindOf<'SetAccessor'>;
+  readonly name: PropertyName;
+  readonly parameters: readonly ParameterDeclaration[];
+}
+export interface ClassStaticBlockDeclaration extends Node {
+  readonly kind: KindOf<'ClassStaticBlockDeclaration'>;
+}
+/** A call signature, a construct signature, or the type of a function or a constructor: the nodes that hold parameters and a return type. */
+export interface SignatureTypeNode extends TypeNode {
+  readonly kind: KindOf<'CallSignature' | 'ConstructSignature' | 'FunctionType' | 'ConstructorType'>;
+  readonly typeParameters?: readonly TypeParameterDeclaration[];
+  readonly parameters: readonly ParameterDeclaration[];
+  readonly type?: TypeNode;
+}
+export interface TypePredicateNode extends TypeNode {
+  readonly kind: KindOf<'TypePredicate'>;
+  readonly type?: TypeNode;
+}
+export interface GetAccessorDeclaration extends Node {
+  readonly kind: KindOf<'GetAccessor'>;
+  readonly name: PropertyName;
+  readonly parameters: readonly ParameterDeclaration[];
+  readonly type?: TypeNode;
+}
+export interface BindingElement extends Node {
+  readonly kind: KindOf<'BindingElement'>;
+}
 export interface PropertySignature extends Node {
   readonly kind: KindOf<'PropertySignature'>;
   readonly name: PropertyName;
@@ -271,14 +304,20 @@ export interface PropertySignature extends Node {
 }
 export interface MethodSignature extends Node {
   readonly kind: KindOf<'MethodSignature'>;
+  readonly typeParameters?: readonly TypeParameterDeclaration[];
+  readonly parameters: readonly ParameterDeclaration[];
+  readonly type?: TypeNode;
 }
 export interface IndexSignatureDeclaration extends Node {
   readonly kind: KindOf<'IndexSignatureDeclaration'>;
+  readonly parameters: readonly ParameterDeclaration[];
   readonly type: TypeNode;
 }
 export interface InterfaceDeclaration extends Node {
   readonly kind: KindOf<'InterfaceDeclaration'>;
   readonly typeParameters?: readonly TypeParameterDeclaration[];
+  readonly heritageClauses?: readonly HeritageClause[];
+  readonly members: readonly Node[];
 }
 export interface TypeAliasDeclaration extends Node {
   readonly kind: KindOf<'TypeAliasDeclaration'>;
@@ -308,6 +347,7 @@ export interface ModuleBlock extends Node {
 export interface VariableDeclaration extends Node {
   readonly kind: KindOf<'VariableDeclaration'>;
   readonly name: BindingName;
+  readonly type?: TypeNode;
   readonly initializer?: Expression;
 }
 export interface VariableDeclarationList extends Node {
@@ -460,7 +500,11 @@ export interface LiteralTypeNode extends TypeNode {
 /** `import("x").T` and `typeof import("x")`: the argument is a literal type that holds the specifier. */
 export interface ImportTypeNode extends TypeNode {
   readonly kind: KindOf<'ImportTypeNode'>;
+  /** Written `typeof import('...')`: the value of the module, not the type that it exports. */
+  readonly isTypeOf?: boolean;
   readonly argument: TypeNode;
+  readonly qualifier?: EntityName;
+  readonly typeArguments?: readonly TypeNode[];
 }
 export interface TypeLiteralNode extends TypeNode {
   readonly kind: KindOf<'TypeLiteralNode'>;
@@ -469,17 +513,25 @@ export interface TypeLiteralNode extends TypeNode {
 export interface MappedTypeNode extends TypeNode {
   readonly kind: KindOf<'MappedTypeNode'>;
   readonly typeParameter: TypeParameterDeclaration;
+  /** The `as` clause. */
+  readonly nameType?: TypeNode;
   readonly type?: TypeNode;
+}
+export interface InferTypeNode extends TypeNode {
+  readonly kind: KindOf<'InferTypeNode'>;
+  readonly typeParameter: TypeParameterDeclaration;
 }
 export interface ConditionalTypeNode extends TypeNode {
   readonly kind: KindOf<'ConditionalTypeNode'>;
   readonly checkType: TypeNode;
+  readonly extendsType: TypeNode;
   readonly trueType: TypeNode;
   readonly falseType: TypeNode;
 }
 export interface IndexedAccessTypeNode extends TypeNode {
   readonly kind: KindOf<'IndexedAccessTypeNode'>;
   readonly objectType: TypeNode;
+  readonly indexType: TypeNode;
 }
 export interface TemplateLiteralTypeNode extends TypeNode {
   readonly kind: KindOf<'TemplateLiteralTypeNode'>;
@@ -526,13 +578,23 @@ export interface Signature {
   getReturnType(): Type;
 }
 
+/**
+ * Files that do not exist yet but will, as a module lookup counts them. A lookup finds a file that is one of `files`, or a TypeScript
+ * file (`.ts`, `.tsx`, `.mts`, `.cts`, a declaration file) inside one of `folders`, and a folder on the way to either. Paths are absolute.
+ * A file read finds no content in them: a lookup reads package.json files only.
+ */
+export interface VirtualFiles {
+  readonly files: ReadonlySet<string>;
+  readonly folders: readonly string[];
+}
+
 export interface TypeChecker {
   /**
    * The module an import of a file of the checker's program resolved to, as the compiler resolved it for the program, or undefined when
    * it resolved to none. `virtualFiles` are files that do not exist yet but will (the companions a job is about to write): when the
    * compiler found none, a second lookup counts them. A package.json that is not JSON throws an error that names it.
    */
-  resolveImport(specifier: StringLiteralLike, virtualFiles?: ReadonlySet<string>): ResolvedModule | undefined;
+  resolveImport(specifier: StringLiteralLike, virtualFiles?: VirtualFiles): ResolvedModule | undefined;
   getTypeFromTypeNode(node: TypeNode): Type;
   getTypeAtLocation(node: Node): Type;
   getSymbolAtLocation(node: Node): Symbol | undefined;
@@ -685,9 +747,14 @@ export interface ProgramSession extends Disposable {
   inputsChanged(filenames: Iterable<string>): void;
   parseConfigFile(configPath: string, onInput?: (filename: string) => void): ParsedProject;
   /**
+   * Parse the configuration of a referenced project as `tsc -p` reads it: the errors of that file are not reported (`tsc` takes what parsed),
+   * and `undefined` is a tsconfig that does not exist, which `tsc` reports at the reference (TS6053).
+   */
+  parseReferencedConfigFile(configPath: string, onInput?: (filename: string) => void): ParsedProject | undefined;
+  /**
    * Parse a project configuration under compiler command-line arguments (`--strict false`, `--allowJs`), as `tsc -p` does: an
    * argument replaces the same option of the configuration, and the file list follows the merged options. An argument the compiler
-   * rejects throws. The TypeScript 6 lane keeps a relative path argument as written; the TypeScript 7 lane makes it absolute.
+   * rejects throws a `CommandLineError` that holds the compiler's diagnostics. The TypeScript 6 lane keeps a relative path argument as written; the TypeScript 7 lane makes it absolute.
    */
   parseConfigFileWithFlags(configPath: string, flags: readonly string[], onInput?: (filename: string) => void): ParsedProject;
   openProgram(options: OpenProgramOptions): Program;
@@ -699,7 +766,7 @@ export interface ProgramSession extends Disposable {
    */
   transpileModule(filename: string, text: string, compilerOptions: CompilerOptions): { readonly outputText: string; readonly sourceMapText: string; readonly diagnostics: readonly Diagnostic[] };
   /** Resolve a module name that no program imports, such as one an SDK manifest names, as the compiler resolves an import of `containingFile`: the disk and `virtualFiles` count. */
-  resolveModuleName(moduleName: string, containingFile: string, compilerOptions: CompilerOptions, resolutionMode?: ModuleKind, virtualFiles?: ReadonlySet<string>): { resolvedModule?: ResolvedModule };
+  resolveModuleName(moduleName: string, containingFile: string, compilerOptions: CompilerOptions, resolutionMode?: ModuleKind, virtualFiles?: VirtualFiles): { resolvedModule?: ResolvedModule };
 }
 
 // The runtime values of the seam, as the facade destructures them. The value `X` of an enum-like name carries the
@@ -762,6 +829,7 @@ export interface TypeScriptBackend {
     readonly Class: SymbolFlags;
     readonly Enum: SymbolFlags;
     readonly Method: SymbolFlags;
+    readonly Module: SymbolFlags;
     readonly Optional: SymbolFlags;
     readonly Transient: SymbolFlags;
     readonly Value: SymbolFlags;
@@ -800,6 +868,7 @@ export interface TypeScriptBackend {
   formatDiagnosticsWithColorAndContext(diagnostics: readonly Diagnostic[], host: DiagnosticFormatHost): string;
   getDecorators(node: Node): readonly Decorator[] | undefined;
   getModifiers(node: Node): readonly Node[] | undefined;
+  /** The program's own diagnostics before emit: options, syntax, global, semantic, and declaration ones when it emits declarations; never the configuration file's. */
   getPreEmitDiagnostics(program: Program): readonly Diagnostic[];
   /**
    * The diagnostics `tsc` reports for a check of the program, in its order and without repeats: the configuration's, then the syntax
@@ -807,6 +876,8 @@ export interface TypeScriptBackend {
    * `emitDiagnostics` are those of an emit of the same program, which `tsc` adds before it sorts.
    */
   getTscDiagnostics(program: Program, emitDiagnostics?: readonly Diagnostic[]): readonly Diagnostic[];
+  /** The diagnostics of the configuration the program was opened on, which `tsc` prints first: its syntax errors, its option errors and those of the configurations it extends. In `tsc`'s order, without repeats. */
+  getConfigDiagnostics(program: Program): readonly Diagnostic[];
   /** The comments between `position` and the next token that start on a later line (all of them at position 0), in source order. Undefined when there are none. */
   getLeadingCommentRanges(text: string, position: number): readonly CommentRange[] | undefined;
   /** The comments that follow `position` on its own line, in source order. Undefined when there are none. */
@@ -827,6 +898,7 @@ export interface TypeScriptBackend {
   isClassLike(node: Node): node is ClassLikeDeclaration;
   isComputedPropertyName(node: Node): node is ComputedPropertyName;
   isConditionalTypeNode(node: Node): node is ConditionalTypeNode;
+  isInferTypeNode(node: Node): node is InferTypeNode;
   isDecorator(node: Node): node is Decorator;
   isDefaultClause(node: Node): node is DefaultClause;
   isElementAccessExpression(node: Node): node is ElementAccessExpression;
@@ -841,7 +913,6 @@ export interface TypeScriptBackend {
   isExpressionWithTypeArguments(node: Node): node is ExpressionWithTypeArguments;
   isFunctionDeclaration(node: Node): node is FunctionDeclaration;
   isFunctionExpression(node: Node): node is FunctionExpression;
-  isFunctionLike(node: Node): node is FunctionLikeDeclaration;
   isIdentifier(node: Node): node is Identifier;
   isImportClause(node: Node): node is ImportClause;
   isImportDeclaration(node: Node): node is ImportDeclaration;
@@ -854,6 +925,16 @@ export interface TypeScriptBackend {
   isIntersectionTypeNode(node: Node): node is IntersectionTypeNode;
   isLiteralTypeNode(node: Node): node is LiteralTypeNode;
   isMappedTypeNode(node: Node): node is MappedTypeNode;
+  isBindingElement(node: Node): node is BindingElement;
+  isCallSignatureDeclaration(node: Node): node is SignatureTypeNode;
+  isClassStaticBlockDeclaration(node: Node): node is ClassStaticBlockDeclaration;
+  isConstructSignatureDeclaration(node: Node): node is SignatureTypeNode;
+  isConstructorDeclaration(node: Node): node is ConstructorDeclaration;
+  isConstructorTypeNode(node: Node): node is SignatureTypeNode;
+  isFunctionTypeNode(node: Node): node is SignatureTypeNode;
+  isSetAccessorDeclaration(node: Node): node is SetAccessorDeclaration;
+  isTypePredicateNode(node: Node): node is TypePredicateNode;
+  isGetAccessorDeclaration(node: Node): node is GetAccessorDeclaration;
   isMethodDeclaration(node: Node): node is MethodDeclaration;
   isMethodSignature(node: Node): node is MethodSignature;
   isModuleBlock(node: Node): node is ModuleBlock;

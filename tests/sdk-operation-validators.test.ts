@@ -311,14 +311,11 @@ test('a model that only an operation response reads is checked by the response v
   assert.equal(exported.filter(name => /^validate_Item_[0-9a-f]{8}$/.test(name)).length, 0, 'no group reads the model, so its root is not exported');
 });
 
-test('a validation-off SDK writes no validators module and no import of one', () => {
-  const result = writeSdk(validatedDocument(), {
-    output: path.join(tmpdir(), 'validators-off'),
-    name: 'Validated',
-    profile: { validation: false, allowAny: false },
-  });
+test('a validation-off SDK writes no validators module and compiles without one', async t => {
+  const output = path.join(createFixtureProject(t, 'golem-openapi-validators-off-'), 'sdk');
+  const result = await generateMaterializedSdk(validatedDocument(), { output, name: 'Validated', profile: { validation: false, allowAny: false } });
   assert.equal(result.artifacts.some(item => item.path.endsWith('validators.generated.ts')), false);
-  assert.equal(result.artifacts.some(item => item.content.includes('validators.generated')), false, 'no module imports one');
+  compileValidatedSdk(output);
 });
 
 test('an operation root that has the name of a model root fails the SDK compile, and roots that only sanitize alike are numbered', () => {
@@ -340,4 +337,14 @@ test('an operation root that has the name of a model root fails the SDK compile,
     ] }, options),
     /two operations give the resource "urn:shared" different schemas/,
   );
+});
+
+test('two operations that give a resource the same schema in another key order share it', () => {
+  const options = { owner: 'test', unknownFormats: 'warn', documentName: 'the document' } as const;
+  const shared = (properties: Record<string, unknown>) => ({ $id: 'urn:shared', type: 'object', properties });
+  const compiled = compileSdkValidators({ operations: [
+    { roots: { a: { $ref: 'urn:shared' } }, resources: { 'urn:shared': shared({ x: { type: 'string', minLength: 1 }, y: { minimum: 0, type: 'integer' } }) } },
+    { roots: { b: { $ref: 'urn:shared' } }, resources: { 'urn:shared': shared({ y: { type: 'integer', minimum: 0 }, x: { minLength: 1, type: 'string' } }) } },
+  ] }, options);
+  assert.deepEqual([...compiled.exports.values()].sort(), ['validate_a', 'validate_b']);
 });

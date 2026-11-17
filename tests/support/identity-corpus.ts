@@ -5,10 +5,10 @@ import { fixturePath } from '../fixture-project.js';
 /** A fixture file (`from`, relative to tests/fixtures) and where the case project holds it (`to`, relative to the project root). */
 interface IdentityFile { readonly from: string; readonly to: string }
 
-/** One project that the identity test generates and rewrites on both TypeScript versions. */
+/** One project that the identity test generates, rewrites and builds on both TypeScript versions. */
 export interface IdentityCase {
   readonly name: string;
-  /** `model`: the model generator, then the rewrite scan. `controller`: the controller generator, then the rewrite scan with the Nest rule. `rewrite`: the rewrite scan alone, over generated companions that are fixtures. `specifiers`: the Node-loadable specifier edits alone, over a Bundler project. */
+  /** `model`: the build with the model job, then the rewrite scan. `controller`: the build with the controller job, then the rewrite scan with the Nest rule. `rewrite`: the rewrite scan alone, over generated companions that are fixtures. `specifiers`: the Node-loadable specifier edits alone, over a Bundler project. */
   readonly kind: 'model' | 'controller' | 'rewrite' | 'specifiers';
   readonly files: readonly IdentityFile[];
   /** The generation profile's `mobx`. */
@@ -22,17 +22,23 @@ export interface IdentityProject {
   readonly name: string;
   readonly kind: IdentityCase['kind'];
   readonly root: string;
-  readonly mobx?: boolean;
 }
 
 /**
  * The files a case leaves in a child's output directory, under the case's own folder:
- * `generated/` holds the generator's files and `rewritten/` the text of each source file the rewrite scan edited, both by path
- * relative to the project root; `diagnostics.txt` holds what the stages reported, one line each, with the root as `<root>`.
+ * `generated/` holds the files that the jobs of `golem build` generated and `rewritten/` the text of each source file the rewrite scan edited,
+ * both by path relative to the project root; `built/` holds each other file that `golem build` wrote into the project or changed in it, by path
+ * relative to the project root, and `build.txt` its exit code and what it printed; `diagnostics.txt` holds what the stages reported, one line
+ * each, with the root as `<root>`.
  */
 export const GENERATED = 'generated';
 export const REWRITTEN = 'rewritten';
+export const BUILT = 'built';
+export const BUILD_LOG = 'build.txt';
 export const DIAGNOSTICS = 'diagnostics.txt';
+
+/** The `nonModelInputs` setting of the nest extension that the controller cases build with, in their golem.yaml and in the rewrite scan alike: `warn`, so a handler input that is no model reports RUNM1081 and the build still emits. */
+export const NON_MODEL_INPUTS = 'warn';
 
 /** A case's folder in the output directory: the case name, which may hold slashes, as one folder name. */
 export function caseFolder(name: string): string {
@@ -70,8 +76,8 @@ const MOBX_CASES: ReadonlySet<string> = new Set([
 const SDK_SPEC = /\.ya?ml$/;
 
 /**
- * The cases whose claim is a rejection, each with a fragment of the message it claims: generation or the rewrite scan ends in an error,
- * and the diagnostics file holds a `generate error` or `rewrite error` line with the fragment. Every other case must write no such line,
+ * The cases whose claim is a rejection, each with a fragment of the message it claims: the build or the rewrite scan ends in an error,
+ * and the diagnostics file holds a `build error` or `rewrite error` line with the fragment. Every other case must write no such line,
  * and a setup fault in a rejection case (a missing file, an unresolved module) does not carry its fragment, so none can pass as the claim.
  */
 export const EXPECTED_REJECTIONS: Readonly<Record<string, string>> = {
@@ -261,6 +267,11 @@ export const IDENTITY_CASES: readonly IdentityCase[] = (() => {
 /** The model cases of the corpus that the one TypeScript 6 compile checks. */
 export function isCompiled(item: IdentityCase): boolean {
   return item.kind === 'model' && !(item.name in COMPILE_EXCLUDED);
+}
+
+/** Whether `golem build` runs on the project of the case. A rewrite case holds hand-written companions and codec keys for the scan alone, so a build of it ends in the scan's own diagnostics. */
+export function isBuilt(item: Pick<IdentityCase, 'kind'>): boolean {
+  return item.kind !== 'rewrite';
 }
 
 /** The cases of shard `index` of `count`: every `count`-th case, so each shard holds the same mix of kinds. */

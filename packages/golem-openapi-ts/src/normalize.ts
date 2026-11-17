@@ -65,6 +65,18 @@ export interface NormalizedResponse {
   readonly success: boolean;
 }
 
+/** The request body of an operation: none, or one content type (the body is the value itself), or several (the body is `{ contentType, value }`). */
+export type RequestBodyShape =
+  | { readonly kind: 'none' }
+  | { readonly kind: 'single'; readonly media: OpenApiMediaType }
+  | { readonly kind: 'several'; readonly media: readonly OpenApiMediaType[] };
+
+export function requestBodyShape(operation: NormalizedOperation): RequestBodyShape {
+  const [first, second] = operation.requestContent;
+  if (first === undefined) return { kind: 'none' };
+  return second === undefined ? { kind: 'single', media: first } : { kind: 'several', media: operation.requestContent };
+}
+
 export interface NormalizedOperation {
   readonly name: string;
   readonly typeName: string;

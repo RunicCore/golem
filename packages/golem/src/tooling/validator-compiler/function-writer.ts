@@ -1,12 +1,11 @@
 import { assertNever } from '../../assert-never.js';
-import { code, identifier as identifierCode, join, joinIndented, literal as literalCode, type Code, type IndentedLine } from '../code.js';
+import { code, identifier as identifierCode, join, joinIndented, literal as literalCode, mentions, type Code, type IndentedLine } from '../code.js';
 import type { IrArray, IrCheck, IrClass, IrDiscriminator, IrFunction, IrInstance, IrNumber, IrObject, IrPatternProperty, IrSchema, IrString, IrType, IrTypeName, IrUnion, IrValidation } from './ir.js';
 import { rt, runtimeFunctionCode } from '../rt.js';
-import { presentValueCode } from '../union-conversion.js';
 import { VALUE, PATH, NEWLINE, COMMA, ISSUES, ALL, SANITY, INHERITED, EVALUATION, type CalleeSlot, type CallArguments } from './function-names.js';
 import { isTuple, keepsFormat } from './call-graph.js';
 import { JSON_TYPES, JSON_TYPE_NAMES, dispatchTest } from './json-types.js';
-import { localName, scaledDivisor, stateTest } from './local-helpers.js';
+import { instanceFieldsOf, scaledDivisor, stateTest } from './local-helpers.js';
 import { patternExpression, type ModuleState } from './module-state.js';
 import { resolve, readSet, objectPresence, type Capture, type Lazy, type KeyList, type KeyTest, type RawKeys, type UnreadKeys, type WriterMode } from './modes.js';
 
@@ -16,7 +15,7 @@ const objectTest = JSON_TYPES.object.code;
 
 /** The model class of `value` among the codec ids `among`, which the module keeps as one frozen list. */
 function selectedModelCall(state: ModuleState, value: Code, among: readonly string[]): Code {
-  return code`${localName('selectedModel')}(${value}, ${state.constant('models', code`Object.freeze(${literalCode(among)})`, JSON.stringify(among))})`;
+  return code`${runtime.selectedModel}(${value}, ${state.constant('models', code``, code`Object.freeze(${literalCode(among)})`, JSON.stringify(among))})`;
 }
 
 /** A leaf check: the expression that is true when the value fails it, and the issue it then reports. */
@@ -91,22 +90,38 @@ export class FunctionWriter {
     this.record = fn.collects || fn.receives ? EVALUATION : undefined;
   }
 
-  /** The body of the function, without its header line. */
+  /**
+   * The body of the function, without its header line. A local that no line reads is not declared, so the function holds
+   * nothing the checker's unused rules flag; `reads` then tells which parameters the body reads.
+   */
   public write(): Code {
-    for (const start of this.mode.fail.start) this.line(start);
-    if (this.fn.collects) this.line(code`const ${EVALUATION} = ${localName('newEvaluation')}();`);
-    else if (this.fn.receives) this.line(code`const ${EVALUATION} = ${INHERITED} ?? ${localName('newEvaluation')}();`);
     this.schema(this.fn.body, VALUE);
     // A function that both keeps a record and receives one hands what it evaluated to its caller once it passed.
-    if (this.fn.collects && this.fn.receives) this.line(code`if (ok && ${INHERITED} !== undefined) ${localName('mergeEvaluation')}(${INHERITED}, ${EVALUATION});`);
+    if (this.fn.collects && this.fn.receives) this.line(code`if (ok && ${INHERITED} !== undefined) ${runtime.mergeEvaluation}(${INHERITED}, ${EVALUATION});`);
     // A `false` schema has already left the function in a mode that leaves at a failure.
     if (this.fn.body.kind !== 'never' || !this.mode.fail.leaves) this.line(this.mode.fail.end);
+    const opening = this.mode.fail.start.filter((open) => open.kind === 'always' || this.readsFrom(open.local, 0));
+    const record = this.fn.collects ? code`const ${EVALUATION} = ${runtime.newEvaluation}();` : this.fn.receives ? code`const ${EVALUATION} = ${INHERITED} ?? ${runtime.newEvaluation}();` : undefined;
+    const head = [...opening.map(({ line }) => line), ...(record === undefined || !this.readsFrom(EVALUATION, 0) ? [] : [record])];
+    this.lines.unshift(...head.map(body => ({ spaces: 2, body })));
     this.lines.push({ spaces: 0, body: code`}` });
     return joinIndented(this.lines, NEWLINE);
   }
 
-  public line(statement: Code): void {
-    this.lines.push({ spaces: this.depth * 2, body: statement });
+  /** True when a line from `from` on reads `name`: the same Code, as `mentions` says. */
+  private readsFrom(name: Code, from: number): boolean {
+    for (let index = from; index < this.lines.length; index++) if (mentions(this.lines[index].body, name)) return true;
+    return false;
+  }
+
+  /** True when a line of the body reads `name`; asked after `write`, it tells which parameters the header names. */
+  public reads(name: Code): boolean {
+    return this.readsFrom(name, 0);
+  }
+
+  /** Writes `statement` at `depth`, the current depth by default; a `} else {` line sits at its block's opener's depth. */
+  public line(statement: Code, depth: number = this.depth): void {
+    this.lines.push({ spaces: depth * 2, body: statement });
   }
 
   /** Opens a block; no `head` opens a bare scope. */
@@ -118,6 +133,17 @@ export class FunctionWriter {
   public close(): void {
     this.depth--;
     this.line(code`}`);
+  }
+
+  /**
+   * Writes the local `member`, which holds `read`, and then `body`, which checks it. A local that no line of `body` reads
+   * is left out: the schema `false` reads no value, it only fails.
+   */
+  private memberLocal(member: Code, read: Code, body: () => void): void {
+    const declaration = this.lines.length;
+    this.line(code`const ${member} = ${read};`);
+    body();
+    if (!this.readsFrom(member, declaration + 1)) this.lines.splice(declaration, 1);
   }
 
   /** A block that is left out when `body` writes nothing, as when a check only marks what it evaluates and nothing reads the mark. */
@@ -256,7 +282,7 @@ export class FunctionWriter {
       case 'type':
         return this.leaf({ fails: code`!(${join(check.names.map(name => JSON_TYPES[name].code(value)), code` || `)})`, issue: code`code: 'type', expected: ${literalCode(check.names)}` });
       case 'literal': {
-        const values = (): Code => this.state.constant('lit', code`Object.freeze(/*#__PURE__*/ JSON.parse(${literalCode(JSON.stringify(check.values))}))`, JSON.stringify(check.values));
+        const values = (): Code => this.state.constant('lit', this.state.notation.literals, code`Object.freeze(/*#__PURE__*/ JSON.parse(${literalCode(JSON.stringify(check.values))}))`, JSON.stringify(check.values));
         const equal = (item: Code): Code => code`${runtime.jsonEqual}(${value}, ${item})`;
         return this.leaf({
           fails: () => (check.values.length === 1 ? code`!${equal(code`${values()}[0]`)}` : code`!${values()}.some(item => ${equal(code`item`)})`),
@@ -270,7 +296,7 @@ export class FunctionWriter {
         return this.leaf({
           fails: () => code`!${runtime.checkFormat}(${literalCode(check.format)}, ${value})`,
           // The format's test, looked up once when the module loads.
-          fast: () => code`!${this.state.constant('format', code`${runtime.formatTest}(${literalCode(check.format)})`, check.format)}(${value})`,
+          fast: () => code`!${this.state.constant('format', code``, code`${runtime.formatTest}(${literalCode(check.format)})`, check.format)}(${value})`,
           issue: code`code: 'format', format: ${literalCode(check.format)}`,
           ...(keepsFormat(check.format) ? {} : { skip: 'costly' as const }),
         });
@@ -292,7 +318,7 @@ export class FunctionWriter {
       case 'conditional': return this.conditionalCheck(check, value);
       case 'dependentSchemas': {
         const presence = objectPresence(value);
-        this.open(code`if (${localName('isObject')}(${value}))`);
+        this.open(code`if (${runtime.isObject}(${value}))`);
         for (const { trigger, fn } of check.entries) {
           this.open(code`if (${presence.present(trigger)})`);
           this.callInPlace(fn, value);
@@ -316,7 +342,7 @@ export class FunctionWriter {
     const issue = code`code: 'instance', model: ${literalCode(check.name)}`;
     if (check.from === undefined) {
       const valid = check.valid === undefined ? code`` : code`, ${runtimeFunctionCode(check.valid)}`;
-      const test = this.state.constant('global', code`${runtime.globalInstanceTest}(${literalCode(check.path)}${valid})`, [...check.path, check.valid?.id ?? ''].join('\u0000'));
+      const test = this.state.constant('global', code``, code`${runtime.globalInstanceTest}(${literalCode(check.path)}${valid})`, [...check.path, check.valid?.id ?? ''].join('\u0000'));
       return this.leaf({ fails: code`!${test}(${value})`, issue });
     }
     const imported = join([this.state.validationFunction(check.from), ...check.path.map(identifierCode)], code`.`);
@@ -345,7 +371,7 @@ export class FunctionWriter {
     const runCalls = (): void => this.unlessSanity(() => {
       for (const index of check.calls) {
         const result = this.fresh('result');
-        this.line(code`const ${result} = ${this.state.validationFunction(index)}(${value});`);
+        this.line(code`const ${result} = ${runtime.callValidation}(${this.state.validationFunction(index)}, ${value});`);
         this.open(code`if (typeof ${result} !== 'boolean' && typeof ${result} !== 'string')`);
         this.line(code`throw new TypeError(${literalCode(`Validation function ${this.state.validationExport(index)} must return boolean or string.`)});`);
         this.close();
@@ -411,7 +437,7 @@ export class FunctionWriter {
       const scaled = scaledDivisor(check.multipleOf);
       const test = scaled === undefined
         ? code`${runtime.isMultipleOf}(${value}, ${divisor})`
-        : code`${localName('isMultipleOfScaled')}(${value}, ${divisor}, ${literalCode(scaled.units)}, ${literalCode(scaled.scale)})`;
+        : code`${runtime.isMultipleOfScaled}(${value}, ${divisor}, ${literalCode(scaled.units)}, ${literalCode(scaled.scale)})`;
       this.leaf({ fails: code`!${test}`, issue: code`code: 'multipleOf', divisor: ${divisor}`, skip: 'costly' });
     }
   }
@@ -465,7 +491,7 @@ export class FunctionWriter {
     }
     this.atChild(index, () => {
       const item = this.fresh('item');
-      this.line(code`let ${item} = ${value}[${index}];`);
+      this.line(code`let ${item}${this.state.notation.read} = ${value}[${index}];`);
       // A mode that leaves at a failure has left at the hole; the full validator goes on in all-errors mode, so it jumps past the schema.
       const skip = this.mode.fail.leaves ? undefined : this.fresh('skip');
       if (skip !== undefined) this.open(code`${skip}:`);
@@ -530,18 +556,12 @@ export class FunctionWriter {
     }
     this.open(code`if (!${objectTest(value)})`);
     this.issue(code`code: 'type', expected: ${literalCode(type.names)}`);
-    this.depth--;
-    this.line(code`} else {`);
-    this.depth++;
+    this.line(code`} else {`, this.depth - 1);
     const start = this.lines.length;
     this.objectKeywords(check, value);
-    if (this.lines.length === start) {
-      this.lines.pop();
-      this.depth--;
-      this.line(code`}`);
-    } else {
-      this.close();
-    }
+    // No keyword wrote a line: the `else` is left out.
+    if (this.lines.length === start) this.lines.pop();
+    this.close();
   }
 
   /** `prepared` is the key test a caller already wrote for this object; without it the mode's key test is written here. */
@@ -588,7 +608,7 @@ export class FunctionWriter {
   /** The keys that neither `properties` nor `patternProperties` name: `additionalProperties`. */
   private additionalKeys({ check, value, patterns }: ObjectPass, additional: NonNullable<IrObject['additional']>, list: KeyList): void {
     const key = this.fresh('key');
-    const known = check.properties.length > 0 ? this.state.constant('known', code`new Set(${literalCode(check.properties.map(property => property.key))})`, JSON.stringify([...new Set(check.properties.map(property => property.key))].sort())) : undefined;
+    const known = check.properties.length > 0 ? this.state.constant('known', code``, code`new Set(${literalCode(check.properties.map(property => property.key))})`, JSON.stringify([...new Set(check.properties.map(property => property.key))].sort())) : undefined;
     const skipped = [...(known === undefined ? [] : [code`${known}.has(${key})`]), ...patterns.map(({ expression }) => code`${expression}.test(${key})`)];
     const member = this.fresh('member');
     this.open(code`for (const ${key} of ${list.keys})`);
@@ -604,11 +624,12 @@ export class FunctionWriter {
       this.issue(code`code: 'unknownKey', key: ${key}`, code`[...${PATH}, ${key}]`);
     } else {
       const schema = additional.schema;
-      if (list.kind !== 'unread') {
-        this.line(code`const ${member} = ${value}[${key}];`);
+      const checkMember = (): void => this.atChild(key, () => this.schema(schema, member));
+      if (list.kind === 'unread') checkMember();
+      else this.memberLocal(member, code`${value}[${key}]`, () => {
         if (list.kind === 'raw') this.line(code`if (${member} === undefined) continue;`);
-      }
-      this.atChild(key, () => this.schema(schema, member));
+        checkMember();
+      });
     }
     this.close();
   }
@@ -638,8 +659,7 @@ export class FunctionWriter {
       this.mark(record => code`${record}.keys.add(${literalCode(property.key)});`);
       if (schema.kind !== 'always') {
         const member = this.fresh('member');
-        this.line(code`const ${member} = ${presence.read(property.key)};`);
-        this.atChild(literalCode(property.key), () => this.schema(schema, member));
+        this.memberLocal(member, presence.read(property.key), () => this.atChild(literalCode(property.key), () => this.schema(schema, member)));
       }
       if (guarded) this.close();
     }
@@ -658,8 +678,9 @@ export class FunctionWriter {
       if (entry.schema.kind !== 'always') {
         const schema = entry.schema;
         const member = held ?? this.fresh('member');
-        if (held === undefined) this.line(code`const ${member} = ${value}[${key}];`);
-        this.atChild(key, () => this.schema(schema, member));
+        const checkMember = (): void => this.atChild(key, () => this.schema(schema, member));
+        if (held === undefined) this.memberLocal(member, code`${value}[${key}]`, checkMember);
+        else checkMember();
       }
       this.close();
     }
@@ -682,19 +703,18 @@ export class FunctionWriter {
   /** `unevaluatedProperties`: the keys that nothing evaluated. */
   private unevaluatedProperties(schema: IrSchema, value: Code): void {
     const record = this.requireRecord();
-    this.open(code`if (${localName('isObject')}(${value}))`);
+    this.open(code`if (${runtime.isObject}(${value}))`);
     if (schema.kind !== 'always') {
       const key = this.fresh('key');
       this.open(code`if (!${record}.allKeys)`);
       // `definedKeys` leaves out program state of a model instance: it is no unevaluated key, whether the schema forbids it or judges its value.
-      this.open(code`for (const ${key} of ${localName('definedKeys')}(${value}))`);
+      this.open(code`for (const ${key} of ${runtime.definedKeys}(${value}, ${instanceFieldsOf(value)}))`);
       this.line(code`if (${record}.keys.has(${key})) continue;`);
       if (schema.kind === 'never') {
         this.issue(code`code: 'unknownKey', key: ${key}`, code`[...${PATH}, ${key}]`);
       } else {
         const member = this.fresh('member');
-        this.line(code`const ${member} = ${value}[${key}];`);
-        this.atChild(key, () => this.schema(schema, member));
+        this.memberLocal(member, code`${value}[${key}]`, () => this.atChild(key, () => this.schema(schema, member)));
       }
       this.close();
       this.close();
@@ -718,7 +738,7 @@ export class FunctionWriter {
         this.line(code`${unevaluated}++;`);
       } else {
         const item = this.fresh('item');
-        this.line(code`const ${item} = ${value}[${index}] ?? null;`);
+        this.line(code`const ${item}${this.state.notation.read} = ${value}[${index}] ?? null;`);
         this.atChild(index, () => this.schema(schema, item));
       }
       this.close();
@@ -748,9 +768,9 @@ export class FunctionWriter {
 
   private exactConditional(check: Extract<IrCheck, { kind: 'conditional' }>, value: Code): void {
     const scratch = this.record === undefined ? undefined : this.fresh('scratch');
-    if (scratch !== undefined) this.line(code`const ${scratch} = ${localName('newEvaluation')}();`);
+    if (scratch !== undefined) this.line(code`const ${scratch} = ${runtime.newEvaluation}();`);
     this.open(code`if (${this.call(check.if, { value, issues: code`[]`, all: code`false`, ...(scratch === undefined ? {} : { record: scratch }) })})`);
-    if (scratch !== undefined && this.record !== undefined) this.line(code`${localName('mergeEvaluation')}(${this.record}, ${scratch});`);
+    if (scratch !== undefined && this.record !== undefined) this.line(code`${runtime.mergeEvaluation}(${this.record}, ${scratch});`);
     if (check.then !== undefined) this.callInPlace(check.then, value);
     this.close();
     if (check.else !== undefined) {
@@ -767,9 +787,9 @@ export class FunctionWriter {
     for (const id of [check.if, check.then, check.else]) {
       if (id === undefined) continue;
       const scratch = this.fresh('scratch');
-      this.line(code`const ${scratch} = ${localName('newEvaluation')}();`);
+      this.line(code`const ${scratch} = ${runtime.newEvaluation}();`);
       this.line(code`${this.call(id, { value, issues: code`[]`, all: code`false`, record: scratch })};`);
-      this.line(code`${localName('mergeEvaluation')}(${record}, ${scratch});`);
+      this.line(code`${runtime.mergeEvaluation}(${record}, ${scratch});`);
     }
   }
 
@@ -823,10 +843,10 @@ export class FunctionWriter {
     check.branches.forEach((fn, position) => {
       const scratch = this.fresh('scratch');
       this.open(position === 0 || !check.exactlyOne ? undefined : code`if (${stops})`);
-      this.line(code`const ${scratch} = ${localName('newEvaluation')}();`);
+      this.line(code`const ${scratch} = ${runtime.newEvaluation}();`);
       this.open(code`if (${this.call(fn, { value, issues: code`[]`, all: code`false`, record: scratch })})`);
       this.line(code`${matched}++;`);
-      this.line(code`${localName('mergeEvaluation')}(${record}, ${scratch});`);
+      this.line(code`${runtime.mergeEvaluation}(${record}, ${scratch});`);
       this.close();
       this.close();
     });
@@ -851,11 +871,7 @@ export class FunctionWriter {
     const property = literalCode(discriminator.property);
     const tag = this.fresh('tag');
     const selected = this.fresh('branch');
-    const read = this.mode.form<Lazy>(
-      () => code`${localName('isObject')}(${value}) && ${presence.present(discriminator.property)} ? ${presence.read(discriminator.property)} : undefined`,
-      code`${localName('isObject')}(${value}) ? (${presentValueCode(value, property, code`${value}[${property}]`)}) : undefined`,
-    );
-    this.line(code`const ${tag} = ${resolve(read)};`);
+    this.line(code`const ${tag} = ${runtime.isObject}(${value}) && ${presence.present(discriminator.property)} ? ${presence.read(discriminator.property)} : undefined;`);
     const selection = this.mode.form<Lazy>(
       () => code`${this.tagLists(discriminator)}.findIndex(list => list.some(item => ${runtime.jsonEqual}(${tag}, item)))`,
       () => this.tagSelection(discriminator, tag),
@@ -874,14 +890,14 @@ export class FunctionWriter {
     }
     this.leaf({
       fails: code`${selected} < 0`,
-      issue: () => code`code: 'literal', expected: ${this.state.constant('lit', code`Object.freeze(/*#__PURE__*/ JSON.parse(${literalCode(JSON.stringify(discriminator.tags.flat()))}))`, JSON.stringify(discriminator.tags.flat()))}`,
+      issue: () => code`code: 'literal', expected: ${this.state.constant('lit', this.state.notation.literals, code`Object.freeze(/*#__PURE__*/ JSON.parse(${literalCode(JSON.stringify(discriminator.tags.flat()))}))`, JSON.stringify(discriminator.tags.flat()))}`,
       path: code`[...${PATH}, ${property}]`,
     });
   }
 
   /** The module constant that holds the tag lists of `discriminator`. */
   private tagLists(discriminator: IrDiscriminator): Code {
-    return this.state.constant('tags', code`Object.freeze(/*#__PURE__*/ JSON.parse(${literalCode(JSON.stringify(discriminator.tags))}))`, JSON.stringify(discriminator.tags));
+    return this.state.constant('tags', this.state.notation.tagLists, code`Object.freeze(/*#__PURE__*/ JSON.parse(${literalCode(JSON.stringify(discriminator.tags))}))`, JSON.stringify(discriminator.tags));
   }
 
   /**
@@ -946,7 +962,11 @@ export class FunctionWriter {
     const extra = closed.some(Boolean) ? this.fresh('extra') : undefined;
     this.line(code`let ${join([tag, ...seen.map(([, mark]) => mark), ...(extra === undefined ? [] : [code`${extra} = false`])], COMMA)};`);
     const key = this.fresh('key');
+    // Program state of the instance is no tag, no declared key and no unknown key: no pass below reads it.
+    const fields = this.fresh('fields');
+    this.line(code`const ${fields} = ${instanceFieldsOf(value)};`);
     this.open(code`for (const ${key} of Object.keys(${value}))`);
+    this.line(code`if (${stateTest(fields, key)}) continue;`);
     this.open(code`switch (${key})`);
     this.line(code`case ${literalCode(discriminator.property)}: ${tag} = ${value}[${literalCode(discriminator.property)}]; break;`);
     for (const [name, mark] of seen) this.line(code`case ${literalCode(name)}: ${mark} = true; break;`);
@@ -964,9 +984,9 @@ export class FunctionWriter {
       for (const [name, mark] of seen) {
         if (!all && !declared.includes(name)) continue;
         const local = this.fresh('present');
-        // A key that this branch names is read as the full validator reads it; a key that only another branch names is read when it is no program state.
+        // A key that this branch names is judged; a key that only another branch names is read all the same, and must be absent when the branch is closed.
         const judged = named[position].has(name) || declared.includes(name);
-        this.line(code`const ${local} = ${judged ? mark : code`${mark} && !${localName('isInstanceState')}(${value}, ${literalCode(name)})`} ? ${value}[${literalCode(name)}] : undefined;`);
+        this.line(code`const ${local} = ${mark} ? ${value}[${literalCode(name)}] : undefined;`);
         if (judged) captured.push([name, local]);
         else absent.push([name, local]);
       }
@@ -976,16 +996,17 @@ export class FunctionWriter {
         this.line(code`let ${unknown} = false;`);
         this.open(code`if (${extra})`);
         this.open(code`for (const ${other} of Object.keys(${value}))`);
+        this.line(code`if (${stateTest(fields, other)}) continue;`);
         this.open(code`switch (${other})`);
         this.line(code`${join(keys.map(name => code`case ${literalCode(name)}:`), code` `)} break;`);
-        this.line(code`default: if (!${localName('isInstanceState')}(${value}, ${other}) && ${value}[${other}] !== undefined) ${unknown} = true;`);
+        this.line(code`default: if (${value}[${other}] !== undefined) ${unknown} = true;`);
         this.close();
         this.close();
         this.close();
       }
       if (closed[position]) {
         if (!named[position].has(discriminator.property)) this.failWhen(code`${tag} !== undefined`);
-        // A key that the instance's own model declares is judged; any other own key is program state, and `absent` never read it.
+        // A key that the instance's own model declares is judged; any other own key is program state, and no pass read it.
         for (const [, local] of absent) this.failWhen(code`${local} !== undefined`);
         if (unknown !== undefined) this.failWhen(unknown);
       }

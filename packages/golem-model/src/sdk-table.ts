@@ -26,7 +26,7 @@ import {
   type ImportOptions,
   type Piece,
 } from '@exprtlabs/golem/internal/emitter';
-import { canonicalPath } from '@exprtlabs/golem/internal/generator-support';
+import { canonicalPath, valueKey, type ValuePlace } from '@exprtlabs/golem/internal/generator-support';
 import type { SchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
 import { golemModeComponents, type GolemModeManifest } from '@exprtlabs/golem/manifest';
 import { codedError, sdkSchemaGraph, type ManifestIndex } from '@exprtlabs/golem/internal/type-analysis';
@@ -140,8 +140,8 @@ export function sdkCodecsSource(
     const checks = operation.validation;
     return {
       name: operation.name,
-      codecOf: (at: readonly string[], conversion: 'fromWire' | 'toWire'): Code | undefined => {
-        const node = sdk.valueNodes.get(JSON.stringify([operation.name, ...at]));
+      codecOf: (at: ValuePlace, conversion: 'fromWire' | 'toWire'): Code | undefined => {
+        const node = sdk.valueNodes.get(valueKey(operation.name, at));
         return node === undefined ? undefined : identifier((conversion === 'fromWire' ? fromWireFunctionName : toWireFunctionName)(node));
       },
       shape: {

@@ -2,14 +2,15 @@ import path from 'node:path';
 import { assertNever } from '../../assert-never.js';
 import { fieldProvenance, isPropertyMapping, isReadonlySequenceType, readonlyPropertyNames, instantiatedTypeSource, substituteTypeNode, authoredPropertyTypeNode, type TypeSubstitutions } from './projections.js';
 import * as ts from '../typescript-ns.js';
-import { assertNoSymbolKey, declaredModelAlias, isDefaultLibraryProperty, isSymbolKeyedProperty, diagnostic, namedDiagnostic, foreignModelReason, isGeneratedBrandKey, modelSpecificationForClass, resolveSymbol } from './symbols.js';
+import { assertNoSymbolKey, declaredModelAlias, isSymbolKeyedProperty, diagnostic, namedDiagnostic, foreignModelReason, isGeneratedBrandKey, modelSpecificationForClass } from './symbols.js';
+import { resolveSymbol } from '../resolve-symbol.js';
 import { projectionIdentity } from './graph.js';
 import { aliasProjectionName, isProjectionName, pascalIdentifier, policySuffix, headQualifiers, projectionBaseName, keysReadAlike, safeNameHint, unionVariantNaming } from './projection-names.js';
 import { commonDirectory, canonicalFilename, companionFilename, portableRelativeFilename, type ModelBoundary } from './project.js';
-import { packageSpecifier } from './package-specifier.js';
+import { packageSpecifier } from '../package-specifier.js';
 import { builtinClassDescriptor, type BuiltinClass } from '../builtin-classes.js';
 import { enclosureOf, findBuiltinClass, isGlobalDeclaration } from './builtin-class.js';
-import { compareText, displayPath } from '../generator-core.js';
+import { compareText } from '../generator-core.js';
 import type { GolemProfile } from '../generator-core.js';
 import { assertSupportedModelFieldName, canonicalDescriptorKey, isBrandPropertyName } from '../schema.js';
 import type {
@@ -25,17 +26,23 @@ import {
   untaggedTypeText,
   withoutDiscriminator,
   carriesSerdeTag,
+  isDeclaredByDefaultLibrary,
   isAmbientOrGlobalSymbol,
   isGolemTagKey,
   hasDescriptorTags,
   hasTagMetadata,
+  propertyTagSources,
   propertyType,
   propertyTypeNode,
   publicExportName,
+  functionIndexOf,
+  type FunctionIndex,
   type ModelConstraint,
   type SerdeBinding,
   type TagMetadata,
   type ValidationBinding,
+  sourceLocation,
+  taggedTemplateHole,
 } from './tags.js';
 
 export type { ModelConversionDescriptor, TupleConversionDescriptor } from '../model-source-emitter.js';
@@ -387,7 +394,7 @@ function assertValidationCompatibility(
 
 type ConstraintFamily = 'number' | 'string' | 'array' | 'object';
 
-/** The `Format` names that validate a number. `validation-runtime.ts` checks them; every other name checks a string. */
+/** The `Format` names that validate a number. `validation-formats.ts` checks them; every other name checks a string. */
 const NUMBER_FORMATS: ReadonlySet<string> = new Set(['int32', 'int64', 'float', 'double']);
 
 function constraintFamily(constraint: ModelConstraint): ConstraintFamily | undefined {
@@ -530,10 +537,23 @@ function escapedKeyText(text: string): string {
   return text.replace(/[\\^$.*+?()[\]{}|/]/g, '\\$&');
 }
 
-/** The expression for one template literal key type (`id_${string}`), or undefined for a shape it cannot state exactly: only `string` holes can. */
-function templateKeyExpression(type: ts.TemplateLiteralType): string | undefined {
+/** Whether `type` is a template literal type (`id_${string}`), which holds its holes in `types`. */
+function isTemplateLiteralType(type: ts.Type): type is ts.TemplateLiteralType {
+  return (type.flags & ts.TypeFlags.TemplateLiteral) !== 0;
+}
+
+/**
+ * The expression for one template literal type (`id_${string}`), a key type or a field type, or undefined for a shape it cannot state exactly: only `string` holes can.
+ * The one place that decides which holes a pattern states, so a key and a field read a template alike.
+ */
+function templateExpression(type: ts.TemplateLiteralType): string | undefined {
   if (!type.types.every((hole) => (hole.flags & ts.TypeFlags.String) !== 0)) return undefined;
   return type.texts.map(escapedKeyText).join('[\\s\\S]*');
+}
+
+/** The name of a field for a message: `Field "id" of TItem`, or the model alone when no field is being described. */
+function fieldLabel(context: TypeAnalysisContext): string {
+  return context.field ? `Field "${context.field}" of ${context.name}` : context.name;
 }
 
 /** The text of a key that a `number` index signature admits: a JSON number written as a property name. */
@@ -551,7 +571,7 @@ function indexKeyPattern(checker: ts.TypeChecker, type: ts.Type, declaredNames: 
     if ((keyType.flags & ts.TypeFlags.String) !== 0) return undefined;
     if ((keyType.flags & ts.TypeFlags.Number) !== 0) numbered = true;
     if ((keyType.flags & ts.TypeFlags.StringLike) === 0) continue;
-    const expression = (keyType.flags & ts.TypeFlags.TemplateLiteral) !== 0 ? templateKeyExpression(keyType as ts.TemplateLiteralType) : undefined;
+    const expression = isTemplateLiteralType(keyType) ? templateExpression(keyType) : undefined;
     if (expression === undefined) return null;
     expressions.push(expression);
   }
@@ -703,11 +723,7 @@ function rejectUntaggedObjectUnion(
   at: ts.Node,
   isDefaultLibraryFile: (file: ts.SourceFile) => boolean,
 ): void {
-  const declaredByLibrary = (type: ts.Type): boolean => {
-    const declarations = type.getSymbol()?.declarations ?? [];
-    return declarations.length > 0 && declarations.every((declaration) => isDefaultLibraryFile(declaration.getSourceFile()));
-  };
-  if (context.dto || entries.every(({ type }) => declaredByLibrary(type))) return;
+  if (context.dto || entries.every(({ type }) => isDeclaredByDefaultLibrary(type.getSymbol(), isDefaultLibraryFile))) return;
   const objects = entries.filter(({ descriptor }) => isObjectLikeVariant(descriptor) && descriptor.serde === undefined);
   if (objects.length < 2) return;
   const names = objects.map(({ type, descriptor }) => descriptor.kind === 'reference' ? descriptor.name
@@ -743,6 +759,8 @@ interface DescribeScope {
   readonly boundary: ModelBoundary | undefined;
   readonly typeErrorAt: ((node: ts.Node) => string | undefined) | undefined;
   readonly isDefaultLibraryFile: (file: ts.SourceFile) => boolean;
+  /** The functions that the tags of the program write, read on the first tag that needs them. */
+  readonly functionIndex: () => FunctionIndex;
   readonly modelSources: ReadonlySet<string> | undefined;
   readonly stableIdentityRoot: string;
   readonly modelNames: ReadonlyMap<ModelSpecification['declaration'], string>;
@@ -772,6 +790,7 @@ interface DescribeScope {
     substitutions?: TypeSubstitutions,
     nameHint?: string,
     nameNode?: ts.TypeNode,
+    tagSources?: readonly ts.Node[],
   ) => ModelConversionDescriptor;
 }
 
@@ -805,6 +824,8 @@ interface DescribeInput {
   readonly substitutions: TypeSubstitutions;
   readonly nameHint: string;
   readonly nameNode: ts.TypeNode | undefined;
+  /** Nodes beside `node` that write the functions of the tags on the type: the declarations that a mapped type copied, the wire parameter of a serde. */
+  readonly tagSources: readonly ts.Node[];
 }
 
 /** One `describeType` call after its tags are read: the substituted nodes, the tag metadata, and `type`, the type the walk describes. */
@@ -835,8 +856,8 @@ function projectionReference(name: string): ModelConversionDescriptor {
 
 /** Read the tags of the type once: the nodes and substitutions the children use, the tag metadata, and the type to describe. */
 function openDescribeCall(scope: DescribeScope, input: DescribeInput): DescribeCall {
-  const { checker, modelSources, stableIdentityRoot, companionOf, describe } = scope;
-  const { originalType, context, seen, representation, provenanceNode, substitutions, nameHint, nameNode } = input;
+  const { checker, modelSources, stableIdentityRoot, companionOf, describe, isDefaultLibraryFile, functionIndex } = scope;
+  const { originalType, context, seen, representation, provenanceNode, substitutions, nameHint, nameNode, tagSources } = input;
   const node = substituteTypeNode(checker, input.node, substitutions);
   const instantiated = instantiatedTypeSource(checker, node ?? provenanceNode, substitutions);
   const childNode = instantiated.node;
@@ -845,19 +866,21 @@ function openDescribeCall(scope: DescribeScope, input: DescribeInput): DescribeC
     checker,
     sourceFile: context.sourceFile,
     identityRoot: stableIdentityRoot,
+    isDefaultLibraryFile,
     importer: companionOf(context.sourceFile.fileName),
     ...(modelSources ? { isModelSource: (filename: string) => modelSources.has(filename) } : {}),
+    functionIndex,
     diagnostic: (tagNode: ts.Node, code: string, message: string) =>
       diagnostic(context.sourceFile, tagNode, code, message),
-    describeSchema: (schemaType: ts.Type, schemaNode?: ts.TypeNode) =>
+    describeSchema: (schemaType: ts.Type, schemaNode: ts.TypeNode | undefined) =>
       describe(schemaType, { ...context, exact: false, schemaData: true }, seen, schemaNode, representation, undefined, undefined, nameHint),
   };
   // Analyze checker types even when a child has no corresponding AST node
   // (for example the Date branch of `Date | undefined`). A union variant reads the authored member that names it.
-  const analysis = analyzeNode(tagContext, originalType, node ?? nameNode);
+  const analysis = analyzeNode(tagContext, originalType, node ?? nameNode, tagSources);
   let metadata: InternalTagMetadata = analysis.metadata;
   if (metadata.serde && !metadata.serde.wireDescriptor) {
-    const wireDescriptor = describe(metadata.serde.wireType, context, seen, undefined, 'wire', undefined, undefined, nameHint);
+    const wireDescriptor = describe(metadata.serde.wireType, context, seen, undefined, 'wire', undefined, undefined, nameHint, undefined, metadata.serde.wireNodes);
     metadata = {
       ...metadata,
       serde: { ...metadata.serde, wireDescriptor },
@@ -871,7 +894,7 @@ function openDescribeCall(scope: DescribeScope, input: DescribeInput): DescribeC
       : originalType,
     metadata,
   );
-  return { ...input, node, childNode, childSubstitutions, tagContext, analysis, metadata, type };
+  return { ...input, context, node, childNode, childSubstitutions, tagContext, analysis, metadata, type };
 }
 
 /** Stop on a tag that does not fit the type it sits on, before the type is described. */
@@ -907,7 +930,7 @@ function describeTaggedValue(scope: DescribeScope, call: DescribeCall): ModelCon
   // A TSerde codec converts the whole value, so only an intersection that no codec converts is cut here, before the object merge reads it.
   const scalar = metadata.serde ? undefined : scalarIntersectedWithObject(checker, type);
   if (scalar) {
-    const where = context.field ? `Field "${context.field}" of ${context.name}` : context.name;
+    const where = fieldLabel(context);
     throw diagnostic(
       context.sourceFile,
       node ?? context.declaration,
@@ -943,7 +966,7 @@ function describeModelReference(scope: DescribeScope, call: DescribeCall, found:
   }
   if (projection) {
     for (const original of provenance.models) {
-      const whole = analyzeNode({ ...tagContext, sourceFile: original.sourceFile }, original.fieldsType, original.fieldsNode).metadata;
+      const whole = analyzeNode({ ...tagContext, sourceFile: original.sourceFile }, original.fieldsType, original.fieldsNode, []).metadata;
       if (hasDescriptorTags(whole)) {
         throw diagnostic(context.sourceFile, node ?? context.declaration, '1055', `Projection of ${original.name} would discard whole-object constraints or serialization. Declare an explicit projected contract.`);
       }
@@ -1002,7 +1025,7 @@ function describeSdkType(scope: DescribeScope, call: DescribeCall, isRoot: boole
 
 /** The descriptor of a scalar, any, unknown or never type, or undefined. */
 function describeScalar(scope: DescribeScope, call: DescribeCall): ModelConversionDescriptor | undefined {
-  const { checker, allowUnresolved, typeErrorAt, rejectUnlessAllowAny } = scope;
+  const { checker, allowUnresolved, typeErrorAt, rejectUnlessAllowAny, modelValidates } = scope;
   const { context, node, metadata, type } = call;
   if (type.flags & ts.TypeFlags.Any) {
     if (!allowUnresolved && isErrorAny(type)) {
@@ -1027,7 +1050,23 @@ function describeScalar(scope: DescribeScope, call: DescribeCall): ModelConversi
   if (type.flags & ts.TypeFlags.Undefined) return withMetadata({ kind: 'undefined' }, metadata);
   const literal = literalTypeValue(checker, type);
   if (literal !== undefined) return withMetadata({ kind: 'literal', value: literal }, metadata);
-  if (type.flags & ts.TypeFlags.TemplateLiteral) return withMetadata({ kind: 'string' }, metadata);
+  if (isTemplateLiteralType(type)) {
+    if (taggedTemplateHole(call.tagContext, type)) {
+      const at = node ?? call.provenanceNode ?? context.declaration;
+      throw diagnostic(context.sourceFile, at, '1045', `A tag inside the template literal type ${checker.typeToString(type)} checks no value: a tag applies to the field, and a hole is a part of its value. Intersect the tag with the field's type, as in \`id-\${string}\` & <tag>.`);
+    }
+    const expression = templateExpression(type);
+    if (expression === undefined) {
+      // The pattern is a validation rule: with validation off nothing states it, so no hole stops generation.
+      if (modelValidates(context)) {
+        throw diagnostic(context.sourceFile, node ?? call.provenanceNode ?? context.declaration, '1004',
+          `${fieldLabel(context)} is typed by the template literal type ${checker.typeToString(type)}, which golem cannot state as a pattern. Use string-only holes, such as \`id-\${string}\`, or a plain string.`);
+      }
+      return withMetadata({ kind: 'string' }, metadata);
+    }
+    const pattern: ModelConstraint = { kind: 'pattern', value: `^${expression}$` };
+    return withMetadata({ kind: 'string' }, { ...metadata, constraints: [pattern, ...metadata.constraints] });
+  }
   return undefined;
 }
 
@@ -1179,7 +1218,7 @@ function describeTuple(scope: DescribeScope, call: DescribeCall, seen: ReadonlyS
     }
     // The schema of a tuple states a fixed element after its rest element as one `anyOf` of the rest and the fixed types, which accepts them out of order.
     if (modelValidates(context) && restIndex < arguments_.length - 1) {
-      const where = context.field ? `Field "${context.field}" of ${context.name}` : context.name;
+      const where = fieldLabel(context);
       throw diagnostic(context.sourceFile, node ?? context.declaration, '1021',
         `${where} has fixed elements after its rest element, which a JSON Schema cannot validate in order. Move the fixed elements before the rest element, or set \`{ validation: false }\` on the model.`);
     }
@@ -1242,7 +1281,7 @@ function objectMembers(scope: DescribeScope, call: DescribeCall, facts: ShapeFac
     if (sourceObject && isGeneratedBrandKey(checker, mapped)) continue;
     // A tag is type-only: a variant `A & B & Discriminator<'k'>` has the tag key beside its fields, and the key is no field.
     if (isGolemTagKey(checker, mapped)) continue;
-    if (isSymbolKeyedProperty(checker, mapped) && isDefaultLibraryProperty(mapped, isDefaultLibraryFile)) continue;
+    if (isSymbolKeyedProperty(checker, mapped) && isDeclaredByDefaultLibrary(mapped, isDefaultLibraryFile)) continue;
     members.push(sourceObject !== undefined && !sourceObject.getProperty(name) ? { kind: 'absent', name, property: mapped, source: sourceObject } : { kind: 'declared', name, property: mapped });
   }
   // A model defined by a mapped type over its own class has no members: the base of the class is a stub of this very model.
@@ -1324,6 +1363,8 @@ function describeProperties(scope: DescribeScope, call: DescribeCall, nextSeen: 
         ?? (isPropertyMapping(type) ? node ?? provenanceNode : undefined),
       childSubstitutions,
       `${projectionName ?? nameHint}${pascalIdentifier(name) ?? 'Field'}`,
+      undefined,
+      propertyNode ? [] : propertyTagSources(checker, property),
     );
     properties[name] = described;
     if (!optional) required.push(name);
@@ -1363,21 +1404,26 @@ function describeObject(scope: DescribeScope, call: DescribeCall, seen: Readonly
   // Two value types are one when each is assignable to the other: `{ x: number }` written twice is two type objects.
   // A plain `string` signature beside a template one also describes the template's keys, so its value type joins the comparison.
   const templateValueTypes = checker.getIndexInfosOfType(type)
-    .filter(({ keyType }) => (keyType.flags & ts.TypeFlags.TemplateLiteral) !== 0).map(({ valueType }) => valueType);
+    .filter(({ keyType }) => isTemplateLiteralType(keyType)).map(({ valueType }) => valueType);
   if (templateValueTypes.length > 0 && indexType) templateValueTypes.push(indexType);
   const [firstValueType] = templateValueTypes;
   if (firstValueType !== undefined && templateValueTypes.some((valueType) => !checker.isTypeAssignableTo(valueType, firstValueType) || !checker.isTypeAssignableTo(firstValueType, valueType))) {
-    const where = context.field ? `Field "${context.field}" of ${context.name}` : context.name;
     throw diagnostic(context.sourceFile, node ?? context.declaration, '1004',
-      `${where} has index signatures of different value types, which golem cannot state as one value type. Give them one value type, or use one index signature.`);
+      `${fieldLabel(context)} has index signatures of different value types, which golem cannot state as one value type. Give them one value type, or use one index signature.`);
   }
   const taggedAdditional = indexType ? undefined : additionalPropertiesFromTags(metadata.constraints);
+  const taggedKey = checker.getIndexInfosOfType(type).map(({ keyType }) => keyType)
+    .find((keyType): keyType is ts.TemplateLiteralType => isTemplateLiteralType(keyType) && taggedTemplateHole(call.tagContext, keyType) !== undefined);
+  // A tag in a hole of a key checks no key, with validation off too: the tag would be dropped without a message (R-55).
+  if (taggedKey) {
+    throw diagnostic(context.sourceFile, node ?? context.declaration, '1045',
+      `${fieldLabel(context)} is keyed by the template literal type ${checker.typeToString(taggedKey)}, which holds a tag in a hole. A tag checks a value, not a key. Remove the tag, or use string-only holes, such as \`id_\${string}\`.`);
+  }
   // The key pattern is a validation rule: with validation off nothing states it, so no key type stops generation for it.
   const keyPattern = indexType && modelValidates(context) ? indexKeyPattern(checker, type, [...memberNames]) : undefined;
   if (keyPattern === null) {
-    const where = context.field ? `Field "${context.field}" of ${context.name}` : context.name;
     throw diagnostic(context.sourceFile, node ?? context.declaration, '1004',
-      `${where} is keyed by a template literal type that golem cannot state as a key pattern. Use string-only holes, such as \`id_\${string}\`, or a plain string key.`);
+      `${fieldLabel(context)} is keyed by a template literal type that golem cannot state as a key pattern. Use string-only holes, such as \`id_\${string}\`, or a plain string key.`);
   }
   const keyConstraint: ModelConstraint[] = keyPattern === undefined ? [] : [{
     kind: 'propertyNames',
@@ -1465,6 +1511,8 @@ export interface DescriptorBuilderOptions {
   readonly typeErrorAt: ((node: ts.Node) => string | undefined) | undefined;
   /** Whether a source file is a default library file: a symbol key it declares is the built-in type's own metadata, not a field. */
   readonly isDefaultLibraryFile: (file: ts.SourceFile) => boolean;
+  /** Every source file of the program except the default library files: the tag references in them make the index of the functions that tags write. */
+  readonly programFiles: () => readonly ts.SourceFile[];
   /** How many instances of one generic declaration may be open at once before the walk stops with RUNM1083; `DEFAULT_MAX_EXPANSION_DEPTH` when omitted. */
   readonly maxExpansionDepth?: number;
 }
@@ -1474,7 +1522,7 @@ export function descriptorBuilder(
   specifications: readonly ModelSpecification[],
   manifestIndex: ManifestIndex,
   {
-    validationLevel, allowAny, identityRoot, allowUnresolved, nameFor, modelSources, boundary, typeErrorAt, isDefaultLibraryFile,
+    validationLevel, allowAny, identityRoot, allowUnresolved, nameFor, modelSources, boundary, typeErrorAt, isDefaultLibraryFile, programFiles,
     maxExpansionDepth = DEFAULT_MAX_EXPANSION_DEPTH,
   }: DescriptorBuilderOptions,
 ): {
@@ -1558,11 +1606,6 @@ export function descriptorBuilder(
       }
     }
     return name;
-  };
-  const sourceLocation = (at: ts.Node): string => {
-    const sourceFile = at.getSourceFile();
-    const position = sourceFile.getLineAndCharacterOfPosition(at.getStart(sourceFile));
-    return `${displayPath(sourceFile.fileName)}:${position.line + 1}:${position.character + 1}`;
   };
   const modelNames = new Map(
     specifications.map((specification) => [specification.declaration, nameFor?.(specification) ?? specification.name] as const),
@@ -1737,8 +1780,9 @@ export function descriptorBuilder(
   const modelValidates = (context: TypeAnalysisContext): boolean =>
     (specifications.find(specification => specification.declaration === context.declaration)?.validation ?? validationLevel) !== false;
 
+  const functionIndex = (): FunctionIndex => functionIndexOf(checker, programFiles);
   const scope: DescribeScope = {
-    checker, specifications, manifestIndex, allowAny, allowUnresolved, boundary, typeErrorAt, isDefaultLibraryFile,
+    checker, specifications, manifestIndex, allowAny, allowUnresolved, boundary, typeErrorAt, isDefaultLibraryFile, functionIndex,
     modelSources, stableIdentityRoot, modelNames, modelLocations, projections, projectionCache, projectionOwners, projectionSources,
     cycleStems, declaredVariants, companionOf, modelNameOf, sourceLocation, claimHeadName, isCycleHead, rejectUnlessAllowAny, modelOf,
     modelValidates,
@@ -1754,8 +1798,9 @@ export function descriptorBuilder(
     substitutions: TypeSubstitutions = new Map(),
     nameHint: string = safeNameHint(context.ownerName ?? context.name, 'Model'),
     nameNode?: ts.TypeNode,
+    tagSources: readonly ts.Node[] = [],
   ): ModelConversionDescriptor => {
-    const call = openDescribeCall(scope, { originalType, context, seen, node, representation, provenanceNode, substitutions, nameHint, nameNode });
+    const call = openDescribeCall(scope, { originalType, context, seen, node, representation, provenanceNode, substitutions, nameHint, nameNode, tagSources });
     assertTagsFit(scope, call);
     const tagged = describeTaggedValue(scope, call);
     if (tagged) return tagged;

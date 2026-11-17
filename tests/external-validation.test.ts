@@ -50,16 +50,14 @@ const numberDescriptor: ModelTypeDescriptor = {
 async function registerNumberModel(
   constructor: new (...args: never[]) => { value: number },
   options: {
-    readonly validation: boolean;
     readonly encode?: (model: { value: number }) => unknown;
     readonly enhanceValidator?: GeneratedModelValidatorEnhancer;
-  } = { validation: true },
+  } = {},
 ): Promise<void> {
   await installCodecModel({
     constructor,
     name: `NumberModel_${constructor.name}`,
     fields: ['value'],
-    profileValidation: options.validation,
     conversion: {
       decode: value => Object.assign(new constructor(), value as object),
       encode: options.encode ?? (model => ({ value: model.value })),
@@ -111,7 +109,6 @@ test('a failed validator enhancer is not cached and can be retried', async () =>
   }
   let enhancerCalls = 0;
   await registerNumberModel(NumberModel, {
-    validation: true,
     enhanceValidator: validator => {
       enhancerCalls += 1;
       if (enhancerCalls === 1) throw new Error('enhancer failed');
@@ -222,7 +219,7 @@ test('validateInstance rejects a declared field that a prototype getter supplies
 
 test('validateInstance reads a MobX model by its own observable fields', async () => {
   class MobxNumberModel { declare value: number; }
-  await registerNumberModel(MobxNumberModel, { validation: true, enhanceValidator: enhanceValidatorWithMobX });
+  await registerNumberModel(MobxNumberModel, { enhanceValidator: enhanceValidatorWithMobX });
   const valid = generated(new MobxNumberModel());
   valid.value = 1;
   asGenObservable(valid);

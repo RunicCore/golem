@@ -11,8 +11,10 @@ import {
   compileStrictUnusedSdk,
   defaultTestProfile,
   generateMaterializedSdk,
-  isGeneratedClientClass,
+  generatedClientFrom,
+  importGeneratedModule,
   isGeneratedModelClass,
+  loadGeneratedClient,
   requireRecord,
   type OpenApiGenerationProfile,
 } from './helpers.js';
@@ -37,10 +39,7 @@ test('applicable custom codecs override built-in request, parameter, response an
   const output = outputDir(t, 'overrides');
   await generateMaterializedSdk(document, { output, name: 'Overrides', profile: { validation: true } });
   compileStrictUnusedSdk(output);
-  const module = requireRecord(await import(pathToFileURL(path.join(output, 'dist/client.js')).href), 'override client');
-  const Client = module.OverridesClient;
-  assert.ok(isGeneratedClientClass(Client));
-  if (!isGeneratedClientClass(Client)) throw new TypeError('OverridesClient');
+  const Client = await loadGeneratedClient(output, 'Overrides');
   const calls: string[] = [];
   const client = new Client({
     baseUrl: 'https://example.test',
@@ -106,13 +105,7 @@ test('generated clients bind the default fetch to globalThis and call an explici
     },
   }, { output, name: 'FetchReceiver', profile: { validation: false } });
   compileStrictUnusedSdk(output);
-  const module = requireRecord(
-    await import(pathToFileURL(path.join(output, 'dist/client.js')).href),
-    'fetch receiver client',
-  );
-  const Client = module.FetchReceiverClient;
-  assert.ok(isGeneratedClientClass(Client));
-  if (!isGeneratedClientClass(Client)) throw new TypeError('FetchReceiverClient');
+  const Client = await loadGeneratedClient(output, 'FetchReceiver');
 
   const originalFetch = globalThis.fetch;
   const defaultReceivers: unknown[] = [];
@@ -164,10 +157,6 @@ function writeAssertFile(output: string, name: string, source: string): string {
   const file = path.join(output, name);
   writeFileSync(file, source);
   return file;
-}
-
-async function importClient(output: string, label: string): Promise<Record<string, unknown>> {
-  return requireRecord(await import(pathToFileURL(path.join(output, 'dist/client.js')).href), label);
 }
 
 test('directional imports follow schema references while literal data and keyword-shaped property names stay distinct', async t => {
@@ -306,9 +295,7 @@ test('generated SDKs of golem mode import the client runtime instead of copying 
     } } },
   }, { output, name: 'Shared', profile: { validation: true }, mode: 'golem' });
   compileStrictUnusedSdk(output);
-  const Client = (await importClient(output, 'shared client')).SharedClient;
-  assert.ok(isGeneratedClientClass(Client));
-  if (!isGeneratedClientClass(Client)) throw new TypeError('SharedClient');
+  const Client = await loadGeneratedClient(output, 'Shared');
   const client = new Client({
     baseUrl: 'https://fixture.invalid',
     fetchImpl: async () => new Response('{}', { status: 500, headers: { 'content-type': 'application/json' } }),
@@ -428,9 +415,7 @@ const options: StreamSecurityClientOptions = {
 void options;
 `);
   compileStrictUnusedSdk(output, [assertFile]);
-  const Client = (await importClient(output, 'stream security client')).StreamSecurityClient;
-  assert.ok(isGeneratedClientClass(Client));
-  if (!isGeneratedClientClass(Client)) throw new TypeError('StreamSecurityClient');
+  const Client = await loadGeneratedClient(output, 'StreamSecurity');
   const events = () => new Response('{"id":1}\n', { headers: { 'content-type': 'application/x-ndjson' } });
   const rows = () => new Response('\u001e{"id":1}\n', { headers: { 'content-type': 'application/json-seq' } });
   const bearerRequests: Array<string | null> = [];
@@ -474,9 +459,8 @@ test('an operation with no effective security requirement sends no credentials a
   }, { output, name: 'Unsecured', profile: { validation: false } });
   compileStrictUnusedSdk(output);
 
-  const module = await importClient(output, 'unsecured client');
-  const Client = module.UnsecuredClient;
-  assert.ok(isGeneratedClientClass(Client));
+  const module = await importGeneratedModule(output, 'unsecured client', 'dist/client.js');
+  const Client = generatedClientFrom(module, 'Unsecured', 'unsecured client');
   // The client merges the scheme metadata of every operation module, including the one that needs none.
   assert.deepEqual(module.unsecuredSecuritySchemeMetadata, { bearer: { type: 'http', scheme: 'bearer' } });
   const seen: Record<string, string | null> = {};
@@ -508,11 +492,9 @@ test('the SDK index exports its client and guard, and the client returns the che
     components: { schemas: { Money: { type: 'object', properties: { amount: { type: 'string' } }, required: ['amount'] } } },
   }, { output, name: 'Surface', profile: { validation: true } });
   compileStrictUnusedSdk(output);
-  const entry = requireRecord(await import(pathToFileURL(path.join(output, 'dist/index.js')).href), 'SDK entry');
+  const entry = await importGeneratedModule(output, 'SDK entry');
   assert.deepEqual(Object.keys(entry).sort(), ['SurfaceClient', 'isSurfaceUndeclaredResponseError']);
-  const Client = entry.SurfaceClient;
-  assert.ok(isGeneratedClientClass(Client));
-  if (!isGeneratedClientClass(Client)) throw new TypeError('SurfaceClient');
+  const Client = generatedClientFrom(entry, 'Surface', 'SDK entry');
   const respond = (status: number, body: unknown) => new Client({ baseUrl: 'https://fixture.invalid', fetchImpl: async () => Response.json(body, { status }) });
   const response = await respond(200, { amount: '5' }).getMoney().execute({});
   assert.deepEqual(response.body, { amount: '5' });
@@ -555,9 +537,7 @@ test('an operation module declares only the request locals it uses', async t => 
   }, { output, name: 'Locals', profile: { validation: false } });
   // Unused locals fail the strict compile; the behavior is the request each module builds.
   compileStrictUnusedSdk(output);
-  const Client = (await importClient(output, 'locals client')).LocalsClient;
-  assert.ok(isGeneratedClientClass(Client));
-  if (!isGeneratedClientClass(Client)) throw new TypeError('LocalsClient');
+  const Client = await loadGeneratedClient(output, 'Locals');
   const requests: Array<{ url: string; cookie: string | null }> = [];
   const client = new Client({
     baseUrl: 'https://fixture.invalid',

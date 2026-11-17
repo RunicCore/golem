@@ -3,17 +3,7 @@ import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { generate } from '#ts-openapi/generator';
 import { createControllerFixture } from '../fixture-templates/controllers/project.js';
-
-interface Doc {
-  readonly openapi: string;
-  readonly servers?: readonly Record<string, unknown>[];
-  readonly paths: Record<string, Record<string, {
-  readonly tags?: readonly string[];
-  readonly security?: readonly Record<string, unknown>[];
-  readonly responses: Record<string, { readonly content: Record<string, { readonly schema: { readonly properties: Record<string, unknown>; readonly required: readonly string[] } }> }>;
-}>>;
-  readonly components?: { readonly schemas?: Record<string, { readonly properties?: Record<string, Record<string, unknown>>; readonly required?: readonly string[] }> };
-}
+import { documentOf, operationOf, propertySchema, refusedWith, requestBodyOf, responseSchema, type OpenApiDocument } from './openapi-document.js';
 
 const IMPORTS = `import { Body, Controller, Get, Post } from '@nestjs/common';
 import { ApiBasicAuth, ApiBearerAuth, ApiOperation, ApiProperty, ApiTags } from '@nestjs/swagger';
@@ -24,7 +14,7 @@ async function build(
   t: TestContext,
   source: string,
   options: { readonly openapiVersion?: '3.1.2' | '3.2.0'; readonly servers?: readonly Record<string, unknown>[] } = {},
-): Promise<Doc> {
+): Promise<OpenApiDocument> {
   const root = createControllerFixture(t, { prefix: 'golem-ts-openapi-parity-', packageName: 'golem-ts-openapi-parity-fixture', sourceFile: 'src/items.controller.ts', source: `${IMPORTS}${source}` });
   const result = await generate({
     root,
@@ -34,17 +24,7 @@ async function build(
     profile: { validation: false },
     ...options,
   });
-  return JSON.parse(result.artifacts[0]!.content) as Doc;
-}
-
-async function rejection(promise: Promise<unknown>): Promise<{ readonly codes: readonly unknown[]; readonly text: string }> {
-  try {
-    await promise;
-  } catch (error) {
-    const diagnostics = (error as { readonly diagnostics?: readonly { readonly code?: unknown }[] }).diagnostics ?? [];
-    return { codes: diagnostics.map(item => item.code), text: String(error) };
-  }
-  assert.fail('expected generation to be refused');
+  return documentOf(result);
 }
 
 test('a string that only looks like a component path adds no component', async t => {
@@ -73,9 +53,8 @@ export class ItemsController {
   @Get() list(): Sample { return { sample: {} }; }
 }
 `);
-  const sample = document.paths['/items']!.get!.responses['200']!.content['application/json']!.schema.properties.sample as { readonly example: unknown };
-  assert.deepEqual(sample.example, { $ref: '#/components/schemas/Missing' });
-  const refused = await rejection(build(t, `
+  assert.deepEqual(propertySchema(responseSchema(document, '/items', 'get', '200'), 'sample').example, { $ref: '#/components/schemas/Missing' });
+  await assert.rejects(build(t, `
 class Pet {
   @ApiProperty({ oneOf: [{ type: 'string' }], discriminator: { propertyName: 'kind', mapping: { cat: '#/components/schemas/Missing' } } }) pet!: string;
 }
@@ -83,9 +62,7 @@ class Pet {
 export class ItemsController {
   @Get() list(): Pet { return { pet: 'a' }; }
 }
-`));
-  assert.ok(refused.codes.includes('NEST1505'), refused.text);
-  assert.match(refused.text, /#\/components\/schemas\/Missing/);
+`), refusedWith('NEST1505', /#\/components\/schemas\/Missing/));
 });
 
 const ITEM = 'export type TItem = IModel<{ id: string }>;\n';
@@ -96,12 +73,11 @@ test('a server name is written on OpenAPI 3.2.0, refused on 3.1.2, and refused w
   const servers = [{ url: 'https://api.example.test', name: 'production' }];
   const document = await build(t, SOURCE, { servers });
   assert.deepEqual(document.servers, servers);
-  const refused = await rejection(build(t, SOURCE, { servers, openapiVersion: '3.1.2' }));
-  assert.ok(refused.codes.includes('NEST1403'), refused.text);
-  assert.match(refused.text, /servers\[0\] contains unsupported property "name"/);
-  const repeated = await rejection(build(t, SOURCE, { servers: [...servers, { url: 'https://eu.example.test', name: 'production' }] }));
-  assert.ok(repeated.codes.includes('NEST1403'), repeated.text);
-  assert.match(repeated.text, /servers\[1\]\.name "production" repeats the name of an earlier server/);
+  await assert.rejects(build(t, SOURCE, { servers, openapiVersion: '3.1.2' }), refusedWith('NEST1403', /servers\[0\] contains unsupported property "name"/));
+  await assert.rejects(
+    build(t, SOURCE, { servers: [...servers, { url: 'https://eu.example.test', name: 'production' }] }),
+    refusedWith('NEST1403', /servers\[1\]\.name "production" repeats the name of an earlier server/),
+  );
 });
 
 test('a quoted route method name resolves like an identifier, and a computed one is reported, not dropped', async t => {
@@ -110,25 +86,28 @@ test('a quoted route method name resolves like an identifier, and a computed one
 class Base { @Get() 'list-items'(): TItem { return { id: 'a' }; } }
 @Controller('items') export class ItemsController extends Base { @Post() 'list-items'(): TItem { return { id: 'b' }; } }
 `);
-  assert.deepEqual(Object.keys(document.paths['/items']!), ['post']);
+  assert.deepEqual(Object.keys(document.paths['/items'] ?? {}), ['post']);
   const generic = await build(t, `${ITEM}
 class Base<T extends object> { @Get() 'find-one'(): T { return {} as T; } }
 @Controller('items') export class ItemsController extends Base<TItem> {}
 `);
-  assert.deepEqual(generic.paths['/items']!.get!.responses['200']!.content['application/json']!.schema, { additionalProperties: true, properties: { id: { type: 'string' } }, required: ['id'], type: 'object' });
-  const computed = await rejection(build(t, `${ITEM}const NAME = 'list';\n@Controller('items') export class ItemsController { @Get() [NAME](): TItem { return { id: 'a' }; } }`));
-  assert.ok(computed.codes.includes('NEST1201'), computed.text);
-  assert.match(computed.text, /\[NAME\].*identifier/);
+  assert.deepEqual(responseSchema(generic, '/items', 'get', '200'), { additionalProperties: true, properties: { id: { type: 'string' } }, required: ['id'], type: 'object' });
+  await assert.rejects(
+    build(t, `${ITEM}const NAME = 'list';\n@Controller('items') export class ItemsController { @Get() [NAME](): TItem { return { id: 'a' }; } }`),
+    refusedWith('NEST1201', /\[NAME\].*identifier/),
+  );
 });
 
 test('a spread or a computed key in @Controller options stops with NEST1201, not a dropped path', async t => {
   // protects: T-860 a spread supplying the path left a document with the controller path missing
-  const spread = await rejection(build(t, `${ITEM}const base = { path: 'users' };\n@Controller({ ...base, version: '2' }) export class ItemsController { @Get() list(): TItem { return { id: 'a' }; } }`));
-  assert.ok(spread.codes.includes('NEST1201'), spread.text);
-  assert.match(spread.text, /@Controller\(\) options must not spread/);
-  const computed = await rejection(build(t, `${ITEM}const KEY = 'path';\n@Controller({ [KEY]: 'users' }) export class ItemsController { @Get() list(): TItem { return { id: 'a' }; } }`));
-  assert.ok(computed.codes.includes('NEST1201'), computed.text);
-  assert.match(computed.text, /@Controller\(\) options must use static property names/);
+  await assert.rejects(
+    build(t, `${ITEM}const base = { path: 'users' };\n@Controller({ ...base, version: '2' }) export class ItemsController { @Get() list(): TItem { return { id: 'a' }; } }`),
+    refusedWith('NEST1201', /@Controller\(\) options must not spread/),
+  );
+  await assert.rejects(
+    build(t, `${ITEM}const KEY = 'path';\n@Controller({ [KEY]: 'users' }) export class ItemsController { @Get() list(): TItem { return { id: 'a' }; } }`),
+    refusedWith('NEST1201', /@Controller\(\) options must use static property names/),
+  );
 });
 
 test('stacked tags and security follow the order Nest applies them, bottom decorator first', async t => {
@@ -141,7 +120,7 @@ export class ItemsController {
   list(): TItem { return { id: 'a' }; }
 }
 `);
-  const operation = document.paths['/items']!.get!;
+  const operation = operationOf(document, '/items', 'get');
   assert.deepEqual(operation.tags, ['c2', 'c1', 'm2', 'm1']);
   assert.deepEqual(operation.security, [{ basic: [] }, { bearer: [] }, { basic: [] }, { bearer: [] }]);
 });
@@ -156,7 +135,7 @@ export class ItemsController {
   @Post() create(@Body() first: TA, @Body() second: TB): TA { return first; }
 }
 `);
-  assert.deepEqual((document.paths['/items']!.post as unknown as { requestBody: unknown }).requestBody, {
+  assert.deepEqual(requestBodyOf(document, '/items', 'post'), {
     required: true,
     content: { 'application/json': { schema: { allOf: [{ $ref: '#/components/schemas/TA' }, { $ref: '#/components/schemas/TB' }] } } },
   });
@@ -174,7 +153,7 @@ export class ItemsController {
   @Get() list(): Holder { return { name: null, alias: null }; }
 }
 `);
-  const holder = document.paths['/items']!.get!.responses['200']!.content['application/json']!.schema;
+  const holder = responseSchema(document, '/items', 'get', '200');
   assert.deepEqual(holder.properties, { alias: { type: ['string', 'null'] }, name: { type: 'string' } });
   assert.deepEqual(holder.required, ['alias', 'name']);
 });
@@ -204,7 +183,7 @@ export class ItemsController extends Base {
   @Get() list(): TItem { return { id: 'a' }; }
 }
 `);
-  const operation = document.paths['/items']!.get!;
+  const operation = operationOf(document, '/items', 'get');
   assert.deepEqual(operation.tags, ['b2', 'b1', 'd2', 'd1']);
   assert.deepEqual(operation.security, [{ basic: [] }, { bearer: [] }, { bearer: [] }, { basic: [] }]);
 });

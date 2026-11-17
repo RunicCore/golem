@@ -6,9 +6,11 @@ import { test, type TestContext } from 'node:test';
 import type { GolemJob } from '#golem/config';
 import { runPipeline } from '#golem/cli';
 import { applyJob, loadInventory } from '#golem/outputs';
-import { createFixtureProject, linkGolemPackages } from './fixture-project.js';
+import { canonicalPath } from '#golem/plan-support';
+import { createFixtureProject, linkGolemPackages, linkProjectPackages } from './fixture-project.js';
 import { configFor, jobWithFacts } from './support/output-config.js';
 import { writeFixture } from './support/consumer.js';
+import { workspace } from './support/process.js';
 
 function pipelineFixture(t: TestContext): { root: string; config: string; external: string; source: string } {
   // The tsconfig folder `outer` holds the project (the folder of golem.yaml) and `external`, where the outputs go.
@@ -19,6 +21,9 @@ function pipelineFixture(t: TestContext): { root: string; config: string; extern
   fs.mkdirSync(root, { recursive: true });
   fs.writeFileSync(path.join(root, 'package.json'), '{"name":"output-paths-fixture","type":"module"}');
   linkGolemPackages(root, ['golem', 'golem-model', 'golem-openapi-ts']);
+  // The validators module in `external` imports @exprtlabs/golem. Node looks for it in the folders above the module, which
+  // are `external` and `outer`, never in `project`: the tsconfig folder `outer` needs its own node_modules, as in a real build.
+  linkProjectPackages(outer, { '@exprtlabs/golem': path.join(workspace, 'packages/golem') });
   writeFixture(root, { validation: true }, false);
 
   // The model job scans the folder of golem.yaml, so its source lies there.
@@ -134,4 +139,16 @@ test('external model companions canonicalize through a symlink and retire safely
   const inventory = loadInventory(config);
   assert.equal(inventory.files[path.relative(root, firstCompanion).replaceAll(path.sep, '/')], undefined);
   assert.equal(inventory.files[path.relative(root, secondCompanion).replaceAll(path.sep, '/')].destination, path.relative(root, secondSourceDirectory).replaceAll(path.sep, '/'));
+});
+
+test('a path through a link that leads nowhere yet has the real path it will have, and links that loop stop with a plain error', (t: TestContext) => {
+  // protects: T-1027 canonicalPath stopped at a link that leads nowhere yet, so a path through it changed its real path once the target was written
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'golem-canonical-path-')));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.symlinkSync(path.join(root, 'first-hop'), path.join(root, 'link'), 'dir');
+  fs.symlinkSync(path.join(root, 'later'), path.join(root, 'first-hop'), 'dir');
+  fs.symlinkSync('c/../loop', path.join(root, 'loop'), 'dir');
+
+  assert.equal(canonicalPath(path.join(root, 'link', 'cart.ts')), path.join(root, 'later', 'cart.ts'));
+  assert.throws(() => canonicalPath(path.join(root, 'loop', 'cart.ts')), /lead back to themselves/);
 });

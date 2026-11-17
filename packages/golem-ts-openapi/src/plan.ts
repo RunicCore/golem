@@ -1,6 +1,7 @@
 // The plan entry of the ts-openapi block (`golem.plan`). Core loads it when it reads golem.yaml, so it imports no TypeScript, no yaml and no generator code.
 import path from 'node:path';
 import { openApiVersionOf, type OpenApiVersion } from './openapi-version.js';
+import { isUriVersioningType, URI_VERSIONING_TYPES_PHRASE, type UriVersioningType } from './uri-versioning.js';
 import { canonicalPath, checkedSuffixes, isRecord, MODEL_BOUNDARY, nonempty } from '@exprtlabs/golem/internal/plan-support';
 import type {
   GeneratorHostContext,
@@ -13,7 +14,7 @@ import type {
   PlannedJob,
 } from '@exprtlabs/golem/generator-api';
 
-export type ControllerUriVersioningType = 'URI' | 'uri' | 0;
+export type ControllerUriVersioningType = UriVersioningType;
 
 /** The subset of Nest URI versioning options which has a static OpenAPI meaning. */
 export interface ControllerUriVersioning {
@@ -129,7 +130,7 @@ function controllerUriVersioning(value: unknown, label: string): ControllerUriVe
   const options = record(value, label);
   keys(options, ['type', 'prefix', 'defaultVersion'], label);
   const type = options.type;
-  if (type !== undefined && type !== 'URI' && type !== 'uri' && type !== 0) throw new TypeError(`${label}.type must be URI or 0.`);
+  if (type !== undefined && !isUriVersioningType(type)) throw new TypeError(`${label}.type must be ${URI_VERSIONING_TYPES_PHRASE}.`);
   const prefix = optionalString(options.prefix, `${label}.prefix`);
   const defaultVersion = options.defaultVersion;
   if (defaultVersion !== undefined

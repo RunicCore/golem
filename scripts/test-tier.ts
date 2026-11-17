@@ -6,13 +6,15 @@ import { fileURLToPath } from 'node:url';
 import { EXAMPLE_NAMES } from './maintained-examples.js';
 import { listPublicSourceFiles } from './public-source.js';
 import { sourcePath } from './test-file-timings.js';
+import { estimateWall, splitForCeiling, type CostedFile } from './test-split.js';
 import { describeResume, finishRun, isTierResult, readRecord, runStateFromEnv, stepResultFile, type PlannedStep, type RunRecord } from './test-runner/run-state.js';
 import type { OrderedRun } from './test-run-ordered.js';
 
-export type Tier = 'prepare' | 'focused' | 'full' | 'acceptance' | 'docs';
+export type Tier = 'prepare' | 'focused' | 'full' | 'full-ts6' | 'acceptance' | 'acceptance-rest' | 'acceptance-unit' | 'docs' | 'examples-check';
 /** `fileTimings` is the JSON-lines file that the test-file reporter fills while the step runs. */
 /** `always`: the step runs again in a resume, because its result lives outside the run record (see `pack`). */
-export interface Step { readonly label: string; readonly run: () => Promise<number>; readonly fileTimings?: string; readonly always?: true }
+/** `readsPacked`: the step reads the packed set in /cache/packed, so `pack` runs before it in the same run. */
+export interface Step { readonly label: string; readonly run: () => Promise<number>; readonly fileTimings?: string; readonly always?: true; readonly readsPacked?: true }
 /** The steps of a chain run one after another. The chains of a group run at the same time; groups run in order. */
 export type Group = readonly (readonly Step[])[];
 /** Each step is a group of its own: the steps run in order. */
@@ -21,7 +23,7 @@ const inOrder = (...steps: readonly Step[]): Group[] => steps.map(step => [[step
 // The public-source and release-version tests stay in this step: the Acceptance tier's "public source" step and the pack
 // step (test-pack, verify-package) run those scripts as release gates, and these tests hold their rejection cases.
 export const UNIT_FILES = ['.build/tests/*.test.js', '.build/tests/openapi/*.test.js', '.build/tests/golem-ts-openapi/*.test.js'] as const;
-// The model-only smoke file runs in Full; Acceptance runs the others so it runs once.
+// The model-only smoke file runs in Full TS6; Acceptance runs the others so it runs once.
 export const PACKED_FILES = ['.build/tests/packed/consumers.test.js', '.build/tests/packed/nest-workflows.test.js'] as const;
 const SMOKE_FILE = '.build/tests/packed/model-only.test.js';
 // The TypeScript 6 lane runs the test files whose first line is `// lane: typescript6 <the shim place the file proves>`, with
@@ -71,12 +73,28 @@ export const CONCURRENCY = {
 const tiers: Readonly<Record<Tier, { readonly budget: string; readonly purpose: string }>> = {
   prepare: { budget: '≤5 min (plus a first-time image build), network', purpose: 'Fill the npm, packed and typia plugin caches so tiers run offline.' },
   focused: { budget: '≤1 min', purpose: 'Did my change break what I touched?' },
-  full: { budget: '≤5 min', purpose: 'Did I break anything anywhere?' },
-  acceptance: { budget: '≤10 min, needs a stated reason', purpose: 'Is this releasable?' },
+  // Full is two runs, each with its own ceiling (entrypoint.sh), record and resume, so neither passes the 10 minute limit of one run.
+  // A sprint-end run is both. The budgets are the recorded wall times at width 8: unit 395 s, the lane 328 s (beside pack, smoke and lint).
+  full: { budget: 'about 400 s', purpose: 'Did I break anything in the unit tests? A sprint-end run is this tier and full-ts6.' },
+  'full-ts6': { budget: 'about 330 s', purpose: 'Did I break anything on TypeScript 6? Runs the TypeScript 6 lane, pack, the packed smoke test and the source checks of lint. The other half of a sprint-end run.' },
+  // Acceptance is three runs of one command (entrypoint.sh), each with its own ceiling, record and resume, so the steps of the gate
+  // do not have to fit one 600 s ceiling. Run 1 holds the steps that do not read the packed set, without the acceptance unit tests
+  // (they add 72 to 95 s on a quiet host and 138 s under load, which cut run 1); run 2 holds the TypeScript 6 lane and the chain that
+  // packs and reads the packed set; run 3 holds the acceptance unit tests. The budgets are the wall times of a quiet host: run 1 is
+  // public source and compliance plus unit 395 s; run 2 is the lane beside a chain of pack (about 83 s cold), smoke, lint, packed,
+  // browser and examples; run 3 is acceptance unit.
+  acceptance: { budget: 'about 400 s', purpose: 'Is this releasable? Run 1 of 3 (the others are acceptance-rest and acceptance-unit): the public-source and OpenAPI compliance checks and the unit tests.' },
+  'acceptance-rest': { budget: 'about 390 s', purpose: 'Is this releasable? Run 2 of 3: the TypeScript 6 lane beside pack, the packed smoke test, the source checks of lint, the packed and browser tests and the examples.' },
+  'acceptance-unit': { budget: 'about 100 s', purpose: 'Is this releasable? Run 3 of 3: the acceptance unit tests (the TypeScript identity corpus included).' },
   docs: { budget: 'about 2 min', purpose: 'Do the docs pass their prose and inventory checks, and does the site build and pass its checks?' },
+  // Not the `examples` tier of entrypoint.sh, which generates the examples for compare:examples and runs no check.
+  'examples-check': { budget: '≤5 min', purpose: 'Does each maintained example pass its own check and test from a clean copy? Acceptance runs this step last; this tier runs it alone.' },
 };
 
 const RUNNER_FLAGS = ['--test-shard', '--test-timeout', '--test-concurrency', '--test-reporter'] as const;
+
+/** Packed and browser tests read the packed set. */
+const readsPackedSet = (files: readonly string[]): boolean => files.some(file => /\/tests\/(?:packed|browser)\//.test(file));
 
 export function selectFocused(args: readonly string[], lane6 = false): { readonly files: readonly string[]; readonly passThrough: readonly string[]; readonly needsPack: boolean } {
   const files: string[] = [];
@@ -100,7 +118,7 @@ export function selectFocused(args: readonly string[], lane6 = false): { readonl
     throw new Error('Select test files or --test-name-pattern, for example: npm run test -- tests/serde.test.ts');
   }
   const selected = files.length ? files : [...(lane6 ? typescript6Files() : UNIT_FILES)];
-  return { files: selected, passThrough, needsPack: selected.some(file => /\/tests\/(?:packed|browser)\//.test(file)) };
+  return { files: selected, passThrough, needsPack: readsPackedSet(selected) };
 }
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
@@ -133,17 +151,23 @@ function fileSecondsRecord(tier: Tier): string | undefined {
   return packedDir ? path.join(path.dirname(packedDir), 'test-order', `${tier}.json`) : undefined;
 }
 
-/** Order is an optimization: a missing record is normal, and one that cannot be read is reported and ignored. */
-function loadFileSeconds(file: string | undefined): void {
-  if (!file || !fs.existsSync(file)) return;
+/** The steps of a tier record by label, each with the seconds of its files. A missing record is normal, and one that cannot be read is reported and ignored: order and splitting are optimizations. */
+function readFileSecondsRecord(file: string | undefined): ReadonlyMap<string, Readonly<Record<string, number>>> {
+  const labels = new Map<string, Readonly<Record<string, number>>>();
+  if (!file || !fs.existsSync(file)) return labels;
   try {
     const record: unknown = JSON.parse(fs.readFileSync(file, 'utf8'));
     if (typeof record !== 'object' || record === null || Array.isArray(record)) throw new SyntaxError('not an object of steps');
-    for (const [label, seconds] of Object.entries(record)) recordedFileSeconds.set(label, seconds as Record<string, number>);
+    for (const [label, seconds] of Object.entries(record)) labels.set(label, seconds as Record<string, number>);
   } catch (error) {
-    process.stderr.write(`Could not read the test file seconds at ${file} (${error instanceof Error ? error.message : String(error)}); the files run in path order.\n`);
-    recordedFileSeconds.clear();
+    process.stderr.write(`Could not read the test file seconds at ${file} (${error instanceof Error ? error.message : String(error)}); the run goes without it.\n`);
+    return new Map();
   }
+  return labels;
+}
+
+function loadFileSeconds(file: string | undefined): void {
+  for (const [label, seconds] of readFileSecondsRecord(file)) recordedFileSeconds.set(label, seconds);
 }
 
 /** Written whole through a temporary file, so a kill never leaves half a record. A failed write is reported; the run goes on. */
@@ -202,6 +226,7 @@ function nodeTest(tier: Tier, label: string, patterns: readonly string[], concur
   return {
     label,
     fileTimings,
+    ...(readsPackedSet(patterns) ? { readsPacked: true as const } : {}),
     run: () => {
       let files: string[];
       try {
@@ -242,7 +267,7 @@ function typescript6Env(): NodeJS.ProcessEnv {
 }
 
 /** Takes `--typescript 6` (or `--typescript=6`) out of the focused arguments. */
-function splitTypescriptLane(args: readonly string[]): { readonly lane6: boolean; readonly rest: readonly string[] } {
+export function splitTypescriptLane(args: readonly string[]): { readonly lane6: boolean; readonly rest: readonly string[] } {
   const rest: string[] = [];
   let lane6 = false;
   for (let index = 0; index < args.length; index++) {
@@ -255,10 +280,59 @@ function splitTypescriptLane(args: readonly string[]): { readonly lane6: boolean
   return { lane6, rest };
 }
 
+/** The step labels of the unit and TypeScript 6 steps: the keys of their file seconds in the order record, which a focused call reads. */
+const UNIT_STEP = 'unit';
+const TYPESCRIPT6_STEP = 'typescript 6';
+
+/**
+ * Where a focused file's seconds come from: the record of the full tier that runs the same lane, by its step. A file with no
+ * entry there (a new test, or one outside the lane) costs `defaultSeconds`, about the mean file of the lane in a full run.
+ */
+const FOCUSED_COSTS = {
+  unit: { tier: 'full', label: UNIT_STEP, defaultSeconds: 10 },
+  typescript6: { tier: 'full-ts6', label: TYPESCRIPT6_STEP, defaultSeconds: 45 },
+} as const satisfies Record<string, { readonly tier: Tier; readonly label: string; readonly defaultSeconds: number }>;
+
+/** The arguments of one run of a focused group: the lane and the flags of the original call, then the group's files (each already a `.build/` path, so the run parses them as files). */
+export function groupArguments(lane6: boolean, passThrough: readonly string[], files: readonly string[]): string[] {
+  return [...(lane6 ? ['--typescript', '6'] : []), ...passThrough, ...files];
+}
+
+export interface FocusedRun { readonly args: readonly string[]; readonly estimatedSeconds: number }
+
+/**
+ * Cuts a focused call into runs that each fit the tier ceiling by the recorded seconds of their files (`splitForCeiling`). A set that
+ * fits is one run. The lane and the flags of the call go to every run; each file is in exactly one run.
+ */
+export function focusedRuns(args: readonly string[], ceiling: number): { readonly runs: readonly FocusedRun[]; readonly unrecorded: number } {
+  const { lane6, rest } = splitTypescriptLane(args);
+  const selection = selectFocused(rest, lane6);
+  const cost = FOCUSED_COSTS[lane6 ? 'typescript6' : 'unit'];
+  const recorded = readFileSecondsRecord(fileSecondsRecord(cost.tier)).get(cost.label);
+  let unrecorded = 0;
+  const files: CostedFile[] = [...new Set(expandFiles(selection.files))].map(file => {
+    const seconds = recorded?.[sourcePath(path.resolve(root, file), root)];
+    if (seconds === undefined) unrecorded++;
+    return { file, seconds: seconds ?? cost.defaultSeconds };
+  });
+  const runs = splitForCeiling(files, { width: CONCURRENCY.unit, ceiling }).map(group => ({
+    args: groupArguments(lane6, selection.passThrough, group.map(item => item.file)),
+    estimatedSeconds: Math.round(estimateWall(group.map(item => item.seconds), CONCURRENCY.unit)),
+  }));
+  return { runs, unrecorded };
+}
+
+/** `entrypoint.sh` runs each file of `dir` as one focused run under the ceiling: `<n>.args` holds its arguments, each ended by a NUL. */
+function writeFocusedRuns(dir: string, ceiling: number, args: readonly string[]): void {
+  const { runs, unrecorded } = focusedRuns(args, ceiling);
+  runs.forEach((focused, index) => fs.writeFileSync(path.join(dir, `${String(index).padStart(3, '0')}.args`), focused.args.map(arg => `${arg}\0`).join('')));
+  if (runs.length > 1) process.stdout.write(`focused: the files would pass the ${ceiling}s ceiling in one run, so they run as ${runs.length} runs, estimated ${runs.map(run => `${run.estimatedSeconds}s`).join(', ')} (${unrecorded} files with no recorded seconds)\n`);
+}
+
 const npmRun = (label: string, script: string): Step => ({ label, run: () => run('npm', ['run', script]) });
 // The packed set lives in /cache/packed, which keeps only the newest set: another checkout can replace it, so a resume packs again (a present set is reused at once).
 const pack: Step = { label: 'pack', always: true, run: () => run(process.execPath, ['.build/scripts/test-pack.js']) };
-/** The source checks of `npm run lint`, without its build: the full tier has built the packages and the scripts by now. */
+/** The source checks of `npm run lint`, without its build: the Full TS6 and Acceptance tiers have built the packages and the scripts by now. */
 const lint: Step = {
   label: 'lint',
   run: async () => {
@@ -311,7 +385,9 @@ async function checkExamples(): Promise<number> {
   return failures.length ? 1 : 0;
 }
 
-function steps(tier: Tier, args: readonly string[], native: boolean): Group[] {
+const examples: Step = { label: 'examples', run: checkExamples };
+
+export function steps(tier: Tier, args: readonly string[]): Group[] {
   if (tier === 'prepare') return prepareSteps;
   if (tier === 'focused') {
     const { lane6, rest } = splitTypescriptLane(args);
@@ -328,35 +404,35 @@ function steps(tier: Tier, args: readonly string[], native: boolean): Group[] {
       { label: 'docs public content', run: () => run(process.execPath, ['.build/scripts/public-source.js', 'scan', 'docs/.vitepress/dist']) },
     );
   }
-  const unit = nodeTest(tier, 'unit', UNIT_FILES, CONCURRENCY.unit);
-  const typescript6 = (concurrency: number): Step => nodeTest(tier, 'typescript 6', typescript6Files(), concurrency, [], typescript6Env());
+  if (tier === 'examples-check') return inOrder(examples);
+  const unit = nodeTest(tier, UNIT_STEP, UNIT_FILES, CONCURRENCY.unit);
+  const typescript6 = (concurrency: number): Step => nodeTest(tier, TYPESCRIPT6_STEP, typescript6Files(), concurrency, [], typescript6Env());
   const smoke = nodeTest(tier, 'packed smoke', [SMOKE_FILE], 1);
-  if (tier === 'full') {
-    if (native) return inOrder(unit);
-    // Pack and the smoke test read the workspace and /cache/packed, never a file that the lane writes. The lane's last files
-    // leave cores idle, so they run beside it and add no time of their own.
-    return [...inOrder(unit), [[typescript6(CONCURRENCY.unit)], [pack, smoke, lint]]];
-  }
-  // Acceptance: after unit, the side chain adds the steps that need nothing from the TypeScript 6 lane. Packed and browser read
-  // /cache/packed after pack (this chain's own step); the lane reads /cache/typescript6 and the workspace. Each test file makes
-  // its own temp folders and registry and server ports, so no step reads a file that another step writes. Acceptance unit
-  // (the identity corpus peaks at 2.9 GiB) runs alone after both chains, so it never overlaps the lane's 5.4 GiB.
-  return [
-    ...inOrder(
+  if (tier === 'full') return inOrder(unit);
+  // Pack and the smoke test read the workspace and /cache/packed, never a file that the lane writes. The lane's last files
+  // leave cores idle, so they run beside it and add no time of their own; beside unit, which has no idle cores, they would.
+  if (tier === 'full-ts6') return [[[typescript6(CONCURRENCY.unit)], [pack, smoke, lint]]];
+  // Acceptance is three runs (see `tiers`). Run 1: the steps that read no packed set.
+  if (tier === 'acceptance') {
+    return inOrder(
       { label: 'public source', run: () => run(process.execPath, ['.build/scripts/public-source.js', 'check']) },
       { label: 'OpenAPI compliance', run: () => run(process.execPath, ['.build/packages/golem-openapi-ts/compliance/generate-matrix.js', '--check']) },
       unit,
-    ),
-    [[typescript6(CONCURRENCY.beside)], [
-      pack,
-      smoke,
-      lint,
-      nodeTest(tier, 'packed', PACKED_FILES, CONCURRENCY.packed),
-      nodeTest(tier, 'browser', BROWSER_FILES, CONCURRENCY.packed),
-      { label: 'examples', run: checkExamples },
-    ]],
-    ...inOrder(nodeTest(tier, 'acceptance unit', ACCEPTANCE_UNIT_FILES, CONCURRENCY.unit)),
-  ];
+    );
+  }
+  // Run 3: the acceptance unit tests alone (the identity corpus peaks at 2.9 GiB), so they never overlap the lane's 5.4 GiB.
+  if (tier === 'acceptance-unit') return inOrder(nodeTest(tier, 'acceptance unit', ACCEPTANCE_UNIT_FILES, CONCURRENCY.unit));
+  // Run 2: the lane beside the chain that packs and then reads the packed set (smoke, packed, browser), so run 2 finds /cache/packed
+  // whether run 1 ran, passed earlier or resumed. Each test file makes its own temp folders and registry and server ports, so no step
+  // reads a file that another step writes. The lane is one step of this run, so removing TypeScript 6 deletes that step and its chain stays.
+  return [[[typescript6(CONCURRENCY.beside)], [
+    pack,
+    smoke,
+    lint,
+    nodeTest(tier, 'packed', PACKED_FILES, CONCURRENCY.packed),
+    nodeTest(tier, 'browser', BROWSER_FILES, CONCURRENCY.packed),
+    examples,
+  ]]];
 }
 
 export interface ImageFacts { readonly node: string; readonly npm: string; readonly playwright: string | undefined; readonly browsers: string | undefined; readonly browsersPresent: boolean }
@@ -381,7 +457,7 @@ function assertContainer(tier: Tier, native: boolean): void {
     if (tier !== 'full') throw new Error('--native runs only the full tier (the unit tests), without Docker.');
     return;
   }
-  const command = { prepare: 'npm run test:prepare', focused: 'npm run test -- <files>', full: 'npm run test:full', acceptance: 'npm run test:acceptance', docs: 'npm run docs:check' }[tier];
+  const command = { prepare: 'npm run test:prepare', focused: 'npm run test -- <files>', full: 'npm run test:full', 'full-ts6': 'npm run test:full:ts6', acceptance: 'npm run test:acceptance', 'acceptance-rest': 'npm run test:acceptance', 'acceptance-unit': 'npm run test:acceptance', docs: 'npm run docs:check', 'examples-check': 'npm run test:examples' }[tier];
   if (process.env.FE_DEPS_TEST_CONTAINER !== '1') throw new Error(`Run this tier through Docker: ${command}`);
   const manifest = readJson<{ devDependencies: Record<string, string> }>(path.join(root, 'package.json'));
   const installed = readJson<{ version: string }>(path.join(root, 'node_modules/@playwright/test/package.json'));
@@ -436,6 +512,12 @@ function sumFileSeconds(timings: readonly StepTiming[]): Record<string, number> 
 
 async function main(argv: readonly string[]): Promise<void> {
   const [tierArg, ...rest] = argv;
+  if (tierArg === 'focused-runs') {
+    const [ceiling, dir, ...args] = rest;
+    if (!/^[1-9][0-9]*$/.test(ceiling ?? '') || !dir) throw new Error('Usage: test-tier focused-runs <ceiling seconds> <folder for the run files> [focused args]');
+    writeFocusedRuns(dir, Number(ceiling), args);
+    return;
+  }
   const native = rest.includes('--native');
   const args = rest.filter(value => value !== '--native');
   if (!tierArg || !(tierArg in tiers)) throw new Error(`Usage: test-tier <${Object.keys(tiers).join('|')}> [args]`);
@@ -449,7 +531,7 @@ async function main(argv: readonly string[]): Promise<void> {
     // A run's results never mix with an earlier run of its tier; the results of other tiers stay.
     for (const name of fs.readdirSync(resultsDir)) if (isTierResult(name, tier)) fs.rmSync(path.join(resultsDir, name));
   }
-  const plan = steps(tier, args, native);
+  const plan = steps(tier, args);
   const state = runStateFromEnv();
   if (state && !state.again) {
     resumed = readRecord(state.recordFile);

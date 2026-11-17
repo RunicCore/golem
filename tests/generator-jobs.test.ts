@@ -205,7 +205,7 @@ test('check on a project that never generated names the missing generation recor
   assert.equal(fs.existsSync(path.join(root, EMITTED)), false);
 });
 
-test('check after generate and a deleted .golem folder names the missing generation record and writes nothing', async t => {
+test('check after generate and a deleted .golem folder names the missing generation record and writes nothing, and generate writes the folder again', async t => {
   // protects: T-32 a deleted .golem folder gives the same message as a project that never generated
   const { root, generate, check } = cachedProject(t);
   await generate();
@@ -217,6 +217,8 @@ test('check after generate and a deleted .golem folder names the missing generat
   assert.doesNotMatch(result.stderr, /stale|drift/);
   assert.equal(fs.existsSync(path.join(root, '.golem')), false);
   assert.equal(fs.readFileSync(path.join(root, EMITTED), 'utf8'), generated);
+  await generate();
+  assert.equal(fs.existsSync(path.join(root, '.golem/outputs.json')), true, 'generate writes the record again');
 });
 
 test('a second generate with the generator code and its inputs unchanged runs no job', async t => {

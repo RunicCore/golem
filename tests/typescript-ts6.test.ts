@@ -5,19 +5,21 @@ import path from 'node:path';
 import test from 'node:test';
 import * as ts from '@exprtlabs/golem/internal/ts';
 import { generate } from '#model/generator';
-import { resolveTypeScript } from '#golem/typescript-version';
 import { createFixtureProject } from './fixture-project.js';
 import { createModelProject } from './model-project.js';
 import { taggedModelSource } from './fixture-templates/models/model-tags.js';
 import { tsSource } from './source-template.js';
 import { write, editTsconfig, sourceOnlyProject, USE, mtimes, importBuilt, golemBuild, assertCallMap } from './support/build-project.js';
+import { inTypeScript6Lane, skipUnlessTypeScript6 } from './support/typescript-lane.js';
 
 // The cases marked `skip` run only on the TypeScript 6 lane: GOLEM_TYPESCRIPT_ROOT names a project whose `typescript` is 6.x.
-const skip = resolveTypeScript(process.env.GOLEM_TYPESCRIPT_ROOT ?? process.cwd()).major !== 6
-  && 'the active TypeScript is not 6.x';
+const skip = skipUnlessTypeScript6('the active TypeScript is not 6.x');
 
-test('the facade runs on TypeScript 6', { skip }, () => {
+// This case skips only outside the lane. In the lane it fails when the root is not a TypeScript 6 install, where the cases marked `skip` would all skip without a failure.
+test('the TypeScript 6 lane loads TypeScript 6 and the facade serves the TypeScript 6 backend', { skip: !inTypeScript6Lane && 'not the TypeScript 6 lane' }, async () => {
+  // protects: F-1141 the lane runs on a TypeScript 6 install; a lane whose root is not 6.x fails here and not by skipping
   assert.match(ts.typescriptVersion, /^6\./);
+  assert.equal(ts.ProgramSession, (await import('#golem/typescript-ts6')).ProgramSession);
 });
 
 test('a class whose type parameter has a default generates without RUNM1063', { skip }, t => {

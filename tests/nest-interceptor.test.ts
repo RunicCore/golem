@@ -14,6 +14,7 @@ import {
   type CallHandler,
   type ExecutionContext,
   type NestInterceptor,
+  type Type,
 } from '@nestjs/common';
 import { defaultIfEmpty, firstValueFrom, map, of, type Observable } from 'rxjs';
 import { NestModelInterceptor, type NestModelInterceptorOptions, nestModelStringifyInterceptor, nestQueryDecoder, nestReturnCodec, nestUnionFromMetatype, objectCodecFromMetatype } from '@exprtlabs/golem-ts-openapi/nest';
@@ -56,7 +57,7 @@ async function registerValidatingCodec(id: string, descriptor: ModelTypeDescript
     validate: (value) => isValidModelValue(value, undefined, validate, id),
     fromWireFormat: (wire) => {
       assertModelValue(wire, undefined, validate, id, IssueRepresentation.Wire, IssueSource.OpenAPI);
-      return convert(wire) as never;
+      return convert(wire);
     },
   });
 }
@@ -426,7 +427,7 @@ function inputController(
   field: string | undefined,
   metatype: unknown,
   respond: (input: unknown) => unknown = (input) => input,
-): Function {
+): Type {
   class InputController {
     handle(input: unknown) {
       return respond(input);
@@ -478,7 +479,7 @@ for (const [label, decorator, field, metatype, name] of inputWithoutModel) {
 test('NestModelInterceptor converts a model-typed one-field @Body() and @Query() and answers 400 for an invalid field', async () => {
   const id = 'FieldModel_34343434';
   registerPassThroughCodec(id, {
-    fromWireFormat: (wire) => ({ at: deserializeDate((wire as { at?: unknown } | undefined)?.at, ['at']) }) as never,
+    fromWireFormat: (wire) => ({ at: deserializeDate((wire as { at?: unknown } | undefined)?.at, ['at']) }),
   });
   const received = (input: unknown) => ({ atIsDate: (input as { at?: unknown }).at instanceof Date });
   const bodyController = inputController('FieldModelBody', Body, 'addr', Object, received);
@@ -671,7 +672,7 @@ test('NestModelInterceptor passes @Query() through unchanged unless a present fi
   const register = (id: string, queryFields?: QueryFieldTable) => registerPassThroughCodec(id, {
     fromWireFormat: (wire) => {
       received.push(wire);
-      return wire as never;
+      return wire;
     },
     ...(queryFields ? { data: { nest: queryFields } } : {}),
   });
@@ -733,10 +734,10 @@ test('NestModelInterceptor answers 400 for request input the decoder rejects and
       get then(): never { throw new Error('validator failure'); },
     })) as never, 'InputFaultbrokenValidator'),
   };
-  const controllers: Function[] = [];
+  const controllers: Type[] = [];
   for (const [name, decode] of Object.entries(decoders)) {
     const id = `InputFault${name}_eeeeeeee`;
-    registerPassThroughCodec(id, { fromWireFormat: (wire) => decode(wire as Record<string, unknown>) as never });
+    registerPassThroughCodec(id, { fromWireFormat: (wire) => decode(wire as Record<string, unknown>) });
     class InputController {
       create(input: unknown) {
         return input;

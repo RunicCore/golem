@@ -152,6 +152,7 @@ Every other specifier stays: a bare package name, a `#` import, a URL, a specifi
 - It passes every other argument unchanged to the check program and the emit program, so `tsc` decides what it means.
 - `--declaration` and `--noEmitOnError` work as they do for `tsc -p`. The build asks the compiler how the arguments change `declaration` and `noEmitOnError`, so a forwarded `--declaration` writes the declarations from your sources.
 - `--listFiles` prints the files of the program after the diagnostics, as `tsc -p` does.
+- An argument that the compiler rejects, such as `--noEmitt` or `--target es1`, stops the build before it generates. The build prints what `tsc -p` prints for it and exits with `1`.
 - A file name among the arguments stops the build with a message that starts `The compiler arguments name source files (...)` and holds `TS5042`. `tsc -p` refuses it too: a build names its files in the tsconfig.
 
 The build sets some arguments itself. Passing one stops the build with `golem build sets <argument> itself (<reason>); <workaround>`.

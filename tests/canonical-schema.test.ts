@@ -256,6 +256,6 @@ test('portable composition follows callback metadata in both serde wire shapes',
     }, { representation: 'wire', portable: true, onNonportable: message => warnings.push(message) });
     assertAccepts(await validator(projected), -1);
     assert.ok(warnings.length > 0);
-    assert.doesNotMatch(JSON.stringify(projected), /positive|exprtValidation/);
+    assert.deepEqual(projected, {});
   }
 });

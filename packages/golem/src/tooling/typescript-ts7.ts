@@ -12,10 +12,8 @@ export * from 'typescript/ast';
 import { ChildProcess } from 'node:child_process';
 import { channel } from 'node:diagnostics_channel';
 import {
-  lstatSync,
   readdirSync,
   readFileSync,
-  realpathSync,
   statSync,
 } from 'node:fs';
 import {
@@ -29,9 +27,9 @@ import * as ast from 'typescript/ast';
 import { GOLEM_CHANNELS } from './diagnostics-channels.js';
 import { displayPath } from './generator-core.js';
 import { fileSignature, MISSING } from './input-watcher.js';
-import { affectsResolution, assertConfigParsed, assertNoSourceFiles, canonical, collectTscDiagnostics, configReferences, declarationOutputOf, emitWanted, flagPathOptions, flagsAsConfigOptions, hasDeclarationOutput, programRequest, referenceClosure, referencedConfigFile } from './typescript-config.js';
-import type { ConfigReference, ProgramRequest, ResolveAtCurrentFolder } from './typescript-config.js';
-import { assertPackageManifestsParse } from './type-analysis/package-specifier.js';
+import { affectsResolution, assertCommandLineParsed, assertConfigParsed, assertNoSourceFiles, canonical, collectTscDiagnostics, configReferences, declarationOutputOf, derivedConfigNames, emitWanted, flagPathOptions, flagsAsConfigOptions, hasDeclarationOutput, isBrokenReference, programRequest, REFERENCE_ERROR_CODES, referenceClosure, referencedConfigFile, hasVirtualFiles, ROOTS_CONFIG_SUFFIX, virtualLookup } from './typescript-config.js';
+import type { ConfigReference, ProgramRequest, ResolveAtCurrentFolder, VirtualLookup } from './typescript-config.js';
+import { assertPackageManifestsParse } from './package-specifier.js';
 import {
   API,
   CheckFlags as SyncCheckFlags,
@@ -62,7 +60,7 @@ import {
 import { serverFS, type FileSystemCallbacks } from 'typescript/fs';
 import { canonicalize, CaseSensitivity } from 'typescript/path';
 import type { Node, SourceFile, TypeNode } from 'typescript/ast';
-import type { EmitKind, MemoryEmit, OpenProgramOptions, ParsedProject, ProgramSessionOptions } from './typescript-types.js';
+import type { EmitKind, MemoryEmit, OpenProgramOptions, ParsedProject, ProgramSessionOptions, VirtualFiles } from './typescript-types.js';
 
 export {
   API,
@@ -118,7 +116,6 @@ export enum IndexKind {
   Number = 1,
 }
 
-export const isFunctionLike = ast.isFunctionLikeDeclaration;
 export const isTypeAssertionExpression = ast.isTypeAssertion;
 
 export interface Diagnostic {
@@ -136,10 +133,7 @@ export interface Diagnostic {
 export interface ModuleResolutionHost {
   fileExists(filename: string): boolean;
   readFile(filename: string): string | undefined;
-  directoryExists?(directory: string): boolean;
   getCurrentDirectory?(): string;
-  getDirectories?(directory: string): string[];
-  realpath?(filename: string): string;
   useCaseSensitiveFileNames?: boolean | (() => boolean);
 }
 
@@ -442,7 +436,7 @@ class CompatChecker implements TypeChecker {
     return this;
   }
 
-  resolveImport(specifier: StringLiteralLike, virtualFiles?: ReadonlySet<string>): ResolvedModule | undefined {
+  resolveImport(specifier: StringLiteralLike, virtualFiles?: VirtualFiles): ResolvedModule | undefined {
     return this.program.resolveImport(specifier, virtualFiles);
   }
 
@@ -642,11 +636,11 @@ class CompatProgram implements Program {
    * The module an import of a file of this program resolved to, as the compiler resolved it for the program. When the compiler found
    * none, `virtualFiles` are files that do not exist yet but will, and a second lookup counts them.
    */
-  resolveImport(specifier: StringLiteralLike, virtualFiles?: ReadonlySet<string>): ResolvedModule | undefined {
+  resolveImport(specifier: StringLiteralLike, virtualFiles?: VirtualFiles): ResolvedModule | undefined {
     const file = specifier.getSourceFile().fileName;
     assertPackageManifestsParse(specifier.text, file);
     const resolved = this.project.program.getResolvedModuleFromModuleSpecifier(specifier, file);
-    if (resolved || !virtualFiles || virtualFiles.size === 0) return resolved;
+    if (resolved || !hasVirtualFiles(virtualFiles)) return resolved;
     const mode = this.project.program.getModeForUsageLocation(file, specifier);
     return this.session.resolveModuleName(specifier.text, file, this.getCompilerOptions(), mode, virtualFiles).resolvedModule;
   }
@@ -705,7 +699,8 @@ class CompatProgram implements Program {
   }
 
   getProgramDiagnostics(): readonly SyncDiagnostic[] {
-    return this.positioned(this.project.program.getProgramDiagnostics());
+    const found = this.project.program.getProgramDiagnostics();
+    return this.twin ? this.twin.withReferenceErrors(found) : found;
   }
 
   /** The compiler lists an option error that names no file here too, so it takes its place in the configuration as well and the report holds it once. */
@@ -718,7 +713,8 @@ class CompatProgram implements Program {
   }
 
   getConfigFileParsingDiagnostics(): readonly SyncDiagnostic[] {
-    return this.project.program.getConfigFileParsingDiagnostics();
+    const own = this.project.program.getConfigFileParsingDiagnostics();
+    return this.twin ? this.twin.configParsing(own) : own;
   }
 
   /**
@@ -737,7 +733,7 @@ class CompatProgram implements Program {
       emitSkipped: output.emitSkipped,
       files: new Map([...output.outputFiles].map(([filename, { text }]) => [canonical(filename), text])),
       sources: new Map([...output.outputFiles].flatMap(([filename, { sourceFileName }]) => (sourceFileName === undefined ? [] : [[canonical(filename), canonical(sourceFileName)] as const]))),
-      diagnostics: output.diagnostics,
+      diagnostics: this.twin ? this.twin.named(output.diagnostics) : output.diagnostics,
     };
   }
 }
@@ -776,29 +772,6 @@ export const sys: ModuleResolutionHost & {
       return undefined;
     }
   },
-  directoryExists: (directory) => {
-    try {
-      return lstatSync(directory).isDirectory();
-    } catch {
-      return false;
-    }
-  },
-  getDirectories: (directory) => {
-    try {
-      return readdirSync(directory, { withFileTypes: true })
-        .filter((entry) => entry.isDirectory())
-        .map((entry) => entry.name);
-    } catch {
-      return [];
-    }
-  },
-  realpath: (filename) => {
-    try {
-      return realpathSync(filename);
-    } catch {
-      return filename;
-    }
-  },
 };
 
 /** How `tsc` keys a file by its name on this file system: lower case when the file system ignores case. */
@@ -809,10 +782,7 @@ export function createCompilerHost(options: CompilerOptions = {}, _setParentNode
   return {
     fileExists: (filename) => sys.fileExists(filename),
     readFile: (filename) => sys.readFile(filename),
-    directoryExists: (directory) => sys.directoryExists?.(directory) ?? false,
     getCurrentDirectory: () => sys.getCurrentDirectory(),
-    getDirectories: (directory) => sys.getDirectories?.(directory) ?? [],
-    realpath: (filename) => sys.realpath?.(filename) ?? filename,
     useCaseSensitiveFileNames: sys.useCaseSensitiveFileNames,
     getCanonicalFileName: (filename) => canonicalize(filename, hostCaseSensitivity),
     getNewLine: () => '\n',
@@ -855,27 +825,148 @@ export function compareDiagnostics(left: SyncDiagnostic, right: SyncDiagnostic, 
   return order(path(left), path(right)) || order(left.pos, right.pos) || order(left.end, right.end) || order(left.code, right.code) || order(diagnosticText(left), diagnosticText(right));
 }
 
+/** The option overrides of a program, flags included. */
+type OptionOverrides = NonNullable<OpenProgramOptions['compilerOptionOverrides']>;
+
+/** The user's configuration text with the program's option overrides written after its own options, and the way back to the user's text. */
+interface OverriddenConfig {
+  readonly text: string;
+  /** A diagnostic of the compiler on `text`, put where `tsc` puts it in the user's text: an error that names an option of the text lies there, and one that only an override causes is at the `compilerOptions` name. */
+  readonly relocate: (diagnostic: SyncDiagnostic) => SyncDiagnostic;
+}
+
+/**
+ * The text of a configuration on disk with `overrides` written as the last properties of its `compilerOptions`, so that the compiler locates an
+ * option error as `tsc` locates it: at the user's own option that the error names, and else at an override, which `relocate` moves to the
+ * `compilerOptions` name. A `compilerOptions` that is no object (`null`) is replaced by one that holds the overrides; with no `compilerOptions`
+ * property `tsc` has no place for the error either, so there is nothing to write.
+ */
+function overriddenConfig(api: API, configPath: string, overrides: OptionOverrides): OverriddenConfig | undefined {
+  const text = sys.readFile(configPath);
+  if (text === undefined) return undefined;
+  const retained = api.createSourceFile(configPath, text);
+  try {
+    const file = retained.sourceFile;
+    const [statement] = file.statements;
+    if (statement === undefined || !ast.isExpressionStatement(statement) || !ast.isObjectLiteralExpression(statement.expression)) return undefined;
+    const property = statement.expression.properties.find((candidate): candidate is ast.PropertyAssignment => ast.isPropertyAssignment(candidate) && ast.isStringLiteral(candidate.name) && candidate.name.text === 'compilerOptions');
+    if (property === undefined) return undefined;
+    const entries = Object.entries(overrides).map(([option, value]) => `${JSON.stringify(option)}:${JSON.stringify(value)}`).join(',');
+    const { initializer } = property;
+    // The text from `start` to `end` is replaced by `written`: the overrides after the last option, or an object for a value that is none.
+    const last = ast.isObjectLiteralExpression(initializer) ? initializer.properties.at(-1) : undefined;
+    const [start, end, written] = !ast.isObjectLiteralExpression(initializer)
+      ? [initializer.getStart(file), initializer.end, `{${entries}}`] as const
+      : last === undefined ? [initializer.getStart(file) + 1, initializer.getStart(file) + 1, entries] as const : [last.end, last.end, `,${entries}`] as const;
+    const name = { pos: property.name.getStart(file), end: property.name.end };
+    // The written text has no line break, so a line keeps its number; a position after it moves back by what the write added.
+    const lineStarts = ast.computeLineStarts(text);
+    const lineAt = (position: number): number => lineStarts.findLastIndex((start) => start <= position);
+    const lineText = (line: number): string => text.slice(lineStarts[line], lineStarts[line + 1]);
+    const place = (position: number): { readonly line: number; readonly character: number } => ({ line: lineAt(position), character: position - (lineStarts[lineAt(position)] ?? 0) });
+    const relocate = (diagnostic: SyncDiagnostic): SyncDiagnostic => {
+      const { relatedInformation } = diagnostic;
+      const related = relatedInformation && { relatedInformation: relatedInformation.map(relocate) };
+      if (diagnostic.fileName === undefined || canonical(diagnostic.fileName) !== configPath) return { ...diagnostic, ...related };
+      const overridden = diagnostic.pos >= start && diagnostic.pos < start + written.length;
+      const back = (position: number): number => (position < start ? position : position >= start + written.length ? position - (written.length - (end - start)) : start);
+      const { pos, end: stop } = overridden ? name : { pos: back(diagnostic.pos), end: back(diagnostic.end) };
+      return {
+        ...diagnostic,
+        ...related,
+        pos,
+        end: stop,
+        startPosition: place(pos),
+        endPosition: place(stop),
+        sourceLines: overridden ? [{ line: lineAt(pos), text: lineText(lineAt(pos)) }] : diagnostic.sourceLines?.map(({ line }) => ({ line, text: lineText(line) })),
+      };
+    };
+    return { text: `${text.slice(0, start)}${written}${text.slice(end)}`, relocate };
+  } finally {
+    retained.dispose();
+  }
+}
+
+/** A `.json` file name in a message: a whole name, between a quote, a space or a path separator, or a closing mark and a space. */
+const JSON_FILE_NAME = /(?<![^\s'"/\\])[^\s'"/\\]+\.json(?=$|[\s'"/\\]|[.,:;)](?:$|\s))/g;
+
+/** A diagnostic with the name of each derived configuration replaced by the user's tsconfig, the file `tsc` names: the user never wrote a derived one. */
+function inUserConfigName(diagnostic: SyncDiagnostic, names: ConfigNames): SyncDiagnostic {
+  const named = (inner: SyncDiagnostic): SyncDiagnostic => inUserConfigName(inner, names);
+  return {
+    ...diagnostic,
+    text: diagnostic.text.replace(JSON_FILE_NAME, (name) => (names.derived.has(name) ? names.user : name)),
+    ...(diagnostic.messageChain && { messageChain: diagnostic.messageChain.map(named) }),
+    ...(diagnostic.relatedInformation && { relatedInformation: diagnostic.relatedInformation.map(named) }),
+  };
+}
+
+/** The base names of the user's tsconfig, and of the configurations derived beside it. */
+interface ConfigNames {
+  readonly derived: ReadonlySet<string>;
+  readonly user: string;
+}
+
+/** What the user's configuration, opened alone, reports: the diagnostics of its options and those of its own text (`tsc`'s configuration step). */
+interface ConfigFindings {
+  readonly options: readonly SyncDiagnostic[];
+  readonly config: readonly SyncDiagnostic[];
+}
+
 /**
  * The user's configuration opened alone, for a program not opened on it. The compiler locates an option only in the text of the
  * configuration it opens, and the derived one only extends the user's, so an option error comes without a file. `lookup` gives the
- * options diagnostics of the user's own configuration; it runs once, and only when a diagnostic has no file.
+ * diagnostics of the user's own configuration, with the program's overrides written into its text; it runs once, and only when a diagnostic has no file, a project reference is broken or the text has a syntax error.
  */
 class ConfigTwin {
-  private found: readonly SyncDiagnostic[] | undefined;
+  private found: ConfigFindings | undefined;
+  /** The configuration diagnostics of a synthetic program, read once: its text is the one of its request. */
+  private config: readonly SyncDiagnostic[] | undefined;
 
-  public constructor(private readonly lookup: () => readonly SyncDiagnostic[]) {}
+  /**
+   * `synthetic`: set for a program of a project with references. It has no configuration, so `tsc`'s report of a project reference of the user's
+   * configuration (`brokenReferences`) and of its syntax errors (`hasSyntaxError`, cheaper than `lookup`, which builds a program) is the twin's.
+   */
+  public constructor(
+    private readonly lookup: () => ConfigFindings,
+    private readonly synthetic: { readonly brokenReferences: boolean; readonly hasSyntaxError: () => boolean } | undefined,
+    private readonly names: ConfigNames,
+  ) {}
+
+  /** The configuration diagnostics of the program: a synthetic program has none of its own, so they are those of the user's configuration; any other program has the compiler's. */
+  configParsing(own: readonly SyncDiagnostic[]): readonly SyncDiagnostic[] {
+    return this.synthetic === undefined ? own : this.config ??= this.synthetic.hasSyntaxError() ? (this.found ??= this.lookup()).config : [];
+  }
+
+  /** The diagnostics with the user's tsconfig name in their text, wherever the compiler named the derived one. */
+  named(diagnostics: readonly SyncDiagnostic[]): readonly SyncDiagnostic[] {
+    return diagnostics.map((diagnostic) => inUserConfigName(diagnostic, this.names));
+  }
+
+  /** Each diagnostic with no file takes its place in the user's text (`match`); a program whose diagnostics all have a file does not ask the twin. */
+  positioned(diagnostics: readonly SyncDiagnostic[]): readonly SyncDiagnostic[] {
+    const named = this.named(diagnostics);
+    return named.every((diagnostic) => diagnostic.fileName !== undefined) ? named : this.match(named).placed;
+  }
+
+  /** The option diagnostics of the program, placed, and the reference errors of the user's configuration that the twin reports and the program cannot. */
+  withReferenceErrors(diagnostics: readonly SyncDiagnostic[]): readonly SyncDiagnostic[] {
+    if (!this.synthetic?.brokenReferences) return this.positioned(diagnostics);
+    const { placed, unused } = this.match(this.named(diagnostics));
+    return [...placed, ...unused.filter((diagnostic) => REFERENCE_ERROR_CODES.has(diagnostic.code))];
+  }
 
   /**
    * Each diagnostic with no file takes the twin's diagnostic of the same code and message; when several share them, the first takes the
-   * first, the second the second. A diagnostic with no match stays as it is (an error that a flag causes is not in the user's text), and a
-   * twin diagnostic that no one takes is dropped: the twin has other roots, so it can report what the program does not.
+   * first, the second the second. A diagnostic with no match stays as it is. `unused` are the twin's diagnostics that no one took: the twin has
+   * other roots, so it can report what the program does not.
    */
-  positioned(diagnostics: readonly SyncDiagnostic[]): readonly SyncDiagnostic[] {
-    if (diagnostics.every((diagnostic) => diagnostic.fileName !== undefined)) return diagnostics;
+  private match(diagnostics: readonly SyncDiagnostic[]): { readonly placed: readonly SyncDiagnostic[]; readonly unused: readonly SyncDiagnostic[] } {
     const key = (diagnostic: SyncDiagnostic): string => `${diagnostic.code}\n${diagnosticText(diagnostic)}`;
     const unused = new Map<string, SyncDiagnostic[]>();
-    for (const diagnostic of this.found ??= this.lookup()) unused.set(key(diagnostic), [...unused.get(key(diagnostic)) ?? [], diagnostic]);
-    return diagnostics.map((diagnostic) => (diagnostic.fileName === undefined ? unused.get(key(diagnostic))?.shift() ?? diagnostic : diagnostic));
+    for (const diagnostic of (this.found ??= this.lookup()).options) unused.set(key(diagnostic), [...unused.get(key(diagnostic)) ?? [], diagnostic]);
+    const placed = diagnostics.map((diagnostic) => (diagnostic.fileName === undefined ? unused.get(key(diagnostic))?.shift() ?? diagnostic : diagnostic));
+    return { placed, unused: [...unused.values()].flat() };
   }
 }
 
@@ -892,8 +983,17 @@ export function getTscDiagnostics(program: Program, emitDiagnostics: readonly Sy
     semantic: () => program.getSemanticDiagnostics(),
     declaration: () => program.getDeclarationDiagnostics(),
   }, program.getCompilerOptions());
+  return sortedWithoutRepeats([...found, ...emitDiagnostics]);
+}
+
+/** The diagnostics of the configuration the program was opened on, sorted without repeats. */
+export function getConfigDiagnostics(program: Program): readonly SyncDiagnostic[] {
+  return sortedWithoutRepeats(program.getConfigFileParsingDiagnostics());
+}
+
+function sortedWithoutRepeats(diagnostics: readonly SyncDiagnostic[]): readonly SyncDiagnostic[] {
   const compare = (left: SyncDiagnostic, right: SyncDiagnostic): number => compareDiagnostics(left, right, hostCaseSensitivity);
-  const sorted = [...found, ...emitDiagnostics].sort(compare);
+  const sorted = [...diagnostics].sort(compare);
   return sorted.filter((diagnostic, index) => {
     const previous = sorted[index - 1];
     return previous === undefined || compare(previous, diagnostic) !== 0;
@@ -934,6 +1034,8 @@ interface SnapshotRequest extends ProgramRequest {
   readonly synthetic?: SyntheticProgram;
   /** The configuration of the user whose text the compiler's option errors name, when the program is not opened on it: a derived configuration extends it, a synthetic program has none. */
   readonly twinOf: string | undefined;
+  /** The option overrides of the request, flags included: the derived configuration carries them, so the user's text has none of them. */
+  readonly overrides: OptionOverrides;
 }
 
 /**
@@ -946,6 +1048,8 @@ interface SyntheticProgram {
   readonly resolver: ModuleResolver;
   /** The sources of referenced projects that an import reached and that have no declaration output. The resolver fills it while the program is made. */
   readonly unbuilt: ReadonlySet<string>;
+  /** Whether `tsc` reports a referenced project (`isBrokenReference`). The program is made without references, so the user's configuration is asked for it. */
+  readonly brokenReferences: boolean;
 }
 
 /** A project a tsconfig references, parsed: the source files it owns and where `tsc` finds its declaration output. */
@@ -1063,6 +1167,8 @@ export class ProgramSession implements Disposable {
   /** Overlays served by the latest snapshot. */
   private overlays: ReadonlyMap<string, string> = new Map();
   private overlayDirectories = new Set<string>();
+  /** The files a module lookup counts that do not exist yet, while that lookup runs. */
+  private virtual: VirtualLookup | undefined;
   private observer: ((filename: string) => void) | undefined;
   private hidden: ReadonlySet<string> = new Set();
   private readonly observed = new Set<string>();
@@ -1077,7 +1183,8 @@ export class ProgramSession implements Disposable {
   private readonly resolvers = new Map<string, ModuleResolver>();
   /**
    * The synthetic program the newest snapshot holds, and the module resolver it was made with. The next program of a project with references
-   * replaces the program's configuration and the resolver; the snapshots before keep theirs. TypeScript 7.1.0-beta panics when a program is removed.
+   * replaces the program's configuration and the resolver, and the old resolver is disposed once the new snapshot exists. The compiler calls a
+   * resolver only while it builds a program, so a snapshot before keeps the program it built and needs no resolver. TypeScript 7.1.0-beta panics when a program is removed.
    */
   private syntheticProgram: SyntheticProjectId | undefined;
   private referenceResolver: ModuleResolver | undefined;
@@ -1106,10 +1213,34 @@ export class ProgramSession implements Disposable {
     const parsed = this.withCompiler('parse', (api) => {
       this.observe(onInput, new Set());
       const result = api.parseConfigFile(configPath);
-      assertConfigParsed(configPath, result.errors);
+      // The parse leaves out a syntax error of the file itself (the program's configuration diagnostics hold it), so it is read from the text.
+      const { error } = api.readConfigFile(configPath);
+      assertConfigParsed(configPath, [...error === undefined ? [] : [error], ...result.errors]);
       return result;
     });
     return projectOf(parsed);
+  }
+
+  /** Parse a referenced project's configuration as `tsc -p` reads it: its errors are not reported, and `undefined` is a tsconfig that does not exist. */
+  parseReferencedConfigFile(configPath: string, onInput?: (filename: string) => void): ParsedProject | undefined {
+    const parsed = this.withCompiler('parse', (api) => {
+      this.observe(onInput, new Set());
+      return this.readReferenced(api, configPath);
+    });
+    return parsed && projectOf(parsed);
+  }
+
+  /** A referenced project's configuration as the compiler parses it, errors and all (`tsc -p` reports none of them), or `undefined` for a tsconfig that does not exist (the compiler reports it, TS6053). */
+  private readReferenced(api: API, configPath: string): ReturnType<API['parseConfigFile']> | undefined {
+    return this.servedByOverlay(canonical(configPath)) || sys.fileExists(configPath) ? api.parseConfigFile(configPath) : undefined;
+  }
+
+  /** Whether an overlay serves the file. The path is an input of the program, and so is its absence: a file that no overlay serves is read from the disk, so its signature is recorded. */
+  private servedByOverlay(file: string): boolean {
+    this.report(file);
+    if (this.overlays.has(file)) return true;
+    this.recordSignature(file);
+    return false;
   }
 
   /**
@@ -1122,13 +1253,14 @@ export class ProgramSession implements Disposable {
     const parsed = this.withCompiler('parse', (api) => {
       this.observe(onInput, new Set());
       const commandLine = api.parseCommandLine(flags);
+      assertCommandLineParsed(commandLine);
       assertNoSourceFiles(commandLine.fileNames);
       const { allowJs, resolveJsonModule, outDir, declarationDir } = commandLine.options;
       const matching = Object.fromEntries(Object.entries({ allowJs, resolveJsonModule, outDir, declarationDir }).filter(([, value]) => value !== undefined));
       const virtual = join(dirname(configPath), `${basename(configPath, '.json')}.flags.json`);
       const references = configReferences(api.readConfigFile(configPath).config);
       const result = api.parseJsonConfigFileContent({ extends: `./${basename(configPath)}`, compilerOptions: matching, ...(references.length === 0 ? {} : { references }) }, { configFileName: virtual });
-      assertConfigParsed(configPath, [...commandLine.errors, ...result.errors]);
+      assertConfigParsed(configPath, result.errors);
       // A path in a flag is read from the current folder, as `tsc` reads it; the API's parse reads it from the folder of the session.
       const paths = flagPathOptions(flags, parseFlags(api), resolveAtCurrentFolder(api));
       return { options: { ...result.options, ...commandLine.options, ...paths, configFilePath: configPath }, fileNames: result.fileNames, projectReferences: result.projectReferences };
@@ -1178,16 +1310,19 @@ export class ProgramSession implements Disposable {
    * program, such as one an SDK manifest names. The lookup sees the disk and `virtualFiles`, the same files as on the TypeScript 6
    * lane, and no overlay of a program.
    */
-  resolveModuleName(moduleName: string, containingFile: string, compilerOptions: CompilerOptions, resolutionMode?: ModuleKind, virtualFiles: ReadonlySet<string> = new Set()): { resolvedModule?: ResolvedModule } {
+  resolveModuleName(moduleName: string, containingFile: string, compilerOptions: CompilerOptions, resolutionMode?: ModuleKind, virtualFiles?: VirtualFiles): { resolvedModule?: ResolvedModule } {
     assertPackageManifestsParse(moduleName, containingFile);
     return this.withCompiler('parse', (api) => {
       const resolver = this.plainResolver(api, compilerOptions);
-      const previous = this.overlays;
-      this.setOverlays(new Map([...virtualFiles].map((filename) => [canonical(filename), 'export {}\n'])));
+      const previousOverlays = this.overlays;
+      const previousVirtual = this.virtual;
+      this.setOverlays(new Map());
+      this.virtual = virtualFiles && virtualLookup(virtualFiles);
       try {
         return resolver.resolveModuleName(moduleName, dirname(containingFile), resolutionMode as ResolutionMode | undefined);
       } finally {
-        this.setOverlays(previous);
+        this.setOverlays(previousOverlays);
+        this.virtual = previousVirtual;
       }
     });
   }
@@ -1200,17 +1335,22 @@ export class ProgramSession implements Disposable {
     return resolver;
   }
 
-  /** The `references` a tsconfig writes, read from its text alone, over the overlays of a request: no `include` is expanded. */
-  private configReferencesOf(configPath: string, overlays: ReadonlyMap<string, string>): ConfigReference[] {
+  /** A tsconfig read from its text alone, over the overlays of a request: its value, and its first syntax error. */
+  private readConfigText(configPath: string, overlays: ReadonlyMap<string, string>): ReturnType<API['readConfigFile']> {
     return this.withCompiler('parse', (api) => {
       const previous = this.overlays;
       this.setOverlays(overlays);
       try {
-        return configReferences(api.readConfigFile(configPath).config);
+        return api.readConfigFile(configPath);
       } finally {
         this.setOverlays(previous);
       }
     });
+  }
+
+  /** The `references` a tsconfig writes, read from its text alone: no `include` is expanded. */
+  private configReferencesOf(configPath: string, overlays: ReadonlyMap<string, string>): ConfigReference[] {
+    return configReferences(this.readConfigText(configPath, overlays).config);
   }
 
   /**
@@ -1239,14 +1379,15 @@ export class ProgramSession implements Disposable {
 
   /** The change that gives a snapshot the program of a project with references: the first one creates it, the later ones give it a new configuration. */
   private syntheticChange(synthetic: SyntheticProgram): CreateSnapshotParams {
-    const program = { rootFiles: [...synthetic.rootFiles], compilerOptions: synthetic.compilerOptions as RawCompilerOptions, options: { moduleResolver: synthetic.resolver, configFileParsingDiagnostics: [] } };
+    const program = { rootFiles: [...synthetic.rootFiles], compilerOptions: synthetic.compilerOptions as RawCompilerOptions, options: { moduleResolver: synthetic.resolver } };
     return this.syntheticProgram === undefined ? { createPrograms: [program] } : { reconfigurePrograms: [{ id: this.syntheticProgram, ...program }] };
   }
 
   /** Open a program in a new snapshot that reflects every file change since the previous one. */
   openProgram(options: OpenProgramOptions): Program {
     if (programOpenedChannel.hasSubscribers) programOpenedChannel.publish({ session: this, configFile: options.configFile });
-    const base: SnapshotRequest = { ...programRequest(this.withFlags(options), sys, (configPath, overlays) => this.configReferencesOf(configPath, overlays)), twinOf: undefined };
+    const flagged = this.withFlags(options);
+    const base: SnapshotRequest = { ...programRequest(flagged, sys, (configPath, overlays) => this.configReferencesOf(configPath, overlays)), twinOf: undefined, overrides: flagged.compilerOptionOverrides ?? {} };
     return this.withCompiler('snapshot', (api, reused) => {
       const request = this.withRequestedRoots(api, base, options.onInput);
       // A program sees only its own overlays: a held program keeps the snapshot it was opened in.
@@ -1291,8 +1432,8 @@ export class ProgramSession implements Disposable {
         const project = created === undefined ? snapshot.getConfiguredProject(request.configPath) : snapshot.getProject(created);
         if (!project) throw new Error(`The compiler did not open the TypeScript project ${displayPath(request.configPath)} for ${displayPath(options.root)}.`);
         this.syntheticProgram = created ?? this.syntheticProgram;
-        const { twinOf } = request;
-        const program = new CompatProgram(this, snapshot, project, synthetic?.unbuilt, twinOf === undefined ? undefined : new ConfigTwin(() => this.diagnosticsOfConfig(twinOf, overlays)));
+        const { twinOf, overrides } = request;
+        const program = new CompatProgram(this, snapshot, project, synthetic?.unbuilt, twinOf === undefined ? undefined : new ConfigTwin(() => this.diagnosticsOfConfig(twinOf, overlays, overrides), synthetic && { brokenReferences: synthetic.brokenReferences, hasSyntaxError: () => this.readConfigText(twinOf, overlays).error !== undefined }, { derived: derivedConfigNames(basename(twinOf)), user: basename(twinOf) }));
         this.held.set(program, request);
         return program;
       } catch (error) {
@@ -1335,36 +1476,33 @@ export class ProgramSession implements Disposable {
    * own and lists exactly what the TypeScript 6 backend gives the compiler: the files the project's configuration parses to,
    * plus the requested roots. `include` is emptied so the list is the whole project. A program whose roots are all files of the
    * user's own configuration opens the configuration itself, so its option errors keep the file and place that `tsc` gives. Every program parses
-   * the configuration here, so a configuration with errors fails the same way on both backends.
+   * the configuration here, and no error of it fails here: the compiler reports a syntax error, in the configuration or in one that it
+   * extends, as a configuration diagnostic of the program, and the TypeScript 6 backend reports the errors of its own parse the same way.
    */
   private withRequestedRoots(api: API, base: SnapshotRequest, onInput: ((filename: string) => void) | undefined): SnapshotRequest {
     const previous = this.overlays;
     this.setOverlays(base.overlays);
     this.observe(onInput, base.hidden);
     let parsed: { readonly fileNames: readonly string[]; readonly options: CompilerOptions };
-    let referenced: ReferencedProject[];
+    let closure: { readonly configFile: string; readonly parsed: ReturnType<API['parseConfigFile']> | undefined }[];
     try {
       const result = api.parseConfigFile(base.configPath);
-      assertConfigParsed(base.configPath, result.errors);
       parsed = result;
-      referenced = referenceClosure(result.projectReferences ?? [], (configFile) => {
-        const project = api.parseConfigFile(configFile);
-        assertConfigParsed(configFile, project.errors);
-        return project;
-      }).map(({ configFile, parsed: project }) => ({ configFile, options: project.options as CompilerOptions, sources: new Set(project.fileNames.map(canonical)) }));
+      closure = referenceClosure(result.projectReferences ?? [], (configFile) => this.readReferenced(api, configFile));
     } finally {
       this.setOverlays(previous);
     }
-    if (referenced.length > 0) {
+    if (closure.length > 0) {
+      const referenced = closure.flatMap(({ configFile, parsed: project }) => (project === undefined ? [] : [{ configFile, options: project.options as CompilerOptions, sources: new Set(project.fileNames.map(canonical)) }]));
       const options = parsed.options as CompilerOptions;
       const unbuilt = new Set<string>();
-      return { ...base, synthetic: { rootFiles: [...new Set([...parsed.fileNames.map(canonical), ...base.rootNames])], compilerOptions: options, resolver: this.referenceResolverFor(api, options, referenced, unbuilt), unbuilt }, twinOf: base.userConfigPath };
+      return { ...base, synthetic: { rootFiles: [...new Set([...parsed.fileNames.map(canonical), ...base.rootNames])], compilerOptions: options, resolver: this.referenceResolverFor(api, options, referenced, unbuilt), unbuilt, brokenReferences: closure.some(({ parsed: project }) => isBrokenReference(project)) }, twinOf: base.userConfigPath };
     }
     const own = new Set(parsed.fileNames.map(canonical));
     // Every root is a file of the configuration, and the configuration is the user's own: the compiler reads it itself, so its option errors name its own text and place.
     // A hidden configuration is golem's overlay (the option overrides): it has no text of the user's to name, and the compiler's own glob would order its roots differently from `tsc`.
     if (!base.hidden.has(base.configPath) && base.rootNames.every((file) => own.has(file))) return base;
-    const configPath = join(dirname(base.configPath), `${basename(base.configPath, '.json')}.roots.json`);
+    const configPath = join(dirname(base.configPath), `${basename(base.configPath, '.json')}${ROOTS_CONFIG_SUFFIX}.json`);
     const files = [...new Set([...own, ...base.rootNames])];
     const overlays = new Map(base.overlays);
     overlays.set(configPath, JSON.stringify({ extends: `./${basename(base.configPath)}`, files, include: [] }));
@@ -1372,17 +1510,22 @@ export class ProgramSession implements Disposable {
   }
 
   /**
-   * The options diagnostics of one configuration opened alone, over the overlays of a program. It lives in a snapshot of its own that ends
+   * The diagnostics of one configuration opened alone, over the overlays of a program. It lives in a snapshot of its own that ends
    * with the call: the session's snapshot, its open project and its held programs stay as they are. A configuration with references opens them
-   * here, and only here: the program that the session serves stays synthetic, and only the options diagnostics of this one are read.
+   * here, and only here: the program that the session serves stays synthetic, and only the diagnostics of this one are read.
+   * The overrides of the program are written into the text it reads (`overriddenConfig`), so each option error is located as `tsc` locates it:
+   * one that names an option of the user's text lies in that text, and one that only an override causes goes to the `compilerOptions` name.
    */
-  private diagnosticsOfConfig(configPath: string, overlays: ReadonlyMap<string, string>): readonly SyncDiagnostic[] {
+  private diagnosticsOfConfig(configPath: string, overlays: ReadonlyMap<string, string>, overrides: OptionOverrides): ConfigFindings {
     return this.withCompiler('parse', (api) => {
       const previous = this.overlays;
-      this.setOverlays(overlays);
+      const overridden = Object.keys(overrides).length === 0 ? undefined : overriddenConfig(api, configPath, overrides);
+      this.setOverlays(overridden === undefined ? overlays : new Map([...overlays, [configPath, overridden.text]]));
       try {
         using alone = api.createSnapshot({ openProjects: [configPath], ensurePrograms: true });
-        return [...alone.getConfiguredProject(configPath)?.program.getProgramDiagnostics() ?? []];
+        const program = alone.getConfiguredProject(configPath)?.program;
+        const placed = (found: readonly SyncDiagnostic[]): readonly SyncDiagnostic[] => (overridden === undefined ? [...found] : found.map(overridden.relocate));
+        return { options: placed(program?.getProgramDiagnostics() ?? []), config: placed(program?.getConfigFileParsingDiagnostics() ?? []) };
       } finally {
         this.setOverlays(previous);
       }
@@ -1527,15 +1670,12 @@ export class ProgramSession implements Disposable {
       },
       fileExists: (fileName) => {
         const filename = canonical(fileName);
-        this.report(filename);
-        if (this.overlays.has(filename)) return true;
-        this.recordSignature(filename);
-        return serverFS.useOS;
+        return this.servedByOverlay(filename) || this.virtual?.file(filename) === true || serverFS.useOS;
       },
       directoryExists: (directoryName) => {
         const directory = canonical(directoryName);
         this.report(directory);
-        if (this.overlayDirectories.has(directory)) return true;
+        if (this.overlayDirectories.has(directory) || this.virtual?.directory(directory) === true) return true;
         this.recordSignature(directory);
         return serverFS.useOS;
       },

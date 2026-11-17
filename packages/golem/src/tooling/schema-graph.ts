@@ -239,7 +239,26 @@ export interface CodecShapeLookup {
   readonly cycling: (shortName: string) => boolean;
 }
 
-type CodecShape = ModelTypeDescriptor | { readonly kind: 'cycle'; readonly name: string };
+type DescriptorOf<Kind extends ModelTypeDescriptor['kind']> = Extract<ModelTypeDescriptor, { readonly kind: Kind }>;
+
+/**
+ * The shape of a descriptor that a codec id hashes: the descriptor with each child a shape, a named type a bare `reference`, and
+ * a type that is still being interned a `cycle`. A descriptor with no child is its own shape.
+ */
+type CodecShape =
+  | Exclude<ModelTypeDescriptor, { readonly kind: 'object' | 'array' | 'tuple' | 'union' | 'intersection' }>
+  | { readonly kind: 'cycle'; readonly name: string }
+  | (Omit<DescriptorOf<'object'>, 'properties' | 'additionalProperties'> & {
+    readonly properties: Readonly<Record<string, CodecShape>>;
+    readonly additionalProperties: boolean | CodecShape;
+  })
+  | (Omit<DescriptorOf<'array'>, 'item'> & { readonly item: CodecShape })
+  | (Omit<DescriptorOf<'tuple'>, 'items' | 'rest'> & {
+    readonly items: readonly CodecShape[];
+    readonly rest?: { readonly index: number; readonly item: CodecShape };
+  })
+  | (Omit<DescriptorOf<'union'>, 'variants'> & { readonly variants: readonly CodecShape[] })
+  | (Omit<DescriptorOf<'intersection'>, 'variants'> & { readonly variants: readonly CodecShape[] });
 
 function namedShapeName(descriptor: ModelTypeDescriptor): string | undefined {
   if (descriptor.kind === 'generated-model') return codecShortName(descriptor.id);
@@ -281,18 +300,18 @@ function codecShapeDescriptor(
       ...(descriptor.additionalPropertiesDeclared ? { additionalPropertiesDeclared: true } : {}),
       ...(descriptor.constraints ? { constraints: descriptor.constraints } : {}),
       ...(descriptor.validations ? { validations: descriptor.validations } : {}),
-      ...(descriptor.serde ? { serde: { id: descriptor.serde.id } as typeof descriptor.serde } : {}),
-    } as ModelTypeDescriptor;
+      ...(descriptor.serde ? { serde: descriptor.serde } : {}),
+    };
   }
   if (descriptor.kind === 'array') {
-    return { ...descriptor, item: codecShapeDescriptor(descriptor.item, lookup) as ModelTypeDescriptor };
+    return { ...descriptor, item: codecShapeDescriptor(descriptor.item, lookup) };
   }
   if (descriptor.kind === 'tuple') {
     return {
       ...descriptor,
-      items: descriptor.items.map((item) => codecShapeDescriptor(item, lookup) as ModelTypeDescriptor),
+      items: descriptor.items.map((item) => codecShapeDescriptor(item, lookup)),
       ...(descriptor.rest
-        ? { rest: { ...descriptor.rest, item: codecShapeDescriptor(descriptor.rest.item, lookup) as ModelTypeDescriptor } }
+        ? { rest: { ...descriptor.rest, item: codecShapeDescriptor(descriptor.rest.item, lookup) } }
         : {}),
     };
   }
@@ -307,7 +326,7 @@ function codecShapeDescriptor(
     const discriminator = descriptor.kind === 'union' ? descriptor.discriminator : undefined;
     return {
       ...descriptor,
-      variants: order.map((index) => variants[index].shape) as ModelTypeDescriptor[],
+      variants: order.map((index) => variants[index].shape),
       ...(discriminator
         ? {
           discriminator: {

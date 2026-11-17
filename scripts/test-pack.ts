@@ -56,7 +56,7 @@ export function packPublicSource(workspace: string, packedRoot: string): { reado
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const packedRoot = process.env.FE_DEPS_PACKED_DIR;
-  if (!packedRoot) throw new Error('FE_DEPS_PACKED_DIR is not set; packed tests run through npm run test:full or test:acceptance.');
+  if (!packedRoot) throw new Error('FE_DEPS_PACKED_DIR is not set; packed tests run through npm run test:full:ts6 or test:acceptance.');
   const started = Date.now();
   const { digest, reused } = packPublicSource(process.cwd(), packedRoot);
   process.stdout.write(`packed set ${digest.slice(0, 12)} ${reused ? 'reused' : 'built'} in ${Math.round((Date.now() - started) / 1000)}s\n`);

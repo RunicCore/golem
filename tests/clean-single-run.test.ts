@@ -6,6 +6,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { runPipeline } from '#golem/cli';
+import { documentFrom, responseSchema, type OpenApiSchema } from './golem-ts-openapi/openapi-document.js';
+import { expectJsonObject } from './support/json.js';
 
 const config = [
   'version: 1',
@@ -58,8 +60,8 @@ const keeps = controller('TStatus | TCharge');
 
 /** The packed profile's tsconfig, with an `@app/*` alias of `src/*`. */
 function tsconfig(): Record<string, unknown> {
-  const profile = JSON.parse(readFixture('packed/profile/tsconfig.json')) as { compilerOptions: Record<string, unknown> };
-  return { ...profile, compilerOptions: { ...profile.compilerOptions, paths: { '@app/*': ['./src/*'] } } };
+  const profile = expectJsonObject(JSON.parse(readFixture('packed/profile/tsconfig.json')), 'the packed profile tsconfig');
+  return { ...profile, compilerOptions: { ...expectJsonObject(profile.compilerOptions, 'its compilerOptions'), paths: { '@app/*': ['./src/*'] } } };
 }
 
 /** A clean tree: no SDK, no generated file and no `.golem/`. Models under the controllers root import the SDK that the openapi job of the same golem.yaml writes. */
@@ -78,13 +80,14 @@ function cleanProject(t: TestContext, source: string, yaml = config, files: Reco
 
 const read = (root: string, file: string): string => fs.readFileSync(path.join(root, file), 'utf8');
 /** The named schemas of a document: a type that has no name, such as a Pick, is written inline and adds none. */
-const schemaNames = (document: string): string[] => Object.keys((JSON.parse(document) as { components?: { schemas: object } }).components?.schemas ?? {});
+const schemaNames = (document: string): string[] => Object.keys(documentFrom(JSON.parse(document)).components?.schemas ?? {});
 /** The response schema of GET /catalog, as the document writes it. */
-const catalogResponse = (document: string): unknown => (JSON.parse(document) as { paths: Record<string, { get: { responses: Record<string, { content: Record<string, { schema: unknown }> }> } }> }).paths['/catalog'].get.responses['200'].content['application/json'].schema;
-const sdkUnknownFormats = (root: string): string => (JSON.parse(read(root, 'sdk/model-manifest.json')) as { profile: { unknownFormats: string } }).profile.unknownFormats;
+const catalogResponse = (document: string): OpenApiSchema => responseSchema(documentFrom(JSON.parse(document)), '/catalog', 'get', '200');
+const sdkUnknownFormats = (root: string): unknown => expectJsonObject(expectJsonObject(JSON.parse(read(root, 'sdk/model-manifest.json')), 'the SDK manifest').profile, 'its profile').unknownFormats;
 
 // protects: T-464 a clean run and a run with the SDK present give the same document
-test('a clean tree generates in one run, and the run after it writes the same document', async (t: TestContext) => {
+// protects: T-517 a profile option change failed on the SDK manifest of the run before, which the openapi job was about to rewrite
+test('a clean tree generates in one run, the run after it writes the same document, and a profile option changed after the runs regenerates the SDK manifest in one run', async (t: TestContext) => {
   const root = cleanProject(t, keeps);
   const yaml = path.join(root, 'golem.yaml');
   assert.equal(fs.existsSync(path.join(root, 'sdk')), false);
@@ -96,20 +99,13 @@ test('a clean tree generates in one run, and the run after it writes the same do
   const first = read(root, 'generated/openapi.json');
   // The document holds the models the controller returns. The two classes named TCharge are told apart by their folder, and only the reached one is in it.
   assert.deepEqual(schemaNames(first), ['TStatus', 'b.TCharge']);
+  assert.equal(sdkUnknownFormats(root), 'error');
 
   // A changed controller file makes the controllers job read the project again, now with the SDK on disk.
   fs.appendFileSync(path.join(root, 'src/catalog.controller.ts'), '// second run\n');
   await runPipeline(yaml);
   assert.equal(read(root, 'generated/openapi.json'), first);
   await runPipeline(yaml, { check: true });
-});
-
-// protects: T-517 a profile option change failed on the SDK manifest of the run before, which the openapi job was about to rewrite
-test('a profile option changed after a run regenerates the SDK manifest with the new profile in one run', async (t: TestContext) => {
-  const root = cleanProject(t, keeps);
-  const yaml = path.join(root, 'golem.yaml');
-  await runPipeline(yaml);
-  assert.equal(sdkUnknownFormats(root), 'error');
 
   fs.writeFileSync(yaml, config.replace('validation: true\n', 'validation: true\nunknownFormats: warn\n'));
   await runPipeline(yaml);

@@ -2,7 +2,6 @@ import { copyFixtureFile, createFixtureProject } from '../fixture-project.js';
 import assert from 'node:assert/strict';
 import { writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 import { generate } from '#openapi/generator';
 import { collectOperations } from '#openapi/normalize';
@@ -13,8 +12,7 @@ import {
   compileStrictUnusedSdk,
   documentBase,
   generateMaterializedSdk,
-  isGeneratedClientClass,
-  requireRecord,
+  loadGeneratedClient,
   writeOpenApiDocument,
   type CapturedRequest,
 } from './helpers.js';
@@ -59,13 +57,7 @@ test('operation parameters override path parameters by (in, name) and repeated p
   copyFixtureFile(output, 'openapi/parameters/parameters-assert.ts', 'parameters-assert.ts');
   compileStrictUnusedSdk(output, [path.join(output, 'parameters-assert.ts')]);
 
-  const module = requireRecord(
-    await import(pathToFileURL(path.join(output, 'dist/client.js')).href),
-    'parameter override client',
-  );
-  const Client = module.ParameterOverridesClient;
-  assert.equal(isGeneratedClientClass(Client), true);
-  if (!isGeneratedClientClass(Client)) throw new TypeError('ParameterOverridesClient');
+  const Client = await loadGeneratedClient(output, 'ParameterOverrides');
   let captured: CapturedRequest | undefined;
   const client = new Client({
     baseUrl: 'https://api.example',
@@ -104,9 +96,7 @@ test('a path value that forms a whole segment may not be a dot-segment, and one 
     },
   }), { output, name: 'DotSegments', profile: { validation: false } });
   compileGeneratedSdk(output);
-  const module = requireRecord(await import(pathToFileURL(path.join(output, 'dist/client.js')).href), 'dot segment client');
-  const Client = module.DotSegmentsClient;
-  if (!isGeneratedClientClass(Client)) throw new TypeError('DotSegmentsClient');
+  const Client = await loadGeneratedClient(output, 'DotSegments');
   let url: string | undefined;
   const client = new Client({
     baseUrl: 'https://api.example',
@@ -199,13 +189,7 @@ test('generated content parameters validate before execute', async t => {
   });
   copyFixtureFile(output, 'openapi/parameters/parameters-content-false-assert.ts', 'parameters-content-false-assert.ts');
   compileGeneratedSdk(output, [path.join(output, 'parameters-content-false-assert.ts')]);
-  const module = requireRecord(
-    await import(pathToFileURL(path.join(output, 'dist/client.js')).href),
-    'content parameter client',
-  );
-  const Client = module.ContentParametersClient;
-  assert.equal(isGeneratedClientClass(Client), true);
-  if (!isGeneratedClientClass(Client)) throw new TypeError('ContentParametersClient');
+  const Client = await loadGeneratedClient(output, 'ContentParameters');
 
   let fetchCount = 0;
   // Header checks are off unless named; the header case below needs them on.

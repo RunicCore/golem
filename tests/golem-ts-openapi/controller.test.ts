@@ -5,7 +5,7 @@ import test, { type TestContext } from 'node:test';
 import YAML from 'yaml';
 import { generate } from '#ts-openapi/generator';
 import { createControllerFixture, type ControllerFixtureOptions } from '../fixture-templates/controllers/project.js';
-import { contentSchema, diagnosticsOf, documentOf, expectSchema, expectValue, operationOf, parameterOf, propertySchema, responseOf, responseSchema, type OpenApiDocument, type OpenApiSchema } from './openapi-document.js';
+import { contentSchema, diagnosticsOf, documentFrom, documentOf, expectSchema, expectValue, firstArtifact, operationOf, parameterOf, propertySchema, refusedWith, responseOf, responseSchema, schemaOf } from './openapi-document.js';
 
 function fixture(t: TestContext, source: string, options: Pick<ControllerFixtureOptions, 'files'> = {}): string {
   return createControllerFixture(t, {
@@ -35,12 +35,11 @@ test('generates a static Nest document with evaluated routes, inheritance, URI v
   assert.equal(parameterOf(document, '/api/cats/{id}', 'get').style, 'simple');
   assert.equal(responseSchema(document, '/api/cats/{id}', 'get', '200').type, 'object');
   assert.equal(operationOf(document, '/api/cats/{id}', 'get').responses['201'], undefined);
-  const versionOne = operationOf(document, '/api/v1/cats', 'post');
-  assert.ok(operationOf(document, '/api/v2/cats', 'post'));
-  assert.ok(responseOf(document, '/api/v1/cats', 'post', '201'));
-  assert.equal(versionOne.responses['200'], undefined);
-  assert.ok(responseOf(document, '/api/v1/cats', 'post', '400'));
-  assert.match(expectValue(versionOne.operationId, 'version 1 operation ID'), /version_1$/);
+  for (const version of ['1', '2']) {
+    const created = operationOf(document, `/api/v${version}/cats`, 'post');
+    assert.deepEqual(Object.keys(created.responses).sort(), ['201', '400'], `version ${version} responses`);
+    assert.match(expectValue(created.operationId, `version ${version} operation ID`), new RegExp(`version_${version}$`));
+  }
 });
 
 test('emits a whole query object as OpenAPI 3.2 querystring content', async (t: TestContext) => {
@@ -68,9 +67,7 @@ test('emits flattened primitive query parameters with OpenAPI form style and sup
     info: { title: 'Search', version: '1' },
     profile: { validation: false },
   });
-  const artifact = result.artifacts[0];
-  assert.ok(artifact);
-  const document = YAML.parse(artifact.content) as OpenApiDocument;
+  const document = documentFrom(YAML.parse(firstArtifact(result)));
   const picks = {
     openapi: document.openapi,
     parameters: [0, 1].map(index => {
@@ -117,9 +114,7 @@ test('rejects conflicting static routes with a structured diagnostic', async (t:
       info: { title: 'Conflicts', version: '1' },
       profile: { validation: false },
     }),
-    (error: unknown) => {
-      return diagnosticsOf(error).some(item => item.code === 'NEST1306');
-    },
+    refusedWith('NEST1306'),
   );
 });
 
@@ -168,7 +163,7 @@ test('does not treat a project-local String function as a Swagger primitive cons
       info: { title: 'Local constructor', version: '1' },
       profile: { validation: false },
     }),
-    (error: unknown) => String(error).includes('NEST1503'),
+    refusedWith('NEST1503'),
   );
 });
 
@@ -199,7 +194,7 @@ test('rejects stream responses without explicit Swagger content', async (t: Test
       info: { title: 'Files', version: '1' },
       profile: { validation: false },
     }),
-    (error: unknown) => String(error).includes('NEST1310'),
+    refusedWith('NEST1310'),
   );
 });
 
@@ -215,7 +210,7 @@ test('recognizes Nest decorators through local reexports of public package expor
     info: { title: 'Reexported', version: '1' },
     profile: { validation: false },
   }));
-  assert.ok(operationOf(document, '/reexported', 'get'));
+  operationOf(document, '/reexported', 'get');
 });
 
 test('resolves HttpStatus enum members and preserves Nest URI version concatenation', async (t: TestContext) => {
@@ -247,7 +242,7 @@ test('a route helper result over 1 MiB stops with RUNT2106 until maxResultBytes 
 function bigPath() { return '${'a'.repeat(1024 * 1024)}'; }
 @Controller(bigPath()) export class BigController { @Get() get(): void {} }`);
   const context = { root, output: path.join(root, 'openapi.json'), info: { title: 'Big', version: '1' }, profile: { validation: false } };
-  await assert.rejects(generate(context), (error: unknown) => diagnosticsOf(error).some(item => item.code === 'RUNT2106'));
+  await assert.rejects(generate(context), refusedWith('RUNT2106'));
   assert.equal(Object.keys(documentOf(await generate({ ...context, maxResultBytes: 2 * 1024 * 1024 })).paths).length, 1);
 });
 
@@ -262,8 +257,39 @@ test('rejects @HostParam routes', async (t: TestContext) => {
       info: { title: 'Unsupported', version: '1' },
       profile: { validation: false },
     }),
-    (error: unknown) => diagnosticsOf(error).some(item => item.code === 'NEST1101'),
+    refusedWith('NEST1101'),
   );
+});
+
+test('refuses a URI versioning spelling that is not URI, uri or 0, in the string and the object form alike', async (t: TestContext) => {
+  // protects: T-998 the string form took any case while the object form took only URI or uri; both take one set of spellings and refuse the rest by name
+  const root = fixture(t, `import { Controller, Get } from '@nestjs/common';
+@Controller('cats') export class CatsController { @Get() list(): void {} }`);
+  // generate() is called from JavaScript too, so the options reach it unchecked.
+  const cases: readonly (readonly [unknown, string])[] = [['Uri', 'NEST1203'], [{ type: 'Uri' }, 'NEST1205']];
+  for (const [uriVersioning, code] of cases) {
+    await assert.rejects(
+      generate({ root, output: path.join(root, 'openapi.json'), info: { title: 'Cats', version: '1' }, uriVersioning: uriVersioning as never, profile: { validation: false } }),
+      refusedWith(code),
+      JSON.stringify(uriVersioning),
+    );
+  }
+});
+
+test('a whole query typed with a model-level tag is not refused and gives a querystring parameter', async (t: TestContext) => {
+  // protects: T-1007 the tag key of a plain DTO is bookkeeping; its object-typed value must not make the whole query "not portable"
+  const root = createControllerFixture(t, {
+    prefix: 'golem-ts-openapi-tagged-query-',
+    links: 'workspace',
+    packageName: 'golem-ts-openapi-tagged-query-fixture',
+    sourceFile: 'src/catalog.controller.ts',
+    source: `import { Controller, Get, Query } from '@nestjs/common';
+import type { PatternProperties } from '@exprtlabs/golem/tags';
+type Filter = { status: string } & PatternProperties<{ '^x-': string }>;
+@Controller('cats') export class CatsController { @Get() list(@Query() filter: Filter): void {} }`,
+  });
+  const document = documentOf(await generate({ root, output: path.join(root, 'openapi.json'), info: { title: 'Cats', version: '1' }, profile: { validation: false } }));
+  assert.deepEqual((operationOf(document, '/cats', 'get').parameters ?? []).map(item => item.in), ['querystring']);
 });
 
 test('keeps Nest runtime status authoritative over a contradicting Swagger success response', async (t: TestContext) => {
@@ -280,7 +306,7 @@ test('keeps Nest runtime status authoritative over a contradicting Swagger succe
         info: { title, version: '1' },
         profile: { validation: false },
       }),
-      (error: unknown) => String(error).includes('NEST1311'),
+      refusedWith('NEST1311'),
     );
   }
 });
@@ -322,7 +348,7 @@ test('rejects unresolved local component references in raw Swagger response meta
       info: { title: 'Unresolved reference', version: '1' },
       profile: { validation: false },
     }),
-    (error: unknown) => String(error).includes('NEST1505'),
+    refusedWith('NEST1505'),
   );
 });
 
@@ -402,13 +428,14 @@ export class JsonController {
     info: { title: 'Json', version: '1' },
     profile: { validation: false },
   }));
-  const components = (document as unknown as { readonly components: { readonly schemas: Readonly<Record<string, OpenApiSchema>> } }).components.schemas;
-  const names = Object.keys(components).filter((name) => name.startsWith('JsonValue'));
+  const names = Object.keys(document.components?.schemas ?? {}).filter((name) => name.startsWith('JsonValue'));
   assert.equal(names.length, 1, 'one component for the alias');
   const reference = { $ref: `#/components/schemas/${names[0]}` };
-  const branches = expectValue(expectValue(components[names[0]], 'the JsonValue component').anyOf, 'JsonValue anyOf') as readonly OpenApiSchema[];
-  assert.deepEqual(expectValue(branches.find((branch) => branch.type === 'array'), 'the array branch').items, reference);
-  assert.deepEqual(expectValue(branches.find((branch) => branch.type === 'object'), 'the record branch').additionalProperties, reference);
-  assert.deepEqual(responseSchema(document, '/json/value', 'get', '200'), components[names[0]], 'the response holds the alias body, which refers to the component');
+  const alias = schemaOf(document, names[0]);
+  const branches = expectValue(alias.anyOf, 'JsonValue anyOf');
+  const branch = (type: string) => expectSchema(branches.find((candidate) => typeof candidate === 'object' && candidate.type === type), `the ${type} branch`);
+  assert.deepEqual(branch('array').items, reference);
+  assert.deepEqual(branch('object').additionalProperties, reference);
+  assert.deepEqual(responseSchema(document, '/json/value', 'get', '200'), alias, 'the response holds the alias body, which refers to the component');
   assert.deepEqual(propertySchema(responseSchema(document, '/json/wrapped', 'get', '200'), 'data'), reference);
 });

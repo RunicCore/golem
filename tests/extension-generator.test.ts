@@ -17,17 +17,29 @@ const CONFIG = [
   '',
 ].join('\n');
 
-/** The extension package as an author sees `@exprtlabs/golem`: every subpath but `internal/*`, so an import of an internal path does not compile. */
+/** The subpaths of `@exprtlabs/golem` that follow semver: every `exports` key of its package.json but `./internal/*`. */
+function publicSubpaths(): Record<string, unknown> {
+  const manifest = JSON.parse(fs.readFileSync(path.join(workspace, 'packages/golem/package.json'), 'utf8')) as { exports: Record<string, unknown> };
+  return Object.fromEntries(Object.entries(manifest.exports).filter(([subpath]) => !subpath.startsWith('./internal/')));
+}
+
+/** The extension package as an author sees `@exprtlabs/golem`: its public subpaths only, so an import of an internal path does not compile. */
 function installPublicGolem(compileRoot: string): void {
   const golem = path.join(workspace, 'packages/golem');
-  const manifest = JSON.parse(fs.readFileSync(path.join(golem, 'package.json'), 'utf8')) as { exports: Record<string, unknown> };
-  const exported = Object.fromEntries(Object.entries(manifest.exports).filter(([subpath]) => !subpath.startsWith('./internal/')));
+  const exported = publicSubpaths();
   const installed = path.join(compileRoot, 'node_modules/@exprtlabs/golem');
   fs.mkdirSync(installed, { recursive: true });
   fs.writeFileSync(path.join(installed, 'package.json'), JSON.stringify({ name: '@exprtlabs/golem', type: 'module', exports: exported }));
   fs.symlinkSync(path.join(golem, 'dist'), path.join(installed, 'dist'), 'dir');
   fs.symlinkSync(path.join(workspace, 'node_modules/@types'), path.join(compileRoot, 'node_modules/@types'), 'dir');
 }
+
+test('the public subpaths of @exprtlabs/golem are the pinned list', () => {
+  // protects: F-1164 a public subpath is added, removed or renamed only on purpose, because the list is the semver surface (`./internal/*` carries no promise and is not pinned)
+  assert.deepEqual(Object.keys(publicSubpaths()).sort(), [
+    './client', './errors', './esbuild', './eslint', './generator-api', './loader', './manifest', './model', './register', './rewrite', './serde', './tags', './temporal', './validation', './vite',
+  ]);
+});
 
 test('a third-party package that imports only public golem subpaths registers its own block, its job writes the output, and the model block generates and compiles it; the project validation level reaches it', async (t: TestContext) => {
   // protects: T-654 an extension package builds with the public API alone (its plan entry and generator), and its output goes through the models job and compiles

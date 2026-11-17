@@ -4,11 +4,10 @@ import { decodeGeneratedModelTrusted } from '@exprtlabs/golem/internal/model-run
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 import { fileFixtureScope } from './fixture-project.js';
 import { buildModelProject, createModelProject, writeModelGolemYaml, writeModelSources } from './model-project.js';
-import { generateMaterializedSdk, isGeneratedClientClass } from './openapi/helpers.js';
+import { generateMaterializedSdk, importGeneratedModule, loadFunctions, loadGeneratedClient, loadModelClasses, requireFunction, requireRecord } from './openapi/helpers.js';
 import { chargesDocument, loadGolemModeProject, writeGolemModeProject, type GolemModeSdkSetup } from './openapi/sdk-client-fixture.js';
 import { runModuleScope } from './support/run-module.js';
 
@@ -39,7 +38,7 @@ function validatorsOfModels(root: string, appModel: string, value: unknown): { c
     const model = typeof scope[name] === 'function' ? /^f\d+_(\w+?)_[0-9a-f]{8}/.exec(name)?.[1] : undefined;
     if (model !== undefined) (functions[model] ??= []).push(name);
   }
-  const validate = exports[Object.keys(exports).find(name => new RegExp(`^validate_${appModel}_[0-9a-f]{8}$`).test(name))!] as (value: unknown) => unknown;
+  const validate = requireFunction(exports[Object.keys(exports).find(name => new RegExp(`^validate_${appModel}_[0-9a-f]{8}$`).test(name)) ?? ''], `validate_${appModel}`);
   const reached: string[] = [];
   for (const [model, names] of Object.entries(functions)) {
     const originals = names.map(name => scope[name]);
@@ -52,16 +51,14 @@ function validatorsOfModels(root: string, appModel: string, value: unknown): { c
   return { compiled: Object.fromEntries(Object.entries(functions).map(([model, names]) => [model, names.length])), reached: reached.sort() };
 }
 
-async function importBuilt(root: string, file: string): Promise<Record<string, any>> {
-  return await import(pathToFileURL(path.join(root, 'build', file)).href) as Record<string, any>;
-}
+const built = (root: string, file: string) => path.join(root, 'build', file);
 
 test('a golem-mode model over an SDK type takes the SDK limits and writes no validator of its own for the type', async () => {
   // protects: T-700 R-84 E-52 an app model over an SDK type keeps the SDK's limits and shares the SDK's validators instead of compiling a copy
   const project = await loadGolemModeProject(scope, 'sdk-app-model-', [CHARGES], true, { 'src/charge.model.ts': CHARGE_MODEL });
   assert.deepEqual(validatorsOfModels(project.root, 'TChargeRecord', { id: 'c1', amount: 2 }), { compiled: { Charge: 4 }, reached: ['Charge'] });
 
-  const generated = await importBuilt(project.root, 'src/charge.model.generated.js');
+  const generated = await loadFunctions(built(project.root, 'src/charge.model.generated.js'), ['fromWireFormatTChargeRecord']);
   assert.deepEqual(generated.fromWireFormatTChargeRecord({ id: 'c1', amount: 2, at: '2025-01-02T03:04:05Z' }), { id: 'c1', amount: 2, at: new Date('2025-01-02T03:04:05Z') });
   assert.throws(() => generated.fromWireFormatTChargeRecord({ id: 'too-long', amount: 2 }), /id/);
 });
@@ -77,11 +74,11 @@ export type TChargeRecord = IModel<Charge>;
   });
   writeModelGolemYaml(root, { validation: true });
   await buildModelProject(root);
-  const generated = await importBuilt(root, 'charge.model.generated.js');
+  const generated = await loadFunctions(built(root, 'charge.model.generated.js'), ['parseTChargeRecord', 'stringifyTChargeRecord']);
   const wire = { id: 'c1', at: '2025-01-02T03:04:05Z', day: '2025-01-02', spent: 'PT5M' };
-  const charge = generated.parseTChargeRecord(JSON.stringify(wire));
+  const charge = requireRecord(generated.parseTChargeRecord(JSON.stringify(wire)), 'charge');
   assert.deepEqual([charge.at instanceof Temporal.Instant, charge.day instanceof Temporal.PlainDate, charge.spent instanceof Temporal.Duration], [true, true, true]);
-  assert.deepEqual(JSON.parse(generated.stringifyTChargeRecord(charge)), wire);
+  assert.deepEqual(JSON.parse(String(generated.stringifyTChargeRecord(charge))), wire);
   assert.throws(() => generated.parseTChargeRecord(JSON.stringify({ ...wire, at: 'yesterday' })), /Temporal\.Instant|at/);
 });
 
@@ -113,8 +110,11 @@ test('a golem-mode model over an SDK type has its own class, a constructor with 
   // protects: T-700 R-84 new ChargeRecord(body), a custom constructor and fromWireFormat<ChargeRecord> work on a model over an SDK type
   const sdk: GolemModeSdkSetup = { document: chargeDocument(true), folder: 'sdk/charges', name: 'Charges' };
   const project = await buildGolemModeProject('sdk-app-model-class-', sdk, { 'src/charge.model.ts': CLASS_MODEL, 'src/use.ts': CLASS_USE });
-  const { ChargeRecord, TrackedCharge } = await importBuilt(project.root, 'src/charge.model.js');
-  const { made, tracked, read } = await importBuilt(project.root, 'src/use.js');
+  const { ChargeRecord, TrackedCharge } = await loadModelClasses(built(project.root, 'src/charge.model.js'), ['ChargeRecord', 'TrackedCharge']);
+  const used = await importGeneratedModule(path.join(project.root, 'build'), 'use module', 'src/use.js');
+  const made = requireRecord(used.made, 'made');
+  const tracked = requireRecord(used.tracked, 'tracked');
+  const read = requireRecord(used.read, 'read');
   assert.deepEqual([made instanceof ChargeRecord, made.id, made.amount], [true, 'c2', 3]);
   assert.deepEqual([tracked instanceof TrackedCharge, tracked.id, tracked.note], [true, 'c3', 'late']);
   assert.equal(read instanceof ChargeRecord, true);
@@ -122,9 +122,8 @@ test('a golem-mode model over an SDK type has its own class, a constructor with 
 
   // The instance goes out as a body of a closed schema: its own state is not a property, so the SDK sends the declared fields only.
   const sent: unknown[] = [];
-  const Client = (await importBuilt(project.root, 'sdk/charges/index.js')).ChargesClient;
-  assert.ok(isGeneratedClientClass(Client), 'generated client');
-  const client = new Client({ baseUrl: 'https://api.test', fetchImpl: async (_url: RequestInfo | URL, init?: RequestInit) => { sent.push(init?.body); return Response.json({ id: 'c3', amount: 4 }); } }) as any;
+  const Client = await loadGeneratedClient(path.join(project.root, 'build/sdk/charges'), 'Charges', 'index.js');
+  const client = new Client({ baseUrl: 'https://api.test', fetchImpl: async (_url: RequestInfo | URL, init?: RequestInit) => { sent.push(init?.body); return Response.json({ id: 'c3', amount: 4 }); } });
   await client.createCharge().execute({ body: tracked });
   assert.deepEqual(sent, ['{"id":"c3","amount":4}']);
 });
@@ -132,7 +131,7 @@ test('a golem-mode model over an SDK type has its own class, a constructor with 
 test('a golem-mode model over an SDK type chooses its own level, never above the project level', async () => {
   // protects: T-700 R-75 R-76 R-77 the level of a model over an SDK type is its own: it may lower the project's, and raising it stops generation
   const lowered = await loadGolemModeProject(scope, 'sdk-app-model-level-', [CHARGES], true, { 'src/charge.model.ts': `${CHARGE_MODEL}export type TLooseCharge = IModel<Charge, { validation: false }>;\n` });
-  const generated = await importBuilt(lowered.root, 'src/charge.model.generated.js');
+  const generated = await loadFunctions(built(lowered.root, 'src/charge.model.generated.js'), ['fromWireFormatTChargeRecord', 'fromWireFormatTLooseCharge']);
   assert.throws(() => generated.fromWireFormatTChargeRecord({ id: 'too-long', amount: 1 }), /id/);
   assert.deepEqual(generated.fromWireFormatTLooseCharge({ id: 'too-long', amount: 1 }), { id: 'too-long', amount: 1 });
 
@@ -168,9 +167,9 @@ export const readBasket = (text: string) => parse<TBasket>(text);
 test('parse<T> reads an app model over an SDK model of golem mode, with the limits of the SDK', async () => {
   // protects: T-683 T-700 parse<MoneyRecord> works on a model over an SDK model (it failed with "codec not registered"), and a model that holds Money parses
   const project = await buildGolemModeProject('sdk-app-model-parse-', MONEY, { 'src/money.model.ts': MONEY_MODEL, 'src/use.ts': MONEY_USE });
-  const { MoneyRecord } = await importBuilt(project.root, 'src/money.model.js');
-  const { readMoney, readBasket } = await importBuilt(project.root, 'src/use.js');
-  const money = readMoney('{"amount":5,"currency":"EUR"}');
+  const { MoneyRecord } = await loadModelClasses(built(project.root, 'src/money.model.js'), ['MoneyRecord']);
+  const { readMoney, readBasket } = await loadFunctions(built(project.root, 'src/use.js'), ['readMoney', 'readBasket']);
+  const money = requireRecord(readMoney('{"amount":5,"currency":"EUR"}'), 'money');
   assert.deepEqual([money instanceof MoneyRecord, money.amount, money.currency], [true, 5, 'EUR']);
   assert.throws(() => readMoney('{"amount":-1,"currency":"EUR"}'), /Model validation failed/);
   assert.throws(() => readMoney('{"amount":5,"currency":"euro"}'), /Model validation failed/);
@@ -202,9 +201,9 @@ export const write = (value: ChargeRecord) => stringify<ChargeRecord>(value);
   });
   writeModelGolemYaml(root, { validation: true });
   await buildModelProject(root);
-  const { ChargeRecord } = await importBuilt(root, 'charge.model.js');
-  const { read, write } = await importBuilt(root, 'use.js');
-  const charge = read('{"id":"c1","amount":2,"at":"2025-01-02T03:04:05Z"}');
+  const { ChargeRecord } = await loadModelClasses(built(root, 'charge.model.js'), ['ChargeRecord']);
+  const { read, write } = await loadFunctions(built(root, 'use.js'), ['read', 'write']);
+  const charge = requireRecord(read('{"id":"c1","amount":2,"at":"2025-01-02T03:04:05Z"}'), 'charge');
   assert.deepEqual([charge instanceof ChargeRecord, charge.at instanceof Temporal.Instant], [true, true]);
   assert.equal(write(charge), '{"id":"c1","amount":2,"at":"2025-01-02T03:04:05Z"}');
 });
@@ -224,8 +223,8 @@ test('a golem-mode model over an SDK type that holds another SDK type checks the
   const project = await loadGolemModeProject(scope, 'sdk-app-model-nested-', [NESTED], true, { 'src/charge.model.ts': CHARGE_MODEL });
   assert.deepEqual(validatorsOfModels(project.root, 'TChargeRecord', { id: 'c1', price: { value: 2 } }), { compiled: { Charge: 4, Money: 4 }, reached: ['Charge'] });
 
-  const generated = await importBuilt(project.root, 'src/charge.model.generated.js');
-  const charge = generated.fromWireFormatTChargeRecord({ id: 'c1', price: { value: 2, at: '2025-01-02T03:04:05Z' } });
+  const generated = await loadFunctions(built(project.root, 'src/charge.model.generated.js'), ['fromWireFormatTChargeRecord', 'toWireFormatTChargeRecord']);
+  const charge = requireRecord(generated.fromWireFormatTChargeRecord({ id: 'c1', price: { value: 2, at: '2025-01-02T03:04:05Z' } }), 'charge');
   assert.deepEqual(charge.price, { value: 2, at: new Date('2025-01-02T03:04:05Z') });
   assert.throws(() => generated.fromWireFormatTChargeRecord({ id: 'c1', price: { value: -1 } }), /Model validation failed/);
   assert.throws(() => generated.toWireFormatTChargeRecord({ id: 'c1', price: { value: -1 } }), /Model validation failed/);
@@ -252,10 +251,10 @@ export type TNodeRecord = IModel<Node>;
   const project = await loadGolemModeProject(scope, 'sdk-app-model-recursive-', [tree], true, { 'src/node.model.ts': model });
   assert.deepEqual(validatorsOfModels(project.root, 'TNodeRecord', { value: 'a', children: [{ value: 'b' }] }), { compiled: { Node: 4 }, reached: ['Node'] });
 
-  const generated = await importBuilt(project.root, 'src/node.model.generated.js');
+  const generated = await loadFunctions(built(project.root, 'src/node.model.generated.js'), ['fromWireFormatTNodeRecord', 'toWireFormatTNodeRecord']);
   const wire = { value: 'a', children: [{ value: 'b', children: [{ value: 'c', at: '2025-01-02T03:04:05.000Z' }] }] };
   const read = generated.fromWireFormatTNodeRecord(wire);
-  assert.deepEqual(read.children[0].children[0].at, new Date('2025-01-02T03:04:05Z'));
+  assert.deepEqual(read, { value: 'a', children: [{ value: 'b', children: [{ value: 'c', at: new Date('2025-01-02T03:04:05Z') }] }] });
   assert.deepEqual(generated.toWireFormatTNodeRecord(read), wire);
   const tooLong = { value: 'a', children: [{ value: 'b', children: [{ value: 'toolong' }] }] };
   assert.throws(() => generated.fromWireFormatTNodeRecord(tooLong), /Model validation failed/);
@@ -276,7 +275,7 @@ import type { Event } from '../sdk/events/index.js';
 export type TEventRecord = IModel<Event>;
 `;
   const project = await loadGolemModeProject(scope, 'sdk-app-model-webhook-', [{ document, folder: 'sdk/events', name: 'Events' }], true, { 'src/event.model.ts': model });
-  const generated = await importBuilt(project.root, 'src/event.model.generated.js');
+  const generated = await loadFunctions(built(project.root, 'src/event.model.generated.js'), ['fromWireFormatTEventRecord', 'toWireFormatTEventRecord']);
   assert.deepEqual(generated.fromWireFormatTEventRecord({ id: 'e1', at: '2025-01-02T03:04:05Z' }), { id: 'e1', at: new Date('2025-01-02T03:04:05Z') });
   assert.throws(() => generated.fromWireFormatTEventRecord({ id: 'too-long' }), /Model validation failed/);
   assert.throws(() => generated.toWireFormatTEventRecord({ id: 'too-long' }), /Model validation failed/);
@@ -302,10 +301,10 @@ import type { Code, Currency, Email, Legacy, Status } from '../sdk/charges/index
 export type TRecord = IModel<{ plain: Currency; tagged: Currency & MinLength<2>; branded: Currency & { readonly __brand: 'C' } & MinLength<2>; code: Code; legacy: Legacy; status: Status; email: Email; maybe: Currency | null }>;
 `;
   const project = await loadGolemModeProject(scope, 'sdk-app-model-scalar-', [sdk], true, { 'src/record.model.ts': model });
-  const generated = await importBuilt(project.root, 'src/record.model.generated.js');
+  const generated = await loadFunctions(built(project.root, 'src/record.model.generated.js'), ['fromWireFormatTRecord']);
   const valid = { plain: 'AB', tagged: 'AB', branded: 'AB', code: null, legacy: 'AB', status: 'shut', email: 'a@b.co', maybe: null };
   assert.deepEqual(generated.fromWireFormatTRecord(valid), valid);
-  assert.deepEqual(generated.fromWireFormatTRecord({ ...valid, code: 'ABC' }).code, 'ABC');
+  assert.deepEqual(requireRecord(generated.fromWireFormatTRecord({ ...valid, code: 'ABC' }), 'record').code, 'ABC');
   assert.throws(() => generated.fromWireFormatTRecord({ ...valid, plain: 'ABCDE' }), /Model validation failed/);
   assert.throws(() => generated.fromWireFormatTRecord({ ...valid, tagged: 'A' }), /Model validation failed/);
   assert.throws(() => generated.fromWireFormatTRecord({ ...valid, tagged: 'ABCDE' }), /Model validation failed/);
@@ -316,7 +315,7 @@ export type TRecord = IModel<{ plain: Currency; tagged: Currency & MinLength<2>;
   assert.throws(() => generated.fromWireFormatTRecord({ ...valid, legacy: 'ABCDE' }), /Model validation failed/);
   assert.throws(() => generated.fromWireFormatTRecord({ ...valid, status: 'gone' }), /Model validation failed/);
   assert.throws(() => generated.fromWireFormatTRecord({ ...valid, email: 'nope' }), /Model validation failed/);
-  assert.equal(generated.fromWireFormatTRecord({ ...valid, maybe: 'EUR' }).maybe, 'EUR');
+  assert.equal(requireRecord(generated.fromWireFormatTRecord({ ...valid, maybe: 'EUR' }), 'record').maybe, 'EUR');
   assert.throws(() => generated.fromWireFormatTRecord({ ...valid, maybe: 'EURO' }), /Model validation failed/);
   // The SDK limit is checked once for each field: a second check of it would report the same field twice.
   for (const field of ['plain', 'code', 'legacy'] as const) {
@@ -344,10 +343,10 @@ import type { Extra, Ident, Tags } from '../sdk/charges/index.js';
 export type TRecord = IModel<{ tags: Tags; ident: Ident; extra: Extra }>;
 `;
   const project = await loadGolemModeProject(scope, 'sdk-app-model-alias-', [sdk], true, { 'src/record.model.ts': model });
-  const generated = await importBuilt(project.root, 'src/record.model.generated.js');
+  const generated = await loadFunctions(built(project.root, 'src/record.model.generated.js'), ['fromWireFormatTRecord']);
   const valid = { tags: [1, 9], ident: 'ABC', extra: { a: 9 } };
   assert.deepEqual(generated.fromWireFormatTRecord(valid), valid);
-  assert.deepEqual(generated.fromWireFormatTRecord({ ...valid, ident: 7 }).ident, 7);
+  assert.deepEqual(requireRecord(generated.fromWireFormatTRecord({ ...valid, ident: 7 }), 'record').ident, 7);
   assert.throws(() => generated.fromWireFormatTRecord({ ...valid, tags: [1.5] }), /Model validation failed/);
   assert.throws(() => generated.fromWireFormatTRecord({ ...valid, tags: [10] }), /Model validation failed/);
   assert.throws(() => generated.fromWireFormatTRecord({ ...valid, ident: 'ABCDE' }), /Model validation failed/);
@@ -399,7 +398,7 @@ test('a $ref sibling that the named schema already implies lets an app model gen
     }),
   };
   const project = await loadGolemModeProject(scope, 'sdk-app-model-ref-sibling-', [implied], true, { 'src/record.model.ts': model });
-  const generated = await importBuilt(project.root, 'src/record.model.generated.js');
+  const generated = await loadFunctions(built(project.root, 'src/record.model.generated.js'), ['fromWireFormatTRecord']);
   assert.deepEqual(generated.fromWireFormatTRecord({ price: { value: 3 } }), { price: { value: 3 } });
   assert.throws(() => generated.fromWireFormatTRecord({ price: { value: 11 } }), /Model validation failed/);
 
@@ -419,7 +418,7 @@ test('a $ref sibling that the named schema already implies lets an app model gen
       Charge: { type: 'object', required: ['price'], properties: { price: { $ref: '#/components/schemas/Amount', maximum: 20 } } },
     }),
   };
-  const loose = await importBuilt((await loadGolemModeProject(scope, 'sdk-app-model-ref-loose-', [looser], true, { 'src/record.model.ts': model })).root, 'src/record.model.generated.js');
+  const loose = await loadFunctions(built((await loadGolemModeProject(scope, 'sdk-app-model-ref-loose-', [looser], true, { 'src/record.model.ts': model })).root, 'src/record.model.generated.js'), ['fromWireFormatTRecord']);
   assert.deepEqual(loose.fromWireFormatTRecord({ price: 3 }), { price: 3 });
   assert.throws(() => loose.fromWireFormatTRecord({ price: 11 }), (error: unknown) => error instanceof LibError
     && error.kind === LibErrorKind.Validation && error.causedByInput === true && error.message === 'Model validation failed.'
@@ -454,18 +453,18 @@ import { OwnerRecord } from './owner.model.js';
 export const read = (wire: unknown) => fromWireFormat<OwnerRecord>(wire);
 `;
   const project = await buildGolemModeProject('sdk-app-model-union-', pets, { 'src/owner.model.ts': model, 'src/use.ts': use });
-  const { read } = await importBuilt(project.root, 'src/use.js');
-  const dog = read({ pet: { petType: 'dog', bornAt: '2025-01-02T03:04:05Z' } });
+  const { read } = await loadFunctions(built(project.root, 'src/use.js'), ['read']);
+  const dog = requireRecord(read({ pet: { petType: 'dog', bornAt: '2025-01-02T03:04:05Z' } }), 'owner');
   assert.deepEqual(dog.pet, { petType: 'dog', bornAt: new Date('2025-01-02T03:04:05Z') });
-  assert.deepEqual(read({ pet: { petType: 'cat', lives: 9 } }).pet, { petType: 'cat', lives: 9 });
+  assert.deepEqual(requireRecord(read({ pet: { petType: 'cat', lives: 9 } }), 'owner').pet, { petType: 'cat', lives: 9 });
   assert.throws(() => read({ pet: { petType: 'bird' } }), (error: unknown) => error instanceof LibError
     && error.kind === LibErrorKind.Validation && error.causedByInput === true && error.message === 'Model validation failed.'
     && JSON.stringify(error.issues.map(issue => [issue.code, issue.path])) === '[["literal",["pet","petType"]]]');
   // A nullable SDK node keeps the value it is given: the same object, and null stays null.
-  const { TKennelBaseModel } = await importBuilt(project.root, 'src/owner.model.generated.js');
+  const { TKennelBaseModel } = await loadModelClasses(built(project.root, 'src/owner.model.generated.js'), ['TKennelBaseModel']);
   const given = { petType: 'dog', bornAt: new Date('2025-01-02T03:04:05Z') };
-  assert.equal((Reflect.construct(TKennelBaseModel, [{ dog: given }]) as { dog: unknown }).dog, given);
-  assert.equal((Reflect.construct(TKennelBaseModel, [{ dog: null }]) as { dog: unknown }).dog, null);
+  assert.equal(requireRecord(new TKennelBaseModel({ dog: given }), 'kennel').dog, given);
+  assert.equal(requireRecord(new TKennelBaseModel({ dog: null }), 'kennel').dog, null);
 });
 
 test('a companion over SDK types imports the SDK types, compiles under noUnusedLocals, and takes the SDK value as its init', async () => {
@@ -518,22 +517,22 @@ export const readBox = (wire: unknown) => fromWireFormat<Box>(wire);
 export const readShelf = (wire: unknown) => fromWireFormat<TShelf>(wire);
 `;
   const project = await buildGolemModeProject('sdk-app-model-union-array-', trees, { 'src/box.model.ts': model, 'src/use.ts': use });
-  const { Box } = await importBuilt(project.root, 'src/box.model.js');
-  const { readBox, readShelf } = await importBuilt(project.root, 'src/use.js');
+  const { Box } = await loadModelClasses(built(project.root, 'src/box.model.js'), ['Box']);
+  const { readBox, readShelf } = await loadFunctions(built(project.root, 'src/use.js'), ['readBox', 'readShelf']);
   const instant = '2025-01-02T03:04:05.000Z';
   const wire = [{ label: 'a', at: instant, children: [{ label: 'b', at: instant, children: [] }] }];
   const decoded = { label: 'a', at: new Date(instant), children: [{ label: 'b', at: new Date(instant), children: [] }] };
   const box = readBox({ id: 'c1', items: wire });
-  assert.deepEqual([box instanceof Box, box.items], [true, [decoded]], 'the class-backed model converts the array');
-  assert.equal(readBox({ id: 'c1', items: 'text' }).items, 'text');
+  assert.deepEqual([box instanceof Box, requireRecord(box, 'box').items], [true, [decoded]], 'the class-backed model converts the array');
+  assert.equal(requireRecord(readBox({ id: 'c1', items: 'text' }), 'box').items, 'text');
   // The decode of the class itself, which a model that holds this one calls, reads the union with the model walker.
-  assert.deepEqual((decodeGeneratedModelTrusted(Box, { id: 'c1', items: wire }) as { items: unknown }).items, [decoded], 'the model decode converts the array');
-  assert.equal((decodeGeneratedModelTrusted(Box, { id: 'c1', items: 'text' }) as { items: unknown }).items, 'text');
-  assert.deepEqual(readShelf({ id: 'c1', items: wire }).items, [decoded], 'the plain object converts the array');
-  assert.equal(readShelf({ id: 'c1', items: 'text' }).items, 'text');
+  assert.deepEqual(requireRecord(decodeGeneratedModelTrusted(Box, { id: 'c1', items: wire }), 'box').items, [decoded], 'the model decode converts the array');
+  assert.equal(requireRecord(decodeGeneratedModelTrusted(Box, { id: 'c1', items: 'text' }), 'box').items, 'text');
+  assert.deepEqual(requireRecord(readShelf({ id: 'c1', items: wire }), 'shelf').items, [decoded], 'the plain object converts the array');
+  assert.equal(requireRecord(readShelf({ id: 'c1', items: 'text' }), 'shelf').items, 'text');
 
   // The write goes the other way: the dates of the array go out as text, validated or not.
-  const generated = await importBuilt(project.root, 'src/box.model.generated.js');
+  const generated = await loadFunctions(built(project.root, 'src/box.model.generated.js'), ['stringifyTBox', 'stringifyTShelf']);
   const value = { id: 'c1', items: [{ label: 'a', at: new Date(instant), children: [] }] };
   const text = `{"id":"c1","items":[{"label":"a","at":"${instant}","children":[]}]}`;
   for (const options of [undefined, { validate: false }]) {
@@ -541,4 +540,82 @@ export const readShelf = (wire: unknown) => fromWireFormat<TShelf>(wire);
     assert.equal(generated.stringifyTShelf(value, options), text, `the plain object writes the array (${JSON.stringify(options)})`);
   }
   assert.equal(generated.stringifyTBox({ id: 'c1', items: 'text' }), '{"id":"c1","items":"text"}');
+});
+
+test('a golem-mode model over an SDK type tagged with a TSerde writes the serde wire value of the field, not the SDK node', async () => {
+  const project = await loadGolemModeProject(scope, 'sdk-app-model-serde-', [CHARGES], true, {
+    'src/codecs.ts': `import type { Charge } from '../sdk/charges/index.js';
+export function encodeCharge(value: Charge): string { return value.id + ':' + String(value.amount); }
+export function decodeCharge(wire: string): Charge { const [id, amount] = wire.split(':'); return { id: id!, amount: Number(amount) } as Charge; }
+`,
+    'src/ledger.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
+import type { TSerde } from '@exprtlabs/golem/tags';
+import type { Charge } from '../sdk/charges/index.js';
+import { encodeCharge, decodeCharge } from './codecs.js';
+export type TLedger = IModel<{ charge: Charge & TSerde<typeof encodeCharge, typeof decodeCharge> }>;
+`,
+  });
+  const generated = await loadFunctions(built(project.root, 'src/ledger.model.generated.js'), ['stringifyTLedger', 'toWireFormatTLedger']);
+  const value = { charge: { id: 'c1', amount: 2 } };
+  assert.deepEqual(generated.toWireFormatTLedger(value), { charge: 'c1:2' });
+  assert.equal(generated.stringifyTLedger(value), '{"charge":"c1:2"}');
+});
+
+const PETS: GolemModeSdkSetup = {
+  folder: 'sdk/pets',
+  name: 'Pets',
+  document: {
+    openapi: '3.1.0',
+    info: { title: 'Pets', version: '1' },
+    paths: { '/owners': { post: { operationId: 'createOwner', requestBody: { required: true, content: json(ref('Owner')) }, responses: { 200: { description: 'ok', content: json(ref('Owner')) } } } } },
+    components: { schemas: {
+      Cat: { type: 'object', required: ['petType', 'lives'], properties: { petType: { type: 'string', const: 'cat' }, lives: { type: 'integer', maximum: 9 } } },
+      Dog: { type: 'object', required: ['petType'], properties: { petType: { type: 'string', const: 'dog' }, bornAt: { type: 'string', format: 'date-time' } } },
+      Owner: { type: 'object', required: ['pet'], properties: { pet: { oneOf: [ref('Cat'), ref('Dog')], discriminator: { propertyName: 'petType', mapping: { cat: '#/components/schemas/Cat', dog: '#/components/schemas/Dog' } } } } },
+    } },
+  },
+};
+
+for (const validation of [true, false]) {
+  test(`a golem-mode tagged union of an SDK type tagged with a TSerde and an object writes and reads the serde form, validation ${validation}`, async () => {
+    // protects: T-955 a serde on a generated model variant of a tagged union is read before the node: stringify, wire write and decode use its object wire form
+    const project = await loadGolemModeProject(scope, 'sdk-app-model-serde-union-', [PETS], validation, {
+      'src/codecs.ts': `import type { Cat } from '../sdk/pets/index.js';
+export type CatWire = { petType: 'cat'; livesLeft: number };
+export function encodeCat(value: Cat): CatWire { return { petType: 'cat', livesLeft: value.lives }; }
+export function decodeCat(wire: CatWire): Cat { return { petType: 'cat', lives: wire.livesLeft }; }
+`,
+      'src/kennel.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
+import type { Discriminator, TSerde } from '@exprtlabs/golem/tags';
+import type { Cat } from '../sdk/pets/index.js';
+import { encodeCat, decodeCat } from './codecs.js';
+export type TKennel = IModel<{ pet: ((Cat & TSerde<typeof encodeCat, typeof decodeCat>) | { petType: 'fish'; fins: number }) & Discriminator<'petType'> }>;
+`,
+    });
+    const generated = await loadFunctions(built(project.root, 'src/kennel.model.generated.js'), ['fromWireFormatTKennel', 'stringifyTKennel', 'toWireFormatTKennel']);
+    const value = { pet: { petType: 'cat', lives: 3 } };
+    assert.equal(generated.stringifyTKennel(value), '{"pet":{"petType":"cat","livesLeft":3}}');
+    assert.deepEqual(generated.toWireFormatTKennel(value), { pet: { petType: 'cat', livesLeft: 3 } });
+    assert.deepEqual(generated.fromWireFormatTKennel({ pet: { petType: 'cat', livesLeft: 3 } }), value);
+    assert.equal(generated.stringifyTKennel({ pet: { petType: 'fish', fins: 2 } }), '{"pet":{"petType":"fish","fins":2}}');
+  });
+}
+
+test('a golem-mode tagged union variant tagged with a TSerde that writes a string stops with RUNM1082 and names the variant', async () => {
+  // protects: T-955 a serde variant of a tagged union must write an object that holds the tag; a scalar wire form has none to dispatch on
+  await assert.rejects(
+    loadGolemModeProject(scope, 'sdk-app-model-serde-scalar-', [PETS], true, {
+      'src/codecs.ts': `import type { Cat } from '../sdk/pets/index.js';
+export function encodeCat(value: Cat): string { return 'cat:' + String(value.lives); }
+export function decodeCat(wire: string): Cat { return { petType: 'cat', lives: Number(wire.slice(4)) }; }
+`,
+      'src/kennel.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
+import type { Discriminator, TSerde } from '@exprtlabs/golem/tags';
+import type { Cat } from '../sdk/pets/index.js';
+import { encodeCat, decodeCat } from './codecs.js';
+export type TKennel = IModel<{ pet: ((Cat & TSerde<typeof encodeCat, typeof decodeCat>) | { petType: 'fish'; fins: number }) & Discriminator<'petType'> }>;
+`,
+    }),
+    /kennel\.model\.ts RUNM1082: The variant \S*Cat\S* of a tagged union has a serde whose wire form is string/,
+  );
 });

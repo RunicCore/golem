@@ -14,7 +14,7 @@ import {
 import { nestingDepthError, readRootFields, resolveMaxDepth, textNestsDeeperThan, valueNestsDeeperThan, type StripPlanRef } from './conversion.js';
 import { withoutInstanceState } from './presence.js';
 import type { SchemaIssue } from './issue-messages.js';
-import type { ModelValidationContext, WireFormat } from './model.js';
+import type { GeneratedModelConstructor, ModelValidationContext, WireFormat } from './model.js';
 import type { Validator } from './validation-runtime.js';
 
 import { MODEL_CODEC_IDS_KEY } from './schema-keywords.js';
@@ -70,7 +70,7 @@ export interface SerdeOptions extends MaxDepthOptions {
   readonly failFast?: boolean;
   readonly validationContext?: ModelValidationContext;
   /** Set by golem's rewrite for `parse<Class>` / `fromWireFormat<Class>`. */
-  readonly construct?: abstract new (values?: never) => object;
+  readonly construct?: GeneratedModelConstructor;
 }
 
 /** The `strip` option, the same for a decode and an encode. */
@@ -136,7 +136,7 @@ export interface ObjectCodecImpl<T = unknown> {
   readonly issueSource?: IssueSource;
 }
 
-const iModelClasses = new Map<string, abstract new (values?: never) => object>();
+const iModelClasses = new Map<string, GeneratedModelConstructor>();
 /** A codec schema plane; the validation reference names it (`Id`, `Id#wire`, `Id#model-only`, `Id#wire-only`). */
 export type ValidationPlane = 'model' | 'wire' | 'model-only' | 'wire-only';
 interface ContextValidatorCache {
@@ -182,14 +182,14 @@ export function resolveModelValidationContextValidator(
  */
 const MODEL_CODEC_IDS = Symbol.for(MODEL_CODEC_IDS_KEY);
 
-function markModelCodecId(ctor: abstract new (values?: never) => object, name: string): void {
+function markModelCodecId(ctor: GeneratedModelConstructor, name: string): void {
   const prototype: object = ctor.prototype;
   const ids: readonly string[] = Object.hasOwn(prototype, MODEL_CODEC_IDS) ? Reflect.get(prototype, MODEL_CODEC_IDS) : [];
   if (ids.includes(name)) return;
   Object.defineProperty(prototype, MODEL_CODEC_IDS, { value: Object.freeze([...ids, name]), configurable: true });
 }
 
-export function registerIModelClass(name: string, ctor: abstract new (values?: never) => object): void {
+export function registerIModelClass(name: string, ctor: GeneratedModelConstructor): void {
   iModelClasses.set(name, ctor);
   // `<codec id>#<class>` names one of several classes linked to a model; the model has no default class.
   const variant = name.indexOf('#');
@@ -198,11 +198,11 @@ export function registerIModelClass(name: string, ctor: abstract new (values?: n
   linkConstructorToCodec(ctor, id);
 }
 
-export function getIModelClass(id: string): (abstract new (values?: never) => object) | undefined {
+export function getIModelClass(id: string): GeneratedModelConstructor | undefined {
   return iModelClasses.get(id);
 }
 
-export function requireIModelClass(id: string): abstract new (values?: never) => object {
+export function requireIModelClass(id: string): GeneratedModelConstructor {
   const ctor = getIModelClass(id);
   if (!ctor) {
     throw new LibError(

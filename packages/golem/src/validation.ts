@@ -3,7 +3,7 @@ import { escapeJsonPointerToken } from './json-pointer.js';
 import { presentValue } from './presence.js';
 import type { generatedModelFieldsBrand, GeneratedModelConstructor, ModelField, ModelValidationContext } from './model.js';
 import type { ModelTypeDescriptor, RegisteredGeneratedModelDefinition } from './model-registry.js';
-export type { SchemaIssue, SchemaIssueDetail, Validator } from './validation-runtime.js';
+export type { Evaluation, JsonValue, SchemaIssue, SchemaIssueDetail, Validator } from './validation-runtime.js';
 export { runValidation } from './validation-runner.js';
 export * from './schema-registry-validation.js';
 
@@ -178,8 +178,18 @@ function customIssue(path: IssuePath, reason?: string): Issue {
   return toIssue({ path, code: 'custom', ...(reason === undefined ? {} : { reason }) }, IssueSource.Custom, IssueRepresentation.Model);
 }
 
+/** A path segment as the property key it names: item 1 and key '1' are one segment, as in the JSON Pointer of `errors` and the reads of `ownersForIssue`. */
+function segmentKey(segment: string | number): string {
+  return String(segment);
+}
+
+/** True when `path` starts with `prefix`, segment by segment. */
+function pathStartsWith(path: IssuePath, prefix: IssuePath): boolean {
+  return path.length >= prefix.length && prefix.every((segment, index) => segmentKey(path[index]) === segmentKey(segment));
+}
+
 function messageOverrideKey(path: IssuePath | null | undefined, code: string): string {
-  const normalized = path == null || path.length === 0 ? null : path;
+  const normalized = path == null || path.length === 0 ? null : path.map(segmentKey);
   return JSON.stringify([normalized, code]);
 }
 
@@ -224,12 +234,17 @@ const noLocalRuleIssues: readonly LocalRuleIssue[] = [];
 
 /** True when a generated issue sits at the path or below it. */
 function hasIssueAtOrBelow(issues: readonly Issue[], path: IssuePath): boolean {
-  return issues.some(issue => path.every((segment, index) => String(issue.path[index]) === String(segment)) && issue.path.length >= path.length);
+  return issues.some(issue => pathStartsWith(issue.path, path));
 }
 
 function evaluateInstanceRules(root: object, mode: ValidationMode, generated: readonly Issue[]): ValidationStep<readonly Issue[]> {
   const memo = new WeakMap<object, readonly LocalRuleIssue[]>();
-  const active = new Set<object>();
+  // The objects on the current path, each with its depth. A path that meets one of them is a cycle and stops there.
+  const active = new Map<object, number>();
+  // Objects whose walk found no model and met no cycle that leads above them: another path to one adds nothing, whatever the path or the owners.
+  const modelFree = new WeakSet<object>();
+  // The shallowest depth that the walk of the current object depends on: -1 for a model, the depth of the object that a cycle meets.
+  let dependsOn = Infinity;
   const issues: Issue[] = [];
   const evaluateLocal = (model: object, path: IssuePath): ValidationStep<readonly LocalRuleIssue[]> => {
     const existing = memo.get(model);
@@ -292,11 +307,24 @@ function evaluateInstanceRules(root: object, mode: ValidationMode, generated: re
     return evaluateRules(0, 0);
   };
   const visit = (value: unknown, path: IssuePath, ancestors: readonly { model: object; offset: number }[]): ValidationStep<void> => {
-    if (value === null || typeof value !== 'object' || active.has(value) || (mode === 'first' && issues.length)) return;
-    active.add(value);
-    const release = (): void => { active.delete(value); };
+    if (value === null || typeof value !== 'object' || modelFree.has(value) || (mode === 'first' && issues.length)) return;
+    const cycleDepth = active.get(value);
+    if (cycleDepth !== undefined) {
+      dependsOn = Math.min(dependsOn, cycleDepth);
+      return;
+    }
+    const depth = active.size;
+    const outerDependsOn = dependsOn;
+    dependsOn = Infinity;
+    active.set(value, depth);
+    const release = (): void => {
+      active.delete(value);
+      if (dependsOn >= depth) modelFree.add(value);
+      dependsOn = Math.min(outerDependsOn, dependsOn);
+    };
     try {
       const definition = findGeneratedModelDefinition(value);
+      if (definition) dependsOn = -1;
       const owners = definition ? [...ancestors, { model: value, offset: path.length }] : ancestors;
       const visitFields = (container: object, fields: readonly (string | number)[], index: number): ValidationStep<void> => {
         for (let fieldIndex = index; fieldIndex < fields.length; fieldIndex++) {
@@ -348,7 +376,8 @@ function evaluateInstanceRules(root: object, mode: ValidationMode, generated: re
         if (isNativeValidationPromise(result)) return result.then(value => { release(); return value; }, error => { release(); throw error; });
         release();
         return result;
-      } else if (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null) {
+      } else if (!ArrayBuffer.isView(value)) {
+        // Any other object is read by its own enumerable keys, as the generated validators read it; a typed array holds no model.
         const keys = Object.keys(value);
         const result = visitFields(value, keys, 0);
         if (isNativeValidationPromise(result)) return result.then(value => { release(); return value; }, error => { release(); throw error; });
@@ -595,7 +624,7 @@ export class ModelValidator<Fields extends object, Owner extends object = Fields
   public error(field: ModelField<Fields> | IssuePath): string | undefined { return this.errorsFor(field)[0]; }
   public errorsFor(field: ModelField<Fields> | IssuePath): readonly string[] {
     const path = typeof field === 'string' ? [field] : field;
-    return this.issuesValue.filter(issue => issue.path.length === path.length && issue.path.every((part, index) => part === path[index])).map(issue => issue.message);
+    return this.issuesValue.filter(issue => issue.path.length === path.length && pathStartsWith(issue.path, path)).map(issue => issue.message);
   }
 
   public setErrors(errors: Partial<Record<ModelField<Fields>, string | readonly string[]>> | readonly ExternalFieldError[]): void {

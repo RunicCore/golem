@@ -1,15 +1,13 @@
 import { copyFixtureFile, createFixtureProject } from '../fixture-project.js';
 import assert from 'node:assert/strict';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { schemaType } from '#openapi/types';
 import {
   compileGeneratedSdk,
   generateMaterializedSdk,
-  isGeneratedClientClass,
-  requireRecord,
+  loadGeneratedClient,
 } from './helpers.js';
 
 /** One operation per tuple schema; each round-trips the schema as request and response body. */
@@ -99,10 +97,7 @@ test('prefixItems closed and rest tuples compile in strict TypeScript and valida
   copyFixtureFile(output, "openapi/prefix-items/prefix-assert.ts", "prefix-assert.ts");
   copyFixtureFile(output, "openapi/prefix-items/prefix-rest-assert.ts", "prefix-rest-assert.ts");
   compileGeneratedSdk(output, [path.join(output, 'prefix-assert.ts'), path.join(output, 'prefix-rest-assert.ts')], { strict: true });
-  const module = requireRecord(await import(pathToFileURL(path.join(output, 'dist/client.js')).href), 'prefix client');
-  const Client = module.PrefixClient;
-  assert.ok(isGeneratedClientClass(Client));
-  if (!isGeneratedClientClass(Client)) throw new TypeError('PrefixClient');
+  const Client = await loadGeneratedClient(output, 'Prefix');
   // The request body is valid for both tuples; only the response varies.
   const acceptsResponse = async (operation: 'putTuple' | 'putRestTuple', reply: unknown): Promise<boolean> => {
     const client = new Client({

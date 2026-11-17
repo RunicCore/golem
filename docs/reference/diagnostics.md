@@ -233,6 +233,7 @@ An error prints its code, location when known, and message, then stops generatio
 - A model, or one of its fields, resolves to a type with call or construct signatures: a function or a class-instance shape rather than plain data. With validation on, generation stops. A model with validation off generates, and the model's own `{ validation }` setting decides before the setting of `golem.yaml`.
 - A model field is typed `Map`, `Set`, `ReadonlyMap` or `ReadonlySet`. The message names the type. This holds with validation off too.
 - With validation on, an object is keyed by a template literal type whose keys golem cannot state as one pattern, such as `` `${number}` ``, `` `${string}_${number}` `` or `Uppercase<string>`. Only holes of type `string`, such as `` `id_${string}` ``, are stated.
+- With validation on, a field is typed by a template literal type with a hole that golem cannot state as a pattern, such as `` `id-${number}` `` or `` `id-${Uppercase<string>}` ``. Only holes of type `string` are stated: the field then accepts only the strings that match the template.
 - An object has two or more index signatures keyed by template literal types, such as `` `a_${string}` `` and `` `n_${string}` ``, whose value types differ, or one such signature beside a plain `string` index signature of another value type. One value type describes every extra key. This holds with validation off too.
 
 **Fix:**
@@ -240,6 +241,7 @@ An error prints its code, location when known, and message, then stops generatio
 - Replace a function or class shape with a plain object, array, or primitive, or set `{ validation: false }` on the model.
 - Replace a `Map` with a `Record<string, V>` and a `Set` with an array.
 - Key the object by `string` holes only, such as `` Record<`id_${string}`, V> ``, or by `string`.
+- Type the field by a template literal type with `string` holes only, such as `` `id-${string}` ``, or by `string`.
 - Give the index signatures one value type.
 
 ### RUNM1005
@@ -286,7 +288,10 @@ An error prints its code, location when known, and message, then stops generatio
 
 - The checker can't resolve the declaration.
 - The resolved function isn't exported.
-- Two functions in one field share one function type, such as two consts typed by the same alias, so golem cannot tell which one the tag names.
+- Two functions in one field share one function type, such as two consts typed by the same alias, or `const b: typeof a`, so golem cannot tell which one the tag names.
+- The tag reaches the field through a type that golem cannot read back to the `typeof` that wrote it. **Fix:** write the tag on the field itself.
+- The field reaches a function tag through a value whose type golem infers, such as `const held = tagged()`, the return of a function, a property of an object, a class member with no type annotation or a class getter, and golem would have to guess which function of that type the tag names. This also holds when a conditional type (`T extends { held: infer V } ? V : never`) or a mapped type with an `as` clause reads the value, and when a class extends a base that a call returns (`class Sub extends mixin(Base)`). **Fix:** give the value a type annotation that writes the tag, or write the tag on the field itself.
+- Two functions of one type are written in tags of the program, or any tag of the program names its function with something other than a direct `typeof` (a type parameter, an indexed access such as `T['f']`, or an alias), and the field reaches a tag through a generic type or a generic tag alias (`type Checked<F> = string & TValidation<F>`). Golem reads everything the field reaches, and it stops at a type parameter that the field does not bind, at a value with an inferred type, and at a tag whose function is not written after `typeof`. The message names that place and the functions. A function that another file writes in a tag can cause this. **Fix:** write the tag on the field itself, with `typeof` and the function.
 
 **Fix:**
 
@@ -318,7 +323,7 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### RUNM1045
 
-**Unintersected tag.** A constraint, `TValidation`, or `TSerde` tag appears on its own instead of intersected with a model value type. **Fix:** Intersect the tag with the field's type, such as `string & MinLength<1>`.
+**Unintersected tag.** A constraint, `TValidation`, or `TSerde` tag appears on its own instead of intersected with a model value type, or inside a hole of a template literal type that types a field or keys an object, such as `` `id-${string & MinLength<3>}` `` or `` Record<`id_${string & MinLength<3>}`, Date> ``: a hole is a part of the value, so no tag checks it. This holds with validation off too. **Fix:** Intersect the tag with the field's type, such as `string & MinLength<1>` or `` `id-${string}` & MinLength<3> ``.
 
 ### RUNM1046
 
@@ -667,6 +672,7 @@ These checks run only when the `ts-openapi` block of `golem.yaml` holds the [`ne
 - Two scalar variants where one converts.
 - A model reference that is no object.
 - A `TSerde` value beside tagged objects whose JSON form is an object or an array, such as a `URL` written as `{ href: string }`.
+- A variant of a tagged union (`Discriminator`) that has a `TSerde` whose JSON form is a scalar or an array. The wire value holds no tag, so golem cannot dispatch it. The message names the variant.
 
 Golem does not try the variants in turn, so generation stops. The message names the model file and lists the variants. An object union with no declared tag has its own code, [RUNM1080](#runm1080).
 
@@ -739,9 +745,9 @@ Golem reads relative imports (`./sdk/index.js`) for this rule, and reads them th
 
 ### RUNM1089
 
-**Model validation option is invalid or above the project.** The `validation` option of a model is none of `true`, `false` and `'sanity'`, or it is above the validation level of the project. The order is `false` < `'sanity'` < `true`. A model may lower the level of its project, never raise it. For a model above its project, the message names the model, its level and the project level. For another value, it names the model and the allowed values.
+**Model option is invalid or above the project.** The `validation` option of a model is none of `true`, `false` and `'sanity'`, or it is above the validation level of the project. The order is `false` < `'sanity'` < `true`. A model may lower the level of its project, never raise it. The `exact` or `allowAny` option of a model is a wide `boolean`, or another type that is no `true` or `false`. An optional property, such as `exact?: false`, counts as its literal. For a model above its project, the message names the model, its level and the project level. For another value, it names the model, the option and the allowed values.
 
-**Fix:** Set the option to `true`, `false` or `'sanity'`, at or below the project level, or raise `validation` in `golem.yaml`.
+**Fix:** Set `validation` to `true`, `false` or `'sanity'`, at or below the project level, or raise `validation` in `golem.yaml`. Set `exact` and `allowAny` to `true` or `false`, or leave them out.
 
 ### RUNM1091
 

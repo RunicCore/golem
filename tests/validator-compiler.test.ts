@@ -441,11 +441,21 @@ test('anyOf and oneOf without a discriminator report a union with the matched co
   await assertIssues(oneOf, 'a', [{ path: [], code: 'union', matched: 0 }]);
 });
 
+/** The fast export of an emitted validator: a yes-or-no check that lists no issues. */
+type FastCheck = (value: unknown) => boolean;
+
 /**
  * Bundles the named exports of an emitted validator module with esbuild and runs the bundle in a fresh context, a realm of its
  * own: a test that counts what the bundle calls patches that realm's globals with `setup` and never the test process's.
  */
-async function loadBundle(t: TestContext, source: string, names: readonly string[], context: object = {}, setup = ''): Promise<{ readonly values: readonly Validator[]; readonly text: string }> {
+async function loadBundle(
+  t: TestContext,
+  source: string,
+  exportNames: { readonly fast: readonly string[]; readonly full: readonly string[] },
+  context: object = {},
+  setup = '',
+): Promise<{ readonly fast: readonly FastCheck[]; readonly full: readonly Validator[]; readonly text: string }> {
+  const names = [...exportNames.fast, ...exportNames.full];
   const directory = mkdtempSync(path.join(tmpdir(), 'golem-validators-bundle-'));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
   writeFileSync(path.join(directory, 'validators.js'), source);
@@ -455,19 +465,20 @@ async function loadBundle(t: TestContext, source: string, names: readonly string
   const fresh = vm.createContext({ ...context, require: () => runtime });
   vm.runInContext(setup, fresh);
   vm.runInContext(result.outputFiles[0].text, fresh);
-  return { values: fresh.used, text: result.outputFiles[0].text };
+  return { fast: fresh.used.slice(0, exportNames.fast.length), full: fresh.used.slice(exportNames.fast.length), text: result.outputFiles[0].text };
 }
 
 test('an anyOf of branches that differ by JSON type checks a valid value with the one branch of its type', async t => {
   // protects: T-255 one type switch for a disjoint union (F-250); `Number.isInteger` runs only in the integer branch, which comes first.
   const { source, exports, fastExports } = compile(
     { roots: new Map([['root', { anyOf: [{ type: 'integer' }, { type: 'string' }, { type: 'null' }, { type: 'array', items: { type: 'string' } }, { type: 'object' }] }]]) },
-    { unknownFormats: 'warn', specifiers: { values: { 'validation-runtime': 'golem-validation-runtime' } }, fastPath: 'all' },
+    { unknownFormats: 'warn', language: 'js', specifiers: { values: { 'validation-runtime': 'golem-validation-runtime' } }, fastPath: 'all' },
   );
   const counts = { isInteger: 0 };
-  const { values } = await loadBundle(t, source, [fastExports.get('root')!, exports.get('root')!], { counts }, 'const real = Number.isInteger; Number.isInteger = value => (counts.isInteger++, real(value));');
-  const [fast, full] = values;
-  const checks = [fast as unknown as (value: unknown) => boolean, (value: unknown) => full(value, false).length === 0];
+  const bundle = await loadBundle(t, source, { fast: [fastExports.get('root')!], full: [exports.get('root')!] }, { counts }, 'const real = Number.isInteger; Number.isInteger = value => (counts.isInteger++, real(value));');
+  const [fast] = bundle.fast;
+  const [full] = bundle.full;
+  const checks: readonly FastCheck[] = [fast, (value: unknown) => full(value, false).length === 0];
   for (const check of checks) {
     const callsFor = (value: unknown): readonly [boolean, number] => {
       counts.isInteger = 0;
@@ -761,7 +772,7 @@ test('$dynamicRef is an unsupported keyword error at its JSON pointer and leaves
   // protects: an unsupported keyword stops generation with its JSON pointer, never a validator that skips it
   const result = compile(
     { roots: new Map([['root', { properties: { a: { $dynamicRef: '#node' } } }]]) },
-    { unknownFormats: 'warn', documentName: 'orders.yaml' },
+    { unknownFormats: 'warn', language: 'js', documentName: 'orders.yaml' },
   );
   assert.equal(result.source, '');
   assert.equal(result.diagnostics.length, 1);
@@ -776,24 +787,24 @@ test('$dynamicRef is an unsupported keyword error at its JSON pointer and leaves
 test('a $ref chain that returns to itself without reading the value is an error at its first $ref', () => {
   const chain = compile(
     { roots: new Map([['a', { $ref: 'b' }]]), resources: new Map([['b', { $ref: 'c' }], ['c', { $ref: 'b' }]]) },
-    { unknownFormats: 'warn' },
+    { unknownFormats: 'warn', language: 'js' },
   );
   assert.equal(chain.source, '');
   assert.deepEqual(chain.diagnostics.map(entry => [entry.code, entry.severity, entry.path]), [
     ['VALIDATE_REF_CYCLE', GolemDiagnosticSeverity.Error, '/$ref'],
   ]);
   assert.match(chain.diagnostics[0].message, /schema "b"/);
-  const self = compile({ roots: new Map([['root', { type: 'object', $ref: '#' }]]) }, { unknownFormats: 'warn' });
+  const self = compile({ roots: new Map([['root', { type: 'object', $ref: '#' }]]) }, { unknownFormats: 'warn', language: 'js' });
   assert.deepEqual(self.diagnostics.map(entry => [entry.code, entry.path]), [['VALIDATE_REF_CYCLE', '/$ref']]);
-  const branch = compile({ roots: new Map([['root', { anyOf: [{ type: 'string' }, { $ref: '#' }] }]]) }, { unknownFormats: 'warn' });
+  const branch = compile({ roots: new Map([['root', { anyOf: [{ type: 'string' }, { $ref: '#' }] }]]) }, { unknownFormats: 'warn', language: 'js' });
   assert.deepEqual(branch.diagnostics.map(entry => [entry.code, entry.path]), [['VALIDATE_REF_CYCLE', '/anyOf/1/$ref']]);
 });
 
 test('a same-value cycle through if/then or dependentSchemas is an error at its $ref', () => {
-  const conditional = compile({ roots: new Map([['root', { if: { type: 'object' }, then: { $ref: '#' } }]]) }, { unknownFormats: 'warn' });
+  const conditional = compile({ roots: new Map([['root', { if: { type: 'object' }, then: { $ref: '#' } }]]) }, { unknownFormats: 'warn', language: 'js' });
   assert.equal(conditional.source, '');
   assert.deepEqual(conditional.diagnostics.map(entry => [entry.code, entry.path]), [['VALIDATE_REF_CYCLE', '/then/$ref']]);
-  const dependent = compile({ roots: new Map([['root', { dependentSchemas: { a: { $ref: '#' } } }]]) }, { unknownFormats: 'warn' });
+  const dependent = compile({ roots: new Map([['root', { dependentSchemas: { a: { $ref: '#' } } }]]) }, { unknownFormats: 'warn', language: 'js' });
   assert.deepEqual(dependent.diagnostics.map(entry => [entry.code, entry.path]), [['VALIDATE_REF_CYCLE', '/dependentSchemas/a/$ref']]);
 });
 
@@ -804,19 +815,19 @@ test('a schema that contains itself compiles and validates, or reports a cycle, 
   await assertIssues(tree, { self: { other: 1 } }, [{ path: ['self', 'other'], code: 'unknownKey', key: 'other' }]);
   const loop: Record<string, unknown> = { type: 'object' };
   loop.allOf = [loop];
-  const result = compile({ roots: new Map([['root', loop]]) }, { unknownFormats: 'warn' });
+  const result = compile({ roots: new Map([['root', loop]]) }, { unknownFormats: 'warn', language: 'js' });
   assert.deepEqual(result.diagnostics.map(entry => entry.code), ['VALIDATE_REF_CYCLE']);
 });
 
 test('$dynamicAnchor is an unsupported keyword error', () => {
-  const result = compile({ roots: new Map([['root', { $ref: '#/$defs/node', $defs: { node: { $dynamicAnchor: 'node' } } }]]) }, { unknownFormats: 'warn' });
+  const result = compile({ roots: new Map([['root', { $ref: '#/$defs/node', $defs: { node: { $dynamicAnchor: 'node' } } }]]) }, { unknownFormats: 'warn', language: 'js' });
   assert.deepEqual(result.diagnostics.map(entry => [entry.code, entry.path]), [['VALIDATE_UNSUPPORTED_KEYWORD', '/$defs/node/$dynamicAnchor']]);
 });
 
 test('a $ref that does not resolve is an error naming the reference', () => {
   const result = compile(
     { roots: new Map([['root', { properties: { a: { $ref: '#/$defs/missing' } } }]]) },
-    { unknownFormats: 'warn', documentName: 'orders.yaml' },
+    { unknownFormats: 'warn', language: 'js', documentName: 'orders.yaml' },
   );
   assert.equal(result.source, '');
   assert.deepEqual(result.diagnostics.map(entry => [entry.code, entry.severity, entry.path]), [
@@ -828,7 +839,7 @@ test('a $ref that does not resolve is an error naming the reference', () => {
 
 test('a $ref that names a value that is no schema is an error naming the reference and its target', () => {
   // protects: T-509 a $ref to a non-schema value is an error, not a validator that accepts everything
-  const result = compile({ roots: new Map([['root', { info: { title: 'x' }, properties: { a: { $ref: '#/info/title' } } }]]) }, { unknownFormats: 'warn' });
+  const result = compile({ roots: new Map([['root', { info: { title: 'x' }, properties: { a: { $ref: '#/info/title' } } }]]) }, { unknownFormats: 'warn', language: 'js' });
   assert.equal(result.source, '');
   assert.deepEqual(result.diagnostics.map(entry => [entry.code, entry.severity, entry.path, entry.message]), [
     ['VALIDATE_UNSUPPORTED_KEYWORD', GolemDiagnosticSeverity.Error, '/properties/a/$ref', 'schema "root" at /properties/a/$ref: the value of $ref is not valid: expected a reference to a schema; "#/info/title" names /info/title, which is no schema'],
@@ -837,13 +848,13 @@ test('a $ref that names a value that is no schema is an error naming the referen
 
 test('an if with no then or else, whose value is a schema, compiles without a diagnostic', () => {
   // protects: T-509 a schema value of if is not reported when nothing lowers it
-  const result = compile({ roots: new Map([['root', { properties: { a: { if: { type: 'string' } } } }]]) }, { unknownFormats: 'warn' });
+  const result = compile({ roots: new Map([['root', { properties: { a: { if: { type: 'string' } } } }]]) }, { unknownFormats: 'warn', language: 'js' });
   assert.deepEqual(result.diagnostics, []);
   assert.notEqual(result.source, '');
 });
 
 test('a pattern that is not a valid unicode regular expression is an error', () => {
-  const result = compile({ roots: new Map([['root', { properties: { a: { pattern: '[' } } }]]) }, { unknownFormats: 'warn' });
+  const result = compile({ roots: new Map([['root', { properties: { a: { pattern: '[' } } }]]) }, { unknownFormats: 'warn', language: 'js' });
   assert.equal(result.source, '');
   assert.deepEqual(result.diagnostics.map(entry => [entry.code, entry.severity, entry.path]), [
     ['VALIDATE_INVALID_PATTERN', GolemDiagnosticSeverity.Error, '/properties/a/pattern'],
@@ -852,19 +863,19 @@ test('a pattern that is not a valid unicode regular expression is an error', () 
 
 test('an unknown format warns and accepts any string, or fails with unknownFormats error', async () => {
   const schema = { type: 'string', format: 'color' };
-  const warned = compile({ roots: new Map([['root', schema]]) }, { unknownFormats: 'warn' });
+  const warned = compile({ roots: new Map([['root', schema]]) }, { unknownFormats: 'warn', language: 'js' });
   assert.deepEqual(warned.diagnostics.map(entry => [entry.code, entry.severity, entry.path]), [
     ['VALIDATE_UNKNOWN_FORMAT', GolemDiagnosticSeverity.Warning, '/format'],
   ]);
   assert.notEqual(warned.source, '');
   await assertIssues(schema, 'not a color', []);
-  const failed = compile({ roots: new Map([['root', schema]]) }, { unknownFormats: 'error' });
+  const failed = compile({ roots: new Map([['root', schema]]) }, { unknownFormats: 'error', language: 'js' });
   assert.equal(failed.source, '');
   assert.deepEqual(failed.diagnostics.map(entry => [entry.code, entry.severity]), [['VALIDATE_UNKNOWN_FORMAT', GolemDiagnosticSeverity.Error]]);
 });
 
 test('a patternProperties key that is not a valid unicode regular expression is an error at that key', () => {
-  const result = compile({ roots: new Map([['root', { patternProperties: { '[': { type: 'string' } } }]]) }, { unknownFormats: 'warn' });
+  const result = compile({ roots: new Map([['root', { patternProperties: { '[': { type: 'string' } } }]]) }, { unknownFormats: 'warn', language: 'js' });
   assert.equal(result.source, '');
   assert.deepEqual(result.diagnostics.map(entry => [entry.code, entry.severity, entry.path]), [
     ['VALIDATE_INVALID_PATTERN', GolemDiagnosticSeverity.Error, '/patternProperties/['],
@@ -874,7 +885,7 @@ test('a patternProperties key that is not a valid unicode regular expression is 
 test('diagnostics from every root are collected before the source is withheld', () => {
   const result = compile(
     { roots: new Map<string, unknown>([['a', { pattern: '(' }], ['b', { $ref: '#/missing' }]]) },
-    { unknownFormats: 'warn' },
+    { unknownFormats: 'warn', language: 'js' },
   );
   assert.equal(result.source, '');
   assert.deepEqual(result.diagnostics.map(entry => entry.code), ['VALIDATE_INVALID_PATTERN', 'VALIDATE_UNRESOLVED_REF']);
@@ -1083,7 +1094,7 @@ test('a binding that no validation names is an error naming it and its place in 
     { roots: new Map([['root', { exprtValidation: { schema: true, bindings: ['rules.isEven', 'rules.missing'] } }]]), validations: new Map([
       ['rules.isEven', { importPath: RULES_PATH, exportName: 'isEven' }],
     ]) },
-    { unknownFormats: 'warn', documentName: 'orders.yaml' },
+    { unknownFormats: 'warn', language: 'js', documentName: 'orders.yaml' },
   );
   assert.equal(result.source, '');
   assert.deepEqual(result.diagnostics.map(entry => [entry.code, entry.severity, entry.path]), [
@@ -1091,7 +1102,7 @@ test('a binding that no validation names is an error naming it and its place in 
   ]);
   assert.match(result.diagnostics[0].message, /rules\.missing/);
   assert.match(result.diagnostics[0].message, /orders\.yaml/);
-  const noTable = compile({ roots: new Map([['root', { exprtValidation: ['rules.isEven'] }]]) }, { unknownFormats: 'warn' });
+  const noTable = compile({ roots: new Map([['root', { exprtValidation: ['rules.isEven'] }]]) }, { unknownFormats: 'warn', language: 'js' });
   assert.deepEqual(noTable.diagnostics.map(entry => [entry.code, entry.path]), [['VALIDATE_UNKNOWN_VALIDATION', '/exprtValidation/0']]);
 });
 
@@ -1116,7 +1127,7 @@ test('a golem keyword with a malformed value is an error naming the keyword, not
   for (const [keyword, value] of cases) {
     const result = compile(
       { roots: new Map([['root', { properties: { a: { [keyword]: value } } }]]), validations: new Map([['rules.isEven', { importPath: RULES_PATH, exportName: 'isEven' }]]) },
-      { unknownFormats: 'warn', documentName: 'orders.yaml' },
+      { unknownFormats: 'warn', language: 'js', documentName: 'orders.yaml' },
     );
     assert.equal(result.source, '', `${keyword} ${JSON.stringify(value)}`);
     assert.deepEqual(result.diagnostics.map(entry => [entry.code, entry.severity, entry.path]), [
@@ -1173,16 +1184,101 @@ test('const and enum accept a value with an extra undefined-valued key', async (
   await assertIssues({ enum: [{ a: 1 }, 2] }, { a: 1, b: undefined }, []);
 });
 
-test('compile with typed emits the same validator with its issue type', async (t) => {
-  // protects: value the typed validator reports the same issues as the untyped one and returns SchemaIssue[]
-  const { byRoot } = await compileValidatorModule({ roots: { root: { type: 'string' } }, typed: true });
+// The roots whose emitted headers, wrappers, helpers and constants the checker reads under `strict`.
+const TYPED_CORPUS = {
+  root: { type: 'string' },
+  limited: { type: 'string', minLength: 2, maxLength: 9, pattern: '^[a-z]+$', format: 'email' },
+  ranged: { type: 'number', minimum: 0, exclusiveMaximum: 10, multipleOf: 2 },
+  decimal: { type: 'number', multipleOf: 0.01 },
+  whole: { type: 'integer', maximum: 100 },
+  choice: { enum: ['a', 2, null] },
+  fixed: { const: 'fixed' },
+  flag: { type: 'boolean' },
+  nothing: { type: 'null' },
+  never: false,
+  list: { type: 'array', items: { type: 'string' }, minItems: 1, maxItems: 4, uniqueItems: true },
+  tuple: { type: 'array', prefixItems: [{ type: 'integer' }, { type: 'string' }], items: false },
+  holder: { type: 'array', contains: { type: 'integer' }, minContains: 1, unevaluatedItems: false },
+  record: {
+    type: 'object',
+    properties: { id: { type: 'integer' }, name: { type: 'string' }, tags: { type: 'array', items: { type: 'string' } } },
+    required: ['id'],
+    patternProperties: { '^x-': { type: 'string' } },
+    additionalProperties: false,
+    minProperties: 1,
+    dependentRequired: { name: ['id'] },
+  },
+  named: { type: 'object', propertyNames: { pattern: '^[a-z]+$' }, additionalProperties: { type: 'number' } },
+  open: { $defs: { part: { properties: { b: { type: 'string' } } } }, properties: { a: { type: 'string' } }, allOf: [{ $ref: '#/$defs/part' }], unevaluatedProperties: false },
+  bare: { type: 'object' },
+  instance: { golemModelInstance: { of: 'Cat', among: ['Cat', 'Dog'], required: true } },
+  any: { anyOf: [{ type: 'string' }, { type: 'integer' }] },
+  one: { oneOf: [{ type: 'string', maxLength: 3 }, { type: 'array', items: { type: 'integer' } }] },
+  // A tagged union writes the tag lists. Its branches merge into one key pass in the fast check when each is a plain object check.
+  merged: {
+    discriminator: { propertyName: 'kind' },
+    oneOf: [
+      { type: 'object', properties: { kind: { const: 'a' }, x: { type: 'integer' } }, required: ['kind', 'x'] },
+      { type: 'object', properties: { kind: { const: 'b' }, y: { type: 'string' } }, required: ['kind'], additionalProperties: false },
+    ],
+  },
+  tagged: {
+    discriminator: { propertyName: 'kind' },
+    oneOf: [
+      { type: 'object', properties: { kind: { const: 'a' }, x: { type: 'integer' } }, required: ['kind'], minProperties: 2 },
+      { type: 'object', properties: { kind: { enum: ['b', 'c'] } }, required: ['kind'], patternProperties: { '^x-': { type: 'string' } } },
+    ],
+  },
+  loose: {
+    discriminator: { propertyName: 'kind' },
+    oneOf: [
+      { type: 'object', properties: { kind: { const: 'a' } }, required: ['x'] },
+      { type: 'object', properties: { kind: { const: 'b' } }, required: ['y'] },
+    ],
+  },
+  conditional: { if: { properties: { a: { const: 1 } }, required: ['a'] }, then: { required: ['b'] }, else: { properties: { c: { type: 'string' } } } },
+  thenOnly: { if: { type: 'string' }, then: { minLength: 1 } },
+  elseOnly: { if: { type: 'string' }, else: { type: 'integer' } },
+  denied: { not: { type: 'string' } },
+  dependent: { dependentSchemas: { a: { required: ['b'] } } },
+  tree: { type: 'object', properties: { children: { type: 'array', items: { $ref: '#' } } } },
+  // An evaluation record is kept by the keyword and filled by each applicator that reaches the value in place.
+  picked: { anyOf: [{ properties: { a: { type: 'string' } } }, { properties: { b: { type: 'integer' } } }], unevaluatedProperties: false },
+  guarded: { if: { properties: { a: { const: 1 } }, required: ['a'] }, then: { properties: { b: { type: 'string' } } }, unevaluatedProperties: false },
+  listed: { oneOf: [{ prefixItems: [{ type: 'integer' }] }, { type: 'string' }], unevaluatedItems: false },
+  // Schemas that evaluate a key and never read its value, fail, or report an issue: no local and no parameter of the validator stays unread.
+  marked: { $defs: { extension: { patternProperties: { '^x-': true } } }, allOf: [{ $ref: '#/$defs/extension' }, { patternProperties: { '^y-': false }, properties: { z: false } }, { required: ['id'] }], unevaluatedProperties: false },
+  checked: { exprtValidation: { schema: { type: 'integer' }, bindings: ['rules.isEven'] } },
+  labelled: { exprtValidation: { schema: { type: 'object', required: ['name'] }, bindings: ['rules.label'] } },
+  bounded: { exprtValidation: ['rules.isEven'] },
+  money: { golemModelClass: { name: 'Money', path: [], id: 'rules.Money' } },
+  moment: { golemModelClass: { name: 'Date', path: ['Date'] } },
+  plain: { golemModelInstance: { among: ['Cat', 'Dog'], required: false } },
+  maybe: { golemModelInstance: { of: 'Cat', among: ['Cat', 'Dog'], required: false } },
+};
+
+// The functions and the class that the validation corpus imports: each takes the type its schema proves, which the checker cannot see.
+const TYPED_RULES = `export const isEven = (value: number): boolean => value % 2 === 0;
+export const label = (value: { readonly name: string }): boolean | string => value.name.length > 0 || 'name must not be empty';
+export class Money { public constructor(public readonly units: number) {} }
+`;
+const TYPED_VALIDATIONS = new Map([
+  ['rules.isEven', { importPath: './rules.js', exportName: 'isEven' }],
+  ['rules.label', { importPath: './rules.js', exportName: 'label' }],
+  ['rules.Money', { importPath: './rules.js', exportName: 'Money' }],
+]);
+
+test('compile with ts emits the same validator with its types, and the corpus passes tsc under strict', async (t) => {
+  // protects: value the ts validator reports the same issues as the js one, and the corpus compiles with noImplicitAny on
+  const { byRoot } = await compileValidatorModule({ roots: { root: { type: 'string' } }, language: 'ts' });
   assert.deepEqual(byRoot.root('a', true), []);
   assert.deepEqual(byRoot.root(5, true), [{ path: [], code: 'type', expected: ['string'] }]);
-  // A type is erased before the module runs, so the compiler proves the annotation: the validator returns `readonly SchemaIssue[]`, not `any`.
+  // A type is erased before the module runs, so the compiler proves the annotations: the validator returns `readonly SchemaIssue[]`, not `any`.
   const project = createFixtureProject(t, 'golem-typed-validator-');
   linkProjectPackages(project, { '@exprtlabs/golem': path.join(workspace, 'packages/golem') });
-  const { source } = compile({ roots: new Map([['root', { type: 'string' }]]) }, { unknownFormats: 'warn', typed: true });
+  const { source } = compile({ roots: new Map(Object.entries(TYPED_CORPUS)), validations: TYPED_VALIDATIONS }, { unknownFormats: 'warn', language: 'ts', fastPath: 'all' });
   writeFileSync(path.join(project, 'validators.ts'), source);
+  writeFileSync(path.join(project, 'rules.ts'), TYPED_RULES);
   writeFileSync(path.join(project, 'probe.ts'), [
     "import type { SchemaIssue } from '@exprtlabs/golem/validation';",
     "import { validate_root } from './validators.js';",
@@ -1191,7 +1287,7 @@ test('compile with typed emits the same validator with its issue type', async (t
     "export const notNumber: number = validate_root('a', true)[0];",
     '',
   ].join('\n'));
-  writeFileSync(path.join(project, 'tsconfig.json'), JSON.stringify({ compilerOptions: { strict: true, noImplicitAny: false, target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', skipLibCheck: true, noEmit: true }, include: ['*.ts'] }));
+  writeFileSync(path.join(project, 'tsconfig.json'), JSON.stringify({ compilerOptions: { strict: true, noUnusedLocals: true, noUnusedParameters: true, target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', skipLibCheck: true, noEmit: true }, include: ['*.ts'] }));
   await command(project, process.execPath, [TSC, '-p', 'tsconfig.json']);
 });
 
@@ -1220,9 +1316,9 @@ test('every root is exported as a named function under the name the compile repo
 });
 
 test('adding a root renames no other export', () => {
-  const before = compile({ roots: MODEL_ROOTS }, { unknownFormats: 'warn' }).exports;
+  const before = compile({ roots: MODEL_ROOTS }, { unknownFormats: 'warn', language: 'js' }).exports;
   const grown = new Map<string, unknown>([['Aardvark_00000000', { type: 'string' }], ...MODEL_ROOTS, ['zebra:input', { type: 'string' }]]);
-  const after = compile({ roots: grown }, { unknownFormats: 'warn' }).exports;
+  const after = compile({ roots: grown }, { unknownFormats: 'warn', language: 'js' }).exports;
   for (const [root, exported] of before) assert.equal(after.get(root), exported, root);
   assert.equal(after.size, before.size + 2);
 });
@@ -1241,23 +1337,38 @@ test('a bundle of one validator drops an unused validator with its constants', a
     ['kept', { type: 'string', pattern: '^kept-pattern-[0-9]+$' }],
     ['unused', { type: 'object', properties: { code: { type: 'string', pattern: '^unused-pattern-[0-9]+$' }, kind: { enum: ['unused-literal-a', 'unused-literal-b'] } }, additionalProperties: false }],
   ]);
-  const { source, exports } = compile({ roots }, { unknownFormats: 'warn', specifiers: { values: { 'validation-runtime': 'golem-validation-runtime' } } });
+  const { source, exports } = compile({ roots }, { unknownFormats: 'warn', language: 'js', specifiers: { values: { 'validation-runtime': 'golem-validation-runtime' } } });
   const kept = exports.get('kept') ?? '';
   const unused = exports.get('unused') ?? '';
-  const one = await loadBundle(t, source, [kept]);
-  const both = await loadBundle(t, source, [kept, unused]);
+  const one = await loadBundle(t, source, { fast: [], full: [kept] });
+  const both = await loadBundle(t, source, { fast: [], full: [kept, unused] });
   const unusedConstants = /unused-pattern|unused-literal/;
   assert.equal(unusedConstants.test(both.text), true, 'a bundle that imports the unused validator holds its constants');
   assert.equal(unusedConstants.test(one.text), false, 'a bundle of the kept validator holds none of them');
-  assert.deepEqual(JSON.parse(JSON.stringify(one.values[0]('kept-pattern-7', true))), []);
-  assert.deepEqual(JSON.parse(JSON.stringify(one.values[0]('other', true))), [{ path: [], code: 'pattern', pattern: '^kept-pattern-[0-9]+$' }]);
+  assert.deepEqual(JSON.parse(JSON.stringify(one.full[0]('kept-pattern-7', true))), []);
+  assert.deepEqual(JSON.parse(JSON.stringify(one.full[0]('other', true))), [{ path: [], code: 'pattern', pattern: '^kept-pattern-[0-9]+$' }]);
+});
+
+test('a bundle of a bare object validator takes nothing of the runtime but the object test', async t => {
+  // protects: F-345 a root that used no runtime name still bundles to its own few lines when the runtime is inlined (no module-level work of the runtime stays)
+  const runtimeEntry = path.join(workspace, 'packages/golem/dist/runtime-validation.js');
+  const { source, exports } = compile({ roots: new Map([['bare', { type: 'object' }]]) }, { unknownFormats: 'warn', language: 'js', specifiers: { values: { 'validation-runtime': runtimeEntry } } });
+  const directory = mkdtempSync(path.join(tmpdir(), 'golem-validators-bundle-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  writeFileSync(path.join(directory, 'validators.js'), source);
+  const name = exports.get('bare') ?? '';
+  writeFileSync(path.join(directory, 'entry.js'), `import { ${name} } from './validators.js';\nglobalThis.used = ${name};\n`);
+  const { outputFiles } = await build({ entryPoints: [path.join(directory, 'entry.js')], bundle: true, format: 'cjs', write: false, treeShaking: true });
+  // A call at the top of a runtime module stays in a bundle that uses any other name of that module, unless it is marked pure.
+  assert.doesNotMatch(outputFiles[0].text, /RegExp|Symbol|new Set|JSON\.parse/);
+  assert.match(outputFiles[0].text, /function isRecord\(/);
 });
 
 test('a diagnostic is placed where the locator says and reported once per place', () => {
   const result = compile(
     { roots: new Map([['a', { $ref: 'shared' }], ['b', { $ref: 'shared' }]]), resources: new Map([['shared', { format: 'money' }]]) },
     {
-      unknownFormats: 'warn',
+      unknownFormats: 'warn', language: 'js',
       documentName: 'orders.yaml',
       locate: (resource, pointer) => resource === 'shared' ? { where: `orders.yaml#/Money${pointer}`, file: 'orders.yaml', path: `#/Money${pointer}` } : undefined,
     },
@@ -1300,7 +1411,7 @@ test('number and integer reject NaN and the infinities, and other number keyword
 
 /** The compiled module text of `roots` (named by `resources` for `$ref` targets). */
 function emitted(roots: Record<string, unknown>, resources: Record<string, unknown> = {}): string {
-  const { source } = compile({ roots: new Map(Object.entries(roots)), resources: new Map(Object.entries(resources)) }, { unknownFormats: 'warn' });
+  const { source } = compile({ roots: new Map(Object.entries(roots)), resources: new Map(Object.entries(resources)) }, { unknownFormats: 'warn', language: 'js' });
   return source;
 }
 
@@ -1416,7 +1527,7 @@ test('fastPath as a set of root names gives a fast check to the roots in it that
     ['Excluded', { type: 'string' }],
     ['AlsoIncluded', { type: 'object', required: ['id'], properties: { id: { type: 'integer' } } }],
   ]);
-  const { fastExports, exports } = compile({ roots }, { unknownFormats: 'warn', fastPath: new Set(['Included', 'AlsoIncluded', 'NotARoot']) });
+  const { fastExports, exports } = compile({ roots }, { unknownFormats: 'warn', language: 'js', fastPath: new Set(['Included', 'AlsoIncluded', 'NotARoot']) });
   assert.deepEqual([...fastExports.keys()].sort(), ['AlsoIncluded', 'Included']);
   assert.deepEqual([...exports.keys()].sort(), ['AlsoIncluded', 'Excluded', 'Included'], 'every root keeps its validator');
 });

@@ -2,7 +2,7 @@ import * as path from 'node:path';
 import * as ts from '@exprtlabs/golem/internal/ts';
 import {
   byRealPath, collectSpecifications, companionFilename, deduplicateProjections, descriptorBuilder, diagnostic, fieldProvenance, filesReadingOutputs, includedModelSources,
-  inNodeModules, isGeneratedCompanion, isUnderOutputs, linkedClasses, manifestModelOfSymbol, modelSpecificationForClass, pascalIdentifier, resolveSymbol, typeScriptErrorAt,
+  inNodeModules, isGeneratedCompanion, isRelativeSpecifier, isUnderOutputs, linkedClasses, manifestModelOfSymbol, modelSpecificationForClass, pascalIdentifier, resolveSymbol, typeScriptErrorAt,
   type DtoRule, type ManifestIndex, type ModelBoundary, type ModelConversionDescriptor, type ModelSpecification, type TypeAnalysisContext,
 } from '@exprtlabs/golem/internal/type-analysis';
 import { canonicalPath, displayPath, stripSourceSuffix } from '@exprtlabs/golem/internal/generator-support';
@@ -37,7 +37,7 @@ export function createContractAnalysis(
     readonly boundary?: ModelBoundary;
     /** The model manifests of the program, as the models job reads them: a model a manifest lists has the codec id of its manifest entry. */
     readonly manifests?: ManifestIndex;
-    /** Where the jobs after the controllers job write, absolute. A model file that imports a path under one is not read: its answer would depend on whether the job has run. */
+    /** Where the jobs after the controllers job write, absolute. A model file that imports a path under one, by a relative path or by an alias that maps there, is not read: its answer would depend on whether the job has run. */
     readonly laterOutputs?: readonly string[];
     /** The component name a class declares for its model, such as `@ApiSchema({ name })`. It renames the OpenAPI component only; the model name and the codec ids stay. */
     readonly classComponentName?: (declaration: ts.ClassDeclaration) => string | undefined;
@@ -47,7 +47,7 @@ export function createContractAnalysis(
 ): ContractAnalysis {
   const checker = program.getTypeChecker();
   // The rule is the same in every run, so run 1 (no SDK yet) and run 2 (SDK present) describe the same models: a file under a later job's
-  // output, and a file that imports one by a relative import, directly or through the files it imports, is read by none of them.
+  // output, and a file that imports one by a relative import or by an alias that maps there, directly or through the files it imports, is read by none of them.
   // The files stay in the program, so a controller type still resolves.
   const laterOutputs = (options.laterOutputs ?? []).map(canonicalPath);
   const excluded = laterOutputs.length === 0 ? new Set<string>() : filesReadingOutputs(program, laterOutputs);
@@ -91,6 +91,7 @@ export function createContractAnalysis(
     boundary: options.boundary,
     typeErrorAt: (node) => typeScriptErrorAt(program, node),
     isDefaultLibraryFile: file => program.isSourceFileDefaultLibrary(file),
+    programFiles: () => program.getSourceFiles().filter(file => !program.isSourceFileDefaultLibrary(file)),
   });
   const describeAll = (builder: ReturnType<typeof buildDescribe>): Map<ModelSpecification, ModelConversionDescriptor> => new Map(
     specifications.map((specification) => [specification, builder(specification.fieldsType, specification, undefined, specification.fieldsNode)] as const),
@@ -183,7 +184,7 @@ export function createContractAnalysis(
           let owner: ts.Node | undefined = declaration;
           while (owner && !ts.isImportDeclaration(owner)) owner = owner.parent;
           const specifier = owner && ts.isImportDeclaration(owner) && ts.isStringLiteral(owner.moduleSpecifier) ? owner.moduleSpecifier.text : undefined;
-          const target = specifier?.startsWith('.') ? path.resolve(path.dirname(declaration.getSourceFile().fileName), specifier) : undefined;
+          const target = specifier !== undefined && isRelativeSpecifier(specifier) ? path.resolve(path.dirname(declaration.getSourceFile().fileName), specifier) : undefined;
           if (target !== undefined && isUnderOutputs(laterOutputs, target)) found = target;
         }
         const resolved = resolveSymbol(checker, symbol);

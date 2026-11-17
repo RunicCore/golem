@@ -8,9 +8,11 @@ import { displayLocation } from './origin.js';
 import { REFERENCE_LIMIT_DEFAULTS } from './plan-options.js';
 import { asRecord, escapeJsonPointerToken, isJsonObject, jsonPointerJoin, objectEntries, resolveJsonPointer } from './json.js';
 import {
+  canonicalUri,
   collectCanonicalResources,
   DATA_KEYWORDS,
   lookupCanonicalResource,
+  resolveHashPointer,
   schemaDocumentBase,
   visitOpenApiComponent,
   visitOpenApiSchemaTree,
@@ -125,7 +127,13 @@ export interface ReferenceTarget {
  * What holds a reference value: a `$ref` or `$dynamicRef` keyword, a
  * discriminator `mapping` value, or a discriminator `defaultMapping`.
  */
-type ReferenceKeyword = '$ref' | '$dynamicRef' | 'mapping' | 'defaultMapping';
+export type ReferenceKeyword = '$ref' | '$dynamicRef' | 'mapping' | 'defaultMapping';
+
+/** The text that names a reference that resolves to nothing; the loader and the `no-unresolved-refs` rule both report it. */
+export function unresolvedReferenceMessage(keyword: ReferenceKeyword, reference: string): string {
+  const label = keyword === 'mapping' || keyword === 'defaultMapping' ? 'discriminator mapping' : keyword;
+  return `Can't resolve ${label} ${reference}`;
+}
 
 export interface ReferenceSite {
   readonly documentUri: string;
@@ -211,29 +219,43 @@ export function isMappingComponentName(value: string, rootSchemaNames: ReadonlyS
 }
 
 /**
- * Index every absolute `$id` so references to it are kept as identities, not
- * fetched. A document not loaded from `file:` cannot declare a `file:` `$id`:
- * a remote document must not shadow a local file.
+ * Index every `$id` of a document. An absolute one goes in `ids`, so references
+ * to it are kept as identities, not fetched; a document not loaded from `file:`
+ * cannot declare a `file:` `$id`: a remote document must not shadow a local
+ * file. Every `$id`, a relative one too, goes in `resources` by its identity
+ * (resolved against the enclosing `$id`, starting at `base`), so that a `#/`
+ * pointer finds the resource that encloses it.
  */
-function registerAbsoluteIds(uri: string, node: unknown, pointer: string, ids: Map<string, ReferenceTarget>): void {
+function registerIds(
+  uri: string,
+  base: string,
+  node: unknown,
+  ids: Map<string, ReferenceTarget>,
+  resources: Map<string, ReferenceTarget>,
+): void {
   const fromFile = new URL(uri).protocol === 'file:';
-  const register = (current: unknown, currentPointer: string): void => {
+  const register = (current: unknown, currentPointer: string, currentBase: string): void => {
     if (Array.isArray(current)) {
-      current.forEach((child, index) => { register(child, `${currentPointer}/${index}`); });
+      current.forEach((child, index) => { register(child, `${currentPointer}/${index}`, currentBase); });
       return;
     }
     if (!isJsonObject(current)) return;
-    if (typeof current.$id === 'string' && ABSOLUTE_URI.test(current.$id)) {
-      const canonical = stripFragment(current.$id);
-      const shadowsLocalFile = !fromFile && /^file:/i.test(canonical);
-      if (!shadowsLocalFile && !ids.has(canonical)) ids.set(canonical, { uri, pointer: currentPointer });
+    let childBase = currentBase;
+    if (typeof current.$id === 'string') {
+      childBase = canonicalUri(current.$id, currentBase);
+      if (!resources.has(childBase)) resources.set(childBase, { uri, pointer: currentPointer });
+      if (ABSOLUTE_URI.test(current.$id)) {
+        const canonical = stripFragment(current.$id);
+        const shadowsLocalFile = !fromFile && /^file:/i.test(canonical);
+        if (!shadowsLocalFile && !ids.has(canonical)) ids.set(canonical, { uri, pointer: currentPointer });
+      }
     }
     for (const [key, child] of objectEntries(current)) {
       if (DATA_KEYWORDS.has(key)) continue;
-      register(child, `${currentPointer}/${escapeJsonPointerToken(key)}`);
+      register(child, `${currentPointer}/${escapeJsonPointerToken(key)}`, childBase);
     }
   };
-  register(node, pointer);
+  register(node, '', base);
 }
 
 async function fetchRemoteDocument(uri: string, maxBytes: number, timeoutMs: number): Promise<string> {
@@ -312,6 +334,7 @@ async function loadGraph(
   const documents = new Map<string, LoadedDocument>([[rootUri, { uri: rootUri, document: rootDocument }]]);
   const localFiles = new Set<string>([rootFile]);
   const absoluteIds = new Map<string, ReferenceTarget>();
+  const resourceIds = new Map<string, ReferenceTarget>();
   // A repeated `$id` is reported by the document rules after bundling, not here.
   const rootResources = collectCanonicalResources(rootDocument, () => {});
   const sites: ReferenceSite[] = [];
@@ -322,7 +345,10 @@ async function loadGraph(
   const rootSchemaNames = new Set(Object.keys(asRecord(asRecord(asRecord(rootDocument).components).schemas)));
   let externalDocuments = 0;
 
-  registerAbsoluteIds(rootUri, rootDocument, '', absoluteIds);
+  /** The base that the schema walk starts from in a document: the root has its own, any other document its URI. */
+  const documentBase = (uri: string): string => (uri === rootUri ? schemaDocumentBase(rootDocument) : uri);
+
+  registerIds(rootUri, documentBase(rootUri), rootDocument, absoluteIds, resourceIds);
 
   const loadDocument = async (uri: string): Promise<LoadedDocument> => {
     if (externalDocuments + 1 > maxDocuments) throw new Error(`reference document limit exceeded (${maxDocuments})`);
@@ -341,7 +367,7 @@ async function loadGraph(
     }
     const loaded: LoadedDocument = { uri, document };
     documents.set(uri, loaded);
-    registerAbsoluteIds(uri, document, '', absoluteIds);
+    registerIds(uri, documentBase(uri), document, absoluteIds, resourceIds);
     return loaded;
   };
 
@@ -369,6 +395,27 @@ async function loadGraph(
   };
 
   /**
+   * Where a `#/` pointer in `documentUri` points: the schema component, the
+   * enclosing `$id` resource or the document, in the order that
+   * `resolveHashPointer` gives. `undefined` when none holds the place.
+   */
+  const placeOfPointer = (documentUri: string, schemaBase: string, reference: string, pointer: string): ReferenceTarget | undefined => {
+    const at = (uri: string, inside: string): ReferenceTarget | undefined =>
+      resolveJsonPointer(documents.get(uri)?.document, inside) === undefined ? undefined : { uri, pointer: inside };
+    return resolveHashPointer(reference, {
+      component: (name) => Object.hasOwn(asRecord(asRecord(asRecord(documents.get(documentUri)?.document).components).schemas), name)
+        ? { place: at(documentUri, pointer) }
+        : undefined,
+      resource: () => {
+        const resource = resourceIds.get(stripFragment(schemaBase));
+        // The first document that declares an `$id` owns it; a pointer in another document names nothing there.
+        return resource?.uri === documentUri ? at(documentUri, `${resource.pointer}${pointer}`) : undefined;
+      },
+      document: () => at(documentUri, pointer),
+    });
+  };
+
+  /**
    * Classify one reference site. A reference is left `deferred` whenever its
    * final scheme, resolved against `documentUri` or against `schemaBase` (the
    * enclosing schema's own `$id`, when it has one), is not `file:`. Such a
@@ -393,7 +440,14 @@ async function loadGraph(
     if (reference.startsWith('#')) {
       const fragment = reference.slice(1);
       if (fragment === '' || fragment.startsWith('/')) {
-        return { target: { uri: documentUri, pointer: decodeUriFragment(fragment) }, preserve: false };
+        const pointer = decodeUriFragment(fragment);
+        const place = placeOfPointer(documentUri, schemaBase, reference, pointer);
+        if (place) return { target: place, preserve: false };
+        // A kept `#/` text in a hoisted document would resolve against the root, so a root component of that name would hide the miss.
+        if (!inRoot) {
+          throw new Error(`${unresolvedReferenceMessage(keyword, reference)} (${displayLocation(documentUri, walkerPointer.slice(1), rootDirectory)})`);
+        }
+        return { target: { uri: documentUri, pointer }, preserve: false };
       }
       if (keyword === '$dynamicRef' || inRoot) return { target: null, preserve: true };
       throw anchorFragmentError(reference, documentUri);
@@ -520,11 +574,9 @@ async function loadGraph(
       walked.add(walkKey);
       const loaded = documents.get(next.target.uri) ?? await loadDocument(next.target.uri);
       const node = resolveJsonPointer(loaded.document, next.target.pointer);
-      // A pointer that names nothing is user input: `no-unresolved-refs` reports it after the bundle (`loadOpenApiInput`).
-      // Gap: a `#/` pointer in a hoisted non-root document is checked against the root, so a root component of that name hides the miss.
+      // A pointer that names nothing is user input: `no-unresolved-refs` reports it after the bundle (`loadOpenApiInput`); `classifySite` reports one inside a non-root document.
       if (node === undefined) continue;
-      const base = next.target.uri === rootUri ? schemaDocumentBase(rootDocument) : next.target.uri;
-      visitOpenApiComponent(next.kind, node, base, `#${next.target.pointer}`, handlersFor(next.target.uri));
+      visitOpenApiComponent(next.kind, node, documentBase(next.target.uri), `#${next.target.pointer}`, handlersFor(next.target.uri));
       continue;
     }
     // The local queue is drained and every loaded document's `$id`s are registered: resolve one

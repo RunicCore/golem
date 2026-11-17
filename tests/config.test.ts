@@ -59,7 +59,7 @@ test('the shared root keys are read by core and reach every plan entry, and a ke
 
 test('a block that no installed package registers stops loading and lists the installed packages and their blocks', async (t: TestContext) => {
   // protects: T-765 page failure row: an unknown block lists the installed golem packages and their blocks (also the retired generators and section keys)
-  for (const key of ['retiredOption', 'generators', 'models']) {
+  for (const key of ['retiredOption', 'generators', 'models', 'mobx']) {
     const { filename } = project(t, `version: 1\n${key}: {}\n${DOCS}`);
     await assert.rejects(() => resolveConfig(filename), (error: unknown) => error instanceof PackageRegistryError
       && error.message === `No installed package registers the golem block "${key}". Installed golem packages and their blocks: @fixture/host (block host), @fixture/shop (block shop). A package that only devDependencies lists is gone after a production install.`, key);
@@ -198,10 +198,18 @@ test('golem.yaml validation accepts true, false and sanity, defaults to true, an
   }
 });
 
-test('configuration errors reject a wrong version, wrong root values and duplicate keys', async (t: TestContext) => {
+test('a golem.yaml with version 1 loads, and any other version stops loading with the version message', async (t: TestContext) => {
+  // protects: F-1139, F-1163 only version 1 loads: a missing version, null, 0, the string "1", true and 2 all stop (a loose check such as < 2 or == 1 lets some through)
+  await loadConfig(project(t, `version: 1\n${DOCS}`).filename);
+  for (const version of ['', 'version: null\n', 'version: 0\n', 'version: "1"\n', 'version: true\n', 'version: 2\n']) {
+    const { filename } = project(t, `${version}${DOCS}`);
+    await assert.rejects(() => loadConfig(filename), { message: 'Configuration version must be 1.' }, version || 'no version');
+  }
+});
+
+test('configuration errors reject wrong root values and duplicate keys', async (t: TestContext) => {
+  // protects: T-765 a wrong root value or a repeated root key stops loading with the message of that key
   const testCases: [string, RegExp][] = [
-    ['version: 2\n', /version/],
-    ['version: 1\nmobx: true\n', /mobx/],
     ['version: 1\nversion: 1\n', /unique/],
     ['version: 1\nallowAny: maybe\n', /allowAny must be a boolean/],
     ['version: 1\nexact: maybe\n', /exact must be a boolean/],

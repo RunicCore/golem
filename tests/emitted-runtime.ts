@@ -17,7 +17,7 @@ export function emitCodecRuntimeText(graph: Parameters<typeof emitCodecRuntimeCo
 }
 
 /** Evaluate emitted `stringify*` functions with the model runtime exports in scope. */
-export function instantiate(source: string): Record<string, (value: never) => string> {
+export function instantiate(source: string): Record<string, (value: unknown) => string> {
   const names = [...source.matchAll(/function (stringify\w+)/g)].map((match) => match[1]);
   return runModule(source, {
     stringifyJsonString: runtime.stringifyJsonString,
@@ -25,7 +25,7 @@ export function instantiate(source: string): Record<string, (value: never) => st
     stringifyJsonBoolean: runtime.stringifyJsonBoolean,
     stringifyJsonArray: runtime.stringifyJsonArray,
     stringifyJsonScalar: runtime.stringifyJsonScalar,
-  }, { exports: names }) as Record<string, (value: never) => string>;
+  }, { exports: names }) as Record<string, (value: unknown) => string>;
 }
 
 export type RuntimeFunction = (...values: unknown[]) => unknown;

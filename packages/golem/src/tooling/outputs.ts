@@ -129,9 +129,8 @@ function jobDestinations(job: GolemJob): readonly Destination[] {
 function insideDestination(destination: Destination, filename: string): boolean {
   if (destination.kind === 'file') return samePath(filename, destination.path);
   if (isInsideDirectory(path.resolve(destination.path), filename)) return true;
-  try {
-    return isInsideDirectory(canonicalPath(destination.path), canonicalPath(filename));
-  } catch { return false; }
+  // A missing path has its real path as written; any other failure (links that loop, EACCES) is the real error, not "escapes".
+  return isInsideDirectory(canonicalPath(destination.path), canonicalPath(filename));
 }
 
 function artifactDestination(config: GolemConfig, job: GolemJob, filename: string): { destination: string; destinationKind: InventoryEntry['destinationKind'] } {
@@ -244,17 +243,30 @@ export interface OutputFiles {
   readonly create: (filename: string, content: string) => void;
   readonly rename: (from: string, to: string) => void;
   readonly unlink: (filename: string) => void;
+  /** Writes a file of its own in `directory` (made when missing), returns the status-change time the file system gave it, in milliseconds, and removes it: the clock the times of other files come from, which `Date.now()` can run ahead of. Each call has its own file, so another process cannot change the time that this call reads. */
+  readonly stamp: (directory: string) => number;
 }
 
 export const realOutputFiles: OutputFiles = {
   create: (filename, content) => { fs.writeFileSync(filename, content, { flag: 'wx' }); },
   rename: (from, to) => { fs.renameSync(from, to); },
   unlink: filename => { fs.unlinkSync(filename); },
+  stamp: directory => {
+    fs.mkdirSync(directory, { recursive: true });
+    const filename = temporaryName(path.join(directory, 'clock'));
+    // The removal neither hides the time nor the error of the write or the stat, and leaves no empty file after a failed write.
+    try {
+      fs.writeFileSync(filename, '\n', { flag: 'wx' });
+      return fs.statSync(filename).ctimeMs;
+    } finally {
+      fs.rmSync(filename, { force: true });
+    }
+  },
 };
 
 const TEMPORARY_NAME = /^(.+)\.(\d+)\.[0-9a-f]{12}\.tmp$/;
 
-/** The temporary file `writeChanged` writes beside `filename` before it renames it over `filename`: `<file>.<pid>.<12 hex digits>.tmp`. */
+/** A file name of this process beside `filename` that no other call uses: `<file>.<pid>.<12 hex digits>.tmp`. `writeChanged` writes it before it renames it over `filename`; `stamp` reads its time. */
 function temporaryName(filename: string): string {
   return `${filename}.${process.pid}.${crypto.randomBytes(6).toString('hex')}.tmp`;
 }

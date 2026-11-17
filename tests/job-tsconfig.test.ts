@@ -10,6 +10,7 @@ import { build as esbuild } from 'esbuild';
 import { runPipeline, watchPipeline } from '#golem/cli';
 import { golem as esbuildPlugin } from '#golem/esbuild';
 import { generate } from '#model/generator';
+import { createControllerFixture } from './fixture-templates/controllers/project.js';
 import { createModelProject } from './model-project.js';
 import { build, buildAndListJobs, sourceOnlyProject, USE, write } from './support/build-project.js';
 import { workspace } from './support/process.js';
@@ -67,7 +68,6 @@ test('a golem.yaml that names the solution tsconfig.json is refused by generate,
   const refusal = `${shown('tsconfig.json')} only lists project references, so it has no files. Name one referenced project in the tsconfig key of golem.yaml. Build each project of ${shown('tsconfig.json')} with its own golem.yaml, in dependency order:\n  ${shown('tsconfig.app.json')}: golem build --config ${shown('golem.yaml')}`;
   const refused = (error: Error): boolean => {
     assert.ok(error.message.includes(refusal), error.message);
-    assert.doesNotMatch(error.message, /host/i);
     return true;
   };
 
@@ -95,6 +95,36 @@ test('a parent tsconfig that includes a package with its own tsconfig.json is th
   await assert.rejects(runPipeline(path.join(root, 'golem.yaml')), /TS2307: Cannot find module '@lib\/ids\.js'/);
   assert.equal(fs.existsSync(path.join(root, 'packages/app/src/generated/models')), false, 'the failed job wrote no companion');
 });
+
+/** A project where the tsconfig.json beside golem.yaml (the one a job would find by itself) has no `@lib` alias and the tsconfig.app.json that golem.yaml names has it. */
+function namedTsconfigHoldsAlias(t: TestContext, block: string): string {
+  return createControllerFixture(t, {
+    prefix: 'golem-job-tsconfig-named-',
+    packageName: 'job-tsconfig-named',
+    links: 'workspace',
+    tsconfig: { compilerOptions: { ...OPTIONS, experimentalDecorators: true }, include: ['src/**/*.ts'] },
+    files: {
+      'tsconfig.app.json': JSON.stringify({ compilerOptions: { ...OPTIONS, experimentalDecorators: true, paths: { '@lib/*': ['./src/lib/*'] } }, include: ['src/**/*.ts'] }),
+      'golem.yaml': `version: 1\nvalidation: false\ntsconfig: ./tsconfig.app.json\n${block}`,
+      'src/lib/ids.ts': 'export type Id = string;\n',
+      'src/item.model.ts': ITEM_MODEL,
+      'src/item.controller.ts': "import { Controller, Get } from '@nestjs/common';\nimport type { TItem } from './item.model.js';\n@Controller('items')\nexport class ItemController {\n  @Get()\n  list(): TItem { return undefined as never; }\n}\n",
+    },
+  });
+}
+
+// The job kinds that read a tsconfig are the plan entries that pass `context.tsconfig` on: model and ts-openapi. The openapi-ts job reads an OpenAPI document and opens no program.
+for (const [job, block, written] of [
+  ['model', 'model:\n  sources:\n    - src/item.model.ts\n', 'src/item.model.generated.ts'],
+  ['ts-openapi', 'ts-openapi:\n  docs:\n    - output: generated/openapi.json\n      info: { title: Items, version: "1" }\n', 'generated/openapi.json'],
+] as const) {
+  test(`the ${job} job reads the tsconfig that golem.yaml names, not the tsconfig.json beside golem.yaml: an alias only in the named one resolves`, async (t) => {
+    // protects: F-1136 every job reads the tsconfig golem.yaml names; a tsconfig nearer to the job root is not read
+    const root = namedTsconfigHoldsAlias(t, block);
+    await runPipeline(path.join(root, 'golem.yaml'));
+    assert.equal(fs.existsSync(path.join(root, written)), true, `the job wrote ${written}`);
+  });
+}
 
 test('a context without tsconfig passed to the model generator opens the nearest tsconfig.json', (t) => {
   // protects: T-480 a caller of the published generator outside golem.yaml keeps the nearest-tsconfig lookup

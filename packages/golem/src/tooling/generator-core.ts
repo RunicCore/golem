@@ -4,12 +4,12 @@ import { fileURLToPath } from 'node:url';
 import { inspect } from 'node:util';
 import YAML from 'yaml';
 import { assertNever } from '../assert-never.js';
-import { canonicalPath, displayPath, isInsideDirectory, isRecord, nonempty } from './plan-support.js';
+import { canonicalPath, displayPath, hasErrorCode, isInsideDirectory, isRecord, nonempty, realPathThroughLinks } from './plan-support.js';
 import type { HookParticipants } from './extension-hooks.js';
 import type { JobFacts, ProgramView } from './job-facts.js';
 
 // The helpers live in plan-support, which plan entries may import; the rest of core reads them here.
-export { canonicalPath, displayPath, isInsideDirectory, isRecord, nonempty };
+export { canonicalPath, displayPath, hasErrorCode, isInsideDirectory, isRecord, nonempty, realPathThroughLinks };
 export { recordOrUndefined } from '../record.js';
 
 /** The `version` of the package that holds the module at `moduleUrl` (`import.meta.url`): its package.json lies one folder above the module's folder. */
@@ -374,10 +374,6 @@ function holdsFault(error: unknown, seen = new Set<unknown>()): boolean {
  */
 export function failureText(error: unknown): string {
   return holdsFault(error) ? inspect(error) : errorMessage(error);
-}
-
-export function hasErrorCode(error: unknown, code: string): boolean {
-  return isRecord(error) && error.code === code;
 }
 
 /** Matches a source file name that ends in one of `suffixes` and is not a generated companion (`*.generated.ts`, `.mts`, `.cts`). */

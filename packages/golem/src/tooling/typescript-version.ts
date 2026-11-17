@@ -13,9 +13,8 @@ export function resolveTypeScript(root: string, golemUrl = import.meta.url): { r
   const [major, minor] = version.split('.').map(Number);
   const packageDir = path.dirname(manifest);
   if (major !== 6 && !(major === 7 && minor >= 1)) {
-    // TypeScript 7.0 serves the compiler API under typescript/unstable/*, which golem 1.1 does not load.
-    const older = major === 7 ? ' golem 1.0 supports TypeScript 7.0.' : '';
-    throw new UnsupportedTypeScriptError(`golem supports TypeScript 6.0+ and 7.1+; found ${version} at ${displayPath(packageDir)}.${older}`);
+    // TypeScript 7.0 serves the compiler API under typescript/unstable/*, which golem does not load.
+    throw new UnsupportedTypeScriptError(`golem supports TypeScript 6.0+ and 7.1+; found ${version} at ${displayPath(packageDir)}.`);
   }
   return { version, major, packageDir };
 }

@@ -7,7 +7,7 @@ import os from 'node:os';
 import { builtinTagsModelSource } from './fixture-templates/models/builtin-tags.js';
 import { buildModelProject, createModelProject, generatedModelFiles, writeModelGolemYaml, writeModelSources } from './model-project.js';
 import { getValidator } from '@exprtlabs/golem/validation';
-import { nearestManifest } from '#golem/type-analysis/package-specifier';
+import { nearestManifest } from '#golem/package-specifier';
 import { isGolemSourceFile } from '#golem/type-analysis/tags';
 
 const valid = {

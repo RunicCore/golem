@@ -11,6 +11,8 @@ import { taggedModelSource } from './fixture-templates/models/model-tags.js';
 import { joinSource, tsSource, type SourceFragment } from './source-template.js';
 import { generate } from '#model/generator';
 import { modelCodec } from './support/model-codec.js';
+import { importGeneratedModule, loadModelClasses } from './openapi/helpers.js';
+import { valueAt } from './support/json.js';
 
 test('tag bindings are AST-provenanced, alias-deduplicated, and relocation-stable', async t => {
   const build = (sourceRoot: string): void => {
@@ -60,7 +62,7 @@ type ValueArray = Array<string>;`,
     fields: tsSource`values: ValueArray & Contains<string & Pattern<'^ok$'>> & MinItems<1> & MinContains<1> & MaxContains<2>; objectValue: ValueObject & MinProperties<1> & MaxProperties<3> & PropertyNames<string & Pattern<'^[a-z_]+$'>> & PatternProperties<{ '^x_': number; '^z_': boolean }> & AdditionalProperties<never> & UnevaluatedProperties<never> & DependentRequired<{ foo: ['bar'] }> & DependentSchemas<{ foo: { bar: string } }> & OneOf<[{ foo: string }, { bar: string }]> & Not<{ forbidden: string }> & IfThenElse<{ bar: string }, { bar: string }, { foo: string }>;`,
   }).text);
   await buildModelProjectWith(root, { validation: true });
-  const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
+  const { A } = await loadModelClasses(path.join(root, 'build/a.model.js'), ['A']);
   const valid = new A({ values: ['ok'], objectValue: { bar: 'yes', x_value: 1 } });
   assert.equal(await getValidator(valid).validate(), true);
   for (const invalid of [
@@ -74,7 +76,7 @@ type ValueArray = Array<string>;`,
     { values: ['ok'], objectValue: { x_value: 'bad' } },
     { values: ['ok'], objectValue: { z_flag: 'bad' } },
   ]) {
-    assert.equal(await getValidator(new A(invalid as never)).validate(), false, JSON.stringify(invalid));
+    assert.equal(await getValidator(new A(invalid)).validate(), false, JSON.stringify(invalid));
   }
 });
 
@@ -170,11 +172,11 @@ type Dictionary = { [key: string]: string };`,
     }).text,
   });
   await buildModelProjectWith(root, { validation: true });
-  const load = (directory: string, file: string) => import(path.toNamespacedPath(path.join(root, 'build', directory, file)));
+  const built = (directory: string, file: string): string => path.join(root, 'build', directory, file);
 
   await t.test('builtin constraints run before custom predicates and distinct predicates compose once', async () => {
-    const { A } = await load('builtin-order', 'a.model.js');
-    const predicates = await load('builtin-order', 'predicates.js');
+    const { A } = await loadModelClasses(built('builtin-order', 'a.model.js'), ['A']);
+    const predicates = await importGeneratedModule(root, 'the predicates', 'build/builtin-order/predicates.js');
     const invalid = new A({ value: 'x' });
     assert.equal(await getValidator(invalid).validate({ failFast: false }), false);
     assert.equal(predicates.calls, 0, 'custom callbacks are suppressed when builtins fail');
@@ -184,16 +186,16 @@ type Dictionary = { [key: string]: string };`,
   });
 
   await t.test('structural tag schemas remain isolated when constraints are equal', async () => {
-    const { A } = await load('structural-isolation', 'a.model.js');
-    const { B } = await load('structural-isolation', 'b.model.js');
+    const { A } = await loadModelClasses(built('structural-isolation', 'a.model.js'), ['A']);
+    const { B } = await loadModelClasses(built('structural-isolation', 'b.model.js'), ['B']);
     assert.equal(await getValidator(new A({ value: { a: 'ok' } })).validate(), true);
     assert.equal(await getValidator(new B({ value: { b: 'ok' } })).validate(), true);
-    assert.equal(await getValidator(new A({ value: { b: 'wrong-shape' } } as never)).validate(), false);
-    assert.equal(await getValidator(new B({ value: { a: 'wrong-shape' } } as never)).validate(), false);
+    assert.equal(await getValidator(new A({ value: { b: 'wrong-shape' } })).validate(), false);
+    assert.equal(await getValidator(new B({ value: { a: 'wrong-shape' } })).validate(), false);
   });
 
   await t.test('structural tag schemas do not duplicate nested descriptor issues', async () => {
-    const { A } = await load('nested-issues', 'a.model.js');
+    const { A } = await loadModelClasses(built('nested-issues', 'a.model.js'), ['A']);
     const validator = getValidator(new A({ value: { name: 'x' } }));
     assert.equal(await validator.validate(), false);
     assert.deepEqual(validator.issues.map((issue: { readonly code: string; readonly path: readonly (string | number)[] }) => ({ code: issue.code, path: issue.path })), [
@@ -202,14 +204,14 @@ type Dictionary = { [key: string]: string };`,
   });
 
   await t.test('nested schema constraints collect referenced descriptors and project them', async () => {
-    const { A } = await load('nested-contains', 'a.model.js');
+    const { A } = await loadModelClasses(built('nested-contains', 'a.model.js'), ['A']);
     assert.equal(await getValidator(new A({ children: [{ name: 'ok' }] })).validate(), true);
-    assert.equal(await getValidator(new A({ children: [{ name: 7 }] } as never)).validate(), false);
+    assert.equal(await getValidator(new A({ children: [{ name: 7 }] })).validate(), false);
   });
 
   await t.test('union branch predicates stay attached to their checker constituent', async () => {
-    const { A } = await load('union-branches', 'a.model.js');
-    const predicates = await load('union-branches', 'predicates.js');
+    const { A } = await loadModelClasses(built('union-branches', 'a.model.js'), ['A']);
+    const predicates = await importGeneratedModule(root, 'the predicates', 'build/union-branches/predicates.js');
     assert.equal(await getValidator(new A({ value: 'text' })).validate(), true);
     assert.equal(predicates.stringCalls, 1);
     assert.equal(predicates.numberCalls, 0);
@@ -221,24 +223,24 @@ type Dictionary = { [key: string]: string };`,
   await t.test('utility aliases preserve two distinct same-signature predicates and deduplicate an alias', async () => {
     const validators = generatedModelFiles(root).find((artifact) => artifact.path.endsWith('/models.validators.generated.ts'))?.content ?? '';
     assert.equal(validators.match(/^import \{ \w+ as v\d+ \} from "[^"]*utility-aliases\/predicates\.js";$/gm)?.length, 2);
-    const { A } = await load('utility-aliases', 'a.model.js');
-    const predicates = await load('utility-aliases', 'predicates.js');
+    const { A } = await loadModelClasses(built('utility-aliases', 'a.model.js'), ['A']);
+    const predicates = await importGeneratedModule(root, 'the predicates', 'build/utility-aliases/predicates.js');
     assert.equal(await getValidator(new A({ payload: { value: 'ok' } })).validate({ failFast: false }), true);
     assert.equal(predicates.firstCalls, 1, 'the same declaration is called once through its alias');
     assert.equal(predicates.secondCalls, 1, 'the distinct same-signature declaration is retained');
   });
 
   await t.test('generic aliases preserve concrete local model identity for nested conversion', async () => {
-    const { Parent } = await load('generic-aliases', 'parent.model.js');
-    const { Child } = await load('generic-aliases', 'child.model.js');
+    const { Parent } = await loadModelClasses(built('generic-aliases', 'parent.model.js'), ['Parent']);
+    const { Child } = await loadModelClasses(built('generic-aliases', 'child.model.js'), ['Child']);
     const parent = modelCodec(Parent).fromWireFormat({ child: { value: { name: 'nested' } } });
-    assert.ok(parent.child.value instanceof Child, 'generic nested model is constructed as the concrete local class');
+    assert.ok(valueAt(parent, 'child', 'value') instanceof Child, 'generic nested model is constructed as the concrete local class');
     assert.deepEqual(modelCodec(parent).toWireFormat(parent), { child: { value: { name: 'nested' } } });
   });
 
   // protects: T-855 only the first data part of an intersection was kept beside a tag; T-864 a generic tag alias with an array base was not generated
   await t.test('an intersection keeps every data part beside a tag, and a generic tag alias with a compound base describes the instantiated type', async () => {
-    const { A } = await load('compound-bases', 'a.model.js');
+    const { A } = await loadModelClasses(built('compound-bases', 'a.model.js'), ['A']);
     const valid = { parts: { a: 's', b: 1 }, before: 'abc', after: 'abc', list: ['x'], page: { items: ['x'] }, legacy: 'abc', state: 'on' };
     const invalid = async (override: object): Promise<boolean> => await getValidator(new A({ ...valid, ...override })).validate();
     assert.deepEqual([
@@ -257,7 +259,7 @@ type Dictionary = { [key: string]: string };`,
 
   // protects: T-953 a mapped type that drops a tag in its template kept the tag of the property it copies its declaration from
   await t.test('a mapped type takes its tags from its template, not from the property it maps over', async () => {
-    const { A } = await load('mapped-templates', 'a.model.js');
+    const { A } = await loadModelClasses(built('mapped-templates', 'a.model.js'), ['A']);
     const valid = { dropped: {}, droppedOverIntersection: {}, keptThroughMappedTemplate: {}, plain: { a: 'ab' }, both: { a: 'ab' } };
     const accepted = async (override: object): Promise<boolean> => await getValidator(new A({ ...valid, ...override })).validate();
     assert.deepEqual([
@@ -273,9 +275,9 @@ type Dictionary = { [key: string]: string };`,
   });
 
   await t.test('recursive local IModel aliases remain concrete nested references', async () => {
-    const { Node } = await load('recursive-alias', 'node.model.js');
+    const { Node } = await loadModelClasses(built('recursive-alias', 'node.model.js'), ['Node']);
     const node = modelCodec(Node).fromWireFormat({ name: 'root', children: [{ name: 'leaf' }] });
-    assert.ok(node.children?.[0] instanceof Node);
+    assert.ok(valueAt(node, 'children', 0) instanceof Node);
     assert.deepEqual(modelCodec(node).toWireFormat(node), { name: 'root', children: [{ name: 'leaf' }] });
   });
 });
@@ -435,6 +437,345 @@ test('two validators that share one type alias in one field are refused, not bou
   assert.throws(() => generate({ root, profile: { validation: true } }), /RUNM1040.*shares its type with another function in this field/);
 });
 
+const throughNonNullable = tsSource`type Box = { a: (string & TValidation<typeof check>) | null };\ntype Field = { [K in keyof Box]: NonNullable<Box[K]> };`;
+
+const ownAnnotations = {
+  plain: typedRules['an annotated arrow'],
+  parenthesized: tsSource`export const check: ((v: string) => boolean) = (v) => v !== '';`,
+  'a type alias': typedRules['a const typed by a type alias'],
+} as const;
+
+for (const [form, rules] of Object.entries(ownAnnotations)) test(`a validator const with its own ${form} function type annotation is bound through a NonNullable mapped type`, t => {
+  // protects: T-957 the tag read from the mapped type named no function and threw RUNM1040 (F-31 TypeScript is the schema)
+  const { root, sourceRoot } = fixture(t);
+  fs.writeFileSync(path.join(sourceRoot, 'rules.ts'), rules.text);
+  fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({
+    name: 'A',
+    imports: tsSource`import type { TValidation } from '@exprtlabs/golem/tags';\nimport { check } from './rules.js';\n${throughNonNullable}`,
+    fields: tsSource`field: Field`,
+  }).text);
+  const generated = generate({ root, profile: { validation: true } }).artifacts.map((artifact) => artifact.content).join('\n');
+  assert.ok(importsOf(generated, 'check') > 0, 'check is bound');
+  assert.equal(importsOf(generated, 'other'), 0, 'the const that shares its type is not bound');
+});
+
+// `b` copies the type of `a`, so the checker shows one type for both: only the source node names the function that was written.
+const copiedFunctionRules = {
+  inline: tsSource`export const a: (v: string) => boolean = (v) => v !== '';\nexport const b: typeof a = (v) => v.length < 9;`,
+  inferred: tsSource`export const a = (v: string): boolean => v !== '';\nexport const b: typeof a = (v) => v.length < 9;`,
+} as const;
+const throughMapped = tsSource`type Box = { f: (string & TValidation<typeof b>) | null };\ntype Field = { [K in keyof Box]: NonNullable<Box[K]> };`;
+const copiedFunctionReads = {
+  'inline a on the field': { rules: copiedFunctionRules.inline, declarations: tsSource``, field: tsSource`string & TValidation<typeof b>` },
+  'inline a through a NonNullable mapped type': { rules: copiedFunctionRules.inline, declarations: throughMapped, field: tsSource`Field` },
+  'inferred a through a NonNullable mapped type': { rules: copiedFunctionRules.inferred, declarations: throughMapped, field: tsSource`Field` },
+  'inline a as an alias type argument': { rules: copiedFunctionRules.inline, declarations: tsSource`type Same<T> = T;`, field: tsSource`Same<string & TValidation<typeof b>>` },
+  'inferred a as an alias type argument': { rules: copiedFunctionRules.inferred, declarations: tsSource`type Same<T> = T;`, field: tsSource`Same<string & TValidation<typeof b>>` },
+  'inline a through a conditional type': { rules: copiedFunctionRules.inline, declarations: tsSource`type Box = { f: string & TValidation<typeof b> };\ntype ValueOf<T> = T extends { f: infer V } ? V : never;`, field: tsSource`ValueOf<Box>` },
+  'inline a through the type of a variable': { rules: copiedFunctionRules.inline, declarations: tsSource`declare const held: string & TValidation<typeof b>;`, field: tsSource`typeof held` },
+} as const;
+
+for (const [name, read] of Object.entries(copiedFunctionReads)) test(`a validator that copies the type of another binds itself, read as ${name}`, t => {
+  // protects: T-982 the tag read from the checker type named the function that owns the type, so `b` bound `a` in silence (F-31 TypeScript is the schema)
+  const { root, sourceRoot } = fixture(t);
+  fs.writeFileSync(path.join(sourceRoot, 'rules.ts'), read.rules.text);
+  fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({
+    name: 'A',
+    imports: tsSource`import type { TValidation } from '@exprtlabs/golem/tags';\nimport { b } from './rules.js';\n${read.declarations}`,
+    fields: tsSource`field: ${read.field}`,
+  }).text);
+  const generated = generate({ root, profile: { validation: true } }).artifacts.map((artifact) => artifact.content).join('\n');
+  assert.equal(importsOf(generated, 'b'), 1, 'b is bound');
+  assert.equal(importsOf(generated, 'a'), 0, 'a is not bound');
+});
+
+test('a serializer that copies the type of another binds itself through a NonNullable mapped type', t => {
+  // protects: T-982 same cause as the validator: the TSerde read from the checker type named the function that owns the type
+  const { root, sourceRoot } = fixture(t);
+  fs.writeFileSync(path.join(sourceRoot, 'rules.ts'), tsSource`export const write: (v: string) => string = (v) => v;\nexport const copy: typeof write = (v) => v.trim();\nexport const read: (w: string) => string = (w) => w;`.text);
+  fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({
+    name: 'A',
+    imports: tsSource`import type { TSerde } from '@exprtlabs/golem/tags';\nimport { copy, read } from './rules.js';\ntype Box = { f: (string & TSerde<typeof copy, typeof read>) | null };\ntype Field = { [K in keyof Box]: NonNullable<Box[K]> };`,
+    fields: tsSource`field: Field`,
+  }).text);
+  const generated = generate({ root, profile: { validation: true } }).artifacts.map((artifact) => artifact.content).join('\n');
+  assert.equal(importsOf(generated, 'copy'), 1, 'copy is bound');
+  assert.equal(importsOf(generated, 'write'), 0, 'write is not bound');
+});
+
+test('a validator that copies the type of another binds itself when a declaration file writes the tag', t => {
+  // protects: T-982 the scan skipped every declaration file, so a tag written in a .d.ts reached the field with no `typeof` and was refused (R-55 no silent difference)
+  const { root, sourceRoot } = fixture(t);
+  fs.writeFileSync(path.join(sourceRoot, 'rules.ts'), copiedFunctionRules.inline.text);
+  fs.writeFileSync(path.join(sourceRoot, 'defs.d.ts'), tsSource`import type { TValidation } from '@exprtlabs/golem/tags';\nimport type { b } from './rules.js';\nexport type Email = string & TValidation<typeof b>;\nexport type Box = { f: Email | null };`.text);
+  fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({
+    name: 'A',
+    imports: tsSource`import type { Box } from './defs.js';\ntype Field = { [K in keyof Box]: NonNullable<Box[K]> };`,
+    fields: tsSource`field: Field`,
+  }).text);
+  const generated = generate({ root, profile: { validation: true } }).artifacts.map((artifact) => artifact.content).join('\n');
+  assert.equal(importsOf(generated, 'b'), 1, 'b is bound');
+  assert.equal(importsOf(generated, 'a'), 0, 'a is not bound');
+});
+
+// `a` and `b` share one type, and a base class or interface writes `typeof a` where the field writes `typeof b`: the scan follows the base.
+// `ValueOf` reads the member through a conditional type, so no property symbol leads to the base and only the `extends` clause does.
+const valueOf = tsSource`type ValueOf<T> = T extends { held: infer V } ? V : never;`;
+const inheritedTagReads = {
+  'a base class': { declarations: tsSource`${valueOf}\nclass Base { held!: string & TValidation<typeof a>; }\nclass Sub extends Base {}`, field: tsSource`ValueOf<Sub> & TValidation<typeof b>` },
+  'a base interface': { declarations: tsSource`${valueOf}\ninterface Base { held: string & TValidation<typeof a>; }\ninterface Sub extends Base {}`, field: tsSource`ValueOf<Sub> & TValidation<typeof b>` },
+  // `typeof Sub` is the class value, which holds the statics of `Sub` and of its base.
+  'a static member of a base class, read through `typeof` the subclass': { declarations: tsSource`${valueOf}\nclass Base { static held: string & TValidation<typeof a>; }\nclass Sub extends Base {}`, field: tsSource`ValueOf<typeof Sub> & TValidation<typeof b>` },
+  'a static member of a class that a namespace exports, read through `typeof` the namespace': { declarations: tsSource`namespace Space { export class Base { static held: string & TValidation<typeof a>; } }\ntype ValueOfExport<T> = T extends { Base: { held: infer V } } ? V : never;`, field: tsSource`ValueOfExport<typeof Space> & TValidation<typeof b>` },
+  // A parameter property is a field of the instance; the constructor of a class is part of `typeof Class`.
+  'a parameter property of a base class': { declarations: tsSource`${valueOf}\nclass Base { constructor(public held: string & TValidation<typeof a>) {} }\nclass Sub extends Base {}`, field: tsSource`ValueOf<Sub> & TValidation<typeof b>` },
+  'a constructor parameter of a base class, read through `typeof` the subclass': { declarations: tsSource`type SeedOf<T> = T extends new (seed: infer V) => unknown ? V : never;\nclass Base { constructor(seed: string & TValidation<typeof a>) {} }\nclass Sub extends Base {}`, field: tsSource`SeedOf<typeof Sub> & TValidation<typeof b>` },
+} as const;
+
+for (const [name, { declarations, field }] of Object.entries(inheritedTagReads)) test(`a copy written on the field beside a function that ${name} writes is refused`, t => {
+  // protects: T-1019 the scan did not follow an `extends` clause, so the base function was dropped and the copy bound in silence (R-55 no silent difference)
+  const { root, sourceRoot } = fixture(t);
+  fs.writeFileSync(path.join(sourceRoot, 'rules.ts'), copiedFunctionRules.inline.text);
+  fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({
+    name: 'A',
+    imports: tsSource`import type { TValidation } from '@exprtlabs/golem/tags';\nimport { a, b } from './rules.js';\n${declarations}`,
+    fields: tsSource`field: ${field}`,
+  }).text);
+  assert.throws(() => generate({ root, profile: { validation: true } }), /RUNM1040.*shares its type with another function in this field/);
+});
+
+test('a copy written on the field beside a function that a mixin base writes is refused', t => {
+  // protects: T-1019 a class that extends a call has no base to follow, so the function of its member was dropped and the copy bound in silence (R-55 no silent difference)
+  const { root, sourceRoot } = fixture(t);
+  fs.writeFileSync(path.join(sourceRoot, 'rules.ts'), copiedFunctionRules.inline.text);
+  fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({
+    name: 'A',
+    imports: tsSource`import type { TValidation } from '@exprtlabs/golem/tags';\nimport { a, b } from './rules.js';\nclass Base { held!: string & TValidation<typeof a>; }\ndeclare function mixin<T extends new () => object>(base: T): T;\nclass Sub extends mixin(Base) {}`,
+    fields: tsSource`field: Sub['held'] & TValidation<typeof b>`,
+  }).text);
+  assert.throws(() => generate({ root, profile: { validation: true } }), /RUNM1040.*shares its type with another function in this field/);
+});
+
+// `a` and `b` share one type, and `Box['f']` writes `typeof a` where the tag of the field writes `typeof b`: golem cannot bind both by their type.
+const hiddenCopyReads = {
+  'an indexed access beside the tag of the field': tsSource`Box['f'] & TValidation<typeof b>`,
+  'an object field beside the tag of the field': tsSource`{ inner: Box['f'] } & TValidation<typeof b>`,
+} as const;
+
+for (const [name, field] of Object.entries(hiddenCopyReads)) test(`a validator and the validator that it copies are refused when ${name} writes the other`, t => {
+  // protects: T-982 the scan found one function for the type and the other one dropped, with no error (R-55 no silent difference)
+  const { root, sourceRoot } = fixture(t);
+  fs.writeFileSync(path.join(sourceRoot, 'rules.ts'), tsSource`export const a: (v: unknown) => boolean = (v) => v !== '';\nexport const b: typeof a = (v) => v !== 0;`.text);
+  fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({
+    name: 'A',
+    imports: tsSource`import type { TValidation } from '@exprtlabs/golem/tags';\nimport { a, b } from './rules.js';\ntype Box = { f: string & TValidation<typeof a> };`,
+    fields: tsSource`field: ${field}`,
+  }).text);
+  assert.throws(() => generate({ root, profile: { validation: true } }), /RUNM1040.*shares its type with another function in this field/);
+});
+
+test('a tag function that comes from an inferred type binds the one function that the program writes for its type', t => {
+  // protects: T-982 no `typeof` in the field leads to the function that the inferred type names; T-1058 the program writes only `b` in a tag, so the type names `b`
+  const { root, sourceRoot } = fixture(t);
+  fs.writeFileSync(path.join(sourceRoot, 'rules.ts'), copiedFunctionRules.inline.text);
+  fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({
+    name: 'A',
+    imports: tsSource`import type { TValidation } from '@exprtlabs/golem/tags';\nimport { b } from './rules.js';\ndeclare function tagged(): string & TValidation<typeof b>;\nconst held = tagged();`,
+    fields: tsSource`field: typeof held`,
+  }).text);
+  const generated = generate({ root, profile: { validation: true } }).artifacts.map((artifact) => artifact.content).join('\n');
+  assert.equal(importsOf(generated, 'b'), 1, 'b is bound');
+  assert.equal(importsOf(generated, 'a'), 0, 'a is not bound');
+});
+
+// `held` carries `typeof a` through an inferred type, and the field writes its copy `b`: the checker shows one tag for both, and the source holds only `typeof b`.
+const inferredTagReads = {
+  'a const inferred from a call': { declarations: tsSource`declare function tagged(): string & TValidation<typeof a>;\nconst held = tagged();`, field: tsSource`typeof held & TValidation<typeof b>` },
+  'the inferred return of a function': { declarations: tsSource`declare const source: string & TValidation<typeof a>;\nfunction tagged() { return source; }`, field: tsSource`ReturnType<typeof tagged> & TValidation<typeof b>` },
+  'an inferred class member': { declarations: tsSource`declare function tagged(): string & TValidation<typeof a>;\nclass Holder { held = tagged(); }`, field: tsSource`Holder['held'] & TValidation<typeof b>` },
+  'the return of an arrow function': { declarations: tsSource`declare function tagged(): string & TValidation<typeof a>;\nconst make = () => tagged();`, field: tsSource`ReturnType<typeof make> & TValidation<typeof b>` },
+  'a property of an inferred object': { declarations: tsSource`declare function tagged(): string & TValidation<typeof a>;\nconst holder = { held: tagged() };`, field: tsSource`(typeof holder)['held'] & TValidation<typeof b>` },
+  'a class getter': { declarations: tsSource`declare function tagged(): string & TValidation<typeof a>;\nclass Holder { get held() { return tagged(); } }`, field: tsSource`Holder['held'] & TValidation<typeof b>` },
+  'a promise of the tagged value': { declarations: tsSource`declare function tagged(): Promise<string & TValidation<typeof a>>;\nconst held = tagged();`, field: tsSource`Awaited<typeof held> & TValidation<typeof b>` },
+  'a frozen object': { declarations: tsSource`declare function tagged(): string & TValidation<typeof a>;\nconst holder = Object.freeze({ held: tagged() });`, field: tsSource`(typeof holder)['held'] & TValidation<typeof b>` },
+  'a conditional type over a class with an inferred member': { declarations: tsSource`declare function tagged(): string & TValidation<typeof a>;\nclass Holder { held = tagged(); }\ntype ValueOf<T> = T extends { held: infer V } ? V : never;`, field: tsSource`ValueOf<Holder> & TValidation<typeof b>` },
+  'an as-mapped type over a class with an inferred member': { declarations: tsSource`declare function tagged(): string & TValidation<typeof a>;\nclass Holder { held = tagged(); }\ntype Renamed<T> = { [K in keyof T as Uppercase<K & string>]: T[K] };`, field: tsSource`Renamed<Holder>['HELD'] & TValidation<typeof b>` },
+  'a destructured const': { declarations: tsSource`declare function tagged(): string & TValidation<typeof a>;\nconst holder = { held: tagged() };\nconst { held } = holder;`, field: tsSource`typeof held & TValidation<typeof b>` },
+} as const;
+
+for (const [name, read] of Object.entries(inferredTagReads)) test(`a copy written on the field beside a function that only an inferred type holds is refused, read as ${name}`, t => {
+  // protects: T-1019 the scan found only the copy `b` for the shared type, so the validator that `held` carries was dropped and `b` bound in silence (R-55 no silent difference)
+  const { root, sourceRoot } = fixture(t);
+  fs.writeFileSync(path.join(sourceRoot, 'rules.ts'), copiedFunctionRules.inline.text);
+  fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({
+    name: 'A',
+    imports: tsSource`import type { TValidation } from '@exprtlabs/golem/tags';\nimport { a, b } from './rules.js';\n${read.declarations}`,
+    fields: tsSource`field: ${read.field}`,
+  }).text);
+  assert.throws(() => generate({ root, profile: { validation: true } }), /RUNM1040.*through `[^`]+` \(\S*a\.model\.ts:\d+:\d+\), whose type golem infers/);
+});
+
+// Nothing in these reads holds a function tag that the field could lose, so the copy `b` binds.
+const untaggedReads = {
+  'a conditional type over a class with an untagged inferred member': { declarations: tsSource`class Holder { held = ''; }\ntype ValueOf<T> = T extends { held: infer V } ? V : never;`, field: tsSource`ValueOf<Holder>` },
+  'a conditional type over a class that extends an untagged mixin call': { declarations: tsSource`class Base { held = ''; }\ndeclare function mixin<T extends new () => object>(base: T): T;\nclass Sub extends mixin(Base) {}\ntype ValueOf<T> = T extends { held: infer V } ? V : never;`, field: tsSource`ValueOf<Sub>` },
+} as const;
+
+for (const [name, { declarations, field }] of Object.entries(untaggedReads)) test(`the tag of the field binds its own function through ${name}`, t => {
+  // protects: T-1043 a refusal of every conditional type over an inferred member or a mixin call would stop fields that lose no tag
+  const { root, sourceRoot } = fixture(t);
+  fs.writeFileSync(path.join(sourceRoot, 'rules.ts'), copiedFunctionRules.inline.text);
+  fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({
+    name: 'A',
+    imports: tsSource`import type { TValidation } from '@exprtlabs/golem/tags';\nimport { b } from './rules.js';\n${declarations}`,
+    fields: tsSource`field: ${field} & TValidation<typeof b>`,
+  }).text);
+  const generated = generate({ root, profile: { validation: true } }).artifacts.map((artifact) => artifact.content).join('\n');
+  assert.equal(importsOf(generated, 'b'), 1, 'b is bound');
+});
+
+// `Wrap<T>` hands the tag `c` to the checker alone, so the field is scanned for the function that `c` names; the scan must leave the sibling members `f` and `g` to their own fields.
+test('two members that copy each other\'s function type each bind their own function beside a tag that only the checker shows', t => {
+  // protects: T-1043 the registry of the field kept every function that its scan found, so `f` and `g` inherited a type shared by two functions and were refused
+  const { root, sourceRoot } = fixture(t);
+  fs.writeFileSync(path.join(sourceRoot, 'rules.ts'), tsSource`${copiedFunctionRules.inline}\nexport const c: (v: unknown) => boolean = (v) => v !== null;`.text);
+  fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({
+    name: 'A',
+    imports: tsSource`import type { TValidation } from '@exprtlabs/golem/tags';\nimport { a, b, c } from './rules.js';\ntype Box = { f: string & TValidation<typeof a>; g: string & TValidation<typeof b> };\ntype Wrap<T> = T;`,
+    fields: tsSource`field: Wrap<Box & TValidation<typeof c>>`,
+  }).text);
+  const generated = generate({ root, profile: { validation: true } }).artifacts.map((artifact) => artifact.content).join('\n');
+  for (const bound of ['a', 'b', 'c']) assert.equal(importsOf(generated, bound), 1, `${bound} is bound`);
+});
+
+// `a` and `b` share one type and `User` writes `typeof b` on `name`: a sibling member that holds the tag through an inferred type is not read, so it must not stop the build.
+const userWith = (member: SourceFragment): SourceFragment => tsSource`class User { name!: string & TValidation<typeof b>; ${member} }`;
+// `Sub` inherits `name` from `Base`, so the getter and the tagged member sit in two classes.
+const inheritedUser = tsSource`class Base { name!: string & TValidation<typeof b>; }\nclass Sub extends Base { get label() { return this.name; } }`;
+const sameTypeNeighbours = {
+  'an indexed access beside a getter that returns the tagged member': { declarations: userWith(tsSource`get label() { return this.name; }`), field: tsSource`User['name']` },
+  'Pick beside a getter that returns the tagged member': { declarations: userWith(tsSource`get label() { return this.name; }`), field: tsSource`Pick<User, 'name'>['name']` },
+  'Omit beside a getter that returns the tagged member': { declarations: userWith(tsSource`get label() { return this.name; }`), field: tsSource`Omit<User, 'label'>['name']` },
+  'Pick beside a member that holds no tag': { declarations: userWith(tsSource`count = 0;`), field: tsSource`Pick<User, 'name'>['name']` },
+  'Omit of a subclass getter': { declarations: inheritedUser, field: tsSource`Omit<Sub, 'label'>['name']` },
+  'Pick of a subclass getter': { declarations: inheritedUser, field: tsSource`Pick<Sub, 'name'>['name']` },
+  'Readonly Pick of a subclass getter': { declarations: inheritedUser, field: tsSource`Readonly<Pick<Sub, 'name'>>` },
+  // protects: T-1092 a constructor parameter that is no field made the field of a subclass refuse, though the instance type holds no constructor (D-155 follow tsc)
+  'a subclass of a base class with a plain constructor parameter of the other function': { declarations: tsSource`${valueOf}\nclass Base { held!: string & TValidation<typeof b>; constructor(seed: string & TValidation<typeof a>) {} }\nclass Sub extends Base {}`, field: tsSource`ValueOf<Sub>` },
+  // protects: T-1092 a static tag on the base class made the field of a subclass refuse, though the instance type holds no static member (D-155 follow tsc)
+  'a subclass of a base class with a static tag of the other function': { declarations: tsSource`${valueOf}\nclass Base { static held: string & TValidation<typeof a>; held!: string & TValidation<typeof b>; }\nclass Sub extends Base {}`, field: tsSource`ValueOf<Sub>` },
+} as const;
+
+for (const [name, { declarations, field }] of Object.entries(sameTypeNeighbours)) test(`the tag of a member binds its own function, read through ${name}`, t => {
+  // protects: T-1019 the first fix refused a field that read `name` of a class with an inferred sibling, though the sibling is not part of the field (F-37 no false refusal)
+  const { root, sourceRoot } = fixture(t);
+  fs.writeFileSync(path.join(sourceRoot, 'rules.ts'), copiedFunctionRules.inline.text);
+  fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({
+    name: 'A',
+    imports: tsSource`import type { TValidation } from '@exprtlabs/golem/tags';\nimport { a, b } from './rules.js';\n${declarations}`,
+    fields: tsSource`field: ${field}`,
+  }).text);
+  const generated = generate({ root, profile: { validation: true } }).artifacts.map((artifact) => artifact.content).join('\n');
+  assert.equal(importsOf(generated, 'b'), 1, 'b is bound');
+  assert.equal(importsOf(generated, 'a'), 0, 'a is not bound');
+});
+
+// `a` and `b` share one type. Each read names a function through a wrapper, a Pick that is no alias argument, an inferred getter beside a Pick, or a mixin base.
+const heldByCall = tsSource`declare function tagged(): string & TValidation<typeof a>;\nclass Holder { held = tagged(); }`;
+const refusedWrapperReads = {
+  'a wrapper whose tag copies the type of the function that its argument writes': { declarations: tsSource`type Box = { f: string & TValidation<typeof a> };\ntype Wrap<T extends { f: unknown }> = { x: T['f'] & TValidation<typeof b> };`, field: tsSource`Wrap<Box>` },
+  'a Pick beside a member that reads an inferred getter of the other function': { declarations: tsSource`declare const other: string & TValidation<typeof a>;\nclass Base { name!: string & TValidation<typeof b>; }\nclass Sub extends Base { get label() { return other; } }`, field: tsSource`Pick<Sub, 'name'> & { extra: Sub['label'] }` },
+  'a conditional type over a wrapper that writes its own member from the class with the inferred member': { declarations: tsSource`${heldByCall}\ntype ValueOf<T> = T extends { held: infer V } ? V : never;\ntype Wrap<T extends { held: unknown }> = { held: T['held'] };`, field: tsSource`ValueOf<Wrap<Holder>> & TValidation<typeof b>` },
+  'a conditional type over a conditional type over the class with the inferred member': { declarations: tsSource`${heldByCall}\ntype ValueOf<T> = T extends { held: infer V } ? V : never;\ntype Cond<T> = T extends { held: infer V } ? { held: V } : never;`, field: tsSource`ValueOf<Cond<Holder>> & TValidation<typeof b>` },
+  'an as-mapped type over a conditional type over the class with the inferred member': { declarations: tsSource`${heldByCall}\ntype Renamed<T> = { [K in keyof T as Uppercase<K & string>]: T[K] };\ntype Cond<T> = T extends { held: infer V } ? { held: V } : never;`, field: tsSource`Renamed<Cond<Holder>>['HELD'] & TValidation<typeof b>` },
+  'a conditional type over a class that extends a mixin call that writes the member': { declarations: tsSource`class Base { held!: string & TValidation<typeof a>; }\ndeclare function mixin<T extends new () => object>(base: T): T;\nclass Sub extends mixin(Base) {}\ntype ValueOf<T> = T extends { held: infer V } ? V : never;`, field: tsSource`ValueOf<Sub> & TValidation<typeof b>` },
+  'a conditional type over a mixin base whose member shows no type node': { declarations: tsSource`${heldByCall}\ndeclare function mixin<T extends new () => object>(base: T): T;\nclass Sub extends mixin(Holder) {}\ntype ValueOf<T> = T extends { held: infer V } ? V : never;`, field: tsSource`ValueOf<Sub> & TValidation<typeof b>` },
+} as const;
+
+for (const [name, { declarations, field }] of Object.entries(refusedWrapperReads)) test(`a function that hides behind ${name} is refused`, t => {
+  // protects: T-1043 a tag function behind a reader, a wrapper or a mixin base was dropped in silence, and `b` bound for it (F-31)
+  const { root, sourceRoot } = fixture(t);
+  fs.writeFileSync(path.join(sourceRoot, 'rules.ts'), copiedFunctionRules.inline.text);
+  fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({
+    name: 'A',
+    imports: tsSource`import type { TValidation } from '@exprtlabs/golem/tags';\nimport { a, b } from './rules.js';\n${declarations}`,
+    fields: tsSource`field: ${field}`,
+  }).text);
+  assert.throws(() => generate({ root, profile: { validation: true } }), /RUNM1040/);
+});
+
+const builtWrapperReads = {
+  'a wrapper that indexes its argument': { declarations: tsSource`class Plain { name!: string & TValidation<typeof b>; }\ntype Wrap<T extends { name: unknown }> = { x: T['name'] };`, field: tsSource`Wrap<Plain>['x']` },
+  'an alias of a Pick that is read by an index': { declarations: tsSource`${inheritedUser}\ntype Named = Pick<Sub, 'name'>;`, field: tsSource`Named['name']` },
+  'an indexed read of a member that a mixin base writes': { declarations: tsSource`class Base { name!: string & TValidation<typeof b>; }\ndeclare function mixin<T extends new () => object>(base: T): T;\nclass Sub extends mixin(Base) {}`, field: tsSource`Sub['name']` },
+  'a class with a mixin base that writes the tag of a member': { declarations: tsSource`class Base { name!: string & TValidation<typeof b>; }\ndeclare function mixin<T extends new () => object>(base: T): T;\nclass Sub extends mixin(Base) {}`, field: tsSource`Sub` },
+  'an Omit of a mixin base that leaves out an inferred getter': { declarations: tsSource`class Base { name!: string & TValidation<typeof b>; get label() { return this.name; } }\ndeclare function mixin<T extends new () => object>(base: T): T;\nclass Sub extends mixin(Base) {}`, field: tsSource`Omit<Sub, 'label'>['name']` },
+  'a Pick of a mixin base that leaves out a member holding the other function': { declarations: tsSource`declare function tagged(): string & TValidation<typeof a>;\nclass Base { name!: string & TValidation<typeof b>; held = tagged(); }\ndeclare function mixin<T extends new () => object>(base: T): T;\nclass Sub extends mixin(Base) {}`, field: tsSource`Pick<Sub, 'name'>['name']` },
+} as const;
+
+for (const [name, { declarations, field }] of Object.entries(builtWrapperReads)) test(`the tag of the field binds its own function through ${name}`, t => {
+  // protects: T-1043 the first fix of the sibling rule refused a field that builds before it
+  const { root, sourceRoot } = fixture(t);
+  fs.writeFileSync(path.join(sourceRoot, 'rules.ts'), copiedFunctionRules.inline.text);
+  fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({
+    name: 'A',
+    imports: tsSource`import type { TValidation } from '@exprtlabs/golem/tags';\nimport { a, b } from './rules.js';\n${declarations}`,
+    fields: tsSource`field: ${field}`,
+  }).text);
+  const generated = generate({ root, profile: { validation: true } }).artifacts.map((artifact) => artifact.content).join('\n');
+  assert.equal(importsOf(generated, 'b'), 1, 'b is bound');
+  assert.equal(importsOf(generated, 'a'), 0, 'a is not bound');
+});
+
+// `f` writes `typeof a` and `g` writes `typeof b`, and `b` copies the type of `a`: each member binds the function that it writes.
+const siblingBox = tsSource`type Box = { f: (string & TValidation<typeof a>) | null; g: (string & TValidation<typeof b>) | null };`;
+const siblingReads = {
+  'a NonNullable mapped type': { declarations: tsSource`${siblingBox}\ntype Field = { [K in keyof Box]: NonNullable<Box[K]> };`, field: tsSource`Field` },
+  'the type itself': { declarations: siblingBox, field: tsSource`Box` },
+  'the type or null': { declarations: siblingBox, field: tsSource`Box | null` },
+  'two indexed members of the type': { declarations: siblingBox, field: tsSource`{ x: Box['g']; y: Box['f'] }` },
+} as const;
+
+for (const [name, { declarations, field }] of Object.entries(siblingReads)) test(`two members that copy each other's function type each bind their own function, read as ${name}`, t => {
+  // protects: T-1020, T-1031 the scan of the enclosing type, or of `Box` under `Box['g']`, read every member of `Box` for each member, so `f` and `g` shared one type with two functions and were refused (F-37 no false refusal)
+  const { root, sourceRoot } = fixture(t);
+  fs.writeFileSync(path.join(sourceRoot, 'rules.ts'), copiedFunctionRules.inline.text);
+  fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({
+    name: 'A',
+    imports: tsSource`import type { TValidation } from '@exprtlabs/golem/tags';\nimport { a, b } from './rules.js';\n${declarations}`,
+    fields: tsSource`field: ${field}`,
+  }).text);
+  const generated = generate({ root, profile: { validation: true } }).artifacts.map((artifact) => artifact.content).join('\n');
+  assert.equal(importsOf(generated, 'a'), 1, 'a is bound');
+  assert.equal(importsOf(generated, 'b'), 1, 'b is bound');
+});
+
+// A getter that holds the tag through an inferred type, or an inferred value of another function type, sits in the reach of the field and adds no tag to its type.
+const unreadInferredTags = {
+  'a mapped NonNullable over a member that sits beside an inferred getter': {
+    declarations: tsSource`class User { name!: string & TValidation<typeof b>; get label() { return this.name; } }\ntype Box = { f: User['name'] | null };\ntype Field = { [K in keyof Box]: NonNullable<Box[K]> };`,
+    field: tsSource`Field`,
+  },
+  'an inferred value of another function type that the type of the field drops': {
+    declarations: tsSource`declare function tagged(): string & TValidation<typeof d>;\nconst held = tagged();\ntype Plain<T> = T extends string ? string : never;`,
+    field: tsSource`Plain<typeof held> & TValidation<typeof b>`,
+  },
+} as const;
+
+for (const [name, { declarations, field }] of Object.entries(unreadInferredTags)) test(`the tag of the field binds its own function through ${name}`, t => {
+  // protects: T-1019 the second fix refused a field when any inferred tag sat in its reach, though that tag is not in its type (F-37 no false refusal)
+  const { root, sourceRoot } = fixture(t);
+  fs.writeFileSync(path.join(sourceRoot, 'rules.ts'), tsSource`${copiedFunctionRules.inline}\nexport const d: (v: unknown) => boolean = (v) => v !== null;`.text);
+  fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({
+    name: 'A',
+    imports: tsSource`import type { TValidation } from '@exprtlabs/golem/tags';\nimport { a, b, d } from './rules.js';\n${declarations}`,
+    fields: tsSource`field: ${field}`,
+  }).text);
+  const generated = generate({ root, profile: { validation: true } }).artifacts.map((artifact) => artifact.content).join('\n');
+  assert.equal(importsOf(generated, 'b'), 1, 'b is bound');
+  assert.equal(importsOf(generated, 'a'), 0, 'a is not bound');
+});
+
 test('a nullable member written through a tag alias is refused, not given a phantom-key validator', t => {
   // protects: fixed bug (T-430): at 75548ea this generated a validator that rejected every plain string
   const { root, sourceRoot } = fixture(t);
@@ -468,7 +809,7 @@ test('a MobX model generated with validation false has no validator', async t =>
     fields: tsSource`title: string; done: boolean`,
   }).text);
   await buildModelProjectWith(root, { mobx: true, validation: false });
-  const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
+  const { A } = await loadModelClasses(path.join(root, 'build/a.model.js'), ['A']);
   const model = modelCodec(A).fromWireFormat({ title: 'Write', done: false });
   assert.equal('$validator' in model, false);
   assert.deepEqual(modelCodec(model).toWireFormat(model), { title: 'Write', done: false });
@@ -491,7 +832,7 @@ test('model validators are a generated TypeScript artifact that the built output
   const validators = artifacts.find((artifact) => artifact.path.endsWith('/models.validators.generated.ts'));
   assert.ok(validators);
   assert.ok(fs.existsSync(path.join(root, 'build', path.relative(sourceRoot, validators.path).replace(/\.ts$/, '.js'))), 'the build writes the validators');
-  const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
+  const { A } = await loadModelClasses(path.join(root, 'build/a.model.js'), ['A']);
   assert.equal(await getValidator(new A({ value: 'ok' })).validate(), true);
   assert.equal(await getValidator(new A({ value: 'bad' })).validate(), false);
 });
@@ -530,9 +871,9 @@ for (const item of [
     const { root, sourceRoot } = fixture(t);
     fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({ name: 'A', imports: item.declaration, fields: tsSource`when: Date` }).text);
     await buildModelProjectWith(root, { validation: true });
-    const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
+    const { A } = await loadModelClasses(path.join(root, 'build/a.model.js'), ['A']);
     const model = modelCodec(A).fromWireFormat(item.wire);
-    assert.equal(model.when instanceof Date, item.isDate);
+    assert.equal(valueAt(model, 'when') instanceof Date, item.isDate);
     assert.deepEqual(modelCodec(model).toWireFormat(model), item.wire);
   });
 }

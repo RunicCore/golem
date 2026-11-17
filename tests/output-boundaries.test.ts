@@ -226,3 +226,19 @@ test('a retired OpenAPI output is removed only through its recorded, unmoved des
   );
   assert.equal(fs.existsSync(path.join(outside, 'sdk', 'client.ts')), false);
 });
+
+// protects: T-1036 a destination that does not exist reads as outside, while one behind links that loop gives its real error
+test('a file outside a destination that is missing reads as outside, and outside one behind links that loop reports the loop', (t: TestContext) => {
+  const directory = fixture(t);
+  const filename = path.join(directory, 'sdk/client.ts');
+  const jobFor = (root: string): GolemJob => jobWithFacts('docs:x', '@exprtlabs/golem-openapi-ts', { ownedRoots: [root] });
+  const apply = (root: string): unknown => {
+    const job = jobFor(root);
+    const config = configFor(directory, job);
+    return applyJob(config, loadInventory(config), job, [{ path: filename, content: openApiContent(1) }]);
+  };
+  assert.throws(() => apply(path.join(directory, 'missing')), /escapes the docs:x destination/);
+  fs.symlinkSync(path.join(directory, 'loop-b'), path.join(directory, 'loop-a'));
+  fs.symlinkSync(path.join(directory, 'loop-a'), path.join(directory, 'loop-b'));
+  assert.throws(() => apply(path.join(directory, 'loop-a/root')), /lead back to themselves/);
+});

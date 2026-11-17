@@ -5,7 +5,7 @@ import type { Plugin, ViteDevServer } from 'vite';
 
 import { isGeneratedModelFile } from './generated-paths.js';
 import { TYPESCRIPT_FILE, openRewriteProject, type GolemHostOptions, type RewriteProject } from './rewrite-host.js';
-import { isInstalledFile } from './type-analysis/path-identity.js';
+import { isInstalledFile } from './path-identity.js';
 
 /**
  * Vite plugin that scans each TypeScript module with the project's own TypeScript, against the golem.yaml named by

@@ -1,6 +1,6 @@
 import { createFixtureProject } from '../fixture-project.js';
 import assert from 'node:assert/strict';
-import { readdirSync, readFileSync } from 'node:fs';
+import { writeFileSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
@@ -157,18 +157,28 @@ test('an enum and a const keep the type and the keywords beside them, in the mod
     deep: { type: 'string', const: { a: 1 } },
     both: { const: 1, enum: [1, 2] },
   }, ['word', 'fixed', 'same', 'both']), { output, name: 'Shelves', profile: { validation: true } });
-  compileGeneratedSdk(output, [], { strict: true });
+  // The generated type admits the values that survive the type filter and nothing else: an assigned value that the type does not hold fails the compile.
+  const typeFile = path.join(output, 'shelf-types.ts');
+  writeFileSync(typeFile, `import type { Shelf } from './types.js';
+export const word: Shelf['word'] = 'a';
+// @ts-expect-error 'b' is not in the enum
+export const wordB: Shelf['word'] = 'b';
+// @ts-expect-error the number 1 is no string, so the type filter dropped it from the enum
+export const wordNumber: Shelf['word'] = 1;
+export const never: Shelf['never'] = undefined;
+// @ts-expect-error a const of another type than its string type leaves no value
+export const neverValue: Shelf['never'] = 1;
+export const both: Shelf['both'] = 1;
+// @ts-expect-error the const 1 limits the enum [1, 2]
+export const bothTwo: Shelf['both'] = 2;
+`);
+  compileGeneratedSdk(output, [typeFile], { strict: true });
   const shelf = await sdkBodyCodec(output, 'Shelves', 'Shelf');
   const body = { word: 'a', fixed: 2, same: 1, both: 1 };
   assert.equal(await requestAccepts(shelf, body), true);
   for (const [field, value] of [['word', 1], ['fixed', 3], ['same', 2], ['never', 1], ['never', '1'], ['low', 1], ['low', 2], ['deep', 'x'], ['deep', { a: 1 }], ['both', 2]] as const) {
     assert.equal(await requestAccepts(shelf, { ...body, [field]: value }), false, `${field} = ${JSON.stringify(value)}`);
   }
-  const source = readdirSync(output, { recursive: true, encoding: 'utf8' }).filter(file => file.endsWith('.ts') && !file.endsWith('.d.ts') && !file.includes('node_modules'))
-    .map(file => readFileSync(path.join(output, file), 'utf8')).join('\n');
-  assert.match(source, /word: "a";/);
-  assert.match(source, /never\?: never;/);
-  assert.match(source, /both: 1;/);
 });
 
 for (const [label, schema] of [
@@ -205,7 +215,22 @@ test('an enum drops each listed value that a keyword beside it excludes, in the 
     word: { enum: ['ab', 'b', 'abc'], pattern: '^a', minLength: 3 },
     low: { type: 'integer', minimum: 2, const: 1 },
   }, ['count', 'even', 'word']), { output, name: 'Shelves', profile: { validation: true } });
-  compileGeneratedSdk(output, [], { strict: true });
+  const typeFile = path.join(output, 'shelf-types.ts');
+  writeFileSync(typeFile, `import type { Shelf } from './types.js';
+export const counts: Shelf['count'][] = [2, 3];
+// @ts-expect-error minimum 2 dropped the listed 1
+export const countOne: Shelf['count'] = 1;
+export const evens: Shelf['even'][] = [2, 4];
+// @ts-expect-error multipleOf 2 dropped the listed 1 and 3
+export const evenOdd: Shelf['even'] = 3;
+export const word: Shelf['word'] = 'abc';
+// @ts-expect-error pattern and minLength dropped the listed 'ab' and 'b'
+export const wordShort: Shelf['word'] = 'ab';
+export const low: Shelf['low'] = undefined;
+// @ts-expect-error minimum 2 beside const 1 leaves no value
+export const lowOne: Shelf['low'] = 1;
+`);
+  compileGeneratedSdk(output, [typeFile], { strict: true });
   const shelf = await sdkBodyCodec(output, 'Shelves', 'Shelf');
   const body = { count: 2, even: 4, word: 'abc' };
   assert.equal(await requestAccepts(shelf, body), true);
@@ -213,10 +238,4 @@ test('an enum drops each listed value that a keyword beside it excludes, in the 
   for (const [field, value] of [['count', 1], ['even', 1], ['even', 3], ['word', 'ab'], ['word', 'b'], ['low', 1], ['low', 2]] as const) {
     assert.equal(await requestAccepts(shelf, { ...body, [field]: value }), false, `${field} = ${JSON.stringify(value)}`);
   }
-  const source = readdirSync(output, { recursive: true, encoding: 'utf8' }).filter(file => file.endsWith('.ts') && !file.endsWith('.d.ts') && !file.includes('node_modules'))
-    .map(file => readFileSync(path.join(output, file), 'utf8')).join('\n');
-  assert.match(source, /count: 2 \| 3;/);
-  assert.match(source, /even: 2 \| 4;/);
-  assert.match(source, /word: "abc";/);
-  assert.match(source, /low\?: never;/);
 });

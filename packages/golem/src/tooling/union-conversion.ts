@@ -3,7 +3,7 @@
  * Ambiguous unions fail generation; conversion must not probe alternatives.
  */
 
-import type { DiscriminatorValue, ModelTypeDescriptor } from '../model-registry.js';
+import type { DescriptorSerde, DiscriminatorValue, ModelTypeDescriptor, SerdeFunctions } from '../model-registry.js';
 import { createHash } from 'node:crypto';
 import { bindInput, code, helperName, identifier, inputOf, inputSlot, join, literal, localCode, readShape, render, sameCode, selfPlacedHelper, type Code, type Helper, type InputSlot } from './code.js';
 import { rt } from './rt.js';
@@ -34,14 +34,24 @@ function describeVariant(variant: ModelTypeDescriptor): string {
 
 /** A union with no object tag needs a conversion that the wire value cannot select: generation stops, and a generator adds its code, location and fix. */
 export class AmbiguousUnionConversionError extends Error {
-  constructor(variants: readonly ModelTypeDescriptor[]) {
-    super(`Union has ambiguous conversions. Use a discriminated object union or one serde pair for the value. The variants are ${variants.map(describeVariant).join(' | ')}.`);
+  constructor(variants: readonly ModelTypeDescriptor[], message = `Union has ambiguous conversions. Use a discriminated object union or one serde pair for the value. The variants are ${variants.map(describeVariant).join(' | ')}.`) {
+    super(message);
+  }
+}
+
+/**
+ * A tagged variant whose serde writes no object: the wire value has no tag to dispatch on, so golem cannot tell the variant from the
+ * others. A generator stops with the code of an ambiguous union.
+ */
+export class TaggedSerdeWireError extends AmbiguousUnionConversionError {
+  constructor(variant: ModelTypeDescriptor, wire: ModelTypeDescriptor) {
+    super([variant], `The variant ${describeVariant(variant)} of a tagged union has a serde whose wire form is ${wire.kind}, not an object that holds the tag, so golem cannot dispatch it. Write the variant as an object with the tag, or take the serde off it.`);
   }
 }
 
 /**
  * The test of the JSON view, as code: `key` is an own enumerable property of `object`. Every generated read of a field
- * (`presentValueCode`, the `isPresent` helper of the validators) builds on this one fragment.
+ * (`presentValueCode`) builds on this one fragment; the validators' runtime `isPresent` (validation-runtime.ts) is the same rule.
  */
 export function ownEnumerableCode(object: Code, key: Code): Code {
   return code`Object.prototype.propertyIsEnumerable.call(${object}, ${key})`;
@@ -63,17 +73,19 @@ export const PRESENT_KEY = localCode('key');
  * One `Object.keys` pass that gives each `[key, local]` pair its value in a `let` local, or `undefined` when the key is
  * absent, so each field is read once (the presence rows of scripts/benchmark/validator-toggles.ts). `declare` writes the
  * declaration of a local, for example with a type annotation. `otherwise` is the statement for a key that is not in
- * `captures`; it reads that key as `PRESENT_KEY`, so the same pass sees the other keys.
+ * `captures`; it reads that key as `PRESENT_KEY`, so the same pass sees the other keys. `skip` is the test that `PRESENT_KEY` is
+ * program state: the pass leaves such a key out whatever its name, so its local stays `undefined`.
  */
 export function presentKeysCode(
   object: Code,
   captures: readonly (readonly [key: string, local: Code])[],
-  options: { readonly declare?: (local: Code) => Code; readonly otherwise?: Code } = {},
+  options: { readonly declare?: (local: Code) => Code; readonly otherwise?: Code; readonly skip?: Code } = {},
 ): Code {
-  const { declare = (local: Code) => local, otherwise } = options;
+  const { declare = (local: Code) => local, otherwise, skip } = options;
   const cases = join(captures.map(([key, local]) => code`case ${literal(key)}: ${local} = ${object}[${literal(key)}]; break;`), code` `);
   const other = otherwise === undefined ? code`` : code` default: ${otherwise}`;
-  return code`let ${join(captures.map(([, local]) => declare(local)), code`, `)}; for (const ${PRESENT_KEY} of Object.keys(${object})) switch (${PRESENT_KEY}) { ${cases}${other} }`;
+  const pass = code`switch (${PRESENT_KEY}) { ${cases}${other} }`;
+  return code`let ${join(captures.map(([, local]) => declare(local)), code`, `)}; for (const ${PRESENT_KEY} of Object.keys(${object})) ${skip === undefined ? pass : code`{ if (${skip}) continue; ${pass} }`}`;
 }
 
 /**
@@ -436,6 +448,31 @@ function inlineDispatch(options: DispatchOptions): Code {
   return code`(${converted})`;
 }
 
+/** The serde with the two functions it names. A serde that names none is a broken input, not a case: it throws, so no output holds a missing function. */
+export function serdeFunctions(serde: DescriptorSerde): SerdeFunctions {
+  const { serialize, deserialize } = serde;
+  if (serialize === undefined || deserialize === undefined) {
+    throw new TypeError(`The serde ${JSON.stringify(serde.id)} names no ${serialize === undefined ? 'serialize' : 'deserialize'} function.`);
+  }
+  return { ...serde, serialize, deserialize };
+}
+
+/**
+ * What converts a value of a descriptor, in the one order every walker reads: a serde first, then a generated model, then the rest. The
+ * node of a generated model with a serde describes the model, not the wire form of the serde, so the serde decides. A walker that
+ * tests `kind === 'generated-model'` before this skips the serde.
+ */
+export type ValueConversion =
+  | { readonly kind: 'serde'; readonly serde: DescriptorSerde }
+  | { readonly kind: 'generated-model'; readonly descriptor: GeneratedModelTypeDescriptor }
+  | { readonly kind: 'other' };
+
+export function valueConversion(descriptor: ModelTypeDescriptor): ValueConversion {
+  const { serde } = descriptor;
+  if (serde) return { kind: 'serde', serde };
+  return descriptor.kind === 'generated-model' ? { kind: 'generated-model', descriptor } : { kind: 'other' };
+}
+
 /** A named variant: a model, or a named alias that a node of the walker's graph holds. */
 export type NamedTypeDescriptor = Extract<ModelTypeDescriptor, { readonly kind: 'reference' | 'generated-model' }>;
 
@@ -469,6 +506,17 @@ function isSequenceVariant(variant: ModelTypeDescriptor, named: NamedVariants): 
 function isSerdeSequence(variant: ModelTypeDescriptor, holdsSequence: NamedVariants): boolean {
   const wire = serdeWireDescriptor(variant.serde);
   return wire !== undefined && (wire.kind === 'array' || wire.kind === 'tuple' || (isNamed(wire) && holdsSequence(wire)));
+}
+
+/**
+ * The variants of a tag table dispatch by the tag in the wire object. A variant with a serde writes its own wire form, so the form must
+ * be an object: a scalar or an array holds no tag. Every walker meets the variants of a table here, so they cannot disagree.
+ */
+function rejectUntaggableSerdeVariants(tagged: readonly ModelTypeDescriptor[], named: NamedVariants): void {
+  for (const variant of tagged) {
+    const wire = serdeWireDescriptor(variant.serde);
+    if (wire !== undefined && (isScalarishDescriptor(wire) || isSequenceVariant(wire, named))) throw new TaggedSerdeWireError(variant, wire);
+  }
 }
 
 /** A model, or a named node that holds an object or anything but an array: its value is a JSON object or the like. */
@@ -696,6 +744,7 @@ export function emitUnionConversion(
     const indices = presentUnionIndices(descriptor);
     const table = descriptor.discriminator;
     const taggedIndices = table ? indices.filter((index) => table.variants[index].values.length > 0) : indices;
+    if (table) rejectUntaggableSerdeVariants(taggedIndices.map((index) => descriptor.variants[index]), named);
     if (!table || taggedIndices.length === indices.length) return conversion.tagged({ indices: taggedIndices });
     const rest = indices.filter((index) => !taggedIndices.includes(index) && index !== table.defaultVariant)
       .map((index) => descriptor.variants[index]);
@@ -781,7 +830,7 @@ function generatedWithObjects(
   named: NamedVariants,
 ): Code | undefined {
   // A generated model that holds an array is no object: an array value is not the one the model takes with every object.
-  const generated = present.filter((variant): variant is GeneratedModelTypeDescriptor => variant.kind === 'generated-model' && !isSequenceVariant(variant, named));
+  const generated = present.filter((variant): variant is GeneratedModelTypeDescriptor => valueConversion(variant).kind === 'generated-model' && !isSequenceVariant(variant, named));
   if (generated.length !== 1) return undefined;
   const generatedCode = options.text(generated[0]);
   if (generatedCode === undefined) return undefined;

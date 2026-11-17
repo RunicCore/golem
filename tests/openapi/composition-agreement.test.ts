@@ -863,7 +863,11 @@ interface Built {
 
 const scope = fileFixtureScope();
 
-function builder(row: Row, validation: boolean): () => Promise<Built> {
+/**
+ * The SDK of the row, generated and compiled once. `types` is a fixture of tests/fixtures/openapi/composition that states the generated
+ * type of the row: it is compiled with the SDK in the same run, so a type that differs from the fixture fails the build.
+ */
+function builder(row: Row, validation: boolean, types?: string): () => Promise<Built> {
   return onceShared(async () => {
     const output = path.join(createFixtureProject(scope, 'golem-composition-agreement-'), 'sdk');
     const result = await generateMaterializedSdk(withRootOperations(row.document, row.root), {
@@ -871,7 +875,8 @@ function builder(row: Row, validation: boolean): () => Promise<Built> {
       name: 'Composition',
       profile: { validation, allowAny: false },
     });
-    compileGeneratedSdk(output, [], { strict: true, skipLibCheck: true });
+    const typeFiles = types === undefined ? [] : [copyFixtureFile(output, `openapi/composition/${types}-types.ts`, `${types}-types.ts`)];
+    compileGeneratedSdk(output, typeFiles, { strict: true, skipLibCheck: true });
     return {
       output,
       warnings: (result.diagnostics ?? []).filter(({ code }) => code.startsWith('OPENAPI_COMPOSITION_'))
@@ -970,18 +975,9 @@ async function assertCodecRejects(built: Built, wire: Wire): Promise<void> {
 }
 
 for (const row of rows) {
-  const checked = builder(row, true);
+  // The fixture states the converted type of a row: a Date where the wire holds a date-time. Every test of the row builds with it.
+  const checked = builder(row, true, row.fixture);
   const unchecked = builder(row, false);
-
-  const fixture = row.fixture;
-  if (fixture !== undefined) {
-    // The fixtures state the converted type of a row: a Date where the wire holds a date-time.
-    test(`${row.shape}: the generated type`, async () => {
-      const { output } = await checked();
-      copyFixtureFile(output, `openapi/composition/${fixture}-types.ts`, 'row-types.ts');
-      compileGeneratedSdk(output, [path.join(output, 'row-types.ts')], { strict: true, skipLibCheck: true, noEmit: true });
-    });
-  }
 
   if (row.converts) {
     test(`${row.shape}: the generated validators have the model root`, async () => {

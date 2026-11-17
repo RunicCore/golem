@@ -2,17 +2,16 @@ import 'temporal-polyfill/global';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 import { createFixtureProject } from '../fixture-project.js';
 import {
   captureRequest,
   compileGeneratedSdk,
   generateMaterializedSdk,
-  importGeneratedModule,
-  isGeneratedClientClass,
   loadGeneratedClient,
+  loadOperationCodecs,
   recordingFetch,
+  requireFunction,
   requireRecord,
   sdkBodyCodec,
   withRootOperations,
@@ -78,11 +77,10 @@ test('dates: temporal models encode to the ISO strings the generated client send
   const output = path.join(createFixtureProject(t, 'golem-openapi-temporal-request-'), 'sdk');
   await generateMaterializedSdk(EVENT_OPERATIONS, { output, name: 'Events', profile: PROFILE, dates: 'temporal' });
   compileGeneratedSdk(output, [], { strict: true, lib: ['ES2023', 'DOM', 'DOM.Iterable', 'esnext.temporal'] });
-  const models = requireRecord(await import(pathToFileURL(path.join(output, 'dist/index.js')).href), 'generated models');
-  assert.ok(isGeneratedClientClass(models.EventsClient), 'generated client');
+  const EventsClient = await loadGeneratedClient(output, 'Events', 'dist/index.js');
   const wire = { at: '2025-01-02T03:04:05Z', day: '2025-01-02', span: 'P1D', clock: '03:04:05Z', maybe: null };
   const requests: CapturedRequest[] = [];
-  const client = new models.EventsClient({
+  const client = new EventsClient({
     baseUrl: 'https://api.test',
     fetchImpl: async (url: RequestInfo | URL, init?: RequestInit) => {
       requests.push(captureRequest(url, init));
@@ -90,7 +88,7 @@ test('dates: temporal models encode to the ISO strings the generated client send
     },
   });
   const model = { at: Temporal.Instant.from('2025-01-02T03:04:05Z'), day: Temporal.PlainDate.from('2025-01-02'), span: Temporal.Duration.from('P1D'), clock: '03:04:05Z', maybe: null };
-  const response = await client.createEvent().execute({ body: model as never });
+  const response = await client.createEvent().execute({ body: model });
   assert.equal(response.status, 201);
   assert.deepEqual(JSON.parse(String(requests[0]?.init.body)), wire);
 });
@@ -101,16 +99,17 @@ test('a standalone SDK writes one codec module for each operation that converts 
   await generateMaterializedSdk(EVENT_OPERATIONS, { output, name: 'Events', profile: PROFILE, dates: 'temporal' });
   compileGeneratedSdk(output, [], { strict: true, lib: ['ES2023', 'DOM', 'DOM.Iterable', 'esnext.temporal'] });
   assert.deepEqual(fs.readdirSync(path.join(output, 'codecs')).sort(), ['createEvent.ts', 'listEvents.ts']);
-  const { operationCodecs: created } = requireRecord(await importGeneratedModule(output, 'create codecs', 'dist/codecs/createEvent.js'), 'create codecs module') as { operationCodecs: Record<string, Record<string, unknown>> };
+  const created = await loadOperationCodecs(output, 'createEvent');
   assert.deepEqual(Object.keys(created), ['input', 'responses', 'encode', 'decode']);
-  assert.deepEqual(Object.keys(created.encode ?? {}), ['application/json']);
-  assert.deepEqual(Object.keys(created.decode ?? {}), ['201:application/json']);
-  const { operationCodecs: listed } = requireRecord(await importGeneratedModule(output, 'list codecs', 'dist/codecs/listEvents.js'), 'list codecs module') as { operationCodecs: Record<string, unknown> };
-  assert.deepEqual(Object.keys(listed), ['input']);
+  const encode = requireRecord(created.encode, 'create encoders');
+  const decode = requireRecord(created.decode, 'create decoders');
+  assert.deepEqual(Object.keys(encode), ['application/json']);
+  assert.deepEqual(Object.keys(decode), ['201:application/json']);
+  assert.deepEqual(Object.keys(await loadOperationCodecs(output, 'listEvents')), ['input']);
   const wire = { at: '2025-01-02T03:04:05Z', day: '2025-01-02', span: 'P1D', clock: '03:04:05Z', maybe: null };
-  const decoded = (created.decode?.['201:application/json'] as (wire: unknown) => Record<string, unknown>)(wire);
+  const decoded = requireRecord(requireFunction(decode['201:application/json'], 'create decoder')(wire), 'decoded event');
   assert.ok(decoded.at instanceof Temporal.Instant);
-  assert.deepEqual((created.encode?.['application/json'] as (value: unknown) => unknown)(decoded), wire);
+  assert.deepEqual(requireFunction(encode['application/json'], 'create encoder')(decoded), wire);
 });
 
 test('dates omitted and dates: date generate the same SDK, with Date values', async t => {
@@ -348,8 +347,8 @@ test('dates: temporal sends a duration query parameter and a duration header in 
   const client = new Client({ baseUrl: 'https://api.test', fetchImpl: (async (url: RequestInfo | URL, init?: RequestInit) => {
     requests.push({ url: String(url), headers: Object.fromEntries(new Headers(init?.headers)) });
     return fetchImpl(url, init);
-  }) as typeof fetch }) as unknown as { listSpans(): { execute(input: unknown): Promise<{ headers: Record<string, unknown> }> } };
+  }) as typeof fetch });
   const response = await client.listSpans().execute({ query: { span: Temporal.Duration.from({ milliseconds: 500 }) }, header: { 'X-Span': Temporal.Duration.from({ years: 1, days: 2 }) } });
   assert.deepEqual([requests[0]?.url, requests[0]?.headers['x-span'], sent.length], ['https://api.test/spans?span=PT0.5S', 'P1Y2D', 1]);
-  assert.equal(String(response.headers['X-Left'] ?? response.headers['x-left']), 'PT1H30S');
+  assert.equal(String(response.headers?.['X-Left'] ?? response.headers?.['x-left']), 'PT1H30S');
 });

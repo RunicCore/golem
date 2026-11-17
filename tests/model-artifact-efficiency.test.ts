@@ -4,7 +4,6 @@ import {
   writeFileSync,
 } from 'node:fs';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
 import test, { type TestContext } from 'node:test';
 
 import { deduplicateTagSchemas, type TagSchema } from '#model/emit';
@@ -14,6 +13,7 @@ import { readFixture, writeGeneratedArtifacts } from './fixture-project.js';
 import { buildModelProject, createModelProject, generatedModelFiles, writeModelGolemYaml, writeModelSources, type ModelProject } from './model-project.js';
 import { duplicateLocalNameReferenceModelSource } from './fixture-templates/models/model-artifact-efficiency.js';
 import { parse as parseYaml } from 'yaml';
+import { importGeneratedModule, loadModelClasses, requireRecord, type GeneratedModelClass } from './openapi/helpers.js';
 import { loadGolemModeProject } from './openapi/sdk-client-fixture.js';
 import { IssueRepresentation, IssueSource, LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { requireObjectCodec, decodeGeneratedModelTrusted, findGeneratedModelDefinitionForConstructor } from '@exprtlabs/golem/internal/model-runtime';
@@ -67,17 +67,16 @@ test('equivalent MinLength tags of two companions compile to one validators modu
   assert.equal(artifacts.filter((item) => item.path.endsWith('.validators.generated.ts')).length, 1, 'one validators module serves every companion');
   assert.equal(artifacts.filter((item) => item.path.endsWith('.model.generated.ts')).length, 2);
   const spy = await spyOnBuild(fixtureValue.root, {});
-  let Item: new (values?: { value?: string; extra?: string }) => { value: string; extra: string };
+  let Item: GeneratedModelClass;
   try {
-    ({ Item } = await import(pathToFileURL(path.join(fixtureValue.root, 'build/item.model.js')).href));
-    await import(pathToFileURL(path.join(fixtureValue.root, 'build/other.model.js')).href);
+    ({ Item } = await loadModelClasses(path.join(fixtureValue.root, 'build/item.model.js'), ['Item']));
+    await importGeneratedModule(path.join(fixtureValue.root, 'build'), 'other.model.js', 'other.model.js');
   } finally { spy.stop(); }
   assert.deepEqual(
     spy.requests.filter((request) => request.specifier.endsWith('models.validators.generated.js')).map((request) => request.importer).sort(),
     ['item.model.generated.js', 'other.model.generated.js'],
     'each companion loads the one validators module',
   );
-  const { getValidator } = await import('@exprtlabs/golem/validation');
   const valid = new Item({ value: 'ab', extra: 'wxyz' });
   const invalid = new Item({ value: 'x', extra: 'wxyz' });
   assert.equal(await getValidator(valid).validate(), true);
@@ -106,7 +105,7 @@ test('validator bindings survive strict companion regeneration', async (t) => {
   // The build runs the models job, which regenerates the companions beside the existing ones.
   writeModelGolemYaml(fixtureValue.root, profile);
   await buildModelProject(fixtureValue.root);
-  const { Cart } = await import(pathToFileURL(path.join(fixtureValue.root, 'build/cart.model.js')).href);
+  const { Cart } = await loadModelClasses(path.join(fixtureValue.root, 'build/cart.model.js'), ['Cart']);
   assert.equal(await getValidator(new Cart({ count: 2 })).validate(), true);
   assert.equal(await getValidator(new Cart({ count: 3 })).validate(), false, 'custom predicate rejects values accepted by Minimum');
   assert.equal(await getValidator(new Cart({ count: 0 })).validate(), false, 'Minimum constraint remains active');
@@ -119,9 +118,7 @@ test('wire-only serde predicates do not create model-plane tag validators', asyn
   writeFileSync(path.join(fixtureValue.sourceRoot, 'item.model.ts'), readFixture("models/model-artifact-efficiency/wire-only-serde-predicates-do-not-create-model-plane-tag-validators/item.model.ts"));
   writeModelGolemYaml(fixtureValue.root, { validation: true });
   await buildModelProject(fixtureValue.root);
-  const { Item } = await import(pathToFileURL(path.join(fixtureValue.root, 'build/item.model.js')).href) as {
-    Item: new (values?: { value?: number }) => { value: number };
-  };
+  const { Item } = await loadModelClasses(path.join(fixtureValue.root, 'build/item.model.js'), ['Item']);
   const codec = requireObjectCodec(generatedCodecIdFromRoot(fixtureValue.root, 'TItem'));
   const model = new Item({ value: -5 });
   assert.equal(codec.validate(model), true, 'the model-plane number field carries no tag validator derived from the wire-only predicate');
@@ -144,22 +141,10 @@ test('generated tag schemas retain distinct reference closures for duplicate loc
 
   writeModelGolemYaml(fixtureValue.root, { validation: true });
   await buildModelProject(fixtureValue.root);
-  const [
-    { Parent: OneParent, Child: OneChild },
-    { TParentBaseModel: OneParentBaseModel },
-    { Parent: TwoParent, Child: TwoChild },
-    { TParentBaseModel: TwoParentBaseModel },
-  ] = await Promise.all([
-    import(pathToFileURL(path.join(fixtureValue.root, 'build/one/things.model.js')).href),
-    import(pathToFileURL(path.join(fixtureValue.root, 'build/one/things.model.generated.js')).href),
-    import(pathToFileURL(path.join(fixtureValue.root, 'build/two/things.model.js')).href),
-    import(pathToFileURL(path.join(fixtureValue.root, 'build/two/things.model.generated.js')).href),
-  ]) as [
-    { Parent: new (values?: never) => object; Child: new (values?: never) => object },
-    { TParentBaseModel: abstract new (...args: never[]) => object },
-    { Parent: new (values?: never) => object; Child: new (values?: never) => object },
-    { TParentBaseModel: abstract new (...args: never[]) => object },
-  ];
+  const { Parent: OneParent, Child: OneChild } = await loadModelClasses(path.join(fixtureValue.root, 'build/one/things.model.js'), ['Parent', 'Child']);
+  const { TParentBaseModel: OneParentBaseModel } = await loadModelClasses(path.join(fixtureValue.root, 'build/one/things.model.generated.js'), ['TParentBaseModel']);
+  const { Parent: TwoParent, Child: TwoChild } = await loadModelClasses(path.join(fixtureValue.root, 'build/two/things.model.js'), ['Parent', 'Child']);
+  const { TParentBaseModel: TwoParentBaseModel } = await loadModelClasses(path.join(fixtureValue.root, 'build/two/things.model.generated.js'), ['TParentBaseModel']);
   const oneCodecId = findGeneratedModelDefinitionForConstructor(OneParentBaseModel)?.codecId;
   const twoCodecId = findGeneratedModelDefinitionForConstructor(TwoParentBaseModel)?.codecId;
   assert.ok(oneCodecId, 'the "one" Parent model has a registered codec id');
@@ -167,14 +152,14 @@ test('generated tag schemas retain distinct reference closures for duplicate loc
   const oneCodec = requireObjectCodec(oneCodecId);
   const twoCodec = requireObjectCodec(twoCodecId);
 
-  const oneValid = new OneParent({ children: [new OneChild({ value: 'a' } as never)] } as never);
+  const oneValid = new OneParent({ children: [new OneChild({ value: 'a' })] });
   assert.equal(oneCodec.validate(oneValid), true, 'the "one" Contains schema accepts a matching string child');
-  const oneInvalid = new OneParent({ children: [{ value: 5 }] } as never);
+  const oneInvalid = new OneParent({ children: [{ value: 5 }] });
   assert.equal(oneCodec.validate(oneInvalid), false, 'the "one" Contains schema still requires string children');
 
-  const twoValid = new TwoParent({ children: [new TwoChild({ value: 5 } as never)] } as never);
+  const twoValid = new TwoParent({ children: [new TwoChild({ value: 5 })] });
   assert.equal(twoCodec.validate(twoValid), true, 'the "two" Contains schema accepts a matching number child');
-  const twoInvalid = new TwoParent({ children: [{ value: 'a' }] } as never);
+  const twoInvalid = new TwoParent({ children: [{ value: 'a' }] });
   assert.equal(
     twoCodec.validate(twoInvalid),
     false,
@@ -189,9 +174,9 @@ test('shared projection helpers retain distinct validators', async t => {
   await buildModelProject(value.root);
   const companion = generatedModelFiles(value.root).find(item => item.path.endsWith('/item.model.generated.ts'))?.content ?? '';
   assert.equal((companion.match(/function decodeTShortPickValue\(/g) ?? []).length, 1);
-  const { Container } = await import(pathToFileURL(path.join(value.root, 'build/item.model.js')).href);
+  const { Container } = await loadModelClasses(path.join(value.root, 'build/item.model.js'), ['Container']);
   const wire = { first: { value: 'a' }, second: { value: 'abc' } };
-  const model = modelCodec(Container).fromWireFormat(wire);
+  const model = requireRecord(modelCodec(Container).fromWireFormat(wire), 'container');
   assert.deepEqual(modelCodec(model).toWireFormat(model), wire);
   assert.equal(Object.getPrototypeOf(model.first), Object.prototype);
   assert.equal(await getValidator(new Container(wire)).validate(), true);
@@ -209,13 +194,13 @@ test('validation-disabled serde artifacts omit executable predicate bindings', a
   await buildModelProject(value.root);
   // The deployed codecs module has no predicate: a companion that still referenced it would not link.
   writeFileSync(path.join(value.root, 'build/codecs.js'), 'export const encode = (value) => String(value);\nexport const decode = (value) => Number(value);\n');
-  const { Item } = await import(pathToFileURL(path.join(value.root, 'build/item.model.js')).href);
+  const { Item } = await loadModelClasses(path.join(value.root, 'build/item.model.js'), ['Item']);
   const item = new Item({ value: -5 });
   assert.deepEqual(modelCodec(item).toWireFormat(item), { value: '-5' });
-  assert.equal(modelCodec(Item).fromWireFormat({ value: '7' }).value, 7);
-  const codec = requireObjectCodec<{ value: number }>(generatedCodecIdFromRoot(value.root, 'TItem'));
+  assert.equal(requireRecord(modelCodec(Item).fromWireFormat({ value: '7' }), 'item').value, 7);
+  const codec = requireObjectCodec(generatedCodecIdFromRoot(value.root, 'TItem'));
   assert.equal(codec.stringify(item), '{"value":"-5"}');
-  assert.equal(codec.parse('{"value":"7"}').value, 7);
+  assert.equal(requireRecord(codec.parse('{"value":"7"}'), 'item').value, 7);
   assert.throws(() => getValidator(item), (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.ValidationUnavailable);
 });
 
@@ -226,7 +211,7 @@ test('array item models validate at their full path, recursive ones included', a
   const profile = { validation: true } as const;
   writeModelGolemYaml(fixtureValue.root, profile);
   await buildModelProject(fixtureValue.root);
-  const { Company, Node } = await import(pathToFileURL(path.join(fixtureValue.root, 'build/company.model.js')).href);
+  const { Company, Node } = await loadModelClasses(path.join(fixtureValue.root, 'build/company.model.js'), ['Company', 'Node']);
   const invalid = getValidator(new Company({
     departments: [{ title: 'R&D', employees: [{ name: 'a', age: 1 }, { name: '', age: 2 }] }],
   }));
@@ -253,7 +238,7 @@ test('array item models that live in another file validate at their full path', 
   writeModelGolemYaml(fixtureValue.root, { validation: true });
   await buildModelProject(fixtureValue.root);
 
-  const { Roster } = await import(pathToFileURL(path.join(fixtureValue.root, 'build/roster.model.js')).href);
+  const { Roster } = await loadModelClasses(path.join(fixtureValue.root, 'build/roster.model.js'), ['Roster']);
   const invalid = getValidator(new Roster({
     departments: [{ title: 'R&D', employees: [{ name: 'a', age: 1 }, { name: '', age: 2 }] }],
   }));
@@ -268,7 +253,7 @@ test('an array item type from a golem-mode SDK reports the issue source of the m
   const fixtureRoot = 'models/model-artifact-efficiency/array-items-inline/mixed-source';
   const wallet = readFixture(`${fixtureRoot}/wallet.model.ts`).replace("'./sdk/index.js'", "'../sdk/index.js'");
   const { root } = await loadGolemModeProject(t, 'golem-model-efficiency-mixed-', [{ document: parseYaml(readFixture(`${fixtureRoot}/money.yaml`)), folder: 'sdk', name: 'Payments' }], true, { 'src/wallet.model.ts': wallet });
-  const { Wallet } = await import(pathToFileURL(path.join(root, 'build/src/wallet.model.js')).href);
+  const { Wallet } = await loadModelClasses(path.join(root, 'build/src/wallet.model.js'), ['Wallet']);
   const invalid = getValidator(new Wallet({ coins: [{ amount: 1, currency: 'USD' }, { amount: -1, currency: 'USD' }] }));
   assert.equal(await invalid.validate(), false);
   assert.deepEqual(
@@ -291,7 +276,7 @@ test('converted model fields call their converter without a per-field closure', 
   });
   const spy = await buildAndSpy(project, ['convertModelField']);
   try {
-    const { Wallet } = await import(pathToFileURL(path.join(project.root, 'build/wallet.model.js')).href);
+    const { Wallet } = await loadModelClasses(path.join(project.root, 'build/wallet.model.js'), ['Wallet']);
     const wire = { balance: { amount: '1', currency: 'USD' }, rebate: { amount: '2', currency: 'EUR' } };
     // The model's own decode hook is not on the codec's fromWireFormat path; the nested-model decode of generated code (decodeGeneratedModelTrusted) is its only caller.
     // One decode: the converter each field passes, by field.
@@ -323,7 +308,7 @@ test('converted model items inside an array call their converter without a per-i
   });
   const spy = await buildAndSpy(project, ['convertModelField', 'convertModelItems']);
   try {
-    const { Wallet } = await import(pathToFileURL(path.join(project.root, 'build/wallet.model.js')).href);
+    const { Wallet } = await loadModelClasses(path.join(project.root, 'build/wallet.model.js'), ['Wallet']);
     const wire = { history: [{ amount: '1', currency: 'USD' }, { amount: '2', currency: 'EUR' }, { amount: '3', currency: 'GBP' }] };
     const round = () => {
       spy.calls.length = 0;

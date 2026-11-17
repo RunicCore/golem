@@ -2,7 +2,6 @@ import { generatorSettings } from './support/mobx-extension.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
 import test, { type TestContext } from 'node:test';
 import { command, workspace } from './support/process.js';
 import { spyOnBuild } from './support/build-spy.js';
@@ -14,7 +13,7 @@ import { getValidator } from '@exprtlabs/golem/validation';
 
 import { copyFixture, copyFixtureFile, createFixtureProject, linkProjectPackages, writeGeneratedArtifacts } from './fixture-project.js';
 import { accountModelWithField, accountModelWithMissingImport } from './fixture-templates/models/model-generator.js';
-import { buildModelProject, buildModelProjectWith, createModelProject, writeModelGolemYaml, writeModelSources } from './model-project.js';
+import { buildModelProject, buildModelProjectWith, createModelProject, generatedModelFiles, writeModelGolemYaml, writeModelSources } from './model-project.js';
 import { taggedModelSource } from './fixture-templates/models/model-tags.js';
 import { COUNT_DIST_FILES, writeCodecPackage } from './fixture-templates/models/codec-package.js';
 import { tsSource } from './source-template.js';
@@ -26,7 +25,9 @@ import {
   discoverModelSources,
   generate,
 } from '#model/generator';
+import { importGeneratedModule, loadFunctions, loadModelClasses, requireRecord } from './openapi/helpers.js';
 import { modelCodec } from './support/model-codec.js';
+import { valueAt } from './support/json.js';
 
 function project(t: TestContext) {
   return createModelProject(t, { prefix: 'golem-model-generator-', name: 'model-generator' });
@@ -96,7 +97,7 @@ export const wrong: Payment[typeof generatedModelFieldsBrand] = { id: 1, amount:
     });
     writeModelGolemYaml(built.root, profile);
     await buildModelProject(built.root);
-    const { Payment } = await import(`${pathToFileURL(path.join(built.root, 'build/payment.model.js')).href}`);
+    const { Payment } = await loadModelClasses(path.join(built.root, 'build/payment.model.js'), ['Payment']);
     const wire = { id: 'p1', amount: 5, total: { currency: 'USD' } };
     const payment = modelCodec(Payment).fromWireFormat(wire);
     assert.ok(payment instanceof Payment, 'the companion registers the model for conversion');
@@ -108,7 +109,16 @@ export const wrong: Payment[typeof generatedModelFieldsBrand] = { id: 1, amount:
       assert.throws(() => codec.parse(shortCurrency));
       const validator = getValidator(payment);
       assert.equal(await validator.validate(), true);
-      assert.equal(await getValidator(new Payment({ id: 'p1', amount: 'five', total: wire.total })).validate(), false);
+      const bad = getValidator(new Payment({ id: 'p1', amount: 'five', total: wire.total }));
+      assert.deepEqual([bad.pending, bad.valid, bad.error(['amount'])], [false, true, undefined], 'a constructor never validates: the validator holds no issue until it is asked');
+      assert.equal(await bad.validate(), false);
+      assert.notEqual(bad.error(['amount']), undefined);
+      const edited = new Payment({ id: 'p1', amount: 5, total: wire.total });
+      const editedValidator = getValidator(edited);
+      Reflect.set(edited, 'amount', 'six');
+      assert.deepEqual([editedValidator.pending, editedValidator.valid, editedValidator.error(['amount'])], [false, true, undefined], 'a field assignment never validates: the validator holds no issue until it is asked');
+      assert.equal(await editedValidator.validate(), false);
+      assert.notEqual(editedValidator.error(['amount']), undefined);
       assert.equal(isComputedProp(validator, 'valid'), expected.mobx === true, 'the validator is observable exactly when the profile uses MobX');
       assert.equal(codec.validate(payment), true);
     } else {
@@ -118,6 +128,27 @@ export const wrong: Payment[typeof generatedModelFieldsBrand] = { id: 1, amount:
     }
   });
 }
+
+test('a golem.yaml with no validation key validates: its build writes the validators and parse rejects a short value', async (t: TestContext) => {
+  // protects: F-38 validation is on by default; the root key left out reaches the models job as validation true
+  const { root, sourceRoot } = project(t);
+  writeModelSources(sourceRoot, {
+    'money.model.ts': tsSource`import type { IModel } from '@exprtlabs/golem/model';
+import type { MinLength } from '@exprtlabs/golem/tags';
+export type TMoney = IModel<{ currency: string & MinLength<3> }>;
+`,
+    'money.ts': tsSource`import { TMoneyBaseModel } from './money.model.generated.js';
+export class Money extends TMoneyBaseModel {}
+`,
+  });
+  writeModelGolemYaml(root, {});
+  await buildModelProject(root);
+  assert.equal(generatedModelFiles(root).some(file => file.path.endsWith('models.validators.generated.ts')), true);
+  await importGeneratedModule(root, 'the money module', 'build/money.js');
+  const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TMoney'));
+  assert.deepEqual(codec.parse('{"currency":"USD"}'), { currency: 'USD' });
+  assert.throws(() => codec.parse('{"currency":"US"}'), (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.Validation);
+});
 
 test('getValidator infers generated fields and rejects handwritten subclass fields', async (t: TestContext) => {
   const { root } = project(t);
@@ -427,10 +458,10 @@ export type TOrder = IModel<{ lines: TLine[] }>;`,
   // Built and run, the order companion loads the line companion through its .mjs specifier.
   fs.writeFileSync(path.join(root, 'golem.yaml'), 'version: 1\nmodel:\n  suffixes: [.entity.mts]\n');
   await buildModelProject(root);
-  const { TOrderBaseModel } = await import(pathToFileURL(path.join(root, 'build/order.entity.generated.mjs')).href);
-  const { TLineBaseModel } = await import(pathToFileURL(path.join(root, 'build/line.entity.generated.mjs')).href);
+  const { TOrderBaseModel } = await loadModelClasses(path.join(root, 'build/order.entity.generated.mjs'), ['TOrderBaseModel']);
+  const { TLineBaseModel } = await loadModelClasses(path.join(root, 'build/line.entity.generated.mjs'), ['TLineBaseModel']);
   const decoded = modelCodec(TOrderBaseModel).fromWireFormat({ lines: [{ sku: 'a' }] });
-  assert.ok(decoded.lines[0] instanceof TLineBaseModel);
+  assert.ok(valueAt(decoded, 'lines', 0) instanceof TLineBaseModel);
   assert.deepEqual(modelCodec(decoded).toWireFormat(decoded), { lines: [{ sku: 'a' }] });
 });
 
@@ -444,9 +475,9 @@ export type TAccount = IModel<{ id: string }>;`,
   const result = generate({ root, directory, profile: { validation: false } });
   const keys = result.artifacts.find((artifact) => artifact.path === path.join(directory, '.golem/codec-keys.json'));
   assert.ok(keys, 'the codec key file lies under the configuration directory');
-  const table = JSON.parse(keys.content) as { version: number; keys: Record<string, string> };
+  const table = requireRecord(JSON.parse(keys.content), 'the codec key file');
   assert.equal(table.version, 1);
-  assert.deepEqual(Object.keys(table.keys), ['src/account.model.ts#TAccount']);
+  assert.deepEqual(Object.keys(requireRecord(table.keys, 'the codec keys')), ['src/account.model.ts#TAccount']);
 });
 
 /** A fixture of two files: `TMoney` (a tagged field, an `unknown` field, a Date field) and `TPayment`, which nests it. */
@@ -498,7 +529,7 @@ test('one package installed at two paths and used by models of one job is one bi
   writeCodecPackage(path.join(sourceRoot, 'two/node_modules/@fixture/pg'), { name: '@fixture/pg', exports, files: COUNT_DIST_FILES });
   // The compiler reads two copies of one name and version as one file; another version keeps the copies apart.
   const copyManifest = path.join(sourceRoot, 'two/node_modules/@fixture/pg/package.json');
-  fs.writeFileSync(copyManifest, JSON.stringify({ ...JSON.parse(fs.readFileSync(copyManifest, 'utf8')) as object, version: '0.0.1' }));
+  fs.writeFileSync(copyManifest, JSON.stringify({ ...requireRecord(JSON.parse(fs.readFileSync(copyManifest, 'utf8')), 'the package manifest'), version: '0.0.1' }));
   const model = (name: string): string => taggedModelSource({ name, imports: tsSource`import type { PkgCount } from '@fixture/pg/tags';`, fields: tsSource`count: PkgCount` }).text;
   writeModelSources(sourceRoot, { 'a.model.ts': model('A'), 'two/b.model.ts': model('B') });
   const result = generate({ root, profile: { validation: true } });
@@ -537,9 +568,11 @@ test('a companion imports only the validators of its own models and the companio
   const spy = await spyOnBuild(root, { '@exprtlabs/golem/internal/model-runtime': ['assertAcyclicEncodeInput', 'beginEncode', 'endEncode'] });
   try {
     // The payment companion alone brings in the money companion it needs.
-    const { TPaymentBaseModel, stringifyTPayment, toWireFormatTPayment } = await import(pathToFileURL(path.join(root, 'build/payment.model.generated.js')).href);
+    const companion = path.join(root, 'build/payment.model.generated.js');
+    const { TPaymentBaseModel } = await loadModelClasses(companion, ['TPaymentBaseModel']);
+    const { stringifyTPayment, toWireFormatTPayment } = await loadFunctions(companion, ['stringifyTPayment', 'toWireFormatTPayment']);
     const payment = modelCodec(TPaymentBaseModel).fromWireFormat(NESTED_PAYMENT_WIRE);
-    assert.ok(payment.total.at instanceof Date, 'the nested money converts with the decoder of its own companion');
+    assert.ok(valueAt(payment, 'total', 'at') instanceof Date, 'the nested money converts with the decoder of its own companion');
     assert.deepEqual(modelCodec(payment).toWireFormat(payment), NESTED_PAYMENT_WIRE);
     assert.equal(stringifyTPayment(payment), JSON.stringify(NESTED_PAYMENT_WIRE));
     assert.deepEqual(toWireFormatTPayment(payment), NESTED_PAYMENT_WIRE);
@@ -618,9 +651,9 @@ for (const layout of ['sibling files', 'one file'] as const) {
       }).text,
     });
     await buildModelProjectWith(root, { validation: true });
-    const { B } = await import(pathToFileURL(path.join(root, 'build', 'b.model.js')).href) as { B: new (values: object) => object };
-    const decoded = modelCodec(B).fromWireFormat({ s: { v: '2020-01-01T00:00:00.000Z' }, u: { w: '2020-01-01T00:00:00.000Z' } }) as { s: { v: unknown }; u: { w: unknown } };
-    assert.deepEqual([decoded.s.v instanceof Date, decoded.u.w instanceof Date], [true, true]);
+    const { B } = await loadModelClasses(path.join(root, 'build', 'b.model.js'), ['B']);
+    const decoded = modelCodec(B).fromWireFormat({ s: { v: '2020-01-01T00:00:00.000Z' }, u: { w: '2020-01-01T00:00:00.000Z' } });
+    assert.deepEqual([valueAt(decoded, 's', 'v') instanceof Date, valueAt(decoded, 'u', 'w') instanceof Date], [true, true]);
   });
 }
 
@@ -644,11 +677,10 @@ export class ${name} extends T${name}BaseModel {
     }).text,
   });
   await buildModelProjectWith(root, { validation: true });
-  const built = async (file: string) => await import(pathToFileURL(path.join(root, 'build', file)).href) as Record<string, new (values: object) => object>;
-  const [{ B }, first, second] = await Promise.all([built('b.model.js'), built('a1.model.js'), built('a2.model.js')]);
+  const [{ B }, first, second] = await Promise.all([loadModelClasses(path.join(root, 'build', 'b.model.js'), ['B']), loadModelClasses(path.join(root, 'build', 'a1.model.js'), ['A$']), loadModelClasses(path.join(root, 'build', 'a2.model.js'), ['A_'])]);
   const day = '2020-01-01T00:00:00.000Z';
-  const decoded = modelCodec(B).fromWireFormat({ s: { v: day }, u: { v: day } }) as { s: object; u: object };
-  assert.deepEqual([decoded.s instanceof first['A$']!, decoded.u instanceof second['A_']!], [true, true]);
+  const decoded = modelCodec(B).fromWireFormat({ s: { v: day }, u: { v: day } });
+  assert.deepEqual([valueAt(decoded, 's') instanceof first.A$, valueAt(decoded, 'u') instanceof second.A_], [true, true]);
 });
 
 // protects: T-867 class models of one shape that share a short name, in one file in either order, each decode to their own class
@@ -671,11 +703,10 @@ ${order.map(classModel).join('')}`,
       }).text,
     });
     await buildModelProjectWith(root, { validation: true });
-    const built = async (file: string) => await import(pathToFileURL(path.join(root, 'build', file)).href) as Record<string, new (values: object) => object>;
-    const [{ B }, classes] = await Promise.all([built('b.model.js'), built('a.model.js')]);
+    const [{ B }, classes] = await Promise.all([loadModelClasses(path.join(root, 'build', 'b.model.js'), ['B']), loadModelClasses(path.join(root, 'build', 'a.model.js'), ['A$', 'A_'])]);
     const day = '2020-01-01T00:00:00.000Z';
-    const decoded = modelCodec(B).fromWireFormat({ s: { v: day }, u: { v: day } }) as { s: object; u: object };
-    assert.deepEqual([decoded.s instanceof classes['A$']!, decoded.u instanceof classes['A_']!], [true, true]);
+    const decoded = modelCodec(B).fromWireFormat({ s: { v: day }, u: { v: day } });
+    assert.deepEqual([valueAt(decoded, 's') instanceof classes.A$, valueAt(decoded, 'u') instanceof classes.A_], [true, true]);
   });
 }
 
@@ -695,12 +726,10 @@ export type TA_ = IObject<{ b?: TB }>;
     }).text,
   });
   await buildModelProjectWith(root, { validation: true });
-  const { B } = await import(pathToFileURL(path.join(root, 'build', 'b.model.js')).href) as { B: new (values: object) => object };
+  const { B } = await loadModelClasses(path.join(root, 'build', 'b.model.js'), ['B']);
   const day = '2020-01-01T00:00:00.000Z';
-  const decoded = modelCodec(B).fromWireFormat({ s: { b: { at: day, a: { b: { at: day } } } }, u: { b: { at: day } } }) as {
-    s: { b: { at: unknown; a: { b: { at: unknown } } } }; u: { b: { at: unknown } };
-  };
-  assert.deepEqual([decoded.s.b.at instanceof Date, decoded.s.b.a.b.at instanceof Date, decoded.u.b.at instanceof Date], [true, true, true]);
+  const decoded = modelCodec(B).fromWireFormat({ s: { b: { at: day, a: { b: { at: day } } } }, u: { b: { at: day } } });
+  assert.deepEqual([valueAt(decoded, 's', 'b', 'at'), valueAt(decoded, 's', 'b', 'a', 'b', 'at'), valueAt(decoded, 'u', 'b', 'at')].map(at => at instanceof Date), [true, true, true]);
 });
 
 /** A shared folder `outer/shared` with a golem.yaml of its own, and an app that includes it and has a model of its own. */
@@ -808,7 +837,7 @@ test('a TValidation function of a folder outside the root runs in the built app'
     include: ['src/**/*.ts', '../shared/**/*.ts'],
   }));
   await buildModelProjectWith(root, { validation: true });
-  const { TOrderBaseModel } = await import(pathToFileURL(path.join(root, 'build/a/src/order.model.generated.js')).href);
+  const { TOrderBaseModel } = await loadModelClasses(path.join(root, 'build/a/src/order.model.generated.js'), ['TOrderBaseModel']);
   const order = modelCodec(TOrderBaseModel);
   assert.deepEqual(order.toWireFormat(order.fromWireFormat({ count: 2 })), { count: 2 });
   assert.throws(
@@ -1043,9 +1072,9 @@ export type TA = IModel<{ big: bigint & TSerde<typeof $e, typeof $d> }>;
 `,
   });
   await buildModelProjectWith(root, { validation: false });
-  const { TABaseModel } = await import(pathToFileURL(path.join(root, 'build/a.model.generated.js')).href);
+  const { TABaseModel } = await loadModelClasses(path.join(root, 'build/a.model.generated.js'), ['TABaseModel']);
   const model = modelCodec(TABaseModel).fromWireFormat({ big: '12' });
-  assert.equal(model.big, 12n);
+  assert.equal(valueAt(model, 'big'), 12n);
   assert.deepEqual(modelCodec(model).toWireFormat(model), { big: '12' });
 });
 
@@ -1057,8 +1086,8 @@ function configProject(t: TestContext, yaml: string): { root: string; app: strin
   const shop = path.join(root, 'node_modules/@fixture/shop');
   fs.mkdirSync(path.dirname(shop), { recursive: true });
   copyFixture(shop, 'config/scripted-plan');
-  const template = JSON.parse(fs.readFileSync(path.join(shop, 'package.json'), 'utf8')) as { golem: object };
-  fs.writeFileSync(path.join(shop, 'package.json'), JSON.stringify({ ...template, name: '@fixture/shop', golem: { ...template.golem, block: 'shop' } }));
+  const template = requireRecord(JSON.parse(fs.readFileSync(path.join(shop, 'package.json'), 'utf8')), 'the package manifest');
+  fs.writeFileSync(path.join(shop, 'package.json'), JSON.stringify({ ...template, name: '@fixture/shop', golem: { ...requireRecord(template.golem, 'its golem field'), block: 'shop' } }));
   const app = path.join(root, 'app');
   fs.mkdirSync(path.join(app, 'src'), { recursive: true });
   fs.writeFileSync(path.join(app, 'tsconfig.json'), '{}');
@@ -1198,12 +1227,12 @@ test('the models job reads the SDK folders of the jobs that need the codecs host
   ].join('\n') + '\n')).filename);
   const app = path.dirname(linked.config.configFile);
   assert.deepEqual(linked.job.facts.inputFolders, [path.join(app, 'sdk/a'), path.join(app, 'sdk/b')]);
-  assert.deepEqual(Reflect.get(linked.job.options as object, 'sdkOutputs'), [path.join(app, 'sdk/a'), path.join(app, 'sdk/b')]);
+  assert.deepEqual(requireRecord(linked.job.options, 'the job options').sdkOutputs, [path.join(app, 'sdk/a'), path.join(app, 'sdk/b')]);
   assert.deepEqual(linked.config.jobs.map(job => job.id).filter(id => id !== 'sdk-b'), ['sdk-a', 'model', 'docs']);
 
   const unlinked = await modelJobOf(configProject(t, shop('    - { id: docs, outputs: [{ path: api.yaml }] }\n')).filename);
   assert.deepEqual(unlinked.job.facts.inputFolders, []);
-  assert.equal('sdkOutputs' in (unlinked.job.options as object), false);
+  assert.equal('sdkOutputs' in requireRecord(unlinked.job.options, 'the job options'), false);
 });
 
 test('the plan entry of golem-model loads without TypeScript, yaml or the generator', async () => {
@@ -1216,7 +1245,8 @@ test('the plan entry of golem-model loads without TypeScript, yaml or the genera
     'console.log(JSON.stringify(urls));',
   ].join('\n');
   const { stdout } = await command(workspace, process.execPath, ['-e', script, path.join(workspace, 'packages/golem-model/dist/plan.js')]);
-  const urls = JSON.parse(stdout) as string[];
+  const urls: unknown = JSON.parse(stdout);
+  assert.ok(Array.isArray(urls) && urls.every((url): url is string => typeof url === 'string'), 'the hook prints a list of urls');
   assert.ok(urls.some(url => url.endsWith('/golem/dist/tooling/plan-support.js')), 'the hook sees the plan entry load its core helpers');
   assert.deepEqual(urls.filter(url => /\/(typescript|yaml)\/|generator(-core)?\.js$/.test(url)), []);
 });

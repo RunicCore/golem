@@ -12,7 +12,7 @@ import { parameterIdentity } from '@exprtlabs/golem/internal/generator-support';
 import { followReference, resolveFragmentPointer, schemaReference, type ScopedSchema } from '@exprtlabs/golem/internal/schema';
 import { followLocalRefs, overrideParameters, visitOperationSites, type OperationSite } from './normalize.js';
 import type { OpenApiProblem } from './openapi-validator.js';
-import { isMappingComponentName } from './reference-loader.js';
+import { isMappingComponentName, unresolvedReferenceMessage, type ReferenceKeyword } from './reference-loader.js';
 import { collectCanonicalResources, findDuplicateSchemaIds, lookupCanonicalResource, resolveSchemaTarget, visitOpenApiSchemaTree } from './schema-projection.js';
 
 const TEMPLATE = /\{([^{}]*)\}/g;
@@ -50,23 +50,24 @@ function checkUnresolvedRefs(document: unknown): OpenApiProblem[] {
   const resources = collectCanonicalResources(document);
   const problems: OpenApiProblem[] = [];
   const rootSchemaNames = new Set(Object.keys(asRecord(asRecord(asRecord(document).components).schemas)));
-  const check = (reference: string, currentBase: string | null, walkerPointer: string, label = '$ref'): void => {
+  const check = (keyword: ReferenceKeyword, reference: string, currentBase: string | null, walkerPointer: string): void => {
     if (reference === '#') return;
     if (reference.startsWith('#/')) {
       if (resolveFragmentPointer(document, reference.slice(1)) !== undefined) return;
+      if (currentBase !== null && resolveSchemaTarget(reference, currentBase, resources, document) !== undefined) return; // a place in the enclosing `$id` resource
     } else if (reference.startsWith('#')) {
       return; // Plain-name anchors are resolved by the JSON Schema engine.
     } else if (currentBase !== null && lookupCanonicalResource(reference, currentBase, resources)?.hasId) {
       return;
     }
-    problems.push({ ruleId: 'no-unresolved-refs', message: `Can't resolve ${label} ${reference}`, pointer: walkerPointer.slice(1) });
+    problems.push({ ruleId: 'no-unresolved-refs', message: unresolvedReferenceMessage(keyword, reference), pointer: walkerPointer.slice(1) });
   };
   visitOpenApiSchemaTree(document, {
-    onSchemaRef(_keyword, reference, currentBase, pointer) { check(reference, currentBase, pointer); },
-    onOpenApiRef(reference, pointer) { check(reference, null, pointer); },
+    onSchemaRef(keyword, reference, currentBase, pointer) { check(keyword, reference, currentBase, pointer); },
+    onOpenApiRef(reference, pointer) { check('$ref', reference, null, pointer); },
     onDiscriminatorMapping(keyword, reference, currentBase, ownerPointer, property) {
-      if (keyword !== 'mapping' || isMappingComponentName(reference, rootSchemaNames)) return;
-      check(reference, currentBase, pointerJoin(ownerPointer, property), 'discriminator mapping');
+      if (isMappingComponentName(reference, rootSchemaNames)) return;
+      check(keyword, reference, currentBase, pointerJoin(ownerPointer, property));
     },
   });
   return problems;

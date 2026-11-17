@@ -2,12 +2,12 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
-import { pathToFileURL } from 'node:url';
 
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { requireObjectCodec } from '@exprtlabs/golem/internal/model-runtime';
 
 import { generatedCodecIdFromRoot } from './support/consumer.js';
+import { loadModelClasses } from './openapi/helpers.js';
 import { fileFixtureScope, onceShared } from './fixture-project.js';
 import { buildModelProject, createModelProject, writeModelGolemYaml } from './model-project.js';
 
@@ -24,14 +24,13 @@ export { TLeafBaseModel, TStampedBaseModel, TKeeperBaseModel };
 
 const LEAF = { id: 'a' };
 const TREE = { leaf: LEAF, leaves: [LEAF, LEAF], maybe: null };
-type Models = Record<string, new (values?: object) => object>;
 
 const buildFor = (validation: boolean) => onceShared(async () => {
   const { root, sourceRoot } = createModelProject(fileFixtureScope(), { prefix: 'golem-nested-non-object-', name: 'nested-non-object', linkWorkspaceNodeModules: true });
   fs.writeFileSync(path.join(sourceRoot, 'nested.model.ts'), SOURCE);
   writeModelGolemYaml(root, { validation, exact: false });
   await buildModelProject(root);
-  const models = await import(pathToFileURL(path.join(root, 'build/nested.model.js')).href) as Models;
+  const models = await loadModelClasses(path.join(root, 'build/nested.model.js'), ['Tree', 'TKeeperBaseModel']);
   const codec = (name: string) => requireObjectCodec(generatedCodecIdFromRoot(root, name));
   return { models, tree: codec('TTree'), keeper: codec('TKeeper') };
 });
@@ -52,15 +51,15 @@ function outcome(decode: () => unknown): string {
 test('with validation on, the validator rejects a nested value that is no object before the conversion runs', async () => {
   // protects: T-646 the validated call keeps the validator's error; only an unvalidated decode reaches the class guard
   const { models, tree } = await builds.get(true)!();
-  assert.throws(() => tree.fromWireFormat({ ...TREE, leaf: 'text' }, { construct: models.Tree as never }), (error) => error instanceof LibError && error.kind === LibErrorKind.Validation);
+  assert.throws(() => tree.fromWireFormat({ ...TREE, leaf: 'text' }, { construct: models.Tree }), (error) => error instanceof LibError && error.kind === LibErrorKind.Validation);
 });
 
 for (const validation of [true, false]) {
   test(`a class field given a value that is no object is rejected, not built empty (validation ${validation})`, async () => {
     // protects: T-646 fromWireFormat and parse built an empty model from 'text' or null in a nested class field; golem rejects bad input and never coerces it (F-39)
     const { models, tree, keeper } = await builds.get(validation)!();
-    const options = { validate: false, construct: models.Tree as never };
-    const keeperOptions = { validate: false, construct: models.TKeeperBaseModel as never };
+    const options = { validate: false, construct: models.Tree };
+    const keeperOptions = { validate: false, construct: models.TKeeperBaseModel };
     const rows: [string, () => unknown, string][] = [
       ['text', () => tree.fromWireFormat({ ...TREE, leaf: 'text' }, options), 'TLeafBaseModel expected an object. @[["leaf"]] input=true'],
       ['null', () => tree.fromWireFormat({ ...TREE, leaf: null }, options), 'TLeafBaseModel expected an object. @[["leaf"]] input=true'],
@@ -79,34 +78,45 @@ for (const validation of [true, false]) {
   });
 }
 
+test('with validation off, parse still refuses a nested value that is no object with default call options, and parse, stringify and toWireFormat still convert', async () => {
+  // protects: F-38 a job at validation false drops the validators, not the codec: its guards and its stringify and toWireFormat stay
+  const { models, tree } = await builds.get(false)!();
+  const options = { construct: models.Tree };
+  assert.equal(outcome(() => tree.parse(JSON.stringify({ ...TREE, leaf: 'text' }), options)), 'TLeafBaseModel expected an object. @[["leaf"]] input=true');
+  const parsed = tree.parse(JSON.stringify(TREE), options);
+  assert.ok(parsed instanceof models.Tree);
+  assert.equal(tree.stringify(parsed), JSON.stringify(TREE));
+  assert.deepEqual(tree.toWireFormat(parsed), TREE);
+});
+
 test('a model constructor that throws at the root is a fault of the program, not bad input', async () => {
   // protects: T-660 a constructor that threw at the root reached the caller raw, and inside a field conversion it was reported as bad input
   const { models, tree } = await builds.get(false)!();
-  class Failing extends models.Tree { constructor(values?: object) { super(values); throw new Error('db down'); } }
+  class Failing extends models.Tree { constructor(values?: Record<string, unknown>) { super(values); throw new Error('db down'); } }
   const fault = (decode: () => unknown): string => {
     try { decode(); } catch (error) {
-      return error instanceof LibError ? `${error.message} input=${error.causedByInput} cause=${String((error.cause as Error | undefined)?.message)}` : `not a LibError: ${String(error)}`;
+      return error instanceof LibError ? `${error.message} input=${error.causedByInput} cause=${error.cause instanceof Error ? error.cause.message : String(error.cause)}` : `not a LibError: ${String(error)}`;
     }
     return 'decoded';
   };
-  assert.equal(fault(() => tree.fromWireFormat(TREE, { validate: false, construct: Failing as never })), 'db down input=false cause=db down');
+  assert.equal(fault(() => tree.fromWireFormat(TREE, { validate: false, construct: Failing })), 'db down input=false cause=db down');
 });
 
 test('a nested model whose constructor throws is a fault of the program, not bad input', async () => {
   // protects: T-660 the decode of a nested model ran its constructor inside the parent field conversion, so a program fault answered as bad input
   const { root, sourceRoot } = createModelProject(fileFixtureScope(), { prefix: 'golem-nested-constructor-', name: 'nested-constructor', linkWorkspaceNodeModules: true });
   fs.writeFileSync(path.join(sourceRoot, 'fault.model.ts'), `import type { IModel } from '@exprtlabs/golem/model';
-import { TInnerBaseModel, TOuterBaseModel } from './fault.model.generated.js';
+import { TInnerBaseModel, TOuterBaseModel, type TInnerFields } from './fault.model.generated.js';
 export type TInner = IModel<{ id: string }>;
 export type TOuter = IModel<{ inner: TInner }>;
-export class Inner extends TInnerBaseModel { constructor(values: { id?: string } = {}) { super(values as never); if (values.id === 'boom') throw new Error('db down'); } }
+export class Inner extends TInnerBaseModel { constructor(values: Partial<TInnerFields> = {}) { super(values); if (values.id === 'boom') throw new Error('db down'); } }
 export class Outer extends TOuterBaseModel {}
 `);
   writeModelGolemYaml(root, { validation: false, exact: false });
   await buildModelProject(root);
-  const models = await import(pathToFileURL(path.join(root, 'build/fault.model.js')).href) as Models;
+  const models = await loadModelClasses(path.join(root, 'build/fault.model.js'), ['Outer']);
   const outer = requireObjectCodec(generatedCodecIdFromRoot(root, 'TOuter'));
-  const options = { validate: false, construct: models.Outer as never };
+  const options = { validate: false, construct: models.Outer };
   assert.equal(outcome(() => outer.fromWireFormat({ inner: { id: 'fine' } }, options)).startsWith('decoded'), true);
   assert.equal(outcome(() => outer.fromWireFormat({ inner: { id: 'boom' } }, options)), 'db down @[[]] input=false');
 });

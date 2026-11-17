@@ -12,8 +12,7 @@ import {
   compileGeneratedSdk,
   generateMaterializedSdk,
   sdkBodyCodec,
-  isGeneratedClientClass,
-  requireRecord,
+  loadGeneratedClient,
   withRootOperations,
   writeGeneratedSdk,
 } from './helpers.js';
@@ -254,13 +253,7 @@ test('component names that collide once escaped keep separate validators, not ea
   const output = path.join(createFixtureProject(t, 'golem-openapi-urn-collision-'), 'sdk');
   writeGeneratedSdk(writeSdk, document, { output, name: 'Collide', profile: { validation: true } });
   compileGeneratedSdk(output);
-  const module = requireRecord(
-    await import(pathToFileURL(path.join(output, 'dist/client.js')).href),
-    'collide client',
-  );
-  const Client = module.CollideClient;
-  assert.equal(isGeneratedClientClass(Client), true);
-  if (!isGeneratedClientClass(Client)) throw new TypeError('CollideClient');
+  const Client = await loadGeneratedClient(output, 'Collide');
   const client = new Client({
     baseUrl: 'https://api.example',
     fetchImpl: async () => new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } }),

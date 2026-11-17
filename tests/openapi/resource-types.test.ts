@@ -127,7 +127,7 @@ test('public generate types URI $id refs, directional imports, nested models, an
   const send = async (body: unknown, answer: unknown): Promise<{ sent: unknown; received: unknown }> => {
     const { fetchImpl, sent } = recordingFetch(() => Response.json(answer));
     const client = new Client({ baseUrl: 'https://api.test', fetchImpl });
-    const received = (await client.putEnvelope!().execute({ body })).body;
+    const received = (await client.putEnvelope().execute({ body })).body;
     return { sent: sent[0], received };
   };
 

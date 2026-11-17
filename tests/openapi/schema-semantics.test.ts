@@ -2,7 +2,6 @@ import { createFixtureProject } from '../fixture-project.js';
 import assert from 'node:assert/strict';
 import { writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 import { LibError, LibErrorKind, IssueSource } from '@exprtlabs/golem/errors';
 import { generate } from '#openapi/generator';
@@ -10,9 +9,8 @@ import {
   compileGeneratedSdk,
   documentBase,
   generateMaterializedSdk,
-  isGeneratedClientClass,
+  loadGeneratedClient,
   materializeGeneratedSdk,
-  requireRecord,
   sdkBodyCodec,
   withRootOperations,
   writeOpenApiDocument,
@@ -58,13 +56,8 @@ test('public generation accepts OAS 3.1/3.2 boolean schemas in direct, nested, a
       if (openapi === '3.1.0') continue;
       materializeGeneratedSdk(result.artifacts, output);
       compileGeneratedSdk(output);
-      const compiled = requireRecord(
-        await import(pathToFileURL(path.join(output, 'dist/client.js')).href),
-        'boolean schema client',
-      );
-      assert.equal(isGeneratedClientClass(compiled.BooleanSchemaClient), true);
-      if (!isGeneratedClientClass(compiled.BooleanSchemaClient)) throw new TypeError('BooleanSchemaClient');
-      const client = new compiled.BooleanSchemaClient({
+      const BooleanSchemaClient = await loadGeneratedClient(output, 'BooleanSchema');
+      const client = new BooleanSchemaClient({
         baseUrl: 'https://api.example',
         fetchImpl: async () => new Response('{"unexpected":true}', {
           status: 200,
@@ -180,12 +173,7 @@ test('nullable binary response decodes to Blob or null and both pass runtime val
   ].join('\n'));
   compileGeneratedSdk(output, [typeAssertion], { strict: true });
 
-  const module = requireRecord(
-    await import(pathToFileURL(path.join(output, 'dist/client.js')).href),
-    'nullable binary client',
-  );
-  const Client = module.NullableBinaryClient;
-  if (!isGeneratedClientClass(Client)) throw new TypeError('NullableBinaryClient');
+  const Client = await loadGeneratedClient(output, 'NullableBinary');
 
   const bytesClient = new Client({
     baseUrl: 'https://example.test',

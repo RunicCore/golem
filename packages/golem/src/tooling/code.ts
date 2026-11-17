@@ -291,6 +291,25 @@ class LinesCode extends CodeValue {
   }
 }
 
+/**
+ * Whether `target` is a slot inside `root`: the same Code, not one that spells the same. The emitter names a local or a
+ * parameter by one Code, so this tells whether a line it wrote reads that name, with no text to search. It copies no parts.
+ */
+export function mentions(root: Code, target: Code): boolean {
+  const seen = new Set<Code>();
+  const pending: Code[] = [root];
+  for (let node = pending.pop(); node !== undefined; node = pending.pop()) {
+    if (node === target) return true;
+    if (seen.has(node) || !(node instanceof CodeValue)) continue;
+    seen.add(node);
+    for (let index = 0; index < node.slotCount(); index++) {
+      const slot = node.slot(index);
+      if (typeof slot === 'object') pending.push(slot);
+    }
+  }
+  return false;
+}
+
 /** Whether `piece` writes nothing, as `piece.parts.length === 0` says. It does not write the parts of a piece that holds other pieces. */
 export function isEmpty(piece: Code): boolean {
   return piece instanceof CodeValue ? piece.isEmpty() : piece.parts.length === 0;
@@ -358,11 +377,10 @@ export type LocalKind = keyof typeof LOCAL_LETTERS;
 
 /** The local of `kind` with `index`; a kind that a function holds once takes no index. */
 export function localCode(kind: LocalKind, index?: number): Code {
-  const letter = Object.hasOwn(LOCAL_LETTERS, kind) ? LOCAL_LETTERS[kind] : undefined;
-  if (letter === undefined || (index !== undefined && !Number.isSafeInteger(index))) {
-    throw new TypeError(`a local needs one of the kinds ${Object.keys(LOCAL_LETTERS).join(', ')} and an integer index, got ${JSON.stringify([kind, index])}`);
+  if (index !== undefined && !Number.isSafeInteger(index)) {
+    throw new TypeError(`a local of kind ${kind} needs an integer index, got ${JSON.stringify(index)}`);
   }
-  return fromParts([{ kind: 'text', text: `$${letter}${index ?? ''}`, identifier: true }]);
+  return fromParts([{ kind: 'text', text: `$${LOCAL_LETTERS[kind]}${index ?? ''}`, identifier: true }]);
 }
 
 function syntaxChecked(name: string, what: string): string {

@@ -32,6 +32,8 @@ Both declare fields. `IObject` stops there: values stay plain objects, and you c
 
 Put declarations in `src/**/*.model.ts` or `src/**/*.models.ts`. Set [`model.suffixes`](/reference/config#model-block) to use other endings, such as `.entity.ts`, and `model.sources` to name files directly. A field can have any of the [supported shapes](/guide/field-types) and carry [validation tags](/guide/tags).
 
+A file that imports `@exprtlabs/golem` must lie where that package resolves, as in a build with `tsc`: in a folder at or below the one whose `node_modules` holds it. This holds for each model file and for [`model.output`](/reference/config#model-block), where golem writes `models.validators.generated.ts`. Generation type-checks both and stops with a "Cannot find module" error when the import fails.
+
 ## Set the validation level of a model
 
 The second type argument of `IObject` and `IModel` takes `{ validation: true | false | 'sanity' }`. It sets the level of the checks that a call uses when it names none.

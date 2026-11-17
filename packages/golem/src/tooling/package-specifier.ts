@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { canonicalPath, displayPath, isInsideDirectory, isRecord, recordOrUndefined } from '../generator-core.js';
+import { canonicalPath, displayPath, isInsideDirectory, isRecord, recordOrUndefined } from './generator-core.js';
+import { isRelativeSpecifier } from './path-identity.js';
 
 type PackageSpecifierResult =
   | { readonly kind: 'same-package' }
@@ -49,7 +50,7 @@ export function packageName(specifier: string): string {
  * file as `{}` and does not name it.
  */
 export function assertPackageManifestsParse(specifier: string, importer: string): void {
-  if (specifier.startsWith('.') || path.isAbsolute(specifier)) return;
+  if (isRelativeSpecifier(specifier) || path.isAbsolute(specifier)) return;
   const name = specifier.startsWith('#') ? undefined : packageName(specifier);
   const nearest = (relative: (directory: string) => string): void => {
     for (let directory = path.dirname(importer); ; directory = path.dirname(directory)) {

@@ -4,6 +4,7 @@ import { canonicalFilename, generatedFilename, isModelFileName, type ModelBounda
 import type { ModelSpecification } from './models.js';
 import { isGolemSourceFile, isGolemTagKey, propertyKey } from './tags.js';
 import { hasLocalForm, localFormMessage } from '../names.js';
+import { resolveSymbol } from '../resolve-symbol.js';
 
 /** An error with a code: the text is `<where> <code>: <message>`, and `code` is a property of the error. */
 export function codedError(code: string, message: string, where?: string): Error & { readonly code: string } {
@@ -28,16 +29,6 @@ export function diagnostic(
   message: string,
 ): Error & { readonly code: string } {
   return namedDiagnostic(sourceFile, node, `RUNM${code}`, message);
-}
-
-/** Resolve imported aliases without using the local spelling of a declaration. */
-export function resolveSymbol(checker: ts.TypeChecker, symbol: ts.Symbol | undefined): ts.Symbol | undefined {
-  const seen = new Set<ts.Symbol>();
-  while (symbol && (symbol.flags & ts.SymbolFlags.Alias) !== 0 && !seen.has(symbol)) {
-    seen.add(symbol);
-    symbol = checker.getAliasedSymbol(symbol);
-  }
-  return symbol;
 }
 
 /** The symbol at a node; a qualified name or a property access resolves to its last segment. */
@@ -131,7 +122,7 @@ export function modelSpecificationForClass(
   seen.add(declaration);
   // The companions the jobs are about to write do not exist on the first run, so the compiler finds no module for an import of one; the
   // lookup that counts them covers every import form (relative, `paths`, `#imports`). Built when the first import needs it.
-  let expected: ReadonlySet<string> | undefined;
+  let expected: ts.VirtualFiles | undefined;
   const match = (filename: string, name: string | undefined): ModelSpecification | undefined => specifications.find(specification =>
     canonicalFilename(companionOfSpecification(specification)) === canonicalFilename(filename)
       && name === `${specification.name}BaseModel`);
@@ -148,7 +139,7 @@ export function modelSpecificationForClass(
         if (!ts.isImportSpecifier(alias)) continue;
         const statement = alias.parent.parent.parent;
         if (!ts.isImportDeclaration(statement) || !ts.isStringLiteralLike(statement.moduleSpecifier)) continue;
-        const resolved = checker.resolveImport(statement.moduleSpecifier, expected ??= new Set(specifications.map(specification => canonicalFilename(companionOfSpecification(specification)))))?.resolvedFileName;
+        const resolved = checker.resolveImport(statement.moduleSpecifier, expected ??= { files: new Set(specifications.map(specification => canonicalFilename(companionOfSpecification(specification)))), folders: [] })?.resolvedFileName;
         const specification = resolved && match(resolved, (alias.propertyName ?? alias.name).text);
         if (specification) return specification;
       }
@@ -224,12 +215,6 @@ export function isSymbolKeyedProperty(checker: ts.TypeChecker, property: ts.Symb
  */
 export function isUnsupportedSymbolKey(checker: ts.TypeChecker, property: ts.Symbol): boolean {
   return isSymbolKeyedProperty(checker, property) && !isGeneratedBrandKey(checker, property) && !isGolemTagKey(checker, property);
-}
-
-/** Whether only a default library file declares `property`: the built-in type's own metadata, such as the `[Symbol.toStringTag]` of `Uint8Array`. */
-export function isDefaultLibraryProperty(property: ts.Symbol, isDefaultLibraryFile: (file: ts.SourceFile) => boolean): boolean {
-  const declarations = property.declarations ?? [];
-  return declarations.length > 0 && declarations.every(declaration => isDefaultLibraryFile(declaration.getSourceFile()));
 }
 
 /** Stops generation when `property` has a symbol key; `owner` names the model or parameter and `node` is where the error points. */

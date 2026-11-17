@@ -1,6 +1,6 @@
 import 'reflect-metadata';
 import assert from 'node:assert/strict';
-import { Controller, Get, Module, Query, type INestApplication, type NestInterceptor } from '@nestjs/common';
+import { Controller, Get, Module, Query, type INestApplication, type NestInterceptor, type Type } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { NestModelInterceptor } from '@exprtlabs/golem-ts-openapi/nest';
 import { nestModelCodec } from '@exprtlabs/golem-ts-openapi/internal/nest-runtime';
@@ -15,9 +15,9 @@ export interface NestAppOptions {
 }
 
 /** Starts a Nest app on a free local port with `controllers` and one global interceptor. The caller closes it. */
-export async function startNestApp(controllers: readonly Function[], options: NestAppOptions = {}): Promise<INestApplication> {
+export async function startNestApp(controllers: readonly Type[], options: NestAppOptions = {}): Promise<INestApplication> {
   class AppModule {}
-  Module({ controllers: controllers as never[] })(AppModule);
+  Module({ controllers: [...controllers] })(AppModule);
   const { errors } = options;
   const logger = errors === undefined ? false : {
     log() {},

@@ -10,6 +10,7 @@ import { TSC } from './support/build-project.js';
 import { command, golem } from './support/process.js';
 import { runRewritten } from './support/rewritten-module.js';
 import { literal, tsSource, type SourceFragment } from './source-template.js';
+import type { ModelTypeDescriptor } from '@exprtlabs/golem/internal/schema';
 import { createJobAnalysis } from '#model/emit';
 import { generate } from '#model/generator';
 import { applyRewrites } from '#golem/rewrite';
@@ -71,17 +72,19 @@ test('type analysis reads the tags of an alias in the .model.d.ts file of an ins
   const order = path.join(root, 'src/order.model.ts');
   const info = createProgram([order], root);
   const { checker, specifications } = collectSpecifications(info.program, [order, declaration]);
-  const job = createJobAnalysis(checker, specifications, loadModelManifests(root, info, [], PROFILE), PROFILE, [order], file => info.program.isSourceFileDefaultLibrary(file), root);
-  const describe = (name: string): { properties: Record<string, object> } => {
+  const job = createJobAnalysis(checker, specifications, loadModelManifests(root, info, [], PROFILE), PROFILE, [order], file => info.program.isSourceFileDefaultLibrary(file), () => info.program.getSourceFiles().filter(file => !info.program.isSourceFileDefaultLibrary(file)), root);
+  const propertiesOf = (name: string): Readonly<Record<string, ModelTypeDescriptor>> => {
     const specification = specifications.find((item) => item.name === name);
     assert.ok(specification);
-    return job.describe(specification.fieldsType, specification, undefined, specification.fieldsNode) as unknown as { properties: Record<string, object> };
+    const descriptor = job.describe(specification.fieldsType, specification, undefined, specification.fieldsNode);
+    assert.ok(descriptor.kind === 'object');
+    return descriptor.properties;
   };
 
-  const customer = describe('TCustomer').properties;
-  assert.deepEqual((customer.name as { constraints: object[] }).constraints, [{ kind: 'minLength', value: 3 }]);
-  assert.equal((customer.visits as { serde: { serialize: { exportName: string } } }).serde.serialize.exportName, 'encodeCount');
-  assert.deepEqual(describe('TOrder').properties.customer, { kind: 'reference', name: 'TCustomer' });
+  const customer = propertiesOf('TCustomer');
+  assert.deepEqual(customer.name?.constraints, [{ kind: 'minLength', value: 3 }]);
+  assert.equal(customer.visits?.serde?.serialize?.exportName, 'encodeCount');
+  assert.deepEqual(propertiesOf('TOrder').customer, { kind: 'reference', name: 'TCustomer' });
 });
 
 test('a model file is own only inside the models root: a folder, a folder link, a linked package and node_modules hold shared files', (t: TestContext) => {

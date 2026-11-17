@@ -2,7 +2,7 @@ import { reachesRecursiveNode } from '@exprtlabs/golem/internal/emitter';
 import type { SchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
 import type { CodecSchemaClosureEntry } from '@exprtlabs/golem/internal/validation-plan';
 import type { JsonSchema } from '@exprtlabs/golem/internal/schema';
-import { isRecord, sourceDigest } from '@exprtlabs/golem/internal/generator-support';
+import { isRecord, parseValueKey, sourceDigest, statusKey } from '@exprtlabs/golem/internal/generator-support';
 import { asRecord, isJsonObject, objectEntries } from './json.js';
 import { compareText } from '@exprtlabs/golem/generator-api';
 import { identifier } from '@exprtlabs/golem/internal/generator-support';
@@ -10,7 +10,7 @@ import type { GolemModeManifest, SdkOperationValidation, SdkOperationValue } fro
 import type { OperationValidationSchemas } from './client/emit.js';
 import type { NormalizedOperation } from './normalize.js';
 import { GENERATOR_NAME, PACKAGE_VERSION } from './package-info.js';
-import type { OpenApiModeKind } from './plan.js';
+import { openApiModeTraits, type OpenApiModeKind } from './plan.js';
 import type { OpenApiGenerationProfile } from './profile.js';
 import { requireProfile } from './profile.js';
 import {
@@ -21,7 +21,7 @@ import {
   modelEnv,
   modelStableId,
 } from './model-resolution.js';
-import { parseValueKey, uncarriedOf } from './model-schema-graph.js';
+import { uncarriedOf } from './model-schema-graph.js';
 import { resolveLocal } from './normalize.js';
 
 /**
@@ -46,8 +46,8 @@ function golemModeGraph(document: unknown, analysis: OpenApiModelAnalysis, sdk: 
     const validation: SdkOperationValidation | undefined = bundle && {
       input: bundle.inputReference,
       ...(bundle.headersReference === undefined ? {} : { headers: bundle.headersReference }),
-      responses: bundle.responseReferences.map((item) => ({ key: `${item.status}:${item.contentType}`, root: item.reference })),
-      responseHeaders: bundle.responseHeaderReferences.map((item) => ({ key: `${item.status}:${item.name}`, root: item.reference })),
+      responses: bundle.responseReferences.map((item) => ({ key: statusKey(item.status, item.contentType), root: item.reference })),
+      responseHeaders: bundle.responseHeaderReferences.map((item) => ({ key: statusKey(item.status, item.name), root: item.reference })),
       roots: bundle.roots,
     };
     if (values.length === 0 && validation === undefined) continue;
@@ -106,10 +106,11 @@ export function generateModelManifest(
   document: unknown,
   profile: OpenApiGenerationProfile,
   modelAnalysis: OpenApiModelAnalysis,
-  mode: OpenApiModeKind = 'standalone',
-  golem: GolemModeOperations = { operations: [], validation: undefined },
+  mode: OpenApiModeKind,
+  golem: GolemModeOperations,
 ): unknown {
   profile = requireProfile(profile);
+  const { selfContained } = openApiModeTraits(mode);
   const { ordered, schemaGraph } = modelAnalysis;
   const digest = sourceDigest(document);
   const stableId = (definition: ModelDefinition) => modelStableId(digest, definition);
@@ -123,7 +124,7 @@ export function generateModelManifest(
     return {
       id: stableId(definition),
       // A golem-mode manifest keeps the codec id on the component of the model.
-      ...(mode === 'golem' ? {} : { codecId: openApiCodecId(modelAnalysis, definition.name) }),
+      ...(selfContained ? { codecId: openApiCodecId(modelAnalysis, definition.name) } : {}),
       sourceKind: 'openapi',
       allowAny: profile.allowAny ?? false,
       type: declaredType(definition.name),
@@ -139,7 +140,7 @@ export function generateModelManifest(
       version: PACKAGE_VERSION,
     },
     // A golem-mode SDK imports the installed @exprtlabs/golem and records the version it needs; a standalone SDK carries its own runtime and records none.
-    ...(mode === 'golem' ? { runtime: { name: '@exprtlabs/golem', minimumVersion: PACKAGE_VERSION } } : {}),
+    ...(selfContained ? {} : { runtime: { name: '@exprtlabs/golem', minimumVersion: PACKAGE_VERSION } }),
     source: {
       kind: 'openapi',
       dialect: asRecord(document).openapi,
@@ -147,7 +148,7 @@ export function generateModelManifest(
     },
     profile,
     models,
-    ...(mode === 'golem' ? golemModeGraph(document, modelAnalysis, golem, Boolean(profile.validation)) : {}),
+    ...(selfContained ? {} : golemModeGraph(document, modelAnalysis, golem, Boolean(profile.validation))),
   };
 }
 

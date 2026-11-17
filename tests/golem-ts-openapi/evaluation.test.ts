@@ -202,6 +202,57 @@ test('folds string concatenation, const prefixes, and destructured object parame
   assert.equal(await evaluateRouteExpression(byName.get('RESOURCE')!, program), 'payments/transactions');
 });
 
+test('a helper parameter read refuses a key that only the object prototype holds', async (t: TestContext) => {
+  // protects: T-996 r({ a: 'x' }).toString is "not a static value", never Object.prototype.toString
+  const { root } = project(t);
+  const toStringRead = write(root, 'src/to-string.ts', [
+    'function r(o: { a: string }): string { return o.toString; }',
+    "export const ROUTE = r({ a: 'x' });",
+    '',
+  ].join('\n'));
+  const constructorRead = write(root, 'src/constructor.ts', [
+    'function p(o: {}): string { return o.constructor; }',
+    'export const ROUTE = p({});',
+    '',
+  ].join('\n'));
+  const destructured = write(root, 'src/destructured.ts', [
+    'function d({ toString }: { toString: string }): string { return toString; }',
+    "export const ROUTE = d({ a: 'x' });",
+    '',
+  ].join('\n'));
+  const program = compile(root);
+  for (const filename of [toStringRead, constructorRead, destructured]) {
+    await assert.rejects(
+      () => evaluateRouteExpression(routeExpression(program, filename), program),
+      (error: unknown) => error instanceof TsToOpenApiError
+        && error.diagnostics.some(item => String(item.code) === 'RUNT2101'),
+    );
+  }
+});
+
+test('a quoted key in a destructured parameter reads the named field, a computed key is refused', async (t: TestContext) => {
+  // protects: T-999 `{ 'a-b': x }` reads field 'a-b', never the field named like the local x
+  const { root } = project(t);
+  const quoted = write(root, 'src/quoted.ts', [
+    "function q({ 'a-b': x }: { 'a-b': string; x: string }): string { return x; }",
+    "export const ROUTE = q({ 'a-b': 'right', x: 'wrong' });",
+    '',
+  ].join('\n'));
+  const computed = write(root, 'src/computed.ts', [
+    "const KEY = 'a';",
+    'function c({ [KEY]: x }: { a: string; x: string }): string { return x; }',
+    "export const ROUTE = c({ a: 'right', x: 'wrong' });",
+    '',
+  ].join('\n'));
+  const program = compile(root);
+  assert.equal(await evaluateRouteExpression(routeExpression(program, quoted), program), 'right');
+  await assert.rejects(
+    () => evaluateRouteExpression(routeExpression(program, computed), program),
+    (error: unknown) => error instanceof TsToOpenApiError
+      && error.diagnostics.some(item => String(item.code) === 'RUNT2101'),
+  );
+});
+
 test('rejects let and var route constants with a typed diagnostic', async (t: TestContext) => {
   const { root } = project(t);
   const letFile = write(root, 'src/let.ts', "let prefix = '/tasks';\nprefix = '/other';\nexport const ROUTE = prefix;\n");

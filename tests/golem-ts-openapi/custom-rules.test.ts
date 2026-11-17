@@ -25,7 +25,7 @@ function fixture(t: TestContext): string {
   });
 }
 
-function diagnosticsOf(result: Awaited<ReturnType<typeof generate>>): readonly DiagnosticLike[] {
+function diagnosticsOfResult(result: Awaited<ReturnType<typeof generate>>): readonly DiagnosticLike[] {
   return (result.diagnostics ?? []).map(item => ({
     code: item.code,
     severity: item.severity,
@@ -42,7 +42,7 @@ test('keeps custom TValidation server-side with a typed warning and no executabl
     info: { title: 'Custom rules', version: '1' },
     profile: { validation: false },
   });
-  const diagnostics = diagnosticsOf(result);
+  const diagnostics = diagnosticsOfResult(result);
   const warning = diagnostics.find(item => item.code === 'NEST1502');
   assert.ok(warning, 'custom executable validation must produce a nonportable-schema warning');
   assert.equal(warning.severity, 'warning');

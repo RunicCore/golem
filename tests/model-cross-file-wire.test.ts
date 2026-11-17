@@ -31,19 +31,20 @@ export class C extends TCBaseModel {}
 `,
 };
 
-async function build(t: test.TestContext) {
+async function build(t: test.TestContext, sources: Readonly<Record<string, string>> = SOURCES) {
   const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-cross-file-wire-', name: 'cross-file-wire', linkWorkspaceNodeModules: true });
-  writeModelSources(sourceRoot, SOURCES);
+  writeModelSources(sourceRoot, sources);
   writeModelGolemYaml(root, { validation: true });
   const result = await buildModelProject(root);
   assert.equal(result.code, 0, result.stderr);
   const load = (name: string) => import(`${pathToFileURL(path.join(root, 'build', name)).href}`);
-  return { a: await load('a.model.generated.js'), c: await load('c.model.generated.js'), models: await load('a.model.js') };
+  return load;
 }
 
 test('parse reads the wire date of a child model declared in another file', async (t) => {
   // protects: bug T-161 parse and stringify of a model whose child in another file has a Date
-  const { a, c, models } = await build(t);
+  const load = await build(t);
+  const [a, c, models] = [await load('a.model.generated.js'), await load('c.model.generated.js'), await load('a.model.js')];
   const text = '{"b":{"at":"2020-01-01T00:00:00.000Z"}}';
   for (const options of [undefined, { construct: models.A }]) {
     const parsed = a.parseTA(text, options);
@@ -58,4 +59,26 @@ test('parse reads the wire date of a child model declared in another file', asyn
   });
   const deep = c.parseTC(`{"mid":{"a":${text}}}`);
   assert.equal(deep.mid.a.b.at.toISOString(), '2020-01-01T00:00:00.000Z');
+});
+
+// The child is declared in another file with validation off: the parent's wire write still has to write the child's wire value.
+const VALIDATION_OFF_CHILD_SOURCES = {
+  'b.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
+import { TBBaseModel } from './b.model.generated.js';
+export type TB = IModel<{ at: Date }, { validation: false }>;
+export class B extends TBBaseModel {}
+`,
+  'a.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
+import { TABaseModel } from './a.model.generated.js';
+import type { TB } from './b.model.js';
+export type TA = IModel<{ at: Date; b: TB }>;
+export class A extends TABaseModel {}
+`,
+};
+
+test('stringify and toWireFormat of a model write the date of a child declared in another file with validation off', async (t) => {
+  const a = await (await build(t, VALIDATION_OFF_CHILD_SOURCES))('a.model.generated.js');
+  const value = { at: new Date('2021-01-01T00:00:00.000Z'), b: { at: new Date('2020-01-01T00:00:00.000Z') } };
+  assert.equal(a.stringifyTA(value), '{"at":"2021-01-01T00:00:00.000Z","b":{"at":"2020-01-01T00:00:00.000Z"}}');
+  assert.deepEqual(a.toWireFormatTA(value), { at: '2021-01-01T00:00:00.000Z', b: { at: '2020-01-01T00:00:00.000Z' } });
 });

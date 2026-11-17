@@ -1,8 +1,8 @@
 import { code, helperDefinitions, identifier as identifierCode, join, nameOf, NameTable, render, runtimeImports, type Code, type ImportOptions } from '../code.js';
 import type { IrFunction, IrModule } from './ir.js';
 import { compareText } from '../generator-core.js';
-import { rtType } from '../rt.js';
-import { VALUE, NEWLINE, SANITY, functionParameters, FunctionSlots, callFunction, type CalleeSlot, type CheckForm } from './function-names.js';
+import { NEWLINE, SANITY, NOTATIONS, functionParameters, valueParameter, FunctionSlots, callFunction, type CalleeSlot, type CheckForm, type Notation } from './function-names.js';
+import type { Language } from './options.js';
 import { FULL_VALIDATOR, fastCheckMode, type WriterMode } from './modes.js';
 import { ModuleState } from './module-state.js';
 import { FunctionWriter } from './function-writer.js';
@@ -13,8 +13,8 @@ import { groupFunctions, type WrittenFastCheck, type WrittenFunction } from './g
 interface EmitOptions {
   /** The specifiers the generated file imports its runtime helpers and their types from; the internal validation runtime and the public subpath by default. */
   readonly specifiers?: ImportOptions['specifiers'];
-  /** Types each exported validator as a `Validator`, for a TypeScript file. */
-  readonly typed?: boolean;
+  /** The language of the module; `ts` types each header and each exported validator. */
+  readonly language: Language;
   /** Also writes the boolean fast check `is_X` beside `validate_X`, for each root (`'all'`) or each root named, that has one (see `FastPlan`). Absent: none. */
   readonly fastPath?: 'all' | ReadonlySet<string>;
   /** `sanity` writes the module that checks the shape only (see `sanitize`); `full`, the default, one module whose validators skip the value limits when the caller passes the flag `s`. */
@@ -86,12 +86,13 @@ function functionName(index: number, schemaName: string | undefined, form: Check
 function writeFunction(state: ModuleState, module: IrModule, target: (id: number) => number, calleeSlot: CalleeSlot, fn: IrFunction, mode: WriterMode): WrittenFunction {
   const writer = new FunctionWriter(state, module.functions, target, fn, mode, calleeSlot);
   const body = writer.write();
-  return { id: fn.id, parameters: functionParameters(fn), body, calls: writer.calls };
+  return { id: fn.id, parameters: functionParameters(fn, state.notation, name => writer.reads(name)), body, calls: writer.calls };
 }
 
 function writeFastCheck(state: ModuleState, module: IrModule, target: (id: number) => number, calleeSlot: CalleeSlot, fn: IrFunction, mode: WriterMode): WrittenFastCheck {
   const writer = new FunctionWriter(state, module.functions, target, fn, mode, calleeSlot);
-  return { body: writer.write(), calls: writer.calls, fastCalls: writer.fastCalls };
+  const body = writer.write();
+  return { parameter: code`${valueParameter(name => writer.reads(name))}${state.notation.value}`, body, calls: writer.calls, fastCalls: writer.fastCalls };
 }
 
 /** A root that validates conjunctively (see `conjunctiveValidation`) and has a structure check: the functions of its two passes. */
@@ -108,6 +109,7 @@ interface Emission {
   readonly plan: FastPlan | undefined;
   readonly fastMode: WriterMode | undefined;
   readonly slots: FunctionSlots;
+  readonly notation: Notation;
   /** The roots that export a fast check. */
   readonly fastRootExports: IrModule['exports'];
   /** The roots that export a structure check and a predicates-only pass. */
@@ -127,7 +129,7 @@ interface Reached {
   readonly fastKept: ReadonlySet<number>;
 }
 
-function startEmission(whole: IrModule, fastPath: EmitOptions['fastPath'], level: EmitOptions['level']): Emission {
+function startEmission(whole: IrModule, { fastPath, level, language }: EmitOptions): Emission {
   const source = level === 'sanity' ? sanitize(whole) : whole;
   // A set of root names is any `ReadonlySet`, not only a `Set`.
   const wantsFastCheck = (name: string): boolean => fastPath === 'all' || (fastPath !== undefined && fastPath.has(name));
@@ -146,6 +148,7 @@ function startEmission(whole: IrModule, fastPath: EmitOptions['fastPath'], level
     plan,
     fastMode: plan === undefined ? undefined : fastCheckMode(plan),
     slots: new FunctionSlots(module.functions),
+    notation: NOTATIONS[language],
     fastRootExports: module.exports.filter(({ name, fn }) => wantsFastCheck(name) && (plan?.has(target(fn)) ?? false)),
     passRoots: passes === undefined ? [] : module.exports.flatMap(({ name, fn }): PassRoot[] => {
       const structure = passes.structure.get(sourceTarget(fn));
@@ -156,8 +159,8 @@ function startEmission(whole: IrModule, fastPath: EmitOptions['fastPath'], level
 }
 
 /** First pass: every function as code, to learn which of those the roots reach are the same. */
-function surveyFunctions({ module, target, plan, fastMode, slots }: Emission): ReadonlyMap<number, WrittenFunction> {
-  const survey = new ModuleState();
+function surveyFunctions({ module, target, plan, fastMode, slots, notation }: Emission): ReadonlyMap<number, WrittenFunction> {
+  const survey = new ModuleState(notation);
   survey.importValidations(module.validations);
   const ownSlot: CalleeSlot = (id, form) => slots.of(id, form);
   return new Map(module.functions.filter(fn => target(fn.id) === fn.id).map(fn => [fn.id, {
@@ -202,15 +205,17 @@ function stayingSlotOf({ slots }: Emission, { representative }: Reached): Callee
 }
 
 /** Second pass: only the functions that stay, so the constants and helpers are those they use. */
-function writeStaying({ module, target, fastMode, slots }: Emission, { kept, fastKept }: Reached, stayingSlot: CalleeSlot): { readonly state: ModuleState; readonly functions: readonly Code[]; readonly fastFunctions: readonly Code[] } {
-  const state = new ModuleState();
+function writeStaying({ module, target, fastMode, slots, notation }: Emission, { kept, fastKept }: Reached, stayingSlot: CalleeSlot): { readonly state: ModuleState; readonly functions: readonly Code[]; readonly fastFunctions: readonly Code[] } {
+  const state = new ModuleState(notation);
   state.importValidations(module.validations);
   const functions = kept.map(id => {
     const { parameters, body } = writeFunction(state, module, target, stayingSlot, module.functions[id], FULL_VALIDATOR);
-    return code`function ${nameOf(slots.of(id, 'full'))}(${parameters}) {\n${body}`;
+    return code`function ${nameOf(slots.of(id, 'full'))}(${parameters})${notation.verdict} {\n${body}`;
   });
-  const fastFunctions = fastMode === undefined ? [] : [...fastKept].sort((first, second) => first - second)
-    .map(id => code`function ${nameOf(slots.of(id, 'fast'))}(${VALUE}) {\n${writeFastCheck(state, module, target, stayingSlot, module.functions[id], fastMode).body}`);
+  const fastFunctions = fastMode === undefined ? [] : [...fastKept].sort((first, second) => first - second).map(id => {
+    const { parameter, body } = writeFastCheck(state, module, target, stayingSlot, module.functions[id], fastMode);
+    return code`function ${nameOf(slots.of(id, 'fast'))}(${parameter})${notation.verdict} {\n${body}`;
+  });
   return { state, functions, fastFunctions };
 }
 
@@ -224,7 +229,7 @@ interface Exported {
 }
 
 /** The exported wrapper of each root, of each fast check, and of each root's two passes. */
-function writeExports({ module, target, fastRootExports, passRoots }: Emission, stayingSlot: CalleeSlot, options: EmitOptions): Exported {
+function writeExports({ module, target, fastRootExports, passRoots, notation }: Emission, stayingSlot: CalleeSlot): Exported {
   const exported = exportNames(module.exports.map(({ name }) => name));
   const exportsOf = (name: string): RootExportNames => {
     const known = exported.get(name);
@@ -234,11 +239,8 @@ function writeExports({ module, target, fastRootExports, passRoots }: Emission, 
   // The wrapper takes the sanity flag as its third argument when its function does; see `Validator`.
   const issuesOf = (name: string, id: number): Code => {
     const sanity = module.functions[target(id)].sanity === true;
-    const signature = options.typed
-      ? code`(value: unknown, all: boolean${sanity ? code`, ${SANITY}?: boolean` : code``}): readonly ${rtType.validation.SchemaIssue}[] {`
-      : code`(value, all${sanity ? code`, ${SANITY}` : code``}) {`;
-    return code`export function ${identifierCode(name)}${signature}
-  const issues = [];
+    return code`export function ${identifierCode(name)}(value${notation.value}, all${notation.all}${sanity ? code`, ${SANITY}${notation.sanity}` : code``})${notation.wrapperResult} {
+  const issues${notation.issues} = [];
   ${callFunction(module.functions[target(id)], nameOf(stayingSlot(target(id), 'full')), { value: identifierCode('value'), path: code`[]`, issues: identifierCode('issues'), all: identifierCode('all') })};
   return issues;
 }`;
@@ -247,12 +249,11 @@ function writeExports({ module, target, fastRootExports, passRoots }: Emission, 
   const fastNamed = fastRootExports.map(({ name, fn }) => ({ name, fn, exportName: exportsOf(name).fast }));
   const fastExports = new Map(fastNamed.map(({ name, exportName }) => [name, exportName] as const));
   // The fast check itself is the export: a valid value takes no extra call.
-  const fastType = options.typed ? code`: (value: unknown) => boolean` : code``;
-  const fastWrappers = fastNamed.map(({ fn, exportName }) => code`export const ${identifierCode(exportName)}${fastType} = ${nameOf(stayingSlot(target(fn), 'fast'))};`);
+  const fastWrappers = fastNamed.map(({ fn, exportName }) => code`export const ${identifierCode(exportName)}${notation.fastCheck} = ${nameOf(stayingSlot(target(fn), 'fast'))};`);
   const passNamed = passRoots.map(({ name, structure, predicates }) => ({ name, structure, predicates, passNames: exportsOf(name).passes }));
   const passExports = new Map(passNamed.map(({ name, passNames }) => [name, passNames] as const));
   const passWrappers = passNamed.flatMap(({ structure, predicates, passNames }) => [
-    code`export const ${identifierCode(passNames.structure)}${fastType} = ${nameOf(stayingSlot(target(structure), 'fast'))};`,
+    code`export const ${identifierCode(passNames.structure)}${notation.fastCheck} = ${nameOf(stayingSlot(target(structure), 'fast'))};`,
     issuesOf(passNames.predicates, predicates),
   ]);
   return { wrappers, fastWrappers, passWrappers, fastExports, passExports };
@@ -266,12 +267,12 @@ function writeExports({ module, target, fastRootExports, passRoots }: Emission, 
  * and whose structure has a fast check also exports `structure_X` and `predicates_X`.
  */
 export function emit(module: IrModule, options: EmitOptions): EmitResult {
-  const emission = startEmission(module, options.fastPath, options.level);
+  const emission = startEmission(module, options);
   const reached = reachedFunctions(emission, surveyFunctions(emission));
   const stayingSlot = stayingSlotOf(emission, reached);
   const names = declareFunctionNames(emission, reached);
   const { state, functions, fastFunctions } = writeStaying(emission, reached, stayingSlot);
-  const { wrappers, fastWrappers, passWrappers, fastExports, passExports } = writeExports(emission, stayingSlot, options);
+  const { wrappers, fastWrappers, passWrappers, fastExports, passExports } = writeExports(emission, stayingSlot);
   // The imports and the helpers come from the parts of everything the file holds.
   const contents = [...state.constantDeclarations(), ...functions, ...fastFunctions, ...wrappers, ...fastWrappers, ...passWrappers];
   const everything = join(contents, NEWLINE);

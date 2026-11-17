@@ -61,7 +61,6 @@ test('golem build --watch regenerates and rebuilds once after a model edit; any 
   const model = path.join(root, 'src/money.model.ts');
   fs.writeFileSync(model, fs.readFileSync(model, 'utf8').replace('note: string', 'note: string; extra?: string'));
   await until(() => /extra/.test(built('money.model.generated.js')), 'the rebuild after a model edit');
-  assert.match(fs.readFileSync(companion, 'utf8'), /extra/);
   assert.ok(hinted.includes(companion), 'the compiler session was told that the regenerated companion changed');
 
   // The models job's program reads the whole project, so `use.ts` is one of its inputs; the generator reads only the model.

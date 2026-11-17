@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { isValuePlace, valueKey, type ValuePlace } from '../client-runtime/value-places.js';
 import { discoverSources, displayPath, isRecord, isValidationLevel, resolveProfile, stableValue } from './generator-core.js';
 import type { GolemProfile, InputObserver } from './generator-core.js';
 import { createSchemaGraph, internDescriptors, type SchemaGraph } from './schema-graph.js';
@@ -58,8 +59,8 @@ export function golemModeComponents(manifest: GolemModeManifest): ReadonlyMap<st
 
 /** One operation value that converts something: where it sits, and its node. An inline shape (no `$ref`) also holds the descriptor the graph interned for it. */
 export interface SdkOperationValue {
-  /** The key of the value after the operation name: `['request', contentType]`, `['response', status, contentType]`, `['parameter', location, name]` or `['response-header', status, name]`. */
-  readonly at: readonly string[];
+  /** The place of the value after the operation name. */
+  readonly at: ValuePlace;
   readonly node: string;
   readonly inline?: { readonly name?: string; readonly descriptor: string };
 }
@@ -105,7 +106,7 @@ export function isGolemModeManifest(manifest: ModelManifest): manifest is GolemM
  * The schema graph of a golem-mode SDK, sealed, made from the manifest's data: every model and recursive alias under its fixed
  * codec id, then every inline operation value. The graph is `openapi`-sourced, as the SDK's own was, so an unnamed shape gets the
  * node and codec id it had there; `valueNodes` gives the node of each operation value that converts something, by
- * `JSON.stringify([operation, ...at])`. A node the graph does not hold under the id the manifest recorded means the manifest and
+ * `valueKey`. A node the graph does not hold under the id the manifest recorded means the manifest and
  * this golem disagree, and stops with the regenerate message.
  */
 export function sdkSchemaGraph(
@@ -123,7 +124,7 @@ export function sdkSchemaGraph(
       if (id !== node || !graph.nodes.has(id)) {
         throw new Error(`The SDK manifest of operation ${operation} names the schema node ${JSON.stringify(node)} for ${at.join(' ')}, which this golem does not rebuild. Regenerate the SDK with this golem version.`);
       }
-      valueNodes.set(JSON.stringify([operation, ...at]), id);
+      valueNodes.set(valueKey(operation, at), id);
     }
   }
   graph.seal();
@@ -206,7 +207,7 @@ function isDescriptorText(value: unknown): value is string {
 const isName = (value: unknown): value is string => typeof value === 'string' && value.length > 0;
 
 function isOperationValue(value: unknown): boolean {
-  return isRecord(value) && Array.isArray(value.at) && value.at.length > 0 && value.at.every(isName) && isName(value.node)
+  return isRecord(value) && Array.isArray(value.at) && isValuePlace(value.at) && value.at.every(isName) && isName(value.node)
     && (value.inline === undefined || (isRecord(value.inline) && isDescriptorText(value.inline.descriptor)
       && (value.inline.name === undefined || isName(value.inline.name))));
 }

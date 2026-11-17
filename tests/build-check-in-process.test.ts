@@ -106,3 +106,70 @@ test('with noEmitOnError a syntax error alone is printed, as tsc prints it, and 
   assert.equal(result.code, 1);
   assert.equal(fs.existsSync(path.join(root, 'build')), false);
 });
+
+type Tsconfig = { readonly compilerOptions: object; readonly include: readonly string[] };
+/** A row: its name, the text it makes of the tsconfig, and what the output must hold first. */
+for (const [name, text, first] of [
+  ['a syntax error', ({ compilerOptions, include }: Tsconfig) => `{ compilerOptions: ${JSON.stringify(compilerOptions)}, "include": ${JSON.stringify(include)} }\n`, /^tsconfig\.json\(1,3\): error TS1327: /],
+  ['an unknown compiler option', ({ compilerOptions, include }: Tsconfig) => JSON.stringify({ compilerOptions: { ...compilerOptions, nope: 1 }, include }), /^tsconfig\.json\(1,\d+\): error TS5023: /],
+  ['an unknown compiler option and an include that matches no file', ({ compilerOptions }: Tsconfig) => JSON.stringify({ compilerOptions: { ...compilerOptions, nope: 1 }, include: ['nothing'] }), /error TS18003: [^]*error TS5023: /],
+] as const) {
+  test(`${name} in the tsconfig prints as tsc prints it and stops the build`, async (t) => {
+    // protects: T-1026 T-1025 the build prints the errors of the configuration from a program on both lanes, never a throw and never a derived file, and runs no step that needs valid options
+    const root = serdeProject(t, 'build-tsconfig-errors');
+    const tsconfig = path.join(root, 'tsconfig.json');
+    fs.writeFileSync(tsconfig, text(JSON.parse(fs.readFileSync(tsconfig, 'utf8')) as Tsconfig));
+    const result = await golemBuild(root, []);
+    assert.match(result.stdout, first);
+    assert.equal(result.stdout, await tsc(root, []));
+    assert.equal(result.stderr, '');
+    assert.equal(result.code, 1);
+    assert.equal(fs.existsSync(path.join(root, 'build')), false);
+  });
+}
+
+/** A row: its name and the arguments that the compiler's parse rejects. */
+for (const [name, flags] of [
+  ['an unknown flag', ['--noEmitt']],
+  ['a bad value', ['--target', 'es1']],
+  ['an unknown flag with --pretty', ['--pretty', '--noEmitt']],
+] as const) {
+  test(`${name} among the arguments prints as tsc prints it, exits as tsc does and runs no step`, async (t) => {
+    // protects: T-1032 the errors of the command line are the compiler's own diagnostics, printed before anything is generated or emitted
+    const root = serdeProject(t, 'build-argument-errors');
+    fs.rmSync(path.join(root, '.golem'), { recursive: true, force: true });
+    const result = await golemBuild(root, flags);
+    assert.match(result.stdout, /TS\d+/);
+    assert.equal(result.stdout, await tsc(root, flags));
+    assert.equal(result.stderr, '');
+    assert.equal(result.code, 1);
+    assert.equal(fs.existsSync(path.join(root, 'build')), false);
+    assert.equal(fs.existsSync(path.join(root, '.golem')), false, 'nothing is generated');
+  });
+}
+
+test('a value that starts with a dash is the value of a value option, as tsc takes it', async (t) => {
+  // protects: T-1042 --rootDir -x reaches the program as tsc reads it (TS6059), not as a missing argument (TS6044)
+  const root = serdeProject(t, 'build-dash-value');
+  const result = await golemBuild(root, ['--rootDir', '-x']);
+  assert.match(result.stdout, /error TS6059: /);
+  assert.equal(result.stdout, await tsc(root, ['--rootDir', '-x']));
+  // TS6059 is a diagnostic of the program, not of the command line: the build goes on as tsc does, and its own refusal to write outside the outDir ends it with status 1.
+  assert.match(result.stderr, /^golem build would write .* outside build,/);
+  assert.equal(result.code, 1);
+  assert.equal(fs.existsSync(path.join(root, 'build')), false);
+});
+
+/** A row: its name and arguments in which an argument that starts with '-' is a flag of its own. */
+for (const [name, flags] of [
+  ['a list option followed by a flag is an empty list and the flag', ['--types', '--noEmitOnError']],
+  ['a boolean option repeated with a value is two flags', ['--strict', '--strict', 'false']],
+] as const) {
+  test(`${name} keep their own meaning, as tsc reads them`, async (t) => {
+    // protects: T-1042 --types --noEmitOnError sets two options, not the type definition "--noEmitOnError", and --strict --strict false is no source file
+    const root = serdeProject(t, 'build-flag-then-flag');
+    const result = await golemBuild(root, flags);
+    assert.equal(printed(result.stdout), await tsc(root, flags));
+    assert.equal(result.stderr, '');
+  });
+}

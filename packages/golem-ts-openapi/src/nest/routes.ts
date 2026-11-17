@@ -8,10 +8,11 @@ import {
   TsToOpenApiDiagnosticCode,
   diagnostic,
 } from '../diagnostics.js';
-import { baseClassDeclarations, classHierarchyBaseToDerived, evaluateContextExpression, evaluateStringValues, hasAnyDecorator, hasDecorator, staticMethodName } from './analysis-utils.js';
+import { baseClassDeclarations, classHierarchyBaseToDerived, evaluateContextExpression, evaluateStringValues, hasAnyDecorator, hasDecorator } from './analysis-utils.js';
 import { callStringValues, decoratorOptions, parseSecurity, parseTags, readBoolean, type MetadataReader } from './metadata.js';
-import { resolveValueSymbol, unwrapExpression } from '@exprtlabs/golem/internal/static-value';
+import { literalPropertyName, resolveValueSymbol, unwrapExpression } from '@exprtlabs/golem/internal/static-value';
 import { NEST_COMMON, NEST_SWAGGER } from './packages.js';
+import { isUriVersioningType, URI_VERSIONING_TYPES_PHRASE } from '../uri-versioning.js';
 import { callArguments, decoratorsOf, propertyInitializer, staticObject } from './symbols.js';
 import { classParameterDecorators, parseParameters, parseParameterOverride } from './parameters.js';
 import { assertManualResponseContract, parseRequestBody, parseResponses } from './responses.js';
@@ -147,7 +148,7 @@ function classMethods(
   const byName = new Map<string, ts.MethodDeclaration>();
   const unnamed: ts.MethodDeclaration[] = [];
   for (const method of [...inherited, ...own]) {
-    const name = staticMethodName(method);
+    const name = literalPropertyName(method.name);
     if (name !== undefined) byName.set(name, method);
     else unnamed.push(method);
   }
@@ -162,13 +163,13 @@ function exportClass(classDeclaration: ts.ClassDeclaration): boolean {
 function parseUriVersioning(value: unknown): UriVersioning {
   if (value === undefined || value === null) return { enabled: false, prefix: 'v', defaultVersions: [] };
   if (typeof value === 'string') {
-    if (value.toUpperCase() !== 'URI') throw new TsToOpenApiError({ severity: GolemDiagnosticSeverity.Error, code: TsToOpenApiDiagnosticCode.UnsupportedVersioningType, message: `Only URI versioning is supported; received ${value}.` });
+    if (!isUriVersioningType(value)) throw new TsToOpenApiError({ severity: GolemDiagnosticSeverity.Error, code: TsToOpenApiDiagnosticCode.UnsupportedVersioningType, message: `Only URI versioning is supported, written ${URI_VERSIONING_TYPES_PHRASE}; received ${value}.` });
     return { enabled: true, prefix: 'v', defaultVersions: [] };
   }
   if (!isRecord(value)) throw new TsToOpenApiError({ severity: GolemDiagnosticSeverity.Error, code: TsToOpenApiDiagnosticCode.InvalidVersioningOptions, message: 'uriVersioning must be an object describing URI versioning.' });
   const type = value.type;
-  if (!(type === undefined || type === 0 || type === 'URI' || type === 'uri')) {
-    throw new TsToOpenApiError({ severity: GolemDiagnosticSeverity.Error, code: TsToOpenApiDiagnosticCode.UnsupportedVersioningMode, message: 'Only URI versioning is supported by the static Nest adapter.' });
+  if (type !== undefined && !isUriVersioningType(type)) {
+    throw new TsToOpenApiError({ severity: GolemDiagnosticSeverity.Error, code: TsToOpenApiDiagnosticCode.UnsupportedVersioningMode, message: `Only URI versioning is supported by the static Nest adapter; uriVersioning.type must be ${URI_VERSIONING_TYPES_PHRASE}.` });
   }
   const prefix = value.prefix === undefined
     ? 'v'
@@ -260,35 +261,24 @@ function routeDecorator(
   return undefined;
 }
 
-/** Nest Swagger stores `{ disable }` and skips the endpoint when `disable` is true. */
-function apiExcludeEndpointDisable(
-  reader: MetadataReader,
-  decorators: readonly DecoratorInfo[],
-): boolean | undefined {
-  const matches = [...hasAnyDecorator(decorators, ['ApiExcludeEndpoint'], NEST_SWAGGER)].reverse();
-  if (matches.length === 0) return undefined;
-  let disable: boolean | undefined;
-  for (const decorator of matches) {
-    // An omitted argument excludes the endpoint; `false` includes it.
-    disable = readBoolean(reader, callArguments(decorator)[0], '@ApiExcludeEndpoint()', TsToOpenApiDiagnosticCode.UnsupportedRouteDecorator) ?? true;
-  }
-  return disable;
-}
-
 /**
- * Whether Swagger omits the endpoint (`@ApiExcludeEndpoint()` or
- * `@ApiOperation({ hidden: true })`). Checked before the route itself, so an
- * excluded catch-all or SSE route never needs an OpenAPI form.
+ * Whether Swagger omits the endpoint. It stores `{ disable }` for
+ * `@ApiExcludeEndpoint()` and skips the endpoint when `disable` is true. Only
+ * that decorator hides a route; `@ApiOperation` has no `hidden` option. Checked
+ * before the route itself, so an excluded catch-all or SSE route never needs an
+ * OpenAPI form.
  */
 function routeExcluded(
   reader: MetadataReader,
   decorators: readonly DecoratorInfo[],
 ): boolean {
-  // SwaggerExplorer skips excluded endpoints before ApiOperation is merged.
-  if (apiExcludeEndpointDisable(reader, decorators) === true) return true;
-  const operation = hasDecorator(decorators, 'ApiOperation', NEST_SWAGGER);
-  return operation !== undefined
-    && decoratorOptions(reader, operation).boolean('hidden', TsToOpenApiDiagnosticCode.UnsupportedRouteDecorator) === true;
+  const matches = [...hasAnyDecorator(decorators, ['ApiExcludeEndpoint'], NEST_SWAGGER)].reverse();
+  let disable = false;
+  for (const decorator of matches) {
+    // An omitted argument excludes the endpoint; `false` includes it.
+    disable = readBoolean(reader, callArguments(decorator)[0], '@ApiExcludeEndpoint()', TsToOpenApiDiagnosticCode.UnsupportedRouteDecorator) ?? true;
+  }
+  return disable;
 }
 
 function parseOperation(
@@ -388,7 +378,7 @@ async function analyzeController(
     if (routeExcluded(context, decorators)) continue;
     const selected = routeDecorator(context, decorators);
     if (!selected) continue;
-    const methodName = staticMethodName(method);
+    const methodName = literalPropertyName(method.name);
     if (methodName === undefined) {
       throw new TsToOpenApiError(diagnostic(
         method.getSourceFile(),

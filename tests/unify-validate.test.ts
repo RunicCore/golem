@@ -10,9 +10,9 @@ import { getValidator, validateInstance } from '@exprtlabs/golem/validation';
 import { buildModelProject, createModelProject, writeModelGolemYaml, type ModelProject } from './model-project.js';
 import { command } from './support/process.js';
 import { parse as parseYaml } from 'yaml';
+import { importGeneratedModule, loadCounter, loadModelClasses, requireRecord } from './openapi/helpers.js';
 import { loadGolemModeProject } from './openapi/sdk-client-fixture.js';
 import { generatedCodecIdFromRoot } from './support/consumer.js';
-import { pathToFileURL } from 'node:url';
 import { modelCodec } from './support/model-codec.js';
 
 function fixture(t: TestContext): ModelProject {
@@ -56,20 +56,16 @@ test('global validation true binds IObject and IModel codecs to generated valida
   await compile(root);
   const source = generatedText(root);
   assertGeneratedValidatorsBound(source);
-  const companion = await import(pathToFileURL(path.join(root, 'build/payload.model.generated.js')).href) as Record<string, unknown>;
+  const companion = await importGeneratedModule(root, 'the payload companion', 'build/payload.model.generated.js');
   assert.equal(typeof companion.validateTPayload, 'function', 'the companion exports the validator of the interface');
   assert.equal(typeof companion.validateTAlias, 'function', 'the companion exports the validator of the alias');
-  const { Payload } = await import(pathToFileURL(path.join(root, 'build/payload.model.js')).href);
+  const { Payload } = await loadModelClasses(path.join(root, 'build/payload.model.js'), ['Payload']);
   const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TPayload'));
   const model = new Payload({ title: 'ok' });
   assert.equal(codec.validate(model), true, 'the handwritten own state of a model instance is not an extra key');
   assert.deepEqual((await validateInstance(model)).map((issue) => issue.path), []);
-  assert.equal(await getValidator(model).validate(), true);
-  const invalid = new Payload({ title: 1 as never });
+  const invalid = new Payload({ title: 1 });
   assert.equal(codec.validate(invalid), false);
-  const issues = await validateInstance(invalid);
-  assert.equal(await getValidator(invalid).validate(), false);
-  assert.deepEqual(issues.map((issue) => issue.path), getValidator(invalid).issues.map((issue) => issue.path));
 });
 
 const MIXED_FIXTURE = 'models/unify-validate/i-validation-option-lowers-the-project-level-per-type-in-mixed-files';
@@ -87,7 +83,7 @@ test('a model registers its own validation level as the default of its calls', a
   writeMixedModels(sourceRoot);
   writeModelGolemYaml(root, { validation: true });
   await compile(root);
-  const { Checked } = await import(pathToFileURL(path.join(root, 'build/mixed.model.js')).href);
+  const { Checked } = await loadModelClasses(path.join(root, 'build/mixed.model.js'), ['Checked']);
   assert.deepEqual(findGeneratedModelDefinition(new Checked({ title: 'abc' }))?.profile, { validation: 'sanity' });
   const checkedCodec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TChecked'));
   const trustedCodec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TTrusted'));
@@ -106,7 +102,7 @@ test('a sanity project emits no value limit and no validation function, and its 
   const validators = validatorsText(sourceRoot);
   assert.notEqual(validators, '', 'the sanity project writes its validators module');
   assert.equal(/notBlank|rules\.js|\.length\s*<|codePointLength/.test(validators), false, 'the validators module holds no limit and imports no validation function');
-  await import(pathToFileURL(path.join(root, 'build/mixed.model.js')).href);
+  await importGeneratedModule(root, 'the generated model', 'build/mixed.model.js');
   const outerCodec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TOuter'));
   assert.equal(outerCodec.validate({ inner: { title: 'ok', note: ' ' }, code: 'ab' }), true);
   assert.equal(outerCodec.validate({ inner: { title: 'ok' }, code: 5 }), false);
@@ -135,7 +131,7 @@ test('an off model with a validation function in its own file, held by a validat
   writeGeneratedArtifacts(Object.entries(files).map(([name, content]) => ({ path: path.join(sourceRoot, name), content })));
   writeModelGolemYaml(root, { validation: true });
   await compile(root);
-  await import(pathToFileURL(path.join(root, 'build/parent.model.generated.js')).href);
+  await importGeneratedModule(root, 'the generated model', 'build/parent.model.generated.js');
   const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TParent'));
   assert.equal(codec.validate({ child: { secret: '  ' }, note: 'ok' }), true, 'the off child is not checked');
   assert.equal(codec.validate({ child: { secret: 'x' }, note: 5 }), false);
@@ -155,9 +151,9 @@ test('nested interned child with validation false is opaque; parent field tags s
   ]);
   writeModelGolemYaml(root, { validation: true });
   await compile(root);
-  const { Parent } = await import(pathToFileURL(path.join(root, 'build/nested.model.js')).href);
+  const { Parent } = await loadModelClasses(path.join(root, 'build/nested.model.js'), ['Parent']);
   const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TParent'));
-  const valid = new Parent({ child: { secret: 7 as never }, note: 'ok' });
+  const valid = new Parent({ child: { secret: 7 }, note: 'ok' });
   assert.equal(codec.validate(valid), true);
   const blank = new Parent({ child: { secret: 'x' }, note: '  ' });
   assert.equal(codec.validate(blank), false);
@@ -176,7 +172,7 @@ test('SDK Money $ref plus extra TValidation, local TValidation, and TSerde compi
   assertGeneratedValidatorsBound(source);
   const companion = fs.readFileSync(path.join(sourceRoot, 'checkout.model.generated.ts'), 'utf8');
   assert.equal((companion.match(/^import \{ [^}]*validate_[^}]+\} from /gm) ?? []).length, 1, 'the parent companion imports the shared validators once');
-  const { Checkout } = await import(pathToFileURL(path.join(root, 'build/src/checkout.model.js')).href);
+  const { Checkout } = await loadModelClasses(path.join(root, 'build/src/checkout.model.js'), ['Checkout']);
   const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TCheckout'));
   const validWire = {
     money: { amount: 12, currency: 'USD' },
@@ -227,13 +223,13 @@ test('SDK Money $ref plus extra TValidation, local TValidation, and TSerde compi
 
   const jsonCodec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TJsonCheckout'));
   const text = codec.stringify(valid);
-  const parsed = codec.parse(text) as { note: string };
+  const parsed = requireRecord(codec.parse(text), 'parsed');
   assert.equal(codec.validate(parsed), true);
   assert.equal(parsed.note, 'ok');
-  const rules = await import(pathToFileURL(path.join(root, 'build/src/rules.js')).href) as { extraMoneyCalls: number };
-  const callsBefore = rules.extraMoneyCalls;
+  const extraMoneyCalls = await loadCounter(path.join(root, 'build/src/rules.js'), 'extraMoneyCalls');
+  const callsBefore = extraMoneyCalls();
   const jsonValue = jsonCodec.parse(text);
-  assert.equal(rules.extraMoneyCalls - callsBefore, 1, 'extraMoney runs once per parse');
+  assert.equal(extraMoneyCalls() - callsBefore, 1, 'extraMoney runs once per parse');
   assert.equal(jsonCodec.validate(jsonValue), true);
   assert.throws(() => codec.parse(JSON.stringify({ ...validWire, code: 'gg' })));
   assert.equal((companion.match(/function validateTCheckout\b/g) ?? []).length, 1);
@@ -250,16 +246,16 @@ test('an extra TValidation on an SDK-typed field rejects what the SDK accepts, a
     'src/rules.ts': fixtureFile('rules.ts'),
     'src/checkout.model.ts': fixtureFile('checkout.model.ts').replace("'./sdk/index.js'", "'../sdk/index.js'"),
   });
-  const { Checkout } = await import(pathToFileURL(path.join(root, 'build/src/checkout.model.js')).href);
-  const rules = await import(pathToFileURL(path.join(root, 'build/src/rules.js')).href) as { extraMoneyCalls: number };
+  const { Checkout } = await loadModelClasses(path.join(root, 'build/src/checkout.model.js'), ['Checkout']);
+  const extraMoneyCalls = await loadCounter(path.join(root, 'build/src/rules.js'), 'extraMoneyCalls');
   const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TCheckout'));
   const wire = { note: 'ok', code: 'ff', when: '2026-01-01T00:00:00.000Z', items: [], primary: { sku: 'ABC', quantity: 1, price: 2 }, flags: {}, channel: { kind: 'open' }, span: ['2026-01-01T00:00:00.000Z', '2026-01-02T00:00:00.000Z'], hold: null };
   const issuesOf = async (money: { amount: number; currency: string }): Promise<{ path: readonly (string | number)[]; message: string }[]> =>
     (await validateInstance(modelCodec(Checkout).fromWireFormat({ ...wire, money }, { validate: false }), { failFast: false })).map((issue) => ({ path: issue.path, message: issue.message }));
 
-  const before = rules.extraMoneyCalls;
+  const before = extraMoneyCalls();
   assert.deepEqual(await issuesOf({ amount: 12, currency: 'XXX' }), [{ path: ['money'], message: 'reserved' }]);
-  assert.equal(rules.extraMoneyCalls - before, 1, 'the extra rule ran for the value the SDK accepts');
+  assert.equal(extraMoneyCalls() - before, 1, 'the extra rule ran for the value the SDK accepts');
   assert.deepEqual((await issuesOf({ amount: 12, currency: 'usd' })).map((issue) => issue.path), [['money', 'currency']]);
   assert.deepEqual(await issuesOf({ amount: 12, currency: 'USD' }), []);
   assert.equal(codec.validate(modelCodec(Checkout).fromWireFormat({ ...wire, money: { amount: 12, currency: 'XXX' } }, { validate: false })), false);

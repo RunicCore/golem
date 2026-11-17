@@ -3,7 +3,7 @@ import { mediaFraming } from '../emission-plan.js';
 import type { SchemaPlace, SdkValidatorsInput } from '@exprtlabs/golem/internal/validation-plan';
 import { asRecord, escapeJsonPointerToken, isJsonObject, objectEntries } from '../json.js';
 import { componentPlace, type OriginLocator } from '../origin.js';
-import { identifier, NameScope } from '@exprtlabs/golem/internal/generator-support';
+import { assertNever, identifier, NameScope, statusKey } from '@exprtlabs/golem/internal/generator-support';
 import {
   aliased,
   code,
@@ -33,6 +33,8 @@ import {
 import {
   effectiveSchemaTypes,
   parameterSchema,
+  requestBodyShape,
+  type RequestBodyShape,
   resolveLocal,
   type NormalizedOperation,
   type NormalizedParameter,
@@ -229,6 +231,17 @@ function requireValidatorExport(operation: string, reference: string, exports: R
   return exported;
 }
 
+/** Whether the call has a body, and its content type: chosen by the caller (several content types) or fixed (one). */
+function bodyDelivery(shape: RequestBodyShape): { readonly requestBody: boolean; readonly chosenContentType: boolean; readonly singleContentType: string | null } {
+  switch (shape.kind) {
+    case 'none': return { requestBody: false, chosenContentType: false, singleContentType: null };
+    case 'single': return { requestBody: true, chosenContentType: false, singleContentType: shape.media.contentType };
+    // With several content types the body is `{ contentType, value }`.
+    case 'several': return { requestBody: true, chosenContentType: true, singleContentType: null };
+    default: return assertNever(shape);
+  }
+}
+
 function operationSource(
   clientName: string,
   operation: NormalizedOperation,
@@ -255,16 +268,11 @@ function operationSource(
   const queryStringParameter = operation.parameters.find((item) => item.in === 'querystring');
   const headerParameters = operation.parameters.filter((item) => item.in === 'header');
   const cookieParameters = operation.parameters.filter((item) => item.in === 'cookie');
-  const requestBody = operation.requestContent.length > 0;
-  // With several content types the body is `{ contentType, value }`; with one, the value itself.
-  const chosenContentType = operation.requestContent.length > 1;
-  const singleContentType = operation.requestContent.length === 1
-    ? operation.requestContent[0]?.contentType
-    : null;
+  const { requestBody, chosenContentType, singleContentType } = bodyDelivery(requestBodyShape(operation));
   const bodyValue = chosenContentType ? code`input.body?.value` : code`input.body`;
   const bodyContentType = chosenContentType
     ? code`input.body?.contentType`
-    : documentLiteral(singleContentType ?? null);
+    : documentLiteral(singleContentType);
   const bodyEncodings = documentLiteral(Object.fromEntries(
     operation.requestContent.map((media) => {
       const requirement = textCodecRequirement(media, 'bodyEncoders', document);
@@ -773,8 +781,8 @@ export function operationValidatorNames(
   return new Map([...schemas.bundles].map(([name, bundle]) => [name, {
     input: requireValidatorExport(name, bundle.inputReference, validatorExports),
     ...(bundle.headersReference === undefined ? {} : { headers: requireValidatorExport(name, bundle.headersReference, validatorExports) }),
-    responses: bundle.responseReferences.map((item) => ({ key: `${item.status}:${item.contentType}`, name: requireValidatorExport(name, item.reference, validatorExports) })),
-    responseHeaders: bundle.responseHeaderReferences.map((item) => ({ key: `${item.status}:${item.name}`, name: requireValidatorExport(name, item.reference, validatorExports) })),
+    responses: bundle.responseReferences.map((item) => ({ key: statusKey(item.status, item.contentType), name: requireValidatorExport(name, item.reference, validatorExports) })),
+    responseHeaders: bundle.responseHeaderReferences.map((item) => ({ key: statusKey(item.status, item.name), name: requireValidatorExport(name, item.reference, validatorExports) })),
   }] as const));
 }
 

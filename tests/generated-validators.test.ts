@@ -1,4 +1,5 @@
 import { readFixture } from './fixture-project.js';
+import { loadModelClasses, loadValidator } from './openapi/helpers.js';
 import assert from 'node:assert/strict';
 import {
   existsSync,
@@ -7,7 +8,6 @@ import {
   writeFileSync,
 } from 'node:fs';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
 import test, { type TestContext } from 'node:test';
 
 import { buildCodecValidationPlan, compilePlanValidators, type CodecSchemaClosureEntry } from '@exprtlabs/golem/internal/validation-plan';
@@ -155,6 +155,7 @@ test('validation plan identity compares owned definitions per model and wire pla
 });
 
 test('the validation plan of nested models refers to each child by its id and does not repeat owned definitions', () => {
+  // protects: F-129 generated code is not duplicated: a plan schema refers to a model it references by id, and does not copy the definition (ownedGraphDefinitions in validation-plan.ts)
   const leaf: ModelTypeDescriptor = {
     kind: 'object', properties: { code: { kind: 'string' } }, required: ['code'], additionalProperties: false,
   };
@@ -185,6 +186,18 @@ test('the validation plan of nested models refers to each child by its id and do
     const definitions = Object.keys(schema.$defs === undefined ? {} : schemaRecord(schema.$defs, 'definitions'));
     assert.deepEqual(definitions.filter(name => [leafNode.codecId, middleNode.codecId, rootNode.codecId].includes(name)), [], 'an owned definition is a plan schema, not a copy');
   }
+});
+
+test('a cyclic array in schema data gives the cycle TypeError, not a stack overflow', () => {
+  // protects: T-997 an array that holds itself was mapped before the cycle check and overflowed the stack
+  const cycle: unknown[] = [];
+  cycle.push(cycle);
+  const graph = createSchemaGraph();
+  graph.seal();
+  assert.throws(
+    () => buildCodecValidationPlan(graph, [], { 'Tag#cyclic': { enum: cycle } }, true),
+    error => error instanceof TypeError && error.message === 'Cyclic schema data cannot be compiled into validators.',
+  );
 });
 
 test('a plan root that is no model of the plan gets a validator and no fast check', () => {
@@ -250,15 +263,8 @@ test('generated object codecs close nested schemas and keep first/all and contex
   assert.match(generated, /import \{ [^}]*\bvalidate_\w+_[0-9a-f]{8}[^}]*\} from "[^"]*models\.validators\.generated\.js";/, 'a model file imports the generated validators');
 
   const validatorsPath = builtValidators(value);
-  const [{ Root }, { TLeafBaseModel, TMiddleBaseModel, TRootBaseModel }, validatorModule] = await Promise.all([
-    import(pathToFileURL(path.join(value.root, 'build/root.model.js')).href),
-    import(pathToFileURL(path.join(value.root, 'build/root.model.generated.js')).href),
-    import(pathToFileURL(validatorsPath).href),
-  ]) as [{ Root: new (values?: never) => object }, {
-    TLeafBaseModel: abstract new (...args: never[]) => object;
-    TMiddleBaseModel: abstract new (...args: never[]) => object;
-    TRootBaseModel: abstract new (...args: never[]) => object;
-  }, Readonly<Record<string, Validator>>];
+  const { Root } = await loadModelClasses(path.join(value.root, 'build/root.model.js'), ['Root']);
+  const { TLeafBaseModel, TMiddleBaseModel, TRootBaseModel } = await loadModelClasses(path.join(value.root, 'build/root.model.generated.js'), ['TLeafBaseModel', 'TMiddleBaseModel', 'TRootBaseModel']);
   const { findGeneratedModelDefinitionForConstructor, requireObjectCodec } = await import('@exprtlabs/golem/internal/model-runtime');
   const findCodecIdForConstructor = (constructor: Function): string | undefined => findGeneratedModelDefinitionForConstructor(constructor)?.codecId;
   const { getValidator, validateInstance } = await import('@exprtlabs/golem/validation');
@@ -270,14 +276,14 @@ test('generated object codecs close nested schemas and keep first/all and contex
     first: { label: 'first', child: { code: 'y' } },
     second: { label: 'second', child: { code: 'z' } },
   };
-  const invalid = new Root(wire as never);
+  const invalid = new Root(wire);
   // A root named by its codec id is exported as `validate_` and the id.
-  const validators = { [codecId]: validatorModule[`validate_${codecId}`] };
+  const validateRoot = await loadValidator(validatorsPath, `validate_${codecId}`);
   assert.ok(findCodecIdForConstructor(TLeafBaseModel));
   assert.ok(findCodecIdForConstructor(TMiddleBaseModel));
-  assert.equal(validators[codecId]?.(wire, false).length, 1, 'the first issue only');
+  assert.equal(validateRoot(wire, false).length, 1, 'the first issue only');
   assert.deepEqual(
-    validators[codecId]?.(wire, true).map(issue => issue.path.join('.')).sort(),
+    validateRoot(wire, true).map(issue => issue.path.join('.')).sort(),
     ['first.child.code', 'label', 'second.child.code'],
     'every issue, nested models included',
   );
@@ -359,16 +365,11 @@ test('generated validators permit equal model names in independent source graphs
   writeModelGolemYaml(value.root, { validation: true });
   await compile(value.root);
   assert.ok(generatedModelFiles(value.root).some(item => item.path.endsWith('/models.validators.generated.ts')));
-  const [{ Item: FirstItem }, { Item: SecondItem }] = await Promise.all([
-    import(pathToFileURL(path.join(value.root, 'build/first/item.model.js')).href),
-    import(pathToFileURL(path.join(value.root, 'build/second/item.model.js')).href),
-  ]) as [
-    { Item: new (values?: never) => object },
-    { Item: new (values?: never) => object },
-  ];
+  const { Item: FirstItem } = await loadModelClasses(path.join(value.root, 'build/first/item.model.js'), ['Item']);
+  const { Item: SecondItem } = await loadModelClasses(path.join(value.root, 'build/second/item.model.js'), ['Item']);
   const { getValidator } = await import('@exprtlabs/golem/validation');
-  assert.equal(await getValidator(new FirstItem({ label: 'first' } as never)).validate(), true);
-  assert.equal(await getValidator(new SecondItem({ count: 2 } as never)).validate(), true);
+  assert.equal(await getValidator(new FirstItem({ label: 'first' })).validate(), true);
+  assert.equal(await getValidator(new SecondItem({ count: 2 })).validate(), true);
 });
 
 test('a model format golem does not check stops generation by default, and unknownFormats: warn warns and writes the files', async t => {
@@ -401,6 +402,55 @@ test('a field type that only a model without validation holds still fails genera
   ]);
   const config = path.join(value.root, 'golem.yaml');
   await assert.rejects(runPipeline(config), /VALIDATE_UNKNOWN_FORMAT: a model field type: the format "phone-number" is not implemented/);
+});
+
+test('a project whose models all have validation off still fails generation when a field type format is unknown, and writes no validators module', async t => {
+  // protects: T-1014 the tag schemas were compiled only when a model validated or an SDK had operations
+  const value = validationProject(t, 'contact.model.ts', [
+    "import type { IModel } from '@exprtlabs/golem/model';",
+    "import type { Format } from '@exprtlabs/golem/tags';",
+    "export type TUnchecked = IModel<{ phone: string & Format<'phone-number'> }, { validation: false }>;",
+    '',
+  ]);
+  const config = path.join(value.root, 'golem.yaml');
+  await assert.rejects(runPipeline(config), /VALIDATE_UNKNOWN_FORMAT: a model field type: the format "phone-number" is not implemented/);
+  writeFileSync(config, `${readFileSync(config, 'utf8')}unknownFormats: warn\n`);
+  await runPipeline(config);
+  assert.equal(generatedModelFiles(value.root).some(item => item.path.endsWith('/models.validators.generated.ts')), false);
+});
+
+test('a validating model beside a model source with validation off still fails generation when a field type format of the off source is unknown', async t => {
+  // protects: T-1014 the rule does not depend on which source file holds the off model
+  const value = validationProject(t, 'checked.model.ts', [
+    "import type { IModel } from '@exprtlabs/golem/model';",
+    "export type TChecked = IModel<{ count: number }>;",
+    '',
+  ]);
+  writeFileSync(path.join(value.sourceRoot, 'rules.ts'), 'export function notBlank(value: string): boolean | string { return value.trim().length > 0 || "blank"; }\n');
+  writeFileSync(path.join(value.sourceRoot, 'unchecked.model.ts'), [
+    "import type { IModel } from '@exprtlabs/golem/model';",
+    "import type { Format, TValidation } from '@exprtlabs/golem/tags';",
+    "import { notBlank } from './rules.js';",
+    "export type TUnchecked = IModel<{ phone: string & Format<'phone-number'> & TValidation<typeof notBlank> }, { validation: false }>;",
+    '',
+  ].join('\n'));
+  await assert.rejects(runPipeline(path.join(value.root, 'golem.yaml')), /VALIDATE_UNKNOWN_FORMAT: a model field type: the format "phone-number" is not implemented/);
+});
+
+test('a project at validation:false still fails generation when a field type format is unknown, and writes no validators module', async t => {
+  // protects: T-1030 a project-level validation:false built no validation plan, so no format was checked
+  const value = validationProject(t, 'contact.model.ts', [
+    "import type { IModel } from '@exprtlabs/golem/model';",
+    "import type { Format } from '@exprtlabs/golem/tags';",
+    "export type TContact = IModel<{ phone: string & Format<'phone-number'> }>;",
+    '',
+  ]);
+  const config = path.join(value.root, 'golem.yaml');
+  writeModelGolemYaml(value.root, { validation: false });
+  await assert.rejects(runPipeline(config), /VALIDATE_UNKNOWN_FORMAT: a model field type: the format "phone-number" is not implemented/);
+  writeFileSync(config, `${readFileSync(config, 'utf8')}unknownFormats: warn\n`);
+  await runPipeline(config);
+  assert.equal(generatedModelFiles(value.root).some(item => item.path.endsWith('/models.validators.generated.ts')), false);
 });
 
 test('a model class registered at run time satisfies a generated model-instance check', async () => {

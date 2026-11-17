@@ -5,17 +5,17 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 import * as ts from '@exprtlabs/golem/internal/ts';
-import { declarationOutputOf, flagsAsConfigOptions } from '#golem/typescript-config';
+import { CommandLineError, declarationOutputOf, flagsAsConfigOptions } from '#golem/typescript-config';
 import { createFixtureProject } from './fixture-project.js';
 import { TSC } from './support/build-project.js';
 
 const COMPILER = { strict: true, target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', skipLibCheck: true, types: [] };
 
-function project(t: TestContext, files: Readonly<Record<string, string>>, compilerOptions: object = {}, inside = ''): { root: string; config: string } {
+function project(t: TestContext, files: Readonly<Record<string, string>>, compilerOptions: object | null = {}, inside = ''): { root: string; config: string } {
   const root = path.join(createFixtureProject(t, 'golem-seam-build-'), inside);
   fs.mkdirSync(root, { recursive: true });
   fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'seam-build', private: true, type: 'module' }));
-  fs.writeFileSync(path.join(root, 'tsconfig.json'), JSON.stringify({ compilerOptions: { ...COMPILER, ...compilerOptions }, include: ['src'] }));
+  fs.writeFileSync(path.join(root, 'tsconfig.json'), JSON.stringify({ compilerOptions: compilerOptions === null ? null : { ...COMPILER, ...compilerOptions }, include: ['src'] }));
   for (const [name, text] of Object.entries(files)) {
     fs.mkdirSync(path.dirname(path.join(root, name)), { recursive: true });
     fs.writeFileSync(path.join(root, name), text);
@@ -41,11 +41,11 @@ test('a configuration parsed under flags takes the flags over its options and li
   assert.equal(flagged.options.strict, false);
   assert.equal(flagged.options.allowJs, true);
   assert.equal(flagged.options.target, plain.options.target);
-  assert.throws(() => session.parseConfigFileWithFlags(config, ['--noSuchFlag']), /TS5023/);
+  assert.throws(() => session.parseConfigFileWithFlags(config, ['--noSuchFlag']), (error: unknown) => error instanceof CommandLineError && /TS5023/.test(error.message));
 });
 
 /** A row: its name, its files, its compiler options, the roots the program is given beyond the ones its tsconfig matches, its command-line flags and its option overrides. */
-const PRINTED: readonly (readonly [string, Readonly<Record<string, string>>, object?, (readonly string[])?, (readonly string[])?, Readonly<Record<string, boolean>>?])[] = [
+const PRINTED: readonly (readonly [string, Readonly<Record<string, string>>, (object | null)?, (readonly string[])?, (readonly string[])?, Readonly<Record<string, boolean>>?])[] = [
   ['no error', { 'src/a.ts': 'export const a: string = "x";\n' }],
   ['a syntax error hides the type errors', { 'src/a.ts': 'export const a: string = 1;\n', 'src/b.ts': 'export const = ;\n' }],
   ['errors in files created out of order', { 'src/z.ts': 'export const z: string = 1;\n', 'src/a.ts': 'export const a: string = 1;\n', 'src/m.ts': 'export const m: string = 1;\n' }],
@@ -56,6 +56,10 @@ const PRINTED: readonly (readonly [string, Readonly<Record<string, string>>, obj
   ['an options error stays in the configuration file under flags', { 'src/a.ts': 'export const a = 1;\n' }, { declaration: false, declarationMap: true }, [], ['--noEmit']],
   ['an options error stays in the configuration file under flags when a root lies outside it', { 'src/a.ts': 'export const a = 1;\n', 'extra.ts': 'export const extra = 1;\n' }, { declaration: false, declarationMap: true }, ['extra.ts'], ['--noEmit']],
   ['a file out of rootDir names the include pattern that matched it in the configuration file under flags', { 'src/a.ts': 'export const a = 1;\n', 'src/inner/b.ts': 'export const b = 1;\n' }, { rootDir: 'src/inner' }, [], ['--noEmit']],
+  ['an options error that only a flag causes is placed at compilerOptions in the configuration file', { 'src/a.ts': 'export const a = 1;\n' }, {}, [], ['--declarationMap']],
+  ['an options error that a flag causes against an option of the configuration file is placed at that option', { 'src/a.ts': 'export const a = 1;\n' }, { inlineSourceMap: true }, [], ['--sourceMap']],
+  ['an options error that only a flag causes is placed at compilerOptions when its value is null', { 'src/a.ts': 'export const a = 1;\n' }, null, [], ['--noEmit', '--declarationMap']],
+  ['an options error that a flag causes names the tsconfig of the user, not a derived one', { 'src/a.ts': 'export const a = 1;\n' }, { noEmit: false }, [], ['--incremental', '--outFile', 'x.js']],
   ['an options error stays in the configuration file under option overrides', { 'src/a.ts': 'export const a = 1;\n' }, { declaration: false, declarationMap: true }, [], [], { noEmit: true }],
   ['two errors in one file', { 'src/a.ts': 'export const a: string = 1;\nexport const b: string = 2;\n' }],
   ['errors in two files', { 'src/a.ts': 'export const a: string = 1;\nexport const b: string = 2;\n', 'src/b.ts': 'export const c: string = 3;\n' }],
@@ -63,14 +67,14 @@ const PRINTED: readonly (readonly [string, Readonly<Record<string, string>>, obj
 for (const [name, files, options, outside = [], flags = [], overrides] of PRINTED) {
   test(`diagnostics print as tsc prints them: ${name}`, t => {
     // protects: T-460 T-461 the seam's tsc-form diagnostics (set and order), formatters and Found N errors summary equal tsc's plain and pretty output
-    const { root, config } = project(t, files, { noEmit: true, ...options });
+    const { root, config } = project(t, files, options === null ? null : { noEmit: true, ...options });
     using session = new ts.ProgramSession({ cwd: root });
     using program = session.openProgram({ root, sources: [...session.parseConfigFile(config).fileNames, ...outside.map((file) => path.join(root, file))], configFile: config, flags, ...overrides && { compilerOptionOverrides: overrides } });
     const diagnostics = ts.getTscDiagnostics(program);
-    assert.equal(ts.formatDiagnostics(diagnostics, host(root)), tsc(root, ['--pretty', 'false']));
+    assert.equal(ts.formatDiagnostics(diagnostics, host(root)), tsc(root, [...flags, '--pretty', 'false']));
     const printed = diagnostics.map((diagnostic) => `${ts.formatDiagnosticsWithColorAndContext([diagnostic], host(root))}\n`).join('');
     const pretty = `${printed}${ts.formatErrorSummary(diagnostics, host(root))}`;
-    assert.equal(pretty, tsc(root, ['--pretty', 'true']));
+    assert.equal(pretty, tsc(root, [...flags, '--pretty', 'true']));
   });
 }
 
@@ -84,6 +88,68 @@ test('an options error stays in the configuration file when the project has refe
   const printed = ts.formatDiagnostics(ts.getTscDiagnostics(program), host(root));
   assert.match(printed, /^tsconfig\.json\(1,\d+\): error TS5069: /);
   assert.equal(printed, tsc(root, ['--pretty', 'false']));
+});
+
+const SHARED = { compilerOptions: { ...COMPILER, composite: true, outDir: 'dist', rootDir: 'src' }, include: ['src'] };
+/** A row: its name, the text of the referenced project's tsconfig (`undefined`: it does not exist) and what `tsc -p` prints. */
+for (const [name, shared, printsLike] of [
+  ['a referenced project that is not composite', JSON.stringify({ ...SHARED, compilerOptions: { ...SHARED.compilerOptions, composite: false } }), /^tsconfig\.json\(1,\d+\): error TS6306: /],
+  ['a referenced tsconfig that does not exist', undefined, /^tsconfig\.json\(1,\d+\): error TS6053: /],
+  ['a referenced tsconfig with an option error prints nothing', JSON.stringify({ ...SHARED, compilerOptions: { ...SHARED.compilerOptions, nope: 1 } }), /^$/],
+] as const) {
+  test(`a project reference error prints as tsc prints it: ${name}`, t => {
+    // protects: T-974 a broken project reference is an options error of the user's tsconfig, never a throw and never silent; an error in the referenced file is not one
+    const { root, config } = project(t, { 'src/a.ts': 'export const a = 1;\n', 'shared/src/x.ts': 'export const x = 1;\n' });
+    if (shared !== undefined) fs.writeFileSync(path.join(root, 'shared/tsconfig.json'), shared);
+    fs.writeFileSync(config, JSON.stringify({ compilerOptions: { ...COMPILER, noEmit: true }, include: ['src'], references: [{ path: './shared' }] }));
+    using session = new ts.ProgramSession({ cwd: root });
+    using program = session.openProgram({ root, sources: session.parseConfigFile(config).fileNames, configFile: config });
+    const printed = ts.formatDiagnostics(ts.getTscDiagnostics(program), host(root));
+    assert.match(printed, printsLike);
+    assert.equal(printed, tsc(root, ['--pretty', 'false']));
+  });
+}
+
+/** A row: its name and the text of the user's tsconfig, and of the configuration it extends, which holds the syntax error (an unquoted key, TS1327). */
+for (const [name, configText, baseText] of [
+  ['the tsconfig itself', `{ compilerOptions: ${JSON.stringify({ ...COMPILER, noEmit: true })}, "include": ["src"] }\n`, undefined],
+  ['a configuration it extends', JSON.stringify({ extends: './base.json', include: ['src'] }), `{ compilerOptions: ${JSON.stringify({ ...COMPILER, noEmit: true })} }\n`],
+] as const) {
+  test(`a syntax error in ${name} prints as tsc prints it`, t => {
+    // protects: T-1025 a syntax error in the tsconfig or in a configuration it extends is a diagnostic of the program on both lanes, never a throw
+    const { root, config } = project(t, { 'src/a.ts': 'export const a = 1;\n' });
+    fs.writeFileSync(config, configText);
+    if (baseText !== undefined) fs.writeFileSync(path.join(root, 'base.json'), baseText);
+    using session = new ts.ProgramSession({ cwd: root });
+    using program = session.openProgram({ root, sources: [path.join(root, 'src/a.ts')], configFile: config });
+    const printed = ts.formatDiagnostics(ts.getTscDiagnostics(program), host(root));
+    assert.match(printed, /^(?:tsconfig|base)\.json\(1,\d+\): error TS1327: /);
+    assert.equal(printed, tsc(root, ['--pretty', 'false']));
+  });
+}
+
+test('a syntax error in the tsconfig of a project with references prints as tsc prints it', t => {
+  // protects: T-1018 the synthetic program of a project with references reports the configuration's own syntax errors (TS1327 for an unquoted key)
+  const { root, config } = project(t, { 'src/a.ts': 'export const a = 1;\n', 'shared/src/x.ts': 'export const x = 1;\n' });
+  fs.writeFileSync(path.join(root, 'shared/tsconfig.json'), JSON.stringify(SHARED));
+  fs.writeFileSync(config, `{ compilerOptions: ${JSON.stringify({ ...COMPILER, noEmit: true })}, "include": ["src"], "references": [{ "path": "./shared" }] }\n`);
+  using session = new ts.ProgramSession({ cwd: root });
+  using program = session.openProgram({ root, sources: [path.join(root, 'src/a.ts')], configFile: config });
+  const printed = ts.formatDiagnostics(ts.getTscDiagnostics(program), host(root));
+  assert.match(printed, /^tsconfig\.json\(1,\d+\): error TS1327: /);
+  assert.equal(printed, tsc(root, ['--pretty', 'false']));
+});
+
+test('an options error that tsc makes with no place stays without one when a flag causes it', t => {
+  // protects: T-977 only an option error that tsc locates at compilerOptions moves there; one it builds with no option to name keeps no place
+  const { root, config } = project(t, { 'src/x.ts': 'export const a = 1;\n', 'src/x.js': 'export const b = 1;\n' });
+  fs.writeFileSync(config, JSON.stringify({ compilerOptions: { ...COMPILER, outDir: 'out', rootDir: '.' }, files: ['src/x.ts', 'src/x.js'] }));
+  const flags = ['--allowJs'];
+  using session = new ts.ProgramSession({ cwd: root });
+  using program = session.openProgram({ root, sources: session.parseConfigFileWithFlags(config, flags).fileNames, configFile: config, flags });
+  const printed = ts.formatDiagnostics(ts.getTscDiagnostics(program), host(root));
+  assert.match(printed, /^error TS5056: /);
+  assert.equal(printed, tsc(root, [...flags, '--pretty', 'false']));
 });
 
 test('a program emits JavaScript and declarations to memory, equal to what tsc writes, and writes no file', t => {
@@ -154,7 +220,7 @@ test('arguments reach a program as the options of a configuration parsed under t
   assert.equal(ts.getTscDiagnostics(plain).length, 1);
   assert.equal(ts.getTscDiagnostics(flagged).length, 0);
   assert.equal(ts.getTscDiagnostics(overridden).length, 1, 'an override wins over an argument');
-  assert.throws(() => session.openProgram({ root, sources, configFile: config, flags: ['--noSuchFlag'] }), /TS5023/);
+  assert.throws(() => session.openProgram({ root, sources, configFile: config, flags: ['--noSuchFlag'] }), (error: unknown) => error instanceof CommandLineError && /TS5023/.test(error.message));
 });
 
 test('a list argument with spaces reaches a program as the configuration parsed under it has it', t => {
