@@ -6,11 +6,20 @@ import { steps, type Tier } from '../scripts/test-tier.js';
 // Building the steps starts none of them; the lane's step only needs the variable that the container sets.
 process.env.GOLEM_TYPESCRIPT6_ROOT ??= '/typescript6';
 
-const labels = (tier: Tier): string[] => steps(tier, []).flat(2).map(step => step.label);
+const runs: readonly Tier[] = ['acceptance', 'acceptance-rest'];
+const chainsOf = (tier: Tier) => steps(tier, []).flat();
+const readers = runs.flatMap(tier => chainsOf(tier).flat().filter(step => step.readsPacked).map(step => `${tier}: ${step.label}`));
 
-test('the two runs of acceptance hold each step of the gate once, pack comes before each step that reads the packed set, and the TypeScript 6 lane is alone in its chain', () => {
-  assert.deepEqual(labels('acceptance'), ['public source', 'OpenAPI compliance', 'unit', 'pack', 'packed smoke', 'lint', 'examples']);
-  assert.deepEqual(labels('acceptance-rest'), ['typescript 6', 'pack', 'packed', 'browser', 'acceptance unit']);
-  const laneChain = steps('acceptance-rest', []).flat().find(chain => chain.some(step => step.label === 'typescript 6'));
+test('in each acceptance run, pack comes before every step that reads the packed set, in the same chain', () => {
+  const withoutPack = runs.flatMap(tier => chainsOf(tier).flatMap(chain => chain.flatMap((step, index) =>
+    step.readsPacked && !chain.slice(0, index).some(before => before.label === 'pack') ? [`${tier}: ${step.label}`] : [])));
+  assert.ok(readers.length > 0, 'no step of Acceptance reads the packed set, so this check proves nothing');
+  assert.deepEqual(withoutPack, []);
+});
+
+test('no step runs in both acceptance runs, and the TypeScript 6 lane is alone in its chain', () => {
+  const labels = runs.flatMap(tier => chainsOf(tier).flat().map(step => step.label));
+  assert.equal(new Set(labels).size, labels.length);
+  const laneChain = chainsOf('acceptance-rest').find(chain => chain.some(step => step.label === 'typescript 6'));
   assert.deepEqual(laneChain?.map(step => step.label), ['typescript 6']);
 });

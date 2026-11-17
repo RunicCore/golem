@@ -124,25 +124,22 @@ lock_hash="$(sha256sum package-lock.json | cut -c1-64)"
 # (its slot and content) and the host values that change what a tier checks (the denied-text rules and GOLEM_TYPESCRIPT_ROOT). A tree that passed is
 # not run again, and a run that the ceiling cut is finished by the next run of the same key (scripts/test-runner/run-state.ts). The records sit in the
 # cache volume, so any checkout of the same tree finds them; those older than 14 days are removed.
-# `select_run` points GOLEM_RUN_STATE and GOLEM_RUN_KEY at one run; the runs left to start are in `pending`.
+# `run_state` and `run_key` hold the folder and the key of each run, and `pending` the runs left to start.
+declare -A run_state run_key
 pending=("${runs[@]}")
 if [ -n "$tree_hash" ]; then
   export GOLEM_RUN_TREE="$tree_hash"
   # Every value that run.sh takes from the host environment and that changes what a tier checks: the denied-text rules of the
   # public-content scans and the TypeScript root of a focused run.
   host_env_hash="$(printf '%s\0' "${PUBLIC_CONTENT_DENIED_TEXT-unset}" "${GOLEM_TYPESCRIPT_ROOT-unset}" | sha256sum | cut -c1-64)"
-  select_run() {
-    GOLEM_RUN_STATE="/cache/test-state/$1"
-    GOLEM_RUN_KEY="$(printf '%s\n' "$1" "$tree_hash" "${GOLEM_IMAGE_TAG:-}" "$manifest_hash" "$lock_hash" "$host_env_hash" | sha256sum | cut -c1-32)"
-    export GOLEM_RUN_STATE GOLEM_RUN_KEY
-    mkdir -p "$GOLEM_RUN_STATE"
-    find "$GOLEM_RUN_STATE" -type f -mtime +14 -delete
-  }
   [ "$again" -eq 0 ] || export GOLEM_RUN_AGAIN=1
   pending=()
   for name in "${runs[@]}"; do
-    select_run "$name"
-    passed_file="$GOLEM_RUN_STATE/$GOLEM_RUN_KEY.passed"
+    run_state[$name]="/cache/test-state/$name"
+    run_key[$name]="$(printf '%s\n' "$name" "$tree_hash" "${GOLEM_IMAGE_TAG:-}" "$manifest_hash" "$lock_hash" "$host_env_hash" | sha256sum | cut -c1-32)"
+    mkdir -p "${run_state[$name]}"
+    find "${run_state[$name]}" -type f -mtime +14 -delete
+    passed_file="${run_state[$name]}/${run_key[$name]}.passed"
     if [ "$again" -eq 1 ]; then
       # A run that executes and does not finish passing (failed, cut or killed) must leave no old pass for the next plain run to skip on.
       rm -f "$passed_file"
@@ -251,7 +248,7 @@ else
   # failure. The status is the first one that is not 0. A run that this tree passed is not in `pending`.
   for name in "${pending[@]}"; do
     [ "$stopped" -eq 0 ] || break
-    [ -z "$tree_hash" ] || select_run "$name"
+    [ -z "$tree_hash" ] || export GOLEM_RUN_STATE="${run_state[$name]}" GOLEM_RUN_KEY="${run_key[$name]}"
     run_under_ceiling "$name" "${@:2}"
     [ "$status" -ne 0 ] || status="$run_status"
   done
