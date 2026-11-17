@@ -3,10 +3,13 @@
 set -euo pipefail
 tier="${1:?usage: golem-test <prepare|focused|full|full-ts6|acceptance|docs|examples|examples-check> [args]}"
 
-# Full, Full TS6 and Acceptance keep a run record: `recorded` is 1 for them. Each tier name is its own key and its own record, so a cut
+# Full, Full TS6 and Acceptance keep a run record: `recorded` is 1 for them. Each run name is its own key and its own record, so a cut
 # run of one never resumes another. Full and Full TS6 are the two halves of a sprint-end run and each has its own ceiling.
+# Acceptance is two runs of one command, `acceptance` and `acceptance-rest` (scripts/test-tier.ts, `steps`), each with its own
+# ceiling, key, record and resume, so the gate does not have to fit one ceiling. Every other tier is one run named like the tier.
 recorded=0
 case "$tier" in full|full-ts6|acceptance) recorded=1 ;; esac
+case "$tier" in acceptance) runs=(acceptance acceptance-rest) ;; *) runs=("$tier") ;; esac
 
 # Every tier takes --lock-wait: the seconds to wait for /cache/run.lock when another run holds it (default 300: the focused ceiling of
 # 180 s and the build before it). Full, Full TS6 and Acceptance use three more options of the runner. --again runs the tier even when
@@ -117,25 +120,37 @@ fi
 
 lock_hash="$(sha256sum package-lock.json | cut -c1-64)"
 
-# A Full, Full TS6 or Acceptance run is kept by the key of what it tests: the tier, the source tree, the runner image, the Linux lockfile
-# (its slot and content) and the host values that change what a tier checks (the denied-text rules and GOLEM_TYPESCRIPT_ROOT). A tree that passed is not run again, and a run
-# that the ceiling cut is finished by the next run of the same key (scripts/test-runner/run-state.ts). The records sit in the
+# Each run of a Full, Full TS6 or Acceptance tier is kept by the key of what it tests: the run, the source tree, the runner image, the Linux lockfile
+# (its slot and content) and the host values that change what a tier checks (the denied-text rules and GOLEM_TYPESCRIPT_ROOT). A tree that passed is
+# not run again, and a run that the ceiling cut is finished by the next run of the same key (scripts/test-runner/run-state.ts). The records sit in the
 # cache volume, so any checkout of the same tree finds them; those older than 14 days are removed.
+# `run_state` and `run_key` hold the folder and the key of each run, and `pending` the runs left to start.
+declare -A run_state run_key
+pending=("${runs[@]}")
 if [ -n "$tree_hash" ]; then
-  export GOLEM_RUN_TREE="$tree_hash" GOLEM_RUN_STATE="/cache/test-state/$tier"
+  export GOLEM_RUN_TREE="$tree_hash"
   # Every value that run.sh takes from the host environment and that changes what a tier checks: the denied-text rules of the
   # public-content scans and the TypeScript root of a focused run.
   host_env_hash="$(printf '%s\0' "${PUBLIC_CONTENT_DENIED_TEXT-unset}" "${GOLEM_TYPESCRIPT_ROOT-unset}" | sha256sum | cut -c1-64)"
-  GOLEM_RUN_KEY="$(printf '%s\n' "$tier" "$tree_hash" "${GOLEM_IMAGE_TAG:-}" "$manifest_hash" "$lock_hash" "$host_env_hash" | sha256sum | cut -c1-32)"
-  export GOLEM_RUN_KEY
-  mkdir -p "$GOLEM_RUN_STATE"
-  find "$GOLEM_RUN_STATE" -type f -mtime +14 -delete
-  if [ "$again" -eq 1 ]; then
-    export GOLEM_RUN_AGAIN=1
-    # A run that executes and does not finish passing (failed, cut or killed) must leave no old pass for the next plain run to skip on.
-    rm -f "$GOLEM_RUN_STATE/$GOLEM_RUN_KEY.passed"
-  elif [ -s "$GOLEM_RUN_STATE/$GOLEM_RUN_KEY.passed" ]; then
-    echo "The $tier tier is not run: this tree already passed it. $(cat "$GOLEM_RUN_STATE/$GOLEM_RUN_KEY.passed")"
+  [ "$again" -eq 0 ] || export GOLEM_RUN_AGAIN=1
+  pending=()
+  for name in "${runs[@]}"; do
+    run_state[$name]="/cache/test-state/$name"
+    run_key[$name]="$(printf '%s\n' "$name" "$tree_hash" "${GOLEM_IMAGE_TAG:-}" "$manifest_hash" "$lock_hash" "$host_env_hash" | sha256sum | cut -c1-32)"
+    mkdir -p "${run_state[$name]}"
+    find "${run_state[$name]}" -type f -mtime +14 -delete
+    passed_file="${run_state[$name]}/${run_key[$name]}.passed"
+    if [ "$again" -eq 1 ]; then
+      # A run that executes and does not finish passing (failed, cut or killed) must leave no old pass for the next plain run to skip on.
+      rm -f "$passed_file"
+      pending+=("$name")
+    elif [ -s "$passed_file" ]; then
+      echo "The $name run is skipped: this tree already passed it. $(cat "$passed_file")"
+    else
+      pending+=("$name")
+    fi
+  done
+  if [ "${#pending[@]}" -eq 0 ]; then
     echo "Run it anyway with --again."
     exit 0
   fi
@@ -145,7 +160,7 @@ if [ "$(cat node_modules/.golem-lock-hash 2>/dev/null || true)" != "$lock_hash" 
     echo "npm ci failed. If npm reported ENOTCACHED, run: npm run test:prepare" >&2; exit 2; }
   echo "$lock_hash" > node_modules/.golem-lock-hash
 fi
-ceiling_message() { echo "The $tier tier exceeded its ${ceiling}s ceiling and was stopped." >&2; }
+ceiling_message() { echo "The $1 tier exceeded its ${ceiling}s ceiling and was stopped." >&2; }
 # The examples tier runs no tests: it writes the generated files of the examples, which no commit holds, and hands them to the host
 # in /results/examples (scripts/compare-examples.sh). It skips the test build and the TypeScript 6 install below, because
 # `npm run generate:examples` builds what it needs. The examples call the workspace bin `golem`, which npm ci links only once the
@@ -156,7 +171,7 @@ if [ "$tier" = examples ]; then
   { npm run build && npm rebuild --ignore-scripts --no-audit --no-fund \
     && timeout --foreground -k 30s "$ceiling" npm run generate:examples \
     && rsync -a --delete "${rsync_excludes[@]}" examples/ /results/examples/; } || status=$?
-  [ "$status" -ne 124 ] && [ "$status" -ne 137 ] || ceiling_message
+  [ "$status" -ne 124 ] && [ "$status" -ne 137 ] || ceiling_message "$tier"
   [ "$status" -eq 0 ] || exit 3
   exit 0
 fi
@@ -191,8 +206,8 @@ if [ "$recorded" -eq 1 ]; then
   done
   [ "$waited" -eq 0 ] || [ "$waited" -ge "$bound" ] || echo "The $tier tier starts after waiting ${waited}s: load (container kernel) is $load."
 fi
-# Runs one tier invocation under the ceiling and leaves its exit status in run_status. The function never returns non-zero, so
-# `set -e` does not end the script before the other runs of a split focused call.
+# Runs one tier invocation under the ceiling and leaves its exit status in run_status. The first argument is the run name. The
+# function never returns non-zero, so `set -e` does not end the script before the other runs of a split focused call or of Acceptance.
 # timeout puts the tier in its own process group, so a Ctrl-C or docker stop
 # reaches only this shell. Pass it on; timeout forwards it to the tier.
 run_under_ceiling() {
@@ -205,11 +220,11 @@ run_under_ceiling() {
     kill -0 "$tier_pid" 2>/dev/null || break
   done
   if [ "$run_status" -eq 124 ] || [ "$run_status" -eq 137 ]; then
-    ceiling_message
-    node -e "import('./.build/scripts/test-file-timings.js').then(({ ceilingReport }) => console.error(ceilingReport(process.argv[1], process.argv[2])))" /results "$tier" \
+    ceiling_message "$1"
+    node -e "import('./.build/scripts/test-file-timings.js').then(({ ceilingReport }) => console.error(ceilingReport(process.argv[1], process.argv[2])))" /results "$1" \
       || echo "Could not name the unfinished files from /results." >&2
     if [ -n "$tree_hash" ]; then
-      node -e "import('./.build/scripts/test-runner/run-state.js').then(({ recordCut }) => console.error(recordCut(process.argv[1], process.argv[2], Number(process.argv[3]))))" /results "$tier" "$ceiling" \
+      node -e "import('./.build/scripts/test-runner/run-state.js').then(({ recordCut }) => console.error(recordCut(process.argv[1], process.argv[2], Number(process.argv[3]))))" /results "$1" "$ceiling" \
         || echo "Could not keep the cut run for a resume." >&2
     fi
   fi
@@ -229,7 +244,13 @@ if [ "$tier" = focused ]; then
   done
   rm -rf "$runs_dir"
 else
-  run_under_ceiling "$@"
-  status="$run_status"
+  # Each run of the tier happens even when an earlier one fails or is cut, as the files of one run do: one command shows every
+  # failure. The status is the first one that is not 0. A run that this tree passed is not in `pending`.
+  for name in "${pending[@]}"; do
+    [ "$stopped" -eq 0 ] || break
+    [ -z "$tree_hash" ] || export GOLEM_RUN_STATE="${run_state[$name]}" GOLEM_RUN_KEY="${run_key[$name]}"
+    run_under_ceiling "$name" "${@:2}"
+    [ "$status" -ne 0 ] || status="$run_status"
+  done
 fi
 exit "$status"
