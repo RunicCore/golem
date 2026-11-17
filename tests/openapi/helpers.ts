@@ -373,7 +373,7 @@ export async function loadGeneratedClient(output: string, name: string, file = '
 /** A function that a built module exports: only the generated code knows what it takes and returns. */
 export type BuiltFunction = (...args: unknown[]) => unknown;
 
-function isBuiltFunction(value: unknown): value is BuiltFunction {
+export function isBuiltFunction(value: unknown): value is BuiltFunction {
   return typeof value === 'function';
 }
 
@@ -407,9 +407,23 @@ export async function loadClass(file: string, name: string): Promise<Type> {
   return (await loadExports(file, [name], isClass, 'class'))[name];
 }
 
+/** A reader of the number that the built module `file` exports as `name`; each read sees the current value, so a counter that the module bumps shows. */
+export async function loadCounter(file: string, name: string): Promise<() => number> {
+  const module = await importFile(file);
+  const isCounter = (value: unknown): value is number => typeof value === 'number';
+  if (!hasExports(module, [name], isCounter)) throw new TypeError(`${file} must export the number ${name}`);
+  return () => module[name];
+}
+
 /** The generated validator that the built validators module `file` exports as `name`. */
 export async function loadValidator(file: string, name: string): Promise<Validator> {
   return (await loadExports(file, [name], isValidator, 'validator'))[name];
+}
+
+/** `value` as a string; anything else throws and names `label`. */
+export function requireString(value: unknown, label: string): string {
+  if (typeof value !== 'string') throw new TypeError(`${label} must be a string`);
+  return value;
 }
 
 /** `value` as a built function; anything else throws and names `label`. */

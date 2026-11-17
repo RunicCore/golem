@@ -11,13 +11,13 @@ import type { DecodeOptions, EncodeOptions } from '@exprtlabs/golem/serde';
 
 import { readFixture } from './fixture-project.js';
 import { buildModelProject, createModelProject, writeModelGolemYaml } from './model-project.js';
+import { importGeneratedModule, isBuiltFunction, loadClass, loadFunctions, loadModelClasses, type BuiltFunction } from './openapi/helpers.js';
 import { chargesDocument, loadGolemModeProject, loadSdk, type GolemModeSdkSetup } from './openapi/sdk-client-fixture.js';
 import { generatedCodecIdFromRoot } from './support/consumer.js';
 
 // `strip: true` on one decode or encode call removes the keys that a closed object does not declare, at every level (R-65 G2).
 // The default is unchanged: an extra key of a closed object fails validation.
 
-type Model = new (values?: object) => object;
 const strip = { strip: true } as const;
 const isValidationError = (error: unknown): error is LibError => error instanceof LibError && error.kind === LibErrorKind.Validation;
 
@@ -26,23 +26,43 @@ async function buildModels(t: TestContext) {
   for (const file of ['strip.model.ts', 'units.ts']) fs.writeFileSync(path.join(sourceRoot, file), readFixture(`models/decode-strip/strip/${file}`));
   writeModelGolemYaml(root, { validation: true });
   await buildModelProject(root);
-  const models = await import(pathToFileURL(path.join(root, 'build/strip.model.js')).href);
-  const units = await import(pathToFileURL(path.join(root, 'build/units.js')).href) as { Price: new (units: number) => object };
+  const classes = await loadModelClasses(path.join(root, 'build/strip.model.js'), ['Card', 'Ledger', 'PatternLedger', 'Registry', 'Shelf', 'PetHolder', 'CatModel', 'StrayModel', 'Tree', 'Tally', 'Tagged', 'TaggedOpen']);
+  const Price = await loadClass(path.join(root, 'build/units.js'), 'Price');
   const codec = (name: string) => requireObjectCodec(generatedCodecIdFromRoot(root, name));
   return {
-    Price: units.Price,
-    Card: models.Card as Model, Ledger: models.Ledger as Model, PatternLedger: models.PatternLedger as Model, Registry: models.Registry as Model, Shelf: models.Shelf as Model, PetHolder: models.PetHolder as Model, CatModel: models.CatModel as Model, StrayModel: models.StrayModel as Model, Tree: models.Tree as Model, Tally: models.Tally as Model, Tagged: models.Tagged as Model, TaggedOpen: models.TaggedOpen as Model,
+    ...classes, Price,
     plain: codec('TPlain'), nested: codec('TNested'), open: codec('TOpen'), mapHolder: codec('TMapHolder'), patterned: codec('TPatterned'), nullable: codec('TNullable'), tagged: codec('TTagged'), patternItems: codec('TPatternItems'), tagTypes: codec('TTagTypes'), tagProto: codec('TTagProto'), suffixTuple: codec('TSuffixTuple'), leadingRest: codec('TLeadingRest'), headRest: codec('THeadRest'), taggedOpen: codec('TTaggedOpen'), priced: codec('TPriced'), classPriced: codec('TClassPriced'), metaTree: codec('TMetaTree'), classTagged: codec('TClassTagged'), petList: codec('TPetList'),
     card: codec('TCard'), ledger: codec('TLedger'), patternLedger: codec('TPatternLedger'), registry: codec('TRegistry'), shelf: codec('TShelf'), petHolder: codec('TPetHolder'), tree: codec('TTree'), patternTree: codec('TPatternTree'), tally: codec('TTally'),
   };
 }
 
-/** The value at `path` of `value`. */
-function at(value: unknown, ...path: (string | number)[]): object {
-  return path.reduce<unknown>((current, key) => (current as Record<string | number, unknown>)[key], value) as object;
+/** The functions that the `_group-*.js` modules of `folder` export: `named(prefix)` is the one of the `Charge` schema whose name starts with `prefix`. */
+async function loadGroupFunctions(folder: string) {
+  const files = fs.readdirSync(folder).filter((file) => /^_group-.*\.js$/.test(file));
+  const functions = new Map<string, BuiltFunction>();
+  for (const file of files) {
+    for (const [name, value] of Object.entries(await importGeneratedModule(folder, file, file))) if (isBuiltFunction(value)) functions.set(name, value);
+  }
+  const named = (prefix: string): BuiltFunction => {
+    const found = [...functions].find(([name]) => name.startsWith(prefix) && /Charge/.test(name));
+    if (found === undefined) throw new Error(`no group exports a Charge function that starts with ${prefix}`);
+    return found[1];
+  };
+  return { files, named };
 }
 
-const sorted = (value: object) => Object.keys(value).sort();
+/** The value at `path` of `value`. */
+function at(value: unknown, ...path: (string | number)[]): unknown {
+  return path.reduce<unknown>((current, key) => Reflect.get(requireObject(current), key), value);
+}
+
+/** `value` when it is an object or an array; anything else throws. */
+function requireObject(value: unknown): object {
+  if (typeof value !== 'object' || value === null) throw new TypeError(`${String(value)} is no object`);
+  return value;
+}
+
+const sorted = (value: unknown) => Object.keys(requireObject(value)).sort();
 
 test('strip on decode', async (t) => {
   const m = await buildModels(t);
@@ -82,19 +102,19 @@ test('strip on decode', async (t) => {
   await t.test('parse strips the same keys from JSON text', () => {
     // protects: R-65 G2 parse takes the option as fromWireFormat does
     const result = m.nested.parse('{"inner":{"title":"a","x":1},"list":[{"title":"b","y":2}],"z":3}', strip);
-    assert.deepEqual(sorted(result as object), ['inner', 'list']);
+    assert.deepEqual(sorted(result), ['inner', 'list']);
     assert.deepEqual(sorted(at(result, 'inner')), ['title']);
     assert.deepEqual(sorted(at(result, 'list', 0)), ['title']);
   });
 
   await t.test('data that a model declares as extra stays: an open model, a map, an index signature and pattern properties', () => {
     // protects: R-65 G2 strip never removes declared extra data
-    assert.deepEqual(sorted(m.open.fromWireFormat({ title: 'a', extra: 1 }, strip) as object), ['extra', 'title']);
+    assert.deepEqual(sorted(m.open.fromWireFormat({ title: 'a', extra: 1 }, strip)), ['extra', 'title']);
     const mapped = m.mapHolder.fromWireFormat({ tags: { a: { title: 'x', junk: 1 }, b: { title: 'y' } } }, strip);
     assert.deepEqual(sorted(at(mapped, 'tags')), ['a', 'b']);
     assert.deepEqual(sorted(at(mapped, 'tags', 'a')), ['title'], 'a closed value of the map is stripped');
-    assert.deepEqual(sorted(m.tally.fromWireFormat({ id: 'a', anything: 'x' }, { ...strip, construct: m.Tally }) as object), ['anything', 'id']);
-    assert.deepEqual(sorted(m.patterned.fromWireFormat({ known: 'a', x_1: 1, junk: 2 }, strip) as object), ['known', 'x_1']);
+    assert.deepEqual(sorted(m.tally.fromWireFormat({ id: 'a', anything: 'x' }, { ...strip, construct: m.Tally })), ['anything', 'id']);
+    assert.deepEqual(sorted(m.patterned.fromWireFormat({ known: 'a', x_1: 1, junk: 2 }, strip)), ['known', 'x_1']);
   });
 
   await t.test('a key that a pattern declares holds a closed object that is stripped', () => {
@@ -241,7 +261,7 @@ test('strip on encode', async (t) => {
       assert.deepEqual(m.patterned.toWireFormat({ known: 'a', x_1: 1, junk: 2 }, options(level)), m.patterned.toWireFormat({ known: 'a', x_1: 1 }, { validate: level }));
       const open = { item: { kind: 'open', value: 1, extra: 1 } };
       assert.deepEqual(m.taggedOpen.toWireFormat(open, options(level)), m.taggedOpen.toWireFormat(open, { validate: level }));
-      assert.equal((m.taggedOpen.toWireFormat(open, options(level)) as { item: { kind: string } }).item.kind, 'open');
+      assert.equal(at(m.taggedOpen.toWireFormat(open, options(level)), 'item', 'kind'), 'open');
     });
 
     await t.test(`an instance of a class and its nested instances encode the declared fields, validate ${level}`, () => {
@@ -297,7 +317,7 @@ test('strip on encode', async (t) => {
       const ledger = Object.assign(new m.Ledger({ id: 'a' }), { one: { name: 'n', extra: 1 }, two: { name: 'm' } });
       assert.deepEqual(m.ledger.toWireFormat(ledger, options(level)), { id: 'a', one: { name: 'n' }, two: { name: 'm' } });
       assert.deepEqual(JSON.parse(m.ledger.stringify(ledger, options(level))), { id: 'a', one: { name: 'n' }, two: { name: 'm' } });
-      assert.deepEqual((ledger as { one: unknown }).one, { name: 'n', extra: 1 }, 'the instance is not changed');
+      assert.deepEqual(at(ledger, 'one'), { name: 'n', extra: 1 }, 'the instance is not changed');
       const registry = Object.assign(new m.Registry(), { one: { name: 'n', extra: 1 } });
       assert.deepEqual(m.registry.toWireFormat(registry, options(level)), { one: { name: 'n' } });
       assert.deepEqual(JSON.parse(m.registry.stringify(registry, options(level))), { one: { name: 'n' } });
@@ -307,7 +327,7 @@ test('strip on encode', async (t) => {
       // protects: T-896 the copy of an instance takes a changed map entry in its own descriptor
       const ledger = Object.freeze(Object.assign(new m.Ledger({ id: 'a' }), { one: { name: 'n', extra: 1 } }));
       assert.deepEqual(m.ledger.toWireFormat(ledger, options(level)), { id: 'a', one: { name: 'n' } });
-      assert.deepEqual((ledger as { one: unknown }).one, { name: 'n', extra: 1 }, 'the instance is not changed');
+      assert.deepEqual(at(ledger, 'one'), { name: 'n', extra: 1 }, 'the instance is not changed');
     });
 
     await t.test(`an instance of an open model strips the closed object that a pattern key holds, validate ${level}`, () => {
@@ -322,7 +342,7 @@ test('strip on encode', async (t) => {
       assert.deepEqual(m.petHolder.toWireFormat(clean, options(level)), { pet: { kind: 'cat', lives: 9 } });
       const dirty = new m.PetHolder({ pet: { kind: 'cat', lives: 9, junk: 1 } });
       m.petHolder.toWireFormat(dirty, options(level));
-      assert.deepEqual((dirty as { pet: unknown }).pet, { kind: 'cat', lives: 9, junk: 1 }, 'the instance is not changed');
+      assert.deepEqual(at(dirty, 'pet'), { kind: 'cat', lives: 9, junk: 1 }, 'the instance is not changed');
     });
   }
 
@@ -430,7 +450,7 @@ test('strip on encode', async (t) => {
       const holder = lock(new m.PetHolder({ pet: { kind: 'cat', lives: 9, junk: 1 } }));
       assert.deepEqual(m.petHolder.toWireFormat(holder, strip), { pet: { kind: 'cat', lives: 9 } });
       assert.deepEqual(JSON.parse(m.petHolder.stringify(holder, strip)), { pet: { kind: 'cat', lives: 9 } });
-      assert.deepEqual((holder as { pet: unknown }).pet, { kind: 'cat', lives: 9, junk: 1 }, 'the instance is not changed');
+      assert.deepEqual(at(holder, 'pet'), { kind: 'cat', lives: 9, junk: 1 }, 'the instance is not changed');
     });
   }
 
@@ -461,7 +481,8 @@ test('strip walks the values as the encoder and the decoder walk them', async (t
   for (const [name, call] of holeCalls) {
     await t.test(`${name} keeps the holes of an array, validate false`, () => {
       // protects: T-896 a hole of an array stays a hole when an item before it is converted or stripped, as the conversion of an array leaves it
-      const { list } = call() as { list: unknown[] };
+      const list = at(call(), 'list');
+      assert.ok(Array.isArray(list));
       assert.equal(list.length, 3);
       assert.deepEqual(Object.keys(list), ['0', '2']);
     });
@@ -603,7 +624,7 @@ test('strip reaches a model of another module', async (t) => {
     await t.test(`a class result holds the declared keys of the nested model of another file, validate ${level}`, () => {
       // protects: T-896 the plan of the parent reaches the plan of a model of another module
       const result = parent.fromWireFormat(wire, { strip: true, validate: level, construct: models.Parent });
-      assert.deepEqual(sorted(result as object), ['child', 'children', 'id']);
+      assert.deepEqual(sorted(result), ['child', 'children', 'id']);
       assert.deepEqual(sorted(at(result, 'child')), ['name']);
       assert.deepEqual(sorted(at(result, 'children', 0)), ['name']);
       assert.ok(at(result, 'child') instanceof children.Child);
@@ -624,14 +645,14 @@ import type { Charge } from '../sdk/charges/index.js';
 export type TOrder = IModel<{ ref: string; charge: Charge; charges: Charge[] }>;
 `;
   const project = await loadGolemModeProject(t, 'decode-strip-sdk-', [sdk], true, { 'src/order.model.ts': order });
-  const generated = await import(pathToFileURL(path.join(project.root, 'build/src/order.model.generated.js')).href) as Record<string, (value: unknown, options?: object) => object>;
+  const generated = await loadFunctions(path.join(project.root, 'build/src/order.model.generated.js'), ['fromWireFormatTOrder', 'toWireFormatTOrder']);
   const wire = { ref: 'r', extra: 1, charge: { id: 'c', amount: 1, x: 1 }, charges: [{ id: 'd', amount: 2, y: 2 }] };
   // protects: T-896 the plan of an app model reaches the plan of the SDK table node that it holds
-  const decoded = generated.fromWireFormatTOrder!(wire, strip);
+  const decoded = generated.fromWireFormatTOrder(wire, strip);
   assert.deepEqual(sorted(decoded), ['charge', 'charges', 'ref']);
   assert.deepEqual(sorted(at(decoded, 'charge')), ['amount', 'id']);
   assert.deepEqual(sorted(at(decoded, 'charges', 0)), ['amount', 'id']);
-  assert.deepEqual(generated.toWireFormatTOrder!(wire, strip), { ref: 'r', charge: { id: 'c', amount: 1 }, charges: [{ id: 'd', amount: 2 }] });
+  assert.deepEqual(generated.toWireFormatTOrder(wire, strip), { ref: 'r', charge: { id: 'c', amount: 1 }, charges: [{ id: 'd', amount: 2 }] });
 });
 
 test('strip reaches the model of another dependency group of a generated SDK', async (t) => {
@@ -645,14 +666,8 @@ test('strip reaches the model of another dependency group of a generated SDK', a
   });
   const sdk = await loadSdk(t, 'decode-strip-groups-', { document, name: 'Groups', dates: 'date', validation: true });
   const folder = path.join(sdk.output, 'dist/models');
-  const groups = fs.readdirSync(folder).filter((file) => /^_group-.*\.js$/.test(file));
-  assert.ok(groups.length > 1, 'each of the three schemas is a group of its own');
-  const functions = new Map<string, (value: unknown, options?: object) => object>();
-  for (const file of groups) {
-    const exported = await import(pathToFileURL(path.join(folder, file)).href) as Record<string, unknown>;
-    for (const [name, value] of Object.entries(exported)) if (typeof value === 'function') functions.set(name, value as (value: unknown, options?: object) => object);
-  }
-  const named = (prefix: string) => functions.get([...functions.keys()].find((name) => name.startsWith(prefix) && /Charge/.test(name))!)!;
+  const { files, named } = await loadGroupFunctions(folder);
+  assert.ok(files.length > 1, 'each of the three schemas is a group of its own');
   const instant = '2024-01-02T03:04:05.000Z';
   const wire = { group: { items: [{ label: 'a', at: instant, x: 1 }], y: 1 }, history: [{ items: [], z: 1 }], w: 1 };
   // protects: T-896 the plan of one group reaches the plan that another group exports, on decode and encode
@@ -678,12 +693,7 @@ test('a union of a recursive array of another group and a string strips the item
   });
   const sdk = await loadSdk(t, 'decode-strip-tree-', { document, name: 'Trees', dates: 'date', validation: true });
   const folder = path.join(sdk.output, 'dist/models');
-  const functions = new Map<string, (value: unknown, options?: object) => object>();
-  for (const file of fs.readdirSync(folder).filter((entry) => /^_group-.*\.js$/.test(entry))) {
-    const exported = await import(pathToFileURL(path.join(folder, file)).href) as Record<string, unknown>;
-    for (const [name, value] of Object.entries(exported)) if (typeof value === 'function') functions.set(name, value as (value: unknown, options?: object) => object);
-  }
-  const named = (prefix: string) => functions.get([...functions.keys()].find((name) => name.startsWith(prefix) && /Charge/.test(name))!)!;
+  const { named } = await loadGroupFunctions(folder);
   const instant = '2024-01-02T03:04:05.000Z';
   const treeWire = [{ label: 'a', extra: 1, children: [{ label: 'b', junk: 2, children: [] }] }];
   const treeStripped = [{ label: 'a', children: [{ label: 'b', children: [] }] }];
@@ -707,12 +717,7 @@ test('a union of a concrete union of another group and an inline array keeps the
   });
   const sdk = await loadSdk(t, 'decode-strip-union-', { document, name: 'Unions', dates: 'date', validation: true });
   const folder = path.join(sdk.output, 'dist/models');
-  const functions = new Map<string, (value: unknown, options?: object) => object>();
-  for (const file of fs.readdirSync(folder).filter((entry) => /^_group-.*\.js$/.test(entry))) {
-    const exported = await import(pathToFileURL(path.join(folder, file)).href) as Record<string, unknown>;
-    for (const [name, value] of Object.entries(exported)) if (typeof value === 'function') functions.set(name, value as (value: unknown, options?: object) => object);
-  }
-  const named = (prefix: string) => functions.get([...functions.keys()].find((name) => name.startsWith(prefix) && /Charge/.test(name))!)!;
+  const { named } = await loadGroupFunctions(folder);
   const instant = '2024-01-02T03:04:05.000Z';
   const tree = [{ label: 'a', children: { leaf: 'b' } }];
   const wire = { when: instant, holder: tree };

@@ -26,6 +26,7 @@ import {
   discoverModelSources,
   generate,
 } from '#model/generator';
+import { loadModelClasses, requireRecord } from './openapi/helpers.js';
 import { modelCodec } from './support/model-codec.js';
 
 function project(t: TestContext) {
@@ -474,9 +475,9 @@ export type TAccount = IModel<{ id: string }>;`,
   const result = generate({ root, directory, profile: { validation: false } });
   const keys = result.artifacts.find((artifact) => artifact.path === path.join(directory, '.golem/codec-keys.json'));
   assert.ok(keys, 'the codec key file lies under the configuration directory');
-  const table = JSON.parse(keys.content) as { version: number; keys: Record<string, string> };
+  const table = requireRecord(JSON.parse(keys.content), 'the codec key file');
   assert.equal(table.version, 1);
-  assert.deepEqual(Object.keys(table.keys), ['src/account.model.ts#TAccount']);
+  assert.deepEqual(Object.keys(requireRecord(table.keys, 'the codec keys')), ['src/account.model.ts#TAccount']);
 });
 
 /** A fixture of two files: `TMoney` (a tagged field, an `unknown` field, a Date field) and `TPayment`, which nests it. */
@@ -528,7 +529,7 @@ test('one package installed at two paths and used by models of one job is one bi
   writeCodecPackage(path.join(sourceRoot, 'two/node_modules/@fixture/pg'), { name: '@fixture/pg', exports, files: COUNT_DIST_FILES });
   // The compiler reads two copies of one name and version as one file; another version keeps the copies apart.
   const copyManifest = path.join(sourceRoot, 'two/node_modules/@fixture/pg/package.json');
-  fs.writeFileSync(copyManifest, JSON.stringify({ ...JSON.parse(fs.readFileSync(copyManifest, 'utf8')) as object, version: '0.0.1' }));
+  fs.writeFileSync(copyManifest, JSON.stringify({ ...requireRecord(JSON.parse(fs.readFileSync(copyManifest, 'utf8')), 'the package manifest'), version: '0.0.1' }));
   const model = (name: string): string => taggedModelSource({ name, imports: tsSource`import type { PkgCount } from '@fixture/pg/tags';`, fields: tsSource`count: PkgCount` }).text;
   writeModelSources(sourceRoot, { 'a.model.ts': model('A'), 'two/b.model.ts': model('B') });
   const result = generate({ root, profile: { validation: true } });
@@ -648,9 +649,9 @@ for (const layout of ['sibling files', 'one file'] as const) {
       }).text,
     });
     await buildModelProjectWith(root, { validation: true });
-    const { B } = await import(pathToFileURL(path.join(root, 'build', 'b.model.js')).href) as { B: new (values: object) => object };
-    const decoded = modelCodec(B).fromWireFormat({ s: { v: '2020-01-01T00:00:00.000Z' }, u: { w: '2020-01-01T00:00:00.000Z' } }) as { s: { v: unknown }; u: { w: unknown } };
-    assert.deepEqual([decoded.s.v instanceof Date, decoded.u.w instanceof Date], [true, true]);
+    const { B } = await loadModelClasses(path.join(root, 'build', 'b.model.js'), ['B']);
+    const decoded = requireRecord(modelCodec(B).fromWireFormat({ s: { v: '2020-01-01T00:00:00.000Z' }, u: { w: '2020-01-01T00:00:00.000Z' } }), 'decoded');
+    assert.deepEqual([requireRecord(decoded.s, 's').v instanceof Date, requireRecord(decoded.u, 'u').w instanceof Date], [true, true]);
   });
 }
 
@@ -674,11 +675,10 @@ export class ${name} extends T${name}BaseModel {
     }).text,
   });
   await buildModelProjectWith(root, { validation: true });
-  const built = async (file: string) => await import(pathToFileURL(path.join(root, 'build', file)).href) as Record<string, new (values: object) => object>;
-  const [{ B }, first, second] = await Promise.all([built('b.model.js'), built('a1.model.js'), built('a2.model.js')]);
+  const [{ B }, first, second] = await Promise.all([loadModelClasses(path.join(root, 'build', 'b.model.js'), ['B']), loadModelClasses(path.join(root, 'build', 'a1.model.js'), ['A$']), loadModelClasses(path.join(root, 'build', 'a2.model.js'), ['A_'])]);
   const day = '2020-01-01T00:00:00.000Z';
-  const decoded = modelCodec(B).fromWireFormat({ s: { v: day }, u: { v: day } }) as { s: object; u: object };
-  assert.deepEqual([decoded.s instanceof first['A$']!, decoded.u instanceof second['A_']!], [true, true]);
+  const decoded = requireRecord(modelCodec(B).fromWireFormat({ s: { v: day }, u: { v: day } }), 'decoded');
+  assert.deepEqual([decoded.s instanceof first.A$, decoded.u instanceof second.A_], [true, true]);
 });
 
 // protects: T-867 class models of one shape that share a short name, in one file in either order, each decode to their own class
@@ -701,11 +701,10 @@ ${order.map(classModel).join('')}`,
       }).text,
     });
     await buildModelProjectWith(root, { validation: true });
-    const built = async (file: string) => await import(pathToFileURL(path.join(root, 'build', file)).href) as Record<string, new (values: object) => object>;
-    const [{ B }, classes] = await Promise.all([built('b.model.js'), built('a.model.js')]);
+    const [{ B }, classes] = await Promise.all([loadModelClasses(path.join(root, 'build', 'b.model.js'), ['B']), loadModelClasses(path.join(root, 'build', 'a.model.js'), ['A$', 'A_'])]);
     const day = '2020-01-01T00:00:00.000Z';
-    const decoded = modelCodec(B).fromWireFormat({ s: { v: day }, u: { v: day } }) as { s: object; u: object };
-    assert.deepEqual([decoded.s instanceof classes['A$']!, decoded.u instanceof classes['A_']!], [true, true]);
+    const decoded = requireRecord(modelCodec(B).fromWireFormat({ s: { v: day }, u: { v: day } }), 'decoded');
+    assert.deepEqual([decoded.s instanceof classes.A$, decoded.u instanceof classes.A_], [true, true]);
   });
 }
 
@@ -725,12 +724,13 @@ export type TA_ = IObject<{ b?: TB }>;
     }).text,
   });
   await buildModelProjectWith(root, { validation: true });
-  const { B } = await import(pathToFileURL(path.join(root, 'build', 'b.model.js')).href) as { B: new (values: object) => object };
+  const { B } = await loadModelClasses(path.join(root, 'build', 'b.model.js'), ['B']);
   const day = '2020-01-01T00:00:00.000Z';
-  const decoded = modelCodec(B).fromWireFormat({ s: { b: { at: day, a: { b: { at: day } } } }, u: { b: { at: day } } }) as {
-    s: { b: { at: unknown; a: { b: { at: unknown } } } }; u: { b: { at: unknown } };
-  };
-  assert.deepEqual([decoded.s.b.at instanceof Date, decoded.s.b.a.b.at instanceof Date, decoded.u.b.at instanceof Date], [true, true, true]);
+  const decoded = requireRecord(modelCodec(B).fromWireFormat({ s: { b: { at: day, a: { b: { at: day } } } }, u: { b: { at: day } } }), 'decoded');
+  const sb = requireRecord(requireRecord(decoded.s, 's').b, 's.b');
+  const sab = requireRecord(requireRecord(sb.a, 's.b.a').b, 's.b.a.b');
+  const ub = requireRecord(requireRecord(decoded.u, 'u').b, 'u.b');
+  assert.deepEqual([sb.at instanceof Date, sab.at instanceof Date, ub.at instanceof Date], [true, true, true]);
 });
 
 /** A shared folder `outer/shared` with a golem.yaml of its own, and an app that includes it and has a model of its own. */
@@ -1087,8 +1087,8 @@ function configProject(t: TestContext, yaml: string): { root: string; app: strin
   const shop = path.join(root, 'node_modules/@fixture/shop');
   fs.mkdirSync(path.dirname(shop), { recursive: true });
   copyFixture(shop, 'config/scripted-plan');
-  const template = JSON.parse(fs.readFileSync(path.join(shop, 'package.json'), 'utf8')) as { golem: object };
-  fs.writeFileSync(path.join(shop, 'package.json'), JSON.stringify({ ...template, name: '@fixture/shop', golem: { ...template.golem, block: 'shop' } }));
+  const template = requireRecord(JSON.parse(fs.readFileSync(path.join(shop, 'package.json'), 'utf8')), 'the package manifest');
+  fs.writeFileSync(path.join(shop, 'package.json'), JSON.stringify({ ...template, name: '@fixture/shop', golem: { ...requireRecord(template.golem, 'its golem field'), block: 'shop' } }));
   const app = path.join(root, 'app');
   fs.mkdirSync(path.join(app, 'src'), { recursive: true });
   fs.writeFileSync(path.join(app, 'tsconfig.json'), '{}');
@@ -1228,12 +1228,12 @@ test('the models job reads the SDK folders of the jobs that need the codecs host
   ].join('\n') + '\n')).filename);
   const app = path.dirname(linked.config.configFile);
   assert.deepEqual(linked.job.facts.inputFolders, [path.join(app, 'sdk/a'), path.join(app, 'sdk/b')]);
-  assert.deepEqual(Reflect.get(linked.job.options as object, 'sdkOutputs'), [path.join(app, 'sdk/a'), path.join(app, 'sdk/b')]);
+  assert.deepEqual(requireRecord(linked.job.options, 'the job options').sdkOutputs, [path.join(app, 'sdk/a'), path.join(app, 'sdk/b')]);
   assert.deepEqual(linked.config.jobs.map(job => job.id).filter(id => id !== 'sdk-b'), ['sdk-a', 'model', 'docs']);
 
   const unlinked = await modelJobOf(configProject(t, shop('    - { id: docs, outputs: [{ path: api.yaml }] }\n')).filename);
   assert.deepEqual(unlinked.job.facts.inputFolders, []);
-  assert.equal('sdkOutputs' in (unlinked.job.options as object), false);
+  assert.equal('sdkOutputs' in requireRecord(unlinked.job.options, 'the job options'), false);
 });
 
 test('the plan entry of golem-model loads without TypeScript, yaml or the generator', async () => {
@@ -1246,7 +1246,8 @@ test('the plan entry of golem-model loads without TypeScript, yaml or the genera
     'console.log(JSON.stringify(urls));',
   ].join('\n');
   const { stdout } = await command(workspace, process.execPath, ['-e', script, path.join(workspace, 'packages/golem-model/dist/plan.js')]);
-  const urls = JSON.parse(stdout) as string[];
+  const urls: unknown = JSON.parse(stdout);
+  assert.ok(Array.isArray(urls) && urls.every((url): url is string => typeof url === 'string'), 'the hook prints a list of urls');
   assert.ok(urls.some(url => url.endsWith('/golem/dist/tooling/plan-support.js')), 'the hook sees the plan entry load its core helpers');
   assert.deepEqual(urls.filter(url => /\/(typescript|yaml)\/|generator(-core)?\.js$/.test(url)), []);
 });
