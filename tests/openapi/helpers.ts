@@ -320,14 +320,14 @@ export interface CapturedRequest {
 
 /** A model class loaded from build output: its constructor takes the model's field values, whose shape only the generated code knows. */
 export interface GeneratedModelClass {
-  new (values: Record<string, unknown>): object;
+  new (values?: Record<string, unknown>): object;
 }
 
 export function isGeneratedModelClass(value: unknown): value is GeneratedModelClass {
   return typeof value === 'function' && Boolean(findGeneratedModelDefinitionForConstructor(value));
 }
 
-interface GeneratedClientInstance {
+export interface GeneratedClientInstance {
   [name: string]: () => { execute: (
     input?: unknown,
     options?: unknown,

@@ -2,15 +2,14 @@ import 'temporal-polyfill/global';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 import { createFixtureProject } from '../fixture-project.js';
+import { loadClientClass } from '../support/generated-module.js';
 import {
   captureRequest,
   compileGeneratedSdk,
   generateMaterializedSdk,
   importGeneratedModule,
-  isGeneratedClientClass,
   loadGeneratedClient,
   recordingFetch,
   requireRecord,
@@ -78,11 +77,10 @@ test('dates: temporal models encode to the ISO strings the generated client send
   const output = path.join(createFixtureProject(t, 'golem-openapi-temporal-request-'), 'sdk');
   await generateMaterializedSdk(EVENT_OPERATIONS, { output, name: 'Events', profile: PROFILE, dates: 'temporal' });
   compileGeneratedSdk(output, [], { strict: true, lib: ['ES2023', 'DOM', 'DOM.Iterable', 'esnext.temporal'] });
-  const models = requireRecord(await import(pathToFileURL(path.join(output, 'dist/index.js')).href), 'generated models');
-  assert.ok(isGeneratedClientClass(models.EventsClient), 'generated client');
+  const EventsClient = await loadClientClass(path.join(output, 'dist/index.js'), 'EventsClient');
   const wire = { at: '2025-01-02T03:04:05Z', day: '2025-01-02', span: 'P1D', clock: '03:04:05Z', maybe: null };
   const requests: CapturedRequest[] = [];
-  const client = new models.EventsClient({
+  const client = new EventsClient({
     baseUrl: 'https://api.test',
     fetchImpl: async (url: RequestInfo | URL, init?: RequestInit) => {
       requests.push(captureRequest(url, init));
@@ -90,7 +88,7 @@ test('dates: temporal models encode to the ISO strings the generated client send
     },
   });
   const model = { at: Temporal.Instant.from('2025-01-02T03:04:05Z'), day: Temporal.PlainDate.from('2025-01-02'), span: Temporal.Duration.from('P1D'), clock: '03:04:05Z', maybe: null };
-  const response = await client.createEvent().execute({ body: model as never });
+  const response = await client.createEvent().execute({ body: model });
   assert.equal(response.status, 201);
   assert.deepEqual(JSON.parse(String(requests[0]?.init.body)), wire);
 });
@@ -348,8 +346,8 @@ test('dates: temporal sends a duration query parameter and a duration header in 
   const client = new Client({ baseUrl: 'https://api.test', fetchImpl: (async (url: RequestInfo | URL, init?: RequestInit) => {
     requests.push({ url: String(url), headers: Object.fromEntries(new Headers(init?.headers)) });
     return fetchImpl(url, init);
-  }) as typeof fetch }) as unknown as { listSpans(): { execute(input: unknown): Promise<{ headers: Record<string, unknown> }> } };
+  }) as typeof fetch });
   const response = await client.listSpans().execute({ query: { span: Temporal.Duration.from({ milliseconds: 500 }) }, header: { 'X-Span': Temporal.Duration.from({ years: 1, days: 2 }) } });
   assert.deepEqual([requests[0]?.url, requests[0]?.headers['x-span'], sent.length], ['https://api.test/spans?span=PT0.5S', 'P1Y2D', 1]);
-  assert.equal(String(response.headers['X-Left'] ?? response.headers['x-left']), 'PT1H30S');
+  assert.equal(String(response.headers?.['X-Left'] ?? response.headers?.['x-left']), 'PT1H30S');
 });

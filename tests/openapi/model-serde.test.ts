@@ -276,7 +276,7 @@ async function assertConverts(codec: SdkBodyCodec, row: ConversionRow): Promise<
 
 /** The body of the schema `root` of a golem-mode SDK of `project`, through its built client. */
 function golemBodyCodec(project: GolemModeProject, sdk: GolemModeSdkSetup, root: string): SdkBodyCodec {
-  return clientBodyCodec(fetchImpl => project.client<unknown>(sdk, { fetchImpl }), root);
+  return clientBodyCodec(fetchImpl => project.client(sdk, { fetchImpl }), root);
 }
 
 test('nested Date, inherited, and dictionary conversions work in a standalone SDK', async t => {

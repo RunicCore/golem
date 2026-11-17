@@ -353,7 +353,7 @@ test('a header parameter named Accept, Content-Type or Authorization is ignored 
       sent = captureRequest(url, init).init.headers;
       return new Response(null, { status: 204 });
     },
-  }) as unknown as { opA(): { execute(input: unknown): Promise<unknown> } };
+  });
   await client.opA().execute({ header: { Accept: 'x/a', 'content-type': 'x/b', AUTHORIZATION: 'Bearer c', 'X-Id': null, 'X-Kept': 'kept' } });
   assert.deepEqual(
     { accept: sent?.get('accept'), contentType: sent?.get('content-type'), authorization: sent?.get('authorization'), id: sent?.get('x-id'), kept: sent?.get('x-kept') },
