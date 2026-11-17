@@ -344,7 +344,7 @@ export interface GeneratedClientClass {
   new (options: Record<string, unknown>): GeneratedClientInstance;
 }
 
-export function isGeneratedClientClass(value: unknown): value is GeneratedClientClass {
+function isGeneratedClientClass(value: unknown): value is GeneratedClientClass {
   return typeof value === 'function';
 }
 
@@ -357,7 +357,7 @@ export async function importGeneratedModule(output: string, label: string, file 
   return importFile(join(output, file), label);
 }
 
-/** The client class `<name>Client` that the loaded module `module` exports; a missing export or one that is no class throws and names `label`, the module, and the export. */
+/** The client class `<name>Client` that the loaded module `module` exports; a missing export or one that is no class throws and names `label` and the export. */
 export function generatedClientFrom(module: Record<string, unknown>, name: string, label: string): GeneratedClientClass {
   const Client = module[`${name}Client`];
   if (!isGeneratedClientClass(Client)) throw new TypeError(`${label} must export the client class ${name}Client`);

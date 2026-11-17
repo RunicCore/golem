@@ -22,8 +22,9 @@ import {
   type UpstreamResponseCase,
 } from './compliance-cases.js';
 import {
-  isGeneratedClientClass,
   generateMaterializedSdk,
+  type GeneratedClientClass,
+  loadGeneratedClient,
   openApiFixture,
   repoRoot,
   requireRecord,
@@ -41,10 +42,6 @@ interface UpstreamFixture {
 interface UpstreamManifest {
   readonly fixtures: readonly UpstreamFixture[];
   readonly sources: readonly { readonly commit: string; readonly licenseFile: string }[];
-}
-
-interface GeneratedOperationModule {
-  readonly [name: string]: unknown;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -259,23 +256,13 @@ function requiresMutualTls(document: unknown): boolean {
   return Object.values(schemes).some((rawScheme) => isRecord(rawScheme) && rawScheme.type === 'mutualTLS');
 }
 
-function generatedClientModule(output: string, name: string): Promise<GeneratedOperationModule> {
-  return import(pathToFileURL(path.join(output, 'dist', 'client.js')).href)
-    .then((module) => requireRecord(module, `${name} generated client`));
-}
-
 async function executeCase(
-  output: string,
-  clientName: string,
+  Client: GeneratedClientClass,
   document: unknown,
   ir: ReturnType<typeof normalizeDocument>,
   item: UpstreamOperationCase,
   assertRequestValidation: boolean,
 ): Promise<void> {
-  const module = await generatedClientModule(output, clientName);
-  const Client = module[`${clientName}Client`];
-  assert.equal(isGeneratedClientClass(Client), true, `${item.id} generated client class`);
-  if (!isGeneratedClientClass(Client)) throw new TypeError(`${clientName}Client`);
   const operation = ir.operations.find((candidate) => candidate.name === item.operation);
   assert.ok(operation, `${item.id} normalized operation`);
   if (!operation) return;
@@ -405,10 +392,10 @@ test('typed upstream corpus cases generate, strict-compile, and execute every ac
       // and artifact checks alone cannot prove that profile-specific client
       // composition, codecs, and validation seams work on the wire.
       const selected = cases;
+      const Client = await loadGeneratedClient(output, `Upstream${fixtureIndex}`);
       for (const item of selected) {
         await executeCase(
-          output,
-          `Upstream${fixtureIndex}`,
+          Client,
           document,
           ir,
           item,

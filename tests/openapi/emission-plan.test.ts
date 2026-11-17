@@ -13,8 +13,8 @@ import {
   generateMaterializedSdk,
   generatedClientFrom,
   importGeneratedModule,
-  loadGeneratedClient,
   isGeneratedModelClass,
+  loadGeneratedClient,
   requireRecord,
   type OpenApiGenerationProfile,
 } from './helpers.js';

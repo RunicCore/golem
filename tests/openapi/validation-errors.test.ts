@@ -1,10 +1,9 @@
 import { createFixtureProject } from '../fixture-project.js';
 import assert from 'node:assert/strict';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
-import { compileGeneratedSdk, generateMaterializedSdk, isGeneratedClientClass } from './helpers.js';
+import { compileGeneratedSdk, generateMaterializedSdk, loadGeneratedClient } from './helpers.js';
 
 test('client validation failures use library errors while network failures preserve their identity', async t => {
   const directory = createFixtureProject(t, 'golem-validation-errors-');
@@ -16,8 +15,7 @@ test('client validation failures use library errors while network failures prese
     } } } },
   }, { output, name: 'Failures', profile: { validation: true } });
   compileGeneratedSdk(output);
-  const { FailuresClient } = await import(pathToFileURL(path.join(output, 'dist/client.js')).href);
-  assert.ok(isGeneratedClientClass(FailuresClient));
+  const FailuresClient = await loadGeneratedClient(output, 'Failures');
   const validatorFailure = new Error('Validator stopped');
   let failure: unknown = validatorFailure;
   let shouldThrow = true;
