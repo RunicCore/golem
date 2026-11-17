@@ -5,11 +5,11 @@ tier="${1:?usage: golem-test <prepare|focused|full|full-ts6|acceptance|docs|exam
 
 # Full, Full TS6 and Acceptance keep a run record: `recorded` is 1 for them. Each run name is its own key and its own record, so a cut
 # run of one never resumes another. Full and Full TS6 are the two halves of a sprint-end run and each has its own ceiling.
-# Acceptance is two runs of one command, `acceptance` and `acceptance-rest` (scripts/test-tier.ts, `steps`), each with its own
+# Acceptance is three runs of one command, `acceptance`, `acceptance-rest` and `acceptance-unit` (scripts/test-tier.ts, `steps`), each with its own
 # ceiling, key, record and resume, so the gate does not have to fit one ceiling. Every other tier is one run named like the tier.
 recorded=0
 case "$tier" in full|full-ts6|acceptance) recorded=1 ;; esac
-case "$tier" in acceptance) runs=(acceptance acceptance-rest) ;; *) runs=("$tier") ;; esac
+case "$tier" in acceptance) runs=(acceptance acceptance-rest acceptance-unit) ;; *) runs=("$tier") ;; esac
 
 # Every tier takes --lock-wait: the seconds to wait for /cache/run.lock when another run holds it (default 300: the focused ceiling of
 # 180 s and the build before it). Full, Full TS6 and Acceptance use three more options of the runner. --again runs the tier even when

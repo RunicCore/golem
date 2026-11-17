@@ -6,7 +6,7 @@ import { steps, type Tier } from '../scripts/test-tier.js';
 // Building the steps starts none of them; the lane's step only needs the variable that the container sets.
 process.env.GOLEM_TYPESCRIPT6_ROOT ??= '/typescript6';
 
-const runs: readonly Tier[] = ['acceptance', 'acceptance-rest'];
+const runs: readonly Tier[] = ['acceptance', 'acceptance-rest', 'acceptance-unit'];
 const chainsOf = (tier: Tier) => steps(tier, []).flat();
 const readerCount = runs.flatMap(tier => chainsOf(tier).flat()).filter(step => step.readsPacked).length;
 
@@ -17,7 +17,7 @@ test('in each acceptance run, pack comes before every step that reads the packed
   assert.deepEqual(withoutPack, []);
 });
 
-test('no step but pack runs in both acceptance runs, and the TypeScript 6 lane is alone in its chain', () => {
+test('no step but pack runs in two acceptance runs, and the TypeScript 6 lane is alone in its chain', () => {
   const labels = runs.flatMap(tier => chainsOf(tier).flat().map(step => step.label)).filter(label => label !== 'pack');
   assert.equal(new Set(labels).size, labels.length);
   const laneChain = chainsOf('acceptance-rest').find(chain => chain.some(step => step.label === 'typescript 6'));
