@@ -414,13 +414,13 @@ test('a field typed by a template literal type rejects a string outside the temp
   const { root, sourceRoot } = fixture(t);
   fs.writeFileSync(path.join(sourceRoot, 'item.model.ts'), `import type { IModel } from '@exprtlabs/golem/model';
 import type { Pattern } from '@exprtlabs/golem/tags';
-export type TItem = IModel<{ id: \`id-\${string}\`; parts: \`a\${string}b\${string}c\`; maybe: \`id-\${string}\` | null; dotted: \`v1.\${string}\`; both: \`id-\${string}\` & Pattern<'-x$'> }>;
+export type TItem = IModel<{ id: \`id-\${string}\`; parts: \`a\${string}b\${string}c\`; maybe: \`id-\${string}\` | null; dotted: \`v1.\${string}\`; either: \`a-\${string}\` | \`b-\${string}\`; both: \`id-\${string}\` & Pattern<'-x$'> }>;
 `);
   const codec = await builtItemCodec(root);
-  const match = { id: 'id-1', parts: 'a1b2c', maybe: null, dotted: 'v1.x', both: 'id-1-x' };
+  const match = { id: 'id-1', parts: 'a1b2c', maybe: null, dotted: 'v1.x', either: 'b-1', both: 'id-1-x' };
   assert.equal(codec.validate(match), true);
   assert.equal(codec.validate({ ...match, id: 'id-', parts: 'abc', maybe: 'id-7' }), true);
-  for (const miss of [{ id: 'zzz' }, { id: 'xid-1' }, { parts: 'a1b2' }, { parts: 'ab' }, { parts: 'a1c2b' }, { maybe: 'zzz' }, { dotted: 'v1x' }, { both: 'id-1' }, { both: 'zzz-x' }]) {
+  for (const miss of [{ id: 'zzz' }, { id: 'xid-1' }, { parts: 'a1b2' }, { parts: 'ab' }, { parts: 'a1c2b' }, { parts: 'a1b2cx' }, { maybe: 'zzz' }, { dotted: 'v1x' }, { either: 'c-1' }, { both: 'id-1' }, { both: 'zzz-x' }]) {
     assert.equal(codec.validate({ ...match, ...miss }), false, JSON.stringify(miss));
   }
   assert.deepEqual(codec.parse(JSON.stringify(match)), match);

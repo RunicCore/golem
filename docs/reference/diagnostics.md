@@ -241,6 +241,7 @@ An error prints its code, location when known, and message, then stops generatio
 - Replace a function or class shape with a plain object, array, or primitive, or set `{ validation: false }` on the model.
 - Replace a `Map` with a `Record<string, V>` and a `Set` with an array.
 - Key the object by `string` holes only, such as `` Record<`id_${string}`, V> ``, or by `string`.
+- Type the field by a template literal type with `string` holes only, such as `` `id-${string}` ``, or by `string`.
 - Give the index signatures one value type.
 
 ### RUNM1005
