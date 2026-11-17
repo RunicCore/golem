@@ -2,13 +2,11 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
 import test, { after } from 'node:test';
 import {
   compileGeneratedSdk,
   generateMaterializedSdk,
-  isGeneratedClientClass,
-  requireRecord,
+  loadGeneratedClient,
 } from './helpers.js';
 
 function document(): Record<string, unknown> {
@@ -84,13 +82,7 @@ async function generateClient() {
   const output = path.join(root, 'sdk');
   await generateMaterializedSdk(document(), { output, name: 'Select', profile: { validation: false } });
   compileGeneratedSdk(output);
-  const module = requireRecord(
-    await import(pathToFileURL(path.join(output, 'dist/client.js')).href),
-    'select client',
-  );
-  assert.equal(isGeneratedClientClass(module.SelectClient), true);
-  if (!isGeneratedClientClass(module.SelectClient)) throw new TypeError('SelectClient');
-  return module.SelectClient;
+  return loadGeneratedClient(output, 'Select');
 }
 
 function json(status: number, body: unknown, contentType: string): Response {

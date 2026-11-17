@@ -4,7 +4,6 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import test, { after } from 'node:test';
 import { validateModelManifest } from '@exprtlabs/golem/manifest';
@@ -17,7 +16,6 @@ import { schemaContext, schemaType } from '#openapi/types';
 import {
   captureRequest,
   isAsyncIterable,
-  isGeneratedClientClass,
   loadGeneratedClient,
   openApiFixture,
   requireRecord,
@@ -235,9 +233,7 @@ test('OpenAPI 3.1 generation preserves its dialect', async (t) => {
   const output = createFixtureProject(t, 'golem-openapi-31-');
   writeGeneratedSdk(writeSdk, document, { output, name: 'Oas31', profile: { validation: true } });
   compileGeneratedSdk(output, []);
-  const module = requireRecord(await import(pathToFileURL(path.join(output, 'dist/client.js')).href), 'oas31 client');
-  const Client = module.Oas31Client;
-  if (!isGeneratedClientClass(Client)) throw new TypeError('Oas31Client');
+  const Client = await loadGeneratedClient(output, 'Oas31');
   const respond = (body: unknown) => new Client({
     baseUrl: 'https://api.example',
     fetchImpl: async () => Response.json(body),

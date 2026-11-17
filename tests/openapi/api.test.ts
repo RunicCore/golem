@@ -2,8 +2,7 @@ import { copyFixture, createFixtureProject, writeGeneratedArtifacts } from '../f
 import {
   compileStrictUnusedSdk,
   generatedClientSource,
-  isGeneratedClientClass,
-  requireRecord,
+  loadGeneratedClient,
 } from './helpers.js';
 import assert from 'node:assert/strict';
 import { writeFileSync, existsSync, cpSync, mkdirSync } from 'node:fs';
@@ -95,12 +94,7 @@ test('SDK generated with mobx and validation disabled loads and runs an operatio
     );
   }
 
-  const module = requireRecord(
-    await import(pathToFileURL(path.join(output, 'dist/client.js')).href),
-    'no-peer-deps client',
-  );
-  const Client = module.NoPeerDepsClient;
-  if (!isGeneratedClientClass(Client)) throw new TypeError('NoPeerDepsClient');
+  const Client = await loadGeneratedClient(output, 'NoPeerDeps');
   const client = new Client({
     baseUrl: 'https://example.test',
     fetchImpl: async () => new Response(JSON.stringify({ ok: true }), {
