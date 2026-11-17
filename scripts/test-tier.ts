@@ -79,8 +79,8 @@ const tiers: Readonly<Record<Tier, { readonly budget: string; readonly purpose: 
   'full-ts6': { budget: 'about 330 s', purpose: 'Did I break anything on TypeScript 6? Runs the TypeScript 6 lane, pack, the packed smoke test and the source checks of lint. The other half of a sprint-end run.' },
   // Acceptance is two runs of one command (entrypoint.sh), each with its own ceiling, record and resume, so the steps of the gate
   // do not have to fit one 600 s ceiling. Run 1 holds the steps that do not read the packed set; run 2 holds the TypeScript 6 lane and
-  // the chain that packs and reads the packed set. The budgets are the wall times of a normal host (unit 395 s and acceptance unit 72 to 95 s;
-  // the lane beside pack 83 s, smoke, lint, packed, browser and examples).
+  // the chain that packs and reads the packed set. The budgets are the wall times of a normal host: run 1 is unit 395 s plus acceptance
+  // unit 72 to 95 s; run 2 is the lane beside a chain of pack (about 83 s cold), smoke, lint, packed, browser and examples.
   acceptance: { budget: 'about 480 s, needs a stated reason', purpose: 'Is this releasable? Run 1 of 2 (the other is acceptance-rest): the public-source and OpenAPI compliance checks, the unit tests and the acceptance unit tests.' },
   'acceptance-rest': { budget: 'about 390 s', purpose: 'Is this releasable? Run 2 of 2: the TypeScript 6 lane beside pack, the packed smoke test, the source checks of lint, the packed and browser tests and the examples.' },
   docs: { budget: 'about 2 min', purpose: 'Do the docs pass their prose and inventory checks, and does the site build and pass its checks?' },
