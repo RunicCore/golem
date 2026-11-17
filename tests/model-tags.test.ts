@@ -520,18 +520,21 @@ test('a validator that copies the type of another binds itself when a declaratio
 // `ValueOf` reads the member through a conditional type, so no property symbol leads to the base and only the `extends` clause does.
 const valueOf = tsSource`type ValueOf<T> = T extends { held: infer V } ? V : never;`;
 const inheritedTagReads = {
-  'a base class': tsSource`${valueOf}\nclass Base { held!: string & TValidation<typeof a>; }\nclass Sub extends Base {}`,
-  'a base interface': tsSource`${valueOf}\ninterface Base { held: string & TValidation<typeof a>; }\ninterface Sub extends Base {}`,
+  'a base class': { declarations: tsSource`${valueOf}\nclass Base { held!: string & TValidation<typeof a>; }\nclass Sub extends Base {}`, field: tsSource`ValueOf<Sub> & TValidation<typeof b>` },
+  'a base interface': { declarations: tsSource`${valueOf}\ninterface Base { held: string & TValidation<typeof a>; }\ninterface Sub extends Base {}`, field: tsSource`ValueOf<Sub> & TValidation<typeof b>` },
+  // `typeof Sub` is the class value, which holds the statics of `Sub` and of its base.
+  'a static member of a base class, read through `typeof` the subclass': { declarations: tsSource`${valueOf}\nclass Base { static held: string & TValidation<typeof a>; }\nclass Sub extends Base {}`, field: tsSource`ValueOf<typeof Sub> & TValidation<typeof b>` },
+  'a static member of a class that a namespace exports, read through `typeof` the namespace': { declarations: tsSource`namespace Space { export class Base { static held: string & TValidation<typeof a>; } }\ntype ValueOfExport<T> = T extends { Base: { held: infer V } } ? V : never;`, field: tsSource`ValueOfExport<typeof Space> & TValidation<typeof b>` },
 } as const;
 
-for (const [name, declarations] of Object.entries(inheritedTagReads)) test(`a copy written on the field beside a function that ${name} writes is refused`, t => {
+for (const [name, { declarations, field }] of Object.entries(inheritedTagReads)) test(`a copy written on the field beside a function that ${name} writes is refused`, t => {
   // protects: T-1019 the scan did not follow an `extends` clause, so the base function was dropped and the copy bound in silence (R-55 no silent difference)
   const { root, sourceRoot } = fixture(t);
   fs.writeFileSync(path.join(sourceRoot, 'rules.ts'), copiedFunctionRules.inline.text);
   fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({
     name: 'A',
     imports: tsSource`import type { TValidation } from '@exprtlabs/golem/tags';\nimport { a, b } from './rules.js';\n${declarations}`,
-    fields: tsSource`field: ValueOf<Sub> & TValidation<typeof b>`,
+    fields: tsSource`field: ${field}`,
   }).text);
   assert.throws(() => generate({ root, profile: { validation: true } }), /RUNM1040.*shares its type with another function in this field/);
 });
@@ -652,6 +655,8 @@ const sameTypeNeighbours = {
   'Omit of a subclass getter': { declarations: inheritedUser, field: tsSource`Omit<Sub, 'label'>['name']` },
   'Pick of a subclass getter': { declarations: inheritedUser, field: tsSource`Pick<Sub, 'name'>['name']` },
   'Readonly Pick of a subclass getter': { declarations: inheritedUser, field: tsSource`Readonly<Pick<Sub, 'name'>>` },
+  // protects: T-1092 a static tag on the base class made the field of a subclass refuse, though the instance type holds no static member (D-155 follow tsc)
+  'a subclass of a base class with a static tag of the other function': { declarations: tsSource`${valueOf}\nclass Base { static held: string & TValidation<typeof a>; held!: string & TValidation<typeof b>; }\nclass Sub extends Base {}`, field: tsSource`ValueOf<Sub>` },
 } as const;
 
 for (const [name, { declarations, field }] of Object.entries(sameTypeNeighbours)) test(`the tag of a member binds its own function, read through ${name}`, t => {
