@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { displayPath } from '../generator-core.js';
 import { hasLocalForm, localFormMessage } from '../names.js';
+import { isParameterProperty } from '../parameter-property.js';
 import * as ts from '../typescript-ns.js';
 import { canonicalFilename, portableRelativeFilename } from './project.js';
 import { nearestManifest, packageSpecifier } from '../package-specifier.js';
@@ -512,15 +513,13 @@ function typeReferenceOf(node: ts.Node): { readonly name: ts.Node; readonly type
   return ts.isImportTypeNode(node) && node.qualifier ? { name: node.qualifier, typeArguments: node.typeArguments } : undefined;
 }
 
-const PARAMETER_PROPERTY_MODIFIERS: readonly ts.SyntaxKind[] = [ts.SyntaxKind.PublicKeyword, ts.SyntaxKind.PrivateKeyword, ts.SyntaxKind.ProtectedKeyword, ts.SyntaxKind.OverrideKeyword, ts.SyntaxKind.ReadonlyKeyword];
-
 /**
  * The members of a class that its instance type holds. The static members and the constructor belong to the class value (`typeof Class`) and are no part
  * of an instance; only a parameter property of the constructor is a field of it.
  */
 function instanceMembersOf(declaration: ts.ClassDeclaration | ts.InterfaceDeclaration): readonly ts.Node[] {
   return declaration.members.flatMap((member): readonly ts.Node[] => {
-    if (ts.isConstructorDeclaration(member)) return member.parameters.filter(parameter => (ts.getModifiers(parameter) ?? []).some(modifier => PARAMETER_PROPERTY_MODIFIERS.includes(modifier.kind)));
+    if (ts.isConstructorDeclaration(member)) return member.parameters.filter(parameter => isParameterProperty(ts, parameter));
     return ts.canHaveModifiers(member) && (ts.getModifiers(member) ?? []).some(modifier => modifier.kind === ts.SyntaxKind.StaticKeyword) ? [] : [member];
   });
 }
