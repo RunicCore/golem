@@ -15,7 +15,7 @@ Golem 1.1.0 is the first stable release. It brings TypeScript models, NestJS con
 - Keep generated files current with [`watch`](/guide/watch), or run the read-only `check` command in CI.
 - [Share models between apps](/guide/shared-models). Each app generates its own copy.
 - Enable [MobX](/guide/mobx) for reactive fields and nested SDK models.
-- The public subpaths of `@exprtlabs/golem` follow semver, and tooling lives under `internal/` ([public API](/compatibility#public-api)). `@exprtlabs/golem` has 15 public subpaths. The helpers that only generated code calls live in `internal/` runtime entries, so generate again after you update ([Package subpaths](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#package subpaths)).
+- The public subpaths of `@exprtlabs/golem` follow semver, and tooling lives under `internal/` ([public API](/compatibility#public-api)). `@exprtlabs/golem` has 15 public subpaths. The helpers that only generated code calls live in `internal/` runtime entries, so generate again after you update ([Package subpaths](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#package-subpaths)).
 - Run generation on TypeScript 6.0+ and 7.1+, including 7.1.0-beta ([Compatibility](/compatibility#ts)).
 - TypeScript 7.0 fails at load. Install TypeScript 7.1 or 6 ([Generation](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#generation)).
 - Each package registers one `golem.yaml` block: `model`, `ts-openapi` with `docs`, or `openapi-ts` with `sdks` ([Configuration](/reference/config#blocks), [Register a block](/reference/generator-api#register-a-block)).
@@ -59,10 +59,10 @@ Golem 1.1.0 is the first stable release. It brings TypeScript models, NestJS con
 - With validation on, a tuple with fixed elements after its rest element stops generation with `RUNM1021` ([Models](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#models)).
 - Template index signatures of different value types in one object stop generation with `RUNM1004` ([Models](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#models)).
 - Models of one name and different schemas in files or folders whose names read alike stop generation with `RUNM1005` ([OpenAPI](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#openapi)).
-- A model union of two or more objects declares its tag key with `Discriminator<'kind'>`; golem never looks for it. An untagged union stops with `RUNM1080` ([Models](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#models)).
+- A model union of two or more objects declares its tag key with `Discriminator<'kind'>`. Golem never looks for it. An untagged union stops with `RUNM1080` ([Models](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#models)).
 - The controllers document writes a union's `discriminator` from the tag only, and a Nest union parameter needs the tag ([OpenAPI](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#openapi)).
 - A template index signature beside a `string` index signature of another value type stops generation with `RUNM1004` ([Models](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#models)).
-- An OpenAPI 3.1 document with `discriminator.defaultMapping` stops generation; the keyword is OpenAPI 3.2 only ([OpenAPI](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#openapi)).
+- An OpenAPI 3.1 document with `discriminator.defaultMapping` stops generation, because the keyword is OpenAPI 3.2 only ([OpenAPI](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#openapi)).
 - Two `@ApiHeader()` names of one operation that differ only in case stop generation with `NEST1312` ([OpenAPI](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#openapi)).
 - The `controllers` job documents optional and mixed body and query parameters, such as `@Body('payment') payment?: TPayment` and a second whole `@Body()`, and the build tools report the run-time limits ([OpenAPI](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#openapi)).
 - A Nest `@Query()` model field that is a tuple, such as `[number, string]`, decodes each position by its own type: `?pair=1&pair=2` gives `[1, '2']`. An entry after the listed positions follows the rest type of the tuple, and stays text when the tuple has none.
@@ -87,9 +87,8 @@ Golem 1.1.0 is the first stable release. It brings TypeScript models, NestJS con
 - `Date` and the Temporal classes are built-in `TSerde` types. A field typed `Date` or `Temporal.Instant` converts with no tag, and a `TSerde` tag on the type replaces the default ([Dates and times](/guide/field-types#dates-and-times)).
 - `validation: sanity` checks the shape only. It takes `golem.yaml` and the options of a model, and a call chooses a level with `validate: true | 'sanity' | false` up to the project level. `validate<T>`, `assertValue<T>` and `NestModelInterceptor` take `validate: true | 'sanity'` ([Models](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#models), [Validation profiles](/reference/config#validation-profiles)).
 - A model with `{ validation: false }` can use a validation function from its own file. A shared unnamed object type validates for every model that holds it ([Models](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#models)).
-- A recursive model bounds input nesting with `maxDepth` (512 by default); the Nest interceptor answers 400 beyond it ([Models](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#models)).
-- The `model-manifest.json` of a generated SDK does not list `modelReferences` ([OpenAPI](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#openapi)).
-- An untagged `anyOf` whose branches state different JSON types checks a value only with the branches of its type.
+- A recursive model bounds input nesting with `maxDepth` (512 by default). The Nest interceptor answers 400 beyond it ([Models](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#models)).
+- An untagged `anyOf` whose branches state different JSON types checks a value only with the branches of its type ([OpenAPI](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#openapi)).
 - A generated SDK has no model classes, in either mode, and no per-schema functions. The client checks and converts each request and response, and a response body is a plain object of the SDK type with converted dates. Your own `IModel<Charge>` gives a class with methods ([OpenAPI](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#openapi)).
 - An `openapi` job takes `mode: standalone | golem`. A standalone SDK (the default) runs alone with a bundled copy of the runtime. A golem mode SDK leaves checks and conversions to the `models` job ([SDK modes](/reference/config#sdk-modes)).
 - The `mobx` extension on a standalone SDK stops generation with `OPENAPI_MOBX_NEEDS_GOLEM_MODE`. Set `mode: golem` ([OpenAPI](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#openapi)).
@@ -104,6 +103,9 @@ Golem 1.1.0 is the first stable release. It brings TypeScript models, NestJS con
 - **Breaking:** two response headers of one response whose names differ only in letter case stop generation with `operation-response-headers-unique` ([OpenAPI](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#openapi)).
 - **Breaking:** a property of a Swagger `schema` override that is neither an object nor a boolean stops generation with `NEST1503` ([OpenAPI](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#openapi)).
 - **Breaking:** a `oneOf` of a recursive array component and another array stops generation with `Union has ambiguous conversions` ([OpenAPI](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#openapi)).
+- **Breaking:** generation type-checks the generated validators module and stops on an error in it ([Models](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#models)).
+- **Breaking:** two functions of one type written in one field, or a function tag that an inferred value holds beside a written function of the same type, stop with `RUNM1040` ([Models](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#models)).
+- **Breaking:** the string form of `uriVersioning` is refused with `NEST1203` unless it is `URI` or `uri` ([OpenAPI](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#openapi)).
 - **Breaking:** `GeneratorSession.share` and `GeneratorSession.retain` take a `SessionKey<Resource>` as their key. Make it with `sessionKey` from `@exprtlabs/golem/generator-api` ([Generation](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#generation)).
 
 Read the [CHANGELOG](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#110) for every change.
