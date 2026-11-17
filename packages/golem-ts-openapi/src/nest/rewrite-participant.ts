@@ -255,7 +255,7 @@ function tagThroughAliasFault({ ts, checker }: Scope, model: ts.TypeNode): reado
 }
 
 /** Where a type stands. Only an input parameter can be a union of models; `text` is true for a query, whose tag is text. */
-type NestTypeSite = { readonly kind: 'input'; readonly text: boolean } | { readonly kind: 'return' };
+type NestTypeSite = { readonly kind: 'input'; readonly text: boolean } | { readonly kind: 'return' } | { readonly kind: 'headers' };
 
 /** What a parameter or return type binds to. */
 function nestBinding(scope: Scope, typeNode: ts.TypeNode, site: NestTypeSite): NestBinding {
@@ -264,7 +264,7 @@ function nestBinding(scope: Scope, typeNode: ts.TypeNode, site: NestTypeSite): N
   const model = walked?.model;
   const unbound = { id: '', primitive: false, golemModel: false, label: (model ?? typeNode).getText(file), array: walked?.array ?? false };
   if (!model) return unbound;
-  // Only an input parameter can be a union: a union return is left as Nest JSON.
+  // Only an input parameter can be a union: a union return or a union `@Headers()` is left as written.
   if (site.kind === 'input') {
     const members = authoredUnionMembers(checker, model);
     if (members) return nestUnionBinding(scope, unbound, model, members, site);
@@ -384,7 +384,7 @@ function rewriteFile(input: RewriteParticipantInput): RewriteParticipantResult {
    * `@Headers('name')`, stay as written and report nothing.
    */
   const visitHeaders = (parameter: ts.ParameterDeclaration, decoratorNode: ts.Decorator, typeNode: ts.TypeNode): void => {
-    const { id, golemModel, label, array, name, defaultExport } = nestBinding(scope, typeNode);
+    const { id, golemModel, label, array, name, defaultExport } = nestBinding(scope, typeNode, { kind: 'headers' });
     if (array) return;
     if (id === '') {
       if (golemModel) diagnostics.push(core.locate(typeNode, CODE_NEST_NO_CODEC, defaultExport
@@ -403,8 +403,9 @@ function rewriteFile(input: RewriteParticipantInput): RewriteParticipantResult {
 
   /** A `@Body()` or `@Query()` parameter of a model gets `@nestModelCodec(id)` before its name, and one of a tagged union of models `@nestModelUnion(tag, variants)`. */
   const visitParameter = (parameter: ts.ParameterDeclaration): void => {
-    const headers = parameter.type === undefined ? undefined : wholeHeadersDecorator(scope, parameter);
-    if (headers !== undefined) { visitHeaders(parameter, headers, parameter.type!); return; }
+    const { type } = parameter;
+    const headers = type === undefined ? undefined : wholeHeadersDecorator(scope, parameter);
+    if (type !== undefined && headers !== undefined) { visitHeaders(parameter, headers, type); return; }
     const found = nestParameterDecorator(scope, parameter);
     if (!parameter.type || found === undefined || hasDecorator(scope, parameter, NEST_CODEC_DECORATOR) || hasDecorator(scope, parameter, NEST_UNION_DECORATOR)) return;
     const { node: decoratorNode, name: decorator } = found;

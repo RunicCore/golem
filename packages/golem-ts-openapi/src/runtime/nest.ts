@@ -190,7 +190,7 @@ export function nestReturnCodec(controllerClass: Function, handler: Function): N
 /** What an interceptor decodes the headers of a handler with: the codec of its `@Headers()` model, and the class to construct when the model is one. */
 export interface NestHeadersCodec {
   readonly codec: ObjectCodec;
-  readonly construct: NestModelConstruct | undefined;
+  readonly construct: GeneratedModelConstructor | undefined;
 }
 
 /**
@@ -296,7 +296,7 @@ const NO_DECODE = (value: unknown): unknown => value;
 
 /** The headers of a request without the ones that hold empty text: an empty header is a header that was not sent. */
 function presentHeaders(headers: unknown): Record<string, unknown> {
-  return Object.fromEntries(Object.entries(schemaRecord(headers) ?? {}).filter(([, value]) => value !== ''));
+  return Object.fromEntries(Object.entries(recordOrUndefined(headers) ?? {}).filter(([, value]) => value !== ''));
 }
 
 /** The error with `path` in front of each issue path; a path of no segments, or an error that is not a LibError, stays as it is. */

@@ -125,7 +125,7 @@ export function nestModelReturn(id: string, array?: boolean): MethodDecorator {
  * headers never reach the parameter: a request with no stored value is a fault of the app, so it throws.
  */
 const nestHeadersSlot = createParamDecorator((_data: unknown, context: ExecutionContext): unknown => {
-  const decoded = (context.switchToHttp().getRequest() as Record<symbol, unknown>)[NEST_HEADERS_SLOT];
+  const decoded = context.switchToHttp().getRequest<Record<symbol, unknown>>()[NEST_HEADERS_SLOT];
   if (decoded === undefined || decoded === null) {
     throw new TypeError(
       `golem fault: no interceptor decoded the headers for the @Headers() parameter of ${context.getClass().name}.${context.getHandler().name}. Register an interceptor that calls setNestHeaders(request, decoded) before the handler runs.`,
