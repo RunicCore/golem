@@ -349,8 +349,19 @@ function isGeneratedClientClass(value: unknown): value is GeneratedClientClass {
   return typeof value === 'function';
 }
 
-async function importFile(file: string, label = file): Promise<Record<string, unknown>> {
-  return requireRecord(await import(pathToFileURL(file).href), label);
+/**
+ * A built module to load: its path, or its path with the number of a fresh load. A path alone reads the module that Node cached
+ * for it, so a rebuilt file or a module that holds state at load shows its old self. A fresh load numbers the import, so each
+ * number loads the module anew; the caller counts the loads, as it counts builds, and never reads the clock.
+ */
+export type BuiltModule = string | { readonly file: string; readonly load: number };
+
+const builtFile = (module: BuiltModule): string => typeof module === 'string' ? module : module.file;
+
+async function importFile(module: BuiltModule, label = builtFile(module)): Promise<Record<string, unknown>> {
+  const url = pathToFileURL(builtFile(module));
+  if (typeof module !== 'string') url.searchParams.set('load', String(module.load));
+  return requireRecord(await import(url.href), label);
 }
 
 /** Imports a compiled module of a generated SDK (`dist/index.js` unless `file` names another) as a record. */
@@ -390,33 +401,33 @@ function hasExports<Name extends string, Value>(module: Record<string, unknown>,
 }
 
 /** The exports `names` of the built module `file`, each checked by `guard`; a missing export or one that fails it throws and names `kind`. */
-async function loadExports<Name extends string, Value>(file: string, names: readonly Name[], guard: (value: unknown) => value is Value, kind: string): Promise<Record<Name, Value>> {
+async function loadExports<Name extends string, Value>(file: BuiltModule, names: readonly Name[], guard: (value: unknown) => value is Value, kind: string): Promise<Record<Name, Value>> {
   const module = await importFile(file);
-  if (!hasExports(module, names, guard)) throw new TypeError(`${file} must export the ${kind} ${names.filter((name) => !guard(module[name])).join(', ')}`);
+  if (!hasExports(module, names, guard)) throw new TypeError(`${builtFile(file)} must export the ${kind} ${names.filter((name) => !guard(module[name])).join(', ')}`);
   return module;
 }
 
 /** The generated model classes that the built module `file` exports under `names`. */
-export const loadModelClasses = <Name extends string>(file: string, names: readonly Name[]) => loadExports(file, names, isGeneratedModelClass, 'generated model classes');
+export const loadModelClasses = <Name extends string>(file: BuiltModule, names: readonly Name[]) => loadExports(file, names, isGeneratedModelClass, 'generated model classes');
 
 /** The functions that the built module `file` exports under `names`. */
-export const loadFunctions = <Name extends string>(file: string, names: readonly Name[]) => loadExports(file, names, isBuiltFunction, 'functions');
+export const loadFunctions = <Name extends string>(file: BuiltModule, names: readonly Name[]) => loadExports(file, names, isBuiltFunction, 'functions');
 
 /** The class that the built module `file` exports as `name`, for a class that is no generated model or client, such as a controller. */
-export async function loadClass(file: string, name: string): Promise<Type> {
+export async function loadClass(file: BuiltModule, name: string): Promise<Type> {
   return (await loadExports(file, [name], isClass, 'class'))[name];
 }
 
 /** A reader of the number that the built module `file` exports as `name`; each read sees the current value, so a counter that the module bumps shows. */
-export async function loadCounter(file: string, name: string): Promise<() => number> {
+export async function loadCounter(file: BuiltModule, name: string): Promise<() => number> {
   const module = await importFile(file);
   const isCounter = (value: unknown): value is number => typeof value === 'number';
-  if (!hasExports(module, [name], isCounter)) throw new TypeError(`${file} must export the number ${name}`);
+  if (!hasExports(module, [name], isCounter)) throw new TypeError(`${builtFile(file)} must export the number ${name}`);
   return () => module[name];
 }
 
 /** The generated validator that the built validators module `file` exports as `name`. */
-export async function loadValidator(file: string, name: string): Promise<Validator> {
+export async function loadValidator(file: BuiltModule, name: string): Promise<Validator> {
   return (await loadExports(file, [name], isValidator, 'validator'))[name];
 }
 

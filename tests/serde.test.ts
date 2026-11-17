@@ -1,11 +1,10 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
-import type { GeneratedModelConstructor } from '@exprtlabs/golem/model';
 import test, { type TestContext } from 'node:test';
 import { copyFixtureFile, readFixture } from './fixture-project.js';
 import { buildModelProject, createModelProject, writeModelGolemYaml } from './model-project.js';
+import { loadCounter, loadFunctions, loadModelClasses, requireRecord } from './openapi/helpers.js';
 
 import {
   assertValue as publicAssertValue,
@@ -43,26 +42,15 @@ async function compile(root: string): Promise<void> {
 }
 
 
-interface PaymentCodecs {
-  stringifyTPayment: (value: object, options?: { validate?: boolean; failFast?: boolean }) => string;
-  parseTPayment: (text: string, options?: { validate?: boolean; failFast?: boolean }) => unknown;
-  validateTPayment: (value: unknown, options?: { failFast?: boolean }) => value is object;
-  toWireFormatTPayment: (value: unknown, options?: { validate?: boolean; failFast?: boolean }) => unknown;
-  fromWireFormatTPayment: (wire: unknown, options?: { validate?: boolean; failFast?: boolean }) => unknown;
-  stringifyTMoney: (value: object, options?: { validate?: boolean; failFast?: boolean }) => string;
-  parseTMoney: (text: string, options?: { validate?: boolean; failFast?: boolean }) => unknown;
-}
+/** The `scale` of a decoded model. */
+const scaleOf = (value: unknown): unknown => requireRecord(value, 'model').scale;
 
 test('IObject stringify/parse compose nested Money by call; invalid JSON fails before validation; validate<T> narrows', async (t) => {
   const { root } = fixture(t);
   fs.writeFileSync(path.join(root, 'src/narrow.ts'), readFixture("models/serde/validate-t-type-predicate-narrows-to-iobject-fields-for-imodel-and-iobject/narrow.ts"));
   await compile(root);
-  const { Payment } = await import(pathToFileURL(path.join(root, 'build/money.model.js')).href) as {
-    Payment: new (values?: object) => { id: string; amount: { currency: string; value: string }; note: string };
-  };
-  const codecs = await import(pathToFileURL(path.join(root, 'build/money.model.generated.js')).href) as PaymentCodecs & {
-    parseTPayment: (text: string, options?: { validate?: boolean; failFast?: boolean; construct?: GeneratedModelConstructor }) => unknown;
-  };
+  const { Payment } = await loadModelClasses(path.join(root, 'build/money.model.js'), ['Payment']);
+  const codecs = await loadFunctions(path.join(root, 'build/money.model.generated.js'), ['stringifyTPayment', 'parseTPayment', 'parseTMoney', 'validateTPayment', 'fromWireFormatTPayment', 'toWireFormatTPayment']);
   const wire = { id: '1', amount: { currency: 'USD', value: '12.50' }, note: 'ok' };
   const text = codecs.stringifyTPayment(wire, { validate: false });
   assert.equal(text, '{"id":"1","amount":{"currency":"USD","value":"12.50"},"note":"ok"}');
@@ -80,9 +68,9 @@ test('IObject stringify/parse compose nested Money by call; invalid JSON fails b
   assert.equal(Object.getPrototypeOf(parsed), Object.prototype);
   assert.equal(parsed.id, '1');
   assert.deepEqual(parsed.amount, wire.amount);
-  const constructed = codecs.parseTPayment(text, { validate: false, construct: Payment }) as InstanceType<typeof Payment>;
+  const constructed = codecs.parseTPayment(text, { validate: false, construct: Payment });
   assert.ok(constructed instanceof Payment);
-  assert.equal(constructed.id, '1');
+  assert.equal(Reflect.get(constructed, 'id'), '1');
   assert.equal(codecs.validateTPayment(wire), true);
   const defaultText = codecs.stringifyTPayment(wire);
   assert.equal(defaultText, text);
@@ -145,26 +133,14 @@ test('IObject TSerde stringify/parse convert declared fields in one pass', async
   fs.writeFileSync(path.join(sourceRoot, 'permission.model.ts'), readFixture("models/serde/iobject-tserde-stringify-parse-convert-declared-fields-in-one-pass/permission.model.ts"));
   writeModelGolemYaml(root, { validation: true });
   await compile(root);
-  const permissionCodecs = await import(pathToFileURL(path.join(root, 'build/codecs.js')).href) as {
-    deserializeCalls: number;
-  };
-  const codecs = await import(pathToFileURL(path.join(root, 'build/permission.model.generated.js')).href) as {
-    stringifyTPermissionInput: (value: object, options?: { validate?: boolean }) => string;
-    parseTPermissionInput: (text: string, options?: { validate?: boolean }) => { permissions: number };
-    stringifyTPermissionModel: (value: object, options?: { validate?: boolean }) => string;
-    parseTPermissionModel: (text: string, options?: { validate?: boolean; construct?: GeneratedModelConstructor }) => { permissions: number };
-    toWireFormatTPermissionInput: (value: unknown, options?: { validate?: boolean }) => unknown;
-    fromWireFormatTPermissionInput: (wire: unknown, options?: { validate?: boolean }) => { permissions: number };
-    validateTPermissionInput: (value: unknown) => boolean;
-  };
-  const { Permission } = await import(pathToFileURL(path.join(root, 'build/permission.model.js')).href) as {
-    Permission: new (values?: object) => { permissions: number };
-  };
+  const deserializeCalls = await loadCounter(path.join(root, 'build/codecs.js'), 'deserializeCalls');
+  const codecs = await loadFunctions(path.join(root, 'build/permission.model.generated.js'), ['stringifyTPermissionInput', 'parseTPermissionInput', 'stringifyTPermissionModel', 'parseTPermissionModel', 'toWireFormatTPermissionInput', 'fromWireFormatTPermissionInput', 'validateTPermissionInput']);
+  const { Permission } = await loadModelClasses(path.join(root, 'build/permission.model.js'), ['Permission']);
   assert.equal(codecs.stringifyTPermissionInput({ permissions: 5 }), '{"permissions":"0x5"}');
-  const parsed = codecs.parseTPermissionInput('{"permissions":"0x5"}');
+  const parsed = requireRecord(codecs.parseTPermissionInput('{"permissions":"0x5"}'), 'parsed');
   assert.equal(parsed.permissions, 5);
   assert.equal(Object.getPrototypeOf(parsed), Object.prototype);
-  const dropped = codecs.parseTPermissionInput('{"permissions":"0x5","extra":true}', { validate: false });
+  const dropped = requireRecord(codecs.parseTPermissionInput('{"permissions":"0x5","extra":true}', { validate: false }), 'dropped');
   assert.equal(dropped.permissions, 5);
   assert.equal(Reflect.get(dropped, 'extra'), undefined);
   assert.throws(
@@ -173,33 +149,33 @@ test('IObject TSerde stringify/parse convert declared fields in one pass', async
       && error.kind === LibErrorKind.Validation
       && error.issues[0]?.path?.[0] === 'extra',
   );
-  const model = codecs.parseTPermissionModel('{"permissions":"0x5"}');
+  const model = requireRecord(codecs.parseTPermissionModel('{"permissions":"0x5"}'), 'model');
   assert.equal(Object.getPrototypeOf(model), Object.prototype);
   assert.equal(model.permissions, 5);
   const constructed = codecs.parseTPermissionModel('{"permissions":"0x5"}', { construct: Permission });
   assert.ok(constructed instanceof Permission);
-  assert.equal(constructed.permissions, 5);
+  assert.equal(Reflect.get(constructed, 'permissions'), 5);
   assert.equal(codecs.stringifyTPermissionModel(constructed), '{"permissions":"0x5"}');
   assert.deepEqual(codecs.toWireFormatTPermissionInput({ permissions: 5 }), { permissions: '0x5' });
-  assert.equal(codecs.fromWireFormatTPermissionInput({ permissions: '0x5' }).permissions, 5);
+  assert.equal(requireRecord(codecs.fromWireFormatTPermissionInput({ permissions: '0x5' }), 'decoded').permissions, 5);
   assert.equal(codecs.validateTPermissionInput({ permissions: 5 }), true);
   assert.equal(codecs.validateTPermissionInput({ permissions: '0x5' }), false);
-  const beforeInvalid = permissionCodecs.deserializeCalls;
+  const beforeInvalid = deserializeCalls();
   assert.throws(
     () => codecs.parseTPermissionInput('{"permissions":"nope"}'),
     (error: unknown) => error instanceof LibError
       && error.kind === LibErrorKind.Validation
       && error.issues[0]?.representation === IssueRepresentation.Wire,
   );
-  assert.equal(permissionCodecs.deserializeCalls, beforeInvalid);
+  assert.equal(deserializeCalls(), beforeInvalid);
   assert.throws(
     () => codecs.parseTPermissionModel('{"permissions":"0x100"}', { construct: Permission }),
     (error: unknown) => error instanceof LibError
       && error.kind === LibErrorKind.Validation
       && error.issues[0]?.representation === IssueRepresentation.Model,
   );
-  assert.ok(permissionCodecs.deserializeCalls > beforeInvalid);
-  const trusted = codecs.parseTPermissionInput('{"permissions":"nope"}', { validate: false });
+  assert.ok(deserializeCalls() > beforeInvalid);
+  const trusted = requireRecord(codecs.parseTPermissionInput('{"permissions":"nope"}', { validate: false }), 'trusted');
   assert.ok(trusted.permissions === Number.parseInt('nope', 16) || Number.isNaN(trusted.permissions));
 });
 
@@ -213,12 +189,9 @@ test('same-type TSerde emits one validator and global validation false rejects {
   fs.writeFileSync(path.join(sourceRoot, 'label.model.ts'), readFixture("models/serde/same-type-tserde-emits-one-validator-and-global-validation-false-rejects-va/label.model.ts"));
   writeModelGolemYaml(identityRoot, { validation: true });
   await compile(identityRoot);
-  const codecs = await import(pathToFileURL(path.join(identityRoot, 'build/label.model.generated.js')).href) as {
-    stringifyTLabel: (value: object, options?: { validate?: boolean }) => string;
-    parseTLabel: (text: string, options?: { validate?: boolean }) => { name: string };
-  };
+  const codecs = await loadFunctions(path.join(identityRoot, 'build/label.model.generated.js'), ['stringifyTLabel', 'parseTLabel']);
   assert.equal(codecs.stringifyTLabel({ name: 'ok' }), '{"name":"ok"}');
-  assert.equal(codecs.parseTLabel('{"name":"ok"}').name, 'ok');
+  assert.equal(requireRecord(codecs.parseTLabel('{"name":"ok"}'), 'label').name, 'ok');
   assert.throws(
     () => codecs.parseTLabel('{"name":1}'),
     (error: unknown) => error instanceof LibError
@@ -228,7 +201,7 @@ test('same-type TSerde emits one validator and global validation false rejects {
 
   const { root } = fixture(t, { validation: false });
   await compile(root);
-  const off = await import(pathToFileURL(path.join(root, 'build/money.model.generated.js')).href) as PaymentCodecs;
+  const off = await loadFunctions(path.join(root, 'build/money.model.generated.js'), ['stringifyTPayment', 'parseTPayment']);
   const trusted = off.stringifyTPayment(
     { id: '1', amount: { currency: 'USD', value: '1' }, note: 'x' },
     { validate: false },
@@ -258,52 +231,39 @@ test('nested class-typed IModel fields construct; type-only parse fills like IOb
   const generated = fs.readFileSync(path.join(root, 'src/money.model.generated.ts'), 'utf8');
   const pointId = generatedCodecId(generated, 'TPoint3D');
   const { registerIModelClass } = await import('@exprtlabs/golem/internal/model-runtime');
-  const { Point3D } = await import(pathToFileURL(path.join(root, 'build/money.model.js')).href) as {
-    Point3D: new (values?: object) => object;
-  };
+  const { Point3D } = await loadModelClasses(path.join(root, 'build/money.model.js'), ['Point3D']);
   registerIModelClass(pointId, Point3D);
-  const codecs = await import(pathToFileURL(path.join(root, 'build/money.model.generated.js')).href) as {
-    parseTObjectTypeField: (text: string, options?: { validate?: boolean }) => { scale: object };
-    parseTObjectClassField: (text: string, options?: { validate?: boolean }) => { scale: object };
-    fromWireFormatTObjectClassField: (wire: unknown, options?: { validate?: boolean }) => { scale: object };
-  };
+  const codecs = await loadFunctions(path.join(root, 'build/money.model.generated.js'), ['parseTObjectTypeField', 'fromWireFormatTObjectClassField']);
   const wire = '{"id":"1","scale":{"x":1,"y":2,"z":3}}';
-  const typedParsed = codecs.parseTObjectTypeField(wire, { validate: false });
-  assert.equal(Object.getPrototypeOf(typedParsed.scale), Object.prototype);
-  assert.equal(Reflect.get(typedParsed.scale, 'x'), 1);
+  const typedScale = requireRecord(scaleOf(codecs.parseTObjectTypeField(wire, { validate: false })), 'scale');
+  assert.equal(Object.getPrototypeOf(typedScale), Object.prototype);
+  assert.equal(typedScale.x, 1);
   const classified = codecs.fromWireFormatTObjectClassField(JSON.parse(wire) as object, { validate: false });
-  assert.ok(classified.scale instanceof Point3D);
+  assert.ok(scaleOf(classified) instanceof Point3D);
 });
 
 test('type-only IModel parse fills nested models from the generated base', async (t) => {
   const { root } = fixture(t, { validation: false });
   fs.writeFileSync(path.join(root, 'src/money.model.ts'), readFixture("models/serde/type-only-imodel-parse-fills-nested-models-from-the-generated-base/money.model.ts"));
   await compile(root);
-  const { TIsolatedPointBaseModel } = await import(pathToFileURL(path.join(root, 'build/money.model.generated.js')).href) as {
-    TIsolatedPointBaseModel: new (values?: object) => object;
-  };
-  const codecs = await import(pathToFileURL(path.join(root, 'build/money.model.generated.js')).href) as {
-    parseTObjectClassField: (text: string, options?: { validate?: boolean }) => { scale: object };
-    fromWireFormatTObjectClassField: (wire: unknown, options?: { validate?: boolean }) => { scale: object };
-  };
-  const parsed = codecs.parseTObjectClassField('{"id":"1","scale":{"x":1,"y":2,"z":3}}', { validate: false });
-  assert.ok(parsed.scale instanceof TIsolatedPointBaseModel);
-  assert.equal(Reflect.get(parsed.scale, 'x'), 1);
+  const generated = path.join(root, 'build/money.model.generated.js');
+  const { TIsolatedPointBaseModel } = await loadModelClasses(generated, ['TIsolatedPointBaseModel']);
+  const codecs = await loadFunctions(generated, ['parseTObjectClassField', 'fromWireFormatTObjectClassField']);
+  const parsedScale = scaleOf(codecs.parseTObjectClassField('{"id":"1","scale":{"x":1,"y":2,"z":3}}', { validate: false }));
+  assert.ok(parsedScale instanceof TIsolatedPointBaseModel);
+  assert.equal(Reflect.get(parsedScale, 'x'), 1);
   const constructed = codecs.fromWireFormatTObjectClassField(
     { id: '1', scale: { x: 1, y: 2, z: 3 } },
     { validate: false },
   );
-  assert.ok(constructed.scale instanceof TIsolatedPointBaseModel);
+  assert.ok(scaleOf(constructed) instanceof TIsolatedPointBaseModel);
 });
 
 test('toWireFormat encodes nullable nested IModel fields to plain objects, not class instances', async (t) => {
   const { root } = fixture(t);
   fs.writeFileSync(path.join(root, 'src/money.model.ts'), readFixture("models/serde/towireformat-encodes-nullable-nested-imodel-fields-to-plain-objects-not-clas/money.model.ts"));
   await compile(root);
-  const codecs = await import(pathToFileURL(path.join(root, 'build/money.model.generated.js')).href) as {
-    fromWireFormatTCustomer: (wire: unknown, options?: { validate?: boolean }) => { id: number; account: object | null };
-    toWireFormatTCustomer: (value: unknown, options?: { validate?: boolean }) => unknown;
-  };
+  const codecs = await loadFunctions(path.join(root, 'build/money.model.generated.js'), ['fromWireFormatTCustomer', 'toWireFormatTCustomer']);
   const present = { id: 101, account: { id: 601, code: 'customer-account-601' } };
   const missing = { id: 101, account: null };
   const presentModel = codecs.fromWireFormatTCustomer(present, { validate: false });
@@ -319,17 +279,14 @@ test('fromWireFormat copies identity arrays and tuples instead of aliasing the i
   const { root } = fixture(t, { validation: false });
   fs.writeFileSync(path.join(root, 'src/money.model.ts'), readFixture("models/serde/fromwireformat-copies-identity-arrays-and-tuples-without-aliasing-input/money.model.ts"));
   await compile(root);
-  const codecs = await import(pathToFileURL(path.join(root, 'build/money.model.generated.js')).href) as {
-    fromWireFormatTMember: (wire: unknown, options?: { validate?: boolean }) => { emails: string[]; ip: [number, number, number, number] };
-    toWireFormatTMember: (value: unknown, options?: { validate?: boolean }) => { emails: string[]; ip: [number, number, number, number] };
-  };
+  const codecs = await loadFunctions(path.join(root, 'build/money.model.generated.js'), ['fromWireFormatTMember', 'toWireFormatTMember']);
   const wire = { id: 1, emails: ['a@example.com', 'b@example.com'], ip: [127, 0, 0, 1] as [number, number, number, number] };
-  const model = codecs.fromWireFormatTMember(wire, { validate: false });
+  const model = requireRecord(codecs.fromWireFormatTMember(wire, { validate: false }), 'model');
   assert.notEqual(model.emails, wire.emails);
   assert.deepEqual(model.emails, wire.emails);
   assert.notEqual(model.ip, wire.ip);
   assert.deepEqual(model.ip, wire.ip);
-  const encoded = codecs.toWireFormatTMember(model, { validate: false });
+  const encoded = requireRecord(codecs.toWireFormatTMember(model, { validate: false }), 'encoded');
   assert.notEqual(encoded.emails, model.emails);
   assert.deepEqual(encoded.emails, wire.emails);
   assert.notEqual(encoded.ip, model.ip);

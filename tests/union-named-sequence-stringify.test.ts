@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import test from 'node:test';
-import { pathToFileURL } from 'node:url';
 
 import { createSchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
 import { identifier } from '@exprtlabs/golem/internal/emitter';
 import { emitCodecRuntimeText, instantiateRuntime } from './emitted-runtime.js';
+import { loadFunctions, requireString } from './openapi/helpers.js';
 import { buildModelProject, createModelProject, writeModelGolemYaml, writeModelSources } from './model-project.js';
 import { DATE_FIELD, DATE_SERDE } from './support/date-field.js';
 import { closedObject } from './support/schema-nodes.js';
@@ -33,8 +33,8 @@ export type TBox = IObject<{ items: TTree | string; when: Date }>;
 `,
   });
   await buildModelProject(root);
-  const generated = await import(pathToFileURL(path.join(root, 'build/box.model.generated.js')).href) as { stringifyTBox: Stringify };
-  return generated.stringifyTBox;
+  const { stringifyTBox } = await loadFunctions(path.join(root, 'build/box.model.generated.js'), ['stringifyTBox']);
+  return (value, options) => requireString(stringifyTBox(value, options), 'the JSON text');
 }
 
 const withDates = tree('at: Date');

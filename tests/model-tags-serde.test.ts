@@ -12,6 +12,7 @@ import { buildModelProjectWith, generatedModelFiles } from './model-project.js';
 import { taggedModelSource } from './fixture-templates/models/model-tags.js';
 import { tsSource, type SourceFragment } from './source-template.js';
 import { generate } from '#model/generator';
+import { importGeneratedModule, loadCounter, loadFunctions, loadModelClasses, requireRecord, requireString } from './openapi/helpers.js';
 import { modelCodec } from './support/model-codec.js';
 
 test('validation false retains Date and serde conversions without a validator registry', async t => {
@@ -25,14 +26,15 @@ test('validation false retains Date and serde conversions without a validator re
   await buildModelProjectWith(root, { validation: false });
   const generated = generatedModelFiles(root).find((artifact) => artifact.path.endsWith('/a.model.generated.ts'))?.content ?? '';
   assert.match(generated, /__golemSerialize0Source/);
-  const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
-  const codecs = await import(path.toNamespacedPath(path.join(root, 'build/codecs.js')));
-  const model = modelCodec(A).fromWireFormat({ token: '4' }, { validate: false });
+  const { A } = await loadModelClasses(path.join(root, 'build/a.model.js'), ['A']);
+  const deserialized = await loadCounter(path.join(root, 'build/codecs.js'), 'deserialized');
+  const serialized = await loadCounter(path.join(root, 'build/codecs.js'), 'serialized');
+  const model = requireRecord(modelCodec(A).fromWireFormat({ token: '4' }, { validate: false }), 'model');
   assert.equal(model.when, undefined);
   assert.deepEqual(modelCodec(model).toWireFormat(model), { token: '4' });
-  assert.equal(codecs.deserialized, 1);
-  assert.equal(codecs.serialized, 1);
-  const dated = modelCodec(A).fromWireFormat({ when: '2025-01-02T03:04:05.000Z', token: '5' }, { validate: false });
+  assert.equal(deserialized(), 1);
+  assert.equal(serialized(), 1);
+  const dated = requireRecord(modelCodec(A).fromWireFormat({ when: '2025-01-02T03:04:05.000Z', token: '5' }, { validate: false }), 'dated');
   assert.ok(dated.when instanceof Date);
   assert.deepEqual(modelCodec(dated).toWireFormat(dated), { when: '2025-01-02T03:04:05.000Z', token: '5' });
 });
@@ -60,12 +62,13 @@ test('serde wire descriptors validate nested constraints before decode and after
     fields: tsSource`value: number & TSerde<typeof encode, typeof decode>`,
   }).text);
   await buildModelProjectWith(root, { validation: true });
-  const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
-  const codecs = await import(path.toNamespacedPath(path.join(root, 'build/codecs.js')));
+  const { A } = await loadModelClasses(path.join(root, 'build/a.model.js'), ['A']);
+  const decodeCalls = await loadCounter(path.join(root, 'build/codecs.js'), 'decodeCalls');
+  const encodeCalls = await loadCounter(path.join(root, 'build/codecs.js'), 'encodeCalls');
   assert.throws(() => requireObjectCodec(generatedCodecIdFromRoot(root, 'TA')).parse( JSON.stringify({ value: { code: 'x' } })));
-  assert.equal(codecs.decodeCalls, 0, 'invalid wire input is rejected before decode');
+  assert.equal(decodeCalls(), 0, 'invalid wire input is rejected before decode');
   assert.throws(() => requireObjectCodec(generatedCodecIdFromRoot(root, 'TA')).assert( modelCodec(A).toWireFormat(new A({ value: 7 }))));
-  assert.equal(codecs.encodeCalls, 1, 'invalid encoded wire output is checked after one encode');
+  assert.equal(encodeCalls(), 1, 'invalid encoded wire output is checked after one encode');
 });
 
 test('serde wire predicates run on the wire plane', async t => {
@@ -77,39 +80,44 @@ test('serde wire predicates run on the wire plane', async t => {
     fields: tsSource`value: number & TValidation<typeof positive> & TSerde<typeof encode, typeof decode>`,
   }).text);
   await buildModelProjectWith(root, { validation: true });
-  const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
-  const codecs = await import(path.toNamespacedPath(path.join(root, 'build/codecs.js')));
+  const { A } = await loadModelClasses(path.join(root, 'build/a.model.js'), ['A']);
+  const codecsFile = path.join(root, 'build/codecs.js');
+  const wireCalls = await loadCounter(codecsFile, 'wireCalls');
+  const decodeCalls = await loadCounter(codecsFile, 'decodeCalls');
+  const modelCalls = await loadCounter(codecsFile, 'modelCalls');
+  const encodeCalls = await loadCounter(codecsFile, 'encodeCalls');
+  const { setInvalidEncoding } = await loadFunctions(codecsFile, ['setInvalidEncoding']);
 
   const parsed = requireObjectCodec(generatedCodecIdFromRoot(root, 'TA')).parse( JSON.stringify({ value: '0a' })) as { value: number };
-  assert.equal(codecs.wireCalls, 1, 'validates the explicit wire predicate before decode');
-  assert.equal(codecs.decodeCalls, 1, 'type-only parse fills through deserialize');
+  assert.equal(wireCalls(), 1, 'validates the explicit wire predicate before decode');
+  assert.equal(decodeCalls(), 1, 'type-only parse fills through deserialize');
   assert.equal(parsed.value, 10);
   assert.equal(Object.getPrototypeOf(parsed), Object.prototype);
-  assert.equal(codecs.modelCalls, 1, 'parse runs the model predicate once after decoding, with or without a class');
+  assert.equal(modelCalls(), 1, 'parse runs the model predicate once after decoding, with or without a class');
   const model = new A(parsed);
   assert.equal(Reflect.get(model, 'value'), 10);
   assert.equal(await getValidator(model).validate(), true);
-  assert.equal(codecs.modelCalls, 2, 'the class validator runs the model predicate');
-  assert.equal(codecs.encodeCalls, 0, 'public validate stays on the model plane and does not encode');
+  assert.equal(modelCalls(), 2, 'the class validator runs the model predicate');
+  assert.equal(encodeCalls(), 0, 'public validate stays on the model plane and does not encode');
 
-  const wireBeforeStringify = codecs.wireCalls;
+  const wireBeforeStringify = wireCalls();
   requireObjectCodec(generatedCodecIdFromRoot(root, 'TA')).stringify(model);
-  assert.equal(codecs.wireCalls, wireBeforeStringify + 1, 'stringify validates the encoded wire value');
-  assert.equal(codecs.encodeCalls, 1, 'stringify serializes through TSerde');
-  assert.equal(codecs.modelCalls, 3, 'stringify checks the model plane before encoding');
+  assert.equal(wireCalls(), wireBeforeStringify + 1, 'stringify validates the encoded wire value');
+  assert.equal(encodeCalls(), 1, 'stringify serializes through TSerde');
+  assert.equal(modelCalls(), 3, 'stringify checks the model plane before encoding');
 
-  const wireBeforeInvalidParse = codecs.wireCalls;
+  const wireBeforeInvalidParse = wireCalls();
   assert.throws(() => requireObjectCodec(generatedCodecIdFromRoot(root, 'TA')).parse( JSON.stringify({ value: 'zz' })));
-  assert.equal(codecs.wireCalls, wireBeforeInvalidParse + 1);
-  assert.equal(codecs.decodeCalls, 1, 'invalid wire data does not invoke the decoder');
-  assert.equal(codecs.modelCalls, 3, 'invalid wire data does not invoke the model predicate');
+  assert.equal(wireCalls(), wireBeforeInvalidParse + 1);
+  assert.equal(decodeCalls(), 1, 'invalid wire data does not invoke the decoder');
+  assert.equal(modelCalls(), 3, 'invalid wire data does not invoke the model predicate');
 
-  codecs.setInvalidEncoding(true);
-  const wireBeforeInvalidEncode = codecs.wireCalls;
+  setInvalidEncoding(true);
+  const wireBeforeInvalidEncode = wireCalls();
   assert.throws(() => requireObjectCodec(generatedCodecIdFromRoot(root, 'TA')).stringify(new A({ value: 10 })));
-  assert.equal(codecs.modelCalls, 4, 'failed stringify still checks the model plane');
-  assert.equal(codecs.encodeCalls, 2);
-  assert.equal(codecs.wireCalls, wireBeforeInvalidEncode + 1);
+  assert.equal(modelCalls(), 4, 'failed stringify still checks the model plane');
+  assert.equal(encodeCalls(), 2);
+  assert.equal(wireCalls(), wireBeforeInvalidEncode + 1);
 });
 
 test('rejects asynchronous, multi-parameter, and incompatible codec bindings', t => {
@@ -196,18 +204,20 @@ test('generic utility aliases retain nested constraints, predicates, and serde b
   await buildModelProjectWith(root, { validation: true });
   const shared = generatedModelFiles(root).map((artifact) => artifact.content).join('\n');
   assert.match(shared, /__golemSerialize0Source/);
-  const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
-  const bindings = await import(path.toNamespacedPath(path.join(root, 'build/bindings.js')));
+  const { A } = await loadModelClasses(path.join(root, 'build/a.model.js'), ['A']);
+  const predicateCalls = await loadCounter(path.join(root, 'build/bindings.js'), 'predicateCalls');
+  const deserialized = await loadCounter(path.join(root, 'build/bindings.js'), 'deserialized');
+  const serialized = await loadCounter(path.join(root, 'build/bindings.js'), 'serialized');
   const invalid = modelCodec(A).fromWireFormat({ payload: { value: 'x', when: '2025-01-02T03:04:05.000Z' } }, { validate: false });
   assert.equal(await getValidator(invalid).validate(), false);
-  assert.equal(bindings.predicateCalls, 0, 'builtin minLength failure suppresses the predicate');
-  assert.equal(bindings.deserialized, 1, 'nested serde deserializes once');
+  assert.equal(predicateCalls(), 0, 'builtin minLength failure suppresses the predicate');
+  assert.equal(deserialized(), 1, 'nested serde deserializes once');
   const valid = modelCodec(A).fromWireFormat({ payload: { value: 'good', when: '2025-01-02T03:04:05.000Z' } }, { validate: false });
   assert.equal(await getValidator(valid).validate(), true);
-  assert.equal(bindings.predicateCalls, 1, 'the aliased predicate runs once after builtins pass');
-  assert.equal(bindings.serialized, 0, 'model-plane validate does not encode TSerde values');
+  assert.equal(predicateCalls(), 1, 'the aliased predicate runs once after builtins pass');
+  assert.equal(serialized(), 0, 'model-plane validate does not encode TSerde values');
   assert.deepEqual(modelCodec(valid).toWireFormat(valid), { payload: { value: 'good', when: '2025-01-02T03:04:05.000Z' } });
-  assert.equal(bindings.serialized, 1, 'an explicit serialize call serializes once for that call');
+  assert.equal(serialized(), 1, 'an explicit serialize call serializes once for that call');
   const boundary = (value: string) => modelCodec(A).fromWireFormat({ payload: { value, when: '2025-01-02T03:04:05.000Z' } }, { validate: false });
   assert.equal(await getValidator(boundary('abc')).validate(), true, 'a value of the minimum length passes');
   assert.equal(await getValidator(boundary('ab')).validate(), false, 'a value under the minimum length fails');
@@ -229,13 +239,13 @@ import type { TA } from './a.model.js';
 export type TB = IObject<{ back?: TA; copy: Pick<TA, 'token'> }>;
 `.text);
   await buildModelProjectWith(root, { validation: true });
-  const a = await import(path.toNamespacedPath(path.join(root, 'build/a.model.generated.js')));
-  const b = await import(path.toNamespacedPath(path.join(root, 'build/b.model.generated.js')));
+  const a = await loadFunctions(path.join(root, 'build/a.model.generated.js'), ['parseTA', 'stringifyTA']);
+  const b = await loadFunctions(path.join(root, 'build/b.model.generated.js'), ['parseTB', 'stringifyTB']);
 
   assert.deepEqual(a.parseTA('{"token":"4","other":{"copy":{"token":"5"}}}'), { token: 4, other: { copy: { token: 5 } } });
-  assert.deepEqual(JSON.parse(a.stringifyTA({ token: 4, other: { copy: { token: 5 } } })), { token: '4', other: { copy: { token: '5' } } });
+  assert.deepEqual(JSON.parse(requireString(a.stringifyTA({ token: 4, other: { copy: { token: 5 } } }), 'text')), { token: '4', other: { copy: { token: '5' } } });
   assert.deepEqual(b.parseTB('{"back":{"token":"6"},"copy":{"token":"7"}}'), { back: { token: 6 }, copy: { token: 7 } });
-  assert.deepEqual(JSON.parse(b.stringifyTB({ back: { token: 6 }, copy: { token: 7 } })), { back: { token: '6' }, copy: { token: '7' } });
+  assert.deepEqual(JSON.parse(requireString(b.stringifyTB({ back: { token: 6 }, copy: { token: 7 } }), 'text')), { back: { token: '6' }, copy: { token: '7' } });
 });
 
 for (const validation of [true, false]) {
@@ -258,9 +268,9 @@ export type TLinkWire = IObject<{ label: string; next?: TLinkWire }>;
 export type TChain = IObject<{ path: string & TSerde<typeof encode, typeof decode> }>;
 `);
     await buildModelProjectWith(root, { validation });
-    const a = await import(path.toNamespacedPath(path.join(root, 'build/a.model.generated.js')));
+    const a = await loadFunctions(path.join(root, 'build/a.model.generated.js'), ['parseTChain', 'stringifyTChain']);
     assert.deepEqual(a.parseTChain('{"path":{"label":"a","next":{"label":"b"}}}'), { path: 'a>b' });
-    assert.deepEqual(JSON.parse(a.stringifyTChain({ path: 'a>b' })), { path: { label: 'a', next: { label: 'b' } } });
+    assert.deepEqual(JSON.parse(requireString(a.stringifyTChain({ path: 'a>b' }), 'text')), { path: { label: 'a', next: { label: 'b' } } });
   });
 }
 
@@ -279,10 +289,10 @@ export function fromFlag(wire: boolean): 'yes' | 'no' { return wire ? 'yes' : 'n
       fields: tsSource`amount: number & TSerde<typeof toCents, typeof fromCents>; answer: ('yes' | 'no') & TSerde<typeof toFlag, typeof fromFlag>`,
     }).text);
     await buildModelProjectWith(root, { validation });
-    const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
+    const { A } = await loadModelClasses(path.join(root, 'build/a.model.js'), ['A']);
     const parsed = requireObjectCodec(generatedCodecIdFromRoot(root, 'TA')).parse('{"amount":500,"answer":true}') as { amount: number; answer: string };
     assert.deepEqual({ amount: parsed.amount, answer: parsed.answer }, { amount: 5, answer: 'yes' });
-    const decoded = modelCodec(A).fromWireFormat({ amount: 250, answer: false }, { validate: false });
+    const decoded = requireRecord(modelCodec(A).fromWireFormat({ amount: 250, answer: false }, { validate: false }), 'decoded');
     assert.deepEqual({ amount: decoded.amount, answer: decoded.answer }, { amount: 2.5, answer: 'no' });
     assert.deepEqual(modelCodec(decoded).toWireFormat(decoded), { amount: 250, answer: false });
   });
@@ -304,14 +314,14 @@ export type TBoth = IModel<{ token: Token; label: string } & { token: Token; at:
 export type TEither = IModel<{ value: ({ kind: 'one'; token: Token } | { kind: 'two'; other: Token }) & Discriminator<'kind'> }>;
 `);
     await buildModelProjectWith(root, { validation });
-    await import(path.toNamespacedPath(path.join(root, 'build/a.model.generated.js')));
-    const codecs = await import(path.toNamespacedPath(path.join(root, 'build/codecs.js')));
+    await importGeneratedModule(root, 'the generated model', 'build/a.model.generated.js');
+    const encodeCalls = await loadCounter(path.join(root, 'build/codecs.js'), 'encodeCalls');
     const both = requireObjectCodec(generatedCodecIdFromRoot(root, 'TBoth'));
     const at = new Date('2025-01-02T03:04:05.000Z');
     assert.deepEqual(both.toWireFormat({ token: 7, label: 'x', at }), { token: 'token:7', label: 'x', at: '2025-01-02T03:04:05.000Z' });
-    assert.equal(codecs.encodeCalls, 1, 'the shared serde field is encoded once');
+    assert.equal(encodeCalls(), 1, 'the shared serde field is encoded once');
     const either = requireObjectCodec(generatedCodecIdFromRoot(root, 'TEither'));
     assert.deepEqual(either.toWireFormat({ value: { kind: 'one', token: 11 } }), { value: { kind: 'one', token: 'token:11' } });
-    assert.equal(codecs.encodeCalls, 2, 'the selected branch encodes its field once and the other branch encodes nothing');
+    assert.equal(encodeCalls(), 2, 'the selected branch encodes its field once and the other branch encodes nothing');
   });
 }

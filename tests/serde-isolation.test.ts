@@ -1,17 +1,14 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
 import { test, type TestContext } from 'node:test';
 import { decodeGeneratedModelTrusted, registerGeneratedModel } from '@exprtlabs/golem/internal/model-runtime';
 import { LibError, LibErrorKind, IssueSource, IssueRepresentation } from '@exprtlabs/golem/errors';
-import type { SerdeOptions } from '@exprtlabs/golem/serde';
 import { generate } from '#model/generator';
 import { fileFixtureScope, onceShared, readFixture } from './fixture-project.js';
 import { buildModelProject, createModelProject, writeModelGolemYaml } from './model-project.js';
+import { loadFunctions, loadModelClasses } from './openapi/helpers.js';
 import { modelCodec } from './support/model-codec.js';
-
-type FromWire = (wire: unknown, options?: Pick<SerdeOptions, 'validate' | 'construct'>) => unknown;
 
 function cycleAt(path: readonly (string | number)[]): (error: unknown) => boolean {
   return error => {
@@ -51,9 +48,10 @@ function builtFixture(name: string, validation: boolean): Promise<string> {
   return build();
 }
 
-async function loadCodecs(name: string, validation = false): Promise<Record<string, FromWire>> {
+/** The codec functions `names` of a fresh load of the generated codecs of fixture `name`. */
+async function loadCodecs<Name extends string>(name: string, names: readonly Name[], validation = false) {
   const root = await builtFixture(name, validation);
-  return await import(`${pathToFileURL(path.join(root, `build/${name}.model.generated.js`)).href}?load=${++loads}`) as Record<string, FromWire>;
+  return loadFunctions({ file: path.join(root, `build/${name}.model.generated.js`), load: ++loads }, names);
 }
 
 // Retired: the cycle checks of decoding a hand-registered model through the public decode function. That function is deleted, and
@@ -99,7 +97,7 @@ test('decode cycle tracking retains multiple contracts and recovers after failur
 });
 
 test('generated decode reads each declared property once', async () => {
-  const { fromWireFormatTPayment } = await loadCodecs('payment');
+  const { fromWireFormatTPayment } = await loadCodecs('payment', ['fromWireFormatTPayment']);
   let reads = 0;
   const wire = { id: 'p1', note: 'n', merchant: { id: 'm', name: 'M' }, billing: { name: 'B' }, money: { amount: '1.00', currency: 'USD' } };
   Object.defineProperty(wire, 'merchant', { enumerable: true, get() { reads++; return { id: 'm', name: 'M' }; } });
@@ -108,8 +106,8 @@ test('generated decode reads each declared property once', async () => {
 });
 
 test('generated decode with a constructor reads each declared property once and checks unknown fields', async () => {
-  const { fromWireFormatTPayment } = await loadCodecs('payment');
-  const { fromWireFormatTRecord } = await loadCodecs('recursive');
+  const { fromWireFormatTPayment } = await loadCodecs('payment', ['fromWireFormatTPayment']);
+  const { fromWireFormatTRecord } = await loadCodecs('recursive', ['fromWireFormatTRecord']);
   class Construct { constructor(public fields: unknown) {} }
   let reads = 0;
   const wire = { id: 'p1', note: 'n', merchant: { id: 'm', name: 'M' }, billing: { name: 'B' }, money: { amount: '1.00', currency: 'USD' } };
@@ -138,7 +136,7 @@ function hasOwnCharge(value: unknown): boolean {
 }
 
 test('fromWireFormat leaves out a field that is undefined or not enumerable in the wire', async () => {
-  const { fromWireFormatTPayment } = await loadCodecs('payment');
+  const { fromWireFormatTPayment } = await loadCodecs('payment', ['fromWireFormatTPayment']);
   assert.equal(hasOwnCharge(fromWireFormatTPayment(wireWithCharge('undefined'), { validate: false })), false);
   assert.equal(hasOwnCharge(fromWireFormatTPayment(wireWithCharge('hidden'), { validate: false })), false);
 });
@@ -148,18 +146,16 @@ test('the generated constructor and decode leave out a field that is undefined o
   fs.writeFileSync(path.join(sourceRoot, 'payment.model.ts'), readFixture('models/serde-isolation/payment.model.ts'));
   writeModelGolemYaml(root, { validation: false });
   await buildModelProject(root);
-  const { Payment } = await import(pathToFileURL(path.join(root, 'build/payment.model.js')).href);
+  const { Payment } = await loadModelClasses(path.join(root, 'build/payment.model.js'), ['Payment']);
   assert.equal(hasOwnCharge(new Payment(wireWithCharge('undefined'))), false);
   assert.equal(hasOwnCharge(new Payment(wireWithCharge('hidden'))), false);
   assert.equal(hasOwnCharge(modelCodec(Payment).fromWireFormat(wireWithCharge('undefined'), { validate: false })), false);
   assert.equal(hasOwnCharge(modelCodec(Payment).fromWireFormat(wireWithCharge('hidden'), { validate: false })), false);
 });
 
-/** Imports the generated codecs of the shared build of fixture `name` and gives the URL of its model module. */
-async function loadModel(name: string): Promise<{ codecs: Record<string, FromWire>; modelUrl: string }> {
-  const root = await builtFixture(name, false);
-  const codecs: Record<string, FromWire> = await import(pathToFileURL(path.join(root, `build/${name}.model.generated.js`)).href);
-  return { codecs, modelUrl: pathToFileURL(path.join(root, `build/${name}.model.js`)).href };
+/** The file `file` of the shared build of fixture `name`. */
+async function builtPath(name: string, file: string): Promise<string> {
+  return path.join(await builtFixture(name, false), 'build', file);
 }
 
 function ownKeys(value: unknown, field?: string): readonly string[] {
@@ -172,8 +168,7 @@ function stampsWire(change: Record<string, unknown> = {}): Record<string, unknow
 }
 
 test('the generated constructor and decode read each declared field once', async () => {
-  const { modelUrl } = await loadModel('payment');
-  const { Payment } = await import(modelUrl);
+  const { Payment } = await loadModelClasses(await builtPath('payment', 'payment.model.js'), ['Payment']);
   let reads = 0;
   const wire = (): Record<string, unknown> => Object.defineProperty(wireWithCharge('undefined'), 'billing', { enumerable: true, get() { reads++; return { name: 'B' }; } });
   new Payment(wire());
@@ -185,18 +180,18 @@ test('the generated constructor and decode read each declared field once', async
 });
 
 test('decode leaves out an undeclared key whose value is undefined', async () => {
-  const { codecs, modelUrl } = await loadModel('stamps');
-  const { Stamps } = await import(modelUrl);
-  const { fromWireFormatTBag } = await loadCodecs('bag');
+  const { fromWireFormatTStamps } = await loadFunctions(await builtPath('stamps', 'stamps.model.generated.js'), ['fromWireFormatTStamps']);
+  const { Stamps } = await loadModelClasses(await builtPath('stamps', 'stamps.model.js'), ['Stamps']);
+  const { fromWireFormatTBag } = await loadCodecs('bag', ['fromWireFormatTBag']);
   const wire = stampsWire({ stamps: { x: undefined, y: '2026-01-02T00:00:00.000Z' } });
-  assert.deepEqual(ownKeys(codecs.fromWireFormatTStamps(wire, { validate: false }), 'stamps'), ['y']);
+  assert.deepEqual(ownKeys(fromWireFormatTStamps(wire, { validate: false }), 'stamps'), ['y']);
   assert.deepEqual(ownKeys(modelCodec(Stamps).fromWireFormat(wire, { validate: false }), 'stamps'), ['y']);
   assert.deepEqual(ownKeys(fromWireFormatTBag({ k: undefined, j: 'v' }, { validate: false })), ['j']);
 });
 
 test('fromWireFormat leaves out a required or optional field that is undefined, and an optional one that is not enumerable', async () => {
-  const { codecs } = await loadModel('stamps');
-  const decode = (wire: Record<string, unknown>): readonly string[] => ownKeys(codecs.fromWireFormatTStamps(wire, { validate: false }));
+  const { fromWireFormatTStamps } = await loadFunctions(await builtPath('stamps', 'stamps.model.generated.js'), ['fromWireFormatTStamps']);
+  const decode = (wire: Record<string, unknown>): readonly string[] => ownKeys(fromWireFormatTStamps(wire, { validate: false }));
   assert.deepEqual(decode(stampsWire({ id: undefined })), ['at', 'stamps']);
   assert.deepEqual(decode(stampsWire({ at: undefined })), ['id', 'stamps']);
   assert.deepEqual(decode(stampsWire({ label: undefined })), ['at', 'id', 'stamps']);
@@ -205,7 +200,7 @@ test('fromWireFormat leaves out a required or optional field that is undefined, 
 });
 
 test('a union tag that is inherited or not enumerable selects no branch', async () => {
-  const { fromWireFormatTContact } = await loadCodecs('union');
+  const { fromWireFormatTContact } = await loadCodecs('union', ['fromWireFormatTContact']);
   const unknownTag = (error: unknown): boolean => {
     assert.ok(error instanceof LibError);
     assert.deepEqual(error.issues[0]?.path, ['value', 'kind']);
@@ -218,7 +213,7 @@ test('a union tag that is inherited or not enumerable selects no branch', async 
 });
 
 test('a conversion that fails inside a nested model reports the outer field, the index and the inner field', async () => {
-  const { fromWireFormatTCalendar } = await loadCodecs('calendar');
+  const { fromWireFormatTCalendar } = await loadCodecs('calendar', ['fromWireFormatTCalendar']);
   const note = {};
   assert.throws(() => fromWireFormatTCalendar({ title: 't', event: { at: 'not a date' }, events: [] }, { validate: false }), (error: unknown) => {
     assert.ok(error instanceof LibError);
@@ -237,7 +232,7 @@ test('a conversion that fails inside a nested model reports the outer field, the
 });
 
 test('generated decode copies every level of closed nested objects and rejects a cycle at depth two', async () => {
-  const { fromWireFormatTOuter } = await loadCodecs('outer');
+  const { fromWireFormatTOuter } = await loadCodecs('outer', ['fromWireFormatTOuter']);
   const input = { inner: { deep: { x: 1 } } };
   const decoded = fromWireFormatTOuter(input, { validate: false }) as typeof input;
   input.inner.deep.x = 2;
@@ -254,7 +249,7 @@ test('generated decode copies every level of closed nested objects and rejects a
 });
 
 test('generated decode copies maps and arrays and carries only unknown values by reference', async () => {
-  const { fromWireFormatTContainers } = await loadCodecs('containers');
+  const { fromWireFormatTContainers } = await loadCodecs('containers', ['fromWireFormatTContainers']);
   const open = Object.assign(Object.create(null) as Record<string, unknown>, { id: 'o', note: { n: 1 } });
   const wire = { flags: { a: 'x', b: 'y' }, tags: ['t1', 't2'], matrix: [['m']], open, payload: { deep: [1] } };
   const decoded = fromWireFormatTContainers(wire, { validate: false }) as typeof wire;
@@ -279,7 +274,7 @@ test('generated decode copies maps and arrays and carries only unknown values by
 });
 
 test('generated decode of a recursive model rejects a cycle instead of overflowing the stack', async () => {
-  const { fromWireFormatTNode } = await loadCodecs('recursive');
+  const { fromWireFormatTNode } = await loadCodecs('recursive', ['fromWireFormatTNode']);
   const node: { label: string; children: unknown[] } = { label: 'root', children: [] };
   node.children = [node];
   assert.throws(() => fromWireFormatTNode(node, { validate: false }), cycleAt(['children', 0]));
@@ -292,7 +287,7 @@ class Construct { constructor(public fields: unknown) {} }
 for (const [name, options] of [['default options', undefined], ['validate: true', { validate: true }], ['validate: true with construct', { validate: true, construct: Construct }]] as const) {
   test(`validated decode of a cyclic recursive value throws a deserialization error instead of overflowing the stack, with ${name}`, async () => {
     // protects: T-278 a cyclic value decoded with validation on throws a deserialization LibError, not a RangeError
-    const { fromWireFormatTTree, fromWireFormatTNode } = await loadCodecs('recursive', true);
+    const { fromWireFormatTTree, fromWireFormatTNode } = await loadCodecs('recursive', ['fromWireFormatTTree', 'fromWireFormatTNode'], true);
     const self: { next?: unknown } = {};
     self.next = self;
     const toRoot: { next?: unknown } = { next: {} };
@@ -307,7 +302,7 @@ for (const [name, options] of [['default options', undefined], ['validate: true'
 
 test('validated decode of a recursive value that holds no cycle succeeds', async () => {
   // protects: T-278 the cycle check leaves a value without a cycle decoding as before
-  const { fromWireFormatTTree, fromWireFormatTNode } = await loadCodecs('recursive', true);
+  const { fromWireFormatTTree, fromWireFormatTNode } = await loadCodecs('recursive', ['fromWireFormatTTree', 'fromWireFormatTNode'], true);
   assert.deepEqual(fromWireFormatTNode({ label: 'root', children: [] }, { validate: true }), { label: 'root', children: [] });
   assert.deepEqual(fromWireFormatTTree({ next: { next: {} } }, { validate: true }), { next: { next: {} } });
 });
@@ -324,7 +319,7 @@ function countedChain(length: number, counter: { reads: number }): Record<string
 }
 
 test('generated decode of a recursive object visits each level once', async () => {
-  const { fromWireFormatTTree } = await loadCodecs('recursive');
+  const { fromWireFormatTTree } = await loadCodecs('recursive', ['fromWireFormatTTree']);
   const visits = (length: number): number => {
     const counter = { reads: 0 };
     fromWireFormatTTree(countedChain(length, counter), { validate: false });
@@ -337,7 +332,7 @@ test('generated decode of a recursive object visits each level once', async () =
 });
 
 test('a rejected cycle leaves no decode state behind', async () => {
-  const { fromWireFormatTTree, fromWireFormatTNode } = await loadCodecs('recursive');
+  const { fromWireFormatTTree, fromWireFormatTNode } = await loadCodecs('recursive', ['fromWireFormatTTree', 'fromWireFormatTNode']);
   const tree: { next?: unknown } = {};
   tree.next = tree;
   assert.throws(() => fromWireFormatTTree(tree, { validate: false }), cycleAt(['next']));
@@ -353,7 +348,7 @@ test('a rejected cycle leaves no decode state behind', async () => {
 });
 
 test('a decoder that user code runs during a parse still checks its own input for cycles', async () => {
-  const { fromWireFormatTTree, parseTTree } = await loadCodecs('recursive') as Record<string, FromWire> & { parseTTree: (text: string, options?: unknown) => unknown };
+  const { fromWireFormatTTree, parseTTree } = await loadCodecs('recursive', ['fromWireFormatTTree', 'parseTTree']);
   const cyclic: { next?: unknown } = {};
   cyclic.next = cyclic;
   let inner: unknown;
@@ -372,7 +367,7 @@ test('a decoder that user code runs during a parse still checks its own input fo
 });
 
 test('parsed JSON text is decoded without cycle checks', async (t) => {
-  const { fromWireFormatTTree, parseTTree } = await loadCodecs('recursive') as Record<string, FromWire> & { parseTTree: (text: string, options?: { validate?: boolean }) => unknown };
+  const { fromWireFormatTTree, parseTTree } = await loadCodecs('recursive', ['fromWireFormatTTree', 'parseTTree']);
   assert.deepEqual(parseTTree('{"next":{"next":{}}}', { validate: false }), { next: { next: {} } });
   const tree: { next?: unknown } = {};
   tree.next = tree;
@@ -409,7 +404,7 @@ test('a nested fill that cannot throw runs without a conversion scope', (t) => {
 });
 
 test('a nested union reads its tag once', async () => {
-  const { fromWireFormatTContact } = await loadCodecs('union');
+  const { fromWireFormatTContact } = await loadCodecs('union', ['fromWireFormatTContact']);
   let reads = 0;
   const value = { address: 'a@example.com' };
   Object.defineProperty(value, 'kind', { enumerable: true, get() { reads++; return 'email'; } });
@@ -423,7 +418,7 @@ test('a nested union reads its tag once', async () => {
 });
 
 test('an open object without declared fields keeps an own __proto__ key instead of changing the prototype', async () => {
-  const { fromWireFormatTBag, fromWireFormatTShelfOfBag } = await loadCodecs('bag');
+  const { fromWireFormatTBag, fromWireFormatTShelfOfBag } = await loadCodecs('bag', ['fromWireFormatTBag', 'fromWireFormatTShelfOfBag']);
   const wire = (): Record<string, unknown> => JSON.parse('{"__proto__":{"x":1},"k":"v"}') as Record<string, unknown>;
   const plain = fromWireFormatTBag(wire(), { validate: false }) as Record<string, unknown>;
   assert.equal(Object.getPrototypeOf(plain), Object.prototype);
@@ -439,7 +434,7 @@ test('an open object without declared fields keeps an own __proto__ key instead 
 });
 
 test('generated decode copies declared objects and carries unknown values by reference', async () => {
-  const { fromWireFormatTRecord, fromWireFormatTShelf } = await loadCodecs('recursive');
+  const { fromWireFormatTRecord, fromWireFormatTShelf } = await loadCodecs('recursive', ['fromWireFormatTRecord', 'fromWireFormatTShelf']);
   const wire = { payload: { nested: { a: 1 } } };
   const decoded = fromWireFormatTRecord(wire, { validate: false }) as { payload: { nested: { a: number } } };
   wire.payload.nested.a = 2;
