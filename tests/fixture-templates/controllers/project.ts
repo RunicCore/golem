@@ -20,7 +20,7 @@ export const NEST_PARTICIPANTS = Object.fromEntries(await Promise.all((['error',
   package: '@exprtlabs/golem-ts-openapi', block: 'ts-openapi', name: 'nest', entry: path.join(workspace, 'packages/golem-ts-openapi/dist/nest/rewrite-participant.js'), options: { nonModelInputs },
 }])] as const))) as Record<'error' | 'warn', Awaited<ReturnType<typeof loadRewriteParticipants>>>;
 
-const defaultTsconfig = {
+export const defaultTsconfig = {
   compilerOptions: {
     target: 'ES2022',
     module: 'NodeNext',

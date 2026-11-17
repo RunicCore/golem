@@ -1,8 +1,10 @@
 import { generatorSettings } from './mobx-extension.js';
 import fs from 'node:fs';
 import path from 'node:path';
+import { mock } from 'node:test';
 import { generate as generateControllers } from '#ts-openapi/generator';
 import { generate as generateModels } from '#model/generator';
+import { runBuild } from '#golem/build';
 import { applyRewrites } from '#golem/rewrite';
 import { scanProject } from '#golem/rewrite-scan';
 import { typescriptVersion } from '#golem/typescript-ns';
@@ -10,7 +12,7 @@ import type { GolemDiagnostic } from '#golem/generator-api';
 import { writeGeneratedArtifacts } from '../fixture-project.js';
 import { NEST_PARTICIPANTS } from '../fixture-templates/controllers/project.js';
 import { editProjectSources } from './node-specifiers-project.js';
-import { caseFolder, DIAGNOSTICS, GENERATED, REWRITTEN, type IdentityProject } from './identity-corpus.js';
+import { BUILD_LOG, BUILT, caseFolder, DIAGNOSTICS, GENERATED, isBuilt, REWRITTEN, type IdentityProject } from './identity-corpus.js';
 import { defaultModelOutput } from '@exprtlabs/golem-model/plan';
 
 function describeDiagnostic(stage: string, diagnostic: GolemDiagnostic): string {
@@ -79,7 +81,50 @@ function specifierStage(item: IdentityProject, lines: string[]): ReadonlyMap<str
   }
 }
 
-function write(filename: string, content: string): void {
+/** The files of the project by path relative to the root, as bytes; the installed packages and golem's own state under `.golem` are no output of a build. */
+function projectFiles(root: string): Map<string, Buffer> {
+  const files = new Map<string, Buffer>();
+  const visit = (directory: string): void => {
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+      const filename = path.join(directory, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name !== 'node_modules' && entry.name !== '.golem') visit(filename);
+      } else files.set(path.relative(root, filename), fs.readFileSync(filename));
+    }
+  };
+  visit(root);
+  return files;
+}
+
+/**
+ * `golem build` on the project, run in this process with the project as the working directory: its exit code (or the error it ended in) and
+ * what it printed go to the build log, and each file it wrote or changed in the project goes under `built/`. The generate stage already wrote
+ * the generated files, so a file that the build generated differently shows here too.
+ */
+async function buildStage(item: IdentityProject, folder: string): Promise<void> {
+  const before = projectFiles(item.root);
+  const printed: string[] = [];
+  const capture = (chunk: string | Uint8Array): boolean => { printed.push(Buffer.from(chunk).toString()); return true; };
+  const outside = process.cwd();
+  process.chdir(item.root);
+  mock.method(process.stdout, 'write', capture);
+  mock.method(process.stderr, 'write', capture);
+  let status: string;
+  try {
+    status = `exit ${(await runBuild({ watch: false, config: path.join(item.root, 'golem.yaml') })).exitCode}`;
+  } catch (error) {
+    status = describeError('build', error);
+  } finally {
+    mock.restoreAll();
+    process.chdir(outside);
+  }
+  write(path.join(folder, BUILD_LOG), `${status}\n${printed.join('')}`.replaceAll(item.root, '<root>'));
+  for (const [relative, content] of projectFiles(item.root)) {
+    if (!before.get(relative)?.equals(content)) write(path.join(folder, BUILT, relative), content);
+  }
+}
+
+function write(filename: string, content: string | Buffer): void {
   fs.mkdirSync(path.dirname(filename), { recursive: true });
   fs.writeFileSync(filename, content);
 }
@@ -98,6 +143,7 @@ async function run(projects: readonly IdentityProject[], outputDirectory: string
       for (const [relative, text] of item.kind === 'specifiers' ? specifierStage(item, lines) : rewriteStage(item, lines)) write(path.join(folder, REWRITTEN, relative), text);
     }
     write(path.join(folder, DIAGNOSTICS), lines.map(line => `${line.replaceAll(item.root, '<root>')}\n`).join(''));
+    if (isBuilt(item)) await buildStage(item, folder);
   }
 }
 
