@@ -500,6 +500,8 @@ export interface LiteralTypeNode extends TypeNode {
 /** `import("x").T` and `typeof import("x")`: the argument is a literal type that holds the specifier. */
 export interface ImportTypeNode extends TypeNode {
   readonly kind: KindOf<'ImportTypeNode'>;
+  /** Written `typeof import('...')`: the value of the module, not the type that it exports. */
+  readonly isTypeOf?: boolean;
   readonly argument: TypeNode;
   readonly qualifier?: EntityName;
   readonly typeArguments?: readonly TypeNode[];

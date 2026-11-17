@@ -680,6 +680,8 @@ function reach(context: TagAnalysisContext, walk: Walk, node: ts.Node): void {
     const target = checker.getTypeFromTypeNode(node).getSymbol();
     if (!target) stop('whose type names no declaration');
     reachDeclarationsOf(target);
+    // `typeof import('...')` of a module that writes `export = Class` is the class value, with its statics and constructors.
+    if (node.isTypeOf) reachStaticSideOf(target);
     reachExportsOf(target);
     nextAll(node.typeArguments);
   } else if (ts.isTypeAliasDeclaration(node)) {
