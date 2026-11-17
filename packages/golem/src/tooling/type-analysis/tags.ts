@@ -558,6 +558,8 @@ export interface Walk {
 }
 
 const INFERRED = 'whose type golem infers';
+/** A value of a JavaScript file that shows no type node: TypeScript 6 keeps its `@type` in the JSDoc, which golem does not read, where TypeScript 7 hoists it into the declaration. */
+const JSDOC_TYPE = 'whose JSDoc type golem does not read on this TypeScript version';
 
 /** Whether `node` holds no other node that can hold a tag: a name, a literal, a keyword type such as `string`, or a class static block, which carries no type. */
 function holdsNothing(node: ts.Node): boolean {
@@ -589,7 +591,7 @@ function reach(context: TagAnalysisContext, walk: Walk, node: ts.Node): void {
     }
   };
   if (holdsNothing(node)) return;
-  if (infersItsType(node)) return stop(INFERRED);
+  if (infersItsType(node)) return stop(/\.[cm]?jsx?$/.test(node.getSourceFile().fileName) ? JSDOC_TYPE : INFERRED);
   const reference = typeReferenceOf(node);
   if (ts.isParenthesizedTypeNode(node) || ts.isOptionalTypeNode(node) || ts.isRestTypeNode(node) || ts.isTypeOperatorNode(node) || ts.isNamedTupleMember(node) || ts.isTypePredicateNode(node)) {
     next(node.type);
@@ -707,7 +709,7 @@ function functionBinding(
   if (registry) registry.walk ??= walkSources(context, registry.sources);
   const unreadable = registry?.walk?.unreadable;
   if (unreadable) {
-    throw context.diagnostic(fn.owner, '1040', `${kind} function reaches this tag through \`${firstLine(unreadable.node.getText())}\` (${sourceLocation(unreadable.node)}), ${unreadable.reason}, so golem cannot tell which function of this type the tag names. ${writes} Write the tag on the field itself, with \`typeof\` and the function${unreadable.reason === INFERRED ? ', or give that value a type annotation that writes the tag' : ''}.`);
+    throw context.diagnostic(fn.owner, '1040', `${kind} function reaches this tag through \`${firstLine(unreadable.node.getText())}\` (${sourceLocation(unreadable.node)}), ${unreadable.reason}, so golem cannot tell which function of this type the tag names. ${writes} ${unreadable.reason === JSDOC_TYPE ? 'Declare each with `function`, or give each const its own type annotation.' : `Write the tag on the field itself, with \`typeof\` and the function${unreadable.reason === INFERRED ? ', or give that value a type annotation that writes the tag' : ''}.`}`);
   }
   const written = registry?.[kind].get(fn.type);
   if (written === undefined) {
