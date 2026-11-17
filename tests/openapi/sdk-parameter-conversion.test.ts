@@ -2,7 +2,7 @@ import 'temporal-polyfill/global';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
-import { importGeneratedModule, requireRecord } from './helpers.js';
+import { importGeneratedModule, requireRecord, type GeneratedClientInstance } from './helpers.js';
 import { loadSdk } from './sdk-client-fixture.js';
 
 // The client converts what it carries (R-80): parameters leave in their wire form and response headers arrive in their plain form.
@@ -30,13 +30,11 @@ const DOCUMENT = {
   components: { schemas: { Moment: DATE_TIME } },
 };
 
-type Operation = { execute(input: unknown, options?: unknown): Promise<{ status: number; headers: Record<string, unknown> }> };
-type MomentsClient = Record<string, () => Operation>;
 interface Fetched { readonly url: string; readonly headers: Record<string, string> }
 
 /** Generates the SDK with `dates` and returns a client whose fetch answers `reply` and records the URL and headers of each request, and the folder of the SDK. */
-async function loadClient(t: Parameters<typeof loadSdk>[0], dates: 'date' | 'temporal', reply: () => Response, sent: Fetched[]): Promise<{ readonly client: MomentsClient; readonly output: string }> {
-  const sdk = await loadSdk<MomentsClient>(t, `golem-openapi-parameter-conversion-${dates}-`, { document: DOCUMENT, name: 'Moments', dates, validation: true });
+async function loadClient(t: Parameters<typeof loadSdk>[0], dates: 'date' | 'temporal', reply: () => Response, sent: Fetched[]): Promise<{ readonly client: GeneratedClientInstance; readonly output: string }> {
+  const sdk = await loadSdk(t, `golem-openapi-parameter-conversion-${dates}-`, { document: DOCUMENT, name: 'Moments', dates, validation: true });
   const client = sdk.createClient({
     fetchImpl: async (url: RequestInfo | URL, init?: RequestInit) => {
       sent.push({ url: String(url), headers: Object.fromEntries(new Headers(init?.headers)) });

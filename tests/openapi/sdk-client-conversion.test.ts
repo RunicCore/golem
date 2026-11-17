@@ -2,7 +2,7 @@ import 'temporal-polyfill/global';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
-import { importGeneratedModule, requireRecord } from './helpers.js';
+import { importGeneratedModule, requireRecord, type GeneratedClientInstance } from './helpers.js';
 import { loadSdk } from './sdk-client-fixture.js';
 
 // The client converts what it carries (R-80): bodies and stream items arrive and leave in their plain form.
@@ -35,14 +35,11 @@ const DOCUMENT = {
   } },
 };
 
-type Operation = { execute(input: unknown): Promise<{ status: number; body: unknown }> };
-type EventsClient = Record<string, () => Operation>;
-
 interface Fetched { readonly body: unknown }
 
 /** Generates the SDK with `dates` and returns a client whose fetch answers `reply` and records the body each request sends, and the folder of the SDK. */
-async function loadClient(t: Parameters<typeof loadSdk>[0], dates: 'date' | 'temporal', reply: () => Response, sent: Fetched[], validation = true): Promise<{ readonly client: EventsClient; readonly output: string }> {
-  const sdk = await loadSdk<EventsClient>(t, `golem-openapi-client-conversion-${dates}-`, { document: DOCUMENT, name: 'Events', dates, validation });
+async function loadClient(t: Parameters<typeof loadSdk>[0], dates: 'date' | 'temporal', reply: () => Response, sent: Fetched[], validation = true): Promise<{ readonly client: GeneratedClientInstance; readonly output: string }> {
+  const sdk = await loadSdk(t, `golem-openapi-client-conversion-${dates}-`, { document: DOCUMENT, name: 'Events', dates, validation });
   const client = sdk.createClient({
     fetchImpl: async (_url: RequestInfo | URL, init?: RequestInit) => {
       sent.push({ body: typeof init?.body === 'string' && new Headers(init.headers).get('content-type') === 'application/json' ? JSON.parse(init.body) : init?.body });
