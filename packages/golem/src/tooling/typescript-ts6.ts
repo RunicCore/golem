@@ -239,7 +239,6 @@ export const {
   canHaveModifiers,
   createCompilerHost,
   findConfigFile,
-  forEachChild,
   formatDiagnostics,
   formatDiagnosticsWithColorAndContext,
   getDecorators,
@@ -348,6 +347,25 @@ export const {
   isVariableStatement,
   sys,
 } = classic;
+
+/** Whether the classic parser attached JSDoc comments to `node`: its `jsDoc` list is an internal member, so the public declarations omit it. */
+function hasJsDoc(node: Golem.Node): node is Golem.Node & { readonly jsDoc: readonly Golem.Node[] } {
+  return 'jsDoc' in node && Array.isArray(node.jsDoc);
+}
+
+/**
+ * The children of `node`, its JSDoc nodes first. TypeScript 7 visits the JSDoc of a node as its children; the classic `forEachChild` skips it,
+ * so a tag written in a JSDoc type of a JavaScript file (`@type {TValidation<typeof f>}`) would be read on one version only.
+ */
+export function forEachChild<T>(node: Golem.Node, callback: (node: Golem.Node) => T | undefined): T | undefined {
+  if (hasJsDoc(node)) {
+    for (const comment of node.jsDoc) {
+      const result = callback(comment);
+      if (result) return result;
+    }
+  }
+  return classic.forEachChild(node, callback);
+}
 
 /** TypeScript 7 names a type parameter's default `defaultType`; TypeScript 6 names it `default`. */
 export function typeParameterDefault(parameter: Golem.TypeParameterDeclaration): Golem.TypeNode | undefined {
