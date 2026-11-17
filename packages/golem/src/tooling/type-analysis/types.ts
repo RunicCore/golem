@@ -542,10 +542,18 @@ function isTemplateLiteralType(type: ts.Type): type is ts.TemplateLiteralType {
   return (type.flags & ts.TypeFlags.TemplateLiteral) !== 0;
 }
 
-/** The expression for one template literal key type (`id_${string}`), or undefined for a shape it cannot state exactly: only `string` holes can. */
-function templateKeyExpression(type: ts.TemplateLiteralType): string | undefined {
+/**
+ * The expression for one template literal type (`id_${string}`), a key type or a field type, or undefined for a shape it cannot state exactly: only `string` holes can.
+ * The one place that decides which holes a pattern states, so a key and a field read a template alike.
+ */
+function templateExpression(type: ts.TemplateLiteralType): string | undefined {
   if (!type.types.every((hole) => (hole.flags & ts.TypeFlags.String) !== 0)) return undefined;
   return type.texts.map(escapedKeyText).join('[\\s\\S]*');
+}
+
+/** The name of a field for a message: `Field "id" of TItem`, or the model alone when no field is being described. */
+function fieldLabel(context: TypeAnalysisContext): string {
+  return context.field ? `Field "${context.field}" of ${context.name}` : context.name;
 }
 
 /** The text of a key that a `number` index signature admits: a JSON number written as a property name. */
@@ -563,7 +571,7 @@ function indexKeyPattern(checker: ts.TypeChecker, type: ts.Type, declaredNames: 
     if ((keyType.flags & ts.TypeFlags.String) !== 0) return undefined;
     if ((keyType.flags & ts.TypeFlags.Number) !== 0) numbered = true;
     if ((keyType.flags & ts.TypeFlags.StringLike) === 0) continue;
-    const expression = isTemplateLiteralType(keyType) ? templateKeyExpression(keyType) : undefined;
+    const expression = isTemplateLiteralType(keyType) ? templateExpression(keyType) : undefined;
     if (expression === undefined) return null;
     expressions.push(expression);
   }
@@ -922,7 +930,7 @@ function describeTaggedValue(scope: DescribeScope, call: DescribeCall): ModelCon
   // A TSerde codec converts the whole value, so only an intersection that no codec converts is cut here, before the object merge reads it.
   const scalar = metadata.serde ? undefined : scalarIntersectedWithObject(checker, type);
   if (scalar) {
-    const where = context.field ? `Field "${context.field}" of ${context.name}` : context.name;
+    const where = fieldLabel(context);
     throw diagnostic(
       context.sourceFile,
       node ?? context.declaration,
@@ -1017,7 +1025,7 @@ function describeSdkType(scope: DescribeScope, call: DescribeCall, isRoot: boole
 
 /** The descriptor of a scalar, any, unknown or never type, or undefined. */
 function describeScalar(scope: DescribeScope, call: DescribeCall): ModelConversionDescriptor | undefined {
-  const { checker, allowUnresolved, typeErrorAt, rejectUnlessAllowAny } = scope;
+  const { checker, allowUnresolved, typeErrorAt, rejectUnlessAllowAny, modelValidates } = scope;
   const { context, node, metadata, type } = call;
   if (type.flags & ts.TypeFlags.Any) {
     if (!allowUnresolved && isErrorAny(type)) {
@@ -1047,7 +1055,17 @@ function describeScalar(scope: DescribeScope, call: DescribeCall): ModelConversi
       const at = node ?? call.provenanceNode ?? context.declaration;
       throw diagnostic(context.sourceFile, at, '1045', `A tag inside the template literal type ${checker.typeToString(type)} checks no value: a tag applies to the field, and a hole is a part of its value. Intersect the tag with the field's type, as in \`id-\${string}\` & <tag>.`);
     }
-    return withMetadata({ kind: 'string' }, metadata);
+    const expression = templateExpression(type);
+    if (expression === undefined) {
+      // The pattern is a validation rule: with validation off nothing states it, so no hole stops generation.
+      if (modelValidates(context)) {
+        throw diagnostic(context.sourceFile, node ?? call.provenanceNode ?? context.declaration, '1004',
+          `${fieldLabel(context)} is typed by the template literal type ${checker.typeToString(type)}, which golem cannot state as a pattern. Use string-only holes, such as \`id-\${string}\`, or a plain string.`);
+      }
+      return withMetadata({ kind: 'string' }, metadata);
+    }
+    const pattern: ModelConstraint = { kind: 'pattern', value: `^${expression}$` };
+    return withMetadata({ kind: 'string' }, { ...metadata, constraints: [pattern, ...metadata.constraints] });
   }
   return undefined;
 }
@@ -1200,7 +1218,7 @@ function describeTuple(scope: DescribeScope, call: DescribeCall, seen: ReadonlyS
     }
     // The schema of a tuple states a fixed element after its rest element as one `anyOf` of the rest and the fixed types, which accepts them out of order.
     if (modelValidates(context) && restIndex < arguments_.length - 1) {
-      const where = context.field ? `Field "${context.field}" of ${context.name}` : context.name;
+      const where = fieldLabel(context);
       throw diagnostic(context.sourceFile, node ?? context.declaration, '1021',
         `${where} has fixed elements after its rest element, which a JSON Schema cannot validate in order. Move the fixed elements before the rest element, or set \`{ validation: false }\` on the model.`);
     }
@@ -1390,17 +1408,22 @@ function describeObject(scope: DescribeScope, call: DescribeCall, seen: Readonly
   if (templateValueTypes.length > 0 && indexType) templateValueTypes.push(indexType);
   const [firstValueType] = templateValueTypes;
   if (firstValueType !== undefined && templateValueTypes.some((valueType) => !checker.isTypeAssignableTo(valueType, firstValueType) || !checker.isTypeAssignableTo(firstValueType, valueType))) {
-    const where = context.field ? `Field "${context.field}" of ${context.name}` : context.name;
     throw diagnostic(context.sourceFile, node ?? context.declaration, '1004',
-      `${where} has index signatures of different value types, which golem cannot state as one value type. Give them one value type, or use one index signature.`);
+      `${fieldLabel(context)} has index signatures of different value types, which golem cannot state as one value type. Give them one value type, or use one index signature.`);
   }
   const taggedAdditional = indexType ? undefined : additionalPropertiesFromTags(metadata.constraints);
+  const taggedKey = checker.getIndexInfosOfType(type).map(({ keyType }) => keyType)
+    .find((keyType): keyType is ts.TemplateLiteralType => isTemplateLiteralType(keyType) && taggedTemplateHole(call.tagContext, keyType) !== undefined);
+  // A tag in a hole of a key checks no key, with validation off too: the tag would be dropped without a message (R-55).
+  if (taggedKey) {
+    throw diagnostic(context.sourceFile, node ?? context.declaration, '1004',
+      `${fieldLabel(context)} is keyed by the template literal type ${checker.typeToString(taggedKey)}, which holds a tag in a hole. A tag checks a value, not a key. Remove the tag, or use string-only holes, such as \`id_\${string}\`.`);
+  }
   // The key pattern is a validation rule: with validation off nothing states it, so no key type stops generation for it.
   const keyPattern = indexType && modelValidates(context) ? indexKeyPattern(checker, type, [...memberNames]) : undefined;
   if (keyPattern === null) {
-    const where = context.field ? `Field "${context.field}" of ${context.name}` : context.name;
     throw diagnostic(context.sourceFile, node ?? context.declaration, '1004',
-      `${where} is keyed by a template literal type that golem cannot state as a key pattern. Use string-only holes, such as \`id_\${string}\`, or a plain string key.`);
+      `${fieldLabel(context)} is keyed by a template literal type that golem cannot state as a key pattern. Use string-only holes, such as \`id_\${string}\`, or a plain string key.`);
   }
   const keyConstraint: ModelConstraint[] = keyPattern === undefined ? [] : [{
     kind: 'propertyNames',
