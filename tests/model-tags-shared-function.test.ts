@@ -151,6 +151,9 @@ const kindRows = {
   'an enum member': { declarations: `enum Color { Red, Blue }\n${neutral('Color.Red')}`, files: {} },
   'a namespace that an interface merges with': { declarations: `interface Shape { n: number }\nnamespace Shape { export const k: number = 1; }\n${neutral('Shape')}`, files: {} },
   'a namespace that an enum merges with': { declarations: `enum Mode { A }\nnamespace Mode { export const k: number = 1; }\n${neutral('Mode')}`, files: {} },
+  'a const that shares the name of a type': { declarations: `const Mode = { A: 1 } as const;\ntype Mode = 'a' | 'b';\n${neutral('Mode')}`, files: {} },
+  'a namespace of an unannotated const that an interface merges with': { declarations: `interface Shape { n: number }\nnamespace Shape { export const k = 1; }\n${neutral('Shape')}`, files: {} },
+  'a namespace of an unannotated const that an enum merges with': { declarations: `enum Mode { A }\nnamespace Mode { export const k = 1; }\n${neutral('Mode')}`, files: {} },
   'a namespace import of a module that holds no tag': { declarations: `import * as ns from './plain.js';\n${neutral('typeof ns')}`, files: { 'plain.ts': "export const k: string = '';\nexport type OnlyType = { z: 1 };" } },
   'an import type with no qualifier': { declarations: neutral("typeof import('./plain.js')"), files: { 'plain.ts': "export const k: string = '';" } },
   'a nested namespace and a namespace export that hold no tag': {
