@@ -121,6 +121,7 @@ test('each watch run prints the result of every job and its time; the run after 
   try {
     await until(() => lines.length === 1, 'the first run is summarized');
     assert.match(lines[0], / · \d+ ms$/);
+    assert.ok(fs.existsSync(path.join(root, '.golem/outputs.json')), 'the first run wrote the local state of golem');
     assert.ok(results(lines[0]).length >= 2, lines[0]);
     for (const result of results(lines[0])) assert.match(result, /^\S+: \d+ files? updated$/);
 
