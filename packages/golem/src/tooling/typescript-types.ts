@@ -827,6 +827,7 @@ export interface TypeScriptBackend {
     readonly Class: SymbolFlags;
     readonly Enum: SymbolFlags;
     readonly Method: SymbolFlags;
+    readonly Module: SymbolFlags;
     readonly Optional: SymbolFlags;
     readonly Transient: SymbolFlags;
     readonly Value: SymbolFlags;

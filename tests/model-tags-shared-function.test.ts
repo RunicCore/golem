@@ -139,3 +139,33 @@ test('a serializer and a deserializer that copy the type of another pair are nev
   const declarations = `declare function tagged(): string & TSerde<typeof s, typeof d>;\nclass Holder { held = tagged(); }\n${valueOf}type Box<T> = { v: ValueOf<T> };\n`;
   assertNoSilentDrop(generateField(t, { rules, declarations, field: "Box<Holder>['v'] & TSerde<typeof s2, typeof d2>" }, ['s', 's2', 'd', 'd2']), 's,s2,d,d2');
 });
+
+// The walk reads a field only as far as it can follow, and refuses by name where it cannot (`reach`). A kind that tsc resolves and that holds no tag is read through,
+// so the field binds the function that it writes; a module that holds a tag is read, so a function that the tag names is never dropped.
+const heldIn = 'declare function tagged(): string & TValidation<typeof a>;\nclass Holder { held = tagged(); }\n';
+const neutral = (kind: string) => `type Neutral = unknown extends (${kind}) ? unknown : unknown;\n`;
+const taggedModule = "import type { TValidation } from '@exprtlabs/golem/tags';\nimport { a } from './rules.js';\nexport const w: string & TValidation<typeof a> = '';";
+const kindRows = {
+  'an enum member': { declarations: `enum Color { Red, Blue }\n${neutral('Color.Red')}`, files: {} },
+  'a namespace that an interface merges with': { declarations: `interface Shape { n: number }\nnamespace Shape { export const k: number = 1; }\n${neutral('Shape')}`, files: {} },
+  'a namespace that an enum merges with': { declarations: `enum Mode { A }\nnamespace Mode { export const k: number = 1; }\n${neutral('Mode')}`, files: {} },
+  'a namespace import of a module that holds no tag': { declarations: `import * as ns from './plain.js';\n${neutral('typeof ns')}`, files: { 'plain.ts': "export const k: string = '';\nexport type OnlyType = { z: 1 };" } },
+  'an import type with no qualifier': { declarations: neutral("typeof import('./plain.js')"), files: { 'plain.ts': "export const k: string = '';" } },
+  'an import type of a module that writes export =': { declarations: neutral("import('./single.js')"), files: { 'single.ts': 'class Single { n: number = 0 }\nexport = Single;' } },
+} as const;
+
+for (const [name, row] of Object.entries(kindRows)) test(`a field that the walk reads through ${name} binds the function that it writes`, t => {
+  // protects: T-1069 the walk refused the field with "a kind of node that golem does not follow" for a kind that tsc resolves and that holds no tag (RUNM1040 refuses only what tsc cannot type)
+  assert.deepEqual(generateField(t, { rules: validators.copied, declarations: `${heldIn}${row.declarations}`, field: `string${beside} & Neutral`, files: row.files }, ['a', 'b', 'c']), { bound: 'b' });
+});
+
+const moduleRows = {
+  'a namespace import': { declarations: "import * as tagged from './tagged.js';\n" + neutral('typeof tagged') },
+  'an import type with no qualifier': { declarations: neutral("typeof import('./tagged.js')") },
+} as const;
+
+for (const [name, row] of Object.entries(moduleRows)) test(`a tag that a module holds is read through ${name} and shares its type with the function of the field`, t => {
+  // protects: T-1069 the walk must read the exports of a module that `typeof` names, so the tag `a` in it is seen and the field is refused for the shared type, never bound to `b` alone
+  const outcome = generateField(t, { rules: validators.copied, declarations: row.declarations, field: `string${beside} & Neutral`, files: { 'tagged.ts': taggedModule } }, ['a', 'b', 'c']);
+  assert.match('refused' in outcome ? outcome.refused : `bound ${outcome.bound}`, /shares its type with another function/);
+});
