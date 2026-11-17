@@ -1217,7 +1217,11 @@ test('an app-written interceptor decodes the headers with nestHeadersCodec and s
   Get()(AppController.prototype, 'read', descriptor);
   nestModelHeaders(id)(AppController.prototype, 'read', 0);
   Req()(AppController.prototype, 'read', 1);
-  assert.equal(nestHeadersCodec(AppController, AppController.prototype.read)?.codec, getObjectCodec(id));
+  const documented = nestHeadersCodec(AppController, AppController.prototype.read);
+  assert.ok(documented);
+  assert.deepEqual({ ...documented.decode({ port: '8080', retry: '', 'x-undeclared': 'a' }) as object }, { port: 8080 });
+  // An empty header is a header that was not sent: the required field is missing, not an empty string.
+  assert.throws(() => documented.decode({ port: '' }), (error) => error instanceof LibError && error.causedByInput && error.issues.length === 1 && error.issues[0]!.path.join('.') === 'port' && error.issues[0]!.code === 'required');
   assert.equal(nestHeadersCodec(AdapterWriterController, AdapterWriterController.prototype.write), undefined);
   class LostController { read(_headers: unknown) { return 1; } }
   nestModelHeaders('NeverLoaded_dddddddd')(LostController.prototype, 'read', 0);
@@ -1227,7 +1231,7 @@ test('an app-written interceptor decodes the headers with nestHeadersCodec and s
     intercept(context, next) {
       const found = nestHeadersCodec(context.getClass(), context.getHandler());
       const request = context.switchToHttp().getRequest<{ headers: unknown }>();
-      if (found) setNestHeaders(request, found.codec.fromWireFormat(request.headers, { strip: true }));
+      if (found) setNestHeaders(request, found.decode(request.headers));
       return next.handle();
     },
   };

@@ -152,7 +152,7 @@ For example, a model with the fields `port` and `'x-trace'`, where `port` is a n
 - **OpenAPI document:** the document shows the type that a client sends. A `TSerde` field with a text form is a `string` with the pattern of that text, such as `^[0-9]+$` for `port`, not a number with limits.
 - **No decoded value:** a handler with a header model fails with HTTP 500 and a `TypeError` that starts with `golem fault` when no interceptor stored the decoded headers. The handler never gets the raw headers.
 
-To decode the headers in your own interceptor, call [`nestHeadersCodec`](/reference/runtime-api#nest) with `context.getClass()` and `context.getHandler()`. It returns the codec and the class to construct, or `undefined` for a handler with no header model. Decode with `strip: true`, then call [`setNestHeaders`](/reference/runtime-api#nest). The [runtime API](/reference/runtime-api#nest) shows the call order.
+To decode the headers in your own interceptor, call [`nestHeadersCodec`](/reference/runtime-api#nest) with `context.getClass()` and `context.getHandler()`. It returns `undefined` for a handler with no header model, and otherwise an object with `decode(headers)`. `decode` treats an empty header as not sent, keeps the declared fields only, and returns the model. Pass its result to [`setNestHeaders`](/reference/runtime-api#nest). The [runtime API](/reference/runtime-api#nest) shows the call order.
 
 ## Extra properties
 

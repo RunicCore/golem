@@ -14,7 +14,7 @@
  * models, and decode a query with `nestQueryDecoder`. `nestReturnCodec` gives
  * an interceptor the codec of the declared return. `nestModelStringifyInterceptor` stays for a response whose codec is
  * not the declared return type. The rewrite swaps a whole `@Headers()` typed as a model for a decorator
- * (`nestModelHeaders`) that reads the headers an interceptor decoded: `nestHeadersCodec` gives the codec to decode with, and
+ * (`nestModelHeaders`) that reads the headers an interceptor decoded: `nestHeadersCodec` gives the call that decodes them, and
  * `setNestHeaders` hands the result to the handler. `NestModelInterceptor` does both.
  */
 import {
@@ -27,7 +27,7 @@ import { mergeMap, type Observable } from 'rxjs';
 import { LibError, LibErrorKind, type IssuePath } from '@exprtlabs/golem/errors';
 import { IssueRepresentation, IssueSource, recordOrUndefined, resolveMaxDepth } from '@exprtlabs/golem/internal/model-runtime';
 import type { GeneratedModelConstructor } from '@exprtlabs/golem/model';
-import { getIModelClass, getObjectCodec, type ObjectCodec } from '@exprtlabs/golem/serde';
+import { getIModelClass, getObjectCodec, type DecodeOptions, type ObjectCodec } from '@exprtlabs/golem/serde';
 import {
   asToken,
   boundArray,
@@ -187,15 +187,23 @@ export function nestReturnCodec(controllerClass: Function, handler: Function): N
   return { codec, array: declared.array };
 }
 
-/** What an interceptor decodes the headers of a handler with: the codec of its `@Headers()` model, and the class to construct when the model is one. */
+/** What an interceptor decodes the headers of a handler with. */
 export interface NestHeadersCodec {
-  readonly codec: ObjectCodec;
-  readonly construct: GeneratedModelConstructor | undefined;
+  /**
+   * The model of the request headers: a header that holds empty text counts as not sent, and only the fields that the model declares stay.
+   * Throws a `LibError` for headers the model rejects. `options` are the options of `fromWireFormat`, except the ones that this call sets.
+   */
+  decode(headers: unknown, options?: Omit<DecodeOptions, 'strip' | 'construct'>): unknown;
+}
+
+/** The headers of a request without the ones that hold empty text: an empty header is a header that was not sent. */
+function presentHeaders(headers: unknown): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(recordOrUndefined(headers) ?? {}).filter(([, value]) => value !== ''));
 }
 
 /**
- * The codec of the whole `@Headers()` parameter of a controller handler that the build rewrote, for an interceptor that decodes the
- * headers. Pass `{ strip: true, construct }` to `fromWireFormat`, then store the result with `setNestHeaders`. `undefined` for a handler
+ * The decoder of the whole `@Headers()` parameter of a controller handler that the build rewrote, for an interceptor that decodes the
+ * headers. Call `decode(request.headers)`, then store the result with `setNestHeaders`. `undefined` for a handler
  * with no such parameter: a `@Headers()` that is no model, such as `Record` or `any`, and every `@Headers('name')`, stay as Nest reads them. It
  * throws a `TypeError` that starts with `golem fault` when the build rewrote the parameter and the codec of its model is not registered.
  * The lookup runs at each call. Cache the result for each handler if you need to.
@@ -209,7 +217,8 @@ export function nestHeadersCodec(controllerClass: Function, handler: Function): 
       `golem fault: the build rewrote the @Headers() of ${controllerClass.name}.${handler.name} with model "${id}", but the generated module of that model did not load, so its codec is not registered.`,
     );
   }
-  return { codec, construct: getIModelClass(id) };
+  const construct = getIModelClass(id);
+  return { decode: (headers, options) => codec.fromWireFormat(presentHeaders(headers), { ...options, strip: true, construct }) };
 }
 
 /**
@@ -293,11 +302,6 @@ function replaceQuery(request: HttpRequest, value: unknown): void {
 }
 
 const NO_DECODE = (value: unknown): unknown => value;
-
-/** The headers of a request without the ones that hold empty text: an empty header is a header that was not sent. */
-function presentHeaders(headers: unknown): Record<string, unknown> {
-  return Object.fromEntries(Object.entries(recordOrUndefined(headers) ?? {}).filter(([, value]) => value !== ''));
-}
 
 /** The error with `path` in front of each issue path; a path of no segments, or an error that is not a LibError, stays as it is. */
 function prefixedError(error: unknown, path: IssuePath): unknown {
@@ -464,10 +468,7 @@ export class NestModelInterceptor implements NestInterceptor {
       if (headers) {
         const req = context.switchToHttp().getRequest<HttpRequest>();
         // Only the declared fields reach the handler; `request.headers` stays as received.
-        const decoded = headers.codec.fromWireFormat(
-          presentHeaders(req.headers),
-          { failFast: true, strip: true, construct: headers.construct, maxDepth: this.maxDepth, validate: this.validate },
-        );
+        const decoded = headers.decode(req.headers, { failFast: true, maxDepth: this.maxDepth, validate: this.validate });
         setNestHeaders(req, decoded);
       }
     } catch (error) {
