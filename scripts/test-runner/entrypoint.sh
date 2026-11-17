@@ -171,7 +171,8 @@ export GOLEM_TYPESCRIPT6_ROOT="$typescript6_root"
 npm rebuild --ignore-scripts --no-audit --no-fund
 # Run-level ceiling (F1: no run exceeds 10 min). It is the one hang catcher: a test step passes no
 # per-file or per-test limit, so a loaded host does not fail a file that works. A hung file process or a
-# stuck await is ended here, and the files that started and did not finish are named below.
+# stuck await is ended here, and the files that started and did not finish are named below. A focused call that the recorded
+# seconds of its files put near the ceiling runs as several runs, each under it (see the end of this file).
 case "$tier" in
   focused) ceiling=180 ;; full|full-ts6) ceiling=450 ;; acceptance) ceiling=600 ;; docs|examples-check) ceiling=300 ;; prepare) ceiling=300 ;;
   *) ceiling=60 ;;
@@ -190,24 +191,45 @@ if [ "$recorded" -eq 1 ]; then
   done
   [ "$waited" -eq 0 ] || [ "$waited" -ge "$bound" ] || echo "The $tier tier starts after waiting ${waited}s: load (container kernel) is $load."
 fi
-status=0
+# Runs one tier invocation under the ceiling and leaves its exit status in run_status. The function never returns non-zero, so
+# `set -e` does not end the script before the other runs of a split focused call.
 # timeout puts the tier in its own process group, so a Ctrl-C or docker stop
 # reaches only this shell. Pass it on; timeout forwards it to the tier.
-timeout -k 30s "$ceiling" node .build/scripts/test-tier.js "$@" &
-tier_pid=$!
-trap 'kill -INT "$tier_pid" 2>/dev/null || true' INT
-trap 'kill -TERM "$tier_pid" 2>/dev/null || true' TERM
-while :; do
-  wait "$tier_pid" && status=0 || status=$?
-  kill -0 "$tier_pid" 2>/dev/null || break
-done
-if [ "$status" -eq 124 ] || [ "$status" -eq 137 ]; then
-  ceiling_message
-  node -e "import('./.build/scripts/test-file-timings.js').then(({ ceilingReport }) => console.error(ceilingReport(process.argv[1], process.argv[2])))" /results "$tier" \
-    || echo "Could not name the unfinished files from /results." >&2
-  if [ -n "$tree_hash" ]; then
-    node -e "import('./.build/scripts/test-runner/run-state.js').then(({ recordCut }) => console.error(recordCut(process.argv[1], process.argv[2], Number(process.argv[3]))))" /results "$tier" "$ceiling" \
-      || echo "Could not keep the cut run for a resume." >&2
+run_under_ceiling() {
+  timeout -k 30s "$ceiling" node .build/scripts/test-tier.js "$@" &
+  tier_pid=$!
+  trap 'stopped=1; kill -INT "$tier_pid" 2>/dev/null || true' INT
+  trap 'stopped=1; kill -TERM "$tier_pid" 2>/dev/null || true' TERM
+  while :; do
+    wait "$tier_pid" && run_status=0 || run_status=$?
+    kill -0 "$tier_pid" 2>/dev/null || break
+  done
+  if [ "$run_status" -eq 124 ] || [ "$run_status" -eq 137 ]; then
+    ceiling_message
+    node -e "import('./.build/scripts/test-file-timings.js').then(({ ceilingReport }) => console.error(ceilingReport(process.argv[1], process.argv[2])))" /results "$tier" \
+      || echo "Could not name the unfinished files from /results." >&2
+    if [ -n "$tree_hash" ]; then
+      node -e "import('./.build/scripts/test-runner/run-state.js').then(({ recordCut }) => console.error(recordCut(process.argv[1], process.argv[2], Number(process.argv[3]))))" /results "$tier" "$ceiling" \
+        || echo "Could not keep the cut run for a resume." >&2
+    fi
   fi
+}
+status=0; stopped=0
+if [ "$tier" = focused ]; then
+  # A focused set that the recorded seconds of its files put near the ceiling runs as several runs, each under its own ceiling
+  # (scripts/test-tier.ts, focusedRuns). The runs share the build and the lock above; each file is in one run. Every run
+  # happens even when an earlier one fails, as the files of one run do; the status is the first one that is not 0.
+  runs_dir="$(mktemp -d)"
+  node .build/scripts/test-tier.js focused-runs "$ceiling" "$runs_dir" "${@:2}" || exit
+  for run_file in "$runs_dir"/*.args; do
+    [ "$stopped" -eq 0 ] || break
+    mapfile -d '' -t run_args < "$run_file"
+    run_under_ceiling focused "${run_args[@]}"
+    [ "$status" -ne 0 ] || status="$run_status"
+  done
+  rm -rf "$runs_dir"
+else
+  run_under_ceiling "$@"
+  status="$run_status"
 fi
 exit "$status"

@@ -4,7 +4,7 @@ Run tests in the golem test-runner image. Tier runs are offline.
 
 | Command | Budget | Runs |
 | --- | --- | --- |
-| `npm run test -- <files or --test-name-pattern>` | 1 min | The tests you select. A packed or browser file packs first. |
+| `npm run test -- <files or --test-name-pattern>` | 1 min | The tests you select. A packed or browser file packs first. A set that is too big for one 180 s run runs as several runs (see [A big focused set](#a-big-focused-set)). |
 | `npm run test:full` | about 400 s | Half of a sprint-end run: the unit tests (not the identity corpus). Run it with `test:full:ts6` before a commit that ends a sprint. |
 | `npm run test:full:ts6` | about 330 s | The other half of a sprint-end run: the TypeScript 6 lane, the packed model-only smoke test and the source checks of `npm run lint`. Pack, the smoke test and the source checks run beside the lane. |
 | `npm run test:acceptance` | 10 min | Everything that Full and Full TS6 run, the public-source and OpenAPI compliance checks, the acceptance unit tests (the TypeScript identity corpus included), and the packed and browser tests. After the unit step, the TypeScript 6 lane runs beside a second chain: pack, the packed smoke test, the source checks, packed, browser. The acceptance unit tests run last, alone. Run before a release. |
@@ -42,9 +42,18 @@ The checked-in `package-lock.json` comes from macOS and lacks the Linux platform
 - `Another golem test run holds /cache/run.lock; waiting up to …s for it`: one run uses the cache at a time, so a second run waits for the first. When the wait ends the run stops with exit 2 and `…; wait for it to finish`. Set the wait with `--lock-wait <seconds>` (default 300, every tier), for example `npm run test -- --lock-wait 900 tests/serde.test.ts`.
 - `The … tier exceeded its …s ceiling and was stopped`: the whole run passed its time limit. The lines after it name each step that was running and the files of that step that started and did not finish. See [A hung test file](#a-hung-test-file).
 
+## A big focused set
+
+A focused call cannot pass its 180 s ceiling in one run. The runner reads the recorded seconds of each file, and it splits the call into few runs that each fit. One command runs them all, one after the other, under one lock and one build. Each run has its own 180 s ceiling.
+
+- **Seconds.** A TypeScript 6 call (`--typescript 6`) reads the `typescript 6` step of the `full-ts6` order record. Other calls read the `unit` step of the `full` record (see [File order](#file-order)). A file with no entry there costs 45 s on TypeScript 6 and 10 s on TypeScript 7.
+- **Fit.** The recorded seconds of a file are its wall time in a full run that keeps 8 files going. So the runner estimates the wall time of a run as the sum of the recorded seconds divided by 8 (the files at once, or fewer on a small machine). A run fits when the estimate is 135 s or less, which is three quarters of the ceiling. The seconds come from earlier runs at another load, so the rest of the ceiling is room for the error. A file that alone needs more than 135 s by this estimate runs alone.
+- **Same call.** Each run gets the lane and the flags of your call, and each file runs once. The runner prints one line, `focused: the files would pass the 180s ceiling in one run, so they run as N runs, estimated ...`, only when it splits.
+- **Result.** A run that fails or hits its ceiling does not stop the next runs. The command exits with the first status that is not 0.
+
 ## A hung test file
 
-The tier ceiling is the one hang catcher. A test step sets no limit on a file or a test, and the helper that tests use to run a command sets none on a command, so a slow host does not fail a file that works. The ceilings are 180 s for `npm run test`, 450 s for each of Full and Full TS6, 600 s for Acceptance and 300 s for docs and `test:examples`. They are the same on every machine.
+The tier ceiling is the one hang catcher. A test step sets no limit on a file or a test, and the helper that tests use to run a command sets none on a command, so a slow host does not fail a file that works. The ceilings are 180 s for each run of `npm run test`, 450 s for each of Full and Full TS6, 600 s for Acceptance and 300 s for docs and `test:examples`. They are the same on every machine.
 
 A file that hangs stops the run at the ceiling, not sooner. The runner prints the ceiling message and each step that was cut, then the files of each step that started and did not finish. The hung file is among them. A file that was only slow when the ceiling hit appears there too.
 
