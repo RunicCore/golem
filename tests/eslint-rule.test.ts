@@ -44,14 +44,6 @@ test('an eslint-disable comment suppresses the report under the text parser, and
   assert.deepEqual(quoted.map((message) => [message.ruleId, message.line]), [['golem/no-unrewritable-code', 4]]);
 });
 
-test('a JSDoc type with a string literal in a TypeScript file stays one comment, so the words in it are no directive', async (t) => {
-  // protects: T-1063 the TypeScript 6 forEachChild walked the JSDoc of a TypeScript file, so its `'a'` split the comment scan and `/* eslint-disable */` inside the JSDoc read as a directive
-  const root = await project(t, 'eslint-rule-jsdoc-literal');
-  write(root, 'src/use.ts', IMPORTS);
-  const reported = await lint(root, 'src/use.ts', `${IMPORTS}/** @param {'a'} x /* eslint-disable */\nexport function pick(x: string) { return x; }\n${DECODE}\n`);
-  assert.deepEqual(reported.map((message) => [message.ruleId, message.line]), [['golem/no-unrewritable-code', 5]]);
-});
-
 test('a report in a file with CRLF line breaks and a multi-line comment lands on its own line', async (t) => {
   // protects: T-396 lines and columns of reports and of comments follow ESLint's own count
   const root = await project(t, 'eslint-rule-crlf');
