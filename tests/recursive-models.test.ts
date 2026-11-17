@@ -1,15 +1,15 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
 import test, { type TestContext } from 'node:test';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import type { GolemProfile } from '@exprtlabs/golem/generator-api';
 import { writeSdk } from '#openapi/generator';
 import { createFixtureProject } from './fixture-project.js';
 import { buildModelProject, createModelProject, writeModelGolemYaml, writeModelSources } from './model-project.js';
-import { buildRecursiveProject, importCodecs, json, type Codec, type Codecs } from './support/recursive-fixtures.js';
-import { compileGeneratedSdk, generateMaterializedSdk, sdkBodyCodec, withRootOperations, writeGeneratedSdk } from './openapi/helpers.js';
+import { valueAt } from './support/json.js';
+import { buildRecursiveProject, json } from './support/recursive-fixtures.js';
+import { compileGeneratedSdk, generateMaterializedSdk, importGeneratedModule, loadFunctions, loadValidator, requireString, sdkBodyCodec, withRootOperations, writeGeneratedSdk } from './openapi/helpers.js';
 
 const sources = {
   'tree.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
@@ -23,6 +23,9 @@ export class Right extends TRightBaseModel {}
 `,
 };
 
+const isSerializationError = (error: unknown): boolean =>
+  error instanceof LibError && error.kind === LibErrorKind.Serialization && error.causedByInput === false;
+
 const profiles: readonly (readonly [string, GolemProfile])[] = [
   ['validation off', { validation: false }],
   ['validation on', { validation: true }],
@@ -31,18 +34,18 @@ const profiles: readonly (readonly [string, GolemProfile])[] = [
 for (const [label, profile] of profiles) {
   test(`self- and mutually recursive models generate and round-trip (${label})`, async (t: TestContext) => {
     const { root } = await buildRecursiveProject(t, 'golem-recursive-models-', sources, profile);
-    const codecs = await importCodecs(root, 'tree');
+    const codecs = await loadFunctions(path.join(root, 'build/tree.model.generated.js'), ['fromWireFormatTNode', 'toWireFormatTNode', 'stringifyTNode', 'parseTNode', 'fromWireFormatTLeft', 'toWireFormatTLeft', 'stringifyTLeft', ...(profile.validation ? ['validateTNode'] : [])]);
 
     const nodeWire = { at: '2024-01-01T00:00:00.000Z', children: [{ at: '2024-01-02T00:00:00.000Z', children: [{ at: '2024-01-03T00:00:00.000Z', children: [] }] }] };
-    const node = codecs.fromWireFormatTNode(nodeWire) as { children: { children: { at: unknown }[] }[] };
-    assert.ok(node.children[0].children[0].at instanceof Date, 'nested dates decode at every depth');
+    const node = codecs.fromWireFormatTNode(nodeWire);
+    assert.ok(valueAt(node, 'children', 0, 'children', 0, 'at') instanceof Date, 'nested dates decode at every depth');
     assert.deepEqual(json(codecs.toWireFormatTNode(node)), nodeWire);
     assert.equal(codecs.stringifyTNode(node), JSON.stringify(nodeWire));
     assert.deepEqual(json(codecs.toWireFormatTNode(codecs.parseTNode(JSON.stringify(nodeWire)))), nodeWire);
 
     const leftWire = { at: '2024-01-01T00:00:00.000Z', right: { at: '2024-01-02T00:00:00.000Z', lefts: [{ at: '2024-01-03T00:00:00.000Z' }] } };
-    const left = codecs.fromWireFormatTLeft(leftWire) as { right: { lefts: { at: unknown }[] } };
-    assert.ok(left.right.lefts[0].at instanceof Date);
+    const left = codecs.fromWireFormatTLeft(leftWire);
+    assert.ok(valueAt(left, 'right', 'lefts', 0, 'at') instanceof Date);
     assert.equal(codecs.stringifyTLeft(left), JSON.stringify(leftWire));
     assert.deepEqual(json(codecs.toWireFormatTLeft(left)), leftWire);
 
@@ -78,24 +81,17 @@ for (const [label, profile] of profiles) {
     writeModelSources(sourceRoot, cycleSources);
     writeModelGolemYaml(root, profile);
     await buildModelProject(root);
-    const codecs = await import(pathToFileURL(path.join(root, 'build/chain.model.generated.js')).href) as Codecs;
 
     const selfLink: { name: string; child?: unknown } = { name: 'a' };
     selfLink.child = selfLink;
-    const farLink = { name: 'a', child: { name: 'b', child: { name: 'c' } as { name: string; child?: unknown } } };
-    farLink.child.child.child = farLink;
+    const tail: { name: string; child?: unknown } = { name: 'c' };
+    const farLink = { name: 'a', child: { name: 'b', child: tail } };
+    tail.child = farLink;
     const cyclicData: Record<string, unknown> = { at: 1 };
     cyclicData.back = cyclicData;
     const cyclicList: unknown[] = [{ ok: true }];
     cyclicList.push(cyclicList);
 
-    const isSerializationError = (error: unknown): boolean =>
-      error instanceof LibError && error.kind === LibErrorKind.Serialization && error.causedByInput === false;
-    const encoders: readonly (readonly [string, Codec])[] = [
-      ['stringifyTLink', codecs.stringifyTLink], ['toWireFormatTLink', codecs.toWireFormatTLink],
-      ['stringifyTBag', codecs.stringifyTBag], ['toWireFormatTBag', codecs.toWireFormatTBag],
-      ['stringifyTHolder', codecs.stringifyTHolder], ['toWireFormatTHolder', codecs.toWireFormatTHolder],
-    ];
     const cyclicInputs: readonly (readonly [string, unknown])[] = [
       ['stringifyTLink', selfLink], ['toWireFormatTLink', selfLink],
       ['stringifyTLink', farLink], ['toWireFormatTLink', farLink],
@@ -103,9 +99,9 @@ for (const [label, profile] of profiles) {
       ['stringifyTBag', { data: cyclicData }], ['toWireFormatTBag', { data: cyclicData }],
       ['stringifyTBag', { data: cyclicList }], ['toWireFormatTBag', { data: cyclicList }],
     ];
+    const codecs = await loadFunctions(path.join(root, 'build/chain.model.generated.js'), cyclicInputs.map(([name]) => name));
     for (const [name, input] of cyclicInputs) {
-      const encode = encoders.find(([encoder]) => encoder === name)![1];
-      assert.throws(() => encode(input), isSerializationError, `${name} throws a Serialization LibError on a cycle`);
+      assert.throws(() => codecs[name](input), isSerializationError, `${name} throws a Serialization LibError on a cycle`);
     }
 
     // A value reached twice without a cycle, and a long chain, encode.
@@ -147,7 +143,7 @@ for (const [label, profile] of profiles) {
     writeModelSources(sourceRoot, crossFileSources);
     writeModelGolemYaml(root, profile);
     await buildModelProject(root);
-    const owner = await import(pathToFileURL(path.join(root, 'build/owner.model.generated.js')).href) as Codecs;
+    const owner = await loadFunctions(path.join(root, 'build/owner.model.generated.js'), ['stringifyTOwner', 'toWireFormatTOwner']);
 
     const chain: { name: string; next?: unknown } = { name: 'a' };
     chain.next = chain;
@@ -186,7 +182,7 @@ test('a model two files away from a recursive model throws a Serialization LibEr
   writeModelSources(sourceRoot, chainedFileSources);
   writeModelGolemYaml(root, { validation: true });
   await buildModelProject(root);
-  const top = await import(pathToFileURL(path.join(root, 'build/top.model.generated.js')).href) as Codecs;
+  const top = await loadFunctions(path.join(root, 'build/top.model.generated.js'), ['stringifyTTop', 'toWireFormatTTop']);
 
   const link: { name: string; next?: unknown } = { name: 'a' };
   link.next = link;
@@ -197,9 +193,6 @@ test('a model two files away from a recursive model throws a Serialization LibEr
   const acyclic = { middle: { link: { name: 'a', next: { name: 'b' } } } };
   assert.equal(top.stringifyTTop(acyclic), JSON.stringify(acyclic));
 });
-
-const isSerializationError = (error: unknown): boolean =>
-  error instanceof LibError && error.kind === LibErrorKind.Serialization && error.causedByInput === false;
 
 // An expression tree: a leaf, or a branch whose children are again expressions. In golem-model a union is a field
 // type and never a codec of its own; only an OpenAPI oneOf component whose variants share a base is a union model.
@@ -287,7 +280,7 @@ test('a model that holds an SDK model walks for cycles only when that model is r
   assert.deepEqual(walkers.filter(name => name.endsWith('TWallet')), [], 'the wallet holds a Money model that never reaches itself');
   assert.ok(walkers.some(name => name.endsWith('TChainHolder')), 'the holder of a recursive Link walks for cycles before its validator');
 
-  const codecs = await import(pathToFileURL(path.join(root, 'build/holder.model.generated.js')).href) as Codecs;
+  const codecs = await loadFunctions(path.join(root, 'build/holder.model.generated.js'), ['stringifyTChainHolder', 'toWireFormatTChainHolder', 'stringifyTWallet']);
   const link: { name: string; next?: unknown } = { name: 'a' };
   link.next = link;
   for (const encode of [codecs.stringifyTChainHolder, codecs.toWireFormatTChainHolder]) {
@@ -312,7 +305,7 @@ test('a recursive inline discriminated union generates with validation on and ju
   writeModelSources(sourceRoot, inlineUnionSources);
   writeModelGolemYaml(root, { validation: true });
   await buildModelProject(root);
-  const codecs = await import(pathToFileURL(path.join(root, 'build/expr.model.generated.js')).href) as Codecs;
+  const codecs = await loadFunctions(path.join(root, 'build/expr.model.generated.js'), ['validateTBranch', 'parseTBranch']);
   const tree = (value: unknown) => ({ kind: 'branch', children: [{ kind: 'branch', children: [{ kind: 'branch', children: [{ kind: 'leaf', value }] }] }] });
   assert.equal(codecs.validateTBranch(tree('a')), true);
   assert.deepEqual(json(codecs.parseTBranch(JSON.stringify(tree('a')))), tree('a'));
@@ -334,6 +327,8 @@ export type TDoc = IModel<{ tree: Tree; registry: Registry; payload: JsonValue; 
 export type TBox = IModel<{ mixed: Mixed }>;
 `,
 };
+const aliasCodecNames = ['TShelf', 'TDoc'].flatMap((model) => ['fromWireFormat', 'toWireFormat', 'stringify', 'parse'].map((operation) => `${operation}${model}`));
+const loadAliasCodecs = (root: string, profile: GolemProfile) => loadFunctions(path.join(root, 'build/alias.model.generated.js'), [...aliasCodecNames, 'fromWireFormatTBox', 'toWireFormatTBox', 'stringifyTBox', ...(profile.validation ? ['validateTDoc'] : [])]);
 const shelfWire = { item: ['a', ['b', ['c']], 'd'] };
 const docWire = {
   tree: ['root', [['left', []], ['right', [['leaf', []]]]]],
@@ -348,7 +343,7 @@ for (const [label, profile] of profiles) {
   test(`a recursive alias of a union, a tuple, a record and a JSON value generates and round-trips (${label})`, async (t: TestContext) => {
     // protects: T-221 a recursive type alias of any shape generates, validates and converts
     const { root } = await buildRecursiveProject(t, 'golem-recursive-alias-', aliasSources, profile);
-    const codecs = await importCodecs(root, 'alias');
+    const codecs = await loadAliasCodecs(root, profile);
     const generated = fs.readFileSync(path.join(root, 'src/alias.model.generated.ts'), 'utf8');
 
     for (const [wire, name] of [[shelfWire, 'TShelf'], [docWire, 'TDoc']] as const) {
@@ -359,10 +354,10 @@ for (const [label, profile] of profiles) {
       assert.deepEqual(json(codecs[`parse${name}`](JSON.stringify(wire))), wire, `${name} parses`);
     }
     if (profile.validation) {
-      const validators = await import(pathToFileURL(path.join(root, 'build/generated/models/models.validators.generated.js')).href) as Record<string, (value: unknown, collectAll?: boolean) => unknown>;
-      const jsonId = Object.keys(validators).find((name) => /^is_JsonValue_/.test(name))!.slice('is_'.length);
-      const isJson = validators[`is_${jsonId}`] as (value: unknown) => boolean;
-      const issuesOf = validators[`validate_${jsonId}`] as (value: unknown, collectAll: boolean) => readonly unknown[];
+      const validators = 'build/generated/models/models.validators.generated.js';
+      const jsonId = requireString(Object.keys(await importGeneratedModule(root, 'the validators module', validators)).find((name) => /^is_JsonValue_/.test(name)), 'the JsonValue validator').slice('is_'.length);
+      const isJson = (await loadFunctions(path.join(root, validators), [`is_${jsonId}`]))[`is_${jsonId}`];
+      const issuesOf = await loadValidator(path.join(root, validators), `validate_${jsonId}`);
       const deep = (leaf: unknown): unknown => ({ a: [{ b: leaf }] });
       assert.equal(isJson(deep('ok')), true);
       assert.equal(issuesOf(deep('ok'), true).length, 0);
@@ -380,7 +375,7 @@ for (const [label, profile] of profiles) {
   test(`a cyclic value in a field of a recursive alias throws a Serialization LibError, and a union of a named model and an array encodes (${label})`, async (t: TestContext) => {
     // protects: T-221 a recursive alias never overflows the stack on a cyclic value, and encodes a valid named model beside an array
     const { root } = await buildRecursiveProject(t, 'golem-recursive-alias-cycle-', aliasSources, profile);
-    const codecs = await importCodecs(root, 'alias');
+    const codecs = await loadAliasCodecs(root, profile);
     const doc = (payload: unknown) => ({ tree: ['t', []], registry: {}, payload, list: [], items: [] });
 
     const cyclicList: unknown[] = [1];
