@@ -1,20 +1,18 @@
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
-import { pathToFileURL } from 'node:url';
 
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import type { GolemProfile } from '@exprtlabs/golem/generator-api';
 
 import { createFixtureProject } from './fixture-project.js';
 import { buildModelProject, createModelProject, writeModelGolemYaml, writeModelSources } from './model-project.js';
-import { compileGeneratedSdk, generateMaterializedSdk, sdkBodyCodec, withRootOperations } from './openapi/helpers.js';
+import { compileGeneratedSdk, generateMaterializedSdk, loadCounter, loadFunctions, loadModelClasses, sdkBodyCodec, withRootOperations } from './openapi/helpers.js';
 import { modelCodec } from './support/model-codec.js';
 
 // toWireFormat of the codec of a model's class (D-105) validates when the profile does and `{ validate: false }` skips.
 // A getter field of the root counts only with `allowGetter: true`.
 
-type Model = new (values?: object) => object;
 const isValidationError = (error: unknown): boolean => error instanceof LibError && error.kind === LibErrorKind.Validation;
 
 const sources = {
@@ -34,8 +32,7 @@ async function buildCards(t: TestContext, profile: GolemProfile) {
   writeModelSources(sourceRoot, sources);
   writeModelGolemYaml(root, profile);
   await buildModelProject(root);
-  const models = await import(pathToFileURL(path.join(root, 'build/card.model.js')).href) as { Card: Model; Link: Model };
-  return models;
+  return loadModelClasses(path.join(root, 'build/card.model.js'), ['Card', 'Link']);
 }
 
 test('the toWireFormat of a model codec validates when the profile does, and validate false skips it', async (t) => {
@@ -51,8 +48,8 @@ test('the toWireFormat of a model codec validates when the profile does, and val
   const getter = new Getter();
   assert.deepEqual(modelCodec(getter).toWireFormat(getter, { allowGetter: true }), { title: 'from getter' }, 'a subclass resolves its generated codec and a getter field counts with allowGetter');
 
-  const link = new Link({ name: 'a' }) as { child?: unknown };
-  link.child = link;
+  const link = new Link({ name: 'a' });
+  Reflect.set(link, 'child', link);
   for (const options of [undefined, { validate: false }]) {
     assert.throws(
       () => modelCodec(link).toWireFormat(link, options),
@@ -108,12 +105,12 @@ export class Wallet extends TWalletBaseModel {}
   });
   writeModelGolemYaml(root, { validation: true });
   await buildModelProject(root);
-  const rules = await import(pathToFileURL(path.join(root, 'build/rules.js')).href) as { calls: number };
-  const { Money } = await import(pathToFileURL(path.join(root, 'build/money.model.js')).href) as { Money: Model };
-  const { Wallet } = await import(pathToFileURL(path.join(root, 'build/wallet.model.js')).href) as { Wallet: Model };
-  const { stringifyTWallet, toWireFormatTWallet } = await import(pathToFileURL(path.join(root, 'build/wallet.model.generated.js')).href) as Record<string, (value: unknown) => unknown>;
+  const calls = await loadCounter(path.join(root, 'build/rules.js'), 'calls');
+  const { Money } = await loadModelClasses(path.join(root, 'build/money.model.js'), ['Money']);
+  const { Wallet } = await loadModelClasses(path.join(root, 'build/wallet.model.js'), ['Wallet']);
+  const { stringifyTWallet, toWireFormatTWallet } = await loadFunctions(path.join(root, 'build/wallet.model.generated.js'), ['stringifyTWallet', 'toWireFormatTWallet']);
   const wallet = new Wallet({ money: new Money({ amount: 3 }) });
-  const counted = (run: () => unknown): number => { const before = rules.calls; run(); return rules.calls - before; };
+  const counted = (run: () => unknown): number => { const before = calls(); run(); return calls() - before; };
   assert.equal(counted(() => stringifyTWallet(wallet)), 1, 'stringify');
   assert.equal(counted(() => toWireFormatTWallet(wallet)), 1, 'toWireFormat');
   assert.equal(counted(() => modelCodec(wallet).toWireFormat(wallet)), 1, 'codec toWireFormat');

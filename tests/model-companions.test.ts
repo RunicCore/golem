@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
 import test, { type TestContext } from 'node:test';
 
 import * as ts from '@exprtlabs/golem/internal/ts';
@@ -15,6 +14,7 @@ import {
   writeModelSources,
 } from './model-project.js';
 import { copyFixtureFile, fileFixtureScope, onceShared, readFixture, writeGeneratedArtifacts } from './fixture-project.js';
+import { importGeneratedModule, loadModelClasses, requireRecord } from './openapi/helpers.js';
 import { runRewritten } from './support/rewritten-module.js';
 import { tsSource } from './source-template.js';
 import { generate } from '#model/generator';
@@ -90,7 +90,7 @@ test('generated model names are scoped to their companion modules', (t) => {
 
 test('same-file aliases that differ only by the T prefix generate two separate models', async () => {
   const { root } = await trustedProject();
-  const built = await import(path.toNamespacedPath(path.join(root, 'build/payment.model.generated.js'))) as Record<string, unknown>;
+  const built = await importGeneratedModule(root, 'the payment companion', 'build/payment.model.generated.js');
   assert.deepEqual(Object.keys(built).filter((name) => name.endsWith('BaseModel')).sort(), ['PaymentBaseModel', 'TPaymentBaseModel']);
   // The codec ids are core's own record, which no job's inventory lists.
   const keys = fs.readFileSync(path.join(root, '.golem/codec-keys.json'), 'utf8');
@@ -151,7 +151,7 @@ test('public generation compiles and executes conversion and rest tuple behavior
 test('re-exported IModel and IObject symbols preserve class versus plain-object generation', async () => {
   const { root, sourceRoot } = await trustedProject();
   const sourceFile = path.join(sourceRoot, 'provenance.model.ts');
-  const built = await import(path.toNamespacedPath(path.join(root, 'build/provenance.model.generated.js'))) as Record<string, unknown>;
+  const built = await importGeneratedModule(root, 'the provenance companion', 'build/provenance.model.generated.js');
   assert.deepEqual(Object.keys(built).filter((name) => name.endsWith('BaseModel')), ['TProvenanceBaseModel'], 'only the IModel alias gets a class');
   {
     using program = ts.createProgramFromSources({ root, sources: [sourceFile] });
@@ -160,12 +160,9 @@ test('re-exported IModel and IObject symbols preserve class versus plain-object 
     for (const alias of aliases) assert.equal(isModelDeclarationReference(program.getTypeChecker(), alias.type), true);
   }
 
-  const loaded = await import(pathToFileURL(path.join(root, 'build/provenance.model.js')).href) as {
-    readonly Provenance: new (values?: object) => object;
-    readonly model: object;
-    readonly plain: object;
-  };
-  assert.ok(loaded.model instanceof loaded.Provenance);
+  const loaded = await importGeneratedModule(root, 'the provenance module', 'build/provenance.model.js');
+  const { Provenance } = await loadModelClasses(path.join(root, 'build/provenance.model.js'), ['Provenance']);
+  assert.ok(loaded.model instanceof Provenance);
   assert.equal(Object.getPrototypeOf(loaded.plain), Object.prototype);
   assert.deepEqual(loaded.plain, { label: 'plain' });
 });
@@ -187,11 +184,12 @@ export type TA = IModel<{ title: string }>;
   await buildModelProject(root);
   // The inventory a release before this change wrote: it owns models.generated.ts beside the validators.
   const inventoryFile = path.join(root, '.golem/outputs.json');
-  const inventory = JSON.parse(fs.readFileSync(inventoryFile, 'utf8')) as { files: Record<string, unknown> };
-  const validatorsKey = Object.keys(inventory.files).find((key) => key.endsWith('models.validators.generated.ts')) ?? '';
+  const inventory = requireRecord(JSON.parse(fs.readFileSync(inventoryFile, 'utf8')), 'the output inventory');
+  const files = requireRecord(inventory.files, 'the inventory files');
+  const validatorsKey = Object.keys(files).find((key) => key.endsWith('models.validators.generated.ts')) ?? '';
   assert.notEqual(validatorsKey, '');
   const oldKey = validatorsKey.replace('models.validators.generated.ts', 'models.generated.ts');
-  inventory.files[oldKey] = inventory.files[validatorsKey];
+  files[oldKey] = files[validatorsKey];
   fs.writeFileSync(inventoryFile, `${JSON.stringify(inventory, null, 2)}\n`);
   const oldFile = path.join(root, oldKey);
   // A new release also runs its jobs again: the job cache of the old release does not apply.
