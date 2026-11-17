@@ -1,15 +1,12 @@
-import { generatorSettings } from './mobx-extension.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { mock } from 'node:test';
-import { generate as generateControllers } from '#ts-openapi/generator';
-import { generate as generateModels } from '#model/generator';
 import { runBuild } from '#golem/build';
+import { codecKeysPath } from '#golem/generated-paths';
 import { applyRewrites } from '#golem/rewrite';
 import { scanProject } from '#golem/rewrite-scan';
 import { typescriptVersion } from '#golem/typescript-ns';
 import type { GolemDiagnostic } from '#golem/generator-api';
-import { writeGeneratedArtifacts } from '../fixture-project.js';
 import { NEST_PARTICIPANTS } from '../fixture-templates/controllers/project.js';
 import { editProjectSources } from './node-specifiers-project.js';
 import { BUILD_LOG, BUILT, caseFolder, DIAGNOSTICS, GENERATED, isBuilt, REWRITTEN, type IdentityProject } from './identity-corpus.js';
@@ -25,27 +22,6 @@ function describeDiagnostic(stage: string, diagnostic: GolemDiagnostic): string 
  */
 function describeError(stage: string, error: unknown): string {
   return `${stage} error: ${error instanceof Error ? error.message : String(error)}`;
-}
-
-/** The generator's files, or undefined when it rejected the project. */
-async function generateStage(item: IdentityProject, lines: string[]): Promise<readonly { readonly path: string; readonly content: string }[] | undefined> {
-  try {
-    const result = item.kind === 'model'
-      ? generateModels({ root: item.root, ...generatorSettings({ mobx: item.mobx, validation: true }) })
-      : await generateControllers({
-        root: item.root,
-        output: path.join(item.root, 'openapi.json'),
-        info: { title: 'Catalog', version: '1' },
-        globalPrefix: 'api',
-        uriVersioning: { type: 'URI', prefix: 'v' },
-        profile: { validation: false },
-      });
-    for (const diagnostic of result.diagnostics ?? []) lines.push(describeDiagnostic('generate', diagnostic));
-    return result.artifacts;
-  } catch (error) {
-    lines.push(describeError('generate', error));
-    return undefined;
-  }
 }
 
 /** The text the rewrite scan makes of each edited source file of the project, keyed by path relative to the root. */
@@ -96,12 +72,21 @@ function projectFiles(root: string): Map<string, Buffer> {
   return files;
 }
 
+/** The files a golem.yaml's jobs generated, by path relative to the root: those of the outputs record, and the codec keys that the models job writes beside it. */
+function generatedFiles(root: string): ReadonlySet<string> {
+  const record = path.join(root, '.golem/outputs.json');
+  const recorded = fs.existsSync(record) ? Object.keys((JSON.parse(fs.readFileSync(record, 'utf8')) as { readonly files: Readonly<Record<string, unknown>> }).files) : [];
+  const keys = codecKeysPath(root);
+  return new Set([...recorded, ...(fs.existsSync(keys) ? [path.relative(root, keys)] : [])].map(file => path.relative(root, path.resolve(root, file))));
+}
+
 /**
- * `golem build` on the project, run in this process with the project as the working directory: its exit code (or the error it ended in) and
- * what it printed go to the build log, and each file it wrote or changed in the project goes under `built/`. The generate stage already wrote
- * the generated files, so a file that the build generated differently shows here too.
+ * `golem build` on the project, run in this process with the project as the working directory, and the one generation of its jobs: the
+ * files they generated go under `generated/`, each other file the build wrote or changed in the project under `built/`, and the exit code
+ * and what the build printed to the build log. A build that throws, as one does for a project that its jobs or the rewrite scan reject, gives a
+ * line of the diagnostics. Returns whether the jobs generated any file: a project they rejected has nothing to rewrite.
  */
-async function buildStage(item: IdentityProject, folder: string): Promise<void> {
+async function buildStage(item: IdentityProject, folder: string, lines: string[]): Promise<boolean> {
   const before = projectFiles(item.root);
   const printed: string[] = [];
   const capture = (chunk: string | Uint8Array): boolean => { printed.push(Buffer.from(chunk).toString()); return true; };
@@ -113,15 +98,19 @@ async function buildStage(item: IdentityProject, folder: string): Promise<void> 
   try {
     status = `exit ${(await runBuild({ watch: false, config: path.join(item.root, 'golem.yaml') })).exitCode}`;
   } catch (error) {
-    status = describeError('build', error);
+    status = 'threw';
+    lines.push(describeError('build', error));
   } finally {
     mock.restoreAll();
     process.chdir(outside);
   }
   write(path.join(folder, BUILD_LOG), `${status}\n${printed.join('')}`.replaceAll(item.root, '<root>'));
+  const generated = generatedFiles(item.root);
+  for (const relative of generated) write(path.join(folder, GENERATED, relative), fs.readFileSync(path.join(item.root, relative)));
   for (const [relative, content] of projectFiles(item.root)) {
-    if (!before.get(relative)?.equals(content)) write(path.join(folder, BUILT, relative), content);
+    if (!generated.has(relative) && !before.get(relative)?.equals(content)) write(path.join(folder, BUILT, relative), content);
   }
+  return generated.size > 0;
 }
 
 function write(filename: string, content: string | Buffer): void {
@@ -133,17 +122,12 @@ async function run(projects: readonly IdentityProject[], outputDirectory: string
   for (const item of projects) {
     begin(item.name);
     const lines: string[] = [];
-    // A rewrite case's companions are fixtures; the other cases write their generated files into the project, where the scan reads them.
-    const artifacts = item.kind === 'rewrite' || item.kind === 'specifiers' ? [] : await generateStage(item, lines);
     const folder = path.join(outputDirectory, caseFolder(item.name));
-    // A rejected generation leaves nothing to rewrite.
-    if (artifacts) {
-      writeGeneratedArtifacts(artifacts);
-      for (const artifact of artifacts) write(path.join(folder, GENERATED, path.relative(item.root, artifact.path)), artifact.content);
+    // A rewrite case's companions are fixtures; the other cases generate in the build, which writes them into the project, where the scan reads them.
+    if (!isBuilt(item) || await buildStage(item, folder, lines)) {
       for (const [relative, text] of item.kind === 'specifiers' ? specifierStage(item, lines) : rewriteStage(item, lines)) write(path.join(folder, REWRITTEN, relative), text);
     }
     write(path.join(folder, DIAGNOSTICS), lines.map(line => `${line.replaceAll(item.root, '<root>')}\n`).join(''));
-    if (isBuilt(item)) await buildStage(item, folder);
   }
 }
 

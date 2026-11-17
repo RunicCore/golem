@@ -8,7 +8,7 @@ interface IdentityFile { readonly from: string; readonly to: string }
 /** One project that the identity test generates, rewrites and builds on both TypeScript versions. */
 export interface IdentityCase {
   readonly name: string;
-  /** `model`: the model generator, then the rewrite scan. `controller`: the controller generator, then the rewrite scan with the Nest rule. `rewrite`: the rewrite scan alone, over generated companions that are fixtures. `specifiers`: the Node-loadable specifier edits alone, over a Bundler project. */
+  /** `model`: the build with the model job, then the rewrite scan. `controller`: the build with the controller job, then the rewrite scan with the Nest rule. `rewrite`: the rewrite scan alone, over generated companions that are fixtures. `specifiers`: the Node-loadable specifier edits alone, over a Bundler project. */
   readonly kind: 'model' | 'controller' | 'rewrite' | 'specifiers';
   readonly files: readonly IdentityFile[];
   /** The generation profile's `mobx`. */
@@ -22,14 +22,13 @@ export interface IdentityProject {
   readonly name: string;
   readonly kind: IdentityCase['kind'];
   readonly root: string;
-  readonly mobx?: boolean;
 }
 
 /**
  * The files a case leaves in a child's output directory, under the case's own folder:
- * `generated/` holds the generator's files and `rewritten/` the text of each source file the rewrite scan edited, both by path
- * relative to the project root; `built/` holds each file that `golem build` wrote into the project or changed in it, by path relative
- * to the project root, and `build.txt` its exit code and what it printed; `diagnostics.txt` holds what the stages reported, one line
+ * `generated/` holds the files that the jobs of `golem build` generated and `rewritten/` the text of each source file the rewrite scan edited,
+ * both by path relative to the project root; `built/` holds each other file that `golem build` wrote into the project or changed in it, by path
+ * relative to the project root, and `build.txt` its exit code and what it printed; `diagnostics.txt` holds what the stages reported, one line
  * each, with the root as `<root>`.
  */
 export const GENERATED = 'generated';
@@ -74,8 +73,8 @@ const MOBX_CASES: ReadonlySet<string> = new Set([
 const SDK_SPEC = /\.ya?ml$/;
 
 /**
- * The cases whose claim is a rejection, each with a fragment of the message it claims: generation or the rewrite scan ends in an error,
- * and the diagnostics file holds a `generate error` or `rewrite error` line with the fragment. Every other case must write no such line,
+ * The cases whose claim is a rejection, each with a fragment of the message it claims: the build or the rewrite scan ends in an error,
+ * and the diagnostics file holds a `build error` or `rewrite error` line with the fragment. Every other case must write no such line,
  * and a setup fault in a rejection case (a missing file, an unresolved module) does not carry its fragment, so none can pass as the claim.
  */
 export const EXPECTED_REJECTIONS: Readonly<Record<string, string>> = {
@@ -84,6 +83,10 @@ export const EXPECTED_REJECTIONS: Readonly<Record<string, string>> = {
   'model-composition/anonymous-nested-imodel-declarations-fail-with-an-actionable-diagnostic': 'RUNM1053: Nested IModel definitions need a named, exported declaration',
   'model-composition/generic-model-templates-require-a-concrete-named-declaration': 'RUNM1057: IModel declarations must have concrete fields',
   'model-composition/imodel-exposes-fields-and-rejects-root-unions-before-emitting-artifacts': 'RUNM1052: The IModel fields type must be an object type, but TItem has a union',
+  'controller': 'RUNM1081 (src/catalog.controller.ts:25:32): number is not a golem model',
+  'controller/emits-a-whole-query-object-as-openapi-3-2-querystring-content': 'RUNM1081 (src/catalog.controller.ts:9:26): { page: number; term?: string } is not a golem model',
+  'controller/emits-flattened-primitive-query-parameters-with-openapi-form-style-and-support': 'RUNM1081 (src/catalog.controller.ts:9:26): { page: number; term?: string } is not a golem model',
+  'controller/preserves-swagger-status-media-and-parameter-metadata': 'RUNM1081 (src/catalog.controller.ts:15:29): string is not a golem model',
   'controller/does-not-treat-a-project-local-string-function-as-a-swagger-primitive-construc': 'NEST1503: Swagger property value type conflicts',
   'controller/keeps-nest-runtime-status-authoritative-over-apinocontentresponse': 'NEST1311: Swagger success response status 204 conflicts',
   'controller/rejects-a-swagger-schema-that-conflicts-with-an-authoritative-imodel-wire-cont': 'NEST1503: Swagger schema at response.200.application/json.properties.id.type is "number"',

@@ -38,7 +38,7 @@ interface IdentityRun {
   readonly six: readonly ShardRun[];
 }
 
-/** The golem.yaml of a controller case: the settings of the controller generator that the child calls (the document, its prefix and versioning, the NestJS rewrite), and the models job. */
+/** The golem.yaml of a controller case: the document and its prefix and versioning, the NestJS rewrite, and the models job. */
 const CONTROLLER_GOLEM_YAML = `version: 1
 validation: false
 model: {}
@@ -60,14 +60,14 @@ async function createProject(t: FixtureScope, item: IdentityCase, label: string)
     const files = { 'golem.yaml': CONTROLLER_GOLEM_YAML, ...Object.fromEntries(item.files.map(file => [file.to, readFixture(file.from)])) };
     // `golem build` emits into an outDir, which the controller fixture's default tsconfig has none of.
     const tsconfig = { ...defaultTsconfig, compilerOptions: { ...defaultTsconfig.compilerOptions, outDir: 'build', rootDir: 'src' } };
-    return { name: item.name, kind: item.kind, mobx: item.mobx, root: createControllerFixture(t, { prefix, files, tsconfig }) };
+    return { name: item.name, kind: item.kind, root: createControllerFixture(t, { prefix, files, tsconfig }) };
   }
   if (item.kind === 'specifiers') {
     // The jsx option makes the .tsx edge case spell its emitted extension, which the two versions must number alike.
     const root = createNodeSpecifierProject(t, { prefix, compilerOptions: { jsx: 'preserve' } });
     for (const file of item.files) copyFixtureFile(root, file.from, file.to);
     writeModelGolemYaml(root, { mobx: item.mobx === true, validation: true });
-    return { name: item.name, kind: item.kind, mobx: item.mobx, root };
+    return { name: item.name, kind: item.kind, root };
   }
   const { root } = createModelProject(t, { prefix, name: `identity-${slug}`, linkTypescript: item.kind === 'rewrite' });
   for (const file of item.files) copyFixtureFile(root, file.from, file.to);
@@ -80,7 +80,7 @@ async function createProject(t: FixtureScope, item: IdentityCase, label: string)
       ...generatorSettings({ mobx: item.mobx, validation: true }),
     })).artifacts);
   }
-  return { name: item.name, kind: item.kind, mobx: item.mobx, root };
+  return { name: item.name, kind: item.kind, root };
 }
 
 function readTree(directory: string): Map<string, string> {
@@ -131,9 +131,9 @@ function filesOfCase(shards: readonly ShardRun[], version: string, name: string)
   return new Map([...shard.artifacts].filter(([file]) => file.startsWith(folder)).map(([file, content]) => [file.slice(folder.length), content]));
 }
 
-/** The lines of a diagnostics file where a stage ended in an error, rather than reporting a diagnostic. */
+/** The lines of a diagnostics file where a stage ended in an error, rather than reporting a diagnostic. An error message can run over more lines, and the claim of a rejection can sit in any of them. */
 function rejectionLines(diagnostics: string | undefined): string[] {
-  return (diagnostics ?? '').split('\n').filter(line => /^(?:generate|rewrite) error: /.test(line));
+  return (diagnostics ?? '').split('\n').filter(line => /^(?:build|rewrite) error: /.test(line));
 }
 
 /** The first line where the two texts differ, with two lines before it; a file that one version did not write shows as missing. */
@@ -238,11 +238,11 @@ if (!typescript6Root) {
       const claimed = EXPECTED_REJECTIONS[item.name];
       for (const [version, files] of [['7', sevenFiles], ['6', sixFiles]] as const) {
         const lines = rejectionLines(files.get(DIAGNOSTICS));
-        const matches = claimed === undefined ? lines.length === 0 : lines.some(line => line.includes(claimed));
+        const matches = claimed === undefined ? lines.length === 0 : lines.length > 0 && (files.get(DIAGNOSTICS) ?? '').includes(claimed);
         assert.ok(matches, `${item.name} ${claimed === undefined ? 'ended in an error' : `did not end in the error "${claimed}"`} on TypeScript ${version}:\n${files.get(DIAGNOSTICS)}`);
         // A build that stopped before it read the project (no golem.yaml, no outDir) would leave the comparison below with two equal setup errors: it must emit JavaScript or report a diagnostic of the compiler or of golem.
         const emitted = [...files.keys()].some(file => file.startsWith(`${BUILT}${path.sep}`) && file.endsWith('.js'));
-        assert.ok(!isBuilt(item) || emitted || /\b(?:TS|RUNM|NEST)\d+\b/.test(files.get(BUILD_LOG) ?? ''), `${item.name} built no JavaScript and reported no diagnostic on TypeScript ${version}:\n${files.get(BUILD_LOG)}`);
+        assert.ok(!isBuilt(item) || emitted || /\b(?:TS|RUNM|NEST)\d+\b/.test(`${files.get(DIAGNOSTICS)}${files.get(BUILD_LOG)}`), `${item.name} built no JavaScript and reported no diagnostic on TypeScript ${version}:\n${files.get(DIAGNOSTICS)}${files.get(BUILD_LOG)}`);
       }
       const difference = describeDifference(item.name, sevenFiles, sixFiles);
       assert.ok(difference === '', difference);
