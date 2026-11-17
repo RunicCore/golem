@@ -11,7 +11,8 @@ import { taggedModelSource } from './fixture-templates/models/model-tags.js';
 import { joinSource, tsSource, type SourceFragment } from './source-template.js';
 import { generate } from '#model/generator';
 import { modelCodec } from './support/model-codec.js';
-import { importGeneratedModule, loadModelClasses, requireRecord } from './openapi/helpers.js';
+import { importGeneratedModule, loadModelClasses } from './openapi/helpers.js';
+import { valueAt } from './support/json.js';
 
 test('tag bindings are AST-provenanced, alias-deduplicated, and relocation-stable', async t => {
   const build = (sourceRoot: string): void => {
@@ -233,7 +234,7 @@ type Dictionary = { [key: string]: string };`,
     const { Parent } = await loadModelClasses(built('generic-aliases', 'parent.model.js'), ['Parent']);
     const { Child } = await loadModelClasses(built('generic-aliases', 'child.model.js'), ['Child']);
     const parent = modelCodec(Parent).fromWireFormat({ child: { value: { name: 'nested' } } });
-    assert.ok(requireRecord(parent.child, 'the child').value instanceof Child, 'generic nested model is constructed as the concrete local class');
+    assert.ok(valueAt(parent, 'child', 'value') instanceof Child, 'generic nested model is constructed as the concrete local class');
     assert.deepEqual(modelCodec(parent).toWireFormat(parent), { child: { value: { name: 'nested' } } });
   });
 
@@ -276,7 +277,7 @@ type Dictionary = { [key: string]: string };`,
   await t.test('recursive local IModel aliases remain concrete nested references', async () => {
     const { Node } = await loadModelClasses(built('recursive-alias', 'node.model.js'), ['Node']);
     const node = modelCodec(Node).fromWireFormat({ name: 'root', children: [{ name: 'leaf' }] });
-    assert.ok(Array.isArray(node.children) && node.children[0] instanceof Node);
+    assert.ok(valueAt(node, 'children', 0) instanceof Node);
     assert.deepEqual(modelCodec(node).toWireFormat(node), { name: 'root', children: [{ name: 'leaf' }] });
   });
 });
@@ -872,7 +873,7 @@ for (const item of [
     await buildModelProjectWith(root, { validation: true });
     const { A } = await loadModelClasses(path.join(root, 'build/a.model.js'), ['A']);
     const model = modelCodec(A).fromWireFormat(item.wire);
-    assert.equal(model.when instanceof Date, item.isDate);
+    assert.equal(valueAt(model, 'when') instanceof Date, item.isDate);
     assert.deepEqual(modelCodec(model).toWireFormat(model), item.wire);
   });
 }

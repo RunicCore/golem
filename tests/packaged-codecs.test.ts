@@ -12,6 +12,7 @@ import { COUNT_DIST_FILES, writeCodecPackage } from './fixture-templates/models/
 import { tsSource } from './source-template.js';
 import { generate } from '#model/generator';
 import { modelCodec } from './support/model-codec.js';
+import { valueAt } from './support/json.js';
 import { loadFunctions, loadModelClasses } from './openapi/helpers.js';
 
 function project(t: TestContext, packages: Record<string, string> = {}, options: { readonly rootDir?: string } = {}) {
@@ -40,7 +41,7 @@ async function roundTrip(root: string): Promise<void> {
   assert.ok(importsOf(generated).includes('@fixture/pg/codecs'), 'the model imports the codecs by their package specifier');
   const { A } = await loadModelClasses(path.join(root, 'build/a.model.js'), ['A']);
   const decoded = modelCodec(A).fromWireFormat({ count: '42', name: 'abcd' });
-  assert.equal(decoded.count, 42);
+  assert.equal(valueAt(decoded, 'count'), 42);
   assert.deepEqual(modelCodec(decoded).toWireFormat(decoded), { count: '42', name: 'abcd' });
 }
 
@@ -102,7 +103,7 @@ export class A extends TABaseModel { constructor(values: Partial<TAFields> = {})
 
   const { A } = await loadModelClasses(path.join(root, 'build', path.basename(root), 'src/a.model.js'), ['A']);
   const decoded = modelCodec(A).fromWireFormat({ count: '42' });
-  assert.equal(decoded.count, 42);
+  assert.equal(valueAt(decoded, 'count'), 42);
   assert.deepEqual(modelCodec(decoded).toWireFormat(decoded), { count: '42' });
   assert.deepEqual(fs.readdirSync(shared).sort(), ['codecs.ts', 'node_modules', 'package.json']);
 });
