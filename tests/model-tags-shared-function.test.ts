@@ -144,13 +144,19 @@ test('a serializer and a deserializer that copy the type of another pair are nev
 // so the field binds the function that it writes; a module that holds a tag is read, so a function that the tag names is never dropped.
 const heldIn = 'declare function tagged(): string & TValidation<typeof a>;\nclass Holder { held = tagged(); }\n';
 const neutral = (kind: string) => `type Neutral = unknown extends (${kind}) ? unknown : unknown;\n`;
-const taggedModule = "import type { TValidation } from '@exprtlabs/golem/tags';\nimport { a } from './rules.js';\nexport const w: string & TValidation<typeof a> = '';";
+const taggedImports = "import type { TValidation } from '@exprtlabs/golem/tags';\nimport { a } from './rules.js';\n";
+const taggedModule = `${taggedImports}export const w: string & TValidation<typeof a> = '';`;
+const nestedModule = `${taggedImports}export namespace N { export const w: string & TValidation<typeof a> = ''; }`;
 const kindRows = {
   'an enum member': { declarations: `enum Color { Red, Blue }\n${neutral('Color.Red')}`, files: {} },
   'a namespace that an interface merges with': { declarations: `interface Shape { n: number }\nnamespace Shape { export const k: number = 1; }\n${neutral('Shape')}`, files: {} },
   'a namespace that an enum merges with': { declarations: `enum Mode { A }\nnamespace Mode { export const k: number = 1; }\n${neutral('Mode')}`, files: {} },
   'a namespace import of a module that holds no tag': { declarations: `import * as ns from './plain.js';\n${neutral('typeof ns')}`, files: { 'plain.ts': "export const k: string = '';\nexport type OnlyType = { z: 1 };" } },
   'an import type with no qualifier': { declarations: neutral("typeof import('./plain.js')"), files: { 'plain.ts': "export const k: string = '';" } },
+  'a nested namespace and a namespace export that hold no tag': {
+    declarations: `import * as plainNested from './plain-nested.js';\n${neutral('typeof plainNested')}`,
+    files: { 'plain-nested.ts': "export namespace N { export const k: string = ''; }\nexport * as sub from './plain-inner.js';", 'plain-inner.ts': "export const k: string = '';" },
+  },
   'an import type of a module that writes export =': { declarations: neutral("import('./single.js')"), files: { 'single.ts': 'class Single { n: number = 0 }\nexport = Single;' } },
 } as const;
 
@@ -160,12 +166,15 @@ for (const [name, row] of Object.entries(kindRows)) test(`a field that the walk 
 });
 
 const moduleRows = {
-  'a namespace import': { declarations: "import * as tagged from './tagged.js';\n" + neutral('typeof tagged') },
-  'an import type with no qualifier': { declarations: neutral("typeof import('./tagged.js')") },
+  'a namespace import': { declarations: "import * as tagged from './tagged.js';\n" + neutral('typeof tagged'), files: { 'tagged.ts': taggedModule } },
+  'an import type with no qualifier': { declarations: neutral("typeof import('./tagged.js')"), files: { 'tagged.ts': taggedModule } },
+  'a namespace that the module exports': { declarations: "import * as tagged from './tagged.js';\n" + neutral('typeof tagged'), files: { 'tagged.ts': nestedModule } },
+  'an import type over a namespace that the module exports': { declarations: neutral("typeof import('./tagged.js')"), files: { 'tagged.ts': nestedModule } },
+  'a module that `export * as` names': { declarations: "import * as tagged from './tagged.js';\n" + neutral('typeof tagged'), files: { 'tagged.ts': "export * as sub from './inner.js';", 'inner.ts': taggedModule } },
 } as const;
 
 for (const [name, row] of Object.entries(moduleRows)) test(`a tag that a module holds is read through ${name} and shares its type with the function of the field`, t => {
-  // protects: T-1069 the walk must read the exports of a module that `typeof` names, so the tag `a` in it is seen and the field is refused for the shared type, never bound to `b` alone
-  const outcome = generateField(t, { rules: validators.copied, declarations: row.declarations, field: `string${beside} & Neutral`, files: { 'tagged.ts': taggedModule } }, ['a', 'b', 'c']);
+  // protects: T-1069 the walk must read the exports of a module that `typeof` names, nested namespaces and `export * as` included, so the tag `a` in it is seen and the field is refused for the shared type, never bound to `b` alone
+  const outcome = generateField(t, { rules: validators.copied, declarations: row.declarations, field: `string${beside} & Neutral`, files: row.files }, ['a', 'b', 'c']);
   assert.match('refused' in outcome ? outcome.refused : `bound ${outcome.bound}`, /shares its type with another function/);
 });

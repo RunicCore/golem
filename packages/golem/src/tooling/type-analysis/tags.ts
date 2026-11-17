@@ -561,12 +561,10 @@ const INFERRED = 'whose type golem infers';
 
 /**
  * Whether `node` holds no other node that can hold a tag: a name, a literal, a keyword type such as `string`, an enum member (`Color.Red`), or a class
- * static block, which carries no type. A namespace body and a module file hold none that a type or a `typeof` reaches by the node: the members
- * of a merged namespace are no part of the type, and `reachExportsOf` reads the exported values that a `typeof` or an import type names.
+ * static block, which carries no type.
  */
 function holdsNothing(node: ts.Node): boolean {
   return ts.isIdentifier(node) || ts.isLiteralTypeNode(node) || ts.isTemplateLiteralTypeNode(node) || ts.isEnumDeclaration(node) || ts.isEnumMember(node) || ts.isClassStaticBlockDeclaration(node)
-    || ts.isModuleDeclaration(node) || ts.isSourceFile(node)
     || (ts.isTypeNode(node) && ts.forEachChild(node, () => true) === undefined);
 }
 
@@ -594,6 +592,7 @@ function reach(context: TagAnalysisContext, walk: Walk, node: ts.Node): void {
     }
   };
   // The exported values of a module or a namespace: what `typeof ns` and `typeof import('...')` name. An export that is only a type holds no value of it.
+  // An export that is a namespace or a module (`export * as sub`) is read at its own declaration, which comes back here.
   const reachExportsOf = (symbol: ts.Symbol | undefined): void => {
     if (!symbol || (symbol.flags & ts.SymbolFlags.Module) === 0) return;
     for (const exported of checker.getExportsOfModule(symbol)) {
@@ -641,6 +640,10 @@ function reach(context: TagAnalysisContext, walk: Walk, node: ts.Node): void {
       reachDeclarationsOf(symbol);
       nextAll(reference.typeArguments);
     }
+  } else if (ts.isModuleDeclaration(node)) {
+    reachExportsOf(checker.getSymbolAtLocation(node.name));
+  } else if (ts.isSourceFile(node)) {
+    reachExportsOf(checker.getSymbolAtLocation(node));
   } else if (ts.isImportTypeNode(node)) {
     // An import type with no qualifier (the qualified one is `reference`): `typeof import('...')` is the module, and `import('...')` of a module that writes `export =` is the type that it exports.
     const target = checker.getTypeFromTypeNode(node).getSymbol();
