@@ -36,7 +36,7 @@ async function validatedModel(
   enhanceValidator?: GeneratedModelValidatorEnhancer,
 ): Promise<void> {
   await installCodecModel({
-    constructor: constructor as never,
+    constructor,
     name,
     fields,
     definitions,
