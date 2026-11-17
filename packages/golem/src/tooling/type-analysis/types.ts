@@ -42,6 +42,7 @@ import {
   type TagMetadata,
   type ValidationBinding,
   sourceLocation,
+  taggedTemplateHole,
 } from './tags.js';
 
 export type { ModelConversionDescriptor, TupleConversionDescriptor } from '../model-source-emitter.js';
@@ -536,6 +537,11 @@ function escapedKeyText(text: string): string {
   return text.replace(/[\\^$.*+?()[\]{}|/]/g, '\\$&');
 }
 
+/** Whether `type` is a template literal type (`id_${string}`), which holds its holes in `types`. */
+function isTemplateLiteralType(type: ts.Type): type is ts.TemplateLiteralType {
+  return (type.flags & ts.TypeFlags.TemplateLiteral) !== 0;
+}
+
 /** The expression for one template literal key type (`id_${string}`), or undefined for a shape it cannot state exactly: only `string` holes can. */
 function templateKeyExpression(type: ts.TemplateLiteralType): string | undefined {
   if (!type.types.every((hole) => (hole.flags & ts.TypeFlags.String) !== 0)) return undefined;
@@ -557,7 +563,7 @@ function indexKeyPattern(checker: ts.TypeChecker, type: ts.Type, declaredNames: 
     if ((keyType.flags & ts.TypeFlags.String) !== 0) return undefined;
     if ((keyType.flags & ts.TypeFlags.Number) !== 0) numbered = true;
     if ((keyType.flags & ts.TypeFlags.StringLike) === 0) continue;
-    const expression = (keyType.flags & ts.TypeFlags.TemplateLiteral) !== 0 ? templateKeyExpression(keyType as ts.TemplateLiteralType) : undefined;
+    const expression = isTemplateLiteralType(keyType) ? templateKeyExpression(keyType) : undefined;
     if (expression === undefined) return null;
     expressions.push(expression);
   }
@@ -1036,7 +1042,13 @@ function describeScalar(scope: DescribeScope, call: DescribeCall): ModelConversi
   if (type.flags & ts.TypeFlags.Undefined) return withMetadata({ kind: 'undefined' }, metadata);
   const literal = literalTypeValue(checker, type);
   if (literal !== undefined) return withMetadata({ kind: 'literal', value: literal }, metadata);
-  if (type.flags & ts.TypeFlags.TemplateLiteral) return withMetadata({ kind: 'string' }, metadata);
+  if (isTemplateLiteralType(type)) {
+    if (taggedTemplateHole(call.tagContext, type)) {
+      const at = node ?? call.provenanceNode ?? context.declaration;
+      throw diagnostic(context.sourceFile, at, '1045', `A tag inside the template literal type ${checker.typeToString(type)} checks no value: a tag applies to the field, and a hole is a part of its value. Intersect the tag with the field's type, as in \`id-\${string}\` & <tag>.`);
+    }
+    return withMetadata({ kind: 'string' }, metadata);
+  }
   return undefined;
 }
 
@@ -1374,7 +1386,7 @@ function describeObject(scope: DescribeScope, call: DescribeCall, seen: Readonly
   // Two value types are one when each is assignable to the other: `{ x: number }` written twice is two type objects.
   // A plain `string` signature beside a template one also describes the template's keys, so its value type joins the comparison.
   const templateValueTypes = checker.getIndexInfosOfType(type)
-    .filter(({ keyType }) => (keyType.flags & ts.TypeFlags.TemplateLiteral) !== 0).map(({ valueType }) => valueType);
+    .filter(({ keyType }) => isTemplateLiteralType(keyType)).map(({ valueType }) => valueType);
   if (templateValueTypes.length > 0 && indexType) templateValueTypes.push(indexType);
   const [firstValueType] = templateValueTypes;
   if (firstValueType !== undefined && templateValueTypes.some((valueType) => !checker.isTypeAssignableTo(valueType, firstValueType) || !checker.isTypeAssignableTo(firstValueType, valueType))) {

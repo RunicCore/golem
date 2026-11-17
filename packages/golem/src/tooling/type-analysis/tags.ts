@@ -569,7 +569,7 @@ const INFERRED = 'whose type golem infers';
  * static block, which carries no type.
  */
 function holdsNothing(node: ts.Node): boolean {
-  return ts.isIdentifier(node) || ts.isLiteralTypeNode(node) || ts.isTemplateLiteralTypeNode(node) || ts.isEnumDeclaration(node) || ts.isEnumMember(node) || ts.isClassStaticBlockDeclaration(node)
+  return ts.isIdentifier(node) || ts.isLiteralTypeNode(node) || ts.isEnumDeclaration(node) || ts.isEnumMember(node) || ts.isClassStaticBlockDeclaration(node)
     || (ts.isTypeNode(node) && ts.forEachChild(node, () => true) === undefined);
 }
 
@@ -615,6 +615,8 @@ function reach(context: TagAnalysisContext, walk: Walk, node: ts.Node): void {
     nextAll(node.types);
   } else if (ts.isArrayTypeNode(node)) {
     next(node.elementType);
+  } else if (ts.isTemplateLiteralTypeNode(node)) {
+    nextAll(node.templateSpans.map(span => span.type));
   } else if (ts.isTupleTypeNode(node)) {
     nextAll(node.elements);
   } else if (ts.isConditionalTypeNode(node)) {
@@ -1233,6 +1235,11 @@ function metadataFromType(
     );
   }
   return EMPTY;
+}
+
+/** The first hole of a template literal type that carries a golem tag (`id-${string & MinLength<3>}`), or none. A tag checks a model value, and a hole is a part of one. */
+export function taggedTemplateHole(context: TagAnalysisContext, type: ts.TemplateLiteralType): ts.Type | undefined {
+  return type.types.find((hole) => hasTagMetadata(metadataFromType(context, hole)));
 }
 
 /** Whether a type node is a reference to the `Discriminator` tag, by the tag the symbol resolves to (the importer's name for it does not matter). */
