@@ -2,7 +2,7 @@ import 'temporal-polyfill/global';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
-import { importGeneratedModule, requireRecord, type GeneratedClientInstance } from './helpers.js';
+import { importGeneratedModule, isAsyncIterable, requireRecord, type GeneratedClientInstance } from './helpers.js';
 import { loadSdk } from './sdk-client-fixture.js';
 
 // The client converts what it carries (R-80): bodies and stream items arrive and leave in their plain form.
@@ -37,17 +37,9 @@ const DOCUMENT = {
 
 interface Fetched { readonly body: unknown }
 
-/** The response bodies that these tests read. A date field is `unknown`: `dates` makes it a Date or a Temporal value, and the test narrows it. */
-interface EventBodies {
-  createEvent: { at: unknown; day: unknown };
-  echoInline: { when: unknown };
-  echoComposed: { at: unknown; note: unknown };
-  streamEvents: AsyncIterable<{ at: unknown }>;
-}
-
 /** Generates the SDK with `dates` and returns a client whose fetch answers `reply` and records the body each request sends, and the folder of the SDK. */
-async function loadClient(t: Parameters<typeof loadSdk>[0], dates: 'date' | 'temporal', reply: () => Response, sent: Fetched[], validation = true): Promise<{ readonly client: GeneratedClientInstance<EventBodies>; readonly output: string }> {
-  const sdk = await loadSdk<EventBodies>(t, `golem-openapi-client-conversion-${dates}-`, { document: DOCUMENT, name: 'Events', dates, validation });
+async function loadClient(t: Parameters<typeof loadSdk>[0], dates: 'date' | 'temporal', reply: () => Response, sent: Fetched[], validation = true): Promise<{ readonly client: GeneratedClientInstance; readonly output: string }> {
+  const sdk = await loadSdk(t, `golem-openapi-client-conversion-${dates}-`, { document: DOCUMENT, name: 'Events', dates, validation });
   const client = sdk.createClient({
     fetchImpl: async (_url: RequestInfo | URL, init?: RequestInit) => {
       sent.push({ body: typeof init?.body === 'string' && new Headers(init.headers).get('content-type') === 'application/json' ? JSON.parse(init.body) : init?.body });
@@ -65,9 +57,10 @@ test('the client returns Date values for a response body and sends them as wire 
   const { client } = await loadClient(t, 'date', () => Response.json(WIRE_EVENT, { status: 201 }), sent);
   const response = await client.createEvent().execute({ body: { at: new Date('2025-01-02T03:04:05Z'), day: '2025-01-02' } });
   assert.deepEqual(sent, [{ body: { at: '2025-01-02T03:04:05.000Z', day: '2025-01-02' } }]);
-  assert.ok(response.body.at instanceof Date);
-  assert.equal(response.body.at.toISOString(), '2025-01-02T03:04:05.000Z');
-  assert.equal(response.body.day, '2025-01-02');
+  const body = requireRecord(response.body, 'event body');
+  assert.ok(body.at instanceof Date);
+  assert.equal(body.at.toISOString(), '2025-01-02T03:04:05.000Z');
+  assert.equal(body.day, '2025-01-02');
 });
 
 test('with dates: temporal the client returns Temporal values for a $ref body and sends their wire strings', async t => {
@@ -75,8 +68,8 @@ test('with dates: temporal the client returns Temporal values for a $ref body an
   const sent: Fetched[] = [];
   const { client } = await loadClient(t, 'temporal', () => Response.json(WIRE_EVENT, { status: 201 }), sent);
   const created = await client.createEvent().execute({ body: { at: Temporal.Instant.from('2025-01-02T03:04:05Z'), day: Temporal.PlainDate.from('2025-01-02') } });
-  assert.ok(created.body.at instanceof Temporal.Instant);
-  assert.ok(created.body.day instanceof Temporal.PlainDate);
+  assert.ok(requireRecord(created.body, 'event body').at instanceof Temporal.Instant);
+  assert.ok(requireRecord(created.body, 'event body').day instanceof Temporal.PlainDate);
   assert.deepEqual(sent, [{ body: { at: '2025-01-02T03:04:05Z', day: '2025-01-02' } }]);
 });
 
@@ -85,7 +78,7 @@ test('with dates: temporal the client converts an inline body', async t => {
   const sent: Fetched[] = [];
   const { client } = await loadClient(t, 'temporal', () => Response.json({ when: '2025-01-02T03:04:05Z' }), sent);
   const inline = await client.echoInline().execute({ body: { when: Temporal.Instant.from('2025-01-02T03:04:05Z') } });
-  assert.ok(inline.body.when instanceof Temporal.Instant);
+  assert.ok(requireRecord(inline.body, 'inline body').when instanceof Temporal.Instant);
   assert.deepEqual(sent, [{ body: { when: '2025-01-02T03:04:05Z' } }]);
 });
 
@@ -94,8 +87,9 @@ test('with dates: temporal the client converts each stream item', async t => {
   const sent: Fetched[] = [];
   const { client } = await loadClient(t, 'temporal', () => new Response(`${JSON.stringify(WIRE_EVENT)}\n${JSON.stringify(WIRE_EVENT)}\n`, { headers: { 'content-type': 'application/x-ndjson' } }), sent);
   const streamed = await client.streamEvents().execute({});
+  assert.ok(isAsyncIterable(streamed.body));
   const items: unknown[] = [];
-  for await (const item of streamed.body) items.push(item.at);
+  for await (const item of streamed.body) items.push(requireRecord(item, 'stream item').at);
   assert.equal(items.length, 2);
   assert.ok(items.every(at => at instanceof Temporal.Instant));
 });
@@ -139,8 +133,9 @@ test('an allOf body with a date converts in both directions', async t => {
   const { client } = await loadClient(t, 'date', () => Response.json({ at: '2025-01-02T03:04:05Z', note: 'hi' }), sent);
   const response = await client.echoComposed().execute({ body: { at: new Date('2025-01-02T03:04:05Z'), note: 'hi' } });
   assert.deepEqual(sent, [{ body: { at: '2025-01-02T03:04:05.000Z', note: 'hi' } }]);
-  assert.ok(response.body.at instanceof Date);
-  assert.equal(response.body.note, 'hi');
+  const body = requireRecord(response.body, 'composed body');
+  assert.ok(body.at instanceof Date);
+  assert.equal(body.note, 'hi');
 });
 
 test('a class instance with extra own state is sent without that state against additionalProperties false', async t => {

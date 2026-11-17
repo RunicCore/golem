@@ -14,17 +14,17 @@ interface SdkSetup {
   readonly validation: boolean | 'sanity';
 }
 
-/** An SDK generated from a document and compiled once; `createClient` makes a client of it, with `baseUrl` set to a test address. `Bodies` names the response bodies that a test reads (`GeneratedClientInstance`). */
-export interface LoadedSdk<Bodies extends object = object> {
+/** An SDK generated from a document and compiled once; `createClient` makes a client of it, with `baseUrl` set to a test address. */
+export interface LoadedSdk {
   readonly output: string;
-  createClient(options: Record<string, unknown>): GeneratedClientInstance<Bodies>;
+  createClient(options: Record<string, unknown>): GeneratedClientInstance;
 }
 
-export async function loadSdk<Bodies extends object = object>(scope: FixtureScope, prefix: string, setup: SdkSetup): Promise<LoadedSdk<Bodies>> {
+export async function loadSdk(scope: FixtureScope, prefix: string, setup: SdkSetup): Promise<LoadedSdk> {
   const output = path.join(createFixtureProject(scope, prefix), 'sdk');
   await generateMaterializedSdk(setup.document, { output, name: setup.name, profile: { validation: setup.validation, allowAny: false }, dates: setup.dates });
   compileGeneratedSdk(output, [], { strict: true, lib: ['ES2023', 'DOM', 'DOM.Iterable', 'esnext.temporal'] });
-  const Constructor = await loadGeneratedClient<Bodies>(output, setup.name, 'dist/index.js');
+  const Constructor = await loadGeneratedClient(output, setup.name, 'dist/index.js');
   return { output, createClient: (options) => new Constructor({ baseUrl: 'https://api.test', ...options }) };
 }
 
