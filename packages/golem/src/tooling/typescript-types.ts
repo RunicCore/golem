@@ -855,6 +855,7 @@ export interface TypeScriptBackend {
   createScanner(skipTrivia: boolean, text: string, start?: number, length?: number): Scanner;
   createProgramFromSources(options: OpenProgramOptions): Program;
   findConfigFile(searchPath: string, fileExists: (filename: string) => boolean, configName?: string): string | undefined;
+  /** Calls `callback` on each child of `node` until it returns a value. A JavaScript file's JSDoc types are nodes to walk on every TypeScript version: TypeScript 7 hoists them into declarations, and TypeScript 6 walks the JSDoc nodes. */
   forEachChild<T>(node: Node, callback: (node: Node) => T | undefined): T | undefined;
   /** The compiler's plain form, `path(line,col): error TS1234: message`, one line each with chained messages indented below. */
   formatDiagnostics(diagnostics: readonly Diagnostic[], host: DiagnosticFormatHost): string;
