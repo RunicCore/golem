@@ -173,7 +173,9 @@ interface ParsedConfigHost {
 type Implemented = 'ProgramSession' | 'CheckFlags' | 'sys' | 'createCompilerHost' | 'createProgramFromSources' | 'createScanner'
   | 'getPreEmitDiagnostics' | 'getTscDiagnostics' | 'getConfigDiagnostics' | 'typeParameterDefault' | 'typeReferenceTarget';
 
-interface ClassicTypeScript extends Omit<Golem.TypeScriptBackend, Implemented | 'ObjectFlags' | 'SignatureKind'> {
+interface ClassicTypeScript extends Omit<Golem.TypeScriptBackend, Implemented | 'NodeFlags' | 'ObjectFlags' | 'SignatureKind'> {
+  /** `JavaScriptFile` is set on every node of a JavaScript file; the public declarations omit it. */
+  readonly NodeFlags: Golem.TypeScriptBackend['NodeFlags'] & { readonly JavaScriptFile: Golem.NodeFlags };
   readonly SignatureKind: Golem.TypeScriptBackend['SignatureKind'] & { readonly Construct: Golem.SignatureKind };
   readonly ObjectFlags: Golem.TypeScriptBackend['ObjectFlags'] & {
     readonly Reference: Golem.ObjectFlags;
@@ -348,17 +350,18 @@ export const {
   sys,
 } = classic;
 
-/** Whether the classic parser attached JSDoc comments to `node`: its `jsDoc` list is an internal member, so the public declarations omit it. */
-function hasJsDoc(node: Golem.Node): node is Golem.Node & { readonly jsDoc: readonly Golem.Node[] } {
-  return 'jsDoc' in node && Array.isArray(node.jsDoc);
+/** Whether `node` is in a JavaScript file, and the classic parser attached JSDoc to it: its `jsDoc` list is an internal member, so the public declarations omit it. */
+function hasJavaScriptJsDoc(node: Golem.Node): node is Golem.Node & { readonly jsDoc: readonly Golem.Node[] } {
+  return 'jsDoc' in node && Array.isArray(node.jsDoc) && (node.flags & classic.NodeFlags.JavaScriptFile) !== 0;
 }
 
 /**
- * The children of `node`, its JSDoc nodes first. TypeScript 7 visits the JSDoc of a node as its children; the classic `forEachChild` skips it,
- * so a tag written in a JSDoc type of a JavaScript file (`@type {TValidation<typeof f>}`) would be read on one version only.
+ * The children of `node`, with the JSDoc nodes of a JavaScript file first. TypeScript 7 hoists the JSDoc types of a JavaScript file into
+ * declarations (`@type` becomes the `type` of a variable, `@typedef` a type alias), so a tag written there (`@type {TValidation<typeof f>}`) is a node to
+ * walk. The classic `forEachChild` skips JSDoc, so this one walks it to match. The JSDoc of a TypeScript file stays unread on both versions.
  */
 export function forEachChild<T>(node: Golem.Node, callback: (node: Golem.Node) => T | undefined): T | undefined {
-  if (hasJsDoc(node)) {
+  if (hasJavaScriptJsDoc(node)) {
     for (const comment of node.jsDoc) {
       const result = callback(comment);
       if (result) return result;

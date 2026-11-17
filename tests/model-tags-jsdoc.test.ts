@@ -1,4 +1,4 @@
-// lane: typescript6 forEachChild of the TypeScript 6 shim, which must visit the JSDoc of a JavaScript file as TypeScript 7 does
+// lane: typescript6 forEachChild of the TypeScript 6 shim, which walks the JSDoc types of a JavaScript file, as TypeScript 7 hoists them into its declarations
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -24,7 +24,7 @@ const helpers = {
 } as const;
 
 for (const [name, helper] of Object.entries(helpers)) test(`a function tag written in the JSDoc of a JavaScript file is read, not dropped: ${name}`, t => {
-  // protects: T-1063 the TypeScript 6 forEachChild skipped JSDoc, so the function index missed the tag of `a` and the field bound `b` alone (R-55 no silent difference)
+  // protects: T-1063 the TypeScript 6 forEachChild skipped the JSDoc of a JavaScript file, so the function index missed the tag of `a` and the field bound `b` alone (R-55 no silent difference)
   const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-model-tags-jsdoc-', name: 'model-tags-jsdoc', linkWorkspaceNodeModules: true, allowJs: true });
   fs.writeFileSync(path.join(sourceRoot, 'rules.ts'), "export const a: (v: string) => boolean = (v) => v !== '';\nexport const b: typeof a = (v) => v.length < 9;\n");
   fs.writeFileSync(path.join(sourceRoot, 'helper.js'), helper);
