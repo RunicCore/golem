@@ -98,16 +98,18 @@ test('a standalone SDK writes one codec module for each operation that converts 
   await generateMaterializedSdk(EVENT_OPERATIONS, { output, name: 'Events', profile: PROFILE, dates: 'temporal' });
   compileGeneratedSdk(output, [], { strict: true, lib: ['ES2023', 'DOM', 'DOM.Iterable', 'esnext.temporal'] });
   assert.deepEqual(fs.readdirSync(path.join(output, 'codecs')).sort(), ['createEvent.ts', 'listEvents.ts']);
-  const { operationCodecs: created } = requireRecord(await importGeneratedModule(output, 'create codecs', 'dist/codecs/createEvent.js'), 'create codecs module') as { operationCodecs: Record<string, Record<string, unknown>> };
+  const created = requireRecord((await importGeneratedModule(output, 'create codecs', 'dist/codecs/createEvent.js')).operationCodecs, 'create codecs');
   assert.deepEqual(Object.keys(created), ['input', 'responses', 'encode', 'decode']);
-  assert.deepEqual(Object.keys(created.encode ?? {}), ['application/json']);
-  assert.deepEqual(Object.keys(created.decode ?? {}), ['201:application/json']);
-  const { operationCodecs: listed } = requireRecord(await importGeneratedModule(output, 'list codecs', 'dist/codecs/listEvents.js'), 'list codecs module') as { operationCodecs: Record<string, unknown> };
+  const encode = requireRecord(created.encode, 'create encoders');
+  const decode = requireRecord(created.decode, 'create decoders');
+  assert.deepEqual(Object.keys(encode), ['application/json']);
+  assert.deepEqual(Object.keys(decode), ['201:application/json']);
+  const listed = requireRecord((await importGeneratedModule(output, 'list codecs', 'dist/codecs/listEvents.js')).operationCodecs, 'list codecs');
   assert.deepEqual(Object.keys(listed), ['input']);
   const wire = { at: '2025-01-02T03:04:05Z', day: '2025-01-02', span: 'P1D', clock: '03:04:05Z', maybe: null };
-  const decoded = (created.decode?.['201:application/json'] as (wire: unknown) => Record<string, unknown>)(wire);
+  const decoded = (decode['201:application/json'] as (wire: unknown) => Record<string, unknown>)(wire);
   assert.ok(decoded.at instanceof Temporal.Instant);
-  assert.deepEqual((created.encode?.['application/json'] as (value: unknown) => unknown)(decoded), wire);
+  assert.deepEqual((encode['application/json'] as (value: unknown) => unknown)(decoded), wire);
 });
 
 test('dates omitted and dates: date generate the same SDK, with Date values', async t => {

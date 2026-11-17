@@ -24,6 +24,7 @@ import {
 import { mergeMap, type Observable } from 'rxjs';
 import { LibError, LibErrorKind, type IssuePath } from '@exprtlabs/golem/errors';
 import { IssueRepresentation, IssueSource, recordOrUndefined, resolveMaxDepth } from '@exprtlabs/golem/internal/model-runtime';
+import type { GeneratedModelConstructor } from '@exprtlabs/golem/model';
 import { getIModelClass, getObjectCodec, type ObjectCodec } from '@exprtlabs/golem/serde';
 import {
   asToken,
@@ -37,7 +38,6 @@ import {
   queryWireDecoder,
   reflectMeta,
   type ModelInput,
-  type NestModelConstruct,
   type NestReturnMeta,
   type NestUnionInput,
 } from './nest-binding.js';
@@ -128,7 +128,7 @@ export function nestQueryDecoder(metatype: unknown): ((query: unknown) => unknow
   return codec && queryWireDecoder(codec);
 }
 
-export function nestModelConstruct(metatype: unknown): (abstract new (values?: never) => object) | undefined {
+export function nestModelConstruct(metatype: unknown): GeneratedModelConstructor | undefined {
   const bound = boundConstruct(metatype);
   if (bound) return bound;
   const id = codecIdFromMetatype(metatype);
@@ -269,7 +269,7 @@ function prefixedError(error: unknown, path: IssuePath): unknown {
  */
 function convertInput(
   codec: ModelInput,
-  construct: NestModelConstruct | undefined,
+  construct: GeneratedModelConstructor | undefined,
   array: boolean,
   wire: unknown,
   decode: (wire: unknown) => unknown,
@@ -348,7 +348,7 @@ export class NestModelInterceptor implements NestInterceptor {
           ?? [];
         const req = context.switchToHttp().getRequest<HttpRequest>();
         // A whole parameter keys by its source, a one-field parameter by its source and field.
-        let converted: Map<number | string, { codec: ModelInput; construct: NestModelConstruct | undefined; array: boolean }> | undefined;
+        let converted: Map<number | string, { codec: ModelInput; construct: GeneratedModelConstructor | undefined; array: boolean }> | undefined;
         // Bit 1 is the body, bit 2 the query.
         let wholeSources = 0;
         let fieldSources = 0;

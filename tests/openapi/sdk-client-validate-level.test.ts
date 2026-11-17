@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { fileFixtureScope, onceShared } from '../fixture-project.js';
-import { importGeneratedModule, requireRecord } from './helpers.js';
+import { importGeneratedModule, requireRecord, type GeneratedClientInstance } from './helpers.js';
 import { loadGolemModeSdk, loadSdk, type LoadedSdk } from './sdk-client-fixture.js';
 
 // The client takes a validation level per client and per call, request and response apart (R-86). The amount limit (maximum 100)
@@ -40,18 +40,17 @@ const DOCUMENT = {
 type Level = 'full' | 'sanity' | 'off';
 type Setting = true | 'sanity' | false;
 type Validate = Setting | { request?: Setting; response?: Setting; requestHeaders?: Setting; responseHeaders?: Setting };
-type ChargesClient = { getStatus(): { execute(input: unknown, options?: { validate?: unknown }): Promise<{ headers: Record<string, unknown> }> }; createCharge(): { execute(input: unknown, options?: { validate?: unknown }): Promise<{ body: { when: unknown }; headers: Record<string, unknown> }> }; postEvent(): { execute(input: unknown): Promise<unknown> }; getSince(): { execute(input: unknown): Promise<unknown> } };
 
 const scope = fileFixtureScope();
 const sdks = {
-  full: onceShared(() => loadSdk<ChargesClient>(scope, 'golem-sdk-validate-full-', { document: DOCUMENT, name: 'Charges', dates: 'date', validation: true })),
-  sanity: onceShared(() => loadSdk<ChargesClient>(scope, 'golem-sdk-validate-sanity-', { document: DOCUMENT, name: 'Charges', dates: 'date', validation: 'sanity' })),
+  full: onceShared(() => loadSdk(scope, 'golem-sdk-validate-full-', { document: DOCUMENT, name: 'Charges', dates: 'date', validation: true })),
+  sanity: onceShared(() => loadSdk(scope, 'golem-sdk-validate-sanity-', { document: DOCUMENT, name: 'Charges', dates: 'date', validation: 'sanity' })),
 };
 
 /** The same documents as golem-mode SDKs: the models job writes their validators and codecs, and the client reads the same levels. */
 const golemSdks = {
-  full: onceShared(() => loadGolemModeSdk<ChargesClient>(scope, 'golem-sdk-validate-full-', { document: DOCUMENT, name: 'Charges', dates: 'date', validation: true })),
-  sanity: onceShared(() => loadGolemModeSdk<ChargesClient>(scope, 'golem-sdk-validate-sanity-', { document: DOCUMENT, name: 'Charges', dates: 'date', validation: 'sanity' })),
+  full: onceShared(() => loadGolemModeSdk(scope, 'golem-sdk-validate-full-', { document: DOCUMENT, name: 'Charges', dates: 'date', validation: true })),
+  sanity: onceShared(() => loadGolemModeSdk(scope, 'golem-sdk-validate-sanity-', { document: DOCUMENT, name: 'Charges', dates: 'date', validation: 'sanity' })),
 };
 
 const WHEN = '2025-01-02T03:04:05.000Z';
@@ -72,7 +71,7 @@ async function outcome(run: () => Promise<unknown>): Promise<string> {
 }
 
 /** A client that answers `amount`, and the number of requests it was asked to send. */
-function chargesClient(sdk: LoadedSdk<ChargesClient>, validate: Validate | undefined, answer: unknown, sent: unknown[]): ChargesClient {
+function chargesClient(sdk: LoadedSdk, validate: Validate | undefined, answer: unknown, sent: unknown[]): GeneratedClientInstance {
   return sdk.createClient({
     ...(validate === undefined ? {} : { validate }),
     fetchImpl: async (_url: RequestInfo | URL, init?: RequestInit) => {
@@ -83,7 +82,7 @@ function chargesClient(sdk: LoadedSdk<ChargesClient>, validate: Validate | undef
 }
 
 /** The four outcomes of a configuration: the request with an amount over the limit and with a string, the response with each. */
-async function outcomes(sdk: LoadedSdk<ChargesClient>, client: Validate | undefined, call: Validate | undefined): Promise<string[]> {
+async function outcomes(sdk: LoadedSdk, client: Validate | undefined, call: Validate | undefined): Promise<string[]> {
   const run = async (sent: unknown, answered: unknown): Promise<string> => outcome(() => chargesClient(sdk, client, answered, []).createCharge().execute({ body: { amount: sent, when: new Date(WHEN) } }, call === undefined ? undefined : { validate: call }));
   return [await run(500, 1), await run('x', 1), await run(1, 500), await run(1, 'x')];
 }
@@ -295,7 +294,9 @@ test('a leap-second date passes the wire check and arrives as a real Date at sec
   // protects: T-851 a text the wire check accepts is a text the converter reads
   const client = (await sdks.full()).createClient({ fetchImpl: async () => Response.json({ amount: 1, when: '2025-12-31T23:59:60Z' }) });
   const answer = await client.createCharge().execute({ body: { amount: 1, when: new Date(WHEN) } });
-  assert.equal((answer.body.when as Date).toISOString(), '2025-12-31T23:59:59.000Z');
+  const { when } = requireRecord(answer.body, 'answer body');
+  assert.ok(when instanceof Date);
+  assert.equal(when.toISOString(), '2025-12-31T23:59:59.000Z');
 });
 
 test('with response validation off a bad date is a deserialization error: conversion still runs', async () => {
@@ -303,7 +304,7 @@ test('with response validation off a bad date is a deserialization error: conver
   const sdk = await sdks.full();
   const answer = (when: string) => sdk.createClient({ validate: { response: false }, fetchImpl: async () => Response.json({ amount: 1, when }) });
   const good = await answer(WHEN).createCharge().execute({ body: { amount: 1, when: new Date(WHEN) } });
-  assert.ok(good.body.when instanceof Date);
+  assert.ok(requireRecord(good.body, 'good body').when instanceof Date);
   await assert.rejects(
     answer('not a date').createCharge().execute({ body: { amount: 1, when: new Date(WHEN) } }),
     (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.Deserialization && error.causedByInput === true,

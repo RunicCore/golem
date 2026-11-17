@@ -335,7 +335,7 @@ export interface GeneratedClientInstance {
   ) => Promise<{
     status: number;
     body: unknown;
-    headers?: Record<string, unknown>;
+    headers: Record<string, unknown>;
     contentType?: string | null;
   }>; readonly loading?: boolean };
 }
@@ -344,7 +344,7 @@ export interface GeneratedClientClass {
   new (options: Record<string, unknown>): GeneratedClientInstance;
 }
 
-export function isGeneratedClientClass(value: unknown): value is GeneratedClientClass {
+function isGeneratedClientClass(value: unknown): value is GeneratedClientClass {
   return typeof value === 'function';
 }
 
@@ -357,11 +357,16 @@ export async function importGeneratedModule(output: string, label: string, file 
   return importFile(join(output, file), label);
 }
 
+/** The client class `<name>Client` that the loaded module `module` exports; a missing export or one that is no class throws and names `label` and the export. */
+export function generatedClientFrom(module: Record<string, unknown>, name: string, label: string): GeneratedClientClass {
+  const Client = module[`${name}Client`];
+  if (!isGeneratedClientClass(Client)) throw new TypeError(`${label} must export the client class ${name}Client`);
+  return Client;
+}
+
 /** Loads `<name>Client` from the compiled `dist/client.js` of a generated SDK, or from `file` below `output`. */
 export async function loadGeneratedClient(output: string, name: string, file = 'dist/client.js'): Promise<GeneratedClientClass> {
-  const Client = (await importFile(join(output, file)))[`${name}Client`];
-  if (!isGeneratedClientClass(Client)) throw new TypeError(`${join(output, file)} must export the client class ${name}Client`);
-  return Client;
+  return generatedClientFrom(await importFile(join(output, file)), name, join(output, file));
 }
 
 function exportsModelClasses<Name extends string>(module: Record<string, unknown>, names: readonly Name[]): module is Record<Name, GeneratedModelClass> {

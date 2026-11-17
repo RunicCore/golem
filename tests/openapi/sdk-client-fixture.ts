@@ -15,17 +15,17 @@ interface SdkSetup {
 }
 
 /** An SDK generated from a document and compiled once; `createClient` makes a client of it, with `baseUrl` set to a test address. */
-export interface LoadedSdk<Client> {
+export interface LoadedSdk {
   readonly output: string;
-  createClient(options: Record<string, unknown>): Client;
+  createClient(options: Record<string, unknown>): GeneratedClientInstance;
 }
 
-export async function loadSdk<Client>(scope: FixtureScope, prefix: string, setup: SdkSetup): Promise<LoadedSdk<Client>> {
+export async function loadSdk(scope: FixtureScope, prefix: string, setup: SdkSetup): Promise<LoadedSdk> {
   const output = path.join(createFixtureProject(scope, prefix), 'sdk');
   await generateMaterializedSdk(setup.document, { output, name: setup.name, profile: { validation: setup.validation, allowAny: false }, dates: setup.dates });
   compileGeneratedSdk(output, [], { strict: true, lib: ['ES2023', 'DOM', 'DOM.Iterable', 'esnext.temporal'] });
   const Constructor = await loadGeneratedClient(output, setup.name, 'dist/index.js');
-  return { output, createClient: (options) => new Constructor({ baseUrl: 'https://api.test', ...options }) as Client };
+  return { output, createClient: (options) => new Constructor({ baseUrl: 'https://api.test', ...options }) };
 }
 
 /** A document of one operation, `createCharge`, that posts and returns the schema `Charge` of `schemas`. */
@@ -92,10 +92,10 @@ export async function loadGolemModeProject(scope: FixtureScope, prefix: string, 
 }
 
 /** A golem-mode SDK made like `loadSdk` makes a standalone one, so one test can run against both modes. */
-export async function loadGolemModeSdk<Client>(scope: FixtureScope, prefix: string, setup: SdkSetup): Promise<LoadedSdk<Client>> {
+export async function loadGolemModeSdk(scope: FixtureScope, prefix: string, setup: SdkSetup): Promise<LoadedSdk> {
   const sdk: GolemModeSdkSetup = { document: setup.document, folder: 'sdk/api', name: setup.name, dates: setup.dates };
   const project = await loadGolemModeProject(scope, prefix, [sdk], setup.validation);
   const output = path.join(project.root, 'sdk/api');
   const Constructor = await loadGeneratedClient(path.join(project.root, 'build/sdk/api'), setup.name, 'index.js');
-  return { output, createClient: (options) => new Constructor({ baseUrl: 'https://api.test', ...options }) as Client };
+  return { output, createClient: (options) => new Constructor({ baseUrl: 'https://api.test', ...options }) };
 }

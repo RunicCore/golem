@@ -3,7 +3,6 @@ import { copyFixtureFile, createFixtureProject } from '../fixture-project.js';
 import assert from 'node:assert/strict';
 import { writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { findRemoteRefs } from '#openapi/document';
@@ -13,7 +12,7 @@ import { buildSchemaData } from '#openapi/schemas';
 import {
   compileGeneratedSdk,
   generateMaterializedSdk,
-  isGeneratedClientClass,
+  loadGeneratedClient,
   requireRecord,
 } from './helpers.js';
 import { compileValidators } from '../support/compiled-validators.js';
@@ -103,10 +102,7 @@ interface OperationProbe {
 }
 
 async function clientProbe(output: string, clientName: string): Promise<OperationProbe> {
-  const module = requireRecord(await import(pathToFileURL(path.join(output, 'dist/client.js')).href), 'generated client module');
-  const Client = module[`${clientName}Client`];
-  assert.ok(isGeneratedClientClass(Client), `${clientName}Client`);
-  if (!isGeneratedClientClass(Client)) throw new TypeError(`${clientName}Client`);
+  const Client = await loadGeneratedClient(output, clientName);
   let fetches = 0;
   let reply: unknown = {};
   const client = new Client({
@@ -624,9 +620,7 @@ test('literal example and default $ref values are not treated as schema referenc
     });
     assert.ok(result.artifacts.some((artifact) => artifact.path.endsWith('/validators.generated.ts') && artifact.content.includes('export function validate_putX_input(')));
     compileGeneratedSdk(output, []);
-    const module = requireRecord(await import(pathToFileURL(path.join(output, 'dist/client.js')).href), 'literal ref client');
-    const Client = module.LiteralRefClient;
-    if (!isGeneratedClientClass(Client)) throw new TypeError('LiteralRefClient');
+    const Client = await loadGeneratedClient(output, 'LiteralRef');
     const client = new Client({
       baseUrl: 'https://api.example',
       fetchImpl: async (_url: RequestInfo | URL, init?: RequestInit) => new Response(String(init?.body), { headers: { 'content-type': 'application/json' } }),

@@ -7,6 +7,7 @@ import type { GolemConfig } from './config.js';
 import { displayPath, GolemDiagnosticSeverity } from './generator-core.js';
 import { fileSignature } from './input-watcher.js';
 import { loadInventory } from './outputs.js';
+import { isParameterProperty } from './parameter-property.js';
 import { sourceComments } from './source-comments.js';
 import type { SourceComment } from './source-comments.js';
 import type { GolemDiagnostic } from './generator-core.js';
@@ -87,12 +88,10 @@ function holdsCompiledForm(compiler: typeof ts, file: ts.SourceFile): boolean {
  * `enum`, a namespace with a value, or a constructor parameter with an accessibility, `override` or `readonly` modifier.
  */
 function isCompiledForm(compiler: typeof ts, node: ts.Node): boolean {
-  const { SyntaxKind } = compiler;
-  const parameterProperty = [SyntaxKind.PublicKeyword, SyntaxKind.PrivateKeyword, SyntaxKind.ProtectedKeyword, SyntaxKind.OverrideKeyword, SyntaxKind.ReadonlyKeyword];
   return compiler.isDecorator(node)
     || compiler.isEnumDeclaration(node)
     || compiler.isModuleDeclaration(node) && isInstantiated(compiler, node)
-    || compiler.isParameter(node) && (compiler.getModifiers(node) ?? []).some((modifier) => parameterProperty.includes(modifier.kind));
+    || compiler.isParameter(node) && isParameterProperty(compiler, node);
 }
 
 /**

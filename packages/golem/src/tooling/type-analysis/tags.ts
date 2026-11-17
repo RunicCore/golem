@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { displayPath } from '../generator-core.js';
 import { hasLocalForm, localFormMessage } from '../names.js';
+import { isParameterProperty } from '../parameter-property.js';
 import * as ts from '../typescript-ns.js';
 import { canonicalFilename, portableRelativeFilename } from './project.js';
 import { nearestManifest, packageSpecifier } from '../package-specifier.js';
@@ -512,6 +513,17 @@ function typeReferenceOf(node: ts.Node): { readonly name: ts.Node; readonly type
   return ts.isImportTypeNode(node) && node.qualifier ? { name: node.qualifier, typeArguments: node.typeArguments } : undefined;
 }
 
+/**
+ * The members of a class that its instance type holds. The static members and the constructor belong to the class value (`typeof Class`) and are no part
+ * of an instance; only a parameter property of the constructor is a field of it.
+ */
+function instanceMembersOf(declaration: ts.ClassDeclaration | ts.InterfaceDeclaration): readonly ts.Node[] {
+  return declaration.members.flatMap((member): readonly ts.Node[] => {
+    if (ts.isConstructorDeclaration(member)) return member.parameters.filter(parameter => isParameterProperty(ts, parameter));
+    return ts.canHaveModifiers(member) && (ts.getModifiers(member) ?? []).some(modifier => modifier.kind === ts.SyntaxKind.StaticKeyword) ? [] : [member];
+  });
+}
+
 /** A declaration that gives its name no type meaning: a variable, a function, or a namespace (a class, an enum, an interface and a type alias carry one). */
 function isValueOrNamespace(declaration: ts.Declaration): boolean {
   return ts.isVariableDeclaration(declaration) || ts.isFunctionDeclaration(declaration) || ts.isModuleDeclaration(declaration);
@@ -591,19 +603,29 @@ function reach(context: TagAnalysisContext, walk: Walk, node: ts.Node): void {
   const stop = (reason: string): void => {
     walk.unreadable ??= { node, reason };
   };
-  const reachDeclarations = (declarations: readonly ts.Declaration[]): void => {
+  const reachDeclarations = (declarations: readonly ts.Node[]): void => {
     for (const declaration of declarations) {
       if (!context.isDefaultLibraryFile?.(declaration.getSourceFile())) next(declaration);
     }
   };
   const reachDeclarationsOf = (symbol: ts.Symbol | undefined): void => reachDeclarations(targetSymbol(checker, symbol)?.declarations ?? []);
+  // What `typeof Class` holds beside the members of an instance, which the declaration of the class reads: the static members and the constructors, those of its base classes too.
+  const reachStaticSideOf = (symbol: ts.Symbol | undefined): void => {
+    if (!symbol || (symbol.flags & ts.SymbolFlags.Class) === 0) return;
+    const value = checker.getTypeOfSymbolAtLocation(symbol, node);
+    for (const property of checker.getPropertiesOfType(value)) reachDeclarations(propertyDeclarations(checker, property));
+    reachDeclarations(value.getConstructSignatures().flatMap(signature => signature.declaration ?? []));
+  };
   // The exported values of a module or a namespace: what `typeof ns` and `typeof import('...')` name. An export that is only a type holds no value of it.
   // An export that is a namespace or a module (`export * as sub`) is read at its own declaration, which comes back here.
   const reachExportsOf = (symbol: ts.Symbol | undefined): void => {
     if (!symbol || (symbol.flags & ts.SymbolFlags.Module) === 0) return;
     for (const exported of checker.getExportsOfModule(symbol)) {
       const target = targetSymbol(checker, exported);
-      if (target && (target.flags & ts.SymbolFlags.Value) !== 0) reachDeclarationsOf(target);
+      if (target && (target.flags & ts.SymbolFlags.Value) !== 0) {
+        reachDeclarationsOf(target);
+        reachStaticSideOf(target);
+      }
     }
   };
   if (holdsNothing(node)) return;
@@ -658,6 +680,8 @@ function reach(context: TagAnalysisContext, walk: Walk, node: ts.Node): void {
     const target = checker.getTypeFromTypeNode(node).getSymbol();
     if (!target) stop('whose type names no declaration');
     reachDeclarationsOf(target);
+    // `typeof import('...')` of a module that writes `export = Class` is the class value, with its statics and constructors.
+    if (node.isTypeOf) reachStaticSideOf(target);
     reachExportsOf(target);
     nextAll(node.typeArguments);
   } else if (ts.isTypeAliasDeclaration(node)) {
@@ -666,7 +690,8 @@ function reach(context: TagAnalysisContext, walk: Walk, node: ts.Node): void {
   } else if (ts.isInterfaceDeclaration(node) || ts.isClassDeclaration(node)) {
     nextAll(node.typeParameters);
     nextAll(node.heritageClauses?.flatMap(clause => clause.types));
-    nextAll(node.members);
+    // A class reached here is read as an instance type, or as a base of one: `reachStaticSideOf` reads the rest of it for `typeof Class`.
+    nextAll(instanceMembersOf(node));
   } else if (ts.isExpressionWithTypeArguments(node)) {
     reachDeclarationsOf(checker.getSymbolAtLocation(node.expression));
     // A call shows no declaration of its base: each member is read where it is written.
@@ -679,6 +704,7 @@ function reach(context: TagAnalysisContext, walk: Walk, node: ts.Node): void {
     const declaration = declarationOf(target);
     if (declaration) next(declaration);
     else stop('which names no declaration');
+    reachStaticSideOf(target);
     reachExportsOf(target);
   } else if (ts.isIndexedAccessTypeNode(node)) {
     // `Box['g']` names one member: the other members of `Box` are fields beside it and stay unread.

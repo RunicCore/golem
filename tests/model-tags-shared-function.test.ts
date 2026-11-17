@@ -173,6 +173,11 @@ const moduleRows = {
   'an import type with no qualifier': { declarations: neutral("typeof import('./tagged.js')"), files: { 'tagged.ts': taggedModule } },
   'a namespace that the module exports': { declarations: "import * as tagged from './tagged.js';\n" + neutral('typeof tagged'), files: { 'tagged.ts': nestedModule } },
   'an import type over a namespace that the module exports': { declarations: neutral("typeof import('./tagged.js')"), files: { 'tagged.ts': nestedModule } },
+  'a module that writes `export =` a class with a static tag': { declarations: neutral("typeof import('./single.js')"), files: { 'single.ts': `${taggedImports}class Single { static w: string & TValidation<typeof a>; }\nexport = Single;` } },
+  'a class that a namespace merges with': { declarations: `class Merged {}\nnamespace Merged { export const w: string & TValidation<typeof a> = ''; }\n${neutral('typeof Merged')}`, files: {} },
+  'a static method of a class': { declarations: `class Statics { static m(): string & TValidation<typeof a> { return ''; } }\n${neutral('typeof Statics')}`, files: {} },
+  'a static accessor of a class': { declarations: `class Statics { static get w(): string & TValidation<typeof a> { return ''; } }\n${neutral('typeof Statics')}`, files: {} },
+  'an override parameter property of a class': { declarations: `class Parent { w!: string; }\nclass Child extends Parent { constructor(override w: string & TValidation<typeof a>) { super(); } }\n${neutral('Child')}`, files: {} },
   'a module that `export * as` names': { declarations: "import * as tagged from './tagged.js';\n" + neutral('typeof tagged'), files: { 'tagged.ts': "export * as sub from './inner.js';", 'inner.ts': taggedModule } },
 } as const;
 
