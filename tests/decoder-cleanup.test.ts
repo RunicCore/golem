@@ -3,13 +3,11 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 import {
   compileStrictUnusedSdk,
   generateMaterializedSdk,
-  isGeneratedClientClass,
-  requireRecord,
+  loadGeneratedClient,
 } from './openapi/helpers.js';
 
 interface OpenResponseCase {
@@ -107,13 +105,7 @@ test('decoder failures cancel an unconsumed generated response body', async t =>
     });
     compileStrictUnusedSdk(output);
 
-    const generated = requireRecord(
-      await import(pathToFileURL(path.join(output, 'dist', 'client.js')).href),
-      `${name} client`,
-    );
-    const Client = generated[`${name}Client`];
-    assert.ok(isGeneratedClientClass(Client));
-    if (!isGeneratedClientClass(Client)) throw new TypeError(`${name}Client`);
+    const Client = await loadGeneratedClient(output, name);
 
     for (const decoderCase of decoderCases) {
       if (decoderCase.validationProfiles && !decoderCase.validationProfiles.includes(validation)) continue;

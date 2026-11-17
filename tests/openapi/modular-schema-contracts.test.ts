@@ -1,13 +1,11 @@
 import { createFixtureProject } from '../fixture-project.js';
 import assert from 'node:assert/strict';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 import {
   compileGeneratedSdk,
   generateMaterializedSdk,
-  isGeneratedClientClass,
-  requireRecord,
+  loadGeneratedClient,
 } from './helpers.js';
 
 test('operation schema closures preserve resource references and schema-looking JSON values', async t => {
@@ -57,10 +55,9 @@ test('operation schema closures preserve resource references and schema-looking 
     exactOptionalPropertyTypes: true,
     noUncheckedIndexedAccess: true,
   });
-  const module = requireRecord(await import(pathToFileURL(path.join(output, 'dist/client.js')).href), 'scoped client');
-  assert.ok(isGeneratedClientClass(module.ScopedClient));
+  const ScopedClient = await loadGeneratedClient(output, 'Scoped');
   let requests = 0;
-  const client = new module.ScopedClient({
+  const client = new ScopedClient({
     baseUrl: 'https://fixture.invalid',
     fetchImpl: async (_input: RequestInfo | URL, init?: RequestInit) => {
       requests++;
