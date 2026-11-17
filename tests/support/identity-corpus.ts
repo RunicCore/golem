@@ -37,6 +37,9 @@ export const BUILT = 'built';
 export const BUILD_LOG = 'build.txt';
 export const DIAGNOSTICS = 'diagnostics.txt';
 
+/** The `nonModelInputs` setting of the nest extension that the controller cases build with, in their golem.yaml and in the rewrite scan alike: `warn`, so a handler input that is no model reports RUNM1081 and the build still emits. */
+export const NON_MODEL_INPUTS = 'warn';
+
 /** A case's folder in the output directory: the case name, which may hold slashes, as one folder name. */
 export function caseFolder(name: string): string {
   return name.replaceAll('/', '__');
@@ -83,10 +86,6 @@ export const EXPECTED_REJECTIONS: Readonly<Record<string, string>> = {
   'model-composition/anonymous-nested-imodel-declarations-fail-with-an-actionable-diagnostic': 'RUNM1053: Nested IModel definitions need a named, exported declaration',
   'model-composition/generic-model-templates-require-a-concrete-named-declaration': 'RUNM1057: IModel declarations must have concrete fields',
   'model-composition/imodel-exposes-fields-and-rejects-root-unions-before-emitting-artifacts': 'RUNM1052: The IModel fields type must be an object type, but TItem has a union',
-  'controller': 'RUNM1081 (src/catalog.controller.ts:25:32): number is not a golem model',
-  'controller/emits-a-whole-query-object-as-openapi-3-2-querystring-content': 'RUNM1081 (src/catalog.controller.ts:9:26): { page: number; term?: string } is not a golem model',
-  'controller/emits-flattened-primitive-query-parameters-with-openapi-form-style-and-support': 'RUNM1081 (src/catalog.controller.ts:9:26): { page: number; term?: string } is not a golem model',
-  'controller/preserves-swagger-status-media-and-parameter-metadata': 'RUNM1081 (src/catalog.controller.ts:15:29): string is not a golem model',
   'controller/does-not-treat-a-project-local-string-function-as-a-swagger-primitive-construc': 'NEST1503: Swagger property value type conflicts',
   'controller/keeps-nest-runtime-status-authoritative-over-apinocontentresponse': 'NEST1311: Swagger success response status 204 conflicts',
   'controller/rejects-a-swagger-schema-that-conflicts-with-an-authoritative-imodel-wire-cont': 'NEST1503: Swagger schema at response.200.application/json.properties.id.type is "number"',

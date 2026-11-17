@@ -9,7 +9,7 @@ import { typescriptVersion } from '#golem/typescript-ns';
 import type { GolemDiagnostic } from '#golem/generator-api';
 import { NEST_PARTICIPANTS } from '../fixture-templates/controllers/project.js';
 import { editProjectSources } from './node-specifiers-project.js';
-import { BUILD_LOG, BUILT, caseFolder, DIAGNOSTICS, GENERATED, isBuilt, REWRITTEN, type IdentityProject } from './identity-corpus.js';
+import { BUILD_LOG, BUILT, caseFolder, DIAGNOSTICS, GENERATED, isBuilt, NON_MODEL_INPUTS, REWRITTEN, type IdentityProject } from './identity-corpus.js';
 import { defaultModelOutput } from '@exprtlabs/golem-model/plan';
 
 function describeDiagnostic(stage: string, diagnostic: GolemDiagnostic): string {
@@ -33,7 +33,7 @@ function rewriteStage(item: IdentityProject, lines: string[]): ReadonlyMap<strin
       boundary: { root: item.root, directory: item.root, output: defaultModelOutput(item.root), suffixes: ['.model.ts', '.models.ts'] },
       configFile: path.join(item.root, 'tsconfig.json'),
       // The NestJS side of the rewrite is what a controller case compares; extensions: nest in golem.yaml turns it on.
-      participants: item.kind === 'controller' ? NEST_PARTICIPANTS.error : [],
+      participants: item.kind === 'controller' ? NEST_PARTICIPANTS[NON_MODEL_INPUTS] : [],
       codecKeysFile: path.join(item.root, '.golem/codec-keys.json'),
     });
     for (const diagnostic of scan.diagnostics) lines.push(describeDiagnostic('rewrite', diagnostic));
@@ -123,10 +123,10 @@ async function run(projects: readonly IdentityProject[], outputDirectory: string
     begin(item.name);
     const lines: string[] = [];
     const folder = path.join(outputDirectory, caseFolder(item.name));
-    // A rewrite case's companions are fixtures; the other cases generate in the build, which writes them into the project, where the scan reads them.
-    if (!isBuilt(item) || await buildStage(item, folder, lines)) {
-      for (const [relative, text] of item.kind === 'specifiers' ? specifierStage(item, lines) : rewriteStage(item, lines)) write(path.join(folder, REWRITTEN, relative), text);
-    }
+    const generated = isBuilt(item) && await buildStage(item, folder, lines);
+    // A specifier case holds no model for the generators and a rewrite case holds its companions as fixtures; every other case is scanned after its build wrote the generated files into the project, and a rejected generation leaves nothing to scan.
+    const edited = item.kind === 'specifiers' ? specifierStage(item, lines) : generated || item.kind === 'rewrite' ? rewriteStage(item, lines) : new Map<string, string>();
+    for (const [relative, text] of edited) write(path.join(folder, REWRITTEN, relative), text);
     write(path.join(folder, DIAGNOSTICS), lines.map(line => `${line.replaceAll(item.root, '<root>')}\n`).join(''));
   }
 }
