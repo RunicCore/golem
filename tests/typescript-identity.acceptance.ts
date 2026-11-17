@@ -228,7 +228,7 @@ if (!typescript6Root) {
   });
 
   for (const item of IDENTITY_CASES) {
-    test(item.name, async () => {
+    test(`identity ${item.name}`, async () => {
       const { seven, six } = await generateOnce();
       const sevenFiles = filesOfCase(seven, '7', item.name);
       const sixFiles = filesOfCase(six, '6', item.name);
