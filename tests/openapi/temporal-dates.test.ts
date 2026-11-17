@@ -4,7 +4,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import { createFixtureProject } from '../fixture-project.js';
-import { loadClientClass } from '../support/generated-module.js';
 import {
   captureRequest,
   compileGeneratedSdk,
@@ -77,7 +76,7 @@ test('dates: temporal models encode to the ISO strings the generated client send
   const output = path.join(createFixtureProject(t, 'golem-openapi-temporal-request-'), 'sdk');
   await generateMaterializedSdk(EVENT_OPERATIONS, { output, name: 'Events', profile: PROFILE, dates: 'temporal' });
   compileGeneratedSdk(output, [], { strict: true, lib: ['ES2023', 'DOM', 'DOM.Iterable', 'esnext.temporal'] });
-  const EventsClient = await loadClientClass(path.join(output, 'dist/index.js'), 'EventsClient');
+  const EventsClient = await loadGeneratedClient(output, 'Events', 'dist/index.js');
   const wire = { at: '2025-01-02T03:04:05Z', day: '2025-01-02', span: 'P1D', clock: '03:04:05Z', maybe: null };
   const requests: CapturedRequest[] = [];
   const client = new EventsClient({

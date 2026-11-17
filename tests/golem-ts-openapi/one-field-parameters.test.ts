@@ -8,8 +8,8 @@ import { generate } from '#ts-openapi/generator';
 import { runPipeline } from '#golem/cli';
 import { formatOpenApiProblems, validateOpenApiDocument } from '#openapi/openapi-validator';
 import { createControllerFixture } from '../fixture-templates/controllers/project.js';
-import { loadClass, loadClientClass } from '../support/generated-module.js';
 import { expectJsonArray, expectJsonObject } from '../support/json.js';
+import { loadClass, loadGeneratedClient } from '../openapi/helpers.js';
 import { startNestApp } from '../support/nest-app.js';
 import { command, golem } from '../support/process.js';
 import { contentSchema, documentFrom, documentOf, operationOf, parameterOf, propertySchema, refusedWith, requestBodyOf, schemaOf, type OpenApiDocument, type OpenApiSchema } from './openapi-document.js';
@@ -217,7 +217,7 @@ export class AController {
   const built = await command(root, process.execPath, [golem, 'build', '--config', path.join(root, 'golem.yaml')]);
   assert.equal(built.code, 0, built.stdout + built.stderr);
   const AController = await loadClass(path.join(root, 'build/a.controller.js'), 'AController');
-  const ApiClient = await loadClientClass(path.join(root, 'build/sdk/index.js'), 'ApiClient');
+  const ApiClient = await loadGeneratedClient(path.join(root, 'build/sdk'), 'Api', 'index.js');
   const application = await startNestApp([AController], { nestedQuery: true });
   try {
     const client = new ApiClient({ baseUrl: await application.getUrl() });

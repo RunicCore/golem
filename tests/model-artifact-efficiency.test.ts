@@ -14,7 +14,7 @@ import { readFixture, writeGeneratedArtifacts } from './fixture-project.js';
 import { buildModelProject, createModelProject, generatedModelFiles, writeModelGolemYaml, writeModelSources, type ModelProject } from './model-project.js';
 import { duplicateLocalNameReferenceModelSource } from './fixture-templates/models/model-artifact-efficiency.js';
 import { parse as parseYaml } from 'yaml';
-import { loadModelClasses } from './support/generated-module.js';
+import { loadModelClasses } from './openapi/helpers.js';
 import { loadGolemModeProject } from './openapi/sdk-client-fixture.js';
 import { IssueRepresentation, IssueSource, LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { requireObjectCodec, decodeGeneratedModelTrusted, findGeneratedModelDefinitionForConstructor } from '@exprtlabs/golem/internal/model-runtime';

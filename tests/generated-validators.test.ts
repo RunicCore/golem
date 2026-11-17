@@ -1,5 +1,5 @@
 import { readFixture } from './fixture-project.js';
-import { loadModelClasses, loadValidator } from './support/generated-module.js';
+import { loadModelClasses, loadValidator } from './openapi/helpers.js';
 import assert from 'node:assert/strict';
 import {
   existsSync,

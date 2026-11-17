@@ -7,7 +7,7 @@ import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { requireObjectCodec } from '@exprtlabs/golem/internal/model-runtime';
 
 import { generatedCodecIdFromRoot } from './support/consumer.js';
-import { loadModelClasses } from './support/generated-module.js';
+import { loadModelClasses } from './openapi/helpers.js';
 import { fileFixtureScope, onceShared } from './fixture-project.js';
 import { buildModelProject, createModelProject, writeModelGolemYaml } from './model-project.js';
 

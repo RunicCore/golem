@@ -8,9 +8,8 @@ import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 import { fileFixtureScope } from './fixture-project.js';
 import { buildModelProject, createModelProject, writeModelGolemYaml, writeModelSources } from './model-project.js';
-import { generateMaterializedSdk } from './openapi/helpers.js';
+import { generateMaterializedSdk, loadGeneratedClient } from './openapi/helpers.js';
 import { chargesDocument, loadGolemModeProject, writeGolemModeProject, type GolemModeSdkSetup } from './openapi/sdk-client-fixture.js';
-import { loadClientClass } from './support/generated-module.js';
 import { runModuleScope } from './support/run-module.js';
 
 const scope = fileFixtureScope();
@@ -123,7 +122,7 @@ test('a golem-mode model over an SDK type has its own class, a constructor with 
 
   // The instance goes out as a body of a closed schema: its own state is not a property, so the SDK sends the declared fields only.
   const sent: unknown[] = [];
-  const Client = await loadClientClass(path.join(project.root, 'build/sdk/charges/index.js'), 'ChargesClient');
+  const Client = await loadGeneratedClient(path.join(project.root, 'build/sdk/charges'), 'Charges', 'index.js');
   const client = new Client({ baseUrl: 'https://api.test', fetchImpl: async (_url: RequestInfo | URL, init?: RequestInit) => { sent.push(init?.body); return Response.json({ id: 'c3', amount: 4 }); } });
   await client.createCharge().execute({ body: tracked });
   assert.deepEqual(sent, ['{"id":"c3","amount":4}']);
