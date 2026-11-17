@@ -58,13 +58,10 @@ test('IObject stringify/parse compose nested Money by call; invalid JSON fails b
     codecs.stringifyTPayment({ ...wire, extra: true }, { validate: false }),
     text,
   );
-  const money = codecs.parseTMoney('{"currency":"USD","value":"12.50"}', { validate: false }) as {
-    currency: string;
-    value: string;
-  };
+  const money = requireRecord(codecs.parseTMoney('{"currency":"USD","value":"12.50"}', { validate: false }), 'money');
   assert.equal(Object.getPrototypeOf(money), Object.prototype);
   assert.equal(money.currency, 'USD');
-  const parsed = codecs.parseTPayment(text, { validate: false }) as { id: string; amount: unknown };
+  const parsed = requireRecord(codecs.parseTPayment(text, { validate: false }), 'parsed');
   assert.equal(Object.getPrototypeOf(parsed), Object.prototype);
   assert.equal(parsed.id, '1');
   assert.deepEqual(parsed.amount, wire.amount);
@@ -74,9 +71,9 @@ test('IObject stringify/parse compose nested Money by call; invalid JSON fails b
   assert.equal(codecs.validateTPayment(wire), true);
   const defaultText = codecs.stringifyTPayment(wire);
   assert.equal(defaultText, text);
-  const defaultParsed = codecs.parseTPayment(text) as { id: string };
+  const defaultParsed = requireRecord(codecs.parseTPayment(text), 'defaultParsed');
   assert.equal(defaultParsed.id, '1');
-  const model = codecs.fromWireFormatTPayment(wire) as { id: string };
+  const model = requireRecord(codecs.fromWireFormatTPayment(wire), 'model');
   assert.equal(Object.getPrototypeOf(model), Object.prototype);
   assert.equal(model.id, '1');
   assert.deepEqual(codecs.toWireFormatTPayment(model), wire);
@@ -268,8 +265,8 @@ test('toWireFormat encodes nullable nested IModel fields to plain objects, not c
   const missing = { id: 101, account: null };
   const presentModel = codecs.fromWireFormatTCustomer(present, { validate: false });
   const missingModel = codecs.fromWireFormatTCustomer(missing, { validate: false });
-  const presentWire = codecs.toWireFormatTCustomer(presentModel, { validate: false }) as typeof present;
-  const missingWire = codecs.toWireFormatTCustomer(missingModel, { validate: false }) as typeof missing;
+  const presentWire = requireRecord(codecs.toWireFormatTCustomer(presentModel, { validate: false }), 'presentWire');
+  const missingWire = requireRecord(codecs.toWireFormatTCustomer(missingModel, { validate: false }), 'missingWire');
   assert.deepEqual(presentWire, present);
   assert.deepEqual(missingWire, missing);
   assert.equal(Object.getPrototypeOf(presentWire.account), Object.prototype);

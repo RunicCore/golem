@@ -88,7 +88,7 @@ test('serde wire predicates run on the wire plane', async t => {
   const encodeCalls = await loadCounter(codecsFile, 'encodeCalls');
   const { setInvalidEncoding } = await loadFunctions(codecsFile, ['setInvalidEncoding']);
 
-  const parsed = requireObjectCodec(generatedCodecIdFromRoot(root, 'TA')).parse( JSON.stringify({ value: '0a' })) as { value: number };
+  const parsed = requireRecord(requireObjectCodec(generatedCodecIdFromRoot(root, 'TA')).parse( JSON.stringify({ value: '0a' })), 'parsed');
   assert.equal(wireCalls(), 1, 'validates the explicit wire predicate before decode');
   assert.equal(decodeCalls(), 1, 'type-only parse fills through deserialize');
   assert.equal(parsed.value, 10);
@@ -290,7 +290,7 @@ export function fromFlag(wire: boolean): 'yes' | 'no' { return wire ? 'yes' : 'n
     }).text);
     await buildModelProjectWith(root, { validation });
     const { A } = await loadModelClasses(path.join(root, 'build/a.model.js'), ['A']);
-    const parsed = requireObjectCodec(generatedCodecIdFromRoot(root, 'TA')).parse('{"amount":500,"answer":true}') as { amount: number; answer: string };
+    const parsed = requireRecord(requireObjectCodec(generatedCodecIdFromRoot(root, 'TA')).parse('{"amount":500,"answer":true}'), 'parsed');
     assert.deepEqual({ amount: parsed.amount, answer: parsed.answer }, { amount: 5, answer: 'yes' });
     const decoded = requireRecord(modelCodec(A).fromWireFormat({ amount: 250, answer: false }, { validate: false }), 'decoded');
     assert.deepEqual({ amount: decoded.amount, answer: decoded.answer }, { amount: 2.5, answer: 'no' });

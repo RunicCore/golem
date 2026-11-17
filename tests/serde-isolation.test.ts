@@ -7,7 +7,7 @@ import { LibError, LibErrorKind, IssueSource, IssueRepresentation } from '@exprt
 import { generate } from '#model/generator';
 import { fileFixtureScope, onceShared, readFixture } from './fixture-project.js';
 import { buildModelProject, createModelProject, writeModelGolemYaml } from './model-project.js';
-import { loadFunctions, loadModelClasses } from './openapi/helpers.js';
+import { loadFunctions, loadModelClasses, requireRecord } from './openapi/helpers.js';
 import { modelCodec } from './support/model-codec.js';
 
 function cycleAt(path: readonly (string | number)[]): (error: unknown) => boolean {
@@ -112,7 +112,7 @@ test('generated decode with a constructor reads each declared property once and 
   let reads = 0;
   const wire = { id: 'p1', note: 'n', merchant: { id: 'm', name: 'M' }, billing: { name: 'B' }, money: { amount: '1.00', currency: 'USD' } };
   Object.defineProperty(wire, 'merchant', { enumerable: true, get() { reads++; return { id: 'm', name: 'M' }; } });
-  const built = fromWireFormatTPayment(wire, { validate: false, construct: Construct }) as Construct;
+  const built = fromWireFormatTPayment(wire, { validate: false, construct: Construct });
   assert.ok(built instanceof Construct);
   assert.equal(reads, 1);
   const loop: Record<string, unknown> = {};
@@ -226,18 +226,18 @@ test('a conversion that fails inside a nested model reports the outer field, the
     assert.deepEqual(error.issues[0]?.path, ['events', 2, 'at']);
     return true;
   });
-  const decoded = fromWireFormatTCalendar({ title: 't', event: { at: '2026-01-01T00:00:00Z', note }, events: [] }, { validate: false }) as { event: { at: unknown; note: unknown } };
-  assert.ok(decoded.event.at instanceof Date);
-  assert.strictEqual(decoded.event.note, note);
+  const event = requireRecord(requireRecord(fromWireFormatTCalendar({ title: 't', event: { at: '2026-01-01T00:00:00Z', note }, events: [] }, { validate: false }), 'decoded').event, 'event');
+  assert.ok(event.at instanceof Date);
+  assert.strictEqual(event.note, note);
 });
 
 test('generated decode copies every level of closed nested objects and rejects a cycle at depth two', async () => {
   const { fromWireFormatTOuter } = await loadCodecs('outer', ['fromWireFormatTOuter']);
   const input = { inner: { deep: { x: 1 } } };
-  const decoded = fromWireFormatTOuter(input, { validate: false }) as typeof input;
+  const decodedDeep = requireRecord(requireRecord(requireRecord(fromWireFormatTOuter(input, { validate: false }), 'decoded').inner, 'inner').deep, 'deep');
   input.inner.deep.x = 2;
-  assert.equal(decoded.inner.deep.x, 1);
-  assert.notStrictEqual(decoded.inner.deep, input.inner.deep);
+  assert.equal(decodedDeep.x, 1);
+  assert.notStrictEqual(decodedDeep, input.inner.deep);
 
   const deep: Record<string, unknown> = { x: 1 };
   deep.extra = deep;
@@ -252,25 +252,26 @@ test('generated decode copies maps and arrays and carries only unknown values by
   const { fromWireFormatTContainers } = await loadCodecs('containers', ['fromWireFormatTContainers']);
   const open = Object.assign(Object.create(null) as Record<string, unknown>, { id: 'o', note: { n: 1 } });
   const wire = { flags: { a: 'x', b: 'y' }, tags: ['t1', 't2'], matrix: [['m']], open, payload: { deep: [1] } };
-  const decoded = fromWireFormatTContainers(wire, { validate: false }) as typeof wire;
+  const decoded = requireRecord(fromWireFormatTContainers(wire, { validate: false }), 'decoded');
   assert.notStrictEqual(decoded.flags, wire.flags);
   assert.deepEqual(decoded.flags, wire.flags);
   assert.notStrictEqual(decoded.tags, wire.tags);
   assert.deepEqual(decoded.tags, wire.tags);
   assert.notStrictEqual(decoded.matrix, wire.matrix);
+  assert.ok(Array.isArray(decoded.matrix));
   assert.notStrictEqual(decoded.matrix[0], wire.matrix[0]);
   assert.deepEqual(decoded.matrix, wire.matrix);
   assert.notStrictEqual(decoded.open, wire.open);
-  assert.deepEqual({ ...decoded.open }, { id: 'o', note: { n: 1 } });
+  assert.deepEqual({ ...requireRecord(decoded.open, 'open') }, { id: 'o', note: { n: 1 } });
   assert.strictEqual(decoded.payload, wire.payload);
   wire.flags.a = 'changed';
   wire.tags.push('t3');
   assert.deepEqual(decoded.flags, { a: 'x', b: 'y' });
   assert.deepEqual(decoded.tags, ['t1', 't2']);
   const flags = JSON.parse('{"__proto__":"p","k":"v"}') as Record<string, string>;
-  const kept = fromWireFormatTContainers({ ...wire, flags }, { validate: false }) as typeof wire;
-  assert.equal(Object.getPrototypeOf(kept.flags), Object.prototype);
-  assert.equal(Object.hasOwn(kept.flags, '__proto__'), true);
+  const keptFlags = requireRecord(requireRecord(fromWireFormatTContainers({ ...wire, flags }, { validate: false }), 'kept').flags, 'flags');
+  assert.equal(Object.getPrototypeOf(keptFlags), Object.prototype);
+  assert.equal(Object.hasOwn(keptFlags, '__proto__'), true);
 });
 
 test('generated decode of a recursive model rejects a cycle instead of overflowing the stack', async () => {
@@ -408,7 +409,7 @@ test('a nested union reads its tag once', async () => {
   let reads = 0;
   const value = { address: 'a@example.com' };
   Object.defineProperty(value, 'kind', { enumerable: true, get() { reads++; return 'email'; } });
-  assert.deepEqual({ ...(fromWireFormatTContact({ value }, { validate: false }) as { value: object }).value }, { kind: 'email', address: 'a@example.com' });
+  assert.deepEqual({ ...requireRecord(requireRecord(fromWireFormatTContact({ value }, { validate: false }), 'contact').value, 'value') }, { kind: 'email', address: 'a@example.com' });
   assert.equal(reads, 1);
   assert.throws(() => fromWireFormatTContact({ value: { kind: 'fax' } }, { validate: false }), (error: unknown) => {
     assert.ok(error instanceof LibError);
@@ -420,15 +421,16 @@ test('a nested union reads its tag once', async () => {
 test('an open object without declared fields keeps an own __proto__ key instead of changing the prototype', async () => {
   const { fromWireFormatTBag, fromWireFormatTShelfOfBag } = await loadCodecs('bag', ['fromWireFormatTBag', 'fromWireFormatTShelfOfBag']);
   const wire = (): Record<string, unknown> => JSON.parse('{"__proto__":{"x":1},"k":"v"}') as Record<string, unknown>;
-  const plain = fromWireFormatTBag(wire(), { validate: false }) as Record<string, unknown>;
+  const plain = requireRecord(fromWireFormatTBag(wire(), { validate: false }), 'plain');
   assert.equal(Object.getPrototypeOf(plain), Object.prototype);
   assert.equal(Object.hasOwn(plain, '__proto__'), true);
   assert.equal(plain.k, 'v');
-  const nested = (fromWireFormatTShelfOfBag({ bag: wire() }, { validate: false }) as { bag: Record<string, unknown> }).bag;
+  const nested = requireRecord(requireRecord(fromWireFormatTShelfOfBag({ bag: wire() }, { validate: false }), 'shelf').bag, 'bag');
   assert.equal(Object.getPrototypeOf(nested), Object.prototype);
   assert.equal(Object.hasOwn(nested, '__proto__'), true);
   class Construct { constructor(public fields: Record<string, unknown> = {}) {} }
-  const built = fromWireFormatTBag(wire(), { validate: false, construct: Construct }) as Construct;
+  const built = fromWireFormatTBag(wire(), { validate: false, construct: Construct });
+  assert.ok(built instanceof Construct);
   assert.equal(Object.getPrototypeOf(built.fields), Object.prototype);
   assert.equal(Object.hasOwn(built.fields, '__proto__'), true);
 });
@@ -436,18 +438,18 @@ test('an open object without declared fields keeps an own __proto__ key instead 
 test('generated decode copies declared objects and carries unknown values by reference', async () => {
   const { fromWireFormatTRecord, fromWireFormatTShelf } = await loadCodecs('recursive', ['fromWireFormatTRecord', 'fromWireFormatTShelf']);
   const wire = { payload: { nested: { a: 1 } } };
-  const decoded = fromWireFormatTRecord(wire, { validate: false }) as { payload: { nested: { a: number } } };
+  const decoded = requireRecord(fromWireFormatTRecord(wire, { validate: false }), 'decoded');
   wire.payload.nested.a = 2;
-  assert.equal(decoded.payload.nested.a, 2);
+  assert.equal(requireRecord(requireRecord(decoded.payload, 'payload').nested, 'nested').a, 2);
   assert.strictEqual(decoded.payload, wire.payload);
 
   const shelf = { owner: { id: 'o' }, extras: { tag: { deep: 1 } } };
-  const copy = fromWireFormatTShelf(shelf, { validate: false }) as typeof shelf;
+  const copy = requireRecord(fromWireFormatTShelf(shelf, { validate: false }), 'copy');
   shelf.owner.id = 'changed';
-  assert.equal(copy.owner.id, 'o');
+  assert.equal(requireRecord(copy.owner, 'owner').id, 'o');
   assert.notStrictEqual(copy.owner, shelf.owner);
   assert.notStrictEqual(copy.extras, shelf.extras);
-  assert.strictEqual(copy.extras.tag, shelf.extras.tag);
+  assert.strictEqual(requireRecord(copy.extras, 'extras').tag, shelf.extras.tag);
 
   const loop: Record<string, unknown> = {};
   loop.again = loop;
