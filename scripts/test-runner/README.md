@@ -44,7 +44,7 @@ The checked-in `package-lock.json` comes from macOS and lacks the Linux platform
 
 ## A big focused set
 
-A focused call cannot pass its 180 s ceiling in one run. The runner reads the recorded seconds of each file, and it splits the call into the fewest runs that each fit. One command runs them all, one after the other, under one lock and one build. Each run has its own 180 s ceiling.
+A focused call cannot pass its 180 s ceiling in one run. The runner reads the recorded seconds of each file, and it splits the call into few runs that each fit. One command runs them all, one after the other, under one lock and one build. Each run has its own 180 s ceiling.
 
 - **Seconds.** A TypeScript 6 call (`--typescript 6`) reads the `typescript 6` step of the `full-ts6` order record. Other calls read the `unit` step of the `full` record (see [File order](#file-order)). A file with no entry there costs 45 s on TypeScript 6 and 10 s on TypeScript 7.
 - **Fit.** The recorded seconds of a file are its wall time in a full run that keeps 8 files going. So the runner estimates the wall time of a run as the sum of the recorded seconds divided by 8 (the files at once, or fewer on a small machine). A run fits when the estimate is 135 s or less, which is three quarters of the ceiling. The seconds come from earlier runs at another load, so the rest of the ceiling is room for the error. A file that alone needs more than 135 s by this estimate runs alone.

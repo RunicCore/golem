@@ -17,7 +17,7 @@ export function estimateWall(seconds: readonly number[], width: number): number 
 }
 
 /**
- * Cuts the files into the fewest runs whose estimated wall time (`estimateWall`) fits the share of the ceiling that one run may
+ * Cuts the files into few runs whose estimated wall time (`estimateWall`) fits the share of the ceiling that one run may
  * use, longest file first and each into the run with the least work so far. Every file lands in exactly one run. A file that
  * alone costs more than that share gets a run of its own: no cut makes it fit, and it must not force a cut of the others.
  */

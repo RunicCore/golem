@@ -15,7 +15,7 @@ test('a set that fits under the ceiling is one run', () => {
   assert.deepEqual(names(groups), names([files]));
 });
 
-test('a set that would pass the ceiling (the 16 files that needed 254 s in one run, T-1073) runs as the fewest runs that fit, with every file once', () => {
+test('a set that would pass the ceiling (the 16 files that needed 254 s in one run, T-1073) runs as few runs that fit, with every file once', () => {
   const files = costed(213.6, 150.6, 144.2, 142.8, 138.8, 134.9, 131.8, 114.1, 114, 108.5, 103.6, 99.1, 91.1, 81.4, 79.5, 65.4);
   const groups = splitForCeiling(files, { width: 8, ceiling: 180 });
   assert.equal(groups.length, 2);

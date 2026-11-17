@@ -222,10 +222,10 @@ if [ "$tier" = focused ]; then
   runs_dir="$(mktemp -d)"
   node .build/scripts/test-tier.js focused-runs "$ceiling" "$runs_dir" "${@:2}" || exit
   for run_file in "$runs_dir"/*.args; do
+    [ "$stopped" -eq 0 ] || break
     mapfile -d '' -t run_args < "$run_file"
     run_under_ceiling focused "${run_args[@]}"
     [ "$status" -ne 0 ] || status="$run_status"
-    [ "$stopped" -eq 0 ] || break
   done
   rm -rf "$runs_dir"
 else

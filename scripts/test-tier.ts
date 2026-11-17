@@ -267,14 +267,18 @@ export function splitTypescriptLane(args: readonly string[]): { readonly lane6: 
   return { lane6, rest };
 }
 
+/** The step labels of the unit and TypeScript 6 steps: the keys of their file seconds in the order record, which a focused call reads. */
+const UNIT_STEP = 'unit';
+const TYPESCRIPT6_STEP = 'typescript 6';
+
 /**
  * Where a focused file's seconds come from: the record of the full tier that runs the same lane, by its step. A file with no
  * entry there (a new test, or one outside the lane) costs `defaultSeconds`, about the mean file of the lane in a full run.
  */
 const FOCUSED_COSTS = {
-  unit: { tier: 'full', label: 'unit', defaultSeconds: 10 },
-  typescript6: { tier: 'full-ts6', label: 'typescript 6', defaultSeconds: 45 },
-} as const;
+  unit: { tier: 'full', label: UNIT_STEP, defaultSeconds: 10 },
+  typescript6: { tier: 'full-ts6', label: TYPESCRIPT6_STEP, defaultSeconds: 45 },
+} as const satisfies Record<string, { readonly tier: Tier; readonly label: string; readonly defaultSeconds: number }>;
 
 /** The arguments of one run of a focused group: the lane and the flags of the original call, then the group's files (each already a `.build/` path, so the run parses them as files). */
 export function groupArguments(lane6: boolean, passThrough: readonly string[], files: readonly string[]): string[] {
@@ -388,8 +392,8 @@ function steps(tier: Tier, args: readonly string[]): Group[] {
     );
   }
   if (tier === 'examples-check') return inOrder(examples);
-  const unit = nodeTest(tier, 'unit', UNIT_FILES, CONCURRENCY.unit);
-  const typescript6 = (concurrency: number): Step => nodeTest(tier, 'typescript 6', typescript6Files(), concurrency, [], typescript6Env());
+  const unit = nodeTest(tier, UNIT_STEP, UNIT_FILES, CONCURRENCY.unit);
+  const typescript6 = (concurrency: number): Step => nodeTest(tier, TYPESCRIPT6_STEP, typescript6Files(), concurrency, [], typescript6Env());
   const smoke = nodeTest(tier, 'packed smoke', [SMOKE_FILE], 1);
   if (tier === 'full') return inOrder(unit);
   // Pack and the smoke test read the workspace and /cache/packed, never a file that the lane writes. The lane's last files
