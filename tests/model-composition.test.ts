@@ -12,17 +12,19 @@ import { buildModelProject, buildModelProjectWith, writeModelGolemYaml, writeMod
 import { discardedProjectionCodecsSource, discardedProjectionMetadataSource } from './fixture-templates/models/model-composition.js';
 import { generate } from '#model/generator';
 import { modelCodec } from './support/model-codec.js';
+import { importGeneratedModule, loadClass, loadModelClasses, requireRecord } from './openapi/helpers.js';
+import { valueAt } from './support/json.js';
 
 test('an unrelated same-name class does not become a model constructor', async t => {
   const { root, sourceRoot } = fixture(t);
   fs.writeFileSync(path.join(sourceRoot, 'item.model.ts'), readFixture("models/model-composition/an-unrelated-same-name-class-does-not-become-a-model-constructor/item.model.ts"));
   writeModelGolemYaml(root, { validation: false });
   await buildModelProject(root);
-  const generated = await import(`${path.join(root, 'build/item.model.generated.js')}?${Date.now()}`);
-  const authored = await import(`${path.join(root, 'build/item.model.js')}?${Date.now()}`);
-  const parent = new generated.TParentBaseModel({ child: { id: 'child' } });
-  assert.ok(parent.child instanceof generated.TItemBaseModel);
-  assert.equal(parent.child instanceof authored.Item, false);
+  const { TParentBaseModel, TItemBaseModel } = await loadModelClasses(path.join(root, 'build/item.model.generated.js'), ['TParentBaseModel', 'TItemBaseModel']);
+  const Item = await loadClass(path.join(root, 'build/item.model.js'), 'Item');
+  const parent = new TParentBaseModel({ child: { id: 'child' } });
+  assert.ok(valueAt(parent, 'child') instanceof TItemBaseModel);
+  assert.equal(valueAt(parent, 'child') instanceof Item, false);
   assert.deepEqual(modelCodec(parent).toWireFormat(parent), { child: { id: 'child' } });
 });
 
@@ -36,11 +38,11 @@ test('first generation resolves model class bases through project path aliases',
   fs.writeFileSync(path.join(sourceRoot, 'parent.model.ts'), readFixture("models/model-composition/first-generation-resolves-model-class-bases-through-project-path-aliases/parent.model.ts"));
   writeModelGolemYaml(root, { validation: false });
   await buildModelProject(root);
-  const generated = await import(`${path.join(root, 'build/parent.model.generated.js')}?${Date.now()}`);
-  const authored = await import(path.join(root, 'build/item.model.js'));
-  const parent = new generated.TParentBaseModel({ child: { id: 'nested' } });
-  assert.ok(parent.child instanceof authored.Item);
-  assert.equal(parent.child.label, 'nested');
+  const { TParentBaseModel } = await loadModelClasses(path.join(root, 'build/parent.model.generated.js'), ['TParentBaseModel']);
+  const { Item } = await loadModelClasses(path.join(root, 'build/item.model.js'), ['Item']);
+  const parent = new TParentBaseModel({ child: { id: 'nested' } });
+  assert.ok(valueAt(parent, 'child') instanceof Item);
+  assert.equal(valueAt(parent, 'child', 'label'), 'nested');
   assert.deepEqual(modelCodec(parent).toWireFormat(parent), { child: { id: 'nested' } });
 });
 
@@ -154,9 +156,9 @@ export type TItem = IModel<{ value: (Money | { kind: 'a' | 'b'; x: number } | { 
 `,
   });
   await buildModelProjectWith(root, { validation: true });
-  const generated = await import(`${path.join(root, 'build/item.model.generated.js')}?${Date.now()}`);
+  const { TItemBaseModel } = await loadModelClasses(path.join(root, 'build/item.model.generated.js'), ['TItemBaseModel']);
   for (const value of [{ kind: 'a', x: 1 }, { kind: 'b', x: 2 }, { kind: 'c' }, { amount: 5, currency: 'EUR' }]) {
-    assert.deepEqual(modelCodec(generated.TItemBaseModel).toWireFormat(modelCodec(generated.TItemBaseModel).fromWireFormat({ value })), { value });
+    assert.deepEqual(modelCodec(TItemBaseModel).toWireFormat(modelCodec(TItemBaseModel).fromWireFormat({ value })), { value });
   }
 });
 
@@ -223,8 +225,8 @@ export const brandKeysDropped: [SymbolKeys<Item>] extends [SymbolKeys<Plain>] ? 
 `,
   });
   await buildModelProjectWith(root, { validation });
-  const authored = await import(`${path.join(root, 'build/item.model.js')}?${Date.now()}`);
-  const item = new authored.Item({ amount: 1, '__@generatedModelWireBrand@1': 'plain' });
+  const { Item } = await loadModelClasses(path.join(root, 'build/item.model.js'), ['Item']);
+  const item = new Item({ amount: 1, '__@generatedModelWireBrand@1': 'plain' });
   assert.deepEqual(modelCodec(item).toWireFormat(item), { amount: 1, '__@generatedModelWireBrand@1': 'plain' });
 });
 
@@ -285,19 +287,20 @@ test('MobX projections retain nested observability', async t => {
   fs.writeFileSync(path.join(sourceRoot, 'item.model.ts'), readFixture("models/model-composition/model-composition-item-model/item.model.ts"));
   writeModelGolemYaml(root, { mobx: true, validation: true });
   await buildModelProject(root);
-  const { Parent, Child } = await import(path.join(root, 'build/item.model.js'));
+  const { Parent, Child } = await loadModelClasses(path.join(root, 'build/item.model.js'), ['Parent', 'Child']);
   const { autorun, isObservableObject, runInAction } = await import('mobx');
   const parent = modelCodec(Parent).fromWireFormat({ projected: { child: { name: 'First' } } });
-  assert.ok(parent.projected.child instanceof Child);
-  assert.equal(Object.getPrototypeOf(parent.projected), Object.prototype);
-  assert.ok(isObservableObject(parent.projected.child));
-  const seen: string[] = [];
-  const dispose = autorun(() => { seen.push(parent.projected.child.name); });
+  const child = () => requireRecord(valueAt(parent, 'projected', 'child'), 'the projected child');
+  assert.ok(child() instanceof Child);
+  assert.equal(Object.getPrototypeOf(valueAt(parent, 'projected')), Object.prototype);
+  assert.ok(isObservableObject(child()));
+  const seen: unknown[] = [];
+  const dispose = autorun(() => { seen.push(child().name); });
   try {
-    runInAction(() => { parent.projected.child.name = 'Next'; });
+    runInAction(() => { child().name = 'Next'; });
     assert.deepEqual(seen, ['First', 'Next']);
     assert.deepEqual(modelCodec(parent).toWireFormat(parent), { projected: { child: { name: 'Next' } } });
-    runInAction(() => { parent.projected.child.name = 'x'; });
+    runInAction(() => { child().name = 'x'; });
     assert.throws(() => requireObjectCodec(generatedCodecIdFromRoot(root, 'Parent')).assert( modelCodec(parent).toWireFormat(parent)));
   } finally { dispose(); }
 });
@@ -356,10 +359,10 @@ export type TItem = IModel<{ at: Timestamp; later?: Optional }>;
 `);
     writeModelGolemYaml(root, { validation });
     await buildModelProject(root);
-    const generated = await import(`${path.join(root, 'build/item.model.generated.js')}?${Date.now()}`);
-    const decoded = modelCodec(generated.TItemBaseModel).fromWireFormat({ at: '2024-05-06T07:08:09.000Z', later: '2025-01-02T03:04:05.000Z' });
-    assert.equal(decoded.at instanceof Date, true);
-    assert.equal(decoded.later instanceof Date, true);
+    const { TItemBaseModel } = await loadModelClasses(path.join(root, 'build/item.model.generated.js'), ['TItemBaseModel']);
+    const decoded = modelCodec(TItemBaseModel).fromWireFormat({ at: '2024-05-06T07:08:09.000Z', later: '2025-01-02T03:04:05.000Z' });
+    assert.equal(valueAt(decoded, 'at') instanceof Date, true);
+    assert.equal(valueAt(decoded, 'later') instanceof Date, true);
     assert.deepEqual(modelCodec(decoded).toWireFormat(decoded), { at: '2024-05-06T07:08:09.000Z', later: '2025-01-02T03:04:05.000Z' });
   });
 }
@@ -373,7 +376,7 @@ export type Email = string & { readonly __brand: 'Email' };
 export type TItem = IModel<{ email: Email }>;
 `);
     await buildModelProjectWith(root, { validation: true, exact });
-    await import(`${path.join(root, 'build/item.model.generated.js')}?${Date.now()}`);
+    await importGeneratedModule(root, 'the item companion', 'build/item.model.generated.js');
     const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TItem'));
     assert.deepEqual(codec.parse('{"email":"a@b.c"}'), { email: 'a@b.c' });
     assert.equal(codec.validate({ email: 'a@b.c' }), true);
@@ -384,7 +387,7 @@ export type TItem = IModel<{ email: Email }>;
 /** Build the project with validation on and return the codec of its `TItem`. */
 async function builtItemCodec(root: string): Promise<ReturnType<typeof requireObjectCodec>> {
   await buildModelProjectWith(root, { validation: true });
-  await import(`${path.join(root, 'build/item.model.generated.js')}?${Date.now()}`);
+  await importGeneratedModule(root, 'the item companion', 'build/item.model.generated.js');
   return requireObjectCodec(generatedCodecIdFromRoot(root, 'TItem'));
 }
 
@@ -472,14 +475,13 @@ export type TItem = IModel<{ byId: Record<number, Date>; items: { [id: number]: 
 `);
   const codec = await builtItemCodec(root);
   const day = '2024-01-01T00:00:00.000Z';
-  const decoded = codec.parse(`{"byId":{"1":"${day}"},"items":{"2":{"at":"${day}"}},"at":"${day}"}`) as { byId: Record<number, Date>; items: Record<number, { at: Date }> };
-  assert.deepEqual([decoded.byId[1], decoded.items[2]?.at], [new Date(day), new Date(day)]);
+  const decoded = codec.parse(`{"byId":{"1":"${day}"},"items":{"2":{"at":"${day}"}},"at":"${day}"}`);
+  assert.deepEqual([valueAt(decoded, 'byId', '1'), valueAt(decoded, 'items', '2', 'at')], [new Date(day), new Date(day)]);
   // The keys of a number index are numbers written as text.
   assert.throws(() => codec.parse(`{"byId":{"abc":"${day}"},"items":{},"at":"${day}"}`), /Model validation failed/);
-  assert.deepEqual((codec.parse(`{"byId":{"-2.5":"${day}"},"items":{},"at":"${day}"}`) as { byId: Record<string, Date> }).byId['-2.5'], new Date(day));
+  assert.deepEqual(valueAt(codec.parse(`{"byId":{"-2.5":"${day}"},"items":{},"at":"${day}"}`), 'byId', '-2.5'), new Date(day));
   // A model that holds itself through a number-keyed record converts the nested level.
-  const nested = codec.parse(`{"byId":{},"items":{},"at":"${day}","kids":{"1":{"byId":{},"items":{},"at":"${day}"}}}`) as { kids: Record<number, { at: Date }> };
-  assert.deepEqual(nested.kids[1]?.at, new Date(day));
+  assert.deepEqual(valueAt(codec.parse(`{"byId":{},"items":{},"at":"${day}","kids":{"1":{"byId":{},"items":{},"at":"${day}"}}}`), 'kids', '1', 'at'), new Date(day));
 });
 
 for (const key of ['${number}', '${string}_${number}', 'Uppercase<string>']) {
@@ -545,10 +547,10 @@ export type TItem = IModel<{ row: [string, ...Date[], number] }>;
 `);
   writeModelGolemYaml(root, { validation: false });
   await buildModelProject(root);
-  const generated = await import(`${path.join(root, 'build/item.model.generated.js')}?${Date.now()}`);
+  const { TItemBaseModel } = await loadModelClasses(path.join(root, 'build/item.model.generated.js'), ['TItemBaseModel']);
   const wire = { row: ['a', '2024-01-01T00:00:00.000Z', '2024-01-02T00:00:00.000Z', 3] };
-  const decoded = modelCodec(generated.TItemBaseModel).fromWireFormat(wire);
-  assert.deepEqual(decoded.row, ['a', new Date('2024-01-01T00:00:00.000Z'), new Date('2024-01-02T00:00:00.000Z'), 3]);
+  const decoded = modelCodec(TItemBaseModel).fromWireFormat(wire);
+  assert.deepEqual(valueAt(decoded, 'row'), ['a', new Date('2024-01-01T00:00:00.000Z'), new Date('2024-01-02T00:00:00.000Z'), 3]);
   assert.deepEqual(modelCodec(decoded).toWireFormat(decoded), wire);
 });
 
@@ -626,11 +628,11 @@ export type TCatOwner = IModel<TOwner & { pet: TCat; pets: TCat[] }>;
 `);
     writeModelGolemYaml(root, { validation });
     await buildModelProject(root);
-    const generated = await import(`${path.join(root, 'build/pets.model.generated.js')}?${Date.now()}`);
+    const { TCatOwnerBaseModel, TCatBaseModel } = await loadModelClasses(path.join(root, 'build/pets.model.generated.js'), ['TCatOwnerBaseModel', 'TCatBaseModel']);
     const wire = { pet: { name: 'Tom', lives: 9 }, pets: [{ name: 'Kit', lives: 3 }] };
-    const decoded = modelCodec(generated.TCatOwnerBaseModel).fromWireFormat(wire);
-    assert.equal(decoded.pet instanceof generated.TCatBaseModel, true);
-    assert.equal(decoded.pets[0] instanceof generated.TCatBaseModel, true);
+    const decoded = modelCodec(TCatOwnerBaseModel).fromWireFormat(wire);
+    assert.equal(valueAt(decoded, 'pet') instanceof TCatBaseModel, true);
+    assert.equal(valueAt(decoded, 'pets', 0) instanceof TCatBaseModel, true);
     assert.deepEqual(modelCodec(decoded).toWireFormat(decoded), wire);
   });
 }
