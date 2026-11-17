@@ -569,7 +569,7 @@ const INFERRED = 'whose type golem infers';
  * static block, which carries no type.
  */
 function holdsNothing(node: ts.Node): boolean {
-  return ts.isIdentifier(node) || ts.isLiteralTypeNode(node) || ts.isTemplateLiteralTypeNode(node) || ts.isEnumDeclaration(node) || ts.isEnumMember(node) || ts.isClassStaticBlockDeclaration(node)
+  return ts.isIdentifier(node) || ts.isLiteralTypeNode(node) || ts.isEnumDeclaration(node) || ts.isEnumMember(node) || ts.isClassStaticBlockDeclaration(node)
     || (ts.isTypeNode(node) && ts.forEachChild(node, () => true) === undefined);
 }
 
@@ -615,6 +615,8 @@ function reach(context: TagAnalysisContext, walk: Walk, node: ts.Node): void {
     nextAll(node.types);
   } else if (ts.isArrayTypeNode(node)) {
     next(node.elementType);
+  } else if (ts.isTemplateLiteralTypeNode(node)) {
+    nextAll(node.templateSpans.map(span => span.type));
   } else if (ts.isTupleTypeNode(node)) {
     nextAll(node.elements);
   } else if (ts.isConditionalTypeNode(node)) {

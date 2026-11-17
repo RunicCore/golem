@@ -15,16 +15,18 @@ const verbatim = (text: string) => {
   const strings: TemplateStringsArray = Object.assign([text], { raw: [text] });
   return tsSource(strings);
 };
-const imports = "import type { MinLength, TValidation } from '@exprtlabs/golem/tags';\nimport { a } from './rules.js';\n";
+const imports = "import type { MinLength, TValidation } from '@exprtlabs/golem/tags';\nimport { a, b } from './rules.js';\n";
 
 function generateField(t: test.TestContext, declarations: string, field: string): string {
   const { root, sourceRoot } = fixture(t);
-  fs.writeFileSync(path.join(sourceRoot, 'rules.ts'), "export const a: (v: string) => boolean = (v) => v !== '';");
+  fs.writeFileSync(path.join(sourceRoot, 'rules.ts'), "export const a: (v: string) => boolean = (v) => v !== '';\nexport const b: typeof a = (v) => v.length < 9;");
   fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({ name: 'A', imports: verbatim(`${imports}${declarations}`), fields: verbatim(`field: ${field}`) }).text);
   return generate({ root, profile: { validation: true } }).artifacts.map(artifact => artifact.content).join('\n');
 }
 
 const refusedRows = {
+  'a tagged hole in a union with null': { declarations: '', field: '`id-${string & MinLength<3>}` | null' },
+  'a tagged hole in a union with undefined': { declarations: '', field: '`id-${string & MinLength<3>}` | undefined' },
   'a constraint tag in a hole of a template literal type': { declarations: '', field: '`id-${string & MinLength<3>}`' },
   'a function tag in a hole of a template literal type': { declarations: '', field: '`id-${string & TValidation<typeof a>}`' },
   'a tagged hole beside a tag of the field': { declarations: '', field: '`id-${string & MinLength<3>}` & MinLength<5>' },
@@ -34,7 +36,15 @@ const refusedRows = {
 
 for (const [name, row] of Object.entries(refusedRows)) test(`generation refuses ${name} by name`, t => {
   // protects: T-1077 the tag in a hole was dropped without a message: the field read as a plain string (R-55 no silent difference)
-  assert.throws(() => generateField(t, row.declarations, row.field), /RUNM1045: A tag inside the template literal type .* checks no value/);
+  assert.throws(() => generateField(t, row.declarations, row.field), /a\.model\.ts:\d+:34 RUNM1045: A tag inside the template literal type .* checks no value/);
+});
+
+test('the walk of a tag function reads the holes of a template literal type, and refuses a hole tag that writes no typeof', t => {
+  // protects: T-1077 the walk skipped a template literal type as a node that holds nothing, so a function tag written in a hole without typeof was never reached
+  assert.throws(
+    () => generateField(t, 'type Fa = typeof a;\ntype Id = `id-${string & TValidation<Fa>}`;\n', 'Id & TValidation<typeof b>'),
+    /RUNM1040: .*without `typeof`/,
+  );
 });
 
 test('a template literal type with no tag in its holes generates, also beside a tag of the field', t => {
