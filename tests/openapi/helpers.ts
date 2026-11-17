@@ -328,23 +328,25 @@ export function isGeneratedModelClass(value: unknown): value is GeneratedModelCl
   return typeof value === 'function' && Boolean(findGeneratedModelDefinitionForConstructor(value));
 }
 
-export interface GeneratedClientInstance {
-  [name: string]: () => { execute: (
-    input?: unknown,
-    options?: unknown,
-  ) => Promise<{
-    status: number;
-    body: unknown;
-    headers: Record<string, unknown>;
-    contentType?: string | null;
-  }>; readonly loading?: boolean };
+/** One operation of a generated client: `execute` answers with a response whose body is `Body`. */
+type GeneratedOperation<Body> = () => { execute: (
+  input?: unknown,
+  options?: unknown,
+) => Promise<{
+  status: number;
+  body: Body;
+  headers: Record<string, unknown>;
+  contentType?: string | null;
+}>; readonly loading?: boolean };
+
+/** A generated client. A test names the response body of the operations whose body it reads in `Bodies`; every other operation answers with `unknown`. */
+export type GeneratedClientInstance<Bodies extends object = object> = { readonly [Name in keyof Bodies]: GeneratedOperation<Bodies[Name]> } & { [name: string]: GeneratedOperation<unknown> };
+
+export interface GeneratedClientClass<Bodies extends object = object> {
+  new (options: Record<string, unknown>): GeneratedClientInstance<Bodies>;
 }
 
-export interface GeneratedClientClass {
-  new (options: Record<string, unknown>): GeneratedClientInstance;
-}
-
-function isGeneratedClientClass(value: unknown): value is GeneratedClientClass {
+function isGeneratedClientClass<Bodies extends object>(value: unknown): value is GeneratedClientClass<Bodies> {
   return typeof value === 'function';
 }
 
@@ -358,15 +360,15 @@ export async function importGeneratedModule(output: string, label: string, file 
 }
 
 /** The client class `<name>Client` that the loaded module `module` exports; a missing export or one that is no class throws and names `label` and the export. */
-export function generatedClientFrom(module: Record<string, unknown>, name: string, label: string): GeneratedClientClass {
+export function generatedClientFrom<Bodies extends object = object>(module: Record<string, unknown>, name: string, label: string): GeneratedClientClass<Bodies> {
   const Client = module[`${name}Client`];
-  if (!isGeneratedClientClass(Client)) throw new TypeError(`${label} must export the client class ${name}Client`);
+  if (!isGeneratedClientClass<Bodies>(Client)) throw new TypeError(`${label} must export the client class ${name}Client`);
   return Client;
 }
 
 /** Loads `<name>Client` from the compiled `dist/client.js` of a generated SDK, or from `file` below `output`. */
-export async function loadGeneratedClient(output: string, name: string, file = 'dist/client.js'): Promise<GeneratedClientClass> {
-  return generatedClientFrom(await importFile(join(output, file)), name, join(output, file));
+export async function loadGeneratedClient<Bodies extends object = object>(output: string, name: string, file = 'dist/client.js'): Promise<GeneratedClientClass<Bodies>> {
+  return generatedClientFrom<Bodies>(await importFile(join(output, file)), name, join(output, file));
 }
 
 function exportsModelClasses<Name extends string>(module: Record<string, unknown>, names: readonly Name[]): module is Record<Name, GeneratedModelClass> {

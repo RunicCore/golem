@@ -37,9 +37,17 @@ const DOCUMENT = {
 
 interface Fetched { readonly body: unknown }
 
+/** The response bodies that these tests read. A date field is `unknown`: `dates` makes it a Date or a Temporal value, and the test narrows it. */
+interface EventBodies {
+  createEvent: { at: unknown; day: unknown };
+  echoInline: { when: unknown };
+  echoComposed: { at: unknown; note: unknown };
+  streamEvents: AsyncIterable<{ at: unknown }>;
+}
+
 /** Generates the SDK with `dates` and returns a client whose fetch answers `reply` and records the body each request sends, and the folder of the SDK. */
-async function loadClient(t: Parameters<typeof loadSdk>[0], dates: 'date' | 'temporal', reply: () => Response, sent: Fetched[], validation = true): Promise<{ readonly client: GeneratedClientInstance; readonly output: string }> {
-  const sdk = await loadSdk(t, `golem-openapi-client-conversion-${dates}-`, { document: DOCUMENT, name: 'Events', dates, validation });
+async function loadClient(t: Parameters<typeof loadSdk>[0], dates: 'date' | 'temporal', reply: () => Response, sent: Fetched[], validation = true): Promise<{ readonly client: GeneratedClientInstance<EventBodies>; readonly output: string }> {
+  const sdk = await loadSdk<EventBodies>(t, `golem-openapi-client-conversion-${dates}-`, { document: DOCUMENT, name: 'Events', dates, validation });
   const client = sdk.createClient({
     fetchImpl: async (_url: RequestInfo | URL, init?: RequestInit) => {
       sent.push({ body: typeof init?.body === 'string' && new Headers(init.headers).get('content-type') === 'application/json' ? JSON.parse(init.body) : init?.body });
@@ -55,22 +63,20 @@ test('the client returns Date values for a response body and sends them as wire 
   // protects: R-80 the client converts a $ref body in both directions
   const sent: Fetched[] = [];
   const { client } = await loadClient(t, 'date', () => Response.json(WIRE_EVENT, { status: 201 }), sent);
-  const response = await client.createEvent!().execute({ body: { at: new Date('2025-01-02T03:04:05Z'), day: '2025-01-02' } });
+  const response = await client.createEvent().execute({ body: { at: new Date('2025-01-02T03:04:05Z'), day: '2025-01-02' } });
   assert.deepEqual(sent, [{ body: { at: '2025-01-02T03:04:05.000Z', day: '2025-01-02' } }]);
-  const body = response.body as { at: unknown; day: unknown };
-  assert.ok(body.at instanceof Date);
-  assert.equal((body.at as Date).toISOString(), '2025-01-02T03:04:05.000Z');
-  assert.equal(body.day, '2025-01-02');
+  assert.ok(response.body.at instanceof Date);
+  assert.equal(response.body.at.toISOString(), '2025-01-02T03:04:05.000Z');
+  assert.equal(response.body.day, '2025-01-02');
 });
 
 test('with dates: temporal the client returns Temporal values for a $ref body and sends their wire strings', async t => {
   // protects: R-80 Temporal date-time and date convert in a $ref body, both directions
   const sent: Fetched[] = [];
   const { client } = await loadClient(t, 'temporal', () => Response.json(WIRE_EVENT, { status: 201 }), sent);
-  const created = await client.createEvent!().execute({ body: { at: Temporal.Instant.from('2025-01-02T03:04:05Z'), day: Temporal.PlainDate.from('2025-01-02') } });
-  const event = created.body as { at: unknown; day: unknown };
-  assert.ok(event.at instanceof Temporal.Instant);
-  assert.ok(event.day instanceof Temporal.PlainDate);
+  const created = await client.createEvent().execute({ body: { at: Temporal.Instant.from('2025-01-02T03:04:05Z'), day: Temporal.PlainDate.from('2025-01-02') } });
+  assert.ok(created.body.at instanceof Temporal.Instant);
+  assert.ok(created.body.day instanceof Temporal.PlainDate);
   assert.deepEqual(sent, [{ body: { at: '2025-01-02T03:04:05Z', day: '2025-01-02' } }]);
 });
 
@@ -78,8 +84,8 @@ test('with dates: temporal the client converts an inline body', async t => {
   // protects: R-80 Temporal values convert in an inline body, both directions
   const sent: Fetched[] = [];
   const { client } = await loadClient(t, 'temporal', () => Response.json({ when: '2025-01-02T03:04:05Z' }), sent);
-  const inline = await client.echoInline!().execute({ body: { when: Temporal.Instant.from('2025-01-02T03:04:05Z') } });
-  assert.ok((inline.body as { when: unknown }).when instanceof Temporal.Instant);
+  const inline = await client.echoInline().execute({ body: { when: Temporal.Instant.from('2025-01-02T03:04:05Z') } });
+  assert.ok(inline.body.when instanceof Temporal.Instant);
   assert.deepEqual(sent, [{ body: { when: '2025-01-02T03:04:05Z' } }]);
 });
 
@@ -87,9 +93,9 @@ test('with dates: temporal the client converts each stream item', async t => {
   // protects: R-80 Temporal values convert in a stream item
   const sent: Fetched[] = [];
   const { client } = await loadClient(t, 'temporal', () => new Response(`${JSON.stringify(WIRE_EVENT)}\n${JSON.stringify(WIRE_EVENT)}\n`, { headers: { 'content-type': 'application/x-ndjson' } }), sent);
-  const streamed = await client.streamEvents!().execute({});
+  const streamed = await client.streamEvents().execute({});
   const items: unknown[] = [];
-  for await (const item of streamed.body as AsyncIterable<{ at: unknown }>) items.push(item.at);
+  for await (const item of streamed.body) items.push(item.at);
   assert.equal(items.length, 2);
   assert.ok(items.every(at => at instanceof Temporal.Instant));
 });
@@ -98,7 +104,7 @@ test('a body with nothing to convert passes through unchanged', async t => {
   // protects: R-80 identity bodies have no codec: the value is the same object
   const sent: Fetched[] = [];
   const { client } = await loadClient(t, 'date', () => Response.json({ id: 'a' }), sent);
-  const response = await client.echoPlain!().execute({ body: { id: 'a' } });
+  const response = await client.echoPlain().execute({ body: { id: 'a' } });
   assert.deepEqual(sent, [{ body: { id: 'a' } }]);
   assert.deepEqual(response.body, { id: 'a' });
 });
@@ -108,12 +114,12 @@ test('a response with an invalid date is rejected as a validation error caused b
   const sent: Fetched[] = [];
   const { client } = await loadClient(t, 'date', () => Response.json({ at: 'not a date', day: '2025-01-02' }, { status: 201 }), sent);
   await assert.rejects(
-    client.createEvent!().execute({ body: { at: new Date('2025-01-02T03:04:05Z'), day: '2025-01-02' } }),
+    client.createEvent().execute({ body: { at: new Date('2025-01-02T03:04:05Z'), day: '2025-01-02' } }),
     (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.Validation && error.causedByInput === true,
   );
   sent.length = 0;
   await assert.rejects(
-    client.createEvent!().execute({ body: { at: '2025-01-02T03:04:05Z', day: 3 } }),
+    client.createEvent().execute({ body: { at: '2025-01-02T03:04:05Z', day: 3 } }),
     (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.Validation && error.causedByInput === true,
   );
   assert.deepEqual(sent, []);
@@ -123,7 +129,7 @@ test('a form-urlencoded body with a date is sent with the date as its wire strin
   // protects: R-80 the encoder runs for every request media type, so a form field holds the wire string
   const sent: Fetched[] = [];
   const { client } = await loadClient(t, 'date', () => new Response(null, { status: 204 }), sent);
-  await client.submitForm!().execute({ body: { when: new Date('2025-01-02T03:04:05Z') } });
+  await client.submitForm().execute({ body: { when: new Date('2025-01-02T03:04:05Z') } });
   assert.deepEqual(sent, [{ body: 'when=2025-01-02T03%3A04%3A05.000Z' }]);
 });
 
@@ -131,11 +137,10 @@ test('an allOf body with a date converts in both directions', async t => {
   // protects: R-80 a composed body converts the member fields it merges
   const sent: Fetched[] = [];
   const { client } = await loadClient(t, 'date', () => Response.json({ at: '2025-01-02T03:04:05Z', note: 'hi' }), sent);
-  const response = await client.echoComposed!().execute({ body: { at: new Date('2025-01-02T03:04:05Z'), note: 'hi' } });
+  const response = await client.echoComposed().execute({ body: { at: new Date('2025-01-02T03:04:05Z'), note: 'hi' } });
   assert.deepEqual(sent, [{ body: { at: '2025-01-02T03:04:05.000Z', note: 'hi' } }]);
-  const body = response.body as { at: unknown; note: unknown };
-  assert.ok(body.at instanceof Date);
-  assert.equal(body.note, 'hi');
+  assert.ok(response.body.at instanceof Date);
+  assert.equal(response.body.note, 'hi');
 });
 
 test('a class instance with extra own state is sent without that state against additionalProperties false', async t => {
@@ -146,11 +151,11 @@ test('a class instance with extra own state is sent without that state against a
   }
   const sent: Fetched[] = [];
   const { client } = await loadClient(t, 'date', () => new Response(null, { status: 204 }), sent);
-  await client.chargeTracked!().execute({ body: new TrackedCharge(5, new Date('2025-01-02T03:04:05Z')) });
+  await client.chargeTracked().execute({ body: new TrackedCharge(5, new Date('2025-01-02T03:04:05Z')) });
   assert.deepEqual(sent, [{ body: { amount: 5, when: '2025-01-02T03:04:05.000Z' } }]);
   sent.length = 0;
   await assert.rejects(
-    client.chargeTracked!().execute({ body: { amount: 5, when: new Date('2025-01-02T03:04:05Z'), trace: 'internal-1' } as never }),
+    client.chargeTracked().execute({ body: { amount: 5, when: new Date('2025-01-02T03:04:05Z'), trace: 'internal-1' } as never }),
     (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.Validation && error.causedByInput === true,
   );
   assert.deepEqual(sent, []);
@@ -160,7 +165,7 @@ test('a multipart body with a date is sent with the date as its wire string', as
   // protects: R-80 the encoder runs for a multipart request media type
   const sent: Fetched[] = [];
   const { client } = await loadClient(t, 'date', () => new Response(null, { status: 204 }), sent);
-  await client.uploadForm!().execute({ body: { when: new Date('2025-01-02T03:04:05Z') } });
+  await client.uploadForm().execute({ body: { when: new Date('2025-01-02T03:04:05Z') } });
   assert.ok(sent[0]?.body instanceof FormData);
   assert.equal(sent[0].body.get('when'), '2025-01-02T03:04:05.000Z');
 });
@@ -169,7 +174,7 @@ test('a text body with a date is sent as its wire string', async t => {
   // protects: R-80 the encoder runs for a text request media type
   const sent: Fetched[] = [];
   const { client } = await loadClient(t, 'date', () => new Response(null, { status: 204 }), sent);
-  await client.sendNote!().execute({ body: new Date('2025-01-02T03:04:05Z') });
+  await client.sendNote().execute({ body: new Date('2025-01-02T03:04:05Z') });
   assert.deepEqual(sent, [{ body: '2025-01-02T03:04:05.000Z' }]);
 });
 
@@ -178,7 +183,7 @@ test('with validation off a response with an invalid date is a deserialization e
   const sent: Fetched[] = [];
   const { client } = await loadClient(t, 'date', () => Response.json({ at: 'not a date', day: '2025-01-02' }, { status: 201 }), sent, false);
   await assert.rejects(
-    client.createEvent!().execute({ body: { at: new Date('2025-01-02T03:04:05Z'), day: '2025-01-02' } }),
+    client.createEvent().execute({ body: { at: new Date('2025-01-02T03:04:05Z'), day: '2025-01-02' } }),
     (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.Deserialization && error.causedByInput === true,
   );
 });

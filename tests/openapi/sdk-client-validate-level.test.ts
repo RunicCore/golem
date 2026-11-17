@@ -71,7 +71,7 @@ async function outcome(run: () => Promise<unknown>): Promise<string> {
 }
 
 /** A client that answers `amount`, and the number of requests it was asked to send. */
-function chargesClient(sdk: LoadedSdk, validate: Validate | undefined, answer: unknown, sent: unknown[]): GeneratedClientInstance {
+function chargesClient(sdk: LoadedSdk, validate: unknown, answer: unknown, sent: unknown[]): GeneratedClientInstance {
   return sdk.createClient({
     ...(validate === undefined ? {} : { validate }),
     fetchImpl: async (_url: RequestInfo | URL, init?: RequestInit) => {
@@ -160,7 +160,7 @@ for (const [name, client, call] of [
     // protects: R-72 any other value is a TypeError, never read as off
     const sent: unknown[] = [];
     await assert.rejects(
-      chargesClient(await sdks.full(), client as Validate | undefined, 1, sent).createCharge().execute({ body: { amount: 1, when: new Date(WHEN) } }, call === undefined ? undefined : { validate: call }),
+      chargesClient(await sdks.full(), client, 1, sent).createCharge().execute({ body: { amount: 1, when: new Date(WHEN) } }, call === undefined ? undefined : { validate: call }),
       TypeError,
     );
     assert.deepEqual(sent, []);
@@ -187,7 +187,7 @@ for (const [name, validate, expected] of [
 ] as const) {
   test(`header checks ${name}`, async () => {
     // protects: R-86 header checks are off by default and switch apart from bodies and from each other; the bad date is rejected by conversion when its check is off
-    assert.deepEqual(await headerOutcomes(validate as Validate | undefined), expected);
+    assert.deepEqual(await headerOutcomes(validate), expected);
   });
 }
 
