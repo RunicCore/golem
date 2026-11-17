@@ -427,6 +427,27 @@ export type TItem = IModel<{ id: \`id-\${string}\`; parts: \`a\${string}b\${stri
   assert.throws(() => codec.parse(JSON.stringify({ ...match, id: 'zzz' })), /Model validation failed/);
 });
 
+// protects: T-1091 RUNM1045 tells the user to intersect a tag with the template (`id-${string}` & MinLength<3>), so the pattern must still apply beside the tag
+test('a template literal field intersected with a tag, a validation function or a serde keeps its pattern', async t => {
+  const { root, sourceRoot } = fixture(t);
+  fs.writeFileSync(path.join(sourceRoot, 'rules.ts'), `export const notBad = (value: string): boolean => value !== 'id-bad';
+export const encode = (value: \`id-\${string}\`): string => value.slice(3);
+export const decode = (value: string): \`id-\${string}\` => \`id-\${value}\`;
+`);
+  fs.writeFileSync(path.join(sourceRoot, 'item.model.ts'), `import type { IModel } from '@exprtlabs/golem/model';
+import type { MinLength, TSerde, TValidation } from '@exprtlabs/golem/tags';
+import { decode, encode, notBad } from './rules.js';
+export type TItem = IModel<{ short: \`id-\${string}\` & MinLength<5>; checked: \`id-\${string}\` & TValidation<typeof notBad>; wired: \`id-\${string}\` & TSerde<typeof encode, typeof decode> }>;
+`);
+  const codec = await builtItemCodec(root);
+  const model = { short: 'id-123', checked: 'id-ok', wired: 'id-x' };
+  assert.equal(codec.validate(model), true);
+  for (const miss of [{ short: 'zzz-123' }, { short: 'id-1' }, { checked: 'zzz' }, { checked: 'id-bad' }, { wired: 'zzz' }]) {
+    assert.equal(codec.validate({ ...model, ...miss }), false, JSON.stringify(miss));
+  }
+  assert.deepEqual(codec.parse(JSON.stringify({ short: 'id-123', checked: 'id-ok', wired: 'x' })), model);
+});
+
 for (const hole of ['${number}', '${bigint}', '${Uppercase<string>}']) {
   // protects: T-1091 a template literal field with a hole that golem cannot state as a pattern read as a plain string (R-55: refuse by name)
   test(`a field typed \`id-${hole}\` stops generation with RUNM1004 when validation is on and generates when it is off`, t => {

@@ -53,9 +53,9 @@ test('a template literal type with no tag in its holes generates, also beside a 
 });
 
 for (const validation of [true, false]) test(`generation refuses a tagged hole in a Record key by name with validation ${validation ? 'on' : 'off'}`, t => {
-  // protects: T-1091 with validation off the tag in a key hole was dropped without a message, while validation on stopped with RUNM1004 (R-55 no silent difference)
+  // protects: T-1091 with validation off the tag in a key hole was dropped without a message, while validation on stopped with RUNM1004 (the value site stops with RUNM1045) (R-55 no silent difference)
   assert.throws(
     () => generateField(t, '', 'Record<`id-${string & MinLength<3>}`, Date>', validation),
-    /a\.model\.ts:\d+:34 RUNM1004: Field "field" of TA is keyed by the template literal type .* which holds a tag in a hole/,
+    /a\.model\.ts:\d+:34 RUNM1045: Field "field" of TA is keyed by the template literal type .* which holds a tag in a hole/,
   );
 });

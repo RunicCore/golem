@@ -1416,7 +1416,7 @@ function describeObject(scope: DescribeScope, call: DescribeCall, seen: Readonly
     .find((keyType): keyType is ts.TemplateLiteralType => isTemplateLiteralType(keyType) && taggedTemplateHole(call.tagContext, keyType) !== undefined);
   // A tag in a hole of a key checks no key, with validation off too: the tag would be dropped without a message (R-55).
   if (taggedKey) {
-    throw diagnostic(context.sourceFile, node ?? context.declaration, '1004',
+    throw diagnostic(context.sourceFile, node ?? context.declaration, '1045',
       `${fieldLabel(context)} is keyed by the template literal type ${checker.typeToString(taggedKey)}, which holds a tag in a hole. A tag checks a value, not a key. Remove the tag, or use string-only holes, such as \`id_\${string}\`.`);
   }
   // The key pattern is a validation rule: with validation off nothing states it, so no key type stops generation for it.
