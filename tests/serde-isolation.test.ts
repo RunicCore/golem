@@ -366,6 +366,9 @@ test('a decoder that user code runs during a parse still checks its own input fo
   assert.ok(inner instanceof LibError);
   assert.equal(inner.kind, LibErrorKind.Deserialization);
   assert.match(inner.message, /Cyclic values cannot be converted/);
+  // The rejected cycle left no decode state: once it is cut, the same object decodes.
+  delete cyclic.next;
+  assert.deepEqual(fromWireFormatTTree(cyclic, { validate: false }), {});
 });
 
 test('parsed JSON text is decoded without cycle checks', async (t) => {

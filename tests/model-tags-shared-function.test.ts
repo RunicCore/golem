@@ -151,6 +151,9 @@ const kindRows = {
   'an enum member': { declarations: `enum Color { Red, Blue }\n${neutral('Color.Red')}`, files: {} },
   'a namespace that an interface merges with': { declarations: `interface Shape { n: number }\nnamespace Shape { export const k: number = 1; }\n${neutral('Shape')}`, files: {} },
   'a namespace that an enum merges with': { declarations: `enum Mode { A }\nnamespace Mode { export const k: number = 1; }\n${neutral('Mode')}`, files: {} },
+  'a const that shares the name of a type': { declarations: `const Mode = { A: 1 } as const;\ntype Mode = 'a' | 'b';\n${neutral('Mode')}`, files: {} },
+  'a namespace of an unannotated const that an interface merges with': { declarations: `interface Shape { n: number }\nnamespace Shape { export const k = 1; }\n${neutral('Shape')}`, files: {} },
+  'a namespace of an unannotated const that an enum merges with': { declarations: `enum Mode { A }\nnamespace Mode { export const k = 1; }\n${neutral('Mode')}`, files: {} },
   'a namespace import of a module that holds no tag': { declarations: `import * as ns from './plain.js';\n${neutral('typeof ns')}`, files: { 'plain.ts': "export const k: string = '';\nexport type OnlyType = { z: 1 };" } },
   'an import type with no qualifier': { declarations: neutral("typeof import('./plain.js')"), files: { 'plain.ts': "export const k: string = '';" } },
   'a nested namespace and a namespace export that hold no tag': {
@@ -176,5 +179,12 @@ const moduleRows = {
 for (const [name, row] of Object.entries(moduleRows)) test(`a tag that a module holds is read through ${name} and shares its type with the function of the field`, t => {
   // protects: T-1069 the walk must read the exports of a module that `typeof` names, nested namespaces and `export * as` included, so the tag `a` in it is seen and the field is refused for the shared type, never bound to `b` alone
   const outcome = generateField(t, { rules: validators.copied, declarations: row.declarations, field: `string${beside} & Neutral`, files: row.files }, ['a', 'b', 'c']);
+  assert.match('refused' in outcome ? outcome.refused : `bound ${outcome.bound}`, /shares its type with another function/);
+});
+
+test('a type that shares its name with a const is read for its tag and shares its type with the function of the field', t => {
+  // protects: T-1076 a type reference reads the type half of a const/type pair, so a filter that drops the value must not drop the type alias that holds the tag
+  const declarations = `const Mode = 1;\ntype Mode = string & TValidation<typeof a>;\n${neutral('Mode')}`;
+  const outcome = generateField(t, { rules: validators.copied, declarations, field: `string${beside} & Neutral` }, ['a', 'b', 'c']);
   assert.match('refused' in outcome ? outcome.refused : `bound ${outcome.bound}`, /shares its type with another function/);
 });

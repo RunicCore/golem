@@ -512,6 +512,11 @@ function typeReferenceOf(node: ts.Node): { readonly name: ts.Node; readonly type
   return ts.isImportTypeNode(node) && node.qualifier ? { name: node.qualifier, typeArguments: node.typeArguments } : undefined;
 }
 
+/** A declaration that gives its name no type meaning: a variable, a function, or a namespace (a class, an enum, an interface and a type alias carry one). */
+function isValueOrNamespace(declaration: ts.Declaration): boolean {
+  return ts.isVariableDeclaration(declaration) || ts.isFunctionDeclaration(declaration) || ts.isModuleDeclaration(declaration);
+}
+
 function buildFunctionIndex(checker: ts.TypeChecker, files: readonly ts.SourceFile[]): FunctionIndex {
   const writers = new Map<ts.Type, Map<ts.Symbol, ts.Node>>();
   let complete = true;
@@ -564,7 +569,7 @@ const INFERRED = 'whose type golem infers';
  * static block, which carries no type.
  */
 function holdsNothing(node: ts.Node): boolean {
-  return ts.isIdentifier(node) || ts.isLiteralTypeNode(node) || ts.isTemplateLiteralTypeNode(node) || ts.isEnumDeclaration(node) || ts.isEnumMember(node) || ts.isClassStaticBlockDeclaration(node)
+  return ts.isIdentifier(node) || ts.isLiteralTypeNode(node) || ts.isEnumDeclaration(node) || ts.isEnumMember(node) || ts.isClassStaticBlockDeclaration(node)
     || (ts.isTypeNode(node) && ts.forEachChild(node, () => true) === undefined);
 }
 
@@ -586,11 +591,12 @@ function reach(context: TagAnalysisContext, walk: Walk, node: ts.Node): void {
   const stop = (reason: string): void => {
     walk.unreadable ??= { node, reason };
   };
-  const reachDeclarationsOf = (symbol: ts.Symbol | undefined): void => {
-    for (const declaration of targetSymbol(checker, symbol)?.declarations ?? []) {
+  const reachDeclarations = (declarations: readonly ts.Declaration[]): void => {
+    for (const declaration of declarations) {
       if (!context.isDefaultLibraryFile?.(declaration.getSourceFile())) next(declaration);
     }
   };
+  const reachDeclarationsOf = (symbol: ts.Symbol | undefined): void => reachDeclarations(targetSymbol(checker, symbol)?.declarations ?? []);
   // The exported values of a module or a namespace: what `typeof ns` and `typeof import('...')` name. An export that is only a type holds no value of it.
   // An export that is a namespace or a module (`export * as sub`) is read at its own declaration, which comes back here.
   const reachExportsOf = (symbol: ts.Symbol | undefined): void => {
@@ -609,6 +615,8 @@ function reach(context: TagAnalysisContext, walk: Walk, node: ts.Node): void {
     nextAll(node.types);
   } else if (ts.isArrayTypeNode(node)) {
     next(node.elementType);
+  } else if (ts.isTemplateLiteralTypeNode(node)) {
+    nextAll(node.templateSpans.map(span => span.type));
   } else if (ts.isTupleTypeNode(node)) {
     nextAll(node.elements);
   } else if (ts.isConditionalTypeNode(node)) {
@@ -637,7 +645,8 @@ function reach(context: TagAnalysisContext, walk: Walk, node: ts.Node): void {
     } else if (symbol?.declarations?.some(ts.isTypeParameterDeclaration)) {
       if (!walk.bound.has(symbol)) stop('which names a type parameter that the read does not bind');
     } else {
-      reachDeclarationsOf(symbol);
+      // A type reference names the type meaning only: a value or a namespace that shares its name (`const Mode` beside `type Mode`) is no part of the type.
+      reachDeclarations((targetSymbol(checker, symbol)?.declarations ?? []).filter(declaration => !isValueOrNamespace(declaration)));
       nextAll(reference.typeArguments);
     }
   } else if (ts.isModuleDeclaration(node)) {
@@ -1226,6 +1235,11 @@ function metadataFromType(
     );
   }
   return EMPTY;
+}
+
+/** The first hole of a template literal type that carries a golem tag (`id-${string & MinLength<3>}`), or none. A tag checks a model value, and a hole is a part of one. */
+export function taggedTemplateHole(context: TagAnalysisContext, type: ts.TemplateLiteralType): ts.Type | undefined {
+  return type.types.find((hole) => hasTagMetadata(metadataFromType(context, hole)));
 }
 
 /** Whether a type node is a reference to the `Discriminator` tag, by the tag the symbol resolves to (the importer's name for it does not matter). */

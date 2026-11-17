@@ -321,7 +321,7 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### RUNM1045
 
-**Unintersected tag.** A constraint, `TValidation`, or `TSerde` tag appears on its own instead of intersected with a model value type. **Fix:** Intersect the tag with the field's type, such as `string & MinLength<1>`.
+**Unintersected tag.** A constraint, `TValidation`, or `TSerde` tag appears on its own instead of intersected with a model value type, or inside a hole of a template literal type, such as `` `id-${string & MinLength<3>}` ``: a hole is a part of the value, so no tag checks it. **Fix:** Intersect the tag with the field's type, such as `string & MinLength<1>` or `` `id-${string}` & MinLength<3> ``.
 
 ### RUNM1046
 
