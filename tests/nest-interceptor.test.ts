@@ -1227,7 +1227,7 @@ test('an app-written interceptor decodes the headers with nestHeadersCodec and s
     intercept(context, next) {
       const found = nestHeadersCodec(context.getClass(), context.getHandler());
       const request = context.switchToHttp().getRequest<{ headers: unknown }>();
-      if (found) setNestHeaders(request, found.codec.fromWireFormat(request.headers, { strip: true }) as object);
+      if (found) setNestHeaders(request, found.codec.fromWireFormat(request.headers, { strip: true }));
       return next.handle();
     },
   };

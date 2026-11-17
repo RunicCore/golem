@@ -216,7 +216,7 @@ export function nestHeadersCodec(controllerClass: Function, handler: Function): 
  * Stores the decoded headers on the request, for the `@Headers()` parameter that the build rewrote. `request.headers` stays as received, so
  * `request.host` and the trace context keep working. A handler that runs with nothing stored fails with a `TypeError` that starts with `golem fault`.
  */
-export function setNestHeaders(request: object, value: object): void {
+export function setNestHeaders(request: object, value: unknown): void {
   Object.defineProperty(request, NEST_HEADERS_SLOT, { value, writable: true, configurable: true });
 }
 
@@ -468,7 +468,7 @@ export class NestModelInterceptor implements NestInterceptor {
           presentHeaders(req.headers),
           { failFast: true, strip: true, construct: headers.construct, maxDepth: this.maxDepth, validate: this.validate },
         );
-        setNestHeaders(req, decoded as object);
+        setNestHeaders(req, decoded);
       }
     } catch (error) {
       httpError(error);
