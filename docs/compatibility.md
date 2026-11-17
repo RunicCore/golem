@@ -22,7 +22,7 @@ Windows support is best effort. Golem makes no promise for Windows. When you rep
 
 ## Stability and public API {#public-api}
 
-The configuration format (`version: 1`) and the public subpaths of `@exprtlabs/golem` follow semver from 1.1.0, the first published release. The [runtime API](/reference/runtime-api) page lists the public subpaths.
+The configuration format (`version: 1`) and the public subpaths of `@exprtlabs/golem` follow semver from 1.1.0. The [runtime API](/reference/runtime-api) page lists the public subpaths.
 
 - Extension API: [`generator-api`](/reference/generator-api#generator-api) is the contract of an extension generator package. It follows semver, and the package keeps its own version.
 - A path that starts with `internal/` may change in any release. Do not import it. Generated files import runtime helpers from such paths, so each built-in generator package needs the exact version of `@exprtlabs/golem` ([Runtime version](/reference/generated-files#runtime-version)).
