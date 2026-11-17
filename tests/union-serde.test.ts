@@ -1,11 +1,11 @@
 import { copyFixtureFile } from './fixture-project.js';
 import assert from 'node:assert/strict';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
 import test, { type TestContext } from 'node:test';
 
 import { IssueRepresentation } from '@exprtlabs/golem/errors';
 import { buildModelProject, createModelProject, writeModelGolemYaml, writeModelSources } from './model-project.js';
+import { loadFunctions, requireRecord } from './openapi/helpers.js';
 import { validationFailure } from './support/validation-failure.js';
 
 async function compile(root: string): Promise<void> {
@@ -23,22 +23,17 @@ function generateRoot(t: TestContext): string {
 test('nested TSerde with exact and T|T[] fail-fast reports one issue', async (t) => {
   const root = generateRoot(t);
   await compile(root);
-  const codecs = await import(pathToFileURL(path.join(root, 'build/order.model.generated.js')).href) as {
-    fromWireFormatTOrder: (wire: unknown, options?: { validate?: boolean; failFast?: boolean }) => {
-      money: { amount: number; currency: string };
-      tag?: 'open' | 'closed' | Array<'open' | 'closed'>;
-    };
-  };
-  const loaded = codecs.fromWireFormatTOrder({
+  const codecs = await loadFunctions(path.join(root, 'build/order.model.generated.js'), ['fromWireFormatTOrder']);
+  const loaded = requireRecord(codecs.fromWireFormatTOrder({
     money: { amount: '12.50', currency: 'USD' },
     tag: 'open',
-  });
-  assert.equal(loaded.money.amount, 12.5);
+  }), 'order');
+  assert.equal(requireRecord(loaded.money, 'money').amount, 12.5);
   assert.equal(loaded.tag, 'open');
-  const listed = codecs.fromWireFormatTOrder({
+  const listed = requireRecord(codecs.fromWireFormatTOrder({
     money: { amount: '12.50', currency: 'USD' },
     tag: ['open', 'closed'],
-  });
+  }), 'order');
   assert.deepEqual(listed.tag, ['open', 'closed']);
   const failFast = validationFailure(() => codecs.fromWireFormatTOrder({
     money: { amount: 1, currency: 1 },

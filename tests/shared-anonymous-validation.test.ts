@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
-import { pathToFileURL } from 'node:url';
 
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { requireObjectCodec } from '@exprtlabs/golem/internal/model-runtime';
 import { writeGeneratedArtifacts } from './fixture-project.js';
 import { buildModelProject, createModelProject, writeModelGolemYaml } from './model-project.js';
+import { importGeneratedModule } from './openapi/helpers.js';
 import { generatedCodecIdFromRoot } from './support/consumer.js';
 
 const HEAD = "import type { IModel } from '@exprtlabs/golem/model';\nimport type { DependentRequired } from '@exprtlabs/golem/tags';\n";
@@ -38,7 +38,7 @@ async function load(t: TestContext, files: Readonly<Record<string, string>>) {
   writeGeneratedArtifacts(Object.entries(files).map(([name, content]) => ({ path: path.join(sourceRoot, name), content })));
   writeModelGolemYaml(root, { validation: true });
   await buildModelProject(root);
-  for (const name of Object.keys(files)) await import(pathToFileURL(path.join(root, 'build', name.replace(/\.ts$/, '.generated.js'))).href);
+  for (const name of Object.keys(files)) await importGeneratedModule(root, name, path.join('build', name.replace(/\.ts$/, '.generated.js')));
   return root;
 }
 
