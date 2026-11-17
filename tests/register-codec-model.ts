@@ -82,20 +82,20 @@ export async function installCodecModel<Model extends object>(options: {
       validate: (value, optionsArg) => isValidModelValue(value, optionsArg, validator, codecId),
       assert: (value, optionsArg) => {
         assertModelValue(value, optionsArg, validator, codecId, IssueRepresentation.Model, IssueSource.TypeScript);
-        return value as never;
+        return value;
       },
       toWireFormat: (value) => (options.conversion?.encode ?? ((model: Model) => ({ ...model })))(value as Model),
-      fromWireFormat: (wire) => wire as never,
+      fromWireFormat: (wire) => wire,
     });
   } else {
     const unused = (): never => { throw new Error('not used'); };
-    createObjectCodec(codecId, {
+    createObjectCodec<unknown>(codecId, {
       stringify: unused,
       parse: unused,
       validate: unused,
       assert: unused,
       toWireFormat: (value) => (options.conversion?.encode ?? ((model: Model) => ({ ...model })))(value as Model),
-      fromWireFormat: (wire) => wire as never,
+      fromWireFormat: (wire) => wire,
     });
   }
   registerGeneratedModel(options.constructor, {
@@ -108,6 +108,7 @@ export async function installCodecModel<Model extends object>(options: {
     profile: { validation: enabled },
     ...(options.enhanceValidator ? { enhanceValidator: options.enhanceValidator } : {}),
   });
+  // The registry of model classes takes `(values?: never)` where the model registry takes `(...arguments_: never[])`.
   registerIModelClass(codecId, options.constructor as never);
   return codecId;
 }
