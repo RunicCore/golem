@@ -335,7 +335,7 @@ export interface GeneratedClientInstance {
   ) => Promise<{
     status: number;
     body: unknown;
-    headers?: Record<string, unknown>;
+    headers: Record<string, unknown>;
     contentType?: string | null;
   }>; readonly loading?: boolean };
 }
