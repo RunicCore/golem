@@ -12,7 +12,7 @@ import { buildModelProject, buildModelProjectWith, writeModelGolemYaml, writeMod
 import { discardedProjectionCodecsSource, discardedProjectionMetadataSource } from './fixture-templates/models/model-composition.js';
 import { generate } from '#model/generator';
 import { modelCodec } from './support/model-codec.js';
-import { loadClass, loadFunctions, loadModelClasses, requireRecord } from './openapi/helpers.js';
+import { importGeneratedModule, loadClass, loadModelClasses, requireRecord } from './openapi/helpers.js';
 import { valueAt } from './support/json.js';
 
 test('an unrelated same-name class does not become a model constructor', async t => {
@@ -376,7 +376,7 @@ export type Email = string & { readonly __brand: 'Email' };
 export type TItem = IModel<{ email: Email }>;
 `);
     await buildModelProjectWith(root, { validation: true, exact });
-    await loadFunctions(path.join(root, 'build/item.model.generated.js'), []);
+    await importGeneratedModule(root, 'the item companion', 'build/item.model.generated.js');
     const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TItem'));
     assert.deepEqual(codec.parse('{"email":"a@b.c"}'), { email: 'a@b.c' });
     assert.equal(codec.validate({ email: 'a@b.c' }), true);
@@ -387,7 +387,7 @@ export type TItem = IModel<{ email: Email }>;
 /** Build the project with validation on and return the codec of its `TItem`. */
 async function builtItemCodec(root: string): Promise<ReturnType<typeof requireObjectCodec>> {
   await buildModelProjectWith(root, { validation: true });
-  await loadFunctions(path.join(root, 'build/item.model.generated.js'), []);
+  await importGeneratedModule(root, 'the item companion', 'build/item.model.generated.js');
   return requireObjectCodec(generatedCodecIdFromRoot(root, 'TItem'));
 }
 
