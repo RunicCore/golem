@@ -409,6 +409,60 @@ export type TItem = IModel<{ seen: Record<\`id_\${string}\`, Date>; both: Record
   assert.equal(codec.validate({ seen: {}, both: {}, mixed: { x: 1 } }), false);
 });
 
+// protects: T-1091 a field typed `id-${string}` read as a plain string, so 'zzz' passed though tsc rejects it (D-155 follow tsc)
+test('a field typed by a template literal type rejects a string outside the template and decodes a match', async t => {
+  const { root, sourceRoot } = fixture(t);
+  fs.writeFileSync(path.join(sourceRoot, 'item.model.ts'), `import type { IModel } from '@exprtlabs/golem/model';
+import type { Pattern } from '@exprtlabs/golem/tags';
+export type TItem = IModel<{ id: \`id-\${string}\`; parts: \`a\${string}b\${string}c\`; maybe: \`id-\${string}\` | null; dotted: \`v1.\${string}\`; either: \`a-\${string}\` | \`b-\${string}\`; both: \`id-\${string}\` & Pattern<'-x$'> }>;
+`);
+  const codec = await builtItemCodec(root);
+  const match = { id: 'id-1', parts: 'a1b2c', maybe: null, dotted: 'v1.x', either: 'b-1', both: 'id-1-x' };
+  assert.equal(codec.validate(match), true);
+  assert.equal(codec.validate({ ...match, id: 'id-', parts: 'abc', maybe: 'id-7' }), true);
+  for (const miss of [{ id: 'zzz' }, { id: 'xid-1' }, { parts: 'a1b2' }, { parts: 'ab' }, { parts: 'a1c2b' }, { parts: 'a1b2cx' }, { maybe: 'zzz' }, { dotted: 'v1x' }, { either: 'c-1' }, { both: 'id-1' }, { both: 'zzz-x' }]) {
+    assert.equal(codec.validate({ ...match, ...miss }), false, JSON.stringify(miss));
+  }
+  assert.deepEqual(codec.parse(JSON.stringify(match)), match);
+  assert.throws(() => codec.parse(JSON.stringify({ ...match, id: 'zzz' })), /Model validation failed/);
+});
+
+// protects: T-1091 RUNM1045 tells the user to intersect a tag with the template (`id-${string}` & MinLength<3>), so the pattern must still apply beside the tag
+test('a template literal field intersected with a tag, a validation function or a serde keeps its pattern', async t => {
+  const { root, sourceRoot } = fixture(t);
+  fs.writeFileSync(path.join(sourceRoot, 'rules.ts'), `export const notBad = (value: string): boolean => value !== 'id-bad';
+export const encode = (value: \`id-\${string}\`): string => value.slice(3);
+export const decode = (value: string): \`id-\${string}\` => \`id-\${value}\`;
+`);
+  fs.writeFileSync(path.join(sourceRoot, 'item.model.ts'), `import type { IModel } from '@exprtlabs/golem/model';
+import type { MinLength, TSerde, TValidation } from '@exprtlabs/golem/tags';
+import { decode, encode, notBad } from './rules.js';
+export type TItem = IModel<{ short: \`id-\${string}\` & MinLength<5>; checked: \`id-\${string}\` & TValidation<typeof notBad>; wired: \`id-\${string}\` & TSerde<typeof encode, typeof decode> }>;
+`);
+  const codec = await builtItemCodec(root);
+  const model = { short: 'id-123', checked: 'id-ok', wired: 'id-x' };
+  assert.equal(codec.validate(model), true);
+  for (const miss of [{ short: 'zzz-123' }, { short: 'id-1' }, { checked: 'zzz' }, { checked: 'id-bad' }, { wired: 'zzz' }]) {
+    assert.equal(codec.validate({ ...model, ...miss }), false, JSON.stringify(miss));
+  }
+  assert.deepEqual(codec.parse(JSON.stringify({ short: 'id-123', checked: 'id-ok', wired: 'x' })), model);
+});
+
+for (const hole of ['${number}', '${bigint}', '${Uppercase<string>}']) {
+  // protects: T-1091 a template literal field with a hole that golem cannot state as a pattern read as a plain string (R-55: refuse by name)
+  test(`a field typed \`id-${hole}\` stops generation with RUNM1004 when validation is on and generates when it is off`, t => {
+    const { root, sourceRoot } = fixture(t);
+    fs.writeFileSync(path.join(sourceRoot, 'item.model.ts'), `import type { IModel } from '@exprtlabs/golem/model';
+export type TItem = IModel<{ id: \`id-${hole}\` }>;
+`);
+    assert.throws(
+      () => generate({ root, profile: { validation: true } }),
+      /item\.model\.ts:\d+:\d+ RUNM1004: Field "id" of TItem is typed by the template literal type .* which golem cannot state as a pattern\. Use string-only holes, such as `id-\$\{string\}`, or a plain string\./,
+    );
+    assert.doesNotThrow(() => generate({ root, profile: { validation: false } }));
+  });
+}
+
 // protects: T-856 a number-keyed index signature left its values unconverted, though JSON keys are strings
 test('a Record<number, Date> and an index signature [id: number] decode the values like a string-keyed record', async t => {
   const { root, sourceRoot } = fixture(t);

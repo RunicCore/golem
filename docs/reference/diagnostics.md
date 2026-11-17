@@ -233,6 +233,7 @@ An error prints its code, location when known, and message, then stops generatio
 - A model, or one of its fields, resolves to a type with call or construct signatures: a function or a class-instance shape rather than plain data. With validation on, generation stops. A model with validation off generates, and the model's own `{ validation }` setting decides before the setting of `golem.yaml`.
 - A model field is typed `Map`, `Set`, `ReadonlyMap` or `ReadonlySet`. The message names the type. This holds with validation off too.
 - With validation on, an object is keyed by a template literal type whose keys golem cannot state as one pattern, such as `` `${number}` ``, `` `${string}_${number}` `` or `Uppercase<string>`. Only holes of type `string`, such as `` `id_${string}` ``, are stated.
+- With validation on, a field is typed by a template literal type with a hole that golem cannot state as a pattern, such as `` `id-${number}` `` or `` `id-${Uppercase<string>}` ``. Only holes of type `string` are stated: the field then accepts only the strings that match the template.
 - An object has two or more index signatures keyed by template literal types, such as `` `a_${string}` `` and `` `n_${string}` ``, whose value types differ, or one such signature beside a plain `string` index signature of another value type. One value type describes every extra key. This holds with validation off too.
 
 **Fix:**
@@ -240,6 +241,7 @@ An error prints its code, location when known, and message, then stops generatio
 - Replace a function or class shape with a plain object, array, or primitive, or set `{ validation: false }` on the model.
 - Replace a `Map` with a `Record<string, V>` and a `Set` with an array.
 - Key the object by `string` holes only, such as `` Record<`id_${string}`, V> ``, or by `string`.
+- Type the field by a template literal type with `string` holes only, such as `` `id-${string}` ``, or by `string`.
 - Give the index signatures one value type.
 
 ### RUNM1005
@@ -321,7 +323,7 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### RUNM1045
 
-**Unintersected tag.** A constraint, `TValidation`, or `TSerde` tag appears on its own instead of intersected with a model value type, or inside a hole of a template literal type, such as `` `id-${string & MinLength<3>}` ``: a hole is a part of the value, so no tag checks it. **Fix:** Intersect the tag with the field's type, such as `string & MinLength<1>` or `` `id-${string}` & MinLength<3> ``.
+**Unintersected tag.** A constraint, `TValidation`, or `TSerde` tag appears on its own instead of intersected with a model value type, or inside a hole of a template literal type that types a field or keys an object, such as `` `id-${string & MinLength<3>}` `` or `` Record<`id_${string & MinLength<3>}`, Date> ``: a hole is a part of the value, so no tag checks it. This holds with validation off too. **Fix:** Intersect the tag with the field's type, such as `string & MinLength<1>` or `` `id-${string}` & MinLength<3> ``.
 
 ### RUNM1046
 
