@@ -3,13 +3,14 @@ import {
   type GeneratedModelValidatorEnhancer,
   registerGeneratedModel,
   assertModelValue,
-  createObjectCodec,
   isValidModelValue,
   registerIModelClass,
 } from '@exprtlabs/golem/internal/model-runtime';
 import { IssueRepresentation, IssueSource } from '@exprtlabs/golem/errors';
 import { GENERATED_MODEL_SCHEMA_REF_PREFIX, schemaForDescriptor, type ModelTypeDescriptor } from '@exprtlabs/golem/internal/schema';
+import type { ModelField } from '@exprtlabs/golem/validation';
 import { compileValidators } from './support/compiled-validators.js';
+import { registerPassThroughCodec } from './support/pass-through-codec.js';
 
 /** Where a compiled module finds the test's own validation functions: files cannot carry closures. */
 const BINDINGS = Symbol.for('golem.test.validationBindings');
@@ -48,11 +49,9 @@ export async function installCodecModel<Model extends object>(options: {
   readonly conversion?: GeneratedModelConversion<Model, unknown> & { readonly encode?: (model: Model) => unknown };
   readonly bindings?: Readonly<Record<string, (value: unknown) => boolean | string>>;
   readonly nestedCodecIds?: readonly string[];
-  readonly profileValidation?: boolean;
   readonly enhanceValidator?: GeneratedModelValidatorEnhancer;
 }): Promise<string> {
   const codecId = options.name;
-  const enabled = options.profileValidation !== false;
   const schema = schemaForDescriptor(options.definitions[options.name], {
     definitions: options.definitions,
     executableBindings: true,
@@ -63,49 +62,35 @@ export async function installCodecModel<Model extends object>(options: {
     : { $id: codecId, ...schema };
   const resolved = inlineGeneratedModelRefs(payload as object);
   installedSchemas.set(codecId, resolved as Record<string, unknown>);
-  if (enabled) {
-    const bindings = options.bindings ?? {};
-    const ids = Object.keys(bindings);
-    const registry = globalThis as { [BINDINGS]?: Record<string, Record<string, (value: unknown) => boolean | string>> };
-    registry[BINDINGS] = { ...registry[BINDINGS], [codecId]: bindings };
-    const validators = await compileValidators({
-      roots: { [codecId]: resolved },
-      validations: Object.fromEntries(ids.map((id, index) => [id, { importPath: './bindings.mjs', exportName: `binding${index}` }])),
-      modules: {
-        'bindings.mjs': ids.map((id, index) => `export const binding${index} = (value) => globalThis[Symbol.for('golem.test.validationBindings')][${JSON.stringify(codecId)}][${JSON.stringify(id)}](value);`).join('\n'),
-      },
-    });
-    const validator = validators[codecId];
-    createObjectCodec(codecId, {
-      stringify: () => { throw new Error('not used'); },
-      parse: () => { throw new Error('not used'); },
-      validate: (value, optionsArg) => isValidModelValue(value, optionsArg, validator, codecId),
-      assert: (value, optionsArg) => {
-        assertModelValue(value, optionsArg, validator, codecId, IssueRepresentation.Model, IssueSource.TypeScript);
-        return value;
-      },
-      toWireFormat: (value) => (options.conversion?.encode ?? ((model: Model) => ({ ...model })))(value as Model),
-      fromWireFormat: (wire) => wire,
-    });
-  } else {
-    const unused = (): never => { throw new Error('not used'); };
-    createObjectCodec<unknown>(codecId, {
-      stringify: unused,
-      parse: unused,
-      validate: unused,
-      assert: unused,
-      toWireFormat: (value) => (options.conversion?.encode ?? ((model: Model) => ({ ...model })))(value as Model),
-      fromWireFormat: (wire) => wire,
-    });
-  }
+  const bindings = options.bindings ?? {};
+  const ids = Object.keys(bindings);
+  const registry = globalThis as { [BINDINGS]?: Record<string, Record<string, (value: unknown) => boolean | string>> };
+  registry[BINDINGS] = { ...registry[BINDINGS], [codecId]: bindings };
+  const validators = await compileValidators({
+    roots: { [codecId]: resolved },
+    validations: Object.fromEntries(ids.map((id, index) => [id, { importPath: './bindings.mjs', exportName: `binding${index}` }])),
+    modules: {
+      'bindings.mjs': ids.map((id, index) => `export const binding${index} = (value) => globalThis[Symbol.for('golem.test.validationBindings')][${JSON.stringify(codecId)}][${JSON.stringify(id)}](value);`).join('\n'),
+    },
+  });
+  const validator = validators[codecId];
+  registerPassThroughCodec(codecId, {
+    validate: (value, optionsArg) => isValidModelValue(value, optionsArg, validator, codecId),
+    assert: (value, optionsArg) => {
+      assertModelValue(value, optionsArg, validator, codecId, IssueRepresentation.Model, IssueSource.TypeScript);
+      return value;
+    },
+    toWireFormat: (value) => (options.conversion?.encode ?? ((model: Model) => ({ ...model })))(value as Model),
+  });
   registerGeneratedModel(options.constructor, {
-    fields: options.fields as never,
+    // `ModelField<Model>` is `never` for a class that declares none of the fields its descriptor names (a union or tuple stand-in), so the names stay strings.
+    fields: options.fields as readonly ModelField<Model>[],
     // Validation requires conversion metadata; plain field copies stand in for a companion.
     conversion: options.conversion ?? {
       decode: (value) => Object.assign(Object.create(options.constructor.prototype) as Model, value),
     },
     codecId,
-    profile: { validation: enabled },
+    profile: { validation: true },
     ...(options.enhanceValidator ? { enhanceValidator: options.enhanceValidator } : {}),
   });
   registerIModelClass(codecId, options.constructor);
