@@ -14,7 +14,7 @@ import {
   writeModelSources,
 } from './model-project.js';
 import { copyFixtureFile, fileFixtureScope, onceShared, readFixture, writeGeneratedArtifacts } from './fixture-project.js';
-import { importGeneratedModule, loadModelClasses } from './openapi/helpers.js';
+import { importGeneratedModule, loadModelClasses, requireRecord } from './openapi/helpers.js';
 import { runRewritten } from './support/rewritten-module.js';
 import { tsSource } from './source-template.js';
 import { generate } from '#model/generator';
@@ -184,11 +184,12 @@ export type TA = IModel<{ title: string }>;
   await buildModelProject(root);
   // The inventory a release before this change wrote: it owns models.generated.ts beside the validators.
   const inventoryFile = path.join(root, '.golem/outputs.json');
-  const inventory = JSON.parse(fs.readFileSync(inventoryFile, 'utf8')) as { files: Record<string, unknown> };
-  const validatorsKey = Object.keys(inventory.files).find((key) => key.endsWith('models.validators.generated.ts')) ?? '';
+  const inventory = requireRecord(JSON.parse(fs.readFileSync(inventoryFile, 'utf8')), 'the output inventory');
+  const files = requireRecord(inventory.files, 'the inventory files');
+  const validatorsKey = Object.keys(files).find((key) => key.endsWith('models.validators.generated.ts')) ?? '';
   assert.notEqual(validatorsKey, '');
   const oldKey = validatorsKey.replace('models.validators.generated.ts', 'models.generated.ts');
-  inventory.files[oldKey] = inventory.files[validatorsKey];
+  files[oldKey] = files[validatorsKey];
   fs.writeFileSync(inventoryFile, `${JSON.stringify(inventory, null, 2)}\n`);
   const oldFile = path.join(root, oldKey);
   // A new release also runs its jobs again: the job cache of the old release does not apply.

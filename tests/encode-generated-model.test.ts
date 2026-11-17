@@ -48,8 +48,8 @@ test('the toWireFormat of a model codec validates when the profile does, and val
   const getter = new Getter();
   assert.deepEqual(modelCodec(getter).toWireFormat(getter, { allowGetter: true }), { title: 'from getter' }, 'a subclass resolves its generated codec and a getter field counts with allowGetter');
 
-  const link = new Link({ name: 'a' }) as { child?: unknown };
-  link.child = link;
+  const link = new Link({ name: 'a' });
+  Reflect.set(link, 'child', link);
   for (const options of [undefined, { validate: false }]) {
     assert.throws(
       () => modelCodec(link).toWireFormat(link, options),
