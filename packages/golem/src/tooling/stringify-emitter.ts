@@ -2520,7 +2520,6 @@ function isExternalCodecNode(node: SchemaNode): boolean {
 /** What the strip plans of a module ask of this emitter: the objects its descriptors resolve to, and which codecs are another module's. */
 function stripPlanEnv(ctx: EmitCtx): StripPlanEnv {
   return {
-    graph: ctx.graph,
     resolveObject: (descriptor) => resolveObjectDescriptor(descriptor, ctx),
     nodeOf: (descriptor) => ctx.graph.nodeFor(descriptor) ?? (descriptor.kind === 'reference' ? ctx.graph.nodeFor(descriptor, codecShortName(descriptor.name)) : undefined),
     extraValues: mapValueDescriptor,
