@@ -1,24 +1,25 @@
 import { generatorSettings } from './support/mobx-extension.js';
-// TypeScript 6 and 7 must write the same bytes. Each case of the identity corpus (tests/support/identity-corpus.ts) is generated and
-// rewritten in child processes of each version: the generated files, the rewritten source text and the diagnostics are compared.
+// TypeScript 6 and 7 must write the same bytes. Each case of the identity corpus (tests/support/identity-corpus.ts) is generated, rewritten
+// and built in child processes of each version: the generated files, the rewritten source text, the diagnostics and the output of
+// `golem build` are compared.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import { generate as generateOpenApi } from '@exprtlabs/golem-openapi-ts/generator';
 import { copyFixtureFile, createFixtureProject, fileFixtureScope, fixturePath, onceShared, readFixture, writeGeneratedArtifacts, type FixtureScope } from './fixture-project.js';
-import { createControllerFixture } from './fixture-templates/controllers/project.js';
+import { createControllerFixture, defaultTsconfig } from './fixture-templates/controllers/project.js';
 import { resolveTypeScript } from '#golem/typescript-version';
-import { createModelProject } from './model-project.js';
-import { caseFolder, DIAGNOSTICS, EXPECTED_REJECTIONS, GENERATED, IDENTITY_CASES, isCompiled, shardOf, type IdentityCase, type IdentityProject } from './support/identity-corpus.js';
+import { createModelProject, writeModelGolemYaml } from './model-project.js';
+import { BUILD_LOG, BUILT, caseFolder, DIAGNOSTICS, EXPECTED_REJECTIONS, GENERATED, IDENTITY_CASES, isBuilt, isCompiled, NON_MODEL_INPUTS, REWRITTEN, shardOf, type IdentityCase, type IdentityProject } from './support/identity-corpus.js';
 import { createNodeSpecifierProject } from './support/node-specifiers-project.js';
 import { command, workspace } from './support/process.js';
 import { mtimes } from './support/build-project.js';
 
 const typescript6Root = process.env.GOLEM_TYPESCRIPT6_ROOT;
 // The shard counts keep the peak memory of the children beside the unit step low; TypeScript 6 runs slower per case, so it has more shards.
-const SEVEN_SHARDS = 3;
-const SIX_SHARDS = 4;
+const SEVEN_SHARDS = 2;
+const SIX_SHARDS = 7;
 const SDK_ONLY_WIRE_CLAIM = 'wire-format/nested-sdk';
 
 interface ShardRun {
@@ -37,22 +38,40 @@ interface IdentityRun {
   readonly six: readonly ShardRun[];
 }
 
-/** The project of one case: the fixture files in place, the SDK of an SDK case written beside them. */
+/** The golem.yaml of a controller case: the document and its prefix and versioning, the NestJS rewrite, and the models job. */
+const CONTROLLER_GOLEM_YAML = `version: 1
+validation: false
+model: {}
+ts-openapi:
+  docs:
+    - output: openapi.json
+      info: { title: Catalog, version: "1" }
+      globalPrefix: api
+      uriVersioning: { type: URI, prefix: v }
+  extensions:
+    nest: { nonModelInputs: ${NON_MODEL_INPUTS} }
+`;
+
+/** The project of one case: the fixture files in place, the SDK of an SDK case written beside them, and the golem.yaml that `golem build` reads. */
 async function createProject(t: FixtureScope, item: IdentityCase, label: string): Promise<IdentityProject> {
   const slug = item.name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
   const prefix = `golem-identity-${label}-`;
   if (item.kind === 'controller') {
-    const files = Object.fromEntries(item.files.map(file => [file.to, readFixture(file.from)]));
-    return { name: item.name, kind: item.kind, mobx: item.mobx, root: createControllerFixture(t, { prefix, files }) };
+    const files = { 'golem.yaml': CONTROLLER_GOLEM_YAML, ...Object.fromEntries(item.files.map(file => [file.to, readFixture(file.from)])) };
+    // `golem build` emits into an outDir, which the controller fixture's default tsconfig has none of.
+    const tsconfig = { ...defaultTsconfig, compilerOptions: { ...defaultTsconfig.compilerOptions, outDir: 'build', rootDir: 'src' } };
+    return { name: item.name, kind: item.kind, root: createControllerFixture(t, { prefix, files, tsconfig }) };
   }
   if (item.kind === 'specifiers') {
     // The jsx option makes the .tsx edge case spell its emitted extension, which the two versions must number alike.
     const root = createNodeSpecifierProject(t, { prefix, compilerOptions: { jsx: 'preserve' } });
     for (const file of item.files) copyFixtureFile(root, file.from, file.to);
-    return { name: item.name, kind: item.kind, mobx: item.mobx, root };
+    writeModelGolemYaml(root, { mobx: item.mobx === true, validation: true });
+    return { name: item.name, kind: item.kind, root };
   }
   const { root } = createModelProject(t, { prefix, name: `identity-${slug}`, linkTypescript: item.kind === 'rewrite' });
   for (const file of item.files) copyFixtureFile(root, file.from, file.to);
+  if (isBuilt(item)) writeModelGolemYaml(root, { mobx: item.mobx === true, validation: true });
   if (item.sdkSpec) {
     writeGeneratedArtifacts((await generateOpenApi({
       input: fixturePath(item.sdkSpec),
@@ -61,7 +80,7 @@ async function createProject(t: FixtureScope, item: IdentityCase, label: string)
       ...generatorSettings({ mobx: item.mobx, validation: true }),
     })).artifacts);
   }
-  return { name: item.name, kind: item.kind, mobx: item.mobx, root };
+  return { name: item.name, kind: item.kind, root };
 }
 
 function readTree(directory: string): Map<string, string> {
@@ -112,9 +131,11 @@ function filesOfCase(shards: readonly ShardRun[], version: string, name: string)
   return new Map([...shard.artifacts].filter(([file]) => file.startsWith(folder)).map(([file, content]) => [file.slice(folder.length), content]));
 }
 
-/** The lines of a diagnostics file where a stage ended in an error, rather than reporting a diagnostic. */
-function rejectionLines(diagnostics: string | undefined): string[] {
-  return (diagnostics ?? '').split('\n').filter(line => /^(?:generate|rewrite) error: /.test(line));
+/** The text of a diagnostics file from the line where a stage first ended in an error, rather than reporting a diagnostic, to its end; empty when no stage did. An error message can run over more lines. */
+function rejectionText(diagnostics: string | undefined): string {
+  const text = diagnostics ?? '';
+  const start = text.search(/^(?:build|rewrite) error: /m);
+  return start < 0 ? '' : text.slice(start);
 }
 
 /** The first line where the two texts differ, with two lines before it; a file that one version did not write shows as missing. */
@@ -207,20 +228,22 @@ if (!typescript6Root) {
   });
 
   for (const item of IDENTITY_CASES) {
-    test(item.name, async () => {
+    test(`identity ${item.name}`, async () => {
       const { seven, six } = await generateOnce();
       const sevenFiles = filesOfCase(seven, '7', item.name);
       const sixFiles = filesOfCase(six, '6', item.name);
-      // The diagnostics file is always written; a case that wrote a file besides it, or a diagnostic, wrote an artifact.
-      for (const [version, files] of [['7', sevenFiles], ['6', sixFiles]] as const) {
-        assert.ok([...files].some(([file, content]) => file !== DIAGNOSTICS || content !== ''), `${item.name} wrote no artifact on TypeScript ${version}`);
-      }
       // Only the cases that claim a rejection end in one, and each ends in the message it claims, on both versions.
       const claimed = EXPECTED_REJECTIONS[item.name];
       for (const [version, files] of [['7', sevenFiles], ['6', sixFiles]] as const) {
-        const lines = rejectionLines(files.get(DIAGNOSTICS));
-        const matches = claimed === undefined ? lines.length === 0 : lines.some(line => line.includes(claimed));
+        const rejection = rejectionText(files.get(DIAGNOSTICS));
+        const matches = claimed === undefined ? rejection === '' : rejection.includes(claimed);
         assert.ok(matches, `${item.name} ${claimed === undefined ? 'ended in an error' : `did not end in the error "${claimed}"`} on TypeScript ${version}:\n${files.get(DIAGNOSTICS)}`);
+        // A case that claims no rejection must leave the files of its stage: the diagnostics and the build log always exist, so only these show that the generators ran, or for a case with no generator input that the edits did.
+        const stageFolder = item.kind === 'specifiers' || item.kind === 'rewrite' ? REWRITTEN : GENERATED;
+        assert.ok(claimed !== undefined || [...files.keys()].some(file => file.startsWith(`${stageFolder}${path.sep}`)), `${item.name} wrote no file under ${stageFolder}/ on TypeScript ${version}`);
+        // A build that stopped before it read the project (no golem.yaml, no outDir) would leave the comparison below with two equal setup errors: it must emit JavaScript or report a diagnostic of the compiler or of golem.
+        const emitted = [...files.keys()].some(file => file.startsWith(`${BUILT}${path.sep}`) && file.endsWith('.js'));
+        assert.ok(!isBuilt(item) || emitted || /\b(?:TS|RUNM|NEST)\d+\b/.test(`${files.get(DIAGNOSTICS)}${files.get(BUILD_LOG)}`), `${item.name} built no JavaScript and reported no diagnostic on TypeScript ${version}:\n${files.get(DIAGNOSTICS)}${files.get(BUILD_LOG)}`);
       }
       const difference = describeDifference(item.name, sevenFiles, sixFiles);
       assert.ok(difference === '', difference);
