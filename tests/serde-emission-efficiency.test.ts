@@ -3,12 +3,11 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
 import test, { type TestContext } from 'node:test';
 
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { buildModelProject, createModelProject, writeModelGolemYaml } from './model-project.js';
-import { loadFunctions, loadModelClasses, requireRecord, requireString } from './openapi/helpers.js';
+import { loadCounter, loadFunctions, loadModelClasses, requireRecord, requireString } from './openapi/helpers.js';
 import { spyOnBuild, type SpiedCall } from './support/build-spy.js';
 import { generatedCodecIdFromRoot } from './support/consumer.js';
 import { command } from './support/process.js';
@@ -39,9 +38,9 @@ test('model decoder leaves unchanged fields in the initializer copy', async (t) 
   await buildModelProject(value.root);
   const spy = await spyOnBuild(value.root, { '@exprtlabs/golem/internal/model-runtime': ['defineModelProperty'] });
   try {
-    const { Item } = await import(pathToFileURL(path.join(value.root, 'build/item.model.js')).href);
+    const { Item } = await loadModelClasses(path.join(value.root, 'build/item.model.js'), ['Item']);
     const wire = { title: 'T', code: 'ABC' };
-    const item = modelCodec(Item).fromWireFormat(wire);
+    const item = requireRecord(modelCodec(Item).fromWireFormat(wire), 'item');
     // The decoder defines its fields on a plain copy of the wire values; the constructor defines them on the model.
     const redefinedInCopy = spy.calls
       .filter((call) => Object.getPrototypeOf(call.args[0]) === Object.prototype)
@@ -114,17 +113,17 @@ test('generated decoding preserves the constructor and initializer boundaries', 
     Reflect.deleteProperty(parent, 'note');
     const absent = requireRecord(modelCodec(parent).toWireFormat(parent), 'wire');
     assert.equal(Object.hasOwn(absent, 'note'), false);
-    const codec = await import(pathToFileURL(path.join(value.root, 'build/optional-codec.js')).href);
-    assert.equal(codec.encodeCalls, 0, 'absent optional codecs are never invoked');
+    const encodeCalls = await loadCounter(path.join(value.root, 'build/optional-codec.js'), 'encodeCalls');
+    assert.equal(encodeCalls(), 0, 'absent optional codecs are never invoked');
     Object.defineProperty(parent, 'code', { value: 'x', enumerable: true, configurable: true });
     const encodedCode = requireRecord(modelCodec(parent).toWireFormat(parent), 'wire');
     assert.equal(encodedCode.code, 'X');
-    assert.equal(codec.encodeCalls, 1, 'present optional codec executes exactly once');
+    assert.equal(encodeCalls(), 1, 'present optional codec executes exactly once');
     assert.equal(objectPrototypeSetterCalls, 0, 'generated conversion never assigns through Object.prototype');
 
     const encodedWire = requireRecord(modelCodec(parent).toWireFormat(parent), 'wire');
     JSON.stringify(encodedWire);
-    assert.equal(codec.encodeCalls, 2, 'JSON writing does not replay the field codec');
+    assert.equal(encodeCalls(), 2, 'JSON writing does not replay the field codec');
   } finally {
     if (previousProbe) Object.defineProperty(Object.prototype, probeName, previousProbe);
     else Reflect.deleteProperty(Object.prototype, probeName);
@@ -194,8 +193,8 @@ export class Note extends TNoteBaseModel {}
 
 test('model encoding assigns present fields in declaration order without deleting keys', async (t) => {
   const value = await buildNote(t);
-  const { Note } = await import(pathToFileURL(path.join(value.root, 'build/note.model.js')).href);
-  const keys = (init: object) => Object.keys(modelCodec(Note).toWireFormat(new Note(init)));
+  const { Note } = await loadModelClasses(path.join(value.root, 'build/note.model.js'), ['Note']);
+  const keys = (init: Record<string, unknown>) => Object.keys(modelCodec(Note).toWireFormat(new Note(init)));
   assert.deepEqual(keys({ title: 't', pinned: true }), ['title', 'pinned']);
   assert.deepEqual(keys({ title: 't', body: undefined, pinned: true }), ['title', 'pinned'], 'an undefined optional field is omitted');
   assert.deepEqual(keys({ pinned: false, body: 'b', title: 't' }), ['title', 'body', 'pinned'], 'declaration order, not initializer order');
