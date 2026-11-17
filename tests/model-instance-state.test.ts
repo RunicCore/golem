@@ -12,6 +12,7 @@ import { buildModelProject, createModelProject, writeModelGolemYaml } from './mo
 import { compileValidatorModule } from './support/compiled-validators.js';
 import { instanceFields } from '../packages/golem/src/presence.js';
 import { MODEL_FIELDS_KEY } from '../packages/golem/src/schema-keywords.js';
+import { loadModelClasses, type GeneratedModelClass } from './openapi/helpers.js';
 import { generatedCodecIdFromRoot } from './support/consumer.js';
 import { modelCodec } from './support/model-codec.js';
 // An own key of a golem model instance that its own model does not declare is program state, never an unknown key
@@ -337,12 +338,12 @@ export class Loose extends TLooseBaseModel {
 `);
   writeModelGolemYaml(root, { validation: true, exact: false });
   await buildModelProject(root);
-  const { Loose } = await import(pathToFileURL(path.join(root, 'build/loose.model.js')).href) as { Loose: new (values?: object) => object };
+  const { Loose } = await loadModelClasses(path.join(root, 'build/loose.model.js'), ['Loose']);
   const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TLoose'));
   const parsed = codec.parse('{"id":"a","extra":1}', { construct: Loose });
   assert.ok(parsed instanceof Loose);
   assert.deepEqual({ ...parsed }, { id: 'a' });
-  assert.equal(codec.stringify(new Loose({ id: 'a', extra: 1 } as object)), '{"id":"a"}');
+  assert.equal(codec.stringify(new Loose({ id: 'a', extra: 1 })), '{"id":"a"}');
 });
 
 async function buildLooseIn(scope: FixtureScope) {
@@ -419,7 +420,7 @@ export class View extends TViewBaseModel {
 `);
   writeModelGolemYaml(root, { validation: true, exact: false });
   await buildModelProject(root);
-  const { View } = await import(pathToFileURL(path.join(root, 'build/view.model.js')).href) as { View: new (values?: object) => object };
+  const { View } = await loadModelClasses(path.join(root, 'build/view.model.js'), ['View']);
   const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TView'));
   const written = { view: { id: 'a', extra: 1 } };
   const instance = new View(written);
@@ -440,7 +441,7 @@ export class Nest extends TNestBaseModel { constructor(values: Partial<TNestFiel
 `);
   writeModelGolemYaml(root, { validation: true });
   await buildModelProject(root);
-  const { Nest } = await import(pathToFileURL(path.join(root, 'build/nest.model.js')).href) as { Nest: new (values?: object) => object };
+  const { Nest } = await loadModelClasses(path.join(root, 'build/nest.model.js'), ['Nest']);
   const text = '2020-01-02T03:04:05.000Z';
   const hidden = Object.defineProperty({ id: 'a' }, 'when', { value: text, enumerable: false });
   const inherited = Object.assign(Object.create({ when: text }), { id: 'a' });
@@ -463,7 +464,7 @@ export class Stamp extends TStampBaseModel { constructor(values: Partial<TStampF
 `);
   writeModelGolemYaml(root, { validation: true });
   await buildModelProject(root);
-  const models = await import(pathToFileURL(path.join(root, 'build/undefined-field.model.js')).href) as { Profile: new (values?: object) => object; Stamp: new (values?: object) => object };
+  const models = await loadModelClasses(path.join(root, 'build/undefined-field.model.js'), ['Profile', 'Stamp']);
   const profile = requireObjectCodec(generatedCodecIdFromRoot(root, 'TProfile'));
   const stamp = requireObjectCodec(generatedCodecIdFromRoot(root, 'TStamp'));
   const options = { validate: false };
@@ -493,7 +494,7 @@ export class Dated extends TDatedBaseModel { constructor(values: Partial<TDatedF
 `);
   writeModelGolemYaml(root, { validation: true });
   await buildModelProject(root);
-  const models = await import(pathToFileURL(path.join(root, 'build/nested-undefined.model.js')).href) as Record<'Optional' | 'Required' | 'Dated', new (values?: object) => object>;
+  const models = await loadModelClasses(path.join(root, 'build/nested-undefined.model.js'), ['Optional', 'Required', 'Dated']);
   const optional = requireObjectCodec(generatedCodecIdFromRoot(root, 'TOptional'));
   const required = requireObjectCodec(generatedCodecIdFromRoot(root, 'TRequired'));
   const dated = requireObjectCodec(generatedCodecIdFromRoot(root, 'TDated'));
@@ -507,7 +508,7 @@ export class Dated extends TDatedBaseModel { constructor(values: Partial<TDatedF
     assert.deepEqual(dated.toWireFormat({ id: 'a', inner: { at, note: undefined } }, options), { id: 'a', inner: { at: at.toISOString() } }, `a Date beside an optional key, ${label}`);
   }
   assert.deepEqual(required.toWireFormat({ id: 'a', inner: { tag: undefined } }, { validate: false }), { id: 'a', inner: {} }, 'a required key that admits undefined');
-  const classLevel = (Model: new (values?: object) => object, inner: object): unknown => (modelCodec(Model).toWireFormat(Object.assign(new Model({ id: 'a' }), { inner }), { validate: false }) as { inner: unknown }).inner;
+  const classLevel = (Model: GeneratedModelClass, inner: object): unknown => (modelCodec(Model).toWireFormat(Object.assign(new Model({ id: 'a' }), { inner }), { validate: false }) as { inner: unknown }).inner;
   assert.deepEqual(classLevel(models.Optional, { tag: undefined, n: undefined }), {}, 'the model codec toWireFormat of an optional key');
   assert.deepEqual(classLevel(models.Required, { tag: undefined }), {}, 'the model codec toWireFormat of a required key that admits undefined');
   assert.deepEqual(classLevel(models.Dated, { at, note: undefined }), { at: at.toISOString() }, 'the model codec toWireFormat of a Date beside an optional key');

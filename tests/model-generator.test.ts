@@ -26,6 +26,7 @@ import {
   discoverModelSources,
   generate,
 } from '#model/generator';
+import { loadModelClasses } from './openapi/helpers.js';
 import { modelCodec } from './support/model-codec.js';
 
 function project(t: TestContext) {
@@ -648,7 +649,7 @@ for (const layout of ['sibling files', 'one file'] as const) {
       }).text,
     });
     await buildModelProjectWith(root, { validation: true });
-    const { B } = await import(pathToFileURL(path.join(root, 'build', 'b.model.js')).href) as { B: new (values: object) => object };
+    const { B } = await loadModelClasses(path.join(root, 'build', 'b.model.js'), ['B']);
     const decoded = modelCodec(B).fromWireFormat({ s: { v: '2020-01-01T00:00:00.000Z' }, u: { w: '2020-01-01T00:00:00.000Z' } }) as { s: { v: unknown }; u: { w: unknown } };
     assert.deepEqual([decoded.s.v instanceof Date, decoded.u.w instanceof Date], [true, true]);
   });
@@ -674,11 +675,10 @@ export class ${name} extends T${name}BaseModel {
     }).text,
   });
   await buildModelProjectWith(root, { validation: true });
-  const built = async (file: string) => await import(pathToFileURL(path.join(root, 'build', file)).href) as Record<string, new (values: object) => object>;
-  const [{ B }, first, second] = await Promise.all([built('b.model.js'), built('a1.model.js'), built('a2.model.js')]);
+  const [{ B }, first, second] = await Promise.all([loadModelClasses(path.join(root, 'build', 'b.model.js'), ['B']), loadModelClasses(path.join(root, 'build', 'a1.model.js'), ['A$']), loadModelClasses(path.join(root, 'build', 'a2.model.js'), ['A_'])]);
   const day = '2020-01-01T00:00:00.000Z';
   const decoded = modelCodec(B).fromWireFormat({ s: { v: day }, u: { v: day } }) as { s: object; u: object };
-  assert.deepEqual([decoded.s instanceof first['A$']!, decoded.u instanceof second['A_']!], [true, true]);
+  assert.deepEqual([decoded.s instanceof first.A$, decoded.u instanceof second.A_], [true, true]);
 });
 
 // protects: T-867 class models of one shape that share a short name, in one file in either order, each decode to their own class
@@ -701,11 +701,10 @@ ${order.map(classModel).join('')}`,
       }).text,
     });
     await buildModelProjectWith(root, { validation: true });
-    const built = async (file: string) => await import(pathToFileURL(path.join(root, 'build', file)).href) as Record<string, new (values: object) => object>;
-    const [{ B }, classes] = await Promise.all([built('b.model.js'), built('a.model.js')]);
+    const [{ B }, classes] = await Promise.all([loadModelClasses(path.join(root, 'build', 'b.model.js'), ['B']), loadModelClasses(path.join(root, 'build', 'a.model.js'), ['A$', 'A_'])]);
     const day = '2020-01-01T00:00:00.000Z';
     const decoded = modelCodec(B).fromWireFormat({ s: { v: day }, u: { v: day } }) as { s: object; u: object };
-    assert.deepEqual([decoded.s instanceof classes['A$']!, decoded.u instanceof classes['A_']!], [true, true]);
+    assert.deepEqual([decoded.s instanceof classes.A$, decoded.u instanceof classes.A_], [true, true]);
   });
 }
 
@@ -725,7 +724,7 @@ export type TA_ = IObject<{ b?: TB }>;
     }).text,
   });
   await buildModelProjectWith(root, { validation: true });
-  const { B } = await import(pathToFileURL(path.join(root, 'build', 'b.model.js')).href) as { B: new (values: object) => object };
+  const { B } = await loadModelClasses(path.join(root, 'build', 'b.model.js'), ['B']);
   const day = '2020-01-01T00:00:00.000Z';
   const decoded = modelCodec(B).fromWireFormat({ s: { b: { at: day, a: { b: { at: day } } } }, u: { b: { at: day } } }) as {
     s: { b: { at: unknown; a: { b: { at: unknown } } } }; u: { b: { at: unknown } };

@@ -407,6 +407,12 @@ export async function loadClass(file: string, name: string): Promise<Type> {
   return (await loadExports(file, [name], isClass, 'class'))[name];
 }
 
+/** A reader of the number that the built module `file` exports as `name`; each read sees the current value, so a counter that the module bumps shows. */
+export async function loadCounter(file: string, name: string): Promise<() => number> {
+  const module = await importFile(file);
+  return () => { const value = module[name]; if (typeof value !== 'number') throw new TypeError(`${file} must export the number ${name}`); return value; };
+}
+
 /** The generated validator that the built validators module `file` exports as `name`. */
 export async function loadValidator(file: string, name: string): Promise<Validator> {
   return (await loadExports(file, [name], isValidator, 'validator'))[name];

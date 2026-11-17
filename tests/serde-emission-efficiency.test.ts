@@ -8,6 +8,7 @@ import test, { type TestContext } from 'node:test';
 
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { buildModelProject, createModelProject, writeModelGolemYaml } from './model-project.js';
+import { loadFunctions, loadModelClasses } from './openapi/helpers.js';
 import { spyOnBuild, type SpiedCall } from './support/build-spy.js';
 import { generatedCodecIdFromRoot } from './support/consumer.js';
 import { command } from './support/process.js';
@@ -246,8 +247,8 @@ export class Stamps extends TStampsBaseModel {}
     '@exprtlabs/golem/serde': ['stringifyJsonScalar', 'stringifyJsonString', 'stringifyJsonNumber', 'stringifyJsonBoolean', 'stringifyJsonArray'],
   });
   try {
-    const codecs = await import(pathToFileURL(path.join(value.root, 'build/maps.model.generated.js')).href) as Record<string, (value: unknown) => unknown>;
-    const { Directory } = await import(pathToFileURL(path.join(value.root, 'build/maps.model.js')).href) as { Directory: new () => object };
+    const codecs = await loadFunctions(path.join(value.root, 'build/maps.model.generated.js'), ['stringifyTDirectory', 'toWireFormatTDirectory', 'stringifyTShelf', 'stringifyTStamps', 'toWireFormatTStamps']);
+    const { Directory } = await loadModelClasses(path.join(value.root, 'build/maps.model.js'), ['Directory']);
     const names = { zeta: 'z', alpha: 'a', 2: 'two', 1: 'one', skipped: undefined, empty: '' };
     const instance = Object.assign(new Directory(), names);
     spy.calls.length = 0;
@@ -277,7 +278,7 @@ export class Series extends TSeriesBaseModel {}
 `);
   writeModelGolemYaml(value.root, { validation: false });
   await buildModelProject(value.root);
-  const codecs = await import(pathToFileURL(path.join(value.root, 'build/counts.model.generated.js')).href) as Record<string, (value: unknown) => unknown>;
+  const codecs = await loadFunctions(path.join(value.root, 'build/counts.model.generated.js'), ['stringifyTCounts', 'stringifyTSeries']);
   const isSerializationError = (error: unknown): boolean => error instanceof LibError && error.kind === LibErrorKind.Serialization;
   assert.equal(codecs.stringifyTCounts({ a: 1, b: -0.5 }), '{"a":1,"b":-0.5}');
   assert.throws(() => codecs.stringifyTCounts({ a: NaN }), isSerializationError);
@@ -294,7 +295,7 @@ export class Counts extends TCountsBaseModel {}
 `);
   writeModelGolemYaml(value.root, { validation: false });
   await buildModelProject(value.root);
-  const codecs = await import(pathToFileURL(path.join(value.root, 'build/counts.model.generated.js')).href) as Record<string, (value: unknown) => unknown>;
+  const codecs = await loadFunctions(path.join(value.root, 'build/counts.model.generated.js'), ['stringifyTCounts']);
   class Tally {
     a = 1;
     b = 2;
