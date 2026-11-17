@@ -1235,6 +1235,11 @@ function metadataFromType(
   return EMPTY;
 }
 
+/** The first hole of a template literal type that carries a golem tag (`id-${string & MinLength<3>}`), or none. A tag checks a model value, and a hole is a part of one. */
+export function taggedTemplateHole(context: TagAnalysisContext, type: ts.TemplateLiteralType): ts.Type | undefined {
+  return type.types.find((hole) => hasTagMetadata(metadataFromType(context, hole)));
+}
+
 /** Whether a type node is a reference to the `Discriminator` tag, by the tag the symbol resolves to (the importer's name for it does not matter). */
 export function isDiscriminatorTag(checker: ts.TypeChecker, node: ts.TypeNode): boolean {
   return ts.isTypeReferenceNode(node) && golemTagName(checker, checker.getSymbolAtLocation(node.typeName)) === 'Discriminator';

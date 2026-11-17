@@ -42,6 +42,7 @@ import {
   type TagMetadata,
   type ValidationBinding,
   sourceLocation,
+  taggedTemplateHole,
 } from './tags.js';
 
 export type { ModelConversionDescriptor, TupleConversionDescriptor } from '../model-source-emitter.js';
@@ -1036,7 +1037,13 @@ function describeScalar(scope: DescribeScope, call: DescribeCall): ModelConversi
   if (type.flags & ts.TypeFlags.Undefined) return withMetadata({ kind: 'undefined' }, metadata);
   const literal = literalTypeValue(checker, type);
   if (literal !== undefined) return withMetadata({ kind: 'literal', value: literal }, metadata);
-  if (type.flags & ts.TypeFlags.TemplateLiteral) return withMetadata({ kind: 'string' }, metadata);
+  if (type.flags & ts.TypeFlags.TemplateLiteral) {
+    if (taggedTemplateHole(call.tagContext, type as ts.TemplateLiteralType)) {
+      const at = node ?? context.declaration;
+      throw diagnostic(context.sourceFile, at, '1045', `A tag inside the template literal type ${checker.typeToString(type)} checks no value: a tag applies to the field, and a hole is a part of its value. Intersect the tag with the field's type, such as \`id-\${string}\` & MinLength<3>.`);
+    }
+    return withMetadata({ kind: 'string' }, metadata);
+  }
   return undefined;
 }
 
