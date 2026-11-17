@@ -12,7 +12,7 @@ import { workspace } from './process.js';
 import { stripTypes } from './run-module.js';
 
 /** The built runtime file; the emitted module sits in a temp directory where the package name does not resolve. */
-const runtimeModule = pathToFileURL(path.join(workspace, 'packages/golem/dist/validation-runtime.js')).href;
+const runtimeModule = pathToFileURL(path.join(workspace, 'packages/golem/dist/runtime-validation.js')).href;
 
 /**
  * Node caches each ES module by its URL, and a deleted temp directory's name can come back.

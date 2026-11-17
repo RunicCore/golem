@@ -1,3 +1,4 @@
+// lane: typescript6 the pre-emit diagnostics of a golem-mode SDK program, whose generated models config has an empty include (T-1051)
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';

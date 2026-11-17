@@ -4,6 +4,7 @@ import type { BodyEncoder, ClientRuntime, EncodedBody, EncodingMetadata, Operati
 import { isJsonMediaType, mediaEssence } from './media-type.js';
 import { addQueryParameter } from './parameters.js';
 import type { CallLevels } from './validation.js';
+import { parameterOfKey, statusKey } from './value-places.js';
 
 /** Encoding metadata the generated operation declares for one request media type. */
 interface RequestMediaMetadata {
@@ -176,8 +177,7 @@ export function requireObjectInput(operation: string, input: unknown): void {
 export function convertRequestParameters<Input extends object>(codecs: OperationCodecs, input: Input, levels?: Pick<CallLevels, 'request' | 'requestHeaders'>): Input & RequestParameters {
   const converted: Record<string, unknown> = Object.fromEntries(Object.entries(input));
   for (const [key, encode] of Object.entries(codecs.parameters ?? {})) {
-    const separator = key.indexOf(':');
-    const location = key.slice(0, separator);
+    const { location, name } = parameterOfKey(key);
     const level = location === 'header' ? levels?.requestHeaders : levels?.request;
     const options = level === undefined ? undefined : { validate: level };
     if (location === 'querystring') {
@@ -186,7 +186,6 @@ export function convertRequestParameters<Input extends object>(codecs: Operation
     }
     const group = converted[location];
     if (typeof group !== 'object' || group === null) continue;
-    const name = key.slice(separator + 1);
     const plain = (group as Record<string, unknown>)[name];
     if (plain !== undefined) converted[location] = { ...group, [name]: encode(plain as never, options) };
   }
@@ -205,8 +204,10 @@ export function responseDecoder(codecs: OperationCodecs): ResponseDecode | undef
   if (!decode && !headers) return undefined;
   return (response, value, header) => {
     const table = header === undefined ? decode : headers;
-    const key = `${response.status}:${header ?? response.contentType}`;
-    const codec = table && Object.hasOwn(table, key) ? table[key] : undefined;
+    // A response with no content has no body to convert, and no codec is keyed by it.
+    const name = header ?? response.contentType;
+    const key = name === null ? undefined : statusKey(response.status, name);
+    const codec = table && key !== undefined && Object.hasOwn(table, key) ? table[key] : undefined;
     return codec === undefined ? value : codec(value as never, CHECKED);
   };
 }

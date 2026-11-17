@@ -5,7 +5,8 @@ import { canonicalSchemaKey } from './canonical-schema-key.js';
 import { compareText, isRecord, type GolemDiagnostic, type GolemProfile } from './generator-core.js';
 import { codecShortName, type SchemaGraph, type SchemaNode } from './schema-graph.js';
 import type { JsonSchema } from './schema.js';
-import { compile, type CompileInput, type CompileOptions, type CompileResult, type SchemaPlace } from './validator-compiler/index.js';
+import { compile, type CompileResult } from './validator-compiler/index.js';
+import type { CompileInput, CompileOptions, SchemaPlace } from './validator-compiler/options.js';
 
 export type { SchemaPlace };
 

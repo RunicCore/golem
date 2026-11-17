@@ -4,6 +4,7 @@ import { serdeValidates, type ValidationLevel } from '../object-codec.js';
 import { runValidation } from '../validation-runner.js';
 import type { Validator } from '../validation-runtime.js';
 import type { ClientRuntime, OperationCodecs, ResponseCheck, ValidateOption } from './core.js';
+import { statusKey } from './value-places.js';
 
 // Exported from `@exprtlabs/golem/validation` and `@exprtlabs/golem/internal/client-validation-runtime`, which only SDKs generated with validation import; `@exprtlabs/golem/client` and `@exprtlabs/golem/internal/client-runtime` never reach this module.
 
@@ -87,11 +88,11 @@ export function responseCheck(validators: OperationRuntimeValidators, level: Val
       if (headerLevel === false) return Promise.resolve();
       return value === undefined
         ? Promise.reject(new LibError(LibErrorKind.Validation, 'API data validation failed.', [toIssue({ code: 'required', key: header, path: [header] }, IssueSource.OpenAPI, IssueRepresentation.Wire)]))
-        : assertValid(validators.responseHeaders?.get(`${response.status}:${header}`), value, headerLevel === 'sanity');
+        : assertValid(validators.responseHeaders?.get(statusKey(response.status, header)), value, headerLevel === 'sanity');
     }
     return level === false || response.contentType === null
       ? Promise.resolve()
-      : assertValid(validators.responses.get(`${response.status}:${response.contentType}`), value, level === 'sanity');
+      : assertValid(validators.responses.get(statusKey(response.status, response.contentType)), value, level === 'sanity');
   };
 }
 

@@ -1,6 +1,6 @@
 import { basename, dirname, isAbsolute, join, normalize, relative, resolve as resolvePath, sep } from 'node:path';
 import { displayPath } from './generator-core.js';
-import { inNodeModules } from './type-analysis/path-identity.js';
+import { inNodeModules } from './path-identity.js';
 import type { CompilerOptions, Diagnostic, OpenProgramOptions, VirtualFiles } from './typescript-types.js';
 
 /** The diagnostic code of a configuration that matches no file. */
@@ -225,18 +225,35 @@ export function flagsAsConfigOptions(flags: readonly string[], parse: (flags: re
   return { ...parsedFlagOptions(flags, parse), ...flagPathOptions(flags, parse, resolveAtCurrentFolder) };
 }
 
+/** The diagnostic of an option that finds no argument (TS6044). */
+const EXPECTS_AN_ARGUMENT = 6044;
+
+/**
+ * Whether a flag took its next argument `argument` as its value, from the compiler's parse `pair` of the two, in command-line arguments that parse
+ * without errors. An argument that does not start with '-' is never a flag, so the compiler gave it to the flag. One that starts with '-' is a flag of
+ * its own after a boolean option (`--strict --strict false`) or a list option (`--types --strict`), which the parse shows as a boolean or a list,
+ * and after an option that finds no argument in the pair, as the pair ends there; a value option takes it (`--rootDir -x`, `--depth -1`).
+ */
+function tookArgument(pair: ParsedArguments, argument: string): boolean {
+  if (!argument.startsWith('-')) return true;
+  return !pair.errors.some((error) => error.code === EXPECTS_AN_ARGUMENT) && !Object.values(pair.options).some((value) => typeof value === 'boolean' || Array.isArray(value));
+}
+
+/**
+ * The options of the command-line `flags`, each with the argument that the compiler gave it. The compiler's parse of the whole list reports the errors, as `tsc` does;
+ * the parse of each flag with its next argument then tells which value that argument is, so that the flag's value can be read from its own text (`configValue`).
+ */
 function parsedFlagOptions(flags: readonly string[], parse: (flags: readonly string[]) => ParsedArguments): Record<string, string | number | boolean | readonly string[]> {
+  const all = parse(flags);
+  assertNoSourceFiles(all.fileNames);
+  assertCommandLineParsed(all);
   const options: Record<string, string | number | boolean | readonly string[]> = {};
   for (let index = 0; index < flags.length; index += 1) {
     const flag = flags[index];
     const next = flags[index + 1];
-    const together = next !== undefined && (!next.startsWith('-') || /^-\d+$/.test(next)) && (() => {
-      const pair = parse([flag, next]);
-      return pair.errors.length === 0 && pair.fileNames.length === 0;
-    })();
-    const parsed = parse(together ? [flag, next] : [flag]);
-    assertNoSourceFiles(parsed.fileNames);
-    assertCommandLineParsed(parsed);
+    // Without the argument, the parse also holds the next flag, whose own turn sets it again.
+    const parsed = parse(next === undefined ? [flag] : [flag, next]);
+    const together = next !== undefined && tookArgument(parsed, next);
     for (const [name, value] of Object.entries(parsed.options as Record<string, unknown>)) options[name] = configValue(value, together ? next : undefined);
     if (together) index += 1;
   }

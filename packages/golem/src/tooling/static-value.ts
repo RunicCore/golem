@@ -1,5 +1,5 @@
 import * as ts from './typescript-ns.js';
-import { resolveSymbol } from './type-analysis/symbols.js';
+import { resolveSymbol } from './resolve-symbol.js';
 
 /** A JSON-compatible value read from source without executing project code. */
 export type StaticValue =

@@ -3,9 +3,9 @@ import { displayPath } from '../generator-core.js';
 import { hasLocalForm, localFormMessage } from '../names.js';
 import * as ts from '../typescript-ns.js';
 import { canonicalFilename, portableRelativeFilename } from './project.js';
-import { nearestManifest, packageSpecifier } from './package-specifier.js';
-import { ManifestError } from './package-specifier.js';
-import type { PackageManifest } from './package-specifier.js';
+import { nearestManifest, packageSpecifier } from '../package-specifier.js';
+import { ManifestError } from '../package-specifier.js';
+import type { PackageManifest } from '../package-specifier.js';
 import { canonicalConstraintKey } from '../schema.js';
 import type { ConstraintSchemaValue, ModelConstraint } from '../schema.js';
 import type { ImportedFunction } from '../../model-registry.js';
@@ -100,7 +100,7 @@ export interface WrittenFunctions {
   readonly deserialize: Map<ts.Type, ts.Symbol | null>;
   /** The nodes that this field was read from. */
   readonly sources: readonly ts.Node[];
-  /** The nodes that the fields around it were read from, and that no scan of an enclosing field has read yet. The scan leaves out the members that declare a sibling of this field. */
+  /** The nodes that the fields around it were read from. The scan of this field leaves out the members that declare a sibling of it. */
   readonly enclosing: readonly ts.Node[];
   /** Whether `recordReachableFunctions` read `sources` and `enclosing` already. It runs once, before the first tag read from the checker looks up a function. */
   scanned: boolean;
@@ -128,22 +128,24 @@ function isInside(node: ts.Node, outer: ts.Node): boolean {
 }
 
 /**
- * A registry for one field: it starts with what the fields around it wrote, because a generic type (`Box<Tagged<string>>`) hands
- * the tags of its argument to the property that its declaration names `T`. A source of the fields around it that holds this field's own
- * node, such as the object type that declares it, is left out: its other members are fields of their own. A reference to the type that
- * declares it (`Box`, `Field` over a mapped `keyof Box`) holds the node only through the declaration: the scan leaves out the
- * members that declare a sibling (`FieldDeclarations`), so the siblings of this field stay out too.
+ * A registry for one field. It holds what the field reaches by itself: the scan of its own sources, and of the sources of the fields
+ * around it, because a generic type (`Box<Tagged<string>>`) hands the tags of its argument to the property that its declaration names `T`.
+ * It takes nothing from the registry of a field around it: that registry holds what the scan of the whole enclosing type found, the
+ * functions of the sibling fields too, and a type that two siblings share would name no function for this field. A source of the
+ * fields around it that holds this field's own node, such as the object type that declares it, is left out: its other members are fields
+ * of their own. A reference to the type that declares it (`Box`, `Field` over a mapped `keyof Box`) holds the node only through the
+ * declaration: the scan leaves out the members that declare a sibling (`FieldDeclarations`), so the siblings of this field stay out too.
  */
-function newWrittenFunctions(inherited: WrittenFunctions | undefined, sources: readonly ts.Node[]): WrittenFunctions {
-  const enclosing = inherited && !inherited.scanned ? [...inherited.enclosing, ...inherited.sources].filter(outer => !sources.some(own => isInside(own, outer))) : [];
+function newWrittenFunctions(around: WrittenFunctions | undefined, sources: readonly ts.Node[]): WrittenFunctions {
+  const enclosing = around ? [...around.enclosing, ...around.sources].filter(outer => !sources.some(own => isInside(own, outer))) : [];
   return {
-    validation: new Map(inherited?.validation),
-    serialize: new Map(inherited?.serialize),
-    deserialize: new Map(inherited?.deserialize),
+    validation: new Map(),
+    serialize: new Map(),
+    deserialize: new Map(),
     sources,
     enclosing,
     scanned: false,
-    hidden: new Map(inherited?.hidden),
+    hidden: new Map(),
   };
 }
 
@@ -487,11 +489,16 @@ export function isDeclaredByDefaultLibrary(symbol: ts.Symbol | undefined, isDefa
   return declarations.length > 0 && declarations.every(declaration => isDefaultLibraryFile(declaration.getSourceFile()));
 }
 
-/** What one scan of the sources has read: each node once, and each type once. `siblings` tells whether the scan leaves out the members that declare a sibling of the field. */
+/**
+ * What one scan of the sources has read: each node once, and each type once. `siblings` tells whether the scan leaves out the members that
+ * declare a sibling of the field. `shaped` is set below a type that reads its arguments by shape (`shapeSources`): it holds the members
+ * that the arguments give that type, and a member of it that writes no type node can be the one that the type takes its tag from.
+ */
 interface Scan {
   readonly nodes: Set<ts.Node>;
   readonly types: Set<ts.Type>;
   readonly siblings: 'read' | 'skip';
+  readonly shaped: ReadonlySet<ts.Node> | undefined;
 }
 
 /** Whether `node` declares a field beside the field that the scan serves: such a field has tags of its own. */
@@ -523,21 +530,58 @@ function functionTagTypes(context: TagAnalysisContext, type: ts.Type, at: ts.Nod
   checker.getSignaturesOfType(type, ts.SignatureKind.Call).forEach(signature => inside(checker.getReturnTypeOfSignature(signature)));
 }
 
-/** Whether `declaration` is a value whose type the checker infers, because it writes no type node. */
-function infersItsType(declaration: ts.Node): boolean {
-  if (ts.isVariableDeclaration(declaration) || ts.isPropertyDeclaration(declaration) || ts.isFunctionDeclaration(declaration) || ts.isMethodDeclaration(declaration) || ts.isGetAccessorDeclaration(declaration)) {
-    return declaration.type === undefined;
+/** Whether the checker supplies the type of `node`, so the registry cannot name its function: a value that writes no type node. */
+function infersItsType(node: ts.Node): boolean {
+  if (ts.isVariableDeclaration(node) || ts.isPropertyDeclaration(node) || ts.isFunctionDeclaration(node) || ts.isMethodDeclaration(node) || ts.isGetAccessorDeclaration(node)) {
+    return node.type === undefined;
   }
-  return ts.isPropertyAssignment(declaration) || ts.isBindingElement(declaration);
+  return ts.isPropertyAssignment(node) || ts.isBindingElement(node);
 }
 
-/** Marks the function types of the tags that `declaration` holds in its inferred type: the registry cannot name the function of such a tag. */
-function hideInferredFunctionTags(context: TagAnalysisContext, declaration: ts.Node, scan: Scan): void {
+/** Whether `node` names a base class that a call computes (`class Sub extends mixin(Base)`): the scan reaches no declaration of it, so it reads the members of the base type instead. */
+function computesItsBase(node: ts.ExpressionWithTypeArguments): boolean {
+  return !ts.isIdentifier(node.expression) && !ts.isPropertyAccessExpression(node.expression);
+}
+
+/** Marks the function types of the tags that `node` holds in its inferred type: the registry cannot name the function of such a tag. */
+function hideInferredFunctionTags(context: TagAnalysisContext, node: ts.Node, scan: Scan): void {
   const { hidden } = context.writtenFunctions ?? {};
-  if (!hidden || !infersItsType(declaration)) return;
+  if (!hidden || !infersItsType(node)) return;
   const found: ts.Type[] = [];
-  functionTagTypes(context, context.checker.getTypeAtLocation(declaration), declaration, scan, found);
-  for (const type of found) if (!hidden.has(type)) hidden.set(type, declaration);
+  functionTagTypes(context, context.checker.getTypeAtLocation(node), node, scan, found);
+  for (const type of found) if (!hidden.has(type)) hidden.set(type, node);
+}
+
+/** Whether `node` is a conditional type or a mapped type with an `as` clause: it takes the members of its argument by shape, not by name. */
+function readsByShape(node: ts.Node): boolean {
+  return ts.isConditionalTypeNode(node) || (ts.isMappedTypeNode(node) && node.nameType !== undefined);
+}
+
+/**
+ * The members that a type reading by shape can take its values from: the members of `type`, and of each type argument of its alias that it
+ * does not only project. A mapped type that keeps some members of its argument (`Pick<Sub, 'name'>`) leaves out the rest; a type that writes
+ * members of its own from the argument (`{ held: T['held'] }`, a renamed key) can take any member of it.
+ */
+function sourceMembers(checker: ts.TypeChecker, type: ts.Type, seen = new Set<ts.Type>()): readonly ts.Node[] {
+  const members = checker.getPropertiesOfType(type).flatMap(property => propertyDeclarations(checker, property));
+  for (const argument of type.aliasTypeArguments ?? []) {
+    if (seen.has(argument) || (argument.flags & ts.TypeFlags.Object) === 0) continue;
+    seen.add(argument);
+    const projected = checker.getPropertiesOfType(argument).some(property => propertyDeclarations(checker, property).some(declaration => members.includes(declaration)));
+    if (!projected) members.push(...sourceMembers(checker, argument, seen));
+  }
+  return members;
+}
+
+/** The type nodes that `node` reads by shape: the arguments of a reference to a type that does (`ValueOf<Holder>`), or the checked or mapped type of one written in place. None for any other node. */
+function shapeSources(checker: ts.TypeChecker, node: ts.Node): readonly ts.TypeNode[] {
+  if (ts.isTypeReferenceNode(node)) {
+    const body = targetSymbol(checker, checker.getSymbolAtLocation(node.typeName))?.declarations?.find(ts.isTypeAliasDeclaration)?.type;
+    return body !== undefined && readsByShape(ts.isParenthesizedTypeNode(body) ? body.type : body) ? node.typeArguments ?? [] : [];
+  }
+  if (ts.isConditionalTypeNode(node)) return [node.checkType];
+  const mapped = ts.isMappedTypeNode(node) && node.nameType !== undefined ? node.typeParameter.constraint : undefined;
+  return mapped !== undefined && ts.isTypeOperatorNode(mapped) ? [mapped.type] : [];
 }
 
 /** The properties that `T['key']` names: each string literal of its index type, as the checker finds it in the type of `T`. */
@@ -562,14 +606,17 @@ function membersBeside(checker: ts.TypeChecker, node: ts.IndexedAccessTypeNode, 
 /**
  * Records every `typeof` of a tag in everything that `node` reaches, through type aliases, interfaces, classes and their base
  * classes, `typeof` a variable, and the parts of mapped, conditional and indexed types. A default library file holds no tag of the
- * user and stays unread. A `typeof` target, a source, or a property that `T['key']` names marks `hidden` when it infers a type
- * with a function tag. Each node is read once for each `scan`. A scan that skips siblings leaves out the members that declare a
- * field beside the one it serves, so their functions do not enter its registry. `T['key']` reads `T` that way too, beside the members
- * that the key names.
+ * user and stays unread.
+ * A `typeof` target, a source, or a property that `T['key']` names marks `hidden` when it infers a type with a function tag.
+ * So does a member of a base class that a call computes, and a member that a type reading by shape takes from its arguments (`shaped`).
+ * Each node is read once for each `scan`.
+ * A scan that skips siblings leaves out the members that declare a field beside the one it serves, so their functions do not enter
+ * its registry. `T['key']` reads `T` that way too, beside the members that the key names.
  */
 function recordReachableFunctions(context: TagAnalysisContext, node: ts.Node, scan: Scan): void {
   if (scan.nodes.has(node) || (scan.siblings === 'skip' && declaresSibling(context, node))) return;
   scan.nodes.add(node);
+  if (scan.shaped?.has(node)) hideInferredFunctionTags(context, node, scan);
   const { checker } = context;
   const reachDeclarationsOf = (symbol: ts.Symbol | undefined): void => {
     for (const declaration of targetSymbol(checker, symbol)?.declarations ?? []) {
@@ -583,6 +630,12 @@ function recordReachableFunctions(context: TagAnalysisContext, node: ts.Node, sc
     else reachDeclarationsOf(symbol);
   } else if (ts.isExpressionWithTypeArguments(node)) {
     reachDeclarationsOf(checker.getSymbolAtLocation(node.expression));
+    if (computesItsBase(node)) {
+      // A call shows no declaration of its base: each member is read where it is written. A member that shows no type node hides its tag only when a reader takes it (`shaped`).
+      for (const property of checker.getPropertiesOfType(checker.getTypeAtLocation(node))) {
+        for (const member of propertyDeclarations(checker, property)) recordReachableFunctions(context, member, scan);
+      }
+    }
   } else if (ts.isTypeQueryNode(node)) {
     const declaration = declarationOf(targetSymbol(checker, symbolAtExpression(checker, node.exprName)));
     if (declaration) {
@@ -603,7 +656,14 @@ function recordReachableFunctions(context: TagAnalysisContext, node: ts.Node, sc
       return;
     }
   }
-  ts.forEachChild(node, child => recordReachableFunctions(context, child, scan));
+  // The nodes below a type that reads by shape are read again, whichever scan read them before. A reader below another one adds its members.
+  const sources = shapeSources(checker, node);
+  const below: Scan = sources.length === 0 ? scan : {
+    ...scan,
+    nodes: scan.shaped ? scan.nodes : new Set(),
+    shaped: new Set([...scan.shaped ?? [], ...sources.flatMap(source => sourceMembers(checker, checker.getTypeFromTypeNode(source)))]),
+  };
+  ts.forEachChild(node, child => recordReachableFunctions(context, child, below));
 }
 
 /** The file, line and column where `at` starts, to name it in a message. */
@@ -638,7 +698,7 @@ function functionBinding(
   const registry = context.writtenFunctions;
   if (registry && !registry.scanned) {
     registry.scanned = true;
-    const full: Scan = { nodes: new Set(), types: new Set(), siblings: 'read' };
+    const full: Scan = { nodes: new Set(), types: new Set(), siblings: 'read', shaped: undefined };
     const aroundSiblings: Scan = { ...full, siblings: 'skip' };
     // The sources of this field go first, so a node that the scan of the fields around skips is still read in full for this field.
     const reads = [...registry.sources.map(source => [source, full] as const), ...registry.enclosing.map(source => [source, aroundSiblings] as const)];

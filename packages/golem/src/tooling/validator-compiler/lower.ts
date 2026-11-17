@@ -1,10 +1,11 @@
 import { MODEL_CLASS_KEYWORD, MODEL_INSTANCE_KEYWORD, VALIDATION_KEYWORD } from '../../schema-keywords.js';
 import { SCHEMA_ARRAY_KEYWORDS, SCHEMA_MAP_KEYWORDS } from '../../json-vocabulary.js';
 import { jsonPointerTokens } from '../../json-pointer.js';
-import { isKnownFormat, jsonEqual } from '../../validation-runtime.js';
+import { jsonEqual } from '../../json-equal.js';
+import { isKnownFormat } from '../../validation-formats.js';
 import { isRuntimeFunction } from '../rt.js';
 import { GolemDiagnosticSeverity, isRecord, type GolemDiagnostic } from '../generator-core.js';
-import type { CompileInput, CompileOptions } from './index.js';
+import type { CompileInput, CompileOptions } from './options.js';
 import { ALWAYS, type IrAdditional, type IrCheck, type IrContains, type IrDiscriminator, type IrClass, type IrFunction, type IrInstance, type IrModule, type IrSchema, type IrValidationImport } from './ir.js';
 import { JSON_TYPES, TYPE_NAMES, isTypeName } from './json-types.js';
 import { baseInside, pointerSegment, SchemaResolver, type SchemaLocation } from './resolve.js';

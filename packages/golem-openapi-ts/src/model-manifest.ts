@@ -2,7 +2,7 @@ import { reachesRecursiveNode } from '@exprtlabs/golem/internal/emitter';
 import type { SchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
 import type { CodecSchemaClosureEntry } from '@exprtlabs/golem/internal/validation-plan';
 import type { JsonSchema } from '@exprtlabs/golem/internal/schema';
-import { isRecord, sourceDigest } from '@exprtlabs/golem/internal/generator-support';
+import { isRecord, parseValueKey, sourceDigest, statusKey } from '@exprtlabs/golem/internal/generator-support';
 import { asRecord, isJsonObject, objectEntries } from './json.js';
 import { compareText } from '@exprtlabs/golem/generator-api';
 import { identifier } from '@exprtlabs/golem/internal/generator-support';
@@ -21,7 +21,7 @@ import {
   modelEnv,
   modelStableId,
 } from './model-resolution.js';
-import { parseValueKey, uncarriedOf } from './model-schema-graph.js';
+import { uncarriedOf } from './model-schema-graph.js';
 import { resolveLocal } from './normalize.js';
 
 /**
@@ -46,8 +46,8 @@ function golemModeGraph(document: unknown, analysis: OpenApiModelAnalysis, sdk: 
     const validation: SdkOperationValidation | undefined = bundle && {
       input: bundle.inputReference,
       ...(bundle.headersReference === undefined ? {} : { headers: bundle.headersReference }),
-      responses: bundle.responseReferences.map((item) => ({ key: `${item.status}:${item.contentType}`, root: item.reference })),
-      responseHeaders: bundle.responseHeaderReferences.map((item) => ({ key: `${item.status}:${item.name}`, root: item.reference })),
+      responses: bundle.responseReferences.map((item) => ({ key: statusKey(item.status, item.contentType), root: item.reference })),
+      responseHeaders: bundle.responseHeaderReferences.map((item) => ({ key: statusKey(item.status, item.name), root: item.reference })),
       roots: bundle.roots,
     };
     if (values.length === 0 && validation === undefined) continue;

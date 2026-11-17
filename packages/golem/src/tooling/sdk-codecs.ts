@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { code, exportedName, fileImports, ImportSource, join, lineBreak, nest, propertyKey, render, type Code } from './code.js';
-import { portableRelativeFilename, relativeSpecifierOf } from './type-analysis/path-identity.js';
+import { placeKey, type ValuePlace, type ValuePlaceKind } from '../client-runtime/value-places.js';
+import { portableRelativeFilename, relativeSpecifierOf } from './path-identity.js';
 
 /**
  * What both generated-SDK writers share: the codec module of an operation the client reads. One generator writes
@@ -78,17 +79,16 @@ function operationCodecsLiteral(operation: SdkOperationCodecs): Code {
 }
 
 /**
- * What a writer knows of one operation. `values` are the places of the values that convert: `['request', contentType]`,
- * `['response', status, contentType]`, `['parameter', location, name]` and `['response-header', status, name]`, in the order of each kind's table.
+ * What a writer knows of one operation. `values` are the places of the values that convert, in the order of each kind's table (see `ValuePlace`).
  * `checks` are the validators of the operation.
  */
 export interface SdkOperationShape {
-  readonly values: readonly (readonly string[])[];
+  readonly values: readonly ValuePlace[];
   readonly checks?: Pick<SdkOperationCodecs, 'input' | 'requestHeaders' | 'responses' | 'responseHeaders'>;
 }
 
 /** The code of the conversion function of the value at a place, or none when the value converts nothing. */
-export type SdkValueCodec = (at: readonly string[], conversion: 'fromWire' | 'toWire') => Code | undefined;
+export type SdkValueCodec = (at: ValuePlace, conversion: 'fromWire' | 'toWire') => Code | undefined;
 
 /**
  * The codecs of one operation, or none when it has nothing to say. Both writers of the SDK codecs (the module of a standalone operation
@@ -96,11 +96,11 @@ export type SdkValueCodec = (at: readonly string[], conversion: 'fromWire' | 'to
  */
 function operationCodecsOf(shape: SdkOperationShape, codecOf: SdkValueCodec): SdkOperationCodecs | undefined {
   // The request of a client operation leaves in its wire form and its response arrives in its plain form.
-  const keyed = (kind: string, conversion: 'fromWire' | 'toWire'): SdkKeyedCode[] => shape.values
-    .filter((at) => at[0] === kind)
-    .flatMap((at) => {
-      const codec = codecOf(at, conversion);
-      return codec === undefined ? [] : [{ key: at.slice(1).join(':'), code: codec }];
+  const keyed = (kind: ValuePlaceKind, conversion: 'fromWire' | 'toWire'): SdkKeyedCode[] => shape.values
+    .filter((place) => place[0] === kind)
+    .flatMap((place) => {
+      const codec = codecOf(place, conversion);
+      return codec === undefined ? [] : [{ key: placeKey(place), code: codec }];
     });
   const encode = keyed('request', 'toWire');
   const decode = keyed('response', 'fromWire');
