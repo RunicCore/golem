@@ -8,7 +8,7 @@ import {
   captureRequest,
   compileGeneratedSdk,
   generateMaterializedSdk,
-  isGeneratedClientClass,
+  loadGeneratedClient,
   requireRecord,
   type GeneratedClientClass,
 } from './helpers.js';
@@ -46,9 +46,7 @@ async function loadSdk(): Promise<{ root: string; Client: GeneratedClientClass }
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'golem-openapi-reserved-schemes-')));
   await generateMaterializedSdk(reservedDocument(), { output: path.join(root, 'sdk'), name: 'Reserved', profile: { validation: false } });
   compileGeneratedSdk(path.join(root, 'sdk'), [], { strict: true });
-  const module = requireRecord(await import(pathToFileURL(path.join(root, 'sdk/dist/index.js')).href), 'reserved client');
-  if (!isGeneratedClientClass(module.ReservedClient)) throw new TypeError('ReservedClient must be a class');
-  sdk = { root, Client: module.ReservedClient };
+  sdk = { root, Client: await loadGeneratedClient(path.join(root, 'sdk'), 'Reserved', 'dist/index.js') };
   return sdk;
 }
 

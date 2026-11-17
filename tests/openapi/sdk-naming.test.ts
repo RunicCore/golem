@@ -2,7 +2,6 @@ import { createFixtureProject } from '../fixture-project.js';
 import assert from 'node:assert/strict';
 import { writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 import { generate } from '#openapi/generator';
 import {
@@ -10,8 +9,7 @@ import {
   compileGeneratedSdk,
   documentBase,
   generateMaterializedSdk,
-  isGeneratedClientClass,
-  requireRecord,
+  loadGeneratedClient,
   writeOpenApiDocument,
 } from './helpers.js';
 
@@ -81,9 +79,7 @@ test('reserved-word operation names get a deterministic identifier suffix and co
     const output = path.join(directory, 'sdk');
     const result = await generateMaterializedSdk(document, { output, name: 'Reserved', profile: { mobx: true, validation: true } });
     compileGeneratedSdk(output);
-    const client = requireRecord(await import(pathToFileURL(path.join(output, 'dist/client.js')).href), 'reserved client');
-    const ReservedClient = client.ReservedClient;
-    if (!isGeneratedClientClass(ReservedClient)) throw new TypeError('ReservedClient must be a class');
+    const ReservedClient = await loadGeneratedClient(output, 'Reserved');
     const instance = new ReservedClient({ baseUrl: 'https://example.test', fetchImpl: async () => new Response(null, { status: 204 }) });
     for (const name of expected) {
       const response = await instance[name]().execute({});

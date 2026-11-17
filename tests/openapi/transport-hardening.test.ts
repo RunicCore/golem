@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
 import test, { after } from 'node:test';
 import { ClientRuntime } from '@exprtlabs/golem/internal/client-runtime';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
@@ -10,8 +9,8 @@ import {
   captureRequest,
   compileGeneratedSdk,
   generateMaterializedSdk,
-  isGeneratedClientClass,
-  requireRecord,
+  generatedClientFrom,
+  importGeneratedModule,
   type CapturedRequest,
   type GeneratedClientClass,
 } from './helpers.js';
@@ -82,9 +81,8 @@ async function generateTransportSdk(): Promise<TransportSdk> {
     profile: { validation: false },
   });
   compileGeneratedSdk(output, [], { strict: true });
-  const module = requireRecord(await import(pathToFileURL(path.join(output, 'dist/index.js')).href), 'transport client');
-  const Client = module.TransportClient;
-  if (!isGeneratedClientClass(Client)) throw new TypeError('TransportClient must be a class');
+  const module = await importGeneratedModule(output, 'transport client');
+  const Client = generatedClientFrom(module, 'Transport', 'transport client');
   const guard = module.isTransportUndeclaredResponseError;
   if (typeof guard !== 'function') throw new TypeError('isTransportUndeclaredResponseError must be exported');
   const isUndeclared = (error: unknown): boolean => Reflect.apply(guard, undefined, [error]) === true;

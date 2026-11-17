@@ -344,7 +344,7 @@ export interface GeneratedClientClass {
   new (options: Record<string, unknown>): GeneratedClientInstance;
 }
 
-export function isGeneratedClientClass(value: unknown): value is GeneratedClientClass {
+function isGeneratedClientClass(value: unknown): value is GeneratedClientClass {
   return typeof value === 'function';
 }
 

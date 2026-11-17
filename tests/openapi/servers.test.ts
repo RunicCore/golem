@@ -1,14 +1,14 @@
 import assert from 'node:assert/strict';
 import { writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
 import test, { type TestContext } from 'node:test';
 import { createFixtureProject } from '../fixture-project.js';
 import {
   captureRequest,
   compileGeneratedSdk,
   generateMaterializedSdk,
-  isGeneratedClientClass,
+  importGeneratedModule,
+  loadGeneratedClient,
   type GeneratedClientClass,
   requireRecord,
   type CapturedRequest,
@@ -41,10 +41,8 @@ async function loadSdk(t: TestContext, document: unknown, name: string, assertSo
   const assertFile = path.join(output, 'servers-assert.ts');
   writeFileSync(assertFile, assertSource);
   compileGeneratedSdk(output, [assertFile], { strict: true });
-  const load = async (file: string) => requireRecord(await import(pathToFileURL(path.join(output, 'dist', file)).href), file);
-  const Client = (await load('client.js'))[`${name}Client`];
-  assert.equal(isGeneratedClientClass(Client), true);
-  if (!isGeneratedClientClass(Client)) throw new TypeError(`${name}Client`);
+  const load = (file: string) => importGeneratedModule(output, file, `dist/${file}`);
+  const Client = await loadGeneratedClient(output, name);
   return { Client, load, diagnostics };
 }
 
