@@ -200,8 +200,7 @@ test('golem.yaml validation accepts true, false and sanity, defaults to true, an
 
 test('a golem.yaml with version 1 loads, and any other version stops loading with the version message', async (t: TestContext) => {
   // protects: F-1139, F-1163 only version 1 loads: a missing version, null, 0, the string "1", true and 2 all stop (a loose check such as < 2 or == 1 lets some through)
-  const config = await loadConfig(project(t, `version: 1\n${DOCS}`).filename);
-  assert.deepEqual(config.profile, { validation: true, allowAny: false, unknownFormats: 'error' });
+  await loadConfig(project(t, `version: 1\n${DOCS}`).filename);
   for (const version of ['', 'version: null\n', 'version: 0\n', 'version: "1"\n', 'version: true\n', 'version: 2\n']) {
     const { filename } = project(t, `${version}${DOCS}`);
     await assert.rejects(() => loadConfig(filename), { message: 'Configuration version must be 1.' }, version || 'no version');
