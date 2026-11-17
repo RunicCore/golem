@@ -29,6 +29,8 @@ The benchmark's typia adapter compiles with `ttsc`, which builds typia's Go plug
 
 After you change what a test installs, run `npm run test:prepare` before the next tier run. The image tag follows the `Dockerfile` only, and `run.sh` mounts the entrypoint from its own checkout, so a changed `entrypoint.sh` needs no rebuild.
 
+Each run copies the source into the cache volume by content, not by size and modification time, so the run always tests the files on disk, also after an edit that keeps both (`cp -p`, `touch -r`). A file with the same content keeps its time, so incremental builds stay warm.
+
 ## Linux lockfile
 
 The checked-in `package-lock.json` comes from macOS and lacks the Linux platform binaries. `test:prepare` resolves a Linux lockfile online and keeps it in the cache volume at `/cache/linux-lock/deps-<hash>/package-lock.json`; the other tiers copy it and install offline. The hash covers only the fields of the root, `packages/*` and `examples/payments` `package.json` files that change the install: `name`, `version`, `dependencies`, `devDependencies`, `optionalDependencies`, `peerDependencies`, `peerDependenciesMeta`, `bundleDependencies`, `bundledDependencies`, `overrides`, `workspaces` and `packageManager`. A change to `scripts` or another field keeps the lockfile. Branches with different dependencies keep separate slots. When a tier reports `No Linux lockfile for the current package.json files`, run `npm run test:prepare`.
