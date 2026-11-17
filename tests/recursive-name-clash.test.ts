@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
 import test, { type TestContext } from 'node:test';
+import { loadWireRoundTrip } from './support/recursive-fixtures.js';
 import { buildRecursiveNames } from './support/recursive-names.js';
 
 const HEAD = "import type { IModel } from '@exprtlabs/golem/model';\n";
@@ -14,8 +14,8 @@ async function roundTrips(t: TestContext, sources: Record<string, string>, value
   const { root, names } = await buildRecursiveNames(t, sources);
   assert.deepEqual(names, [...fields].sort());
   for (const [file, model, value] of values) {
-    const codecs = await import(pathToFileURL(path.join(root, `build/${file}.model.generated.js`)).href) as Record<string, (value: unknown) => unknown>;
-    assert.deepEqual(JSON.parse(JSON.stringify(codecs[`toWireFormat${model}`]!(codecs[`fromWireFormat${model}`]!(value)))), value);
+    const wire = await loadWireRoundTrip(path.join(root, `build/${file}.model.generated.js`), [model]);
+    assert.deepEqual(wire(model, value), value);
   }
 }
 

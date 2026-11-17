@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
 import test, { type TestContext } from 'node:test';
 
 import { command, golem } from './support/process.js';
@@ -15,6 +14,8 @@ import {
 } from './model-project.js';
 import { copyFixtureFile, fileFixtureScope, listProjectDependencies, onceShared, readFixture } from './fixture-project.js';
 import { companionModelSource } from './fixture-templates/models/model-companions.js';
+import { importGeneratedModule, loadFunctions, loadModelClasses, requireFunction, requireRecord, type GeneratedModelClass } from './openapi/helpers.js';
+import { valueAt } from './support/json.js';
 
 test('model companions compile with --noUnusedLocals for empty, scalar and nested models', async t => {
   const { root, sourceRoot } = modelProject(t);
@@ -89,23 +90,21 @@ test('golem build rewrites nested model serde calls and preserves class construc
   await buildModelProject(root);
   assert.equal(fs.readFileSync(path.join(root, 'build/item.model.js'), 'utf8'), firstEmit);
 
-  const loaded = await import(pathToFileURL(path.join(root, 'build/item.model.js')).href) as {
-    readonly Item: new (values?: object) => object;
-  };
-  const item = new loaded.Item();
-  const parsed = (item as { parseItem(text: string): object }).parseItem('{"title":"nested","value":7}');
-  assert.ok(parsed instanceof loaded.Item);
-  const wired = (item as { fromWireItem(value: unknown): object }).fromWireItem({ title: 'wire', value: 8 });
+  const { Item } = await loadModelClasses(path.join(root, 'build/item.model.js'), ['Item']);
+  const item = requireRecord(new Item(), 'item');
+  const parsed = requireFunction(item.parseItem, 'parseItem')('{"title":"nested","value":7}');
+  assert.ok(parsed instanceof Item);
+  const wired = requireRecord(requireFunction(item.fromWireItem, 'fromWireItem')({ title: 'wire', value: 8 }), 'wired');
   assert.deepEqual({ ...wired }, { title: 'wire', value: 8 });
-  assert.ok(wired instanceof loaded.Item);
+  assert.ok(wired instanceof Item);
 });
 
-/** Builds the project at `profile` and imports its built `use.js`; `files` are the generated files of that build. */
-async function buildAndImport<Exports>(root: string, profile: { readonly mobx?: boolean; readonly validation: boolean }): Promise<{ readonly loaded: Exports; readonly files: ReturnType<typeof generatedModelFiles> }> {
+/** Builds the project at `profile` and imports its built `use.js`, whose model classes `classNames` are returned as `classes`; `files` are the generated files of that build. */
+async function buildAndImport<Name extends string>(root: string, profile: { readonly mobx?: boolean; readonly validation: boolean }, classNames: readonly Name[]): Promise<{ readonly loaded: Record<string, unknown>; readonly classes: Record<Name, GeneratedModelClass>; readonly files: ReturnType<typeof generatedModelFiles> }> {
   writeModelGolemYaml(root, profile);
   await buildModelProject(root);
   const files = generatedModelFiles(root);
-  return { loaded: await import(pathToFileURL(path.join(root, 'build/use.js')).href) as Exports, files };
+  return { loaded: await importGeneratedModule(root, 'use.js', 'build/use.js'), classes: await loadModelClasses(path.join(root, 'build/use.js'), classNames), files };
 }
 
 test('a field typed with an app class from its own file builds, parses and writes that class, and a second build writes the same files', async t => {
@@ -118,8 +117,8 @@ test('a field typed with an app class from its own file builds, parses and write
     'order.model.ts': `${imodel}import type { Customer } from './customer.js';\nexport type TOrder = IModel<{ id: string; customer: Customer }>;\n`,
     'use.ts': "import { parse, stringify } from '@exprtlabs/golem/serde';\nimport type { TOrder } from './order.model.js';\nexport { Customer } from './customer.js';\nexport const order = parse<TOrder>('{\"id\":\"o1\",\"customer\":{\"name\":\"Ada\"}}');\nexport const text = stringify<TOrder>(order);\n",
   });
-  const { loaded, files: firstFiles } = await buildAndImport<{ Customer: new () => object; order: { customer: object }; text: string }>(root, { validation: true });
-  assert.ok(loaded.order.customer instanceof loaded.Customer);
+  const { loaded, classes: { Customer }, files: firstFiles } = await buildAndImport(root, { validation: true }, ['Customer']);
+  assert.ok(valueAt(loaded, 'order', 'customer') instanceof Customer);
   assert.equal(loaded.text, '{"id":"o1","customer":{"name":"Ada"}}');
   await generateModels(root);
   assert.deepEqual(generatedModelFiles(root), firstFiles);
@@ -136,8 +135,8 @@ test('a class field that a projection reaches builds: a model that picks it from
     'invoice.model.ts': `${imodel}import type { TOrder } from './order.model.js';\nexport type TInvoice = IObject<{ order: Pick<TOrder, 'customer'> }>;\n`,
     'use.ts': "import { parse } from '@exprtlabs/golem/serde';\nimport type { TInvoice } from './invoice.model.js';\nexport { Customer } from './customer.js';\nexport const invoice = parse<TInvoice>('{\"order\":{\"customer\":{\"name\":\"Ada\"}}}');\n",
   });
-  const { loaded } = await buildAndImport<{ Customer: new () => object; invoice: { order: { customer: object } } }>(root, { validation: true });
-  assert.ok(loaded.invoice.order.customer instanceof loaded.Customer);
+  const { loaded, classes: { Customer } } = await buildAndImport(root, { validation: true }, ['Customer']);
+  assert.ok(valueAt(loaded, 'invoice', 'order', 'customer') instanceof Customer);
 });
 
 test('two models that name each other through their app classes build, and each parse gives the class of the other', async t => {
@@ -151,9 +150,9 @@ test('two models that name each other through their app classes build, and each 
     'order.ts': "import { TOrderBaseModel } from './order.model.generated.js';\nexport class Order extends TOrderBaseModel {}\n",
     'use.ts': "import { parse } from '@exprtlabs/golem/serde';\nimport type { TCustomer } from './customer.model.js';\nimport type { TOrder } from './order.model.js';\nexport { Customer } from './customer.js';\nexport { Order } from './order.js';\nexport const customer = parse<TCustomer>('{\"name\":\"Ada\",\"orders\":[{\"id\":\"o1\",\"customer\":{\"name\":\"Ada\",\"orders\":[]}}]}');\nexport const order = parse<TOrder>('{\"id\":\"o1\",\"customer\":{\"name\":\"Ada\",\"orders\":[]}}');\n",
   });
-  const { loaded } = await buildAndImport<{ Customer: new () => object; Order: new () => object; customer: { orders: object[] }; order: { customer: object } }>(root, { validation: true });
-  assert.ok(loaded.customer.orders[0] instanceof loaded.Order);
-  assert.ok(loaded.order.customer instanceof loaded.Customer);
+  const { loaded, classes: { Customer, Order } } = await buildAndImport(root, { validation: true }, ['Customer', 'Order']);
+  assert.ok(valueAt(loaded, 'customer', 'orders', 0) instanceof Order);
+  assert.ok(valueAt(loaded, 'order', 'customer') instanceof Customer);
 });
 
 test('a field typed with a projection of an app class builds on the first run, keeps an optional picked member optional, and a second build writes the same files', async t => {
@@ -166,8 +165,8 @@ test('a field typed with a projection of an app class builds on the first run, k
     'order.model.ts': `${imodel}import type { Customer } from './customer.js';\nexport type TOrder = IModel<{ id: string; summary: Pick<Customer, 'name' | 'age'> }>;\n`,
     'use.ts': "import { parse, stringify } from '@exprtlabs/golem/serde';\nimport type { TOrder } from './order.model.js';\nexport { Customer } from './customer.js';\nexport const order = parse<TOrder>('{\"id\":\"o1\",\"summary\":{\"name\":\"Ada\"}}');\nexport const text = stringify<TOrder>(order);\n",
   });
-  const { loaded, files: firstFiles } = await buildAndImport<{ order: { id: string; summary: { name: string } }; text: string }>(root, { validation: true });
-  assert.deepEqual({ ...loaded.order.summary }, { name: 'Ada' });
+  const { loaded, files: firstFiles } = await buildAndImport(root, { validation: true }, []);
+  assert.deepEqual({ ...requireRecord(valueAt(loaded, 'order', 'summary'), 'summary') }, { name: 'Ada' });
   assert.equal(loaded.text, '{"id":"o1","summary":{"name":"Ada"}}');
   await generateModels(root);
   assert.deepEqual(generatedModelFiles(root), firstFiles);
@@ -192,8 +191,8 @@ function orderProject(t: TestContext, options: { readonly projection: string; re
 
 /** The summaries the built `TOrder` of `root` accepts, among `candidates`. */
 async function acceptedSummaries(root: string, candidates: readonly string[], build: number): Promise<readonly string[]> {
-  const loaded = await import(`${pathToFileURL(path.join(root, 'build/use.js')).href}?build=${build}`) as { accepts(summary: string): boolean };
-  return candidates.filter(candidate => loaded.accepts(candidate));
+  const { accepts } = await loadFunctions({ file: path.join(root, 'build/use.js'), load: build }, ['accepts']);
+  return candidates.filter(candidate => accepts(candidate) === true);
 }
 
 /** Runs golem generate on the project: a second run whose claim is the generated files needs no compile. */
@@ -246,7 +245,7 @@ const projectionProject = onceShared(async () => {
   writeModelGolemYaml(root, { validation: true });
   await buildModelProject(root);
   const files = generatedModelFiles(root);
-  const loaded = await import(pathToFileURL(path.join(root, 'build/use.js')).href) as Record<string, unknown>;
+  const loaded = await importGeneratedModule(root, 'use.js', 'build/use.js');
   await generateModels(root);
   return { files, loaded, again: generatedModelFiles(root) };
 });
@@ -373,6 +372,6 @@ export const hole = run(() => stringify<TList>({ names: ['x', , ] } as never));
 export const anyHole = run(() => stringify<TAny>({ values: ['x', , ] } as never));
 `,
   });
-  const { loaded } = await buildAndImport<{ undefinedItem: string; hole: string; anyHole: string }>(root, { validation: true });
+  const { loaded } = await buildAndImport(root, { validation: true }, []);
   assert.deepEqual({ ...loaded }, { undefinedItem: '{"names":["x",null]}', hole: 'Model validation failed.', anyHole: 'Model validation failed.' });
 });

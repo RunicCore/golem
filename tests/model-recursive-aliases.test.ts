@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
 import test, { type TestContext } from 'node:test';
 import type { GolemProfile } from '@exprtlabs/golem/generator-api';
-import { buildRecursiveProject, importCodecs, json } from './support/recursive-fixtures.js';
-
+import { loadFunctions, loadModelClasses, requireRecord } from './openapi/helpers.js';
+import { valueAt } from './support/json.js';
+import { buildRecursiveProject, json } from './support/recursive-fixtures.js';
 
 const profiles: readonly (readonly [string, GolemProfile])[] = [
   ['validation off', { validation: false }],
@@ -32,13 +32,13 @@ for (const [label, profile] of profiles) {
     // protects: T-221 an alias that reaches no date, serde value or model has no conversion call; one that holds a date converts
     const { root } = await buildRecursiveProject(t, 'golem-recursive-alias-conversion-', sources, profile);
     const generated = fs.readFileSync(path.join(root, 'src/alias.model.generated.ts'), 'utf8');
-    const codecs = await importCodecs(root, 'alias');
-    const models = await import(pathToFileURL(path.join(root, 'build/alias.model.js')).href) as { JsonHolder: new (init: object) => { value: unknown }; Stamps: new (init: object) => { list: { at: unknown }[] } };
+    const codecs = await loadFunctions(path.join(root, 'build/alias.model.generated.js'), ['fromWireFormatTJsonHolder', 'toWireFormatTJsonHolder', 'fromWireFormatTStamps', 'toWireFormatTStamps', 'stringifyTStamps', ...(profile.validation ? ['validateTStamps'] : [])]);
+    const { JsonHolder } = await loadModelClasses(path.join(root, 'build/alias.model.js'), ['JsonHolder']);
 
     assert.equal(/(decode|init|encode)JsonValue\b/.test(generated), false, 'a JsonValue field has no conversion call');
     const value = { text: 'a', count: 3, list: [1, 'two', [null, true]], nested: { deep: { deeper: ['x'] } } };
-    const holder = new models.JsonHolder({ value, many: [value, 'b', 4] });
-    assert.deepEqual(json(holder.value), value);
+    const holder = new JsonHolder({ value, many: [value, 'b', 4] });
+    assert.deepEqual(json(requireRecord(holder, 'holder').value), value);
     const wire = { value, many: [value, 'b', 4] };
     assert.deepEqual(json(codecs.fromWireFormatTJsonHolder(wire)), wire);
     assert.deepEqual(json(codecs.toWireFormatTJsonHolder(holder)), wire);
@@ -48,11 +48,11 @@ for (const [label, profile] of profiles) {
       one: { at: iso(4), next: [{ at: iso(5), next: [] }] },
       tree: ['plain', { at: iso(1), kids: ['x', { at: iso(2), kids: [] }] }],
     };
-    const stamps = codecs.fromWireFormatTStamps(stampsWire) as { list: { at: unknown; next: { next: { at: unknown }[] }[] }[]; one: { next: { at: unknown }[] } | null; tree: unknown[] };
-    assert.ok(stamps.list[0].at instanceof Date, 'the date of a T[] item');
-    assert.ok(stamps.list[0].next[0].next[0].at instanceof Date, 'the date three levels deep');
-    assert.ok(stamps.one!.next[0].at instanceof Date, 'the date of a T | null field');
-    assert.ok(((stamps.tree[1] as { kids: { at: unknown }[] }).kids[1]).at instanceof Date, 'the date of a recursive union branch');
+    const stamps = codecs.fromWireFormatTStamps(stampsWire);
+    assert.ok(valueAt(stamps, 'list', 0, 'at') instanceof Date, 'the date of a T[] item');
+    assert.ok(valueAt(stamps, 'list', 0, 'next', 0, 'next', 0, 'at') instanceof Date, 'the date three levels deep');
+    assert.ok(valueAt(stamps, 'one', 'next', 0, 'at') instanceof Date, 'the date of a T | null field');
+    assert.ok(valueAt(stamps, 'tree', 1, 'kids', 1, 'at') instanceof Date, 'the date of a recursive union branch');
     assert.deepEqual(json(codecs.toWireFormatTStamps(stamps)), stampsWire);
     assert.equal(codecs.stringifyTStamps(stamps), JSON.stringify(stampsWire));
     if (profile.validation) {

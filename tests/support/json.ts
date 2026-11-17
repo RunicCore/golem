@@ -16,3 +16,7 @@ export function expectJsonString(value: unknown, label: string): string {
   if (typeof value !== 'string') throw new Error(`Expected ${label} to be a JSON string.`);
   return value;
 }
+
+/** The value that `steps` reach below `value`: a key of an object or an index of an array at each step. A step that the value cannot take throws. */
+export const valueAt = (value: unknown, ...steps: readonly (string | number)[]): unknown =>
+  steps.reduce((current, step) => typeof step === 'number' ? expectJsonArray(current, `[${step}]`)[step] : expectJsonObject(current, step)[step], value);
