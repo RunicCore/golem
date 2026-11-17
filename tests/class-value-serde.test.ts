@@ -81,9 +81,9 @@ function writeClassSupport(sourceRoot: string): void {
 }
 
 /** The model of one build: its name picks the files and the codec id, so builds of one model at two validation levels register their own codecs. */
-interface BuiltModel { readonly name: 'A' | 'AOff'; readonly validation: boolean }
-const VALIDATED: BuiltModel = { name: 'A', validation: true };
-const VALIDATION_OFF: BuiltModel = { name: 'AOff', validation: false };
+const VALIDATED = { name: 'A', validation: true } as const;
+const VALIDATION_OFF = { name: 'AOff', validation: false } as const;
+type BuiltModel = typeof VALIDATED | typeof VALIDATION_OFF;
 
 /** Builds the model `model.name` over `fields`; the returned `A` is its class, whatever its name. */
 async function build(t: FixtureScope, fields: SourceFragment, { name, validation }: BuiltModel) {
