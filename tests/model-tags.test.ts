@@ -525,6 +525,9 @@ const inheritedTagReads = {
   // `typeof Sub` is the class value, which holds the statics of `Sub` and of its base.
   'a static member of a base class, read through `typeof` the subclass': { declarations: tsSource`${valueOf}\nclass Base { static held: string & TValidation<typeof a>; }\nclass Sub extends Base {}`, field: tsSource`ValueOf<typeof Sub> & TValidation<typeof b>` },
   'a static member of a class that a namespace exports, read through `typeof` the namespace': { declarations: tsSource`namespace Space { export class Base { static held: string & TValidation<typeof a>; } }\ntype ValueOfExport<T> = T extends { Base: { held: infer V } } ? V : never;`, field: tsSource`ValueOfExport<typeof Space> & TValidation<typeof b>` },
+  // A parameter property is a field of the instance; the constructor of a class is part of `typeof Class`.
+  'a parameter property of a base class': { declarations: tsSource`${valueOf}\nclass Base { constructor(public held: string & TValidation<typeof a>) {} }\nclass Sub extends Base {}`, field: tsSource`ValueOf<Sub> & TValidation<typeof b>` },
+  'a constructor parameter of a base class, read through `typeof` the subclass': { declarations: tsSource`type SeedOf<T> = T extends new (seed: infer V) => unknown ? V : never;\nclass Base { constructor(seed: string & TValidation<typeof a>) {} }\nclass Sub extends Base {}`, field: tsSource`SeedOf<typeof Sub> & TValidation<typeof b>` },
 } as const;
 
 for (const [name, { declarations, field }] of Object.entries(inheritedTagReads)) test(`a copy written on the field beside a function that ${name} writes is refused`, t => {
@@ -655,6 +658,8 @@ const sameTypeNeighbours = {
   'Omit of a subclass getter': { declarations: inheritedUser, field: tsSource`Omit<Sub, 'label'>['name']` },
   'Pick of a subclass getter': { declarations: inheritedUser, field: tsSource`Pick<Sub, 'name'>['name']` },
   'Readonly Pick of a subclass getter': { declarations: inheritedUser, field: tsSource`Readonly<Pick<Sub, 'name'>>` },
+  // protects: T-1092 a constructor parameter that is no field made the field of a subclass refuse, though the instance type holds no constructor (D-155 follow tsc)
+  'a subclass of a base class with a plain constructor parameter of the other function': { declarations: tsSource`${valueOf}\nclass Base { held!: string & TValidation<typeof b>; constructor(seed: string & TValidation<typeof a>) {} }\nclass Sub extends Base {}`, field: tsSource`ValueOf<Sub>` },
   // protects: T-1092 a static tag on the base class made the field of a subclass refuse, though the instance type holds no static member (D-155 follow tsc)
   'a subclass of a base class with a static tag of the other function': { declarations: tsSource`${valueOf}\nclass Base { static held: string & TValidation<typeof a>; held!: string & TValidation<typeof b>; }\nclass Sub extends Base {}`, field: tsSource`ValueOf<Sub>` },
 } as const;
