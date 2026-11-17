@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
 import test, { type TestContext } from 'node:test';
 import type { GolemProfile } from '@exprtlabs/golem/generator-api';
 import { generate } from '#ts-openapi/generator';
 import { validateOpenApiDocument } from '#openapi/openapi-validator';
 import { createControllerFixture } from './fixture-templates/controllers/project.js';
 import { buildModelProject, createModelProject, writeModelGolemYaml, writeModelSources } from './model-project.js';
+import { loadWireRoundTrip } from './support/recursive-fixtures.js';
 
 const MODELS = `import type { IModel } from '@exprtlabs/golem/model';
 import { TTreeBaseModel, TForestBaseModel, TGenericBaseModel, TApplesBaseModel } from './tree.model.generated.js';
@@ -51,8 +51,7 @@ for (const [label, profile] of [['validation off', { validation: false }], ['val
     writeModelGolemYaml(root, profile);
     const built = await buildModelProject(root);
     assert.equal(built.code, 0, `${built.stdout}${built.stderr}`);
-    const codecs = await import(pathToFileURL(path.join(root, 'build/tree.model.generated.js')).href) as Record<string, (value: unknown) => unknown>;
-    const wire = (name: string, value: unknown): unknown => JSON.parse(JSON.stringify(codecs[`toWireFormat${name}`]!(codecs[`fromWireFormat${name}`]!(value))));
+    const wire = await loadWireRoundTrip(path.join(root, 'build/tree.model.generated.js'), ['TTree', 'TForest', 'TApples', 'TGeneric']);
     const tree = { name: 'a', kids: [{ name: 'b', kids: [{ name: 'c', kids: [] }] }] };
     assert.deepEqual(wire('TTree', tree), tree);
     assert.deepEqual(wire('TForest', { root: tree }), { root: tree });

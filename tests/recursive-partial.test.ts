@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
 import test, { type TestContext } from 'node:test';
 import type { GolemProfile } from '@exprtlabs/golem/generator-api';
 import { generate } from '#model/generator';
 import { buildModelProject, createModelProject, writeModelGolemYaml, writeModelSources } from './model-project.js';
+import { loadWireRoundTrip } from './support/recursive-fixtures.js';
 
 const MODELS = `import type { IModel } from '@exprtlabs/golem/model';
 import { TCfgBaseModel, TSettingsBaseModel, TListBaseModel } from './cfg.model.generated.js';
@@ -27,8 +27,7 @@ for (const [label, profile] of [['validation off', { validation: false }], ['val
     writeModelGolemYaml(root, profile);
     const built = await buildModelProject(root);
     assert.equal(built.code, 0, `${built.stdout}${built.stderr}`);
-    const codecs = await import(pathToFileURL(path.join(root, 'build/cfg.model.generated.js')).href) as Record<string, (value: unknown) => unknown>;
-    const wire = (name: string, value: unknown): unknown => JSON.parse(JSON.stringify(codecs[`toWireFormat${name}`]!(codecs[`fromWireFormat${name}`]!(value))));
+    const wire = await loadWireRoundTrip(path.join(root, 'build/cfg.model.generated.js'), ['TCfg', 'TSettings', 'TList']);
     const cfg = { name: 'a', patch: { patch: { name: 'c', patch: {} } } };
     assert.deepEqual(wire('TCfg', cfg), cfg);
     assert.deepEqual(wire('TSettings', cfg), cfg);
