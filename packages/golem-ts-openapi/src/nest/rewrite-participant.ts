@@ -1,13 +1,14 @@
 // The rewrite participant of the nest extension (the extension entry `./nest-extension`). Core runs it for each source file when a ts-openapi block turns on
 // `extensions: { nest: {} }`, in golem check, golem build, Vite, esbuild and the Node loader alike. It stamps the codec of a `@Body()` or `@Query()` parameter
-// and of a return, and reports the inputs that `NestModelInterceptor` would reject. It uses the TypeScript seam that core passes and never picks TypeScript itself.
+// and of a return, swaps a whole `@Headers()` model for the decorator that reads the decoded headers, and reports the inputs that `NestModelInterceptor` would
+// reject. It uses the TypeScript seam that core passes and never picks TypeScript itself.
 import type { CodecDataParticipant } from '@exprtlabs/golem-model/plan';
 import type * as ts from '@exprtlabs/golem/internal/ts';
 import { GolemDiagnosticSeverity } from '@exprtlabs/golem/generator-api';
 import type { GolemDiagnostic, GolemExtension, RewriteCore, RewriteParticipantInput, RewriteParticipantResult } from '@exprtlabs/golem/generator-api';
 import { REWRITE_IMPORT_PREFIX, type RewriteEdit } from '@exprtlabs/golem/rewrite';
 import type { DiscriminatorValue } from '@exprtlabs/golem/internal/schema';
-import { arrayItemNode, authoredUnionMembers, decoratorIdentity, isDiscriminatorTag, modelDeclarationKind, NO_FUNCTIONS_KNOWN, propertyType, readTags, resolvedSymbolAt, serdeTypeName, staticDecoratorKey } from '@exprtlabs/golem/internal/type-analysis';
+import { arrayItemNode, authoredUnionMembers, decoratorIdentity, isDiscriminatorTag, isGeneratedBrandKey, isGolemTagKey, isSymbolKeyedProperty, modelDeclarationKind, NO_FUNCTIONS_KNOWN, propertyType, readTags, resolvedSymbolAt, serdeTypeName, staticDecoratorKey } from '@exprtlabs/golem/internal/type-analysis';
 import { NEST_COMMON, OWN_PACKAGE } from './packages.js';
 import { nodeQueryFields } from './query-fields.js';
 
@@ -19,6 +20,7 @@ const NEST_PARAMETER_DECORATORS: readonly string[] = ['Body', 'Query'];
 const NEST_CODEC_DECORATOR = 'nestModelCodec';
 const NEST_UNION_DECORATOR = 'nestModelUnion';
 const NEST_RETURN_DECORATOR = 'nestModelReturn';
+const NEST_HEADERS_DECORATOR = 'nestModelHeaders';
 /** Type names a nest parameter or return never carries a model codec for. */
 const NEST_PRIMITIVE_TYPES: ReadonlySet<string> = new Set([
   'void', 'undefined', 'null', 'never', 'any', 'unknown', 'object', 'string', 'number', 'boolean', 'bigint', 'symbol',
@@ -28,6 +30,8 @@ const NEST_PRIMITIVE_TYPES: ReadonlySet<string> = new Set([
 const CODE_NEST_NO_CODEC = 'RUNM1071';
 /** A `@Body()` or `@Query()` parameter, whole or one field, whose type is no golem model, which `NestModelInterceptor` rejects on each request. An error unless `nonModelInputs: warn` is set. */
 const CODE_NEST_NOT_A_MODEL = 'RUNM1081';
+/** A field of a `@Headers()` model whose name has an uppercase letter: Node lowercases header names and golem matches field names exactly, so no request carries it. */
+const CODE_NEST_HEADER_FIELD_CASE = 'RUNM1092';
 
 /** What the helpers of one file share: the TypeScript seam of core, the checker, the helpers core lends and the file in hand. */
 interface Scope {
@@ -76,6 +80,23 @@ function nestParameterDecorator({ ts, checker }: Scope, parameter: ts.ParameterD
     if (packageName === NEST_COMMON && name !== undefined && NEST_PARAMETER_DECORATORS.includes(name)) return { node, name };
   }
   return undefined;
+}
+
+/** The whole `@Headers()` of NestJS that a parameter carries, found by the symbol it resolves to. `@Headers('name')` reads one header and is no model parameter. */
+function wholeHeadersDecorator({ ts, checker }: Scope, parameter: ts.ParameterDeclaration): ts.Decorator | undefined {
+  return (ts.getDecorators(parameter) ?? []).find((node) => {
+    if (!ts.isCallExpression(node.expression) || node.expression.arguments.length !== 0) return false;
+    const { name, packageName } = decoratorIdentity(checker, node, [NEST_COMMON]);
+    return packageName === NEST_COMMON && name === 'Headers';
+  });
+}
+
+/** The fields of a model type that a header can carry: its data properties, without the type-only brands and tags of golem and the methods of a class. */
+function headerFields({ ts, checker }: Scope, type: ts.Type): readonly string[] {
+  return checker.getPropertiesOfType(type)
+    .filter((property) => (property.flags & ts.SymbolFlags.Method) === 0
+      && !isGeneratedBrandKey(checker, property) && !isGolemTagKey(checker, property) && !isSymbolKeyedProperty(checker, property))
+    .map((property) => property.name);
 }
 
 /** Whether the node carries the decorator `name` of this package, plainly or under an alias; a decorator of that name from another package is not it. */
@@ -234,7 +255,7 @@ function tagThroughAliasFault({ ts, checker }: Scope, model: ts.TypeNode): reado
 }
 
 /** Where a type stands. Only an input parameter can be a union of models; `text` is true for a query, whose tag is text. */
-type NestTypeSite = { readonly kind: 'input'; readonly text: boolean } | { readonly kind: 'return' };
+type NestTypeSite = { readonly kind: 'input'; readonly text: boolean } | { readonly kind: 'return' } | { readonly kind: 'headers' };
 
 /** What a parameter or return type binds to. */
 function nestBinding(scope: Scope, typeNode: ts.TypeNode, site: NestTypeSite): NestBinding {
@@ -243,7 +264,7 @@ function nestBinding(scope: Scope, typeNode: ts.TypeNode, site: NestTypeSite): N
   const model = walked?.model;
   const unbound = { id: '', primitive: false, golemModel: false, label: (model ?? typeNode).getText(file), array: walked?.array ?? false };
   if (!model) return unbound;
-  // Only an input parameter can be a union: a union return is left as Nest JSON.
+  // Only an input parameter can be a union: a union return or a union `@Headers()` is left as written.
   if (site.kind === 'input') {
     const members = authoredUnionMembers(checker, model);
     if (members) return nestUnionBinding(scope, unbound, model, members, site);
@@ -357,8 +378,34 @@ function rewriteFile(input: RewriteParticipantInput): RewriteParticipantResult {
     }
   };
 
+  /**
+   * A whole `@Headers()` parameter of a golem model gets `@nestModelHeaders(id)` in place of the decorator: Nest reads `request.headers`
+   * for a header parameter and runs no pipe on it, so the swap hands the handler the headers that an interceptor decoded. Any other type, and
+   * `@Headers('name')`, stay as written and report nothing.
+   */
+  const visitHeaders = (parameter: ts.ParameterDeclaration, decoratorNode: ts.Decorator, typeNode: ts.TypeNode): void => {
+    const { id, golemModel, label, array, name, defaultExport } = nestBinding(scope, typeNode, { kind: 'headers' });
+    if (array) return;
+    if (id === '') {
+      if (golemModel) diagnostics.push(core.locate(typeNode, CODE_NEST_NO_CODEC, defaultExport
+        ? `@Headers() type ${label} is the default export of its file, which has no codec id; golem generate cannot add one. Export the class by name (export class ${label}) and import it by name.`
+        : `@Headers() type ${label} has no unique codec id; run golem generate`));
+      return;
+    }
+    for (const field of headerFields(scope, checker.getTypeFromTypeNode(typeNode)).filter((field) => field !== field.toLowerCase())) {
+      diagnostics.push(core.locate(typeNode, CODE_NEST_HEADER_FIELD_CASE,
+        `The field "${field}" of the @Headers() model ${label} has an uppercase letter, so no request carries it: Node lowercases the name of each header, and golem matches field names exactly. Rename the field to "${field.toLowerCase()}".`));
+    }
+    edits.push({ start: decoratorNode.getStart(file), end: decoratorNode.end, expect: decoratorNode.getText(file), text: `@${REWRITE_IMPORT_PREFIX}${NEST_HEADERS_DECORATOR}(${JSON.stringify(id)})` });
+    core.importName(parameter, NEST_HEADERS_DECORATOR, NEST_MODULE);
+    core.loadCodecModule(id, name);
+  };
+
   /** A `@Body()` or `@Query()` parameter of a model gets `@nestModelCodec(id)` before its name, and one of a tagged union of models `@nestModelUnion(tag, variants)`. */
   const visitParameter = (parameter: ts.ParameterDeclaration): void => {
+    const { type } = parameter;
+    const headers = type === undefined ? undefined : wholeHeadersDecorator(scope, parameter);
+    if (type !== undefined && headers !== undefined) { visitHeaders(parameter, headers, type); return; }
     const found = nestParameterDecorator(scope, parameter);
     if (!parameter.type || found === undefined || hasDecorator(scope, parameter, NEST_CODEC_DECORATOR) || hasDecorator(scope, parameter, NEST_UNION_DECORATOR)) return;
     const { node: decoratorNode, name: decorator } = found;

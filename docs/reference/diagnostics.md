@@ -520,7 +520,7 @@ When the generated file of the model is missing, the message adds that file and 
 
 ### RUNM1071
 
-**Nest parameter type has no codec.** A `@Body()` or `@Query()` parameter's type is a model (an `IModel` or `IObject` alias, or a class that extends a generated base class), but golem finds no single generated model for it.
+**Nest parameter type has no codec.** A `@Body()`, `@Query()` or whole `@Headers()` parameter's type is a model (an `IModel` or `IObject` alias, or a class that extends a generated base class), but golem finds no single generated model for it.
 
 The message shows the decorator and the type, such as `@Body() type Payment has no unique codec id; run golem generate`. Two causes are possible:
 
@@ -757,6 +757,12 @@ Golem reads relative imports (`./sdk/index.js`) for this rule, and reads them th
 
 - Edit text that no other rewrite covers.
 - Or turn off one of the extensions in the `extensions:` list of its block.
+
+### RUNM1092
+
+**Uppercase field in a `@Headers()` model.** A field of the model of a whole `@Headers()` parameter has an uppercase letter, such as `xRequestId`. Node lowercases the name of each header, and golem matches field names exactly, so no request carries that field. The message names the field and the lowercase name to use. This is always an error. The `nonModelInputs` option does not change it.
+
+**Fix:** Rename the field to lowercase, such as `'x-request-id'` or `xrequestid`, as the [header model rules](/guide/nestjs-requests#header-models) say.
 
 ### GOLEM_SDK_JOB_MISSING
 

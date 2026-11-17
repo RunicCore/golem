@@ -11,14 +11,15 @@ import {
   Get,
   Post,
   Query,
+  Req,
   type CallHandler,
   type ExecutionContext,
   type NestInterceptor,
   type Type,
 } from '@nestjs/common';
 import { defaultIfEmpty, firstValueFrom, map, of, type Observable } from 'rxjs';
-import { NestModelInterceptor, type NestModelInterceptorOptions, nestModelStringifyInterceptor, nestQueryDecoder, nestReturnCodec, nestUnionFromMetatype, objectCodecFromMetatype } from '@exprtlabs/golem-ts-openapi/nest';
-import { nestModelCodec, nestModelReturn, nestModelUnion } from '@exprtlabs/golem-ts-openapi/internal/nest-runtime';
+import { NestModelInterceptor, type NestModelInterceptorOptions, nestHeadersCodec, nestModelStringifyInterceptor, nestQueryDecoder, nestReturnCodec, nestUnionFromMetatype, objectCodecFromMetatype, setNestHeaders } from '@exprtlabs/golem-ts-openapi/nest';
+import { nestModelCodec, nestModelHeaders, nestModelReturn, nestModelUnion } from '@exprtlabs/golem-ts-openapi/internal/nest-runtime';
 import { LibError, type LibErrorKind } from '@exprtlabs/golem/errors';
 import { constructModel, convertModelField, deserializeDate, unknownDiscriminatorValue, assertModelValue, isValidModelValue } from '@exprtlabs/golem/internal/model-runtime';
 import type { ModelTypeDescriptor } from '@exprtlabs/golem/internal/schema';
@@ -1111,3 +1112,131 @@ for (const validate of [false, null, 0, '', 'full', 1]) {
     assert.throws(() => new NestModelInterceptor({ validate: validate as never }), TypeError);
   });
 }
+
+const PORT_FILE = `import type { Pattern } from '@exprtlabs/golem/tags';
+export type PortText = string & Pattern<'^[0-9]+$'>;
+export function encodePort(value: number): PortText { return String(value) as PortText; }
+export function decodePort(value: PortText): number { return Number(value); }
+`;
+const TARGET_MODEL = `import type { IModel } from '@exprtlabs/golem/model';
+import type { Integer, Maximum, Minimum, TSerde } from '@exprtlabs/golem/tags';
+import { decodePort, encodePort } from './port.js';
+type Port = number & Integer & Minimum<1> & Maximum<65535> & TSerde<typeof encodePort, typeof decodePort>;
+export type TTarget = IModel<{ port: Port; retry?: Port }>;
+`;
+
+/** A controller whose one handler takes the headers as the build output writes it: `@nestModelHeaders(id)` where the source has `@Headers()`, and the raw request beside it. */
+class HeadersController {
+  read(headers: { port: number; retry?: number }, request: { headers: Record<string, unknown>; hostname: string }) {
+    return { port: headers.port, type: typeof headers.port, keys: Object.keys(headers), rawHost: request.headers.host, hostname: request.hostname };
+  }
+}
+
+function decorateHeaders(id: string): void {
+  Controller('h')(HeadersController);
+  const descriptor = Object.getOwnPropertyDescriptor(HeadersController.prototype, 'read');
+  assert.ok(descriptor);
+  Get()(HeadersController.prototype, 'read', descriptor);
+  nestModelHeaders(id)(HeadersController.prototype, 'read', 0);
+  Req()(HeadersController.prototype, 'read', 1);
+}
+
+test('a @Headers() model parameter holds the declared, decoded fields only, and request.headers stays raw', async (t) => {
+  // protects: T-897 Nest reads request.headers for @Headers(), so the decoded and stripped value reaches the handler through a slot
+  const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-nest-headers-', name: 'nest-headers', linkWorkspaceNodeModules: true });
+  fs.writeFileSync(path.join(sourceRoot, 'port.ts'), PORT_FILE);
+  fs.writeFileSync(path.join(sourceRoot, 'target.model.ts'), TARGET_MODEL);
+  writeModelGolemYaml(root, { validation: true });
+  await buildModelProject(root);
+  await import(pathToFileURL(path.join(root, 'build/target.model.generated.js')).href);
+  decorateHeaders(generatedCodecIdFromRoot(root, 'TTarget'));
+  const application = await startNestApp([HeadersController], { errors: [] });
+  try {
+    const base = await application.getUrl();
+    const get = (headers: Record<string, string>) => fetch(`${base}/h`, { headers });
+    const ok = await get({ port: '8080', 'x-undeclared': 'a' });
+    assert.equal(ok.status, 200);
+    assert.deepEqual(await ok.json(), { port: 8080, type: 'number', keys: ['port'], rawHost: new URL(base).host, hostname: '127.0.0.1' });
+    // An empty header is a header that was not sent: the optional field is absent, and the required one is missing.
+    const emptyOptional = await get({ port: '8080', retry: '' });
+    assert.deepEqual((await emptyOptional.json() as { keys: string[] }).keys, ['port']);
+    const emptyRequired = await get({ port: '' });
+    assert.equal(emptyRequired.status, 400);
+    assert.equal((await get({ port: 'abc' })).status, 400);
+    assert.equal((await get({ port: '70000' })).status, 400);
+    assert.equal((await get({ 'x-undeclared': 'a' })).status, 400);
+  } finally {
+    await application.close();
+  }
+});
+
+test('a handler with a rewritten @Headers() fails with the golem fault when no interceptor decoded the headers', async (t) => {
+  // protects: T-897 the slot never falls back to the raw headers
+  const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-nest-headers-none-', name: 'nest-headers-none', linkWorkspaceNodeModules: true });
+  fs.writeFileSync(path.join(sourceRoot, 'port.ts'), PORT_FILE);
+  fs.writeFileSync(path.join(sourceRoot, 'target.model.ts'), TARGET_MODEL);
+  writeModelGolemYaml(root, { validation: true });
+  await buildModelProject(root);
+  await import(pathToFileURL(path.join(root, 'build/target.model.generated.js')).href);
+  class NoDecodeController extends HeadersController {}
+  const id = generatedCodecIdFromRoot(root, 'TTarget');
+  Controller('n')(NoDecodeController);
+  const descriptor = Object.getOwnPropertyDescriptor(HeadersController.prototype, 'read');
+  assert.ok(descriptor);
+  Object.defineProperty(NoDecodeController.prototype, 'read', descriptor);
+  Get()(NoDecodeController.prototype, 'read', descriptor);
+  nestModelHeaders(id)(NoDecodeController.prototype, 'read', 0);
+  Req()(NoDecodeController.prototype, 'read', 1);
+  const errors: string[] = [];
+  const passThrough: NestInterceptor = { intercept: (_context, next) => next.handle() };
+  const application = await startNestApp([NoDecodeController], { interceptor: passThrough, errors });
+  try {
+    const response = await fetch(`${await application.getUrl()}/n`, { headers: { port: '8080' } });
+    assert.equal(response.status, 500);
+    assert.equal(errors.length, 1);
+    assert.match(errors[0]!, /^TypeError: golem fault: no interceptor decoded the headers for the @Headers\(\) parameter of NoDecodeController\.read\. Register an interceptor that calls setNestHeaders\(request, decoded\) before the handler runs\./);
+  } finally {
+    await application.close();
+  }
+});
+
+test('an app-written interceptor decodes the headers with nestHeadersCodec and stores them with setNestHeaders', async (t) => {
+  // protects: T-897 the public pair of an app (or core) interceptor; an unmarked handler gives undefined and a marked one with no codec throws the golem fault
+  const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-nest-headers-app-', name: 'nest-headers-app', linkWorkspaceNodeModules: true });
+  fs.writeFileSync(path.join(sourceRoot, 'port.ts'), PORT_FILE);
+  fs.writeFileSync(path.join(sourceRoot, 'target.model.ts'), TARGET_MODEL);
+  writeModelGolemYaml(root, { validation: true });
+  await buildModelProject(root);
+  await import(pathToFileURL(path.join(root, 'build/target.model.generated.js')).href);
+  const id = generatedCodecIdFromRoot(root, 'TTarget');
+  class AppController extends HeadersController {}
+  Controller('a')(AppController);
+  const descriptor = Object.getOwnPropertyDescriptor(HeadersController.prototype, 'read');
+  assert.ok(descriptor);
+  Object.defineProperty(AppController.prototype, 'read', descriptor);
+  Get()(AppController.prototype, 'read', descriptor);
+  nestModelHeaders(id)(AppController.prototype, 'read', 0);
+  Req()(AppController.prototype, 'read', 1);
+  assert.equal(nestHeadersCodec(AppController, AppController.prototype.read)?.codec, getObjectCodec(id));
+  assert.equal(nestHeadersCodec(AdapterWriterController, AdapterWriterController.prototype.write), undefined);
+  class LostController { read(_headers: unknown) { return 1; } }
+  nestModelHeaders('NeverLoaded_dddddddd')(LostController.prototype, 'read', 0);
+  assert.throws(() => nestHeadersCodec(LostController, LostController.prototype.read), { name: 'TypeError', message: /^golem fault: the build rewrote the @Headers\(\) of LostController\.read with model "NeverLoaded_dddddddd"/ });
+
+  const appInterceptor: NestInterceptor = {
+    intercept(context, next) {
+      const found = nestHeadersCodec(context.getClass(), context.getHandler());
+      const request = context.switchToHttp().getRequest<{ headers: unknown }>();
+      if (found) setNestHeaders(request, found.codec.fromWireFormat(request.headers, { strip: true }));
+      return next.handle();
+    },
+  };
+  const application = await startNestApp([AppController], { interceptor: appInterceptor });
+  try {
+    const response = await fetch(`${await application.getUrl()}/a`, { headers: { port: '443' } });
+    assert.equal(response.status, 200);
+    assert.deepEqual(((await response.json()) as { port: number; keys: string[] }).keys, ['port']);
+  } finally {
+    await application.close();
+  }
+});

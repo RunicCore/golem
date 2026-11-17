@@ -1,6 +1,6 @@
 # NestJS requests
 
-Convert and validate the `@Body()` and `@Query()` models of your NestJS 11 controllers, and write model responses as JSON.
+Convert and validate the `@Body()`, `@Query()` and `@Headers()` models of your NestJS 11 controllers, and write model responses as JSON.
 
 The types in your controller signatures drive both the OpenAPI schema and the runtime conversion. [`examples/payments`](https://github.com/RunicCore/golem/tree/master/examples/payments) combines the sections below in one app.
 
@@ -53,7 +53,7 @@ Golem marks a rejected value with a `LibError` whose `causedByInput` is true. Th
 
 The interceptor converts HTTP handlers. A handler of another context, such as RPC, passes through unchanged.
 
-1. `fromWireFormat` runs on each `@Body()` and `@Query()` parameter with fail-fast validation.
+1. `fromWireFormat` runs on each `@Body()` and `@Query()` parameter with fail-fast validation. A whole `@Headers()` model gets the same call with `strip: true` ([Header models](#header-models)).
 2. Input that fails validation or cannot be decoded returns HTTP 400 with `issues` (`LibError.causedByInput`). Examples are a broken constraint, an unknown discriminator tag, an unparsable date and a `Deserialize` function that throws.
 3. Valid input reaches the handler as a model. A type alias stays a plain object, and your class is constructed.
 4. An `IModel` or `IObject` return is stringified with that type. This includes a `Promise` or an array of that type. A return that the rewrite did not mark stays Nest JSON. Examples are a handler with no written return type and a handler that returns a union.
@@ -61,7 +61,7 @@ The interceptor converts HTTP handlers. A handler of another context, such as RP
    A mark needs an explicit return type on the handler. The type must be a model, `Promise<Model>` or `Model[]`. A union, such as `Model | undefined`, gets no mark.
 5. A `Serialize` function that throws, and missing generated metadata, return HTTP 500. A marked return whose generated model did not load fails the request with HTTP 500 before the handler runs.
 
-`@Param()` and `@Headers()` stay as Nest received them.
+`@Param()` and `@Headers('name')` stay as Nest received them.
 
 ## Parameter types and arrays
 
@@ -124,6 +124,35 @@ HTTP query values are strings, and repeated keys arrive as string arrays. Declar
 - `PaymentStatus | PaymentStatus[]` is the [supported query union](/guide/field-types#unions).
 
 OpenAPI 3.2 emits the whole query schema, and its SDK calls `.execute({ querystring: { limit: 10, status: ['paid'] } })`. OpenAPI 3.1.2 flattens a query object into named parameters ([query compatibility](/reference/nestjs#query-compatibility)).
+
+## Header models
+
+A request header is text. Declare a whole `@Headers()` parameter as a model, and the handler gets only the fields that the model declares, decoded to their types. Other headers, such as `host` and `user-agent`, do not reach the parameter.
+
+For example, a model with the fields `port` and `'x-trace'`, where `port` is a number that a [`TSerde`](/guide/serialization#change-the-json-form) tag reads from text, and a handler `read(@Headers() target: TTarget)`:
+
+| Request header | Field of `TTarget` | Value in `target` |
+| --- | --- | --- |
+| `port: 8080` | `port`, a number | `8080` |
+| `x-trace: abc` | `'x-trace'`, optional text | `'abc'` |
+| `user-agent: curl` | none | not in `target` |
+
+`NestModelInterceptor` does the work:
+
+1. It drops the headers that hold empty text. An empty header counts as not sent.
+2. It runs `fromWireFormat` with `strip: true`, so the headers that the model does not declare are removed and do not make the model fail.
+3. A header that fails validation returns HTTP 400 with `issues`.
+4. It stores the result with `setNestHeaders`, and the handler gets it.
+
+`request.headers` stays as the client sent it. `request.host`, `request.protocol` and your log and trace code read the same headers as before.
+
+- **Lowercase names:** Node lowercases the name of each header, and golem matches field names exactly. Write each field in lowercase, such as `'x-trace'`. A field with an uppercase letter stops the build with [`RUNM1092`](/reference/diagnostics#runm1092).
+- **Types:** the parameter is a whole `@Headers()` typed as an `IModel`, an `IObject` or a class that extends a generated model class. `Record`, `any`, `IncomingHttpHeaders`, an array, a union and `@Headers('name')` stay as Nest reads them. They report nothing.
+- **Source and build output:** your source keeps `@Headers()`. The build output replaces it with a golem decorator that reads the decoded headers. Every build tool does this ([Build tools](/guide/build)).
+- **OpenAPI document:** the document shows the type that a client sends. A `TSerde` field with a text form is a `string` with the pattern of that text, such as `^[0-9]+$` for `port`, not a number with limits.
+- **No decoded value:** a handler with a header model fails with HTTP 500 and a `TypeError` that starts with `golem fault` when no interceptor stored the decoded headers. The handler never gets the raw headers.
+
+To decode the headers in your own interceptor, call [`nestHeadersCodec`](/reference/runtime-api#nest) with `context.getClass()` and `context.getHandler()`. It returns the codec and the class to construct, or `undefined` for a handler with no header model. Decode with `strip: true`, then call [`setNestHeaders`](/reference/runtime-api#nest). The [runtime API](/reference/runtime-api#nest) shows the call order.
 
 ## Extra properties
 

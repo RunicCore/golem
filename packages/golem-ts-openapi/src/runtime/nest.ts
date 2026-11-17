@@ -13,7 +13,9 @@
  * `objectCodecFromMetatype`, or `nestUnionFromMetatype` for a union of
  * models, and decode a query with `nestQueryDecoder`. `nestReturnCodec` gives
  * an interceptor the codec of the declared return. `nestModelStringifyInterceptor` stays for a response whose codec is
- * not the declared return type.
+ * not the declared return type. The rewrite swaps a whole `@Headers()` typed as a model for a decorator
+ * (`nestModelHeaders`) that reads the headers an interceptor decoded: `nestHeadersCodec` gives the codec to decode with, and
+ * `setNestHeaders` hands the result to the handler. `NestModelInterceptor` does both.
  */
 import {
   BadRequestException,
@@ -33,6 +35,8 @@ import {
   boundConstruct,
   boundUnion,
   codecIdFromMetatype,
+  NEST_HEADERS_SLOT,
+  NEST_MODEL_HEADERS,
   NEST_MODEL_RETURN,
   NEST_MODEL_UNION_IDS,
   queryWireDecoder,
@@ -58,6 +62,7 @@ type RouteArgMeta = {
 type HttpRequest = {
   body?: unknown;
   query?: unknown;
+  headers?: unknown;
 };
 
 type HttpResponse = {
@@ -142,15 +147,19 @@ function returnMeta(value: unknown): NestReturnMeta | undefined {
   return { id: meta.id, array: meta.array === true };
 }
 
-function declaredReturn(klass: Function, name: string): NestReturnMeta | undefined {
+/** The value of the metadata `key` that the nearest class of the prototype chain holds for a handler, read by `read`. */
+function declaredMeta<Meta>(klass: Function, name: string, key: string, read: (value: unknown) => Meta | undefined): Meta | undefined {
   let current: unknown = klass.prototype;
   while (current && current !== Object.prototype) {
-    const meta = returnMeta(reflectMeta().getOwnMetadata(NEST_MODEL_RETURN, current, name));
+    const meta = read(reflectMeta().getOwnMetadata(key, current, name));
     if (meta) return meta;
     current = Object.getPrototypeOf(current);
   }
   return undefined;
 }
+
+const declaredReturn = (klass: Function, name: string): NestReturnMeta | undefined => declaredMeta(klass, name, NEST_MODEL_RETURN, returnMeta);
+const declaredHeaders = (klass: Function, name: string): string | undefined => declaredMeta(klass, name, NEST_MODEL_HEADERS, (value) => typeof value === 'string' && value !== '' ? value : undefined);
 
 /** The codec of a handler's declared return, and whether the handler returns an array of that model. */
 export interface NestReturnCodec {
@@ -176,6 +185,39 @@ export function nestReturnCodec(controllerClass: Function, handler: Function): N
     );
   }
   return { codec, array: declared.array };
+}
+
+/** What an interceptor decodes the headers of a handler with: the codec of its `@Headers()` model, and the class to construct when the model is one. */
+export interface NestHeadersCodec {
+  readonly codec: ObjectCodec;
+  readonly construct: GeneratedModelConstructor | undefined;
+}
+
+/**
+ * The codec of the whole `@Headers()` parameter of a controller handler that the build rewrote, for an interceptor that decodes the
+ * headers. Pass `{ strip: true, construct }` to `fromWireFormat`, then store the result with `setNestHeaders`. `undefined` for a handler
+ * with no such parameter: a `@Headers()` that is no model, such as `Record` or `any`, and every `@Headers('name')`, stay as Nest reads them. It
+ * throws a `TypeError` that starts with `golem fault` when the build rewrote the parameter and the codec of its model is not registered.
+ * The lookup runs at each call. Cache the result for each handler if you need to.
+ */
+export function nestHeadersCodec(controllerClass: Function, handler: Function): NestHeadersCodec | undefined {
+  const id = declaredHeaders(controllerClass, handler.name);
+  if (id === undefined) return undefined;
+  const codec = getObjectCodec(id);
+  if (!codec) {
+    throw new TypeError(
+      `golem fault: the build rewrote the @Headers() of ${controllerClass.name}.${handler.name} with model "${id}", but the generated module of that model did not load, so its codec is not registered.`,
+    );
+  }
+  return { codec, construct: getIModelClass(id) };
+}
+
+/**
+ * Stores the decoded headers on the request, for the `@Headers()` parameter that the build rewrote. `request.headers` stays as received, so
+ * `request.host` and the trace context keep working. A handler that runs with nothing stored fails with a `TypeError` that starts with `golem fault`.
+ */
+export function setNestHeaders(request: object, value: unknown): void {
+  Object.defineProperty(request, NEST_HEADERS_SLOT, { value, writable: true, configurable: true });
 }
 
 function stringifyModel(codec: ObjectCodec, value: unknown, array: boolean): string {
@@ -251,6 +293,11 @@ function replaceQuery(request: HttpRequest, value: unknown): void {
 }
 
 const NO_DECODE = (value: unknown): unknown => value;
+
+/** The headers of a request without the ones that hold empty text: an empty header is a header that was not sent. */
+function presentHeaders(headers: unknown): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(recordOrUndefined(headers) ?? {}).filter(([, value]) => value !== ''));
+}
 
 /** The error with `path` in front of each issue path; a path of no segments, or an error that is not a LibError, stays as it is. */
 function prefixedError(error: unknown, path: IssuePath): unknown {
@@ -412,6 +459,16 @@ export class NestModelInterceptor implements NestInterceptor {
           }
           (converted ??= new Map()).set(convertedKey, { codec, construct, array });
         }
+      }
+      const headers = nestHeadersCodec(klass, handler);
+      if (headers) {
+        const req = context.switchToHttp().getRequest<HttpRequest>();
+        // Only the declared fields reach the handler; `request.headers` stays as received.
+        const decoded = headers.codec.fromWireFormat(
+          presentHeaders(req.headers),
+          { failFast: true, strip: true, construct: headers.construct, maxDepth: this.maxDepth, validate: this.validate },
+        );
+        setNestHeaders(req, decoded);
       }
     } catch (error) {
       httpError(error);

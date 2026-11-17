@@ -456,6 +456,37 @@ export class Filter extends TFilterBaseModel {}
   assert.deepEqual(operationOf(document, '/items', 'get').parameters?.map(parameter => `${parameter.in}:${parameter.name}`), ['header:term', 'header:page']);
 });
 
+test('a @Headers() model field that a TSerde decodes from text gets the wire schema of its header parameter', async t => {
+  // protects: T-897 first check: the document shows the text a client sends, not the decoded number, so the header guide states the wire type
+  const root = fixture(t, `import { Controller, Get, Headers } from '@nestjs/common';
+import { ApiOkResponse } from '@nestjs/swagger';
+import type { TTarget } from './target.model.js';
+
+@Controller('items')
+export class ItemsController {
+  @Get()
+  @ApiOkResponse({ description: 'ok' })
+  list(@Headers() target: TTarget): void {}
+}
+`, {
+    files: {
+      'src/target.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
+import type { Integer, Maximum, Minimum, Pattern, TSerde } from '@exprtlabs/golem/tags';
+
+type PortText = string & Pattern<'^[0-9]+$'>;
+export function encodePort(value: number): PortText { return String(value) as PortText; }
+export function decodePort(value: PortText): number { return Number(value); }
+export type Port = number & Integer & Minimum<1> & Maximum<65535> & TSerde<typeof encodePort, typeof decodePort>;
+export type TTarget = IModel<{ port: Port }>;
+`,
+    },
+  });
+  const document = documentOf(await generateFixture(root));
+  const [port] = expectValue(operationOf(document, '/items', 'get').parameters, 'header parameters');
+  assert.equal(`${port?.in}:${port?.name}`, 'header:port');
+  assert.deepEqual(port?.schema, { type: 'string', pattern: '^[0-9]+$' });
+});
+
 test('a symbol-keyed property of a flattened @Query() parameter type stops generation with RUNM1070', async t => {
   // protects: F-39 golem rejects a property that JSON cannot carry; a symbol key once became a query parameter named __@sym@N
   const root = fixture(t, `import { Controller, Get, Query } from '@nestjs/common';
