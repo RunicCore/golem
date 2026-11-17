@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Runs one golem test tier inside the test-runner container.
 set -euo pipefail
-tier="${1:?usage: golem-test <prepare|focused|full|full-ts6|acceptance|docs|examples> [args]}"
+tier="${1:?usage: golem-test <prepare|focused|full|full-ts6|acceptance|docs|examples|examples-check> [args]}"
 
 # Full, Full TS6 and Acceptance keep a run record: `recorded` is 1 for them. Each tier name is its own key and its own record, so a cut
 # run of one never resumes another. Full and Full TS6 are the two halves of a sprint-end run and each has its own ceiling.
@@ -171,7 +171,7 @@ npm rebuild --ignore-scripts --no-audit --no-fund
 # per-file or per-test limit, so a loaded host does not fail a file that works. A hung file process or a
 # stuck await is ended here, and the files that started and did not finish are named below.
 case "$tier" in
-  focused) ceiling=180 ;; full|full-ts6) ceiling=450 ;; acceptance) ceiling=600 ;; docs) ceiling=300 ;; prepare) ceiling=300 ;;
+  focused) ceiling=180 ;; full|full-ts6) ceiling=450 ;; acceptance) ceiling=600 ;; docs|examples-check) ceiling=300 ;; prepare) ceiling=300 ;;
   *) ceiling=60 ;;
 esac
 # Full, Full TS6 and Acceptance wait for a quiet host: a load above the limit at the start leaves the run slower than its ceiling

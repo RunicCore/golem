@@ -22,6 +22,7 @@
     "test:full": "bash scripts/test-runner/run.sh full",
     "test:full:ts6": "bash scripts/test-runner/run.sh full-ts6",
     "test:acceptance": "bash scripts/test-runner/run.sh acceptance",
+    "test:examples": "bash scripts/test-runner/run.sh examples-check",
     "test:prepare": "bash scripts/test-runner/run.sh prepare",
     "test:native": "npm run build:tests && node .build/scripts/test-tier.js full --native",
     "generate:examples": "npm run build && npm run build:scripts && node .build/scripts/examples.js generate",

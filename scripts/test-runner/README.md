@@ -8,6 +8,7 @@ Run tests in the golem test-runner image. Tier runs are offline.
 | `npm run test:full` | about 400 s | Half of a sprint-end run: the unit tests (not the identity corpus). Run it with `test:full:ts6` before a commit that ends a sprint. |
 | `npm run test:full:ts6` | about 330 s | The other half of a sprint-end run: the TypeScript 6 lane, the packed model-only smoke test and the source checks of `npm run lint`. Pack, the smoke test and the source checks run beside the lane. |
 | `npm run test:acceptance` | 10 min | Everything that Full and Full TS6 run, the public-source and OpenAPI compliance checks, the acceptance unit tests (the TypeScript identity corpus included), and the packed and browser tests. After the unit step, the TypeScript 6 lane runs beside a second chain: pack, the packed smoke test, the source checks, packed, browser. The acceptance unit tests run last, alone. Run before a release. |
+| `npm run test:examples` | ≤5 min | The examples step of Acceptance alone: each maintained example passes its own `npm run check` and `npm test` from a clean copy. Use it when a run of `test:acceptance` stops at its ceiling before this last step. It keeps no record and has no resume. |
 | `npm run test:prepare` | 5 min (plus a first-time image build), online | Builds the image and fills the npm, packed and typia plugin caches. Runs no tests. Run it first, and again after a lockfile or image change. |
 | `npm run docs:check` | 2 min | Checks the docs prose rules and page inventory, then builds the documentation site and checks it. |
 | `npm run compare:examples -- <base-ref>` | 5 min (warm run of both trees: 1.5 min) | Generates the examples of the base ref and of this worktree (`npm run generate:examples`, in the `examples` tier) and prints `diff -r --no-dereference base worktree`. Exit 0: the same files; 1: they differ; 3: a generation failed (its log goes to stderr); 2: a lock or setup error. Use it after a generator change. |
@@ -41,7 +42,7 @@ The checked-in `package-lock.json` comes from macOS and lacks the Linux platform
 
 ## A hung test file
 
-The tier ceiling is the one hang catcher. A test step sets no limit on a file or a test, and the helper that tests use to run a command sets none on a command, so a slow host does not fail a file that works. The ceilings are 180 s for `npm run test`, 450 s for each of Full and Full TS6, 600 s for Acceptance and 300 s for docs. They are the same on every machine.
+The tier ceiling is the one hang catcher. A test step sets no limit on a file or a test, and the helper that tests use to run a command sets none on a command, so a slow host does not fail a file that works. The ceilings are 180 s for `npm run test`, 450 s for each of Full and Full TS6, 600 s for Acceptance and 300 s for docs and `test:examples`. They are the same on every machine.
 
 A file that hangs stops the run at the ceiling, not sooner. The runner prints the ceiling message and each step that was cut, then the files of each step that started and did not finish. The hung file is among them. A file that was only slow when the ceiling hit appears there too.
 

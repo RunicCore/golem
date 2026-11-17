@@ -265,6 +265,29 @@ export interface PropertyDeclaration extends Node {
   readonly name: PropertyName;
   readonly type?: TypeNode;
 }
+export interface ConstructorDeclaration extends Node {
+  readonly kind: KindOf<'Constructor'>;
+  readonly parameters: readonly ParameterDeclaration[];
+}
+export interface SetAccessorDeclaration extends Node {
+  readonly kind: KindOf<'SetAccessor'>;
+  readonly name: PropertyName;
+  readonly parameters: readonly ParameterDeclaration[];
+}
+export interface ClassStaticBlockDeclaration extends Node {
+  readonly kind: KindOf<'ClassStaticBlockDeclaration'>;
+}
+/** A call signature, a construct signature, or the type of a function or a constructor: the nodes that hold parameters and a return type. */
+export interface SignatureTypeNode extends TypeNode {
+  readonly kind: KindOf<'CallSignature' | 'ConstructSignature' | 'FunctionType' | 'ConstructorType'>;
+  readonly typeParameters?: readonly TypeParameterDeclaration[];
+  readonly parameters: readonly ParameterDeclaration[];
+  readonly type?: TypeNode;
+}
+export interface TypePredicateNode extends TypeNode {
+  readonly kind: KindOf<'TypePredicate'>;
+  readonly type?: TypeNode;
+}
 export interface GetAccessorDeclaration extends Node {
   readonly kind: KindOf<'GetAccessor'>;
   readonly name: PropertyName;
@@ -478,6 +501,8 @@ export interface LiteralTypeNode extends TypeNode {
 export interface ImportTypeNode extends TypeNode {
   readonly kind: KindOf<'ImportTypeNode'>;
   readonly argument: TypeNode;
+  readonly qualifier?: EntityName;
+  readonly typeArguments?: readonly TypeNode[];
 }
 export interface TypeLiteralNode extends TypeNode {
   readonly kind: KindOf<'TypeLiteralNode'>;
@@ -898,6 +923,14 @@ export interface TypeScriptBackend {
   isLiteralTypeNode(node: Node): node is LiteralTypeNode;
   isMappedTypeNode(node: Node): node is MappedTypeNode;
   isBindingElement(node: Node): node is BindingElement;
+  isCallSignatureDeclaration(node: Node): node is SignatureTypeNode;
+  isClassStaticBlockDeclaration(node: Node): node is ClassStaticBlockDeclaration;
+  isConstructSignatureDeclaration(node: Node): node is SignatureTypeNode;
+  isConstructorDeclaration(node: Node): node is ConstructorDeclaration;
+  isConstructorTypeNode(node: Node): node is SignatureTypeNode;
+  isFunctionTypeNode(node: Node): node is SignatureTypeNode;
+  isSetAccessorDeclaration(node: Node): node is SetAccessorDeclaration;
+  isTypePredicateNode(node: Node): node is TypePredicateNode;
   isGetAccessorDeclaration(node: Node): node is GetAccessorDeclaration;
   isMethodDeclaration(node: Node): node is MethodDeclaration;
   isMethodSignature(node: Node): node is MethodSignature;

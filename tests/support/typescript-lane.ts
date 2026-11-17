@@ -13,3 +13,6 @@ export function skipOnTypeScript6(reason: string): string | false {
 export function skipUnlessTypeScript6(reason: string): string | false {
   return !onTypeScript6 && reason;
 }
+
+/** Whether the runner started this process as the TypeScript 6 lane: it points `GOLEM_TYPESCRIPT_ROOT` at the container's TypeScript 6 install (`GOLEM_TYPESCRIPT6_ROOT`). */
+export const inTypeScript6Lane = process.env.GOLEM_TYPESCRIPT_ROOT !== undefined && process.env.GOLEM_TYPESCRIPT_ROOT === process.env.GOLEM_TYPESCRIPT6_ROOT;
