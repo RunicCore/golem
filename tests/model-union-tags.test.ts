@@ -1,14 +1,13 @@
 import assert from 'node:assert/strict';
 import { writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 import { requireObjectCodec } from '@exprtlabs/golem/internal/model-runtime';
 import { generate } from '#model/generator';
 import { copyFixtureFile, readFixture } from './fixture-project.js';
 import { generatedCodecIdFromRoot } from './support/consumer.js';
 import { buildModelProject, createModelProject, writeModelGolemYaml } from './model-project.js';
-import { requireRecord, type GeneratedModelClass } from './openapi/helpers.js';
+import { loadModelClasses, requireRecord } from './openapi/helpers.js';
 import { loadPets } from './support/pets-project.js';
 import { modelCodec } from './support/model-codec.js';
 
@@ -171,7 +170,7 @@ test('a Date beside an array converts by the wire form: a string is the Date, an
     copyFixtureFile(root, 'models/date-or-dates/when.model.ts', 'src/when.model.ts');
     writeModelGolemYaml(root, { validation });
     await buildModelProject(root);
-    const { When } = await import(pathToFileURL(path.join(root, 'build/when.model.js')).href) as { When: GeneratedModelClass };
+    const { When } = await loadModelClasses(path.join(root, 'build/when.model.js'), ['When']);
     const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TWhen'));
     const options = { validate: validation };
     for (const [wire, value] of cases) {
@@ -198,7 +197,7 @@ export class Amount extends TAmountBaseModel {}
 `);
     writeModelGolemYaml(root, { validation });
     await buildModelProject(root);
-    const { Amount } = await import(pathToFileURL(path.join(root, 'build/amount.model.js')).href) as { Amount: GeneratedModelClass };
+    const { Amount } = await loadModelClasses(path.join(root, 'build/amount.model.js'), ['Amount']);
     const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TAmount'));
     for (const wire of cases) {
       const model = new Amount(wire);

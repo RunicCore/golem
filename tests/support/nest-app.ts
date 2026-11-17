@@ -1,6 +1,6 @@
 import 'reflect-metadata';
 import assert from 'node:assert/strict';
-import { Controller, Get, Module, Query, type INestApplication, type NestInterceptor } from '@nestjs/common';
+import { Controller, Get, Module, Query, type INestApplication, type NestInterceptor, type Type } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { NestModelInterceptor } from '@exprtlabs/golem-ts-openapi/nest';
 import { nestModelCodec } from '@exprtlabs/golem-ts-openapi/internal/nest-runtime';
@@ -14,10 +14,26 @@ export interface NestAppOptions {
   readonly errors?: string[];
 }
 
+/** Whether `candidate` is a class: `Reflect.construct` refuses a `newTarget` that is no constructor, before it runs any code of it. */
+function isController(candidate: Function): candidate is Type {
+  try {
+    Reflect.construct(Object, [], candidate);
+    return true;
+  } catch (error) {
+    if (error instanceof TypeError) return false;
+    throw error;
+  }
+}
+
+function requireController(candidate: Function): Type {
+  if (!isController(candidate)) throw new TypeError(`A controller must be a class: ${candidate.name || 'anonymous function'}`);
+  return candidate;
+}
+
 /** Starts a Nest app on a free local port with `controllers` and one global interceptor. The caller closes it. */
 export async function startNestApp(controllers: readonly Function[], options: NestAppOptions = {}): Promise<INestApplication> {
   class AppModule {}
-  Module({ controllers: controllers as never[] })(AppModule);
+  Module({ controllers: controllers.map(requireController) })(AppModule);
   const { errors } = options;
   const logger = errors === undefined ? false : {
     log() {},

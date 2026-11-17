@@ -95,7 +95,7 @@ test('a model constructor that throws at the root is a fault of the program, not
   class Failing extends models.Tree { constructor(values?: Record<string, unknown>) { super(values); throw new Error('db down'); } }
   const fault = (decode: () => unknown): string => {
     try { decode(); } catch (error) {
-      return error instanceof LibError ? `${error.message} input=${error.causedByInput} cause=${String((error.cause as Error | undefined)?.message)}` : `not a LibError: ${String(error)}`;
+      return error instanceof LibError ? `${error.message} input=${error.causedByInput} cause=${error.cause instanceof Error ? error.cause.message : String(error.cause)}` : `not a LibError: ${String(error)}`;
     }
     return 'decoded';
   };

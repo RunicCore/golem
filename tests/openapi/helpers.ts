@@ -400,6 +400,36 @@ export async function loadValidator(file: string, name: string): Promise<Validat
   return value;
 }
 
+/** A function that a built module exports: only the generated code knows what it takes and returns. */
+export type BuiltFunction = (...args: unknown[]) => unknown;
+
+function isBuiltFunction(value: unknown): value is BuiltFunction {
+  return typeof value === 'function';
+}
+
+/** `value` as a built function; anything else throws and names `label`. */
+export function requireFunction(value: unknown, label: string): BuiltFunction {
+  if (!isBuiltFunction(value)) throw new TypeError(`${label} must be a function`);
+  return value;
+}
+
+function exportsFunctions<Name extends string>(module: Record<string, unknown>, names: readonly Name[]): module is Record<Name, BuiltFunction> {
+  return names.every((name) => isBuiltFunction(module[name]));
+}
+
+/** The functions that the built module `file` exports under `names`; a missing export or one that is no function throws. */
+export async function loadFunctions<Name extends string>(file: string, names: readonly Name[]): Promise<Record<Name, BuiltFunction>> {
+  const module = await importFile(file);
+  if (!exportsFunctions(module, names)) throw new TypeError(`${file} must export the functions ${names.filter((name) => !isBuiltFunction(module[name])).join(', ')}`);
+  return module;
+}
+
+/** The `operationCodecs` of the codec module `operation` of a compiled standalone SDK. */
+export async function loadOperationCodecs(output: string, operation: string): Promise<Record<string, unknown>> {
+  const label = `${operation} codecs`;
+  return requireRecord((await importGeneratedModule(output, label, `dist/codecs/${operation}.js`)).operationCodecs, label);
+}
+
 export function isAsyncIterable(value: unknown): value is AsyncIterable<unknown> {
   return typeof value === 'object' && value !== null && Symbol.asyncIterator in value;
 }

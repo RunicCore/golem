@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
 import test, { type TestContext } from 'node:test';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { requireObjectCodec } from '@exprtlabs/golem/internal/model-runtime';
@@ -11,19 +10,19 @@ import { generate } from '#model/generator';
 import { fixturePath, writeGeneratedArtifacts } from './fixture-project.js';
 import { generatedCodecIdFromRoot } from './support/consumer.js';
 import { buildModelProject, createModelProject, writeModelGolemYaml, writeModelSources } from './model-project.js';
-import { loadModelClasses, requireRecord, type GeneratedModelClass } from './openapi/helpers.js';
+import { importGeneratedModule, loadClass, loadFunctions, loadModelClasses, requireRecord, type GeneratedModelClass } from './openapi/helpers.js';
 import { modelCodec } from './support/model-codec.js';
 import { parse as parseYaml } from 'yaml';
 import { loadGolemModeProject } from './openapi/sdk-client-fixture.js';
 
 const TAG = "Discriminator<'kind'>";
 
-type ContactCodecs = Record<string, (value: unknown, options?: object) => unknown>;
+const loadContactCodecs = (root: string) => loadFunctions(path.join(root, 'build/contact.model.generated.js'), ['fromWireFormatTContact', 'parseTContact', 'stringifyTContact', 'toWireFormatTContact']);
 
-async function buildContactCodecs(root: string, validation: boolean): Promise<ContactCodecs> {
+async function buildContactCodecs(root: string, validation: boolean) {
   writeModelGolemYaml(root, { validation });
   await buildModelProject(root);
-  return requireRecord(await import(pathToFileURL(path.join(root, 'build/contact.model.generated.js')).href), 'contact companion') as ContactCodecs;
+  return loadContactCodecs(root);
 }
 
 // Every position a declared union can stand in: written on the union, through an alias, nullable, optional, array and record value.
@@ -293,7 +292,7 @@ import type { Money } from '../sdk/index.js';
 export type TItem = IModel<{ value: (Money | { kind: 'a' | 'b'; x: number } | { kind: 'c' }) & Discriminator<'kind', Money> }>;
 `;
   const { root } = await loadGolemModeProject(t, 'golem-declared-open-default-', [{ document: parseYaml(OPEN_MONEY_DOCUMENT), folder: 'sdk', name: 'Payments' }], true, { 'src/item.model.ts': model });
-  await import(pathToFileURL(path.join(root, 'build/src/item.model.generated.js')).href);
+  await importGeneratedModule(path.join(root, 'build'), 'item companion', 'src/item.model.generated.js');
   const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TItem'));
   const options = { validate: true };
   assert.throws(() => codec.parse(JSON.stringify({ value: { kind: 'a', amount: 5, currency: 'EUR' } }), options));
@@ -388,7 +387,7 @@ export class Item extends TItemBaseModel {}
   });
   writeModelGolemYaml(root, { validation });
   await buildModelProject(root);
-  const { Item, Email } = requireRecord(await import(pathToFileURL(path.join(root, 'build/item.model.js')).href), 'item') as Record<string, new () => Record<string, unknown>>;
+  const { Item, Email } = await loadModelClasses(path.join(root, 'build/item.model.js'), ['Item', 'Email']);
   const itemOf = (fields: Record<string, unknown>): Record<string, unknown> => Object.assign(new Item(), { value: Object.assign(new Email(), fields) });
   return { codec: requireObjectCodec(generatedCodecIdFromRoot(root, 'TItem')), Item, itemOf };
 }
@@ -442,9 +441,8 @@ export type TItem = IModel<{ value: (TEmail | TPhone) & ${TAG} }>;
     });
     writeModelGolemYaml(root, { validation: false });
     await buildModelProject(root);
-    const load = async (name: string) => requireRecord(await import(pathToFileURL(path.join(root, name)).href), name);
-    const Email = (await load('build/variants.model.generated.js')).TEmailBaseModel as new () => Record<string, unknown>;
-    const Item = (await load('build/item.model.generated.js')).TItemBaseModel as new () => Record<string, unknown>;
+    const { TEmailBaseModel: Email } = await loadModelClasses(path.join(root, 'build/variants.model.generated.js'), ['TEmailBaseModel']);
+    const { TItemBaseModel: Item } = await loadModelClasses(path.join(root, 'build/item.model.generated.js'), ['TItemBaseModel']);
     const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TItem'));
     const tagless = Object.assign(new Item(), { value: Object.assign(new Email(), { address: 'a@b.c' }) });
     assert.deepEqual(modelCodec(tagless).toWireFormat(tagless), { value: { kind: 'email', address: 'a@b.c' } });
@@ -467,7 +465,7 @@ export type TItem = IModel<{ tagged: (TEmail | TPhone | Date) & ${TAG}; untagged
     });
     writeModelGolemYaml(root, { validation });
     await buildModelProject(root);
-    const Item = (requireRecord(await import(pathToFileURL(path.join(root, 'build/item.model.generated.js')).href), 'item')).TItemBaseModel as new () => Record<string, unknown>;
+    const { TItemBaseModel: Item } = await loadModelClasses(path.join(root, 'build/item.model.generated.js'), ['TItemBaseModel']);
     const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TItem'));
     const item = Object.assign(new Item(), { tagged: new Date(DAY), untagged: new Date(DAY) });
     const wire = { tagged: DAY, untagged: DAY };
@@ -503,11 +501,11 @@ export type TInner = IModel<{ value: (TAlpha | TBeta) & ${TAG} }>;
   });
   writeModelGolemYaml(root, { validation: false });
   await buildModelProject(root);
-  const bases = requireRecord(await import(pathToFileURL(path.join(root, 'build/item.model.generated.js')).href), 'item companion');
-  const make = (name: string, values: object): object => Object.assign(new (bases[name] as new () => object)(), values);
-  const Wrap = requireRecord(await import(pathToFileURL(path.join(root, 'build/wrap.js')).href), 'wrap').Wrap as new (inner: object) => object;
+  const bases = await loadModelClasses(path.join(root, 'build/item.model.generated.js'), ['TInnerBaseModel', 'TBetaBaseModel', 'TAlphaBaseModel', 'TLeafBaseModel', 'TTwigBaseModel', 'TRootBaseModel']);
+  const make = (name: keyof typeof bases, values: object): object => Object.assign(new bases[name](), values);
+  const Wrap = await loadClass(path.join(root, 'build/wrap.js'), 'Wrap');
   const inner = make('TInnerBaseModel', { value: make('TBetaBaseModel', {}) });
-  const alpha = make('TAlphaBaseModel', { parts: [make('TLeafBaseModel', {}), make('TTwigBaseModel', {})], wrapped: new Wrap(inner) });
+  const alpha = make('TAlphaBaseModel', { parts: [make('TLeafBaseModel', {}), make('TTwigBaseModel', {})], wrapped: Reflect.construct(Wrap, [inner]) });
   const item = make('TRootBaseModel', { value: alpha });
   const wire = { value: { kind: 'a', parts: [{ kind: 'leaf' }, { kind: 'twig' }], wrapped: '{"value":{"kind":"b"}}' } };
   const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TRoot'));
@@ -636,8 +634,8 @@ export class Email extends TEmailBaseModel {}
   });
   writeModelGolemYaml(root, { validation: true });
   await buildModelProject(root);
-  const companion = await import(pathToFileURL(path.join(root, 'build/contact.model.generated.js')).href) as Record<string, (value: unknown, options?: object) => unknown>;
-  const { Email } = await import(pathToFileURL(path.join(root, 'build/contact.model.js')).href) as { Email: new (values: object) => object };
+  const companion = await loadContactCodecs(root);
+  const { Email } = await loadModelClasses(path.join(root, 'build/contact.model.js'), ['Email']);
   const bare = Object.assign(Object.create(null) as object, { kind: 'phone', number: '5' });
   const href = 'https://example.com/a?b=1';
   const cases = [
