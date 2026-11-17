@@ -1,15 +1,17 @@
 import {
   type GeneratedModelConversion,
   type GeneratedModelValidatorEnhancer,
+  type ObjectCodecImpl,
   registerGeneratedModel,
   assertModelValue,
-  createObjectCodec,
   isValidModelValue,
   registerIModelClass,
 } from '@exprtlabs/golem/internal/model-runtime';
 import { IssueRepresentation, IssueSource } from '@exprtlabs/golem/errors';
 import { GENERATED_MODEL_SCHEMA_REF_PREFIX, schemaForDescriptor, type ModelTypeDescriptor } from '@exprtlabs/golem/internal/schema';
+import type { ModelField } from '@exprtlabs/golem/validation';
 import { compileValidators } from './support/compiled-validators.js';
+import { registerPassThroughCodec } from './support/pass-through-codec.js';
 
 /** Where a compiled module finds the test's own validation functions: files cannot carry closures. */
 const BINDINGS = Symbol.for('golem.test.validationBindings');
@@ -63,6 +65,8 @@ export async function installCodecModel<Model extends object>(options: {
     : { $id: codecId, ...schema };
   const resolved = inlineGeneratedModelRefs(payload as object);
   installedSchemas.set(codecId, resolved as Record<string, unknown>);
+  // A part the model never reaches is the pass-through part: the codec-part types of the runtime check it, a `never` stub would not.
+  let validation: Partial<ObjectCodecImpl> = {};
   if (enabled) {
     const bindings = options.bindings ?? {};
     const ids = Object.keys(bindings);
@@ -76,30 +80,21 @@ export async function installCodecModel<Model extends object>(options: {
       },
     });
     const validator = validators[codecId];
-    createObjectCodec(codecId, {
-      stringify: () => { throw new Error('not used'); },
-      parse: () => { throw new Error('not used'); },
+    validation = {
       validate: (value, optionsArg) => isValidModelValue(value, optionsArg, validator, codecId),
       assert: (value, optionsArg) => {
         assertModelValue(value, optionsArg, validator, codecId, IssueRepresentation.Model, IssueSource.TypeScript);
         return value;
       },
-      toWireFormat: (value) => (options.conversion?.encode ?? ((model: Model) => ({ ...model })))(value as Model),
-      fromWireFormat: (wire) => wire,
-    });
-  } else {
-    const unused = (): never => { throw new Error('not used'); };
-    createObjectCodec<unknown>(codecId, {
-      stringify: unused,
-      parse: unused,
-      validate: unused,
-      assert: unused,
-      toWireFormat: (value) => (options.conversion?.encode ?? ((model: Model) => ({ ...model })))(value as Model),
-      fromWireFormat: (wire) => wire,
-    });
+    };
   }
+  registerPassThroughCodec(codecId, {
+    ...validation,
+    toWireFormat: (value) => (options.conversion?.encode ?? ((model: Model) => ({ ...model })))(value as Model),
+  });
   registerGeneratedModel(options.constructor, {
-    fields: options.fields as never,
+    // `ModelField<Model>` is `never` for a class that declares none of the fields its descriptor names (a union or tuple stand-in), so the names stay strings.
+    fields: options.fields as readonly ModelField<Model>[],
     // Validation requires conversion metadata; plain field copies stand in for a companion.
     conversion: options.conversion ?? {
       decode: (value) => Object.assign(Object.create(options.constructor.prototype) as Model, value),
