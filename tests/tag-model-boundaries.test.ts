@@ -8,6 +8,7 @@ import { requireObjectCodec } from '@exprtlabs/golem/internal/model-runtime';
 import { getValidator } from '@exprtlabs/golem/validation';
 import { canonicalSchemaKey, schemaForDescriptor, validationTagSchemaDescriptor } from '@exprtlabs/golem/internal/schema';
 import type { ModelTypeDescriptor } from '@exprtlabs/golem/internal/schema';
+import type { GeneratedModelConstructor } from '@exprtlabs/golem/model';
 import { generatedCodecId } from './support/consumer.js';
 import { buildModelProject, createModelProject, writeModelGolemYaml } from './model-project.js';
 import { modelCodec } from './support/model-codec.js';
@@ -75,10 +76,10 @@ async function buildScenarioProject(t: TestContext, names: readonly string[]): P
   };
 }
 
-async function loadModel(project: ScenarioProject, directory: string, file: string, modelName: string): Promise<new (values?: never) => object> {
+async function loadModel(project: ScenarioProject, directory: string, file: string, modelName: string): Promise<GeneratedModelConstructor> {
   const modelConstructor: unknown = Reflect.get(await project.load(directory, file), modelName);
   if (typeof modelConstructor !== 'function') throw new Error(`Missing generated ${modelName} constructor.`);
-  return modelConstructor as new (values?: never) => object;
+  return modelConstructor as GeneratedModelConstructor;
 }
 
 test('tag schemas keep user fields named like descriptor metadata', () => {

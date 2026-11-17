@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import type { GeneratedModelConstructor } from '@exprtlabs/golem/model';
 import test, { type TestContext } from 'node:test';
 import { copyFixtureFile, readFixture } from './fixture-project.js';
 import { buildModelProject, createModelProject, writeModelGolemYaml } from './model-project.js';
@@ -60,7 +61,7 @@ test('IObject stringify/parse compose nested Money by call; invalid JSON fails b
     Payment: new (values?: object) => { id: string; amount: { currency: string; value: string }; note: string };
   };
   const codecs = await import(pathToFileURL(path.join(root, 'build/money.model.generated.js')).href) as PaymentCodecs & {
-    parseTPayment: (text: string, options?: { validate?: boolean; failFast?: boolean; construct?: new (values?: never) => object }) => unknown;
+    parseTPayment: (text: string, options?: { validate?: boolean; failFast?: boolean; construct?: GeneratedModelConstructor }) => unknown;
   };
   const wire = { id: '1', amount: { currency: 'USD', value: '12.50' }, note: 'ok' };
   const text = codecs.stringifyTPayment(wire, { validate: false });
@@ -151,7 +152,7 @@ test('IObject TSerde stringify/parse convert declared fields in one pass', async
     stringifyTPermissionInput: (value: object, options?: { validate?: boolean }) => string;
     parseTPermissionInput: (text: string, options?: { validate?: boolean }) => { permissions: number };
     stringifyTPermissionModel: (value: object, options?: { validate?: boolean }) => string;
-    parseTPermissionModel: (text: string, options?: { validate?: boolean; construct?: new (values?: never) => object }) => { permissions: number };
+    parseTPermissionModel: (text: string, options?: { validate?: boolean; construct?: GeneratedModelConstructor }) => { permissions: number };
     toWireFormatTPermissionInput: (value: unknown, options?: { validate?: boolean }) => unknown;
     fromWireFormatTPermissionInput: (wire: unknown, options?: { validate?: boolean }) => { permissions: number };
     validateTPermissionInput: (value: unknown) => boolean;
