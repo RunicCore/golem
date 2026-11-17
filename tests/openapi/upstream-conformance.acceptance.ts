@@ -23,7 +23,6 @@ import {
 } from './compliance-cases.js';
 import {
   generateMaterializedSdk,
-  type GeneratedClientClass,
   loadGeneratedClient,
   openApiFixture,
   repoRoot,
@@ -257,12 +256,14 @@ function requiresMutualTls(document: unknown): boolean {
 }
 
 async function executeCase(
-  Client: GeneratedClientClass,
+  output: string,
+  clientName: string,
   document: unknown,
   ir: ReturnType<typeof normalizeDocument>,
   item: UpstreamOperationCase,
   assertRequestValidation: boolean,
 ): Promise<void> {
+  const Client = await loadGeneratedClient(output, clientName);
   const operation = ir.operations.find((candidate) => candidate.name === item.operation);
   assert.ok(operation, `${item.id} normalized operation`);
   if (!operation) return;
@@ -392,10 +393,10 @@ test('typed upstream corpus cases generate, strict-compile, and execute every ac
       // and artifact checks alone cannot prove that profile-specific client
       // composition, codecs, and validation seams work on the wire.
       const selected = cases;
-      const Client = await loadGeneratedClient(output, `Upstream${fixtureIndex}`);
       for (const item of selected) {
         await executeCase(
-          Client,
+          output,
+          `Upstream${fixtureIndex}`,
           document,
           ir,
           item,
