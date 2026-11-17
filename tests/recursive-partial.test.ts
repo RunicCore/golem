@@ -19,7 +19,7 @@ export class SettingsModel extends TSettingsBaseModel {}
 export class ListModel extends TListBaseModel {}
 `;
 
-for (const [label, profile] of [['validation off', { validation: false }], ['validation on', { validation: true }]] as readonly (readonly [string, GolemProfile])[]) {
+for (const [label, profile] of [['validation off', { validation: false }], ['validation on', { validation: true }]] satisfies readonly (readonly [string, GolemProfile])[]) {
   test(`a type that holds Partial of itself round-trips (${label})`, async (t: TestContext) => {
     // protects: T-440 a type with a field of Partial of itself no longer overflows the stack; the projection refers back to itself
     const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-recursive-partial-', linkTypescript: true });

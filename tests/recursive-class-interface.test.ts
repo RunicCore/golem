@@ -6,6 +6,7 @@ import { generate } from '#ts-openapi/generator';
 import { validateOpenApiDocument } from '#openapi/openapi-validator';
 import { createControllerFixture } from './fixture-templates/controllers/project.js';
 import { buildModelProject, createModelProject, writeModelGolemYaml, writeModelSources } from './model-project.js';
+import { expectJsonObject, valueAt } from './support/json.js';
 import { loadWireRoundTrip } from './support/recursive-fixtures.js';
 
 const MODELS = `import type { IModel } from '@exprtlabs/golem/model';
@@ -41,9 +42,11 @@ export class NodesController {
 }
 `;
 
+/** The OpenAPI document that a generation wrote, as parsed JSON. */
+const documentOf = (result: { readonly artifacts: readonly { readonly content: string }[] }): unknown => JSON.parse((result.artifacts.at(0) ?? assert.fail('the generation wrote no artifact')).content);
 const loop = (name: string) => ({ $ref: `#/components/schemas/${name}` });
 
-for (const [label, profile] of [['validation off', { validation: false }], ['validation on', { validation: true }]] as readonly (readonly [string, GolemProfile])[]) {
+for (const [label, profile] of [['validation off', { validation: false }], ['validation on', { validation: true }]] satisfies readonly (readonly [string, GolemProfile])[]) {
   test(`a self-referencing interface as a model round-trips (${label})`, async (t: TestContext) => {
     // protects: T-418 a recursive interface named as an IModel field type no longer overflows the stack, and a recursive interface or alias with a non-ASCII name ends its cycle too
     const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-recursive-interface-', linkTypescript: true });
@@ -65,9 +68,9 @@ test('a controller with a self-referencing class DTO and interface documents a r
   // protects: T-418 a recursive class DTO or interface no longer overflows the stack; the document keeps a $ref loop
   const root = createControllerFixture(t, { prefix: 'golem-ts-openapi-recursive-class-', packageName: 'golem-ts-openapi-recursive-class-fixture', sourceFile: 'src/nodes.controller.ts', source: CONTROLLER });
   const result = await generate({ root, output: path.join(root, 'openapi.json'), openapiVersion: '3.1.2', info: { title: 'Nodes', version: '1' }, profile: { validation: false } });
-  const document = JSON.parse(result.artifacts[0]!.content) as { components: { schemas: unknown } };
+  const document = documentOf(result);
   assert.deepEqual(validateOpenApiDocument(document), []);
-  assert.deepEqual(document.components.schemas, {
+  assert.deepEqual(valueAt(document, 'components', 'schemas'), {
     NodeLoose: {
       type: 'object', additionalProperties: true, required: ['children', 'id'],
       properties: { id: { type: 'string' }, children: { type: 'array', items: loop('NodeLoose') }, parent: { anyOf: [loop('NodeLoose')] } },
@@ -91,8 +94,8 @@ for (const [form, [declarations, components]] of Object.entries(RECURSIVE_ROOTS)
       + "@Controller('menus') export class MenusController { @Get() read(): Menu { return {} as Menu; } }\n";
     const root = createControllerFixture(t, { prefix: 'golem-ts-openapi-recursive-roots-', packageName: 'golem-ts-openapi-recursive-roots-fixture', sourceFile: 'src/roots.controller.ts', source });
     const result = await generate({ root, output: path.join(root, 'openapi.json'), openapiVersion: '3.1.2', info: { title: 'Roots', version: '1' }, profile: { validation: false } });
-    const document = JSON.parse(result.artifacts[0]!.content) as { components: { schemas: Record<string, unknown> } };
+    const document = documentOf(result);
     assert.deepEqual(validateOpenApiDocument(document), []);
-    assert.deepEqual(Object.keys(document.components.schemas).sort(), components);
+    assert.deepEqual(Object.keys(expectJsonObject(valueAt(document, 'components', 'schemas'), 'schemas')).sort(), components);
   });
 }

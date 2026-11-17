@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import test, { type TestContext } from 'node:test';
 
 import { command, golem } from './support/process.js';
@@ -14,8 +15,8 @@ import {
 } from './model-project.js';
 import { copyFixtureFile, fileFixtureScope, listProjectDependencies, onceShared, readFixture } from './fixture-project.js';
 import { companionModelSource } from './fixture-templates/models/model-companions.js';
-import { importGeneratedModule, loadFunctions, loadModelClasses, requireFunction, requireRecord, type GeneratedModelClass } from './openapi/helpers.js';
-import { valueAt } from './support/json.js';
+import { importGeneratedModule, loadModelClasses, requireFunction, requireRecord, type GeneratedModelClass } from './openapi/helpers.js';
+import { expectJsonArray, expectJsonString, valueAt } from './support/json.js';
 
 test('model companions compile with --noUnusedLocals for empty, scalar and nested models', async t => {
   const { root, sourceRoot } = modelProject(t);
@@ -189,10 +190,16 @@ function orderProject(t: TestContext, options: { readonly projection: string; re
   return project;
 }
 
-/** The summaries the built `TOrder` of `root` accepts, among `candidates`. */
-async function acceptedSummaries(root: string, candidates: readonly string[], build: number): Promise<readonly string[]> {
-  const { accepts } = await loadFunctions({ file: path.join(root, 'build/use.js'), load: build }, ['accepts']);
-  return candidates.filter(candidate => accepts(candidate) === true);
+/** What a child process runs: it loads the built `use.js` (argument 1) and prints the candidates (argument 2, JSON) that its `accepts` takes. */
+const ACCEPTS_SCRIPT = "const { accepts } = await import(process.argv[1]); console.log(JSON.stringify(JSON.parse(process.argv[2]).filter(candidate => accepts(candidate) === true)));";
+
+/**
+ * The summaries the built `TOrder` of `root` accepts, among `candidates`. Each call runs in a child process, so it loads the module and the codec registry
+ * of the build on disk now: a module cache of this process would answer for a build that is gone.
+ */
+async function acceptedSummaries(root: string, candidates: readonly string[]): Promise<readonly string[]> {
+  const { stdout } = await command(root, process.execPath, ['--input-type=module', '-e', ACCEPTS_SCRIPT, pathToFileURL(path.join(root, 'build/use.js')).href, JSON.stringify(candidates)]);
+  return expectJsonArray(JSON.parse(stdout), 'the accepted summaries').map(summary => expectJsonString(summary, 'a summary'));
 }
 
 /** Runs golem generate on the project: a second run whose claim is the generated files needs no compile. */
@@ -280,7 +287,7 @@ test('a keyof over a subclass of an app class has the members of its base on the
     imports: 'VipCustomer',
   });
   await buildModelProject(root);
-  assert.deepEqual(await acceptedSummaries(root, ['{"name":"Ada","age":36,"tier":2}', '{"tier":2}', '{"name":"Ada","age":36}'], 1), ['{"name":"Ada","age":36,"tier":2}']);
+  assert.deepEqual(await acceptedSummaries(root, ['{"name":"Ada","age":36,"tier":2}', '{"tier":2}', '{"name":"Ada","age":36}']), ['{"name":"Ada","age":36,"tier":2}']);
 });
 
 test('a model that holds its own class has the members of its base under a keyof on the first run', async t => {
@@ -292,7 +299,7 @@ test('a model that holds its own class has the members of its base under a keyof
   });
   await buildModelProject(root);
   assert.deepEqual(
-    await acceptedSummaries(root, ['{"name":"Ada","age":36,"friend":{"name":"Bo","age":7}}', '{"name":"Ada","age":36}', '{"name":"Ada","age":36,"friend":{"name":1,"age":7}}'], 1),
+    await acceptedSummaries(root, ['{"name":"Ada","age":36,"friend":{"name":"Bo","age":7}}', '{"name":"Ada","age":36}', '{"name":"Ada","age":36,"friend":{"name":1,"age":7}}']),
     ['{"name":"Ada","age":36,"friend":{"name":"Bo","age":7}}', '{"name":"Ada","age":36}'],
   );
 });
@@ -317,12 +324,12 @@ test('a tagged field picked from an app class keeps its tag on the first run and
   });
   await buildModelProject(root);
   const firstFiles = generatedModelFiles(root);
-  assert.deepEqual(await acceptedSummaries(root, ['{"name":"Ada"}', '{"name":"Al"}'], 1), ['{"name":"Ada"}']);
+  assert.deepEqual(await acceptedSummaries(root, ['{"name":"Ada"}', '{"name":"Al"}']), ['{"name":"Ada"}']);
   // The second run also runs its built output, so it builds.
   fs.rmSync(path.join(root, '.golem/jobs.json'));
   await buildModelProject(root);
   assert.deepEqual(generatedModelFiles(root), firstFiles);
-  assert.deepEqual(await acceptedSummaries(root, ['{"name":"Ada"}', '{"name":"Al"}'], 2), ['{"name":"Ada"}']);
+  assert.deepEqual(await acceptedSummaries(root, ['{"name":"Ada"}', '{"name":"Al"}']), ['{"name":"Ada"}']);
 });
 
 test('a build over the stale generated base of a changed model writes the files of a fresh build', async t => {
@@ -336,7 +343,7 @@ test('a build over the stale generated base of a changed model writes the files 
   await buildModelProject(fresh.root);
   const contents = (root: string): readonly string[] => generatedModelFiles(root).map(file => `${path.relative(root, file.path)}\n${file.content}`);
   assert.deepEqual(contents(stale.root), contents(fresh.root));
-  assert.deepEqual(await acceptedSummaries(stale.root, ['{"city":"Oslo"}', '{"age":36}'], 1), ['{"city":"Oslo"}']);
+  assert.deepEqual(await acceptedSummaries(stale.root, ['{"city":"Oslo"}', '{"age":36}']), ['{"city":"Oslo"}']);
 });
 
 test('one generate after a model change gives the docs job the new fields of a projection of its class', async t => {
