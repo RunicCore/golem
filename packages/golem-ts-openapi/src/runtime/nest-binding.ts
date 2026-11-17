@@ -4,6 +4,7 @@
  * `objectCodecFromMetatype`; the decorators are internal because only generated code calls them.
  */
 import { presentValue, recordOrUndefined, requireModelObject, unknownDiscriminatorValue, type DiscriminatorValue, type InternalObjectCodec } from '@exprtlabs/golem/internal/model-runtime';
+import type { GeneratedModelConstructor } from '@exprtlabs/golem/model';
 import { getIModelClass, getObjectCodec, type ObjectCodec, type SerdeOptions } from '@exprtlabs/golem/serde';
 import { decodeQueryField, type QueryFieldTable } from './query-decode.js';
 
@@ -33,8 +34,6 @@ export type NestReturnMeta = {
   readonly array: boolean;
 };
 
-export type NestModelConstruct = abstract new (values?: never) => object;
-
 /** A variant of a union parameter: the values of its tag and the id of its codec. */
 type NestUnionVariant = readonly [values: readonly DiscriminatorValue[], id: string];
 
@@ -59,7 +58,7 @@ type NestModelToken = Function & {
   readonly [NEST_MODEL_CODEC]?: ObjectCodec;
   readonly [NEST_MODEL_UNION]?: NestUnionBinding;
   readonly [NEST_MODEL_UNION_IDS]?: readonly string[];
-  readonly [NEST_MODEL_CONSTRUCT]?: NestModelConstruct;
+  readonly [NEST_MODEL_CONSTRUCT]?: GeneratedModelConstructor;
   readonly [NEST_MODEL_ARRAY]?: true;
 };
 
@@ -104,7 +103,7 @@ export function boundArray(metatype: unknown): boolean {
   return asToken(metatype)?.[NEST_MODEL_ARRAY] === true;
 }
 
-export function boundConstruct(metatype: unknown): NestModelConstruct | undefined {
+export function boundConstruct(metatype: unknown): GeneratedModelConstructor | undefined {
   return asToken(metatype)?.[NEST_MODEL_CONSTRUCT];
 }
 

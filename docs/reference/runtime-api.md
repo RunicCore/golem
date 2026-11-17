@@ -621,7 +621,7 @@ Pass one `ModelValidationContext` to repeated serde, `validateInstance` and `Mod
 | Member | Signature | Behavior |
 | --- | --- | --- |
 | `getObjectCodec` | `(id): ObjectCodec \| undefined` | Returns the codec whose id is exactly `id`. A short model name finds nothing. |
-| `getIModelClass` | `(id): class \| undefined` | Returns the `IModel` class registered under the exact id `id`. |
+| `getIModelClass` | `(id): GeneratedModelConstructor \| undefined` | Returns the `IModel` class registered under the exact id `id`. `GeneratedModelConstructor` is `abstract new (...arguments: never[]) => object`, exported from `@exprtlabs/golem/model`. |
 
 Types: `AllowGetterOptions`, `DecodeOptions`, `EncodeOptions`, `ObjectCodec`, `SerdeOptions`, `ValidateOptions`, `ValidationPlane`, `WireFormat`. `IssueRepresentation` and `IssueSource` are re-exported from [`errors`](#errors).
 
@@ -642,7 +642,7 @@ Install `@exprtlabs/golem-ts-openapi` in `dependencies`. `@nestjs/common` and `r
 | `objectCodecFromMetatype` | `<T>(metatype: unknown): ObjectCodec<T> \| undefined` | The codec of a parameter token that the rewrite placed, such as the `design:paramtypes` entry of a `@Body()` parameter. `undefined` for a raw class. |
 | `nestUnionFromMetatype` | `(metatype: unknown): NestUnionInput \| undefined` | The converter of a parameter token for a union of models, such as the `design:paramtypes` entry of a `@Body()` or `@Query()` parameter typed `TCircle \| TRect`. `fromWireFormat(wire, options?)` returns the model of the variant that the tag picks and throws a `LibError` for a missing or unknown tag or invalid input. `decodeQuery(query)` turns query strings into the types that variant declares. `undefined` for any other token. |
 | `nestQueryDecoder` | `(metatype: unknown): ((query: unknown) => unknown) \| undefined` | The function that decodes a query of a parameter token to the numbers, booleans and arrays that its model declares, for a single model or a union of models, such as the `design:paramtypes` entry of a `@Query()` parameter. A value that does not fit stays text, so `fromWireFormat` rejects it. `undefined` for any other token, and for a union whose variant codecs are not registered yet. |
-| `nestModelConstruct` | `(metatype: unknown)` | The class that token constructs, or `undefined`. |
+| `nestModelConstruct` | `(metatype: unknown): GeneratedModelConstructor \| undefined` | The class that token constructs, or `undefined`. |
 | `nestReturnCodec` | `(controllerClass: Function, handler: Function): NestReturnCodec \| undefined` | The codec of the declared return of a handler, as `{ codec, array }`. `array` is true when the handler returns an array of the model. `undefined` for a handler with no mark ([mark rules](/guide/nestjs-requests#what-happens-to-a-request)). It throws a `TypeError` that starts with `golem fault` when the build marked the handler and the codec of the model is not registered. The lookup runs at each call, so cache the result for each handler if you need to. |
 
 For inbound conversion in your own interceptor or pipe, get the codec with `objectCodecFromMetatype` and call its `fromWireFormat`. For a union of models, use `nestUnionFromMetatype`. For a `@Query()`, pass `request.query` through `nestQueryDecoder` before `fromWireFormat`. For an outbound response in your own interceptor, get the codec of the handler with `nestReturnCodec(context.getClass(), context.getHandler())` and call its `stringify`.

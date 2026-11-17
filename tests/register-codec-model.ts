@@ -108,7 +108,6 @@ export async function installCodecModel<Model extends object>(options: {
     profile: { validation: enabled },
     ...(options.enhanceValidator ? { enhanceValidator: options.enhanceValidator } : {}),
   });
-  // The registry of model classes takes `(values?: never)` where the model registry takes `(...arguments_: never[])`.
-  registerIModelClass(codecId, options.constructor as never);
+  registerIModelClass(codecId, options.constructor);
   return codecId;
 }

@@ -34,6 +34,7 @@ Golem 1.1.0 is the first stable release. It brings TypeScript models, NestJS con
 - `FileRewrite` from `@exprtlabs/golem/rewrite` has a required `importsAt` ([Generation](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#generation)).
 - The type of the fields of a generated model is the derived `T<Name>Fields` type ([Generation](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#generation)).
 - `getObjectCodec` and `getIModelClass` find a model only by its full id ([Models](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#models)).
+- **Breaking:** `getIModelClass` and `nestModelConstruct` return `GeneratedModelConstructor | undefined`, the class type of `@exprtlabs/golem/model`. A variable that you typed with the old shape `abstract new (values?: never) => object` stops compiling ([Models](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#models)).
 - A registered codec holds no JSON Schema. Generated model files are smaller, and a generated parse asks a validation context for `Id#wire` ([Models](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#models)).
 - A model class with `@ApiSchema({ name })` is the OpenAPI component of that name ([OpenAPI](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#openapi)).
 - A route with no response decorator gets an empty description (`""`) on its default response, as Nest Swagger writes ([OpenAPI](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#openapi)).
