@@ -1,6 +1,9 @@
 import { code, type Code } from '../code.js';
 import type { IrTypeName } from './ir.js';
-import { localName } from './local-helpers.js';
+import { isObject } from '../../validation-runtime.js';
+import { rt } from '../rt.js';
+
+const runtime = rt['validation-runtime'];
 
 /**
  * The test of each JSON type, once as a value check (lowering) and once as the code the validator writes. The order of the
@@ -12,10 +15,10 @@ export const JSON_TYPES: Readonly<Record<IrTypeName, { readonly test: (value: un
   // JSON has no NaN or infinity; a model value that holds one is not a number.
   number: { test: value => typeof value === 'number' && Number.isFinite(value), code: value => code`(typeof ${value} === 'number' && Number.isFinite(${value}))` },
   // A JSON number is a double, so an integer beyond Number.MAX_SAFE_INTEGER has already been rounded when it is read.
-  integer: { test: value => Number.isSafeInteger(value), code: value => code`Number.isSafeInteger(${value})` },
+  integer: { test: value => Number.isSafeInteger(value), code: value => code`(typeof ${value} === 'number' && Number.isSafeInteger(${value}))` },
   string: { test: value => typeof value === 'string', code: value => code`typeof ${value} === 'string'` },
   array: { test: value => Array.isArray(value), code: value => code`Array.isArray(${value})` },
-  object: { test: value => typeof value === 'object' && value !== null && !Array.isArray(value), code: value => code`${localName('isObject')}(${value})` },
+  object: { test: isObject, code: value => code`${runtime.isObject}(${value})` },
 };
 
 /** True when `value` names a type that a JSON Schema `type` keyword can test. */

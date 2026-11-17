@@ -566,8 +566,8 @@ for (const [name, field] of Object.entries(hiddenCopyReads)) test(`a validator a
   assert.throws(() => generate({ root, profile: { validation: true } }), /RUNM1040.*shares its type with another function in this field/);
 });
 
-test('a tag function that comes from an inferred type is refused, not bound by its type', t => {
-  // protects: T-982 no `typeof` in the field leads to the function that the inferred type names
+test('a tag function that comes from an inferred type binds the one function that the program writes for its type', t => {
+  // protects: T-982 no `typeof` in the field leads to the function that the inferred type names; T-1058 the program writes only `b` in a tag, so the type names `b`
   const { root, sourceRoot } = fixture(t);
   fs.writeFileSync(path.join(sourceRoot, 'rules.ts'), copiedFunctionRules.inline.text);
   fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({
@@ -575,7 +575,9 @@ test('a tag function that comes from an inferred type is refused, not bound by i
     imports: tsSource`import type { TValidation } from '@exprtlabs/golem/tags';\nimport { b } from './rules.js';\ndeclare function tagged(): string & TValidation<typeof b>;\nconst held = tagged();`,
     fields: tsSource`field: typeof held`,
   }).text);
-  assert.throws(() => generate({ root, profile: { validation: true } }), /RUNM1040.*cannot read back to the `typeof` that wrote it/);
+  const generated = generate({ root, profile: { validation: true } }).artifacts.map((artifact) => artifact.content).join('\n');
+  assert.equal(importsOf(generated, 'b'), 1, 'b is bound');
+  assert.equal(importsOf(generated, 'a'), 0, 'a is not bound');
 });
 
 // `held` carries `typeof a` through an inferred type, and the field writes its copy `b`: the checker shows one tag for both, and the source holds only `typeof b`.

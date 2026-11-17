@@ -291,6 +291,25 @@ class LinesCode extends CodeValue {
   }
 }
 
+/**
+ * Whether `target` is a slot inside `root`: the same Code, not one that spells the same. The emitter names a local or a
+ * parameter by one Code, so this tells whether a line it wrote reads that name, with no text to search. It copies no parts.
+ */
+export function mentions(root: Code, target: Code): boolean {
+  const seen = new Set<Code>();
+  const pending: Code[] = [root];
+  for (let node = pending.pop(); node !== undefined; node = pending.pop()) {
+    if (node === target) return true;
+    if (seen.has(node) || !(node instanceof CodeValue)) continue;
+    seen.add(node);
+    for (let index = 0; index < node.slotCount(); index++) {
+      const slot = node.slot(index);
+      if (typeof slot === 'object') pending.push(slot);
+    }
+  }
+  return false;
+}
+
 /** Whether `piece` writes nothing, as `piece.parts.length === 0` says. It does not write the parts of a piece that holds other pieces. */
 export function isEmpty(piece: Code): boolean {
   return piece instanceof CodeValue ? piece.isEmpty() : piece.parts.length === 0;

@@ -39,7 +39,7 @@ export function compile(input: CompileInput, options: CompileOptions): CompileRe
   if (diagnostics.some(entry => entry.severity === GolemDiagnosticSeverity.Error)) return { source: '', exports, fastExports: new Map(), passExports: new Map(), diagnostics };
   const { source, fastExports, passExports } = emit(module, {
     ...(options.specifiers === undefined ? {} : { specifiers: options.specifiers }),
-    ...(options.typed ? { typed: true } : {}),
+    language: options.language,
     ...(options.fastPath === undefined ? {} : { fastPath: options.fastPath }),
     ...(options.level === undefined ? {} : { level: options.level }),
   });

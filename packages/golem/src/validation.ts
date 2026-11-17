@@ -3,7 +3,7 @@ import { escapeJsonPointerToken } from './json-pointer.js';
 import { presentValue } from './presence.js';
 import type { generatedModelFieldsBrand, GeneratedModelConstructor, ModelField, ModelValidationContext } from './model.js';
 import type { ModelTypeDescriptor, RegisteredGeneratedModelDefinition } from './model-registry.js';
-export type { SchemaIssue, SchemaIssueDetail, Validator } from './validation-runtime.js';
+export type { Evaluation, JsonValue, SchemaIssue, SchemaIssueDetail, Validator } from './validation-runtime.js';
 export { runValidation } from './validation-runner.js';
 export * from './schema-registry-validation.js';
 

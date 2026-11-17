@@ -28,6 +28,8 @@ const barrelTypes = [
   ['object-codec', ['DecodeOptions', 'EncodeOptions', 'SerdeOptions', 'ValidateOptions']],
   ['schema-registry-validation', ['OperationRuntimeValidators']],
   ['issue-messages', ['SchemaIssue']],
+  ['validation-runtime', ['Evaluation']],
+  ['errors', ['JsonValue']],
 ];
 
 const compiler = new API({ cwd: root });

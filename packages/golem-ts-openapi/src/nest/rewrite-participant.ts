@@ -7,7 +7,7 @@ import { GolemDiagnosticSeverity } from '@exprtlabs/golem/generator-api';
 import type { GolemDiagnostic, GolemExtension, RewriteCore, RewriteParticipantInput, RewriteParticipantResult } from '@exprtlabs/golem/generator-api';
 import { REWRITE_IMPORT_PREFIX, type RewriteEdit } from '@exprtlabs/golem/rewrite';
 import type { DiscriminatorValue } from '@exprtlabs/golem/internal/schema';
-import { arrayItemNode, authoredUnionMembers, decoratorIdentity, isDiscriminatorTag, modelDeclarationKind, propertyType, readTags, resolvedSymbolAt, serdeTypeName, staticDecoratorKey } from '@exprtlabs/golem/internal/type-analysis';
+import { arrayItemNode, authoredUnionMembers, decoratorIdentity, isDiscriminatorTag, modelDeclarationKind, NO_FUNCTIONS_KNOWN, propertyType, readTags, resolvedSymbolAt, serdeTypeName, staticDecoratorKey } from '@exprtlabs/golem/internal/type-analysis';
 import { NEST_COMMON, OWN_PACKAGE } from './packages.js';
 import { nodeQueryFields } from './query-fields.js';
 
@@ -150,7 +150,7 @@ function unionTag(
   const { ts, root, checker, file } = scope;
   let declared;
   try {
-    declared = readTags({ checker, sourceFile: file, identityRoot: root, diagnostic: (_node, _code, message) => new TagReadFault(message) }, model).metadata;
+    declared = readTags({ checker, sourceFile: file, identityRoot: root, functionIndex: NO_FUNCTIONS_KNOWN, diagnostic: (_node, _code, message) => new TagReadFault(message) }, model).metadata;
   } catch (error) {
     if (!(error instanceof TagReadFault)) throw error;
     return { fault: ['has a Discriminator tag that golem cannot read', error.message] };
