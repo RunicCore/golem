@@ -34,7 +34,7 @@ console.log(JSON.stringify({ version: ns.typescriptVersion, sameBackend: ns.Prog
     assert.equal(sameBackend, true, `the seam serves the TypeScript ${major} backend`);
   }
 });
-for (const version of ['5.9.3', '8.0.0', '8.2.1-beta']) {
+for (const version of ['5.9.3', '7.0.2', '7.0.1-rc', '8.0.0', '8.2.1-beta']) {
   test(`(b) TypeScript ${version} fails with the version and path`, () => {
     // protects: F-1142 a TypeScript outside 6.x and 7.1+ stops golem, below and above, naming the found version and the package path
     const root = fakeProject(version);
@@ -43,12 +43,6 @@ for (const version of ['5.9.3', '8.0.0', '8.2.1-beta']) {
       && error.message === `golem supports TypeScript 6.0+ and 7.1+; found ${version} at ${path.relative(process.cwd(), packageDir)}.`);
   });
 }
-test('(b2) TypeScript 7.0 fails and names golem 1.0', () => {
-  for (const version of ['7.0.2', '7.0.1-rc']) {
-    assert.throws(() => resolveTypeScript(fakeProject(version)), (error: unknown) => error instanceof UnsupportedTypeScriptError
-      && new RegExp(`TypeScript 6\\.0\\+ and 7\\.1\\+; found ${version.replaceAll('.', '\\.')} at .*node_modules\\/typescript\\. golem 1\\.0 supports TypeScript 7\\.0\\.$`).test((error as Error).message), version);
-  }
-});
 test('(c) the project\'s own TypeScript wins over golem\'s', () => {
   const root = fakeProject('6.0.3');
   // Node resolves a package to its real path, and the temp folder of macOS is a link (/var to /private/var).

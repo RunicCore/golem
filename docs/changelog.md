@@ -6,7 +6,7 @@ Read the highlights of each Golem release.
 
 Golem 1.1.0 is a breaking release with a 1.x number. It supports TypeScript 6.0+ and 7.1+, and it drops TypeScript 7.0.
 
-- **Breaking:** TypeScript 7.0 fails at load. Install TypeScript 7.1 or 6, or stay on Golem 1.0 with TypeScript 7.0 ([Generation](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#generation)).
+- **Breaking:** TypeScript 7.0 fails at load. Install TypeScript 7.1 or 6 ([Generation](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#generation)).
 - Run generation on TypeScript 6.0+ and 7.1+, including 7.1.0-beta ([Compatibility](/compatibility#ts)).
 - **Breaking:** each package registers one `golem.yaml` block. Write `model`, `ts-openapi` with `docs`, and `openapi-ts` with `sdks`, in place of `models`, `controllers`, `openapi` and `generators` ([Configuration](/reference/config#blocks), [Register a block](/reference/generator-api#register-a-block)).
 - **Breaking:** golem derives the job order from what each job reads and writes ([Job order](/reference/config#job-order)).
