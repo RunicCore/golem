@@ -279,7 +279,7 @@ export function ignoredSharedFileWarnings(sharedFiles: readonly string[], appDir
       }
     }
   }
-  return [...warnings.values()].sort((left, right) => (left.file ?? '') < (right.file ?? '') ? -1 : 1);
+  return [...warnings.values()].sort((left, right) => compareText(left.file ?? '', right.file ?? ''));
 }
 
 function ignoredGolemYamlMessage(golemYaml: string, modelFile: string): string {
@@ -433,16 +433,26 @@ function parsedProject(
   };
 }
 
-/** The session that a program opens on (the retained one, else a compiler that closes with its last program) and the project it parses. */
-function openProject(
+/**
+ * Runs `open` on the session that a program opens on (the retained one, else a compiler that closes with its last program) and
+ * the project it parses. A compiler that this call made is disposed when `open` or the parse throws: until a program holds it,
+ * no program's close ends it.
+ */
+function withProject<T>(
   root: string,
   sources: readonly string[],
   retained: ts.ProgramSession | undefined,
   onInput: InputObserver | undefined,
   configFile: string | undefined,
-): { readonly session: ts.ProgramSession; readonly parsed: ReturnType<typeof parsedProject> } {
+  open: (session: ts.ProgramSession, parsed: ReturnType<typeof parsedProject>) => T,
+): T {
   const session = retained ?? new ts.ProgramSession({ cwd: root, closeWhenIdle: true });
-  return { session, parsed: parsedProject(root, sources, session, onInput, configFile) };
+  try {
+    return open(session, parsedProject(root, sources, session, onInput, configFile));
+  } catch (error) {
+    if (retained === undefined) session[Symbol.dispose]();
+    throw error;
+  }
 }
 
 const PROGRAM_SESSION = sessionKey<ts.ProgramSession>('program');
@@ -495,8 +505,7 @@ export function createProgram(
   /** The tsconfig to open, from the golem.yaml; without it the one that `tsc` would find from `root` upward. */
   configFile?: string,
 ): ProgramInfo {
-  const { session, parsed } = openProject(root, sources, retained, onInput, configFile);
-  return openParsedProgram(session, root, parsed, uniqueFilenames([...sources, ...parsed.ambientFiles]), onInput);
+  return withProject(root, sources, retained, onInput, configFile, (session, parsed) => openParsedProgram(session, root, parsed, uniqueFilenames([...sources, ...parsed.ambientFiles]), onInput));
 }
 
 /**
@@ -510,8 +519,7 @@ export function createProjectProgram(
   /** The tsconfig to open, from the golem.yaml; without it the one that `tsc` would find from `root` upward. */
   configFile?: string,
 ): ProgramInfo {
-  const { session, parsed } = openProject(root, [], retained, onInput, configFile);
-  return openParsedProgram(session, root, parsed, parsed.projectFiles, onInput);
+  return withProject(root, [], retained, onInput, configFile, (session, parsed) => openParsedProgram(session, root, parsed, parsed.projectFiles, onInput));
 }
 
 /** Whether a generated companion is left over: its model source no longer exists. */
@@ -572,49 +580,50 @@ export function createModelStubProgram(
   /** The tsconfig to open, from the golem.yaml; without it the one that `tsc` would find from `root` upward. */
   configFile?: string,
 ): ProgramInfo {
-  const { session, parsed } = openProject(root, sources, retained, onInput, configFile);
-  const stubbed = new Set<string>();
-  const stubsOf = (files: readonly string[]): Map<string, string> => {
-    const stubs = new Map<string, string>();
-    for (const file of files) {
-      const real = canonicalFilename(file);
-      if (stubbed.has(real) || !existsSync(file)) continue;
-      stubbed.add(real);
-      const names = classModelNames(session.parseSourceFile(file, readFileSync(file, 'utf8')));
-      if (names.length === 0) continue;
-      const companion = canonicalFilename(companionFilename(boundary, file));
-      stubs.set(companion, `import type { ${names.join(', ')} } from ${JSON.stringify(sourceImportPath(real, companion))};\n`
-        + names.map((name) => `export declare abstract class ${name}BaseModel {}\nexport interface ${name}BaseModel extends ${name} {}\n`).join(''));
-    }
-    return stubs;
-  };
-  const open = (stubs: ReadonlyMap<string, string>): ProgramInfo => {
-    const overlays = new Map(stubs);
-    for (const filename of parsed.projectFiles) {
-      const companion = canonicalFilename(filename);
-      const underOutput = boundary.companions !== undefined && isInsideDirectory(boundary.companions.output, companion);
-      if (isGeneratedCompanion(companion) && !overlays.has(companion) && (underOutput || isOrphanCompanion(companion, boundary.suffixes))) {
-        overlays.set(companion, 'export {}\n');
+  return withProject(root, sources, retained, onInput, configFile, (session, parsed) => {
+    const stubbed = new Set<string>();
+    const stubsOf = (files: readonly string[]): Map<string, string> => {
+      const stubs = new Map<string, string>();
+      for (const file of files) {
+        const real = canonicalFilename(file);
+        if (stubbed.has(real) || !existsSync(file)) continue;
+        stubbed.add(real);
+        const names = classModelNames(session.parseSourceFile(file, readFileSync(file, 'utf8')));
+        if (names.length === 0) continue;
+        const companion = canonicalFilename(companionFilename(boundary, file));
+        stubs.set(companion, `import type { ${names.join(', ')} } from ${JSON.stringify(sourceImportPath(real, companion))};\n`
+          + names.map((name) => `export declare abstract class ${name}BaseModel {}\nexport interface ${name}BaseModel extends ${name} {}\n`).join(''));
       }
+      return stubs;
+    };
+    const open = (stubs: ReadonlyMap<string, string>): ProgramInfo => {
+      const overlays = new Map(stubs);
+      for (const filename of parsed.projectFiles) {
+        const companion = canonicalFilename(filename);
+        const underOutput = boundary.companions !== undefined && isInsideDirectory(boundary.companions.output, companion);
+        if (isGeneratedCompanion(companion) && !overlays.has(companion) && (underOutput || isOrphanCompanion(companion, boundary.suffixes))) {
+          overlays.set(companion, 'export {}\n');
+        }
+      }
+      return openParsedProgram(session, root, parsed, uniqueFilenames([...sources, ...parsed.ambientFiles]), onInput, overlays);
+    };
+    const stubs = stubsOf([...modelFiles, ...byRealPath(includedModelSources(parsed.projectFiles, boundary.suffixes))]);
+    const info = open(stubs);
+    let next: ProgramInfo;
+    try {
+      const reached = stubsOf(byRealPath(includedModelSources(info.program.getSourceFiles()
+        .filter((file) => !info.program.isSourceFileDefaultLibrary(file))
+        .map((file) => file.fileName), boundary.suffixes)));
+      if (reached.size === 0) return info;
+      next = open(new Map([...stubs, ...reached]));
+    } catch (error) {
+      // The first program holds the session; a failed second pass would leave it held.
+      info.program[Symbol.dispose]();
+      throw error;
     }
-    return openParsedProgram(session, root, parsed, uniqueFilenames([...sources, ...parsed.ambientFiles]), onInput, overlays);
-  };
-  const stubs = stubsOf([...modelFiles, ...byRealPath(includedModelSources(parsed.projectFiles, boundary.suffixes))]);
-  const info = open(stubs);
-  let next: ProgramInfo;
-  try {
-    const reached = stubsOf(byRealPath(includedModelSources(info.program.getSourceFiles()
-      .filter((file) => !info.program.isSourceFileDefaultLibrary(file))
-      .map((file) => file.fileName), boundary.suffixes)));
-    if (reached.size === 0) return info;
-    next = open(new Map([...stubs, ...reached]));
-  } catch (error) {
-    // The first program holds the session; a failed second pass would leave it held.
     info.program[Symbol.dispose]();
-    throw error;
-  }
-  info.program[Symbol.dispose]();
-  return next;
+    return next;
+  });
 }
 
 export function createOverlayProgram(

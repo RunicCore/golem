@@ -5,13 +5,12 @@ import { execFileSync } from 'node:child_process';
 import { type TestContext } from 'node:test';
 import { watchPipeline } from '#golem/cli';
 import type { WatchOptions } from '#golem/watch';
-import { resolveTypeScript } from '#golem/typescript-version';
 import { linkGolemPackages } from '../fixture-project.js';
 import { writeFixture } from './consumer.js';
+import { skipOnTypeScript6 } from './typescript-lane.js';
 
 // Tests that count the TypeScript 7 compiler's server processes and sessions, which TypeScript 6 does not have, skip on this.
-export const skipOnTypeScript6 = resolveTypeScript(process.env.GOLEM_TYPESCRIPT_ROOT ?? process.cwd()).major === 6
-  && 'TypeScript 6 runs no compiler server process';
+export const skipWithoutCompilerServer = skipOnTypeScript6('TypeScript 6 runs no compiler server process');
 
 /** A generation project in a temp directory: a model, an OpenAPI document and a golem.yaml that runs both, with the golem packages linked. */
 export function generationWatchFixture(t: TestContext): { root: string; config: string } {

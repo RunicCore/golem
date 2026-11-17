@@ -109,6 +109,9 @@ export const wrong: Payment[typeof generatedModelFieldsBrand] = { id: 1, amount:
       const validator = getValidator(payment);
       assert.equal(await validator.validate(), true);
       assert.equal(await getValidator(new Payment({ id: 'p1', amount: 'five', total: wire.total })).validate(), false);
+      const edited = new Payment({ id: 'p1', amount: 5, total: wire.total });
+      edited.amount = 'six';
+      assert.equal(await getValidator(edited).validate(), false, 'a field assignment never validates; the check runs when it is asked for');
       assert.equal(isComputedProp(validator, 'valid'), expected.mobx === true, 'the validator is observable exactly when the profile uses MobX');
       assert.equal(codec.validate(payment), true);
     } else {

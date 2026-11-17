@@ -12,7 +12,7 @@ import { dirname } from 'node:path';
 import { GOLEM_CHANNELS } from './diagnostics-channels.js';
 import { displayPath } from './generator-core.js';
 import { fileSignature, MISSING } from './input-watcher.js';
-import { affectsResolution, assertConfigParsed, assertNoSourceFiles, canonical, hasVirtualFiles, virtualLookup, collectTscDiagnostics, configReferences, emitWanted, flagPathOptions, flagsAsConfigOptions, isDeclarationFile, programRequest, referencedConfigFile } from './typescript-config.js';
+import { affectsResolution, assertCommandLineParsed, assertConfigParsed, assertNoSourceFiles, canonical, hasVirtualFiles, virtualLookup, collectTscDiagnostics, configReferences, emitWanted, flagPathOptions, flagsAsConfigOptions, isDeclarationFile, programRequest, referencedConfigFile } from './typescript-config.js';
 import type { ConfigReference, ProgramConfig, ResolveAtCurrentFolder, VirtualLookup } from './typescript-config.js';
 import { selectedTypeScript } from './typescript-selection.js';
 import { assertPackageManifestsParse } from './type-analysis/package-specifier.js';
@@ -721,7 +721,7 @@ class CompatProgram implements Golem.Program {
 
 function parseFlags(flags: readonly string[]) {
   const { options: parsed, fileNames, errors } = classic.parseCommandLine(flags);
-  return { options: parsed, fileNames, errors: errors.map((diagnostic) => ({ code: diagnostic.code, text: classic.flattenDiagnosticMessageText(diagnostic.messageText, '\n') })) };
+  return { options: parsed, fileNames, errors: errors.map(withText) };
 }
 
 /**
@@ -879,6 +879,8 @@ export class ProgramSession implements Disposable {
     this.assertOpen();
     this.observe(onInput, new Set());
     const commandLine = classic.parseCommandLine(flags);
+    // The classic `tsc` makes its reporter before it reads the options, so the form of these errors follows the terminal alone, never `--pretty`.
+    assertCommandLineParsed({ options: {}, errors: commandLine.errors.map(withText) });
     assertNoSourceFiles(commandLine.fileNames);
     // A path in a flag is read from the current folder, as `tsc` reads it; the session works from the tsconfig's folder.
     const paths = flagPathOptions(flags, parseFlags, resolveAtCurrentFolder);
@@ -1010,9 +1012,9 @@ export class ProgramSession implements Disposable {
     return configReferences(config);
   }
 
-  private parseConfig(configPath: string, overlays: ReadonlyMap<string, string>, commandLine?: { readonly options: Golem.CompilerOptions; readonly errors: readonly ClassicDiagnostic[] }): ParsedConfig {
+  private parseConfig(configPath: string, overlays: ReadonlyMap<string, string>, commandLine?: { readonly options: Golem.CompilerOptions }): ParsedConfig {
     const { parsed, errors } = this.readConfig(configPath, overlays, commandLine);
-    assertConfigParsed(configPath, [...commandLine?.errors ?? [], ...errors].map((diagnostic) => ({ code: diagnostic.code, text: classic.flattenDiagnosticMessageText(diagnostic.messageText, '\n') })));
+    assertConfigParsed(configPath, errors.map((diagnostic) => ({ code: diagnostic.code, text: classic.flattenDiagnosticMessageText(diagnostic.messageText, '\n') })));
     return parsed;
   }
 

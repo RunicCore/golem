@@ -27,7 +27,7 @@ import * as ast from 'typescript/ast';
 import { GOLEM_CHANNELS } from './diagnostics-channels.js';
 import { displayPath } from './generator-core.js';
 import { fileSignature, MISSING } from './input-watcher.js';
-import { affectsResolution, assertConfigParsed, assertNoSourceFiles, canonical, collectTscDiagnostics, configReferences, declarationOutputOf, derivedConfigNames, emitWanted, flagPathOptions, flagsAsConfigOptions, hasDeclarationOutput, isBrokenReference, programRequest, REFERENCE_ERROR_CODES, referenceClosure, referencedConfigFile, hasVirtualFiles, ROOTS_CONFIG_SUFFIX, virtualLookup } from './typescript-config.js';
+import { affectsResolution, assertCommandLineParsed, assertConfigParsed, assertNoSourceFiles, canonical, collectTscDiagnostics, configReferences, declarationOutputOf, derivedConfigNames, emitWanted, flagPathOptions, flagsAsConfigOptions, hasDeclarationOutput, isBrokenReference, programRequest, REFERENCE_ERROR_CODES, referenceClosure, referencedConfigFile, hasVirtualFiles, ROOTS_CONFIG_SUFFIX, virtualLookup } from './typescript-config.js';
 import type { ConfigReference, ProgramRequest, ResolveAtCurrentFolder, VirtualLookup } from './typescript-config.js';
 import { assertPackageManifestsParse } from './type-analysis/package-specifier.js';
 import {
@@ -1253,13 +1253,14 @@ export class ProgramSession implements Disposable {
     const parsed = this.withCompiler('parse', (api) => {
       this.observe(onInput, new Set());
       const commandLine = api.parseCommandLine(flags);
+      assertCommandLineParsed(commandLine);
       assertNoSourceFiles(commandLine.fileNames);
       const { allowJs, resolveJsonModule, outDir, declarationDir } = commandLine.options;
       const matching = Object.fromEntries(Object.entries({ allowJs, resolveJsonModule, outDir, declarationDir }).filter(([, value]) => value !== undefined));
       const virtual = join(dirname(configPath), `${basename(configPath, '.json')}.flags.json`);
       const references = configReferences(api.readConfigFile(configPath).config);
       const result = api.parseJsonConfigFileContent({ extends: `./${basename(configPath)}`, compilerOptions: matching, ...(references.length === 0 ? {} : { references }) }, { configFileName: virtual });
-      assertConfigParsed(configPath, [...commandLine.errors, ...result.errors]);
+      assertConfigParsed(configPath, result.errors);
       // A path in a flag is read from the current folder, as `tsc` reads it; the API's parse reads it from the folder of the session.
       const paths = flagPathOptions(flags, parseFlags(api), resolveAtCurrentFolder(api));
       return { options: { ...result.options, ...commandLine.options, ...paths, configFilePath: configPath }, fileNames: result.fileNames, projectReferences: result.projectReferences };

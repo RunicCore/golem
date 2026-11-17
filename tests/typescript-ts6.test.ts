@@ -5,16 +5,15 @@ import path from 'node:path';
 import test from 'node:test';
 import * as ts from '@exprtlabs/golem/internal/ts';
 import { generate } from '#model/generator';
-import { resolveTypeScript } from '#golem/typescript-version';
 import { createFixtureProject } from './fixture-project.js';
 import { createModelProject } from './model-project.js';
 import { taggedModelSource } from './fixture-templates/models/model-tags.js';
 import { tsSource } from './source-template.js';
 import { write, editTsconfig, sourceOnlyProject, USE, mtimes, importBuilt, golemBuild, assertCallMap } from './support/build-project.js';
+import { skipUnlessTypeScript6 } from './support/typescript-lane.js';
 
 // The cases marked `skip` run only on the TypeScript 6 lane: GOLEM_TYPESCRIPT_ROOT names a project whose `typescript` is 6.x.
-const skip = resolveTypeScript(process.env.GOLEM_TYPESCRIPT_ROOT ?? process.cwd()).major !== 6
-  && 'the active TypeScript is not 6.x';
+const skip = skipUnlessTypeScript6('the active TypeScript is not 6.x');
 
 test('the facade runs on TypeScript 6', { skip }, () => {
   assert.match(ts.typescriptVersion, /^6\./);
