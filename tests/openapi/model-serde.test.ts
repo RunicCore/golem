@@ -349,7 +349,7 @@ test('nested Date, inherited, and dictionary conversions work in a standalone SD
       headers: { 'content-type': 'application/json' },
     }),
   });
-  assert.deepEqual(await client.createEvent!().execute({ body: { when: new Date('2025-01-02T03:04:05Z'), child: { id: 'child' } } }), {
+  assert.deepEqual(await client.createEvent().execute({ body: { when: new Date('2025-01-02T03:04:05Z'), child: { id: 'child' } } }), {
     matched: 'status',
     status: 400,
     contentType: 'application/json',
