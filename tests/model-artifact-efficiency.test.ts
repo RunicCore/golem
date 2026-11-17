@@ -14,7 +14,7 @@ import { readFixture, writeGeneratedArtifacts } from './fixture-project.js';
 import { buildModelProject, createModelProject, generatedModelFiles, writeModelGolemYaml, writeModelSources, type ModelProject } from './model-project.js';
 import { duplicateLocalNameReferenceModelSource } from './fixture-templates/models/model-artifact-efficiency.js';
 import { parse as parseYaml } from 'yaml';
-import type { GeneratedModelClass } from './openapi/helpers.js';
+import { loadModelClasses } from './openapi/helpers.js';
 import { loadGolemModeProject } from './openapi/sdk-client-fixture.js';
 import { IssueRepresentation, IssueSource, LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { requireObjectCodec, decodeGeneratedModelTrusted, findGeneratedModelDefinitionForConstructor } from '@exprtlabs/golem/internal/model-runtime';
@@ -120,9 +120,7 @@ test('wire-only serde predicates do not create model-plane tag validators', asyn
   writeFileSync(path.join(fixtureValue.sourceRoot, 'item.model.ts'), readFixture("models/model-artifact-efficiency/wire-only-serde-predicates-do-not-create-model-plane-tag-validators/item.model.ts"));
   writeModelGolemYaml(fixtureValue.root, { validation: true });
   await buildModelProject(fixtureValue.root);
-  const { Item } = await import(pathToFileURL(path.join(fixtureValue.root, 'build/item.model.js')).href) as {
-    Item: new (values?: { value?: number }) => { value: number };
-  };
+  const { Item } = await loadModelClasses(path.join(fixtureValue.root, 'build/item.model.js'), ['Item']);
   const codec = requireObjectCodec(generatedCodecIdFromRoot(fixtureValue.root, 'TItem'));
   const model = new Item({ value: -5 });
   assert.equal(codec.validate(model), true, 'the model-plane number field carries no tag validator derived from the wire-only predicate');
@@ -145,22 +143,10 @@ test('generated tag schemas retain distinct reference closures for duplicate loc
 
   writeModelGolemYaml(fixtureValue.root, { validation: true });
   await buildModelProject(fixtureValue.root);
-  const [
-    { Parent: OneParent, Child: OneChild },
-    { TParentBaseModel: OneParentBaseModel },
-    { Parent: TwoParent, Child: TwoChild },
-    { TParentBaseModel: TwoParentBaseModel },
-  ] = await Promise.all([
-    import(pathToFileURL(path.join(fixtureValue.root, 'build/one/things.model.js')).href),
-    import(pathToFileURL(path.join(fixtureValue.root, 'build/one/things.model.generated.js')).href),
-    import(pathToFileURL(path.join(fixtureValue.root, 'build/two/things.model.js')).href),
-    import(pathToFileURL(path.join(fixtureValue.root, 'build/two/things.model.generated.js')).href),
-  ]) as [
-    { Parent: GeneratedModelClass; Child: GeneratedModelClass },
-    { TParentBaseModel: abstract new (...args: never[]) => object },
-    { Parent: GeneratedModelClass; Child: GeneratedModelClass },
-    { TParentBaseModel: abstract new (...args: never[]) => object },
-  ];
+  const { Parent: OneParent, Child: OneChild } = await loadModelClasses(path.join(fixtureValue.root, 'build/one/things.model.js'), ['Parent', 'Child']);
+  const { TParentBaseModel: OneParentBaseModel } = await loadModelClasses(path.join(fixtureValue.root, 'build/one/things.model.generated.js'), ['TParentBaseModel']);
+  const { Parent: TwoParent, Child: TwoChild } = await loadModelClasses(path.join(fixtureValue.root, 'build/two/things.model.js'), ['Parent', 'Child']);
+  const { TParentBaseModel: TwoParentBaseModel } = await loadModelClasses(path.join(fixtureValue.root, 'build/two/things.model.generated.js'), ['TParentBaseModel']);
   const oneCodecId = findGeneratedModelDefinitionForConstructor(OneParentBaseModel)?.codecId;
   const twoCodecId = findGeneratedModelDefinitionForConstructor(TwoParentBaseModel)?.codecId;
   assert.ok(oneCodecId, 'the "one" Parent model has a registered codec id');

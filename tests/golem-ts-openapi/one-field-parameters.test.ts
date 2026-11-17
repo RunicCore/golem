@@ -4,12 +4,12 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
-import { pathToFileURL } from 'node:url';
 import { generate } from '#ts-openapi/generator';
 import { runPipeline } from '#golem/cli';
 import { formatOpenApiProblems, validateOpenApiDocument } from '#openapi/openapi-validator';
 import { createControllerFixture } from '../fixture-templates/controllers/project.js';
 import { expectJsonArray, expectJsonObject } from '../support/json.js';
+import { loadClass, loadGeneratedClient } from '../openapi/helpers.js';
 import { startNestApp } from '../support/nest-app.js';
 import { command, golem } from '../support/process.js';
 import { contentSchema, documentFrom, documentOf, operationOf, parameterOf, propertySchema, refusedWith, requestBodyOf, schemaOf, type OpenApiDocument, type OpenApiSchema } from './openapi-document.js';
@@ -216,12 +216,8 @@ export class AController {
   });
   const built = await command(root, process.execPath, [golem, 'build', '--config', path.join(root, 'golem.yaml')]);
   assert.equal(built.code, 0, built.stdout + built.stderr);
-  const { AController } = await import(pathToFileURL(path.join(root, 'build/a.controller.js')).href) as { AController: new () => object };
-  const { ApiClient } = await import(pathToFileURL(path.join(root, 'build/sdk/index.js')).href) as { ApiClient: new (options: { baseUrl: string }) => {
-    aController_create(): { execute(input: unknown): Promise<{ body: unknown }> };
-    aController_createBatch(): { execute(input: unknown): Promise<{ body: unknown }> };
-    aController_list(): { execute(input: unknown): Promise<{ body: unknown }> };
-  } };
+  const AController = await loadClass(path.join(root, 'build/a.controller.js'), 'AController');
+  const ApiClient = await loadGeneratedClient(path.join(root, 'build/sdk'), 'Api', 'index.js');
   const application = await startNestApp([AController], { nestedQuery: true });
   try {
     const client = new ApiClient({ baseUrl: await application.getUrl() });

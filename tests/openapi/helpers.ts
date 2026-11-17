@@ -9,6 +9,7 @@ import { findGeneratedModelDefinitionForConstructor } from '@exprtlabs/golem/int
 import { generate, type OpenApiGenerationContext, writeSdk as WriteSdk } from '#openapi/generator';
 import { generate as generateModels } from '#model/generator';
 import { GolemDiagnosticSeverity } from '@exprtlabs/golem/generator-api';
+import type { Validator } from '@exprtlabs/golem/validation';
 import { sdkCodecsFile } from '@exprtlabs/golem/internal/emitter';
 import type { OpenApiGenerationProfile as GeneratorProfile } from '#openapi/profile';
 import { generatorSettings, type WithMobx } from '../support/mobx-extension.js';
@@ -320,14 +321,14 @@ export interface CapturedRequest {
 
 /** A model class loaded from build output: its constructor takes the model's field values, whose shape only the generated code knows. */
 export interface GeneratedModelClass {
-  new (values: Record<string, unknown>): object;
+  new (values?: Record<string, unknown>): object;
 }
 
 export function isGeneratedModelClass(value: unknown): value is GeneratedModelClass {
   return typeof value === 'function' && Boolean(findGeneratedModelDefinitionForConstructor(value));
 }
 
-interface GeneratedClientInstance {
+export interface GeneratedClientInstance {
   [name: string]: () => { execute: (
     input?: unknown,
     options?: unknown,
@@ -347,18 +348,51 @@ export function isGeneratedClientClass(value: unknown): value is GeneratedClient
   return typeof value === 'function';
 }
 
-/** Imports a compiled module of a generated SDK (`dist/index.js` unless `file` names another) as a record. */
-export async function importGeneratedModule(output: string, label: string, file = 'dist/index.js'): Promise<Record<string, unknown>> {
-  return requireRecord(await import(pathToFileURL(join(output, file)).href), label);
+async function importFile(file: string, label = file): Promise<Record<string, unknown>> {
+  return requireRecord(await import(pathToFileURL(file).href), label);
 }
 
-/** Loads `<name>Client` from the compiled `dist/client.js` of a generated SDK. */
-export async function loadGeneratedClient(output: string, name: string): Promise<GeneratedClientClass> {
-  const module = await importGeneratedModule(output, `${name} client`, 'dist/client.js');
-  const Client = module[`${name}Client`];
-  assert.equal(isGeneratedClientClass(Client), true);
-  if (!isGeneratedClientClass(Client)) throw new TypeError(`${name}Client`);
+/** Imports a compiled module of a generated SDK (`dist/index.js` unless `file` names another) as a record. */
+export async function importGeneratedModule(output: string, label: string, file = 'dist/index.js'): Promise<Record<string, unknown>> {
+  return importFile(join(output, file), label);
+}
+
+/** Loads `<name>Client` from the compiled `dist/client.js` of a generated SDK, or from `file` below `output`. */
+export async function loadGeneratedClient(output: string, name: string, file = 'dist/client.js'): Promise<GeneratedClientClass> {
+  const Client = (await importFile(join(output, file)))[`${name}Client`];
+  if (!isGeneratedClientClass(Client)) throw new TypeError(`${join(output, file)} must export the client class ${name}Client`);
   return Client;
+}
+
+function exportsModelClasses<Name extends string>(module: Record<string, unknown>, names: readonly Name[]): module is Record<Name, GeneratedModelClass> {
+  return names.every((name) => isGeneratedModelClass(module[name]));
+}
+
+/** The generated model classes that the built module `file` exports under `names`; a missing export or one that is no generated model class throws. */
+export async function loadModelClasses<Name extends string>(file: string, names: readonly Name[]): Promise<Record<Name, GeneratedModelClass>> {
+  const module = await importFile(file);
+  if (!exportsModelClasses(module, names)) {
+    throw new TypeError(`${file} must export the generated model classes ${names.filter((name) => !isGeneratedModelClass(module[name])).join(', ')}`);
+  }
+  return module;
+}
+
+/** The class that the built module `file` exports as `name`, for a class that is no generated model or client, such as a controller; a missing export or one that is no class throws. */
+export async function loadClass(file: string, name: string): Promise<Function> {
+  const value = (await importFile(file))[name];
+  if (typeof value !== 'function') throw new TypeError(`${file} must export the class ${name}`);
+  return value;
+}
+
+function isValidator(value: unknown): value is Validator {
+  return typeof value === 'function';
+}
+
+/** The generated validator that the built validators module `file` exports as `name`; a missing export or one that is no function throws. */
+export async function loadValidator(file: string, name: string): Promise<Validator> {
+  const value = (await importFile(file))[name];
+  if (!isValidator(value)) throw new TypeError(`${file} must export the validator ${name}`);
+  return value;
 }
 
 export function isAsyncIterable(value: unknown): value is AsyncIterable<unknown> {
