@@ -181,3 +181,10 @@ for (const [name, row] of Object.entries(moduleRows)) test(`a tag that a module 
   const outcome = generateField(t, { rules: validators.copied, declarations: row.declarations, field: `string${beside} & Neutral`, files: row.files }, ['a', 'b', 'c']);
   assert.match('refused' in outcome ? outcome.refused : `bound ${outcome.bound}`, /shares its type with another function/);
 });
+
+test('a type that shares its name with a const is read for its tag and shares its type with the function of the field', t => {
+  // protects: T-1076 a type reference reads the type half of a const/type pair, so a filter that drops the value must not drop the type alias that holds the tag
+  const declarations = `const Mode = 1;\ntype Mode = string & TValidation<typeof a>;\n${neutral('Mode')}`;
+  const outcome = generateField(t, { rules: validators.copied, declarations, field: `string${beside} & Neutral` }, ['a', 'b', 'c']);
+  assert.match('refused' in outcome ? outcome.refused : `bound ${outcome.bound}`, /shares its type with another function/);
+});
