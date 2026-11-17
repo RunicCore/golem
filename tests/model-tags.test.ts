@@ -11,6 +11,7 @@ import { taggedModelSource } from './fixture-templates/models/model-tags.js';
 import { joinSource, tsSource, type SourceFragment } from './source-template.js';
 import { generate } from '#model/generator';
 import { modelCodec } from './support/model-codec.js';
+import { importGeneratedModule, loadModelClasses, requireRecord } from './openapi/helpers.js';
 
 test('tag bindings are AST-provenanced, alias-deduplicated, and relocation-stable', async t => {
   const build = (sourceRoot: string): void => {
@@ -60,7 +61,7 @@ type ValueArray = Array<string>;`,
     fields: tsSource`values: ValueArray & Contains<string & Pattern<'^ok$'>> & MinItems<1> & MinContains<1> & MaxContains<2>; objectValue: ValueObject & MinProperties<1> & MaxProperties<3> & PropertyNames<string & Pattern<'^[a-z_]+$'>> & PatternProperties<{ '^x_': number; '^z_': boolean }> & AdditionalProperties<never> & UnevaluatedProperties<never> & DependentRequired<{ foo: ['bar'] }> & DependentSchemas<{ foo: { bar: string } }> & OneOf<[{ foo: string }, { bar: string }]> & Not<{ forbidden: string }> & IfThenElse<{ bar: string }, { bar: string }, { foo: string }>;`,
   }).text);
   await buildModelProjectWith(root, { validation: true });
-  const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
+  const { A } = await loadModelClasses(path.join(root, 'build/a.model.js'), ['A']);
   const valid = new A({ values: ['ok'], objectValue: { bar: 'yes', x_value: 1 } });
   assert.equal(await getValidator(valid).validate(), true);
   for (const invalid of [
@@ -74,7 +75,7 @@ type ValueArray = Array<string>;`,
     { values: ['ok'], objectValue: { x_value: 'bad' } },
     { values: ['ok'], objectValue: { z_flag: 'bad' } },
   ]) {
-    assert.equal(await getValidator(new A(invalid as never)).validate(), false, JSON.stringify(invalid));
+    assert.equal(await getValidator(new A(invalid)).validate(), false, JSON.stringify(invalid));
   }
 });
 
@@ -170,11 +171,11 @@ type Dictionary = { [key: string]: string };`,
     }).text,
   });
   await buildModelProjectWith(root, { validation: true });
-  const load = (directory: string, file: string) => import(path.toNamespacedPath(path.join(root, 'build', directory, file)));
+  const built = (directory: string, file: string): string => path.join(root, 'build', directory, file);
 
   await t.test('builtin constraints run before custom predicates and distinct predicates compose once', async () => {
-    const { A } = await load('builtin-order', 'a.model.js');
-    const predicates = await load('builtin-order', 'predicates.js');
+    const { A } = await loadModelClasses(built('builtin-order', 'a.model.js'), ['A']);
+    const predicates = await importGeneratedModule(root, 'the predicates', 'build/builtin-order/predicates.js');
     const invalid = new A({ value: 'x' });
     assert.equal(await getValidator(invalid).validate({ failFast: false }), false);
     assert.equal(predicates.calls, 0, 'custom callbacks are suppressed when builtins fail');
@@ -184,16 +185,16 @@ type Dictionary = { [key: string]: string };`,
   });
 
   await t.test('structural tag schemas remain isolated when constraints are equal', async () => {
-    const { A } = await load('structural-isolation', 'a.model.js');
-    const { B } = await load('structural-isolation', 'b.model.js');
+    const { A } = await loadModelClasses(built('structural-isolation', 'a.model.js'), ['A']);
+    const { B } = await loadModelClasses(built('structural-isolation', 'b.model.js'), ['B']);
     assert.equal(await getValidator(new A({ value: { a: 'ok' } })).validate(), true);
     assert.equal(await getValidator(new B({ value: { b: 'ok' } })).validate(), true);
-    assert.equal(await getValidator(new A({ value: { b: 'wrong-shape' } } as never)).validate(), false);
-    assert.equal(await getValidator(new B({ value: { a: 'wrong-shape' } } as never)).validate(), false);
+    assert.equal(await getValidator(new A({ value: { b: 'wrong-shape' } })).validate(), false);
+    assert.equal(await getValidator(new B({ value: { a: 'wrong-shape' } })).validate(), false);
   });
 
   await t.test('structural tag schemas do not duplicate nested descriptor issues', async () => {
-    const { A } = await load('nested-issues', 'a.model.js');
+    const { A } = await loadModelClasses(built('nested-issues', 'a.model.js'), ['A']);
     const validator = getValidator(new A({ value: { name: 'x' } }));
     assert.equal(await validator.validate(), false);
     assert.deepEqual(validator.issues.map((issue: { readonly code: string; readonly path: readonly (string | number)[] }) => ({ code: issue.code, path: issue.path })), [
@@ -202,14 +203,14 @@ type Dictionary = { [key: string]: string };`,
   });
 
   await t.test('nested schema constraints collect referenced descriptors and project them', async () => {
-    const { A } = await load('nested-contains', 'a.model.js');
+    const { A } = await loadModelClasses(built('nested-contains', 'a.model.js'), ['A']);
     assert.equal(await getValidator(new A({ children: [{ name: 'ok' }] })).validate(), true);
-    assert.equal(await getValidator(new A({ children: [{ name: 7 }] } as never)).validate(), false);
+    assert.equal(await getValidator(new A({ children: [{ name: 7 }] })).validate(), false);
   });
 
   await t.test('union branch predicates stay attached to their checker constituent', async () => {
-    const { A } = await load('union-branches', 'a.model.js');
-    const predicates = await load('union-branches', 'predicates.js');
+    const { A } = await loadModelClasses(built('union-branches', 'a.model.js'), ['A']);
+    const predicates = await importGeneratedModule(root, 'the predicates', 'build/union-branches/predicates.js');
     assert.equal(await getValidator(new A({ value: 'text' })).validate(), true);
     assert.equal(predicates.stringCalls, 1);
     assert.equal(predicates.numberCalls, 0);
@@ -221,24 +222,24 @@ type Dictionary = { [key: string]: string };`,
   await t.test('utility aliases preserve two distinct same-signature predicates and deduplicate an alias', async () => {
     const validators = generatedModelFiles(root).find((artifact) => artifact.path.endsWith('/models.validators.generated.ts'))?.content ?? '';
     assert.equal(validators.match(/^import \{ \w+ as v\d+ \} from "[^"]*utility-aliases\/predicates\.js";$/gm)?.length, 2);
-    const { A } = await load('utility-aliases', 'a.model.js');
-    const predicates = await load('utility-aliases', 'predicates.js');
+    const { A } = await loadModelClasses(built('utility-aliases', 'a.model.js'), ['A']);
+    const predicates = await importGeneratedModule(root, 'the predicates', 'build/utility-aliases/predicates.js');
     assert.equal(await getValidator(new A({ payload: { value: 'ok' } })).validate({ failFast: false }), true);
     assert.equal(predicates.firstCalls, 1, 'the same declaration is called once through its alias');
     assert.equal(predicates.secondCalls, 1, 'the distinct same-signature declaration is retained');
   });
 
   await t.test('generic aliases preserve concrete local model identity for nested conversion', async () => {
-    const { Parent } = await load('generic-aliases', 'parent.model.js');
-    const { Child } = await load('generic-aliases', 'child.model.js');
+    const { Parent } = await loadModelClasses(built('generic-aliases', 'parent.model.js'), ['Parent']);
+    const { Child } = await loadModelClasses(built('generic-aliases', 'child.model.js'), ['Child']);
     const parent = modelCodec(Parent).fromWireFormat({ child: { value: { name: 'nested' } } });
-    assert.ok(parent.child.value instanceof Child, 'generic nested model is constructed as the concrete local class');
+    assert.ok(requireRecord(parent.child, 'the child').value instanceof Child, 'generic nested model is constructed as the concrete local class');
     assert.deepEqual(modelCodec(parent).toWireFormat(parent), { child: { value: { name: 'nested' } } });
   });
 
   // protects: T-855 only the first data part of an intersection was kept beside a tag; T-864 a generic tag alias with an array base was not generated
   await t.test('an intersection keeps every data part beside a tag, and a generic tag alias with a compound base describes the instantiated type', async () => {
-    const { A } = await load('compound-bases', 'a.model.js');
+    const { A } = await loadModelClasses(built('compound-bases', 'a.model.js'), ['A']);
     const valid = { parts: { a: 's', b: 1 }, before: 'abc', after: 'abc', list: ['x'], page: { items: ['x'] }, legacy: 'abc', state: 'on' };
     const invalid = async (override: object): Promise<boolean> => await getValidator(new A({ ...valid, ...override })).validate();
     assert.deepEqual([
@@ -257,7 +258,7 @@ type Dictionary = { [key: string]: string };`,
 
   // protects: T-953 a mapped type that drops a tag in its template kept the tag of the property it copies its declaration from
   await t.test('a mapped type takes its tags from its template, not from the property it maps over', async () => {
-    const { A } = await load('mapped-templates', 'a.model.js');
+    const { A } = await loadModelClasses(built('mapped-templates', 'a.model.js'), ['A']);
     const valid = { dropped: {}, droppedOverIntersection: {}, keptThroughMappedTemplate: {}, plain: { a: 'ab' }, both: { a: 'ab' } };
     const accepted = async (override: object): Promise<boolean> => await getValidator(new A({ ...valid, ...override })).validate();
     assert.deepEqual([
@@ -273,9 +274,9 @@ type Dictionary = { [key: string]: string };`,
   });
 
   await t.test('recursive local IModel aliases remain concrete nested references', async () => {
-    const { Node } = await load('recursive-alias', 'node.model.js');
+    const { Node } = await loadModelClasses(built('recursive-alias', 'node.model.js'), ['Node']);
     const node = modelCodec(Node).fromWireFormat({ name: 'root', children: [{ name: 'leaf' }] });
-    assert.ok(node.children?.[0] instanceof Node);
+    assert.ok(Array.isArray(node.children) && node.children[0] instanceof Node);
     assert.deepEqual(modelCodec(node).toWireFormat(node), { name: 'root', children: [{ name: 'leaf' }] });
   });
 });
@@ -807,7 +808,7 @@ test('a MobX model generated with validation false has no validator', async t =>
     fields: tsSource`title: string; done: boolean`,
   }).text);
   await buildModelProjectWith(root, { mobx: true, validation: false });
-  const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
+  const { A } = await loadModelClasses(path.join(root, 'build/a.model.js'), ['A']);
   const model = modelCodec(A).fromWireFormat({ title: 'Write', done: false });
   assert.equal('$validator' in model, false);
   assert.deepEqual(modelCodec(model).toWireFormat(model), { title: 'Write', done: false });
@@ -830,7 +831,7 @@ test('model validators are a generated TypeScript artifact that the built output
   const validators = artifacts.find((artifact) => artifact.path.endsWith('/models.validators.generated.ts'));
   assert.ok(validators);
   assert.ok(fs.existsSync(path.join(root, 'build', path.relative(sourceRoot, validators.path).replace(/\.ts$/, '.js'))), 'the build writes the validators');
-  const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
+  const { A } = await loadModelClasses(path.join(root, 'build/a.model.js'), ['A']);
   assert.equal(await getValidator(new A({ value: 'ok' })).validate(), true);
   assert.equal(await getValidator(new A({ value: 'bad' })).validate(), false);
 });
@@ -869,7 +870,7 @@ for (const item of [
     const { root, sourceRoot } = fixture(t);
     fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({ name: 'A', imports: item.declaration, fields: tsSource`when: Date` }).text);
     await buildModelProjectWith(root, { validation: true });
-    const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
+    const { A } = await loadModelClasses(path.join(root, 'build/a.model.js'), ['A']);
     const model = modelCodec(A).fromWireFormat(item.wire);
     assert.equal(model.when instanceof Date, item.isDate);
     assert.deepEqual(modelCodec(model).toWireFormat(model), item.wire);

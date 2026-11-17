@@ -12,6 +12,7 @@ import { COUNT_DIST_FILES, writeCodecPackage } from './fixture-templates/models/
 import { tsSource } from './source-template.js';
 import { generate } from '#model/generator';
 import { modelCodec } from './support/model-codec.js';
+import { loadFunctions, loadModelClasses } from './openapi/helpers.js';
 
 function project(t: TestContext, packages: Record<string, string> = {}, options: { readonly rootDir?: string } = {}) {
   return createModelProject(t, {
@@ -37,7 +38,7 @@ async function roundTrip(root: string): Promise<void> {
   await buildModelProject(root);
   const generated = fs.readFileSync(path.join(root, MODEL_FILE), 'utf8');
   assert.ok(importsOf(generated).includes('@fixture/pg/codecs'), 'the model imports the codecs by their package specifier');
-  const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
+  const { A } = await loadModelClasses(path.join(root, 'build/a.model.js'), ['A']);
   const decoded = modelCodec(A).fromWireFormat({ count: '42', name: 'abcd' });
   assert.equal(decoded.count, 42);
   assert.deepEqual(modelCodec(decoded).toWireFormat(decoded), { count: '42', name: 'abcd' });
@@ -99,7 +100,7 @@ export class A extends TABaseModel { constructor(values: Partial<TAFields> = {})
 
   await buildModelProject(root);
 
-  const { A } = await import(path.toNamespacedPath(path.join(root, 'build', path.basename(root), 'src/a.model.js')));
+  const { A } = await loadModelClasses(path.join(root, 'build', path.basename(root), 'src/a.model.js'), ['A']);
   const decoded = modelCodec(A).fromWireFormat({ count: '42' });
   assert.equal(decoded.count, 42);
   assert.deepEqual(modelCodec(decoded).toWireFormat(decoded), { count: '42' });
@@ -168,7 +169,7 @@ export type TA = IObject<{ viaAlias: EvenCount; direct: number & TValidation<typ
 `.text);
   writeModelGolemYaml(root, { validation: true });
   await buildModelProject(root);
-  const { parseTA } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.generated.js')));
+  const { parseTA } = await loadFunctions(path.join(root, 'build/a.model.generated.js'), ['parseTA']);
 
   assert.deepEqual(parseTA('{"viaAlias":2,"direct":4}'), { viaAlias: 2, direct: 4 });
   assert.throws(() => parseTA('{"viaAlias":3,"direct":4}'), (error: unknown) => {
@@ -215,7 +216,7 @@ test('a package with no exports field hosts a codec at its package-relative path
   await buildModelProject(root);
   const generated = fs.readFileSync(path.join(root, MODEL_FILE), 'utf8');
   assert.ok(importsOf(generated).includes('@fixture/pg/dist/codecs.js'));
-  const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
+  const { A } = await loadModelClasses(path.join(root, 'build/a.model.js'), ['A']);
   assert.deepEqual(modelCodec(A).toWireFormat(modelCodec(A).fromWireFormat({ count: '42' })), { count: '42' });
 });
 

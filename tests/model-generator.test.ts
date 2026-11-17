@@ -2,7 +2,6 @@ import { generatorSettings } from './support/mobx-extension.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
 import test, { type TestContext } from 'node:test';
 import { command, workspace } from './support/process.js';
 import { spyOnBuild } from './support/build-spy.js';
@@ -26,7 +25,7 @@ import {
   discoverModelSources,
   generate,
 } from '#model/generator';
-import { loadModelClasses, requireRecord } from './openapi/helpers.js';
+import { importGeneratedModule, loadFunctions, loadModelClasses, requireRecord } from './openapi/helpers.js';
 import { modelCodec } from './support/model-codec.js';
 
 function project(t: TestContext) {
@@ -97,7 +96,7 @@ export const wrong: Payment[typeof generatedModelFieldsBrand] = { id: 1, amount:
     });
     writeModelGolemYaml(built.root, profile);
     await buildModelProject(built.root);
-    const { Payment } = await import(`${pathToFileURL(path.join(built.root, 'build/payment.model.js')).href}`);
+    const { Payment } = await loadModelClasses(path.join(built.root, 'build/payment.model.js'), ['Payment']);
     const wire = { id: 'p1', amount: 5, total: { currency: 'USD' } };
     const payment = modelCodec(Payment).fromWireFormat(wire);
     assert.ok(payment instanceof Payment, 'the companion registers the model for conversion');
@@ -144,7 +143,7 @@ export class Money extends TMoneyBaseModel {}
   writeModelGolemYaml(root, {});
   await buildModelProject(root);
   assert.equal(generatedModelFiles(root).some(file => file.path.endsWith('models.validators.generated.ts')), true);
-  await import(`${pathToFileURL(path.join(root, 'build/money.js')).href}`);
+  await importGeneratedModule(root, 'the money module', 'build/money.js');
   const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TMoney'));
   assert.deepEqual(codec.parse('{"currency":"USD"}'), { currency: 'USD' });
   assert.throws(() => codec.parse('{"currency":"US"}'), (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.Validation);
@@ -458,10 +457,10 @@ export type TOrder = IModel<{ lines: TLine[] }>;`,
   // Built and run, the order companion loads the line companion through its .mjs specifier.
   fs.writeFileSync(path.join(root, 'golem.yaml'), 'version: 1\nmodel:\n  suffixes: [.entity.mts]\n');
   await buildModelProject(root);
-  const { TOrderBaseModel } = await import(pathToFileURL(path.join(root, 'build/order.entity.generated.mjs')).href);
-  const { TLineBaseModel } = await import(pathToFileURL(path.join(root, 'build/line.entity.generated.mjs')).href);
+  const { TOrderBaseModel } = await loadModelClasses(path.join(root, 'build/order.entity.generated.mjs'), ['TOrderBaseModel']);
+  const { TLineBaseModel } = await loadModelClasses(path.join(root, 'build/line.entity.generated.mjs'), ['TLineBaseModel']);
   const decoded = modelCodec(TOrderBaseModel).fromWireFormat({ lines: [{ sku: 'a' }] });
-  assert.ok(decoded.lines[0] instanceof TLineBaseModel);
+  assert.ok(Array.isArray(decoded.lines) && decoded.lines[0] instanceof TLineBaseModel);
   assert.deepEqual(modelCodec(decoded).toWireFormat(decoded), { lines: [{ sku: 'a' }] });
 });
 
@@ -568,9 +567,11 @@ test('a companion imports only the validators of its own models and the companio
   const spy = await spyOnBuild(root, { '@exprtlabs/golem/internal/model-runtime': ['assertAcyclicEncodeInput', 'beginEncode', 'endEncode'] });
   try {
     // The payment companion alone brings in the money companion it needs.
-    const { TPaymentBaseModel, stringifyTPayment, toWireFormatTPayment } = await import(pathToFileURL(path.join(root, 'build/payment.model.generated.js')).href);
+    const companion = path.join(root, 'build/payment.model.generated.js');
+    const { TPaymentBaseModel } = await loadModelClasses(companion, ['TPaymentBaseModel']);
+    const { stringifyTPayment, toWireFormatTPayment } = await loadFunctions(companion, ['stringifyTPayment', 'toWireFormatTPayment']);
     const payment = modelCodec(TPaymentBaseModel).fromWireFormat(NESTED_PAYMENT_WIRE);
-    assert.ok(payment.total.at instanceof Date, 'the nested money converts with the decoder of its own companion');
+    assert.ok(requireRecord(payment.total, 'the nested money').at instanceof Date, 'the nested money converts with the decoder of its own companion');
     assert.deepEqual(modelCodec(payment).toWireFormat(payment), NESTED_PAYMENT_WIRE);
     assert.equal(stringifyTPayment(payment), JSON.stringify(NESTED_PAYMENT_WIRE));
     assert.deepEqual(toWireFormatTPayment(payment), NESTED_PAYMENT_WIRE);
@@ -838,7 +839,7 @@ test('a TValidation function of a folder outside the root runs in the built app'
     include: ['src/**/*.ts', '../shared/**/*.ts'],
   }));
   await buildModelProjectWith(root, { validation: true });
-  const { TOrderBaseModel } = await import(pathToFileURL(path.join(root, 'build/a/src/order.model.generated.js')).href);
+  const { TOrderBaseModel } = await loadModelClasses(path.join(root, 'build/a/src/order.model.generated.js'), ['TOrderBaseModel']);
   const order = modelCodec(TOrderBaseModel);
   assert.deepEqual(order.toWireFormat(order.fromWireFormat({ count: 2 })), { count: 2 });
   assert.throws(
@@ -1073,7 +1074,7 @@ export type TA = IModel<{ big: bigint & TSerde<typeof $e, typeof $d> }>;
 `,
   });
   await buildModelProjectWith(root, { validation: false });
-  const { TABaseModel } = await import(pathToFileURL(path.join(root, 'build/a.model.generated.js')).href);
+  const { TABaseModel } = await loadModelClasses(path.join(root, 'build/a.model.generated.js'), ['TABaseModel']);
   const model = modelCodec(TABaseModel).fromWireFormat({ big: '12' });
   assert.equal(model.big, 12n);
   assert.deepEqual(modelCodec(model).toWireFormat(model), { big: '12' });
