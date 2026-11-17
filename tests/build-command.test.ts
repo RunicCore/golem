@@ -67,6 +67,7 @@ test('a project with no generated file builds in one golem build, and the built 
   write(root, 'src/use.ts', USE);
   const companion = path.join(root, 'src/money.model.generated.ts');
   assert.equal(fs.existsSync(companion), false, 'the fixture holds sources, golem.yaml and tsconfig only');
+  assert.equal(fs.existsSync(path.join(root, '.golem')), false, 'the fixture holds no local state of golem');
   assert.deepEqual(await build(root), { exitCode: 0 });
   assert.ok(fs.existsSync(path.join(root, '.golem/outputs.json')), 'the build wrote the local state of golem');
   assert.ok(fs.existsSync(companion), 'the build generated the file the source imports');
