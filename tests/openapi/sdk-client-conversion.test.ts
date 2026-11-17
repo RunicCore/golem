@@ -68,8 +68,9 @@ test('with dates: temporal the client returns Temporal values for a $ref body an
   const sent: Fetched[] = [];
   const { client } = await loadClient(t, 'temporal', () => Response.json(WIRE_EVENT, { status: 201 }), sent);
   const created = await client.createEvent().execute({ body: { at: Temporal.Instant.from('2025-01-02T03:04:05Z'), day: Temporal.PlainDate.from('2025-01-02') } });
-  assert.ok(requireRecord(created.body, 'event body').at instanceof Temporal.Instant);
-  assert.ok(requireRecord(created.body, 'event body').day instanceof Temporal.PlainDate);
+  const body = requireRecord(created.body, 'event body');
+  assert.ok(body.at instanceof Temporal.Instant);
+  assert.ok(body.day instanceof Temporal.PlainDate);
   assert.deepEqual(sent, [{ body: { at: '2025-01-02T03:04:05Z', day: '2025-01-02' } }]);
 });
 
