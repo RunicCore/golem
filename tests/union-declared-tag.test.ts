@@ -505,7 +505,7 @@ export type TInner = IModel<{ value: (TAlpha | TBeta) & ${TAG} }>;
   const make = (name: keyof typeof bases, values: object): object => Object.assign(new bases[name](), values);
   const Wrap = await loadClass(path.join(root, 'build/wrap.js'), 'Wrap');
   const inner = make('TInnerBaseModel', { value: make('TBetaBaseModel', {}) });
-  const alpha = make('TAlphaBaseModel', { parts: [make('TLeafBaseModel', {}), make('TTwigBaseModel', {})], wrapped: Reflect.construct(Wrap, [inner]) });
+  const alpha = make('TAlphaBaseModel', { parts: [make('TLeafBaseModel', {}), make('TTwigBaseModel', {})], wrapped: new Wrap(inner) });
   const item = make('TRootBaseModel', { value: alpha });
   const wire = { value: { kind: 'a', parts: [{ kind: 'leaf' }, { kind: 'twig' }], wrapped: '{"value":{"kind":"b"}}' } };
   const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TRoot'));
@@ -580,7 +580,7 @@ export type TContact = IObject<{
       assert.equal(model.beside instanceof URL, typeof wire.beside === 'string');
       assert.equal(model.maybe instanceof URL, typeof wire.maybe === 'string');
       assert.deepEqual(codecs.toWireFormatTContact(model, options), wire);
-      assert.deepEqual(JSON.parse(codecs.stringifyTContact(model, options) as string), wire);
+      assert.deepEqual(JSON.parse(String(codecs.stringifyTContact(model, options))), wire);
       assert.deepEqual(codecs.toWireFormatTContact(codecs.parseTContact(JSON.stringify(wire), options), options), wire);
     }
     if (validation) assert.throws(() => codecs.fromWireFormatTContact({ ...wires[0], value: 5 }, options));
@@ -609,7 +609,7 @@ export type TContact = IObject<{ value: (Date | TEmail | TPhone) & ${TAG} }>;
       const model = requireRecord(codecs.fromWireFormatTContact(wire, options), 'contact');
       assert.equal(model.value instanceof Date, typeof wire.value === 'string');
       assert.deepEqual(codecs.toWireFormatTContact(model, options), wire);
-      assert.deepEqual(JSON.parse(codecs.stringifyTContact(model, options) as string), wire);
+      assert.deepEqual(JSON.parse(String(codecs.stringifyTContact(model, options))), wire);
     }
   });
 }
@@ -645,7 +645,7 @@ export class Email extends TEmailBaseModel {}
   ];
   for (const { value, wire } of cases) {
     assert.deepEqual(companion.toWireFormatTContact({ value }, { validate: true }), { value: wire });
-    assert.deepEqual(JSON.parse(companion.stringifyTContact({ value }, { validate: true }) as string), { value: wire });
+    assert.deepEqual(JSON.parse(String(companion.stringifyTContact({ value }, { validate: true }))), { value: wire });
     const decoded = requireRecord(companion.fromWireFormatTContact({ value: wire }, { validate: true }), 'contact');
     assert.deepEqual(companion.toWireFormatTContact(decoded, { validate: true }), { value: wire });
   }

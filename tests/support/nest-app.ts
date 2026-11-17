@@ -14,26 +14,10 @@ export interface NestAppOptions {
   readonly errors?: string[];
 }
 
-/** Whether `candidate` is a class: `Reflect.construct` refuses a `newTarget` that is no constructor, before it runs any code of it. */
-function isController(candidate: Function): candidate is Type {
-  try {
-    Reflect.construct(Object, [], candidate);
-    return true;
-  } catch (error) {
-    if (error instanceof TypeError) return false;
-    throw error;
-  }
-}
-
-function requireController(candidate: Function): Type {
-  if (!isController(candidate)) throw new TypeError(`A controller must be a class: ${candidate.name || 'anonymous function'}`);
-  return candidate;
-}
-
 /** Starts a Nest app on a free local port with `controllers` and one global interceptor. The caller closes it. */
-export async function startNestApp(controllers: readonly Function[], options: NestAppOptions = {}): Promise<INestApplication> {
+export async function startNestApp(controllers: readonly Type[], options: NestAppOptions = {}): Promise<INestApplication> {
   class AppModule {}
-  Module({ controllers: controllers.map(requireController) })(AppModule);
+  Module({ controllers: [...controllers] })(AppModule);
   const { errors } = options;
   const logger = errors === undefined ? false : {
     log() {},

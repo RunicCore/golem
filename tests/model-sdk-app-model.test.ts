@@ -7,7 +7,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileFixtureScope } from './fixture-project.js';
 import { buildModelProject, createModelProject, writeModelGolemYaml, writeModelSources } from './model-project.js';
-import { generateMaterializedSdk, importGeneratedModule, loadFunctions, loadGeneratedClient, loadModelClasses, requireRecord } from './openapi/helpers.js';
+import { generateMaterializedSdk, importGeneratedModule, loadFunctions, loadGeneratedClient, loadModelClasses, requireFunction, requireRecord } from './openapi/helpers.js';
 import { chargesDocument, loadGolemModeProject, writeGolemModeProject, type GolemModeSdkSetup } from './openapi/sdk-client-fixture.js';
 import { runModuleScope } from './support/run-module.js';
 
@@ -38,7 +38,7 @@ function validatorsOfModels(root: string, appModel: string, value: unknown): { c
     const model = typeof scope[name] === 'function' ? /^f\d+_(\w+?)_[0-9a-f]{8}/.exec(name)?.[1] : undefined;
     if (model !== undefined) (functions[model] ??= []).push(name);
   }
-  const validate = exports[Object.keys(exports).find(name => new RegExp(`^validate_${appModel}_[0-9a-f]{8}$`).test(name))!] as (value: unknown) => unknown;
+  const validate = requireFunction(exports[Object.keys(exports).find(name => new RegExp(`^validate_${appModel}_[0-9a-f]{8}$`).test(name)) ?? ''], `validate_${appModel}`);
   const reached: string[] = [];
   for (const [model, names] of Object.entries(functions)) {
     const originals = names.map(name => scope[name]);

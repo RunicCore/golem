@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 
 import { dirname, join, resolve, basename, relative } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawnSync } from 'node:child_process';
+import type { Type } from '@nestjs/common';
 import { linkProjectPackages, writeGeneratedArtifacts } from '../fixture-project.js';
 import { isRecord } from '@exprtlabs/golem/internal/generator-support';
 import { findGeneratedModelDefinitionForConstructor } from '@exprtlabs/golem/internal/model-runtime';
@@ -369,37 +370,6 @@ export async function loadGeneratedClient(output: string, name: string, file = '
   return generatedClientFrom(await importFile(join(output, file)), name, join(output, file));
 }
 
-function exportsModelClasses<Name extends string>(module: Record<string, unknown>, names: readonly Name[]): module is Record<Name, GeneratedModelClass> {
-  return names.every((name) => isGeneratedModelClass(module[name]));
-}
-
-/** The generated model classes that the built module `file` exports under `names`; a missing export or one that is no generated model class throws. */
-export async function loadModelClasses<Name extends string>(file: string, names: readonly Name[]): Promise<Record<Name, GeneratedModelClass>> {
-  const module = await importFile(file);
-  if (!exportsModelClasses(module, names)) {
-    throw new TypeError(`${file} must export the generated model classes ${names.filter((name) => !isGeneratedModelClass(module[name])).join(', ')}`);
-  }
-  return module;
-}
-
-/** The class that the built module `file` exports as `name`, for a class that is no generated model or client, such as a controller; a missing export or one that is no class throws. */
-export async function loadClass(file: string, name: string): Promise<Function> {
-  const value = (await importFile(file))[name];
-  if (typeof value !== 'function') throw new TypeError(`${file} must export the class ${name}`);
-  return value;
-}
-
-function isValidator(value: unknown): value is Validator {
-  return typeof value === 'function';
-}
-
-/** The generated validator that the built validators module `file` exports as `name`; a missing export or one that is no function throws. */
-export async function loadValidator(file: string, name: string): Promise<Validator> {
-  const value = (await importFile(file))[name];
-  if (!isValidator(value)) throw new TypeError(`${file} must export the validator ${name}`);
-  return value;
-}
-
 /** A function that a built module exports: only the generated code knows what it takes and returns. */
 export type BuiltFunction = (...args: unknown[]) => unknown;
 
@@ -407,21 +377,45 @@ function isBuiltFunction(value: unknown): value is BuiltFunction {
   return typeof value === 'function';
 }
 
+function isClass(value: unknown): value is Type {
+  return isBuiltFunction(value) && /^class\b/.test(Function.prototype.toString.call(value));
+}
+
+function isValidator(value: unknown): value is Validator {
+  return typeof value === 'function';
+}
+
+function hasExports<Name extends string, Value>(module: Record<string, unknown>, names: readonly Name[], guard: (value: unknown) => value is Value): module is Record<Name, Value> {
+  return names.every((name) => guard(module[name]));
+}
+
+/** The exports `names` of the built module `file`, each checked by `guard`; a missing export or one that fails it throws and names `kind`. */
+async function loadExports<Name extends string, Value>(file: string, names: readonly Name[], guard: (value: unknown) => value is Value, kind: string): Promise<Record<Name, Value>> {
+  const module = await importFile(file);
+  if (!hasExports(module, names, guard)) throw new TypeError(`${file} must export the ${kind} ${names.filter((name) => !guard(module[name])).join(', ')}`);
+  return module;
+}
+
+/** The generated model classes that the built module `file` exports under `names`. */
+export const loadModelClasses = <Name extends string>(file: string, names: readonly Name[]) => loadExports(file, names, isGeneratedModelClass, 'generated model classes');
+
+/** The functions that the built module `file` exports under `names`. */
+export const loadFunctions = <Name extends string>(file: string, names: readonly Name[]) => loadExports(file, names, isBuiltFunction, 'functions');
+
+/** The class that the built module `file` exports as `name`, for a class that is no generated model or client, such as a controller. */
+export async function loadClass(file: string, name: string): Promise<Type> {
+  return (await loadExports(file, [name], isClass, 'class'))[name];
+}
+
+/** The generated validator that the built validators module `file` exports as `name`. */
+export async function loadValidator(file: string, name: string): Promise<Validator> {
+  return (await loadExports(file, [name], isValidator, 'validator'))[name];
+}
+
 /** `value` as a built function; anything else throws and names `label`. */
 export function requireFunction(value: unknown, label: string): BuiltFunction {
   if (!isBuiltFunction(value)) throw new TypeError(`${label} must be a function`);
   return value;
-}
-
-function exportsFunctions<Name extends string>(module: Record<string, unknown>, names: readonly Name[]): module is Record<Name, BuiltFunction> {
-  return names.every((name) => isBuiltFunction(module[name]));
-}
-
-/** The functions that the built module `file` exports under `names`; a missing export or one that is no function throws. */
-export async function loadFunctions<Name extends string>(file: string, names: readonly Name[]): Promise<Record<Name, BuiltFunction>> {
-  const module = await importFile(file);
-  if (!exportsFunctions(module, names)) throw new TypeError(`${file} must export the functions ${names.filter((name) => !isBuiltFunction(module[name])).join(', ')}`);
-  return module;
 }
 
 /** The `operationCodecs` of the codec module `operation` of a compiled standalone SDK. */
