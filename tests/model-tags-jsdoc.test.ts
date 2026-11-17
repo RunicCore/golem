@@ -24,10 +24,10 @@ const helpers = {
   'a @typedef tag': `import { a } from './rules.js';\n/** @typedef {string & ${tag}} Held */\n/** @type {Held} */\nexport const held = '';\n`,
 } as const;
 
-/** The message that generation stops with for a field that holds the tag of `a` through `helper.js`, and the tag of `b` itself. */
-function refusalOf(t: TestContext, helper: string): string {
+/** The message that generation stops with for a field that holds the tag of `a` through `helper.js`, and the tag of `b` itself. `rulesTail` is more source for `rules.ts`. */
+function refusalOf(t: TestContext, helper: string, rulesTail = ''): string {
   const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-model-tags-jsdoc-', name: 'model-tags-jsdoc', linkWorkspaceNodeModules: true, allowJs: true });
-  fs.writeFileSync(path.join(sourceRoot, 'rules.ts'), "export const a: (v: string) => boolean = (v) => v !== '';\nexport const b: typeof a = (v) => v.length < 9;\n");
+  fs.writeFileSync(path.join(sourceRoot, 'rules.ts'), `export const a: (v: string) => boolean = (v) => v !== '';\nexport const b: typeof a = (v) => v.length < 9;\n${rulesTail}`);
   fs.writeFileSync(path.join(sourceRoot, 'helper.js'), helper);
   fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({
     name: 'A',
@@ -47,9 +47,19 @@ for (const [name, helper] of Object.entries(helpers)) test(`a function tag writt
   assert.match(refusalOf(t, helper), /RUNM1040.*This program writes the functions `a` \(.*helper\.js:\d+:\d+\), `b` \(.*a\.model\.ts/s);
 });
 
-test('TypeScript 6 says that it does not read the JSDoc type of a JavaScript value, and gives the remedy that works', { skip: skipUnlessTypeScript6('TypeScript 7 reads the JSDoc type, which it hoists into the declaration') }, t => {
+const inferredReason = /whose type golem infers; on TypeScript 6 a JSDoc `@type` does not count.*Declare each with `function`, or give each const its own type annotation\./s;
+
+test('a JavaScript value with no type node is refused by name as inferred, with the remedy that works, on every TypeScript version', t => {
+  // protects: T-1063 the reason named a TypeScript 6 limit for a value with no JSDoc and on TypeScript 7, where it was false
+  const message = refusalOf(t, "export const held = '';\n", "import type { TValidation } from '@exprtlabs/golem/tags';\nexport type Other = string & TValidation<typeof a>;\n");
+  assert.match(message, /RUNM1040.*through `held = ''` \(.*helper\.js:\d+:\d+\), /s);
+  assert.match(message, inferredReason);
+  assert.doesNotMatch(message, /annotation that writes the tag/);
+});
+
+test('TypeScript 6 keeps the JSDoc @type of a JavaScript value out of the type node, and the refusal says that it does not count', { skip: skipUnlessTypeScript6('TypeScript 7 reads the JSDoc type, which it hoists into the declaration') }, t => {
   // protects: T-1063 the text told the user that golem infers a type that the user had written in a JSDoc @type, and to annotate it
   const message = refusalOf(t, helpers['a @type tag']);
-  assert.match(message, /whose JSDoc type golem does not read on this TypeScript version.*Declare each with `function`, or give each const its own type annotation\./s);
-  assert.doesNotMatch(message, /golem infers|annotation that writes the tag/);
+  assert.match(message, inferredReason);
+  assert.doesNotMatch(message, /annotation that writes the tag/);
 });
