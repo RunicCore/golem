@@ -10,7 +10,7 @@ import { getValidator, validateInstance } from '@exprtlabs/golem/validation';
 import { buildModelProject, createModelProject, writeModelGolemYaml, type ModelProject } from './model-project.js';
 import { command } from './support/process.js';
 import { parse as parseYaml } from 'yaml';
-import { importGeneratedModule, loadCounter } from './openapi/helpers.js';
+import { importGeneratedModule, loadCounter, requireRecord } from './openapi/helpers.js';
 import { loadGolemModeProject } from './openapi/sdk-client-fixture.js';
 import { generatedCodecIdFromRoot } from './support/consumer.js';
 import { pathToFileURL } from 'node:url';
@@ -224,7 +224,7 @@ test('SDK Money $ref plus extra TValidation, local TValidation, and TSerde compi
 
   const jsonCodec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TJsonCheckout'));
   const text = codec.stringify(valid);
-  const parsed = codec.parse(text) as { note: string };
+  const parsed = requireRecord(codec.parse(text), 'parsed');
   assert.equal(codec.validate(parsed), true);
   assert.equal(parsed.note, 'ok');
   const extraMoneyCalls = await loadCounter(path.join(root, 'build/src/rules.js'), 'extraMoneyCalls');

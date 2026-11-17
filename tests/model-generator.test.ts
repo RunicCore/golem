@@ -26,7 +26,7 @@ import {
   discoverModelSources,
   generate,
 } from '#model/generator';
-import { loadModelClasses } from './openapi/helpers.js';
+import { loadModelClasses, requireRecord } from './openapi/helpers.js';
 import { modelCodec } from './support/model-codec.js';
 
 function project(t: TestContext) {
@@ -650,8 +650,8 @@ for (const layout of ['sibling files', 'one file'] as const) {
     });
     await buildModelProjectWith(root, { validation: true });
     const { B } = await loadModelClasses(path.join(root, 'build', 'b.model.js'), ['B']);
-    const decoded = modelCodec(B).fromWireFormat({ s: { v: '2020-01-01T00:00:00.000Z' }, u: { w: '2020-01-01T00:00:00.000Z' } }) as { s: { v: unknown }; u: { w: unknown } };
-    assert.deepEqual([decoded.s.v instanceof Date, decoded.u.w instanceof Date], [true, true]);
+    const decoded = requireRecord(modelCodec(B).fromWireFormat({ s: { v: '2020-01-01T00:00:00.000Z' }, u: { w: '2020-01-01T00:00:00.000Z' } }), 'decoded');
+    assert.deepEqual([requireRecord(decoded.s, 's').v instanceof Date, requireRecord(decoded.u, 'u').w instanceof Date], [true, true]);
   });
 }
 
@@ -677,7 +677,7 @@ export class ${name} extends T${name}BaseModel {
   await buildModelProjectWith(root, { validation: true });
   const [{ B }, first, second] = await Promise.all([loadModelClasses(path.join(root, 'build', 'b.model.js'), ['B']), loadModelClasses(path.join(root, 'build', 'a1.model.js'), ['A$']), loadModelClasses(path.join(root, 'build', 'a2.model.js'), ['A_'])]);
   const day = '2020-01-01T00:00:00.000Z';
-  const decoded = modelCodec(B).fromWireFormat({ s: { v: day }, u: { v: day } }) as { s: object; u: object };
+  const decoded = requireRecord(modelCodec(B).fromWireFormat({ s: { v: day }, u: { v: day } }), 'decoded');
   assert.deepEqual([decoded.s instanceof first.A$, decoded.u instanceof second.A_], [true, true]);
 });
 
@@ -703,7 +703,7 @@ ${order.map(classModel).join('')}`,
     await buildModelProjectWith(root, { validation: true });
     const [{ B }, classes] = await Promise.all([loadModelClasses(path.join(root, 'build', 'b.model.js'), ['B']), loadModelClasses(path.join(root, 'build', 'a.model.js'), ['A$', 'A_'])]);
     const day = '2020-01-01T00:00:00.000Z';
-    const decoded = modelCodec(B).fromWireFormat({ s: { v: day }, u: { v: day } }) as { s: object; u: object };
+    const decoded = requireRecord(modelCodec(B).fromWireFormat({ s: { v: day }, u: { v: day } }), 'decoded');
     assert.deepEqual([decoded.s instanceof classes.A$, decoded.u instanceof classes.A_], [true, true]);
   });
 }
@@ -726,10 +726,11 @@ export type TA_ = IObject<{ b?: TB }>;
   await buildModelProjectWith(root, { validation: true });
   const { B } = await loadModelClasses(path.join(root, 'build', 'b.model.js'), ['B']);
   const day = '2020-01-01T00:00:00.000Z';
-  const decoded = modelCodec(B).fromWireFormat({ s: { b: { at: day, a: { b: { at: day } } } }, u: { b: { at: day } } }) as {
-    s: { b: { at: unknown; a: { b: { at: unknown } } } }; u: { b: { at: unknown } };
-  };
-  assert.deepEqual([decoded.s.b.at instanceof Date, decoded.s.b.a.b.at instanceof Date, decoded.u.b.at instanceof Date], [true, true, true]);
+  const decoded = requireRecord(modelCodec(B).fromWireFormat({ s: { b: { at: day, a: { b: { at: day } } } }, u: { b: { at: day } } }), 'decoded');
+  const sb = requireRecord(requireRecord(decoded.s, 's').b, 's.b');
+  const sab = requireRecord(requireRecord(sb.a, 's.b.a').b, 's.b.a.b');
+  const ub = requireRecord(requireRecord(decoded.u, 'u').b, 'u.b');
+  assert.deepEqual([sb.at instanceof Date, sab.at instanceof Date, ub.at instanceof Date], [true, true, true]);
 });
 
 /** A shared folder `outer/shared` with a golem.yaml of its own, and an app that includes it and has a model of its own. */
