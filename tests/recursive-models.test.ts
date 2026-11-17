@@ -23,6 +23,9 @@ export class Right extends TRightBaseModel {}
 `,
 };
 
+const isSerializationError = (error: unknown): boolean =>
+  error instanceof LibError && error.kind === LibErrorKind.Serialization && error.causedByInput === false;
+
 const profiles: readonly (readonly [string, GolemProfile])[] = [
   ['validation off', { validation: false }],
   ['validation on', { validation: true }],
@@ -81,15 +84,14 @@ for (const [label, profile] of profiles) {
 
     const selfLink: { name: string; child?: unknown } = { name: 'a' };
     selfLink.child = selfLink;
-    const farLink = { name: 'a', child: { name: 'b', child: { name: 'c' } as { name: string; child?: unknown } } };
-    farLink.child.child.child = farLink;
+    const tail: { name: string; child?: unknown } = { name: 'c' };
+    const farLink = { name: 'a', child: { name: 'b', child: tail } };
+    tail.child = farLink;
     const cyclicData: Record<string, unknown> = { at: 1 };
     cyclicData.back = cyclicData;
     const cyclicList: unknown[] = [{ ok: true }];
     cyclicList.push(cyclicList);
 
-    const isSerializationError = (error: unknown): boolean =>
-      error instanceof LibError && error.kind === LibErrorKind.Serialization && error.causedByInput === false;
     const cyclicInputs: readonly (readonly [string, unknown])[] = [
       ['stringifyTLink', selfLink], ['toWireFormatTLink', selfLink],
       ['stringifyTLink', farLink], ['toWireFormatTLink', farLink],
@@ -191,9 +193,6 @@ test('a model two files away from a recursive model throws a Serialization LibEr
   const acyclic = { middle: { link: { name: 'a', next: { name: 'b' } } } };
   assert.equal(top.stringifyTTop(acyclic), JSON.stringify(acyclic));
 });
-
-const isSerializationError = (error: unknown): boolean =>
-  error instanceof LibError && error.kind === LibErrorKind.Serialization && error.causedByInput === false;
 
 // An expression tree: a leaf, or a branch whose children are again expressions. In golem-model a union is a field
 // type and never a codec of its own; only an OpenAPI oneOf component whose variants share a base is a union model.

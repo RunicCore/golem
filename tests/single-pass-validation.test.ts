@@ -9,7 +9,8 @@ import { readFixture, writeGeneratedArtifacts } from './fixture-project.js';
 import { generatedCodecIdFromRoot } from './support/consumer.js';
 import { generate as generateOpenApi } from '@exprtlabs/golem-openapi-ts/generator';
 import { buildModelProject, createModelProject, generatedModelFiles, writeModelGolemYaml, writeModelSources } from './model-project.js';
-import { importGeneratedModule, loadCounter, loadFunctions, loadModelClasses, loadValidator } from './openapi/helpers.js';
+import { importGeneratedModule, loadCounter, loadFunctions, loadModelClasses, loadValidator, requireRecord } from './openapi/helpers.js';
+import { valueAt } from './support/json.js';
 
 const COUNTER = `export let calls = 0;
 export function notBlank(value: string): boolean | string { calls++; return value.trim().length > 0 || 'blank'; }
@@ -40,8 +41,8 @@ export class RuleOnly extends TRuleOnlyBaseModel {}
 const loadCalls = async (file: string, name: string) => ({ calls: await loadCounter(file, name), reset: (await loadFunctions(file, ['reset'])).reset });
 
 const good = { note: 'hi', code: 'ff', when: '2026-01-02T03:04:05.000Z', sku: 'A' };
-const validationError = (error: unknown): boolean => error instanceof LibError && error.kind === LibErrorKind.Validation;
-const firstIssue = (error: unknown) => (error as LibError).issues[0];
+const validationError = (error: unknown): error is LibError => error instanceof LibError && error.kind === LibErrorKind.Validation;
+const firstIssue = (error: LibError) => error.issues[0];
 
 async function project(t: TestContext, profile: { validation: true }) {
   const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-single-pass-', name: 'single-pass' });
@@ -73,11 +74,11 @@ test('each rule runs once per conversion; IObject parse enforces model-only rule
   assert.equal(count(() => order.toWireFormat(model)), 1);
 
   // Stringify checks the full model first.
-  assert.throws(() => order.stringify({ ...(model as object), when: 'not a date' } as never),
+  assert.throws(() => order.stringify({ ...requireRecord(model, 'model'), when: 'not a date' }),
     (e: unknown) => validationError(e) && firstIssue(e)?.representation === IssueRepresentation.Model);
-  const bad = order.parse(JSON.stringify(good), { construct: Order }) as object;
+  const bad = requireRecord(order.parse(JSON.stringify(good), { construct: Order }), 'bad');
   Reflect.set(bad, 'when', 'not a date');
-  assert.throws(() => order.stringify(bad as never), (e: unknown) => validationError(e) && firstIssue(e)?.representation === IssueRepresentation.Model);
+  assert.throws(() => order.stringify(bad), (e: unknown) => validationError(e) && firstIssue(e)?.representation === IssueRepresentation.Model);
 
   // Wire violations are unchanged.
   assert.throws(() => plain.parse(JSON.stringify({ ...good, code: 'ZZ' })),
@@ -91,7 +92,7 @@ test('each rule runs once per conversion; IObject parse enforces model-only rule
   // A violation of the rule is one model issue: no wire-only step judges it again.
   counter.reset();
   assert.throws(() => ruleOnly.parse(JSON.stringify({ ...rule, note: ' ' }), { construct: RuleOnly }),
-    (e: unknown) => validationError(e) && (e as LibError).issues.length === 1 && firstIssue(e)?.representation === IssueRepresentation.Model);
+    (e: unknown) => validationError(e) && e.issues.length === 1 && firstIssue(e)?.representation === IssueRepresentation.Model);
   assert.equal(counter.calls(), 1);
 });
 
@@ -186,7 +187,7 @@ for (const [projectValidates, source, rows] of [[true, TOGGLES_VALIDATING, VALID
       const validateChecks = {
         none: () => undefined,
         unavailable: () => assert.throws(() => codec.validate(model), unavailable, `${name} codec.validate`),
-        rejects: () => assert.equal(codec.validate({ note: 'hi', when: 'not a date' } as never), false, `${name} codec.validate rejects a bad value`),
+        rejects: () => assert.equal(codec.validate({ note: 'hi', when: 'not a date' }), false, `${name} codec.validate rejects a bad value`),
       };
       validateChecks[validateCheck]();
       for (const call of CALLS) {
@@ -194,7 +195,7 @@ for (const [projectValidates, source, rows] of [[true, TOGGLES_VALIDATING, VALID
         const expected = RULE_RUNS[effective][call];
         for (const [operation, run] of [
           ['parse', () => codec.parse(JSON.stringify(TOGGLE_VALUE), options)],
-          ['stringify', () => codec.stringify(model as never, CALL_OPTIONS[call])],
+          ['stringify', () => codec.stringify(model, CALL_OPTIONS[call])],
         ] as const) {
           counter.reset();
           const label = `${name} ${operation} validate=${call}`;
@@ -272,10 +273,10 @@ export class Trip extends TTripBaseModel {}
   const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TTrip'));
   const good = { at: '2026-01-02T03:04:05.000Z', stop: { at: '2026-01-03T00:00:00.000Z', name: 'A' } };
   const trip = codec.parse(JSON.stringify(good), { construct: Trip, validationContext: context });
-  assert.equal(codec.stringify(trip as never, { validationContext: context }), JSON.stringify(good));
+  assert.equal(codec.stringify(trip, { validationContext: context }), JSON.stringify(good));
   assert.ok(requested.some(reference => reference.startsWith('TTrip') && reference.endsWith('#model-only')), 'parse checks the decoded value through the context');
   assert.throws(() => codec.parse(JSON.stringify({ ...good, stop: { ...good.stop, at: 'nope' } }), { construct: Trip, validationContext: context }), validationError);
-  const bad = codec.parse(JSON.stringify(good), { construct: Trip }) as { stop: object };
-  Reflect.set(bad.stop, 'at', 'not a date');
-  assert.throws(() => codec.stringify(bad as never, { validationContext: context }), validationError);
+  const bad = codec.parse(JSON.stringify(good), { construct: Trip });
+  Reflect.set(requireRecord(valueAt(bad, 'stop'), 'stop'), 'at', 'not a date');
+  assert.throws(() => codec.stringify(bad, { validationContext: context }), validationError);
 });
